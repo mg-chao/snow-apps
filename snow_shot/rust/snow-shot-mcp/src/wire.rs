@@ -53,6 +53,8 @@ pub struct AppResponse {
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Descriptor {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub product: Option<String>,
     pub protocol: String,
     pub socket: String,
     pub token: String,

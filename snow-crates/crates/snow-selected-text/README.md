@@ -5,6 +5,12 @@ Apache-2.0; Windows 10/11 x64 and macOS 15+ on Apple Silicon or Intel are suppor
 platforms compile and return `UnsupportedPlatform`. There is no translation service, global hook,
 UI, permission prompt, or network access.
 
+When linked as a separate application FFI archive, enable `host-application-qos`
+and provide the C ABI `int32_t snow_application_qos_apply_current_thread(void)`.
+The worker calls that host policy before creating its platform backend, so it
+shares the application's launch-scoped QoS state. Standalone builds use
+`snow-core` directly by default.
+
 ```rust,no_run
 use snow_selected_text::{CaptureOptions, SelectedTextService, SelectionOutcome};
 

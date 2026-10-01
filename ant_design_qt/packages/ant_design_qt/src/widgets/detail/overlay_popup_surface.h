@@ -49,7 +49,11 @@ class OverlayPopupSurface final : public QWidget, public TopLevelToolResourceRel
  public:
   explicit OverlayPopupSurface(QWidget* parent = nullptr);
 
-  void releaseTopLevelToolResources() override { destroy(); }
+  // Read when deferred releases execute, including tasks posted before retention changed.
+  void releaseTopLevelToolResources() override {
+    if (!nativeSurfaceRetained_) destroy();
+  }
+  void setNativeSurfaceRetained(bool retained) { nativeSurfaceRetained_ = retained; }
 
   QWidget* bodyWidget() const { return bodyWidget_; }
 
@@ -121,6 +125,7 @@ class OverlayPopupSurface final : public QWidget, public TopLevelToolResourceRel
   OverlayPopupPlacement placement_ = OverlayPopupPlacement::Top;
   ArrowSide arrowSide_ = ArrowSide::Bottom;
   bool arrowVisible_ = true;
+  bool nativeSurfaceRetained_ = false;
   qreal arrowCenter_ = 0.0;
   mutable std::unique_ptr<PathCache> pathCache_;
   mutable std::unique_ptr<ShadowCache> shadowCache_;

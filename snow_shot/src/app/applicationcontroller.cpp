@@ -1,3 +1,4 @@
+#include "snow_shot/app/edition.h"
 #include "snow_shot/app/applicationcontroller.h"
 #include "snow_shot/app/applicationrestart.h"
 #include "snow_shot/app/updateconfirmationdialog.h"
@@ -8,7 +9,9 @@
 #include "snow_shot/presentation/permissionguidecontroller.h"
 #endif
 #include "snow_shot/platform/windows/administratorlaunch.h"
+#if SNOW_SHOT_ENABLE_TEXT_TRANSLATION
 #include "snow_shot/translation/translationservice.h"
+#endif
 #include "snow_shot/presentation/languagemanager.h"
 #include "snow_shot/update/updateservice.h"
 #include "snow_shot/presentation/screenshotexportcoordinator.h"
@@ -25,8 +28,12 @@
 #include "snow_shot/presentation/screenshotcontroller.h"
 #include "snow_shot/presentation/screenshotautofiltercontroller.h"
 #include "snow_shot/presentation/directcapturecontroller.h"
+#if SNOW_SHOT_ENABLE_TEXT_TRANSLATION
 #include "snow_shot/presentation/selectedtexttranslationcoordinator.h"
+#endif
+#if SNOW_SHOT_ENABLE_TEXT_TRANSLATION
 #include "snow_shot/presentation/selectedtexttranslationcontroller.h"
+#endif
 #include "snow_shot/presentation/screenshotocrrecognitionservice.h"
 #include "snow_shot/presentation/screenshotpinnedwindow.h"
 #include "snow_shot/presentation/screenrecordingfolder.h"
@@ -276,6 +283,7 @@ class ApplicationController::Impl {
         if (!applicationStorage.isInitialized()) {
             static_cast<void>(applicationStorage.initialize());
         }
+#if SNOW_SHOT_ENABLE_TEXT_TRANSLATION
         translationClient =
             std::make_unique<SnowShotApiClient>(SnowShotApiClient::configuredBaseUrl(
                 applicationStorage.configuration()
@@ -289,6 +297,7 @@ class ApplicationController::Impl {
                          [this](const QString&, const QLocale& locale) {
                              translationService->setLocale(locale);
                          });
+#endif
         // OCR process ownership is application-scoped. ScreenshotController
         // instances receive a consumer of this service instead of creating a
         // second child process for each controller.
@@ -329,17 +338,27 @@ class ApplicationController::Impl {
         updates->setMode(configuration.value(QStringLiteral("updates/mode")).toString());
         updates->setSystemProxy(configuration.value(QStringLiteral("network/proxy")).toString() ==
                                 u"system");
-        QObject::connect(updates, &update::UpdateService::automaticUpdateAvailable, &q,
-                         [this](const QString& version) {
-                             systemTray.showUpdateMessage(
-                                 ApplicationController::tr(
-                                     "Snow Shot %1 is available. Open About for update options.")
-                                     .arg(version));
-                         });
+        QObject::connect(
+            updates, &update::UpdateService::automaticUpdateAvailable, &q,
+            [this](const QString& version) {
+                systemTray.showUpdateMessage(
+                    (edition::isMini
+                         ? ApplicationController::tr(
+                               "%1 %2 is available. Open About for update options.")
+                               .arg(edition::productName(), version)
+                         : ApplicationController::tr(
+                               "Snow Shot %1 is available. Open About for update options.")
+                               .arg(version)));
+            });
 #ifndef Q_OS_MACOS
         QObject::connect(updates, &update::UpdateService::updateReady, &q, [this] {
-            systemTray.showUpdateMessage(ApplicationController::tr(
-                "An update is ready. Open About to restart and update Snow Shot."));
+            systemTray.showUpdateMessage(
+                (edition::isMini
+                     ? ApplicationController::tr(
+                           "An update is ready. Open About to restart and update %1.")
+                           .arg(edition::productName())
+                     : ApplicationController::tr(
+                           "An update is ready. Open About to restart and update Snow Shot.")));
         });
 #endif
         platform::windows::setAdministratorRestartGuard([this] { return restartAllowed(); });
@@ -517,7 +536,9 @@ class ApplicationController::Impl {
             appPorts.storage = &storage::ApplicationStorage::instance();
             appPorts.settings = runtimeSession.get();
             appPorts.permissions = &permissions;
+#if SNOW_SHOT_ENABLE_TEXT_TRANSLATION
             appPorts.translation = translationService;
+#endif
             appPorts.updates = updates;
             appPorts.jobs = mcpJobs.get();
             appPorts.artifactWriter = [this](quint64 owner, QByteArray bytes, QString mime) {
@@ -532,9 +553,13 @@ class ApplicationController::Impl {
                     ensureMainWindow().showScreenshotHistory();
                 else if (action == u"show_pinned")
                     ensureMainWindow().showPinToScreenManagement();
-                else if (action == u"show_translation")
+                else if (action == u"show_translation") {
+#if SNOW_SHOT_ENABLE_TEXT_TRANSLATION
                     ensureMainWindow().showTranslation({});
-                else if (action == u"show_settings") {
+#else
+                    return false;
+#endif
+                } else if (action == u"show_settings") {
                     const auto page = params.value(QStringLiteral("page_id")).toString();
                     if (page.isEmpty())
                         ensureMainWindow().showFunctionSettings();
@@ -570,6 +595,7 @@ class ApplicationController::Impl {
                     return false;
                 return true;
             };
+#if SNOW_SHOT_ENABLE_TEXT_TRANSLATION
             appPorts.selectedText = [this](auto done) -> std::function<void()> {
                 auto* capture =
                     new presentation::SelectedTextTranslationController(mcpApplication.get());
@@ -588,12 +614,13 @@ class ApplicationController::Impl {
                         }
                     };
             };
+#endif
             mcpApplication = std::make_unique<mcp::McpApplicationService>(std::move(appPorts), &q);
             mcp::McpDocumentService::Ports documentPorts;
             documentPorts.jobs = mcpJobs.get();
             documentPorts.recognition = ocrRecognition.get();
             documentPorts.qrRecognition = controller->mcpQrRecognition();
-            documentPorts.api = translationClient.get();
+            documentPorts.api = apiClient();
             documentPorts.autoFilter = ScreenshotAutoFilterController::detectRegions;
             documentPorts.cancelSource = [this](quint64 owner, const QString& requestId) {
                 cancelMcpSource(owner, requestId);
@@ -1257,7 +1284,7 @@ class ApplicationController::Impl {
     ScreenshotController* ensureScreenshotController() {
         if (screenshotController == nullptr) {
             screenshotController = std::make_unique<ScreenshotController>(
-                &q, &groupManager, ocrRecognition.get(), translationClient.get());
+                &q, &groupManager, ocrRecognition.get(), apiClient());
 #ifdef Q_OS_MACOS
             screenshotController->setRecordingPermissionCheck([this](bool microphone, bool input,
                                                                      bool notify) {
@@ -1298,11 +1325,13 @@ class ApplicationController::Impl {
             QObject::connect(screenshotController.get(),
                              &ScreenshotController::showMainWindowRequested, &q,
                              [this]() { showMainWindow(); });
+#if SNOW_SHOT_ENABLE_TEXT_TRANSLATION
             QObject::connect(screenshotController.get(),
                              &ScreenshotController::translationPageRequested, &q,
                              [this](const QString& text) {
                                  ensureSelectedTextTranslationCoordinator().presentText(text);
                              });
+#endif
             if (isFeatureAvailable(FeatureFamily::Screenshot) ||
                 isFeatureAvailable(FeatureFamily::PinToScreen) ||
                 isFeatureAvailable(FeatureFamily::ScreenRecording)) {
@@ -1320,11 +1349,13 @@ class ApplicationController::Impl {
     void applyRuntimeConfiguration(const QJsonValue& value, const QString& key) {
         if (key == QStringLiteral("screen_recording/enable_microphone"))
             permissions.setMicrophoneEnabled(value.toBool());
+#if SNOW_SHOT_ENABLE_EXTENDED_FEATURES
         if (key == QStringLiteral("extended_features/translation_page_enabled")) {
             systemTray.setMenuOptions(
                 stringList(storage::ApplicationStorage::instance().configuration().value(
                     kTrayMenuOptionsKey)));
         }
+#endif
         if (key == u"updates/mode" && updates != nullptr) {
             updates->setMode(value.toString());
         } else if (key == u"network/proxy" && updates != nullptr) {
@@ -1373,8 +1404,7 @@ class ApplicationController::Impl {
     MainWindow& ensureMainWindow() {
         if (mainWindow == nullptr) {
             ensureSettingsRuntime();
-            mainWindow = new MainWindow(*settingsRegistry, *runtimeSession, nullptr,
-                                        translationClient.get());
+            mainWindow = new MainWindow(*settingsRegistry, *runtimeSession, nullptr, apiClient());
             QObject::connect(mainWindow, &QObject::destroyed, &q,
                              [this]() { mainWindow = nullptr; });
             QObject::connect(mainWindow, &MainWindow::screenshotRequested, &q, [this]() {
@@ -1502,9 +1532,11 @@ class ApplicationController::Impl {
             }
             break;
         case presentation::GlobalShortcutAction::ScreenshotTranslation:
+#if SNOW_SHOT_ENABLE_TEXT_TRANSLATION
             if (ScreenshotController* controller = ensureScreenshotController()) {
                 controller->captureAndTranslateText();
             }
+#endif
             break;
         case presentation::GlobalShortcutAction::ScreenshotCopy:
             if (ScreenshotController* controller = ensureScreenshotController()) {
@@ -1558,9 +1590,11 @@ class ApplicationController::Impl {
             showInterfaceSettings();
             break;
         case presentation::GlobalShortcutAction::TranslateSelectedText:
+#if SNOW_SHOT_ENABLE_TEXT_TRANSLATION
             if (storage::ExtendedFeaturesSettings().translationPageEnabled()) {
                 ensureSelectedTextTranslationCoordinator().capture();
             }
+#endif
             break;
         case presentation::GlobalShortcutAction::PinSelectedFiles: {
             const auto target = platform::createSelectedFileBackend()->captureTarget();
@@ -1591,12 +1625,12 @@ class ApplicationController::Impl {
         }
     }
 
+#if SNOW_SHOT_ENABLE_TEXT_TRANSLATION
     presentation::SelectedTextTranslationCoordinator& ensureSelectedTextTranslationCoordinator() {
         if (!selectedTextTranslationCoordinator) {
             selectedTextTranslationCoordinator =
                 std::make_unique<presentation::SelectedTextTranslationCoordinator>(
-                    storage::ApplicationStorage::instance().configuration(),
-                    translationClient.get());
+                    storage::ApplicationStorage::instance().configuration(), apiClient());
             QObject::connect(
                 selectedTextTranslationCoordinator.get(),
                 &presentation::SelectedTextTranslationCoordinator::mainTranslationRequested, &q,
@@ -1612,6 +1646,7 @@ class ApplicationController::Impl {
         return *selectedTextTranslationCoordinator;
     }
 
+#endif
     presentation::DirectCaptureController& ensureDirectCaptureController() {
         if (!directCaptureController) {
             directCaptureController = std::make_unique<presentation::DirectCaptureController>(&q);
@@ -1721,8 +1756,19 @@ class ApplicationController::Impl {
     std::unique_ptr<presentation::settings::SettingsRegistry> settingsRegistry;
     std::unique_ptr<presentation::settings::BuiltInSettingsBackend> settingsBackend;
     std::unique_ptr<presentation::settings::SettingsRuntimeSession> runtimeSession;
+    SnowShotApiClient* apiClient() const {
+#if SNOW_SHOT_ENABLE_TEXT_TRANSLATION
+        return translationClient.get();
+#else
+        return nullptr;
+#endif
+    }
+#if SNOW_SHOT_ENABLE_TEXT_TRANSLATION
     std::unique_ptr<SnowShotApiClient> translationClient;
+#endif
+#if SNOW_SHOT_ENABLE_TEXT_TRANSLATION
     translation::TranslationService* translationService = nullptr;
+#endif
     std::unique_ptr<ScreenshotOcrRecognitionService> ocrRecognition;
     std::unique_ptr<ScreenshotController> screenshotController;
     std::unique_ptr<presentation::GlobalCanvasController> globalCanvasController;
@@ -1739,8 +1785,10 @@ class ApplicationController::Impl {
     QThreadPool mcpSourceWorkers;
     int mcpSourceWork = 0;
     std::unique_ptr<presentation::DirectCaptureController> directCaptureController;
+#if SNOW_SHOT_ENABLE_TEXT_TRANSLATION
     std::unique_ptr<presentation::SelectedTextTranslationCoordinator>
         selectedTextTranslationCoordinator;
+#endif
     QPointer<MainWindow> mainWindow;
 #ifdef Q_OS_MACOS
     std::unique_ptr<platform::macos::ApplicationReopenHandler> reopenHandler;

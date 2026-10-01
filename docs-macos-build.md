@@ -4,6 +4,39 @@ The app presets target macOS 15 or newer, with separate Apple Silicon (`arm64`)
 and Intel (`x64`) builds. Each build uses one architecture throughout CMake,
 vcpkg and Cargo; universal builds are not supported by these presets.
 
+## Snow Shot Mini
+
+Apple Silicon presets build both `snow_shot` and `snow_shot_mini` from the same
+configuration. Intel presets build Snow Shot only; Snow Shot Mini requires
+`arm64` on macOS. `SNOW_APPS_BUILD_SNOW_SHOT_MINI` controls the additional target
+and defaults to `ON` in the Apple Silicon presets. Use an explicit `--target`
+to build one edition, or configure with this option `OFF` for a full-only build.
+The build wrappers select the enabled editions automatically. Paired CMake build
+presets retain both target names, so a direct build with Mini disabled must use
+`cmake --build --preset build-<preset> --target snow_shot`. Apple Silicon release
+packaging requires both editions and rejects a Mini-disabled cache.
+
+Mini removes QR, table, Markdown, HTML, LaTeX, translation, Extended Features,
+and API Configuration. Manual text recognition remains available; its toolbar
+button is hidden by default, and Pin to Screen automatic recognition is off.
+Both macOS bundles include the local OCR worker, runtime, and default models.
+
+```sh
+scripts/build.sh snow-shot-macos-arm64-debug --target snow_shot_mini
+scripts/run-snow-shot.sh snow-shot-macos-arm64-debug --edition mini
+scripts/package-snow-shot.sh snow-shot-macos-arm64-release
+bash install-snow-shot-macos.sh --edition mini --lang en
+```
+
+The Apple Silicon package command produces both
+`snow-shot-<version>-macos-arm64.dmg` and
+`snow-shot-mini-<version>-macos-arm64.dmg`, each with a `.sha256` sidecar.
+Mini installs as `Snow Shot Mini.app`, with executable `snow_shot_mini` and
+bundle ID `com.snowshot.snow_shot_mini`. Its settings, launch-at-login entry,
+MCP discovery, and installer state use separate product identities. For direct
+staging, use `cmake --install build/<preset> --component SnowShotMini --prefix
+/path/to/staging`. Both editions share a version and release tag.
+
 ## Homebrew installation
 
 The project tap is `mg-chao/homebrew-tap`. Stable releases update `snow-shot`;
@@ -360,7 +393,8 @@ Only run tests covering your change. Test presets exclude Windows-only,
 interactive, end-to-end and benchmark labels. Build a benchmark explicitly with
 `--target` using the performance preset. Running an Intel executable on Apple
 Silicon requires Rosetta. `build.sh` defaults to the application target; use
-`--target snow-all` only when all enabled targets are needed.
+`--target snow-all` only when all enabled targets are needed. On Apple Silicon,
+the default application build includes both Snow Shot editions.
 
 For direct CMake use, put the host tools on PATH and supply `-DQt6_DIR=...`:
 `cmake --preset snow-shot-macos-arm64-debug`, then
@@ -378,13 +412,14 @@ the CPU OCR helper. Other changed Rust crates should be linted individually.
 scripts/package-snow-shot.sh snow-shot-macos-arm64-release
 ```
 
-The release script builds and produces a DMG plus SHA-256 checksum under the
+The release script builds and produces edition DMGs plus SHA-256 checksums under the
 preset's build directory. Pass `--parallel N` to control the build or
 `--skip-build` to package an already validated release cache. CPack installs only
-the Snow Shot component and verifies the bundle signature. Static packages import
+the corresponding Snow Shot component and verifies the bundle signature. Static packages import
 the Cocoa, macOS style, Secure Transport, SVG, and offscreen Qt plugins at link
 time and reject every non-system Mach-O dependency. The bundle includes the OCR
-helper and updater, QR models, shutter audio, and project license notices. Executable-relative
+helper, shutter audio, and project license notices; the full edition also includes
+QR models. Executable-relative
 asset lookup paths remain under `Contents/MacOS`; deployment moves data into
 `Contents/Resources` and creates relative `assets`/`audios` directory links so
 code signing seals them as resources. Static Qt and vcpkg source-license notices

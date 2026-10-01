@@ -1,3 +1,4 @@
+#include "snow_shot/app/edition.h"
 #include "snow_shot/platform/applicationqos.h"
 #include "snow_shot/app/applicationcontroller.h"
 #include "snow_shot/app/applicationrestart.h"
@@ -86,8 +87,8 @@ std::optional<bool> updateTransactionPending(const QString& helperPath, const QS
 } // namespace
 
 int main(int argc, char* argv[]) {
-    QCoreApplication::setOrganizationName(QStringLiteral("SnowShot"));
-    QString applicationName = QStringLiteral("snow_shot");
+    QCoreApplication::setOrganizationName(snow_shot::app::edition::registryName());
+    QString applicationName = snow_shot::app::edition::applicationName();
     QString e2eInstanceId;
     bool e2eCaptureEnabled = false;
     for (int index = 1; index < argc; ++index) {
@@ -349,11 +350,7 @@ int main(int argc, char* argv[]) {
 #endif
     const QString updateRoot = updateInstallationRoot(QFileInfo(executablePath).absolutePath());
     const QString updateHelper = QDir(QFileInfo(executablePath).absolutePath())
-#ifdef Q_OS_WIN
-                                     .filePath(QStringLiteral("snow-shot-updater.exe"));
-#else
-                                     .filePath(QStringLiteral("snow-shot-updater"));
-#endif
+                                     .filePath(snow_shot::app::edition::updaterName());
     const auto pendingUpdate = updateTransactionPending(updateHelper, updateRoot);
     if (!pendingUpdate.has_value()) {
         return 6;
@@ -458,8 +455,7 @@ int main(int argc, char* argv[]) {
 #endif
     // The internal application name also owns settings and single-instance keys.
     // Keep it stable while giving Qt windows and the macOS menu the product name.
-    QGuiApplication::setApplicationDisplayName(
-        QCoreApplication::translate("AboutPageWidget", "Snow Shot"));
+    QGuiApplication::setApplicationDisplayName(snow_shot::app::edition::productName());
     QApplication app(argc, argv);
     adqt::widgets::initializePlatformCompatibility(app);
     snow_shot::diagnostics::logEvent(QStringLiteral("snow_shot.app"),

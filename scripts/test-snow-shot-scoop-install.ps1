@@ -1,5 +1,5 @@
 #Requires -Version 7.0
-param([Parameter(Mandatory)][string]$ScoopRoot)
+param([Parameter(Mandatory)][string]$ScoopRoot, [ValidateSet('Full', 'Mini')][string]$Edition = 'Full')
 # Exercise pinned Scoop's real install, shim, shortcut and persistence functions.
 # Only OS integration boundaries (Start Menu location and persistent PATH writes)
 # are redirected. No existing Scoop config, installation or user data is touched.
@@ -45,38 +45,42 @@ try {
     }
     . (Join-Path $PSScriptRoot 'snow-shot-scoop.ps1')
     Set-StrictMode -Off
-    $fixtureManifest = Join-Path $root 'snowshot.json'
-    $manifest = New-SnowShotScoopManifestObject '0.0.1' 'https://fixture.invalid/portable.zip' ('0' * 64) |
+    $product = Get-SnowShotEdition $Edition
+    $appName = $product.Scoop
+    $executable = $product.Executable
+    $marker = $product.Marker
+    $fixtureManifest = Join-Path $root "$appName.json"
+    $manifest = New-SnowShotScoopManifestObject '0.0.1' 'https://fixture.invalid/portable.zip' ('0' * 64) $Edition |
         ConvertTo-Json -Depth 8 | ConvertFrom-Json
     # The executable is inert: use the OS's existing executable as a valid PE fixture,
     # but never launch it. The real release ZIP is independently verified by the generator.
     foreach ($version in @('0.0.1-beta', '0.0.2-beta')) {
         $stage = Join-Path $root "stage-$version"
         $null = New-Item -ItemType Directory -Path "$stage/bin"
-        Copy-Item -LiteralPath "$env:SystemRoot/System32/where.exe" -Destination "$stage/bin/snow_shot.exe"
-        [IO.File]::WriteAllText("$stage/bin/__data_directory", 'portable')
+        Copy-Item -LiteralPath "$env:SystemRoot/System32/where.exe" -Destination "$stage/bin/$executable.exe"
+        [IO.File]::WriteAllText("$stage/bin/$marker", 'portable')
         $archive = Join-Path $root "$version.zip"
         [IO.Compression.ZipFile]::CreateFromDirectory($stage, $archive)
         $manifest.version = $version
-        $manifest.architecture.'64bit'.url = "https://fixture.invalid/snow-shot-$version.zip"
+        $manifest.architecture.'64bit'.url = "https://fixture.invalid/$($product.Product)-$version.zip"
         $manifest.architecture.'64bit'.hash = (Get-FileHash $archive -Algorithm SHA256).Hash
         $manifest | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $fixtureManifest
         # Populate Scoop's isolated cache; download still runs its normal hash check.
-        $cacheFile = cache_path 'snowshot' $version $manifest.architecture.'64bit'.url
+        $cacheFile = cache_path $appName $version $manifest.architecture.'64bit'.url
         Assert-FixturePath $cacheFile
         Copy-Item -LiteralPath $archive -Destination $cacheFile
         install_app $fixtureManifest '64bit' $false @{}
-        $current = Join-Path $env:SCOOP 'apps/snowshot/current'
+        $current = Join-Path $env:SCOOP "apps/$appName/current"
         Require ((Get-Content "$current/manifest.json" -Raw | ConvertFrom-Json).version -ceq $version) 'Current version did not advance'
-        Require ((Get-Content "$current/bin/__data_directory" -Raw) -ceq 'portable') 'Portable marker changed'
+        Require ((Get-Content "$current/bin/$marker" -Raw) -ceq 'portable') 'Portable marker changed'
         $data = Join-Path $current 'bin/portable'
         Require ((Get-Item $data).LinkType -eq 'Junction') 'Portable data is not persisted'
-        $shim = Get-Content "$env:SCOOP/shims/snowshot.shim" -Raw
-        $expectedShim = 'path = "' + (Convert-Path "$current/bin/snow_shot.exe") + '"'
+        $shim = Get-Content "$env:SCOOP/shims/$appName.shim" -Raw
+        $expectedShim = 'path = "' + (Convert-Path "$current/bin/$executable.exe") + '"'
         Require ($shim.Trim() -ceq $expectedShim) 'Wrong shim target'
-        Require (Test-Path "$env:SCOOP/shims/snowshot.exe") 'Missing executable shim'
-        $shortcut = (New-Object -ComObject WScript.Shell).CreateShortcut("$root/Start Menu/Snow Shot.lnk")
-        Require ($shortcut.TargetPath -ieq "$current\bin\snow_shot.exe") 'Wrong shortcut target'
+        Require (Test-Path "$env:SCOOP/shims/$appName.exe") 'Missing executable shim'
+        $shortcut = (New-Object -ComObject WScript.Shell).CreateShortcut("$root/Start Menu/$($product.Name).lnk")
+        Require ($shortcut.TargetPath -ieq "$current\bin\$executable.exe") 'Wrong shortcut target'
         if ($version -eq '0.0.1-beta') {
             [IO.File]::WriteAllText("$data/settings.json", '{"fixture":"retained"}')
             [IO.File]::WriteAllText("$data/history.fixture", 'history')
@@ -87,36 +91,36 @@ try {
     }
     # Use the same removal primitives as scoop-uninstall without reloading its
     # real Start Menu boundary. Unlink persisted data before removing any version.
-    rm_shims 'snowshot' $manifest $false '64bit'
+    rm_shims $appName $manifest $false '64bit'
     rm_startmenu_shortcuts $manifest $false '64bit'
-    $null = unlink_current (Join-Path $env:SCOOP 'apps/snowshot/0.0.2-beta')
+    $null = unlink_current (Join-Path $env:SCOOP "apps/$appName/0.0.2-beta")
     foreach ($version in @('0.0.1-beta', '0.0.2-beta')) {
-        $directory = Join-Path $env:SCOOP "apps/snowshot/$version"
+        $directory = Join-Path $env:SCOOP "apps/$appName/$version"
         Assert-FixturePath $directory
         unlink_persist_data $manifest $directory
         Remove-Item -LiteralPath $directory -Recurse -Force
     }
-    Require (-not (Test-Path "$env:SCOOP/shims/snowshot.exe")) 'Shim survived uninstall'
-    Require (-not (Test-Path "$root/Start Menu/Snow Shot.lnk")) 'Shortcut survived uninstall'
-    $persisted = Join-Path $env:SCOOP 'persist/snowshot/bin/portable'
+    Require (-not (Test-Path "$env:SCOOP/shims/$appName.exe")) 'Shim survived uninstall'
+    Require (-not (Test-Path "$root/Start Menu/$($product.Name).lnk")) 'Shortcut survived uninstall'
+    $persisted = Join-Path $env:SCOOP "persist/$appName/bin/portable"
     Require ((Get-Content "$persisted/settings.json" -Raw) -ceq '{"fixture":"retained"}') 'Uninstall removed settings'
     Require ((Get-Content "$persisted/history.fixture" -Raw) -ceq 'history') 'Uninstall removed history'
     # Changing buckets requires uninstall/reinstall of the same app name.
     # Reinstall must reconnect the data left by ordinary uninstall.
     install_app $fixtureManifest '64bit' $false @{}
-    $current = Join-Path $env:SCOOP 'apps/snowshot/current'
+    $current = Join-Path $env:SCOOP "apps/$appName/current"
     $data = Join-Path $current 'bin/portable'
     Require ((Get-Item $data).LinkType -eq 'Junction') 'Reinstall did not reconnect portable data'
     Require ((Get-Content "$data/settings.json" -Raw) -ceq '{"fixture":"retained"}') 'Reinstall lost settings'
     Require ((Get-Content "$data/history.fixture" -Raw) -ceq 'history') 'Reinstall lost history'
-    rm_shims 'snowshot' $manifest $false '64bit'
+    rm_shims $appName $manifest $false '64bit'
     rm_startmenu_shortcuts $manifest $false '64bit'
-    $directory = Join-Path $env:SCOOP 'apps/snowshot/0.0.2-beta'
+    $directory = Join-Path $env:SCOOP "apps/$appName/0.0.2-beta"
     Assert-FixturePath $directory
     $null = unlink_current $directory
     unlink_persist_data $manifest $directory
     Remove-Item -LiteralPath $directory -Recurse -Force
-    Write-Output 'Isolated Scoop install, upgrade, uninstall, and migration reinstall smoke test passed.'
+    Write-Output "Isolated $($product.Name) Scoop install, upgrade, uninstall, and migration reinstall smoke test passed."
 } finally {
     foreach ($key in $saved.Keys) { [Environment]::SetEnvironmentVariable($key, $saved[$key], 'Process') }
     # The root is created by this test. Remove junctions first, including on failure.

@@ -27,6 +27,7 @@ try {
     New-Item -ItemType Directory -Force -Path (Split-Path $JsonReport -Parent) | Out-Null
 
     $env:QT_QPA_PLATFORM = "offscreen"
+    $env:QT_QPA_FONTDIR = Join-Path $repoRoot "test-support/fonts"
     # A static Qt links the offscreen plugin into the executable and has no
     # plugins\platforms directory; pointing QT_QPA_PLATFORM_PLUGIN_PATH at the
     # missing directory makes the platform plugin fail to load. This mirrors
@@ -35,7 +36,7 @@ try {
     if (Test-Path $platformPlugins) {
         $env:QT_QPA_PLATFORM_PLUGIN_PATH = $platformPlugins
     }
-    $runtime = Join-Path $repoRoot ".tools/vcpkg/installed/dynamic/bin"
+    $runtime = Join-Path $repoRoot ".tools/vcpkg/installed/dynamic/x64-windows/bin"
     $qtBin = Join-Path $env:QTDIR "bin"
     $env:PATH = "$qtBin;$runtime;$env:PATH"
     $executable = Join-Path $repoRoot `

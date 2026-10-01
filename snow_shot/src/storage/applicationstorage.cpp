@@ -2,6 +2,8 @@
 #include "snow_shot/storage/applicationstorage.h"
 #include <QTimer>
 
+#include "snow_shot/presentation/editionfeatures.h"
+
 #include "snow_shot/storage/capturehistoryrepository.h"
 #include "snow_shot/storage/pinnedwindowrepository.h"
 #include "snow_shot/storage/configurationschema.h"
@@ -69,7 +71,7 @@ QString markerSelection(const QString& executableDirectory, bool* markerPresent,
         *markerPresent = false;
     }
     const QString markerPath =
-        QDir(executableDirectory).filePath(QStringLiteral("__data_directory"));
+        QDir(executableDirectory).filePath(app::edition::portableMarkerName());
     QFile marker(markerPath);
     if (!marker.exists()) {
         return {};
@@ -79,7 +81,8 @@ QString markerSelection(const QString& executableDirectory, bool* markerPresent,
     }
     if (!marker.open(QIODevice::ReadOnly)) {
         if (markerError != nullptr) {
-            *markerError = QStringLiteral("The __data_directory marker could not be read");
+            *markerError = QStringLiteral("The %1 marker could not be read")
+                               .arg(app::edition::portableMarkerName());
         }
         return {};
     }

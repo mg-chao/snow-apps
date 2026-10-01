@@ -2,16 +2,19 @@
 #define SNOW_SHOT_PRESENTATION_SCREENSHOTIMAGECONVERSIONPERSISTENCE_H
 
 #include "snow_shot/presentation/screenshotrecognitionresults.h"
+#if SNOW_SHOT_ENABLE_IMAGE_CONVERSION
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QSet>
+#endif
 
 namespace snow_shot::presentation {
 inline constexpr quint32 kImageConversionPayloadMarker = 0x53494356;
 inline constexpr quint8 kImageConversionPayloadVersion = 1;
 inline constexpr qsizetype kMaximumImageConversionPayload = 16 * 1024 * 1024;
 
+#if SNOW_SHOT_ENABLE_IMAGE_CONVERSION
 [[nodiscard]] inline QByteArray
 encodeImageConversions(const ScreenshotRecognitionResults& results) {
     QJsonArray entries;
@@ -83,6 +86,7 @@ inline void decodeImageConversions(const QByteArray& bytes, ScreenshotRecognitio
         results.visibleConversion = static_cast<SnowShotImageConversionFormat>(visible);
     }
 }
+#endif // SNOW_SHOT_ENABLE_IMAGE_CONVERSION
 } // namespace snow_shot::presentation
 
 #endif // SNOW_SHOT_PRESENTATION_SCREENSHOTIMAGECONVERSIONPERSISTENCE_H

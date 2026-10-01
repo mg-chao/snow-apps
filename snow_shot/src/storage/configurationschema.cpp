@@ -1,8 +1,13 @@
 #include "snow_shot/globalmouseactivationkeys.h"
 #include "snow_shot/storage/configurationschema.h"
+#include "snow_shot/app/edition.h"
+#if SNOW_SHOT_ENABLE_API_CONFIGURATION
 #include "snow_shot/serverconfiguration.h"
 #include "snow_shot/customaimodelconfiguration.h"
 #include "snow_shot/texttranslationconfiguration.h"
+#endif
+
+#include "snow_shot/presentation/editionfeatures.h"
 
 #include "snow_shot/storage/capturehistorytypes.h"
 #include "snow_shot/storage/persistedselectioncodec.h"
@@ -24,6 +29,20 @@
 
 namespace snow_shot::storage {
 namespace {
+QStringList editionActionIds(QStringList ids) {
+    ids.removeIf([](const QString& id) { return !presentation::editionActionToolAvailable(id); });
+    return ids;
+}
+QVector<QStringList> editionActionPositions(QVector<QStringList> positions) {
+    for (QStringList& position : positions) {
+        position.removeIf([](const QString& id) {
+            return !presentation::editionActionToolAvailable(id) ||
+                   (app::edition::isMini && id == QStringLiteral("text-recognition"));
+        });
+    }
+    positions.removeIf([](const QStringList& position) { return position.isEmpty(); });
+    return positions;
+}
 const QStringList kDrawingToolIds = {
     QStringLiteral("shape"),     QStringLiteral("arrow"),         QStringLiteral("line"),
     QStringLiteral("free-draw"), QStringLiteral("highlighter"),   QStringLiteral("spotlight"),
@@ -35,14 +54,20 @@ const QStringList kDrawingToolbarItemIds =
     QStringList{QStringLiteral("separator"), QStringLiteral("undo"), QStringLiteral("redo")};
 const QStringList kLastDrawingToolIds = QStringList{QStringLiteral("")} + kDrawingToolIds;
 
-const QStringList kActionToolbarItemIds = {
-    QStringLiteral("barcode-recognition"), QStringLiteral("table-recognition"),
-    QStringLiteral("convert-to-markdown"), QStringLiteral("latex-recognition"),
-    QStringLiteral("convert-to-html"),     QStringLiteral("record-screen"),
-    QStringLiteral("pin-to-screen"),       QStringLiteral("text-recognition"),
-    QStringLiteral("text-translation"),    QStringLiteral("scrolling-screenshot"),
-    QStringLiteral("quick-save"),          QStringLiteral("save-as-file"),
-};
+const QStringList kActionToolbarItemIds = editionActionIds({
+    QStringLiteral("barcode-recognition"),
+    QStringLiteral("table-recognition"),
+    QStringLiteral("convert-to-markdown"),
+    QStringLiteral("latex-recognition"),
+    QStringLiteral("convert-to-html"),
+    QStringLiteral("record-screen"),
+    QStringLiteral("pin-to-screen"),
+    QStringLiteral("text-recognition"),
+    QStringLiteral("text-translation"),
+    QStringLiteral("scrolling-screenshot"),
+    QStringLiteral("quick-save"),
+    QStringLiteral("save-as-file"),
+});
 
 QJsonArray jsonArray(const QStringList& values) {
     QJsonArray result;
@@ -72,7 +97,7 @@ QVector<QStringList> defaultDrawingToolbarPositions() {
 }
 
 QVector<QStringList> defaultActionToolbarPositions() {
-    return {
+    return editionActionPositions({
         {QStringLiteral("convert-to-html"), QStringLiteral("convert-to-markdown"),
          QStringLiteral("latex-recognition"), QStringLiteral("barcode-recognition"),
          QStringLiteral("table-recognition")},
@@ -82,23 +107,18 @@ QVector<QStringList> defaultActionToolbarPositions() {
         {QStringLiteral("text-translation")},
         {QStringLiteral("scrolling-screenshot")},
         {QStringLiteral("quick-save"), QStringLiteral("save-as-file")},
-    };
+    });
 }
 
-const QStringList kPinnedActionToolbarItemIds = {QStringLiteral("barcode-recognition"),
-                                                 QStringLiteral("table-recognition"),
-                                                 QStringLiteral("convert-to-markdown"),
-                                                 QStringLiteral("latex-recognition"),
-                                                 QStringLiteral("convert-to-html"),
-                                                 QStringLiteral("text-recognition"),
-                                                 QStringLiteral("text-translation"),
-                                                 QStringLiteral("separator"),
-                                                 QStringLiteral("quick-save"),
-                                                 QStringLiteral("save-as-file"),
-                                                 QStringLiteral("copy")};
+const QStringList kPinnedActionToolbarItemIds = editionActionIds(
+    {QStringLiteral("barcode-recognition"), QStringLiteral("table-recognition"),
+     QStringLiteral("convert-to-markdown"), QStringLiteral("latex-recognition"),
+     QStringLiteral("convert-to-html"), QStringLiteral("text-recognition"),
+     QStringLiteral("text-translation"), QStringLiteral("separator"), QStringLiteral("quick-save"),
+     QStringLiteral("save-as-file"), QStringLiteral("copy")});
 
 QVector<QStringList> defaultPinnedActionToolbarPositions() {
-    return {
+    return editionActionPositions({
         {QStringLiteral("convert-to-html"), QStringLiteral("convert-to-markdown"),
          QStringLiteral("latex-recognition"), QStringLiteral("barcode-recognition"),
          QStringLiteral("table-recognition")},
@@ -107,12 +127,14 @@ QVector<QStringList> defaultPinnedActionToolbarPositions() {
         {QStringLiteral("separator")},
         {QStringLiteral("quick-save"), QStringLiteral("save-as-file")},
         {QStringLiteral("copy")},
-    };
+    });
 }
 
-QJsonObject defaultToolbarLayout(const QVector<QStringList>& positions) {
+QJsonObject defaultToolbarLayout(const QVector<QStringList>& positions, bool actionTools = false) {
     return {{QStringLiteral("positions"), jsonArray(positions)},
-            {QStringLiteral("hidden"), QJsonArray()}};
+            {QStringLiteral("hidden"), actionTools && app::edition::isMini
+                                           ? QJsonArray{QStringLiteral("text-recognition")}
+                                           : QJsonArray()}};
 }
 
 QString defaultOutputDirectory(QStandardPaths::StandardLocation primary) {
@@ -124,11 +146,17 @@ QString defaultOutputDirectory(QStandardPaths::StandardLocation primary) {
 }
 
 const QVector<ConfigurationSchemaEntry> kRawEntries = {
+#if SNOW_SHOT_ENABLE_API_CONFIGURATION
     {QStringLiteral("api_configuration/server_url"), QString(), ConfigurationValueKind::String},
+#endif
+#if SNOW_SHOT_ENABLE_API_CONFIGURATION
     {QStringLiteral("api_configuration/text_translation"), QJsonArray(),
      ConfigurationValueKind::Structured},
+#endif
+#if SNOW_SHOT_ENABLE_API_CONFIGURATION
     {QStringLiteral("api_configuration/custom_models"), QJsonArray(),
      ConfigurationValueKind::Structured},
+#endif
     {QStringLiteral("storage/schema_version"), 3, ConfigurationValueKind::Integer,
      ConfigurationIntegerRange{3, 3, 1}},
     {QStringLiteral("interface/theme_mode"),
@@ -190,6 +218,7 @@ const QVector<ConfigurationSchemaEntry> kRawEntries = {
      ConfigurationValueKind::String,
      std::nullopt,
      {QStringLiteral("max"), QStringLiteral("min")}},
+#if SNOW_SHOT_ENABLE_TEXT_TRANSLATION
     {QStringLiteral("screenshot_translation/source_language"),
      QStringLiteral("auto"),
      ConfigurationValueKind::String,
@@ -198,6 +227,8 @@ const QVector<ConfigurationSchemaEntry> kRawEntries = {
       QStringLiteral("es"), QStringLiteral("fr"), QStringLiteral("it"), QStringLiteral("ja"),
       QStringLiteral("pt"), QStringLiteral("ru"), QStringLiteral("tr"), QStringLiteral("zh-Hans"),
       QStringLiteral("zh-Hant")}},
+#endif
+#if SNOW_SHOT_ENABLE_TEXT_TRANSLATION
     {QStringLiteral("screenshot_translation/target_language"),
      QString(),
      ConfigurationValueKind::String,
@@ -206,27 +237,44 @@ const QVector<ConfigurationSchemaEntry> kRawEntries = {
       QStringLiteral("fr"), QStringLiteral("it"), QStringLiteral("ja"), QStringLiteral("pt"),
       QStringLiteral("ru"), QStringLiteral("tr"), QStringLiteral("zh-Hans"),
       QStringLiteral("zh-Hant")}},
+#endif
+#if SNOW_SHOT_ENABLE_TEXT_TRANSLATION
     {QStringLiteral("screenshot_translation/model"), QString(), ConfigurationValueKind::String},
+#endif
+#if SNOW_SHOT_ENABLE_IMAGE_CONVERSION
     {QStringLiteral("screenshot_conversion/vision_model"), QString(),
      ConfigurationValueKind::String},
+#endif
+#if SNOW_SHOT_ENABLE_EXTENDED_FEATURES
     {QStringLiteral("extended_features/standalone_translation_window"), false,
      ConfigurationValueKind::Boolean},
+#endif
+#if SNOW_SHOT_ENABLE_EXTENDED_FEATURES
     {QStringLiteral("extended_features/jump_to_translation_page"), false,
      ConfigurationValueKind::Boolean},
+#endif
+#if SNOW_SHOT_ENABLE_EXTENDED_FEATURES
     {QStringLiteral("extended_features/translation_page_enabled"), false,
      ConfigurationValueKind::Boolean},
+#endif
+#if SNOW_SHOT_ENABLE_TEXT_TRANSLATION
     {QStringLiteral("screenshot_translation/original_image_translation"), true,
      ConfigurationValueKind::Boolean},
+#endif
+#if SNOW_SHOT_ENABLE_TEXT_TRANSLATION
     {QStringLiteral("screenshot_translation/layout_processing"),
      QStringLiteral("smart_merge"),
      ConfigurationValueKind::String,
      std::nullopt,
      {QStringLiteral("smart_merge"), QStringLiteral("original")}},
+#endif
     {QStringLiteral("interface/sidebar_collapsed"), false, ConfigurationValueKind::Boolean},
     {QStringLiteral("interface/main_window_geometry"), QJsonObject(),
      ConfigurationValueKind::Structured},
+#if SNOW_SHOT_ENABLE_TEXT_TRANSLATION
     {QStringLiteral("interface/translation_window_size"), QJsonObject(),
      ConfigurationValueKind::Structured},
+#endif
     {QStringLiteral("text_recognition/save_recognition_result_as_image"), true,
      ConfigurationValueKind::Boolean},
     {QStringLiteral("text_recognition/default_formatting"),
@@ -268,12 +316,14 @@ const QVector<ConfigurationSchemaEntry> kRawEntries = {
      std::nullopt,
      {},
      2},
+#if SNOW_SHOT_ENABLE_TEXT_TRANSLATION
     {QStringLiteral("global_shortcuts/screenshot_translation"),
      QJsonArray(),
      ConfigurationValueKind::StringList,
      std::nullopt,
      {},
      2},
+#endif
     {QStringLiteral("global_shortcuts/screenshot_copy"),
      QJsonArray{QStringLiteral("Ctrl+F1")},
      ConfigurationValueKind::StringList,
@@ -340,12 +390,14 @@ const QVector<ConfigurationSchemaEntry> kRawEntries = {
      std::nullopt,
      {},
      2},
+#if SNOW_SHOT_ENABLE_TEXT_TRANSLATION
     {QStringLiteral("global_shortcuts/translate_selected_text"),
      QJsonArray(),
      ConfigurationValueKind::StringList,
      std::nullopt,
      {},
      2},
+#endif
     {QStringLiteral("global_shortcuts/pin_clipboard_content"),
      QJsonArray{QStringLiteral("F3")},
      ConfigurationValueKind::StringList,
@@ -402,8 +454,10 @@ const QVector<ConfigurationSchemaEntry> kRawEntries = {
                  {QStringLiteral("mouse_button"), QStringLiteral("right_drag")}},
 #endif
      ConfigurationValueKind::Structured},
+#if SNOW_SHOT_ENABLE_TEXT_TRANSLATION
     {QStringLiteral("global_mouse/screenshot_translation"), QJsonObject(),
      ConfigurationValueKind::Structured},
+#endif
     {QStringLiteral("global_mouse/screenshot_quick_save"), QJsonObject(),
      ConfigurationValueKind::Structured},
     {QStringLiteral("global_mouse/screenshot_save"), QJsonObject(),
@@ -412,6 +466,10 @@ const QVector<ConfigurationSchemaEntry> kRawEntries = {
      ConfigurationValueKind::Structured},
     {QStringLiteral("screen_recording/enable_microphone"), false, ConfigurationValueKind::Boolean},
     {QStringLiteral("screen_recording/enable_system_audio"), true, ConfigurationValueKind::Boolean},
+    {QStringLiteral("screen_recording/microphone_gain_db"), 0, ConfigurationValueKind::Integer,
+     ConfigurationIntegerRange{-24, 24, 1}},
+    {QStringLiteral("screen_recording/system_audio_gain_db"), 0, ConfigurationValueKind::Integer,
+     ConfigurationIntegerRange{-24, 24, 1}},
     {QStringLiteral("screen_recording/separate_audio_tracks"), false,
      ConfigurationValueKind::Boolean},
     {QStringLiteral("screen_recording/clarity"),
@@ -659,18 +717,22 @@ const QVector<ConfigurationSchemaEntry> kRawEntries = {
      std::nullopt,
      {},
      2},
+#if SNOW_SHOT_ENABLE_TABLE_RECOGNITION
     {QStringLiteral("screenshot_shortcuts/table_recognition"),
      QJsonArray{QStringLiteral("Ctrl+X")},
      ConfigurationValueKind::StringList,
      std::nullopt,
      {},
      2},
+#endif
+#if SNOW_SHOT_ENABLE_QR_RECOGNITION
     {QStringLiteral("screenshot_shortcuts/qr_code_recognition"),
      QJsonArray{QStringLiteral("Ctrl+Q")},
      ConfigurationValueKind::StringList,
      std::nullopt,
      {},
      2},
+#endif
     {QStringLiteral("screenshot_shortcuts/video_recording"),
      QJsonArray{QStringLiteral("Ctrl+R")},
      ConfigurationValueKind::StringList,
@@ -683,12 +745,14 @@ const QVector<ConfigurationSchemaEntry> kRawEntries = {
      std::nullopt,
      {},
      2},
+#if SNOW_SHOT_ENABLE_TEXT_TRANSLATION
     {QStringLiteral("screenshot_shortcuts/text_translation"),
      QJsonArray{QStringLiteral("Ctrl+T")},
      ConfigurationValueKind::StringList,
      std::nullopt,
      {},
      2},
+#endif
     {QStringLiteral("screenshot_shortcuts/scrolling_screenshot"),
      QJsonArray{QStringLiteral("L")},
      ConfigurationValueKind::StringList,
@@ -927,11 +991,13 @@ const QVector<ConfigurationSchemaEntry> kRawEntries = {
      ConfigurationValueKind::String,
      std::nullopt,
      {QStringLiteral("pen_highlight"), QStringLiteral("highlight"), QStringLiteral("spotlight")}},
+#if SNOW_SHOT_ENABLE_TABLE_RECOGNITION || SNOW_SHOT_ENABLE_QR_RECOGNITION
     {QStringLiteral("screenshot_toolbar/table_qr_tool"),
      QStringLiteral("table"),
      ConfigurationValueKind::String,
      std::nullopt,
      {QStringLiteral("table"), QStringLiteral("qr")}},
+#endif
     {QStringLiteral("screenshot_toolbar/last_filter_tool"),
      QStringLiteral("pen-filter"),
      ConfigurationValueKind::String,
@@ -948,10 +1014,11 @@ const QVector<ConfigurationSchemaEntry> kRawEntries = {
     {QStringLiteral("screenshot_toolbar/layout"),
      defaultToolbarLayout(defaultDrawingToolbarPositions()), ConfigurationValueKind::Structured},
     {QStringLiteral("pin_to_screen/action_tools_layout"),
-     defaultToolbarLayout(defaultPinnedActionToolbarPositions()),
+     defaultToolbarLayout(defaultPinnedActionToolbarPositions(), true),
      ConfigurationValueKind::Structured},
     {QStringLiteral("screenshot_toolbar/action_tools_layout"),
-     defaultToolbarLayout(defaultActionToolbarPositions()), ConfigurationValueKind::Structured},
+     defaultToolbarLayout(defaultActionToolbarPositions(), true),
+     ConfigurationValueKind::Structured},
     {QStringLiteral("screenshot_ui/toolbar_size"),
      QStringLiteral("normal"),
      ConfigurationValueKind::String,
@@ -1020,7 +1087,7 @@ const QVector<ConfigurationSchemaEntry> kRawEntries = {
      std::nullopt,
      {QStringLiteral("none"), QStringLiteral("reset_zoom"), QStringLiteral("thumbnail_mode"),
       QStringLiteral("hide_to_top"), QStringLiteral("close")}},
-    {QStringLiteral("pin_to_screen/automatic_text_recognition"), true,
+    {QStringLiteral("pin_to_screen/automatic_text_recognition"), !app::edition::isMini,
      ConfigurationValueKind::Boolean},
     {QStringLiteral("pin_to_screen/text_selection_on_recognition_results"),
      QStringLiteral("only_when_displayed"),
@@ -1118,7 +1185,9 @@ const QVector<ConfigurationSchemaEntry> kRawEntries = {
      ConfigurationValueKind::Boolean},
     {QStringLiteral("screenshot/shutter_sound_notification"), true,
      ConfigurationValueKind::Boolean},
+#if SNOW_SHOT_ENABLE_QR_RECOGNITION
     {QStringLiteral("screenshot/auto_recognize_qr_code"), true, ConfigurationValueKind::Boolean},
+#endif
     {QStringLiteral("screenshot/confirm_before_exiting_via_shortcut"), false,
      ConfigurationValueKind::Boolean},
     {QStringLiteral("screenshot/restore_original_screen_colors"), true,
@@ -1291,6 +1360,18 @@ QVector<ConfigurationSchemaEntry> buildEntries() {
     replaceDefault(QStringLiteral("global_shortcuts/pin_clipboard_content"),
                    macGlobalShortcutDefault(QStringLiteral("Meta+3"), 20));
 #endif
+    result.removeIf([](const ConfigurationSchemaEntry& entry) {
+        return !presentation::editionConfigurationKeyAvailable(entry.key);
+    });
+    if constexpr (!app::edition::textTranslation) {
+        for (auto& entry : result) {
+            if (entry.key == QStringLiteral("tray/menu_options")) {
+                entry.allowedStringValues.removeAll(QStringLiteral("quick.screenshot-translation"));
+                entry.allowedStringValues.removeAll(
+                    QStringLiteral("quick.translate-selected-text"));
+            }
+        }
+    }
     return result;
 }
 
@@ -1602,6 +1683,7 @@ ConfigurationNormalization normalizeFilenameFormat(const QJsonValue& value) {
     return {normalized, true, normalized != original};
 }
 
+#if SNOW_SHOT_ENABLE_TEXT_TRANSLATION
 ConfigurationNormalization normalizeTranslationLanguage(const ConfigurationSchemaEntry& schemaEntry,
                                                         const QJsonValue& value) {
     if (!value.isString()) {
@@ -1619,6 +1701,7 @@ ConfigurationNormalization normalizeTranslationLanguage(const ConfigurationSchem
     }
     return {*canonical, true, *canonical != original};
 }
+#endif
 
 ConfigurationNormalization normalizeToolbarLayout(const QJsonValue& value,
                                                   const QStringList& itemIds,
@@ -1689,6 +1772,12 @@ ConfigurationNormalization normalizeToolbarLayout(const QJsonValue& value,
         }
     } else {
         return {};
+    }
+
+    if (app::edition::isMini && known.contains(QStringLiteral("text-recognition")) &&
+        !positioned.contains(QStringLiteral("text-recognition")) &&
+        !hiddenSet.contains(QStringLiteral("text-recognition"))) {
+        appendHidden({QStringLiteral("text-recognition")});
     }
 
     if (known.contains(QStringLiteral("quick-save")) &&
@@ -1863,6 +1952,8 @@ const QVector<ConfigurationSchemaEntry>& ConfigurationSchema::entries() {
 }
 
 const ConfigurationSchemaEntry* ConfigurationSchema::entry(const QString& key) {
+    if (!presentation::editionConfigurationKeyAvailable(key))
+        return nullptr;
     const auto found = entryIndex().constFind(key);
     return found == entryIndex().cend() ? nullptr : &kEntries.at(found.value());
 }
@@ -1934,6 +2025,7 @@ ConfigurationNormalization ConfigurationSchema::normalize(const QString& key,
         return {QStringLiteral("check"), true, true};
     }
 #endif
+#if SNOW_SHOT_ENABLE_API_CONFIGURATION
     if (key == QStringLiteral("api_configuration/server_url")) {
         const auto normalized = normalizedServerUrl(value.toString());
         return {normalized.value_or(QString()), value.isString() && normalized.has_value(),
@@ -1951,6 +2043,7 @@ ConfigurationNormalization ConfigurationSchema::normalize(const QString& key,
         const auto normalized = textTranslationConfigurationsToJson(models);
         return {normalized, valid, normalized != value};
     }
+#endif
     if (key == QStringLiteral("interface/theme_mode")) {
         return normalizeTheme(value);
     }
@@ -2011,10 +2104,12 @@ ConfigurationNormalization ConfigurationSchema::normalize(const QString& key,
     if (isFilenameFormatKey(key)) {
         return normalizeFilenameFormat(value);
     }
+#if SNOW_SHOT_ENABLE_TEXT_TRANSLATION
     if (key == QStringLiteral("screenshot_translation/source_language") ||
         key == QStringLiteral("screenshot_translation/target_language")) {
         return normalizeTranslationLanguage(*schemaEntry, value);
     }
+#endif
     if (key == QStringLiteral("drawing/quick_selection_disabled_tools")) {
         return normalizeAllowedStringList(*schemaEntry, value);
     }
@@ -2077,7 +2172,7 @@ int ConfigurationSchema::currentVersion() {
 
 QJsonObject ConfigurationSchema::completeDefaultDocument() {
     QJsonObject root;
-    for (const ConfigurationSchemaEntry& entry : kEntries) {
+    for (const ConfigurationSchemaEntry& entry : entries()) {
         insertPath(&root, entry.key, entry.defaultValue);
     }
     return root;

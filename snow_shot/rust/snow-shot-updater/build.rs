@@ -43,7 +43,14 @@ fn compile_windows_resources(output: &std::path::Path) {
             .expect("version components must be integers");
     }
 
-    let resource_path = output.join("snow-shot-updater.rc");
+    let mini = env::var_os("CARGO_FEATURE_MINI").is_some();
+    let product = if mini { "Snow Shot Mini" } else { "Snow Shot" };
+    let updater = if mini {
+        "snow-shot-mini-updater"
+    } else {
+        "snow-shot-updater"
+    };
+    let resource_path = output.join(format!("{updater}.rc"));
     // Normal startup runs --transaction-state through CreateProcess. Declare
     // asInvoker so Windows never guesses that this "updater" needs elevation.
     // Protected installation writes still use the explicit runas handoff.
@@ -81,12 +88,12 @@ BEGIN
         BLOCK "000004b0"
         BEGIN
             VALUE "CompanyName", "Snow Apps\0"
-            VALUE "FileDescription", "Snow Shot update service\0"
+            VALUE "FileDescription", "{product} update service\0"
             VALUE "FileVersion", "{numeric}.0\0"
-            VALUE "InternalName", "snow-shot-updater\0"
+            VALUE "InternalName", "{updater}\0"
             VALUE "LegalCopyright", "Copyright (C) 2025-2026 mg-chao\0"
-            VALUE "OriginalFilename", "snow-shot-updater.exe\0"
-            VALUE "ProductName", "Snow Shot\0"
+            VALUE "OriginalFilename", "{updater}.exe\0"
+            VALUE "ProductName", "{product}\0"
             VALUE "ProductVersion", "{version}\0"
         END
     END

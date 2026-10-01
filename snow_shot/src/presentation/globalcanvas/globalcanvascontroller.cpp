@@ -5,6 +5,8 @@
 #include "snow_shot/presentation/screenshotfloatingtoolpalettewindow.h"
 #include "snow_shot/presentation/screenshotcanvastoolstyles.h"
 #include "snow_shot/presentation/screenshotstylebinding.h"
+#include "snow_shot/presentation/screenshotcanvascolorsampler.h"
+#include "snow_shot/presentation/screenshotcanvascolorsamplerwindow.h"
 #include "snow_shot/presentation/windowshortcutmanager.h"
 #include "snow_shot/presentation/screenshotwheelinput.h"
 #include "snow_shot/storage/applicationstorage.h"
@@ -157,7 +159,7 @@ class GlobalCanvasController::Session final : public QWidget, public SnowCanvasC
         activateDrawing();
     }
     ~Session() override {
-        finishColorSampling();
+        cancelColorSampling();
         drawing->setCustomRenderer(nullptr);
     }
     void activateDrawing() {
@@ -171,7 +173,7 @@ class GlobalCanvasController::Session final : public QWidget, public SnowCanvasC
         const bool next = !transparent;
         finishPan();
         drawing->resetEditingStatePreservingTool();
-        finishColorSampling();
+        cancelColorSampling();
         if (!owner.m_platform.setInputTransparent(this, next)) {
             // A failed native operation may have changed only some flags.
             owner.m_platform.setInputTransparent(this, transparent);
@@ -236,6 +238,7 @@ class GlobalCanvasController::Session final : public QWidget, public SnowCanvasC
         painter.restore();
     }
     void resizeEvent(QResizeEvent* event) override {
+        cancelColorSampling();
         QWidget::resizeEvent(event);
         const QTransform transform = drawing->canvasToViewTransform();
         const QPointF origin = cameraInitialized ? transform.inverted().map(QPointF()) : QPointF();
@@ -246,7 +249,7 @@ class GlobalCanvasController::Session final : public QWidget, public SnowCanvasC
         cameraInitialized = true;
     }
     void closeEvent(QCloseEvent* event) override {
-        finishColorSampling();
+        cancelColorSampling();
         tools->hide();
         QWidget::closeEvent(event);
         QPointer<Session> session(this);
@@ -269,6 +272,11 @@ class GlobalCanvasController::Session final : public QWidget, public SnowCanvasC
         return result;
     }
     bool eventFilter(QObject* watched, QEvent* event) override {
+        if (watched == drawing.get() && samplingMouseReleasePending &&
+            event->type() == QEvent::MouseButtonRelease) {
+            samplingMouseReleasePending = false;
+            return true;
+        }
         if (watched == drawing.get()) {
             if (event->type() == QEvent::UngrabMouse || event->type() == QEvent::Hide ||
                 event->type() == QEvent::FocusOut)
@@ -277,23 +285,30 @@ class GlobalCanvasController::Session final : public QWidget, public SnowCanvasC
                 return true;
         }
         if (watched == drawing.get() && sampleTarget) {
+            if (event->type() == QEvent::MouseMove) {
+                updateColorSamplingPreview(static_cast<QMouseEvent*>(event)->position());
+                return true;
+            }
+            if (event->type() == QEvent::Leave) {
+                sampleWindow->hide();
+            }
+            if (event->type() == QEvent::Wheel)
+                return true;
             if (event->type() == QEvent::MouseButtonPress) {
                 auto* mouse = static_cast<QMouseEvent*>(event);
                 QPointer<adqt::widgets::AdColorPicker> target = sampleTarget;
-                finishColorSampling();
-                if (mouse->button() == Qt::LeftButton) {
-                    const QRectF area = drawing->canvasToViewTransform().inverted().mapRect(
-                        QRectF(drawing->rect()));
-                    const QImage image = runtime.renderToImage(area, drawing->size(), {});
-                    if (!image.isNull() && image.rect().contains(mouse->position().toPoint()))
-                        target->commitValue(adqt::widgets::AdColorValue::solid(
-                            image.pixelColor(mouse->position().toPoint())));
+                const QImage preview = colorSamplingPreview(mouse->position());
+                samplingMouseReleasePending = true;
+                cancelColorSampling();
+                if (mouse->button() == Qt::LeftButton && target && !preview.isNull()) {
+                    target->commitValue(adqt::widgets::AdColorValue::solid(
+                        preview.pixelColor(preview.width() / 2, preview.height() / 2)));
                 }
                 return true;
             }
             if (event->type() == QEvent::KeyPress &&
                 static_cast<QKeyEvent*>(event)->key() == Qt::Key_Escape) {
-                finishColorSampling();
+                cancelColorSampling();
                 return true;
             }
         }
@@ -302,18 +317,56 @@ class GlobalCanvasController::Session final : public QWidget, public SnowCanvasC
     void beginColorSampling(adqt::widgets::AdColorPicker* picker) {
         if (transparent || !picker)
             return;
-        finishColorSampling();
+        cancelColorSampling();
+        finishPan();
+        const QRectF area =
+            drawing->canvasToViewTransform().inverted().mapRect(QRectF(drawing->rect()));
+        // Sample annotation pixels at the display's resolution, without capturing
+        // the desktop or the toolbar through this transparent canvas.
+        sampleRaster =
+            runtime.renderToImage(area, drawing->size() * drawing->devicePixelRatioF(), {});
+        if (sampleRaster.isNull())
+            return;
+        if (!sampleWindow)
+            sampleWindow = std::make_unique<ScreenshotCanvasColorSamplerWindow>();
         sampleTarget = picker;
-        sampleTargetDestroyed =
-            connect(picker, &QObject::destroyed, this, [this]() { finishColorSampling(); });
-        drawing->setCursorForLayer(SnowCanvasCursorLayer::Host, QCursor(Qt::CrossCursor));
+        sampleDestroyedConnection =
+            connect(picker, &QObject::destroyed, this, [this]() { cancelColorSampling(); });
+        samplingMouseReleasePending = false;
+        sampleWindow->beginSampling(picker);
+        drawing->setCursorForLayer(SnowCanvasCursorLayer::Host,
+                                   ScreenshotCanvasColorSamplerWindow::samplingCursor());
         activateDrawing();
+        const QPointF globalPosition =
+            platform::PhysicalCursor().logicalPosition().value_or(QCursor::pos());
+        updateColorSamplingPreview(drawing->mapFromGlobal(globalPosition));
     }
-    void finishColorSampling() {
-        disconnect(sampleTargetDestroyed);
-        sampleTargetDestroyed = {};
+    void cancelColorSampling() {
+        if (!sampleTarget && sampleRaster.isNull())
+            return;
         sampleTarget.clear();
+        disconnect(sampleDestroyedConnection);
+        sampleDestroyedConnection = {};
+        sampleRaster = {};
+        if (sampleWindow)
+            sampleWindow->endSampling();
         drawing->clearCursorForLayer(SnowCanvasCursorLayer::Host);
+    }
+    QImage colorSamplingPreview(const QPointF& localPosition) const {
+        if (!drawing->rect().contains(localPosition.toPoint()) || sampleRaster.isNull())
+            return {};
+        const QPoint pixel = ScreenshotCanvasColorSampler::physicalPointForLocalPosition(
+            localPosition, drawing->size(), sampleRaster.rect());
+        return ScreenshotCanvasColorSampler::previewFromPhysicalRaster(sampleRaster,
+                                                                       sampleRaster.rect(), pixel);
+    }
+    void updateColorSamplingPreview(const QPointF& localPosition) {
+        const QImage preview = colorSamplingPreview(localPosition);
+        if (preview.isNull()) {
+            sampleWindow->hide();
+        } else {
+            sampleWindow->updateSample(preview, drawing->mapToGlobal(localPosition).toPoint());
+        }
     }
     void finishPan() {
         if (!panning)
@@ -424,7 +477,7 @@ class GlobalCanvasController::Session final : public QWidget, public SnowCanvasC
             binding.shortcutBindings = it.value();
             binding.priority = WindowShortcutManager::StandardPriority::DrawingShortcut;
             binding.canActivate = [this](const auto& context) {
-                return !transparent && !drawing->hasActiveTextEditing() &&
+                return !transparent && !sampleTarget && !drawing->hasActiveTextEditing() &&
                        !WindowShortcutManager::focusAcceptsTextInput(context.focusWidget);
             };
             binding.activate = [this, id = it.key()](const auto&) {
@@ -487,8 +540,10 @@ class GlobalCanvasController::Session final : public QWidget, public SnowCanvasC
         }
     }
     void wireTools() {
-        connect(drawing.get(), &SnowCanvasWidget::activeToolChanged, this,
-                [this]() { synchronizeTool(); });
+        connect(drawing.get(), &SnowCanvasWidget::activeToolChanged, this, [this]() {
+            cancelColorSampling();
+            synchronizeTool();
+        });
         connect(palette, &ScreenshotToolPalette::selectRequested, this, [this]() {
             drawing->setCanvasTool(SnowCanvasTool::Select);
             palette->setActiveTool(ScreenshotToolPalette::Tool::Select);
@@ -615,10 +670,14 @@ class GlobalCanvasController::Session final : public QWidget, public SnowCanvasC
                 [this]() { drawing->undo(); });
         connect(palette, &ScreenshotToolPalette::redoRequested, this,
                 [this]() { drawing->redo(); });
-        connect(drawing.get(), &SnowCanvasWidget::historyStateChanged, this,
-                [this]() { palette->setHistoryState(drawing->canvasHistoryState()); });
-        connect(drawing.get(), &SnowCanvasWidget::styleToolbarStateChanged, this,
-                [this]() { palette->setStyleToolbarState(drawing->canvasStyleToolbarState()); });
+        connect(drawing.get(), &SnowCanvasWidget::historyStateChanged, this, [this]() {
+            cancelColorSampling();
+            palette->setHistoryState(drawing->canvasHistoryState());
+        });
+        connect(drawing.get(), &SnowCanvasWidget::styleToolbarStateChanged, this, [this]() {
+            cancelColorSampling();
+            palette->setStyleToolbarState(drawing->canvasStyleToolbarState());
+        });
         connect(palette, &ScreenshotToolPalette::watermarkPreviewChanged, this,
                 [this](const SnowCanvasWatermarkConfig& config) {
                     drawing->previewCanvasWatermarkConfig(config);
@@ -649,7 +708,10 @@ class GlobalCanvasController::Session final : public QWidget, public SnowCanvasC
     ScreenshotToolPalette* palette = nullptr;
     QPointer<QScreen> display;
     QPointer<adqt::widgets::AdColorPicker> sampleTarget;
-    QMetaObject::Connection sampleTargetDestroyed;
+    std::unique_ptr<ScreenshotCanvasColorSamplerWindow> sampleWindow;
+    QImage sampleRaster;
+    QMetaObject::Connection sampleDestroyedConnection;
+    bool samplingMouseReleasePending = false;
     bool transparent = false;
     bool panning = false;
     bool cameraInitialized = false;

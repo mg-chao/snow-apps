@@ -2,17 +2,17 @@
 use super::*;
 
 macro_rules! input {
-    ($name:ident { $($field:ident : $ty:ty),* $(,)? }) => {
+    ($name:ident { $($(#[$attribute:meta])* $field:ident : $ty:ty),* $(,)? }) => {
         #[derive(Deserialize, JsonSchema)]
         #[serde(deny_unknown_fields)]
-        struct $name { $($field: $ty),* }
+        struct $name { $($(#[$attribute])* $field: $ty),* }
     };
 }
 macro_rules! choices {
-    ($name:ident { $($variant:ident),* $(,)? }) => {
+    ($name:ident { $($(#[$attribute:meta])* $variant:ident),* $(,)? }) => {
         #[derive(Deserialize, JsonSchema)]
         #[serde(rename_all = "snake_case")]
-        enum $name { $($variant),* }
+        enum $name { $($(#[$attribute])* $variant),* }
     };
 }
 macro_rules! limited_integer {
@@ -50,6 +50,27 @@ macro_rules! integer_choices {
             }
         }
     };
+}
+struct AudioGainDb(i32);
+impl<'de> Deserialize<'de> for AudioGainDb {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let value = i32::deserialize(deserializer)?;
+        if (-24..=24).contains(&value) {
+            Ok(Self(value))
+        } else {
+            Err(serde::de::Error::custom(
+                "Audio gain must be between -24 and 24 dB",
+            ))
+        }
+    }
+}
+impl JsonSchema for AudioGainDb {
+    fn schema_name() -> std::borrow::Cow<'static, str> {
+        "AudioGainDb".into()
+    }
+    fn json_schema(_: &mut schemars::SchemaGenerator) -> schemars::Schema {
+        schemars::json_schema!({"type":"integer","minimum":-24,"maximum":24})
+    }
 }
 limited_integer!(DelaySeconds, 0, 10);
 limited_integer!(HistoryPageSize, 1, 200);
@@ -104,6 +125,7 @@ choices!(AppAction {
     ShowSettings,
     ShowHistory,
     ShowPinned,
+    #[cfg(not(feature = "mini"))]
     ShowTranslation,
     Restart,
     Quit
@@ -115,8 +137,11 @@ input!(SettingsReset {
     section_id: String
 });
 input!(SettingsAction { field_id: String, path: Option<String> });
+#[cfg(not(feature = "mini"))]
 input!(Model { id: String, name: String, base_url: String, model: String, supports_vision: Option<bool>, supports_reasoning: Option<bool>, api_key: Option<String>, credential_set: Option<bool> });
+#[cfg(not(feature = "mini"))]
 input!(ModelsUpdate { models: Vec<Model> });
+#[cfg(not(feature = "mini"))]
 input!(Credential {
     provider: String,
     secret: String
@@ -151,7 +176,9 @@ choices!(TemplateKind { Drawing, Watermark });
 input!(TemplateList { kind: TemplateKind });
 input!(Template { name: String, payload: Option<Map<String, Value>>, text: Option<String> });
 input!(TemplateUpdate { kind: TemplateKind, templates: Vec<Template> });
+#[cfg(not(feature = "mini"))]
 choices!(TranslationSource { Selection });
+#[cfg(not(feature = "mini"))]
 input!(TranslationStart { texts: Option<Vec<String>>, source: Option<TranslationSource>, source_language: Option<String>, target_language: Option<String>, model_id: Option<String>, retry_job_id: Option<String>, idempotency_key: Option<String> });
 
 choices!(DocumentSource {
@@ -230,17 +257,33 @@ struct DocumentElementEdit {
     #[schemars(length(min = 1, max = 8192))]
     points: Option<Vec<[f64; 2]>>,
 }
-input!(DocumentRecognitionEdit { expected_recognition_revision: u64, action: RecognitionAction,
-    text: Option<String>, value: Option<String>, range: Option<[u32;4]>, row: Option<u32>,
-    column: Option<u32>, enabled: Option<bool> });
+input!(DocumentRecognitionEdit {
+    expected_recognition_revision: u64,
+    action: RecognitionAction,
+    text: Option<String>,
+    #[cfg(not(feature = "mini"))]
+    value: Option<String>,
+    #[cfg(not(feature = "mini"))]
+    range: Option<[u32;4]>,
+    #[cfg(not(feature = "mini"))]
+    row: Option<u32>,
+    #[cfg(not(feature = "mini"))]
+    column: Option<u32>,
+    #[cfg(not(feature = "mini"))]
+    enabled: Option<bool>
+});
 choices!(OriginalContentFormat { Json, Text, Html });
 input!(OriginalContentOutput { output: RecognitionOutput, format: Option<OriginalContentFormat>, path: Option<String> });
 input!(DocumentSelection { operation: Option<RegionOperation>, r#type: Option<RegionType>, bounds: Option<[f64; 4]>, points: Option<Vec<[f64; 2]>> });
 choices!(RecognitionKind {
     Text,
+    #[cfg(not(feature = "mini"))]
     Table,
+    #[cfg(not(feature = "mini"))]
     Qr,
+    #[cfg(not(feature = "mini"))]
     Markdown,
+    #[cfg(not(feature = "mini"))]
     Html
 });
 input!(DocumentRecognize {
@@ -292,10 +335,10 @@ choices!(PostProcessingEffect {
 });
 input!(RecordingOptions {
     path: Option<String>,
-    format: Option<RecordingFormat>, start_delay_seconds: Option<DelaySeconds>, microphone: Option<bool>,
-    system_audio: Option<bool>, separate_audio_tracks: Option<bool>, frame_rate: Option<FrameRate>, animated_frame_rate: Option<AnimatedFrameRate>,
+    format: Option<RecordingFormat>, quality: Option<Percentage>, start_delay_seconds: Option<DelaySeconds>, microphone: Option<bool>,
+    system_audio: Option<bool>, system_audio_gain_db: Option<AudioGainDb>, microphone_gain_db: Option<AudioGainDb>, separate_audio_tracks: Option<bool>, frame_rate: Option<FrameRate>, animated_frame_rate: Option<AnimatedFrameRate>,
     clarity: Option<Clarity>, animated_clarity: Option<AnimatedClarity>, encoder: Option<Encoder>,
-    encoding_preset: Option<EncodingPreset>, quality: Option<Percentage>, r#loop: Option<bool>, capture_toolbar: Option<bool>,
+    encoding_preset: Option<EncodingPreset>, r#loop: Option<bool>, capture_toolbar: Option<bool>,
     post_processing: Option<bool>, post_processing_effect: Option<PostProcessingEffect>, progress_bar_color: Option<String>,
     show_cursor: Option<bool>, show_keyboard: Option<bool>, mouse_highlight: Option<bool>,
     record_mouse_clicks: Option<bool>, mouse_trail_duration_ms: Option<TrailDuration>, keyboard_size: Option<KeyboardSize>,
@@ -369,6 +412,7 @@ choices!(PinnedEditAction {
     Redo,
     Reset,
     Recognize,
+    #[cfg(not(feature = "mini"))]
     Translate,
     RecognitionEdit,
     Duplicate,
@@ -421,7 +465,7 @@ enum PinnedPayload {
     TemplateInsert(TemplateInsert),
     AutoFilter(PinnedAutoFilter),
     Tool(DocumentTool),
-    ToolStyle(ToolStyle),
+    ToolStyle(Box<ToolStyle>),
     Editing(Editing),
 }
 input!(PinnedEdit { id: String, action: PinnedEditAction, payload: Option<PinnedPayload> });
@@ -485,16 +529,19 @@ pub const TOOLS: &[(&str, &str, bool)] = &[
         "Run a settings action with explicit arguments.",
         false,
     ),
+    #[cfg(not(feature = "mini"))]
     (
         "snow_shot_models_list",
         "Read configured model metadata without credentials.",
         true,
     ),
+    #[cfg(not(feature = "mini"))]
     (
         "snow_shot_models_update",
         "Update model definitions, retaining omitted credentials.",
         false,
     ),
+    #[cfg(not(feature = "mini"))]
     (
         "snow_shot_credentials_set",
         "Replace a model credential without returning its value.",
@@ -575,11 +622,13 @@ pub const TOOLS: &[(&str, &str, bool)] = &[
         "Replace a validated drawing or watermark template collection.",
         false,
     ),
+    #[cfg(not(feature = "mini"))]
     (
         "snow_shot_translation_catalog",
         "Read translation models, languages, and preferences without credentials.",
         true,
     ),
+    #[cfg(not(feature = "mini"))]
     (
         "snow_shot_translation_start",
         "Translate explicit text using configured providers and return an owned job handle.",
@@ -707,7 +756,11 @@ pub const TOOLS: &[(&str, &str, bool)] = &[
     ),
     (
         "snow_shot_document_edit_recognition",
-        "Edit retained text or table recognition using its own revision.",
+        if crate::edition::MINI {
+            "Edit retained text recognition using its own revision."
+        } else {
+            "Edit retained text or table recognition using its own revision."
+        },
         false,
     ),
     (
@@ -799,27 +852,38 @@ pub const TOOLS: &[(&str, &str, bool)] = &[
 ];
 
 pub fn schema(name: &str, input: Option<Value>) -> Result<Map<String, Value>, serde_json::Error> {
+    if !crate::edition::method_enabled(name)
+        || input
+            .as_ref()
+            .is_some_and(|value| !crate::edition::input_enabled(name, value))
+    {
+        return Err(serde::de::Error::custom(
+            "This operation is unavailable in the compiled edition",
+        ));
+    }
     match name {
         "snow_shot_artifact_list" => model::<Empty>(input),
         "snow_shot_artifact_read" => model::<ArtifactRead>(input),
         "snow_shot_artifact_release" => model::<ArtifactRelease>(input),
         "snow_shot_app_status"
         | "snow_shot_app_displays"
-        | "snow_shot_models_list"
         | "snow_shot_storage_status"
         | "snow_shot_permissions_get"
         | "snow_shot_updates_status"
         | "snow_shot_document_list"
         | "snow_shot_job_list"
         | "snow_shot_recording_state"
-        | "snow_shot_group_list"
-        | "snow_shot_translation_catalog" => model::<Empty>(input),
+        | "snow_shot_group_list" => model::<Empty>(input),
+        #[cfg(not(feature = "mini"))]
+        "snow_shot_models_list" | "snow_shot_translation_catalog" => model::<Empty>(input),
         "snow_shot_app_action" => model::<AppActionInput>(input),
         "snow_shot_settings_get" => model::<Section>(input),
         "snow_shot_settings_update" => model::<Revision<SettingsUpdate>>(input),
         "snow_shot_settings_reset" => model::<Revision<SettingsReset>>(input),
         "snow_shot_settings_action" => model::<Revision<SettingsAction>>(input),
+        #[cfg(not(feature = "mini"))]
         "snow_shot_models_update" => model::<Revision<ModelsUpdate>>(input),
+        #[cfg(not(feature = "mini"))]
         "snow_shot_credentials_set" => model::<Revision<Credential>>(input),
         "snow_shot_history_list" => model::<HistoryList>(input),
         "snow_shot_history_get" => model::<HistoryGet>(input),
@@ -833,6 +897,7 @@ pub fn schema(name: &str, input: Option<Value>) -> Result<Map<String, Value>, se
         "snow_shot_updates_action" => model::<UpdateInput>(input),
         "snow_shot_templates_list" => model::<TemplateList>(input),
         "snow_shot_templates_update" => model::<Revision<TemplateUpdate>>(input),
+        #[cfg(not(feature = "mini"))]
         "snow_shot_translation_start" => {
             let exclusive = [
                 "texts",
@@ -941,6 +1006,31 @@ mod tests {
     use super::*;
     use serde_json::json;
     #[test]
+    fn recording_capability_catalogs_match_typed_options_without_duplicates() {
+        let published = model::<RecordingOptions>(None).unwrap();
+        let properties = published["properties"].as_object().unwrap();
+        let expected: std::collections::BTreeSet<_> =
+            properties.keys().map(String::as_str).collect();
+        for (edition, source) in [
+            ("full", include_str!("../../../mcp-capabilities.json")),
+            ("mini", include_str!("../../../mcp-capabilities-mini.json")),
+        ] {
+            let catalog: Value = serde_json::from_str(source).unwrap();
+            let members = catalog["surface_contracts"]["recording_options"]["members"]
+                .as_array()
+                .unwrap();
+            let actual: std::collections::BTreeSet<_> = members
+                .iter()
+                .map(|member| member.as_str().unwrap())
+                .collect();
+            assert_eq!(actual.len(), members.len(), "{edition}: duplicate options");
+            assert_eq!(
+                actual, expected,
+                "{edition}: recording options differ from schema"
+            );
+        }
+    }
+    #[test]
     fn recording_post_processing_options_and_retained_source_actions_are_typed() {
         for effect in ["progress_bar", "playback_time"] {
             assert!(
@@ -949,7 +1039,8 @@ mod tests {
                     Some(json!({
                         "region": [0, 0, 320, 240],
                         "options": {"post_processing": true, "post_processing_effect": effect,
-                                    "progress_bar_color": "#1464C880", "quality": 70}
+                                    "progress_bar_color": "#1464C880", "quality": 70,
+                                    "separate_audio_tracks": true}
                     }))
                 )
                 .is_ok()
@@ -1009,7 +1100,10 @@ mod tests {
     #[test]
     fn all_domain_contracts_have_unique_schemas_and_mutations_are_revisioned() {
         let mut names = std::collections::HashSet::new();
-        for (name, _, _) in TOOLS {
+        for (name, _, _) in TOOLS
+            .iter()
+            .filter(|(name, _, _)| crate::edition::method_enabled(name))
+        {
             assert!(names.insert(name), "{name}");
             assert!(
                 schema(name, None).unwrap().get("type") == Some(&json!("object")),
@@ -1077,10 +1171,13 @@ mod tests {
             )
             .is_ok()
         );
-        let input = json!({"region":[0,0,1920,1080],"options":{"frame_rate":60,"clarity":"1080p","keyboard_size":32,"path":"C:/capture.mp4"}});
+        let input = json!({"region":[0,0,1920,1080],"options":{"frame_rate":60,"clarity":"1080p","keyboard_size":32,"quality":100,"path":"C:/capture.mp4"}});
         assert!(schema("snow_shot_recording_start", Some(input.clone())).is_ok());
         for (key, value) in [
             ("frame_rate", json!(240)),
+            ("quality", json!(101)),
+            ("quality", json!(-1)),
+            ("quality", json!(1.5)),
             ("clarity", json!("8k")),
             ("keyboard_size", json!(256)),
             ("surprise", json!(true)),
@@ -1157,19 +1254,21 @@ mod tests {
             )
             .is_ok()
         );
-        assert!(
+        assert_eq!(
             schema(
                 "snow_shot_translation_start",
                 Some(json!({"source":"selection"}))
             )
-            .is_ok()
+            .is_ok(),
+            !crate::edition::MINI
         );
-        assert!(
+        assert_eq!(
             schema(
                 "snow_shot_translation_start",
                 Some(json!({"retry_job_id":"prior"}))
             )
-            .is_ok()
+            .is_ok(),
+            !crate::edition::MINI
         );
         assert!(
             schema(
@@ -1178,5 +1277,35 @@ mod tests {
             )
             .is_err()
         );
+    }
+}
+
+#[cfg(test)]
+mod audio_gain_tests {
+    use super::*;
+    #[test]
+    fn recording_audio_gains_validate_signed_integer_bounds() {
+        for value in [-24, 0, 24] {
+            let options: RecordingOptions = serde_json::from_value(
+                serde_json::json!({"microphone_gain_db":value,"system_audio_gain_db":-value}),
+            )
+            .unwrap();
+            assert_eq!(options.microphone_gain_db.unwrap().0, value);
+            assert_eq!(options.system_audio_gain_db.unwrap().0, -value);
+        }
+        for value in [
+            serde_json::json!(-25),
+            serde_json::json!(25),
+            serde_json::json!(0.5),
+            serde_json::json!("0"),
+            serde_json::json!(true),
+        ] {
+            assert!(
+                serde_json::from_value::<RecordingOptions>(
+                    serde_json::json!({"system_audio_gain_db":value})
+                )
+                .is_err()
+            );
+        }
     }
 }

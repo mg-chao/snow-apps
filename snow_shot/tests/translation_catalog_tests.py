@@ -60,6 +60,28 @@ class TranslationCatalogTests(unittest.TestCase):
         self.assertEqual(before, self.snapshot())
         catalogs.check(self.directory)
 
+    def test_excluded_feature_catalogs_are_not_embedded_and_sources_are_untouched(self):
+        before = self.snapshot()
+        output = self.root / "mini"
+        catalogs.merge(self.directory, output, excluded_modules=("settings",))
+        for locale in catalogs.LOCALES:
+            root = ET.parse(output / f"snow_shot_{locale}.ts").getroot()
+            self.assertEqual([c.findtext("name") for c in root.findall("context")], ["Core"])
+        self.assertEqual(before, self.snapshot())
+
+    def test_context_exclusion_preserves_other_contexts_in_shared_catalogs(self):
+        output = self.root / "mini"
+        catalogs.merge(self.directory, output, excluded_contexts=("Core", "AbsentOnPlatform"))
+        for locale in catalogs.LOCALES:
+            root = ET.parse(output / f"snow_shot_{locale}.ts").getroot()
+            self.assertEqual([c.findtext("name") for c in root.findall("context")], ["Settings"])
+
+    def test_unknown_excluded_module_fails_before_writing(self):
+        output = self.root / "mini"
+        with self.assertRaisesRegex(ValueError, "Unknown excluded modules"):
+            catalogs.merge(self.directory, output, excluded_modules=("unknown-feature",))
+        self.assertFalse(output.exists())
+
     def test_source_order_and_locations_do_not_change_fragments(self):
         before = self.snapshot()
         for locale in catalogs.LOCALES:

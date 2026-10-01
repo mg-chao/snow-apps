@@ -5,6 +5,11 @@ edition = "2024"
 license.workspace = true
 description = "Bounded cross-platform selected-text acquisition with guarded clipboard fallback"
 
+[features]
+# A separate application FFI archive must use the host's launch-scoped policy,
+# rather than initialize a second copy of snow-core's process state.
+host-application-qos = []
+
 [target.'cfg(target_os = "macos")'.dependencies]
 accessibility-sys = "0.2.0"
 core-foundation = "0.10.1"

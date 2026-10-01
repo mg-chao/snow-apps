@@ -51,7 +51,7 @@ struct ScreenshotOcrControllerContext {
     ScreenshotGeometryMapper& geometry;
     ScreenshotOverlayCoordinator& overlayCoordinator;
     ScreenshotOcrRecognitionPort& recognition;
-    ScreenshotQrRecognitionPort& qrRecognition;
+    ScreenshotQrRecognitionPort* qrRecognition = nullptr;
     SnowShotApiClient* tableRecognition = nullptr;
     std::function<void()> hideColorPicker = []() {};
     std::function<void()> cancelCapture = []() {};

@@ -4,12 +4,24 @@
     <context>
         <name>AboutPageWidget</name>
         <message>
+            <source>%1 logo</source>
+            <translation>%1 標誌</translation>
+        </message>
+        <message>
             <source>%1 · %2</source>
             <translation>%1 · %2</translation>
         </message>
         <message>
+            <source>%1 · Make expression clearer</source>
+            <translation>%1 · 讓表達更清晰</translation>
+        </message>
+        <message>
             <source>, excellent work.</source>
             <translation>，出色工作。</translation>
+        </message>
+        <message>
+            <source>About %1</source>
+            <translation>關於 %1</translation>
         </message>
         <message>
             <source>About Snow Shot</source>
@@ -36,6 +48,10 @@ so every moment on screen can be expressed clearly and shared easily.</source>
         <message>
             <source>Changelog</source>
             <translation>更新日誌</translation>
+        </message>
+        <message>
+            <source>Check for a newer version of %1.</source>
+            <translation>檢查 %1 是否有新版本。</translation>
         </message>
         <message>
             <source>Check for a newer version of Snow Shot.</source>
@@ -338,6 +354,17 @@ so every moment on screen can be expressed clearly and shared easily.</source>
         <message>
             <source>Writing the log file failed. Check available disk space.</source>
             <translation>寫入記錄檔失敗。請檢查可用磁碟空間。</translation>
+        </message>
+    </context>
+    <context>
+        <name>EditionMetadata</name>
+        <message>
+            <source>Snow Shot</source>
+            <translation>Snow Shot</translation>
+        </message>
+        <message>
+            <source>Snow Shot Mini</source>
+            <translation>Snow Shot Mini</translation>
         </message>
     </context>
     <context>
@@ -672,6 +699,18 @@ so every moment on screen can be expressed clearly and shared easily.</source>
     </context>
     <context>
         <name>snow_shot::app::ApplicationController</name>
+        <message>
+            <source>%1 %2 is available. Open About for update options.</source>
+            <translation>%1 %2 已發布。請開啟「關於」查看更新選項。</translation>
+        </message>
+        <message>
+            <source>%1 will close and restart to install the update. Continue?</source>
+            <translation>%1 將關閉並重新啟動以安裝更新。是否繼續？</translation>
+        </message>
+        <message>
+            <source>An update is ready. Open About to restart and update %1.</source>
+            <translation>更新已就緒。請開啟「關於」重新啟動並更新 %1。</translation>
+        </message>
         <message>
             <source>An update is ready. Open About to restart and update Snow Shot.</source>
             <translation>更新已準備就緒。請開啟「關於」頁面，重新啟動並更新 Snow Shot。</translation>

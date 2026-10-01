@@ -174,6 +174,15 @@ pub struct MicrophoneStream {
 unsafe impl Send for MicrophoneStream {}
 impl MicrophoneStream {
     pub fn start(uid: Option<&str>) -> MacResult<Self> {
+        Self::start_cancelable(uid, &crate::CancellationToken::default())
+    }
+    pub fn start_cancelable(
+        uid: Option<&str>,
+        cancellation: &crate::CancellationToken,
+    ) -> MacResult<Self> {
+        if cancellation.is_canceled() {
+            return Err(MacError::Canceled);
+        }
         if !microphone_authorized() {
             return Err(MacError::MicrophonePermissionDenied);
         }
@@ -181,6 +190,9 @@ impl MicrophoneStream {
             .into_iter()
             .find(|d| uid.map_or(d.is_default, |uid| d.uid == uid))
             .ok_or(MacError::TargetUnavailable)?;
+        if cancellation.is_canceled() {
+            return Err(MacError::Canceled);
+        }
         let engine = unsafe { AVAudioEngine::new() };
         let node = unsafe { engine.inputNode() };
         let unit = audio_unit(&node);
@@ -273,7 +285,13 @@ impl MicrophoneStream {
             samples,
             dropped,
         };
+        if cancellation.is_canceled() {
+            return Err(MacError::Canceled);
+        }
         unsafe { result.engine.startAndReturnError() }.map_err(|e| MacError::from_native(&e))?;
+        if cancellation.is_canceled() {
+            return Err(MacError::Canceled);
+        }
         Ok(result)
     }
     pub fn device_uid(&self) -> &str {
@@ -313,5 +331,15 @@ mod tests {
         AVAudioIONode::class()
             .verify_sel::<(), NativeAudioUnit>(sel!(audioUnit))
             .expect("microphone audioUnit binding must match the macOS runtime");
+    }
+
+    #[test]
+    fn canceled_microphone_start_never_checks_permission_or_opens_a_device() {
+        let cancellation = crate::CancellationToken::default();
+        cancellation.cancel();
+        assert!(matches!(
+            super::MicrophoneStream::start_cancelable(None, &cancellation),
+            Err(crate::MacError::Canceled)
+        ));
     }
 }

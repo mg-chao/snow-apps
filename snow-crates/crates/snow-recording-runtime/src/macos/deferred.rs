@@ -1,7 +1,9 @@
 //! Native clean sources preserve CoreVideo/VideoToolbox and the fixed output canvas.
 use super::*;
 use crate::DirectRecordingConfig;
-use crate::deferred::{CaptureProduct, Command, FrameIndexWriter, InputRecorder, start_audio};
+use crate::deferred::{
+    CaptureProduct, Command, DeferredCaptureControls, FrameIndexWriter, InputRecorder, start_audio,
+};
 use crossbeam_channel::{Receiver, Sender};
 use snow_recording_model::CursorFrameRecord;
 use std::path::Path;
@@ -10,6 +12,7 @@ use std::sync::{
     atomic::{AtomicU8, Ordering},
 };
 
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn run_capture(
     config: &DirectRecordingConfig,
     path: &Path,
@@ -18,6 +21,7 @@ pub(crate) fn run_capture(
     ready: Sender<std::result::Result<(), String>>,
     stop_boundary: Arc<Mutex<Option<Instant>>>,
     control_clock: Arc<Mutex<Option<RecordingClock>>>,
+    capture_controls: DeferredCaptureControls,
 ) -> Result<CaptureProduct> {
     let mut native = super::direct::native_config(config.clone(), Default::default())?;
     let logical = native.output;
@@ -45,10 +49,13 @@ pub(crate) fn run_capture(
     };
     let source_codec = native.codec;
     let mut recording = NativeRecordingSession::start_source(native, logical)?;
+    recording
+        .capture
+        .set_exclusion_control(capture_controls.exclusions);
     recording.set_stop_boundary(Arc::clone(&stop_boundary));
     let clock = recording.source_clock();
     clock.controller().mark_pause(clock.started_at());
-    let mut audio = start_audio(config, path, &clock)?;
+    let mut audio = start_audio(config, path, &clock, capture_controls.audio)?;
     let mut input = InputRecorder::new(config, &inputs, (logical.width, logical.height))?;
     let mut cursor = config
         .show_cursor
@@ -111,6 +118,7 @@ pub(crate) fn run_capture(
             break;
         }
         if paused {
+            recording.capture.poll_exclusions().map_err(native_error)?;
             input.drain(&clock, true, since, None)?;
             continue;
         }

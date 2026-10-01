@@ -1,6 +1,9 @@
 #include "snow_shot/storage/configurationstore.h"
+#include "snow_shot/app/edition.h"
+#if SNOW_SHOT_ENABLE_API_CONFIGURATION
 #include "snow_shot/customaimodelconfiguration.h"
 #include "snow_shot/texttranslationconfiguration.h"
+#endif
 
 #include "snow_shot/storage/configurationschema.h"
 #include "snow_shot/storage/storagelogging.h"
@@ -22,7 +25,9 @@
 namespace snow_shot::storage {
 namespace {
 const QString kSchemaVersionKey = QStringLiteral("storage/schema_version");
+#if SNOW_SHOT_ENABLE_API_CONFIGURATION
 const QString kCustomModelsKey = QStringLiteral("api_configuration/custom_models");
+#endif
 
 enum class ConfigurationOverlayPolicy {
     MergeFromDisk,
@@ -132,6 +137,7 @@ MaterializedConfiguration materializeConfiguration(const QMap<QString, QJsonValu
                 migratedDestroyShortcut = true;
             }
         }
+#if SNOW_SHOT_ENABLE_API_CONFIGURATION
         if (entry.key == kCustomModelsKey ||
             entry.key == QStringLiteral("api_configuration/text_translation")) {
             bool valid = false;
@@ -148,6 +154,7 @@ MaterializedConfiguration materializeConfiguration(const QMap<QString, QJsonValu
             continue;
         }
 
+#endif
         const ConfigurationNormalization normalized =
             ConfigurationSchema::normalize(entry.key, raw);
         if (!normalized.valid) {

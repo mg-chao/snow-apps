@@ -777,6 +777,8 @@ mod tests {
     fn config(path: PathBuf, backend: CaptureBackendKind) -> DirectRecordingConfig {
         DirectRecordingConfig {
             audio_mode: Default::default(),
+            system_audio_gain_db: 0,
+            microphone_gain_db: 0,
             excluded_windows: Default::default(),
             excluded_processes: Default::default(),
             loop_animated_images: true,

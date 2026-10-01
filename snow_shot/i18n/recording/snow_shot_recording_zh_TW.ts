@@ -2,6 +2,25 @@
 <!DOCTYPE TS>
 <TS version="2.1" language="zh_TW" sourcelanguage="en_US">
     <context>
+        <name>RecordingAudioGainPopover</name>
+        <message>
+            <source>%1 dB</source>
+            <translation>%1 dB</translation>
+        </message>
+        <message>
+            <source>Adjust gain from -24 to +24 dB. The track shows the processed audio level.</source>
+            <translation>將增益調整至 -24 到 +24 dB。滑軌顯示處理後的音訊電平。</translation>
+        </message>
+        <message>
+            <source>Microphone gain</source>
+            <translation>麥克風增益</translation>
+        </message>
+        <message>
+            <source>System audio gain</source>
+            <translation>系統音訊增益</translation>
+        </message>
+    </context>
+    <context>
         <name>RecordingEffectPreview</name>
         <message>
             <source>Motion Preview in Progress</source>
@@ -127,6 +146,10 @@ Keep this folder to recover the recording.</source>
         <message>
             <source>Unable to create the recording directory</source>
             <translation>無法建立錄製目錄</translation>
+        </message>
+        <message>
+            <source>Unable to exclude audio controls from recording</source>
+            <translation>無法從螢幕錄製中排除音訊控制項</translation>
         </message>
         <message>
             <source>Unknown recording error</source>

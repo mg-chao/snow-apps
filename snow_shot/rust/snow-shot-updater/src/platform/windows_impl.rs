@@ -84,8 +84,8 @@ pub fn path_has_reparse(path: &Path) -> bool {
     attributes != INVALID_FILE_ATTRIBUTES && attributes & FILE_ATTRIBUTE_REPARSE_POINT.0 != 0
 }
 
-const INSTALL_KEY: &str = "Software\\Snow Apps\\SnowShot";
-const UNINSTALL_KEY: &str = "Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\SnowShot";
+const INSTALL_KEY: &str = crate::edition::INSTALL_KEY;
+const UNINSTALL_KEY: &str = crate::edition::UNINSTALL_KEY;
 
 fn registry_error(hive: HKEY, key: &str, operation: &str, status: WIN32_ERROR) -> UpdateError {
     let hive = if hive == HKEY_LOCAL_MACHINE {

@@ -39,6 +39,8 @@ class AdPopover final : public QObject, private detail::OverlayPopupControllerDe
                  setPopupLayerMode NOTIFY popupLayerModeChanged)
   Q_PROPERTY(bool destroyOnHidden READ destroyOnHidden WRITE setDestroyOnHidden NOTIFY
                  destroyOnHiddenChanged)
+  Q_PROPERTY(bool retainNativeSurfaceOnHide READ retainNativeSurfaceOnHide WRITE
+                 setRetainNativeSurfaceOnHide NOTIFY retainNativeSurfaceOnHideChanged)
   Q_PROPERTY(
       bool defaultVisible READ defaultVisible WRITE setDefaultVisible NOTIFY defaultVisibleChanged)
   Q_PROPERTY(bool autoAdjustOverflow READ autoAdjustOverflow WRITE setAutoAdjustOverflow NOTIFY
@@ -109,6 +111,16 @@ class AdPopover final : public QObject, private detail::OverlayPopupControllerDe
   void hide();
   void toggle();
   void preparePopup();
+
+  // Borrowed surface; null until preparation/opening. Does not create native resources.
+  QWidget* surfaceWidget() const { return popupSurface_; }
+  // Only effective with a retained popup lifetime; defaults to release on hide.
+  bool retainNativeSurfaceOnHide() const { return retainNativeSurfaceOnHide_; }
+  void setRetainNativeSurfaceOnHide(bool retain);
+  // Called after native identity/geometry preparation, before exposing the surface.
+  // Returning false keeps the requested popup hidden. refreshPopupLayout() retries.
+  using SurfaceShowGuard = std::function<bool(QWidget*)>;
+  void setSurfaceShowGuard(SurfaceShowGuard guard);
 
   VisibilityPolicy visibilityPolicy() const { return visibilityPolicy_; }
   void setVisibilityPolicy(VisibilityPolicy value);
@@ -221,6 +233,7 @@ class AdPopover final : public QObject, private detail::OverlayPopupControllerDe
   void popupLifetimeChanged(PopupLifetime value);
   void popupLayerModeChanged(PopupLayerMode value);
   void destroyOnHiddenChanged(bool value);
+  void retainNativeSurfaceOnHideChanged(bool value);
   void defaultVisibleChanged(bool value);
   void autoAdjustOverflowChanged(bool value);
   void arrowVisibleChanged(bool value);
@@ -303,12 +316,16 @@ class AdPopover final : public QObject, private detail::OverlayPopupControllerDe
                                    qreal arrowCenterCoord) override;
   bool popupReleaseOnHide() const override;
   void popupReleaseSurface() override;
+  bool popupHasSurfaceShowGuard() const override;
+  bool popupSurfaceCanShow() const override;
 
   Placement placement_ = Placement::Top;
   Triggers triggers_ = Trigger::Hover;
   VisibilityPolicy visibilityPolicy_ = VisibilityPolicy::Automatic;
   PopupLifetime popupLifetime_ = PopupLifetime::Retained;
   PopupLayerMode popupLayerMode_ = PopupLayerMode::InWindow;
+  bool retainNativeSurfaceOnHide_ = false;
+  SurfaceShowGuard surfaceShowGuard_;
   bool defaultVisible_ = false;
   bool defaultVisibleApplied_ = false;
   bool explicitVisibleSet_ = false;

@@ -18,7 +18,8 @@ use crate::mouse_hook::{
 use crate::{DirectRecordingConfig, RecordingState, ScreenRecorderError, error::Result};
 use crossbeam_channel::{Receiver, Sender};
 use snow_audio_recorder::{
-    AudioRecordingConfig, AudioRecordingSession, AudioTrackConfig, RecordedAudioTrack,
+    AudioControlHandle, AudioRecordingConfig, AudioRecordingSession, AudioSourceKind,
+    AudioTrackConfig, RecordedAudioTrack,
 };
 use snow_core::recording_clock::RecordingClock;
 use snow_media::geometry::{
@@ -120,6 +121,12 @@ pub(crate) enum Command {
     Stop(Instant),
     Cancel,
 }
+#[derive(Clone)]
+pub(crate) struct DeferredCaptureControls {
+    pub audio: AudioControlHandle,
+    #[cfg(target_os = "macos")]
+    pub exclusions: snow_macos::desktop::ExclusionControl,
+}
 pub struct DeferredRecordingSession {
     config: DirectRecordingConfig,
     options: DeferredRecordingOptions,
@@ -129,6 +136,9 @@ pub struct DeferredRecordingSession {
     stop_boundary: Arc<Mutex<Option<Instant>>>,
     control_clock: Arc<Mutex<Option<RecordingClock>>>,
     worker: Option<JoinHandle<Result<DeferredRecordingSource>>>,
+    capture_controls: DeferredCaptureControls,
+    #[cfg(not(target_os = "macos"))]
+    exclusion_generation: std::sync::atomic::AtomicU64,
 }
 impl DeferredRecordingSession {
     pub fn create(
@@ -154,6 +164,9 @@ impl DeferredRecordingSession {
         )
         .validate()
         .map_err(ScreenRecorderError::InvalidConfig)?;
+        let audio = AudioControlHandle::new();
+        audio.set_gain_db(AudioSourceKind::System, config.system_audio_gain_db)?;
+        audio.set_gain_db(AudioSourceKind::Microphone, config.microphone_gain_db)?;
         Ok(Self {
             config,
             options,
@@ -163,6 +176,13 @@ impl DeferredRecordingSession {
             stop_requested: AtomicBool::new(false),
             stop_boundary: Arc::new(Mutex::new(None)),
             control_clock: Arc::new(Mutex::new(None)),
+            capture_controls: DeferredCaptureControls {
+                audio,
+                #[cfg(target_os = "macos")]
+                exclusions: Default::default(),
+            },
+            #[cfg(not(target_os = "macos"))]
+            exclusion_generation: std::sync::atomic::AtomicU64::new(0),
         })
     }
     pub fn start(&mut self) -> Result<()> {
@@ -178,6 +198,8 @@ impl DeferredRecordingSession {
         let state = Arc::clone(&self.state);
         let stop_boundary = Arc::clone(&self.stop_boundary);
         let control_clock = Arc::clone(&self.control_clock);
+        let capture_controls = self.capture_controls.clone();
+        let audio_control = capture_controls.audio.clone();
         let worker = std::thread::Builder::new()
             .name("snow-deferred-recording".into())
             .spawn(move || {
@@ -190,11 +212,13 @@ impl DeferredRecordingSession {
                     ready.clone(),
                     stop_boundary,
                     control_clock,
+                    capture_controls,
                 );
                 if let Err(error) = &result {
                     let _ = ready.try_send(Err(error.to_string()));
                 }
                 state.store(3, Ordering::Release);
+                audio_control.mark_stopped();
                 result
             })?;
         self.commands = Some(commands);
@@ -225,6 +249,46 @@ impl DeferredRecordingSession {
             2 => RecordingState::Paused,
             3 => RecordingState::Stopped,
             _ => RecordingState::Created,
+        }
+    }
+    pub fn audio_control(&self) -> AudioControlHandle {
+        self.capture_controls.audio.clone()
+    }
+    pub fn request_exclusions(
+        &self,
+        windows: Vec<u32>,
+        processes: Vec<i32>,
+        required: Vec<u32>,
+    ) -> Result<u64> {
+        #[cfg(target_os = "macos")]
+        {
+            self.capture_controls
+                .exclusions
+                .request(windows, processes, required)
+                .map_err(crate::macos::native_error)
+        }
+        #[cfg(not(target_os = "macos"))]
+        {
+            // Windows uses native display affinity for application-owned surfaces.
+            if windows.len() > 4096
+                || processes.len() > 4096
+                || required.len() > 4096
+                || required.iter().any(|id| !windows.contains(id))
+            {
+                return Err(invalid("invalid capture exclusions"));
+            }
+            Ok(self.exclusion_generation.fetch_add(1, Ordering::AcqRel) + 1)
+        }
+    }
+    pub fn exclusion_status(&self) -> (u64, u64, u32) {
+        #[cfg(target_os = "macos")]
+        {
+            self.capture_controls.exclusions.status()
+        }
+        #[cfg(not(target_os = "macos"))]
+        {
+            let generation = self.exclusion_generation.load(Ordering::Acquire);
+            (generation, generation, 0)
         }
     }
     pub fn pause(&self) -> Result<()> {
@@ -342,6 +406,7 @@ fn run_recording(
     ready: Sender<std::result::Result<(), String>>,
     stop_boundary: Arc<Mutex<Option<Instant>>>,
     control_clock: Arc<Mutex<Option<RecordingClock>>>,
+    capture_controls: DeferredCaptureControls,
 ) -> Result<DeferredRecordingSource> {
     let parent = options.working_directory.unwrap_or_else(|| {
         config
@@ -364,6 +429,7 @@ fn run_recording(
         ready,
         stop_boundary,
         control_clock,
+        capture_controls,
     )?;
     #[cfg(target_os = "macos")]
     let product = crate::macos::deferred::run_capture(
@@ -374,6 +440,7 @@ fn run_recording(
         ready,
         stop_boundary,
         control_clock,
+        capture_controls,
     )?;
     finalize_source(directory, product, config, parent, options.playback_overlay)
 }
@@ -507,6 +574,7 @@ pub(crate) fn start_audio(
     config: &DirectRecordingConfig,
     path: &Path,
     clock: &RecordingClock,
+    audio_control: AudioControlHandle,
 ) -> Result<Option<AudioRecordingSession>> {
     if config.format.is_animated_image() {
         return Ok(None);
@@ -525,17 +593,19 @@ pub(crate) fn start_audio(
     if tracks.is_empty() {
         return Ok(None);
     }
-    Ok(Some(AudioRecordingSession::start(
+    Ok(Some(AudioRecordingSession::start_with_controls(
         AudioRecordingConfig {
             output_dir: path.join("audio"),
             tracks,
             ..Default::default()
         },
         clock.clone(),
+        audio_control,
     )?))
 }
 
 #[cfg(not(target_os = "macos"))]
+#[allow(clippy::too_many_arguments)]
 fn run_capture(
     config: &DirectRecordingConfig,
     path: &Path,
@@ -544,6 +614,7 @@ fn run_capture(
     ready: Sender<std::result::Result<(), String>>,
     stop_boundary: Arc<Mutex<Option<Instant>>>,
     control_clock: Arc<Mutex<Option<RecordingClock>>>,
+    capture_controls: DeferredCaptureControls,
 ) -> Result<CaptureProduct> {
     use crate::direct::capture::{DirectCapture, DirectCaptureEvent, DirectFrame};
     let logical = config.output_dimensions();
@@ -568,7 +639,7 @@ fn run_capture(
     let capture = DirectCapture::cpu(config, true)?;
     let clock = RecordingClock::new(Instant::now());
     clock.controller().mark_pause(clock.started_at());
-    let mut audio = start_audio(config, path, &clock)?;
+    let mut audio = start_audio(config, path, &clock, capture_controls.audio)?;
     let mut input = InputRecorder::new(config, &inputs, logical)?;
     let origin = Instant::now();
     clock.controller().mark_resume(origin);
@@ -1529,6 +1600,8 @@ mod tests {
             enable_microphone: false,
             enable_system_audio: false,
             audio_mode: Default::default(),
+            system_audio_gain_db: 0,
+            microphone_gain_db: 0,
             show_cursor: false,
             keyboard: None,
             mouse_trail_rgba: [0; 4],
@@ -1540,6 +1613,26 @@ mod tests {
             excluded_windows: Default::default(),
             excluded_processes: Default::default(),
         }
+    }
+    #[test]
+    fn deferred_audio_controls_share_initial_and_live_gains_with_capture() {
+        let mut config = test_config(PathBuf::from("output.mp4"));
+        config.system_audio_gain_db = -9;
+        config.microphone_gain_db = 6;
+        let session = DeferredRecordingSession::create(config, Default::default()).unwrap();
+        let capture = session.capture_controls.clone();
+        assert_eq!(capture.audio.gain_db(AudioSourceKind::System), -9);
+        assert_eq!(capture.audio.gain_db(AudioSourceKind::Microphone), 6);
+        let control = session.audio_control();
+        control.set_gain_db(AudioSourceKind::System, 12).unwrap();
+        control
+            .set_gain_db(AudioSourceKind::Microphone, -12)
+            .unwrap();
+        assert_eq!(capture.audio.gain_db(AudioSourceKind::System), 12);
+        assert_eq!(capture.audio.gain_db(AudioSourceKind::Microphone), -12);
+        let mut invalid = test_config(PathBuf::from("output.mp4"));
+        invalid.system_audio_gain_db = 25;
+        assert!(DeferredRecordingSession::create(invalid, Default::default()).is_err());
     }
     #[test]
     fn full_control_queue_rejects_transitions_without_changing_clock_and_cannot_block_stop() {

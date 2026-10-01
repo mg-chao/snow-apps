@@ -1,0 +1,6 @@
+/* Native bundle names and privacy prompts; Qt catalogs are separate. */
+"CFBundleName" = "Snow Shot Mini";
+"CFBundleDisplayName" = "Snow Shot Mini";
+"NSAppleEventsUsageDescription" = "Snow Shot Mini 讀取 Finder 中選取的影像檔案，以將其固定到螢幕。";
+"NSMicrophoneUsageDescription" = "啟用螢幕錄製的麥克風音訊後，Snow Shot Mini 將錄製麥克風聲音。";
+"NSAudioCaptureUsageDescription" = "啟用螢幕錄製的系統音訊後，Snow Shot Mini 將擷取系統聲音。";

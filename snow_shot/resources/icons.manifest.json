@@ -30,6 +30,14 @@
       "fit": "contain"
     },
     {
+      "variant": "brand",
+      "symbol": "SnowShotMiniLogo",
+      "name": "snow-shot-mini-logo",
+      "source": "../src/presentation/components/icons/resources/snow-shot-mini-logo.svg",
+      "colorModel": "monochrome",
+      "fit": "contain"
+    },
+    {
       "variant": "outlined",
       "symbol": "AlignBottom",
       "name": "align-bottom",

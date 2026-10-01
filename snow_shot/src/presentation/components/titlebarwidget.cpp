@@ -1,4 +1,5 @@
-﻿#include "snow_shot/presentation/components/titlebarwidget.h"
+#include "snow_shot/app/edition.h"
+#include "snow_shot/presentation/components/titlebarwidget.h"
 
 #include "snow_shot/presentation/components/icons/snowshoticons.h"
 #include "snow_shot/presentation/styles/thememanager.h"
@@ -39,7 +40,7 @@ QPixmap renderBrandLogo(int logicalHeight, const QColor& color, qreal devicePixe
         return {};
     }
 
-    constexpr qreal aspectRatio = 95.0 / 17.0;
+    constexpr qreal aspectRatio = snow_shot::app::edition::isMini ? 137.0 / 17.0 : 95.0 / 17.0;
     const int logicalWidth =
         static_cast<int>(std::llround(static_cast<qreal>(logicalHeight) * aspectRatio));
     if (logicalWidth <= 0) {
@@ -49,8 +50,11 @@ QPixmap renderBrandLogo(int logicalHeight, const QColor& color, qreal devicePixe
     adqt::icons::IconRenderRequest request;
     request.logicalSize = QSize(logicalWidth, logicalHeight);
     request.devicePixelRatio = devicePixelRatio;
-    return adqt::icons::renderIconPixmap(
-        custom_icons::brand::SnowShotLogo(adqt::icons::IconColors::primary(color)), request);
+    const auto colors = adqt::icons::IconColors::primary(color);
+    const auto logo = snow_shot::app::edition::isMini
+                          ? custom_icons::brand::SnowShotMiniLogo(colors)
+                          : custom_icons::brand::SnowShotLogo(colors);
+    return adqt::icons::renderIconPixmap(logo, request);
 }
 
 #ifndef Q_OS_MACOS
@@ -317,6 +321,10 @@ void TitleBarWidget::mousePressEvent(QMouseEvent* event) {
 }
 
 void TitleBarWidget::retranslateUi() {
+    if (snow_shot::app::edition::isMini) {
+        setAccessibleName(snow_shot::app::edition::productName());
+        window()->setWindowTitle(snow_shot::app::edition::productName());
+    }
 #ifndef Q_OS_MACOS
     m_closeButton->setToolTip(tr("Close"));
     m_closeButton->setAccessibleName(tr("Close"));
@@ -333,7 +341,6 @@ void TitleBarWidget::paintEvent(QPaintEvent* event) {
 
     QPainter painter(this);
     painter.setRenderHint(QPainter::SmoothPixmapTransform, true);
-
 #ifdef Q_OS_WIN
     const QColor color = window()->isActiveWindow()
                              ? m_logoColor

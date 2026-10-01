@@ -18,6 +18,7 @@ include(RustStaticLibrary)
 set(CMAKE_AUTOUIC OFF)
 set(CMAKE_AUTOMOC ON)
 set(CMAKE_AUTORCC ON)
+set(CMAKE_INSTALL_DEFAULT_COMPONENT_NAME SnowShot)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -269,27 +270,7 @@ if(NOT TARGET snow_visual_region_detector_c)
     snow_add_rust_static_library(snow_visual_region_detector_c PACKAGE snow-visual-region-detector-c MANIFEST_DIR "${SNOW_SHOT_CAPTURE_CRATES_DIR}" OUTPUT_NAME snow_visual_region_detector_c)
 endif()
 
-if(NOT TARGET snow_selected_text_c)
-    snow_add_rust_static_library(snow_selected_text_c
-        PACKAGE snow-selected-text-c
-        MANIFEST_DIR "${SNOW_SHOT_CAPTURE_CRATES_DIR}"
-        OUTPUT_NAME snow_selected_text_c
-        STRIP_MSVC_DIRECTIVES)
-    target_include_directories(snow_selected_text_c INTERFACE
-        "${SNOW_SHOT_CAPTURE_CRATES_DIR}/crates/snow-selected-text-c/include")
-    if(APPLE)
-        find_library(SNOW_SELECTED_TEXT_APPKIT_FRAMEWORK NAMES AppKit REQUIRED)
-        find_library(SNOW_SELECTED_TEXT_APPLICATION_SERVICES_FRAMEWORK
-            NAMES ApplicationServices REQUIRED)
-        find_library(SNOW_SELECTED_TEXT_CORE_FOUNDATION_FRAMEWORK NAMES CoreFoundation REQUIRED)
-        find_library(SNOW_SELECTED_TEXT_CORE_GRAPHICS_FRAMEWORK NAMES CoreGraphics REQUIRED)
-        target_link_libraries(snow_selected_text_c INTERFACE
-            "${SNOW_SELECTED_TEXT_APPKIT_FRAMEWORK}"
-            "${SNOW_SELECTED_TEXT_APPLICATION_SERVICES_FRAMEWORK}"
-            "${SNOW_SELECTED_TEXT_CORE_FOUNDATION_FRAMEWORK}"
-            "${SNOW_SELECTED_TEXT_CORE_GRAPHICS_FRAMEWORK}")
-    endif()
-endif()
+include("${CMAKE_CURRENT_SOURCE_DIR}/../cmake/SnowSelectedText.cmake")
 
 # OpenCV's contrib wechat_qrcode module backs in-process QR recognition and
 # objdetect's cv::barcode detector covers EAN/UPC 1-D symbologies; text
@@ -1381,12 +1362,16 @@ set(PROJECT_CXX_SOURCES
     src/presentation/tools/screenshottoolpalettestylemodel.cpp
     src/presentation/tools/screenshottoolpalettestylepresets.cpp
     src/presentation/tools/screenshottoolpalette.cpp
+    src/presentation/recording/recordingaudiogainpopover.cpp
+    src/presentation/recording/recordingaudiogainpopover.h
     src/presentation/tools/screenshottoolpalettehost.cpp
     src/presentation/toolbar/screenshottoolbarwindow.cpp
     src/presentation/recording/screenrecordingareawindow.cpp
     src/presentation/recording/recordingrenderjob.cpp
     src/presentation/recording/recordingrenderjob.h
     src/presentation/recording/screenrecordingcontroller.cpp
+    src/presentation/recording/recordingcolorsampler.cpp
+    src/presentation/recording/recordingcolorsampler.h
     src/presentation/recording/screenrecordingfolder.cpp
     src/presentation/recording/recordingcountdownoverlay.cpp
     src/presentation/recording/recordingcountdownoverlay.h
@@ -3767,6 +3752,8 @@ if(SNOW_SHOT_BUILD_TESTS)
         src/presentation/tools/screenshotfloatingtoolpalettewindow.cpp
         src/presentation/tools/screenshottoolbarmainpanel.cpp
         src/presentation/tools/screenshottoolpalette.cpp
+        src/presentation/recording/recordingaudiogainpopover.cpp
+        src/presentation/recording/recordingaudiogainpopover.h
         src/presentation/tools/screenshottoolpalettebuttons.cpp
         src/presentation/tools/screenshottoolpalettehost.cpp
         src/presentation/tools/screenshottoolpalettestylecontrols.cpp
@@ -4575,6 +4562,8 @@ if(SNOW_SHOT_BUILD_TESTS)
         src/presentation/tools/screenshottoolpalettestylemodel.cpp
         src/presentation/tools/screenshottoolpalettestylepresets.cpp
         src/presentation/tools/screenshottoolpalette.cpp
+        src/presentation/recording/recordingaudiogainpopover.cpp
+        src/presentation/recording/recordingaudiogainpopover.h
         src/presentation/styles/thememanager.cpp
         src/presentation/styles/themecolorscheme.cpp
     )
@@ -4764,6 +4753,8 @@ if(SNOW_SHOT_BUILD_TESTS)
         src/presentation/tools/screenshottoolpalettestylemodel.cpp
         src/presentation/tools/screenshottoolpalettestylepresets.cpp
         src/presentation/tools/screenshottoolpalette.cpp
+        src/presentation/recording/recordingaudiogainpopover.cpp
+        src/presentation/recording/recordingaudiogainpopover.h
         src/presentation/toolbar/screenshottoolbarwindow.cpp
         src/presentation/styles/thememanager.cpp
         src/presentation/styles/themecolorscheme.cpp
@@ -4799,6 +4790,8 @@ if(SNOW_SHOT_BUILD_TESTS)
 
     add_executable(snow-shot-global-canvas-tests
         tests/global_canvas_tests.cpp
+        src/presentation/services/screenshotcanvascolorsampler.cpp
+        src/presentation/services/screenshotcanvascolorsamplerwindow.cpp
         include/snow_shot/presentation/globalcanvascontroller.h
         src/presentation/globalcanvas/globalcanvascontroller.cpp
         src/presentation/globalcanvas/globalcanvasplatform.cpp
@@ -4822,6 +4815,8 @@ if(SNOW_SHOT_BUILD_TESTS)
         src/presentation/tools/screenshottoolpalettestylemodel.cpp
         src/presentation/tools/screenshottoolpalettestylepresets.cpp
         src/presentation/tools/screenshottoolpalette.cpp
+        src/presentation/recording/recordingaudiogainpopover.cpp
+        src/presentation/recording/recordingaudiogainpopover.h
         src/presentation/styles/thememanager.cpp
         src/presentation/styles/themecolorscheme.cpp
     )
@@ -4839,6 +4834,11 @@ if(SNOW_SHOT_BUILD_TESTS)
             COMMAND snow-shot-global-canvas-tests --native-only -platform windows)
         set_tests_properties(snow-shot-global-canvas-native-tests PROPERTIES
             LABELS "interactive;windows" RUN_SERIAL TRUE TIMEOUT 90
+            ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
+        add_test(NAME snow-shot-global-canvas-color-sampling-native-tests
+            COMMAND snow-shot-global-canvas-tests --color-sampling-native-only -platform windows)
+        set_tests_properties(snow-shot-global-canvas-color-sampling-native-tests PROPERTIES
+            LABELS "interactive;windows" RUN_SERIAL TRUE TIMEOUT 30
             ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
     endif()
     if(APPLE)
@@ -4861,6 +4861,10 @@ if(SNOW_SHOT_BUILD_TESTS)
     set_tests_properties(snow-shot-global-canvas-window-shadow-tests PROPERTIES LABELS "unit")
     add_test(NAME snow-shot-global-canvas-tests COMMAND snow-shot-global-canvas-tests -platform offscreen)
     set_tests_properties(snow-shot-global-canvas-tests PROPERTIES LABELS "unit" TIMEOUT 90
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
+    add_test(NAME snow-shot-global-canvas-color-sampling-tests
+        COMMAND snow-shot-global-canvas-tests --color-sampling-only -platform offscreen)
+    set_tests_properties(snow-shot-global-canvas-color-sampling-tests PROPERTIES LABELS "unit" TIMEOUT 30
         ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
 
     if(WIN32)
@@ -4886,6 +4890,8 @@ if(SNOW_SHOT_BUILD_TESTS)
             src/presentation/tools/screenshottoolpalettestylemodel.cpp
             src/presentation/tools/screenshottoolpalettestylepresets.cpp
             src/presentation/tools/screenshottoolpalette.cpp
+            src/presentation/recording/recordingaudiogainpopover.cpp
+            src/presentation/recording/recordingaudiogainpopover.h
             src/presentation/toolbar/screenshottoolbarwindow.cpp
             src/presentation/styles/thememanager.cpp
             src/presentation/styles/themecolorscheme.cpp
@@ -4951,6 +4957,8 @@ if(SNOW_SHOT_BUILD_TESTS)
             src/presentation/tools/screenshottoolpalettestylemodel.cpp
             src/presentation/tools/screenshottoolpalettestylepresets.cpp
             src/presentation/tools/screenshottoolpalette.cpp
+            src/presentation/recording/recordingaudiogainpopover.cpp
+            src/presentation/recording/recordingaudiogainpopover.h
             src/presentation/tools/screenshottoolbarperfinstrumentation.h
             src/presentation/toolbar/screenshottoolbarwindow.cpp
             src/presentation/styles/thememanager.cpp
@@ -5013,6 +5021,8 @@ if(SNOW_SHOT_BUILD_TESTS)
         src/presentation/tools/screenshottoolpalettestylemodel.cpp
         src/presentation/tools/screenshottoolpalettestylepresets.cpp
         src/presentation/tools/screenshottoolpalette.cpp
+        src/presentation/recording/recordingaudiogainpopover.cpp
+        src/presentation/recording/recordingaudiogainpopover.h
     )
     snow_shot_link_macos_window_platform(snow-shot-screen-recording-shortcut-tests)
     target_compile_definitions(snow-shot-screen-recording-shortcut-tests PRIVATE
@@ -5089,6 +5099,8 @@ if(SNOW_SHOT_BUILD_TESTS)
         src/presentation/tools/screenshottoolpalettestylemodel.cpp
         src/presentation/tools/screenshottoolpalettestylepresets.cpp
         src/presentation/tools/screenshottoolpalette.cpp
+        src/presentation/recording/recordingaudiogainpopover.cpp
+        src/presentation/recording/recordingaudiogainpopover.h
         src/presentation/toolbar/screenshottoolbarwindow.cpp
     )
     snow_shot_link_macos_window_platform(snow-shot-floating-toolbar-drag-tests)
@@ -5564,6 +5576,8 @@ if(SNOW_SHOT_BUILD_TESTS)
         src/presentation/tools/screenshottoolpalettestylemodel.cpp
         src/presentation/tools/screenshottoolpalettestylepresets.cpp
         src/presentation/tools/screenshottoolpalette.cpp
+        src/presentation/recording/recordingaudiogainpopover.cpp
+        src/presentation/recording/recordingaudiogainpopover.h
     )
     target_include_directories(snow-shot-toolbar-main-panel-tests PRIVATE
         "${CMAKE_CURRENT_SOURCE_DIR}/include"
@@ -5665,6 +5679,7 @@ if(SNOW_SHOT_BUILD_TESTS)
     add_executable(snow-shot-screen-recording-controller-tests
         ${_recording_test_sources}
         tests/screen_recording_controller_tests.cpp
+        tests/recording_color_sampler_tests.cpp
         include/snow_shot/presentation/screenrecordingcontroller.h
         include/snow_shot/presentation/screenrecordingfolder.h
         include/snow_shot/presentation/screenrecordingareawindow.h
@@ -5674,6 +5689,10 @@ if(SNOW_SHOT_BUILD_TESTS)
         src/presentation/recording/recordingrenderjob.cpp
         src/presentation/recording/recordingrenderjob.h
         src/presentation/recording/screenrecordingcontroller.cpp
+        src/presentation/recording/recordingcolorsampler.cpp
+        src/presentation/recording/recordingcolorsampler.h
+        src/presentation/services/screenshotcanvascolorsampler.cpp
+        src/presentation/services/screenshotcanvascolorsamplerwindow.cpp
         src/presentation/services/screenshotclipboardservice.cpp
         src/presentation/recording/screenrecordingfolder.cpp
         src/presentation/recording/recordingeffectpreview.cpp
@@ -5718,9 +5737,13 @@ if(SNOW_SHOT_BUILD_TESTS)
         "${CMAKE_CURRENT_SOURCE_DIR}/../test-support/fonts/recording_test_fonts.qrc")
     # Override only the test executable: exercise the real controller without
     # opening capture devices, recording the desktop, or exporting media.
-    foreach(_operation create_direct create_deferred finalize_deferred destroy start pause resume request_stop stop state)
+    foreach(_operation create_direct create_deferred finalize_deferred destroy start pause resume request_stop stop state set_audio_gain set_audio_metering take_audio_levels request_exclusions exclusion_status)
         target_compile_definitions(snow-shot-screen-recording-controller-tests PRIVATE
             "snow_recording_session_${_operation}=test_recording_session_${_operation}")
+    endforeach()
+    foreach(_operation create cancel destroy set_gain set_metering take_levels)
+        target_compile_definitions(snow-shot-screen-recording-controller-tests PRIVATE
+            "snow_recording_audio_monitor_${_operation}=test_recording_audio_monitor_${_operation}")
     endforeach()
     target_compile_definitions(snow-shot-screen-recording-controller-tests PRIVATE
         snow_recording_source_render_start=test_recording_source_render_start
@@ -5743,12 +5766,22 @@ if(SNOW_SHOT_BUILD_TESTS)
         add_test(NAME snow-shot-screen-recording-toolbar-ready-display-tests
             COMMAND snow-shot-screen-recording-controller-tests
                 --native-toolbar-ready-display-only -platform windows)
+        add_test(NAME snow-shot-recording-color-sampler-native-tests
+            COMMAND snow-shot-screen-recording-controller-tests
+                --color-sampling-native-only -platform windows)
+        set_tests_properties(snow-shot-recording-color-sampler-native-tests PROPERTIES
+            LABELS "interactive;windows" RUN_SERIAL TRUE TIMEOUT 30
+            ENVIRONMENT "QT_QPA_PLATFORM=windows"
+            ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:${SNOW_FFMPEG_ROOT}/bin")
         set_tests_properties(snow-shot-screen-recording-toolbar-display-tests
             snow-shot-screen-recording-toolbar-ready-display-tests PROPERTIES
             LABELS "interactive;windows" RUN_SERIAL TRUE TIMEOUT 30 SKIP_RETURN_CODE 77
             ENVIRONMENT "QT_QPA_PLATFORM=windows"
             ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
     endif()
+    add_test(NAME snow-shot-recording-color-sampler-tests
+        COMMAND snow-shot-screen-recording-controller-tests --color-sampling-only -platform offscreen)
+    set_tests_properties(snow-shot-recording-color-sampler-tests PROPERTIES LABELS "unit" TIMEOUT 60)
     add_test(NAME snow-shot-recording-style-wheel-tests
         COMMAND snow-shot-screen-recording-controller-tests --style-wheel-only -platform offscreen)
     set_tests_properties(snow-shot-recording-style-wheel-tests PROPERTIES LABELS "unit" TIMEOUT 60)
@@ -6848,6 +6881,8 @@ if(WIN32 AND SNOW_SHOT_BUILD_BENCHMARKS)
         src/presentation/tools/screenshottoolpalettestylemodel.cpp
         src/presentation/tools/screenshottoolpalettestylepresets.cpp
         src/presentation/tools/screenshottoolpalette.cpp
+        src/presentation/recording/recordingaudiogainpopover.cpp
+        src/presentation/recording/recordingaudiogainpopover.h
         src/presentation/tools/screenshottoolbarperfinstrumentation.h
         src/presentation/toolbar/screenshottoolbarwindow.cpp
         src/presentation/styles/thememanager.cpp
@@ -7048,6 +7083,8 @@ if(WIN32 AND SNOW_SHOT_BUILD_BENCHMARKS)
         src/presentation/tools/screenshotfloatingtoolpalettewindow.cpp
         src/presentation/tools/screenshottoolbarmainpanel.cpp
         src/presentation/tools/screenshottoolpalette.cpp
+        src/presentation/recording/recordingaudiogainpopover.cpp
+        src/presentation/recording/recordingaudiogainpopover.h
         src/presentation/tools/screenshottoolpalettebuttons.cpp
         src/presentation/tools/screenshottoolpalettehost.cpp
         src/presentation/tools/screenshottoolpalettestylecontrols.cpp
@@ -7590,9 +7627,12 @@ if(WIN32)
     set(ENV{PKG_CONFIG_PATH} "${_SNOW_SHOT_SAVED_PKG_CONFIG_PATH}")
     unset(_SNOW_SHOT_SAVED_PKG_CONFIG_PATH)
     # Canvas-only consumers also reach recording symbols in the bundled archive.
-    if(TARGET snow_shot_rust_ffi_bundle)
-        target_link_libraries(snow_shot_rust_ffi_bundle INTERFACE PkgConfig::SNOW_SHOT_FFMPEG)
-    endif()
+    foreach(_snow_rust_bundle IN ITEMS snow_shot_rust_ffi_bundle snow_shot_full_rust_ffi_bundle)
+        if(TARGET ${_snow_rust_bundle})
+            target_link_libraries(${_snow_rust_bundle} INTERFACE PkgConfig::SNOW_SHOT_FFMPEG)
+        endif()
+    endforeach()
+    unset(_snow_rust_bundle)
     target_link_libraries(snow_shot PRIVATE PkgConfig::SNOW_SHOT_FFMPEG)
     if(TARGET snow-shot-screen-recording-controller-tests)
         target_link_libraries(snow-shot-screen-recording-controller-tests PRIVATE PkgConfig::SNOW_SHOT_FFMPEG)
@@ -7639,24 +7679,40 @@ if(WIN32)
             "avutil-*.dll"
             "swresample-*.dll"
             "swscale-*.dll"
-            "libx264-*.dll"
-            "libx265*.dll"
-            "libwebp*.dll"
-            "libsharpyuv*.dll"
-            "openh264-*.dll"
-            "vpl*.dll"
         )
         set(SNOW_SHOT_FFMPEG_DLLS)
         foreach(_ffmpeg_dll_pattern IN LISTS SNOW_SHOT_FFMPEG_DLL_PATTERNS)
             file(GLOB _ffmpeg_matching_dlls
-                "${SNOW_SHOT_FFMPEG_BIN_DIR}/${_ffmpeg_dll_pattern}"
+                CONFIGURE_DEPENDS "${SNOW_SHOT_FFMPEG_BIN_DIR}/${_ffmpeg_dll_pattern}"
             )
             list(APPEND SNOW_SHOT_FFMPEG_DLLS ${_ffmpeg_matching_dlls})
         endforeach()
-        set(SNOW_SHOT_FFMPEG_RUNTIME_FILES ${SNOW_SHOT_FFMPEG_DLLS}
+        # FFmpeg is built with the release CRT even in Debug. Resolve its DLL
+        # imports from its own bin directory, including dependencies whose names
+        # differ from the application's Debug codecs (zlib1.dll, libvpl.dll).
+        set(_snow_ffmpeg_runtime_manifest
+            "${CMAKE_CURRENT_BINARY_DIR}/generated/ffmpeg-runtime.cmake")
+        execute_process(COMMAND "${CMAKE_COMMAND}"
+            "-DSNOW_RUNTIME_ROOT_LIBRARIES=${SNOW_SHOT_FFMPEG_DLLS}"
+            "-DSNOW_RUNTIME_MANIFEST=${_snow_ffmpeg_runtime_manifest}"
+            -P "${CMAKE_CURRENT_SOURCE_DIR}/../cmake/StageRuntimeDependencies.cmake"
+            COMMAND_ERROR_IS_FATAL ANY)
+        include("${_snow_ffmpeg_runtime_manifest}")
+        set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+            ${SNOW_RUNTIME_FILES})
+        set(SNOW_SHOT_FFMPEG_RUNTIME_FILES ${SNOW_RUNTIME_FILES}
             CACHE INTERNAL "FFmpeg runtime files installed with Snow Shot.")
+        unset(SNOW_RUNTIME_FILES)
     endif()
 endif()
+
+function(snow_shot_stage_ffmpeg_runtime target)
+    if(WIN32 AND NOT SNOW_SHOT_RELEASE_STATIC AND SNOW_SHOT_FFMPEG_RUNTIME_FILES)
+        add_custom_command(TARGET ${target} POST_BUILD
+            COMMAND "${CMAKE_COMMAND}" -E copy_if_different ${SNOW_SHOT_FFMPEG_RUNTIME_FILES}
+                "$<TARGET_FILE_DIR:${target}>" COMMAND_EXPAND_LISTS VERBATIM)
+    endif()
+endfunction()
 
 if(MSVC)
     # Parallel CL invocations otherwise race over the target's shared PDB.
@@ -7810,6 +7866,7 @@ install(FILES
 )
 
 if(WIN32 AND NOT SNOW_SHOT_RELEASE_STATIC)
+    snow_shot_stage_ffmpeg_runtime(snow_shot)
     if(SNOW_SHOT_FFMPEG_RUNTIME_FILES)
         install(FILES ${SNOW_SHOT_FFMPEG_RUNTIME_FILES}
             DESTINATION ${CMAKE_INSTALL_BINDIR}
@@ -8628,3 +8685,34 @@ foreach(_snow_target IN LISTS _snow_clipboard_consumers)
         target_link_libraries(${_snow_target} PRIVATE snow_shot_macos_clipboard)
     endif()
 endforeach()
+
+if(SNOW_SHOT_BUILD_TESTS)
+    add_test(NAME snow-shot-recording-audio-settings-tests
+        COMMAND snow-shot-application-storage-tests --recording-audio-only)
+    set_tests_properties(snow-shot-recording-audio-settings-tests PROPERTIES LABELS "unit")
+    add_test(NAME snow-shot-recording-audio-controller-tests
+        COMMAND snow-shot-screen-recording-controller-tests --audio-gain-only -platform offscreen)
+    set_tests_properties(snow-shot-recording-audio-controller-tests PROPERTIES LABELS "unit" TIMEOUT 60
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
+endif()
+
+if(SNOW_SHOT_BUILD_TESTS)
+    find_package(Qt6 REQUIRED COMPONENTS Test)
+    add_executable(snow-shot-recording-audio-gain-popover-tests
+        tests/recording_audio_gain_popover_tests.cpp
+        src/presentation/recording/recordingaudiogainpopover.cpp
+        src/presentation/recording/recordingaudiogainpopover.h)
+    set_target_properties(snow-shot-recording-audio-gain-popover-tests PROPERTIES AUTOMOC ON)
+    target_link_libraries(snow-shot-recording-audio-gain-popover-tests PRIVATE ant_design_qt Qt6::Widgets Qt6::Test)
+    target_include_directories(snow-shot-recording-audio-gain-popover-tests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/include")
+    get_target_property(_snow_audio_qt_core_type Qt6::Core TYPE)
+    if(_snow_audio_qt_core_type STREQUAL "STATIC_LIBRARY" AND TARGET Qt6::QOffscreenIntegrationPlugin)
+        target_link_libraries(snow-shot-recording-audio-gain-popover-tests PRIVATE Qt6::QOffscreenIntegrationPlugin)
+        qt_import_plugins(snow-shot-recording-audio-gain-popover-tests INCLUDE Qt6::QOffscreenIntegrationPlugin)
+    endif()
+    add_test(NAME snow-shot-recording-audio-gain-popover-tests
+        COMMAND snow-shot-recording-audio-gain-popover-tests -platform offscreen)
+    set_tests_properties(snow-shot-recording-audio-gain-popover-tests PROPERTIES LABELS "unit" TIMEOUT 60
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
+endif()
+include("${CMAKE_CURRENT_SOURCE_DIR}/../cmake/SnowShotMini.cmake")

@@ -1,5 +1,6 @@
 #pragma once
 
+#include "snow_shot/app/edition.h"
 #include "snow_shot/presentation/settings/settingsruntimesession.h"
 #include "snow_shot/storage/configurationschema.h"
 #include <QJsonArray>
@@ -29,6 +30,7 @@ auxiliaryIntegerSetting(const settings::SettingsFieldDescriptor& field) {
     return std::nullopt;
 }
 
+#if SNOW_SHOT_ENABLE_API_CONFIGURATION
 inline QJsonArray publicModels(const CustomAiModels& models) {
     QJsonArray result;
     for (const auto& model : models) {
@@ -39,12 +41,15 @@ inline QJsonArray publicModels(const CustomAiModels& models) {
     }
     return result;
 }
+#endif
 
 inline QJsonValue settingsJson(const QVariant& value) {
     if (value.metaType() == QMetaType::fromType<QColor>())
         return storage::colorToRgbaString(value.value<QColor>());
+#if SNOW_SHOT_ENABLE_API_CONFIGURATION
     if (value.metaType() == QMetaType::fromType<CustomAiModels>())
         return publicModels(value.value<CustomAiModels>());
+#endif
     if (value.metaType() == QMetaType::fromType<shortcuts::ShortcutBindingList>())
         return shortcuts::shortcutBindingsToJson(value.value<shortcuts::ShortcutBindingList>());
     if (value.metaType() == QMetaType::fromType<settings::SettingsGlobalMouseCombination>()) {

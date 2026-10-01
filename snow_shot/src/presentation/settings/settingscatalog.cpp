@@ -1,5 +1,7 @@
 #include "snow_shot/presentation/settings/settingscatalog.h"
 
+#include "snow_shot/presentation/editionfeatures.h"
+
 #include "antd_icons.h"
 #include "snow_shot/presentation/components/icons/snowshoticons.h"
 #include "snow_shot/storage/configurationschema.h"
@@ -120,6 +122,7 @@ SettingsItemDefinition screenshotOcrItem() {
         []() { return custom_outlined_icons::TextRecognition(); });
 }
 
+#if SNOW_SHOT_ENABLE_TEXT_TRANSLATION
 SettingsItemDefinition screenshotTranslationItem() {
     return quickActionItem(
         QStringLiteral("quick.screenshot-translation"),
@@ -131,6 +134,7 @@ SettingsItemDefinition screenshotTranslationItem() {
         QStringLiteral("global_shortcuts/screenshot_translation"),
         []() { return custom_outlined_icons::OcrTranslate(); });
 }
+#endif
 
 SettingsItemDefinition screenshotCopyItem() {
     return quickActionItem(
@@ -703,6 +707,7 @@ SettingsItemDefinition trayMenuOptionsItem() {
     };
 }
 
+#if SNOW_SHOT_ENABLE_TEXT_TRANSLATION
 SettingsItemDefinition translateSelectedTextItem() {
     return quickActionItem(
         QStringLiteral("quick.translate-selected-text"),
@@ -712,6 +717,7 @@ SettingsItemDefinition translateSelectedTextItem() {
         QStringLiteral("global_shortcuts/translate_selected_text"),
         []() { return custom_outlined_icons::OcrTranslate(); });
 }
+#endif
 
 SettingsItemDefinition toggleGlobalHotkeysItem() {
     return quickActionItem(
@@ -1131,6 +1137,7 @@ SettingsItemDefinition screenshotShutterSoundNotificationItem() {
         SettingsSwitchBinding::ScreenshotShutterSoundNotification);
 }
 
+#if SNOW_SHOT_ENABLE_QR_RECOGNITION
 SettingsItemDefinition screenshotAutoRecognizeQrCodeItem() {
     return switchItem(
         QStringLiteral("screenshot.auto-recognize-qr-code"),
@@ -1141,6 +1148,7 @@ SettingsItemDefinition screenshotAutoRecognizeQrCodeItem() {
         QStringLiteral("screenshot/auto_recognize_qr_code"),
         SettingsSwitchBinding::ScreenshotAutoRecognizeQrCode);
 }
+#endif
 
 SettingsItemDefinition screenshotConfirmBeforeExitingViaShortcutItem() {
     return switchItem(
@@ -1355,6 +1363,7 @@ SettingsItemDefinition pinAutoResizeItem() {
         SettingsSwitchBinding::PinAutoResizeWindow);
 }
 
+#if SNOW_SHOT_ENABLE_TEXT_TRANSLATION
 SettingsItemDefinition originalImageTranslationItem() {
     return switchItem(
         QStringLiteral("translation.original-image"),
@@ -1363,6 +1372,7 @@ SettingsItemDefinition originalImageTranslationItem() {
         QStringLiteral("screenshot_translation/original_image_translation"),
         SettingsSwitchBinding::OriginalImageTranslation);
 }
+#endif
 
 QVector<SettingsOptionDefinition> trayClickActionOptions() {
     return {
@@ -1397,6 +1407,7 @@ SettingsItemDefinition trayMiddleClickItem() {
         trayClickActionOptions());
 }
 
+#if SNOW_SHOT_ENABLE_TEXT_TRANSLATION
 SettingsItemDefinition translationLayoutProcessingItem() {
     return fixedSelectItem(
         QStringLiteral("translation.layout-processing"),
@@ -1409,6 +1420,7 @@ SettingsItemDefinition translationLayoutProcessingItem() {
          {QStringLiteral("original"),
           settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Original"))}});
 }
+#endif
 
 QVector<SettingsOptionDefinition> clarityOptions(bool includeHighRes) {
     QVector<SettingsOptionDefinition> options;
@@ -1740,22 +1752,28 @@ QVector<SettingsItemDefinition> screenshotShortcutItems() {
 
 QVector<SettingsItemDefinition> screenshotOtherShortcutItems() {
     return {
+#if SNOW_SHOT_ENABLE_TABLE_RECOGNITION
         localShortcutItem(SettingsLocalShortcutScope::Screenshot,
                           QStringLiteral("table_recognition"),
                           QT_TRANSLATE_NOOP("SettingsCatalog", "Table recognition"),
                           []() { return custom_outlined_icons::TableRecognition(); }),
+#endif
+#if SNOW_SHOT_ENABLE_QR_RECOGNITION
         localShortcutItem(SettingsLocalShortcutScope::Screenshot,
                           QStringLiteral("qr_code_recognition"),
                           QT_TRANSLATE_NOOP("SettingsCatalog", "Barcode recognition"),
                           []() { return custom_outlined_icons::ScanQrcode(); }),
+#endif
         localShortcutItem(SettingsLocalShortcutScope::Screenshot,
                           QStringLiteral("text_recognition"),
                           QT_TRANSLATE_NOOP("SettingsCatalog", "Text recognition"),
                           []() { return custom_outlined_icons::TextRecognition(); }),
+#if SNOW_SHOT_ENABLE_TEXT_TRANSLATION
         localShortcutItem(SettingsLocalShortcutScope::Screenshot,
                           QStringLiteral("text_translation"),
                           QT_TRANSLATE_NOOP("SettingsCatalog", "Text translation"),
                           []() { return custom_outlined_icons::OcrTranslate(); }),
+#endif
         localShortcutItem(SettingsLocalShortcutScope::Screenshot, QStringLiteral("undo"),
                           QT_TRANSLATE_NOOP("SettingsCatalog", "Undo"),
                           []() { return outlined_icons::Undo(); }),
@@ -2203,7 +2221,9 @@ QVector<SettingsPageDefinition> builtInPages() {
                         screenshotDelayItem(),
                         screenshotFixedItem(),
                         screenshotOcrItem(),
+#if SNOW_SHOT_ENABLE_TEXT_TRANSLATION
                         screenshotTranslationItem(),
+#endif
                         screenshotCopyItem(),
                         screenshotFullScreenItem(),
                         screenshotFocusedWindowItem(),
@@ -2244,7 +2264,9 @@ QVector<SettingsPageDefinition> builtInPages() {
                     {
                         openCaptureHistoryItem(),
                         globalCanvasItem(),
+#if SNOW_SHOT_ENABLE_TEXT_TRANSLATION
                         translateSelectedTextItem(),
+#endif
                         toggleGlobalHotkeysItem(),
                         toggleDisableOnFocusedFullscreenWindowItem(),
                     },
@@ -2295,10 +2317,12 @@ QVector<SettingsPageDefinition> builtInPages() {
                                         QT_TRANSLATE_NOOP("SettingsCatalog", "Text recognition"),
                                         SettingsGlobalMouseAction::ScreenshotOcr,
                                         QStringLiteral("global_mouse/screenshot_ocr")),
+#if SNOW_SHOT_ENABLE_TEXT_TRANSLATION
                         globalMouseItem(QStringLiteral("global-mouse.screenshot-translation"),
                                         QT_TRANSLATE_NOOP("SettingsCatalog", "Text translation"),
                                         SettingsGlobalMouseAction::ScreenshotTranslation,
                                         QStringLiteral("global_mouse/screenshot_translation")),
+#endif
                         globalMouseItem(QStringLiteral("global-mouse.screenshot-save"),
                                         QT_TRANSLATE_NOOP("SettingsCatalog", "Save as file"),
                                         SettingsGlobalMouseAction::ScreenshotSave,
@@ -2325,6 +2349,7 @@ QVector<SettingsPageDefinition> builtInPages() {
                 },
             },
         },
+#if SNOW_SHOT_ENABLE_TEXT_TRANSLATION
         {
             QStringLiteral("translation"),
             QStringLiteral("/tools/translation"),
@@ -2333,6 +2358,7 @@ QVector<SettingsPageDefinition> builtInPages() {
             {},
             SettingsPageKind::Translation,
         },
+#endif
         {
             QString::fromLatin1(FUNCTION_PAGE_ID),
             QStringLiteral("/settings/functionSettings"),
@@ -2345,11 +2371,19 @@ QVector<SettingsPageDefinition> builtInPages() {
                     settingsText(
                         QT_TRANSLATE_NOOP("SettingsCatalog", "Screenshot selection behavior")),
                     SettingsSectionReset::ScreenshotSettings,
-                    {smartSelectionItem(), selectionResizeModeItem(), screenshotOcrActionItem(),
-                     screenshotDoubleClickActionItem(), screenshotMiddleClickActionItem(),
-                     quickSelectionModificationItem(), screenshotShutterSoundNotificationItem(),
-                     screenshotConfirmBeforeExitingViaShortcutItem(),
-                     screenshotAutoRecognizeQrCodeItem()},
+                    {
+                        smartSelectionItem(),
+                        selectionResizeModeItem(),
+                        screenshotOcrActionItem(),
+                        screenshotDoubleClickActionItem(),
+                        screenshotMiddleClickActionItem(),
+                        quickSelectionModificationItem(),
+                        screenshotShutterSoundNotificationItem(),
+                        screenshotConfirmBeforeExitingViaShortcutItem(),
+#if SNOW_SHOT_ENABLE_QR_RECOGNITION
+                        screenshotAutoRecognizeQrCodeItem(),
+#endif
+                    },
                 },
                 {
                     QStringLiteral("pin-to-screen-settings"),
@@ -2370,6 +2404,7 @@ QVector<SettingsPageDefinition> builtInPages() {
                     {saveRecognitionResultAsImageItem(), defaultOcrFormattingItem(),
                      defaultOcrPunctuationItem()},
                 },
+#if SNOW_SHOT_ENABLE_TEXT_TRANSLATION
                 {
                     QStringLiteral("translation-settings"),
                     settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Translation")),
@@ -2378,6 +2413,7 @@ QVector<SettingsPageDefinition> builtInPages() {
                     SettingsSectionReset::Translation,
                     {originalImageTranslationItem(), translationLayoutProcessingItem()},
                 },
+#endif
                 {
                     QStringLiteral("drawing-settings"),
                     settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Drawing")),
@@ -2701,6 +2737,7 @@ QVector<SettingsPageDefinition> builtInPages() {
                 },
             },
         },
+#if SNOW_SHOT_ENABLE_API_CONFIGURATION
         {
             QStringLiteral("api-configuration"),
             QStringLiteral("/settings/apiConfiguration"),
@@ -2748,6 +2785,8 @@ QVector<SettingsPageDefinition> builtInPages() {
                 QStringLiteral("api_configuration/text_translation"),
                 SettingsCustomDefinition{SettingsCustomRenderer::TextTranslationConfigurations}}}}},
         },
+#endif
+#if SNOW_SHOT_ENABLE_EXTENDED_FEATURES
         {
             QStringLiteral("extended-features"),
             QStringLiteral("/settings/extended-features"),
@@ -2782,6 +2821,7 @@ QVector<SettingsPageDefinition> builtInPages() {
                    QStringLiteral("extended_features/standalone_translation_window"),
                    SettingsSwitchBinding::StandaloneTranslationWindow)}}},
         },
+#endif
         {
             QString::fromLatin1(SYSTEM_PAGE_ID),
             QStringLiteral("/settings/systemSettings"),
@@ -3015,16 +3055,20 @@ QVector<SettingsNavigationNode> builtInNavigation() {
             QString::fromLatin1(STORAGE_PAGE_ID),
             []() { return outlined_icons::Lock(); },
         },
+#if SNOW_SHOT_ENABLE_API_CONFIGURATION
         {
             QStringLiteral("nav.api-configuration"),
             QStringLiteral("api-configuration"),
             []() { return outlined_icons::Setting(); },
         },
+#endif
+#if SNOW_SHOT_ENABLE_EXTENDED_FEATURES
         {
             QStringLiteral("nav.extended-features"),
             QStringLiteral("extended-features"),
             []() { return outlined_icons::Function(); },
         },
+#endif
         {
             QStringLiteral("nav.system-settings"),
             QString::fromLatin1(SYSTEM_PAGE_ID),
@@ -3042,16 +3086,22 @@ QVector<SettingsNavigationNode> builtInNavigation() {
     about.pageId = QStringLiteral("about");
     about.iconFactory = []() { return outlined_icons::InfoCircle(); };
 
+#if SNOW_SHOT_ENABLE_TEXT_TRANSLATION
     SettingsNavigationPageDefinition translation;
     translation.id = QStringLiteral("nav.translation");
     translation.pageId = QStringLiteral("translation");
     translation.iconFactory = []() { return outlined_icons::Translation(); };
 
+#endif
     SettingsNavigationPageDefinition pinned;
     pinned.id = QStringLiteral("nav.pin-to-screen-management");
     pinned.pageId = QString::fromLatin1(PINNED_PAGE_ID);
     pinned.iconFactory = []() { return custom_outlined_icons::PinToScreenManagement(); };
-    return {globalHotkeys, globalMouse, history, pinned, translation, settingsGroup, about};
+    return {globalHotkeys, globalMouse, history, pinned,
+#if SNOW_SHOT_ENABLE_TEXT_TRANSLATION
+            translation,
+#endif
+            settingsGroup, about};
 }
 
 QString locationText(const SettingsLocation& location) {
@@ -3165,6 +3215,42 @@ SettingsCatalog::SettingsCatalog(QVector<SettingsPageDefinition> pages,
                                  SettingsLocation defaultLocation)
     : m_pages(std::move(pages)), m_navigation(std::move(navigation)),
       m_defaultLocation(std::move(defaultLocation)) {
+    if constexpr (!app::edition::qrRecognition || !app::edition::tableRecognition ||
+                  !app::edition::imageConversion || !app::edition::latexRecognition ||
+                  !app::edition::textTranslation || !app::edition::apiConfiguration ||
+                  !app::edition::extendedFeatures) {
+        const auto pageAvailable = [](const QString& id) {
+            return (app::edition::textTranslation || id != QStringLiteral("translation")) &&
+                   (app::edition::apiConfiguration || id != QStringLiteral("api-configuration")) &&
+                   (app::edition::extendedFeatures || id != QStringLiteral("extended-features"));
+        };
+        m_pages.removeIf([&pageAvailable](const SettingsPageDefinition& page) {
+            return !pageAvailable(page.id);
+        });
+        for (auto& page : m_pages) {
+            for (auto& section : page.sections) {
+                section.items.removeIf([](const SettingsItemDefinition& item) {
+                    return !item.configurationKey.isEmpty() &&
+                           !editionConfigurationKeyAvailable(item.configurationKey);
+                });
+            }
+            page.sections.removeIf(
+                [](const SettingsSectionDefinition& section) { return section.items.isEmpty(); });
+        }
+        for (auto& node : m_navigation) {
+            if (auto* group = std::get_if<SettingsNavigationGroupDefinition>(&node)) {
+                group->pages.removeIf(
+                    [&pageAvailable](const SettingsNavigationPageDefinition& page) {
+                        return !pageAvailable(page.pageId);
+                    });
+            }
+        }
+        m_navigation.removeIf([&pageAvailable](const SettingsNavigationNode& node) {
+            const auto* page = std::get_if<SettingsNavigationPageDefinition>(&node);
+            return page != nullptr && !pageAvailable(page->pageId);
+        });
+    }
+
     // Compile the authoring tree once.  Consumers can now resolve routes and
     // fields in constant-time without repeatedly walking every page.
     for (int pageIndex = 0; pageIndex < m_pages.size(); ++pageIndex) {
@@ -3485,6 +3571,18 @@ TrayCommandManifest buildBuiltInTrayCommandManifest() {
            GlobalShortcutAction::Screenshot,
            []() { return custom_outlined_icons::Exit(); }}}}};
 
+    if constexpr (!app::edition::textTranslation) {
+        for (auto& group : manifest.groups) {
+            group.options.removeIf([](const SettingsTrayMenuOptionDefinition& option) {
+                return option.shortcutAction == GlobalShortcutAction::ScreenshotTranslation ||
+                       option.shortcutAction == GlobalShortcutAction::TranslateSelectedText;
+            });
+        }
+        manifest.shortcutAdjustments.remove(
+            static_cast<int>(GlobalShortcutAction::ScreenshotTranslation));
+        manifest.shortcutAdjustments.remove(
+            static_cast<int>(GlobalShortcutAction::TranslateSelectedText));
+    }
     return manifest;
 }
 

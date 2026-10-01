@@ -186,8 +186,8 @@ mod windows_coordination {
             .unwrap_or_default();
         path.is_absolute()
             && path.file_name().and_then(|name| name.to_str()) == Some("coordinator.exe")
-            && parent_name.starts_with("snow-shot-updater-")
-            && parent_name.len() == "snow-shot-updater-".len() + 6
+            && parent_name.starts_with(crate::edition::TEMP_PREFIX)
+            && parent_name.len() == crate::edition::TEMP_PREFIX.len() + 6
             && parent
                 .parent()
                 .is_some_and(|base| platform::path_eq(base, &std::env::temp_dir()))
@@ -233,7 +233,7 @@ mod windows_coordination {
                 error,
             )
         })?;
-        let installed = root.join("bin/snow-shot-updater.exe");
+        let installed = root.join(crate::edition::UPDATER_PATH);
         require(
             platform::path_eq(&current, &installed),
             "coordinator_identity_invalid",
@@ -640,8 +640,8 @@ mod windows_coordination {
             .unwrap_or_default();
         require(
             actual.file_name().and_then(|name| name.to_str()) == Some("coordinator.exe")
-                && parent_name.starts_with("snow-shot-updater-")
-                && parent_name.len() == "snow-shot-updater-".len() + 6
+                && parent_name.starts_with(crate::edition::TEMP_PREFIX)
+                && parent_name.len() == crate::edition::TEMP_PREFIX.len() + 6
                 && !platform::path_has_reparse(parent),
             "coordinator_identity_invalid",
             "The update coordinator identity could not be verified",
@@ -666,7 +666,7 @@ mod windows_coordination {
 
     fn relaunch(root: &Path) -> Result<()> {
         spawn_detached(
-            &root.join("bin/snow_shot.exe"),
+            &root.join(crate::edition::APP_PATH),
             &["--show-main-window".to_owned()],
             Some(root),
         )
@@ -679,8 +679,8 @@ mod windows_coordination {
         let now = SystemTime::now();
         for entry in entries.flatten() {
             let name = entry.file_name().to_string_lossy().to_string();
-            if !name.starts_with("snow-shot-updater-")
-                || name.len() != "snow-shot-updater-".len() + 6
+            if !name.starts_with(crate::edition::TEMP_PREFIX)
+                || name.len() != crate::edition::TEMP_PREFIX.len() + 6
             {
                 continue;
             }
@@ -711,7 +711,7 @@ mod windows_coordination {
         validate_operation_shape(args, "--launch", false)?;
         prune_coordinators();
         let directory = Builder::new()
-            .prefix("snow-shot-updater-")
+            .prefix(crate::edition::TEMP_PREFIX)
             .tempdir()
             .map_err(|error| {
                 io_error(
@@ -814,7 +814,7 @@ mod windows_coordination {
             "The update coordinator identity could not be verified",
         )?;
         let digest = fsutil::sha256_file(&coordinator)?;
-        let installed = root.join("bin/snow-shot-updater.exe");
+        let installed = root.join(crate::edition::UPDATER_PATH);
         spawn_detached(&installed, &replace_mode(args, "--bootstrap"), Some(&root))?;
 
         let preapproved = args.iter().any(|argument| argument == "--preapproved");
@@ -829,7 +829,7 @@ mod windows_coordination {
                 verify_peer(
                     application.as_raw_handle(),
                     true,
-                    &root.join("bin/snow-shot-updater.exe"),
+                    &root.join(crate::edition::UPDATER_PATH),
                     Some(numeric_option(args, "--service-parent")?),
                     None,
                     None,
@@ -838,7 +838,7 @@ mod windows_coordination {
                 verify_peer(
                     application.as_raw_handle(),
                     true,
-                    &root.join("bin/snow_shot.exe"),
+                    &root.join(crate::edition::APP_PATH),
                     Some(numeric_option(args, "--parent")?),
                     None,
                     None,
@@ -931,7 +931,7 @@ mod windows_coordination {
         let root = path_option(args, "--target")?;
         transaction::validate_root(&root)?;
         transaction::installation_record(&root)?;
-        transaction::validate_target_path(&root, "bin/snow-shot-updater.exe")?;
+        transaction::validate_target_path(&root, crate::edition::UPDATER_PATH)?;
         validate_installed_bootstrap(args, &root)?;
         if elevated {
             require(
@@ -1018,12 +1018,12 @@ mod windows_coordination {
             validate_worker_copy(args, &root)?;
             let parent = platform::open_validated_process(
                 numeric_option(args, "--parent")?,
-                &root.join("bin/snow_shot.exe"),
+                &root.join(crate::edition::APP_PATH),
             )?;
             let service = if args.iter().any(|argument| argument == "--service-parent") {
                 Some(platform::open_validated_process(
                     numeric_option(args, "--service-parent")?,
-                    &root.join("bin/snow-shot-updater.exe"),
+                    &root.join(crate::edition::UPDATER_PATH),
                 )?)
             } else {
                 None
@@ -1121,7 +1121,7 @@ mod windows_coordination {
         #[test]
         fn generated_coordinator_path_is_accepted() {
             let directory = Builder::new()
-                .prefix("snow-shot-updater-")
+                .prefix(crate::edition::TEMP_PREFIX)
                 .tempdir()
                 .expect("temporary coordinator directory");
             let coordinator = directory.path().join("coordinator.exe");

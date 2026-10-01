@@ -138,7 +138,7 @@ class SampleSink final : public recording_perf::Sink {
 // windows, which the toolbar covers without a paintEvent override.
 class PaintObserver final : public QObject {
   public:
-    explicit PaintObserver(QApplication& app) : m_app(app) {
+    explicit PaintObserver(QApplication& app, const SampleSink& sink) : m_app(app), m_sink(sink) {
         m_app.installEventFilter(this);
     }
     ~PaintObserver() {
@@ -156,8 +156,10 @@ class PaintObserver final : public QObject {
                 m_toolbarPaintMs = elapsedMs();
             }
             if (watched == m_canvas) {
-                if (m_canvasPaintTimes.size() < kMaxTrackedCanvasPaints) {
-                    m_canvasPaintTimes.push_back(elapsedMs());
+                if (m_canvasPaintAfterFrame < 0 &&
+                    m_sink.hasMilestone(QStringLiteral("preview.first_frame_received"))) {
+                    m_canvasPaintAfterFrame = m_canvasPaints;
+                    recording_perf::milestone("paint.canvas_after_preview_frame");
                 }
                 ++m_canvasPaints;
             }
@@ -170,8 +172,8 @@ class PaintObserver final : public QObject {
         m_clock.start();
         m_areaPaintMs = -1;
         m_toolbarPaintMs = -1;
-        m_canvasPaintTimes.clear();
         m_canvasPaints = 0;
+        m_canvasPaintAfterFrame = -1;
         m_windowPaints = 0;
         m_idleBase = 0;
     }
@@ -190,13 +192,8 @@ class PaintObserver final : public QObject {
     double toolbarPaintMs() const {
         return m_toolbarPaintMs;
     }
-    int canvasPaints() const {
-        return m_canvasPaints;
-    }
-    double canvasPaintMs(int zeroBasedIndex) const {
-        return zeroBasedIndex >= 0 && zeroBasedIndex < m_canvasPaintTimes.size()
-                   ? m_canvasPaintTimes.at(zeroBasedIndex)
-                   : -1;
+    int canvasPaintAfterFrame() const {
+        return m_canvasPaintAfterFrame;
     }
     int idlePaints() const {
         return m_windowPaints - m_idleBase;
@@ -206,16 +203,16 @@ class PaintObserver final : public QObject {
     double elapsedMs() const {
         return m_clock.isValid() ? m_clock.elapsed() : 0;
     }
-    static constexpr int kMaxTrackedCanvasPaints = 64;
     QApplication& m_app;
+    const SampleSink& m_sink;
     QElapsedTimer m_clock;
     QPointer<QObject> m_area;
     QPointer<QObject> m_toolbar;
     QPointer<SnowCanvasWidget> m_canvas;
     double m_areaPaintMs = -1;
     double m_toolbarPaintMs = -1;
-    std::vector<double> m_canvasPaintTimes;
     int m_canvasPaints = 0;
+    int m_canvasPaintAfterFrame = -1;
     int m_windowPaints = 0;
     int m_idleBase = 0;
 };
@@ -255,7 +252,6 @@ SampleResult collectSample(PaintObserver& observer, SampleSink& sink, const QStr
 
     QElapsedTimer wall;
     recording_perf::installSink(&sink);
-    int canvasPaintsAtFrame = -1;
     {
         wall.start();
         recording_perf::beginSample(scenario.toLatin1().constData(), region.width(),
@@ -286,12 +282,12 @@ SampleResult collectSample(PaintObserver& observer, SampleSink& sink, const QStr
                     },
                     5000),
                 "recording windows must paint within the sample deadline");
-        const int canvasPaintsBeforeFrame = observer.canvasPaints();
-        canvasPaintsAtFrame = canvasPaintsBeforeFrame;
+        // The preview can arrive before the first area/toolbar paint. Observe
+        // frame-to-paint ordering at delivery so a completed paint is accepted.
         require(pumpUntil(
-                    [&sink, &observer, canvasPaintsBeforeFrame]() {
+                    [&sink, &observer]() {
                         return sink.hasMilestone(QStringLiteral("preview.first_frame_received")) &&
-                               observer.canvasPaints() > canvasPaintsBeforeFrame;
+                               observer.canvasPaintAfterFrame() >= 0;
                     },
                     5000),
                 "motion preview must deliver its first frame and repaint the canvas");
@@ -340,12 +336,15 @@ SampleResult collectSample(PaintObserver& observer, SampleSink& sink, const QStr
     }
     result.metrics.insert(QStringLiteral("paint.area_window"), observer.areaPaintMs());
     result.metrics.insert(QStringLiteral("paint.toolbar_window"), observer.toolbarPaintMs());
-    result.metrics.insert(QStringLiteral("paint.canvas_after_preview_frame"),
-                          observer.canvasPaintMs(canvasPaintsAtFrame));
+    require(sink.milestone(QStringLiteral("paint.canvas_after_preview_frame")) >=
+                sink.milestone(QStringLiteral("preview.first_frame_received")),
+            "the observed canvas paint must follow preview frame receipt");
     for (const QString& name : sink.counters().keys()) {
         result.counters.insert(name, sink.counters().value(name));
     }
     result.counters.insert(QStringLiteral("count.idle_paints"), observer.idlePaints());
+    result.counters.insert(QStringLiteral("count.canvas_paint_after_preview_frame_index"),
+                           observer.canvasPaintAfterFrame());
     return result;
 }
 
@@ -411,6 +410,7 @@ int runRecordingWindowStartupPerformanceBenchmark(QApplication& app) {
         int warmups = 3;
         int samples = 15;
         QString jsonPath;
+        QString selectedScenario;
         const QStringList arguments = app.arguments();
         for (int i = 1; i < arguments.size(); ++i) {
             if (arguments.at(i) == QStringLiteral("--warmups") && i + 1 < arguments.size()) {
@@ -419,6 +419,9 @@ int runRecordingWindowStartupPerformanceBenchmark(QApplication& app) {
                 samples = qMax(1, arguments.at(++i).toInt());
             } else if (arguments.at(i) == QStringLiteral("--json") && i + 1 < arguments.size()) {
                 jsonPath = arguments.at(++i);
+            } else if (arguments.at(i) == QStringLiteral("--scenario") &&
+                       i + 1 < arguments.size()) {
+                selectedScenario = arguments.at(++i);
             }
         }
 
@@ -437,11 +440,20 @@ int runRecordingWindowStartupPerformanceBenchmark(QApplication& app) {
             {"1920x1080", QSize(1920, 1080)},
             {"3840x2160", QSize(3840, 2160)},
         };
+        require(selectedScenario.isEmpty() ||
+                    std::any_of(scenarios.begin(), scenarios.end(),
+                                [&](const Scenario& scenario) {
+                                    return selectedScenario == QString::fromLatin1(scenario.name);
+                                }),
+                "unknown recording startup benchmark scenario");
 
-        PaintObserver observer(app);
         SampleSink sink;
+        PaintObserver observer(app, sink);
         QJsonArray scenarioReports;
         for (const Scenario& scenario : scenarios) {
+            if (!selectedScenario.isEmpty() &&
+                selectedScenario != QString::fromLatin1(scenario.name))
+                continue;
             const QRect region(16, 16, scenario.size.width(), scenario.size.height());
             double endToEndMs = 0;
             for (int i = 0; i < warmups; ++i) {

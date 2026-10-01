@@ -7,5 +7,8 @@ license.workspace = true
 [lib]
 crate-type = ["staticlib", "rlib"]
 
+[features]
+host-application-qos = ["snow-selected-text/host-application-qos"]
+
 [dependencies]
 snow-selected-text = { path = "../snow-selected-text" }

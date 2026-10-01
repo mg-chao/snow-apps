@@ -14,6 +14,7 @@ use snow_recording_model::{
     AudioSampleFormat, AudioTrackManifest, AudioTrackRole, AudioTrackRole::*,
 };
 
+use crate::control::AudioControlHandle;
 use crate::device::DeviceSelector;
 use crate::error::{AudioError, AudioResult};
 use crate::format::AudioFormat;
@@ -173,12 +174,20 @@ pub struct AudioRecordingSession {
 
 impl AudioRecordingSession {
     pub fn start(config: AudioRecordingConfig, clock: RecordingClock) -> AudioResult<Self> {
+        Self::start_with_controls(config, clock, AudioControlHandle::new())
+    }
+
+    pub fn start_with_controls(
+        config: AudioRecordingConfig,
+        clock: RecordingClock,
+        audio_control: AudioControlHandle,
+    ) -> AudioResult<Self> {
         config.validate()?;
         create_dir_all(&config.output_dir).map_err(AudioError::platform)?;
 
         let session = AudioSession::new()?;
         let stream_config = build_stream_config(&config);
-        let stream = session.start_streaming(stream_config)?;
+        let stream = session.start_streaming_with_controls(stream_config, audio_control)?;
         let stop_flag = Arc::new(AtomicBool::new(false));
         let pause_flag = Arc::new(AtomicBool::new(false));
         let worker_stop = Arc::clone(&stop_flag);
@@ -757,6 +766,91 @@ mod tests {
         let stream = build_stream_config(&config);
         assert!(stream.system.required);
         assert!(stream.microphone.required);
+    }
+
+    #[test]
+    fn controlled_recording_writes_gained_pcm_and_exposes_live_levels() {
+        use crate::backend::{AudioRecorderEngine, EngineEvent};
+        struct GainedEngine {
+            step: u64,
+            origin: std::time::Instant,
+            control: AudioControlHandle,
+            ready: std::sync::mpsc::Sender<f32>,
+        }
+        impl AudioRecorderEngine for GainedEngine {
+            fn poll(&mut self, _: Duration) -> AudioResult<EngineEvent> {
+                let step = self.step;
+                self.step += 1;
+                if step == 1 {
+                    assert_eq!(self.control.take_levels().microphone.peak, 501.0 / 32768.0);
+                    self.control.set_gain_db(AudioSourceKind::Microphone, 6)?;
+                }
+                if step < 2 {
+                    let mut packet = timed_packet(
+                        self.origin + Duration::from_millis((step + 1) * 20),
+                        1_000_000 + step as i64 * 200_000,
+                        step,
+                    );
+                    packet.data.fill(1000);
+                    return Ok(EngineEvent::Events(vec![AudioEvent::Packet(packet)]));
+                }
+                if step == 2 {
+                    self.ready
+                        .send(self.control.take_levels().microphone.peak)
+                        .unwrap();
+                }
+                std::thread::sleep(Duration::from_millis(1));
+                Ok(EngineEvent::Idle)
+            }
+        }
+        let directory = std::env::temp_dir().join(format!(
+            "snow-audio-controlled-recording-{}",
+            std::process::id()
+        ));
+        std::fs::create_dir_all(&directory).unwrap();
+        let config = AudioRecordingConfig {
+            output_dir: directory.clone(),
+            tracks: vec![AudioTrackConfig::microphone_default("microphone")],
+            ..Default::default()
+        };
+        let control = AudioControlHandle::new();
+        control
+            .set_gain_db(AudioSourceKind::Microphone, -6)
+            .unwrap();
+        control.set_metering(AudioSourceKind::Microphone, true);
+        let origin = std::time::Instant::now();
+        let (ready, receiver) = std::sync::mpsc::channel();
+        let stream = crate::streaming::AudioStreamHandle::start_with_controls(
+            Box::new(GainedEngine {
+                step: 0,
+                origin,
+                control: control.clone(),
+                ready,
+            }),
+            build_stream_config(&config),
+            control.clone(),
+        )
+        .unwrap();
+        assert_eq!(
+            receiver.recv_timeout(Duration::from_secs(2)).unwrap(),
+            1995.0 / 32768.0
+        );
+        let artifact = run_audio_recording_worker(
+            stream,
+            config,
+            RecordingClock::new(origin),
+            Arc::new(AtomicBool::new(true)),
+            Arc::new(AtomicBool::new(false)),
+        )
+        .unwrap();
+        let pcm = std::fs::read(&artifact.tracks[0].path).unwrap();
+        assert_eq!(pcm.len(), 1920 * 2 * 2);
+        assert_eq!(i16::from_le_bytes(pcm[..2].try_into().unwrap()), 501);
+        assert_eq!(
+            i16::from_le_bytes(pcm[pcm.len() - 2..].try_into().unwrap()),
+            1995
+        );
+        std::fs::remove_dir_all(directory).unwrap();
     }
 
     #[test]

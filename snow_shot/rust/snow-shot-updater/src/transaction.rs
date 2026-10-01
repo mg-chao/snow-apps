@@ -18,12 +18,14 @@ use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 use uuid::Uuid;
 
-pub const INSTALLATION_RECORD: &str = "snow-shot-installation.json";
-pub const UPDATE_WORK: &str = ".snow-shot-update";
+pub const INSTALLATION_RECORD: &str = crate::edition::INSTALLATION_RECORD;
+pub const UPDATE_WORK: &str = crate::edition::UPDATE_WORK;
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
 pub struct InstallationRecord {
     pub schema: u64,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub product: String,
     pub variant: String,
     pub version: String,
     pub files: Vec<UpdateFile>,
@@ -109,7 +111,7 @@ fn no_links(path: &Path) -> Result<()> {
 }
 
 fn selected_data_root(root: &Path) -> Result<Option<PathBuf>> {
-    let marker = root.join("bin/__data_directory");
+    let marker = root.join(crate::edition::MARKER_PATH);
     let mut data = if marker.exists() {
         String::from_utf8(read_limited(&marker, 32_768)?).map_err(|_| {
             UpdateError::new(
@@ -187,9 +189,9 @@ fn selected_data_root_if_known(root: &Path) -> Option<PathBuf> {
 fn is_payload_relative(relative: &str) -> bool {
     safe_relative_path(relative)
         && (relative.starts_with("bin/")
-            || relative.starts_with("share/snow-shot/")
+            || relative.starts_with(crate::edition::SHARE_PREFIX)
             || relative == INSTALLATION_RECORD)
-        && !relative.eq_ignore_ascii_case("bin/__data_directory")
+        && !relative.eq_ignore_ascii_case(crate::edition::MARKER_PATH)
 }
 
 pub fn validate_root(root: &Path) -> Result<()> {
@@ -235,7 +237,9 @@ pub fn installation_record(root: &Path) -> Result<InstallationRecord> {
         .unwrap_or_default()
         .to_owned();
     require(
-        schema == 1 && matches!(variant.as_str(), "online" | "offline" | "portable"),
+        schema == 1
+            && crate::edition::product_matches(object.get("product"))
+            && crate::edition::installation_variant(&variant),
         "invalid_installation_metadata",
         "This copy does not have valid Snow Shot installation metadata",
     )?;
@@ -243,6 +247,11 @@ pub fn installation_record(root: &Path) -> Result<InstallationRecord> {
     let files = parse_file_inventory(object.get("files"))?;
     Ok(InstallationRecord {
         schema,
+        product: object
+            .get("product")
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .to_owned(),
         variant,
         version,
         files,
@@ -693,7 +702,7 @@ pub fn apply_transaction(
     let mut previous_owned = BTreeSet::new();
     let mut paths = BTreeSet::new();
     for file in &package.files {
-        if file.path == "bin/__data_directory" {
+        if file.path == crate::edition::MARKER_PATH {
             continue;
         }
         validate_target_path(root, &file.path)?;
@@ -702,7 +711,7 @@ pub fn apply_transaction(
         next.insert(file.path.clone(), file);
     }
     for file in &installed.files {
-        if file.path == "bin/__data_directory" {
+        if file.path == crate::edition::MARKER_PATH {
             continue;
         }
         validate_target_path(root, &file.path)?;
@@ -802,7 +811,7 @@ pub fn apply_transaction(
         let ready = hooks.probe.map_or_else(
             || {
                 run_with_timeout(
-                    Command::new(root.join("bin/snow_shot.exe"))
+                    Command::new(root.join(crate::edition::APP_PATH))
                         .arg("--update-probe")
                         .arg(&release.version)
                         .stdout(Stdio::piped())
@@ -969,9 +978,9 @@ pub fn audit_release(directory: &Path, release: &UpdateRelease) -> Result<()> {
         let manifest = temporary.path().join("release-audit.json");
         write_atomic(&manifest, &release.envelope)?;
         let helper = temporary.path().join(if cfg!(windows) {
-            "bin/snow-shot-updater.exe"
+            crate::edition::UPDATER_PATH
         } else {
-            "bin/snow-shot-updater"
+            crate::edition::UPDATER_NONWINDOWS_PATH
         });
         let trusted = run_with_timeout(
             Command::new(helper)
@@ -986,7 +995,7 @@ pub fn audit_release(directory: &Path, release: &UpdateRelease) -> Result<()> {
             "Release signature is invalid or its signing key is not trusted",
         )?;
         let succeeded = run_with_timeout(
-            Command::new(temporary.path().join("bin/snow_shot.exe"))
+            Command::new(temporary.path().join(crate::edition::APP_PATH))
                 .arg("--update-probe")
                 .arg(&release.version),
             Duration::from_secs(60),
@@ -1145,12 +1154,13 @@ mod tests {
         let root = directory.path().join("雪图 SnowShot café 中文路径 🧊");
         fs::create_dir_all(root.join("bin")).unwrap();
         let old_app = b"old application";
-        fs::write(root.join("bin/snow_shot.exe"), old_app).unwrap();
+        fs::write(root.join(crate::edition::APP_PATH), old_app).unwrap();
         let old_record = InstallationRecord {
+            product: crate::edition::PRODUCT.to_owned(),
             schema: 1,
             variant: "online".to_owned(),
             version: "1.0.0".to_owned(),
-            files: vec![descriptor("bin/snow_shot.exe", old_app)],
+            files: vec![descriptor(crate::edition::APP_PATH, old_app)],
         };
         fs::write(
             root.join(INSTALLATION_RECORD),
@@ -1160,22 +1170,23 @@ mod tests {
 
         let new_app = b"new application";
         let new_record = InstallationRecord {
+            product: crate::edition::PRODUCT.to_owned(),
             schema: 1,
             variant: "online".to_owned(),
             version: "2.0.0".to_owned(),
-            files: vec![descriptor("bin/snow_shot.exe", new_app)],
+            files: vec![descriptor(crate::edition::APP_PATH, new_app)],
         };
         let new_record_bytes = serde_json::to_vec(&new_record).unwrap();
         let archive = directory.path().join("更新包 🧊.zip");
         write_zip(
             &archive,
             &[
-                ("bin/snow_shot.exe", new_app, None),
+                (crate::edition::APP_PATH, new_app, None),
                 (INSTALLATION_RECORD, &new_record_bytes, None),
             ],
         );
         let mut update_package = package(vec![
-            descriptor("bin/snow_shot.exe", new_app),
+            descriptor(crate::edition::APP_PATH, new_app),
             descriptor(INSTALLATION_RECORD, &new_record_bytes),
         ]);
         update_package.size = fs::metadata(&archive).unwrap().len();
@@ -1196,7 +1207,10 @@ mod tests {
             },
         )
         .unwrap();
-        assert_eq!(fs::read(root.join("bin/snow_shot.exe")).unwrap(), new_app);
+        assert_eq!(
+            fs::read(root.join(crate::edition::APP_PATH)).unwrap(),
+            new_app
+        );
         assert_eq!(
             serde_json::from_slice::<InstallationRecord>(
                 &fs::read(root.join(INSTALLATION_RECORD)).unwrap()
@@ -1216,15 +1230,16 @@ mod tests {
             fs::create_dir_all(root.join("bin")).unwrap();
             let old_app = b"old application";
             let old_helper = b"old helper";
-            fs::write(root.join("bin/snow_shot.exe"), old_app).unwrap();
-            fs::write(root.join("bin/snow-shot-updater.exe"), old_helper).unwrap();
+            fs::write(root.join(crate::edition::APP_PATH), old_app).unwrap();
+            fs::write(root.join(crate::edition::UPDATER_PATH), old_helper).unwrap();
             let old_record = InstallationRecord {
+                product: crate::edition::PRODUCT.to_owned(),
                 schema: 1,
                 variant: "online".to_owned(),
                 version: "1.0.0".to_owned(),
                 files: vec![
-                    descriptor("bin/snow_shot.exe", old_app),
-                    descriptor("bin/snow-shot-updater.exe", old_helper),
+                    descriptor(crate::edition::APP_PATH, old_app),
+                    descriptor(crate::edition::UPDATER_PATH, old_helper),
                 ],
             };
             fs::write(
@@ -1236,12 +1251,13 @@ mod tests {
             let new_app = b"new application";
             let new_helper = b"new helper";
             let new_record = InstallationRecord {
+                product: crate::edition::PRODUCT.to_owned(),
                 schema: 1,
                 variant: "online".to_owned(),
                 version: "2.0.0".to_owned(),
                 files: vec![
-                    descriptor("bin/snow_shot.exe", new_app),
-                    descriptor("bin/snow-shot-updater.exe", new_helper),
+                    descriptor(crate::edition::APP_PATH, new_app),
+                    descriptor(crate::edition::UPDATER_PATH, new_helper),
                 ],
             };
             let new_record_bytes = serde_json::to_vec(&new_record).unwrap();
@@ -1249,14 +1265,14 @@ mod tests {
             write_zip(
                 &archive,
                 &[
-                    ("bin/snow_shot.exe", new_app, None),
-                    ("bin/snow-shot-updater.exe", new_helper, None),
+                    (crate::edition::APP_PATH, new_app, None),
+                    (crate::edition::UPDATER_PATH, new_helper, None),
                     (INSTALLATION_RECORD, &new_record_bytes, None),
                 ],
             );
             let mut update_package = package(vec![
-                descriptor("bin/snow_shot.exe", new_app),
-                descriptor("bin/snow-shot-updater.exe", new_helper),
+                descriptor(crate::edition::APP_PATH, new_app),
+                descriptor(crate::edition::UPDATER_PATH, new_helper),
                 descriptor(INSTALLATION_RECORD, &new_record_bytes),
             ]);
             update_package.size = fs::metadata(&archive).unwrap().len();
@@ -1278,12 +1294,18 @@ mod tests {
             );
             if probe_succeeds {
                 result.unwrap();
-                assert_eq!(fs::read(root.join("bin/snow_shot.exe")).unwrap(), new_app);
+                assert_eq!(
+                    fs::read(root.join(crate::edition::APP_PATH)).unwrap(),
+                    new_app
+                );
                 assert!(!transaction_pending(&root));
-                assert!(work_path(&root, "backup/bin/snow_shot.exe").is_file());
+                assert!(work_path(&root, format!("backup/{}", crate::edition::APP_PATH)).is_file());
             } else {
                 assert_eq!(result.unwrap_err().code, "startup_probe_failed");
-                assert_eq!(fs::read(root.join("bin/snow_shot.exe")).unwrap(), old_app);
+                assert_eq!(
+                    fs::read(root.join(crate::edition::APP_PATH)).unwrap(),
+                    old_app
+                );
                 assert_eq!(
                     fs::read_to_string(work_path(&root, "failed-version.txt")).unwrap(),
                     "2.0.0"
@@ -1299,13 +1321,13 @@ mod tests {
             let directory = tempfile::tempdir().unwrap();
             let root = directory.path().join("SnowShot");
             fs::create_dir_all(root.join("bin")).unwrap();
-            fs::write(root.join("bin/snow_shot.exe"), b"application").unwrap();
+            fs::write(root.join(crate::edition::APP_PATH), b"application").unwrap();
             if let Some(bytes) = damaged {
                 fs::write(root.join(INSTALLATION_RECORD), bytes).unwrap();
             }
 
             uninstall(&root, false).unwrap();
-            assert!(root.join("bin/snow_shot.exe").is_file());
+            assert!(root.join(crate::edition::APP_PATH).is_file());
             assert!(!root.join(UPDATE_WORK).exists());
         }
     }
@@ -1317,14 +1339,15 @@ mod tests {
         fs::create_dir_all(root.join("bin")).unwrap();
         let application = b"application";
         let helper = b"helper";
-        fs::write(root.join("bin/snow_shot.exe"), application).unwrap();
+        fs::write(root.join(crate::edition::APP_PATH), application).unwrap();
         let record = InstallationRecord {
+            product: crate::edition::PRODUCT.to_owned(),
             schema: 1,
             variant: "online".to_owned(),
             version: "1.0.0".to_owned(),
             files: vec![
-                descriptor("bin/snow_shot.exe", application),
-                descriptor("bin/snow-shot-updater.exe", helper),
+                descriptor(crate::edition::APP_PATH, application),
+                descriptor(crate::edition::UPDATER_PATH, helper),
             ],
         };
         fs::write(
@@ -1334,8 +1357,8 @@ mod tests {
         .unwrap();
 
         uninstall(&root, false).unwrap();
-        assert!(!root.join("bin/snow_shot.exe").exists());
-        assert!(!root.join("bin/snow-shot-updater.exe").exists());
+        assert!(!root.join(crate::edition::APP_PATH).exists());
+        assert!(!root.join(crate::edition::UPDATER_PATH).exists());
     }
 
     #[test]
@@ -1345,13 +1368,14 @@ mod tests {
         fs::create_dir_all(root.join("bin")).unwrap();
         fs::create_dir_all(work_path(&root, "backup/bin")).unwrap();
         let application = b"application";
-        fs::write(root.join("bin/snow_shot.exe"), application).unwrap();
+        fs::write(root.join(crate::edition::APP_PATH), application).unwrap();
         fs::write(root.join("bin/user-data.dat"), b"user data").unwrap();
         let record = InstallationRecord {
+            product: crate::edition::PRODUCT.to_owned(),
             schema: 1,
             variant: "online".to_owned(),
             version: "1.0.0".to_owned(),
-            files: vec![descriptor("bin/snow_shot.exe", application)],
+            files: vec![descriptor(crate::edition::APP_PATH, application)],
         };
         fs::write(
             root.join(INSTALLATION_RECORD),
@@ -1361,7 +1385,7 @@ mod tests {
         fs::write(work_path(&root, "journal.json"), b"damaged journal").unwrap();
 
         uninstall(&root, false).unwrap();
-        assert!(!root.join("bin/snow_shot.exe").exists());
+        assert!(!root.join(crate::edition::APP_PATH).exists());
         assert!(root.join("bin/user-data.dat").is_file());
         assert!(!root.join(UPDATE_WORK).exists());
     }
@@ -1372,16 +1396,17 @@ mod tests {
         let root = directory.path().join("SnowShot");
         fs::create_dir_all(root.join("bin")).unwrap();
         let application = b"application";
-        fs::write(root.join("bin/snow_shot.exe"), application).unwrap();
+        fs::write(root.join(crate::edition::APP_PATH), application).unwrap();
         // The selected data directory covers one claimed file; removing that
         // entry must not block removal of the remaining owned files.
-        fs::write(root.join("bin/__data_directory"), b"missing-data").unwrap();
+        fs::write(root.join(crate::edition::MARKER_PATH), b"missing-data").unwrap();
         let record = InstallationRecord {
+            product: crate::edition::PRODUCT.to_owned(),
             schema: 1,
             variant: "online".to_owned(),
             version: "1.0.0".to_owned(),
             files: vec![
-                descriptor("bin/snow_shot.exe", application),
+                descriptor(crate::edition::APP_PATH, application),
                 descriptor("bin/missing-data/plugin.dll", b"plugin"),
             ],
         };
@@ -1392,7 +1417,7 @@ mod tests {
         .unwrap();
 
         uninstall(&root, false).unwrap();
-        assert!(!root.join("bin/snow_shot.exe").exists());
+        assert!(!root.join(crate::edition::APP_PATH).exists());
         assert!(!root.join(UPDATE_WORK).exists());
     }
 
@@ -1401,7 +1426,7 @@ mod tests {
         let directory = tempfile::tempdir().unwrap();
         let root = directory.path().join("SnowShot");
         fs::create_dir_all(root.join("bin/my-data")).unwrap();
-        fs::write(root.join("bin/__data_directory"), b"my-data").unwrap();
+        fs::write(root.join(crate::edition::MARKER_PATH), b"my-data").unwrap();
         assert_eq!(
             validate_target_path(&root, "bin/my-data/plugin.dll")
                 .unwrap_err()
@@ -1431,13 +1456,14 @@ mod tests {
         let root = directory.path().join("SnowShot");
         fs::create_dir_all(root.join("bin")).unwrap();
         let application = b"application";
-        fs::write(root.join("bin/snow_shot.exe"), application).unwrap();
-        fs::write(root.join("bin/__data_directory"), [0xff]).unwrap();
+        fs::write(root.join(crate::edition::APP_PATH), application).unwrap();
+        fs::write(root.join(crate::edition::MARKER_PATH), [0xff]).unwrap();
         let record = InstallationRecord {
+            product: crate::edition::PRODUCT.to_owned(),
             schema: 1,
             variant: "online".to_owned(),
             version: "1.0.0".to_owned(),
-            files: vec![descriptor("bin/snow_shot.exe", application)],
+            files: vec![descriptor(crate::edition::APP_PATH, application)],
         };
         fs::write(
             root.join(INSTALLATION_RECORD),
@@ -1450,7 +1476,7 @@ mod tests {
             "data_directory_invalid"
         );
         uninstall(&root, true).unwrap();
-        assert!(!root.join("bin/snow_shot.exe").exists());
+        assert!(!root.join(crate::edition::APP_PATH).exists());
     }
 
     #[test]
@@ -1459,15 +1485,20 @@ mod tests {
         let root = directory.path().join("SnowShot");
         fs::create_dir_all(root.join("bin")).unwrap();
         let application = b"application";
-        fs::write(root.join("bin/snow_shot.exe"), application).unwrap();
+        fs::write(root.join(crate::edition::APP_PATH), application).unwrap();
         fs::create_dir_all(work_path(&root, "user")).unwrap();
         fs::write(work_path(&root, "user/photo.png"), b"photo").unwrap();
-        fs::write(root.join("bin/__data_directory"), b"../.snow-shot-update").unwrap();
+        fs::write(
+            root.join(crate::edition::MARKER_PATH),
+            format!("../{}", crate::edition::UPDATE_WORK).as_bytes(),
+        )
+        .unwrap();
         let record = InstallationRecord {
+            product: crate::edition::PRODUCT.to_owned(),
             schema: 1,
             variant: "online".to_owned(),
             version: "1.0.0".to_owned(),
-            files: vec![descriptor("bin/snow_shot.exe", application)],
+            files: vec![descriptor(crate::edition::APP_PATH, application)],
         };
         fs::write(
             root.join(INSTALLATION_RECORD),
@@ -1480,7 +1511,7 @@ mod tests {
             "selected_data_collision"
         );
         uninstall(&root, false).unwrap();
-        assert!(!root.join("bin/snow_shot.exe").exists());
+        assert!(!root.join(crate::edition::APP_PATH).exists());
         assert_eq!(
             fs::read(work_path(&root, "user/photo.png")).unwrap(),
             b"photo"
@@ -1495,12 +1526,13 @@ mod tests {
         let root = directory.path().join("SnowShot");
         fs::create_dir_all(root.join("bin")).unwrap();
         let application = b"application";
-        fs::write(root.join("bin/snow_shot.exe"), application).unwrap();
+        fs::write(root.join(crate::edition::APP_PATH), application).unwrap();
         let record = InstallationRecord {
+            product: crate::edition::PRODUCT.to_owned(),
             schema: 1,
             variant: "online".to_owned(),
             version: "1.0.0".to_owned(),
-            files: vec![descriptor("bin/snow_shot.exe", application)],
+            files: vec![descriptor(crate::edition::APP_PATH, application)],
         };
         fs::write(
             root.join(INSTALLATION_RECORD),
@@ -1513,7 +1545,7 @@ mod tests {
             uninstall(&root, false).unwrap_err().code,
             "update_lock_failed"
         );
-        assert!(root.join("bin/snow_shot.exe").is_file());
+        assert!(root.join(crate::edition::APP_PATH).is_file());
     }
 
     #[test]
@@ -1522,13 +1554,14 @@ mod tests {
         let root = directory.path().join("SnowShot");
         fs::create_dir_all(root.join("bin/plugin.dll")).unwrap();
         let application = b"application";
-        fs::write(root.join("bin/snow_shot.exe"), application).unwrap();
+        fs::write(root.join(crate::edition::APP_PATH), application).unwrap();
         let record = InstallationRecord {
+            product: crate::edition::PRODUCT.to_owned(),
             schema: 1,
             variant: "online".to_owned(),
             version: "1.0.0".to_owned(),
             files: vec![
-                descriptor("bin/snow_shot.exe", application),
+                descriptor(crate::edition::APP_PATH, application),
                 descriptor("bin/plugin.dll", b"plugin"),
             ],
         };
@@ -1539,7 +1572,7 @@ mod tests {
         .unwrap();
 
         uninstall(&root, false).unwrap();
-        assert!(!root.join("bin/snow_shot.exe").exists());
+        assert!(!root.join(crate::edition::APP_PATH).exists());
         assert!(root.join("bin/plugin.dll").is_dir());
     }
 }

@@ -147,6 +147,8 @@ pub(crate) fn run() -> Result<()> {
         enable_system_audio: system,
         enable_microphone: microphone,
         audio_mode: mode,
+        system_audio_gain_db: 0,
+        microphone_gain_db: 0,
         show_cursor: effects,
         keyboard: effects.then(|| KeyboardOverlayConfig {
             font: None,

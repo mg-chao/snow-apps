@@ -1,4 +1,8 @@
 #include "snow_shot/presentation/screenrecordingshortcutcontroller.h"
+#include "recordingaudiogainpopover.h"
+#include "widgets/popover.h"
+
+#include <QKeyEvent>
 
 #include "snow_shot/presentation/screenrecordingareawindow.h"
 #include "snow_shot/presentation/screenrecordingtoolbarwindow.h"
@@ -73,6 +77,17 @@ ScreenRecordingShortcutController::ScreenRecordingShortcutController(
 bool ScreenRecordingShortcutController::canActivate(
     const ShortcutManager::ActivationContext& context) const {
     const auto* receiver = qobject_cast<QWidget*>(context.receiver);
+    if (m_toolbar && receiver) {
+        for (bool microphone : {false, true}) {
+            auto* popup = m_toolbar->palette()->recordingAudioGainPopover(microphone);
+            if (!popup || !popup->popover()->isVisible())
+                continue;
+            const QWidget* content = popup->popover()->contentWidget();
+            if ((content && (content == receiver || content->isAncestorOf(receiver))) ||
+                (context.event && context.event->key() == Qt::Key_Escape))
+                return false;
+        }
+    }
     return m_area != nullptr && m_toolbar != nullptr && m_area->isVisible() &&
            m_toolbar->isVisible() && receiver != nullptr && receiver->isVisible() &&
            !m_area->drawingBlocked() &&

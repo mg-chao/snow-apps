@@ -139,9 +139,15 @@ snow_shot_nsis_replace("@CPACK_NSIS_DELETE_FILES@" [=[
   !insertmacro SnowShotUninstallOwnedCleanup
 @CPACK_NSIS_DELETE_FILES@
 ]=])
-file(MAKE_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/snow-shot-nsis")
-file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/snow-shot-nsis/NSIS.template.in" "${_snow_nsis_template}")
-list(PREPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_BINARY_DIR}/snow-shot-nsis")
+if(NOT SNOW_SHOT_NSIS_DIRECTORY)
+    set(SNOW_SHOT_NSIS_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/snow-shot-nsis")
+endif()
+if(SNOW_SHOT_EXECUTABLE_NAME STREQUAL "snow_shot_mini")
+    string(REPLACE "snow-shot-updater.exe" "snow-shot-mini-updater.exe" _snow_nsis_template "${_snow_nsis_template}")
+endif()
+file(MAKE_DIRECTORY "${SNOW_SHOT_NSIS_DIRECTORY}")
+file(WRITE "${SNOW_SHOT_NSIS_DIRECTORY}/NSIS.template.in" "${_snow_nsis_template}")
+list(PREPEND CMAKE_MODULE_PATH "${SNOW_SHOT_NSIS_DIRECTORY}")
 set(_snow_nsis_guard "${CMAKE_CURRENT_LIST_DIR}/../snow_shot/packaging/RunningApplication.nsh")
 cmake_path(NATIVE_PATH _snow_nsis_guard NORMALIZE _snow_nsis_guard_native)
 set(_snow_nsis_owned_cleanup "${CMAKE_CURRENT_LIST_DIR}/../snow_shot/packaging/OwnedCleanup.nsh")

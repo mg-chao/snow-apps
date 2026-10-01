@@ -443,6 +443,14 @@ void AdPopover::preparePopup() {
     return;
   }
   popupPrepareToShow();
+  if (popupSurface_ && !popupSurface_->isVisible() && popupLayerMode_ == PopupLayerMode::QtTool &&
+      retainNativeSurfaceOnHide_) {
+    if (QWidget* anchor = effectiveAnchorWidget();
+        anchor && anchor->screen() && popupSurface_->screen() != anchor->screen()) {
+      popupSurface_->setScreen(anchor->screen());
+    }
+    detail::syncTopLevelToolTransientParent(popupSurface_, popupScopeWindow());
+  }
   if (!popupSurface_ || popupSurface_->isVisible()) {
     return;
   }
@@ -455,6 +463,26 @@ void AdPopover::preparePopup() {
     warmupFrame.fill(Qt::transparent);
     popupSurface_->render(&warmupFrame);
   }
+}
+
+void AdPopover::setRetainNativeSurfaceOnHide(bool retain) {
+  if (retainNativeSurfaceOnHide_ == retain) {
+    return;
+  }
+  retainNativeSurfaceOnHide_ = retain;
+  if (popupSurface_) {
+    static_cast<detail::OverlayPopupSurface*>(popupSurface_.data())
+        ->setNativeSurfaceRetained(retain);
+    if (!retain && !popupSurface_->isVisible()) {
+      detail::releaseTopLevelToolResourcesOnHide(popupSurface_);
+    }
+  }
+  emit retainNativeSurfaceOnHideChanged(retain);
+}
+
+void AdPopover::setSurfaceShowGuard(SurfaceShowGuard guard) {
+  surfaceShowGuard_ = std::move(guard);
+  refreshVisiblePopup();
 }
 
 void AdPopover::setVisibilityPolicy(VisibilityPolicy value) {
@@ -1192,6 +1220,10 @@ void AdPopover::setPopupOffset(int value) {
 void AdPopover::refreshPopupLayout() { refreshVisiblePopup(); }
 
 bool AdPopover::eventFilter(QObject* watched, QEvent* event) {
+  if (event && watched == popupSurface_ && event->type() == QEvent::WinIdChange &&
+      surfaceShowGuard_ && controller_) {
+    controller_->nativeSurfaceChanged();
+  }
   if (event && (watched == sourceWidget_ || watched == anchorWidget_)) {
     if (event->type() == QEvent::EnabledChange) {
       syncControllerConfiguration();
@@ -1399,6 +1431,8 @@ void AdPopover::ensurePopupSurface() {
   surface->setMouseTracking(true);
   surface->hide();
   popupSurface_ = surface;
+  surface->setNativeSurfaceRetained(retainNativeSurfaceOnHide_);
+  surface->installEventFilter(this);
 
   popupBodyHost_ = surface->bodyWidget();
   if (popupBodyHost_) {
@@ -1775,5 +1809,11 @@ bool AdPopover::popupReleaseOnHide() const {
 }
 
 void AdPopover::popupReleaseSurface() { releasePopupSurface(); }
+
+bool AdPopover::popupHasSurfaceShowGuard() const { return static_cast<bool>(surfaceShowGuard_); }
+
+bool AdPopover::popupSurfaceCanShow() const {
+  return !surfaceShowGuard_ || surfaceShowGuard_(popupSurface_);
+}
 
 }  // namespace adqt::widgets

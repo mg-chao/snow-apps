@@ -33,7 +33,8 @@
         "SNOW_APPS_BUILD_SNOW_IMAGE": "ON",
         "SNOW_APPS_BUILD_DRAW_ENGINE": "ON",
         "SNOW_APPS_BUILD_IMAGE_VIEWER": "ON",
-        "SNOW_APPS_BUILD_SNOW_SHOT": "ON"
+        "SNOW_APPS_BUILD_SNOW_SHOT": "ON",
+        "SNOW_APPS_BUILD_SNOW_SHOT_MINI": "ON"
       },
       "condition": {
         "type": "equals",
@@ -166,7 +167,8 @@
         "SNOW_APPS_STRICT_COMPILE": "ON",
         "SNOW_MACOS_CODESIGN_IDENTITY": "AUTO",
         "SNOW_IMAGE_PROFILE": "redistributable",
-        "SNOW_IMAGE_DEFAULT_LINKAGE": "static"
+        "SNOW_IMAGE_DEFAULT_LINKAGE": "static",
+        "SNOW_APPS_BUILD_SNOW_SHOT_MINI": "ON"
       }
     },
     {
@@ -262,7 +264,8 @@
         "SNOW_APPS_QT_STATIC": "OFF",
         "SNOW_APPS_PACKAGE_SNOW_SHOT": "OFF",
         "SNOW_APPS_API_BASE_URL": "http://localhost:8080",
-        "SNOW_APPS_ENABLE_RELEASE_OPTIMIZATION": "ON"
+        "SNOW_APPS_ENABLE_RELEASE_OPTIMIZATION": "ON",
+        "SNOW_APPS_BUILD_SNOW_SHOT_MINI": "OFF"
       }
     },
     {
@@ -280,7 +283,8 @@
         "SNOW_APPS_QT_STATIC": "OFF",
         "SNOW_APPS_PACKAGE_SNOW_SHOT": "OFF",
         "SNOW_APPS_API_BASE_URL": "https://snowshot.top",
-        "SNOW_APPS_ENABLE_RELEASE_OPTIMIZATION": "ON"
+        "SNOW_APPS_ENABLE_RELEASE_OPTIMIZATION": "ON",
+        "SNOW_APPS_BUILD_SNOW_SHOT_MINI": "OFF"
       }
     },
     {
@@ -293,7 +297,8 @@
         "SNOW_RUST_TARGET": "x86_64-apple-darwin",
         "CMAKE_BUILD_TYPE": "Release",
         "SNOW_APPS_PACKAGE_SNOW_SHOT": "ON",
-        "SNOW_APPS_ENABLE_RELEASE_OPTIMIZATION": "ON"
+        "SNOW_APPS_ENABLE_RELEASE_OPTIMIZATION": "ON",
+        "SNOW_APPS_BUILD_SNOW_SHOT_MINI": "OFF"
       }
     },
     {
@@ -308,7 +313,8 @@
         "SNOW_APPS_PACKAGE_SNOW_SHOT": "OFF",
         "SNOW_APPS_ENABLE_RELEASE_OPTIMIZATION": "OFF",
         "CMAKE_INTERPROCEDURAL_OPTIMIZATION_RELEASE": "OFF",
-        "SNOW_RUST_RELEASE_PROFILE": "release-fast"
+        "SNOW_RUST_RELEASE_PROFILE": "release-fast",
+        "SNOW_APPS_BUILD_SNOW_SHOT_MINI": "OFF"
       }
     }
   ],
@@ -341,7 +347,8 @@
       "configurePreset": "snow-shot-msvc-release",
       "configuration": "Release",
       "targets": [
-        "snow_shot"
+        "snow_shot",
+        "snow_shot_mini"
       ]
     },
     {
@@ -349,35 +356,40 @@
       "configurePreset": "snow-shot-msvc-fast",
       "configuration": "Release",
       "targets": [
-        "snow_shot"
+        "snow_shot",
+        "snow_shot_mini"
       ]
     },
     {
       "name": "build-snow-shot-macos-arm64-debug",
       "configurePreset": "snow-shot-macos-arm64-debug",
       "targets": [
-        "snow_shot"
+        "snow_shot",
+        "snow_shot_mini"
       ]
     },
     {
       "name": "build-snow-shot-macos-arm64-performance",
       "configurePreset": "snow-shot-macos-arm64-performance",
       "targets": [
-        "snow_shot"
+        "snow_shot",
+        "snow_shot_mini"
       ]
     },
     {
       "name": "build-snow-shot-macos-arm64-release",
       "configurePreset": "snow-shot-macos-arm64-release",
       "targets": [
-        "snow_shot"
+        "snow_shot",
+        "snow_shot_mini"
       ]
     },
     {
       "name": "build-snow-shot-macos-arm64-fast",
       "configurePreset": "snow-shot-macos-arm64-fast",
       "targets": [
-        "snow_shot"
+        "snow_shot",
+        "snow_shot_mini"
       ]
     },
     {

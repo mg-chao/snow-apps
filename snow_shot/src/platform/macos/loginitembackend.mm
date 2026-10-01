@@ -1,3 +1,4 @@
+#include "snow_shot/app/edition.h"
 #include "snow_shot/platform/macos/loginitemservice.h"
 #include "snow_shot/storage/applicationstorage.h"
 #include "snow_shot/storage/settingsadapters.h"
@@ -22,7 +23,8 @@ bool initialLoginLaunch = false;
 id launchObserver = nil;
 QString markerPath() {
     return QStandardPaths::writableLocation(QStandardPaths::GenericConfigLocation) +
-           QStringLiteral("/SnowShot/macos-login-item.ini");
+           (QStringLiteral("/") + app::edition::registryName() +
+            QStringLiteral("/macos-login-item.ini"));
 }
 LoginItemSnapshot query() {
     @autoreleasepool {
@@ -33,13 +35,18 @@ LoginItemSnapshot query() {
             QFileInfo(QDir::homePath() + QStringLiteral("/Applications")).canonicalFilePath();
         NSNumber* readOnly = nil;
         [bundle.bundleURL getResourceValue:&readOnly forKey:NSURLVolumeIsReadOnlyKey error:nil];
-        if (![bundle.bundleIdentifier isEqualToString:@"com.snowshot.snow_shot"] ||
+        if (![bundle.bundleIdentifier isEqualToString:app::edition::bundleId().toNSString()] ||
             !loginItemLocationAllowed(path, applications) || readOnly == nil ||
             readOnly.boolValue) {
             return {LoginItemStatus::Unavailable,
-                    text(QT_TRANSLATE_NOOP("LoginItemService",
-                                           "Move the signed Snow Shot app to /Applications or "
-                                           "~/Applications to use launch at login."))};
+                    (app::edition::isMini
+                         ? text(QT_TRANSLATE_NOOP("LoginItemService",
+                                                  "Move the signed %1 app to /Applications or "
+                                                  "~/Applications to use launch at login."))
+                               .arg(app::edition::productName())
+                         : text(QT_TRANSLATE_NOOP("LoginItemService",
+                                                  "Move the signed Snow Shot app to /Applications "
+                                                  "or ~/Applications to use launch at login.")))};
         }
         SecStaticCodeRef code = nullptr;
         OSStatus signature = SecStaticCodeCreateWithPath(
@@ -50,9 +57,14 @@ LoginItemSnapshot query() {
         }
         if (signature != errSecSuccess)
             return {LoginItemStatus::Unavailable,
-                    text(QT_TRANSLATE_NOOP("LoginItemService",
-                                           "Snow Shot needs a valid code signature to use launch "
-                                           "at login. Reinstall the signed app."))};
+                    (app::edition::isMini
+                         ? text(QT_TRANSLATE_NOOP("LoginItemService",
+                                                  "%1 needs a valid code signature to use launch "
+                                                  "at login. Reinstall the signed app."))
+                               .arg(app::edition::productName())
+                         : text(QT_TRANSLATE_NOOP("LoginItemService",
+                                                  "Snow Shot needs a valid code signature to use "
+                                                  "launch at login. Reinstall the signed app.")))};
         switch (SMAppService.mainAppService.status) {
         case SMAppServiceStatusNotRegistered:
             return {LoginItemStatus::Unregistered, {}};
@@ -64,9 +76,14 @@ LoginItemSnapshot query() {
             break;
         }
         return {LoginItemStatus::Unavailable,
-                text(QT_TRANSLATE_NOOP("LoginItemService",
-                                       "macOS could not find Snow Shot's login item. Reinstall the "
-                                       "app in Applications."))};
+                (app::edition::isMini
+                     ? text(QT_TRANSLATE_NOOP("LoginItemService",
+                                              "macOS could not find %1's login item. Reinstall the "
+                                              "app in Applications."))
+                           .arg(app::edition::productName())
+                     : text(QT_TRANSLATE_NOOP("LoginItemService",
+                                              "macOS could not find Snow Shot's login item. "
+                                              "Reinstall the app in Applications.")))};
     }
 }
 } // namespace

@@ -1,10 +1,16 @@
 #ifndef SNOW_SHOT_PRESENTATION_SCREENSHOTRECOGNITIONFILEEXPORT_H
 #define SNOW_SHOT_PRESENTATION_SCREENSHOTRECOGNITIONFILEEXPORT_H
 
+#include "snow_shot/app/edition.h"
+
 #include <QString>
+#if SNOW_SHOT_ENABLE_IMAGE_CONVERSION || SNOW_SHOT_ENABLE_LATEX_RECOGNITION ||                     \
+    SNOW_SHOT_ENABLE_QR_RECOGNITION
 #include <QStringList>
 
 class QWidget;
+#endif
+class ScreenshotRecognitionFileExport;
 
 enum class ScreenshotRecognitionFileKind { Html, Markdown, Qr, Latex };
 
@@ -13,6 +19,8 @@ struct ScreenshotRecognitionFileSnapshot {
     QString source;
 };
 
+#if SNOW_SHOT_ENABLE_IMAGE_CONVERSION || SNOW_SHOT_ENABLE_LATEX_RECOGNITION ||                     \
+    SNOW_SHOT_ENABLE_QR_RECOGNITION
 struct ScreenshotRecognitionFileSaveResult {
     QString path;
     QString error;
@@ -38,5 +46,6 @@ class ScreenshotRecognitionFileExport final {
     quickSave(const ScreenshotRecognitionFileSnapshot& snapshot, const QString& directory,
               const QString& baseName);
 };
+#endif
 
 #endif // SNOW_SHOT_PRESENTATION_SCREENSHOTRECOGNITIONFILEEXPORT_H

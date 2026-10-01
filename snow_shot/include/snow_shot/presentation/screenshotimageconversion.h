@@ -1,6 +1,7 @@
 #ifndef SNOW_SHOT_PRESENTATION_SCREENSHOTIMAGECONVERSION_H
 #define SNOW_SHOT_PRESENTATION_SCREENSHOTIMAGECONVERSION_H
 
+#include "snow_shot/app/edition.h"
 #include "snow_shot/network/snowshotapiclient.h"
 
 struct ScreenshotImageConversionEntry {
@@ -10,14 +11,17 @@ struct ScreenshotImageConversionEntry {
     int promptVersion = 1;
     QString modelFingerprint{};
 
+#if SNOW_SHOT_ENABLE_IMAGE_CONVERSION
     [[nodiscard]] bool isValid() const {
         return !model.isEmpty() && model.size() <= 256 && !source.trimmed().isEmpty() &&
                source.size() <= 4 * 1024 * 1024 && promptVersion == 1 &&
                (format == SnowShotImageConversionFormat::Markdown ||
                 format == SnowShotImageConversionFormat::Html);
     }
+#endif
 };
 
+#if SNOW_SHOT_ENABLE_IMAGE_CONVERSION
 // Only unwrap a complete, explicitly format-tagged response. Ordinary code fences are content.
 [[nodiscard]] inline QString normalizedImageConversionSource(const QString& source,
                                                              SnowShotImageConversionFormat format) {
@@ -73,5 +77,7 @@ struct ScreenshotImageConversionEntry {
     }
     return candidate;
 }
+
+#endif // SNOW_SHOT_ENABLE_IMAGE_CONVERSION
 
 #endif // SNOW_SHOT_PRESENTATION_SCREENSHOTIMAGECONVERSION_H

@@ -1,3 +1,4 @@
+#include "snow_shot/app/edition.h"
 #include "snow_shot/platform/windows/administratorlaunch.h"
 #include "snow_shot/platform/windows/autostartregistration.h"
 
@@ -134,7 +135,7 @@ bool peerMatches(QLocalSocket& socket, DWORD expected, bool serverPeer) {
 QString taskName(const QString& executable, const QString& sid) {
     const QByteArray identity =
         QDir::cleanPath(QDir::fromNativeSeparators(executable)).toCaseFolded().toUtf8();
-    return QStringLiteral("SnowShot-%1-%2")
+    return (app::edition::registryName() + QStringLiteral("-%1-%2"))
         .arg(sid,
              QString::fromLatin1(
                  QCryptographicHash::hash(identity, QCryptographicHash::Sha256).toHex().left(24)));
@@ -390,7 +391,8 @@ bool reconcileStartupRunValue(HKEY base, const QString& subKey, const QString& e
     wchar_t command[32768];
     DWORD bytes = sizeof(command);
     const LSTATUS read =
-        RegGetValueW(run, nullptr, L"SnowShot", RRF_RT_REG_SZ, nullptr, command, &bytes);
+        RegGetValueW(run, nullptr, app::edition::registryName().toStdWString().c_str(),
+                     RRF_RT_REG_SZ, nullptr, command, &bytes);
     if (read != ERROR_SUCCESS ||
         QString::fromWCharArray(command).compare(expectedCommand, Qt::CaseInsensitive) != 0) {
         return false;
@@ -404,11 +406,11 @@ bool reconcileStartupRunValue(HKEY base, const QString& subKey, const QString& e
     checkRegistry(opened);
     RegistryHandle writeGuard{write};
     if (replacementCommand.isEmpty()) {
-        checkRegistry(RegDeleteValueW(write, L"SnowShot"));
+        checkRegistry(RegDeleteValueW(write, app::edition::registryName().toStdWString().c_str()));
     } else {
         const std::wstring value = replacementCommand.toStdWString();
-        checkRegistry(RegSetValueExW(write, L"SnowShot", 0, REG_SZ,
-                                     reinterpret_cast<const BYTE*>(value.c_str()),
+        checkRegistry(RegSetValueExW(write, app::edition::registryName().toStdWString().c_str(), 0,
+                                     REG_SZ, reinterpret_cast<const BYTE*>(value.c_str()),
                                      static_cast<DWORD>((value.size() + 1) * sizeof(wchar_t))));
     }
     return true;
@@ -837,7 +839,8 @@ static AdministratorResult updateInstallationStartup(const QString& root,
 #ifdef Q_OS_WIN
     try {
         Tasks tasks;
-        tasks.executable = QDir(root).filePath(QStringLiteral("bin/snow_shot.exe"));
+        tasks.executable =
+            QDir(root).filePath((QStringLiteral("bin/") + app::edition::executableName()));
         ComPtr<IRegisteredTaskCollection> collection;
         check(tasks.folder->GetTasks(TASK_ENUM_HIDDEN, &collection));
         LONG count = 0;
@@ -866,7 +869,7 @@ static AdministratorResult updateInstallationStartup(const QString& root,
                 // registration; skipping it must not abort the uninstall.
                 continue;
             }
-            if (!candidate.startsWith(u"SnowShot-"))
+            if (!candidate.startsWith(app::edition::registryName() + QStringLiteral("-")))
                 continue;
             tasks.sid = canonicalAccountSid(owner);
             if (tasks.sid.isEmpty() || candidate != taskName(tasks.executable, tasks.sid))
@@ -878,7 +881,8 @@ static AdministratorResult updateInstallationStartup(const QString& root,
             const QString previousExecutable = tasks.executable;
             if (!replacementRoot.isEmpty()) {
                 tasks.executable =
-                    QDir(replacementRoot).filePath(QStringLiteral("bin/snow_shot.exe"));
+                    QDir(replacementRoot)
+                        .filePath((QStringLiteral("bin/") + app::edition::executableName()));
                 tasks.name = taskName(tasks.executable, tasks.sid);
                 if (tasks.current())
                     throw std::runtime_error(QT_TRANSLATE_NOOP(
@@ -890,7 +894,8 @@ static AdministratorResult updateInstallationStartup(const QString& root,
             if (!replacementRoot.isEmpty()) {
                 try {
                     tasks.executable =
-                        QDir(replacementRoot).filePath(QStringLiteral("bin/snow_shot.exe"));
+                        QDir(replacementRoot)
+                            .filePath((QStringLiteral("bin/") + app::edition::executableName()));
                     tasks.name = taskName(tasks.executable, tasks.sid);
                     tasks.create();
                 } catch (...) {
@@ -909,11 +914,12 @@ static AdministratorResult updateInstallationStartup(const QString& root,
         const QString startupCommand =
             QStringLiteral("\"%1\" --autostart").arg(QDir::toNativeSeparators(tasks.executable));
         const QString migratedCommand =
-            replacementRoot.isEmpty()
-                ? QString()
-                : QStringLiteral("\"%1\" --autostart")
-                      .arg(QDir::toNativeSeparators(
-                          QDir(replacementRoot).filePath(QStringLiteral("bin/snow_shot.exe"))));
+            replacementRoot.isEmpty() ? QString()
+                                      : QStringLiteral("\"%1\" --autostart")
+                                            .arg(QDir::toNativeSeparators(
+                                                QDir(replacementRoot)
+                                                    .filePath((QStringLiteral("bin/") +
+                                                               app::edition::executableName()))));
         // Enumerate loaded user hives, never confuse the installer account with the app owner.
         for (DWORD index = 0;; ++index) {
             wchar_t sid[256];

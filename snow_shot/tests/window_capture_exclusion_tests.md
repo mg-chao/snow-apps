@@ -3,7 +3,9 @@
 Snow Shot keeps capture controls visible while omitting them from captured display
 or region pixels. The scrolling overlay and toolbar follow the scrolling UI
 capture setting; the recording toolbar follows the recording toolbar setting.
-Exclusion failures are best effort and never hide a window.
+Toolbar exclusion failures are best effort. Audio gain popovers use a show guard
+when the toolbar is excluded: the native surface stays hidden until its required
+window ID is acknowledged, and remains hidden if the filter update fails.
 
 Windows uses `WDA_EXCLUDEFROMCAPTURE`. macOS 15+ saves the actual NSWindow sharing
 policy and temporarily sets it to `NSWindowSharingNone`; **ScreenCaptureKit content
@@ -18,16 +20,25 @@ The shared `SnowCaptureExclusions` C structure is accepted by desktop, monitor,
 region and continuous stream creation, and direct recording. Arrays are copied
 before creation returns, sorted and deduplicated, with a 4096-entry limit per
 input array. Empty lists may have null pointers. These IDs are macOS WindowServer
-IDs and process IDs, never NSView pointers. A session owns its fixed exclusion
-snapshot through pauses and native stream recreation. New native window IDs
-require a new session. Independent-window capture rejects nonempty filters.
+IDs and process IDs, never NSView pointers. Streams retain their exclusion
+snapshot through pauses and native stream recreation. Direct recording also
+supports asynchronous updates through `snow_recording_session_request_exclusions`.
+The request copies IDs and returns a generation immediately. On macOS, a worker
+enumerates all windows and verifies every required ID before updating all active
+ScreenCaptureKit filters. `snow_recording_session_exclusion_status` reports the
+requested/applied generations and pending or failed status. Show a new popup only
+after its generation is applied. Updates while paused configure filters for the
+next stream startup. Successful updates discard queued frames and cached desktop
+images from the previous filters. Independent-window capture rejects nonempty filters.
 Windows continues to use display affinity; the macOS lists do not implement
 filtering for Windows backends.
 
-Stream configuration version is 2; direct recording configuration version is 6.
+Stream configuration version is 2. Direct recording configuration version 6
+introduced exclusions; current callers use version 11, which adds independent
+`system_audio_gain_db` and `microphone_gain_db` fields in the range -24..24 dB.
+Versions 1 through 10 remain supported and default both gains to 0 dB.
 Recompile users of the expanded unversioned desktop/monitor/region configurations.
-Current direct recording callers use version 6; previous version decoding remains
-bounded by the supplied version and struct size.
+Previous version decoding remains bounded by the supplied version and struct size.
 
 Build and run the relevant checks:
 
@@ -58,3 +69,42 @@ of successful and failed window exclusions. It checks each C stream configuratio
 and verifies streams are joined before restoration. Run the native tests on
 both Apple Silicon and Intel and on macOS 15 before platform-wide qualification;
 one machine does not qualify other OS versions or mixed-display configurations.
+
+## Native audio gain qualification
+
+Run on Windows with DXGI and WGC, and on macOS 15+ with ScreenCaptureKit. Use a
+constant-level source, enable system audio and microphone, and inspect the exported
+MP4 as well as the live UI. Repeat with mixed audio and separate audio tracks.
+
+- In ready, recording and paused states, hover each enabled audio button. Gain
+  starts at 0 dB in the middle; −12/+12 dB lowers/raises the processed peak and the
+  exported audio. The thumb stays at the gain position while the track follows
+  audio. Check Reset, arrow/Page/Home/End keys, drag beyond the popover, clipping,
+  Escape without stopping recording, outside click and application deactivation.
+  An idle audio-off source permits gain editing with a zero meter. A source not
+  captured by the active session stays disabled. GIF/WebP expose no gain popover.
+- With **Capture toolbar in recording** on, the toolbar and visible gain popover
+  appear in captured pixels. With it off, both stay usable on screen and are
+  absent from every exported frame. Open/close and alternate sources repeatedly;
+  no old meter value, native window flash or hidden preview should persist.
+- Move the toolbar between monitors with different scales, then disconnect and
+  reconnect its monitor while the popover is open. Topology changes close the
+  popover before Qt moves native windows. Reopening must exclude the replacement
+  HWND/NSWindow before showing it; the first exported frame must remain clean.
+- Pause with each source enabled, change its gain and open its meter, then resume.
+  The paused meter continues to respond, no audio is added to the paused export,
+  and resumed audio uses the new gain. Any paused exclusion update must also apply
+  to streams created on resume or after a capture-source topology change.
+- Using a debugger or instrumented native build, defer exclusion completion,
+  close/reopen the popover, replace its native ID, and deliver an old completion.
+  A macOS acknowledgment for an older generation or different IDs must not expose
+  the current surface. While hidden, no audio meter timer or preview is active.
+- Fail Windows display affinity, or on macOS fail enumeration of a required
+  hidden window and fail one of several ScreenCaptureKit filter updates. The
+  popover remains hidden with one visible error; partial success never releases
+  the show guard. Remove the fault and reopen to verify retry. Updated filters
+  must discard queued/cached frames from their previous exclusion snapshot.
+- Stop, fail startup, close during pending exclusion, and destroy the controller
+  with a popover open. No late acknowledgment reopens it, no preview capture or
+  polling survives, and original native capture-sharing policies are restored.
+  Start another recording to verify gain persistence and fresh exclusion state.

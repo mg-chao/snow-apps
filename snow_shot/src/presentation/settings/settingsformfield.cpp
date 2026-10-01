@@ -1,6 +1,9 @@
 #include "snow_shot/presentation/settings/settingsformfield.h"
 
+#include "snow_shot/app/edition.h"
+#if SNOW_SHOT_ENABLE_API_CONFIGURATION
 #include "snow_shot/network/snowshotapiclient.h"
+#endif
 #include "snow_shot/storage/configurationschema.h"
 #include "widgets/radio.h"
 
@@ -131,8 +134,10 @@ struct SettingsFormField::Impl {
                     const auto handle = fields::text(metadata, options);
                     field = handle.field;
                     editor = handle.editor;
+#if SNOW_SHOT_ENABLE_API_CONFIGURATION
                     if (payload.binding == SettingsTextBinding::ServerUrl)
                         handle.editor->setPlaceholderText(SnowShotApiClient::configuredBaseUrl());
+#endif
                 }
             },
             definition.payload);
@@ -318,12 +323,15 @@ struct SettingsFormField::Impl {
                        &descriptor.definition->payload)) {
             qobject_cast<DirectoryPathInput*>(editor)->setBrowseButtonText(
                 directory->buttonText.translated());
-        } else if (const auto* text =
-                       std::get_if<SettingsTextDefinition>(&descriptor.definition->payload);
-                   text != nullptr && text->binding == SettingsTextBinding::ServerUrl) {
+        }
+#if SNOW_SHOT_ENABLE_API_CONFIGURATION
+        else if (const auto* text =
+                     std::get_if<SettingsTextDefinition>(&descriptor.definition->payload);
+                 text != nullptr && text->binding == SettingsTextBinding::ServerUrl) {
             qobject_cast<adqt::widgets::AdLineEdit*>(editor)->setPlaceholderText(
                 SnowShotApiClient::configuredBaseUrl());
         }
+#endif
         sync();
     }
 

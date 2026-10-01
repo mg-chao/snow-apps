@@ -2527,8 +2527,42 @@ void pinnedManagementConfigurationAndTrayMigration() {
 #endif
 }
 
+void recordingGainSettingsPersistAndValidate() {
+    QTemporaryDir temporary;
+    require(temporary.isValid(), "audio gain storage fixture exists");
+    const QString executable = temporary.filePath(QStringLiteral("bin"));
+    require(QDir().mkpath(executable), "audio gain executable directory exists");
+    auto& appStorage = initialize(executable, temporary.filePath(QStringLiteral("settings")));
+    const storage::RecordingSettings settings;
+    require(settings.microphoneGainDb() == 0 && settings.systemAudioGainDb() == 0,
+            "both new and legacy recording gains default to zero");
+    require(settings.setMicrophoneGainDb(-24) && settings.setSystemAudioGainDb(24),
+            "independent gains accept symmetric endpoints");
+    require(!settings.setMicrophoneGainDb(-25) && !settings.setSystemAudioGainDb(25) &&
+                settings.microphoneGainDb() == -24 && settings.systemAudioGainDb() == 24,
+            "out of range gains reject without replacing values");
+    require(appStorage.configuration().flushNow().success, "gain preferences flush");
+    initialize(executable, temporary.filePath(QStringLiteral("settings")));
+    require(settings.microphoneGainDb() == -24 && settings.systemAudioGainDb() == 24,
+            "independent gain preferences survive restart");
+    require(appStorage.configuration().setValues(
+                {{QStringLiteral("screen_recording/microphone_gain_db"),
+                  storage::ConfigurationSchema::defaultValue(
+                      QStringLiteral("screen_recording/microphone_gain_db"))},
+                 {QStringLiteral("screen_recording/system_audio_gain_db"),
+                  storage::ConfigurationSchema::defaultValue(
+                      QStringLiteral("screen_recording/system_audio_gain_db"))}}) &&
+                settings.microphoneGainDb() == 0 && settings.systemAudioGainDb() == 0,
+            "gain defaults restore unity independently");
+    appStorage.shutdown();
+}
+
 int main(int argc, char** argv) {
     LifetimeObservedApplication application(argc, argv);
+    if (application.arguments().contains(QStringLiteral("--recording-audio-only"))) {
+        recordingGainSettingsPersistAndValidate();
+        return 0;
+    }
     if (application.arguments().contains(QStringLiteral("--recording-post-processing-only"))) {
         recordingPostProcessingPreferencesPersistAndValidate();
         return 0;

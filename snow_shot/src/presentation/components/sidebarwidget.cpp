@@ -185,9 +185,12 @@ void SidebarWidget::rebuildNavigationModel() {
                const snow_shot::presentation::settings::SettingsNavigationPageDefinition&
                    navigationPage) {
             const auto* page = m_registry.catalog().page(navigationPage.pageId);
-            if (page == nullptr ||
-                (page->id == QStringLiteral("translation") &&
-                 !snow_shot::storage::ExtendedFeaturesSettings().translationPageEnabled())) {
+            if (page == nullptr
+#if SNOW_SHOT_ENABLE_EXTENDED_FEATURES
+                || (page->id == QStringLiteral("translation") &&
+                    !snow_shot::storage::ExtendedFeaturesSettings().translationPageEnabled())
+#endif
+            ) {
                 return;
             }
             m_leafRoutes.push_back(page->route);
@@ -343,6 +346,7 @@ SidebarWidget::SidebarWidget(const snow_shot::presentation::settings::SettingsRe
     const auto* defaultPage = catalog.page(catalog.defaultLocation().pageId);
     setCurrentRoute(defaultPage != nullptr ? defaultPage->route : QStringLiteral("/"));
     setCollapsed(snow_shot::storage::InterfaceSettings().sidebarCollapsed());
+#if SNOW_SHOT_ENABLE_EXTENDED_FEATURES
     connect(&snow_shot::storage::ApplicationStorage::instance().configuration(),
             &snow_shot::storage::ConfigurationStore::valueChanged, this,
             [this](const QString& key, const QJsonValue&) {
@@ -357,6 +361,7 @@ SidebarWidget::SidebarWidget(const snow_shot::presentation::settings::SettingsRe
                 rebuildNavigationModel();
                 applyRouteSelection(route, route != m_currentRoute);
             });
+#endif
 }
 
 void SidebarWidget::changeEvent(QEvent* event) {

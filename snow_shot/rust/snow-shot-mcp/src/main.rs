@@ -1,4 +1,5 @@
 mod app_client;
+mod edition;
 mod schemas;
 mod server;
 mod stdio_transport;
@@ -28,7 +29,9 @@ async fn run() -> Result<()> {
             "--launch-app" => launch_app = true,
             "--help" | "-h" => {
                 eprintln!(
-                    "snow-shot-mcp [--launch-app]\n  --launch-app  Start the adjacent Snow Shot app when unavailable; saved MCP enablement is respected."
+                    "{} [--launch-app]\n  --launch-app  Start the adjacent {} app when unavailable; saved MCP enablement is respected.",
+                    edition::MCP_NAME,
+                    edition::PRODUCT_NAME
                 );
                 return Ok(());
             }

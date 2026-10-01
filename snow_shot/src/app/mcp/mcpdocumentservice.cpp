@@ -1,3 +1,4 @@
+#include "snow_shot/app/mcp/mcpedition.h"
 #include "snow_shot/platform/applicationqos.h"
 #include "snow_shot/app/mcp/mcpdocumentservice.h"
 #include "snow_shot/app/mcp/mcpjobregistry.h"
@@ -2397,6 +2398,10 @@ void McpDocumentService::request(const ScreenshotMcpRequest& request,
     if (s.stopped || !handles(request.method) || request.connectionId == 0) {
         done(failure(request,
                      s.stopped ? QStringLiteral("disabled") : QStringLiteral("method_not_found")));
+        return;
+    }
+    if (!editionRequestEnabled(request.method, request.params)) {
+        done(failure(request, QStringLiteral("unsupported")));
         return;
     }
     if (readOnly(request.method)) {

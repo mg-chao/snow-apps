@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleInfoDictionaryVersion</key><string>6.0</string>
+    <key>LSApplicationCategoryType</key><string>public.app-category.productivity</string>
+    <key>NSHumanReadableCopyright</key><string>${SNOW_SHOT_COPYRIGHT}</string>
+    <key>CFBundleExecutable</key><string>${MACOSX_BUNDLE_EXECUTABLE_NAME}</string>
+    <key>CFBundleIdentifier</key><string>com.snowshot.snow_shot_mini</string>
+    <key>CFBundleName</key><string>Snow Shot Mini</string>
+    <key>CFBundleDisplayName</key><string>Snow Shot Mini</string>
+    <key>LSUIElement</key><true/>
+    <key>CFBundleIconFile</key><string>${MACOSX_BUNDLE_ICON_FILE}</string>
+    <key>CFBundlePackageType</key><string>APPL</string>
+    <key>CFBundleDevelopmentRegion</key><string>en</string>
+    <!-- Qt catalogs live in resources; AppKit needs the supported languages here. -->
+    <key>CFBundleLocalizations</key>
+    <array>
+        <string>en</string>
+        <string>zh-Hans</string>
+        <string>zh-Hant</string>
+    </array>
+    <key>CFBundleVersion</key><string>${MACOSX_BUNDLE_BUNDLE_VERSION}</string>
+    <key>CFBundleShortVersionString</key><string>${MACOSX_BUNDLE_SHORT_VERSION_STRING}</string>
+    <key>LSMinimumSystemVersion</key><string>${CMAKE_OSX_DEPLOYMENT_TARGET}</string>
+    <key>NSHighResolutionCapable</key><true/>
+    <key>NSAppleEventsUsageDescription</key><string>Snow Shot Mini reads selected image files from Finder to pin them to the screen.</string>
+    <key>NSMicrophoneUsageDescription</key><string>Snow Shot Mini records microphone audio when you enable it for a screen recording.</string>
+    <key>NSAudioCaptureUsageDescription</key><string>Snow Shot Mini captures system audio when you enable it for a screen recording.</string>
+</dict>
+</plist>

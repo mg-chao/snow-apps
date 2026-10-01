@@ -10,8 +10,8 @@ use windows::Win32::Security::{DACL_SECURITY_INFORMATION, PSECURITY_DESCRIPTOR};
 use windows::Win32::System::Registry::*;
 use windows::core::PCWSTR;
 
-const INSTALL: &str = "Software\\Snow Apps\\SnowShot";
-const UNINSTALL: &str = "Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\SnowShot";
+const INSTALL: &str = snow_shot_updater::edition::INSTALL_KEY;
+const UNINSTALL: &str = snow_shot_updater::edition::UNINSTALL_KEY;
 
 fn wide(text: &str) -> Vec<u16> {
     text.encode_utf16().chain(Some(0)).collect()
@@ -141,12 +141,13 @@ fn descriptor(path: &str, bytes: &[u8]) -> UpdateFile {
 fn prepare(root: &Path, archive: &Path) -> UpdateRelease {
     fs::create_dir_all(root.join("bin")).unwrap();
     let record = |version: &str, bytes: &[u8]| InstallationRecord {
+        product: snow_shot_updater::edition::PRODUCT.to_owned(),
         schema: 1,
         variant: "online".into(),
         version: version.into(),
-        files: vec![descriptor("bin/snow_shot.exe", bytes)],
+        files: vec![descriptor(snow_shot_updater::edition::APP_PATH, bytes)],
     };
-    fs::write(root.join("bin/snow_shot.exe"), b"old").unwrap();
+    fs::write(root.join(snow_shot_updater::edition::APP_PATH), b"old").unwrap();
     fs::write(
         root.join(INSTALLATION_RECORD),
         serde_json::to_vec(&record("1.0.0", b"old")).unwrap(),
@@ -154,7 +155,7 @@ fn prepare(root: &Path, archive: &Path) -> UpdateRelease {
     .unwrap();
     let next = serde_json::to_vec(&record("2.0.0", b"new")).unwrap();
     let entries = [
-        ("bin/snow_shot.exe", b"new".as_slice()),
+        (snow_shot_updater::edition::APP_PATH, b"new".as_slice()),
         (INSTALLATION_RECORD, &next),
     ];
     let mut zip = zip::ZipWriter::new(fs::File::create(archive).unwrap());
@@ -249,7 +250,10 @@ fn registry_permissions_and_transaction_recovery() {
         )
         .unwrap_err();
         assert_eq!(error.code, "registered_version_update_failed");
-        assert_eq!(fs::read(root.join("bin/snow_shot.exe")).unwrap(), b"old");
+        assert_eq!(
+            fs::read(root.join(snow_shot_updater::edition::APP_PATH)).unwrap(),
+            b"old"
+        );
         assert!(!transaction_pending(&root));
     }
 
@@ -286,7 +290,10 @@ fn registry_permissions_and_transaction_recovery() {
     )
     .unwrap_err();
     assert_eq!(error.code, "startup_probe_failed");
-    assert_eq!(fs::read(root.join("bin/snow_shot.exe")).unwrap(), b"old");
+    assert_eq!(
+        fs::read(root.join(snow_shot_updater::edition::APP_PATH)).unwrap(),
+        b"old"
+    );
     assert!(!transaction_pending(&root));
     acl(&uninstall, KEY_SET_VALUE.0);
     platform::write_registered_version(&root, "1.0.0").unwrap();

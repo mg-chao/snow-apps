@@ -22,7 +22,7 @@ $common = @('-o', 'BatchMode=yes', '-o', 'StrictHostKeyChecking=yes', '-o', 'Upd
 if ($MacIdentityFile) { $common += @('-i', [IO.Path]::GetFullPath($MacIdentityFile), '-o', 'IdentitiesOnly=yes') }
 if ($MacKnownHostsFile) { $common += @('-o', "UserKnownHostsFile=$([IO.Path]::GetFullPath($MacKnownHostsFile))") }
 $request = @{ projectDirectory = $MacProjectDirectory; version = $Version; parallelism = $Parallelism;
-    skipBuild = [bool]$SkipBuild; id = [guid]::NewGuid().ToString('N') }
+    editions = @('Full', 'Mini'); skipBuild = [bool]$SkipBuild; id = [guid]::NewGuid().ToString('N') }
 $encoded = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes(($request | ConvertTo-Json -Compress)))
 $destination = "$MacUser@$MacHost"
 $info = [Diagnostics.ProcessStartInfo]::new('ssh')
@@ -44,13 +44,17 @@ try {
     if ($process.ExitCode -ne 0) { throw "Remote macOS packaging failed. See $logPath" }
 } finally { $log.Dispose(); $process.Dispose() }
 $result = $output.GetAwaiter().GetResult() | ConvertFrom-Json
-$expectedPath = "$MacProjectDirectory/artifacts/remote-release-$($request.id)/snow-shot_macos-arm64.dmg"
-if ($result.version -cne $Version -or $result.path -cne $expectedPath) { throw 'Unexpected remote package identity.' }
-$image = Join-Path $OutputDirectory 'snow-shot_macos-arm64.dmg'
-& scp @common -P $MacPort "$destination`:$expectedPath" $image
-if ($LASTEXITCODE -ne 0) { throw 'Downloading the macOS package failed.' }
-if ((Get-FileHash -LiteralPath $image -Algorithm SHA256).Hash.ToLowerInvariant() -cne $result.sha256 -or
-    (Get-Item -LiteralPath $image).Length -ne $result.size) { throw 'Downloaded macOS package checksum mismatch.' }
-[IO.File]::WriteAllText("$image.sha256", "$($result.sha256)  snow-shot_macos-arm64.dmg`n", [Text.UTF8Encoding]::new($false))
+if ($result.version -cne $Version -or @($result.images).Count -ne 2) { throw 'Unexpected remote package identity.' }
+foreach ($product in @('snow-shot', 'snow-shot-mini')) {
+    $item = @($result.images | Where-Object { $_.product -ceq $product })
+    $expectedPath = "$MacProjectDirectory/artifacts/remote-release-$($request.id)/${product}_macos-arm64.dmg"
+    if ($item.Count -ne 1 -or $item[0].path -cne $expectedPath) { throw 'Unexpected remote package identity.' }
+    $image = Join-Path $OutputDirectory "${product}_macos-arm64.dmg"
+    & scp @common -P $MacPort "$destination`:$expectedPath" $image
+    if ($LASTEXITCODE -ne 0) { throw 'Downloading the macOS package failed.' }
+    if ((Get-FileHash -LiteralPath $image -Algorithm SHA256).Hash.ToLowerInvariant() -cne $item[0].sha256 -or
+        (Get-Item -LiteralPath $image).Length -ne $item[0].size) { throw 'Downloaded macOS package checksum mismatch.' }
+    [IO.File]::WriteAllText("$image.sha256", "$($item[0].sha256)  ${product}_macos-arm64.dmg`n", [Text.UTF8Encoding]::new($false))
+}
 $result | ConvertTo-Json -Depth 5 | Set-Content (Join-Path $OutputDirectory 'macos-build.json') -Encoding utf8NoBOM
 Write-Output "Packaged and verified macOS ${Version}: $image"

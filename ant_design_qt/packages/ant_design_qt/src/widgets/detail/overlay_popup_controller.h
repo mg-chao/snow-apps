@@ -52,6 +52,8 @@ class OverlayPopupControllerDelegate {
                                            qreal arrowCenterCoord) = 0;
   virtual bool popupReleaseOnHide() const { return false; }
   virtual void popupReleaseSurface() {}
+  virtual bool popupHasSurfaceShowGuard() const { return false; }
+  virtual bool popupSurfaceCanShow() const { return true; }
 };
 
 class OverlayPopupController final : public QObject, private PopupInteractionOwner {
@@ -109,6 +111,7 @@ class OverlayPopupController final : public QObject, private PopupInteractionOwn
   void popupContentChanged(bool emitSignal = true);
   void refreshVisiblePopup();
   void invalidatePopupGeometry();
+  void nativeSurfaceChanged();
 
  signals:
   void popupVisibleChanged(bool value);
@@ -167,6 +170,7 @@ class OverlayPopupController final : public QObject, private PopupInteractionOwn
   void setPopupVisibleInternal(bool visible, bool emitSignal);
   void finishPopupVisibilityUpdate();
   void syncPreparedPopupVisibility();
+  void applySurfaceVisibility(QWidget* popup, bool shouldShow, bool raiseWhenShowing);
   bool syncPopupGeometry();
   bool popupUsesInWindowLayer() const;
   bool popupUsesTopLevelToolLayer() const;
@@ -223,6 +227,7 @@ class OverlayPopupController final : public QObject, private PopupInteractionOwn
   bool triggerKeyPressActive_ = false;
   bool closingFromHost_ = false;
   bool updatingPopupVisible_ = false;
+  bool applyingSurfaceVisibility_ = false;
   std::optional<bool> pendingPopupVisible_;
   bool pendingPopupVisibleEmitSignal_ = false;
   bool popupRelayoutQueued_ = false;

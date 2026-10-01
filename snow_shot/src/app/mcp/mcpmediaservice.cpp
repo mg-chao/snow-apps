@@ -1,3 +1,4 @@
+#include "snow_shot/app/mcp/mcpedition.h"
 #include "snow_shot/app/mcp/mcpmediaservice.h"
 #include "snow_shot/presentation/screenshotcontroller.h"
 #include "snow_shot/presentation/screenrecordingcontroller.h"
@@ -502,6 +503,10 @@ void McpMediaService::request(const ScreenshotMcpRequest& r,
             waiter(response);
         completion(std::move(response));
     };
+    if (!editionRequestEnabled(r.method, r.params)) {
+        reply({}, QStringLiteral("unsupported"));
+        return;
+    }
     if (s.stopped) {
         reply({}, QStringLiteral("unavailable"));
         return;
@@ -759,7 +764,10 @@ void McpMediaService::request(const ScreenshotMcpRequest& r,
                                        });
                 return;
             }
-        } else if (!original) {
+        }
+#if SNOW_SHOT_ENABLE_IMAGE_CONVERSION || SNOW_SHOT_ENABLE_LATEX_RECOGNITION ||                     \
+    SNOW_SHOT_ENABLE_QR_RECOGNITION
+        else if (!original) {
             if (const auto snapshot = window->automationFileSnapshot()) {
                 const auto path = p.value(QStringLiteral("path")).toString();
                 if (!QFileInfo(path).isAbsolute() ||
@@ -799,6 +807,7 @@ void McpMediaService::request(const ScreenshotMcpRequest& r,
                 return;
             }
         }
+#endif
         auto artifact = window->automationArtifact(original, output == QStringLiteral("copy"));
         if (!artifact) {
             reply({}, QStringLiteral("not_ready"));

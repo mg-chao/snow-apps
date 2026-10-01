@@ -103,7 +103,7 @@ typedef struct SnowCaptureExclusions {
 } SnowCaptureExclusions;
 #endif
 
-#define SNOW_CAPTURE_DIRECT_RECORDING_CONFIG_VERSION 10u
+#define SNOW_CAPTURE_DIRECT_RECORDING_CONFIG_VERSION 11u
 
 /* Strings are bounded UTF-8 key names, copied during session creation. */
 typedef struct SnowCaptureKeyboardLabel {
@@ -171,6 +171,9 @@ typedef struct SnowCaptureDirectRecordingConfig {
     uint32_t quality;
     /* v10: SnowCaptureRecordingAudioMode; older versions use mixed audio. */
     uint32_t audio_mode;
+    /* v11: independent source gain in decibels (-24..24); older callers use 0. */
+    int32_t system_audio_gain_db;
+    int32_t microphone_gain_db;
 } SnowCaptureDirectRecordingConfig;
 
 #define SNOW_RECORDING_DEFERRED_OPTIONS_VERSION 1u
@@ -286,6 +289,64 @@ SnowRecordingResult snow_recording_gpu_probe(const SnowCaptureDirectRecordingCon
                                              uint32_t recover);
 /* Live recording sessions created and not yet destroyed; for leak diagnostics in tests. */
 size_t snow_recording_session_live_count(void);
+
+typedef enum SnowRecordingAudioSource {
+    SNOW_RECORDING_AUDIO_SYSTEM = 0,
+    SNOW_RECORDING_AUDIO_MICROPHONE = 1
+} SnowRecordingAudioSource;
+typedef enum SnowRecordingAudioSourceStatus {
+    SNOW_RECORDING_AUDIO_DISABLED = 0,
+    SNOW_RECORDING_AUDIO_STARTING = 1,
+    SNOW_RECORDING_AUDIO_READY = 2,
+    SNOW_RECORDING_AUDIO_RECONNECTING = 3,
+    SNOW_RECORDING_AUDIO_UNAVAILABLE = 4,
+    SNOW_RECORDING_AUDIO_PERMISSION_DENIED = 5,
+    SNOW_RECORDING_AUDIO_STOPPED = 6
+} SnowRecordingAudioSourceStatus;
+typedef struct SnowRecordingAudioLevel {
+    float peak;
+    uint32_t clipped;
+    uint32_t status;
+    uint64_t age_ms;
+} SnowRecordingAudioLevel;
+typedef struct SnowRecordingAudioLevels {
+    SnowRecordingAudioLevel system_audio;
+    SnowRecordingAudioLevel microphone;
+} SnowRecordingAudioLevels;
+uint8_t snow_recording_session_set_audio_gain(SnowRecordingSession* session, uint32_t source,
+                                              int32_t gain_db);
+/* Bit 0 enables the system meter; bit 1 enables the microphone meter. */
+uint8_t snow_recording_session_set_audio_metering(SnowRecordingSession* session,
+                                                  uint32_t source_mask);
+uint8_t snow_recording_session_take_audio_levels(const SnowRecordingSession* session,
+                                                 SnowRecordingAudioLevels* levels);
+
+typedef struct SnowRecordingAudioMonitorImpl SnowRecordingAudioMonitor;
+/* Returns before native acquisition finishes. Inspect source status for startup errors. */
+SnowRecordingResult snow_recording_audio_monitor_create(uint32_t source, int32_t gain_db,
+                                                        SnowRecordingAudioMonitor** monitor);
+void snow_recording_audio_monitor_cancel(SnowRecordingAudioMonitor* monitor);
+/* Joins acquisition/teardown; call on a worker thread. */
+void snow_recording_audio_monitor_destroy(SnowRecordingAudioMonitor* monitor);
+uint8_t snow_recording_audio_monitor_set_gain(SnowRecordingAudioMonitor* monitor, int32_t gain_db);
+uint8_t snow_recording_audio_monitor_set_metering(SnowRecordingAudioMonitor* monitor,
+                                                  uint8_t enabled);
+uint8_t snow_recording_audio_monitor_take_levels(const SnowRecordingAudioMonitor* monitor,
+                                                 SnowRecordingAudioLevels* levels);
+
+typedef struct SnowRecordingExclusionStatus {
+    uint64_t requested_generation;
+    uint64_t applied_generation;
+    /* 0: ready; 1: pending; 2: failed. */
+    uint32_t status;
+} SnowRecordingExclusionStatus;
+/* Copies all IDs immediately. Required windows must appear in the native content snapshot. */
+uint8_t snow_recording_session_request_exclusions(SnowRecordingSession* session,
+                                                  const SnowCaptureExclusions* exclusions,
+                                                  const uint32_t* required_windows,
+                                                  uint32_t required_count, uint64_t* generation);
+uint8_t snow_recording_session_exclusion_status(const SnowRecordingSession* session,
+                                                SnowRecordingExclusionStatus* status);
 
 const char* snow_recording_last_error_message(void);
 #ifdef __cplusplus

@@ -1,5 +1,10 @@
 #include "snow_shot/platform/applicationqos.h"
 #include "recordingeffectpreview.h"
+#include "recordingaudiogainpopover.h"
+#include "widgets/popover.h"
+#include "snow_shot/storage/applicationstorage.h"
+#include <array>
+#include "recordingcolorsampler.h"
 #include "recordingrenderjob.h"
 #include "widgets/message.h"
 #include "recordingeffectstyle.h"
@@ -249,6 +254,9 @@ struct RecordingUiSession final : QObject {
     std::unique_ptr<QObject> connections = std::make_unique<QObject>();
     std::unique_ptr<ScreenRecordingShortcutController> shortcuts;
     std::unique_ptr<RecordingEffectPreview> preview;
+    std::unique_ptr<snow_shot::presentation::recording::RecordingColorSampler> colorSampler =
+        std::make_unique<snow_shot::presentation::recording::RecordingColorSampler>(*area,
+                                                                                    *toolbar);
 };
 } // namespace
 
@@ -259,6 +267,8 @@ struct ScreenRecordingController::Impl {
         const snow_shot::storage::RecordingSettings settings;
         microphoneEnabled = settings.microphoneEnabled();
         systemAudioEnabled = settings.systemAudioEnabled();
+        microphoneGainDb = settings.microphoneGainDb();
+        systemAudioGainDb = settings.systemAudioGainDb();
         outputFormat = settings.outputFormat();
         mouseTrailColor = settings.mouseTrailColor();
         mouseTrailDurationMs = settings.mouseTrailDurationMs();
@@ -309,6 +319,31 @@ struct ScreenRecordingController::Impl {
             syncPreview();
         });
 #endif
+        audioMeterTimer.setInterval(33);
+        audioMeterTimer.setTimerType(Qt::PreciseTimer);
+        QObject::connect(&audioMeterTimer, &QTimer::timeout, &owner, [this] { pollAudioMeter(); });
+        audioMeterClock.start();
+        auto& storage = snow_shot::storage::ApplicationStorage::instance();
+        if (storage.isInitialized()) {
+            QObject::connect(
+                &storage.configuration(), &snow_shot::storage::ConfigurationStore::valueChanged,
+                &owner, [this](const QString& key, const QJsonValue&) {
+                    if (key != QStringLiteral("screen_recording/system_audio_gain_db") &&
+                        key != QStringLiteral("screen_recording/microphone_gain_db"))
+                        return;
+                    audioSettingsRefreshPending = true;
+                    if (audioSettingsRefreshQueued)
+                        return;
+                    audioSettingsRefreshQueued = true;
+                    QTimer::singleShot(0, &this->owner, [this] {
+                        audioSettingsRefreshQueued = false;
+                        refreshAudioGains();
+                    });
+                });
+        }
+        exclusionPollTimer.setInterval(33);
+        QObject::connect(&exclusionPollTimer, &QTimer::timeout, &owner,
+                         [this] { pollAudioExclusions(); });
         durationTimer.setInterval(kDurationTickMilliseconds);
         durationTimer.setTimerType(Qt::PreciseTimer);
         QObject::connect(&durationTimer, &QTimer::timeout, &owner, [this]() {
@@ -334,6 +369,8 @@ struct ScreenRecordingController::Impl {
     }
 
     ~Impl() {
+        stopAudioMeter();
+        exclusionPollTimer.stop();
         durationTimer.stop();
         finalizationPollTimer.stop();
         startPollTimer.stop();
@@ -382,6 +419,11 @@ struct ScreenRecordingController::Impl {
             return;
         }
         cancelPendingStart();
+        if (!automationOwned && !automationNextStart) {
+            const snow_shot::storage::RecordingSettings settings;
+            microphoneGainDb = settings.microphoneGainDb();
+            systemAudioGainDb = settings.systemAudioGainDb();
+        }
         if (uiSession != nullptr) {
             setOption(recordingRegion, region);
             updateCaptureRegion();
@@ -558,12 +600,49 @@ struct ScreenRecordingController::Impl {
                          uiSession->connections.get(), [this](bool enabled) {
                              setOption(microphoneEnabled, enabled);
                              snow_shot::storage::RecordingSettings().setMicrophoneEnabled(enabled);
+                             syncAudioMeter();
                          });
         QObject::connect(palette, &ScreenshotToolPalette::recordingSystemAudioToggled,
                          uiSession->connections.get(), [this](bool enabled) {
                              setOption(systemAudioEnabled, enabled);
                              snow_shot::storage::RecordingSettings().setSystemAudioEnabled(enabled);
+                             syncAudioMeter();
                          });
+        QObject::connect(palette, &ScreenshotToolPalette::recordingMicrophoneGainChanged,
+                         uiSession->connections.get(),
+                         [this](int gainDb) { changeAudioGain(true, gainDb); });
+        QObject::connect(palette, &ScreenshotToolPalette::recordingSystemAudioGainChanged,
+                         uiSession->connections.get(),
+                         [this](int gainDb) { changeAudioGain(false, gainDb); });
+        for (bool microphone : {false, true}) {
+            auto* popover = palette->recordingAudioGainPopover(microphone);
+            QObject::connect(
+                popover, &RecordingAudioGainPopover::visibleChanged, uiSession->connections.get(),
+                [this, microphone, popover](bool visible) {
+                    if (visible) {
+                        const bool retryExclusion =
+                            audioPopoversExcluded &&
+                            audioFailedPopupIds != std::array<uint32_t, 2>{};
+                        audioMeterSource = microphone ? 1 : 0;
+                        audioFailedPopupIds = {};
+                        displayedAudioPeak = 0;
+                        audioClipDeadline = 0;
+                        lastAudioMeterTick = audioMeterClock.elapsed();
+                        if (retryExclusion) {
+                            // The show guard runs before visibleChanged. Retry after
+                            // clearing its failed native IDs, outside that stack.
+                            QTimer::singleShot(
+                                0, popover, [popup = QPointer<RecordingAudioGainPopover>(popover)] {
+                                    if (popup && popup->popover()->isVisible())
+                                        popup->popover()->refreshPopupLayout();
+                                });
+                        }
+                    }
+                    syncAudioMeter();
+                });
+            QObject::connect(popover, &RecordingAudioGainPopover::surfaceVisibilityChanged,
+                             uiSession->connections.get(), [this](bool) { syncAudioMeter(); });
+        }
         QObject::connect(palette, &ScreenshotToolPalette::recordingOpenFolderRequested,
                          uiSession->connections.get(), [this]() { openFolder(); });
         QObject::connect(palette, &ScreenshotToolPalette::recordingCloseRequested,
@@ -789,6 +868,8 @@ struct ScreenRecordingController::Impl {
             const snow_shot::storage::RecordingSettings settings;
             microphoneEnabled = settings.microphoneEnabled();
             systemAudioEnabled = settings.systemAudioEnabled();
+            microphoneGainDb = settings.microphoneGainDb();
+            systemAudioGainDb = settings.systemAudioGainDb();
             outputFormat = settings.outputFormat();
             mouseTrailColor = settings.mouseTrailColor();
             mouseTrailDurationMs = settings.mouseTrailDurationMs();
@@ -919,6 +1000,7 @@ struct ScreenRecordingController::Impl {
                 excludedWindowIds =
                     captureExclusion.windowIds(snow_shot::platform::captureWindowId);
             }
+            const auto previewRetirement = audioPreviewRetirement;
             SnowCaptureDirectRecordingConfig config{
                 SNOW_CAPTURE_DIRECT_RECORDING_CONFIG_VERSION,
                 sizeof(SnowCaptureDirectRecordingConfig),
@@ -972,6 +1054,8 @@ struct ScreenRecordingController::Impl {
                                 .toBool(settings.separateAudioTracks())
                         ? SNOW_CAPTURE_RECORDING_AUDIO_SEPARATE
                         : SNOW_CAPTURE_RECORDING_AUDIO_MIXED),
+                systemAudioGainDb,
+                microphoneGainDb,
             };
             const QString baseName =
                 ScreenshotImageFileService::suggestedBaseName(settings.videoFilenameFormat());
@@ -987,8 +1071,10 @@ struct ScreenRecordingController::Impl {
             startFuture = std::async(
                 std::launch::async,
                 [config, excludedWindowIds, directories, baseName, extension, keyboard,
-                 keyboardFont, requestedPath, deferred = sessionDeferred, overlay,
-                 barColor]() mutable -> StartAttemptResult {
+                 keyboardFont, requestedPath, previewRetirement, deferred = sessionDeferred,
+                 overlay, barColor]() mutable -> StartAttemptResult {
+                    if (previewRetirement.valid())
+                        previewRetirement.wait();
                     snow_shot::platform::applyApplicationQoSToCurrentThread();
                     StartAttemptResult result;
                     result.outputPath =
@@ -1140,6 +1226,8 @@ struct ScreenRecordingController::Impl {
 
         // Freeze the media endpoint before UI teardown or worker scheduling.
         static_cast<void>(snow_recording_session_request_stop(recordingSession.get()));
+        stopAudioMeter();
+        exclusionPollTimer.stop();
         durationTimer.stop();
         // Keep the final duration on screen while the file is finalized;
         // pollFinalization resets it once the operation completes.
@@ -1269,8 +1357,12 @@ struct ScreenRecordingController::Impl {
     }
 
     void destroyUi() {
+        stopAudioMeter();
+        if (toolbarWindow)
+            toolbarWindow->palette()->closeRecordingAudioGainPopovers();
         cancelPendingStart();
         if (uiSession == nullptr) {
+            restoreToolbarCaptureVisibility();
             return;
         }
         automationRevision = snow_shot::presentation::nextAutomationRevision();
@@ -1286,21 +1378,57 @@ struct ScreenRecordingController::Impl {
         retiring->preview->setEligible(false);
         retiring->preview->stopAndClear();
         retiring->connections.reset();
+        retiring->colorSampler.reset();
         retiring->shortcuts.reset();
         retiring->toolbar->hide();
         retiring->area->hide();
-        restoreToolbarCaptureVisibility();
+        // Capture may still be joining on its worker. Hide every retained surface
+        // before clearing the exclusion policies and native show guards.
+        restoreToolbarCaptureVisibility(retiring->toolbar->palette());
         // Close can originate in a toolbar button's event handler.
         retiring->deleteLater();
     }
 
     bool excludeToolbarFromCapture() {
         restoreToolbarCaptureVisibility();
-        return captureExclusion.exclude(toolbarWindow);
+        audioPopoversExcluded = true;
+        const bool excluded = captureExclusion.exclude(toolbarWindow);
+        if (toolbarWindow && outputFormat == QStringLiteral("mp4")) {
+            for (bool microphone : {false, true}) {
+                if (!(microphone ? microphoneEnabled : systemAudioEnabled))
+                    continue;
+                auto* control = toolbarWindow->palette()->recordingAudioGainPopover(microphone);
+                control->setRetainNativeSurfaceOnHide(true);
+                control->setSurfaceShowGuard(
+                    [this](QWidget* surface) { return guardAudioSurface(surface); });
+                QWidget* surface = control->prepareSurface();
+                // Initial macOS filters may not discover a prepared hidden window.
+                // Only a required-window update acknowledgment permits showing it.
+                static_cast<void>(captureExclusion.exclude(surface));
+            }
+        }
+        return excluded;
     }
 
-    void restoreToolbarCaptureVisibility() {
+    void restoreToolbarCaptureVisibility(ScreenshotToolPalette* palette = nullptr) {
+        exclusionPollTimer.stop();
+        audioPopoversExcluded = false;
+        audioExclusionErrorReported = false;
+        audioExclusionGeneration = 0;
+        audioAppliedPopupIds = {};
+        audioPendingPopupIds = {};
+        audioFailedPopupIds = {};
         captureExclusion.restore();
+        if (!palette && toolbarWindow)
+            palette = toolbarWindow->palette();
+        if (palette) {
+            for (bool microphone : {false, true}) {
+                if (auto* control = palette->recordingAudioGainPopover(microphone)) {
+                    control->setSurfaceShowGuard({});
+                    control->setRetainNativeSurfaceOnHide(false);
+                }
+            }
+        }
     }
 
     QJsonObject currentAutomationOptions() const {
@@ -1315,6 +1443,8 @@ struct ScreenRecordingController::Impl {
              snow_shot::storage::colorToRgbaString(progressBarColor)},
             {QStringLiteral("microphone"), microphoneEnabled},
             {QStringLiteral("system_audio"), systemAudioEnabled},
+            {QStringLiteral("system_audio_gain_db"), systemAudioGainDb},
+            {QStringLiteral("microphone_gain_db"), microphoneGainDb},
             {QStringLiteral("show_cursor"), showCursor},
             {QStringLiteral("show_keyboard"), showKeyboard},
             {QStringLiteral("record_mouse_clicks"), recordMouseClicks},
@@ -1327,6 +1457,256 @@ struct ScreenRecordingController::Impl {
             {QStringLiteral("mouse_highlight_color"), mouseHighlightColor.name(QColor::HexArgb)},
             {QStringLiteral("keyboard_background"), keyboardBackgroundColor.name(QColor::HexArgb)},
             {QStringLiteral("keyboard_foreground"), keyboardForegroundColor.name(QColor::HexArgb)}};
+    }
+
+    void retireAudioPreview() {
+        if (!audioPreview)
+            return;
+        auto* retiring = std::exchange(audioPreview, nullptr);
+        audioPreviewSource = -1;
+        snow_recording_audio_monitor_cancel(retiring);
+        std::promise<void> completion;
+        audioPreviewRetirement = completion.get_future().share();
+        std::thread([retiring, completion = std::move(completion)]() mutable {
+            snow_shot::platform::applyApplicationQoSToCurrentThread();
+            snow_recording_audio_monitor_destroy(retiring);
+            completion.set_value();
+        }).detach();
+    }
+
+    void stopAudioMeter() {
+        audioMeterTimer.stop();
+        if (recordingSession && !sessionStatus.busy())
+            static_cast<void>(snow_recording_session_set_audio_metering(recordingSession.get(), 0));
+        retireAudioPreview();
+    }
+
+    void syncAudioMeter() {
+        auto* palette = toolbarWindow ? toolbarWindow->palette() : nullptr;
+        int visibleSource = -1;
+        if (palette && !sessionStatus.busy() && !startScheduled &&
+            outputFormat == QStringLiteral("mp4")) {
+            for (bool microphone : {false, true}) {
+                auto* popup = palette->recordingAudioGainPopover(microphone);
+                if (popup && popup->popover()->isVisible() && popup->popover()->surfaceWidget() &&
+                    popup->popover()->surfaceWidget()->isVisible())
+                    visibleSource = microphone ? 1 : 0;
+            }
+        }
+        if (visibleSource < 0) {
+            stopAudioMeter();
+            audioMeterSource = -1;
+            return;
+        }
+        audioMeterSource = visibleSource;
+        const bool enabled = visibleSource == 1 ? microphoneEnabled : systemAudioEnabled;
+        if (audioPreview && (recordingSession || audioPreviewSource != visibleSource || !enabled))
+            retireAudioPreview();
+        if (recordingSession)
+            static_cast<void>(snow_recording_session_set_audio_metering(
+                recordingSession.get(), enabled ? (1u << visibleSource) : 0u));
+        if (!enabled) {
+            palette->recordingAudioGainPopover(visibleSource == 1)
+                ->setLevel(0, false, RecordingAudioGainPopover::LevelStatus::AudioOff);
+            audioMeterTimer.stop();
+        } else {
+            if (!audioMeterTimer.isActive()) {
+                audioMeterTimer.start();
+                pollAudioMeter();
+            }
+        }
+    }
+
+    void applyAudioGain(bool microphone, int gainDb) {
+        setOption(microphone ? microphoneGainDb : systemAudioGainDb, gainDb);
+        if (recordingSession)
+            static_cast<void>(snow_recording_session_set_audio_gain(
+                recordingSession.get(),
+                microphone ? SNOW_RECORDING_AUDIO_MICROPHONE : SNOW_RECORDING_AUDIO_SYSTEM,
+                gainDb));
+        if (audioPreview && audioPreviewSource == (microphone ? 1 : 0))
+            static_cast<void>(snow_recording_audio_monitor_set_gain(audioPreview, gainDb));
+    }
+
+    void refreshAudioGains() {
+        if (!audioSettingsRefreshPending || sessionStatus.busy() || automationOwned ||
+            automationNextStart)
+            return;
+        audioSettingsRefreshPending = false;
+        const snow_shot::storage::RecordingSettings settings;
+        if (microphoneGainDb != settings.microphoneGainDb())
+            applyAudioGain(true, settings.microphoneGainDb());
+        if (systemAudioGainDb != settings.systemAudioGainDb())
+            applyAudioGain(false, settings.systemAudioGainDb());
+        if (toolbarWindow) {
+            toolbarWindow->palette()->setRecordingMicrophoneGainDb(microphoneGainDb);
+            toolbarWindow->palette()->setRecordingSystemAudioGainDb(systemAudioGainDb);
+        }
+    }
+
+    void changeAudioGain(bool microphone, int gainDb) {
+        if (gainDb < -24 || gainDb > 24 || sessionStatus.busy())
+            return;
+        applyAudioGain(microphone, gainDb);
+        if (!automationOwned) {
+            const snow_shot::storage::RecordingSettings settings;
+            if (microphone)
+                settings.setMicrophoneGainDb(gainDb);
+            else
+                settings.setSystemAudioGainDb(gainDb);
+        }
+    }
+
+    void pollAudioMeter() {
+        if (audioMeterSource < 0 || !toolbarWindow || sessionStatus.busy())
+            return;
+        auto* control = toolbarWindow->palette()->recordingAudioGainPopover(audioMeterSource == 1);
+        if (!control || !control->popover()->isVisible() || !control->popover()->surfaceWidget() ||
+            !control->popover()->surfaceWidget()->isVisible()) {
+            stopAudioMeter();
+            return;
+        }
+        SnowRecordingAudioLevels levels{};
+        bool available = false;
+        if (recordingSession)
+            available =
+                snow_recording_session_take_audio_levels(recordingSession.get(), &levels) != 0;
+        else {
+            if (!audioPreview) {
+                if (audioPreviewRetirement.valid() &&
+                    audioPreviewRetirement.wait_for(std::chrono::milliseconds(0)) !=
+                        std::future_status::ready) {
+                    control->setLevel(0, false, RecordingAudioGainPopover::LevelStatus::Starting);
+                    return;
+                }
+                const auto source = audioMeterSource == 1 ? SNOW_RECORDING_AUDIO_MICROPHONE
+                                                          : SNOW_RECORDING_AUDIO_SYSTEM;
+                const int gain = audioMeterSource == 1 ? microphoneGainDb : systemAudioGainDb;
+                if (snow_recording_audio_monitor_create(source, gain, &audioPreview) !=
+                    SNOW_RECORDING_RESULT_OK) {
+                    control->setLevel(0, false,
+                                      RecordingAudioGainPopover::LevelStatus::Unavailable);
+                    audioMeterTimer.stop();
+                    return;
+                }
+                audioPreviewSource = audioMeterSource;
+                static_cast<void>(snow_recording_audio_monitor_set_metering(audioPreview, 1));
+            }
+            available = snow_recording_audio_monitor_take_levels(audioPreview, &levels) != 0;
+        }
+        const auto& level = audioMeterSource == 1 ? levels.microphone : levels.system_audio;
+        const qint64 now = audioMeterClock.elapsed();
+        const double elapsed = static_cast<double>(std::max<qint64>(0, now - lastAudioMeterTick));
+        lastAudioMeterTick = now;
+        const bool ready = available && level.status == SNOW_RECORDING_AUDIO_READY;
+        if (!ready || level.age_ms > 200)
+            displayedAudioPeak = 0;
+        else
+            displayedAudioPeak = std::max(static_cast<double>(level.peak),
+                                          displayedAudioPeak * std::exp(-elapsed / 200.0));
+        if (ready && level.clipped)
+            audioClipDeadline = now + 1000;
+        auto status = RecordingAudioGainPopover::LevelStatus::Live;
+        if (!available || level.status == SNOW_RECORDING_AUDIO_UNAVAILABLE ||
+            level.status == SNOW_RECORDING_AUDIO_STOPPED)
+            status = RecordingAudioGainPopover::LevelStatus::Unavailable;
+        else if (level.status == SNOW_RECORDING_AUDIO_PERMISSION_DENIED)
+            status = RecordingAudioGainPopover::LevelStatus::PermissionRequired;
+        else if (level.status == SNOW_RECORDING_AUDIO_STARTING ||
+                 level.status == SNOW_RECORDING_AUDIO_RECONNECTING)
+            status = RecordingAudioGainPopover::LevelStatus::Starting;
+        else if (level.status == SNOW_RECORDING_AUDIO_DISABLED)
+            status = RecordingAudioGainPopover::LevelStatus::AudioOff;
+        control->setLevel(displayedAudioPeak, ready && now < audioClipDeadline, status);
+    }
+
+    bool guardAudioSurface(QWidget* surface) {
+        if (!audioPopoversExcluded)
+            return true;
+        if (!surface || !snow_shot::platform::setWindowExcludedFromCapture(surface, true)) {
+            reportAudioExclusionError();
+            return false;
+        }
+        static_cast<void>(captureExclusion.exclude(surface));
+#ifdef Q_OS_MACOS
+        if (!recordingSession || sessionStatus.busy())
+            return false;
+        std::array<uint32_t, 2> ids{};
+        for (bool microphone : {false, true}) {
+            if (!(microphone ? microphoneEnabled : systemAudioEnabled))
+                continue;
+            auto* control = toolbarWindow->palette()->recordingAudioGainPopover(microphone);
+            const auto id = snow_shot::platform::captureWindowId(control->prepareSurface());
+            if (!id) {
+                reportAudioExclusionError();
+                return false;
+            }
+            ids[microphone ? 1 : 0] = *id;
+        }
+        if (ids == audioAppliedPopupIds)
+            return true;
+        if (ids == audioFailedPopupIds || (audioExclusionGeneration && ids == audioPendingPopupIds))
+            return false;
+        const auto windows = captureExclusion.windowIds(snow_shot::platform::captureWindowId);
+        QVector<uint32_t> required;
+        for (auto id : ids)
+            if (id)
+                required.push_back(id);
+        SnowCaptureExclusions exclusions{windows.constData(), static_cast<size_t>(windows.size()),
+                                         nullptr, 0};
+        if (snow_recording_session_request_exclusions(
+                recordingSession.get(), &exclusions, required.constData(),
+                static_cast<uint32_t>(required.size()), &audioExclusionGeneration)) {
+            audioPendingPopupIds = ids;
+            exclusionPollTimer.start();
+        } else {
+            audioFailedPopupIds = ids;
+            reportAudioExclusionError();
+        }
+        return false;
+#else
+        return true;
+#endif
+    }
+
+    void reportAudioExclusionError() {
+        if (audioExclusionErrorReported || !toolbarWindow)
+            return;
+        audioExclusionErrorReported = true;
+        adqt::widgets::AdMessage::Request request;
+        request.key = QStringLiteral("recording-audio-exclusion-error");
+        request.content = QCoreApplication::translate(
+            "ScreenRecordingController", "Unable to exclude audio controls from recording");
+        adqt::widgets::AdMessageService::warning(std::move(request), toolbarWindow);
+    }
+
+    void pollAudioExclusions() {
+#ifdef Q_OS_MACOS
+        if (!recordingSession || sessionStatus.busy() || !audioExclusionGeneration) {
+            exclusionPollTimer.stop();
+            return;
+        }
+        SnowRecordingExclusionStatus status{};
+        if (!snow_recording_session_exclusion_status(recordingSession.get(), &status))
+            return;
+        if (status.requested_generation != audioExclusionGeneration || status.status == 1)
+            return;
+        exclusionPollTimer.stop();
+        if (status.status == 0 && status.applied_generation == audioExclusionGeneration) {
+            audioAppliedPopupIds = audioPendingPopupIds;
+            audioExclusionGeneration = 0;
+            if (toolbarWindow)
+                for (bool microphone : {false, true}) {
+                    auto* control = toolbarWindow->palette()->recordingAudioGainPopover(microphone);
+                    if (control->popover()->isVisible())
+                        control->popover()->refreshPopupLayout();
+                }
+        } else {
+            audioFailedPopupIds = audioPendingPopupIds;
+            audioExclusionGeneration = 0;
+            reportAudioExclusionError();
+        }
+#endif
     }
 
     void syncPreview() {
@@ -1411,6 +1791,9 @@ struct ScreenRecordingController::Impl {
     }
 
     void syncUi() {
+        refreshAudioGains();
+        if (uiSession != nullptr && sessionStatus.busy())
+            uiSession->colorSampler->cancel();
         if (uiSession != nullptr && uiSession->settingsModal &&
             (sessionStatus.state() != ScreenshotToolPalette::RecordingState::Idle ||
              sessionStatus.busy()))
@@ -1427,6 +1810,8 @@ struct ScreenRecordingController::Impl {
             palette->setRecordingDuration(durationMilliseconds);
             palette->setRecordingMicrophoneEnabled(microphoneEnabled);
             palette->setRecordingSystemAudioEnabled(systemAudioEnabled);
+            palette->setRecordingMicrophoneGainDb(microphoneGainDb);
+            palette->setRecordingSystemAudioGainDb(systemAudioGainDb);
             palette->setRecordingOutputFormat(outputFormat);
             palette->setRecordingPostProcessingEnabled(postProcessingEnabled);
             palette->setRecordingPostProcessingEffect(postProcessingEffect);
@@ -1444,6 +1829,7 @@ struct ScreenRecordingController::Impl {
             palette->setRecordingCursorVisible(showCursor);
             palette->setRecordingKeyboardVisible(showKeyboard);
         }
+        syncAudioMeter();
     }
 
     void updateCaptureRegion() {
@@ -1515,6 +1901,26 @@ struct ScreenRecordingController::Impl {
     QString pendingOutputPath;
     bool microphoneEnabled = false;
     bool systemAudioEnabled = true;
+    int microphoneGainDb = 0;
+    int systemAudioGainDb = 0;
+    bool audioSettingsRefreshPending = false;
+    bool audioSettingsRefreshQueued = false;
+    QTimer audioMeterTimer;
+    QElapsedTimer audioMeterClock;
+    qint64 lastAudioMeterTick = 0;
+    qint64 audioClipDeadline = 0;
+    double displayedAudioPeak = 0;
+    int audioMeterSource = -1;
+    SnowRecordingAudioMonitor* audioPreview = nullptr;
+    int audioPreviewSource = -1;
+    std::shared_future<void> audioPreviewRetirement;
+    QTimer exclusionPollTimer;
+    bool audioPopoversExcluded = false;
+    bool audioExclusionErrorReported = false;
+    uint64_t audioExclusionGeneration = 0;
+    std::array<uint32_t, 2> audioAppliedPopupIds{};
+    std::array<uint32_t, 2> audioPendingPopupIds{};
+    std::array<uint32_t, 2> audioFailedPopupIds{};
     QString outputFormat = QStringLiteral("mp4");
     int startDelaySeconds = 0;
     int mouseTrailDurationMs = 500;
@@ -1686,6 +2092,8 @@ bool ScreenRecordingController::startAutomation(const QRect& region, const QJson
         QStringLiteral("keyboard_foreground"), QStringLiteral("mouse_trail"),
         QStringLiteral("mouse_click"),         QStringLiteral("mouse_highlight_color")};
     const QHash<QString, QPair<int, int>> integers{
+        {QStringLiteral("system_audio_gain_db"), {-24, 24}},
+        {QStringLiteral("microphone_gain_db"), {-24, 24}},
         {QStringLiteral("start_delay_seconds"), {0, 10}},
         {QStringLiteral("frame_rate"), {1, 120}},
         {QStringLiteral("quality"), {0, 100}},
@@ -1736,6 +2144,10 @@ bool ScreenRecordingController::startAutomation(const QRect& region, const QJson
         options.value(QStringLiteral("microphone")).toBool(settings.microphoneEnabled());
     s.systemAudioEnabled =
         options.value(QStringLiteral("system_audio")).toBool(settings.systemAudioEnabled());
+    s.systemAudioGainDb =
+        options.value(QStringLiteral("system_audio_gain_db")).toInt(settings.systemAudioGainDb());
+    s.microphoneGainDb =
+        options.value(QStringLiteral("microphone_gain_db")).toInt(settings.microphoneGainDb());
     s.startDelaySeconds =
         options.value(QStringLiteral("start_delay_seconds")).toInt(settings.startDelaySeconds());
     s.showCursor = options.value(QStringLiteral("show_cursor")).toBool(settings.showCursor());

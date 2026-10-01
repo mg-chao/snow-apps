@@ -75,9 +75,11 @@ HatchTexture createHatchTexture(const QColor& color, double lineWidth) {
     QPainter texturePainter(&image);
     texturePainter.setRenderHint(QPainter::Antialiasing, true);
     texturePainter.setPen(QPen(color, lineWidth / brushScale, Qt::SolidLine, Qt::FlatCap));
+    // Clip continuous stripes to the tile. Ending strokes at its edges leaves flat-cap
+    // notches that repeat at every texture boundary, especially at the tile corners.
     for (int diagonal = -1; diagonal <= 2; ++diagonal) {
-        texturePainter.drawLine(QPointF(0.0, diagonal * sourceTileSize),
-                                QPointF(sourceTileSize, (diagonal - 1) * sourceTileSize));
+        texturePainter.drawLine(QPointF(-sourceTileSize, (diagonal + 1) * sourceTileSize),
+                                QPointF(2.0 * sourceTileSize, (diagonal - 2) * sourceTileSize));
     }
 
     return HatchTexture{std::move(image), brushScale, 0};

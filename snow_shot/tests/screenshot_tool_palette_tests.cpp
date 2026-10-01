@@ -316,7 +316,7 @@ void recordingControlsRemainLaidOutAcrossStateChanges() {
                                 state == State::Recording && !busy,
                                 paused && !busy,
                                 idle && !busy,
-                                idle && !busy,
+                                !busy,
                                 true,
                                 !busy,
                                 !idle && !busy};
@@ -13021,14 +13021,20 @@ void moveToolExposesCaptureCursorAndRecaptureOptions() {
                     unitGroup->button(0)->x() + unitGroup->button(0)->width() - 2,
                 "unit buttons must share a joined border at every scale");
         auto* scrollingLayout = scrollingControls->layout();
+        auto* scrollingSeparator = scrollingControls->findChild<QWidget*>(
+            QStringLiteral("screenshotScrollingAutoScrollSeparator"));
+        require(scrollingSeparator != nullptr, "scrolling controls expose their group separator");
+        const int scrollingSeparatorIndex = scrollingLayout->indexOf(scrollingSeparator);
+        require(scrollingSeparatorIndex > 0 &&
+                    scrollingSeparatorIndex + 1 < scrollingLayout->count(),
+                "scrolling separator retains its neighboring group spacers");
         const int hideSeparator = layout->indexOf(hideSelectionToolbar) - 4;
         require(regionSeparator->size() == layout->itemAt(hideSeparator)->widget()->size() &&
-                    layout->itemAt(hideSeparator)->widget()->size() ==
-                        scrollingLayout->itemAt(2)->widget()->size() &&
+                    layout->itemAt(hideSeparator)->widget()->size() == scrollingSeparator->size() &&
                     layout->itemAt(hideSeparator - 1)->sizeHint() ==
-                        scrollingLayout->itemAt(1)->sizeHint() &&
+                        scrollingLayout->itemAt(scrollingSeparatorIndex - 1)->sizeHint() &&
                     layout->itemAt(hideSeparator + 1)->sizeHint() ==
-                        scrollingLayout->itemAt(3)->sizeHint(),
+                        scrollingLayout->itemAt(scrollingSeparatorIndex + 1)->sizeHint(),
                 "the hide-toolbar separator and group spacing must match scrolling screenshot "
                 "controls");
     }

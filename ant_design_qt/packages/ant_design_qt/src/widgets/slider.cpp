@@ -125,6 +125,9 @@ QString formatNumber(double value) {
 int maxMarkLabelHeight(const AdMultiSlider::MarkMap& marks, const QFont& fallbackFont) {
   int maxHeight = 0;
   for (auto it = marks.cbegin(); it != marks.cend(); ++it) {
+    if (!it->labelVisible) {
+      continue;
+    }
     const QFont markFont = it->font.has_value() ? it->font.value() : fallbackFont;
     maxHeight = std::max(maxHeight, QFontMetrics(markFont).height());
   }
@@ -134,6 +137,9 @@ int maxMarkLabelHeight(const AdMultiSlider::MarkMap& marks, const QFont& fallbac
 int maxMarkLabelWidth(const AdMultiSlider::MarkMap& marks, const QFont& fallbackFont) {
   int maxWidth = 0;
   for (auto it = marks.cbegin(); it != marks.cend(); ++it) {
+    if (!it->labelVisible) {
+      continue;
+    }
     const QFont markFont = it->font.has_value() ? it->font.value() : fallbackFont;
     maxWidth = std::max(maxWidth, QFontMetrics(markFont).horizontalAdvance(it->label));
   }
@@ -726,6 +732,28 @@ void AdMultiSlider::setSelectionHighlightVisible(bool value) {
   update();
 }
 
+void AdMultiSlider::setTrackFillRatio(double ratio) {
+  if (!std::isfinite(ratio)) {
+    return;
+  }
+  const double normalized = std::clamp(ratio, 0.0, 1.0);
+  if (fuzzyEq(trackFillRatio_, normalized)) {
+    return;
+  }
+  trackFillRatio_ = normalized;
+  emit trackFillRatioChanged(trackFillRatio_);
+  update();
+}
+
+void AdMultiSlider::resetTrackFillRatio() {
+  if (trackFillRatio_ < 0.0) {
+    return;
+  }
+  trackFillRatio_ = -1.0;
+  emit trackFillRatioChanged(trackFillRatio_);
+  update();
+}
+
 Qt::Orientation AdMultiSlider::orientation() const { return orientation_; }
 
 void AdMultiSlider::setOrientation(Qt::Orientation value) {
@@ -1122,13 +1150,13 @@ QSize AdMultiSlider::sizeHint() const {
     const int height =
         std::max(std::max(34, sliderThickness),
                  layout.style.metrics.controlSize + layout.style.metrics.marginCross * 2 +
-                     (hasMarks ? layout.style.metrics.markGap + markLabelHeight : 0));
+                     (markLabelHeight > 0 ? layout.style.metrics.markGap + markLabelHeight : 0));
     return scaled(QSize(std::max(260, sliderLength * 6), height));
   }
   const int width =
       std::max(std::max(52, sliderThickness),
                layout.style.metrics.controlSize + layout.style.metrics.marginCross * 2 +
-                   (hasMarks ? layout.style.metrics.markGap + markLabelWidth : 0));
+                   (markLabelWidth > 0 ? layout.style.metrics.markGap + markLabelWidth : 0));
   return scaled(QSize(width, std::max(260, sliderLength * 6)));
 }
 
@@ -1165,7 +1193,7 @@ void AdMultiSlider::commitControlScale(const AdControlScaleContext& context) {
 AdMultiSlider::MarkMap AdMultiSlider::effectiveMarks() const {
   MarkMap out = marks_;
   for (auto it = out.begin(); it != out.end(); ++it) {
-    if (it->label.trimmed().isEmpty()) {
+    if (it->labelVisible && it->label.trimmed().isEmpty()) {
       it->label = formatNumber(it.key());
     }
   }
@@ -1294,6 +1322,16 @@ void AdMultiSlider::emitSliderPositionChangedIfNeeded(double previousPosition) {
   if (!fuzzyEq(previousPosition, currentPosition)) {
     emit sliderPositionChanged(currentPosition);
   }
+}
+
+void AdMultiSlider::setFocusVisible(bool visible) {
+  if (focusVisible_ == visible) {
+    return;
+  }
+  focusVisible_ = visible;
+  invalidateLayoutCache();
+  requestTooltipSync();
+  update();
 }
 
 void AdMultiSlider::setFocusHandleIndex(int index) {
@@ -1857,9 +1895,8 @@ AdMultiSlider::LayoutInfo AdMultiSlider::buildLayout() const {
                       : !((layoutDirection() == Qt::RightToLeft) ^ invertedAppearance_);
   const qreal minimumThumbRadius =
       std::min(layout.style.metrics.handleSize, layout.style.metrics.handleSizeHover) / 2.0;
-  const int markSpan =
-      hasMarks ? layout.style.metrics.markGap + (layout.vertical ? maxMarkWidth : maxMarkHeight)
-               : 0;
+  const int markLabelSpan = layout.vertical ? maxMarkWidth : maxMarkHeight;
+  const int markSpan = markLabelSpan > 0 ? layout.style.metrics.markGap + markLabelSpan : 0;
   // Keep the handle on the clipping-safe axis. The minimum thumb diameter is
   // added back only as a visual rail extension around that logical span.
   if (!layout.vertical) {
@@ -2247,7 +2284,12 @@ void AdMultiSlider::paintEvent(QPaintEvent* event) {
     }
   };
 
-  if (mode_ == Mode::Single) {
+  if (trackFillRatio_ >= 0.0) {
+    const double trackValue = minimum_ + (maximum_ - minimum_) * trackFillRatio_;
+    const TrackEndpoint endpoint =
+        trackFillRatio_ >= 1.0 ? TrackEndpoint::VisualMaximum : TrackEndpoint::HandleCenter;
+    drawTrackSegment(minimum_, trackValue, TrackEndpoint::VisualMinimum, endpoint);
+  } else if (mode_ == Mode::Single) {
     if (included_ && !handles_.isEmpty()) {
       const double handleValue = handles_.constFirst();
       const TrackEndpoint handleEndpoint = fuzzyEq(handleValue, maximum_)
@@ -2297,6 +2339,10 @@ void AdMultiSlider::paintEvent(QPaintEvent* event) {
         painter.setBrush(layout.style.surfaceBg);
         painter.setPen(QPen(dotBorder, std::max<qreal>(1.0, layout.style.metrics.handleLineWidth)));
         painter.drawEllipse(dotRect);
+      }
+
+      if (!it->labelVisible) {
+        continue;
       }
 
       QFont markFont = layout.style.metrics.font;
@@ -2433,6 +2479,8 @@ void AdMultiSlider::mousePressEvent(QMouseEvent* event) {
   }
 
   setFocus(Qt::MouseFocusReason);
+  // An already-focused widget receives no FocusIn when input switches to the mouse.
+  setFocusVisible(false);
   dragChanged_ = false;
   pendingPrimaryValueChange_ = false;
   pendingValuesChange_ = false;
@@ -2658,6 +2706,7 @@ void AdMultiSlider::keyPressEvent(QKeyEvent* event) {
   const int key = event->key();
   const int handleCount = static_cast<int>(handles_.size());
   if ((key == Qt::Key_Tab || key == Qt::Key_Backtab) && handleCount > 1) {
+    setFocusVisible(true);
     int index = focusHandleIndex_;
     if (index < 0 || index >= handleCount) {
       index = 0;
@@ -2673,6 +2722,7 @@ void AdMultiSlider::keyPressEvent(QKeyEvent* event) {
 
   if (mode_ == Mode::Range && editableHandles_ &&
       (key == Qt::Key_Delete || key == Qt::Key_Backspace)) {
+    setFocusVisible(true);
     pendingPrimaryValueChange_ = false;
     pendingValuesChange_ = false;
     dragChanged_ = false;
@@ -2726,6 +2776,7 @@ void AdMultiSlider::keyPressEvent(QKeyEvent* event) {
     return;
   }
 
+  setFocusVisible(true);
   nextValue = normalizeValue(nextValue);
   QList<double> next = handles_;
   next[index] = nextValue;

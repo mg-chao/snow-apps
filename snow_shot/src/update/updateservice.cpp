@@ -1,3 +1,4 @@
+#include "snow_shot/app/edition.h"
 #include "snow_shot/update/updateservice.h"
 
 #include <QCoreApplication>
@@ -209,9 +210,9 @@ struct UpdateService::Impl {
 
     QString executablePath() const {
 #ifdef Q_OS_MACOS
-        return QDir(options.applicationDirectory).filePath(QStringLiteral("snow-shot-updater"));
+        return QDir(options.applicationDirectory).filePath(app::edition::updaterName());
 #else
-        return QDir(options.applicationDirectory).filePath(QStringLiteral("snow-shot-updater.exe"));
+        return QDir(options.applicationDirectory).filePath(app::edition::updaterName());
 #endif
     }
 

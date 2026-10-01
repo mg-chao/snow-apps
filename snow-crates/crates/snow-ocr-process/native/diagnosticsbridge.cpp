@@ -1,3 +1,7 @@
+#ifndef SNOW_DIAGNOSTICS_PRODUCT
+#define SNOW_DIAGNOSTICS_PRODUCT "Snow Shot"
+#endif
+
 // SPDX-License-Identifier: Apache-2.0
 #include "diagnosticsbridge.h"
 
@@ -86,7 +90,7 @@ void terminateNow() noexcept {
 void configure(const char* role, const char* session) {
     _set_abort_behavior(0, _WRITE_ABORT_MSG | _CALL_REPORTFAULT);
     strncpy_s(sessionIdentity.data(), sessionIdentity.size(), session, _TRUNCATE);
-    annotations.SetKeyValue("product", "Snow Shot");
+    annotations.SetKeyValue("product", SNOW_DIAGNOSTICS_PRODUCT);
     annotations.SetKeyValue("role", role);
     annotations.SetKeyValue("session", session);
 #ifdef SNOW_DIAGNOSTICS_BUILD

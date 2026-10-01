@@ -6,6 +6,10 @@
 #include "snow_shot/presentation/settings/settingscatalog.h"
 #include "snow_shot/storage/applicationstorage.h"
 #include "snow_shot/storage/settingsadapters.h"
+#if SNOW_SHOT_ENABLE_API_CONFIGURATION
+#include "snow_shot/customaimodelconfiguration.h"
+#include "snow_shot/texttranslationconfiguration.h"
+#endif
 
 #include "snow_shot/platform/macos/loginitemservice.h"
 
@@ -102,6 +106,7 @@ class SettingsBackend : public QObject {
     applyToolbarLayout(storage::ScreenshotToolbarLayoutKind kind,
                        const storage::ScreenshotToolbarLayout& layout) = 0;
 
+#if SNOW_SHOT_ENABLE_API_CONFIGURATION
     [[nodiscard]] virtual CustomAiModels customAiModels() const {
         return {};
     }
@@ -114,6 +119,7 @@ class SettingsBackend : public QObject {
     virtual bool applyTextTranslationConfigurations(const TextTranslationConfigurations&) {
         return false;
     }
+#endif
     virtual bool
     importConfigurationSnapshot(const QMap<QString, QJsonValue>&, int,
                                 std::shared_future<storage::StorageResult>* completion = nullptr) {
@@ -278,10 +284,13 @@ class BuiltInSettingsBackend final : public SettingsBackend {
     [[nodiscard]] SettingsActionState actionState(SettingsActionBinding binding) const override;
     [[nodiscard]] bool triggerAction(SettingsActionBinding binding,
                                      const QString& filePath = {}) override;
+#if SNOW_SHOT_ENABLE_API_CONFIGURATION
     [[nodiscard]] CustomAiModels customAiModels() const override;
     bool applyCustomAiModels(const CustomAiModels& models) override;
     [[nodiscard]] TextTranslationConfigurations textTranslationConfigurations() const override;
     bool applyTextTranslationConfigurations(const TextTranslationConfigurations& values) override;
+#endif
+
     bool importConfigurationSnapshot(
         const QMap<QString, QJsonValue>& values, int schemaVersion,
         std::shared_future<storage::StorageResult>* completion = nullptr) override;

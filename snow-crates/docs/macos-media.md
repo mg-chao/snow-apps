@@ -404,6 +404,36 @@ carry the same filters through direct recording. Stream config version 2 and
 direct recording config version 6 include this structure. Recompile unversioned
 C desktop/monitor/region configuration callers after this layout change.
 
+Direct and deferred recording callers use configuration version 11. Its appended
+`system_audio_gain_db` and `microphone_gain_db` fields accept integer gains from
+-24 to 24 dB; versions 1 through 10 remain supported with 0 dB defaults. Gain is
+applied to each source before mixing or separate-track encoding. Live controls
+use `snow_recording_session_set_audio_gain`; opt-in metering uses
+`snow_recording_session_set_audio_metering` and
+`snow_recording_session_take_audio_levels` to read processed peaks and source status.
+Deferred capture writes the gained PCM to its source tracks; rendering reuses
+those samples without applying gain again.
+
+Direct and deferred recording can update exclusions without restarting video capture.
+`snow_recording_session_request_exclusions` copies the new IDs and required popup
+IDs and returns a generation immediately. Content discovery runs on a separate
+worker, retries until required windows are available, and initiates asynchronous
+updates for every active ScreenCaptureKit filter. Poll
+`snow_recording_session_exclusion_status` and show the popup only when its
+generation is applied. Pending or failed requests do not permit showing it.
+Successful native acknowledgments invalidate both queued frame stages and cached
+desktop images. While paused, the same update configures the next stream startup.
+An acknowledgment timeout reports failure but retains unfinished native callbacks;
+new filter mutations wait until those callbacks settle. Topology replacement also
+waits for in-flight mutations, and replacement/resumed streams verify every required
+window against their own content snapshot before starting.
+
+Audio previews use `snow_recording_audio_monitor_create`, which returns before
+native acquisition. Cancel immediately with `snow_recording_audio_monitor_cancel`,
+then destroy on a worker with `snow_recording_audio_monitor_destroy`. Destruction
+joins the owner worker and releases its native audio engine before returning;
+recording startup waits for this retirement to prevent overlapping acquisition.
+
 Qt resolves NSView handles to NSWindow window numbers on the GUI thread. It passes
 successful exclusion IDs into recording and scrolling configs before workers
 start, preserves them across scrolling direction changes/export pauses, and

@@ -42,6 +42,10 @@ class RemotePackageTests(unittest.TestCase):
         self.image.write_bytes(b'native DMG fixture')
         self.image.with_suffix('.dmg.sha256').write_text(
             (checksum or remote.digest(self.image)) + '  ' + self.image.name + '\n')
+        for name in ['snow_shot', 'snow-ocr-process', 'snow_shot_mini']:
+            path = self.build / 'symbols' / (name + '.dSYM') / 'Contents/Resources/DWARF' / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(('DWARF fixture: ' + name).encode())
 
     def run_command(self, command, **kwargs):
         if command[0] == 'bash':
@@ -57,10 +61,68 @@ class RemotePackageTests(unittest.TestCase):
         self.assertFalse((self.repo / 'artifacts/.macos-release.lock').exists())
         receipt = json.loads((self.build / 'remote-release-source.json').read_text())
         self.assertEqual(receipt['sha256'], result['sha256'])
+        self.assertEqual(len(receipt['symbols']), 2)
 
     def test_wrong_version_fails_before_build(self):
         self.request['version'] = '1.2.4'
         with self.assertRaisesRegex(ValueError, 'versions must match'):
+            remote.package(self.request)
+        self.run.assert_not_called()
+
+    def test_cargo_worker_symbols_retain_the_hashed_executable_name(self):
+        self.write_package()
+        path = self.build / 'symbols/snow-ocr-process.dSYM/Contents/Resources/DWARF/snow-ocr-process'
+        hashed = path.with_name('snow_ocr_process-2682fb017056abac')
+        path.rename(hashed)
+        symbols = remote.symbols_inventory(self.build, ['snow-shot', 'snow-shot-mini'])
+        self.assertEqual(symbols[1]['file'], str(hashed.relative_to(self.build)))
+        self.assertEqual(symbols[1]['sha256'], remote.digest(hashed))
+        self.assertEqual(symbols[1]['size'], hashed.stat().st_size)
+
+    def test_worker_symbols_require_exactly_one_dwarf_file(self):
+        self.write_package()
+        path = self.build / 'symbols/snow-ocr-process.dSYM/Contents/Resources/DWARF/unexpected'
+        path.write_bytes(b'extra DWARF')
+        with self.assertRaisesRegex(ValueError, 'symbols'):
+            remote.symbols_inventory(self.build, ['snow-shot'])
+
+    def test_paired_images_are_audited_and_recorded_together(self):
+        self.request['editions'] = ['Full', 'Mini']
+        mini = self.build / 'snow-shot-mini-1.2.3-beta-macos-arm64.dmg'
+        def paired(command, **kwargs):
+            if command[0] == 'bash':
+                self.write_package()
+                mini.write_bytes(b'mini fixture')
+                mini.with_suffix('.dmg.sha256').write_text(remote.digest(mini) + '  ' + mini.name)
+            return SimpleNamespace(returncode=0)
+        self.run.side_effect = paired
+        result = remote.package(self.request)
+        self.assertEqual([item['product'] for item in result['images']], ['snow-shot', 'snow-shot-mini'])
+        self.assertEqual(len(result['symbols']), 3)
+        self.assertEqual(Path(result['images'][1]['path']).read_bytes(), mini.read_bytes())
+        self.assertEqual([call.args[0][0] for call in self.run.call_args_list],
+                         ['bash', 'hdiutil', 'codesign', 'hdiutil', 'codesign'])
+        self.request.update(skipBuild=True, id='b' * 32)
+        mini.write_bytes(b'changed')
+        with self.assertRaisesRegex(ValueError, 'source receipt'):
+            remote.package(self.request)
+
+    def test_paired_cached_symbols_reject_corruption(self):
+        self.request['editions'] = ['Full', 'Mini']
+        def paired(command, **kwargs):
+            if command[0] == 'bash':
+                self.write_package()
+                image = self.build / 'snow-shot-mini-1.2.3-beta-macos-arm64.dmg'
+                image.write_bytes(b'mini fixture')
+                image.with_suffix('.dmg.sha256').write_text(remote.digest(image) + '  ' + image.name)
+            return SimpleNamespace(returncode=0)
+        self.run.side_effect = paired
+        remote.package(self.request)
+        self.request.update(skipBuild=True, id='b' * 32)
+        path = self.build / 'symbols/snow_shot_mini.dSYM/Contents/Resources/DWARF/snow_shot_mini'
+        path.write_bytes(b'corrupted Mini symbols')
+        self.run.reset_mock()
+        with self.assertRaisesRegex(ValueError, 'symbols differ'):
             remote.package(self.request)
         self.run.assert_not_called()
 

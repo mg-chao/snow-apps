@@ -1,3 +1,4 @@
+#include "snow_shot/app/edition.h"
 #include "snow_shot/presentation/systemtraycontroller.h"
 #include "snowimageqtcodec.h"
 #include "snow_shot/storage/settingsadapters.h"
@@ -246,7 +247,8 @@ class SystemTrayController::Impl {
         menu->setObjectName(QStringLiteral("systemTrayMenu"));
         menu->setMinimumWidth(300);
         trayIcon->setObjectName(QStringLiteral("snowShotSystemTrayIcon"));
-        trayIcon->setToolTip(QStringLiteral("SnowShot"));
+        trayIcon->setToolTip(app::edition::isMini ? app::edition::productName()
+                                                  : QStringLiteral("SnowShot"));
         updateIcon();
 
         buildMenu();
@@ -481,6 +483,8 @@ class SystemTrayController::Impl {
     }
 
     void retranslateUi() {
+        if (app::edition::isMini)
+            trayIcon->setToolTip(app::edition::productName());
         for (const settings::SettingsTrayMenuGroupDefinition& group : groups) {
             for (const settings::SettingsTrayMenuOptionDefinition& option : group.options) {
                 if (QAction* action = actions.value(option.id)) {
@@ -512,9 +516,12 @@ class SystemTrayController::Impl {
                  groups.at(groupIndex).options) {
                 QAction* action = actions.value(option.id);
                 const bool visible =
-                    action != nullptr && requested.contains(option.id) &&
-                    (option.shortcutAction != GlobalShortcutAction::TranslateSelectedText ||
-                     snow_shot::storage::ExtendedFeaturesSettings().translationPageEnabled());
+                    action != nullptr && requested.contains(option.id)
+#if SNOW_SHOT_ENABLE_EXTENDED_FEATURES
+                    && (option.shortcutAction != GlobalShortcutAction::TranslateSelectedText ||
+                        snow_shot::storage::ExtendedFeaturesSettings().translationPageEnabled())
+#endif
+                    ;
                 if (action != nullptr) {
                     action->setVisible(visible);
                 }

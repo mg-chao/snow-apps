@@ -1,5 +1,6 @@
 pub mod contract;
 pub mod coordination;
+pub mod edition;
 pub mod error;
 pub mod fsutil;
 mod gitee;

@@ -7,6 +7,7 @@ use crate::backend::{AudioRecorderEngine, EngineEvent};
 use crate::error::{AudioError, AudioResult, RecvError, RecvTimeoutError, TryRecvError};
 use crate::packet::{AudioEvent, AudioPacket};
 use crate::session::AudioStreamConfig;
+use crate::{AudioControlHandle, AudioSourceKind, control::GainProcessor};
 use snow_core::stream_queue::StreamQueue;
 
 #[derive(Debug)]
@@ -66,13 +67,31 @@ pub struct AudioStreamHandle {
     stats: Arc<AudioStreamStats>,
     join_handle: Option<JoinHandle<()>>,
     buffer_depth: usize,
+    control: AudioControlHandle,
 }
 
 impl AudioStreamHandle {
     pub(crate) fn start(
-        mut engine: Box<dyn AudioRecorderEngine>,
+        engine: Box<dyn AudioRecorderEngine>,
         config: AudioStreamConfig,
     ) -> AudioResult<Self> {
+        let control = AudioControlHandle::new();
+        config
+            .cancellation
+            .commit(|| control.initialize_sources(config.system.enabled, config.microphone.enabled))
+            .map_err(|_| AudioError::Canceled)?;
+        Self::start_with_controls(engine, config, control)
+    }
+
+    pub(crate) fn start_with_controls(
+        mut engine: Box<dyn AudioRecorderEngine>,
+        config: AudioStreamConfig,
+        control: AudioControlHandle,
+    ) -> AudioResult<Self> {
+        if config.cancellation.is_canceled() {
+            control.mark_stopped();
+            return Err(AudioError::Canceled);
+        }
         let buffer_depth = config.event_buffer_depth;
         let queue = Arc::new(StreamQueue::new(buffer_depth));
         let stop_flag = Arc::new(AtomicBool::new(false));
@@ -84,18 +103,20 @@ impl AudioStreamHandle {
         let worker_pause = Arc::clone(&pause_flag);
         let worker_stats = Arc::clone(&stats);
         let worker_config = config.clone();
+        let worker_control = control.clone();
 
         let join_handle = std::thread::Builder::new()
             .name("snow-audio-stream".into())
             .spawn(move || {
                 snow_core::qos::apply_current_thread();
-                stream_loop(
+                stream_loop_with_controls(
                     &mut engine,
                     &worker_config,
                     &worker_queue,
                     &worker_stop,
                     &worker_pause,
                     &worker_stats,
+                    &worker_control,
                 );
             })
             .map_err(|err| {
@@ -111,6 +132,7 @@ impl AudioStreamHandle {
             stats,
             join_handle: Some(join_handle),
             buffer_depth,
+            control,
         })
     }
 
@@ -173,6 +195,10 @@ impl AudioStreamHandle {
 
     pub fn stats(&self) -> &Arc<AudioStreamStats> {
         &self.stats
+    }
+
+    pub fn control(&self) -> AudioControlHandle {
+        self.control.clone()
     }
 
     pub fn buffer_fill_percent(&self) -> f64 {
@@ -246,6 +272,7 @@ impl snow_core::streaming::StreamStats for AudioStreamHandle {
     }
 }
 
+#[cfg(test)]
 fn stream_loop(
     engine: &mut Box<dyn AudioRecorderEngine>,
     config: &AudioStreamConfig,
@@ -254,12 +281,37 @@ fn stream_loop(
     pause: &AtomicBool,
     stats: &AudioStreamStats,
 ) {
+    stream_loop_with_controls(
+        engine,
+        config,
+        queue,
+        stop,
+        pause,
+        stats,
+        &AudioControlHandle::new(),
+    );
+}
+
+fn stream_loop_with_controls(
+    engine: &mut Box<dyn AudioRecorderEngine>,
+    config: &AudioStreamConfig,
+    queue: &StreamQueue<AudioEvent>,
+    stop: &AtomicBool,
+    pause: &AtomicBool,
+    stats: &AudioStreamStats,
+    control: &AudioControlHandle,
+) {
     let mut consecutive_errors = 0usize;
     let mut was_paused = false;
     let mut pause_started: Option<Instant> = None;
+    let mut processors = [
+        GainProcessor::new(control.gain_db(AudioSourceKind::System)),
+        GainProcessor::new(control.gain_db(AudioSourceKind::Microphone)),
+    ];
 
     loop {
         if config.cancellation.is_canceled() {
+            control.mark_stopped();
             push_event_with_drop_notice(queue, stats, AudioEvent::Error(AudioError::Canceled));
             break;
         }
@@ -267,18 +319,21 @@ fn stream_loop(
             break;
         }
 
-        if pause.load(Ordering::Acquire) {
+        let paused = pause.load(Ordering::Acquire);
+        if paused {
             if !was_paused {
                 let now = Instant::now();
                 pause_started = Some(now);
                 push_event_with_drop_notice(queue, stats, AudioEvent::Paused { at: now });
                 was_paused = true;
             }
-            std::thread::sleep(Duration::from_millis(25));
-            continue;
+            if !control.any_metering() {
+                std::thread::sleep(Duration::from_millis(25));
+                continue;
+            }
         }
 
-        if was_paused {
+        if was_paused && !paused {
             let now = Instant::now();
             let gap = pause_started
                 .map(|started| now.saturating_duration_since(started))
@@ -292,11 +347,33 @@ fn stream_loop(
         if config.cancellation.is_canceled() {
             continue;
         }
+        if let Some(states) = engine.source_states()
+            && config
+                .cancellation
+                .commit(|| {
+                    for (source, status) in [AudioSourceKind::System, AudioSourceKind::Microphone]
+                        .into_iter()
+                        .zip(states)
+                    {
+                        control.set_source_status(source, status);
+                    }
+                })
+                .is_err()
+        {
+            continue;
+        }
         match polled {
             Ok(EngineEvent::Idle) => {}
             Ok(EngineEvent::Events(events)) => {
                 consecutive_errors = 0;
-                for event in events {
+                for mut event in events {
+                    let measurement = if let AudioEvent::Packet(packet) = &mut event {
+                        processors[crate::control::source_index(packet.source)]
+                            .process(packet, control)
+                            .map(|measurement| (packet.source, measurement))
+                    } else {
+                        None
+                    };
                     match &event {
                         AudioEvent::Packet(packet) => {
                             stats.packets_captured.fetch_add(1, Ordering::Relaxed);
@@ -311,7 +388,21 @@ fn stream_loop(
                     }
                     if config
                         .cancellation
-                        .commit(|| push_event_with_drop_notice(queue, stats, event))
+                        .commit(|| {
+                            if let Some((source, measurement)) = measurement {
+                                control.publish(
+                                    source,
+                                    measurement.peak,
+                                    measurement.clipped,
+                                    measurement.at,
+                                );
+                            }
+                            if !matches!(event, AudioEvent::Packet(_))
+                                || !pause.load(Ordering::Acquire)
+                            {
+                                push_event_with_drop_notice(queue, stats, event);
+                            }
+                        })
                         .is_err()
                     {
                         break;
@@ -322,6 +413,7 @@ fn stream_loop(
                 consecutive_errors += 1;
                 stats.errors_recovered.fetch_add(1, Ordering::Relaxed);
                 if consecutive_errors >= config.max_consecutive_errors {
+                    let _ = config.cancellation.commit(|| control.mark_error(&err));
                     emit_terminal_error(queue, stats, &err);
                     break;
                 }
@@ -329,12 +421,14 @@ fn stream_loop(
                 continue;
             }
             Err(err) => {
+                let _ = config.cancellation.commit(|| control.mark_error(&err));
                 emit_terminal_error(queue, stats, &err);
                 break;
             }
         }
     }
 
+    control.mark_stopped();
     push_event_with_drop_notice(queue, stats, AudioEvent::StreamEnded);
     queue.close();
 }
@@ -581,5 +675,127 @@ mod tests {
             }
         )));
         assert!(stats.packets_dropped.load(Ordering::Relaxed) > 0);
+    }
+
+    #[test]
+    fn paused_monitoring_processes_gain_but_never_delivers_paused_pcm() {
+        struct MonitoringEngine {
+            step: usize,
+            pause: Arc<AtomicBool>,
+            stop: Arc<AtomicBool>,
+            control: AudioControlHandle,
+            queue: Arc<StreamQueue<AudioEvent>>,
+        }
+        impl AudioRecorderEngine for MonitoringEngine {
+            fn poll(&mut self, _: Duration) -> AudioResult<EngineEvent> {
+                let step = self.step;
+                self.step += 1;
+                match step {
+                    0 | 2 => {
+                        let mut input = packet(step as u64);
+                        input.data.fill(if step == 0 { 4000 } else { 1000 });
+                        Ok(EngineEvent::Events(vec![AudioEvent::Packet(input)]))
+                    }
+                    1 => {
+                        let level = self.control.take_levels().system;
+                        assert_eq!(level.peak, 2005.0 / 32768.0);
+                        let events = self.queue.drain();
+                        assert_eq!(events.len(), 1);
+                        assert!(matches!(events[0], AudioEvent::Paused { .. }));
+                        self.pause.store(false, Ordering::Release);
+                        Ok(EngineEvent::Idle)
+                    }
+                    3 => {
+                        self.stop.store(true, Ordering::Release);
+                        Ok(EngineEvent::Idle)
+                    }
+                    _ => panic!("monitor worker did not stop"),
+                }
+            }
+        }
+        let pause = Arc::new(AtomicBool::new(true));
+        let stop = Arc::new(AtomicBool::new(false));
+        let queue = Arc::new(StreamQueue::new(4));
+        let control = AudioControlHandle::new();
+        control.set_gain_db(AudioSourceKind::System, -6).unwrap();
+        control.set_metering(AudioSourceKind::System, true);
+        let mut engine: Box<dyn AudioRecorderEngine> = Box::new(MonitoringEngine {
+            step: 0,
+            pause: pause.clone(),
+            stop: stop.clone(),
+            control: control.clone(),
+            queue: queue.clone(),
+        });
+        stream_loop_with_controls(
+            &mut engine,
+            &AudioStreamConfig::default(),
+            &queue,
+            &stop,
+            &pause,
+            &AudioStreamStats::default(),
+            &control,
+        );
+        let events = queue.drain();
+        assert!(
+            events
+                .iter()
+                .any(|event| matches!(event, AudioEvent::Resumed { .. }))
+        );
+        let packets: Vec<_> = events
+            .into_iter()
+            .filter_map(|event| match event {
+                AudioEvent::Packet(packet) => Some(packet),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(packets.len(), 1);
+        assert_eq!(packets[0].data, vec![501; 960]);
+    }
+
+    #[test]
+    fn silent_ready_backend_is_distinct_from_unavailable_source() {
+        struct SilentEngine {
+            stop: Arc<AtomicBool>,
+            control: AudioControlHandle,
+            calls: usize,
+        }
+        impl AudioRecorderEngine for SilentEngine {
+            fn source_states(&self) -> Option<[crate::AudioSourceStatus; 2]> {
+                Some([
+                    crate::AudioSourceStatus::Ready,
+                    crate::AudioSourceStatus::Unavailable,
+                ])
+            }
+            fn poll(&mut self, _: Duration) -> AudioResult<EngineEvent> {
+                if self.calls == 1 {
+                    let levels = self.control.take_levels();
+                    assert_eq!(levels.system.status, crate::AudioSourceStatus::Ready);
+                    assert_eq!(levels.system.peak, 0.0);
+                    assert_eq!(
+                        levels.microphone.status,
+                        crate::AudioSourceStatus::Unavailable
+                    );
+                    self.stop.store(true, Ordering::Release);
+                }
+                self.calls += 1;
+                Ok(EngineEvent::Idle)
+            }
+        }
+        let control = AudioControlHandle::new();
+        let stop = Arc::new(AtomicBool::new(false));
+        let mut engine: Box<dyn AudioRecorderEngine> = Box::new(SilentEngine {
+            stop: stop.clone(),
+            control: control.clone(),
+            calls: 0,
+        });
+        stream_loop_with_controls(
+            &mut engine,
+            &AudioStreamConfig::default(),
+            &StreamQueue::new(1),
+            &stop,
+            &AtomicBool::new(false),
+            &AudioStreamStats::default(),
+            &control,
+        );
     }
 }

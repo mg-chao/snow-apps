@@ -5,6 +5,7 @@ use crate::{
     capture::{CaptureConfig, NativeFrame, Target, VideoStream},
     compositor::{Compositor, Layer},
     content::{self, DisplayInfo, SharedSnapshot, WindowProbe},
+    exclusion_update::{NativeUpdateBarrier, NativeUpdateProgress},
 };
 use objc2_screen_capture_kit::SCShareableContent;
 use snow_media::{
@@ -15,7 +16,7 @@ use snow_media::{
 };
 use std::{
     sync::{
-        OnceLock,
+        Arc, Mutex, OnceLock,
         atomic::{AtomicU64, Ordering},
     },
     time::{Duration, Instant},
@@ -26,6 +27,94 @@ pub struct DisplayId(pub u32);
 /// A WindowServer session identifier; never persist it as a durable identity.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct WindowId(pub u32);
+
+#[derive(Clone)]
+struct ExclusionRequest {
+    generation: u64,
+    windows: Vec<u32>,
+    processes: Vec<i32>,
+    required: Vec<u32>,
+}
+#[derive(Default)]
+struct ExclusionState {
+    requested: u64,
+    applied: u64,
+    failed: u64,
+    pending: Option<ExclusionRequest>,
+}
+/// Latest-request mailbox. Native content discovery and update acknowledgments
+/// are handled independently of recording commands and video encoding.
+#[derive(Clone, Default)]
+pub struct ExclusionControl(Arc<Mutex<ExclusionState>>);
+impl ExclusionControl {
+    pub fn request(
+        &self,
+        mut windows: Vec<u32>,
+        mut processes: Vec<i32>,
+        required: Vec<u32>,
+    ) -> MacResult<u64> {
+        if windows.len() > 4096 || processes.len() > 4096 || required.len() > 4096 {
+            return Err(geometry("invalid capture exclusions"));
+        }
+        windows.sort_unstable();
+        windows.dedup();
+        if required.iter().any(|id| windows.binary_search(id).is_err()) {
+            return Err(geometry("required window is not excluded"));
+        }
+        processes.sort_unstable();
+        processes.dedup();
+        let mut state = self.0.lock().unwrap_or_else(|error| error.into_inner());
+        state.requested = state
+            .requested
+            .checked_add(1)
+            .ok_or_else(|| geometry("exclusion generation overflow"))?;
+        let generation = state.requested;
+        state.pending = Some(ExclusionRequest {
+            generation,
+            windows,
+            processes,
+            required,
+        });
+        Ok(generation)
+    }
+    pub fn status(&self) -> (u64, u64, u32) {
+        let state = self.0.lock().unwrap_or_else(|error| error.into_inner());
+        let status = if state.applied == state.requested {
+            0
+        } else if state.failed == state.requested {
+            2
+        } else {
+            1
+        };
+        (state.requested, state.applied, status)
+    }
+    fn take_pending(&self) -> Option<ExclusionRequest> {
+        self.0
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+            .pending
+            .take()
+    }
+    fn complete(&self, generation: u64, success: bool) {
+        let mut state = self.0.lock().unwrap_or_else(|error| error.into_inner());
+        if success {
+            state.applied = generation;
+        } else {
+            state.failed = generation;
+        }
+    }
+}
+enum ExclusionFlight {
+    Preparing {
+        request: ExclusionRequest,
+        result: crossbeam_channel::Receiver<MacResult<SharedSnapshot>>,
+    },
+    Applying {
+        request: ExclusionRequest,
+        results: Vec<crossbeam_channel::Receiver<MacResult<()>>>,
+        barrier: NativeUpdateBarrier,
+    },
+}
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum DesktopTarget {
     PrimaryDisplay,
@@ -306,6 +395,9 @@ pub struct DesktopSession {
     inspected_at: Instant,
     window_probe: Option<WindowProbe>,
     pending_content: Option<SharedSnapshot>,
+    exclusion_control: Option<ExclusionControl>,
+    exclusion_flight: Option<ExclusionFlight>,
+    required_excluded_windows: Vec<u32>,
 }
 impl DesktopSession {
     pub fn new(mut config: DesktopConfig) -> MacResult<Self> {
@@ -343,6 +435,9 @@ impl DesktopSession {
             inspected_at: Instant::now(),
             window_probe,
             pending_content: None,
+            exclusion_control: None,
+            exclusion_flight: None,
+            required_excluded_windows: Vec::new(),
         })
     }
     /// Replace the cancellation token between one-shot operations. Streams must be stopped.
@@ -361,6 +456,126 @@ impl DesktopSession {
     pub fn transform(&self) -> DesktopTransform {
         self.plan.transform
     }
+    pub fn set_exclusion_control(&mut self, control: ExclusionControl) {
+        self.exclusion_control = Some(control);
+    }
+    pub fn poll_exclusions(&mut self) -> MacResult<()> {
+        let Some(control) = self.exclusion_control.clone() else {
+            return Ok(());
+        };
+        if let Some(flight) = self.exclusion_flight.take() {
+            match flight {
+                ExclusionFlight::Preparing { request, result } => match result.try_recv() {
+                    Ok(Ok(content)) => {
+                        self.config.excluded_windows.clone_from(&request.windows);
+                        self.config
+                            .excluded_processes
+                            .clone_from(&request.processes);
+                        self.required_excluded_windows.clone_from(&request.required);
+                        let mut failed = false;
+                        let results = self
+                            .streams
+                            .iter()
+                            .enumerate()
+                            .filter_map(|(index, stream)| {
+                                match stream.update_exclusions(
+                                    &self.plan.capture_config(&self.config, index),
+                                    &content,
+                                ) {
+                                    Ok(result) => Some(result),
+                                    Err(_) => {
+                                        failed = true;
+                                        None
+                                    }
+                                }
+                            })
+                            .collect::<Vec<_>>();
+                        if results.is_empty() {
+                            control.complete(request.generation, !failed);
+                        } else {
+                            self.exclusion_flight = Some(ExclusionFlight::Applying {
+                                request,
+                                results,
+                                barrier: NativeUpdateBarrier::new(
+                                    Instant::now() + self.config.timeout,
+                                    failed,
+                                ),
+                            });
+                        }
+                    }
+                    Ok(Err(_)) | Err(crossbeam_channel::TryRecvError::Disconnected) => {
+                        control.complete(request.generation, false);
+                    }
+                    Err(crossbeam_channel::TryRecvError::Empty) => {
+                        self.exclusion_flight =
+                            Some(ExclusionFlight::Preparing { request, result });
+                    }
+                },
+                ExclusionFlight::Applying {
+                    request,
+                    mut results,
+                    mut barrier,
+                } => {
+                    let mut failed = false;
+                    results.retain(|result| match result.try_recv() {
+                        Ok(Ok(())) => false,
+                        Ok(Err(_)) | Err(crossbeam_channel::TryRecvError::Disconnected) => {
+                            failed = true;
+                            false
+                        }
+                        Err(crossbeam_channel::TryRecvError::Empty) => true,
+                    });
+                    match barrier.poll(results.len(), failed, Instant::now()) {
+                        NativeUpdateProgress::Pending { report_timeout } => {
+                            if report_timeout {
+                                control.complete(request.generation, false);
+                            }
+                            // A timeout cannot cancel a native mutation. Keep
+                            // all unfinished callbacks before issuing a newer filter.
+                            self.exclusion_flight = Some(ExclusionFlight::Applying {
+                                request,
+                                results,
+                                barrier,
+                            });
+                        }
+                        NativeUpdateProgress::Settled { success } => {
+                            self.previous = None;
+                            self.latest.fill(None);
+                            self.generation += 1;
+                            self.configuration_pending = true;
+                            control.complete(request.generation, success);
+                        }
+                    }
+                }
+            }
+        }
+        if self.exclusion_flight.is_none()
+            && let Some(request) = control.take_pending()
+        {
+            let cancellation = self.config.cancellation.clone();
+            let timeout = self.config.timeout;
+            let required = request.required.clone();
+            let (tx, result) = crossbeam_channel::bounded(1);
+            match std::thread::Builder::new()
+                .name("snow-capture-exclusions".into())
+                .spawn(move || {
+                    snow_core::qos::apply_current_thread();
+                    let _ = tx.send(content::shareable_content_with_required_windows(
+                        timeout,
+                        &cancellation,
+                        &required,
+                    ));
+                }) {
+                Ok(_) => {
+                    self.exclusion_flight = Some(ExclusionFlight::Preparing { request, result });
+                }
+                Err(_) => {
+                    control.complete(request.generation, false);
+                }
+            }
+        }
+        Ok(())
+    }
     pub fn set_cursor(&mut self, mode: CursorMode) -> MacResult<()> {
         if mode != self.config.cursor {
             for stream in &mut self.streams {
@@ -373,6 +588,14 @@ impl DesktopSession {
         Ok(())
     }
     fn refresh(&mut self) -> MacResult<()> {
+        // An acknowledgment must describe the currently active streams. Do
+        // not replace them while a native filter mutation is still in flight.
+        if matches!(
+            self.exclusion_flight,
+            Some(ExclusionFlight::Applying { .. })
+        ) {
+            return Ok(());
+        }
         let current = topology()?;
         let window_check = matches!(self.config.target, DesktopTarget::Window(_))
             && self.inspected_at.elapsed() >= Duration::from_millis(250);
@@ -393,6 +616,11 @@ impl DesktopSession {
             deadline.remaining()?,
             &self.config.cancellation,
         )?;
+        // A prepared popup can disappear temporarily from discovery. Retain
+        // the existing verified streams until replacements can include every ID.
+        if !content::has_required_windows(&content, &self.required_excluded_windows) {
+            return Ok(());
+        }
         let next = Plan::resolve_with(&self.config, &content)?;
         self.pending_content = Some(SharedSnapshot::new(content));
         if matches!(self.config.target, DesktopTarget::Window(_))
@@ -443,6 +671,7 @@ impl DesktopSession {
         self.complete(result)
     }
     fn next_event_inner(&mut self, timeout: Duration) -> MacResult<DesktopEvent> {
+        self.poll_exclusions()?;
         self.refresh()?;
         if std::mem::take(&mut self.configuration_pending) {
             return Ok(DesktopEvent::Configuration {
@@ -454,7 +683,7 @@ impl DesktopSession {
             let deadline = crate::deadline::Deadline::new(self.config.timeout)?;
             let shared = if let Some(content) = self.pending_content.take() {
                 Some(content)
-            } else if self.plan.sources.len() > 1 {
+            } else if self.plan.sources.len() > 1 || !self.required_excluded_windows.is_empty() {
                 Some(SharedSnapshot::new(content::shareable_content_cancelable(
                     deadline.remaining()?,
                     &self.config.cancellation,
@@ -462,6 +691,11 @@ impl DesktopSession {
             } else {
                 None
             };
+            if shared.as_deref().is_some_and(|content| {
+                !content::has_required_windows(content, &self.required_excluded_windows)
+            }) {
+                return Err(MacError::Inactive);
+            }
             let mut streams = Vec::with_capacity(self.plan.sources.len());
             for i in 0..self.plan.sources.len() {
                 streams.push(VideoStream::start_with(
@@ -713,6 +947,40 @@ mod tests {
             DesktopSession::new(config),
             Err(MacError::Canceled)
         ));
+    }
+    #[test]
+    fn exclusions_acknowledge_only_the_applied_generation() {
+        let control = ExclusionControl::default();
+        assert_eq!(control.status(), (0, 0, 0));
+        assert_eq!(
+            control.request(vec![9, 7, 9], vec![4, 4], vec![9]).unwrap(),
+            1
+        );
+        let first = control.take_pending().unwrap();
+        assert_eq!(first.windows, vec![7, 9]);
+        assert_eq!(first.processes, vec![4]);
+        assert_eq!(control.request(vec![10], vec![], vec![10]).unwrap(), 2);
+        control.complete(first.generation, true);
+        assert_eq!(control.status(), (2, 1, 1));
+        let second = control.take_pending().unwrap();
+        control.complete(second.generation, false);
+        assert_eq!(control.status(), (2, 1, 2));
+        assert!(control.request(vec![10], vec![], vec![11]).is_err());
+        assert_eq!(control.status(), (2, 1, 2));
+        assert_eq!(control.request(vec![10], vec![], vec![10]).unwrap(), 3);
+        let third = control.take_pending().unwrap();
+        control.complete(third.generation, true);
+        assert_eq!(control.status(), (3, 3, 0));
+    }
+    #[test]
+    fn exclusions_keep_only_the_latest_unstarted_request() {
+        let control = ExclusionControl::default();
+        control.request(vec![1], vec![], vec![1]).unwrap();
+        control.request(vec![2], vec![], vec![2]).unwrap();
+        let latest = control.take_pending().unwrap();
+        assert_eq!(latest.generation, 2);
+        assert_eq!(latest.windows, vec![2]);
+        assert!(control.take_pending().is_none());
     }
     #[test]
     fn target_loss_is_sticky_but_temporary_interruptions_are_not() {

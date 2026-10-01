@@ -53,6 +53,11 @@ try {
     if (-not [string]::IsNullOrWhiteSpace($Target)) {
         $buildArguments += @("--target", $Target)
     }
+    elseif ($Preset -in @('snow-shot-msvc-release', 'snow-shot-msvc-fast') -and
+        -not (Select-String -LiteralPath (Join-Path $buildDirectory 'CMakeCache.txt') `
+            -Pattern '^SNOW_APPS_BUILD_SNOW_SHOT_MINI:BOOL=(ON|TRUE|1)$' -Quiet)) {
+        $buildArguments += @('--target', 'snow_shot')
+    }
     & cmake @buildArguments
     if ($LASTEXITCODE -ne 0) {
         throw "CMake build failed for preset $Preset."

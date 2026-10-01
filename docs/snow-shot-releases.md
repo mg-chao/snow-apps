@@ -83,6 +83,45 @@ all referenced files until both public release pages and asset downloads are ver
 
 ## Release contract
 
+### Snow Shot Mini paired releases
+
+Snow Shot and Snow Shot Mini are built from one CMake configuration and published
+under the same `v<version>_snow-shot` tag. The `snow_shot` and `snow_shot_mini`
+targets keep separate executable, helper, install, storage, and MCP identities.
+`SNOW_APPS_BUILD_SNOW_SHOT_MINI=ON` enables Mini alongside the full edition in
+Windows and macOS Apple Silicon presets; macOS Intel presets exclude Mini.
+The `scripts/build.ps1` and `scripts/build.sh` wrappers select the enabled
+editions automatically. After configuring with Mini `OFF`, override the paired
+targets for a direct build with `cmake --build --preset build-<preset> --target
+snow_shot`. Windows and ARM64 release packaging requires both editions.
+`scripts/package-snow-shot.ps1` produces both Windows editions, and
+`scripts/package-snow-shot.sh snow-shot-macos-arm64-release` produces both DMGs.
+
+| Mini Windows asset | Purpose |
+| --- | --- |
+| `snow-shot-mini-<version>-windows-x64-online.exe` | Installer |
+| `snow-shot-mini-<version>-windows-x64-online-update.zip` | Installed-copy update |
+| `snow-shot-mini-<version>-windows-x64-portable.zip` | Portable install and update |
+
+Windows Mini bundles only the trusted OCR asset manifest; manual text recognition
+downloads the local OCR payload on demand. It has no offline installer. macOS
+Mini supports Apple Silicon only and bundles its OCR worker, runtime, and default
+models in `snow-shot-mini-<version>-macos-arm64.dmg`. Mini hides its
+text-recognition toolbar button by default on both platforms and disables
+automatic Pin to Screen recognition; users can enable manual text recognition
+in Mini settings.
+
+Mini's signed feed is `latest-version-mini.json`. Its payload requires
+`product: "snow-shot-mini"` and exactly three package entries. Its updater rejects
+the full product's feed or installation record; full-edition helpers continue to
+accept historical full metadata without a product field. Mini ownership is stored
+in `snow-shot-mini-installation.json`, its portable marker is
+`bin/__mini_data_directory`, and its installed helpers are
+`bin/snow-shot-mini-updater.exe` and `bin/snow-shot-mini-mcp.exe` beside
+`bin/snow_shot_mini.exe`. Publish and verify both signed feeds together. Package
+manager submissions use separate Mini identities (`mg-chao.snow-shot-mini`,
+`snowshot-mini`, and `snow-shot-mini` Homebrew casks).
+
 GitHub and Gitee publish versioned Windows installer and update assets, their checksum
 sidecars and audit manifests, plus `latest-version.json`. When macOS packaging is
 configured, the release also includes the versioned arm64 DMG, its `.sha256` sidecar,
@@ -92,7 +131,7 @@ feed. The website homepage and unrelated application API remain configured separ
 
 The JSON envelope is `{schema:1,keyId,payload,signature}`. `payload` and `signature` are
 Base64. The signature is RSA-3072/PSS/SHA-256 (32-byte salt) over the exact decoded UTF-8
-payload bytes. The payload includes `schema`, strict SemVer `version`, ISO-8601
+payload bytes. The full-edition payload includes `schema`, strict SemVer `version`, ISO-8601
 `publishedAt`, `platform: "windows-x64"`, and exactly five `packages`. Each package carries
 `variant`, `kind`, fixed relative `path`, byte `size`, and lowercase hex `sha256`. Each ZIP
 also carries an exhaustive `files` array of `{path,size,sha256}` entries. Installers are
@@ -160,8 +199,8 @@ physical storage failure.
 The Rust updater uses native platform TLS, Tokio/Reqwest, Serde, RSA/SHA-256, SemVer, and
 ZIP/Deflate without linking Qt or minizip. Windows release packages use the static CRT and a
 dedicated size profile with fat LTO, one codegen unit, aborting panics, overflow checks, and
-external CodeView/PDB information. macOS bundles and signs the same executable, but the
-service reports updates unavailable and does not expose a self-update channel there.
+external CodeView/PDB information. macOS uses the Qt release-discovery service
+and opens the verified release page for manual installation.
 
 ## Operator setup and commands
 
@@ -465,6 +504,32 @@ Public English/Chinese pages and `/website-release.json` are checked after deplo
 For a website-only retry, rerun `publish-snow-shot-website.ps1` without republishing
 release packages. Server settings can be overridden on that command. Focused website
 workflow tests and their commands are documented in the website repository README.
+
+### Snow Shot Mini website downloads
+
+The official website deploys both editions in one operation. Publish and verify
+the paired release on GitHub and Gitee first, including Mini's online installer,
+portable archive, and Apple Silicon DMG listed above. Both editions share
+`SNOW_SHOT_VERSION` and `v<version>_snow-shot`; Mini needs no separate deployment
+command or version setting.
+
+The website's Windows Mini card links to
+`snow-shot-mini-<version>-windows-x64-online.exe` and offers
+`snow-shot-mini-<version>-windows-x64-portable.zip` as a second download.
+The macOS Mini card links to `snow-shot-mini-<version>-macos-arm64.dmg`.
+English uses GitHub download URLs and Chinese uses Gitee. Mini cards use `#f759ab`
+and describe the lighter feature set; no Mini offline installer or Intel DMG is
+advertised.
+
+Commit the website changes in `D:/snow-apps-site`, then run
+`scripts/publish-snow-shot-website.ps1` or the publisher with `-DeployWebsite`.
+The website workflow synchronizes both editions' links through its single
+`releaseVersion`, checks the generated Windows download anchors before packing
+and before replacing server files, then checks the public English and Chinese
+download anchors against the target release. The platform-specific component
+tests cover both macOS DMG links. Mini's existing `setup/` files and
+`latest-version-mini.json` are outside the website replacement set and remain
+intact. Website-only retries use the same entry point and do not republish packages.
 
 ## Signing keys and rotation
 

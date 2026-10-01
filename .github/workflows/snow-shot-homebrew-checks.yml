@@ -51,6 +51,10 @@ jobs:
           path.write_text(helper.cask('1.2.3', '0' * 64), encoding='utf-8')
           path.with_name('snow-shot@beta.rb').write_text(
               helper.cask('1.2.4-beta.2', '0' * 64, 'v1.2.4-beta.2'), encoding='utf-8')
+          path.with_name('snow-shot-mini.rb').write_text(
+              helper.cask('1.2.3', '0' * 64, edition='mini'), encoding='utf-8')
+          path.with_name('snow-shot-mini@beta.rb').write_text(
+              helper.cask('1.2.4-beta.2', '0' * 64, 'v1.2.4-beta.2_snow-shot', edition='mini'), encoding='utf-8')
           PY
       - name: Check Homebrew style and offline metadata
         run: |
@@ -61,6 +65,11 @@ jobs:
           brew trust --cask mg-chao/preflight/snow-shot@beta
           brew style --cask --except Cask/InstallSteps mg-chao/preflight/snow-shot@beta
           brew audit --cask mg-chao/preflight/snow-shot@beta
+          for cask in snow-shot-mini snow-shot-mini@beta; do
+            brew trust --cask "mg-chao/preflight/$cask"
+            brew style --cask --except Cask/InstallSteps "mg-chao/preflight/$cask"
+            brew audit --cask "mg-chao/preflight/$cask"
+          done
       - name: Verify native preflight preserves the installing account
         run: brew ruby scripts/test-snow-shot-homebrew-preflight.rb "$GITHUB_WORKSPACE/scripts/prepare-snow-shot-homebrew.sh"
 

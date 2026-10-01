@@ -209,4 +209,149 @@ impl AudioSession {
         let engine = self.backend.create_engine(config.clone())?;
         AudioStreamHandle::start(engine, config)
     }
+
+    pub fn start_streaming_with_controls(
+        &self,
+        config: AudioStreamConfig,
+        control: crate::AudioControlHandle,
+    ) -> AudioResult<AudioStreamHandle> {
+        config.validate()?;
+        if config
+            .cancellation
+            .commit(|| control.initialize_sources(config.system.enabled, config.microphone.enabled))
+            .is_err()
+        {
+            control.mark_stopped();
+            return Err(crate::AudioError::Canceled);
+        }
+        let engine = self
+            .backend
+            .create_engine_with_controls(config.clone(), &control)
+            .inspect_err(|error| {
+                let _ = config
+                    .cancellation
+                    .commit(|| control.mark_initialization_error(error));
+                if config.cancellation.is_canceled() {
+                    control.mark_stopped();
+                }
+            })?;
+        AudioStreamHandle::start_with_controls(engine, config, control)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{AudioControlHandle, AudioError, AudioSourceKind, AudioSourceStatus};
+
+    #[test]
+    fn all_optional_startup_failures_keep_individual_source_statuses() {
+        struct FailedBackend;
+        impl AudioBackend for FailedBackend {
+            fn enumerate_devices(&self, _: DeviceFlow) -> AudioResult<Vec<AudioDeviceInfo>> {
+                Ok(Vec::new())
+            }
+            fn create_engine(
+                &self,
+                _: AudioStreamConfig,
+            ) -> AudioResult<Box<dyn crate::backend::AudioRecorderEngine>> {
+                Err(AudioError::DeviceUnavailable("no sources".into()))
+            }
+            fn create_engine_with_controls(
+                &self,
+                config: AudioStreamConfig,
+                control: &AudioControlHandle,
+            ) -> AudioResult<Box<dyn crate::backend::AudioRecorderEngine>> {
+                assert!(!config.system.required && !config.microphone.required);
+                config
+                    .cancellation
+                    .commit(|| {
+                        control.set_source_status(
+                            AudioSourceKind::System,
+                            AudioSourceStatus::Unavailable,
+                        );
+                        control.set_source_status(
+                            AudioSourceKind::Microphone,
+                            AudioSourceStatus::PermissionDenied,
+                        );
+                    })
+                    .unwrap();
+                self.create_engine(config)
+            }
+        }
+        let session = AudioSession::builder()
+            .with_backend(Arc::new(FailedBackend))
+            .build()
+            .unwrap();
+        let control = AudioControlHandle::new();
+        let mut config = AudioStreamConfig::default();
+        config.system.required = false;
+        config.microphone.required = false;
+        assert!(matches!(
+            session.start_streaming_with_controls(config, control.clone()),
+            Err(AudioError::DeviceUnavailable(_))
+        ));
+        let levels = control.take_levels();
+        assert_eq!(levels.system.status, AudioSourceStatus::Unavailable);
+        assert_eq!(
+            levels.microphone.status,
+            AudioSourceStatus::PermissionDenied
+        );
+    }
+
+    #[test]
+    fn successful_stream_keeps_classified_optional_source_failure() {
+        struct SilentEngine;
+        impl crate::backend::AudioRecorderEngine for SilentEngine {
+            fn poll(&mut self, _: Duration) -> AudioResult<crate::backend::EngineEvent> {
+                std::thread::sleep(Duration::from_millis(1));
+                Ok(crate::backend::EngineEvent::Idle)
+            }
+        }
+        struct PartialBackend;
+        impl AudioBackend for PartialBackend {
+            fn enumerate_devices(&self, _: DeviceFlow) -> AudioResult<Vec<AudioDeviceInfo>> {
+                Ok(Vec::new())
+            }
+            fn create_engine(
+                &self,
+                _: AudioStreamConfig,
+            ) -> AudioResult<Box<dyn crate::backend::AudioRecorderEngine>> {
+                Ok(Box::new(SilentEngine))
+            }
+            fn create_engine_with_controls(
+                &self,
+                config: AudioStreamConfig,
+                control: &AudioControlHandle,
+            ) -> AudioResult<Box<dyn crate::backend::AudioRecorderEngine>> {
+                config
+                    .cancellation
+                    .commit(|| {
+                        control
+                            .set_source_status(AudioSourceKind::System, AudioSourceStatus::Ready);
+                        control.set_source_status(
+                            AudioSourceKind::Microphone,
+                            AudioSourceStatus::PermissionDenied,
+                        );
+                    })
+                    .unwrap();
+                self.create_engine(config)
+            }
+        }
+        let session = AudioSession::builder()
+            .with_backend(Arc::new(PartialBackend))
+            .build()
+            .unwrap();
+        let control = AudioControlHandle::new();
+        let stream = session
+            .start_streaming_with_controls(AudioStreamConfig::default(), control.clone())
+            .unwrap();
+        let levels = control.take_levels();
+        assert_eq!(levels.system.status, AudioSourceStatus::Ready);
+        assert_eq!(
+            levels.microphone.status,
+            AudioSourceStatus::PermissionDenied
+        );
+        drop(stream);
+    }
 }

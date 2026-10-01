@@ -1,6 +1,8 @@
 #ifndef SNOW_SHOT_PRESENTATION_SCREENSHOTQRRECOGNITIONSERVICE_H
 #define SNOW_SHOT_PRESENTATION_SCREENSHOTQRRECOGNITIONSERVICE_H
 
+#include "snow_shot/app/edition.h"
+
 #include <QImage>
 #include <QObject>
 #include <QString>
@@ -37,6 +39,7 @@ class ScreenshotQrRecognitionPort : public QObject {
     virtual void cancel(RequestToken token) = 0;
 };
 
+#if SNOW_SHOT_ENABLE_QR_RECOGNITION
 class ScreenshotQrRecognitionService final : public ScreenshotQrRecognitionPort {
     Q_OBJECT
 
@@ -58,5 +61,7 @@ class ScreenshotQrRecognitionService final : public ScreenshotQrRecognitionPort 
     std::unique_ptr<Impl> m_impl;
     RequestToken m_nextToken = 0;
 };
+
+#endif // SNOW_SHOT_ENABLE_QR_RECOGNITION
 
 #endif // SNOW_SHOT_PRESENTATION_SCREENSHOTQRRECOGNITIONSERVICE_H

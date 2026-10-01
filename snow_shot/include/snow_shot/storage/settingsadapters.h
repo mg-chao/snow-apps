@@ -1,8 +1,11 @@
 #ifndef SNOW_SHOT_STORAGE_SETTINGSADAPTERS_H
 #define SNOW_SHOT_STORAGE_SETTINGSADAPTERS_H
 
+#include "snow_shot/app/edition.h"
+#if SNOW_SHOT_ENABLE_API_CONFIGURATION
 #include "snow_shot/customaimodelconfiguration.h"
 #include "snow_shot/texttranslationconfiguration.h"
+#endif
 #include "snow_shot/shortcuts/shortcutbinding.h"
 #include "snow_shot/storage/persistedwindowgeometry.h"
 
@@ -18,6 +21,7 @@
 #include <optional>
 
 namespace snow_shot::storage {
+#if SNOW_SHOT_ENABLE_EXTENDED_FEATURES
 class ExtendedFeaturesSettings final {
   public:
     [[nodiscard]] bool translationPageEnabled() const;
@@ -27,6 +31,7 @@ class ExtendedFeaturesSettings final {
     [[nodiscard]] bool standaloneTranslationWindow() const;
     bool setStandaloneTranslationWindow(bool enabled) const;
 };
+#endif
 
 class TextRecognitionSettings final {
   public:
@@ -68,6 +73,7 @@ enum class ScreenshotToolbarLayoutKind {
 [[nodiscard]] QColor colorFromRgbaString(const QString& value);
 [[nodiscard]] QString colorToRgbaString(const QColor& color);
 
+#if SNOW_SHOT_ENABLE_API_CONFIGURATION
 class ApiConfigurationSettings final {
   public:
     [[nodiscard]] QString serverUrl() const;
@@ -77,6 +83,7 @@ class ApiConfigurationSettings final {
     [[nodiscard]] TextTranslationConfigurations textTranslationConfigurations() const;
     bool setTextTranslationConfigurations(const TextTranslationConfigurations& values) const;
 };
+#endif
 
 class InterfaceSettings final {
   public:
@@ -96,8 +103,10 @@ class WindowMemorySettings final {
   public:
     [[nodiscard]] std::optional<PersistedWindowGeometry> mainWindowGeometry() const;
     bool setMainWindowGeometry(const QRect& normalGeometry, bool maximized) const;
+#if SNOW_SHOT_ENABLE_TEXT_TRANSLATION
     [[nodiscard]] std::optional<QSize> translationWindowSize() const;
     bool setTranslationWindowSize(const QSize& size) const;
+#endif
 };
 
 class ShortcutSettings final {
@@ -110,8 +119,11 @@ class ShortcutSettings final {
     bool setScreenshotFixed(const shortcuts::ShortcutBindingList& bindings) const;
     [[nodiscard]] shortcuts::ShortcutBindingList screenshotOcr() const;
     bool setScreenshotOcr(const shortcuts::ShortcutBindingList& bindings) const;
+#if SNOW_SHOT_ENABLE_TEXT_TRANSLATION
     [[nodiscard]] shortcuts::ShortcutBindingList screenshotTranslation() const;
     bool setScreenshotTranslation(const shortcuts::ShortcutBindingList& bindings) const;
+#endif
+
     [[nodiscard]] shortcuts::ShortcutBindingList screenshotCopy() const;
     bool setScreenshotCopy(const shortcuts::ShortcutBindingList& bindings) const;
     [[nodiscard]] shortcuts::ShortcutBindingList screenshotFullScreen() const;
@@ -140,8 +152,11 @@ class ShortcutSettings final {
     bool setPinSelectedFiles(const shortcuts::ShortcutBindingList& bindings) const;
     [[nodiscard]] shortcuts::ShortcutBindingList restoreLastClosedWindows() const;
     bool setRestoreLastClosedWindows(const shortcuts::ShortcutBindingList& bindings) const;
+#if SNOW_SHOT_ENABLE_TEXT_TRANSLATION
     [[nodiscard]] shortcuts::ShortcutBindingList translateSelectedText() const;
     bool setTranslateSelectedText(const shortcuts::ShortcutBindingList& bindings) const;
+#endif
+
     [[nodiscard]] shortcuts::ShortcutBindingList toggleGlobalHotkeys() const;
     bool setToggleGlobalHotkeys(const shortcuts::ShortcutBindingList& bindings) const;
     [[nodiscard]] shortcuts::ShortcutBindingList toggleDisableOnFocusedFullscreenWindow() const;
@@ -159,8 +174,10 @@ class ScreenshotSettings final {
   public:
     [[nodiscard]] bool shutterSoundNotification() const;
     bool setShutterSoundNotification(bool enabled) const;
+#if SNOW_SHOT_ENABLE_QR_RECOGNITION
     [[nodiscard]] bool autoRecognizeQrCode() const;
     bool setAutoRecognizeQrCode(bool enabled) const;
+#endif
     [[nodiscard]] bool confirmBeforeExitingViaShortcut() const;
     bool setConfirmBeforeExitingViaShortcut(bool enabled) const;
     [[nodiscard]] bool captureCursor() const;
@@ -307,12 +324,15 @@ struct ScreenshotTranslationConfiguration {
                            const ScreenshotTranslationConfiguration& second) = default;
 };
 
+#if SNOW_SHOT_ENABLE_IMAGE_CONVERSION
 class ScreenshotImageConversionSettings final {
   public:
     [[nodiscard]] QString visionModel() const;
     bool setVisionModel(const QString& model) const;
 };
+#endif
 
+#if SNOW_SHOT_ENABLE_TEXT_TRANSLATION
 class ScreenshotTranslationSettings final {
   public:
     [[nodiscard]] bool originalImageTranslationEnabled() const;
@@ -322,6 +342,7 @@ class ScreenshotTranslationSettings final {
     [[nodiscard]] ScreenshotTranslationConfiguration configuration() const;
     bool setConfiguration(const ScreenshotTranslationConfiguration& configuration) const;
 };
+#endif
 
 class ScreenshotUiSettings final {
   public:
@@ -359,6 +380,10 @@ class RecordingSettings final {
     bool setMicrophoneEnabled(bool enabled) const;
     [[nodiscard]] bool systemAudioEnabled() const;
     bool setSystemAudioEnabled(bool enabled) const;
+    [[nodiscard]] int microphoneGainDb() const;
+    bool setMicrophoneGainDb(int gainDb) const;
+    [[nodiscard]] int systemAudioGainDb() const;
+    bool setSystemAudioGainDb(int gainDb) const;
     [[nodiscard]] QString screenRecordingClarity() const;
     bool setScreenRecordingClarity(const QString& clarity) const;
     [[nodiscard]] int frameRate() const;
@@ -419,8 +444,10 @@ class RecordingSettings final {
 
 class ScreenshotToolbarSettings final {
   public:
+#if SNOW_SHOT_ENABLE_TABLE_RECOGNITION || SNOW_SHOT_ENABLE_QR_RECOGNITION
     [[nodiscard]] QString tableQrTool() const;
     bool setTableQrTool(const QString& tool) const;
+#endif
     [[nodiscard]] QString lastFilterTool() const;
     bool setLastFilterTool(const QString& tool) const;
     [[nodiscard]] QString lastHighlightTool() const;

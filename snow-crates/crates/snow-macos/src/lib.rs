@@ -2,6 +2,7 @@
 #![cfg(target_os = "macos")]
 pub mod content;
 mod error;
+mod exclusion_update;
 pub mod permission;
 pub use error::{MacError, MacResult};
 pub mod audio;

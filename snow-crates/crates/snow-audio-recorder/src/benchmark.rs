@@ -1,9 +1,11 @@
+#[cfg(windows)]
 use std::time::Duration;
 
 use crate::convert::{AudioConverter, NativeAudioFormat, NativeSampleFormat};
 use crate::error::AudioResult;
 use crate::format::AudioFormat;
 use crate::packet::{AudioPacket, AudioSourceKind};
+#[cfg(windows)]
 use crate::platform::windows::wasapi_source::{PacketAccumulator, PendingMetadata};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -51,11 +53,41 @@ impl ConverterBenchHarness {
     }
 }
 
+#[cfg(windows)]
 pub struct AccumulatorBenchHarness {
     inner: PacketAccumulator,
     sequence: u64,
 }
 
+pub struct GainBenchHarness {
+    control: crate::AudioControlHandle,
+    processor: crate::control::GainProcessor,
+}
+
+impl GainBenchHarness {
+    pub fn new(gain_db: i32, metering: bool) -> AudioResult<Self> {
+        let control = crate::AudioControlHandle::new();
+        control.set_gain_db(AudioSourceKind::System, gain_db)?;
+        control.set_metering(AudioSourceKind::System, metering);
+        Ok(Self {
+            processor: crate::control::GainProcessor::new(gain_db),
+            control,
+        })
+    }
+
+    pub fn set_gain_db(&self, gain_db: i32) -> AudioResult<()> {
+        self.control.set_gain_db(AudioSourceKind::System, gain_db)
+    }
+
+    pub fn process(&mut self, packet: &mut AudioPacket) {
+        if let Some(level) = self.processor.process(packet, &self.control) {
+            self.control
+                .publish(packet.source, level.peak, level.clipped, level.at);
+        }
+    }
+}
+
+#[cfg(windows)]
 impl AccumulatorBenchHarness {
     pub fn new(
         source: AudioSourceKind,

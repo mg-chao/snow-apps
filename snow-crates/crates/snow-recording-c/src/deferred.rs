@@ -423,6 +423,8 @@ mod tests {
             let mut raw = crate::tests::direct_config(&output);
             raw.version = version;
             raw.struct_size = direct_config_size(version).unwrap();
+            raw.system_audio_gain_db = -9;
+            raw.microphone_gain_db = 6;
             if version == 2 {
                 raw.mouse_trail_duration_ms = 0;
             }
@@ -452,6 +454,57 @@ mod tests {
             drop(output);
             drop(prefix);
             assert!(!session.is_null());
+            let control = recording_audio_control(session).unwrap();
+            assert_eq!(
+                control.gain_db(AudioSourceKind::System),
+                if version >= 11 { -9 } else { 0 }
+            );
+            assert_eq!(
+                control.gain_db(AudioSourceKind::Microphone),
+                if version >= 11 { 6 } else { 0 }
+            );
+            assert_eq!(snow_recording_session_set_audio_gain(session, 0, 12), 1);
+            assert_eq!(snow_recording_session_set_audio_gain(session, 1, -12), 1);
+            assert_eq!(snow_recording_session_set_audio_gain(session, 1, 25), 0);
+            assert_eq!(control.gain_db(AudioSourceKind::System), 12);
+            assert_eq!(control.gain_db(AudioSourceKind::Microphone), -12);
+            assert_eq!(snow_recording_session_set_audio_metering(session, 3), 1);
+            assert_eq!(snow_recording_session_set_audio_metering(session, 4), 0);
+            let mut levels = SnowRecordingAudioLevels::default();
+            assert_eq!(
+                unsafe { snow_recording_session_take_audio_levels(session, &mut levels) },
+                1
+            );
+            assert_eq!(levels.system_audio.status, 0);
+            assert_eq!(levels.microphone.peak, 0.0);
+            let windows = [10u32, 20];
+            let exclusions = SnowCaptureExclusions {
+                windows: windows.as_ptr(),
+                window_count: windows.len(),
+                processes: ptr::null(),
+                process_count: 0,
+            };
+            let mut generation = 0;
+            assert_eq!(
+                unsafe {
+                    snow_recording_session_request_exclusions(
+                        session,
+                        &exclusions,
+                        windows.as_ptr(),
+                        1,
+                        &mut generation,
+                    )
+                },
+                1
+            );
+            let mut status = SnowRecordingExclusionStatus::default();
+            assert_eq!(
+                unsafe { snow_recording_session_exclusion_status(session, &mut status) },
+                1
+            );
+            assert_eq!(status.requested_generation, generation);
+            #[cfg(not(target_os = "macos"))]
+            assert_eq!(status.applied_generation, generation);
             assert_eq!(
                 snow_recording_session_request_stop(session),
                 SnowRecordingResult::InvalidState

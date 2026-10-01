@@ -1,6 +1,5 @@
 use std::collections::{BTreeMap, VecDeque};
 use std::path::PathBuf;
-#[cfg(feature = "bench-synthetic-input")]
 use std::sync::atomic::AtomicU64;
 use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 use std::sync::{Arc, Mutex};
@@ -9,8 +8,8 @@ use std::time::{Duration, Instant};
 
 use crossbeam_channel::{Receiver, Sender};
 use snow_audio_recorder::{
-    AudioEvent, AudioFormat, AudioPacket, AudioSession, AudioSourceKind, AudioStreamConfig,
-    AudioStreamHandle,
+    AudioControlHandle, AudioEvent, AudioFormat, AudioPacket, AudioSession, AudioSourceKind,
+    AudioSourceStatus, AudioStreamConfig, AudioStreamHandle,
 };
 use snow_capture::{
     CaptureEvent, CaptureOptions, CaptureStream, CaptureStreamConfig, CaptureSystem,
@@ -151,6 +150,8 @@ pub struct DirectRecordingConfig {
     pub enable_microphone: bool,
     pub enable_system_audio: bool,
     pub audio_mode: RecordingAudioMode,
+    pub system_audio_gain_db: i32,
+    pub microphone_gain_db: i32,
     pub show_cursor: bool,
     pub keyboard: Option<KeyboardOverlayConfig>,
     pub mouse_trail_rgba: [u8; 4],
@@ -192,6 +193,11 @@ impl DirectRecordingConfig {
     }
 
     pub fn validate(&self) -> std::result::Result<(), String> {
+        if !(-24..=24).contains(&self.system_audio_gain_db)
+            || !(-24..=24).contains(&self.microphone_gain_db)
+        {
+            return Err("audio gain must be between -24 and 24 dB".into());
+        }
         if self.quality > 100 {
             return Err("direct recording quality must be in 0..=100".into());
         }
@@ -482,6 +488,8 @@ pub struct DirectRecordingSession {
     bench_pixel_paths: (bool, bool),
     state: Arc<AtomicU8>,
     runtime: Mutex<Option<RuntimeHandles>>,
+    audio_control: AudioControlHandle,
+    exclusion_generation: AtomicU64,
 }
 
 impl DirectRecordingSession {
@@ -523,6 +531,13 @@ impl DirectRecordingSession {
             .map_err(ScreenRecorderError::InvalidConfig)?;
         let resize_threads = config.automatic_resize_threads();
         let align_capture = config.aligned_capture();
+        let audio_control = AudioControlHandle::new();
+        audio_control
+            .set_gain_db(AudioSourceKind::System, config.system_audio_gain_db)
+            .map_err(|error| ScreenRecorderError::InvalidConfig(error.to_string()))?;
+        audio_control
+            .set_gain_db(AudioSourceKind::Microphone, config.microphone_gain_db)
+            .map_err(|error| ScreenRecorderError::InvalidConfig(error.to_string()))?;
         Ok(Self {
             config,
             encode_threads: 0,
@@ -552,7 +567,38 @@ impl DirectRecordingSession {
             bench_pixel_paths: (false, false),
             state: Arc::new(AtomicU8::new(state_to_u8(RecordingState::Created))),
             runtime: Mutex::new(None),
+            audio_control,
+            exclusion_generation: AtomicU64::new(0),
         })
+    }
+
+    pub fn audio_control(&self) -> AudioControlHandle {
+        self.audio_control.clone()
+    }
+
+    /// Windows excludes application-owned windows through native display affinity.
+    /// Acknowledge the caller's generation without restarting video acquisition.
+    pub fn request_exclusions(
+        &self,
+        windows: Vec<u32>,
+        processes: Vec<i32>,
+        required: Vec<u32>,
+    ) -> Result<u64> {
+        if windows.len() > 4096
+            || processes.len() > 4096
+            || required.len() > 4096
+            || required.iter().any(|id| !windows.contains(id))
+        {
+            return Err(ScreenRecorderError::InvalidConfig(
+                "invalid capture exclusions".into(),
+            ));
+        }
+        Ok(self.exclusion_generation.fetch_add(1, Ordering::AcqRel) + 1)
+    }
+
+    pub fn exclusion_status(&self) -> (u64, u64, u32) {
+        let generation = self.exclusion_generation.load(Ordering::Acquire);
+        (generation, generation, 0)
     }
 
     /// Override encoder workers before startup; zero requests the exporter's
@@ -854,6 +900,7 @@ impl DirectRecordingSession {
         let automatic_policies = VALIDATED_RESIZE_DEFAULT;
         let (ready_tx, ready_rx) = std::sync::mpsc::sync_channel(1);
         let worker_state = Arc::clone(&self.state);
+        let audio_control = self.audio_control.clone();
         let stop_boundary = Arc::clone(&self.stop_boundary);
         let cancel_requested = Arc::clone(&self.cancel_requested);
         let control_clock = Arc::clone(&self.control_clock);
@@ -963,7 +1010,7 @@ impl DirectRecordingSession {
                     let asynchronous = asynchronous && gpu_compositor.is_none();
                     let created = RecordingEncoder::new(
                         streaming_config,
-                        start_optional_audio_stream(&config),
+                        start_optional_audio_stream(&config, audio_control.clone()),
                         (config.enable_system_audio, config.enable_microphone),
                         clock.clone(),
                         asynchronous,
@@ -980,7 +1027,7 @@ impl DirectRecordingSession {
                             negotiation.stage = Some("encoder_startup".into());
                             RecordingEncoder::new(
                                 fallback_config,
-                                start_optional_audio_stream(&config),
+                                start_optional_audio_stream(&config, audio_control.clone()),
                                 (config.enable_system_audio, config.enable_microphone),
                                 clock.clone(),
                                 false,
@@ -1064,6 +1111,7 @@ impl DirectRecordingSession {
                     })
                 })();
                 worker_state.store(state_to_u8(RecordingState::Stopped), Ordering::Release);
+                audio_control.mark_stopped();
                 result
             })
             .map_err(|error| ScreenRecorderError::Io(std::io::Error::other(error)))?;
@@ -2086,7 +2134,10 @@ fn report_from_encoder(
     }
 }
 
-fn start_optional_audio_stream(config: &DirectRecordingConfig) -> Option<AudioStreamHandle> {
+fn start_optional_audio_stream(
+    config: &DirectRecordingConfig,
+    controls: AudioControlHandle,
+) -> Option<AudioStreamHandle> {
     if config.format != ExportFormat::Mp4
         || (!config.enable_system_audio && !config.enable_microphone)
     {
@@ -2102,9 +2153,25 @@ fn start_optional_audio_stream(config: &DirectRecordingConfig) -> Option<AudioSt
     stream_config.microphone.output_format = AudioFormat::new(AUDIO_SAMPLE_RATE, AUDIO_CHANNELS);
     stream_config.microphone.packet_duration = Duration::from_millis(AUDIO_SLOT_MS);
     stream_config.event_buffer_depth = 64;
-    AudioSession::new()
-        .and_then(|session| session.start_streaming(stream_config))
-        .ok()
+    match AudioSession::new()
+        .and_then(|session| session.start_streaming_with_controls(stream_config, controls.clone()))
+    {
+        Ok(stream) => Some(stream),
+        Err(error) => {
+            let status = if matches!(error, snow_audio_recorder::AudioError::AccessDenied) {
+                AudioSourceStatus::PermissionDenied
+            } else {
+                AudioSourceStatus::Unavailable
+            };
+            if config.enable_system_audio {
+                controls.set_source_status(AudioSourceKind::System, status);
+            }
+            if config.enable_microphone {
+                controls.set_source_status(AudioSourceKind::Microphone, status);
+            }
+            None
+        }
+    }
 }
 
 #[derive(Default)]
@@ -3328,6 +3395,8 @@ mod tests {
     fn config() -> DirectRecordingConfig {
         DirectRecordingConfig {
             audio_mode: Default::default(),
+            system_audio_gain_db: 0,
+            microphone_gain_db: 0,
             excluded_windows: Default::default(),
             excluded_processes: Default::default(),
             loop_animated_images: true,
@@ -3452,6 +3521,23 @@ mod tests {
         assert_eq!(options.excluded_processes, value.excluded_processes);
         assert_eq!(options.workload, CaptureWorkload::Continuous);
         value.excluded_windows = vec![7; 4097].into();
+        assert!(value.validate().is_err());
+    }
+    #[test]
+    fn audio_gain_targets_survive_control_clones_and_reject_invalid_values() {
+        let mut value = config();
+        value.system_audio_gain_db = -24;
+        value.microphone_gain_db = 24;
+        let session = DirectRecordingSession::create(value.clone()).unwrap();
+        let control = session.audio_control();
+        assert_eq!(control.gain_db(AudioSourceKind::System), -24);
+        assert_eq!(control.gain_db(AudioSourceKind::Microphone), 24);
+        control.set_gain_db(AudioSourceKind::System, 6).unwrap();
+        assert_eq!(session.audio_control().gain_db(AudioSourceKind::System), 6);
+        value.system_audio_gain_db = -25;
+        assert!(value.validate().is_err());
+        value.system_audio_gain_db = 0;
+        value.microphone_gain_db = 25;
         assert!(value.validate().is_err());
     }
 
