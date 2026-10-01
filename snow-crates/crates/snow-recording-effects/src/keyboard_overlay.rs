@@ -175,6 +175,7 @@ pub trait KeycapRasterizer {
     /// Scale is relative to the default 64-pixel keycap height.
     fn rasterize(&mut self, label: &str, scale: f32) -> Result<Keycap, String>;
     /// A single playback-time glyph. Native adapters keep the requested font size.
+    /// Bitmaps must share a vertical origin so numerals and punctuation retain one baseline.
     fn rasterize_glyph(&mut self, label: &str, font_pixels: f32) -> Result<Keycap, String> {
         self.rasterize(label, font_pixels / 32.0)
     }

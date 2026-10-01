@@ -47,6 +47,8 @@
 #include <QTimer>
 #include <QJsonArray>
 #include <QMessageBox>
+#include <QLabel>
+#include <QLayout>
 #include "widgets/color_picker.h"
 #include "widgets/form.h"
 #include "widgets/modal.h"
@@ -116,6 +118,7 @@ std::shared_future<void> renderCancelGate;
 std::atomic<bool> renderCancelEntered = false;
 std::atomic<uint32_t> renderState = SNOW_RECORDING_RENDER_STATE_RUNNING;
 std::atomic<float> renderPercent = 0;
+QByteArray renderSourcePath("D:/recordings/test-source");
 std::atomic<int> exports = 0;
 std::shared_future<void> exportGate;
 std::promise<void>* exportEntered = nullptr;
@@ -667,6 +670,78 @@ class PreviewTestTranslator final : public QTranslator {
         return {};
     }
 };
+
+#ifdef Q_OS_MACOS
+void effectsPreviewPhysicalPixels() {
+    auto state = std::make_shared<RecordingEffectTestState>();
+    ScreenRecordingAreaWindow area;
+    area.setRecordingRegion(QRect(40, 40, 640, 480));
+    area.setInputMode(ScreenRecordingAreaWindow::InputMode::PassThrough);
+    RecordingEffectPreview preview(area, std::make_unique<RecordingEffectTestSource>(state));
+    area.show();
+    pumpPreview();
+    const qreal dpr = area.devicePixelRatioF();
+    const QSize canvasSize(qRound(640 * dpr), qRound(480 * dpr));
+    for (const QSize exportSize : {QSize(320, 240), QSize(1920, 1080)}) {
+        preview.configure(area.recordingRegion(), exportSize, Qt::red, Qt::transparent, true);
+        preview.setEligible(true);
+        pumpPreview();
+        require(state->output == canvasSize,
+                "macOS preview must rasterize desktop points into physical display pixels");
+        state->publish(false);
+        QImage keycap(64, 64, QImage::Format_RGBA8888_Premultiplied);
+        keycap.fill(Qt::blue);
+        state->frame->tiles.push_back({QRect(128, 128, 64, 64), keycap, canvasSize});
+        QImage mouse(82, 82, QImage::Format_RGBA8888_Premultiplied);
+        mouse.fill(Qt::red);
+        const QPoint center(canvasSize.width() / 2, canvasSize.height() / 2);
+        state->frame->tiles.push_back({QRect(center - QPoint(41, 41), mouse.size()), mouse, {}});
+        state->notify();
+        pumpPreview();
+        QImage rendered(
+            QSize(qRound(area.canvas()->width() * dpr), qRound(area.canvas()->height() * dpr)),
+            QImage::Format_RGBA8888_Premultiplied);
+        rendered.setDevicePixelRatio(dpr);
+        rendered.fill(Qt::transparent);
+        QPainter painter(&rendered);
+        area.canvas()->render(&painter);
+        painter.end();
+        QRect keyboardPixels;
+        QRect mousePixels;
+        for (int y = 0; y < rendered.height(); ++y) {
+            for (int x = 0; x < rendered.width(); ++x) {
+                const QColor color = rendered.pixelColor(x, y);
+                if (color.blue() > 128)
+                    keyboardPixels |= QRect(x, y, 1, 1);
+                if (color.red() > 128)
+                    mousePixels |= QRect(x, y, 1, 1);
+            }
+        }
+        require(keyboardPixels == QRect(128, 128, 64, 64),
+                "macOS keycap size and placement must use physical pixels at every DPI");
+        require(mousePixels == QRect(center - QPoint(41, 41), QSize(82, 82)),
+                "macOS mouse effects must keep their pixel size and align with the pointer");
+        state->publish(false);
+        pumpPreview();
+        const QImage cleared = previewImage(*area.canvas());
+        require(
+            cleared.pixelColor(qRound(128 / dpr), qRound(128 / dpr)).alpha() == 0 &&
+                cleared.pixelColor(qRound(center.x() / dpr), qRound(center.y() / dpr)).alpha() == 0,
+            "expired effects must clear their display-scaled canvas regions");
+        for (const auto eventType :
+             {QEvent::DevicePixelRatioChange, QEvent::ScreenChangeInternal}) {
+            const int startsBeforeScaleChange = state->starts;
+            const quint64 generationBeforeScaleChange = preview.generation();
+            QEvent scaleChange(eventType);
+            QCoreApplication::sendEvent(&area, &scaleChange);
+            pumpPreview();
+            require(preview.generation() > generationBeforeScaleChange &&
+                        state->starts == startsBeforeScaleChange && state->active,
+                    "display scale changes must reconfigure the active preview canvas");
+        }
+    }
+}
+#endif
 
 void effectsPreviewLifecycle() {
     for (const qreal dpr : {1.0, 1.25, 1.5, 1.75, 2.0}) {
@@ -1722,7 +1797,7 @@ SnowRecordingResult snow_recording_source_render_start(SnowRecordingSource*,
     return SNOW_RECORDING_RESULT_OK;
 }
 size_t snow_recording_source_path(const SnowRecordingSource*, char* buffer, size_t capacity) {
-    const QByteArray value("D:/recordings/test-source");
+    const QByteArray& value = renderSourcePath;
     if (buffer && capacity) {
         const size_t count = std::min(capacity - 1, static_cast<size_t>(value.size()));
         std::copy_n(value.constData(), count, buffer);
@@ -1995,6 +2070,114 @@ void recordingSettingsDialog() {
             "the next recording must use preferences saved in the popup");
     toolbarPalette->recordingCloseRequested();
     QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+}
+
+void recordingRenderLayout() {
+    using namespace adqt::widgets;
+    const auto wait = [](const std::function<bool()>& condition, const char* message) {
+        QElapsedTimer timer;
+        timer.start();
+        while (!condition() && timer.elapsed() < 5000)
+            QCoreApplication::processEvents(QEventLoop::AllEvents | QEventLoop::WaitForMoreEvents,
+                                            100);
+        require(condition(), message);
+    };
+    const QFont previousFont = QApplication::font();
+    QApplication::setFont(QFontDatabase::systemFont(QFontDatabase::GeneralFont));
+    const QByteArray previousPath = renderSourcePath;
+    for (const auto& path :
+         {QByteArray("/Users/chao/Movies/b6180d62-5b37-4800-8883-0b5d83aa4c1d.snowrec"),
+          QByteArray("/Users/chao/Movies/Recordings saved for later/Project recordings/"
+                     "b6180d62-5b37-4800-8883-0b5d83aa4c1d.snowrec")}) {
+        renderSourcePath = path;
+        RecordingRenderJob job(new SnowRecordingSource, true, nullptr, nullptr);
+        job.start();
+        auto* modal = job.findChild<AdModal*>(QStringLiteral("screenRecordingRenderModal"));
+        require(modal && modal->isOpen(), "render layout test must open its modal");
+        auto* progress = modal->contentWidget()->findChild<AdProgress*>(
+            QStringLiteral("screenRecordingRenderProgress"));
+        wait([&] { return renderState == SNOW_RECORDING_RENDER_STATE_RUNNING && renderPolls > 0; },
+             "render layout test must start its task");
+        renderPercent = 45;
+        wait([&] { return progress->percent() == 45; }, "render progress must update");
+        modal->footerWidget()
+            ->findChild<AdButton*>(QStringLiteral("screenRecordingRenderCancel"))
+            ->click();
+        const auto retained = [&] {
+            return job.state().value(QStringLiteral("source_retained")).toBool();
+        };
+        wait(retained, "canceling must show the retained source layout");
+
+        const auto verifyLayout = [&] {
+            QCoreApplication::processEvents();
+            auto* surface = modal->contentWidget()->window();
+            auto* panel = surface->findChild<QWidget*>(QStringLiteral("ad-modal-panel"));
+            require(panel && surface->rect().contains(panel->geometry()),
+                    "the render panel must fit entirely within its modal window");
+            auto* footer = modal->footerWidget()->parentWidget();
+            const int bottomInset = footer->layout()->contentsMargins().bottom();
+            const int footerBottom = modal->footerWidget()->mapTo(surface, QPoint(0, 0)).y() +
+                                     modal->footerWidget()->height();
+            require(bottomInset > 0 && surface->height() - footerBottom >= bottomInset,
+                    "render actions must preserve the modal bottom padding");
+            for (auto* label : modal->contentWidget()->findChildren<QLabel*>()) {
+                require(!label->isVisible() ||
+                            label->height() >= label->heightForWidth(label->width()),
+                        "render labels must have enough height for their wrapped text");
+            }
+            for (auto* button : modal->footerWidget()->findChildren<AdButton*>()) {
+                require(!button->isVisible() ||
+                            modal->footerWidget()->rect().contains(button->geometry()),
+                        "every render action must fit within the footer");
+            }
+        };
+        const auto verifyLanguages = [&](const QString& phase) {
+            for (const auto* locale : {"en_US", "zh_CN", "zh_TW"}) {
+                QTranslator translator;
+                require(translator.load(QDir(QStringLiteral(SNOW_SHOT_TEST_TRANSLATIONS_DIR))
+                                            .filePath(QStringLiteral("snow_shot_%1.qm")
+                                                          .arg(QString::fromLatin1(locale)))),
+                        "load the complete render dialog catalog");
+                QCoreApplication::installTranslator(&translator);
+                verifyLayout();
+                const QSize size = modal->contentWidget()->window()->size();
+                modal->open();
+                modal->open();
+                verifyLayout();
+                require(modal->contentWidget()->window()->size() == size,
+                        "repeated render dialog refreshes must preserve its fitted size");
+                if (const QString snapshots =
+                        qEnvironmentVariable("SNOW_RECORDING_RENDER_SNAPSHOT_DIR");
+                    !snapshots.isEmpty()) {
+                    QDir().mkpath(snapshots);
+                    const QString name = QStringLiteral("%1-%2-%3.png")
+                                             .arg(phase, QString::fromLatin1(locale))
+                                             .arg(path.contains("Project") ? 1 : 0);
+                    require(modal->contentWidget()->window()->grab().save(
+                                QDir(snapshots).filePath(name)),
+                            "render dialog layout snapshot must save");
+                }
+                QCoreApplication::removeTranslator(&translator);
+            }
+        };
+        verifyLanguages(QStringLiteral("canceled"));
+        const int retainedHeight = modal->contentWidget()->window()->height();
+        modal->footerWidget()
+            ->findChild<AdButton*>(QStringLiteral("screenRecordingRenderRetry"))
+            ->click();
+        wait([&] { return renderState == SNOW_RECORDING_RENDER_STATE_RUNNING; },
+             "retry must start a fresh render task");
+        verifyLayout();
+        require(modal->contentWidget()->window()->height() < retainedHeight,
+                "retry must shrink the dialog after hiding source details");
+        renderState = SNOW_RECORDING_RENDER_STATE_FAILED;
+        wait(retained, "render failure must show source details again");
+        verifyLanguages(QStringLiteral("failed"));
+        require(job.release(false), "layout test must keep its source");
+        wait([&] { return !modal->isOpen(); }, "layout test must finish source cleanup");
+    }
+    renderSourcePath = previousPath;
+    QApplication::setFont(previousFont);
 }
 
 void recordingPostProcessingLifecycle() {
@@ -2580,6 +2763,11 @@ int main(int argc, char** argv) {
         require(fontId >= 0, "load recording settings preview font");
         QApplication::setFont(QFont(QFontDatabase::applicationFontFamilies(fontId).first()));
     }
+    if (app.arguments().contains(QStringLiteral("--render-layout-only"))) {
+        recordingRenderLayout();
+        ApplicationStorage::instance().shutdown();
+        return 0;
+    }
     if (app.arguments().contains(QStringLiteral("--post-processing-only"))) {
         recordingPostProcessingLifecycle();
         ApplicationStorage::instance().shutdown();
@@ -2762,6 +2950,13 @@ int main(int argc, char** argv) {
         ApplicationStorage::instance().shutdown();
         return 0;
     }
+#ifdef Q_OS_MACOS
+    if (app.arguments().contains(QStringLiteral("--effects-preview-dpi-only"))) {
+        effectsPreviewPhysicalPixels();
+        ApplicationStorage::instance().shutdown();
+        return 0;
+    }
+#endif
     if (app.arguments().contains(QStringLiteral("--effects-preview-only"))) {
         class KeyTranslator : public QTranslator {
           public:

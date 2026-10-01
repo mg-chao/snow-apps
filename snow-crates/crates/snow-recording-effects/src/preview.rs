@@ -14,7 +14,10 @@ use crossbeam_channel::{Receiver, Sender, bounded, select_biased};
 
 #[derive(Clone, PartialEq, Eq)]
 pub struct PreviewConfig {
+    /// Native desktop units: points on macOS, physical pixels on Windows.
     pub region: (i32, i32, u32, u32),
+    /// Physical display pixels used to rasterize fixed-size preview styles.
+    pub canvas: (u32, u32),
     pub output: (u32, u32),
     pub trail: [u8; 4],
     pub trail_duration_ms: u64,
@@ -30,16 +33,23 @@ impl PreviewConfig {
     fn effects_output(&self) -> (u32, u32) {
         // Preview styles belong to the desktop capture canvas. Export dimensions
         // only affect saved video and must not rescale live effects.
-        (self.region.2, self.region.3)
+        self.canvas
     }
 
     pub fn validate(&self) -> Result<(), String> {
         if !(100..=2000).contains(&self.trail_duration_ms) {
             return Err("trail duration must be between 100 and 2000 ms".into());
         }
-        if [self.region.2, self.region.3, self.output.0, self.output.1]
-            .into_iter()
-            .any(|v| v == 0 || v > 32768)
+        if [
+            self.region.2,
+            self.region.3,
+            self.canvas.0,
+            self.canvas.1,
+            self.output.0,
+            self.output.1,
+        ]
+        .into_iter()
+        .any(|v| v == 0 || v > 32768)
         {
             return Err("effect dimensions must be between 1 and 32768 pixels".into());
         }
@@ -57,7 +67,7 @@ pub struct PreviewFrame {
     pub error: Option<String>,
 }
 
-/// Both layers use desktop capture coordinates, independent of export dimensions.
+/// Both layers use physical display pixels, independent of export dimensions.
 #[derive(Default)]
 pub struct PreviewLayers {
     pub mouse: Vec<Tile>,
@@ -531,6 +541,7 @@ mod tests {
     fn config() -> PreviewConfig {
         PreviewConfig {
             region: (-400, -200, 1920, 1080),
+            canvas: (1920, 1080),
             output: (1920, 1080),
             trail: [255, 0, 0, 128],
             trail_duration_ms: 500,
@@ -544,12 +555,84 @@ mod tests {
     }
 
     #[test]
+    fn desktop_points_map_to_display_pixels_without_scaling_effect_styles() {
+        struct FixedSquare;
+        impl KeycapRasterizer for FixedSquare {
+            fn rasterize(&mut self, _: &str, scale: f32) -> Result<Keycap, String> {
+                assert_eq!(scale, 1.0);
+                Ok(Keycap {
+                    width: 64,
+                    height: 64,
+                    pixels: [100, 0, 0, 255].repeat(64 * 64),
+                })
+            }
+        }
+        for scale in [1.0, 1.25, 1.5, 1.75, 2.0] {
+            for output in [(320, 240), (1920, 1080)] {
+                let mut cfg = config();
+                cfg.region = (-400, -200, 640, 480);
+                cfg.canvas = ((640.0 * scale) as u32, (480.0 * scale) as u32);
+                cfg.output = output;
+                cfg.highlight = [255, 255, 0, 128];
+                let mut reference = cfg.clone();
+                reference.region.2 = cfg.canvas.0;
+                reference.region.3 = cfg.canvas.1;
+                let render = |cfg: PreviewConfig, input_scale: f64| {
+                    let mut preview = EffectsPreview::new(cfg, Some(Box::new(FixedSquare)));
+                    preview.key_event(key(0, true));
+                    preview.observe(
+                        Some(((160.0 * input_scale) as i32, (120.0 * input_scale) as i32)),
+                        0,
+                    );
+                    preview.observe(
+                        Some(((200.0 * input_scale) as i32, (160.0 * input_scale) as i32)),
+                        17,
+                    );
+                    preview.click(RenderClick {
+                        timestamp_ms: 17,
+                        x: (300.0 * input_scale) as i32,
+                        y: (200.0 * input_scale) as i32,
+                        button: ObservedMouseButton::Left,
+                    });
+                    preview.render(200).unwrap()
+                };
+                let frame = render(cfg, 1.0);
+                let expected = render(reference, scale);
+                let pixels = |tiles: &[Tile]| {
+                    tiles
+                        .iter()
+                        .map(|tile| (tile.x, tile.y, tile.pixels.clone()))
+                        .collect::<Vec<_>>()
+                };
+                assert_eq!(
+                    pixels(&frame.mouse),
+                    pixels(&expected.mouse),
+                    "pointer effects at scale {scale}, export {output:?}"
+                );
+                assert_eq!(
+                    pixels(&frame.keyboard),
+                    pixels(&expected.keyboard),
+                    "keyboard at scale {scale}, export {output:?}"
+                );
+                let count = frame
+                    .keyboard
+                    .iter()
+                    .flat_map(|tile| tile.pixels.chunks_exact(4))
+                    .filter(|pixel| pixel[3] != 0)
+                    .count();
+                assert_eq!(count, 64 * 64, "keycaps keep their physical pixel size");
+            }
+        }
+    }
+
+    #[test]
     fn fixed_pixel_preview_styles_do_not_depend_on_export_dimensions() {
         for capture in [(640, 480), (1920, 1080), (3840, 2160), (641, 479)] {
             let mut reference = None;
             for output in [(320, 180), (640, 480), (1920, 1080), (3840, 2160)] {
                 let mut cfg = config();
                 cfg.region = (-400, -200, capture.0, capture.1);
+                cfg.canvas = capture;
                 cfg.output = output;
                 cfg.highlight = [255, 255, 0, 128];
                 let mut preview = EffectsPreview::new(cfg, Some(Box::new(Solid)));
@@ -655,6 +738,7 @@ mod tests {
             for output in [(320, 180), (640, 480), (1920, 1080)] {
                 let mut config = config();
                 config.region = (-400, -200, capture.0, capture.1);
+                config.canvas = capture;
                 config.output = output;
                 let mut preview = EffectsPreview::new(config, Some(Box::new(FixedSquare)));
                 preview.keyboard.as_mut().unwrap().model.event(key(0, true));
@@ -746,6 +830,7 @@ mod tests {
         let mut value = config();
         value.output = (131, 129);
         value.region = (-400, -200, 131, 129);
+        value.canvas = (131, 129);
         let mut preview = EffectsPreview::new(value, Some(Box::new(Solid)));
         preview.keyboard.as_mut().unwrap().model.event(key(0, true));
         preview.render(200).unwrap();
@@ -799,6 +884,7 @@ mod tests {
             value.trail_duration_ms = duration;
             value.output = (256, 128);
             value.region = (-500, 20, 256, 128);
+            value.canvas = (256, 128);
             let mut preview = EffectsPreview::new(value.clone(), Some(Box::new(Solid)));
             let mut video_trail = LaserTrail::new(duration);
             for (index, point) in [(120, 96), (130, 100), (140, 96)].into_iter().enumerate() {

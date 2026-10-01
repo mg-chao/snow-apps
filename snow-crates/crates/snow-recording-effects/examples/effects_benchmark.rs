@@ -43,6 +43,7 @@ fn main() -> Result<(), String> {
         };
         let config = PreviewConfig {
             region: (0, 0, size.0, size.1),
+            canvas: size,
             output: size,
             trail: [255, 40, 60, 180],
             trail_duration_ms: 500,

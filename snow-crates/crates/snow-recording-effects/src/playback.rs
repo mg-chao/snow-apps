@@ -85,6 +85,7 @@ pub struct PlaybackRenderer {
     glyphs: BTreeMap<char, Keycap>,
     glyph_top: u32,
     glyph_height: u32,
+    glyph_y: u32,
     advance: u32,
     horizontal_padding: u32,
     margin: u32,
@@ -109,6 +110,7 @@ impl PlaybackRenderer {
             glyphs: BTreeMap::new(),
             glyph_top: u32::MAX,
             glyph_height: 0,
+            glyph_y: 0,
             advance: 0,
             horizontal_padding: (font / 2.0).round() as u32,
             margin: TIMER_MARGIN,
@@ -123,6 +125,8 @@ impl PlaybackRenderer {
                 .as_mut()
                 .ok_or("playback time requires a text rasterizer")?;
             let mut bottom = 0;
+            let mut digit_top = u32::MAX;
+            let mut digit_bottom = 0;
             for character in "0123456789:/".chars() {
                 let cap = rasterizer.rasterize_glyph(&character.to_string(), font)?;
                 validate_cap(&cap)?;
@@ -136,6 +140,10 @@ impl PlaybackRenderer {
                         right = right.max(x + 1);
                         result.glyph_top = result.glyph_top.min(y);
                         bottom = bottom.max(y + 1);
+                        if character.is_ascii_digit() {
+                            digit_top = digit_top.min(y);
+                            digit_bottom = digit_bottom.max(y + 1);
+                        }
                     }
                 }
                 if left == cap.width {
@@ -161,7 +169,16 @@ impl PlaybackRenderer {
             }
             result.glyph_height = bottom - result.glyph_top;
             result.advance += (font / 12.0).round().max(1.0) as u32;
-            result.badge_height = result.badge_height.max(result.glyph_height + 2 * padding);
+            // Center the numeral body, keeping a stable baseline as the timer ticks.
+            // A slash can extend below that body; its overhang needs padding without
+            // pulling the numerals upward. Keep every glyph on the same raster origin.
+            let digit_height = digit_bottom - digit_top;
+            let above = digit_top - result.glyph_top;
+            let below = bottom - digit_bottom;
+            result.badge_height = result
+                .badge_height
+                .max(digit_height + 2 * (padding + above.max(below)));
+            result.glyph_y = (result.badge_height - digit_height) / 2 - above;
         }
         Ok(result)
     }
@@ -263,7 +280,7 @@ impl PlaybackRenderer {
             return Err("playback badge requires a time overlay".into());
         };
         let mut x = self.horizontal_padding;
-        let top = (badge.height - self.glyph_height) / 2;
+        let top = self.glyph_y;
         let mut secondary = false;
         for character in self.caption.chars() {
             if character == ' ' {
@@ -365,6 +382,146 @@ mod tests {
             Some(Box::new(Glyph)),
         )
         .unwrap()
+    }
+
+    fn opaque_numeral_rows(badge: &Keycap) -> (u32, u32) {
+        let mut top = badge.height;
+        let mut bottom = 0;
+        for (index, pixel) in badge.pixels.chunks_exact(4).enumerate() {
+            if pixel == [255; 4] {
+                let y = index as u32 / badge.width;
+                top = top.min(y);
+                bottom = bottom.max(y + 1);
+            }
+        }
+        assert!(top < bottom, "elapsed numerals must be visible");
+        (top, bottom)
+    }
+
+    #[test]
+    fn numeral_centering_preserves_separator_baseline_and_padding() {
+        struct BaselineGlyphs {
+            separator: (u32, u32),
+        }
+        impl KeycapRasterizer for BaselineGlyphs {
+            fn rasterize(&mut self, label: &str, _: f32) -> Result<Keycap, String> {
+                let (top, bottom) = match label {
+                    "/" => self.separator,
+                    ":" => (24, 30),
+                    _ => (20, 32),
+                };
+                let mut cap = Keycap {
+                    width: 8,
+                    height: 56,
+                    pixels: vec![0; 8 * 56 * 4],
+                };
+                for y in top..bottom {
+                    for x in 2..6 {
+                        let offset = ((y * cap.width + x) * 4) as usize;
+                        cap.pixels[offset..offset + 4].fill(255);
+                    }
+                }
+                Ok(cap)
+            }
+        }
+
+        // Transparent font leading is asymmetric; slash extents can lie on either
+        // side of the numeral body. Neither should move the numeral center.
+        for separator in [(20, 40), (12, 32), (12, 40)] {
+            let timeline = FinalizedTimeline::new(3_665_000, 30).unwrap();
+            let mut renderer = PlaybackRenderer::new(
+                PlaybackOverlay::PlaybackTime { rgba: [255; 4] },
+                (320, 240),
+                Some(Box::new(BaselineGlyphs { separator })),
+            )
+            .unwrap();
+            let mut previous_rows = None;
+            for index in [0, 30, 65 * 30, timeline.frame_count() - 1] {
+                renderer
+                    .draw_to(
+                        &mut TileSurface::new(renderer.output),
+                        timeline.frame(index).unwrap(),
+                        Some(timeline),
+                    )
+                    .unwrap();
+                let badge = renderer.badge.as_ref().unwrap();
+                let rows = opaque_numeral_rows(badge);
+                assert!(
+                    rows.0.abs_diff(badge.height - rows.1) <= 1,
+                    "numerals must be vertically centered with separator {separator:?}: {rows:?}"
+                );
+                if let Some(previous) = previous_rows {
+                    assert_eq!(rows, previous, "ticking must preserve the numeral baseline");
+                }
+                previous_rows = Some(rows);
+
+                let separator_top = (i64::from(rows.0) + i64::from(separator.0) - 20) as u32;
+                let separator_bottom = separator_top + separator.1 - separator.0;
+                assert!(separator_top >= 8 && separator_bottom <= badge.height - 8);
+                let separator_x = renderer.horizontal_padding
+                    + renderer
+                        .caption
+                        .chars()
+                        .take_while(|c| *c != '/')
+                        .map(|c| {
+                            if c == ' ' {
+                                renderer.advance / 2
+                            } else {
+                                renderer.advance
+                            }
+                        })
+                        .sum::<u32>()
+                    + (renderer.advance - 4) / 2;
+                for y in separator_top..separator_bottom {
+                    let offset = ((y * badge.width + separator_x) * 4) as usize;
+                    assert_eq!(
+                        &badge.pixels[offset..offset + 4],
+                        &[138, 139, 142, 236],
+                        "the complete separator must retain its baseline and coverage"
+                    );
+                }
+            }
+        }
+    }
+
+    #[cfg(any(windows, target_os = "macos"))]
+    #[test]
+    fn native_playback_numerals_are_vertically_centered() {
+        let style = crate::keyboard_overlay::KeyboardOverlayConfig {
+            font: None,
+            keycap_size: 64,
+            background_rgba: [0; 4],
+            text_rgba: [255; 4],
+            border_rgba: [0; 4],
+            labels: Default::default(),
+        };
+        let rasterizer = crate::keyboard_rasterizer::create(&style).unwrap();
+        let mut renderer = PlaybackRenderer::new(
+            PlaybackOverlay::PlaybackTime { rgba: [255; 4] },
+            (320, 240),
+            Some(rasterizer),
+        )
+        .unwrap();
+        for duration in [125_000, 3_665_000] {
+            let timeline = FinalizedTimeline::new(duration, 30).unwrap();
+            for index in [0, 30, 65 * 30, timeline.frame_count() - 1] {
+                renderer
+                    .draw_to(
+                        &mut TileSurface::new(renderer.output),
+                        timeline.frame(index).unwrap(),
+                        Some(timeline),
+                    )
+                    .unwrap();
+                let badge = renderer.badge.as_ref().unwrap();
+                let (top, bottom) = opaque_numeral_rows(badge);
+                assert!(
+                    top.abs_diff(badge.height - bottom) <= 1,
+                    "native numerals in {} must have equal vertical padding: {top} vs {}",
+                    renderer.caption(),
+                    badge.height - bottom
+                );
+            }
+        }
     }
 
     #[test]

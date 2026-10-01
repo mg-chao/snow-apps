@@ -236,6 +236,7 @@ mod tests {
                 let mut preview = EffectsPreview::new(
                     PreviewConfig {
                         region: (0, 0, SIZE.0, SIZE.1),
+                        canvas: SIZE,
                         output: SIZE,
                         trail: COLOR,
                         trail_duration_ms: lifetime,

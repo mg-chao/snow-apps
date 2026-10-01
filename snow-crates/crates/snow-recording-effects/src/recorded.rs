@@ -424,6 +424,7 @@ mod tests {
         let mut live = EffectsPreview::new(
             PreviewConfig {
                 region: (0, 0, size.0, size.1),
+                canvas: size,
                 output: size,
                 trail: effects.mouse_trail_rgba,
                 trail_duration_ms: effects.mouse_trail_duration_ms,

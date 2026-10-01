@@ -5641,8 +5641,9 @@ if(SNOW_SHOT_BUILD_TESTS)
 
     get_target_property(_recording_test_sources snow-shot-screenshot-tool-palette-tests SOURCES)
     list(FILTER _recording_test_sources EXCLUDE REGEX "tests/screenshot_tool_palette_tests.cpp$")
-    # The shared settings library supplies theme objects and their Qt metaobjects.
+    # The shared settings libraries supply the icons, theme objects and Qt metaobjects.
     list(REMOVE_ITEM _recording_test_sources
+        src/presentation/components/icons/snowshoticons.cpp
         include/snow_shot/presentation/styles/thememanager.h
         src/presentation/styles/thememanager.cpp
         src/presentation/styles/themecolorscheme.cpp)
@@ -5694,6 +5695,9 @@ if(SNOW_SHOT_BUILD_TESTS)
         target_link_libraries(snow-shot-screen-recording-controller-tests PRIVATE "${SNOW_SHOT_APPKIT_FRAMEWORK}")
     endif()
     target_compile_definitions(snow-shot-screen-recording-controller-tests PRIVATE SNOW_SHOT_TEST_HOOKS=1)
+    target_compile_definitions(snow-shot-screen-recording-controller-tests PRIVATE
+        SNOW_SHOT_TEST_TRANSLATIONS_DIR="${CMAKE_CURRENT_BINARY_DIR}")
+    add_dependencies(snow-shot-screen-recording-controller-tests snow_shot_release_translations)
     target_sources(snow-shot-screen-recording-controller-tests PRIVATE
         "${CMAKE_CURRENT_SOURCE_DIR}/../test-support/fonts/recording_test_fonts.qrc")
     # Override only the test executable: exercise the real controller without
@@ -5735,6 +5739,9 @@ if(SNOW_SHOT_BUILD_TESTS)
     add_test(NAME snow-shot-recording-post-processing-tests
         COMMAND snow-shot-screen-recording-controller-tests --post-processing-only -platform offscreen)
     set_tests_properties(snow-shot-recording-post-processing-tests PROPERTIES LABELS "unit" TIMEOUT 60)
+    add_test(NAME snow-shot-recording-render-layout-tests
+        COMMAND snow-shot-screen-recording-controller-tests --render-layout-only -platform offscreen)
+    set_tests_properties(snow-shot-recording-render-layout-tests PROPERTIES LABELS "unit" TIMEOUT 30)
     add_test(NAME snow-shot-recording-settings-dialog-tests
         COMMAND snow-shot-screen-recording-controller-tests --settings-dialog-only -platform offscreen)
     set_tests_properties(snow-shot-recording-settings-dialog-tests PROPERTIES
@@ -5756,6 +5763,16 @@ if(SNOW_SHOT_BUILD_TESTS)
         ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}"
         ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
         LABELS "unit" RUN_SERIAL TRUE TIMEOUT 60)
+    if(APPLE)
+        foreach(_preview_scale IN ITEMS 1 1.25 1.5 1.75 2)
+            add_test(NAME snow-shot-recording-effects-preview-dpi-${_preview_scale}-tests
+                COMMAND snow-shot-screen-recording-controller-tests --effects-preview-dpi-only)
+            set_tests_properties(snow-shot-recording-effects-preview-dpi-${_preview_scale}-tests
+                PROPERTIES
+                ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT};QT_SCALE_FACTOR=${_preview_scale}"
+                LABELS "unit" RUN_SERIAL TRUE TIMEOUT 60)
+        endforeach()
+    endif()
     add_test(NAME snow-shot-recording-capture-exclusion-tests
         COMMAND snow-shot-screen-recording-controller-tests --capture-exclusion-only)
     set_tests_properties(snow-shot-recording-capture-exclusion-tests PROPERTIES

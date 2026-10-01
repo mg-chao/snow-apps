@@ -26,6 +26,7 @@ fn run(size: (u32, u32), moving: bool, enabled: bool) -> Result<(), String> {
     };
     let config = PreviewConfig {
         region: (0, 0, size.0, size.1),
+        canvas: size,
         output: size,
         trail: if enabled { [255, 40, 60, 180] } else { [0; 4] },
         trail_duration_ms: 500,

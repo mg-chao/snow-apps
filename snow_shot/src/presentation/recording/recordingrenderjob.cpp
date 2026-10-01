@@ -345,7 +345,7 @@ struct RecordingRenderJob::Impl {
             return;
         }
         const double next = std::isfinite(snapshot.percent)
-                                ? std::clamp<double>(snapshot.percent, 0, 100)
+                                ? std::clamp(static_cast<double>(snapshot.percent), 0.0, 100.0)
                                 : percent;
         const double updated = std::max(percent, next);
         const bool progressChanged =
