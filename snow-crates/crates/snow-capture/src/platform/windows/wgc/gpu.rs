@@ -1,5 +1,5 @@
 use super::*;
-use crate::gpu::{GpuMonitorFrame, copy_texture};
+use crate::gpu::{GpuMonitorFrame, acquire_conversion_output, copy_texture};
 use snow_d3d11::{SharedDevice, TexturePool};
 
 pub(crate) struct GpuWgcCapturer {
@@ -68,8 +68,17 @@ impl GpuWgcCapturer {
         // Frame delivery, Close and worker recreation enter WGC's own locks.
         // Only GPU operations may hold the shared immediate-context lock.
         let _lock = self.device.lock();
-        let (source, _, _) = self.worker.effective_canonical_source()?;
-        let texture = copy_texture(&self.device, &mut self.pool, &source)?;
+        let desc = self.worker.canonical.desc().ok_or(CaptureError::Timeout)?;
+        let texture = if desc.Format == DXGI_FORMAT_R16G16B16A16_FLOAT
+            && self.worker.gpu_hdr_conversion_enabled
+        {
+            let output = acquire_conversion_output(&mut self.pool, desc.Width, desc.Height)?;
+            self.worker.effective_canonical_source_into(Some(&output))?;
+            output
+        } else {
+            let (source, _, _) = self.worker.effective_canonical_source()?;
+            copy_texture(&self.device, &mut self.pool, &source)?
+        };
         self.generation = self.generation.wrapping_add(1);
         let mut frame_metadata = crate::FrameMetadata {
             backend_kind: CaptureBackendKind::WindowsGraphicsCapture,

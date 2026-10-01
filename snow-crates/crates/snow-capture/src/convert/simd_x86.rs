@@ -972,6 +972,28 @@ unsafe fn scale_hdr_rgb_ps(
 // This path keeps the entire per-pixel hot loop in SIMD (except scalar tail),
 // including inverse boost, the smooth SDR/BT.2390 handoff, and sRGB encode.
 
+macro_rules! dispatch_hdr_prepared {
+    ($kernel:ident, $fma:literal, $opaque:literal, $src:ident, $dst:ident,
+        $count:ident, $prepared:ident) => {{
+        // Select both policies once; keep channel order out of the pixel loop.
+        let bgra = $prepared.output_pixel_format == crate::CapturePixelFormat::Bgra8;
+        unsafe {
+            match ($prepared.use_lut(), bgra) {
+                (true, false) => {
+                    $kernel::<true, $fma, $opaque, false>($src, $dst, $count, $prepared)
+                }
+                (true, true) => $kernel::<true, $fma, $opaque, true>($src, $dst, $count, $prepared),
+                (false, false) => {
+                    $kernel::<false, $fma, $opaque, false>($src, $dst, $count, $prepared)
+                }
+                (false, true) => {
+                    $kernel::<false, $fma, $opaque, true>($src, $dst, $count, $prepared)
+                }
+            }
+        }
+    }};
+}
+
 #[target_feature(enable = "avx2,f16c")]
 pub(crate) unsafe fn convert_f16_rgba_to_srgb_hdr_f16c_prepared_unchecked(
     src: *const u8,
@@ -979,26 +1001,15 @@ pub(crate) unsafe fn convert_f16_rgba_to_srgb_hdr_f16c_prepared_unchecked(
     pixel_count: usize,
     prepared: &HdrPreparedContext,
 ) {
-    // Specialize by LUT usage so the hot loop doesn't carry a runtime branch.
-    if prepared.use_lut() {
-        unsafe {
-            convert_f16_rgba_to_srgb_hdr_f16c_inner::<true, false, false>(
-                src,
-                dst,
-                pixel_count,
-                prepared,
-            )
-        }
-    } else {
-        unsafe {
-            convert_f16_rgba_to_srgb_hdr_f16c_inner::<false, false, false>(
-                src,
-                dst,
-                pixel_count,
-                prepared,
-            )
-        }
-    }
+    dispatch_hdr_prepared!(
+        convert_f16_rgba_to_srgb_hdr_f16c_inner,
+        false,
+        false,
+        src,
+        dst,
+        pixel_count,
+        prepared
+    );
 }
 
 #[target_feature(enable = "avx2,f16c")]
@@ -1008,25 +1019,15 @@ pub(crate) unsafe fn convert_f16_rgba_to_srgb_hdr_f16c_prepared_opaque_unchecked
     pixel_count: usize,
     prepared: &HdrPreparedContext,
 ) {
-    if prepared.use_lut() {
-        unsafe {
-            convert_f16_rgba_to_srgb_hdr_f16c_inner::<true, false, true>(
-                src,
-                dst,
-                pixel_count,
-                prepared,
-            )
-        }
-    } else {
-        unsafe {
-            convert_f16_rgba_to_srgb_hdr_f16c_inner::<false, false, true>(
-                src,
-                dst,
-                pixel_count,
-                prepared,
-            )
-        }
-    }
+    dispatch_hdr_prepared!(
+        convert_f16_rgba_to_srgb_hdr_f16c_inner,
+        false,
+        true,
+        src,
+        dst,
+        pixel_count,
+        prepared
+    );
 }
 
 #[target_feature(enable = "avx2,f16c,fma")]
@@ -1036,26 +1037,15 @@ pub(crate) unsafe fn convert_f16_rgba_to_srgb_hdr_f16c_fma_prepared_unchecked(
     pixel_count: usize,
     prepared: &HdrPreparedContext,
 ) {
-    // Specialize by LUT usage so the hot loop doesn't carry a runtime branch.
-    if prepared.use_lut() {
-        unsafe {
-            convert_f16_rgba_to_srgb_hdr_f16c_inner::<true, true, false>(
-                src,
-                dst,
-                pixel_count,
-                prepared,
-            )
-        }
-    } else {
-        unsafe {
-            convert_f16_rgba_to_srgb_hdr_f16c_inner::<false, true, false>(
-                src,
-                dst,
-                pixel_count,
-                prepared,
-            )
-        }
-    }
+    dispatch_hdr_prepared!(
+        convert_f16_rgba_to_srgb_hdr_f16c_inner,
+        true,
+        false,
+        src,
+        dst,
+        pixel_count,
+        prepared
+    );
 }
 
 #[target_feature(enable = "avx2,f16c,fma")]
@@ -1065,25 +1055,15 @@ pub(crate) unsafe fn convert_f16_rgba_to_srgb_hdr_f16c_fma_prepared_opaque_unche
     pixel_count: usize,
     prepared: &HdrPreparedContext,
 ) {
-    if prepared.use_lut() {
-        unsafe {
-            convert_f16_rgba_to_srgb_hdr_f16c_inner::<true, true, true>(
-                src,
-                dst,
-                pixel_count,
-                prepared,
-            )
-        }
-    } else {
-        unsafe {
-            convert_f16_rgba_to_srgb_hdr_f16c_inner::<false, true, true>(
-                src,
-                dst,
-                pixel_count,
-                prepared,
-            )
-        }
-    }
+    dispatch_hdr_prepared!(
+        convert_f16_rgba_to_srgb_hdr_f16c_inner,
+        true,
+        true,
+        src,
+        dst,
+        pixel_count,
+        prepared
+    );
 }
 
 #[target_feature(enable = "avx2")]
@@ -1116,6 +1096,7 @@ unsafe fn convert_f16_rgba_to_srgb_hdr_f16c_inner<
     const USE_LUT: bool,
     const USE_FMA: bool,
     const FORCE_OPAQUE_ALPHA: bool,
+    const OUTPUT_BGRA: bool,
 >(
     src: *const u8,
     dst: *mut u8,
@@ -1219,6 +1200,7 @@ unsafe fn convert_f16_rgba_to_srgb_hdr_f16c_inner<
                 let r_i = hdr_srgb_bytes_ps($r, srgb_lut_ptr);
                 let g_i = hdr_srgb_bytes_ps($g, srgb_lut_ptr);
                 let b_i = hdr_srgb_bytes_ps($b, srgb_lut_ptr);
+                let (r_i, b_i) = if OUTPUT_BGRA { (b_i, r_i) } else { (r_i, b_i) };
 
                 let g_shifted = _mm256_slli_epi32(g_i, 8);
                 let b_shifted = _mm256_slli_epi32(b_i, 16);
@@ -1284,6 +1266,25 @@ unsafe fn convert_f16_rgba_to_srgb_hdr_f16c_inner<
             r = _mm256_mul_ps(r, v_inv_boost);
             g = _mm256_mul_ps(g, v_inv_boost);
             b = _mm256_mul_ps(b, v_inv_boost);
+
+            // The precise curve is expensive and cannot affect an all-SDR block.
+            // Keep this branch out of the LUT specialization, where its overhead
+            // did not produce a repeatable gain for mixed desktop content.
+            if !USE_LUT {
+                let max_rgb = _mm256_max_ps(r, _mm256_max_ps(g, b));
+                let sdr = _mm256_cmp_ps(
+                    max_rgb,
+                    _mm256_set1_ps(super::f16::HDR_SDR_TRANSITION_START),
+                    _CMP_LE_OQ,
+                );
+                if _mm256_movemask_ps(sdr) == 255 {
+                    pack_store_rgba_ps!(r, g, b, a, dst_ptr);
+                    src_ptr = src_ptr.add(32);
+                    dst_ptr = dst_ptr.add(32);
+                    remaining -= 8;
+                    continue;
+                }
+            }
 
             let rg_luma = mul_add_ps!(v_luma_g, g, _mm256_mul_ps(r, v_luma_r));
             let y_in = mul_add_ps!(v_luma_b, b, rg_luma);
@@ -1633,26 +1634,15 @@ pub(crate) unsafe fn convert_f16_rgba_to_srgb_hdr_avx512_prepared_unchecked(
     pixel_count: usize,
     prepared: &HdrPreparedContext,
 ) {
-    // Specialize by LUT usage so the hot loop doesn't carry a runtime branch.
-    if prepared.use_lut() {
-        unsafe {
-            convert_f16_rgba_to_srgb_hdr_avx512_inner::<true, false, false>(
-                src,
-                dst,
-                pixel_count,
-                prepared,
-            )
-        }
-    } else {
-        unsafe {
-            convert_f16_rgba_to_srgb_hdr_avx512_inner::<false, false, false>(
-                src,
-                dst,
-                pixel_count,
-                prepared,
-            )
-        }
-    }
+    dispatch_hdr_prepared!(
+        convert_f16_rgba_to_srgb_hdr_avx512_inner,
+        false,
+        false,
+        src,
+        dst,
+        pixel_count,
+        prepared
+    );
 }
 
 #[target_feature(enable = "avx512f,avx512bw,f16c,avx2")]
@@ -1662,25 +1652,15 @@ pub(crate) unsafe fn convert_f16_rgba_to_srgb_hdr_avx512_prepared_opaque_uncheck
     pixel_count: usize,
     prepared: &HdrPreparedContext,
 ) {
-    if prepared.use_lut() {
-        unsafe {
-            convert_f16_rgba_to_srgb_hdr_avx512_inner::<true, false, true>(
-                src,
-                dst,
-                pixel_count,
-                prepared,
-            )
-        }
-    } else {
-        unsafe {
-            convert_f16_rgba_to_srgb_hdr_avx512_inner::<false, false, true>(
-                src,
-                dst,
-                pixel_count,
-                prepared,
-            )
-        }
-    }
+    dispatch_hdr_prepared!(
+        convert_f16_rgba_to_srgb_hdr_avx512_inner,
+        false,
+        true,
+        src,
+        dst,
+        pixel_count,
+        prepared
+    );
 }
 
 #[target_feature(enable = "avx512f,avx512bw,f16c,avx2,fma")]
@@ -1690,26 +1670,15 @@ pub(crate) unsafe fn convert_f16_rgba_to_srgb_hdr_avx512_fma_prepared_unchecked(
     pixel_count: usize,
     prepared: &HdrPreparedContext,
 ) {
-    // Specialize by LUT usage so the hot loop doesn't carry a runtime branch.
-    if prepared.use_lut() {
-        unsafe {
-            convert_f16_rgba_to_srgb_hdr_avx512_inner::<true, true, false>(
-                src,
-                dst,
-                pixel_count,
-                prepared,
-            )
-        }
-    } else {
-        unsafe {
-            convert_f16_rgba_to_srgb_hdr_avx512_inner::<false, true, false>(
-                src,
-                dst,
-                pixel_count,
-                prepared,
-            )
-        }
-    }
+    dispatch_hdr_prepared!(
+        convert_f16_rgba_to_srgb_hdr_avx512_inner,
+        true,
+        false,
+        src,
+        dst,
+        pixel_count,
+        prepared
+    );
 }
 
 #[target_feature(enable = "avx512f,avx512bw,f16c,avx2,fma")]
@@ -1719,25 +1688,15 @@ pub(crate) unsafe fn convert_f16_rgba_to_srgb_hdr_avx512_fma_prepared_opaque_unc
     pixel_count: usize,
     prepared: &HdrPreparedContext,
 ) {
-    if prepared.use_lut() {
-        unsafe {
-            convert_f16_rgba_to_srgb_hdr_avx512_inner::<true, true, true>(
-                src,
-                dst,
-                pixel_count,
-                prepared,
-            )
-        }
-    } else {
-        unsafe {
-            convert_f16_rgba_to_srgb_hdr_avx512_inner::<false, true, true>(
-                src,
-                dst,
-                pixel_count,
-                prepared,
-            )
-        }
-    }
+    dispatch_hdr_prepared!(
+        convert_f16_rgba_to_srgb_hdr_avx512_inner,
+        true,
+        true,
+        src,
+        dst,
+        pixel_count,
+        prepared
+    );
 }
 
 #[target_feature(enable = "avx512f,avx512bw,f16c,avx2")]
@@ -1745,6 +1704,7 @@ unsafe fn convert_f16_rgba_to_srgb_hdr_avx512_inner<
     const USE_LUT: bool,
     const USE_FMA: bool,
     const FORCE_OPAQUE_ALPHA: bool,
+    const OUTPUT_BGRA: bool,
 >(
     src: *const u8,
     dst: *mut u8,
@@ -1848,6 +1808,7 @@ unsafe fn convert_f16_rgba_to_srgb_hdr_avx512_inner<
                 let r_i = hdr_srgb_bytes_ps($r, srgb_lut_ptr);
                 let g_i = hdr_srgb_bytes_ps($g, srgb_lut_ptr);
                 let b_i = hdr_srgb_bytes_ps($b, srgb_lut_ptr);
+                let (r_i, b_i) = if OUTPUT_BGRA { (b_i, r_i) } else { (r_i, b_i) };
                 let a_i = if FORCE_OPAQUE_ALPHA {
                     _mm256_set1_epi32(255)
                 } else {
@@ -1903,74 +1864,90 @@ unsafe fn convert_f16_rgba_to_srgb_hdr_avx512_inner<
                 g = _mm256_mul_ps(g, v_inv_boost);
                 b = _mm256_mul_ps(b, v_inv_boost);
 
-                let rg_luma = mul_add_ps!(v_luma_g, g, _mm256_mul_ps(r, v_luma_r));
-                let y_in = mul_add_ps!(v_luma_b, b, rg_luma);
-                let y_in_pos = _mm256_max_ps(y_in, v_zero);
-                let y_out = if USE_LUT {
-                    let lut_idx_f =
-                        _mm256_mul_ps(_mm256_min_ps(y_in_pos, v_lut_input_max), v_lut_inv_step);
-                    let lut_idx = _mm256_cvttps_epi32(lut_idx_f);
-                    let lut_idx_next =
-                        _mm256_min_epi32(_mm256_add_epi32(lut_idx, v_i32_one), v_lut_last_idx);
-                    let lut_frac = _mm256_sub_ps(lut_idx_f, _mm256_cvtepi32_ps(lut_idx));
-                    let y0 = _mm256_i32gather_ps(lut_ptr, lut_idx, 4);
-                    let y1 = _mm256_i32gather_ps(lut_ptr, lut_idx_next, 4);
-                    _mm256_add_ps(y0, _mm256_mul_ps(lut_frac, _mm256_sub_ps(y1, y0)))
+                let max_rgb = _mm256_max_ps(r, _mm256_max_ps(g, b));
+                let all_sdr = !USE_LUT
+                    && _mm256_movemask_ps(_mm256_cmp_ps(
+                        max_rgb,
+                        _mm256_set1_ps(super::f16::HDR_SDR_TRANSITION_START),
+                        _CMP_LE_OQ,
+                    )) == 255;
+                if all_sdr {
+                    pack_rgba_ps!(r, g, b, a)
                 } else {
-                    let l_in_nits =
-                        _mm256_max_ps(_mm256_mul_ps(y_in_pos, v_sdr_ref_white), v_hdr_input_black);
+                    let rg_luma = mul_add_ps!(v_luma_g, g, _mm256_mul_ps(r, v_luma_r));
+                    let y_in = mul_add_ps!(v_luma_b, b, rg_luma);
+                    let y_in_pos = _mm256_max_ps(y_in, v_zero);
+                    let y_out = if USE_LUT {
+                        let lut_idx_f =
+                            _mm256_mul_ps(_mm256_min_ps(y_in_pos, v_lut_input_max), v_lut_inv_step);
+                        let lut_idx = _mm256_cvttps_epi32(lut_idx_f);
+                        let lut_idx_next =
+                            _mm256_min_epi32(_mm256_add_epi32(lut_idx, v_i32_one), v_lut_last_idx);
+                        let lut_frac = _mm256_sub_ps(lut_idx_f, _mm256_cvtepi32_ps(lut_idx));
+                        let y0 = _mm256_i32gather_ps(lut_ptr, lut_idx, 4);
+                        let y1 = _mm256_i32gather_ps(lut_ptr, lut_idx_next, 4);
+                        _mm256_add_ps(y0, _mm256_mul_ps(lut_frac, _mm256_sub_ps(y1, y0)))
+                    } else {
+                        let l_in_nits = _mm256_max_ps(
+                            _mm256_mul_ps(y_in_pos, v_sdr_ref_white),
+                            v_hdr_input_black,
+                        );
 
-                    let x = nits_to_pq_ps!(l_in_nits);
-                    let mut y = _mm256_div_ps(_mm256_sub_ps(x, v_bt_ib), v_bt_denom);
+                        let x = nits_to_pq_ps!(l_in_nits);
+                        let mut y = _mm256_div_ps(_mm256_sub_ps(x, v_bt_ib), v_bt_denom);
 
-                    let tb = _mm256_div_ps(_mm256_sub_ps(y, v_bt_ks), v_bt_one_minus_ks_safe);
-                    let tb2 = _mm256_mul_ps(tb, tb);
-                    let tb3 = _mm256_mul_ps(tb2, tb);
-                    let poly = _mm256_add_ps(
-                        _mm256_add_ps(
+                        let tb = _mm256_div_ps(_mm256_sub_ps(y, v_bt_ks), v_bt_one_minus_ks_safe);
+                        let tb2 = _mm256_mul_ps(tb, tb);
+                        let tb3 = _mm256_mul_ps(tb2, tb);
+                        let poly = _mm256_add_ps(
+                            _mm256_add_ps(
+                                _mm256_mul_ps(
+                                    _mm256_add_ps(
+                                        _mm256_sub_ps(
+                                            _mm256_mul_ps(v_two, tb3),
+                                            _mm256_mul_ps(v_three, tb2),
+                                        ),
+                                        v_one,
+                                    ),
+                                    v_bt_ks,
+                                ),
+                                _mm256_mul_ps(
+                                    _mm256_add_ps(
+                                        _mm256_sub_ps(tb3, _mm256_mul_ps(v_two, tb2)),
+                                        tb,
+                                    ),
+                                    v_bt_one_minus_ks,
+                                ),
+                            ),
                             _mm256_mul_ps(
                                 _mm256_add_ps(
-                                    _mm256_sub_ps(
-                                        _mm256_mul_ps(v_two, tb3),
-                                        _mm256_mul_ps(v_three, tb2),
-                                    ),
-                                    v_one,
+                                    _mm256_mul_ps(v_neg_two, tb3),
+                                    _mm256_mul_ps(v_three, tb2),
                                 ),
-                                v_bt_ks,
+                                v_bt_max_lum,
                             ),
-                            _mm256_mul_ps(
-                                _mm256_add_ps(_mm256_sub_ps(tb3, _mm256_mul_ps(v_two, tb2)), tb),
-                                v_bt_one_minus_ks,
-                            ),
-                        ),
-                        _mm256_mul_ps(
-                            _mm256_add_ps(
-                                _mm256_mul_ps(v_neg_two, tb3),
-                                _mm256_mul_ps(v_three, tb2),
-                            ),
-                            v_bt_max_lum,
-                        ),
-                    );
-                    y = _mm256_blendv_ps(y, poly, _mm256_cmp_ps(y, v_bt_ks, _CMP_GE_OQ));
+                        );
+                        y = _mm256_blendv_ps(y, poly, _mm256_cmp_ps(y, v_bt_ks, _CMP_GE_OQ));
 
-                    let one_minus_y = _mm256_max_ps(_mm256_sub_ps(v_one, y), v_zero);
-                    let one_minus_y2 = _mm256_mul_ps(one_minus_y, one_minus_y);
-                    let one_minus_y4 = _mm256_mul_ps(one_minus_y2, one_minus_y2);
-                    let y_black = mul_add_ps!(v_bt_min_lum, one_minus_y4, y);
-                    y = _mm256_blendv_ps(y, y_black, _mm256_cmp_ps(y, v_zero, _CMP_GE_OQ));
+                        let one_minus_y = _mm256_max_ps(_mm256_sub_ps(v_one, y), v_zero);
+                        let one_minus_y2 = _mm256_mul_ps(one_minus_y, one_minus_y);
+                        let one_minus_y4 = _mm256_mul_ps(one_minus_y2, one_minus_y2);
+                        let y_black = mul_add_ps!(v_bt_min_lum, one_minus_y4, y);
+                        y = _mm256_blendv_ps(y, y_black, _mm256_cmp_ps(y, v_zero, _CMP_GE_OQ));
 
-                    let mapped_pq = _mm256_min_ps(
-                        _mm256_max_ps(mul_add_ps!(y, v_bt_denom, v_bt_ib), v_bt_ob),
-                        v_bt_ow,
-                    );
-                    _mm256_max_ps(
-                        _mm256_div_ps(pq_to_nits_ps!(mapped_pq), v_sdr_ref_white),
-                        v_zero,
-                    )
-                };
+                        let mapped_pq = _mm256_min_ps(
+                            _mm256_max_ps(mul_add_ps!(y, v_bt_denom, v_bt_ib), v_bt_ob),
+                            v_bt_ow,
+                        );
+                        _mm256_max_ps(
+                            _mm256_div_ps(pq_to_nits_ps!(mapped_pq), v_sdr_ref_white),
+                            v_zero,
+                        )
+                    };
 
-                let [r_hdr, g_hdr, b_hdr] = scale_hdr_rgb_ps([r, g, b], y_in_pos, y_out);
-                pack_rgba_ps!(r_hdr, g_hdr, b_hdr, a)
+                    let [r_hdr, g_hdr, b_hdr] = scale_hdr_rgb_ps([r, g, b], y_in_pos, y_out);
+                    pack_rgba_ps!(r_hdr, g_hdr, b_hdr, a)
+                }
             }};
         }
 

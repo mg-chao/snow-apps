@@ -207,6 +207,10 @@ struct GpuComputePass {
     cached_width: u32,
     cached_height: u32,
     output_desc: Option<D3D11_TEXTURE2D_DESC>,
+    // UAVs retain COM resources, but never retain the pool's immutable leases.
+    // This lets the pool reuse a destination after its published users release it.
+    pooled_outputs: Vec<(ID3D11Texture2D, ID3D11UnorderedAccessView)>,
+    pooled_output_size: (u32, u32),
 }
 
 impl GpuComputePass {
@@ -258,6 +262,8 @@ impl GpuComputePass {
             cached_width: 0,
             cached_height: 0,
             output_desc: None,
+            pooled_outputs: Vec::new(),
+            pooled_output_size: (0, 0),
         })
     }
 
@@ -336,6 +342,52 @@ impl GpuComputePass {
         Ok(srv)
     }
 
+    fn pooled_output_uav(
+        &mut self,
+        device: &ID3D11Device,
+        output: &snow_d3d11::Texture,
+        dimensions: (u32, u32),
+    ) -> CaptureResult<ID3D11UnorderedAccessView> {
+        let desc = output.desc();
+        if (desc.Width, desc.Height) != dimensions
+            || desc.Format != DXGI_FORMAT_R8G8B8A8_UNORM
+            || desc.BindFlags & D3D11_BIND_UNORDERED_ACCESS.0 as u32 == 0
+            || desc.MipLevels != 1
+            || desc.ArraySize != 1
+            || desc.SampleDesc.Count != 1
+        {
+            return Err(CaptureError::InvalidConfig(
+                "GPU conversion output must be a matching RGBA8 UAV texture".into(),
+            ));
+        }
+        if self.pooled_output_size != dimensions {
+            self.pooled_outputs.clear();
+            self.pooled_output_size = dimensions;
+        }
+        if let Some((_, uav)) = self
+            .pooled_outputs
+            .iter()
+            .find(|(texture, _)| texture.as_raw() == output.raw().as_raw())
+        {
+            return Ok(uav.clone());
+        }
+        let mut uav = None;
+        unsafe { device.CreateUnorderedAccessView(output.raw(), None, Some(&mut uav)) }
+            .context("CreateUnorderedAccessView for pooled conversion output failed")
+            .map_err(CaptureError::platform)?;
+        let uav = uav
+            .context("CreateUnorderedAccessView for pooled conversion output returned None")
+            .map_err(CaptureError::platform)?;
+        // Match the bounded capture pools; larger callers still work through
+        // eviction rather than retaining an unbounded number of GPU resources.
+        if self.pooled_outputs.len() == 6 {
+            self.pooled_outputs.remove(0);
+        }
+        self.pooled_outputs
+            .push((output.raw().clone(), uav.clone()));
+        Ok(uav)
+    }
+
     /// Uploads `gpu_params` to the constant buffer via Map/Unmap.
     fn update_cbuf(
         &self,
@@ -365,9 +417,8 @@ impl GpuComputePass {
         lut_srv: Option<ID3D11ShaderResourceView>,
         width: u32,
         height: u32,
+        uav: &ID3D11UnorderedAccessView,
     ) {
-        let uav = self.output_uav.as_ref().unwrap();
-
         unsafe {
             let use_1d = (width < SMALL_TEXTURE_THRESHOLD || height < SMALL_TEXTURE_THRESHOLD)
                 && self.cs_1d.is_some();
@@ -413,6 +464,8 @@ impl GpuComputePass {
         self.cached_width = 0;
         self.cached_height = 0;
         self.output_desc = None;
+        self.pooled_outputs.clear();
+        self.pooled_output_size = (0, 0);
     }
 }
 
@@ -517,10 +570,61 @@ impl GpuTonemapper {
         params: HdrFrameContext,
         screen_color_transform: Option<ScreenColorTransform>,
     ) -> CaptureResult<&ID3D11Texture2D> {
-        let params = params.sanitized();
         let (width, height) =
             super::rotation::oriented_size(source_desc.Width, source_desc.Height, self.rotation);
         self.pass.ensure_output(device, width, height)?;
+        let uav = self.pass.output_uav.as_ref().unwrap().clone();
+        self.dispatch_frame(
+            device,
+            context,
+            source,
+            params,
+            screen_color_transform,
+            (width, height),
+            &uav,
+        )?;
+        Ok(self.pass.output_tex())
+    }
+
+    /// Write directly into an exclusively acquired pool destination. The caller
+    /// publishes its immutable lease only after this dispatch has been queued.
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn tonemap_into(
+        &mut self,
+        device: &ID3D11Device,
+        context: &ID3D11DeviceContext,
+        source: &ID3D11Texture2D,
+        source_desc: &D3D11_TEXTURE2D_DESC,
+        params: HdrFrameContext,
+        screen_color_transform: Option<ScreenColorTransform>,
+        output: &snow_d3d11::Texture,
+    ) -> CaptureResult<()> {
+        let dimensions =
+            super::rotation::oriented_size(source_desc.Width, source_desc.Height, self.rotation);
+        let uav = self.pass.pooled_output_uav(device, output, dimensions)?;
+        self.dispatch_frame(
+            device,
+            context,
+            source,
+            params,
+            screen_color_transform,
+            dimensions,
+            &uav,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn dispatch_frame(
+        &mut self,
+        device: &ID3D11Device,
+        context: &ID3D11DeviceContext,
+        source: &ID3D11Texture2D,
+        params: HdrFrameContext,
+        screen_color_transform: Option<ScreenColorTransform>,
+        (width, height): (u32, u32),
+        uav: &ID3D11UnorderedAccessView,
+    ) -> CaptureResult<()> {
+        let params = params.sanitized();
 
         let (lut_srv, lut_input_max, lut_inv_step, flags) =
             if params.tonemap_use_lut && !self.lut_disabled {
@@ -566,8 +670,9 @@ impl GpuTonemapper {
         }
 
         let srv = self.pass.get_or_create_srv(device, source)?;
-        self.pass.dispatch(context, srv, lut_srv, width, height);
-        Ok(self.pass.output_tex())
+        self.pass
+            .dispatch(context, srv, lut_srv, width, height, uav);
+        Ok(())
     }
 
     pub(crate) fn output_desc(&self) -> D3D11_TEXTURE2D_DESC {
@@ -615,7 +720,48 @@ impl GpuF16Converter {
         let width = source_desc.Width;
         let height = source_desc.Height;
         self.pass.ensure_output(device, width, height)?;
+        let uav = self.pass.output_uav.as_ref().unwrap().clone();
+        self.dispatch_frame(
+            device,
+            context,
+            source,
+            screen_color_transform,
+            (width, height),
+            &uav,
+        )?;
+        Ok(self.pass.output_tex())
+    }
 
+    pub(crate) fn convert_into(
+        &mut self,
+        device: &ID3D11Device,
+        context: &ID3D11DeviceContext,
+        source: &ID3D11Texture2D,
+        source_desc: &D3D11_TEXTURE2D_DESC,
+        screen_color_transform: Option<ScreenColorTransform>,
+        output: &snow_d3d11::Texture,
+    ) -> CaptureResult<()> {
+        let dimensions = (source_desc.Width, source_desc.Height);
+        let uav = self.pass.pooled_output_uav(device, output, dimensions)?;
+        self.dispatch_frame(
+            device,
+            context,
+            source,
+            screen_color_transform,
+            dimensions,
+            &uav,
+        )
+    }
+
+    fn dispatch_frame(
+        &mut self,
+        device: &ID3D11Device,
+        context: &ID3D11DeviceContext,
+        source: &ID3D11Texture2D,
+        screen_color_transform: Option<ScreenColorTransform>,
+        (width, height): (u32, u32),
+        uav: &ID3D11UnorderedAccessView,
+    ) -> CaptureResult<()> {
         let gpu_params = GpuParams {
             sdr_white_nits: 0.0,
             hdr_peak_nits: 0.0,
@@ -638,8 +784,8 @@ impl GpuF16Converter {
         }
 
         let srv = self.pass.get_or_create_srv(device, source)?;
-        self.pass.dispatch(context, srv, None, width, height);
-        Ok(self.pass.output_tex())
+        self.pass.dispatch(context, srv, None, width, height, uav);
+        Ok(())
     }
 
     pub(crate) fn output_desc(&self) -> D3D11_TEXTURE2D_DESC {
@@ -1139,6 +1285,291 @@ mod tests {
             context.Unmap(&staging, 0);
             Ok(pixel)
         }
+    }
+
+    #[test]
+    fn pooled_hdr_outputs_match_internal_outputs_and_preserve_leases() -> anyhow::Result<()> {
+        use windows::Win32::Graphics::Dxgi::Common::{
+            DXGI_MODE_ROTATION_ROTATE90, DXGI_MODE_ROTATION_ROTATE180, DXGI_MODE_ROTATION_ROTATE270,
+        };
+        use windows::Win32::Graphics::Dxgi::{CreateDXGIFactory1, IDXGIAdapter, IDXGIFactory4};
+        let factory: IDXGIFactory4 = unsafe { CreateDXGIFactory1()? };
+        let adapter: IDXGIAdapter = unsafe { factory.EnumWarpAdapter()? };
+        let shared = snow_d3d11::SharedDevice::create_compute(&adapter)?;
+        let _lock = shared.lock();
+        let device = shared.device();
+        let context = shared.context();
+        let mut mapper = GpuTonemapper::new(device)?;
+        let mut converter = GpuF16Converter::new(device)?;
+        let correction = ScreenColorTransform::from_magnifier_matrix(&[
+            -1., 0., 0., 0., 0., 0., -1., 0., 0., 0., 0., 0., -1., 0., 0., 0., 0., 0., 1., 0., 1.,
+            1., 1., 0., 1.,
+        ])
+        .unwrap();
+        for (width, height) in [(19, 11), (513, 517)] {
+            let (source, desc) = hdr_source(device, width, height)?;
+            for rotation in [
+                DXGI_MODE_ROTATION_IDENTITY,
+                DXGI_MODE_ROTATION_ROTATE90,
+                DXGI_MODE_ROTATION_ROTATE180,
+                DXGI_MODE_ROTATION_ROTATE270,
+            ] {
+                mapper.set_rotation(rotation);
+                let (out_width, out_height) = rotation::oriented_size(width, height, rotation);
+                let mut pool = snow_d3d11::TexturePool::new(shared.clone(), 2);
+                let mut expected =
+                    Readback::new(device, out_width, out_height, CapturePixelFormat::Rgba8)?;
+                let mut actual =
+                    Readback::new(device, out_width, out_height, CapturePixelFormat::Rgba8)?;
+                for lut in [false, true] {
+                    for transform in [None, Some(correction)] {
+                        let params = HdrFrameContext {
+                            sdr_white_nits: 160.,
+                            tonemap_use_lut: lut,
+                            ..Default::default()
+                        };
+                        let internal =
+                            mapper.tonemap(device, context, &source, &desc, params, transform)?;
+                        expected.copy(context, internal, 0, 0)?;
+                        let first = crate::gpu::acquire_conversion_output(
+                            &mut pool, out_width, out_height,
+                        )?;
+                        let first_id = first.raw().as_raw();
+                        mapper.tonemap_into(
+                            device, context, &source, &desc, params, transform, &first,
+                        )?;
+                        let second = crate::gpu::acquire_conversion_output(
+                            &mut pool, out_width, out_height,
+                        )?;
+                        assert_ne!(first.raw().as_raw(), second.raw().as_raw());
+                        assert!(
+                            crate::gpu::acquire_conversion_output(&mut pool, out_width, out_height)
+                                .is_err()
+                        );
+                        mapper.tonemap_into(
+                            device,
+                            context,
+                            &source,
+                            &desc,
+                            HdrFrameContext {
+                                sdr_white_nits: 280.,
+                                ..params
+                            },
+                            transform,
+                            &second,
+                        )?;
+                        // Neither another pooled dispatch nor the internal-output
+                        // API may modify a previously published immutable lease.
+                        mapper.tonemap(device, context, &source, &desc, params, None)?;
+                        actual.copy(context, first.raw(), 0, 0)?;
+                        assert_eq!(actual.frame.as_bytes(), expected.frame.as_bytes());
+                        drop(first);
+                        drop(second);
+                        let reused = crate::gpu::acquire_conversion_output(
+                            &mut pool, out_width, out_height,
+                        )?;
+                        assert_eq!(reused.raw().as_raw(), first_id);
+                    }
+                }
+            }
+            let mut pool = snow_d3d11::TexturePool::new(shared.clone(), 2);
+            for transform in [None, Some(correction)] {
+                let internal = converter.convert(device, context, &source, &desc, transform)?;
+                let mut expected = Readback::new(device, width, height, CapturePixelFormat::Rgba8)?;
+                let mut actual = Readback::new(device, width, height, CapturePixelFormat::Rgba8)?;
+                expected.copy(context, internal, 0, 0)?;
+                let output = crate::gpu::acquire_conversion_output(&mut pool, width, height)?;
+                converter.convert_into(device, context, &source, &desc, transform, &output)?;
+                actual.copy(context, output.raw(), 0, 0)?;
+                assert_eq!(actual.frame.as_bytes(), expected.frame.as_bytes());
+            }
+            let wrong_size = crate::gpu::acquire_conversion_output(&mut pool, width + 1, height)?;
+            assert!(
+                converter
+                    .convert_into(device, context, &source, &desc, None, &wrong_size)
+                    .is_err()
+            );
+            let no_uav = shared.texture(
+                width,
+                height,
+                DXGI_FORMAT_R8G8B8A8_UNORM,
+                D3D11_BIND_SHADER_RESOURCE.0 as u32,
+            )?;
+            assert!(
+                converter
+                    .convert_into(device, context, &source, &desc, None, &no_uav)
+                    .is_err()
+            );
+            assert!(mapper.pass.pooled_outputs.len() <= 6);
+        }
+        mapper.release_capture_surfaces();
+        converter.release_capture_surfaces();
+        assert!(mapper.pass.pooled_outputs.is_empty());
+        assert!(converter.pass.pooled_outputs.is_empty());
+        Ok(())
+    }
+
+    #[test]
+    #[ignore = "Release hardware benchmark; run with windows-msvc-performance and --ignored --nocapture"]
+    fn hdr_pooled_output_performance_benchmark() -> anyhow::Result<()> {
+        use std::collections::VecDeque;
+        use std::time::{Duration, Instant};
+        use windows::Win32::Graphics::Dxgi::{CreateDXGIFactory1, IDXGIAdapter, IDXGIFactory1};
+        anyhow::ensure!(
+            !cfg!(debug_assertions),
+            "Release is required for GPU benchmarks"
+        );
+        fn query(device: &ID3D11Device, kind: D3D11_QUERY) -> anyhow::Result<ID3D11Query> {
+            let mut result = None;
+            unsafe {
+                device.CreateQuery(
+                    &D3D11_QUERY_DESC {
+                        Query: kind,
+                        MiscFlags: 0,
+                    },
+                    Some(&mut result),
+                )?;
+            }
+            Ok(result.unwrap())
+        }
+        fn query_data<T: Default>(
+            context: &ID3D11DeviceContext,
+            query: &ID3D11Query,
+        ) -> anyhow::Result<T> {
+            let start = Instant::now();
+            loop {
+                let mut value = T::default();
+                let status = unsafe {
+                    (context.vtable().GetData)(
+                        context.as_raw(),
+                        query.as_raw(),
+                        (&mut value as *mut T).cast(),
+                        std::mem::size_of::<T>() as u32,
+                        0,
+                    )
+                };
+                if status.0 == 0 {
+                    return Ok(value);
+                }
+                status.ok()?;
+                anyhow::ensure!(
+                    start.elapsed() < Duration::from_secs(10),
+                    "GPU timestamp query timed out"
+                );
+                std::thread::yield_now();
+            }
+        }
+        let factory: IDXGIFactory1 = unsafe { CreateDXGIFactory1()? };
+        let adapter: IDXGIAdapter = unsafe { factory.EnumAdapters(0)? };
+        let shared = snow_d3d11::SharedDevice::create(&adapter)?;
+        println!("HDR_GPU_ADAPTER,{}", shared.identity().description);
+        let _lock = shared.lock();
+        let device = shared.device();
+        let context = shared.context();
+        let clock = query(device, D3D11_QUERY_TIMESTAMP_DISJOINT)?;
+        let begin = query(device, D3D11_QUERY_TIMESTAMP)?;
+        let end = query(device, D3D11_QUERY_TIMESTAMP)?;
+        println!(
+            "HDR_GPU_HEADER,round,width,height,mode,path,gpu_p50_ms,gpu_p95_ms,cpu_p50_ms,cpu_p95_ms"
+        );
+        for (width, height) in [(1920, 1080), (3840, 2160)] {
+            let (source, desc) = hdr_source(device, width, height)?;
+            for mode in ["lut", "precise", "f16"] {
+                let params = HdrFrameContext {
+                    sdr_white_nits: 160.,
+                    tonemap_use_lut: mode == "lut",
+                    ..Default::default()
+                };
+                for round in 0..3 {
+                    for direct in if round % 2 == 0 {
+                        [false, true]
+                    } else {
+                        [true, false]
+                    } {
+                        let mut mapper = GpuTonemapper::new(device)?;
+                        let mut converter = GpuF16Converter::new(device)?;
+                        let mut pool = snow_d3d11::TexturePool::new(shared.clone(), 6);
+                        let mut history = VecDeque::new();
+                        let mut gpu_times = Vec::new();
+                        let mut cpu_times = Vec::new();
+                        let warming = Instant::now();
+                        let mut iteration = 0;
+                        while gpu_times.len() < 80 {
+                            unsafe {
+                                context.Begin(&clock);
+                                context.End(&begin);
+                            }
+                            let submitted = Instant::now();
+                            for _ in 0..16 {
+                                let output = if direct {
+                                    let output = crate::gpu::acquire_conversion_output(
+                                        &mut pool, width, height,
+                                    )?;
+                                    if mode == "f16" {
+                                        converter.convert_into(
+                                            device, context, &source, &desc, None, &output,
+                                        )?;
+                                    } else {
+                                        mapper.tonemap_into(
+                                            device, context, &source, &desc, params, None, &output,
+                                        )?;
+                                    }
+                                    output
+                                } else {
+                                    let temporary = if mode == "f16" {
+                                        converter.convert(device, context, &source, &desc, None)?
+                                    } else {
+                                        mapper.tonemap(
+                                            device, context, &source, &desc, params, None,
+                                        )?
+                                    };
+                                    crate::gpu::copy_texture(&shared, &mut pool, temporary)?
+                                };
+                                history.push_back(output);
+                                if history.len() > 3 {
+                                    history.pop_front();
+                                }
+                            }
+                            let cpu_ms = submitted.elapsed().as_secs_f64() * 1000. / 16.;
+                            unsafe {
+                                context.End(&end);
+                                context.End(&clock);
+                                context.Flush();
+                            }
+                            let data =
+                                query_data::<D3D11_QUERY_DATA_TIMESTAMP_DISJOINT>(context, &clock)?;
+                            let start = query_data::<u64>(context, &begin)?;
+                            let finish = query_data::<u64>(context, &end)?;
+                            if iteration >= 24
+                                && warming.elapsed() >= Duration::from_millis(750)
+                                && !data.Disjoint.as_bool()
+                            {
+                                gpu_times.push(
+                                    (finish - start) as f64 / data.Frequency as f64 * 1000. / 16.,
+                                );
+                                cpu_times.push(cpu_ms);
+                            }
+                            iteration += 1;
+                            anyhow::ensure!(
+                                warming.elapsed() < Duration::from_secs(30),
+                                "GPU benchmark case timed out"
+                            );
+                        }
+                        gpu_times.sort_by(f64::total_cmp);
+                        cpu_times.sort_by(f64::total_cmp);
+                        println!(
+                            "HDR_GPU_PERF,{round},{width},{height},{mode},{},{:.6},{:.6},{:.6},{:.6}",
+                            if direct { "direct" } else { "copy" },
+                            gpu_times[40],
+                            gpu_times[75],
+                            cpu_times[40],
+                            cpu_times[75]
+                        );
+                    }
+                }
+            }
+        }
+        Ok(())
     }
 
     #[test]
