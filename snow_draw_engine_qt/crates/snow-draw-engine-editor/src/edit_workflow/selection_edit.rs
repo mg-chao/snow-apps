@@ -623,7 +623,7 @@ impl Editor {
                         context.original_arrows,
                     ),
                     &excluded,
-                    snapping_mode,
+                    modifiers,
                 ) {
                     let anchors_x = resize_snap_anchors_for_sign(dragged_x_sign);
                     let anchors_y = resize_snap_anchors_for_sign(dragged_y_sign);

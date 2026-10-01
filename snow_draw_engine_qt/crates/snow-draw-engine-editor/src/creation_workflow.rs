@@ -281,37 +281,7 @@ impl Editor {
         current: Point<f64>,
         modifiers: Modifiers,
     ) -> (Point<f64>, Vec<SnapGuide>) {
-        let snapping_mode = self.effective_snapping_mode(modifiers);
-        match snapping_mode {
-            SnappingMode::Grid => (
-                GRID_SNAP_SERVICE.snap_point(current, self.config.grid.size),
-                Vec::new(),
-            ),
-            SnappingMode::Object => {
-                let (point, guides) =
-                    if self.config.snap.enabled && self.config.snap.enable_point_snaps {
-                        let snap = document.snap_point(&snow_draw_engine_core::SnapQuery {
-                            point: current,
-                            threshold: self.zoom_adjusted_snap_distance(),
-                            include_grid: false,
-                            grid_size: self.config.grid.size,
-                        });
-                        (snap.point, snap.guides)
-                    } else {
-                        (current, Vec::new())
-                    };
-                let (point, guides) = self.snap_point_to_external_guides(current, point, guides);
-                (
-                    point,
-                    if self.config.snap.show_guides {
-                        guides
-                    } else {
-                        Vec::new()
-                    },
-                )
-            }
-            _ => (current, Vec::new()),
-        }
+        self.snap_creation_point(document, current, modifiers)
     }
 
     pub(crate) fn finalize_arrow_creation_from_points(
@@ -338,37 +308,7 @@ impl Editor {
         current: Point<f64>,
         modifiers: Modifiers,
     ) -> (Point<f64>, Vec<SnapGuide>) {
-        let snapping_mode = self.effective_snapping_mode(modifiers);
-        match snapping_mode {
-            SnappingMode::Grid => (
-                GRID_SNAP_SERVICE.snap_point(current, self.config.grid.size),
-                Vec::new(),
-            ),
-            SnappingMode::Object => {
-                let (point, guides) =
-                    if self.config.snap.enabled && self.config.snap.enable_point_snaps {
-                        let snap = document.snap_point(&snow_draw_engine_core::SnapQuery {
-                            point: current,
-                            threshold: self.zoom_adjusted_snap_distance(),
-                            include_grid: false,
-                            grid_size: self.config.grid.size,
-                        });
-                        (snap.point, snap.guides)
-                    } else {
-                        (current, Vec::new())
-                    };
-                let (point, guides) = self.snap_point_to_external_guides(current, point, guides);
-                (
-                    point,
-                    if self.config.snap.show_guides {
-                        guides
-                    } else {
-                        Vec::new()
-                    },
-                )
-            }
-            _ => (current, Vec::new()),
-        }
+        self.snap_creation_point(document, current, modifiers)
     }
 
     fn arrow_creation_preview(

@@ -501,14 +501,16 @@ mod tests {
         );
         assert!(ObjectSnapActor::selection(&document, &[rect_state], &[]).participates());
 
-        let editor = Editor::new(EngineConfig::default()).unwrap();
+        let mut config = EngineConfig::default();
+        config.snap.enabled = true;
+        let mut editor = Editor::new(config).unwrap();
         assert!(
             editor
                 .object_snap_plan(
                     &document,
                     ObjectSnapActor::Creation(ActiveTool::RectangleFilter),
                     &[],
-                    SnappingMode::Object,
+                    Modifiers::default(),
                 )
                 .is_none()
         );
@@ -518,7 +520,7 @@ mod tests {
                     &document,
                     ObjectSnapActor::Creation(ActiveTool::PenFilter),
                     &[],
-                    SnappingMode::Object,
+                    Modifiers::default(),
                 )
                 .is_none()
         );
@@ -528,7 +530,7 @@ mod tests {
                     &document,
                     ObjectSnapActor::selection(&document, &[filter_state], &[]),
                     &[],
-                    SnappingMode::Object,
+                    Modifiers::default(),
                 )
                 .is_none()
         );
@@ -538,7 +540,7 @@ mod tests {
                 &document,
                 ObjectSnapActor::Creation(ActiveTool::Shape),
                 &[],
-                SnappingMode::Object,
+                Modifiers::default(),
             )
             .expect("layout creation should object-snap");
         assert_eq!(plan.references.len(), 1);
@@ -548,28 +550,30 @@ mod tests {
                 &document,
                 ObjectSnapActor::selection(&document, &[rect_state], &[]),
                 &[rect_id],
-                SnappingMode::Object,
+                Modifiers::default(),
             )
             .expect("layout selection should object-snap");
         assert!(plan.references.is_empty());
 
+        editor.config.grid.enabled = true;
         assert!(
             editor
                 .object_snap_plan(
                     &document,
                     ObjectSnapActor::Creation(ActiveTool::Shape),
                     &[],
-                    SnappingMode::Grid,
+                    Modifiers::default(),
                 )
                 .is_none()
         );
+        editor.config.grid.enabled = false;
         assert!(
             editor
                 .object_snap_plan(
                     &document,
                     ObjectSnapActor::selection(&document, &[filter_state, rect_state], &[]),
                     &[],
-                    SnappingMode::Object,
+                    Modifiers::default(),
                 )
                 .is_some()
         );
