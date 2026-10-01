@@ -190,7 +190,7 @@ void RecordingAudioGainPopover::refreshText() {
                                                                    : tr("System audio gain"));
         m_slider->setAccessibleDescription(
             tr("Adjust gain from -24 to +24 dB. The track shows the processed audio level."));
-        m_slider->setTooltipFormatter([this](double value) {
+        m_slider->setTooltipFormatter([](double value) {
             const int gain = qRound(value);
             const QString amount =
                 gain > 0 ? QStringLiteral("+%1").arg(gain) : QString::number(gain);
