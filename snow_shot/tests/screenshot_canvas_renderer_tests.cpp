@@ -52,6 +52,7 @@
 #include <QScopedValueRollback>
 #include <QScrollBar>
 #include <QTextBoundaryFinder>
+#include <QTranslator>
 #include <QWheelEvent>
 #include <private/qwindow_p.h>
 #include <private/qhighdpiscaling_p.h>
@@ -1833,6 +1834,126 @@ void selectionBorderAndHandlesFollowTheConfiguredColor() {
 
     themeManager.setConfig(originalConfig);
     canvas.setCustomRenderer(nullptr);
+}
+
+void scrollingResultPreviewPreservesSourcePixelsAcrossDisplayDprs() {
+    const QRectF selection(-40, -30, 80, 60);
+    QImage source(80, 60, QImage::Format_RGBA8888);
+    for (int y = 0; y < source.height(); ++y) {
+        for (int x = 0; x < source.width(); ++x) {
+            source.setPixelColor(
+                x, y, QColor((x * 11 + y * 7) % 256, (x * 23 + 31) % 256, (y * 17 + 47) % 256));
+        }
+    }
+    QImage desktop(source.size(), QImage::Format_RGBA8888);
+    desktop.fill(QColor(12, 34, 56));
+    SnowCanvasWidget canvas;
+    ScreenshotCanvasRenderer renderer(canvas);
+    renderer.setImage(desktop, selection);
+    renderer.setRenderMode(ScreenshotCanvasRenderer::RenderMode::ScrollingCapture);
+    renderer.setScrollingResultPreview(source, selection);
+    require(renderer.hasScrollingResultPreview(), "scrolling preview should retain its image");
+    for (const qreal dpr : {1.0, 1.25, 1.5, 1.75, 2.0}) {
+        for (int display = 0; display < 2; ++display) {
+            QImage output(40, 60, QImage::Format_RGBA8888);
+            output.setDevicePixelRatio(dpr);
+            output.fill(Qt::transparent);
+            const QRect viewport(0, 0, qCeil(40 / dpr), qCeil(60 / dpr));
+            const QTransform transform(1 / dpr, 0, 0, 1 / dpr, (display == 0 ? 40 : 0) / dpr,
+                                       30 / dpr);
+            const SnowCanvasRenderContext context{viewport, QRegion(viewport), transform, dpr};
+            QPainter painter(&output);
+            renderer.renderBeforeCanvas(painter, context);
+            renderer.renderAfterCanvas(painter, context);
+            painter.end();
+            for (int y = 0; y < output.height(); ++y) {
+                for (int x = 0; x < output.width(); ++x) {
+                    require(output.pixel(x, y) == source.pixel(x + display * 40, y),
+                            "scrolling previews must preserve source pixels across display DPI");
+                }
+            }
+            renderer.clearScrollingResultPreview();
+            QPainter clearing(&output);
+            renderer.renderBeforeCanvas(clearing, context);
+            clearing.end();
+            require(output.pixelColor(0, 0).alpha() == 0 && output.pixelColor(39, 59).alpha() == 0,
+                    "clearing the scrolling preview must restore transparency");
+            renderer.setRenderMode(ScreenshotCanvasRenderer::RenderMode::Standard);
+            QPainter restored(&output);
+            renderer.renderBeforeCanvas(restored, context);
+            restored.end();
+            require(output.pixelColor(20, 30) == QColor(12, 34, 56),
+                    "previewing must preserve the original captured desktop image");
+            renderer.setRenderMode(ScreenshotCanvasRenderer::RenderMode::ScrollingCapture);
+            renderer.setScrollingResultPreview(source, selection);
+        }
+    }
+    renderer.setScrollingResultPreview({}, selection);
+    require(!renderer.hasScrollingResultPreview(), "empty preview images must clear the preview");
+    renderer.setScrollingResultPreview(source, selection);
+    renderer.reset();
+    require(!renderer.hasScrollingResultPreview(), "reset must discard the scrolling preview");
+}
+
+void scrollingCropGuideCentersAndClearsAcrossDisplayDprs() {
+    const QRectF selection(-40, -30, 80, 60);
+    QImage source(80, 60, QImage::Format_RGBA8888);
+    source.fill(QColor(13, 57, 91));
+    for (int y = 0; y < 10; ++y) {
+        for (int x = 0; x < source.width(); ++x)
+            source.setPixelColor(x, y, Qt::black);
+    }
+    const QImage original = source;
+    SnowCanvasWidget canvas;
+    ScreenshotCanvasRenderer renderer(canvas);
+    renderer.setRenderMode(ScreenshotCanvasRenderer::RenderMode::ScrollingCapture);
+    for (const auto orientation : {Qt::Horizontal, Qt::Vertical}) {
+        for (const qreal dpr : {1.0, 1.25, 1.5, 1.75, 2.0}) {
+            for (int display = 0; display < 2; ++display) {
+                const QRect viewport(0, 0, qCeil(40 / dpr), qCeil(60 / dpr));
+                const QTransform transform(1 / dpr, 0, 0, 1 / dpr, (display == 0 ? 40 : 0) / dpr,
+                                           30 / dpr);
+                const SnowCanvasRenderContext context{viewport, QRegion(viewport), transform, dpr};
+                const auto paint = [&] {
+                    QImage output(40, 60, QImage::Format_RGBA8888);
+                    output.setDevicePixelRatio(dpr);
+                    output.fill(Qt::transparent);
+                    QPainter painter(&output);
+                    renderer.renderBeforeCanvas(painter, context);
+                    renderer.renderAfterCanvas(painter, context);
+                    painter.end();
+                    output.setDevicePixelRatio(1.0);
+                    return output;
+                };
+                renderer.setScrollingResultPreview(source, selection, orientation);
+                const QImage output = paint();
+                for (int y = 0; y < output.height(); ++y) {
+                    for (int x = 0; x < output.width(); ++x) {
+                        const int sourceX = x + display * 40;
+                        const bool onGuide =
+                            orientation == Qt::Horizontal ? y == 30 : sourceX == 40;
+                        require(output.pixelColor(x, y) ==
+                                    (onGuide ? QColor(Qt::red) : source.pixelColor(sourceX, y)),
+                                "crop guide must cross the selection center at one physical pixel");
+                    }
+                }
+                renderer.setScrollingResultPreview(source, selection);
+                require(paint() == source.copy(display * 40, 0, 40, 60),
+                        "changing to hover with the same image must remove the crop guide");
+                renderer.setScrollingResultPreview(source, selection, orientation);
+                renderer.clearScrollingResultPreview();
+                require(paint().pixelColor(0, 30).alpha() == 0,
+                        "clearing crop preview must remove the center guide and padded pixels");
+                renderer.setScrollingResultPreview(source, selection, orientation);
+                renderer.setRenderMode(ScreenshotCanvasRenderer::RenderMode::Standard);
+                renderer.setRenderMode(ScreenshotCanvasRenderer::RenderMode::ScrollingCapture);
+                renderer.setScrollingResultPreview(source, selection);
+                require(paint() == source.copy(display * 40, 0, 40, 60),
+                        "leaving scrolling mode must discard the previous crop guide");
+            }
+        }
+    }
+    require(source == original, "the crop guide must not change the stitched source pixels");
 }
 
 void overlayWatermarkRendersOnlyInsideScreenshotSelection() {
@@ -3742,6 +3863,7 @@ void scrollingThumbnailKeepsOwnerAcrossPopupAndSurfaceLifecycles() {
         overlay.updateScrollingThumbnail(preview, preview.size(),
                                          ScreenshotScrollingStitchChange::Initial, 256);
         auto* thumbnail = overlay.scrollingThumbnailWindow();
+        const QPointer<QWidget> thumbnailGuard(thumbnail);
         const auto check = [&]() {
             QApplication::processEvents();
             require(thumbnail->isVisible() && thumbnail->windowHandle() != nullptr,
@@ -3785,11 +3907,13 @@ void scrollingThumbnailKeepsOwnerAcrossPopupAndSurfaceLifecycles() {
         require(thumbnail->isHidden(), "hiding the owner must hide its preview");
         overlay.show();
         check();
-        overlay.setScrollingCaptureMode(false);
         overlay.releaseNativeSurface();
-        require(thumbnail->internalWinId() == 0 && thumbnail->windowHandle() == nullptr,
+        require(thumbnailGuard && thumbnail->internalWinId() == 0 &&
+                    thumbnail->windowHandle() == nullptr,
                 "overlay teardown must release the owned preview surface as well");
         overlay.restoreNativeSurface();
+        overlay.setScrollingCaptureMode(false);
+        require(thumbnailGuard.isNull(), "ending scrolling capture must destroy its thumbnail");
     }
 }
 
@@ -3819,6 +3943,22 @@ void scrollingThumbnailStaysWithinHostDisplayWhenNeitherSideFits() {
     require(thumbnail->isVisible(), "thumbnail should become visible after a frame");
     require(overlay.captureGeometry().contains(thumbnail->geometry()),
             "thumbnail should stay within the display that hosts the capture selection");
+
+    const QPoint hoverPosition(thumbnail->width() / 2, thumbnail->height() / 2);
+    QMouseEvent hover(QEvent::MouseMove, QPointF(hoverPosition),
+                      QPointF(thumbnail->mapToGlobal(hoverPosition)), Qt::NoButton, Qt::NoButton,
+                      Qt::NoModifier);
+    QApplication::sendEvent(thumbnail, &hover);
+    require(!thumbnail->hoverSourceRectForTesting().isEmpty(),
+            "the clamped thumbnail should show a hover crop before selection movement");
+    const QPoint thumbnailPosition = thumbnail->pos();
+    overlay.setScrollingResultPreview(preview, selection);
+    overlay.reanchorScrollingThumbnail(selection.translated(1, 0));
+    require(thumbnail->pos() == thumbnailPosition,
+            "screen-edge clamping should keep the thumbnail stationary during this move");
+    require(thumbnail->hoverSourceRectForTesting().isEmpty() &&
+                !overlay.screenshotRendererForTesting()->hasScrollingResultPreview(),
+            "capture-area changes must clear hover even when the thumbnail does not move");
 }
 
 void scrollingThumbnailAlignsWithTopEdgeSelection() {
@@ -4041,6 +4181,93 @@ void stableScrollingGeometryDoesNotReapplyWindowMask() {
     }
     require(overlay.windowMaskApplicationCountForTesting() == stableCount,
             "stable scrolling geometry should not reapply the native window mask");
+}
+
+void scrollingResultPreviewRestoresNativeHoleAndReadout() {
+    class PreviewTranslator final : public QTranslator {
+      public:
+        QString translate(const char* context, const char* source, const char*,
+                          int) const override {
+            if (QByteArray(context) == "ScreenshotOverlayWindow" &&
+                QByteArray(source) == "Result Preview in Progress") {
+                return QStringLiteral("Result preview translated");
+            }
+            return {};
+        }
+    } translator;
+    NoopOverlayEventSink sink;
+    auto* canvas = new SnowCanvasWidget;
+    ScreenshotOverlayWindow overlay(sink, canvas);
+    overlay.setCaptureGeometry(QRect(-300, -200, 300, 240));
+    canvas->setViewportCamera(150, 120, 1.0);
+    overlay.setScreenshotSelection(QRectF(30, 20, 220, 180), false, 0);
+    overlay.setScreenshotMaskVisible(true);
+    overlay.show();
+    QApplication::processEvents();
+    const QRect selection(30, 20, 220, 180);
+    overlay.setScrollingVisualHole(selection);
+    overlay.setScrollingCaptureMode(true);
+    const QRegion holeMask = overlay.mask();
+    const WId nativeId = overlay.winId();
+    QImage preview(selection.size(), QImage::Format_RGBA8888);
+    preview.fill(QColor(90, 120, 180));
+    overlay.setScrollingResultPreview(preview, selection);
+    QApplication::processEvents();
+    require(overlay.mask().isEmpty() && overlay.winId() == nativeId,
+            "previewing must close the visual hole without recreating its native surface");
+    auto* label =
+        overlay.findChild<QLabel*>(QStringLiteral("scrollingScreenshotResultPreviewLabel"));
+    require(label != nullptr && label->isVisible(), "result preview must show its status readout");
+    require(label->toolTip() == QStringLiteral("Result Preview in Progress") &&
+                label->accessibleName() == label->toolTip(),
+            "result preview status must retain complete accessible text");
+    const QRect logicalAnchor = selection.translated(canvas->pos());
+    require(logicalAnchor.contains(label->geometry()) && label->x() == logicalAnchor.left() + 8 &&
+                label->geometry().bottom() == logicalAnchor.bottom() - 8,
+            "result preview status must sit inside the selection's bottom-left corner");
+    require(label->testAttribute(Qt::WA_TransparentForMouseEvents) &&
+                label->focusPolicy() == Qt::NoFocus &&
+                label->styleSheet().contains(QStringLiteral("rgba(0, 0, 0, 150)")),
+            "result preview status must reuse the recording readout appearance and input policy");
+    const QImage rendered = renderCanvas(*canvas);
+    require(rendered.pixelColor(selection.center()) == QColor(90, 120, 180),
+            "result preview must paint the selected stitched image area");
+    require(rendered.pixelColor(5, 5) == QColor(0, 0, 0, 128),
+            "result preview must retain the mask outside the screenshot selection");
+    for (const auto orientation : {Qt::Horizontal, Qt::Vertical}) {
+        overlay.setScrollingResultPreview(preview, selection, true, orientation);
+        require(renderCanvas(*canvas).pixelColor(140, 110) == QColor(Qt::red),
+                "the overlay must forward the crop guide to the center of the selection");
+    }
+    overlay.setScrollingResultPreview(preview, selection);
+    require(renderCanvas(*canvas).pixelColor(140, 110) == QColor(90, 120, 180),
+            "ordinary result preview must remove the crop guide without changing the image");
+    qApp->installTranslator(&translator);
+    QEvent language(QEvent::LanguageChange);
+    QCoreApplication::sendEvent(&overlay, &language);
+    require(label->toolTip() == QStringLiteral("Result preview translated"),
+            "result preview status must refresh after a language change");
+    qApp->removeTranslator(&translator);
+    overlay.setScrollingResultPreview(preview, selection, false);
+    require(!label->isVisible(), "overlays outside the bottom-left owner must hide the readout");
+    overlay.setScrollingResultPreview(preview, selection);
+    overlay.clearScrollingResultPreview();
+    require(overlay.mask() == holeMask && !label->isVisible() && overlay.winId() == nativeId,
+            "ending preview must restore the native hole and hide the readout synchronously");
+    require(renderCanvas(*canvas).pixelColor(selection.center()).alpha() == 0,
+            "ending preview must remove stitched pixels before manual capture resumes");
+    overlay.setScrollingResultPreview(preview, selection);
+    overlay.hide();
+    require(!overlay.screenshotRendererForTesting()->hasScrollingResultPreview() &&
+                overlay.mask() == holeMask,
+            "hiding the capture overlay must discard transient result preview state");
+    overlay.show();
+    QApplication::processEvents();
+    overlay.setScrollingResultPreview(preview, selection);
+    overlay.setScrollingCaptureMode(false);
+    require(!overlay.screenshotRendererForTesting()->hasScrollingResultPreview() &&
+                !label->isVisible() && overlay.mask().isEmpty(),
+            "ending scrolling capture must discard the preview and restore the full surface");
 }
 
 void scrollingInputModeKeepsNativeSurfacesStable() {
@@ -5469,6 +5696,9 @@ int main(int argc, char** argv) {
         return 0;
     }
     if (application.arguments().contains(QStringLiteral("--scrolling-overlay"))) {
+        scrollingResultPreviewPreservesSourcePixelsAcrossDisplayDprs();
+        scrollingCropGuideCentersAndClearsAcrossDisplayDprs();
+        scrollingResultPreviewRestoresNativeHoleAndReadout();
         scrollingThumbnailKeepsOwnerAcrossPopupAndSurfaceLifecycles();
         scrollingModeClearsVisualMaskBeforeRestoringRenderer();
         scrollingThumbnailHasAnIndependentInputWindow();

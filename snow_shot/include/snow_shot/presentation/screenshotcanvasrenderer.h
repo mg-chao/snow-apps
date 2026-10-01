@@ -20,6 +20,7 @@
 #include <cstddef>
 #include <array>
 #include <memory>
+#include <optional>
 
 class SnowCanvasWidget;
 class ScreenshotOcrPresentation;
@@ -106,6 +107,10 @@ class ScreenshotCanvasRenderer final : public SnowCanvasCustomRenderer {
     void setRenderMode(RenderMode mode);
     void setImage(QImage image, const QRectF& canvasRect);
     void setImageSource(ScreenshotImageSource source);
+    void setScrollingResultPreview(QImage image, const QRectF& canvasRect,
+                                   std::optional<Qt::Orientation> cropGuide = std::nullopt);
+    void clearScrollingResultPreview();
+    [[nodiscard]] bool hasScrollingResultPreview() const;
     void setImageViewportPhysicalSize(const QSize& size);
     void setPinnedResultSurface(const QRectF& contentCanvasRect, const QRectF& surfaceCanvasRect,
                                 const ScreenshotResultStyle& style);
@@ -200,15 +205,18 @@ class ScreenshotCanvasRenderer final : public SnowCanvasCustomRenderer {
     };
     void invalidateCachedContent();
     [[nodiscard]] ScreenshotOcrTextLayer* ensureOcrTextLayer();
-    // Widget-space repaint region for a filtered-image canvas rect; empty when the
+    // Widget-space repaint region for an image canvas rect; empty when the
     // rect maps outside the viewport, the full viewport when the display cache is
     // unsynchronized.
-    [[nodiscard]] QRegion ocrFilterImageDamageRegion(const QRectF& canvasRect) const;
+    [[nodiscard]] QRegion canvasImageDamageRegion(const QRectF& canvasRect) const;
 
     SnowCanvasWidget& m_canvas;
     QMetaObject::Connection m_themeConnection;
     std::uint64_t m_contentRevision = 0;
     ScreenshotImageSource m_imageSource;
+    QImage m_scrollingResultPreviewImage;
+    QRectF m_scrollingResultPreviewCanvasRect;
+    std::optional<Qt::Orientation> m_scrollingCropGuide;
     QSize m_imageViewportPhysicalSize;
     QRectF m_pinnedContentCanvasRect;
     QRectF m_pinnedSurfaceCanvasRect;

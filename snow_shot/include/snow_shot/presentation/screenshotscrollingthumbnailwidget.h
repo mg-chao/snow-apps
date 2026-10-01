@@ -9,6 +9,7 @@
 
 #include <deque>
 #include <memory>
+#include <optional>
 
 class QMouseEvent;
 class QPainter;
@@ -22,15 +23,19 @@ class AdScrollBar;
 }
 
 class ScreenshotScrollingThumbnailWidget final : public QWidget {
+    Q_OBJECT
+
   public:
     explicit ScreenshotScrollingThumbnailWidget(QWidget& parent);
 
     void reset();
+    void clearHover();
     void releaseNativeSurface();
     void setTrimModel(std::shared_ptr<ScreenshotScrollingTrimRange> trim);
     void setRecognitionMode(ScreenshotScrollingRecognitionMode mode);
     void setMaximumPreviewHeight(int height);
     void setMaximumPreviewExtent(int extent);
+    void setCaptureViewportSize(const QSize& size);
     void setStitchedImage(const QImage& previewImage, const QSize& sourceSize,
                           ScreenshotScrollingStitchChange change, int addedRows,
                           bool replacePreview = false, int replacedPreviewRows = 0);
@@ -42,10 +47,16 @@ class ScreenshotScrollingThumbnailWidget final : public QWidget {
     [[nodiscard]] qsizetype previewLogicalBytesForTesting() const;
     [[nodiscard]] qsizetype previewAllocatedBytesForTesting() const;
     [[nodiscard]] QRect highlightedRowsForTesting() const;
+    [[nodiscard]] QRectF hoverPreviewRectForTesting() const;
+    [[nodiscard]] QRect hoverSourceRectForTesting() const;
 #endif
+
+  signals:
+    void hoverSourceRectChanged(const QRect& sourceRect, bool cropping);
 
   protected:
     bool event(QEvent* event) override;
+    bool eventFilter(QObject* watched, QEvent* event) override;
     void paintEvent(QPaintEvent* event) override;
     void resizeEvent(QResizeEvent* event) override;
     void leaveEvent(QEvent* event) override;
@@ -71,21 +82,26 @@ class ScreenshotScrollingThumbnailWidget final : public QWidget {
         QImage image;
         int firstSpan = 0;
         int spanCount = 0;
+        qint64 firstPosition = 0;
     };
 
     [[nodiscard]] QRect previewRect() const;
     [[nodiscard]] qreal imageScale() const;
+    [[nodiscard]] QRectF imageTargetRect() const;
     [[nodiscard]] int scaledImageExtent() const;
     [[nodiscard]] int sourceExtent() const;
     [[nodiscard]] int previewPosition(const QPointF& position) const;
     [[nodiscard]] int handlePosition(int sourcePosition) const;
     [[nodiscard]] int sourcePositionForPreviewPosition(int position) const;
     [[nodiscard]] bool isTrimHandleAtPosition(int position) const;
-    void updateWidgetMetrics();
+    void updateWidgetMetrics(bool refreshHover = true);
     void updateScrollBarGeometry();
+    void createScrollBar();
     void updateCursorForPosition(int position);
     void updateTrimFromPosition(int position);
     void cancelDrag();
+    void updateHover();
+    void setHoverRect(const QRectF& preview, const QRect& source, bool cropping = false);
     void drawTrimHandle(QPainter& painter, int position, bool head) const;
     void replacePreview(const QImage& image);
     void discardPreviewBack(int rows);
@@ -102,6 +118,9 @@ class ScreenshotScrollingThumbnailWidget final : public QWidget {
     TileDirection m_tileDirection = TileDirection::None;
     ScreenshotScrollingRecognitionMode m_mode = ScreenshotScrollingRecognitionMode::Vertical;
     QSize m_sourceSize;
+    QSize m_captureViewportSize;
+    bool m_captureViewportSizeConfigured = false;
+    bool m_updatingMetrics = false;
     QRect m_highlightedRows;
     int m_captureImageExtent = 0;
     adqt::widgets::AdScrollBar* m_scrollBar = nullptr;
@@ -109,6 +128,10 @@ class ScreenshotScrollingThumbnailWidget final : public QWidget {
     std::shared_ptr<ScreenshotScrollingTrimRange> m_trim =
         std::make_shared<ScreenshotScrollingTrimRange>();
     DragHandle m_dragHandle = DragHandle::None;
+    std::optional<QPointF> m_hoverPosition;
+    QRectF m_hoverPreviewRect;
+    QRect m_hoverSourceRect;
+    bool m_cropPreviewActive = false;
 };
 
 #endif // SNOW_SHOT_PRESENTATION_SCREENSHOTSCROLLINGTHUMBNAILWIDGET_H

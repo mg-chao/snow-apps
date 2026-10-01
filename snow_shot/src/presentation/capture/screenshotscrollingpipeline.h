@@ -74,6 +74,7 @@ class ScreenshotScrollingPipeline final : public QObject {
     using FrameCallback = std::function<void(ScrollingPipelineFrame)>;
     using ErrorCallback = std::function<void(quint64, QString)>;
     using SnapshotCallback = std::function<void(ScreenshotScrollingSnapshot)>;
+    using ViewportPreviewCallback = std::function<void(QImage)>;
 
     ScreenshotScrollingPipeline(FrameCallback frameCallback, ErrorCallback errorCallback,
                                 QObject* parent = nullptr);
@@ -81,13 +82,20 @@ class ScreenshotScrollingPipeline final : public QObject {
     void begin(quint64 generation, QSize viewport, ScreenshotScrollingRecognitionMode mode,
                ScrollingSourceFactory source, AdaptiveScrollingCaptureCadence::Config cadence = {});
     void reset(quint64 generation);
-    void pause(quint64 generation);
+    // Acknowledgment follows native source shutdown and all committed stitch-result deliveries.
+    // A later control operation cancels the acknowledgment.
+    void pause(quint64 generation, std::function<void()> acknowledged = {});
     void resume(quint64 generation, QSize viewport, ScrollingSourceFactory source,
                 AdaptiveScrollingCaptureCadence::Config cadence = {});
     [[nodiscard]] bool idle() const;
     void finishInput(std::function<void()> callback);
     [[nodiscard]] bool requestSnapshot(int top, int bottom, QObject* receiver,
                                        SnapshotCallback callback);
+    // Extracts the requested stitching-axis range on the worker thread, padding beyond the result
+    // with black. Invalid ranges or a later control operation yield a null image;
+    // destruction cancels delivery.
+    [[nodiscard]] bool requestViewportPreview(int start, int end, QObject* receiver,
+                                              ViewportPreviewCallback callback);
 
   private:
     struct Impl;

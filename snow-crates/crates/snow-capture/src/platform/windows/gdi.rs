@@ -1177,6 +1177,7 @@ fn build_window_capture_attempts(
 
 struct GdiResources {
     screen_color_transform: Option<crate::color_effect::ScreenColorTransform>,
+    pending_screen_color_transform: Option<crate::color_effect::PendingScreenColorTransform>,
     screen_dc: HDC,
     screen_dc_owned: bool,
     mem_dc: HDC,
@@ -1203,6 +1204,17 @@ struct GdiResources {
 }
 
 impl GdiResources {
+    fn resolve_pending_screen_color_transform(&mut self) {
+        if let Some(snapshot) = self.pending_screen_color_transform.take() {
+            let transform = snapshot.resolve();
+            if self.screen_color_transform != transform {
+                self.screen_color_transform = transform;
+                self.history_surface_valid = false;
+                self.bgra_history.clear();
+                self.incremental_duplicate_hint = false;
+            }
+        }
+    }
     fn row_converter(&self) -> convert::SurfaceRowConverter {
         if self.screen_color_transform.is_none() {
             return bgra_row_converter();
@@ -1250,6 +1262,7 @@ impl GdiResources {
 
         Ok(Self {
             screen_color_transform: None,
+            pending_screen_color_transform: None,
             screen_dc,
             screen_dc_owned,
             mem_dc,
@@ -2018,6 +2031,7 @@ impl GdiResources {
         mode: CaptureMode,
         destination_has_history: bool,
     ) -> CaptureResult<Frame> {
+        self.resolve_pending_screen_color_transform();
         let width_u32 = u32::try_from(width).map_err(|_| CaptureError::BufferOverflow)?;
         let height_u32 = u32::try_from(height).map_err(|_| CaptureError::BufferOverflow)?;
         let width = usize::try_from(width_u32).map_err(|_| CaptureError::BufferOverflow)?;
@@ -2204,6 +2218,8 @@ impl GdiResources {
         }
         .context("BitBlt failed during GDI region capture")
         .map_err(CaptureError::platform)?;
+
+        self.resolve_pending_screen_color_transform();
 
         let copy_w = usize::try_from(copy_width).map_err(|_| CaptureError::BufferOverflow)?;
         let copy_h = usize::try_from(copy_height).map_err(|_| CaptureError::BufferOverflow)?;
@@ -2615,8 +2631,10 @@ impl WindowsMonitorCapturer {
                 Err(_) => (GdiResources::new()?, false),
             };
         let transform = self.resources.screen_color_transform;
+        let pending = self.resources.pending_screen_color_transform.clone();
         self.resources = resources;
         self.resources.screen_color_transform = transform;
+        self.resources.pending_screen_color_transform = pending;
         self.resources.output_pixel_format = self.output_pixel_format;
         self.monitor_source_dc_local = monitor_source_dc_local;
         Ok(())
@@ -2639,6 +2657,13 @@ impl WindowsMonitorCapturer {
 }
 
 impl crate::backend::MonitorCapturer for WindowsMonitorCapturer {
+    fn set_pending_screen_color_transform(
+        &mut self,
+        snapshot: Option<crate::color_effect::PendingScreenColorTransform>,
+    ) -> CaptureResult<()> {
+        self.resources.pending_screen_color_transform = snapshot;
+        Ok(())
+    }
     fn set_screen_color_transform(
         &mut self,
         transform: Option<crate::color_effect::ScreenColorTransform>,
@@ -3040,6 +3065,52 @@ mod tests {
             &changed.as_rgba_bytes()[offset..offset + 4],
             &[115, 135, 205, 255]
         );
+        Ok(())
+    }
+
+    #[test]
+    fn pending_color_query_corrects_raw_pixels_and_clears_stale_transform()
+    -> crate::error::CaptureResult<()> {
+        use crate::color_effect::{ScreenColorQuery, ScreenColorTransform};
+
+        for format in [CapturePixelFormat::Rgba8, CapturePixelFormat::Bgra8] {
+            let mut resources = GdiResources::new()?;
+            resources.ensure_surface(4, 4)?;
+            resources.output_pixel_format = format;
+            let raw = [25u8, 50, 75, 255].repeat(16);
+            // Supply acquired pixels directly; no desktop pixels or global
+            // Magnifier settings are needed for this conversion test.
+            unsafe {
+                std::ptr::copy_nonoverlapping(raw.as_ptr(), resources.bits, raw.len());
+            }
+            for correct in [true, false] {
+                let query = ScreenColorQuery::start_with(move || {
+                    let mut matrix = [0.; 25];
+                    for i in 0..5 {
+                        matrix[i * 6] = if i < 3 { -1. } else { 1. };
+                    }
+                    matrix[20..23].fill(1.);
+                    correct.then(|| ScreenColorTransform::from_magnifier_matrix(&matrix).unwrap())
+                })
+                .unwrap();
+                resources.pending_screen_color_transform = Some(query.snapshot());
+                let frame =
+                    resources.read_surface_to_rgba(4, 4, None, CaptureMode::Snapshot, false)?;
+                let expected = match (format, correct) {
+                    (CapturePixelFormat::Rgba8, true) => [180, 205, 230, 255],
+                    (CapturePixelFormat::Bgra8, true) => [230, 205, 180, 255],
+                    (CapturePixelFormat::Rgba8, false) => [75, 50, 25, 255],
+                    (CapturePixelFormat::Bgra8, false) => [25, 50, 75, 255],
+                };
+                assert!(
+                    frame
+                        .as_bytes()
+                        .chunks_exact(4)
+                        .all(|pixel| pixel == expected)
+                );
+                drop(query);
+            }
+        }
         Ok(())
     }
     use super::*;

@@ -274,6 +274,64 @@ class ScreenshotScrollingCaptureWorker final : public QObject {
             snapshot, QSize(static_cast<int>(info.width), static_cast<int>(info.height)));
     }
 
+    QImage viewportPreview(quint64 generation, int start, int end) const {
+        if (generation != m_generation || m_stitchSession == nullptr ||
+            m_lastOutputSize.isEmpty() || end <= start ||
+            static_cast<qint64>(end) - start > std::numeric_limits<int>::max()) {
+            return {};
+        }
+        const bool horizontal = m_mode == ScreenshotScrollingRecognitionMode::Horizontal;
+        const int extent = horizontal ? m_lastOutputSize.width() : m_lastOutputSize.height();
+        const QSize size = horizontal ? QSize(end - start, m_lastOutputSize.height())
+                                      : QSize(m_lastOutputSize.width(), end - start);
+        const int sourceStart = std::clamp(start, 0, extent);
+        const int sourceEnd = std::clamp(end, 0, extent);
+        QImage padded;
+        if (sourceStart != start || sourceEnd != end) {
+            padded = QImage(size, QImage::Format_RGBA8888);
+            if (padded.isNull())
+                return {};
+            padded.fill(Qt::black);
+        }
+        if (sourceStart == sourceEnd)
+            return padded;
+        const QSize sourceSize = horizontal ? QSize(sourceEnd - sourceStart, size.height())
+                                            : QSize(size.width(), sourceEnd - sourceStart);
+        SnowStitchOwnedImage* image = snow_stitch_session_materialize_axis(
+            m_stitchSession, static_cast<std::uint32_t>(sourceStart),
+            static_cast<std::uint32_t>(sourceEnd));
+        if (image == nullptr) {
+            return {};
+        }
+        SnowStitchImageInfo info{};
+        if (snow_stitch_owned_image_info(image, &info) == 0 || info.rgba_bytes == nullptr ||
+            info.width != static_cast<std::uint32_t>(sourceSize.width()) ||
+            info.height != static_cast<std::uint32_t>(sourceSize.height()) ||
+            info.width > static_cast<std::uint32_t>(std::numeric_limits<int>::max() / 4) ||
+            info.stride_bytes != info.width * 4) {
+            snow_stitch_owned_image_destroy(image);
+            return {};
+        }
+        QImage result(info.rgba_bytes, sourceSize.width(), sourceSize.height(),
+                      static_cast<int>(info.stride_bytes), QImage::Format_RGBA8888,
+                      &releaseStitchOwnedImage, image);
+        if (result.isNull()) {
+            snow_stitch_owned_image_destroy(image);
+            return {};
+        }
+        if (padded.isNull())
+            return result;
+        const int offset = sourceStart - start;
+        for (int row = 0; row < result.height(); ++row) {
+            auto* destination = horizontal
+                                    ? padded.scanLine(row) + static_cast<qsizetype>(offset) * 4
+                                    : padded.scanLine(row + offset);
+            std::memcpy(destination, result.constScanLine(row),
+                        static_cast<size_t>(result.width()) * 4);
+        }
+        return padded;
+    }
+
   private:
     void resetPreview() {
         m_emittedPreviewHeight = 0;
@@ -801,12 +859,43 @@ void ScreenshotScrollingPipeline::reset(quint64 generation) {
         m_impl->worker, [target = m_impl->worker, generation]() { target->reset(generation); },
         Qt::QueuedConnection);
 }
-void ScreenshotScrollingPipeline::pause(quint64 generation) {
-    ++m_impl->controlRevision;
+void ScreenshotScrollingPipeline::pause(quint64 generation, std::function<void()> acknowledged) {
+    if (generation != m_impl->generation)
+        return;
+    const auto revision = ++m_impl->controlRevision;
     m_impl->active = false;
     m_impl->mailbox->reset(generation);
+    const QPointer<ScreenshotScrollingPipeline> receiver(this);
     QMetaObject::invokeMethod(
-        m_impl->producer, [target = m_impl->producer, generation]() { target->pause(generation); },
+        m_impl->producer,
+        [target = m_impl->producer, worker = m_impl->worker, receiver, generation, revision,
+         acknowledged = std::move(acknowledged)]() mutable {
+            target->pause(generation);
+            if (!receiver || !acknowledged)
+                return;
+            // The source has stopped and joined. This worker barrier posts to the same GUI
+            // receiver as stitch results, so their extent/trim updates precede acknowledgment.
+            QMetaObject::invokeMethod(
+                worker,
+                [receiver, generation, revision, acknowledged = std::move(acknowledged)]() mutable {
+                    if (!receiver)
+                        return;
+                    QMetaObject::invokeMethod(
+                        receiver,
+                        [receiver, generation, revision,
+                         acknowledged = std::move(acknowledged)]() mutable {
+                            if (!receiver || receiver->m_impl->generation != generation ||
+                                receiver->m_impl->controlRevision != revision)
+                                return;
+                            // A consumer already copying a frame may publish after the first
+                            // reset. It is now joined, so this removes every race-admitted frame.
+                            receiver->m_impl->mailbox->reset(generation);
+                            acknowledged();
+                        },
+                        Qt::QueuedConnection);
+                },
+                Qt::QueuedConnection);
+        },
         Qt::QueuedConnection);
 }
 void ScreenshotScrollingPipeline::resume(quint64 generation, QSize viewport,
@@ -888,6 +977,38 @@ bool ScreenshotScrollingPipeline::requestSnapshot(int top, int bottom, QObject* 
                 [guarded, callback = std::move(callback), result = std::move(result)]() mutable {
                     if (guarded)
                         callback(std::move(result));
+                },
+                Qt::QueuedConnection);
+        },
+        Qt::QueuedConnection);
+}
+
+bool ScreenshotScrollingPipeline::requestViewportPreview(int start, int end, QObject* receiver,
+                                                         ViewportPreviewCallback callback) {
+    if (end <= start || static_cast<qint64>(end) - start > std::numeric_limits<int>::max() ||
+        receiver == nullptr || !callback)
+        return false;
+    const QPointer<QObject> guarded(receiver);
+    const QPointer<ScreenshotScrollingPipeline> pipeline(this);
+    const auto generation = m_impl->generation;
+    const auto revision = m_impl->controlRevision;
+    return QMetaObject::invokeMethod(
+        m_impl->worker,
+        [target = m_impl->worker, pipeline, generation, revision, start, end, guarded,
+         callback = std::move(callback)]() mutable {
+            if (!guarded || !pipeline)
+                return;
+            QImage result = target->viewportPreview(generation, start, end);
+            QMetaObject::invokeMethod(
+                guarded,
+                [pipeline, generation, revision, guarded, callback = std::move(callback),
+                 result = std::move(result)]() mutable {
+                    if (!pipeline || !guarded)
+                        return;
+                    if (pipeline->m_impl->generation != generation ||
+                        pipeline->m_impl->controlRevision != revision)
+                        result = {};
+                    callback(std::move(result));
                 },
                 Qt::QueuedConnection);
         },

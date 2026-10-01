@@ -12,7 +12,7 @@ use std::sync::{Arc, mpsc};
 use std::thread::{self, JoinHandle};
 use std::time::Duration;
 
-use snow_capture::color_effect::ColorCorrection;
+use snow_capture::color_effect::{ColorCorrection, PendingScreenColorTransform};
 use snow_capture::cursor_snapshot::ScreenshotCursorSnapshot;
 use snow_capture::frame::{CaptureEvent, CapturePixelFormat, CapturedFrame, Frame};
 use snow_capture::{
@@ -348,7 +348,7 @@ enum WorkerCommand {
     Prepare(mpsc::Sender<Result<(), String>>),
     Capture(
         mpsc::Sender<Result<Frame, String>>,
-        ColorCorrection,
+        Option<PendingScreenColorTransform>,
         bool,
         CancellationToken,
     ),
@@ -692,8 +692,13 @@ impl MonitorWorker {
                         WorkerCommand::Capture(reply, correction, include_cursor, cancellation) => {
                             let result = match session.as_mut() {
                                 Ok(session) => {
-                                    session.set_windows_color_correction(correction);
-                                    match session.capture_snapshot(include_cursor, cancellation) {
+                                    let captured = match correction {
+                                        Some(snapshot) => session.capture_snapshot_with_color_query(
+                                            include_cursor, cancellation, snapshot,
+                                        ),
+                                        None => session.capture_snapshot(include_cursor, cancellation),
+                                    };
+                                    match captured {
                                         Ok(mut frame)
                                             if session.active_capture_access_count() == 0 =>
                                         {
@@ -761,7 +766,7 @@ impl MonitorWorker {
 
     fn request_capture(
         &self,
-        correction: ColorCorrection,
+        correction: Option<PendingScreenColorTransform>,
         include_cursor: bool,
         cancellation: CancellationToken,
     ) -> Result<mpsc::Receiver<Result<Frame, String>>, String> {
@@ -929,14 +934,14 @@ fn same_monitor_layout(left: &[MonitorEntry], right: &[MonitorEntry]) -> bool {
 
 fn capture_all_frames(
     session: &mut SnowCaptureDesktopSessionImpl,
-    correction: ColorCorrection,
+    correction: Option<PendingScreenColorTransform>,
     include_cursor: bool,
     cancellation: CancellationToken,
 ) -> Result<Vec<SnapshotFrame>, String> {
     let mut receivers = Vec::with_capacity(session.workers.len());
     let mut first_error = None;
     for worker in &session.workers {
-        match worker.request_capture(correction, include_cursor, cancellation.clone()) {
+        match worker.request_capture(correction.clone(), include_cursor, cancellation.clone()) {
             Ok(receiver) => receivers.push((worker.entry.clone(), receiver)),
             Err(error) => {
                 if first_error.is_none() {
@@ -977,7 +982,7 @@ fn capture_all_frames(
 
 fn capture_all_frames_with_layout_retry(
     session: &mut SnowCaptureDesktopSessionImpl,
-    correction: ColorCorrection,
+    correction: Option<PendingScreenColorTransform>,
     include_cursor: bool,
     cancellation: CancellationToken,
 ) -> Result<Vec<SnapshotFrame>, String> {
@@ -988,7 +993,12 @@ fn capture_all_frames_with_layout_retry(
         capture_all_frames(session, correction, include_cursor, cancellation)
     }
     #[cfg(not(target_os = "macos"))]
-    match capture_all_frames(session, correction, include_cursor, cancellation.clone()) {
+    match capture_all_frames(
+        session,
+        correction.clone(),
+        include_cursor,
+        cancellation.clone(),
+    ) {
         Ok(frames) => Ok(frames),
         Err(first_error) => {
             if let Err(refresh_error) = session.system.refresh_display_configuration() {
@@ -1237,6 +1247,7 @@ fn capture_window_snapshot(
     options: CaptureOptions,
     include_cursor: bool,
     cancellation: CancellationToken,
+    correction: Option<PendingScreenColorTransform>,
 ) -> Result<SnapshotWindowFrame, String> {
     let system = CaptureSystem::builder()
         .with_backend_kind(CaptureBackendKind::Auto)
@@ -1245,9 +1256,13 @@ fn capture_window_snapshot(
     let mut session = system
         .open_session(CaptureTarget::Window(native_window_id(hwnd)?), options)
         .map_err(|error| error.to_string())?;
-    let mut frame = session
-        .capture_snapshot(include_cursor, cancellation)
-        .map_err(|error| error.to_string())?;
+    let mut frame = match correction {
+        Some(snapshot) => {
+            session.capture_snapshot_with_color_query(include_cursor, cancellation, snapshot)
+        }
+        None => session.capture_snapshot(include_cursor, cancellation),
+    }
+    .map_err(|error| error.to_string())?;
     if session.active_capture_access_count() != 0 {
         let _ = session.reset_to_prepared();
         return Err("capture access remained active after focused-window capture".to_owned());
@@ -1579,6 +1594,25 @@ pub unsafe extern "C" fn snow_capture_desktop_session_capture(
         return ptr::null_mut();
     }
 
+    // Start one query before capture preparation and share it with every source.
+    // Its owner joins on every return path; no query thread survives the request.
+    #[cfg(windows)]
+    let color_query = if request.flags & SCREENSHOT_REQUEST_RESTORE_ORIGINAL_COLORS != 0 {
+        match snow_capture::color_effect::ScreenColorQuery::start_current() {
+            Ok(query) => Some(query),
+            Err(error) => {
+                set_last_error(format!("failed to start screen-color query: {error}"));
+                return ptr::null_mut();
+            }
+        }
+    } else {
+        None
+    };
+    #[cfg(windows)]
+    let correction = color_query.as_ref().map(|query| query.snapshot());
+    #[cfg(not(windows))]
+    let correction = None;
+
     if session.workers.is_empty() {
         if let Err(error) = rebuild_workers(session) {
             set_last_error(error);
@@ -1601,22 +1635,18 @@ pub unsafe extern "C" fn snow_capture_desktop_session_capture(
         return ptr::null_mut();
     }
 
-    let correction = if request.flags & SCREENSHOT_REQUEST_RESTORE_ORIGINAL_COLORS != 0 {
-        ColorCorrection::snapshot_current()
-    } else {
-        ColorCorrection::Disabled
-    };
     let include_cursor = request.flags & SCREENSHOT_REQUEST_INCLUDE_CURSOR != 0;
     let focused_window_worker = if request.focused_window != 0 {
         let hwnd = request.focused_window;
         let options = CaptureOptions {
             backend_tuning: platform_tuning(snow_capture::tuning::windows::WindowsCaptureOptions {
-                color_correction: correction,
+                color_correction: ColorCorrection::Disabled,
                 ..session.options.backend_tuning.windows_or_default()
             }),
             ..session.options.clone()
         };
         let canceled = canceled.clone();
+        let correction = correction.clone();
         match thread::Builder::new()
             .name("snow-capture-window-once".to_owned())
             .spawn(move || {
@@ -1629,6 +1659,7 @@ pub unsafe extern "C" fn snow_capture_desktop_session_capture(
                     options,
                     include_cursor,
                     canceled.clone().unwrap_or_default(),
+                    correction,
                 );
                 if canceled.as_ref().is_some_and(|state| state.is_canceled()) {
                     return Err("screenshot capture canceled".to_owned());

@@ -1915,6 +1915,7 @@ fn dxgi_frame_has_no_metadata(info: &DXGI_OUTDUPL_FRAME_INFO) -> bool {
 
 struct OutputCapturer {
     screen_color_transform: Option<crate::color_effect::ScreenColorTransform>,
+    pending_screen_color_transform: Option<crate::color_effect::PendingScreenColorTransform>,
     device: ID3D11Device,
     context: ID3D11DeviceContext,
     /// Active desktop-duplication access. The D3D environment stays warm,
@@ -1990,6 +1991,13 @@ struct OutputCapturer {
 }
 
 impl OutputCapturer {
+    fn resolve_pending_screen_color_transform(&mut self) -> bool {
+        if let Some(snapshot) = self.pending_screen_color_transform.take() {
+            self.set_screen_color_transform(snapshot.resolve());
+            return true;
+        }
+        false
+    }
     fn effective_screen_transform(&self) -> Option<crate::color_effect::ScreenColorTransform> {
         self.staging_ring.screen_color_transform
     }
@@ -2016,6 +2024,7 @@ impl OutputCapturer {
         let hdr_to_sdr = hdr_to_sdr_params(resolved.hdr_metadata);
         Ok(Self {
             screen_color_transform: None,
+            pending_screen_color_transform: None,
             device,
             context,
             duplication: None,
@@ -3002,6 +3011,10 @@ impl OutputCapturer {
                 }
             };
 
+        if self.resolve_pending_screen_color_transform() {
+            destination_has_history = false;
+            self.region.ensure_blit(blit);
+        }
         if self.output_rotation != capture_rotation {
             // The crop was computed for the old orientation. Let the existing
             // monitor/window recovery path resolve its desktop coordinates again.
@@ -3463,6 +3476,9 @@ impl OutputCapturer {
                 }
             };
 
+        if self.resolve_pending_screen_color_transform() {
+            has_frame_history = false;
+        }
         frame.metadata.set_timing(
             Some(capture_time),
             if frame_info.LastPresentTime != 0 {
@@ -3926,6 +3942,7 @@ impl OutputCapturer {
 
 pub(crate) struct WindowsMonitorCapturer {
     screen_color_transform: Option<crate::color_effect::ScreenColorTransform>,
+    pending_screen_color_transform: Option<crate::color_effect::PendingScreenColorTransform>,
     monitor: MonitorId,
     resolver: Arc<MonitorResolver>,
     /// Created on demand and retained only until explicit idle cleanup.
@@ -3951,6 +3968,7 @@ impl WindowsMonitorCapturer {
         resolver.resolve_monitor(monitor)?;
         Ok(Self {
             screen_color_transform: None,
+            pending_screen_color_transform: None,
             monitor: monitor.clone(),
             resolver,
             output: None,
@@ -3977,6 +3995,7 @@ impl WindowsMonitorCapturer {
         output.set_gpu_hdr_conversion(self.gpu_hdr_conversion_enabled);
         output.set_hdr_tonemap_lut(self.hdr_tonemap_lut_enabled);
         output.set_screen_color_transform(self.screen_color_transform);
+        output.pending_screen_color_transform = self.pending_screen_color_transform.clone();
         #[cfg(feature = "stage-timing")]
         output.set_record_stage_timings(self.record_stage_timings);
         self.output = Some(output);
@@ -3998,6 +4017,16 @@ impl WindowsMonitorCapturer {
 }
 
 impl crate::backend::MonitorCapturer for WindowsMonitorCapturer {
+    fn set_pending_screen_color_transform(
+        &mut self,
+        snapshot: Option<crate::color_effect::PendingScreenColorTransform>,
+    ) -> CaptureResult<()> {
+        self.pending_screen_color_transform = snapshot.clone();
+        if let Some(output) = self.output.as_mut() {
+            output.pending_screen_color_transform = snapshot;
+        }
+        Ok(())
+    }
     fn set_screen_color_transform(
         &mut self,
         transform: Option<crate::color_effect::ScreenColorTransform>,
@@ -4192,6 +4221,7 @@ unsafe impl Send for SendHmon {}
 
 pub(crate) struct WindowsDxgiWindowCapturer {
     screen_color_transform: Option<crate::color_effect::ScreenColorTransform>,
+    pending_screen_color_transform: Option<crate::color_effect::PendingScreenColorTransform>,
     hwnd: SendHwnd,
     resolver: Arc<MonitorResolver>,
     /// Created on demand for the monitor the window is on.
@@ -4236,6 +4266,7 @@ impl WindowsDxgiWindowCapturer {
 
         Ok(Self {
             screen_color_transform: None,
+            pending_screen_color_transform: None,
             hwnd: SendHwnd(hwnd),
             resolver,
             output: None,
@@ -4286,6 +4317,8 @@ impl WindowsDxgiWindowCapturer {
         self.output_mut().staging_ring.output_pixel_format = self.output_pixel_format;
         let transform = self.screen_color_transform;
         self.output_mut().set_screen_color_transform(transform);
+        self.output_mut().pending_screen_color_transform =
+            self.pending_screen_color_transform.clone();
         self.output_mut()
             .set_gpu_hdr_conversion(gpu_hdr_conversion_enabled);
         self.output_mut()
@@ -4445,6 +4478,16 @@ impl WindowsDxgiWindowCapturer {
 }
 
 impl crate::backend::MonitorCapturer for WindowsDxgiWindowCapturer {
+    fn set_pending_screen_color_transform(
+        &mut self,
+        snapshot: Option<crate::color_effect::PendingScreenColorTransform>,
+    ) -> CaptureResult<()> {
+        self.pending_screen_color_transform = snapshot.clone();
+        if let Some(output) = self.output.as_mut() {
+            output.pending_screen_color_transform = snapshot;
+        }
+        Ok(())
+    }
     fn set_screen_color_transform(
         &mut self,
         transform: Option<crate::color_effect::ScreenColorTransform>,

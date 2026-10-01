@@ -1268,6 +1268,7 @@ set(PROJECT_CXX_SOURCES
     src/presentation/capture/screenshotscrollingpipeline.cpp
     src/presentation/capture/screenshotscrollingnativesource.cpp
     src/presentation/capture/screenshotscrollingthumbnailwidget.cpp
+    src/presentation/capture/scrollinghoverpreview.h
     src/presentation/services/screenshotcanvascolorsampler.cpp
     src/presentation/services/screenshotcanvascolorsamplerwindow.cpp
     src/presentation/services/screenshotcolorpickercontroller.cpp
@@ -6552,6 +6553,7 @@ endif()
 
 function(snow_shot_configure_scrolling_replay_target target)
     target_sources(${target} PRIVATE
+        include/snow_shot/presentation/screenshotscrollingthumbnailwidget.h
         tests/scrolling_image_replay.cpp
         src/presentation/capture/screenshotscrollingpipeline.cpp
         src/presentation/capture/screenshotscrollingthumbnailwidget.cpp
@@ -6676,14 +6678,43 @@ if(SNOW_SHOT_BUILD_BENCHMARKS)
     add_executable(snow-shot-scrolling-image-performance-benchmark
         tests/scrolling_image_performance_benchmark.cpp)
     snow_shot_configure_scrolling_replay_target(snow-shot-scrolling-image-performance-benchmark)
+    add_executable(snow-shot-scrolling-hover-preview-benchmark
+        tests/scrolling_hover_preview_benchmark.cpp)
+    snow_shot_configure_scrolling_replay_target(snow-shot-scrolling-hover-preview-benchmark)
 endif()
 
 if(SNOW_SHOT_BUILD_TESTS)
+    add_executable(snow-shot-scrolling-hover-preview-tests tests/scrolling_hover_preview_tests.cpp)
+    target_include_directories(snow-shot-scrolling-hover-preview-tests PRIVATE src)
+    target_link_libraries(snow-shot-scrolling-hover-preview-tests PRIVATE Qt6::Gui)
+    add_test(NAME snow-shot-scrolling-hover-preview-tests
+        COMMAND snow-shot-scrolling-hover-preview-tests)
+    set_tests_properties(snow-shot-scrolling-hover-preview-tests PROPERTIES LABELS "unit"
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
+
+    add_executable(snow-shot-scrolling-hover-geometry-tests
+        tests/scrolling_hover_geometry_tests.cpp
+        include/snow_shot/presentation/screenshotscrollingthumbnailwidget.h
+        src/presentation/capture/screenshotscrollingthumbnailwidget.cpp)
+    target_include_directories(snow-shot-scrolling-hover-geometry-tests PRIVATE include)
+    target_compile_definitions(snow-shot-scrolling-hover-geometry-tests PRIVATE
+        SNOW_SHOT_BENCH_INTERNALS=1)
+    target_link_libraries(snow-shot-scrolling-hover-geometry-tests PRIVATE ant_design_qt Qt6::Widgets)
+    snow_shot_import_offscreen_platform(snow-shot-scrolling-hover-geometry-tests)
+    add_test(NAME snow-shot-scrolling-hover-geometry-tests
+        COMMAND snow-shot-scrolling-hover-geometry-tests -platform offscreen)
+    set_tests_properties(snow-shot-scrolling-hover-geometry-tests PROPERTIES LABELS "unit"
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
+
     add_executable(snow-shot-scrolling-image-replay-tests tests/scrolling_image_replay_tests.cpp)
     snow_shot_configure_scrolling_replay_target(snow-shot-scrolling-image-replay-tests)
     add_test(NAME snow-shot-scrolling-image-replay-tests COMMAND snow-shot-scrolling-image-replay-tests)
     add_test(NAME snow-shot-scrolling-thumbnail-drag-tests
         COMMAND snow-shot-scrolling-image-replay-tests --thumbnail-drag-only)
+    add_test(NAME snow-shot-scrolling-hover-pipeline-tests
+        COMMAND snow-shot-scrolling-image-replay-tests --hover-preview-only)
+    set_tests_properties(snow-shot-scrolling-hover-pipeline-tests PROPERTIES LABELS "unit"
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
     set_tests_properties(snow-shot-scrolling-thumbnail-drag-tests PROPERTIES LABELS "unit")
     set_tests_properties(snow-shot-scrolling-image-replay-tests PROPERTIES
         LABELS "unit" ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}"
