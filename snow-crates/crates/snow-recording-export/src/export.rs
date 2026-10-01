@@ -1,3 +1,4 @@
+use snow_core::cancellation::CancellationToken;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -68,6 +69,7 @@ pub struct ExportProgress {
 
 pub struct ExportTask {
     cancel_flag: Arc<AtomicBool>,
+    cancellation: CancellationToken,
     progress_rx: crossbeam_channel::Receiver<ExportProgress>,
     join: Option<JoinHandle<Result<ExportResult>>>,
 }
@@ -75,17 +77,20 @@ pub struct ExportTask {
 impl ExportTask {
     pub(crate) fn new(
         cancel_flag: Arc<AtomicBool>,
+        cancellation: CancellationToken,
         progress_rx: crossbeam_channel::Receiver<ExportProgress>,
         join: JoinHandle<Result<ExportResult>>,
     ) -> Self {
         Self {
             cancel_flag,
+            cancellation,
             progress_rx,
             join: Some(join),
         }
     }
 
     pub fn cancel(&self) {
+        self.cancellation.cancel();
         self.cancel_flag.store(true, Ordering::Release);
     }
 
@@ -100,5 +105,14 @@ impl ExportTask {
         handle
             .join()
             .map_err(|_| ScreenRecorderError::Export("export task panicked".to_string()))?
+    }
+}
+
+impl Drop for ExportTask {
+    fn drop(&mut self) {
+        if let Some(join) = self.join.take() {
+            self.cancel();
+            let _ = join.join();
+        }
     }
 }

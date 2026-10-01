@@ -101,7 +101,7 @@ pub struct RecordingArtifact {
 }
 
 impl RecordingArtifact {
-    /// Open a self-contained version-2 bundle. FFmpeg reads its video payload
+    /// Open a self-contained version-2 or version-3 bundle. FFmpeg reads its video payload
     /// directly; auxiliary assets are resolved from the checked footer.
     pub fn open(bundle_path: PathBuf) -> Result<Self> {
         let footer = read_recording_bundle_footer(&bundle_path)?;

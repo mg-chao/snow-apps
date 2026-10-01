@@ -286,12 +286,17 @@ choices!(EncodingPreset {
     Veryslow,
     Placebo
 });
+choices!(PostProcessingEffect {
+    ProgressBar,
+    PlaybackTime
+});
 input!(RecordingOptions {
     path: Option<String>,
     format: Option<RecordingFormat>, start_delay_seconds: Option<DelaySeconds>, microphone: Option<bool>,
     system_audio: Option<bool>, separate_audio_tracks: Option<bool>, frame_rate: Option<FrameRate>, animated_frame_rate: Option<AnimatedFrameRate>,
     clarity: Option<Clarity>, animated_clarity: Option<AnimatedClarity>, encoder: Option<Encoder>,
-    encoding_preset: Option<EncodingPreset>, r#loop: Option<bool>, capture_toolbar: Option<bool>,
+    encoding_preset: Option<EncodingPreset>, quality: Option<Percentage>, r#loop: Option<bool>, capture_toolbar: Option<bool>,
+    post_processing: Option<bool>, post_processing_effect: Option<PostProcessingEffect>, progress_bar_color: Option<String>,
     show_cursor: Option<bool>, show_keyboard: Option<bool>, mouse_highlight: Option<bool>,
     record_mouse_clicks: Option<bool>, mouse_trail_duration_ms: Option<TrailDuration>, keyboard_size: Option<KeyboardSize>,
     keyboard_background: Option<String>, keyboard_foreground: Option<String>, mouse_trail: Option<String>,
@@ -303,8 +308,12 @@ choices!(RecordingAction {
     Resume,
     Stop,
     Cancel,
+    CancelRender,
     Copy,
     Close,
+    Retry,
+    KeepSource,
+    Discard,
     Annotations,
     Undo,
     Redo,
@@ -733,12 +742,12 @@ pub const TOOLS: &[(&str, &str, bool)] = &[
     ),
     (
         "snow_shot_recording_start",
-        "Start a region recording with explicit recording options.",
+        "Start a region recording with explicit recording options. post_processing enables rendering after Stop; post_processing_effect selects progress_bar or playback_time. progress_bar_color uses #RRGGBBAA (alpha last); #RRGGBB and color names are also accepted.",
         false,
     ),
     (
         "snow_shot_recording_control",
-        "Pause, resume, finish, cancel, copy, or close an owned recording.",
+        "Pause, resume, finish, copy, or close an owned recording; cancel_render stops rendering, retry repeats it, keep_source preserves files, and discard explicitly removes them.",
         false,
     ),
     (
@@ -931,6 +940,48 @@ pub fn schema(name: &str, input: Option<Value>) -> Result<Map<String, Value>, se
 mod tests {
     use super::*;
     use serde_json::json;
+    #[test]
+    fn recording_post_processing_options_and_retained_source_actions_are_typed() {
+        for effect in ["progress_bar", "playback_time"] {
+            assert!(
+                schema(
+                    "snow_shot_recording_start",
+                    Some(json!({
+                        "region": [0, 0, 320, 240],
+                        "options": {"post_processing": true, "post_processing_effect": effect,
+                                    "progress_bar_color": "#1464C880", "quality": 70}
+                    }))
+                )
+                .is_ok()
+            );
+        }
+        for (key, value) in [
+            ("post_processing", json!(1)),
+            ("post_processing_effect", json!("both")),
+            ("progress_bar_color", json!(42)),
+            ("render_mode", json!("post_recording")),
+            ("quality", json!(101)),
+        ] {
+            let mut input = json!({"region": [0,0,320,240], "options": {}});
+            input["options"][key] = value;
+            assert!(
+                schema("snow_shot_recording_start", Some(input)).is_err(),
+                "{key}"
+            );
+        }
+        for action in ["cancel", "cancel_render", "retry", "keep_source", "discard"] {
+            assert!(
+                schema(
+                    "snow_shot_recording_control",
+                    Some(json!({
+                        "recording_id": "recording", "expected_revision": 1, "action": action
+                    }))
+                )
+                .is_ok(),
+                "{action}"
+            );
+        }
+    }
     #[test]
     fn recording_accepts_only_boolean_separate_audio_tracks() {
         for value in [serde_json::json!(true), serde_json::json!(false)] {

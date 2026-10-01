@@ -79,10 +79,13 @@ pub struct NativeRecordingSession {
     interrupted: bool,
     media: snow_recording_model::media::RecordedMedia,
     last_pts: Option<u64>,
+    accepted_transform: Option<DesktopTransform>,
     geometry_changes: Vec<(u64, DesktopTransform)>,
     interruptions: Vec<(u64, String)>,
     cpu_readbacks: u64,
     audio_ends: [Option<Instant>; 2],
+    logical_output: Option<PixelSize>,
+    stop_boundary: Option<std::sync::Arc<std::sync::Mutex<Option<Instant>>>>,
 }
 pub(crate) fn native_error(error: MacError) -> ScreenRecorderError {
     match error {
@@ -113,7 +116,20 @@ pub(crate) fn native_error(error: MacError) -> ScreenRecorderError {
     }
 }
 impl NativeRecordingSession {
-    pub fn start(mut config: NativeRecordingConfig) -> Result<Self> {
+    pub fn start(config: NativeRecordingConfig) -> Result<Self> {
+        Self::start_inner(config, false, None)
+    }
+    pub(super) fn start_source(
+        config: NativeRecordingConfig,
+        logical_output: PixelSize,
+    ) -> Result<Self> {
+        Self::start_inner(config, true, Some(logical_output))
+    }
+    fn start_inner(
+        mut config: NativeRecordingConfig,
+        source: bool,
+        logical_output: Option<PixelSize>,
+    ) -> Result<Self> {
         // Composite the tint against clean content and draw the pointer above it.
         if config.effects.highlight_rgba[3] != 0
             && config.capture.cursor == snow_media::CursorMode::Embedded
@@ -134,7 +150,10 @@ impl NativeRecordingSession {
             ));
         }
         let hdr = config.capture.dynamic_range == DynamicRange::Hdr;
-        if hdr && (config.codec != VideoCodec::H265 || config.format != ExportFormat::Mp4) {
+        if hdr
+            && (config.format != ExportFormat::Mp4
+                || !snow_recording_export::preserves_hdr_output(hdr, config.format, config.codec))
+        {
             return Err(ScreenRecorderError::UnsupportedFeature(
                 "HDR recording requires HEVC Main10 encoding".into(),
             ));
@@ -185,25 +204,23 @@ impl NativeRecordingSession {
                 })
                 .unwrap_or_default(),
         };
+        let mut base_builder = StreamingEncoder::builder(encode_config);
+        if source {
+            base_builder = base_builder.recording_source();
+        }
         let (mut encoder, native) = if config.execution == ExportExecutionMode::SoftwareOnly
             || config.format.is_animated_image()
         {
-            let mut builder = StreamingEncoder::builder(encode_config).software_only();
+            let mut builder = base_builder.software_only();
             if hdr {
                 builder = builder.hdr10_cpu_input();
             }
             (builder.create()?, false)
         } else {
-            match StreamingEncoder::builder(encode_config.clone())
-                .native_input(format)
-                .create()
-            {
+            match base_builder.clone().native_input(format).create() {
                 Ok(encoder) => (encoder, true),
                 Err(_) if config.execution == ExportExecutionMode::HardwarePreferred => (
-                    StreamingEncoder::builder(encode_config)
-                        .native_input(format)
-                        .software_only()
-                        .create()?,
+                    base_builder.native_input(format).software_only().create()?,
                     false,
                 ),
                 Err(error) => return Err(error.into()),
@@ -249,10 +266,13 @@ impl NativeRecordingSession {
             native,
             interrupted: false,
             last_pts: None,
+            accepted_transform: None,
             geometry_changes: Vec::new(),
             interruptions: Vec::new(),
             cpu_readbacks: 0,
             audio_ends: [None; 2],
+            logical_output,
+            stop_boundary: None,
         })
     }
     pub(crate) fn preserve_failure(&mut self, error: ScreenRecorderError) -> ScreenRecorderError {
@@ -265,8 +285,14 @@ impl NativeRecordingSession {
             .unwrap_or(error)
     }
     pub fn pause(&mut self) {
+        self.pause_at(Instant::now());
+    }
+    pub(super) fn pause_at(&mut self, at: Instant) {
+        self.clock.controller().mark_pause(at);
+        self.pause_capture_at(at);
+    }
+    pub(super) fn pause_capture_at(&mut self, at: Instant) {
         if !self.paused {
-            self.clock.controller().mark_pause(Instant::now());
             self.paused = true;
             if let Some(audio) = &self.audio {
                 audio.pause();
@@ -275,14 +301,20 @@ impl NativeRecordingSession {
                 mixer.reset_alignment(None);
             }
             if let Some(effects) = &mut self.effects {
-                effects.reset(self.clock.active_elapsed_ms(Instant::now()));
+                effects.reset(self.clock.active_elapsed_ms(at));
             }
             self.capture.release_capture_access();
         }
     }
     pub fn resume(&mut self) {
+        self.resume_at(Instant::now());
+    }
+    pub(super) fn resume_at(&mut self, at: Instant) {
+        self.clock.controller().mark_resume(at);
+        self.resume_capture();
+    }
+    pub(super) fn resume_capture(&mut self) {
         if self.paused {
-            self.clock.controller().mark_resume(Instant::now());
             self.paused = false;
             if let Some(audio) = &self.audio {
                 audio.resume();
@@ -337,8 +369,11 @@ impl NativeRecordingSession {
                         timestamp_ms: self.clock.active_elapsed_ms(Instant::now()),
                         generation,
                         transform,
-                        destination: aspect_fit(transform.output, self.config.output)
-                            .map_err(|e| ScreenRecorderError::InvalidConfig(e.to_string()))?,
+                        destination: aspect_fit(
+                            transform.output,
+                            self.logical_output.unwrap_or(self.config.output),
+                        )
+                        .map_err(|e| ScreenRecorderError::InvalidConfig(e.to_string()))?,
                     });
                 Ok(NativeRecordingEvent::Configuration {
                     transform,
@@ -394,7 +429,15 @@ impl NativeRecordingSession {
             return Ok(NativeRecordingEvent::Idle);
         }
         let size = frame.image.size();
-        let destination = aspect_fit(size, self.config.output)
+        if self.stop_boundary.as_ref().is_some_and(|boundary| {
+            boundary
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .is_some_and(|stop| frame_time >= stop)
+        }) {
+            return Ok(NativeRecordingEvent::Idle);
+        }
+        let destination = aspect_fit(size, self.logical_output.unwrap_or(self.config.output))
             .map_err(|e| ScreenRecorderError::InvalidConfig(e.to_string()))?;
         let (tiles, interruption) = if let Some(effects) = &mut self.effects {
             effects.draw(
@@ -457,21 +500,83 @@ impl NativeRecordingSession {
                     Compositor::new(self.config.output, output_format, 4).map_err(native_error)?,
                 );
             }
-            match self.compositor.as_mut().unwrap().compose_with_highlight(
-                &[Layer {
-                    image: &frame.image,
-                    source: PixelRect {
-                        x: 0,
-                        y: 0,
-                        width: size.width,
-                        height: size.height,
-                    },
-                    destination,
-                }],
-                &overlays,
-                &highlight,
-                true,
-            ) {
+            let mut layers = smallvec::SmallVec::<[Layer<'_>; 4]>::new();
+            layers.push(Layer {
+                image: &frame.image,
+                source: PixelRect {
+                    x: 0,
+                    y: 0,
+                    width: size.width,
+                    height: size.height,
+                },
+                destination,
+            });
+            // A 4:2:0 clean source may have one padded row/column. Replicate
+            // fitted edge pixels so chroma filtering cannot bleed black into
+            // the odd logical canvas that replay restores before overlays.
+            if let Some(logical) = self.logical_output {
+                let right = self.config.output.width > logical.width
+                    && destination.x + destination.width == logical.width;
+                let bottom = self.config.output.height > logical.height
+                    && destination.y + destination.height == logical.height;
+                if right {
+                    layers.push(Layer {
+                        image: &frame.image,
+                        source: PixelRect {
+                            x: size.width - 1,
+                            y: 0,
+                            width: 1,
+                            height: size.height,
+                        },
+                        destination: PixelRect {
+                            x: logical.width,
+                            y: destination.y,
+                            width: 1,
+                            height: destination.height,
+                        },
+                    });
+                }
+                if bottom {
+                    layers.push(Layer {
+                        image: &frame.image,
+                        source: PixelRect {
+                            x: 0,
+                            y: size.height - 1,
+                            width: size.width,
+                            height: 1,
+                        },
+                        destination: PixelRect {
+                            x: destination.x,
+                            y: logical.height,
+                            width: destination.width,
+                            height: 1,
+                        },
+                    });
+                }
+                if right && bottom {
+                    layers.push(Layer {
+                        image: &frame.image,
+                        source: PixelRect {
+                            x: size.width - 1,
+                            y: size.height - 1,
+                            width: 1,
+                            height: 1,
+                        },
+                        destination: PixelRect {
+                            x: logical.width,
+                            y: logical.height,
+                            width: 1,
+                            height: 1,
+                        },
+                    });
+                }
+            }
+            match self
+                .compositor
+                .as_mut()
+                .unwrap()
+                .compose_with_highlight(&layers, &overlays, &highlight, true)
+            {
                 Ok(image) => image,
                 Err(MacError::Timeout) => return Ok(NativeRecordingEvent::Idle),
                 Err(error) => return Err(native_error(error)),
@@ -497,6 +602,7 @@ impl NativeRecordingSession {
             self.cpu_readbacks += 1;
         }
         self.last_pts = Some(pts);
+        self.accepted_transform = Some(frame.transform);
         Ok(NativeRecordingEvent::Frame { pts })
     }
     fn prepare_finish(&mut self) -> Result<u64> {
@@ -515,16 +621,18 @@ impl NativeRecordingSession {
             }
         }
         self.drain_audio(true)?;
-        let end = u64::try_from(
-            self.clock.active_elapsed_duration(stop).as_nanos() * u128::from(self.config.fps)
-                / 1_000_000_000,
+        let duration_ms = u64::try_from(
+            self.clock
+                .active_elapsed_duration(stop)
+                .as_nanos()
+                .div_ceil(1_000_000)
+                .max(1),
         )
         .map_err(|_| ScreenRecorderError::InvalidConfig("recording endpoint overflow".into()))?;
-        let end = end.max(self.last_pts.unwrap_or(0).saturating_add(1));
         self.media
             .validate()
             .map_err(ScreenRecorderError::InvalidConfig)?;
-        Ok(end)
+        Ok(duration_ms)
     }
     pub fn finish(mut self) -> Result<NativeRecordingReport> {
         let end = self
@@ -544,17 +652,47 @@ impl NativeRecordingSession {
             cpu_readbacks: self.cpu_readbacks,
         })
     }
+    pub(super) fn source_clock(&self) -> RecordingClock {
+        self.clock.clone()
+    }
+    pub(super) fn set_stop_boundary(
+        &mut self,
+        boundary: std::sync::Arc<std::sync::Mutex<Option<Instant>>>,
+    ) {
+        self.stop_boundary = Some(boundary);
+    }
+    pub(super) fn source_transform(&self) -> DesktopTransform {
+        self.accepted_transform
+            .unwrap_or_else(|| self.capture.transform())
+    }
+    pub(super) fn freeze_source(&mut self, at: Instant) {
+        self.clock.controller().mark_pause(at);
+        self.capture.release_capture_access();
+    }
+    pub(super) fn finish_source(mut self, duration_ms: u64) -> Result<NativeRecordingReport> {
+        self.capture.release_capture_access();
+        let encoder = self
+            .encoder
+            .finish_at_duration_ms_cancelable(duration_ms, &self.config.capture.cancellation)?;
+        Ok(NativeRecordingReport {
+            encoder,
+            media: self.media,
+            geometry_changes: self.geometry_changes,
+            interruptions: self.interruptions,
+            cpu_readbacks: self.cpu_readbacks,
+        })
+    }
 }
 
 // The encoder owns the output path. Metadata persistence belongs to the caller
 // (or the editable bundle layer), never to media finalization.
 fn finish_recording_output(
     encoder: StreamingEncoder,
-    end: u64,
+    duration_ms: u64,
     execution: ExportExecutionMode,
     cancellation: &CancellationToken,
 ) -> Result<StreamingEncoderReport> {
-    let mut report = encoder.finish_at_pts_cancelable(end, cancellation)?;
+    let mut report = encoder.finish_at_duration_ms_cancelable(duration_ms, cancellation)?;
     report.hardware_fallback |=
         execution == ExportExecutionMode::HardwarePreferred && !report.used_hardware_video_encoder;
     Ok(report)
@@ -640,6 +778,7 @@ fn audio_discontinuity(
 mod direct;
 pub use direct::{DirectSession, recording_dimensions};
 
+pub(crate) mod deferred;
 mod editable;
 mod editable_cursor;
 pub use editable::{NativeEditableReport, NativeEditableSession};
@@ -700,7 +839,7 @@ mod tests {
                     .unwrap();
                 let report = finish_recording_output(
                     encoder,
-                    2,
+                    200,
                     ExportExecutionMode::SoftwareOnly,
                     &CancellationToken::default(),
                 )

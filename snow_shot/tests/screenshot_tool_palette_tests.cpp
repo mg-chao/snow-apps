@@ -493,7 +493,7 @@ void recordingCursorOptionsAreIndependentAndLazy() {
             "busy recording must dismiss and disable cursor options");
 }
 
-void recordingPostProcessingOptionsStayInTheUi() {
+void recordingPostProcessingOptionsBindState() {
     ScreenshotToolPalette::Options options;
     options.showShapeTool = true;
     options.showRecordingControls = true;
@@ -557,12 +557,19 @@ void recordingPostProcessingOptionsStayInTheUi() {
         loop.exec();
     require(popover->isVisible() && popover->contentWidget(),
             "hovering the post-processing button must open its options");
-    auto* progress = popover->contentWidget()->findChild<adqt::widgets::AdRadio*>(
-        QStringLiteral("screenRecordingShowProgressBar"));
-    auto* playback = popover->contentWidget()->findChild<adqt::widgets::AdRadio*>(
-        QStringLiteral("screenRecordingShowPlaybackTime"));
+    // Hover opening was verified above. Keep the options explicitly open while
+    // scale changes move the trigger and language delivery drains hover events.
+    popover->show();
+    QPointer<adqt::widgets::AdRadio> progress =
+        popover->contentWidget()->findChild<adqt::widgets::AdRadio*>(
+            QStringLiteral("screenRecordingShowProgressBar"));
+    QPointer<adqt::widgets::AdRadio> playback =
+        popover->contentWidget()->findChild<adqt::widgets::AdRadio*>(
+            QStringLiteral("screenRecordingShowPlaybackTime"));
     require(progress && playback && progress->isChecked() && !playback->isChecked(),
             "progress bar must be the initial radio choice");
+    require(popover->contentWidget()->layout()->count() == 2,
+            "post-processing options must show only the two effect choices");
     const QString snapshots = qEnvironmentVariable("SNOW_RECORDING_UI_SNAPSHOT_DIR");
     if (!snapshots.isEmpty()) {
         QDir().mkpath(snapshots);
@@ -579,7 +586,14 @@ void recordingPostProcessingOptionsStayInTheUi() {
                 palette.recordingCursorVisible() && !palette.recordingKeyboardVisible() &&
                 snow_shot::storage::ApplicationStorage::instance().configuration().snapshot() ==
                     configuration,
-            "the toggle and exclusive radio choice must remain UI drafts");
+            "palette state and exclusive effect choice must match without owning persistence");
+    require(palette.recordingPostProcessingEnabled() &&
+                palette.recordingPostProcessingEffect() == QStringLiteral("playback_time"),
+            "post-processing controls must expose their effective state");
+    palette.setRecordingPostProcessingEffect(QStringLiteral("progress_bar"));
+    require(progress->isChecked() && !playback->isChecked(),
+            "controller updates must reconcile already-open post-processing options");
+    palette.setRecordingPostProcessingEffect(QStringLiteral("playback_time"));
     require(palette.setPhysicalScale(1.5), "post-processing scale change must apply");
     require(button->height() == keyboard->height() && progress->font().pixelSize() == 21 &&
                 popover->contentWidget()->layout()->spacing() == 12,
@@ -594,7 +608,8 @@ void recordingPostProcessingOptionsStayInTheUi() {
         const auto translated = [](const char* source) {
             return QCoreApplication::translate("ScreenshotToolPalette", source);
         };
-        require(button->accessibleName() == translated("Post-processing effects") &&
+        require(progress && playback &&
+                    button->accessibleName() == translated("Post-processing effects") &&
                     button->toolTip() == translated("Post-processing effects") &&
                     progress->text() == translated("Show Progress Bar") &&
                     progress->accessibleName() == translated("Show Progress Bar") &&
@@ -605,7 +620,9 @@ void recordingPostProcessingOptionsStayInTheUi() {
     }
     require(language.setLanguage(QStringLiteral("en_US")), "restore English recording labels");
     popover->hide();
-    require(!popover->contentWidget(), "hiding post-processing must release its options");
+    QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+    require(!popover->contentWidget() && !progress && !playback,
+            "hiding post-processing must release its options and invalidate widget handles");
     popover->show();
     playback = popover->contentWidget()->findChild<adqt::widgets::AdRadio*>(
         QStringLiteral("screenRecordingShowPlaybackTime"));
@@ -13301,7 +13318,7 @@ int main(int argc, char** argv) {
     if (application.arguments().contains(QStringLiteral("--recording-controls-only"))) {
         recordingSessionStatusMakesInvalidCombinationsUnrepresentable();
         recordingCursorOptionsAreIndependentAndLazy();
-        recordingPostProcessingOptionsStayInTheUi();
+        recordingPostProcessingOptionsBindState();
         recordingEffectSettingsModal();
         recordingControlsRemainLaidOutAcrossStateChanges();
         recordingExportSettingsAndDrawingAvailabilityFollowSessionState();
@@ -13484,7 +13501,7 @@ int main(int argc, char** argv) {
     }
     colorPresetEditorsPreserveCommandsAcrossRebinding();
     recordingSessionStatusMakesInvalidCombinationsUnrepresentable();
-    recordingPostProcessingOptionsStayInTheUi();
+    recordingPostProcessingOptionsBindState();
     recordingControlsRemainLaidOutAcrossStateChanges();
     translucentColorSwatchesShowCheckerboardUnderlay();
     recordingExportSettingsAndDrawingAvailabilityFollowSessionState();

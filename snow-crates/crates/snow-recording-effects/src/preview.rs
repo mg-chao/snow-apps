@@ -1,5 +1,4 @@
 //! Live observation is an adapter around the same explicitly clocked effects used by video.
-use std::collections::VecDeque;
 use std::sync::atomic::Ordering;
 use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
@@ -7,9 +6,9 @@ use std::time::{Duration, Instant};
 
 use crate::keyboard_hook::KeyboardInput;
 use crate::keyboard_overlay::{KeyboardOverlay, KeyboardOverlayConfig, KeycapRasterizer};
-use crate::laser_trail::LaserTrail;
-use crate::mouse_effects::{CLICK_ANIMATION_MS, CLICK_QUEUE_DEPTH, RenderClick, draw_clicks_to};
+use crate::mouse_effects::{CLICK_QUEUE_DEPTH, RenderClick};
 use crate::mouse_hook::{MouseClickObservation, MouseHookObserver, MouseMovement};
+use crate::state::InputEffectsState;
 use crate::surface::{Tile, TileSurface};
 use crossbeam_channel::{Receiver, Sender, bounded, select_biased};
 
@@ -28,18 +27,10 @@ pub struct PreviewConfig {
 }
 
 impl PreviewConfig {
-    fn keyboard_output(&self) -> (u32, u32) {
-        // Native macOS recording composes keycaps in the final pixel canvas while
-        // the observed desktop region is expressed in points. Windows observes a
-        // physical-pixel region, so that region is the matching preview canvas.
-        #[cfg(target_os = "macos")]
-        {
-            self.output
-        }
-        #[cfg(not(target_os = "macos"))]
-        {
-            (self.region.2, self.region.3)
-        }
+    fn effects_output(&self) -> (u32, u32) {
+        // Preview styles belong to the desktop capture canvas. Export dimensions
+        // only affect saved video and must not rescale live effects.
+        (self.region.2, self.region.3)
     }
 
     pub fn validate(&self) -> Result<(), String> {
@@ -66,9 +57,7 @@ pub struct PreviewFrame {
     pub error: Option<String>,
 }
 
-/// Mouse tiles use export coordinates. Keyboard tiles use the coordinate space in which native
-/// recording composes keycaps: export pixels on macOS and physical capture pixels elsewhere.
-/// Keeping these destinations separate prevents export scaling from resizing Windows keycaps.
+/// Both layers use desktop capture coordinates, independent of export dimensions.
 #[derive(Default)]
 pub struct PreviewLayers {
     pub mouse: Vec<Tile>,
@@ -90,45 +79,53 @@ impl PreviewLayers {
 /// Deterministic preview destination. No native APIs, worker, or wall clock are required.
 pub struct EffectsPreview {
     pub config: PreviewConfig,
-    pub trail: LaserTrail,
-    pub clicks: VecDeque<RenderClick>,
-    pub keyboard: Option<KeyboardOverlay>,
+    pub input_effects: InputEffectsState,
     surface: TileSurface,
     keyboard_surface: TileSurface,
     position: Option<(i32, i32)>,
     continuity: u64,
-    pending_keys: Vec<crate::keyboard_overlay::KeyEvent>,
+}
+
+impl std::ops::Deref for EffectsPreview {
+    type Target = InputEffectsState;
+    fn deref(&self) -> &Self::Target {
+        &self.input_effects
+    }
+}
+impl std::ops::DerefMut for EffectsPreview {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.input_effects
+    }
 }
 
 impl EffectsPreview {
     pub fn new(config: PreviewConfig, rasterizer: Option<Box<dyn KeycapRasterizer>>) -> Self {
-        let output = config.output;
-        let trail = LaserTrail::new(config.trail_duration_ms);
-        let keyboard_output = config.keyboard_output();
+        let output = config.effects_output();
         let keycap_size = config
             .keyboard
             .as_ref()
             .map_or(64, |style| style.keycap_size);
+        let input_effects = InputEffectsState {
+            keyboard: rasterizer
+                .map(|r| KeyboardOverlay::new(output, r).with_keycap_size(keycap_size)),
+            ..InputEffectsState::new(config.trail_duration_ms)
+        };
         Self {
             config,
-            trail,
-            clicks: VecDeque::new(),
-            keyboard: rasterizer
-                .map(|r| KeyboardOverlay::new(keyboard_output, r).with_keycap_size(keycap_size)),
+            input_effects,
             surface: TileSurface::new(output),
-            keyboard_surface: TileSurface::new(keyboard_output),
+            keyboard_surface: TileSurface::new(output),
             position: None,
             continuity: 0,
-            pending_keys: Vec::new(),
         }
     }
     pub fn observe(&mut self, position: Option<(i32, i32)>, at: u64) {
         self.position = position;
         if self.config.trail[3] != 0 {
-            self.trail.observe(
+            self.input_effects.observe_pointer(
                 position,
                 (self.config.region.2, self.config.region.3),
-                self.config.output,
+                self.config.effects_output(),
                 at,
             );
         }
@@ -142,22 +139,13 @@ impl EffectsPreview {
         self.observe(position, at);
     }
     pub fn click(&mut self, click: RenderClick) {
-        if self.clicks.len() == CLICK_QUEUE_DEPTH {
-            self.clicks.pop_front();
-        }
-        self.clicks.push_back(click);
+        self.input_effects.click(click);
     }
     pub fn key_event(&mut self, event: crate::keyboard_overlay::KeyEvent) {
-        if self.pending_keys.len() >= 256 {
-            self.reset_inputs(event.at_ms);
-        }
-        self.pending_keys.push(event);
+        self.input_effects.queue_key(event);
     }
     pub fn reset_inputs(&mut self, now: u64) {
-        self.pending_keys.clear();
-        if let Some(overlay) = &mut self.keyboard {
-            overlay.model.reset(now);
-        }
+        self.input_effects.reset_keyboard(now);
     }
     pub fn mouse_event(&mut self, event: &MouseClickObservation, at_ms: u64) {
         if event.down && event.button.has_ring() && self.config.click[3] != 0 {
@@ -178,14 +166,12 @@ impl EffectsPreview {
         self.surface.clear();
         self.keyboard_surface.clear();
         self.observe(self.position, now);
-        self.clicks
-            .retain(|click| now.saturating_sub(click.timestamp_ms) < CLICK_ANIMATION_MS);
         if let Some(position) = self.position {
             let center = crate::mouse_effects::scale_point(
                 position.0,
                 position.1,
                 (self.config.region.2, self.config.region.3),
-                self.config.output,
+                self.config.effects_output(),
             );
             crate::mouse_effects::draw_highlight_to(
                 &mut self.surface,
@@ -194,25 +180,16 @@ impl EffectsPreview {
                 false,
             );
         }
-        self.trail
-            .draw_to(&mut self.surface, now, self.config.trail);
-        draw_clicks_to(
+        self.input_effects.draw_mouse_layers_to(
             &mut self.surface,
-            &self.clicks,
             now,
-            self.config.click,
             (self.config.region.2, self.config.region.3),
+            self.config.trail,
+            self.config.trail_duration_ms,
+            self.config.click,
         );
-        self.pending_keys.sort_by_key(|event| event.at_ms);
-        let ready = self
-            .pending_keys
-            .partition_point(|event| event.at_ms <= now);
-        if let Some(keyboard) = self.keyboard.as_mut() {
-            for event in self.pending_keys.drain(..ready) {
-                keyboard.model.event(event);
-            }
-            keyboard.draw_to(&mut self.keyboard_surface, now)?;
-        }
+        self.input_effects
+            .draw_keyboard_to(&mut self.keyboard_surface, now)?;
         Ok(PreviewLayers {
             mouse: self.surface.snapshot(),
             keyboard: self.keyboard_surface.snapshot(),
@@ -384,9 +361,9 @@ fn run(
                     PreviewFrame {
                         generation: config.generation,
                         revision,
-                        output: config.output,
+                        output: config.effects_output(),
                         tiles: vec![],
-                        keyboard_output: config.keyboard_output(),
+                        keyboard_output: config.effects_output(),
                         keyboard_tiles: vec![],
                         error: Some(error),
                     },
@@ -468,9 +445,9 @@ fn run(
                     PreviewFrame {
                         generation: config.generation,
                         revision,
-                        output: config.output,
+                        output: config.effects_output(),
                         tiles: tiles.mouse,
-                        keyboard_output: config.keyboard_output(),
+                        keyboard_output: config.effects_output(),
                         keyboard_tiles: tiles.keyboard,
                         error,
                     },
@@ -542,8 +519,11 @@ fn publish(latest: &Mutex<Option<Arc<PreviewFrame>>>, notify: &dyn Fn(), frame: 
 mod tests {
     use super::*;
     use crate::keyboard_overlay::{KeyEvent, Keycap};
+    use crate::laser_trail::LaserTrail;
+    use crate::mouse_effects::draw_clicks_to;
     use crate::mouse_hook::ObservedMouseButton;
     use crate::surface::{RgbaSurface, Surface, TILE_SIZE};
+    use std::collections::VecDeque;
 
     fn config() -> PreviewConfig {
         PreviewConfig {
@@ -557,6 +537,42 @@ mod tests {
             show_keyboard: true,
             keyboard: None,
             generation: 7,
+        }
+    }
+
+    #[test]
+    fn fixed_pixel_preview_styles_do_not_depend_on_export_dimensions() {
+        for capture in [(640, 480), (1920, 1080), (3840, 2160), (641, 479)] {
+            let mut reference = None;
+            for output in [(320, 180), (640, 480), (1920, 1080), (3840, 2160)] {
+                let mut cfg = config();
+                cfg.region = (-400, -200, capture.0, capture.1);
+                cfg.output = output;
+                cfg.highlight = [255, 255, 0, 128];
+                let mut preview = EffectsPreview::new(cfg, Some(Box::new(Solid)));
+                preview.key_event(key(0, true));
+                preview.observe(Some((160, 160)), 0);
+                preview.observe(Some((200, 200)), 17);
+                preview.click(RenderClick {
+                    timestamp_ms: 17,
+                    x: 200,
+                    y: 200,
+                    button: crate::mouse_hook::ObservedMouseButton::Left,
+                });
+                let frame = preview.render(200).unwrap();
+                let pixels: Vec<_> = frame
+                    .iter()
+                    .map(|tile| (tile.x, tile.y, tile.pixels.clone()))
+                    .collect();
+                if let Some(reference) = &reference {
+                    assert!(
+                        &pixels == reference,
+                        "capture {capture:?}, export {output:?}"
+                    );
+                } else {
+                    reference = Some(pixels);
+                }
+            }
         }
     }
     #[test]
@@ -620,7 +636,7 @@ mod tests {
         }
     }
     #[test]
-    fn preview_keycaps_match_native_composition_coordinates() {
+    fn preview_keycaps_keep_fixed_size_in_capture_coordinates() {
         struct FixedSquare;
         impl KeycapRasterizer for FixedSquare {
             fn rasterize(&mut self, _: &str, scale: f32) -> Result<Keycap, String> {
@@ -639,10 +655,7 @@ mod tests {
                 config.output = output;
                 let mut preview = EffectsPreview::new(config, Some(Box::new(FixedSquare)));
                 preview.keyboard.as_mut().unwrap().model.event(key(0, true));
-                #[cfg(target_os = "macos")]
-                assert_eq!(preview.config.keyboard_output(), output);
-                #[cfg(not(target_os = "macos"))]
-                assert_eq!(preview.config.keyboard_output(), capture);
+                assert_eq!(preview.config.effects_output(), capture);
                 let frame = preview.render(200).unwrap();
                 assert!(frame.mouse.is_empty());
                 let mut count = 0;
@@ -653,8 +666,8 @@ mod tests {
                             let x = tile.x + index as u32 % TILE_SIZE;
                             let y = tile.y + index as u32 / TILE_SIZE;
                             assert!(
-                                x < preview.config.keyboard_output().0
-                                    && y < preview.config.keyboard_output().1
+                                x < preview.config.effects_output().0
+                                    && y < preview.config.effects_output().1
                             );
                             left = left.min(x);
                             top = top.min(y);

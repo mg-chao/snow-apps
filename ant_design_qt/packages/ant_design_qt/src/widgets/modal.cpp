@@ -1070,6 +1070,19 @@ void AdModal::setWindowScreen(QScreen* screen) {
   }
 }
 
+QRect AdModal::windowAnchorGeometry() const { return windowAnchorGeometry_; }
+
+void AdModal::setWindowAnchorGeometry(const QRect& geometry) {
+  if (windowAnchorGeometry_ == geometry) {
+    return;
+  }
+  windowAnchorGeometry_ = geometry;
+  if (!open_) {
+    windowGeometryInitialized_ = false;
+  }
+  syncOverlayGeometry();
+}
+
 QSize AdModal::windowPreferredSize() const { return windowPreferredSize_; }
 void AdModal::setWindowPreferredSize(const QSize& size) {
   if (windowPreferredSize_ == size) {
@@ -1995,6 +2008,9 @@ QRect AdModal::windowModeAvailableGeometry() const {
 }
 
 QRect AdModal::windowModeAnchorGeometry() const {
+  if (windowAnchorGeometry_.isValid() && !windowAnchorGeometry_.isEmpty()) {
+    return windowAnchorGeometry_;
+  }
   if (windowScreen_ || !ownerWindow_) {
     return windowModeAvailableGeometry();
   }

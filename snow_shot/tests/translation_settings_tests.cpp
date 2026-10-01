@@ -360,6 +360,15 @@ int main(int argc, char** argv) {
                     !backend.switchValue(separateAudio) &&
                     !storage::RecordingSettings().separateAudioTracks(),
                 "screen recording reset restores mixed audio");
+        const storage::RecordingSettings recording;
+        require(recording.setPostProcessingEnabled(true) &&
+                    recording.setPostProcessingEffect(QStringLiteral("playback_time")) &&
+                    recording.setProgressBarColor(QColor(12, 34, 56, 78)) &&
+                    backend.resetSection(settings::SettingsSectionReset::ScreenRecording) &&
+                    !recording.postProcessingEnabled() &&
+                    recording.postProcessingEffect() == QStringLiteral("progress_bar") &&
+                    recording.progressBarColor() == QColor(22, 119, 255),
+                "screen recording reset restores automatic real-time mode and overlay defaults");
         const auto loopImages = settings::SettingsSwitchBinding::LoopAnimatedImages;
         require(backend.switchEnabled(loopImages) && backend.switchValue(loopImages) &&
                     backend.applySwitchValue(loopImages, false) &&

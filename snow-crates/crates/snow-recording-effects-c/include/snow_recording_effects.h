@@ -20,6 +20,7 @@ typedef struct SnowRecordingEffectsConfig {
     uint32_t struct_size;
     int32_t x, y;
     uint32_t width, height;
+    /* Export dimensions. Preview layers use the width/height capture canvas. */
     uint32_t output_width, output_height;
     uint32_t trail_rgba, click_rgba;
     uint32_t show_keyboard;
@@ -73,7 +74,9 @@ void snow_recording_effects_destroy(SnowRecordingEffects* effects);
 SnowRecordingEffectsFrame* snow_recording_effects_acquire_frame(SnowRecordingEffects* effects);
 int32_t snow_recording_effects_frame_info(const SnowRecordingEffectsFrame* frame,
                                           SnowRecordingEffectsFrameInfo* info);
-// Keyboard layer in native composition coordinates, drawn above the mouse layer returned by
+// Both layers use desktop capture coordinates and fixed pixel styles. FrameInfo width/height
+// describe that coordinate space independently of the configured export dimensions.
+// Keyboard layer, drawn above the mouse layer returned by
 // frame_info. This is a complete snapshot, including an empty tile array when keys expire. Same
 // frame lease.
 int32_t snow_recording_effects_frame_keyboard_info(const SnowRecordingEffectsFrame* frame,

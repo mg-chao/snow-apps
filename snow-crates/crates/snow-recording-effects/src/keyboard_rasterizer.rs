@@ -258,6 +258,10 @@ mod platform {
             self.render(label, scale.clamp(0.5, 2.0))
                 .map_err(|e| e.to_string())
         }
+        fn rasterize_glyph(&mut self, label: &str, font_pixels: f32) -> Result<Keycap, String> {
+            self.render(label, (font_pixels / 32.0).clamp(0.25, 4.0))
+                .map_err(|error| error.to_string())
+        }
     }
 
     #[cfg(test)]

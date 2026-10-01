@@ -66,8 +66,7 @@ class RecordingEffectTestSource final : public RecordingEffectsSource {
         state->keyboardBackground = config.keyboard_background_rgba;
         state->keyboardForeground = config.keyboard_text_rgba;
         state->keyboardBorder = config.keyboard_border_rgba;
-        state->output =
-            QSize(static_cast<int>(config.output_width), static_cast<int>(config.output_height));
+        state->output = QSize(static_cast<int>(config.width), static_cast<int>(config.height));
         state->publish();
         return true;
     }

@@ -649,6 +649,13 @@
             "x265",
             "zlib"
           ]
+        },
+        {
+          "name": "x265",
+          "features": [
+            "main10"
+          ],
+          "platform": "x64 | arm64"
         }
       ]
     },
@@ -809,6 +816,12 @@
             "x264",
             "x265",
             "zlib"
+          ]
+        },
+        {
+          "name": "x265",
+          "features": [
+            "main10"
           ]
         }
       ]

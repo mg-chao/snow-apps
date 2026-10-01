@@ -93,7 +93,7 @@ impl FrameConverter {
         // or SIMD padding. The caller fills every visible pixel after this call.
         // SAFETY: this converter exclusively owns the input AVFrame object.
         let shared = unsafe { ffmpeg::ffi::av_frame_is_writable(self.input.as_mut_ptr()) == 0 };
-        crate::editing::ensure_video_frame_writable(&mut self.input)?;
+        crate::codec::ensure_video_frame_writable(&mut self.input)?;
         if shared {
             // SAFETY: make_writable succeeded, so every buffer is exclusively
             // writable. Initialize all bytes before the retaining API sees it.

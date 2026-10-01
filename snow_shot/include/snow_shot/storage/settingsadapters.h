@@ -373,6 +373,12 @@ class RecordingSettings final {
     bool setLoopAnimatedImages(bool enabled) const;
     [[nodiscard]] QString outputFormat() const;
     bool setOutputFormat(const QString& format) const;
+    [[nodiscard]] bool postProcessingEnabled() const;
+    bool setPostProcessingEnabled(bool enabled) const;
+    [[nodiscard]] QString postProcessingEffect() const;
+    bool setPostProcessingEffect(const QString& effect) const;
+    [[nodiscard]] QColor progressBarColor() const;
+    bool setProgressBarColor(const QColor& color) const;
     [[nodiscard]] int mouseTrailDurationMs() const;
     bool setMouseTrailDurationMs(int duration) const;
     [[nodiscard]] int keyboardSize() const;

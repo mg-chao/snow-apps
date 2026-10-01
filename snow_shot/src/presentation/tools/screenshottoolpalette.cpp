@@ -2196,6 +2196,37 @@ QColor ScreenshotToolPalette::recordingMouseHighlightColor() const {
     return m_recordingMouseHighlightColor;
 }
 
+void ScreenshotToolPalette::setRecordingPostProcessingEnabled(bool enabled) {
+    m_recordPostProcessingEnabled = enabled;
+    if (m_recordPostProcessingButton) {
+        const QSignalBlocker blocker(m_recordPostProcessingButton);
+        m_recordPostProcessingButton->setChecked(enabled);
+        setScreenshotToolPaletteButtonActive(m_recordPostProcessingButton, enabled);
+    }
+}
+bool ScreenshotToolPalette::recordingPostProcessingEnabled() const {
+    return m_recordPostProcessingEnabled;
+}
+void ScreenshotToolPalette::setRecordingPostProcessingEffect(const QString& effect) {
+    m_recordPlaybackTimeSelected = effect == QStringLiteral("playback_time");
+    refreshRecordingPostProcessingOptions();
+}
+QString ScreenshotToolPalette::recordingPostProcessingEffect() const {
+    return m_recordPlaybackTimeSelected ? QStringLiteral("playback_time")
+                                        : QStringLiteral("progress_bar");
+}
+void ScreenshotToolPalette::setRecordingProgressBarColor(const QColor& color) {
+    m_recordProgressBarColor = color.isValid() ? color : QColor(22, 119, 255);
+    if (m_recordProgressBarColorPicker) {
+        const QSignalBlocker blocker(m_recordProgressBarColorPicker);
+        m_recordProgressBarColorPicker->setValue(
+            adqt::widgets::AdColorValue::solid(m_recordProgressBarColor));
+    }
+}
+QColor ScreenshotToolPalette::recordingProgressBarColor() const {
+    return m_recordProgressBarColor;
+}
+
 void ScreenshotToolPalette::refreshRecordingMouseOptions() {
     if (!m_recordHighlightCheckbox || !m_recordClicksCheckbox) {
         return;
@@ -6150,11 +6181,14 @@ void ScreenshotToolPalette::createRecordingExportSettingsToolbar() {
         custom_outlined_icons::RecordingPostProcessing(), styleButtonMetrics(m_physicalScale));
     m_recordPostProcessingButton->setObjectName(QStringLiteral("screenRecordingPostProcessing"));
     m_recordPostProcessingButton->setCheckable(true);
+    m_recordPostProcessingButton->setChecked(m_recordPostProcessingEnabled);
     m_recordPostProcessingButton->setCheckedUsesActiveStyle(false);
     layout->addWidget(m_recordPostProcessingButton);
     connect(m_recordPostProcessingButton, &adqt::widgets::AdButton::toggled, this,
             [this](bool checked) {
+                m_recordPostProcessingEnabled = checked;
                 setScreenshotToolPaletteButtonActive(m_recordPostProcessingButton, checked);
+                emit recordingPostProcessingEnabledChanged(checked);
             });
     m_recordPostProcessingPopover = new adqt::widgets::AdPopover(m_recordPostProcessingButton);
     m_recordPostProcessingPopover->setObjectName(
@@ -6181,7 +6215,10 @@ void ScreenshotToolPalette::createRecordingExportSettingsToolbar() {
             options->addWidget(m_recordPlaybackTimeRadio);
             refreshRecordingPostProcessingOptions();
             connect(m_recordPlaybackTimeRadio, &QAbstractButton::toggled, this,
-                    [this](bool checked) { m_recordPlaybackTimeSelected = checked; });
+                    [this](bool checked) {
+                        m_recordPlaybackTimeSelected = checked;
+                        emit recordingPostProcessingEffectChanged(recordingPostProcessingEffect());
+                    });
             return content;
         },
         adqt::widgets::AdPopover::FactoryContentLifetime::RecreateOnOpen);
@@ -6449,7 +6486,8 @@ bool ScreenshotToolPalette::ensureRecordingEffectSettingsModal() {
     connect(m_recordProgressBarColorPicker, &adqt::widgets::AdColorPicker::valueChanged, this,
             [this](const adqt::widgets::AdColorValue& value) {
                 if (value.isSolid() && value.solidColor.isValid()) {
-                    m_recordProgressBarColor = value.solidColor;
+                    setRecordingProgressBarColor(value.solidColor);
+                    emit recordingProgressBarColorChanged(m_recordProgressBarColor);
                 }
             });
     for (auto* item : form->items()) {

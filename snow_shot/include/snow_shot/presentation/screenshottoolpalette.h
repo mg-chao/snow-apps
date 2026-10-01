@@ -363,6 +363,12 @@ class ScreenshotToolPalette final : public QWidget,
     void setRecordingSystemAudioEnabled(bool enabled);
     void setRecordingOutputFormat(const QString& format);
     [[nodiscard]] QString recordingOutputFormat() const;
+    void setRecordingPostProcessingEnabled(bool enabled);
+    [[nodiscard]] bool recordingPostProcessingEnabled() const;
+    void setRecordingPostProcessingEffect(const QString& effect);
+    [[nodiscard]] QString recordingPostProcessingEffect() const;
+    void setRecordingProgressBarColor(const QColor& color);
+    [[nodiscard]] QColor recordingProgressBarColor() const;
     void setRecordingMouseTrailDurationMs(int value);
     [[nodiscard]] int recordingMouseTrailDurationMs() const;
     void setRecordingStartDelaySeconds(int seconds);
@@ -540,6 +546,9 @@ class ScreenshotToolPalette final : public QWidget,
     void recordingCloseRequested();
     void recordingCopyRequested();
     void recordingOutputFormatChanged(const QString& format);
+    void recordingPostProcessingEnabledChanged(bool enabled);
+    void recordingPostProcessingEffectChanged(const QString& effect);
+    void recordingProgressBarColorChanged(const QColor& color);
     void recordingStartDelaySecondsChanged(int seconds);
     void recordingMouseTrailDurationMsChanged(int value);
     void recordingKeyboardSizeChanged(int value);
@@ -907,8 +916,9 @@ class ScreenshotToolPalette final : public QWidget,
     QPointer<adqt::widgets::AdRadio> m_recordProgressBarRadio;
     QPointer<adqt::widgets::AdRadio> m_recordPlaybackTimeRadio;
     adqt::widgets::AdColorPicker* m_recordProgressBarColorPicker = nullptr;
-    // UI drafts only; these controls do not configure recording or rendering.
+    // The controller reconciles palette state with recording preferences.
     bool m_recordPlaybackTimeSelected = false;
+    bool m_recordPostProcessingEnabled = false;
     QColor m_recordProgressBarColor{22, 119, 255};
     adqt::widgets::AdButton* m_recordSettingsButton = nullptr;
     adqt::widgets::AdButton* m_recordPreferencesButton = nullptr;

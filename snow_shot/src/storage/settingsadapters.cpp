@@ -1447,6 +1447,25 @@ bool RecordingSettings::setOutputFormat(const QString& format) const {
     return cache().setValue(QStringLiteral("screen_recording/output_format"), format);
 }
 
+bool RecordingSettings::postProcessingEnabled() const {
+    return cache().value(QStringLiteral("screen_recording/post_processing_enabled")).toBool();
+}
+bool RecordingSettings::setPostProcessingEnabled(bool enabled) const {
+    return cache().setValue(QStringLiteral("screen_recording/post_processing_enabled"), enabled);
+}
+QString RecordingSettings::postProcessingEffect() const {
+    return cache().value(QStringLiteral("screen_recording/post_processing_effect")).toString();
+}
+bool RecordingSettings::setPostProcessingEffect(const QString& effect) const {
+    return cache().setValue(QStringLiteral("screen_recording/post_processing_effect"), effect);
+}
+QColor RecordingSettings::progressBarColor() const {
+    return colorValue(QStringLiteral("screen_recording/progress_bar_color"));
+}
+bool RecordingSettings::setProgressBarColor(const QColor& color) const {
+    return setColorValue(QStringLiteral("screen_recording/progress_bar_color"), color);
+}
+
 int RecordingSettings::mouseTrailDurationMs() const {
     return cache().value(QStringLiteral("screen_recording/mouse_trail_duration_ms")).toInt();
 }

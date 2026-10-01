@@ -1343,6 +1343,38 @@ void shortcutSchemaMigrationAndPhysicalMetadataRoundTrip() {
             "structured shortcut bindings must round-trip without losing physical metadata");
 }
 
+void recordingPostProcessingPreferencesPersistAndValidate() {
+    QTemporaryDir temporary;
+    require(temporary.isValid(), "create isolated post-processing settings storage");
+    const QString executable = QDir(temporary.path()).filePath(QStringLiteral("bin"));
+    require(QDir().mkpath(executable), "create post-processing settings executable directory");
+    auto& applicationStorage = initialize(executable, temporary.path());
+    const storage::RecordingSettings recording;
+    require(!recording.postProcessingEnabled() &&
+                recording.postProcessingEffect() == QStringLiteral("progress_bar") &&
+                recording.progressBarColor() == QColor(22, 119, 255) &&
+                recording.setPostProcessingEnabled(true) &&
+                recording.setPostProcessingEffect(QStringLiteral("playback_time")) &&
+                recording.setProgressBarColor(QColor(12, 34, 56, 78)) &&
+                storage::RecordingSettings().postProcessingEnabled() &&
+                storage::RecordingSettings().postProcessingEffect() ==
+                    QStringLiteral("playback_time") &&
+                storage::RecordingSettings().progressBarColor() == QColor(12, 34, 56, 78) &&
+                !recording.setPostProcessingEffect(QStringLiteral("unsupported")) &&
+                !recording.setProgressBarColor(QColor()) &&
+                recording.postProcessingEffect() == QStringLiteral("playback_time") &&
+                recording.progressBarColor() == QColor(12, 34, 56, 78),
+            "post-processing preferences validate and persist including alpha");
+    require(applicationStorage.flushNow().success, "flush post-processing settings");
+    applicationStorage.shutdown();
+    static_cast<void>(initialize(executable, temporary.path()));
+    require(recording.postProcessingEnabled() &&
+                recording.postProcessingEffect() == QStringLiteral("playback_time") &&
+                recording.progressBarColor() == QColor(12, 34, 56, 78),
+            "post-processing preferences survive storage restart");
+    applicationStorage.shutdown();
+}
+
 void settingsAdaptersRoundTripAndRejectInvalidValues() {
     QTemporaryDir temporary;
     require(temporary.isValid(), "failed to create settings adapter directory");
@@ -1517,6 +1549,7 @@ void settingsAdaptersRoundTripAndRejectInvalidValues() {
             "invalid pin zoom modes must not replace the stored mode");
 
     const storage::RecordingSettings recording;
+
     require(recording.screenRecordingClarity() == QStringLiteral("1080p") &&
                 recording.frameRate() == 30 &&
                 recording.animatedImageClarity() == QStringLiteral("720p") &&
@@ -2460,6 +2493,10 @@ void pinnedManagementConfigurationAndTrayMigration() {
 
 int main(int argc, char** argv) {
     QCoreApplication application(argc, argv);
+    if (application.arguments().contains(QStringLiteral("--recording-post-processing-only"))) {
+        recordingPostProcessingPreferencesPersistAndValidate();
+        return 0;
+    }
     if (application.arguments().contains(QStringLiteral("--scrolling-interval-only"))) {
         scrollingIntervalSettingsPersistAndValidate();
         return 0;
@@ -2522,6 +2559,7 @@ int main(int argc, char** argv) {
     screenshotUiAdaptersRoundTripTypedValues();
     screenshotTranslationSettingsRoundTripSupportedValues();
     settingsAdaptersRoundTripAndRejectInvalidValues();
+    recordingPostProcessingPreferencesPersistAndValidate();
     invalidCaptureCursorConfigurationFallsBackToDisabled();
     invalidOcrModelConfigurationFallsBackToSmallWithoutAMigration();
     missingOcrModelConfigurationDefaultsToSmallWithoutAMigration();

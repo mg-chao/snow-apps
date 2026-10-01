@@ -1380,6 +1380,8 @@ set(PROJECT_CXX_SOURCES
     src/presentation/tools/screenshottoolpalettehost.cpp
     src/presentation/toolbar/screenshottoolbarwindow.cpp
     src/presentation/recording/screenrecordingareawindow.cpp
+    src/presentation/recording/recordingrenderjob.cpp
+    src/presentation/recording/recordingrenderjob.h
     src/presentation/recording/screenrecordingcontroller.cpp
     src/presentation/recording/screenrecordingfolder.cpp
     src/presentation/recording/recordingcountdownoverlay.cpp
@@ -1716,6 +1718,11 @@ if(SNOW_SHOT_BUILD_TESTS)
         tests/application_storage_tests.cpp
     )
     target_link_libraries(snow-shot-application-storage-tests PRIVATE snow_shot_storage Qt6::Core)
+    add_test(NAME snow-shot-recording-post-processing-settings-tests
+        COMMAND snow-shot-application-storage-tests --recording-post-processing-only)
+    set_tests_properties(snow-shot-recording-post-processing-settings-tests PROPERTIES
+        LABELS "unit" TIMEOUT 60
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
     add_test(NAME snow-shot-scrolling-interval-settings-tests
         COMMAND snow-shot-application-storage-tests --scrolling-interval-only)
     set_tests_properties(snow-shot-scrolling-interval-settings-tests PROPERTIES
@@ -5648,6 +5655,8 @@ if(SNOW_SHOT_BUILD_TESTS)
         include/snow_shot/presentation/screenrecordingtoolbarwindow.h
         include/snow_shot/presentation/screenshotfloatingtoolpalettewindow.h
         include/snow_shot/presentation/screenshottoolpalettehost.h
+        src/presentation/recording/recordingrenderjob.cpp
+        src/presentation/recording/recordingrenderjob.h
         src/presentation/recording/screenrecordingcontroller.cpp
         src/presentation/services/screenshotclipboardservice.cpp
         src/presentation/recording/screenrecordingfolder.cpp
@@ -5689,11 +5698,19 @@ if(SNOW_SHOT_BUILD_TESTS)
         "${CMAKE_CURRENT_SOURCE_DIR}/../test-support/fonts/recording_test_fonts.qrc")
     # Override only the test executable: exercise the real controller without
     # opening capture devices, recording the desktop, or exporting media.
-    foreach(_operation create_direct destroy start pause resume stop state)
+    foreach(_operation create_direct create_deferred finalize_deferred destroy start pause resume request_stop stop state)
         target_compile_definitions(snow-shot-screen-recording-controller-tests PRIVATE
             "snow_recording_session_${_operation}=test_recording_session_${_operation}")
     endforeach()
     target_compile_definitions(snow-shot-screen-recording-controller-tests PRIVATE
+        snow_recording_source_render_start=test_recording_source_render_start
+        snow_recording_source_path=test_recording_source_path
+        snow_recording_source_discard=test_recording_source_discard
+        snow_recording_source_destroy=test_recording_source_destroy
+        snow_recording_render_task_poll=test_recording_render_task_poll
+        snow_recording_render_task_cancel=test_recording_render_task_cancel
+        snow_recording_render_task_error=test_recording_render_task_error
+        snow_recording_render_task_destroy=test_recording_render_task_destroy
         snow_recording_last_error_message=test_recording_last_error_message
         snow_recording_region_output_dimensions=test_recording_region_output_dimensions)
     if(WIN32)
@@ -5715,6 +5732,9 @@ if(SNOW_SHOT_BUILD_TESTS)
     add_test(NAME snow-shot-recording-style-wheel-tests
         COMMAND snow-shot-screen-recording-controller-tests --style-wheel-only -platform offscreen)
     set_tests_properties(snow-shot-recording-style-wheel-tests PROPERTIES LABELS "unit" TIMEOUT 60)
+    add_test(NAME snow-shot-recording-post-processing-tests
+        COMMAND snow-shot-screen-recording-controller-tests --post-processing-only -platform offscreen)
+    set_tests_properties(snow-shot-recording-post-processing-tests PROPERTIES LABELS "unit" TIMEOUT 60)
     add_test(NAME snow-shot-recording-settings-dialog-tests
         COMMAND snow-shot-screen-recording-controller-tests --settings-dialog-only -platform offscreen)
     set_tests_properties(snow-shot-recording-settings-dialog-tests PROPERTIES
@@ -7178,6 +7198,14 @@ if(WIN32 AND SNOW_SHOT_BUILD_BENCHMARKS)
             "${CARGO_EXECUTABLE}" build --locked --release
             --target x86_64-pc-windows-msvc
             --package snow-recording-effects --example effects_benchmark
+        WORKING_DIRECTORY "${SNOW_SHOT_CAPTURE_CRATES_DIR}"
+        USES_TERMINAL VERBATIM)
+    add_custom_target(snow-shot-recording-postprocessing-performance-benchmark
+        COMMAND "${CMAKE_COMMAND}" -E env
+            "CARGO_TARGET_DIR=${SNOW_RUST_CARGO_TARGET_DIR}"
+            "${CARGO_EXECUTABLE}" build --locked --release
+            --target x86_64-pc-windows-msvc
+            --package snow-recording-effects --example postprocessing_benchmark
         WORKING_DIRECTORY "${SNOW_SHOT_CAPTURE_CRATES_DIR}"
         USES_TERMINAL VERBATIM)
     if(WIN32 AND TARGET snow-shot-screen-recording-controller-tests)

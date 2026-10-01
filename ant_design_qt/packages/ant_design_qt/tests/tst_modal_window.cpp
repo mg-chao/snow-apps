@@ -1057,6 +1057,65 @@ class TstModalWindow : public QObject {
     modal.close();
   }
 
+  void explicitAnchorCentersDetachedWindow() {
+    for (QScreen* screen : qApp->screens()) {
+      const QRect available = screen->availableGeometry().adjusted(16, 16, -16, -16);
+      const QPoint center =
+          available.topLeft() + QPoint(available.width() * 2 / 5, available.height() * 2 / 5);
+      const QRect anchor(center - QPoint(40, 30), QSize(81, 61));
+      for (bool resizable : {false, true}) {
+        AdModal modal;
+        modal.setMode(AdModal::Mode::Window);
+        modal.setWindowModeDetached(true);
+        modal.setWindowModality(Qt::NonModal);
+        modal.setWindowScreen(screen);
+        modal.setWindowAnchorGeometry(anchor);
+        modal.setWindowPreferredSize(QSize(200, 120));
+        modal.setWindowResizable(resizable);
+        modal.setCentered(true);
+        modal.open();
+        auto* surface = visibleOverlaySurface();
+        QVERIFY(surface);
+        QCOMPARE(modal.windowAnchorGeometry(), anchor);
+        QVERIFY(!modal.ownerWindow());
+        QVERIFY(!surface->parentWidget());
+        QVERIFY((surface->geometry().center() - center).manhattanLength() <= 2);
+        if (!resizable) {
+          modal.setWindowPreferredSize(QSize(240, 160));
+          QVERIFY((surface->geometry().center() - center).manhattanLength() <= 2);
+        }
+        modal.close();
+        modal.setWindowAnchorGeometry({});
+        modal.open();
+        surface = visibleOverlaySurface();
+        QVERIFY(surface);
+        QVERIFY((surface->geometry().center() - available.center()).manhattanLength() <= 2);
+        modal.close();
+      }
+    }
+  }
+
+  void explicitAnchorClampsToAvailableScreen() {
+    QScreen* screen = qApp->primaryScreen();
+    const QRect available = screen->availableGeometry().adjusted(16, 16, -16, -16);
+    for (bool resizable : {false, true}) {
+      AdModal modal;
+      modal.setMode(AdModal::Mode::Window);
+      modal.setWindowModeDetached(true);
+      modal.setWindowScreen(screen);
+      modal.setWindowAnchorGeometry(QRect(available.topLeft(), QSize(10, 10)));
+      modal.setWindowPreferredSize(QSize(200, 120));
+      modal.setWindowResizable(resizable);
+      modal.setCentered(true);
+      modal.open();
+      auto* surface = visibleOverlaySurface();
+      QVERIFY(surface);
+      QCOMPARE(surface->geometry().topLeft(), available.topLeft());
+      QVERIFY(available.contains(surface->geometry()));
+      modal.close();
+    }
+  }
+
   void detachedWindowDoesNotAcquireAmbientOwner() {
     QWidget owner;
     owner.show();
