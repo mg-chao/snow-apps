@@ -3,6 +3,7 @@
 #include "snow_shot/presentation/settings/settingsruntimesession.h"
 #include "snow_shot/presentation/settings/settingssearchindex.h"
 #include "snow_shot/presentation/components/settingspagewidget.h"
+#include "snow_shot/presentation/settings/settingsformfield.h"
 #include "snow_shot/network/snowshotapiclient.h"
 #include "snow_shot/storage/applicationstorage.h"
 #include "snow_shot/storage/configurationarchive.h"
@@ -51,6 +52,20 @@ void serverSettings(const QTemporaryDir& temporary) {
             serverControl = control;
     }
     require(serverControl != nullptr, "server editor displays the resolved default address");
+    settings::SettingsFormField* serverField = nullptr;
+    for (auto* candidate : page.findChildren<QObject*>()) {
+        auto* field = dynamic_cast<settings::SettingsFormField*>(candidate);
+        if (field && field->descriptor().id == fieldId) {
+            serverField = field;
+            break;
+        }
+    }
+    require(serverField != nullptr, "server editor uses the shared settings field binding");
+    serverControl->setText(QStringLiteral("local unsaved draft"));
+    page.retranslateUi();
+    require(serverControl->text() == QStringLiteral("local unsaved draft") &&
+                session.state(fieldId).draftValue.toString().isEmpty(),
+            "retranslation preserves local uncommitted text without a settings write");
     settings::SettingsSearchIndex search(registry);
     bool found = false;
     for (const auto& entry : search.search(QStringLiteral("Server address")))
@@ -79,6 +94,10 @@ void serverSettings(const QTemporaryDir& temporary) {
                 "invalid input preserves the accepted address");
         require(session.state(fieldId).error.contains(QStringLiteral("HTTP or HTTPS")),
                 "validation error explains the required address format");
+        require(serverControl->text() == value &&
+                    serverField->controller()->item()->errorMessages().contains(
+                        session.state(fieldId).error),
+                "rejected drafts remain visible with shared inline feedback");
     }
     require(!storage::ConfigurationSchema::normalize(key, 123).valid,
             "configuration rejects non-string addresses");

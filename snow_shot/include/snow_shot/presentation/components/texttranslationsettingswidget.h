@@ -8,6 +8,9 @@
 
 class QVBoxLayout;
 class QLabel;
+namespace snow_shot::presentation::components::form_fields {
+class FormField;
+}
 namespace adqt::widgets {
 class AdAlert;
 class AdButton;
@@ -49,6 +52,7 @@ class TextTranslationSettingsWidget final : public SettingsCustomWidget {
     adqt::widgets::AdAlert* m_modalError = nullptr;
     std::array<adqt::widgets::AdLineEdit*, 4> m_inputs{};
     std::array<adqt::widgets::AdFormItem*, 6> m_fields{};
+    std::array<snow_shot::presentation::components::form_fields::FormField*, 6> m_formFields{};
     adqt::widgets::AdComboBox* m_provider = nullptr;
     adqt::widgets::AdInputNumber* m_concurrency = nullptr;
     QString m_editId;

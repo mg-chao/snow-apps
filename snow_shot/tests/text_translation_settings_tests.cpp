@@ -1,5 +1,6 @@
 #include "translation_test_support.h"
 #include "snow_shot/presentation/components/texttranslationsettingswidget.h"
+#include "snow_shot/presentation/components/formfields.h"
 #include "snow_shot/presentation/components/settingspagewidget.h"
 #include "snow_shot/presentation/settings/settingsruntimesession.h"
 #include "snow_shot/presentation/globalshortcutmanager.h"
@@ -22,6 +23,7 @@ using namespace snow_shot;
 using namespace adqt::widgets;
 using namespace translation_tests;
 namespace settings = snow_shot::presentation::settings;
+namespace form_fields = snow_shot::presentation::components::form_fields;
 namespace {
 void settle() {
     QEventLoop loop;
@@ -59,6 +61,18 @@ void contracts(QApplication& app) {
             return modal;
         };
         auto* modal = open();
+        const auto sharedFields = modal->contentWidget()->findChildren<form_fields::FormField*>();
+        require(sharedFields.size() == 6, "translation editor uses six shared fields");
+        int sharedEdits = 0;
+        int sharedCommits = 0;
+        for (auto* field : sharedFields) {
+            require(!field->item()->isTouched() && !field->item()->isDirty(),
+                    "translation editor initializes a clean AdForm baseline");
+            QObject::connect(field, &form_fields::FormField::valueEdited, modal,
+                             [&sharedEdits] { ++sharedEdits; });
+            QObject::connect(field, &form_fields::FormField::valueCommitted, modal,
+                             [&sharedCommits] { ++sharedCommits; });
+        }
         modal->acceptButton()->click();
         settle();
         require(session.textTranslationConfigurations().isEmpty(), "empty form rejected");
@@ -92,9 +106,13 @@ void contracts(QApplication& app) {
         secret->setText(QStringLiteral("secret"));
         applicationId->setText(QStringLiteral("app"));
         limit->setValue(16);
+        require(sharedEdits >= 6 && sharedCommits == 0,
+                "translation fields keep edits local until a successful Save");
         modal->acceptButton()->click();
         settle();
         require(session.textTranslationConfigurations().size() == 1, "saved configuration");
+        require(sharedCommits == 6,
+                "successful translation save commits each changed shared field once");
         const auto original = session.textTranslationConfigurations().first();
         require(original.provider == QStringLiteral("baidu") && original.concurrency == 16,
                 "provider and limit persisted");
@@ -120,6 +138,17 @@ void contracts(QApplication& app) {
                         QStringLiteral("Renamed"),
                 "rename preserves ID");
         modal = open();
+        int cancelledEdits = 0;
+        int cancelledCommits = 0;
+        for (auto* field : modal->contentWidget()->findChildren<form_fields::FormField*>()) {
+            QObject::connect(field, &form_fields::FormField::valueEdited, modal,
+                             [&cancelledEdits] { ++cancelledEdits; });
+            QObject::connect(field, &form_fields::FormField::valueCommitted, modal,
+                             [&cancelledCommits] { ++cancelledCommits; });
+        }
+        modal->contentWidget()
+            ->findChild<AdLineEdit*>(QStringLiteral("modelName"))
+            ->setText(QStringLiteral("Cancelled draft"));
         require(presentation::LanguageManager::instance().setLanguage(QStringLiteral("zh_CN")),
                 "Simplified Chinese");
         settle();
@@ -131,7 +160,9 @@ void contracts(QApplication& app) {
         settle();
         modal->reject();
         settle();
-        require(session.textTranslationConfigurations().size() == 2, "cancel preserves records");
+        require(session.textTranslationConfigurations().size() == 2 && cancelledEdits == 1 &&
+                    cancelledCommits == 0,
+                "language refresh stays silent and Cancel does not commit or save shared drafts");
         require(presentation::LanguageManager::instance().setLanguage(QStringLiteral("en_US")),
                 "restore English");
         settle();

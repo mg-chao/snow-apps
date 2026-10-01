@@ -3,6 +3,7 @@
 #include "snow_shot/storage/configurationschema.h"
 #include "snow_shot/storage/applicationstorage.h"
 #include "snow_shot/presentation/components/customaimodelssettingswidget.h"
+#include "snow_shot/presentation/components/formfields.h"
 #include "snow_shot/presentation/components/settingspagewidget.h"
 #include "snow_shot/presentation/components/sectionheaderwidget.h"
 #include "snow_shot/storage/settingsadapters.h"
@@ -43,6 +44,7 @@
 using namespace snow_shot;
 using namespace adqt::widgets;
 namespace settings = snow_shot::presentation::settings;
+namespace form_fields = snow_shot::presentation::components::form_fields;
 namespace {
 void clickReset(QWidget* button) {
     const QPointF local = button->rect().center();
@@ -210,7 +212,9 @@ void widgetContracts(QApplication& application) {
         flush();
         auto* widget = page.findChild<CustomAiModelsSettingsWidget*>();
         require(widget != nullptr, "page constructs custom model renderer");
-        auto* header = page.findChild<SectionHeaderWidget*>();
+        auto* header = page.findChild<SectionHeaderWidget*>(settings::generatedObjectName(
+            QStringLiteral("settings-section"), QStringLiteral("api-configuration-ai-model")));
+        require(header != nullptr, "AI model category header exists");
         auto* reset = header->findChild<AdButton*>(QStringLiteral("sectionResetButton"));
         auto* confirmation = header->findChild<AdPopconfirm*>();
         require(reset != nullptr && reset->isVisible() && reset->isEnabled() &&
@@ -237,6 +241,18 @@ void widgetContracts(QApplication& application) {
         require(observer.frames.size() == 1, "editor geometry is stable from its first paint");
         auto* modal = widget->findChild<AdModal*>(QStringLiteral("customAiModelEditor"));
         require(modal != nullptr, "add opens form");
+        const auto sharedFields = modal->contentWidget()->findChildren<form_fields::FormField*>();
+        require(sharedFields.size() == 7, "AI editor uses seven shared fields");
+        int sharedEdits = 0;
+        int sharedCommits = 0;
+        for (auto* field : sharedFields) {
+            require(!field->item()->isTouched() && !field->item()->isDirty(),
+                    "AI editor initializes a clean AdForm baseline");
+            QObject::connect(field, &form_fields::FormField::valueEdited, modal,
+                             [&sharedEdits] { ++sharedEdits; });
+            QObject::connect(field, &form_fields::FormField::valueCommitted, modal,
+                             [&sharedCommits] { ++sharedCommits; });
+        }
         modal->acceptButton()->click();
         flush();
         require(session.customAiModels().isEmpty(), "empty submission does not create a record");
@@ -401,9 +417,12 @@ void widgetContracts(QApplication& application) {
             ->setChecked(true);
         reasoning->setChecked(true);
         concurrency->setValue(2);
+        require(sharedEdits >= 7 && sharedCommits == 0,
+                "AI form edits and model fetching must remain drafts until Save succeeds");
         modal->acceptButton()->click();
         flush();
         require(session.customAiModels().size() == 1, "create persists one model");
+        require(sharedCommits == 7, "successful AI save commits each changed shared field once");
         const auto original = session.customAiModels().first();
         auto* row = widget->findChild<QWidget*>(QStringLiteral("customAiModelRow:") + original.id);
         require(row != nullptr, "saved model has a list row");
@@ -513,9 +532,18 @@ void widgetContracts(QApplication& application) {
         require(session.customAiModels().size() == 2, "confirmed deletion persists");
         add->click();
         flush();
-        widget->findChild<AdModal*>(QStringLiteral("customAiModelEditor"))->reject();
+        modal = widget->findChild<AdModal*>(QStringLiteral("customAiModelEditor"));
+        int cancelledCommits = 0;
+        for (auto* field : modal->contentWidget()->findChildren<form_fields::FormField*>())
+            QObject::connect(field, &form_fields::FormField::valueCommitted, modal,
+                             [&cancelledCommits] { ++cancelledCommits; });
+        modal->contentWidget()
+            ->findChild<AdLineEdit*>(QStringLiteral("modelName"))
+            ->setText(QStringLiteral("Cancelled draft"));
+        modal->reject();
         flush();
-        require(session.customAiModels().size() == 2, "cancel create preserves list");
+        require(session.customAiModels().size() == 2 && cancelledCommits == 0,
+                "cancel create preserves the list and does not commit shared drafts");
 
         const auto beforeReset = session.customAiModels();
         require(storage::ExtendedFeaturesSettings().setTranslationPageEnabled(true),
@@ -531,13 +559,15 @@ void widgetContracts(QApplication& application) {
         flush();
         confirmation->button(AdPopconfirm::StandardButton::Ok)->click();
         flush();
-        require(
-            session.customAiModels().isEmpty() &&
-                storage::ApiConfigurationSettings().customModels().isEmpty() &&
-                widget->findChild<QLabel*>(QStringLiteral("customAiModelsEmpty")) != nullptr &&
-                !session.state(QStringLiteral("api.custom-models")).dirty &&
-                storage::ExtendedFeaturesSettings().translationPageEnabled(),
-            "confirmed reset persists defaults, refreshes custom UI, and stays category-scoped");
+        require(session.customAiModels().isEmpty(), "confirmed reset clears runtime custom models");
+        require(storage::ApiConfigurationSettings().customModels().isEmpty(),
+                "confirmed reset persists default custom models");
+        require(widget->findChild<QLabel*>(QStringLiteral("customAiModelsEmpty")) != nullptr,
+                "confirmed reset refreshes the custom model empty state");
+        require(!session.state(QStringLiteral("api.custom-models")).dirty,
+                "confirmed reset clears the custom model dirty state");
+        require(storage::ExtendedFeaturesSettings().translationPageEnabled(),
+                "confirmed reset preserves unrelated feature preferences");
         require(session.applyCustomAiModels(beforeReset), "restore models for preview");
         flush();
 

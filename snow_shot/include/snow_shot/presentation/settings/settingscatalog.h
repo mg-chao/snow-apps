@@ -4,6 +4,7 @@
 #include "icon_core.h"
 #include "snow_shot/presentation/globalshortcuttypes.h"
 #include "snow_shot/presentation/globalmousetypes.h"
+#include "snow_shot/presentation/translatabletext.h"
 
 #include <QMetaType>
 #include <QHash>
@@ -17,14 +18,6 @@
 #include <variant>
 
 namespace snow_shot::presentation::settings {
-
-struct TranslatableText {
-    const char* context = nullptr;
-    const char* source = nullptr;
-
-    [[nodiscard]] bool isValid() const;
-    [[nodiscard]] QString translated() const;
-};
 
 struct SettingsLocation {
     QString pageId;

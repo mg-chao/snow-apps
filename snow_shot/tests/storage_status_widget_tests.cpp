@@ -1,5 +1,6 @@
 #include "snow_shot/presentation/screenshottoolbarlayoutmodel.h"
 #include "snow_shot/presentation/components/storagestatussettingswidget.h"
+#include "snow_shot/presentation/components/formfields.h"
 #include "snow_shot/presentation/components/customaimodelssettingswidget.h"
 #include "snow_shot/presentation/components/settingscustomwidget.h"
 #include "snow_shot/presentation/components/pathinput.h"
@@ -50,6 +51,7 @@
 namespace presentation = snow_shot::presentation;
 namespace settings = snow_shot::presentation::settings;
 namespace storage = snow_shot::storage;
+namespace fields = presentation::components::form_fields;
 
 namespace {
 void require(bool condition, const char* message) {
@@ -57,6 +59,23 @@ void require(bool condition, const char* message) {
         std::cerr << message << '\n';
         std::exit(1);
     }
+}
+
+struct FieldEvents {
+    int edits = 0;
+    int commits = 0;
+};
+
+void observeField(QObject& owner, const char* id, FieldEvents& events) {
+    fields::FormField* field = nullptr;
+    for (auto* candidate : owner.findChildren<fields::FormField*>()) {
+        if (candidate->metadata().id == QString::fromLatin1(id))
+            field = candidate;
+    }
+    require(field != nullptr, "storage configuration field exposes its shared controller");
+    QObject::connect(field, &fields::FormField::valueEdited, field, [&events] { ++events.edits; });
+    QObject::connect(field, &fields::FormField::valueCommitted, field,
+                     [&events] { ++events.commits; });
 }
 
 void flushEvents() {
@@ -967,10 +986,17 @@ void directoryDialogLifecycle() {
                 path->browseButtonText() == QStringLiteral("Choose storage directory") &&
                 directoryItem->itemLayout() == AdFormItem::ItemLayout::Vertical &&
                 migrateItem->itemLayout() == AdFormItem::ItemLayout::Vertical &&
-                directoryItem->controlWidget() == path && migrateItem->controlWidget() == migrate &&
+                directoryItem->controlWidget() == path &&
+                migrateItem->controlWidget()->isAncestorOf(migrate) &&
                 migrateItem->value().toBool(),
             "directory and migration controls use the API editor's vertical Ant Design fields");
+    FieldEvents directoryEvents;
+    FieldEvents migrateEvents;
+    observeField(*modal->contentWidget(), "directory", directoryEvents);
+    observeField(*modal->contentWidget(), "migrate", migrateEvents);
     field->setText(QStringLiteral("relative"));
+    require(directoryEvents.edits == 1 && directoryEvents.commits == 0,
+            "storage path edits publish a draft without committing before confirmation");
     modal->acceptButton()->click();
     require(!widget.findChild<AdModal*>(QStringLiteral("storage-directory-confirmation")),
             "invalid form does not confirm");
@@ -1000,6 +1026,9 @@ void directoryDialogLifecycle() {
             "cancel releases the settings window's input block");
     require(modal->isOpen() && backend.migrations == 0 && field->text() == destination.path(),
             "cancel retains form without starting migration");
+    require(directoryEvents.edits == 2 && directoryEvents.commits == 0 &&
+                migrateEvents.commits == 0,
+            "cancelling storage confirmation never commits pending field drafts");
     modal->acceptButton()->click();
     flushEvents();
     confirm = widget.findChild<AdModal*>(QStringLiteral("storage-directory-confirmation"));
@@ -1058,6 +1087,9 @@ void directoryDialogLifecycle() {
                 migrateItem->label() == QStringLiteral("Translated: Migrate existing data") &&
                 path->browseButtonText() == QStringLiteral("Translated: Choose storage directory"),
             "language changes update setting, modal, and live progress");
+    require(directoryEvents.edits == 2 && migrateEvents.edits == 0 &&
+                directoryEvents.commits == 0 && migrateEvents.commits == 0,
+            "storage retranslation produces no shared edits or commits during migration");
     emit backend.directoryChangeFinished({false, QStringLiteral("copy failed"), {}});
     require(modal->isOpen() && modal->acceptButton()->isEnabled() && field->isVisible(),
             "failure returns to editable form");
@@ -1069,8 +1101,13 @@ void directoryDialogLifecycle() {
     require(error && error->isVisible() && error->severity() == AdAlert::Severity::Error &&
                 error->text() == QStringLiteral("copy failed"),
             "migration failure displays the same error alert as the API editor");
-    migrateItem->setValue(false);
-    require(!migrate->isChecked(), "migration switch reflects form values");
+    require(directoryEvents.commits == 0 && migrateEvents.commits == 0,
+            "failed storage operations do not commit field drafts");
+    migrate->setChecked(false);
+    require(!migrate->isChecked() && !migrateItem->value().toBool(),
+            "migration switch reflects form values");
+    require(migrateEvents.edits == 1 && migrateEvents.commits == 0,
+            "changing migration preference stays pending until the operation succeeds");
     modal->acceptButton()->click();
     flushEvents();
     confirm = widget.findChild<AdModal*>(QStringLiteral("storage-directory-confirmation"));
@@ -1082,6 +1119,8 @@ void directoryDialogLifecycle() {
     QPointer<AdModal> lifetime(modal);
     emit backend.directoryChangeFinished({true, {}, {}});
     flushEvents();
+    require(directoryEvents.commits == 1 && migrateEvents.commits == 1,
+            "successful storage confirmation commits each changed field exactly once");
     require(!lifetime || !lifetime->isOpen(), "success dismisses modal automatically");
     require(notification && notification->type() == AdMessage::Type::Success &&
                 notification->content() ==
@@ -1094,11 +1133,18 @@ void directoryDialogLifecycle() {
     form = modal->contentWidget()->findChild<QWidget*>(QStringLiteral("storage-directory-form"));
     migrateItem = form->findChild<AdFormItem*>(QStringLiteral("storage-directory-migrate-field"));
     require(migrateItem->value().toBool(), "reopened form defaults migration on");
+    FieldEvents cancelled;
+    observeField(*modal->contentWidget(), "directory", cancelled);
+    modal->contentWidget()
+        ->findChild<AdLineEdit*>(QStringLiteral("storage-directory-input"))
+        ->setText(destination.path());
     modal->rejectButton()->click();
     flushEvents();
     require(!widget.findChild<AdModal*>(QStringLiteral("settings-storage-directory-modal")) &&
                 backend.migrations == 2,
             "cancel closes the overlay without starting migration");
+    require(cancelled.edits == 1 && cancelled.commits == 0,
+            "cancelling the storage editor discards its changed field without a commit");
 
     choose->click();
     flushEvents();

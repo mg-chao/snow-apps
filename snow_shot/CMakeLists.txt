@@ -851,6 +851,9 @@ set(SNOW_SHOT_SETTINGS_SOURCES
     include/snow_shot/platform/windows/printscreenshortcutrecorder.h
     include/snow_shot/shortcuts/shortcutrecorder.h
     include/snow_shot/presentation/components/pathinput.h
+    include/snow_shot/presentation/components/formfields.h
+    include/snow_shot/presentation/translatabletext.h
+    include/snow_shot/presentation/settings/settingsformfield.h
     include/snow_shot/presentation/components/globalmouserow.h
     include/snow_shot/presentation/components/toolbareditorsettingswidget.h
     include/snow_shot/presentation/components/infotooltipicon.h
@@ -877,6 +880,8 @@ set(SNOW_SHOT_SETTINGS_SOURCES
     src/presentation/components/infotooltipicon.cpp
     src/presentation/components/globalmouserow.cpp
     src/presentation/components/pathinput.cpp
+    src/presentation/components/formfields.cpp
+    src/presentation/settings/settingsformfield.cpp
     src/presentation/components/pagecontainerwidget.cpp
     src/presentation/components/sectionheaderwidget.cpp
     src/presentation/components/screenshothistorypagewidget.cpp
@@ -1794,6 +1799,16 @@ if(SNOW_SHOT_BUILD_TESTS)
         ENVIRONMENT_MODIFICATION
             "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
     )
+
+    add_executable(snow-shot-form-fields-tests tests/form_fields_tests.cpp
+        src/presentation/services/screenshotclipboardservice.cpp)
+    target_link_libraries(snow-shot-form-fields-tests PRIVATE snow_shot_settings)
+    snow_shot_import_offscreen_platform(snow-shot-form-fields-tests)
+    add_test(NAME snow-shot-form-fields-tests COMMAND snow-shot-form-fields-tests)
+    set_tests_properties(snow-shot-form-fields-tests PROPERTIES
+        LABELS "unit" TIMEOUT 30
+        ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}"
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
 
     add_executable(snow-shot-text-translation-settings-tests tests/text_translation_settings_tests.cpp
         src/presentation/services/screenshotclipboardservice.cpp)
@@ -2741,40 +2756,16 @@ if(SNOW_SHOT_BUILD_TESTS)
 
     add_executable(snow-shot-shortcut-key-row-tests
         tests/shortcut_key_row_tests.cpp
-        src/presentation/services/shortcutrecorder.cpp
-        include/snow_shot/presentation/components/infotooltipicon.h
-        include/snow_shot/presentation/components/actionrow.h
-        include/snow_shot/presentation/components/shortcutkeyrow.h
-        include/snow_shot/presentation/components/shortcutconfigurationbutton.h
-        include/snow_shot/presentation/styles/buttonborder.h
-        include/snow_shot/presentation/styles/mainwindowcomponenttoken.h
-        include/snow_shot/presentation/styles/thememanager.h
-        include/snow_shot/presentation/styles/themecolorscheme.h
-        src/presentation/components/icons/snowshoticons.cpp
-        src/presentation/components/infotooltipicon.cpp
-        src/presentation/components/actionrow.cpp
-        src/presentation/components/shortcutkeyrow.cpp
-        src/presentation/components/shortcutconfigurationbutton.cpp
-        src/presentation/styles/buttonborder.cpp
-        src/presentation/styles/mainwindowcomponenttoken.cpp
-        src/presentation/styles/thememanager.cpp
-        src/presentation/styles/themecolorscheme.cpp
+        src/presentation/services/screenshotclipboardservice.cpp
     )
     target_include_directories(snow-shot-shortcut-key-row-tests PRIVATE
         "${CMAKE_CURRENT_SOURCE_DIR}/include"
     )
     target_link_libraries(snow-shot-shortcut-key-row-tests PRIVATE
-        snow_shot_window_shortcuts
-        adqt_icon_core
-        ant_design_icons_qt
-        ant_design_qt
+        snow_shot_settings
         Qt6::Widgets
     )
-    if(WIN32)
-        target_sources(snow-shot-shortcut-key-row-tests PRIVATE
-            src/platform/windows/printscreenshortcutrecorder.cpp)
-        target_link_libraries(snow-shot-shortcut-key-row-tests PRIVATE user32)
-    endif()
+    snow_shot_import_offscreen_platform(snow-shot-shortcut-key-row-tests)
     add_test(
         NAME snow-shot-shortcut-key-row-tests
         COMMAND snow-shot-shortcut-key-row-tests
@@ -6410,6 +6401,12 @@ if(SNOW_SHOT_BUILD_TESTS)
     add_dependencies(snow-shot-translation-page-tests snow_shot_release_translations)
     snow_shot_import_offscreen_platform(snow-shot-translation-page-tests)
     add_test(NAME snow-shot-translation-page-tests COMMAND snow-shot-translation-page-tests)
+    add_test(NAME snow-shot-screenshot-translation-settings-dialog-tests
+        COMMAND snow-shot-translation-page-tests --screenshot-settings)
+    set_tests_properties(snow-shot-screenshot-translation-settings-dialog-tests PROPERTIES
+        LABELS "unit" TIMEOUT 60
+        ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}"
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
     set_tests_properties(snow-shot-translation-page-tests PROPERTIES
         LABELS "unit"
         ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}"

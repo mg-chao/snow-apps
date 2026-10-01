@@ -1,4 +1,5 @@
 #include "snow_shot/presentation/components/customaimodelssettingswidget.h"
+#include "snow_shot/presentation/components/formfields.h"
 #include "snow_shot/presentation/settings/settingsruntimesession.h"
 #include "snow_shot/presentation/styles/thememanager.h"
 #include "widgets/alert.h"
@@ -29,6 +30,7 @@
 using namespace adqt::widgets;
 using namespace snow_shot;
 namespace settings = snow_shot::presentation::settings;
+namespace fields = snow_shot::presentation::components::form_fields;
 
 namespace {
 class ModelRow final : public QWidget {
@@ -239,7 +241,8 @@ void CustomAiModelsSettingsWidget::deleteModel(const QString& id) {
     modal->setCentered(true);
     modal->setCloseOnMaskClick(false);
     modal->setClosePolicy(AdModal::ClosePolicy::Manual);
-    modal->setStandardButtons(AdModal::StandardButton::Ok | AdModal::StandardButton::Cancel);
+    modal->setStandardButtons(AdModal::StandardButtons(AdModal::StandardButton::Ok) |
+                              AdModal::StandardButton::Cancel);
     translateModal();
     connect(modal, &AdModal::closeRequested, this, [this, modal, id](AdModal::CloseReason reason) {
         if (reason != AdModal::CloseReason::OkAction) {
@@ -288,47 +291,56 @@ void CustomAiModelsSettingsWidget::openEditor(const QString& id) {
     modal->setPreferredWidth(760);
     modal->setCloseOnMaskClick(false);
     modal->setClosePolicy(AdModal::ClosePolicy::Manual);
-    modal->setStandardButtons(AdModal::StandardButton::Ok | AdModal::StandardButton::Cancel);
+    modal->setStandardButtons(AdModal::StandardButtons(AdModal::StandardButton::Ok) |
+                              AdModal::StandardButton::Cancel);
     auto* body = new QWidget;
     auto* layout = new QVBoxLayout(body);
     layout->setContentsMargins(0, 0, 0, 0);
-    auto* form = new QWidget(body);
-    auto* grid = new QGridLayout(form);
-    grid->setContentsMargins(0, 0, 0, 0);
-    grid->setHorizontalSpacing(m_scheme.metricAlias.marginLG);
-    grid->setVerticalSpacing(0);
-    grid->setColumnStretch(0, 1);
-    grid->setColumnStretch(1, 1);
+    layout->setSpacing(m_scheme.metricAlias.marginSM);
+    auto* form = new AdForm(body);
+    fields::configureForm(form);
+    auto* grid = new QGridLayout;
+    fields::configureTwoColumnGrid(grid);
+    connect(&presentation::styles::ThemeManager::instance(),
+            &presentation::styles::ThemeManager::themeChanged, body,
+            [layout, grid](const presentation::styles::ThemeColorScheme& scheme) {
+                layout->setSpacing(scheme.metricAlias.marginSM);
+                grid->setHorizontalSpacing(scheme.metricAlias.marginLG);
+            });
     const QStringList names{QStringLiteral("modelName"), QStringLiteral("apiUrl"),
-                            QStringLiteral("apiKey"), QStringLiteral("apiModel")};
-    const QStringList values{value.name, value.baseUrl, value.apiKey, value.model};
+                            QStringLiteral("apiKey")};
+    const QStringList values{value.name, value.baseUrl, value.apiKey};
     for (size_t i = 0; i < m_inputs.size(); ++i) {
-        m_inputs[i] = i == 2 ? new AdPasswordEdit(form) : new AdLineEdit(form);
-        m_inputs[i]->setObjectName(names[static_cast<qsizetype>(i)]);
-        m_inputs[i]->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
-        m_inputs[i]->setText(values[static_cast<qsizetype>(i)]);
-        m_fields[i] =
-            new AdFormItem(QString(), m_inputs[i], names[static_cast<qsizetype>(i)], form);
-        m_fields[i]->setItemLayout(AdFormItem::ItemLayout::Vertical);
-        grid->addWidget(m_fields[i], static_cast<int>(i / 2), static_cast<int>(i % 2),
-                        Qt::AlignTop);
-        m_fields[i]->setRequired(i != 2);
-        m_fields[i]->setValidateOnChange(false);
+        fields::Options options;
+        options.parent = form;
+        options.form = form;
+        options.commitPolicy = fields::CommitPolicy::Explicit;
+        options.required = i != 2;
+        const fields::Metadata metadata{names[static_cast<qsizetype>(i)]};
+        if (i == 2) {
+            const auto field = fields::password(metadata, options);
+            m_inputs[i] = field.editor;
+            m_formFields[i] = field.field;
+        } else {
+            const auto field = fields::text(metadata, options);
+            m_inputs[i] = field.editor;
+            m_formFields[i] = field.field;
+        }
+        m_fields[i] = m_formFields[i]->item();
+        m_formFields[i]->syncValue(values[static_cast<qsizetype>(i)]);
     }
-    m_modelSelect = new AdComboBox(form);
-    m_modelSelect->setObjectName(QStringLiteral("apiModel"));
-    m_modelSelect->setEditable(true);
-    m_modelSelect->setPopupLayerMode(AdComboBox::PopupLayerMode::QtTool);
-    m_modelSelect->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
-    m_modelSelect->setCurrentValue(value.model);
-    // Commit typed IDs independently of the select's transient search text.
-    connect(m_modelSelect->lineEdit(), &QLineEdit::textEdited, m_modelSelect,
-            [select = m_modelSelect](const QString& text) { select->setCurrentValue(text); });
-    m_fields[3] = new AdFormItem(QString(), m_modelSelect, QStringLiteral("apiModel"), form);
-    m_fields[3]->setItemLayout(AdFormItem::ItemLayout::Vertical);
-    m_fields[3]->setRequired(true);
-    m_fields[3]->setValidateOnChange(false);
-    grid->addWidget(m_fields[3], 1, 1, Qt::AlignTop);
+    fields::Options modelOptions;
+    modelOptions.parent = form;
+    modelOptions.form = form;
+    modelOptions.commitPolicy = fields::CommitPolicy::Explicit;
+    modelOptions.required = true;
+    modelOptions.popupInModal = true;
+    modelOptions.editable = true;
+    const auto modelField = fields::comboBox({QStringLiteral("apiModel")}, {}, modelOptions);
+    m_modelSelect = modelField.editor;
+    m_formFields[3] = modelField.field;
+    m_formFields[3]->syncValue(value.model);
+    m_fields[3] = modelField.item();
     m_modelFetchStatus = new QLabel(m_modelSelect);
     m_modelFetchStatus->setObjectName(QStringLiteral("modelFetchStatus"));
     m_modelFetchStatus->setWordWrap(true);
@@ -354,7 +366,7 @@ void CustomAiModelsSettingsWidget::openEditor(const QString& id) {
     auto pending = std::make_shared<QPointer<QNetworkReply>>();
     // Successful results belong to this editor and its current connection, even when empty.
     auto fetched = std::make_shared<bool>(false);
-    const auto invalidate = [select = m_modelSelect, pending, fetched,
+    const auto invalidate = [select = m_modelSelect, field = modelField.field, pending, fetched,
                              status = m_modelFetchStatus]() {
         *fetched = false;
         if (*pending) {
@@ -363,7 +375,7 @@ void CustomAiModelsSettingsWidget::openEditor(const QString& id) {
             reply->abort();
         }
         select->setLoading(false);
-        select->clearOptions();
+        field->synchronize([select] { select->clearOptions(); });
         status->setProperty("fetchFailed", false);
         status->clear();
         select->setPopupFooterWidget(nullptr);
@@ -393,7 +405,7 @@ void CustomAiModelsSettingsWidget::openEditor(const QString& id) {
                 m_modelFetchStatus->setProperty("fetchFailed", false);
                 m_modelFetchStatus->clear();
                 m_modelSelect->setPopupFooterWidget(nullptr);
-                m_modelSelect->clearOptions();
+                m_formFields[3]->synchronize([this] { m_modelSelect->clearOptions(); });
                 m_modelSelect->setLoading(true);
                 auto* reply = network->get(request);
                 *pending = reply;
@@ -423,35 +435,39 @@ void CustomAiModelsSettingsWidget::openEditor(const QString& id) {
                             options.append(option);
                         }
                     }
-                    m_modelSelect->setOptions(options);
+                    m_formFields[3]->synchronize(
+                        [this, &options] { m_modelSelect->setOptions(options); });
                     m_modelSelect->setLoading(false);
                     m_modelFetchStatus->setProperty("fetchFailed", failed);
                     translateModal();
                 });
             });
-    m_inputs[1]->setPlaceholderText(QStringLiteral("https://api.openai.com/v1"));
-    m_vision = new AdSwitch(form);
-    m_vision->setObjectName(QStringLiteral("visionSupport"));
-    m_vision->setChecked(value.supportsVision);
-    m_fields[4] = new AdFormItem(QString(), m_vision, QStringLiteral("visionSupport"), form);
-    m_fields[4]->setItemLayout(AdFormItem::ItemLayout::Vertical);
-    grid->addWidget(m_fields[4], 2, 0);
-    m_reasoning = new AdSwitch(form);
-    m_reasoning->setObjectName(QStringLiteral("reasoningSupport"));
-    m_reasoning->setChecked(value.supportsReasoning);
-    m_fields[5] = new AdFormItem(QString(), m_reasoning, QStringLiteral("reasoningSupport"), form);
-    m_fields[5]->setItemLayout(AdFormItem::ItemLayout::Vertical);
-    grid->addWidget(m_fields[5], 2, 1);
-    m_concurrency = new AdInputNumber(form);
-    m_concurrency->setObjectName(QStringLiteral("customAiModelConcurrency"));
-    m_concurrency->setMinimum(1);
-    m_concurrency->setMaximum(16);
-    m_concurrency->setDecimals(0);
-    m_concurrency->setValue(value.concurrency);
-    m_fields[6] =
-        new AdFormItem(QString(), m_concurrency, QStringLiteral("customAiModelConcurrency"), form);
-    m_fields[6]->setItemLayout(AdFormItem::ItemLayout::Vertical);
-    grid->addWidget(m_fields[6], 3, 0);
+    fields::Options options;
+    options.parent = form;
+    options.form = form;
+    options.commitPolicy = fields::CommitPolicy::Explicit;
+    const auto visionField = fields::switchField({QStringLiteral("visionSupport")}, options);
+    m_vision = visionField.editor;
+    m_formFields[4] = visionField.field;
+    m_fields[4] = visionField.item();
+    visionField.field->syncValue(value.supportsVision);
+    const auto reasoningField = fields::switchField({QStringLiteral("reasoningSupport")}, options);
+    m_reasoning = reasoningField.editor;
+    m_formFields[5] = reasoningField.field;
+    m_fields[5] = reasoningField.item();
+    reasoningField.field->syncValue(value.supportsReasoning);
+    const auto concurrencyField =
+        fields::number({QStringLiteral("customAiModelConcurrency")}, {1, 16, 1, 0}, options);
+    m_concurrency = concurrencyField.editor;
+    m_formFields[6] = concurrencyField.field;
+    m_fields[6] = concurrencyField.item();
+    concurrencyField.field->syncValue(value.concurrency);
+    for (size_t i = 0; i < m_formFields.size(); ++i) {
+        auto* view = m_formFields[i]->viewWidget();
+        form->layout()->removeWidget(view);
+        grid->addWidget(view, static_cast<int>(i / 2), static_cast<int>(i % 2), Qt::AlignTop);
+    }
+    static_cast<QVBoxLayout*>(form->layout())->addLayout(grid);
     layout->addWidget(form);
     m_modalError = new AdAlert(body);
     m_modalError->setSeverity(AdAlert::Severity::Error);
@@ -459,6 +475,8 @@ void CustomAiModelsSettingsWidget::openEditor(const QString& id) {
     layout->addWidget(m_modalError);
     modal->setContentWidget(body);
     translateModal();
+    form->setInitialValues(form->values());
+    form->resetFields();
     connect(modal, &AdModal::closeRequested, this, [this, modal](AdModal::CloseReason reason) {
         if (reason == AdModal::CloseReason::OkAction) {
             submitEditor();
@@ -520,9 +538,7 @@ void CustomAiModelsSettingsWidget::submitEditor(bool saveChanges) {
     }
     QWidget* firstInvalid = nullptr;
     for (size_t i = 0; i < errors.size(); ++i) {
-        m_fields[i]->setErrorMessages(errors[i].isEmpty() ? QStringList{} : QStringList{errors[i]});
-        m_fields[i]->setValidateStatus(errors[i].isEmpty() ? AdFormItem::ValidateStatus::None
-                                                           : AdFormItem::ValidateStatus::Error);
+        m_formFields[i]->setFeedback(errors[i].isEmpty() ? QStringList{} : QStringList{errors[i]});
         if (!errors[i].isEmpty() && firstInvalid == nullptr) {
             firstInvalid = i == 3 ? static_cast<QWidget*>(m_modelSelect) : m_inputs[i];
         }
@@ -549,6 +565,8 @@ void CustomAiModelsSettingsWidget::submitEditor(bool saveChanges) {
         models.push_back(value);
     }
     if (save(models)) {
+        for (auto* field : m_formFields)
+            field->notifyCommitted();
         m_modal->accept();
     } else {
         m_modalError->setProperty("deletedModel", false);
@@ -569,17 +587,43 @@ void CustomAiModelsSettingsWidget::translateModal() {
                     : tr("Unable to save models. Check that configuration storage is writable and "
                          "try again."));
         }
-        const QStringList labels{tr("Model Name"), tr("API URL"),        tr("API Key"),
-                                 tr("API Model"),  tr("Vision Support"), tr("Reasoning Support"),
-                                 tr("Concurrency")};
+        const char* labels[] = {
+            QT_TRANSLATE_NOOP("CustomAiModelsSettingsWidget", "Model Name"),
+            QT_TRANSLATE_NOOP("CustomAiModelsSettingsWidget", "API URL"),
+            QT_TRANSLATE_NOOP("CustomAiModelsSettingsWidget", "API Key"),
+            QT_TRANSLATE_NOOP("CustomAiModelsSettingsWidget", "API Model"),
+            QT_TRANSLATE_NOOP("CustomAiModelsSettingsWidget", "Vision Support"),
+            QT_TRANSLATE_NOOP("CustomAiModelsSettingsWidget", "Reasoning Support"),
+            QT_TRANSLATE_NOOP("CustomAiModelsSettingsWidget", "Concurrency")};
+        const char* descriptions[] = {
+            QT_TRANSLATE_NOOP("CustomAiModelsSettingsWidget",
+                              "The model name displayed in Snow Shot."),
+            QT_TRANSLATE_NOOP("CustomAiModelsSettingsWidget",
+                              "OpenAI-compatible Chat Completions. /chat/completions is appended "
+                              "to this base URL."),
+            QT_TRANSLATE_NOOP("CustomAiModelsSettingsWidget",
+                              "Optional for servers that do not require authentication."),
+            QT_TRANSLATE_NOOP("CustomAiModelsSettingsWidget",
+                              "Enter a custom model ID or open the list to fetch models from the "
+                              "API URL."),
+            QT_TRANSLATE_NOOP("CustomAiModelsSettingsWidget",
+                              "Allow this model to convert images to Markdown and HTML."),
+            QT_TRANSLATE_NOOP("CustomAiModelsSettingsWidget",
+                              "Explicitly enable or disable reasoning in model requests."),
+            QT_TRANSLATE_NOOP("CustomAiModelsSettingsWidget",
+                              "Maximum simultaneous translation and image conversion requests "
+                              "for this model (1-16).")};
         for (size_t i = 0; i < m_fields.size(); ++i) {
-            m_fields[i]->setLabel(labels[static_cast<qsizetype>(i)]);
-            if (i < m_inputs.size()) {
-                m_inputs[i]->setAccessibleName(labels[static_cast<qsizetype>(i)]);
-            }
+            auto metadata = m_formFields[i]->metadata();
+            metadata.label = {"CustomAiModelsSettingsWidget", labels[i]};
+            metadata.description = {"CustomAiModelsSettingsWidget", descriptions[i]};
+            if (i == 3)
+                metadata.placeholder = {"CustomAiModelsSettingsWidget",
+                                        QT_TRANSLATE_NOOP("CustomAiModelsSettingsWidget",
+                                                          "Enter or select a model ID")};
+            m_formFields[i]->setMetadata(metadata);
         }
-        m_modelSelect->setAccessibleName(tr("API Model"));
-        m_modelSelect->setPlaceholder(tr("Enter or select a model ID"));
+        m_inputs[1]->setPlaceholderText(QStringLiteral("https://api.openai.com/v1"));
         m_modelFetchStatus->setText(
             m_modelFetchStatus->property("fetchFailed").toBool()
                 ? tr("Unable to fetch models. Enter a model ID or reopen the list to retry.")
@@ -587,21 +631,6 @@ void CustomAiModelsSettingsWidget::translateModal() {
         // An attached footer contributes its size even when its label is empty.
         m_modelSelect->setPopupFooterWidget(
             m_modelFetchStatus->property("fetchFailed").toBool() ? m_modelFetchStatus : nullptr);
-        m_vision->setAccessibleName(tr("Vision Support"));
-        m_reasoning->setAccessibleName(tr("Reasoning Support"));
-        m_concurrency->setAccessibleName(tr("Concurrency"));
-        m_fields[0]->setTooltipText(tr("The model name displayed in Snow Shot."));
-        m_fields[1]->setTooltipText(tr(
-            "OpenAI-compatible Chat Completions. /chat/completions is appended to this base URL."));
-        m_fields[2]->setTooltipText(tr("Optional for servers that do not require authentication."));
-        m_fields[3]->setTooltipText(
-            tr("Enter a custom model ID or open the list to fetch models from the API URL."));
-        m_fields[4]->setTooltipText(tr("Allow this model to convert images to Markdown and HTML."));
-        m_fields[5]->setTooltipText(
-            tr("Explicitly enable or disable reasoning in model requests."));
-        m_fields[6]->setTooltipText(
-            tr("Maximum simultaneous translation and image conversion requests for this model "
-               "(1-16)."));
     }
     if (m_deleteModal != nullptr) {
         m_deleteModal->setWindowTitle(tr("Delete Model"));

@@ -1,4 +1,5 @@
 #include "snow_shot/presentation/components/storagestatussettingswidget.h"
+#include "snow_shot/presentation/components/formfields.h"
 
 #include "snow_shot/presentation/components/pathinput.h"
 #include "snow_shot/presentation/components/settingspageutils.h"
@@ -392,6 +393,7 @@ void StorageStatusSettingsWidget::syncStatus(const snow_shot::storage::StorageSt
 void StorageStatusSettingsWidget::openDirectoryDialog() {
 #ifdef Q_OS_WIN
     using namespace adqt::widgets;
+    namespace fields = snow_shot::presentation::components::form_fields;
     if (m_directoryModal)
         return;
     auto* modal = new AdModal(this);
@@ -407,24 +409,28 @@ void StorageStatusSettingsWidget::openDirectoryDialog() {
     auto* body = new QWidget;
     auto* layout = new QVBoxLayout(body);
     layout->setContentsMargins(0, 0, 0, 0);
-    m_directoryForm = new QWidget(body);
+    auto* form = new AdForm(body);
+    fields::configureForm(form);
+    m_directoryForm = form;
     m_directoryForm->setObjectName(QStringLiteral("storage-directory-form"));
-    auto* grid = new QGridLayout(m_directoryForm);
-    grid->setContentsMargins(0, 0, 0, 0);
-    grid->setHorizontalSpacing(m_colorScheme.metricAlias.marginLG);
-    grid->setVerticalSpacing(0);
-    grid->setColumnStretch(0, 1);
-    m_directoryInput = new DirectoryPathInput(m_directoryForm);
+    fields::Options fieldOptions;
+    fieldOptions.parent = m_directoryForm;
+    fieldOptions.form = form;
+    fieldOptions.commitPolicy = fields::CommitPolicy::Explicit;
+    fields::Metadata directoryMetadata;
+    directoryMetadata.id = QStringLiteral("directory");
+    directoryMetadata.label = {
+        "StorageStatusSettingsWidget",
+        QT_TRANSLATE_NOOP("StorageStatusSettingsWidget", "Storage directory")};
+    const auto directoryField = fields::directoryPath(directoryMetadata, fieldOptions);
+    m_directoryInput = directoryField.editor;
     m_directoryInput->setObjectName(QStringLiteral("storage-directory-path-input"));
     m_directoryInput->lineEdit()->setObjectName(QStringLiteral("storage-directory-input"));
     m_directoryInput->browseButton()->setObjectName(QStringLiteral("storage-directory-browse"));
-    m_directoryInput->setText(
+    directoryField.field->syncValue(
         QDir::toNativeSeparators(m_runtimeSession.storageStatus().effectiveDirectory));
-    m_directoryField =
-        new AdFormItem(QString(), m_directoryInput, QStringLiteral("directory"), m_directoryForm);
+    m_directoryField = directoryField.item();
     m_directoryField->setObjectName(QStringLiteral("storage-directory-field"));
-    m_directoryField->setItemLayout(AdFormItem::ItemLayout::Vertical);
-    m_directoryField->setControlValueProperty(QStringLiteral("text"));
     m_directoryField->setValidateOnChange(false);
     m_directoryField->setFormValidator([this](const QVariant& value, AdFormItem*) {
         AdFormItem::ValidationResult result;
@@ -437,16 +443,19 @@ void StorageStatusSettingsWidget::openDirectoryDialog() {
         }
         return result;
     });
-    grid->addWidget(m_directoryField, 0, 0, Qt::AlignTop);
-    m_migrateSwitch = new AdSwitch(m_directoryForm);
+    fields::Metadata migrateMetadata;
+    migrateMetadata.id = QStringLiteral("migrate");
+    migrateMetadata.label = {
+        "StorageStatusSettingsWidget",
+        QT_TRANSLATE_NOOP("StorageStatusSettingsWidget", "Migrate existing data")};
+    const auto migrateField = fields::switchField(migrateMetadata, fieldOptions);
+    m_migrateSwitch = migrateField.editor;
     m_migrateSwitch->setObjectName(QStringLiteral("storage-directory-migrate"));
-    m_migrateSwitch->setChecked(true);
-    m_migrateField =
-        new AdFormItem(QString(), m_migrateSwitch, QStringLiteral("migrate"), m_directoryForm);
+    migrateField.field->syncValue(true);
+    m_migrateField = migrateField.item();
     m_migrateField->setObjectName(QStringLiteral("storage-directory-migrate-field"));
-    m_migrateField->setItemLayout(AdFormItem::ItemLayout::Vertical);
-    m_migrateField->setControlValueProperty(QStringLiteral("checked"));
-    grid->addWidget(m_migrateField, 1, 0, Qt::AlignTop);
+    form->setInitialValues(form->values());
+    form->resetFields();
     layout->addWidget(m_directoryForm);
     m_directoryError = new AdAlert(body);
     m_directoryError->setObjectName(QStringLiteral("storage-directory-error"));
@@ -468,13 +477,16 @@ void StorageStatusSettingsWidget::openDirectoryDialog() {
     m_directoryProgressBody->hide();
     modal->setContentWidget(body);
     modal->setInitialFocusWidget(m_directoryInput->lineEdit());
-    connect(m_directoryInput, &DirectoryPathInput::browseRequested, this, [this] {
-        const QString directory = QFileDialog::getExistingDirectory(
-            m_directoryModal->contentWidget()->window(), tr("Choose storage directory"),
-            m_directoryInput->text());
-        if (!directory.isEmpty())
-            m_directoryInput->setText(QDir::toNativeSeparators(directory));
-    });
+    connect(m_directoryInput, &DirectoryPathInput::browseRequested, this,
+            [this, field = directoryField.field] {
+                const QString directory = QFileDialog::getExistingDirectory(
+                    m_directoryModal->contentWidget()->window(), tr("Choose storage directory"),
+                    m_directoryInput->text());
+                if (!directory.isEmpty()) {
+                    field->syncValue(QDir::toNativeSeparators(directory));
+                    field->notifyEdited();
+                }
+            });
     connect(modal, &AdModal::closeRequested, this, [this, modal](AdModal::CloseReason reason) {
         if (m_directoryBusy || m_directoryConfirmation)
             return;
@@ -605,6 +617,11 @@ void StorageStatusSettingsWidget::finishDirectoryChange(
     if (result.success) {
         message.content =
             result.warning.isEmpty() ? tr("Storage migration complete.") : result.warning;
+        for (auto* field :
+             m_directoryForm
+                 ->findChildren<snow_shot::presentation::components::form_fields::FormField*>()) {
+            field->notifyCommitted();
+        }
         m_directoryBusy = false;
         m_directoryModal->accept();
         if (result.warning.isEmpty())

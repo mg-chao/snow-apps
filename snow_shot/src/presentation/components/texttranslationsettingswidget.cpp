@@ -1,4 +1,5 @@
 #include "snow_shot/presentation/components/texttranslationsettingswidget.h"
+#include "snow_shot/presentation/components/formfields.h"
 #include "snow_shot/presentation/settings/settingsruntimesession.h"
 #include "snow_shot/presentation/styles/thememanager.h"
 #include "widgets/alert.h"
@@ -24,6 +25,7 @@
 using namespace adqt::widgets;
 using namespace snow_shot;
 namespace settings = snow_shot::presentation::settings;
+namespace fields = snow_shot::presentation::components::form_fields;
 
 namespace {
 class ConfigurationRow final : public QWidget {
@@ -233,7 +235,8 @@ void TextTranslationSettingsWidget::deleteModel(const QString& id) {
     modal->setCentered(true);
     modal->setCloseOnMaskClick(false);
     modal->setClosePolicy(AdModal::ClosePolicy::Manual);
-    modal->setStandardButtons(AdModal::StandardButton::Ok | AdModal::StandardButton::Cancel);
+    modal->setStandardButtons(AdModal::StandardButtons(AdModal::StandardButton::Ok) |
+                              AdModal::StandardButton::Cancel);
     translateModal();
     connect(modal, &AdModal::closeRequested, this, [this, modal, id](AdModal::CloseReason reason) {
         if (reason != AdModal::CloseReason::OkAction) {
@@ -282,52 +285,68 @@ void TextTranslationSettingsWidget::openEditor(const QString& id) {
     modal->setPreferredWidth(760);
     modal->setCloseOnMaskClick(false);
     modal->setClosePolicy(AdModal::ClosePolicy::Manual);
-    modal->setStandardButtons(AdModal::StandardButton::Ok | AdModal::StandardButton::Cancel);
+    modal->setStandardButtons(AdModal::StandardButtons(AdModal::StandardButton::Ok) |
+                              AdModal::StandardButton::Cancel);
     auto* body = new QWidget;
     auto* layout = new QVBoxLayout(body);
     layout->setContentsMargins(0, 0, 0, 0);
-    auto* form = new QWidget(body);
-    auto* grid = new QGridLayout(form);
-    grid->setContentsMargins(0, 0, 0, 0);
-    grid->setHorizontalSpacing(m_scheme.metricAlias.marginLG);
-    grid->setVerticalSpacing(0);
-    grid->setColumnStretch(0, 1);
-    grid->setColumnStretch(1, 1);
+    layout->setSpacing(m_scheme.metricAlias.marginSM);
+    auto* form = new AdForm(body);
+    fields::configureForm(form);
+    auto* grid = new QGridLayout;
+    fields::configureTwoColumnGrid(grid);
+    connect(&presentation::styles::ThemeManager::instance(),
+            &presentation::styles::ThemeManager::themeChanged, body,
+            [layout, grid](const presentation::styles::ThemeColorScheme& scheme) {
+                layout->setSpacing(scheme.metricAlias.marginSM);
+                grid->setHorizontalSpacing(scheme.metricAlias.marginLG);
+            });
     const QStringList names{QStringLiteral("modelName"), QStringLiteral("apiUrl"),
                             QStringLiteral("apiKey"), QStringLiteral("applicationId")};
     const QStringList values{value.name, value.endpoint, value.apiKey, value.applicationId};
     for (size_t i = 0; i < m_inputs.size(); ++i) {
-        m_inputs[i] = i == 2 ? new AdPasswordEdit(form) : new AdLineEdit(form);
-        m_inputs[i]->setObjectName(names[static_cast<qsizetype>(i)]);
-        m_inputs[i]->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
-        m_inputs[i]->setText(values[static_cast<qsizetype>(i)]);
-        m_fields[i] =
-            new AdFormItem(QString(), m_inputs[i], names[static_cast<qsizetype>(i)], form);
-        m_fields[i]->setItemLayout(AdFormItem::ItemLayout::Vertical);
-        grid->addWidget(m_fields[i], static_cast<int>(i / 2), static_cast<int>(i % 2),
-                        Qt::AlignTop);
-        m_fields[i]->setRequired(i < 2);
-        m_fields[i]->setValidateOnChange(false);
+        fields::Options options;
+        options.parent = form;
+        options.form = form;
+        options.commitPolicy = fields::CommitPolicy::Explicit;
+        options.required = i < 2;
+        const fields::Metadata metadata{names[static_cast<qsizetype>(i)]};
+        if (i == 2) {
+            const auto field = fields::password(metadata, options);
+            m_inputs[i] = field.editor;
+            m_formFields[i] = field.field;
+        } else {
+            const auto field = fields::text(metadata, options);
+            m_inputs[i] = field.editor;
+            m_formFields[i] = field.field;
+        }
+        m_fields[i] = m_formFields[i]->item();
+        m_formFields[i]->syncValue(values[static_cast<qsizetype>(i)]);
     }
-    m_provider = new AdComboBox(form);
-    m_provider->setObjectName(QStringLiteral("translationProvider"));
-    m_provider->setPopupLayerMode(AdComboBox::PopupLayerMode::QtTool);
-    m_fields[4] =
-        new AdFormItem(QString(), m_provider, QStringLiteral("translationProvider"), form);
-    m_fields[4]->setItemLayout(AdFormItem::ItemLayout::Vertical);
-    grid->addWidget(m_fields[4], 2, 0);
-    m_concurrency = new AdInputNumber(form);
-    m_concurrency->setObjectName(QStringLiteral("translationConcurrency"));
-    m_concurrency->setMinimum(1);
-    m_concurrency->setMaximum(16);
-    m_concurrency->setDecimals(0);
-    m_concurrency->setValue(value.concurrency);
-    m_fields[5] =
-        new AdFormItem(QString(), m_concurrency, QStringLiteral("translationConcurrency"), form);
-    m_fields[5]->setItemLayout(AdFormItem::ItemLayout::Vertical);
-    grid->addWidget(m_fields[5], 2, 1);
+    fields::Options options;
+    options.parent = form;
+    options.form = form;
+    options.commitPolicy = fields::CommitPolicy::Explicit;
+    options.popupInModal = true;
+    const auto providerField =
+        fields::comboBox({QStringLiteral("translationProvider")}, {}, options);
+    m_provider = providerField.editor;
+    m_formFields[4] = providerField.field;
+    m_fields[4] = providerField.item();
+    const auto concurrencyField =
+        fields::number({QStringLiteral("translationConcurrency")}, {1, 16, 1, 0}, options);
+    m_concurrency = concurrencyField.editor;
+    m_formFields[5] = concurrencyField.field;
+    m_fields[5] = concurrencyField.item();
+    concurrencyField.field->syncValue(value.concurrency);
+    for (size_t i = 0; i < m_formFields.size(); ++i) {
+        auto* view = m_formFields[i]->viewWidget();
+        form->layout()->removeWidget(view);
+        grid->addWidget(view, static_cast<int>(i / 2), static_cast<int>(i % 2), Qt::AlignTop);
+    }
+    static_cast<QVBoxLayout*>(form->layout())->addLayout(grid);
     translateModal();
-    m_provider->setCurrentValue(value.provider);
+    providerField.field->syncValue(value.provider);
     connect(m_provider, &AdComboBox::currentValueChanged, this, [this]() { translateModal(); });
     layout->addWidget(form);
     m_modalError = new AdAlert(body);
@@ -336,6 +355,8 @@ void TextTranslationSettingsWidget::openEditor(const QString& id) {
     layout->addWidget(m_modalError);
     modal->setContentWidget(body);
     translateModal();
+    form->setInitialValues(form->values());
+    form->resetFields();
     connect(modal, &AdModal::closeRequested, this, [this, modal](AdModal::CloseReason reason) {
         if (reason == AdModal::CloseReason::OkAction) {
             submitEditor();
@@ -394,9 +415,7 @@ void TextTranslationSettingsWidget::submitEditor(bool saveChanges) {
     }
     QWidget* firstInvalid = nullptr;
     for (size_t i = 0; i < errors.size(); ++i) {
-        m_fields[i]->setErrorMessages(errors[i].isEmpty() ? QStringList{} : QStringList{errors[i]});
-        m_fields[i]->setValidateStatus(errors[i].isEmpty() ? AdFormItem::ValidateStatus::None
-                                                           : AdFormItem::ValidateStatus::Error);
+        m_formFields[i]->setFeedback(errors[i].isEmpty() ? QStringList{} : QStringList{errors[i]});
         if (!errors[i].isEmpty() && firstInvalid == nullptr) {
             firstInvalid = m_inputs[i];
         }
@@ -423,6 +442,8 @@ void TextTranslationSettingsWidget::submitEditor(bool saveChanges) {
         models.push_back(value);
     }
     if (save(models)) {
+        for (auto* field : m_formFields)
+            field->notifyCommitted();
         m_modal->accept();
     } else {
         m_modalError->setProperty("deletedModel", false);
@@ -446,18 +467,33 @@ void TextTranslationSettingsWidget::translateModal() {
         }
         const QString provider = m_provider->currentValue().toString();
         const bool deepL = provider.isEmpty() || provider == QStringLiteral("deepl");
-        const QStringList labels{tr("Configuration Name"),
-                                 tr("API URL"),
-                                 deepL ? tr("API Key") : tr("Application Secret"),
-                                 tr("Application ID"),
-                                 tr("Service Format"),
-                                 tr("Concurrency")};
+        const char* labels[] = {
+            QT_TRANSLATE_NOOP("TextTranslationSettingsWidget", "Configuration Name"),
+            QT_TRANSLATE_NOOP("TextTranslationSettingsWidget", "API URL"),
+            deepL ? QT_TRANSLATE_NOOP("TextTranslationSettingsWidget", "API Key")
+                  : QT_TRANSLATE_NOOP("TextTranslationSettingsWidget", "Application Secret"),
+            QT_TRANSLATE_NOOP("TextTranslationSettingsWidget", "Application ID"),
+            QT_TRANSLATE_NOOP("TextTranslationSettingsWidget", "Service Format"),
+            QT_TRANSLATE_NOOP("TextTranslationSettingsWidget", "Concurrency")};
+        const char* descriptions[] = {
+            nullptr,
+            QT_TRANSLATE_NOOP("TextTranslationSettingsWidget",
+                              "The full translation endpoint. Its path and query are used as "
+                              "entered."),
+            QT_TRANSLATE_NOOP("TextTranslationSettingsWidget",
+                              "Optional for servers that do not require authentication."),
+            nullptr,
+            nullptr,
+            QT_TRANSLATE_NOOP("TextTranslationSettingsWidget",
+                              "Maximum simultaneous requests for this configuration across "
+                              "translation jobs (1-16).")};
         for (size_t i = 0; i < m_fields.size(); ++i) {
-            m_fields[i]->setLabel(labels[static_cast<qsizetype>(i)]);
-            if (i < m_inputs.size())
-                m_inputs[i]->setAccessibleName(labels[static_cast<qsizetype>(i)]);
+            auto metadata = m_formFields[i]->metadata();
+            metadata.label = {"TextTranslationSettingsWidget", labels[i]};
+            metadata.description = {"TextTranslationSettingsWidget", descriptions[i]};
+            m_formFields[i]->setMetadata(metadata);
         }
-        m_fields[3]->setItemHidden(deepL);
+        m_formFields[3]->setFieldVisible(!deepL);
         const QSignalBlocker blocker(m_provider);
         QVector<AdComboBox::Option> options;
         const QStringList ids{QStringLiteral("deepl"), QStringLiteral("baidu"),
@@ -469,15 +505,10 @@ void TextTranslationSettingsWidget::translateModal() {
             option.label = names[i];
             options.append(option);
         }
-        m_provider->setOptions(options);
-        m_provider->setCurrentValue(deepL ? QStringLiteral("deepl") : provider);
-        m_provider->setAccessibleName(tr("Service Format"));
-        m_concurrency->setAccessibleName(tr("Concurrency"));
-        m_fields[1]->setTooltipText(
-            tr("The full translation endpoint. Its path and query are used as entered."));
-        m_fields[2]->setTooltipText(tr("Optional for servers that do not require authentication."));
-        m_fields[5]->setTooltipText(tr("Maximum simultaneous requests for this configuration "
-                                       "across translation jobs (1-16)."));
+        m_formFields[4]->synchronize([&] {
+            m_provider->setOptions(options);
+            m_provider->setCurrentValue(deepL ? QStringLiteral("deepl") : provider);
+        });
     }
     if (m_deleteModal != nullptr) {
         m_deleteModal->setWindowTitle(tr("Delete Configuration"));

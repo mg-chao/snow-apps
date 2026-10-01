@@ -1,5 +1,6 @@
 #include "snow_shot/presentation/globalmousetypes.h"
 #include "snow_shot/presentation/components/globalmouserow.h"
+#include "snow_shot/presentation/components/formfields.h"
 #include "snow_shot/presentation/components/icons/iconrenderutils.h"
 #include "snow_shot/presentation/components/icons/snowshoticons.h"
 #include "snow_shot/presentation/components/settingspagewidget.h"
@@ -44,6 +45,7 @@ namespace settings = snow_shot::presentation::settings;
 namespace presentation = snow_shot::presentation;
 namespace styles = snow_shot::presentation::styles;
 namespace storage = snow_shot::storage;
+namespace fields = presentation::components::form_fields;
 
 namespace {
 static_assert(std::is_base_of_v<ActionRow, GlobalMouseRow>);
@@ -54,6 +56,23 @@ void require(bool condition, const char* message) {
         std::cerr << message << '\n';
         std::exit(1);
     }
+}
+
+struct FieldEvents {
+    int edits = 0;
+    int commits = 0;
+};
+
+void observeField(QObject& owner, const char* id, FieldEvents& events) {
+    fields::FormField* field = nullptr;
+    for (auto* candidate : owner.findChildren<fields::FormField*>()) {
+        if (candidate->metadata().id == QString::fromLatin1(id))
+            field = candidate;
+    }
+    require(field != nullptr, "configuration field exposes its shared controller");
+    QObject::connect(field, &fields::FormField::valueEdited, field, [&events] { ++events.edits; });
+    QObject::connect(field, &fields::FormField::valueCommitted, field,
+                     [&events] { ++events.commits; });
 }
 
 class StableHeightObserver final : public QObject {
@@ -455,16 +474,25 @@ void globalMouseModalEditsOnlyOnAcceptedUniquePairs() {
     require(form->formLayout() == adqt::widgets::AdForm::FormLayout::Vertical &&
                 form->items().size() == 2 && form->items().at(0)->controlWidget() == activation &&
                 form->items().at(0)->label() == QStringLiteral("Activation keys") &&
-                form->items().at(1)->controlWidget()->isAncestorOf(mouseButton) &&
+                form->items().at(1)->controlWidget() == mouseButton &&
                 form->items().at(1)->label() == QStringLiteral("Mouse button"),
             "both mouse selectors must use labeled fields managed by the unified vertical form");
+    FieldEvents cancelled;
+    observeField(*modal->contentWidget(), "activationKeys", cancelled);
+    observeField(*modal->contentWidget(), "mouseButton", cancelled);
     activation->setCurrentValues({snow_shot::presentation::globalMouseActivationKeys().at(2)});
     mouseButton->setCurrentValue(QStringLiteral("wheel_drag"));
+    require(cancelled.edits == 2 && cancelled.commits == 0,
+            "mouse selector drafts emit edits while waiting for explicit confirmation");
+    copyRow->retranslateUi();
+    require(cancelled.edits == 2 && cancelled.commits == 0,
+            "mouse editor retranslation preserves drafts without shared events");
     modal->rejectButton()->click();
     flushEvents();
     require(session.globalMouseCombination(Action::ScreenshotCopy).isUnset() &&
                 copyButton->text() == QStringLiteral("Unset"),
             "Cancel must leave an Unset global mouse field unchanged");
+    require(cancelled.commits == 0, "cancelling a mouse editor never commits its field drafts");
 
     copyButton->click();
     flushEvents();
@@ -473,9 +501,16 @@ void globalMouseModalEditsOnlyOnAcceptedUniquePairs() {
     activation =
         namedWidget<adqt::widgets::AdSelect>(QStringLiteral("globalMouseActivationKeySelect"));
     mouseButton = namedWidget<adqt::widgets::AdSelect>(QStringLiteral("globalMouseButtonSelect"));
+    FieldEvents savedActivation;
+    FieldEvents savedMouse;
+    observeField(*modal->contentWidget(), "activationKeys", savedActivation);
+    observeField(*modal->contentWidget(), "mouseButton", savedMouse);
     activation->setCurrentValues(
         {QStringLiteral("shift"), snow_shot::presentation::globalMouseActivationKeys().at(1)});
     mouseButton->setCurrentValue(QStringLiteral("right_drag"));
+    require(savedActivation.edits == 1 && savedMouse.edits == 1 && savedActivation.commits == 0 &&
+                savedMouse.commits == 0,
+            "each changed mouse selector publishes one draft without an early commit");
     modal->acceptButton()->click();
     flushEvents();
     const Combination saved{
@@ -490,6 +525,8 @@ void globalMouseModalEditsOnlyOnAcceptedUniquePairs() {
 #endif
                                               ),
             "OK must persist the structured pair and refresh the button label");
+    require(savedActivation.commits == 1 && savedMouse.commits == 1,
+            "successful mouse confirmation commits each changed field exactly once");
 
     GlobalMouseRow* fixedRow = rowForTitle(page, QStringLiteral("Pin to screen"));
     require(fixedRow != nullptr, "Pin to screen row must exist");
@@ -857,6 +894,9 @@ void globalMousePopupStaysAboveModalDuringLayout() {
     select->showPopup();
     flushEvents();
     QWidget* viewport = select->view()->viewport();
+    require(select->popupLayerMode() == adqt::widgets::AdSelect::PopupLayerMode::QtTool &&
+                viewport->window()->isWindow() && viewport->window()->windowType() == Qt::Tool,
+            "modal selectors use a separate QtTool popup surface");
     for (int i = 0; i < 3; ++i) {
         const QPointF local = viewport->rect().center();
         QEnterEvent hover(local, viewport->mapTo(viewport->window(), local.toPoint()),
@@ -864,12 +904,15 @@ void globalMousePopupStaysAboveModalDuringLayout() {
         QApplication::sendEvent(viewport, &hover);
         QEvent layout(QEvent::LayoutRequest);
         QApplication::sendEvent(&page, &layout);
-        QWidget* immediateHit = page.childAt(viewport->mapTo(&page, viewport->rect().center()));
-        require(immediateHit == viewport || viewport->isAncestorOf(immediateHit),
+        QWidget* immediateHit =
+            QApplication::widgetAt(viewport->mapToGlobal(viewport->rect().center()));
+        require(select->popupVisible() && viewport->window()->isVisible() &&
+                    (immediateHit == viewport || viewport->isAncestorOf(immediateHit)),
                 "modal relayout must not temporarily cover the open select popup");
         flushEvents();
-        QWidget* hit = page.childAt(viewport->mapTo(&page, viewport->rect().center()));
-        require(select->popupVisible() && (hit == viewport || viewport->isAncestorOf(hit)),
+        QWidget* hit = QApplication::widgetAt(viewport->mapToGlobal(viewport->rect().center()));
+        require(select->popupVisible() && viewport->window()->isVisible() &&
+                    (hit == viewport || viewport->isAncestorOf(hit)),
                 "select popup must remain above the modal during hover and layout updates");
     }
     select->hidePopup();

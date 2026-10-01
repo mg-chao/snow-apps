@@ -2,20 +2,15 @@
 #include "snow_shot/presentation/components/screenrecordingmodal.h"
 
 #include "snow_shot/presentation/globalshortcutmanager.h"
+#include "snow_shot/presentation/settings/settingsformfield.h"
 #include "snow_shot/presentation/settings/settingsruntimesession.h"
-#include "snow_shot/storage/configurationschema.h"
+#include "snow_shot/presentation/styles/thememanager.h"
 #include "widgets/form.h"
 #include "widgets/modal.h"
-#include "widgets/select.h"
-#include "widgets/slider.h"
-#include "widgets/switch.h"
 
 #include <QCoreApplication>
 #include <QEvent>
 #include <QGridLayout>
-#include <QHBoxLayout>
-#include <QLabel>
-#include <QSignalBlocker>
 #include <QVBoxLayout>
 
 #include <utility>
@@ -23,6 +18,7 @@
 namespace snow_shot::presentation {
 namespace {
 namespace settings = snow_shot::presentation::settings;
+namespace fields = components::form_fields;
 using namespace adqt::widgets;
 
 settings::SettingsRegistry recordingRegistry() {
@@ -51,98 +47,47 @@ class ScreenRecordingSettingsBody final : public QWidget {
           m_session(m_registry, m_backend) {
         auto* layout = new QVBoxLayout(this);
         layout->setContentsMargins(0, 0, 0, 0);
+        layout->setSpacing(
+            styles::ThemeManager::instance().themeColorScheme().metricAlias.marginSM);
         m_form = new AdForm(this);
         m_form->setObjectName(QStringLiteral("screenRecordingSettingsForm"));
-        m_form->setFormLayout(AdForm::FormLayout::Vertical);
-        m_form->setLabelAlign(AdForm::LabelAlign::Left);
-        m_form->setLabelWrap(true);
-        m_form->setRequiredMark(AdForm::RequiredMark::Hidden);
-        m_form->setColon(false);
+        fields::configureForm(m_form);
         auto* grid = new QGridLayout;
-        grid->setContentsMargins(0, 0, 0, 0);
-        grid->setHorizontalSpacing(24);
-        grid->setVerticalSpacing(0);
-        grid->setColumnStretch(0, 1);
-        grid->setColumnStretch(1, 1);
+        fields::configureTwoColumnGrid(grid);
 
         for (const auto& descriptor : m_registry.fields()) {
-            Field field;
-            field.definition = descriptor.definition;
-            const auto& definition = *field.definition;
-            QWidget* editor = nullptr;
-            if (std::holds_alternative<settings::SettingsSelectDefinition>(definition.payload)) {
-                field.select = new AdSelect(m_form);
-                field.select->setPopupLayerMode(AdSelect::PopupLayerMode::QtTool);
-                editor = field.select;
-                connect(field.select, &AdSelect::currentValueChanged, this,
-                        [this, id = definition.id](const QVariant& value) {
-                            m_session.submitDraft(id, value);
-                        });
-            } else if (std::holds_alternative<settings::SettingsSwitchDefinition>(
-                           definition.payload)) {
-                auto* row = new QWidget(m_form);
-                auto* rowLayout = new QHBoxLayout(row);
-                rowLayout->setContentsMargins(0, 0, 0, 0);
-                field.toggle = new AdSwitch(row);
-                rowLayout->addWidget(field.toggle);
-                rowLayout->addStretch();
-                editor = row;
-                connect(
-                    field.toggle, &AdSwitch::toggled, this,
-                    [this, id = definition.id](bool value) { m_session.submitDraft(id, value); });
-            } else if (std::holds_alternative<settings::SettingsSliderDefinition>(
-                           definition.payload)) {
-                auto* row = new QWidget(m_form);
-                auto* rowLayout = new QHBoxLayout(row);
-                rowLayout->setContentsMargins(0, 0, 0, 0);
-                field.slider = new AdSlider(row);
-                const auto* schema =
-                    storage::ConfigurationSchema::entry(definition.configurationKey);
-                Q_ASSERT(schema != nullptr && schema->integerRange.has_value());
-                field.slider->setRange(schema->integerRange->minimum,
-                                       schema->integerRange->maximum);
-                field.slider->setSingleStep(schema->integerRange->step);
-                field.slider->setTooltipEnabled(true);
-                field.valueLabel = new QLabel(row);
-                field.valueLabel->setMinimumWidth(42);
-                field.valueLabel->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
-                rowLayout->addWidget(field.slider, 1);
-                rowLayout->addWidget(field.valueLabel);
-                editor = row;
-                connect(field.slider, &AdSlider::valueChanged, this,
-                        [this, id = definition.id](double value) {
-                            m_session.submitDraft(id, qRound(value));
-                        });
+            fields::Options options;
+            options.parent = m_form;
+            options.form = m_form;
+            options.popupInModal = true;
+            auto* field = settings::SettingsFormField::create(descriptor, m_session, options);
+            Q_ASSERT(field != nullptr);
+            if (field != nullptr) {
+                field->editor()->setObjectName(descriptor.id);
+                m_fields.append(field);
             }
-            Q_ASSERT(editor != nullptr);
-            if (editor == nullptr)
-                continue;
-            field.control = field.select   ? static_cast<QWidget*>(field.select)
-                            : field.toggle ? static_cast<QWidget*>(field.toggle)
-                                           : static_cast<QWidget*>(field.slider);
-            field.control->setObjectName(definition.id);
-            field.item = m_form->addField({}, editor, definition.id);
-            m_fields.append(field);
         }
         // Adding a field rebuilds AdForm's default layout. Arrange the complete
         // set only after registration so those rebuilds cannot undo the grid.
         for (int index = 0; index < m_fields.size(); ++index) {
-            auto* item = m_fields[index].item;
+            auto* item = m_fields[index]->controller()->item();
             m_form->layout()->removeWidget(item);
             grid->addWidget(item, index / 2, index % 2, Qt::AlignTop);
         }
         static_cast<QVBoxLayout*>(m_form->layout())->addLayout(grid);
         m_form->setAutoFillBackground(false);
         layout->addWidget(m_form);
-        connect(&m_session, &settings::SettingsRuntimeSession::fieldChanged, this,
-                [this](const QString& id, const settings::SettingsFieldState&) {
-                    for (auto& field : m_fields) {
-                        if (field.definition->id == id)
-                            syncField(field);
-                    }
+        connect(&styles::ThemeManager::instance(), &styles::ThemeManager::themeChanged, this,
+                [layout, grid](const styles::ThemeColorScheme& scheme) {
+                    layout->setSpacing(scheme.metricAlias.marginSM);
+                    grid->setHorizontalSpacing(scheme.metricAlias.marginLG);
                 });
         retranslate();
-        modal.setInitialFocusWidget(m_fields.first().control);
+        m_form->setInitialValues(m_form->values());
+        m_form->resetFields();
+        for (auto* field : m_fields)
+            field->sync();
+        modal.setInitialFocusWidget(m_fields.first()->focusTarget());
     }
 
   protected:
@@ -153,58 +98,12 @@ class ScreenRecordingSettingsBody final : public QWidget {
     }
 
   private:
-    struct Field {
-        const settings::SettingsItemDefinition* definition = nullptr;
-        AdFormItem* item = nullptr;
-        QWidget* control = nullptr;
-        AdSelect* select = nullptr;
-        AdSwitch* toggle = nullptr;
-        AdSlider* slider = nullptr;
-        QLabel* valueLabel = nullptr;
-    };
-
-    void syncField(Field& field) {
-        const auto state = m_session.state(field.definition->id);
-        const QSignalBlocker guard(field.control);
-        if (field.select)
-            field.select->setCurrentValue(state.draftValue);
-        if (field.toggle)
-            field.toggle->setChecked(state.draftValue.toBool());
-        if (field.slider) {
-            field.slider->setValue(state.draftValue.toInt());
-            const auto& slider =
-                std::get<settings::SettingsSliderDefinition>(field.definition->payload);
-            field.valueLabel->setText(QStringLiteral("%1%2")
-                                          .arg(state.draftValue.toInt())
-                                          .arg(slider.suffix.translated()));
-        }
-        field.control->setEnabled(state.enabled);
-        field.item->setHelpText(state.error);
-        field.item->setValidateStatus(state.error.isEmpty() ? AdFormItem::ValidateStatus::None
-                                                            : AdFormItem::ValidateStatus::Error);
-    }
-
     void retranslate() {
         m_modal.setWindowTitle(
             QCoreApplication::translate("ScreenRecordingSettingsDialog", "Recording settings"));
         m_modal.setAcceptText(QCoreApplication::translate("ScreenRecordingSettingsDialog", "Done"));
-        for (auto& field : m_fields) {
-            const auto& definition = *field.definition;
-            field.item->setLabel(definition.title.translated());
-            field.control->setToolTip(definition.description.translated());
-            field.control->setAccessibleName(definition.title.translated());
-            field.control->setAccessibleDescription(definition.description.translated());
-            if (field.select) {
-                const QSignalBlocker guard(field.select);
-                QVector<AdSelect::Option> options;
-                const auto& select =
-                    std::get<settings::SettingsSelectDefinition>(definition.payload);
-                for (const auto& option : select.options)
-                    options.append({option.value, option.label.translated()});
-                field.select->setOptions(options);
-            }
-            syncField(field);
-        }
+        for (auto* field : m_fields)
+            field->retranslateUi();
     }
 
     AdModal& m_modal;
@@ -215,7 +114,7 @@ class ScreenRecordingSettingsBody final : public QWidget {
     settings::BuiltInSettingsBackend m_backend;
     settings::SettingsRuntimeSession m_session;
     AdForm* m_form = nullptr;
-    QVector<Field> m_fields;
+    QVector<settings::SettingsFormField*> m_fields;
 };
 } // namespace
 

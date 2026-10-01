@@ -1,6 +1,7 @@
 #include "physical_key_test_support.h"
 #include "translation_test_support.h"
 #include "snow_shot/presentation/components/screenshottranslationsettingsdialog.h"
+#include "snow_shot/presentation/components/formfields.h"
 #include "widgets/modal.h"
 
 #include "snow_shot/presentation/components/contentcardwidget.h"
@@ -59,6 +60,7 @@ using namespace translation_tests;
 using namespace adqt::widgets;
 namespace settings = snow_shot::presentation::settings;
 namespace styles = snow_shot::presentation::styles;
+namespace form_fields = snow_shot::presentation::components::form_fields;
 
 namespace {
 template <typename T> T* child(QObject& owner, const char* name) {
@@ -105,6 +107,21 @@ void sharedServiceSelectors() {
             "select shared custom model");
     auto* modal = snow_shot::presentation::createScreenshotTranslationSettingsDialog(service, &page,
                                                                                      &page, {});
+    int sharedEdits = 0;
+    int sharedCommits = 0;
+    const auto watchSharedFields = [&](AdModal* editor) {
+        const auto fields = editor->contentWidget()->findChildren<form_fields::FormField*>();
+        require(fields.size() == 4, "screenshot settings uses four shared fields");
+        for (auto* field : fields) {
+            require(!field->item()->isTouched() && !field->item()->isDirty(),
+                    "screenshot settings initializes a clean AdForm baseline");
+            QObject::connect(field, &form_fields::FormField::valueEdited, editor,
+                             [&sharedEdits] { ++sharedEdits; });
+            QObject::connect(field, &form_fields::FormField::valueCommitted, editor,
+                             [&sharedCommits] { ++sharedCommits; });
+        }
+    };
+    watchSharedFields(modal);
     auto* pageSelect = child<AdSelect>(page, "translationService");
     auto* screenshotSelect =
         child<AdSelect>(*modal->contentWidget(), "screenshotTranslationService");
@@ -165,6 +182,9 @@ void sharedServiceSelectors() {
     require(pageSelect->currentValue() == screenshotSelect->currentValue() &&
                 pageSelect->currentValue().toString() == QStringLiteral("general"),
             "both views resolve the same fallback after deletion");
+    require(
+        sharedEdits == 0 && sharedCommits == 0,
+        "catalog changes and external preferences must not report shared user edits or commits");
     screenshotSelect->setCurrentValue(QStringLiteral("specialist"));
     require(service.savePreferences(
                 {QStringLiteral("en"), QStringLiteral("de"), QStringLiteral("general")}),
@@ -174,6 +194,24 @@ void sharedServiceSelectors() {
             "an uncommitted dialog edit remains local until OK");
     modal->reject();
     flushEvents();
+    require(sharedEdits == 1 && sharedCommits == 0 &&
+                service.preferences().modelId == QStringLiteral("general"),
+            "cancelling a model draft must not commit it or replace shared preferences");
+    sharedEdits = 0;
+    modal = snow_shot::presentation::createScreenshotTranslationSettingsDialog(service, &page,
+                                                                               &page, {});
+    watchSharedFields(modal);
+    child<AdSelect>(*modal->contentWidget(), "screenshotTranslationService")
+        ->setCurrentValue(QStringLiteral("specialist"));
+    child<AdSelect>(*modal->contentWidget(), "screenshotTranslationTargetLanguage")
+        ->setCurrentValue(QStringLiteral("ja"));
+    require(sharedEdits == 2 && sharedCommits == 0,
+            "screenshot preference edits remain local until OK");
+    modal->acceptButton()->click();
+    flushEvents();
+    require(sharedCommits == 2 && service.preferences().modelId == QStringLiteral("specialist") &&
+                service.preferences().targetLanguage == QStringLiteral("ja"),
+            "successful screenshot save commits only changed shared fields once");
     require(configuration.setValue(customKey, previousModels), "restore custom models");
     require(
         snow_shot::storage::ScreenshotTranslationSettings().setConfiguration(previousPreferences),

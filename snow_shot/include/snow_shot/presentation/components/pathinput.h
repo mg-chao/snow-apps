@@ -17,6 +17,13 @@ class DirectoryPathInput : public QWidget {
     Q_PROPERTY(QString text READ text WRITE setText NOTIFY textChanged)
     Q_PROPERTY(QString placeholderText READ placeholderText WRITE setPlaceholderText)
     Q_PROPERTY(bool allowClear READ allowClear WRITE setAllowClear)
+    Q_PROPERTY(bool readOnly READ readOnly WRITE setReadOnly)
+    Q_PROPERTY(adqt::widgets::AdLineEdit::ControlSize controlSize READ controlSize WRITE
+                   setControlSize NOTIFY controlSizeChanged)
+    Q_PROPERTY(adqt::widgets::AdLineEdit::Variant variant READ variant WRITE setVariant NOTIFY
+                   variantChanged)
+    Q_PROPERTY(
+        adqt::widgets::AdLineEdit::Status status READ status WRITE setStatus NOTIFY statusChanged)
 
   public:
     explicit DirectoryPathInput(QWidget* parent = nullptr);
@@ -32,8 +39,16 @@ class DirectoryPathInput : public QWidget {
     [[nodiscard]] bool allowClear() const;
     void setAllowClear(bool allow);
 
+    [[nodiscard]] bool readOnly() const;
+    void setReadOnly(bool readOnly);
+
     [[nodiscard]] adqt::widgets::AdLineEdit::ControlSize controlSize() const;
     void setControlSize(adqt::widgets::AdLineEdit::ControlSize size);
+
+    [[nodiscard]] adqt::widgets::AdLineEdit::Variant variant() const;
+    void setVariant(adqt::widgets::AdLineEdit::Variant variant);
+    [[nodiscard]] adqt::widgets::AdLineEdit::Status status() const;
+    void setStatus(adqt::widgets::AdLineEdit::Status status);
 
     [[nodiscard]] QString browseButtonText() const;
     void setBrowseButtonText(const QString& text);
@@ -48,6 +63,9 @@ class DirectoryPathInput : public QWidget {
     void editingFinished();
     void cleared();
     void browseRequested(const QString& currentPath);
+    void controlSizeChanged(adqt::widgets::AdLineEdit::ControlSize size);
+    void variantChanged(adqt::widgets::AdLineEdit::Variant variant);
+    void statusChanged(adqt::widgets::AdLineEdit::Status status);
 
   protected:
     DirectoryPathInput(const adqt::icons::IconRef& browseIcon, QWidget* parent);

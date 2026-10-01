@@ -12,6 +12,9 @@
 class QLabel;
 class QEvent;
 class QMouseEvent;
+namespace snow_shot::presentation::components::form_fields {
+class FormField;
+}
 namespace adqt::widgets {
 class AdFormItem;
 class AdModal;
@@ -62,7 +65,9 @@ class GlobalMouseRow final : public ActionRow {
     ShortcutConfigurationButton* m_button = nullptr;
     QPointer<adqt::widgets::AdModal> m_modal;
     QPointer<adqt::widgets::AdFormItem> m_activationField;
+    QPointer<snow_shot::presentation::components::form_fields::FormField> m_activationController;
     QPointer<adqt::widgets::AdFormItem> m_mouseButtonField;
+    QPointer<snow_shot::presentation::components::form_fields::FormField> m_mouseButtonController;
     QPointer<QLabel> m_validationLabel;
     QPointer<adqt::widgets::AdSelect> m_activationSelect;
     QPointer<adqt::widgets::AdSelect> m_mouseButtonSelect;

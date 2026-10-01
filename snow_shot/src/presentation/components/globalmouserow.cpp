@@ -1,4 +1,5 @@
 #include "snow_shot/presentation/components/globalmouserow.h"
+#include "snow_shot/presentation/components/formfields.h"
 
 #include "snow_shot/presentation/components/icons/snowshoticons.h"
 #include "snow_shot/presentation/components/shortcutconfigurationbutton.h"
@@ -23,6 +24,7 @@
 namespace {
 namespace custom_outlined_icons = snow_shot::presentation::icons::custom::outlined;
 namespace settings = snow_shot::presentation::settings;
+namespace fields = snow_shot::presentation::components::form_fields;
 
 constexpr int CONFIGURATION_MODAL_WIDTH = 520;
 constexpr int COMBINATION_TEXT_MAX_WIDTH = 260;
@@ -169,41 +171,32 @@ void GlobalMouseRow::openConfigurationDialog() {
 
     auto* form = new adqt::widgets::AdForm(content);
     form->setObjectName(QStringLiteral("globalMouseConfigurationForm"));
-    form->setFormLayout(adqt::widgets::AdForm::FormLayout::Vertical);
+    fields::configureForm(form);
     contentLayout->addWidget(form);
-    const auto addSelect = [form](const QString& objectName) {
-        auto* select = new adqt::widgets::AdSelect(form);
-        select->setSearchEnabled(true);
-        select->setSearchFilterFields({QStringLiteral("label")});
-        select->setObjectName(objectName);
-        select->setMode(adqt::widgets::AdSelect::Mode::Single);
-        select->setControlSize(adqt::widgets::AdSelect::ControlSize::Middle);
-        return select;
-    };
-
-    m_activationSelect = addSelect(QStringLiteral("globalMouseActivationKeySelect"));
+    fields::Options fieldOptions;
+    fieldOptions.form = form;
+    fieldOptions.commitPolicy = fields::CommitPolicy::Explicit;
+    fieldOptions.popupInModal = true;
+    fields::Metadata activationMetadata;
+    activationMetadata.id = QStringLiteral("activationKeys");
+    activationMetadata.label = {"GlobalMouseRow",
+                                QT_TRANSLATE_NOOP("GlobalMouseRow", "Activation keys")};
+    const auto activationField = fields::select(activationMetadata, {}, fieldOptions);
+    m_activationSelect = activationField.editor;
+    m_activationSelect->setObjectName(QStringLiteral("globalMouseActivationKeySelect"));
     m_activationSelect->setMode(adqt::widgets::AdSelect::Mode::Multiple);
-    m_activationField =
-        form->addField(QString(), m_activationSelect, QStringLiteral("activationKeys"));
-    m_mouseButtonSelect = addSelect(QStringLiteral("globalMouseButtonSelect"));
-    // Keep validation inside the field, before AdForm's trailing item margin.
-    auto* mouseButtonEditor = new QWidget(form);
-    auto* mouseButtonLayout = new QVBoxLayout(mouseButtonEditor);
-    mouseButtonLayout->setContentsMargins(0, 0, 0, 0);
-    mouseButtonLayout->setSpacing(m_colorScheme.metricAlias.marginXS);
-    mouseButtonLayout->addWidget(m_mouseButtonSelect);
-
-    m_validationLabel = new QLabel(mouseButtonEditor);
+    m_activationField = activationField.item();
+    m_activationController = activationField.field;
+    fields::Metadata mouseMetadata;
+    mouseMetadata.id = QStringLiteral("mouseButton");
+    mouseMetadata.label = {"GlobalMouseRow", QT_TRANSLATE_NOOP("GlobalMouseRow", "Mouse button")};
+    const auto mouseField = fields::select(mouseMetadata, {}, fieldOptions);
+    m_mouseButtonSelect = mouseField.editor;
+    m_mouseButtonSelect->setObjectName(QStringLiteral("globalMouseButtonSelect"));
+    m_mouseButtonField = mouseField.item();
+    m_mouseButtonController = mouseField.field;
+    m_validationLabel = mouseField.field->feedbackLabel();
     m_validationLabel->setObjectName(QStringLiteral("globalMouseValidationMessage"));
-    m_validationLabel->setWordWrap(true);
-    m_validationLabel->setAlignment(Qt::AlignLeft | Qt::AlignTop);
-    QSizePolicy validationPolicy(QSizePolicy::Preferred, QSizePolicy::Fixed);
-    validationPolicy.setRetainSizeWhenHidden(true);
-    m_validationLabel->setSizePolicy(validationPolicy);
-    m_validationLabel->hide();
-    mouseButtonLayout->addWidget(m_validationLabel);
-    m_mouseButtonField =
-        form->addField(QString(), mouseButtonEditor, QStringLiteral("mouseButton"));
 
     const settings::SettingsGlobalMouseCombination initial =
         m_combination.isUnset()
@@ -225,9 +218,11 @@ void GlobalMouseRow::openConfigurationDialog() {
     m_activationSelect->resize(CONFIGURATION_MODAL_WIDTH - 2 * m_colorScheme.metricAlias.paddingLG,
                                m_activationSelect->sizeHint().height());
     m_activationSelect->layout()->setGeometry(m_activationSelect->rect());
-    m_activationSelect->setCurrentValues(initialKeys);
-    m_mouseButtonSelect->setCurrentValue(initial.mouseButton.isEmpty() ? QVariant()
-                                                                       : initial.mouseButton);
+    form->setInitialValues(
+        {{QStringLiteral("activationKeys"), initialKeys},
+         {QStringLiteral("mouseButton"),
+          initial.mouseButton.isEmpty() ? QVariant() : QVariant(initial.mouseButton)}});
+    form->resetFields();
 
     connect(m_activationSelect, &adqt::widgets::AdSelect::currentValuesChanged, this,
             [this](const QVariantList&) { syncModalValidation(); });
@@ -247,8 +242,10 @@ void GlobalMouseRow::openConfigurationDialog() {
             }
         });
     connect(modal, &adqt::widgets::AdModal::accepted, this, [this]() {
-        static_cast<void>(
-            m_runtimeSession.applyGlobalMouseCombination(m_action, modalCombination()));
+        if (m_runtimeSession.applyGlobalMouseCombination(m_action, modalCombination())) {
+            m_activationController->notifyCommitted();
+            m_mouseButtonController->notifyCommitted();
+        }
     });
     connect(modal, &adqt::widgets::AdModal::finished, this,
             [this, modal](adqt::widgets::AdModal::DialogCode) {
@@ -256,6 +253,7 @@ void GlobalMouseRow::openConfigurationDialog() {
                 m_modal = nullptr;
                 m_activationField = nullptr;
                 m_mouseButtonField = nullptr;
+                m_mouseButtonController = nullptr;
                 m_validationLabel = nullptr;
                 m_activationSelect = nullptr;
                 m_mouseButtonSelect = nullptr;
@@ -302,28 +300,32 @@ void GlobalMouseRow::syncModalText() {
     }
     const QVariantList activation = m_activationSelect->currentValues();
     const QVariant mouseButton = m_mouseButtonSelect->currentValue();
+    m_activationController->synchronize([this, &activation] {
 #ifdef Q_OS_MACOS
-    m_activationSelect->setOptions({option(QStringLiteral("command"), tr("Command")),
-                                    option(QStringLiteral("control"), tr("Control")),
-                                    option(QStringLiteral("option"), tr("Option")),
-                                    option(QStringLiteral("shift"), tr("Shift"))});
+        m_activationSelect->setOptions({option(QStringLiteral("command"), tr("Command")),
+                                        option(QStringLiteral("control"), tr("Control")),
+                                        option(QStringLiteral("option"), tr("Option")),
+                                        option(QStringLiteral("shift"), tr("Shift"))});
 #else
-    m_activationSelect->setOptions({option(QStringLiteral("windows"), tr("Windows")),
-                                    option(QStringLiteral("ctrl"), tr("Ctrl")),
-                                    option(QStringLiteral("alt"), tr("Alt")),
-                                    option(QStringLiteral("shift"), tr("Shift"))});
+        m_activationSelect->setOptions({option(QStringLiteral("windows"), tr("Windows")),
+                                        option(QStringLiteral("ctrl"), tr("Ctrl")),
+                                        option(QStringLiteral("alt"), tr("Alt")),
+                                        option(QStringLiteral("shift"), tr("Shift"))});
 #endif
-    m_mouseButtonSelect->setOptions(
-        {option(QStringLiteral("left_drag"), tr("Left-button drag")),
-         option(QStringLiteral("right_drag"), tr("Right-button drag")),
-         option(QStringLiteral("wheel_drag"), tr("Middle-button drag")),
-         option(QStringLiteral("side_button_1_drag"), tr("Side button 1 (Back) drag")),
-         option(QStringLiteral("side_button_2_drag"), tr("Side button 2 (Forward) drag")),
-         option(QStringLiteral("none"), tr("None"))});
-    m_activationSelect->setCurrentValues(activation);
-    if (mouseButton.isValid()) {
-        m_mouseButtonSelect->setCurrentValue(mouseButton);
-    }
+        m_activationSelect->setCurrentValues(activation);
+    });
+    m_mouseButtonController->synchronize([this, &mouseButton] {
+        m_mouseButtonSelect->setOptions(
+            {option(QStringLiteral("left_drag"), tr("Left-button drag")),
+             option(QStringLiteral("right_drag"), tr("Right-button drag")),
+             option(QStringLiteral("wheel_drag"), tr("Middle-button drag")),
+             option(QStringLiteral("side_button_1_drag"), tr("Side button 1 (Back) drag")),
+             option(QStringLiteral("side_button_2_drag"), tr("Side button 2 (Forward) drag")),
+             option(QStringLiteral("none"), tr("None"))});
+        if (mouseButton.isValid()) {
+            m_mouseButtonSelect->setCurrentValue(mouseButton);
+        }
+    });
     // Reserve the longest translated validation message before the modal is shown.
     const QFontMetrics metrics(m_validationLabel->font());
     const int messageWidth = CONFIGURATION_MODAL_WIDTH - 2 * m_colorScheme.metricAlias.paddingLG;
@@ -336,7 +338,7 @@ void GlobalMouseRow::syncModalText() {
             messageHeight,
             metrics.boundingRect(QRect(0, 0, messageWidth, 0), Qt::TextWordWrap, message).height());
     }
-    m_validationLabel->setFixedHeight(messageHeight);
+    m_mouseButtonController->reserveFeedbackHeight(messageHeight);
     syncModalValidation();
 }
 
@@ -352,14 +354,14 @@ void GlobalMouseRow::syncModalValidation() {
     const bool available =
         (none || hasKeys) && hasMouseButton &&
         m_runtimeSession.globalMouseCombinationAvailable(m_action, modalCombination());
-    m_validationLabel->setText(
+    const QString message =
         available  ? QString()
         : !hasKeys ? tr("Select at least one activation key.")
         : !hasMouseButton
             ? tr("Select a mouse button.")
             : tr("This mouse combination is already assigned to another action. Choose a "
-                 "different combination."));
-    m_validationLabel->setVisible(!available);
+                 "different combination.");
+    m_mouseButtonController->setFeedback(message.isEmpty() ? QStringList() : QStringList{message});
     if (m_modal->acceptButton() != nullptr) {
         m_modal->acceptButton()->setEnabled(available);
     }

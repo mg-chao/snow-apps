@@ -47,6 +47,16 @@ DirectoryPathInput::DirectoryPathInput(const adqt::icons::IconRef& browseIcon, Q
     connect(m_lineEdit, &QLineEdit::textEdited, this, &DirectoryPathInput::textEdited);
     connect(m_lineEdit, &QLineEdit::editingFinished, this, &DirectoryPathInput::editingFinished);
     connect(m_lineEdit, &adqt::widgets::AdLineEdit::cleared, this, &DirectoryPathInput::cleared);
+    connect(m_lineEdit, &adqt::widgets::AdLineEdit::controlSizeChanged, this,
+            [this](adqt::widgets::AdLineEdit::ControlSize size) {
+                m_browseButton->setSizeClass(
+                    static_cast<adqt::widgets::AdButton::SizeClass>(static_cast<int>(size)));
+                emit controlSizeChanged(size);
+            });
+    connect(m_lineEdit, &adqt::widgets::AdLineEdit::variantChanged, this,
+            &DirectoryPathInput::variantChanged);
+    connect(m_lineEdit, &adqt::widgets::AdLineEdit::statusChanged, this,
+            &DirectoryPathInput::statusChanged);
     connect(m_browseButton, &QAbstractButton::clicked, this,
             [this] { emit browseRequested(text()); });
     setControlSize(adqt::widgets::AdLineEdit::ControlSize::Medium);
@@ -85,6 +95,15 @@ void DirectoryPathInput::setAllowClear(bool allow) {
     m_lineEdit->setAllowClear(allow);
 }
 
+bool DirectoryPathInput::readOnly() const {
+    return m_lineEdit->isReadOnly();
+}
+
+void DirectoryPathInput::setReadOnly(bool readOnly) {
+    m_lineEdit->setReadOnly(readOnly);
+    m_browseButton->setEnabled(!readOnly);
+}
+
 adqt::widgets::AdLineEdit::ControlSize DirectoryPathInput::controlSize() const {
     return m_lineEdit->controlSize();
 }
@@ -93,6 +112,22 @@ void DirectoryPathInput::setControlSize(adqt::widgets::AdLineEdit::ControlSize s
     m_lineEdit->setControlSize(size);
     m_browseButton->setSizeClass(
         static_cast<adqt::widgets::AdButton::SizeClass>(static_cast<int>(size)));
+}
+
+adqt::widgets::AdLineEdit::Variant DirectoryPathInput::variant() const {
+    return m_lineEdit->variant();
+}
+
+void DirectoryPathInput::setVariant(adqt::widgets::AdLineEdit::Variant variant) {
+    m_lineEdit->setVariant(variant);
+}
+
+adqt::widgets::AdLineEdit::Status DirectoryPathInput::status() const {
+    return m_lineEdit->status();
+}
+
+void DirectoryPathInput::setStatus(adqt::widgets::AdLineEdit::Status status) {
+    m_lineEdit->setStatus(status);
 }
 
 QString DirectoryPathInput::browseButtonText() const {
