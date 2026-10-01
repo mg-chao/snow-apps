@@ -77,8 +77,15 @@ screenshotSelectionEffectLayout(const QRectF& selection, int radius, const QTran
     layout.radiusPerCanvasUnit = layout.maximumRadius * scale / (maximumInset - minimumInset);
     layout.shadowAnchor = QPointF(view.right(), view.center().y());
     layout.shadow = layout.shadowAnchor + QPointF(16, 0);
-    if (layout.shadow.x() + 8 > viewport.right())
-        layout.shadow.rx() = view.right() - 16;
+    if (!viewport.isEmpty() && layout.shadow.x() + 8 > viewport.right()) {
+        const QPointF leftShadow(view.left() - 16, view.center().y());
+        if (leftShadow.x() - 8 >= viewport.left() && leftShadow.x() + 8 <= viewport.right()) {
+            layout.shadowAnchor = QPointF(view.left(), view.center().y());
+            layout.shadow = leftShadow;
+        } else {
+            layout.shadow.rx() = view.right() - 16;
+        }
+    }
     // A clipped/multi-display selection must never move its control to an unrelated viewport.
     layout.available =
         viewport.isEmpty() || viewport.contains(view.center()) || viewport.intersects(view);

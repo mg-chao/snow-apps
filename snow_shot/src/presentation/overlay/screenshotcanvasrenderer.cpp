@@ -1984,6 +1984,11 @@ void ScreenshotCanvasRenderer::renderAfterCanvas(QPainter& painter,
                 context.viewportRect);
             if (layout.available) {
                 painter.setRenderHint(QPainter::Antialiasing);
+                painter.save();
+                if (m_selectionState.hoveredEffectHandle !=
+                        ScreenshotSelectionEffectHandle::Shadow &&
+                    m_selectionState.activeEffectHandle != ScreenshotSelectionEffectHandle::Shadow)
+                    painter.setOpacity(painter.opacity() * 0.5);
                 painter.setPen(QPen(selectionAccent, 1.5));
                 painter.drawLine(layout.shadowAnchor, layout.shadow);
                 painter.setPen(QPen(Qt::white, 1.5));
@@ -1994,6 +1999,7 @@ void ScreenshotCanvasRenderer::renderAfterCanvas(QPainter& painter,
                 painter.setBrush(Qt::NoBrush);
                 painter.drawRoundedRect(QRectF(layout.shadow - QPointF(2, 1), QSizeF(5, 4)), 1, 1);
                 painter.drawRoundedRect(QRectF(layout.shadow - QPointF(3, 3), QSizeF(5, 4)), 1, 1);
+                painter.restore();
                 const auto handle =
                     screenshotSelectionRadiusHandle(m_selectionState.activeEffectHandle)
                         ? m_selectionState.activeEffectHandle

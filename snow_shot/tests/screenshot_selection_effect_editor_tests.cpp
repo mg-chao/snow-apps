@@ -323,8 +323,57 @@ void geometryAndCursorsRespectDisplayScale() {
     }
     const auto edge = screenshotSelectionEffectLayout(QRectF(200, 50, 200, 150), 0, QTransform(),
                                                       QRectF(0, 0, 400, 300));
-    require(edge.shadow == QPointF(384, 125),
-            "screen-edge handle must move inside the right border");
+    require(edge.shadow == QPointF(184, 125) && edge.shadowAnchor == QPointF(200, 125),
+            "screen-edge handle must move outside the left border when it fits");
+    for (const qreal scale : {0.5, 1.0, 1.25, 1.5, 2.0}) {
+        QTransform transform;
+        transform.translate(100, 20);
+        transform.scale(scale, scale);
+        const QRectF viewport(100, 20, 400 * scale, 300 * scale);
+        const auto right =
+            screenshotSelectionEffectLayout(QRectF(200, 50, 200, 150), 0, transform, viewport);
+        require(right.shadow == QPointF(100 + 200 * scale - 16, 20 + 125 * scale) &&
+                    right.shadowAnchor == QPointF(100 + 200 * scale, 20 + 125 * scale),
+                "left placement must keep logical spacing and attach to the left midpoint");
+    }
+    const auto noSpace = screenshotSelectionEffectLayout(QRectF(0, 50, 400, 150), 0, QTransform(),
+                                                         QRectF(0, 0, 400, 300));
+    require(noSpace.shadow == QPointF(384, 125) && noSpace.shadowAnchor == QPointF(400, 125),
+            "handle must remain inside the right border when neither outside edge fits");
+    const auto leftFits = screenshotSelectionEffectLayout(QRectF(24, 50, 376, 150), 0, QTransform(),
+                                                          QRectF(0, 0, 400, 300));
+    require(leftFits.shadow == QPointF(8, 125) && leftFits.shadowAnchor == QPointF(24, 125),
+            "left placement must allow exactly enough room for the complete hit area");
+    const auto leftClipped = screenshotSelectionEffectLayout(QRectF(23, 50, 377, 150), 0,
+                                                             QTransform(), QRectF(0, 0, 400, 300));
+    require(leftClipped.shadow == QPointF(384, 125),
+            "left placement must not clip the hit area at the viewport edge");
+    const auto rightFits = screenshotSelectionEffectLayout(QRectF(50, 50, 326, 150), 0,
+                                                           QTransform(), QRectF(0, 0, 400, 300));
+    require(rightFits.shadow == QPointF(392, 125),
+            "right placement remains preferred when its complete hit area fits");
+}
+
+void leftShadowHandleSupportsHoverAndDragging() {
+    Fixture f;
+    f.selection.setSelectionRect(QRectF(200, 50, 200, 150));
+    f.refresh();
+    const auto bounds = f.selection.normalizedSelection();
+    const QPointF point = f.layout().shadow;
+    require(point.x() < bounds.left(), "edge selection must expose the left shadow control");
+    f.mouse(QEvent::MouseMove, point, Qt::NoButton, Qt::NoButton);
+    require(f.interaction.hoveredEffectHandle() == Handle::Shadow && f.state().effectPreviewVisible,
+            "left shadow control must support hover and preview");
+    f.mouse(QEvent::MouseButtonPress, point, Qt::LeftButton, Qt::LeftButton);
+    require(f.input->effectDragActive(), "left shadow control must own the pointer gesture");
+    f.mouse(QEvent::MouseMove, point + QPointF(20, 45), Qt::NoButton, Qt::LeftButton);
+    require(f.selection.shadowWidth() == 20 && f.selection.normalizedSelection() == bounds &&
+                f.layout().shadow == point,
+            "left placement must preserve horizontal drag behavior and selection geometry");
+    f.mouse(QEvent::MouseButtonRelease, point + QPointF(20, 45), Qt::LeftButton, Qt::NoButton);
+    require(!f.input->effectDragActive() && f.writes == 1 && f.settings.shadowWidth() == 20 &&
+                f.interaction.hoveredEffectHandle() == Handle::None,
+            "release away from the left control must commit and return it to idle");
 }
 
 void escapeCancelsBeforeCaptureAndResizeRemainsSeparate() {
@@ -417,6 +466,65 @@ QImage render(SnowCanvasWidget& canvas, qreal dpr) {
     return output;
 }
 
+void shadowControlOpacityTracksHoverAndDragging() {
+    for (const qreal dpr : {1.0, 1.25, 1.5, 2.0}) {
+        for (const QRectF& bounds :
+             {QRectF(50, 50, 200, 150), QRectF(200, 50, 200, 150), QRectF(0, 50, 400, 150)}) {
+            SnowCanvasWidget canvas;
+            canvas.resize(400, 300);
+            canvas.setViewportCamera(200, 150, 1);
+            ScreenshotCanvasRenderer renderer(canvas);
+            canvas.setCustomRenderer(&renderer);
+            QImage background(400, 300, QImage::Format_RGBA8888);
+            background.fill(QColor(20, 70, 110));
+            renderer.setImage(background, QRectF(0, 0, 400, 300));
+            renderer.setMaskVisible(true);
+            ScreenshotSelectionVisualState state;
+            state.present = true;
+            state.bounds = bounds;
+            const auto capture = [&] {
+                renderer.applySelectionState(state);
+                return render(canvas, dpr);
+            };
+            const auto withoutControl = capture();
+            state.effectEditorsVisible = true;
+            const auto idle = capture();
+            state.hoveredEffectHandle = Handle::Shadow;
+            const auto hovered = capture();
+            state.hoveredEffectHandle = Handle::None;
+            state.activeEffectHandle = Handle::Shadow;
+            const auto active = capture();
+            require(active == hovered, "shadow drag must remain opaque after the pointer leaves");
+            state.activeEffectHandle = Handle::None;
+            require(capture() == idle, "ending shadow interaction must restore idle opacity");
+            const auto layout = screenshotSelectionEffectLayout(
+                bounds, 0, canvas.canvasToViewTransform(), canvas.rect());
+            for (const QPointF& point :
+                 {layout.shadow + QPointF(4, 2), (layout.shadowAnchor + layout.shadow) / 2}) {
+                const QPoint pixel(qFloor(point.x() * dpr), qFloor(point.y() * dpr));
+                const auto base = withoutControl.pixelColor(pixel);
+                const auto faded = idle.pixelColor(pixel);
+                const auto full = hovered.pixelColor(pixel);
+                require(faded != base && faded != full,
+                        "idle shadow badge and connector must remain visible and translucent");
+                require(std::abs(2 * faded.red() - base.red() - full.red()) <= 3 &&
+                            std::abs(2 * faded.green() - base.green() - full.green()) <= 3 &&
+                            std::abs(2 * faded.blue() - base.blue() - full.blue()) <= 3,
+                        "idle shadow control must blend with the background at half opacity");
+            }
+            state.hoveredEffectHandle = Handle::TopLeft;
+            const auto radiusWithIdleShadow = capture();
+            state.activeEffectHandle = Handle::Shadow;
+            const auto radiusWithActiveShadow = capture();
+            const auto radiusArea = QRectF(layout.corners[0] - QPointF(5, 5), QSizeF(10, 10));
+            const QRect pixels(qFloor(radiusArea.x() * dpr), qFloor(radiusArea.y() * dpr),
+                               qCeil(radiusArea.width() * dpr), qCeil(radiusArea.height() * dpr));
+            require(radiusWithIdleShadow.copy(pixels) == radiusWithActiveShadow.copy(pixels),
+                    "shadow opacity must not affect the corner radius control");
+        }
+    }
+}
+
 void editorDamageCoversEveryChangedPixel() {
     for (const qreal dpr : {1.0, 1.25, 1.5, 2.0}) {
         SnowCanvasWidget canvas;
@@ -446,7 +554,8 @@ void editorDamageCoversEveryChangedPixel() {
                             "incremental effect damage must cover every changed rendered pixel");
                 }
             }
-            if (state.effectPreviewVisible == next.effectPreviewVisible &&
+            if (state.bounds == next.bounds &&
+                state.effectPreviewVisible == next.effectPreviewVisible &&
                 state.cornerRadius == next.cornerRadius)
                 require(!damage.contains(QPoint(150, 125)),
                         "hover-only updates must preserve stable interior");
@@ -456,6 +565,12 @@ void editorDamageCoversEveryChangedPixel() {
         auto next = state;
         next.effectEditorsVisible = true;
         transition(next);
+        next.hoveredEffectHandle = Handle::Shadow;
+        transition(next);
+        next.hoveredEffectHandle = Handle::None;
+        next.activeEffectHandle = Handle::Shadow;
+        transition(next);
+        next.activeEffectHandle = Handle::None;
         next.hoveredEffectHandle = Handle::TopLeft;
         transition(next);
         next.hoveredEffectHandle = Handle::BottomRight;
@@ -481,6 +596,18 @@ void editorDamageCoversEveryChangedPixel() {
         next.effectPreviewVisible = false;
         next.hoveredEffectHandle = next.activeEffectHandle = Handle::None;
         transition(next);
+        for (const QRectF& bounds :
+             {QRectF(200, 50, 200, 150), QRectF(0, 50, 400, 150), QRectF(50, 50, 200, 150)}) {
+            next.bounds = bounds;
+            transition(next);
+            next.hoveredEffectHandle = Handle::Shadow;
+            transition(next);
+            next.hoveredEffectHandle = Handle::None;
+            next.activeEffectHandle = Handle::Shadow;
+            transition(next);
+            next.activeEffectHandle = Handle::None;
+            transition(next);
+        }
         next.toolbarHovered = true;
         transition(next);
         next.toolbarHovered = false;
@@ -502,8 +629,10 @@ void runScreenshotSelectionEffectEditorTests() {
     hoverHysteresisLimitsAndTinySelections();
     shadowDraggingCancellationAndPointerOwnership();
     geometryAndCursorsRespectDisplayScale();
+    leftShadowHandleSupportsHoverAndDragging();
     escapeCancelsBeforeCaptureAndResizeRemainsSeparate();
     aspectRatioSnappingAndEffectEditingPreserveEachOther();
+    shadowControlOpacityTracksHoverAndDragging();
     editorDamageCoversEveryChangedPixel();
     storage.shutdown();
 }
