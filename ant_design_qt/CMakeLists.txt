@@ -339,6 +339,17 @@ if(ADQT_BUILD_TESTS)
         qt_import_plugins(adqt-select-tests INCLUDE Qt6::QOffscreenIntegrationPlugin)
     endif()
     add_test(NAME adqt-select-tests COMMAND adqt-select-tests)
+    add_test(NAME adqt-select-compact-height-tests
+        COMMAND adqt-select-tests compactControlHeightTokenSurvivesSelectionThemeAndStyleRefresh
+            controlHeightTokenSurvivesVisualRefreshAndScaling
+            controlScaleAppliesToContentAndSurvivesStyleRefresh)
+    add_test(NAME adqt-select-toolbar-input-tests
+        COMMAND adqt-select-tests selectorShellClickConsumesPressAndIgnoresHiddenClearGeometry
+            popupCanBeDestroyedBeforeItsSelectDuringHostTeardown)
+    set_tests_properties(adqt-select-compact-height-tests PROPERTIES
+        ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+    set_tests_properties(adqt-select-toolbar-input-tests PROPERTIES
+        ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
     set_tests_properties(adqt-select-tests PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 
     add_executable(adqt-spin-tests packages/ant_design_qt/tests/tst_spin.cpp)

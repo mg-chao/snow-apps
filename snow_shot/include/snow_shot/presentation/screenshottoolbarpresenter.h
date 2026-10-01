@@ -2,6 +2,7 @@
 #define SNOW_SHOT_PRESENTATION_SCREENSHOTTOOLBARPRESENTER_H
 
 #include "snow_shot/presentation/screenshotselectiondisplayunit.h"
+#include "snow_shot/presentation/screenshotselectionaspectratio.h"
 #include "snow_shot/image/screenshotregiongeometry.h"
 
 #include <QColor>
@@ -28,6 +29,8 @@ struct ScreenshotToolbarPresentationState {
     bool selectionResizable = true;
     bool cornerRadiusApplicable = true;
     bool aspectRatioLocked = false;
+    ScreenshotSelectionAspectRatioPreset aspectRatioPreset =
+        ScreenshotSelectionAspectRatioPreset::Free;
     int cornerRadius = 0;
     int shadowWidth = 0;
     QColor shadowColor = QColor(0x33, 0x33, 0x33);

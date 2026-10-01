@@ -4413,11 +4413,310 @@ void customRegionInputTransactions() {
     handler.setRegionType(ScreenshotRegionType::Rectangle);
 }
 
+void rememberedRatioNormalizesSmartPicksBeforePresentation() {
+    for (const auto preset : {ScreenshotSelectionAspectRatioPreset::Landscape16x9,
+                              ScreenshotSelectionAspectRatioPreset::Portrait3x4}) {
+        ScreenshotCaptureState capture;
+        ScreenshotDisplaySession displays;
+        CapturedDisplayModel display;
+        display.active = true;
+        display.physicalRect = QRect(-500, -200, 1920, 1080);
+        display.logicalRect = display.physicalRect;
+        displays.appendDisplay(display);
+        ScreenshotGeometryMapper geometry;
+        geometry.rebuild(displays);
+        const QRectF canvas = geometry.canvasBounds();
+        const QRectF detected(canvas.topLeft() + QPointF(50, 60), QSizeF(320, 100));
+        ScreenshotSelectionModel selection;
+        require(selection.setAspectRatioPreset(preset, {}, 1.0),
+                "remembered ratio must arm before smart selection");
+        selection.setSelectionRect(detected);
+        ScreenshotIntelligentSelectionModel intelligent;
+        intelligent.beginCaptureSession(true);
+        require(intelligent.applyCanvasHitPath({detected}, canvas, 1.0),
+                "smart selection fixture must accept its detected frame");
+        ScreenshotInteractionState interaction;
+        interaction.enterOverlayVisible(true);
+        int presentations = 0;
+        int confirmations = 0;
+        const auto assertFinalGeometry = [&] {
+            const QRectF rectangle = selection.normalizedSelection();
+            require(rectangle.width() == detected.width() &&
+                        qFuzzyCompare(rectangle.height() / rectangle.width(),
+                                      screenshotSelectionAspectRatioHeightOverWidth(preset)) &&
+                        selection.aspectRatioPreset() == preset && selection.aspectRatioLocked(),
+                    "the first confirmed presentation must already use the remembered ratio");
+        };
+        ScreenshotOverlayInputActions actions;
+        actions.updateOverlayState = assertFinalGeometry;
+        actions.showToolbar = [&] {
+            assertFinalGeometry();
+            ++presentations;
+        };
+        actions.selectionConfirmed = [&] { ++confirmations; };
+        ScreenshotOverlayInputHandler handler(
+            {capture, interaction, selection, intelligent, geometry, displays, actions});
+        require(selection.normalizedSelection() == detected,
+                "remembered ratio must leave smart hover previews at detected dimensions");
+        require(handler.activateKeepSelectionAspectRatioShortcut(false),
+                "idle aspect shortcut must not replace a smart pick's remembered preset");
+        handler.handleMousePress(nullptr, detected.center());
+        handler.handleMouseRelease(nullptr, detected.center());
+        require(presentations == 1 && confirmations == 1 && interaction.movingSelection() &&
+                    capture.sessionState == ScreenshotSessionState::Editing,
+                "smart pick must normalize and confirm exactly once");
+        interaction.enterOverlayVisible(true);
+        selection.setSelectionRect(detected);
+        int activations = 0;
+        require(handler.activateToolbarShortcutForSelection([&] {
+            assertFinalGeometry();
+            ++activations;
+            return true;
+        }),
+                "selection toolbar shortcuts must accept the smart-picked rectangle");
+        require(activations == 1 && presentations == 2 && confirmations == 2,
+                "toolbar actions must see the final ratio before the first presentation");
+    }
+}
+
+void rectangularRegionEditsPreserveExactGeometryWithRememberedRatio() {
+    struct RegionEdit {
+        ScreenshotSelectionModel::RegionOperation operation;
+        QRect original;
+        QRect operand;
+        QRect expected;
+    };
+    const RegionEdit edits[] = {
+        {ScreenshotSelectionModel::RegionOperation::Add, QRect(100, 100, 100, 100),
+         QRect(200, 100, 100, 100), QRect(100, 100, 200, 100)},
+        {ScreenshotSelectionModel::RegionOperation::Subtract, QRect(100, 100, 200, 200),
+         QRect(200, 100, 100, 200), QRect(100, 100, 100, 200)},
+    };
+    for (const auto& edit : edits) {
+        ScreenshotCaptureState capture;
+        ScreenshotDisplaySession displays;
+        CapturedDisplayModel display;
+        display.active = true;
+        display.physicalRect = QRect(0, 0, 1920, 1080);
+        display.logicalRect = display.physicalRect;
+        displays.appendDisplay(display);
+        ScreenshotGeometryMapper geometry;
+        geometry.rebuild(displays);
+        ScreenshotSelectionModel selection;
+        selection.setSelectionRect(QRectF(edit.original));
+        require(selection.setAspectRatioPreset(ScreenshotSelectionAspectRatioPreset::Square,
+                                               geometry.canvasBounds(), 1.0),
+                "region edit fixture must start with an explicit square preset");
+        selection.beginRegionOperation(edit.operation);
+        selection.setSelectionRect(QRectF(edit.operand));
+        require(selection.selectionRegion() == QRegion(edit.expected) &&
+                    selection.selectionRegion().rectCount() == 1,
+                "region edit fixture must collapse to a single exact rectangle");
+        ScreenshotIntelligentSelectionModel intelligent;
+        ScreenshotInteractionState interaction;
+        interaction.beginCapture();
+        int presentations = 0;
+        const auto assertExactReplacement = [&] {
+            require(selection.normalizedSelection() == QRectF(edit.expected) &&
+                        selection.selectionRegion() == QRegion(edit.expected) &&
+                        selection.aspectRatioPreset() ==
+                            ScreenshotSelectionAspectRatioPreset::Free &&
+                        selection.aspectRatioLocked(),
+                    "a rectangular Boolean result must retain exact geometry and a custom lock");
+        };
+        ScreenshotOverlayInputActions actions;
+        actions.updateOverlayState = assertExactReplacement;
+        actions.showToolbar = [&] {
+            assertExactReplacement();
+            ++presentations;
+        };
+        ScreenshotOverlayInputHandler handler(
+            {capture, interaction, selection, intelligent, geometry, displays, actions});
+        handler.confirmSelection();
+        require(presentations == 1 && !selection.regionOperationActive(),
+                "a rectangular Boolean result should confirm exactly once");
+        selection.beginMoveDrag(selection.normalizedSelection().bottomRight());
+        const QRectF resized = selection.selectionRectForDrag(
+            ScreenshotSelectionDragMode::Right,
+            selection.normalizedSelection().bottomRight() + QPointF(20, 0), geometry.canvasBounds(),
+            1.0);
+        require(qFuzzyCompare(resized.height() / resized.width(),
+                              static_cast<qreal>(edit.expected.height()) / edit.expected.width()),
+                "resizing a Boolean result should retain its new custom aspect ratio");
+    }
+}
+
+void aspectRatioDragConfirmationPreservesPreview() {
+    using Preset = ScreenshotSelectionAspectRatioPreset;
+    auto& configuration = storage::ApplicationStorage::instance().configuration();
+    const QString ratioKey = QStringLiteral("screenshot_selection/aspect_ratio");
+    const QString lockKey = QStringLiteral("screenshot_selection/lock_aspect_ratio");
+    enum class Completion { MouseRelease, ToolbarShortcut, MoveThenRelease, ReleaseThenShortcut };
+    struct Gesture {
+        bool marquee;
+        bool constrained;
+        Completion completion;
+    };
+    const Gesture gestures[] = {
+        {false, true, Completion::MouseRelease},
+        {true, true, Completion::MouseRelease},
+        {false, true, Completion::ToolbarShortcut},
+        {true, true, Completion::ToolbarShortcut},
+        {false, true, Completion::MoveThenRelease},
+        {true, true, Completion::MoveThenRelease},
+        {false, true, Completion::ReleaseThenShortcut},
+        {true, true, Completion::ReleaseThenShortcut},
+        {false, false, Completion::MouseRelease},
+        {true, false, Completion::MouseRelease},
+    };
+    for (const auto preset :
+         {Preset::Free, Preset::Square, Preset::Landscape3x2, Preset::Landscape4x3,
+          Preset::Landscape16x9, Preset::Portrait2x3, Preset::Portrait3x4, Preset::Portrait9x16}) {
+        const QString savedPreset = screenshotSelectionAspectRatioPresetId(preset);
+        require(
+            configuration.setValues({{ratioKey, savedPreset}, {lockKey, preset != Preset::Free}}),
+            "drag fixture must persist its next-capture aspect ratio preference");
+        for (const auto& gesture : gestures) {
+            ScreenshotCaptureState capture;
+            ScreenshotDisplaySession displays;
+            CapturedDisplayModel display;
+            display.active = true;
+            display.physicalRect = QRect(0, 0, 1920, 1080);
+            display.logicalRect = display.physicalRect;
+            displays.appendDisplay(display);
+            ScreenshotGeometryMapper geometry;
+            geometry.rebuild(displays);
+            ScreenshotSelectionModel selection;
+            static_cast<void>(selection.setAspectRatioPreset(preset, {}, 1.0));
+            ScreenshotIntelligentSelectionModel intelligent;
+            ScreenshotInteractionState interaction;
+            QPointF press(100, 100);
+            QPointF pointer(220, 150);
+            if (gesture.marquee) {
+                interaction.enterOverlayVisible(false);
+            } else {
+                selection.setSelectionRect(QRectF(300, 300, 320, 180));
+                static_cast<void>(selection.finalizeAspectRatio(geometry.canvasBounds(), 1.0));
+                interaction.confirmSelection();
+                press = QPointF(selection.normalizedSelection().right(),
+                                selection.normalizedSelection().center().y());
+                pointer = press + QPointF(40, 0);
+            }
+            const Preset expectedPreset =
+                gesture.constrained && preset != Preset::Free && preset != Preset::Square
+                    ? Preset::Free
+                    : preset;
+            std::optional<QRectF> committedPreview;
+            int confirmations = 0;
+            const auto assertCommittedPreview = [&] {
+                require(committedPreview.has_value(), "drag must provide a committed preview");
+                const QRectF current = selection.normalizedSelection();
+                require(qFuzzyCompare(1.0 + current.x(), 1.0 + committedPreview->x()) &&
+                            qFuzzyCompare(1.0 + current.y(), 1.0 + committedPreview->y()) &&
+                            qFuzzyCompare(1.0 + current.width(), 1.0 + committedPreview->width()) &&
+                            qFuzzyCompare(1.0 + current.height(), 1.0 + committedPreview->height()),
+                        "confirmation must preserve the completed drag's preview geometry");
+                require(selection.aspectRatioPreset() == expectedPreset &&
+                            selection.aspectRatioLocked() == (preset != Preset::Free),
+                        "overridden presets must become custom locks; matching presets remain");
+            };
+            ScreenshotOverlayInputActions actions;
+            actions.updateOverlayState = [&] {
+                if (committedPreview) {
+                    assertCommittedPreview();
+                }
+            };
+            actions.showToolbar = assertCommittedPreview;
+            actions.selectionConfirmed = [&] {
+                // The controller finalizes again after the input handler presents the selection.
+                static_cast<void>(selection.finalizeAspectRatio(geometry.canvasBounds(), 1.0));
+                assertCommittedPreview();
+                ++confirmations;
+            };
+            ScreenshotOverlayInputHandler handler(
+                {capture, interaction, selection, intelligent, geometry, displays, actions});
+            if (gesture.constrained) {
+                require(handler.activateKeepSelectionAspectRatioShortcut(false),
+                        "aspect shortcut must arm before the pointer drag");
+            }
+            handler.handleMousePress(nullptr, press);
+            handler.handleMouseMove(nullptr, pointer);
+            require(interaction.dragging(), "pointer fixture must start a selection drag");
+            if (gesture.constrained) {
+                const QSizeF size = selection.normalizedSelection().size();
+                require(qFuzzyCompare(size.width(), size.height()),
+                        "the aspect shortcut must preview a square for every preset");
+            }
+            require(selection.aspectRatioPreset() == preset,
+                    "a temporary preview must retain its preset until the drag is committed");
+            if (gesture.completion == Completion::MoveThenRelease) {
+                require(handler.activateMoveEntireSelectionShortcut(),
+                        "whole-selection shortcut must temporarily move the resized rectangle");
+                pointer += QPointF(20, 10);
+                handler.handleMouseMove(nullptr, pointer);
+            } else if (gesture.completion == Completion::ReleaseThenShortcut) {
+                require(handler.releaseKeepSelectionAspectRatioShortcut(),
+                        "aspect shortcut must release before committing through the toolbar");
+            }
+            committedPreview = selection.normalizedSelection();
+            if (gesture.completion == Completion::ToolbarShortcut ||
+                gesture.completion == Completion::ReleaseThenShortcut) {
+                require(handler.activateToolbarShortcutForSelection([&] {
+                    assertCommittedPreview();
+                    return true;
+                }),
+                        "toolbar commands must commit the displayed selection before activation");
+            }
+            handler.handleMouseRelease(nullptr, pointer);
+            assertCommittedPreview();
+            require(confirmations == 1 && !interaction.dragging() && interaction.movingSelection(),
+                    "each pointer gesture must confirm exactly once");
+            require(configuration.value(ratioKey) == savedPreset &&
+                        configuration.value(lockKey).toBool() == (preset != Preset::Free),
+                    "temporary aspect overrides must retain the next capture's saved preference");
+            selection.beginMoveDrag(selection.normalizedSelection().bottomRight());
+            const QRectF nextResize = selection.selectionRectForDrag(
+                ScreenshotSelectionDragMode::Right,
+                selection.normalizedSelection().bottomRight() + QPointF(10, 0),
+                geometry.canvasBounds(), 1.0);
+            if (preset != Preset::Free) {
+                require(qFuzzyCompare(nextResize.height() / nextResize.width(),
+                                      committedPreview->height() / committedPreview->width()),
+                        "subsequent resizing must retain the committed preset or custom lock");
+                static_cast<void>(selection.setAspectRatioPreset(preset, {}, 1.0));
+                selection.setSelectionRect(QRectF(100, 100, 240, 80));
+                static_cast<void>(selection.finalizeAspectRatio(geometry.canvasBounds(), 1.0));
+                require(selection.aspectRatioPreset() == preset &&
+                            qFuzzyCompare(selection.normalizedSelection().height() /
+                                              selection.normalizedSelection().width(),
+                                          screenshotSelectionAspectRatioHeightOverWidth(preset)),
+                        "a later smart-picked rectangle must still apply its remembered preset");
+            }
+        }
+    }
+}
+
 int main(int argc, char** argv) {
     if (qEnvironmentVariableIsEmpty("QT_QPA_PLATFORM")) {
         qputenv("QT_QPA_PLATFORM", "offscreen");
     }
     QApplication application(argc, argv);
+    if (QCoreApplication::arguments().contains(QStringLiteral("--selection-aspect-ratio-only"))) {
+        QTemporaryDir temporary;
+        require(temporary.isValid(), "temporary settings directory unavailable");
+        auto& appStorage = storage::ApplicationStorage::instance();
+        appStorage.shutdown();
+        require(appStorage
+                    .initialize({temporary.filePath(QStringLiteral("bin")),
+                                 temporary.filePath(QStringLiteral("settings")), 0})
+                    .success,
+                "initialize isolated aspect ratio settings");
+        rememberedRatioNormalizesSmartPicksBeforePresentation();
+        rectangularRegionEditsPreserveExactGeometryWithRememberedRatio();
+        aspectRatioDragConfirmationPreservesPreview();
+        appStorage.shutdown();
+        return 0;
+    }
     if (QCoreApplication::arguments().contains(QStringLiteral("--canvas-color-sampling-only"))) {
         canvasColorSamplingConsumesOneCanvasClick();
         return 0;

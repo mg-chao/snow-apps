@@ -312,7 +312,7 @@ SelectVisualStyle resolveSelectVisualStyle(const SelectStyleInput& input,
   const auto& metricTokens = tokens.metrics;
   const auto& colorTokens = tokens.colors;
   if (metricTokens.controlHeight.has_value()) {
-    style.metrics.height = std::max(24, metricTokens.controlHeight.value());
+    style.metrics.height = std::max(20, metricTokens.controlHeight.value());
   }
   if (metricTokens.borderRadius.has_value()) {
     style.metrics.borderRadius = std::max(0, metricTokens.borderRadius.value());
@@ -375,6 +375,7 @@ SelectVisualStyle resolveSelectVisualStyle(const SelectStyleInput& input,
   style.clearColor = resolveTokenColor(colorTokens.clear, style.clearColor);
   style.prefixColor = resolveTokenColor(colorTokens.prefix, style.prefixColor);
   style.suffixColor = resolveTokenColor(colorTokens.suffix, style.suffixColor);
+  style.disabledTextColor = resolveTokenColor(colorTokens.disabledText, style.disabledTextColor);
 
   const AdSelect::SemanticStyles& semantic = input.semanticStyles;
   applySemanticSlot(semantic.root, nullptr, &style.selectorBg, &style.selectorBorderColor);

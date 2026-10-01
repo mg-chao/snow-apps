@@ -141,6 +141,7 @@ class StyleToolbarCommands final : public ScreenshotToolbarCommandSink,
     void hideColorPickersForScreenshotUi() override {}
 
     void toggleSelectionAspectRatioLockFromToolbar() override {}
+    void setSelectionAspectRatioPresetFromToolbar(ScreenshotSelectionAspectRatioPreset) override {}
     void openSelectionResizeModalFromToolbar() override {}
     void adjustSelectionFromToolbar(int, int, int, int) override {}
     void setSelectionCornerRadiusFromToolbar(int) override {}

@@ -258,10 +258,10 @@ void SelectionToolbarValueLabel::paintEvent(QPaintEvent* event) {
         if (m_iconOnly) {
             x = LockIconHorizontalMargin;
         }
-        const QRect iconRect(x, (height() - screenshot_selection_toolbar::IconSize) / 2 + 1,
-                             screenshot_selection_toolbar::IconSize,
-                             screenshot_selection_toolbar::IconSize);
-        painter.drawPixmap(iconRect, m_leadingIcon);
+        const QRectF iconRect(x, (height() - screenshot_selection_toolbar::IconSize) / 2.0,
+                              screenshot_selection_toolbar::IconSize,
+                              screenshot_selection_toolbar::IconSize);
+        painter.drawPixmap(iconRect, m_leadingIcon, QRectF(m_leadingIcon.rect()));
         x += screenshot_selection_toolbar::IconSize + (m_iconOnly ? 0 : IconTextSpacing);
     }
 

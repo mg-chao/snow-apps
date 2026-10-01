@@ -51,6 +51,7 @@
 #include <QSet>
 #include <QStandardItemModel>
 #include <QStyle>
+#include <QStyleOptionFrame>
 #include <QStyleOptionViewItem>
 #include <QStyledItemDelegate>
 #include <QToolButton>
@@ -2935,8 +2936,26 @@ QSize AdSelect::sizeHint() const {
             ? QString()
             : fallbackSelectedLabel(rawValueForSelectionKey(currentValueKey_));
     const QString label = selectedLabel.isEmpty() ? placeholder_ : selectedLabel;
-    // Include QLineEdit's cursor and horizontal text inset, as well as the selector accessories.
-    int width = lineEdit_->fontMetrics().horizontalAdvance(label) + 4;
+    QStyleOptionFrame inputOption;
+    inputOption.initFrom(lineEdit_);
+    inputOption.rect = lineEdit_->contentsRect();
+    inputOption.lineWidth =
+        lineEdit_->hasFrame()
+            ? lineEdit_->style()->pixelMetric(QStyle::PM_DefaultFrameWidth, &inputOption, lineEdit_)
+            : 0;
+    inputOption.state |= QStyle::State_Sunken;
+    if (lineEdit_->isReadOnly()) {
+      inputOption.state |= QStyle::State_ReadOnly;
+    }
+    const QRect inputContents =
+        lineEdit_->style()->subElementRect(QStyle::SE_LineEditContents, &inputOption, lineEdit_);
+    const QMargins textMargins = lineEdit_->textMargins();
+    // QLineEdit adds two pixels on each side and one pixel to the text's natural width when
+    // deciding whether to scroll. Include the style's content inset so the first glyph stays
+    // visible.
+    int width = lineEdit_->fontMetrics().horizontalAdvance(label) + 5 +
+                std::max(0, lineEdit_->width() - inputContents.width()) + textMargins.left() +
+                textMargins.right();
     const auto margins = rootLayout_->contentsMargins();
     width += margins.left() + margins.right();
     if (suffixButton_ && !suffixButton_->isHidden()) {
@@ -3360,7 +3379,8 @@ void AdSelect::leaveEvent(QEvent* event) {
 
 void AdSelect::mousePressEvent(QMouseEvent* event) {
   if (!disabled() && event && event->button() == Qt::LeftButton) {
-    if (clearButton_ && clearButton_->geometry().contains(event->pos())) {
+    if (clearButton_ && clearButton_->isVisible() &&
+        clearButton_->geometry().contains(event->pos())) {
       QWidget::mousePressEvent(event);
       return;
     }
@@ -3380,6 +3400,8 @@ void AdSelect::mousePressEvent(QMouseEvent* event) {
         openPopup();
       }
     }
+    event->accept();
+    return;
   }
   QWidget::mousePressEvent(event);
 }

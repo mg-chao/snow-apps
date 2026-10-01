@@ -49,6 +49,13 @@ screenshotSelectionDragModeForPoint(const QRectF& selection, const QPointF& poin
 [[nodiscard]] QRectF boundedScreenshotSelectionRect(const QRectF& selection, const QRectF& bounds,
                                                     bool preserveSize, qreal minimumSelectionSize);
 
+// Preserve width where possible, adjusting height and translating the result into
+// the canvas. Oversized selections shrink proportionally; tiny ones grow only
+// enough to satisfy both minimum dimensions. An impossible fit returns an empty rect.
+[[nodiscard]] QRectF aspectRatioScreenshotSelectionRect(const QRectF& selection,
+                                                        const QRectF& bounds, qreal aspectRatio,
+                                                        qreal minimumSelectionSize);
+
 [[nodiscard]] QRectF draggedScreenshotSelectionRect(ScreenshotSelectionDragMode dragMode,
                                                     const QRectF& origin,
                                                     const QPointF& originPosition,

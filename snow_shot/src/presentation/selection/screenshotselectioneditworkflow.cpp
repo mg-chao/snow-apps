@@ -63,13 +63,47 @@ void ScreenshotSelectionEditWorkflow::setSelectionShadowWidthFromToolbar(int sha
 }
 
 void ScreenshotSelectionEditWorkflow::toggleSelectionAspectRatioLockFromToolbar() {
-    if (!m_context.selection.rectangular())
+    if (!m_context.selection.rectangular() || !m_context.interaction.canResizeSelection())
         return;
     m_context.selection.toggleAspectRatioLock(
         snow_shot::presentation::kScreenshotSelectionMinimumSize);
-    m_context.persistSelectionAspectRatioLock(m_context.selection.aspectRatioLocked());
+    m_context.persistSelectionAspectRatioPreference(m_context.selection.aspectRatioPreset(),
+                                                    m_context.selection.aspectRatioLocked());
     if (m_context.ui.updateOverlayState) {
         m_context.ui.updateOverlayState();
+    }
+}
+
+void ScreenshotSelectionEditWorkflow::setSelectionAspectRatioPresetFromToolbar(
+    ScreenshotSelectionAspectRatioPreset preset) {
+    if (!m_context.selection.rectangular() || !m_context.interaction.canResizeSelection() ||
+        (preset != ScreenshotSelectionAspectRatioPreset::Free &&
+         screenshotSelectionAspectRatioHeightOverWidth(preset) <= 0.0)) {
+        return;
+    }
+    const bool changed = m_context.selection.setAspectRatioPreset(
+        preset, m_context.geometry.canvasBounds(),
+        snow_shot::presentation::kScreenshotSelectionMinimumSize);
+    if (!changed && (m_context.selection.aspectRatioPreset() != preset ||
+                     m_context.selection.aspectRatioLocked() !=
+                         (preset != ScreenshotSelectionAspectRatioPreset::Free))) {
+        return;
+    }
+    // Exact replacements clear the active preset while retaining the next capture's preference.
+    // An explicit choice must update that preference even when the active selection is unchanged.
+    m_context.persistSelectionAspectRatioPreference(m_context.selection.aspectRatioPreset(),
+                                                    m_context.selection.aspectRatioLocked());
+    if (!changed) {
+        return;
+    }
+    if (m_context.ui.updateOverlayState) {
+        m_context.ui.updateOverlayState();
+    }
+    if (m_context.ui.showSelectionToolbar) {
+        m_context.ui.showSelectionToolbar();
+    }
+    if (m_context.ui.moveToolbar) {
+        m_context.ui.moveToolbar();
     }
 }
 

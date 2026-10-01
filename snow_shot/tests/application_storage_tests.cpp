@@ -116,6 +116,71 @@ void scrollingIntervalSettingsPersistAndValidate() {
     }
 }
 
+void selectionAspectRatioSettingsValidateAndPreserveLegacyLock() {
+    QTemporaryDir temporary;
+    require(temporary.isValid(), "aspect ratio settings require an isolated directory");
+    const QString ratioKey = QStringLiteral("screenshot_selection/aspect_ratio");
+    const QString lockKey = QStringLiteral("screenshot_selection/lock_aspect_ratio");
+    const QStringList ratios{QStringLiteral("free"), QStringLiteral("1:1"),  QStringLiteral("3:2"),
+                             QStringLiteral("4:3"),  QStringLiteral("16:9"), QStringLiteral("2:3"),
+                             QStringLiteral("3:4"),  QStringLiteral("9:16")};
+    const auto* entry = storage::ConfigurationSchema::entry(ratioKey);
+    require(entry != nullptr && entry->defaultValue == QStringLiteral("free") &&
+                entry->allowedStringValues == ratios,
+            "aspect ratio schema must preserve the ordered toolbar presets and Free default");
+    const QString path = temporary.filePath(QStringLiteral("aspect-ratio.json"));
+    storage::ConfigurationStore store(path, true, true, 60000);
+    require(store.value(ratioKey) == QStringLiteral("free") && !store.value(lockKey).toBool(),
+            "new configurations must default to an unlocked Free aspect ratio");
+    for (const QString& ratio : ratios) {
+        require(store.setValues({{ratioKey, ratio}, {lockKey, ratio != QStringLiteral("free")}}) &&
+                    store.value(ratioKey) == ratio,
+                "every toolbar aspect ratio must be accepted by storage");
+    }
+    const auto revision = store.revision();
+    int changes = 0;
+    QObject::connect(&store, &storage::ConfigurationStore::valueChanged,
+                     [&changes](const QString&, const QJsonValue&) { ++changes; });
+    require(store.setValues({{ratioKey, QStringLiteral("9:16")}, {lockKey, true}}) &&
+                store.revision() == revision && changes == 0,
+            "unchanged aspect ratio preferences must not announce changes or advance revision");
+    for (const QJsonValue& invalid : {QJsonValue(QStringLiteral("16:10")), QJsonValue(1),
+                                      QJsonValue(true), QJsonValue(QJsonValue::Null)}) {
+        require(!store.setValue(ratioKey, invalid) &&
+                    store.value(ratioKey) == QStringLiteral("9:16") && store.revision() == revision,
+                "invalid aspect ratio writes must preserve the accepted preference");
+    }
+    require(!store.setValues(
+                {{ratioKey, QStringLiteral("1:1")}, {lockKey, QStringLiteral("invalid")}}) &&
+                store.value(ratioKey) == QStringLiteral("9:16") && store.value(lockKey).toBool(),
+            "a rejected preference transaction must not partially change the aspect ratio");
+    require(store.flushNow().success, "aspect ratio preferences must flush to disk");
+    storage::ConfigurationStore reloaded(path, true, true, 60000);
+    require(reloaded.value(ratioKey) == QStringLiteral("9:16") && reloaded.value(lockKey).toBool(),
+            "aspect ratio preferences must survive storage restart");
+
+    for (const QJsonValue& storedRatio :
+         {QJsonValue(QJsonValue::Undefined), QJsonValue(QStringLiteral("16:10")), QJsonValue(1)}) {
+        QJsonObject selection{{QStringLiteral("lock_aspect_ratio"), true}};
+        if (!storedRatio.isUndefined()) {
+            selection.insert(QStringLiteral("aspect_ratio"), storedRatio);
+        }
+        const QString legacyPath = temporary.filePath(QStringLiteral("legacy-aspect-ratio.json"));
+        writeBytes(
+            legacyPath,
+            QJsonDocument(QJsonObject{
+                              {QStringLiteral("storage"),
+                               QJsonObject{{QStringLiteral("schema_version"),
+                                            storage::ConfigurationStore::currentSchemaVersion()}}},
+                              {QStringLiteral("screenshot_selection"), selection},
+                          })
+                .toJson());
+        storage::ConfigurationStore legacy(legacyPath, true, true, 60000);
+        require(legacy.value(ratioKey) == QStringLiteral("free") && legacy.value(lockKey).toBool(),
+                "missing or invalid presets must preserve the legacy custom lock preference");
+    }
+}
+
 void setLastModified(const QString& path, const QDateTime& when) {
     namespace fs = std::filesystem;
     const auto systemMoment =
@@ -2616,6 +2681,10 @@ int main(int argc, char** argv) {
         scrollingIntervalSettingsPersistAndValidate();
         return 0;
     }
+    if (application.arguments().contains(QStringLiteral("--selection-aspect-ratio-only"))) {
+        selectionAspectRatioSettingsValidateAndPreserveLegacyLock();
+        return 0;
+    }
     if (application.arguments().contains(QStringLiteral("--global-mouse-only"))) {
         globalMouseCombinationSchemaIsStrictAndPersistent();
         return 0;
@@ -2660,6 +2729,7 @@ int main(int argc, char** argv) {
     pinnedManagementConfigurationAndTrayMigration();
     markerResolutionAndStatus();
     defaultsAndTypedRoundTrip();
+    selectionAspectRatioSettingsValidateAndPreserveLegacyLock();
     settingsSchemaDefaultsAndValidationAreComplete();
     pinnedDestroyShortcutMigratesPreviousDefault();
     obsoleteClickThroughShortcutIsIgnored();

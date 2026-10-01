@@ -1712,6 +1712,10 @@ if(SNOW_SHOT_BUILD_TESTS)
         tests/application_storage_tests.cpp
     )
     target_link_libraries(snow-shot-application-storage-tests PRIVATE snow_shot_storage Qt6::Core)
+    add_test(NAME snow-shot-selection-aspect-ratio-settings-tests
+        COMMAND snow-shot-application-storage-tests --selection-aspect-ratio-only)
+    set_tests_properties(snow-shot-selection-aspect-ratio-settings-tests PROPERTIES LABELS "unit"
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
     add_test(NAME snow-shot-recording-post-processing-settings-tests
         COMMAND snow-shot-application-storage-tests --recording-post-processing-only)
     set_tests_properties(snow-shot-recording-post-processing-settings-tests PROPERTIES
@@ -2409,6 +2413,10 @@ if(SNOW_SHOT_BUILD_TESTS)
     )
     add_test(NAME snow-shot-configuration-archive-tests
              COMMAND snow-shot-configuration-archive-tests)
+    add_test(NAME snow-shot-selection-aspect-ratio-archive-tests
+        COMMAND snow-shot-configuration-archive-tests --selection-aspect-ratio-only)
+    set_tests_properties(snow-shot-selection-aspect-ratio-archive-tests PROPERTIES LABELS "unit"
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
     set_tests_properties(snow-shot-configuration-archive-tests PROPERTIES
         LABELS "unit"
         ENVIRONMENT_MODIFICATION
@@ -3308,6 +3316,8 @@ if(SNOW_SHOT_BUILD_TESTS)
         NAME snow-shot-selection-border-resize-tests
         COMMAND snow-shot-screenshot-history-tests --selection-border-resize-only
     )
+    add_test(NAME snow-shot-selection-aspect-ratio-confirmation-tests
+        COMMAND snow-shot-screenshot-history-tests --selection-aspect-ratio-only)
     snow_shot_import_offscreen_platform(snow-shot-screenshot-history-tests)
     add_test(
         NAME snow-shot-screenshot-completion-gesture-tests
@@ -3316,6 +3326,7 @@ if(SNOW_SHOT_BUILD_TESTS)
     set_tests_properties(
         snow-shot-direct-capture-history-tests
         snow-shot-selection-border-resize-tests
+        snow-shot-selection-aspect-ratio-confirmation-tests
         snow-shot-screenshot-completion-gesture-tests
         PROPERTIES
         ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}"
@@ -4731,6 +4742,7 @@ if(SNOW_SHOT_BUILD_TESTS)
         "${CMAKE_CURRENT_SOURCE_DIR}/src/presentation/selection"
     )
     target_link_libraries(snow-shot-screenshot-selection-toolbar-hover-tests PRIVATE
+        snow_shot_window_shortcuts
         adqt::widgets
         adqt_icon_core
         ant_design_icons_qt
@@ -4740,6 +4752,26 @@ if(SNOW_SHOT_BUILD_TESTS)
     add_test(
         NAME snow-shot-screenshot-selection-toolbar-hover-tests
         COMMAND snow-shot-screenshot-selection-toolbar-hover-tests
+    )
+    add_test(
+        NAME snow-shot-screenshot-selection-toolbar-compact-ratio-tests
+        COMMAND snow-shot-screenshot-selection-toolbar-hover-tests --compact-ratio-tests
+    )
+    add_test(
+        NAME snow-shot-screenshot-selection-toolbar-icon-centering-tests
+        COMMAND snow-shot-screenshot-selection-toolbar-hover-tests --icon-centering-tests
+    )
+    set_tests_properties(snow-shot-screenshot-selection-toolbar-icon-centering-tests PROPERTIES
+        ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+        ENVIRONMENT_MODIFICATION
+            "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+        LABELS "unit"
+    )
+    set_tests_properties(snow-shot-screenshot-selection-toolbar-compact-ratio-tests PROPERTIES
+        ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+        ENVIRONMENT_MODIFICATION
+            "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+        LABELS "unit"
     )
     set_tests_properties(snow-shot-screenshot-selection-toolbar-hover-tests PROPERTIES
         ENVIRONMENT_MODIFICATION
@@ -6855,6 +6887,26 @@ if(SNOW_SHOT_BUILD_TESTS)
 endif()
 
 if(WIN32 AND SNOW_SHOT_BUILD_BENCHMARKS)
+    add_executable(snow-shot-selection-toolbar-performance-benchmark
+        tests/screenshot_selection_toolbar_performance_benchmark.cpp
+        include/snow_shot/presentation/screenshotselectiontoolbarwidget.h
+        src/platform/windows/monitorgeometry.cpp
+        src/presentation/components/icons/snowshoticons.cpp
+        src/presentation/core/screenshotgeometry.cpp
+        src/presentation/selection/screenshotselectiongeometry.cpp
+        src/presentation/selection/screenshotselectionmodel.cpp
+        src/presentation/selection/screenshotselectionparams.cpp
+        src/presentation/selection/screenshotselectiontoolbarwidget.cpp
+        src/presentation/selection/screenshotselectiontoolbarwidgets.h
+        src/presentation/selection/screenshotselectiontoolbarwidgets.cpp)
+    target_include_directories(snow-shot-selection-toolbar-performance-benchmark PRIVATE
+        "${CMAKE_CURRENT_SOURCE_DIR}/include"
+        "${CMAKE_CURRENT_SOURCE_DIR}/src/presentation/selection")
+    target_link_libraries(snow-shot-selection-toolbar-performance-benchmark PRIVATE
+        adqt::widgets adqt_icon_core ant_design_icons_qt Qt6::Widgets snow_draw_engine_qt_canvas
+        user32)
+    snow_shot_import_offscreen_platform(snow-shot-selection-toolbar-performance-benchmark)
+
     add_executable(snow-shot-decoration-area-benchmark
         tests/screenshot_decoration_area_benchmark.cpp)
     target_link_libraries(snow-shot-decoration-area-benchmark PRIVATE

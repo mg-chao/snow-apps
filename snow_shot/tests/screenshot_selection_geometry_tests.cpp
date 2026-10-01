@@ -153,6 +153,170 @@ void persistedAspectRatioLockConstrainsNewMarquee() {
             "clearing a selection should preserve the enabled aspect-ratio preference");
 }
 
+void aspectRatioPresetsPreserveWidthAndExactGeometry() {
+    using Preset = ScreenshotSelectionAspectRatioPreset;
+    const Preset presets[] = {Preset::Square,        Preset::Landscape3x2, Preset::Landscape4x3,
+                              Preset::Landscape16x9, Preset::Portrait2x3,  Preset::Portrait3x4,
+                              Preset::Portrait9x16};
+    const QRectF bounds(0, 0, 1000, 1000);
+    for (const Preset preset : presets) {
+        require(screenshotSelectionAspectRatioPresetFromId(
+                    screenshotSelectionAspectRatioPresetId(preset)) == preset,
+                "preset identifiers should round-trip independently of translated labels");
+        ScreenshotSelectionModel selection;
+        selection.setSelectionRect(QRectF(100, 80, 101, 50));
+        require(selection.setAspectRatioPreset(preset, bounds, 1.0),
+                "choosing a ratio should update geometry and enable its lock");
+        const QRectF resized = selection.normalizedSelection();
+        const qreal ratio = screenshotSelectionAspectRatioHeightOverWidth(preset);
+        require(resized.topLeft() == QPointF(100, 80) && resized.width() == 101,
+                "ratio presets should preserve width and the leading corner when they fit");
+        require(std::abs(resized.height() - 101 * ratio) < kComparisonTolerance,
+                "preset height should retain fractional canvas geometry");
+        require(selection.aspectRatioLocked() && selection.aspectRatioPreset() == preset,
+                "the active preset should authoritatively enable the aspect lock");
+        require(!selection.setAspectRatioPreset(preset, bounds, 1.0),
+                "reapplying an unchanged ratio should avoid redundant state updates");
+        selection.beginMoveDrag(resized.bottomRight());
+        const QRectF dragged =
+            selection.selectionRectForDrag(ScreenshotSelectionDragMode::BottomRight,
+                                           resized.bottomRight() + QPointF(30, 20), bounds, 1.0);
+        require(std::abs(dragged.height() / dragged.width() - ratio) < kComparisonTolerance,
+                "subsequent pointer resizing should preserve the chosen exact ratio");
+    }
+    require(screenshotSelectionAspectRatioPresetFromId(QStringLiteral("invalid")) == Preset::Free &&
+                screenshotSelectionAspectRatioPresetId(Preset::Free) == QStringLiteral("free"),
+            "unknown identifiers should use the initial Free choice");
+    ScreenshotSelectionModel fractional;
+    fractional.setSelectionRect(QRectF(100, 80, 101, 50));
+    static_cast<void>(fractional.setAspectRatioPreset(Preset::Landscape16x9, bounds, 1.0));
+    require(fractional.normalizedSelection().height() == 56.8125 &&
+                fractional.pixelSelection() == QRect(100, 80, 101, 57),
+            "ratio-exact fractional edges should retain the established outward pixel rounding");
+}
+
+void aspectRatioPresetsFitCanvasWithoutDistortion() {
+    using Preset = ScreenshotSelectionAspectRatioPreset;
+    const QRectF bounds(10, 20, 800, 600);
+    ScreenshotSelectionModel selection;
+    selection.setSelectionRect(QRectF(100, 500, 200, 80));
+    static_cast<void>(selection.setAspectRatioPreset(Preset::Portrait2x3, bounds, 1.0));
+    require(selection.normalizedSelection() == QRectF(100, 320, 200, 300),
+            "a taller preset should move upward only enough to fit while preserving width");
+    selection.setSelectionRect(QRectF(100, 100, 700, 100));
+    static_cast<void>(selection.setAspectRatioPreset(Preset::Portrait9x16, bounds, 1.0));
+    const QRectF fitted = selection.normalizedSelection();
+    require(std::abs(fitted.width() - 337.5) < kComparisonTolerance &&
+                std::abs(fitted.height() - 600) < kComparisonTolerance && fitted.top() == 20 &&
+                fitted.left() == 100,
+            "an oversized preset should fit by shrinking both dimensions proportionally");
+    selection.setSelectionRect(QRectF(100, 100, 1, 1));
+    static_cast<void>(selection.setAspectRatioPreset(Preset::Landscape16x9, bounds, 1.0));
+    const QRectF minimum = selection.normalizedSelection();
+    require(std::abs(minimum.width() - 16.0 / 9.0) < kComparisonTolerance &&
+                minimum.height() >= 1.0,
+            "a tiny preset should minimally grow its width to retain a one-pixel height");
+
+    ScreenshotSelectionModel impossible;
+    impossible.setSelectionRect(QRectF(0, 0, 1, 1));
+    require(!impossible.setAspectRatioPreset(Preset::Landscape16x9, QRectF(0, 0, 1, 1), 1.0) &&
+                impossible.normalizedSelection() == QRectF(0, 0, 1, 1) &&
+                !impossible.aspectRatioLocked() && impossible.aspectRatioPreset() == Preset::Free,
+            "an impossible minimum-size fit should leave geometry and lock unchanged");
+}
+
+void aspectRatioPresetLifecyclePreservesExplicitAndCustomLocks() {
+    using Preset = ScreenshotSelectionAspectRatioPreset;
+    const QRectF bounds(0, 0, 1000, 1000);
+    ScreenshotSelectionModel selection;
+    require(selection.aspectRatioPreset() == Preset::Free && !selection.aspectRatioLocked(),
+            "a new selection model should initially use Free without locking");
+    require(selection.setAspectRatioPreset(Preset::Landscape3x2, bounds, 1.0),
+            "a remembered preset should arm before a selection exists");
+    selection.clearSelection();
+    selection.setSelectionStartEnd(QPointF(20, 30), QPointF(20, 30));
+    selection.beginMoveDrag(QPointF(20, 30));
+    const QRectF marquee = selection.selectionRectForDrag(ScreenshotSelectionDragMode::Marquee,
+                                                          QPointF(220, 80), bounds, 1.0);
+    require(std::abs(marquee.height() / marquee.width() - 2.0 / 3.0) < kComparisonTolerance,
+            "clearing the old rectangle should preserve the remembered marquee ratio");
+    selection.setSelectionRect(QRectF(100, 100, 300, 100));
+    require(!selection.setAspectRatioLockEnabled(true, 1.0),
+            "restoring enabled locking should preserve the already-active explicit ratio");
+    require(selection.finalizeAspectRatio(bounds, 1.0) &&
+                selection.normalizedSelection() == QRectF(100, 100, 300, 200),
+            "confirming a smart-selected rectangle should apply the remembered ratio");
+    require(!selection.finalizeAspectRatio(bounds, 1.0),
+            "confirming an already-matching rectangle should avoid redundant updates");
+    const QRectF beforeFree = selection.normalizedSelection();
+    require(selection.setAspectRatioPreset(Preset::Free, bounds, 1.0) &&
+                !selection.aspectRatioLocked() && selection.normalizedSelection() == beforeFree,
+            "choosing Free should unlock without modifying the selected rectangle");
+    selection.toggleAspectRatioLock(1.0);
+    require(selection.aspectRatioLocked() && selection.aspectRatioPreset() == Preset::Free,
+            "manual locking should retain Free as a custom-ratio choice");
+    selection.beginMoveDrag(beforeFree.bottomRight());
+    const QRectF custom = selection.selectionRectForDrag(
+        ScreenshotSelectionDragMode::Right, beforeFree.bottomRight() + QPointF(30, 0), bounds, 1.0);
+    require(std::abs(custom.height() / custom.width() - 2.0 / 3.0) < kComparisonTolerance,
+            "manual locking should continue to derive the current rectangle's aspect ratio");
+    static_cast<void>(selection.setAspectRatioPreset(Preset::Square, bounds, 1.0));
+    selection.toggleAspectRatioLock(1.0);
+    require(!selection.aspectRatioLocked() && selection.aspectRatioPreset() == Preset::Free,
+            "manually unlocking should return an explicit preset to Free");
+
+    static_cast<void>(selection.setAspectRatioPreset(Preset::Square, bounds, 1.0));
+    selection.setSelectionRect(QRectF(30, 40, 240, 120));
+    selection.clearAspectRatioPresetForReplacement();
+    require(selection.normalizedSelection() == QRectF(30, 40, 240, 120) &&
+                selection.aspectRatioPreset() == Preset::Free && selection.aspectRatioLocked(),
+            "exact replacements should preserve geometry and retain an enabled custom lock");
+    selection.beginMoveDrag(QPointF(270, 100));
+    const QRectF replaced = selection.selectionRectForDrag(ScreenshotSelectionDragMode::Right,
+                                                           QPointF(290, 100), bounds, 1.0);
+    require(std::abs(replaced.height() / replaced.width() - 0.5) < kComparisonTolerance,
+            "replacement locking should derive the replacement rectangle's custom ratio");
+    static_cast<void>(selection.setAspectRatioPreset(Preset::Square, bounds, 1.0));
+    ScreenshotSelectionParams params;
+    params.selection = QRect(20, 40, 300, 100);
+    params.lockAspectRatio = true;
+    params.lockDragAspectRatio = true;
+    require(selection.applyParams(params, bounds.toRect()) &&
+                selection.aspectRatioPreset() == Preset::Free &&
+                selection.normalizedSelection() == QRectF(params.selection),
+            "restored parameters should clear the active preset and preserve exact geometry");
+    selection.reset();
+    require(selection.aspectRatioPreset() == Preset::Free && !selection.aspectRatioLocked(),
+            "capture reset should clear the active model's preset before preferences reload");
+}
+
+void lockedToolbarWheelResizeFitsBothDimensionsTogether() {
+    using Preset = ScreenshotSelectionAspectRatioPreset;
+    const QRectF bounds(0, 0, 400, 300);
+    ScreenshotSelectionModel selection;
+    selection.setSelectionRect(QRectF(300, 240, 100, 50));
+    static_cast<void>(selection.setAspectRatioPreset(Preset::Landscape3x2, bounds, 1.0));
+    const QPointF anchor = selection.normalizedSelection().topLeft();
+    require(selection.adjustFromToolbar(0, 0, 1, 0, bounds, 1.0),
+            "locked width wheel edits should remain valid at canvas boundaries");
+    const QRectF widthEdit = selection.normalizedSelection();
+    require(widthEdit.topLeft() == anchor && widthEdit.right() <= bounds.right() &&
+                widthEdit.bottom() <= bounds.bottom() &&
+                std::abs(widthEdit.height() / widthEdit.width() - 2.0 / 3.0) < kComparisonTolerance,
+            "bounded width wheel edits should preserve their anchor and selected ratio");
+    require(selection.adjustFromToolbar(0, 0, 0, 1, bounds, 1.0),
+            "locked height wheel edits should remain valid at canvas boundaries");
+    const QRectF heightEdit = selection.normalizedSelection();
+    require(heightEdit.topLeft() == anchor && heightEdit.right() <= bounds.right() &&
+                heightEdit.bottom() <= bounds.bottom() &&
+                std::abs(heightEdit.height() / heightEdit.width() - 2.0 / 3.0) <
+                    kComparisonTolerance,
+            "bounded height wheel edits should limit both dimensions without distorting the ratio");
+    require(selection.adjustFromToolbar(0, 0, -1, 0, bounds, 1.0) &&
+                selection.normalizedSelection().width() < widthEdit.width(),
+            "locked width wheel edits should still shrink proportionally away from canvas edges");
+}
+
 void grabAdjustmentSnapsOnlyTheDraggedEdgesToThePressPosition() {
     const QRectF selection(100.0, 100.0, 200.0, 100.0);
     const QRectF bounds(0.0, 0.0, 800.0, 600.0);
@@ -1194,6 +1358,10 @@ int main() {
     lockedCornerResizeCanFlipBothAxes();
     unlockedResizeCanChangeAspectRatio();
     persistedAspectRatioLockConstrainsNewMarquee();
+    aspectRatioPresetsPreserveWidthAndExactGeometry();
+    aspectRatioPresetsFitCanvasWithoutDistortion();
+    aspectRatioPresetLifecyclePreservesExplicitAndCustomLocks();
+    lockedToolbarWheelResizeFitsBothDimensionsTogether();
     grabAdjustmentSnapsOnlyTheDraggedEdgesToThePressPosition();
     grabAdjustmentRespectsBoundsAndMinimumSize();
     positionFollowDragTracksThePointerAfterGrabAdjustment();

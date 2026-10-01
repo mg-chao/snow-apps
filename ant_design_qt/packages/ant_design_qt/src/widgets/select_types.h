@@ -85,6 +85,7 @@ class AdSelectTypes {
     std::optional<QColor> clear;
     std::optional<QColor> prefix;
     std::optional<QColor> suffix;
+    std::optional<QColor> disabledText;
   };
 
   struct ComponentTokens {

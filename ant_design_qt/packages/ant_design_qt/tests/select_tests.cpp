@@ -4,6 +4,7 @@
 #include <QListView>
 #include <QLineEdit>
 #include <QLayout>
+#include <QMouseEvent>
 #include <QStandardItemModel>
 #include <QToolButton>
 #include <QStringList>
@@ -12,6 +13,7 @@
 
 #include "widgets/select.h"
 #include "widgets/control_scale.h"
+#include "theme/theme_manager.h"
 
 using adqt::widgets::AdControlScaleContext;
 using adqt::widgets::AdSelect;
@@ -52,12 +54,51 @@ int horizontalCenterIn(const QWidget* widget, const QWidget* ancestor) {
   return widget->mapTo(ancestor, widget->rect().center()).x();
 }
 
+class SelectPressHost final : public QWidget {
+ public:
+  int pressCount = 0;
+
+ protected:
+  void mousePressEvent(QMouseEvent* event) override {
+    ++pressCount;
+    QWidget::mousePressEvent(event);
+  }
+};
+
 }  // namespace
 
 class SelectTest final : public QObject {
   Q_OBJECT
 
  private slots:
+  void disabledTextTokenPreservesSelectorAndSuffixColors() {
+    AdSelect select;
+    select.setOptions({makeOption(QStringLiteral("ratio"), QStringLiteral("16:9"))});
+    select.setCurrentValue(QStringLiteral("ratio"));
+    select.setDisabled(true);
+    const QColor defaultDisabledText =
+        select.lineEdit()->palette().color(QPalette::Disabled, QPalette::Text);
+    const QColor textColor(230, 240, 250);
+    AdSelect::ComponentTokens tokens;
+    tokens.colors.selectorText = textColor;
+    tokens.colors.suffix = textColor;
+    tokens.colors.disabledText = textColor;
+    select.setComponentTokens(tokens);
+    auto* suffix = select.findChild<QToolButton*>(QStringLiteral("adselect-suffix"));
+    QVERIFY(suffix);
+    QCOMPARE(select.lineEdit()->palette().color(QPalette::Disabled, QPalette::Text), textColor);
+    QCOMPARE(suffix->palette().color(QPalette::Disabled, QPalette::ButtonText), textColor);
+    select.setDisabled(false);
+    QCOMPARE(select.lineEdit()->palette().color(QPalette::Active, QPalette::Text), textColor);
+    select.setVariant(AdSelect::Variant::Borderless);
+    select.setDisabled(true);
+    QCOMPARE(select.lineEdit()->palette().color(QPalette::Disabled, QPalette::Text), textColor);
+    QCOMPARE(suffix->palette().color(QPalette::Disabled, QPalette::ButtonText), textColor);
+    select.resetComponentTokens();
+    QCOMPARE(select.lineEdit()->palette().color(QPalette::Disabled, QPalette::Text),
+             defaultDisabledText);
+  }
+
   void emptyStringValuesSelectTheirLabel() {
     const QString label = QStringLiteral("System default");
     const QStringList emptyValues{QString(), QStringLiteral(""), QStringLiteral(" \t ")};
@@ -111,6 +152,68 @@ class SelectTest final : public QObject {
     select.resetComponentTokens();
     QCOMPARE(select.height(), select.sizeHint().height());
     QVERIFY(select.height() != 28);
+  }
+
+  void compactControlHeightTokenSurvivesSelectionThemeAndStyleRefresh() {
+    auto& theme = adqt::theme::ThemeManager::instance();
+    const auto originalConfig = theme.config();
+    AdSelect select;
+    select.setControlSize(AdSelect::ControlSize::Small);
+    const int defaultHeight = select.height();
+    QVERIFY(defaultHeight >= 24);
+    select.setOptions({makeOption(QStringLiteral("free"), QStringLiteral("Free")),
+                       makeOption(QStringLiteral("square"), QStringLiteral("1:1"))});
+    AdSelect::ComponentTokens tokens;
+    tokens.metrics.controlHeight = 22;
+    select.setComponentTokens(tokens);
+    select.show();
+    QCoreApplication::processEvents();
+    for (const qreal scale : {1.0, 1.5, 2.0}) {
+      select.commitControlScale(AdControlScaleContext::fromDprsAndContentScale(1, 1, scale));
+      const int expectedHeight = qRound(22 * scale);
+      for (const auto scheme : {adqt::theme::ThemeScheme::Light, adqt::theme::ThemeScheme::Dark}) {
+        theme.setColorScheme(scheme);
+        select.setCurrentValue(QStringLiteral("square"));
+        select.setVariant(AdSelect::Variant::Borderless);
+        AdSelect::SemanticStyles styles;
+        styles.selector.backgroundColor = QColor(22, 119, 255, 107);
+        select.setSemanticStyles(styles);
+        select.setCurrentValue(QStringLiteral("free"));
+        QCoreApplication::processEvents();
+        QCOMPARE(select.height(), expectedHeight);
+        QCOMPARE(select.sizeHint().height(), expectedHeight);
+        QCOMPARE(select.minimumHeight(), expectedHeight);
+        QCOMPARE(select.maximumHeight(), expectedHeight);
+      }
+    }
+    theme.setConfig(originalConfig);
+    select.commitControlScale(AdControlScaleContext::fromDprsAndContentScale(1, 1, 1));
+    select.resetComponentTokens();
+    QCOMPARE(select.height(), defaultHeight);
+  }
+
+  void selectorShellClickConsumesPressAndIgnoresHiddenClearGeometry() {
+    SelectPressHost host;
+    host.resize(240, 140);
+    AdSelect select(&host);
+    select.setOptions({makeOption(QStringLiteral("free"), QStringLiteral("Free"))});
+    select.setCurrentValue(QStringLiteral("free"));
+    select.setAllowClear(false);
+    select.setFixedWidth(68);
+    select.move(20, 20);
+    host.show();
+    select.show();
+    QCoreApplication::processEvents();
+    auto* clear = select.findChild<QToolButton*>(QStringLiteral("adselect-clear"));
+    QVERIFY(clear);
+    QVERIFY(!clear->isVisible());
+    clear->setGeometry(select.rect());
+    QTest::mouseClick(&select, Qt::LeftButton, Qt::NoModifier, select.rect().center());
+    QVERIFY(select.popupVisible());
+    QCOMPARE(host.pressCount, 0);
+    QTest::mouseClick(&select, Qt::LeftButton, Qt::NoModifier, select.rect().center());
+    QVERIFY(!select.popupVisible());
+    QCOMPARE(host.pressCount, 0);
   }
 
   void popupCanBeDestroyedBeforeItsSelectDuringHostTeardown() {

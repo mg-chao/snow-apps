@@ -88,13 +88,29 @@ void ScreenshotSelectionSettingsStore::setSelectionEffects(int cornerRadius, int
     }));
 }
 
+ScreenshotSelectionAspectRatioPreset ScreenshotSelectionSettingsStore::aspectRatioPreset() const {
+    return screenshotSelectionAspectRatioPresetFromId(
+        configuration().value(QStringLiteral("screenshot_selection/aspect_ratio")).toString());
+}
+
 bool ScreenshotSelectionSettingsStore::aspectRatioLocked() const {
-    return configuration().value(QStringLiteral("screenshot_selection/lock_aspect_ratio")).toBool();
+    return aspectRatioPreset() != ScreenshotSelectionAspectRatioPreset::Free ||
+           configuration().value(QStringLiteral("screenshot_selection/lock_aspect_ratio")).toBool();
+}
+
+void ScreenshotSelectionSettingsStore::setAspectRatioPreference(
+    ScreenshotSelectionAspectRatioPreset preset, bool locked) {
+    static_cast<void>(configuration().setValues({
+        {QStringLiteral("screenshot_selection/aspect_ratio"),
+         screenshotSelectionAspectRatioPresetId(preset)},
+        {QStringLiteral("screenshot_selection/lock_aspect_ratio"),
+         locked || preset != ScreenshotSelectionAspectRatioPreset::Free},
+    }));
 }
 
 void ScreenshotSelectionSettingsStore::setAspectRatioLocked(bool locked) {
-    static_cast<void>(
-        configuration().setValue(QStringLiteral("screenshot_selection/lock_aspect_ratio"), locked));
+    setAspectRatioPreference(
+        locked ? aspectRatioPreset() : ScreenshotSelectionAspectRatioPreset::Free, locked);
 }
 
 ScreenshotIntelligentSelectionTarget ScreenshotSelectionSettingsStore::selectionTarget() const {
@@ -133,6 +149,7 @@ void ScreenshotSelectionSettingsStore::clear() {
         {QStringLiteral("screenshot_selection/selection_rect_presets"), QJsonArray()},
         {QStringLiteral("screenshot_selection/corner_radius"), 0},
         {QStringLiteral("screenshot_selection/shadow_width"), 0},
+        {QStringLiteral("screenshot_selection/aspect_ratio"), QStringLiteral("free")},
         {QStringLiteral("screenshot_selection/lock_aspect_ratio"), false},
     }));
 }

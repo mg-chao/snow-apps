@@ -1,6 +1,7 @@
 #ifndef SNOW_SHOT_PRESENTATION_SCREENSHOTSELECTIONMODEL_H
 #define SNOW_SHOT_PRESENTATION_SCREENSHOTSELECTIONMODEL_H
 
+#include "snow_shot/presentation/screenshotselectionaspectratio.h"
 #include "snow_shot/presentation/screenshotselectiongeometry.h"
 #include "snow_shot/presentation/screenshotselectionparams.h"
 #include "snow_shot/presentation/screenshotresultcompositor.h"
@@ -57,11 +58,11 @@ class ScreenshotSelectionModel final {
     [[nodiscard]] bool hasPixelSelection() const;
 
     void clearSelection();
-    // Stores a selection rectangle as provided. Pointer-driven callers must pass
-    // a rect produced by the shared drag geometry (draggedScreenshotSelectionRect
-    // / grabAdjustedScreenshotSelectionRect), which resolves pointer cells;
-    // detection sources (intelligent selection, persisted params) may provide
-    // sub-pixel rects that pixel conversion rounds outward.
+    // Stores a selection rectangle as provided. Detection sources (intelligent selection,
+    // persisted params) may provide sub-pixel rects that pixel conversion rounds outward.
+    // Pointer drags must use setDraggedSelectionRect with the shared drag geometry
+    // (draggedScreenshotSelectionRect / grabAdjustedScreenshotSelectionRect) so confirmation
+    // preserves any gesture-specific aspect ratio.
     void setSelectionRect(const QRectF& selection);
     // Stores a selection spanning the pointer cells under the press and
     // release positions: both cells are inclusive, exactly like a marquee
@@ -88,12 +89,18 @@ class ScreenshotSelectionModel final {
     [[nodiscard]] int shadowWidth() const;
     [[nodiscard]] QColor shadowColor() const;
     [[nodiscard]] bool aspectRatioLocked() const;
+    [[nodiscard]] ScreenshotSelectionAspectRatioPreset aspectRatioPreset() const;
 
     [[nodiscard]] bool setCornerRadius(int radius);
     [[nodiscard]] bool setShadowWidth(int shadowWidth);
     void setShadowColor(const QColor& color);
     [[nodiscard]] bool setAspectRatioLockEnabled(bool enabled, qreal minimumSelectionSize);
     void toggleAspectRatioLock(qreal minimumSelectionSize);
+    [[nodiscard]] bool setAspectRatioPreset(ScreenshotSelectionAspectRatioPreset preset,
+                                            const QRectF& bounds, qreal minimumSelectionSize);
+    [[nodiscard]] bool finalizeAspectRatio(const QRectF& bounds, qreal minimumSelectionSize);
+    // Exact incoming geometry remains authoritative without losing a custom lock.
+    void clearAspectRatioPresetForReplacement();
 
     [[nodiscard]] ScreenshotSelectionParams params(const QRect& bounds) const;
     [[nodiscard]] bool applyParams(const ScreenshotSelectionParams& params, const QRect& bounds);
@@ -115,6 +122,10 @@ class ScreenshotSelectionModel final {
     int m_shadowWidth = 0;
     QColor m_shadowColor = QColor(0x33, 0x33, 0x33);
     bool m_aspectRatioLockEnabled = false;
+    ScreenshotSelectionAspectRatioPreset m_aspectRatioPreset =
+        ScreenshotSelectionAspectRatioPreset::Free;
+    // Pointer drags already resolve their ratio; confirmation must preserve their geometry.
+    bool m_selectionFromDrag = false;
     double m_lockedAspectRatio = 0.0;
 };
 

@@ -362,6 +362,36 @@ void applySnapshotReplacesConfiguration(const QTemporaryDir& temporary) {
     require(!readOnly.applySnapshot({{archivedKey, archivedValue}}),
             "read-only stores must reject snapshots");
 }
+
+void selectionAspectRatioArchivesPreservePreferences(const QTemporaryDir& temporary) {
+    const QString ratioKey = QStringLiteral("screenshot_selection/aspect_ratio");
+    const QString lockKey = QStringLiteral("screenshot_selection/lock_aspect_ratio");
+    const QString archivePath = temporary.filePath(QStringLiteral("aspect-ratio.zip"));
+    const QString configurationPath =
+        temporary.filePath(QStringLiteral("aspect-ratio-import.json"));
+    const QMap<QString, QJsonValue> preferences{{ratioKey, QStringLiteral("3:4")}, {lockKey, true}};
+    require(storage::ConfigurationArchive::write(
+                archivePath, preferences, storage::ConfigurationStore::currentSchemaVersion())
+                .isEmpty(),
+            "aspect ratio preferences must export successfully");
+    const auto imported = storage::ConfigurationArchive::read(archivePath);
+    require(imported.isValid() && imported.values == preferences,
+            "a nondefault aspect ratio and lock must round trip through configuration archives");
+    storage::ConfigurationStore store(configurationPath, true, true, 60000);
+    require(store.applySnapshot(imported.values, imported.schemaVersion) &&
+                store.value(ratioKey) == QStringLiteral("3:4") && store.value(lockKey).toBool(),
+            "importing a ratio archive must apply both preferences");
+    require(
+        store.applySnapshot({{lockKey, true}}, 1) &&
+            store.value(ratioKey) == QStringLiteral("free") && store.value(lockKey).toBool(),
+        "legacy archives must retain custom aspect locking while defaulting the preset to Free");
+    require(store.applySnapshot({{ratioKey, QStringLiteral("16:10")}, {lockKey, true}}) &&
+                store.value(ratioKey) == QStringLiteral("free") && store.value(lockKey).toBool(),
+            "invalid archived presets must reset to Free without discarding a valid lock");
+    require(store.applySnapshot({}) && store.value(ratioKey) == QStringLiteral("free") &&
+                !store.value(lockKey).toBool(),
+            "archives omitting selection preferences must restore both defaults");
+}
 } // namespace
 
 void mcpCredentialRedactionAndRevision(const QTemporaryDir& temporary) {
@@ -432,11 +462,16 @@ int main(int argc, char** argv) {
 
     QTemporaryDir temporary;
     require(temporary.isValid(), "temporary directory unavailable");
+    if (application.arguments().contains(QStringLiteral("--selection-aspect-ratio-only"))) {
+        selectionAspectRatioArchivesPreservePreferences(temporary);
+        return 0;
+    }
     roundTripPreservesValuesAndSchemaVersion(temporary);
     readRejectsInvalidArchives(temporary);
     writeRejectsUnwritableTargets(temporary);
     unicodePathsRoundTrip();
     applySnapshotReplacesConfiguration(temporary);
+    selectionAspectRatioArchivesPreservePreferences(temporary);
     mcpCredentialRedactionAndRevision(temporary);
     return 0;
 }

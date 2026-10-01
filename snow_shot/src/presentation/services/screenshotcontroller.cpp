@@ -305,7 +305,7 @@ struct ScreenshotController::Impl final : public ScreenshotToolbarCommandSink,
     void handleCapturePresented();
     void invalidateDelayedCapture();
     void resetPendingCaptureRequest();
-    [[nodiscard]] bool restoreSelectionAspectRatioLock();
+    [[nodiscard]] bool finalizeSelectionAspectRatio();
     [[nodiscard]] bool beginCapture(
         PendingSelectionAction action = PendingSelectionAction::None,
         ScreenshotCaptureWorkflow::StartMode mode = ScreenshotCaptureWorkflow::StartMode::Normal);
@@ -532,6 +532,8 @@ struct ScreenshotController::Impl final : public ScreenshotToolbarCommandSink,
     void repositionToolbarForContentChange() override;
     void repositionToolbarForPresentationChange() override;
     void toggleSelectionAspectRatioLockFromToolbar() override;
+    void
+    setSelectionAspectRatioPresetFromToolbar(ScreenshotSelectionAspectRatioPreset preset) override;
     void openSelectionResizeModalFromToolbar() override;
     void hideColorPickersForScreenshotUi() override;
     void beginCanvasColorSampling(adqt::widgets::AdColorPicker* picker) override;
@@ -539,11 +541,14 @@ struct ScreenshotController::Impl final : public ScreenshotToolbarCommandSink,
     void setSelectionCornerRadiusFromToolbar(int radius) override;
     void setSelectionShadowWidthFromToolbar(int shadowWidth) override;
     void setSelectionToolbarHovered(bool hovered) override;
+    void setSelectionToolbarPopupVisible(bool visible) override;
 
     ScreenshotController& owner;
     ScreenshotSelectorCoordinator* m_selectorCoordinator = nullptr;
     ScreenshotCaptureState m_captureState;
     std::unique_ptr<snow_shot::presentation::WindowShortcutManager> m_windowShortcutManager;
+    snow_shot::presentation::WindowShortcutManager::InputSuspensionHandle
+        m_selectionToolbarPopupInputSuspension = 0;
     std::unique_ptr<ScreenshotOverlayEventAdapter> m_overlayEventAdapter;
     std::unique_ptr<ScreenshotOverlayCoordinator> m_overlayCoordinator;
     std::unique_ptr<ScreenshotPresentationServices> m_presentationServices;
@@ -1378,7 +1383,9 @@ void ScreenshotController::Impl::createSelectionWorkflows() {
             [this](int cornerRadius, int shadowWidth) {
                 m_selectionSettings->setSelectionEffects(cornerRadius, shadowWidth);
             },
-            [this](bool locked) { m_selectionSettings->setAspectRatioLocked(locked); },
+            [this](ScreenshotSelectionAspectRatioPreset preset, bool locked) {
+                m_selectionSettings->setAspectRatioPreference(preset, locked);
+            },
         });
 }
 
@@ -1604,6 +1611,9 @@ void ScreenshotController::Impl::createCaptureWorkflow() {
                 m_selection.setRegionType(m_selectionSettings->regionType());
                 static_cast<void>(m_selection.setCornerRadius(m_selectionSettings->cornerRadius()));
                 static_cast<void>(m_selection.setShadowWidth(m_selectionSettings->shadowWidth()));
+                static_cast<void>(m_selection.setAspectRatioPreset(
+                    m_selectionSettings->aspectRatioPreset(), {},
+                    snow_shot::presentation::kScreenshotSelectionMinimumSize));
                 static_cast<void>(m_selection.setAspectRatioLockEnabled(
                     m_selectionSettings->aspectRatioLocked(),
                     snow_shot::presentation::kScreenshotSelectionMinimumSize));
@@ -1718,6 +1728,7 @@ void ScreenshotController::Impl::handleCapturePresented() {
         m_selection.clearSelection();
         m_selection.setRegionType(ScreenshotRegionType::Rectangle);
         m_selection.setSelectionRect(rect);
+        m_selection.clearAspectRatioPresetForReplacement();
         m_interaction.confirmSelection();
         m_captureState.sessionState = ScreenshotSessionState::Editing;
         if (m_mcpOptions.value(QStringLiteral("presentation")).toString() !=
@@ -4991,6 +5002,31 @@ void ScreenshotController::Impl::toggleSelectionAspectRatioLockFromToolbar() {
     m_selectionEditWorkflow->toggleSelectionAspectRatioLockFromToolbar();
 }
 
+void ScreenshotController::Impl::setSelectionAspectRatioPresetFromToolbar(
+    ScreenshotSelectionAspectRatioPreset preset) {
+    m_selectionEditWorkflow->setSelectionAspectRatioPresetFromToolbar(preset);
+}
+
+void ScreenshotController::Impl::setSelectionToolbarPopupVisible(bool visible) {
+    if (m_windowShortcutManager == nullptr) {
+        return;
+    }
+    if (visible) {
+        if (m_selectionToolbarPopupInputSuspension == 0) {
+            m_selectionToolbarPopupInputSuspension = m_windowShortcutManager->suspendInput();
+        }
+        return;
+    }
+    const auto suspension = std::exchange(m_selectionToolbarPopupInputSuspension, 0);
+    if (suspension == 0) {
+        return;
+    }
+    // Keep the closing key press inside the popup interaction. The shared popup
+    // host closes tool windows before screenshot shortcuts see the same event.
+    auto* manager = m_windowShortcutManager.get();
+    QTimer::singleShot(0, manager, [manager, suspension]() { manager->resumeInput(suspension); });
+}
+
 void ScreenshotController::Impl::openSelectionResizeModalFromToolbar() {
     m_selectionEditWorkflow->openSelectionResizeModalFromToolbar();
 }
@@ -5291,8 +5327,6 @@ bool ScreenshotController::Impl::selectPreviousSelection() {
         }
         return false;
     }
-    static_cast<void>(restoreSelectionAspectRatioLock());
-
     m_intelligentSelection.clearTransientState();
     m_interaction.confirmSelection();
     m_captureState.sessionState = ScreenshotSessionState::Editing;
@@ -5309,11 +5343,9 @@ bool ScreenshotController::Impl::selectPreviousSelection() {
     return true;
 }
 
-bool ScreenshotController::Impl::restoreSelectionAspectRatioLock() {
-    return m_selectionSettings != nullptr &&
-           m_selection.setAspectRatioLockEnabled(
-               m_selectionSettings->aspectRatioLocked(),
-               snow_shot::presentation::kScreenshotSelectionMinimumSize);
+bool ScreenshotController::Impl::finalizeSelectionAspectRatio() {
+    return m_selection.finalizeAspectRatio(
+        m_geometry.canvasBounds(), snow_shot::presentation::kScreenshotSelectionMinimumSize);
 }
 
 void ScreenshotController::Impl::synchronizeQrToolbar() {
@@ -5418,10 +5450,10 @@ void ScreenshotController::Impl::scheduleAutomaticQrRecognition() {
 }
 
 void ScreenshotController::Impl::handleSelectionConfirmed() {
-    scheduleAutomaticQrRecognition();
-    if (restoreSelectionAspectRatioLock() && m_presentationServices != nullptr) {
+    if (finalizeSelectionAspectRatio() && m_presentationServices != nullptr) {
         m_presentationServices->updateOverlayState();
     }
+    scheduleAutomaticQrRecognition();
 
     const PendingSelectionAction action =
         std::exchange(m_pendingSelectionAction, PendingSelectionAction::None);
