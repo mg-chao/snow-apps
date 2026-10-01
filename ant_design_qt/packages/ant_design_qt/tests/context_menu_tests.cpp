@@ -4,7 +4,9 @@
 #include <QFrame>
 #include <QImage>
 #include <QPalette>
+#include <QPainter>
 #include <QSignalSpy>
+#include <QStyleOption>
 #include <QTest>
 #include <QVBoxLayout>
 #include <QWidget>
@@ -50,6 +52,9 @@ class ContextMenuTests final : public QObject {
   void longLabelsRespectTrailingColumnsInConstrainedMenus();
   void widgetMenuHonorsComponentTokens();
   void widgetSurfaceFollowsExistingSubmenus();
+  void preparedBackgroundClipsAndComposites();
+  void preparedBackgroundPreservesItemStates();
+  void preparedBackgroundDoesNotSelectNativeSurface();
 };
 
 void ContextMenuTests::actionMetadataAndNativeStateCoexist() {
@@ -432,6 +437,100 @@ void ContextMenuTests::widgetSurfaceFollowsExistingSubmenus() {
 #ifdef Q_OS_MACOS
   QVERIFY(!action->icon().isMask());
 #endif
+}
+
+void ContextMenuTests::preparedBackgroundClipsAndComposites() {
+  AdContextMenu menu;
+  menu.setNativeMenuEnabled(false);
+  menu.resize(200, 120);
+  AdContextMenu::ComponentTokens tokens;
+  tokens.background = Qt::white;
+  tokens.border = Qt::blue;
+  tokens.borderRadius = 12;
+  menu.setComponentTokens(tokens);
+  QPixmap skin(20, 20);
+  skin.fill(Qt::red);
+  const auto renderPanel = [&]() {
+    QImage result(menu.size(), QImage::Format_ARGB32_Premultiplied);
+    result.fill(Qt::black);
+    QPainter painter(&result);
+    QStyleOption option;
+    option.initFrom(&menu);
+    option.rect = menu.rect();
+    menu.style()->drawPrimitive(QStyle::PE_PanelMenu, &option, &painter, &menu);
+    return result;
+  };
+
+  menu.setBackgroundFrame({skin, QRectF(0.25, 0.25, 0.5, 0.5), 1.0, 0.0});
+  QImage rendered = renderPanel();
+  QCOMPARE(rendered.pixelColor(100, 60), QColor(Qt::red));
+  QCOMPARE(rendered.pixelColor(20, 60), QColor(Qt::white));
+  QCOMPARE(rendered.pixelColor(0, 0).alpha(), 0);
+  QCOMPARE(rendered.pixelColor(199, 119).alpha(), 0);
+
+  menu.setBackgroundFrame({skin, QRectF(0.0, 0.0, 1.0, 1.0), 0.5, 0.5});
+  rendered = renderPanel();
+  const QColor blended = rendered.pixelColor(100, 60);
+  QCOMPARE(blended.red(), 255);
+  QVERIFY(qAbs(blended.green() - 191) <= 1);
+  QVERIFY(qAbs(blended.blue() - 191) <= 1);
+  QCOMPARE(blended.alpha(), 255);
+  QCOMPARE(rendered.pixelColor(0, 0).alpha(), 0);
+
+  menu.resetBackgroundFrame();
+  QVERIFY(menu.backgroundFrame().image.isNull());
+  QCOMPARE(renderPanel().pixelColor(100, 60), QColor(Qt::white));
+  menu.setBackgroundFrame({skin, QRectF(), 1.0, 0.0});
+  QVERIFY(menu.backgroundFrame().image.isNull());
+}
+
+void ContextMenuTests::preparedBackgroundPreservesItemStates() {
+  AdContextMenu menu;
+  menu.setNativeMenuEnabled(false);
+  AdContextMenu::ComponentTokens tokens;
+  tokens.background = Qt::white;
+  tokens.hoverBackground = Qt::green;
+  tokens.dangerHoverBackground = Qt::yellow;
+  tokens.itemBorderRadius = 0;
+  menu.setComponentTokens(tokens);
+  QAction* normal = menu.addItem(QStringLiteral("Normal"));
+  QAction* danger = menu.addItem(QStringLiteral("Danger"));
+  menu.setActionDanger(danger);
+  QPixmap skin(20, 20);
+  skin.fill(Qt::red);
+  menu.setBackgroundFrame({skin, QRectF(0.0, 0.0, 1.0, 1.0), 1.0, 0.0});
+  menu.ensurePolished();
+  menu.adjustSize();
+  const auto renderItem = [&](QAction* action) {
+    QImage result(menu.size(), QImage::Format_ARGB32_Premultiplied);
+    result.fill(Qt::transparent);
+    QPainter painter(&result);
+    QStyleOptionMenuItem option;
+    option.initFrom(&menu);
+    option.rect = menu.actionGeometry(action);
+    option.state |= QStyle::State_Selected | QStyle::State_Enabled;
+    option.menuItemType = QStyleOptionMenuItem::Normal;
+    option.text = action->text();
+    menu.style()->drawControl(QStyle::CE_MenuItem, &option, &painter, &menu);
+    return result.pixelColor(option.rect.left() + 2, option.rect.center().y());
+  };
+  QCOMPARE(renderItem(normal), QColor(Qt::green));
+  QCOMPARE(renderItem(danger), QColor(Qt::yellow));
+  QVERIFY(!normal->isCheckable());
+  QVERIFY(menu.actionDanger(danger));
+}
+
+void ContextMenuTests::preparedBackgroundDoesNotSelectNativeSurface() {
+  AdContextMenu menu;
+  const bool native = menu.nativeMenuEnabled();
+  QStyle* originalStyle = menu.style();
+  QPixmap skin(10, 10);
+  skin.fill(Qt::red);
+  menu.setBackgroundFrame({skin, QRectF(0.0, 0.0, 1.0, 1.0), 1.0, 0.0});
+  QCOMPARE(menu.nativeMenuEnabled(), native);
+  QCOMPARE(menu.style(), originalStyle);
+  menu.resetBackgroundFrame();
+  QCOMPARE(menu.nativeMenuEnabled(), native);
 }
 
 QTEST_MAIN(ContextMenuTests)

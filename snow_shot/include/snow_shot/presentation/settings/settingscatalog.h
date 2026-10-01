@@ -104,6 +104,9 @@ enum class SettingsSelectBinding {
     TranslationLayoutProcessing,
     ScreenshotSelectionResizeMode,
     SkinDisplayMode,
+    SkinPosition,
+    ToolbarSkinPosition,
+    TrayMenuSkinPosition,
 };
 
 struct SettingsSelectDefinition {
@@ -230,6 +233,8 @@ struct SettingsRadioDefinition {
 enum class SettingsFilePathBinding {
     TrayCustomIcon,
     SkinPath,
+    ToolbarSkinPath,
+    TrayMenuSkinPath,
 };
 
 struct SettingsFilePathDefinition {

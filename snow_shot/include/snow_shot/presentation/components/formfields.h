@@ -34,10 +34,10 @@ enum class CommitPolicy { Immediate, OnFinish, Explicit };
 
 struct Metadata {
     QString id;
-    settings::TranslatableText label;
-    settings::TranslatableText description;
-    settings::TranslatableText placeholder;
-    settings::TranslatableText suffix;
+    settings::TranslatableText label = {};
+    settings::TranslatableText description = {};
+    settings::TranslatableText placeholder = {};
+    settings::TranslatableText suffix = {};
 };
 
 struct Options {
@@ -58,8 +58,8 @@ struct Options {
 
 struct Choice {
     QVariant value;
-    settings::TranslatableText label;
-    QString text;
+    settings::TranslatableText label = {};
+    QString text = {};
     bool enabled = true;
 };
 

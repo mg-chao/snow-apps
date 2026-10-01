@@ -53,6 +53,11 @@ const QStringList kDrawingToolbarItemIds =
     kDrawingToolIds +
     QStringList{QStringLiteral("separator"), QStringLiteral("undo"), QStringLiteral("redo")};
 const QStringList kLastDrawingToolIds = QStringList{QStringLiteral("")} + kDrawingToolIds;
+const QStringList kSkinPositions = {
+    QStringLiteral("top_left"),    QStringLiteral("top_center"),    QStringLiteral("top_right"),
+    QStringLiteral("center_left"), QStringLiteral("center"),        QStringLiteral("center_right"),
+    QStringLiteral("bottom_left"), QStringLiteral("bottom_center"), QStringLiteral("bottom_right"),
+};
 
 const QStringList kActionToolbarItemIds = editionActionIds({
     QStringLiteral("barcode-recognition"),
@@ -170,6 +175,14 @@ const QVector<ConfigurationSchemaEntry> kRawEntries = {
     {QStringLiteral("interface/language"), QStringLiteral("system"),
      ConfigurationValueKind::String},
     {QStringLiteral("interface/skin_path"), QString(), ConfigurationValueKind::String},
+    {QStringLiteral("interface/skin_position"), QStringLiteral("center"),
+     ConfigurationValueKind::String, std::nullopt, kSkinPositions},
+    {QStringLiteral("interface/toolbar_skin_path"), QString(), ConfigurationValueKind::String},
+    {QStringLiteral("interface/toolbar_skin_position"), QStringLiteral("center"),
+     ConfigurationValueKind::String, std::nullopt, kSkinPositions},
+    {QStringLiteral("interface/tray_menu_skin_path"), QString(), ConfigurationValueKind::String},
+    {QStringLiteral("interface/tray_menu_skin_position"), QStringLiteral("center"),
+     ConfigurationValueKind::String, std::nullopt, kSkinPositions},
     {QStringLiteral("interface/skin_display_mode"),
      QStringLiteral("overlay"),
      ConfigurationValueKind::String,

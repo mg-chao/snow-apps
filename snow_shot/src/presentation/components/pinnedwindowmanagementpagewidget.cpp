@@ -52,6 +52,29 @@ namespace thumbnail_cache = snow_shot::presentation::components::thumbnail_cache
 constexpr int kPinnedPreviewWidth = 260;
 constexpr int kPinnedPreviewHeight = 156;
 
+QString pinnedRowBackgroundStyle(const QWidget* entries, const styles::ThemeColorScheme& scheme) {
+    return QStringLiteral("QFrame#pinnedManagementRecord { background: %1; border: %2px solid %3; "
+                          "border-radius: %4px; }")
+        .arg(styles::mainWindowBackgroundColor(entries, scheme.map.colorBgContainer)
+                 .name(QColor::HexArgb))
+        .arg(std::max<qreal>(1.0, scheme.metricAlias.lineWidth))
+        .arg(scheme.map.colorBorderSecondary.name())
+        .arg(scheme.metricAlias.borderRadius);
+}
+
+void applyPinnedRowBackground(QFrame* row, const QString& cardStyle,
+                              const styles::ThemeColorScheme& scheme) {
+    row->setStyleSheet(cardStyle);
+    auto* badge = row->findChild<QLabel*>(QStringLiteral("pinnedManagementSourceBadge"));
+    badge->setStyleSheet(
+        QStringLiteral("QLabel { color: %1; background: %2; border: 1px solid %3; "
+                       "border-radius: 4px; padding: 2px 7px; }")
+            .arg(scheme.map.colorPrimaryText.name(),
+                 styles::mainWindowBackgroundColor(badge, scheme.map.colorPrimaryBg)
+                     .name(QColor::HexArgb),
+                 scheme.map.colorPrimaryBorder.name()));
+}
+
 QImage loadPinnedImage(storage::PinnedWindowRepository* repository, const QString& id) {
     const auto record = repository->loadRecord(id);
     if (!record) {
@@ -536,7 +559,7 @@ PinnedWindowManagementPageWidget::PinnedWindowManagementPageWidget(
     connect(&styles::ThemeManager::instance(), &styles::ThemeManager::themeChanged, this,
             [this]() { applyTheme(styles::ThemeManager::instance().themeColorScheme()); });
     connect(&adqt::theme::ThemeManager::instance(), &adqt::theme::ThemeManager::themeChanged, this,
-            [this] { applyTheme(m_scheme); });
+            [this] { updateSkinBackgrounds(); });
 
     retranslateUi();
     refresh();
@@ -956,6 +979,7 @@ void PinnedWindowManagementPageWidget::retranslateUi() {
 
 void PinnedWindowManagementPageWidget::applyTheme(const styles::ThemeColorScheme& scheme) {
     m_scheme = scheme;
+    m_backgroundOpacity = styles::mainWindowBackgroundOpacity(this);
     history_page::applyTextTheme(
         {m_title, m_count, m_selectionSummary, m_emptyTitle, m_emptyDescription}, scheme);
     const QPalette titlePalette = m_title->palette();
@@ -963,24 +987,9 @@ void PinnedWindowManagementPageWidget::applyTheme(const styles::ThemeColorScheme
     static_cast<HistorySelectionBar*>(m_selectionPanel)->applyTheme(scheme);
     m_emptyIcon->setPixmap(snow_shot::presentation::components::renderEmptyStateIcon(
         scheme, m_emptyIcon->size(), m_emptyIcon->devicePixelRatioF()));
-    const QString cardStyle =
-        QStringLiteral("QFrame#pinnedManagementRecord { background: %1; border: %2px solid %3; "
-                       "border-radius: %4px; }")
-            .arg(styles::mainWindowBackgroundColor(m_entries, scheme.map.colorBgContainer)
-                     .name(QColor::HexArgb))
-            .arg(std::max<qreal>(1.0, scheme.metricAlias.lineWidth))
-            .arg(scheme.map.colorBorderSecondary.name())
-            .arg(scheme.metricAlias.borderRadius);
+    const QString cardStyle = pinnedRowBackgroundStyle(m_entries, scheme);
     for (auto* row : m_entries->findChildren<QFrame*>(QStringLiteral("pinnedManagementRecord"))) {
-        row->setStyleSheet(cardStyle);
-        auto* badge = row->findChild<QLabel*>(QStringLiteral("pinnedManagementSourceBadge"));
-        badge->setStyleSheet(
-            QStringLiteral("QLabel { color: %1; background: %2; border: 1px solid %3; "
-                           "border-radius: 4px; padding: 2px 7px; }")
-                .arg(scheme.map.colorPrimaryText.name(),
-                     styles::mainWindowBackgroundColor(badge, scheme.map.colorPrimaryBg)
-                         .name(QColor::HexArgb),
-                     scheme.map.colorPrimaryBorder.name()));
+        applyPinnedRowBackground(row, cardStyle, scheme);
         auto* checkbox = row->findChild<adqt::widgets::AdCheckbox*>();
         QFont dateFont = checkbox->font();
         dateFont.setPixelSize(scheme.metricAlias.fontSizeLG);
@@ -991,6 +1000,19 @@ void PinnedWindowManagementPageWidget::applyTheme(const styles::ThemeColorScheme
         row->findChild<QLabel*>(QStringLiteral("pinnedManagementStatus"))->setPalette(muted);
     }
     updateSelectionBar();
+}
+
+void PinnedWindowManagementPageWidget::updateSkinBackgrounds() {
+    const qreal opacity = styles::mainWindowBackgroundOpacity(this);
+    if (m_backgroundOpacity == opacity) {
+        return;
+    }
+    m_backgroundOpacity = opacity;
+    const QString cardStyle = pinnedRowBackgroundStyle(m_entries, m_scheme);
+    for (auto* row : m_entries->findChildren<QFrame*>(QStringLiteral("pinnedManagementRecord"))) {
+        applyPinnedRowBackground(row, cardStyle, m_scheme);
+    }
+    m_selectionPanel->update();
 }
 
 void PinnedWindowManagementPageWidget::changeEvent(QEvent* event) {

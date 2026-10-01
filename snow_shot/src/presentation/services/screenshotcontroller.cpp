@@ -862,6 +862,7 @@ bool ScreenshotController::Impl::toggleGuidesForCurrentSession() {
 }
 
 void ScreenshotController::Impl::createHistoryService() {
+    auto& storage = snow_shot::storage::ApplicationStorage::instance();
     m_historyService = std::make_unique<ScreenshotHistoryService>(
         ScreenshotHistoryServiceContext{
             m_displaySession,
@@ -928,7 +929,9 @@ void ScreenshotController::Impl::createHistoryService() {
                 }
             },
         },
-        snow_shot::storage::ApplicationStorage::instance().captureHistory());
+        storage.captureHistory());
+    QObject::connect(&storage, &snow_shot::storage::ApplicationStorage::captureHistoryChanged,
+                     m_historyService.get(), &ScreenshotHistoryService::refreshMetadata);
 }
 
 ScreenshotOverlayWindow* ScreenshotController::Impl::overlayUnderCursor() const {

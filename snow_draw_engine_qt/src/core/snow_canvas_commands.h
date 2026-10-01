@@ -114,6 +114,9 @@ MutationResult setSpotlightConfig(SnowRuntime runtime, SnowViewport viewport,
                                   const SnowSpotlightConfig& config);
 MutationResult setFilterStyle(SnowRuntime runtime, SnowViewport viewport,
                               const SnowFilterStyle& style, std::uint32_t properties);
+MutationResult setFilterCreationStyle(SnowRuntime runtime, SnowViewport viewport,
+                                      const SnowFilterStyle& style, std::uint32_t properties,
+                                      SnowActiveTool tool);
 MutationResult setTextStyle(SnowRuntime runtime, SnowViewport viewport, const SnowTextStyle& style,
                             std::uint32_t properties,
                             const std::vector<SnowTextLayoutOverride>& layouts = {});

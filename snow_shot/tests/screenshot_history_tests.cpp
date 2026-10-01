@@ -57,6 +57,23 @@
 
 namespace storage = snow_shot::storage;
 
+class ScreenshotHistoryServiceTestAccess {
+  public:
+    static const QVector<storage::CaptureHistoryRecord>&
+    records(const ScreenshotHistoryService& history) {
+        return history.m_entries;
+    }
+
+    static std::size_t pendingWrites(const ScreenshotHistoryService& history) {
+        return history.m_pendingWrites.size();
+    }
+
+    static std::shared_future<storage::CaptureHistoryPublishResult>
+    lastWrite(const ScreenshotHistoryService& history) {
+        return history.m_pendingWrites.back().result;
+    }
+};
+
 namespace {
 using snow_shot::platform::PhysicalCursorDirection;
 
@@ -288,6 +305,270 @@ CapturedDisplayModel display(QString stableId, QString name, QRect canvasRect, Q
     result.image = std::move(image);
     result.active = true;
     return result;
+}
+
+struct HistoryMetadataFixture {
+    ScreenshotDisplaySession displays;
+    SnowCanvasRuntime runtime;
+    ScreenshotSelectionModel selection;
+    ScreenshotInteractionState interaction;
+    ScreenshotIntelligentSelectionModel intelligent;
+
+    HistoryMetadataFixture() {
+        displays.appendDisplay(display(QStringLiteral("metadata"), QStringLiteral("Metadata"),
+                                       QRect(0, 0, 16, 16),
+                                       solidImage(QSize(16, 16), qRgb(10, 20, 30))));
+        selection.setSelectionRect(QRectF(0, 0, 16, 16));
+        interaction.enterOverlayVisible(false);
+    }
+
+    ScreenshotHistoryServiceContext context() {
+        return {displays, runtime, selection, interaction, intelligent};
+    }
+};
+
+void waitForHistoryWrites(ScreenshotHistoryService& history, std::size_t expected,
+                          const char* message) {
+    QElapsedTimer timer;
+    timer.start();
+    while (ScreenshotHistoryServiceTestAccess::pendingWrites(history) != expected &&
+           timer.elapsed() < 5000) {
+        QCoreApplication::processEvents(QEventLoop::AllEvents, 20);
+        QThread::msleep(1);
+    }
+    require(ScreenshotHistoryServiceTestAccess::pendingWrites(history) == expected, message);
+}
+
+void idlePublicationsReconcileRepositoryLimits(const QString& root) {
+    storage::CaptureHistoryRepositoryOptions options;
+    options.policy.maxEntries = 3;
+    auto repository = storage::makeCaptureHistoryRepository(root, std::move(options));
+    HistoryMetadataFixture fixture;
+    ScreenshotHistoryService history(fixture.context(), *repository);
+    const auto started = QDateTime::currentDateTimeUtc();
+    for (int cycle = 0; cycle < 20; ++cycle) {
+        auto entry = takeSnapshot(history.snapshotCurrent(true), "metadata snapshot failed");
+        entry.createdUtc = started.addMSecs(cycle);
+        history.commit(std::move(entry));
+        history.resetCaptureNavigation();
+        waitForHistoryWrites(history, 0, "idle history did not reap its completed publication");
+        const auto persisted = repository->records();
+        const auto& metadata = ScreenshotHistoryServiceTestAccess::records(history);
+        require(persisted.size() == std::min(cycle + 1, 3),
+                "repository did not enforce its history limit");
+        require(metadata.size() == persisted.size(),
+                "idle history retained metadata pruned by the repository");
+        for (qsizetype index = 0; index < persisted.size(); ++index) {
+            require(metadata[index].id == persisted[index].id,
+                    "idle history metadata diverged from the repository");
+        }
+    }
+}
+
+void rejectedPublicationsPreservePendingMetadata(const QString& root) {
+    std::mutex gateMutex;
+    std::condition_variable gateChanged;
+    bool entered = false;
+    bool released = false;
+    storage::CaptureHistoryRepositoryOptions options;
+    options.policy.maxEntries = 1;
+    options.operationObserved = [&](storage::CaptureHistoryOperation operation) {
+        if (operation != storage::CaptureHistoryOperation::WorkerStarted)
+            return;
+        std::unique_lock lock(gateMutex);
+        entered = true;
+        gateChanged.notify_all();
+        require(gateChanged.wait_for(lock, std::chrono::seconds(5), [&]() { return released; }),
+                "history publication gate was not released");
+    };
+    auto repository = storage::makeCaptureHistoryRepository(root, std::move(options));
+    HistoryMetadataFixture fixture;
+    ScreenshotHistoryService history(fixture.context(), *repository);
+    QVector<QString> accepted;
+    auto commit = [&]() {
+        auto entry =
+            takeSnapshot(history.snapshotCurrent(true), "pending metadata snapshot failed");
+        const auto id = entry.id;
+        history.commit(std::move(entry));
+        return id;
+    };
+    accepted.push_back(commit());
+    {
+        std::unique_lock lock(gateMutex);
+        require(gateChanged.wait_for(lock, std::chrono::seconds(5), [&]() { return entered; }),
+                "history publication did not reach its gate");
+    }
+    accepted.push_back(commit());
+    accepted.push_back(commit());
+    const QString rejected = commit();
+    waitForHistoryWrites(history, 3, "rejected history placeholder survived while idle");
+    const auto& metadata = ScreenshotHistoryServiceTestAccess::records(history);
+    require(metadata.size() == 3, "refresh lost pending history metadata");
+    for (const auto& record : metadata) {
+        require(record.id != rejected && accepted.contains(record.id),
+                "refresh retained a rejected record or discarded an accepted placeholder");
+    }
+    {
+        const std::lock_guard lock(gateMutex);
+        released = true;
+    }
+    gateChanged.notify_all();
+    waitForHistoryWrites(history, 0, "accepted history publications did not settle");
+    require(repository->records().size() == 1 &&
+                ScreenshotHistoryServiceTestAccess::records(history).size() == 1,
+            "completed history metadata did not follow repository pruning");
+}
+
+void failedPublicationsReleaseMetadata(const QString& root) {
+    HistoryMetadataFixture fixture;
+    {
+        ScreenshotHistoryService history(fixture.context(),
+                                         QDir(root).filePath(QStringLiteral("validation")));
+        auto entry =
+            takeSnapshot(history.snapshotCurrent(true), "invalid metadata snapshot failed");
+        entry.canvasHistory = QByteArrayLiteral("invalid canvas history");
+        history.commit(std::move(entry));
+        waitForHistoryWrites(history, 0, "failed validation was not reaped while idle");
+        require(ScreenshotHistoryServiceTestAccess::records(history).isEmpty(),
+                "failed validation retained its history placeholder");
+    }
+    {
+        storage::CaptureHistoryRepositoryOptions options;
+        options.writeAvailable = false;
+        auto repository = storage::makeCaptureHistoryRepository(
+            QDir(root).filePath(QStringLiteral("publication")), std::move(options));
+        ScreenshotHistoryService history(fixture.context(), *repository);
+        history.commit(
+            takeSnapshot(history.snapshotCurrent(true), "unavailable publication snapshot failed"));
+        waitForHistoryWrites(history, 0, "failed publication was not reaped while idle");
+        require(ScreenshotHistoryServiceTestAccess::records(history).isEmpty(),
+                "failed publication retained its history placeholder");
+    }
+}
+
+void historyDestructionDiscardsQueuedCompletion(const QString& root) {
+    auto repository = storage::makeCaptureHistoryRepository(root);
+    HistoryMetadataFixture fixture;
+    {
+        ScreenshotHistoryService history(fixture.context(), *repository);
+        history.commit(takeSnapshot(history.snapshotCurrent(true), "shutdown snapshot failed"));
+        require(ScreenshotHistoryServiceTestAccess::lastWrite(history).get().storage.success,
+                "shutdown publication failed");
+        // Do not deliver the queued completion until its receiver has been destroyed.
+    }
+    QCoreApplication::processEvents(QEventLoop::AllEvents, 20);
+    require(repository->records().size() == 1,
+            "history destruction abandoned a completed publication");
+}
+
+void historyNavigationSurvivesIdlePublication(const QString& root, int maximumEntries) {
+    storage::CaptureHistoryRepositoryOptions options;
+    options.policy.maxEntries = maximumEntries;
+    auto repository = storage::makeCaptureHistoryRepository(root, std::move(options));
+    HistoryMetadataFixture fixture;
+    ScreenshotHistoryService history(fixture.context(), *repository);
+    const auto started = QDateTime::currentDateTimeUtc();
+    const QImage originalImage = fixture.displays.displayAt(0).image;
+    auto original =
+        takeSnapshot(history.snapshotCurrent(true), "navigation metadata snapshot failed");
+    original.createdUtc = started;
+    const auto originalId = original.id;
+    history.commit(std::move(original));
+    waitForHistoryWrites(history, 0, "navigation metadata publication did not settle");
+
+    const QImage liveImage = solidImage(QSize(16, 16), qRgb(40, 50, 60));
+    fixture.displays.displayAt(0).image = liveImage;
+    require(history.navigateToRecord(originalId), "could not browse original history record");
+    waitForNavigation(history, "original history record navigation timed out");
+    auto newer = takeSnapshot(history.snapshotCurrent(true), "newer navigation snapshot failed");
+    newer.createdUtc = started.addMSecs(1);
+    const QImage newerImage = solidImage(QSize(16, 16), qRgb(70, 80, 90));
+    newer.displays.front().image = newerImage;
+    history.commit(std::move(newer));
+    waitForHistoryWrites(history, 0, "newer navigation publication did not settle");
+    require(equalPixels(fixture.displays.displayAt(0).image, originalImage),
+            "metadata reconciliation replaced the displayed history snapshot");
+    require(repository->records().size() == std::min(maximumEntries, 2),
+            "navigation repository did not enforce its history limit");
+    require(!history.navigatePrevious(), "displayed oldest history moved past its boundary");
+    require(history.navigateNext(), "displayed history skipped the retained newer record");
+    waitForNavigation(history, "retained newer record navigation timed out");
+    require(equalPixels(fixture.displays.displayAt(0).image, newerImage),
+            "displayed history position referred to a different metadata row");
+    require(history.navigateNext() && equalPixels(fixture.displays.displayAt(0).image, liveImage),
+            "metadata reconciliation lost the original live endpoint");
+}
+
+void storageClearPreservesHistoryLiveEndpoint() {
+    HistoryMetadataFixture fixture;
+    auto& repository = storage::ApplicationStorage::instance().captureHistory();
+    ScreenshotHistoryService history(fixture.context());
+    history.commit(takeSnapshot(history.snapshotCurrent(true), "clear metadata snapshot failed"));
+    waitForHistoryWrites(history, 0, "history publication before clear did not settle");
+    require(!ScreenshotHistoryServiceTestAccess::records(history).isEmpty(),
+            "history publication before clear did not retain metadata");
+    const QImage liveImage = solidImage(QSize(16, 16), qRgb(40, 50, 60));
+    fixture.displays.displayAt(0).image = liveImage;
+    require(history.navigatePrevious(), "could not browse history before external clear");
+    waitForNavigation(history, "history navigation before external clear timed out");
+    require(repository.requestClear().get().success, "external history clear failed");
+    QElapsedTimer timer;
+    timer.start();
+    while (!ScreenshotHistoryServiceTestAccess::records(history).isEmpty() &&
+           timer.elapsed() < 5000) {
+        QCoreApplication::processEvents(QEventLoop::AllEvents, 20);
+        QThread::msleep(1);
+    }
+    require(ScreenshotHistoryServiceTestAccess::records(history).isEmpty(),
+            "external storage clear retained idle history metadata");
+    require(history.navigateNext() && equalPixels(fixture.displays.displayAt(0).image, liveImage),
+            "external history clear lost the live endpoint");
+}
+
+void removedHistoryRecordRemainsADetachedSnapshot() {
+    HistoryMetadataFixture fixture;
+    auto& repository = storage::ApplicationStorage::instance().captureHistory();
+    ScreenshotHistoryService history(fixture.context());
+    const auto started = QDateTime::currentDateTimeUtc();
+    QVector<QString> ids;
+    QVector<QImage> images;
+    for (int index = 0; index < 3; ++index) {
+        images.push_back(solidImage(QSize(16, 16), qRgb(30 * index, 50, 60)));
+        fixture.displays.displayAt(0).image = images.back();
+        auto entry =
+            takeSnapshot(history.snapshotCurrent(true), "removed metadata snapshot failed");
+        entry.createdUtc = started.addMSecs(index);
+        ids.push_back(entry.id);
+        history.commit(std::move(entry));
+        waitForHistoryWrites(history, 0, "history publication before removal did not settle");
+    }
+    const QImage liveImage = solidImage(QSize(16, 16), qRgb(90, 100, 110));
+    fixture.displays.displayAt(0).image = liveImage;
+    require(history.navigateToRecord(ids[1]), "could not browse middle history record");
+    waitForNavigation(history, "middle history record navigation timed out");
+    require(repository.remove(ids[1]).get().success, "external middle history removal failed");
+    QElapsedTimer timer;
+    timer.start();
+    while (ScreenshotHistoryServiceTestAccess::records(history).size() != 2 &&
+           timer.elapsed() < 5000) {
+        QCoreApplication::processEvents(QEventLoop::AllEvents, 20);
+        QThread::msleep(1);
+    }
+    require(ScreenshotHistoryServiceTestAccess::records(history).size() == 2 &&
+                equalPixels(fixture.displays.displayAt(0).image, images[1]),
+            "external removal changed the displayed snapshot or retained its metadata");
+    // A removed snapshot uses the existing virtual position beyond retained history.
+    require(!history.navigatePrevious() && history.navigateNext(),
+            "removed snapshot did not become a detached history endpoint");
+    waitForNavigation(history, "oldest retained record navigation timed out");
+    require(equalPixels(fixture.displays.displayAt(0).image, images[0]),
+            "detached history skipped the retained oldest record");
+    require(history.navigateNext(), "detached history could not traverse newer retained records");
+    waitForNavigation(history, "newer retained record navigation timed out");
+    require(equalPixels(fixture.displays.displayAt(0).image, images[2]),
+            "detached history navigation applied a different retained record");
+    require(history.navigateNext() && equalPixels(fixture.displays.displayAt(0).image, liveImage),
+            "external history removal lost the live endpoint");
 }
 
 void requireCanvasHistoryPayload(const QByteArray& payload) {
@@ -4977,6 +5258,27 @@ int main(int argc, char** argv) {
     };
     require(storage::ApplicationStorage::instance().initialize(storageOptions).success,
             "failed to initialize isolated shortcut settings");
+    auto metadataLifecycle = [&]() {
+        const QDir root(temporary.path());
+        idlePublicationsReconcileRepositoryLimits(root.filePath(QStringLiteral("metadata-limits")));
+        rejectedPublicationsPreservePendingMetadata(
+            root.filePath(QStringLiteral("metadata-pending")));
+        failedPublicationsReleaseMetadata(root.filePath(QStringLiteral("metadata-failures")));
+        historyDestructionDiscardsQueuedCompletion(
+            root.filePath(QStringLiteral("metadata-shutdown")));
+        historyNavigationSurvivesIdlePublication(
+            root.filePath(QStringLiteral("metadata-navigation-pruned")), 1);
+        historyNavigationSurvivesIdlePublication(
+            root.filePath(QStringLiteral("metadata-navigation-retained")), 3);
+        storageClearPreservesHistoryLiveEndpoint();
+        removedHistoryRecordRemainsADetachedSnapshot();
+    };
+    if (QCoreApplication::arguments().contains(
+            QStringLiteral("--history-metadata-lifecycle-only"))) {
+        metadataLifecycle();
+        storage::ApplicationStorage::instance().shutdown();
+        return 0;
+    }
     if (QCoreApplication::arguments().contains(QStringLiteral("--history-worker-lifecycle-only"))) {
         validationWorkersRetireAndRestart();
         storage::ApplicationStorage::instance().shutdown();
@@ -5050,6 +5352,7 @@ int main(int argc, char** argv) {
         return 0;
     }
     snapshotsRetainTheLiveDesktopGeometry();
+    metadataLifecycle();
     validationWorkersRetireAndRestart();
     editorHistoryUsesConfiguredDisplayCompression(
         QDir(temporary.path()).filePath(QStringLiteral("compression")));

@@ -1,6 +1,13 @@
 use crate::abi::convert::*;
 use crate::abi::handles::*;
+use crate::abi::raw_enum::SnowRawEnum;
 use crate::abi::types::*;
+
+unsafe fn filter_style_type_is_valid(style: *const SnowFilterStyle) -> bool {
+    let raw =
+        unsafe { std::ptr::read_unaligned(std::ptr::addr_of!((*style).filter_type).cast::<i32>()) };
+    SnowFilterType::from_raw(raw).is_some()
+}
 
 unsafe fn serial_number_style_type_is_valid(style: *const SnowSerialNumberStyle) -> bool {
     let raw = unsafe {
@@ -190,7 +197,10 @@ pub unsafe extern "C" fn snow_viewport_set_filter_style_ex(
     out_changed_viewports: *mut SnowChangedViewportList,
 ) -> SnowError {
     ffi_error(|| {
-        if style.is_null() || out_changed_viewports.is_null() {
+        if style.is_null()
+            || out_changed_viewports.is_null()
+            || !unsafe { filter_style_type_is_valid(style) }
+        {
             return SnowError::InvalidArgument;
         }
         ffi_status(with_runtime_impl_mut(runtime, |state| {
@@ -203,6 +213,161 @@ pub unsafe extern "C" fn snow_viewport_set_filter_style_ex(
             Ok(())
         }))
     })
+}
+
+/// # Safety
+/// Handles and output pointers must be live and writable; `style` must be readable.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn snow_viewport_set_filter_creation_style_ex(
+    runtime: SnowRuntime,
+    viewport: SnowViewport,
+    style: *const SnowFilterStyle,
+    properties: u32,
+    // Decode the C enum as an integer so invalid discriminants can be rejected safely.
+    tool: i32,
+    out_changed_viewports: *mut SnowChangedViewportList,
+) -> SnowError {
+    ffi_error(|| {
+        if style.is_null()
+            || out_changed_viewports.is_null()
+            || !unsafe { filter_style_type_is_valid(style) }
+        {
+            return SnowError::InvalidArgument;
+        }
+        let tool = match tool {
+            value if value == SnowActiveTool::RectangleFilter as i32 => {
+                snow_draw_engine::ActiveTool::RectangleFilter
+            }
+            value if value == SnowActiveTool::PenFilter as i32 => {
+                snow_draw_engine::ActiveTool::PenFilter
+            }
+            _ => return SnowError::InvalidArgument,
+        };
+        ffi_status(with_runtime_impl_mut(runtime, |state| {
+            let id = viewport_id(viewport)?;
+            let result = state
+                .runtime
+                .set_viewport_filter_creation_style(
+                    id,
+                    unsafe { (*style).into() },
+                    properties,
+                    tool,
+                )
+                .map_err(SnowError::from)?;
+            write_changed_viewports(out_changed_viewports, result.changed_viewports);
+            Ok(())
+        }))
+    })
+}
+
+#[cfg(test)]
+mod filter_creation_style_tests {
+    use super::*;
+
+    #[test]
+    fn filter_creation_style_export_preserves_state_and_output_on_rejection() {
+        let mut state = SnowRuntimeImpl {
+            runtime: snow_draw_engine::Runtime::new(snow_draw_engine::RuntimeConfig::default()),
+        };
+        let id = state
+            .runtime
+            .create_viewport(snow_draw_engine::ViewportConfig::default())
+            .unwrap();
+        let mut viewport = SnowViewportImpl { id };
+        state
+            .runtime
+            .set_viewport_active_tool(id, snow_draw_engine::ActiveTool::Select)
+            .unwrap();
+        let before = state.runtime.serialize_document_session().unwrap();
+        let style = SnowFilterStyle {
+            filter_type: SnowFilterType::GaussianBlur,
+            strength: 0.3,
+            opacity: 0.6,
+            stroke_width: 20.0,
+        };
+        let sentinel = std::ptr::dangling_mut::<SnowChangedViewportListImpl>();
+        let mut changed = sentinel;
+        unsafe {
+            let mut invalid = Box::<SnowFilterStyle>::new_uninit();
+            let invalid_ptr = invalid.as_mut_ptr();
+            invalid_ptr.write(style);
+            std::ptr::addr_of_mut!((*invalid_ptr).filter_type)
+                .cast::<i32>()
+                .write_unaligned(99);
+            for (patch, properties, tool) in [
+                (
+                    &style as *const _,
+                    u32::MAX,
+                    SnowActiveTool::PenFilter as i32,
+                ),
+                (
+                    &style as *const _,
+                    snow_draw_engine::FILTER_STYLE_PROPERTY_ALL,
+                    SnowActiveTool::Shape as i32,
+                ),
+                (
+                    std::ptr::null(),
+                    snow_draw_engine::FILTER_STYLE_PROPERTY_ALL,
+                    SnowActiveTool::PenFilter as i32,
+                ),
+                (
+                    invalid_ptr.cast_const(),
+                    snow_draw_engine::FILTER_STYLE_PROPERTY_ALL,
+                    SnowActiveTool::PenFilter as i32,
+                ),
+                (
+                    &style as *const _,
+                    snow_draw_engine::FILTER_STYLE_PROPERTY_ALL,
+                    99,
+                ),
+            ] {
+                assert_eq!(
+                    snow_viewport_set_filter_creation_style_ex(
+                        &mut state,
+                        &mut viewport,
+                        patch,
+                        properties,
+                        tool,
+                        &mut changed
+                    ),
+                    SnowError::InvalidArgument
+                );
+                assert_eq!(changed, sentinel);
+                assert_eq!(state.runtime.serialize_document_session().unwrap(), before);
+            }
+            assert_eq!(
+                snow_viewport_set_filter_style_ex(
+                    &mut state,
+                    &mut viewport,
+                    invalid_ptr,
+                    snow_draw_engine::FILTER_STYLE_PROPERTY_ALL,
+                    &mut changed
+                ),
+                SnowError::InvalidArgument
+            );
+            assert_eq!(changed, sentinel);
+            assert_eq!(state.runtime.serialize_document_session().unwrap(), before);
+            changed = std::ptr::null_mut();
+            assert_eq!(
+                snow_viewport_set_filter_creation_style_ex(
+                    &mut state,
+                    &mut viewport,
+                    &style,
+                    snow_draw_engine::FILTER_STYLE_PROPERTY_ALL,
+                    SnowActiveTool::PenFilter as i32,
+                    &mut changed
+                ),
+                SnowError::Ok
+            );
+            assert!(!changed.is_null());
+            assert_eq!(
+                state.runtime.viewport_active_tool(id).unwrap(),
+                snow_draw_engine::ActiveTool::Select
+            );
+            assert!(!state.runtime.history_state().can_undo);
+            crate::abi::exports::snow_changed_viewports_destroy(changed);
+        }
+    }
 }
 
 #[cfg(test)]

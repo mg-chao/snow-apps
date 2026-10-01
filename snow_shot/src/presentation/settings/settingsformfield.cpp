@@ -158,13 +158,25 @@ struct SettingsFormField::Impl {
                                                descriptor.kind == SettingsFieldKind::Slider
                                            ? QVariant(value.toInt())
                                            : value;
-                static_cast<void>(session.submitDraft(descriptor.id, draft));
+                if (const auto* file =
+                        std::get_if<SettingsFilePathDefinition>(&descriptor.definition->payload)) {
+                    static_cast<void>(session.applyFilePathValue(file->binding, draft.toString()));
+                } else {
+                    static_cast<void>(session.submitDraft(descriptor.id, draft));
+                }
                 sync();
             });
         QObject::connect(&session, &SettingsRuntimeSession::fieldChanged, &q,
                          [this](const QString& id, const SettingsFieldState& state) {
                              if (id == descriptor.id)
                                  sync(&state);
+                         });
+        QObject::connect(&session, &SettingsRuntimeSession::filePathStatusChanged, &q,
+                         [this](SettingsFilePathBinding binding) {
+                             const auto* file = std::get_if<SettingsFilePathDefinition>(
+                                 &descriptor.definition->payload);
+                             if (file != nullptr && file->binding == binding)
+                                 sync();
                          });
         QObject::connect(&session, &SettingsRuntimeSession::optionsChanged, &q,
                          [this](const QString& id, const SettingsOptions& optionsState) {
@@ -174,13 +186,6 @@ struct SettingsFormField::Impl {
                              optionsLoading = optionsState.loading;
                              syncChoices();
                              sync();
-                         });
-        QObject::connect(&session, &SettingsRuntimeSession::filePathStatusChanged, &q,
-                         [this](SettingsFilePathBinding binding) {
-                             const auto* file = std::get_if<SettingsFilePathDefinition>(
-                                 &descriptor.definition->payload);
-                             if (file != nullptr && file->binding == binding)
-                                 sync();
                          });
         retranslateUi();
         sync();
@@ -308,6 +313,9 @@ struct SettingsFormField::Impl {
             field->setDescriptionOverride(description, statusError);
             if (statusError)
                 field->item()->setValidateStatus(adqt::widgets::AdFormItem::ValidateStatus::Error);
+            qobject_cast<FilePathInput*>(editor)->lineEdit()->setStatus(
+                statusError || !error.isEmpty() ? adqt::widgets::AdLineEdit::Status::Error
+                                                : adqt::widgets::AdLineEdit::Status::None);
         }
         const auto applyProperties = [&state](QWidget* target) {
             bool changed = false;

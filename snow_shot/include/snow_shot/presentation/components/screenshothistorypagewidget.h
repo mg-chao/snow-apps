@@ -108,6 +108,7 @@ class ScreenshotHistoryPageWidget final : public QWidget {
     void hideEvent(QHideEvent* event) override;
 
   private:
+    void updateSkinBackgrounds();
     void rebuildFilteredRecords(bool resetPage);
     void rebuildEntries();
     void rebuildPreview();
@@ -161,6 +162,7 @@ class ScreenshotHistoryPageWidget final : public QWidget {
     QSet<QString> m_selectedRecordIds;
     QHash<QString, std::optional<snow_shot::storage::CaptureHistoryAssetSet>> m_resolvedAssets;
     snow_shot::presentation::styles::ThemeColorScheme m_colorScheme;
+    qreal m_backgroundOpacity = 1.0;
     bool m_active = false;
     bool m_dirty = true;
     bool m_refreshQueued = false;

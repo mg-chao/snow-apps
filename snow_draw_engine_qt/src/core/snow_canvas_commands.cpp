@@ -350,6 +350,19 @@ MutationResult setFilterStyle(SnowRuntime runtime, SnowViewport viewport,
     return result;
 }
 
+MutationResult setFilterCreationStyle(SnowRuntime runtime, SnowViewport viewport,
+                                      const SnowFilterStyle& style, std::uint32_t properties,
+                                      SnowActiveTool tool) {
+    MutationResult result;
+    if (!hasViewport(runtime, viewport)) {
+        return result;
+    }
+    result.success =
+        snow_viewport_set_filter_creation_style_ex(runtime, viewport, &style, properties, tool,
+                                                   result.changedViewports.outParam()) == SNOW_OK;
+    return result;
+}
+
 MutationResult setTextStyle(SnowRuntime runtime, SnowViewport viewport, const SnowTextStyle& style,
                             std::uint32_t properties,
                             const std::vector<SnowTextLayoutOverride>& layouts) {

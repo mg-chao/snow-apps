@@ -28,6 +28,7 @@
 #include <QPointer>
 #include <QPainter>
 #include <QStackedWidget>
+#include <QStringList>
 #include <algorithm>
 #include <cstdlib>
 #include <iostream>
@@ -87,6 +88,50 @@ class SkinBackdrop final : public QWidget {
         painter.fillRect(rect(), color);
     }
 };
+
+class StyleChangeRecorder final : public QObject {
+  public:
+    QStringList styles;
+
+  protected:
+    bool eventFilter(QObject* watched, QEvent* event) override {
+        if (event->type() == QEvent::StyleChange) {
+            styles.push_back(static_cast<QWidget*>(watched)->styleSheet());
+        }
+        return false;
+    }
+};
+
+void pinnedThemeChangesDoNotRestyleTwice(const QVector<storage::PinnedWindowSummary>& records) {
+    auto& themeManager = presentation::styles::ThemeManager::instance();
+    themeManager.setThemeAppearance(presentation::styles::ThemeAppearance::Light);
+    Fixture fixture;
+    fixture.items = records;
+    PinnedWindowManagementPageWidget page(&fixture, nullptr);
+    page.resize(980, 640);
+    page.show();
+    QCoreApplication::processEvents();
+    auto* row = page.findChild<QFrame*>(QStringLiteral("pinnedManagementRecord"));
+    require(row != nullptr, "the pinned theme regression needs a seeded row");
+    StyleChangeRecorder recorder;
+    row->installEventFilter(&recorder);
+    for (const auto appearance : {presentation::styles::ThemeAppearance::Dark,
+                                  presentation::styles::ThemeAppearance::Light}) {
+        const QString previous = row->styleSheet();
+        recorder.styles.clear();
+        themeManager.setThemeAppearance(appearance);
+        require(recorder.styles.size() == 1 && recorder.styles.first() != previous,
+                "an unskinned pinned theme change must apply each row background exactly once");
+    }
+    QWidget unrelated;
+    adqt::theme::ThemeOverride overrideValue;
+    overrideValue.backgroundOpacity = 0.4;
+    auto& controlTheme = adqt::theme::ThemeManager::instance();
+    recorder.styles.clear();
+    controlTheme.setScopeOverride(&unrelated, overrideValue);
+    controlTheme.clearScopeOverride(&unrelated);
+    require(recorder.styles.isEmpty(), "an unrelated skin must not restyle unskinned pinned rows");
+}
 
 void pinnedRowsRespectSkinMask(const QVector<storage::PinnedWindowSummary>& records) {
     Fixture fixture;
@@ -154,6 +199,7 @@ int main(int argc, char** argv) {
     second.ignored = true;
     second.creationSource = storage::PinnedWindowCreationSource::Screenshot;
     fixture.items = {first, second};
+    pinnedThemeChangesDoNotRestyleTwice(fixture.items);
     pinnedRowsRespectSkinMask(fixture.items);
     {
         Fixture many;

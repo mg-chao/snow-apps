@@ -71,6 +71,11 @@ class SnowCanvasWidget : public QWidget {
     bool setCanvasShapeStylePatch(const SnowCanvasShapeStyle& style, quint32 properties,
                                   SnowCanvasShapeKind kind);
     bool setCanvasFilterStyle(const SnowCanvasFilterStyle& style, quint32 properties);
+    // Updates shared creation defaults for RectangleFilter or PenFilter without
+    // changing this widget's active tool, selection, or existing elements.
+    // Strength remains shared by both filter families.
+    bool setCanvasFilterCreationStyle(const SnowCanvasFilterStyle& style, quint32 properties,
+                                      SnowCanvasTool filterTool);
     bool setCanvasTextStyle(const SnowCanvasTextStyle& style,
                             quint32 properties = SnowCanvasTextStyleAllProperties);
     bool setCanvasSerialNumberStyle(const SnowCanvasSerialNumberStyle& style);

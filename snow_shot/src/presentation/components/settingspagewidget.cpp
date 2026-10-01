@@ -649,6 +649,12 @@ class SettingsPageWidget::Impl {
                 definition.payload);
         }
 
+        if (descriptor != nullptr && descriptor->reset == settings::SettingsSectionReset::Skin &&
+            runtime.anchor != nullptr) {
+            // Skin copy can include a loading or error line. Fixed vertical
+            // policies clamp height-for-width to the unwrapped size hint.
+            runtime.anchor->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
+        }
         if (runtime.formField == nullptr && runtime.focusTarget != nullptr &&
             runtime.focusTarget != runtime.anchor) {
             runtime.focusTarget->setObjectName(

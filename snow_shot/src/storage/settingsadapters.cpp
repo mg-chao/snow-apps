@@ -373,6 +373,46 @@ bool InterfaceSettings::setSkinPath(const QString& path) const {
     return cache().setValue(QStringLiteral("interface/skin_path"), path);
 }
 
+QString InterfaceSettings::skinPosition() const {
+    return cache().value(QStringLiteral("interface/skin_position")).toString();
+}
+
+bool InterfaceSettings::setSkinPosition(const QString& position) const {
+    return cache().setValue(QStringLiteral("interface/skin_position"), position);
+}
+
+QString InterfaceSettings::toolbarSkinPath() const {
+    return cache().value(QStringLiteral("interface/toolbar_skin_path")).toString();
+}
+
+bool InterfaceSettings::setToolbarSkinPath(const QString& path) const {
+    return cache().setValue(QStringLiteral("interface/toolbar_skin_path"), path);
+}
+
+QString InterfaceSettings::toolbarSkinPosition() const {
+    return cache().value(QStringLiteral("interface/toolbar_skin_position")).toString();
+}
+
+bool InterfaceSettings::setToolbarSkinPosition(const QString& position) const {
+    return cache().setValue(QStringLiteral("interface/toolbar_skin_position"), position);
+}
+
+QString InterfaceSettings::trayMenuSkinPath() const {
+    return cache().value(QStringLiteral("interface/tray_menu_skin_path")).toString();
+}
+
+bool InterfaceSettings::setTrayMenuSkinPath(const QString& path) const {
+    return cache().setValue(QStringLiteral("interface/tray_menu_skin_path"), path);
+}
+
+QString InterfaceSettings::trayMenuSkinPosition() const {
+    return cache().value(QStringLiteral("interface/tray_menu_skin_position")).toString();
+}
+
+bool InterfaceSettings::setTrayMenuSkinPosition(const QString& position) const {
+    return cache().setValue(QStringLiteral("interface/tray_menu_skin_position"), position);
+}
+
 QString InterfaceSettings::skinDisplayMode() const {
     return cache().value(QStringLiteral("interface/skin_display_mode")).toString();
 }

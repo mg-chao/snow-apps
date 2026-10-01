@@ -53,6 +53,10 @@ class AdDpiStableWindowControllerTestAccess {
         controller.nativeTransitionActive_ = active;
         controller.windowUpdatesWereEnabled_ = false;
     }
+
+    static qsizetype auxiliarySurfaceCount(const AdDpiStableWindowController& controller) {
+        return controller.auxiliarySurfaces_.size();
+    }
 };
 
 } // namespace adqt::widgets
@@ -562,6 +566,92 @@ void resetAndExternalUpdateSuppressionArePreserved() {
     controller.endPhysicalDrag();
 }
 
+void auxiliarySurfaceRegistrationsFollowWidgetLifetimes() {
+    QWidget window;
+    window.resize(320, 80);
+    adqt::widgets::AdDpiStableWindowController controller(&window);
+    QWidget persistentSurface;
+    controller.registerAuxiliarySurface(&persistentSurface);
+    controller.registerAuxiliarySurface(&persistentSurface);
+    controller.registerAuxiliarySurface(nullptr);
+    require(adqt::widgets::AdDpiStableWindowControllerTestAccess::auxiliarySurfaceCount(
+                controller) == 1,
+            "duplicate and null auxiliary surfaces must not create registrations");
+
+    for (int cycle = 0; cycle < 128; ++cycle) {
+        auto surface = std::make_unique<QWidget>();
+        controller.registerAuxiliarySurface(surface.get());
+        controller.registerAuxiliarySurface(surface.get());
+        controller.resetBaseline();
+        require(controller.captureBaseline(), "auxiliary lifetime baseline could not be reused");
+        require(adqt::widgets::AdDpiStableWindowControllerTestAccess::auxiliarySurfaceCount(
+                    controller) == 2,
+                "baseline reset must preserve exactly the live auxiliary registrations");
+        surface.reset();
+        require(adqt::widgets::AdDpiStableWindowControllerTestAccess::auxiliarySurfaceCount(
+                    controller) == 1,
+                "destroyed auxiliary surfaces must release registrations without a DPI transition");
+    }
+
+    controller.unregisterAuxiliarySurface(&persistentSurface);
+    controller.unregisterAuxiliarySurface(&persistentSurface);
+    controller.unregisterAuxiliarySurface(nullptr);
+    require(adqt::widgets::AdDpiStableWindowControllerTestAccess::auxiliarySurfaceCount(
+                controller) == 0,
+            "explicit auxiliary unregistration must be idempotent");
+    controller.registerAuxiliarySurface(&persistentSurface);
+    require(adqt::widgets::AdDpiStableWindowControllerTestAccess::auxiliarySurfaceCount(
+                controller) == 1,
+            "an unregistered live auxiliary surface could not be registered again");
+}
+
+void auxiliarySurfaceObserversDisconnectWithTheirRegistration() {
+    class Surface final : public QWidget {
+      public:
+        int destructionObserverCount() const {
+            return receivers(SIGNAL(destroyed(QObject*)));
+        }
+    };
+
+    QWidget window;
+    int unrelatedDestructions = 0;
+    Surface surface;
+    QObject::connect(&surface, &QObject::destroyed, &window, [&]() { ++unrelatedDestructions; });
+    const int initialObservers = surface.destructionObserverCount();
+    auto controller = std::make_unique<adqt::widgets::AdDpiStableWindowController>(&window);
+    for (int cycle = 0; cycle < 32; ++cycle) {
+        controller->registerAuxiliarySurface(&surface);
+        controller->registerAuxiliarySurface(&surface);
+        require(surface.destructionObserverCount() == initialObservers + 1,
+                "a live auxiliary registration must own exactly one destruction observer");
+        controller->unregisterAuxiliarySurface(&surface);
+        require(surface.destructionObserverCount() == initialObservers,
+                "auxiliary unregistration retained or removed an unrelated destruction observer");
+    }
+    controller->registerAuxiliarySurface(&surface);
+    controller.reset();
+    require(surface.destructionObserverCount() == initialObservers && unrelatedDestructions == 0,
+            "controller destruction must disconnect only its own auxiliary observer");
+
+    auto transientSurface = std::make_unique<Surface>();
+    const int transientObservers = transientSurface->destructionObserverCount();
+    auto transientController =
+        std::make_unique<adqt::widgets::AdDpiStableWindowController>(&window);
+    transientController->registerAuxiliarySurface(transientSurface.get());
+    bool disconnectedBeforeDestroyedSignal = false;
+    QObject::connect(transientController.get(), &QObject::destroyed, &window, [&]() {
+        disconnectedBeforeDestroyedSignal =
+            transientSurface->destructionObserverCount() == transientObservers;
+        // Only delete after the assertion condition is known to be safe; otherwise
+        // the old observer would access the controller's already destroyed registry.
+        if (disconnectedBeforeDestroyedSignal)
+            transientSurface.reset();
+    });
+    transientController.reset();
+    require(disconnectedBeforeDestroyedSignal && !transientSurface,
+            "controller destruction exposed a stale auxiliary observer to nested widget deletion");
+}
+
 void intentionalExtentPrecedesPlacementAndRecreationInvalidatesCommit() {
     QWidget window;
     window.resize(320, 80);
@@ -906,6 +996,8 @@ int main(int argc, char** argv) {
         referenceMetricsSurviveFractionalRoundTrips();
         presentationCommitsOnlyTheLatestGeneration();
         resetAndExternalUpdateSuppressionArePreserved();
+        auxiliarySurfaceRegistrationsFollowWidgetLifetimes();
+        auxiliarySurfaceObserversDisconnectWithTheirRegistration();
         intentionalExtentPrecedesPlacementAndRecreationInvalidatesCommit();
         componentHintsFollowTheScope();
         radioIconUsesDirectPaintingAfterScaleChanges();

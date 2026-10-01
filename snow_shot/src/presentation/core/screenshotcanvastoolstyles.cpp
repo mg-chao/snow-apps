@@ -496,10 +496,10 @@ void applyScreenshotCanvasToolStyles(SnowCanvasWidget& canvas,
     applyShape(defaults.penHighlight, kPenHighlightProperties, SnowCanvasShapeKind::PenHighlight);
     static_cast<void>(canvas.setCanvasTextStyle(defaults.text));
     static_cast<void>(canvas.setCanvasSerialNumberStyle(defaults.serialNumber));
-    static_cast<void>(canvas.setCanvasTool(SnowCanvasTool::RectangleFilter));
-    static_cast<void>(canvas.setCanvasFilterStyle(defaults.rectangleFilter, kAllFilterProperties));
-    static_cast<void>(canvas.setCanvasTool(SnowCanvasTool::PenFilter));
-    static_cast<void>(canvas.setCanvasFilterStyle(defaults.penFilter, kAllFilterProperties));
+    static_cast<void>(canvas.setCanvasFilterCreationStyle(
+        defaults.rectangleFilter, kAllFilterProperties, SnowCanvasTool::RectangleFilter));
+    static_cast<void>(canvas.setCanvasFilterCreationStyle(defaults.penFilter, kAllFilterProperties,
+                                                          SnowCanvasTool::PenFilter));
     static_cast<void>(canvas.setCanvasTool(previousTool));
 }
 

@@ -107,6 +107,10 @@ AdDpiStableWindowController::AdDpiStableWindowController(QWidget* window, QObjec
 }
 
 AdDpiStableWindowController::~AdDpiStableWindowController() {
+  // QObject emits destroyed before disconnecting incoming observers, after this
+  // class's members are gone. Its handlers can delete auxiliary widgets.
+  for (const auto& registration : auxiliarySurfaces_) disconnect(registration.destroyedConnection);
+  auxiliarySurfaces_.clear();
   removeSubclass();
   finishNativeTransition();
 }
@@ -315,14 +319,21 @@ QPointF AdDpiStableWindowController::physicalDragAnchor() const {
 void AdDpiStableWindowController::registerAuxiliarySurface(QWidget* surface) {
   if (!surface) return;
   for (const auto& item : auxiliarySurfaces_)
-    if (item == surface) return;
-  auxiliarySurfaces_.append(surface);
+    if (item.surface == surface) return;
+  auxiliarySurfaces_.append(AuxiliarySurfaceRegistration{
+      surface, connect(surface, &QObject::destroyed, this,
+                       [this, surface]() { unregisterAuxiliarySurface(surface); })});
 }
 
 void AdDpiStableWindowController::unregisterAuxiliarySurface(QWidget* surface) {
-  auxiliarySurfaces_.erase(
-      std::remove(auxiliarySurfaces_.begin(), auxiliarySurfaces_.end(), surface),
-      auxiliarySurfaces_.end());
+  auxiliarySurfaces_.erase(std::remove_if(auxiliarySurfaces_.begin(), auxiliarySurfaces_.end(),
+                                          [surface](const AuxiliarySurfaceRegistration& item) {
+                                            if (item.surface && item.surface != surface)
+                                              return false;
+                                            disconnect(item.destroyedConnection);
+                                            return true;
+                                          }),
+                           auxiliarySurfaces_.end());
 }
 
 AdDpiStableWindowDiagnostics AdDpiStableWindowController::diagnostics() const {
@@ -543,15 +554,15 @@ void AdDpiStableWindowController::finishNativeTransition() {
 }
 
 void AdDpiStableWindowController::syncAuxiliarySurfaces(const QPoint& physicalDelta) {
-  auxiliarySurfaces_.erase(
-      std::remove_if(auxiliarySurfaces_.begin(), auxiliarySurfaces_.end(),
-                     [](const QPointer<QWidget>& surface) { return surface.isNull(); }),
-      auxiliarySurfaces_.end());
-  for (const auto& surface : auxiliarySurfaces_) {
+  // Geometry changes can destroy a surface and remove its registration reentrantly.
+  const auto registrations = auxiliarySurfaces_;
+  for (const auto& registration : registrations) {
+    const auto& surface = registration.surface;
     if (!surface) continue;
 #if defined(Q_OS_WIN) || defined(_WIN32)
     if (!physicalDelta.isNull() && usesWindowsNativeWindows()) {
       const HWND hwnd = nativePointerFromInteger<HWND>(surface->winId());
+      if (!surface) continue;
       RECT frame{};
       if (hwnd && GetWindowRect(hwnd, &frame)) {
         SetWindowPos(hwnd, nullptr, frame.left + physicalDelta.x(), frame.top + physicalDelta.y(),
@@ -561,7 +572,7 @@ void AdDpiStableWindowController::syncAuxiliarySurfaces(const QPoint& physicalDe
 #else
     Q_UNUSED(physicalDelta)
 #endif
-    surface->updateGeometry();
+    if (surface) surface->updateGeometry();
   }
 }
 

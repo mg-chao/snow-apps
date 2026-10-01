@@ -53,16 +53,21 @@ void destroyedMenuTreesReleaseIcons(bool native) {
     QWidget owner;
     auto* menu = new AdContextMenu(&owner);
     menu->setNativeMenuEnabled(native);
+    QPixmap background(120, 80);
+    background.fill(Qt::blue);
+    menu->setBackgroundFrame({background, QRectF(0.0, 0.0, 1.0, 1.0), 1.0, 0.8});
     std::vector<std::weak_ptr<int>> icons;
     for (int item = 0; item < 10; ++item) {
       icons.push_back(trackIcon(menu->addItem(QStringLiteral("Root item"))));
     }
     auto* submenu = menu->addSubMenu(QStringLiteral("Submenu"));
+    submenu->setBackgroundFrame({background, QRectF(0.0, 0.0, 1.0, 1.0), 1.0, 0.8});
     icons.push_back(trackIcon(submenu->menuAction()));
     for (int item = 0; item < 10; ++item) {
       icons.push_back(trackIcon(submenu->addItem(QStringLiteral("Child item"))));
     }
     auto* nested = submenu->addSubMenu(QStringLiteral("Nested submenu"));
+    nested->setBackgroundFrame({background, QRectF(0.0, 0.0, 1.0, 1.0), 1.0, 0.8});
     icons.push_back(trackIcon(nested->menuAction()));
     icons.push_back(trackIcon(nested->addItem(QStringLiteral("Nested item"))));
     QPointer<AdContextMenu> child = submenu;
@@ -108,6 +113,26 @@ void destructionCancelsPendingPopup() {
   QCoreApplication::processEvents();
   require(icon.expired(), "a cancelled queued popup must release its icon on destruction");
 }
+
+void resettingBackgroundPreservesMenuTree() {
+  AdContextMenu menu;
+  menu.setNativeMenuEnabled(false);
+  QAction* action = menu.addItem(QStringLiteral("Root"));
+  AdContextMenu* submenu = menu.addSubMenu(QStringLiteral("Child"));
+  QAction* child = submenu->addItem(QStringLiteral("Child item"));
+  QPixmap background(120, 80);
+  background.fill(Qt::blue);
+  menu.setBackgroundFrame({background, QRectF(0.0, 0.0, 1.0, 1.0), 1.0, 0.8});
+  submenu->setBackgroundFrame({background, QRectF(0.0, 0.0, 0.5, 1.0), 1.0, 0.8});
+  menu.resetBackgroundFrame();
+  require(menu.backgroundFrame().image.isNull(), "reset must release the stored background raster");
+  require(!submenu->backgroundFrame().image.isNull(),
+          "independent submenu viewports must retain their own background frames");
+  require(menu.actions().contains(action) && submenu->actions().contains(child),
+          "background reset must preserve actions and submenu ownership");
+  submenu->resetBackgroundFrame();
+  require(submenu->backgroundFrame().image.isNull(), "submenu reset must release its raster");
+}
 }  // namespace
 
 int main(int argc, char** argv) {
@@ -117,6 +142,7 @@ int main(int argc, char** argv) {
     destroyedMenuTreesReleaseIcons(false);
     destructionPreservesSharedActionsAndSubmenus();
     destructionCancelsPendingPopup();
+    resettingBackgroundPreservesMenuTree();
     std::cout << "Context menu lifecycle tests passed\n";
     return 0;
   } catch (const std::exception& error) {

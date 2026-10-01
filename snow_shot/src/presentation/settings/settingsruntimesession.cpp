@@ -1411,14 +1411,15 @@ bool SettingsRuntimeSession::applyFilePathValue(SettingsFilePathBinding binding,
     const auto* descriptor = descriptorForFile(binding);
     if (descriptor == nullptr)
         return false;
-    const QString normalizedValue =
-        binding == SettingsFilePathBinding::SkinPath ? value.trimmed() : value;
+    const bool skinPath = binding == SettingsFilePathBinding::SkinPath ||
+                          binding == SettingsFilePathBinding::ToolbarSkinPath ||
+                          binding == SettingsFilePathBinding::TrayMenuSkinPath;
+    const QString normalizedValue = skinPath ? value.trimmed() : value;
     const QString previousValue = m_backend.filePathValue(binding);
     const bool accepted = submitDraft(descriptor->id, normalizedValue);
     // Re-entering the same skin path explicitly reloads the file, including a
     // file that was replaced or repaired without changing its name.
-    if (accepted && binding == SettingsFilePathBinding::SkinPath &&
-        previousValue == normalizedValue)
+    if (accepted && skinPath && previousValue == normalizedValue)
         m_backend.reloadFilePathValue(binding);
     return accepted;
 }

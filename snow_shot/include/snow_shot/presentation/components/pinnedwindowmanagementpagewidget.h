@@ -67,6 +67,7 @@ class PinnedWindowManagementPageWidget final : public QWidget {
     bool eventFilter(QObject* watched, QEvent* event) override;
 
   private:
+    void updateSkinBackgrounds();
     void rebuildFilteredRecords(bool resetPage);
     void rebuildEntries();
     void rebuildPreview();
@@ -111,6 +112,7 @@ class PinnedWindowManagementPageWidget final : public QWidget {
     QHash<QString, quint64> m_entryPreviewRevisions;
     QSet<QString> m_selected;
     snow_shot::presentation::styles::ThemeColorScheme m_scheme;
+    qreal m_backgroundOpacity = 1.0;
     adqt::widgets::AdImageViewer* m_previewViewer = nullptr;
     adqt::widgets::AdImageListModel* m_previewModel = nullptr;
     QHash<QString, int> m_previewRows;

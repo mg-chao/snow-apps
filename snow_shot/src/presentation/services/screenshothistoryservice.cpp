@@ -35,9 +35,6 @@ bool restoreCanvasPayload(SnowCanvasRuntime& runtime, const QByteArray& payload)
 
 } // namespace
 
-void initializeHistoryValidationQueue(std::unique_ptr<ScreenshotHistoryValidationQueue>* target,
-                                      snow_shot::storage::CaptureHistoryRepository& repository);
-
 ScreenshotHistoryService::ScreenshotHistoryService(ScreenshotHistoryServiceContext context,
                                                    QString storageRoot, Clock clock)
     : m_context(std::move(context)),
@@ -58,8 +55,7 @@ ScreenshotHistoryService::ScreenshotHistoryService(ScreenshotHistoryServiceConte
                                                                              std::move(options));
         m_repository = m_ownedRepository.get();
     }
-    m_entries = m_repository->records();
-    initializeHistoryValidationQueue(&m_validationQueue, *m_repository);
+    initializeRepository();
 }
 
 namespace {
@@ -225,8 +221,8 @@ presentationEntry(const snow_shot::storage::CaptureHistoryRecord& record,
 class ScreenshotHistoryValidationQueue final {
   public:
     explicit ScreenshotHistoryValidationQueue(
-        snow_shot::storage::CaptureHistoryRepository& repository)
-        : m_repository(repository) {}
+        snow_shot::storage::CaptureHistoryRepository& repository, ScreenshotHistoryService& service)
+        : m_repository(repository), m_service(service) {}
 
     ~ScreenshotHistoryValidationQueue() {
         {
@@ -248,15 +244,15 @@ class ScreenshotHistoryValidationQueue final {
         {
             const std::lock_guard lock(m_mutex);
             if (m_stopping) {
-                promise->set_value({snow_shot::storage::StorageResult::failure(
-                                        QStringLiteral("History validation is shutting down")),
-                                    {}});
+                complete(promise, {snow_shot::storage::StorageResult::failure(
+                                       QStringLiteral("History validation is shutting down")),
+                                   {}});
                 return result;
             }
             if (m_jobs.size() >= kMaximumPendingJobs) {
-                promise->set_value({snow_shot::storage::StorageResult::failure(
-                                        QStringLiteral("History validation queue is full")),
-                                    {}});
+                complete(promise, {snow_shot::storage::StorageResult::failure(
+                                       QStringLiteral("History validation queue is full")),
+                                   {}});
                 return result;
             }
             if (!m_running) {
@@ -271,9 +267,9 @@ class ScreenshotHistoryValidationQueue final {
                     });
                 } catch (...) {
                     m_running = false;
-                    promise->set_value({snow_shot::storage::StorageResult::failure(
-                                            QStringLiteral("Unable to start history validation")),
-                                        {}});
+                    complete(promise, {snow_shot::storage::StorageResult::failure(
+                                           QStringLiteral("Unable to start history validation")),
+                                       {}});
                     return result;
                 }
             }
@@ -284,6 +280,9 @@ class ScreenshotHistoryValidationQueue final {
     }
 
   private:
+    using PublishResult = snow_shot::storage::CaptureHistoryPublishResult;
+    using PublishPromise = std::promise<PublishResult>;
+
     static constexpr std::size_t kMaximumPendingJobs = 2;
     static constexpr auto kIdleTimeout = std::chrono::seconds(5);
 
@@ -291,6 +290,14 @@ class ScreenshotHistoryValidationQueue final {
         snow_shot::storage::CaptureHistoryDraft draft;
         std::shared_ptr<std::promise<snow_shot::storage::CaptureHistoryPublishResult>> promise;
     };
+
+    void complete(const std::shared_ptr<PublishPromise>& promise, PublishResult result) {
+        promise->set_value(std::move(result));
+        // Reconcile pruning and failed placeholders even when the editor stays idle.
+        // Queuing also lets submit() install an immediately rejected write first.
+        QMetaObject::invokeMethod(&m_service, &ScreenshotHistoryService::refreshMetadata,
+                                  Qt::QueuedConnection);
+    }
 
     void run() {
         for (;;) {
@@ -316,33 +323,34 @@ class ScreenshotHistoryValidationQueue final {
 
             try {
                 if (!validateCanvasPayload(job.draft.canvasHistory)) {
-                    job.promise->set_value({snow_shot::storage::StorageResult::failure(
-                                                QStringLiteral("Capture history is invalid")),
-                                            {}});
+                    complete(job.promise, {snow_shot::storage::StorageResult::failure(
+                                               QStringLiteral("Capture history is invalid")),
+                                           {}});
                     continue;
                 }
                 std::shared_future<snow_shot::storage::CaptureHistoryPublishResult> publication =
                     m_repository.publish(std::move(job.draft));
-                job.promise->set_value(
-                    publication.valid()
-                        ? publication.get()
-                        : snow_shot::storage::CaptureHistoryPublishResult{
-                              snow_shot::storage::StorageResult::failure(
-                                  QStringLiteral("History publication returned no result")),
-                              {}});
+                complete(job.promise,
+                         publication.valid()
+                             ? publication.get()
+                             : snow_shot::storage::CaptureHistoryPublishResult{
+                                   snow_shot::storage::StorageResult::failure(
+                                       QStringLiteral("History publication returned no result")),
+                                   {}});
             } catch (const std::exception& error) {
-                job.promise->set_value(
-                    {snow_shot::storage::StorageResult::failure(QString::fromUtf8(error.what())),
-                     {}});
+                complete(job.promise, {snow_shot::storage::StorageResult::failure(
+                                           QString::fromUtf8(error.what())),
+                                       {}});
             } catch (...) {
-                job.promise->set_value({snow_shot::storage::StorageResult::failure(
-                                            QStringLiteral("History validation failed")),
-                                        {}});
+                complete(job.promise, {snow_shot::storage::StorageResult::failure(
+                                           QStringLiteral("History validation failed")),
+                                       {}});
             }
         }
     }
 
     snow_shot::storage::CaptureHistoryRepository& m_repository;
+    ScreenshotHistoryService& m_service;
     std::mutex m_mutex;
     std::condition_variable m_condition;
     std::deque<Job> m_jobs;
@@ -352,11 +360,9 @@ class ScreenshotHistoryValidationQueue final {
     std::thread m_thread;
 };
 
-void initializeHistoryValidationQueue(std::unique_ptr<ScreenshotHistoryValidationQueue>* target,
-                                      snow_shot::storage::CaptureHistoryRepository& repository) {
-    if (target != nullptr) {
-        *target = std::make_unique<ScreenshotHistoryValidationQueue>(repository);
-    }
+void ScreenshotHistoryService::initializeRepository() {
+    m_entries = m_repository->records();
+    m_validationQueue = std::make_unique<ScreenshotHistoryValidationQueue>(*m_repository, *this);
 }
 
 ScreenshotHistoryService::ScreenshotHistoryService(
@@ -364,8 +370,7 @@ ScreenshotHistoryService::ScreenshotHistoryService(
     snow_shot::storage::CaptureHistoryRepository& repository, Clock clock)
     : m_context(std::move(context)), m_repository(&repository),
       m_clock(clock ? std::move(clock) : []() { return QDateTime::currentDateTimeUtc(); }) {
-    m_entries = m_repository->records();
-    initializeHistoryValidationQueue(&m_validationQueue, *m_repository);
+    initializeRepository();
 }
 
 ScreenshotHistoryService::~ScreenshotHistoryService() {
@@ -795,13 +800,16 @@ bool ScreenshotHistoryService::navigationInProgress() const {
 }
 
 void ScreenshotHistoryService::scheduleWrite(ScreenshotHistoryEntry entry) {
-    reapCompletedWrites();
+    refreshMetadata();
     if (m_validationQueue == nullptr || !structurallyValidCanvasPayload(entry.canvasHistory)) {
         return;
     }
     snow_shot::storage::CaptureHistoryDraft draft = storageDraft(entry);
     const QString id = draft.id;
     m_entries.prepend(placeholderRecord(draft));
+    if (m_navigationIndex > 0) {
+        ++m_navigationIndex;
+    }
     m_pendingWrites.push_back(PendingWrite{id, m_validationQueue->submit(std::move(draft))});
     // Remember the exported snapshot, even if the live editor has since changed or closed.
     m_context.selectionCommitted(entry.selection);
@@ -886,6 +894,10 @@ void ScreenshotHistoryService::refreshMetadata() {
                          [&selectedId](const auto& record) { return record.id == selectedId; });
         if (selected != m_entries.cend()) {
             m_navigationIndex = static_cast<int>(std::distance(m_entries.cbegin(), selected)) + 1;
+        } else {
+            // The displayed snapshot remains valid after its stored record disappears.
+            // Keep it beyond the retained oldest entry instead of selecting another row.
+            m_navigationIndex = static_cast<int>(m_entries.size()) + 1;
         }
     }
     if (m_navigationIndex > m_entries.size()) {

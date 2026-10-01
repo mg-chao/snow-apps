@@ -36,6 +36,17 @@ QJsonObject distribution(QVector<double> values) {
             {QStringLiteral("p95_ms"), values.at((values.size() - 1) * 95 / 100)}};
 }
 
+bool waitForIdle(QApplication& application,
+                 const snow_shot::presentation::MainWindowSkinController& controller) {
+    QElapsedTimer timeout;
+    timeout.start();
+    do {
+        application.processEvents();
+        QThread::msleep(1);
+    } while (controller.diagnostics().busy && timeout.elapsed() < 30000);
+    return !controller.diagnostics().busy;
+}
+
 double peakResidentBytes() {
 #ifdef Q_OS_UNIX
     rusage usage{};
@@ -108,7 +119,8 @@ int main(int argc, char** argv) {
     QJsonArray preparation;
     namespace presentation = snow_shot::presentation;
     SnowCanvasRegionFilterScratch preparationScratch;
-    for (const QSize viewport : {QSize(900, 640), QSize(1920, 1080)}) {
+    for (const QSize viewport :
+         {QSize(900, 640), QSize(1920, 1080), QSize(960, 56), QSize(480, 320), QSize(320, 440)}) {
         for (const qreal dpr : {1.0, 1.5, 2.0}) {
             for (const int blur : {0, 16, 100}) {
                 for (const auto mode : {presentation::MainWindowSkinDisplayMode::Overlay,
@@ -141,6 +153,7 @@ int main(int argc, char** argv) {
         }
     }
     presentation::MainWindowSkinController controller;
+    QJsonObject report;
     {
         presentation::MainWindowSkinWidget widget(nullptr, &controller);
         widget.resize(1920, 1080);
@@ -203,7 +216,7 @@ int main(int argc, char** argv) {
             paints.append(record);
         }
         const auto afterPaint = controller.diagnostics();
-        const QJsonObject report{
+        report = QJsonObject{
             {QStringLiteral("decode"), distribution(decodeTimes)},
             {QStringLiteral("preparation"), preparation},
             {QStringLiteral("cached_paint"), paints},
@@ -215,13 +228,104 @@ int main(int argc, char** argv) {
              double(preparationScratch.retainedBytes())},
             {QStringLiteral("peak_resident_bytes"), peakResidentBytes()},
             {QStringLiteral("cached_paint_scheduled_jobs"), double(scheduledPaintJobs)}};
-        QFile output(arguments.value(outputIndex + 1));
-        if (!output.open(QIODevice::WriteOnly) ||
-            output.write(QJsonDocument(report).toJson()) < 0) {
-            return EXIT_FAILURE;
-        }
-        std::cout << QJsonDocument(report).toJson().toStdString();
     }
+    if (!storage.configuration().setValues(
+            {{QStringLiteral("interface/toolbar_skin_path"), path},
+             {QStringLiteral("interface/tray_menu_skin_path"), path}}))
+        return EXIT_FAILURE;
+    QObject mainView;
+    QObject firstToolbar;
+    QObject secondToolbar;
+    QObject popover;
+    QObject matchingPopover;
+    QObject trayView;
+    const auto beforeConcurrent = controller.diagnostics();
+    QElapsedTimer concurrentTime;
+    concurrentTime.start();
+    double lastTick = 0;
+    double concurrentTickGap = 0;
+    QTimer heartbeat;
+    heartbeat.setInterval(5);
+    QObject::connect(&heartbeat, &QTimer::timeout, &application, [&] {
+        const double now = milliseconds(concurrentTime);
+        concurrentTickGap = std::max(concurrentTickGap, now - lastTick);
+        lastTick = now;
+    });
+    heartbeat.start();
+    controller.attach(&mainView, presentation::SkinSurface::MainWindow, QSize(900, 640), 2.0);
+    controller.attach(&firstToolbar, presentation::SkinSurface::Toolbar, QSize(960, 56), 2.0);
+    controller.attach(&secondToolbar, presentation::SkinSurface::Toolbar, QSize(640, 56), 1.5);
+    controller.attach(&popover, presentation::SkinSurface::Toolbar, QSize(480, 320), 2.0);
+    controller.attach(&matchingPopover, presentation::SkinSurface::Toolbar, QSize(480, 320), 2.0);
+    controller.attach(&trayView, presentation::SkinSurface::TrayMenu, QSize(320, 440), 1.5);
+    if (!waitForIdle(application, controller) || !controller.skinActive(&mainView) ||
+        !controller.skinActive(&firstToolbar) || !controller.skinActive(&secondToolbar) ||
+        !controller.skinActive(&popover) || !controller.skinActive(&trayView) ||
+        controller.pixmap(&popover).cacheKey() != controller.pixmap(&matchingPopover).cacheKey())
+        return EXIT_FAILURE;
+    heartbeat.stop();
+    const auto loadedConcurrent = controller.diagnostics();
+    const double concurrentLoadMs = milliseconds(concurrentTime);
+    QVector<double> popupOpenTimes;
+    for (int sample = -1; sample < samples * 10; ++sample) {
+        controller.detach(&popover);
+        QElapsedTimer timer;
+        timer.start();
+        controller.attach(&popover, presentation::SkinSurface::Toolbar, QSize(480, 320), 2.0);
+        if (!controller.skinActive(&popover))
+            return EXIT_FAILURE;
+        if (sample >= 0)
+            popupOpenTimes.append(milliseconds(timer));
+    }
+    const auto reopened = controller.diagnostics();
+    if (reopened.preparationJobs != loadedConcurrent.preparationJobs ||
+        reopened.pixmapConversions != loadedConcurrent.pixmapConversions)
+        return EXIT_FAILURE;
+    QElapsedTimer resizeTime;
+    resizeTime.start();
+    for (int step = 1; step <= 30; ++step) {
+        controller.setViewport(&firstToolbar, QSize(960 + step, 56), 2.0);
+        controller.setViewport(&secondToolbar, QSize(640 + step, 56), 1.5);
+    }
+    if (!waitForIdle(application, controller))
+        return EXIT_FAILURE;
+    const auto resized = controller.diagnostics();
+    report.insert(
+        QStringLiteral("concurrent_surfaces"),
+        QJsonObject{
+            {QStringLiteral("visible_views"), 6},
+            {QStringLiteral("load_ms"), concurrentLoadMs},
+            {QStringLiteral("load_ui_max_tick_gap_ms"), concurrentTickGap},
+            {QStringLiteral("additional_decode_jobs"),
+             double(loadedConcurrent.decodeJobs - beforeConcurrent.decodeJobs)},
+            {QStringLiteral("additional_preparation_jobs"),
+             double(loadedConcurrent.preparationJobs - beforeConcurrent.preparationJobs)},
+            {QStringLiteral("additional_pixmap_conversions"),
+             double(loadedConcurrent.pixmapConversions - beforeConcurrent.pixmapConversions)},
+            {QStringLiteral("cached_popup_open"), distribution(popupOpenTimes)},
+            {QStringLiteral("cached_popup_preparation_jobs"),
+             double(reopened.preparationJobs - loadedConcurrent.preparationJobs)},
+            {QStringLiteral("resize_burst_ms"), milliseconds(resizeTime)},
+            {QStringLiteral("resize_burst_preparation_jobs"),
+             double(resized.preparationJobs - reopened.preparationJobs)},
+            {QStringLiteral("retained_bytes"), double(resized.retainedBytes)},
+            {QStringLiteral("idle_frame_bytes"), double(resized.idleFrameBytes)}});
+    controller.detach(&mainView);
+    controller.detach(&firstToolbar);
+    controller.detach(&secondToolbar);
+    controller.detach(&popover);
+    controller.detach(&matchingPopover);
+    controller.detach(&trayView);
+    if (!waitForIdle(application, controller))
+        return EXIT_FAILURE;
+    report.insert(QStringLiteral("suspended_idle_frame_bytes"),
+                  double(controller.diagnostics().idleFrameBytes));
+    report.insert(QStringLiteral("suspended_executor_count"),
+                  controller.diagnostics().executorCount);
+    QFile output(arguments.value(outputIndex + 1));
+    if (!output.open(QIODevice::WriteOnly) || output.write(QJsonDocument(report).toJson()) < 0)
+        return EXIT_FAILURE;
+    std::cout << QJsonDocument(report).toJson().toStdString();
     storage.shutdown();
     return 0;
 }

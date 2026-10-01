@@ -97,6 +97,16 @@ class InterfaceSettings final {
     bool setLanguage(const QString& language) const;
     [[nodiscard]] QString skinPath() const;
     bool setSkinPath(const QString& path) const;
+    [[nodiscard]] QString skinPosition() const;
+    bool setSkinPosition(const QString& position) const;
+    [[nodiscard]] QString toolbarSkinPath() const;
+    bool setToolbarSkinPath(const QString& path) const;
+    [[nodiscard]] QString toolbarSkinPosition() const;
+    bool setToolbarSkinPosition(const QString& position) const;
+    [[nodiscard]] QString trayMenuSkinPath() const;
+    bool setTrayMenuSkinPath(const QString& path) const;
+    [[nodiscard]] QString trayMenuSkinPosition() const;
+    bool setTrayMenuSkinPosition(const QString& position) const;
     [[nodiscard]] QString skinDisplayMode() const;
     bool setSkinDisplayMode(const QString& mode) const;
     [[nodiscard]] int skinOpacity() const;
