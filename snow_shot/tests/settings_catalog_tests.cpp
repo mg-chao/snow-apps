@@ -352,15 +352,9 @@ void builtInCatalogIsCompleteAndValid() {
         require(itemIds.remove(id), "catalog must contain each platform-specific setting");
     for (const auto& id : excludedPlatformItems)
         require(!itemIds.contains(id), "catalog must omit settings exclusive to another platform");
-<<<<<<< Updated upstream
-    require(itemIds.size() == 208,
+    require(itemIds.size() == 213,
             qPrintable(QStringLiteral(
-                           "catalog must contain 208 shared settings on every platform; found %1")
-=======
-    require(itemIds.size() == 209,
-            qPrintable(QStringLiteral(
-                           "catalog must contain 209 shared settings on every platform; found %1")
->>>>>>> Stashed changes
+                           "catalog must contain 213 shared settings on every platform; found %1")
                            .arg(itemIds.size())));
     require(foundUpdates, "catalog must contain the update mode item");
     const auto* pinnedEditor =

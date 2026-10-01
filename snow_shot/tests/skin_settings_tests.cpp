@@ -374,9 +374,8 @@ void skinCopyFitsAfterStatusLanguageThemeAndResize() {
     page.reveal({page.pageId(), QStringLiteral("skin"), {}});
     drainEvents();
     auto* generalRow = page.findChild<QWidget*>(QStringLiteral("settings-item-interface-theme"));
-    require(generalRow != nullptr &&
-                generalRow->sizePolicy().verticalPolicy() == QSizePolicy::Fixed,
-            "wrapping Skin copy must preserve the existing General row sizing policy");
+    require(generalRow != nullptr, "the General row must be materialized alongside Skin");
+    const QSizePolicy generalSizePolicy = generalRow->sizePolicy();
 
     auto& languages = presentation::LanguageManager::instance();
     auto& themes = presentation::styles::ThemeManager::instance();
@@ -419,6 +418,8 @@ void skinCopyFitsAfterStatusLanguageThemeAndResize() {
                       SkinStatusBackend::Status::Error, SkinStatusBackend::Status::Ready}) {
                     backend.setStatus(status);
                     drainEvents();
+                    require(generalRow->sizePolicy() == generalSizePolicy,
+                            "Skin status must preserve the General form field sizing policy");
                     const QString pathStatus =
                         session.filePathStatus(settings::SettingsFilePathBinding::SkinPath);
                     for (const auto& fieldId : fieldIds)

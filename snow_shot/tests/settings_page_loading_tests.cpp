@@ -429,16 +429,17 @@ void skinControlsCommitAndRetranslate(const settings::SettingsRegistry& registry
     require(path != nullptr && mode != nullptr && path->isEnabled() && mode->isEnabled() &&
                 path->allowClear() && path->browseButtonText() == QStringLiteral("Browse"),
             "revealing Skin must create an editable path with browse/clear and a display mode");
-    path->setText(QStringLiteral("/skins/settings-preview.webp"));
+    path->setText(QStringLiteral("  /skins/settings-preview.webp  "));
     require(QMetaObject::invokeMethod(path, "editingFinished", Qt::DirectConnection),
             "commit the skin path through the settings widget");
     mode->setCurrentValue(QStringLiteral("contain"));
     drainEvents();
     require(session.filePathValue(settings::SettingsFilePathBinding::SkinPath) ==
                     QStringLiteral("/skins/settings-preview.webp") &&
+                path->text() == QStringLiteral("/skins/settings-preview.webp") &&
                 session.selectValue(settings::SettingsSelectBinding::SkinDisplayMode).toString() ==
                     QStringLiteral("contain"),
-            "path editing and mode selection must commit through the runtime session");
+            "path editing must normalize the skin path and commit with mode selection");
     for (const auto& id : {QStringLiteral("opacity"), QStringLiteral("blur-level"),
                            QStringLiteral("mask-opacity")}) {
         auto* slider = page.findChild<adqt::widgets::AdSlider*>(
