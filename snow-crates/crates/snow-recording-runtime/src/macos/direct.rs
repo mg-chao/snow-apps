@@ -151,6 +151,8 @@ pub struct DirectSession {
     worker: Option<JoinHandle<Result<NativeRecordingReport>>>,
     state: Arc<AtomicU8>,
     cancellation: snow_macos::CancellationToken,
+    audio_control: AudioControlHandle,
+    exclusion_control: snow_macos::desktop::ExclusionControl,
 }
 impl DirectSession {
     pub fn create(config: DirectRecordingConfig) -> Result<Self> {
@@ -163,12 +165,23 @@ impl DirectSession {
                 "macOS recording requires 1..240 fps".into(),
             ));
         }
+        let audio_control = AudioControlHandle::new();
+        audio_control.set_gain_db(
+            snow_audio_recorder::AudioSourceKind::System,
+            config.system_audio_gain_db,
+        )?;
+        audio_control.set_gain_db(
+            snow_audio_recorder::AudioSourceKind::Microphone,
+            config.microphone_gain_db,
+        )?;
         Ok(Self {
             config: Some(config),
             commands: None,
             worker: None,
             state: Arc::new(AtomicU8::new(0)),
             cancellation: Default::default(),
+            audio_control,
+            exclusion_control: Default::default(),
         })
     }
     pub fn start(&mut self) -> Result<()> {
@@ -179,14 +192,19 @@ impl DirectSession {
         let (ready_tx, ready_rx) = mpsc::sync_channel(1);
         let state = self.state.clone();
         let cancellation = self.cancellation.clone();
+        let audio_control = self.audio_control.clone();
+        let exclusion_control = self.exclusion_control.clone();
         self.worker = Some(
             std::thread::Builder::new()
                 .name("snow-macos-recording".into())
                 .spawn(move || {
                     snow_core::qos::apply_current_thread();
                     let result = (|| {
-                        let mut recording =
-                            NativeRecordingSession::start(native_config(config, cancellation)?)?;
+                        let mut recording = NativeRecordingSession::start_with_controls(
+                            native_config(config, cancellation)?,
+                            audio_control.clone(),
+                        )?;
+                        recording.capture.set_exclusion_control(exclusion_control);
                         state.store(1, Ordering::Release);
                         let _ = ready_tx.send(());
                         loop {
@@ -221,6 +239,7 @@ impl DirectSession {
                         }
                     })();
                     state.store(3, Ordering::Release);
+                    audio_control.mark_stopped();
                     result
                 })
                 .map_err(ScreenRecorderError::Io)?,
@@ -237,6 +256,22 @@ impl DirectSession {
             .ok_or_else(|| ScreenRecorderError::InvalidConfig("recording has not started".into()))?
             .send(command)
             .map_err(|_| ScreenRecorderError::Encode("recording worker stopped".into()))
+    }
+    pub fn audio_control(&self) -> AudioControlHandle {
+        self.audio_control.clone()
+    }
+    pub fn request_exclusions(
+        &self,
+        windows: Vec<u32>,
+        processes: Vec<i32>,
+        required: Vec<u32>,
+    ) -> Result<u64> {
+        self.exclusion_control
+            .request(windows, processes, required)
+            .map_err(native_error)
+    }
+    pub fn exclusion_status(&self) -> (u64, u64, u32) {
+        self.exclusion_control.status()
     }
     pub fn pause(&self) -> Result<()> {
         self.send(Command::Pause)
@@ -290,6 +325,8 @@ mod tests {
     fn config() -> DirectRecordingConfig {
         DirectRecordingConfig {
             audio_mode: Default::default(),
+            system_audio_gain_db: 0,
+            microphone_gain_db: 0,
             loop_animated_images: true,
             region: crate::RecordingRegion::new(-321, -99, 641, 359),
             capture_backend: crate::CaptureBackendKind::Auto,

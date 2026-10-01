@@ -1997,6 +1997,8 @@ bool BuiltInSettingsBackend::resetSection(SettingsSectionReset reset) {
         });
     case SettingsSectionReset::ScreenRecording:
         return storage::ApplicationStorage::instance().configuration().setValues({
+            {QStringLiteral("screen_recording/microphone_gain_db"), 0},
+            {QStringLiteral("screen_recording/system_audio_gain_db"), 0},
             {QStringLiteral("screen_recording/clarity"),
              storage::ConfigurationSchema::defaultValue(
                  QStringLiteral("screen_recording/clarity"))},

@@ -1,5 +1,6 @@
 #include "snow_shot/shortcuts/shortcutbinding.h"
 #include "snow_shot/presentation/screenshottoolpalette.h"
+#include "../recording/recordingaudiogainpopover.h"
 #include "snow_shot/presentation/shortcutdisplaytext.h"
 
 #include "screenshottoolbarperfinstrumentation.h"
@@ -8227,11 +8228,45 @@ void ScreenshotToolPalette::addRecordingControls(QBoxLayout* layout) {
             &ScreenshotToolPalette::recordingPauseRequested);
     connect(m_recordResumeButton, &adqt::widgets::AdButton::clicked, this,
             &ScreenshotToolPalette::recordingResumeRequested);
+    m_recordMicrophoneGainPopover = new RecordingAudioGainPopover(
+        m_recordMicrophoneButton, RecordingAudioGainPopover::Source::Microphone, this);
+    m_recordSystemAudioGainPopover = new RecordingAudioGainPopover(
+        m_recordSystemAudioButton, RecordingAudioGainPopover::Source::SystemAudio, this);
+    m_recordMicrophoneGainPopover->setGainDb(m_recordingMicrophoneGainDb);
+    m_recordSystemAudioGainPopover->setGainDb(m_recordingSystemAudioGainDb);
+    connect(m_recordMicrophoneGainPopover, &RecordingAudioGainPopover::gainChanged, this,
+            [this](int gainDb) {
+                m_recordingMicrophoneGainDb = gainDb;
+                emit recordingMicrophoneGainChanged(gainDb);
+            });
+    connect(m_recordSystemAudioGainPopover, &RecordingAudioGainPopover::gainChanged, this,
+            [this](int gainDb) {
+                m_recordingSystemAudioGainDb = gainDb;
+                emit recordingSystemAudioGainChanged(gainDb);
+            });
+    connect(m_recordMicrophoneGainPopover, &RecordingAudioGainPopover::visibleChanged, this,
+            [this](bool visible) {
+                if (visible)
+                    m_recordSystemAudioGainPopover->close();
+            });
+    connect(m_recordSystemAudioGainPopover, &RecordingAudioGainPopover::visibleChanged, this,
+            [this](bool visible) {
+                if (visible)
+                    m_recordMicrophoneGainPopover->close();
+            });
     connect(m_recordMicrophoneButton, &adqt::widgets::AdButton::clicked, this, [this]() {
+        if (m_recordingSession.state() != RecordingState::Idle) {
+            m_recordMicrophoneGainPopover->openAndFocus();
+            return;
+        }
         setRecordingMicrophoneEnabled(!m_recordingMicrophoneEnabled);
         emit recordingMicrophoneToggled(m_recordingMicrophoneEnabled);
     });
     connect(m_recordSystemAudioButton, &adqt::widgets::AdButton::clicked, this, [this]() {
+        if (m_recordingSession.state() != RecordingState::Idle) {
+            m_recordSystemAudioGainPopover->openAndFocus();
+            return;
+        }
         setRecordingSystemAudioEnabled(!m_recordingSystemAudioEnabled);
         emit recordingSystemAudioToggled(m_recordingSystemAudioEnabled);
     });
@@ -8599,7 +8634,8 @@ void ScreenshotToolPalette::updateRecordingControls() {
         m_recordResumeButton->setEnabled(paused && !busy);
     }
     if (m_recordMicrophoneButton != nullptr) {
-        const bool microphoneControlEnabled = idle && !busy && !animatedFormat;
+        const bool microphoneControlEnabled =
+            !busy && !animatedFormat && (idle || m_recordingMicrophoneEnabled);
         const auto scheme = snow_shot::presentation::styles::generateThemeColorScheme();
         const QColor microphoneIconColor =
             m_recordingMicrophoneEnabled ? scheme.map.colorSuccess : scheme.map.colorTextQuaternary;
@@ -8612,6 +8648,10 @@ void ScreenshotToolPalette::updateRecordingControls() {
         m_recordMicrophoneButton->setIconRef(snow_shot::presentation::icons::withPrimaryColor(
             custom_outlined_icons::RecordingMicrophone(), microphoneIconColor));
         m_recordMicrophoneButton->setEnabled(microphoneControlEnabled);
+        if (m_recordMicrophoneGainPopover) {
+            m_recordMicrophoneGainPopover->setAudioEnabled(m_recordingMicrophoneEnabled);
+            m_recordMicrophoneGainPopover->setAvailable(microphoneControlEnabled);
+        }
         m_recordMicrophoneButton->setToolTip(
             animatedFormat ? tr("Animated recording formats do not contain audio")
                            : tr("Record microphone"));
@@ -8620,7 +8660,8 @@ void ScreenshotToolPalette::updateRecordingControls() {
             animatedFormat ? tr("Animated recording formats do not contain audio") : QString());
     }
     if (m_recordSystemAudioButton != nullptr) {
-        const bool systemAudioControlEnabled = idle && !busy && !animatedFormat;
+        const bool systemAudioControlEnabled =
+            !busy && !animatedFormat && (idle || m_recordingSystemAudioEnabled);
         const auto scheme = snow_shot::presentation::styles::generateThemeColorScheme();
         const QColor systemAudioIconColor = m_recordingSystemAudioEnabled
                                                 ? scheme.map.colorSuccess
@@ -8633,6 +8674,10 @@ void ScreenshotToolPalette::updateRecordingControls() {
         m_recordSystemAudioButton->setIconRef(snow_shot::presentation::icons::withPrimaryColor(
             outlined_icons::Sound(), systemAudioIconColor));
         m_recordSystemAudioButton->setEnabled(systemAudioControlEnabled);
+        if (m_recordSystemAudioGainPopover) {
+            m_recordSystemAudioGainPopover->setAudioEnabled(m_recordingSystemAudioEnabled);
+            m_recordSystemAudioGainPopover->setAvailable(systemAudioControlEnabled);
+        }
         m_recordSystemAudioButton->setToolTip(
             animatedFormat ? tr("Animated recording formats do not contain audio")
                            : tr("Record speakers"));
@@ -8841,4 +8886,27 @@ void ScreenshotToolPalette::setLatexState(bool enabled, bool busy) {
         m_latexButton->setBusy(busy);
     }
     refreshActionToolGroups();
+}
+
+void ScreenshotToolPalette::setRecordingMicrophoneGainDb(int gainDb) {
+    m_recordingMicrophoneGainDb = std::clamp(gainDb, -24, 24);
+    if (m_recordMicrophoneGainPopover)
+        m_recordMicrophoneGainPopover->setGainDb(m_recordingMicrophoneGainDb);
+}
+
+void ScreenshotToolPalette::setRecordingSystemAudioGainDb(int gainDb) {
+    m_recordingSystemAudioGainDb = std::clamp(gainDb, -24, 24);
+    if (m_recordSystemAudioGainPopover)
+        m_recordSystemAudioGainPopover->setGainDb(m_recordingSystemAudioGainDb);
+}
+
+RecordingAudioGainPopover* ScreenshotToolPalette::recordingAudioGainPopover(bool microphone) const {
+    return microphone ? m_recordMicrophoneGainPopover : m_recordSystemAudioGainPopover;
+}
+
+void ScreenshotToolPalette::closeRecordingAudioGainPopovers() {
+    if (m_recordMicrophoneGainPopover)
+        m_recordMicrophoneGainPopover->close();
+    if (m_recordSystemAudioGainPopover)
+        m_recordSystemAudioGainPopover->close();
 }

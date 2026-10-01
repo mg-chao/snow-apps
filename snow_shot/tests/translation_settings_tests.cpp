@@ -350,6 +350,12 @@ int main(int argc, char** argv) {
     {
         snow_shot::presentation::GlobalShortcutManager shortcuts;
         settings::BuiltInSettingsBackend backend(shortcuts);
+        require(storage::RecordingSettings().setMicrophoneGainDb(-12) &&
+                    storage::RecordingSettings().setSystemAudioGainDb(9) &&
+                    backend.resetSection(settings::SettingsSectionReset::ScreenRecording) &&
+                    storage::RecordingSettings().microphoneGainDb() == 0 &&
+                    storage::RecordingSettings().systemAudioGainDb() == 0,
+                "recording section reset restores both gains to unity");
         const auto separateAudio = settings::SettingsSwitchBinding::SeparateRecordingAudioTracks;
         require(backend.switchEnabled(separateAudio) && !backend.switchValue(separateAudio) &&
                     backend.applySwitchValue(separateAudio, true) &&

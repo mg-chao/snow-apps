@@ -359,6 +359,10 @@ class RecordingSettings final {
     bool setMicrophoneEnabled(bool enabled) const;
     [[nodiscard]] bool systemAudioEnabled() const;
     bool setSystemAudioEnabled(bool enabled) const;
+    [[nodiscard]] int microphoneGainDb() const;
+    bool setMicrophoneGainDb(int gainDb) const;
+    [[nodiscard]] int systemAudioGainDb() const;
+    bool setSystemAudioGainDb(int gainDb) const;
     [[nodiscard]] QString screenRecordingClarity() const;
     bool setScreenRecordingClarity(const QString& clarity) const;
     [[nodiscard]] int frameRate() const;

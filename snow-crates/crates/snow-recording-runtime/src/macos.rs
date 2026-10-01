@@ -5,7 +5,9 @@ use crate::direct::{LiveAudioMixer, process_audio_event};
 use crate::macos_effects::Effects;
 pub use crate::macos_effects::NativeEffectsConfig;
 use crate::{ScreenRecorderError, error::Result};
-use snow_audio_recorder::{AudioEvent, AudioSession, AudioStreamConfig, AudioStreamHandle};
+use snow_audio_recorder::{
+    AudioControlHandle, AudioEvent, AudioSession, AudioStreamConfig, AudioStreamHandle,
+};
 use snow_core::{cancellation::CancellationToken, recording_clock::RecordingClock};
 use snow_macos::{
     MacError,
@@ -113,7 +115,13 @@ pub(crate) fn native_error(error: MacError) -> ScreenRecorderError {
     }
 }
 impl NativeRecordingSession {
-    pub fn start(mut config: NativeRecordingConfig) -> Result<Self> {
+    pub fn start(config: NativeRecordingConfig) -> Result<Self> {
+        Self::start_with_controls(config, AudioControlHandle::new())
+    }
+    pub fn start_with_controls(
+        mut config: NativeRecordingConfig,
+        audio_control: AudioControlHandle,
+    ) -> Result<Self> {
         // Composite the tint against clean content and draw the pointer above it.
         if config.effects.highlight_rgba[3] != 0
             && config.capture.cursor == snow_media::CursorMode::Embedded
@@ -217,7 +225,7 @@ impl NativeRecordingSession {
                 audio.cancellation = config.capture.cancellation.clone();
                 audio.system.output_format = snow_audio_recorder::AudioFormat::new(48_000, 2);
                 audio.microphone.output_format = snow_audio_recorder::AudioFormat::new(48_000, 2);
-                AudioSession::new()?.start_streaming(audio)
+                AudioSession::new()?.start_streaming_with_controls(audio, audio_control.clone())
             })
             .transpose()?;
         let mixer = config
@@ -320,6 +328,7 @@ impl NativeRecordingSession {
         self.drain_audio(false)?;
         self.encoder.poll_native_packets()?;
         if self.paused {
+            self.capture.poll_exclusions().map_err(native_error)?;
             return Ok(NativeRecordingEvent::Idle);
         }
         match self

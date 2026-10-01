@@ -27,6 +27,8 @@
 #include "snow_shot/platform/windowcaptureexclusion.h"
 #include "snow_recording.h"
 #include "widgets/button.h"
+#include "../src/presentation/recording/recordingaudiogainpopover.h"
+#include "widgets/popover.h"
 #include "widgets/dpi_stable_window_controller.h"
 
 #include <QApplication>
@@ -73,6 +75,10 @@ const char* nativeCaptureError() {
 #include <stdexcept>
 
 struct SnowRecordingSessionImpl {};
+struct SnowRecordingAudioMonitorImpl {
+    uint32_t source = 0;
+    int gain = 0;
+};
 namespace {
 std::vector<std::weak_ptr<RecordingEffectTestState>> effectSources;
 std::unique_ptr<RecordingEffectsSource> testEffectsSource() {
@@ -83,6 +89,14 @@ std::unique_ptr<RecordingEffectsSource> testEffectsSource() {
 
 SnowRecordingSession session;
 std::atomic<int> starts = 0;
+std::atomic<int> audioMonitorCreates = 0;
+std::atomic<int> audioMonitorDestroys = 0;
+std::atomic<int> audioMonitorsActive = 0;
+std::atomic<bool> holdAudioMonitorDestroy = false;
+std::atomic<uint32_t> audioMeterMask = 0;
+std::atomic<int> liveSystemGain = 0;
+std::atomic<int> liveMicrophoneGain = 0;
+std::atomic<int> audioLevelReads = 0;
 std::atomic<bool> holdDimensions = false;
 std::atomic<bool> dimensionsEntered = false;
 std::atomic<int> dimensionsCompleted = 0;
@@ -1018,6 +1032,27 @@ void controllerPreviewTransitions() {
     RecordingSettings().setKeyboardForegroundColor(Qt::white);
 }
 
+std::vector<uint32_t> prepareExpectedRecordingExclusions(ScreenshotToolPalette* toolbarPalette,
+                                                         bool captureToolbar) {
+    std::vector<uint32_t> expected;
+    if (captureToolbar)
+        return expected;
+    if (auto id = snow_shot::platform::captureWindowId(toolbarPalette->window()))
+        expected.push_back(*id);
+    const snow_shot::storage::RecordingSettings settings;
+    if (settings.outputFormat() != QStringLiteral("mp4"))
+        return expected;
+    for (bool microphone : {false, true}) {
+        if (!(microphone ? settings.microphoneEnabled() : settings.systemAudioEnabled()))
+            continue;
+        auto* popup = toolbarPalette->recordingAudioGainPopover(microphone);
+        popup->setRetainNativeSurfaceOnHide(true);
+        if (auto id = snow_shot::platform::captureWindowId(popup->prepareSurface()))
+            expected.push_back(*id);
+    }
+    return expected;
+}
+
 void recordingCaptureExclusionWiring() {
     using snow_shot::storage::RecordingSettings;
     QCoreApplication::setAttribute(Qt::AA_DontUseNativeDialogs);
@@ -1032,7 +1067,7 @@ void recordingCaptureExclusionWiring() {
             ScreenRecordingController controller(testEffectsSource);
             controller.open({40, 40, 320, 240});
             QWidget* toolbar = palette()->window();
-            const auto id = snow_shot::platform::captureWindowId(toolbar);
+            const auto expected = prepareExpectedRecordingExclusions(palette(), captureToolbar);
 #ifdef Q_OS_MACOS
             const auto sharingMatches = macosCaptureSharingProbe(toolbar);
 #endif
@@ -1050,10 +1085,8 @@ void recordingCaptureExclusionWiring() {
             } else {
                 waitForRecording(controller);
             }
-            const std::vector<uint32_t> expected =
-                !captureToolbar && id ? std::vector<uint32_t>{*id} : std::vector<uint32_t>{};
             require(lastExcludedWindows == expected,
-                    "recording creation owns exactly the configured toolbar exclusion");
+                    "recording creation owns the toolbar and prepared audio surface exclusions");
             require(toolbar->isVisible(), "toolbar remains visible on success and failure");
 #ifdef Q_OS_MACOS
             require(sharingMatches(!captureToolbar && !fail),
@@ -1614,7 +1647,11 @@ snow_recording_session_create_direct(const SnowCaptureDirectRecordingConfig* con
     // Session creation runs on the controller's worker thread: only plain data
     // may be touched here. The preview label invariant is asserted on the GUI
     // thread by controllerPreviewTransitions instead.
+    require(audioMonitorsActive == 0,
+            "recording native initialization follows audio preview retirement");
     lastDirectConfig = *config;
+    liveSystemGain = config->system_audio_gain_db;
+    liveMicrophoneGain = config->microphone_gain_db;
     lastKeyboardFontFamily = config->keyboard_font_family_utf8;
     lastKeyboardCjkFontFamily = config->keyboard_cjk_font_family_utf8;
     lastExcludedWindows.clear();
@@ -1663,6 +1700,64 @@ SnowRecordingResult snow_recording_session_stop(SnowRecordingSession*) {
 }
 uint8_t snow_recording_session_state(const SnowRecordingSession*, SnowRecordingState* state) {
     *state = SNOW_RECORDING_STATE_RUNNING;
+    return 1;
+}
+uint8_t snow_recording_session_set_audio_gain(SnowRecordingSession*, uint32_t source,
+                                              int32_t gain) {
+    if (source > 1 || gain < -24 || gain > 24)
+        return 0;
+    (source == 0 ? liveSystemGain : liveMicrophoneGain) = gain;
+    return 1;
+}
+uint8_t snow_recording_session_set_audio_metering(SnowRecordingSession*, uint32_t mask) {
+    audioMeterMask = mask;
+    return 1;
+}
+uint8_t snow_recording_session_take_audio_levels(const SnowRecordingSession*,
+                                                 SnowRecordingAudioLevels* levels) {
+    ++audioLevelReads;
+    *levels = {{0.42f, 0, SNOW_RECORDING_AUDIO_READY, 0},
+               {0.25f, 0, SNOW_RECORDING_AUDIO_READY, 0}};
+    return 1;
+}
+uint8_t snow_recording_session_request_exclusions(SnowRecordingSession*,
+                                                  const SnowCaptureExclusions*, const uint32_t*,
+                                                  uint32_t, uint64_t* generation) {
+    *generation = 1;
+    return 1;
+}
+uint8_t snow_recording_session_exclusion_status(const SnowRecordingSession*,
+                                                SnowRecordingExclusionStatus* status) {
+    *status = {1, 1, 0};
+    return 1;
+}
+SnowRecordingResult snow_recording_audio_monitor_create(uint32_t source, int32_t gain,
+                                                        SnowRecordingAudioMonitor** monitor) {
+    *monitor = new SnowRecordingAudioMonitorImpl{source, gain};
+    ++audioMonitorCreates;
+    ++audioMonitorsActive;
+    return SNOW_RECORDING_RESULT_OK;
+}
+void snow_recording_audio_monitor_cancel(SnowRecordingAudioMonitor*) {}
+void snow_recording_audio_monitor_destroy(SnowRecordingAudioMonitor* monitor) {
+    while (holdAudioMonitorDestroy)
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    delete monitor;
+    --audioMonitorsActive;
+    ++audioMonitorDestroys;
+}
+uint8_t snow_recording_audio_monitor_set_gain(SnowRecordingAudioMonitor* monitor, int32_t gain) {
+    monitor->gain = gain;
+    return 1;
+}
+uint8_t snow_recording_audio_monitor_set_metering(SnowRecordingAudioMonitor*, uint8_t) {
+    return 1;
+}
+uint8_t snow_recording_audio_monitor_take_levels(const SnowRecordingAudioMonitor* monitor,
+                                                 SnowRecordingAudioLevels* levels) {
+    *levels = {};
+    auto& source = monitor->source == 0 ? levels->system_audio : levels->microphone;
+    source = {0.42f, 0, SNOW_RECORDING_AUDIO_READY, 0};
     return 1;
 }
 const char* snow_recording_last_error_message() {
@@ -1819,9 +1914,8 @@ void recordingSettingsDialog() {
     button->click();
     modal = controller.findChild<AdModal*>(QStringLiteral("screenRecordingSettingsModal"));
     retired = modal;
-    const auto toolbarId = snow_shot::platform::captureWindowId(toolbarPalette->window());
-    const std::vector<uint32_t> expectedExclusions =
-        toolbarId ? std::vector<uint32_t>{*toolbarId} : std::vector<uint32_t>{};
+    const auto expectedExclusions = prepareExpectedRecordingExclusions(
+        toolbarPalette, snow_shot::storage::RecordingSettings().captureToolbarInRecording());
     controller.startRecording();
     waitForRecording(controller);
     require(!button->isEnabled() && (retired.isNull() || !retired->isOpen()),
@@ -1907,6 +2001,145 @@ int main(int argc, char** argv) {
     QApplication::setFont(testFont);
     QFontDatabase::setApplicationFallbackFontFamilies(QChar::Script_Han,
                                                       {QStringLiteral("Snow Recording Test Han")});
+    if (app.arguments().contains(QStringLiteral("--audio-gain-only"))) {
+        const auto waitFor = [](auto predicate) {
+            QElapsedTimer deadline;
+            deadline.start();
+            while (!predicate() && deadline.elapsed() < 3000) {
+                QCoreApplication::processEvents();
+                QThread::msleep(1);
+            }
+            require(predicate(), "audio controller operation completes without blocking the GUI");
+        };
+        require(RecordingSettings().setMicrophoneEnabled(true) &&
+                    RecordingSettings().setSystemAudioEnabled(true) &&
+                    RecordingSettings().setMicrophoneGainDb(-6) &&
+                    RecordingSettings().setSystemAudioGainDb(9),
+                "recording audio fixture preferences save");
+        {
+            ScreenRecordingController controller(testEffectsSource);
+            controller.open(QRect(10, 10, 320, 240));
+            auto* controls = palette();
+            auto* microphone = controls->recordingAudioGainPopover(true);
+            auto* system = controls->recordingAudioGainPopover(false);
+            require(microphone->gainDb() == -6 && system->gainDb() == 9,
+                    "recording UI reloads independent gain preferences");
+            microphone->openAndFocus();
+            waitFor([] { return audioMonitorCreates == 1; });
+            auto* slider =
+                microphone->popover()->contentWidget()->findChild<adqt::widgets::AdSlider*>(
+                    QStringLiteral("recordingAudioGainSlider"));
+            require(slider != nullptr, "microphone gain slider exists");
+            slider->setValue(12);
+            require(RecordingSettings().microphoneGainDb() == 12 && system->gainDb() == 9,
+                    "gain changes save independently before recording");
+            holdAudioMonitorDestroy = true;
+            system->openAndFocus();
+            microphone->openAndFocus();
+            QCoreApplication::processEvents();
+            require(microphone->popover()->isVisible() && !system->popover()->isVisible() &&
+                        audioMonitorCreates == 1 && audioMonitorsActive == 1,
+                    "rapid source switching rejects a stale preview before retirement completes");
+            holdAudioMonitorDestroy = false;
+            waitFor([] { return audioMonitorCreates == 2; });
+            microphone->trigger()->click();
+            waitFor([] { return audioMonitorsActive == 0; });
+            const int offMonitorCreates = audioMonitorCreates;
+            slider->setValue(11);
+            QCoreApplication::processEvents();
+            require(audioMonitorCreates == offMonitorCreates &&
+                        RecordingSettings().microphoneGainDb() == 11,
+                    "off source gain editing persists without acquiring an audio device");
+            microphone->trigger()->click();
+            slider->setValue(12);
+            waitFor([offMonitorCreates] { return audioMonitorCreates == offMonitorCreates + 1; });
+            holdAudioMonitorDestroy = true;
+            const int oldStarts = starts;
+            controller.startRecording();
+            QCoreApplication::processEvents();
+            require(starts == oldStarts,
+                    "recording initialization waits for audio preview teardown asynchronously");
+            holdAudioMonitorDestroy = false;
+            waitForRecording(controller);
+            require(lastDirectConfig.system_audio_gain_db == 9 &&
+                        lastDirectConfig.microphone_gain_db == 12 && audioMonitorsActive == 0,
+                    "native configuration captures gains after preview retirement");
+            microphone->openAndFocus();
+            waitFor([] { return audioMeterMask == 2; });
+            QKeyEvent escapePress(QEvent::KeyPress, Qt::Key_Escape, Qt::NoModifier);
+            QApplication::sendEvent(slider, &escapePress);
+            QKeyEvent escapeRelease(QEvent::KeyRelease, Qt::Key_Escape, Qt::NoModifier);
+            QApplication::sendEvent(slider, &escapeRelease);
+            require(!microphone->popover()->isVisible() && !controls->recordingBusy() &&
+                        controller.isRecording(),
+                    "Escape closes audio control without recording shortcut activation");
+            microphone->openAndFocus();
+            waitFor([] { return audioMeterMask == 2; });
+            slider->setValue(-12);
+            require(liveMicrophoneGain == -12 && liveSystemGain == 9 &&
+                        RecordingSettings().microphoneGainDb() == -12,
+                    "gain updates reach active source without changing the other source");
+            controls->recordingPauseRequested();
+            require(audioMeterMask == 2, "paused recording reuses selected source metering");
+            slider->setValue(0);
+            require(liveMicrophoneGain == 0, "paused gain changes reach recording control state");
+            require(ApplicationStorage::instance().configuration().setValues(
+                        {{QStringLiteral("screen_recording/microphone_gain_db"), -3},
+                         {QStringLiteral("screen_recording/system_audio_gain_db"), 7}}),
+                    "external gain preference updates succeed");
+            waitFor([&] { return liveMicrophoneGain == -3 && liveSystemGain == 7; });
+            require(microphone->gainDb() == -3 && system->gainDb() == 7,
+                    "reset or import refreshes paused gains and independent controls");
+            microphone->close();
+            require(audioMeterMask == 0, "closing audio controls disables worker metering");
+            const int oldReads = audioLevelReads;
+            QElapsedTimer closed;
+            closed.start();
+            while (closed.elapsed() < 90) {
+                QCoreApplication::processEvents();
+                QThread::msleep(1);
+            }
+            require(audioLevelReads == oldReads,
+                    "closed gain controls have no meter polling timer");
+            controls->recordingResumeRequested();
+            controller.stopRecordingAndCopy();
+            waitForIdle(controller);
+            controls->recordingCloseRequested();
+        }
+        QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+        const auto saved = ApplicationStorage::instance().configuration().snapshot();
+        {
+            ScreenRecordingController controller(testEffectsSource);
+            QString error;
+            require(!controller.startAutomation(QRect(10, 10, 320, 240),
+                                                {{QStringLiteral("microphone_gain_db"), 25}},
+                                                &error) &&
+                        error == QStringLiteral("invalid_parameters"),
+                    "automation rejects invalid gain before acquiring devices");
+            require(controller.startAutomation(QRect(10, 10, 320, 240),
+                                               {{QStringLiteral("microphone_gain_db"), -24},
+                                                {QStringLiteral("system_audio_gain_db"), 24}},
+                                               &error),
+                    "automation accepts independent signed gain overrides");
+            waitForRecording(controller);
+            require(lastDirectConfig.microphone_gain_db == -24 &&
+                        lastDirectConfig.system_audio_gain_db == 24 &&
+                        ApplicationStorage::instance().configuration().snapshot() == saved,
+                    "automation gain overrides are session-local");
+            require(controller.automationState()
+                            .value(QStringLiteral("options"))
+                            .toObject()
+                            .value(QStringLiteral("microphone_gain_db"))
+                            .toInt() == -24,
+                    "automation state exposes current gain");
+            controller.stopRecordingAndCopy();
+            waitForIdle(controller);
+            controller.detachAutomation();
+        }
+        QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+        ApplicationStorage::instance().shutdown();
+        return 0;
+    }
     if (app.arguments().contains(QStringLiteral("--settings-dialog-only"))) {
         if (const QString previewFont =
                 qEnvironmentVariable("SNOW_TEST_RECORDING_SETTINGS_PREVIEW_FONT");

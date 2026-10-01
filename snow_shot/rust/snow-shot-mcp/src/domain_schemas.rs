@@ -51,6 +51,27 @@ macro_rules! integer_choices {
         }
     };
 }
+struct AudioGainDb(i32);
+impl<'de> Deserialize<'de> for AudioGainDb {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let value = i32::deserialize(deserializer)?;
+        if (-24..=24).contains(&value) {
+            Ok(Self(value))
+        } else {
+            Err(serde::de::Error::custom(
+                "Audio gain must be between -24 and 24 dB",
+            ))
+        }
+    }
+}
+impl JsonSchema for AudioGainDb {
+    fn schema_name() -> std::borrow::Cow<'static, str> {
+        "AudioGainDb".into()
+    }
+    fn json_schema(_: &mut schemars::SchemaGenerator) -> schemars::Schema {
+        schemars::json_schema!({"type":"integer","minimum":-24,"maximum":24})
+    }
+}
 limited_integer!(DelaySeconds, 0, 10);
 limited_integer!(HistoryPageSize, 1, 200);
 limited_integer!(TrailDuration, 100, 2000);
@@ -289,7 +310,7 @@ choices!(EncodingPreset {
 input!(RecordingOptions {
     path: Option<String>,
     format: Option<RecordingFormat>, start_delay_seconds: Option<DelaySeconds>, microphone: Option<bool>,
-    system_audio: Option<bool>, separate_audio_tracks: Option<bool>, frame_rate: Option<FrameRate>, animated_frame_rate: Option<AnimatedFrameRate>,
+    system_audio: Option<bool>, system_audio_gain_db: Option<AudioGainDb>, microphone_gain_db: Option<AudioGainDb>, separate_audio_tracks: Option<bool>, frame_rate: Option<FrameRate>, animated_frame_rate: Option<AnimatedFrameRate>,
     clarity: Option<Clarity>, animated_clarity: Option<AnimatedClarity>, encoder: Option<Encoder>,
     encoding_preset: Option<EncodingPreset>, r#loop: Option<bool>, capture_toolbar: Option<bool>,
     show_cursor: Option<bool>, show_keyboard: Option<bool>, mouse_highlight: Option<bool>,
@@ -1127,5 +1148,35 @@ mod tests {
             )
             .is_err()
         );
+    }
+}
+
+#[cfg(test)]
+mod audio_gain_tests {
+    use super::*;
+    #[test]
+    fn recording_audio_gains_validate_signed_integer_bounds() {
+        for value in [-24, 0, 24] {
+            let options: RecordingOptions = serde_json::from_value(
+                serde_json::json!({"microphone_gain_db":value,"system_audio_gain_db":-value}),
+            )
+            .unwrap();
+            assert_eq!(options.microphone_gain_db.unwrap().0, value);
+            assert_eq!(options.system_audio_gain_db.unwrap().0, -value);
+        }
+        for value in [
+            serde_json::json!(-25),
+            serde_json::json!(25),
+            serde_json::json!(0.5),
+            serde_json::json!("0"),
+            serde_json::json!(true),
+        ] {
+            assert!(
+                serde_json::from_value::<RecordingOptions>(
+                    serde_json::json!({"system_audio_gain_db":value})
+                )
+                .is_err()
+            );
+        }
     }
 }

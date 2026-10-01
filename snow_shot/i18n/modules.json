@@ -70,6 +70,7 @@
     "ScreenshotSavePreviewCanvas"
   ],
   "recording": [
+    "RecordingAudioGainPopover",
     "RecordingEffectPreview",
     "RecordingKeyboardLabels",
     "ScreenRecordingSettingsDialog",

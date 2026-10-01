@@ -155,6 +155,7 @@ void ScreenRecordingToolbarWindow::beginRegionInteraction() {
         return;
     }
     m_regionInteractionActive = true;
+    palette()->closeRecordingAudioGainPopovers();
     for (auto* picker : palette()->findChildren<adqt::widgets::AdColorPicker*>()) {
         picker->setPopupVisible(false);
     }

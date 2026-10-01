@@ -244,6 +244,8 @@
         "start_delay_seconds",
         "microphone",
         "system_audio",
+        "microphone_gain_db",
+        "system_audio_gain_db",
         "frame_rate",
         "animated_frame_rate",
         "clarity",

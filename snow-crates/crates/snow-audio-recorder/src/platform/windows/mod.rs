@@ -18,6 +18,7 @@ use crate::device::{AudioDeviceInfo, DeviceFlow};
 use crate::error::{AudioError, AudioResult};
 use crate::packet::{AudioEvent, AudioSourceKind};
 use crate::session::{AudioStreamConfig, SourceConfig};
+use crate::{AudioSourceStatus, control::source_index};
 
 use self::com::{CoInitGuard, EventHandle};
 use self::notification::NotificationClientGuard;
@@ -89,6 +90,7 @@ struct WasapiEngine {
     system_retry: Option<SourceRetryState>,
     /// Deferred retry state for the microphone source.
     microphone_retry: Option<SourceRetryState>,
+    source_states: [AudioSourceStatus; 2],
 }
 
 // SAFETY: WasapiEngine is moved into and used by a single dedicated worker thread.
@@ -225,12 +227,20 @@ impl SourceRetryState {
 
 impl WasapiEngine {
     fn new(config: AudioStreamConfig) -> Self {
+        let source_states = [config.system.enabled, config.microphone.enabled].map(|enabled| {
+            if enabled {
+                AudioSourceStatus::Starting
+            } else {
+                AudioSourceStatus::Disabled
+            }
+        });
         Self {
             config,
             com: None,
             worker_thread_id: None,
             system_retry: None,
             microphone_retry: None,
+            source_states,
         }
     }
 
@@ -255,12 +265,17 @@ impl WasapiEngine {
         let notification =
             NotificationClientGuard::register(&enumerator, Arc::clone(&control_event))?;
 
-        let system_source =
-            Self::try_init_source(AudioSourceKind::System, &self.config.system, &enumerator)?;
+        let system_source = Self::try_init_source(
+            AudioSourceKind::System,
+            &self.config.system,
+            &enumerator,
+            &mut self.source_states[0],
+        )?;
         let microphone_source = Self::try_init_source(
             AudioSourceKind::Microphone,
             &self.config.microphone,
             &enumerator,
+            &mut self.source_states[1],
         )?;
 
         if system_source.is_none() && microphone_source.is_none() {
@@ -288,14 +303,25 @@ impl WasapiEngine {
         kind: AudioSourceKind,
         config: &SourceConfig,
         enumerator: &windows::Win32::Media::Audio::IMMDeviceEnumerator,
+        status: &mut AudioSourceStatus,
     ) -> AudioResult<Option<WasapiSource>> {
         if !config.enabled {
+            *status = AudioSourceStatus::Disabled;
             return Ok(None);
         }
         match WasapiSource::new(kind, config.clone(), enumerator.clone()) {
-            Ok(source) => Ok(Some(source)),
-            Err(err) if config.required => Err(err),
-            Err(_) => Ok(None),
+            Ok(source) => {
+                *status = AudioSourceStatus::Ready;
+                Ok(Some(source))
+            }
+            Err(err) => {
+                *status = if matches!(err, AudioError::AccessDenied) {
+                    AudioSourceStatus::PermissionDenied
+                } else {
+                    AudioSourceStatus::Unavailable
+                };
+                if config.required { Err(err) } else { Ok(None) }
+            }
         }
     }
 
@@ -342,6 +368,7 @@ impl WasapiEngine {
     /// Start a deferred retry sequence for the given source. If a retry is
     /// already in progress it is reset (e.g. a new device-change notification).
     fn begin_retry(&mut self, kind: AudioSourceKind, last_error: Option<AudioError>) {
+        self.source_states[source_index(kind)] = AudioSourceStatus::Reconnecting;
         if let Some(com) = self.com.as_mut() {
             *com.source_mut(kind) = None;
         }
@@ -388,6 +415,7 @@ impl WasapiEngine {
 
         match result {
             Ok(new_device_id) => {
+                self.source_states[source_index(kind)] = AudioSourceStatus::Ready;
                 *self.retry_mut(kind) = None;
                 out.push(AudioEvent::SourceRestarted {
                     source: kind,
@@ -403,6 +431,13 @@ impl WasapiEngine {
                     if state.attempts >= max_attempts {
                         let last_err = state.last_error.take().unwrap_or_else(|| err.clone());
                         let required = source_config.required;
+
+                        self.source_states[source_index(kind)] =
+                            if matches!(err, AudioError::AccessDenied) {
+                                AudioSourceStatus::PermissionDenied
+                            } else {
+                                AudioSourceStatus::Unavailable
+                            };
 
                         *self.retry_mut(kind) = None;
                         if let Some(com) = self.com.as_mut() {
@@ -468,6 +503,10 @@ impl WasapiEngine {
 }
 
 impl AudioRecorderEngine for WasapiEngine {
+    fn source_states(&self) -> Option<[AudioSourceStatus; 2]> {
+        Some(self.source_states)
+    }
+
     fn poll(&mut self, timeout: Duration) -> AudioResult<EngineEvent> {
         self.ensure_initialized()?;
 

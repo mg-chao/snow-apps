@@ -56,6 +56,7 @@ namespace snow_shot::presentation {
 class ScreenshotToolPaletteColorPresets;
 }
 
+class RecordingAudioGainPopover;
 class ScreenshotToolPaletteStyleControls;
 class ScreenshotToolbarMainPanel;
 class IconNumericValuePreviewButton;
@@ -360,6 +361,10 @@ class ScreenshotToolPalette final : public QWidget,
     void setRecordingDuration(qint64 durationMilliseconds);
     void setRecordingMicrophoneEnabled(bool enabled);
     void setRecordingSystemAudioEnabled(bool enabled);
+    void setRecordingMicrophoneGainDb(int gainDb);
+    void setRecordingSystemAudioGainDb(int gainDb);
+    RecordingAudioGainPopover* recordingAudioGainPopover(bool microphone) const;
+    void closeRecordingAudioGainPopovers();
     void setRecordingOutputFormat(const QString& format);
     [[nodiscard]] QString recordingOutputFormat() const;
     void setRecordingMouseTrailDurationMs(int value);
@@ -535,6 +540,8 @@ class ScreenshotToolPalette final : public QWidget,
     void recordingResumeRequested();
     void recordingMicrophoneToggled(bool enabled);
     void recordingSystemAudioToggled(bool enabled);
+    void recordingMicrophoneGainChanged(int gainDb);
+    void recordingSystemAudioGainChanged(int gainDb);
     void recordingOpenFolderRequested();
     void recordingCloseRequested();
     void recordingCopyRequested();
@@ -989,6 +996,10 @@ class ScreenshotToolPalette final : public QWidget,
     RecordingSessionStatus m_recordingSession = RecordingSessionStatus::idle();
     bool m_recordingMicrophoneEnabled = false;
     bool m_recordingSystemAudioEnabled = true;
+    int m_recordingMicrophoneGainDb = 0;
+    int m_recordingSystemAudioGainDb = 0;
+    RecordingAudioGainPopover* m_recordMicrophoneGainPopover = nullptr;
+    RecordingAudioGainPopover* m_recordSystemAudioGainPopover = nullptr;
     bool m_recordExportSettingsVisible = false;
     QString m_recordingOutputFormat = QStringLiteral("mp4");
     int m_recordingStartDelaySeconds = 0;

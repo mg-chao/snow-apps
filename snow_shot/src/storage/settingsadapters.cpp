@@ -1390,6 +1390,22 @@ bool RecordingSettings::setSystemAudioEnabled(bool enabled) const {
     return cache().setValue(QStringLiteral("screen_recording/enable_system_audio"), enabled);
 }
 
+int RecordingSettings::microphoneGainDb() const {
+    return cache().value(QStringLiteral("screen_recording/microphone_gain_db")).toInt();
+}
+
+bool RecordingSettings::setMicrophoneGainDb(int gainDb) const {
+    return cache().setValue(QStringLiteral("screen_recording/microphone_gain_db"), gainDb);
+}
+
+int RecordingSettings::systemAudioGainDb() const {
+    return cache().value(QStringLiteral("screen_recording/system_audio_gain_db")).toInt();
+}
+
+bool RecordingSettings::setSystemAudioGainDb(int gainDb) const {
+    return cache().setValue(QStringLiteral("screen_recording/system_audio_gain_db"), gainDb);
+}
+
 QString RecordingSettings::screenRecordingClarity() const {
     return cache().value(QStringLiteral("screen_recording/clarity")).toString();
 }

@@ -30,12 +30,27 @@ pub enum EngineEvent {
 
 pub trait AudioRecorderEngine: Send {
     fn poll(&mut self, timeout: Duration) -> AudioResult<EngineEvent>;
+
+    /// Device readiness is independent of whether a silent device supplies PCM.
+    fn source_states(&self) -> Option<[crate::AudioSourceStatus; 2]> {
+        None
+    }
 }
 
 pub trait AudioBackend: Send + Sync {
     fn enumerate_devices(&self, flow: DeviceFlow) -> AudioResult<Vec<AudioDeviceInfo>>;
     fn create_engine(&self, config: AudioStreamConfig)
     -> AudioResult<Box<dyn AudioRecorderEngine>>;
+
+    /// Publish source-specific initialization failures even when no engine starts.
+    /// Backends that do not report startup state retain the existing creation path.
+    fn create_engine_with_controls(
+        &self,
+        config: AudioStreamConfig,
+        _control: &crate::AudioControlHandle,
+    ) -> AudioResult<Box<dyn AudioRecorderEngine>> {
+        self.create_engine(config)
+    }
 }
 
 pub fn backend_for_kind(kind: AudioBackendKind) -> AudioResult<Arc<dyn AudioBackend>> {

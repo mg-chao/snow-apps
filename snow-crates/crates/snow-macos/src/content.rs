@@ -86,6 +86,39 @@ pub(crate) fn shareable_content_cancelable(
 ) -> MacResult<Retained<SCShareableContent>> {
     shareable_content_cancelable_filtered(timeout, cancellation, false)
 }
+/// A popup may have a WindowServer ID before ScreenCaptureKit enumerates it.
+/// Retry on a preparation worker; never acknowledge a silently omitted exclusion.
+pub(crate) fn shareable_content_with_required_windows(
+    timeout: Duration,
+    cancellation: &crate::CancellationToken,
+    required: &[u32],
+) -> MacResult<SharedSnapshot> {
+    let deadline = Instant::now()
+        .checked_add(timeout)
+        .ok_or_else(|| MacError::InvalidConfig("deadline overflow".into()))?;
+    loop {
+        let remaining = deadline.saturating_duration_since(Instant::now());
+        if remaining.is_zero() {
+            return Err(MacError::Timeout);
+        }
+        let snapshot = shareable_content_cancelable_filtered(remaining, cancellation, false)?;
+        if has_required_windows(&snapshot, required) {
+            return Ok(SharedSnapshot::new(snapshot));
+        }
+        if cancellation.is_canceled() {
+            return Err(MacError::Canceled);
+        }
+        std::thread::sleep(Duration::from_millis(25));
+    }
+}
+pub(crate) fn has_required_windows(content: &SCShareableContent, required: &[u32]) -> bool {
+    crate::exclusion_update::contains_required_windows(
+        required,
+        unsafe { content.windows() }
+            .iter()
+            .map(|window| unsafe { window.windowID() }),
+    )
+}
 pub(crate) fn shareable_content_cancelable_filtered(
     timeout: Duration,
     cancellation: &crate::CancellationToken,
