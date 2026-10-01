@@ -2383,12 +2383,21 @@ void originalImagePreviewPreservesSelectionAndOwnerLifecycle() {
     QTextDocument document;
     document.setPlainText(QStringLiteral("A long draft that must not expand the selection"));
     window->showTextEditor(&document);
+    flush();
+    require(preview->isVisible(), "text editing preserves the separate preview");
+    window->setShowOriginalImage(true);
+    require(preview->isHidden(), "showing the original image hides the preview immediately");
+    flush();
+    require(window->geometry() == geometry && preview->isHidden() &&
+                preview->size() == geometry.size(),
+            "showing the original image preserves selection geometry while hiding the preview");
+    window->setShowOriginalImage(false);
     window->setShowOriginalImage(true);
     flush();
-    require(window->geometry() == geometry && preview->isVisible() &&
-                preview->size() == geometry.size(),
-            "editing and the existing original-image peek preserve the separate preview");
+    require(preview->isHidden(), "a queued preview refresh must respect the original-image mode");
     window->setShowOriginalImage(false);
+    flush();
+    require(preview->isVisible(), "returning to recognition results restores the preview");
     window->hideTextEditor();
     window->setOriginalImagePreviewSuppressed(true);
     require(preview->isHidden(), "interaction suppression hides the preview immediately");

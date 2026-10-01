@@ -325,6 +325,7 @@ class ScreenshotPinnedWindow final : public QWidget {
     [[nodiscard]] bool copyHiddenTextSelection();
     void updateOcrPresentation();
     void updateRecognitionContentGeometry();
+    void updateOriginalImagePreviewVisibility();
     void beginAuxiliaryWindowInteraction();
     void endAuxiliaryWindowInteraction();
     void activateRecognitionMode(int mode, bool showToolbar = true);

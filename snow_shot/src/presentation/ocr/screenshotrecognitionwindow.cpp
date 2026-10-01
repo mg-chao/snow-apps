@@ -440,8 +440,8 @@ void ScreenshotRecognitionWindow::syncOriginalImagePreviewStacking(bool staysOnT
 }
 
 void ScreenshotRecognitionWindow::refreshOriginalImagePreview() {
-    if (!m_originalImagePreviewEnabled || m_originalImagePreviewSuppressed || !isVisible() ||
-        !m_originalImagePreviewHost || !m_originalImagePreviewHost->isVisible() ||
+    if (!m_originalImagePreviewEnabled || m_originalImagePreviewSuppressed || m_showOriginalImage ||
+        !isVisible() || !m_originalImagePreviewHost || !m_originalImagePreviewHost->isVisible() ||
         m_originalImagePreviewHost->isMinimized()) {
         if (m_originalImagePreview) {
             m_originalImagePreview->hide();
@@ -490,8 +490,8 @@ void ScreenshotRecognitionWindow::observeOriginalImagePreviewHost() {
 }
 
 void ScreenshotRecognitionWindow::updateOriginalImagePreview() {
-    if (!m_originalImagePreviewEnabled || m_originalImagePreviewSuppressed || !isVisible() ||
-        !m_originalImagePreviewHost || !m_originalImagePreviewHost->isVisible() ||
+    if (!m_originalImagePreviewEnabled || m_originalImagePreviewSuppressed || m_showOriginalImage ||
+        !isVisible() || !m_originalImagePreviewHost || !m_originalImagePreviewHost->isVisible() ||
         m_originalImagePreviewHost->isMinimized()) {
         if (m_originalImagePreview) {
             m_originalImagePreview->hide();
@@ -562,6 +562,7 @@ void ScreenshotRecognitionWindow::setShowOriginalImage(bool show) {
     if (show) {
         setFocus(Qt::OtherFocusReason);
     }
+    refreshOriginalImagePreview();
 }
 
 void ScreenshotRecognitionWindow::setOcrCopyDefaultsEnabled(bool enabled) {

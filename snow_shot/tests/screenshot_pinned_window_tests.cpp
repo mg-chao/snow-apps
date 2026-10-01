@@ -1793,9 +1793,37 @@ void pinnedOriginalImagePreviewFollowsViewAndAuxiliaryLifecycle() {
                                              QStringLiteral("screenshotOriginalImagePreviewWindow"))
                                        : nullptr;
     auto* canvas = window.findChild<SnowCanvasWidget*>();
-    require(content != nullptr && preview != nullptr && preview->isVisible() && canvas != nullptr &&
-                window.findChild<ScreenshotPinnedEditController*>() == nullptr,
-            "text recognition must preview the original image without requiring a toolbar");
+    require(content != nullptr && (preview == nullptr || preview->isHidden()) &&
+                canvas != nullptr && window.findChild<ScreenshotPinnedEditController*>() == nullptr,
+            "text recognition must hide the comparison image when there is no toolbar");
+    Access::editSelectionOffscreen(window, true);
+    auto* controller = window.findChild<ScreenshotPinnedEditController*>();
+    require(controller != nullptr && controller->toolbarWindow() != nullptr &&
+                controller->toolbarWindow()->isVisible(),
+            "the preview fixture needs a visible pinned toolbar");
+    waitForUi(30);
+    preview = content->findChild<ScreenshotOriginalImagePreviewWindow*>(
+        QStringLiteral("screenshotOriginalImagePreviewWindow"));
+    require(preview != nullptr && preview->isVisible(),
+            "showing the pinned toolbar must show the comparison image");
+    session->setShowOriginalImage(true);
+    require(preview->isHidden(), "original-image mode must hide the pinned comparison immediately");
+    waitForUi(20);
+    require(preview->isHidden() && controller->toolbarWindow()->isVisible(),
+            "the pinned comparison must stay hidden in original-image mode with a visible toolbar");
+    session->setShowOriginalImage(false);
+    waitForUi(20);
+    require(preview->isVisible(), "leaving original-image mode must restore the pinned comparison");
+    controller->toolbarWindow()->hide();
+    require(preview->isHidden(), "hiding the toolbar must hide the pinned comparison immediately");
+    controller->toolbarWindow()->show();
+    controller->toolbarWindow()->hide();
+    waitForUi(20);
+    require(preview->isHidden(),
+            "a queued refresh must not restore a comparison without a toolbar");
+    controller->toolbarWindow()->show();
+    waitForUi(20);
+    require(preview->isVisible(), "showing the toolbar again must restore the pinned comparison");
     require(canvas->internalWinId() == 0 && content->internalWinId() == 0,
             "creating the preview must preserve the pin's shared nonnative recognition canvas");
     int projectionPass = 0;
@@ -1926,7 +1954,7 @@ void pinnedOriginalImagePreviewFollowsViewAndAuxiliaryLifecycle() {
 
     const quint64 generation = PreviewAccess::rasterGeneration(*preview);
     Access::beginAuxiliaryInteraction(window);
-    require(preview->isHidden(), "pin dragging must hide the preview even without a toolbar");
+    require(preview->isHidden(), "pin dragging must hide the preview with the toolbar");
     require(Access::moveForOriginalPreview(window, QPoint(20, 15)), "move the preview's pin");
     waitForUi(20);
     require(preview->isHidden() && PreviewAccess::rasterGeneration(*preview) == generation,
@@ -1936,11 +1964,6 @@ void pinnedOriginalImagePreviewFollowsViewAndAuxiliaryLifecycle() {
     require(PreviewAccess::rasterGeneration(*preview) == generation,
             "moving the pin must reuse the original-image preview raster");
 
-    Access::editSelectionOffscreen(window, true);
-    auto* controller = window.findChild<ScreenshotPinnedEditController*>();
-    require(controller != nullptr && controller->toolbarWindow() != nullptr &&
-                controller->toolbarWindow()->isVisible(),
-            "the preview fixture needs a visible pinned toolbar");
     Access::beginAuxiliaryInteraction(window);
     require(preview->isHidden() && controller->toolbarWindow()->isHidden(),
             "pin interaction must hide the preview and toolbar together");
@@ -1969,6 +1992,10 @@ void pinnedOriginalImagePreviewFollowsViewAndAuxiliaryLifecycle() {
     require(Access::hiddenSelection(window) && preview->isHidden(),
             "hidden text-selection overlays must not restore an original-image preview");
     session->activate(ScreenshotRecognitionSessionController::Mode::Text);
+    waitForUi(20);
+    require(preview->isHidden(),
+            "recognition reactivation without a toolbar must hide the preview");
+    Access::editSelectionOffscreen(window, true);
     verifyProjection();
     Access::beginAuxiliaryInteraction(window);
     ScreenshotClipboardContent replacement;
@@ -2005,6 +2032,7 @@ void pinnedOriginalImagePreviewSupportsTranslationModes() {
         auto* session = ScreenshotPinnedWindowTestAccess::hiddenSelectionOffscreen(window, config);
         session->activate(ScreenshotRecognitionSessionController::Mode::Text);
         session->beginTextTranslation();
+        ScreenshotPinnedWindowTestAccess::editSelectionOffscreen(window, true);
         waitForUi(30);
         auto* preview = window.findChild<ScreenshotOriginalImagePreviewWindow*>(
             QStringLiteral("screenshotOriginalImagePreviewWindow"));

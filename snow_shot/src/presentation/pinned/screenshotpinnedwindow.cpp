@@ -2305,6 +2305,12 @@ bool ScreenshotPinnedWindow::eventFilter(QObject* watched, QEvent* event) {
     if (watched == nullptr || !watched->isWidgetType() || event == nullptr || m_closing) {
         return QWidget::eventFilter(watched, event);
     }
+    if (m_editController != nullptr && watched == m_editController->toolbarWindow()) {
+        if (event->type() == QEvent::Show || event->type() == QEvent::Hide) {
+            updateOriginalImagePreviewVisibility();
+        }
+        return QWidget::eventFilter(watched, event);
+    }
     if (handleExportDrag(watched, event))
         return true;
     if (event->type() == QEvent::Enter || event->type() == QEvent::MouseMove ||
@@ -3919,6 +3925,7 @@ void ScreenshotPinnedWindow::ensureEditController() {
                 }
                 synchronizeHiddenTextSelection();
                 updateControlsGeometry();
+                updateOriginalImagePreviewVisibility();
             });
     connect(m_editController, &ScreenshotPinnedEditController::toolbarCreated, this,
             &ScreenshotPinnedWindow::configureEditToolbar);
@@ -3956,6 +3963,7 @@ void ScreenshotPinnedWindow::configureEditToolbar(
     if (toolbarWindow == nullptr || toolbarWindow->palette() == nullptr) {
         return;
     }
+    toolbarWindow->installEventFilter(this);
 
     ScreenshotToolPalette* toolbar = toolbarWindow->palette();
     connect(toolbar, &ScreenshotToolPalette::quickSaveRequested, this,
@@ -4083,11 +4091,18 @@ void ScreenshotPinnedWindow::updateRecognitionContentGeometry() {
     updateBorderOutline();
 }
 
+void ScreenshotPinnedWindow::updateOriginalImagePreviewVisibility() {
+    if (m_recognitionContent != nullptr) {
+        const auto* toolbar =
+            m_editController != nullptr ? m_editController->toolbarWindow() : nullptr;
+        m_recognitionContent->setOriginalImagePreviewSuppressed(
+            m_auxiliaryWindowInteractionActive || toolbar == nullptr || !toolbar->isVisible());
+    }
+}
+
 void ScreenshotPinnedWindow::beginAuxiliaryWindowInteraction() {
     m_auxiliaryWindowInteractionActive = true;
-    if (m_recognitionContent != nullptr) {
-        m_recognitionContent->setOriginalImagePreviewSuppressed(true);
-    }
+    updateOriginalImagePreviewVisibility();
     if (m_editController != nullptr) {
         m_editController->beginNativeWindowInteraction();
     }
@@ -4105,7 +4120,7 @@ void ScreenshotPinnedWindow::endAuxiliaryWindowInteraction() {
         m_editController->endNativeWindowInteraction();
     }
     if (m_recognitionContent != nullptr) {
-        m_recognitionContent->setOriginalImagePreviewSuppressed(false);
+        updateOriginalImagePreviewVisibility();
         m_recognitionContent->refreshOriginalImagePreview();
     }
 }
@@ -4718,7 +4733,6 @@ ScreenshotRecognitionWindow* ScreenshotPinnedWindow::ensureRecognitionContent() 
         content->setOriginalImagePreviewAboveSiblingProvider([this]() -> QWidget* {
             return m_editController != nullptr ? m_editController->toolbarWindow() : nullptr;
         });
-        content->setOriginalImagePreviewSuppressed(m_auxiliaryWindowInteractionActive);
         content->syncOriginalImagePreviewStacking(m_alwaysOnTop);
         content->installEventFilter(this);
         connect(content, &ScreenshotRecognitionWindow::embeddedContextMenuRequested, this,
@@ -4735,6 +4749,7 @@ ScreenshotRecognitionWindow* ScreenshotPinnedWindow::ensureRecognitionContent() 
         }
         content->hide();
         m_recognitionContent = content;
+        updateOriginalImagePreviewVisibility();
         updateRecognitionContentGeometry();
     }
     return m_recognitionContent;
