@@ -36,7 +36,8 @@ Use `editor` for control-specific capabilities, `item()` for an AdForm validator
 `VerticalDialog` is the default preset: labels above controls, descriptions in label tooltips,
 and inline errors/warnings. `SettingsRow` places title/description beside a shared 230-pixel
 control column. It owns an inner inline AdForm for feedback; never register that item with a
-second form. Theme colors and metrics are shared, while compact controls keep their native size.
+second form. The item inherits the inline layout so the settings section alone supplies row
+spacing. Theme colors and metrics are shared, while compact controls keep their native size.
 
 For a dialog-level AdForm, call `configureForm(form)` and pass `options.form = form` before
 creating fields. This registers their items with the form. Use AdForm initial values/reset to

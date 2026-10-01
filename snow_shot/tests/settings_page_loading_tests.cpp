@@ -1,4 +1,5 @@
 #include "snow_shot/presentation/components/settingspagewidget.h"
+#include "snow_shot/presentation/components/formfields.h"
 #include "snow_shot/presentation/components/pathinput.h"
 #include "snow_shot/presentation/components/toolbareditorsettingswidget.h"
 #include "snow_shot/presentation/globalshortcutmanager.h"
@@ -46,6 +47,62 @@ void drainEvents() {
     for (int i = 0; i < 4; ++i) {
         QCoreApplication::processEvents();
         QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+    }
+}
+
+void settingsRowsHaveOnlySectionSpacing(const settings::SettingsRegistry& registry,
+                                        settings::SettingsRuntimeSession& session) {
+    SettingsPageWidget page(registry, QStringLiteral("interface-settings"), session);
+    page.resize(880, 760);
+    page.show();
+    drainEvents();
+    const auto metric =
+        snow_shot::presentation::styles::ThemeManager::instance().themeColorScheme().metricAlias;
+    const auto verifyRows = [&] {
+        QWidget* previous = nullptr;
+        for (const QString& id :
+             {QStringLiteral("interface.theme"), QStringLiteral("interface.theme-primary-color"),
+              QStringLiteral("interface.language"), QStringLiteral("interface.app-font")}) {
+            auto* row = page.findChild<QWidget*>(
+                settings::generatedObjectName(QStringLiteral("settings-item"), id));
+            require(row != nullptr, "general settings row exists");
+            auto* field =
+                row->findChild<snow_shot::presentation::components::form_fields::FormField*>();
+            require(field != nullptr, "general settings row uses the shared field");
+            QLabel* title = nullptr;
+            QLabel* description = nullptr;
+            for (auto* label : row->findChildren<QLabel*>()) {
+                if (label->text() == field->metadata().label.translated())
+                    title = label;
+                if (label->text() == field->metadata().description.translated())
+                    description = label;
+            }
+            require(title != nullptr && description != nullptr,
+                    "general settings row presents its title and description");
+            const int copyHeight = title->heightForWidth(title->width()) + metric.marginXXS +
+                                   description->heightForWidth(description->width());
+            require(
+                row->height() == qMax(copyHeight, field->controlWidget()->height()),
+                "settings rows fit their wrapped copy and control without a form bottom margin");
+            if (previous) {
+                require(row->y() - previous->y() - previous->height() == metric.paddingLG,
+                        "the settings section alone owns spacing between its rows");
+            }
+            previous = row;
+        }
+    };
+    verifyRows();
+    for (int width : {640, 1040, 880}) {
+        page.resize(width, 760);
+        drainEvents();
+        verifyRows();
+    }
+    auto& languageManager = snow_shot::presentation::LanguageManager::instance();
+    for (const QString& language :
+         {QStringLiteral("zh_CN"), QStringLiteral("zh_TW"), QStringLiteral("en_US")}) {
+        require(languageManager.setLanguage(language), "change the settings row language");
+        drainEvents();
+        verifyRows();
     }
 }
 
@@ -117,9 +174,15 @@ void scrollingLoadsSections(const settings::SettingsRegistry& registry,
     auto* bar = scroll->verticalScrollBar();
     bar->setValue(bar->maximum());
     drainEvents();
-    auto* tray =
-        page.findChild<QWidget*>(QStringLiteral("settings-control-interface-tray-enabled"));
-    require(tray != nullptr, "scrolling to the bottom loads the last section without navigation");
+    const auto* definition = registry.catalog().page(page.pageId());
+    require(definition != nullptr && !definition->sections.isEmpty() &&
+                !definition->sections.constLast().items.isEmpty(),
+            "the settings page has a final section with items");
+    const QString lastItemId = definition->sections.constLast().items.constLast().id;
+    auto* lastItem = page.findChild<QWidget*>(
+        settings::generatedObjectName(QStringLiteral("settings-item"), lastItemId));
+    require(lastItem != nullptr,
+            "scrolling to the bottom loads the last section without navigation");
     require(bar->value() == bar->maximum(),
             "jumping to the bottom must stay at the bottom after deferred layout");
     page.resize(880, 1000);
@@ -535,6 +598,7 @@ int main(int argc, char** argv) {
         return 0;
     }
     deferredSections(registry, session);
+    settingsRowsHaveOnlySectionSpacing(registry, session);
     deferredStateAndKeyboard(registry, session);
     scrollingLoadsSections(registry, session);
     unchangedPresentation(registry, session);

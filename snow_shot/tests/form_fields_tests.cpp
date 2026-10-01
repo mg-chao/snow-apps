@@ -181,6 +181,45 @@ void presentationsAndFeedback() {
     require(row.viewWidget()->isHidden(), "visibility applies to the entire settings field");
 }
 
+void settingsRowsKeepNaturalHeight() {
+    QWidget owner;
+    auto* layout = new QVBoxLayout(&owner);
+    layout->setAlignment(Qt::AlignTop);
+    fields::Options options;
+    options.parent = &owner;
+    options.presentation = fields::Presentation::SettingsRow;
+    auto rowMetadata = metadata("natural-height-row");
+    rowMetadata.label = {};
+    rowMetadata.description = {};
+    const auto row = fields::text(rowMetadata, options);
+    layout->addWidget(row.viewWidget());
+    owner.resize(760, 320);
+    owner.show();
+    flushEvents();
+    const auto requireNaturalHeight = [&] {
+        require(row.viewWidget()->height() == row.editor->height(),
+                "settings fields without copy or feedback add no space below the control");
+    };
+    requireNaturalHeight();
+    row.field->applyTheme(styles::ThemeManager::instance().themeColorScheme());
+    row.field->syncValue(QStringLiteral("refreshed"));
+    flushEvents();
+    requireNaturalHeight();
+    row.field->setFeedback({QStringLiteral("Invalid value")});
+    flushEvents();
+    require(row.field->feedbackLabel()->isVisible() &&
+                row.viewWidget()->height() > row.editor->height() &&
+                row.viewWidget()->rect().contains(
+                    QRect(row.field->feedbackLabel()->mapTo(row.viewWidget(), QPoint()),
+                          row.field->feedbackLabel()->size())),
+            "settings rows grow to contain inline feedback");
+    row.field->setFeedback();
+    // Clearing feedback posts layout requests through the item, form, row and owner.
+    for (int i = 0; i < 4; ++i)
+        flushEvents();
+    requireNaturalHeight();
+}
+
 void descriptionOverrides() {
     QWidget owner;
     fields::Options options;
@@ -823,6 +862,7 @@ int main(int argc, char** argv) {
     optionalMetadataAndChoiceLabels();
     constructionKeepsItemsInTheirOwner();
     presentationsAndFeedback();
+    settingsRowsKeepNaturalHeight();
     descriptionOverrides();
     reservedFeedbackKeepsModalGeometry();
     editAndCommitTiming();
