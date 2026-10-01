@@ -68,6 +68,9 @@ class GlobalCanvasController::Session final : public QWidget, public SnowCanvasC
           owner(controller), drawing(std::make_unique<SnowCanvasWidget>(runtime, this)),
           tools(std::make_unique<ScreenshotFloatingToolPaletteWindow>(canvasOptions())),
           shortcuts(this) {
+#ifdef Q_OS_MACOS
+        setWindowFlag(Qt::NoDropShadowWindowHint);
+#endif
         setObjectName(QStringLiteral("globalCanvasWindow"));
         setAttribute(Qt::WA_TranslucentBackground);
         setAttribute(Qt::WA_NoSystemBackground);

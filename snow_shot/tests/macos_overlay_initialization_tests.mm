@@ -414,6 +414,9 @@ void captureWindowAnimationPolicy() {
             require(captureWindowAnimation({CaptureFamily::Screenshot, kOverlayLayer}, requested,
                                            fallback) == NSWindowAnimationBehaviorNone,
                     "screenshot overlays must suppress both default and explicit animations");
+            require(captureWindowAnimation({CaptureFamily::Screenshot, kPopupLayer}, requested,
+                                           fallback, true) == NSWindowAnimationBehaviorNone,
+                    "screenshot magnifiers must suppress both default and explicit animations");
             for (const CaptureLayer role : {CaptureLayer{},
                                             {CaptureFamily::Screenshot, kRecognitionLayer},
                                             {CaptureFamily::Screenshot, kToolbarLayer},

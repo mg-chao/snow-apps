@@ -239,9 +239,9 @@ void canvasCollectionBehavior() {
     const auto screenshotLevel = CGWindowLevelForKey(kCGScreenSaverWindowLevelKey);
     require(captureWindowLevel({CaptureFamily::Screenshot, 0}) == screenshotLevel &&
                 captureWindowLevel({CaptureFamily::Recording, 0}) ==
-                    screenshotLevel - kRecordingBandSize &&
-                pinnedWindowLevel() == screenshotLevel - kRecordingBandSize - 1,
-            "original screenshot, recording, and pin levels remain unchanged");
+                    screenshotLevel - kCaptureBandSize &&
+                pinnedWindowLevel() == screenshotLevel - 2 * kCaptureBandSize,
+            "screenshot, recording, and pin windows use separate native level bands");
     QWindow canvas;
     canvas.setProperty(kScreenshotLayer, kOverlayLayer);
     canvas.setProperty(kCaptureFamily, static_cast<int>(CaptureFamily::GlobalCanvas));
@@ -331,6 +331,41 @@ void nativeCanvasLifecycle() {
     }
 }
 #endif
+
+void canvasWindowHasNoNativeShadow() {
+    for (int session = 0; session < 2; ++session) {
+        presentation::GlobalCanvasController controller;
+        controller.activate();
+        QApplication::processEvents();
+        QWidget* window = controller.window();
+        const auto verify = [&]() {
+            require(window != nullptr && window->isVisible(), "canvas window is visible");
+#ifdef Q_OS_MACOS
+            require(window->windowFlags().testFlag(Qt::NoDropShadowWindowHint),
+                    "canvas must disable native shadows at opaque/transparent boundaries");
+            if (QGuiApplication::platformName() == QStringLiteral("cocoa")) {
+                NSWindow* native = reinterpret_cast<NSView*>(window->winId()).window;
+                require(native != nil && !native.hasShadow,
+                        "canvas native surface must not cast a shadow");
+            }
+#endif
+        };
+        verify();
+        controller.activate();
+        QApplication::processEvents();
+        require(controller.clickThrough(), "canvas enters click-through mode");
+        verify();
+        controller.activate();
+        QApplication::processEvents();
+        require(!controller.clickThrough(), "canvas returns to editing mode");
+        verify();
+        window->hide();
+        window->show();
+        QApplication::processEvents();
+        verify();
+        controller.shutdown();
+    }
+}
 
 void toolbarPlacement(QApplication& app) {
     presentation::GlobalCanvasController controller(
@@ -577,6 +612,11 @@ int main(int argc, char** argv) {
         return 0;
     }
 #endif
+    if (app.arguments().contains(QStringLiteral("--window-shadow-only"))) {
+        canvasWindowHasNoNativeShadow();
+        storage.shutdown();
+        return 0;
+    }
     if (app.arguments().contains(QStringLiteral("--text-escape-only"))) {
         textEscapePreservesAnnotations(app);
         storage.shutdown();

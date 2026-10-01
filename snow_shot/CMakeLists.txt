@@ -3257,6 +3257,10 @@ if(SNOW_SHOT_BUILD_TESTS)
         set_source_files_properties(tests/screenshot_color_picker_tests.cpp
             PROPERTIES LANGUAGE OBJCXX)
         target_link_libraries(snow-shot-screenshot-color-picker-tests PRIVATE "-framework AppKit")
+        add_test(NAME snow-shot-macos-color-picker-animation-native-tests
+            COMMAND snow-shot-screenshot-color-picker-tests --magnifier-animation-only -platform cocoa)
+        set_tests_properties(snow-shot-macos-color-picker-animation-native-tests PROPERTIES
+            LABELS "interactive;macos" RUN_SERIAL TRUE TIMEOUT 30)
     endif()
     add_test(NAME snow-shot-screenshot-color-picker-tests
         COMMAND snow-shot-screenshot-color-picker-tests)
@@ -3526,6 +3530,9 @@ if(SNOW_SHOT_BUILD_TESTS)
     endif()
     add_test(NAME snow-shot-overlay-safe-area-tests
         COMMAND snow-shot-screenshot-canvas-renderer-tests --overlay-safe-area -platform offscreen)
+    add_test(NAME snow-shot-overlay-window-shadow-tests
+        COMMAND snow-shot-screenshot-canvas-renderer-tests --window-shadow-only -platform offscreen)
+    set_tests_properties(snow-shot-overlay-window-shadow-tests PROPERTIES LABELS "unit")
     add_test(NAME snow-shot-overlay-boundary-input-tests
         COMMAND snow-shot-screenshot-canvas-renderer-tests --overlay-boundary-input -platform offscreen)
     set_tests_properties(snow-shot-overlay-boundary-input-tests PROPERTIES LABELS "unit")
@@ -3534,6 +3541,10 @@ if(SNOW_SHOT_BUILD_TESTS)
             ../cmake/test-support/macos_native_input.mm)
         target_include_directories(snow-shot-screenshot-canvas-renderer-tests PRIVATE
             ../cmake/test-support)
+        add_test(NAME snow-shot-macos-overlay-window-shadow-native-tests
+            COMMAND snow-shot-screenshot-canvas-renderer-tests --window-shadow-only -platform cocoa)
+        set_tests_properties(snow-shot-macos-overlay-window-shadow-native-tests PROPERTIES
+            LABELS "interactive;macos" RUN_SERIAL TRUE TIMEOUT 30)
         add_test(NAME snow-shot-macos-overlay-boundary-input-native-tests
             COMMAND snow-shot-screenshot-canvas-renderer-tests --overlay-boundary-input -platform cocoa)
         set_tests_properties(snow-shot-macos-overlay-boundary-input-native-tests PROPERTIES
@@ -4842,8 +4853,15 @@ if(SNOW_SHOT_BUILD_TESTS)
             COMMAND snow-shot-global-canvas-tests --native-only -platform cocoa)
         set_tests_properties(snow-shot-global-canvas-native-tests PROPERTIES
             LABELS "interactive;macos" RUN_SERIAL TRUE TIMEOUT 90)
+        add_test(NAME snow-shot-global-canvas-window-shadow-native-tests
+            COMMAND snow-shot-global-canvas-tests --window-shadow-only -platform cocoa)
+        set_tests_properties(snow-shot-global-canvas-window-shadow-native-tests PROPERTIES
+            LABELS "interactive;macos" RUN_SERIAL TRUE TIMEOUT 30)
     endif()
     snow_shot_import_offscreen_platform(snow-shot-global-canvas-tests)
+    add_test(NAME snow-shot-global-canvas-window-shadow-tests
+        COMMAND snow-shot-global-canvas-tests --window-shadow-only -platform offscreen)
+    set_tests_properties(snow-shot-global-canvas-window-shadow-tests PROPERTIES LABELS "unit")
     add_test(NAME snow-shot-global-canvas-tests COMMAND snow-shot-global-canvas-tests -platform offscreen)
     set_tests_properties(snow-shot-global-canvas-tests PROPERTIES LABELS "unit" TIMEOUT 90
         ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")

@@ -20,6 +20,7 @@
 #include "snow_shot/presentation/screenshotshortcuthints.h"
 #include "snow_shot/presentation/screenshotuipreferences.h"
 #include "snow_shot/presentation/windowshortcutmanager.h"
+#include "snow_shot/storage/applicationstorage.h"
 #include "snow_draw_engine_qt/snow_canvas_widget.h"
 #include "snow_draw_engine_qt/snow_canvas_runtime.h"
 #include "theme/theme_manager.h"
@@ -5610,8 +5611,58 @@ void nonRectangularSelectionDraftLeavesInteriorUnchanged() {
             "curve draft vertices must not add control points to the visible outline");
 }
 
+void overlayWindowHasNoNativeShadow() {
+    NoopOverlayEventSink eventSink;
+    ScreenshotOverlayWindow overlay(eventSink, new SnowCanvasWidget);
+    overlay.resize(320, 240);
+    QImage image(320, 240, QImage::Format_ARGB32_Premultiplied);
+    image.fill(Qt::transparent);
+    QPainter painter(&image);
+    painter.fillRect(QRect(60, 60, 200, 120), Qt::white);
+    painter.end();
+    overlay.setScreenshotImage(image, image.rect());
+    overlay.setScreenshotMaskVisible(false);
+    const auto verify = [&]() {
+#ifdef Q_OS_MACOS
+        require(overlay.windowFlags().testFlag(Qt::NoDropShadowWindowHint),
+                "screenshot overlay must disable native shadows at opaque/transparent boundaries");
+        if (QGuiApplication::platformName() == QStringLiteral("cocoa")) {
+            require(overlay.internalWinId() != 0, "screenshot overlay has a native surface");
+            require(!macWindowHasShadow(&overlay),
+                    "screenshot native surface must not cast a shadow");
+        }
+#endif
+    };
+    for (int surface = 0; surface < 2; ++surface) {
+        overlay.restoreNativeSurface();
+        overlay.warmPresentationSurface();
+        verify();
+        overlay.showPreparedFrame();
+        QApplication::processEvents();
+        verify();
+        overlay.hide();
+        overlay.showPreparedFrame();
+        QApplication::processEvents();
+        verify();
+        overlay.releaseNativeSurface();
+        require(overlay.internalWinId() == 0, "overlay releases its native surface for reuse");
+    }
+}
+
 int main(int argc, char** argv) {
     QApplication application(argc, argv);
+    if (application.arguments().contains(QStringLiteral("--window-shadow-only"))) {
+        QTemporaryDir directory;
+        auto& storage = snow_shot::storage::ApplicationStorage::instance();
+        require(storage
+                    .initialize({directory.filePath(QStringLiteral("bin")),
+                                 directory.filePath(QStringLiteral("data")), 60000})
+                    .success,
+                "initialize temporary storage for window shadow tests");
+        overlayWindowHasNoNativeShadow();
+        storage.shutdown();
+        return 0;
+    }
     if (application.arguments().contains(QStringLiteral("--pinned-filter-reference-only"))) {
         pinnedFiltersUseTheSourceResolution();
         pinnedResultDownscaleUsesLinearFiltering();

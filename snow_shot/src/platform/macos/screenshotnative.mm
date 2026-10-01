@@ -40,6 +40,7 @@ struct ScreenshotNativeSettings {
     ScreenshotNativeSettings requested;
     bool applying;
     bool unconstrainedFrame;
+    bool immediatePresentation;
     NSWindowAnimationBehavior defaultAnimation;
     snow_shot::platform::detail::CaptureLayer captureRole;
 }
@@ -52,6 +53,7 @@ namespace {
 using namespace detail;
 
 char nativePolicyKey;
+constexpr auto kImmediateCapturePresentation = "snowCaptureWindowImmediatePresentation";
 
 SnowScreenshotWindowPolicy* nativePolicyState(NSWindow* window) {
     return static_cast<SnowScreenshotWindowPolicy*>(
@@ -60,7 +62,7 @@ SnowScreenshotWindowPolicy* nativePolicyState(NSWindow* window) {
 
 NSWindowAnimationBehavior managedAnimation(SnowScreenshotWindowPolicy* state) {
     return captureWindowAnimation(state->captureRole, state->requested.animationBehavior,
-                                  state->defaultAnimation);
+                                  state->defaultAnimation, state->immediatePresentation);
 }
 
 template <typename Value>
@@ -148,7 +150,7 @@ void applyNativeSettings(NSWindow* window, const ScreenshotNativeSettings& setti
 void applyNativeWindowPolicy(
     NSWindow* window, NSInteger level, bool enforceQtSettings = true,
     NSWindowAnimationBehavior defaultAnimation = NSWindowAnimationBehaviorDefault,
-    CaptureLayer captureRole = {}) {
+    CaptureLayer captureRole = {}, bool immediatePresentation = false) {
     if (!window)
         return;
     auto* state = nativePolicyState(window);
@@ -164,6 +166,7 @@ void applyNativeWindowPolicy(
     }
     state->defaultAnimation = defaultAnimation;
     state->captureRole = captureRole;
+    state->immediatePresentation = immediatePresentation;
     state->required = {level,
                        NSWindowCollectionBehaviorCanJoinAllSpaces |
                            NSWindowCollectionBehaviorFullScreenAuxiliary,
@@ -224,7 +227,8 @@ void applyScreenshotLayer(QWidget* widget, const ModalFloors& floors) {
         handle->modality() == Qt::NonModal && (window.styleMask & NSWindowStyleMaskTitled)
             ? NSWindowAnimationBehaviorDocumentWindow
             : NSWindowAnimationBehaviorDefault;
-    applyNativeWindowPolicy(window, level, true, defaultAnimation, role);
+    applyNativeWindowPolicy(window, level, true, defaultAnimation, role,
+                            widget->property(kImmediateCapturePresentation).toBool());
     // AppKit otherwise constrains a screen-sized panel to the visible/safe frame,
     // shifting its top edge below the menu bar or camera housing. Only the canvas
     // surface owns the entire display; its tools keep normal frame constraints.
@@ -380,7 +384,8 @@ class ScreenshotStackingPolicy final : public QObject {
 };
 
 void registerScreenshotLayer(QWidget* widget, int layer,
-                             CaptureFamily family = CaptureFamily::Screenshot) {
+                             CaptureFamily family = CaptureFamily::Screenshot,
+                             bool immediatePresentation = false) {
     if (!widget || QGuiApplication::platformName() != QStringLiteral("cocoa"))
         return;
     static QPointer<ScreenshotStackingPolicy> policy;
@@ -390,7 +395,10 @@ void registerScreenshotLayer(QWidget* widget, int layer,
     }
     widget->setProperty(kScreenshotLayer, layer);
     widget->setProperty(kCaptureFamily, static_cast<int>(family));
-    static_cast<void>(widget->winId());
+    widget->setProperty(kImmediateCapturePresentation, immediatePresentation);
+    // An already-created tool must not force its owner's canvas siblings native.
+    if (!widget->internalWinId())
+        static_cast<void>(widget->winId());
     // A toolbar or popup may have been materialized before the overlay was shown.
     synchronizeScreenshotLayers();
 }
@@ -564,6 +572,10 @@ void configureScreenshotOverlayWindow(QWidget* widget) {
     macos::configureWindowCursorUpdates(widget);
     registerScreenshotLayer(widget, kOverlayLayer);
     configureControlledWindowDragging(widget, true);
+}
+
+void configureScreenshotColorPickerWindow(QWidget* widget) {
+    registerScreenshotLayer(widget, kPopupLayer, CaptureFamily::Screenshot, true);
 }
 
 void configureScreenRecordingAreaWindow(QWidget* widget) {
