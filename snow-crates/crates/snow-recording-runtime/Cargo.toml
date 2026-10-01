@@ -53,6 +53,10 @@ proptest = "1.11.0"
 name = "realtime_recording_benchmark"
 required-features = ["bench-synthetic-input"]
 
+[[example]]
+name = "deferred_recording_benchmark"
+required-features = ["bench-synthetic-input"]
+
 [target.'cfg(windows)'.dev-dependencies]
 windows = { workspace = true, features = [
     "Win32_Media_MediaFoundation",

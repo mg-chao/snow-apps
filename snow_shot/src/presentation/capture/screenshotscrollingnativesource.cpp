@@ -2,6 +2,7 @@
 #include "screenshotscrollingdiagnostics.h"
 #include "snow_capture.h"
 
+#include <QColorSpace>
 #include <limits>
 
 namespace snow_shot::capture_detail {
@@ -54,6 +55,7 @@ class NativeScrollingSource final : public ScrollingFrameSource {
                     snow_capture_stream_frame_release(static_cast<SnowCaptureStreamFrame*>(frame));
                 },
                 event.frame);
+            result.frame.image.setColorSpace(QColorSpace::SRgb);
             break;
         }
 #ifdef Q_OS_MACOS

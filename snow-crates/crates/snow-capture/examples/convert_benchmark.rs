@@ -6,6 +6,7 @@ use std::time::Instant;
 use anyhow::{Context, Result, bail};
 use half::f16;
 use rustc_hash::FxHashMap;
+use snow_capture::CapturePixelFormat;
 use snow_capture::convert::{
     HdrFrameContext, SurfaceConversionOptions, SurfacePixelFormat, convert_surface_to_rgba,
 };
@@ -75,6 +76,14 @@ struct Config {
 }
 
 #[derive(Clone, Copy, Debug)]
+enum HdrPattern {
+    Sdr,
+    SpatialMixed,
+    InterleavedMixed,
+    Hdr,
+}
+
+#[derive(Clone, Copy, Debug)]
 struct Scenario {
     name: &'static str,
     format: SurfacePixelFormat,
@@ -83,6 +92,7 @@ struct Scenario {
     src_pitch: usize,
     dst_pitch: usize,
     options: SurfaceConversionOptions,
+    hdr_pattern: Option<HdrPattern>,
 }
 
 #[derive(Clone, Debug)]
@@ -295,6 +305,7 @@ fn scenario_catalog() -> Vec<Scenario> {
         src_pitch: 3840 * 4,
         dst_pitch: 3840 * 4,
         options: SurfaceConversionOptions::default(),
+        hdr_pattern: None,
     };
 
     let row_serial_width = 510usize;
@@ -308,6 +319,7 @@ fn scenario_catalog() -> Vec<Scenario> {
         src_pitch: row_serial_src_pitch,
         dst_pitch: row_serial_width * 4,
         options: SurfaceConversionOptions::default(),
+        hdr_pattern: None,
     };
 
     let row_parallel_width = 1919usize;
@@ -321,6 +333,7 @@ fn scenario_catalog() -> Vec<Scenario> {
         src_pitch: row_parallel_src_pitch,
         dst_pitch: row_parallel_width * 4,
         options: SurfaceConversionOptions::default(),
+        hdr_pattern: None,
     };
 
     let hdr_lut = HdrFrameContext {
@@ -344,6 +357,7 @@ fn scenario_catalog() -> Vec<Scenario> {
             hdr_to_sdr: Some(hdr_lut),
             ..SurfaceConversionOptions::default()
         },
+        hdr_pattern: None,
     };
     let hdr_contiguous_4k_precise = Scenario {
         name: "hdr_contiguous_4k_precise",
@@ -356,6 +370,7 @@ fn scenario_catalog() -> Vec<Scenario> {
             hdr_to_sdr: Some(hdr_precise),
             ..SurfaceConversionOptions::default()
         },
+        hdr_pattern: None,
     };
     let hdr_pitched_4k_width = 3839usize;
     let hdr_pitched_4k_height = 2160usize;
@@ -371,6 +386,7 @@ fn scenario_catalog() -> Vec<Scenario> {
             hdr_to_sdr: Some(hdr_lut),
             ..SurfaceConversionOptions::default()
         },
+        hdr_pattern: None,
     };
     let hdr_pitched_4k_precise = Scenario {
         name: "hdr_pitched_4k_precise",
@@ -383,6 +399,7 @@ fn scenario_catalog() -> Vec<Scenario> {
             hdr_to_sdr: Some(hdr_precise),
             ..SurfaceConversionOptions::default()
         },
+        hdr_pattern: None,
     };
     let hdr_pitched_1080_width = 1919usize;
     let hdr_pitched_1080_height = 1079usize;
@@ -398,6 +415,7 @@ fn scenario_catalog() -> Vec<Scenario> {
             hdr_to_sdr: Some(hdr_lut),
             ..SurfaceConversionOptions::default()
         },
+        hdr_pattern: None,
     };
     let hdr_pitched_1080_precise = Scenario {
         name: "hdr_pitched_1080p_precise",
@@ -410,9 +428,10 @@ fn scenario_catalog() -> Vec<Scenario> {
             hdr_to_sdr: Some(hdr_precise),
             ..SurfaceConversionOptions::default()
         },
+        hdr_pattern: None,
     };
 
-    vec![
+    let mut scenarios = vec![
         contiguous_4k,
         row_serial,
         row_parallel,
@@ -422,7 +441,65 @@ fn scenario_catalog() -> Vec<Scenario> {
         hdr_pitched_4k_precise,
         hdr_pitched_1080_lut,
         hdr_pitched_1080_precise,
-    ]
+    ];
+    // These patterns distinguish uniform SDR blocks from interleaved HDR lanes.
+    // BGRA is the screenshot output format; RGBA cases guard its shared kernel.
+    for (pattern, names) in [
+        (
+            HdrPattern::Sdr,
+            [
+                "hdr_sdr_4k_rgba_lut",
+                "hdr_sdr_4k_bgra_lut",
+                "hdr_sdr_4k_rgba_precise",
+                "hdr_sdr_4k_bgra_precise",
+            ],
+        ),
+        (
+            HdrPattern::SpatialMixed,
+            [
+                "hdr_spatial_4k_rgba_lut",
+                "hdr_spatial_4k_bgra_lut",
+                "hdr_spatial_4k_rgba_precise",
+                "hdr_spatial_4k_bgra_precise",
+            ],
+        ),
+        (
+            HdrPattern::InterleavedMixed,
+            [
+                "hdr_interleaved_4k_rgba_lut",
+                "hdr_interleaved_4k_bgra_lut",
+                "hdr_interleaved_4k_rgba_precise",
+                "hdr_interleaved_4k_bgra_precise",
+            ],
+        ),
+        (
+            HdrPattern::Hdr,
+            [
+                "hdr_only_4k_rgba_lut",
+                "hdr_only_4k_bgra_lut",
+                "hdr_only_4k_rgba_precise",
+                "hdr_only_4k_bgra_precise",
+            ],
+        ),
+    ] {
+        for (index, name) in names.into_iter().enumerate() {
+            scenarios.push(Scenario {
+                name,
+                options: SurfaceConversionOptions {
+                    hdr_to_sdr: Some(if index < 2 { hdr_lut } else { hdr_precise }),
+                    output_pixel_format: if index % 2 == 0 {
+                        CapturePixelFormat::Rgba8
+                    } else {
+                        CapturePixelFormat::Bgra8
+                    },
+                    ..SurfaceConversionOptions::default()
+                },
+                hdr_pattern: Some(pattern),
+                ..hdr_contiguous_4k_lut
+            });
+        }
+    }
+    scenarios
 }
 
 fn percentile(sorted: &[f64], p: f64) -> f64 {
@@ -475,6 +552,30 @@ fn fill_source_buffer_hdr_f16(scenario: Scenario) -> Vec<u8> {
             let noise1 = ((state >> 40) & 0xFF) as f32 / 255.0;
             state = state.wrapping_mul(6364136223846793005).wrapping_add(1);
             let noise2 = ((state >> 40) & 0xFF) as f32 / 255.0;
+
+            if let Some(pattern) = scenario.hdr_pattern {
+                let t = ((x * 17 + y * 31) % 1024) as f32 / 1023.0;
+                let b = ((x * 13 + y * 29) % 1024) as f32 / 1023.0;
+                let hdr = match pattern {
+                    HdrPattern::Sdr => false,
+                    HdrPattern::SpatialMixed => x >= scenario.width * 3 / 4,
+                    HdrPattern::InterleavedMixed => ((x ^ y) & 3) == 0,
+                    HdrPattern::Hdr => true,
+                };
+                let scale = if hdr { 2.0 * (2.0 + 6.0 * t) } else { 2.0 };
+                let channels = [
+                    (0.05 + 0.95 * t) * scale,
+                    (0.03 + 0.85 * (1.0 - t)) * scale,
+                    (0.02 + 0.7 * b) * scale,
+                    [0.0, 0.5, 1.0][(y * scenario.width + x) % 3],
+                ];
+                for (channel, value) in channels.into_iter().enumerate() {
+                    let offset = row_off + x * 8 + channel * 2;
+                    out[offset..offset + 2]
+                        .copy_from_slice(&f16::from_f32(value).to_bits().to_le_bytes());
+                }
+                continue;
+            }
 
             let tx = x as f32 * inv_w;
             let ty = y as f32 * inv_h;

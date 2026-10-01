@@ -85,7 +85,9 @@ ScreenshotImageFileService::encodeOptions(ScreenshotImageFileFormat format,
                                           ScreenshotImageEncodingOptions encoding) {
     snow::image::EncodeOptions options;
     options.format = snowImageFormat(format);
-    options.preserve_metadata = false;
+    // The codec bridge supplies only the canonical sRGB color description, not
+    // imported EXIF or other source metadata. Retain it to interpret the pixels.
+    options.preserve_metadata = true;
     options.quality = qBound(0, encoding.quality, 100);
     const auto encoder = snow_shot::image_codec::encoderInfo(options.format);
     switch (format) {

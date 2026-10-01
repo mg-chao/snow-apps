@@ -5,12 +5,14 @@
 #import <AppKit/AppKit.h>
 
 namespace snow_shot::platform::detail {
-inline NSWindowAnimationBehavior
-captureWindowAnimation(CaptureLayer role, NSWindowAnimationBehavior requested,
-                       NSWindowAnimationBehavior defaultAnimation) {
-    // Capture overlays must appear and disappear immediately, including when Qt
-    // rewrites the native animation setting during a pooled window's lifetime.
-    if (role.family == CaptureFamily::Screenshot && role.layer == kOverlayLayer)
+inline NSWindowAnimationBehavior captureWindowAnimation(CaptureLayer role,
+                                                        NSWindowAnimationBehavior requested,
+                                                        NSWindowAnimationBehavior defaultAnimation,
+                                                        bool immediatePresentation = false) {
+    // Capture overlays and magnifiers must appear and disappear immediately,
+    // including when Qt rewrites native settings during a pooled window's lifetime.
+    if (immediatePresentation ||
+        (role.family == CaptureFamily::Screenshot && role.layer == kOverlayLayer))
         return NSWindowAnimationBehaviorNone;
     return requested == NSWindowAnimationBehaviorDefault ? defaultAnimation : requested;
 }

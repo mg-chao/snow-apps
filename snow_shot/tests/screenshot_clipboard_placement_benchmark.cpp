@@ -1,7 +1,9 @@
 #include "snow_shot/presentation/screenshotclipboardcontent.h"
 #include "snow_shot/presentation/screenshotclipboardservice.h"
+#include "snowimageqtcodec.h"
 #include <QApplication>
 #include <QClipboard>
+#include <QColorSpace>
 #include <QFile>
 #include <QJsonArray>
 #include <QJsonDocument>
@@ -63,11 +65,13 @@ qsizetype placementStorage(const ScreenshotClipboardPlacement& value) {
 }
 QJsonObject scenario(QSize size, bool native) {
     QImage pixels(size, QImage::Format_RGBA8888);
+    pixels.setColorSpace(QColorSpace::SRgb);
     pixels.fill(QColor(80, 120, 200, 255));
     const auto value = placement(size);
     auto initial = ScreenshotClipboardService::prepareImage(pixels);
     require(initial.isValid());
     const auto png = initial.pngBytes();
+    const auto rows = snow_shot::image_codec::srgbRowSource(pixels);
     QMimeData ordinary, located;
     ordinary.setData(QStringLiteral("image/png"), png);
     located.setData(QStringLiteral("image/png"), png);
@@ -81,8 +85,8 @@ QJsonObject scenario(QSize size, bool native) {
         for (int j = 0; j < 2; ++j) {
             const int mode = (i + warmups + j) % 2;
             const double copyMs = measure([&] {
-                auto payload = ScreenshotClipboardService::prepareImage(
-                    pixels, png, mode ? std::optional(value) : std::nullopt);
+                auto payload = ScreenshotClipboardService::prepareEncoded(
+                    rows, png, mode ? std::optional(value) : std::nullopt);
                 require(payload.isValid() && payload.pngBytes().constData() == png.constData());
                 if (mode)
                     metadataBytes = payload.placementBytes().size();

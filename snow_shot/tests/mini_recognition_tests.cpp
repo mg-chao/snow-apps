@@ -96,9 +96,9 @@ void manualRecognitionWithoutRemoteProviders() {
             "edited Mini OCR text must remain exportable");
 
     auto results = session.cachedRecognitionResults();
-    results.table = SnowShotTableResult{QStringLiteral("<table><tr><td>x</td></tr></table>")};
-    results.qr = ScreenshotQrRecognitionResult{{QStringLiteral("qr")}, {}};
-    results.latex = SnowShotLatexResult{QStringLiteral("x^2")};
+    results.table.emplace().html = QStringLiteral("<table><tr><td>x</td></tr></table>");
+    results.qr.emplace().contents = {QStringLiteral("qr")};
+    results.latex.emplace().latex = QStringLiteral("x^2");
     results.visibleLatex = true;
     results.translatedText = std::make_shared<ScreenshotOcrPresentation>();
     results.conversions.append({SnowShotImageConversionFormat::Markdown, QStringLiteral("model"),
@@ -127,9 +127,9 @@ void removedProvidersAndCachesDoNotParticipateInTextSessions() {
     session.setTarget({key, image, QRectF(0, 0, 120, 40)});
     ScreenshotRecognitionResults legacy;
     legacy.key = key;
-    legacy.table = SnowShotTableResult{QStringLiteral("<table><tr><td>x</td></tr></table>")};
-    legacy.qr = ScreenshotQrRecognitionResult{{QStringLiteral("qr")}, {}};
-    legacy.latex = SnowShotLatexResult{QStringLiteral("x^2")};
+    legacy.table.emplace().html = QStringLiteral("<table><tr><td>x</td></tr></table>");
+    legacy.qr.emplace().contents = {QStringLiteral("qr")};
+    legacy.latex.emplace().latex = QStringLiteral("x^2");
     legacy.visibleLatex = true;
     legacy.conversions.append({SnowShotImageConversionFormat::Markdown, QStringLiteral("model"),
                                QStringLiteral("# Converted")});

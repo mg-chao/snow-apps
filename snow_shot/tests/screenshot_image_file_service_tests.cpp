@@ -13,6 +13,7 @@
 #include <QTimeZone>
 #include <QTranslator>
 #include <QUrl>
+#include <QColorSpace>
 
 #include <cstdlib>
 #include <cstring>
@@ -176,6 +177,8 @@ void writesLosslessImageAndPreservesCollisionNames() {
             "automatic saves must preserve existing files and add a numeric suffix");
     require(snow_shot::image_codec::inspectFile(result.path, snow::image::Format::png, QSize(3, 2)),
             "the automatic PNG must be encoded by snow_image");
+    require(QImage(result.path).colorSpace() == QColorSpace(QColorSpace::SRgb),
+            "saved screenshot PNG must declare its sRGB color space");
 }
 
 void writesEveryAdvertisedFormat() {

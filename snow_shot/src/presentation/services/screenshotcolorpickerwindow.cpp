@@ -2,6 +2,7 @@
 #include "widgets/detail/top_level_popup_window.h"
 
 #include "snow_shot/presentation/screenshotgeometry.h"
+#include "snow_shot/platform/screenshotnative.h"
 #include "snow_shot/presentation/screenshotguidelinerendering.h"
 #include "snow_shot/presentation/styles/thememanager.h"
 #include "snow_shot/storage/applicationstorage.h"
@@ -360,6 +361,16 @@ void ScreenshotColorPickerWindow::hidePicker() {
         m_opacityEffect->setOpacity(0.0);
     }
     hide();
+}
+
+bool ScreenshotColorPickerWindow::event(QEvent* event) {
+#ifdef Q_OS_MACOS
+    if ((event->type() == QEvent::WinIdChange || event->type() == QEvent::Show) &&
+        internalWinId() != 0) {
+        snow_shot::platform::configureScreenshotColorPickerWindow(this);
+    }
+#endif
+    return QWidget::event(event);
 }
 
 bool ScreenshotColorPickerWindow::nativeEvent(const QByteArray& eventType, void* message,

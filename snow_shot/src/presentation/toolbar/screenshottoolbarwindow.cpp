@@ -268,13 +268,13 @@ void ScreenshotToolbarWindow::connectToolCommands(ScreenshotToolPalette& toolPal
 }
 
 void ScreenshotToolbarWindow::synchronizeJumpToTranslationPageSetting() {
-    if (ScreenshotToolPalette* toolPalette = palette()) {
 #if SNOW_SHOT_ENABLE_EXTENDED_FEATURES
+    if (ScreenshotToolPalette* toolPalette = palette()) {
         const snow_shot::storage::ExtendedFeaturesSettings settings;
         toolPalette->setJumpToTranslationPageVisible(settings.translationPageEnabled() &&
                                                      settings.jumpToTranslationPage());
-#endif
     }
+#endif
 }
 
 void ScreenshotToolbarWindow::connectActionCommands(ScreenshotToolPalette& toolPalette) {

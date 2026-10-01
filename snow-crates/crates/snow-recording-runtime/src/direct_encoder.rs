@@ -40,7 +40,7 @@ impl Mailbox {
 enum Command {
     Pause(Sender<()>),
     Resume(Sender<()>),
-    Finish(u64),
+    Finish(u64, Option<u64>),
     Cancel,
 }
 
@@ -144,16 +144,18 @@ impl OwnedEncoder {
         })
     }
 
-    fn finish(mut self, endpoint: u64) -> Result<StreamingEncoderReport> {
+    fn finish(mut self, endpoint: u64, duration_ms: Option<u64>) -> Result<StreamingEncoderReport> {
         // Device shutdown can take time after the accepted video boundary.
         // RecordingClock::finalize closes pauses; it does not freeze elapsed time.
         // Flush audio to the same integer PTS boundary as video, independently
         // of capture/audio teardown and recovery latency.
         let fps = u64::from(self.encoder.fps());
-        let audio_endpoint = Duration::new(
-            endpoint / fps,
-            ((endpoint % fps) * 1_000_000_000 / fps) as u32,
-        );
+        let audio_endpoint = duration_ms.map(Duration::from_millis).unwrap_or_else(|| {
+            Duration::new(
+                endpoint / fps,
+                ((endpoint % fps) * 1_000_000_000 / fps) as u32,
+            )
+        });
         let mut dropped_audio = 0;
         if let Some(audio) = self.audio.take() {
             let stats = Arc::clone(audio.stats());
@@ -168,7 +170,11 @@ impl OwnedEncoder {
             }
             dropped_audio += mixer.dropped_frames;
         }
-        let mut report = self.encoder.finish_at_pts(endpoint)?;
+        let mut report = if let Some(duration) = duration_ms {
+            self.encoder.finish_at_duration_ms(duration)?
+        } else {
+            self.encoder.finish_at_pts(endpoint)?
+        };
         report.dropped_audio_frames = report.dropped_audio_frames.saturating_add(dropped_audio);
         Ok(report)
     }
@@ -378,8 +384,8 @@ impl RecordingEncoder {
                                             owned.resume();
                                             let _ = ack.send(());
                                         }
-                                        Command::Finish(endpoint) => {
-                                            let mut report = owned.finish(endpoint)?;
+                                        Command::Finish(endpoint, duration_ms) => {
+                                            let mut report = owned.finish(endpoint, duration_ms)?;
                                             report.queued_video_replacements = worker_mailbox
                                                 .lock()
                                                 .unwrap_or_else(|e| e.into_inner())
@@ -521,13 +527,24 @@ impl RecordingEncoder {
         }
     }
 
-    pub(super) fn finish_at_pts(mut self, endpoint: u64) -> Result<StreamingEncoderReport> {
+    #[cfg(test)]
+    pub(super) fn finish_at_pts(self, endpoint: u64) -> Result<StreamingEncoderReport> {
+        self.finish(endpoint, None)
+    }
+    pub(super) fn finish_at_duration_ms(
+        self,
+        endpoint: u64,
+        duration_ms: u64,
+    ) -> Result<StreamingEncoderReport> {
+        self.finish(endpoint, Some(duration_ms))
+    }
+    fn finish(mut self, endpoint: u64, duration_ms: Option<u64>) -> Result<StreamingEncoderReport> {
         match self.driver.take().expect("encoder driver") {
-            Driver::Inline(owned) => owned.finish(endpoint),
+            Driver::Inline(owned) => owned.finish(endpoint, duration_ms),
             #[cfg(any(test, feature = "bench-synthetic-input"))]
             Driver::Threaded(threaded) => {
                 // Join even if the channel closed after a worker failure.
-                let _ = threaded.command(Command::Finish(endpoint));
+                let _ = threaded.command(Command::Finish(endpoint, duration_ms));
                 threaded.worker.join().map_err(|_| {
                     ScreenRecorderError::Encode("recording encoder worker panicked".into())
                 })?
@@ -624,11 +641,8 @@ mod tests {
                             .push_owned_rgba_frame_at_pts(u64::from(fps / 2), vec![90; 16 * 16 * 4])
                             .unwrap();
                     }
-                    let report = owned.finish(u64::from(fps)).unwrap();
-                    assert_eq!(
-                        report.encoded_audio_frames,
-                        u64::from(AUDIO_SAMPLE_RATE) * track_count as u64
-                    );
+                    let report = owned.finish(u64::from(fps) + 1, Some(1001)).unwrap();
+                    assert_eq!(report.encoded_audio_frames, 48_048 * track_count as u64);
                     assert_eq!(report.recovery_count, u32::from(recover));
                     let mut media = ffmpeg_next::format::input(&path).unwrap();
                     let mut audio_pts: BTreeMap<usize, Vec<i64>> = BTreeMap::new();
@@ -647,15 +661,15 @@ mod tests {
                             video_end = end;
                         }
                     }
-                    assert_eq!(video_end, 1000);
+                    assert_eq!(video_end, 1001);
                     assert_eq!(audio_pts.len(), track_count);
                     for points in audio_pts.values() {
                         assert!(points.len() >= 47);
                         assert!(points.windows(2).all(|pair| pair[1] - pair[0] == 1024));
                     }
-                    // AAC may pad the final 1024-sample frame, at most 22 ms.
+                    // Preserve codec padding internally but clip presentation to the exact Stop time.
                     for end in audio_ends.values() {
-                        assert!((1000..=1022).contains(end), "audio end {end}");
+                        assert_eq!(*end, 1001, "audio end {end}");
                     }
                     assert!(
                         audio_ends
@@ -690,7 +704,7 @@ mod tests {
         // Inject a failed audio sink: the mixer has data but the encoder has no
         // audio track. The stop boundary must retain already emitted video.
         owned.mixer = Some(LiveAudioMixer::new(true, false));
-        let error = owned.finish(100).unwrap_err().to_string();
+        let error = owned.finish(100, None).unwrap_err().to_string();
         assert!(
             error.contains("unknown streaming audio track: system"),
             "{error}"

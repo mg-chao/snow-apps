@@ -237,7 +237,11 @@ impl CursorAssets {
         Ok(())
     }
 }
-fn rasterize(shape: &CursorShape, scale: (f64, f64), id: u64) -> Result<CursorShapeRecord> {
+pub(super) fn rasterize(
+    shape: &CursorShape,
+    scale: (f64, f64),
+    id: u64,
+) -> Result<CursorShapeRecord> {
     let width = (shape.point_width * scale.0).round();
     let height = (shape.point_height * scale.1).round();
     let hotspot_x = (shape.hotspot_x * scale.0).round();
@@ -284,8 +288,8 @@ fn rasterize(shape: &CursorShape, scale: (f64, f64), id: u64) -> Result<CursorSh
         shape_id: id,
         width,
         height,
-        hotspot_x: hotspot_x as u32,
-        hotspot_y: hotspot_y as u32,
+        hotspot_x: (hotspot_x as u32).min(width - 1),
+        hotspot_y: (hotspot_y as u32).min(height - 1),
         mode: CursorShapeCompositionMode::AlphaBlend,
         shape_rgba: rgba,
     })
@@ -333,6 +337,12 @@ mod tests {
             hotspot_y: 0.5,
             rgba: [value, 0, 0, 128].repeat(4).into(),
         }
+    }
+    #[test]
+    fn scaled_cursor_endpoint_hotspots_stay_inside_the_recorded_shape() {
+        let record = rasterize(&shape(128), (1.0, 1.0), 1).unwrap();
+        assert_eq!((record.width, record.height), (1, 1));
+        assert_eq!((record.hotspot_x, record.hotspot_y), (0, 0));
     }
     #[test]
     fn input_assets_preserve_buttons_and_transform_without_requiring_cursor_shapes() {

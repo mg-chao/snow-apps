@@ -20,6 +20,7 @@ pub struct PendingScreenColorTransform {
 }
 
 impl PendingScreenColorTransform {
+    #[cfg(any(windows, test))]
     pub(crate) fn resolve(&self) -> Option<ScreenColorTransform> {
         *self.result.wait()
     }

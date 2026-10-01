@@ -8,17 +8,20 @@ pub use snow_recording_export::{
 };
 pub use snow_recording_model::{
     AudioSampleFormat, AudioTrackManifest, AudioTrackRole, ClickEventRecord, CursorFrameRecord,
-    CursorShapeCompositionMode, CursorShapeRecord, IntermediateRecordingProfile,
-    LocalRecordingPaths, MouseButton, MouseStore, PauseInterval, RecordingArtifact,
-    RecordingModelError, SessionManifest, StoredFrame, VideoEncodeConfig, VideoEncodingSpeed,
-    read_mouse_records, write_mouse_records,
+    CursorShapeCompositionMode, CursorShapeRecord, EffectsConfig, FinalizedTimeline,
+    IntermediateRecordingProfile, LocalRecordingPaths, MouseButton, MouseStore, PauseInterval,
+    PlaybackOverlay, RecordingArtifact, RecordingModelError, RenderConfig, RenderMetadata,
+    SessionManifest, StoredFrame, VideoEncodeConfig, VideoEncodingSpeed, read_mouse_records,
+    write_mouse_records,
 };
 pub use snow_recording_runtime::{
-    AudioChannels, CaptureBackendKind, DirectRecordingConfig, DirectRecordingReport,
-    DirectRecordingSession, KeyboardOverlayConfig, KeyboardOverlayFont, MediaPermission,
-    MonitorSelector, RecordingAudioConfig, RecordingAudioMode, RecordingAudioTrackConfig,
-    RecordingAudioTrackSource, RecordingConfig, RecordingRegion, RecordingSession, RecordingState,
-    RecordingTarget, ScreenRecorderError, WindowId,
+    AudioChannels, CaptureBackendKind, DeferredRecordingOptions, DeferredRecordingSession,
+    DeferredRecordingSource, DeferredRenderProgress, DeferredRenderState, DeferredRenderTask,
+    DirectRecordingConfig, DirectRecordingReport, DirectRecordingSession, KeyboardOverlayConfig,
+    KeyboardOverlayFont, MediaPermission, MonitorSelector, RecordingAudioConfig,
+    RecordingAudioMode, RecordingAudioTrackConfig, RecordingAudioTrackSource, RecordingConfig,
+    RecordingRegion, RecordingSession, RecordingState, RecordingTarget, ScreenRecorderError,
+    WindowId,
 };
 
 #[cfg(target_os = "macos")]

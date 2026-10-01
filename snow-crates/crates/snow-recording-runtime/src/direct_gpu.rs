@@ -143,7 +143,7 @@ pub(super) fn prepare(
     }
     drop(media);
     diagnostics.stage = None;
-    state.trail.clear();
+    state.input_effects.trail.clear();
     compositor.overlay_upload_bytes = 0;
     Ok(Some((stream, compositor, device)))
 }
@@ -487,9 +487,12 @@ impl GpuVisualCompositor {
             index = 1 - index;
         }
         self.tiles.clear();
-        state.trail.set_lifetime_ms(config.mouse_trail_duration_ms);
+        state
+            .input_effects
+            .trail
+            .set_lifetime_ms(config.mouse_trail_duration_ms);
         if config.mouse_trail_rgba[3] != 0 {
-            state.trail.observe(
+            state.input_effects.trail.observe(
                 cursor
                     .filter(|cursor| cursor.visible)
                     .map(|cursor| (cursor.x, cursor.y)),
@@ -498,21 +501,23 @@ impl GpuVisualCompositor {
                 timestamp,
             );
             state
+                .input_effects
                 .trail
                 .draw_to(&mut self.tiles, timestamp, config.mouse_trail_rgba);
         } else {
-            state.trail.clear();
+            state.input_effects.trail.clear();
         }
         while state
+            .input_effects
             .clicks
             .front()
             .is_some_and(|click| timestamp.saturating_sub(click.timestamp_ms) > CLICK_ANIMATION_MS)
         {
-            state.clicks.pop_front();
+            state.input_effects.clicks.pop_front();
         }
         snow_recording_effects::mouse_effects::draw_clicks_to(
             &mut self.tiles,
-            &state.clicks,
+            &state.input_effects.clicks,
             timestamp,
             config.mouse_click_rgba,
             source_size,
@@ -542,16 +547,8 @@ impl GpuVisualCompositor {
             }
         }
         self.tiles.clear();
-        if let Some(keyboard) = state.keyboard.as_mut() {
-            while state
-                .pending_keys
-                .front()
-                .is_some_and(|event| event.at_ms <= timestamp)
-            {
-                keyboard
-                    .model
-                    .event(state.pending_keys.pop_front().expect("pending key"));
-            }
+        state.input_effects.advance_keys(timestamp);
+        if let Some(keyboard) = state.input_effects.keyboard.as_mut() {
             keyboard
                 .draw_to(&mut self.tiles, timestamp)
                 .map_err(gpu_error)?;
@@ -891,9 +888,9 @@ mod tests {
         let mut cpu_state = VisualCompositor::new(size);
         let mut gpu_state = VisualCompositor::new(size);
         for state in [&mut cpu_state, &mut gpu_state] {
-            state.keyboard = Some(KeyboardOverlay::new(size, Box::new(Rasterizer)));
+            state.input_effects.keyboard = Some(KeyboardOverlay::new(size, Box::new(Rasterizer)));
             for (at_ms, down) in [(0, true), (150, false)] {
-                state.pending_keys.push_back(KeyEvent {
+                state.input_effects.pending_keys.push_back(KeyEvent {
                     at_ms,
                     key: 65,
                     down,
@@ -901,7 +898,7 @@ mod tests {
                     modifiers: vec![],
                 });
             }
-            state.clicks.push_back(RenderClick {
+            state.input_effects.clicks.push_back(RenderClick {
                 timestamp_ms: 50,
                 x: 160,
                 y: 150,

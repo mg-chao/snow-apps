@@ -245,12 +245,14 @@
         "start_delay_seconds",
         "microphone",
         "system_audio",
+        "separate_audio_tracks",
         "frame_rate",
         "animated_frame_rate",
         "clarity",
         "animated_clarity",
         "encoder",
         "encoding_preset",
+        "quality",
         "loop",
         "capture_toolbar",
         "show_cursor",
@@ -264,8 +266,9 @@
         "mouse_trail",
         "mouse_click",
         "mouse_highlight_color",
-        "quality",
-        "separate_audio_tracks"
+        "post_processing",
+        "post_processing_effect",
+        "progress_bar_color"
       ]
     },
     "settings_shortcut_adjustments": {

@@ -51,6 +51,8 @@ pub struct SnowUiSelectorQuery {
     pub y: i32,
     pub mode: SnowUiSelectorHitTestMode,
     pub display_id: u32,
+    pub window_id: usize,
+    pub window_hit_tested: u8,
 }
 #[repr(C)]
 pub struct SnowUiSelectorEvent {
@@ -378,6 +380,8 @@ fn foreground_worker<S: WorkerService>(
                                 x: query.x,
                                 y: query.y,
                                 display_id: query.display_id,
+                                window_id: (query.window_hit_tested != 0)
+                                    .then_some(query.window_id),
                             },
                             mode(query.mode),
                             &QueryControl::foreground_with_cancellation(&cancelled),
@@ -450,6 +454,7 @@ fn refinement_worker<S: WorkerService>(
                             x: query.x,
                             y: query.y,
                             display_id: query.display_id,
+                            window_id: (query.window_hit_tested != 0).then_some(query.window_id),
                         },
                         mode(query.mode),
                         &QueryControl::refinement(&cancelled),

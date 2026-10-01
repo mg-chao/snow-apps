@@ -1,3 +1,4 @@
+use snow_core::cancellation::CancellationToken;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -69,6 +70,7 @@ pub struct ExportProgress {
 /// Owns the export worker. Dropping an unawaited task cancels and joins it.
 pub struct ExportTask {
     cancel_flag: Arc<AtomicBool>,
+    cancellation: CancellationToken,
     progress_rx: crossbeam_channel::Receiver<ExportProgress>,
     join: Option<JoinHandle<Result<ExportResult>>>,
 }
@@ -85,17 +87,20 @@ impl Drop for ExportTask {
 impl ExportTask {
     pub(crate) fn new(
         cancel_flag: Arc<AtomicBool>,
+        cancellation: CancellationToken,
         progress_rx: crossbeam_channel::Receiver<ExportProgress>,
         join: JoinHandle<Result<ExportResult>>,
     ) -> Self {
         Self {
             cancel_flag,
+            cancellation,
             progress_rx,
             join: Some(join),
         }
     }
 
     pub fn cancel(&self) {
+        self.cancellation.cancel();
         self.cancel_flag.store(true, Ordering::Release);
     }
 
@@ -122,6 +127,7 @@ mod tests {
     fn dropping_export_task_cancels_and_joins_its_worker() {
         let cancel_flag = Arc::new(AtomicBool::new(false));
         let worker_flag = cancel_flag.clone();
+        let cancellation = CancellationToken::default();
         let resource = Arc::new(());
         let worker_resource = resource.clone();
         let (started_tx, started_rx) = mpsc::channel();
@@ -137,7 +143,12 @@ mod tests {
             Err(ScreenRecorderError::ExportCanceled)
         });
         started_rx.recv().unwrap();
-        drop(ExportTask::new(cancel_flag.clone(), progress_rx, worker));
+        drop(ExportTask::new(
+            cancel_flag.clone(),
+            cancellation.clone(),
+            progress_rx,
+            worker,
+        ));
         let canceled_on_drop = cancel_flag.load(Ordering::Acquire);
         let released_on_drop = Arc::strong_count(&resource) == 1;
         // Release a detached worker even when the old behavior fails this test.
@@ -145,21 +156,60 @@ mod tests {
         finished_rx.recv().unwrap();
         assert!(canceled_on_drop, "dropping a task must cancel its worker");
         assert!(
+            cancellation.is_canceled(),
+            "dropping a task must cancel deferred work"
+        );
+        assert!(
             released_on_drop,
             "dropping a task must join resource cleanup"
         );
     }
 
     #[test]
+    fn dropping_export_task_wakes_a_deferred_worker() {
+        let cancel_flag = Arc::new(AtomicBool::new(false));
+        let cancellation = CancellationToken::default();
+        let worker_cancellation = cancellation.clone();
+        let (finished_tx, finished_rx) = mpsc::channel();
+        let (_, progress_rx) = crossbeam_channel::unbounded();
+        let worker = std::thread::spawn(move || {
+            let result = worker_cancellation
+                .receiver()
+                .recv_timeout(std::time::Duration::from_secs(2));
+            finished_tx.send(result).unwrap();
+            Err(ScreenRecorderError::ExportCanceled)
+        });
+        drop(ExportTask::new(
+            cancel_flag.clone(),
+            cancellation,
+            progress_rx,
+            worker,
+        ));
+        assert!(matches!(
+            finished_rx.recv().unwrap(),
+            Err(crossbeam_channel::RecvTimeoutError::Disconnected)
+        ));
+        assert!(cancel_flag.load(Ordering::Acquire));
+    }
+
+    #[test]
     fn waiting_for_export_task_preserves_the_worker_result() {
+        let cancellation = CancellationToken::default();
         let cancel_flag = Arc::new(AtomicBool::new(false));
         let (_, progress_rx) = crossbeam_channel::unbounded();
         let worker =
             std::thread::spawn(|| Err(ScreenRecorderError::Export("original failure".into())));
-        let result = ExportTask::new(cancel_flag.clone(), progress_rx, worker).wait();
+        let result = ExportTask::new(
+            cancel_flag.clone(),
+            cancellation.clone(),
+            progress_rx,
+            worker,
+        )
+        .wait();
         assert!(
             matches!(result, Err(ScreenRecorderError::Export(message)) if message == "original failure")
         );
         assert!(!cancel_flag.load(Ordering::Acquire));
+        assert!(!cancellation.is_canceled());
     }
 }

@@ -25,6 +25,37 @@ add_test(NAME snow_image_viewer_worker_lifecycle_tests
     COMMAND snow_image_viewer_tests --worker-lifecycle-only)
 set_tests_properties(snow_image_viewer_worker_lifecycle_tests PROPERTIES LABELS "unit" TIMEOUT 30)
 
+add_executable(snow_image_viewer_editor_lifecycle_tests editor_lifecycle_tests.cpp)
+target_link_libraries(snow_image_viewer_editor_lifecycle_tests PRIVATE snow_image_viewer_lib)
+target_compile_features(snow_image_viewer_editor_lifecycle_tests PRIVATE cxx_std_20)
+if(MSVC)
+    target_compile_options(snow_image_viewer_editor_lifecycle_tests PRIVATE
+        /FS /utf-8 /permissive- /Zc:__cplusplus /W4
+    )
+    if(SNOW_IMAGE_VIEWER_STRICT_COMPILE)
+        target_compile_options(snow_image_viewer_editor_lifecycle_tests PRIVATE /WX)
+    endif()
+endif()
+include("${CMAKE_CURRENT_SOURCE_DIR}/../../cmake/SnowQtOffscreenTest.cmake")
+snow_shot_import_offscreen_platform(snow_image_viewer_editor_lifecycle_tests)
+snow_shot_offscreen_qpa_environment(SNOW_IMAGE_VIEWER_EDITOR_LIFECYCLE_ENVIRONMENT)
+add_test(NAME snow_image_viewer_editor_lifecycle_tests
+    COMMAND snow_image_viewer_editor_lifecycle_tests)
+add_test(NAME snow_image_viewer_editor_reopen_tests
+    COMMAND snow_image_viewer_editor_lifecycle_tests --reopen-only)
+set_tests_properties(snow_image_viewer_editor_lifecycle_tests
+    snow_image_viewer_editor_reopen_tests PROPERTIES
+    ENVIRONMENT "${SNOW_IMAGE_VIEWER_EDITOR_LIFECYCLE_ENVIRONMENT}"
+    LABELS "unit"
+    TIMEOUT 60
+)
+if(WIN32)
+    set_tests_properties(snow_image_viewer_editor_lifecycle_tests
+        snow_image_viewer_editor_reopen_tests PROPERTIES
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+    )
+endif()
+
 add_executable(snow_image_viewer_generated_icon_pack_tests
     generated_icon_pack_tests.cpp
 )

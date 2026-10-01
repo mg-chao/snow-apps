@@ -19,7 +19,7 @@ pub enum CursorShapeCompositionMode {
     MaskedColor,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct CursorShapeRecord {
     pub shape_id: u64,
     pub hotspot_x: u32,
@@ -30,7 +30,7 @@ pub struct CursorShapeRecord {
     pub shape_rgba: Vec<u8>,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct CursorFrameRecord {
     pub timestamp_ms: u64,
     pub x: i32,

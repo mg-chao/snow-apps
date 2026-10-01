@@ -46,6 +46,39 @@ do not populate AppKit's local position. This symbol is exported but not in the
 public SDK; if unavailable on a future macOS release, automatic scrolling fails
 recoverably instead of moving the pointer. Requalify it when upgrading macOS.
 
+## Color handling
+
+SDR screenshot buffers use sRGB. The application declares sRGB in the default Qt
+surface format before creating `QApplication`, so Cocoa tags raster windows with
+sRGB rather than the monitor's ICC profile. QPainter copies image samples without
+color conversion; using a monitor profile for those sRGB samples introduces a color
+cast. Tagged imported pins are converted to sRGB before composition.
+
+Capture leases, selection exports and scrolling snapshots retain their sRGB tag.
+The codec bridge declares the same color description for packed and streamed
+encoding, and screenshot encoding retains it. PNG exports carry the standard sRGB
+chunk; source EXIF and other imported metadata do not cross the row-source bridge.
+
+Image imports carry the decoded frame's ICC profile or standard primaries and
+transfer function through the versioned codec ABI. The Qt adapter attaches that
+declaration while wrapping the owned RGBA/BGRA buffer, without copying the raster.
+Clipboard images and file-pin batches use the same decoder. Profiles remain
+attached to the original pixels until the compositor or encoder converts them to
+sRGB. Untagged imports retain their existing interpretation.
+
+Focused color regression checks:
+
+```sh
+ctest --test-dir build/snow-shot-macos-arm64-debug --output-on-failure \
+  -R '^snow-shot-(raster-color-space|macos-raster-color-space|direct-capture-frame|selection-render|screenshot-export-service|scrolling-image-replay|image-codec-backend-smoke|clipboard-mime-data|file-pin-batch|macos-clipboard-roundtrip)-tests$'
+```
+
+The raster test runs offscreen, and its Cocoa variant checks hidden opaque,
+translucent, tool and popup windows, including native surface recreation, without
+requiring Screen Recording permission. Requalify the native profile checks when
+upgrading Qt. On a profiled display, also check the live selection, a pin, saved
+PNG and a pasted image against the source, including repeated capture of a pin.
+
 ## Permission recovery
 
 Screen Recording permission is required for capture. Use the existing App

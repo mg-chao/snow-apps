@@ -4,17 +4,6 @@ use crate::error::{RecordingExportError, Result};
 use ffmpeg_next as ffmpeg;
 use snow_media::{ColorDescription, PixelFormat, macos::PixelBuffer};
 
-pub(crate) unsafe fn set_hdr_context(context: *mut ffmpeg::ffi::AVCodecContext) {
-    unsafe {
-        (*context).color_range = ffmpeg::ffi::AVColorRange::AVCOL_RANGE_MPEG;
-        (*context).colorspace = ffmpeg::ffi::AVColorSpace::AVCOL_SPC_BT2020_NCL;
-        (*context).color_primaries = ffmpeg::ffi::AVColorPrimaries::AVCOL_PRI_BT2020;
-        (*context).color_trc = ffmpeg::ffi::AVColorTransferCharacteristic::AVCOL_TRC_SMPTE2084;
-        (*context).profile = 2; // HEVC Main 10 (ISO/IEC 23008-2).
-        (*context).codec_tag = u32::from_le_bytes(*b"hvc1");
-    }
-}
-
 pub(crate) fn frame(image: PixelBuffer) -> Result<ffmpeg::frame::Video> {
     if image.format() == PixelFormat::P010 && image.color() != ColorDescription::HDR10 {
         return Err(RecordingExportError::InvalidConfig(

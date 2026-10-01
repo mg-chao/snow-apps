@@ -32,6 +32,71 @@
         </message>
     </context>
     <context>
+        <name>RecordingRenderDialog</name>
+        <message>
+            <source>Cancel</source>
+            <translation>取消</translation>
+        </message>
+        <message>
+            <source>Cancelling rendering...</source>
+            <translation>正在取消轉繪...</translation>
+        </message>
+        <message>
+            <source>Discard</source>
+            <translation>捨棄</translation>
+        </message>
+        <message>
+            <source>Finalizing recording...</source>
+            <translation>正在完成錄製匯出...</translation>
+        </message>
+        <message>
+            <source>Keep Source</source>
+            <translation>保留來源檔案</translation>
+        </message>
+        <message>
+            <source>Preparing recording...</source>
+            <translation>正在準備錄製...</translation>
+        </message>
+        <message>
+            <source>Rendering canceled</source>
+            <translation>轉繪已取消</translation>
+        </message>
+        <message>
+            <source>Rendering failed</source>
+            <translation>轉繪失敗</translation>
+        </message>
+        <message>
+            <source>Rendering progress</source>
+            <translation>轉繪進度</translation>
+        </message>
+        <message>
+            <source>Rendering recording</source>
+            <translation>轉繪錄製</translation>
+        </message>
+        <message>
+            <source>Rendering video...</source>
+            <translation>正在轉繪影片...</translation>
+        </message>
+        <message>
+            <source>Retry</source>
+            <translation>重試</translation>
+        </message>
+        <message>
+            <source>Source files are preserved in:
+%1</source>
+            <translation>來源檔案已保留在：
+%1</translation>
+        </message>
+        <message>
+            <source>Unable to read rendering progress</source>
+            <translation>無法讀取轉繪進度</translation>
+        </message>
+        <message>
+            <source>Unable to start rendering</source>
+            <translation>無法開始轉繪</translation>
+        </message>
+    </context>
+    <context>
         <name>ScreenRecordingController</name>
         <message>
             <source>Keyboard recording failed: %1</source>

@@ -1,5 +1,6 @@
 if(APPLE)
     set_source_files_properties(src/presentation/core/screenshotgeometry.cpp
+        src/presentation/selector/screenshotselectorserviceclient.cpp
         src/presentation/recording/screenrecordingareawindow.cpp
         src/presentation/globalcanvas/globalcanvasplatform.cpp
         tests/global_canvas_tests.cpp
@@ -905,6 +906,7 @@ set(SNOW_SHOT_SETTINGS_SOURCES
     src/presentation/components/settingscustomwidget.cpp
     src/presentation/components/settingspagewidget.cpp
     include/snow_shot/presentation/components/screenrecordingsettingsdialog.h
+    include/snow_shot/presentation/components/screenrecordingmodal.h
     src/presentation/components/screenrecordingsettingsdialog.cpp
     src/presentation/components/actionrow.cpp
     src/presentation/components/shortcutkeyrow.cpp
@@ -1389,6 +1391,8 @@ set(PROJECT_CXX_SOURCES
     src/presentation/tools/screenshottoolpalettehost.cpp
     src/presentation/toolbar/screenshottoolbarwindow.cpp
     src/presentation/recording/screenrecordingareawindow.cpp
+    src/presentation/recording/recordingrenderjob.cpp
+    src/presentation/recording/recordingrenderjob.h
     src/presentation/recording/screenrecordingcontroller.cpp
     src/presentation/recording/screenrecordingfolder.cpp
     src/presentation/recording/recordingcountdownoverlay.cpp
@@ -1725,6 +1729,11 @@ if(SNOW_SHOT_BUILD_TESTS)
         tests/application_storage_tests.cpp
     )
     target_link_libraries(snow-shot-application-storage-tests PRIVATE snow_shot_storage Qt6::Core)
+    add_test(NAME snow-shot-recording-post-processing-settings-tests
+        COMMAND snow-shot-application-storage-tests --recording-post-processing-only)
+    set_tests_properties(snow-shot-recording-post-processing-settings-tests PROPERTIES
+        LABELS "unit" TIMEOUT 60
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
     add_test(NAME snow-shot-scrolling-interval-settings-tests
         COMMAND snow-shot-application-storage-tests --scrolling-interval-only)
     set_tests_properties(snow-shot-scrolling-interval-settings-tests PROPERTIES
@@ -2524,7 +2533,8 @@ if(SNOW_SHOT_BUILD_TESTS)
         Qt6::Widgets
     )
     if(APPLE)
-        target_link_libraries(snow-shot-window-element-api-tests PRIVATE "-framework CoreGraphics")
+        target_link_libraries(snow-shot-window-element-api-tests PRIVATE
+            "-framework CoreGraphics" "-framework AppKit")
     endif()
     add_test(NAME snow-shot-window-element-api-tests
              COMMAND snow-shot-window-element-api-tests)
@@ -3262,6 +3272,10 @@ if(SNOW_SHOT_BUILD_TESTS)
         set_source_files_properties(tests/screenshot_color_picker_tests.cpp
             PROPERTIES LANGUAGE OBJCXX)
         target_link_libraries(snow-shot-screenshot-color-picker-tests PRIVATE "-framework AppKit")
+        add_test(NAME snow-shot-macos-color-picker-animation-native-tests
+            COMMAND snow-shot-screenshot-color-picker-tests --magnifier-animation-only -platform cocoa)
+        set_tests_properties(snow-shot-macos-color-picker-animation-native-tests PROPERTIES
+            LABELS "interactive;macos" RUN_SERIAL TRUE TIMEOUT 30)
     endif()
     add_test(NAME snow-shot-screenshot-color-picker-tests
         COMMAND snow-shot-screenshot-color-picker-tests)
@@ -3531,6 +3545,9 @@ if(SNOW_SHOT_BUILD_TESTS)
     endif()
     add_test(NAME snow-shot-overlay-safe-area-tests
         COMMAND snow-shot-screenshot-canvas-renderer-tests --overlay-safe-area -platform offscreen)
+    add_test(NAME snow-shot-overlay-window-shadow-tests
+        COMMAND snow-shot-screenshot-canvas-renderer-tests --window-shadow-only -platform offscreen)
+    set_tests_properties(snow-shot-overlay-window-shadow-tests PROPERTIES LABELS "unit")
     add_test(NAME snow-shot-overlay-boundary-input-tests
         COMMAND snow-shot-screenshot-canvas-renderer-tests --overlay-boundary-input -platform offscreen)
     set_tests_properties(snow-shot-overlay-boundary-input-tests PROPERTIES LABELS "unit")
@@ -3539,6 +3556,10 @@ if(SNOW_SHOT_BUILD_TESTS)
             ../cmake/test-support/macos_native_input.mm)
         target_include_directories(snow-shot-screenshot-canvas-renderer-tests PRIVATE
             ../cmake/test-support)
+        add_test(NAME snow-shot-macos-overlay-window-shadow-native-tests
+            COMMAND snow-shot-screenshot-canvas-renderer-tests --window-shadow-only -platform cocoa)
+        set_tests_properties(snow-shot-macos-overlay-window-shadow-native-tests PROPERTIES
+            LABELS "interactive;macos" RUN_SERIAL TRUE TIMEOUT 30)
         add_test(NAME snow-shot-macos-overlay-boundary-input-native-tests
             COMMAND snow-shot-screenshot-canvas-renderer-tests --overlay-boundary-input -platform cocoa)
         set_tests_properties(snow-shot-macos-overlay-boundary-input-native-tests PROPERTIES
@@ -4084,6 +4105,9 @@ if(SNOW_SHOT_BUILD_TESTS)
         "${CMAKE_CURRENT_SOURCE_DIR}/include")
     target_link_libraries(snow-shot-file-pin-batch-tests PRIVATE snow_shot_image_codec Qt6::Widgets
         ${SNOW_SELECTED_FILES_LIBRARIES})
+    if(APPLE)
+        target_link_libraries(snow-shot-file-pin-batch-tests PRIVATE snow_shot_rust_ffi_bundle)
+    endif()
     if(WIN32)
         target_link_libraries(snow-shot-file-pin-batch-tests PRIVATE ole32 oleaut32 shell32 uuid)
         add_executable(snow-shot-selected-files-native-smoke-tests
@@ -4847,8 +4871,15 @@ if(SNOW_SHOT_BUILD_TESTS)
             COMMAND snow-shot-global-canvas-tests --native-only -platform cocoa)
         set_tests_properties(snow-shot-global-canvas-native-tests PROPERTIES
             LABELS "interactive;macos" RUN_SERIAL TRUE TIMEOUT 90)
+        add_test(NAME snow-shot-global-canvas-window-shadow-native-tests
+            COMMAND snow-shot-global-canvas-tests --window-shadow-only -platform cocoa)
+        set_tests_properties(snow-shot-global-canvas-window-shadow-native-tests PROPERTIES
+            LABELS "interactive;macos" RUN_SERIAL TRUE TIMEOUT 30)
     endif()
     snow_shot_import_offscreen_platform(snow-shot-global-canvas-tests)
+    add_test(NAME snow-shot-global-canvas-window-shadow-tests
+        COMMAND snow-shot-global-canvas-tests --window-shadow-only -platform offscreen)
+    set_tests_properties(snow-shot-global-canvas-window-shadow-tests PROPERTIES LABELS "unit")
     add_test(NAME snow-shot-global-canvas-tests COMMAND snow-shot-global-canvas-tests -platform offscreen)
     set_tests_properties(snow-shot-global-canvas-tests PROPERTIES LABELS "unit" TIMEOUT 90
         ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
@@ -5646,8 +5677,9 @@ if(SNOW_SHOT_BUILD_TESTS)
 
     get_target_property(_recording_test_sources snow-shot-screenshot-tool-palette-tests SOURCES)
     list(FILTER _recording_test_sources EXCLUDE REGEX "tests/screenshot_tool_palette_tests.cpp$")
-    # The shared settings library supplies theme objects and their Qt metaobjects.
+    # The shared settings libraries supply the icons, theme objects and Qt metaobjects.
     list(REMOVE_ITEM _recording_test_sources
+        src/presentation/components/icons/snowshoticons.cpp
         include/snow_shot/presentation/styles/thememanager.h
         src/presentation/styles/thememanager.cpp
         src/presentation/styles/themecolorscheme.cpp)
@@ -5660,6 +5692,8 @@ if(SNOW_SHOT_BUILD_TESTS)
         include/snow_shot/presentation/screenrecordingtoolbarwindow.h
         include/snow_shot/presentation/screenshotfloatingtoolpalettewindow.h
         include/snow_shot/presentation/screenshottoolpalettehost.h
+        src/presentation/recording/recordingrenderjob.cpp
+        src/presentation/recording/recordingrenderjob.h
         src/presentation/recording/screenrecordingcontroller.cpp
         src/presentation/services/screenshotclipboardservice.cpp
         src/presentation/recording/screenrecordingfolder.cpp
@@ -5693,19 +5727,31 @@ if(SNOW_SHOT_BUILD_TESTS)
     if(APPLE)
         target_sources(snow-shot-screen-recording-controller-tests PRIVATE
             src/platform/macos/windowcaptureexclusion.mm
-            tests/macos_capture_exclusion_probe.mm)
+            tests/macos_capture_exclusion_probe.mm
+            tests/macos_recording_modal_probe.mm)
         target_link_libraries(snow-shot-screen-recording-controller-tests PRIVATE "${SNOW_SHOT_APPKIT_FRAMEWORK}")
     endif()
     target_compile_definitions(snow-shot-screen-recording-controller-tests PRIVATE SNOW_SHOT_TEST_HOOKS=1)
+    target_compile_definitions(snow-shot-screen-recording-controller-tests PRIVATE
+        SNOW_SHOT_TEST_TRANSLATIONS_DIR="${CMAKE_CURRENT_BINARY_DIR}")
+    add_dependencies(snow-shot-screen-recording-controller-tests snow_shot_release_translations)
     target_sources(snow-shot-screen-recording-controller-tests PRIVATE
         "${CMAKE_CURRENT_SOURCE_DIR}/../test-support/fonts/recording_test_fonts.qrc")
     # Override only the test executable: exercise the real controller without
     # opening capture devices, recording the desktop, or exporting media.
-    foreach(_operation create_direct destroy start pause resume stop state)
+    foreach(_operation create_direct create_deferred finalize_deferred destroy start pause resume request_stop stop state)
         target_compile_definitions(snow-shot-screen-recording-controller-tests PRIVATE
             "snow_recording_session_${_operation}=test_recording_session_${_operation}")
     endforeach()
     target_compile_definitions(snow-shot-screen-recording-controller-tests PRIVATE
+        snow_recording_source_render_start=test_recording_source_render_start
+        snow_recording_source_path=test_recording_source_path
+        snow_recording_source_discard=test_recording_source_discard
+        snow_recording_source_destroy=test_recording_source_destroy
+        snow_recording_render_task_poll=test_recording_render_task_poll
+        snow_recording_render_task_cancel=test_recording_render_task_cancel
+        snow_recording_render_task_error=test_recording_render_task_error
+        snow_recording_render_task_destroy=test_recording_render_task_destroy
         snow_recording_last_error_message=test_recording_last_error_message
         snow_recording_region_output_dimensions=test_recording_region_output_dimensions)
     if(WIN32)
@@ -5727,11 +5773,26 @@ if(SNOW_SHOT_BUILD_TESTS)
     add_test(NAME snow-shot-recording-style-wheel-tests
         COMMAND snow-shot-screen-recording-controller-tests --style-wheel-only -platform offscreen)
     set_tests_properties(snow-shot-recording-style-wheel-tests PROPERTIES LABELS "unit" TIMEOUT 60)
+    add_test(NAME snow-shot-recording-post-processing-tests
+        COMMAND snow-shot-screen-recording-controller-tests --post-processing-only -platform offscreen)
+    set_tests_properties(snow-shot-recording-post-processing-tests PROPERTIES LABELS "unit" TIMEOUT 60)
+    add_test(NAME snow-shot-recording-render-layout-tests
+        COMMAND snow-shot-screen-recording-controller-tests --render-layout-only -platform offscreen)
+    set_tests_properties(snow-shot-recording-render-layout-tests PROPERTIES LABELS "unit" TIMEOUT 30)
     add_test(NAME snow-shot-recording-settings-dialog-tests
         COMMAND snow-shot-screen-recording-controller-tests --settings-dialog-only -platform offscreen)
     set_tests_properties(snow-shot-recording-settings-dialog-tests PROPERTIES
         LABELS "unit" TIMEOUT 60
         ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
+    add_test(NAME snow-shot-recording-modal-stacking-tests
+        COMMAND snow-shot-screen-recording-controller-tests --modal-stacking-only -platform offscreen)
+    set_tests_properties(snow-shot-recording-modal-stacking-tests PROPERTIES LABELS "unit" TIMEOUT 30)
+    if(APPLE)
+        add_test(NAME snow-shot-macos-recording-modal-stacking-tests
+            COMMAND snow-shot-screen-recording-controller-tests --modal-stacking-only -platform cocoa)
+        set_tests_properties(snow-shot-macos-recording-modal-stacking-tests PROPERTIES
+            LABELS "interactive;macos" RUN_SERIAL TRUE TIMEOUT 60)
+    endif()
     add_test(NAME snow-shot-screen-recording-controller-tests
         COMMAND snow-shot-screen-recording-controller-tests)
     if(WIN32)
@@ -5748,6 +5809,16 @@ if(SNOW_SHOT_BUILD_TESTS)
         ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}"
         ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
         LABELS "unit" RUN_SERIAL TRUE TIMEOUT 60)
+    if(APPLE)
+        foreach(_preview_scale IN ITEMS 1 1.25 1.5 1.75 2)
+            add_test(NAME snow-shot-recording-effects-preview-dpi-${_preview_scale}-tests
+                COMMAND snow-shot-screen-recording-controller-tests --effects-preview-dpi-only)
+            set_tests_properties(snow-shot-recording-effects-preview-dpi-${_preview_scale}-tests
+                PROPERTIES
+                ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT};QT_SCALE_FACTOR=${_preview_scale}"
+                LABELS "unit" RUN_SERIAL TRUE TIMEOUT 60)
+        endforeach()
+    endif()
     add_test(NAME snow-shot-recording-capture-exclusion-tests
         COMMAND snow-shot-screen-recording-controller-tests --capture-exclusion-only)
     set_tests_properties(snow-shot-recording-capture-exclusion-tests PROPERTIES
@@ -7226,6 +7297,14 @@ if(WIN32 AND SNOW_SHOT_BUILD_BENCHMARKS)
             --package snow-recording-effects --example effects_benchmark
         WORKING_DIRECTORY "${SNOW_SHOT_CAPTURE_CRATES_DIR}"
         USES_TERMINAL VERBATIM)
+    add_custom_target(snow-shot-recording-postprocessing-performance-benchmark
+        COMMAND "${CMAKE_COMMAND}" -E env
+            "CARGO_TARGET_DIR=${SNOW_RUST_CARGO_TARGET_DIR}"
+            "${CARGO_EXECUTABLE}" build --locked --release
+            --target x86_64-pc-windows-msvc
+            --package snow-recording-effects --example postprocessing_benchmark
+        WORKING_DIRECTORY "${SNOW_SHOT_CAPTURE_CRATES_DIR}"
+        USES_TERMINAL VERBATIM)
     if(WIN32 AND TARGET snow-shot-screen-recording-controller-tests)
         target_sources(snow-shot-screen-recording-controller-tests PRIVATE
             tests/recording_effects_performance_benchmark.cpp)
@@ -8097,6 +8176,11 @@ if(SNOW_SHOT_BUILD_TESTS)
     set_tests_properties(snow-shot-clipboard-appearance-presentation-tests PROPERTIES
         LABELS unit SNOW_TEST_CROSS_PLATFORM TRUE RUN_SERIAL TRUE TIMEOUT 60
         ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}")
+    add_test(NAME snow-shot-pinned-color-space-tests
+        COMMAND snow-shot-pinned-window-tests --color-space-only -platform offscreen)
+    set_tests_properties(snow-shot-pinned-color-space-tests PROPERTIES
+        LABELS unit SNOW_TEST_CROSS_PLATFORM TRUE RUN_SERIAL TRUE TIMEOUT 60
+        ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}")
     add_test(NAME snow-shot-history-selection-presentation-tests
         COMMAND snow-shot-pinned-window-tests --history-selection-only -platform offscreen)
     set_tests_properties(snow-shot-history-selection-presentation-tests PROPERTIES
@@ -8210,6 +8294,19 @@ foreach(_target IN LISTS _region_switcher_targets)
 endforeach()
 
 if(APPLE AND SNOW_SHOT_BUILD_TESTS)
+    add_executable(snow-shot-macos-raster-color-space-tests
+        tests/macos_raster_color_space_tests.mm)
+    target_include_directories(snow-shot-macos-raster-color-space-tests PRIVATE include)
+    target_link_libraries(snow-shot-macos-raster-color-space-tests PRIVATE Qt6::Widgets
+        "-framework AppKit")
+    snow_shot_import_offscreen_platform(snow-shot-macos-raster-color-space-tests)
+    add_test(NAME snow-shot-raster-color-space-tests
+        COMMAND snow-shot-macos-raster-color-space-tests -platform offscreen)
+    set_tests_properties(snow-shot-raster-color-space-tests PROPERTIES LABELS "unit;macos")
+    add_test(NAME snow-shot-macos-raster-color-space-tests
+        COMMAND snow-shot-macos-raster-color-space-tests -platform cocoa)
+    set_tests_properties(snow-shot-macos-raster-color-space-tests PROPERTIES LABELS "unit;macos")
+
     add_executable(snow-shot-macos-screenshot-window-target-tests
         tests/macos_screenshot_window_target_tests.mm)
     target_link_libraries(snow-shot-macos-screenshot-window-target-tests PRIVATE Qt6::Core

@@ -20,7 +20,7 @@ use crate::format::AudioFormat;
 use crate::packet::{AudioEvent, AudioPacket, AudioSourceKind};
 use crate::session::{AudioSession, AudioStreamConfig, SourceConfig};
 use crate::timeline::{
-    AudioPacketAlignment, AudioPacketTimestamp, AudioTimestampAnchorExt, align_packet_frames,
+    ActivePcmSpan, AudioPacketTimestamp, AudioTimestampAnchorExt, admit_active_pcm,
     audio_anchor_from_first_packet,
 };
 
@@ -457,6 +457,7 @@ struct RecordedTrackWriter {
     timeline_alignment_pending: bool,
     silence_chunk: Vec<u8>,
     discontinuities: Vec<TimelineDiscontinuity>,
+    active_spans: Vec<ActivePcmSpan>,
 }
 
 struct StableAudioTimeline {
@@ -527,6 +528,7 @@ impl RecordedTrackWriter {
             timeline_alignment_pending: true,
             silence_chunk,
             discontinuities: Vec::new(),
+            active_spans: Vec::with_capacity(2),
         })
     }
 
@@ -535,57 +537,54 @@ impl RecordedTrackWriter {
         if packet_frames == 0 {
             return Ok(());
         }
-
+        if packet.format != self.format || packet_frames != u64::from(packet.frames) {
+            return Err(AudioError::InvalidConfig(
+                "recorded PCM packet disagrees with its configured format".into(),
+            ));
+        }
         let packet_ts = self.timeline.packet_timestamp(packet);
-        let aligned = if !self.timeline_alignment_pending && !packet.metadata.discontinuity {
-            AudioPacketAlignment {
-                write_packet_frames: packet_frames,
-                ..Default::default()
-            }
-        } else {
-            align_packet_frames(
-                self.written_frames,
-                self.format.sample_rate,
-                AudioPacketTimestamp {
-                    start: clock.active_elapsed_from_stream_offset(packet_ts.start),
-                    end: clock.active_elapsed_from_stream_offset(packet_ts.end),
-                },
-                packet_frames,
-            )
-        };
-
-        if aligned.silence_prefix_frames > 0 {
-            self.record_discontinuity(
-                Some(aligned.silence_prefix_frames),
-                DiscontinuityReason::SourceInterrupted,
-            )?;
-            self.append_silence_frames(aligned.silence_prefix_frames)?;
-        } else if packet.metadata.discontinuity {
-            self.record_discontinuity(None, DiscontinuityReason::SourceInterrupted)?;
-        }
-
-        if aligned.write_packet_frames == 0 {
-            self.timeline_alignment_pending = false;
-            return Ok(());
-        }
-
-        let channels = usize::from(self.format.channels);
-        let skip_samples = aligned
-            .skip_packet_frames
-            .checked_mul(channels as u64)
-            .ok_or(AudioError::BufferOverflow)? as usize;
-        let write_samples = aligned
-            .write_packet_frames
-            .checked_mul(channels as u64)
-            .ok_or(AudioError::BufferOverflow)? as usize;
-        let end = skip_samples
-            .checked_add(write_samples)
+        let packet_start = self
+            .timeline
+            .recording_started_at
+            .checked_add(packet_ts.start)
             .ok_or(AudioError::BufferOverflow)?;
-        let result = self.append_i16_samples(&packet.as_i16_slice()[skip_samples..end]);
-        if result.is_ok() {
-            self.timeline_alignment_pending = false;
+        admit_active_pcm(
+            clock,
+            packet_start,
+            packet_frames,
+            self.format.sample_rate,
+            &mut self.active_spans,
+        );
+        let whole_packet = self.active_spans.len() == 1
+            && self.active_spans[0].source_start_frame == 0
+            && self.active_spans[0].frames == packet_frames;
+        let channels = usize::from(self.format.channels);
+        for index in 0..self.active_spans.len() {
+            let span = self.active_spans[index];
+            let target = if whole_packet
+                && !self.timeline_alignment_pending
+                && !packet.metadata.discontinuity
+            {
+                self.written_frames
+            } else {
+                span.timeline_start_frame
+            };
+            let silence = target.saturating_sub(self.written_frames);
+            if silence != 0 {
+                self.record_discontinuity(Some(silence), DiscontinuityReason::SourceInterrupted)?;
+                self.append_silence_frames(silence)?;
+            } else if packet.metadata.discontinuity && index == 0 {
+                self.record_discontinuity(None, DiscontinuityReason::SourceInterrupted)?;
+            }
+            let skip = self.written_frames.saturating_sub(target).min(span.frames);
+            let first = (span.source_start_frame + skip) as usize * channels;
+            let end = (span.source_start_frame + span.frames) as usize * channels;
+            self.append_i16_samples(&packet.as_i16_slice()[first..end])?;
         }
-        result
+        // Inactive/clipped packets form an alignment boundary even when the
+        // underlying stream's Paused/Resumed event arrives later.
+        self.timeline_alignment_pending = !whole_packet;
+        Ok(())
     }
 
     fn append_silence_frames(&mut self, frames: u64) -> AudioResult<()> {
@@ -824,6 +823,52 @@ mod tests {
         assert_eq!(first_ts.end, Duration::from_millis(50));
         assert_eq!(second_ts.start, Duration::from_millis(50));
         assert_eq!(second_ts.end, Duration::from_millis(70));
+    }
+
+    #[test]
+    fn buffered_pcm_excludes_startup_pause_samples_and_clips_the_accepted_stop() {
+        let start = std::time::Instant::now();
+        let output = std::env::temp_dir().join(format!(
+            "snow-audio-active-spans-{}-{}",
+            std::process::id(),
+            start.elapsed().as_nanos()
+        ));
+        std::fs::create_dir_all(&output).unwrap();
+        let format = AudioFormat::new(48_000, 2);
+        let track = AudioTrackConfig::microphone_default("clock");
+        let mut writer = RecordedTrackWriter::new(&track, &output, start, format).unwrap();
+        let clock = RecordingClock::new(start);
+        let controller = clock.controller();
+        controller.mark_pause(start);
+        controller.mark_resume(start + Duration::from_millis(30));
+        controller.mark_pause(start + Duration::from_millis(50));
+        controller.mark_resume(start + Duration::from_millis(70));
+        controller.mark_pause(start + Duration::from_millis(85));
+        for index in 1..=6 {
+            let mut packet = timed_packet(
+                start + Duration::from_millis(index * 20),
+                1_000_000 + (index as i64 - 1) * 200_000,
+                index,
+            );
+            packet.data = (0..960)
+                .flat_map(|frame| [index as i16 * 1_000 + frame; 2])
+                .collect();
+            writer.write_packet(&packet, &clock).unwrap();
+        }
+        let recorded = writer.finish().unwrap();
+        let bytes = std::fs::read(&recorded.path).unwrap();
+        let samples: Vec<_> = bytes
+            .chunks_exact(2)
+            .map(|sample| i16::from_le_bytes([sample[0], sample[1]]))
+            .collect();
+        let expected: Vec<_> = [(2, 480..960), (3, 0..480), (4, 480..960), (5, 0..240)]
+            .into_iter()
+            .flat_map(|(packet, frames)| frames.flat_map(move |frame| [packet * 1_000 + frame; 2]))
+            .collect();
+        assert_eq!(samples, expected);
+        assert_eq!(recorded.manifest.duration_frames, 1_680);
+        assert!(recorded.manifest.recorded);
+        std::fs::remove_dir_all(output).unwrap();
     }
 
     #[test]

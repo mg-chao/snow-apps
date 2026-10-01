@@ -56,6 +56,7 @@
 #include <utility>
 
 namespace {
+#if SNOW_SHOT_ENABLE_QR_RECOGNITION
 QMargins adTextAreaContentMargins(const adqt::theme::ThemeMapToken& theme) {
     const int borderInset = std::max(1, qRound(theme.lineWidth));
     const int horizontalPadding = std::max(8, qRound(theme.sizeSM - theme.lineWidth));
@@ -66,6 +67,7 @@ QMargins adTextAreaContentMargins(const adqt::theme::ThemeMapToken& theme) {
     return QMargins(borderInset + horizontalPadding, borderInset + verticalPadding,
                     borderInset + horizontalPadding, borderInset + verticalPadding);
 }
+#endif
 
 void applyTextEditorContainerBackground(QWidget* container) {
     if (container == nullptr) {

@@ -8,6 +8,7 @@ using ScrollInputResult = windows::ScrollInputResult;
 // Give Qt exclusive drag ownership, including after native surface recreation.
 void configureControlledWindowDragging(QWidget* widget, bool controlResizing = false);
 void configureScreenshotOverlayWindow(QWidget* widget);
+void configureScreenshotColorPickerWindow(QWidget* widget);
 void configureGlobalCanvasWindow(QWidget* widget);
 void configureScreenRecordingAreaWindow(QWidget* widget);
 void configureScreenRecordingToolbarWindow(QWidget* widget);

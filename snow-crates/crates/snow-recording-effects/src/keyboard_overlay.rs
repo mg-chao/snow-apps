@@ -1,6 +1,9 @@
 //! Recording-time key state and bounded, output-pixel overlay composition.
 //! Native input and font APIs are adapters; animation uses only explicit timestamps.
 use crate::surface::{RgbaSurface, Surface};
+pub use snow_recording_model::{
+    KeyEventRecord as KeyEvent, KeyboardOverlayConfig, KeyboardOverlayFont,
+};
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::sync::Arc;
 
@@ -10,54 +13,11 @@ pub const FADE_MS: u64 = 400;
 /// Native keycap height in output pixels for video and live preview.
 pub const KEYCAP_SIZE: u32 = snow_core::keycap_layout::HEIGHT;
 const KEYCAP_GAP: f32 = 10.0;
+const KEYCAP_MARGIN: f32 = 48.0;
 const ROW_PITCH: f32 = KEYCAP_SIZE as f32 + 12.0;
 const MAX_ROWS: usize = 4;
 const MAX_CACHE: usize = 256;
 const MAX_CACHE_BYTES: usize = 32 * 1024 * 1024;
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct KeyboardOverlayConfig {
-    pub font: Option<KeyboardOverlayFont>,
-    pub keycap_size: u32,
-    pub background_rgba: [u8; 4],
-    pub text_rgba: [u8; 4],
-    pub border_rgba: [u8; 4],
-    pub labels: BTreeMap<u16, String>,
-}
-
-/// Application-resolved UI families and OpenType weight (1..=999).
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct KeyboardOverlayFont {
-    pub family: String,
-    pub cjk_family: String,
-    pub weight: u32,
-}
-
-impl KeyboardOverlayFont {
-    pub fn new(family: &str, cjk_family: &str, weight: u32) -> Result<Self, String> {
-        if !(1..=999).contains(&weight)
-            || [family, cjk_family].iter().any(|name| {
-                name.trim().is_empty() || name.len() > 256 || name.chars().any(char::is_control)
-            })
-        {
-            return Err("invalid keyboard font family or weight".into());
-        }
-        Ok(Self {
-            family: family.into(),
-            cjk_family: cjk_family.into(),
-            weight,
-        })
-    }
-}
-
-#[derive(Clone, Debug)]
-pub struct KeyEvent {
-    pub at_ms: u64,
-    pub key: u16,
-    pub down: bool,
-    pub label: String,
-    pub modifiers: Vec<(u16, String)>,
-}
 
 pub fn modifier(key: u16) -> bool {
     matches!(key, 0x10..=0x12 | 0x5b..=0x5c | 0xa0..=0xa5)
@@ -214,6 +174,11 @@ pub struct Keycap {
 pub trait KeycapRasterizer {
     /// Scale is relative to the default 64-pixel keycap height.
     fn rasterize(&mut self, label: &str, scale: f32) -> Result<Keycap, String>;
+    /// A single playback-time glyph. Native adapters keep the requested font size.
+    /// Bitmaps must share a vertical origin so numerals and punctuation retain one baseline.
+    fn rasterize_glyph(&mut self, label: &str, font_pixels: f32) -> Result<Keycap, String> {
+        self.rasterize(label, font_pixels / 32.0)
+    }
 }
 
 pub struct KeyboardOverlay {
@@ -228,6 +193,26 @@ pub struct KeyboardOverlay {
     cache_misses: u64,
     output: (u32, u32),
     scale: f32,
+    top_reservation: u32,
+}
+
+struct TopClippedSurface<'a, S> {
+    surface: &'a mut S,
+    top: u32,
+}
+
+impl<S: Surface> Surface for TopClippedSurface<'_, S> {
+    const OPAQUE: bool = S::OPAQUE;
+
+    fn size(&self) -> (u32, u32) {
+        self.surface.size()
+    }
+
+    fn span(&mut self, x: u32, y: u32, width: u32, visit: impl FnMut(&mut [u8], usize)) {
+        if y >= self.top {
+            self.surface.span(x, y, width, visit);
+        }
+    }
 }
 
 impl KeyboardOverlay {
@@ -244,12 +229,18 @@ impl KeyboardOverlay {
             cache_misses: 0,
             output,
             scale: 1.0,
+            top_reservation: 0,
         }
     }
 
     pub fn with_keycap_size(mut self, size: u32) -> Self {
         self.scale = size.clamp(32, 128) as f32 / KEYCAP_SIZE as f32;
         self
+    }
+
+    /// Keep history below the playback badge without moving the bottom baseline.
+    pub fn set_top_reservation(&mut self, pixels: u32) {
+        self.top_reservation = pixels.min(self.output.1);
     }
 
     #[cfg(feature = "bench-timing")]
@@ -305,14 +296,34 @@ impl KeyboardOverlay {
 
     pub fn draw_to(&mut self, surface: &mut impl Surface, now: u64) -> Result<(), String> {
         self.model.advance(now);
+        let available_height = self.output.1.saturating_sub(self.top_reservation);
+        if available_height == 0 {
+            return Ok(());
+        }
+        if self.top_reservation == 0 {
+            return self.draw_rows_to(surface, now, available_height as f32);
+        }
+        self.draw_rows_to(
+            &mut TopClippedSurface {
+                surface,
+                top: self.top_reservation,
+            },
+            now,
+            available_height as f32,
+        )
+    }
+
+    fn draw_rows_to(
+        &mut self,
+        surface: &mut impl Surface,
+        now: u64,
+        available_height: f32,
+    ) -> Result<(), String> {
         let row_pitch = ROW_PITCH * self.scale;
         let keycap_size = KEYCAP_SIZE as f32 * self.scale;
         let gap = KEYCAP_GAP * self.scale;
-        // Preserve the recording overlay inset at each configured key size.
-        let margin = (48.0 * (self.output.1 as f32 / 1080.0).clamp(0.5, 4.0))
-            .min(self.output.0.min(self.output.1) as f32 * 0.05);
-        let row_limit = ((self.output.1 as f32 - 2.0 * margin + row_pitch - keycap_size)
-            / row_pitch)
+        let margin = KEYCAP_MARGIN;
+        let row_limit = ((available_height - 2.0 * margin + row_pitch - keycap_size) / row_pitch)
             .floor()
             .max(1.0) as usize;
         for index in (0..self.model.rows.len()).rev().take(row_limit) {
@@ -365,7 +376,7 @@ fn blend_keycap(
     );
 }
 
-fn blend_keycap_to<S: Surface>(
+pub(crate) fn blend_keycap_to<S: Surface>(
     surface: &mut S,
     cap: &Keycap,
     x: f32,
@@ -403,8 +414,12 @@ fn blend_keycap_to<S: Surface>(
                 } else {
                     for (index, dst) in destination.chunks_exact_mut(4).enumerate() {
                         let dx = left + (offset + index) as i32;
-                        let sx = (dx as u64 * u64::from(cap.width) / width as u64) as usize;
-                        let sy = (dy as u64 * u64::from(cap.height) / height as u64) as usize;
+                        // Sample pixel centers so a badge fitted to a tiny canvas
+                        // retains its content instead of its transparent corner.
+                        let sx = ((2 * dx as u64 + 1) * u64::from(cap.width) / (2 * width as u64))
+                            as usize;
+                        let sy = ((2 * dy as u64 + 1) * u64::from(cap.height) / (2 * height as u64))
+                            as usize;
                         let source = (sy * cap.width as usize + sx) * 4;
                         if S::OPAQUE {
                             blend_faded_pixel::<true>(
@@ -666,6 +681,86 @@ mod tests {
     }
 
     #[test]
+    fn animated_keycaps_and_history_clip_below_the_top_badge() {
+        struct ScaledSquare;
+        impl KeycapRasterizer for ScaledSquare {
+            fn rasterize(&mut self, _: &str, scale: f32) -> Result<Keycap, String> {
+                let side = (KEYCAP_SIZE as f32 * scale).round() as u32;
+                Ok(Keycap {
+                    width: side,
+                    height: side,
+                    pixels: [255, 0, 0, 255].repeat(side as usize * side as usize),
+                })
+            }
+        }
+        struct BadgeGlyph;
+        impl KeycapRasterizer for BadgeGlyph {
+            fn rasterize(&mut self, _: &str, _: f32) -> Result<Keycap, String> {
+                Ok(Keycap {
+                    width: 4,
+                    height: 12,
+                    pixels: [255; 4].repeat(4 * 12),
+                })
+            }
+        }
+        for size in [
+            (120, 100),
+            (640, 480),
+            (1920, 1080),
+            (8, 100),
+            (16, 22),
+            (1, 1),
+        ] {
+            let playback = crate::playback::PlaybackRenderer::new(
+                snow_recording_model::PlaybackOverlay::PlaybackTime { rgba: [255; 4] },
+                size,
+                Some(Box::new(BadgeGlyph)),
+            )
+            .unwrap();
+            let reservation = playback.top_reservation();
+            for keycap_size in [32, 64, 128] {
+                let mut overlay = KeyboardOverlay::new(size, Box::new(ScaledSquare))
+                    .with_keycap_size(keycap_size);
+                overlay.set_top_reservation(reservation);
+                for index in 0..MAX_ROWS as u64 {
+                    overlay.model.event(event(index * 30, 65, true, &[]));
+                    overlay.model.event(event(index * 30 + 1, 65, false, &[]));
+                }
+                for now in [MOVE_MS, MOVE_MS * 2, MOVE_MS * 3] {
+                    let mut pixels = [20, 40, 60, 255].repeat(size.0 as usize * size.1 as usize);
+                    overlay.draw(&mut pixels, now).unwrap();
+                    let reserved = reservation as usize * size.0 as usize * 4;
+                    assert!(
+                        pixels[..reserved]
+                            .chunks_exact(4)
+                            .all(|pixel| pixel == [20, 40, 60, 255]),
+                        "key history enters timer at {size:?}, size {keycap_size}, time {now}"
+                    );
+                    if size.1.saturating_sub(KEYCAP_MARGIN as u32) > reservation
+                        && size.0 > KEYCAP_MARGIN as u32
+                    {
+                        assert!(
+                            pixels[reserved..]
+                                .chunks_exact(4)
+                                .any(|pixel| pixel[0] == 255)
+                        );
+                    }
+                    let mut tiles = crate::surface::TileSurface::new(size);
+                    overlay.draw_to(&mut tiles, now).unwrap();
+                    for tile in tiles.snapshot() {
+                        for (index, pixel) in tile.pixels.chunks_exact(4).enumerate() {
+                            let y = tile.y + index as u32 / crate::surface::TILE_SIZE;
+                            if y < reservation {
+                                assert_eq!(pixel, [0; 4]);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
     fn keycaps_remain_64_square_with_fixed_chord_spacing_at_every_resolution() {
         for size in [
             (320, 240),
@@ -705,6 +800,33 @@ mod tests {
     }
 
     #[test]
+    fn fixed_pixel_keyboard_inset_does_not_depend_on_output_dimensions() {
+        for size in [
+            (640, 480),
+            (1280, 720),
+            (1920, 1080),
+            (3840, 2160),
+            (1080, 1920),
+        ] {
+            let mut overlay = KeyboardOverlay::new(size, Box::new(FixedSquare));
+            overlay.model.event(event(0, 65, true, &[]));
+            let mut tiles = crate::surface::TileSurface::new(size);
+            overlay.draw_to(&mut tiles, MOVE_MS).unwrap();
+            let (mut right, mut bottom) = (0, 0);
+            for tile in tiles.snapshot() {
+                for (index, pixel) in tile.pixels.chunks_exact(4).enumerate() {
+                    if pixel[3] != 0 {
+                        right = right.max(tile.x + index as u32 % crate::surface::TILE_SIZE);
+                        bottom = bottom.max(tile.y + index as u32 / crate::surface::TILE_SIZE);
+                    }
+                }
+            }
+            assert_eq!(size.0 - right - 1, 48, "right inset at {size:?}");
+            assert_eq!(size.1 - bottom - 1, 48, "bottom inset at {size:?}");
+        }
+    }
+
+    #[test]
     fn mixed_width_keycaps_keep_native_width_spacing_and_right_alignment() {
         struct VariableWidth;
         impl KeycapRasterizer for VariableWidth {
@@ -723,19 +845,14 @@ mod tests {
                 })
             }
         }
-        for (size, margin) in [
-            ((100, 100), 5),
-            ((640, 480), 24),
-            ((1920, 1080), 48),
-            ((3840, 2160), 96),
-        ] {
+        for size in [(100, 180), (640, 480), (1920, 1080), (3840, 2160)] {
             let mut overlay = KeyboardOverlay::new(size, Box::new(VariableWidth));
             for key in 65..=67 {
                 overlay.model.event(event(0, key, true, &[]));
             }
             let mut pixels = [0, 0, 0, 255].repeat(size.0 as usize * size.1 as usize);
             overlay.draw(&mut pixels, MOVE_MS).unwrap();
-            let right = size.0 as usize - margin;
+            let right = size.0 as usize - 48;
             let rows: Vec<_> = pixels
                 .chunks_exact(size.0 as usize * 4)
                 .filter(|row| row.chunks_exact(4).any(|p| p[0] != 0))
@@ -766,14 +883,14 @@ mod tests {
                 .chunks_exact(size.0 as usize * 4)
                 .filter(|row| row.chunks_exact(4).any(|p| p[0] == 66))
                 .collect();
-            assert_eq!(rows.len(), 64.min(size.1 as usize));
-            // The right inset is 5, 2 and 0 pixels respectively; the latest key is
-            // either a complete square or a crop of it, never a scaled-down chord.
-            let visible_width = match size.0 {
-                100 => 64,
-                40 => 38,
-                _ => 2,
+            let visible_width = 64.min(size.0.saturating_sub(48) as usize);
+            let visible_height = if visible_width == 0 {
+                0
+            } else {
+                64.min(size.1.saturating_sub(48) as usize)
             };
+            assert_eq!(rows.len(), visible_height);
+            // Fixed insets and key dimensions are clipped by the canvas bounds.
             for row in rows {
                 assert_eq!(
                     row.chunks_exact(4).filter(|p| p[0] == 66).count(),
@@ -785,7 +902,7 @@ mod tests {
 
     #[test]
     fn fixed_height_history_rows_do_not_overlap_at_low_resolution() {
-        let size = (320, 324);
+        let size = (320, 400);
         let mut overlay = KeyboardOverlay::new(size, Box::new(FixedSquare));
         for key in 65..=68 {
             let at = u64::from(key - 65) * 20;
@@ -864,14 +981,14 @@ mod tests {
     }
     #[test]
     fn offscreen_composition_is_bounded_blended_and_cleared() {
-        for size in [(1920, 1080), (40, 100), (2, 2), (1080, 1920)] {
+        for size in [(1920, 1080), (100, 100), (40, 100), (2, 2), (1080, 1920)] {
             let mut overlay = KeyboardOverlay::new(size, Box::new(Solid));
             overlay.model.event(event(0, 65, true, &[]));
             overlay.model.event(event(1, 65, false, &[]));
             let original = [20, 40, 60, 255].repeat(size.0 as usize * size.1 as usize);
             let mut pixels = original.clone();
             overlay.draw(&mut pixels, 200).unwrap();
-            assert_ne!(pixels, original);
+            assert_eq!(pixels != original, size.0 > 48 && size.1 > 48);
             let mut cleared = original.clone();
             overlay.draw(&mut cleared, 1601).unwrap();
             assert_eq!(cleared, original);

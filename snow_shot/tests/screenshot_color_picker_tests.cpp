@@ -441,6 +441,24 @@ void pickerPreparationPreservesCanvasInputSurfaces() {
                     firstCanvas.internalWinId() == 0 && secondCanvas.internalWinId() == 0,
                 "picker preparation, reveal, and reparenting must preserve canvas input surfaces");
     };
+    const auto requireImmediatePresentation = [](ScreenshotColorPickerWindow& picker) {
+#ifdef Q_OS_MACOS
+        if (QGuiApplication::platformName() == QStringLiteral("cocoa")) {
+            NSWindow* native = reinterpret_cast<NSView*>(picker.internalWinId()).window;
+            require(native.animationBehavior == NSWindowAnimationBehaviorNone,
+                    "the magnifier must disable system animation before showing and hiding");
+            for (auto requested :
+                 {NSWindowAnimationBehaviorDefault, NSWindowAnimationBehaviorDocumentWindow,
+                  NSWindowAnimationBehaviorUtilityWindow}) {
+                native.animationBehavior = requested;
+                require(native.animationBehavior == NSWindowAnimationBehaviorNone,
+                        "native animation requests must not animate a reused magnifier");
+            }
+        }
+#else
+        Q_UNUSED(picker);
+#endif
+    };
 
     // Exercise both direct ownership and preparing a surface before attaching it.
     for (bool prepareBeforeOwner : {false, true}) {
@@ -449,11 +467,13 @@ void pickerPreparationPreservesCanvasInputSurfaces() {
         require(picker.internalWinId() != 0 && !picker.isVisible(),
                 "preparation must create a hidden top-level surface");
         requireNonNativeCanvases();
+        requireImmediatePresentation(picker);
         for (QWidget* owner : {&firstOwner, &secondOwner, &firstOwner}) {
             picker.setOwnerWindow(owner);
             picker.prepareNativeSurface();
             picker.prepareNativeSurface();
             requireNonNativeCanvases();
+            requireImmediatePresentation(picker);
             QImage image(owner->size(), QImage::Format_RGBA8888);
             image.fill(Qt::red);
             picker.setCaptureImage(image, image.rect());
@@ -463,7 +483,15 @@ void pickerPreparationPreservesCanvasInputSurfaces() {
                         picker.windowHandle()->transientParent() == owner->windowHandle(),
                     "the picker must retain its separate visible surface and stacking owner");
             requireNonNativeCanvases();
+            requireImmediatePresentation(picker);
+            picker.updatePicker(QPoint(100, 100), QPointF(100, 100), 0.0);
+            require(!picker.isVisible(), "zero opacity must immediately hide the magnifier");
+            requireImmediatePresentation(picker);
+            picker.updatePicker(QPoint(100, 100), QPointF(100, 100), 1.0);
+            require(picker.isVisible(), "the hidden magnifier must reveal immediately on reuse");
             picker.resetForNewCapture();
+            require(!picker.isVisible(), "resetting capture must immediately hide the magnifier");
+            requireImmediatePresentation(picker);
         }
     }
 }
@@ -474,6 +502,10 @@ int main(int argc, char** argv) {
         qputenv("QT_QPA_PLATFORM", "offscreen");
     }
     QApplication application(argc, argv);
+    if (application.arguments().contains(QStringLiteral("--magnifier-animation-only"))) {
+        pickerPreparationPreservesCanvasInputSurfaces();
+        return 0;
+    }
 #ifdef Q_OS_WIN
     const int fontId =
         QFontDatabase::addApplicationFont(QStringLiteral("C:/Windows/Fonts/segoeui.ttf"));

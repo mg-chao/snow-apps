@@ -32,6 +32,71 @@
         </message>
     </context>
     <context>
+        <name>RecordingRenderDialog</name>
+        <message>
+            <source>Cancel</source>
+            <translation>Cancel</translation>
+        </message>
+        <message>
+            <source>Cancelling rendering...</source>
+            <translation>Cancelling rendering...</translation>
+        </message>
+        <message>
+            <source>Discard</source>
+            <translation>Discard</translation>
+        </message>
+        <message>
+            <source>Finalizing recording...</source>
+            <translation>Finalizing recording...</translation>
+        </message>
+        <message>
+            <source>Keep Source</source>
+            <translation>Keep Source</translation>
+        </message>
+        <message>
+            <source>Preparing recording...</source>
+            <translation>Preparing recording...</translation>
+        </message>
+        <message>
+            <source>Rendering canceled</source>
+            <translation>Rendering canceled</translation>
+        </message>
+        <message>
+            <source>Rendering failed</source>
+            <translation>Rendering failed</translation>
+        </message>
+        <message>
+            <source>Rendering progress</source>
+            <translation>Rendering progress</translation>
+        </message>
+        <message>
+            <source>Rendering recording</source>
+            <translation>Rendering recording</translation>
+        </message>
+        <message>
+            <source>Rendering video...</source>
+            <translation>Rendering video...</translation>
+        </message>
+        <message>
+            <source>Retry</source>
+            <translation>Retry</translation>
+        </message>
+        <message>
+            <source>Source files are preserved in:
+%1</source>
+            <translation>Source files are preserved in:
+%1</translation>
+        </message>
+        <message>
+            <source>Unable to read rendering progress</source>
+            <translation>Unable to read rendering progress</translation>
+        </message>
+        <message>
+            <source>Unable to start rendering</source>
+            <translation>Unable to start rendering</translation>
+        </message>
+    </context>
+    <context>
         <name>ScreenRecordingController</name>
         <message>
             <source>Keyboard recording failed: %1</source>

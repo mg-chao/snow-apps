@@ -14,7 +14,7 @@ pub(super) unsafe fn convert_f16_surface(
 ) {
     layout.assert_pitches(8);
     let prepared = hdr.map(|params| {
-        let mut prepared = super::prepare_hdr_context_cached(params);
+        let mut prepared = super::prepare_hdr_context_cached(params).with_output_format(output);
         prepared.screen_color_rows = Some(transform.linear_rows());
         prepared
     });
@@ -32,12 +32,6 @@ pub(super) unsafe fn convert_f16_surface(
                 super::f16_hdr_prepared_kernel()
             };
             kernel(src, dst, count, prepared);
-            if output == CapturePixelFormat::Bgra8 {
-                super::swap_rgba_to_bgra_in_place(
-                    std::slice::from_raw_parts_mut(dst, count * 4),
-                    count,
-                );
-            }
         } else {
             super::f16::convert_corrected_row(src, dst, count, rows, output, opaque);
         }

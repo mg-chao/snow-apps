@@ -461,6 +461,7 @@ fn hdr_cpu_kernels_match_scalar_for_dark_saturated_and_corrected_colors() {
                     ..Default::default()
                 });
                 for screen_color_rows in transforms {
+                    prepared.output_pixel_format = crate::CapturePixelFormat::Rgba8;
                     prepared.screen_color_rows = screen_color_rows;
                     let mut reference = vec![0; colors.len() * 4];
                     unsafe {
@@ -471,21 +472,149 @@ fn hdr_cpu_kernels_match_scalar_for_dark_saturated_and_corrected_colors() {
                             &prepared,
                         );
                     }
-                    for &(name, kernel, opaque) in &kernels {
-                        let mut actual = vec![0; reference.len()];
-                        unsafe {
-                            kernel(src.as_ptr(), actual.as_mut_ptr(), colors.len(), &prepared)
-                        };
-                        for (index, (&a, &b)) in actual.iter().zip(&reference).enumerate() {
-                            if index % 4 == 3 {
-                                assert_eq!(a, if opaque { 255 } else { b }, "{name} alpha");
-                            } else {
-                                assert!(
-                                    a.abs_diff(b) <= 1,
-                                    "{name} at byte {index}: {a} != {b}, white={sdr_white_nits}, peak={hdr_peak_nits}, LUT={tonemap_use_lut}, rows={screen_color_rows:?}"
-                                );
+                    for output in [
+                        crate::CapturePixelFormat::Rgba8,
+                        crate::CapturePixelFormat::Bgra8,
+                    ] {
+                        prepared.output_pixel_format = output;
+                        let mut expected = reference.clone();
+                        if output == crate::CapturePixelFormat::Bgra8 {
+                            for pixel in expected.chunks_exact_mut(4) {
+                                pixel.swap(0, 2);
                             }
                         }
+                        for &(name, kernel, opaque) in &kernels {
+                            let mut actual = vec![0; reference.len()];
+                            unsafe {
+                                kernel(src.as_ptr(), actual.as_mut_ptr(), colors.len(), &prepared)
+                            };
+                            for (index, (&a, &b)) in actual.iter().zip(&expected).enumerate() {
+                                if index % 4 == 3 {
+                                    assert_eq!(a, if opaque { 255 } else { b }, "{name} alpha");
+                                } else {
+                                    assert!(
+                                        a.abs_diff(b) <= 1,
+                                        "{name} at byte {index}: {a} != {b}, white={sdr_white_nits}, peak={hdr_peak_nits}, LUT={tonemap_use_lut}, rows={screen_color_rows:?}, output={output:?}"
+                                    );
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn hdr_bgra_packing_covers_rows_tails_padding_parallelism_and_color_correction() {
+    use super::{
+        SurfaceConversionOptions, SurfacePixelFormat, SurfaceRowConverter,
+        convert_row_to_rgba_with_options, convert_surface_to_rgba,
+    };
+    use crate::{CapturePixelFormat, color_effect::ScreenColorTransform};
+    for (width, height) in [(1, 3), (7, 3), (8, 3), (9, 3), (259, 7), (1025, 769)] {
+        let src_pitch = width * 8 + 16;
+        let dst_pitch = width * 4 + 20;
+        let mut src = vec![0xAA; src_pitch * height];
+        for y in 0..height {
+            for x in 0..width {
+                let scale = if (x / 8) % 4 == 3 { 8.0 } else { 1.0 };
+                let pixel = [
+                    0.04 * scale,
+                    0.8 * scale,
+                    0.2 * scale,
+                    [0.0, 0.5, 1.0][(x + y) % 3],
+                ];
+                for (channel, value) in pixel.into_iter().enumerate() {
+                    let offset = y * src_pitch + x * 8 + channel * 2;
+                    src[offset..offset + 2]
+                        .copy_from_slice(&half::f16::from_f32(value).to_bits().to_le_bytes());
+                }
+            }
+        }
+        for lut in [false, true] {
+            for opaque in [false, true] {
+                for transform in [
+                    None,
+                    Some(ScreenColorTransform {
+                        rows: [
+                            [-1., 0., 0., 255.],
+                            [0., -1., 0., 255.],
+                            [0., 0., -1., 255.],
+                        ],
+                        inverted: true,
+                    }),
+                ] {
+                    let options = SurfaceConversionOptions {
+                        hdr_to_sdr: Some(HdrFrameContext {
+                            tonemap_use_lut: lut,
+                            ..Default::default()
+                        }),
+                        force_opaque_alpha: opaque,
+                        screen_color_transform: transform,
+                        ..Default::default()
+                    };
+                    let mut expected = vec![0xCC; dst_pitch * height];
+                    convert_surface_to_rgba(
+                        SurfacePixelFormat::Rgba16Float,
+                        &src,
+                        src_pitch,
+                        &mut expected,
+                        dst_pitch,
+                        width,
+                        height,
+                        options,
+                    );
+                    for row in expected.chunks_exact_mut(dst_pitch) {
+                        for pixel in row[..width * 4].chunks_exact_mut(4) {
+                            pixel.swap(0, 2);
+                        }
+                    }
+                    let bgra = SurfaceConversionOptions {
+                        output_pixel_format: CapturePixelFormat::Bgra8,
+                        ..options
+                    };
+                    for route in 0..3 {
+                        let mut actual = vec![0xCC; expected.len()];
+                        match route {
+                            0 => convert_surface_to_rgba(
+                                SurfacePixelFormat::Rgba16Float,
+                                &src,
+                                src_pitch,
+                                &mut actual,
+                                dst_pitch,
+                                width,
+                                height,
+                                bgra,
+                            ),
+                            1 => unsafe {
+                                SurfaceRowConverter::new(SurfacePixelFormat::Rgba16Float, bgra)
+                                    .convert_rows_unchecked(
+                                        src.as_ptr(),
+                                        src_pitch,
+                                        actual.as_mut_ptr(),
+                                        dst_pitch,
+                                        width,
+                                        height,
+                                    );
+                            },
+                            _ => {
+                                for y in 0..height {
+                                    convert_row_to_rgba_with_options(
+                                        SurfacePixelFormat::Rgba16Float,
+                                        &src[y * src_pitch..y * src_pitch + width * 8],
+                                        &mut actual[y * dst_pitch..y * dst_pitch + width * 4],
+                                        width,
+                                        bgra,
+                                    );
+                                }
+                            }
+                        }
+                        assert_eq!(
+                            actual, expected,
+                            "width={width}, height={height}, LUT={lut}, opaque={opaque}, correction={transform:?}, route={route}"
+                        );
                     }
                 }
             }

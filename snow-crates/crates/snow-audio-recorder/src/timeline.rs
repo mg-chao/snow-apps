@@ -4,6 +4,59 @@ use snow_core::timestamp::{StreamTimestamp, TickFormat, TimestampAnchor};
 
 use crate::packet::AudioPacket;
 
+/// A range of source PCM frames admitted to the active recording timeline.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ActivePcmSpan {
+    pub source_start_frame: u64,
+    pub frames: u64,
+    pub timeline_start_frame: u64,
+}
+
+/// Clips PCM at precise recording-clock boundaries, reusing the caller's scratch space.
+/// Sample instants belong to half-open active intervals; paused samples are never admitted.
+pub fn admit_active_pcm(
+    clock: &snow_core::recording_clock::RecordingClock,
+    started_at: Instant,
+    frames: u64,
+    sample_rate: u32,
+    spans: &mut Vec<ActivePcmSpan>,
+) {
+    spans.clear();
+    if frames == 0 || sample_rate == 0 {
+        return;
+    }
+    let duration = |frames: u64| {
+        Duration::from_nanos(
+            (u128::from(frames) * 1_000_000_000 / u128::from(sample_rate)).min(u128::from(u64::MAX))
+                as u64,
+        )
+    };
+    let Some(end) = started_at.checked_add(duration(frames)) else {
+        return;
+    };
+    clock.visit_active_spans(started_at, end, |span| {
+        let frame_at = |at: Instant| {
+            (at.saturating_duration_since(started_at).as_nanos() * u128::from(sample_rate))
+                .div_ceil(1_000_000_000)
+                .min(u128::from(frames)) as u64
+        };
+        let first = frame_at(span.start);
+        let last = frame_at(span.end);
+        if first < last {
+            let within_span =
+                duration(first).saturating_sub(span.start.saturating_duration_since(started_at));
+            spans.push(ActivePcmSpan {
+                source_start_frame: first,
+                frames: last - first,
+                timeline_start_frame: duration_to_frames_round(
+                    span.timeline_start.saturating_add(within_span),
+                    sample_rate,
+                ),
+            });
+        }
+    });
+}
+
 /// Stream-relative packet time range.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct AudioPacketTimestamp {
@@ -179,6 +232,65 @@ mod tests {
     use super::*;
     use crate::format::AudioFormat;
     use crate::packet::{AudioPacketMetadata, AudioSourceKind};
+
+    #[test]
+    fn active_pcm_maps_multiple_boundaries_to_exact_source_and_output_frames() {
+        let start = Instant::now();
+        let clock = snow_core::recording_clock::RecordingClock::new(start);
+        let controller = clock.controller();
+        controller.mark_pause(start);
+        controller.mark_resume(start + Duration::from_millis(5));
+        controller.mark_pause(start + Duration::from_millis(15));
+        controller.mark_resume(start + Duration::from_millis(25));
+        controller.mark_pause(start + Duration::from_millis(35));
+        let mut spans = Vec::with_capacity(2);
+        admit_active_pcm(&clock, start, 1_920, 48_000, &mut spans);
+        assert_eq!(
+            spans,
+            [
+                ActivePcmSpan {
+                    source_start_frame: 240,
+                    frames: 480,
+                    timeline_start_frame: 0,
+                },
+                ActivePcmSpan {
+                    source_start_frame: 1_200,
+                    frames: 480,
+                    timeline_start_frame: 480,
+                },
+            ]
+        );
+        let capacity = spans.capacity();
+        admit_active_pcm(
+            &clock,
+            start + Duration::from_millis(40),
+            960,
+            48_000,
+            &mut spans,
+        );
+        assert!(spans.is_empty());
+        assert_eq!(spans.capacity(), capacity);
+    }
+
+    #[test]
+    fn active_pcm_uses_half_open_subsample_pause_boundaries() {
+        let start = Instant::now();
+        let clock = snow_core::recording_clock::RecordingClock::new(start);
+        let controller = clock.controller();
+        controller.mark_pause(start);
+        controller.mark_resume(start + Duration::from_micros(2_501));
+        controller.mark_pause(start + Duration::from_micros(7_501));
+        let mut spans = Vec::new();
+        admit_active_pcm(&clock, start, 480, 48_000, &mut spans);
+        assert_eq!(
+            spans,
+            [ActivePcmSpan {
+                source_start_frame: 121,
+                frames: 240,
+                timeline_start_frame: 1,
+            }]
+        );
+    }
 
     fn packet(frames: u32) -> AudioPacket {
         let format = AudioFormat::new(48_000, 2);

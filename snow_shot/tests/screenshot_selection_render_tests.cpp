@@ -2,6 +2,7 @@
 #include "snow_shot/presentation/screenshotgeometry.h"
 #include "snow_shot/presentation/screenshotsourceimagecomposer.h"
 #include <QApplication>
+#include <QColorSpace>
 #include <cstdlib>
 #include <iostream>
 #include <limits>
@@ -21,6 +22,7 @@ CapturedDisplayModel display(QRect points, int scale, QColor color) {
     d.logicalRect = points;
     d.canvasRect = points;
     d.image = QImage(points.size() * scale, QImage::Format_RGBA8888);
+    d.image.setColorSpace(QColorSpace::SRgb);
     d.image.fill(color);
     d.canvasUsesPoints = true;
     d.backingScale = scale;
@@ -42,6 +44,8 @@ int main(int argc, char** argv) {
     const QImage image = composeScreenshotSourceSelection(displays, all);
     require(image.size() == spec.pixelSize && image.devicePixelRatio() == 1,
             "encoded pixel dimensions");
+    require(image.colorSpace() == QColorSpace(QColorSpace::SRgb),
+            "mixed-display composition lost the capture color space");
     require(image.pixelColor(3839, 100) == QColor(Qt::red) &&
                 image.pixelColor(3840, 100) == QColor(Qt::blue),
             "display seam or resampling is wrong");

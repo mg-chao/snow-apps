@@ -101,12 +101,19 @@ pub(crate) struct HdrBt2390Curve {
 #[derive(Clone)]
 pub(crate) struct HdrPreparedContext {
     pub(crate) screen_color_rows: Option<[[f32; 4]; 3]>,
+    pub(crate) output_pixel_format: crate::CapturePixelFormat,
     pub(crate) inv_boost: f32,
     pub(crate) curve: HdrBt2390Curve,
     pub(crate) luma_lut: Option<HdrLumaLut>,
 }
 
 impl HdrPreparedContext {
+    #[inline(always)]
+    pub(crate) fn with_output_format(mut self, output: crate::CapturePixelFormat) -> Self {
+        self.output_pixel_format = output;
+        self
+    }
+
     #[inline(always)]
     #[cfg(any(windows, target_arch = "x86_64"))]
     pub(crate) fn use_lut(&self) -> bool {
@@ -276,6 +283,7 @@ pub(crate) fn prepare_hdr_context(params: HdrFrameContext) -> HdrPreparedContext
     };
     HdrPreparedContext {
         screen_color_rows: None,
+        output_pixel_format: crate::CapturePixelFormat::Rgba8,
         inv_boost,
         curve,
         luma_lut,
@@ -652,6 +660,9 @@ unsafe fn convert_f16_rgba_to_srgb_hdr_scalar_prepared_impl<const FORCE_OPAQUE_A
             tone_map_hdr_pixel_bt2390(&mut rgb, curve);
         }
 
+        if prepared.output_pixel_format == crate::CapturePixelFormat::Bgra8 {
+            rgb.swap(0, 2);
+        }
         let a_byte = ((a * 255.0 + 0.5) as u32) & 0xFF;
         let color = u32::from(linear_to_srgb_u8(rgb[0]))
             | (u32::from(linear_to_srgb_u8(rgb[1])) << 8)

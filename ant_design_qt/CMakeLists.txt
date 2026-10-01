@@ -513,6 +513,16 @@ if(ADQT_BUILD_TESTS)
     set_tests_properties(adqt-theme-typography-tests PROPERTIES
         ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 
+    add_executable(adqt-registration-lifecycle-tests
+        packages/ant_design_qt/tests/registration_lifecycle_tests.cpp)
+    target_link_libraries(adqt-registration-lifecycle-tests PRIVATE adqt::widgets Qt6::Widgets)
+    if(TARGET Qt6::QOffscreenIntegrationPlugin)
+        qt_import_plugins(adqt-registration-lifecycle-tests INCLUDE Qt6::QOffscreenIntegrationPlugin)
+    endif()
+    add_test(NAME adqt-registration-lifecycle-tests COMMAND adqt-registration-lifecycle-tests)
+    set_tests_properties(adqt-registration-lifecycle-tests PROPERTIES
+        LABELS "unit" ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+
     if(APPLE)
         add_executable(adqt-widget-surface-lifecycle-tests
             packages/ant_design_qt/tests/widget_surface_lifecycle_tests.mm)

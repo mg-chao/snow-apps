@@ -79,6 +79,8 @@ class ViewerWindow final : public QMainWindow {
     void dropEvent(QDropEvent* event) override;
 
   private:
+    friend class ViewerWindowTestAccess;
+
     enum class PixelReadbackPurpose {
         None,
         Clipboard,

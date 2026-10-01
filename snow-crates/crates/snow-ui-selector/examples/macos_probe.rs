@@ -12,6 +12,7 @@ fn main() -> snow_ui_selector::SelectorResult<()> {
         x: args[0].parse()?,
         y: args[1].parse()?,
         display_id: args[2].parse()?,
+        window_id: None,
     };
     let excluded = args[3..]
         .iter()

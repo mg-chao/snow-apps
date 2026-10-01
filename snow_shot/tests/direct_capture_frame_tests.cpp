@@ -1,5 +1,6 @@
 #include "captureframeimage.h"
 
+#include <QColorSpace>
 #include <array>
 #include <cstdlib>
 #include <iostream>
@@ -33,6 +34,8 @@ int main() {
     require(!image.isNull() && image.format() == QImage::Format_RGB32 &&
                 image.pixelColor(1, 1).red() == 123,
             "native image pixels were not wrapped correctly");
+    require(image.colorSpace() == QColorSpace(QColorSpace::SRgb),
+            "native sRGB frame lost its color-space tag");
     auto retained = image;
     image = {};
     require(releases == 0 && retained.pixelColor(0, 0).green() == 123,
@@ -48,6 +51,8 @@ int main() {
                                                    FrameAlphaMode::Preserve);
         require(wrapped.constBits() == pixels && wrapped.hasAlphaChannel(),
                 "preserving native alpha copied pixels or lost the alpha format tag");
+        require(wrapped.colorSpace() == QColorSpace(QColorSpace::SRgb),
+                "transparent native sRGB frame lost its color-space tag");
         const QImage converted = wrapped.convertToFormat(QImage::Format_RGBA8888);
         const std::array<int, 4> alpha{0, 64, 128, 255};
         for (int pixel = 0; pixel < 4; ++pixel) {

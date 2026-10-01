@@ -268,8 +268,9 @@ void ThemeManager::setScopeOverride(QObject* scope, const ThemeOverride& overrid
       state.originalFont = widget->font();
     }
     it = scopeStates_.insert(scope, state);
-    connect(scope, &QObject::destroyed, this,
-            [this](QObject* destroyedScope) { scopeStates_.remove(destroyedScope); });
+    it->destroyedConnection =
+        connect(scope, &QObject::destroyed, this,
+                [this](QObject* destroyedScope) { scopeStates_.remove(destroyedScope); });
   }
 
   applyScopeState(scope);
@@ -398,9 +399,11 @@ void ThemeManager::cleanupScope(QObject* scope) {
     return;
   }
 
-  const ScopeState& state = it.value();
-  restoreScopeState(scope, state);
+  const ScopeState state = it.value();
   scopeStates_.erase(it);
+  QObject::disconnect(state.destroyedConnection);
+  // Font and palette restoration can synchronously change scope registrations.
+  restoreScopeState(scope, state);
   ++revision_;
   emit themeChanged();
 }

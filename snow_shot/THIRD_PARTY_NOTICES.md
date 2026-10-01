@@ -85,6 +85,12 @@ reuse crossbeam-channel (MIT OR Apache-2.0) and Microsoft windows-rs (MIT OR
 Apache-2.0) for bounded input observation and native font rendering. Their
 resolved licenses are included in the generated Rust dependency bundle.
 
+Shared recording source metadata and export settings reuse bincode 1.3.3 (MIT)
+for versioned serialization. Its original notice is included in the resolved
+Rust dependency bundle. Deferred HDR source encoding uses the existing x265
+(GPL-2.0-or-later) dependency with both 8-bit and Main10 APIs; it adds no separate
+codec library or license.
+
 GPU screen recording uses the repository's Apache-2.0 `snow-d3d11` crate and
 Microsoft windows-rs (MIT OR Apache-2.0). The restricted FFmpeg 9.0 build enables
 native H.264 surfaces using AMD AMF headers 1.5.2 (MIT), NVIDIA nv-codec-headers

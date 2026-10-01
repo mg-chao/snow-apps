@@ -232,7 +232,12 @@ void RecordingEffectPreview::synchronize() {
                                       static_cast<uint32_t>(m_recordMouseClicks),
                                       nullptr,
                                       nullptr,
-                                      0u};
+                                      0u,
+                                      1.0};
+#ifdef Q_OS_MACOS
+    // Native input uses desktop points; fixed-pixel styles need a display-pixel canvas.
+    config.canvas_scale = m_area.devicePixelRatioF();
+#endif
     font.applyTo(config);
     QString error;
     const bool success = m_running ? m_source->configure(config, error)
@@ -379,8 +384,13 @@ bool RecordingEffectPreview::eventFilter(QObject* watched, QEvent* event) {
             m_configurationTimer.start();
             break;
         case QEvent::Resize:
+            updateReadout();
+            break;
         case QEvent::DevicePixelRatioChange:
         case QEvent::ScreenChangeInternal:
+            m_configurationDirty = true;
+            m_failed = false;
+            m_configurationTimer.start();
             updateReadout();
             break;
         case QEvent::LanguageChange:
