@@ -5818,6 +5818,12 @@ if(SNOW_SHOT_BUILD_TESTS)
     endif()
     add_test(NAME snow-shot-screen-recording-controller-tests
         COMMAND snow-shot-screen-recording-controller-tests)
+    add_test(NAME snow-shot-recording-finalization-close-tests
+        COMMAND snow-shot-screen-recording-controller-tests --finalization-close-only -platform offscreen)
+    set_tests_properties(snow-shot-recording-finalization-close-tests PROPERTIES
+        ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}"
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+        LABELS "unit" RUN_SERIAL TRUE TIMEOUT 60)
     if(WIN32)
         add_test(NAME snow-shot-recording-effects-preview-native-tests
             COMMAND snow-shot-screen-recording-controller-tests --effects-preview-native -platform windows)
