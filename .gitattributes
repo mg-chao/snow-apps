@@ -1,2 +1,4 @@
 *.onnx binary
 *.dll binary
+/scripts/static-qt-features.json text eol=lf
+/scripts/qtbase-timezone-without-cldr.patch text eol=lf

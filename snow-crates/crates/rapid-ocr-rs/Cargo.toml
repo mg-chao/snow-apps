@@ -12,35 +12,44 @@ authors = ["mg-chao <chao@mgchao.top>"]
 [dependencies]
 geo-clipper = "0.9.0"
 geo-types = "0.7"
-image = { version = "0.25", default-features = false, features = ["png", "jpeg"] }
+image = { version = "0.25", default-features = false }
 imageproc = { version = "0.25", default-features = false, features = ["rayon"] }
-kamadak-exif = "0.6"
+kamadak-exif = { version = "0.6", optional = true }
 nalgebra = "0.33"
 ndarray = "0.17"
 num_cpus = "1.16"
 opencv = { version = "0.100.1", optional = true, default-features = false, features = ["clang-runtime", "imgproc"] }
 ort = { version = "=2.0.0-rc.13", default-features = false, features = ["ndarray", "std"] }
 ort-sys = { version = "=2.0.0-rc.13", default-features = false, optional = true }
-reqwest = { version = "0.12", default-features = false, features = ["blocking", "rustls-tls"] }
+reqwest = { version = "0.12", optional = true, default-features = false, features = ["blocking", "rustls-tls"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-serde_yaml = "0.9"
-sha2 = "0.10"
+serde_yaml = { version = "0.9", optional = true }
+sha2 = { version = "0.10", optional = true }
 thiserror = "2"
 unicode-bidi = "0.3"
 turbojpeg = { version = "1.4.0", default-features = false, features = ["cmake"], optional = true }
 rayon = "1.10"
-clap = { version = "4.5", features = ["derive"] }
+clap = { version = "4.5", optional = true, features = ["derive"] }
 
 [target.'cfg(target_os = "windows")'.dependencies]
 ort = { version = "=2.0.0-rc.13", default-features = false, features = ["ndarray", "std"] }
-windows-sys = { version = "0.61.2", features = ["Win32_Foundation", "Win32_System_Threading"] }
+windows-sys = { version = "0.61.2", optional = true, features = ["Win32_Foundation", "Win32_System_Threading"] }
 
 [features]
-default = ["download-binaries", "copy-dylibs", "ort/default", "turbojpeg-decode", "full-image-io"]
+default = ["download-binaries", "copy-dylibs", "ort/default", "turbojpeg-decode", "full-image-io", "cli"]
 download-binaries = ["ort/download-binaries"]
 copy-dylibs = ["ort/copy-dylibs"]
+# Raw pixel input and explicit local/in-memory models need none of these
+# convenience features. Keep them in the default CLI build, while applications
+# with their own asset manager can omit their decoders and HTTP/TLS stack.
+image-io = ["image/png", "image/jpeg", "dep:kamadak-exif"]
+remote-input = ["image-io", "dep:reqwest"]
+model-download = ["dep:reqwest", "dep:sha2", "dep:serde_yaml", "dep:windows-sys"]
+config-yaml = ["dep:serde_yaml"]
+cli = ["dep:clap", "config-yaml", "remote-input", "model-download"]
 full-image-io = [
+    "image-io",
     "image/avif",
     "image/bmp",
     "image/dds",
@@ -57,7 +66,7 @@ full-image-io = [
 ]
 dynamic-onnx-runtime = ["ort/api-28", "ort/load-dynamic"]
 static-onnx-runtime = ["dep:ort-sys", "ort/api-28", "ort-sys/disable-linking"]
-turbojpeg-decode = ["dep:turbojpeg"]
+turbojpeg-decode = ["image-io", "dep:turbojpeg"]
 opencv-backend = ["dep:opencv"]
 cuda-provider = ["ort/cuda"]
 directml-provider = ["ort/directml"]
@@ -65,11 +74,15 @@ cann-provider = ["ort/cann"]
 # Gates the warm end-to-end benchmark harness so plain `cargo build` only
 # produces the functional `rapidocr` CLI. Run the harness with:
 # `cargo run --features bench-internals --bin bench_warm_e2e -- ...`
-bench-internals = []
+bench-internals = ["dep:clap", "config-yaml", "image-io"]
+
+[dev-dependencies]
+tempfile = { workspace = true }
 
 [[bin]]
 name = "rapidocr"
 path = "src/bin/rapidocr.rs"
+required-features = ["cli"]
 
 [[bin]]
 name = "bench_warm_e2e"

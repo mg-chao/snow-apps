@@ -217,6 +217,7 @@ struct ScreenshotOverlayShortcutController::Impl {
             QStringLiteral("toggle_cursor_visibility"),
             QStringLiteral("copy_color"),
             QStringLiteral("toggle_coordinate_mode"),
+            QStringLiteral("toggle_guides"),
             QStringLiteral("table_recognition"),
             QStringLiteral("qr_code_recognition"),
             QStringLiteral("video_recording"),
@@ -236,10 +237,15 @@ struct ScreenshotOverlayShortcutController::Impl {
             binding.id = QStringLiteral("screenshot.configured.") + actionId;
             if (actionId == QStringLiteral("cancel_screenshot")) {
                 binding.activationTrigger = ShortcutManager::Binding::ActivationTrigger::Release;
+            } else if (actionId == QStringLiteral("toggle_guides")) {
+                binding.activationTrigger = ShortcutManager::Binding::ActivationTrigger::Tap;
             }
             binding.priority = ShortcutManager::StandardPriority::ScreenshotShortcut;
             binding.autoRepeat = actionId.startsWith(QStringLiteral("move_cursor_"));
             binding.canActivate = [this, actionId](const auto&) {
+                if (actionId == QStringLiteral("toggle_guides")) {
+                    return !interaction.inactive() && actions.localShortcutInputAllowed();
+                }
                 if (inputHandler.externalDragActive() &&
                     actionId != QStringLiteral("move_entire_selection") &&
                     actionId != QStringLiteral("keep_selection_width_and_height_consistent") &&
@@ -362,6 +368,9 @@ struct ScreenshotOverlayShortcutController::Impl {
                 }
                 if (actionId == QStringLiteral("toggle_coordinate_mode")) {
                     return actions.toggleColorPickerCoordinateMode();
+                }
+                if (actionId == QStringLiteral("toggle_guides")) {
+                    return actions.toggleGuidesForCurrentSession();
                 }
                 if (actionId == QStringLiteral("copy_color")) {
                     if (!actions.copyColorPickerColorToClipboard()) {

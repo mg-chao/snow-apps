@@ -1,10 +1,10 @@
-use std::{
-    borrow::Cow,
-    path::{Path, PathBuf},
-};
+use std::{borrow::Cow, path::PathBuf};
 
+#[cfg(feature = "image-io")]
 use image::ImageReader;
 use serde::{Deserialize, Serialize};
+#[cfg(feature = "image-io")]
+use std::path::Path;
 
 use crate::error::{RapidOcrError, Result};
 
@@ -286,6 +286,7 @@ impl RecImage {
         Self::new(width, height, data, ColorOrder::Rgb)
     }
 
+    #[cfg(feature = "image-io")]
     pub fn from_path(path: impl AsRef<Path>) -> Result<Self> {
         let image = ImageReader::open(path.as_ref())
             .map_err(|e| RapidOcrError::InvalidImage(e.to_string()))?

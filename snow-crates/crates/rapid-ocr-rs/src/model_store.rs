@@ -1,24 +1,29 @@
+use std::path::{Path, PathBuf};
+
+#[cfg(feature = "model-download")]
 use std::{
     fs,
     io::{Read, Write},
-    path::{Path, PathBuf},
     time::Duration,
 };
 
-#[cfg(not(target_os = "windows"))]
+#[cfg(all(feature = "model-download", not(target_os = "windows")))]
 use std::sync::{Mutex, OnceLock};
 
-#[cfg(target_os = "windows")]
+#[cfg(all(feature = "model-download", target_os = "windows"))]
 use std::{ffi::OsStr, os::windows::ffi::OsStrExt, ptr};
 
+#[cfg(feature = "model-download")]
 use reqwest::blocking::Client;
+#[cfg(feature = "model-download")]
 use sha2::{Digest, Sha256};
 
 use crate::error::{RapidOcrError, Result};
 
-#[cfg(not(target_os = "windows"))]
+#[cfg(all(feature = "model-download", not(target_os = "windows")))]
 static DOWNLOAD_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
 
+#[cfg(feature = "model-download")]
 struct DownloadGuard {
     #[cfg(target_os = "windows")]
     handle: windows_sys::Win32::Foundation::HANDLE,
@@ -26,6 +31,7 @@ struct DownloadGuard {
     _guard: std::sync::MutexGuard<'static, ()>,
 }
 
+#[cfg(feature = "model-download")]
 fn acquire_download_guard(save_dir: &Path) -> Result<DownloadGuard> {
     #[cfg(target_os = "windows")]
     {
@@ -72,6 +78,7 @@ fn acquire_download_guard(save_dir: &Path) -> Result<DownloadGuard> {
     }
 }
 
+#[cfg(feature = "model-download")]
 impl Drop for DownloadGuard {
     fn drop(&mut self) {
         #[cfg(target_os = "windows")]
@@ -83,6 +90,7 @@ impl Drop for DownloadGuard {
     }
 }
 
+#[cfg(feature = "model-download")]
 pub fn default_model_store_dir() -> PathBuf {
     if let Ok(local_app_data) = std::env::var("LOCALAPPDATA") {
         return PathBuf::from(local_app_data)
@@ -107,6 +115,7 @@ pub fn verify_existing_file(path: impl AsRef<Path>) -> Result<PathBuf> {
     Ok(path)
 }
 
+#[cfg(feature = "model-download")]
 pub fn ensure_downloaded(
     file_url: &str,
     expected_sha256: Option<&str>,
@@ -188,6 +197,7 @@ pub fn ensure_downloaded(
     Ok(target_path)
 }
 
+#[cfg(feature = "model-download")]
 fn build_http_client() -> Result<Client> {
     Client::builder()
         .timeout(Duration::from_secs(60))
@@ -195,6 +205,7 @@ fn build_http_client() -> Result<Client> {
         .map_err(Into::into)
 }
 
+#[cfg(feature = "model-download")]
 fn extract_file_name(url: &str) -> Result<String> {
     let trimmed = url.split('?').next().unwrap_or(url);
     let file_name = trimmed
@@ -207,6 +218,7 @@ fn extract_file_name(url: &str) -> Result<String> {
     Ok(file_name.to_string())
 }
 
+#[cfg(feature = "model-download")]
 fn sha256_file(path: impl AsRef<Path>) -> Result<String> {
     let bytes = fs::read(path.as_ref())?;
     let mut hasher = Sha256::new();

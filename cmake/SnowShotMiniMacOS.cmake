@@ -38,12 +38,12 @@ add_custom_target(snow_shot_mini-ocr-assets
     COMMAND "${Python3_EXECUTABLE}" "${SNOW_MACOS_OCR_TOOL}" stage
         --manifest "${SNOW_MACOS_OCR_MANIFEST}"
         --runtime-dir "$<TARGET_FILE_DIR:snow_shot_mini>"
-        --worker "$<TARGET_FILE:snow_ocr_process>" ${_snow_macos_ocr_runtime_arguments}
+        --worker "$<TARGET_FILE:snow_ocr_process>" --runtime-only ${_snow_macos_ocr_runtime_arguments}
     DEPENDS snow_ocr_process onnxruntime::onnxruntime VERBATIM)
 add_dependencies(snow_shot_mini snow_shot_mini-ocr-assets)
 install(PROGRAMS "$<TARGET_FILE:snow_ocr_process>" DESTINATION "${_mini_bindir}" COMPONENT SnowShotMini)
 install(DIRECTORY "$<TARGET_FILE_DIR:snow_shot_mini>/assets/ocr"
-    DESTINATION "${_mini_bindir}/assets" COMPONENT SnowShotMini)
+    DESTINATION "${_mini_bindir}/assets" COMPONENT SnowShotMini PATTERN models EXCLUDE)
 if(NOT SNOW_SHOT_OCR_STATIC_ONNXRUNTIME)
     install(FILES "$<TARGET_FILE:onnxruntime::onnxruntime>" DESTINATION "${_mini_bindir}"
         RENAME libonnxruntime.dylib COMPONENT SnowShotMini)
@@ -60,6 +60,7 @@ if(SNOW_SHOT_RELEASE_STATIC)
         COMPONENT SnowShotMini FILES_MATCHING PATTERN copyright)
 endif()
 file(READ "${CMAKE_CURRENT_LIST_DIR}/DeploySnowShotMacOS.cmake.in" _mini_deploy)
+string(REPLACE "@SNOW_MACOS_OCR_RUNTIME_ONLY@" "ON" _mini_deploy "${_mini_deploy}")
 string(REPLACE "snow_shot.app" "snow_shot_mini.app" _mini_deploy "${_mini_deploy}")
 string(REPLACE "snow-shot-mcp" "snow-shot-mini-mcp" _mini_deploy "${_mini_deploy}")
 string(REPLACE "snow-shot-updater" "snow-shot-mini-updater" _mini_deploy "${_mini_deploy}")
@@ -68,7 +69,6 @@ string(APPEND _mini_deploy [==[
 set(SNOW_SHOT_MINI_APP "${_app}")
 set(SNOW_SHOT_MINI_STATIC @SNOW_SHOT_RELEASE_STATIC@)
 set(SNOW_SHOT_MINI_MCP @SNOW_SHOT_ENABLE_MCP@)
-set(SNOW_SHOT_MINI_OCR_MANIFEST "@SNOW_MACOS_OCR_MANIFEST@")
 include("@CMAKE_CURRENT_LIST_DIR@/AssertSnowShotMiniMacOSPayload.cmake")
 ]==])
 string(CONFIGURE "${_mini_deploy}" _mini_deploy @ONLY)

@@ -37,7 +37,7 @@ snow_select_preset() {
 }
 snow_setup_tools() {
     export PATH="$snow_repo_root/.tools/macos-dev/bin:$snow_repo_root/.tools/macos-media/host/bin:$PATH"
-    for tool in cmake ninja cargo rustup pkg-config; do
+    for tool in cmake ninja cargo rustup pkg-config python3; do
         command -v "$tool" >/dev/null || snow_die "Missing $tool. Install the prerequisites listed in docs-macos-build.md."
     done
     export MACOSX_DEPLOYMENT_TARGET=15.0
@@ -60,16 +60,8 @@ snow_setup_tools() {
         snow_qt_prefix="$(cd "$snow_qt_dir/../../.." && pwd)"
         snow_qt_stamp="$snow_qt_prefix/share/snow-apps/static-qt-build.json"
         [[ -f "$snow_qt_stamp" ]] || snow_die "The audited static Qt build stamp was not found: $snow_qt_stamp. Run scripts/build-static-qt.sh."
-        grep -Eq '"SchemaVersion"[[:space:]]*:[[:space:]]*1' "$snow_qt_stamp" || snow_die 'The static Qt build stamp schema is unsupported.'
-        grep -Eq '"QtVersion"[[:space:]]*:[[:space:]]*"6\.11\.1"' "$snow_qt_stamp" || snow_die 'The static Qt build stamp has the wrong Qt version.'
-        grep -Eq '"Architecture"[[:space:]]*:[[:space:]]*"'"$snow_arch"'"' "$snow_qt_stamp" || snow_die 'The static Qt build stamp has the wrong architecture.'
-        grep -Eq '"Configuration"[[:space:]]*:[[:space:]]*"Release"' "$snow_qt_stamp" || snow_die 'The static Qt build stamp is not a Release kit.'
-        grep -Eq '"DeploymentTarget"[[:space:]]*:[[:space:]]*"14\.0"' "$snow_qt_stamp" || snow_die 'The static Qt build has the wrong deployment target.'
-        grep -Eq '"Dup3"[[:space:]]*:[[:space:]]*false' "$snow_qt_stamp" || snow_die 'The static Qt build can use dup3 outside its deployment range.'
-        grep -Eq '"Ltcg"[[:space:]]*:[[:space:]]*true' "$snow_qt_stamp" || snow_die 'The static Qt build does not enable LTO.'
-        grep -Eq '"SystemPng"[[:space:]]*:[[:space:]]*true' "$snow_qt_stamp" || snow_die 'The static Qt build does not use the audited system libpng.'
-        grep -Eq '"SystemZlib"[[:space:]]*:[[:space:]]*true' "$snow_qt_stamp" || snow_die 'The static Qt build does not use the audited system zlib.'
-        [[ -d "$snow_qt_prefix/share/snow-apps/qt-licenses" ]] || snow_die 'The static Qt source-license bundle is missing.'
+        python3 "$snow_repo_root/scripts/validate-static-qt.py" --prefix "$snow_qt_prefix" \
+            --arch "$snow_arch" || snow_die 'Rebuild the audited static Qt kit with scripts/build-static-qt.sh.'
         export SNOW_QT_STATIC_DIR="$snow_qt_dir"
     fi
     export Qt6_DIR="$snow_qt_dir"

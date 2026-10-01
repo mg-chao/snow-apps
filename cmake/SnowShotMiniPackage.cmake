@@ -61,6 +61,8 @@ function(snow_shot_configure_mini_package)
             "!define SNOW_SHOT_INSTALLER_PRODUCT_NAME \"Snow Shot Mini\"\n"
             "!define SNOW_SHOT_INSTALLER_EXECUTABLE \"snow_shot_mini\"\n"
             "!define SNOW_SHOT_INSTALLER_UPDATER \"snow-shot-mini-updater\"\n")
+        include("${CMAKE_CURRENT_FUNCTION_LIST_DIR}/SnowShotPackageCompression.cmake")
+        snow_shot_apply_nsis_compression()
         set(SNOW_SHOT_NSIS_DIRECTORY "${CMAKE_BINARY_DIR}/snow-shot-mini-nsis")
         include("${CMAKE_CURRENT_FUNCTION_LIST_DIR}/SnowShotInstaller.cmake")
         set(CPACK_MODULE_PATH "${CMAKE_MODULE_PATH}")

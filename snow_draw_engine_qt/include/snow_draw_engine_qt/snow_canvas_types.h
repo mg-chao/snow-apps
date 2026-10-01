@@ -8,6 +8,7 @@
 #include <cstring>
 #include <optional>
 #include <QSet>
+#include <QVector>
 
 inline bool snowCanvasExactDoubleEqual(double lhs, double rhs) noexcept {
     return std::memcmp(&lhs, &rhs, sizeof(double)) == 0;
@@ -573,6 +574,11 @@ struct SnowCanvasSnapConfig {
     double markerSize = 8.0;
     double gapDashLength = 4.0;
     double gapDashGap = 4.0;
+};
+
+struct SnowCanvasSnapGuideTargets {
+    QVector<qreal> verticalXs;
+    QVector<qreal> horizontalYs;
 };
 
 struct SnowCanvasGridConfig {

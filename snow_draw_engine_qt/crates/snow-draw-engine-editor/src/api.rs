@@ -437,12 +437,20 @@ pub fn selection_box_visible_for_members(
 pub struct EditorViewportState {
     pub surface: SurfaceSize,
     pub camera: Camera,
+    pub snap_guide_targets: SnapGuideTargets,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct SnapGuideTargets {
+    pub vertical_xs: [Option<f64>; 2],
+    pub horizontal_ys: [Option<f64>; 2],
 }
 
 impl Default for EditorViewportState {
     fn default() -> Self {
         Self {
             surface: SurfaceSize::default(),
+            snap_guide_targets: SnapGuideTargets::default(),
             camera: Camera {
                 center: Point::default(),
                 zoom: 1.0,

@@ -66,7 +66,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ${{ runner.tool_cache }}\snow-qt\6.11.1\msvc2026_64-static-system-codecs
-          key: snow-qt-static-system-codecs-v2-6.11.1-msvc2026-x64-${{ runner.os }}-${{ hashFiles('scripts/build-static-qt.ps1', 'scripts/bootstrap.ps1', 'vcpkg.json', 'cmake/vcpkg-overlay-triplets/x64-windows-static.cmake', 'cmake/vcpkg-overlay-ports/zlib/**') }}
+          key: snow-qt-static-system-codecs-v3-6.11.1-msvc2026-x64-${{ runner.os }}-${{ hashFiles('scripts/build-static-qt.ps1', 'scripts/snow-build-environment.ps1', 'scripts/static-qt-features.json', 'scripts/qtbase-timezone-without-cldr.patch', 'scripts/bootstrap.ps1', 'vcpkg.json', 'cmake/vcpkg-overlay-triplets/x64-windows-static.cmake', 'cmake/vcpkg-overlay-ports/zlib/**') }}
 
       - name: Prepare Qt 6.11.1 static kit
         shell: pwsh
@@ -82,6 +82,18 @@ jobs:
           "SNOW_QT_STATIC_DIR=$qtDir" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
           "Qt6_DIR=$qtDir" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
+      - name: Verify native Qt timezone behavior
+        shell: pwsh
+        run: |
+          . scripts/snow-build-environment.ps1
+          Add-SnowMsvcToolsToPath | Out-Null
+          cmake -S test-support/qt-timezone -B build/qt-timezone-size -G Ninja -DCMAKE_BUILD_TYPE=Release "-DQt6_DIR=$env:Qt6_DIR" "-DCMAKE_PREFIX_PATH=$env:GITHUB_WORKSPACE/.tools/vcpkg/installed/static/x64-windows-static"
+          if ($LASTEXITCODE -ne 0) { throw "Qt timezone test configuration failed." }
+          cmake --build build/qt-timezone-size --parallel 2
+          if ($LASTEXITCODE -ne 0) { throw "Qt timezone test build failed." }
+          ctest --test-dir build/qt-timezone-size -R '^snow-qt-timezone-tests$' --output-on-failure
+          if ($LASTEXITCODE -ne 0) { throw "Qt timezone behavior tests failed." }
+
       - name: Build, audit, and package statically
         shell: pwsh
         run: .\scripts\stage-snow-shot-release.ps1
@@ -89,6 +101,18 @@ jobs:
       - name: Verify focused updater and installer behavior
         shell: pwsh
         run: |
+          . scripts/snow-build-environment.ps1
+          $null = Set-SnowBuildEnvironment -Preset 'snow-shot-msvc-release'
+          python scripts/test-release-optimization.py
+          if ($LASTEXITCODE -ne 0) { throw "Release optimization policy tests failed." }
+          python scripts/test-release-optimization-pch.py
+          if ($LASTEXITCODE -ne 0) { throw "Mixed optimization precompiled-header tests failed." }
+          python scripts/test-snow-shot-mini-package.py
+          if ($LASTEXITCODE -ne 0) { throw "Full/Mini compression configuration tests failed." }
+          python -m unittest discover -s ant_design_qt/tools/tests -p test_generate_icon_pack.py
+          if ($LASTEXITCODE -ne 0) { throw "Icon pack generator tests failed." }
+          & scripts/test-static-qt-features.ps1
+          & scripts/test-snow-shot-package-compression.ps1
           python scripts/test-snow-shot-gitee-release.py
           if ($LASTEXITCODE -ne 0) { throw "Gitee mirror tests failed." }
           node scripts/test-macos-installer-parser.js
@@ -107,8 +131,6 @@ jobs:
           & scripts/test-snow-shot-installer-i18n.ps1
           & scripts/test-snow-shot-installer-i18n.ps1 -Edition Mini
           & scripts/test-snow-shot-mini-release.ps1
-          . scripts/snow-build-environment.ps1
-          $null = Set-SnowBuildEnvironment -Preset 'snow-shot-msvc-release'
           cmake --preset snow-shot-msvc-release -DSNOW_SHOT_BUILD_UPDATE_TESTS=ON
           if ($LASTEXITCODE -ne 0) { throw "Updater test configuration failed." }
           cmake --build --preset build-snow-shot-msvc-release --target snow-shot-update-adapter-tests snow-shot-macos-update-tests snow-shot-update-about-tests snow-shot-update-settings-tests --parallel 4

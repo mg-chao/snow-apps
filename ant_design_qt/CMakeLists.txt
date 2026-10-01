@@ -26,6 +26,7 @@ file(GLOB ADQT_ICON_CORE_SOURCES CONFIGURE_DEPENDS
     "${CMAKE_CURRENT_SOURCE_DIR}/packages/adqt_icon_core/src/*.h"
 )
 add_library(adqt_icon_core STATIC ${ADQT_ICON_CORE_SOURCES})
+snow_apply_release_options(adqt_icon_core)
 add_library(adqt::icon_core ALIAS adqt_icon_core)
 target_include_directories(adqt_icon_core SYSTEM PUBLIC
     "${CMAKE_CURRENT_SOURCE_DIR}/packages/adqt_icon_core/src"
@@ -36,6 +37,18 @@ file(GLOB_RECURSE ADQT_ICONS_SOURCES CONFIGURE_DEPENDS
     "${CMAKE_CURRENT_SOURCE_DIR}/packages/ant_design_icons_qt/src/*.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/packages/ant_design_icons_qt/src/*.h"
 )
+include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/AdQtIconSubset.cmake")
+if(ADQT_ICON_USAGE_ROOTS)
+    if(ADQT_BUILD_TESTS OR ADQT_BUILD_BENCHMARKS)
+        message(FATAL_ERROR "AdQt icon subsets are for application-only builds; tests need the full pack")
+    endif()
+    adqt_generate_icon_subset(_adqt_icon_subset_source NAME antd_icons
+        USAGE_ROOTS ${ADQT_ICON_USAGE_ROOTS}
+            "${CMAKE_CURRENT_SOURCE_DIR}/packages/ant_design_qt/src")
+    list(REMOVE_ITEM ADQT_ICONS_SOURCES
+        "${CMAKE_CURRENT_SOURCE_DIR}/packages/ant_design_icons_qt/src/antd_icons.cpp")
+    list(APPEND ADQT_ICONS_SOURCES "${_adqt_icon_subset_source}")
+endif()
 # The checked-in icon registry is validated by its generator and is too large
 # for useful source-level linting. It remains subject to strict compilation.
 set_source_files_properties(
@@ -45,6 +58,11 @@ set_source_files_properties(
         SKIP_UNITY_BUILD_INCLUSION ON
 )
 add_library(ant_design_icons_qt STATIC ${ADQT_ICONS_SOURCES})
+if(SNOW_APPS_ENABLE_RELEASE_SIZE_OPTIMIZATION)
+    snow_apply_release_options(ant_design_icons_qt POLICY size)
+else()
+    snow_apply_release_options(ant_design_icons_qt)
+endif()
 add_library(adqt::icons ALIAS ant_design_icons_qt)
 target_include_directories(ant_design_icons_qt SYSTEM PUBLIC
     "${CMAKE_CURRENT_SOURCE_DIR}/packages/ant_design_icons_qt/src"
@@ -56,6 +74,7 @@ file(GLOB_RECURSE ADQT_WIDGET_SOURCES CONFIGURE_DEPENDS
     "${CMAKE_CURRENT_SOURCE_DIR}/packages/ant_design_qt/src/*.h"
 )
 add_library(ant_design_qt STATIC ${ADQT_WIDGET_SOURCES})
+snow_apply_release_options(ant_design_qt)
 # Keep the modal-blocking query behind a private adapter so native input and
 # popup hover use Qt's complete modal stack on every platform. Consumers finalize
 # executables in sibling directories, so this static library's private link
@@ -149,6 +168,31 @@ if(ADQT_BUILD_TESTS)
     # Test binaries must report failures as stderr output plus a non-zero
     # exit code instead of blocking on modal dialogs.
     snow_link_test_cli_guard(qt)
+    set(_adqt_subset_test_roots "${CMAKE_CURRENT_SOURCE_DIR}/packages/ant_design_qt/src")
+    foreach(_adqt_subset_consumer IN ITEMS snow_shot snow_draw_engine_qt)
+        foreach(_adqt_subset_tree IN ITEMS src include)
+            if(IS_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/../${_adqt_subset_consumer}/${_adqt_subset_tree}")
+                list(APPEND _adqt_subset_test_roots
+                    "${CMAKE_CURRENT_SOURCE_DIR}/../${_adqt_subset_consumer}/${_adqt_subset_tree}")
+            endif()
+        endforeach()
+    endforeach()
+    adqt_generate_icon_subset(_adqt_subset_test_source NAME antd_subset_icons
+        NAMESPACE adqt::icons::subset_test USAGE_ROOTS ${_adqt_subset_test_roots})
+    add_executable(adqt-icon-subset-tests tests/icon_subset_tests.cpp "${_adqt_subset_test_source}")
+    target_include_directories(adqt-icon-subset-tests PRIVATE
+        "${CMAKE_CURRENT_BINARY_DIR}/generated/antd_subset_icons")
+    target_link_libraries(adqt-icon-subset-tests PRIVATE adqt::icons Qt6::Widgets)
+    if(MSVC)
+        target_compile_options(adqt-icon-subset-tests PRIVATE /utf-8)
+    endif()
+    if(TARGET Qt6::QOffscreenIntegrationPlugin)
+        qt_import_plugins(adqt-icon-subset-tests INCLUDE Qt6::QOffscreenIntegrationPlugin)
+    endif()
+    add_test(NAME adqt-icon-subset-tests COMMAND adqt-icon-subset-tests)
+    set_tests_properties(adqt-icon-subset-tests PROPERTIES
+        LABELS "unit" ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
     add_executable(adqt-checkerboard-tests
         packages/ant_design_qt/tests/checkerboard_tests.cpp)
     target_link_libraries(adqt-checkerboard-tests PRIVATE adqt::widgets Qt6::Widgets)

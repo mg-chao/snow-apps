@@ -2523,6 +2523,87 @@ void configuredSelectionShortcutsRouteTabHistoryAndColorActions(bool targetSwitc
             "failed to restore selection shortcuts after route test");
 }
 
+void guideToggleShortcutFollowsSessionInputAndRemapping() {
+    const storage::ScreenshotShortcutSettings settings;
+    const auto original = settings.allShortcuts();
+    auto configured = original;
+    configured.insert(QStringLiteral("toggle_guides"), {QStringLiteral("Alt")});
+    configured.insert(QStringLiteral("toggle_cursor_visibility"), {QStringLiteral("`")});
+    require(settings.setAllShortcutsAtomic(configured),
+            "failed to configure the standalone guide shortcut");
+
+    ScreenshotCaptureState captureState;
+    ScreenshotDisplaySession displays;
+    ScreenshotGeometryMapper geometry;
+    ScreenshotSelectionModel selection;
+    ScreenshotIntelligentSelectionModel intelligent;
+    ScreenshotInteractionState interaction;
+    interaction.enterOverlayVisible(true);
+    QWidget window;
+    window.show();
+    snow_shot::presentation::WindowShortcutManager manager;
+    manager.addScopeWindow(&window);
+    bool inputAllowed = true;
+    int toggles = 0;
+    int cursorToggles = 0;
+    ScreenshotOverlayInputActions actions;
+    actions.localShortcutInputAllowed = [&] { return inputAllowed; };
+    actions.cursorVisibilityAvailable = [] { return true; };
+    actions.toggleCursorVisibility = [&] {
+        ++cursorToggles;
+        return true;
+    };
+    actions.toggleGuidesForCurrentSession = [&] {
+        ++toggles;
+        return true;
+    };
+    ScreenshotOverlayInputHandler handler(
+        {captureState, interaction, selection, intelligent, geometry, displays, actions});
+    ScreenshotOverlayShortcutController controller(manager, handler, interaction, intelligent,
+                                                   actions);
+
+    dispatchShortcut(window, Qt::Key_Alt, Qt::AltModifier);
+    require(toggles == 0, "guide shortcut must wait for Alt release");
+    dispatchShortcutRelease(window, Qt::Key_Alt);
+    require(toggles == 1 && cursorToggles == 0,
+            "standalone Alt must toggle guides without changing captured cursor visibility");
+    dispatchShortcut(window, Qt::Key_QuoteLeft);
+    require(toggles == 1 && cursorToggles == 1,
+            "the cursor shortcut must toggle captured cursor visibility without changing guides");
+    dispatchShortcutRelease(window, Qt::Key_QuoteLeft);
+    inputAllowed = false;
+    dispatchShortcut(window, Qt::Key_Alt, Qt::AltModifier);
+    dispatchShortcutRelease(window, Qt::Key_Alt);
+    dispatchShortcut(window, Qt::Key_QuoteLeft);
+    dispatchShortcutRelease(window, Qt::Key_QuoteLeft);
+    require(toggles == 1 && cursorToggles == 1,
+            "guide and cursor toggles must respect suspended local shortcut input");
+    inputAllowed = true;
+
+    configured.insert(QStringLiteral("toggle_guides"), {QStringLiteral("Ctrl+G")});
+    require(settings.setAllShortcutsAtomic(configured), "failed to remap the guide shortcut");
+    controller.reloadConfiguredShortcuts();
+    dispatchShortcut(window, Qt::Key_Alt, Qt::AltModifier);
+    dispatchShortcutRelease(window, Qt::Key_Alt);
+    require(toggles == 1, "remapping guides must retire the old Alt binding");
+    dispatchShortcut(window, Qt::Key_G, Qt::ControlModifier);
+    dispatchShortcutRelease(window, Qt::Key_G, Qt::ControlModifier);
+    require(toggles == 2, "remapped guide shortcut must toggle in the active session");
+
+    configured.insert(QStringLiteral("toggle_guides"), {});
+    require(settings.setAllShortcutsAtomic(configured), "failed to clear the guide shortcut");
+    controller.reloadConfiguredShortcuts();
+    dispatchShortcut(window, Qt::Key_G, Qt::ControlModifier);
+    dispatchShortcutRelease(window, Qt::Key_G, Qt::ControlModifier);
+    require(toggles == 2, "an unset guide shortcut must remain inactive");
+    dispatchShortcut(window, Qt::Key_QuoteLeft);
+    dispatchShortcutRelease(window, Qt::Key_QuoteLeft);
+    require(toggles == 2 && cursorToggles == 2,
+            "remapping and clearing the guide shortcut must preserve the cursor shortcut");
+    require(settings.setAllShortcutsAtomic(original),
+            "failed to restore screenshot shortcuts after guide test");
+}
+
 void screenshotTextEditingTakesPriorityOverCancelShortcut() {
     ScreenshotCaptureState captureState;
     ScreenshotDisplaySession displays;
@@ -4438,6 +4519,7 @@ int main(int argc, char** argv) {
         colorCopyEndsCaptureOnlyAfterSuccessfulCopy();
         sharedShiftShortcutChoosesResizeOrColorFormat();
         configuredSelectionShortcutsRouteTabHistoryAndColorActions();
+        guideToggleShortcutFollowsSessionInputAndRemapping();
         intelligentSelectionSupportsCursorMovementShortcuts();
         cursorMovementEligibilityFollowsInteractionState();
         screenshotTextEditingTakesPriorityOverCancelShortcut();
@@ -4492,6 +4574,7 @@ int main(int argc, char** argv) {
     colorCopyEndsCaptureOnlyAfterSuccessfulCopy();
     sharedShiftShortcutChoosesResizeOrColorFormat();
     configuredSelectionShortcutsRouteTabHistoryAndColorActions();
+    guideToggleShortcutFollowsSessionInputAndRemapping();
     intelligentSelectionSupportsCursorMovementShortcuts();
     cursorMovementEligibilityFollowsInteractionState();
     screenshotTextEditingTakesPriorityOverCancelShortcut();

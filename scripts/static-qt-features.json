@@ -1,0 +1,11 @@
+{
+  "schemaVersion": 1,
+  "windowsSourcePatches": ["qtbase-timezone-without-cldr.patch"],
+  "features": {
+    "ltcg": true,
+    "system_png": true,
+    "system_zlib": true,
+    "timezone": true,
+    "timezone_locale": false
+  }
+}

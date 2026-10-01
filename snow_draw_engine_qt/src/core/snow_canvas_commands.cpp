@@ -431,6 +431,19 @@ PairedMutationResult setSnapConfig(SnowRuntime runtime, SnowViewport viewport,
     return result;
 }
 
+MutationResult setSnapGuideTargets(SnowRuntime runtime, SnowViewport viewport,
+                                   const double* verticalXs, size_t verticalCount,
+                                   const double* horizontalYs, size_t horizontalCount) {
+    MutationResult result;
+    if (!hasViewport(runtime, viewport)) {
+        return result;
+    }
+    result.success = snow_viewport_set_snap_guide_targets_ex(
+                         runtime, viewport, verticalXs, verticalCount, horizontalYs,
+                         horizontalCount, result.changedViewports.outParam()) == SNOW_OK;
+    return result;
+}
+
 PairedMutationResult setGridConfig(SnowRuntime runtime, SnowViewport viewport,
                                    SnowGridConfig config) {
     PairedMutationResult result;

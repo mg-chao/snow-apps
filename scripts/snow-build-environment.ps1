@@ -5,6 +5,80 @@ $script:SnowQtVersion = "6.11.1"
 $script:SnowMsvcToolset = "14.51"
 $script:SnowRustToolchain = "1.97.1"
 $script:SnowRustTarget = "x86_64-pc-windows-msvc"
+$script:SnowStaticQtSchemaVersion = 4
+$script:SnowStaticQtFeaturePolicy = Get-Content -Raw -LiteralPath (
+    Join-Path $PSScriptRoot "static-qt-features.json") | ConvertFrom-Json
+$script:SnowStaticQtSourcePatches = @($script:SnowStaticQtFeaturePolicy.windowsSourcePatches |
+    ForEach-Object {
+        [pscustomobject]@{
+            File = $_
+            SHA256 = (Get-FileHash -Algorithm SHA256 -LiteralPath (
+                Join-Path $PSScriptRoot $_)).Hash.ToLowerInvariant()
+        }
+    })
+$featureHashes = @((Get-FileHash -Algorithm SHA256 -LiteralPath (
+    Join-Path $PSScriptRoot "static-qt-features.json")).Hash.ToLowerInvariant()) +
+    @($script:SnowStaticQtSourcePatches | ForEach-Object { $_.SHA256 })
+$script:SnowStaticQtFeatureFingerprint = [Convert]::ToHexString(
+    [System.Security.Cryptography.SHA256]::HashData(
+        [System.Text.Encoding]::UTF8.GetBytes($featureHashes -join '|'))).ToLowerInvariant()
+
+function Test-SnowQtTargetFeature {
+    param(
+        [Parameter(Mandatory = $true)][string]$TargetsText,
+        [Parameter(Mandatory = $true)][ValidateSet("PUBLIC", "PRIVATE")][string]$Visibility,
+        [Parameter(Mandatory = $true)][string]$Feature,
+        [Parameter(Mandatory = $true)][bool]$Enabled
+    )
+
+    $state = if ($Enabled) { "ENABLED" } else { "DISABLED" }
+    $oppositeState = if ($Enabled) { "DISABLED" } else { "ENABLED" }
+    $match = [regex]::Match($TargetsText, "QT_${state}_${Visibility}_FEATURES `"([^`"]*)`"")
+    $oppositeMatch = [regex]::Match(
+        $TargetsText, "QT_${oppositeState}_${Visibility}_FEATURES `"([^`"]*)`"")
+    return $match.Success -and ($match.Groups[1].Value -csplit ';') -ccontains $Feature -and
+        (-not $oppositeMatch.Success -or
+            ($oppositeMatch.Groups[1].Value -csplit ';') -cnotcontains $Feature)
+}
+
+function Test-SnowStaticQtStamp {
+    param(
+        [Parameter(Mandatory = $true)][object]$Stamp,
+        [string]$Version = $script:SnowQtVersion,
+        [string]$Configuration = "Release"
+    )
+
+    $expected = [ordered]@{
+        SchemaVersion = $script:SnowStaticQtSchemaVersion
+        QtVersion = $Version
+        Configuration = $Configuration
+        FeatureFingerprint = $script:SnowStaticQtFeatureFingerprint
+        Ltcg = $true
+        SystemPng = $true
+        SystemZlib = $true
+        Timezone = $true
+        TimezoneLocale = $false
+    }
+    foreach ($name in $expected.Keys) {
+        $property = $Stamp.PSObject.Properties[$name]
+        if ($null -eq $property -or $property.Value -cne $expected[$name]) { return $false }
+        if ($expected[$name] -is [bool] -and $property.Value -isnot [bool]) { return $false }
+    }
+    $patchProperty = $Stamp.PSObject.Properties["SourcePatches"]
+    if ($null -eq $patchProperty) { return $false }
+    $patches = @($patchProperty.Value)
+    if ($patches.Count -ne $script:SnowStaticQtSourcePatches.Count) { return $false }
+    for ($index = 0; $index -lt $patches.Count; $index++) {
+        foreach ($name in @("File", "SHA256")) {
+            $property = $patches[$index].PSObject.Properties[$name]
+            if ($null -eq $property -or
+                $property.Value -cne $script:SnowStaticQtSourcePatches[$index].$name) {
+                return $false
+            }
+        }
+    }
+    return $true
+}
 
 function Test-SnowQtSystemCodecKit {
     param([Parameter(Mandatory = $true)][string]$Qt6Dir)
@@ -17,8 +91,28 @@ function Test-SnowQtSystemCodecKit {
     }
     $coreText = Get-Content -LiteralPath $coreTargets -Raw
     $guiText = Get-Content -LiteralPath $guiTargets -Raw
-    return $coreText -match 'QT_ENABLED_PRIVATE_FEATURES "[^"]*system_zlib' -and
-        $guiText -match 'QT_ENABLED_PRIVATE_FEATURES "[^"]*system_png'
+    foreach ($feature in $script:SnowStaticQtFeaturePolicy.features.PSObject.Properties) {
+        $text = if ($feature.Name -ceq "system_png") { $guiText } else { $coreText }
+        $visibility = if ($feature.Name -ceq "timezone") { "PUBLIC" } else { "PRIVATE" }
+        if (-not (Test-SnowQtTargetFeature $text $visibility $feature.Name $feature.Value)) {
+            return $false
+        }
+    }
+    return $true
+}
+
+function Test-SnowValidatedStaticQtKit {
+    param([Parameter(Mandatory = $true)][string]$Qt6Dir)
+
+    if (-not (Test-SnowQtSystemCodecKit -Qt6Dir $Qt6Dir)) { return $false }
+    $prefix = [System.IO.Path]::GetFullPath((Join-Path $Qt6Dir "..\..\.."))
+    $stampPath = Join-Path $prefix "share\snow-apps\static-qt-build.json"
+    if (-not (Test-Path -LiteralPath $stampPath -PathType Leaf)) { return $false }
+    try {
+        return Test-SnowStaticQtStamp -Stamp (Get-Content -LiteralPath $stampPath -Raw |
+            ConvertFrom-Json)
+    }
+    catch { return $false }
 }
 
 function Resolve-SnowQtDir {
@@ -96,7 +190,7 @@ function Resolve-SnowQtDir {
             if (-not (Test-Path -LiteralPath $configurationTargets -PathType Leaf)) { continue }
         }
         if ($Preset -in @("snow-shot-msvc-release", "snow-shot-msvc-fast") -and
-            -not (Test-SnowQtSystemCodecKit -Qt6Dir $resolved)) {
+            -not (Test-SnowValidatedStaticQtKit -Qt6Dir $resolved)) {
             continue
         }
         return $resolved

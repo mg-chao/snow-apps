@@ -8,10 +8,14 @@
 #include <QApplication>
 #include <QCursor>
 #include <QEvent>
+#include <QHelpEvent>
 #include <QFontDatabase>
 #include <QDir>
 #include <QKeyEvent>
+#include <QMouseEvent>
 #include <QScreen>
+#include <QScopeGuard>
+#include <QStyle>
 #include <QTest>
 #include <QTranslator>
 #include <QWindow>
@@ -83,6 +87,8 @@ void gainEditorsPreferAboveAndAvoidTopEdge() {
                     bounds.contains(contentRect),
                 "gain editors fall back below a top-edge trigger to stay on screen");
         popup.close();
+        // Finish returning activation before destroying the fixture's window.
+        flush();
     }
 }
 
@@ -168,6 +174,177 @@ void gainAndMeterAreIndependent() {
     popup.setAvailable(false);
     popup.openAndFocus();
     require(!popup.popover()->isVisible(), "unavailable source cannot open");
+}
+
+void hoveringBetweenGainEditorsWithVisibleTooltips() {
+    adqt::widgets::AdTooltip::installApplicationTooltips();
+    const QPoint originalCursor = QCursor::pos();
+    const auto restoreCursor = qScopeGuard([&]() { QCursor::setPos(originalCursor); });
+    QWidget host;
+    host.setFocusPolicy(Qt::StrongFocus);
+    host.resize(460, 200);
+    host.move(host.screen()->availableGeometry().center() - host.rect().center());
+    adqt::widgets::AdButton microphoneTrigger(&host);
+    microphoneTrigger.setGeometry(200, 100, 32, 32);
+    microphoneTrigger.setToolTip(QStringLiteral("Microphone (Ctrl+M)"));
+    adqt::widgets::AdButton systemTrigger(&host);
+    systemTrigger.setGeometry(236, 100, 32, 32);
+    systemTrigger.setToolTip(QStringLiteral("System audio (Ctrl+A)"));
+    RecordingAudioGainPopover microphone(&microphoneTrigger,
+                                         RecordingAudioGainPopover::Source::Microphone);
+    RecordingAudioGainPopover system(&systemTrigger,
+                                     RecordingAudioGainPopover::Source::SystemAudio);
+    host.show();
+    host.activateWindow();
+    host.setFocus();
+    QCursor::setPos(host.mapToGlobal(QPoint(420, 180)));
+    QTest::mouseMove(&host, {420, 180});
+    flush();
+    for (auto* popup : {&microphone, &system, &microphone, &system}) {
+        auto* trigger = popup->trigger();
+        const QPoint center = trigger->rect().center();
+        const QPoint global = trigger->mapToGlobal(center);
+        QCursor::setPos(global);
+        QMouseEvent move(QEvent::MouseMove, center, global, Qt::NoButton, Qt::NoButton,
+                         Qt::NoModifier);
+        QApplication::sendEvent(trigger, &move);
+        auto* sibling = popup == &microphone ? &system : &microphone;
+        require(QTest::qWaitFor(
+                    [&]() {
+                        return popup->popover()->isVisible() &&
+                               popup->popover()->surfaceWidget()->isVisible() &&
+                               !sibling->popover()->isVisible();
+                    },
+                    1000),
+                "hover switches to the requested gain editor while a source tooltip is visible");
+        QTest::qWait(trigger->style()->styleHint(QStyle::SH_ToolTip_WakeUpDelay, nullptr, trigger));
+        QHelpEvent help(QEvent::ToolTip, center, trigger->mapToGlobal(center));
+        QApplication::sendEvent(trigger, &help);
+        bool visible = false;
+        for (auto* tooltip : qApp->findChildren<adqt::widgets::AdTooltip*>()) {
+            visible |= tooltip->isVisible() && tooltip->targetWidget() == trigger &&
+                       tooltip->text() == trigger->toolTip();
+        }
+        require(help.isAccepted() && visible,
+                "source tooltip follows the newly hovered gain editor");
+        QWidget* content = popup->popover()->contentWidget();
+        require(content->mapToGlobal(content->rect().bottomLeft()).y() <
+                    trigger->mapToGlobal(QPoint()).y(),
+                "the gain editor remains above its source tooltip");
+    }
+    host.hide();
+    flush();
+}
+
+void switchingGainEditorsKeepsTheRequestedSourceOpen() {
+    QWidget host;
+    host.setFocusPolicy(Qt::StrongFocus);
+    host.resize(460, 200);
+    adqt::widgets::AdButton microphoneTrigger(&host);
+    microphoneTrigger.setGeometry(40, 50, 30, 30);
+    adqt::widgets::AdButton systemTrigger(&host);
+    systemTrigger.setGeometry(100, 50, 30, 30);
+    RecordingAudioGainPopover microphone(&microphoneTrigger,
+                                         RecordingAudioGainPopover::Source::Microphone);
+    RecordingAudioGainPopover system(&systemTrigger,
+                                     RecordingAudioGainPopover::Source::SystemAudio);
+    // The recording controller retains guarded surfaces for capture exclusion.
+    microphone.setRetainNativeSurfaceOnHide(true);
+    system.setRetainNativeSurfaceOnHide(true);
+    QObject::connect(&microphone, &RecordingAudioGainPopover::visibleChanged, [&](bool visible) {
+        if (visible)
+            system.close();
+    });
+    QObject::connect(&system, &RecordingAudioGainPopover::visibleChanged, [&](bool visible) {
+        if (visible) {
+            microphone.close();
+            // Native tool dismissal returns activation and focus to its owner.
+            host.activateWindow();
+            microphoneTrigger.setFocus(Qt::OtherFocusReason);
+        }
+    });
+    host.show();
+    host.activateWindow();
+    host.setFocus();
+    QTest::mouseMove(&host, {400, 150});
+    flush();
+    microphone.openAndFocus();
+    flush();
+    auto* microphoneSlider =
+        microphone.popover()->contentWidget()->findChild<adqt::widgets::AdSlider*>();
+    require(microphoneSlider && microphoneSlider->hasFocus(),
+            "source switching starts with focused microphone editing");
+
+    bool allowSystem = false;
+    system.setSurfaceShowGuard([&](QWidget*) { return allowSystem; });
+    system.openAndFocus();
+    flush();
+    require(system.popover()->isVisible() && !microphone.popover()->isVisible(),
+            "closing the focused source cannot reopen it and cancel the requested source");
+    allowSystem = true;
+    system.popover()->refreshPopupLayout();
+    flush();
+    auto* systemSlider = system.popover()->contentWidget()->findChild<adqt::widgets::AdSlider*>();
+    require(system.popover()->surfaceWidget()->isVisible() && systemSlider->hasFocus() &&
+                !microphone.popover()->isVisible(),
+            "the requested source becomes visible and focused after acknowledgment");
+    system.close();
+    flush();
+    require(systemTrigger.hasFocus(), "closing an editor returns focus to its source button");
+    host.activateWindow();
+    systemTrigger.setFocus(Qt::OtherFocusReason);
+    flush();
+    require(!system.popover()->isVisible() && !microphone.popover()->isVisible(),
+            "restoring source focus after dismissal cannot reopen a gain editor");
+    QTest::mouseMove(&systemTrigger, systemTrigger.rect().center());
+    QTest::qWait(210);
+    require(system.popover()->isVisible(), "a dismissed source can be opened by hovering again");
+    host.activateWindow();
+    systemTrigger.setFocus(Qt::OtherFocusReason);
+    QTest::mouseMove(&host, {400, 150});
+    QTest::qWait(320);
+    require(!system.popover()->isVisible(),
+            "hover departure closes the editor even while its source retains focus");
+    microphone.openAndFocus();
+    system.openAndFocus();
+    microphone.openAndFocus();
+    flush();
+    require(microphone.popover()->isVisible() && microphoneSlider->hasFocus() &&
+                !system.popover()->isVisible(),
+            "rapid source switching keeps the latest editor visible and focused");
+}
+
+void hoverSliderDragKeepsTheEditorOpen() {
+    QWidget host;
+    host.setFocusPolicy(Qt::StrongFocus);
+    host.resize(700, 500);
+    adqt::widgets::AdButton trigger(&host);
+    trigger.setGeometry(40, 100, 30, 30);
+    RecordingAudioGainPopover popup(&trigger, RecordingAudioGainPopover::Source::Microphone);
+    host.show();
+    host.activateWindow();
+    host.setFocus();
+    QTest::mouseMove(&host, {650, 450});
+    flush();
+    QTest::mouseMove(&trigger, trigger.rect().center());
+    QTest::qWait(210);
+    require(popup.popover()->isVisible(), "pointer editing starts from a hover-opened editor");
+    auto* slider = popup.popover()->contentWidget()->findChild<adqt::widgets::AdSlider*>();
+    // Keep the offscreen hover fixture in its owner until the slider is pressed.
+    host.activateWindow();
+    host.setFocus();
+    QTest::mousePress(slider, Qt::LeftButton, Qt::NoModifier, slider->rect().center());
+    QTest::mouseMove(slider, {slider->width() + 80, slider->height() / 2});
+    QTest::qWait(320);
+    require(slider->sliderDown() && popup.popover()->isVisible() && popup.gainDb() == 24,
+            "dragging out of a hover-opened editor preserves gain editing");
+    QTest::mouseRelease(slider, Qt::LeftButton, Qt::NoModifier,
+                        {slider->width() + 80, slider->height() / 2});
+    QTest::qWait(320);
+    require(popup.popover()->isVisible(), "pointer editing remains open after the drag ends");
+    QTest::mouseClick(&host, Qt::LeftButton, Qt::NoModifier, {650, 450});
+    flush();
+    require(!popup.popover()->isVisible(), "an outside press dismisses pointer editing");
 }
 
 void hoverDragAndDeactivateKeepInteractionSafe(QApplication& app) {
@@ -547,6 +724,9 @@ int main(int argc, char** argv) {
     }
     gainEditorsPreferAboveAndAvoidTopEdge();
     gainAndMeterAreIndependent();
+    hoveringBetweenGainEditorsWithVisibleTooltips();
+    switchingGainEditorsKeepsTheRequestedSourceOpen();
+    hoverSliderDragKeepsTheEditorOpen();
     pointerEditingClearsKeyboardFocusFeedback();
     keyboardAndDeferredShowAreSafe();
     hoverDragAndDeactivateKeepInteractionSafe(app);

@@ -219,6 +219,20 @@ if(SNOW_APPS_BUILD_SNOW_IMAGE)
 endif()
 
 if(SNOW_APPS_BUILD_ANT_DESIGN_QT)
+    # Shipping builds retain all themes of icons used by the app and its widgets.
+    # Development, benchmarks and other apps keep the public library's full pack.
+    if(SNOW_APPS_ENABLE_RELEASE_SIZE_OPTIMIZATION AND
+       SNOW_APPS_BUILD_SNOW_SHOT AND SNOW_APPS_PACKAGE_SNOW_SHOT AND
+       NOT SNOW_APPS_BUILD_TESTS AND NOT SNOW_APPS_BUILD_BENCHMARKS AND
+       NOT SNOW_APPS_BUILD_IMAGE_VIEWER)
+        set(ADQT_ICON_USAGE_ROOTS
+            "${CMAKE_CURRENT_SOURCE_DIR}/snow_shot/src"
+            "${CMAKE_CURRENT_SOURCE_DIR}/snow_shot/include"
+            "${CMAKE_CURRENT_SOURCE_DIR}/snow_draw_engine_qt/src"
+            "${CMAKE_CURRENT_SOURCE_DIR}/snow_draw_engine_qt/include")
+    else()
+        set(ADQT_ICON_USAGE_ROOTS "")
+    endif()
     add_subdirectory(ant_design_qt "${CMAKE_BINARY_DIR}/ant_design_qt")
 endif()
 
@@ -409,10 +423,6 @@ if(SNOW_APPS_PACKAGE_SNOW_SHOT AND NOT APPLE)
     set(CPACK_PACKAGE_FILE_NAME "snow-shot-${SNOW_SHOT_VERSION}-windows-x64")
     set(CPACK_PACKAGE_DIRECTORY "${CMAKE_BINARY_DIR}")
     set(CPACK_PACKAGE_CHECKSUM "SHA256")
-    # LZMA gives the smallest installer while solid compression keeps repeated
-    # Qt/runtime data from being stored more than once.
-    set(CPACK_NSIS_COMPRESSOR "lzma")
-    set(CPACK_NSIS_COMPRESSOR_SOLID ON)
     set(CPACK_PACKAGE_DESCRIPTION_FILE
         "${CMAKE_CURRENT_SOURCE_DIR}/snow_shot/packaging/README.txt")
     set(CPACK_RESOURCE_FILE_LICENSE "${CMAKE_CURRENT_SOURCE_DIR}/snow_shot/LICENSE")
@@ -451,6 +461,8 @@ if(SNOW_APPS_PACKAGE_SNOW_SHOT AND NOT APPLE)
     set(CPACK_NSIS_URL_INFO_ABOUT "${SNOW_SHOT_HOMEPAGE_URL}")
     set(CPACK_NSIS_CONTACT "${SNOW_SHOT_SUPPORT_EMAIL}")
     set(CPACK_VERBATIM_VARIABLES ON)
+    include(cmake/SnowShotPackageCompression.cmake)
+    snow_shot_apply_nsis_compression()
     include(cmake/SnowShotInstaller.cmake)
     include(CPack)
 endif()

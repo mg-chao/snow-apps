@@ -85,6 +85,14 @@ void ScreenshotPresentationServices::setUiPreferences(const ScreenshotUiPreferen
     updateOverlayState();
 }
 
+void ScreenshotPresentationServices::setGuideLinesVisible(bool visible) {
+    if (m_guideLinesVisible == visible) {
+        return;
+    }
+    m_guideLinesVisible = visible;
+    updateOverlayState();
+}
+
 void ScreenshotPresentationServices::setQuickSelectionDisabledTools(
     const QSet<SnowCanvasTool>& tools) {
     if (m_context.quickSelectionDisabledTools == tools) {
@@ -223,8 +231,9 @@ void ScreenshotPresentationServices::presentOverlayState(const QRectF& selection
     m_context.overlayCoordinator.updateGuideLines(
         m_context.displaySession, cursorOwner,
         cursorOwner ? QPointF(cursorPosition - cursorOwner->geometry().topLeft()) : QPointF(),
-        m_context.interaction.selecting(), m_uiPreferences.cursorGuideLineColor,
-        m_uiPreferences.monitorCenterGuideLineColor);
+        !m_context.interaction.inactive() && m_guideLinesVisible,
+        m_uiPreferences.cursorGuideLineColor, m_uiPreferences.monitorCenterGuideLineColor,
+        m_uiPreferences.selectionCenterGuideLineColor);
 
     ScreenshotShortcutHintContext hintContext{m_context.interaction.activeTool(),
                                               m_context.interaction.mode(),

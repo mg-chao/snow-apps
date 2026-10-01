@@ -378,11 +378,11 @@ void ScreenshotOverlayCanvasPresenter::updateOverlayCursors(
 
 void ScreenshotOverlayCanvasPresenter::updateGuideLines(
     const ScreenshotDisplaySession& displaySession, ScreenshotOverlayWindow* owner,
-    const QPointF& localPosition, bool selecting, const QColor& cursorColor,
-    const QColor& monitorCenterColor) const {
+    const QPointF& localPosition, bool visible, const QColor& cursorColor,
+    const QColor& monitorCenterColor, const QColor& selectionCenterColor) const {
     const bool guideLinesEnabled = (cursorColor.isValid() && cursorColor.alpha() > 0) ||
                                    (monitorCenterColor.isValid() && monitorCenterColor.alpha() > 0);
-    ScreenshotOverlayWindow* nextOwner = selecting && guideLinesEnabled ? owner : nullptr;
+    ScreenshotOverlayWindow* nextOwner = visible && guideLinesEnabled ? owner : nullptr;
     if (nextOwner != nullptr && m_guideLineOwner != nextOwner) {
         bool activeOwner = false;
         displaySession.forEachActiveOverlay(
@@ -401,12 +401,52 @@ void ScreenshotOverlayCanvasPresenter::updateGuideLines(
     if (nextOwner != nullptr) {
         nextOwner->setScreenshotGuideLines(localPosition, cursorColor, monitorCenterColor);
     }
+    displaySession.forEachActiveOverlay([&](qsizetype, const CapturedDisplayModel&,
+                                            ScreenshotOverlayWindow* overlay) {
+        if (overlay == nullptr) {
+            return;
+        }
+        const bool selectionGuideVisible =
+            visible && selectionCenterColor.isValid() && selectionCenterColor.alpha() > 0;
+        overlay->setSelectionCenterGuideLineColor(selectionGuideVisible ? selectionCenterColor
+                                                                        : QColor(Qt::transparent));
+        SnowCanvasWidget* canvas = overlay->canvas();
+        if (canvas == nullptr) {
+            return;
+        }
+        SnowCanvasSnapGuideTargets targets;
+        const QTransform canvasToView = canvas->canvasToViewTransform();
+        if (visible && canvasToView.isInvertible()) {
+            const QRectF viewport(canvas->rect());
+            const QTransform viewToCanvas = canvasToView.inverted();
+            if (selectionGuideVisible) {
+                const QRectF selection = overlay->screenshotSelection();
+                if (selection.isValid() && !selection.isEmpty()) {
+                    const QPointF center = canvasToView.map(selection.center());
+                    if (center.x() >= viewport.left() && center.x() < viewport.right()) {
+                        targets.verticalXs.append(selection.center().x());
+                    }
+                    if (center.y() >= viewport.top() && center.y() < viewport.bottom()) {
+                        targets.horizontalYs.append(selection.center().y());
+                    }
+                }
+            }
+            if (overlay == nextOwner && monitorCenterColor.isValid() &&
+                monitorCenterColor.alpha() > 0) {
+                const QPointF center = viewToCanvas.map(viewport.center());
+                targets.verticalXs.append(center.x());
+                targets.horizontalYs.append(center.y());
+            }
+        }
+        canvas->setCanvasSnapGuideTargets(targets);
+    });
 }
 
 void ScreenshotOverlayCanvasPresenter::updateGuideLinesAtGlobalPosition(
-    const ScreenshotDisplaySession& displaySession, const QPoint& globalPosition, bool selecting,
-    const QColor& cursorColor, const QColor& monitorCenterColor) const {
-    if (!selecting) {
+    const ScreenshotDisplaySession& displaySession, const QPoint& globalPosition, bool visible,
+    const QColor& cursorColor, const QColor& monitorCenterColor,
+    const QColor& selectionCenterColor) const {
+    if (!visible) {
         clearGuideLines(displaySession);
         return;
     }
@@ -414,13 +454,15 @@ void ScreenshotOverlayCanvasPresenter::updateGuideLinesAtGlobalPosition(
     const QVector<ActiveOverlayEntry> entries = activeOverlayEntries(displaySession);
     const qsizetype ownerIndex = overlayEntryIndexAtPosition(entries, globalPosition);
     if (ownerIndex < 0 || ownerIndex >= entries.size()) {
-        clearGuideLines(displaySession);
+        updateGuideLines(displaySession, nullptr, {}, true, cursorColor, monitorCenterColor,
+                         selectionCenterColor);
         return;
     }
 
     ScreenshotOverlayWindow* owner = entries.at(ownerIndex).overlay;
     const QPointF localPosition = owner->canvasLocalPosition(globalPosition);
-    updateGuideLines(displaySession, owner, localPosition, true, cursorColor, monitorCenterColor);
+    updateGuideLines(displaySession, owner, localPosition, true, cursorColor, monitorCenterColor,
+                     selectionCenterColor);
 }
 
 void ScreenshotOverlayCanvasPresenter::clearGuideLines(
@@ -433,6 +475,9 @@ void ScreenshotOverlayCanvasPresenter::clearGuideLines(
     displaySession.forEachOverlay([previousOwner](qsizetype, ScreenshotOverlayWindow* overlay) {
         if (overlay != previousOwner) {
             overlay->clearScreenshotGuideLines();
+        }
+        if (overlay != nullptr && overlay->canvas() != nullptr) {
+            overlay->canvas()->setCanvasSnapGuideTargets({});
         }
     });
 }

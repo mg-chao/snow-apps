@@ -126,6 +126,9 @@ MutationResult setSerialNumberStyle(SnowRuntime runtime, SnowViewport viewport,
                                     const SnowSerialNumberStyle& style);
 PairedMutationResult setSnapConfig(SnowRuntime runtime, SnowViewport viewport,
                                    SnowSnapConfig config);
+MutationResult setSnapGuideTargets(SnowRuntime runtime, SnowViewport viewport,
+                                   const double* verticalXs, size_t verticalCount,
+                                   const double* horizontalYs, size_t horizontalCount);
 PairedMutationResult setGridConfig(SnowRuntime runtime, SnowViewport viewport,
                                    SnowGridConfig config);
 

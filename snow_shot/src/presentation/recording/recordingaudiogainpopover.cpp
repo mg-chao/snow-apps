@@ -2,6 +2,7 @@
 
 #include "theme/theme_manager.h"
 #include "widgets/button.h"
+#include "widgets/detail/qt_tooltip_bridge.h"
 #include "widgets/control_scale.h"
 #include "widgets/popover.h"
 #include "widgets/slider.h"
@@ -9,6 +10,7 @@
 #include <QApplication>
 #include <QEvent>
 #include <QKeyEvent>
+#include <QMouseEvent>
 #include <QScreen>
 #include <QSignalBlocker>
 #include <QTimer>
@@ -27,14 +29,15 @@ RecordingAudioGainPopover::RecordingAudioGainPopover(adqt::widgets::AdButton* tr
     setObjectName(prefix + QStringLiteral("GainController"));
     m_popover->setObjectName(prefix + QStringLiteral("GainPopover"));
     m_popover->setSourceWidget(trigger);
-    m_popover->setTriggers(adqt::widgets::AdPopover::Trigger::Hover |
-                           adqt::widgets::AdPopover::Trigger::Focus);
+    // Match grouped toolbar actions: focus restoration must not reopen a dismissed editor.
+    m_popover->setTriggers(adqt::widgets::AdPopover::Trigger::Hover);
     m_popover->setPlacement(adqt::widgets::AdPopover::Placement::Top);
     m_popover->setPopupLayerMode(adqt::widgets::AdPopover::PopupLayerMode::QtTool);
     m_popover->setHoverOpenDelayMs(150);
     m_popover->setHoverCloseDelayMs(250);
     m_popover->setContentFactory([this]() { return createContent(); });
     if (trigger != nullptr) {
+        trigger->setProperty(adqt::widgets::detail::kPopupTriggerTooltipEnabledProperty, true);
         trigger->setFocusPolicy(Qt::StrongFocus);
         trigger->installEventFilter(this);
     }
@@ -126,13 +129,14 @@ void RecordingAudioGainPopover::close() {
         return;
     m_closing = true;
     m_focusWhenVisible = false;
-    if (m_content && m_trigger && m_trigger->isEnabled()) {
-        QWidget* focus = QApplication::focusWidget();
-        if (focus && (focus == m_content || m_content->isAncestorOf(focus)))
-            m_trigger->setFocus(Qt::OtherFocusReason);
-    }
-    // Restoring focus may open a Focus trigger; the final hide clears all reasons.
+    QWidget* focus = QApplication::focusWidget();
+    const bool restoreFocus =
+        m_content && focus && (focus == m_content || m_content->isAncestorOf(focus));
     m_popover->hide();
+    if (restoreFocus && m_trigger && m_trigger->isEnabled()) {
+        m_trigger->window()->activateWindow();
+        m_trigger->setFocus(Qt::OtherFocusReason);
+    }
     m_closing = false;
 }
 
@@ -242,6 +246,11 @@ bool RecordingAudioGainPopover::eventFilter(QObject* watched, QEvent* event) {
         emit surfaceVisibilityChanged(visible);
         if (visible)
             QTimer::singleShot(0, this, [this]() { focusSliderWhenVisible(); });
+    }
+    if (event->type() == QEvent::MouseButtonPress && watched == m_slider &&
+        m_popover->isVisible() && static_cast<QMouseEvent*>(event)->button() == Qt::LeftButton) {
+        // Pointer editing, like keyboard editing, stays open until explicitly dismissed.
+        m_popover->show();
     }
     if (event->type() != QEvent::KeyPress && event->type() != QEvent::ShortcutOverride)
         return false;

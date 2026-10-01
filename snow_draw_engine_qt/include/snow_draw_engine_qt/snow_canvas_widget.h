@@ -83,6 +83,7 @@ class SnowCanvasWidget : public QWidget {
 
     SnowCanvasSnapConfig canvasSnapConfig() const;
     bool setCanvasSnapConfig(const SnowCanvasSnapConfig& config);
+    bool setCanvasSnapGuideTargets(const SnowCanvasSnapGuideTargets& targets);
 
     SnowCanvasGridConfig canvasGridConfig() const;
     bool setCanvasGridConfig(const SnowCanvasGridConfig& config);

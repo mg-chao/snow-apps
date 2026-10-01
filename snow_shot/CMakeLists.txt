@@ -1546,6 +1546,11 @@ if(SNOW_SHOT_BUILD_TESTS)
                 -File "${CMAKE_CURRENT_SOURCE_DIR}/../scripts/test-snow-shot-installer-i18n.ps1")
         set_tests_properties(snow-shot-installer-i18n-tests PROPERTIES
             LABELS "unit;windows" TIMEOUT 180)
+        add_test(NAME snow-shot-package-compression-tests
+            COMMAND "${SNOW_SHOT_INSTALLER_TEST_POWERSHELL}" -NoProfile -ExecutionPolicy Bypass
+                -File "${CMAKE_CURRENT_SOURCE_DIR}/../scripts/test-snow-shot-package-compression.ps1")
+        set_tests_properties(snow-shot-package-compression-tests PROPERTIES
+            LABELS "unit;windows" TIMEOUT 60)
     endif()
     if(DEFINED CMAKE_RUNTIME_OUTPUT_DIRECTORY)
         set(_SNOW_SHOT_RUNTIME_OUTPUT_DIRECTORY_WAS_DEFINED TRUE)
@@ -2533,12 +2538,15 @@ if(SNOW_SHOT_BUILD_TESTS)
                      --shortcut-exit-confirmation-settings-only)
     add_test(NAME snow-shot-auto-qr-settings-tests
              COMMAND snow-shot-window-element-api-tests --auto-qr-settings-only)
+    add_test(NAME snow-shot-screenshot-guide-settings-reset-tests
+             COMMAND snow-shot-window-element-api-tests --guide-settings-only)
     snow_shot_import_offscreen_platform(snow-shot-window-element-api-tests)
     set_tests_properties(
         snow-shot-window-element-api-tests
         snow-shot-selector-phased-tests
         snow-shot-shortcut-exit-confirmation-settings-tests
         snow-shot-auto-qr-settings-tests
+        snow-shot-screenshot-guide-settings-reset-tests
         PROPERTIES
         ENVIRONMENT
             "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}"
@@ -3497,6 +3505,8 @@ if(SNOW_SHOT_BUILD_TESTS)
         NAME snow-shot-screenshot-canvas-renderer-tests
         COMMAND snow-shot-screenshot-canvas-renderer-tests
     )
+    add_test(NAME snow-shot-screenshot-guide-preferences-tests
+        COMMAND snow-shot-screenshot-canvas-renderer-tests --screenshot-ui-preferences)
     add_test(NAME snow-shot-direct-capture-history-rendering-tests
         COMMAND snow-shot-screenshot-canvas-renderer-tests --direct-capture-history-rendering)
     add_test(NAME snow-shot-pinned-filter-reference-tests
@@ -3563,6 +3573,7 @@ if(SNOW_SHOT_BUILD_TESTS)
     )
     set_tests_properties(
         snow-shot-screenshot-canvas-renderer-tests
+        snow-shot-screenshot-guide-preferences-tests
         snow-shot-overlay-pool-prewarm-tests
         PROPERTIES
         ENVIRONMENT
@@ -4645,6 +4656,12 @@ if(SNOW_SHOT_BUILD_TESTS)
             -platform offscreen)
     set_tests_properties(snow-shot-toolbar-popover-lifecycle-tests PROPERTIES LABELS "unit"
         TIMEOUT 90
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
+    add_test(NAME snow-shot-toolbar-popover-hover-switching-tests
+        COMMAND snow-shot-screenshot-tool-palette-tests --popover-hover-switching-only
+            -platform offscreen)
+    set_tests_properties(snow-shot-toolbar-popover-hover-switching-tests PROPERTIES LABELS "unit"
+        TIMEOUT 30
         ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
     add_test(
         NAME snow-shot-screenshot-action-toolbar-layout-tests
@@ -6152,6 +6169,9 @@ if(SNOW_SHOT_BUILD_TESTS)
         src/presentation/ocr/screenshotocrassets.cpp)
     target_include_directories(snow-shot-ocr-assets-tests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/include")
     target_link_libraries(snow-shot-ocr-assets-tests PRIVATE Qt6::Core Qt6::Network MINIZIP::minizip-ng)
+    if(APPLE)
+        target_link_libraries(snow-shot-ocr-assets-tests PRIVATE snow_shot_rust_ffi_bundle)
+    endif()
     add_test(NAME snow-shot-ocr-assets-tests COMMAND snow-shot-ocr-assets-tests)
     set_tests_properties(snow-shot-ocr-assets-tests PROPERTIES TIMEOUT 60 LABELS "unit"
         ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
@@ -7582,9 +7602,6 @@ foreach(_qr_host_target IN ITEMS snow_shot snow-shot-qr-recognition-service-test
 endforeach()
 unset(_qr_host_target)
 
-if(SNOW_SHOT_ENABLE_AGGRESSIVE_RELEASE_OPTIMIZATION OR SNOW_SHOT_RELEASE_STATIC)
-    snow_apply_release_options(snow_shot)
-endif()
 if(MSVC AND SNOW_SHOT_RELEASE_STATIC)
     target_link_options(snow_shot PRIVATE
         $<$<CONFIG:Release>:/MAP>
@@ -8734,4 +8751,5 @@ if(SNOW_SHOT_BUILD_TESTS)
     set_tests_properties(snow-shot-recording-audio-gain-popover-tests PROPERTIES LABELS "unit" TIMEOUT 60
         ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
 endif()
+include("${CMAKE_CURRENT_SOURCE_DIR}/../cmake/SnowShotReleaseOptimization.cmake")
 include("${CMAKE_CURRENT_SOURCE_DIR}/../cmake/SnowShotMini.cmake")

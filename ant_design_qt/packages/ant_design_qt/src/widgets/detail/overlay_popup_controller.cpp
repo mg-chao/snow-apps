@@ -730,11 +730,16 @@ bool OverlayPopupController::hoverRegionContainsGlobalPos(const QPoint& globalPo
 const QWidget* OverlayPopupController::resolvedHoverTarget(const QPoint& globalPos,
                                                            const QWidget* target) const {
   // The event receiver is the input target Qt actually delivered to. A later
-  // widgetAt() lookup can return no widget, or an input-transparent tooltip
-  // window, even while the cursor has not moved off that receiver.
-  const bool transparentWindow =
-      target && target->window()->windowFlags().testFlag(Qt::WindowTransparentForInput);
-  if ((target && !transparentWindow) || QWidget::mouseGrabber() || !lastHoverEventWindow_ ||
+  // widgetAt() can return a tooltip or a sibling popup's rectangular shadow,
+  // even though native hit testing delivered input to the button underneath.
+  // Reuse that delivered target only while the pointer remains unchanged and
+  // the queried window does not accept input at this position.
+  const QWidget* targetWindow = target ? target->window() : nullptr;
+  const auto* surface = dynamic_cast<const OverlayPopupSurface*>(targetWindow);
+  const bool transparentTarget =
+      targetWindow && (targetWindow->windowFlags().testFlag(Qt::WindowTransparentForInput) ||
+                       (surface && !surface->containsInteractiveGlobalPos(globalPos)));
+  if ((target && !transparentTarget) || QWidget::mouseGrabber() || !lastHoverEventWindow_ ||
       lastHoverEventPosition_ != globalPos) {
     return target;
   }

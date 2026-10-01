@@ -1220,6 +1220,13 @@ SnowError snow_viewport_set_snap_config_ex(SnowRuntime runtime, SnowViewport vie
                                            const SnowSnapConfig* config,
                                            SnowChangedViewportList* out_changed_viewports);
 
+/* Transient canvas-coordinate targets; each axis accepts at most two positions. */
+SnowError snow_viewport_set_snap_guide_targets_ex(SnowRuntime runtime, SnowViewport viewport,
+                                                  const double* vertical_xs, size_t vertical_count,
+                                                  const double* horizontal_ys,
+                                                  size_t horizontal_count,
+                                                  SnowChangedViewportList* out_changed_viewports);
+
 SnowError snow_viewport_get_grid_config(SnowRuntime runtime, SnowViewport viewport,
                                         SnowGridConfig* out_config);
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Stage and verify the bundled macOS ARM64 OCR contract (standard library only)."""
+"""Stage and verify macOS ARM64 OCR runtimes and optional bundled models."""
 import argparse
 import hashlib
 import json
@@ -192,20 +192,41 @@ def deploy_native_libraries(app, library_directory):
     remove_development_libraries(runtime)
 
 
-def prepare_bundle(app, library_directory=None):
+def require_real_directory(path):
+    if path.is_symlink() or (path.exists() and not path.is_dir()):
+        raise ValueError(f'Invalid bundled resource directory: {path}')
+
+
+def validate_bundle_directories(app):
+    for relative in ('Contents', 'Contents/MacOS', 'Contents/Resources'):
+        require_real_directory(app / relative)
+
+
+def prepare_bundle(app, library_directory=None, runtime_only=False):
     """Seal data as resources while preserving executable-relative lookup paths.
 
     codesign interprets regular files inside MacOS as nested code. Directory
     symlinks preserve the existing assets/ocr and audios contracts without
     signing model files or JSON as executable code.
     """
+    validate_bundle_directories(app)
+    if runtime_only:
+        directories = [app / 'Contents' / name for name in ('MacOS', 'Resources')]
+        for directory in directories:
+            bundled_models_directory(directory)
+        # Remove both payloads before merging resources. A stale destination
+        # models link must never let copytree write into an external cache.
+        for directory in directories:
+            remove_bundled_models(directory)
     for name in ('assets', 'audios'):
         source = app / 'Contents/MacOS' / name
         destination = app / 'Contents/Resources' / name
         if source.is_symlink():
-            if source.readlink() != Path('../Resources') / name or not destination.is_dir():
+            if (source.readlink() != Path('../Resources') / name
+                    or destination.is_symlink() or not destination.is_dir()):
                 raise ValueError(f'Invalid bundled resource link: {source}')
             continue
+        require_real_directory(destination)
         if not source.exists():
             continue
         if not source.is_dir() or destination.is_symlink():
@@ -217,6 +238,8 @@ def prepare_bundle(app, library_directory=None):
         else:
             source.rename(destination)
         source.symlink_to(Path('../Resources') / name, target_is_directory=True)
+    if runtime_only:
+        verify_no_bundled_models(app / 'Contents/Resources')
     if library_directory is not None:
         deploy_native_libraries(app, library_directory)
 
@@ -256,15 +279,55 @@ def runtime_manifest(source, runtime, static_runtime=False):
         models=source['models'])
 
 
-def finalize(source, runtime, static_runtime=False):
+def bundled_models_directory(runtime):
+    """Validate every package-owned parent before touching the model subtree."""
+    require_real_directory(runtime)
+    assets = runtime / 'assets'
+    is_bundle_directory = runtime.name in ('MacOS', 'Resources') and runtime.parent.name == 'Contents'
+    if is_bundle_directory:
+        validate_bundle_directories(runtime.parent.parent)
+    if assets.is_symlink():
+        if (not is_bundle_directory or runtime.name != 'MacOS'
+                or assets.readlink() != Path('../Resources/assets')):
+            raise ValueError(f'Invalid bundled resource link: {assets}')
+        assets = runtime.parent / 'Resources/assets'
+        if assets.is_symlink() or not assets.is_dir():
+            raise ValueError(f'Invalid bundled resource link: {assets}')
+    require_real_directory(assets)
+    require_real_directory(assets / 'ocr')
+    return assets / 'ocr/models'
+
+
+def remove_bundled_models(runtime):
+    """Make reused Mini staging trees model-free without touching the cache."""
+    directory = bundled_models_directory(runtime)
+    if directory.is_symlink() or directory.is_file():
+        directory.unlink()
+    elif directory.exists():
+        shutil.rmtree(directory)
+
+
+def verify_no_bundled_models(runtime):
+    directory = bundled_models_directory(runtime)
+    if directory.exists() or directory.is_symlink():
+        raise ValueError(f'Runtime-only OCR package must not contain bundled models: {directory}')
+
+
+def finalize(source, runtime, static_runtime=False, runtime_only=False):
+    if runtime_only:
+        verify_no_bundled_models(runtime)
     manifest = runtime_manifest(source, runtime, static_runtime)
     atomic_json(runtime / 'assets/ocr/asset-manifest.json', manifest)
 
 
-def verify_assets(source, runtime, static_runtime=False):
+def verify_assets(source, runtime, static_runtime=False, runtime_only=False):
+    if runtime_only:
+        verify_no_bundled_models(runtime)
     actual = json.loads((runtime / 'assets/ocr/asset-manifest.json').read_text())
     if actual != runtime_manifest(source, runtime, static_runtime):
         raise ValueError('Bundled OCR manifest does not match finalized runtime bytes')
+    if runtime_only:
+        return actual
     small = next(m for m in source['models'] if m['type'] == 'small')
     directory = runtime / 'assets/ocr/models' / small['id']
     for item in small['files']:
@@ -343,11 +406,15 @@ def main():
                         help='Finalize after macdeployqt has moved dependencies into Frameworks')
     parser.add_argument('--static-runtime', action='store_true',
                         help='ONNX Runtime is linked into the worker instead of deployed as a dylib')
+    parser.add_argument('--runtime-only', action='store_true',
+                        help='Package the OCR runtime without bundled models')
     args = parser.parse_args()
+    if args.runtime_only and args.command == 'fetch-models':
+        parser.error('--runtime-only cannot be used with fetch-models')
     if args.command == 'prepare-bundle':
         if args.app is None:
             parser.error('--app is required')
-        prepare_bundle(args.app.resolve(), args.library_dir)
+        prepare_bundle(args.app.resolve(), args.library_dir, args.runtime_only)
         return
     source = json.loads(args.manifest.read_text())
     if args.command == 'fetch-models':
@@ -357,6 +424,8 @@ def main():
         return
     if args.runtime_dir is None:
         parser.error('--runtime-dir is required')
+    if args.runtime_only:
+        bundled_models_directory(args.runtime_dir.absolute())
     runtime = args.runtime_dir.resolve()
     if args.command == 'stage':
         if args.worker is None or (args.library is None and not args.static_runtime):
@@ -367,18 +436,22 @@ def main():
             stage_native_dependencies(args.library, runtime, args.worker)
         else:
             (runtime / RUNTIME_FILES[1]).unlink(missing_ok=True)
-        stage_models(source, args.cache, runtime / 'assets/ocr/models')
-        finalize(source, runtime, args.static_runtime)
+        if args.runtime_only:
+            remove_bundled_models(runtime)
+        else:
+            stage_models(source, args.cache, runtime / 'assets/ocr/models')
+        finalize(source, runtime, args.static_runtime, args.runtime_only)
     elif args.command == 'finalize':
         if args.deployed:
             remove_development_libraries(runtime)
-        finalize(source, runtime, args.static_runtime)
+        finalize(source, runtime, args.static_runtime, args.runtime_only)
     else:
-        manifest = verify_assets(source, runtime, args.static_runtime)
+        manifest = verify_assets(source, runtime, args.static_runtime, args.runtime_only)
         binaries = verify_bundle(args.app.resolve()) if args.app else []
         if args.report:
             atomic_json(args.report, dict(platform='macos-arm64', runtime=manifest['runtime'],
-                        bundled_model=manifest['default_model'], verified_binaries=binaries,
+                        bundled_model=None if args.runtime_only else manifest['default_model'],
+                        verified_binaries=binaries,
                         signature='ad-hoc' if args.app else None))
         print('Verified macOS ARM64 OCR assets' + (' and app bundle' if args.app else ''))
 

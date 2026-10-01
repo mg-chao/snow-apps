@@ -222,6 +222,34 @@ fn moving_a_rectangle_still_snaps_to_other_rectangles() {
 }
 
 #[test]
+fn visible_external_guide_snaps_move_with_element_snapping_disabled() {
+    let mut engine = Engine::default();
+    let viewport = engine.create_viewport(ViewportConfig::default()).unwrap();
+    engine
+        .set_viewport_surface_size(viewport, 800, 600)
+        .unwrap();
+    let id = create_element(
+        &mut engine,
+        viewport,
+        ActiveTool::Shape,
+        (100.0, 450.0),
+        (180.0, 530.0),
+    );
+    assert!(!engine.viewport_snap_config(viewport).unwrap().enabled);
+    let mut targets = snow_draw_engine_editor::SnapGuideTargets::default();
+    targets.vertical_xs[0] = Some(-100.0);
+    engine
+        .set_viewport_snap_guide_targets(viewport, targets)
+        .unwrap();
+    select(&mut engine, viewport, id);
+    pointer(&mut engine, viewport, PointerEventType::Down, 140.0, 490.0);
+    pointer(&mut engine, viewport, PointerEventType::Move, 267.0, 490.0);
+    pointer(&mut engine, viewport, PointerEventType::Up, 267.0, 490.0);
+    let rect = engine.model.rectangle(id).unwrap();
+    assert_eq!(rect.center.x + rect.width / 2.0, -100.0);
+}
+
+#[test]
 fn creating_a_rectangle_does_not_snap_to_filter_edges() {
     let (mut engine, viewport) = snap_enabled_engine();
     create_element(

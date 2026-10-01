@@ -66,6 +66,209 @@ class MacOSOcrAssets(unittest.TestCase):
         ocr.finalize(self.source, self.runtime)
         ocr.verify_assets(self.source, self.runtime)
 
+    def command(self, command, *arguments):
+        manifest = self.root / 'source-manifest.json'
+        ocr.atomic_json(manifest, self.source)
+        argv = ['snow-shot-macos-ocr.py', command, '--manifest', str(manifest),
+                '--runtime-dir', str(self.runtime), *map(str, arguments)]
+        with patch.object(ocr.sys, 'argv', argv):
+            ocr.main()
+
+    def test_runtime_only_stage_removes_stale_models_and_retains_download_metadata(self):
+        cache = self.root / 'cache'
+        with patch.object(ocr, 'stage_models', side_effect=AssertionError('models must not stage')):
+            self.command('stage', '--worker', self.runtime / 'snow-ocr-process',
+                         '--static-runtime', '--runtime-only', '--cache', cache)
+        self.assertFalse((self.runtime / 'assets/ocr/models').exists())
+        self.assertFalse(cache.exists())
+        result = ocr.verify_assets(self.source, self.runtime, static_runtime=True, runtime_only=True)
+        self.assertEqual(result['default_model'], 'small')
+        self.assertEqual(result['models'], self.source['models'])
+        self.assertTrue(result['runtime']['static'])
+        self.assertEqual([item['name'] for item in result['runtime']['files']], ['snow-ocr-process'])
+        self.command('finalize', '--static-runtime', '--runtime-only')
+        report = self.root / 'runtime-only-report.json'
+        self.command('verify', '--static-runtime', '--runtime-only', '--report', report)
+        self.assertIsNone(json.loads(report.read_text())['bundled_model'])
+        with self.assertRaisesRegex(ValueError, 'Missing or corrupt bundled model'):
+            ocr.verify_assets(self.source, self.runtime, static_runtime=True)
+
+    def test_runtime_only_finalization_and_verification_reject_model_payload(self):
+        ocr.finalize(self.source, self.runtime)
+        for operation in (ocr.finalize, ocr.verify_assets):
+            with self.assertRaisesRegex(ValueError, 'must not contain bundled models'):
+                operation(self.source, self.runtime, runtime_only=True)
+        self.assertTrue((self.model / 'det.onnx').exists())
+        ocr.remove_bundled_models(self.runtime)
+        ocr.finalize(self.source, self.runtime, runtime_only=True)
+        result = ocr.verify_assets(self.source, self.runtime, runtime_only=True)
+        self.assertFalse(result['runtime']['static'])
+        self.assertEqual(len(result['runtime']['files']), 2)
+        models = self.runtime / 'assets/ocr/models'
+        models.symlink_to(self.root / 'missing-model-directory')
+        with self.assertRaisesRegex(ValueError, 'must not contain bundled models'):
+            ocr.verify_assets(self.source, self.runtime, runtime_only=True)
+
+    def test_runtime_only_staging_removes_model_links_without_deleting_cache(self):
+        cached = self.root / 'cache/ocr-models-small-id'
+        cached.parent.mkdir()
+        self.model.rename(cached)
+        (self.runtime / 'assets/ocr/models').rmdir()
+        (self.runtime / 'assets/ocr/models').symlink_to(cached.parent)
+        self.command('stage', '--worker', self.runtime / 'snow-ocr-process',
+                     '--static-runtime', '--runtime-only')
+        self.assertFalse((self.runtime / 'assets/ocr/models').is_symlink())
+        self.assertTrue((cached / 'det.onnx').exists())
+
+    def test_runtime_only_cleanup_rejects_ocr_parent_links_without_deleting_cache(self):
+        cached = self.root / 'cache'
+        (self.runtime / 'assets/ocr').rename(cached)
+        (self.runtime / 'assets/ocr').symlink_to(cached)
+        for operation in (ocr.remove_bundled_models, ocr.verify_no_bundled_models):
+            with self.assertRaisesRegex(ValueError, 'Invalid bundled resource directory'):
+                operation(self.runtime)
+            self.assertEqual((cached / 'models/small-id/det.onnx').read_bytes(), b'det.onnx')
+        with self.assertRaisesRegex(ValueError, 'Invalid bundled resource directory'):
+            self.command('stage', '--worker', self.runtime / 'snow-ocr-process',
+                         '--static-runtime', '--runtime-only')
+        self.assertTrue((cached / 'models/small-id/rec.onnx').is_file())
+
+    def test_runtime_only_cleanup_rejects_external_asset_parent_links(self):
+        cached = self.root / 'cache'
+        (self.runtime / 'assets').rename(cached)
+        (self.runtime / 'assets').symlink_to(cached)
+        with self.assertRaisesRegex(ValueError, 'Invalid bundled resource link'):
+            ocr.remove_bundled_models(self.runtime)
+        self.assertTrue((cached / 'ocr/models/small-id/det.onnx').is_file())
+
+    def test_runtime_only_cli_rejects_external_runtime_root_before_resolving_it(self):
+        cached = self.root / 'cache-runtime'
+        self.runtime.rename(cached)
+        self.runtime.symlink_to(cached)
+        with self.assertRaisesRegex(ValueError, 'Invalid bundled resource directory'):
+            self.command('stage', '--worker', self.runtime / 'snow-ocr-process',
+                         '--static-runtime', '--runtime-only')
+        self.assertEqual((cached / 'assets/ocr/models/small-id/det.onnx').read_bytes(), b'det.onnx')
+
+    def test_full_staging_rebundles_small_after_runtime_only_staging(self):
+        cached = self.root / 'cache/ocr-models-small-id'
+        cached.mkdir(parents=True)
+        for item in self.source['models'][0]['files']:
+            ocr.copy_changed(self.model / item['name'], cached / item['name'])
+        arguments = ('--worker', self.runtime / 'snow-ocr-process',
+                     '--static-runtime', '--cache', cached.parent)
+        self.command('stage', *arguments, '--runtime-only')
+        with patch.object(ocr.urllib.request, 'urlopen', side_effect=AssertionError('network')):
+            self.command('stage', *arguments)
+        ocr.verify_assets(self.source, self.runtime, static_runtime=True)
+        for item in self.source['models'][0]['files']:
+            self.assertTrue(ocr.valid(self.model / item['name'], item))
+
+    def test_runtime_only_bundle_preparation_cleans_reused_resource_models(self):
+        app = self.root / 'Snow Shot Mini.app'
+        resources = app / 'Contents/Resources/assets'
+        stale = resources / 'ocr/models/old-small-id/rec.onnx'
+        stale.parent.mkdir(parents=True)
+        stale.write_bytes(b'previous bundled model')
+        incoming = app / 'Contents/MacOS/assets/ocr/asset-manifest.json'
+        incoming.parent.mkdir(parents=True)
+        incoming.write_text(json.dumps(self.source))
+        with patch.object(ocr.sys, 'argv', ['snow-shot-macos-ocr.py', 'prepare-bundle',
+                                         '--app', str(app), '--runtime-only']):
+            ocr.main()
+        self.assertTrue((app / 'Contents/MacOS/assets').is_symlink())
+        self.assertFalse((resources / 'ocr/models').exists())
+        self.assertEqual(json.loads(incoming.read_text()), self.source)
+        # An existing resource link must also clean up a package left by an
+        # earlier install that bundled models before the Mini policy changed.
+        stale.parent.mkdir(parents=True)
+        stale.write_bytes(b'previous bundled model')
+        ocr.prepare_bundle(app, runtime_only=True)
+        self.assertFalse((resources / 'ocr/models').exists())
+        ocr.prepare_bundle(app, runtime_only=True)
+        self.assertTrue((resources / 'ocr/asset-manifest.json').is_file())
+
+    def test_runtime_only_bundle_preparation_rejects_external_resource_links(self):
+        app = self.root / 'Snow Shot Mini.app'
+        runtime = app / 'Contents/MacOS'
+        resources = app / 'Contents/Resources'
+        runtime.mkdir(parents=True)
+        resources.mkdir(parents=True)
+        (runtime / 'assets').symlink_to('../Resources/assets')
+        (resources / 'assets').symlink_to(self.runtime / 'assets')
+        with self.assertRaisesRegex(ValueError, 'Invalid bundled resource link'):
+            ocr.prepare_bundle(app, runtime_only=True)
+        self.assertTrue((self.model / 'det.onnx').exists())
+
+    def test_runtime_only_resource_merge_never_overwrites_destination_model_cache(self):
+        app = self.root / 'Snow Shot Mini.app'
+        source = app / 'Contents/MacOS/assets/ocr'
+        resources = app / 'Contents/Resources/assets/ocr'
+        incoming = source / 'models/small-id/rec.onnx'
+        incoming.parent.mkdir(parents=True)
+        incoming.write_bytes(b'stale bundled model')
+        (source / 'asset-manifest.json').write_text(json.dumps(self.source))
+        resources.mkdir(parents=True)
+        cached = self.root / 'cache/models/small-id/rec.onnx'
+        cached.parent.mkdir(parents=True)
+        cached.write_bytes(b'previously downloaded model')
+        (resources / 'models').symlink_to(cached.parent.parent)
+
+        ocr.prepare_bundle(app, runtime_only=True)
+
+        self.assertEqual(cached.read_bytes(), b'previously downloaded model')
+        self.assertFalse((resources / 'models').exists())
+        self.assertFalse((resources / 'models').is_symlink())
+        self.assertTrue((app / 'Contents/MacOS/assets').is_symlink())
+        self.assertEqual(json.loads((resources / 'asset-manifest.json').read_text()), self.source)
+
+    def test_runtime_only_bundle_without_source_rejects_external_resources(self):
+        app = self.root / 'Snow Shot Mini.app'
+        resources = app / 'Contents/Resources'
+        resources.mkdir(parents=True)
+        (resources / 'assets').symlink_to(self.runtime / 'assets')
+        self.assertFalse((app / 'Contents/MacOS/assets').exists())
+        with self.assertRaisesRegex(ValueError, 'Invalid bundled resource link'):
+            ocr.prepare_bundle(app, runtime_only=True)
+        self.assertEqual((self.model / 'det.onnx').read_bytes(), b'det.onnx')
+
+    def test_runtime_only_bundle_rejects_external_ocr_and_resource_ancestors(self):
+        app = self.root / 'Snow Shot Mini.app'
+        resources = app / 'Contents/Resources'
+        assets = resources / 'assets'
+        assets.mkdir(parents=True)
+        (assets / 'ocr').symlink_to(self.runtime / 'assets/ocr')
+        with self.assertRaisesRegex(ValueError, 'Invalid bundled resource directory'):
+            ocr.prepare_bundle(app, runtime_only=True)
+        self.assertEqual((self.model / 'rec.onnx').read_bytes(), b'rec.onnx')
+
+        (assets / 'ocr').unlink()
+        assets.rmdir()
+        resources.rmdir()
+        resources.symlink_to(self.runtime)
+        with self.assertRaisesRegex(ValueError, 'Invalid bundled resource directory'):
+            ocr.prepare_bundle(app, runtime_only=True)
+        self.assertEqual((self.model / 'rec.onnx').read_bytes(), b'rec.onnx')
+
+    def test_runtime_only_cleanup_accepts_valid_executable_resource_link(self):
+        app = self.root / 'Snow Shot Mini.app'
+        runtime = app / 'Contents/MacOS'
+        resources = app / 'Contents/Resources'
+        runtime.mkdir(parents=True)
+        resources.mkdir(parents=True)
+        (self.runtime / 'assets').rename(resources / 'assets')
+        (runtime / 'assets').symlink_to('../Resources/assets')
+        ocr.remove_bundled_models(runtime)
+        self.assertTrue((runtime / 'assets').is_symlink())
+        self.assertFalse((resources / 'assets/ocr/models').exists())
+        ocr.verify_no_bundled_models(runtime)
+
+    def test_fetch_models_still_requests_all_downloadable_model_variants(self):
+        with patch.object(ocr, 'stage_models') as stage:
+            self.command('fetch-models', '--model-root', self.root / 'fetched')
+        stage.assert_called_once_with(self.source, ocr.ROOT / 'artifacts',
+                                      self.root / 'fetched', all_models=True)
+
     def test_static_runtime_manifest_contains_only_the_linked_worker(self):
         (self.runtime / 'libonnxruntime.dylib').unlink()
         ocr.finalize(self.source, self.runtime, static_runtime=True)

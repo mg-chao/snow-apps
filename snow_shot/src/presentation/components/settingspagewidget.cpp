@@ -499,6 +499,9 @@ class SettingsPageWidget::Impl {
                             : payload.scope == settings::SettingsLocalShortcutScope::ScreenRecording
                                 ? ShortcutKeyRowConfig::ValidationScope::RecordingShortcut
                                 : ShortcutKeyRowConfig::ValidationScope::PinnedWindowShortcut;
+                        config.allowModifierOnlyAlt =
+                            payload.scope == settings::SettingsLocalShortcutScope::Screenshot &&
+                            payload.shortcutId == QStringLiteral("toggle_guides");
                         config.presentation = ShortcutKeyRowConfig::Presentation::CompactFormField;
                         auto* control = new ShortcutKeyRow(config, metric, mainWindowMetric, list);
                         control->setObjectName(settings::generatedObjectName(

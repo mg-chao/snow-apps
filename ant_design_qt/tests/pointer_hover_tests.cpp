@@ -229,6 +229,39 @@ void independentReasonsAndPopupTravel() {
   require(!f.controller.popupVisible(), "explicit dismissal must close the popup");
 }
 
+void siblingPopupCornerCannotStealAnEstablishedHoverTarget() {
+  const auto opensAfterDeliveredHover = [](bool interactive, bool moveCursor) {
+    Fixture f;
+    f.controller.setVisibilityMode(OverlayPopupController::VisibilityMode::External);
+    f.controller.setMouseEnterDelayMs(10);
+    int opens = 0;
+    QObject::connect(&f.controller, &OverlayPopupController::popupVisibilityRequested,
+                     [&opens](bool visible) {
+                       if (visible) ++opens;
+                     });
+    OverlayPopupSurface sibling;
+    sibling.setWindowFlags(Qt::Tool | Qt::FramelessWindowHint);
+    sibling.setArrowVisible(false);
+    sibling.resize(160, 100);
+    const QPoint local = interactive ? sibling.rect().center() : QPoint(1, 1);
+    sibling.move(f.cursor - local);
+    sibling.show();
+    require(sibling.containsInteractiveGlobalPos(f.cursor) == interactive,
+            "sibling popup fixture must distinguish its body from a transparent corner");
+    f.target = &sibling;
+    if (moveCursor) f.cursor = f.outside.mapToGlobal(QPoint(5, 5));
+    f.enter(f.trigger);
+    QTest::qWait(40);
+    return opens;
+  };
+  require(opensAfterDeliveredHover(false, false) == 1,
+          "a sibling popup's transparent corner must not veto a delivered trigger hover");
+  require(opensAfterDeliveredHover(true, false) == 0,
+          "a sibling popup's interactive body must still occlude the trigger");
+  require(opensAfterDeliveredHover(false, true) == 0,
+          "moving away must invalidate the delivered hover behind a sibling popup");
+}
+
 void nonInteractivePopupCornerOverTriggerPreservesHover() {
   for (const auto layer :
        {adqt::widgets::AdPopupLayerMode::QtTool, adqt::widgets::AdPopupLayerMode::InWindow}) {
@@ -601,6 +634,7 @@ int main(int argc, char** argv) {
   eventPositionOwnsImmediateTransitions();
   deadlinesValidateTargetAndStopWhenIdle();
   tooltipWindowCannotStealAnEstablishedHoverTarget();
+  siblingPopupCornerCannotStealAnEstablishedHoverTarget();
   independentReasonsAndPopupTravel();
   nonInteractivePopupCornerOverTriggerPreservesHover();
   embeddedPopupShadowForwardsWheelAfterClosing();

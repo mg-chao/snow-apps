@@ -34,9 +34,11 @@ pub enum RapidOcrError {
     #[error(transparent)]
     Ort(#[from] ort::Error),
 
+    #[cfg(any(feature = "config-yaml", feature = "model-download"))]
     #[error(transparent)]
     Yaml(#[from] serde_yaml::Error),
 
+    #[cfg(any(feature = "remote-input", feature = "model-download"))]
     #[error(transparent)]
     Reqwest(#[from] reqwest::Error),
 

@@ -70,7 +70,8 @@ if(WIN32)
     foreach(_lib vcpkg_crashpad_client vcpkg_crashpad_client_common vcpkg_crashpad_util vcpkg_crashpad_base)
         list(APPEND _snow_crash_links "${CRASHPAD_${_lib}_LIBRARY_RELEASE}")
     endforeach()
-    list(APPEND _snow_crash_links "${ZLIB_LIBRARY_RELEASE}" dbghelp.lib winhttp.lib rpcrt4.lib version.lib)
+    list(APPEND _snow_crash_links "${ZLIB_LIBRARY_RELEASE}" advapi32.lib dbghelp.lib
+        winhttp.lib rpcrt4.lib version.lib)
     list(JOIN _snow_crash_links "\n" _snow_crash_link_manifest)
     file(GENERATE OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/generated/snow-ocr-crash-$<CONFIG>.rsp"
         CONTENT "${_snow_crash_link_manifest}\n")
