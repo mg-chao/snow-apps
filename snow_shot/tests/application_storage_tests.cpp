@@ -101,8 +101,8 @@ void scrollingIntervalSettingsPersistAndValidate() {
     require(settings.scrollingAutoScrollIntervalMs() == 350,
             "interval must survive application storage restart");
     appStorage.shutdown();
-    for (const QJsonValue value : {QJsonValue(127), QJsonValue(1001), QJsonValue(200.5),
-                                   QJsonValue(QStringLiteral("invalid"))}) {
+    for (const QJsonValue& value : {QJsonValue(127), QJsonValue(1001), QJsonValue(200.5),
+                                    QJsonValue(QStringLiteral("invalid"))}) {
         const QString path = temporary.filePath(QStringLiteral("invalid.json"));
         writeBytes(
             path, QJsonDocument(
@@ -2668,6 +2668,34 @@ void recordingGainSettingsPersistAndValidate() {
 }
 
 int main(int argc, char** argv) {
+#ifdef Q_OS_MACOS
+    if (argc == 2 && QByteArray(argv[1]) == "--directory-resolution-only") {
+        require(QCoreApplication::instance() == nullptr,
+                "startup directory resolution runs before the Qt application exists");
+        const QString expected = QFileInfo(QString::fromLocal8Bit(argv[0])).canonicalPath();
+        QTemporaryDir temporary;
+        require(temporary.isValid(), "startup directory resolution needs isolated storage");
+        require(QDir::setCurrent(temporary.path()), "change to an unrelated launch directory");
+        const storage::StorageInitializationOptions options{
+            {}, temporary.filePath(QStringLiteral("data")), 60000};
+        const auto early = storage::ApplicationStorage::resolveDirectory(options);
+        require(early.executableDirectory == expected,
+                "pre-application startup resolves the executable rather than the launch directory");
+        require(early.effectiveDirectory == options.appDataDirectory,
+                "pre-application resolution uses the requested isolated storage");
+        LifetimeObservedApplication application(argc, argv);
+        require(early.executableDirectory == QCoreApplication::applicationDirPath() &&
+                    storage::ApplicationStorage::resolveDirectory(options).executableDirectory ==
+                        early.executableDirectory,
+                "executable directory stays stable across Qt application initialization");
+        const QString explicitDirectory = temporary.filePath(QStringLiteral("bin"));
+        require(storage::ApplicationStorage::resolveDirectory(
+                    {explicitDirectory, options.appDataDirectory, 60000})
+                        .executableDirectory == explicitDirectory,
+                "explicit executable directories remain authoritative");
+        return 0;
+    }
+#endif
     LifetimeObservedApplication application(argc, argv);
     if (application.arguments().contains(QStringLiteral("--recording-audio-only"))) {
         recordingGainSettingsPersistAndValidate();

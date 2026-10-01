@@ -1722,6 +1722,12 @@ if(SNOW_SHOT_BUILD_TESTS)
         tests/application_storage_tests.cpp
     )
     target_link_libraries(snow-shot-application-storage-tests PRIVATE snow_shot_storage Qt6::Core)
+    if(APPLE)
+        add_test(NAME snow-shot-storage-startup-directory-tests
+            COMMAND snow-shot-application-storage-tests --directory-resolution-only)
+        set_tests_properties(snow-shot-storage-startup-directory-tests PROPERTIES
+            LABELS "unit;macos" TIMEOUT 30)
+    endif()
     add_test(NAME snow-shot-selection-aspect-ratio-settings-tests
         COMMAND snow-shot-application-storage-tests --selection-aspect-ratio-only)
     set_tests_properties(snow-shot-selection-aspect-ratio-settings-tests PROPERTIES LABELS "unit"
