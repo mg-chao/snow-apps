@@ -80,6 +80,11 @@ shortcuts::ShortcutBindingList normalizedBindings(const shortcuts::ShortcutBindi
 } // namespace
 
 struct WindowShortcutManager::Impl {
+    struct RegisteredScope {
+        QPointer<QWidget> window;
+        QMetaObject::Connection destroyedConnection;
+    };
+
     struct PendingActivation {
         BindingHandle handle = 0;
         QPointer<QWidget> scope;
@@ -91,6 +96,7 @@ struct WindowShortcutManager::Impl {
         QPointer<QObject> owner;
         Binding binding;
         shortcuts::ShortcutBindingList activeReleaseBindings;
+        QMetaObject::Connection destroyedConnection;
     };
 
     struct Candidate {
@@ -153,23 +159,22 @@ struct WindowShortcutManager::Impl {
             return;
         }
         QWidget* eventWindow = widget->window();
-        const bool isScopeWindow = std::any_of(m_scopeWindows.cbegin(), m_scopeWindows.cend(),
-                                               [eventWindow](const QPointer<QWidget>& scopeWindow) {
-                                                   return scopeWindow == eventWindow;
-                                               });
+        const bool isScopeWindow = std::any_of(
+            m_scopeWindows.cbegin(), m_scopeWindows.cend(),
+            [eventWindow](const RegisteredScope& scope) { return scope.window == eventWindow; });
         // Every manager observes application-wide key presses, including those
         // handled by another window. That window can lose the release when it
         // closes, so invalidate inactive scopes even when the event is outside
         // this manager. Hiding an ordinary child must not end a held key.
         if (type == QEvent::Hide && isScopeWindow) {
-            for (const QPointer<QWidget>& scopeWindow : m_scopeWindows) {
-                if (scopeWindow != nullptr && scopeWindow->isVisible()) {
+            for (const RegisteredScope& scope : m_scopeWindows) {
+                if (scope.window != nullptr && scope.window->isVisible()) {
                     return;
                 }
             }
         } else {
-            for (const QPointer<QWidget>& scopeWindow : m_scopeWindows) {
-                if (scopeWindow != nullptr && scopeWindow->isActiveWindow()) {
+            for (const RegisteredScope& scope : m_scopeWindows) {
+                if (scope.window != nullptr && scope.window->isActiveWindow()) {
                     return;
                 }
             }
@@ -188,11 +193,20 @@ struct WindowShortcutManager::Impl {
             Qt::QueuedConnection);
     }
 
+    void removeScopes(QWidget* root = nullptr) {
+        m_scopeWindows.erase(std::remove_if(m_scopeWindows.begin(), m_scopeWindows.end(),
+                                            [root](const RegisteredScope& scope) {
+                                                if (scope.window.isNull() || scope.window == root) {
+                                                    QObject::disconnect(scope.destroyedConnection);
+                                                    return true;
+                                                }
+                                                return false;
+                                            }),
+                             m_scopeWindows.end());
+    }
+
     [[nodiscard]] QWidget* scopeForReceiver(QObject* receiver) {
-        m_scopeWindows.erase(
-            std::remove_if(m_scopeWindows.begin(), m_scopeWindows.end(),
-                           [](const QPointer<QWidget>& window) { return window.isNull(); }),
-            m_scopeWindows.end());
+        removeScopes();
 
         auto* widget = qobject_cast<QWidget*>(receiver);
         if (widget == nullptr) {
@@ -207,9 +221,9 @@ struct WindowShortcutManager::Impl {
         // The common case is a child widget of the registered top-level
         // window. Keep the comparison on window() so ordinary child widgets
         // do not require a native handle.
-        for (const QPointer<QWidget>& scopeWindow : m_scopeWindows) {
-            if (scopeWindow != nullptr && scopeWindow->window() == receiverWindow) {
-                return scopeWindow.data();
+        for (const RegisteredScope& scope : m_scopeWindows) {
+            if (scope.window != nullptr && scope.window->window() == receiverWindow) {
+                return scope.window.data();
             }
         }
 
@@ -221,13 +235,13 @@ struct WindowShortcutManager::Impl {
         QSet<QWindow*> visited;
         while (candidate != nullptr && !visited.contains(candidate)) {
             visited.insert(candidate);
-            for (const QPointer<QWidget>& scopeWindow : m_scopeWindows) {
-                if (scopeWindow == nullptr) {
+            for (const RegisteredScope& scope : m_scopeWindows) {
+                if (scope.window == nullptr) {
                     continue;
                 }
-                QWindow* scopeHandle = scopeWindow->windowHandle();
+                QWindow* scopeHandle = scope.window->windowHandle();
                 if (scopeHandle != nullptr && scopeHandle == candidate) {
-                    return scopeWindow.data();
+                    return scope.window.data();
                 }
             }
             candidate = candidate->transientParent();
@@ -238,9 +252,9 @@ struct WindowShortcutManager::Impl {
         // established by setParent(owner, Qt::Tool), so use it as a fallback.
         for (QWidget* parent = receiverWindow->parentWidget(); parent != nullptr;
              parent = parent->parentWidget()) {
-            for (const QPointer<QWidget>& scopeWindow : m_scopeWindows) {
-                if (scopeWindow != nullptr && scopeWindow->window() == parent->window()) {
-                    return scopeWindow.data();
+            for (const RegisteredScope& scope : m_scopeWindows) {
+                if (scope.window != nullptr && scope.window->window() == parent->window()) {
+                    return scope.window.data();
                 }
             }
         }
@@ -366,7 +380,7 @@ struct WindowShortcutManager::Impl {
     }
 
     WindowShortcutManager& q;
-    QList<QPointer<QWidget>> m_scopeWindows;
+    QList<RegisteredScope> m_scopeWindows;
     QVector<RegisteredBinding> m_bindings;
     QHash<quint64, PendingActivation> m_releaseActivations;
     QSet<quint64> m_heldKeys;
@@ -386,6 +400,12 @@ WindowShortcutManager::WindowShortcutManager(QObject* parent)
 }
 
 WindowShortcutManager::~WindowShortcutManager() {
+    for (const auto& scope : m_impl->m_scopeWindows) {
+        disconnect(scope.destroyedConnection);
+    }
+    for (const auto& binding : m_impl->m_bindings) {
+        disconnect(binding.destroyedConnection);
+    }
     auto& owners = applicationKeyState().releaseOwners;
     for (auto it = owners.begin(); it != owners.end();) {
         it = it.value() == this ? owners.erase(it) : std::next(it);
@@ -400,35 +420,27 @@ void WindowShortcutManager::addScopeWindow(QWidget* window) {
         return;
     }
     QWidget* root = window->window();
-    const bool alreadyRegistered =
-        std::any_of(m_impl->m_scopeWindows.cbegin(), m_impl->m_scopeWindows.cend(),
-                    [root](const QPointer<QWidget>& existing) { return existing == root; });
+    const bool alreadyRegistered = std::any_of(
+        m_impl->m_scopeWindows.cbegin(), m_impl->m_scopeWindows.cend(),
+        [root](const Impl::RegisteredScope& existing) { return existing.window == root; });
     if (alreadyRegistered) {
         return;
     }
-    m_impl->m_scopeWindows.push_back(root);
-    connect(root, &QObject::destroyed, this, [this]() {
+    const auto connection = connect(root, &QObject::destroyed, this, [this]() {
         for (auto& pending : m_impl->m_releaseActivations) {
             if (!pending.scope) {
                 pending.handle = 0;
             }
         }
-        m_impl->m_scopeWindows.erase(
-            std::remove_if(m_impl->m_scopeWindows.begin(), m_impl->m_scopeWindows.end(),
-                           [](const QPointer<QWidget>& item) { return item.isNull(); }),
-            m_impl->m_scopeWindows.end());
+        m_impl->removeScopes();
     });
+    m_impl->m_scopeWindows.push_back({root, connection});
 }
 
 void WindowShortcutManager::removeScopeWindow(QWidget* window) {
     QWidget* root = window != nullptr ? window->window() : nullptr;
     m_impl->cancelReleaseActivations(0, root);
-    m_impl->m_scopeWindows.erase(std::remove_if(m_impl->m_scopeWindows.begin(),
-                                                m_impl->m_scopeWindows.end(),
-                                                [root](const QPointer<QWidget>& item) {
-                                                    return item.isNull() || item == root;
-                                                }),
-                                 m_impl->m_scopeWindows.end());
+    m_impl->removeScopes(root);
 }
 
 WindowShortcutManager::InputSuspensionHandle WindowShortcutManager::suspendInput() {
@@ -465,10 +477,10 @@ WindowShortcutManager::BindingHandle WindowShortcutManager::addBinding(QObject* 
     binding.keyCombinations.clear();
 
     const BindingHandle handle = m_impl->m_nextHandle++;
-    m_impl->m_bindings.push_back(
-        Impl::RegisteredBinding{handle, m_impl->m_nextOrder++, owner, std::move(binding), {}});
-    connect(owner, &QObject::destroyed, this,
-            [this, handle]() { static_cast<void>(removeBinding(handle)); });
+    const auto connection = connect(owner, &QObject::destroyed, this,
+                                    [this, handle]() { static_cast<void>(removeBinding(handle)); });
+    m_impl->m_bindings.push_back(Impl::RegisteredBinding{
+        handle, m_impl->m_nextOrder++, owner, std::move(binding), {}, connection});
     return handle;
 }
 
@@ -496,6 +508,7 @@ bool WindowShortcutManager::removeBinding(BindingHandle handle) {
         for (const auto& binding : registered->activeReleaseBindings) {
             applicationKeyState().releaseOwners.remove(shortcuts::shortcutKeyToken(binding));
         }
+        disconnect(registered->destroyedConnection);
     }
     const auto previousSize = m_impl->m_bindings.size();
     m_impl->m_bindings.erase(std::remove_if(m_impl->m_bindings.begin(), m_impl->m_bindings.end(),

@@ -154,6 +154,7 @@ class GlobalCanvasController::Session final : public QWidget, public SnowCanvasC
         activateDrawing();
     }
     ~Session() override {
+        finishColorSampling();
         drawing->setCustomRenderer(nullptr);
     }
     void activateDrawing() {
@@ -167,8 +168,7 @@ class GlobalCanvasController::Session final : public QWidget, public SnowCanvasC
         const bool next = !transparent;
         finishPan();
         drawing->resetEditingStatePreservingTool();
-        sampleTarget.clear();
-        drawing->clearCursorForLayer(SnowCanvasCursorLayer::Host);
+        finishColorSampling();
         if (!owner.m_platform.setInputTransparent(this, next)) {
             // A failed native operation may have changed only some flags.
             owner.m_platform.setInputTransparent(this, transparent);
@@ -243,6 +243,7 @@ class GlobalCanvasController::Session final : public QWidget, public SnowCanvasC
         cameraInitialized = true;
     }
     void closeEvent(QCloseEvent* event) override {
+        finishColorSampling();
         tools->hide();
         QWidget::closeEvent(event);
         QPointer<Session> session(this);
@@ -276,8 +277,7 @@ class GlobalCanvasController::Session final : public QWidget, public SnowCanvasC
             if (event->type() == QEvent::MouseButtonPress) {
                 auto* mouse = static_cast<QMouseEvent*>(event);
                 QPointer<adqt::widgets::AdColorPicker> target = sampleTarget;
-                sampleTarget.clear();
-                drawing->clearCursorForLayer(SnowCanvasCursorLayer::Host);
+                finishColorSampling();
                 if (mouse->button() == Qt::LeftButton) {
                     const QRectF area = drawing->canvasToViewTransform().inverted().mapRect(
                         QRectF(drawing->rect()));
@@ -290,12 +290,27 @@ class GlobalCanvasController::Session final : public QWidget, public SnowCanvasC
             }
             if (event->type() == QEvent::KeyPress &&
                 static_cast<QKeyEvent*>(event)->key() == Qt::Key_Escape) {
-                sampleTarget.clear();
-                drawing->clearCursorForLayer(SnowCanvasCursorLayer::Host);
+                finishColorSampling();
                 return true;
             }
         }
         return QWidget::eventFilter(watched, event);
+    }
+    void beginColorSampling(adqt::widgets::AdColorPicker* picker) {
+        if (transparent || !picker)
+            return;
+        finishColorSampling();
+        sampleTarget = picker;
+        sampleTargetDestroyed =
+            connect(picker, &QObject::destroyed, this, [this]() { finishColorSampling(); });
+        drawing->setCursorForLayer(SnowCanvasCursorLayer::Host, QCursor(Qt::CrossCursor));
+        activateDrawing();
+    }
+    void finishColorSampling() {
+        disconnect(sampleTargetDestroyed);
+        sampleTargetDestroyed = {};
+        sampleTarget.clear();
+        drawing->clearCursorForLayer(SnowCanvasCursorLayer::Host);
     }
     void finishPan() {
         if (!panning)
@@ -620,20 +635,7 @@ class GlobalCanvasController::Session final : public QWidget, public SnowCanvasC
                 drawing->insertDrawTemplate(payload, center);
             });
         connect(palette, &ScreenshotToolPalette::canvasColorSamplingRequested, this,
-                [this](adqt::widgets::AdColorPicker* picker) {
-                    if (transparent || !picker)
-                        return;
-                    sampleTarget = picker;
-                    drawing->setCursorForLayer(SnowCanvasCursorLayer::Host,
-                                               QCursor(Qt::CrossCursor));
-                    connect(picker, &QObject::destroyed, this, [this, picker]() {
-                        if (!sampleTarget || sampleTarget == picker) {
-                            sampleTarget.clear();
-                            drawing->clearCursorForLayer(SnowCanvasCursorLayer::Host);
-                        }
-                    });
-                    activateDrawing();
-                });
+                [this](adqt::widgets::AdColorPicker* picker) { beginColorSampling(picker); });
     }
     GlobalCanvasController& owner;
     SnowCanvasRuntime runtime;
@@ -644,6 +646,7 @@ class GlobalCanvasController::Session final : public QWidget, public SnowCanvasC
     ScreenshotToolPalette* palette = nullptr;
     QPointer<QScreen> display;
     QPointer<adqt::widgets::AdColorPicker> sampleTarget;
+    QMetaObject::Connection sampleTargetDestroyed;
     bool transparent = false;
     bool panning = false;
     bool cameraInitialized = false;

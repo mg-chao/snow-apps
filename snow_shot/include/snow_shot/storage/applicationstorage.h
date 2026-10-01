@@ -176,6 +176,7 @@ class ApplicationStorage final : public QObject {
     bool m_pinnedMaintenancePending = false;
     bool m_pinnedMaintenanceRunning = false;
     quint64 m_lastPinnedNotifiedRevision = 0;
+    QMetaObject::Connection m_aboutToQuitConnection;
     bool m_initialized = false;
 };
 } // namespace snow_shot::storage

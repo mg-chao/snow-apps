@@ -142,6 +142,108 @@ WindowShortcutManager::Binding binding(const QString& id, Qt::Key key, int prior
     return result;
 }
 
+class LifetimeObservedWidget : public QWidget {
+  public:
+    using QWidget::QWidget;
+
+    int destructionObserverCount() const {
+        return receivers(SIGNAL(destroyed(QObject*)));
+    }
+};
+
+void removedScopesReleaseTheirLifetimeObservers() {
+    LifetimeObservedWidget window;
+    QWidget child(&window);
+    WindowShortcutManager manager;
+    QObject unrelatedObserver;
+    QObject::connect(&window, &QObject::destroyed, &unrelatedObserver, [] {});
+    const int originalObservers = window.destructionObserverCount();
+    for (int iteration = 0; iteration < 256; ++iteration) {
+        manager.addScopeWindow(&child);
+        require(window.destructionObserverCount() == originalObservers + 1,
+                "an active scope must own exactly one destruction observer");
+        manager.addScopeWindow(&window);
+        require(window.destructionObserverCount() == originalObservers + 1,
+                "adding the same root again must preserve one destruction observer");
+        manager.removeScopeWindow(&child);
+        require(window.destructionObserverCount() == originalObservers,
+                "removing a reusable scope must release its destruction observer");
+    }
+
+    manager.addScopeWindow(&window);
+    int activations = 0;
+    require(manager.addBinding(&window, binding(QStringLiteral("scope-reuse"), Qt::Key_K, 100,
+                                                [&]() {
+                                                    ++activations;
+                                                    return true;
+                                                })) != 0,
+            "binding registration after repeated scope removal failed");
+    require(sendKey(&child, QEvent::KeyPress, Qt::Key_K) && activations == 1,
+            "a reused scope must continue dispatching its shortcuts");
+    sendKey(&child, QEvent::KeyRelease, Qt::Key_K);
+    manager.removeScopeWindow(&window);
+    sendKey(&child, QEvent::KeyPress, Qt::Key_K);
+    require(activations == 1, "a removed scope must stop dispatching its shortcuts");
+    sendKey(&child, QEvent::KeyRelease, Qt::Key_K);
+}
+
+void removedBindingsReleaseTheirLifetimeObservers() {
+    LifetimeObservedWidget owner;
+    WindowShortcutManager manager;
+    QObject unrelatedObserver;
+    int destroyed = 0;
+    QObject::connect(&owner, &QObject::destroyed, &unrelatedObserver,
+                     [&destroyed]() { ++destroyed; });
+    const int originalObservers = owner.destructionObserverCount();
+    for (int iteration = 0; iteration < 256; ++iteration) {
+        const auto handle = manager.addBinding(
+            &owner, binding(QStringLiteral("binding-reuse"), Qt::Key_K, 100, [] { return true; }));
+        require(handle != 0 && owner.destructionObserverCount() == originalObservers + 1,
+                "an active binding must own exactly one destruction observer");
+        require(manager.removeBinding(handle), "registered binding removal failed");
+        require(owner.destructionObserverCount() == originalObservers,
+                "removing a binding must release only its own destruction observer");
+        require(!manager.removeBinding(handle), "a removed binding must not remain registered");
+    }
+
+    auto destroyedOwner = std::make_unique<QObject>();
+    const auto destroyedHandle =
+        manager.addBinding(destroyedOwner.get(), binding(QStringLiteral("destroyed-owner"),
+                                                         Qt::Key_K, 100, [] { return true; }));
+    destroyedOwner.reset();
+    require(!manager.removeBinding(destroyedHandle),
+            "owner destruction must still unregister an active binding");
+    require(destroyed == 0, "unregistering a binding must not destroy its owner");
+}
+
+void managerDestructionRetiresObserversBeforeItsState() {
+    {
+        auto manager = std::make_unique<WindowShortcutManager>();
+        require(manager->addBinding(manager.get(), binding(QStringLiteral("self-owned"), Qt::Key_K,
+                                                           100, [] { return true; })) != 0,
+                "a manager may own its own shortcut binding");
+        manager.reset();
+    }
+
+    auto window = std::make_unique<LifetimeObservedWidget>();
+    auto owner = std::make_unique<QObject>();
+    auto manager = std::make_unique<WindowShortcutManager>();
+    manager->addScopeWindow(window.get());
+    require(manager->addBinding(owner.get(), binding(QStringLiteral("external-owner"), Qt::Key_K,
+                                                     100, [] { return true; })) != 0,
+            "an external binding owner must be registered before manager destruction");
+    QObject observer;
+    int destructionCalls = 0;
+    QObject::connect(manager.get(), &QObject::destroyed, &observer, [&] {
+        ++destructionCalls;
+        window.reset();
+        owner.reset();
+    });
+    manager.reset();
+    require(destructionCalls == 1 && !window && !owner,
+            "manager destruction observers may destroy registered scopes and owners safely");
+}
+
 void priorityAndFallthroughAreDeterministic() {
     QWidget window;
     QWidget child(&window);
@@ -1228,6 +1330,9 @@ int main(int argc, char** argv) {
         qputenv("QT_QPA_PLATFORM", "offscreen");
     }
     QApplication application(argc, argv);
+    removedScopesReleaseTheirLifetimeObservers();
+    removedBindingsReleaseTheirLifetimeObservers();
+    managerDestructionRetiresObserversBeforeItsState();
     windowCloseShortcutStaysWithinItsOwnSurface();
     sharedShortcutDomainCanonicalizesIdentityAndDisplay();
     canceledCloseDoesNotStealAnotherManagersFreshPress();

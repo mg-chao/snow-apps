@@ -55,6 +55,7 @@ class ThemeManager final : public QObject {
  private:
   struct ScopeState {
     ThemeOverride overrideValue;
+    QMetaObject::Connection destroyedConnection;
     bool hadExplicitPalette = false;
     QPalette originalPalette;
     bool hadExplicitFont = false;
