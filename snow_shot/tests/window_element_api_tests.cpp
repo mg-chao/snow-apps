@@ -6,6 +6,7 @@
 #include "snow_shot/storage/settingsadapters.h"
 
 #include "snow_ui_selector.h"
+#include "../src/presentation/selector/screenshotselectorserviceclient.h"
 
 #include <QApplication>
 #include <QFile>
@@ -617,6 +618,34 @@ void diagnosticEnvironmentOverridesRemainAvailable() {
     qunsetenv("SNOW_SHOT_UI_SELECTOR_BACKEND");
 #endif
 }
+
+void nativeWindowIdentitySurvivesClientCallbacksAndRefinement() {
+    automaticReply = false;
+    setApi(QStringLiteral("uia"));
+    ScreenshotSelectorResult received;
+    ScreenshotSelectorServiceClient client(
+        {{}, [&](const ScreenshotSelectorResult& result) { received = result; }});
+    require(client.startRefresh(1, {}), "native identity fixture refresh failed");
+    QCoreApplication::sendPostedEvents();
+    for (const auto hit : {std::optional<std::uintptr_t>(7), std::optional<std::uintptr_t>(0),
+                           std::optional<std::uintptr_t>()}) {
+        require(client.startHitTest(1, 1, 1, QPoint(10, 20),
+                                    ScreenshotSelectorHitTestMode::WindowSubElement),
+                "native identity fixture query failed");
+        Submission reply = submissions.last();
+        reply.query.mode = SNOW_UI_SELECTOR_HIT_TEST_MODE_UI_ELEMENT;
+        reply.query.window_id = hit.value_or(0);
+        reply.query.window_hit_tested = static_cast<uint8_t>(hit.has_value());
+        deliver(reply);
+        QCoreApplication::sendPostedEvents();
+        require(received.nativeWindowId == hit, "client must copy native window identity");
+        require(client.startRefinement(received), "native identity refinement rejected");
+        const auto& query = refinements.last().query;
+        require(query.window_id == hit.value_or(0) && query.window_hit_tested == hit.has_value(),
+                "refinement must preserve desktop, window, and unresolved native hits");
+    }
+    automaticReply = true;
+}
 } // namespace
 
 extern "C" {
@@ -724,6 +753,7 @@ int main(int argc, char** argv) {
     permissionFallbackIsAppliedAndWarningIsThrottled();
     permissionRevocationDuringRefinementAppliesFallback();
     accessibilityInitializationRefinesAndCancelsWithCapture();
+    nativeWindowIdentitySurvivesClientCallbacksAndRefinement();
     require(created == destroyed, "selector leaked a native service");
     applicationStorage.shutdown();
     return 0;

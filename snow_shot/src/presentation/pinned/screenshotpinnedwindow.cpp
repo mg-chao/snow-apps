@@ -1889,6 +1889,10 @@ bool ScreenshotPinnedWindow::present(const Config& requestedConfig,
         m_originalImage.setDevicePixelRatio(1.0);
     }
     m_transformedImage = ScreenshotResultCompositor::normalizeImage(m_originalImage);
+    if (!m_transformedImage.isNull()) {
+        // Keep the source mapping for baked images that extend beyond the content.
+        m_imageSource.materializedImage = m_transformedImage;
+    }
     m_originalPixelSize = !m_originalImage.isNull()
                               ? m_originalImage.size()
                               : QSize(std::max(1, qRound(m_canvasSourceRect.width())),

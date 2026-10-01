@@ -6,6 +6,7 @@
 #include "snow_draw_engine_qt/snow_canvas_runtime.h"
 
 #include <QList>
+#include <QColorSpace>
 
 #include <utility>
 
@@ -29,6 +30,7 @@ QImage renderPinnedViewport(const ScreenshotPinnedViewportExportSource& source) 
         CanvasExportSource{source.backgroundImage, source.backgroundCanvasRect}};
     QImage content =
         runtime.renderToImage(source.backgroundCanvasRect, source.contentPixelSize, sources);
+    content.setColorSpace(source.backgroundImage.colorSpace());
     ScreenshotResultCompositor::restoreBakedExterior(content, source.backgroundImage,
                                                      source.bakedSelectionPath);
     return content.isNull() ? QImage{}

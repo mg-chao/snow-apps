@@ -42,6 +42,7 @@ struct JpegInfo final {
     PixelFormat pixel_format = kRgb8;
     int turbo_pixel_format = TJPF_RGB;
     int subsampling = TJSAMP_UNKNOWN;
+    ColorEncoding color;
 };
 
 Result<ChromaSubsampling> chroma_subsampling(int value) {
@@ -102,9 +103,11 @@ Result<DocumentDescriptor> native_descriptor(const JpegInfo& info) {
     document.format = Format::jpeg;
     document.canvas_width = info.width;
     document.canvas_height = info.height;
+    document.color = info.color;
     RasterFrameDescriptor frame;
     frame.width = info.width;
     frame.height = info.height;
+    frame.color = info.color;
     frame.layout.alpha = AlphaMode::none;
     frame.layout.color_range = ColorRange::full;
     if (info.colorspace == TJCS_GRAY || info.subsampling == TJSAMP_GRAY) {
@@ -153,7 +156,7 @@ bool matching_descriptor(const DocumentDescriptor& left, const DocumentDescripto
 }
 
 Result<std::pair<TjHandle, JpegInfo>> read_header(std::span<const std::byte> bytes,
-                                                  const DecodeLimits& limits) {
+                                                  const DecodeOptions& options) {
     if (bytes.size() > std::numeric_limits<std::size_t>::max()) {
         return Status::error(ErrorCode::limit_exceeded, "JPEG input is too large.",
                              "libjpeg-turbo");
@@ -162,6 +165,9 @@ Result<std::pair<TjHandle, JpegInfo>> read_header(std::span<const std::byte> byt
     if (!handle) {
         return Status::error(ErrorCode::out_of_memory, "Could not create the JPEG decoder.",
                              "libjpeg-turbo");
+    }
+    if (tj3Set(handle.get(), TJPARAM_SAVEMARKERS, options.preserve_metadata ? 4 : 0) != 0) {
+        return tj_error(handle.get(), ErrorCode::decode_failed);
     }
     if (tj3DecompressHeader(handle.get(), reinterpret_cast<const unsigned char*>(bytes.data()),
                             bytes.size()) != 0) {
@@ -173,8 +179,8 @@ Result<std::pair<TjHandle, JpegInfo>> read_header(std::span<const std::byte> byt
         return Status::error(ErrorCode::corrupt_data, "JPEG dimensions are invalid.",
                              "libjpeg-turbo");
     }
-    Result<void> dimensions = validate_dimensions(static_cast<std::uint32_t>(width),
-                                                  static_cast<std::uint32_t>(height), limits);
+    Result<void> dimensions = validate_dimensions(
+        static_cast<std::uint32_t>(width), static_cast<std::uint32_t>(height), options.limits);
     if (!dimensions)
         return dimensions.error();
     JpegInfo info;
@@ -182,6 +188,26 @@ Result<std::pair<TjHandle, JpegInfo>> read_header(std::span<const std::byte> byt
     info.height = static_cast<std::uint32_t>(height);
     info.colorspace = tj3Get(handle.get(), TJPARAM_COLORSPACE);
     info.subsampling = tj3Get(handle.get(), TJPARAM_SUBSAMP);
+    if (options.preserve_metadata) {
+        std::size_t profile_size = 0;
+        // TurboJPEG reports an absent ICC profile as a warning with size zero.
+        // Untagged JPEGs are valid; other retrieval failures remain decode errors.
+        if (tj3GetICCProfile(handle.get(), nullptr, &profile_size) != 0 &&
+            (profile_size != 0 || tj3GetErrorCode(handle.get()) != TJERR_WARNING))
+            return tj_error(handle.get(), ErrorCode::corrupt_data);
+        if (profile_size > options.limits.maximum_metadata_bytes) {
+            return Status::error(ErrorCode::limit_exceeded,
+                                 "JPEG ICC profile exceeds the metadata limit.", "libjpeg-turbo");
+        }
+        if (profile_size != 0) {
+            unsigned char* raw_profile = nullptr;
+            if (tj3GetICCProfile(handle.get(), &raw_profile, &profile_size) != 0)
+                return tj_error(handle.get(), ErrorCode::corrupt_data);
+            const std::unique_ptr<unsigned char, decltype(&tj3Free)> profile(raw_profile, &tj3Free);
+            const auto* first = reinterpret_cast<const std::byte*>(profile.get());
+            info.color.icc_profile.assign(first, first + profile_size);
+        }
+    }
     if (info.colorspace == TJCS_GRAY) {
         info.pixel_format = kGray8;
         info.turbo_pixel_format = TJPF_GRAY;
@@ -190,7 +216,7 @@ Result<std::pair<TjHandle, JpegInfo>> read_header(std::span<const std::byte> byt
                              true};
         info.turbo_pixel_format = TJPF_CMYK;
     }
-    return std::pair{std::move(handle), info};
+    return std::pair{std::move(handle), std::move(info)};
 }
 
 Result<JpegInfo> scaled_info(void* handle, JpegInfo info, const DecodeOptions& options) {
@@ -239,8 +265,10 @@ DocumentInfo document_info(const JpegInfo& info) {
     document.format = Format::jpeg;
     document.canvas_width = info.width;
     document.canvas_height = info.height;
+    document.color = info.color;
     document.frames.push_back({info.width, info.height, 0, 0, std::chrono::nanoseconds{0},
                                info.pixel_format, false, std::nullopt});
+    document.frames.back().color = info.color;
     return document;
 }
 
@@ -466,10 +494,11 @@ Result<DocumentInfo> JpegCodec::inspect(const Input& input, const DecodeOptions&
         read_all(*input.source, options.limits.maximum_input_bytes);
     if (!bytes)
         return bytes.error();
-    Result<std::pair<TjHandle, JpegInfo>> header = read_header(bytes.value(), options.limits);
+    Result<std::pair<TjHandle, JpegInfo>> header = read_header(bytes.value(), options);
     if (!header)
         return header.error();
-    Result<JpegInfo> info = scaled_info(header.value().first.get(), header.value().second, options);
+    Result<JpegInfo> info =
+        scaled_info(header.value().first.get(), std::move(header.value().second), options);
     if (!info)
         return info.error();
     return document_info(info.value());
@@ -484,10 +513,11 @@ Result<DocumentDescriptor> JpegCodec::inspect_raster(const Input& input,
         read_all(*input.source, options.limits.maximum_input_bytes);
     if (!bytes)
         return bytes.error();
-    Result<std::pair<TjHandle, JpegInfo>> header = read_header(bytes.value(), options.limits);
+    Result<std::pair<TjHandle, JpegInfo>> header = read_header(bytes.value(), options);
     if (!header)
         return header.error();
-    Result<JpegInfo> info = scaled_info(header.value().first.get(), header.value().second, options);
+    Result<JpegInfo> info =
+        scaled_info(header.value().first.get(), std::move(header.value().second), options);
     if (!info)
         return info.error();
     if (options.raster_layout == RasterLayoutPolicy::native && !options.output_format &&
@@ -508,14 +538,14 @@ Result<Document> JpegCodec::decode(const Input& input, const DecodeOptions& opti
         read_all(*input.source, options.limits.maximum_input_bytes);
     if (!bytes)
         return bytes.error();
-    Result<std::pair<TjHandle, JpegInfo>> header = read_header(bytes.value(), options.limits);
+    Result<std::pair<TjHandle, JpegInfo>> header = read_header(bytes.value(), options);
     if (!header)
         return header.error();
     TjHandle handle = std::move(header.value().first);
-    Result<JpegInfo> scaled = scaled_info(handle.get(), header.value().second, options);
+    Result<JpegInfo> scaled = scaled_info(handle.get(), std::move(header.value().second), options);
     if (!scaled)
         return scaled.error();
-    JpegInfo info = scaled.value();
+    JpegInfo info = std::move(scaled).value();
     if (options.output_format) {
         Result<int> output = turbo_pixel_format(*options.output_format);
         if (!output)
@@ -555,7 +585,9 @@ Result<Document> JpegCodec::decode(const Input& input, const DecodeOptions& opti
     document.format = Format::jpeg;
     document.canvas_width = info.width;
     document.canvas_height = info.height;
+    document.color = info.color;
     Frame frame;
+    frame.color = info.color;
     frame.image = std::move(pixels).freeze();
     document.frames.push_back(std::move(frame));
     return document;
@@ -619,14 +651,14 @@ Result<void> JpegCodec::decode_to_sink(const Input& input, PixelSink& sink,
         read_all(*input.source, options.limits.maximum_input_bytes);
     if (!bytes)
         return bytes.error();
-    Result<std::pair<TjHandle, JpegInfo>> header = read_header(bytes.value(), options.limits);
+    Result<std::pair<TjHandle, JpegInfo>> header = read_header(bytes.value(), options);
     if (!header)
         return header.error();
     TjHandle handle = std::move(header.value().first);
-    Result<JpegInfo> scaled = scaled_info(handle.get(), header.value().second, options);
+    Result<JpegInfo> scaled = scaled_info(handle.get(), std::move(header.value().second), options);
     if (!scaled)
         return scaled.error();
-    const JpegInfo info = scaled.value();
+    const JpegInfo info = std::move(scaled).value();
     JpegInfo sinkInfo = info;
     sinkInfo.pixel_format = options.output_format.value_or(kRgba8);
     Result<int> sink_pixel_format = turbo_pixel_format(sinkInfo.pixel_format);
@@ -701,14 +733,14 @@ Result<void> JpegCodec::decode_into(const Input& input, RasterWriter& writer,
         read_all(*input.source, options.limits.maximum_input_bytes);
     if (!bytes)
         return bytes.error();
-    Result<std::pair<TjHandle, JpegInfo>> header = read_header(bytes.value(), options.limits);
+    Result<std::pair<TjHandle, JpegInfo>> header = read_header(bytes.value(), options);
     if (!header)
         return header.error();
     TjHandle handle = std::move(header.value().first);
-    Result<JpegInfo> scaled = scaled_info(handle.get(), header.value().second, options);
+    Result<JpegInfo> scaled = scaled_info(handle.get(), std::move(header.value().second), options);
     if (!scaled)
         return scaled.error();
-    const JpegInfo info = scaled.value();
+    const JpegInfo info = std::move(scaled).value();
     if (!native_planar_supported(info))
         return Codec::decode_into(input, writer, options, stop);
     Result<DocumentDescriptor> descriptor = native_descriptor(info);

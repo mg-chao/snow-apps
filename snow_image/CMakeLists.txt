@@ -143,7 +143,7 @@ if(SNOW_IMAGE_CODEC_PNG)
 endif()
 
 if(SNOW_IMAGE_CODEC_JPEG)
-    find_package(libjpeg-turbo CONFIG REQUIRED)
+    find_package(libjpeg-turbo 3.1 CONFIG REQUIRED)
     list(APPEND SNOW_IMAGE_SOURCES src/codecs/jpeg_codec.cpp src/codecs/jpeg_codec.h)
     list(APPEND SNOW_IMAGE_PRIVATE_LIBRARIES
         $<IF:$<TARGET_EXISTS:libjpeg-turbo::jpeg>,libjpeg-turbo::jpeg,libjpeg-turbo::jpeg-static>

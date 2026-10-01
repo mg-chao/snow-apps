@@ -4,6 +4,7 @@
 
 #include <QApplication>
 #include <QClipboard>
+#include <QColorSpace>
 #include <QElapsedTimer>
 #include <QFile>
 #include <QMimeData>
@@ -103,6 +104,26 @@ void mixedFilesAndLargeBatches() {
         return true;
     });
     finish(batch);
+}
+
+void profiledFilesSurviveBatchDecode() {
+    QTemporaryDir directory;
+    require(directory.isValid(), "profile fixture directory must exist");
+    QImage source(7, 5, QImage::Format_RGBA8888);
+    source.setColorSpace(QColorSpace::DisplayP3);
+    source.fill(QColor(200, 100, 50));
+    const QString path = directory.filePath(QStringLiteral("display-p3.png"));
+    require(source.save(path, "PNG"), "profiled pin fixture must encode");
+    ScreenshotFilePinBatch batch;
+    int presented = 0;
+    batch.start({path}, [&](ScreenshotClipboardContent content) {
+        require(content.image == source,
+                "asynchronous file pinning must preserve the embedded profile and pixels");
+        ++presented;
+        return true;
+    });
+    finish(batch);
+    require(presented == 1, "profiled file must be presented once");
 }
 
 void duplicateFiltering() {
@@ -354,6 +375,7 @@ void clipboardFiles() {
 int main(int argc, char** argv) {
     QApplication app(argc, argv);
     mixedFilesAndLargeBatches();
+    profiledFilesSurviveBatchDecode();
     duplicateFiltering();
     changedFilesAndPresentationStop();
     prefetchKeepsPresentationOrder();

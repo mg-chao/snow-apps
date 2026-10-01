@@ -175,7 +175,10 @@ void payloadsPreservePixels() {
     tagged.setColorSpace(QColorSpace::SRgbLinear);
     auto payload = ScreenshotClipboardService::prepareImage(tagged);
     const QImage expected = tagged.convertedToColorSpace(QColorSpace::SRgb);
-    comparePixels(expected, QImage::fromData(payload.pngBytes(), "PNG"));
+    const QImage decoded = QImage::fromData(payload.pngBytes(), "PNG");
+    require(decoded.colorSpace() == QColorSpace(QColorSpace::SRgb),
+            "clipboard PNG must declare its canonical sRGB pixels");
+    comparePixels(expected, decoded);
     verifyDib(expected, ScreenshotClipboardPayloadTestAccess::dib(payload));
     auto rows = snow_shot::image_codec::srgbRowSource(tagged);
     rows.cancellationRequested = [] { return true; };

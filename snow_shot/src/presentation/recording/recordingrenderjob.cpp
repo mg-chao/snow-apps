@@ -1,5 +1,6 @@
 #include "recordingrenderjob.h"
 #include "snow_shot/platform/applicationqos.h"
+#include "snow_shot/presentation/components/screenrecordingmodal.h"
 #include "widgets/button.h"
 #include "widgets/modal.h"
 #include "widgets/progress.h"
@@ -46,9 +47,9 @@ struct CleanupResult {
 
 struct RecordingRenderJob::Impl {
     explicit Impl(RecordingRenderJob& owner, SnowRecordingSource* source, bool visible,
-                  QScreen* screen, const QRect& anchorGeometry)
+                  QScreen* screen, const QRect& anchorGeometry, QWidget* windowOwner)
         : owner(owner), source(source), visible(visible), screen(screen),
-          anchorGeometry(anchorGeometry) {
+          anchorGeometry(anchorGeometry), windowOwner(windowOwner) {
         path = nativeString([source](char* buffer, size_t capacity) {
             return snow_recording_source_path(source, buffer, capacity);
         });
@@ -103,17 +104,10 @@ struct RecordingRenderJob::Impl {
         using namespace adqt::widgets;
         modal = new AdModal(&owner);
         modal->setObjectName(QStringLiteral("screenRecordingRenderModal"));
-        modal->setMode(AdModal::Mode::Window);
-        modal->setWindowModeDetached(true);
+        snow_shot::presentation::configureScreenRecordingModal(*modal, windowOwner);
         modal->setWindowScreen(screen);
         modal->setWindowAnchorGeometry(anchorGeometry);
-        modal->setWindowModality(Qt::ApplicationModal);
-        // Detached dialogs cannot inherit the recording windows' topmost layer from an owner.
-        modal->setWindowAlwaysOnTop(true);
-        modal->setCentered(true);
         modal->setPreferredWidth(500);
-        modal->setMaskVisible(false);
-        modal->setCloseOnMaskClick(false);
         modal->setClosePolicy(AdModal::ClosePolicy::Manual);
         modal->setStandardButtons(AdModal::StandardButton::NoButton);
         auto* body = new QWidget;
@@ -375,6 +369,7 @@ struct RecordingRenderJob::Impl {
     const bool visible;
     QPointer<QScreen> screen;
     const QRect anchorGeometry;
+    QPointer<QWidget> windowOwner;
     QTimer timer;
     std::future<StartResult> startFuture;
     std::future<CleanupResult> cleanupFuture;
@@ -401,12 +396,27 @@ struct RecordingRenderJob::Impl {
 
 RecordingRenderJob::RecordingRenderJob(SnowRecordingSource* source, bool showDialog,
                                        QScreen* screen, QObject* parent,
-                                       const QRect& anchorGeometry)
-    : QObject(parent),
-      m_impl(std::make_unique<Impl>(*this, source, showDialog, screen, anchorGeometry)) {}
+                                       const QRect& anchorGeometry, QWidget* windowOwner)
+    : QObject(parent), m_impl(std::make_unique<Impl>(*this, source, showDialog, screen,
+                                                     anchorGeometry, windowOwner)) {}
 RecordingRenderJob::~RecordingRenderJob() = default;
 void RecordingRenderJob::start() {
     m_impl->start();
+}
+void RecordingRenderJob::detachWindowOwner() {
+    auto& s = *m_impl;
+    if (!s.windowOwner)
+        return;
+    s.windowOwner.clear();
+    if (!s.modal)
+        return;
+    // Change native parenting while closed so the surface is recreated once.
+    // Content, render state, and the saved screen/anchor remain owned by the job.
+    const bool reopen = s.modal->isOpen();
+    s.modal->close();
+    snow_shot::presentation::configureScreenRecordingModal(*s.modal, nullptr);
+    if (reopen)
+        s.modal->open();
 }
 bool RecordingRenderJob::cancel() {
     auto& s = *m_impl;

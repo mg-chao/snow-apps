@@ -31,6 +31,7 @@
 #include "widgets/dpi_stable_window_controller.h"
 
 #include <QApplication>
+#include <QAbstractEventDispatcher>
 #include <QClipboard>
 #include <QMimeData>
 #include <QtMath>
@@ -60,6 +61,7 @@
 #include <future>
 #ifdef Q_OS_MACOS
 #include "macos_capture_exclusion_probe.h"
+#include "macos_recording_modal_probe.h"
 #endif
 #ifdef Q_OS_WIN
 #include <qt_windows.h>
@@ -2072,6 +2074,104 @@ void recordingSettingsDialog() {
     QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
 }
 
+void recordingModalStacking() {
+    using namespace adqt::widgets;
+    const auto wait = [](const std::function<bool()>& condition, const char* message) {
+        QElapsedTimer timer;
+        timer.start();
+        while (!condition() && timer.elapsed() < 5000)
+            QCoreApplication::processEvents(QEventLoop::AllEvents | QEventLoop::WaitForMoreEvents,
+                                            100);
+        require(condition(), message);
+    };
+    ScreenRecordingController controller(testEffectsSource);
+    controller.open(QRect(80, 80, 320, 240));
+    auto* controls = palette();
+    auto* toolbar = qobject_cast<ScreenRecordingToolbarWindow*>(controls->window());
+    controls->findChild<AdButton*>(QStringLiteral("screenRecordingSettings"))->click();
+    auto* settings = controller.findChild<AdModal*>(QStringLiteral("screenRecordingSettingsModal"));
+    require(settings && settings->isOpen(), "recording settings must open before rendering");
+    QPointer<QWidget> area = settings->ownerWindow();
+    require(area, "recording modals must have a recording area to cover");
+    const QRect anchor = area->frameGeometry();
+    QScreen* screen = area->screen();
+    const auto verify = [&](AdModal* modal) {
+        auto* surface = modal->contentWidget()->window();
+        area->raise();
+        toolbar->raise();
+#ifdef Q_OS_MACOS
+        if (QGuiApplication::platformName() == QStringLiteral("cocoa"))
+            wait(
+                [&] {
+                    // Drive Cocoa's native modal session through its idle boundary.
+                    QEventLoop loop;
+                    QObject::connect(QAbstractEventDispatcher::instance(),
+                                     &QAbstractEventDispatcher::aboutToBlock, &loop,
+                                     &QEventLoop::quit, Qt::QueuedConnection);
+                    loop.exec();
+                    return macosRecordingModalAboveControls(surface, area, toolbar);
+                },
+                modal == settings
+                    ? "native recording settings must stay above the area and toolbar after raises"
+                    : "native render progress must stay above the area and toolbar after raises");
+#endif
+        require(modal->ownerWindow() == area && !modal->windowModeDetached() &&
+                    modal->mode() == AdModal::Mode::Window &&
+                    modal->windowModality() == Qt::ApplicationModal &&
+                    surface->windowHandle()->transientParent() == area->windowHandle(),
+                "settings and render progress must share recording area ownership and modality");
+        require(QApplication::activeModalWidget() == surface,
+                "the visible recording modal must block recording controls");
+        requireModalCenteredOnArea(modal, anchor, screen);
+    };
+    verify(settings);
+    settings->accept();
+    QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+    controls->recordingPostProcessingEnabledChanged(true);
+    controller.startRecording();
+    waitForRecording(controller);
+    controls->recordingStopRequested();
+    QPointer<AdModal> modal;
+    wait(
+        [&] {
+            modal = controller.findChild<AdModal*>(QStringLiteral("screenRecordingRenderModal"));
+            return modal && modal->isOpen() && renderPolls > 0;
+        },
+        "deferred finalization must open render progress");
+    verify(modal);
+    modal->footerWidget()
+        ->findChild<AdButton*>(QStringLiteral("screenRecordingRenderCancel"))
+        ->click();
+    wait(
+        [&] {
+            return controller.automationState().value(QStringLiteral("source_retained")).toBool();
+        },
+        "canceling rendering must retain the source");
+    verify(modal);
+    const int previousStarts = renderStarts;
+    modal->footerWidget()
+        ->findChild<AdButton*>(QStringLiteral("screenRecordingRenderRetry"))
+        ->click();
+    wait([&] { return renderStarts > previousStarts; }, "retry must start another render attempt");
+    verify(modal);
+    controls->recordingCloseRequested();
+    QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+    require(!controller.isOpen() && !area && modal && modal->isOpen() &&
+                modal->windowModeDetached() && !modal->ownerWindow() &&
+                !modal->contentWidget()->window()->windowHandle()->transientParent(),
+            "rendering must detach before recording area destruction and remain usable");
+    requireModalCenteredOnArea(modal, anchor, screen);
+    renderPercent = 53;
+    auto* progress = modal->contentWidget()->findChild<AdProgress*>(
+        QStringLiteral("screenRecordingRenderProgress"));
+    wait([&] { return progress->percent() == 53; },
+         "detached progress must continue updating after the area closes");
+    renderState = SNOW_RECORDING_RENDER_STATE_SUCCEEDED;
+    renderPercent = 100;
+    waitForIdle(controller);
+    require(!modal || !modal->isOpen(), "successful rendering must close the detached modal");
+}
+
 void recordingRenderLayout() {
     using namespace adqt::widgets;
     const auto wait = [](const std::function<bool()>& condition, const char* message) {
@@ -2242,9 +2342,9 @@ void recordingPostProcessingLifecycle() {
         wait([&] { return renderStarts > oldStarts; }, "stopping must start deferred rendering");
         QPointer<AdModal> modal =
             controller.findChild<AdModal*>(QStringLiteral("screenRecordingRenderModal"));
-        require(modal && modal->isOpen() && modal->windowModeDetached() &&
-                    modal->windowModality() == Qt::ApplicationModal && !modal->ownerWindow(),
-                "rendering must open a detached application modal owned by the controller");
+        require(modal && modal->isOpen() && !modal->windowModeDetached() &&
+                    modal->windowModality() == Qt::ApplicationModal && modal->ownerWindow() == area,
+                "rendering must open an application modal anchored to the recording area");
         require(areaInput.blocked && toolbarInput.blocked,
                 "render progress must block clicks on the recording area and toolbar");
         auto* renderWindow = modal->contentWidget()->window();
@@ -2320,8 +2420,9 @@ void recordingPostProcessingLifecycle() {
                 "render modal must omit decimals near completion");
         controls->recordingCloseRequested();
         QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
-        require(!controller.isOpen() && modal->isOpen(),
-                "closing recording selection must not close the render modal");
+        require(!controller.isOpen() && modal->isOpen() && modal->windowModeDetached() &&
+                    !modal->ownerWindow(),
+                "closing recording selection must detach and preserve the render modal");
         auto* cancel = modal->footerWidget()->findChild<AdButton*>(
             QStringLiteral("screenRecordingRenderCancel"));
         cancel->click();
@@ -2765,6 +2866,11 @@ int main(int argc, char** argv) {
     }
     if (app.arguments().contains(QStringLiteral("--render-layout-only"))) {
         recordingRenderLayout();
+        ApplicationStorage::instance().shutdown();
+        return 0;
+    }
+    if (app.arguments().contains(QStringLiteral("--modal-stacking-only"))) {
+        recordingModalStacking();
         ApplicationStorage::instance().shutdown();
         return 0;
     }

@@ -141,7 +141,8 @@ fn retina_mapping_rounds_outward_and_preserves_secondary_origins() {
         d.to_points(Point {
             x: -80,
             y: -30,
-            display_id: 2
+            display_id: 2,
+            window_id: None,
         }),
         (-90., -40.)
     );
@@ -165,7 +166,8 @@ fn display_identity_disambiguates_overlapping_physical_spaces() {
             Point {
                 x: 150,
                 y: 50,
-                display_id: 1
+                display_id: 1,
+                window_id: None,
             }
         )
         .unwrap()
@@ -178,7 +180,8 @@ fn display_identity_disambiguates_overlapping_physical_spaces() {
             Point {
                 x: 150,
                 y: 50,
-                display_id: 2
+                display_id: 2,
+                window_id: None,
             }
         )
         .unwrap()
@@ -191,7 +194,8 @@ fn display_identity_disambiguates_overlapping_physical_spaces() {
             Point {
                 x: 150,
                 y: 50,
-                display_id: 3
+                display_id: 3,
+                window_id: None,
             }
         )
         .is_none()
@@ -235,6 +239,7 @@ fn window_mode_uses_z_order_and_snapshot_without_accessibility() {
                 x: 30,
                 y: 30,
                 display_id: 1,
+                window_id: None,
             },
             HitTestMode::Window,
             &QueryControl::foreground(),
@@ -245,6 +250,96 @@ fn window_mode_uses_z_order_and_snapshot_without_accessibility() {
     assert_eq!(path[0].width(), 60);
     service.release_cache();
     assert!(service.window_snapshot().unwrap().windows.is_empty());
+}
+
+#[test]
+fn native_mouse_hit_bypasses_full_screen_surfaces_and_validates_snapshot_geometry() {
+    let app = rect(10., 10., 60., 60.);
+    let snapshot = WindowSnapshot {
+        windows: vec![
+            WindowInfo {
+                id: 8,
+                pid: 98,
+                bounds: display().bounds,
+            },
+            WindowInfo {
+                id: 7,
+                pid: 42,
+                bounds: app,
+            },
+        ],
+        displays: vec![display()],
+        ..WindowSnapshot::default()
+    };
+    let mut service = ElementRegionService::from_snapshot(&snapshot).unwrap();
+    let point = Point {
+        x: 30,
+        y: 30,
+        display_id: 1,
+        window_id: Some(7),
+    };
+    let result = service
+        .query(
+            point,
+            HitTestMode::Window,
+            &QueryControl::foreground(),
+            &mut |_| {},
+        )
+        .unwrap();
+    assert_eq!(
+        result.path.unwrap(),
+        vec![ElementRect::new(display().to_pixels(app).unwrap())]
+    );
+
+    // The selected owner, not the screen-sized surface, supplies AX children.
+    let selected = snapshot
+        .windows
+        .iter()
+        .find(|w| w.id == point.window_id.unwrap())
+        .unwrap();
+    let mut provider = Fake::new();
+    provider.nodes[1].bounds = Some(app);
+    let result = traversal::query(
+        &mut provider,
+        selected,
+        &display(),
+        (15., 15.),
+        &QueryControl::foreground(),
+        &mut |_| {},
+    );
+    assert_eq!(result.reason, StopReason::Complete);
+    assert_eq!(result.path.unwrap().len(), 2);
+
+    // No native hit, an unknown/stale ID, or an ID outside its frozen bounds
+    // must never substitute the first bounding rectangle above the application.
+    for point in [
+        Point {
+            window_id: Some(0),
+            ..point
+        },
+        Point {
+            window_id: Some(99),
+            ..point
+        },
+        Point {
+            x: 180,
+            y: 180,
+            ..point
+        },
+    ] {
+        for mode in [HitTestMode::Window, HitTestMode::UiElement] {
+            let result = service
+                .query(point, mode, &QueryControl::foreground(), &mut |_| {})
+                .unwrap();
+            assert_eq!(result.reason, StopReason::Complete);
+            assert_eq!(
+                result.path.unwrap(),
+                vec![ElementRect::new(
+                    display().to_pixels(display().bounds).unwrap()
+                )]
+            );
+        }
+    }
 }
 #[test]
 fn traversal_clips_deduplicates_and_terminates_at_window() {
@@ -362,7 +457,8 @@ fn rotated_and_scaled_display_modes_use_oriented_bounds() {
         d.to_points(Point {
             x: 0,
             y: 1440,
-            display_id: 1
+            display_id: 1,
+            window_id: None,
         }),
         (-450., 720.)
     );
@@ -412,6 +508,7 @@ fn dock_surface_does_not_mask_application_windows_or_their_children() {
                 x: 30,
                 y: 30,
                 display_id: 1,
+                window_id: None,
             },
             HitTestMode::Window,
             &QueryControl::foreground(),
@@ -445,6 +542,7 @@ fn dock_surface_does_not_mask_application_windows_or_their_children() {
                 x: 30,
                 y: 2,
                 display_id: 1,
+                window_id: None,
             },
             HitTestMode::Window,
             &QueryControl::foreground(),
@@ -477,6 +575,7 @@ fn empty_dock_area_selects_only_the_queried_display_in_both_modes() {
                         x: 150,
                         y: 95,
                         display_id: d.id,
+                        window_id: None,
                     },
                     mode,
                     &QueryControl::foreground(),
@@ -496,6 +595,7 @@ fn empty_dock_area_selects_only_the_queried_display_in_both_modes() {
                 x: 300,
                 y: 300,
                 display_id: 2,
+                window_id: None,
             },
             HitTestMode::Window,
             &QueryControl::foreground(),

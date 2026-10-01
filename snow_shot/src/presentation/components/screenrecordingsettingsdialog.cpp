@@ -1,4 +1,5 @@
 #include "snow_shot/presentation/components/screenrecordingsettingsdialog.h"
+#include "snow_shot/presentation/components/screenrecordingmodal.h"
 
 #include "snow_shot/presentation/globalshortcutmanager.h"
 #include "snow_shot/presentation/settings/settingsruntimesession.h"
@@ -222,13 +223,8 @@ adqt::widgets::AdModal* createScreenRecordingSettingsDialog(QWidget* owner, QObj
     using namespace adqt::widgets;
     auto* modal = new AdModal(parent);
     modal->setObjectName(QStringLiteral("screenRecordingSettingsModal"));
-    modal->setOwnerWindow(owner);
-    modal->setMode(AdModal::Mode::Window);
-    modal->setWindowModality(Qt::ApplicationModal);
-    modal->setCentered(true);
+    configureScreenRecordingModal(*modal, owner);
     modal->setPreferredWidth(660);
-    modal->setMaskVisible(false);
-    modal->setCloseOnMaskClick(false);
     modal->setStandardButtons(AdModal::StandardButton::Ok);
     modal->setContentWidget(new ScreenRecordingSettingsBody(*modal));
     QObject::connect(modal, &AdModal::finished, modal, &QObject::deleteLater);

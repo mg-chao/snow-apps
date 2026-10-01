@@ -6,6 +6,7 @@
 #include <QVector>
 
 #include <cstdint>
+#include <optional>
 
 class ScreenshotDisplaySession;
 struct CapturedDisplayModel;
@@ -39,6 +40,7 @@ struct ScreenshotSelectorResult {
     bool canRefine = false;
     quint64 elapsedUs = 0;
     quint32 displayId = 0;
+    std::optional<std::uintptr_t> nativeWindowId;
     QVector<QRectF> rects;
 };
 

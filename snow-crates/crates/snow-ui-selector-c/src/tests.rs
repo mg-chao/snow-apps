@@ -98,6 +98,8 @@ fn pending_accessibility_refinement_never_blocks_foreground_replacement_or_shutd
         y: 5,
         mode: SnowUiSelectorHitTestMode::UiElement,
         display_id: 0,
+        window_id: 0,
+        window_hit_tested: 0,
     };
     unsafe {
         assert_eq!(
@@ -260,6 +262,8 @@ fn foreground_queue_coalesces_refreshes_and_queries_with_terminal_delivery() {
         y: 0,
         mode: SnowUiSelectorHitTestMode::Window,
         display_id: 0,
+        window_id: 0,
+        window_hit_tested: 0,
     };
     assert!(queue.submit(
         ForegroundCommand::Refresh {
@@ -370,6 +374,8 @@ fn refinement_rebuilds_when_a_snapshot_is_replaced_with_the_same_epoch() {
             y: 0,
             mode: SnowUiSelectorHitTestMode::UiElement,
             display_id: 0,
+            window_id: 0,
+            window_hit_tested: 0,
         };
         queue.replace(RefinementCommand::Query(query, 0), &shared);
         assert_eq!(
@@ -391,7 +397,9 @@ fn refinement_rebuilds_when_a_snapshot_is_replaced_with_the_same_epoch() {
     }
 }
 
-struct LayoutService;
+struct LayoutService {
+    backend: AccessibilityBackend,
+}
 impl WorkerService for LayoutService {
     fn create(_: AccessibilityBackend, _: &[usize]) -> SelectorResult<Self> {
         panic!("unexpected native enumeration")
@@ -400,12 +408,12 @@ impl WorkerService for LayoutService {
         panic!("unexpected native enumeration")
     }
     fn create_with_displays(
-        _: AccessibilityBackend,
+        backend: AccessibilityBackend,
         _: &[usize],
         displays: Option<&[snow_ui_selector::DisplayGeometry]>,
     ) -> SelectorResult<Self> {
         assert_eq!(displays.unwrap()[0].x, -200.0);
-        Ok(Self)
+        Ok(Self { backend })
     }
     fn refresh_with_displays(
         &mut self,
@@ -416,13 +424,15 @@ impl WorkerService for LayoutService {
         Ok(())
     }
     fn backend(&self) -> AccessibilityBackend {
-        AccessibilityBackend::Uia
+        self.backend
     }
     fn snapshot(&self) -> Option<WindowSnapshot> {
         None
     }
     fn from_snapshot(_: &WindowSnapshot) -> SelectorResult<Self> {
-        Ok(Self)
+        Ok(Self {
+            backend: AccessibilityBackend::default(),
+        })
     }
     fn release(&mut self) {}
     fn query(
@@ -482,6 +492,88 @@ fn supplied_display_geometry_reaches_creation_and_refresh() {
         display.x = 0.0;
         assert_eq!(display.x, 0.0);
         assert_eq!(receive(&events), Delivery::Refresh(2));
+        snow_ui_selector_service_destroy(service);
+        drop(Box::from_raw(context));
+    }
+}
+
+#[test]
+fn native_window_hit_reaches_foreground_and_refinement_workers() {
+    struct HitService;
+    impl WorkerService for HitService {
+        fn create(_: AccessibilityBackend, _: &[usize]) -> SelectorResult<Self> {
+            Ok(Self)
+        }
+        fn backend(&self) -> AccessibilityBackend {
+            AccessibilityBackend::Accessibility
+        }
+        fn refresh(&mut self, _: &[usize]) -> SelectorResult<()> {
+            Ok(())
+        }
+        fn snapshot(&self) -> Option<WindowSnapshot> {
+            Some(WindowSnapshot::default())
+        }
+        fn from_snapshot(_: &WindowSnapshot) -> SelectorResult<Self> {
+            Ok(Self)
+        }
+        fn release(&mut self) {}
+        fn query(
+            &mut self,
+            point: Point,
+            _: HitTestMode,
+            _: &QueryControl<'_>,
+            _: &mut dyn FnMut(&[snow_ui_selector::ElementRect]),
+        ) -> SelectorResult<QueryResult> {
+            assert_eq!(point.window_id, usize::try_from(point.x).ok());
+            Ok(empty(StopReason::Complete))
+        }
+    }
+    let (sender, events) = mpsc::channel::<Delivery>();
+    let context = Box::into_raw(Box::new(sender));
+    let service = start_service::<HitService>(Some(event), Some(refresh), context.cast());
+    unsafe {
+        assert_eq!(
+            snow_ui_selector_service_refresh(
+                service,
+                1,
+                SnowUiSelectorBackend::Accessibility,
+                std::ptr::null(),
+                0
+            ),
+            1
+        );
+        assert_eq!(receive(&events), Delivery::Refresh(1));
+        for (request_id, x) in [(1, 7), (2, 0), (3, -1)] {
+            let query = SnowUiSelectorQuery {
+                epoch: 1,
+                request_id,
+                generation: 1,
+                x,
+                y: 5,
+                mode: SnowUiSelectorHitTestMode::UiElement,
+                display_id: 1,
+                window_id: usize::try_from(x).unwrap_or(0),
+                window_hit_tested: u8::from(x >= 0),
+            };
+            assert_eq!(snow_ui_selector_service_query(service, &query), 1);
+            assert_eq!(
+                receive(&events),
+                Delivery::Event(
+                    request_id,
+                    SnowUiSelectorPhase::Initial,
+                    StopReason::Complete
+                )
+            );
+            assert_eq!(snow_ui_selector_service_refine(service, &query), 1);
+            assert_eq!(
+                receive(&events),
+                Delivery::Event(
+                    request_id,
+                    SnowUiSelectorPhase::Finished,
+                    StopReason::Complete
+                )
+            );
+        }
         snow_ui_selector_service_destroy(service);
         drop(Box::from_raw(context));
     }

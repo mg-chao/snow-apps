@@ -17,6 +17,7 @@
 #include <condition_variable>
 #include <mutex>
 #include <QTimer>
+#include <QColorSpace>
 
 #include <iostream>
 #include <limits>
@@ -29,6 +30,10 @@ void require(bool value, const char* message) {
         std::cerr << message << '\n';
         throw std::runtime_error(message);
     }
+}
+bool snapshotMatchesSrgbPixels(const QImage& snapshot, QImage expected) {
+    expected.setColorSpace(QColorSpace::SRgb);
+    return snapshot.colorSpace() == QColorSpace(QColorSpace::SRgb) && snapshot == expected;
 }
 void scheduleTests() {
     ReplayState queueState(QImage(16, 32, QImage::Format_RGBA8888), 16, 1, 30);
@@ -286,7 +291,8 @@ void pipelineTest(ScreenshotScrollingRecognitionMode mode) {
     pipeline.reset();
     require(error.isEmpty() && received == 3, "pipeline did not complete");
     const auto expected = source.copy(0, 0, horizontal ? 450 : 400, horizontal ? 400 : 450);
-    require(snapshot == expected, "snapshot pixel content changed");
+    require(snapshotMatchesSrgbPixels(snapshot, expected),
+            "snapshot pixels or sRGB interpretation changed");
     const QSize previewSize(horizontal ? 144 : 128, horizontal ? 128 : 144);
     require(thumbnail.previewImageForTesting().size() == previewSize, "preview scale drift");
     QImage painted(thumbnail.size(), QImage::Format_ARGB32_Premultiplied);
@@ -360,7 +366,7 @@ void pauseWithDispatchedFramePreservesPreview() {
     require(error.isEmpty() && acknowledged && delivered == 1 &&
                 !thumbnail.previewImageForTesting().isNull(),
             "committed frame must update the preview while paused");
-    require(snapshot == frame.copy(0, 30, 400, 340),
+    require(snapshotMatchesSrgbPixels(snapshot, frame.copy(0, 30, 400, 340)),
             "pause must preserve the trimmed result and reject later source frames");
 }
 
@@ -555,7 +561,7 @@ void acceptedSnapshotsSurviveTeardown() {
                                 mode == ScreenshotScrollingRecognitionMode::Horizontal
                                     ? frame.copy(30, 0, 340, 400)
                                     : frame.copy(0, 30, 400, 340);
-                            require(snapshot.materialize() == expected,
+                            require(snapshotMatchesSrgbPixels(snapshot.materialize(), expected),
                                     "detached snapshot must retain its pixels");
                             ++completed;
                         }),

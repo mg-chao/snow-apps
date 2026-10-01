@@ -7,6 +7,7 @@
 #include <QPainter>
 #include <QPainterPath>
 #include <QRegion>
+#include <QColorSpace>
 
 #include <algorithm>
 #include <cmath>
@@ -600,6 +601,7 @@ QImage composeSparseRegion(const QImage& content, const ScreenshotResultLayout& 
                            const ScreenshotResultStyle& style, const std::vector<RegionTile>& tiles,
                            qreal opacity) {
     QImage output(layout.outputRect.size(), QImage::Format_ARGB32_Premultiplied);
+    output.setColorSpace(content.colorSpace());
     output.fill(Qt::transparent);
     QPainter outputPainter(&output);
     for (const auto& region : tiles) {
@@ -667,6 +669,7 @@ QImage composeTiledRegion(const QImage& content, const ScreenshotResultLayout& l
                           const ScreenshotResultStyle& style, const QPainterPath& path,
                           qreal opacity) {
     QImage output(layout.outputRect.size(), QImage::Format_ARGB32_Premultiplied);
+    output.setColorSpace(content.colorSpace());
     output.fill(Qt::transparent);
     QPainter painter(&output);
     paintTiledRegion(painter, content, layout, style, path, layout.outputRect);
@@ -721,6 +724,7 @@ QImage composeRegion(const QImage& content, const ScreenshotResultStyle& style,
             cache.shadow = shadow;
     }
     QImage output(layout.outputRect.size(), QImage::Format_ARGB32_Premultiplied);
+    output.setColorSpace(content.colorSpace());
     output.fill(Qt::transparent);
     QPainter painter(&output);
     painter.drawImage(layout.contentRect.topLeft(), content);
@@ -770,8 +774,11 @@ QImage ScreenshotResultCompositor::normalizeImage(const QImage& image) {
     if (image.isNull()) {
         return {};
     }
-    QImage normalized = image.format() == QImage::Format_ARGB32_Premultiplied
-                            ? image
+    const QColorSpace srgb(QColorSpace::SRgb);
+    // Imported pins can have an ICC profile. Convert their pixels before painting
+    // alongside sRGB screenshots; QPainter does not perform this conversion.
+    QImage normalized = image.colorSpace().isValid() && image.colorSpace() != srgb
+                            ? image.convertedToColorSpace(srgb, QImage::Format_ARGB32_Premultiplied)
                             : image.convertToFormat(QImage::Format_ARGB32_Premultiplied);
     normalized.setDevicePixelRatio(1.0);
     return normalized;
@@ -798,6 +805,7 @@ QImage ScreenshotResultCompositor::compose(const QImage& content,
     }
 
     QImage output(layout.outputRect.size(), QImage::Format_ARGB32_Premultiplied);
+    output.setColorSpace(normalizedContent.colorSpace());
     output.setDevicePixelRatio(1.0);
     output.fill(Qt::transparent);
     QPainter painter(&output);

@@ -26,6 +26,13 @@ its enclosing window. Native AX objects never cross worker threads.
 
 ## macOS behavior and limits
 
+- Snow Shot resolves the native mouse hit on its UI thread, stepping below its
+  explicitly excluded capture windows. AppKit hit testing bypasses click-through
+  surfaces (including the system Screenshot utility) and transparent window regions;
+  Quartz bounding rectangles alone cannot identify the input target. The same window
+  ID is passed to foreground and refinement workers, which validate its presence and
+  bounds against the frozen snapshot. A missing or stale hit selects the queried
+  display. Standalone callers can omit this hit to use rectangle-based selection.
 - Queries follow the hit element’s parent chain to its first AX window, then validate
   its PID and bounds against the Quartz snapshot before publishing child frames.
   They do not depend on `AXWindow`, which can be absent or return a stale WebKit proxy

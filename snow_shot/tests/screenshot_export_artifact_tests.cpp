@@ -17,6 +17,7 @@
 #include <QImage>
 #include <QThread>
 #include <QScopeGuard>
+#include <QColorSpace>
 
 #include <atomic>
 #include <cstdlib>
@@ -47,12 +48,27 @@ void processUntil(const std::function<bool()>& predicate) {
 
 QImage testImage() {
     QImage image(QSize(37, 19), QImage::Format_RGBA8888);
+    image.setColorSpace(QColorSpace::SRgb);
     for (int y = 0; y < image.height(); ++y) {
         for (int x = 0; x < image.width(); ++x) {
             image.setPixelColor(x, y, QColor((x * 9) % 256, (y * 17) % 256, (x + y) % 256, 255));
         }
     }
     return image;
+}
+
+bool hasSamePixels(const QImage& actual, const QImage& expected) {
+    if (actual.size() != expected.size())
+        return false;
+    const auto actualPixels = actual.convertToFormat(QImage::Format_RGBA8888);
+    const auto expectedPixels = expected.convertToFormat(QImage::Format_RGBA8888);
+    const auto rowBytes = static_cast<std::size_t>(expected.width()) * 4;
+    for (int row = 0; row < expected.height(); ++row) {
+        if (std::memcmp(actualPixels.constScanLine(row), expectedPixels.constScanLine(row),
+                        rowBytes) != 0)
+            return false;
+    }
+    return true;
 }
 
 ScreenshotImageRowSource rowSourceFor(const QImage& source, std::function<bool()> cancellation) {
@@ -569,12 +585,10 @@ void clipboardAndSavesShareConfiguredEncoding(ScreenshotCompressionLevel saveCom
                     ScreenshotImageEncodingOptions{100, saveCompression},
                     [&](ScreenshotExportTaskResult result) {
                         QFile file(result.savedPath);
-                        require(
-                            result.succeeded() && file.open(QIODevice::ReadOnly) &&
-                                file.readAll().startsWith("BM") &&
-                                QImage(result.savedPath).convertToFormat(QImage::Format_RGBA8888) ==
-                                    image,
-                            "non-PNG output reused incompatible canonical PNG bytes");
+                        require(result.succeeded() && file.open(QIODevice::ReadOnly) &&
+                                    file.readAll().startsWith("BM") &&
+                                    hasSamePixels(QImage(result.savedPath), image),
+                                "non-PNG output reused incompatible canonical PNG bytes");
                         ++callbacks;
                     }),
                 "non-PNG path save request rejected");
