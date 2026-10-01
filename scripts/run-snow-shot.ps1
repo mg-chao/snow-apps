@@ -109,13 +109,9 @@ if ($Detached) {
     return
 }
 
-Push-Location $workingDirectory
-try {
-    & $executablePath
-    if ($LASTEXITCODE -ne 0) {
-        throw "Snow Shot exited with code $LASTEXITCODE."
-    }
-}
-finally {
-    Pop-Location
+$process = Start-Process -FilePath $executablePath -WorkingDirectory $workingDirectory `
+    -WindowStyle Hidden -PassThru
+$process.WaitForExit()
+if ($process.ExitCode -ne 0) {
+    throw "Snow Shot exited with code $($process.ExitCode)."
 }

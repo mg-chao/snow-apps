@@ -109,6 +109,10 @@ snow_shot_mini_filter_sources(_sources ${_sources})
 qt_add_executable(snow_shot_mini MANUAL_FINALIZATION ${_sources})
 _snow_mini_copy_build_properties(snow_shot snow_shot_mini)
 target_link_libraries(snow_shot_mini PRIVATE snow_shot_edition_mini)
+if(SNOW_SHOT_BUILD_TESTS)
+    # Full's generated plugin-import source is deliberately excluded above.
+    snow_shot_import_offscreen_platform(snow_shot_mini)
+endif()
 snow_shot_add_translations(snow_shot_mini MINI)
 set_target_properties(snow_shot_mini PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/snow_shot_mini"
@@ -209,6 +213,9 @@ if(NOT SNOW_SHOT_IMAGE_CODEC_BACKEND_STATIC)
     endif()
 endif()
 if(WIN32)
+    if(NOT SNOW_SHOT_IMAGE_CODEC_BACKEND_STATIC)
+        _snow_shot_stage_image_runtime(snow_shot_mini)
+    endif()
     add_custom_command(TARGET snow_shot_mini POST_BUILD
         COMMAND "${CMAKE_COMMAND}" -E make_directory "$<TARGET_FILE_DIR:snow_shot_mini>/assets/ocr"
         COMMAND "${CMAKE_COMMAND}" -E copy_if_different
@@ -221,13 +228,11 @@ if(WIN32)
             COMMAND "${CMAKE_COMMAND}" -E copy_if_different $<TARGET_RUNTIME_DLLS:snow_shot_mini>
                 "$<TARGET_FILE_DIR:snow_shot_mini>" COMMAND_EXPAND_LISTS VERBATIM)
         if(SNOW_SHOT_FFMPEG_RUNTIME_FILES)
-            add_custom_command(TARGET snow_shot_mini POST_BUILD
-                COMMAND "${CMAKE_COMMAND}" -E copy_if_different ${SNOW_SHOT_FFMPEG_RUNTIME_FILES}
-                    "$<TARGET_FILE_DIR:snow_shot_mini>" COMMAND_EXPAND_LISTS VERBATIM)
             install(FILES ${SNOW_SHOT_FFMPEG_RUNTIME_FILES} DESTINATION "${_mini_bindir}"
                 COMPONENT SnowShotMini)
         endif()
     endif()
+    snow_shot_stage_ffmpeg_runtime(snow_shot_mini)
 endif()
 if(EXISTS "${SNOW_SHOT_CAMERA_SHUTTER_AUDIO_SOURCE}")
     add_custom_command(TARGET snow_shot_mini POST_BUILD
@@ -271,6 +276,20 @@ target_link_libraries(snow_shot PRIVATE snow_shot_edition_full)
 target_sources(snow_shot PRIVATE include/snow_shot/app/edition.h)
 
 if(SNOW_SHOT_BUILD_TESTS)
+    if(WIN32)
+        find_program(_snow_launch_test_powershell NAMES pwsh powershell REQUIRED)
+        add_test(NAME snow-shot-launcher-tests
+            COMMAND "${_snow_launch_test_powershell}" -NoProfile -File
+                "${CMAKE_CURRENT_SOURCE_DIR}/../scripts/test-run-snow-shot.ps1")
+        set_tests_properties(snow-shot-launcher-tests PROPERTIES LABELS "unit;windows" TIMEOUT 15)
+        if(SNOW_SHOT_ENABLE_MCP)
+            add_test(NAME snow-shot-mini-startup-tests
+                COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tests/mini_startup_tests.py"
+                    --application "$<TARGET_FILE:snow_shot_mini>")
+            set_tests_properties(snow-shot-mini-startup-tests PROPERTIES LABELS "unit;windows"
+                TIMEOUT 45)
+        endif()
+    endif()
     add_test(NAME snow-shot-mini-build-contract-tests
         COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tests/mini_build_contract_tests.py")
     set_tests_properties(snow-shot-mini-build-contract-tests PROPERTIES LABELS unit TIMEOUT 60)
