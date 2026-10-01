@@ -534,6 +534,8 @@ AdRadio::AdRadio(QWidget* parent) : QRadioButton(parent) {
     refreshAutomaticCursor();
     update();
   });
+  connect(&adqt::theme::ThemeManager::instance(), &adqt::theme::ThemeManager::themeChanged, this,
+          qOverload<>(&QWidget::update));
 }
 
 AdRadio::AdRadio(const QString& text, QWidget* parent) : AdRadio(parent) { setText(text); }

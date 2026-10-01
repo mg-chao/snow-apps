@@ -296,6 +296,84 @@ void stopAndCopyBusyIndicatorsStayOnTheInitiatingControl() {
     }
 }
 
+void recordingCanCloseDuringAndAfterFinalization() {
+    const QRect screenRegion =
+        ScreenshotGeometryMapper::physicalRectForScreen(*QGuiApplication::primaryScreen());
+    for (const QRect& region : {QRect(40, 40, 320, 240), screenRegion}) {
+        for (const bool paused : {false, true}) {
+            for (const bool copy : {false, true}) {
+                for (const bool closeWhileBusy : {false, true}) {
+                    ScreenRecordingController controller(testEffectsSource);
+                    int finalized = 0;
+                    QObject::connect(&controller, &ScreenRecordingController::finalized,
+                                     &controller, [&] { ++finalized; });
+                    std::promise<void> release;
+                    std::promise<void> entered;
+                    auto enteredFuture = entered.get_future();
+                    exportGate = release.get_future().share();
+                    exportEntered = &entered;
+                    const int previousExports = exports.load();
+                    const int previousDestroyed = destroyedSessions.load();
+                    controller.open(region);
+                    controller.startRecording();
+                    waitForRecording(controller);
+                    if (paused)
+                        palette()->recordingPauseRequested();
+                    if (copy)
+                        palette()->recordingCopyRequested();
+                    else
+                        palette()->recordingStopRequested();
+                    require(enteredFuture.wait_for(std::chrono::seconds(2)) ==
+                                std::future_status::ready,
+                            "finalization must reach the controlled backend");
+                    if (!closeWhileBusy) {
+                        joinHeldExport(release, previousExports);
+                        waitForIdle(controller);
+                    }
+                    auto* closeButton = recordingToolbarButton("Close recording");
+                    require(closeButton && closeButton->isEnabled(),
+                            "Close must remain available during and after recording finalization");
+                    QPointer<QWidget> toolbar(closeButton->window());
+                    const QPointF localPosition(closeButton->rect().center());
+                    const QPointF globalPosition(closeButton->mapToGlobal(localPosition.toPoint()));
+                    QMouseEvent down(QEvent::MouseButtonPress, localPosition, globalPosition,
+                                     Qt::LeftButton, Qt::LeftButton, Qt::NoModifier);
+                    QMouseEvent up(QEvent::MouseButtonRelease, localPosition, globalPosition,
+                                   Qt::LeftButton, Qt::NoButton, Qt::NoModifier);
+                    QCoreApplication::sendEvent(closeButton, &down);
+                    QCoreApplication::sendEvent(closeButton, &up);
+                    require(!controller.isOpen(),
+                            "clicking Close must immediately hide recording UI");
+                    QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+                    require(toolbar.isNull() && recordingWindowCount() == 0,
+                            "clicking Close must retire both recording windows");
+                    if (closeWhileBusy) {
+                        require(
+                            controller.isRecording() && finalized == 0 &&
+                                destroyedSessions.load() == previousDestroyed,
+                            "closing must preserve pending finalization and its native session");
+                        joinHeldExport(release, previousExports);
+                        waitForIdle(controller);
+                    }
+                    require(finalized == 1 && exports.load() == previousExports + 1 &&
+                                destroyedSessions.load() == previousDestroyed + 1 &&
+                                recordingWindowCount() == 0,
+                            "background export must finish once without reopening recording UI");
+                    if (copy) {
+                        const auto* mime = QApplication::clipboard()->mimeData();
+                        require(mime && mime->hasUrls() &&
+                                    mime->urls() == QList<QUrl>{QUrl::fromLocalFile(
+                                                        controller.automationState()
+                                                            .value(QStringLiteral("path"))
+                                                            .toString())},
+                                "closing during Copy must preserve its finalized clipboard result");
+                    }
+                }
+            }
+        }
+    }
+}
+
 #ifdef Q_OS_MACOS
 void standardCloseFromRecordingArea() {
     ScreenRecordingController controller(testEffectsSource);
@@ -3065,6 +3143,11 @@ int main(int argc, char** argv) {
     QApplication::setFont(testFont);
     QFontDatabase::setApplicationFallbackFontFamilies(QChar::Script_Han,
                                                       {QStringLiteral("Snow Recording Test Han")});
+    if (app.arguments().contains(QStringLiteral("--finalization-close-only"))) {
+        recordingCanCloseDuringAndAfterFinalization();
+        ApplicationStorage::instance().shutdown();
+        return 0;
+    }
     if (app.arguments().contains(QStringLiteral("--audio-gain-only"))) {
         const auto waitFor = [](auto predicate) {
             QElapsedTimer deadline;
@@ -3685,6 +3768,7 @@ int main(int argc, char** argv) {
             "restore mixed recording audio");
     permissionsAndExactLogicalRegion();
     stopAndCopyBusyIndicatorsStayOnTheInitiatingControl();
+    recordingCanCloseDuringAndAfterFinalization();
     delayCountdownBlocksTheStartUntilItElapses();
     ApplicationStorage::instance().shutdown();
     return 0;

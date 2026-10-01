@@ -150,6 +150,17 @@ struct FormField::Impl {
     QStringList errors;
     QStringList warnings;
     QString descriptionOverride;
+    bool descriptionError = false;
+
+    void refreshDescriptionStyle(const styles::ThemeColorScheme& scheme) const {
+        if (description) {
+            QPalette palette = description->palette();
+            palette.setColor(QPalette::WindowText, descriptionError
+                                                       ? scheme.map.colorErrorText
+                                                       : scheme.map.colorTextSecondary);
+            description->setPalette(palette);
+        }
+    }
 
     [[nodiscard]] QString descriptionText() const {
         return !descriptionOverride.isEmpty() ? descriptionOverride
@@ -373,10 +384,11 @@ void FormField::setMetadata(const Metadata& metadata) {
     retranslateUi();
 }
 
-void FormField::setDescriptionOverride(const QString& description) {
+void FormField::setDescriptionOverride(const QString& description, bool error) {
     m_impl->clearingDescriptionOverride =
         !m_impl->descriptionOverride.isEmpty() && description.isEmpty();
     m_impl->descriptionOverride = description;
+    m_impl->descriptionError = error;
     retranslateUi();
 }
 
@@ -454,8 +466,10 @@ void FormField::retranslateUi() {
             state.clearingDescriptionOverride) {
             const QString description = state.descriptionText();
             if (state.description) {
+                state.description->setTextFormat(Qt::PlainText);
                 state.description->setText(description);
                 state.description->setVisible(!description.isEmpty());
+                state.refreshDescriptionStyle(styles::ThemeManager::instance().themeColorScheme());
             }
             state.item->setTooltipText(description);
             state.control->setToolTip(description);
@@ -503,6 +517,7 @@ void FormField::retranslateUi() {
 void FormField::applyTheme(const styles::ThemeColorScheme& scheme) {
     if (m_impl->title && m_impl->description) {
         components::applySettingItemTheme(m_impl->title, m_impl->description, scheme);
+        m_impl->refreshDescriptionStyle(scheme);
         if (auto* layout = qobject_cast<QHBoxLayout*>(m_impl->view->layout())) {
             layout->setSpacing(scheme.metricAlias.marginLG);
         }

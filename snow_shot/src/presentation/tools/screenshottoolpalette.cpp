@@ -8856,7 +8856,7 @@ ScreenshotToolPalette::recordingShortcutButton(const QString& actionId) const {
 
 bool ScreenshotToolPalette::canActivateRecordingShortcut(const QString& actionId) const {
     const auto* button = recordingShortcutButton(actionId);
-    return button != nullptr && button->isVisible() && button->isEnabled() && !recordingBusy();
+    return button != nullptr && button->isVisible() && button->isEnabled();
 }
 
 bool ScreenshotToolPalette::activateRecordingShortcut(const QString& actionId) {
@@ -8984,9 +8984,8 @@ void ScreenshotToolPalette::updateRecordingControls() {
             animatedFormat ? tr("Animated recording formats do not contain audio") : QString());
     }
     if (m_recordCloseButton != nullptr) {
-        // A pending countdown is pure UI state; closing may always cancel it.
-        m_recordCloseButton->setEnabled(!busy || m_recordingSession.busyOperation() ==
-                                                     RecordingBusyOperation::CountingDown);
+        // Close retires the recording UI while pending backend work finishes independently.
+        m_recordCloseButton->setEnabled(true);
     }
     if (m_recordCopyButton != nullptr) {
         const bool copyEnabled = active && !busy;

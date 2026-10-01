@@ -13,6 +13,9 @@
 #include <QSizePolicy>
 #include <QVBoxLayout>
 
+#include <algorithm>
+#include <cmath>
+
 namespace {
 constexpr int GLOBAL_SEARCH_MAX_WIDTH = 400;
 constexpr int GLOBAL_SEARCH_MIN_WIDTH = 280;
@@ -107,13 +110,32 @@ void MainContentHeaderWidget::setCurrentSection(const QString& sectionId) {
 
 void MainContentHeaderWidget::applyTheme(
     const snow_shot::presentation::styles::ThemeColorScheme& scheme) {
-    QPalette headerPalette = palette();
-    headerPalette.setColor(QPalette::Window, scheme.map.colorBgContainer);
-    setPalette(headerPalette);
+    m_surfaceColor = scheme.map.colorBgContainer;
+    updateSkinMask();
     updateLayoutMargins(scheme.metricAlias);
     if (m_globalSearch != nullptr) {
         m_globalSearch->applyTheme(scheme);
     }
+    update();
+}
+
+void MainContentHeaderWidget::setSkinMaskOpacity(qreal opacity) {
+    const qreal normalized = std::isfinite(opacity) ? std::clamp(opacity, 0.0, 1.0) : 1.0;
+    if (m_skinMaskOpacity == normalized) {
+        return;
+    }
+    m_skinMaskOpacity = normalized;
+    updateSkinMask();
+}
+
+void MainContentHeaderWidget::updateSkinMask() {
+    QPalette headerPalette = palette();
+    QColor background = m_surfaceColor;
+    if (m_skinMaskOpacity != 1.0) {
+        background.setAlphaF(background.alphaF() * static_cast<float>(m_skinMaskOpacity));
+    }
+    headerPalette.setColor(QPalette::Window, background);
+    setPalette(headerPalette);
     update();
 }
 

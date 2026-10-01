@@ -1282,6 +1282,12 @@ SnowError snow_viewport_set_shape_style_patch_ex(SnowRuntime runtime, SnowViewpo
 SnowError snow_viewport_set_filter_style_ex(SnowRuntime runtime, SnowViewport viewport,
                                             const SnowFilterStyle* style, uint32_t properties,
                                             SnowChangedViewportList* out_changed_viewports);
+/* Patches creation defaults without changing the tool, selection, or document.
+ * tool must be
+ * RectangleFilter or PenFilter. Strength remains shared by both families. */
+SnowError snow_viewport_set_filter_creation_style_ex(
+    SnowRuntime runtime, SnowViewport viewport, const SnowFilterStyle* style, uint32_t properties,
+    SnowActiveTool tool, SnowChangedViewportList* out_changed_viewports);
 SnowError snow_viewport_get_watermark_config(SnowRuntime runtime, SnowViewport viewport,
                                              SnowWatermarkConfig* out_config);
 SnowError snow_viewport_set_watermark_config_ex(SnowRuntime runtime, SnowViewport viewport,

@@ -34,6 +34,7 @@ class SnowCanvasRegionFilterScratch {
 
     // Releases leased scratch while retaining pooled buffers within the byte limit.
     void finishFrame();
+    [[nodiscard]] std::size_t retainedBytes() const;
 
   private:
     friend struct SnowCanvasRegionFilterScratchAccess;
@@ -53,4 +54,5 @@ snowCanvasRegionFilterSupportPixels(const SnowCanvasRegionFilterParameters& para
 [[nodiscard]] bool applySnowCanvasRegionFilter(const QImage& source, QImage& destination,
                                                const QRegion& destinationPixels,
                                                const SnowCanvasRegionFilterParameters& parameters,
-                                               SnowCanvasRegionFilterScratch* scratch = nullptr);
+                                               SnowCanvasRegionFilterScratch* scratch = nullptr,
+                                               bool singleThreaded = false);

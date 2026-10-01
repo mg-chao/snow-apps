@@ -14,6 +14,7 @@
 #include "snow_shot/platform/macos/loginitemservice.h"
 
 #include <QObject>
+#include <QPointer>
 #include <QVariant>
 #include <QVector>
 #include <future>
@@ -21,6 +22,7 @@
 namespace snow_shot::presentation {
 class GlobalShortcutManager;
 class GlobalMouseManager;
+class MainWindowSkinController;
 namespace settings {
 
 struct SettingsRuntimeOption {
@@ -90,6 +92,13 @@ class SettingsBackend : public QObject {
     [[nodiscard]] virtual QString filePathValue(SettingsFilePathBinding binding) const = 0;
     [[nodiscard]] virtual bool applyFilePathValue(SettingsFilePathBinding binding,
                                                   const QString& value) = 0;
+    [[nodiscard]] virtual QString filePathStatus(SettingsFilePathBinding) const {
+        return {};
+    }
+    [[nodiscard]] virtual bool filePathStatusError(SettingsFilePathBinding) const {
+        return false;
+    }
+    virtual void reloadFilePathValue(SettingsFilePathBinding) {}
 
     [[nodiscard]] virtual QString
     directoryPathValue(SettingsDirectoryPathBinding binding) const = 0;
@@ -250,6 +259,9 @@ class BuiltInSettingsBackend final : public SettingsBackend {
     [[nodiscard]] QString filePathValue(SettingsFilePathBinding binding) const override;
     [[nodiscard]] bool applyFilePathValue(SettingsFilePathBinding binding,
                                           const QString& value) override;
+    [[nodiscard]] QString filePathStatus(SettingsFilePathBinding binding) const override;
+    [[nodiscard]] bool filePathStatusError(SettingsFilePathBinding binding) const override;
+    void reloadFilePathValue(SettingsFilePathBinding binding) override;
     [[nodiscard]] QString directoryPathValue(SettingsDirectoryPathBinding binding) const override;
     [[nodiscard]] bool applyDirectoryPathValue(SettingsDirectoryPathBinding binding,
                                                const QString& value) override;
@@ -302,10 +314,14 @@ class BuiltInSettingsBackend final : public SettingsBackend {
     [[nodiscard]] bool resetSection(SettingsSectionReset reset) override;
 
   private:
+    void connectSkinControllerIfNeeded();
+
     ::snow_shot::presentation::GlobalShortcutManager& m_shortcutManager;
     AppPermissionService* m_permissions = nullptr;
     GlobalMouseManager* m_mouseManager = nullptr;
     platform::macos::LoginItemService* m_loginItems = nullptr;
+    QPointer<MainWindowSkinController> m_skinController;
+    QMetaObject::Connection m_skinStatusConnection;
     bool m_copyLogBusy = false;
     bool m_configurationBusy = false;
 };

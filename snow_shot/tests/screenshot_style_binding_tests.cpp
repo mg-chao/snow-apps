@@ -7,6 +7,10 @@
 #include "widgets/button.h"
 
 #include <QApplication>
+#include <QCursor>
+#include <QJsonArray>
+#include <QJsonDocument>
+#include <QJsonObject>
 #include <QMouseEvent>
 #include <QWheelEvent>
 #include <QScopeGuard>
@@ -54,6 +58,99 @@ void wheel(SnowCanvasWidget& canvas, int delta) {
     QWheelEvent event(point, canvas.mapToGlobal(point.toPoint()), QPoint(), QPoint(0, delta),
                       Qt::NoButton, Qt::NoModifier, Qt::NoScrollPhase, false);
     QApplication::sendEvent(&canvas, &event);
+}
+void mouse(SnowCanvasWidget& canvas, QEvent::Type type, QPointF point) {
+    QMouseEvent event(type, point, canvas.mapToGlobal(point.toPoint()),
+                      type == QEvent::MouseMove ? Qt::NoButton : Qt::LeftButton,
+                      type == QEvent::MouseButtonRelease ? Qt::NoButton : Qt::LeftButton,
+                      Qt::NoModifier);
+    QApplication::sendEvent(&canvas, &event);
+}
+QJsonArray documentSlots(const SnowCanvasRuntime& runtime) {
+    return QJsonDocument::fromJson(runtime.serializeDocumentSession())
+        .object()
+        .value(QStringLiteral("document"))
+        .toObject()
+        .value(QStringLiteral("slots"))
+        .toArray();
+}
+void creationDefaultsDoNotActivateFilterTools() {
+    SnowCanvasRuntime runtime;
+    SnowCanvasWidget canvas(runtime);
+    require(canvas.setCanvasTool(SnowCanvasTool::Select), "prepare screenshot selection tool");
+    const QCursor cursor = canvas.cursor();
+    const auto viewport = canvas.viewportId();
+    const auto revision = runtime.documentRevision();
+    int activeToolChanges = 0;
+    QObject::connect(&canvas, &SnowCanvasWidget::activeToolChanged, &canvas,
+                     [&] { ++activeToolChanges; });
+    auto defaults = screenshotCanvasToolStyleDefaults();
+    defaults.rectangleFilter = {SnowCanvasFilterType::GaussianBlur, 0.37, 0.61, 3};
+    defaults.penFilter = {SnowCanvasFilterType::Brightness, 0.37, 0.83, 21};
+    for (int capture = 0; capture < 8; ++capture) {
+        applyScreenshotCanvasToolStyles(canvas, defaults);
+        require(activeToolChanges == 0 && canvas.canvasTool() == SnowCanvasTool::Select &&
+                    canvas.cursor() == cursor,
+                "repeated screenshot defaults must not activate tools or allocate brush cursors");
+        require(canvas.viewportId() == viewport && runtime.documentRevision() == revision &&
+                    !runtime.canUndo(),
+                "creation defaults must preserve the viewport and empty document history");
+    }
+    require(canvas.setCanvasTool(SnowCanvasTool::RectangleFilter), "inspect rectangle defaults");
+    require(canvas.canvasStyleToolbarState().filterStyle == defaults.rectangleFilter,
+            "rectangle filter creation style must apply without activating it during setup");
+    require(canvas.setCanvasTool(SnowCanvasTool::PenFilter), "inspect pen defaults");
+    require(canvas.canvasStyleToolbarState().filterStyle == defaults.penFilter,
+            "pen filter creation style must apply independently of rectangle defaults");
+}
+void creationDefaultsPreserveDocumentAndEditingCleanup() {
+    SnowCanvasRuntime runtime;
+    SnowCanvasWidget canvas(runtime);
+    canvas.resize(320, 240);
+    canvas.show();
+    QApplication::processEvents();
+    require(canvas.setViewportCamera(160, 120, 1), "set style restoration fixture camera");
+    require(canvas.setCanvasTool(SnowCanvasTool::Shape), "draw style restoration fixture");
+    mouse(canvas, QEvent::MouseButtonPress, QPointF(40, 40));
+    mouse(canvas, QEvent::MouseMove, QPointF(140, 100));
+    mouse(canvas, QEvent::MouseButtonRelease, QPointF(140, 100));
+    require(canvas.setCanvasTool(SnowCanvasTool::Select), "select style restoration fixture");
+    mouse(canvas, QEvent::MouseButtonPress, QPointF(40, 60));
+    mouse(canvas, QEvent::MouseButtonRelease, QPointF(40, 60));
+    require(canvas.canvasStyleToolbarState().source ==
+                SnowCanvasStyleToolbarSource::SelectedRectangle,
+            "fixture rectangle must be selected before defaults refresh");
+    const auto originalSlots = documentSlots(runtime);
+    const auto history = runtime.serializeDocumentHistory();
+    const auto revision = runtime.documentRevision();
+    require(!originalSlots.isEmpty(), "style restoration fixture must contain a document element");
+    auto defaults = screenshotCanvasToolStyleDefaults();
+    defaults.rectangle.stroke = QColor(19, 47, 89);
+    defaults.rectangle.strokeWidth = 12;
+    applyScreenshotCanvasToolStyles(canvas, defaults);
+    require(documentSlots(runtime) == originalSlots &&
+                runtime.serializeDocumentHistory() == history &&
+                runtime.documentRevision() == revision,
+            "refreshing creation styles must never rewrite selected elements or their history");
+    require(canvas.canvasStyleToolbarState().source !=
+                SnowCanvasStyleToolbarSource::SelectedRectangle,
+            "creation style restoration retains its existing selection cleanup");
+    require(canvas.setCanvasTool(SnowCanvasTool::Text), "start pending text before style refresh");
+    mouse(canvas, QEvent::MouseButtonPress, QPointF(180, 150));
+    QKeyEvent type(QEvent::KeyPress, Qt::Key_A, Qt::NoModifier, QStringLiteral("pending"));
+    QApplication::sendEvent(&canvas, &type);
+    require(canvas.hasActiveTextEditing(), "style restoration fixture must have pending text");
+    QList<SnowCanvasTool> observedTools;
+    QObject::connect(&canvas, &SnowCanvasWidget::activeToolChanged, &canvas,
+                     [&] { observedTools.append(canvas.canvasTool()); });
+    applyScreenshotCanvasToolStyles(canvas, defaults);
+    require(!canvas.hasActiveTextEditing() && canvas.canvasTool() == SnowCanvasTool::Text &&
+                canvas.cursor().shape() == Qt::IBeamCursor &&
+                documentSlots(runtime) != originalSlots,
+            "creation style restoration must commit pending text and restore its active tool");
+    require(!observedTools.contains(SnowCanvasTool::RectangleFilter) &&
+                !observedTools.contains(SnowCanvasTool::PenFilter),
+            "restoring a non-filter tool must not transiently activate either filter");
 }
 void fontWheelRemembersDefaultsAndDraftChoice() {
     Editor editor;
@@ -252,6 +349,8 @@ void runScreenshotStyleBindingTests() {
     const auto restore = qScopeGuard([&] {
         static_cast<void>(snow_shot::presentation::persistScreenshotCanvasToolStyles(original));
     });
+    creationDefaultsDoNotActivateFilterTools();
+    creationDefaultsPreserveDocumentAndEditingCleanup();
     fontWheelRemembersDefaultsAndDraftChoice();
     propertyPatchesPreserveOtherEditorsAndProgrammaticState();
     allStyleFamiliesPersistOnlyTheirPatch();

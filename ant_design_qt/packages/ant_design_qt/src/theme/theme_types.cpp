@@ -179,6 +179,9 @@ void applyDensityMetrics(ThemeMetrics* metrics, const ThemeConfig& config) {
   metrics->popupArrowSize = std::max(0, qRound(config.sizePopupArrow));
   metrics->popupZIndexBase = std::max(0, qRound(config.zIndexPopupBase));
   metrics->opacityImage = std::max(0.0, config.opacityImage);
+  metrics->backgroundOpacity = std::isfinite(config.backgroundOpacity)
+                                   ? std::clamp(config.backgroundOpacity, 0.0, 1.0)
+                                   : 1.0;
 
   applyTypographyMetrics(metrics);
 }
@@ -340,6 +343,7 @@ ThemeConfig themeConfigFromTheme(const AdTheme& theme) {
   config.controlHeight = theme.metrics.controlHeight;
   config.zIndexPopupBase = theme.metrics.popupZIndexBase;
   config.opacityImage = theme.metrics.opacityImage;
+  config.backgroundOpacity = theme.metrics.backgroundOpacity;
   config.wireframe = theme.wireframe;
   config.motion = theme.motion.motion;
   return config;
@@ -414,6 +418,9 @@ ThemeConfig mergeThemeConfigImpl(const ThemeConfig& base, const ThemeOverride& o
   }
   if (overrideValue.opacityImage.has_value()) {
     merged.opacityImage = overrideValue.opacityImage.value();
+  }
+  if (overrideValue.backgroundOpacity.has_value()) {
+    merged.backgroundOpacity = overrideValue.backgroundOpacity.value();
   }
 
   if (overrideValue.wireframe.has_value()) {
@@ -747,6 +754,7 @@ ThemeConfig defaultThemeConfig(ThemeScheme scheme, ThemeDensity density) {
   config.controlHeight = density == ThemeDensity::Compact ? 28.0 : 32.0;
   config.zIndexPopupBase = 1000.0;
   config.opacityImage = 1.0;
+  config.backgroundOpacity = 1.0;
   config.wireframe = false;
   config.motion = true;
   return config;
@@ -872,7 +880,9 @@ bool operator==(const ThemeConfig& lhs, const ThemeConfig& rhs) {
                                          ADQT_EQ_FIELD(sizePopupArrow) ADQT_EQ_FIELD(controlHeight)
                                              ADQT_EQ_FIELD(zIndexPopupBase)
                                                  ADQT_EQ_FIELD(opacityImage)
-                                                     ADQT_EQ_FIELD(wireframe) ADQT_EQ_FIELD(motion);
+                                                     ADQT_EQ_FIELD(backgroundOpacity)
+                                                         ADQT_EQ_FIELD(wireframe)
+                                                             ADQT_EQ_FIELD(motion);
 }
 
 bool operator==(const ThemeOverride& lhs, const ThemeOverride& rhs) {
@@ -890,7 +900,9 @@ bool operator==(const ThemeOverride& lhs, const ThemeOverride& rhs) {
                                          ADQT_EQ_FIELD(sizePopupArrow) ADQT_EQ_FIELD(controlHeight)
                                              ADQT_EQ_FIELD(zIndexPopupBase)
                                                  ADQT_EQ_FIELD(opacityImage)
-                                                     ADQT_EQ_FIELD(wireframe) ADQT_EQ_FIELD(motion);
+                                                     ADQT_EQ_FIELD(backgroundOpacity)
+                                                         ADQT_EQ_FIELD(wireframe)
+                                                             ADQT_EQ_FIELD(motion);
 }
 
 bool operator==(const AdTheme& lhs, const AdTheme& rhs) {

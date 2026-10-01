@@ -16,7 +16,9 @@
 #include "snow_shot/presentation/settings/settingsregistry.h"
 #include "snow_shot/presentation/settings/settingsruntimesession.h"
 #include "snow_shot/presentation/styles/thememanager.h"
+#include "snow_shot/presentation/styles/mainwindowcomponenttoken.h"
 
+#include "theme/theme_manager.h"
 #include "widgets/button.h"
 #include "widgets/checkbox.h"
 #include "widgets/divider.h"
@@ -49,6 +51,7 @@
 #include <QMimeData>
 #include <QMouseEvent>
 #include <QPainter>
+#include <QPainterPath>
 #include <QPalette>
 #include <QSet>
 #include <QSignalBlocker>
@@ -263,6 +266,8 @@ class ToolbarDropSurface final : public QFrame {
         shadow->setOffset(0.0, 3.0);
         shadow->setColor(QColor(0, 0, 0, 90));
         setGraphicsEffect(shadow);
+        connect(&adqt::theme::ThemeManager::instance(), &adqt::theme::ThemeManager::themeChanged,
+                this, [this] { update(); });
     }
 
     [[nodiscard]] QHBoxLayout* contentLayout() const {
@@ -348,7 +353,9 @@ class ToolbarDropSurface final : public QFrame {
 
         QPainter painter(this);
         painter.setRenderHint(QPainter::Antialiasing, true);
-        painter.setBrush(m_surfaceColor.isValid() ? m_surfaceColor : QColor(Qt::white));
+        const QColor background = snow_shot::presentation::styles::mainWindowBackgroundColor(
+            this, m_surfaceColor.isValid() ? m_surfaceColor : QColor(Qt::white));
+        painter.setBrush(background);
         if (m_dragActive && m_accentColor.isValid()) {
             QColor outline = m_accentColor;
             outline.setAlpha(110);
@@ -357,21 +364,37 @@ class ToolbarDropSurface final : public QFrame {
             painter.setPen(Qt::NoPen);
         }
         const int bottomBarHeight = kToolbarButtonSize + kToolbarVerticalMargin * 2;
-        painter.drawRoundedRect(
+        const bool translucent = background.alpha() < 255;
+        QPainterPath surfacePath;
+        const QRectF bottomBarRect =
             QRectF(0, qMax(0, height() - bottomBarHeight), width(), bottomBarHeight)
-                .adjusted(0.5, 0.5, -0.5, -0.5),
-            kToolbarRadius, kToolbarRadius);
+                .adjusted(0.5, 0.5, -0.5, -0.5);
+        if (translucent) {
+            surfacePath.addRoundedRect(bottomBarRect, kToolbarRadius, kToolbarRadius);
+        } else {
+            painter.drawRoundedRect(bottomBarRect, kToolbarRadius, kToolbarRadius);
+        }
         for (ToolbarPositionWidget* position : std::as_const(m_positions)) {
             if (position == nullptr || position->height() <= kToolbarButtonSize) {
                 continue;
             }
             const QRect geometry = position->geometry();
             const int extensionTop = qMax(0, geometry.top() - kToolbarVerticalMargin);
-            painter.drawRoundedRect(QRectF(geometry.left() - kToolbarVerticalMargin, extensionTop,
-                                           geometry.width() + kToolbarVerticalMargin * 2,
-                                           height() - extensionTop)
-                                        .adjusted(0.5, 0.5, -0.5, -0.5),
-                                    kToolbarRadius, kToolbarRadius);
+            const QRectF extensionRect =
+                QRectF(geometry.left() - kToolbarVerticalMargin, extensionTop,
+                       geometry.width() + kToolbarVerticalMargin * 2, height() - extensionTop)
+                    .adjusted(0.5, 0.5, -0.5, -0.5);
+            if (translucent) {
+                QPainterPath extension;
+                extension.addRoundedRect(extensionRect, kToolbarRadius, kToolbarRadius);
+                surfacePath = surfacePath.united(extension);
+            } else {
+                painter.drawRoundedRect(extensionRect, kToolbarRadius, kToolbarRadius);
+            }
+        }
+        // Paint the joined surface once so stacked tool positions share one mask.
+        if (translucent) {
+            painter.drawPath(surfacePath);
         }
     }
 
@@ -497,6 +520,8 @@ class ToolbarHiddenDropZone final : public QFrame {
         m_emptyLabel->setObjectName(QStringLiteral("%1-hidden-empty").arg(objectNamePrefix));
         m_emptyLabel->setAlignment(Qt::AlignCenter);
         m_layout->addWidget(m_emptyLabel, 1);
+        connect(&adqt::theme::ThemeManager::instance(), &adqt::theme::ThemeManager::themeChanged,
+                this, [this] { update(); });
     }
 
     void setButtons(const QVector<ToolbarDragButton*>& buttons) {
@@ -602,7 +627,8 @@ class ToolbarHiddenDropZone final : public QFrame {
         Q_UNUSED(event);
         QPainter painter(this);
         painter.setRenderHint(QPainter::Antialiasing, true);
-        painter.setBrush(m_backgroundColor.isValid() ? m_backgroundColor : QColor(Qt::transparent));
+        painter.setBrush(snow_shot::presentation::styles::mainWindowBackgroundColor(
+            this, m_backgroundColor.isValid() ? m_backgroundColor : QColor(Qt::transparent)));
         QColor outline = m_dragActive && m_accentColor.isValid() ? m_accentColor : m_borderColor;
         painter.setPen(outline.isValid() ? QPen(outline, m_dragActive ? 1.5 : 1.0) : Qt::NoPen);
         painter.drawRoundedRect(QRectF(rect()).adjusted(0.75, 0.75, -0.75, -0.75), kToolbarRadius,

@@ -303,6 +303,133 @@ SettingsItemDefinition languageItem() {
     };
 }
 
+QVector<SettingsItemDefinition> skinItems() {
+    const auto pathItem = [](const QString& id, const QString& key, SettingsFilePathBinding binding,
+                             const TranslatableText& title, const TranslatableText& description) {
+        return SettingsItemDefinition{
+            id,
+            title,
+            description,
+            {settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Background image"))},
+            key,
+            SettingsFilePathDefinition{
+                binding, settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Browse")),
+                settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Select skin image")),
+                settingsText(QT_TRANSLATE_NOOP(
+                    "SettingsCatalog",
+                    "Image files (*.png *.jpg *.jpeg *.webp);;PNG images "
+                    "(*.png);;JPG images (*.jpg *.jpeg);;WebP images (*.webp)"))}};
+    };
+    const auto positionItem = [](const QString& id, const QString& key,
+                                 SettingsSelectBinding binding, const TranslatableText& title) {
+        SettingsSelectDefinition position;
+        position.binding = binding;
+        position.options = {
+            {QStringLiteral("top_left"),
+             settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Top left"))},
+            {QStringLiteral("top_center"),
+             settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Top center"))},
+            {QStringLiteral("top_right"),
+             settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Top right"))},
+            {QStringLiteral("center_left"),
+             settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Center left"))},
+            {QStringLiteral("center"),
+             settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Center"))},
+            {QStringLiteral("center_right"),
+             settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Center right"))},
+            {QStringLiteral("bottom_left"),
+             settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Bottom left"))},
+            {QStringLiteral("bottom_center"),
+             settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Bottom center"))},
+            {QStringLiteral("bottom_right"),
+             settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Bottom right"))},
+        };
+        return SettingsItemDefinition{
+            id,
+            title,
+            settingsText(QT_TRANSLATE_NOOP("SettingsCatalog",
+                                           "Choose the image alignment within this surface.")),
+            {},
+            key,
+            position};
+    };
+    SettingsSelectDefinition displayMode;
+    displayMode.binding = SettingsSelectBinding::SkinDisplayMode;
+    displayMode.options = {
+        {QStringLiteral("overlay"), settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Overlay"))},
+        {QStringLiteral("contain"), settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Contain"))},
+    };
+    return {
+        pathItem(QStringLiteral("interface.skin.path"), QStringLiteral("interface/skin_path"),
+                 SettingsFilePathBinding::SkinPath,
+                 settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Main Interface Skin Path")),
+                 settingsText(QT_TRANSLATE_NOOP(
+                     "SettingsCatalog", "Enter or browse to a PNG, JPG or WebP image for the main "
+                                        "interface. Clear the path to remove this skin."))),
+        positionItem(
+            QStringLiteral("interface.skin.position"), QStringLiteral("interface/skin_position"),
+            SettingsSelectBinding::SkinPosition,
+            settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Main Interface Skin Position"))),
+        pathItem(QStringLiteral("interface.skin.toolbar-path"),
+                 QStringLiteral("interface/toolbar_skin_path"),
+                 SettingsFilePathBinding::ToolbarSkinPath,
+                 settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Toolbar Skin Path")),
+                 settingsText(QT_TRANSLATE_NOOP(
+                     "SettingsCatalog", "Choose an image for the screenshot, pin-to-screen, "
+                                        "full-screen canvas and screen recording toolbar rows. "
+                                        "Clear the path to remove this skin."))),
+        positionItem(QStringLiteral("interface.skin.toolbar-position"),
+                     QStringLiteral("interface/toolbar_skin_position"),
+                     SettingsSelectBinding::ToolbarSkinPosition,
+                     settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Toolbar Skin Position"))),
+        pathItem(QStringLiteral("interface.skin.tray-menu-path"),
+                 QStringLiteral("interface/tray_menu_skin_path"),
+                 SettingsFilePathBinding::TrayMenuSkinPath,
+                 settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Tray Menu Skin Path")),
+                 settingsText(QT_TRANSLATE_NOOP(
+                     "SettingsCatalog", "Choose an image for Snow Shot's custom tray menu. Native "
+                                        "system menus keep their system appearance. Clear the path "
+                                        "to remove this skin."))),
+        positionItem(QStringLiteral("interface.skin.tray-menu-position"),
+                     QStringLiteral("interface/tray_menu_skin_position"),
+                     SettingsSelectBinding::TrayMenuSkinPosition,
+                     settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Tray Menu Skin Position"))),
+        {QStringLiteral("interface.skin.display-mode"),
+         settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Skin Display Mode")),
+         settingsText(QT_TRANSLATE_NOOP(
+             "SettingsCatalog",
+             "Applies to all three skins. Overlay fills each surface and crops the edges. "
+             "Contain shows the whole image.")),
+         {},
+         QStringLiteral("interface/skin_display_mode"),
+         displayMode},
+        {QStringLiteral("interface.skin.opacity"),
+         settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Skin Opacity")),
+         settingsText(
+             QT_TRANSLATE_NOOP("SettingsCatalog", "Adjust the image opacity for all three skins.")),
+         {},
+         QStringLiteral("interface/skin_opacity"),
+         SettingsSliderDefinition{SettingsSliderBinding::SkinOpacity,
+                                  settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "%"))}},
+        {QStringLiteral("interface.skin.blur-level"),
+         settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Skin Blur Level")),
+         settingsText(
+             QT_TRANSLATE_NOOP("SettingsCatalog", "Soften all three skin images with blur.")),
+         {},
+         QStringLiteral("interface/skin_blur_level"),
+         SettingsSliderDefinition{SettingsSliderBinding::SkinBlurLevel, {}}},
+        {QStringLiteral("interface.skin.mask-opacity"),
+         settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Mask Opacity")),
+         settingsText(QT_TRANSLATE_NOOP(
+             "SettingsCatalog", "Adjust the theme background opacity over all three skins to keep "
+                                "controls and text readable.")),
+         {},
+         QStringLiteral("interface/skin_mask_opacity"),
+         SettingsSliderDefinition{SettingsSliderBinding::SkinMaskOpacity,
+                                  settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "%"))}},
+    };
+}
+
 SettingsItemDefinition appFontItem() {
     SettingsSelectDefinition payload;
     payload.binding = SettingsSelectBinding::AppFont;
@@ -2491,6 +2618,15 @@ QVector<SettingsPageDefinition> builtInPages() {
                     {themeItem(), themePrimaryColorItem(), languageItem(), appFontItem()},
                 },
                 {
+                    QStringLiteral("skin"),
+                    settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Skin")),
+                    settingsText(QT_TRANSLATE_NOOP(
+                        "SettingsCatalog",
+                        "Customize the main interface, toolbar rows and custom tray menu")),
+                    SettingsSectionReset::Skin,
+                    skinItems(),
+                },
+                {
                     QStringLiteral("interface-screenshot"),
                     settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Screenshot")),
                     settingsText(QT_TRANSLATE_NOOP(
@@ -3752,6 +3888,18 @@ QStringList SettingsCatalog::validationErrors() const {
                     case SettingsSelectBinding::Theme:
                         expectedKey = QStringLiteral("interface/theme_mode");
                         break;
+                    case SettingsSelectBinding::SkinDisplayMode:
+                        expectedKey = QStringLiteral("interface/skin_display_mode");
+                        break;
+                    case SettingsSelectBinding::SkinPosition:
+                        expectedKey = QStringLiteral("interface/skin_position");
+                        break;
+                    case SettingsSelectBinding::ToolbarSkinPosition:
+                        expectedKey = QStringLiteral("interface/toolbar_skin_position");
+                        break;
+                    case SettingsSelectBinding::TrayMenuSkinPosition:
+                        expectedKey = QStringLiteral("interface/tray_menu_skin_position");
+                        break;
                     case SettingsSelectBinding::AppFont:
                         expectedKey = QStringLiteral("interface/app_font");
                         expectedSource = SettingsSelectSource::FontFamilies;
@@ -4210,10 +4358,21 @@ QStringList SettingsCatalog::validationErrors() const {
                     case SettingsSliderBinding::ScreenRecordingVideoQuality:
                         expectedKey = QStringLiteral("screen_recording/video_quality");
                         break;
+                    case SettingsSliderBinding::SkinOpacity:
+                        expectedKey = QStringLiteral("interface/skin_opacity");
+                        break;
+                    case SettingsSliderBinding::SkinBlurLevel:
+                        expectedKey = QStringLiteral("interface/skin_blur_level");
+                        break;
+                    case SettingsSliderBinding::SkinMaskOpacity:
+                        expectedKey = QStringLiteral("interface/skin_mask_opacity");
+                        break;
                     }
                     if (itemDefinition.configurationKey != expectedKey || schemaEntry == nullptr ||
                         schemaEntry->valueKind != storage::ConfigurationValueKind::Integer ||
-                        !schemaEntry->integerRange.has_value() || !slider->suffix.isValid()) {
+                        !schemaEntry->integerRange.has_value() ||
+                        (slider->binding != SettingsSliderBinding::SkinBlurLevel &&
+                         !slider->suffix.isValid())) {
                         errors.push_back(QStringLiteral("slider binding is incompatible: %1")
                                              .arg(itemDefinition.id));
                     }
@@ -4296,6 +4455,15 @@ QStringList SettingsCatalog::validationErrors() const {
                     switch (filePath->binding) {
                     case SettingsFilePathBinding::TrayCustomIcon:
                         expectedKey = QStringLiteral("tray/custom_icon");
+                        break;
+                    case SettingsFilePathBinding::SkinPath:
+                        expectedKey = QStringLiteral("interface/skin_path");
+                        break;
+                    case SettingsFilePathBinding::ToolbarSkinPath:
+                        expectedKey = QStringLiteral("interface/toolbar_skin_path");
+                        break;
+                    case SettingsFilePathBinding::TrayMenuSkinPath:
+                        expectedKey = QStringLiteral("interface/tray_menu_skin_path");
                         break;
                     }
                     if (itemDefinition.configurationKey != expectedKey || schemaEntry == nullptr ||

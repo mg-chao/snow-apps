@@ -57,6 +57,23 @@
 
 namespace storage = snow_shot::storage;
 
+class ScreenshotHistoryServiceTestAccess {
+  public:
+    static const QVector<storage::CaptureHistoryRecord>&
+    records(const ScreenshotHistoryService& history) {
+        return history.m_entries;
+    }
+
+    static std::size_t pendingWrites(const ScreenshotHistoryService& history) {
+        return history.m_pendingWrites.size();
+    }
+
+    static std::shared_future<storage::CaptureHistoryPublishResult>
+    lastWrite(const ScreenshotHistoryService& history) {
+        return history.m_pendingWrites.back().result;
+    }
+};
+
 namespace {
 using snow_shot::platform::PhysicalCursorDirection;
 
@@ -288,6 +305,270 @@ CapturedDisplayModel display(QString stableId, QString name, QRect canvasRect, Q
     result.image = std::move(image);
     result.active = true;
     return result;
+}
+
+struct HistoryMetadataFixture {
+    ScreenshotDisplaySession displays;
+    SnowCanvasRuntime runtime;
+    ScreenshotSelectionModel selection;
+    ScreenshotInteractionState interaction;
+    ScreenshotIntelligentSelectionModel intelligent;
+
+    HistoryMetadataFixture() {
+        displays.appendDisplay(display(QStringLiteral("metadata"), QStringLiteral("Metadata"),
+                                       QRect(0, 0, 16, 16),
+                                       solidImage(QSize(16, 16), qRgb(10, 20, 30))));
+        selection.setSelectionRect(QRectF(0, 0, 16, 16));
+        interaction.enterOverlayVisible(false);
+    }
+
+    ScreenshotHistoryServiceContext context() {
+        return {displays, runtime, selection, interaction, intelligent};
+    }
+};
+
+void waitForHistoryWrites(ScreenshotHistoryService& history, std::size_t expected,
+                          const char* message) {
+    QElapsedTimer timer;
+    timer.start();
+    while (ScreenshotHistoryServiceTestAccess::pendingWrites(history) != expected &&
+           timer.elapsed() < 5000) {
+        QCoreApplication::processEvents(QEventLoop::AllEvents, 20);
+        QThread::msleep(1);
+    }
+    require(ScreenshotHistoryServiceTestAccess::pendingWrites(history) == expected, message);
+}
+
+void idlePublicationsReconcileRepositoryLimits(const QString& root) {
+    storage::CaptureHistoryRepositoryOptions options;
+    options.policy.maxEntries = 3;
+    auto repository = storage::makeCaptureHistoryRepository(root, std::move(options));
+    HistoryMetadataFixture fixture;
+    ScreenshotHistoryService history(fixture.context(), *repository);
+    const auto started = QDateTime::currentDateTimeUtc();
+    for (int cycle = 0; cycle < 20; ++cycle) {
+        auto entry = takeSnapshot(history.snapshotCurrent(true), "metadata snapshot failed");
+        entry.createdUtc = started.addMSecs(cycle);
+        history.commit(std::move(entry));
+        history.resetCaptureNavigation();
+        waitForHistoryWrites(history, 0, "idle history did not reap its completed publication");
+        const auto persisted = repository->records();
+        const auto& metadata = ScreenshotHistoryServiceTestAccess::records(history);
+        require(persisted.size() == std::min(cycle + 1, 3),
+                "repository did not enforce its history limit");
+        require(metadata.size() == persisted.size(),
+                "idle history retained metadata pruned by the repository");
+        for (qsizetype index = 0; index < persisted.size(); ++index) {
+            require(metadata[index].id == persisted[index].id,
+                    "idle history metadata diverged from the repository");
+        }
+    }
+}
+
+void rejectedPublicationsPreservePendingMetadata(const QString& root) {
+    std::mutex gateMutex;
+    std::condition_variable gateChanged;
+    bool entered = false;
+    bool released = false;
+    storage::CaptureHistoryRepositoryOptions options;
+    options.policy.maxEntries = 1;
+    options.operationObserved = [&](storage::CaptureHistoryOperation operation) {
+        if (operation != storage::CaptureHistoryOperation::WorkerStarted)
+            return;
+        std::unique_lock lock(gateMutex);
+        entered = true;
+        gateChanged.notify_all();
+        require(gateChanged.wait_for(lock, std::chrono::seconds(5), [&]() { return released; }),
+                "history publication gate was not released");
+    };
+    auto repository = storage::makeCaptureHistoryRepository(root, std::move(options));
+    HistoryMetadataFixture fixture;
+    ScreenshotHistoryService history(fixture.context(), *repository);
+    QVector<QString> accepted;
+    auto commit = [&]() {
+        auto entry =
+            takeSnapshot(history.snapshotCurrent(true), "pending metadata snapshot failed");
+        const auto id = entry.id;
+        history.commit(std::move(entry));
+        return id;
+    };
+    accepted.push_back(commit());
+    {
+        std::unique_lock lock(gateMutex);
+        require(gateChanged.wait_for(lock, std::chrono::seconds(5), [&]() { return entered; }),
+                "history publication did not reach its gate");
+    }
+    accepted.push_back(commit());
+    accepted.push_back(commit());
+    const QString rejected = commit();
+    waitForHistoryWrites(history, 3, "rejected history placeholder survived while idle");
+    const auto& metadata = ScreenshotHistoryServiceTestAccess::records(history);
+    require(metadata.size() == 3, "refresh lost pending history metadata");
+    for (const auto& record : metadata) {
+        require(record.id != rejected && accepted.contains(record.id),
+                "refresh retained a rejected record or discarded an accepted placeholder");
+    }
+    {
+        const std::lock_guard lock(gateMutex);
+        released = true;
+    }
+    gateChanged.notify_all();
+    waitForHistoryWrites(history, 0, "accepted history publications did not settle");
+    require(repository->records().size() == 1 &&
+                ScreenshotHistoryServiceTestAccess::records(history).size() == 1,
+            "completed history metadata did not follow repository pruning");
+}
+
+void failedPublicationsReleaseMetadata(const QString& root) {
+    HistoryMetadataFixture fixture;
+    {
+        ScreenshotHistoryService history(fixture.context(),
+                                         QDir(root).filePath(QStringLiteral("validation")));
+        auto entry =
+            takeSnapshot(history.snapshotCurrent(true), "invalid metadata snapshot failed");
+        entry.canvasHistory = QByteArrayLiteral("invalid canvas history");
+        history.commit(std::move(entry));
+        waitForHistoryWrites(history, 0, "failed validation was not reaped while idle");
+        require(ScreenshotHistoryServiceTestAccess::records(history).isEmpty(),
+                "failed validation retained its history placeholder");
+    }
+    {
+        storage::CaptureHistoryRepositoryOptions options;
+        options.writeAvailable = false;
+        auto repository = storage::makeCaptureHistoryRepository(
+            QDir(root).filePath(QStringLiteral("publication")), std::move(options));
+        ScreenshotHistoryService history(fixture.context(), *repository);
+        history.commit(
+            takeSnapshot(history.snapshotCurrent(true), "unavailable publication snapshot failed"));
+        waitForHistoryWrites(history, 0, "failed publication was not reaped while idle");
+        require(ScreenshotHistoryServiceTestAccess::records(history).isEmpty(),
+                "failed publication retained its history placeholder");
+    }
+}
+
+void historyDestructionDiscardsQueuedCompletion(const QString& root) {
+    auto repository = storage::makeCaptureHistoryRepository(root);
+    HistoryMetadataFixture fixture;
+    {
+        ScreenshotHistoryService history(fixture.context(), *repository);
+        history.commit(takeSnapshot(history.snapshotCurrent(true), "shutdown snapshot failed"));
+        require(ScreenshotHistoryServiceTestAccess::lastWrite(history).get().storage.success,
+                "shutdown publication failed");
+        // Do not deliver the queued completion until its receiver has been destroyed.
+    }
+    QCoreApplication::processEvents(QEventLoop::AllEvents, 20);
+    require(repository->records().size() == 1,
+            "history destruction abandoned a completed publication");
+}
+
+void historyNavigationSurvivesIdlePublication(const QString& root, int maximumEntries) {
+    storage::CaptureHistoryRepositoryOptions options;
+    options.policy.maxEntries = maximumEntries;
+    auto repository = storage::makeCaptureHistoryRepository(root, std::move(options));
+    HistoryMetadataFixture fixture;
+    ScreenshotHistoryService history(fixture.context(), *repository);
+    const auto started = QDateTime::currentDateTimeUtc();
+    const QImage originalImage = fixture.displays.displayAt(0).image;
+    auto original =
+        takeSnapshot(history.snapshotCurrent(true), "navigation metadata snapshot failed");
+    original.createdUtc = started;
+    const auto originalId = original.id;
+    history.commit(std::move(original));
+    waitForHistoryWrites(history, 0, "navigation metadata publication did not settle");
+
+    const QImage liveImage = solidImage(QSize(16, 16), qRgb(40, 50, 60));
+    fixture.displays.displayAt(0).image = liveImage;
+    require(history.navigateToRecord(originalId), "could not browse original history record");
+    waitForNavigation(history, "original history record navigation timed out");
+    auto newer = takeSnapshot(history.snapshotCurrent(true), "newer navigation snapshot failed");
+    newer.createdUtc = started.addMSecs(1);
+    const QImage newerImage = solidImage(QSize(16, 16), qRgb(70, 80, 90));
+    newer.displays.front().image = newerImage;
+    history.commit(std::move(newer));
+    waitForHistoryWrites(history, 0, "newer navigation publication did not settle");
+    require(equalPixels(fixture.displays.displayAt(0).image, originalImage),
+            "metadata reconciliation replaced the displayed history snapshot");
+    require(repository->records().size() == std::min(maximumEntries, 2),
+            "navigation repository did not enforce its history limit");
+    require(!history.navigatePrevious(), "displayed oldest history moved past its boundary");
+    require(history.navigateNext(), "displayed history skipped the retained newer record");
+    waitForNavigation(history, "retained newer record navigation timed out");
+    require(equalPixels(fixture.displays.displayAt(0).image, newerImage),
+            "displayed history position referred to a different metadata row");
+    require(history.navigateNext() && equalPixels(fixture.displays.displayAt(0).image, liveImage),
+            "metadata reconciliation lost the original live endpoint");
+}
+
+void storageClearPreservesHistoryLiveEndpoint() {
+    HistoryMetadataFixture fixture;
+    auto& repository = storage::ApplicationStorage::instance().captureHistory();
+    ScreenshotHistoryService history(fixture.context());
+    history.commit(takeSnapshot(history.snapshotCurrent(true), "clear metadata snapshot failed"));
+    waitForHistoryWrites(history, 0, "history publication before clear did not settle");
+    require(!ScreenshotHistoryServiceTestAccess::records(history).isEmpty(),
+            "history publication before clear did not retain metadata");
+    const QImage liveImage = solidImage(QSize(16, 16), qRgb(40, 50, 60));
+    fixture.displays.displayAt(0).image = liveImage;
+    require(history.navigatePrevious(), "could not browse history before external clear");
+    waitForNavigation(history, "history navigation before external clear timed out");
+    require(repository.requestClear().get().success, "external history clear failed");
+    QElapsedTimer timer;
+    timer.start();
+    while (!ScreenshotHistoryServiceTestAccess::records(history).isEmpty() &&
+           timer.elapsed() < 5000) {
+        QCoreApplication::processEvents(QEventLoop::AllEvents, 20);
+        QThread::msleep(1);
+    }
+    require(ScreenshotHistoryServiceTestAccess::records(history).isEmpty(),
+            "external storage clear retained idle history metadata");
+    require(history.navigateNext() && equalPixels(fixture.displays.displayAt(0).image, liveImage),
+            "external history clear lost the live endpoint");
+}
+
+void removedHistoryRecordRemainsADetachedSnapshot() {
+    HistoryMetadataFixture fixture;
+    auto& repository = storage::ApplicationStorage::instance().captureHistory();
+    ScreenshotHistoryService history(fixture.context());
+    const auto started = QDateTime::currentDateTimeUtc();
+    QVector<QString> ids;
+    QVector<QImage> images;
+    for (int index = 0; index < 3; ++index) {
+        images.push_back(solidImage(QSize(16, 16), qRgb(30 * index, 50, 60)));
+        fixture.displays.displayAt(0).image = images.back();
+        auto entry =
+            takeSnapshot(history.snapshotCurrent(true), "removed metadata snapshot failed");
+        entry.createdUtc = started.addMSecs(index);
+        ids.push_back(entry.id);
+        history.commit(std::move(entry));
+        waitForHistoryWrites(history, 0, "history publication before removal did not settle");
+    }
+    const QImage liveImage = solidImage(QSize(16, 16), qRgb(90, 100, 110));
+    fixture.displays.displayAt(0).image = liveImage;
+    require(history.navigateToRecord(ids[1]), "could not browse middle history record");
+    waitForNavigation(history, "middle history record navigation timed out");
+    require(repository.remove(ids[1]).get().success, "external middle history removal failed");
+    QElapsedTimer timer;
+    timer.start();
+    while (ScreenshotHistoryServiceTestAccess::records(history).size() != 2 &&
+           timer.elapsed() < 5000) {
+        QCoreApplication::processEvents(QEventLoop::AllEvents, 20);
+        QThread::msleep(1);
+    }
+    require(ScreenshotHistoryServiceTestAccess::records(history).size() == 2 &&
+                equalPixels(fixture.displays.displayAt(0).image, images[1]),
+            "external removal changed the displayed snapshot or retained its metadata");
+    // A removed snapshot uses the existing virtual position beyond retained history.
+    require(!history.navigatePrevious() && history.navigateNext(),
+            "removed snapshot did not become a detached history endpoint");
+    waitForNavigation(history, "oldest retained record navigation timed out");
+    require(equalPixels(fixture.displays.displayAt(0).image, images[0]),
+            "detached history skipped the retained oldest record");
+    require(history.navigateNext(), "detached history could not traverse newer retained records");
+    waitForNavigation(history, "newer retained record navigation timed out");
+    require(equalPixels(fixture.displays.displayAt(0).image, images[2]),
+            "detached history navigation applied a different retained record");
+    require(history.navigateNext() && equalPixels(fixture.displays.displayAt(0).image, liveImage),
+            "external history removal lost the live endpoint");
 }
 
 void requireCanvasHistoryPayload(const QByteArray& payload) {
@@ -4413,11 +4694,310 @@ void customRegionInputTransactions() {
     handler.setRegionType(ScreenshotRegionType::Rectangle);
 }
 
+void rememberedRatioNormalizesSmartPicksBeforePresentation() {
+    for (const auto preset : {ScreenshotSelectionAspectRatioPreset::Landscape16x9,
+                              ScreenshotSelectionAspectRatioPreset::Portrait3x4}) {
+        ScreenshotCaptureState capture;
+        ScreenshotDisplaySession displays;
+        CapturedDisplayModel display;
+        display.active = true;
+        display.physicalRect = QRect(-500, -200, 1920, 1080);
+        display.logicalRect = display.physicalRect;
+        displays.appendDisplay(display);
+        ScreenshotGeometryMapper geometry;
+        geometry.rebuild(displays);
+        const QRectF canvas = geometry.canvasBounds();
+        const QRectF detected(canvas.topLeft() + QPointF(50, 60), QSizeF(320, 100));
+        ScreenshotSelectionModel selection;
+        require(selection.setAspectRatioPreset(preset, {}, 1.0),
+                "remembered ratio must arm before smart selection");
+        selection.setSelectionRect(detected);
+        ScreenshotIntelligentSelectionModel intelligent;
+        intelligent.beginCaptureSession(true);
+        require(intelligent.applyCanvasHitPath({detected}, canvas, 1.0),
+                "smart selection fixture must accept its detected frame");
+        ScreenshotInteractionState interaction;
+        interaction.enterOverlayVisible(true);
+        int presentations = 0;
+        int confirmations = 0;
+        const auto assertFinalGeometry = [&] {
+            const QRectF rectangle = selection.normalizedSelection();
+            require(rectangle.width() == detected.width() &&
+                        qFuzzyCompare(rectangle.height() / rectangle.width(),
+                                      screenshotSelectionAspectRatioHeightOverWidth(preset)) &&
+                        selection.aspectRatioPreset() == preset && selection.aspectRatioLocked(),
+                    "the first confirmed presentation must already use the remembered ratio");
+        };
+        ScreenshotOverlayInputActions actions;
+        actions.updateOverlayState = assertFinalGeometry;
+        actions.showToolbar = [&] {
+            assertFinalGeometry();
+            ++presentations;
+        };
+        actions.selectionConfirmed = [&] { ++confirmations; };
+        ScreenshotOverlayInputHandler handler(
+            {capture, interaction, selection, intelligent, geometry, displays, actions});
+        require(selection.normalizedSelection() == detected,
+                "remembered ratio must leave smart hover previews at detected dimensions");
+        require(handler.activateKeepSelectionAspectRatioShortcut(false),
+                "idle aspect shortcut must not replace a smart pick's remembered preset");
+        handler.handleMousePress(nullptr, detected.center());
+        handler.handleMouseRelease(nullptr, detected.center());
+        require(presentations == 1 && confirmations == 1 && interaction.movingSelection() &&
+                    capture.sessionState == ScreenshotSessionState::Editing,
+                "smart pick must normalize and confirm exactly once");
+        interaction.enterOverlayVisible(true);
+        selection.setSelectionRect(detected);
+        int activations = 0;
+        require(handler.activateToolbarShortcutForSelection([&] {
+            assertFinalGeometry();
+            ++activations;
+            return true;
+        }),
+                "selection toolbar shortcuts must accept the smart-picked rectangle");
+        require(activations == 1 && presentations == 2 && confirmations == 2,
+                "toolbar actions must see the final ratio before the first presentation");
+    }
+}
+
+void rectangularRegionEditsPreserveExactGeometryWithRememberedRatio() {
+    struct RegionEdit {
+        ScreenshotSelectionModel::RegionOperation operation;
+        QRect original;
+        QRect operand;
+        QRect expected;
+    };
+    const RegionEdit edits[] = {
+        {ScreenshotSelectionModel::RegionOperation::Add, QRect(100, 100, 100, 100),
+         QRect(200, 100, 100, 100), QRect(100, 100, 200, 100)},
+        {ScreenshotSelectionModel::RegionOperation::Subtract, QRect(100, 100, 200, 200),
+         QRect(200, 100, 100, 200), QRect(100, 100, 100, 200)},
+    };
+    for (const auto& edit : edits) {
+        ScreenshotCaptureState capture;
+        ScreenshotDisplaySession displays;
+        CapturedDisplayModel display;
+        display.active = true;
+        display.physicalRect = QRect(0, 0, 1920, 1080);
+        display.logicalRect = display.physicalRect;
+        displays.appendDisplay(display);
+        ScreenshotGeometryMapper geometry;
+        geometry.rebuild(displays);
+        ScreenshotSelectionModel selection;
+        selection.setSelectionRect(QRectF(edit.original));
+        require(selection.setAspectRatioPreset(ScreenshotSelectionAspectRatioPreset::Square,
+                                               geometry.canvasBounds(), 1.0),
+                "region edit fixture must start with an explicit square preset");
+        selection.beginRegionOperation(edit.operation);
+        selection.setSelectionRect(QRectF(edit.operand));
+        require(selection.selectionRegion() == QRegion(edit.expected) &&
+                    selection.selectionRegion().rectCount() == 1,
+                "region edit fixture must collapse to a single exact rectangle");
+        ScreenshotIntelligentSelectionModel intelligent;
+        ScreenshotInteractionState interaction;
+        interaction.beginCapture();
+        int presentations = 0;
+        const auto assertExactReplacement = [&] {
+            require(selection.normalizedSelection() == QRectF(edit.expected) &&
+                        selection.selectionRegion() == QRegion(edit.expected) &&
+                        selection.aspectRatioPreset() ==
+                            ScreenshotSelectionAspectRatioPreset::Free &&
+                        selection.aspectRatioLocked(),
+                    "a rectangular Boolean result must retain exact geometry and a custom lock");
+        };
+        ScreenshotOverlayInputActions actions;
+        actions.updateOverlayState = assertExactReplacement;
+        actions.showToolbar = [&] {
+            assertExactReplacement();
+            ++presentations;
+        };
+        ScreenshotOverlayInputHandler handler(
+            {capture, interaction, selection, intelligent, geometry, displays, actions});
+        handler.confirmSelection();
+        require(presentations == 1 && !selection.regionOperationActive(),
+                "a rectangular Boolean result should confirm exactly once");
+        selection.beginMoveDrag(selection.normalizedSelection().bottomRight());
+        const QRectF resized = selection.selectionRectForDrag(
+            ScreenshotSelectionDragMode::Right,
+            selection.normalizedSelection().bottomRight() + QPointF(20, 0), geometry.canvasBounds(),
+            1.0);
+        require(qFuzzyCompare(resized.height() / resized.width(),
+                              static_cast<qreal>(edit.expected.height()) / edit.expected.width()),
+                "resizing a Boolean result should retain its new custom aspect ratio");
+    }
+}
+
+void aspectRatioDragConfirmationPreservesPreview() {
+    using Preset = ScreenshotSelectionAspectRatioPreset;
+    auto& configuration = storage::ApplicationStorage::instance().configuration();
+    const QString ratioKey = QStringLiteral("screenshot_selection/aspect_ratio");
+    const QString lockKey = QStringLiteral("screenshot_selection/lock_aspect_ratio");
+    enum class Completion { MouseRelease, ToolbarShortcut, MoveThenRelease, ReleaseThenShortcut };
+    struct Gesture {
+        bool marquee;
+        bool constrained;
+        Completion completion;
+    };
+    const Gesture gestures[] = {
+        {false, true, Completion::MouseRelease},
+        {true, true, Completion::MouseRelease},
+        {false, true, Completion::ToolbarShortcut},
+        {true, true, Completion::ToolbarShortcut},
+        {false, true, Completion::MoveThenRelease},
+        {true, true, Completion::MoveThenRelease},
+        {false, true, Completion::ReleaseThenShortcut},
+        {true, true, Completion::ReleaseThenShortcut},
+        {false, false, Completion::MouseRelease},
+        {true, false, Completion::MouseRelease},
+    };
+    for (const auto preset :
+         {Preset::Free, Preset::Square, Preset::Landscape3x2, Preset::Landscape4x3,
+          Preset::Landscape16x9, Preset::Portrait2x3, Preset::Portrait3x4, Preset::Portrait9x16}) {
+        const QString savedPreset = screenshotSelectionAspectRatioPresetId(preset);
+        require(
+            configuration.setValues({{ratioKey, savedPreset}, {lockKey, preset != Preset::Free}}),
+            "drag fixture must persist its next-capture aspect ratio preference");
+        for (const auto& gesture : gestures) {
+            ScreenshotCaptureState capture;
+            ScreenshotDisplaySession displays;
+            CapturedDisplayModel display;
+            display.active = true;
+            display.physicalRect = QRect(0, 0, 1920, 1080);
+            display.logicalRect = display.physicalRect;
+            displays.appendDisplay(display);
+            ScreenshotGeometryMapper geometry;
+            geometry.rebuild(displays);
+            ScreenshotSelectionModel selection;
+            static_cast<void>(selection.setAspectRatioPreset(preset, {}, 1.0));
+            ScreenshotIntelligentSelectionModel intelligent;
+            ScreenshotInteractionState interaction;
+            QPointF press(100, 100);
+            QPointF pointer(220, 150);
+            if (gesture.marquee) {
+                interaction.enterOverlayVisible(false);
+            } else {
+                selection.setSelectionRect(QRectF(300, 300, 320, 180));
+                static_cast<void>(selection.finalizeAspectRatio(geometry.canvasBounds(), 1.0));
+                interaction.confirmSelection();
+                press = QPointF(selection.normalizedSelection().right(),
+                                selection.normalizedSelection().center().y());
+                pointer = press + QPointF(40, 0);
+            }
+            const Preset expectedPreset =
+                gesture.constrained && preset != Preset::Free && preset != Preset::Square
+                    ? Preset::Free
+                    : preset;
+            std::optional<QRectF> committedPreview;
+            int confirmations = 0;
+            const auto assertCommittedPreview = [&] {
+                require(committedPreview.has_value(), "drag must provide a committed preview");
+                const QRectF current = selection.normalizedSelection();
+                require(qFuzzyCompare(1.0 + current.x(), 1.0 + committedPreview->x()) &&
+                            qFuzzyCompare(1.0 + current.y(), 1.0 + committedPreview->y()) &&
+                            qFuzzyCompare(1.0 + current.width(), 1.0 + committedPreview->width()) &&
+                            qFuzzyCompare(1.0 + current.height(), 1.0 + committedPreview->height()),
+                        "confirmation must preserve the completed drag's preview geometry");
+                require(selection.aspectRatioPreset() == expectedPreset &&
+                            selection.aspectRatioLocked() == (preset != Preset::Free),
+                        "overridden presets must become custom locks; matching presets remain");
+            };
+            ScreenshotOverlayInputActions actions;
+            actions.updateOverlayState = [&] {
+                if (committedPreview) {
+                    assertCommittedPreview();
+                }
+            };
+            actions.showToolbar = assertCommittedPreview;
+            actions.selectionConfirmed = [&] {
+                // The controller finalizes again after the input handler presents the selection.
+                static_cast<void>(selection.finalizeAspectRatio(geometry.canvasBounds(), 1.0));
+                assertCommittedPreview();
+                ++confirmations;
+            };
+            ScreenshotOverlayInputHandler handler(
+                {capture, interaction, selection, intelligent, geometry, displays, actions});
+            if (gesture.constrained) {
+                require(handler.activateKeepSelectionAspectRatioShortcut(false),
+                        "aspect shortcut must arm before the pointer drag");
+            }
+            handler.handleMousePress(nullptr, press);
+            handler.handleMouseMove(nullptr, pointer);
+            require(interaction.dragging(), "pointer fixture must start a selection drag");
+            if (gesture.constrained) {
+                const QSizeF size = selection.normalizedSelection().size();
+                require(qFuzzyCompare(size.width(), size.height()),
+                        "the aspect shortcut must preview a square for every preset");
+            }
+            require(selection.aspectRatioPreset() == preset,
+                    "a temporary preview must retain its preset until the drag is committed");
+            if (gesture.completion == Completion::MoveThenRelease) {
+                require(handler.activateMoveEntireSelectionShortcut(),
+                        "whole-selection shortcut must temporarily move the resized rectangle");
+                pointer += QPointF(20, 10);
+                handler.handleMouseMove(nullptr, pointer);
+            } else if (gesture.completion == Completion::ReleaseThenShortcut) {
+                require(handler.releaseKeepSelectionAspectRatioShortcut(),
+                        "aspect shortcut must release before committing through the toolbar");
+            }
+            committedPreview = selection.normalizedSelection();
+            if (gesture.completion == Completion::ToolbarShortcut ||
+                gesture.completion == Completion::ReleaseThenShortcut) {
+                require(handler.activateToolbarShortcutForSelection([&] {
+                    assertCommittedPreview();
+                    return true;
+                }),
+                        "toolbar commands must commit the displayed selection before activation");
+            }
+            handler.handleMouseRelease(nullptr, pointer);
+            assertCommittedPreview();
+            require(confirmations == 1 && !interaction.dragging() && interaction.movingSelection(),
+                    "each pointer gesture must confirm exactly once");
+            require(configuration.value(ratioKey) == savedPreset &&
+                        configuration.value(lockKey).toBool() == (preset != Preset::Free),
+                    "temporary aspect overrides must retain the next capture's saved preference");
+            selection.beginMoveDrag(selection.normalizedSelection().bottomRight());
+            const QRectF nextResize = selection.selectionRectForDrag(
+                ScreenshotSelectionDragMode::Right,
+                selection.normalizedSelection().bottomRight() + QPointF(10, 0),
+                geometry.canvasBounds(), 1.0);
+            if (preset != Preset::Free) {
+                require(qFuzzyCompare(nextResize.height() / nextResize.width(),
+                                      committedPreview->height() / committedPreview->width()),
+                        "subsequent resizing must retain the committed preset or custom lock");
+                static_cast<void>(selection.setAspectRatioPreset(preset, {}, 1.0));
+                selection.setSelectionRect(QRectF(100, 100, 240, 80));
+                static_cast<void>(selection.finalizeAspectRatio(geometry.canvasBounds(), 1.0));
+                require(selection.aspectRatioPreset() == preset &&
+                            qFuzzyCompare(selection.normalizedSelection().height() /
+                                              selection.normalizedSelection().width(),
+                                          screenshotSelectionAspectRatioHeightOverWidth(preset)),
+                        "a later smart-picked rectangle must still apply its remembered preset");
+            }
+        }
+    }
+}
+
 int main(int argc, char** argv) {
     if (qEnvironmentVariableIsEmpty("QT_QPA_PLATFORM")) {
         qputenv("QT_QPA_PLATFORM", "offscreen");
     }
     QApplication application(argc, argv);
+    if (QCoreApplication::arguments().contains(QStringLiteral("--selection-aspect-ratio-only"))) {
+        QTemporaryDir temporary;
+        require(temporary.isValid(), "temporary settings directory unavailable");
+        auto& appStorage = storage::ApplicationStorage::instance();
+        appStorage.shutdown();
+        require(appStorage
+                    .initialize({temporary.filePath(QStringLiteral("bin")),
+                                 temporary.filePath(QStringLiteral("settings")), 0})
+                    .success,
+                "initialize isolated aspect ratio settings");
+        rememberedRatioNormalizesSmartPicksBeforePresentation();
+        rectangularRegionEditsPreserveExactGeometryWithRememberedRatio();
+        aspectRatioDragConfirmationPreservesPreview();
+        appStorage.shutdown();
+        return 0;
+    }
     if (QCoreApplication::arguments().contains(QStringLiteral("--canvas-color-sampling-only"))) {
         canvasColorSamplingConsumesOneCanvasClick();
         return 0;
@@ -4459,6 +5039,27 @@ int main(int argc, char** argv) {
     };
     require(storage::ApplicationStorage::instance().initialize(storageOptions).success,
             "failed to initialize isolated shortcut settings");
+    auto metadataLifecycle = [&]() {
+        const QDir root(temporary.path());
+        idlePublicationsReconcileRepositoryLimits(root.filePath(QStringLiteral("metadata-limits")));
+        rejectedPublicationsPreservePendingMetadata(
+            root.filePath(QStringLiteral("metadata-pending")));
+        failedPublicationsReleaseMetadata(root.filePath(QStringLiteral("metadata-failures")));
+        historyDestructionDiscardsQueuedCompletion(
+            root.filePath(QStringLiteral("metadata-shutdown")));
+        historyNavigationSurvivesIdlePublication(
+            root.filePath(QStringLiteral("metadata-navigation-pruned")), 1);
+        historyNavigationSurvivesIdlePublication(
+            root.filePath(QStringLiteral("metadata-navigation-retained")), 3);
+        storageClearPreservesHistoryLiveEndpoint();
+        removedHistoryRecordRemainsADetachedSnapshot();
+    };
+    if (QCoreApplication::arguments().contains(
+            QStringLiteral("--history-metadata-lifecycle-only"))) {
+        metadataLifecycle();
+        storage::ApplicationStorage::instance().shutdown();
+        return 0;
+    }
     if (QCoreApplication::arguments().contains(QStringLiteral("--history-worker-lifecycle-only"))) {
         validationWorkersRetireAndRestart();
         storage::ApplicationStorage::instance().shutdown();
@@ -4532,6 +5133,7 @@ int main(int argc, char** argv) {
         return 0;
     }
     snapshotsRetainTheLiveDesktopGeometry();
+    metadataLifecycle();
     validationWorkersRetireAndRestart();
     editorHistoryUsesConfiguredDisplayCompression(
         QDir(temporary.path()).filePath(QStringLiteral("compression")));

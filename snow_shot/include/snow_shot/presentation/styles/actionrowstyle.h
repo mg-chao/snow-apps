@@ -3,6 +3,7 @@
 
 #include "snow_shot/presentation/styles/themecolorscheme.h"
 
+#include "theme/theme_color_utils.h"
 #include "widgets/detail/button_rendering.h"
 
 #include <QPainter>
@@ -27,11 +28,12 @@ inline QColor actionRowColor(const QString& state, bool pressed, bool hovered,
 
 inline void paintActionRow(QPainter& painter, const QSize& size, const ThemeMapColorToken& map,
                            const QString& state, bool pressed, bool hovered, int radius,
-                           int borderWidth, bool stableBorder) {
+                           int borderWidth, bool stableBorder, qreal backgroundOpacity = 1.0) {
     painter.setRenderHint(QPainter::Antialiasing, true);
     painter.setPen(Qt::NoPen);
-    painter.setBrush(state == QStringLiteral("highlight") ? map.colorPrimaryBgHover
-                                                          : map.colorBgContainer);
+    painter.setBrush(adqt::theme::applyBackgroundOpacity(
+        state == QStringLiteral("highlight") ? map.colorPrimaryBgHover : map.colorBgContainer,
+        backgroundOpacity));
     if (stableBorder) {
         // Use AdButton's inset so the rounded backing-store clip cannot trim a stroke
         // at fractional display scales or child origins. Fill and stroke share one path.

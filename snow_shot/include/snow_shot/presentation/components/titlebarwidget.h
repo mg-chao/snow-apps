@@ -23,6 +23,7 @@ class TitleBarWidget : public QFrame {
                             QWidget* parent = nullptr);
     void applyTheme(const snow_shot::presentation::styles::ThemeColorScheme& scheme);
     void setMaximized(bool maximized);
+    void setSkinMaskOpacity(qreal opacity);
 
     QAbstractButton* minimizeButton() const;
     QAbstractButton* maximizeButton() const;
@@ -37,6 +38,7 @@ class TitleBarWidget : public QFrame {
 
   private:
     void retranslateUi();
+    void updateSkinMask();
 
     QAbstractButton* m_minimizeButton = nullptr;
     QAbstractButton* m_maximizeButton = nullptr;
@@ -45,6 +47,8 @@ class TitleBarWidget : public QFrame {
     bool m_maximized = false;
     int m_logoHeight = 17;
     QColor m_logoColor = QColor(Qt::black);
+    QColor m_surfaceColor;
+    qreal m_skinMaskOpacity = 1.0;
 };
 
 #endif // SNOW_SHOT_PRESENTATION_COMPONENTS_TITLEBARWIDGET_H

@@ -108,7 +108,7 @@ void ScreenshotToolbarPresenter::updateSelectionToolbarState(
             state.selectionPixels, state.aspectRatioLocked, state.cornerRadius, state.shadowWidth,
             state.intelligentSelecting ? ScreenshotSelectionToolbarWidget::DisplayMode::SizeOnly
                                        : ScreenshotSelectionToolbarWidget::DisplayMode::Full,
-            conversion.canvasUsesPoints, conversion.selection);
+            conversion.canvasUsesPoints, conversion.selection, state.aspectRatioPreset);
     }
 
     if (reposition) {

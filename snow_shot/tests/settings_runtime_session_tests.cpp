@@ -201,12 +201,76 @@ class FakeSettingsBackend final : public settings::SettingsBackend {
         return false;
     }
 
-    QString filePathValue(settings::SettingsFilePathBinding) const override {
+    QString filePathValue(settings::SettingsFilePathBinding binding) const override {
+        switch (binding) {
+        case settings::SettingsFilePathBinding::SkinPath:
+            return m_skinPath;
+        case settings::SettingsFilePathBinding::ToolbarSkinPath:
+            return m_toolbarSkinPath;
+        case settings::SettingsFilePathBinding::TrayMenuSkinPath:
+            return m_traySkinPath;
+        case settings::SettingsFilePathBinding::TrayCustomIcon:
+            return m_trayIconPath;
+        }
         return {};
     }
-    bool applyFilePathValue(settings::SettingsFilePathBinding, const QString&) override {
-        return false;
+    bool applyFilePathValue(settings::SettingsFilePathBinding binding,
+                            const QString& value) override {
+        QString fieldId;
+        switch (binding) {
+        case settings::SettingsFilePathBinding::SkinPath:
+            fieldId = QStringLiteral("interface.skin.path");
+            break;
+        case settings::SettingsFilePathBinding::ToolbarSkinPath:
+            fieldId = QStringLiteral("interface.skin.toolbar-path");
+            break;
+        case settings::SettingsFilePathBinding::TrayMenuSkinPath:
+            fieldId = QStringLiteral("interface.skin.tray-menu-path");
+            break;
+        case settings::SettingsFilePathBinding::TrayCustomIcon:
+            fieldId = QStringLiteral("interface.tray.custom-icon");
+            break;
+        }
+        return applyField(fieldId, value, [this, binding](const QVariant& next) {
+            switch (binding) {
+            case settings::SettingsFilePathBinding::SkinPath:
+                m_skinPath = next.toString();
+                break;
+            case settings::SettingsFilePathBinding::ToolbarSkinPath:
+                m_toolbarSkinPath = next.toString();
+                break;
+            case settings::SettingsFilePathBinding::TrayMenuSkinPath:
+                m_traySkinPath = next.toString();
+                break;
+            case settings::SettingsFilePathBinding::TrayCustomIcon:
+                m_trayIconPath = next.toString();
+                break;
+            }
+        });
     }
+    QString filePathStatus(settings::SettingsFilePathBinding binding) const override {
+        return binding == settings::SettingsFilePathBinding::SkinPath
+                   ? skinStatus
+                   : surfaceSkinStatuses.value(static_cast<int>(binding));
+    }
+    bool filePathStatusError(settings::SettingsFilePathBinding binding) const override {
+        return binding == settings::SettingsFilePathBinding::SkinPath
+                   ? skinStatusError
+                   : surfaceSkinStatusErrors.contains(static_cast<int>(binding));
+    }
+    void reloadFilePathValue(settings::SettingsFilePathBinding binding) override {
+        if (binding == settings::SettingsFilePathBinding::SkinPath)
+            ++skinReloadCount;
+        else if (binding != settings::SettingsFilePathBinding::TrayCustomIcon)
+            ++surfaceSkinReloadCounts[static_cast<int>(binding)];
+    }
+
+    QString skinStatus;
+    bool skinStatusError = false;
+    int skinReloadCount = 0;
+    QHash<int, QString> surfaceSkinStatuses;
+    QSet<int> surfaceSkinStatusErrors;
+    QHash<int, int> surfaceSkinReloadCounts;
 
     QString directoryPathValue(settings::SettingsDirectoryPathBinding) const override {
         return {};
@@ -493,6 +557,10 @@ class FakeSettingsBackend final : public settings::SettingsBackend {
     }
 
     QString m_theme = QStringLiteral("system");
+    QString m_skinPath;
+    QString m_toolbarSkinPath;
+    QString m_traySkinPath;
+    QString m_trayIconPath;
     bool m_trayEnabled = true;
     bool m_keepPermanently = false;
     bool m_translationPageEnabled = false;
@@ -1481,6 +1549,110 @@ void configurationImportsDelegateToBackend() {
             "every configuration import attempt must reach the backend");
 }
 
+void skinPathReloadAndStatusAreIndependentOfPersistence() {
+    FakeSettingsBackend backend;
+    const auto registry = settings::buildBuiltInSettingsRegistry();
+    settings::SettingsRuntimeSession session(registry, backend);
+    constexpr auto skin = settings::SettingsFilePathBinding::SkinPath;
+    int statusChanges = 0;
+    QObject::connect(&session, &settings::SettingsRuntimeSession::filePathStatusChanged, &session,
+                     [&statusChanges](settings::SettingsFilePathBinding binding) {
+                         if (binding == skin)
+                             ++statusChanges;
+                     });
+    session.refreshAll();
+    require(statusChanges == 0, "unchanged file path status must not notify the settings UI");
+    const QString fieldId = QStringLiteral("interface.skin.path");
+    const QString path = QStringLiteral("/skins/background.webp");
+    require(session.applyFilePathValue(skin, path) && backend.applyCount(fieldId) == 1 &&
+                backend.skinReloadCount == 0 && session.filePathValue(skin) == path,
+            "changing the skin path must commit once and use the configuration reload path");
+    require(session.applyFilePathValue(skin, QStringLiteral("  ") + path + QStringLiteral("  ")) &&
+                backend.skinReloadCount == 1 && backend.applyCount(fieldId) == 1,
+            "re-entering the normalized skin path must reload without another persistence write");
+    backend.skinStatus = QStringLiteral("Skin image is loading.");
+    backend.notify();
+    flushEvents();
+    require(statusChanges == 1 && session.filePathStatus(skin) == backend.skinStatus &&
+                !session.filePathStatusError(skin) && !session.state(fieldId).busy &&
+                !session.hasPendingWrites(),
+            "skin loading status must leave the editable setting and persistence state settled");
+    session.refreshAll();
+    session.refreshAll();
+    require(statusChanges == 1,
+            "generic refreshes must not repeat unchanged skin status notifications");
+    backend.skinStatus = QStringLiteral("The skin image could not be loaded.");
+    backend.skinStatusError = true;
+    backend.notify();
+    flushEvents();
+    require(
+        statusChanges == 2 && session.filePathStatusError(skin) &&
+            session.filePathStatus(skin) == backend.skinStatus && !session.state(fieldId).dirty &&
+            session.state(fieldId).error.isEmpty() && session.applyFilePathValue(skin, path) &&
+            backend.skinReloadCount == 2,
+        "skin loading errors must remain separate from committed configuration and allow reload");
+    backend.skinStatusError = false;
+    backend.notify();
+    flushEvents();
+    require(statusChanges == 3 && !session.filePathStatusError(skin),
+            "an error-style change must notify even when the status text is unchanged");
+    backend.skinStatus.clear();
+    backend.notify();
+    flushEvents();
+    require(statusChanges == 4 && session.filePathStatus(skin).isEmpty(),
+            "clearing the skin status must notify once to remove its description line");
+    constexpr auto tray = settings::SettingsFilePathBinding::TrayCustomIcon;
+    require(session.applyFilePathValue(tray, QStringLiteral("/icons/tray.png")) &&
+                session.applyFilePathValue(tray, QStringLiteral("/icons/tray.png")) &&
+                backend.applyCount(QStringLiteral("interface.tray.custom-icon")) == 1 &&
+                backend.skinReloadCount == 2 && session.filePathStatus(tray).isEmpty() &&
+                !session.filePathStatusError(tray),
+            "other file path settings must retain no-op behavior without skin status or reload");
+}
+
+void surfaceSkinPathsRemainIndependent() {
+    FakeSettingsBackend backend;
+    const auto registry = settings::buildBuiltInSettingsRegistry();
+    settings::SettingsRuntimeSession session(registry, backend);
+    const auto mainSkin = settings::SettingsFilePathBinding::SkinPath;
+    const QString mainPath = QStringLiteral("/skins/main.png");
+    require(session.applyFilePathValue(mainSkin, mainPath), "configure the main interface skin");
+    for (const auto binding : {settings::SettingsFilePathBinding::ToolbarSkinPath,
+                               settings::SettingsFilePathBinding::TrayMenuSkinPath}) {
+        const int key = static_cast<int>(binding);
+        const QString fieldId = registry.fieldForFilePath(binding)->id;
+        const QString path = binding == settings::SettingsFilePathBinding::ToolbarSkinPath
+                                 ? QStringLiteral("/skins/toolbar.png")
+                                 : QStringLiteral("/skins/tray-menu.webp");
+        require(session.applyFilePathValue(binding,
+                                           QStringLiteral("  ") + path + QStringLiteral("  ")) &&
+                    session.filePathValue(binding) == path && backend.applyCount(fieldId) == 1 &&
+                    session.applyFilePathValue(binding, path) && backend.applyCount(fieldId) == 1 &&
+                    backend.surfaceSkinReloadCounts.value(key) == 1 &&
+                    backend.skinReloadCount == 0 && session.filePathValue(mainSkin) == mainPath,
+                "each surface path must normalize, reload once and leave the main skin untouched");
+        backend.surfaceSkinStatuses.insert(key, QStringLiteral("The image could not be opened."));
+        backend.surfaceSkinStatusErrors.insert(key);
+        backend.notify();
+        flushEvents();
+        require(
+            session.filePathStatusError(binding) &&
+                session.filePathStatus(binding) == backend.surfaceSkinStatuses.value(key) &&
+                session.filePathStatus(mainSkin).isEmpty() &&
+                !session.filePathStatusError(mainSkin) && !session.state(fieldId).dirty &&
+                !session.hasPendingWrites(),
+            "skin load status must belong to its surface without becoming a persistence failure");
+        require(session.applyFilePathValue(binding, QString()) &&
+                    session.filePathValue(binding).isEmpty() &&
+                    session.filePathValue(mainSkin) == mainPath,
+                "clearing one surface skin must preserve the other configured image");
+        backend.surfaceSkinStatuses.remove(key);
+        backend.surfaceSkinStatusErrors.remove(key);
+        backend.notify();
+        flushEvents();
+    }
+}
+
 int main(int argc, char** argv) {
     QCoreApplication application(argc, argv);
     if (application.arguments().contains(QStringLiteral("--global-mouse-only"))) {
@@ -1512,5 +1684,7 @@ int main(int argc, char** argv) {
     auxiliaryIntegerValuesRemainReactiveWithoutSyntheticFields();
     globalMouseCombinationsUseTypedStateAndRejectDuplicates();
     configurationImportsDelegateToBackend();
+    skinPathReloadAndStatusAreIndependentOfPersistence();
+    surfaceSkinPathsRemainIndependent();
     return 0;
 }

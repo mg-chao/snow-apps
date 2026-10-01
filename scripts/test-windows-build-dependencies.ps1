@@ -63,12 +63,20 @@ foreach ($index in 0..1) {
         $failures += "Bootstrap $($VcpkgVariants[$index]) features must match ${preset}: " +
             "expected $($expectedFeatures -join ';'), got $($actualFeatures -join ';')."
     }
+    $scanOverlay = "--overlay-ports=$(Join-Path $repoRoot 'cmake/vcpkg-overlay-ports/libde265')"
+    if ($scanOverlay -notin $script:InstallCalls[$index].Arguments) {
+        $failures += "Bootstrap must install the libde265 scan initialization correction."
+    }
 }
 
 foreach ($preset in @("windows-msvc-debug", "windows-msvc-performance",
         "windows-clang-portability", "snow-shot-msvc-release", "snow-shot-msvc-fast")) {
     if ((Get-PresetVariable $preset "VCPKG_MANIFEST_INSTALL") -cne "ON") {
         $failures += "$preset must enable dependency installation when reusing a cache."
+    }
+    $overlays = @(Get-PresetVariable $preset "VCPKG_OVERLAY_PORTS") -split ';'
+    if (-not ($overlays | Where-Object { $_ -match '/vcpkg-overlay-ports(?:/libde265)?$' })) {
+        $failures += "$preset must use the libde265 scan initialization correction."
     }
 }
 

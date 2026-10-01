@@ -1,6 +1,7 @@
 #include "pagination_style.h"
 
 #include "theme/theme_manager.h"
+#include "theme/theme_color_utils.h"
 
 #include <algorithm>
 
@@ -87,6 +88,13 @@ PaginationVisualStyle resolvePaginationVisualStyle(
     style.activeBorder = *input.semanticStyles.item.borderColor;
   }
 
+  if (values.backgroundOpacity != 1.0) {
+    for (QColor* background :
+         {&style.rootBackground, &style.itemBackground, &style.itemHoverBackground,
+          &style.itemPressedBackground, &style.activeBackground, &style.activeDisabledBackground}) {
+      *background = adqt::theme::applyBackgroundOpacity(*background, values.backgroundOpacity);
+    }
+  }
   return style;
 }
 

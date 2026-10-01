@@ -103,6 +103,11 @@ class AdDpiStableWindowController final : public QObject {
  private:
   friend class AdDpiStableWindowControllerTestAccess;
 
+  struct AuxiliarySurfaceRegistration {
+    QPointer<QWidget> surface;
+    QMetaObject::Connection destroyedConnection;
+  };
+
   struct PhysicalBaseline {
     WId windowId = 0;
     qreal referenceDpr = 1.0;
@@ -144,7 +149,7 @@ class AdDpiStableWindowController final : public QObject {
 
   QPointer<QWidget> window_;
   QPointer<AdControlScaleScope> scaleScope_;
-  QList<QPointer<QWidget>> auxiliarySurfaces_;
+  QList<AuxiliarySurfaceRegistration> auxiliarySurfaces_;
   WId subclassWinId_ = 0;
   PhysicalBaseline baseline_;
   std::optional<PhysicalDragSession> dragSession_;

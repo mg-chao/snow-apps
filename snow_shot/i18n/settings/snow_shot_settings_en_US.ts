@@ -520,6 +520,33 @@
         </message>
     </context>
     <context>
+        <name>MainWindowSkin</name>
+        <message>
+            <source>Choose a PNG, JPG, or WebP image.</source>
+            <translation>Choose a PNG, JPG, or WebP image.</translation>
+        </message>
+        <message>
+            <source>Loading skin...</source>
+            <translation>Loading skin...</translation>
+        </message>
+        <message>
+            <source>The skin image could not be decoded.</source>
+            <translation>The skin image could not be decoded.</translation>
+        </message>
+        <message>
+            <source>The skin image could not be opened.</source>
+            <translation>The skin image could not be opened.</translation>
+        </message>
+        <message>
+            <source>The skin image exceeds 64 MiB.</source>
+            <translation>The skin image exceeds 64 MiB.</translation>
+        </message>
+        <message>
+            <source>The skin image exceeds processing limits.</source>
+            <translation>The skin image exceeds processing limits.</translation>
+        </message>
+    </context>
+    <context>
         <name>PermissionGuide</name>
         <message>
             <source>Close guidance</source>
@@ -849,6 +876,14 @@
             <translation>Adjust MP4 quality and file size</translation>
         </message>
         <message>
+            <source>Adjust the image opacity for all three skins.</source>
+            <translation>Adjust the image opacity for all three skins.</translation>
+        </message>
+        <message>
+            <source>Adjust the theme background opacity over all three skins to keep controls and text readable.</source>
+            <translation>Adjust the theme background opacity over all three skins to keep controls and text readable.</translation>
+        </message>
+        <message>
             <source>Age</source>
             <translation>Age</translation>
         </message>
@@ -933,6 +968,10 @@
             <translation>Application shortcuts</translation>
         </message>
         <message>
+            <source>Applies to all three skins. Overlay fills each surface and crops the edges. Contain shows the whole image.</source>
+            <translation>Applies to all three skins. Overlay fills each surface and crops the edges. Contain shows the whole image.</translation>
+        </message>
+        <message>
             <source>Apply to recognized text when editing or copying</source>
             <translation>Apply to recognized text when editing or copying</translation>
         </message>
@@ -997,6 +1036,10 @@
             <translation>Background Fill</translation>
         </message>
         <message>
+            <source>Background image</source>
+            <translation>Background image</translation>
+        </message>
+        <message>
             <source>Backup settings</source>
             <translation>Backup settings</translation>
         </message>
@@ -1019,6 +1062,18 @@
         <message>
             <source>Border color</source>
             <translation>Border color</translation>
+        </message>
+        <message>
+            <source>Bottom center</source>
+            <translation>Bottom center</translation>
+        </message>
+        <message>
+            <source>Bottom left</source>
+            <translation>Bottom left</translation>
+        </message>
+        <message>
+            <source>Bottom right</source>
+            <translation>Bottom right</translation>
         </message>
         <message>
             <source>Browse</source>
@@ -1073,8 +1128,20 @@
             <translation>Capture toolbar during recording</translation>
         </message>
         <message>
+            <source>Center</source>
+            <translation>Center</translation>
+        </message>
+        <message>
+            <source>Center left</source>
+            <translation>Center left</translation>
+        </message>
+        <message>
             <source>Center on mouse position</source>
             <translation>Center on mouse position</translation>
+        </message>
+        <message>
+            <source>Center right</source>
+            <translation>Center right</translation>
         </message>
         <message>
             <source>Check automatically</source>
@@ -1087,6 +1154,14 @@
         <message>
             <source>Child elements</source>
             <translation>Child elements</translation>
+        </message>
+        <message>
+            <source>Choose an image for Snow Shot's custom tray menu. Native system menus keep their system appearance. Clear the path to remove this skin.</source>
+            <translation>Choose an image for Snow Shot's custom tray menu. Native system menus keep their system appearance. Clear the path to remove this skin.</translation>
+        </message>
+        <message>
+            <source>Choose an image for the screenshot, pin-to-screen, full-screen canvas and screen recording toolbar rows. Clear the path to remove this skin.</source>
+            <translation>Choose an image for the screenshot, pin-to-screen, full-screen canvas and screen recording toolbar rows. Clear the path to remove this skin.</translation>
         </message>
         <message>
             <source>Choose how much execution time the application receives</source>
@@ -1159,6 +1234,10 @@
         <message>
             <source>Choose the functions shown in the system tray menu</source>
             <translation>Choose the functions shown in the system tray menu</translation>
+        </message>
+        <message>
+            <source>Choose the image alignment within this surface.</source>
+            <translation>Choose the image alignment within this surface.</translation>
         </message>
         <message>
             <source>Choose the page size for manually and automatically saved PDF files</source>
@@ -1353,6 +1432,10 @@
             <translation>Connect AI clients to Snow Shot</translation>
         </message>
         <message>
+            <source>Contain</source>
+            <translation>Contain</translation>
+        </message>
+        <message>
             <source>Control when the screenshot color picker is visible</source>
             <translation>Control when the screenshot color picker is visible</translation>
         </message>
@@ -1451,6 +1534,10 @@
         <message>
             <source>Custom translation endpoints and concurrency</source>
             <translation>Custom translation endpoints and concurrency</translation>
+        </message>
+        <message>
+            <source>Customize the main interface, toolbar rows and custom tray menu</source>
+            <translation>Customize the main interface, toolbar rows and custom tray menu</translation>
         </message>
         <message>
             <source>DXGI</source>
@@ -1673,6 +1760,10 @@
             <translation>Enter or browse to a PNG or ICO file; invalid files use the selected bundled icon</translation>
         </message>
         <message>
+            <source>Enter or browse to a PNG, JPG or WebP image for the main interface. Clear the path to remove this skin.</source>
+            <translation>Enter or browse to a PNG, JPG or WebP image for the main interface. Clear the path to remove this skin.</translation>
+        </message>
+        <message>
             <source>Eraser</source>
             <translation>Eraser</translation>
         </message>
@@ -1881,6 +1972,10 @@
             <translation>Image files (*.png *.ico);;PNG images (*.png);;Icon files (*.ico)</translation>
         </message>
         <message>
+            <source>Image files (*.png *.jpg *.jpeg *.webp);;PNG images (*.png);;JPG images (*.jpg *.jpeg);;WebP images (*.webp)</source>
+            <translation>Image files (*.png *.jpg *.jpeg *.webp);;PNG images (*.png);;JPG images (*.jpg *.jpeg);;WebP images (*.webp)</translation>
+        </message>
+        <message>
             <source>Image format</source>
             <translation>Image format</translation>
         </message>
@@ -2061,6 +2156,14 @@
             <translation>Magnifier visibility</translation>
         </message>
         <message>
+            <source>Main Interface Skin Path</source>
+            <translation>Main Interface Skin Path</translation>
+        </message>
+        <message>
+            <source>Main Interface Skin Position</source>
+            <translation>Main Interface Skin Position</translation>
+        </message>
+        <message>
             <source>Manage Snow Shot's login permission in macOS System Settings</source>
             <translation>Manage Snow Shot's login permission in macOS System Settings</translation>
         </message>
@@ -2075,6 +2178,10 @@
         <message>
             <source>Manual save image filename format</source>
             <translation>Manual save image filename format</translation>
+        </message>
+        <message>
+            <source>Mask Opacity</source>
+            <translation>Mask Opacity</translation>
         </message>
         <message>
             <source>Match your system appearance or choose a light or dark theme</source>
@@ -2267,6 +2374,10 @@
         <message>
             <source>Other application shortcuts and actions</source>
             <translation>Other application shortcuts and actions</translation>
+        </message>
+        <message>
+            <source>Overlay</source>
+            <translation>Overlay</translation>
         </message>
         <message>
             <source>PDF</source>
@@ -2781,6 +2892,10 @@
             <translation>Select previously selected area</translation>
         </message>
         <message>
+            <source>Select skin image</source>
+            <translation>Select skin image</translation>
+        </message>
+        <message>
             <source>Select the language used throughout the application</source>
             <translation>Select the language used throughout the application</translation>
         </message>
@@ -2985,6 +3100,22 @@
             <translation>Shutter Sound Notification</translation>
         </message>
         <message>
+            <source>Skin</source>
+            <translation>Skin</translation>
+        </message>
+        <message>
+            <source>Skin Blur Level</source>
+            <translation>Skin Blur Level</translation>
+        </message>
+        <message>
+            <source>Skin Display Mode</source>
+            <translation>Skin Display Mode</translation>
+        </message>
+        <message>
+            <source>Skin Opacity</source>
+            <translation>Skin Opacity</translation>
+        </message>
+        <message>
             <source>Small</source>
             <translation>Small</translation>
         </message>
@@ -3027,6 +3158,10 @@
         <message>
             <source>Snowflake light</source>
             <translation>Snowflake light</translation>
+        </message>
+        <message>
+            <source>Soften all three skin images with blur.</source>
+            <translation>Soften all three skin images with blur.</translation>
         </message>
         <message>
             <source>Software updates</source>
@@ -3217,12 +3352,32 @@
             <translation>Toolbar</translation>
         </message>
         <message>
+            <source>Toolbar Skin Path</source>
+            <translation>Toolbar Skin Path</translation>
+        </message>
+        <message>
+            <source>Toolbar Skin Position</source>
+            <translation>Toolbar Skin Position</translation>
+        </message>
+        <message>
             <source>Toolbar size</source>
             <translation>Toolbar size</translation>
         </message>
         <message>
             <source>Tools that forbid quick selection of same-type elements</source>
             <translation>Tools that forbid quick selection of same-type elements</translation>
+        </message>
+        <message>
+            <source>Top center</source>
+            <translation>Top center</translation>
+        </message>
+        <message>
+            <source>Top left</source>
+            <translation>Top left</translation>
+        </message>
+        <message>
+            <source>Top right</source>
+            <translation>Top right</translation>
         </message>
         <message>
             <source>Translate Selected Text</source>
@@ -3255,6 +3410,14 @@
         <message>
             <source>Tray</source>
             <translation>Tray</translation>
+        </message>
+        <message>
+            <source>Tray Menu Skin Path</source>
+            <translation>Tray Menu Skin Path</translation>
+        </message>
+        <message>
+            <source>Tray Menu Skin Position</source>
+            <translation>Tray Menu Skin Position</translation>
         </message>
         <message>
             <source>Tray appearance</source>

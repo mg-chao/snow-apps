@@ -3783,6 +3783,8 @@ AdNavigationMenu::AdNavigationMenu(QWidget* parent)
     : QWidget(parent), d_(std::make_unique<Private>(this)) {
   setFocusPolicy(Qt::StrongFocus);
   d_->rebuildRootViews();
+  connect(&adqt::theme::ThemeManager::instance(), &adqt::theme::ThemeManager::themeChanged, this,
+          [this] { d_->updateAllViewports(); });
 }
 
 AdNavigationMenu::~AdNavigationMenu() {

@@ -296,9 +296,19 @@ void selection() {
     ScreenshotSelectionModel model;
     const QRectF canvas(0, 0, 800, 600);
     QString field;
+    require(model.setAspectRatioPreset(ScreenshotSelectionAspectRatioPreset::Landscape16x9, canvas,
+                                       1.0),
+            "a remembered ratio can be armed before an explicit MCP selection");
     require(applySelection(model, canvas,
                            {{QStringLiteral("bounds"), QJsonArray{10, 20, 100, 100}}}, &field),
             "rectangle selection");
+    require(model.pixelSelection() == QRect(10, 20, 100, 100) &&
+                model.aspectRatioPreset() == ScreenshotSelectionAspectRatioPreset::Free &&
+                model.aspectRatioLocked(),
+            "MCP replacement preserves exact bounds and uses a custom session lock");
+    static_cast<void>(model.finalizeAspectRatio(canvas, 1.0));
+    require(model.pixelSelection() == QRect(10, 20, 100, 100),
+            "later confirmation must not reshape an explicit MCP replacement");
     const auto original = model.selectionRegion().toJson();
     require(!applySelection(model, canvas, {{QStringLiteral("bounds"), QJsonArray{-1, 0, 20, 20}}},
                             &field),

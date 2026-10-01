@@ -71,6 +71,7 @@ inline bool applySelection(ScreenshotSelectionModel& model, const QRectF& canvas
         return fail(QStringLiteral("bounds"));
     model.setRegionType(regionType);
     model.setSelectionRegion(result);
+    model.clearAspectRatioPresetForReplacement();
     return true;
 }
 } // namespace snow_shot::app::mcp

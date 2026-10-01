@@ -1,7 +1,9 @@
 #include "snow_shot/presentation/components/customaimodelssettingswidget.h"
 #include "snow_shot/presentation/components/formfields.h"
 #include "snow_shot/presentation/settings/settingsruntimesession.h"
+#include "snow_shot/presentation/styles/mainwindowcomponenttoken.h"
 #include "snow_shot/presentation/styles/thememanager.h"
+#include "theme/theme_manager.h"
 #include "widgets/alert.h"
 #include "widgets/button.h"
 #include "widgets/form.h"
@@ -36,7 +38,10 @@ namespace {
 class ModelRow final : public QWidget {
   public:
     ModelRow(const presentation::styles::ThemeColorScheme& scheme, QWidget* parent)
-        : QWidget(parent), m_scheme(scheme) {}
+        : QWidget(parent), m_scheme(scheme) {
+        connect(&adqt::theme::ThemeManager::instance(), &adqt::theme::ThemeManager::themeChanged,
+                this, [this] { update(); });
+    }
 
   protected:
     void paintEvent(QPaintEvent*) override {
@@ -44,7 +49,8 @@ class ModelRow final : public QWidget {
         painter.setRenderHint(QPainter::Antialiasing);
         const qreal borderWidth = m_scheme.metricAlias.lineWidth;
         const qreal inset = borderWidth / 2.0;
-        painter.setBrush(m_scheme.map.colorBgContainer);
+        painter.setBrush(
+            presentation::styles::mainWindowBackgroundColor(this, m_scheme.map.colorBgContainer));
         painter.setPen(borderWidth > 0 ? QPen(m_scheme.map.colorBorderSecondary, borderWidth)
                                        : Qt::NoPen);
         painter.drawRoundedRect(QRectF(rect()).adjusted(inset, inset, -inset, -inset),

@@ -26,6 +26,8 @@ void ScreenshotSelectionModel::reset() {
     m_shadowWidth = 0;
     m_shadowColor = QColor(0x33, 0x33, 0x33);
     m_aspectRatioLockEnabled = false;
+    m_aspectRatioPreset = ScreenshotSelectionAspectRatioPreset::Free;
+    m_selectionFromDrag = false;
     m_lockedAspectRatio = 0.0;
 }
 
@@ -52,7 +54,10 @@ void ScreenshotSelectionModel::clearSelection() {
     m_regionOperation = RegionOperation::Replace;
     m_start = QPointF();
     m_end = QPointF();
-    m_lockedAspectRatio = 0.0;
+    m_selectionFromDrag = false;
+    if (m_aspectRatioPreset == ScreenshotSelectionAspectRatioPreset::Free) {
+        m_lockedAspectRatio = 0.0;
+    }
 }
 
 void ScreenshotSelectionModel::setSelectionRect(const QRectF& selection) {
@@ -63,6 +68,7 @@ void ScreenshotSelectionModel::setSelectionRect(const QRectF& selection) {
     const QRectF normalized = selection.normalized();
     m_start = normalized.topLeft();
     m_end = normalized.bottomRight();
+    m_selectionFromDrag = false;
 }
 
 void ScreenshotSelectionModel::setSelectionStartEnd(const QPointF& start, const QPointF& end) {
@@ -137,8 +143,23 @@ bool ScreenshotSelectionModel::adjustFromToolbar(int minDx, int minDy, int maxDx
         selection.setHeight(height);
     }
 
-    setSelectionRect(boundedSelectionRect(selection.normalized(), bounds,
-                                          minDx == maxDx && minDy == maxDy, minimumSelectionSize));
+    if (m_lockedAspectRatio > 0.0 && minDx == 0 && minDy == 0 && (maxDx != 0 || maxDy != 0)) {
+        // Wheel edits keep the leading corner fixed. Limit both dimensions
+        // together instead of independently clipping the paired dimension.
+        const QRectF anchoredBounds =
+            bounds.isNull() ? bounds
+                            : QRectF(selection.topLeft(), bounds.normalized().bottomRight());
+        selection = aspectRatioScreenshotSelectionRect(selection, anchoredBounds,
+                                                       m_lockedAspectRatio, minimumSelectionSize);
+        if (selection.isEmpty()) {
+            return false;
+        }
+        setSelectionRect(selection);
+    } else {
+        setSelectionRect(boundedSelectionRect(selection.normalized(), bounds,
+                                              minDx == maxDx && minDy == maxDy,
+                                              minimumSelectionSize));
+    }
     if (originalRegion.rectCount() > 1) {
         setSelectionRegion(originalRegion.translated(pixelSelection().topLeft() -
                                                      originalRegion.boundingRect().topLeft()));
@@ -160,6 +181,10 @@ QColor ScreenshotSelectionModel::shadowColor() const {
 
 bool ScreenshotSelectionModel::aspectRatioLocked() const {
     return m_aspectRatioLockEnabled;
+}
+
+ScreenshotSelectionAspectRatioPreset ScreenshotSelectionModel::aspectRatioPreset() const {
+    return m_aspectRatioPreset;
 }
 
 bool ScreenshotSelectionModel::setCornerRadius(int radius) {
@@ -190,8 +215,18 @@ bool ScreenshotSelectionModel::setAspectRatioLockEnabled(bool enabled, qreal min
     const bool enabledChanged = m_aspectRatioLockEnabled != enabled;
     m_aspectRatioLockEnabled = enabled;
     if (!enabled) {
-        const bool ratioChanged = m_lockedAspectRatio > 0.0;
+        const bool ratioChanged = m_lockedAspectRatio > 0.0 ||
+                                  m_aspectRatioPreset != ScreenshotSelectionAspectRatioPreset::Free;
+        m_aspectRatioPreset = ScreenshotSelectionAspectRatioPreset::Free;
         m_lockedAspectRatio = 0.0;
+        return enabledChanged || ratioChanged;
+    }
+
+    if (m_aspectRatioPreset != ScreenshotSelectionAspectRatioPreset::Free) {
+        const qreal nextAspectRatio =
+            screenshotSelectionAspectRatioHeightOverWidth(m_aspectRatioPreset);
+        const bool ratioChanged = !qFuzzyCompare(1.0 + m_lockedAspectRatio, 1.0 + nextAspectRatio);
+        m_lockedAspectRatio = nextAspectRatio;
         return enabledChanged || ratioChanged;
     }
 
@@ -209,6 +244,68 @@ bool ScreenshotSelectionModel::setAspectRatioLockEnabled(bool enabled, qreal min
 
 void ScreenshotSelectionModel::toggleAspectRatioLock(qreal minimumSelectionSize) {
     static_cast<void>(setAspectRatioLockEnabled(!aspectRatioLocked(), minimumSelectionSize));
+}
+
+bool ScreenshotSelectionModel::setAspectRatioPreset(ScreenshotSelectionAspectRatioPreset preset,
+                                                    const QRectF& bounds,
+                                                    qreal minimumSelectionSize) {
+    if (preset == ScreenshotSelectionAspectRatioPreset::Free) {
+        return setAspectRatioLockEnabled(false, minimumSelectionSize);
+    }
+    const qreal ratio = screenshotSelectionAspectRatioHeightOverWidth(preset);
+    if (ratio <= 0.0) {
+        return false;
+    }
+    const QRectF current = normalizedSelection();
+    QRectF resized = current;
+    if (hasPixelSelection()) {
+        if (!rectangular()) {
+            return false;
+        }
+        resized = aspectRatioScreenshotSelectionRect(current, bounds, ratio, minimumSelectionSize);
+        if (resized.isEmpty()) {
+            return false;
+        }
+    }
+    const bool geometryChanged = current != resized;
+    const bool changed = geometryChanged || m_aspectRatioPreset != preset ||
+                         !m_aspectRatioLockEnabled ||
+                         !qFuzzyCompare(1.0 + m_lockedAspectRatio, 1.0 + ratio);
+    if (geometryChanged) {
+        setSelectionRect(resized);
+    }
+    m_aspectRatioPreset = preset;
+    m_aspectRatioLockEnabled = true;
+    m_lockedAspectRatio = ratio;
+    return changed;
+}
+
+bool ScreenshotSelectionModel::finalizeAspectRatio(const QRectF& bounds,
+                                                   qreal minimumSelectionSize) {
+    bool presetCleared = false;
+    if (m_selectionFromDrag && m_aspectRatioPreset != ScreenshotSelectionAspectRatioPreset::Free &&
+        rectangular()) {
+        const QRectF selection = normalizedSelection();
+        const qreal presetRatio =
+            screenshotSelectionAspectRatioHeightOverWidth(m_aspectRatioPreset);
+        if (!qFuzzyCompare(1.0 + selection.height() / selection.width(), 1.0 + presetRatio)) {
+            // A gesture can override the preset. Keep its result as a custom lock without
+            // changing the separately persisted preference for the next capture.
+            clearAspectRatioPresetForReplacement();
+            presetCleared = true;
+        }
+    }
+    if (m_aspectRatioPreset != ScreenshotSelectionAspectRatioPreset::Free) {
+        return setAspectRatioPreset(m_aspectRatioPreset, bounds, minimumSelectionSize);
+    }
+    return setAspectRatioLockEnabled(m_aspectRatioLockEnabled, minimumSelectionSize) ||
+           presetCleared;
+}
+
+void ScreenshotSelectionModel::clearAspectRatioPresetForReplacement() {
+    m_aspectRatioPreset = ScreenshotSelectionAspectRatioPreset::Free;
+    static_cast<void>(setAspectRatioLockEnabled(
+        m_aspectRatioLockEnabled, snow_shot::presentation::kScreenshotSelectionMinimumSize));
 }
 
 ScreenshotSelectionParams ScreenshotSelectionModel::params(const QRect& bounds) const {
@@ -244,6 +341,7 @@ bool ScreenshotSelectionModel::applyParams(const ScreenshotSelectionParams& para
     m_shadowWidth = clamped.shadowWidth;
     setShadowColor(clamped.shadowColor);
     m_aspectRatioLockEnabled = clamped.lockDragAspectRatio;
+    m_aspectRatioPreset = ScreenshotSelectionAspectRatioPreset::Free;
     m_lockedAspectRatio = clamped.lockDragAspectRatio
                               ? static_cast<double>(std::max(1, clamped.selection.height())) /
                                     static_cast<double>(std::max(1, clamped.selection.width()))
@@ -330,6 +428,7 @@ void ScreenshotSelectionModel::setDraggedSelectionRect(const QRectF& rect,
     } else {
         setSelectionRect(rect);
     }
+    m_selectionFromDrag = true;
 }
 
 ScreenshotResultStyle ScreenshotSelectionModel::resultStyle() const {
@@ -348,6 +447,7 @@ void ScreenshotSelectionModel::setDraftRegion(const ScreenshotRegionGeometry& re
     const QRectF bounds(region.boundingRect());
     m_start = bounds.topLeft();
     m_end = bounds.bottomRight();
+    m_selectionFromDrag = false;
 }
 
 void ScreenshotSelectionModel::clearDraftRegion() {
@@ -356,6 +456,7 @@ void ScreenshotSelectionModel::clearDraftRegion() {
     m_draftRegion.reset();
     m_start = {};
     m_end = {};
+    m_selectionFromDrag = false;
 }
 
 void ScreenshotSelectionModel::commitDraftRegion(const QRect& canvasBounds) {

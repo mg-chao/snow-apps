@@ -843,6 +843,138 @@ void strokeCursorsUseNativeBitmapsAndRefreshWithStyle() {
             "switching tools must release the native brush cursor");
 }
 
+void filterCreationStylesPreserveWidgetInteraction() {
+    constexpr quint32 properties =
+        SnowCanvasFilterStylePropertyType | SnowCanvasFilterStylePropertyStrength |
+        SnowCanvasFilterStylePropertyOpacity | SnowCanvasFilterStylePropertyStrokeWidth;
+    const SnowCanvasFilterStyle rectangleStyle{SnowCanvasFilterType::GaussianBlur, 0.3, 0.6, 7.0};
+    const SnowCanvasFilterStyle penStyle{SnowCanvasFilterType::Mosaic, 0.3, 0.8, 20.0};
+    SnowCanvasRuntime runtime;
+    SnowCanvasWidget canvas(runtime);
+    canvas.resize(200, 200);
+    canvas.show();
+    QApplication::processEvents();
+    require(canvas.setViewportCamera(100, 100, 1.0), "set the filter creation fixture camera");
+    require(canvas.setCanvasTool(SnowCanvasTool::RectangleFilter),
+            "activate the selected filter fixture tool");
+    sendMouseEvent(canvas, QEvent::MouseButtonPress, QPointF(30, 30), Qt::LeftButton,
+                   Qt::LeftButton);
+    sendMouseEvent(canvas, QEvent::MouseMove, QPointF(100, 100), Qt::NoButton, Qt::LeftButton);
+    sendMouseEvent(canvas, QEvent::MouseButtonRelease, QPointF(100, 100), Qt::LeftButton,
+                   Qt::NoButton);
+    require(canvas.setCanvasTool(SnowCanvasTool::Select), "activate the selected filter fixture");
+    sendMouseEvent(canvas, QEvent::MouseButtonPress, QPointF(60, 60), Qt::LeftButton,
+                   Qt::LeftButton);
+    sendMouseEvent(canvas, QEvent::MouseButtonRelease, QPointF(60, 60), Qt::LeftButton,
+                   Qt::NoButton);
+    require(canvas.canvasStyleToolbarState().source ==
+                SnowCanvasStyleToolbarSource::SelectedRectangleFilter,
+            "filter creation fixture must select an existing filter");
+    const auto selectedStyle = canvas.canvasStyleToolbarState().filterStyle;
+    const auto selectedIds = runtime.selectedElementIds();
+    const QByteArray selectedElements = runtime.serializeSelectedDrawTemplate();
+    const QByteArray history = runtime.serializeDocumentHistory();
+    const QCursor selectedCursor = canvas.cursor();
+    int toolChanges = 0;
+    QObject::connect(&canvas, &SnowCanvasWidget::activeToolChanged, &canvas,
+                     [&toolChanges]() { ++toolChanges; });
+    require(
+        canvas.setCanvasFilterCreationStyle(rectangleStyle, properties,
+                                            SnowCanvasTool::RectangleFilter) &&
+            canvas.setCanvasFilterCreationStyle(penStyle, properties, SnowCanvasTool::PenFilter),
+        "both filter creation families must update without activating a visible tool");
+    require(canvas.canvasTool() == SnowCanvasTool::Select && toolChanges == 0 &&
+                canvas.cursor() == selectedCursor && runtime.selectedElementIds() == selectedIds &&
+                runtime.serializeSelectedDrawTemplate() == selectedElements &&
+                runtime.serializeDocumentHistory() == history &&
+                canvas.canvasStyleToolbarState().source ==
+                    SnowCanvasStyleToolbarSource::SelectedRectangleFilter &&
+                canvas.canvasStyleToolbarState().filterStyle == selectedStyle,
+            "creation defaults must preserve the selected filter, history, tool, and cursor");
+    require(canvas.resetEditingState() && canvas.setCanvasTool(SnowCanvasTool::RectangleFilter) &&
+                canvas.canvasStyleToolbarState().filterStyle == rectangleStyle &&
+                canvas.setCanvasTool(SnowCanvasTool::PenFilter) &&
+                canvas.canvasStyleToolbarState().filterStyle == penStyle,
+            "rectangle and pen filter creation styles must retain their targeted properties");
+    for (const auto tool : {SnowCanvasTool::Select, SnowCanvasTool::FreeDraw}) {
+        require(canvas.resetEditingState() && canvas.setCanvasTool(tool),
+                "prepare the repeated filter-default fixture");
+        const QCursor cursor = canvas.cursor();
+        toolChanges = 0;
+        for (int cycle = 0; cycle < 128; ++cycle) {
+            require(canvas.setCanvasFilterCreationStyle(rectangleStyle, properties,
+                                                        SnowCanvasTool::RectangleFilter) &&
+                        canvas.setCanvasFilterCreationStyle(penStyle, properties,
+                                                            SnowCanvasTool::PenFilter),
+                    "repeated filter-default refresh must succeed");
+            require(canvas.canvasTool() == tool && toolChanges == 0 && canvas.cursor() == cursor,
+                    "repeated defaults must not activate brush tools or recreate the cursor");
+        }
+    }
+    require(!canvas.setCanvasFilterCreationStyle(rectangleStyle, properties, SnowCanvasTool::Shape),
+            "a non-filter creation target must be rejected");
+    require(canvas.setCanvasTool(SnowCanvasTool::RectangleFilter) &&
+                canvas.canvasStyleToolbarState().filterStyle == rectangleStyle &&
+                canvas.setCanvasTool(SnowCanvasTool::PenFilter) &&
+                canvas.canvasStyleToolbarState().filterStyle == penStyle,
+            "rejected filter targets must leave creation defaults unchanged");
+    SnowCanvasWidget secondView(runtime);
+    require(secondView.setCanvasTool(SnowCanvasTool::PenFilter),
+            "activate the peer cursor synchronization fixture");
+    auto widerPen = penStyle;
+    widerPen.strokeWidth = 24.0;
+    toolChanges = 0;
+    require(canvas.setCanvasFilterCreationStyle(widerPen, SnowCanvasFilterStylePropertyStrokeWidth,
+                                                SnowCanvasTool::PenFilter) &&
+                toolChanges == 0 && canvas.canvasStyleToolbarState().filterStyle == widerPen &&
+                secondView.canvasStyleToolbarState().filterStyle == widerPen &&
+                canvas.cursor().hotSpot() == QPoint(24, 24) &&
+                secondView.cursor().hotSpot() == QPoint(24, 24),
+            "creation style changes must refresh shared viewport metadata and active cursors");
+    SnowCanvasWidget ownedCanvas;
+    require(
+        ownedCanvas.setCanvasFilterCreationStyle(penStyle, properties, SnowCanvasTool::PenFilter) &&
+            ownedCanvas.setCanvasTool(SnowCanvasTool::PenFilter) &&
+            ownedCanvas.canvasStyleToolbarState().filterStyle == penStyle,
+        "filter creation defaults must also work with a widget-owned runtime");
+    auto detachedRuntime = std::make_unique<SnowCanvasRuntime>();
+    SnowCanvasWidget detachedCanvas(*detachedRuntime);
+    detachedRuntime.reset();
+    require(!detachedCanvas.setCanvasFilterCreationStyle(penStyle, properties,
+                                                         SnowCanvasTool::PenFilter),
+            "a detached runtime must reject filter creation updates safely");
+}
+
+void filterCreationStylesPreservePeerTextDraft() {
+    SnowCanvasRuntime runtime;
+    QWidget host;
+    SnowCanvasWidget canvas(runtime, &host);
+    SnowCanvasWidget peer(runtime, &host);
+    host.resize(400, 200);
+    canvas.setGeometry(0, 0, 200, 200);
+    peer.setGeometry(200, 0, 200, 200);
+    host.show();
+    host.activateWindow();
+    QApplication::processEvents();
+    require(peer.setCanvasTool(SnowCanvasTool::Text), "activate the peer text draft fixture");
+    sendMouseEvent(peer, QEvent::MouseButtonPress, QPointF(50, 50), Qt::LeftButton, Qt::LeftButton);
+    sendMouseEvent(peer, QEvent::MouseButtonRelease, QPointF(50, 50), Qt::LeftButton, Qt::NoButton);
+    QKeyEvent text(QEvent::KeyPress, Qt::Key_A, Qt::NoModifier, QStringLiteral("draft"));
+    QApplication::sendEvent(&peer, &text);
+    require(peer.hasActiveTextEditing() && QApplication::focusWidget() != nullptr,
+            "the peer fixture must own a focused uncommitted text draft");
+    QWidget* focus = QApplication::focusWidget();
+    const auto history = runtime.serializeDocumentHistory();
+    const SnowCanvasFilterStyle style{SnowCanvasFilterType::Mosaic, 0.5, 1.0, 20.0};
+    require(canvas.setCanvasFilterCreationStyle(style, SnowCanvasFilterStylePropertyStrokeWidth,
+                                                SnowCanvasTool::PenFilter),
+            "creation style must update while another viewport edits text");
+    require(peer.hasActiveTextEditing() && QApplication::focusWidget() == focus &&
+                canvas.canvasTool() == SnowCanvasTool::Text &&
+                runtime.serializeDocumentHistory() == history,
+            "creation style must preserve the peer draft, focus, shared tool, and history");
+}
+
 void freeDrawContinuationRendersOneStrokeAndActivatedEndpoint() {
     SnowCanvasWidget canvas;
     canvas.resize(240, 200);
@@ -1041,6 +1173,11 @@ int main(int argc, char** argv) {
         strokeCursorsUseNativeBitmapsAndRefreshWithStyle();
         return 0;
     }
+    if (application.arguments().contains(QStringLiteral("--filter-creation-only"))) {
+        filterCreationStylesPreserveWidgetInteraction();
+        filterCreationStylesPreservePeerTextDraft();
+        return 0;
+    }
     if (application.arguments().contains(QStringLiteral("--document-reset-only"))) {
         documentResetClearsElementsAndPreservesViews();
         documentResetReleasesDrawingCaches();
@@ -1053,6 +1190,8 @@ int main(int argc, char** argv) {
     }
     freeDrawContinuationRendersOneStrokeAndActivatedEndpoint();
     strokeCursorsUseNativeBitmapsAndRefreshWithStyle();
+    filterCreationStylesPreserveWidgetInteraction();
+    filterCreationStylesPreservePeerTextDraft();
     rotationHandleCursorMatchesTheReferencePlatformBehavior();
     customRendererContractIsOrderedAndIsolated();
     runtimeExportUsesTheRequestedCanvasOrigin();

@@ -5,6 +5,8 @@
 
 namespace adqt::theme {
 
+QColor applyBackgroundOpacity(QColor color, qreal opacity);
+
 qreal colorContrastRatio(const QColor& first, const QColor& second);
 QColor ensureContrastWithText(const QColor& background, const QColor& text,
                               qreal minimumContrast = 4.5);

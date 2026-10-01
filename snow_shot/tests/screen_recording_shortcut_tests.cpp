@@ -437,16 +437,25 @@ void recordingControlShortcutsFollowButtonsAndSettings() {
     pressAll(*area.canvas());
     require(exports == 2 && pauses == 1 && resumes == 1 && copies == 2 && ends == 3,
             "paused shortcuts must export, resume, copy or end exactly once");
-    const int before = total();
+    const int beforeRepeat = total();
     pressAll(toolbar, true);
-    palette.setRecordingSession(ScreenshotToolPalette::RecordingSessionStatus::pausedStopping());
-    pressAll(toolbar);
+    require(total() == beforeRepeat, "key repeat must not trigger recording commands");
+    using Status = ScreenshotToolPalette::RecordingSessionStatus;
+    for (const auto status :
+         {Status::countingDown(), Status::starting(), Status::stopping(), Status::pausedStopping(),
+          Status::copying(), Status::pausedCopying()}) {
+        palette.setRecordingSession(status);
+        area.setDrawingBlocked(true);
+        const int beforeClose = ends;
+        const int beforeCommands = total() - ends;
+        pressAll(toolbar);
+        pressAll(area);
+        require(ends == beforeClose + 2 && total() - ends == beforeCommands,
+                "busy recording must allow exit from both windows while locking capture commands");
+    }
     palette.setRecordingSession(ScreenshotToolPalette::RecordingSessionStatus::paused());
-    area.setDrawingBlocked(true);
-    pressAll(area);
     area.setDrawingBlocked(false);
-    require(total() == before,
-            "busy operations and key repeat must not trigger recording commands");
+    const int before = total();
     QLineEdit editor(&toolbar);
     editor.setText(QStringLiteral("recording shortcut text"));
     editor.show();

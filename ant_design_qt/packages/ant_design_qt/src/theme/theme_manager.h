@@ -41,6 +41,7 @@ class ThemeManager final : public QObject {
                         const QWidget* logicalOwner = nullptr) const;
   ThemeMapToken resolveTheme(const QWidget* widget = nullptr,
                              const QWidget* logicalOwner = nullptr) const;
+  qreal backgroundOpacity(const QWidget* widget = nullptr) const;
 
   const QPalette& globalPalette() const;
   const QPalette& palette() const;

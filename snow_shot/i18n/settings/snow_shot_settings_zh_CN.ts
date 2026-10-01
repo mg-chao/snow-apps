@@ -520,6 +520,33 @@
         </message>
     </context>
     <context>
+        <name>MainWindowSkin</name>
+        <message>
+            <source>Choose a PNG, JPG, or WebP image.</source>
+            <translation>请选择 PNG、JPG 或 WebP 图像。</translation>
+        </message>
+        <message>
+            <source>Loading skin...</source>
+            <translation>正在加载皮肤...</translation>
+        </message>
+        <message>
+            <source>The skin image could not be decoded.</source>
+            <translation>无法解码皮肤图像。</translation>
+        </message>
+        <message>
+            <source>The skin image could not be opened.</source>
+            <translation>无法打开皮肤图像。</translation>
+        </message>
+        <message>
+            <source>The skin image exceeds 64 MiB.</source>
+            <translation>皮肤图像文件大小超过 64 MiB。</translation>
+        </message>
+        <message>
+            <source>The skin image exceeds processing limits.</source>
+            <translation>皮肤图像超出处理限制。</translation>
+        </message>
+    </context>
+    <context>
         <name>PermissionGuide</name>
         <message>
             <source>Close guidance</source>
@@ -849,6 +876,14 @@
             <translation>调整 MP4 画质和文件大小</translation>
         </message>
         <message>
+            <source>Adjust the image opacity for all three skins.</source>
+            <translation>调整三种皮肤的图像不透明度。</translation>
+        </message>
+        <message>
+            <source>Adjust the theme background opacity over all three skins to keep controls and text readable.</source>
+            <translation>调整三种皮肤上方的主题背景不透明度，以保持控件和文字清晰可读。</translation>
+        </message>
+        <message>
             <source>Age</source>
             <translation>期限</translation>
         </message>
@@ -933,6 +968,10 @@
             <translation>应用快捷键</translation>
         </message>
         <message>
+            <source>Applies to all three skins. Overlay fills each surface and crops the edges. Contain shows the whole image.</source>
+            <translation>适用于三种皮肤。覆盖模式填满各个界面并裁剪边缘，适应模式显示完整图像。</translation>
+        </message>
+        <message>
             <source>Apply to recognized text when editing or copying</source>
             <translation>编辑或复制识别文字时应用</translation>
         </message>
@@ -997,6 +1036,10 @@
             <translation>背景填充</translation>
         </message>
         <message>
+            <source>Background image</source>
+            <translation>背景图像</translation>
+        </message>
+        <message>
             <source>Backup settings</source>
             <translation>备份设置</translation>
         </message>
@@ -1019,6 +1062,18 @@
         <message>
             <source>Border color</source>
             <translation>边框颜色</translation>
+        </message>
+        <message>
+            <source>Bottom center</source>
+            <translation>底部居中</translation>
+        </message>
+        <message>
+            <source>Bottom left</source>
+            <translation>左下角</translation>
+        </message>
+        <message>
+            <source>Bottom right</source>
+            <translation>右下角</translation>
         </message>
         <message>
             <source>Browse</source>
@@ -1073,8 +1128,20 @@
             <translation>录制时捕获工具栏</translation>
         </message>
         <message>
+            <source>Center</source>
+            <translation>居中</translation>
+        </message>
+        <message>
+            <source>Center left</source>
+            <translation>左侧居中</translation>
+        </message>
+        <message>
             <source>Center on mouse position</source>
             <translation>以鼠标位置为中心</translation>
+        </message>
+        <message>
+            <source>Center right</source>
+            <translation>右侧居中</translation>
         </message>
         <message>
             <source>Check automatically</source>
@@ -1087,6 +1154,14 @@
         <message>
             <source>Child elements</source>
             <translation>子元素</translation>
+        </message>
+        <message>
+            <source>Choose an image for Snow Shot's custom tray menu. Native system menus keep their system appearance. Clear the path to remove this skin.</source>
+            <translation>为 Snow Shot 自定义托盘菜单选择图像。系统原生菜单保留系统外观。清空路径可移除此皮肤。</translation>
+        </message>
+        <message>
+            <source>Choose an image for the screenshot, pin-to-screen, full-screen canvas and screen recording toolbar rows. Clear the path to remove this skin.</source>
+            <translation>为截图、贴图、全屏画布和录屏工具栏选择图像。清空路径可移除此皮肤。</translation>
         </message>
         <message>
             <source>Choose how much execution time the application receives</source>
@@ -1159,6 +1234,10 @@
         <message>
             <source>Choose the functions shown in the system tray menu</source>
             <translation>选择系统托盘菜单中显示的功能</translation>
+        </message>
+        <message>
+            <source>Choose the image alignment within this surface.</source>
+            <translation>选择图像在此界面内的对齐位置。</translation>
         </message>
         <message>
             <source>Choose the page size for manually and automatically saved PDF files</source>
@@ -1353,6 +1432,10 @@
             <translation>将 AI 客户端连接到 Snow Shot</translation>
         </message>
         <message>
+            <source>Contain</source>
+            <translation>适应</translation>
+        </message>
+        <message>
             <source>Control when the screenshot color picker is visible</source>
             <translation>控制截图颜色拾取器何时显示</translation>
         </message>
@@ -1451,6 +1534,10 @@
         <message>
             <source>Custom translation endpoints and concurrency</source>
             <translation>自定义翻译端点和并发数</translation>
+        </message>
+        <message>
+            <source>Customize the main interface, toolbar rows and custom tray menu</source>
+            <translation>自定义主界面、工具栏和自定义托盘菜单</translation>
         </message>
         <message>
             <source>DXGI</source>
@@ -1673,6 +1760,10 @@
             <translation>输入或浏览选择 PNG 或 ICO 文件；无效文件将使用所选内置图标</translation>
         </message>
         <message>
+            <source>Enter or browse to a PNG, JPG or WebP image for the main interface. Clear the path to remove this skin.</source>
+            <translation>输入或浏览选择用于主界面的 PNG、JPG 或 WebP 图像。清空路径可移除此皮肤。</translation>
+        </message>
+        <message>
             <source>Eraser</source>
             <translation>橡皮擦</translation>
         </message>
@@ -1881,6 +1972,10 @@
             <translation>图像文件 (*.png *.ico);;PNG 图像 (*.png);;图标文件 (*.ico)</translation>
         </message>
         <message>
+            <source>Image files (*.png *.jpg *.jpeg *.webp);;PNG images (*.png);;JPG images (*.jpg *.jpeg);;WebP images (*.webp)</source>
+            <translation>图像文件 (*.png *.jpg *.jpeg *.webp);;PNG 图像 (*.png);;JPG 图像 (*.jpg *.jpeg);;WebP 图像 (*.webp)</translation>
+        </message>
+        <message>
             <source>Image format</source>
             <translation>图像格式</translation>
         </message>
@@ -2061,6 +2156,14 @@
             <translation>放大镜可见性</translation>
         </message>
         <message>
+            <source>Main Interface Skin Path</source>
+            <translation>主界面皮肤路径</translation>
+        </message>
+        <message>
+            <source>Main Interface Skin Position</source>
+            <translation>主界面皮肤位置</translation>
+        </message>
+        <message>
             <source>Manage Snow Shot's login permission in macOS System Settings</source>
             <translation>在 macOS 系统设置中管理 Snow Shot 的登录权限</translation>
         </message>
@@ -2075,6 +2178,10 @@
         <message>
             <source>Manual save image filename format</source>
             <translation>手动保存图像文件名格式</translation>
+        </message>
+        <message>
+            <source>Mask Opacity</source>
+            <translation>遮罩不透明度</translation>
         </message>
         <message>
             <source>Match your system appearance or choose a light or dark theme</source>
@@ -2267,6 +2374,10 @@
         <message>
             <source>Other application shortcuts and actions</source>
             <translation>其它应用程序快捷键和操作</translation>
+        </message>
+        <message>
+            <source>Overlay</source>
+            <translation>覆盖</translation>
         </message>
         <message>
             <source>PDF</source>
@@ -2781,6 +2892,10 @@
             <translation>选择之前选中的区域</translation>
         </message>
         <message>
+            <source>Select skin image</source>
+            <translation>选择皮肤图像</translation>
+        </message>
+        <message>
             <source>Select the language used throughout the application</source>
             <translation>选择应用程序中使用的语言</translation>
         </message>
@@ -2985,6 +3100,22 @@
             <translation>快门声音通知</translation>
         </message>
         <message>
+            <source>Skin</source>
+            <translation>皮肤</translation>
+        </message>
+        <message>
+            <source>Skin Blur Level</source>
+            <translation>皮肤模糊程度</translation>
+        </message>
+        <message>
+            <source>Skin Display Mode</source>
+            <translation>皮肤显示模式</translation>
+        </message>
+        <message>
+            <source>Skin Opacity</source>
+            <translation>皮肤不透明度</translation>
+        </message>
+        <message>
             <source>Small</source>
             <translation>小</translation>
         </message>
@@ -3027,6 +3158,10 @@
         <message>
             <source>Snowflake light</source>
             <translation>雪花浅色</translation>
+        </message>
+        <message>
+            <source>Soften all three skin images with blur.</source>
+            <translation>通过模糊柔化三种皮肤图像。</translation>
         </message>
         <message>
             <source>Software updates</source>
@@ -3217,12 +3352,32 @@
             <translation>工具栏</translation>
         </message>
         <message>
+            <source>Toolbar Skin Path</source>
+            <translation>工具栏皮肤路径</translation>
+        </message>
+        <message>
+            <source>Toolbar Skin Position</source>
+            <translation>工具栏皮肤位置</translation>
+        </message>
+        <message>
             <source>Toolbar size</source>
             <translation>工具栏大小</translation>
         </message>
         <message>
             <source>Tools that forbid quick selection of same-type elements</source>
             <translation>禁止快速选择同类型元素的工具</translation>
+        </message>
+        <message>
+            <source>Top center</source>
+            <translation>顶部居中</translation>
+        </message>
+        <message>
+            <source>Top left</source>
+            <translation>左上角</translation>
+        </message>
+        <message>
+            <source>Top right</source>
+            <translation>右上角</translation>
         </message>
         <message>
             <source>Translate Selected Text</source>
@@ -3255,6 +3410,14 @@
         <message>
             <source>Tray</source>
             <translation>托盘</translation>
+        </message>
+        <message>
+            <source>Tray Menu Skin Path</source>
+            <translation>托盘菜单皮肤路径</translation>
+        </message>
+        <message>
+            <source>Tray Menu Skin Position</source>
+            <translation>托盘菜单皮肤位置</translation>
         </message>
         <message>
             <source>Tray appearance</source>

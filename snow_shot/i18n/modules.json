@@ -24,6 +24,7 @@
     "DrawingToolbarEditorSettingsWidget",
     "GlobalMouseRow",
     "LoginItemService",
+    "MainWindowSkin",
     "PermissionGuide",
     "PinnedToolbarEditorSettingsWidget",
     "ScreenshotMcpSettings",

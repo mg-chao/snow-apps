@@ -324,11 +324,13 @@ void captureRestoresSelectionPreferencesAfterReset() {
         int radius = 24;
         int shadowWidth = 12;
         bool aspectRatioLocked = true;
+        auto aspectRatioPreset = ScreenshotSelectionAspectRatioPreset::Landscape16x9;
         auto regionType = ScreenshotRegionType::Polyline;
         context.restoreSelectionPreferences = [&]() {
             selection.setRegionType(regionType);
             static_cast<void>(selection.setCornerRadius(radius));
             static_cast<void>(selection.setShadowWidth(shadowWidth));
+            static_cast<void>(selection.setAspectRatioPreset(aspectRatioPreset, {}, 5.0));
             static_cast<void>(selection.setAspectRatioLockEnabled(aspectRatioLocked, 5.0));
         };
         ScreenshotCaptureWorkflow workflow(std::move(context));
@@ -342,18 +344,30 @@ void captureRestoresSelectionPreferencesAfterReset() {
                 "cold and prewarmed captures must restore effects after resetting the model");
         require(!selection.hasPixelSelection() && selection.aspectRatioLocked(),
                 "capture startup must restore the lock preference without restoring geometry");
+        require(selection.aspectRatioPreset() == aspectRatioPreset,
+                "cold and prewarmed captures restore the explicit ratio before selection creation");
+        selection.clearSelection();
+        selection.beginMoveDrag(QPointF(20, 30));
+        const QRectF firstMarquee = selection.selectionRectForDrag(
+            ScreenshotSelectionDragMode::Marquee, QPointF(180, 100), QRectF(0, 0, 2000, 1000), 5.0);
+        require(qFuzzyCompare(firstMarquee.height() / firstMarquee.width(), 9.0 / 16.0),
+                "the first marquee after capture reset uses the remembered ratio");
         workflow.cancelCapture();
         radius = 32;
         shadowWidth = 16;
+        aspectRatioPreset = ScreenshotSelectionAspectRatioPreset::Portrait3x4;
         regionType = ScreenshotRegionType::Curve;
         workflow.startCapture();
         require(selection.regionType() == regionType,
                 "captures after cancellation reload the latest region type");
         require(selection.cornerRadius() == 32 && selection.shadowWidth() == 16,
                 "captures after cancellation must reload the latest saved effects");
+        require(selection.aspectRatioPreset() == aspectRatioPreset,
+                "captures after cancellation reload the latest ratio preference");
         radius = 0;
         shadowWidth = 0;
         aspectRatioLocked = false;
+        aspectRatioPreset = ScreenshotSelectionAspectRatioPreset::Free;
         regionType = ScreenshotRegionType::Freehand;
         workflow.startCapture();
         require(selection.regionType() == regionType,

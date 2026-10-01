@@ -319,7 +319,7 @@ void recordingControlsRemainLaidOutAcrossStateChanges() {
                                 idle && !busy,
                                 !busy,
                                 true,
-                                !busy,
+                                true,
                                 !idle && !busy};
         // Only the initiating start, stop, or copy action shows a spinner.
         const bool spinning[] = {operation == BusyOp::Starting,

@@ -64,6 +64,7 @@ struct ButtonStyleInput {
   bool flat = false;
   bool defaultButton = false;
   bool hasMenu = false;
+  bool joinsEdges = false;
   QFont baseFont;
 };
 

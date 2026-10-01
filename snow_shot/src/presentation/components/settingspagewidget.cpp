@@ -301,7 +301,9 @@ class SettingsPageWidget::Impl {
         // Populate a hidden body, then attach it once. Initializing each row in
         // an already visible shell would repeatedly run show/layout work.
         auto* list = new QWidget(shell);
-        list->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+        const bool wrappingCopy = section.reset == settings::SettingsSectionReset::Skin;
+        list->setSizePolicy(QSizePolicy::Expanding,
+                            wrappingCopy ? QSizePolicy::Preferred : QSizePolicy::Fixed);
         list->hide();
         const auto metric = colorScheme.metricAlias;
         const auto itemLayout = section.itemLayout;
@@ -362,6 +364,9 @@ class SettingsPageWidget::Impl {
         shell->setFocusPolicy(Qt::NoFocus);
         shell->setMinimumHeight(0);
         shell->setMaximumHeight(QWIDGETSIZE_MAX);
+        if (wrappingCopy) {
+            shell->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
+        }
         list->show();
         rebuildTabOrder();
     }
@@ -644,6 +649,12 @@ class SettingsPageWidget::Impl {
                 definition.payload);
         }
 
+        if (descriptor != nullptr && descriptor->reset == settings::SettingsSectionReset::Skin &&
+            runtime.anchor != nullptr) {
+            // Skin copy can include a loading or error line. Fixed vertical
+            // policies clamp height-for-width to the unwrapped size hint.
+            runtime.anchor->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
+        }
         if (runtime.formField == nullptr && runtime.focusTarget != nullptr &&
             runtime.focusTarget != runtime.anchor) {
             runtime.focusTarget->setObjectName(
@@ -731,6 +742,8 @@ class SettingsPageWidget::Impl {
                              }
                              syncField(*item, &state);
                          });
+        QObject::connect(&runtimeSession, &settings::SettingsRuntimeSession::filePathStatusChanged,
+                         &q, [this] { requestVisibleSectionSync(); });
 #ifdef Q_OS_MACOS
         if (page != nullptr && page->id == QStringLiteral("app-permissions")) {
             if (auto* service = runtimeSession.appPermissions()) {

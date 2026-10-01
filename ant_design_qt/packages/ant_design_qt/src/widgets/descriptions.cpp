@@ -2,6 +2,7 @@
 
 #include "descriptions_style.h"
 #include "theme/theme.h"
+#include "theme/theme_color_utils.h"
 
 #include <QEvent>
 #include <QGridLayout>
@@ -135,9 +136,10 @@ class Surface final : public LayoutWidget {
  public:
   explicit Surface(QWidget* parent = nullptr) : LayoutWidget(parent) {}
 
-  void setAppearance(const Appearance& value, bool drawsBorder) {
+  void setAppearance(const Appearance& value, bool drawsBorder, bool drawsBackground) {
     appearance_ = value;
     drawsBorder_ = drawsBorder;
+    drawsBackground_ = drawsBackground;
     update();
   }
 
@@ -145,7 +147,8 @@ class Surface final : public LayoutWidget {
   void paintEvent(QPaintEvent*) override {
     QPainter painter(this);
     painter.setRenderHint(QPainter::Antialiasing, true);
-    const QColor background = appearance_.rootBackground;
+    const QColor background =
+        drawsBackground_ ? appearance_.rootBackground : QColor(Qt::transparent);
     const bool paintBorder = drawsBorder_ && appearance_.metrics.borderWidth > 0;
     const qreal inset = paintBorder ? appearance_.metrics.borderWidth / 2.0 : 0.0;
     const QRectF rect = QRectF(this->rect()).adjusted(inset, inset, -inset, -inset);
@@ -159,12 +162,18 @@ class Surface final : public LayoutWidget {
  private:
   Appearance appearance_;
   bool drawsBorder_ = false;
+  bool drawsBackground_ = true;
 };
 
 class SemanticFrame final : public LayoutWidget {
  public:
-  SemanticFrame(const SlotStyle& style, int borderWidth, QWidget* parent = nullptr)
+  SemanticFrame(const SlotStyle& style, int borderWidth, qreal backgroundOpacity,
+                QWidget* parent = nullptr)
       : LayoutWidget(parent), style_(style), borderWidth_(std::max(0, borderWidth)) {
+    if (backgroundOpacity != 1.0 && style_.backgroundColor) {
+      style_.backgroundColor =
+          adqt::theme::applyBackgroundOpacity(*style_.backgroundColor, backgroundOpacity);
+    }
     setAutoFillBackground(false);
   }
 
@@ -196,7 +205,9 @@ class Cell final : public LayoutWidget {
        bool drawInlineEnd, QWidget* parent = nullptr)
       : LayoutWidget(parent),
         appearance_(appearance),
-        background_(background),
+        background_(appearance.backgroundOpacity != 1.0 && background == appearance.rootBackground
+                        ? QColor(Qt::transparent)
+                        : background),
         drawBlockEnd_(drawBlockEnd),
         drawInlineEnd_(drawInlineEnd) {
     setAutoFillBackground(false);
@@ -447,7 +458,8 @@ struct AdDescriptions::Private {
         style.borderColor && style.borderColor->isValid() && appearance.metrics.borderWidth > 0;
     if (!hasBackground && !hasBorder) return value;
 
-    auto* frame = new SemanticFrame(style, appearance.metrics.borderWidth, parent);
+    auto* frame = new SemanticFrame(style, appearance.metrics.borderWidth,
+                                    appearance.backgroundOpacity, parent);
     auto* layout = new QVBoxLayout(frame);
     const int frameWidth = frame->frameWidth();
     layout->setContentsMargins(frameWidth, frameWidth, frameWidth, frameWidth);
@@ -477,8 +489,10 @@ struct AdDescriptions::Private {
     const SlotStyle merged = mergeSlot(label ? semantics.label : semantics.content,
                                        label ? item.labelStyle : item.contentStyle);
     const QColor background =
-        mergeColor(merged.backgroundColor,
-                   label && bordered ? appearance.labelBackground : appearance.rootBackground);
+        merged.backgroundColor
+            ? adqt::theme::applyBackgroundOpacity(*merged.backgroundColor,
+                                                  appearance.backgroundOpacity)
+            : (label && bordered ? appearance.labelBackground : appearance.rootBackground);
     Appearance cellAppearance = appearance;
     cellAppearance.borderColor = mergeColor(merged.borderColor, appearance.borderColor);
     auto* cell = new Cell(cellAppearance, background, bordered && blockEnd, bordered && inlineEnd);
@@ -569,16 +583,15 @@ struct AdDescriptions::Private {
     SemanticStyles semantics = resolvedSemantics();
     Appearance appearance = detail::resolveDescriptionsAppearance(q, tokens, semantics);
 
-    QPalette rootPalette = q->palette();
-    rootPalette.setColor(QPalette::Window, appearance.rootBackground);
-    if (q->palette() != rootPalette) q->setPalette(rootPalette);
-    const bool autoFill = semantics.root.backgroundColor.has_value();
-    if (q->autoFillBackground() != autoFill) q->setAutoFillBackground(autoFill);
+    hasRootBackground = semantics.root.backgroundColor.has_value();
+    rootBackground = appearance.rootBackground;
+    if (q->autoFillBackground()) q->setAutoFillBackground(false);
 
     const bool hasTitle = titleWidget || !title.isEmpty();
     const bool hasExtra = extraWidget || !extra.isEmpty();
     if (hasTitle || hasExtra) {
-      auto* header = new SemanticFrame(semantics.header, appearance.metrics.borderWidth, q);
+      auto* header = new SemanticFrame(semantics.header, appearance.metrics.borderWidth,
+                                       appearance.backgroundOpacity, q);
       header->setObjectName(QStringLiteral("adDescriptionsHeader"));
       auto* headerLayout = new QHBoxLayout(header);
       const int headerFrame = header->frameWidth();
@@ -609,7 +622,8 @@ struct AdDescriptions::Private {
 
     auto* surface = new Surface(q);
     surface->setObjectName(QStringLiteral("adDescriptionsView"));
-    surface->setAppearance(appearance, bordered);
+    surface->setAppearance(appearance, bordered,
+                           !hasRootBackground || appearance.backgroundOpacity == 1.0);
     auto* grid = new QGridLayout(surface);
     grid->setContentsMargins(bordered ? appearance.metrics.borderWidth : 0,
                              bordered ? appearance.metrics.borderWidth : 0,
@@ -743,6 +757,8 @@ struct AdDescriptions::Private {
   SemanticStyleResolver semanticResolver;
   bool rebuilding = false;
   bool rebuildPending = false;
+  bool hasRootBackground = false;
+  QColor rootBackground;
   QString generatedAccessibleName;
   QString generatedAccessibleDescription;
 };
@@ -1129,6 +1145,13 @@ int AdDescriptions::heightForWidth(int width) const {
   if (!d_->root) return QWidget::heightForWidth(width);
   const int height = d_->root->heightForWidth(width);
   return height >= 0 ? height : sizeHint().height();
+}
+
+void AdDescriptions::paintEvent(QPaintEvent*) {
+  if (d_->hasRootBackground) {
+    QPainter painter(this);
+    painter.fillRect(rect(), d_->rootBackground);
+  }
 }
 
 void AdDescriptions::changeEvent(QEvent* event) {

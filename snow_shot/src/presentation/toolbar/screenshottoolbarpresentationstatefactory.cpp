@@ -22,6 +22,7 @@ makeScreenshotToolbarPresentationState(const ScreenshotInteractionState& interac
     state.ocrAvailable = selectionPixels.width() < 1 || selectionPixels.height() < 1 ||
                          screenshotOcrImageWithinPixelLimit(selectionPixels.size());
     state.aspectRatioLocked = selection.aspectRatioLocked();
+    state.aspectRatioPreset = selection.aspectRatioPreset();
     state.cornerRadius = selection.cornerRadius();
     state.cornerRadiusApplicable = selection.cornerRadiusApplicable();
     state.shadowWidth = selection.shadowWidth();

@@ -503,6 +503,16 @@ impl EditorSession {
         self.editor.set_filter_style(document, style, properties)
     }
 
+    pub fn set_filter_creation_style(
+        &mut self,
+        style: FilterStyle,
+        properties: u32,
+        tool: ActiveTool,
+    ) -> Result<(), ErrorCode> {
+        self.editor
+            .set_filter_creation_style(style, properties, tool)
+    }
+
     pub fn set_watermark_config(
         &mut self,
         document: &DocumentModel,

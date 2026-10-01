@@ -1,6 +1,7 @@
 #include "select_style.h"
 
 #include "theme/theme.h"
+#include "theme/theme_color_utils.h"
 
 #include <algorithm>
 
@@ -312,7 +313,7 @@ SelectVisualStyle resolveSelectVisualStyle(const SelectStyleInput& input,
   const auto& metricTokens = tokens.metrics;
   const auto& colorTokens = tokens.colors;
   if (metricTokens.controlHeight.has_value()) {
-    style.metrics.height = std::max(24, metricTokens.controlHeight.value());
+    style.metrics.height = std::max(20, metricTokens.controlHeight.value());
   }
   if (metricTokens.borderRadius.has_value()) {
     style.metrics.borderRadius = std::max(0, metricTokens.borderRadius.value());
@@ -375,6 +376,7 @@ SelectVisualStyle resolveSelectVisualStyle(const SelectStyleInput& input,
   style.clearColor = resolveTokenColor(colorTokens.clear, style.clearColor);
   style.prefixColor = resolveTokenColor(colorTokens.prefix, style.prefixColor);
   style.suffixColor = resolveTokenColor(colorTokens.suffix, style.suffixColor);
+  style.disabledTextColor = resolveTokenColor(colorTokens.disabledText, style.disabledTextColor);
 
   const AdSelect::SemanticStyles& semantic = input.semanticStyles;
   applySemanticSlot(semantic.root, nullptr, &style.selectorBg, &style.selectorBorderColor);
@@ -445,6 +447,13 @@ SelectVisualStyle resolveSelectVisualStyle(const SelectStyleInput& input,
   style.emptyBorderColor = compositeOn(style.emptyBorderColor, style.popupBg);
   style.emptyShadowColor = compositeOn(style.emptyShadowColor, style.popupBg);
   style.emptyContentColor = compositeOn(style.emptyContentColor, style.popupBg);
+
+  if (map.backgroundOpacity != 1.0) {
+    for (QColor* background : {&style.selectorBg, &style.selectorHoverBg, &style.selectorActiveBg,
+                               &style.disabledBg, &style.tagBg, &style.clearBg}) {
+      *background = adqt::theme::applyBackgroundOpacity(*background, map.backgroundOpacity);
+    }
+  }
 
   // Resolve theme and component overrides in reference units, then scale once.
   // Every style refresh must retain the same geometry and typography contract.

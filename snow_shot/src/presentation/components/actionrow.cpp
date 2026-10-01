@@ -5,6 +5,8 @@
 #include "snow_shot/presentation/styles/mainwindowcomponenttoken.h"
 #include "snow_shot/presentation/styles/thememanager.h"
 
+#include "theme/theme_manager.h"
+
 #include <QEvent>
 #include <QHBoxLayout>
 #include <QLabel>
@@ -64,6 +66,8 @@ ActionRow::ActionRow(
     const auto& themeManager = snow_shot::presentation::styles::ThemeManager::instance();
     connect(&themeManager, &snow_shot::presentation::styles::ThemeManager::themeChanged, this,
             [this](const auto& updatedScheme) { applyTheme(updatedScheme); });
+    connect(&adqt::theme::ThemeManager::instance(), &adqt::theme::ThemeManager::themeChanged, this,
+            [this] { update(); });
     syncTitle();
 }
 
@@ -92,7 +96,7 @@ void ActionRow::paintEvent(QPaintEvent*) {
     snow_shot::presentation::styles::paintActionRow(
         painter, size(), m_colorScheme.map, m_rowState, isDown() && !configurationActive,
         underMouse() && !configurationActive, m_rowBorderRadius, m_rowBorderWidth,
-        m_useStableBorder);
+        m_useStableBorder, snow_shot::presentation::styles::mainWindowBackgroundOpacity(this));
 }
 
 bool ActionRow::event(QEvent* event) {

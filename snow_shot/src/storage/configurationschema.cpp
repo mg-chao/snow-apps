@@ -53,6 +53,11 @@ const QStringList kDrawingToolbarItemIds =
     kDrawingToolIds +
     QStringList{QStringLiteral("separator"), QStringLiteral("undo"), QStringLiteral("redo")};
 const QStringList kLastDrawingToolIds = QStringList{QStringLiteral("")} + kDrawingToolIds;
+const QStringList kSkinPositions = {
+    QStringLiteral("top_left"),    QStringLiteral("top_center"),    QStringLiteral("top_right"),
+    QStringLiteral("center_left"), QStringLiteral("center"),        QStringLiteral("center_right"),
+    QStringLiteral("bottom_left"), QStringLiteral("bottom_center"), QStringLiteral("bottom_right"),
+};
 
 const QStringList kActionToolbarItemIds = editionActionIds({
     QStringLiteral("barcode-recognition"),
@@ -169,6 +174,26 @@ const QVector<ConfigurationSchemaEntry> kRawEntries = {
     {QStringLiteral("interface/app_font"), QStringLiteral(""), ConfigurationValueKind::String},
     {QStringLiteral("interface/language"), QStringLiteral("system"),
      ConfigurationValueKind::String},
+    {QStringLiteral("interface/skin_path"), QString(), ConfigurationValueKind::String},
+    {QStringLiteral("interface/skin_position"), QStringLiteral("center"),
+     ConfigurationValueKind::String, std::nullopt, kSkinPositions},
+    {QStringLiteral("interface/toolbar_skin_path"), QString(), ConfigurationValueKind::String},
+    {QStringLiteral("interface/toolbar_skin_position"), QStringLiteral("center"),
+     ConfigurationValueKind::String, std::nullopt, kSkinPositions},
+    {QStringLiteral("interface/tray_menu_skin_path"), QString(), ConfigurationValueKind::String},
+    {QStringLiteral("interface/tray_menu_skin_position"), QStringLiteral("center"),
+     ConfigurationValueKind::String, std::nullopt, kSkinPositions},
+    {QStringLiteral("interface/skin_display_mode"),
+     QStringLiteral("overlay"),
+     ConfigurationValueKind::String,
+     std::nullopt,
+     {QStringLiteral("overlay"), QStringLiteral("contain")}},
+    {QStringLiteral("interface/skin_opacity"), 100, ConfigurationValueKind::Integer,
+     ConfigurationIntegerRange{0, 100, 1}},
+    {QStringLiteral("interface/skin_blur_level"), 0, ConfigurationValueKind::Integer,
+     ConfigurationIntegerRange{0, 100, 1}},
+    {QStringLiteral("interface/skin_mask_opacity"), 80, ConfigurationValueKind::Integer,
+     ConfigurationIntegerRange{0, 100, 1}},
     {QStringLiteral("system/application_priority"),
      QStringLiteral("above_normal"),
      ConfigurationValueKind::String,
@@ -1194,6 +1219,13 @@ const QVector<ConfigurationSchemaEntry> kRawEntries = {
      ConfigurationIntegerRange{0, 256, 1}},
     {QStringLiteral("screenshot_selection/shadow_width"), 0, ConfigurationValueKind::Integer,
      ConfigurationIntegerRange{0, 64, 1}},
+    {QStringLiteral("screenshot_selection/aspect_ratio"),
+     QStringLiteral("free"),
+     ConfigurationValueKind::String,
+     std::nullopt,
+     {QStringLiteral("free"), QStringLiteral("1:1"), QStringLiteral("3:2"), QStringLiteral("4:3"),
+      QStringLiteral("16:9"), QStringLiteral("2:3"), QStringLiteral("3:4"),
+      QStringLiteral("9:16")}},
     {QStringLiteral("screenshot_selection/lock_aspect_ratio"), false,
      ConfigurationValueKind::Boolean},
     {QStringLiteral("screenshot/scrolling_auto_scroll_interval_ms"), 200,

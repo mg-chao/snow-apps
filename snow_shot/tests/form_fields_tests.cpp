@@ -58,6 +58,36 @@ class Translator final : public QTranslator {
     }
 };
 
+void optionalMetadataAndChoiceLabels() {
+    QWidget owner;
+    fields::Options options;
+    options.parent = &owner;
+    const auto text = fields::text({QStringLiteral("minimal-text")}, options);
+    text.field->syncValue(QStringLiteral("draft"));
+    require(text.item()->fieldKey() == QStringLiteral("minimal-text") &&
+                text.item()->label().isEmpty() && text.editor->placeholderText().isEmpty() &&
+                text.editor->accessibleDescription().isEmpty() &&
+                text.field->value() == QStringLiteral("draft"),
+            "ID-only metadata creates a usable field without optional copy");
+
+    const auto select =
+        fields::select({QStringLiteral("minimal-select"), {"FormFieldsTests", "Field label"}},
+                       {{QStringLiteral("translated"), {"FormFieldsTests", "Option label"}},
+                        {QStringLiteral("raw"), {}, QStringLiteral("Runtime label")}},
+                       options);
+    select.field->syncValue(QStringLiteral("translated"));
+    Translator translator;
+    require(QCoreApplication::installTranslator(&translator), "install minimal field translator");
+    select.field->retranslateUi();
+    const auto choices = select.editor->options();
+    require(choices.size() == 2 &&
+                choices.at(0).label == QStringLiteral("Translated: Option label") &&
+                choices.at(1).label == QStringLiteral("Runtime label") && !choices.at(0).disabled &&
+                !choices.at(1).disabled && select.field->value() == QStringLiteral("translated"),
+            "partial choices preserve translated and runtime labels with enabled defaults");
+    QCoreApplication::removeTranslator(&translator);
+}
+
 void constructionKeepsItemsInTheirOwner() {
     class ItemShowObserver final : public QObject {
       public:
@@ -777,6 +807,7 @@ void customEditorBridgeAndOwnership() {
 int main(int argc, char** argv) {
     QApplication application(argc, argv);
     styles::ThemeManager::instance().initialize(application);
+    optionalMetadataAndChoiceLabels();
     constructionKeepsItemsInTheirOwner();
     presentationsAndFeedback();
     descriptionOverrides();

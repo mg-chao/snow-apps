@@ -860,7 +860,14 @@ void ScreenshotOverlayInputHandler::confirmSelection(
             m_context.actions.updateOverlayState();
             return;
         }
+        // Boolean region edits are exact replacements, even when their result
+        // collapses to a single rectangle. Keep that operand authoritative
+        // instead of reshaping it to the previously selected preset.
+        m_context.selection.clearAspectRatioPresetForReplacement();
     }
+    static_cast<void>(m_context.selection.finalizeAspectRatio(
+        m_context.geometry.canvasBounds(),
+        snow_shot::presentation::kScreenshotSelectionMinimumSize));
     const QRect selection = m_context.selection.pixelSelection();
     if (selection.width() < 1 || selection.height() < 1) {
         return;

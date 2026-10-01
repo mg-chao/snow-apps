@@ -16,11 +16,13 @@
 #include "../pinned/screenshotclipboardplacementgeometry.h"
 
 #include "snow_shot/presentation/styles/thememanager.h"
+#include "snow_shot/presentation/styles/mainwindowcomponenttoken.h"
 #include "snow_shot/storage/applicationstorage.h"
 #include "snow_shot/storage/capturehistoryrepository.h"
 #include "snow_shot/storage/storageusagetracker.h"
 
 #include "antd_icons.h"
+#include "theme/theme_manager.h"
 #include "widgets/button.h"
 #include "widgets/carousel.h"
 #include "widgets/checkbox.h"
@@ -958,10 +960,17 @@ class HistoryEntryWidget final : public QFrame {
         QPalette tertiary = m_metaLabel->palette();
         tertiary.setColor(QPalette::WindowText, scheme.map.colorTextTertiary);
         m_metaLabel->setPalette(tertiary);
+        updateBackgroundStyle();
+    }
+
+    void updateBackgroundStyle() {
+        const auto& scheme = m_scheme;
         m_sourceLabel->setStyleSheet(
             QStringLiteral("QLabel { color: %1; background: %2; border: 1px solid %3; "
                            "border-radius: 4px; padding: 2px 7px; }")
-                .arg(scheme.map.colorPrimaryText.name(), scheme.map.colorPrimaryBg.name(),
+                .arg(scheme.map.colorPrimaryText.name(),
+                     styles::mainWindowBackgroundColor(m_sourceLabel, scheme.map.colorPrimaryBg)
+                         .name(QColor::HexArgb),
                      scheme.map.colorPrimaryBorder.name()));
         update();
     }
@@ -1061,7 +1070,8 @@ class HistoryEntryWidget final : public QFrame {
             adqt::widgets::detail::roundedButtonPath(shapeRect, radius, radius, radius, radius);
         QPainter painter(this);
         painter.setRenderHint(QPainter::Antialiasing, true);
-        painter.fillPath(shapePath, m_scheme.map.colorBgContainer);
+        painter.fillPath(shapePath,
+                         styles::mainWindowBackgroundColor(this, m_scheme.map.colorBgContainer));
         painter.setPen(adqt::widgets::detail::makeButtonBorderPen(m_scheme.map.colorBorderSecondary,
                                                                   borderWidth, Qt::SolidLine));
         painter.setBrush(Qt::NoBrush);
@@ -1363,6 +1373,8 @@ ScreenshotHistoryPageWidget::ScreenshotHistoryPageWidget(
     const auto& themeManager = styles::ThemeManager::instance();
     connect(&themeManager, &styles::ThemeManager::themeChanged, this,
             &ScreenshotHistoryPageWidget::applyTheme);
+    connect(&adqt::theme::ThemeManager::instance(), &adqt::theme::ThemeManager::themeChanged, this,
+            [this] { updateSkinBackgrounds(); });
     retranslateUi();
     applyTheme(m_colorScheme);
 }
@@ -1867,6 +1879,7 @@ void ScreenshotHistoryPageWidget::retranslateUi() {
 
 void ScreenshotHistoryPageWidget::applyTheme(const styles::ThemeColorScheme& scheme) {
     m_colorScheme = scheme;
+    m_backgroundOpacity = styles::mainWindowBackgroundOpacity(this);
     QPalette pagePalette = palette();
     pagePalette.setColor(QPalette::Window, Qt::transparent);
     setPalette(pagePalette);
@@ -1891,6 +1904,21 @@ void ScreenshotHistoryPageWidget::applyTheme(const styles::ThemeColorScheme& sch
     updateEmptyStateMinimumHeight();
     updateSelectionBar();
     update();
+}
+
+void ScreenshotHistoryPageWidget::updateSkinBackgrounds() {
+    const qreal opacity = styles::mainWindowBackgroundOpacity(this);
+    if (m_backgroundOpacity == opacity) {
+        return;
+    }
+    m_backgroundOpacity = opacity;
+    for (QWidget* child :
+         m_entriesHost->findChildren<QWidget*>(QString(), Qt::FindDirectChildrenOnly)) {
+        if (auto* entry = dynamic_cast<HistoryEntryWidget*>(child); entry != nullptr) {
+            entry->updateBackgroundStyle();
+        }
+    }
+    m_selectionPanel->update();
 }
 
 void ScreenshotHistoryPageWidget::changeEvent(QEvent* event) {

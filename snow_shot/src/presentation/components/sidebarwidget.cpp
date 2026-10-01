@@ -12,6 +12,9 @@
 #include <QVariant>
 #include <QVBoxLayout>
 
+#include <algorithm>
+#include <cmath>
+
 #include "antd_icons.h"
 #include "snow_shot/presentation/styles/thememanager.h"
 #include "snow_shot/presentation/settings/settingsregistry.h"
@@ -262,14 +265,79 @@ void SidebarWidget::applyTheme(const snow_shot::presentation::styles::ThemeColor
         return;
     }
 
-    // Keep the empty sidebar area and collapse trigger on the same surface as
-    // the top-level navigation items.
-    const QColor background = m_menu->resolvedColorTokens().itemBackground;
-    applyWindowSurface(this, background, true);
-    applyWindowSurface(m_menu, background);
-    applyWindowSurface(m_collapseTrigger, background);
+    if (!m_skinActive) {
+        // Keep the original theme path free of skin token and opacity work.
+        const QColor background = m_menu->resolvedColorTokens().itemBackground;
+        applyWindowSurface(this, background, true);
+        applyWindowSurface(m_menu, background);
+        applyWindowSurface(m_collapseTrigger, background);
+        update();
+        return;
+    }
 
+    // The sidebar supplies one translucent surface. Its menu, scroll viewport,
+    // and collapse trigger must not composite the same mask a second time.
+    const QColor background = AdNavigationMenu::resolveColorTokens(this).itemBackground;
+    QColor maskedBackground = background;
+    if (m_skinMaskOpacity != 1.0) {
+        maskedBackground.setAlphaF(background.alphaF() * static_cast<float>(m_skinMaskOpacity));
+    }
+    QPalette sidebarPalette = palette();
+    sidebarPalette.setColor(QPalette::Window, maskedBackground);
+    sidebarPalette.setColor(QPalette::Base, background);
+    setPalette(sidebarPalette);
     update();
+}
+
+void SidebarWidget::setSkinChildrenTransparent(bool transparent) {
+    auto menuTokens = m_menu->componentTokens();
+    if (transparent) {
+        menuTokens.colors.shared.itemBackground = QColor(Qt::transparent);
+        menuTokens.colors.shared.subMenuItemBackground = QColor(Qt::transparent);
+        applyWindowSurface(m_menu, Qt::transparent);
+        applyWindowSurface(m_collapseTrigger, Qt::transparent);
+    } else {
+        menuTokens.colors.shared.itemBackground.reset();
+        menuTokens.colors.shared.subMenuItemBackground.reset();
+    }
+    m_menu->setComponentTokens(menuTokens);
+    m_menu->setAutoFillBackground(!transparent);
+    m_collapseTrigger->setAutoFillBackground(!transparent);
+    if (m_menuScroll != nullptr) {
+        if (transparent) {
+            applyWindowSurface(m_menuScroll, Qt::transparent);
+        } else {
+            // Restore inherited palette roles so future ordinary theme changes
+            // retain the exact original scroll surface without extra updates.
+            m_menuScroll->setPalette(QPalette());
+        }
+        m_menuScroll->setAutoFillBackground(transparent ? false
+                                                        : m_originalScrollAutoFillBackground);
+        if (QWidget* viewport = m_menuScroll->viewport(); viewport != nullptr) {
+            if (transparent) {
+                applyWindowSurface(viewport, Qt::transparent, true);
+            } else {
+                viewport->setPalette(QPalette());
+            }
+            viewport->setAutoFillBackground(transparent ? false
+                                                        : m_originalViewportAutoFillBackground);
+        }
+    }
+}
+
+void SidebarWidget::setSkinMaskOpacity(qreal opacity, bool skinActive) {
+    const qreal normalized = std::isfinite(opacity) ? std::clamp(opacity, 0.0, 1.0) : 1.0;
+    const bool active = skinActive || normalized < 1.0;
+    if (m_skinMaskOpacity == normalized && m_skinActive == active) {
+        return;
+    }
+    const bool activeChanged = m_skinActive != active;
+    m_skinMaskOpacity = normalized;
+    m_skinActive = active;
+    if (activeChanged) {
+        setSkinChildrenTransparent(active);
+    }
+    applyTheme(snow_shot::presentation::styles::ThemeManager::instance().themeColorScheme());
 }
 
 SidebarWidget::SidebarWidget(const snow_shot::presentation::settings::SettingsRegistry& registry,
@@ -294,8 +362,11 @@ SidebarWidget::SidebarWidget(const snow_shot::presentation::settings::SettingsRe
 
     rebuildNavigationModel();
     auto* menuScroll = new adqt::widgets::AdScrollArea(this);
+    m_menuScroll = menuScroll;
     menuScroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     menuScroll->setContentWidget(m_menu);
+    m_originalScrollAutoFillBackground = menuScroll->autoFillBackground();
+    m_originalViewportAutoFillBackground = menuScroll->viewport()->autoFillBackground();
     sidebarLayout->addWidget(menuScroll, 1);
 
     m_collapseTrigger = new QFrame(this);

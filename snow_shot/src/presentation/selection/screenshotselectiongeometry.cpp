@@ -318,6 +318,49 @@ QRectF boundedScreenshotSelectionRect(const QRectF& selection, const QRectF& bou
     return constrained;
 }
 
+QRectF aspectRatioScreenshotSelectionRect(const QRectF& selection, const QRectF& bounds,
+                                          qreal aspectRatio, qreal minimumSelectionSize) {
+    const QRectF normalized = selection.normalized();
+    if (!normalized.isValid() || !std::isfinite(normalized.left()) ||
+        !std::isfinite(normalized.top()) || !std::isfinite(normalized.width()) ||
+        !std::isfinite(normalized.height()) || !std::isfinite(aspectRatio) || aspectRatio <= 0.0 ||
+        !std::isfinite(minimumSelectionSize) || minimumSelectionSize < 0.0) {
+        return {};
+    }
+
+    const qreal minimumWidth = std::max(minimumSelectionSize, minimumSelectionSize / aspectRatio);
+    qreal width = std::max(normalized.width(), minimumWidth);
+    if (!std::isfinite(width) || !std::isfinite(width * aspectRatio)) {
+        return {};
+    }
+    qreal left = normalized.left();
+    qreal top = normalized.top();
+    if (!bounds.isNull()) {
+        const QRectF normalizedBounds = bounds.normalized();
+        if (!normalizedBounds.isValid() || !std::isfinite(normalizedBounds.left()) ||
+            !std::isfinite(normalizedBounds.top()) || !std::isfinite(normalizedBounds.width()) ||
+            !std::isfinite(normalizedBounds.height())) {
+            return {};
+        }
+        const qreal maximumWidth =
+            std::min(normalizedBounds.width(), normalizedBounds.height() / aspectRatio);
+        if (maximumWidth < minimumWidth) {
+            return {};
+        }
+        width = std::min(width, maximumWidth);
+        // Division followed by multiplication may exceed an exact canvas edge
+        // by one floating-point step. Keep the geometric ratio without clipping
+        // the dependent dimension independently.
+        if (width * aspectRatio > normalizedBounds.height()) {
+            width = std::nextafter(width, 0.0);
+        }
+        left = std::clamp(left, normalizedBounds.left(), normalizedBounds.right() - width);
+        top = std::clamp(top, normalizedBounds.top(),
+                         normalizedBounds.bottom() - width * aspectRatio);
+    }
+    return QRectF(left, top, width, width * aspectRatio);
+}
+
 QRectF draggedScreenshotSelectionRect(ScreenshotSelectionDragMode dragMode, const QRectF& origin,
                                       const QPointF& originPosition, const QPointF& position,
                                       const QRectF& bounds, qreal minimumSelectionSize,

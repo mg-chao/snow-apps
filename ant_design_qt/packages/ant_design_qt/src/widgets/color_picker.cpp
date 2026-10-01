@@ -2381,9 +2381,25 @@ AdColorPicker::AdColorPicker(HostMode hostMode, QWidget* parent)
   ownedState_->applyState(exportColorValue(), mode_, modeOptions_, format_, allowClear_,
                           !disabledAlpha_, !disabledFormat_, activeStopIndex_, presets_, false);
   setState(ownedState_.get());
+  connect(&adqt::theme::ThemeManager::instance(), &adqt::theme::ThemeManager::themeChanged, this,
+          [this, currentTheme = adqt::theme::ThemeManager::instance()
+                                    .resolve(this, themeLogicalOwner())
+                                    .config]() mutable {
+            const auto nextTheme =
+                adqt::theme::ThemeManager::instance().resolve(this, themeLogicalOwner()).config;
+            if (nextTheme == currentTheme) {
+              return;
+            }
+            auto previousTheme = currentTheme;
+            previousTheme.backgroundOpacity = nextTheme.backgroundOpacity;
+            const bool backgroundOnly = previousTheme == nextTheme;
+            currentTheme = nextTheme;
+            refreshStyle(backgroundOnly);
+          });
 }
 
 AdColorPicker::~AdColorPicker() {
+  disconnect(&adqt::theme::ThemeManager::instance(), nullptr, this, nullptr);
   // Releasing the popover can reparent a focused editor and synchronously emit
   // editingFinished. Do that while the picker's derived state is still alive;
   // QObject would otherwise destroy the popover after these members are gone.

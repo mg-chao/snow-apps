@@ -390,10 +390,8 @@ bool TitleBarWidget::eventFilter(QObject* watched, QEvent* event) {
 }
 
 void TitleBarWidget::applyTheme(const snow_shot::presentation::styles::ThemeColorScheme& scheme) {
-    QPalette palette = this->palette();
-    palette.setColor(QPalette::Window,
-                     adqt::widgets::AdNavigationMenu::resolveColorTokens(this).itemBackground);
-    setPalette(palette);
+    m_surfaceColor = adqt::widgets::AdNavigationMenu::resolveColorTokens(this).itemBackground;
+    updateSkinMask();
     m_logoColor = scheme.map.colorText;
 #ifdef Q_OS_WIN
     adqt::icons::IconRenderRequest request;
@@ -415,6 +413,26 @@ void TitleBarWidget::applyTheme(const snow_shot::presentation::styles::ThemeColo
     refreshWindowControlButtonTheme(m_closeButton);
 #endif
 
+    update();
+}
+
+void TitleBarWidget::setSkinMaskOpacity(qreal opacity) {
+    const qreal normalized = std::isfinite(opacity) ? std::clamp(opacity, 0.0, 1.0) : 1.0;
+    if (m_skinMaskOpacity == normalized) {
+        return;
+    }
+    m_skinMaskOpacity = normalized;
+    updateSkinMask();
+}
+
+void TitleBarWidget::updateSkinMask() {
+    QPalette palette = this->palette();
+    QColor background = m_surfaceColor;
+    if (m_skinMaskOpacity != 1.0) {
+        background.setAlphaF(background.alphaF() * static_cast<float>(m_skinMaskOpacity));
+    }
+    palette.setColor(QPalette::Window, background);
+    setPalette(palette);
     update();
 }
 

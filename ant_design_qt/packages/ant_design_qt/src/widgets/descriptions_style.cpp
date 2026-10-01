@@ -1,6 +1,7 @@
 #include "descriptions_style.h"
 
 #include "theme/theme.h"
+#include "theme/theme_color_utils.h"
 
 #include <algorithm>
 
@@ -27,6 +28,7 @@ DescriptionsAppearance resolveDescriptionsAppearance(
   const auto& metrics = theme.theme.metrics;
 
   DescriptionsAppearance result;
+  result.backgroundOpacity = theme.values.backgroundOpacity;
   result.rootBackground = descriptions->palette().color(QPalette::Window);
   result.labelBackground =
       colors.colorFillAlter.isValid() ? colors.colorFillAlter : QColor("#fafafa");
@@ -98,6 +100,12 @@ DescriptionsAppearance resolveDescriptionsAppearance(
   result.labelColor = resolved(semantics.label.textColor, result.labelColor);
   result.labelBackground = resolved(semantics.label.backgroundColor, result.labelBackground);
   result.contentColor = resolved(semantics.content.textColor, result.contentColor);
+  if (result.backgroundOpacity != 1.0) {
+    result.rootBackground =
+        adqt::theme::applyBackgroundOpacity(result.rootBackground, result.backgroundOpacity);
+    result.labelBackground =
+        adqt::theme::applyBackgroundOpacity(result.labelBackground, result.backgroundOpacity);
+  }
   return result;
 }
 

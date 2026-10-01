@@ -22,13 +22,17 @@
 #include <QStackedWidget>
 #include <QVBoxLayout>
 
+#include <algorithm>
+#include <cmath>
+
 ContentCardWidget::ContentCardWidget(
     const snow_shot::presentation::settings::SettingsRegistry& registry,
     snow_shot::presentation::settings::SettingsRuntimeSession& runtimeSession, QWidget* parent,
     SnowShotApiClient* translationClient)
     : QFrame(parent), m_registry(registry), m_runtimeSession(runtimeSession),
       m_translationClient(translationClient),
-      m_colorScheme(snow_shot::presentation::styles::ThemeManager::instance().themeColorScheme()) {
+      m_colorScheme(snow_shot::presentation::styles::ThemeManager::instance().themeColorScheme()),
+      m_backgroundBrush(m_colorScheme.map.colorBgContainer) {
     setFrameShape(QFrame::NoFrame);
     setLineWidth(0);
     setAutoFillBackground(false);
@@ -287,6 +291,7 @@ void ContentCardWidget::handleCommand(
 void ContentCardWidget::applyTheme(
     const snow_shot::presentation::styles::ThemeColorScheme& scheme) {
     m_colorScheme = scheme;
+    updateBackgroundBrush();
 #if SNOW_SHOT_ENABLE_TEXT_TRANSLATION
     if (auto* page = qobject_cast<TranslationPageWidget*>(m_activePage.data())) {
         page->applyTheme(scheme);
@@ -325,6 +330,24 @@ void ContentCardWidget::retranslateUi() {
     emit sectionListChanged();
 }
 
+void ContentCardWidget::setSkinMaskOpacity(qreal opacity) {
+    const qreal normalized = std::isfinite(opacity) ? std::clamp(opacity, 0.0, 1.0) : 1.0;
+    if (m_skinMaskOpacity == normalized) {
+        return;
+    }
+    m_skinMaskOpacity = normalized;
+    updateBackgroundBrush();
+    update();
+}
+
+void ContentCardWidget::updateBackgroundBrush() {
+    QColor background = m_colorScheme.map.colorBgContainer;
+    if (m_skinMaskOpacity != 1.0) {
+        background.setAlphaF(background.alphaF() * static_cast<float>(m_skinMaskOpacity));
+    }
+    m_backgroundBrush = QBrush(background);
+}
+
 void ContentCardWidget::changeEvent(QEvent* event) {
     QFrame::changeEvent(event);
     if (event->type() == QEvent::LanguageChange) {
@@ -340,7 +363,7 @@ void ContentCardWidget::paintEvent(QPaintEvent* event) {
         snow_shot::presentation::styles::buildMainWindowComponentMetricToken(m_colorScheme);
     const QRectF cardRect = QRectF(rect()).adjusted(0.5, 0.5, -0.5, -0.5);
     painter.setPen(Qt::NoPen);
-    painter.setBrush(m_colorScheme.map.colorBgContainer);
+    painter.setBrush(m_backgroundBrush);
     painter.drawRoundedRect(cardRect, static_cast<qreal>(mainWindowMetric.cardRadius),
                             static_cast<qreal>(mainWindowMetric.cardRadius));
 }

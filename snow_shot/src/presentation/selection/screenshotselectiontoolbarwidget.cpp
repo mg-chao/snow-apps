@@ -4,12 +4,17 @@
 #include "snow_shot/presentation/components/icons/snowshoticons.h"
 #include "snow_shot/presentation/screenshotselectionlimits.h"
 #include "snow_shot/presentation/screenshottoolbarcommands.h"
+#include "widgets/select.h"
 
 #include <QCoreApplication>
+#include <QApplication>
 #include <QEvent>
+#include <QFontMetrics>
 #include <QHBoxLayout>
 #include <QHideEvent>
+#include <QKeyEvent>
 #include <QLabel>
+#include <QListView>
 #include <QMargins>
 #include <QMouseEvent>
 #include <QPainter>
@@ -18,12 +23,14 @@
 #include <QRegion>
 #include <QSizePolicy>
 #include <QShowEvent>
+#include <QSignalBlocker>
 #include <QTimer>
 #include <QVariant>
 #include <QWheelEvent>
 #include <QtMath>
 
 #include <algorithm>
+#include <array>
 
 namespace {
 namespace custom_outlined_icons = snow_shot::presentation::icons::custom::outlined;
@@ -33,6 +40,27 @@ using snow_shot::presentation::kScreenshotSelectionShadowWidthMax;
 
 constexpr auto kAlwaysMouseTransparentProperty = "selectionToolbarAlwaysMouseTransparent";
 constexpr auto kTranslationSourceProperty = "selectionToolbarTranslationSource";
+constexpr int kAspectRatioSelectGap = 8;
+constexpr std::array kAspectRatioPresets = {
+    ScreenshotSelectionAspectRatioPreset::Free,
+    ScreenshotSelectionAspectRatioPreset::Square,
+    ScreenshotSelectionAspectRatioPreset::Landscape3x2,
+    ScreenshotSelectionAspectRatioPreset::Landscape4x3,
+    ScreenshotSelectionAspectRatioPreset::Landscape16x9,
+    ScreenshotSelectionAspectRatioPreset::Portrait2x3,
+    ScreenshotSelectionAspectRatioPreset::Portrait3x4,
+    ScreenshotSelectionAspectRatioPreset::Portrait9x16,
+};
+constexpr std::array kAspectRatioLabelSources = {
+    QT_TRANSLATE_NOOP("ScreenshotSelectionToolbarWidget", "Free"),
+    QT_TRANSLATE_NOOP("ScreenshotSelectionToolbarWidget", "1:1"),
+    QT_TRANSLATE_NOOP("ScreenshotSelectionToolbarWidget", "3:2"),
+    QT_TRANSLATE_NOOP("ScreenshotSelectionToolbarWidget", "4:3"),
+    QT_TRANSLATE_NOOP("ScreenshotSelectionToolbarWidget", "16:9"),
+    QT_TRANSLATE_NOOP("ScreenshotSelectionToolbarWidget", "2:3"),
+    QT_TRANSLATE_NOOP("ScreenshotSelectionToolbarWidget", "3:4"),
+    QT_TRANSLATE_NOOP("ScreenshotSelectionToolbarWidget", "9:16"),
+};
 
 void setTranslationSource(QLabel* label, const char* source) {
     if (label != nullptr && source != nullptr && source[0] != '\0') {
@@ -199,6 +227,96 @@ ScreenshotSelectionToolbarWidget::ScreenshotSelectionToolbarWidget(
     panelLayout->addWidget(sizeUnitLabel);
     m_sizeWidgets << m_widthLabel << sizeSeparatorLabel << m_heightLabel << sizeUnitLabel;
 
+    auto* aspectRatioGap = new QWidget(m_panel);
+    aspectRatioGap->setFixedSize(kAspectRatioSelectGap, 1);
+    aspectRatioGap->setProperty(kAlwaysMouseTransparentProperty, true);
+    aspectRatioGap->setAttribute(Qt::WA_TransparentForMouseEvents, true);
+    panelLayout->addWidget(aspectRatioGap);
+
+    m_aspectRatioSelect = new adqt::widgets::AdSelect(m_panel);
+    m_aspectRatioSelect->setObjectName(QStringLiteral("screenshotSelectionAspectRatioSelect"));
+    m_aspectRatioSelect->setFocusPolicy(Qt::NoFocus);
+    m_aspectRatioSelect->setMode(adqt::widgets::AdSelect::Mode::Single);
+    m_aspectRatioSelect->setSizeAdjustPolicy(
+        adqt::widgets::AdSelect::SizeAdjustPolicy::AdjustToCurrentText);
+    m_aspectRatioSelect->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
+    m_aspectRatioSelect->setControlSize(adqt::widgets::AdSelect::ControlSize::Small);
+    m_aspectRatioSelect->setVariant(adqt::widgets::AdSelect::Variant::Borderless);
+    m_aspectRatioSelect->setSearchEnabled(false);
+    m_aspectRatioSelect->setAllowClear(false);
+    m_aspectRatioSelect->setPopupLayerMode(adqt::widgets::AdSelect::PopupLayerMode::QtTool);
+    m_aspectRatioSelect->setPopupMatchSelectWidth(false);
+    m_aspectRatioSelect->setPopupWidth(112);
+    m_aspectRatioSelect->setPlacement(adqt::widgets::AdSelect::Placement::BottomLeft);
+    QFont ratioFont = m_aspectRatioSelect->font();
+    ratioFont.setPixelSize(14);
+    ratioFont.setWeight(QFont::Normal);
+    m_aspectRatioSelect->setFont(ratioFont);
+    adqt::widgets::AdSelect::ComponentTokens ratioTokens;
+    ratioTokens.metrics.controlHeight =
+        toolbar_widgets::PanelHeight - toolbar_widgets::PanelVerticalPadding * 2;
+    ratioTokens.metrics.borderRadius = toolbar_widgets::PanelRadius;
+    ratioTokens.metrics.borderWidth = 0;
+    ratioTokens.metrics.horizontalPadding = 4;
+    ratioTokens.metrics.iconSize = 12;
+    ratioTokens.metrics.selectorFontSize = 14;
+    ratioTokens.metrics.optionFontSize = 14;
+    ratioTokens.metrics.optionHeight = 28;
+    ratioTokens.metrics.popupMaxHeight = 240;
+    ratioTokens.colors.selectorText = toolbar_widgets::panelTextColor();
+    ratioTokens.colors.placeholderText = toolbar_widgets::panelTextColor();
+    ratioTokens.colors.suffix = toolbar_widgets::panelTextColor();
+    ratioTokens.colors.disabledText = toolbar_widgets::panelTextColor();
+    m_aspectRatioSelect->setComponentTokens(ratioTokens);
+    m_aspectRatioSelect->setFixedHeight(*ratioTokens.metrics.controlHeight);
+    m_aspectRatioSelect->installEventFilter(this);
+    updateAspectRatioOptions();
+    updateAspectRatioSelectStyle();
+    panelLayout->addWidget(m_aspectRatioSelect);
+    m_editingWidgets << aspectRatioGap << m_aspectRatioSelect;
+    connect(m_aspectRatioSelect, &adqt::widgets::AdSelect::selected, this,
+            [this](const QVariant& value, const QString&) {
+                if (pointerInteractionEnabled() && m_selectionResizable) {
+                    m_commands.setSelectionAspectRatioPresetFromToolbar(
+                        screenshotSelectionAspectRatioPresetFromId(value.toString()));
+                }
+                const QSignalBlocker blocker(m_aspectRatioSelect);
+                m_aspectRatioSelect->setCurrentValue(
+                    screenshotSelectionAspectRatioPresetId(m_aspectRatioPreset));
+            });
+    connect(m_aspectRatioSelect, &adqt::widgets::AdSelect::popupOpening, this, [this]() {
+        prepareAspectRatioPopupInput();
+        m_focusBeforeAspectRatioPopup = QApplication::focusWidget();
+        m_commands.hideColorPickersForScreenshotUi();
+    });
+    connect(m_aspectRatioSelect, &adqt::widgets::AdSelect::popupVisibleChanged, this,
+            [this](bool visible) {
+                m_commands.setSelectionToolbarPopupVisible(visible);
+                updateAspectRatioSelectStyle();
+                const auto* panel = static_cast<SelectionToolbarPanel*>(m_panel);
+                setToolbarHovered(visible || panel->pointerHovered());
+                if (!visible) {
+                    scheduleToolbarHoverSync();
+                    const QPointer<QWidget> previousFocus = m_focusBeforeAspectRatioPopup;
+                    m_focusBeforeAspectRatioPopup = nullptr;
+                    QTimer::singleShot(0, this, [this, previousFocus]() {
+                        if (isVisible() && pointerInteractionEnabled() &&
+                            previousFocus != nullptr && previousFocus->isVisible() &&
+                            window()->isActiveWindow() && !m_aspectRatioSelect->popupVisible()) {
+                            QWidget* currentFocus = QApplication::focusWidget();
+                            const bool popupOwnsFocus =
+                                currentFocus != nullptr && m_aspectRatioPopupView != nullptr &&
+                                m_aspectRatioPopupView->window()->isAncestorOf(currentFocus);
+                            if (currentFocus != nullptr && currentFocus != previousFocus &&
+                                !popupOwnsFocus) {
+                                return;
+                            }
+                            previousFocus->setFocus(Qt::PopupFocusReason);
+                        }
+                    });
+                }
+            });
+
     QWidget* selectionSettingsSeparator = addSeparator();
     panelLayout->addWidget(selectionSettingsSeparator);
 
@@ -234,17 +352,31 @@ ScreenshotSelectionToolbarWidget::ScreenshotSelectionToolbarWidget(
     updateWindowSize();
 }
 
+ScreenshotSelectionToolbarWidget::~ScreenshotSelectionToolbarWidget() {
+    closeAspectRatioPopup();
+    setToolbarHovered(false);
+}
+
 void ScreenshotSelectionToolbarWidget::resetForNewCapture() {
+    closeAspectRatioPopup();
     m_selection = QRect();
     m_displayValues = {};
     m_aspectRatioLocked = false;
+    m_aspectRatioPreset = ScreenshotSelectionAspectRatioPreset::Free;
+    {
+        const QSignalBlocker blocker(m_aspectRatioSelect);
+        m_aspectRatioSelect->setCurrentValue(
+            screenshotSelectionAspectRatioPresetId(m_aspectRatioPreset));
+    }
     m_displayMode = DisplayMode::Full;
     m_pointerInteractionEnabled = true;
     m_cornerRadius = 0;
     m_shadowWidth = 0;
     m_canvasUsesPoints = false;
     updateLabels();
+    updateLockIconPixmap();
     updateDisplayMode();
+    updateWindowSize();
 }
 
 void ScreenshotSelectionToolbarWidget::prepareForDisplay() {
@@ -281,7 +413,8 @@ void ScreenshotSelectionToolbarWidget::prewarm() {
 void ScreenshotSelectionToolbarWidget::setSelectionState(
     const QRect& selection, bool aspectRatioLocked, int cornerRadius, int shadowWidth,
     DisplayMode displayMode, bool canvasUsesPoints,
-    std::optional<ScreenshotSelectionDisplayValues> displayValues) {
+    std::optional<ScreenshotSelectionDisplayValues> displayValues,
+    ScreenshotSelectionAspectRatioPreset aspectRatioPreset) {
     const QRect normalized = selection.normalized();
     const int clampedRadius = std::clamp(cornerRadius, 0, kScreenshotSelectionCornerRadiusMax);
     const int clampedShadowWidth = std::clamp(shadowWidth, 0, kScreenshotSelectionShadowWidthMax);
@@ -293,11 +426,12 @@ void ScreenshotSelectionToolbarWidget::setSelectionState(
         canvasUsesPoints});
     const bool unitsChanged = m_canvasUsesPoints != canvasUsesPoints || m_displayValues != values;
     const bool aspectRatioChanged = m_aspectRatioLocked != aspectRatioLocked;
+    const bool aspectRatioPresetChanged = m_aspectRatioPreset != aspectRatioPreset;
     const bool cornerRadiusChanged = m_cornerRadius != clampedRadius;
     const bool shadowWidthChanged = m_shadowWidth != clampedShadowWidth;
     const bool displayModeChanged = m_displayMode != displayMode;
     if (!selectionChanged && !unitsChanged && !aspectRatioChanged && !cornerRadiusChanged &&
-        !shadowWidthChanged && !displayModeChanged) {
+        !shadowWidthChanged && !displayModeChanged && !aspectRatioPresetChanged) {
         return;
     }
 
@@ -305,6 +439,7 @@ void ScreenshotSelectionToolbarWidget::setSelectionState(
     m_displayValues = values;
     m_canvasUsesPoints = canvasUsesPoints;
     m_aspectRatioLocked = aspectRatioLocked;
+    m_aspectRatioPreset = aspectRatioPreset;
     m_cornerRadius = clampedRadius;
     m_shadowWidth = clampedShadowWidth;
     m_displayMode = displayMode;
@@ -317,10 +452,15 @@ void ScreenshotSelectionToolbarWidget::setSelectionState(
     if (aspectRatioChanged) {
         updateLockIconPixmap();
     }
+    if (aspectRatioPresetChanged) {
+        const QSignalBlocker blocker(m_aspectRatioSelect);
+        m_aspectRatioSelect->setCurrentValue(
+            screenshotSelectionAspectRatioPresetId(m_aspectRatioPreset));
+    }
     if (displayModeChanged) {
         updateDisplayMode();
     }
-    if (labelGeometryChanged || displayModeChanged) {
+    if (labelGeometryChanged || displayModeChanged || aspectRatioPresetChanged) {
         updateWindowSize();
     }
 }
@@ -331,6 +471,17 @@ QSize ScreenshotSelectionToolbarWidget::contentSizeHint() const {
 
 bool ScreenshotSelectionToolbarWidget::containsInteractiveGlobalPoint(
     const QPoint& globalPosition) const {
+    if (!pointerInteractionEnabled()) {
+        return false;
+    }
+    if (m_aspectRatioSelect->popupVisible()) {
+        const auto* view = m_aspectRatioSelect->view();
+        const QWidget* popup = view != nullptr ? view->window() : nullptr;
+        if (popup != nullptr && popup->isVisible() &&
+            popup->rect().contains(popup->mapFromGlobal(globalPosition))) {
+            return true;
+        }
+    }
     return isPointInInteractiveContent(mapFromGlobal(globalPosition));
 }
 
@@ -339,6 +490,33 @@ void ScreenshotSelectionToolbarWidget::moveContentTo(const QPoint& position) {
 }
 
 bool ScreenshotSelectionToolbarWidget::eventFilter(QObject* watched, QEvent* event) {
+    if (watched == m_aspectRatioPopupView && event != nullptr &&
+        event->type() == QEvent::KeyPress) {
+        auto* keyEvent = static_cast<QKeyEvent*>(event);
+        const bool confirmsOption =
+            keyEvent->key() == Qt::Key_Return || keyEvent->key() == Qt::Key_Enter;
+        if (confirmsOption && pointerInteractionEnabled() && m_selectionResizable &&
+            m_aspectRatioSelect->currentValue() == QStringLiteral("free") &&
+            m_aspectRatioPopupView->currentIndex().row() == 0) {
+            // Explicit Free also clears a remembered preset when the active value is already Free.
+            m_commands.setSelectionAspectRatioPresetFromToolbar(
+                ScreenshotSelectionAspectRatioPreset::Free);
+            m_aspectRatioSelect->hidePopup();
+            keyEvent->accept();
+            return true;
+        }
+    }
+    if (watched == m_aspectRatioSelect) {
+        if (event != nullptr &&
+            (event->type() == QEvent::Enter || event->type() == QEvent::Leave)) {
+            m_aspectRatioSelectHovered =
+                event->type() == QEvent::Enter && pointerInteractionEnabled();
+            updateAspectRatioSelectStyle();
+        }
+        // Select owns presses and keyboard input. The remaining panel controls open the resize
+        // modal.
+        return QWidget::eventFilter(watched, event);
+    }
     if (!pointerInteractionEnabled()) {
         return QWidget::eventFilter(watched, event);
     }
@@ -406,10 +584,12 @@ void ScreenshotSelectionToolbarWidget::retranslateUi() {
         updateLabel(label);
     }
     updateLabels(true);
+    updateAspectRatioOptions();
     updateWindowSize();
 }
 
 void ScreenshotSelectionToolbarWidget::hideEvent(QHideEvent* event) {
+    closeAspectRatioPopup();
     setToolbarHovered(false);
     QWidget::hideEvent(event);
 }
@@ -489,6 +669,7 @@ QWidget* ScreenshotSelectionToolbarWidget::addSeparator() {
 }
 
 void ScreenshotSelectionToolbarWidget::setToolbarHovered(bool hovered) {
+    hovered = hovered || (m_aspectRatioSelect != nullptr && m_aspectRatioSelect->popupVisible());
     hovered = hovered && pointerInteractionEnabled();
     if (m_toolbarHovered == hovered) {
         return;
@@ -516,6 +697,89 @@ void ScreenshotSelectionToolbarWidget::scheduleToolbarHoverSync() {
     });
 }
 
+void ScreenshotSelectionToolbarWidget::updateAspectRatioOptions() {
+    const QSignalBlocker blocker(m_aspectRatioSelect);
+    QVector<adqt::widgets::AdSelect::Option> options;
+    options.reserve(static_cast<qsizetype>(kAspectRatioPresets.size()));
+    int widestLabel = 0;
+    const QFontMetrics metrics(m_aspectRatioSelect->font());
+    for (std::size_t index = 0; index < kAspectRatioPresets.size(); ++index) {
+        const auto preset = kAspectRatioPresets[index];
+        const QString id = screenshotSelectionAspectRatioPresetId(preset);
+        const QString label = translateToolbarText(kAspectRatioLabelSources[index]);
+        options.push_back({id, label});
+        widestLabel = std::max(widestLabel, metrics.horizontalAdvance(label));
+    }
+    m_aspectRatioSelect->setOptions(options);
+    m_aspectRatioSelect->setCurrentValue(
+        screenshotSelectionAspectRatioPresetId(m_aspectRatioPreset));
+    m_aspectRatioSelect->setToolTip(tr("Selection aspect ratio"));
+    m_aspectRatioSelect->setAccessibleName(tr("Selection aspect ratio"));
+    m_aspectRatioSelect->setPopupWidth(std::max(112, widestLabel + 40));
+}
+
+void ScreenshotSelectionToolbarWidget::prepareAspectRatioPopupInput() {
+    m_aspectRatioValueBeforePopupActivation = m_aspectRatioSelect->currentValue().toString();
+    auto* view = m_aspectRatioSelect->view();
+    if (view == nullptr || m_aspectRatioPopupView == view) {
+        return;
+    }
+    m_aspectRatioPopupView = view;
+    view->installEventFilter(this);
+    connect(view, &QListView::pressed, this, [this](const QModelIndex&) {
+        m_aspectRatioValueBeforePopupActivation = m_aspectRatioSelect->currentValue().toString();
+    });
+    connect(view, &QListView::clicked, this, [this](const QModelIndex& index) {
+        if (index.row() == 0 && pointerInteractionEnabled() && m_selectionResizable &&
+            m_aspectRatioValueBeforePopupActivation == QStringLiteral("free") &&
+            m_aspectRatioSelect->currentValue() == QStringLiteral("free")) {
+            m_commands.setSelectionAspectRatioPresetFromToolbar(
+                ScreenshotSelectionAspectRatioPreset::Free);
+        }
+    });
+}
+
+void ScreenshotSelectionToolbarWidget::updateAspectRatioSelectStyle() {
+    if (m_aspectRatioSelect == nullptr) {
+        return;
+    }
+    const bool highlighted = !m_aspectRatioSelect->disabled() &&
+                             (m_aspectRatioSelectHovered || m_aspectRatioSelect->popupVisible());
+    if (m_aspectRatioSelectHighlight == highlighted) {
+        return;
+    }
+    m_aspectRatioSelectHighlight = highlighted;
+    adqt::widgets::AdSelect::SemanticStyles styles;
+    styles.root.backgroundColor = Qt::transparent;
+    styles.selector.backgroundColor =
+        highlighted ? QColor(22, 119, 255, 107) : QColor(Qt::transparent);
+    styles.selector.textColor = toolbar_widgets::panelTextColor();
+    styles.selector.borderColor = Qt::transparent;
+    styles.suffix.textColor = toolbar_widgets::panelTextColor();
+    m_aspectRatioSelect->setSemanticStyles(styles);
+}
+
+void ScreenshotSelectionToolbarWidget::updateAspectRatioSelectAvailability() {
+    if (m_aspectRatioSelect == nullptr) {
+        return;
+    }
+    const bool enabled = pointerInteractionEnabled() && m_selectionResizable;
+    if (!enabled) {
+        closeAspectRatioPopup();
+    }
+    m_aspectRatioSelect->setDisabled(!enabled);
+    updateAspectRatioSelectStyle();
+}
+
+void ScreenshotSelectionToolbarWidget::closeAspectRatioPopup() {
+    if (m_aspectRatioSelect == nullptr) {
+        return;
+    }
+    m_aspectRatioSelectHovered = false;
+    m_aspectRatioSelect->hidePopup();
+    updateAspectRatioSelectStyle();
+}
+
 bool ScreenshotSelectionToolbarWidget::fieldForObject(QObject* object, Field* outField) const {
     if (object == nullptr || outField == nullptr) {
         return false;
@@ -541,6 +805,7 @@ void ScreenshotSelectionToolbarWidget::setPointerInteractionEnabled(bool enabled
         return;
     }
     m_pointerInteractionEnabled = enabled;
+    updateAspectRatioSelectAvailability();
     // A selection drag owns the pointer even when this moving toolbar passes
     // underneath it. Clear preview hover before the next selection frame.
     updateMouseEventTransparency();
@@ -552,7 +817,11 @@ void ScreenshotSelectionToolbarWidget::setPointerInteractionEnabled(bool enabled
 }
 
 void ScreenshotSelectionToolbarWidget::setSelectionResizable(bool enabled) {
+    if (m_selectionResizable == enabled) {
+        return;
+    }
     m_selectionResizable = enabled;
+    updateAspectRatioSelectAvailability();
     for (auto* label : {m_widthLabel, m_heightLabel, m_lockIconLabel}) {
         label->setCursor(enabled ? Qt::SizeHorCursor : Qt::ArrowCursor);
     }
@@ -681,6 +950,7 @@ void ScreenshotSelectionToolbarWidget::updateIconPixmaps() {
 
 void ScreenshotSelectionToolbarWidget::updateDisplayMode() {
     const bool fullMode = m_displayMode == DisplayMode::Full;
+    updateAspectRatioSelectAvailability();
     updateMouseEventTransparency();
     updateInputRegion();
     if (!fullMode) {

@@ -1,6 +1,7 @@
 #include "alert_style.h"
 
 #include "theme/theme.h"
+#include "theme/theme_color_utils.h"
 
 #include <algorithm>
 
@@ -151,6 +152,14 @@ AlertVisualStyle resolveAlertVisualStyle(const AlertStyleInput& input,
     }
   }
 
+  if (resolved.values.backgroundOpacity != 1.0) {
+    style.background =
+        adqt::theme::applyBackgroundOpacity(style.background, resolved.values.backgroundOpacity);
+    style.closeButtonHoverBackground = adqt::theme::applyBackgroundOpacity(
+        style.closeButtonHoverBackground, resolved.values.backgroundOpacity);
+    style.closeButtonPressedBackground = adqt::theme::applyBackgroundOpacity(
+        style.closeButtonPressedBackground, resolved.values.backgroundOpacity);
+  }
   return style;
 }
 

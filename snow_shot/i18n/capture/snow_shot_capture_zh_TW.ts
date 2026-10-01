@@ -355,12 +355,44 @@
     <context>
         <name>ScreenshotSelectionToolbarWidget</name>
         <message>
+            <source>16:9</source>
+            <translation>16:9</translation>
+        </message>
+        <message>
+            <source>1:1</source>
+            <translation>1:1</translation>
+        </message>
+        <message>
+            <source>2:3</source>
+            <translation>2:3</translation>
+        </message>
+        <message>
+            <source>3:2</source>
+            <translation>3:2</translation>
+        </message>
+        <message>
+            <source>3:4</source>
+            <translation>3:4</translation>
+        </message>
+        <message>
+            <source>4:3</source>
+            <translation>4:3</translation>
+        </message>
+        <message>
+            <source>9:16</source>
+            <translation>9:16</translation>
+        </message>
+        <message>
             <source>Corner radius</source>
             <translation>圓角半徑</translation>
         </message>
         <message>
             <source>Corner radius is unavailable for custom regions</source>
             <translation>自訂區域不支援圓角半徑</translation>
+        </message>
+        <message>
+            <source>Free</source>
+            <translation>自由</translation>
         </message>
         <message>
             <source>Height</source>
@@ -377,6 +409,10 @@
         <message>
             <source>Pixels</source>
             <translation>像素</translation>
+        </message>
+        <message>
+            <source>Selection aspect ratio</source>
+            <translation>選取範圍長寬比</translation>
         </message>
         <message>
             <source>Shadow width</source>
