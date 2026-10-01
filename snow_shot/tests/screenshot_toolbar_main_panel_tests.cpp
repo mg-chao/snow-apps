@@ -27,6 +27,7 @@
 #include <QFile>
 #include <QGraphicsDropShadowEffect>
 #include <QImage>
+#include <QHideEvent>
 #include <QLabel>
 #include <QLayout>
 #include <QLineEdit>
@@ -34,6 +35,7 @@
 #include <QPainter>
 #include <QPixmap>
 #include <QPointer>
+#include <QShowEvent>
 #include <QVector>
 #include <QTemporaryDir>
 #include <QThread>
@@ -53,6 +55,23 @@ class LayoutRequestCounter final : public QObject {
         Q_UNUSED(watched);
         if (event != nullptr && event->type() == QEvent::LayoutRequest) {
             ++count;
+        }
+        return false;
+    }
+};
+
+class ToolbarAppearanceEventCounter final : public QObject {
+  public:
+    int updateRequests = 0;
+    int styleChanges = 0;
+    int themeChanges = 0;
+
+  protected:
+    bool eventFilter(QObject*, QEvent* event) override {
+        if (event->type() == QEvent::UpdateRequest) {
+            ++updateRequests;
+        } else if (event->type() == QEvent::StyleChange) {
+            ++styleChanges;
         }
         return false;
     }
@@ -1062,6 +1081,56 @@ void spotlightConfigSurvivesStyleRowEviction() {
             "Spotlight updates must not modify an opacity editor reused by Watermark");
 }
 
+void toolbarWithoutSkinLeavesAppearanceIdle(snow_shot::storage::ConfigurationStore& configuration,
+                                            const QString& skinPath) {
+    ScreenshotToolbarPanel row;
+    row.setGraphicsEffect(nullptr);
+    row.resize(160, 48);
+    adqt::widgets::AdButton child(&row);
+    child.setGeometry(8, 8, 64, 32);
+    row.show();
+    flushEvents();
+
+    auto& themes = adqt::theme::ThemeManager::instance();
+    adqt::theme::ThemeOverride external;
+    external.primary = QColor(Qt::blue);
+    external.backgroundOpacity = 0.65;
+    themes.setScopeOverride(&row, external);
+    flushEvents();
+    ToolbarAppearanceEventCounter counter;
+    row.installEventFilter(&counter);
+    child.installEventFilter(&counter);
+    QObject::connect(&themes, &adqt::theme::ThemeManager::themeChanged, &counter,
+                     [&counter] { ++counter.themeChanges; });
+    const auto requireIdleLifecycle = [&] {
+        // Deliver the lifecycle notifications without remapping a native window:
+        // repainting for a real show is Qt's responsibility, not skin appearance work.
+        for (int index = 0; index < 8; ++index) {
+            QHideEvent hide;
+            QCoreApplication::sendEvent(&row, &hide);
+            QShowEvent show;
+            QCoreApplication::sendEvent(&row, &show);
+        }
+        flushEvents();
+        require(counter.updateRequests == 0 && counter.styleChanges == 0 &&
+                    counter.themeChanges == 0,
+                "unskinned toolbar lifecycle must not schedule paint or theme changes");
+        require(themes.scopeOverride(&row) == external,
+                "an inactive skin must preserve externally supplied scope fields");
+        require(snow_shot::presentation::MainWindowSkinController::existingInstance() == nullptr,
+                "an inactive toolbar must leave the skin service unallocated");
+    };
+    requireIdleLifecycle();
+    require(configuration.setValues({{QStringLiteral("interface/toolbar_skin_path"), skinPath},
+                                     {QStringLiteral("interface/skin_opacity"), 0}}),
+            "configure a fully transparent skin without enabling its renderer");
+    requireIdleLifecycle();
+    require(configuration.setValues({{QStringLiteral("interface/toolbar_skin_path"), QString()},
+                                     {QStringLiteral("interface/skin_opacity"), 100}}),
+            "restore the empty toolbar configuration");
+    requireIdleLifecycle();
+}
+
 void toolbarSkinProfilesAndLifecycle() {
     namespace presentation = snow_shot::presentation;
     auto& storage = snow_shot::storage::ApplicationStorage::instance();
@@ -1094,6 +1163,7 @@ void toolbarSkinProfilesAndLifecycle() {
     require(configuration.setValues({{QStringLiteral("interface/skin_mask_opacity"), 0},
                                      {QStringLiteral("interface/skin_blur_level"), 0}}),
             "prepare unmasked deterministic skin rendering");
+    toolbarWithoutSkinLeavesAppearanceIdle(configuration, toolbarPath);
 
     ScreenshotToolbarPanel first;
     ScreenshotToolbarPanel second;
@@ -1121,6 +1191,31 @@ void toolbarSkinProfilesAndLifecycle() {
                 renderedCenterColor(second) == QColor(Qt::magenta) &&
                 renderedCenterColor(main) == QColor(Qt::green),
             "unequal toolbar viewports and the main interface must retain independent skins");
+    flushEvents();
+    {
+        ToolbarAppearanceEventCounter counter;
+        first.installEventFilter(&counter);
+        for (int index = 0; index < 8; ++index) {
+            emit controller.appearanceChanged();
+            emit controller.viewFrameChanged(&first);
+        }
+        flushEvents();
+        require(counter.updateRequests == 0,
+                "unchanged skin appearance and frame notifications must not repaint a toolbar");
+        const auto preparationJobs = controller.diagnostics().preparationJobs;
+        require(configuration.setValue(QStringLiteral("interface/skin_opacity"), 50),
+                "change only the opacity of a visible toolbar skin");
+        waitUntil([&] { return controller.opacity() == 0.5; });
+        flushEvents();
+        require(counter.updateRequests > 0 && renderedCenterColor(first) != QColor(Qt::magenta) &&
+                    controller.diagnostics().preparationJobs == preparationJobs,
+                "skin opacity changes must repaint without rebuilding the toolbar image");
+        require(configuration.setValue(QStringLiteral("interface/skin_opacity"), 100),
+                "restore the fully visible toolbar fixture");
+        waitUntil([&] { return controller.opacity() == 1.0; });
+        require(renderedCenterColor(first) == QColor(Qt::magenta),
+                "restoring skin opacity must restore the cached toolbar image");
+    }
     QImage clipped(first.size(), QImage::Format_ARGB32_Premultiplied);
     clipped.fill(Qt::transparent);
     QPainter painter(&clipped);

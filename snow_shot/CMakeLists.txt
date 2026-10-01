@@ -8841,15 +8841,41 @@ endif()
 if(SNOW_SHOT_BUILD_BENCHMARKS)
     add_executable(snow-shot-skin-surface-performance-benchmark
         tests/skin_surface_performance_benchmark.cpp
+        include/snow_shot/presentation/languagemanager.h
+        include/snow_shot/presentation/pinnedwindowgroupmanager.h
         include/snow_shot/presentation/styles/thememanager.h
+        include/snow_shot/presentation/systemtraycontroller.h
         src/presentation/tools/screenshottoolbarmainpanel.cpp
         src/presentation/tools/screenshottoolpalettebuttons.cpp
-        src/presentation/components/icons/snowshoticons.cpp
+        src/presentation/services/languagemanager.cpp
+        src/presentation/services/pinnedwindowgroupmanager.cpp
+        src/presentation/services/systemtraycontroller.cpp
         src/presentation/styles/thememanager.cpp
         src/presentation/styles/themecolorscheme.cpp)
     target_include_directories(snow-shot-skin-surface-performance-benchmark PRIVATE include)
+    target_compile_definitions(snow-shot-skin-surface-performance-benchmark PRIVATE
+        SNOW_SKIN_SURFACE_BUILD_CONFIG="$<CONFIG>")
     target_link_libraries(snow-shot-skin-surface-performance-benchmark PRIVATE
-        snow_shot_storage snow_shot_image_codec snow_draw_engine_qt_canvas ant_design_qt Qt6::Widgets)
+        snow_shot_storage snow_shot_image_codec snow_shot_settings_catalog
+        snow_draw_engine_qt_canvas ant_design_qt Qt6::Widgets)
+    if(APPLE)
+        target_sources(snow-shot-skin-surface-performance-benchmark PRIVATE
+            src/platform/macos/systemtraymenu.mm)
+        target_link_libraries(snow-shot-skin-surface-performance-benchmark PRIVATE
+            "-framework AppKit")
+    endif()
+    qt_import_plugins(snow-shot-skin-surface-performance-benchmark EXCLUDE Qt6::QICOPlugin)
+    qt_add_resources(snow-shot-skin-surface-performance-benchmark "snow_shot_skin_surface_tray_assets"
+        PREFIX "/snow-shot/app-icons"
+        BASE "${CMAKE_CURRENT_SOURCE_DIR}/resources"
+        FILES
+            "${CMAKE_CURRENT_SOURCE_DIR}/resources/snow-shot-tray-default.png"
+            "${CMAKE_CURRENT_SOURCE_DIR}/resources/snow-shot-tray-light.png"
+            "${CMAKE_CURRENT_SOURCE_DIR}/resources/snow-shot-tray-dark.png"
+            "${CMAKE_CURRENT_SOURCE_DIR}/resources/snow-shot-tray-snow-default.png"
+            "${CMAKE_CURRENT_SOURCE_DIR}/resources/snow-shot-tray-snow-light.png"
+            "${CMAKE_CURRENT_SOURCE_DIR}/resources/snow-shot-tray-snow-dark.png")
+    snow_shot_add_translations(snow-shot-skin-surface-performance-benchmark)
     snow_shot_import_offscreen_platform(snow-shot-skin-surface-performance-benchmark)
 endif()
 

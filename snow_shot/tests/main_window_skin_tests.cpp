@@ -172,6 +172,142 @@ void allSkinPositions() {
             "unknown skin positions must safely retain the centered appearance");
 }
 
+void invisibleSkinsSkipRendering(const QTemporaryDir& directory) {
+    const QString path = directory.filePath(QStringLiteral("invisible.png"));
+    writeImage(path, Qt::red);
+    auto& configuration = storage::ApplicationStorage::instance().configuration();
+    require(configuration.setValues({{QStringLiteral("interface/skin_path"), path},
+                                     {QStringLiteral("interface/toolbar_skin_path"), path},
+                                     {QStringLiteral("interface/tray_menu_skin_path"), path},
+                                     {QStringLiteral("interface/skin_opacity"), 0},
+                                     {QStringLiteral("interface/skin_mask_opacity"), 100},
+                                     {QStringLiteral("interface/skin_blur_level"), 20}}),
+            "configure invisible skins on every surface");
+    presentation::MainWindowSkinController controller;
+    std::array<QObject, 3> views;
+    for (std::size_t i = 0; i < views.size(); ++i) {
+        controller.attach(&views[i], static_cast<presentation::SkinSurface>(i), QSize(96, 64), 1.0);
+    }
+    waitUntil([&] { return !controller.diagnostics().busy; });
+    const auto requireNoResources = [&] {
+        const auto counts = controller.diagnostics();
+        require(counts.retainedBytes == 0 && counts.scratchRetainedBytes == 0 &&
+                    counts.executorCount == 0 && counts.idleFrameCount == 0,
+                "invisible skins must release all decoded, prepared and executor resources");
+        for (auto& view : views) {
+            require(!controller.skinActive(&view) && controller.frame(&view).image.isNull() &&
+                        controller.pixmap(&view).isNull(),
+                    "invisible skin views must publish no frame");
+        }
+    };
+    require(controller.diagnostics().decodeJobs == 0 &&
+                controller.diagnostics().preparationJobs == 0 &&
+                controller.diagnostics().pixmapConversions == 0,
+            "initial zero opacity must not submit any image work");
+    requireNoResources();
+    for (const int mask : {0, 50, 100}) {
+        require(configuration.setValues({{QStringLiteral("interface/skin_mask_opacity"), mask},
+                                         {QStringLiteral("interface/skin_blur_level"), mask}}),
+                "edit invisible skin effects");
+        controller.reload();
+        for (auto& view : views) {
+            controller.setViewport(&view, QSize(100 + mask, 80 + mask), 2.0, true);
+        }
+    }
+    require(controller.diagnostics().decodeJobs == 0 &&
+                controller.diagnostics().preparationJobs == 0,
+            "invisible effect and viewport changes must remain inert");
+    controller.validate(presentation::SkinSurface::MainWindow);
+    waitUntil([&] { return !controller.diagnostics().busy; });
+    require(controller.diagnostics().decodeJobs == 1 &&
+                controller.diagnostics().preparationJobs == 0 && !controller.hasError(),
+            "explicit validation may decode invisible skins without preparing a raster");
+    requireNoResources();
+    controller.validate(presentation::SkinSurface::MainWindow);
+    require(controller.diagnostics().decodeJobs == 1,
+            "invisible validation must cache its status without retaining image pixels");
+    require(configuration.setValue(QStringLiteral("interface/skin_opacity"), 100),
+            "restore visible skin opacity");
+    controller.reload();
+    waitUntil([&] { return !controller.diagnostics().busy; });
+    require(controller.skinActive(&views[0]) && controller.skinActive(&views[1]) &&
+                controller.skinActive(&views[2]),
+            "restoring opacity must reactivate every attached surface");
+    require(configuration.setValue(QStringLiteral("interface/skin_opacity"), 0),
+            "disable the active skin");
+    controller.reload();
+    waitUntil([&] { return !controller.diagnostics().busy; });
+    requireNoResources();
+    const auto stopped = controller.diagnostics();
+    for (auto& view : views) {
+        controller.setViewport(&view, QSize(350, 240), 1.5, true);
+        controller.detach(&view);
+        controller.attach(&view, static_cast<presentation::SkinSurface>(&view - views.data()),
+                          QSize(350, 240), 1.5);
+    }
+    require(controller.diagnostics().decodeJobs == stopped.decodeJobs &&
+                controller.diagnostics().preparationJobs == stopped.preparationJobs &&
+                controller.diagnostics().pixmapConversions == stopped.pixmapConversions,
+            "reopening invisible surfaces must schedule no image work");
+    requireNoResources();
+
+    // Cancel synchronously at submission, before queued completion can publish a frame.
+    controller.reload(presentation::SkinSurface::MainWindow);
+    bool cancelled = false;
+    const auto cancel = QObject::connect(
+        &controller, &presentation::MainWindowSkinController::statusChanged, &controller, [&] {
+            if (!cancelled && controller.opacity() > 0.0 && controller.diagnostics().busy) {
+                cancelled = true;
+                require(configuration.setValue(QStringLiteral("interface/skin_opacity"), 0),
+                        "disable a running skin job from its loading notification");
+                controller.reload();
+                controller.validate(presentation::SkinSurface::MainWindow);
+            }
+        });
+    require(configuration.setValue(QStringLiteral("interface/skin_opacity"), 100),
+            "begin an interrupted opacity restoration");
+    controller.reload();
+    require(cancelled, "the active rendering job must be interrupted deterministically");
+    waitUntil([&] { return !controller.diagnostics().busy; });
+    QObject::disconnect(cancel);
+    requireNoResources();
+    require(controller.diagnostics().decodeJobs == stopped.decodeJobs + 2 && !controller.hasError(),
+            "cancelled rendering must preserve queued explicit zero-opacity validation");
+
+    controller.reload(presentation::SkinSurface::MainWindow);
+    bool rapidlyRestored = false;
+    const auto restore = QObject::connect(
+        &controller, &presentation::MainWindowSkinController::statusChanged, &controller, [&] {
+            if (!rapidlyRestored && controller.opacity() > 0.0 && controller.diagnostics().busy) {
+                rapidlyRestored = true;
+                require(configuration.setValue(QStringLiteral("interface/skin_opacity"), 0),
+                        "cancel the next rendering job");
+                controller.reload();
+                controller.validate(presentation::SkinSurface::MainWindow);
+                require(configuration.setValue(QStringLiteral("interface/skin_opacity"), 100),
+                        "restore opacity before the cancelled job completes");
+                controller.reload();
+            }
+        });
+    require(configuration.setValue(QStringLiteral("interface/skin_opacity"), 100),
+            "reactivate after an interrupted load");
+    controller.reload();
+    require(rapidlyRestored, "rapid opacity restoration must interrupt a running job");
+    waitUntil([&] { return !controller.diagnostics().busy; });
+    QObject::disconnect(restore);
+    require(controller.skinActive(&views[0]) && controller.skinActive(&views[1]) &&
+                controller.skinActive(&views[2]),
+            "rapid reactivation must publish current frames and preserve queued validation");
+    require(configuration.setValues({{QStringLiteral("interface/skin_path"), QString()},
+                                     {QStringLiteral("interface/toolbar_skin_path"), QString()},
+                                     {QStringLiteral("interface/tray_menu_skin_path"), QString()},
+                                     {QStringLiteral("interface/skin_blur_level"), 0},
+                                     {QStringLiteral("interface/skin_mask_opacity"), 80}}),
+            "restore the skin defaults after invisible lifecycle checks");
+    controller.reload();
+    waitUntil([&] { return !controller.diagnostics().busy; });
+}
+
 void controllerCachingAndLifetime(const QTemporaryDir& directory) {
     const QString firstPath = directory.filePath(QStringLiteral("first.png"));
     const QString secondPath = directory.filePath(QStringLiteral("second.png"));
@@ -928,6 +1064,7 @@ int main(int argc, char** argv) {
     auto& appStorage = storage::ApplicationStorage::instance();
     require(appStorage.initialize({temporary.path(), temporary.path(), 60000}).success,
             "initialize isolated skin settings");
+    invisibleSkinsSkipRendering(temporary);
     imageGeometryAndBlur();
     allSkinPositions();
     lazyLoadingAndReset(temporary);

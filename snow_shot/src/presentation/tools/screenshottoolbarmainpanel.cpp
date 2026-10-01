@@ -119,16 +119,18 @@ void ScreenshotToolbarPanel::syncSkinConfiguration() {
     m_skinConfiguration = &storage.configuration();
     connect(m_skinConfiguration, &snow_shot::storage::ConfigurationStore::valueChanged, this,
             [this](const QString& key) {
-                if (key == QStringLiteral("interface/toolbar_skin_path")) {
+                if (key == QStringLiteral("interface/toolbar_skin_path") ||
+                    key == QStringLiteral("interface/skin_opacity")) {
                     syncSkin();
                 }
             });
     syncSkin();
 }
 
-void ScreenshotToolbarPanel::releaseSkin() {
+bool ScreenshotToolbarPanel::releaseSkin() {
     const auto controller = m_skinController;
     const bool attached = m_skinAttached;
+    const bool frameChanged = !m_skinFrame.isNull();
     if (controller)
         disconnect(controller, nullptr, this, nullptr);
     m_skinAttached = false;
@@ -138,18 +140,21 @@ void ScreenshotToolbarPanel::releaseSkin() {
     // Detachment can synchronously notify settings listeners that close this row.
     if (controller && attached)
         controller->detach(this);
+    return frameChanged;
 }
 
 void ScreenshotToolbarPanel::syncSkin() {
-    const bool enabled = isVisible() && m_skinConfiguration &&
-                         !m_skinConfiguration->value(QStringLiteral("interface/toolbar_skin_path"))
-                              .toString()
-                              .isEmpty();
+    const bool enabled =
+        isVisible() && m_skinConfiguration &&
+        m_skinConfiguration->value(QStringLiteral("interface/skin_opacity")).toInt(100) > 0 &&
+        !m_skinConfiguration->value(QStringLiteral("interface/toolbar_skin_path"))
+             .toString()
+             .isEmpty();
     if (!enabled) {
         const QPointer<ScreenshotToolbarPanel> lifetime(this);
-        releaseSkin();
+        const bool frameChanged = releaseSkin();
         if (lifetime) {
-            syncSkinAppearance();
+            syncSkinAppearance(frameChanged);
         }
         return;
     }
@@ -178,23 +183,37 @@ void ScreenshotToolbarPanel::syncSkin() {
 }
 
 void ScreenshotToolbarPanel::syncSkinFrame() {
-    m_skinFrame = m_skinController ? m_skinController->pixmap(this) : QPixmap{};
-    m_skinPlacement =
+    const auto frame = m_skinController ? m_skinController->pixmap(this) : QPixmap{};
+    const auto placement =
         m_skinController ? m_skinController->frame(this).normalizedPlacement : QRectF{};
-    syncSkinAppearance();
+    const bool frameChanged =
+        m_skinFrame.cacheKey() != frame.cacheKey() || m_skinPlacement != placement;
+    m_skinFrame = frame;
+    m_skinPlacement = placement;
+    syncSkinAppearance(frameChanged);
 }
 
-void ScreenshotToolbarPanel::syncSkinAppearance() {
-    update();
-    auto& controlTheme = adqt::theme::ThemeManager::instance();
-    auto overrideValue = controlTheme.scopeOverride(this);
+void ScreenshotToolbarPanel::syncSkinAppearance(bool frameChanged) {
+    const bool active = !m_skinFrame.isNull() && m_skinController;
+    const qreal imageOpacity = active ? m_skinController->opacity() : 1.0;
+    const qreal maskOpacity = active ? m_skinController->maskOpacity() : 1.0;
+    const std::optional<qreal> mask = maskOpacity < 1.0 ? std::optional(maskOpacity) : std::nullopt;
+    const bool maskChanged = mask != m_skinMaskOpacity;
+    const bool paintChanged = frameChanged || imageOpacity != m_skinImageOpacity || maskChanged;
+    m_skinImageOpacity = imageOpacity;
+    m_skinMaskOpacity = mask;
+    if (paintChanged) {
+        update();
+    }
+    if (!maskChanged) {
+        return;
+    }
     // The row supplies the backdrop for its controls. Only a loaded skin can
     // replace their theme fills; text, icons, borders and preview colors stay intact.
-    if (!m_skinFrame.isNull() && m_skinController && m_skinController->maskOpacity() < 1.0) {
-        overrideValue.backgroundOpacity = m_skinController->maskOpacity();
-    } else {
-        overrideValue.backgroundOpacity.reset();
-    }
+    // Publish our state before a scope update can synchronously close this row.
+    auto& controlTheme = adqt::theme::ThemeManager::instance();
+    auto overrideValue = controlTheme.scopeOverride(this);
+    overrideValue.backgroundOpacity = mask;
     controlTheme.setScopeOverride(this, overrideValue);
 }
 
@@ -223,9 +242,9 @@ bool ScreenshotToolbarPanel::event(QEvent* event) {
             syncSkin();
         }
     } else if (event->type() == QEvent::Hide) {
-        releaseSkin();
+        const bool frameChanged = releaseSkin();
         if (lifetime) {
-            syncSkinAppearance();
+            syncSkinAppearance(frameChanged);
         }
     } else if (m_skinAttached && m_skinController &&
                (event->type() == QEvent::Resize ||
@@ -276,11 +295,11 @@ void ScreenshotToolbarPanel::paintEvent(QPaintEvent* event) {
     if (!m_skinFrame.isNull() && m_skinController) {
         painter.setClipPath(surfacePath());
         painter.setRenderHint(QPainter::SmoothPixmapTransform);
-        painter.setOpacity(m_skinController->opacity());
+        painter.setOpacity(m_skinImageOpacity);
         const QRectF target(m_skinPlacement.x() * width(), m_skinPlacement.y() * height(),
                             m_skinPlacement.width() * width(), m_skinPlacement.height() * height());
         painter.drawPixmap(target, m_skinFrame, QRectF(m_skinFrame.rect()));
-        painter.setOpacity(m_skinController->maskOpacity());
+        painter.setOpacity(m_skinMaskOpacity.value_or(1.0));
         painter.fillPath(surfacePath(), toolbarSurfaceColor());
     }
 }

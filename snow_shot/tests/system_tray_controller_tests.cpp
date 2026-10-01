@@ -121,6 +121,17 @@ void verifyTraySkins(adqt::widgets::AdContextMenu* menu, adqt::widgets::AdContex
     QImage skin(64, 64, QImage::Format_ARGB32_Premultiplied);
     skin.fill(QColor(213, 43, 79));
     require(skin.save(skinPath), "the tray skin fixture must be writable");
+    require(configuration.setValues({{QStringLiteral("interface/skin_opacity"), 0},
+                                     {QStringLiteral("interface/tray_menu_skin_path"), skinPath}}),
+            "configure a zero-opacity tray skin before its first popup");
+    for (auto* popup : {menu, groupMenu, deletionMenu}) {
+        popup->popupAt(QPoint(20, 20));
+        QApplication::processEvents();
+        require(popup->backgroundFrame().image.isNull() &&
+                    MainWindowSkinController::existingInstance() == previousController,
+                "initial zero-opacity tray skins must create no renderer on any popup");
+        popup->hide();
+    }
     require(configuration.setValue(QStringLiteral("interface/skin_display_mode"),
                                    QStringLiteral("contain")) &&
                 configuration.setValue(QStringLiteral("interface/skin_blur_level"), 0) &&
@@ -160,6 +171,24 @@ void verifyTraySkins(adqt::widgets::AdContextMenu* menu, adqt::widgets::AdContex
     require(skinController != nullptr, "visible skinned tray menus must have a skin service");
     const auto decoded = skinController->diagnostics().decodeJobs;
     require(decoded == 1, "a tray menu tree must share a single decoded skin source");
+    require(configuration.setValue(QStringLiteral("interface/skin_opacity"), 0),
+            "disable loaded tray skins without clearing their path");
+    waitFor([skinController] { return !skinController->diagnostics().busy; },
+            "invisible tray rendering resources must retire");
+    for (auto* popup : {menu, groupMenu, deletionMenu}) {
+        require(popup->backgroundFrame().image.isNull() && !skinController->skinActive(popup),
+                "zero opacity must remove every tray popup frame");
+    }
+    require(skinController->diagnostics().retainedBytes == 0 &&
+                skinController->diagnostics().executorCount == 0 &&
+                skinController->diagnostics().scratchRetainedBytes == 0,
+            "zero-opacity tray skins must retain no image or worker resources");
+    require(configuration.setValue(QStringLiteral("interface/skin_opacity"), 73),
+            "reactivate the tray skin without reopening visible popups");
+    waitFor([menu] { return !menu->backgroundFrame().image.isNull(); },
+            "restoring opacity must reattach an existing visible tray popup");
+    // Reactivation decodes once because invisible skins retain no decoded raster.
+    const auto reactivatedDecodes = skinController->diagnostics().decodeJobs;
 
     require(configuration.setValue(QStringLiteral("interface/tray_menu_skin_position"),
                                    QStringLiteral("bottom_right")),
@@ -174,7 +203,7 @@ void verifyTraySkins(adqt::widgets::AdContextMenu* menu, adqt::widgets::AdContex
                        0.001;
         },
         "a visible tray submenu must follow live position changes");
-    require(skinController->diagnostics().decodeJobs == decoded,
+    require(skinController->diagnostics().decodeJobs == reactivatedDecodes,
             "placement changes must not decode the source again");
 
     for (auto* popup : {deletionMenu, groupMenu, menu}) {
@@ -185,7 +214,7 @@ void verifyTraySkins(adqt::widgets::AdContextMenu* menu, adqt::widgets::AdContex
     menu->popupAt(QPoint(20, 20));
     waitFor([menu]() { return !menu->backgroundFrame().image.isNull(); },
             "reopening a tray popup must restore its skin");
-    require(skinController->diagnostics().decodeJobs == decoded,
+    require(skinController->diagnostics().decodeJobs == reactivatedDecodes,
             "reopening a tray menu must reuse the decoded source");
     menu->resize(menu->width() + 37, menu->height() + 11);
     const int expectedExtent =
@@ -195,7 +224,7 @@ void verifyTraySkins(adqt::widgets::AdContextMenu* menu, adqt::widgets::AdContex
             return menu->backgroundFrame().image.size() == QSize(expectedExtent, expectedExtent);
         },
         "resizing a tray popup must prepare a frame for its new viewport");
-    require(skinController->diagnostics().decodeJobs == decoded,
+    require(skinController->diagnostics().decodeJobs == reactivatedDecodes,
             "tray viewport changes must not decode the shared source again");
     require(configuration.setValue(QStringLiteral("interface/tray_menu_skin_path"),
                                    directory.filePath(QStringLiteral("missing-tray-skin.png"))),

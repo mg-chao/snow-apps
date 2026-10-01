@@ -31,6 +31,8 @@ class AboutPageWidget final : public QWidget {
   private:
     struct Ui;
     void applyTheme(const snow_shot::presentation::styles::ThemeColorScheme& scheme);
+    void updateSkinBackgrounds();
+    void updateBackgroundStyles();
     void retranslateUi();
     void refreshUpdateStatus();
     void updateLayout();

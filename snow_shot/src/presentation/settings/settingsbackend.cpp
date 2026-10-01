@@ -288,6 +288,8 @@ BuiltInSettingsBackend::BuiltInSettingsBackend(
                      key == QStringLiteral("interface/tray_menu_skin_path")) &&
                     !value.toString().isEmpty())
                     connectSkinControllerIfNeeded();
+                if (key == QStringLiteral("interface/skin_opacity") && value.toInt(100) > 0)
+                    connectSkinControllerIfNeeded();
                 emit synchronized();
             });
     connectSkinControllerIfNeeded();
@@ -296,9 +298,10 @@ BuiltInSettingsBackend::BuiltInSettingsBackend(
 void BuiltInSettingsBackend::connectSkinControllerIfNeeded() {
     auto* controller = MainWindowSkinController::existingInstance();
     const storage::InterfaceSettings interfaceSettings;
-    if (controller == nullptr && (!interfaceSettings.skinPath().isEmpty() ||
-                                  !interfaceSettings.toolbarSkinPath().isEmpty() ||
-                                  !interfaceSettings.trayMenuSkinPath().isEmpty()))
+    if (controller == nullptr && interfaceSettings.skinOpacity() > 0 &&
+        (!interfaceSettings.skinPath().isEmpty() ||
+         !interfaceSettings.toolbarSkinPath().isEmpty() ||
+         !interfaceSettings.trayMenuSkinPath().isEmpty()))
         controller = &MainWindowSkinController::instance();
     if (controller == nullptr || m_skinController == controller)
         return;
@@ -1230,13 +1233,12 @@ bool BuiltInSettingsBackend::applyFilePathValue(SettingsFilePathBinding binding,
         return storage::TraySettings().setCustomIcon(value);
     }
     if (accepted && changed && receiver && !value.isEmpty()) {
-        connectSkinControllerIfNeeded();
-        if (receiver) {
-            const QPointer<MainWindowSkinController> controller(
-                MainWindowSkinController::existingInstance());
-            if (controller)
-                controller->validate(*surface);
-        }
+        // An explicit file edit validates even while rendering is disabled.
+        const QPointer<MainWindowSkinController> controller(&MainWindowSkinController::instance());
+        if (receiver)
+            connectSkinControllerIfNeeded();
+        if (receiver && controller)
+            controller->validate(*surface);
     }
     return accepted;
 }
@@ -1261,12 +1263,11 @@ void BuiltInSettingsBackend::reloadFilePathValue(SettingsFilePathBinding binding
     if (!surface.has_value() || filePathValue(binding).isEmpty())
         return;
     const QPointer<BuiltInSettingsBackend> receiver(this);
-    connectSkinControllerIfNeeded();
+    const QPointer<MainWindowSkinController> controller(&MainWindowSkinController::instance());
     if (!receiver)
         return;
-    const QPointer<MainWindowSkinController> controller(
-        MainWindowSkinController::existingInstance());
-    if (controller) {
+    connectSkinControllerIfNeeded();
+    if (receiver && controller) {
         controller->reload(*surface);
         if (controller && receiver)
             controller->validate(*surface);

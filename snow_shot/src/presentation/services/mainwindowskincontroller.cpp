@@ -187,6 +187,8 @@ struct MainWindowSkinController::Impl {
         image_codec::SkinDecodeError error = image_codec::SkinDecodeError::None;
         bool loading = false;
         bool validationPending = false;
+        // Keep validation status when invisible skins release their decoded pixels.
+        bool validated = false;
     };
     struct Profile {
         QString path;
@@ -230,6 +232,7 @@ struct MainWindowSkinController::Impl {
         RasterKey key;
         QImage decoded;
         bool prepareRaster = true;
+        std::shared_ptr<std::atomic<bool>> cancelled;
     };
     struct Result {
         Request request;
@@ -486,8 +489,8 @@ struct MainWindowSkinController::Impl {
     void requestPreparation(View& view, bool immediate) {
         view.error = image_codec::SkinDecodeError::None;
         const auto& selected = profile(view.surface);
-        view.pending = view.object && !view.size.isEmpty() && std::isfinite(view.dpr) &&
-                       view.dpr > 0.0 && selected.source &&
+        view.pending = opacity > 0.0 && view.object && !view.size.isEmpty() &&
+                       std::isfinite(view.dpr) && view.dpr > 0.0 && selected.source &&
                        selected.source->error == image_codec::SkinDecodeError::None;
         view.readyAt = immediate ? clock.elapsed() : clock.elapsed() + PREPARATION_DEBOUNCE_MS;
     }
@@ -537,12 +540,22 @@ struct MainWindowSkinController::Impl {
             snapshot.value(QStringLiteral("interface/skin_opacity")).toInt(100) / 100.0;
         const qreal nextMask =
             snapshot.value(QStringLiteral("interface/skin_mask_opacity")).toInt(80) / 100.0;
-        const bool preparationChanged = nextMode != mode || nextBlur != blur;
+        const bool visibilityChanged = (nextOpacity > 0.0) != (opacity > 0.0);
+        const bool preparationChanged = nextMode != mode || nextBlur != blur || visibilityChanged;
         const bool paintChanged = nextOpacity != opacity || nextMask != mask;
         mode = nextMode;
         blur = nextBlur;
         opacity = nextOpacity;
         mask = nextMask;
+        if (opacity <= 0.0) {
+            // In-flight jobs finish asynchronously but must never restore invisible pixels.
+            if (auto cancellation = runningCancellation.lock())
+                cancellation->store(true);
+            frames.clear();
+            legacyFrame.reset();
+            for (const auto& source : sources)
+                source->image = {};
+        }
         const QString reloadedPath =
             reloadSurface
                 ? normalizedPath(snapshot.value(pathKeys[index(*reloadSurface)]).toString())
@@ -551,7 +564,7 @@ struct MainWindowSkinController::Impl {
             sources.remove(reloadedPath);
         std::array<bool, 3> sourceChanged{};
         std::array<bool, 3> positionChanged{};
-        bool statusChanged = false;
+        bool statusChanged = visibilityChanged;
         for (std::size_t i = 0; i < profiles.size(); ++i) {
             auto& selected = profiles[i];
             const auto nextPath = normalizedPath(snapshot.value(pathKeys[i]).toString());
@@ -581,7 +594,8 @@ struct MainWindowSkinController::Impl {
         for (auto& view : views) {
             const auto i = index(view.surface);
             const auto& selected = profile(view.surface);
-            if (!selected.source || selected.source->error != image_codec::SkinDecodeError::None) {
+            if (opacity <= 0.0 || !selected.source ||
+                selected.source->error != image_codec::SkinDecodeError::None) {
                 view.pending = false;
                 view.error =
                     selected.source ? selected.source->error : image_codec::SkinDecodeError::None;
@@ -608,9 +622,12 @@ struct MainWindowSkinController::Impl {
         }
         legacyPosition = profile(SkinSurface::MainWindow).position;
         pruneSourcesAndFrames();
-        if (!hasConfiguredSkin()) {
+        if (!hasConfiguredSkin() || opacity <= 0.0) {
             stopPreparationTimer();
-            retireExecutor();
+            if (!hasPending())
+                retireExecutor();
+            else
+                start();
         } else {
             start();
         }
@@ -681,7 +698,9 @@ struct MainWindowSkinController::Impl {
                 executor = std::make_unique<Executor>(resources);
             }
             Request request{source, next ? keyFor(*next) : RasterKey{}, source->image,
-                            next.has_value()};
+                            next.has_value(),
+                            next ? std::make_shared<std::atomic<bool>>(false) : nullptr};
+            runningCancellation = request.cancelled;
             if (request.decoded.isNull()) {
                 ++counts.decodeJobs;
                 notifyLoading = !source->loading;
@@ -694,16 +713,19 @@ struct MainWindowSkinController::Impl {
             worker->pool.start([request = std::move(request), receiver, application,
                                 worker]() mutable {
                 Result result{std::move(request), {}};
+                const auto cancelled = [&] {
+                    return result.request.cancelled && result.request.cancelled->load();
+                };
                 try {
-                    if (result.request.decoded.isNull()) {
+                    if (!cancelled() && result.request.decoded.isNull()) {
                         auto decoded = image_codec::decodeSkinFile(result.request.source->path);
                         result.request.decoded = std::move(decoded.image);
                         result.decodeError = decoded.error;
                     }
-                    if (result.decodeError == image_codec::SkinDecodeError::None &&
+                    if (!cancelled() && result.decodeError == image_codec::SkinDecodeError::None &&
                         result.request.decoded.isNull())
                         result.decodeError = image_codec::SkinDecodeError::ResourceLimit;
-                    if (result.decodeError == image_codec::SkinDecodeError::None &&
+                    if (!cancelled() && result.decodeError == image_codec::SkinDecodeError::None &&
                         result.request.prepareRaster) {
                         if (result.request.key.blur > 0 && !worker->scratch)
                             worker->scratch = std::make_unique<SnowCanvasRegionFilterScratch>();
@@ -742,17 +764,21 @@ struct MainWindowSkinController::Impl {
         running = false;
         const auto source = result.request.source;
         const bool currentSource = sources.value(source->path) == source;
+        const bool cancelled = result.request.cancelled && result.request.cancelled->load();
+        if (currentSource)
+            source->loading = false;
         std::vector<QPointer<QObject>> changed;
         bool legacyChanged = false;
         bool published = false;
-        if (currentSource) {
-            source->image = std::move(result.request.decoded);
+        if (currentSource && !cancelled) {
+            source->image = opacity > 0.0 ? std::move(result.request.decoded) : QImage{};
+            source->validated = true;
             source->error = result.decodeError;
             source->loading = false;
             source->validationPending = false;
             std::shared_ptr<Prepared> prepared;
             for (auto& view : views) {
-                if (profile(view.surface).source != source)
+                if (opacity <= 0.0 || profile(view.surface).source != source)
                     continue;
                 const bool decodeFailed = source->error != image_codec::SkinDecodeError::None;
                 if (!decodeFailed &&
@@ -811,7 +837,7 @@ struct MainWindowSkinController::Impl {
         const bool hasUsableView =
             std::any_of(views.begin(), views.end(), [this](const View& view) {
                 const auto& selected = profile(view.surface);
-                return view.object && selected.source &&
+                return opacity > 0.0 && view.object && selected.source &&
                        selected.source->error == image_codec::SkinDecodeError::None;
             });
         if (!running && !hasPending() && !hasUsableView)
@@ -831,7 +857,7 @@ struct MainWindowSkinController::Impl {
 
     bool loadingFor(SkinSurface surface) const {
         const auto& source = profile(surface).source;
-        if (!source)
+        if (!source || (opacity <= 0.0 && !source->validationPending))
             return false;
         if (source->loading || source->validationPending)
             return true;
@@ -864,6 +890,7 @@ struct MainWindowSkinController::Impl {
     quint64 legacyViewToken = 0;
     quint64 lastServedToken = 0;
     bool running = false;
+    std::weak_ptr<std::atomic<bool>> runningCancellation;
     bool configurationRefreshPending = false;
     bool applicationOwned = false;
     bool retiringSingleton = false;
@@ -971,7 +998,7 @@ void MainWindowSkinController::validate(SkinSurface surface) {
     if (!receiver || m_impl->retiringSingleton)
         return;
     const auto source = m_impl->profile(surface).source;
-    if (!source || !source->image.isNull() || source->error != image_codec::SkinDecodeError::None)
+    if (!source || source->validated || source->error != image_codec::SkinDecodeError::None)
         return;
     const bool wasLoading = m_impl->loadingFor(surface);
     const bool queuedBehindRunning = m_impl->running;

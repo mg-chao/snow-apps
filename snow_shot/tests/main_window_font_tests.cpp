@@ -501,6 +501,16 @@ void mainWindowSkinIsContinuousAndRestoresTheme(const QString& previewDirectory)
             QThread::msleep(1);
         }
     };
+    require(configuration.setValues({{QStringLiteral("interface/skin_opacity"), 0},
+                                     {QStringLiteral("interface/skin_path"), fixturePath}}),
+            "configure a persisted but invisible main-window skin");
+    flushEvents();
+    require(root->autoFillBackground() &&
+                window.findChild<presentation::MainWindowSkinWidget*>() == nullptr &&
+                presentation::MainWindowSkinController::existingInstance() == nullptr,
+            "zero-opacity startup must keep the original widget without a skin runtime");
+    require(configuration.setValue(QStringLiteral("interface/skin_path"), QString()),
+            "clear the invisible startup fixture before enabling the normal skin");
     require(configuration.setValues(
                 {{QStringLiteral("interface/skin_path"), fixturePath},
                  {QStringLiteral("interface/skin_display_mode"), QStringLiteral("overlay")},
@@ -515,6 +525,63 @@ void mainWindowSkinIsContinuousAndRestoresTheme(const QString& previewDirectory)
     });
     QPointer<presentation::MainWindowSkinController> controller =
         presentation::MainWindowSkinController::existingInstance();
+    require(configuration.setValue(QStringLiteral("interface/skin_opacity"), 0),
+            "disable the main-window skin without removing its saved path");
+    waitUntil([&] { return controller && !controller->diagnostics().busy; });
+    require(root->autoFillBackground() &&
+                window.findChild<presentation::MainWindowSkinWidget*>() == nullptr &&
+                controller->diagnostics().retainedBytes == 0 &&
+                controller->diagnostics().executorCount == 0 &&
+                controller->diagnostics().scratchRetainedBytes == 0,
+            "zero opacity must restore the opaque widget path and release skin resources");
+    require(configuration.setValue(QStringLiteral("interface/skin_opacity"), 100),
+            "restore the skin on the existing main window");
+    waitUntil([&] {
+        auto* skin = window.findChild<presentation::MainWindowSkinWidget*>();
+        return skin && skin->skinActive() && !controller->diagnostics().busy;
+    });
+    QPointer<presentation::MainWindowSkinWidget> retiringBackground =
+        window.findChild<presentation::MainWindowSkinWidget*>();
+    bool restoredDuringRemoval = false;
+    QObject::connect(retiringBackground, &QObject::destroyed, &window, [&] {
+        restoredDuringRemoval = true;
+        require(configuration.setValue(QStringLiteral("interface/skin_opacity"), 100),
+                "restore opacity synchronously while the old background is destroyed");
+    });
+    require(configuration.setValue(QStringLiteral("interface/skin_opacity"), 0),
+            "remove the background with a synchronous opacity restoration listener");
+    require(restoredDuringRemoval && retiringBackground.isNull() &&
+                window.findChild<presentation::MainWindowSkinWidget*>() != nullptr,
+            "background removal must preserve a replacement created by a synchronous listener");
+    waitUntil([&] {
+        auto* skin = window.findChild<presentation::MainWindowSkinWidget*>();
+        return skin && skin->skinActive() && !controller->diagnostics().busy;
+    });
+    require(!root->autoFillBackground(),
+            "reentrant opacity restoration must retain the active skin appearance");
+
+    QPointer<MainWindow> closingWindow = new MainWindow(registry, session);
+    closingWindow->showFunctionSettings();
+    waitUntil([&] {
+        auto* skin = closingWindow->findChild<presentation::MainWindowSkinWidget*>();
+        return skin && skin->skinActive() && !controller->diagnostics().busy;
+    });
+    auto* detachedBackground = closingWindow->findChild<presentation::MainWindowSkinWidget*>();
+    // The callback deletes the window while its background is being destroyed.
+    // Remove that background from the QObject child list before deleting its parent.
+    detachedBackground->setParent(nullptr);
+    QObject::connect(detachedBackground, &QObject::destroyed, closingWindow,
+                     [&] { delete closingWindow.data(); });
+    require(configuration.setValue(QStringLiteral("interface/skin_opacity"), 0),
+            "remove a background whose destruction synchronously closes its window");
+    require(closingWindow.isNull(),
+            "background removal must stop safely when a listener deletes the main window");
+    require(configuration.setValue(QStringLiteral("interface/skin_opacity"), 100),
+            "restore the surviving main window after the receiver lifetime regression");
+    waitUntil([&] {
+        auto* skin = window.findChild<presentation::MainWindowSkinWidget*>();
+        return skin && skin->skinActive() && !controller->diagnostics().busy;
+    });
     struct SurfaceSample {
         QWidget* surface;
         QPoint point;

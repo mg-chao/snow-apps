@@ -960,6 +960,11 @@ class HistoryEntryWidget final : public QFrame {
         QPalette tertiary = m_metaLabel->palette();
         tertiary.setColor(QPalette::WindowText, scheme.map.colorTextTertiary);
         m_metaLabel->setPalette(tertiary);
+        updateBackgroundStyle();
+    }
+
+    void updateBackgroundStyle() {
+        const auto& scheme = m_scheme;
         m_sourceLabel->setStyleSheet(
             QStringLiteral("QLabel { color: %1; background: %2; border: 1px solid %3; "
                            "border-radius: 4px; padding: 2px 7px; }")
@@ -1369,7 +1374,7 @@ ScreenshotHistoryPageWidget::ScreenshotHistoryPageWidget(
     connect(&themeManager, &styles::ThemeManager::themeChanged, this,
             &ScreenshotHistoryPageWidget::applyTheme);
     connect(&adqt::theme::ThemeManager::instance(), &adqt::theme::ThemeManager::themeChanged, this,
-            [this] { applyTheme(m_colorScheme); });
+            [this] { updateSkinBackgrounds(); });
     retranslateUi();
     applyTheme(m_colorScheme);
 }
@@ -1874,6 +1879,7 @@ void ScreenshotHistoryPageWidget::retranslateUi() {
 
 void ScreenshotHistoryPageWidget::applyTheme(const styles::ThemeColorScheme& scheme) {
     m_colorScheme = scheme;
+    m_backgroundOpacity = styles::mainWindowBackgroundOpacity(this);
     QPalette pagePalette = palette();
     pagePalette.setColor(QPalette::Window, Qt::transparent);
     setPalette(pagePalette);
@@ -1898,6 +1904,21 @@ void ScreenshotHistoryPageWidget::applyTheme(const styles::ThemeColorScheme& sch
     updateEmptyStateMinimumHeight();
     updateSelectionBar();
     update();
+}
+
+void ScreenshotHistoryPageWidget::updateSkinBackgrounds() {
+    const qreal opacity = styles::mainWindowBackgroundOpacity(this);
+    if (m_backgroundOpacity == opacity) {
+        return;
+    }
+    m_backgroundOpacity = opacity;
+    for (QWidget* child :
+         m_entriesHost->findChildren<QWidget*>(QString(), Qt::FindDirectChildrenOnly)) {
+        if (auto* entry = dynamic_cast<HistoryEntryWidget*>(child); entry != nullptr) {
+            entry->updateBackgroundStyle();
+        }
+    }
+    m_selectionPanel->update();
 }
 
 void ScreenshotHistoryPageWidget::changeEvent(QEvent* event) {

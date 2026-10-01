@@ -12,6 +12,8 @@
 #include <QPointer>
 #include <QVector>
 
+#include <optional>
+
 class QBoxLayout;
 class QEvent;
 class QPaintEvent;
@@ -45,12 +47,14 @@ class ScreenshotToolbarPanel : public QFrame {
     void syncSkinConfiguration();
     void syncSkin();
     void syncSkinFrame();
-    void syncSkinAppearance();
-    void releaseSkin();
+    void syncSkinAppearance(bool frameChanged = false);
+    bool releaseSkin();
     QPointer<snow_shot::storage::ConfigurationStore> m_skinConfiguration;
     QPointer<snow_shot::presentation::MainWindowSkinController> m_skinController;
     QPixmap m_skinFrame;
     QRectF m_skinPlacement;
+    qreal m_skinImageOpacity = 1.0;
+    std::optional<qreal> m_skinMaskOpacity;
     bool m_skinAttached = false;
     qreal m_panelRadius = 8.0;
     qreal m_panelScale = 0.0;

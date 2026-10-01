@@ -334,6 +334,132 @@ void emptySkinSettingsStayLazy(const QString& path) {
     }
 }
 
+void zeroOpacitySkinSettingsRemainLazyAndValidateExplicitly(const QTemporaryDir& directory) {
+    auto& configuration = storage::ApplicationStorage::instance().configuration();
+    const auto registry = settings::buildBuiltInSettingsRegistry();
+    QImage image(160, 80, QImage::Format_ARGB32_Premultiplied);
+    image.fill(QColor(QStringLiteral("#3377CC")));
+    const auto writeInvalid = [](const QString& path) {
+        QFile file(path);
+        require(file.open(QIODevice::WriteOnly) && file.write("corrupt png") == 11,
+                "write a corrupt zero-opacity image fixture");
+    };
+    int surfaceIndex = 0;
+    for (const auto binding : {settings::SettingsFilePathBinding::SkinPath,
+                               settings::SettingsFilePathBinding::ToolbarSkinPath,
+                               settings::SettingsFilePathBinding::TrayMenuSkinPath}) {
+        const QString key = binding == settings::SettingsFilePathBinding::SkinPath
+                                ? QStringLiteral("interface/skin_path")
+                            : binding == settings::SettingsFilePathBinding::ToolbarSkinPath
+                                ? QStringLiteral("interface/toolbar_skin_path")
+                                : QStringLiteral("interface/tray_menu_skin_path");
+        const QString persistedPath =
+            directory.filePath(QStringLiteral("zero-opacity-persisted-%1.png").arg(surfaceIndex));
+        const QString invalidEdit = directory.filePath(
+            QStringLiteral("zero-opacity-invalid-edit-%1.png").arg(surfaceIndex));
+        const QString validEdit =
+            directory.filePath(QStringLiteral("zero-opacity-valid-edit-%1.png").arg(surfaceIndex));
+        ++surfaceIndex;
+        writeInvalid(persistedPath);
+        writeInvalid(invalidEdit);
+        require(image.save(validEdit), "write a valid zero-opacity image fixture");
+        require(configuration.setValues({{key, persistedPath},
+                                         {QStringLiteral("interface/skin_opacity"), 0},
+                                         {QStringLiteral("interface/skin_blur_level"), 24}}),
+                "seed a persisted zero-opacity surface before constructing settings");
+        presentation::GlobalShortcutManager shortcuts;
+        settings::BuiltInSettingsBackend backend(shortcuts);
+        settings::SettingsRuntimeSession session(registry, backend);
+        session.refreshAll();
+        drainEvents();
+        require(presentation::MainWindowSkinController::existingInstance() == nullptr &&
+                    session.filePathValue(binding) == persistedPath &&
+                    session.filePathStatus(binding).isEmpty() &&
+                    !session.filePathStatusError(binding),
+                "persisted zero-opacity paths and settings refresh must not create skin runtime");
+
+        int statusNotifications = 0;
+        QObject statusObserver;
+        QObject::connect(&session, &settings::SettingsRuntimeSession::filePathStatusChanged,
+                         &statusObserver, [&statusNotifications, binding](auto changed) {
+                             if (changed == binding)
+                                 ++statusNotifications;
+                         });
+        const auto requireDecodeOnly = [&](bool error) {
+            const QPointer<presentation::MainWindowSkinController> controller(
+                presentation::MainWindowSkinController::existingInstance());
+            require(controller != nullptr, "explicit validation must create a status controller");
+            waitForSkinWork(controller);
+            require(controller != nullptr, "validation status must survive worker retirement");
+            const auto diagnostics = controller->diagnostics();
+            require(session.filePathStatusError(binding) == error &&
+                        session.filePathStatus(binding).isEmpty() != error &&
+                        diagnostics.preparationJobs == 0 && diagnostics.pixmapConversions == 0 &&
+                        diagnostics.retainedBytes == 0 && diagnostics.idleFrameBytes == 0 &&
+                        diagnostics.executorCount == 0 && diagnostics.scratchRetainedBytes == 0,
+                    "zero-opacity validation must preserve status without pixels or render work");
+            return diagnostics.decodeJobs;
+        };
+        require(session.applyFilePathValue(binding, persistedPath),
+                "explicitly reload a persisted zero-opacity path with no existing controller");
+        const quint64 firstDecode = requireDecodeOnly(true);
+        require(firstDecode == 1 && statusNotifications > 0,
+                "a zero-opacity reload must validate once and notify its runtime session");
+        require(image.save(persistedPath), "repair the persisted zero-opacity image in place");
+        require(session.applyFilePathValue(binding, persistedPath),
+                "reload the repaired zero-opacity image at the same path");
+        require(requireDecodeOnly(false) == firstDecode + 1,
+                "a repaired same-path reload must clear cached errors with one decode");
+        require(session.applyFilePathValue(binding, invalidEdit),
+                "explicitly edit a zero-opacity path to an invalid image");
+        require(requireDecodeOnly(true) == firstDecode + 2,
+                "an invalid zero-opacity path edit must update status with one decode");
+        require(session.applyFilePathValue(binding, validEdit),
+                "explicitly edit a zero-opacity path to a valid image");
+        require(requireDecodeOnly(false) == firstDecode + 3,
+                "a valid zero-opacity path edit must clear status without retaining pixels");
+
+        const QPointer<presentation::MainWindowSkinController> retired(
+            presentation::MainWindowSkinController::existingInstance());
+        require(session.applyFilePathValue(binding, QString()),
+                "clear the validated zero-opacity path before reconnecting settings");
+        waitForSkinWork(retired);
+        require(retired.isNull() &&
+                    presentation::MainWindowSkinController::existingInstance() == nullptr,
+                "clearing the last validation path must retire its status controller");
+        require(configuration.setValue(key, invalidEdit),
+                "load a new persisted zero-opacity path through the live backend");
+        session.refreshAll();
+        drainEvents();
+        require(presentation::MainWindowSkinController::existingInstance() == nullptr,
+                "live configuration notifications must preserve the zero-opacity cold state");
+        require(session.applySliderValue(settings::SettingsSliderBinding::SkinOpacity, 100),
+                "enable skin rendering after the original status controller was retired");
+        QPointer<presentation::MainWindowSkinController> reenabled(
+            presentation::MainWindowSkinController::existingInstance());
+        require(reenabled && reenabled->diagnostics().decodeJobs == 0 &&
+                    reenabled->diagnostics().preparationJobs == 0,
+                "positive opacity must reconnect settings without rendering a hidden surface");
+        const int beforeReload = statusNotifications;
+        require(session.applyFilePathValue(binding, invalidEdit),
+                "reload through the reconnected positive-opacity status controller");
+        waitForSkinWork(reenabled);
+        require(reenabled && session.filePathStatusError(binding) &&
+                    !session.filePathStatus(binding).isEmpty() &&
+                    statusNotifications > beforeReload &&
+                    reenabled->diagnostics().decodeJobs == 1 &&
+                    reenabled->diagnostics().preparationJobs == 0 &&
+                    reenabled->diagnostics().pixmapConversions == 0,
+                "reenabling opacity must reconnect status notifications to the new controller");
+        require(session.reset(settings::SettingsSectionReset::Skin),
+                "restore skin defaults after each zero-opacity surface regression");
+        waitForSkinWork(reenabled);
+        require(reenabled.isNull() &&
+                    presentation::MainWindowSkinController::existingInstance() == nullptr,
+                "reset must retire the reconnected skin controller");
+    }
+}
+
 void skinSettingsPersistValidateAndReset(const QString& configurationPath) {
     snow_shot::presentation::GlobalShortcutManager shortcuts;
     settings::BuiltInSettingsBackend backend(shortcuts);
@@ -760,6 +886,7 @@ int main(int argc, char** argv) {
     presentation::LanguageManager::instance().initialize();
     presentation::styles::ThemeManager::instance().initialize(application);
     emptySkinSettingsStayLazy(temporary.filePath(QStringLiteral("lazy.png")));
+    zeroOpacitySkinSettingsRemainLazyAndValidateExplicitly(temporary);
     skinSettingsPersistValidateAndReset(temporary.filePath(QStringLiteral("data/config.json")));
     clearedSkinPathsRemoveStatusImmediately(temporary);
     hiddenSurfaceSkinsValidateAndReuseSources(temporary);

@@ -298,7 +298,8 @@ class TrayMenuSkinBinding final : public QObject {
         configurationConnection_ =
             QObject::connect(configuration, &storage::ConfigurationStore::valueChanged, this,
                              [this](const QString& key) {
-                                 if (key == QStringLiteral("interface/tray_menu_skin_path")) {
+                                 if (key == QStringLiteral("interface/tray_menu_skin_path") ||
+                                     key == QStringLiteral("interface/skin_opacity")) {
                                      syncVisibility();
                                  }
                              });
@@ -321,6 +322,7 @@ class TrayMenuSkinBinding final : public QObject {
         connectConfiguration();
         if (menu_->nativeMenuEnabled() || (!showing && !menu_->isVisible()) ||
             !storage::ApplicationStorage::instance().isInitialized() || !configuration_ ||
+            configuration_->value(QStringLiteral("interface/skin_opacity")).toInt(100) <= 0 ||
             configuration_->value(QStringLiteral("interface/tray_menu_skin_path"))
                 .toString()
                 .isEmpty()) {

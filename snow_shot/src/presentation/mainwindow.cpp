@@ -28,12 +28,15 @@
 #include <QPainter>
 #include <QPalette>
 #include <QPoint>
+#include <QPointer>
 #include <QResizeEvent>
 #include <QScopedValueRollback>
 #include <QStatusBar>
 #include <QAbstractButton>
 #include <QVBoxLayout>
 #include <QWidget>
+
+#include <utility>
 
 namespace {
 constexpr int MAIN_WINDOW_WIDTH = 900;
@@ -287,7 +290,8 @@ void MainWindow::buildUi() {
     auto& configuration = snow_shot::storage::ApplicationStorage::instance().configuration();
     connect(&configuration, &snow_shot::storage::ConfigurationStore::valueChanged, this,
             [this](const QString& key) {
-                if (key == QStringLiteral("interface/skin_path")) {
+                if (key == QStringLiteral("interface/skin_path") ||
+                    key == QStringLiteral("interface/skin_opacity")) {
                     syncSkinBackground();
                 }
             });
@@ -295,16 +299,17 @@ void MainWindow::buildUi() {
 }
 
 void MainWindow::syncSkinBackground() {
-    const bool configured = !snow_shot::storage::ApplicationStorage::instance()
-                                 .configuration()
-                                 .value(QStringLiteral("interface/skin_path"))
-                                 .toString()
-                                 .isEmpty();
+    const auto& configuration = snow_shot::storage::ApplicationStorage::instance().configuration();
+    const bool configured =
+        configuration.value(QStringLiteral("interface/skin_opacity")).toInt(100) > 0 &&
+        !configuration.value(QStringLiteral("interface/skin_path")).toString().isEmpty();
     if (!configured) {
         if (m_skinBackground != nullptr) {
-            delete m_skinBackground;
-            m_skinBackground = nullptr;
-            applySkinAppearance();
+            const QPointer<MainWindow> lifetime(this);
+            delete std::exchange(m_skinBackground, nullptr);
+            if (lifetime) {
+                applySkinAppearance();
+            }
         }
         return;
     }
