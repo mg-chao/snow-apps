@@ -1,0 +1,69 @@
+Backport upstream commit 48034e6990e271263dea6d352e3a09b541de2451:
+https://github.com/strukturag/libde265/commit/48034e6990e271263dea6d352e3a09b541de2451
+
+The per-position reverse search is miscompiled by MSVC 14.51 with /O2,
+underflows its sub-block index, and fails libheif DLL initialization when
+the built-in HEVC decoder initializes. Fill the inverse table in bounded
+forward passes instead, retaining the codec ABI and optimized build.
+
+diff --git a/libde265/scan.cc b/libde265/scan.cc
+--- a/libde265/scan.cc
++++ b/libde265/scan.cc
+@@ -105,30 +105,25 @@
+   return scanpos[scanIdx][log2BlkSize][ y*(1<<log2BlkSize) + x ];
+ }
+ 
+-static void fill_scan_pos(scan_position* pos, int x,int y,int scanIdx, int log2TrafoSize)
++static void fill_scan_pos_table(scan_position* pos, int scanIdx, int log2TrafoSize)
+ {
+-  int lastScanPos = 16;
+-  int lastSubBlock = (1<<(log2TrafoSize-2)) * (1<<(log2TrafoSize-2)) -1;
++  int numSubBlocks = (1<<(log2TrafoSize-2)) * (1<<(log2TrafoSize-2));
++  int blkSize = 1 << log2TrafoSize;
+ 
+   const position* ScanOrderSub = get_scan_order(log2TrafoSize-2, scanIdx);
+   const position* ScanOrderPos = get_scan_order(2, scanIdx);
+ 
+-  int xC,yC;
+-  do {
+-    if (lastScanPos==0) {
+-      lastScanPos=16;
+-      lastSubBlock--;
++  for (int sb = 0; sb < numSubBlocks; sb++)
++    {
++      position S = ScanOrderSub[sb];
++      for (int sp = 0; sp < 16; sp++)
++        {
++          int xC = (S.x<<2) + ScanOrderPos[sp].x;
++          int yC = (S.y<<2) + ScanOrderPos[sp].y;
++          pos[yC * blkSize + xC].subBlock = sb;
++          pos[yC * blkSize + xC].scanPos  = sp;
++        }
+     }
+-    lastScanPos--;
+-
+-    position S = ScanOrderSub[lastSubBlock];
+-    xC = (S.x<<2) + ScanOrderPos[lastScanPos].x;
+-    yC = (S.y<<2) + ScanOrderPos[lastScanPos].y;
+-
+-  } while ( (xC != x) || (yC != y));
+-
+-  pos->subBlock = lastSubBlock;
+-  pos->scanPos  = lastScanPos;
+ }
+ 
+ 
+@@ -141,12 +136,7 @@
+       init_scan_d(scan_d[log2size], 1<<log2size);
+     }
+ 
+-
+   for (int log2size=2;log2size<=5;log2size++)
+     for (int scanIdx=0;scanIdx<3;scanIdx++)
+-      for (int y=0;y<(1<<log2size);y++)
+-        for (int x=0;x<(1<<log2size);x++)
+-          {
+-            fill_scan_pos(&scanpos[scanIdx][log2size][ y*(1<<log2size) + x ],x,y,scanIdx,log2size);
+-          }
++      fill_scan_pos_table(scanpos[scanIdx][log2size], scanIdx, log2size);
+ }

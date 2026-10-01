@@ -364,6 +364,8 @@ struct SnowCanvasWidget::Impl : public snow_canvas_runtime::Client {
     bool setCanvasShapeStylePatch(const SnowCanvasShapeStyle& style, quint32 properties,
                                   SnowCanvasShapeKind kind);
     bool setCanvasFilterStyle(const SnowCanvasFilterStyle& style, quint32 properties);
+    bool setCanvasFilterCreationStyle(const SnowCanvasFilterStyle& style, quint32 properties,
+                                      SnowCanvasTool filterTool);
     quint64 readAutoFilterGeneration() const;
     std::optional<SnowCanvasAutoFilterRecord> autoFilterRegions() const;
     bool setAutoFilterRegions(const std::optional<SnowCanvasAutoFilterRecord>& record);
@@ -1085,6 +1087,29 @@ bool SnowCanvasWidget::Impl::setCanvasFilterStyle(const SnowCanvasFilterStyle& s
 bool SnowCanvasWidget::setCanvasFilterStyle(const SnowCanvasFilterStyle& style,
                                             quint32 properties) {
     return m_impl->setCanvasFilterStyle(style, properties);
+}
+
+bool SnowCanvasWidget::Impl::setCanvasFilterCreationStyle(const SnowCanvasFilterStyle& style,
+                                                          quint32 properties,
+                                                          SnowCanvasTool filterTool) {
+    if (filterTool != SnowCanvasTool::RectangleFilter && filterTool != SnowCanvasTool::PenFilter) {
+        return false;
+    }
+    const SnowFilterStyle engineStyle{static_cast<SnowFilterType>(style.type), style.strength,
+                                      style.opacity, style.strokeWidth};
+    const auto result = snow_canvas_commands::setFilterCreationStyle(
+        runtimeBinding.engine(), runtimeBinding.viewportHandle(), engineStyle, properties,
+        snow_canvas_types::toEngineTool(filterTool));
+    if (!result.success) {
+        return false;
+    }
+    syncChangedViewports(result.changedViewports.get());
+    return true;
+}
+
+bool SnowCanvasWidget::setCanvasFilterCreationStyle(const SnowCanvasFilterStyle& style,
+                                                    quint32 properties, SnowCanvasTool filterTool) {
+    return m_impl->setCanvasFilterCreationStyle(style, properties, filterTool);
 }
 
 bool SnowCanvasWidget::Impl::setCanvasTextStyle(const SnowCanvasTextStyle& style,

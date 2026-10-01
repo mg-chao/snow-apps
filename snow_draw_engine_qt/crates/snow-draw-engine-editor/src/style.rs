@@ -973,12 +973,7 @@ impl Editor {
             })
     }
 
-    pub fn set_filter_style(
-        &mut self,
-        document: &DocumentModel,
-        style: FilterStyle,
-        properties: u32,
-    ) -> Result<Option<EditorCommand>, ErrorCode> {
+    fn validate_filter_style_patch(style: FilterStyle, properties: u32) -> Result<(), ErrorCode> {
         if properties
             & !(FILTER_STYLE_PROPERTY_TYPE
                 | FILTER_STYLE_PROPERTY_STRENGTH
@@ -992,23 +987,89 @@ impl Editor {
         {
             return Err(ErrorCode::InvalidArgument);
         }
+        Ok(())
+    }
+
+    fn update_shared_filter_strength(&mut self, strength: f64) {
+        self.state.default_filter.strength = if self.state.default_filter.filter_type
+            == snow_draw_engine_document::CanvasFilterType::SmartErase
+        {
+            0.5
+        } else {
+            strength
+        };
+        self.state.default_pen_filter.strength = if self.state.default_pen_filter.filter_type
+            == snow_draw_engine_document::CanvasFilterType::SmartErase
+        {
+            0.5
+        } else {
+            strength
+        };
+    }
+
+    // Creation defaults share strength, while the other properties belong to
+    // the named filter family. Selection and the active tool remain untouched.
+    pub fn set_filter_creation_style(
+        &mut self,
+        style: FilterStyle,
+        properties: u32,
+        tool: ActiveTool,
+    ) -> Result<(), ErrorCode> {
+        if !matches!(tool, ActiveTool::RectangleFilter | ActiveTool::PenFilter) {
+            return Err(ErrorCode::InvalidArgument);
+        }
+        Self::validate_filter_style_patch(style, properties)?;
         let strength = FilterData::normalized_strength(style.strength);
         if properties & FILTER_STYLE_PROPERTY_STRENGTH != 0 {
-            self.state.default_filter.strength = if self.state.default_filter.filter_type
-                == snow_draw_engine_document::CanvasFilterType::SmartErase
-            {
-                0.5
-            } else {
-                strength
-            };
-            self.state.default_pen_filter.strength = if self.state.default_pen_filter.filter_type
-                == snow_draw_engine_document::CanvasFilterType::SmartErase
-            {
-                0.5
-            } else {
-                strength
-            };
+            self.update_shared_filter_strength(strength);
         }
+        if tool == ActiveTool::PenFilter {
+            if properties & FILTER_STYLE_PROPERTY_TYPE != 0 {
+                self.state.default_pen_filter.filter_type = style.filter_type;
+            }
+            if properties & FILTER_STYLE_PROPERTY_STRENGTH != 0 {
+                self.state.default_pen_filter.strength = strength;
+            }
+            if properties & FILTER_STYLE_PROPERTY_OPACITY != 0 {
+                self.state.default_pen_filter.opacity = style.opacity;
+            }
+            if properties & FILTER_STYLE_PROPERTY_STROKE_WIDTH != 0 {
+                self.state.default_pen_filter.stroke_width = style.stroke_width;
+            }
+        } else {
+            if properties & FILTER_STYLE_PROPERTY_TYPE != 0 {
+                self.state.default_filter.filter_type = style.filter_type;
+            }
+            if properties & FILTER_STYLE_PROPERTY_STRENGTH != 0 {
+                self.state.default_filter.strength = strength;
+            }
+            if properties & FILTER_STYLE_PROPERTY_OPACITY != 0 {
+                self.state.default_filter.opacity = style.opacity;
+            }
+            if properties & FILTER_STYLE_PROPERTY_STROKE_WIDTH != 0 {
+                self.state.default_filter_stroke_width = style.stroke_width;
+            }
+        }
+        if self.state.default_filter.filter_type
+            == snow_draw_engine_document::CanvasFilterType::SmartErase
+        {
+            self.state.default_filter.strength = 0.5;
+        }
+        if self.state.default_pen_filter.filter_type
+            == snow_draw_engine_document::CanvasFilterType::SmartErase
+        {
+            self.state.default_pen_filter.strength = 0.5;
+        }
+        Ok(())
+    }
+
+    pub fn set_filter_style(
+        &mut self,
+        document: &DocumentModel,
+        style: FilterStyle,
+        properties: u32,
+    ) -> Result<Option<EditorCommand>, ErrorCode> {
+        Self::validate_filter_style_patch(style, properties)?;
         let selected_ids = self
             .state
             .selection
@@ -1018,44 +1079,17 @@ impl Editor {
             .filter(|id| document.filter(*id).is_ok() || document.pen_filter(*id).is_ok())
             .collect::<Vec<_>>();
         if selected_ids.is_empty() {
-            if self.state.active_tool == ActiveTool::PenFilter {
-                if properties & FILTER_STYLE_PROPERTY_TYPE != 0 {
-                    self.state.default_pen_filter.filter_type = style.filter_type;
-                }
-                if properties & FILTER_STYLE_PROPERTY_STRENGTH != 0 {
-                    self.state.default_pen_filter.strength = strength;
-                }
-                if properties & FILTER_STYLE_PROPERTY_OPACITY != 0 {
-                    self.state.default_pen_filter.opacity = style.opacity;
-                }
-                if properties & FILTER_STYLE_PROPERTY_STROKE_WIDTH != 0 {
-                    self.state.default_pen_filter.stroke_width = style.stroke_width;
-                }
+            let tool = if self.state.active_tool == ActiveTool::PenFilter {
+                ActiveTool::PenFilter
             } else {
-                if properties & FILTER_STYLE_PROPERTY_TYPE != 0 {
-                    self.state.default_filter.filter_type = style.filter_type;
-                }
-                if properties & FILTER_STYLE_PROPERTY_STRENGTH != 0 {
-                    self.state.default_filter.strength = strength;
-                }
-                if properties & FILTER_STYLE_PROPERTY_OPACITY != 0 {
-                    self.state.default_filter.opacity = style.opacity;
-                }
-                if properties & FILTER_STYLE_PROPERTY_STROKE_WIDTH != 0 {
-                    self.state.default_filter_stroke_width = style.stroke_width;
-                }
-            }
-            if self.state.default_filter.filter_type
-                == snow_draw_engine_document::CanvasFilterType::SmartErase
-            {
-                self.state.default_filter.strength = 0.5;
-            }
-            if self.state.default_pen_filter.filter_type
-                == snow_draw_engine_document::CanvasFilterType::SmartErase
-            {
-                self.state.default_pen_filter.strength = 0.5;
-            }
+                ActiveTool::RectangleFilter
+            };
+            self.set_filter_creation_style(style, properties, tool)?;
             return Ok(None);
+        }
+        let strength = FilterData::normalized_strength(style.strength);
+        if properties & FILTER_STYLE_PROPERTY_STRENGTH != 0 {
+            self.update_shared_filter_strength(strength);
         }
         let mut transaction = Transaction::new("update filter style");
         for id in selected_ids {
@@ -2038,6 +2072,135 @@ mod tests {
             (actual - expected).abs() <= f64::EPSILON,
             "expected {actual} to equal {expected}"
         );
+    }
+
+    #[test]
+    fn filter_creation_style_preserves_selection_tool_and_document() {
+        let mut document = DocumentModel::new();
+        let id = document.allocate_element_id();
+        let filter = FilterData::default();
+        let mut insert = Transaction::new("filter fixture");
+        insert.insert_filter(id, ElementMeta::default(), filter);
+        document.apply_transaction(insert).unwrap();
+        let mut editor = Editor::new(snow_draw_engine_core::EngineConfig::default()).unwrap();
+        editor.set_active_tool(ActiveTool::Select).unwrap();
+        editor.set_selection_state(vec![id], Some(id));
+        let selected = editor.state.selection.clone();
+        let rectangle = FilterStyle {
+            filter_type: snow_draw_engine_document::CanvasFilterType::GaussianBlur,
+            strength: 0.3,
+            opacity: 0.6,
+            stroke_width: 7.0,
+        };
+        let pen = FilterStyle {
+            filter_type: snow_draw_engine_document::CanvasFilterType::Brightness,
+            strength: 0.8,
+            opacity: 0.9,
+            stroke_width: 20.0,
+        };
+        for _ in 0..128 {
+            editor
+                .set_filter_creation_style(
+                    rectangle,
+                    crate::FILTER_STYLE_PROPERTY_ALL,
+                    ActiveTool::RectangleFilter,
+                )
+                .unwrap();
+            editor
+                .set_filter_creation_style(
+                    pen,
+                    crate::FILTER_STYLE_PROPERTY_ALL,
+                    ActiveTool::PenFilter,
+                )
+                .unwrap();
+            assert_eq!(editor.active_tool(), ActiveTool::Select);
+            assert_eq!(editor.state.selection, selected);
+            assert_eq!(document.filter(id).unwrap(), &filter);
+            assert_eq!(editor.filter_style(&document).strength, filter.strength);
+            assert_eq!(
+                editor.state.default_filter.filter_type,
+                rectangle.filter_type
+            );
+            assert_eq!(editor.state.default_filter.opacity, rectangle.opacity);
+            assert_eq!(
+                editor.state.default_filter_stroke_width,
+                rectangle.stroke_width
+            );
+            assert_eq!(editor.state.default_filter.strength, pen.strength);
+            assert_eq!(editor.state.default_pen_filter.filter_type, pen.filter_type);
+            assert_eq!(editor.state.default_pen_filter.opacity, pen.opacity);
+            assert_eq!(
+                editor.state.default_pen_filter.stroke_width,
+                pen.stroke_width
+            );
+            assert_eq!(editor.state.default_pen_filter.strength, pen.strength);
+        }
+    }
+
+    #[test]
+    fn filter_creation_style_rejects_invalid_patches_and_normalizes_smart_erase() {
+        let mut editor = Editor::new(snow_draw_engine_core::EngineConfig::default()).unwrap();
+        let style = FilterStyle {
+            filter_type: snow_draw_engine_document::CanvasFilterType::SmartErase,
+            strength: 0.8,
+            opacity: 0.9,
+            stroke_width: 20.0,
+        };
+        let before = editor.state.clone();
+        for (patch, properties, tool) in [
+            (style, crate::FILTER_STYLE_PROPERTY_ALL, ActiveTool::Shape),
+            (style, u32::MAX, ActiveTool::PenFilter),
+            (
+                FilterStyle {
+                    opacity: f64::NAN,
+                    ..style
+                },
+                crate::FILTER_STYLE_PROPERTY_ALL,
+                ActiveTool::PenFilter,
+            ),
+            (
+                FilterStyle {
+                    stroke_width: 73.0,
+                    ..style
+                },
+                crate::FILTER_STYLE_PROPERTY_ALL,
+                ActiveTool::PenFilter,
+            ),
+        ] {
+            assert_eq!(
+                editor.set_filter_creation_style(patch, properties, tool),
+                Err(ErrorCode::InvalidArgument)
+            );
+            assert_eq!(editor.state, before);
+        }
+        editor
+            .set_filter_creation_style(
+                style,
+                crate::FILTER_STYLE_PROPERTY_ALL,
+                ActiveTool::PenFilter,
+            )
+            .unwrap();
+        assert_eq!(editor.state.default_filter.strength, 0.8);
+        assert_eq!(editor.state.default_pen_filter.strength, 0.5);
+        let pen = editor.state.default_pen_filter.clone();
+        let rectangle = FilterStyle {
+            filter_type: snow_draw_engine_document::CanvasFilterType::Inversion,
+            opacity: 0.4,
+            ..style
+        };
+        editor
+            .set_filter_creation_style(
+                rectangle,
+                FILTER_STYLE_PROPERTY_TYPE | FILTER_STYLE_PROPERTY_OPACITY,
+                ActiveTool::RectangleFilter,
+            )
+            .unwrap();
+        assert_eq!(
+            editor.state.default_filter.filter_type,
+            rectangle.filter_type
+        );
+        assert_eq!(editor.state.default_filter.opacity, rectangle.opacity);
+        assert_eq!(editor.state.default_pen_filter, pen);
     }
 
     #[test]

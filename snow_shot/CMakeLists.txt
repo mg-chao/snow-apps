@@ -3305,6 +3305,10 @@ if(SNOW_SHOT_BUILD_TESTS)
         COMMAND snow-shot-screenshot-history-tests --direct-capture-only
     )
     add_test(
+        NAME snow-shot-history-metadata-lifecycle-tests
+        COMMAND snow-shot-screenshot-history-tests --history-metadata-lifecycle-only
+    )
+    add_test(
         NAME snow-shot-selection-border-resize-tests
         COMMAND snow-shot-screenshot-history-tests --selection-border-resize-only
     )
@@ -3315,6 +3319,7 @@ if(SNOW_SHOT_BUILD_TESTS)
     )
     set_tests_properties(
         snow-shot-direct-capture-history-tests
+        snow-shot-history-metadata-lifecycle-tests
         snow-shot-selection-border-resize-tests
         snow-shot-screenshot-completion-gesture-tests
         PROPERTIES

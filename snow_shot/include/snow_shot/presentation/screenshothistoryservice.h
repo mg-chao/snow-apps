@@ -56,6 +56,8 @@ class ScreenshotHistoryService final : public QObject {
     [[nodiscard]] bool presentTransientEntry(const ScreenshotHistoryEntry& entry);
 
   private:
+    friend class ScreenshotHistoryServiceTestAccess;
+
     struct PendingWrite {
         QString entryId;
         std::shared_future<snow_shot::storage::CaptureHistoryPublishResult> result;
@@ -69,6 +71,7 @@ class ScreenshotHistoryService final : public QObject {
                                     std::optional<ScreenshotHistoryEntry> entry);
     void reapCompletedLoads();
     void drainPendingLoads();
+    void initializeRepository();
     void reapCompletedWrites();
     void scheduleWrite(ScreenshotHistoryEntry entry);
     [[nodiscard]] std::shared_future<snow_shot::storage::CaptureHistoryPublishResult>
