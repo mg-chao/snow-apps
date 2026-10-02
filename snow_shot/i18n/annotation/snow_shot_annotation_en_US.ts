@@ -828,6 +828,10 @@
             <translation>Save as file</translation>
         </message>
         <message>
+            <source>Save to File</source>
+            <translation>Save to File</translation>
+        </message>
+        <message>
             <source>Scrolling screenshot</source>
             <translation>Scrolling screenshot</translation>
         </message>
@@ -1158,6 +1162,10 @@
         <message>
             <source>Transparent</source>
             <translation>Transparent</translation>
+        </message>
+        <message>
+            <source>Trim Video</source>
+            <translation>Trim Video</translation>
         </message>
         <message>
             <source>Undo</source>

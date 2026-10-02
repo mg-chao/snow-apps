@@ -13,6 +13,7 @@ use std::thread::JoinHandle;
 use std::time::Instant;
 
 use bincode::Options;
+use ffmpeg::Rescale;
 use ffmpeg_next as ffmpeg;
 use snow_core::cancellation::CancellationToken;
 use snow_recording_effects::RecordedEffects;
@@ -305,6 +306,24 @@ pub(crate) fn render_bundle(
     config: StreamingEncoderConfig,
     metadata: RenderMetadata,
     cancellation: &CancellationToken,
+    progress: impl FnMut(ExportStage, u64, u64, Instant),
+) -> Result<ExportResult> {
+    let range = snow_recording_model::TrimRange::new(
+        0,
+        metadata.timeline.duration_ms() * 1000,
+        metadata.timeline.duration_ms() * 1000,
+    )
+    .map_err(RecordingExportError::InvalidConfig)?;
+    render_bundle_range(path, config, metadata, range, cancellation, progress)
+}
+
+/// A non-destructive render attempt. Source ownership belongs to the clip/caller.
+pub fn render_bundle_range(
+    path: &Path,
+    config: StreamingEncoderConfig,
+    metadata: RenderMetadata,
+    range: snow_recording_model::TrimRange,
+    cancellation: &CancellationToken,
     mut progress: impl FnMut(ExportStage, u64, u64, Instant),
 ) -> Result<ExportResult> {
     check_cancel(cancellation)?;
@@ -320,7 +339,22 @@ pub(crate) fn render_bundle(
     let source = snow_recording_model::SourceDescription::deferred(&footer.manifest, &metadata)?;
     let source_hdr = source.media.color == snow_media::ColorDescription::HDR10;
     let output_hdr = crate::preserves_hdr_output(source_hdr, config.format, config.codec);
-    let timeline = source.timeline;
+    snow_recording_model::TrimRange::new(
+        range.start_us,
+        range.end_us,
+        source.timeline.duration_ms() * 1000,
+    )
+    .map_err(RecordingExportError::InvalidConfig)?;
+    let first =
+        (u128::from(range.start_us) * u128::from(source.timeline.fps())).div_ceil(1_000_000) as u64;
+    let origin_ms = source
+        .timeline
+        .frame(first)
+        .ok_or_else(|| decode("empty trim range"))?
+        .timestamp_ms;
+    let timeline =
+        FinalizedTimeline::new((range.duration_us() / 1000).max(1), source.timeline.fps())
+            .map_err(RecordingExportError::InvalidConfig)?;
     let total = timeline.frame_count();
     if config.fps != timeline.fps()
         || (config.width, config.height)
@@ -348,7 +382,8 @@ pub(crate) fn render_bundle(
         rasterizer,
     )
     .map_err(RecordingExportError::Export)?
-    .with_timeline(timeline);
+    .with_timeline(timeline)
+    .with_playback_origin(origin_ms);
     let mut inputs = InputStoreReader::from_bundle(path)?
         .ok_or_else(|| decode("recording input timeline is missing"))?;
     let mut encoder_config = config.clone();
@@ -377,13 +412,15 @@ pub(crate) fn render_bundle(
     );
     let mut video = SequentialVideoSource::open(
         path,
-        timeline,
+        source.timeline,
         source_hdr,
         (source.coded_width, source.coded_height),
         (config.width, config.height),
         cancellation,
     )?;
+    video.seek_to(first, cancellation)?;
     let mut audio = AudioReplay::open(path, &footer, &config)?;
+    audio.skip_samples(range.sample_offset(48_000))?;
     let mut rgba = vec![0; config.width as usize * config.height as usize * 4];
     let mut hdr_conversion = if output_hdr {
         let mut conversion = ffmpeg::software::scaling::Context::get(
@@ -420,11 +457,19 @@ pub(crate) fn render_bundle(
         stage_times[0] = started.elapsed();
     }
     let mut previous_telemetry = Instant::now();
-    for frame in timeline.iter() {
+    for output_frame in timeline.iter() {
+        let frame = snow_recording_model::RenderFrame {
+            timestamp_ms: source
+                .timeline
+                .frame(first + output_frame.index)
+                .ok_or_else(|| decode("trim exceeds source frames"))?
+                .timestamp_ms,
+            ..output_frame
+        };
         check_cancel(cancellation)?;
         #[cfg(feature = "bench-timing")]
         let stage_started = Instant::now();
-        video.advance(frame.pts, cancellation)?;
+        video.advance(first + frame.pts, cancellation)?;
         #[cfg(feature = "bench-timing")]
         {
             stage_times[1] += stage_started.elapsed();
@@ -525,7 +570,8 @@ pub(crate) fn render_bundle(
     progress(ExportStage::Finalize, total, total, started);
     #[cfg(feature = "bench-timing")]
     let stage_started = Instant::now();
-    let report = encoder.finish_at_duration_ms_cancelable(timeline.duration_ms(), cancellation)?;
+    audio.emit_until(range.sample_count(48_000), &mut encoder, cancellation)?;
+    let report = encoder.finish_at_duration_us_cancelable(range.duration_us(), cancellation)?;
     #[cfg(feature = "bench-timing")]
     {
         let conversions = if output_hdr {
@@ -664,6 +710,9 @@ struct SequentialVideoSource {
     input: ffmpeg::format::context::Input,
     decoder: ffmpeg::decoder::Video,
     stream_index: usize,
+    time_base: ffmpeg::Rational,
+    source_offset_us: i64,
+    seek_index: bool,
     index: VideoIndexReader,
     timeline: FinalizedTimeline,
     eof: bool,
@@ -692,13 +741,25 @@ impl SequentialVideoSource {
             .best(ffmpeg::media::Type::Video)
             .ok_or_else(|| decode("source video stream missing"))?;
         let stream_index = stream.index();
-        let index = VideoIndexReader::from_bundle(path)?
+        let mut index = VideoIndexReader::from_bundle(path)?
             .ok_or_else(|| decode("clean source video index is missing"))?;
         if index.remaining() > timeline.frame_count() {
             return Err(decode(
                 "clean source index has more images than output slots",
             ));
         }
+        let first = index
+            .next_frame()?
+            .ok_or_else(|| decode("clean source video index is empty"))?;
+        let first_pts =
+            (u128::from(first.timestamp_ms) * u128::from(timeline.fps())).div_ceil(1000);
+        let source_offset_us = (first_pts * 1_000_000 / u128::from(timeline.fps())) as i64
+            - stream
+                .start_time()
+                .max(0)
+                .rescale(stream.time_base(), (1, 1_000_000));
+        index.seek_before(0)?;
+        let time_base = stream.time_base();
         let decoder = ffmpeg::codec::context::Context::from_parameters(stream.parameters())
             .map_err(|e| decode(e.to_string()))?
             .decoder()
@@ -730,6 +791,9 @@ impl SequentialVideoSource {
             input,
             decoder,
             stream_index,
+            time_base,
+            source_offset_us,
+            seek_index: false,
             index,
             timeline,
             eof: false,
@@ -756,6 +820,17 @@ impl SequentialVideoSource {
             let mut frame = ffmpeg::frame::Video::empty();
             match self.decoder.receive_frame(&mut frame) {
                 Ok(()) => {
+                    if self.seek_index {
+                        let at = frame
+                            .timestamp()
+                            .unwrap_or(0)
+                            .rescale(self.time_base, (1, 1_000_000))
+                            .saturating_add(self.source_offset_us)
+                            .max(0) as u64;
+                        // Reconnect the decoder checkpoint to the authoritative admission index.
+                        self.index.seek_before((at + 500) / 1000)?;
+                        self.seek_index = false;
+                    }
                     let entry = self.index.next_frame()?.ok_or_else(|| {
                         decode("clean source contains more decoded images than its index")
                     })?;
@@ -808,6 +883,23 @@ impl SequentialVideoSource {
                 }
             }
         }
+    }
+    fn seek_to(&mut self, pts: u64, cancellation: &CancellationToken) -> Result<()> {
+        if pts < u64::from(self.timeline.fps()) {
+            return Ok(());
+        }
+        check_cancel(cancellation)?;
+        let at = (u128::from(pts) * 1_000_000 / u128::from(self.timeline.fps())) as i64;
+        let seek = (at - self.source_offset_us).max(0);
+        self.input
+            .seek(seek, ..seek)
+            .map_err(|e| decode(e.to_string()))?;
+        self.decoder.flush();
+        self.current = None;
+        self.eof = false;
+        self.seek_index = true;
+        self.next = self.decode_next(cancellation)?;
+        Ok(())
     }
     fn advance(&mut self, pts: u64, cancellation: &CancellationToken) -> Result<()> {
         let mut changed = false;
@@ -881,6 +973,16 @@ struct AudioReplay {
     mixed: Vec<i16>,
 }
 impl AudioReplay {
+    fn skip_samples(&mut self, samples: u64) -> Result<()> {
+        for source in &mut self.sources {
+            let bytes = samples
+                .saturating_mul(source.channels as u64 * 2)
+                .min(source.remaining);
+            source.file.seek(SeekFrom::Current(bytes as i64))?;
+            source.remaining -= bytes;
+        }
+        Ok(())
+    }
     fn open(
         path: &Path,
         footer: &RecordingBundleFooter,

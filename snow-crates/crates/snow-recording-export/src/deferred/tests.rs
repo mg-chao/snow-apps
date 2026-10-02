@@ -13,6 +13,141 @@ struct Fixture {
     config: StreamingEncoderConfig,
     metadata: RenderMetadata,
 }
+
+#[test]
+fn trimmed_deferred_render_restarts_progress_and_retains_the_source() {
+    let fixture = fixture(
+        crate::ExportFormat::Mp4,
+        crate::VideoCodec::H264,
+        false,
+        true,
+        false,
+    );
+    let source = std::fs::read(&fixture.bundle).unwrap();
+    let mut config = fixture.config.clone();
+    config.output_path = fixture.bundle.parent().unwrap().join("trim.mp4");
+    let range = snow_recording_model::TrimRange::new(500_000, 900_000, 1_001_000).unwrap();
+    let result = render_bundle_range(
+        &fixture.bundle,
+        config.clone(),
+        fixture.metadata.clone(),
+        range,
+        &CancellationToken::default(),
+        |_, _, _, _| {},
+    )
+    .unwrap();
+    assert_eq!(result.duration_ms, 400);
+    let (frames, width, height, _) = decode_frames(&config.output_path);
+    assert_eq!(frames.len(), 12);
+    let at = |frame: &[u8], x: u32, y: u32| frame[((y * width + x) * 4) as usize..][..3].to_vec();
+    let first = at(&frames[0], width - 2, height - 1);
+    let last = at(frames.last().unwrap(), width - 2, height - 1);
+    assert!(
+        first[0] < 150 && last[0] > 170 && last[1] < 100,
+        "progress must restart and reach the trimmed endpoint: {first:?} {last:?}"
+    );
+    let cursor = at(&frames[0], 8, 4);
+    assert!(
+        cursor[1] > 150,
+        "cursor state already active at trim start is reconstructed: {cursor:?}"
+    );
+    assert_eq!(std::fs::read(&fixture.bundle).unwrap(), source);
+    config.output_path = fixture.bundle.parent().unwrap().join("one-frame.mp4");
+    let range = snow_recording_model::TrimRange::new(33_333, 66_666, 1_001_000).unwrap();
+    let result = render_bundle_range(
+        &fixture.bundle,
+        config,
+        fixture.metadata.clone(),
+        range,
+        &CancellationToken::default(),
+        |_, _, _, _| {},
+    )
+    .unwrap();
+    assert_eq!(result.duration_ms, 33);
+    assert_eq!(std::fs::read(&fixture.bundle).unwrap(), source);
+}
+#[test]
+fn clip_preview_reads_normalized_source_times_without_rendering_effects() {
+    let fixture = fixture_with_source(
+        crate::ExportFormat::Mp4,
+        crate::VideoCodec::H264,
+        (32, 24),
+        true,
+        false,
+        (5, 20),
+        false,
+    );
+    let source = crate::clip::ClipSource::open(&fixture.bundle, None).unwrap();
+    let mut video = crate::clip::VideoReader::open(source.clone(), false).unwrap();
+    let mut pixels = Vec::new();
+    video
+        .read(source.boundary(19), &CancellationToken::default())
+        .unwrap();
+    video.copy_rgba(&mut pixels).unwrap();
+    let before = pixels[0];
+    video
+        .read(source.boundary(20), &CancellationToken::default())
+        .unwrap();
+    video.copy_rgba(&mut pixels).unwrap();
+    assert!(
+        pixels[0] > before + 10,
+        "normalized container PTS must preserve source admission times"
+    );
+    assert!(
+        pixels[(4 * 32 + 8) * 4 + 1] < 150,
+        "preview must not composite cursor effects"
+    );
+    assert!(
+        !fixture.config.output_path.exists(),
+        "preview must not render the deferred output"
+    );
+    let mut audio = crate::clip::AudioReader::open(&source).unwrap();
+    let tracks = audio
+        .read(24_000, 480, &CancellationToken::default())
+        .unwrap();
+    assert_eq!(tracks.len(), 2);
+    assert!(tracks[0].iter().all(|sample| *sample == 1000));
+    assert!(tracks[1].iter().all(|sample| *sample == 2000));
+}
+
+#[test]
+fn hdr_trim_preserves_transfer_function_and_retains_original_bundle() {
+    let fixture = fixture(
+        crate::ExportFormat::Mp4,
+        crate::VideoCodec::H265,
+        false,
+        false,
+        true,
+    );
+    let source = crate::clip::ClipSource::open(&fixture.bundle, None).unwrap();
+    let path = fixture.bundle.parent().unwrap().join("hdr-trim.mp4");
+    source
+        .export(
+            source.range(15, 30).unwrap(),
+            &path,
+            &CancellationToken::default(),
+            |_| {},
+        )
+        .unwrap();
+    let trimmed = crate::clip::ClipSource::open(&path, Some(fixture.config.clone())).unwrap();
+    assert!(trimmed.hdr);
+    let path2 = fixture.bundle.parent().unwrap().join("hdr-again.mp4");
+    trimmed
+        .export(
+            trimmed.range(3, 10).unwrap(),
+            &path2,
+            &CancellationToken::default(),
+            |_| {},
+        )
+        .unwrap();
+    assert!(
+        crate::clip::ClipSource::open(&path2, Some(fixture.config.clone()))
+            .unwrap()
+            .hdr
+    );
+    assert!(fixture.bundle.exists() && path.exists());
+}
+
 fn fixture(
     format: crate::ExportFormat,
     codec: crate::VideoCodec,
@@ -358,8 +493,7 @@ fn fixture_with_source(
 
 fn decode_frames(path: &Path) -> (Vec<Vec<u8>>, u32, u32, f64) {
     if path.extension().is_some_and(|ext| ext == "gif") {
-        // The packaged GIF demuxer has no parser and emits arbitrary chunks;
-        // use the independent GIF decoder to validate the generated animation.
+        // Use an independent decoder to validate the generated animation.
         let mut options = gif::DecodeOptions::new();
         options.set_color_output(gif::ColorOutput::RGBA);
         let mut reader = options.read_info(File::open(path).unwrap()).unwrap();

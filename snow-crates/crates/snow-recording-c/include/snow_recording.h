@@ -7,6 +7,45 @@ extern "C" {
 typedef struct SnowRecordingSessionImpl SnowRecordingSession;
 typedef struct SnowRecordingSourceImpl SnowRecordingSource;
 typedef struct SnowRecordingRenderTaskImpl SnowRecordingRenderTask;
+typedef struct SnowRecordingClipImpl SnowRecordingClip;
+typedef struct SnowRecordingClipFrameImpl SnowRecordingClipFrame;
+typedef struct SnowRecordingClipExportImpl SnowRecordingClipExport;
+/* Null options open a deferred source bundle using its immutable settings. */
+typedef struct SnowRecordingClipOptions {
+    uint32_t version, struct_size;
+    uint32_t format, codec, preset, quality, fps, hardware, loop;
+} SnowRecordingClipOptions;
+typedef struct SnowRecordingClipInfo {
+    uint32_t width, height;
+    uint64_t duration_us, frame_count;
+} SnowRecordingClipInfo;
+typedef struct SnowRecordingClipPreview {
+    uint64_t revision, position_us;
+    uint32_t playing;
+    const uint8_t* rgba;
+    size_t byte_count;
+} SnowRecordingClipPreview;
+/* Open and destroy may block and must run on a worker. Other preview calls do not wait. */
+SnowRecordingClip* snow_recording_clip_open(const char* path,
+                                            const SnowRecordingClipOptions* options);
+void snow_recording_clip_destroy(SnowRecordingClip* clip);
+uint8_t snow_recording_clip_info(const SnowRecordingClip* clip, SnowRecordingClipInfo* info);
+uint64_t snow_recording_clip_boundary(const SnowRecordingClip* clip, uint64_t frame);
+uint64_t snow_recording_clip_seek(SnowRecordingClip* clip, uint64_t frame, uint64_t end_frame,
+                                  uint8_t play);
+SnowRecordingClipFrame* snow_recording_clip_acquire(const SnowRecordingClip* clip,
+                                                    SnowRecordingClipPreview* preview);
+void snow_recording_clip_frame_destroy(SnowRecordingClipFrame* frame);
+size_t snow_recording_clip_error(const SnowRecordingClip* clip, char* buffer, size_t capacity);
+SnowRecordingClipExport* snow_recording_clip_export_start(const SnowRecordingClip* clip,
+                                                          uint64_t first, uint64_t end,
+                                                          const char* destination);
+/* States match SnowRecordingRenderState. Cancellation and destruction are worker operations. */
+uint32_t snow_recording_clip_export_poll(const SnowRecordingClipExport* task, float* percent);
+size_t snow_recording_clip_export_error(const SnowRecordingClipExport* task, char* buffer,
+                                        size_t capacity);
+void snow_recording_clip_export_cancel(SnowRecordingClipExport* task);
+void snow_recording_clip_export_destroy(SnowRecordingClipExport* task);
 typedef struct SnowRecordingConfig {
     /* Desktop points on macOS; physical desktop pixels on Windows. */
     int32_t x;

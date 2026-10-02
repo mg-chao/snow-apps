@@ -123,6 +123,40 @@
         </message>
     </context>
     <context>
+        <name>RecordingTrimSession</name>
+        <message>
+            <source>Choose a different file to preserve the original recording.</source>
+            <translation>Choose a different file to preserve the original recording.</translation>
+        </message>
+        <message>
+            <source>Save to File</source>
+            <translation>Save to File</translation>
+        </message>
+        <message>
+            <source>Unable to export recording: %1</source>
+            <translation>Unable to export recording: %1</translation>
+        </message>
+        <message>
+            <source>Unable to preview recording: %1</source>
+            <translation>Unable to preview recording: %1</translation>
+        </message>
+    </context>
+    <context>
+        <name>RecordingTrimToolbar</name>
+        <message>
+            <source>Replay</source>
+            <translation>Replay</translation>
+        </message>
+        <message>
+            <source>Trim end</source>
+            <translation>Trim end</translation>
+        </message>
+        <message>
+            <source>Trim start</source>
+            <translation>Trim start</translation>
+        </message>
+    </context>
+    <context>
         <name>ScreenRecordingController</name>
         <message>
             <source>Keyboard recording failed: %1</source>

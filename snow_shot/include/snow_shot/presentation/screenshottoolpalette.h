@@ -275,6 +275,7 @@ class ScreenshotToolPalette final : public QWidget,
     QWidget* actionPanel() const;
     QWidget* stylePanel() const;
     QWidget* recordingExportSettingsPanel() const;
+    QWidget* recordingTrimPanel() const;
     QWidget* dragHandle() const;
     QWidget* trailingDragHandle() const;
     QSize contentSizeHint() const;
@@ -364,6 +365,7 @@ class ScreenshotToolPalette final : public QWidget,
     [[nodiscard]] RecordingBusyOperation recordingBusyOperation() const;
     [[nodiscard]] bool recordingBusy() const;
     void setRecordingDuration(qint64 durationMilliseconds);
+    void setRecordingTrimPanel(QWidget* panel, bool busy);
     void setRecordingMicrophoneEnabled(bool enabled);
     void setRecordingSystemAudioEnabled(bool enabled);
     void setRecordingMicrophoneGainDb(int gainDb);
@@ -558,6 +560,8 @@ class ScreenshotToolPalette final : public QWidget,
     void recordingOpenFolderRequested();
     void recordingCloseRequested();
     void recordingCopyRequested();
+    void recordingTrimRequested();
+    void recordingSaveRequested();
     void recordingOutputFormatChanged(const QString& format);
     void recordingPostProcessingEnabledChanged(bool enabled);
     void recordingPostProcessingEffectChanged(const QString& effect);
@@ -924,6 +928,10 @@ class ScreenshotToolPalette final : public QWidget,
     adqt::widgets::AdButton* m_recordOpenFolderButton = nullptr;
     adqt::widgets::AdButton* m_recordCloseButton = nullptr;
     adqt::widgets::AdButton* m_recordCopyButton = nullptr;
+    adqt::widgets::AdButton* m_recordTrimButton = nullptr;
+    adqt::widgets::AdButton* m_recordSaveButton = nullptr;
+    QPointer<QWidget> m_recordTrimPanel;
+    bool m_recordTrimBusy = false;
     adqt::widgets::AdSelect* m_recordOutputFormatSelect = nullptr;
     adqt::widgets::AdColorPicker* m_recordMouseTrailColorPicker = nullptr;
     adqt::widgets::AdColorPicker* m_recordMouseClickColorPicker = nullptr;

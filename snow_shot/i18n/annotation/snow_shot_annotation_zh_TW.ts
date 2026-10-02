@@ -828,6 +828,10 @@
             <translation>另存為檔案</translation>
         </message>
         <message>
+            <source>Save to File</source>
+            <translation>儲存至檔案</translation>
+        </message>
+        <message>
             <source>Scrolling screenshot</source>
             <translation>捲動截圖</translation>
         </message>
@@ -1158,6 +1162,10 @@
         <message>
             <source>Transparent</source>
             <translation>透明</translation>
+        </message>
+        <message>
+            <source>Trim Video</source>
+            <translation>裁剪影片</translation>
         </message>
         <message>
             <source>Undo</source>

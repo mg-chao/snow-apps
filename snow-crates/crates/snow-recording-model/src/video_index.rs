@@ -21,6 +21,8 @@ pub struct VideoIndexReader {
     remaining: u64,
     next_index: u64,
     last_timestamp: Option<u64>,
+    records_offset: u64,
+    record_count: u64,
 }
 
 impl VideoIndexReader {
@@ -49,11 +51,45 @@ impl VideoIndexReader {
             remaining: records / VIDEO_INDEX_RECORD_BYTES as u64,
             next_index: 0,
             last_timestamp: None,
+            records_offset: offset + VIDEO_INDEX_MAGIC.len() as u64,
+            record_count: records / VIDEO_INDEX_RECORD_BYTES as u64,
         })
     }
 
     pub fn remaining(&self) -> u64 {
         self.remaining
+    }
+
+    /// Position at the last admitted image at or before a source timestamp.
+    /// Fixed-size records permit logarithmic disk reads with bounded buffering.
+    pub fn seek_before(&mut self, timestamp_ms: u64) -> Result<()> {
+        let mut file = self.input.get_ref().get_ref().try_clone()?;
+        let mut low = 0;
+        let mut high = self.record_count;
+        while low < high {
+            let middle = low + (high - low) / 2;
+            file.seek(SeekFrom::Start(
+                self.records_offset + middle * VIDEO_INDEX_RECORD_BYTES as u64 + 8,
+            ))?;
+            let mut bytes = [0; 8];
+            file.read_exact(&mut bytes)?;
+            if u64::from_le_bytes(bytes) <= timestamp_ms {
+                low = middle + 1;
+            } else {
+                high = middle;
+            }
+        }
+        self.next_index = low.saturating_sub(1);
+        self.remaining = self.record_count - self.next_index;
+        self.last_timestamp = None;
+        file.seek(SeekFrom::Start(
+            self.records_offset + self.next_index * VIDEO_INDEX_RECORD_BYTES as u64,
+        ))?;
+        self.input = BufReader::with_capacity(
+            READ_BUFFER_BYTES,
+            file.take(self.remaining * VIDEO_INDEX_RECORD_BYTES as u64),
+        );
+        Ok(())
     }
 
     pub fn next_frame(&mut self) -> Result<Option<VideoIndexEntry>> {
@@ -198,6 +234,36 @@ mod tests {
         drop(reader);
         for path in [bundle, index, next_asset] {
             std::fs::remove_file(path).unwrap();
+        }
+    }
+
+    #[test]
+    fn indexed_seeks_retain_the_containing_image_and_never_read_other_assets() {
+        let entries = [166, 1400, 2033].map(|at| VideoIndexEntry {
+            index: 0,
+            timestamp_ms: at,
+            duration_ms: 1,
+        });
+        let entries: Vec<_> = entries
+            .into_iter()
+            .enumerate()
+            .map(|(i, mut entry)| {
+                entry.index = i as u64;
+                entry
+            })
+            .collect();
+        let data = bytes(&entries);
+        let mut reader = reader(&data, data.len() as u64).unwrap();
+        for (time, expected) in [
+            (0, 0),
+            (166, 0),
+            (1399, 0),
+            (1400, 1),
+            (99999, 2),
+            (1700, 1),
+        ] {
+            reader.seek_before(time).unwrap();
+            assert_eq!(reader.next_frame().unwrap(), Some(entries[expected]));
         }
     }
 

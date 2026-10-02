@@ -1,0 +1,36 @@
+--- a/source/common/x86/mc-a2.asm
++++ b/source/common/x86/mc-a2.asm
+@@ -1262,6 +1262,8 @@
+     pxor        m4, m4
+     movlhps     m6, m6
+     mova        m5, [pw_3fff]
++    cmp         r6d, 1
++    jl          .remainder
+ 
+ .loop:
+     movh        m2, [r2+r5*4]       ; intra
+@@ -1311,6 +1313,7 @@
+     cmp         r5d, r6d
+     jl         .loop
+ 
++.remainder:
+     xor         r6d, r5d
+     jnz         .even
+     movd        m2, [r2+r5*4]       ; intra
+@@ -1361,6 +1364,8 @@
+     mulpd           m6, [pd_inv256]
+     xor             r5d, r5d
+     mova            m5, [pw_3fff]
++    cmp             r6d, 1
++    jl              .remainder
+ 
+ .loop:
+     movu            xm2, [r2+r5*4]      ; intra
+@@ -1394,6 +1399,7 @@
+     cmp             r5d, r6d
+     jl             .loop
+ 
++.remainder:
+     add             r6d, 3
+     xor             r6d, r5d
+     jz              .even               ; if loop counter is multiple of 4, all values are processed

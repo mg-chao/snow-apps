@@ -123,6 +123,40 @@
         </message>
     </context>
     <context>
+        <name>RecordingTrimSession</name>
+        <message>
+            <source>Choose a different file to preserve the original recording.</source>
+            <translation>请选择其他文件，以保留原始录制。</translation>
+        </message>
+        <message>
+            <source>Save to File</source>
+            <translation>保存到文件</translation>
+        </message>
+        <message>
+            <source>Unable to export recording: %1</source>
+            <translation>无法导出录制：%1</translation>
+        </message>
+        <message>
+            <source>Unable to preview recording: %1</source>
+            <translation>无法预览录制：%1</translation>
+        </message>
+    </context>
+    <context>
+        <name>RecordingTrimToolbar</name>
+        <message>
+            <source>Replay</source>
+            <translation>重播</translation>
+        </message>
+        <message>
+            <source>Trim end</source>
+            <translation>裁剪终点</translation>
+        </message>
+        <message>
+            <source>Trim start</source>
+            <translation>裁剪起点</translation>
+        </message>
+    </context>
+    <context>
         <name>ScreenRecordingController</name>
         <message>
             <source>Keyboard recording failed: %1</source>

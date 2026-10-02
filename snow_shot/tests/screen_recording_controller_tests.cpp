@@ -14,6 +14,11 @@
 #endif
 #include "snow_shot/presentation/canvasstatusreadout.h"
 #include <QDialog>
+#include <QSlider>
+#include <QToolButton>
+#include <QFileDialog>
+#include "../src/presentation/recording/recordingtrimtoolbar.h"
+#include "snow_shot/presentation/styles/thememanager.h"
 #include <QAbstractButton>
 #include <QKeyEvent>
 #include <QPainter>
@@ -86,6 +91,11 @@ const char* nativeCaptureError() {
 #include <iostream>
 #include <stdexcept>
 
+struct SnowRecordingClipImpl {
+    quint64 revision = 0;
+};
+struct SnowRecordingClipFrameImpl {};
+struct SnowRecordingClipExportImpl {};
 struct SnowRecordingSessionImpl {};
 struct SnowRecordingAudioMonitorImpl {
     uint32_t source = 0;
@@ -102,6 +112,12 @@ std::unique_ptr<RecordingEffectsSource> testEffectsSource() {
 }
 
 SnowRecordingSession session;
+std::atomic<int> clipOpens = 0, clipDestroys = 0, clipExports = 0;
+std::atomic<uint32_t> clipExportState = SNOW_RECORDING_RENDER_STATE_SUCCEEDED;
+std::atomic<int> clipAutoplays = 0;
+std::atomic<bool> clipDeferred = false;
+QString clipPath;
+quint64 clipFirst = 0, clipEnd = 0;
 std::atomic<int> starts = 0;
 std::atomic<int> audioMonitorCreates = 0;
 std::atomic<int> audioMonitorDestroys = 0;
@@ -1990,6 +2006,64 @@ uint8_t snow_recording_session_pause(SnowRecordingSession*) {
 uint8_t snow_recording_session_resume(SnowRecordingSession*) {
     return 1;
 }
+SnowRecordingClip* snow_recording_clip_open(const char* path,
+                                            const SnowRecordingClipOptions* options) {
+    clipPath = QString::fromUtf8(path);
+    clipDeferred = options == nullptr;
+    ++clipOpens;
+    return new SnowRecordingClip;
+}
+void snow_recording_clip_destroy(SnowRecordingClip* clip) {
+    delete clip;
+    ++clipDestroys;
+}
+uint8_t snow_recording_clip_info(const SnowRecordingClip*, SnowRecordingClipInfo* info) {
+    *info = {32, 24, 1000000, 30};
+    return 1;
+}
+uint64_t snow_recording_clip_boundary(const SnowRecordingClip*, uint64_t frame) {
+    return frame * 1000000 / 30;
+}
+uint64_t snow_recording_clip_seek(SnowRecordingClip* clip, uint64_t frame, uint64_t end,
+                                  uint8_t play) {
+    clipFirst = frame;
+    clipEnd = end;
+    clipAutoplays += play != 0;
+    return ++clip->revision;
+}
+SnowRecordingClipFrame* snow_recording_clip_acquire(const SnowRecordingClip*,
+                                                    SnowRecordingClipPreview*) {
+    return nullptr;
+}
+void snow_recording_clip_frame_destroy(SnowRecordingClipFrame* frame) {
+    delete frame;
+}
+size_t snow_recording_clip_error(const SnowRecordingClip*, char*, size_t) {
+    return 0;
+}
+SnowRecordingClipExport* snow_recording_clip_export_start(const SnowRecordingClip*, uint64_t first,
+                                                          uint64_t end, const char* path) {
+    clipFirst = first;
+    clipEnd = end;
+    ++clipExports;
+    QFile file(QString::fromUtf8(path));
+    require(file.open(QIODevice::WriteOnly), "trim export creates durable output");
+    file.write("trim fixture");
+    return new SnowRecordingClipExport;
+}
+uint32_t snow_recording_clip_export_poll(const SnowRecordingClipExport*, float* percent) {
+    *percent = clipExportState == SNOW_RECORDING_RENDER_STATE_RUNNING ? 41.75f : 100;
+    return clipExportState;
+}
+size_t snow_recording_clip_export_error(const SnowRecordingClipExport*, char*, size_t) {
+    return 0;
+}
+void snow_recording_clip_export_cancel(SnowRecordingClipExport*) {
+    clipExportState = SNOW_RECORDING_RENDER_STATE_CANCELED;
+}
+void snow_recording_clip_export_destroy(SnowRecordingClipExport* task) {
+    delete task;
+}
 SnowRecordingResult snow_recording_session_stop(SnowRecordingSession*) {
     require(recordingStopRequested,
             "Stop must freeze its endpoint before asynchronous finalization");
@@ -3112,6 +3186,508 @@ void recordingEraserTools() {
     QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
 }
 
+void recordingTrimmingTests(const QString& directory) {
+    {
+        ScreenRecordingToolbarWindow toolbar;
+        auto* panel = new RecordingTrimToolbar;
+        panel->setTimeline(30, 1000000,
+                           [](int frame) { return static_cast<quint64>(frame) * 1000000 / 30; });
+        toolbar.palette()->setRecordingTrimPanel(panel, true);
+        toolbar.show();
+        for (bool above : {false, true}) {
+            toolbar.setStyleToolbarAboveMain(above);
+            for (bool busy : {true, false}) {
+                toolbar.palette()->setRecordingTrimPanel(panel, busy);
+                toolbar.prepareForDisplay();
+                QCoreApplication::processEvents();
+                auto* host = toolbar.paletteHost();
+                QList<QPoint> points{panel->mapToGlobal(panel->rect().center())};
+                for (const char* name : {"screenRecordingReplay", "screenRecordingTrimStart",
+                                         "screenRecordingTrimEnd"}) {
+                    auto* control = panel->findChild<QWidget*>(QString::fromLatin1(name));
+                    require(control != nullptr, "trim input target exists");
+                    points.append(control->mapToGlobal(control->rect().center()));
+                }
+                for (const auto& point : points) {
+                    require(toolbar.containsInteractiveGlobalPoint(point),
+                            "trim controls and track must receive input through the floating host");
+                    require(host->surfaceHostRegion().contains(host->mapFromGlobal(point)),
+                            "trim controls and track must belong to the native surface");
+                }
+                const QRect main = toolbar.palette()->mainPanel()->geometry();
+                const QRect secondary = panel->geometry();
+                const int gapY = above ? (secondary.bottom() + main.top()) / 2
+                                       : (main.bottom() + secondary.top()) / 2;
+                require(!toolbar.containsInteractiveGlobalPoint(
+                            toolbar.palette()->mapToGlobal(QPoint(secondary.center().x(), gapY))),
+                        "the gap between toolbar rows must remain click-through");
+            }
+        }
+        toolbar.palette()->setRecordingTrimPanel(nullptr, false);
+        toolbar.prepareForDisplay();
+        require(!panel->isVisible(), "detaching trim retires its input row");
+    }
+    const auto wait = [](auto predicate) {
+        QElapsedTimer deadline;
+        deadline.start();
+        while (!predicate() && deadline.elapsed() < 5000) {
+            QCoreApplication::processEvents();
+            QThread::msleep(1);
+        }
+        require(predicate(), "trim operation completes asynchronously");
+    };
+    QWidget visualHost;
+    visualHost.setAttribute(Qt::WA_TranslucentBackground);
+    RecordingTrimToolbar range(&visualHost);
+    range.setTimeline(30, 1000000,
+                      [](int frame) { return static_cast<quint64>(frame) * 1000000 / 30; });
+    require(range.height() == 40 && range.firstFrame() == 0 && range.endFrame() == 30,
+            "trim row starts at Select height with the entire clip selected");
+    auto* first = range.findChild<QSlider*>(QStringLiteral("screenRecordingTrimStart"));
+    auto* end = range.findChild<QSlider*>(QStringLiteral("screenRecordingTrimEnd"));
+    int preview = -1;
+    range.rangeChanged = [&](int, int, int frame) { preview = frame; };
+    first->setValue(28);
+    end->setValue(1);
+    require(first->value() == 28 && end->value() == 29 && preview == 28,
+            "handles never cross and end scrubbing previews the last included frame");
+    QKeyEvent left(QEvent::KeyPress, Qt::Key_Left, Qt::NoModifier);
+    QApplication::sendEvent(first, &left);
+    require(first->value() == 27 && preview == 27, "keyboard trim steps are exactly one frame");
+    end->setValue(30);
+    first->setValue(0);
+    range.seekRequested = [&](int frame) { preview = frame; };
+    QMouseEvent click(QEvent::MouseButtonPress, QPointF(200, 20), QPointF(200, 20), Qt::LeftButton,
+                      Qt::LeftButton, Qt::NoModifier);
+    QApplication::sendEvent(&range, &click);
+    require(preview == 15, "track scrubbing snaps to the nearest presentation frame");
+    first->setValue(6);
+    end->setValue(24);
+    const QPointF pressGlobal = first->mapToGlobal(QPoint(2, first->height() / 2));
+    for (auto type : {QEvent::MouseButtonPress, QEvent::MouseMove, QEvent::MouseButtonRelease}) {
+        const QPointF global =
+            pressGlobal + (type == QEvent::MouseButtonPress ? QPointF() : QPointF(10, 0));
+        QMouseEvent drag(type, first->mapFromGlobal(global), global,
+                         type == QEvent::MouseMove ? Qt::NoButton : Qt::LeftButton,
+                         type == QEvent::MouseButtonRelease ? Qt::NoButton : Qt::LeftButton,
+                         Qt::NoModifier);
+        QApplication::sendEvent(first, &drag);
+        require(preview == (type == QEvent::MouseButtonPress ? 6 : 7),
+                "dragging pauses at the boundary and preserves the initial grip offset");
+    }
+    require(first->toolTip().endsWith(QStringLiteral("00:00.233")) &&
+                end->toolTip().endsWith(QStringLiteral("00:00.800")),
+            "trim tooltips expose frame boundary timecodes after dragging");
+    range.setEnabled(false);
+    preview = -1;
+    QApplication::sendEvent(&range, &click);
+    require(preview == -1, "disabled timeline cannot request a seek");
+    range.setEnabled(true);
+    end->setValue(8);
+    require(!first->geometry().intersects(end->geometry()),
+            "one-frame selections keep both handles independently reachable");
+    // Render the actual widgets for repeatable light/dark and scale inspection.
+    const QString renders = qEnvironmentVariable("SNOW_TRIM_VISUAL_OUTPUT");
+    using namespace snow_shot::presentation::styles;
+    const auto previousTheme = ThemeManager::instance().themeMode();
+    for (auto theme : {ThemeMode::Light, ThemeMode::Dark}) {
+        ThemeManager::instance().setThemeMode(theme);
+        for (qreal scale : {1.0, 1.25, 1.5, 2.0}) {
+            adqt::widgets::AdControlScaleContext context;
+            context.logicalScale = scale;
+            range.commitControlScale(context);
+            require(range.height() == qRound(40 * scale), "trim row shares Select's scaled height");
+            auto* replay = range.findChild<adqt::widgets::AdButton*>();
+            require(replay->size() == QSize(qRound(32 * scale), qRound(32 * scale)) &&
+                        replay->iconSize() == QSize(qRound(24 * scale), qRound(24 * scale)),
+                    "Replay uses Selection Tool control and icon dimensions at every scale");
+            for (auto* handle : {first, end}) {
+                require(handle->size() == QSize(qRound(16 * scale), qRound(32 * scale)),
+                        "trim handles provide enlarged scaled drag targets");
+                require(range.rect().contains(handle->geometry()) &&
+                            !replay->geometry().intersects(handle->geometry()),
+                        "trim targets stay inside the row and clear of Replay");
+            }
+            first->setValue(6);
+            end->setValue(24);
+            range.setPosition(500000);
+            range.move(48, 48);
+            visualHost.resize(range.size() + QSize(96, 96));
+            visualHost.show();
+            range.show();
+            QCoreApplication::processEvents();
+            const QImage progress = previewImage(range);
+            range.setPosition(600000);
+            const QImage advanced = previewImage(range);
+            const int railTop = qRound(range.height() / 2.0 - 2 * scale);
+            const int railBottom = qRound(range.height() / 2.0 + 2 * scale);
+            for (int y = 0; y < progress.height(); ++y) {
+                if (y >= railTop - 1 && y <= railBottom)
+                    continue;
+                for (int x = qRound(150 * scale); x < qRound(250 * scale); ++x)
+                    require(progress.pixelColor(x, y) == advanced.pixelColor(x, y),
+                            "playback progress must not draw a marker outside the rail");
+            }
+            const qreal trackWidth = range.width() - 96 * scale;
+            const qreal firstX = 68 * scale + trackWidth * 0.2;
+            const qreal endX = 68 * scale + trackWidth * 0.8;
+            for (int y : {railTop, railBottom - 1}) {
+                require(progress.pixelColor(qCeil(firstX), y) ==
+                            progress.pixelColor(qRound(150 * scale), y),
+                        "progress rail meets the start handle with square corners");
+                require(progress.pixelColor(qFloor(endX) - 1, y) ==
+                            progress.pixelColor(qRound(250 * scale), y),
+                        "selected rail meets the end handle with square corners");
+            }
+            range.setPosition(500000);
+            if (!renders.isEmpty()) {
+                QDir().mkpath(renders);
+                require(
+                    previewImage(visualHost)
+                        .save(renders + QStringLiteral("/trim-%1-%2.png")
+                                            .arg(theme == ThemeMode::Dark ? QStringLiteral("dark")
+                                                                          : QStringLiteral("light"))
+                                            .arg(qRound(scale * 100))),
+                    "save trim visual fixture");
+                if (scale == 2.0) {
+                    const auto saveState = [&](const QString& state) {
+                        require(previewImage(visualHost)
+                                    .save(renders + QStringLiteral("/trim-%1-%2.png")
+                                                        .arg(theme == ThemeMode::Dark
+                                                                 ? QStringLiteral("dark")
+                                                                 : QStringLiteral("light"),
+                                                             state)),
+                                "save trim interaction state fixture");
+                    };
+                    first->clearFocus();
+                    end->clearFocus();
+                    saveState(QStringLiteral("rest"));
+                    QEnterEvent enter{QPointF(), QPointF(), QPointF()};
+                    QApplication::sendEvent(end, &enter);
+                    saveState(QStringLiteral("hover"));
+                    QEvent leave(QEvent::Leave);
+                    QApplication::sendEvent(end, &leave);
+                    end->setFocus(Qt::TabFocusReason);
+                    saveState(QStringLiteral("focus"));
+                    range.setEnabled(false);
+                    saveState(QStringLiteral("disabled"));
+                    range.setEnabled(true);
+                    end->setValue(first->value() + 1);
+                    saveState(QStringLiteral("one-frame"));
+                }
+            }
+        }
+    }
+    visualHost.hide();
+    range.commitControlScale({});
+    ThemeManager::instance().setThemeMode(previousTheme);
+    class TrimTranslator final : public QTranslator {
+      public:
+        QString translate(const char* context, const char* source, const char*,
+                          int) const override {
+            if (QByteArray(context) == "RecordingTrimToolbar")
+                return QStringLiteral("Translated ") + QString::fromUtf8(source);
+            return {};
+        }
+    } translator;
+    QCoreApplication::installTranslator(&translator);
+    QEvent languageChange(QEvent::LanguageChange);
+    QApplication::sendEvent(&range, &languageChange);
+    require(first->accessibleName() == QStringLiteral("Translated Trim start") &&
+                range.findChild<adqt::widgets::AdButton*>()->toolTip() ==
+                    QStringLiteral("Translated Replay"),
+            "trim accessibility and Replay retranslate live");
+    require(first->toolTip().startsWith(QStringLiteral("Translated Trim start\n")),
+            "timecode tooltips retranslate alongside the trim handle names");
+    QCoreApplication::removeTranslator(&translator);
+    for (bool deferred : {false, true}) {
+        for (bool paused : {false, true}) {
+            ScreenRecordingController controller(testEffectsSource);
+            QString error;
+            const QString original =
+                directory + (deferred ? QStringLiteral("/deferred") : QStringLiteral("/real")) +
+                (paused ? QStringLiteral("-paused.mp4") : QStringLiteral(".mp4"));
+            const int oldRenders = renderStarts, oldExports = clipExports,
+                      oldAutoplays = clipAutoplays;
+            require(controller.startAutomation(QRect(80, 80, 320, 240),
+                                               {{QStringLiteral("post_processing"), deferred},
+                                                {QStringLiteral("path"), original}},
+                                               &error),
+                    "start trim fixture");
+            waitForRecording(controller);
+            auto* close = recordingToolbarButton("Close recording");
+            auto* trim = recordingToolbarButton("Trim Video");
+            auto* save = recordingToolbarButton("Save to File");
+            auto* copy = recordingToolbarButton("Copy recording");
+            require(close && trim && save && copy && close->x() < trim->x() &&
+                        trim->x() < save->x() && save->x() < copy->x(),
+                    "main toolbar ends with Close, Trim, Save, Copy");
+            if (paused)
+                require(controller.controlAutomation(QStringLiteral("pause"), {}, &error),
+                        "pause before trim");
+            trim->click();
+            require(recordingStopRequested && close->isEnabled(),
+                    "trim freezes capture immediately and keeps Close enabled");
+            wait([&] {
+                return controller.automationState().value(QStringLiteral("state")) ==
+                           QStringLiteral("trimming") &&
+                       copy->isEnabled();
+            });
+            require(clipDeferred == deferred &&
+                        clipPath == (deferred ? QString::fromUtf8(renderSourcePath) : original),
+                    "preview opens clean deferred source or finalized real-time output");
+            require(renderStarts == oldRenders && clipAutoplays == oldAutoplays + 1,
+                    "trim suppresses deferred rendering and autoplays exactly once");
+            if (!renders.isEmpty() && !deferred && !paused) {
+                for (auto theme : {ThemeMode::Light, ThemeMode::Dark}) {
+                    ThemeManager::instance().setThemeMode(theme);
+                    QCoreApplication::processEvents();
+                    require(previewImage(*palette()->window())
+                                .save(renders + (theme == ThemeMode::Dark
+                                                     ? QStringLiteral("/toolbar-dark.png")
+                                                     : QStringLiteral("/toolbar-light.png"))),
+                            "render the complete recording toolbar and selected Trim icon");
+                }
+                ThemeManager::instance().setThemeMode(previousTheme);
+            }
+            if (!deferred) {
+                QFile originalFile(original);
+                require(originalFile.open(QIODevice::WriteOnly), "create finalized source fixture");
+                originalFile.write("original fixture");
+                originalFile.close();
+                copy->click();
+                require(copy->isEnabled() && clipExports == oldExports &&
+                            QApplication::clipboard()->mimeData()->urls().first().toLocalFile() ==
+                                original,
+                        "unchanged full-range Copy reuses the original finalized file");
+            }
+            require(!palette()->activateDrawingShortcut(QStringLiteral("shape")),
+                    "drawing shortcuts stay unavailable in trim mode");
+            auto* start =
+                palette()->findChild<QSlider*>(QStringLiteral("screenRecordingTrimStart"));
+            auto* finish = palette()->findChild<QSlider*>(QStringLiteral("screenRecordingTrimEnd"));
+            start->setValue(5);
+            finish->setValue(20);
+            require(clipFirst == 19 && clipEnd == 20,
+                    "end scrubbing pauses on its last included frame");
+            palette()
+                ->findChild<adqt::widgets::AdButton*>(QStringLiteral("screenRecordingReplay"))
+                ->click();
+            require(clipFirst == 5 && clipEnd == 20 && clipAutoplays == oldAutoplays + 2,
+                    "Replay uses the selected half-open range");
+            const auto captureRegion = controller.automationState().value(QStringLiteral("region"));
+            ScreenRecordingAreaWindow* area = nullptr;
+            for (auto* widget : QApplication::topLevelWidgets())
+                if (auto* candidate = qobject_cast<ScreenRecordingAreaWindow*>(widget);
+                    candidate && candidate->isVisible())
+                    area = candidate;
+            require(area != nullptr, "trim area exists");
+            const QSize size = area->size();
+            area->move(area->pos() + QPoint(10, 10));
+            QCoreApplication::processEvents();
+            require(area->size() == size && controller.automationState().value(
+                                                QStringLiteral("region")) == captureRegion,
+                    "moving the preview never changes the immutable export geometry");
+            controller.open(QRect(0, 0, 600, 600));
+            require(area->size() == size && controller.automationState().value(
+                                                QStringLiteral("region")) == captureRegion,
+                    "reopening cannot replace the geometry of an active trim editor");
+            copy->click();
+            wait([&] { return copy->isEnabled() && clipExports == oldExports + 1; });
+            require(controller.isOpen() && QApplication::clipboard()->mimeData()->hasUrls(),
+                    "Copy keeps the trim editor open");
+            copy->click();
+            require(clipExports == oldExports + 1,
+                    "unchanged trim exports reuse the durable cache");
+            if (!deferred && !paused) {
+                QFile originalFile(original);
+                require(originalFile.open(QIODevice::WriteOnly),
+                        "materialize the retained source fixture");
+                originalFile.write("original fixture");
+                originalFile.close();
+                const QString destination = directory + QStringLiteral("/saved-trim");
+                QTimer choose;
+                QObject::connect(&choose, &QTimer::timeout, [&] {
+                    for (auto* widget : QApplication::topLevelWidgets()) {
+                        if (auto* dialog = qobject_cast<QFileDialog*>(widget)) {
+                            require(
+                                dialog->defaultSuffix() == QStringLiteral("mp4") &&
+                                    !dialog->testOption(QFileDialog::DontConfirmOverwrite),
+                                "Save resolves extensions before native replacement confirmation");
+                            dialog->selectFile(destination);
+                            QMetaObject::invokeMethod(dialog, "accept", Qt::DirectConnection);
+                        }
+                    }
+                });
+                choose.start(10);
+                save->click();
+                choose.stop();
+                wait([&] { return copy->isEnabled(); });
+                QFile saved(destination + QStringLiteral(".mp4"));
+                require(saved.open(QIODevice::ReadOnly) &&
+                            saved.readAll() == QByteArray("trim fixture") &&
+                            clipExports == oldExports + 1 && controller.isOpen(),
+                        "Save atomically publishes the cached trim and keeps the editor open");
+                require(originalFile.open(QIODevice::ReadOnly) &&
+                            originalFile.readAll() == QByteArray("original fixture"),
+                        "Save never replaces the original source");
+            }
+            start->setValue(7);
+            clipExportState = SNOW_RECORDING_RENDER_STATE_FAILED;
+            copy->click();
+            wait([&] { return copy->isEnabled() && clipExports == oldExports + 2; });
+            require(start->value() == 7 && finish->value() == 20 && controller.isOpen(),
+                    "export failure preserves the source session and selected range");
+            clipExportState = SNOW_RECORDING_RENDER_STATE_SUCCEEDED;
+            copy->click();
+            wait([&] { return copy->isEnabled() && clipExports == oldExports + 3; });
+            start->setValue(6);
+            clipExportState = SNOW_RECORDING_RENDER_STATE_RUNNING;
+            copy->click();
+            require(!start->isEnabled() && close->isEnabled(),
+                    "export locks range editing while Close stays available");
+            adqt::widgets::AdModal* cropModal = nullptr;
+            wait([&] {
+                cropModal = controller.findChild<adqt::widgets::AdModal*>(
+                    QStringLiteral("screenRecordingRenderModal"));
+                return cropModal && cropModal->isOpen();
+            });
+            auto* cropProgress = cropModal->contentWidget()->findChild<adqt::widgets::AdProgress*>(
+                QStringLiteral("screenRecordingRenderProgress"));
+            auto* cancel = cropModal->footerWidget()->findChild<adqt::widgets::AdButton*>(
+                QStringLiteral("screenRecordingRenderCancel"));
+            require(cropProgress && cancel &&
+                        cropModal->windowTitle() == QStringLiteral("Rendering recording") &&
+                        cropProgress->accessibleName() == QStringLiteral("Rendering progress"),
+                    "crop export uses the shared rendering modal and accessible copy");
+            wait([&] { return cropProgress->percent() == 41; });
+            class CropRenderTranslator final : public QTranslator {
+              public:
+                bool isEmpty() const override {
+                    return false;
+                }
+                QString translate(const char* context, const char* source, const char*,
+                                  int) const override {
+                    return QByteArray(context) == "RecordingRenderDialog"
+                               ? QStringLiteral("Translated ") + QString::fromUtf8(source)
+                               : QString();
+                }
+            } cropTranslator;
+            QCoreApplication::installTranslator(&cropTranslator);
+            QEvent cropLanguageChange(QEvent::LanguageChange);
+            QApplication::sendEvent(cropModal->contentWidget(), &cropLanguageChange);
+            require(cropModal->windowTitle() == QStringLiteral("Translated Rendering recording") &&
+                        cancel->text() == QStringLiteral("Translated Cancel") &&
+                        cropProgress->accessibleName() ==
+                            QStringLiteral("Translated Rendering progress"),
+                    "crop export retranslates from the shared rendering context");
+            QCoreApplication::removeTranslator(&cropTranslator);
+            cancel->click();
+            require(!cancel->isEnabled(), "cancel disables repeated cancellation immediately");
+            wait([&] { return copy->isEnabled(); });
+            require(!controller.findChild<adqt::widgets::AdModal*>(
+                        QStringLiteral("screenRecordingRenderModal")) &&
+                        controller.isOpen() && start->value() == 6 && finish->value() == 20,
+                    "cancel closes the shared modal and preserves the crop selection");
+            clipExportState = SNOW_RECORDING_RENDER_STATE_RUNNING;
+            copy->click();
+            wait([&] {
+                return controller.findChild<adqt::widgets::AdModal*>(
+                           QStringLiteral("screenRecordingRenderModal")) != nullptr;
+            });
+            close->click();
+            require(!controller.findChild<adqt::widgets::AdModal*>(
+                        QStringLiteral("screenRecordingRenderModal")),
+                    "detaching the crop editor removes its rendering modal");
+            clipExportState = SNOW_RECORDING_RENDER_STATE_SUCCEEDED;
+            wait([&] { return !controller.isOpen(); });
+            QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+        }
+    }
+    for (bool deferred : {false, true}) {
+        for (bool restart : {false, true}) {
+            ScreenRecordingController controller(testEffectsSource);
+            QString error;
+            require(controller.startAutomation(QRect(80, 80, 320, 240),
+                                               {{QStringLiteral("post_processing"), deferred}},
+                                               &error),
+                    "start crop exit fixture");
+            waitForRecording(controller);
+            auto* trim = recordingToolbarButton("Trim Video");
+            trim->click();
+            wait([&] { return trim->isEnabled(); });
+            auto* start = recordingToolbarButton("Start recording");
+            QPointer<QSlider> timeline =
+                palette()->findChild<QSlider*>(QStringLiteral("screenRecordingTrimStart"));
+            require(start && start->isEnabled(), "crop editor allows starting a new recording");
+            if (restart) {
+                start->click();
+                waitForRecording(controller);
+            } else {
+                trim->click();
+                require(controller.automationState().value(QStringLiteral("state")) ==
+                                QStringLiteral("idle") &&
+                            palette()->recordingExportSettingsVisible(),
+                        "active crop button returns to idle export settings");
+                require(palette()->activateDrawingShortcut(QStringLiteral("shape")),
+                        "leaving crop restores drawing controls");
+            }
+            require(!timeline || !timeline->isVisible(), "leaving crop hides the timeline");
+            recordingToolbarButton("Close recording")->click();
+            wait([&] { return !controller.isRecording(); });
+            QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+        }
+    }
+    for (bool deferred : {false, true}) {
+        ScreenRecordingController controller(testEffectsSource);
+        QString error;
+        require(controller.startAutomation(QRect(80, 80, 320, 240),
+                                           {{QStringLiteral("post_processing"), deferred}}, &error),
+                "start closing-during-preparation fixture");
+        waitForRecording(controller);
+        std::promise<void> release, entered;
+        auto reached = entered.get_future();
+        exportGate = release.get_future().share();
+        exportEntered = &entered;
+        const int beforeRenders = renderStarts, beforeOpens = clipOpens,
+                  beforeDiscards = sourceDiscards, beforeSessions = destroyedSessions;
+        recordingToolbarButton("Trim Video")->click();
+        require(reached.wait_for(std::chrono::seconds(2)) == std::future_status::ready,
+                "trim finalization reaches its worker barrier");
+        recordingToolbarButton("Close recording")->click();
+        require(!controller.isOpen(), "Close stays responsive during trim preparation");
+        release.set_value();
+        exportEntered = nullptr;
+        exportGate = {};
+        wait([&] { return destroyedSessions > beforeSessions; });
+        require(renderStarts == beforeRenders && clipOpens == beforeOpens &&
+                    sourceDiscards == beforeDiscards,
+                "closing preparation retains the source without rendering effects or starting "
+                "playback");
+        QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+    }
+    ScreenRecordingController controller(testEffectsSource);
+    QString error;
+    require(controller.startAutomation(QRect(80, 80, 320, 240), {}, &error), "start Save fixture");
+    waitForRecording(controller);
+    QTimer dismiss;
+    QObject::connect(&dismiss, &QTimer::timeout, [] {
+        for (auto* widget : QApplication::topLevelWidgets())
+            if (auto* dialog = qobject_cast<QFileDialog*>(widget))
+                dialog->reject();
+    });
+    dismiss.start(10);
+    recordingToolbarButton("Save to File")->click();
+    wait([&] {
+        return controller.automationState().value(QStringLiteral("state")) ==
+               QStringLiteral("trimming");
+    });
+    QCoreApplication::processEvents();
+    require(controller.isOpen(), "canceling Save preserves a stopped recording in the editor");
+    palette()->recordingCloseRequested();
+    QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+}
+
 int main(int argc, char** argv) {
 #ifdef SNOW_RECORDING_EFFECTS_BENCHMARK
     RecordingEffectsBenchmarkApplication app(argc, argv);
@@ -3181,6 +3757,12 @@ int main(int argc, char** argv) {
     QApplication::setFont(testFont);
     QFontDatabase::setApplicationFallbackFontFamilies(QChar::Script_Han,
                                                       {QStringLiteral("Snow Recording Test Han")});
+    if (app.arguments().contains(QStringLiteral("--trim-only"))) {
+        QApplication::setAttribute(Qt::AA_DontUseNativeDialogs);
+        recordingTrimmingTests(temporary.path());
+        ApplicationStorage::instance().shutdown();
+        return 0;
+    }
     if (app.arguments().contains(QStringLiteral("--finalization-close-only"))) {
         recordingCanCloseDuringAndAfterFinalization();
         ApplicationStorage::instance().shutdown();

@@ -1,5 +1,6 @@
 #![allow(clippy::missing_safety_doc)]
 use snow_audio_recorder::{AudioControlHandle, AudioLevelsSnapshot, AudioMonitor, AudioSourceKind};
+mod clip;
 mod deferred;
 #[cfg(test)]
 static SESSION_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());

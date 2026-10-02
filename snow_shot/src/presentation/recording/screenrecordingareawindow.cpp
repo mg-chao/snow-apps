@@ -220,6 +220,32 @@ ScreenRecordingAreaWindow::~ScreenRecordingAreaWindow() {
         releaseMouse();
 }
 
+void ScreenRecordingAreaWindow::setTrimming(bool enabled) {
+    if (m_trimming == enabled)
+        return;
+    cancelRegionInteraction();
+    m_trimming = enabled;
+    if (enabled)
+        setFixedSize(size());
+    else {
+        setMinimumSize(0, 0);
+        setMaximumSize(QWIDGETSIZE_MAX, QWIDGETSIZE_MAX);
+    }
+    m_canvas->setVisible(!enabled);
+    if (!enabled)
+        m_previewFrame = {};
+    applyInputMode();
+}
+
+void ScreenRecordingAreaWindow::setPreviewFrame(const QImage& frame) {
+    if (!m_trimming)
+        return;
+    if (m_previewFrame.constBits() == frame.constBits() && m_previewFrame.size() == frame.size())
+        return;
+    m_previewFrame = frame;
+    update(m_selectionRect.toAlignedRect());
+}
+
 void ScreenRecordingAreaWindow::applyQuickSelectionPreferences() {
     auto& applicationStorage = snow_shot::storage::ApplicationStorage::instance();
     if (!applicationStorage.isInitialized() || m_canvasRuntime == nullptr) {
@@ -266,6 +292,8 @@ void ScreenRecordingAreaWindow::placeRecordingRegion(const QRect& region) {
     m_frameRect = frameGeometry.frameRect;
     m_selectionRect = frameGeometry.selectionRect;
     m_paddingWidth = frameGeometry.paddingWidth;
+    if (m_trimming)
+        setFixedSize(frameGeometry.windowGeometry.size());
     setGeometry(frameGeometry.windowGeometry);
     m_physicalInsets = QMarginsF(m_selectionRect.left() * scale, m_selectionRect.top() * scale,
                                  (width() - m_selectionRect.right()) * scale,
@@ -381,7 +409,7 @@ void ScreenRecordingAreaWindow::layoutRegionDragHandle() {
                              .intersected(rect());
     const bool editable =
         regionEditingEnabled() && isVisible() && m_recordingRegion.isValid() && !bounds.isEmpty();
-    if (!editable) {
+    if (m_trimming || !editable) {
         if (m_regionDragHandle)
             m_regionDragHandle->hide();
         m_regionInputRouter.reset();
@@ -417,6 +445,8 @@ void ScreenRecordingAreaWindow::layoutRegionDragHandle() {
 }
 
 QRegion ScreenRecordingAreaWindow::regionInteractionRegion() const {
+    if (m_trimming)
+        return QRegion(rect());
     if (!regionEditingEnabled())
         return {};
     const qreal horizontalHitWidth = qMin(kResizeHitWidth, m_selectionRect.width() / 4.0);
@@ -610,12 +640,13 @@ void ScreenRecordingAreaWindow::setRegionCursor(Qt::Edges edges) {
 }
 
 bool ScreenRecordingAreaWindow::regionEditingEnabled() const {
-    return m_inputMode == InputMode::RegionEditing &&
-           m_state == ScreenshotToolPalette::RecordingState::Idle && !m_drawingBlocked;
+    return m_trimming ||
+           (m_inputMode == InputMode::RegionEditing &&
+            m_state == ScreenshotToolPalette::RecordingState::Idle && !m_drawingBlocked);
 }
 
 Qt::Edges ScreenRecordingAreaWindow::resizeEdgesAt(const QPointF& position) const {
-    if (!regionEditingEnabled() || !rect().contains(position.toPoint())) {
+    if (m_trimming || !regionEditingEnabled() || !rect().contains(position.toPoint())) {
         return {};
     }
     Qt::Edges edges;
@@ -645,7 +676,7 @@ int ScreenRecordingAreaWindow::minimumRegionExtent() const {
 void ScreenRecordingAreaWindow::beginRegionDrag(const QPoint& pointer, Qt::Edges edges) {
     if (!regionEditingEnabled() || m_regionDragActive)
         return;
-    if (!edges && (!m_regionDragHandle || !m_regionDragHandle->isDragging()))
+    if (!m_trimming && !edges && (!m_regionDragHandle || !m_regionDragHandle->isDragging()))
         return;
     activateInput();
     m_regionDragOrigin = pointer;
@@ -653,7 +684,10 @@ void ScreenRecordingAreaWindow::beginRegionDrag(const QPoint& pointer, Qt::Edges
     m_regionDragEdges = edges;
     m_regionEffectiveEdges = edges;
     m_regionDragActive = true;
-    m_regionDragSource = edges ? static_cast<QWidget*>(this) : m_regionDragHandle;
+    m_regionDragSource =
+        (edges || (m_trimming && (!m_regionDragHandle || !m_regionDragHandle->isDragging())))
+            ? static_cast<QWidget*>(this)
+            : m_regionDragHandle;
     applyNativePassThrough(false);
     if (m_regionDragSource == this)
         grabMouse();
@@ -874,7 +908,7 @@ void ScreenRecordingAreaWindow::enterEvent(QEnterEvent* event) {
 
 void ScreenRecordingAreaWindow::mousePressEvent(QMouseEvent* event) {
     const auto edges = resizeEdgesAt(event->position());
-    if (event->button() == Qt::LeftButton && edges) {
+    if (event->button() == Qt::LeftButton && (edges || m_trimming)) {
         beginRegionDrag(regionPointer(event->globalPosition()), edges);
         event->accept();
         return;
@@ -1002,6 +1036,18 @@ void ScreenRecordingAreaWindow::paintEvent(QPaintEvent* event) {
         painter.restore();
     }
     painter.setCompositionMode(QPainter::CompositionMode_SourceOver);
+    if (m_trimming) {
+        painter.fillRect(m_selectionRect, Qt::black);
+        if (!m_previewFrame.isNull()) {
+            const QSizeF fitted =
+                QSizeF(m_previewFrame.size()).scaled(m_selectionRect.size(), Qt::KeepAspectRatio);
+            const QRectF target(m_selectionRect.center() -
+                                    QPointF(fitted.width() / 2, fitted.height() / 2),
+                                fitted);
+            painter.setRenderHint(QPainter::SmoothPixmapTransform);
+            painter.drawImage(target, m_previewFrame);
+        }
+    }
     painter.setRenderHint(QPainter::Antialiasing, false);
     const auto border = snow_shot::presentation::recording::screenRecordingAreaBorderGeometry(
         m_frameRect, m_selectionRect, m_paddingWidth);

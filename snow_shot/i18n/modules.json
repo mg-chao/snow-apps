@@ -74,11 +74,13 @@
   "recording": [
     "RecordingAudioGainPopover",
     "RecordingEffectPreview",
-    "RecordingRenderDialog",
     "RecordingKeyboardLabels",
     "RecordingRegionDragHandle",
-    "ScreenRecordingSettingsDialog",
-    "ScreenRecordingController"
+    "RecordingRenderDialog",
+    "RecordingTrimSession",
+    "RecordingTrimToolbar",
+    "ScreenRecordingController",
+    "ScreenRecordingSettingsDialog"
   ],
   "recognition": [
     "ScreenshotImageConversionController",

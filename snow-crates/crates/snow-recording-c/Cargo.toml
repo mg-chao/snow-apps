@@ -10,8 +10,8 @@ snow-capture = { path = "../snow-capture" }
 snow-screen-recorder = { path = "../snow-screen-recorder" }
 snow-audio-recorder = { path = "../snow-audio-recorder" }
 anyhow.workspace = true
+snow-recording-export = { path = "../snow-recording-export" }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 snow-macos = { path = "../snow-macos" }
 snow-media = { path = "../snow-media" }
-snow-recording-export = { path = "../snow-recording-export" }

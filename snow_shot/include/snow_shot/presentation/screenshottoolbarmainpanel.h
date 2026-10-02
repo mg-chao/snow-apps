@@ -30,6 +30,14 @@ namespace snow_shot::storage {
 class ConfigurationStore;
 }
 
+namespace screenshot_action_toolbar {
+inline constexpr int ControlSize = 32;
+inline constexpr int IconSize = 24;
+inline constexpr int HorizontalMargin = 12;
+inline constexpr int VerticalMargin = 4;
+inline constexpr int PanelHeight = ControlSize + 2 * VerticalMargin;
+} // namespace screenshot_action_toolbar
+
 // Surface, shadow and separators shared by main and secondary toolbar rows.
 class ScreenshotToolbarPanel : public QFrame {
   public:

@@ -166,6 +166,7 @@ QRegion ScreenshotToolPaletteHost::panelHostRegion(bool rounded) const {
     appendPanel(m_palette->stylePanel(), m_palette->styleToolbarVisible());
     appendPanel(m_palette->recordingExportSettingsPanel(),
                 m_palette->recordingExportSettingsVisible());
+    appendPanel(m_palette->recordingTrimPanel(), true);
     return region;
 }
 

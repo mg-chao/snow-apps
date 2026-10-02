@@ -1,20 +1,15 @@
 #include "recordingrenderjob.h"
+#include "recordingrenderdialog.h"
 #include "snow_shot/platform/applicationqos.h"
 #include "snow_shot/presentation/components/screenrecordingmodal.h"
-#include "widgets/button.h"
 #include "widgets/modal.h"
-#include "widgets/progress.h"
 #include <QCoreApplication>
 #include <QEvent>
-#include <QHBoxLayout>
-#include <QLabel>
 #include <QPointer>
 #include <QScreen>
 #include <QTimer>
-#include <QVBoxLayout>
 #include <algorithm>
 #include <chrono>
-#include <cmath>
 #include <future>
 #include <optional>
 #include <thread>
@@ -60,7 +55,7 @@ struct RecordingRenderJob::Impl {
         timer.stop();
         if (modal) {
             modal->close();
-            delete modal;
+            delete dialog;
         }
         if (!startFuture.valid() && !cleanupFuture.valid() && !cancelFuture.valid() && !task &&
             !source)
@@ -101,109 +96,27 @@ struct RecordingRenderJob::Impl {
     void ensureModal() {
         if (!visible || modal)
             return;
-        using namespace adqt::widgets;
-        modal = new AdModal(&owner);
-        modal->setObjectName(QStringLiteral("screenRecordingRenderModal"));
-        snow_shot::presentation::configureScreenRecordingModal(*modal, windowOwner);
-        modal->setWindowScreen(screen);
-        modal->setWindowAnchorGeometry(anchorGeometry);
-        modal->setPreferredWidth(500);
-        modal->setClosePolicy(AdModal::ClosePolicy::Manual);
-        modal->setStandardButtons(AdModal::StandardButton::NoButton);
-        auto* body = new QWidget;
-        body->installEventFilter(&owner);
-        auto* layout = new QVBoxLayout(body);
-        layout->setContentsMargins(0, 0, 0, 0);
-        layout->setSpacing(12);
-        status = new QLabel(body);
-        status->setTextFormat(Qt::PlainText);
-        status->setWordWrap(true);
-        layout->addWidget(status);
-        progress = new AdProgress(body);
-        progress->setObjectName(QStringLiteral("screenRecordingRenderProgress"));
-        progress->setType(AdProgress::Type::Line);
-        progress->setAnimationEnabled(false);
-        layout->addWidget(progress);
-        details = new QLabel(body);
-        details->setTextFormat(Qt::PlainText);
-        details->setWordWrap(true);
-        details->setTextInteractionFlags(Qt::TextSelectableByMouse | Qt::TextSelectableByKeyboard);
-        layout->addWidget(details);
-        modal->setContentWidget(body);
-        auto* footer = new QWidget;
-        auto* actions = new QHBoxLayout(footer);
-        actions->setContentsMargins(0, 0, 0, 0);
-        actions->addStretch();
-        cancelButton = new AdButton(footer);
-        retryButton = new AdButton(footer);
-        keepButton = new AdButton(footer);
-        discardButton = new AdButton(footer);
-        discardButton->setAccentRole(AdButton::AccentRole::Danger);
-        cancelButton->setObjectName(QStringLiteral("screenRecordingRenderCancel"));
-        retryButton->setObjectName(QStringLiteral("screenRecordingRenderRetry"));
-        keepButton->setObjectName(QStringLiteral("screenRecordingRenderKeepSource"));
-        discardButton->setObjectName(QStringLiteral("screenRecordingRenderDiscard"));
-        retryButton->setButtonStyle(AdButton::ButtonStyle::Solid);
-        retryButton->setAccentRole(AdButton::AccentRole::Primary);
-        for (auto* button : {cancelButton, retryButton, keepButton, discardButton})
-            actions->addWidget(button);
-        modal->setFooterWidget(footer);
-        QObject::connect(cancelButton, &AdButton::clicked, &owner,
-                         [this] { static_cast<void>(owner.cancel()); });
-        QObject::connect(retryButton, &AdButton::clicked, &owner,
-                         [this] { static_cast<void>(owner.retry()); });
-        QObject::connect(keepButton, &AdButton::clicked, &owner,
-                         [this] { static_cast<void>(owner.release(false)); });
-        QObject::connect(discardButton, &AdButton::clicked, &owner,
-                         [this] { static_cast<void>(owner.release(true)); });
-        QObject::connect(modal, &AdModal::closeRequested, &owner, [this](AdModal::CloseReason) {
-            if (retained)
-                static_cast<void>(owner.release(false));
-            else
-                static_cast<void>(owner.cancel());
-        });
+        dialog = new RecordingRenderDialog(&owner, screen, anchorGeometry, windowOwner);
+        modal = dialog->modal;
+        modal->contentWidget()->installEventFilter(&owner);
+        dialog->cancel = [this] { static_cast<void>(owner.cancel()); };
+        dialog->retry = [this] { static_cast<void>(owner.retry()); };
+        dialog->keep = [this] { static_cast<void>(owner.release(false)); };
+        dialog->discard = [this] { static_cast<void>(owner.release(true)); };
         refresh();
     }
     void refresh() {
-        if (!modal)
+        if (!dialog)
             return;
-        using adqt::widgets::AdProgress;
-        modal->setWindowTitle(
-            renderText(QT_TRANSLATE_NOOP("RecordingRenderDialog", "Rendering recording")));
-        progress->setAccessibleName(
-            renderText(QT_TRANSLATE_NOOP("RecordingRenderDialog", "Rendering progress")));
-        progress->setPercent(std::floor(percent));
-        progress->setStatus(retained && !lastError.isEmpty() ? AdProgress::Status::Exception
-                            : terminalSucceeded              ? AdProgress::Status::Success
-                                                             : AdProgress::Status::Active);
-        const char* text =
-            retained ? (lastError.isEmpty()
-                            ? QT_TRANSLATE_NOOP("RecordingRenderDialog", "Rendering canceled")
-                            : QT_TRANSLATE_NOOP("RecordingRenderDialog", "Rendering failed"))
-            : cancelRequested
-                ? QT_TRANSLATE_NOOP("RecordingRenderDialog", "Cancelling rendering...")
-            : stage == SNOW_RECORDING_RENDER_STAGE_PREPARE
-                ? QT_TRANSLATE_NOOP("RecordingRenderDialog", "Preparing recording...")
-            : stage == SNOW_RECORDING_RENDER_STAGE_FINALIZE
-                ? QT_TRANSLATE_NOOP("RecordingRenderDialog", "Finalizing recording...")
-                : QT_TRANSLATE_NOOP("RecordingRenderDialog", "Rendering video...");
-        status->setText(renderText(text));
-        details->setVisible(retained);
-        details->setText((lastError.isEmpty() ? QString() : lastError + QStringLiteral("\n\n")) +
-                         renderText(QT_TRANSLATE_NOOP("RecordingRenderDialog",
-                                                      "Source files are preserved in:\n%1"))
-                             .arg(path));
-        cancelButton->setText(renderText(QT_TRANSLATE_NOOP("RecordingRenderDialog", "Cancel")));
-        retryButton->setText(renderText(QT_TRANSLATE_NOOP("RecordingRenderDialog", "Retry")));
-        keepButton->setText(renderText(QT_TRANSLATE_NOOP("RecordingRenderDialog", "Keep Source")));
-        discardButton->setText(renderText(QT_TRANSLATE_NOOP("RecordingRenderDialog", "Discard")));
-        cancelButton->setVisible(!retained);
-        cancelButton->setEnabled(!cancelRequested && !cleanupFuture.valid());
-        for (auto* button : {retryButton, keepButton, discardButton}) {
-            button->setVisible(retained);
-            button->setEnabled(!cleanupFuture.valid());
-        }
-        modal->setInitialFocusWidget(retained ? retryButton : cancelButton);
+        dialog->retained = retained;
+        dialog->terminalSucceeded = terminalSucceeded;
+        dialog->cancelRequested = cancelRequested;
+        dialog->busy = cleanupFuture.valid();
+        dialog->percent = percent;
+        dialog->stage = stage;
+        dialog->path = path;
+        dialog->lastError = lastError;
+        dialog->refresh();
     }
     void start() {
         retained = false;
@@ -385,13 +298,7 @@ struct RecordingRenderJob::Impl {
     QString lastError;
     const char* errorTranslation = nullptr;
     QPointer<adqt::widgets::AdModal> modal;
-    QLabel* status = nullptr;
-    QLabel* details = nullptr;
-    adqt::widgets::AdProgress* progress = nullptr;
-    adqt::widgets::AdButton* cancelButton = nullptr;
-    adqt::widgets::AdButton* retryButton = nullptr;
-    adqt::widgets::AdButton* keepButton = nullptr;
-    adqt::widgets::AdButton* discardButton = nullptr;
+    RecordingRenderDialog* dialog = nullptr;
 };
 
 RecordingRenderJob::RecordingRenderJob(SnowRecordingSource* source, bool showDialog,

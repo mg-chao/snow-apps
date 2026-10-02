@@ -799,6 +799,14 @@
     },
     {
       "variant": "outlined",
+      "symbol": "RecordingReplay",
+      "name": "recording-replay",
+      "source": "../src/presentation/components/icons/resources/recording-replay.svg",
+      "colorModel": "monochrome",
+      "fit": "contain"
+    },
+    {
+      "variant": "outlined",
       "symbol": "RecordingResume",
       "name": "recording-resume",
       "source": "../src/presentation/components/icons/resources/recording-resume.svg",
@@ -818,6 +826,14 @@
       "symbol": "RecordingStop",
       "name": "recording-stop",
       "source": "../src/presentation/components/icons/resources/recording-stop.svg",
+      "colorModel": "monochrome",
+      "fit": "contain"
+    },
+    {
+      "variant": "outlined",
+      "symbol": "RecordingTrim",
+      "name": "recording-trim",
+      "source": "../src/presentation/components/icons/resources/recording-trim.svg",
       "colorModel": "monochrome",
       "fit": "contain"
     },
