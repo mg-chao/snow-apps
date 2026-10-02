@@ -154,8 +154,8 @@ void ScreenshotToolCommandWorkflow::setTextStyleFromToolbar(const SnowCanvasText
 }
 
 void ScreenshotToolCommandWorkflow::setSerialNumberStyleFromToolbar(
-    const SnowCanvasSerialNumberStyle& style) {
-    m_context.actions.setSerialNumberStyle(style);
+    const SnowCanvasSerialNumberStyle& style, std::optional<quint32> properties) {
+    m_context.actions.setSerialNumberStyle(style, properties);
 }
 
 bool ScreenshotToolCommandWorkflow::stepStrokeWidth(int delta) {

@@ -1609,6 +1609,14 @@ bool RecordingSettings::setSeparateAudioTracks(bool enabled) const {
     return cache().setValue(QStringLiteral("screen_recording/separate_audio_tracks"), enabled);
 }
 
+QString RecordingSettings::apiMode() const {
+    return cache().value(QStringLiteral("screen_recording/api_mode")).toString();
+}
+
+bool RecordingSettings::setApiMode(const QString& mode) const {
+    return cache().setValue(QStringLiteral("screen_recording/api_mode"), mode);
+}
+
 bool RecordingSettings::loopAnimatedImages() const {
     return cache().value(QStringLiteral("screen_recording/loop_animated_images")).toBool();
 }

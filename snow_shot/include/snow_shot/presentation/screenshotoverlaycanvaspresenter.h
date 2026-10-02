@@ -12,6 +12,7 @@
 #include <QRectF>
 
 #include <functional>
+#include <optional>
 
 class ScreenshotDisplaySession;
 class ScreenshotOverlayWindow;
@@ -74,7 +75,8 @@ class ScreenshotOverlayCanvasPresenter final {
     void setTextStyle(const ScreenshotDisplaySession& displaySession,
                       const SnowCanvasTextStyle& style, quint32 properties) const;
     void setSerialNumberStyle(const ScreenshotDisplaySession& displaySession,
-                              const SnowCanvasSerialNumberStyle& style) const;
+                              const SnowCanvasSerialNumberStyle& style,
+                              std::optional<quint32> properties = std::nullopt) const;
     void adjustSelectedSerialNumbers(const ScreenshotDisplaySession& displaySession,
                                      qint64 delta) const;
     void createTextForSelectedSerialNumber(const ScreenshotDisplaySession& displaySession) const;

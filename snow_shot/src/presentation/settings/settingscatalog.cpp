@@ -774,6 +774,25 @@ SettingsItemDefinition screenshotApiModeItem() {
     };
 }
 
+SettingsItemDefinition screenRecordingApiModeItem() {
+    SettingsSelectDefinition payload;
+    payload.binding = SettingsSelectBinding::ScreenRecordingApiMode;
+    payload.options = {
+        {QStringLiteral("dxgi"), settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "DXGI"))},
+        {QStringLiteral("wgc"), settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "WGC"))},
+        {QStringLiteral("gdi"), settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "GDI"))},
+    };
+    return {
+        QStringLiteral("screen-recording.api-mode"),
+        settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "API Mode")),
+        settingsText(QT_TRANSLATE_NOOP("SettingsCatalog",
+                                       "Choose the preferred capture API for screen recording")),
+        {settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Capture backend"))},
+        QStringLiteral("screen_recording/api_mode"),
+        payload,
+    };
+}
+
 SettingsItemDefinition windowElementApiItem() {
     SettingsSelectDefinition payload;
     payload.binding = SettingsSelectBinding::WindowElementApi;
@@ -3051,7 +3070,11 @@ QVector<SettingsPageDefinition> builtInPages() {
                     settingsText(
                         QT_TRANSLATE_NOOP("SettingsCatalog", "Screen recording capture settings")),
                     SettingsSectionReset::ScreenRecordingCapture,
-                    {screenRecordingCaptureToolbarItem()},
+                    {
+#ifndef Q_OS_MACOS
+                        screenRecordingApiModeItem(),
+#endif
+                        screenRecordingCaptureToolbarItem()},
                 },
                 {
                     QStringLiteral("network"),
@@ -3945,6 +3968,9 @@ QStringList SettingsCatalog::validationErrors() const {
                         break;
                     case SettingsSelectBinding::ScreenshotApiMode:
                         expectedKey = QStringLiteral("screenshot/api_mode");
+                        break;
+                    case SettingsSelectBinding::ScreenRecordingApiMode:
+                        expectedKey = QStringLiteral("screen_recording/api_mode");
                         break;
                     case SettingsSelectBinding::WindowElementApi:
                         expectedKey = QStringLiteral("screenshot/window_element_api");

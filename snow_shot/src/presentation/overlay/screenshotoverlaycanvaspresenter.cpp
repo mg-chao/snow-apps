@@ -715,13 +715,19 @@ void ScreenshotOverlayCanvasPresenter::setTextStyle(const ScreenshotDisplaySessi
 }
 
 void ScreenshotOverlayCanvasPresenter::setSerialNumberStyle(
-    const ScreenshotDisplaySession& displaySession,
-    const SnowCanvasSerialNumberStyle& style) const {
-    displaySession.forEachOverlay([&style](qsizetype, ScreenshotOverlayWindow* overlay) {
-        if (overlay != nullptr && overlay->canvas() != nullptr) {
-            static_cast<void>(overlay->canvas()->setCanvasSerialNumberStyle(style));
-        }
-    });
+    const ScreenshotDisplaySession& displaySession, const SnowCanvasSerialNumberStyle& style,
+    std::optional<quint32> properties) const {
+    displaySession.forEachOverlay(
+        [&style, properties](qsizetype, ScreenshotOverlayWindow* overlay) {
+            if (overlay != nullptr && overlay->canvas() != nullptr) {
+                if (properties) {
+                    static_cast<void>(overlay->canvas()->applyStyleEdit(
+                        SnowCanvasSerialNumberEdit{style, *properties}));
+                } else {
+                    static_cast<void>(overlay->canvas()->setCanvasSerialNumberStyle(style));
+                }
+            }
+        });
 }
 
 namespace {

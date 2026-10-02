@@ -71,7 +71,7 @@ void settingsPersistAndResetToUia(const QString& configurationPath) {
     snow_shot::presentation::GlobalShortcutManager shortcuts;
     settings::BuiltInSettingsBackend backend(shortcuts);
     constexpr auto binding = settings::SettingsSelectBinding::WindowElementApi;
-    constexpr auto cursorBinding = settings::SettingsSwitchBinding::ScreenshotCaptureCursor;
+    constexpr auto cursorBinding = settings::SettingsSwitchBinding::ScreenshotShowCursor;
     require(backend.selectValue(binding) == QStringLiteral("uia"),
             "Window Element API must initially select UIA");
     require(!backend.switchValue(cursorBinding) && backend.applySwitchValue(cursorBinding, true) &&
@@ -186,6 +186,42 @@ void autoRecognizeQrCodeSettingsPersistAndReset(const QString& configurationPath
     const auto invalid = storage::ConfigurationSchema::normalize(
         QStringLiteral("screenshot/auto_recognize_qr_code"), QStringLiteral("enabled"));
     require(!invalid.valid, "automatic QR recognition preference must reject nonboolean values");
+}
+
+void recordingApiModePersistsAndResets(const QString& configurationPath) {
+    snow_shot::presentation::GlobalShortcutManager shortcuts;
+    settings::BuiltInSettingsBackend backend(shortcuts);
+    constexpr auto binding = settings::SettingsSelectBinding::ScreenRecordingApiMode;
+    require(backend.selectValue(binding) == QStringLiteral("dxgi"),
+            "recording API must default to DXGI");
+    const QString screenshotApi = storage::ScreenshotSettings().apiMode();
+    for (const auto& mode :
+         {QStringLiteral("dxgi"), QStringLiteral("wgc"), QStringLiteral("gdi")}) {
+        require(backend.applySelectValue(binding, mode) && backend.selectValue(binding) == mode &&
+                    storage::RecordingSettings().apiMode() == mode,
+                "recording API selection must update storage");
+        require(storage::ApplicationStorage::instance().configuration().flushNow().success,
+                "recording API must be flushable");
+        storage::ConfigurationStore reloaded(configurationPath, true, true, 60000);
+        require(reloaded.value(QStringLiteral("screen_recording/api_mode")) == mode,
+                "recording API must survive a configuration reload");
+    }
+    for (const auto& invalid : {QString(), QStringLiteral("auto"), QStringLiteral("unknown")}) {
+        require(!backend.applySelectValue(binding, invalid) &&
+                    backend.selectValue(binding) == QStringLiteral("gdi"),
+                "invalid recording API values must be rejected without changing the setting");
+    }
+    require(storage::ScreenshotSettings().apiMode() == screenshotApi,
+            "recording API selection must not change screenshot API");
+    require(backend.resetSection(settings::SettingsSectionReset::ScreenRecording) &&
+                backend.selectValue(binding) == QStringLiteral("gdi"),
+            "function recording settings reset must preserve system recording API");
+    require(backend.resetSection(settings::SettingsSectionReset::ScreenshotCapture) &&
+                backend.selectValue(binding) == QStringLiteral("gdi"),
+            "screenshot settings reset must preserve recording API");
+    require(backend.resetSection(settings::SettingsSectionReset::ScreenRecordingCapture) &&
+                backend.selectValue(binding) == QStringLiteral("dxgi"),
+            "system recording settings reset must restore DXGI");
 }
 
 void ownUiCapturePreferencesPersistAndReset() {
@@ -771,6 +807,7 @@ int main(int argc, char** argv) {
         return 0;
     }
     if (!selectorOnly) {
+        recordingApiModePersistsAndResets(temporary.filePath(QStringLiteral("data/config.json")));
         settingsPersistAndResetToUia(temporary.filePath(QStringLiteral("data/config.json")));
         shutterSoundSettingsPersistAndReset(temporary.filePath(QStringLiteral("data/config.json")));
         shortcutExitConfirmationSettingsPersistAndReset(

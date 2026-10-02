@@ -73,6 +73,7 @@ enum class SettingsSelectBinding {
     OcrModelType,
     OcrDetectorResizePolicy,
     ScreenshotApiMode,
+    ScreenRecordingApiMode,
     WindowElementApi,
     ScreenshotToolbarSize,
     OcrFillStyle,

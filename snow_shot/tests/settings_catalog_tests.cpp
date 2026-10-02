@@ -365,6 +365,7 @@ void builtInCatalogIsCompleteAndValid() {
         QStringLiteral("system.launch-as-administrator"),
         QStringLiteral("system.restart-as-administrator"),
         QStringLiteral("screenshot.api-mode"),
+        QStringLiteral("screen-recording.api-mode"),
         QStringLiteral("screenshot.window-element-api"),
         QStringLiteral("screenshot.restore-original-screen-colors"),
         QStringLiteral("text-recognition.direct-ml-acceleration"),
@@ -547,12 +548,33 @@ void builtInCatalogIsCompleteAndValid() {
                       QStringLiteral("screen-recording.capture-toolbar")});
     const auto* recordingCaptureSection = catalog.section(
         QStringLiteral("system-settings"), QStringLiteral("screen-recording-capture"));
+    const auto* recordingApiMode =
+        catalog.item({QStringLiteral("system-settings"), QStringLiteral("screen-recording-capture"),
+                      QStringLiteral("screen-recording.api-mode")});
+#ifdef Q_OS_MACOS
+    require(recordingApiMode == nullptr, "macOS must omit Windows-only recording APIs");
+#else
+    require(recordingApiMode != nullptr &&
+                recordingApiMode->configurationKey == QStringLiteral("screen_recording/api_mode") &&
+                recordingApiMode->title.translated() == QStringLiteral("API Mode"),
+            "system Screen recording must expose its own API mode");
+    const auto& recordingApiSelect =
+        std::get<settings::SettingsSelectDefinition>(recordingApiMode->payload);
+    require(recordingApiSelect.binding == settings::SettingsSelectBinding::ScreenRecordingApiMode &&
+                recordingApiSelect.options.size() == 3 &&
+                recordingApiSelect.options[0].value == QStringLiteral("dxgi") &&
+                recordingApiSelect.options[1].value == QStringLiteral("wgc") &&
+                recordingApiSelect.options[2].value == QStringLiteral("gdi") &&
+                storage::ConfigurationSchema::defaultValue(recordingApiMode->configurationKey) ==
+                    QStringLiteral("dxgi"),
+            "recording API mode must offer exactly DXGI, WGC, GDI and default to DXGI");
+#endif
     require(
         recordingToolbarCapture != nullptr && recordingCaptureSection != nullptr &&
             recordingCaptureSection->title.translated() == QStringLiteral("Screen recording") &&
             recordingCaptureSection->reset ==
                 settings::SettingsSectionReset::ScreenRecordingCapture &&
-            recordingCaptureSection->items.size() == 1 &&
+            recordingCaptureSection->items.size() == (recordingApiMode != nullptr ? 2 : 1) &&
             recordingToolbarCapture->title.translated() ==
                 QStringLiteral("Capture toolbar during recording") &&
             recordingToolbarCapture->configurationKey ==

@@ -409,8 +409,9 @@ void ScreenshotOverlayCoordinator::setTextStyle(const ScreenshotDisplaySession& 
 }
 
 void ScreenshotOverlayCoordinator::setSerialNumberStyle(
-    const ScreenshotDisplaySession& displaySession, const SnowCanvasSerialNumberStyle& style) {
-    m_canvasPresenter.setSerialNumberStyle(displaySession, style);
+    const ScreenshotDisplaySession& displaySession, const SnowCanvasSerialNumberStyle& style,
+    std::optional<quint32> properties) {
+    m_canvasPresenter.setSerialNumberStyle(displaySession, style, properties);
 }
 
 void ScreenshotOverlayCoordinator::adjustSelectedSerialNumbers(

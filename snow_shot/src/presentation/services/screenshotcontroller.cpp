@@ -525,6 +525,8 @@ struct ScreenshotController::Impl final : public ScreenshotToolbarCommandSink,
                                   SnowCanvasShapeKind kind) override;
     void setTextStyleFromToolbar(const SnowCanvasTextStyle& style, quint32 properties) override;
     void setSerialNumberStyleFromToolbar(const SnowCanvasSerialNumberStyle& style) override;
+    void setSerialNumberStyleFromToolbar(const SnowCanvasSerialNumberStyle& style,
+                                         quint32 properties);
     void decrementSelectedSerialNumbers() override;
     void incrementSelectedSerialNumbers() override;
     void createTextForSelectedSerialNumber() override;
@@ -1523,8 +1525,9 @@ void ScreenshotController::Impl::createToolCommandWorkflow() {
                 [this](const SnowCanvasTextStyle& style, quint32 properties) {
                     m_overlayCoordinator->setTextStyle(m_displaySession, style, properties);
                 },
-                [this](const SnowCanvasSerialNumberStyle& style) {
-                    m_overlayCoordinator->setSerialNumberStyle(m_displaySession, style);
+                [this](const SnowCanvasSerialNumberStyle& style,
+                       std::optional<quint32> properties) {
+                    m_overlayCoordinator->setSerialNumberStyle(m_displaySession, style, properties);
                 },
                 [this](qint64 delta) {
                     m_overlayCoordinator->adjustSelectedSerialNumbers(m_displaySession, delta);
@@ -5021,6 +5024,11 @@ void ScreenshotController::Impl::setTextStyleFromToolbar(const SnowCanvasTextSty
 void ScreenshotController::Impl::setSerialNumberStyleFromToolbar(
     const SnowCanvasSerialNumberStyle& style) {
     m_toolCommandWorkflow->setSerialNumberStyleFromToolbar(style);
+}
+
+void ScreenshotController::Impl::setSerialNumberStyleFromToolbar(
+    const SnowCanvasSerialNumberStyle& style, quint32 properties) {
+    m_toolCommandWorkflow->setSerialNumberStyleFromToolbar(style, properties);
 }
 
 void ScreenshotController::Impl::decrementSelectedSerialNumbers() {

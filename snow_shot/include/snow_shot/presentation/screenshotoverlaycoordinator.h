@@ -110,7 +110,8 @@ class ScreenshotOverlayCoordinator final : public ScreenshotOverlayExclusionPort
     void setTextStyle(const ScreenshotDisplaySession& displaySession,
                       const SnowCanvasTextStyle& style, quint32 properties);
     void setSerialNumberStyle(const ScreenshotDisplaySession& displaySession,
-                              const SnowCanvasSerialNumberStyle& style);
+                              const SnowCanvasSerialNumberStyle& style,
+                              std::optional<quint32> properties = std::nullopt);
     void adjustSelectedSerialNumbers(const ScreenshotDisplaySession& displaySession, qint64 delta);
     void createTextForSelectedSerialNumber(const ScreenshotDisplaySession& displaySession);
     void reorderSelectedElements(const ScreenshotDisplaySession& displaySession,

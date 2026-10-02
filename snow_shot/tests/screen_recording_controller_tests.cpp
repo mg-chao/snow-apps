@@ -1288,6 +1288,54 @@ std::vector<uint32_t> prepareExpectedRecordingExclusions(ScreenshotToolPalette* 
     return expected;
 }
 
+void recordingApiModeWiring() {
+    using snow_shot::storage::RecordingSettings;
+    const RecordingSettings settings;
+    require(settings.apiMode() == QStringLiteral("dxgi"), "recording must default to DXGI");
+    require(settings.setStartDelaySeconds(0), "disable countdown");
+    for (bool deferred : {false, true}) {
+        require(settings.setPostProcessingEnabled(deferred), "set recording pipeline");
+        for (const auto& mode :
+             {QStringLiteral("dxgi"), QStringLiteral("wgc"), QStringLiteral("gdi")}) {
+            ScreenRecordingController controller(testEffectsSource);
+            controller.open({40, 40, 320, 240});
+            // Change after opening to verify each start reads the latest preference.
+            require(settings.setApiMode(mode), "set recording API preference");
+            const int beforeDeferred = deferredCreates;
+            controller.startRecording();
+            waitForRecording(controller);
+#ifdef Q_OS_MACOS
+            const uint32_t expected = SNOW_CAPTURE_BACKEND_AUTO;
+#else
+            const uint32_t expected = mode == QStringLiteral("wgc")   ? SNOW_CAPTURE_BACKEND_WGC
+                                      : mode == QStringLiteral("gdi") ? SNOW_CAPTURE_BACKEND_GDI
+                                                                      : SNOW_CAPTURE_BACKEND_DXGI;
+#endif
+            require(lastDirectConfig.capture_backend == expected,
+                    "each recording pipeline must receive the selected API");
+            require(deferredCreates == beforeDeferred + (deferred ? 1 : 0),
+                    "test must exercise both direct and deferred recording");
+            const int beforeRenderPolls = renderPolls;
+            palette()->recordingStopRequested();
+            if (deferred) {
+                QElapsedTimer deadline;
+                deadline.start();
+                while (renderPolls == beforeRenderPolls && deadline.elapsed() < 3000) {
+                    QCoreApplication::processEvents(
+                        QEventLoop::AllEvents | QEventLoop::WaitForMoreEvents, 100);
+                }
+                require(renderPolls > beforeRenderPolls,
+                        "deferred finalization must reach rendering");
+                renderState = SNOW_RECORDING_RENDER_STATE_SUCCEEDED;
+            }
+            waitForIdle(controller);
+            palette()->recordingCloseRequested();
+        }
+    }
+    require(settings.setApiMode(QStringLiteral("dxgi")) && settings.setPostProcessingEnabled(false),
+            "restore recording defaults");
+}
+
 void recordingCaptureExclusionWiring() {
     using snow_shot::storage::RecordingSettings;
     QCoreApplication::setAttribute(Qt::AA_DontUseNativeDialogs);
@@ -2195,7 +2243,8 @@ void recordingSettingsDialog() {
         require(form->field(descriptor.id)->extraText().isEmpty(),
                 "recording preferences must keep descriptions out of the compact form rows");
     }
-    require(form->items().size() == expectedCount && expectedCount == 10,
+    const int apiModeCount = form->field(QStringLiteral("screen-recording.api-mode")) ? 1 : 0;
+    require(form->items().size() == expectedCount && expectedCount == 10 + apiModeCount,
             "recording popup must contain exactly the requested settings categories");
     class SettingsTranslator final : public QTranslator {
       public:
@@ -2231,13 +2280,15 @@ void recordingSettingsDialog() {
     const auto items = form->items();
     for (int index = 0; index < items.size(); index += 2) {
         const auto left = items[index]->geometry();
-        const auto right = items[index + 1]->geometry();
-        require(left.top() == right.top() && left.right() < right.left() &&
-                    qAbs(left.width() - right.width()) <= 1,
-                "recording preferences must use two equally sized columns in each row");
-        require(form->rect().contains(left) && form->rect().contains(right) &&
+        require(form->rect().contains(left) &&
                     (index == 0 || items[index - 2]->geometry().bottom() < left.top()),
-                "all recording preferences must fit in five rows without scrolling");
+                "all recording preference rows must fit without overlap or scrolling");
+        if (index + 1 < items.size()) {
+            const auto right = items[index + 1]->geometry();
+            require(left.top() == right.top() && left.right() < right.left() &&
+                        qAbs(left.width() - right.width()) <= 1 && form->rect().contains(right),
+                    "paired recording preferences must use two equally sized columns");
+        }
     }
     auto* captureToolbar =
         form->findChild<AdSwitch*>(QStringLiteral("screen-recording.capture-toolbar"));
@@ -4160,6 +4211,11 @@ int main(int argc, char** argv) {
     }
     if (app.arguments().contains(QStringLiteral("--capture-exclusion-only"))) {
         recordingCaptureExclusionWiring();
+        ApplicationStorage::instance().shutdown();
+        return 0;
+    }
+    if (app.arguments().contains(QStringLiteral("--api-mode-only"))) {
+        recordingApiModeWiring();
         ApplicationStorage::instance().shutdown();
         return 0;
     }

@@ -403,6 +403,8 @@ class ScreenshotUiSettings final {
 
 class RecordingSettings final {
   public:
+    [[nodiscard]] QString apiMode() const;
+    bool setApiMode(const QString& mode) const;
     [[nodiscard]] bool microphoneEnabled() const;
     bool setMicrophoneEnabled(bool enabled) const;
     [[nodiscard]] bool systemAudioEnabled() const;

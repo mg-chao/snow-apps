@@ -1252,6 +1252,10 @@
             <translation>選擇一般螢幕擷取的偏好 API；自動模式在 HDR 顯示器上使用 DXGI，其他情況使用 GDI</translation>
         </message>
         <message>
+            <source>Choose the preferred capture API for screen recording</source>
+            <translation>選擇螢幕錄製優先使用的擷取介面</translation>
+        </message>
+        <message>
             <source>Choose the primary color used throughout the theme</source>
             <translation>選擇整個主題使用的主色</translation>
         </message>

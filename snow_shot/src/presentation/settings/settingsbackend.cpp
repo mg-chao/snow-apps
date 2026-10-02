@@ -366,6 +366,8 @@ QVariant BuiltInSettingsBackend::selectValue(SettingsSelectBinding binding) cons
             .toString();
     case SettingsSelectBinding::ScreenshotApiMode:
         return storage::ScreenshotSettings().apiMode();
+    case SettingsSelectBinding::ScreenRecordingApiMode:
+        return storage::RecordingSettings().apiMode();
     case SettingsSelectBinding::WindowElementApi:
         return storage::ScreenshotSettings().windowElementApi();
     case SettingsSelectBinding::ScreenshotToolbarSize:
@@ -542,6 +544,8 @@ bool BuiltInSettingsBackend::applySelectValue(SettingsSelectBinding binding,
             QStringLiteral("text_recognition/detector_resize_policy"), value.toString());
     case SettingsSelectBinding::ScreenshotApiMode:
         return storage::ScreenshotSettings().setApiMode(value.toString());
+    case SettingsSelectBinding::ScreenRecordingApiMode:
+        return storage::RecordingSettings().setApiMode(value.toString());
     case SettingsSelectBinding::WindowElementApi:
         return storage::ScreenshotSettings().setWindowElementApi(value.toString());
     case SettingsSelectBinding::ScreenshotToolbarSize:
@@ -2380,10 +2384,14 @@ bool BuiltInSettingsBackend::resetSection(SettingsSectionReset reset) {
                  QStringLiteral("screen_recording/video_quality"))},
         });
     case SettingsSectionReset::ScreenRecordingCapture:
-        return storage::ApplicationStorage::instance().configuration().setValue(
-            QStringLiteral("screen_recording/capture_toolbar_in_recording"),
-            storage::ConfigurationSchema::defaultValue(
-                QStringLiteral("screen_recording/capture_toolbar_in_recording")));
+        return storage::ApplicationStorage::instance().configuration().setValues({
+            {QStringLiteral("screen_recording/api_mode"),
+             storage::ConfigurationSchema::defaultValue(
+                 QStringLiteral("screen_recording/api_mode"))},
+            {QStringLiteral("screen_recording/capture_toolbar_in_recording"),
+             storage::ConfigurationSchema::defaultValue(
+                 QStringLiteral("screen_recording/capture_toolbar_in_recording"))},
+        });
     case SettingsSectionReset::ScreenRecordingOutput:
         return storage::ApplicationStorage::instance().configuration().setValues({
             {QStringLiteral("screen_recording/video_save_directory"),

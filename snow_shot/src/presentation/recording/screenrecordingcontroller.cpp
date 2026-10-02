@@ -71,6 +71,22 @@ namespace {
 constexpr int kDurationTickMilliseconds = 100;
 constexpr int kCountdownTickMilliseconds = 16;
 
+uint32_t recordingCaptureBackend(const snow_shot::storage::RecordingSettings& settings) {
+#ifdef Q_OS_MACOS
+    Q_UNUSED(settings)
+    return SNOW_CAPTURE_BACKEND_AUTO;
+#else
+    const QString mode = settings.apiMode();
+    if (mode == QStringLiteral("wgc")) {
+        return SNOW_CAPTURE_BACKEND_WGC;
+    }
+    if (mode == QStringLiteral("gdi")) {
+        return SNOW_CAPTURE_BACKEND_GDI;
+    }
+    return SNOW_CAPTURE_BACKEND_DXGI;
+#endif
+}
+
 QColor progressBarColorFromString(const QString& value) {
     const QString normalized = value.trimmed();
     return normalized.size() == 9 && normalized.startsWith(u'#')
@@ -1042,8 +1058,7 @@ struct ScreenRecordingController::Impl {
                 captureRegion.y(),
                 static_cast<uint32_t>(captureRegion.width()),
                 static_cast<uint32_t>(captureRegion.height()),
-                // Direct recording Auto tries DXGI, then WGC and GDI on eligible failures.
-                static_cast<uint32_t>(SNOW_CAPTURE_BACKEND_AUTO),
+                recordingCaptureBackend(settings),
                 // Bound on the worker thread together with the keyboard labels.
                 nullptr,
                 static_cast<uint32_t>(sessionOutputSettings.format),
