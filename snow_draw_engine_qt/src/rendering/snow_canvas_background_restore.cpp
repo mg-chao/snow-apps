@@ -257,8 +257,8 @@ bool apply(const QImage& original, QImage& destination, const SnowCanvasSceneIte
             painter.translate(-pixels.left() / dpr, -pixels.top() / dpr);
             painter.fillPath(geometry.clipPath, Qt::white);
             painter.end();
-            diagnostics.maskPixelCount +=
-                static_cast<std::size_t>(pixels.width()) * pixels.height();
+            diagnostics.maskPixelCount += static_cast<std::size_t>(pixels.width()) *
+                                          static_cast<std::size_t>(pixels.height());
         }
         for (int y = pixels.top(); y <= pixels.bottom(); ++y) {
             const int localY = y - physicalBounds.top();
