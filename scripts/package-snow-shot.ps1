@@ -148,6 +148,23 @@ function Get-ValidatedStaticQtStamp {
     return $stamp
 }
 
+function Get-SnowShotExpectedFfmpegComponents {
+    $expectedFfmpegComponents = [ordered]@{
+        BSF = @("AAC_ADTSTOASC", "H264_MP4TOANNEXB", "PGS_FRAME_MERGE", "VP9_SUPERFRAME")
+        DECODER = @("AAC", "APNG", "GIF", "H264", "HEVC", "MP3", "PCM_F32LE", "PCM_S16LE", "PNG", "VP8", "WEBP", "WEBP_ANIM")
+        ENCODER = @("AAC", "APNG", "GIF", "H263", "H264_MF", "H264_AMF", "H264_NVENC", "H264_QSV", "LIBWEBP_ANIM", "LIBX264", "LIBX265", "MP3_MF", "MPEG4")
+        HWACCEL = @("H264_D3D11VA", "H264_D3D11VA2", "H264_DXVA2", "HEVC_D3D11VA", "HEVC_D3D11VA2", "HEVC_DXVA2")
+        PARSER = @("AAC", "AC3", "GIF", "H264", "HEVC", "MPEGAUDIO")
+        DEMUXER = @("APNG", "GIF", "MATROSKA", "MOV", "WEBP_ANIM")
+        MUXER = @("APNG", "AVI", "GIF", "MATROSKA", "MOV", "MP4", "WEBP")
+        PROTOCOL = @("FILE")
+        FILTER = @()
+        INDEV = @()
+        OUTDEV = @()
+    }
+    return $expectedFfmpegComponents
+}
+
 function Assert-SnowShotStaticDependencies {
     param(
         [Parameter(Mandatory = $true)][string]$InstalledRoot,
@@ -171,20 +188,7 @@ function Assert-SnowShotStaticDependencies {
             }
         }
     })
-    $expectedFfmpegComponents = [ordered]@{
-        BSF = @("AAC_ADTSTOASC", "H264_MP4TOANNEXB", "PGS_FRAME_MERGE", "VP9_SUPERFRAME")
-        DECODER = @("AAC", "APNG", "GIF", "H264", "HEVC", "MP3", "PCM_F32LE", "PCM_S16LE", "PNG", "VP8", "WEBP", "WEBP_ANIM")
-        ENCODER = @("AAC", "APNG", "GIF", "H263", "H264_MF", "H264_AMF", "H264_NVENC", "H264_QSV", "LIBWEBP_ANIM", "LIBX264", "LIBX265", "MP3_MF", "MPEG4")
-        HWACCEL = @("H264_D3D11VA", "H264_D3D11VA2", "H264_DXVA2", "HEVC_D3D11VA", "HEVC_D3D11VA2", "HEVC_DXVA2")
-        PARSER = @("AAC", "AC3", "GIF", "H264", "HEVC", "MPEGAUDIO")
-        DEMUXER = @("APNG", "GIF", "MATROSKA", "MOV", "WEBP_ANIM")
-        MUXER = @("APNG", "AVI", "GIF", "MATROSKA", "MOV", "MP4", "WEBP")
-        PROTOCOL = @("FILE")
-        FILTER = @()
-        INDEV = @()
-        OUTDEV = @()
-    }
-    foreach ($entry in $expectedFfmpegComponents.GetEnumerator()) {
+    foreach ($entry in (Get-SnowShotExpectedFfmpegComponents).GetEnumerator()) {
         $actual = @($enabledFfmpegComponents |
             Where-Object { $_.Kind -ceq $entry.Key } |
             ForEach-Object { $_.Name })
@@ -609,52 +613,11 @@ $linkedFfmpegRegistrations = @(Select-String -LiteralPath $linkMapPath `
 # Native hardware encoding retains the configured parser registrations, so the
 # optimized application must match the same restricted component set as FFmpeg.
 $expectedFfmpegRegistrations = @(
-    "ff_aac_adtstoasc_bsf",
-    "ff_h264_mp4toannexb_bsf",
-    "ff_pgs_frame_merge_bsf",
-    "ff_vp9_superframe_bsf",
-    "ff_apng_decoder",
-    "ff_gif_decoder",
-    "ff_h264_decoder",
-    "ff_hevc_decoder",
-    "ff_png_decoder",
-    "ff_vp8_decoder",
-    "ff_webp_decoder",
-    "ff_webp_anim_decoder",
-    "ff_aac_encoder",
-    "ff_apng_encoder",
-    "ff_gif_encoder",
-    "ff_h263_encoder",
-    "ff_h264_mf_encoder",
-    "ff_h264_amf_encoder",
-    "ff_h264_nvenc_encoder",
-    "ff_h264_qsv_encoder",
-    "ff_libwebp_anim_encoder",
-    "ff_libx264_encoder",
-    "ff_libx265_encoder",
-    "ff_mp3_mf_encoder",
-    "ff_mpeg4_encoder",
-    "ff_h264_d3d11va_hwaccel",
-    "ff_h264_d3d11va2_hwaccel",
-    "ff_h264_dxva2_hwaccel",
-    "ff_aac_parser",
-    "ff_ac3_parser",
-    "ff_h264_parser",
-    "ff_hevc_parser",
-    "ff_mpegaudio_parser",
-    "ff_apng_demuxer",
-    "ff_gif_demuxer",
-    "ff_matroska_demuxer",
-    "ff_mov_demuxer",
-    "ff_webp_anim_demuxer",
-    "ff_apng_muxer",
-    "ff_avi_muxer",
-    "ff_gif_muxer",
-    "ff_matroska_muxer",
-    "ff_mov_muxer",
-    "ff_mp4_muxer",
-    "ff_webp_muxer",
-    "ff_file_protocol"
+    foreach ($entry in (Get-SnowShotExpectedFfmpegComponents).GetEnumerator()) {
+        foreach ($name in $entry.Value) {
+            "ff_$($name.ToLowerInvariant())_$($entry.Key.ToLowerInvariant())"
+        }
+    }
 )
 Assert-ExactStringSet -Description "Linked FFmpeg component registrations" `
     -Expected $expectedFfmpegRegistrations -Actual $linkedFfmpegRegistrations

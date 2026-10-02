@@ -30,7 +30,6 @@ function Read-LiteralAssignment {
 }
 
 $components = Read-LiteralAssignment "expectedFfmpegComponents"
-$registrations = Read-LiteralAssignment "expectedFfmpegRegistrations"
 if ([string]::IsNullOrWhiteSpace($ComponentsHeader)) {
     $ComponentsHeader = Join-Path $repoRoot (
         ".tools/vcpkg/installed/static/x64-windows-static/share/ffmpeg/snow-shot-config-components.h")
@@ -47,14 +46,9 @@ $expected = @(foreach ($kind in $components.Keys) {
     }
 })
 $expected = @($expected | Sort-Object)
-foreach ($audit in @(
-    @{ Name = "dependency"; Symbols = $expected },
-    @{ Name = "registration configuration"; Symbols = @($registrations | Sort-Object) }
-)) {
-    $difference = @(Compare-Object -ReferenceObject $actual -DifferenceObject $audit.Symbols)
-    if ($difference.Count -gt 0) {
-        throw "FFmpeg $($audit.Name) audit differs from the compiled component set: $($difference | Out-String)"
-    }
+$difference = @(Compare-Object -ReferenceObject $actual -DifferenceObject $expected)
+if ($difference.Count -gt 0) {
+    throw "FFmpeg dependency audit differs from the compiled component set: $($difference | Out-String)"
 }
 $prefix = Split-Path (Split-Path (Split-Path $ComponentsHeader -Parent) -Parent) -Parent
 $main10CapabilityPath = Join-Path $prefix "share/x265/snow-main10-capability.json"
@@ -73,7 +67,7 @@ $linkMap = Join-Path $repoRoot "build/snow-shot-msvc-release/snow_shot/Release/s
 $linked = @(Select-String -LiteralPath $linkMap -Pattern (
     '^\s+[0-9A-Fa-f]+:[0-9A-Fa-f]+\s+(ff_[A-Za-z0-9_]+_(?:bsf|decoder|encoder|hwaccel|parser|demuxer|muxer|protocol))\s+[0-9A-Fa-f]+\s{2,}\S'
 ) | ForEach-Object { $_.Matches[0].Groups[1].Value } | Sort-Object)
-if (@(Compare-Object $linked @($registrations | Sort-Object)).Count -gt 0) {
+if (@(Compare-Object $linked $expected).Count -gt 0) {
     throw "The link-map audit does not match the optimized executable registrations."
 }
 Write-Output "FFmpeg contract verified: $($actual.Count) compiled components and $($linked.Count) linked registrations."
