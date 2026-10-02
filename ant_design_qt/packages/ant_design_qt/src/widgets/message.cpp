@@ -262,6 +262,7 @@ class MessageHostWidget final : public QWidget {
       }
     }
     setMask(interactiveRegion);
+    setAttribute(Qt::WA_TransparentForMouseEvents, interactiveRegion.isEmpty());
   }
 
   int zIndex() const { return zIndex_; }
@@ -398,7 +399,6 @@ class MessageNoticeWidget final : public QWidget {
 
   void animateIn() {
     closing_ = false;
-    show();
     const int duration = style_.metrics.motionDurationMs;
     progress_.animateTo(1.0, duration, [easing = style_.metrics.motionEasing](qreal value) {
       return easing.valueForProgress(value);
@@ -411,6 +411,14 @@ class MessageNoticeWidget final : public QWidget {
         layoutCallback_();
       }
     }
+  }
+
+  void setMaximumFrameWidth(int width) {
+    if (maximumFrameWidth_ != width) {
+      maximumFrameWidth_ = width;
+      refreshLayoutMetrics();
+    }
+    setMaximumWidth(width);
   }
 
   int animateOut() {
@@ -1146,7 +1154,7 @@ class AdMessagePrivate {
         continue;
       }
       highestZIndex = std::max(highestZIndex, entry.notice->zIndexPopup());
-      entry.notice->setMaximumWidth(frameWidthLimit);
+      entry.notice->setMaximumFrameWidth(frameWidthLimit);
       entry.notice->adjustSize();
       QSize frameSize = entry.notice->sizeHint();
       frameSize.setWidth(std::min(frameSize.width(), frameWidthLimit));
@@ -1163,13 +1171,22 @@ class AdMessagePrivate {
       }
 
       const int frameX = qRound((host->width() - frameSize.width()) / 2.0);
+      // Test the settled layout, so the entrance animation does not toggle visibility.
+      const QRect settledFrame(
+          frameX, qRound(visualY + padding - detail::antPopupShadowSecondaryMargins().top()),
+          frameSize.width(), frameSize.height());
+      const bool clipped = requests.value(entry.handle).hideWhenClipped &&
+                           (entry.notice->sizeHint().width() > frameSize.width() ||
+                            !host->rect().contains(settledFrame));
       const int frameY = qRound(currentVisualY - detail::antPopupShadowSecondaryMargins().top());
       entry.notice->setGeometry(frameX, frameY, frameSize.width(), frameSize.height());
-      entry.notice->setVisible(progress > 0.001 || !entry.notice->isClosing());
+      entry.notice->setVisible(!clipped && (progress > 0.001 || !entry.notice->isClosing()));
       if (entry.notice->isVisible() && progress > 0.001) {
         maskedNotices.append(entry.notice);
       }
-      visualY += wrapperHeight * progress;
+      if (!clipped) {
+        visualY += wrapperHeight * progress;
+      }
     }
 
     host->setNoticeMask(maskedNotices);
