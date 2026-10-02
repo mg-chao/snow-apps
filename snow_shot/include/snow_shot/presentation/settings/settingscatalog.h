@@ -189,6 +189,7 @@ struct SettingsIntegerDefinition {
 
 enum class SettingsSliderBinding {
     ShortcutHintOpacity,
+    FloatingToolbarOpacity,
     ScreenshotImageQuality,
     ScreenRecordingVideoQuality,
     SkinOpacity,

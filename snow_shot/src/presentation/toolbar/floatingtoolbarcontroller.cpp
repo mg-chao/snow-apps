@@ -9,6 +9,7 @@
 #include "snow_shot/storage/configurationstore.h"
 #include "snow_shot/storage/floatingtoolbarsettings.h"
 #include "widgets/button.h"
+#include "widgets/context_menu.h"
 #include "widgets/popover.h"
 #include "../tools/screenshottoolpalettebuttons.h"
 #include "widgets/control_scale.h"
@@ -19,10 +20,13 @@
 #include <QBoxLayout>
 #include <QContextMenuEvent>
 #include <QDragEnterEvent>
+#include <QDragLeaveEvent>
+#include <QDragMoveEvent>
 #include <QDropEvent>
+#include "snow_shot/presentation/screenshotcontentdrop.h"
 #include <QGraphicsDropShadowEffect>
+#include <QHideEvent>
 #include <QFileInfo>
-#include <QMenu>
 #include <QMimeData>
 #include <QMouseEvent>
 #include <QPainter>
@@ -47,6 +51,30 @@ QString text(const char* source) {
 }
 constexpr auto kKind = storage::ScreenshotToolbarLayoutKind::FloatingTools;
 
+class ToolbarShadow final : public QGraphicsDropShadowEffect {
+  public:
+    explicit ToolbarShadow(const QGraphicsDropShadowEffect& source, QObject* parent)
+        : QGraphicsDropShadowEffect(parent) {
+        setBlurRadius(source.blurRadius());
+        setOffset(source.offset());
+        setColor(source.color());
+    }
+    void setVisibleMargins(QMargins margins) {
+        if (margins == m_visibleMargins)
+            return;
+        m_visibleMargins = margins;
+        updateBoundingRect();
+    }
+    QRectF boundingRectFor(const QRectF& rect) const override {
+        // Keep Qt's native dirty region inside the allocated shadow surface.
+        return QGraphicsDropShadowEffect::boundingRectFor(rect).intersected(
+            rect.marginsAdded(QMarginsF(m_visibleMargins)));
+    }
+
+  private:
+    QMargins m_visibleMargins = ScreenshotToolbarMainPanel::shadowMargins();
+};
+
 class SnowflakeButton final : public QAbstractButton {
   public:
     explicit SnowflakeButton(QWidget* parent) : QAbstractButton(parent) {
@@ -55,6 +83,16 @@ class SnowflakeButton final : public QAbstractButton {
         setFocusPolicy(Qt::StrongFocus);
         setMouseTracking(true);
         setAttribute(Qt::WA_Hover);
+    }
+    void setDropReady(bool ready) {
+        if (m_dropReady == ready)
+            return;
+        m_dropReady = ready;
+        update();
+    }
+    void hideEvent(QHideEvent* event) override {
+        setDropReady(false);
+        QAbstractButton::hideEvent(event);
     }
     void paintEvent(QPaintEvent*) override {
         const auto& colors = styles::ThemeManager::instance().themeColorScheme().map;
@@ -69,8 +107,23 @@ class SnowflakeButton final : public QAbstractButton {
             p.setBrush(colors.colorFillQuaternary);
             p.drawRoundedRect(QRectF(1, 1, 46, 46), 12, 12);
         }
+        if (m_dropReady) {
+            QColor glow = colors.colorSuccess;
+            glow.setAlphaF(0.14F);
+            p.setPen(Qt::NoPen);
+            p.setBrush(glow);
+            p.drawRoundedRect(QRectF(1, 1, 46, 46), 12, 12);
+            QColor ring = colors.colorSuccess;
+            ring.setAlphaF(0.7F);
+            p.setPen(QPen(ring, 1.5));
+            p.setBrush(Qt::NoBrush);
+            p.drawRoundedRect(QRectF(2.5, 2.5, 43, 43), 10, 10);
+        }
         p.translate(24, 24);
-        p.setPen(QPen(colors.colorPrimary, 1.8, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
+        if (m_dropReady)
+            p.scale(1.08, 1.08);
+        p.setPen(QPen(m_dropReady ? colors.colorSuccess : colors.colorPrimary, 1.8, Qt::SolidLine,
+                      Qt::RoundCap, Qt::RoundJoin));
         for (int arm = 0; arm < 6; ++arm) {
             p.drawLine(QPointF(0, 0), QPointF(0, -14));
             p.drawLine(QPointF(0, -8.5), QPointF(-4, -11));
@@ -78,11 +131,16 @@ class SnowflakeButton final : public QAbstractButton {
             p.rotate(60);
         }
     }
+
+  private:
+    bool m_dropReady = false;
 };
 
 class DropSurface final : public QWidget {
   public:
     std::function<void(ScreenshotClipboardContentSnapshot, QStringList)> dropped;
+    std::function<void()> hoverChanged;
+    std::function<void()> dropReadyChanged;
     explicit DropSurface()
         : QWidget(nullptr, Qt::Tool | Qt::FramelessWindowHint | Qt::WindowStaysOnTopHint |
                                Qt::WindowDoesNotAcceptFocus) {
@@ -95,48 +153,86 @@ class DropSurface final : public QWidget {
 #endif
         setAcceptDrops(true);
     }
-    static QStringList imagePaths(const QMimeData* mime) {
-        auto paths = ScreenshotClipboardContentReader::localFilePaths(mime);
-        const auto extensions = ScreenshotClipboardContentReader::supportedFileExtensions();
-        paths.removeIf([&extensions](const QString& path) {
-            return !extensions.contains(QFileInfo(path).suffix().toLower());
-        });
-        return paths;
+    bool isHovered() const {
+        return m_hovered;
     }
-    static bool accepts(const QMimeData* mime) {
-        if (!mime)
-            return false;
-        if (mime->hasImage() || !imagePaths(mime).isEmpty())
-            return true;
-        for (const auto& format : mime->formats())
-            if (format.startsWith(QLatin1String("image/")))
-                return true;
-        return false;
+    bool isDropReady() const {
+        return m_dropReady;
+    }
+    void enterEvent(QEnterEvent* event) override {
+        setHovered(true);
+        QWidget::enterEvent(event);
+    }
+    void leaveEvent(QEvent* event) override {
+        setHovered(false);
+        QWidget::leaveEvent(event);
+    }
+    void showEvent(QShowEvent* event) override {
+        setHovered(geometry().contains(QCursor::pos()));
+        QWidget::showEvent(event);
+    }
+    void hideEvent(QHideEvent* event) override {
+        setDropReady(false);
+        setHovered(false);
+        QWidget::hideEvent(event);
     }
     void dragEnterEvent(QDragEnterEvent* event) override {
-        if (accepts(event->mimeData()))
-            event->acceptProposedAction();
+        updateDropReady(event);
+    }
+    void dragMoveEvent(QDragMoveEvent* event) override {
+        updateDropReady(event);
+    }
+    void dragLeaveEvent(QDragLeaveEvent* event) override {
+        setDropReady(false);
+        event->accept();
     }
     void dropEvent(QDropEvent* event) override {
-        if (!accepts(event->mimeData()) || !dropped)
+        setDropReady(false);
+        if (!event->possibleActions().testFlag(Qt::CopyAction) ||
+            !acceptsScreenshotDrop(event->mimeData()) || !dropped)
             return;
-        const auto paths = imagePaths(event->mimeData());
+        const auto paths = screenshotDropFilePaths(event->mimeData());
         if (!paths.isEmpty()) {
-            event->acceptProposedAction();
+            event->setDropAction(Qt::CopyAction);
+            event->accept();
             dropped({}, paths);
             return;
         }
         auto snapshot = ScreenshotClipboardContentReader::snapshotMimeData(
             event->mimeData(), devicePixelRatioF(), palette().color(QPalette::Base));
-        if (snapshot) {
-            snapshot->text.clear();
-            snapshot->html.clear();
-            if (snapshot->isValid()) {
-                event->acceptProposedAction();
-                dropped(std::move(*snapshot), {});
-            }
+        if (snapshot && snapshot->isValid()) {
+            event->setDropAction(Qt::CopyAction);
+            event->accept();
+            dropped(std::move(*snapshot), {});
         }
     }
+
+  private:
+    void updateDropReady(QDropEvent* event) {
+        const bool ready = event->possibleActions().testFlag(Qt::CopyAction) && dropped &&
+                           acceptsScreenshotDrop(event->mimeData());
+        setDropReady(ready);
+        if (ready) {
+            event->setDropAction(Qt::CopyAction);
+            event->accept();
+        } else {
+            event->ignore();
+        }
+    }
+    void setDropReady(bool ready) {
+        if (m_dropReady == ready)
+            return;
+        m_dropReady = ready;
+        if (dropReadyChanged)
+            dropReadyChanged();
+    }
+    void setHovered(bool hovered) {
+        m_hovered = hovered;
+        if (hoverChanged)
+            hoverChanged();
+    }
+    bool m_hovered = false;
+    bool m_dropReady = false;
 };
 } // namespace
 
@@ -166,7 +262,7 @@ class FloatingToolbarController::Impl {
             }
         });
         QObject::connect(&retreat, &QTimer::timeout, &q, [this] {
-            if (menuDepth || dragging || containsCursor())
+            if (menuDepth || dragging || dropReady() || containsCursor())
                 return;
             expanded = false;
             place();
@@ -242,11 +338,16 @@ class FloatingToolbarController::Impl {
     QSize iconExtent() const {
         return QSize(iconSize(), iconSize());
     }
+    QSize anchorExtent(bool mode) const {
+        const int size = mode ? qRound(32 * scale) : iconSize();
+        return QSize(size, size);
+    }
     QRect bounds() const {
         return screen ? screen->availableGeometry() : QRect();
     }
     bool right() const {
-        return dragging ? dragRight : floating_toolbar::rightSide(anchor, iconExtent(), bounds());
+        return dragging ? dragRight
+                        : floating_toolbar::rightSide(anchor, anchorExtent(toolbarMode), bounds());
     }
     bool visibleAllowed() const {
         return !stopped && enabled && screen && !fullscreenHidden &&
@@ -271,9 +372,10 @@ class FloatingToolbarController::Impl {
             screen = QGuiApplication::primaryScreen();
         if (!screen)
             return;
-        anchor = floating_toolbar::restore({saved.value(QStringLiteral("x")).toDouble(1),
-                                            saved.value(QStringLiteral("y")).toDouble(0.97)},
-                                           iconExtent(), bounds());
+        anchor = floating_toolbar::restore(
+            {saved.value(QStringLiteral("x")).toDouble(1),
+             saved.value(QStringLiteral("y")).toDouble(0.97)},
+            anchorExtent(storage::FloatingToolbarSettings().toolbarMode()), bounds());
         if (!storage::FloatingToolbarSettings().toolbarMode())
             anchor = floating_toolbar::dock(anchor, iconExtent(), bounds());
         if (fullscreen.isActive())
@@ -283,7 +385,8 @@ class FloatingToolbarController::Impl {
     void savePlacement() {
         if (!screen || !configuration)
             return;
-        const auto fraction = floating_toolbar::remember(anchor, iconExtent(), bounds());
+        const auto fraction =
+            floating_toolbar::remember(anchor, anchorExtent(toolbarMode), bounds());
         saving = true;
         storage::FloatingToolbarSettings().setPlacement(
             {{QStringLiteral("screen"), screenIdentity(screen)},
@@ -294,9 +397,18 @@ class FloatingToolbarController::Impl {
     std::unique_ptr<DropSurface> surface(const QString& name) {
         auto result = std::make_unique<DropSurface>();
         result->setObjectName(name);
+        result->setWindowOpacity(idleOpacity);
+        result->hoverChanged = [this] { syncOpacity(); };
+        result->dropReadyChanged = [this] {
+            if (icon)
+                icon->setDropReady(!toolbarMode && dropReady());
+            if (toolbarIcon)
+                toolbarIcon->setDropReady(toolbarMode && dropReady());
+            syncOpacity();
+        };
         result->installEventFilter(&q);
         result->dropped = [this](auto snapshot, auto paths) {
-            emit q.imagesDropped(std::move(snapshot), std::move(paths));
+            emit q.contentDropped(std::move(snapshot), std::move(paths));
         };
         return result;
     }
@@ -304,12 +416,8 @@ class FloatingToolbarController::Impl {
         auto* button = new SnowflakeButton(parent);
         button->setFixedSize(iconExtent());
         button->installEventFilter(&q);
-        QObject::connect(button, &QAbstractButton::clicked, &q, [this, button] {
-            if (button == toolbarIcon)
-                showContext(button->mapToGlobal(QPoint(0, button->height())));
-            else
-                invoke(QStringLiteral("screenshot"));
-        });
+        QObject::connect(button, &QAbstractButton::clicked, &q,
+                         [this] { invoke(QStringLiteral("screenshot")); });
         return button;
     }
     void ensureIcon() {
@@ -331,6 +439,8 @@ class FloatingToolbarController::Impl {
         auto* root = new QVBoxLayout(toolbarWindow.get());
         root->setContentsMargins(ScreenshotToolbarMainPanel::shadowMargins());
         panel = new ScreenshotToolbarMainPanel({false}, toolbarWindow.get());
+        if (auto* shadow = qobject_cast<QGraphicsDropShadowEffect*>(panel->graphicsEffect()))
+            panel->setGraphicsEffect(new ToolbarShadow(*shadow, panel));
         root->addWidget(panel);
         toolbarIcon = snowflake(panel);
         scaleScope = new adqt::widgets::AdControlScaleScope(panel, panel);
@@ -358,28 +468,18 @@ class FloatingToolbarController::Impl {
         place();
         emit q.actionRequested(id);
     }
-    void styleMenu(QMenu* menu) {
-        const auto& colors = styles::ThemeManager::instance().themeColorScheme().map;
-        auto palette = menu->palette();
-        palette.setColor(QPalette::Window, colors.colorBgElevated);
-        palette.setColor(QPalette::Base, colors.colorBgElevated);
-        palette.setColor(QPalette::WindowText, colors.colorText);
-        palette.setColor(QPalette::Text, colors.colorText);
-        palette.setColor(QPalette::Highlight, colors.colorFillSecondary);
-        palette.setColor(QPalette::HighlightedText, colors.colorText);
-        menu->setPalette(palette);
-    }
-    QMenu* makeMenu(QWidget* parent) {
-        auto* menu = new QMenu(parent);
+    adqt::widgets::AdContextMenu* makeMenu(QWidget* parent) {
+        auto* menu = new adqt::widgets::AdContextMenu(parent);
         menus.push_back(menu);
-        QObject::connect(menu, &QMenu::aboutToShow, &q, [this, menu] {
+        QObject::connect(menu, &QMenu::aboutToShow, &q, [this] {
             ++menuDepth;
+            syncOpacity();
             retreat.stop();
-            styleMenu(menu);
             place();
         });
         QObject::connect(menu, &QMenu::aboutToHide, &q, [this] {
             menuDepth = std::max(0, menuDepth - 1);
+            syncOpacity();
             retreat.start();
         });
         return menu;
@@ -390,7 +490,7 @@ class FloatingToolbarController::Impl {
                 group.popover->hide();
         for (const auto& menu : menus)
             if (menu)
-                menu->close();
+                menu->dismissPopup();
     }
     struct Group {
         QStringList items;
@@ -405,7 +505,7 @@ class FloatingToolbarController::Impl {
         group.main->setAccessibleName(label(group.current));
         group.main->setProperty("floatingToolbarAction", group.current);
     }
-    void addMenuTools(QMenu* menu, int index) {
+    void addMenuTools(adqt::widgets::AdContextMenu* menu, int index) {
         const auto items = groups[index].items;
         for (const auto& id : items) {
             auto* action = menu->addAction(label(id));
@@ -489,6 +589,7 @@ class FloatingToolbarController::Impl {
                 QObject::connect(popover, &adqt::widgets::AdPopover::visibleChanged, &q,
                                  [this](bool visible) {
                                      menuDepth = std::max(0, menuDepth + (visible ? 1 : -1));
+                                     syncOpacity();
                                      if (visible)
                                          retreat.stop();
                                      else
@@ -501,34 +602,35 @@ class FloatingToolbarController::Impl {
         overflow->setToolTip(overflow->accessibleName());
         overflowMenu = makeMenu(overflow);
         QObject::connect(overflow, &adqt::widgets::AdButton::clicked, &q, [this] {
-            overflowMenu->popup(overflow->mapToGlobal(QPoint(0, overflow->height())));
+            overflowMenu->popupAt(overflow->mapToGlobal(QPoint(0, overflow->height())));
         });
         applyScale();
     }
     void applyScale() {
         if (icon)
             icon->setFixedSize(iconExtent());
-        if (toolbarIcon)
-            toolbarIcon->setFixedSize(iconExtent());
         if (panel) {
             scaleScope->publishScale(
                 adqt::widgets::AdControlScaleContext::fromDprsAndContentScale(1.0, 1.0, scale));
+            toolbarIcon->setFixedSize(panel->buttonSize(), panel->buttonSize());
         }
     }
     void refresh() {
         if (stopped || !configuration)
             return;
         const storage::FloatingToolbarSettings settings;
-        const auto fraction = floating_toolbar::remember(anchor, iconExtent(), bounds());
+        const auto fraction =
+            floating_toolbar::remember(anchor, anchorExtent(toolbarMode), bounds());
         const qreal previousScale = scale;
         const bool previousMode = toolbarMode;
         enabled = settings.enabled();
         toolbarMode = settings.toolbarMode();
         hideCapture = settings.hideDuringCapture();
+        idleOpacity = settings.opacity() / 100.0;
         scale =
             storage::ScreenshotUiSettings().toolbarSize() == QStringLiteral("small") ? 0.8 : 1.0;
         if (screen && scale != previousScale)
-            anchor = floating_toolbar::restore(fraction, iconExtent(), bounds());
+            anchor = floating_toolbar::restore(fraction, anchorExtent(toolbarMode), bounds());
         if (screen && !toolbarMode && (previousMode || scale != previousScale))
             anchor = floating_toolbar::dock(anchor, iconExtent(), bounds());
         if (!enabled) {
@@ -557,14 +659,14 @@ class FloatingToolbarController::Impl {
         ensureIcon();
         if (toolbarMode)
             ensureToolbar();
+        syncOpacity();
         if (contentDirty)
             rebuild();
         applyScale();
         icon->setAccessibleName(text(QT_TRANSLATE_NOOP("FloatingToolbar", "Screenshot")));
         icon->setToolTip(icon->accessibleName());
         if (toolbarIcon) {
-            toolbarIcon->setAccessibleName(
-                text(QT_TRANSLATE_NOOP("FloatingToolbar", "Floating toolbar menu")));
+            toolbarIcon->setAccessibleName(icon->accessibleName());
             toolbarIcon->setToolTip(toolbarIcon->accessibleName());
         }
         if (settings.hideInFullscreen()) {
@@ -585,10 +687,11 @@ class FloatingToolbarController::Impl {
     void arrangeToolbar() {
         if (!panel || !screen)
             return;
+        toolbarWindow->ensurePolished();
         const int sideSpace =
             right() ? anchor.x() - bounds().left() : bounds().right() + 1 - anchor.x() - iconSize();
         const int spacing = qRound(8 * scale);
-        int remaining = (toolbarMode ? bounds().width() - iconSize() : sideSpace) - 64;
+        int remaining = (toolbarMode ? bounds().width() - toolbarIcon->width() : sideSpace) - 64;
         int visibleCount = 0;
         for (const auto& group : groups) {
             const int width = group.widget->sizeHint().width() + spacing;
@@ -634,14 +737,12 @@ class FloatingToolbarController::Impl {
             row->addWidget(toolbarIcon);
         }
         row->invalidate();
-        toolbarWindow->layout()->activate();
-        toolbarWindow->adjustSize();
     }
     void place() {
         if (!screen || !iconWindow)
             return;
-        anchor = floating_toolbar::constrain(anchor, iconExtent(), bounds());
-        const QPoint shown = (!toolbarMode && !expanded && !dragging && !menuDepth)
+        anchor = floating_toolbar::constrain(anchor, anchorExtent(toolbarMode), bounds());
+        const QPoint shown = (!toolbarMode && !dragging)
                                  ? floating_toolbar::tucked(anchor, iconExtent(), bounds())
                                  : anchor;
         // Keep the native surface inside this work area. Clipping the child,
@@ -652,16 +753,63 @@ class FloatingToolbarController::Impl {
         iconWindow->setGeometry(visibleFrame);
         icon->move(shown - visibleFrame.topLeft());
         if (toolbarWindow && (toolbarMode || expanded)) {
+            // Publish the shadow and native frame changes as one paint update.
+            toolbarWindow->setUpdatesEnabled(false);
             arrangeToolbar();
+            toolbarWindow->layout()->setContentsMargins(
+                ScreenshotToolbarMainPanel::shadowMargins());
+            // Activate from the inside out so hidden content changes update the
+            // panel's cached size hint before the outer layout measures it.
+            panel->contentLayout()->activate();
+            toolbarWindow->layout()->activate();
+            toolbarWindow->adjustSize();
+            // Hidden widgets defer resize events until show. Commit both layouts
+            // to the final size before reading the panel or toolbar icon geometry.
+            toolbarWindow->layout()->setGeometry(toolbarWindow->rect());
+            panel->contentLayout()->setGeometry(panel->rect());
             const QPoint desired =
                 toolbarMode ? anchor - toolbarIcon->mapTo(toolbarWindow.get(), QPoint())
-                            : QPoint(right() ? anchor.x() - panel->x() - panel->width() - 4
-                                             : anchor.x() + iconSize() + 4 - panel->x(),
-                                     anchor.y() + (iconSize() - panel->height()) / 2 - panel->y());
-            toolbarWindow->move(
-                floating_toolbar::constrain(desired, toolbarWindow->size(), bounds()));
+                            : QPoint(right() ? shown.x() - panel->x() - panel->width() - 4
+                                             : shown.x() + iconSize() + 4 - panel->x(),
+                                     shown.y() + (iconSize() - panel->height()) / 2 - panel->y());
+            if (toolbarMode) {
+                // Constrain the visible panel, then clip only its shadow at the monitor edge.
+                const QPoint panelPosition =
+                    floating_toolbar::constrain(desired + panel->pos(), panel->size(), bounds());
+                const QRect frame(panelPosition - panel->pos(), toolbarWindow->size());
+                const QRect visible = frame.intersected(bounds());
+                const QRect panelFrame(panelPosition, panel->size());
+                toolbarWindow->layout()->setContentsMargins(
+                    panelFrame.left() - visible.left(), panelFrame.top() - visible.top(),
+                    visible.right() - panelFrame.right(), visible.bottom() - panelFrame.bottom());
+                // Update the minimum window size before shrinking the shadow allocation.
+                toolbarWindow->layout()->activate();
+                toolbarWindow->setGeometry(visible);
+                toolbarWindow->layout()->setGeometry(toolbarWindow->rect());
+            } else {
+                toolbarWindow->move(
+                    floating_toolbar::constrain(desired, toolbarWindow->size(), bounds()));
+            }
+            if (auto* shadow = dynamic_cast<ToolbarShadow*>(panel->graphicsEffect()))
+                shadow->setVisibleMargins(toolbarWindow->layout()->contentsMargins());
+            toolbarWindow->setUpdatesEnabled(true);
         }
         syncVisibility();
+    }
+    bool dropReady() const {
+        return (iconWindow && iconWindow->isDropReady()) ||
+               (toolbarWindow && toolbarWindow->isDropReady());
+    }
+    void syncOpacity() {
+        // The icon, expanded toolbar, and owned popups form one interaction surface.
+        const bool hovered =
+            menuDepth > 0 || (iconWindow && iconWindow->isVisible() && iconWindow->isHovered()) ||
+            (toolbarWindow && toolbarWindow->isVisible() && toolbarWindow->isHovered());
+        const qreal opacity = hovered || dropReady() ? 1.0 : idleOpacity;
+        if (iconWindow)
+            iconWindow->setWindowOpacity(opacity);
+        if (toolbarWindow)
+            toolbarWindow->setWindowOpacity(opacity);
     }
     void syncVisibility() {
         const bool allowed = visibleAllowed();
@@ -743,7 +891,7 @@ class FloatingToolbarController::Impl {
         auto* close = context->addAction(text(QT_TRANSLATE_NOOP("FloatingToolbar", "Close")));
         QObject::connect(close, &QAction::triggered, &q,
                          [] { storage::FloatingToolbarSettings().setEnabled(false); });
-        context->popup(position);
+        context->popupAt(position);
     }
     bool event(QObject* watched, QEvent* event) {
         if (event->type() == QEvent::LanguageChange) {
@@ -807,10 +955,8 @@ class FloatingToolbarController::Impl {
                     anchor = floating_toolbar::dock(anchor, iconExtent(), bounds());
                 savePlacement();
                 place();
-            } else if (toolbarMode) {
-                showContext(mouse->globalPosition().toPoint());
             } else {
-                invoke(QStringLiteral("screenshot"));
+                static_cast<QAbstractButton*>(watched)->click();
             }
             return true;
         }
@@ -827,8 +973,8 @@ class FloatingToolbarController::Impl {
     ScreenshotToolbarMainPanel* panel = nullptr;
     adqt::widgets::AdControlScaleScope* scaleScope = nullptr;
     adqt::widgets::AdButton* overflow = nullptr;
-    QPointer<QMenu> overflowMenu, context;
-    QVector<QPointer<QMenu>> menus;
+    QPointer<adqt::widgets::AdContextMenu> overflowMenu, context;
+    QVector<QPointer<adqt::widgets::AdContextMenu>> menus;
     QVector<Group> groups;
     QHash<QString, QString> choices;
     QSet<QString> activities;
@@ -837,6 +983,7 @@ class FloatingToolbarController::Impl {
     QPoint anchor, pressPosition, pressAnchor;
     bool dragRight = false;
     qreal scale = 1;
+    qreal idleOpacity = 0.5;
     int menuDepth = 0;
     bool enabled = false, toolbarMode = false, hideCapture = true, fullscreenHidden = false;
     bool expanded = false, dragging = false, pressed = false, refreshQueued = false;

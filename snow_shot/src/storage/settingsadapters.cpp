@@ -1843,6 +1843,14 @@ bool FloatingToolbarSettings::setHideDuringCapture(bool value) const {
     return cache().setValue(QStringLiteral("floating_toolbar/hide_during_capture"), value);
 }
 
+int FloatingToolbarSettings::opacity() const {
+    return cache().value(QStringLiteral("floating_toolbar/opacity")).toInt();
+}
+
+bool FloatingToolbarSettings::setOpacity(int value) const {
+    return cache().setValue(QStringLiteral("floating_toolbar/opacity"), value);
+}
+
 bool FloatingToolbarSettings::toolbarMode() const {
     return cache().value(QStringLiteral("floating_toolbar/mode")).toString() ==
            QStringLiteral("toolbar");

@@ -24,7 +24,7 @@ class FloatingToolbarController final : public QObject {
   signals:
     void actionRequested(const QString& action);
     void customizeRequested();
-    void imagesDropped(ScreenshotClipboardContentSnapshot snapshot, QStringList paths);
+    void contentDropped(ScreenshotClipboardContentSnapshot snapshot, QStringList paths);
 
   protected:
     bool eventFilter(QObject* watched, QEvent* event) override;

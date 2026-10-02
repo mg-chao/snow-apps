@@ -114,12 +114,12 @@
             <translation>将剪贴板内容固定到屏幕的队列已满</translation>
         </message>
         <message>
-            <source>The dropped image could not be opened</source>
-            <translation>无法打开拖入的图像</translation>
+            <source>The dropped content could not be opened</source>
+            <translation>无法打开拖放的内容</translation>
         </message>
         <message>
-            <source>The dropped image could not be queued</source>
-            <translation>无法将拖入的图像加入处理队列</translation>
+            <source>The dropped content could not be queued</source>
+            <translation>无法将拖放的内容加入队列</translation>
         </message>
         <message>
             <source>The pinned window could not be restored</source>

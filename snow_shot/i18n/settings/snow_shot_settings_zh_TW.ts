@@ -3019,6 +3019,10 @@
             <translation>設定截圖選取範圍外區域的色彩與不透明度</translation>
         </message>
         <message>
+            <source>Set the floating toolbar opacity when the mouse is not hovering over it</source>
+            <translation>設定滑鼠未停留時浮動工具列的不透明度</translation>
+        </message>
+        <message>
             <source>Set the frame rate of exported animated images</source>
             <translation>設定匯出動態圖片的畫面播放速率</translation>
         </message>
@@ -3421,6 +3425,10 @@
         <message>
             <source>Toolbar</source>
             <translation>工具列</translation>
+        </message>
+        <message>
+            <source>Toolbar Opacity</source>
+            <translation>工具列不透明度</translation>
         </message>
         <message>
             <source>Toolbar Skin Path</source>

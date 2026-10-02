@@ -537,10 +537,6 @@
             <translation>图像文件</translation>
         </message>
         <message>
-            <source>Image files (%1)</source>
-            <translation>图像文件 (%1)</translation>
-        </message>
-        <message>
             <source>Image size is too large.</source>
             <translation>图像尺寸过大。</translation>
         </message>
@@ -611,6 +607,10 @@
         <message>
             <source>Show main interface</source>
             <translation>显示主界面</translation>
+        </message>
+        <message>
+            <source>Supported files (%1)</source>
+            <translation>支持的文件 (%1)</translation>
         </message>
         <message>
             <source>The image could not be saved automatically: %1</source>

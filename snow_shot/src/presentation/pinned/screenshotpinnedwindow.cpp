@@ -1,3 +1,4 @@
+#include "snow_shot/presentation/screenshotcontentdrop.h"
 #include "snow_shot/shortcuts/shortcutbinding.h"
 #include "snow_shot/presentation/windowcloseshortcut.h"
 #include "snow_shot/presentation/screenshotencodingsettings.h"
@@ -5302,22 +5303,11 @@ void ScreenshotPinnedWindow::cancelContentReplacement() {
     m_contentReplacementJob = {};
 }
 
-QStringList ScreenshotPinnedWindow::eligibleDropPaths(const QDropEvent& event) const {
-    if (m_dragExport && m_dragExport->dragging())
-        return {};
-    if (!m_firstContentFramePublished || m_originalImage.isNull() || !isVisible() || m_closing ||
-        m_clickThroughActive || !event.possibleActions().testFlag(Qt::CopyAction)) {
-        return {};
-    }
-    const QStringList extensions = ScreenshotClipboardContentReader::supportedFileExtensions();
-    QStringList paths;
-    for (const QString& path : ScreenshotClipboardContentReader::localFilePaths(event.mimeData())) {
-        // suffix() only inspects the path; never stat or decode a file during a drag.
-        if (extensions.contains(QFileInfo(path).suffix(), Qt::CaseInsensitive)) {
-            paths.append(path);
-        }
-    }
-    return paths;
+bool ScreenshotPinnedWindow::acceptsDrop(const QDropEvent& event) const {
+    return !(m_dragExport && m_dragExport->dragging()) && m_firstContentFramePublished &&
+           !m_originalImage.isNull() && isVisible() && !m_closing && !m_clickThroughActive &&
+           event.possibleActions().testFlag(Qt::CopyAction) &&
+           acceptsScreenshotDrop(event.mimeData());
 }
 
 void ScreenshotPinnedWindow::setFileDragActive(bool active) {
@@ -5329,7 +5319,7 @@ void ScreenshotPinnedWindow::setFileDragActive(bool active) {
 }
 
 void ScreenshotPinnedWindow::dragEnterEvent(QDragEnterEvent* event) {
-    const bool accepted = !eligibleDropPaths(*event).isEmpty();
+    const bool accepted = acceptsDrop(*event);
     setFileDragActive(accepted);
     if (accepted) {
         event->setDropAction(Qt::CopyAction);
@@ -5340,7 +5330,7 @@ void ScreenshotPinnedWindow::dragEnterEvent(QDragEnterEvent* event) {
 }
 
 void ScreenshotPinnedWindow::dragMoveEvent(QDragMoveEvent* event) {
-    const bool accepted = !eligibleDropPaths(*event).isEmpty();
+    const bool accepted = acceptsDrop(*event);
     setFileDragActive(accepted);
     if (accepted) {
         event->setDropAction(Qt::CopyAction);
@@ -5356,15 +5346,22 @@ void ScreenshotPinnedWindow::dragLeaveEvent(QDragLeaveEvent* event) {
 }
 
 void ScreenshotPinnedWindow::dropEvent(QDropEvent* event) {
-    QStringList paths = eligibleDropPaths(*event);
+    const bool accepted = acceptsDrop(*event);
     setFileDragActive(false);
-    if (paths.isEmpty()) {
+    if (!accepted) {
         event->ignore();
         return;
     }
     event->setDropAction(Qt::CopyAction);
     event->accept();
-    requestContentReplacement(std::move(paths));
+    auto paths = screenshotDropFilePaths(event->mimeData());
+    if (!paths.isEmpty()) {
+        requestContentReplacement(std::move(paths));
+    } else {
+        requestContentReplacement(
+            {}, ScreenshotClipboardContentReader::snapshotMimeData(
+                    event->mimeData(), devicePixelRatioF(), palette().color(QPalette::Base)));
+    }
 }
 
 void ScreenshotPinnedWindow::loadImageFile() {
@@ -5376,7 +5373,7 @@ void ScreenshotPinnedWindow::loadImageFile() {
         pattern.prepend(QStringLiteral("*."));
     }
     auto* dialog = new QFileDialog(this, tr("Load new content"), QString(),
-                                   tr("Image files (%1)").arg(patterns.join(QLatin1Char(' '))));
+                                   tr("Supported files (%1)").arg(patterns.join(QLatin1Char(' '))));
     dialog->setObjectName(QStringLiteral("screenshotPinnedLoadImageDialog"));
     dialog->setAttribute(Qt::WA_DeleteOnClose);
     dialog->setFileMode(QFileDialog::ExistingFile);

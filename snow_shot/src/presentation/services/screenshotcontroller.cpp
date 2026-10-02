@@ -7,7 +7,7 @@
 #include "snow_shot/presentation/screenshotautofiltercontroller.h"
 #include "snow_shot/presentation/screenshotsourceimagecomposer.h"
 #include "snow_shot/presentation/screenshotcontroller.h"
-#include "snow_shot/presentation/screenshotimagedrop.h"
+#include "snow_shot/presentation/screenshotcontentdrop.h"
 #include "snow_shot/presentation/screenshotoverlaycanvaspresenter.h"
 #include "snow_shot/presentation/screenshottoolbarpresentationstatefactory.h"
 #include "snow_shot/app/mcp/screenshotmcpselection.h"
@@ -5783,8 +5783,8 @@ bool ScreenshotController::captureForAction(CaptureAction action) {
     return m_impl->beginCapture(action);
 }
 
-void ScreenshotController::pinDroppedImages(ScreenshotClipboardContentSnapshot snapshot,
-                                            QStringList paths) {
+void ScreenshotController::pinDroppedContent(ScreenshotClipboardContentSnapshot snapshot,
+                                             QStringList paths) {
     if (!m_impl->ensureExportFeature())
         return;
     auto* screen = QGuiApplication::screenAt(QCursor::pos());
@@ -5806,20 +5806,20 @@ void ScreenshotController::pinDroppedImages(ScreenshotClipboardContentSnapshot s
         this, ScreenshotExportCoordinator::Priority::Foreground,
         [snapshot = std::move(snapshot),
          content](const ScreenshotExportCancellation& cancellation) mutable {
-            *content = decodeScreenshotImageDrop(std::move(snapshot), [&cancellation] {
+            *content = decodeScreenshotDropContent(std::move(snapshot), [&cancellation] {
                 return cancellation.isCancellationRequested();
             });
             return ScreenshotExportTaskResult{};
         },
         [this, content, present](ScreenshotExportTaskResult) {
-            if (*content && (*content)->kind == ScreenshotClipboardContentKind::Image) {
+            if (*content && (*content)->isValid()) {
                 present(std::move(**content));
             } else {
-                emit selectedFilePinFailed(tr("The dropped image could not be opened"));
+                emit selectedFilePinFailed(tr("The dropped content could not be opened"));
             }
         });
     if (!m_impl->m_clipboardPinJob.isValid())
-        emit selectedFilePinFailed(tr("The dropped image could not be queued"));
+        emit selectedFilePinFailed(tr("The dropped content could not be queued"));
 }
 
 void ScreenshotController::startCapture() {

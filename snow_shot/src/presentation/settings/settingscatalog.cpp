@@ -577,6 +577,18 @@ SettingsItemDefinition pinnedToolbarEditorItem() {
             SettingsCustomDefinition{SettingsCustomRenderer::PinnedToolbarEditor}};
 }
 
+SettingsItemDefinition floatingToolbarOpacityItem() {
+    return {QStringLiteral("interface.floating-toolbar.opacity"),
+            settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Toolbar Opacity")),
+            settingsText(QT_TRANSLATE_NOOP(
+                "SettingsCatalog",
+                "Set the floating toolbar opacity when the mouse is not hovering over it")),
+            {},
+            QStringLiteral("floating_toolbar/opacity"),
+            SettingsSliderDefinition{SettingsSliderBinding::FloatingToolbarOpacity,
+                                     settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "%"))}};
+}
+
 SettingsItemDefinition floatingToolbarEditorItem() {
     return {QStringLiteral("interface.floating-toolbar.editor"),
             settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Floating toolbar settings")),
@@ -2767,7 +2779,7 @@ QVector<SettingsPageDefinition> builtInPages() {
                     settingsText(
                         QT_TRANSLATE_NOOP("SettingsCatalog", "Customize floating toolbar tools")),
                     SettingsSectionReset::FloatingToolbarLayout,
-                    {floatingToolbarEditorItem()},
+                    {floatingToolbarOpacityItem(), floatingToolbarEditorItem()},
                 },
                 {
                     QStringLiteral("tray"),
@@ -4410,6 +4422,9 @@ QStringList SettingsCatalog::validationErrors() const {
                     switch (slider->binding) {
                     case SettingsSliderBinding::ShortcutHintOpacity:
                         expectedKey = QStringLiteral("screenshot_ui/shortcut_hint_opacity");
+                        break;
+                    case SettingsSliderBinding::FloatingToolbarOpacity:
+                        expectedKey = QStringLiteral("floating_toolbar/opacity");
                         break;
                     case SettingsSliderBinding::ScreenshotImageQuality:
                         expectedKey = QStringLiteral("screenshot/image_quality");

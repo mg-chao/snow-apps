@@ -570,11 +570,13 @@ int main(int argc, char* argv[]) {
     applicationController.start();
     if (!startupResult.success) {
         qWarning().noquote() << startupResult.error;
-        QTimer::singleShot(0, &app, [error = startupResult.error] {
+        QTimer::singleShot(0, &app, [&applicationController, error = startupResult.error] {
+            // Startup can otherwise have only a tiny floating toolbar visible.
+            // Give the error a readable application surface before opening it.
+            applicationController.showMainWindow();
             adqt::widgets::AdMessage::Request request;
             request.content = error;
-            adqt::widgets::AdMessageService::error(std::move(request),
-                                                   QApplication::activeWindow());
+            adqt::widgets::AdMessageService::error(std::move(request));
         });
     }
     if (administratorRestart)

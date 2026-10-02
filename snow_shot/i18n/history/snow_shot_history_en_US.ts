@@ -543,10 +543,6 @@
             <translation>Image file</translation>
         </message>
         <message>
-            <source>Image files (%1)</source>
-            <translation>Image files (%1)</translation>
-        </message>
-        <message>
             <source>Image size is too large.</source>
             <translation>Image size is too large.</translation>
         </message>
@@ -617,6 +613,10 @@
         <message>
             <source>Show main interface</source>
             <translation>Show main interface</translation>
+        </message>
+        <message>
+            <source>Supported files (%1)</source>
+            <translation>Supported files (%1)</translation>
         </message>
         <message>
             <source>The image could not be saved automatically: %1</source>

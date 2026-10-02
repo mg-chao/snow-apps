@@ -1,4 +1,5 @@
 #include "message.h"
+#include "detail/feedback_owner.h"
 #include "detail/pointer_region.h"
 
 #include "antd_icons.h"
@@ -803,23 +804,6 @@ void ensureMessageAccessibleFactoryInstalled() {
   Q_UNUSED(installed)
 }
 
-QWidget* resolveMessageOwner(QWidget* requested) {
-  QWidget* owner = requested;
-  if (!owner) {
-    owner = QApplication::activeWindow();
-  }
-  if (!owner) {
-    const auto topLevels = QApplication::topLevelWidgets();
-    for (QWidget* candidate : topLevels) {
-      if (candidate && candidate->isVisible() && candidate->isWindow()) {
-        owner = candidate;
-        break;
-      }
-    }
-  }
-  return owner ? owner->window() : nullptr;
-}
-
 struct GlobalMessageState {
   AdMessage::Config config;
   QHash<QWidget*, QPointer<AdMessage>> services;
@@ -1556,7 +1540,7 @@ void AdMessage::closeHandle(AdMessageHandle* handle, CloseReason reason) {
 }
 
 AdMessage* AdMessageService::instance(QWidget* ownerWindow) {
-  QWidget* resolvedOwner = resolveMessageOwner(ownerWindow);
+  QWidget* resolvedOwner = detail::resolveFeedbackOwner(ownerWindow);
   if (!resolvedOwner) {
     return nullptr;
   }
@@ -1648,7 +1632,7 @@ AdMessageHandle* AdMessageService::loading(const QString& content, int durationM
 }
 
 void AdMessageService::destroy(const QString& key, QWidget* ownerWindow) {
-  QWidget* resolvedOwner = resolveMessageOwner(ownerWindow);
+  QWidget* resolvedOwner = detail::resolveFeedbackOwner(ownerWindow);
   if (AdMessage* messages = globalMessageState().services.value(resolvedOwner)) {
     messages->destroy(key);
   }
@@ -1656,7 +1640,7 @@ void AdMessageService::destroy(const QString& key, QWidget* ownerWindow) {
 
 void AdMessageService::destroyAll(QWidget* ownerWindow) {
   if (ownerWindow) {
-    QWidget* resolvedOwner = resolveMessageOwner(ownerWindow);
+    QWidget* resolvedOwner = detail::resolveFeedbackOwner(ownerWindow);
     if (AdMessage* messages = globalMessageState().services.value(resolvedOwner)) {
       messages->destroyAll();
     }

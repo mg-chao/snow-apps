@@ -276,7 +276,7 @@ class ScreenshotPinnedWindow final : public QWidget {
     void dragMoveEvent(QDragMoveEvent* event) override;
     void dragLeaveEvent(QDragLeaveEvent* event) override;
     void dropEvent(QDropEvent* event) override;
-    [[nodiscard]] QStringList eligibleDropPaths(const QDropEvent& event) const;
+    [[nodiscard]] bool acceptsDrop(const QDropEvent& event) const;
     void setFileDragActive(bool active);
 
     void createUi();

@@ -153,6 +153,8 @@ QString defaultOutputDirectory(QStandardPaths::StandardLocation primary) {
 
 const QVector<ConfigurationSchemaEntry> kRawEntries = {
     {QStringLiteral("floating_toolbar/enabled"), false, ConfigurationValueKind::Boolean},
+    {QStringLiteral("floating_toolbar/opacity"), 50, ConfigurationValueKind::Integer,
+     ConfigurationIntegerRange{10, 100, 1}},
     {QStringLiteral("floating_toolbar/hide_in_fullscreen"), true, ConfigurationValueKind::Boolean},
     {QStringLiteral("floating_toolbar/hide_during_capture"), true, ConfigurationValueKind::Boolean},
     {QStringLiteral("floating_toolbar/mode"),

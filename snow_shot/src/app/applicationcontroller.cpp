@@ -164,7 +164,7 @@ class ApplicationController::Impl {
                                  QStringLiteral("floating-toolbar"));
                          });
         QObject::connect(
-            &floatingToolbar, &presentation::FloatingToolbarController::imagesDropped, &q,
+            &floatingToolbar, &presentation::FloatingToolbarController::contentDropped, &q,
             [this](ScreenshotClipboardContentSnapshot snapshot, QStringList paths) {
                 if (storage::ApplicationStorage::instance().directoryChanging())
                     return;
@@ -172,7 +172,7 @@ class ApplicationController::Impl {
                     FeatureFamily::PinToScreen,
                     [this, snapshot = std::move(snapshot), paths = std::move(paths)]() mutable {
                         if (auto* controller = ensureScreenshotController())
-                            controller->pinDroppedImages(std::move(snapshot), std::move(paths));
+                            controller->pinDroppedContent(std::move(snapshot), std::move(paths));
                     }));
             });
         QObject::connect(&app, &QCoreApplication::aboutToQuit, &floatingToolbar,

@@ -48,6 +48,8 @@ class FloatingToolbarSettings final {
     bool setHideInFullscreen(bool value) const;
     [[nodiscard]] bool hideDuringCapture() const;
     bool setHideDuringCapture(bool value) const;
+    [[nodiscard]] int opacity() const;
+    bool setOpacity(int value) const;
     [[nodiscard]] QJsonObject placement() const;
     bool setPlacement(const QJsonObject& value) const;
 };

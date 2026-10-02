@@ -1,4 +1,5 @@
 #include "notification.h"
+#include "detail/feedback_owner.h"
 #include "detail/pointer_region.h"
 
 #include "antd_icons.h"
@@ -1076,23 +1077,6 @@ void ensureNotificationAccessibleFactoryInstalled() {
   Q_UNUSED(installed)
 }
 
-QWidget* resolveNotificationOwner(QWidget* requested) {
-  QWidget* owner = requested;
-  if (!owner) {
-    owner = QApplication::activeWindow();
-  }
-  if (!owner) {
-    const auto topLevels = QApplication::topLevelWidgets();
-    for (QWidget* candidate : topLevels) {
-      if (candidate && candidate->isVisible() && candidate->isWindow()) {
-        owner = candidate;
-        break;
-      }
-    }
-  }
-  return owner ? owner->window() : nullptr;
-}
-
 struct GlobalNotificationState {
   AdNotification::Config config;
   QHash<QWidget*, QPointer<AdNotification>> services;
@@ -1956,7 +1940,7 @@ void AdNotification::closeHandle(AdNotificationHandle* handle, CloseReason reaso
 }
 
 AdNotification* AdNotificationService::instance(QWidget* ownerWindow) {
-  QWidget* resolvedOwner = resolveNotificationOwner(ownerWindow);
+  QWidget* resolvedOwner = detail::resolveFeedbackOwner(ownerWindow);
   if (!resolvedOwner) {
     return nullptr;
   }
@@ -2051,7 +2035,7 @@ AdNotificationHandle* AdNotificationService::error(const QString& title, const Q
 }
 
 void AdNotificationService::destroy(const QString& key, QWidget* ownerWindow) {
-  QWidget* resolvedOwner = resolveNotificationOwner(ownerWindow);
+  QWidget* resolvedOwner = detail::resolveFeedbackOwner(ownerWindow);
   if (AdNotification* notifications = globalNotificationState().services.value(resolvedOwner)) {
     notifications->destroy(key);
   }
@@ -2059,7 +2043,7 @@ void AdNotificationService::destroy(const QString& key, QWidget* ownerWindow) {
 
 void AdNotificationService::destroyAll(QWidget* ownerWindow) {
   if (ownerWindow) {
-    QWidget* resolvedOwner = resolveNotificationOwner(ownerWindow);
+    QWidget* resolvedOwner = detail::resolveFeedbackOwner(ownerWindow);
     if (AdNotification* notifications = globalNotificationState().services.value(resolvedOwner)) {
       notifications->destroyAll();
     }

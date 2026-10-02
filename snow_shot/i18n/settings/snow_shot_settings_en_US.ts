@@ -3019,6 +3019,10 @@
             <translation>Set the color and opacity outside the screenshot selection</translation>
         </message>
         <message>
+            <source>Set the floating toolbar opacity when the mouse is not hovering over it</source>
+            <translation>Set the floating toolbar opacity when the mouse is not hovering over it</translation>
+        </message>
+        <message>
             <source>Set the frame rate of exported animated images</source>
             <translation>Set the frame rate of exported animated images</translation>
         </message>
@@ -3421,6 +3425,10 @@
         <message>
             <source>Toolbar</source>
             <translation>Toolbar</translation>
+        </message>
+        <message>
+            <source>Toolbar Opacity</source>
+            <translation>Toolbar Opacity</translation>
         </message>
         <message>
             <source>Toolbar Skin Path</source>

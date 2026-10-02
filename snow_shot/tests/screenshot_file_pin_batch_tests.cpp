@@ -84,7 +84,7 @@ void mixedFilesAndLargeBatches() {
     paths.insert(1, corrupt);
     paths.insert(3, directory.path());
     paths.insert(5, directory.filePath(QStringLiteral("missing.png")));
-    paths.insert(7, imageFile(directory, QStringLiteral("unsupported.txt")));
+    paths.insert(7, imageFile(directory, QStringLiteral("unsupported.pdf")));
     paths.append(expected.first());
     paths.append(directory.filePath(QStringLiteral("./0.png")));
     QStringList presented;

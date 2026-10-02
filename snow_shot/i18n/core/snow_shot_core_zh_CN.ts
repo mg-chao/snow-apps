@@ -382,10 +382,6 @@ so every moment on screen can be expressed clearly and shared easily.</source>
             <translation>延迟 %1 秒执行</translation>
         </message>
         <message>
-            <source>Floating toolbar menu</source>
-            <translation>悬浮工具栏菜单</translation>
-        </message>
-        <message>
             <source>Formula recognition</source>
             <translation>公式识别</translation>
         </message>

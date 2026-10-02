@@ -49,7 +49,7 @@ class ScreenshotController : public QObject {
     };
     Q_ENUM(CaptureAction)
     [[nodiscard]] bool captureForAction(CaptureAction action);
-    void pinDroppedImages(ScreenshotClipboardContentSnapshot snapshot, QStringList paths);
+    void pinDroppedContent(ScreenshotClipboardContentSnapshot snapshot, QStringList paths);
     explicit ScreenshotController(
         QObject* parent = nullptr,
         snow_shot::presentation::PinnedWindowGroupManager* groupManager = nullptr,

@@ -299,7 +299,7 @@ class ScreenshotPinnedWindowTestAccess {
         return window.exportDragEnabledAt(position);
     }
     static bool acceptExportDrop(const ScreenshotPinnedWindow& window, const QDropEvent& event) {
-        return !window.eligibleDropPaths(event).isEmpty();
+        return window.acceptsDrop(event);
     }
     static QByteArray dragDocument(ScreenshotPinnedWindow& window) {
         return window.m_runtime.serializeDocumentSession();
@@ -12594,18 +12594,9 @@ void pinnedFileDrop() {
     ScreenshotPinnedWindow::setRuntimeBorderActiveColor(active);
 
     QMimeData unsupported;
-    unsupported.setText(second);
-    unsupported.setHtml(QStringLiteral("<b>image</b>"));
-    unsupported.setImageData(replacement);
     unsupported.setUrls({QUrl(QStringLiteral("https://example.com/image.png")),
-                         QUrl::fromLocalFile(files.filePath(QStringLiteral("document.txt")))});
-    require(!enter(&window, unsupported), "non-file payloads and unsupported URLs must reject");
-    unsupported.clear();
-    unsupported.setText(second);
-    require(!enter(&window, unsupported), "plain paths must not be treated as file URLs");
-    unsupported.clear();
-    unsupported.setImageData(replacement);
-    require(!enter(&window, unsupported), "image-only MIME data must reject");
+                         QUrl::fromLocalFile(files.filePath(QStringLiteral("document.pdf")))});
+    require(!enter(&window, unsupported), "unsupported file and remote URLs must reject");
     require(!enter(&window, mime, Qt::MoveAction), "move-only sources must reject");
     require(enter(&window, mime), "valid drag before invalid move");
     QDragMoveEvent rejectedMove(QPoint(10, 10), Qt::MoveAction, &mime, Qt::LeftButton,
@@ -12732,6 +12723,44 @@ void pinnedFileDrop() {
         QApplication::sendEvent(&other, &otherLeave);
         other.close();
     }
+    QMimeData directImage;
+    directImage.setImageData(replacement);
+    drop(&window, directImage);
+    waitForReplacement();
+    require(samePixels(Access::originalImage(window), replacement),
+            "direct image drops use the shared content replacement path");
+    for (const bool html : {false, true}) {
+        const QString source =
+            html ? QStringLiteral("<b>Dropped HTML</b>") : QStringLiteral("Dropped text");
+        QMimeData text;
+        if (html)
+            text.setHtml(source);
+        else
+            text.setText(source);
+        drop(&window, text);
+        waitForReplacement();
+        auto saved = window.persistenceSnapshot();
+        require((html ? saved.originalHtml : saved.originalText) == source,
+                "direct text and HTML drops preserve original content");
+        for (const auto& suffix : html ? QStringList{QStringLiteral("HTML"), QStringLiteral("htm")}
+                                       : QStringList{QStringLiteral("TXT")}) {
+            const QString path = files.filePath(QStringLiteral("content.") + suffix);
+            QFile file(path);
+            require(file.open(QIODevice::WriteOnly), "open text drop fixture");
+            file.write(source.toUtf8());
+            file.close();
+            QMimeData fileMime;
+            fileMime.setUrls({QUrl::fromLocalFile(path)});
+            drop(&window, fileMime);
+            waitForReplacement();
+            saved = window.persistenceSnapshot();
+            require(saved.sourceKind == snow_shot::storage::PinnedWindowSourceKind::ClipboardText &&
+                        (html ? saved.originalHtml : saved.originalText) == source,
+                    "text and HTML file drops render their contents");
+        }
+    }
+    drop(&window, old);
+    waitForReplacement();
     drop(&window, mime);
     require(enter(&window, mime), "enter before closing");
     window.close();

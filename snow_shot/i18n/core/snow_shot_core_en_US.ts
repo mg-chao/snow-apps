@@ -382,10 +382,6 @@ so every moment on screen can be expressed clearly and shared easily.</translati
             <translation>Delay %1 seconds to execute</translation>
         </message>
         <message>
-            <source>Floating toolbar menu</source>
-            <translation>Floating toolbar menu</translation>
-        </message>
-        <message>
             <source>Formula recognition</source>
             <translation>Formula recognition</translation>
         </message>

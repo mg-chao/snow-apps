@@ -1125,6 +1125,8 @@ int BuiltInSettingsBackend::sliderValue(SettingsSliderBinding binding) const {
         return storage::InterfaceSettings().skinMaskOpacity();
     case SettingsSliderBinding::ShortcutHintOpacity:
         return storage::ScreenshotUiSettings().shortcutHintOpacity();
+    case SettingsSliderBinding::FloatingToolbarOpacity:
+        return storage::FloatingToolbarSettings().opacity();
     case SettingsSliderBinding::ScreenshotImageQuality:
         return storage::ScreenshotSettings().imageQuality();
     case SettingsSliderBinding::ScreenRecordingVideoQuality:
@@ -1143,6 +1145,8 @@ bool BuiltInSettingsBackend::applySliderValue(SettingsSliderBinding binding, int
         return storage::InterfaceSettings().setSkinMaskOpacity(value);
     case SettingsSliderBinding::ShortcutHintOpacity:
         return storage::ScreenshotUiSettings().setShortcutHintOpacity(value);
+    case SettingsSliderBinding::FloatingToolbarOpacity:
+        return storage::FloatingToolbarSettings().setOpacity(value);
     case SettingsSliderBinding::ScreenshotImageQuality:
         return storage::ScreenshotSettings().setImageQuality(value);
     case SettingsSliderBinding::ScreenRecordingVideoQuality:
@@ -2305,9 +2309,13 @@ bool BuiltInSettingsBackend::resetSection(SettingsSectionReset reset) {
             {QStringLiteral("floating_toolbar/hide_during_capture"), true},
         });
     case SettingsSectionReset::FloatingToolbarLayout:
-        return storage::ApplicationStorage::instance().configuration().setValue(
-            QStringLiteral("floating_toolbar/layout"),
-            storage::ConfigurationSchema::defaultValue(QStringLiteral("floating_toolbar/layout")));
+        return storage::ApplicationStorage::instance().configuration().setValues({
+            {QStringLiteral("floating_toolbar/layout"),
+             storage::ConfigurationSchema::defaultValue(QStringLiteral("floating_toolbar/layout"))},
+            {QStringLiteral("floating_toolbar/opacity"),
+             storage::ConfigurationSchema::defaultValue(
+                 QStringLiteral("floating_toolbar/opacity"))},
+        });
     case SettingsSectionReset::TrayBehavior:
         return storage::ApplicationStorage::instance().configuration().setValues({
             {QStringLiteral("tray/left_click_action"),

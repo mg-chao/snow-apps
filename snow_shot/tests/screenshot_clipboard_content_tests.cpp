@@ -9,6 +9,7 @@
 #include <QClipboard>
 #include <QColorSpace>
 #include <QImage>
+#include <QFile>
 #include <QMimeData>
 #include <QPalette>
 #include <QTemporaryDir>
@@ -56,6 +57,57 @@ bool imageContainsColor(const QImage& image, const QColor& expected) {
         }
     }
     return false;
+}
+
+void localTextFilesAreSupported() {
+    QTemporaryDir directory;
+    require(directory.isValid(), "text file directory exists");
+    for (const auto& suffix :
+         {QStringLiteral("TXT"), QStringLiteral("html"), QStringLiteral("htm")}) {
+        const bool html = suffix != QStringLiteral("TXT");
+        const QString source = html ? QStringLiteral("<b>Unicode \u4e2d\u6587</b>")
+                                    : QStringLiteral("Unicode \u4e2d\u6587");
+        const QString path = directory.filePath(QStringLiteral("content.") + suffix);
+        QFile file(path);
+        require(file.open(QIODevice::WriteOnly), "text file opens");
+        file.write(source.toUtf8());
+        file.close();
+        const auto files = ScreenshotClipboardContentReader::snapshotLocalFiles({path});
+        require(files.size() == 1, "text and HTML extensions are admitted case-insensitively");
+        ScreenshotClipboardContentSnapshot snapshot;
+        snapshot.localImage = files.first();
+        snapshot.devicePixelRatio = 2.0;
+        snapshot.baseColor = Qt::white;
+        auto decoded = ScreenshotClipboardContentReader::decode(snapshot);
+        require(decoded && decoded->isFormattedText() &&
+                    decoded->plainText == QStringLiteral("Unicode \u4e2d\u6587") &&
+                    decoded->formattedTextDevicePixelRatio == 2.0 &&
+                    decoded->sourceIdentity == files.first().sourceIdentity &&
+                    decoded->originalContent.localFilePath.isEmpty() &&
+                    (html ? decoded->originalContent.html : decoded->originalContent.text) ==
+                        source,
+                "local text renders at requested density with original source and file identity");
+        require(!ScreenshotClipboardContentReader::decode(snapshot, [] { return true; }),
+                "text file decode honors cancellation");
+        require(
+            !ScreenshotClipboardContentReader::decode(snapshot, {}, [](qint64) { return false; }),
+            "text file decode honors allocation admission");
+        require(file.open(QIODevice::Append), "text file reopens");
+        file.write("changed");
+        file.close();
+        require(!ScreenshotClipboardContentReader::decode(snapshot),
+                "text file mutation after snapshot is rejected");
+    }
+    const QString path = directory.filePath(QStringLiteral("utf16.txt"));
+    QFile file(path);
+    require(file.open(QIODevice::WriteOnly), "UTF-16 file opens");
+    file.write(QByteArray::fromHex("fffe4800690020002d4e8765"));
+    file.close();
+    ScreenshotClipboardContentSnapshot snapshot;
+    snapshot.localImage = ScreenshotClipboardContentReader::snapshotLocalFiles({path}).first();
+    auto decoded = ScreenshotClipboardContentReader::decode(snapshot);
+    require(decoded && decoded->plainText == QStringLiteral("Hi \u4e2d\u6587"),
+            "BOM-marked UTF-16 text decodes correctly");
 }
 
 void directImageWinsOverRichText() {
@@ -823,6 +875,7 @@ int main(int argc, char** argv) {
     if (!application.arguments().contains(QStringLiteral("--mime-data-only"))) {
         liveSnapshotRetainsBitmapFallback();
     }
+    localTextFilesAreSupported();
     imageSourceDensitySurvivesDecode();
     directImageWinsOverRichText();
     oversizedDirectImagesAreIgnored();

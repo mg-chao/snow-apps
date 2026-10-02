@@ -114,12 +114,12 @@
             <translation>The clipboard pin queue is full</translation>
         </message>
         <message>
-            <source>The dropped image could not be opened</source>
-            <translation>The dropped image could not be opened</translation>
+            <source>The dropped content could not be opened</source>
+            <translation>The dropped content could not be opened</translation>
         </message>
         <message>
-            <source>The dropped image could not be queued</source>
-            <translation>The dropped image could not be queued</translation>
+            <source>The dropped content could not be queued</source>
+            <translation>The dropped content could not be queued</translation>
         </message>
         <message>
             <source>The pinned window could not be restored</source>

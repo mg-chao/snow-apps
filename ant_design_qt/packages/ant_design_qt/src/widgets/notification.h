@@ -268,6 +268,8 @@ class AdNotificationHandle final : public QObject {
 class AdNotificationService final {
  public:
   // Returns the shared service for ownerWindow's top-level window.
+  // Without an owner, selects a visible, non-minimized application window or dialog;
+  // returns nullptr when only auxiliary windows (tools, popups, etc.) are visible.
   static AdNotification* instance(QWidget* ownerWindow = nullptr);
   static AdNotification::Config config();
   static void setConfig(const AdNotification::Config& value);

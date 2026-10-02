@@ -28,6 +28,7 @@
 #include <QUrl>
 #include <QVariant>
 #include <QScopeGuard>
+#include <QStringDecoder>
 
 #include <algorithm>
 #include <cmath>
@@ -58,6 +59,11 @@ constexpr qint64 kMaximumEncodedImageBytes = 256LL * 1024LL * 1024LL;
 constexpr qreal kFormattedTextPadding = 16.0;
 
 using AllocationCheck = ScreenshotClipboardContentReader::AllocationCheck;
+
+bool isTextFile(const QString& suffix) {
+    return suffix == QLatin1String("txt") || suffix == QLatin1String("html") ||
+           suffix == QLatin1String("htm");
+}
 
 qint64 snapshotBytes(const ScreenshotClipboardContentSnapshot& snapshot) {
     qint64 bytes =
@@ -400,15 +406,17 @@ readEncodedImage(const QList<ScreenshotClipboardEncodedImage>& images,
 }
 
 std::optional<ScreenshotClipboardContent>
-readFileImage(const ScreenshotClipboardLocalImage& localImage,
-              const ScreenshotClipboardContentReader::CancellationCheck& cancelled,
-              const AllocationCheck& allocate, qint64 retained) {
+readFileContent(const ScreenshotClipboardLocalImage& localImage, qreal devicePixelRatio,
+                const QColor& baseColor,
+                const ScreenshotClipboardContentReader::CancellationCheck& cancelled,
+                const AllocationCheck& allocate, qint64 retained) {
     const auto format =
         std::find_if(std::begin(kFileImageFormats), std::end(kFileImageFormats),
                      [&localImage](const FileImageFormat& candidate) {
                          return localImage.suffix == QLatin1String(candidate.suffix);
                      });
-    if (format == std::end(kFileImageFormats) || cancellationRequested(cancelled)) {
+    const bool textFile = isTextFile(localImage.suffix);
+    if ((!textFile && format == std::end(kFileImageFormats)) || cancellationRequested(cancelled)) {
         return std::nullopt;
     }
 
@@ -416,7 +424,7 @@ readFileImage(const ScreenshotClipboardLocalImage& localImage,
     if (!before.exists() || !before.isFile() || !before.isReadable() ||
         before.size() != localImage.size ||
         before.lastModified().toUTC() != localImage.lastModifiedUtc || before.size() <= 0 ||
-        before.size() > kMaximumEncodedImageBytes) {
+        before.size() > (textFile ? 1024 * 1024 : kMaximumEncodedImageBytes)) {
         return std::nullopt;
     }
     if (allocate && !allocate(retained + before.size() + 1))
@@ -432,6 +440,26 @@ readFileImage(const ScreenshotClipboardLocalImage& localImage,
         after.lastModified().toUTC() != localImage.lastModifiedUtc ||
         cancellationRequested(cancelled)) {
         return std::nullopt;
+    }
+    if (textFile) {
+        if (allocate && !allocate(retained + encoded.size() * 3))
+            return std::nullopt;
+        const bool html = localImage.suffix != QLatin1String("txt");
+        const auto encoding = html ? QStringDecoder::encodingForHtml(encoded)
+                                   : QStringDecoder::encodingForData(encoded);
+        QStringDecoder decoder(encoding.value_or(QStringDecoder::Utf8));
+        ScreenshotClipboardContentSnapshot textSnapshot;
+        (html ? textSnapshot.html : textSnapshot.text) = decoder.decode(encoded);
+        if (decoder.hasError())
+            return std::nullopt;
+        textSnapshot.devicePixelRatio = devicePixelRatio;
+        textSnapshot.baseColor = baseColor;
+        const AllocationCheck textAllocate = allocate ? AllocationCheck([&](qint64 bytes) {
+            return allocate(retained + encoded.size() + bytes);
+        })
+                                                      : AllocationCheck{};
+        return ScreenshotClipboardContentReader::decode(std::move(textSnapshot), cancelled,
+                                                        textAllocate);
     }
     if (allocate && !admitImage(snow_shot::image_codec::inspectSize(encoded, format->format),
                                 retained + encoded.size(), allocate))
@@ -840,6 +868,7 @@ QStringList ScreenshotClipboardContentReader::supportedFileExtensions() {
     for (const auto& format : kFileImageFormats) {
         extensions.append(QString::fromLatin1(format.suffix));
     }
+    extensions.append({QStringLiteral("txt"), QStringLiteral("html"), QStringLiteral("htm")});
     return extensions;
 }
 
@@ -867,12 +896,13 @@ ScreenshotClipboardContentReader::snapshotLocalFiles(const QStringList& paths,
         const QFileInfo info(QDir::cleanPath(path));
         const QString suffix = info.suffix().toLower();
         const bool supported =
+            isTextFile(suffix) ||
             std::any_of(std::begin(kFileImageFormats), std::end(kFileImageFormats),
                         [&suffix](const FileImageFormat& format) {
                             return suffix == QLatin1String(format.suffix);
                         });
         if (!supported || !info.isFile() || !info.isReadable() || info.size() <= 0 ||
-            info.size() > kMaximumEncodedImageBytes) {
+            info.size() > (isTextFile(suffix) ? 1024 * 1024 : kMaximumEncodedImageBytes)) {
             continue;
         }
         const QString absolute = info.absoluteFilePath();
@@ -1070,9 +1100,13 @@ ScreenshotClipboardContentReader::decode(ScreenshotClipboardContentSnapshot snap
     }
     if (snapshot.localImage.has_value()) {
         SNOW_SHOT_PIN_PERF_SCOPE("clipboard.decode_file_image");
-        if (auto result = readFileImage(*snapshot.localImage, cancelled, checked, retained);
+        if (auto result = readFileContent(*snapshot.localImage, snapshot.devicePixelRatio,
+                                          snapshot.baseColor, cancelled, checked, retained);
             result.has_value()) {
-            result->originalContent.localFilePath = snapshot.localImage->absolutePath;
+            // Text pins persist their source text, so restoring them does not
+            // depend on the external file or treat that file as an image.
+            if (!result->isFormattedText())
+                result->originalContent.localFilePath = snapshot.localImage->absolutePath;
             result->sourceIdentity = snapshot.localImage->sourceIdentity;
             return attachPlacement(std::move(result), &*snapshot.localImage);
         }
