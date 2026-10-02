@@ -2341,6 +2341,19 @@ if(SNOW_SHOT_BUILD_TESTS)
     )
     snow_shot_import_offscreen_platform(snow-shot-settings-color-commit-tests)
 
+    add_executable(snow-shot-settings-slider-commit-tests
+        tests/settings_slider_commit_tests.cpp
+        src/presentation/services/screenshotclipboardservice.cpp)
+    target_link_libraries(snow-shot-settings-slider-commit-tests PRIVATE
+        snow_shot_settings snow_shot_image_codec)
+    snow_shot_import_offscreen_platform(snow-shot-settings-slider-commit-tests)
+    add_test(NAME snow-shot-settings-slider-commit-tests
+        COMMAND snow-shot-settings-slider-commit-tests)
+    set_tests_properties(snow-shot-settings-slider-commit-tests PROPERTIES
+        LABELS "unit" TIMEOUT 60
+        ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}"
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
+
     add_executable(snow-shot-settings-page-loading-tests
         tests/settings_page_loading_tests.cpp
         src/presentation/services/screenshotclipboardservice.cpp)

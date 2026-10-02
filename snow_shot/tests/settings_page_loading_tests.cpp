@@ -545,6 +545,8 @@ void skinControlsCommitAndRetranslate(const settings::SettingsRegistry& registry
         require(slider != nullptr && slider->isEnabled(),
                 "Skin must expose three editable sliders");
         slider->setValue(37);
+        require(QMetaObject::invokeMethod(slider, "editingFinished", Qt::DirectConnection),
+                "complete the skin slider adjustment");
     }
     drainEvents();
     require(session.sliderValue(settings::SettingsSliderBinding::SkinOpacity) == 37 &&

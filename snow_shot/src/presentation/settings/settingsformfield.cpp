@@ -73,6 +73,8 @@ struct SettingsFormField::Impl {
                         field = handle.field;
                         editor = handle.editor;
                     } else {
+                        // Keep drag previews local and apply only the completed adjustment.
+                        options.commitPolicy = fields::CommitPolicy::OnFinish;
                         const auto handle = fields::slider(metadata, numberOptions, options);
                         field = handle.field;
                         editor = handle.editor;

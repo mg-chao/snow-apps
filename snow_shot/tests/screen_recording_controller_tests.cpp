@@ -2185,7 +2185,12 @@ void recordingSettingsDialog() {
     auto* quality = form->findChild<AdSlider*>(QStringLiteral("screen-recording.video-quality"));
     require(quality != nullptr && quality->minimum() == 0 && quality->maximum() == 100,
             "recording quality must use the shared schema range");
+    const int originalQuality = snow_shot::storage::RecordingSettings().videoQuality();
     quality->setValue(65);
+    require(snow_shot::storage::RecordingSettings().videoQuality() == originalQuality,
+            "recording quality must stay local until the adjustment finishes");
+    require(QMetaObject::invokeMethod(quality, "editingFinished", Qt::DirectConnection),
+            "complete the recording quality adjustment");
     const auto toggle = [form](const char* id, bool value) {
         auto* control = form->findChild<AdSwitch*>(QString::fromLatin1(id));
         require(control != nullptr, "recording toggle must exist");
