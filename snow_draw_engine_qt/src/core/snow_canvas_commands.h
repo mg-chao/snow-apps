@@ -117,6 +117,9 @@ MutationResult setFilterStyle(SnowRuntime runtime, SnowViewport viewport,
 MutationResult setFilterCreationStyle(SnowRuntime runtime, SnowViewport viewport,
                                       const SnowFilterStyle& style, std::uint32_t properties,
                                       SnowActiveTool tool);
+MutationResult setBrushEraserCreationStyle(SnowRuntime runtime, SnowViewport viewport,
+                                           const SnowBrushEraserStyle& style,
+                                           std::uint32_t properties);
 MutationResult setTextStyle(SnowRuntime runtime, SnowViewport viewport, const SnowTextStyle& style,
                             std::uint32_t properties,
                             const std::vector<SnowTextLayoutOverride>& layouts = {});

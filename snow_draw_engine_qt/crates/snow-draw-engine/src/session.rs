@@ -7,8 +7,8 @@ use snow_draw_engine_model::DocumentModel;
 use crate::engine::EngineConfig as RuntimeEngineConfig;
 use crate::{Engine, history::HistoryStore};
 
-pub const DOCUMENT_SESSION_SCHEMA_VERSION: u32 = 5;
-pub const DOCUMENT_HISTORY_SCHEMA_VERSION: u32 = 5;
+pub const DOCUMENT_SESSION_SCHEMA_VERSION: u32 = 6;
+pub const DOCUMENT_HISTORY_SCHEMA_VERSION: u32 = 6;
 pub const MAX_DOCUMENT_SESSION_BYTES: usize = 16 * 1024 * 1024;
 
 #[derive(Serialize, Deserialize)]
@@ -630,8 +630,14 @@ mod tests {
         let history = engine.serialize_document_history().unwrap();
         let session_json: serde_json::Value = serde_json::from_slice(&session).unwrap();
         let history_json: serde_json::Value = serde_json::from_slice(&history).unwrap();
-        assert_eq!(session_json["schemaVersion"], 5);
-        assert_eq!(history_json["schemaVersion"], 5);
+        assert_eq!(
+            session_json["schemaVersion"],
+            DOCUMENT_SESSION_SCHEMA_VERSION
+        );
+        assert_eq!(
+            history_json["schemaVersion"],
+            DOCUMENT_HISTORY_SCHEMA_VERSION
+        );
         assert_eq!(
             Engine::from_serialized_document_session(&session)
                 .unwrap()

@@ -172,14 +172,92 @@ void changingTheReferenceGridRebuildsOnce() {
     requireReuse(snow_canvas_renderer::filterRenderDiagnosticsForCurrentThread());
 }
 
+void erasersRetainOriginalReferencePixelsAndExportThem() {
+    for (const auto tool : {SnowCanvasTool::RectangleEraser, SnowCanvasTool::BrushEraser}) {
+        Fixture fixture;
+        {
+            QPainter painter(&fixture.renderer.image);
+            painter.setCompositionMode(QPainter::CompositionMode_Source);
+            painter.fillRect(QRect(45, 30, 50, 45), Qt::transparent);
+        }
+        ++fixture.renderer.revision;
+        fixture.filter(SnowCanvasFilterType::Inversion, false, 1.0);
+        fixture.draw(tool, {30, 25}, {120, 95});
+        fixture.renderer.enabled = false;
+        const auto reference = fixture.render();
+        fixture.renderer.enabled = true;
+        require(fixture.render() == reference, "eraser reference must match source-grid rendering");
+        for (const auto [zoom, dpr] : {std::pair{0.5, 2.0}, {0.75, 1.25}, {1.5, 1.0}}) {
+            fixture.zoom(zoom);
+            require(fixture.render(dpr) == scaledReference(fixture, reference, dpr),
+                    "eraser zoom and DPR changes must resample the fixed original source pixels");
+            requireReuse(snow_canvas_renderer::filterRenderDiagnosticsForCurrentThread());
+        }
+        const QList<CanvasExportSource> sources{
+            {fixture.renderer.image, fixture.renderer.reference.canvasRect}};
+        const auto exported = fixture.runtime.renderToImage(fixture.renderer.reference.canvasRect,
+                                                            fixture.renderer.image.size(), sources);
+        require(exported == reference,
+                "runtime export must preserve original eraser pixels and fractional canvas origin");
+        const QRect crop(30, 20, 70, 60);
+        const QRectF canvasCrop(fixture.renderer.reference.canvasRect.topLeft() + crop.topLeft(),
+                                crop.size());
+        require(fixture.runtime.renderToImage(canvasCrop, crop.size(), sources) ==
+                    reference.copy(crop),
+                "cropped export must preserve chronological restoration");
+    }
+}
+
+void referenceSceneEditsReuseImmutableEraserMasks() {
+    Fixture fixture;
+    fixture.filter(SnowCanvasFilterType::Inversion, false, 1.0);
+    fixture.draw(SnowCanvasTool::BrushEraser, {30, 25}, {120, 95});
+    fixture.render();
+    const int originalCalls = fixture.renderer.originalCalls;
+    require(
+        snow_canvas_renderer::filterRenderDiagnosticsForCurrentThread().penRasterizedTileCount != 0,
+        "first reference eraser builds its masks");
+    // A normal edit preserves caches; the fixture's explicit editing reset clears them.
+    fixture.draw(SnowCanvasTool::Shape, {3, 3}, {15, 15}, false);
+    const auto edited = fixture.render();
+    const auto diagnostics = snow_canvas_renderer::filterRenderDiagnosticsForCurrentThread();
+    if (diagnostics.referenceSceneBuildCount != 1 || diagnostics.penRasterizedTileCount != 0 ||
+        diagnostics.penAtlasHits == 0) {
+        std::cerr << "reference rebuilds=" << diagnostics.referenceSceneBuildCount
+                  << " rasterized tiles=" << diagnostics.penRasterizedTileCount
+                  << " atlas hits=" << diagnostics.penAtlasHits
+                  << " atlas misses=" << diagnostics.penAtlasMisses
+                  << " atlas bytes=" << diagnostics.retainedPenAtlasBytes << '\n';
+    }
+    require(diagnostics.referenceSceneBuildCount == 1 && diagnostics.penRasterizedTileCount == 0 &&
+                diagnostics.penAtlasHits != 0 && diagnostics.pristineTileHits == 1 &&
+                fixture.renderer.originalCalls == originalCalls,
+            "editing other reference content must reuse immutable eraser masks");
+    fixture.canvas.clearRenderState();
+    require(fixture.render() == edited, "reference mask clearing must preserve restored pixels");
+    require(
+        snow_canvas_renderer::filterRenderDiagnosticsForCurrentThread().penRasterizedTileCount !=
+                0 &&
+            snow_canvas_renderer::filterRenderDiagnosticsForCurrentThread().pristineTileMisses ==
+                1 &&
+            fixture.renderer.originalCalls == originalCalls + 1,
+        "explicit clearing rebuilds the reference masks and pristine source");
+}
+
 } // namespace
 
 int main(int argc, char** argv) {
     QApplication application(argc, argv);
+    if (argc == 2 && QByteArray(argv[1]) == "--eraser-reuse-only") {
+        referenceSceneEditsReuseImmutableEraserMasks();
+        return 0;
+    }
     filtersScaleTheirReferencePixels();
     sourceOrderingAndRetinaReferenceStayStable();
     contentChangesReplaceTheSurface();
     partialPaintsPreserveAlphaAndUnexposedPixels();
     changingTheReferenceGridRebuildsOnce();
+    erasersRetainOriginalReferencePixelsAndExportThem();
+    referenceSceneEditsReuseImmutableEraserMasks();
     return 0;
 }

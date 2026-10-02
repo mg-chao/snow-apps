@@ -129,6 +129,13 @@ if(SNOW_DRAW_ENGINE_QT_BUILD_DEMO)
 endif()
 
 if(SNOW_DRAW_ENGINE_QT_BUILD_BENCHMARKS)
+    add_executable(snow-canvas-eraser-benchmark tests/snow_canvas_eraser_benchmark.cpp)
+    target_include_directories(snow-canvas-eraser-benchmark PRIVATE
+        ${SNOW_CANVAS_QT_PRIVATE_SOURCE_DIRS}
+        "${CMAKE_CURRENT_SOURCE_DIR}/crates/snow-draw-engine-c/include"
+    )
+    target_link_libraries(snow-canvas-eraser-benchmark PRIVATE snow_draw_engine_qt_canvas)
+    snow_shot_import_offscreen_platform(snow-canvas-eraser-benchmark)
     add_executable(snow-canvas-reference-scene-benchmark
         tests/snow_canvas_reference_scene_benchmark.cpp
     )
@@ -354,10 +361,12 @@ if(SNOW_DRAW_ENGINE_QT_BUILD_TESTS)
         NAME snow-canvas-filter-creation-tests
         COMMAND snow-canvas-custom-renderer-tests --filter-creation-only
     )
+    add_test(NAME snow-canvas-eraser-widget-tests
+        COMMAND snow-canvas-custom-renderer-tests --eraser-only)
     snow_shot_import_offscreen_platform(snow-canvas-custom-renderer-tests)
     snow_shot_offscreen_qpa_environment(_snow_canvas_reset_qpa_environment)
     set_tests_properties(snow-canvas-document-reset-tests snow-canvas-render-state-tests
-        snow-canvas-filter-creation-tests PROPERTIES
+        snow-canvas-filter-creation-tests snow-canvas-eraser-widget-tests PROPERTIES
         ENVIRONMENT "${_snow_canvas_reset_qpa_environment}"
         ENVIRONMENT_MODIFICATION
             "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
@@ -450,6 +459,20 @@ if(SNOW_DRAW_ENGINE_QT_BUILD_TESTS)
     add_test(NAME snow-canvas-reference-scene-tests COMMAND snow-canvas-reference-scene-tests)
     set_tests_properties(snow-canvas-reference-scene-tests PROPERTIES
         ENVIRONMENT "QT_QPA_PLATFORM=offscreen;QT_QPA_PLATFORM_PLUGIN_PATH=$<TARGET_FILE_DIR:Qt6::QOffscreenIntegrationPlugin>"
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+    )
+
+    add_executable(snow-canvas-eraser-render-tests tests/snow_canvas_eraser_render_tests.cpp)
+    target_include_directories(snow-canvas-eraser-render-tests PRIVATE
+        ${SNOW_CANVAS_QT_PRIVATE_SOURCE_DIRS}
+        "${CMAKE_CURRENT_SOURCE_DIR}/crates/snow-draw-engine-c/include"
+    )
+    target_link_libraries(snow-canvas-eraser-render-tests PRIVATE snow_draw_engine_qt_canvas)
+    snow_shot_import_offscreen_platform(snow-canvas-eraser-render-tests)
+    add_test(NAME snow-canvas-eraser-render-tests COMMAND snow-canvas-eraser-render-tests)
+    snow_shot_offscreen_qpa_environment(_snow_canvas_eraser_qpa_environment)
+    set_tests_properties(snow-canvas-eraser-render-tests PROPERTIES
+        ENVIRONMENT "${_snow_canvas_eraser_qpa_environment}"
         ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
     )
 

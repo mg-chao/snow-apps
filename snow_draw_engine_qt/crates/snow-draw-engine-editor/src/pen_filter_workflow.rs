@@ -17,10 +17,12 @@ impl Editor {
         start_canvas_position: Point<f64>,
     ) {
         let zoom = self.camera().zoom.max(f64::EPSILON);
-        let stroke_width = self.state.default_pen_filter.stroke_width.max(0.0);
+        let style = self.pen_filter_creation_style();
+        let stroke_width = style.stroke_width.max(0.0);
         let epsilon = (stroke_width * zoom * 0.04).clamp(0.75, 2.0) / zoom;
         self.state.interaction = InteractionState::CreatingPenFilter(CreatePenFilterState {
             pointer_id,
+            style: (self.active_tool() == ActiveTool::BrushEraser).then_some(style),
             committed_points: Vec::new(),
             pending_simplified_points: Vec::new(),
             pending_raw_points: vec![start_canvas_position],
@@ -71,10 +73,18 @@ impl Editor {
                 let streaming_points = finalized_streaming_points(&state);
                 let points =
                     simplify_polyline(&streaming_points, state.epsilon * FINAL_ERROR_FRACTION);
-                let filter = self.pen_filter_from_points(&points);
+                let style = state
+                    .style
+                    .unwrap_or_else(|| self.pen_filter_creation_style());
+                let filter = self.pen_filter_from_points(&points, style);
                 self.cancel_interaction();
                 if let Some(filter) = filter {
-                    let mut transaction = Transaction::new("create pen filter");
+                    let mut transaction =
+                        Transaction::new(if self.active_tool() == ActiveTool::BrushEraser {
+                            "create brush eraser"
+                        } else {
+                            "create pen filter"
+                        });
                     transaction.insert_pen_filter(
                         document.peek_next_element_id(),
                         ElementMeta::default(),
@@ -112,8 +122,30 @@ impl Editor {
         }
     }
 
-    fn pen_filter_from_points(&self, points: &[Point<f64>]) -> Option<PenFilterData> {
-        let style = &self.state.default_pen_filter;
+    fn pen_filter_creation_style(&self) -> FilterStyle {
+        if self.active_tool() == ActiveTool::BrushEraser {
+            FilterStyle {
+                filter_type: snow_draw_engine_document::CanvasFilterType::RestoreBackground,
+                strength: 1.0,
+                opacity: 1.0,
+                stroke_width: self.state.default_brush_eraser.stroke_width,
+            }
+        } else {
+            let filter = &self.state.default_pen_filter;
+            FilterStyle {
+                filter_type: filter.filter_type,
+                strength: filter.strength,
+                opacity: filter.opacity,
+                stroke_width: filter.stroke_width,
+            }
+        }
+    }
+
+    fn pen_filter_from_points(
+        &self,
+        points: &[Point<f64>],
+        style: FilterStyle,
+    ) -> Option<PenFilterData> {
         PenFilterData::from_global_points(
             points,
             style.filter_type,
@@ -128,10 +160,16 @@ impl Editor {
             return None;
         };
         let points = streaming_points(state);
-        let style = &self.state.default_pen_filter;
+        let style = state
+            .style
+            .unwrap_or_else(|| self.pen_filter_creation_style());
         if points.is_empty()
             || (points.len() < 2
-                && style.filter_type != snow_draw_engine_document::CanvasFilterType::SmartErase)
+                && !matches!(
+                    style.filter_type,
+                    snow_draw_engine_document::CanvasFilterType::SmartErase
+                        | snow_draw_engine_document::CanvasFilterType::RestoreBackground
+                ))
         {
             return None;
         }
@@ -427,6 +465,7 @@ mod tests {
     fn shift_replaces_one_pen_filter_straight_endpoint() {
         let mut state = CreatePenFilterState {
             pointer_id: 7,
+            style: None,
             committed_points: Vec::new(),
             pending_simplified_points: Vec::new(),
             pending_raw_points: vec![Point::new(0.0, 0.0)],
@@ -473,6 +512,7 @@ mod tests {
     fn shift_preserves_the_straight_anchor_at_a_streaming_window_boundary() {
         let mut state = CreatePenFilterState {
             pointer_id: 7,
+            style: None,
             committed_points: Vec::new(),
             pending_simplified_points: Vec::new(),
             pending_raw_points: vec![Point::new(0.0, 0.0)],
@@ -565,6 +605,7 @@ mod tests {
     fn partial_window_preview_does_not_accumulate_subpixel_waves() {
         let mut state = CreatePenFilterState {
             pointer_id: 7,
+            style: None,
             committed_points: Vec::new(),
             pending_simplified_points: Vec::new(),
             pending_raw_points: vec![Point::new(0.0, 0.0)],
@@ -593,6 +634,7 @@ mod tests {
     fn preview_remains_compact_across_streaming_windows() {
         let mut state = CreatePenFilterState {
             pointer_id: 7,
+            style: None,
             committed_points: Vec::new(),
             pending_simplified_points: Vec::new(),
             pending_raw_points: vec![Point::new(0.0, -0.2)],

@@ -163,6 +163,13 @@ void toolMatrixMatchesRequestedVisibility() {
                 withDefaultCursorHints({}),
             "serial-number hints should be suppressed when quick selection is disabled");
 
+    require(
+        hintLines(ScreenshotActiveTool::RectangleEraser) ==
+                QStringList{QStringLiteral("Maintain aspect ratio: Shift"),
+                            QStringLiteral("Draw from center: Alt")} &&
+            hintLines(ScreenshotActiveTool::BrushEraser) ==
+                QStringList{modifierLine(QStringLiteral("Draw straight line"), Qt::ShiftModifier)},
+        "immutable erasers show only their creation modifiers");
     require(hintLines(ScreenshotActiveTool::Eraser).isEmpty() &&
                 hintLines(ScreenshotActiveTool::Ocr).isEmpty() &&
                 hintLines(ScreenshotActiveTool::Table).isEmpty() &&

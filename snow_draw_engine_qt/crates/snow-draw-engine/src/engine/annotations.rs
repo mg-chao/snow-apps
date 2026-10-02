@@ -295,7 +295,9 @@ impl Engine {
                         return Err(ErrorCode::InvalidArgument);
                     }
                     for id in ids {
-                        self.model.element(id)?;
+                        if self.model.element(id)?.data.is_background_restore() {
+                            return Err(ErrorCode::InvalidState);
+                        }
                         tx.remove_element(id);
                     }
                     continue;

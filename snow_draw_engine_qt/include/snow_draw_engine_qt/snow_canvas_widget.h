@@ -76,6 +76,10 @@ class SnowCanvasWidget : public QWidget {
     // Strength remains shared by both filter families.
     bool setCanvasFilterCreationStyle(const SnowCanvasFilterStyle& style, quint32 properties,
                                       SnowCanvasTool filterTool);
+    // Changes only future brush erasers, preserving selection, tool and history.
+    bool setCanvasBrushEraserCreationStyle(
+        const SnowCanvasBrushEraserStyle& style,
+        quint32 properties = SnowCanvasBrushEraserStylePropertyStrokeWidth);
     bool setCanvasTextStyle(const SnowCanvasTextStyle& style,
                             quint32 properties = SnowCanvasTextStyleAllProperties);
     bool setCanvasSerialNumberStyle(const SnowCanvasSerialNumberStyle& style);

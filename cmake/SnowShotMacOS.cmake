@@ -33,7 +33,14 @@ foreach(_framework IN ITEMS AppKit ApplicationServices AVFoundation AudioToolbox
     list(APPEND _snow_native_libraries "${SNOW_MACOS_${_framework}}")
 endforeach()
 if(TARGET snow_shot_rust_ffi_bundle)
-    target_link_libraries(snow_shot_rust_ffi_bundle INTERFACE ${_snow_native_libraries})
+    # Each feature variant is a complete Rust archive. Full hosts omit the
+    # default archive, so both variants need their native dependency closure.
+    foreach(_snow_rust_bundle IN ITEMS
+            snow_shot_rust_ffi_bundle snow_shot_full_rust_ffi_bundle)
+        if(TARGET ${_snow_rust_bundle})
+            target_link_libraries(${_snow_rust_bundle} INTERFACE ${_snow_native_libraries})
+        endif()
+    endforeach()
 else()
     target_link_libraries(snow_recording_c INTERFACE ${_snow_native_libraries})
     target_link_libraries(snow_capture_c INTERFACE ${_snow_native_libraries})

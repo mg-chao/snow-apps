@@ -360,6 +360,10 @@ void ScreenshotPinnedEditController::ensureToolbar() {
                 [this]() { activateCanvasTool(SnowCanvasTool::PenHighlight); });
         connect(toolbar, &ScreenshotToolPalette::spotlightRequested, this,
                 [this]() { activateCanvasTool(SnowCanvasTool::Spotlight); });
+        connect(toolbar, &ScreenshotToolPalette::rectangleEraserRequested, this,
+                [this]() { activateCanvasTool(SnowCanvasTool::RectangleEraser); });
+        connect(toolbar, &ScreenshotToolPalette::brushEraserRequested, this,
+                [this]() { activateCanvasTool(SnowCanvasTool::BrushEraser); });
         connect(toolbar, &ScreenshotToolPalette::eraserRequested, this,
                 [this]() { activateCanvasTool(SnowCanvasTool::Eraser); });
         connect(toolbar, &ScreenshotToolPalette::filterRequested, this,
@@ -830,6 +834,12 @@ void ScreenshotPinnedEditController::syncPaletteFromCanvasTool() {
         break;
     case SnowCanvasTool::Eraser:
         host->setActiveTool(ScreenshotToolPalette::Tool::Eraser);
+        break;
+    case SnowCanvasTool::RectangleEraser:
+        host->setActiveTool(ScreenshotToolPalette::Tool::RectangleEraser);
+        break;
+    case SnowCanvasTool::BrushEraser:
+        host->setActiveTool(ScreenshotToolPalette::Tool::BrushEraser);
         break;
     case SnowCanvasTool::AutoFilter:
         host->setActiveTool(ScreenshotToolPalette::Tool::AutoFilter);

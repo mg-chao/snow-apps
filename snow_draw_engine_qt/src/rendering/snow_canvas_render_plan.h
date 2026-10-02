@@ -41,12 +41,18 @@ struct SceneExecutionPlan {
     std::vector<int> filterForItem;
     std::vector<FilterFrameInfo> filters;
     std::vector<std::uint32_t> filterIndices;
+    std::vector<std::uint32_t> restorationIndices;
+    std::vector<int> restorationForItem;
+    std::vector<FilterFrameInfo> restorations;
     std::uint64_t revision = 0;
     double dpr = 0;
     std::size_t buildCount = 0;
 
     const FilterFrameInfo& filter(std::uint32_t index) const {
         return filters[static_cast<std::size_t>(filterForItem[index])];
+    }
+    const FilterFrameInfo& restoration(std::uint32_t index) const {
+        return restorations[static_cast<std::size_t>(restorationForItem[index])];
     }
 };
 

@@ -14,13 +14,15 @@ if(NOT TARGET snow_selected_text_c)
                 STRIP_MSVC_DIRECTIVES)
         endfunction()
         _snow_add_full_rust_bundle()
+        snow_add_rust_bundle_selector(snow_shot_rust_ffi_selector snow_shot_rust_ffi_bundle)
         add_library(snow_selected_text_c INTERFACE)
         target_link_libraries(snow_selected_text_c INTERFACE
             snow_shot_full_rust_ffi_bundle)
-        # Full's superset archive resolves the shared C ABI before consumers
-        # reach Mini's smaller archive, which then contributes no objects.
-        set_property(TARGET snow_selected_text_c PROPERTY
-            INTERFACE_LINK_LIBRARIES_DIRECT snow_shot_full_rust_ffi_bundle)
+        # Full hosts select this superset for every shared C ABI dependency;
+        # Mini and canvas-only hosts retain the default archive.
+        cmake_language(DEFER DIRECTORY "${CMAKE_SOURCE_DIR}"
+            CALL snow_select_rust_bundle_consumers
+                snow_selected_text_c snow_shot_full_rust_ffi_bundle)
     else()
         snow_add_rust_static_library(snow_selected_text_c
             PACKAGE snow-selected-text-c

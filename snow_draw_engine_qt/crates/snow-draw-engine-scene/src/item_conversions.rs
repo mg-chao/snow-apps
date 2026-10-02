@@ -1328,6 +1328,7 @@ pub(crate) fn scene_item_from_filter(id: ElementId, filter: FilterData) -> Scene
                 CanvasFilterType::Inversion => DisplayFilterType::Inversion,
                 CanvasFilterType::Emboss => DisplayFilterType::Emboss,
                 CanvasFilterType::Brightness => DisplayFilterType::Brightness,
+                CanvasFilterType::RestoreBackground => DisplayFilterType::RestoreBackground,
                 CanvasFilterType::SmartErase => DisplayFilterType::SmartErase,
             },
             FilterData::normalized_strength(filter.strength),
@@ -1360,6 +1361,7 @@ pub(crate) fn scene_item_from_pen_filter(id: ElementId, filter: PenFilterData) -
                 CanvasFilterType::Inversion => DisplayFilterType::Inversion,
                 CanvasFilterType::Emboss => DisplayFilterType::Emboss,
                 CanvasFilterType::Brightness => DisplayFilterType::Brightness,
+                CanvasFilterType::RestoreBackground => DisplayFilterType::RestoreBackground,
                 CanvasFilterType::SmartErase => DisplayFilterType::SmartErase,
             },
             FilterData::normalized_strength(filter.strength),
@@ -1373,7 +1375,11 @@ pub(crate) fn scene_item_from_pen_filter_preview(
     preview: &PenFilterPreview,
 ) -> Option<(SceneDisplayItem, DrawRect)> {
     if preview.global_points.is_empty()
-        || (preview.global_points.len() < 2 && preview.filter_type != CanvasFilterType::SmartErase)
+        || (preview.global_points.len() < 2
+            && !matches!(
+                preview.filter_type,
+                CanvasFilterType::SmartErase | CanvasFilterType::RestoreBackground
+            ))
         || !preview.stroke_width.is_finite()
         || preview.stroke_width <= 0.0
         || !preview.opacity.is_finite()
@@ -1428,6 +1434,7 @@ pub(crate) fn scene_item_from_pen_filter_preview(
                     CanvasFilterType::Inversion => DisplayFilterType::Inversion,
                     CanvasFilterType::Emboss => DisplayFilterType::Emboss,
                     CanvasFilterType::Brightness => DisplayFilterType::Brightness,
+                    CanvasFilterType::RestoreBackground => DisplayFilterType::RestoreBackground,
                     CanvasFilterType::SmartErase => DisplayFilterType::SmartErase,
                 },
                 FilterData::normalized_strength(preview.strength),

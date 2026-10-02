@@ -30,6 +30,8 @@ pub enum ActiveTool {
     SerialNumber,
     Spotlight,
     AutoFilter,
+    RectangleEraser,
+    BrushEraser,
 }
 
 impl ActiveTool {
@@ -41,12 +43,19 @@ impl ActiveTool {
     }
 
     pub(crate) const fn uses_stroke_cursor(self) -> bool {
-        matches!(self, Self::FreeDraw | Self::PenHighlight | Self::PenFilter)
+        matches!(
+            self,
+            Self::FreeDraw | Self::PenHighlight | Self::PenFilter | Self::BrushEraser
+        )
     }
 
     pub(crate) const fn is_filter(self) -> bool {
         match self {
-            Self::RectangleFilter | Self::PenFilter | Self::AutoFilter => true,
+            Self::RectangleFilter
+            | Self::PenFilter
+            | Self::AutoFilter
+            | Self::RectangleEraser
+            | Self::BrushEraser => true,
             Self::Select
             | Self::Shape
             | Self::Arrow
@@ -140,6 +149,8 @@ pub enum StyleToolbarSource {
     Watermark,
     DefaultSpotlight,
     SelectedSpotlight,
+    DefaultRectangleEraser,
+    DefaultBrushEraser,
 }
 
 impl StyleToolbarSource {
@@ -167,6 +178,19 @@ impl Default for FilterStyle {
         }
     }
 }
+
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+pub struct BrushEraserStyle {
+    pub stroke_width: f64,
+}
+
+impl Default for BrushEraserStyle {
+    fn default() -> Self {
+        Self { stroke_width: 30.0 }
+    }
+}
+
+pub const BRUSH_ERASER_STYLE_PROPERTY_STROKE_WIDTH: u32 = 1 << 0;
 
 pub const FILTER_STYLE_PROPERTY_TYPE: u32 = 1 << 0;
 pub const FILTER_STYLE_PROPERTY_STRENGTH: u32 = 1 << 1;
@@ -319,6 +343,7 @@ pub struct StyleToolbarState {
     pub shape_style_mixed: u32,
     pub filter_style: FilterStyle,
     pub filter_style_mixed: u32,
+    pub brush_eraser_style: BrushEraserStyle,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq)]

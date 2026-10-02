@@ -477,6 +477,8 @@ class ScreenshotToolbarSettings final {
 #endif
     [[nodiscard]] QString lastFilterTool() const;
     bool setLastFilterTool(const QString& tool) const;
+    [[nodiscard]] QString lastEraserTool() const;
+    bool setLastEraserTool(const QString& tool) const;
     [[nodiscard]] QString lastHighlightTool() const;
     bool setLastHighlightTool(const QString& tool) const;
     [[nodiscard]] QString lastDrawingTool() const;

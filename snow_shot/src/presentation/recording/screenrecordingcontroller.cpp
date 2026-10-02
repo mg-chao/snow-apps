@@ -782,6 +782,12 @@ struct ScreenRecordingController::Impl {
         QObject::connect(&palette, &ScreenshotToolPalette::spotlightRequested,
                          uiSession->connections.get(),
                          [activate]() { activate(SnowCanvasTool::Spotlight); });
+        QObject::connect(&palette, &ScreenshotToolPalette::rectangleEraserRequested,
+                         uiSession->connections.get(),
+                         [activate]() { activate(SnowCanvasTool::RectangleEraser); });
+        QObject::connect(&palette, &ScreenshotToolPalette::brushEraserRequested,
+                         uiSession->connections.get(),
+                         [activate]() { activate(SnowCanvasTool::BrushEraser); });
         QObject::connect(&palette, &ScreenshotToolPalette::eraserRequested,
                          uiSession->connections.get(),
                          [activate]() { activate(SnowCanvasTool::Eraser); });

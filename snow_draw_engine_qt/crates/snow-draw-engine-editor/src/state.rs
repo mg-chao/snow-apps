@@ -131,6 +131,8 @@ pub(crate) struct CreateFreeDrawState {
 #[derive(Clone, Debug, Default, PartialEq)]
 pub(crate) struct CreatePenFilterState {
     pub(crate) pointer_id: u32,
+    /// Creation styles are latched for this gesture.
+    pub(crate) style: Option<crate::FilterStyle>,
     pub(crate) committed_points: Vec<Point<f64>>,
     pub(crate) pending_simplified_points: Vec<Point<f64>>,
     pub(crate) pending_raw_points: Vec<Point<f64>>,
@@ -454,6 +456,7 @@ pub(crate) struct EditorState {
     pub(crate) default_filter: FilterData,
     pub(crate) default_filter_stroke_width: f64,
     pub(crate) default_pen_filter: PenFilterData,
+    pub(crate) default_brush_eraser: crate::BrushEraserStyle,
     pub(crate) default_text: TextData,
     pub(crate) default_serial_number: SerialNumberData,
     pub(crate) eraser: EraserState,
@@ -552,6 +555,7 @@ impl EditorState {
             default_filter,
             default_filter_stroke_width: default_styles.rectangle_filter.stroke_width,
             default_pen_filter,
+            default_brush_eraser: default_styles.brush_eraser,
             default_text,
             default_serial_number,
             eraser: EraserState::default(),
@@ -567,12 +571,12 @@ pub struct DocumentSyncSnapshot {
 
 impl DocumentSyncSnapshot {
     pub fn validate_session(&self, document: &DocumentModel) -> Result<(), ErrorCode> {
-        if self
-            .selection
-            .ids
-            .iter()
-            .any(|id| document.document().element(*id).is_err())
-        {
+        if self.selection.ids.iter().any(|id| {
+            document
+                .document()
+                .element(*id)
+                .map_or(true, |element| element.data.is_background_restore())
+        }) {
             return Err(ErrorCode::InvalidArgument);
         }
         Ok(())

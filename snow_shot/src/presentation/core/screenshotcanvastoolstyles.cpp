@@ -49,6 +49,7 @@ const QString kRectangleHighlightKey = QStringLiteral("drawing/rectangle_highlig
 const QString kPenHighlightKey = QStringLiteral("drawing/pen_highlight_style");
 const QString kRectangleFilterKey = QStringLiteral("drawing/rectangle_filter_style");
 const QString kPenFilterKey = QStringLiteral("drawing/pen_filter_style");
+const QString kBrushEraserKey = QStringLiteral("drawing/brush_eraser_style");
 const QString kTextKey = QStringLiteral("drawing/text_style");
 const QString kSerialNumberKey = QStringLiteral("drawing/serial_number_style");
 const QString kWatermarkKey = QStringLiteral("drawing/watermark_style");
@@ -373,6 +374,8 @@ SnowCanvasStyleDefaults screenshotCanvasToolStyleDefaults() {
     readShapeValue(configuration.value(kPenHighlightKey).toObject(), &defaults.penHighlight);
     readFilterValue(configuration.value(kRectangleFilterKey).toObject(), &defaults.rectangleFilter);
     readFilterValue(configuration.value(kPenFilterKey).toObject(), &defaults.penFilter);
+    readDouble(configuration.value(kBrushEraserKey).toObject(), QStringLiteral("stroke_width"),
+               &defaults.brushEraser.strokeWidth);
     readTextValue(configuration.value(kTextKey).toObject(), &defaults.text);
     readSerialNumberValue(configuration.value(kSerialNumberKey).toObject(), &defaults.serialNumber);
     readWatermarkValue(configuration.value(kWatermarkKey).toObject(), &defaults.watermark);
@@ -416,6 +419,7 @@ SnowCanvasStyleDefaults screenshotCanvasToolStyleDefaults() {
     defaults.penFilter.strength = bounded(defaults.penFilter.strength, 0.0, 1.0);
     defaults.penFilter.opacity = bounded(defaults.penFilter.opacity, 0.0, 1.0);
     defaults.penFilter.strokeWidth = bounded(defaults.penFilter.strokeWidth, 1.0, 72.0);
+    defaults.brushEraser.strokeWidth = bounded(defaults.brushEraser.strokeWidth, 1.0, 72.0);
     defaults.text.fontSize =
         bounded(defaults.text.fontSize, snow_canvas_style_limits::minimumFontSize,
                 snow_canvas_style_limits::maximumTextFontSize);
@@ -456,6 +460,8 @@ bool persistScreenshotCanvasToolStyles(const SnowCanvasStyleDefaults& defaults) 
         {kPenHighlightKey, shapeValue(defaults.penHighlight)},
         {kRectangleFilterKey, filterValue(defaults.rectangleFilter)},
         {kPenFilterKey, filterValue(penFilter)},
+        {kBrushEraserKey,
+         QJsonObject{{QStringLiteral("stroke_width"), defaults.brushEraser.strokeWidth}}},
         {kTextKey, textValue(defaults.text)},
         {kSerialNumberKey, serialNumberValue(defaults.serialNumber)},
         {kWatermarkKey, watermarkValue(defaults.watermark)},
@@ -500,6 +506,7 @@ void applyScreenshotCanvasToolStyles(SnowCanvasWidget& canvas,
         defaults.rectangleFilter, kAllFilterProperties, SnowCanvasTool::RectangleFilter));
     static_cast<void>(canvas.setCanvasFilterCreationStyle(defaults.penFilter, kAllFilterProperties,
                                                           SnowCanvasTool::PenFilter));
+    static_cast<void>(canvas.setCanvasBrushEraserCreationStyle(defaults.brushEraser));
     static_cast<void>(canvas.setCanvasTool(previousTool));
 }
 

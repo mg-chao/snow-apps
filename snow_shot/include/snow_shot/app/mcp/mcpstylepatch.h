@@ -20,6 +20,8 @@ inline const QHash<QString, SnowCanvasTool>& mcpCanvasTools() {
         {QStringLiteral("rectangle_highlight"), SnowCanvasTool::RectangleHighlight},
         {QStringLiteral("pen_highlight"), SnowCanvasTool::PenHighlight},
         {QStringLiteral("eraser"), SnowCanvasTool::Eraser},
+        {QStringLiteral("rectangle_eraser"), SnowCanvasTool::RectangleEraser},
+        {QStringLiteral("brush_eraser"), SnowCanvasTool::BrushEraser},
         {QStringLiteral("rectangle_filter"), SnowCanvasTool::RectangleFilter},
         {QStringLiteral("pen_filter"), SnowCanvasTool::PenFilter},
         {QStringLiteral("text"), SnowCanvasTool::Text},
@@ -98,6 +100,8 @@ inline bool mcpStylePatch(Commands& commands, Canvas& canvas, const QJsonObject&
                    QStringLiteral("gap")};
     else if (target == QStringLiteral("spotlight"))
         allowed = {QStringLiteral("color"), QStringLiteral("opacity")};
+    else if (target == QStringLiteral("brush_eraser"))
+        allowed = {QStringLiteral("stroke_width")};
     else if (target == QStringLiteral("rectangle_filter") || target == QStringLiteral("pen_filter"))
         allowed = {QStringLiteral("filter"), QStringLiteral("strength"), QStringLiteral("opacity"),
                    QStringLiteral("stroke_width")};
@@ -208,7 +212,16 @@ inline bool mcpStylePatch(Commands& commands, Canvas& canvas, const QJsonObject&
         }
         return fallback;
     };
-    if (target == QStringLiteral("watermark")) {
+    if (target == QStringLiteral("brush_eraser")) {
+        SnowCanvasBrushEraserStyle style{
+            number("stroke_width", state.brushEraserStyle.strokeWidth)};
+        if (style.strokeWidth < 1.0 || style.strokeWidth > 72.0)
+            return false;
+        if constexpr (requires { canvas.setCanvasBrushEraserCreationStyle(style); })
+            return canvas.setCanvasBrushEraserCreationStyle(style);
+        else
+            return canvas.setBrushEraserCreationStyle(style);
+    } else if (target == QStringLiteral("watermark")) {
         auto style = canvas.canvasWatermarkConfig();
         style.color = color("color", style.color);
         style.fontSize = number("font_size", style.fontSize);

@@ -59,6 +59,10 @@ ScreenshotToolPalette::Tool paletteTool(ScreenshotActiveTool tool) {
         return ScreenshotToolPalette::Tool::PenHighlight;
     case ScreenshotActiveTool::Eraser:
         return ScreenshotToolPalette::Tool::Eraser;
+    case ScreenshotActiveTool::RectangleEraser:
+        return ScreenshotToolPalette::Tool::RectangleEraser;
+    case ScreenshotActiveTool::BrushEraser:
+        return ScreenshotToolPalette::Tool::BrushEraser;
     case ScreenshotActiveTool::AutoFilter:
         return ScreenshotToolPalette::Tool::AutoFilter;
     case ScreenshotActiveTool::RectangleFilter:

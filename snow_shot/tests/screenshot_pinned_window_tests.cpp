@@ -1,4 +1,5 @@
 #include "snow_shot/presentation/screenshotcanvastoolstyles.h"
+#include "eraser_toolbar_test_support.h"
 #include "physical_key_test_support.h"
 #include "window_close_shortcut_test_support.h"
 #include "snow_draw_engine_qt/snow_canvas_path_geometry.h"
@@ -2286,6 +2287,77 @@ void pinnedEditingRecognitionShortcutsUsePaletteCommands() {
     controller.setEditMode(false);
 }
 
+void pinnedEraserToolsPreserveIndependentDefaults() {
+    using Tool = ScreenshotToolPalette::Tool;
+    const snow_shot::storage::ScreenshotToolbarSettings toolbarSettings;
+    const snow_shot::storage::DrawingSettings drawingSettings;
+    const auto originalStyles = snow_shot::presentation::screenshotCanvasToolStyleDefaults();
+    const QString originalEraser = toolbarSettings.lastEraserTool();
+    const QString originalDrawingTool = toolbarSettings.lastDrawingTool();
+    const bool originalRememberSwitch = drawingSettings.rememberLastUsedTool();
+    const auto cleanup = qScopeGuard([&] {
+        static_cast<void>(toolbarSettings.setLastEraserTool(originalEraser));
+        static_cast<void>(toolbarSettings.setLastDrawingTool(originalDrawingTool));
+        static_cast<void>(drawingSettings.setRememberLastUsedTool(originalRememberSwitch));
+        static_cast<void>(
+            snow_shot::presentation::persistScreenshotCanvasToolStyles(originalStyles));
+    });
+    auto defaults = originalStyles;
+    defaults.brushEraser.strokeWidth = 30;
+    defaults.penFilter.strokeWidth = 42;
+    require(toolbarSettings.setLastEraserTool(QStringLiteral("eraser")) &&
+                drawingSettings.setRememberLastUsedTool(false) &&
+                snow_shot::presentation::persistScreenshotCanvasToolStyles(defaults),
+            "seed independent pinned eraser defaults");
+    QScreen* screen = QGuiApplication::primaryScreen();
+    require(screen != nullptr, "pinned eraser fixture needs a screen");
+    QImage image(320, 200, QImage::Format_ARGB32_Premultiplied);
+    image.fill(Qt::transparent);
+    ScreenshotPinnedWindow::Config config;
+    config.nativeGeometry = physicalPinGeometry(*screen, QPoint(40, 40), image.size());
+    config.canvasSourceRect = QRectF(QPointF(), QSizeF(image.size()));
+    config.imageSource = ScreenshotImageSource::fromImage(image, config.canvasSourceRect);
+    config.screen = screen;
+    config.enableEditing = true;
+    config.automaticTextRecognition = false;
+    config.checkerboardEnabled = false;
+    config.initialBorderVisible = false;
+    for (int session = 0; session < 2; ++session) {
+        auto* window = new ScreenshotPinnedWindow();
+        QPointer<ScreenshotPinnedWindow> guardedWindow(window);
+        require(window->present(config), "present a real pinned eraser image");
+        auto* editButton = buttonNamed(*window, QStringLiteral("Enable drawing mode"));
+        require(editButton != nullptr, "pinned image exposes drawing mode");
+        editButton->click();
+        QCoreApplication::processEvents();
+        auto* canvas = window->findChild<SnowCanvasWidget*>();
+        auto* controller = window->findChild<ScreenshotPinnedEditController*>();
+        require(canvas && controller && controller->toolbarWindow(),
+                "pinned eraser fixture owns a canvas and the real toolbar");
+        auto* palette = controller->toolbarWindow()->palette();
+        if (session == 0) {
+            verifyEraserToolbarHost(*palette, *canvas, require);
+            const auto saved = snow_shot::presentation::screenshotCanvasToolStyleDefaults();
+            require(saved.brushEraser.strokeWidth == 31 && saved.penFilter.strokeWidth == 42 &&
+                        palette->creationStyleDefaults().penFilter.strokeWidth == 42,
+                    "pinned brush eraser width persists without changing Pen Filter defaults");
+            controller->setEditMode(false);
+            require(drawingSettings.setRememberLastUsedTool(true) &&
+                        toolbarSettings.setLastDrawingTool(QStringLiteral("eraser")),
+                    "remember the eraser family for pinned toolbar recreation");
+            controller->setEditMode(true);
+            palette = controller->toolbarWindow()->palette();
+        }
+        require(palette->activeTool() == Tool::BrushEraser &&
+                    canvas->canvasTool() == SnowCanvasTool::BrushEraser &&
+                    canvas->canvasStyleToolbarState().brushEraserStyle.strokeWidth == 31 &&
+                    canvas->interactionEnabled() && !controller->resizeWindowToolActive(),
+                "recreated pinned toolbar and new pins restore the eraser variant and width");
+        window->close();
+        require(processUntilDeleted(guardedWindow, 2000), "close the pinned eraser fixture");
+    }
+}
+
 void pinnedArrowLabelWheelReachesTextEditor() {
     const auto originalStyles = snow_shot::presentation::screenshotCanvasToolStyleDefaults();
     const auto restoreStyles = qScopeGuard([&] {
@@ -2554,6 +2626,10 @@ void pinnedDrawingToolsRemainUsableAfterRecognition() {
             {&ScreenshotToolPalette::spotlightRequested, SnowCanvasTool::Spotlight,
              Tool::Spotlight},
             {&ScreenshotToolPalette::eraserRequested, SnowCanvasTool::Eraser, Tool::Eraser},
+            {&ScreenshotToolPalette::rectangleEraserRequested, SnowCanvasTool::RectangleEraser,
+             Tool::RectangleEraser},
+            {&ScreenshotToolPalette::brushEraserRequested, SnowCanvasTool::BrushEraser,
+             Tool::BrushEraser},
             {&ScreenshotToolPalette::filterRequested, SnowCanvasTool::RectangleFilter,
              Tool::RectangleFilter},
             {&ScreenshotToolPalette::rectangleFilterRequested, SnowCanvasTool::RectangleFilter,
@@ -14607,6 +14683,10 @@ int main(int argc, char* argv[]) {
             }
             pinnedOriginalImagePreviewFollowsViewAndAuxiliaryLifecycle();
             pinnedOriginalImagePreviewSupportsTranslationModes();
+            return 0;
+        }
+        if (app.arguments().contains(QStringLiteral("--eraser-only"))) {
+            pinnedEraserToolsPreserveIndependentDefaults();
             return 0;
         }
         if (app.arguments().contains(QStringLiteral("--color-space-only"))) {

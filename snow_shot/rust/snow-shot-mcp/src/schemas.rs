@@ -110,6 +110,8 @@ enum CanvasTool {
     Qr,
     Markdown,
     Html,
+    RectangleEraser,
+    BrushEraser,
 }
 #[derive(Deserialize, JsonSchema)]
 struct ToolInput {
@@ -705,6 +707,7 @@ macro_rules! bounded_style_number {
 bounded_style_number!(ArrowRatio, f64, "number", 1.0, 3.0);
 bounded_style_number!(CornerRadius, f64, "number", 0.0, 8192.0);
 bounded_style_number!(SerialNumber, u64, "integer", 0_u64, 9007199254740991_u64);
+bounded_style_number!(BrushEraserWidth, f64, "number", 1.0, 72.0);
 #[derive(Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 enum ShapeVariant {
@@ -749,10 +752,43 @@ enum FilterKind {
     SmartErase,
 }
 #[derive(Deserialize, JsonSchema)]
+#[serde(untagged)]
+enum ToolStyle {
+    Standard(Box<StandardToolStyle>),
+    BrushEraser(BrushEraserToolStyle),
+}
+// Serde cannot consume a flattened untagged enum under deny_unknown_fields.
+// Keep the union outside each complete mutation so its strict object branch
+// owns all fields, including the revision guard.
+#[derive(Deserialize, JsonSchema)]
+#[serde(untagged)]
+#[schemars(extend("type" = "object"))]
+enum ScreenshotToolStyleMutation {
+    Standard(Box<Mutation<StandardToolStyle>>),
+    BrushEraser(Mutation<BrushEraserToolStyle>),
+}
+#[derive(Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
-struct ToolStyle {
+struct StandardToolStyle {
     target: StyleTarget,
     style: StylePatch,
+}
+#[derive(Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+enum BrushEraserTarget {
+    BrushEraser,
+}
+#[derive(Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct BrushEraserToolStyle {
+    target: BrushEraserTarget,
+    style: BrushEraserStylePatch,
+}
+#[derive(Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct BrushEraserStylePatch {
+    /// Width in canvas pixels for future Brush Eraser strokes.
+    stroke_width: BrushEraserWidth,
 }
 #[derive(Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
@@ -837,7 +873,7 @@ pub fn schema(name: &str, input: Option<Value>) -> Result<Map<String, Value>, se
     match name {
         "snow_shot_mcp_status" => model::<Empty>(input),
         "snow_shot_screenshot_set_selection_style" => model::<Mutation<SelectionStyle>>(input),
-        "snow_shot_screenshot_set_tool_style" => model::<Mutation<ToolStyle>>(input),
+        "snow_shot_screenshot_set_tool_style" => model::<ScreenshotToolStyleMutation>(input),
         "snow_shot_screenshot_edit_elements" => model::<Mutation<EditElements>>(input),
         "snow_shot_screenshot_recapture" => model::<Mutation<Empty>>(input),
         "snow_shot_screenshot_scrolling" => model::<Mutation<Scrolling>>(input),
@@ -872,6 +908,142 @@ pub fn schema(name: &str, input: Option<Value>) -> Result<Map<String, Value>, se
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn eraser_tool_ids_are_accepted_for_screenshots_and_documents() {
+        for (name, owner) in [
+            ("snow_shot_screenshot_set_tool", "session_id"),
+            ("snow_shot_document_set_tool", "document_id"),
+        ] {
+            for tool in ["eraser", "rectangle_eraser", "brush_eraser"] {
+                let input = json!({owner:"owned","expected_revision":1,"tool":tool});
+                assert!(schema(name, Some(input.clone())).is_ok(), "{name}: {tool}");
+                let mut invalid = input;
+                invalid.as_object_mut().unwrap().remove("expected_revision");
+                assert!(schema(name, Some(invalid)).is_err(), "{name}: {tool}");
+            }
+            assert!(
+                schema(
+                    name,
+                    Some(json!({owner:"owned","expected_revision":1,"tool":"restore_background"}))
+                )
+                .is_err()
+            );
+        }
+    }
+
+    #[test]
+    fn eraser_brush_style_requires_only_a_bounded_width() {
+        for (name, owner) in [
+            ("snow_shot_screenshot_set_tool_style", "session_id"),
+            ("snow_shot_document_set_tool_style", "document_id"),
+        ] {
+            for width in [1.0, 30.5, 72.0] {
+                let result = schema(
+                    name,
+                    Some(json!({owner:"owned","expected_revision":1,
+                    "target":"brush_eraser","style":{"stroke_width":width}})),
+                );
+                assert!(result.is_ok(), "{name}: {width}: {result:?}");
+            }
+            for style in [
+                json!({}),
+                json!({"stroke_width":0.999}),
+                json!({"stroke_width":72.001}),
+                json!({"stroke_width":null}),
+                json!({"stroke_width":"30"}),
+                json!({"stroke_width":30,"opacity":1}),
+                json!({"stroke_width":30,"strength":1}),
+                json!({"stroke_width":30,"filter":"mosaic"}),
+                json!({"stroke_width":30,"stroke":[0,0,0,255]}),
+                json!({"stroke_width":30,"unknown":true}),
+            ] {
+                assert!(
+                    schema(
+                        name,
+                        Some(json!({owner:"owned","expected_revision":1,
+                    "target":"brush_eraser","style":style}))
+                    )
+                    .is_err(),
+                    "{name}: {style}"
+                );
+            }
+            for target in ["eraser", "rectangle_eraser", "restore_background"] {
+                assert!(
+                    schema(
+                        name,
+                        Some(json!({owner:"owned","expected_revision":1,
+                    "target":target,"style":{"stroke_width":30}}))
+                    )
+                    .is_err(),
+                    "{name}: {target}"
+                );
+            }
+            for target in ["rectangle_filter", "pen_filter"] {
+                assert!(
+                    schema(
+                        name,
+                        Some(json!({owner:"owned","expected_revision":1,
+                    "target":target,"style":{"filter":"mosaic","stroke_width":30}}))
+                    )
+                    .is_ok()
+                );
+                assert!(
+                    schema(
+                        name,
+                        Some(json!({owner:"owned","expected_revision":1,
+                    "target":target,"style":{"filter":"restore_background"}}))
+                    )
+                    .is_err()
+                );
+            }
+            assert!(
+                schema(
+                    name,
+                    Some(json!({owner:"owned","target":"brush_eraser",
+                "style":{"stroke_width":30}}))
+                )
+                .is_err()
+            );
+        }
+    }
+
+    #[test]
+    fn eraser_pinned_payloads_reuse_the_document_contract() {
+        for tool in ["rectangle_eraser", "brush_eraser"] {
+            assert!(
+                schema(
+                    "snow_shot_pinned_edit",
+                    Some(json!({"id":"pinned",
+                "expected_revision":1,"action":"tool","payload":{"tool":tool}}))
+                )
+                .is_ok()
+            );
+        }
+        assert!(
+            schema(
+                "snow_shot_pinned_edit",
+                Some(json!({"id":"pinned",
+            "expected_revision":1,"action":"tool_style","payload":{
+                "target":"brush_eraser","style":{"stroke_width":30}}}))
+            )
+            .is_ok()
+        );
+        for style in [
+            json!({"stroke_width":73}),
+            json!({"stroke_width":30,"opacity":1}),
+        ] {
+            assert!(
+                schema(
+                    "snow_shot_pinned_edit",
+                    Some(json!({"id":"pinned",
+                "expected_revision":1,"action":"tool_style","payload":{
+                    "target":"brush_eraser","style":style}}))
+                )
+                .is_err()
+            );
+        }
+    }
     #[test]
     fn full_only_tools_and_recognition_fields_follow_the_compiled_edition() {
         for name in [

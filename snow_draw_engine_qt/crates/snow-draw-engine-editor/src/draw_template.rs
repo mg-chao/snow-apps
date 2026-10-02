@@ -89,7 +89,7 @@ impl Editor {
         let mut id_map = HashMap::with_capacity(template.elements.len());
         let first_id = document.peek_next_element_id();
         for (index, element) in template.elements.iter().enumerate() {
-            if !old_ids.insert(element.id) {
+            if element.data.is_background_restore() || !old_ids.insert(element.id) {
                 return Err(ErrorCode::InvalidArgument);
             }
             validate_element_data(&element.data)?;

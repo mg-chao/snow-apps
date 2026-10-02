@@ -86,6 +86,7 @@ impl Editor {
             let missing = document.is_some_and(|document| {
                 document.element(id).map_or(true, |e| {
                     e.data.kind() == snow_draw_engine_document::ElementKind::AutoFilter
+                        || e.data.is_background_restore()
                 })
             });
             if next_ids.contains(&id) || missing {
@@ -181,7 +182,11 @@ impl Editor {
             .ids
             .iter()
             .copied()
-            .filter(|id| document.element(*id).is_ok())
+            .filter(|id| {
+                document
+                    .element(*id)
+                    .is_ok_and(|element| !element.data.is_background_restore())
+            })
             .collect::<Vec<_>>();
         let filtered_primary = self
             .state

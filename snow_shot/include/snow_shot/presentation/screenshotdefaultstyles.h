@@ -63,6 +63,7 @@ inline SnowCanvasStyleDefaults screenshotCanvasStyleDefaults() {
     };
     defaults.penFilter = defaults.rectangleFilter;
     defaults.penFilter.strokeWidth = 30.0;
+    defaults.brushEraser.strokeWidth = 30.0;
 
     defaults.text.color = red;
     defaults.text.fontSize = 30.0;

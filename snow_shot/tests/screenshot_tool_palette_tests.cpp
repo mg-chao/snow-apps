@@ -2,6 +2,7 @@
 #include "snow_shot/presentation/screenshotregiontypecontrol.h"
 #include "snow_shot/presentation/screenshottoolpalette.h"
 #include "snow_shot/presentation/screenshotcanvastoolstyles.h"
+#include "snow_shot/presentation/screenshotstylebinding.h"
 #include "snow_shot/presentation/screenshotdefaultstyles.h"
 #include "snow_shot/presentation/screenshottoolbarlayoutmodel.h"
 #include "snow_shot/presentation/components/icons/iconrenderutils.h"
@@ -22,6 +23,7 @@
 #include "theme/theme_manager.h"
 
 #include <QApplication>
+#include <QScopeGuard>
 #include <QAbstractButton>
 #include <QButtonGroup>
 #include <QBoxLayout>
@@ -6580,32 +6582,200 @@ void highlightStyleToolbarWidthTracksActiveMode() {
             "switching back to rectangle highlight should restore its style toolbar width");
 }
 
-void eraserToolIsDiscoverableAndHidesStyleControls() {
+void eraserStyleToolbarHeightMatchesOtherTools() {
+    using Tool = ScreenshotToolPalette::Tool;
     ScreenshotToolPalette::Options options;
     options.showShapeTool = true;
     options.showEraserTool = true;
     ScreenshotToolPalette palette(options);
 
-    auto* eraserButton =
-        qobject_cast<adqt::widgets::AdButton*>(controlWithTooltip(palette, "Eraser"));
-    require(eraserButton != nullptr, "Eraser toolbar control should be present");
-    int requestCount = 0;
-    QObject::connect(&palette, &ScreenshotToolPalette::eraserRequested,
-                     [&requestCount]() { ++requestCount; });
-    eraserButton->click();
-    require(requestCount == 1, "clicking Eraser should emit one tool request");
-    require(palette.stylePanel() == nullptr || palette.stylePanel()->isHidden(),
-            "Eraser should hide style controls");
+    for (const qreal scale : {1.0, 1.25, 1.5, 2.0}) {
+        palette.setPhysicalScale(scale);
+        palette.setActiveTool(Tool::Shape);
+        palette.prepareForDisplay();
+        const int shapeHeight = palette.stylePanel()->height();
+        for (Tool tool : {Tool::Eraser, Tool::RectangleEraser, Tool::BrushEraser}) {
+            palette.setActiveTool(tool);
+            palette.prepareForDisplay();
+            require(
+                palette.styleToolbarVisible() && palette.stylePanel()->height() == shapeHeight,
+                "each eraser mode should retain the shared style toolbar height at every scale");
+        }
+    }
+}
 
-    SnowCanvasStyleToolbarState state;
-    state.source = SnowCanvasStyleToolbarSource::Eraser;
-    palette.setStyleToolbarState(state);
-    require(palette.stylePanel() == nullptr || palette.stylePanel()->isHidden(),
-            "Eraser style source should remain hidden even with canvas state updates");
-
+void eraserToolsExposeRememberedModesAndIndependentWidth() {
+    using Tool = ScreenshotToolPalette::Tool;
+    const snow_shot::storage::ScreenshotToolbarSettings settings;
+    const QString originalMode = settings.lastEraserTool();
+    const auto originalDefaults = snow_shot::presentation::screenshotCanvasToolStyleDefaults();
+    const auto cleanup = qScopeGuard([&] {
+        static_cast<void>(settings.setLastEraserTool(originalMode));
+        static_cast<void>(
+            snow_shot::presentation::persistScreenshotCanvasToolStyles(originalDefaults));
+    });
+    require(settings.setLastEraserTool(QStringLiteral("eraser")), "reset first-use eraser mode");
+    ScreenshotToolPalette::Options options;
+    options.showEraserTool = true;
+    options.showFilterTool = true;
+    options.styleDefaults = originalDefaults;
+    options.styleDefaults.brushEraser.strokeWidth = 30;
+    ScreenshotToolPalette palette(options);
     SnowCanvasWidget canvas;
-    require(canvas.setCanvasTool(SnowCanvasTool::Eraser), "canvas should accept Eraser");
-    require(canvas.canvasTool() == SnowCanvasTool::Eraser, "canvas should retain Eraser identity");
+    canvas.setInteractionEnabled(true);
+    snow_shot::presentation::applyScreenshotCanvasToolStyles(canvas, options.styleDefaults);
+    snow_shot::presentation::ScreenshotStyleBinding binding(palette, canvas, &palette);
+    QObject::connect(&canvas, &SnowCanvasWidget::styleToolbarStateChanged, &palette,
+                     [&] { palette.setStyleToolbarState(canvas.canvasStyleToolbarState()); });
+    int elementRequests = 0;
+    int rectangleRequests = 0;
+    int brushRequests = 0;
+    QObject::connect(&palette, &ScreenshotToolPalette::eraserRequested, [&] {
+        ++elementRequests;
+        static_cast<void>(canvas.setCanvasTool(SnowCanvasTool::Eraser));
+    });
+    QObject::connect(&palette, &ScreenshotToolPalette::rectangleEraserRequested, [&] {
+        ++rectangleRequests;
+        static_cast<void>(canvas.setCanvasTool(SnowCanvasTool::RectangleEraser));
+    });
+    QObject::connect(&palette, &ScreenshotToolPalette::brushEraserRequested, [&] {
+        ++brushRequests;
+        static_cast<void>(canvas.setCanvasTool(SnowCanvasTool::BrushEraser));
+    });
+    auto* button = qobject_cast<adqt::widgets::AdButton*>(controlWithTooltip(palette, "Eraser"));
+    require(button != nullptr, "main eraser button stays discoverable");
+    button->click();
+    require(palette.activeTool() == Tool::Eraser && elementRequests == 1,
+            "first eraser activation preserves whole-element default");
+    const auto group = [&]() {
+        auto* selector =
+            palette.findChild<QWidget*>(QStringLiteral("screenshotEraserModeSelector"));
+        return selector != nullptr ? selector->findChild<adqt::widgets::AdRadioButtonGroup*>()
+                                   : nullptr;
+    };
+    require(group() && group()->buttons().size() == 3 && palette.styleToolbarVisible(),
+            "eraser exposes exactly three secondary modes");
+    require(!palette.findChild<QWidget*>(QStringLiteral("screenshotBrushEraserStrokeWidthSummary")),
+            "element eraser has no stroke width editor");
+    group()->button(static_cast<int>(Tool::RectangleEraser))->click();
+    require(palette.activeTool() == Tool::RectangleEraser && rectangleRequests == 1 &&
+                settings.lastEraserTool() == QStringLiteral("rectangle-eraser"),
+            "rectangle mode explicitly activates and persists without toggling");
+    group()->button(static_cast<int>(Tool::BrushEraser))->click();
+    require(palette.activeTool() == Tool::BrushEraser && brushRequests == 1,
+            "brush mode activates exactly once");
+    auto* summary = palette.findChild<adqt::widgets::AdButton*>(
+        QStringLiteral("screenshotBrushEraserStrokeWidthSummary"));
+    require(summary != nullptr &&
+                canvas.canvasStyleToolbarState().brushEraserStyle.strokeWidth == 30,
+            "brush eraser exposes its independent default width");
+    auto* preset = palette.findChild<adqt::widgets::AdButton*>(
+        QStringLiteral("screenshotBrushEraserStrokeWidth42"));
+    require(preset != nullptr, "brush eraser shares the S/M/L/XL width catalog");
+    preset->click();
+    require(
+        canvas.canvasStyleToolbarState().brushEraserStyle.strokeWidth == 42 &&
+            snow_shot::presentation::screenshotCanvasToolStyleDefaults().brushEraser.strokeWidth ==
+                42,
+        "brush preset reaches creation defaults and independent storage");
+    summary->click();
+    require(canvas.canvasStyleToolbarState().brushEraserStyle.strokeWidth == 43,
+            "brush width summary steps by one pixel");
+    for (int step = 0; step < 100; ++step)
+        require(palette.stepBrushEraserStrokeWidth(1), "active brush accepts width wheel steps");
+    require(canvas.canvasStyleToolbarState().brushEraserStyle.strokeWidth == 72,
+            "brush width clamps to the pen filter upper limit");
+    for (int step = 0; step < 100; ++step)
+        static_cast<void>(palette.stepBrushEraserStrokeWidth(-1));
+    require(canvas.canvasStyleToolbarState().brushEraserStyle.strokeWidth == 1,
+            "brush width clamps to one pixel");
+    button->click();
+    require(palette.activeTool() == Tool::Select &&
+                settings.lastEraserTool() == QStringLiteral("brush-eraser"),
+            "clicking active eraser family switches to Select without losing mode");
+    button->click();
+    require(palette.activeTool() == Tool::BrushEraser, "main button restores last selected eraser");
+    require(settings.setLastEraserTool(QStringLiteral("rectangle-eraser")),
+            "change external preference");
+    require(palette.activateDrawingShortcut(QStringLiteral("eraser")) &&
+                palette.activeTool() == Tool::Select,
+            "generic shortcut uses active brush mode before remembered rectangle mode");
+    require(palette.activateDrawingShortcut(QStringLiteral("eraser")) &&
+                palette.activeTool() == Tool::RectangleEraser,
+            "generic shortcut restores external remembered eraser mode when inactive");
+    ScreenshotToolPalette restored(options);
+    require(restored.activateDrawingShortcut(QStringLiteral("eraser")) &&
+                restored.activeTool() == Tool::RectangleEraser,
+            "rebuilt palettes restore persisted eraser mode");
+    require(!palette.stepBrushEraserStrokeWidth(1), "rectangle mode does not adjust brush width");
+    palette.setActiveTool(Tool::BrushEraser);
+    QWidget* brushRow =
+        palette.findChild<QWidget*>(QStringLiteral("screenshotBrushEraserStyleControls"));
+    QWidget* widthRoot = styleEditorRoot(brushRow, "brush-width");
+    palette.setActiveTool(Tool::PenFilter);
+    QWidget* penRow =
+        palette.findChild<QWidget*>(QStringLiteral("screenshotPenFilterStyleControls"));
+    require(widthRoot != nullptr && widthRoot == styleEditorRoot(penRow, "brush-width") &&
+                palette.creationStyleDefaults().penFilter.strokeWidth ==
+                    options.styleDefaults.penFilter.strokeWidth,
+            "brush and pen filter reuse width widgets without sharing values");
+    palette.setActiveTool(Tool::BrushEraser);
+    palette.setStyleEditHandler([](const SnowCanvasStyleEdit&) { return false; });
+    require(palette.stepBrushEraserStrokeWidth(1) &&
+                palette.creationStyleDefaults().brushEraser.strokeWidth == 1,
+            "rejected brush style commits leave creation preferences unchanged");
+}
+
+void recordingEraserActivationReturnsToSelect() {
+    using Tool = ScreenshotToolPalette::Tool;
+    const snow_shot::storage::ScreenshotToolbarSettings settings;
+    const QString originalMode = settings.lastEraserTool();
+    const auto cleanup =
+        qScopeGuard([&] { static_cast<void>(settings.setLastEraserTool(originalMode)); });
+    require(settings.setLastEraserTool(QStringLiteral("eraser")),
+            "recording eraser fixture starts with the element eraser");
+    ScreenshotToolPalette::Options options;
+    options.showEraserTool = true;
+    options.showRecordingControls = true;
+    options.recordingDrawingMode = true;
+    ScreenshotToolPalette palette(options);
+    int selectRequests = 0;
+    QObject::connect(&palette, &ScreenshotToolPalette::selectRequested, [&] { ++selectRequests; });
+    auto* button = qobject_cast<adqt::widgets::AdButton*>(controlWithTooltip(palette, "Eraser"));
+    require(button != nullptr, "recording exposes the generic eraser entry");
+    button->click();
+    for (const auto& [tool, setting] :
+         {std::pair{Tool::Eraser, QStringLiteral("eraser")},
+          std::pair{Tool::RectangleEraser, QStringLiteral("rectangle-eraser")},
+          std::pair{Tool::BrushEraser, QStringLiteral("brush-eraser")}}) {
+        auto* selector =
+            palette.findChild<QWidget*>(QStringLiteral("screenshotEraserModeSelector"));
+        auto* group =
+            selector ? selector->findChild<adqt::widgets::AdRadioButtonGroup*>() : nullptr;
+        require(group && group->button(static_cast<int>(tool)),
+                "recording eraser fixture exposes every secondary mode");
+        group->button(static_cast<int>(tool))->click();
+        require(palette.activeTool() == tool && settings.lastEraserTool() == setting,
+                "recording secondary mode activation persists its variant");
+        int previousSelectRequests = selectRequests;
+        button->click();
+        require(palette.activeTool() == Tool::Select && !palette.recordingExportSettingsVisible() &&
+                    selectRequests == previousSelectRequests + 1 &&
+                    settings.lastEraserTool() == setting,
+                "repeated recording eraser click requests Select while preserving its mode");
+        button->click();
+        require(palette.activeTool() == tool, "recording eraser click restores its last mode");
+        previousSelectRequests = selectRequests;
+        require(palette.activateDrawingShortcut(QStringLiteral("eraser")) &&
+                    palette.activeTool() == Tool::Select &&
+                    !palette.recordingExportSettingsVisible() &&
+                    selectRequests == previousSelectRequests + 1 &&
+                    settings.lastEraserTool() == setting,
+                "repeated recording eraser shortcut shares the Select toggle contract");
+        require(palette.activateDrawingShortcut(QStringLiteral("eraser")) &&
+                    palette.activeTool() == tool,
+                "recording eraser shortcut restores its last mode");
+    }
 }
 
 void drawingModeSelectionsSurviveToolbarReentry() {
@@ -13307,6 +13477,13 @@ int main(int argc, char** argv) {
     require(QFontDatabase::addApplicationFont(QStringLiteral("C:/Windows/Fonts/segoeui.ttf")) >= 0,
             "the font editor tests require a system TrueType font");
 #endif
+    if (application.arguments().contains(QStringLiteral("--eraser-only"))) {
+        eraserStyleToolbarHeightMatchesOtherTools();
+        eraserToolsExposeRememberedModesAndIndependentWidth();
+        recordingEraserActivationReturnsToSelect();
+        snow_shot::storage::ApplicationStorage::instance().shutdown();
+        return 0;
+    }
     if (application.arguments().contains(QStringLiteral("--style-commit-only"))) {
         runScreenshotStyleBindingTests();
         selectedStyleEditsAreReflectedInTheCreationStyleContext();
@@ -13667,7 +13844,9 @@ int main(int argc, char** argv) {
     drawingToolbarGroupsUseToolbarPopoverMetrics();
     spotlightControlsMatchMaskConfigurationBehavior();
     highlightStyleToolbarWidthTracksActiveMode();
-    eraserToolIsDiscoverableAndHidesStyleControls();
+    eraserStyleToolbarHeightMatchesOtherTools();
+    eraserToolsExposeRememberedModesAndIndependentWidth();
+    recordingEraserActivationReturnsToSelect();
     filterEditorsRestoreValuesAfterToolSwitch();
     filterTypeSelectKeepsSmartEraseAcrossFilterModeSwitches();
     filterToolExposesTypeAndIntensityControls();

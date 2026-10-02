@@ -245,8 +245,9 @@ void SnowCanvasSceneItem::assign(const SnowSceneDisplayItem& item) {
 
 void SnowCanvasSceneItem::rebuildPenFilterGeometry(std::size_t firstChangedPoint) {
     constexpr std::uint32_t kSegmentsPerChunk = 32;
-    if (kind != SNOW_SCENE_DISPLAY_ITEM_FILTER || is_free_draw == 0 || m_arrowPoints.size() < 2 ||
-        !std::isfinite(stroke_width) || stroke_width <= 0.0) {
+    const bool dot = filter.filter_type == 7 && m_arrowPoints.size() == 1;
+    if (kind != SNOW_SCENE_DISPLAY_ITEM_FILTER || is_free_draw == 0 ||
+        (m_arrowPoints.size() < 2 && !dot) || !std::isfinite(stroke_width) || stroke_width <= 0.0) {
         m_penGeometryChunks.clear();
         m_penSpatialCells.clear();
         return;
@@ -265,7 +266,7 @@ void SnowCanvasSceneItem::rebuildPenFilterGeometry(std::size_t firstChangedPoint
             const PenSegmentChunk& chunk = m_penGeometryChunks.back();
             const std::uint32_t chunkFirstSegment = chunk.firstPoint;
             const std::uint32_t segmentCount = chunk.pointCount - 1;
-            if (chunkFirstSegment + segmentCount <= changedSegment) {
+            if (chunk.pointCount > 1 && chunkFirstSegment + segmentCount <= changedSegment) {
                 break;
             }
             for (std::int64_t cell : chunk.spatialCells) {
@@ -289,10 +290,12 @@ void SnowCanvasSceneItem::rebuildPenFilterGeometry(std::size_t firstChangedPoint
         }
     }
 
-    const std::uint32_t segmentCount = static_cast<std::uint32_t>(m_arrowPoints.size() - 1);
+    const std::uint32_t segmentCount =
+        dot ? 1 : static_cast<std::uint32_t>(m_arrowPoints.size() - 1);
     std::size_t built = 0;
     while (firstSegment < segmentCount) {
-        const std::uint32_t count = std::min(kSegmentsPerChunk, segmentCount - firstSegment);
+        const std::uint32_t count =
+            dot ? 0 : std::min(kSegmentsPerChunk, segmentCount - firstSegment);
         double minX = std::numeric_limits<double>::infinity();
         double minY = std::numeric_limits<double>::infinity();
         double maxX = -std::numeric_limits<double>::infinity();
@@ -326,7 +329,7 @@ void SnowCanvasSceneItem::rebuildPenFilterGeometry(std::size_t firstChangedPoint
         }
         m_penGeometryChunks.push_back(std::move(chunk));
         ++built;
-        firstSegment += count;
+        firstSegment += std::max(1u, count);
     }
     m_pendingPenGeometryChunkBuildCount += built;
     m_pendingPenGeometryChunkReuseCount += reused;

@@ -1,5 +1,80 @@
 include_guard(GLOBAL)
 
+# A Rust staticlib includes its dependencies and runtime. Consumers must select
+# one archive for the final host rather than relying on link order to avoid
+# extracting overlapping objects from two feature variants.
+function(snow_add_rust_bundle_selector target default_bundle)
+    if(NOT TARGET ${target})
+        add_library(${target} INTERFACE)
+        target_link_libraries(${target} INTERFACE
+            "$<IF:$<BOOL:$<TARGET_PROPERTY:SNOW_RUST_BUNDLE_OVERRIDE>>,$<TARGET_PROPERTY:SNOW_RUST_BUNDLE_OVERRIDE>,${default_bundle}>")
+    endif()
+endfunction()
+
+function(_snow_rust_target_reaches output root dependency)
+    set(_pending ${root})
+    set(_visited)
+    while(_pending)
+        list(POP_FRONT _pending _target)
+        if(_target STREQUAL dependency)
+            set(${output} TRUE PARENT_SCOPE)
+            return()
+        endif()
+        if(_target IN_LIST _visited)
+            continue()
+        endif()
+        list(APPEND _visited ${_target})
+        get_target_property(_alias ${_target} ALIASED_TARGET)
+        if(_alias)
+            list(APPEND _pending ${_alias})
+        endif()
+        foreach(_property IN ITEMS LINK_LIBRARIES INTERFACE_LINK_LIBRARIES)
+            get_target_property(_items ${_target} ${_property})
+            foreach(_item IN LISTS _items)
+                if(TARGET "${_item}")
+                    list(APPEND _pending "${_item}")
+                elseif(_item MATCHES "\\$<")
+                    # Unwrap LINK_ONLY/TARGET_OBJECTS while preserving aliases.
+                    string(REGEX MATCHALL "[A-Za-z0-9_.:+-]+" _references "${_item}")
+                    foreach(_reference IN LISTS _references)
+                        string(REGEX REPLACE "(^|[^:]):([^:])" "\\1;\\2"
+                            _names "${_reference}")
+                        foreach(_name IN LISTS _names)
+                            if(TARGET "${_name}")
+                                list(APPEND _pending "${_name}")
+                            endif()
+                        endforeach()
+                    endforeach()
+                endif()
+            endforeach()
+        endforeach()
+    endwhile()
+    set(${output} FALSE PARENT_SCOPE)
+endfunction()
+
+# Run after all executables have been declared. The override must be explicit
+# on each final host: compatible interface properties are inferred too late to
+# select that host's transitive link libraries.
+function(snow_select_rust_bundle_consumers dependency bundle)
+    set(_directories ${CMAKE_SOURCE_DIR})
+    while(_directories)
+        list(POP_FRONT _directories _directory)
+        get_property(_children DIRECTORY "${_directory}" PROPERTY SUBDIRECTORIES)
+        list(APPEND _directories ${_children})
+        get_property(_targets DIRECTORY "${_directory}" PROPERTY BUILDSYSTEM_TARGETS)
+        foreach(_target IN LISTS _targets)
+            get_target_property(_type ${_target} TYPE)
+            if(NOT _type STREQUAL "EXECUTABLE")
+                continue()
+            endif()
+            _snow_rust_target_reaches(_uses_bundle ${_target} ${dependency})
+            if(_uses_bundle)
+                set_property(TARGET ${_target} PROPERTY SNOW_RUST_BUNDLE_OVERRIDE ${bundle})
+            endif()
+        endforeach()
+    endwhile()
+endfunction()
+
 # Resolve the target OS before compiler family: AppleClang is not Linux, and
 # GCC on Linux is not a MinGW cross compiler. Build universal macOS archives
 # as two explicit Cargo targets and combine them with lipo at packaging time.

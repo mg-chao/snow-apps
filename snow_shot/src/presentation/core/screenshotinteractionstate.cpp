@@ -8,8 +8,9 @@ bool recognitionTool(ScreenshotActiveTool tool) {
 
 bool drawingToolSupportsCursorMovement(ScreenshotActiveTool tool) {
     return tool != ScreenshotActiveTool::Move && tool != ScreenshotActiveTool::Eraser &&
-           tool != ScreenshotActiveTool::Spotlight && tool != ScreenshotActiveTool::Watermark &&
-           !recognitionTool(tool);
+           tool != ScreenshotActiveTool::RectangleEraser &&
+           tool != ScreenshotActiveTool::BrushEraser && tool != ScreenshotActiveTool::Spotlight &&
+           tool != ScreenshotActiveTool::Watermark && !recognitionTool(tool);
 }
 } // namespace
 

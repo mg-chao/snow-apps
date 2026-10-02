@@ -32,6 +32,8 @@ enum class SnowCanvasTool {
     PenFilter,
     Spotlight,
     AutoFilter,
+    RectangleEraser,
+    BrushEraser,
 };
 
 enum class SnowCanvasCursorLayer {
@@ -66,6 +68,8 @@ enum class SnowCanvasStyleToolbarSource {
     SelectedPenFilter,
     DefaultSpotlight,
     SelectedSpotlight,
+    DefaultRectangleEraser,
+    DefaultBrushEraser,
 };
 
 enum SnowCanvasTextStyleMixedFlag : quint32 {
@@ -183,6 +187,7 @@ enum class SnowCanvasFilterType {
     Emboss = 4,
     SmartErase = 5,
     Brightness = 6,
+    RestoreBackground = 7,
 };
 
 // Capability flag returned alongside filterStyleMixed property bits.
@@ -201,6 +206,24 @@ struct SnowCanvasFilterStyle {
     double opacity = 1.0;
     double strokeWidth = 2.0;
 };
+
+enum SnowCanvasBrushEraserStyleProperty : quint32 {
+    SnowCanvasBrushEraserStylePropertyStrokeWidth = 1u << 0,
+};
+
+struct SnowCanvasBrushEraserStyle {
+    double strokeWidth = 30.0;
+};
+
+inline bool operator==(const SnowCanvasBrushEraserStyle& lhs,
+                       const SnowCanvasBrushEraserStyle& rhs) {
+    return snowCanvasExactDoubleEqual(lhs.strokeWidth, rhs.strokeWidth);
+}
+
+inline bool operator!=(const SnowCanvasBrushEraserStyle& lhs,
+                       const SnowCanvasBrushEraserStyle& rhs) {
+    return !(lhs == rhs);
+}
 
 inline bool operator==(const SnowCanvasFilterStyle& lhs, const SnowCanvasFilterStyle& rhs) {
     return lhs.type == rhs.type && snowCanvasExactDoubleEqual(lhs.strength, rhs.strength) &&
@@ -486,6 +509,7 @@ struct SnowCanvasStyleDefaults {
     SnowCanvasSerialNumberStyle serialNumber;
     SnowCanvasWatermarkConfig watermark;
     SnowCanvasSpotlightConfig spotlight;
+    SnowCanvasBrushEraserStyle brushEraser;
 };
 
 inline bool operator==(const SnowCanvasStyleDefaults& lhs, const SnowCanvasStyleDefaults& rhs) {
@@ -494,7 +518,7 @@ inline bool operator==(const SnowCanvasStyleDefaults& lhs, const SnowCanvasStyle
            lhs.penHighlight == rhs.penHighlight && lhs.rectangleFilter == rhs.rectangleFilter &&
            lhs.penFilter == rhs.penFilter && lhs.text == rhs.text &&
            lhs.serialNumber == rhs.serialNumber && lhs.watermark == rhs.watermark &&
-           lhs.spotlight == rhs.spotlight;
+           lhs.spotlight == rhs.spotlight && lhs.brushEraser == rhs.brushEraser;
 }
 
 inline bool operator!=(const SnowCanvasStyleDefaults& lhs, const SnowCanvasStyleDefaults& rhs) {
@@ -518,6 +542,7 @@ struct SnowCanvasStyleToolbarState {
     SnowCanvasFilterStyle filterStyle;
     quint32 filterStyleMixed = 0;
     bool canEditArrowText = false;
+    SnowCanvasBrushEraserStyle brushEraserStyle;
 };
 
 inline bool operator==(const SnowCanvasStyleToolbarState& lhs,
@@ -529,7 +554,8 @@ inline bool operator==(const SnowCanvasStyleToolbarState& lhs,
            lhs.textStyleMixed == rhs.textStyleMixed &&
            lhs.serialNumberStyleMixed == rhs.serialNumberStyleMixed &&
            lhs.shapeStyleMixed == rhs.shapeStyleMixed && lhs.filterStyle == rhs.filterStyle &&
-           lhs.filterStyleMixed == rhs.filterStyleMixed;
+           lhs.filterStyleMixed == rhs.filterStyleMixed &&
+           lhs.brushEraserStyle == rhs.brushEraserStyle;
 }
 
 inline bool operator!=(const SnowCanvasStyleToolbarState& lhs,

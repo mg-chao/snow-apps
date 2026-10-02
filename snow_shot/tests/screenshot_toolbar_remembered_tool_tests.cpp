@@ -15,6 +15,8 @@
 #include "snow_shot/storage/settingsadapters.h"
 
 #include <QApplication>
+#include "widgets/radio_button_group.h"
+#include <QAbstractButton>
 #include <QScopeGuard>
 #include <QTemporaryDir>
 
@@ -47,7 +49,15 @@ class RecordingToolbarCommands : public ScreenshotToolbarCommandSink {
     void setFreeDrawTool() override {}
     void setHighlightTool() override {}
     void setPenHighlightTool() override {}
-    void setEraserTool() override {}
+    void setEraserTool() override {
+        ++elementEraserCount;
+    }
+    void setRectangleEraserTool() override {
+        ++rectangleEraserCount;
+    }
+    void setBrushEraserTool() override {
+        ++brushEraserCount;
+    }
     void setFilterTool() override {}
     void setWatermarkTool() override {}
     void setWatermarkConfigFromToolbar(const SnowCanvasWatermarkConfig&) override {}
@@ -80,7 +90,45 @@ class RecordingToolbarCommands : public ScreenshotToolbarCommandSink {
     int moveToolCount = 0;
     int selectToolCount = 0;
     int shapeToolCount = 0;
+    int elementEraserCount = 0;
+    int rectangleEraserCount = 0;
+    int brushEraserCount = 0;
 };
+
+void eraserSubtoolsReachToolbarCommands() {
+    using Tool = ScreenshotToolPalette::Tool;
+    const storage::ScreenshotToolbarSettings settings;
+    const QString original = settings.lastEraserTool();
+    const auto cleanup =
+        qScopeGuard([&] { static_cast<void>(settings.setLastEraserTool(original)); });
+    require(settings.setLastEraserTool(QStringLiteral("eraser")), "seed element eraser command");
+    RecordingToolbarCommands commands;
+    ScreenshotToolbarWindow window(commands);
+    auto* palette = window.palette();
+    require(window.activateDrawingShortcut(QStringLiteral("eraser")) &&
+                commands.elementEraserCount == 1 && palette->activeTool() == Tool::Eraser,
+            "generic eraser shortcut reaches the existing command");
+    const auto switchMode = [&](Tool tool) {
+        auto* selector =
+            palette->findChild<QWidget*>(QStringLiteral("screenshotEraserModeSelector"));
+        auto* group = selector != nullptr
+                          ? selector->findChild<adqt::widgets::AdRadioButtonGroup*>()
+                          : nullptr;
+        require(group && group->button(static_cast<int>(tool)),
+                "eraser selector exposes requested command");
+        group->button(static_cast<int>(tool))->click();
+    };
+    switchMode(Tool::RectangleEraser);
+    require(commands.rectangleEraserCount == 1 && palette->activeTool() == Tool::RectangleEraser,
+            "rectangle selector reaches its distinct command exactly once");
+    switchMode(Tool::BrushEraser);
+    require(commands.brushEraserCount == 1 && palette->activeTool() == Tool::BrushEraser,
+            "brush selector reaches its distinct command exactly once");
+    window.resetForNewCapture();
+    require(window.activateDrawingShortcut(QStringLiteral("eraser")) &&
+                commands.brushEraserCount == 2 && palette->activeTool() == Tool::BrushEraser,
+            "a new capture restores the remembered brush command");
+}
 
 void scrollingIntervalRestoresAndReachesCommands() {
     const storage::ScreenshotSettings settings;
@@ -349,11 +397,17 @@ int main(int argc, char** argv) {
     static_cast<void>(
         applicationStorage.initialize({storageDirectory.filePath(QStringLiteral("bin")),
                                        storageDirectory.filePath(QStringLiteral("data")), 60000}));
+    if (application.arguments().contains(QStringLiteral("--eraser-only"))) {
+        eraserSubtoolsReachToolbarCommands();
+        applicationStorage.shutdown();
+        return 0;
+    }
     if (application.arguments().contains(QStringLiteral("--scrolling-interval-only"))) {
         scrollingIntervalRestoresAndReachesCommands();
         applicationStorage.shutdown();
         return 0;
     }
+    eraserSubtoolsReachToolbarCommands();
     rememberedDrawingToolRestoresOncePerCapture();
     selectionShortcutsReachToolbarCommands();
     applicationStorage.shutdown();

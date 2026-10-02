@@ -16,12 +16,13 @@ pub use snow_draw_engine_document::{
 };
 pub use snow_draw_engine_editor::{
     ActiveTextDraftPresentation, ActiveTextDraftTarget, ActiveTool, ApplyTransactionCommand,
-    ArrowStyle, DocumentSyncSnapshot, EditorCommand, EditorSession, EditorSessionSnapshot,
-    EditorStyleDefaults, EditorUpdate, EditorViewState, EditorViewportState,
-    FILTER_STYLE_PROPERTY_ALL, FilterStyle, HistoryState, RectangleShapeStyle, SelectionBounds,
-    SelectionRectState, SerialNumberStyle, SerialNumberToolbarState, ShapeKind, ShapeStyle,
-    ShapeStylePatch, SnapGuideTargets, StyleToolbarSource, StyleToolbarState,
-    TEXT_STYLE_ALL_PROPERTIES, TextCommitTarget, TextDraftCommit, TextLayoutOverride, TextStyle,
+    ArrowStyle, BRUSH_ERASER_STYLE_PROPERTY_STROKE_WIDTH, BrushEraserStyle, DocumentSyncSnapshot,
+    EditorCommand, EditorSession, EditorSessionSnapshot, EditorStyleDefaults, EditorUpdate,
+    EditorViewState, EditorViewportState, FILTER_STYLE_PROPERTY_ALL, FilterStyle, HistoryState,
+    RectangleShapeStyle, SelectionBounds, SelectionRectState, SerialNumberStyle,
+    SerialNumberToolbarState, ShapeKind, ShapeStyle, ShapeStylePatch, SnapGuideTargets,
+    StyleToolbarSource, StyleToolbarState, TEXT_STYLE_ALL_PROPERTIES, TextCommitTarget,
+    TextDraftCommit, TextLayoutOverride, TextStyle,
 };
 pub use snow_draw_engine_interaction::*;
 

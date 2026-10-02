@@ -70,6 +70,14 @@ void ScreenshotToolCommandWorkflow::setEraserTool() {
     setCanvasTool(ScreenshotActiveTool::Eraser, SnowCanvasTool::Eraser);
 }
 
+void ScreenshotToolCommandWorkflow::setRectangleEraserTool() {
+    setCanvasTool(ScreenshotActiveTool::RectangleEraser, SnowCanvasTool::RectangleEraser);
+}
+
+void ScreenshotToolCommandWorkflow::setBrushEraserTool() {
+    setCanvasTool(ScreenshotActiveTool::BrushEraser, SnowCanvasTool::BrushEraser);
+}
+
 void ScreenshotToolCommandWorkflow::setFilterTool() {
     setRectangleFilterTool();
 }

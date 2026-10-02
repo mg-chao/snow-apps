@@ -155,6 +155,8 @@ void renderRuntimeScene(QPainter& painter, const ExportProjection& projection,
         &displayCache,
         &penMaskAtlas,
     };
+    // Export sources are composed over transparency, including pixels restored by erasers.
+    request.clearBackgroundEnabled = false;
     request.smartErase = smartErase;
     request.executionPlan = &executionPlan;
     snow_canvas_renderer::renderSceneItems(request);

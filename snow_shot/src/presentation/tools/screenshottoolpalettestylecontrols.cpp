@@ -102,6 +102,11 @@ constexpr char kRoleTextStroke[] = "text-stroke";
 constexpr char kRoleSerialValue[] = "serial-value";
 constexpr char kRoleSerialType[] = "serial-type";
 constexpr char kRoleFilterMode[] = "filter-mode";
+constexpr char kRoleEraserMode[] = "eraser-mode";
+[[maybe_unused]] constexpr const char* kEraserTranslations[] = {
+    QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Current brush eraser stroke width"),
+    QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Brush eraser stroke width %1 (%2px)"),
+};
 constexpr char kRoleFilterType[] = "filter-type";
 constexpr char kRoleFilterIntensity[] = "filter-intensity";
 constexpr char kRoleWatermarkText[] = "watermark-text";
@@ -132,6 +137,7 @@ constexpr char kSignatureTextStroke[] = "width-color:text-stroke";
 constexpr char kSignatureSerialValue[] = "serial-value";
 constexpr char kSignatureSerialType[] = "radio:serial-type";
 constexpr char kSignatureFilterMode[] = "radio:filter-mode";
+constexpr char kSignatureEraserMode[] = "radio:eraser-mode";
 constexpr char kSignatureFilterType[] = "select:filter-types";
 constexpr char kSignatureAutoFilterType[] = "select:auto-filter-types";
 constexpr char kSignatureFilterIntensity[] = "slider:filter-intensity";
@@ -171,6 +177,11 @@ QVector<QByteArray> styleEditorRoles(ScreenshotToolPalette::Tool tool) {
         return {"filter-mode", "filter-type", "filter-intensity"};
     case Tool::PenFilter:
         return {"filter-mode", "filter-type", kRoleBrushWidth, "filter-intensity"};
+    case Tool::Eraser:
+    case Tool::RectangleEraser:
+        return {kRoleEraserMode};
+    case Tool::BrushEraser:
+        return {kRoleEraserMode, kRoleBrushWidth};
     case Tool::Watermark:
         return {kRoleForegroundColor,
                 "watermark-text",
@@ -760,6 +771,7 @@ void ScreenshotToolPaletteStyleControls::rebuildRegisteredComponents() {
     append(m_penHighlightColorEditor);
     append(m_penHighlightStrokeWidthEditor);
     append(m_penFilterStrokeWidthEditor);
+    append(m_brushEraserStrokeWidthEditor);
     append(m_arrowStrokeWidthEditor);
     append(m_arrowStrokeEditor);
     append(m_startArrowheadEditor);
@@ -836,6 +848,9 @@ void ScreenshotToolPaletteStyleControls::parkStyleEditors(int tool, QWidget* con
     case Tool::PenFilter:
         park(kRoleBrushWidth, kSignatureBrushWidth, m_penFilterStrokeWidthEditor);
         break;
+    case Tool::BrushEraser:
+        park(kRoleBrushWidth, kSignatureBrushWidth, m_brushEraserStrokeWidthEditor);
+        break;
     case Tool::Watermark:
         park(kRoleForegroundColor, kSignatureForegroundColor, m_watermarkColorEditor);
         park(kRoleWatermarkFont, kSignatureWatermarkFont, m_watermarkFontEditor);
@@ -905,6 +920,9 @@ void ScreenshotToolPaletteStyleControls::restoreStyleEditors(int tool, QWidget* 
         break;
     case Tool::PenFilter:
         restore(kRoleBrushWidth, m_penFilterStrokeWidthEditor);
+        break;
+    case Tool::BrushEraser:
+        restore(kRoleBrushWidth, m_brushEraserStrokeWidthEditor);
         break;
     case Tool::Watermark:
         restore(kRoleForegroundColor, m_watermarkColorEditor);
@@ -1028,7 +1046,9 @@ void ScreenshotToolPaletteStyleControls::prepareStyleReconcile(int sourceTool, i
         }
     }
     if (shared(kRoleBrushWidth)) {
-        if (source == ScreenshotToolPalette::Tool::PenFilter) {
+        if (source == ScreenshotToolPalette::Tool::BrushEraser) {
+            stageComponent(kRoleBrushWidth, kSignatureBrushWidth, m_brushEraserStrokeWidthEditor);
+        } else if (source == ScreenshotToolPalette::Tool::PenFilter) {
             stageComponent(kRoleBrushWidth, kSignatureBrushWidth, m_penFilterStrokeWidthEditor);
         } else {
             stageComponent(kRoleBrushWidth, kSignatureBrushWidth, m_penHighlightStrokeWidthEditor);
@@ -1203,6 +1223,14 @@ void ScreenshotToolPaletteStyleControls::stageDestinationStyleEditors(
         stageWidget(kRoleFilterType);
         stageComponent(kRoleBrushWidth, kSignatureBrushWidth, m_penFilterStrokeWidthEditor);
         stageWidget(kRoleFilterIntensity);
+        break;
+    case Tool::Eraser:
+    case Tool::RectangleEraser:
+        stageWidget(kRoleEraserMode);
+        break;
+    case Tool::BrushEraser:
+        stageWidget(kRoleEraserMode);
+        stageComponent(kRoleBrushWidth, kSignatureBrushWidth, m_brushEraserStrokeWidthEditor);
         break;
     case Tool::Watermark:
         stageComponent(kRoleForegroundColor, kSignatureForegroundColor, m_watermarkColorEditor);
@@ -2723,6 +2751,72 @@ QWidget* ScreenshotToolPaletteStyleControls::buildWatermarkFamily(
     return controls;
 }
 
+QWidget* ScreenshotToolPaletteStyleControls::buildEraserFamily(
+    int tool, QWidget* panel, const ScreenshotToolPaletteStyleFamilyHost& host,
+    const std::function<void(double)>& setWidth, const std::function<void()>& cycleWidth,
+    const ScreenshotToolPaletteButtonMetrics& metrics) {
+    using Tool = ScreenshotToolPalette::Tool;
+    if (panel == nullptr)
+        return nullptr;
+    const bool brush = static_cast<Tool>(tool) == Tool::BrushEraser;
+    QWidget* controls = createRowWidget(panel,
+                                        brush ? QStringLiteral("screenshotBrushEraserStyleControls")
+                                              : QStringLiteral("screenshotEraserStyleControls"),
+                                        host);
+    auto* layout = static_cast<QHBoxLayout*>(controls->layout());
+    const QVector<ScreenshotToolPaletteStyleModeSelectorOption> modes{
+        {static_cast<int>(Tool::Eraser), QStringLiteral("Element Eraser"),
+         custom_outlined_icons::ToolEraser()},
+        {static_cast<int>(Tool::RectangleEraser), QStringLiteral("Rectangle Eraser"),
+         custom_outlined_icons::EraserTypeRectangle()},
+        {static_cast<int>(Tool::BrushEraser), QStringLiteral("Brush Eraser"),
+         custom_outlined_icons::EraserTypeBrush()},
+    };
+    QWidget* selector = takeReusableWidget(kRoleEraserMode, kSignatureEraserMode, layout, controls);
+    if (selector == nullptr && host.createModeSelector)
+        selector = host.createModeSelector(controls, QStringLiteral("screenshotEraserModeSelector"),
+                                           tool, modes);
+    if (selector != nullptr) {
+        selector->setObjectName(QStringLiteral("screenshotEraserModeSelector"));
+        selector->setProperty("screenshotStyleEditorRoot", true);
+        selector->setProperty("screenshotStyleEditorRole", kRoleEraserMode);
+        selector->setProperty("screenshotStyleEditorSignature", kSignatureEraserMode);
+        layout->addWidget(selector);
+    }
+    if (brush) {
+        if (host.addGroupSeparator)
+            host.addGroupSeparator(layout);
+        auto config = snow_shot::presentation::screenshotToolPaletteSizePresetEditorConfig(
+            QStringLiteral("Current brush eraser stroke width"),
+            QStringLiteral("screenshotBrushEraserStrokeWidthSummary"),
+            "Brush eraser stroke width %1 (%2px)");
+        config.presetObjectName = [](double width) {
+            return QStringLiteral("screenshotBrushEraserStrokeWidth%1").arg(qRound(width));
+        };
+        if (auto reused =
+                takeReusableEditor(kRoleBrushWidth, kSignatureBrushWidth, layout, controls)) {
+            m_brushEraserStrokeWidthEditor.reset(
+                static_cast<ScreenshotToolPaletteNumericPresetEditor*>(reused.release()));
+            m_brushEraserStrokeWidthEditor->rebind(config, cycleWidth, setWidth);
+        } else {
+            m_brushEraserStrokeWidthEditor =
+                std::make_unique<ScreenshotToolPaletteNumericPresetEditor>();
+            m_brushEraserStrokeWidthEditor->build(layout, controls, controls, config,
+                                                  m_state.brushEraserStyle.strokeWidth, cycleWidth,
+                                                  setWidth, metrics);
+        }
+        tagEditor(m_brushEraserStrokeWidthEditor.get(), kRoleBrushWidth, kSignatureBrushWidth);
+        registerEditor(m_brushEraserStrokeWidthEditor.get());
+        updateBrushEraserStrokeWidthControls(m_state.brushEraserStyle.strokeWidth);
+    }
+    return controls;
+}
+
+void ScreenshotToolPaletteStyleControls::updateBrushEraserStrokeWidthControls(double width) {
+    if (m_brushEraserStrokeWidthEditor != nullptr)
+        m_brushEraserStrokeWidthEditor->update(width, false);
+}
+
 ScreenshotToolPaletteFilterFamilyResult ScreenshotToolPaletteStyleControls::buildFilterFamily(
     const ScreenshotToolPaletteFilterFamilyConfig& config,
     const ScreenshotToolPaletteFilterCallbacks& callbacks, QWidget* panel,
@@ -3399,6 +3493,7 @@ void ScreenshotToolPaletteStyleControls::releaseControlBindings() {
     m_penHighlightColorEditor.reset();
     m_penHighlightStrokeWidthEditor.reset();
     m_penFilterStrokeWidthEditor.reset();
+    m_brushEraserStrokeWidthEditor.reset();
     m_arrowStrokeWidthEditor.reset();
     m_arrowStrokeEditor.reset();
     m_arrowTypeButtonGroup = nullptr;
@@ -3462,6 +3557,7 @@ void ScreenshotToolPaletteStyleControls::discardBindingsExcept(int destinationTo
     const bool keepText = destination == Tool::Text;
     const bool keepSerialNumber = destination == Tool::SerialNumber;
     const bool keepPenFilter = destination == Tool::PenFilter;
+    const bool keepBrushEraser = destination == Tool::BrushEraser;
     const bool keepWatermark = destination == Tool::Watermark;
 
     const auto resetUnless = [](bool keep, auto& editor) {
@@ -3478,6 +3574,7 @@ void ScreenshotToolPaletteStyleControls::discardBindingsExcept(int destinationTo
     resetUnless(keepPenHighlight, m_penHighlightColorEditor);
     resetUnless(keepPenHighlight, m_penHighlightStrokeWidthEditor);
     resetUnless(keepPenFilter, m_penFilterStrokeWidthEditor);
+    resetUnless(keepBrushEraser, m_brushEraserStrokeWidthEditor);
     resetUnless(keepArrow, m_arrowStrokeWidthEditor);
     resetUnless(keepArrow, m_arrowStrokeEditor);
     resetUnless(keepArrow, m_startArrowheadEditor);
@@ -3565,6 +3662,7 @@ void ScreenshotToolPaletteStyleControls::setCreationStyleDefaults(
     updateArrowStyleControls();
     updateHighlightStyleControls();
     updatePenHighlightStyleControls();
+    updateBrushEraserStrokeWidthControls(m_state.brushEraserStyle.strokeWidth);
     updateTextStyleControls();
     updateSerialNumberStyleControls();
 }
@@ -3889,6 +3987,7 @@ SnowCanvasStyleDefaults ScreenshotToolPaletteStyleControls::creationStyleDefault
     defaults.serialNumber = m_state.m_creationSerialNumberStyle;
     defaults.rectangleFilter = m_state.creationRectangleFilterStyle;
     defaults.penFilter = m_state.creationPenFilterStyle;
+    defaults.brushEraser = m_state.creationBrushEraserStyle;
     defaults.watermark = m_state.creationWatermarkConfig;
     defaults.spotlight = m_state.creationSpotlightConfig;
     return defaults;
@@ -3908,6 +4007,7 @@ void ScreenshotToolPaletteStyleControls::rememberStyleEdit(const SnowCanvasStyle
     m_state.m_creationSerialNumberStyle = remembered.m_creationSerialNumberStyle;
     m_state.creationRectangleFilterStyle = remembered.creationRectangleFilterStyle;
     m_state.creationPenFilterStyle = remembered.creationPenFilterStyle;
+    m_state.creationBrushEraserStyle = remembered.creationBrushEraserStyle;
     m_state.creationWatermarkConfig = defaults.watermark;
     m_state.creationSpotlightConfig = defaults.spotlight;
 }

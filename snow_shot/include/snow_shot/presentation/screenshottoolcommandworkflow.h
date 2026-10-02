@@ -36,6 +36,8 @@ class ScreenshotToolCommandWorkflow final {
     void setPenHighlightTool();
     void setSpotlightTool();
     void setEraserTool();
+    void setRectangleEraserTool();
+    void setBrushEraserTool();
     void setFilterTool();
     void setRectangleFilterTool();
     void setPenFilterTool();

@@ -87,8 +87,11 @@ scene once on that fixed grid, then presents the resulting image at every zoom a
 Editor overlays, spotlight, and watermark remain in the live viewport path.
 
 The widget owns one reference image, approximately `width * height * 4` bytes at the
-reference resolution. Filter workspaces and pen-mask data are temporary; the path does
-not retain filter-source tiles or zoom variants. A fixed engine viewport preserves
+reference resolution. Filter workspaces are temporary; pen masks reuse the widget's
+bounded 16 MiB atlas across content edits. Standalone reference renders retain their own
+bounded atlas when no host atlas is supplied. Erasers retain their pristine backdrop in
+the shared 64 MiB source-cache budget; ordinary filter intermediates and zoom variants
+are not retained. A fixed engine viewport preserves
 source-pass boundaries and content that the live viewport culls. Document edits,
 background `contentRevision()` changes, reference-grid changes, and explicit render-state
 clearing replace the image. Hosts must increment their content revision for every
@@ -117,3 +120,10 @@ QT_QPA_PLATFORM=offscreen build/snow-shot-macos-arm64-performance/snow_draw_engi
 
 On Windows, build the same target with `build-windows-msvc-performance` and run its
 Release executable with `QT_QPA_PLATFORM=offscreen`.
+
+## Background erasers
+
+`snow-canvas-eraser-benchmark` measures Rectangle Eraser and Brush Eraser restoration,
+immutable mask reuse, an eight-point append to a long brush stroke, and a local dirty
+paint on a physical 4K canvas. See [the background eraser report](snow_canvas_eraser_benchmark.md)
+for Release commands, cache limits, controlled comparison provenance, and results.

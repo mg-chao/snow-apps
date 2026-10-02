@@ -124,6 +124,14 @@
             <translation>Bring to front</translation>
         </message>
         <message>
+            <source>Brush Eraser</source>
+            <translation>Brush Eraser</translation>
+        </message>
+        <message>
+            <source>Brush eraser stroke width %1 (%2px)</source>
+            <translation>Brush eraser stroke width %1 (%2px)</translation>
+        </message>
+        <message>
             <source>Cancel</source>
             <translation>Cancel</translation>
         </message>
@@ -206,6 +214,10 @@
         <message>
             <source>Current arrow stroke width</source>
             <translation>Current arrow stroke width</translation>
+        </message>
+        <message>
+            <source>Current brush eraser stroke width</source>
+            <translation>Current brush eraser stroke width</translation>
         </message>
         <message>
             <source>Current pen filter stroke width</source>
@@ -330,6 +342,10 @@
         <message>
             <source>Elbow arrow</source>
             <translation>Elbow arrow</translation>
+        </message>
+        <message>
+            <source>Element Eraser</source>
+            <translation>Element Eraser</translation>
         </message>
         <message>
             <source>Ellipse</source>
@@ -766,6 +782,10 @@
         <message>
             <source>Rectangle</source>
             <translation>Rectangle</translation>
+        </message>
+        <message>
+            <source>Rectangle Eraser</source>
+            <translation>Rectangle Eraser</translation>
         </message>
         <message>
             <source>Rectangle filter</source>

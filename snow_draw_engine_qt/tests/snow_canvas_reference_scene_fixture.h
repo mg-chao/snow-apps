@@ -51,11 +51,17 @@ class PatternRenderer final : public SnowCanvasCustomRenderer {
         painter.fillRect(context.viewportRect, Qt::transparent);
         painter.drawImage(context.canvasToViewTransform.mapRect(reference.canvasRect), image);
     }
+    void renderOriginalBackground(QPainter& painter,
+                                  const SnowCanvasRenderContext& context) override {
+        ++originalCalls;
+        renderBeforeCanvas(painter, context);
+    }
     QImage image;
     SnowCanvasFilterRenderReference reference;
     bool enabled = true;
     std::uint64_t revision = 0;
     int beforeCalls = 0;
+    int originalCalls = 0;
 };
 
 struct Fixture {
@@ -83,8 +89,10 @@ struct Fixture {
         canvas.setCustomRenderer(nullptr);
     }
 
-    void draw(SnowCanvasTool tool, QPointF start, QPointF end) {
-        require(canvas.resetEditingStatePreservingTool(), "reset drawing state");
+    void draw(SnowCanvasTool tool, QPointF start, QPointF end, bool resetEditingState = true) {
+        if (resetEditingState) {
+            require(canvas.resetEditingStatePreservingTool(), "reset drawing state");
+        }
         require(canvas.setCanvasTool(tool), "activate drawing tool");
         for (const auto& [type, position, button, buttons] :
              {std::tuple{QEvent::MouseButtonPress, start, Qt::LeftButton,
@@ -95,7 +103,9 @@ struct Fixture {
             QMouseEvent event(type, position, position, position, button, buttons, Qt::NoModifier);
             QApplication::sendEvent(&canvas, &event);
         }
-        require(canvas.resetEditingStatePreservingTool(), "clear drawing selection");
+        if (resetEditingState) {
+            require(canvas.resetEditingStatePreservingTool(), "clear drawing selection");
+        }
         require(canvas.setCanvasTool(SnowCanvasTool::Select), "finish drawing");
     }
 

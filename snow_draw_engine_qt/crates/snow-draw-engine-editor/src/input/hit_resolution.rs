@@ -87,7 +87,7 @@ impl Editor {
             let Ok(element) = document.element(*id) else {
                 continue;
             };
-            if !element.meta.visible {
+            if !element.meta.visible || element.data.is_background_restore() {
                 continue;
             }
             let kind = if active_text

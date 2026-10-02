@@ -1,5 +1,6 @@
 #include "snow_canvas_smart_erase.h"
 #include "snow_canvas_renderer.h"
+#include "snow_canvas_background_restore.h"
 
 #include "snow_canvas_display_item.h"
 #include "snow_canvas_filter_render.h"
@@ -1385,7 +1386,9 @@ void drawOverlayItem(QPainter& painter, const OverlayDisplayInfo& displayInfo,
 
 QPainterPath filterClipPath(const SceneDisplayInfo& displayInfo, const SnowCanvasSceneItem& item) {
     const auto projection = snow_canvas_render_geometry::sceneProjection(displayInfo);
-    if (item.is_free_draw != 0 && item.arrow_points != nullptr && item.arrow_point_count >= 2 &&
+    if (item.is_free_draw != 0 && item.arrow_points != nullptr &&
+        (item.arrow_point_count >= 2 ||
+         (item.filter.filter_type == 7 && item.arrow_point_count == 1)) &&
         item.stroke_width > 0.0) {
         QRectF canvasBounds;
         for (const SnowCanvasSceneItem::PenSegmentChunk& chunk : item.penSegmentChunks()) {
@@ -1839,7 +1842,8 @@ bool sameId(SnowElementId left, SnowElementId right) {
     return left.index == right.index && left.generation == right.generation;
 }
 bool ordinaryFilter(const SnowCanvasSceneItem& item) {
-    return item.kind == SNOW_SCENE_DISPLAY_ITEM_FILTER && item.filter.filter_type != 5;
+    return item.kind == SNOW_SCENE_DISPLAY_ITEM_FILTER && item.filter.filter_type != 5 &&
+           item.filter.filter_type != 7;
 }
 bool sameEffect(const SnowFilterRenderSpec& a, const SnowFilterRenderSpec& b) {
     return a.filter_type == b.filter_type && a.strength == b.strength &&
@@ -1965,6 +1969,40 @@ void prepareExecutionPlan(SceneExecutionPlan& plan, const SnowCanvasSceneItem* i
         return plan.filter(index);
     };
     const double devicePixelRatio = dpr;
+    for (std::uint32_t index = 0; index < count; ++index) {
+        const auto& item = items[index];
+        if (item.kind != SNOW_SCENE_DISPLAY_ITEM_FILTER || item.filter.filter_type != 7) {
+            continue;
+        }
+        if (plan.restorationIndices.empty()) {
+            plan.restorationForItem.assign(count, -1);
+        }
+        plan.restorationIndices.push_back(index);
+        plan.restorationForItem[index] = static_cast<int>(plan.restorations.size());
+        auto& cached = plan.restorations.emplace_back();
+        const bool valid = item.is_free_draw != 0
+                               ? item.arrow_points != nullptr && item.arrow_point_count >= 1 &&
+                                     item.stroke_width > 0.0
+                               : item.width > 0.0 && item.height > 0.0;
+        if (!valid) {
+            continue;
+        }
+        cached.clipPath = filterClipPath(info, item);
+        cached.logicalBounds = cached.clipPath.boundingRect();
+        if (item.is_free_draw != 0) {
+            const double aaOutset = 0.5 / dpr;
+            cached.logicalBounds.adjust(-aaOutset, -aaOutset, aaOutset, aaOutset);
+        }
+        cached.effective = cached.logicalBounds.intersects(viewport);
+        cached.axisAlignedRect = item.is_free_draw == 0 && std::abs(item.rotation) <= 1e-12;
+        const auto aligned = [dpr](double value) {
+            return nearlyEqual(value * dpr, std::round(value * dpr));
+        };
+        cached.devicePixelAlignedRect =
+            cached.axisAlignedRect && aligned(cached.logicalBounds.left()) &&
+            aligned(cached.logicalBounds.top()) && aligned(cached.logicalBounds.right()) &&
+            aligned(cached.logicalBounds.bottom());
+    }
     for (const auto& run : runs) {
         if (plan.passes.empty() || !sameId(plan.passes.back().id, run.source_pass)) {
             plan.passes.push_back(SourcePass{run.source_pass, run.start, run.start, {}});
@@ -2151,7 +2189,7 @@ void renderSceneItemsTiled(const SceneRenderRequest& request) {
     SceneExecutionPlan localPlan;
     const SceneExecutionPlan& executionPlan =
         resolveExecutionPlan(request, localPlan, planningNanoseconds);
-    if (executionPlan.filterIndices.empty()) {
+    if (executionPlan.filterIndices.empty() && executionPlan.restorationIndices.empty()) {
         SceneRenderRequest prepared = request;
         prepared.executionPlan = &executionPlan;
         renderSceneItems(prepared);
@@ -2242,6 +2280,9 @@ void renderSceneItemsTiled(const SceneRenderRequest& request) {
             tilePainter.end();
             request.painter->save();
             request.painter->setClipRegion(request.exposedRegion, Qt::IntersectClip);
+            if (!executionPlan.restorationIndices.empty()) {
+                request.painter->setCompositionMode(QPainter::CompositionMode_Source);
+            }
             request.painter->drawImage(QPointF(physicalRect.left() / dpr, physicalRect.top() / dpr),
                                        tileImage);
             request.painter->restore();
@@ -2317,13 +2358,21 @@ void renderSceneItemsImpl(const SceneRenderRequest& request) {
     const SceneExecutionPlan& plan = *request.executionPlan;
     const auto& filterIndices = plan.filterIndices;
     const bool hasPenFilterItems =
-        std::any_of(filterIndices.begin(), filterIndices.end(), [sceneItems](std::uint32_t index) {
-            return sceneItems[index].is_free_draw != 0;
-        });
+        std::any_of(
+            filterIndices.begin(), filterIndices.end(),
+            [sceneItems](std::uint32_t index) { return sceneItems[index].is_free_draw != 0; }) ||
+        std::any_of(
+            plan.restorationIndices.begin(), plan.restorationIndices.end(),
+            [sceneItems](std::uint32_t index) { return sceneItems[index].is_free_draw != 0; });
     if (hasPenFilterItems) {
         penMaskAtlas.beginFrame(penMaskNamespace, displayInfo, devicePixelRatio, displayCache);
     }
     for (const auto index : filterIndices) {
+        sceneItems[index].takePenFilterGeometryDiagnostics(
+            &g_filterDiagnostics.penGeometryChunkBuildCount,
+            &g_filterDiagnostics.penGeometryChunkReuseCount);
+    }
+    for (const auto index : plan.restorationIndices) {
         sceneItems[index].takePenFilterGeometryDiagnostics(
             &g_filterDiagnostics.penGeometryChunkBuildCount,
             &g_filterDiagnostics.penGeometryChunkReuseCount);
@@ -2342,7 +2391,13 @@ void renderSceneItemsImpl(const SceneRenderRequest& request) {
             break;
         }
     }
-    if (hasFilter && (hasBackgroundContent || sceneItemCount > filterIndices.size())) {
+    const bool hasRestoration = std::any_of(
+        plan.restorationIndices.begin(), plan.restorationIndices.end(), [&](std::uint32_t index) {
+            return plan.restoration(index).effective &&
+                   exposedRegion.intersects(plan.restoration(index).logicalBounds.toAlignedRect());
+        });
+    if ((hasFilter || hasRestoration) &&
+        (hasBackgroundContent || sceneItemCount > filterIndices.size())) {
         g_filterDiagnostics.usedFilterPath = true;
         g_filterDiagnostics.recorderCount = 1;
         const QRect viewportRect(0, 0, qMax(1, qRound(displayInfo.surface_width)),
@@ -2452,6 +2507,8 @@ void renderSceneItemsImpl(const SceneRenderRequest& request) {
             }
             bool copiedBackgroundRows = false;
             if (backgroundImage != nullptr && backgroundRenderer == nullptr &&
+                (plan.restorationIndices.empty() || !request.clearBackgroundEnabled ||
+                 displayInfo.clear_color.a == 0) &&
                 backgroundImage->format() == QImage::Format_ARGB32_Premultiplied &&
                 qFuzzyCompare(backgroundImage->devicePixelRatio(), devicePixelRatio) &&
                 backgroundImage->width() == qCeil(viewportRect.width() * devicePixelRatio) &&
@@ -2476,8 +2533,11 @@ void renderSceneItemsImpl(const SceneRenderRequest& request) {
                 }
             }
             if (!copiedBackgroundRows) {
-                scene.fill(request.enableFilterTileCache ? toQColor(displayInfo.clear_color)
-                                                         : Qt::transparent);
+                const bool initializedBaseline = !plan.restorationIndices.empty()
+                                                     ? request.clearBackgroundEnabled
+                                                     : request.enableFilterTileCache;
+                scene.fill(initializedBaseline ? toQColor(displayInfo.clear_color)
+                                               : Qt::transparent);
             }
             const std::size_t workingPixels =
                 static_cast<std::size_t>(scene.width()) * static_cast<std::size_t>(scene.height());
@@ -2508,9 +2568,7 @@ void renderSceneItemsImpl(const SceneRenderRequest& request) {
             std::vector<std::uint32_t> expandedStream = stream;
             std::vector<bool> expandedPasses(plan.passes.size(), false);
             for (std::uint32_t index : stream) {
-                if (index >= sceneItemCount ||
-                    (sceneItems[index].kind != SNOW_SCENE_DISPLAY_ITEM_FILTER ||
-                     sceneItems[index].filter.filter_type == 5)) {
+                if (index >= sceneItemCount || !ordinaryFilter(sceneItems[index])) {
                     continue;
                 }
                 const auto passIndex = static_cast<std::size_t>(plan.passForItem[index]);
@@ -2544,8 +2602,7 @@ void renderSceneItemsImpl(const SceneRenderRequest& request) {
                      ++candidatePosition) {
                     const std::uint32_t candidateIndex = expandedStream[candidatePosition];
                     if (candidateIndex >= sceneItemCount ||
-                        (sceneItems[candidateIndex].kind != SNOW_SCENE_DISPLAY_ITEM_FILTER ||
-                         sceneItems[candidateIndex].filter.filter_type == 5)) {
+                        !ordinaryFilter(sceneItems[candidateIndex])) {
                         continue;
                     }
                     const auto& candidatePass =
@@ -2606,6 +2663,9 @@ void renderSceneItemsImpl(const SceneRenderRequest& request) {
                 scenePainter.restore();
             }
             bool renderedContent = reusedPreLayer || hasBackgroundContent;
+            std::shared_ptr<const snow_canvas_filter_tile_cache::Entry> pristineEntry;
+            const QImage* pristineBackground = nullptr;
+            bool pristineLookupAttempted = false;
             for (std::size_t position = replayStartPosition; position < expandedStream.size();) {
                 const std::uint32_t index = expandedStream[position];
                 if (index >= sceneItemCount) {
@@ -2613,7 +2673,35 @@ void renderSceneItemsImpl(const SceneRenderRequest& request) {
                     continue;
                 }
                 const SnowCanvasSceneItem& item = sceneItems[index];
-                if (item.kind != SNOW_SCENE_DISPLAY_ITEM_FILTER || item.filter.filter_type == 5) {
+                if (item.kind == SNOW_SCENE_DISPLAY_ITEM_FILTER && item.filter.filter_type == 7) {
+                    const auto& geometry = plan.restoration(index);
+                    if (geometry.effective && geometry.logicalBounds.intersects(surfaceBounds) &&
+                        snow_canvas_background_restore::hasCoverage(
+                            item, geometry, displayInfo, surfaceGeometry.pixelBounds,
+                            devicePixelRatio, penMaskAtlas, execution)) {
+                        scenePainter.end();
+                        if (!pristineLookupAttempted) {
+                            pristineLookupAttempted = true;
+                            pristineBackground = snow_canvas_background_restore::originalBackground(
+                                request, surfaceGeometry.pixelBounds, devicePixelRatio, workspace,
+                                pristineEntry, g_filterDiagnostics);
+                        }
+                        if (pristineBackground != nullptr) {
+                            snow_canvas_background_restore::apply(
+                                *pristineBackground, scene, item, geometry, displayInfo,
+                                surfaceGeometry.pixelBounds, devicePixelRatio, penMaskAtlas,
+                                workspace, execution, g_filterDiagnostics);
+                        }
+                        scenePainter.begin(&scene);
+                        scenePainter.setFont(painter.font());
+                        scenePainter.setRenderHints(painter.renderHints());
+                        scenePainter.translate(-surfaceGeometry.logicalOrigin);
+                    }
+                    ++position;
+                    renderedContent = true;
+                    continue;
+                }
+                if (!ordinaryFilter(item)) {
                     const StageTimer replayTimer{g_filterDiagnostics.sceneReplayNanoseconds};
                     drawSceneItem(scenePainter, displayInfo, item, request.smartErase);
                     ++g_filterDiagnostics.replayedItemCount;
@@ -2924,6 +3012,9 @@ void renderSceneItemsImpl(const SceneRenderRequest& request) {
             const StageTimer presentationTimer{g_filterDiagnostics.presentationNanoseconds};
             painter.save();
             painter.setClipRegion(exposedRegion.intersected(QRegion(surfaceBounds)));
+            if (!plan.restorationIndices.empty()) {
+                painter.setCompositionMode(QPainter::CompositionMode_Source);
+            }
             painter.drawImage(surfaceGeometry.logicalOrigin, scene);
             painter.restore();
         }
@@ -2961,6 +3052,14 @@ void renderSceneItemsImpl(const SceneRenderRequest& request) {
         g_filterDiagnostics.layerCount = g_filterDiagnostics.filterLayerCount;
         g_filterDiagnostics.filterPassCount = g_filterDiagnostics.effectDispatchCount;
         return;
+    }
+    if (!plan.restorationIndices.empty()) {
+        painter.save();
+        painter.setCompositionMode(QPainter::CompositionMode_Source);
+        painter.fillRect(QRectF(0.0, 0.0, displayInfo.surface_width, displayInfo.surface_height),
+                         request.clearBackgroundEnabled ? toQColor(displayInfo.clear_color)
+                                                        : QColor(Qt::transparent));
+        painter.restore();
     }
     if (backgroundImage != nullptr && !backgroundImage->isNull()) {
         painter.drawImage(QRectF(0.0, 0.0, displayInfo.surface_width, displayInfo.surface_height),
@@ -3067,6 +3166,11 @@ void accumulateFilterRenderDiagnostics(FilterRenderDiagnostics& target,
     target.gaussianDownsampleAvx2Executions += source.gaussianDownsampleAvx2Executions;
     target.gaussianReconstructionAvx2Executions += source.gaussianReconstructionAvx2Executions;
     target.opaqueRectDispatchCount += source.opaqueRectDispatchCount;
+    target.restorationDispatchCount += source.restorationDispatchCount;
+    target.restoredPixelCount += source.restoredPixelCount;
+    target.restorationBlendPixelCount += source.restorationBlendPixelCount;
+    target.pristineTileHits += source.pristineTileHits;
+    target.pristineTileMisses += source.pristineTileMisses;
     target.constantOpacityRectDispatchCount += source.constantOpacityRectDispatchCount;
     target.sceneReplayNanoseconds += source.sceneReplayNanoseconds;
     target.maskConstructionNanoseconds += source.maskConstructionNanoseconds;

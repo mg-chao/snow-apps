@@ -843,6 +843,120 @@ void strokeCursorsUseNativeBitmapsAndRefreshWithStyle() {
             "switching tools must release the native brush cursor");
 }
 
+void brushEraserCreationStylesPreserveInteractionAndPeers() {
+    SnowCanvasRuntime runtime;
+    SnowCanvasWidget canvas(runtime);
+    SnowCanvasWidget peer(runtime);
+    canvas.resize(200, 200);
+    canvas.show();
+    QApplication::processEvents();
+    require(peer.setCanvasTool(SnowCanvasTool::BrushEraser), "activate peer brush eraser");
+    require(canvas.setCanvasTool(SnowCanvasTool::PenFilter), "activate independent pen defaults");
+    const auto penStyle = canvas.canvasStyleToolbarState().filterStyle;
+    const auto history = runtime.serializeDocumentHistory();
+    const auto cursor = canvas.cursor();
+    require(canvas.setCanvasBrushEraserCreationStyle({20.0}), "set independent eraser width");
+    require(canvas.canvasTool() == SnowCanvasTool::PenFilter && canvas.cursor() == cursor &&
+                canvas.canvasStyleToolbarState().filterStyle == penStyle &&
+                runtime.serializeDocumentHistory() == history,
+            "eraser defaults must preserve the current tool, pen style and history");
+    require(peer.canvasStyleToolbarState().brushEraserStyle.strokeWidth == 20.0,
+            "shared defaults must immediately refresh peer eraser state");
+    require(canvas.setCanvasTool(SnowCanvasTool::BrushEraser) &&
+                canvas.canvasStyleToolbarState().source ==
+                    SnowCanvasStyleToolbarSource::DefaultBrushEraser &&
+                canvas.cursor().hotSpot() == QPoint(22, 22) &&
+                peer.cursor().hotSpot() == QPoint(22, 22),
+            "brush eraser activation must expose its independent width and native cursor");
+    require(canvas.commitStyleEdit(SnowCanvasBrushEraserEdit{{24.0}}) &&
+                peer.canvasStyleToolbarState().brushEraserStyle.strokeWidth == 24.0,
+            "committed width edits must share only creation preferences");
+    require(!canvas.setCanvasBrushEraserCreationStyle({0.0}) &&
+                !canvas.setCanvasBrushEraserCreationStyle({73.0}) &&
+                !canvas.setCanvasBrushEraserCreationStyle({std::nan("")}) &&
+                canvas.canvasStyleToolbarState().brushEraserStyle.strokeWidth == 24.0,
+            "invalid brush widths must fail without changing defaults");
+    require(canvas.setViewportCamera(0, 0, 2.0) && canvas.cursor().hotSpot() == QPoint(36, 36),
+            "brush eraser cursor must follow canvas zoom");
+    require(canvas.setCanvasTool(SnowCanvasTool::RectangleEraser) &&
+                canvas.canvasStyleToolbarState().source ==
+                    SnowCanvasStyleToolbarSource::DefaultRectangleEraser &&
+                canvas.cursor().shape() == Qt::CrossCursor,
+            "rectangle eraser must expose its source and crosshair");
+    require(canvas.setCanvasTool(SnowCanvasTool::Eraser) &&
+                canvas.cursor().hotSpot() == QPoint(10, 10),
+            "whole-element eraser must retain its fixed cursor width");
+}
+
+void backgroundEraserGesturesRestorePixelsAndHistory() {
+    SnowCanvasRuntime runtime;
+    SnowCanvasWidget canvas(runtime);
+    canvas.resize(200, 200);
+    canvas.show();
+    QApplication::processEvents();
+    require(canvas.setViewportCamera(100, 100, 1.0), "set eraser fixture camera");
+    require(canvas.setCanvasTool(SnowCanvasTool::Shape), "activate fixture rectangle");
+    auto shape = canvas.canvasStyleToolbarState().shapeStyle;
+    shape.fill = QColor(Qt::red);
+    shape.stroke = QColor(Qt::transparent);
+    shape.strokeWidth = 1.0;
+    require(canvas.setCanvasShapeStylePatch(shape,
+                                            SnowCanvasShapeStylePropertyFillColor |
+                                                SnowCanvasShapeStylePropertyStrokeColor |
+                                                SnowCanvasShapeStylePropertyStrokeWidth,
+                                            SnowCanvasShapeKind::Rectangle),
+            "set opaque fixture rectangle");
+    sendMouseEvent(canvas, QEvent::MouseButtonPress, {10, 10}, Qt::LeftButton, Qt::LeftButton);
+    sendMouseEvent(canvas, QEvent::MouseMove, {190, 190}, Qt::NoButton, Qt::LeftButton);
+    sendMouseEvent(canvas, QEvent::MouseButtonRelease, {190, 190}, Qt::LeftButton, Qt::NoButton);
+    QImage background(200, 200, QImage::Format_ARGB32_Premultiplied);
+    background.fill(QColor(30, 90, 160));
+    const auto render = [&] {
+        return runtime.renderToImage(QRectF(0, 0, 200, 200), background.size(),
+                                     {CanvasExportSource{background, QRectF(0, 0, 200, 200)}});
+    };
+    require(render().pixelColor(60, 60) == QColor(Qt::red), "fixture must cover original pixels");
+    require(canvas.setCanvasBrushEraserCreationStyle({20.0}) &&
+                canvas.setCanvasTool(SnowCanvasTool::BrushEraser),
+            "activate twenty-pixel brush eraser");
+    sendMouseEvent(canvas, QEvent::MouseButtonPress, {60, 60}, Qt::LeftButton, Qt::LeftButton);
+    require(canvas.setCanvasBrushEraserCreationStyle({40.0}), "change future width during draft");
+    sendMouseEvent(canvas, QEvent::MouseButtonRelease, {60, 60}, Qt::LeftButton, Qt::NoButton);
+    require(runtime.selectedElementIds().isEmpty(), "created erasers must never be selected");
+    auto output = render();
+    require(output.pixel(60, 60) == background.pixel(60, 60) &&
+                output.pixelColor(75, 60) == QColor(Qt::red),
+            "click dots must restore the background with width captured at gesture start");
+    require(canvas.undo() && render().pixelColor(60, 60) == QColor(Qt::red),
+            "one undo must remove the entire eraser gesture");
+    require(canvas.redo() && render().pixel(60, 60) == background.pixel(60, 60),
+            "redo must restore immutable eraser output");
+    require(canvas.setCanvasTool(SnowCanvasTool::RectangleEraser), "activate rectangle eraser");
+    sendMouseEvent(canvas, QEvent::MouseButtonPress, {130, 130}, Qt::LeftButton, Qt::LeftButton);
+    sendMouseEvent(canvas, QEvent::MouseMove, {90, 100}, Qt::NoButton, Qt::LeftButton);
+    sendMouseEvent(canvas, QEvent::MouseButtonRelease, {90, 100}, Qt::LeftButton, Qt::NoButton);
+    output = render();
+    require(output.pixel(110, 110) == background.pixel(110, 110) &&
+                output.pixelColor(85, 110) == QColor(Qt::red),
+            "reverse rectangle gestures must restore only their normalized bounds");
+    const auto session = runtime.serializeDocumentSession();
+    SnowCanvasRuntime restored;
+    require(restored.restoreDocumentSession(session), "restore immutable eraser session");
+    const auto restoredOutput =
+        restored.renderToImage(QRectF(0, 0, 200, 200), background.size(),
+                               {CanvasExportSource{background, QRectF(0, 0, 200, 200)}});
+    require(restoredOutput == output, "restored eraser sessions must preserve exact output");
+    require(canvas.deleteAllElements() && render() == background && canvas.undo() &&
+                render() == output,
+            "Delete All and its undo must include immutable erasers");
+    require(canvas.setCanvasTool(SnowCanvasTool::BrushEraser), "activate cancelled eraser draft");
+    const auto previousHistory = runtime.serializeDocumentHistory();
+    sendMouseEvent(canvas, QEvent::MouseButtonPress, {150, 50}, Qt::LeftButton, Qt::LeftButton);
+    require(canvas.setCanvasTool(SnowCanvasTool::Select), "cancel eraser by changing tools");
+    require(runtime.serializeDocumentHistory() == previousHistory && render() == output,
+            "tool changes must discard eraser drafts without history");
+}
+
 void filterCreationStylesPreserveWidgetInteraction() {
     constexpr quint32 properties =
         SnowCanvasFilterStylePropertyType | SnowCanvasFilterStylePropertyStrength |
@@ -1173,6 +1287,11 @@ int main(int argc, char** argv) {
         strokeCursorsUseNativeBitmapsAndRefreshWithStyle();
         return 0;
     }
+    if (application.arguments().contains(QStringLiteral("--eraser-only"))) {
+        brushEraserCreationStylesPreserveInteractionAndPeers();
+        backgroundEraserGesturesRestorePixelsAndHistory();
+        return 0;
+    }
     if (application.arguments().contains(QStringLiteral("--filter-creation-only"))) {
         filterCreationStylesPreserveWidgetInteraction();
         filterCreationStylesPreservePeerTextDraft();
@@ -1189,6 +1308,8 @@ int main(int argc, char** argv) {
         return 0;
     }
     freeDrawContinuationRendersOneStrokeAndActivatedEndpoint();
+    brushEraserCreationStylesPreserveInteractionAndPeers();
+    backgroundEraserGesturesRestorePixelsAndHistory();
     strokeCursorsUseNativeBitmapsAndRefreshWithStyle();
     filterCreationStylesPreserveWidgetInteraction();
     filterCreationStylesPreservePeerTextDraft();

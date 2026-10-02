@@ -1802,6 +1802,14 @@ bool ScreenshotToolbarSettings::setLastFilterTool(const QString& tool) const {
     return cache().setValue(QStringLiteral("screenshot_toolbar/last_filter_tool"), tool);
 }
 
+QString ScreenshotToolbarSettings::lastEraserTool() const {
+    return cache().value(QStringLiteral("screenshot_toolbar/last_eraser_tool")).toString();
+}
+
+bool ScreenshotToolbarSettings::setLastEraserTool(const QString& tool) const {
+    return cache().setValue(QStringLiteral("screenshot_toolbar/last_eraser_tool"), tool);
+}
+
 QString ScreenshotToolbarSettings::lastHighlightTool() const {
     return cache().value(QStringLiteral("screenshot_toolbar/last_highlight_tool")).toString();
 }

@@ -54,9 +54,14 @@ struct SnowCanvasSpotlightEdit {
     SnowCanvasSpotlightConfig style;
     quint32 properties = 0;
 };
+struct SnowCanvasBrushEraserEdit {
+    SnowCanvasBrushEraserStyle style;
+    quint32 properties = SnowCanvasBrushEraserStylePropertyStrokeWidth;
+};
 using SnowCanvasStyleEdit =
     std::variant<SnowCanvasShapeEdit, SnowCanvasTextEdit, SnowCanvasSerialNumberEdit,
-                 SnowCanvasFilterEdit, SnowCanvasWatermarkEdit, SnowCanvasSpotlightEdit>;
+                 SnowCanvasFilterEdit, SnowCanvasWatermarkEdit, SnowCanvasSpotlightEdit,
+                 SnowCanvasBrushEraserEdit>;
 
 inline void snowCanvasMergeStyle(SnowCanvasShapeStyle& target, const SnowCanvasShapeStyle& value,
                                  quint32 properties) {
@@ -176,6 +181,12 @@ inline void snowCanvasMergeStyle(SnowCanvasSpotlightConfig& target,
         target.opacity = value.opacity;
 }
 
+inline void snowCanvasMergeStyle(SnowCanvasBrushEraserStyle& target,
+                                 const SnowCanvasBrushEraserStyle& value, quint32 properties) {
+    if ((properties & SnowCanvasBrushEraserStylePropertyStrokeWidth) != 0)
+        target.strokeWidth = value.strokeWidth;
+}
+
 inline void snowCanvasMergeStyleEdit(SnowCanvasStyleDefaults& defaults,
                                      const SnowCanvasStyleEdit& edit) {
     std::visit(
@@ -222,6 +233,8 @@ inline void snowCanvasMergeStyleEdit(SnowCanvasStyleDefaults& defaults,
                 snowCanvasMergeStyle(defaults.watermark, patch.style, patch.properties);
             } else if constexpr (std::is_same_v<T, SnowCanvasSpotlightEdit>) {
                 snowCanvasMergeStyle(defaults.spotlight, patch.style, patch.properties);
+            } else if constexpr (std::is_same_v<T, SnowCanvasBrushEraserEdit>) {
+                snowCanvasMergeStyle(defaults.brushEraser, patch.style, patch.properties);
             }
         },
         edit);

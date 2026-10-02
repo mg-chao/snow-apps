@@ -184,6 +184,7 @@ pub enum DisplayFilterType {
     Emboss = 4,
     SmartErase = 5,
     Brightness = 6,
+    RestoreBackground = 7,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -210,7 +211,9 @@ impl FilterRenderSpec {
         };
         let strength = match filter_type {
             DisplayFilterType::SmartErase => 0.5,
-            DisplayFilterType::Grayscale | DisplayFilterType::Inversion => 1.0,
+            DisplayFilterType::Grayscale
+            | DisplayFilterType::Inversion
+            | DisplayFilterType::RestoreBackground => 1.0,
             DisplayFilterType::Mosaic
             | DisplayFilterType::GaussianBlur
             | DisplayFilterType::Emboss
@@ -223,7 +226,9 @@ impl FilterRenderSpec {
             DisplayFilterType::GaussianBlur => 3.0 * blur_sigma + 1.0,
             DisplayFilterType::Grayscale | DisplayFilterType::Inversion => 0.0,
             DisplayFilterType::Emboss => 1.0,
-            DisplayFilterType::SmartErase | DisplayFilterType::Brightness => 0.0,
+            DisplayFilterType::SmartErase
+            | DisplayFilterType::Brightness
+            | DisplayFilterType::RestoreBackground => 0.0,
         };
         Self {
             render_phase: 0,

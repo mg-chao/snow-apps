@@ -19,7 +19,10 @@ impl OrderNode {
     pub fn new(id: ElementId, item: &SceneDisplayItem) -> Self {
         let effect = match item {
             SceneDisplayItem::Filter(filter)
-                if filter.filter.filter_type != DisplayFilterType::SmartErase =>
+                if !matches!(
+                    filter.filter.filter_type,
+                    DisplayFilterType::SmartErase | DisplayFilterType::RestoreBackground
+                ) =>
             {
                 let mut spec = filter.filter;
                 spec.render_phase = 0;
@@ -80,7 +83,10 @@ impl SceneOrderPlan {
             let SceneDisplayItem::Filter(filter) = item else {
                 continue;
             };
-            if filter.filter.filter_type == DisplayFilterType::SmartErase {
+            if matches!(
+                filter.filter.filter_type,
+                DisplayFilterType::SmartErase | DisplayFilterType::RestoreBackground
+            ) {
                 continue;
             }
             let &(source_pass, effect_run) = self

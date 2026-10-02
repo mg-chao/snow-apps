@@ -128,6 +128,9 @@ constexpr int TOOLBAR_ITEM_SPACING = 8;
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Serial number"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Filter"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Eraser"),
+    QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Element Eraser"),
+    QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Rectangle Eraser"),
+    QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Brush Eraser"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Watermark"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Undo"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Redo"),
@@ -317,13 +320,15 @@ bool toolUsesStandardStyleToolbar(ScreenshotToolPalette::Tool tool) {
     case ScreenshotToolPalette::Tool::AutoFilter:
     case ScreenshotToolPalette::Tool::RectangleFilter:
     case ScreenshotToolPalette::Tool::PenFilter:
+    case ScreenshotToolPalette::Tool::Eraser:
+    case ScreenshotToolPalette::Tool::RectangleEraser:
+    case ScreenshotToolPalette::Tool::BrushEraser:
     case ScreenshotToolPalette::Tool::Watermark:
     case ScreenshotToolPalette::Tool::Text:
     case ScreenshotToolPalette::Tool::SerialNumber:
         return true;
     case ScreenshotToolPalette::Tool::Move:
     case ScreenshotToolPalette::Tool::Select:
-    case ScreenshotToolPalette::Tool::Eraser:
     case ScreenshotToolPalette::Tool::Ocr:
     case ScreenshotToolPalette::Tool::TextTranslation:
     case ScreenshotToolPalette::Tool::Table:
@@ -368,6 +373,22 @@ QString filterToolSetting(ScreenshotToolPalette::Tool tool) {
         return QStringLiteral("auto-filter");
     }
     return QStringLiteral("pen-filter");
+}
+
+ScreenshotToolPalette::Tool eraserToolFromSetting(const QString& value) {
+    if (value == QStringLiteral("rectangle-eraser"))
+        return ScreenshotToolPalette::Tool::RectangleEraser;
+    if (value == QStringLiteral("brush-eraser"))
+        return ScreenshotToolPalette::Tool::BrushEraser;
+    return ScreenshotToolPalette::Tool::Eraser;
+}
+
+QString eraserToolSetting(ScreenshotToolPalette::Tool tool) {
+    if (tool == ScreenshotToolPalette::Tool::RectangleEraser)
+        return QStringLiteral("rectangle-eraser");
+    if (tool == ScreenshotToolPalette::Tool::BrushEraser)
+        return QStringLiteral("brush-eraser");
+    return QStringLiteral("eraser");
 }
 
 ScreenshotToolPalette::Tool highlightToolFromSetting(const QString& value) {
@@ -533,6 +554,8 @@ QString drawingToolItemId(ScreenshotToolPalette::Tool tool) {
     case ScreenshotToolPalette::Tool::PenFilter:
         return QStringLiteral("filter");
     case ScreenshotToolPalette::Tool::Eraser:
+    case ScreenshotToolPalette::Tool::RectangleEraser:
+    case ScreenshotToolPalette::Tool::BrushEraser:
         return QStringLiteral("eraser");
     case ScreenshotToolPalette::Tool::Watermark:
         return QStringLiteral("watermark");
@@ -854,6 +877,7 @@ ScreenshotToolPalette::ScreenshotToolPalette(const Options& options, QWidget* pa
 #endif
     m_lastFilterTool = filterToolFromSetting(settings.lastFilterTool());
     m_lastHighlightTool = highlightToolFromSetting(settings.lastHighlightTool());
+    m_lastEraserTool = eraserToolFromSetting(settings.lastEraserTool());
 
     setAttribute(Qt::WA_TranslucentBackground, true);
     setAttribute(Qt::WA_NoSystemBackground, true);
@@ -972,6 +996,8 @@ ScreenshotToolPalette::ScreenshotToolPalette(const Options& options, QWidget* pa
                         refreshShortcutTooltips();
                     } else if (key == QStringLiteral("screenshot_toolbar/last_filter_tool")) {
                         m_lastFilterTool = filterToolFromSetting(value.toString());
+                    } else if (key == QStringLiteral("screenshot_toolbar/last_eraser_tool")) {
+                        m_lastEraserTool = eraserToolFromSetting(value.toString());
                     } else if (key == QStringLiteral("screenshot_toolbar/last_highlight_tool")) {
                         m_lastHighlightTool = highlightToolFromSetting(value.toString());
                     }
@@ -1318,6 +1344,28 @@ void ScreenshotToolPalette::setPenFilterStrokeWidth(double width) {
     notifyFilterStyleChanged(state.penFilterStyle, SnowCanvasFilterStylePropertyStrokeWidth);
 }
 
+bool ScreenshotToolPalette::stepBrushEraserStrokeWidth(int direction) {
+    if (direction == 0 || m_activeTool != Tool::BrushEraser)
+        return false;
+    setBrushEraserStrokeWidth(m_styleControls->styleState().brushEraserStyle.strokeWidth +
+                              (direction > 0 ? 1.0 : -1.0));
+    return true;
+}
+
+void ScreenshotToolPalette::setBrushEraserStrokeWidth(double width) {
+    if (!std::isfinite(width))
+        return;
+    auto& state = m_styleControls->styleState();
+    const SnowCanvasBrushEraserStyle style{std::clamp(width, 1.0, 72.0)};
+    if (style.strokeWidth == state.brushEraserStyle.strokeWidth)
+        return;
+    if (!submitStyleEdit(SnowCanvasBrushEraserEdit{style}))
+        return;
+    state.brushEraserStyle = style;
+    state.creationBrushEraserStyle = style;
+    m_styleControls->updateBrushEraserStrokeWidthControls(style.strokeWidth);
+}
+
 bool ScreenshotToolPalette::stepWatermarkFontSize(int direction) {
     return direction != 0 && m_activeTool == Tool::Watermark && m_styleControls != nullptr &&
            m_styleControls->stepWatermarkFontSize(direction);
@@ -1624,6 +1672,14 @@ bool ScreenshotToolPalette::prepareStyleControlsForActivation(Tool destinationTo
             sourceControls->findChild<QWidget*>(QStringLiteral("screenshotHighlightModeSelector")));
     }
 
+    const auto eraserVariant = [](Tool tool) {
+        return tool == Tool::Eraser || tool == Tool::RectangleEraser || tool == Tool::BrushEraser;
+    };
+    if (eraserVariant(sourceTool) && eraserVariant(destinationTool) && sourceControls != nullptr) {
+        m_styleControls->stageExternalStyleEditorWidget(
+            sourceControls->findChild<QWidget*>(QStringLiteral("screenshotEraserModeSelector")));
+    }
+
     const bool filterPair =
         (sourceTool == Tool::AutoFilter || sourceTool == Tool::RectangleFilter ||
          sourceTool == Tool::PenFilter) &&
@@ -1768,6 +1824,8 @@ void ScreenshotToolPalette::setActiveTool(Tool tool) {
         activeButton = drawingToolEntryButton(tool);
         break;
     case Tool::Eraser:
+    case Tool::RectangleEraser:
+    case Tool::BrushEraser:
         activeButton = drawingToolEntryButton(tool);
         break;
     case Tool::AutoFilter:
@@ -2726,7 +2784,16 @@ void ScreenshotToolPalette::setStyleToolbarState(const SnowCanvasStyleToolbarSta
         }
         return;
     }
-    if (state.source == SnowCanvasStyleToolbarSource::Eraser) {
+    if (state.source == SnowCanvasStyleToolbarSource::Eraser ||
+        state.source == SnowCanvasStyleToolbarSource::DefaultRectangleEraser ||
+        state.source == SnowCanvasStyleToolbarSource::DefaultBrushEraser) {
+        if (state.source == SnowCanvasStyleToolbarSource::DefaultBrushEraser) {
+            auto& styleState = m_styleControls->styleState();
+            styleState.brushEraserStyle = state.brushEraserStyle;
+            styleState.creationBrushEraserStyle = state.brushEraserStyle;
+            m_styleControls->updateBrushEraserStrokeWidthControls(
+                state.brushEraserStyle.strokeWidth);
+        }
         return;
     }
     if (state.source == SnowCanvasStyleToolbarSource::DefaultRectangleFilter ||
@@ -3116,6 +3183,10 @@ QSize ScreenshotToolPalette::styleToolbarSizeHint() {
     }
 
     const QMargins margins = m_rectangleStyleLayout->contentsMargins();
+    // Some rows contain only a mode selector, whose natural radio height is shorter
+    // than the standard style control. Keep the panel's content row at least as
+    // tall as that shared control while allowing genuinely taller editors to fit.
+    controlsSize.setHeight(std::max(controlsSize.height(), scaledMetric(STYLE_BUTTON_SIZE)));
     const QSize intrinsicSize =
         controlsSize + QSize(margins.left() + margins.right(), margins.top() + margins.bottom());
     return intrinsicSize;
@@ -3463,6 +3534,9 @@ void ScreenshotToolPalette::applyStyleMetricsForScope(QWidget* scope) {
     for (adqt::widgets::AdRadioButtonGroup* group : m_filterModeGroups) {
         configureScreenshotToolPaletteStyleRadioButtonGroup(group, metrics);
     }
+    for (adqt::widgets::AdRadioButtonGroup* group : m_eraserModeGroups) {
+        configureScreenshotToolPaletteStyleRadioButtonGroup(group, metrics);
+    }
 
     if (scope == m_filterStyleControlsWidget) {
         refreshFilterEditorMetrics(m_filterEditor);
@@ -3790,6 +3864,11 @@ bool ScreenshotToolPalette::handleToolbarWheel(QWheelEvent* event) {
         if (!stepFilterIntensity(direction)) {
             return false;
         }
+        event->accept();
+        return true;
+    }
+    if (m_activeTool == Tool::BrushEraser) {
+        static_cast<void>(stepBrushEraserStrokeWidth(direction));
         event->accept();
         return true;
     }
@@ -4304,6 +4383,12 @@ void ScreenshotToolPalette::activateDrawingTool(Tool tool) {
     case Tool::Eraser:
         emit eraserRequested();
         break;
+    case Tool::RectangleEraser:
+        emit rectangleEraserRequested();
+        break;
+    case Tool::BrushEraser:
+        emit brushEraserRequested();
+        break;
     case Tool::AutoFilter:
         emit autoFilterRequested();
         break;
@@ -4367,6 +4452,10 @@ ScreenshotToolPalette::Tool ScreenshotToolPalette::rememberedDrawingMode(Tool to
     const auto isHighlightVariant = [](Tool candidate) {
         return candidate == Tool::RectangleHighlight || candidate == Tool::PenHighlight;
     };
+    const auto isEraserVariant = [](Tool candidate) {
+        return candidate == Tool::Eraser || candidate == Tool::RectangleEraser ||
+               candidate == Tool::BrushEraser;
+    };
     const auto isFilterVariant = [](Tool candidate) {
         return candidate == Tool::AutoFilter || candidate == Tool::RectangleFilter ||
                candidate == Tool::PenFilter;
@@ -4381,6 +4470,11 @@ ScreenshotToolPalette::Tool ScreenshotToolPalette::rememberedDrawingMode(Tool to
         }
         return m_lastHighlightTool;
     }
+    if (isEraserVariant(tool)) {
+        if (m_activeTool.has_value() && isEraserVariant(*m_activeTool))
+            return *m_activeTool;
+        return m_lastEraserTool;
+    }
     if (isFilterVariant(tool)) {
         if (m_activeTool.has_value() && isFilterVariant(*m_activeTool)) {
             return *m_activeTool;
@@ -4391,6 +4485,16 @@ ScreenshotToolPalette::Tool ScreenshotToolPalette::rememberedDrawingMode(Tool to
 }
 
 void ScreenshotToolPalette::rememberDrawingMode(Tool tool) {
+    const bool eraserVariant =
+        tool == Tool::Eraser || tool == Tool::RectangleEraser || tool == Tool::BrushEraser;
+    if (eraserVariant) {
+        if (m_lastEraserTool != tool) {
+            m_lastEraserTool = tool;
+            static_cast<void>(toolbar_settings::ScreenshotToolbarSettings().setLastEraserTool(
+                eraserToolSetting(tool)));
+        }
+        return;
+    }
     const bool highlightVariant = tool == Tool::RectangleHighlight || tool == Tool::PenHighlight;
     const bool filterVariant =
         !highlightVariant &&
@@ -4498,7 +4602,9 @@ bool ScreenshotToolPalette::activateToolFromToolbar(Tool tool, bool toggleVisibl
         !toggleVisibleButton         ? m_activeTool.has_value() && *m_activeTool == tool
         : requestedButton != nullptr ? m_activeToolButton == requestedButton
                                      : m_activeTool.has_value() && *m_activeTool == tool;
-    if (alreadyActive && m_options.recordingDrawingMode) {
+    const bool eraserVariant =
+        tool == Tool::Eraser || tool == Tool::RectangleEraser || tool == Tool::BrushEraser;
+    if (alreadyActive && m_options.recordingDrawingMode && !eraserVariant) {
         setRecordingExportSettingsVisible(true);
         return true;
     }
@@ -5420,6 +5526,7 @@ bool ScreenshotToolPalette::addMainToolButtons(const Options& options, QBoxLayou
 
     if (options.showEraserTool) {
         m_eraserButton = addToolButton("Eraser", custom_outlined_icons::ToolEraser());
+        m_eraserButton->setObjectName(QStringLiteral("screenshotEraserButton"));
         addButton(m_eraserButton);
         connect(m_eraserButton, &adqt::widgets::AdButton::clicked, this,
                 [this]() { activateToolFromToolbar(Tool::Eraser); });
@@ -5996,6 +6103,15 @@ QWidget* ScreenshotToolPalette::createStyleModeSelector(
             break;
         case Tool::PenFilter:
             emit penFilterRequested();
+            break;
+        case Tool::Eraser:
+            emit eraserRequested();
+            break;
+        case Tool::RectangleEraser:
+            emit rectangleEraserRequested();
+            break;
+        case Tool::BrushEraser:
+            emit brushEraserRequested();
             break;
         default:
             break;
@@ -6857,6 +6973,7 @@ void ScreenshotToolPalette::clearSecondaryResourceBindings() {
     m_tableActionSpacers.clear();
     m_highlightModeGroups.clear();
     m_filterModeGroups.clear();
+    m_eraserModeGroups.clear();
 
     m_filterEditor = {};
     m_penFilterEditor = {};
@@ -6916,6 +7033,8 @@ void ScreenshotToolPalette::clearSecondaryResourceBindings() {
     m_filterStyleControlsWidget = nullptr;
     m_autoFilterStyleControlsWidget = nullptr;
     m_penFilterStyleControlsWidget = nullptr;
+    m_eraserStyleControlsWidget = nullptr;
+    m_brushEraserStyleControlsWidget = nullptr;
     m_watermarkStyleControlsWidget = nullptr;
     m_spotlightOpacityIcon = nullptr;
     m_spotlightOpacitySlider = nullptr;
@@ -7109,6 +7228,12 @@ bool ScreenshotToolPalette::evictStyleToolbarContentsExcept(QWidget* retainedCon
                            return belongsToRemovedRow(group);
                        }),
         m_highlightModeGroups.end());
+    m_eraserModeGroups.erase(
+        std::remove_if(m_eraserModeGroups.begin(), m_eraserModeGroups.end(),
+                       [&belongsToRemovedRow](adqt::widgets::AdRadioButtonGroup* group) {
+                           return belongsToRemovedRow(group);
+                       }),
+        m_eraserModeGroups.end());
     m_filterModeGroups.erase(
         std::remove_if(m_filterModeGroups.begin(), m_filterModeGroups.end(),
                        [&belongsToRemovedRow](adqt::widgets::AdRadioButtonGroup* group) {
@@ -7142,6 +7267,8 @@ bool ScreenshotToolPalette::evictStyleToolbarContentsExcept(QWidget* retainedCon
     clearRemoved(m_serialNumberStyleControlsWidget);
     clearRemoved(m_filterStyleControlsWidget);
     clearRemoved(m_penFilterStyleControlsWidget);
+    clearRemoved(m_eraserStyleControlsWidget);
+    clearRemoved(m_brushEraserStyleControlsWidget);
     clearRemoved(m_watermarkStyleControlsWidget);
     if (removedRows.contains(m_filterEditor.controls)) {
         m_filterEditor = {};
@@ -8238,6 +8365,23 @@ void ScreenshotToolPalette::createStyleFamily(Tool tool) {
         return host;
     };
 
+    if ((tool == Tool::Eraser || tool == Tool::RectangleEraser || tool == Tool::BrushEraser) &&
+        styleControlsForTool(tool) == nullptr) {
+        QWidget* controls = m_styleControls->buildEraserFamily(
+            static_cast<int>(tool), m_rectangleStylePanel, makeHost(m_eraserModeGroups),
+            [this](double width) { setBrushEraserStrokeWidth(width); },
+            [this]() { static_cast<void>(stepBrushEraserStrokeWidth(1)); },
+            styleButtonMetrics(m_physicalScale));
+        if (tool == Tool::BrushEraser) {
+            m_brushEraserStyleControlsWidget = controls;
+            registerStyleFamily(controls, {Tool::BrushEraser});
+        } else {
+            m_eraserStyleControlsWidget = controls;
+            registerStyleFamily(controls, {Tool::Eraser, Tool::RectangleEraser});
+        }
+        return;
+    }
+
     QWidget** shapeControlsSlot = tool == Tool::Line       ? &m_lineStyleControlsWidget
                                   : tool == Tool::FreeDraw ? &m_freeDrawStyleControlsWidget
                                                            : &m_rectangleStyleControlsWidget;
@@ -8762,6 +8906,11 @@ QWidget* ScreenshotToolPalette::styleControlsForTool(Tool tool) const {
 bool ScreenshotToolPalette::setStyleControlsActive(Tool tool) {
     SNOW_SHOT_TOOLBAR_PERF_SCOPE("palette.set_style_controls_active");
     synchronizeFilterModeGroups(tool);
+    if (tool == Tool::Eraser || tool == Tool::RectangleEraser || tool == Tool::BrushEraser) {
+        for (auto* group : m_eraserModeGroups)
+            if (group != nullptr)
+                group->setCheckedId(static_cast<int>(tool));
+    }
     if (tool == Tool::RectangleHighlight || tool == Tool::PenHighlight) {
         for (adqt::widgets::AdRadioButtonGroup* group : m_highlightModeGroups) {
             if (group != nullptr) {

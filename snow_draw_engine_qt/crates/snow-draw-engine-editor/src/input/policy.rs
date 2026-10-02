@@ -3,8 +3,11 @@ use super::*;
 impl Editor {
     pub(crate) fn tool_policy(&self) -> ToolPolicy {
         let mut policy = Self::tool_policy_for(self.state.active_tool);
-        policy.quick_selection_enabled = self.state.active_tool == ActiveTool::Select
-            || (self.quick_selection_disabled_tools & self.state.active_tool.policy_bit()) == 0;
+        policy.quick_selection_enabled = !matches!(
+            self.state.active_tool,
+            ActiveTool::RectangleEraser | ActiveTool::BrushEraser
+        ) && (self.state.active_tool == ActiveTool::Select
+            || (self.quick_selection_disabled_tools & self.state.active_tool.policy_bit()) == 0);
         policy
     }
 
@@ -107,6 +110,18 @@ impl Editor {
                 allow_shift_toggle: true,
                 default_cursor: CursorStyle::Crosshair,
             },
+            ActiveTool::RectangleEraser | ActiveTool::BrushEraser => ToolPolicy {
+                selection_scope: ToolSelectionScope::None,
+                quick_selection_enabled: false,
+                clear_selection_on_activate: true,
+                empty_canvas_action: if active_tool == ActiveTool::BrushEraser {
+                    ToolEmptyCanvasAction::CreatePenFilter
+                } else {
+                    ToolEmptyCanvasAction::CreateRectangle
+                },
+                allow_shift_toggle: false,
+                default_cursor: CursorStyle::Crosshair,
+            },
             ActiveTool::Watermark => ToolPolicy {
                 selection_scope: ToolSelectionScope::None,
                 quick_selection_enabled: true,
@@ -187,7 +202,11 @@ impl Editor {
         id: ElementId,
         kind: ElementKind,
     ) -> bool {
-        if kind == ElementKind::AutoFilter {
+        if kind == ElementKind::AutoFilter
+            || document
+                .element(id)
+                .is_ok_and(|element| element.data.is_background_restore())
+        {
             return false;
         }
         match scope {

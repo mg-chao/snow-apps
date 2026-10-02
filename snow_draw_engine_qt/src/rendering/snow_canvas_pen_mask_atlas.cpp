@@ -89,6 +89,17 @@ std::uint64_t PenMaskAtlas::styleRevision(const SnowCanvasSceneItem& item) const
     return hash;
 }
 
+std::uint64_t PenMaskAtlas::restorationGeometryIdentity(const SnowCanvasSceneItem& item) const {
+    std::uint64_t hash = 0xcbf29ce484222325ULL;
+    hashValue(hash, item.penFilterGeometryRevision());
+    hashValue(hash, item.arrow_point_count);
+    hashDouble(hash, item.center_x);
+    hashDouble(hash, item.center_y);
+    hashDouble(hash, item.width);
+    hashDouble(hash, item.height);
+    return hash;
+}
+
 std::uint64_t PenMaskAtlas::viewSignature(const void* canvasOwner,
                                           const SceneDisplayInfo& displayInfo,
                                           qreal devicePixelRatio) const {
@@ -122,8 +133,40 @@ void PenMaskAtlas::beginFrame(const void* canvasOwner, const SceneDisplayInfo& d
         return;
     }
     if (m_appliedSceneRevision != 0 && revision != m_appliedSceneRevision + 1) {
-        // Intermediate deltas are unavailable after multiple cache syncs.
-        clear();
+        // Intermediate mutable-stroke deltas are unavailable. Committed erasers cannot
+        // change, so preserve their masks when the current geometry and style still match.
+        std::unordered_map<std::uint64_t, const SnowCanvasSceneItem*> restorations;
+        const bool hasRestorations =
+            std::any_of(m_entries.begin(), m_entries.end(),
+                        [](const auto& entry) { return entry.second.immutableRestoration; });
+        if (hasRestorations) {
+            for (std::uint32_t index = 0; index < displayCache->sceneItemCount(); ++index) {
+                const auto& item = displayCache->sceneItems()[index];
+                if (item.kind == SNOW_SCENE_DISPLAY_ITEM_FILTER && item.is_free_draw != 0 &&
+                    item.filter.filter_type == SNOW_FILTER_TYPE_RESTORE_BACKGROUND) {
+                    const std::uint64_t id =
+                        (static_cast<std::uint64_t>(item.element_id.index) << 32) |
+                        item.element_id.generation;
+                    restorations.emplace(id, &item);
+                }
+            }
+        }
+        for (auto iterator = m_entries.begin(); iterator != m_entries.end();) {
+            const auto& key = iterator->first;
+            const auto& entry = iterator->second;
+            const std::uint64_t id =
+                (static_cast<std::uint64_t>(key.elementIndex) << 32) | key.elementGeneration;
+            const auto found = restorations.find(id);
+            if (entry.immutableRestoration && found != restorations.end() &&
+                entry.restorationGeometryIdentity == restorationGeometryIdentity(*found->second) &&
+                key.styleRevision == styleRevision(*found->second)) {
+                ++iterator;
+                continue;
+            }
+            m_retainedBytes -= entry.bytes;
+            m_lru.erase(entry.lru);
+            iterator = m_entries.erase(iterator);
+        }
     }
     const std::size_t before = m_entries.size();
     for (const AppliedPenFilterGeometryDelta& delta :
@@ -131,6 +174,34 @@ void PenMaskAtlas::beginFrame(const void* canvasOwner, const SceneDisplayInfo& d
         if (delta.elementRemoved) {
             removeElement(delta.elementId);
         } else {
+            if (delta.fullReset && displayCache->sceneItemCount() != 0) {
+                const auto* items = displayCache->sceneItems();
+                const auto* end = items + displayCache->sceneItemCount();
+                const auto* found = std::find_if(items, end, [&delta](const auto& item) {
+                    return item.element_id.index == delta.elementId.index &&
+                           item.element_id.generation == delta.elementId.generation;
+                });
+                if (found != end && found->kind == SNOW_SCENE_DISPLAY_ITEM_FILTER &&
+                    found->is_free_draw != 0 &&
+                    found->filter.filter_type == SNOW_FILTER_TYPE_RESTORE_BACKGROUND) {
+                    const auto identity = restorationGeometryIdentity(*found);
+                    const auto style = styleRevision(*found);
+                    const bool unchanged =
+                        std::all_of(m_entries.begin(), m_entries.end(), [&](const auto& cached) {
+                            const auto& key = cached.first;
+                            const auto& entry = cached.second;
+                            return key.elementIndex != delta.elementId.index ||
+                                   key.elementGeneration != delta.elementId.generation ||
+                                   (entry.immutableRestoration &&
+                                    entry.restorationGeometryIdentity == identity &&
+                                    key.styleRevision == style);
+                        });
+                    // Scene refreshes can re-emit an unchanged full-reset geometry packet.
+                    if (unchanged) {
+                        continue;
+                    }
+                }
+            }
             invalidate(delta);
         }
     }
@@ -173,14 +244,23 @@ PenMaskAtlas::tile(const SnowCanvasSceneItem& item, int physicalTileX, int physi
     if (!generated) {
         return {};
     }
-    if (m_byteBudget == 0 || !generated->occupied) {
+    if (m_byteBudget == 0 ||
+        (!generated->occupied && item.filter.filter_type != SNOW_FILTER_TYPE_RESTORE_BACKGROUND)) {
         return generated;
+    }
+    // Immutable erasers can retain negative coverage results without a pixel payload.
+    // Sparse strokes should neither rerasterize empty tiles nor request pristine image tiles.
+    if (!generated->occupied) {
+        generated->alpha = {};
     }
     const std::size_t bytes = static_cast<std::size_t>(generated->alpha.sizeInBytes()) +
                               generated->spans.capacity() * sizeof(RowSpan) + sizeof(Entry);
     try {
         m_lru.push_front(key);
-        auto [inserted, ok] = m_entries.emplace(key, Entry{generated, bytes, m_lru.begin()});
+        const bool restoration = item.filter.filter_type == SNOW_FILTER_TYPE_RESTORE_BACKGROUND;
+        auto [inserted, ok] = m_entries.emplace(
+            key, Entry{generated, bytes, m_lru.begin(),
+                       restoration ? restorationGeometryIdentity(item) : 0, restoration});
         if (!ok) {
             m_lru.pop_front();
             return inserted->second.tile;
@@ -236,9 +316,11 @@ std::shared_ptr<Tile> PenMaskAtlas::rasterizeTile(const SnowCanvasSceneItem& ite
             continue;
         }
         const auto& chunk = allChunks[chunkIndex];
-        for (std::uint32_t offset = 0; offset + 1 < chunk.pointCount; ++offset) {
+        const std::uint32_t segmentCount = std::max(1u, chunk.pointCount - 1);
+        for (std::uint32_t offset = 0; offset < segmentCount; ++offset) {
             const SnowArrowPoint& first = points[chunk.firstPoint + offset];
-            const SnowArrowPoint& second = points[chunk.firstPoint + offset + 1];
+            const SnowArrowPoint& second =
+                points[chunk.firstPoint + std::min(offset + 1, chunk.pointCount - 1)];
             const double ax = first.x * scale + viewOffsetX;
             const double ay = first.y * scale + viewOffsetY;
             const double bx = second.x * scale + viewOffsetX;

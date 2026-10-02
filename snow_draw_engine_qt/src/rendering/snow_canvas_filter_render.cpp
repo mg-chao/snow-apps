@@ -1359,6 +1359,11 @@ QImage& RenderWorkspace::preLayerScratch(const QSize& size, qreal devicePixelRat
                        devicePixelRatio);
 }
 
+QImage& RenderWorkspace::originalBackgroundScratch(const QSize& size, qreal devicePixelRatio) {
+    return ensureImage(m_originalBackground, m_originalBackgroundEntry, 5, size,
+                       QImage::Format_ARGB32_Premultiplied, devicePixelRatio);
+}
+
 QImage& RenderWorkspace::alphaScratch(const QSize& size, qreal devicePixelRatio) {
     return ensureImage(m_alpha, m_alphaEntry, 2, size, QImage::Format_Alpha8, devicePixelRatio);
 }
@@ -1377,6 +1382,7 @@ std::vector<QRgb>& RenderWorkspace::mosaicSampleScratch(std::size_t count) {
 }
 
 void RenderWorkspace::clear() {
+    releaseLease(m_originalBackgroundEntry, m_originalBackground);
     releaseLease(m_argbAEntry, m_argbA);
     releaseLease(m_argbBEntry, m_argbB);
     releaseLease(m_sceneEntry, m_scene);
@@ -1390,6 +1396,7 @@ void RenderWorkspace::clear() {
 
 void RenderWorkspace::finishFrame(bool releaseAll) {
     constexpr qsizetype kMaximumRetainedScratchBytes = 16 * 1024 * 1024;
+    releaseLease(m_originalBackgroundEntry, m_originalBackground);
     releaseLease(m_argbAEntry, m_argbA);
     releaseLease(m_argbBEntry, m_argbB);
     releaseLease(m_sceneEntry, m_scene);

@@ -32,6 +32,7 @@ struct KeyHash {
         result ^=
             static_cast<std::size_t>(key.dependencyFingerprint ^ (key.dependencyFingerprint >> 32));
         result ^= static_cast<std::size_t>(key.nodeFingerprint ^ (key.nodeFingerprint >> 32));
+        result ^= static_cast<std::size_t>(key.sourceKind) * 0x27d4eb2fu;
         return result;
     }
 };
@@ -88,7 +89,7 @@ bool Key::operator==(const Key& other) const {
            sourceRect == other.sourceRect && logicalSize == other.logicalSize &&
            devicePixelRatioBits == other.devicePixelRatioBits && contentKey == other.contentKey &&
            dependencyFingerprint == other.dependencyFingerprint &&
-           nodeFingerprint == other.nodeFingerprint;
+           nodeFingerprint == other.nodeFingerprint && sourceKind == other.sourceKind;
 }
 
 std::shared_ptr<const Entry> find(const Key& key, Diagnostics* diagnostics) {
@@ -194,7 +195,8 @@ void invalidateRegion(const void* canvasNamespace, const QRect& logicalRegion,
         const Key& key = iterator->first;
         const bool fingerprintMatches =
             dependencyFingerprint == 0 || key.dependencyFingerprint == dependencyFingerprint;
-        if (key.canvasNamespace != canvasNamespace || !fingerprintMatches ||
+        if (key.sourceKind == SourceKind::Pristine || key.canvasNamespace != canvasNamespace ||
+            !fingerprintMatches ||
             (!invalidateAll && !iterator->second.entry->physicalRect.intersects(physicalRegion))) {
             ++iterator;
             continue;

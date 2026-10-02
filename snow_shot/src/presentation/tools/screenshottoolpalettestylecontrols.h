@@ -225,6 +225,11 @@ class ScreenshotToolPaletteStyleControls final {
     [[nodiscard]] QWidget* buildWatermarkFamily(QWidget* panel,
                                                 const ScreenshotToolPaletteStyleFamilyHost& host,
                                                 const ScreenshotToolPaletteButtonMetrics& metrics);
+    [[nodiscard]] QWidget* buildEraserFamily(int tool, QWidget* panel,
+                                             const ScreenshotToolPaletteStyleFamilyHost& host,
+                                             const std::function<void(double)>& setWidth,
+                                             const std::function<void()>& cycleWidth,
+                                             const ScreenshotToolPaletteButtonMetrics& metrics);
     [[nodiscard]] ScreenshotToolPaletteFilterFamilyResult
     buildFilterFamily(const ScreenshotToolPaletteFilterFamilyConfig& config,
                       const ScreenshotToolPaletteFilterCallbacks& callbacks, QWidget* panel,
@@ -264,6 +269,7 @@ class ScreenshotToolPaletteStyleControls final {
     [[nodiscard]] adqt::widgets::AdSlider* spotlightOpacitySlider() const;
     [[nodiscard]] QLabel* spotlightOpacityIcon() const;
     void updatePenFilterStrokeWidthControls(double width, bool mixed);
+    void updateBrushEraserStrokeWidthControls(double width);
     [[nodiscard]] int spacerReferenceWidth(const QSpacerItem* spacer) const;
 
     // Popup content owns its window DPR and is intentionally excluded.
@@ -477,6 +483,7 @@ class ScreenshotToolPaletteStyleControls final {
     std::unique_ptr<ScreenshotToolPaletteColorEditor> m_penHighlightColorEditor;
     std::unique_ptr<ScreenshotToolPaletteNumericPresetEditor> m_penHighlightStrokeWidthEditor;
     std::unique_ptr<ScreenshotToolPaletteNumericPresetEditor> m_penFilterStrokeWidthEditor;
+    std::unique_ptr<ScreenshotToolPaletteNumericPresetEditor> m_brushEraserStrokeWidthEditor;
     std::unique_ptr<ScreenshotToolPaletteNumericPresetEditor> m_arrowStrokeWidthEditor;
     std::unique_ptr<ScreenshotToolPaletteStrokeEditor> m_arrowStrokeEditor;
     adqt::widgets::AdRadioButtonGroup* m_arrowTypeButtonGroup = nullptr;

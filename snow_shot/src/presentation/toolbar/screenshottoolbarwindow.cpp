@@ -362,6 +362,14 @@ void ScreenshotToolbarWindow::connectStyleCommands(ScreenshotToolPalette& toolPa
         m_commands.setPenHighlightTool();
         setActiveToolAndReposition(ScreenshotToolPalette::Tool::PenHighlight);
     });
+    connect(&toolPalette, &ScreenshotToolPalette::rectangleEraserRequested, this, [this]() {
+        m_commands.setRectangleEraserTool();
+        setActiveToolAndReposition(ScreenshotToolPalette::Tool::RectangleEraser);
+    });
+    connect(&toolPalette, &ScreenshotToolPalette::brushEraserRequested, this, [this]() {
+        m_commands.setBrushEraserTool();
+        setActiveToolAndReposition(ScreenshotToolPalette::Tool::BrushEraser);
+    });
     connect(&toolPalette, &ScreenshotToolPalette::eraserRequested, this, [this]() {
         m_commands.setEraserTool();
         setActiveToolAndReposition(ScreenshotToolPalette::Tool::Eraser);

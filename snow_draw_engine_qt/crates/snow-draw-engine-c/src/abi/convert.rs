@@ -649,6 +649,7 @@ impl From<SnowFilterStyle> for FilterStyle {
                 SnowFilterType::Inversion => CanvasFilterType::Inversion,
                 SnowFilterType::Emboss => CanvasFilterType::Emboss,
                 SnowFilterType::Brightness => CanvasFilterType::Brightness,
+                SnowFilterType::RestoreBackground => CanvasFilterType::RestoreBackground,
                 SnowFilterType::SmartErase => CanvasFilterType::SmartErase,
             },
             strength: value.strength,
@@ -668,6 +669,7 @@ impl From<FilterStyle> for SnowFilterStyle {
                 CanvasFilterType::Inversion => SnowFilterType::Inversion,
                 CanvasFilterType::Emboss => SnowFilterType::Emboss,
                 CanvasFilterType::Brightness => SnowFilterType::Brightness,
+                CanvasFilterType::RestoreBackground => SnowFilterType::RestoreBackground,
                 CanvasFilterType::SmartErase => SnowFilterType::SmartErase,
             },
             strength: value.strength,
@@ -982,6 +984,7 @@ pub(crate) fn runtime_config_from_c(
                 pen_highlight: defaults.pen_highlight.into(),
                 rectangle_filter: defaults.rectangle_filter.into(),
                 pen_filter: defaults.pen_filter.into(),
+                brush_eraser: defaults.brush_eraser.into(),
                 text: TextStyle {
                     color: defaults.text.color.into(),
                     font_size: defaults.text.font_size,
@@ -1088,6 +1091,7 @@ impl From<StyleDefaults> for SnowStyleDefaults {
             serial_number: value.editor.serial_number.into(),
             watermark: value.watermark.into(),
             spotlight: value.spotlight.into(),
+            brush_eraser: value.editor.brush_eraser.into(),
         }
     }
 }
@@ -1105,6 +1109,7 @@ impl Default for SnowStyleToolbarState {
             shape_style_mixed: 0,
             filter_style: SnowFilterStyle::default(),
             filter_style_mixed: 0,
+            brush_eraser_style: SnowBrushEraserStyle::default(),
         }
     }
 }
@@ -1150,6 +1155,8 @@ pub(crate) fn snow_active_tool_to_rust(value: SnowActiveTool) -> ActiveTool {
         SnowActiveTool::PenFilter => ActiveTool::PenFilter,
         SnowActiveTool::Spotlight => ActiveTool::Spotlight,
         SnowActiveTool::AutoFilter => ActiveTool::AutoFilter,
+        SnowActiveTool::RectangleEraser => ActiveTool::RectangleEraser,
+        SnowActiveTool::BrushEraser => ActiveTool::BrushEraser,
         SnowActiveTool::Watermark => ActiveTool::Watermark,
         SnowActiveTool::Text => ActiveTool::Text,
         SnowActiveTool::SerialNumber => ActiveTool::SerialNumber,
@@ -1170,6 +1177,8 @@ pub(crate) fn snow_active_tool_from_rust(value: ActiveTool) -> SnowActiveTool {
         ActiveTool::PenFilter => SnowActiveTool::PenFilter,
         ActiveTool::Spotlight => SnowActiveTool::Spotlight,
         ActiveTool::AutoFilter => SnowActiveTool::AutoFilter,
+        ActiveTool::RectangleEraser => SnowActiveTool::RectangleEraser,
+        ActiveTool::BrushEraser => SnowActiveTool::BrushEraser,
         ActiveTool::Watermark => SnowActiveTool::Watermark,
         ActiveTool::Text => SnowActiveTool::Text,
         ActiveTool::SerialNumber => SnowActiveTool::SerialNumber,
@@ -1177,7 +1186,7 @@ pub(crate) fn snow_active_tool_from_rust(value: ActiveTool) -> SnowActiveTool {
 }
 
 pub(crate) fn snow_active_tool_mask_to_rust(value: u64) -> u64 {
-    const TOOLS: [SnowActiveTool; 15] = [
+    const TOOLS: [SnowActiveTool; 17] = [
         SnowActiveTool::Select,
         SnowActiveTool::Shape,
         SnowActiveTool::Arrow,
@@ -1193,6 +1202,8 @@ pub(crate) fn snow_active_tool_mask_to_rust(value: u64) -> u64 {
         SnowActiveTool::PenFilter,
         SnowActiveTool::Spotlight,
         SnowActiveTool::AutoFilter,
+        SnowActiveTool::RectangleEraser,
+        SnowActiveTool::BrushEraser,
     ];
 
     TOOLS.into_iter().fold(0, |mask, tool| {
@@ -1225,6 +1236,10 @@ pub(crate) fn snow_style_toolbar_source_from_rust(
         StyleToolbarSource::DefaultPenHighlight => SnowStyleToolbarSource::DefaultPenHighlight,
         StyleToolbarSource::SelectedPenHighlight => SnowStyleToolbarSource::SelectedPenHighlight,
         StyleToolbarSource::Eraser => SnowStyleToolbarSource::Eraser,
+        StyleToolbarSource::DefaultRectangleEraser => {
+            SnowStyleToolbarSource::DefaultRectangleEraser
+        }
+        StyleToolbarSource::DefaultBrushEraser => SnowStyleToolbarSource::DefaultBrushEraser,
         StyleToolbarSource::DefaultRectangleFilter => {
             SnowStyleToolbarSource::DefaultRectangleFilter
         }
@@ -1392,6 +1407,21 @@ pub(crate) fn snow_cursor_style_from_rust(value: CursorStyle) -> SnowCursorStyle
         CursorStyle::Hidden => SnowCursorStyle::Hidden,
         CursorStyle::Stroke => SnowCursorStyle::Stroke,
         CursorStyle::Eraser => SnowCursorStyle::Eraser,
+    }
+}
+
+impl From<SnowBrushEraserStyle> for snow_draw_engine::BrushEraserStyle {
+    fn from(value: SnowBrushEraserStyle) -> Self {
+        Self {
+            stroke_width: value.stroke_width,
+        }
+    }
+}
+impl From<snow_draw_engine::BrushEraserStyle> for SnowBrushEraserStyle {
+    fn from(value: snow_draw_engine::BrushEraserStyle) -> Self {
+        Self {
+            stroke_width: value.stroke_width,
+        }
     }
 }
 

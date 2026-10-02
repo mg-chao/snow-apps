@@ -25,6 +25,8 @@ pub enum SnowActiveTool {
     PenFilter = 12,
     Spotlight = 13,
     AutoFilter = 14,
+    RectangleEraser = 15,
+    BrushEraser = 16,
 }
 
 impl SnowActiveTool {
@@ -59,6 +61,8 @@ pub enum SnowStyleToolbarSource {
     SelectedPenFilter = 21,
     DefaultSpotlight = 22,
     SelectedSpotlight = 23,
+    DefaultRectangleEraser = 24,
+    DefaultBrushEraser = 25,
 }
 
 impl SnowStyleToolbarSource {
@@ -79,6 +83,7 @@ snow_c_enum! {
         Emboss = 4,
         SmartErase = 5,
         Brightness = 6,
+        RestoreBackground = 7,
     }
 }
 
@@ -336,6 +341,7 @@ pub struct SnowStyleToolbarState {
     pub shape_style_mixed: u32,
     pub filter_style: SnowFilterStyle,
     pub filter_style_mixed: u32,
+    pub brush_eraser_style: SnowBrushEraserStyle,
 }
 
 #[repr(C)]
@@ -353,6 +359,7 @@ pub struct SnowStyleDefaults {
     pub serial_number: SnowSerialNumberStyle,
     pub watermark: SnowWatermarkConfig,
     pub spotlight: SnowSpotlightConfig,
+    pub brush_eraser: SnowBrushEraserStyle,
 }
 
 #[repr(C)]
@@ -564,3 +571,17 @@ impl Default for SnowGridConfig {
         }
     }
 }
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct SnowBrushEraserStyle {
+    pub stroke_width: f64,
+}
+
+impl Default for SnowBrushEraserStyle {
+    fn default() -> Self {
+        Self { stroke_width: 30.0 }
+    }
+}
+
+pub const SNOW_BRUSH_ERASER_STYLE_PROPERTY_STROKE_WIDTH: u32 = 1 << 0;

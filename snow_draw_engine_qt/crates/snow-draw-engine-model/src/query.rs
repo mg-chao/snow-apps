@@ -180,7 +180,10 @@ impl QueryStore {
                             return None;
                         }
                         let element = document.element(id).ok()?;
-                        if !element.meta.visible || element.meta.locked {
+                        if !element.meta.visible
+                            || element.meta.locked
+                            || element.data.is_background_restore()
+                        {
                             return None;
                         }
                         let hit = match &element.data {

@@ -94,6 +94,8 @@ class ScreenshotToolPalette final : public QWidget,
         Html,
         AutoFilter,
         Latex,
+        RectangleEraser,
+        BrushEraser,
     };
 
     enum class MoveToolPresentation {
@@ -306,6 +308,7 @@ class ScreenshotToolPalette final : public QWidget,
     bool stepFilterIntensity(int direction);
     void setAutoFilterAvailable(bool available);
     bool stepPenFilterStrokeWidth(int direction);
+    bool stepBrushEraserStrokeWidth(int direction);
     bool stepWatermarkFontSize(int direction);
     bool stepRecordingStartDelay(int direction);
     void setStyleToolbarAboveMain(bool above);
@@ -467,6 +470,8 @@ class ScreenshotToolPalette final : public QWidget,
     void penHighlightRequested();
     void spotlightRequested();
     void eraserRequested();
+    void rectangleEraserRequested();
+    void brushEraserRequested();
     void filterRequested();
     void rectangleFilterRequested();
     void autoFilterRequested();
@@ -577,6 +582,7 @@ class ScreenshotToolPalette final : public QWidget,
     void notifyFilterStyleChanged(const SnowCanvasFilterStyle& style, quint32 properties);
     void setFilterStrength(double strength);
     void setPenFilterStrokeWidth(double width);
+    void setBrushEraserStrokeWidth(double width);
     void changeEvent(QEvent* event) override;
     bool eventFilter(QObject* watched, QEvent* event) override;
     void paintEvent(QPaintEvent* event) override;
@@ -838,6 +844,8 @@ class ScreenshotToolPalette final : public QWidget,
     QWidget* m_filterStyleControlsWidget = nullptr;
     QWidget* m_autoFilterStyleControlsWidget = nullptr;
     QWidget* m_penFilterStyleControlsWidget = nullptr;
+    QWidget* m_eraserStyleControlsWidget = nullptr;
+    QWidget* m_brushEraserStyleControlsWidget = nullptr;
     QWidget* m_watermarkStyleControlsWidget = nullptr;
     QWidget* m_activeStyleControlsWidget = nullptr;
     std::optional<Tool> m_activeStyleTool;
@@ -862,6 +870,7 @@ class ScreenshotToolPalette final : public QWidget,
     adqt::widgets::AdButton* m_spotlightButton = nullptr;
     QVector<adqt::widgets::AdRadioButtonGroup*> m_highlightModeGroups;
     QVector<adqt::widgets::AdRadioButtonGroup*> m_filterModeGroups;
+    QVector<adqt::widgets::AdRadioButtonGroup*> m_eraserModeGroups;
     adqt::widgets::AdButton* m_eraserButton = nullptr;
     adqt::widgets::AdButton* m_filterButton = nullptr;
     adqt::widgets::AdButton* m_watermarkButton = nullptr;
@@ -986,6 +995,7 @@ class ScreenshotToolPalette final : public QWidget,
     std::optional<Tool> m_activeTool;
     Tool m_lastHighlightTool = Tool::PenHighlight;
     Tool m_lastFilterTool = Tool::PenFilter;
+    Tool m_lastEraserTool = Tool::Eraser;
     adqt::widgets::AdButton* m_activeToolButton = nullptr;
     QVector<QFrame*> m_styleSeparatorFrames;
     QVector<QFrame*> m_recordExportSettingsSeparators;

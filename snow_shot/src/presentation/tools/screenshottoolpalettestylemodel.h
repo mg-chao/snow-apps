@@ -125,6 +125,8 @@ struct ScreenshotToolPaletteStyleState {
     SnowCanvasFilterStyle rectangleFilterStyle;
     SnowCanvasFilterStyle creationPenFilterStyle;
     SnowCanvasFilterStyle penFilterStyle;
+    SnowCanvasBrushEraserStyle creationBrushEraserStyle;
+    SnowCanvasBrushEraserStyle brushEraserStyle;
     SnowCanvasWatermarkConfig creationWatermarkConfig;
     SnowCanvasSpotlightConfig creationSpotlightConfig;
     SnowCanvasWatermarkConfig m_watermarkConfig;

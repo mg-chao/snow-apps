@@ -1203,6 +1203,116 @@ void jobs() {
                 expiredCancellation == 1 && expiredNotifications == 65,
             "expiry cancels pending work exactly once after retiring its record");
 }
+void eraserDocuments(const QString& directory) {
+    QImage image(100, 80, QImage::Format_ARGB32_Premultiplied);
+    image.fill(QColor(20, 40, 70));
+    const QString path = QDir(directory).filePath(QStringLiteral("eraser-source.png"));
+    require(image.save(path), "write eraser background");
+    McpJobRegistry registry;
+    McpDocumentService::Ports ports;
+    ports.jobs = &registry;
+    McpDocumentService service(std::move(ports));
+    quint64 sequence = 0;
+    QString id;
+    quint64 revision = 1;
+    const auto call = [&](QString method, QJsonObject parameters = {}, bool mutation = false) {
+        ScreenshotMcpRequest request;
+        request.connectionId = 1;
+        request.requestId = QString::number(++sequence);
+        request.idempotencyKey = request.requestId;
+        request.method = std::move(method);
+        if (!id.isEmpty()) {
+            parameters.insert(QStringLiteral("document_id"), id);
+            request.expectedRevision = revision;
+        }
+        request.params = std::move(parameters);
+        std::optional<ScreenshotMcpResponse> response;
+        service.request(request, [&](auto result) { response = std::move(result); });
+        QElapsedTimer elapsed;
+        elapsed.start();
+        while (!response && elapsed.elapsed() < 10000) {
+            QCoreApplication::processEvents();
+            QThread::msleep(1);
+        }
+        require(response.has_value(), "eraser document command completes");
+        if (mutation && response->ok)
+            revision = response->revision.value_or(revision);
+        return *response;
+    };
+    const auto opened =
+        call(QStringLiteral("snow_shot_document_open"), {{QStringLiteral("path"), path}});
+    require(opened.ok, "open eraser document");
+    id = opened.result.value(QStringLiteral("document_id")).toString();
+    const auto render = [&] {
+        const auto response = call(QStringLiteral("snow_shot_document_render"));
+        require(response.ok && response.attachmentMime == QStringLiteral("image/png"),
+                "eraser document renders a PNG attachment at the current revision");
+        const auto rendered = QImage::fromData(response.attachment);
+        require(rendered.size() == image.size(),
+                "eraser document attachment decodes to the original canvas size");
+        return rendered;
+    };
+    require(
+        call(QStringLiteral("snow_shot_document_apply_annotations"),
+             {{QStringLiteral("operations"),
+               QJsonArray{QJsonObject{{QStringLiteral("type"), QStringLiteral("rectangle")},
+                                      {QStringLiteral("bounds"), QJsonArray{10, 10, 60, 50}}}}}},
+             true)
+            .ok,
+        "create annotation under eraser masks");
+    const auto before = render();
+    require(before.pixelColor(10, 25) != image.pixelColor(10, 25) &&
+                before.pixelColor(70, 25) != image.pixelColor(70, 25),
+            "annotation changes local and distant source pixels");
+    for (const QString& tool :
+         {QStringLiteral("rectangle_eraser"), QStringLiteral("brush_eraser")}) {
+        require(call(QStringLiteral("snow_shot_document_set_tool"),
+                     {{QStringLiteral("tool"), tool}}, true)
+                    .ok,
+                "MCP accepts each new eraser tool");
+        if (tool == QStringLiteral("brush_eraser")) {
+            require(
+                call(QStringLiteral("snow_shot_document_set_tool_style"),
+                     {{QStringLiteral("target"), tool},
+                      {QStringLiteral("style"), QJsonObject{{QStringLiteral("stroke_width"), 12}}}},
+                     true)
+                    .ok,
+                "brush MCP style accepts creation width");
+            const auto invalid =
+                call(QStringLiteral("snow_shot_document_set_tool_style"),
+                     {{QStringLiteral("target"), tool},
+                      {QStringLiteral("style"), QJsonObject{{QStringLiteral("opacity"), 0.5}}}},
+                     true);
+            require(!invalid.ok, "brush MCP style rejects immutable opacity");
+        }
+        const QJsonArray points = tool == QStringLiteral("rectangle_eraser")
+                                      ? QJsonArray{QJsonArray{5, 20}, QJsonArray{20, 35}}
+                                      : QJsonArray{QJsonArray{10, 20}, QJsonArray{10, 35}};
+        if (tool == QStringLiteral("rectangle_eraser")) {
+            require(!call(QStringLiteral("snow_shot_document_edit_elements"),
+                          {{QStringLiteral("action"), QStringLiteral("erase_path")},
+                           {QStringLiteral("points"), QJsonArray{QJsonArray{10, 25}}}},
+                          true)
+                         .ok,
+                    "rectangle MCP eraser requires two corners");
+        }
+        require(call(QStringLiteral("snow_shot_document_edit_elements"),
+                     {{QStringLiteral("action"), QStringLiteral("erase_path")},
+                      {QStringLiteral("points"), points}},
+                     true)
+                    .ok,
+                "existing erase_path creates the active background eraser");
+        const auto erased = render();
+        require(erased.pixelColor(10, 25) == image.pixelColor(10, 25) &&
+                    erased.pixelColor(70, 25) == before.pixelColor(70, 25),
+                "MCP eraser restores local background and preserves distant annotation");
+        require(call(QStringLiteral("snow_shot_document_undo"), {}, true).ok,
+                "MCP eraser gesture is one undo transaction");
+        require(render() == before, "undo restores complete annotation with original geometry");
+    }
+    service.shutdown();
+}
+
 void documents(const QString& directory) {
     QImage image(80, 60, QImage::Format_ARGB32_Premultiplied);
     image.fill(Qt::white);
@@ -1582,6 +1692,11 @@ int main(int argc, char** argv) {
     }
     if (application.arguments().contains(QStringLiteral("--application-only"))) {
         runMcpApplicationTests();
+        snow_shot::storage::ApplicationStorage::instance().shutdown();
+        return 0;
+    }
+    if (application.arguments().contains(QStringLiteral("--eraser-only"))) {
+        eraserDocuments(temporary.path());
         snow_shot::storage::ApplicationStorage::instance().shutdown();
         return 0;
     }

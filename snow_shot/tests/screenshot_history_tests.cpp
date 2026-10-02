@@ -2152,6 +2152,50 @@ void selectionResizeModeAdjustsGrabOffsetAtPress() {
             "follow-movement resize must keep the press-time grab offset on the dragged border");
 }
 
+void eraserWheelUsesBrushCreationWidthOnly() {
+    ScreenshotCaptureState captureState;
+    captureState.sessionState = ScreenshotSessionState::Editing;
+    ScreenshotDisplaySession displays;
+    ScreenshotGeometryMapper geometry;
+    ScreenshotSelectionModel selection;
+    selection.setSelectionRect(QRectF(0, 0, 200, 160));
+    ScreenshotIntelligentSelectionModel intelligent;
+    ScreenshotInteractionState interaction;
+    interaction.confirmSelection();
+    QList<int> directions;
+    ScreenshotOverlayInputActions actions;
+    actions.stepPenFilterStrokeWidth = [&](int direction) {
+        directions.append(direction);
+        return true;
+    };
+    actions.stepStrokeWidth = [](int) {
+        require(false, "eraser width must not use shape stroke editing");
+        return false;
+    };
+    ScreenshotOverlayInputHandler handler({captureState, interaction, selection, intelligent,
+                                           geometry, displays, std::move(actions)});
+    interaction.setCanvasTool(ScreenshotActiveTool::BrushEraser);
+    require(handler.handleWheel(nullptr, {}, {0, 120}, {}) && directions == QList<int>{1},
+            "screenshot brush eraser wheel reaches the shared creation width route");
+    require(handler.handleWheel(nullptr, {}, {0, 120}, {0, -1}) && directions == QList<int>{1, -1},
+            "precise brush eraser wheel direction takes priority over estimated notches");
+    require(!handler.handleWheel(nullptr, {}, {}, {}) && directions.size() == 2,
+            "zero wheel delta leaves brush eraser width unchanged");
+    handler.setExternalDragActive(true);
+    require(handler.handleWheel(nullptr, {}, {0, 120}, {}) && directions.size() == 2,
+            "external drag consumes the wheel without changing brush eraser creation width");
+    handler.setExternalDragActive(false);
+    for (const auto tool : {ScreenshotActiveTool::Eraser, ScreenshotActiveTool::RectangleEraser}) {
+        interaction.setCanvasTool(tool);
+        require(!handler.handleWheel(nullptr, {}, {0, 120}, {}) && directions.size() == 2,
+                "element and rectangle erasers do not expose a brush width wheel editor");
+    }
+    interaction.setCanvasTool(ScreenshotActiveTool::BrushEraser);
+    interaction.enterScrollingCapture();
+    require(!handler.handleWheel(nullptr, {}, {0, 120}, {}) && directions.size() == 2,
+            "scrolling capture retains its wheel input instead of editing an eraser width");
+}
+
 void completionGesturesUseSharedEligibilityAcrossTools() {
     const storage::ScreenshotSettings settings;
     const QString originalDoubleClick = settings.doubleClickAction();
@@ -2227,6 +2271,8 @@ void completionGesturesUseSharedEligibilityAcrossTools() {
             ScreenshotActiveTool::RectangleHighlight,
             ScreenshotActiveTool::PenHighlight,
             ScreenshotActiveTool::Eraser,
+            ScreenshotActiveTool::RectangleEraser,
+            ScreenshotActiveTool::BrushEraser,
             ScreenshotActiveTool::RectangleFilter,
             ScreenshotActiveTool::Watermark,
             ScreenshotActiveTool::Text,
@@ -3688,9 +3734,10 @@ void cursorMovementEligibilityFollowsInteractionState() {
             "a drawing tool must enable cursor movement while editing");
 
     const ScreenshotActiveTool unsupportedTools[] = {
-        ScreenshotActiveTool::Eraser,    ScreenshotActiveTool::Spotlight,
-        ScreenshotActiveTool::Watermark, ScreenshotActiveTool::Ocr,
-        ScreenshotActiveTool::Table,     ScreenshotActiveTool::Qr,
+        ScreenshotActiveTool::Eraser,      ScreenshotActiveTool::RectangleEraser,
+        ScreenshotActiveTool::BrushEraser, ScreenshotActiveTool::Spotlight,
+        ScreenshotActiveTool::Watermark,   ScreenshotActiveTool::Ocr,
+        ScreenshotActiveTool::Table,       ScreenshotActiveTool::Qr,
     };
     for (ScreenshotActiveTool tool : unsupportedTools) {
         interaction.setCanvasTool(tool);
@@ -5039,6 +5086,11 @@ int main(int argc, char** argv) {
     };
     require(storage::ApplicationStorage::instance().initialize(storageOptions).success,
             "failed to initialize isolated shortcut settings");
+    if (QCoreApplication::arguments().contains(QStringLiteral("--eraser-wheel-only"))) {
+        eraserWheelUsesBrushCreationWidthOnly();
+        storage::ApplicationStorage::instance().shutdown();
+        return 0;
+    }
     auto metadataLifecycle = [&]() {
         const QDir root(temporary.path());
         idlePublicationsReconcileRepositoryLimits(root.filePath(QStringLiteral("metadata-limits")));
@@ -5171,6 +5223,7 @@ int main(int argc, char** argv) {
     nonMoveToolPermanentlySwitchesForSelectionResize();
     recognitionAndScrollingToolsResizeSelectionBorder();
     selectionResizeModeAdjustsGrabOffsetAtPress();
+    eraserWheelUsesBrushCreationWidthOnly();
     completionGesturesUseSharedEligibilityAcrossTools();
     externalSelectionSupportsHeldShortcuts();
     colorCopyEndsCaptureOnlyAfterSuccessfulCopy();

@@ -2,6 +2,7 @@
 
 #include "snow_canvas_display_cache.h"
 #include "snow_canvas_renderer.h"
+#include "snow_canvas_pen_mask_atlas.h"
 #include "snow_canvas_viewport.h"
 #include "snow_draw_engine_qt/snow_canvas_custom_renderer.h"
 
@@ -12,6 +13,7 @@
 // source scene and its explicit filter passes even when the live viewport crops it.
 class SnowCanvasReferenceScene final {
   public:
+    ~SnowCanvasReferenceScene();
     bool render(SnowRuntime runtime, const SnowCanvasFilterRenderReference& reference,
                 const snow_canvas_renderer::SceneRenderRequest& request,
                 const QTransform& canvasToView);
@@ -21,6 +23,7 @@ class SnowCanvasReferenceScene final {
   private:
     SnowCanvasViewport m_viewport;
     SnowCanvasDisplayCache m_displayCache;
+    snow_canvas_pen_mask::PenMaskAtlas m_penMasks;
     SnowCanvasFilterRenderReference m_reference;
     QImage m_image;
     std::uint64_t m_sceneRevision = 0;

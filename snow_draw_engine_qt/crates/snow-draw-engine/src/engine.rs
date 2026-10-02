@@ -22,6 +22,8 @@ mod document_commands;
 #[cfg(test)]
 mod duplicate_drag_tests;
 #[cfg(test)]
+mod eraser_filter_tests;
+#[cfg(test)]
 mod filter_snap_tests;
 #[cfg(test)]
 mod free_draw_continuation_tests;
@@ -270,6 +272,7 @@ impl Engine {
             shape_style_mixed: self.editor.shape_style_mixed(&self.model),
             filter_style: self.editor.filter_style(&self.model),
             filter_style_mixed: self.editor.filter_style_mixed(&self.model),
+            brush_eraser_style: self.editor.brush_eraser_style(),
         })
     }
 
@@ -322,6 +325,19 @@ impl Engine {
         } else {
             self.refresh_after_session_mutation(before)
         }
+    }
+
+    pub fn set_viewport_brush_eraser_creation_style(
+        &mut self,
+        id: ViewportId,
+        style: snow_draw_engine_editor::BrushEraserStyle,
+        properties: u32,
+    ) -> Result<MutationResult, ErrorCode> {
+        self.ensure_viewport(id)?;
+        let before = self.editor.snapshot();
+        self.editor
+            .set_brush_eraser_creation_style(style, properties)?;
+        self.refresh_after_session_mutation(before)
     }
 
     pub fn set_viewport_filter_creation_style(

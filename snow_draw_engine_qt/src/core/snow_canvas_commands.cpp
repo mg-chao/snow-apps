@@ -363,6 +363,19 @@ MutationResult setFilterCreationStyle(SnowRuntime runtime, SnowViewport viewport
     return result;
 }
 
+MutationResult setBrushEraserCreationStyle(SnowRuntime runtime, SnowViewport viewport,
+                                           const SnowBrushEraserStyle& style,
+                                           std::uint32_t properties) {
+    MutationResult result;
+    if (!hasViewport(runtime, viewport)) {
+        return result;
+    }
+    result.success =
+        snow_viewport_set_brush_eraser_creation_style_ex(
+            runtime, viewport, &style, properties, result.changedViewports.outParam()) == SNOW_OK;
+    return result;
+}
+
 MutationResult setTextStyle(SnowRuntime runtime, SnowViewport viewport, const SnowTextStyle& style,
                             std::uint32_t properties,
                             const std::vector<SnowTextLayoutOverride>& layouts) {

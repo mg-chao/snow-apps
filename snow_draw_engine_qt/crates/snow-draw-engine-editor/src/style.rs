@@ -772,6 +772,12 @@ impl Editor {
         if self.state.active_tool == ActiveTool::Spotlight && self.state.selection.ids.is_empty() {
             return StyleToolbarSource::DefaultSpotlight;
         }
+        if self.state.active_tool == ActiveTool::RectangleEraser {
+            return StyleToolbarSource::DefaultRectangleEraser;
+        }
+        if self.state.active_tool == ActiveTool::BrushEraser {
+            return StyleToolbarSource::DefaultBrushEraser;
+        }
         if self.state.active_tool == ActiveTool::Eraser {
             return StyleToolbarSource::Eraser;
         }
@@ -860,6 +866,27 @@ impl Editor {
         } else {
             StyleToolbarSource::DefaultRectangle
         }
+    }
+
+    pub fn brush_eraser_style(&self) -> crate::BrushEraserStyle {
+        self.state.default_brush_eraser
+    }
+
+    pub fn set_brush_eraser_creation_style(
+        &mut self,
+        style: crate::BrushEraserStyle,
+        properties: u32,
+    ) -> Result<(), ErrorCode> {
+        if properties & !crate::BRUSH_ERASER_STYLE_PROPERTY_STROKE_WIDTH != 0
+            || !style.stroke_width.is_finite()
+            || !(1.0..=72.0).contains(&style.stroke_width)
+        {
+            return Err(ErrorCode::InvalidArgument);
+        }
+        if properties & crate::BRUSH_ERASER_STYLE_PROPERTY_STROKE_WIDTH != 0 {
+            self.state.default_brush_eraser = style;
+        }
+        Ok(())
     }
 
     pub fn filter_style(&self, document: &DocumentModel) -> FilterStyle {
@@ -974,12 +1001,13 @@ impl Editor {
     }
 
     fn validate_filter_style_patch(style: FilterStyle, properties: u32) -> Result<(), ErrorCode> {
-        if properties
-            & !(FILTER_STYLE_PROPERTY_TYPE
-                | FILTER_STYLE_PROPERTY_STRENGTH
-                | FILTER_STYLE_PROPERTY_OPACITY
-                | FILTER_STYLE_PROPERTY_STROKE_WIDTH)
-            != 0
+        if style.filter_type == snow_draw_engine_document::CanvasFilterType::RestoreBackground
+            || properties
+                & !(FILTER_STYLE_PROPERTY_TYPE
+                    | FILTER_STYLE_PROPERTY_STRENGTH
+                    | FILTER_STYLE_PROPERTY_OPACITY
+                    | FILTER_STYLE_PROPERTY_STROKE_WIDTH)
+                != 0
             || !style.opacity.is_finite()
             || !(0.0..=1.0).contains(&style.opacity)
             || (properties & FILTER_STYLE_PROPERTY_STROKE_WIDTH != 0

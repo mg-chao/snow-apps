@@ -168,6 +168,7 @@ if(SNOW_APPS_BUILD_SNOW_SHOT)
         FEATURES ${_snow_scrolling_perf_features}
         STRIP_MSVC_DIRECTIVES
     )
+    snow_add_rust_bundle_selector(snow_shot_rust_ffi_selector snow_shot_rust_ffi_bundle)
     foreach(_snow_rust_ffi_target IN ITEMS
             snow_capture_c
             snow_recording_c
@@ -178,7 +179,7 @@ if(SNOW_APPS_BUILD_SNOW_SHOT)
             snow_visual_region_detector_c)
         add_library("${_snow_rust_ffi_target}" INTERFACE)
         target_link_libraries("${_snow_rust_ffi_target}" INTERFACE
-            snow_shot_rust_ffi_bundle)
+            snow_shot_rust_ffi_selector)
     endforeach()
     unset(_snow_rust_ffi_target)
     target_include_directories(snow_recording_effects_c INTERFACE

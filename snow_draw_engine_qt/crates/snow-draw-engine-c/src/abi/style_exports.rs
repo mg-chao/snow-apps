@@ -178,6 +178,7 @@ pub unsafe extern "C" fn snow_viewport_get_style_toolbar_state(
                         shape_style_mixed: state.shape_style_mixed,
                         filter_style: state.filter_style.into(),
                         filter_style_mixed: state.filter_style_mixed,
+                        brush_eraser_style: state.brush_eraser_style.into(),
                     },
                 );
                 Ok(())
@@ -661,4 +662,127 @@ pub unsafe extern "C" fn snow_viewport_set_text_creation_style_ex(
             Ok(())
         }))
     })
+}
+
+/// # Safety
+/// Handles must be live; style must be readable and output writable.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn snow_viewport_set_brush_eraser_creation_style_ex(
+    runtime: SnowRuntime,
+    viewport: SnowViewport,
+    style: *const SnowBrushEraserStyle,
+    properties: u32,
+    out_changed_viewports: *mut SnowChangedViewportList,
+) -> SnowError {
+    ffi_error(|| {
+        if style.is_null() || out_changed_viewports.is_null() {
+            return SnowError::InvalidArgument;
+        }
+        ffi_status(with_runtime_impl_mut(runtime, |state| {
+            let id = viewport_id(viewport)?;
+            let result = state
+                .runtime
+                .set_viewport_brush_eraser_creation_style(
+                    id,
+                    unsafe { (*style).into() },
+                    properties,
+                )
+                .map_err(SnowError::from)?;
+            write_changed_viewports(out_changed_viewports, result.changed_viewports);
+            Ok(())
+        }))
+    })
+}
+
+#[cfg(test)]
+mod brush_eraser_tests {
+    use super::*;
+
+    #[test]
+    fn eraser_filters_ffi_style_is_creation_only_and_rejection_preserves_output() {
+        let mut state = SnowRuntimeImpl {
+            runtime: snow_draw_engine::Runtime::default(),
+        };
+        let id = state
+            .runtime
+            .create_viewport(snow_draw_engine::ViewportConfig::default())
+            .unwrap();
+        let mut viewport = SnowViewportImpl { id };
+        state
+            .runtime
+            .set_viewport_active_tool(id, snow_draw_engine::ActiveTool::BrushEraser)
+            .unwrap();
+        let before = state.runtime.serialize_document_session().unwrap();
+        let sentinel = std::ptr::dangling_mut::<SnowChangedViewportListImpl>();
+        let mut changed = sentinel;
+        for (style, properties) in [
+            (
+                SnowBrushEraserStyle { stroke_width: 0.0 },
+                SNOW_BRUSH_ERASER_STYLE_PROPERTY_STROKE_WIDTH,
+            ),
+            (
+                SnowBrushEraserStyle {
+                    stroke_width: f64::NAN,
+                },
+                SNOW_BRUSH_ERASER_STYLE_PROPERTY_STROKE_WIDTH,
+            ),
+            (SnowBrushEraserStyle::default(), u32::MAX),
+        ] {
+            assert_eq!(
+                unsafe {
+                    snow_viewport_set_brush_eraser_creation_style_ex(
+                        &mut state,
+                        &mut viewport,
+                        &style,
+                        properties,
+                        &mut changed,
+                    )
+                },
+                SnowError::InvalidArgument
+            );
+            assert_eq!(changed, sentinel);
+            assert_eq!(state.runtime.serialize_document_session().unwrap(), before);
+        }
+        let style = SnowBrushEraserStyle { stroke_width: 42.0 };
+        assert_eq!(
+            unsafe {
+                snow_viewport_set_brush_eraser_creation_style_ex(
+                    &mut state,
+                    &mut viewport,
+                    &style,
+                    SNOW_BRUSH_ERASER_STYLE_PROPERTY_STROKE_WIDTH,
+                    &mut changed,
+                )
+            },
+            SnowError::Ok
+        );
+        let toolbar = state.runtime.viewport_style_toolbar_state(id).unwrap();
+        assert_eq!(toolbar.brush_eraser_style.stroke_width, 42.0);
+        assert_eq!(
+            snow_style_toolbar_source_from_rust(toolbar.source),
+            SnowStyleToolbarSource::DefaultBrushEraser
+        );
+        assert_eq!(
+            state.runtime.viewport_active_tool(id).unwrap(),
+            snow_draw_engine::ActiveTool::BrushEraser
+        );
+        assert!(!state.runtime.history_state().can_undo);
+        unsafe {
+            crate::abi::exports::snow_changed_viewports_destroy(changed);
+        }
+        for tool in [SnowActiveTool::RectangleEraser, SnowActiveTool::BrushEraser] {
+            assert_eq!(
+                snow_active_tool_from_rust(snow_active_tool_to_rust(tool)),
+                tool
+            );
+            assert_eq!(
+                snow_active_tool_mask_to_rust(1 << tool as u32),
+                snow_active_tool_to_rust(tool).policy_bit()
+            );
+        }
+        assert_eq!(std::mem::size_of::<SnowBrushEraserStyle>(), 8);
+        assert_eq!(SnowFilterType::RestoreBackground as u32, 7);
+        assert_eq!(SnowActiveTool::RectangleEraser as u32, 15);
+        assert_eq!(SnowActiveTool::BrushEraser as u32, 16);
+    }
 }

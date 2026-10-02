@@ -784,6 +784,61 @@ void pinnedResultDownscaleUsesLinearFiltering() {
             "stay pixel-exact");
 }
 
+void originalEraserSourceExcludesPresentationOverlays() {
+    using Renderer = ScreenshotCanvasRenderer;
+    SnowCanvasWidget canvas;
+    Renderer renderer(canvas);
+    QImage original(64, 64, QImage::Format_ARGB32_Premultiplied);
+    original.fill(QColor(30, 90, 160));
+    QImage filtered(original.size(), original.format());
+    filtered.fill(QColor(180, 210, 40));
+    const QRectF bounds(original.rect());
+    renderer.setImage(original, bounds);
+    const auto sourceRevision = renderer.originalBackgroundRevision();
+    const auto presentationRevision = renderer.contentRevision();
+    auto presentation = std::make_shared<ScreenshotOcrPresentation>();
+    presentation->selection = original.rect();
+    renderer.setOcrPresentation(presentation, Renderer::OcrPresentationMode::BackgroundOnly);
+    renderer.setOcrFilteredImage(filtered, bounds);
+    require(renderer.originalBackgroundRevision() == sourceRevision &&
+                renderer.contentRevision() != presentationRevision,
+            "OCR previews must invalidate composite pixels while preserving pristine source tiles");
+    renderer.setOcrVisible(false);
+    renderer.setOcrVisible(true);
+    require(renderer.originalBackgroundRevision() == sourceRevision,
+            "OCR visibility must preserve original source identity");
+    const SnowCanvasRenderContext context{original.rect(), QRegion(original.rect()), QTransform(),
+                                          1.0};
+    const auto paint = [&](bool pristine) {
+        QImage output(original.size(), original.format());
+        output.fill(Qt::transparent);
+        QPainter painter(&output);
+        if (pristine) {
+            renderer.renderOriginalBackground(painter, context);
+        } else {
+            renderer.renderBeforeCanvas(painter, context);
+        }
+        painter.end();
+        return output;
+    };
+    require(paint(false).pixel(32, 32) == filtered.pixel(32, 32),
+            "ordinary background must retain OCR replacement presentation");
+    require(paint(true) == original,
+            "eraser source must use original image pixels while OCR preview is visible");
+    renderer.setRenderMode(Renderer::RenderMode::ScrollingCapture);
+    renderer.setScrollingResultPreview(original, bounds, Qt::Horizontal);
+    require(paint(false) != original,
+            "ordinary scrolling presentation must include its crop guide");
+    require(paint(true) == original, "eraser source must exclude scrolling crop guides");
+    const auto scrollingRevision = renderer.originalBackgroundRevision();
+    renderer.setScrollingResultPreview(original, bounds, Qt::Vertical);
+    require(renderer.originalBackgroundRevision() == scrollingRevision && paint(true) == original,
+            "crop-guide changes must preserve pristine scrolling image tiles");
+    renderer.setScrollingResultPreview(filtered, bounds, Qt::Vertical);
+    require(renderer.originalBackgroundRevision() != scrollingRevision && paint(true) == filtered,
+            "replacing the source image must invalidate pristine image tiles");
+}
+
 void pinnedFiltersUseTheSourceResolution() {
     SnowCanvasRuntime runtime;
     SnowCanvasWidget canvas(runtime);
@@ -5760,6 +5815,10 @@ void runScreenshotCursorBenchmark();
 
 int main(int argc, char** argv) {
     QApplication application(argc, argv);
+    if (application.arguments().contains(QStringLiteral("--eraser-source-only"))) {
+        originalEraserSourceExcludesPresentationOverlays();
+        return 0;
+    }
     if (application.arguments().contains(QStringLiteral("--cursor-only"))) {
         runScreenshotCursorTests();
         return 0;
@@ -5943,6 +6002,7 @@ int main(int argc, char** argv) {
         ocrFilteredCropMatchesFullFrameReference();
         return 0;
     }
+    originalEraserSourceExcludesPresentationOverlays();
     pinnedFiltersUseTheSourceResolution();
     ocrBackgroundFillSamplesRobustlyAndChoosesContrastingText();
     ocrSolidFillRendersAdaptiveTextPerBlock();

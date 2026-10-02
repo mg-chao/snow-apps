@@ -85,9 +85,12 @@ class PenMaskAtlas {
         std::shared_ptr<Tile> tile;
         std::size_t bytes = 0;
         std::list<Key>::iterator lru;
+        std::uint64_t restorationGeometryIdentity = 0;
+        bool immutableRestoration = false;
     };
 
     std::uint64_t styleRevision(const SnowCanvasSceneItem& item) const;
+    std::uint64_t restorationGeometryIdentity(const SnowCanvasSceneItem& item) const;
     std::uint64_t viewSignature(const void* canvasOwner, const SceneDisplayInfo& displayInfo,
                                 qreal devicePixelRatio) const;
     std::shared_ptr<Tile> rasterizeTile(const SnowCanvasSceneItem& item, int physicalTileX,

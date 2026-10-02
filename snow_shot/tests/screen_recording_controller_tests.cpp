@@ -1,4 +1,5 @@
 #include "snow_shot/presentation/screenshotcanvastoolstyles.h"
+#include "eraser_toolbar_test_support.h"
 #include "window_close_shortcut_test_support.h"
 #include "../src/presentation/recording/recordingrenderjob.h"
 #include <QFontDatabase>
@@ -3074,6 +3075,36 @@ void recordingColorSamplingIsConnected(bool nativeDesktop = false) {
     QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
 }
 
+void recordingEraserTools() {
+    ScreenRecordingController controller(testEffectsSource);
+    const auto areaWindow = [] {
+        for (auto* widget : QApplication::topLevelWidgets()) {
+            if (auto* area = qobject_cast<ScreenRecordingAreaWindow*>(widget);
+                area && area->isVisible())
+                return area;
+        }
+        return static_cast<ScreenRecordingAreaWindow*>(nullptr);
+    };
+    controller.open(QRect(10, 10, 640, 480));
+    QCoreApplication::processEvents();
+    auto* area = areaWindow();
+    require(area != nullptr, "recording eraser fixture opens an annotation canvas");
+    verifyEraserToolbarHost(*palette(), *area->canvas(), require);
+    require(area->inputMode() == ScreenRecordingAreaWindow::InputMode::Drawing,
+            "recording eraser modes enable canvas drawing input");
+    palette()->recordingCloseRequested();
+    QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+    controller.open(QRect(10, 10, 640, 480));
+    QCoreApplication::processEvents();
+    area = areaWindow();
+    require(area && palette()->activateDrawingShortcut(QStringLiteral("eraser")) &&
+                area->canvas()->canvasTool() == SnowCanvasTool::BrushEraser &&
+                area->canvas()->canvasStyleToolbarState().brushEraserStyle.strokeWidth == 31,
+            "new recording sessions restore the eraser variant and independent width");
+    palette()->recordingCloseRequested();
+    QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+}
+
 int main(int argc, char** argv) {
 #ifdef SNOW_RECORDING_EFFECTS_BENCHMARK
     RecordingEffectsBenchmarkApplication app(argc, argv);
@@ -3322,6 +3353,11 @@ int main(int argc, char** argv) {
     }
     if (app.arguments().contains(QStringLiteral("--color-sampling-native-only"))) {
         recordingColorSamplingIsConnected(true);
+        ApplicationStorage::instance().shutdown();
+        return 0;
+    }
+    if (app.arguments().contains(QStringLiteral("--eraser-only"))) {
+        recordingEraserTools();
         ApplicationStorage::instance().shutdown();
         return 0;
     }

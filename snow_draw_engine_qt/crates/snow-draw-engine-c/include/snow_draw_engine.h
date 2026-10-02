@@ -77,7 +77,9 @@ typedef enum SnowActiveTool {
     SNOW_ACTIVE_TOOL_PEN_HIGHLIGHT = 11,
     SNOW_ACTIVE_TOOL_PEN_FILTER = 12,
     SNOW_ACTIVE_TOOL_SPOTLIGHT = 13,
-    SNOW_ACTIVE_TOOL_AUTO_FILTER = 14
+    SNOW_ACTIVE_TOOL_AUTO_FILTER = 14,
+    SNOW_ACTIVE_TOOL_RECTANGLE_ERASER = 15,
+    SNOW_ACTIVE_TOOL_BRUSH_ERASER = 16
 } SnowActiveTool;
 #define SNOW_ACTIVE_TOOL_FILTER SNOW_ACTIVE_TOOL_RECTANGLE_FILTER
 #define SNOW_ACTIVE_TOOL_HIGHLIGHT SNOW_ACTIVE_TOOL_RECTANGLE_HIGHLIGHT
@@ -106,7 +108,9 @@ typedef enum SnowStyleToolbarSource {
     SNOW_STYLE_TOOLBAR_SOURCE_DEFAULT_PEN_FILTER = 20,
     SNOW_STYLE_TOOLBAR_SOURCE_SELECTED_PEN_FILTER = 21,
     SNOW_STYLE_TOOLBAR_SOURCE_DEFAULT_SPOTLIGHT = 22,
-    SNOW_STYLE_TOOLBAR_SOURCE_SELECTED_SPOTLIGHT = 23
+    SNOW_STYLE_TOOLBAR_SOURCE_SELECTED_SPOTLIGHT = 23,
+    SNOW_STYLE_TOOLBAR_SOURCE_DEFAULT_RECTANGLE_ERASER = 24,
+    SNOW_STYLE_TOOLBAR_SOURCE_DEFAULT_BRUSH_ERASER = 25
 } SnowStyleToolbarSource;
 #define SNOW_STYLE_TOOLBAR_SOURCE_DEFAULT_FILTER SNOW_STYLE_TOOLBAR_SOURCE_DEFAULT_RECTANGLE_FILTER
 #define SNOW_STYLE_TOOLBAR_SOURCE_SELECTED_FILTER                                                  \
@@ -123,8 +127,15 @@ typedef enum SnowFilterType {
     SNOW_FILTER_TYPE_INVERSION = 3,
     SNOW_FILTER_TYPE_EMBOSS = 4,
     SNOW_FILTER_TYPE_SMART_ERASE = 5,
-    SNOW_FILTER_TYPE_BRIGHTNESS = 6
+    SNOW_FILTER_TYPE_BRIGHTNESS = 6,
+    SNOW_FILTER_TYPE_RESTORE_BACKGROUND = 7
 } SnowFilterType;
+
+typedef struct SnowBrushEraserStyle {
+    double stroke_width;
+} SnowBrushEraserStyle;
+
+#define SNOW_BRUSH_ERASER_STYLE_PROPERTY_STROKE_WIDTH (1u << 0)
 
 typedef struct SnowFilterStyle {
     SnowFilterType filter_type;
@@ -564,6 +575,7 @@ typedef struct SnowStyleToolbarState {
     uint32_t shape_style_mixed;
     SnowFilterStyle filter_style;
     uint32_t filter_style_mixed;
+    SnowBrushEraserStyle brush_eraser_style;
 } SnowStyleToolbarState;
 
 typedef struct SnowStyleDefaults {
@@ -579,6 +591,7 @@ typedef struct SnowStyleDefaults {
     SnowSerialNumberStyle serial_number;
     SnowWatermarkConfig watermark;
     SnowSpotlightConfig spotlight;
+    SnowBrushEraserStyle brush_eraser;
 } SnowStyleDefaults;
 
 struct SnowRuntimeConfig {
@@ -1285,6 +1298,10 @@ SnowError snow_viewport_set_filter_style_ex(SnowRuntime runtime, SnowViewport vi
 /* Patches creation defaults without changing the tool, selection, or document.
  * tool must be
  * RectangleFilter or PenFilter. Strength remains shared by both families. */
+SnowError snow_viewport_set_brush_eraser_creation_style_ex(
+    SnowRuntime runtime, SnowViewport viewport, const SnowBrushEraserStyle* style,
+    uint32_t properties, SnowChangedViewportList* out_changed_viewports);
+
 SnowError snow_viewport_set_filter_creation_style_ex(
     SnowRuntime runtime, SnowViewport viewport, const SnowFilterStyle* style, uint32_t properties,
     SnowActiveTool tool, SnowChangedViewportList* out_changed_viewports);

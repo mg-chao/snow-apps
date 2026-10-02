@@ -170,6 +170,7 @@ class ScreenshotCanvasRenderer final : public SnowCanvasCustomRenderer {
     void clearRenderState() override;
 
     [[nodiscard]] std::uint64_t contentRevision() const override;
+    [[nodiscard]] std::uint64_t originalBackgroundRevision() const override;
     [[nodiscard]] std::optional<SnowCanvasFilterRenderReference>
     filterRenderReference() const override;
     [[nodiscard]] RenderMode renderMode() const;
@@ -191,6 +192,8 @@ class ScreenshotCanvasRenderer final : public SnowCanvasCustomRenderer {
 #endif
 
     void renderBeforeCanvas(QPainter& painter, const SnowCanvasRenderContext& context) override;
+    void renderOriginalBackground(QPainter& painter,
+                                  const SnowCanvasRenderContext& context) override;
     void renderAfterCanvas(QPainter& painter, const SnowCanvasRenderContext& context) override;
 
   private:
@@ -208,7 +211,9 @@ class ScreenshotCanvasRenderer final : public SnowCanvasCustomRenderer {
         bool draw(QPainter& painter, const QPainterPath& path, const QColor& color, bool exterior,
                   const QRect& viewport);
     };
-    void invalidateCachedContent();
+    void invalidateCachedContent(bool originalChanged = true);
+    void paintBackground(QPainter& painter, const SnowCanvasRenderContext& context,
+                         bool originalOnly);
     [[nodiscard]] ScreenshotOcrTextLayer* ensureOcrTextLayer();
     // Widget-space repaint region for an image canvas rect; empty when the
     // rect maps outside the viewport, the full viewport when the display cache is
@@ -219,6 +224,7 @@ class ScreenshotCanvasRenderer final : public SnowCanvasCustomRenderer {
     QPointer<SnowCanvasWidget> m_canvasGuard;
     QMetaObject::Connection m_themeConnection;
     std::uint64_t m_contentRevision = 0;
+    std::uint64_t m_originalBackgroundRevision = 0;
     ScreenshotImageSource m_imageSource;
     QImage m_scrollingResultPreviewImage;
     QRectF m_scrollingResultPreviewCanvasRect;

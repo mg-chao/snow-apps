@@ -36,6 +36,13 @@ void filterStyleParticipatesInToolbarStateDiffs() {
 
     require(!snow_canvas_state::diffSnapshots(next, next).any(),
             "identical snapshots should not emit state synchronization");
+    auto brushChanged = next;
+    brushChanged.styleToolbarState.brush_eraser_style.stroke_width = 42.0;
+    require(snow_canvas_state::diffSnapshots(next, brushChanged).styleToolbarChanged,
+            "independent eraser creation width must trigger toolbar synchronization");
+    require(snow_canvas_types::toCanvasStyleToolbarState(brushChanged.styleToolbarState)
+                    .brushEraserStyle.strokeWidth == 42.0,
+            "C/Qt state conversion must preserve independent brush width");
 }
 
 template <typename T> void requireEqualPair(const T& value, const char* message) {
@@ -216,6 +223,7 @@ void publicCanvasDtosUseExactCompleteEquality() {
     changedToolbar.filterStyle.strength = 0.25;
     requireUnequalPair(toolbar, changedToolbar, "filter style should participate");
     REQUIRE_TOOLBAR_CHANGE(filterStyleMixed, 8u);
+    REQUIRE_TOOLBAR_CHANGE(brushEraserStyle, (SnowCanvasBrushEraserStyle{42.0}));
 #undef REQUIRE_TOOLBAR_CHANGE
 
     SnowCanvasSerialNumberToolbarState serialToolbar;

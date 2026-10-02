@@ -124,6 +124,14 @@
             <translation>置于顶层</translation>
         </message>
         <message>
+            <source>Brush Eraser</source>
+            <translation>画笔橡皮擦</translation>
+        </message>
+        <message>
+            <source>Brush eraser stroke width %1 (%2px)</source>
+            <translation>画笔橡皮擦笔画宽度 %1（%2px）</translation>
+        </message>
+        <message>
             <source>Cancel</source>
             <translation>取消</translation>
         </message>
@@ -206,6 +214,10 @@
         <message>
             <source>Current arrow stroke width</source>
             <translation>当前箭头描边宽度</translation>
+        </message>
+        <message>
+            <source>Current brush eraser stroke width</source>
+            <translation>当前画笔橡皮擦笔画宽度</translation>
         </message>
         <message>
             <source>Current pen filter stroke width</source>
@@ -330,6 +342,10 @@
         <message>
             <source>Elbow arrow</source>
             <translation>折线箭头</translation>
+        </message>
+        <message>
+            <source>Element Eraser</source>
+            <translation>元素橡皮擦</translation>
         </message>
         <message>
             <source>Ellipse</source>
@@ -766,6 +782,10 @@
         <message>
             <source>Rectangle</source>
             <translation>矩形</translation>
+        </message>
+        <message>
+            <source>Rectangle Eraser</source>
+            <translation>矩形橡皮擦</translation>
         </message>
         <message>
             <source>Rectangle filter</source>

@@ -14,6 +14,7 @@ pub extern "C" fn snow_filter_render_spec_resolve(
         3 => snow_draw_engine::DisplayFilterType::Inversion,
         4 => snow_draw_engine::DisplayFilterType::Emboss,
         6 => snow_draw_engine::DisplayFilterType::Brightness,
+        7 => snow_draw_engine::DisplayFilterType::RestoreBackground,
         5 => snow_draw_engine::DisplayFilterType::SmartErase,
         _ => snow_draw_engine::DisplayFilterType::Mosaic,
     };
@@ -26,6 +27,7 @@ pub extern "C" fn snow_filter_render_spec_resolve(
             snow_draw_engine::DisplayFilterType::Inversion => 3,
             snow_draw_engine::DisplayFilterType::Emboss => 4,
             snow_draw_engine::DisplayFilterType::Brightness => 6,
+            snow_draw_engine::DisplayFilterType::RestoreBackground => 7,
             snow_draw_engine::DisplayFilterType::SmartErase => 5,
         },
         render_phase: 0,

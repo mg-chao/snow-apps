@@ -1,4 +1,5 @@
 #include "snow_shot/presentation/globalcanvascontroller.h"
+#include "eraser_toolbar_test_support.h"
 #include "../src/presentation/globalcanvas/globalcanvasplatform.h"
 #include "snow_shot/presentation/screenshotfloatingtoolpalettewindow.h"
 #include "snow_shot/presentation/shortcutdisplaytext.h"
@@ -775,6 +776,22 @@ void templateInsertionAfterNavigation(QApplication& app) {
     require(settings.setTemplates(original), "restore template library");
 }
 
+void canvasEraserTools(QApplication& app) {
+    presentation::GlobalCanvasController controller(
+        nullptr, {[&]() { return app.primaryScreen(); }, [](QWidget*, bool) { return true; }});
+    controller.activate();
+    app.processEvents();
+    verifyEraserToolbarHost(*controller.toolbar()->palette(), *controller.canvas(), require);
+    controller.shutdown();
+    controller.activate();
+    app.processEvents();
+    auto* palette = controller.toolbar()->palette();
+    require(palette->activateDrawingShortcut(QStringLiteral("eraser")) &&
+                controller.canvas()->canvasTool() == SnowCanvasTool::BrushEraser &&
+                controller.canvas()->canvasStyleToolbarState().brushEraserStyle.strokeWidth == 31,
+            "new canvas sessions restore the eraser variant and independent width");
+}
+
 int main(int argc, char** argv) {
     QApplication app(argc, argv);
     app.setQuitOnLastWindowClosed(false);
@@ -812,6 +829,11 @@ int main(int argc, char** argv) {
         return 0;
     }
 #endif
+    if (app.arguments().contains(QStringLiteral("--eraser-only"))) {
+        canvasEraserTools(app);
+        storage.shutdown();
+        return 0;
+    }
     if (app.arguments().contains(QStringLiteral("--window-shadow-only"))) {
         canvasWindowHasNoNativeShadow();
         storage.shutdown();

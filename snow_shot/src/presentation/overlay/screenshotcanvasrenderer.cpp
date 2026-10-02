@@ -959,13 +959,15 @@ void ScreenshotCanvasRenderer::setScrollingResultPreview(QImage image, const QRe
     }
     const QRegion damage = canvasImageDamageRegion(m_scrollingResultPreviewCanvasRect) +
                            canvasImageDamageRegion(target);
+    const bool originalChanged = m_scrollingResultPreviewImage.cacheKey() != image.cacheKey() ||
+                                 m_scrollingResultPreviewCanvasRect != target;
     if (image.devicePixelRatio() != 1.0) {
         image.setDevicePixelRatio(1.0);
     }
     m_scrollingResultPreviewImage = std::move(image);
     m_scrollingResultPreviewCanvasRect = target;
     m_scrollingCropGuide = cropGuide;
-    invalidateCachedContent();
+    invalidateCachedContent(originalChanged);
     if (!damage.isEmpty()) {
         m_canvas.update(damage);
     }
@@ -1305,7 +1307,7 @@ void ScreenshotCanvasRenderer::setOcrVisible(bool visible) {
             m_ocrTextLayer->clearPresentation();
         }
     }
-    invalidateCachedContent();
+    invalidateCachedContent(false);
     m_canvas.update();
 }
 
@@ -1328,7 +1330,7 @@ void ScreenshotCanvasRenderer::setOcrPresentation(
         m_ocrBackgroundColor =
             theme.colorBgContainer.isValid() ? theme.colorBgContainer : QColor(Qt::white);
     }
-    invalidateCachedContent();
+    invalidateCachedContent(false);
     if (m_ocrVisible && m_ocrPresentationMode == OcrPresentationMode::BackgroundAndText) {
         ensureOcrTextLayer()->setPresentation(m_ocrPresentation);
     } else if (m_ocrTextLayer != nullptr) {
@@ -1380,7 +1382,7 @@ void ScreenshotCanvasRenderer::setOcrFilteredImage(QImage image, const QRectF& c
         m_ocrFilteredImage = {};
         m_ocrFilteredCanvasRect = {};
     }
-    invalidateCachedContent();
+    invalidateCachedContent(false);
     if (!dirtyRegion.isEmpty()) {
         m_canvas.update(dirtyRegion);
     }
@@ -1392,7 +1394,7 @@ void ScreenshotCanvasRenderer::clearOcrFilteredImage() {
     }
     m_ocrFilteredImage = {};
     m_ocrFilteredCanvasRect = {};
-    invalidateCachedContent();
+    invalidateCachedContent(false);
 }
 
 void ScreenshotCanvasRenderer::updateOcrSelection() {
@@ -1421,7 +1423,7 @@ void ScreenshotCanvasRenderer::clearOcrPresentation() {
     m_ocrFilteredCanvasRect = {};
     m_ocrBackgroundColor = {};
     m_ocrPresentationMode = OcrPresentationMode::BackgroundAndText;
-    invalidateCachedContent();
+    invalidateCachedContent(false);
     if (m_ocrTextLayer != nullptr) {
         m_ocrTextLayer->clearPresentation();
     }
@@ -1493,6 +1495,10 @@ void ScreenshotCanvasRenderer::clearRenderState() {
 
 std::uint64_t ScreenshotCanvasRenderer::contentRevision() const {
     return m_contentRevision;
+}
+
+std::uint64_t ScreenshotCanvasRenderer::originalBackgroundRevision() const {
+    return m_originalBackgroundRevision;
 }
 
 std::optional<SnowCanvasFilterRenderReference>
@@ -1592,8 +1598,11 @@ quint64 ScreenshotCanvasRenderer::ocrGeometrySynchronizationCountForTesting() co
 
 #endif
 
-void ScreenshotCanvasRenderer::invalidateCachedContent() {
+void ScreenshotCanvasRenderer::invalidateCachedContent(bool originalChanged) {
     ++m_contentRevision;
+    if (originalChanged) {
+        ++m_originalBackgroundRevision;
+    }
 }
 
 ScreenshotOcrTextLayer* ScreenshotCanvasRenderer::ensureOcrTextLayer() {
@@ -1605,6 +1614,17 @@ ScreenshotOcrTextLayer* ScreenshotCanvasRenderer::ensureOcrTextLayer() {
 
 void ScreenshotCanvasRenderer::renderBeforeCanvas(QPainter& painter,
                                                   const SnowCanvasRenderContext& context) {
+    paintBackground(painter, context, false);
+}
+
+void ScreenshotCanvasRenderer::renderOriginalBackground(QPainter& painter,
+                                                        const SnowCanvasRenderContext& context) {
+    paintBackground(painter, context, true);
+}
+
+void ScreenshotCanvasRenderer::paintBackground(QPainter& painter,
+                                               const SnowCanvasRenderContext& context,
+                                               bool originalOnly) {
     if (m_renderMode == RenderMode::ScrollingCapture || m_renderMode == RenderMode::PinnedResult) {
         painter.save();
         // Replace every covered device pixel, including fractional-DPI edges.
@@ -1628,7 +1648,7 @@ void ScreenshotCanvasRenderer::renderBeforeCanvas(QPainter& painter,
                     paintExposedScreenshotImage(painter, targetRect, m_scrollingResultPreviewImage,
                                                 QRectF(m_scrollingResultPreviewImage.rect()),
                                                 context.exposedRegion);
-                    if (m_scrollingCropGuide) {
+                    if (!originalOnly && m_scrollingCropGuide) {
                         painter.setClipRegion(context.exposedRegion, Qt::IntersectClip);
                         painter.setClipRect(targetRect, Qt::IntersectClip);
                         painter.setRenderHint(QPainter::Antialiasing, false);
@@ -1699,7 +1719,8 @@ void ScreenshotCanvasRenderer::renderBeforeCanvas(QPainter& painter,
             }
         }
     }
-    if (m_ocrVisible && m_ocrPresentation != nullptr && !m_ocrFilteredImage.isNull()) {
+    if (!originalOnly && m_ocrVisible && m_ocrPresentation != nullptr &&
+        !m_ocrFilteredImage.isNull()) {
         const QRectF canvasRect = m_ocrFilteredCanvasRect.isValid()
                                       ? m_ocrFilteredCanvasRect
                                       : QRectF(m_ocrPresentation->selection).normalized();

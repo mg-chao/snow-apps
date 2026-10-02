@@ -84,12 +84,17 @@ class SnowCanvasRuntimeEditor final {
                                  quint32 properties = SnowCanvasTextStyleAllProperties);
     bool setSerialNumberStyleFromToolbar(const SnowCanvasSerialNumberStyle&);
     bool setFilterStyleFromToolbar(const SnowCanvasFilterStyle&, quint32);
+    bool
+    setBrushEraserCreationStyle(const SnowCanvasBrushEraserStyle&,
+                                quint32 properties = SnowCanvasBrushEraserStylePropertyStrokeWidth);
     bool setWatermarkConfigFromToolbar(const SnowCanvasWatermarkConfig&);
     bool setSpotlightConfigFromToolbar(const SnowCanvasSpotlightConfig&);
     bool select(quint32 index, quint32 generation);
     bool deleteSelected();
     bool deleteAllElements();
-    bool erasePath(const QList<QPointF>& points);
+    // Rectangle Eraser uses two corners; Brush Eraser accepts a stroke or a single dot.
+    bool erasePath(const QList<QPointF>& points,
+                   SnowCanvasTool eraserTool = SnowCanvasTool::Eraser);
     bool duplicateSelected(QPointF offset = QPointF(20, 20));
     bool reorderSelected(SnowCanvasSelectionOrder);
     bool alignSelected(SnowCanvasSelectionAlignment);

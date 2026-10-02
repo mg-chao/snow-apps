@@ -119,6 +119,13 @@ struct DocumentMutation<T> {
     #[serde(flatten)]
     options: T,
 }
+#[derive(Deserialize, JsonSchema)]
+#[serde(untagged)]
+#[schemars(extend("type" = "object"))]
+enum DocumentToolStyleMutation {
+    Standard(Box<DocumentMutation<StandardToolStyle>>),
+    BrushEraser(DocumentMutation<BrushEraserToolStyle>),
+}
 input!(Section { section: Option<String> });
 choices!(AppAction {
     ShowMain,
@@ -216,7 +223,9 @@ choices!(DocumentCanvasTool {
     SerialNumber,
     Watermark,
     Spotlight,
-    AutoFilter
+    AutoFilter,
+    RectangleEraser,
+    BrushEraser
 });
 input!(DocumentTool {
     tool: DocumentCanvasTool
@@ -928,7 +937,7 @@ pub fn schema(name: &str, input: Option<Value>) -> Result<Map<String, Value>, se
         | "snow_shot_document_redo" => model::<DocumentMutation<Empty>>(input),
         "snow_shot_document_apply_annotations" => model::<DocumentMutation<Annotations>>(input),
         "snow_shot_document_set_tool" => model::<DocumentMutation<DocumentTool>>(input),
-        "snow_shot_document_set_tool_style" => model::<DocumentMutation<ToolStyle>>(input),
+        "snow_shot_document_set_tool_style" => model::<DocumentToolStyleMutation>(input),
         "snow_shot_document_edit_elements" => {
             if input.as_ref().is_some_and(|v| {
                 v.get("action").and_then(Value::as_str) == Some("erase_path")

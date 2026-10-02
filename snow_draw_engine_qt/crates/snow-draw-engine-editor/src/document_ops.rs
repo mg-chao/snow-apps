@@ -614,7 +614,9 @@ impl Editor {
         document: &DocumentModel,
         id: ElementId,
     ) -> Result<(), ErrorCode> {
-        document.element(id)?;
+        if document.element(id)?.data.is_background_restore() {
+            return Err(ErrorCode::InvalidState);
+        }
         self.set_selection_state_with_document(Some(document), vec![id], Some(id));
         Ok(())
     }

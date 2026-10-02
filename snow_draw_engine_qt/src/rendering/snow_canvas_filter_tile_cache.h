@@ -15,6 +15,8 @@ namespace snow_canvas_filter_tile_cache {
 constexpr int kTilePhysicalSize = 256;
 constexpr std::size_t kByteLimit = 64u * 1024u * 1024u;
 
+enum class SourceKind { Composite, Pristine };
+
 struct Key {
     const void* canvasNamespace = nullptr;
     QPoint tile;
@@ -24,6 +26,7 @@ struct Key {
     std::uint64_t contentKey = 0;
     std::uint64_t dependencyFingerprint = 0;
     std::uint64_t nodeFingerprint = 0;
+    SourceKind sourceKind = SourceKind::Composite;
 
     bool operator==(const Key& other) const;
 };

@@ -354,6 +354,8 @@ screenshotShortcutHintRows(const ScreenshotShortcutHintContext& context) {
 
     QVector<ScreenshotShortcutHintRow> rows;
     if (context.activeTool != ScreenshotActiveTool::Eraser &&
+        context.activeTool != ScreenshotActiveTool::RectangleEraser &&
+        context.activeTool != ScreenshotActiveTool::BrushEraser &&
         context.activeTool != ScreenshotActiveTool::Ocr &&
         context.activeTool != ScreenshotActiveTool::Table &&
         context.activeTool != ScreenshotActiveTool::Qr &&
@@ -445,6 +447,13 @@ screenshotShortcutHintRows(const ScreenshotShortcutHintContext& context) {
         appendScreenshotConfiguredShortcutHintRow(rows, context.configuredShortcuts,
                                                   QStringLiteral("toggle_cursor_visibility"),
                                                   "Toggle cursor visibility");
+        break;
+    case ScreenshotActiveTool::RectangleEraser:
+        append(rows, "Maintain aspect ratio: Shift");
+        append(rows, "Draw from center: Alt");
+        break;
+    case ScreenshotActiveTool::BrushEraser:
+        append(rows, "Draw straight line: Shift");
         break;
     case ScreenshotActiveTool::Eraser:
     case ScreenshotActiveTool::Ocr:

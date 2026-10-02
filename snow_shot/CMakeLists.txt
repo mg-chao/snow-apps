@@ -3366,6 +3366,10 @@ if(SNOW_SHOT_BUILD_TESTS)
     )
     add_test(NAME snow-shot-selection-aspect-ratio-confirmation-tests
         COMMAND snow-shot-screenshot-history-tests --selection-aspect-ratio-only)
+    add_test(NAME snow-shot-screenshot-eraser-wheel-tests
+        COMMAND snow-shot-screenshot-history-tests --eraser-wheel-only -platform offscreen)
+    set_tests_properties(snow-shot-screenshot-eraser-wheel-tests PROPERTIES LABELS "unit" TIMEOUT 60
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
     snow_shot_import_offscreen_platform(snow-shot-screenshot-history-tests)
     add_test(
         NAME snow-shot-screenshot-completion-gesture-tests
@@ -3934,6 +3938,10 @@ if(SNOW_SHOT_BUILD_TESTS)
         COMMAND snow-shot-pinned-window-tests --checkerboard-only -platform offscreen)
     set_tests_properties(snow-shot-pinned-checkerboard-tests PROPERTIES LABELS "unit"
         RUN_SERIAL TRUE TIMEOUT 60)
+    add_test(NAME snow-shot-pinned-eraser-tests
+        COMMAND snow-shot-pinned-window-tests --eraser-only -platform offscreen)
+    set_tests_properties(snow-shot-pinned-eraser-tests PROPERTIES LABELS "unit" RUN_SERIAL TRUE TIMEOUT 60
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
     add_test(NAME snow-shot-pinned-remembered-drawing-tool-tests
         COMMAND snow-shot-pinned-window-tests --remembered-drawing-tool-only -platform offscreen)
     set_tests_properties(snow-shot-pinned-remembered-drawing-tool-tests PROPERTIES LABELS "unit"
@@ -4006,7 +4014,7 @@ if(SNOW_SHOT_BUILD_TESTS)
     set_tests_properties(snow-shot-pinned-style-wheel-tests PROPERTIES LABELS "unit" TIMEOUT 60)
     add_test(
         NAME snow-shot-pinned-toolbar-parity-tests
-        COMMAND snow-shot-pinned-window-tests --toolbar-parity-only
+        COMMAND snow-shot-pinned-window-tests --toolbar-parity-only -platform offscreen
     )
     add_test(NAME snow-shot-pinned-translation-tests
         COMMAND snow-shot-pinned-window-tests --translation-only)
@@ -4160,7 +4168,7 @@ if(SNOW_SHOT_BUILD_TESTS)
     target_link_libraries(snow-shot-file-pin-batch-tests PRIVATE snow_shot_image_codec Qt6::Widgets
         ${SNOW_SELECTED_FILES_LIBRARIES})
     if(APPLE)
-        target_link_libraries(snow-shot-file-pin-batch-tests PRIVATE snow_shot_rust_ffi_bundle)
+        target_link_libraries(snow-shot-file-pin-batch-tests PRIVATE snow_shot_rust_ffi_selector)
     endif()
     if(WIN32)
         target_link_libraries(snow-shot-file-pin-batch-tests PRIVATE ole32 oleaut32 shell32 uuid)
@@ -4694,6 +4702,12 @@ if(SNOW_SHOT_BUILD_TESTS)
             -platform offscreen)
     set_tests_properties(snow-shot-screenshot-tool-palette-remembered-drawing-tool-tests
         PROPERTIES LABELS "unit" TIMEOUT 60)
+    add_test(NAME snow-shot-eraser-toolbar-tests
+        COMMAND snow-shot-screenshot-tool-palette-tests --eraser-only -platform offscreen)
+    set_tests_properties(snow-shot-eraser-toolbar-tests PROPERTIES LABELS "unit" TIMEOUT 60)
+    add_test(NAME snow-shot-eraser-source-tests
+        COMMAND snow-shot-screenshot-canvas-renderer-tests --eraser-source-only -platform offscreen)
+    set_tests_properties(snow-shot-eraser-source-tests PROPERTIES LABELS "unit" TIMEOUT 60)
     add_test(NAME snow-shot-style-commit-tests
         COMMAND snow-shot-screenshot-tool-palette-tests --style-commit-only -platform offscreen)
     set_tests_properties(snow-shot-style-commit-tests PROPERTIES LABELS "unit" TIMEOUT 60)
@@ -4893,6 +4907,9 @@ if(SNOW_SHOT_BUILD_TESTS)
     snow_shot_import_offscreen_platform(snow-shot-screenshot-toolbar-remembered-tool-tests)
     add_test(NAME snow-shot-scrolling-interval-command-tests
         COMMAND snow-shot-screenshot-toolbar-remembered-tool-tests --scrolling-interval-only -platform offscreen)
+    add_test(NAME snow-shot-eraser-commands-tests
+        COMMAND snow-shot-screenshot-toolbar-remembered-tool-tests --eraser-only -platform offscreen)
+    set_tests_properties(snow-shot-eraser-commands-tests PROPERTIES LABELS "unit" TIMEOUT 60)
     add_test(NAME snow-shot-screenshot-toolbar-remembered-tool-tests
         COMMAND snow-shot-screenshot-toolbar-remembered-tool-tests)
     set_tests_properties(snow-shot-scrolling-interval-command-tests PROPERTIES LABELS "unit" TIMEOUT 60)
@@ -4976,6 +4993,10 @@ if(SNOW_SHOT_BUILD_TESTS)
     set_tests_properties(snow-shot-global-canvas-window-shadow-tests PROPERTIES LABELS "unit")
     add_test(NAME snow-shot-global-canvas-tests COMMAND snow-shot-global-canvas-tests -platform offscreen)
     set_tests_properties(snow-shot-global-canvas-tests PROPERTIES LABELS "unit" TIMEOUT 90
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
+    add_test(NAME snow-shot-global-canvas-eraser-tests
+        COMMAND snow-shot-global-canvas-tests --eraser-only -platform offscreen)
+    set_tests_properties(snow-shot-global-canvas-eraser-tests PROPERTIES LABELS "unit" TIMEOUT 60
         ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
     add_test(NAME snow-shot-global-canvas-color-sampling-tests
         COMMAND snow-shot-global-canvas-tests --color-sampling-only -platform offscreen)
@@ -5903,6 +5924,9 @@ if(SNOW_SHOT_BUILD_TESTS)
     add_test(NAME snow-shot-recording-color-sampler-tests
         COMMAND snow-shot-screen-recording-controller-tests --color-sampling-only -platform offscreen)
     set_tests_properties(snow-shot-recording-color-sampler-tests PROPERTIES LABELS "unit" TIMEOUT 60)
+    add_test(NAME snow-shot-recording-eraser-tests
+        COMMAND snow-shot-screen-recording-controller-tests --eraser-only -platform offscreen)
+    set_tests_properties(snow-shot-recording-eraser-tests PROPERTIES LABELS "unit" TIMEOUT 60)
     add_test(NAME snow-shot-recording-style-wheel-tests
         COMMAND snow-shot-screen-recording-controller-tests --style-wheel-only -platform offscreen)
     set_tests_properties(snow-shot-recording-style-wheel-tests PROPERTIES LABELS "unit" TIMEOUT 60)
@@ -6263,7 +6287,7 @@ if(SNOW_SHOT_BUILD_TESTS)
     target_include_directories(snow-shot-ocr-assets-tests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/include")
     target_link_libraries(snow-shot-ocr-assets-tests PRIVATE Qt6::Core Qt6::Network MINIZIP::minizip-ng)
     if(APPLE)
-        target_link_libraries(snow-shot-ocr-assets-tests PRIVATE snow_shot_rust_ffi_bundle)
+        target_link_libraries(snow-shot-ocr-assets-tests PRIVATE snow_shot_rust_ffi_selector)
     endif()
     add_test(NAME snow-shot-ocr-assets-tests COMMAND snow-shot-ocr-assets-tests)
     set_tests_properties(snow-shot-ocr-assets-tests PROPERTIES TIMEOUT 60 LABELS "unit"
@@ -6451,6 +6475,8 @@ if(SNOW_SHOT_BUILD_TESTS)
     set_tests_properties(snow-shot-mcp-storage-guard-tests PROPERTIES LABELS "unit" TIMEOUT 30
         ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
     add_test(NAME snow-shot-mcp-document-tests COMMAND snow-shot-mcp-document-tests -platform offscreen)
+    add_test(NAME snow-shot-mcp-eraser-tests COMMAND snow-shot-mcp-document-tests --eraser-only -platform offscreen)
+    set_tests_properties(snow-shot-mcp-eraser-tests PROPERTIES LABELS "unit" TIMEOUT 60)
     add_test(NAME snow-shot-mcp-application-tests
         COMMAND snow-shot-mcp-document-tests --application-only -platform offscreen)
     if(Python3_Interpreter_FOUND AND SNOW_SHOT_ENABLE_MCP)
@@ -6504,7 +6530,7 @@ if(SNOW_SHOT_BUILD_TESTS)
         Qt6::Gui
     )
     if(APPLE)
-        target_link_libraries(snow-shot-qr-recognition-service-tests PRIVATE snow_shot_rust_ffi_bundle)
+        target_link_libraries(snow-shot-qr-recognition-service-tests PRIVATE snow_shot_rust_ffi_selector)
     endif()
     add_test(
         NAME snow-shot-qr-recognition-service-tests
@@ -8211,7 +8237,11 @@ foreach(_conversion_controller_target IN ITEMS snow_shot
             src/presentation/components/screenshottranslationsettingsdialog.cpp
             include/snow_shot/presentation/screenshotimageconversioncontroller.h
             src/presentation/ocr/screenshotimageconversioncontroller.cpp)
-        if(NOT _conversion_controller_target STREQUAL "snow_shot")
+        # Settings already owns these widget implementations and their Qt metaobjects.
+        # Standalone conversion hosts compile them locally only without that library.
+        get_target_property(_conversion_controller_libraries
+            ${_conversion_controller_target} LINK_LIBRARIES)
+        if(NOT "snow_shot_settings" IN_LIST _conversion_controller_libraries)
             target_sources(${_conversion_controller_target} PRIVATE
                 include/snow_shot/presentation/components/formfields.h
                 src/presentation/components/formfields.cpp

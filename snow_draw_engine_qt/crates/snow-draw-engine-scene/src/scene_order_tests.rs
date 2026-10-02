@@ -115,6 +115,61 @@ fn culling_preserves_source_boundaries_and_effect_order() {
 }
 
 #[test]
+fn eraser_filters_keep_chronological_order_and_split_sources_even_when_culled() {
+    let mut model = DocumentModel::new();
+    let mut tx = Transaction::new("restoration source boundary");
+    tx.insert_filter(
+        id(0),
+        ElementMeta::default(),
+        filter(CanvasFilterType::Inversion, 0.0),
+    );
+    let mut eraser = filter(CanvasFilterType::RestoreBackground, 100.0);
+    eraser.strength = 1.0;
+    tx.insert_filter(id(1), ElementMeta::default(), eraser);
+    tx.insert_filter(
+        id(2),
+        ElementMeta::default(),
+        filter(CanvasFilterType::Inversion, 0.0),
+    );
+    model.apply_transaction(tx).unwrap();
+    assert_eq!(model.paint_order(), &[id(0), id(1), id(2)]);
+    let mut cache = DocumentSceneCache::new();
+    cache.sync(&model, None);
+    let mut composer = ViewportComposer::new();
+    for width in [256, 64] {
+        refresh(&mut composer, &cache, &model, width);
+        let patch = composer.acquire_patch(None);
+        let runs = patch.scene_render_plan.as_ref().unwrap();
+        assert_eq!(runs.len(), 2);
+        assert_eq!(runs[0].count, 1);
+        assert_eq!(runs[1].count, 1);
+        assert_ne!(runs[0].source_pass, runs[1].source_pass);
+        assert_ne!(runs[0].effect_run, runs[1].effect_run);
+        let indices: Vec<_> = patch
+            .scene
+            .ops
+            .iter()
+            .flat_map(|op| &op.insert_items)
+            .filter_map(|item| {
+                if let SceneDisplayItem::Filter(filter) = item {
+                    Some(filter.id.index)
+                } else {
+                    None
+                }
+            })
+            .collect();
+        assert_eq!(
+            indices,
+            if width == 256 {
+                vec![0, 1, 2]
+            } else {
+                vec![0, 2]
+            }
+        );
+    }
+}
+
+#[test]
 fn offscreen_boundary_visibility_changes_only_plan_and_dirties_filter_outputs() {
     let (mut model, mut cache) = fixture(false);
     let mut composer = ViewportComposer::new();

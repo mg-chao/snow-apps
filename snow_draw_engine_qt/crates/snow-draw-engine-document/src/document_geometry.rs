@@ -991,6 +991,11 @@ pub fn filter_hit_test(filter: &FilterData, point: Point<f64>, hit_tolerance: f6
 }
 
 pub fn validate_filter(filter: &FilterData) -> Result<(), ErrorCode> {
+    if filter.filter_type == crate::CanvasFilterType::RestoreBackground
+        && (filter.opacity != 1.0 || filter.strength != 1.0 || filter.auto_region_id.is_some())
+    {
+        return Err(ErrorCode::InvalidArgument);
+    }
     let scalar_fields = [
         filter.center.x,
         filter.center.y,
@@ -1069,6 +1074,11 @@ pub fn pen_filter_hit_test(filter: &PenFilterData, point: Point<f64>, hit_tolera
 }
 
 pub fn validate_pen_filter(filter: &PenFilterData) -> Result<(), ErrorCode> {
+    if filter.filter_type == crate::CanvasFilterType::RestoreBackground
+        && (filter.opacity != 1.0 || filter.strength != 1.0)
+    {
+        return Err(ErrorCode::InvalidArgument);
+    }
     let scalars = [
         filter.x,
         filter.y,
@@ -1085,16 +1095,18 @@ pub fn validate_pen_filter(filter: &PenFilterData) -> Result<(), ErrorCode> {
         || !(0.0..=1.0).contains(&filter.strength)
         || !(1.0..=72.0).contains(&filter.stroke_width)
         || !(0.0..=1.0).contains(&filter.opacity)
-        || filter.points.len() < 2
+        || filter.points.is_empty()
+        || (filter.points.len() < 2
+            && filter.filter_type != crate::CanvasFilterType::RestoreBackground)
         || filter.points.iter().any(|point| {
             point
                 .iter()
                 .any(|value| !value.is_finite() || !(0.0..=1.0).contains(value))
         })
-        || !filter
-            .global_points()
-            .windows(2)
-            .any(|segment| (segment[1].x - segment[0].x).hypot(segment[1].y - segment[0].y) > 0.0)
+        || (filter.filter_type != crate::CanvasFilterType::RestoreBackground
+            && !filter.global_points().windows(2).any(|segment| {
+                (segment[1].x - segment[0].x).hypot(segment[1].y - segment[0].y) > 0.0
+            }))
     {
         return Err(ErrorCode::InvalidArgument);
     }

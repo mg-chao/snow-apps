@@ -412,6 +412,47 @@ mod stroke_cursor_tests {
     }
 
     #[test]
+    fn eraser_filters_brush_hover_uses_native_cursor_without_invalidating_overlays() {
+        let document = DocumentModel::new();
+        let mut editor = Editor::new(EngineConfig::default()).unwrap();
+        editor.set_surface_size(200, 200).unwrap();
+        editor.set_active_tool(ActiveTool::BrushEraser).unwrap();
+        editor
+            .set_brush_eraser_creation_style(
+                crate::BrushEraserStyle { stroke_width: 31.0 },
+                crate::BRUSH_ERASER_STYLE_PROPERTY_STROKE_WIDTH,
+            )
+            .unwrap();
+        let revision = editor.overlay_input_revision();
+        for (event_type, position) in [
+            (PointerEventType::Enter, Point::new(120.0, 80.0)),
+            (PointerEventType::Move, Point::new(140.0, 90.0)),
+        ] {
+            let update = editor
+                .process_input(&document, pointer(event_type, position))
+                .unwrap();
+            assert_eq!(
+                update.interaction.cursor,
+                CursorCommand::Set(CursorStyle::Stroke)
+            );
+            assert!(editor.state.stroke_cursor_active);
+            assert_eq!(editor.overlay_input_revision(), revision);
+        }
+        let update = editor
+            .process_input(
+                &document,
+                pointer(PointerEventType::Leave, Point::new(140.0, 90.0)),
+            )
+            .unwrap();
+        assert_eq!(
+            update.interaction.cursor,
+            CursorCommand::Set(CursorStyle::Default)
+        );
+        assert!(!editor.state.stroke_cursor_active);
+        assert_eq!(editor.overlay_input_revision(), revision);
+    }
+
+    #[test]
     fn free_draw_control_points_away_from_endpoints_take_priority_over_the_stroke_cursor() {
         let mut document = DocumentModel::new();
         let id = document.peek_next_element_id();

@@ -45,6 +45,8 @@ void ScreenshotToolPaletteStyleState::reset(const SnowCanvasStyleDefaults& defau
     rectangleFilterStyle = creationRectangleFilterStyle;
     creationPenFilterStyle = defaults.penFilter;
     penFilterStyle = creationPenFilterStyle;
+    creationBrushEraserStyle = defaults.brushEraser;
+    brushEraserStyle = creationBrushEraserStyle;
     creationWatermarkConfig = defaults.watermark;
     creationSpotlightConfig = defaults.spotlight;
     m_watermarkConfig = defaults.watermark;

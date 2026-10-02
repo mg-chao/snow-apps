@@ -40,6 +40,8 @@ pub struct PersistedEditorSession {
     #[serde(default = "default_rectangle_filter_stroke_width")]
     rectangle_filter_stroke_width: f64,
     pen_filter: snow_draw_engine_document::PenFilterData,
+    #[serde(default)]
+    brush_eraser: crate::BrushEraserStyle,
     text: snow_draw_engine_document::TextData,
     serial_number: snow_draw_engine_document::SerialNumberData,
 }
@@ -140,6 +142,7 @@ impl EditorSession {
             filter: state.default_filter,
             rectangle_filter_stroke_width: state.default_filter_stroke_width,
             pen_filter: state.default_pen_filter.clone(),
+            brush_eraser: state.default_brush_eraser,
             text: state.default_text.clone(),
             serial_number: state.default_serial_number.clone(),
         }
@@ -169,6 +172,7 @@ impl EditorSession {
         state.default_filter = persisted.filter;
         state.default_filter_stroke_width = persisted.rectangle_filter_stroke_width;
         state.default_pen_filter = persisted.pen_filter;
+        state.default_brush_eraser = persisted.brush_eraser;
         state.default_pen_filter.strength = state.default_filter.strength;
         if state.default_filter.filter_type
             == snow_draw_engine_document::CanvasFilterType::SmartErase
@@ -486,6 +490,19 @@ impl EditorSession {
         self.editor.insert_draw_template(document, template, center)
     }
 
+    pub fn brush_eraser_style(&self) -> crate::BrushEraserStyle {
+        self.editor.brush_eraser_style()
+    }
+
+    pub fn set_brush_eraser_creation_style(
+        &mut self,
+        style: crate::BrushEraserStyle,
+        properties: u32,
+    ) -> Result<(), ErrorCode> {
+        self.editor
+            .set_brush_eraser_creation_style(style, properties)
+    }
+
     pub fn filter_style(&self, document: &DocumentModel) -> FilterStyle {
         self.editor.filter_style(document)
     }
@@ -665,6 +682,15 @@ pub fn validate_editor_style_defaults(defaults: &EditorStyleDefaults) -> Result<
             return Err(ErrorCode::InvalidArgument);
         }
     }
+    if !defaults.brush_eraser.stroke_width.is_finite()
+        || !(1.0..=72.0).contains(&defaults.brush_eraser.stroke_width)
+        || defaults.rectangle_filter.filter_type
+            == snow_draw_engine_document::CanvasFilterType::RestoreBackground
+        || defaults.pen_filter.filter_type
+            == snow_draw_engine_document::CanvasFilterType::RestoreBackground
+    {
+        return Err(ErrorCode::InvalidArgument);
+    }
     super::style::validate_text_style(&defaults.text)?;
     super::style::validate_serial_number_style(&defaults.serial_number)?;
     Ok(())
@@ -691,7 +717,13 @@ fn validate_persisted_editor_styles(persisted: &PersistedEditorSession) -> Resul
             && valid_corner_radii(style.corner_radii)
     }
 
-    if !finite_non_negative(persisted.rectangle.stroke_width)
+    if !persisted.brush_eraser.stroke_width.is_finite()
+        || !(1.0..=72.0).contains(&persisted.brush_eraser.stroke_width)
+        || persisted.filter.filter_type
+            == snow_draw_engine_document::CanvasFilterType::RestoreBackground
+        || persisted.pen_filter.filter_type
+            == snow_draw_engine_document::CanvasFilterType::RestoreBackground
+        || !finite_non_negative(persisted.rectangle.stroke_width)
         || !valid_corner_radii(persisted.rectangle.corner_radii)
         || !finite_non_negative(persisted.arrow.stroke_width)
         || !valid_shape(persisted.line)

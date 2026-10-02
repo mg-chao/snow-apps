@@ -77,12 +77,14 @@ std::optional<SnowCursorStyle> baselineCursorForCanvasTool(SnowCanvasTool tool) 
     case SnowCanvasTool::Line:
     case SnowCanvasTool::RectangleHighlight:
     case SnowCanvasTool::RectangleFilter:
+    case SnowCanvasTool::RectangleEraser:
     case SnowCanvasTool::Spotlight:
     case SnowCanvasTool::SerialNumber:
         return SNOW_CURSOR_STYLE_CROSSHAIR;
     case SnowCanvasTool::FreeDraw:
     case SnowCanvasTool::PenHighlight:
     case SnowCanvasTool::PenFilter:
+    case SnowCanvasTool::BrushEraser:
         return SNOW_CURSOR_STYLE_STROKE;
     case SnowCanvasTool::Eraser:
         return SNOW_CURSOR_STYLE_ERASER;
@@ -366,6 +368,8 @@ struct SnowCanvasWidget::Impl : public snow_canvas_runtime::Client {
     bool setCanvasFilterStyle(const SnowCanvasFilterStyle& style, quint32 properties);
     bool setCanvasFilterCreationStyle(const SnowCanvasFilterStyle& style, quint32 properties,
                                       SnowCanvasTool filterTool);
+    bool setCanvasBrushEraserCreationStyle(const SnowCanvasBrushEraserStyle& style,
+                                           quint32 properties);
     quint64 readAutoFilterGeneration() const;
     std::optional<SnowCanvasAutoFilterRecord> autoFilterRegions() const;
     bool setAutoFilterRegions(const std::optional<SnowCanvasAutoFilterRecord>& record);
@@ -1110,6 +1114,23 @@ bool SnowCanvasWidget::Impl::setCanvasFilterCreationStyle(const SnowCanvasFilter
 bool SnowCanvasWidget::setCanvasFilterCreationStyle(const SnowCanvasFilterStyle& style,
                                                     quint32 properties, SnowCanvasTool filterTool) {
     return m_impl->setCanvasFilterCreationStyle(style, properties, filterTool);
+}
+
+bool SnowCanvasWidget::Impl::setCanvasBrushEraserCreationStyle(
+    const SnowCanvasBrushEraserStyle& style, quint32 properties) {
+    const auto result = snow_canvas_commands::setBrushEraserCreationStyle(
+        runtimeBinding.engine(), runtimeBinding.viewportHandle(),
+        SnowBrushEraserStyle{style.strokeWidth}, properties);
+    if (!result.success) {
+        return false;
+    }
+    syncChangedViewports(result.changedViewports.get());
+    return true;
+}
+
+bool SnowCanvasWidget::setCanvasBrushEraserCreationStyle(const SnowCanvasBrushEraserStyle& style,
+                                                         quint32 properties) {
+    return m_impl->setCanvasBrushEraserCreationStyle(style, properties);
 }
 
 bool SnowCanvasWidget::Impl::setCanvasTextStyle(const SnowCanvasTextStyle& style,
@@ -2108,16 +2129,18 @@ void SnowCanvasWidget::Impl::emitChangedStateSignals(const snow_canvas_state::Ch
 void SnowCanvasWidget::Impl::refreshToolCursorStyle() {
     const auto& cursorStyle = displayState.snapshot().styleToolbarState;
     const bool filterCursor = displayState.snapshot().activeTool == SNOW_ACTIVE_TOOL_PEN_FILTER;
+    const bool eraserCursor = displayState.snapshot().activeTool == SNOW_ACTIVE_TOOL_BRUSH_ERASER;
     const auto& stroke = cursorStyle.shape_style.stroke;
     QColor cursorColor(stroke.r, stroke.g, stroke.b, stroke.a);
     if (displayState.snapshot().activeTool == SNOW_ACTIVE_TOOL_PEN_HIGHLIGHT) {
         cursorColor.setAlphaF(cursorColor.alphaF() * 0.5F);
     }
-    cursorController.configureStrokeCursor((filterCursor ? cursorStyle.filter_style.stroke_width
-                                                         : cursorStyle.shape_style.stroke_width) *
-                                               displayState.displayCache().sceneInfo().camera_zoom,
-                                           filterCursor ? std::nullopt
-                                                        : std::optional<QColor>(cursorColor));
+    const double strokeWidth = eraserCursor   ? cursorStyle.brush_eraser_style.stroke_width
+                               : filterCursor ? cursorStyle.filter_style.stroke_width
+                                              : cursorStyle.shape_style.stroke_width;
+    cursorController.configureStrokeCursor(
+        strokeWidth * displayState.displayCache().sceneInfo().camera_zoom,
+        filterCursor || eraserCursor ? std::nullopt : std::optional<QColor>(cursorColor));
 }
 
 void SnowCanvasWidget::Impl::applyCanvasToolCursor(SnowCanvasTool tool) {
@@ -2461,9 +2484,10 @@ bool SnowCanvasWidget::Impl::handleMouseMove(QMouseEvent* event) {
     }
     const SnowInputEvent input =
         snow_canvas_input::makePointerInput(*event, SNOW_POINTER_EVENT_MOVE);
-    if ((canvasTool() == SnowCanvasTool::FreeDraw || canvasTool() == SnowCanvasTool::PenFilter) &&
+    if ((canvasTool() == SnowCanvasTool::FreeDraw || canvasTool() == SnowCanvasTool::PenFilter ||
+         canvasTool() == SnowCanvasTool::BrushEraser) &&
         (event->buttons() & Qt::LeftButton) != 0) {
-        return queueLiveStrokeMove(event, input, canvasTool() == SnowCanvasTool::PenFilter);
+        return queueLiveStrokeMove(event, input, canvasTool() != SnowCanvasTool::FreeDraw);
     }
     if (canvasTool() == SnowCanvasTool::Eraser && (event->buttons() & Qt::LeftButton) != 0) {
         return queueEraserMove(event, input);
@@ -2804,6 +2828,8 @@ bool SnowCanvasWidget::Impl::applyStyleEdit(const SnowCanvasStyleEdit& edit) {
                     snow_canvas_types::toEngineSerialNumberStyle(style), patch.properties));
             } else if constexpr (std::is_same_v<T, SnowCanvasFilterEdit>) {
                 return setCanvasFilterStyle(patch.style, patch.properties);
+            } else if constexpr (std::is_same_v<T, SnowCanvasBrushEraserEdit>) {
+                return setCanvasBrushEraserCreationStyle(patch.style, patch.properties);
             } else if constexpr (std::is_same_v<T, SnowCanvasWatermarkEdit>) {
                 auto style = canvasWatermarkConfig();
                 snowCanvasMergeStyle(style, patch.style, patch.properties);

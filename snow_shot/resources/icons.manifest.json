@@ -447,6 +447,22 @@
     },
     {
       "variant": "outlined",
+      "symbol": "EraserTypeBrush",
+      "name": "eraser-type-brush",
+      "source": "../src/presentation/components/icons/resources/eraser-type-brush.svg",
+      "colorModel": "monochrome",
+      "fit": "contain"
+    },
+    {
+      "variant": "outlined",
+      "symbol": "EraserTypeRectangle",
+      "name": "eraser-type-rectangle",
+      "source": "../src/presentation/components/icons/resources/eraser-type-rectangle.svg",
+      "colorModel": "monochrome",
+      "fit": "contain"
+    },
+    {
+      "variant": "outlined",
       "symbol": "Exit",
       "name": "exit",
       "source": "../src/presentation/components/icons/resources/exit.svg",

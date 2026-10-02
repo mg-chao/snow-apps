@@ -1,14 +1,21 @@
 #include "snow_canvas_reference_scene.h"
 
 #include "snow_canvas_pen_mask_atlas.h"
+#include "snow_canvas_filter_tile_cache.h"
 
 #include <cmath>
 #include <limits>
+
+SnowCanvasReferenceScene::~SnowCanvasReferenceScene() {
+    snow_canvas_filter_tile_cache::invalidateNamespace(this);
+}
 
 void SnowCanvasReferenceScene::clearRenderState() {
     m_image = {};
     m_backgroundRenderer = nullptr;
     m_displayCache.clearRenderState();
+    m_penMasks.clear();
+    snow_canvas_filter_tile_cache::invalidateNamespace(this);
 }
 
 void SnowCanvasReferenceScene::reset() {
@@ -72,7 +79,7 @@ bool SnowCanvasReferenceScene::render(SnowRuntime runtime,
                          m_font != request.painter->font() ||
                          m_renderHints != request.painter->renderHints();
     if (rebuild) {
-        // Replace the only retained surface; scratch and mask data die with this render.
+        // Replace the retained surface while immutable stroke masks survive content edits.
         m_image = {};
         QImage image(pixelSize, QImage::Format_ARGB32_Premultiplied);
         if (image.isNull()) {
@@ -89,7 +96,6 @@ bool SnowCanvasReferenceScene::render(SnowRuntime runtime,
         const SnowCanvasRenderContext context{image.rect(), QRegion(image.rect()), sourceTransform,
                                               1.0};
         snow_canvas_filter_render::RenderWorkspace workspace;
-        snow_canvas_pen_mask::PenMaskAtlas masks;
         auto sourceRequest = request;
         sourceRequest.painter = &painter;
         sourceRequest.displayInfo = &m_displayCache.sceneInfo();
@@ -101,8 +107,11 @@ bool SnowCanvasReferenceScene::render(SnowRuntime runtime,
         sourceRequest.backgroundContext = &context;
         sourceRequest.displayCache = &m_displayCache;
         sourceRequest.workspace = &workspace;
-        sourceRequest.penMaskAtlas = &masks;
+        sourceRequest.penMaskAtlas =
+            request.penMaskAtlas != nullptr ? request.penMaskAtlas : &m_penMasks;
         sourceRequest.enableFilterTileCache = false;
+        sourceRequest.enableOriginalBackgroundCache = true;
+        sourceRequest.cacheNamespace = this;
         sourceRequest.executionPlan = nullptr;
         sourceRequest.renderPlan = nullptr;
         sourceRequest.diagnostics = nullptr;
