@@ -489,11 +489,11 @@ void aspectRatioSnappingAndEffectEditingPreserveEachOther() {
     f.input->handleMousePress(&f.overlay, border);
     require(f.interaction.dragMode() == ScreenshotSelectionDragMode::Right &&
                 f.input->activateSelectionAspectRatioSnapShortcut(),
-            "Ctrl snapping must remain available during border resizing");
+            "Q snapping must remain available during border resizing");
     const QPointF end = border + QPointF(25, 0);
     f.input->handleMouseMove(&f.overlay, end);
     require(f.input->releaseSelectionAspectRatioSnapShortcut(),
-            "Ctrl release must end the temporary snap modifier");
+            "Q release must end the temporary snap modifier");
     f.input->handleMouseRelease(&f.overlay, end);
     const auto bounds = f.selection.normalizedSelection();
     const auto preset = ScreenshotSelectionAspectRatioPreset::Landscape3x2;
@@ -503,8 +503,8 @@ void aspectRatioSnappingAndEffectEditingPreserveEachOther() {
             "snapping must retain its anchor and persist the ratio independently of effects");
 
     const int ratioWrites = f.aspectRatioWrites;
-    require(f.input->activateSelectionAspectRatioSnapShortcut(),
-            "Ctrl snapping may be armed before an effect drag");
+    require(!f.input->activateSelectionAspectRatioSnapShortcut(),
+            "Q snapping must not arm while the selection is idle");
     const auto shadow = f.layout().shadow;
     f.input->handleMousePress(&f.overlay, shadow);
     f.input->handleMouseMove(&f.overlay, shadow + QPointF(20, 0));
@@ -512,11 +512,11 @@ void aspectRatioSnappingAndEffectEditingPreserveEachOther() {
                 f.selection.normalizedSelection() == bounds &&
                 f.selection.aspectRatioPreset() == preset && f.aspectRatioWrites == ratioWrites &&
                 f.writes == 0,
-            "an armed snap modifier must leave effect previews and selection geometry independent");
+            "effect previews must remain independent of the saved selection ratio");
     require(!f.input->activateSelectionAspectRatioSnapShortcut() &&
                 f.selection.normalizedSelection() == bounds &&
-                f.input->releaseSelectionAspectRatioSnapShortcut(),
-            "Ctrl during an effect drag must preserve the gesture and release an armed modifier");
+                !f.input->releaseSelectionAspectRatioSnapShortcut(),
+            "Q during an effect drag must preserve the gesture without arming snapping");
     f.input->handleMouseRelease(&f.overlay, shadow + QPointF(20, 0));
     require(!f.interaction.dragging() && f.writes == 1 && f.settings.shadowWidth() == 20 &&
                 f.selection.normalizedSelection() == bounds &&

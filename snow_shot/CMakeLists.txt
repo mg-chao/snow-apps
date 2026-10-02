@@ -789,6 +789,10 @@ set(SNOW_SHOT_SETTINGS_CATALOG_SOURCES
     src/presentation/settings/settingscatalog.cpp
     src/presentation/settings/settingsregistry.cpp
 )
+# Widget targets also compile these icons. Keep their definitions separate from
+# the catalog so pulling the catalog from its archive does not pull duplicate icons.
+set_source_files_properties(src/presentation/components/icons/snowshoticons.cpp
+    PROPERTIES SKIP_UNITY_BUILD_INCLUSION ON)
 add_library(snow_shot_settings_catalog STATIC ${SNOW_SHOT_SETTINGS_CATALOG_SOURCES})
 snow_enable_unity_build(snow_shot_settings_catalog)
 target_include_directories(snow_shot_settings_catalog PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include")
@@ -3573,6 +3577,9 @@ if(SNOW_SHOT_BUILD_TESTS)
     add_test(NAME snow-shot-screenshot-cursor-tests
         COMMAND snow-shot-screenshot-canvas-renderer-tests --cursor-only -platform offscreen)
     set_tests_properties(snow-shot-screenshot-cursor-tests PROPERTIES LABELS "unit")
+    add_test(NAME snow-shot-selection-shortcut-hint-stages-tests
+        COMMAND snow-shot-screenshot-canvas-renderer-tests --shortcut-hints-only -platform offscreen)
+    set_tests_properties(snow-shot-selection-shortcut-hint-stages-tests PROPERTIES LABELS "unit")
     add_test(NAME snow-shot-selection-effect-editor-tests
         COMMAND snow-shot-screenshot-canvas-renderer-tests --selection-effect-editors-only -platform offscreen)
     set_tests_properties(snow-shot-selection-effect-editor-tests PROPERTIES LABELS "unit")
@@ -4157,6 +4164,18 @@ if(SNOW_SHOT_BUILD_TESTS)
     snow_shot_import_offscreen_platform(snow-shot-custom-server-settings-tests)
     add_test(NAME snow-shot-custom-server-settings-tests COMMAND snow-shot-custom-server-settings-tests)
     set_tests_properties(snow-shot-custom-server-settings-tests PROPERTIES
+        ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}"
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
+
+    add_executable(snow-shot-selection-snap-shortcut-settings-tests
+        tests/selection_snap_shortcut_settings_tests.cpp
+        src/presentation/services/screenshotclipboardservice.cpp)
+    target_link_libraries(snow-shot-selection-snap-shortcut-settings-tests PRIVATE
+        snow_shot_settings snow_shot_image_codec)
+    snow_shot_import_offscreen_platform(snow-shot-selection-snap-shortcut-settings-tests)
+    add_test(NAME snow-shot-selection-snap-shortcut-settings-tests
+             COMMAND snow-shot-selection-snap-shortcut-settings-tests)
+    set_tests_properties(snow-shot-selection-snap-shortcut-settings-tests PROPERTIES
         ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}"
         ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
 

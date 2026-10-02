@@ -76,7 +76,7 @@ RecordingTrimSession::~RecordingTrimSession() {
         if (open.valid())
             clip = open.get().clip;
         if (publish.valid())
-            publish.get();
+            static_cast<void>(publish.get());
         if (cancellation.valid())
             cancellation.get();
         if (task)
@@ -164,7 +164,7 @@ void RecordingTrimSession::poll() {
     if (m_export) {
         float percent = 0;
         const auto state = snow_recording_clip_export_poll(m_export, &percent);
-        m_percent = percent;
+        m_percent = static_cast<double>(percent);
         if (state != SNOW_RECORDING_RENDER_STATE_RUNNING &&
             (!m_cancelFuture.valid() ||
              m_cancelFuture.wait_for(std::chrono::milliseconds(0)) == std::future_status::ready)) {

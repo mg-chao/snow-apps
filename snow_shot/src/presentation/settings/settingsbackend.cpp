@@ -2147,6 +2147,7 @@ bool BuiltInSettingsBackend::resetSection(SettingsSectionReset reset) {
               QStringLiteral("move_cursor_right"),
               QStringLiteral("move_entire_selection"),
               QStringLiteral("keep_selection_width_and_height_consistent"),
+              QStringLiteral("selection_aspect_ratio_snap"),
               QStringLiteral("switch_selection_between_window_and_window_sub_element"),
               QStringLiteral("previous_screenshot_history"),
               QStringLiteral("next_screenshot_history"),

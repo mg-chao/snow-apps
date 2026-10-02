@@ -2924,6 +2924,10 @@
             <translation>選擇視窗/視窗子元素</translation>
         </message>
         <message>
+            <source>Selection Aspect Ratio Snap</source>
+            <translation>選取範圍長寬比吸附</translation>
+        </message>
+        <message>
             <source>Selection Center Guide Color</source>
             <translation>選取區中央輔助線顏色</translation>
         </message>

@@ -910,25 +910,28 @@ bool ScreenshotOverlayInputHandler::activateKeepSelectionAspectRatioShortcut(
     return true;
 }
 
+bool ScreenshotOverlayInputHandler::canActivateSelectionAspectRatioSnapShortcut() const {
+    const auto dragMode = m_context.interaction.dragMode();
+    return m_context.interaction.dragging() && dragMode != ScreenshotSelectionDragMode::None &&
+           dragMode != ScreenshotSelectionDragMode::All && !effectDragActive() &&
+           !m_externalDragActive &&
+           m_context.selection.regionType() == ScreenshotRegionType::Rectangle &&
+           !m_context.selection.regionOperationActive() &&
+           (dragMode == ScreenshotSelectionDragMode::Marquee ||
+            m_context.selection.rectangular()) &&
+           !recognitionTool(m_context.interaction.activeTool()) &&
+           m_context.actions.localShortcutInputAllowed();
+}
+
 bool ScreenshotOverlayInputHandler::activateSelectionAspectRatioSnapShortcut() {
-    if (effectDragActive())
-        return false;
-    if (!(m_context.interaction.movingSelection() || m_context.interaction.modifyingSelection() ||
-          m_context.interaction.manualSelecting() || m_context.interaction.editing() ||
-          m_context.interaction.intelligentSelecting()) ||
-        m_context.selection.regionType() != ScreenshotRegionType::Rectangle ||
-        m_context.selection.regionOperationActive() ||
-        recognitionTool(m_context.interaction.activeTool()) ||
-        !m_context.actions.localShortcutInputAllowed()) {
+    if (!canActivateSelectionAspectRatioSnapShortcut()) {
         return false;
     }
     if (m_selectionAspectRatioSnapShortcut) {
         return true;
     }
     m_selectionAspectRatioSnapShortcut = true;
-    if (m_context.interaction.dragging()) {
-        updateSelectionDrag(m_lastMoveDragPosition);
-    }
+    updateSelectionDrag(m_lastMoveDragPosition);
     return true;
 }
 
@@ -1266,6 +1269,7 @@ QRectF ScreenshotOverlayInputHandler::selectionRectForDrag(ScreenshotSelectionDr
 }
 
 void ScreenshotOverlayInputHandler::finishTransientDrag() {
+    m_selectionAspectRatioSnapShortcut = false;
     m_moveDragModeBeforeShortcut = ScreenshotSelectionDragMode::None;
     m_marqueeAnchor = QPointF();
     m_lastMoveDragPosition = QPointF();

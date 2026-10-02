@@ -165,8 +165,9 @@ void toolMatrixMatchesRequestedVisibility() {
 
     require(
         hintLines(ScreenshotActiveTool::RectangleEraser) ==
-                QStringList{QStringLiteral("Maintain aspect ratio: Shift"),
-                            QStringLiteral("Draw from center: Alt")} &&
+                QStringList{
+                    modifierLine(QStringLiteral("Maintain aspect ratio"), Qt::ShiftModifier),
+                    QStringLiteral("Draw from center: Alt")} &&
             hintLines(ScreenshotActiveTool::BrushEraser) ==
                 QStringList{modifierLine(QStringLiteral("Draw straight line"), Qt::ShiftModifier)},
         "immutable erasers show only their creation modifiers");
@@ -192,6 +193,8 @@ void configuredShortcutRowsUseActualValues() {
         {QStringLiteral("move_entire_selection"), shortcutBindings({QStringLiteral("Ctrl+M")})},
         {QStringLiteral("keep_selection_width_and_height_consistent"),
          shortcutBindings({QStringLiteral("Alt+R")})},
+        {QStringLiteral("selection_aspect_ratio_snap"),
+         shortcutBindings({QStringLiteral("G"), QStringLiteral("Ctrl+Alt+Q")})},
         {QStringLiteral("select_previously_selected_area"),
          shortcutBindings({QStringLiteral("P")})},
         {QStringLiteral("copy_color"), shortcutBindings({QStringLiteral("Alt+C")})},
@@ -218,8 +221,7 @@ void configuredShortcutRowsUseActualValues() {
                 rows.at(5).shortcut == shortcutDisplay({QStringLiteral("Alt+R")}) &&
                 rows.at(6).label == QStringLiteral("Selection Aspect Ratio Snap") &&
                 rows.at(6).shortcut ==
-                    snow_shot::shortcuts::ShortcutDisplayService::instance().modifierText(
-                        Qt::ControlModifier) &&
+                    shortcutDisplay({QStringLiteral("G"), QStringLiteral("Ctrl+Alt+Q")}) &&
                 rows.at(7).shortcut == shortcutDisplay({QStringLiteral("P")}) &&
                 rows.at(8).shortcut == shortcutDisplay({QStringLiteral("Alt+C")}),
             "selection action hints must use configured shortcuts");
@@ -249,11 +251,8 @@ void coordinateHintFollowsCopyColor() {
         const auto snap = std::find_if(rows.cbegin(), rows.cend(), [](const auto& row) {
             return row.label == QStringLiteral("Selection Aspect Ratio Snap");
         });
-        require(snap != rows.cend() &&
-                    snap->shortcut ==
-                        snow_shot::shortcuts::ShortcutDisplayService::instance().modifierText(
-                            Qt::ControlModifier),
-                "both selection stages must show the fixed Ctrl snap hint");
+        require(snap != rows.cend() && snap->shortcut == shortcutDisplay({QStringLiteral("Q")}),
+                "both selection stages must show the configurable Q snap default");
         const auto copy = std::find_if(rows.cbegin(), rows.cend(), [](const auto& row) {
             return row.label == QStringLiteral("Copy color");
         });
@@ -279,8 +278,10 @@ void defaultHistoryShortcutUsesSeparateChips() {
         screenshotShortcutHintRows(ScreenshotShortcutHintMode::Selection);
     const ScreenshotShortcutHintRow& historyRow = rows.constLast();
     require(historyRow.label == QStringLiteral("Switch screenshot history") &&
-                historyRow.shortcut == QStringLiteral(", / .") &&
-                historyRow.shortcutChips == QStringList{QStringLiteral(","), QStringLiteral(".")},
+                historyRow.shortcut ==
+                    shortcutDisplay({QStringLiteral(","), QStringLiteral(".")}) &&
+                historyRow.shortcutChips == QStringList{shortcutDisplay({QStringLiteral(",")}),
+                                                        shortcutDisplay({QStringLiteral(".")})},
             "default history keys must render as separate comma and period chips");
 }
 

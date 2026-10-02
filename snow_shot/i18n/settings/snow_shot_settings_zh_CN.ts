@@ -2924,6 +2924,10 @@
             <translation>选择窗口/窗口子元素</translation>
         </message>
         <message>
+            <source>Selection Aspect Ratio Snap</source>
+            <translation>选区宽高比吸附</translation>
+        </message>
+        <message>
             <source>Selection Center Guide Color</source>
             <translation>选区中心辅助线颜色</translation>
         </message>

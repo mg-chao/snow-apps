@@ -196,6 +196,7 @@ class ScreenshotOverlayInputHandler final {
     [[nodiscard]] bool shouldBlockUnhandledKeyInput() const;
     [[nodiscard]] bool activateMoveEntireSelectionShortcut();
     [[nodiscard]] bool activateKeepSelectionAspectRatioShortcut(bool cycleColorFormatIfUnused);
+    [[nodiscard]] bool canActivateSelectionAspectRatioSnapShortcut() const;
     [[nodiscard]] bool activateSelectionAspectRatioSnapShortcut();
     bool releaseMoveEntireSelectionShortcut();
     bool releaseKeepSelectionAspectRatioShortcut();
