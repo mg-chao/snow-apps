@@ -8512,17 +8512,23 @@ if(SNOW_SHOT_BUILD_TESTS)
     set_tests_properties(snow-shot-selection-render-tests PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen" LABELS "unit")
 endif()
 
-# Overlay hosts also own the shared region switcher and its custom icon pack.
-get_property(_region_switcher_targets DIRECTORY PROPERTY BUILDSYSTEM_TARGETS)
-foreach(_target IN LISTS _region_switcher_targets)
+# Overlay and recording hosts share widget controls and their custom icon pack.
+get_property(_overlay_widget_targets DIRECTORY PROPERTY BUILDSYSTEM_TARGETS)
+foreach(_target IN LISTS _overlay_widget_targets)
     get_target_property(_sources ${_target} SOURCES)
+    if(_sources MATCHES "screenrecordingareawindow.cpp")
+        target_sources(${_target} PRIVATE
+            src/presentation/recording/recordingregiondraghandle.cpp
+            src/presentation/recording/recordingregiondraghandle.h)
+    endif()
     if(WIN32 AND _sources MATCHES "screenshotoverlaywindow.cpp" AND
        NOT _sources MATCHES "src/platform/windows/windowchrome.cpp")
         target_sources(${_target} PRIVATE src/platform/windows/windowchrome.cpp)
         target_link_libraries(${_target} PRIVATE dwmapi user32)
     endif()
     if(NOT "${_target}" STREQUAL "snow_shot" AND
-       _sources MATCHES "screenshotoverlaywindow.cpp" AND NOT _sources MATCHES "snowshoticons.cpp")
+       _sources MATCHES "(screenshotoverlaywindow|screenrecordingareawindow).cpp" AND
+       NOT _sources MATCHES "snowshoticons.cpp")
         target_sources(${_target} PRIVATE src/presentation/components/icons/snowshoticons.cpp)
     endif()
 endforeach()

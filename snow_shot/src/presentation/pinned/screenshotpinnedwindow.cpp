@@ -10,6 +10,7 @@
 #include "screenshotpinnedhidetotopcontroller.h"
 #include "screenshotpinneddragexport.h"
 #include "screenshotpinnedclickthroughgeometry.h"
+#include "../components/overlaycontrolbutton.h"
 #include "screenshotpinnedcontrolspresence.h"
 #include "snow_shot/storage/pinnedwindowrepository.h"
 #include "snow_shot/presentation/shortcutdisplaytext.h"
@@ -389,8 +390,7 @@ namespace outlined_icons = adqt::icons::antd::outlined;
 namespace custom_outlined_icons = snow_shot::presentation::icons::custom::outlined;
 
 constexpr int kControlsInset = 16;
-constexpr int kControlButtonSize = 32;
-constexpr int kControlIconSize = 16;
+constexpr int kControlButtonSize = snow_shot::presentation::OverlayControlButton::controlSize;
 constexpr int kControlButtonSpacing = 8;
 constexpr int kThumbnailSize = 83;
 constexpr int kThumbnailAnimationDurationMs = 150;
@@ -798,38 +798,7 @@ class PinnedOpacityEditor final : public QWidget {
     ScreenshotToolPaletteSliderEditor m_editor;
 };
 
-class PinnedControlButton final : public adqt::widgets::AdButton {
-  public:
-    enum class Intent : std::uint8_t { Edit, Close };
-
-    explicit PinnedControlButton(Intent intent, QWidget* parent = nullptr)
-        : adqt::widgets::AdButton(parent), m_intent(intent) {}
-
-  protected:
-    void paintEvent(QPaintEvent* event) override {
-        const auto theme = adqt::theme::ThemeManager::instance().resolveTheme(this);
-        QColor background = pinnedControlBackground(this);
-        if (isDown()) {
-            background =
-                m_intent == Intent::Close ? theme.colorErrorActive : theme.colorPrimaryActive;
-        } else if (adqt::widgets::detail::widgetHovered(this)) {
-            background = m_intent == Intent::Close ? theme.colorError : theme.colorPrimary;
-        }
-
-        {
-            QPainter painter(this);
-            painter.setRenderHint(QPainter::Antialiasing, true);
-            painter.setPen(Qt::NoPen);
-            painter.setBrush(background);
-            painter.drawEllipse(rect());
-        }
-
-        adqt::widgets::AdButton::paintEvent(event);
-    }
-
-  private:
-    Intent m_intent;
-};
+using snow_shot::presentation::OverlayControlButton;
 
 class ScreenshotPinnedCanvasWidget final : public SnowCanvasWidget {
   public:
@@ -869,26 +838,10 @@ class ScreenshotPinnedCanvasWidget final : public SnowCanvasWidget {
     std::function<void()> m_afterResize;
 };
 
-void configurePinnedControlButton(adqt::widgets::AdButton* button) {
-    if (button == nullptr) {
-        return;
-    }
-    button->setFocusPolicy(Qt::NoFocus);
-    button->setShape(adqt::widgets::AdButton::Shape::Circle);
-    button->setSizeClass(adqt::widgets::AdButton::SizeClass::Medium);
-    button->setFixedSize(kControlButtonSize, kControlButtonSize);
-    button->setIconSize(QSize(kControlIconSize, kControlIconSize));
-    button->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
-    button->setButtonStyle(adqt::widgets::AdButton::ButtonStyle::Text);
-    button->setAccentRole(adqt::widgets::AdButton::AccentRole::Neutral);
-    button->setInteractionBackgroundVisible(false);
-}
-
 adqt::widgets::AdButton* createControlButton(QWidget* parent, const char* tooltip,
                                              const adqt::icons::IconRef& iconRef,
-                                             PinnedControlButton::Intent intent) {
-    auto* button = new PinnedControlButton(intent, parent);
-    configurePinnedControlButton(button);
+                                             OverlayControlButton::Intent intent) {
+    auto* button = new OverlayControlButton(intent, parent);
     setWidgetTranslationSource(button, tooltip);
     const QString translated = translatePinnedText(tooltip);
     button->setToolTip(translated);
@@ -2773,12 +2726,13 @@ void ScreenshotPinnedWindow::createUi() {
     auto* controlsLayout = new QHBoxLayout(m_controlsPanel);
     controlsLayout->setContentsMargins(0, 0, 0, 0);
     controlsLayout->setSpacing(kControlButtonSpacing);
-    m_editButton = createControlButton(m_controlsPanel, "Enable drawing mode",
-                                       outlined_icons::Edit(), PinnedControlButton::Intent::Edit);
+    m_editButton =
+        createControlButton(m_controlsPanel, "Enable drawing mode", outlined_icons::Edit(),
+                            OverlayControlButton::Intent::Primary);
     m_editButton->setAttribute(Qt::WA_NativeWindow, false);
     m_editButton->setObjectName(QStringLiteral("screenshotPinnedEditButton"));
     m_closeButton = createControlButton(m_controlsPanel, "Close", outlined_icons::Close(),
-                                        PinnedControlButton::Intent::Close);
+                                        OverlayControlButton::Intent::Destructive);
     m_closeButton->setAttribute(Qt::WA_NativeWindow, false);
     m_closeButton->setObjectName(QStringLiteral("screenshotPinnedCloseButton"));
     m_controlsPanel->installEventFilter(this);
@@ -6268,7 +6222,7 @@ bool ScreenshotPinnedWindow::ensureClickThroughExitButton() {
 
     auto button = std::unique_ptr<adqt::widgets::AdButton>(
         createControlButton(nullptr, "Exit click-through mode", custom_outlined_icons::Mouse(),
-                            PinnedControlButton::Intent::Edit));
+                            OverlayControlButton::Intent::Primary));
     button->setObjectName(QStringLiteral("screenshotPinnedClickThroughExitButton"));
     Qt::WindowFlags controlFlags =
         Qt::Tool | Qt::FramelessWindowHint | Qt::WindowDoesNotAcceptFocus;
@@ -6292,7 +6246,7 @@ bool ScreenshotPinnedWindow::ensureClickThroughExitButton() {
     button->windowHandle()->setTransientParent(windowHandle());
     auto moveButton = std::unique_ptr<adqt::widgets::AdButton>(
         createControlButton(nullptr, "Move window", custom_outlined_icons::ToolMove(),
-                            PinnedControlButton::Intent::Edit));
+                            OverlayControlButton::Intent::Primary));
     moveButton->setObjectName(QStringLiteral("screenshotPinnedClickThroughMoveButton"));
     moveButton->setWindowFlags(button->windowFlags());
     moveButton->setAttribute(Qt::WA_TranslucentBackground, true);

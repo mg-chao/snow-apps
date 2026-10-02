@@ -525,7 +525,7 @@ void recordingExpandsSmallSelectionsOnOpenAndReopen() {
     QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
 }
 
-void recordingAreaOwnsFocusAcrossPresentation() {
+void recordingInputOwnerKeepsFocusAcrossPresentation() {
     ScreenRecordingController controller(testEffectsSource);
     const QRect region(40, 40, 320, 240);
     controller.open(region);
@@ -538,28 +538,30 @@ void recordingAreaOwnsFocusAcrossPresentation() {
     }
     require(area != nullptr && toolbar != nullptr, "recording windows must exist");
     QCoreApplication::processEvents();
-    require(area->isActiveWindow() && area->hasFocus(),
-            "opening an editable recording region must focus the area, not the toolbar");
+    const auto inputOwner = [&]() -> QWidget* {
+        return area->inputMode() == ScreenRecordingAreaWindow::InputMode::Drawing
+                   ? static_cast<QWidget*>(area->canvas())
+                   : static_cast<QWidget*>(area);
+    };
+    require(inputOwner() && inputOwner()->window()->isActiveWindow() && inputOwner()->hasFocus(),
+            "opening an editable recording region must focus its effective input surface");
     for (const auto mode : {ScreenRecordingAreaWindow::InputMode::Drawing,
                             ScreenRecordingAreaWindow::InputMode::RegionEditing}) {
         area->setInputMode(mode);
         QCoreApplication::processEvents();
-        require(area->isActiveWindow(), "both editable input modes must activate the area");
-        if (mode == ScreenRecordingAreaWindow::InputMode::Drawing) {
-            require(area->canvas()->hasFocus(), "drawing must focus the canvas");
-        } else {
-            require(area->hasFocus(), "region editing must focus the area");
-        }
+        require(inputOwner()->window()->isActiveWindow() && inputOwner()->hasFocus(),
+                "editable modes must focus the drawing canvas or region controls");
         area->regionInteractionStarted();
         area->move(area->pos() + QPoint(20, 10));
         area->resize(area->size() + QSize(10, 10));
         area->regionInteractionFinished();
         QCoreApplication::processEvents();
-        require(toolbar->isVisible() && area->isActiveWindow(),
-                "restoring the aligned toolbar after move/resize must preserve area activation");
+        require(toolbar->isVisible() && inputOwner()->window()->isActiveWindow(),
+                "restoring the aligned toolbar must preserve the region input owner's activation");
         controller.open(region);
         QCoreApplication::processEvents();
-        require(area->isActiveWindow(), "reopening an editable region must prioritize the area");
+        require(inputOwner()->window()->isActiveWindow(),
+                "reopening an editable region must prioritize its input owner");
     }
     palette()->recordingCloseRequested();
     QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
@@ -3539,7 +3541,7 @@ int main(int argc, char** argv) {
         return 0;
     }
     recordingExpandsSmallSelectionsOnOpenAndReopen();
-    recordingAreaOwnsFocusAcrossPresentation();
+    recordingInputOwnerKeepsFocusAcrossPresentation();
     recordingToolbarReconcilesFrameBeforeShowing();
     recordingToolbarPlacementAcrossDisplays();
     if (app.arguments().contains(QStringLiteral("--placement-only"))) {

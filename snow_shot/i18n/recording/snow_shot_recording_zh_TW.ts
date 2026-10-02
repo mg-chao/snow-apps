@@ -51,6 +51,13 @@
         </message>
     </context>
     <context>
+        <name>RecordingRegionDragHandle</name>
+        <message>
+            <source>Move recording area</source>
+            <translation>移動錄影區域</translation>
+        </message>
+    </context>
+    <context>
         <name>RecordingRenderDialog</name>
         <message>
             <source>Cancel</source>

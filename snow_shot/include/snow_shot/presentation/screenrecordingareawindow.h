@@ -6,12 +6,15 @@
 #include <QRect>
 #include <QMarginsF>
 #include <QRectF>
+#include <QRegion>
 #include <QWidget>
 
 #include <memory>
 
 class QEvent;
 class QShowEvent;
+class RecordingRegionDragHandle;
+class RecordingRegionInputRouter;
 class SnowCanvasRuntime;
 class SnowCanvasWidget;
 
@@ -69,6 +72,10 @@ class ScreenRecordingAreaWindow final : public QWidget {
     void moveEvent(QMoveEvent* event) override;
     void resizeEvent(QResizeEvent* event) override;
     void closeEvent(QCloseEvent* event) override;
+    void enterEvent(QEnterEvent* event) override;
+    void mousePressEvent(QMouseEvent* event) override;
+    void mouseMoveEvent(QMouseEvent* event) override;
+    void mouseReleaseEvent(QMouseEvent* event) override;
     bool eventFilter(QObject* watched, QEvent* event) override;
     bool nativeEvent(const QByteArray& eventType, void* message, qintptr* result) override;
     void paintEvent(QPaintEvent* event) override;
@@ -91,11 +98,13 @@ class ScreenRecordingAreaWindow final : public QWidget {
     [[nodiscard]] Qt::Edges resizeEdgesAt(const QPointF& position) const;
     void cancelRegionInteraction();
     void finishRegionInteraction();
-    void beginRegionInteraction();
     void synchronizeWindowGeometry();
     void scheduleGeometrySynchronization();
     void layoutSelection();
     void layoutCountdownOverlay();
+    void layoutRegionDragHandle();
+    [[nodiscard]] QRegion regionInteractionRegion() const;
+    void updateNativeMouseRouting(const QPoint& desktopPosition);
 
     QRectF m_frameRect;
     QRectF m_selectionRect;
@@ -105,11 +114,12 @@ class ScreenRecordingAreaWindow final : public QWidget {
     InputMode m_inputMode = InputMode::PassThrough;
     bool m_drawingBlocked = false;
     bool m_gestureInProgress = false;
-    bool m_regionInteractionActive = false;
+    bool m_cancellingRegionInteraction = false;
     bool m_settingRegion = false;
     bool m_geometrySyncPending = false;
     QMarginsF m_physicalInsets;
-    bool m_controlledRegionDrag = false;
+    bool m_regionDragActive = false;
+    QWidget* m_regionDragSource = nullptr;
     bool m_regionEscapeRelease = false;
     QPoint m_regionDragOrigin;
     QRect m_regionDragRect;
@@ -117,6 +127,8 @@ class ScreenRecordingAreaWindow final : public QWidget {
     Qt::Edges m_regionEffectiveEdges;
     std::unique_ptr<SnowCanvasRuntime> m_canvasRuntime;
     SnowCanvasWidget* m_canvas = nullptr;
+    std::unique_ptr<RecordingRegionInputRouter> m_regionInputRouter;
+    RecordingRegionDragHandle* m_regionDragHandle = nullptr;
     snow_shot::presentation::recording::RecordingCountdownOverlay* m_countdownOverlay = nullptr;
 };
 
