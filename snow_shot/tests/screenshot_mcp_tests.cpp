@@ -689,7 +689,7 @@ void annotationRuntime() {
     runtime.setDocumentChangedHandler({});
     require(runtime.undo() && changes == 4, "observation can be repeatedly detached");
 }
-void serialNumberPatchesPreserveMixedSelectionProperties() {
+void serialNumberPatchesPreserveMixedSelectionProperties(bool useWidget) {
     SnowCanvasRuntime runtime;
     const auto created =
         QJsonDocument::fromJson(
@@ -700,9 +700,10 @@ void serialNumberPatchesPreserveMixedSelectionProperties() {
             .toArray();
     require(created.size() == 1, "create the serial-number patch fixture");
     SnowCanvasRuntimeEditor editor(runtime);
+    SnowCanvasWidget canvas(runtime);
     const auto id = created.first().toObject();
-    require(editor.select(id.value(QStringLiteral("index")).toInt(),
-                          id.value(QStringLiteral("generation")).toInt()),
+    require(editor.select(static_cast<quint32>(id.value(QStringLiteral("index")).toInt()),
+                          static_cast<quint32>(id.value(QStringLiteral("generation")).toInt())),
             "select the serial-number patch fixture");
     auto drawTemplate = QJsonDocument::fromJson(runtime.serializeSelectedDrawTemplate()).object();
     const auto first = drawTemplate.value(QStringLiteral("elements")).toArray().first().toObject();
@@ -721,9 +722,18 @@ void serialNumberPatchesPreserveMixedSelectionProperties() {
     drawTemplate.insert(QStringLiteral("elements"), QJsonArray{first, second});
     // The last selected ID is primary: request values already present on that item.
     drawTemplate.insert(QStringLiteral("selectedIds"), QJsonArray{secondId, id});
-    require(editor.insertDrawTemplate(QJsonDocument(drawTemplate).toJson(), QPointF(200, 0)),
+    const auto payload = QJsonDocument(drawTemplate).toJson();
+    require(useWidget ? canvas.insertDrawTemplate(payload, QPointF(200, 0))
+                      : editor.insertDrawTemplate(payload, QPointF(200, 0)),
             "insert and select serial numbers with mixed shapes, formats, values and sizes");
-    const auto state = editor.canvasStyleToolbarState();
+    const auto apply = [&](const QJsonObject& patch) {
+        const QJsonObject params{{QStringLiteral("target"), QStringLiteral("serial_number")},
+                                 {QStringLiteral("style"), patch}};
+        return useWidget ? mcpStylePatch(editor, canvas, params)
+                         : mcpStylePatch(editor, editor, params);
+    };
+    const auto state =
+        useWidget ? canvas.canvasStyleToolbarState() : editor.canvasStyleToolbarState();
     require(state.serialNumberStyle.numericType == SnowCanvasSerialNumberNumericType::Arabic &&
                 state.serialNumberStyle.type == SnowCanvasSerialNumberType::OutlinedCircle &&
                 (state.serialNumberStyleMixed & SnowCanvasSerialNumberStyleMixedNumericType) &&
@@ -737,17 +747,11 @@ void serialNumberPatchesPreserveMixedSelectionProperties() {
     };
     const auto before = selectedElements();
     const auto revision = runtime.documentRevision();
-    require(
-        mcpStylePatch(editor, editor,
-                      {{QStringLiteral("target"), QStringLiteral("serial_number")},
-                       {QStringLiteral("style"), QJsonObject{{QStringLiteral("opacity"), 1}}}}) &&
-            selectedElements() == before && runtime.documentRevision() == revision,
-        "a no-op patch does not resolve unrelated mixed properties or create history");
+    require(apply({{QStringLiteral("opacity"), 1}}) && selectedElements() == before &&
+                runtime.documentRevision() == revision,
+            "a no-op patch does not resolve unrelated mixed properties or create history");
     const auto verifyPatch = [&](const QJsonObject& patch, const QJsonObject& expectedChanges) {
-        require(mcpStylePatch(editor, editor,
-                              {{QStringLiteral("target"), QStringLiteral("serial_number")},
-                               {QStringLiteral("style"), patch}}),
-                "apply an explicit serial-number MCP patch");
+        require(apply(patch), "apply an explicit serial-number MCP patch");
         const auto after = selectedElements();
         require(after.size() == before.size(), "style patches preserve the selection");
         for (qsizetype i = 0; i < before.size(); ++i) {
@@ -900,7 +904,8 @@ void completeToolStyleContract() {
 } // namespace
 int main(int argc, char** argv) {
     QApplication app(argc, argv);
-    serialNumberPatchesPreserveMixedSelectionProperties();
+    serialNumberPatchesPreserveMixedSelectionProperties(false);
+    serialNumberPatchesPreserveMixedSelectionProperties(true);
     completeToolStyleContract();
     workflowOperations();
     annotationRuntime();

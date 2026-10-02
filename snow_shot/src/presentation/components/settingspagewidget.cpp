@@ -73,6 +73,7 @@ permissionForRenderer(settings::SettingsCustomRenderer renderer) {
     case Renderer::DrawingToolbarEditor:
     case Renderer::ScreenshotToolbarEditor:
     case Renderer::PinnedToolbarEditor:
+    case Renderer::FloatingToolbarEditor:
     case Renderer::TrayMenuOptions:
         return std::nullopt;
     }

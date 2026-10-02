@@ -312,7 +312,10 @@ inline bool mcpStylePatch(Commands& commands, Canvas& canvas, const QJsonObject&
         quint32 flags = 0;
         for (auto it = patch.begin(); it != patch.end(); ++it)
             flags |= properties.value(it.key());
-        return dispatch([&] { return commands.setSerialNumberStyleFromToolbar(style, flags); });
+        if constexpr (requires { canvas.applyStyleEdit(SnowCanvasSerialNumberEdit{style, flags}); })
+            return canvas.applyStyleEdit(SnowCanvasSerialNumberEdit{style, flags});
+        else
+            return dispatch([&] { return commands.setSerialNumberStyleFromToolbar(style, flags); });
     } else if (target.endsWith(QStringLiteral("filter"))) {
         auto style = state.filterStyle;
         style.type =
