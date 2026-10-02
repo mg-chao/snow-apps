@@ -2971,6 +2971,10 @@
             <translation>Select window/window sub-element</translation>
         </message>
         <message>
+            <source>Selection Aspect Ratio Snap</source>
+            <translation>Selection Aspect Ratio Snap</translation>
+        </message>
+        <message>
             <source>Selection Center Guide Color</source>
             <translation>Selection Center Guide Color</translation>
         </message>

@@ -14,6 +14,7 @@
 #include <QDebug>
 #include <QElapsedTimer>
 #include <QHash>
+#include <QGuiApplication>
 #include <QMimeData>
 #include <QPointer>
 #include <QThread>
@@ -41,7 +42,7 @@ struct ScreenshotClipboardCommitScopeState {
 namespace {
 #if !defined(Q_OS_WIN)
 // Keep canonical PNG bytes for native consumers and lazily provide Qt's image
-// representation when a local reader requests it. Publishing never decodes.
+// representation when a reader requests it. Decoded pixels belong to that reader.
 class PngClipboardMimeData final : public QMimeData {
   public:
     explicit PngClipboardMimeData(QByteArray png, QByteArray placement = {},
@@ -69,18 +70,27 @@ class PngClipboardMimeData final : public QMimeData {
   protected:
     QVariant retrieveData(const QString& mime, QMetaType type) const override {
         if (mime == QStringLiteral("application/x-qt-image")) {
-            if (m_image.isNull()) {
-                m_image = snow_shot::image_codec::decode(data(QStringLiteral("image/png")),
-                                                         snow::image::Format::png, "clipboard.png");
-            }
-            return m_image;
+            return snow_shot::image_codec::decode(data(QStringLiteral("image/png")),
+                                                  snow::image::Format::png, "clipboard.png");
         }
         return QMimeData::retrieveData(mime, type);
     }
-
-  private:
-    mutable QImage m_image;
 };
+
+bool publishPngClipboard(QClipboard* clipboard, const QByteArray& png, const QByteArray& placement,
+                         const QByteArray& appearance) {
+#ifdef Q_OS_MACOS
+    if (QGuiApplication::platformName() == QStringLiteral("cocoa")) {
+        ensureScreenshotClipboardPlacementMimeSupport();
+        ensureScreenshotClipboardAppearanceMimeSupport();
+        return snow_shot::platform::macos::publishImageClipboard(clipboard, png, placement,
+                                                                 appearance);
+    }
+#endif
+    clipboard->setMimeData(new PngClipboardMimeData(png, placement, appearance),
+                           QClipboard::Clipboard);
+    return true;
+}
 #endif
 
 constexpr int kMaximumCommitAttempts = 5;
@@ -643,12 +653,13 @@ ScreenshotClipboardService::commit(QClipboard* clipboard, QObject* receiver,
         if (!sharedPayload->isValid()) {
             return ClipboardPublishAttempt{ScreenshotClipboardCommitFailure::InvalidPayload, 0};
         }
-        auto* mime =
-            new PngClipboardMimeData(sharedPayload->m_pngBytes, sharedPayload->m_placementBytes,
-                                     sharedPayload->m_appearanceBytes);
-        guardedClipboard->setMimeData(mime, QClipboard::Clipboard);
+        const bool published =
+            publishPngClipboard(guardedClipboard, sharedPayload->m_pngBytes,
+                                sharedPayload->m_placementBytes, sharedPayload->m_appearanceBytes);
         sharedPayload->reset();
-        return ClipboardPublishAttempt{};
+        return ClipboardPublishAttempt{published ? ScreenshotClipboardCommitFailure::None
+                                                 : ScreenshotClipboardCommitFailure::PublishFailed,
+                                       0};
     };
 #endif
     auto* operation =
@@ -741,10 +752,8 @@ bool ScreenshotClipboardService::publish(QClipboard* clipboard,
         qWarning("Screenshot clipboard is unavailable");
         return false;
     }
-    auto* mime = new PngClipboardMimeData(payload.m_pngBytes, payload.m_placementBytes,
-                                          payload.m_appearanceBytes);
-    clipboard->setMimeData(mime, QClipboard::Clipboard);
-    return true;
+    return publishPngClipboard(clipboard, payload.m_pngBytes, payload.m_placementBytes,
+                               payload.m_appearanceBytes);
 #endif
 }
 

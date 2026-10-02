@@ -198,27 +198,6 @@ struct ScreenshotOverlayShortcutController::Impl {
                     [this]() {
                         return inputHandler.acceptInput() && actions.cycleColorPickerFormat();
                     })));
-
-        auto snap = fixedBinding(
-            QStringLiteral("screenshot.selection_aspect_ratio_snap"),
-            {QKeyCombination(Qt::ControlModifier, Qt::Key_Control)},
-            ShortcutManager::StandardPriority::WindowCommand,
-            [this]() {
-                return (interaction.selecting() || interaction.movingSelection() ||
-                        interaction.modifyingSelection() || interaction.editing()) &&
-                       actions.localShortcutInputAllowed();
-            },
-            [this]() {
-                return inputHandler.acceptInput() &&
-                       inputHandler.activateSelectionAspectRatioSnapShortcut();
-            });
-        snap.allowModifierOnlyControl = true;
-        snap.allowedAdditionalModifiers = Qt::ShiftModifier;
-        snap.release = [this](const auto&) {
-            return inputHandler.releaseSelectionAspectRatioSnapShortcut();
-        };
-        snap.cancel = [this] { inputHandler.cancelSelectionAspectRatioSnapShortcut(); };
-        static_cast<void>(shortcutManager.addBinding(&q, std::move(snap)));
     }
 
     void registerConfiguredBindings() {
@@ -230,6 +209,7 @@ struct ScreenshotOverlayShortcutController::Impl {
             QStringLiteral("move_cursor_right"),
             QStringLiteral("move_entire_selection"),
             QStringLiteral("keep_selection_width_and_height_consistent"),
+            QStringLiteral("selection_aspect_ratio_snap"),
             QStringLiteral("switch_selection_between_window_and_window_sub_element"),
             QStringLiteral("previous_screenshot_history"),
             QStringLiteral("next_screenshot_history"),
@@ -267,6 +247,9 @@ struct ScreenshotOverlayShortcutController::Impl {
                 if (inputHandler.effectDragActive() &&
                     actionId != QStringLiteral("cancel_screenshot"))
                     return false;
+                if (actionId == QStringLiteral("selection_aspect_ratio_snap")) {
+                    return inputHandler.canActivateSelectionAspectRatioSnapShortcut();
+                }
                 if (actionId == QStringLiteral("toggle_guides")) {
                     return !interaction.inactive() && actions.localShortcutInputAllowed();
                 }
@@ -356,6 +339,9 @@ struct ScreenshotOverlayShortcutController::Impl {
                     return actions.moveCursorOnePixel(
                         snow_shot::platform::PhysicalCursorDirection::Right);
                 }
+                if (actionId == QStringLiteral("selection_aspect_ratio_snap")) {
+                    return inputHandler.activateSelectionAspectRatioSnapShortcut();
+                }
                 if (actionId == QStringLiteral("toggle_cursor_visibility"))
                     return actions.toggleCursorVisibility();
                 if (actionId == QStringLiteral("move_entire_selection")) {
@@ -423,8 +409,14 @@ struct ScreenshotOverlayShortcutController::Impl {
                 binding.release = [this](const auto&) {
                     return inputHandler.releaseKeepSelectionAspectRatioShortcut();
                 };
+            } else if (actionId == QStringLiteral("selection_aspect_ratio_snap")) {
+                binding.allowedAdditionalModifiers = Qt::ShiftModifier;
+                binding.cancel = [this] { inputHandler.cancelSelectionAspectRatioSnapShortcut(); };
+                binding.release = [this](const auto&) {
+                    return inputHandler.releaseSelectionAspectRatioSnapShortcut();
+                };
             }
-            if (binding.release) {
+            if (binding.release && actionId != QStringLiteral("selection_aspect_ratio_snap")) {
                 // The initiating global mouse modifiers may still be held. Only these
                 // two held selection controls tolerate them, and only during that drag.
                 auto externalBinding = binding;

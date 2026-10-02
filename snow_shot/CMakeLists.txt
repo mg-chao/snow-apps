@@ -84,9 +84,9 @@ snow_enable_clang_tidy()
 
 find_package(Qt6 6.11.1 EXACT REQUIRED COMPONENTS Widgets LinguistTools Svg Network)
 if(APPLE)
-    add_library(snow_shot_macos_clipboard STATIC src/platform/macos/imageclipboard.cpp)
+    add_library(snow_shot_macos_clipboard STATIC src/platform/macos/imageclipboard.mm)
     target_link_libraries(snow_shot_macos_clipboard PUBLIC Qt6::Gui
-        PRIVATE "-framework CoreGraphics" "-framework ImageIO")
+        PRIVATE "-framework AppKit" "-framework CoreGraphics" "-framework ImageIO")
     add_library(snow_shot_macos_cursor STATIC
         src/platform/macos/windowcursorcoordinator.cpp
         src/platform/macos/windowcursorcoordinator.mm)
@@ -789,6 +789,10 @@ set(SNOW_SHOT_SETTINGS_CATALOG_SOURCES
     src/presentation/settings/settingscatalog.cpp
     src/presentation/settings/settingsregistry.cpp
 )
+# Widget targets also compile these icons. Keep their definitions separate from
+# the catalog so pulling the catalog from its archive does not pull duplicate icons.
+set_source_files_properties(src/presentation/components/icons/snowshoticons.cpp
+    PROPERTIES SKIP_UNITY_BUILD_INCLUSION ON)
 add_library(snow_shot_settings_catalog STATIC ${SNOW_SHOT_SETTINGS_CATALOG_SOURCES})
 snow_enable_unity_build(snow_shot_settings_catalog)
 target_include_directories(snow_shot_settings_catalog PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include")
@@ -3575,6 +3579,9 @@ if(SNOW_SHOT_BUILD_TESTS)
     add_test(NAME snow-shot-screenshot-cursor-tests
         COMMAND snow-shot-screenshot-canvas-renderer-tests --cursor-only -platform offscreen)
     set_tests_properties(snow-shot-screenshot-cursor-tests PROPERTIES LABELS "unit")
+    add_test(NAME snow-shot-selection-shortcut-hint-stages-tests
+        COMMAND snow-shot-screenshot-canvas-renderer-tests --shortcut-hints-only -platform offscreen)
+    set_tests_properties(snow-shot-selection-shortcut-hint-stages-tests PROPERTIES LABELS "unit")
     add_test(NAME snow-shot-selection-effect-editor-tests
         COMMAND snow-shot-screenshot-canvas-renderer-tests --selection-effect-editors-only -platform offscreen)
     set_tests_properties(snow-shot-selection-effect-editor-tests PROPERTIES LABELS "unit")
@@ -4159,6 +4166,18 @@ if(SNOW_SHOT_BUILD_TESTS)
     snow_shot_import_offscreen_platform(snow-shot-custom-server-settings-tests)
     add_test(NAME snow-shot-custom-server-settings-tests COMMAND snow-shot-custom-server-settings-tests)
     set_tests_properties(snow-shot-custom-server-settings-tests PROPERTIES
+        ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}"
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
+
+    add_executable(snow-shot-selection-snap-shortcut-settings-tests
+        tests/selection_snap_shortcut_settings_tests.cpp
+        src/presentation/services/screenshotclipboardservice.cpp)
+    target_link_libraries(snow-shot-selection-snap-shortcut-settings-tests PRIVATE
+        snow_shot_settings snow_shot_image_codec)
+    snow_shot_import_offscreen_platform(snow-shot-selection-snap-shortcut-settings-tests)
+    add_test(NAME snow-shot-selection-snap-shortcut-settings-tests
+             COMMAND snow-shot-selection-snap-shortcut-settings-tests)
+    set_tests_properties(snow-shot-selection-snap-shortcut-settings-tests PROPERTIES
         ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}"
         ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
 
@@ -8885,7 +8904,8 @@ if(SNOW_SHOT_BUILD_TESTS)
     if(APPLE)
         add_executable(snow-shot-macos-clipboard-roundtrip-tests
             tests/macos_clipboard_roundtrip_tests.mm
-            src/presentation/services/screenshotclipboardservice.cpp)
+            src/presentation/services/screenshotclipboardservice.cpp
+            src/presentation/services/screenshotclipboardcontent.cpp)
         target_include_directories(snow-shot-macos-clipboard-roundtrip-tests PRIVATE include)
         target_link_libraries(snow-shot-macos-clipboard-roundtrip-tests PRIVATE
             snow_shot_image_codec snow_shot_diagnostics Qt6::Widgets
@@ -8971,19 +8991,6 @@ if(SNOW_SHOT_BUILD_BENCHMARKS)
         target_link_libraries(snow-shot-clipboard-placement-benchmark PRIVATE user32)
     endif()
 endif()
-
-# Link after all clipboard test and benchmark targets have been declared so
-# metadata and native image converters are available to every consumer.
-get_property(_snow_clipboard_consumers DIRECTORY PROPERTY BUILDSYSTEM_TARGETS)
-foreach(_snow_target IN LISTS _snow_clipboard_consumers)
-    get_target_property(_snow_sources ${_snow_target} SOURCES)
-    if("${_snow_sources}" MATCHES "screenshotclipboard(service|content)\\.cpp")
-        target_link_libraries(${_snow_target} PRIVATE snow_shot_clipboard_placement)
-    endif()
-    if(APPLE AND "${_snow_sources}" MATCHES "screenshotclipboardservice\\.cpp")
-        target_link_libraries(${_snow_target} PRIVATE snow_shot_macos_clipboard)
-    endif()
-endforeach()
 
 if(SNOW_SHOT_BUILD_TESTS)
     add_test(NAME snow-shot-recording-audio-settings-tests
@@ -9244,6 +9251,19 @@ if(SNOW_SHOT_BUILD_BENCHMARKS)
             ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
     endif()
 endif()
+
+# Link after all clipboard test and benchmark targets have been declared so
+# metadata and native image converters are available to every consumer.
+get_property(_snow_clipboard_consumers DIRECTORY PROPERTY BUILDSYSTEM_TARGETS)
+foreach(_snow_target IN LISTS _snow_clipboard_consumers)
+    get_target_property(_snow_sources ${_snow_target} SOURCES)
+    if("${_snow_sources}" MATCHES "screenshotclipboard(service|content)\\.cpp")
+        target_link_libraries(${_snow_target} PRIVATE snow_shot_clipboard_placement)
+    endif()
+    if(APPLE AND "${_snow_sources}" MATCHES "screenshotclipboard(service|content)\\.cpp")
+        target_link_libraries(${_snow_target} PRIVATE snow_shot_macos_clipboard)
+    endif()
+endforeach()
 
 include("${CMAKE_CURRENT_SOURCE_DIR}/../cmake/SnowShotReleaseOptimization.cmake")
 include("${CMAKE_CURRENT_SOURCE_DIR}/../cmake/SnowShotMini.cmake")

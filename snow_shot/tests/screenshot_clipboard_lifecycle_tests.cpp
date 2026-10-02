@@ -275,6 +275,22 @@ void completionCanCancelOtherCommitsAndStartANewBatch() {
 }
 
 #ifndef Q_OS_WIN
+void clipboardReadersOwnDecodedImages() {
+    QImage source(32, 24, QImage::Format_ARGB32);
+    source.fill(QColor(30, 60, 90, 128));
+    require(ScreenshotClipboardService::publishImage(QApplication::clipboard(), source),
+            "image publication must succeed");
+    const QImage first = QApplication::clipboard()->image();
+    require(!first.isNull() && first.isDetached(),
+            "the clipboard must not retain a reader's decoded image");
+    const QImage second = QApplication::clipboard()->image();
+    require(first == second && second.isDetached(),
+            "repeated reads must preserve pixels without caching decoded images");
+    QApplication::clipboard()->setText(QStringLiteral("replacement"));
+    require(first.pixelColor(0, 0) == source.pixelColor(0, 0),
+            "replacing the clipboard must preserve images already owned by readers");
+}
+
 void scopeDestructionDuringPublicationSuppressesCompletion() {
     QObject receiver;
     auto scope = std::make_unique<ScreenshotClipboardCommitScope>();
@@ -343,6 +359,7 @@ int main(int argc, char** argv) {
     scopeDestructionCancelsWithoutAffectingOtherScopes();
     completionCanCancelOtherCommitsAndStartANewBatch();
 #ifndef Q_OS_WIN
+    clipboardReadersOwnDecodedImages();
     scopeDestructionDuringPublicationSuppressesCompletion();
     receiverDestructionDuringPublicationKeepsActiveInputsAlive(false);
     receiverDestructionDuringPublicationKeepsActiveInputsAlive(true);

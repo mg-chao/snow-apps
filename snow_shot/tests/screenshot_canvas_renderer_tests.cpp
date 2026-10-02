@@ -1381,36 +1381,42 @@ void guideVisibilityResetsAtEachCaptureSession() {
 }
 
 void shortcutHintStagesUseTheExactRequiredLines() {
+    const auto keyLine = [](const QString& label, const QStringList& keys) {
+        return label + QStringLiteral(": ") +
+               snow_shot::shortcuts::formatShortcutListDisplayText(
+                   snow_shot::shortcuts::bindingsFromPortableText(keys, true));
+    };
     const QStringList cursorLines{
-        QStringLiteral("Move cursor up: W / Up"),
-        QStringLiteral("Move cursor down: S / Down"),
-        QStringLiteral("Move cursor left: A / Left"),
-        QStringLiteral("Move cursor right: D / Right"),
+        keyLine(QStringLiteral("Move cursor up"), {QStringLiteral("W"), QStringLiteral("Up")}),
+        keyLine(QStringLiteral("Move cursor down"), {QStringLiteral("S"), QStringLiteral("Down")}),
+        keyLine(QStringLiteral("Move cursor left"), {QStringLiteral("A"), QStringLiteral("Left")}),
+        keyLine(QStringLiteral("Move cursor right"),
+                {QStringLiteral("D"), QStringLiteral("Right")}),
     };
     const QStringList commonLines{
         QStringLiteral("Select previously selected area: R"),
         QStringLiteral("Copy color: C"),
-        QStringLiteral("Toggle Global/Relative Coordinates: Ctrl+P"),
-        QStringLiteral("Toggle cursor visibility: `"),
-        QStringLiteral("Switch color format: Shift"),
-        QStringLiteral("Switch screenshot history: , / ."),
+        keyLine(QStringLiteral("Toggle Global/Relative Coordinates"), {QStringLiteral("Ctrl+P")}),
+        keyLine(QStringLiteral("Toggle cursor visibility"), {QStringLiteral("`")}),
+        QStringLiteral("Switch color format: %1")
+            .arg(snow_shot::shortcuts::ShortcutDisplayService::instance().modifierText(
+                Qt::ShiftModifier)),
+        keyLine(QStringLiteral("Switch screenshot history"),
+                {QStringLiteral(","), QStringLiteral(".")}),
     };
     QStringList selectionLines = cursorLines;
     selectionLines.append({
-        QStringLiteral("Move entire selection: Space"),
-        QStringLiteral("Keep selection width and height consistent: Shift"),
-        QStringLiteral("Selection Aspect Ratio Snap: %1")
-            .arg(snow_shot::shortcuts::ShortcutDisplayService::instance().modifierText(
-                Qt::ControlModifier)),
+        keyLine(QStringLiteral("Move entire selection"), {QStringLiteral("Space")}),
+        keyLine(QStringLiteral("Keep selection width and height consistent"),
+                {QStringLiteral("Shift")}),
+        QStringLiteral("Selection Aspect Ratio Snap: Q"),
     });
     selectionLines.append(commonLines);
     QStringList smartLines = cursorLines;
     smartLines.append({
         QStringLiteral("Switch element level: mouse wheel"),
-        QStringLiteral("Select window/window sub-element: Tab"),
-        QStringLiteral("Selection Aspect Ratio Snap: %1")
-            .arg(snow_shot::shortcuts::ShortcutDisplayService::instance().modifierText(
-                Qt::ControlModifier)),
+        keyLine(QStringLiteral("Select window/window sub-element"), {QStringLiteral("Tab")}),
+        QStringLiteral("Selection Aspect Ratio Snap: Q"),
     });
     smartLines.append(commonLines);
 
@@ -5898,6 +5904,10 @@ void runScreenshotCursorBenchmark();
 
 int main(int argc, char** argv) {
     QApplication application(argc, argv);
+    if (application.arguments().contains(QStringLiteral("--shortcut-hints-only"))) {
+        shortcutHintStagesUseTheExactRequiredLines();
+        return 0;
+    }
     if (application.arguments().contains(QStringLiteral("--eraser-source-only"))) {
         originalEraserSourceExcludesPresentationOverlays();
         return 0;

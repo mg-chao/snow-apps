@@ -464,6 +464,7 @@ void settingsSchemaDefaultsAndValidationAreComplete() {
         {QStringLiteral("move_entire_selection"), QJsonArray{QStringLiteral("Space")}},
         {QStringLiteral("keep_selection_width_and_height_consistent"),
          QJsonArray{QStringLiteral("Shift")}},
+        {QStringLiteral("selection_aspect_ratio_snap"), QJsonArray{QStringLiteral("Q")}},
         {QStringLiteral("switch_selection_between_window_and_window_sub_element"),
          QJsonArray{QStringLiteral("Tab")}},
         {QStringLiteral("previous_screenshot_history"), QJsonArray{QStringLiteral(",")}},
@@ -1763,7 +1764,7 @@ void settingsAdaptersRoundTripAndRejectInvalidValues() {
     const storage::ScreenshotShortcutSettings screenshotShortcuts;
     const shortcuts::ShortcutBindingMap screenshotDefaults = screenshotShortcuts.allShortcuts();
     require(
-        screenshotDefaults.size() == 29 &&
+        screenshotDefaults.size() == 30 &&
             portable(screenshotShortcuts.moveTool()) ==
                 QStringList{QStringLiteral("M"), QStringLiteral("Ctrl+E")} &&
             portable(screenshotShortcuts.moveCursorUp()) ==
@@ -1810,6 +1811,9 @@ void settingsAdaptersRoundTripAndRejectInvalidValues() {
             screenshotShortcuts.shortcuts(QStringLiteral("unsupported")).isEmpty() &&
             !screenshotShortcuts.setShortcuts(QStringLiteral("unsupported"), {QStringLiteral("Q")}),
         "screenshot shortcut adapter must expose all stable actions and defaults");
+    require(portable(screenshotDefaults.value(QStringLiteral("selection_aspect_ratio_snap"))) ==
+                QStringList{QStringLiteral("Q")},
+            "snap must expose Q as its configurable default");
     require(screenshotShortcuts.setShortcuts(QStringLiteral("toggle_guides"),
                                              {QStringLiteral("Ctrl+G")}) &&
                 portable(screenshotShortcuts.toggleGuides()) ==
