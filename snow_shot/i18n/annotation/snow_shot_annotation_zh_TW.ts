@@ -924,6 +924,10 @@
             <translation>智慧擦除</translation>
         </message>
         <message>
+            <source>Smart Typesetting</source>
+            <translation>智慧排版</translation>
+        </message>
+        <message>
             <source>Solid arrow stroke</source>
             <translation>實線箭頭描邊</translation>
         </message>

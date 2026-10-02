@@ -924,6 +924,10 @@
             <translation>Smart Erase</translation>
         </message>
         <message>
+            <source>Smart Typesetting</source>
+            <translation>Smart Typesetting</translation>
+        </message>
+        <message>
             <source>Solid arrow stroke</source>
             <translation>Solid arrow stroke</translation>
         </message>

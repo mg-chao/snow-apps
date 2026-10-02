@@ -149,6 +149,7 @@ constexpr int TOOLBAR_ITEM_SPACING = 8;
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Formatting"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Keep line breaks"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Remove line breaks"),
+    QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Smart Typesetting"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Punctuation"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Half-width"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Full-width"),
@@ -7881,8 +7882,19 @@ void ScreenshotToolPalette::createTextRecognitionActionFamily() {
         createScreenshotToolPaletteSelectEditor(m_selectActionPanel, formattingConfig,
                                                 actionButtonMetrics(m_physicalScale))
             .select;
-    m_textFormattingSelect->setOptions({{QStringLiteral("keep"), tr("Keep line breaks")},
-                                        {QStringLiteral("remove"), tr("Remove line breaks")}});
+    auto* formattingModel = new QStandardItemModel(m_textFormattingSelect);
+    const char* formattingKeys[] = {"keep", "remove", "smart"};
+    const char* formattingLabels[] = {"Keep line breaks", "Remove line breaks",
+                                      "Smart Typesetting"};
+    for (int i = 0; i < 3; ++i) {
+        const ScreenshotToolPaletteTranslationText text(formattingLabels[i]);
+        auto* item = new QStandardItem(text.translated());
+        setScreenshotToolPaletteItemTranslationSource(item, text);
+        item->setData(QString::fromLatin1(formattingKeys[i]),
+                      adqt::widgets::AdSelect::DefaultValueRole);
+        formattingModel->appendRow(item);
+    }
+    m_textFormattingSelect->setModel(formattingModel);
     m_textFormattingSelect->setAllowClear(true);
     m_selectActionLayout->addWidget(m_textFormattingSelect);
     m_textActionSpacers.push_back(addStyleToolbarSpacing(m_selectActionLayout, STYLE_ITEM_SPACING));

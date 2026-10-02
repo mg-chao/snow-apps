@@ -1377,7 +1377,25 @@ void ScreenshotRecognitionSessionController::applyTextFormatting(const QString& 
     constexpr bool streaming = false;
 #endif
     if (session != nullptr && !streaming) {
-        static_cast<void>(session->setFormatting(value));
+        QString smartText;
+        if (value == QStringLiteral("smart") && entry.presentation != nullptr) {
+            auto lines = entry.presentation->lines;
+            if (m_translating) {
+                // Translated drafts have no per-line OCR geometry of their own.
+                const QRectF bounds(entry.presentation->selection);
+                lines = {{session->text(),
+                          1.0,
+                          {bounds.topLeft(), bounds.topRight(), bounds.bottomRight(),
+                           bounds.bottomLeft()}}};
+            }
+            QStringList paragraphs;
+            for (const auto& line : snow_shot::presentation::mergeOcrLayout(
+                     lines, entry.presentation->selection.topLeft())) {
+                paragraphs.push_back(line.text);
+            }
+            smartText = paragraphs.join(QChar('\n'));
+        }
+        static_cast<void>(session->setFormatting(value, smartText));
         updateTextState();
     }
 }
@@ -2551,7 +2569,7 @@ bool ScreenshotRecognitionSessionController::editWorkflow(const QJsonObject& par
             const QStringList allowed =
                 action == QStringLiteral("format")
                     ? QStringList{QStringLiteral("none"), QStringLiteral("keep"),
-                                  QStringLiteral("remove")}
+                                  QStringLiteral("remove"), QStringLiteral("smart")}
                     : QStringList{QStringLiteral("none"), QStringLiteral("half"),
                                   QStringLiteral("full")};
             if (!allowed.contains(value))

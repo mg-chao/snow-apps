@@ -5720,6 +5720,22 @@ void ocrToolReplacesSelectionActionToolbarContents() {
     require(edit->isEnabled() && !reset->isEnabled() && textSelects.at(0)->isEnabled() &&
                 textSelects.at(1)->isEnabled(),
             "a text result should enable editing operations but not Reset");
+    formattingSelect->setCurrentValue(QStringLiteral("smart"));
+    require(formattingSelect->currentValue().toString() == QStringLiteral("smart"),
+            "OCR formatting offers Smart Typesetting");
+    auto& language = snow_shot::presentation::LanguageManager::instance();
+    for (const QString& locale :
+         {QStringLiteral("zh_CN"), QStringLiteral("zh_TW"), QStringLiteral("en_US")}) {
+        require(language.setLanguage(locale), "switch OCR formatting language");
+        QCoreApplication::processEvents();
+        require(formattingSelect->model()
+                            ->index(2, 0)
+                            .data(adqt::widgets::AdSelect::DefaultLabelRole)
+                            .toString() ==
+                        QCoreApplication::translate("ScreenshotToolPalette", "Smart Typesetting") &&
+                    formattingSelect->currentValue().toString() == QStringLiteral("smart"),
+                "Smart Typesetting retranslates without changing the selected format");
+    }
     formattingSelect->setCurrentValue(QStringLiteral("remove"));
     punctuationSelect->setCurrentValue(QStringLiteral("full"));
     require(formattingSelect->currentValue().toString() == QStringLiteral("remove") &&
