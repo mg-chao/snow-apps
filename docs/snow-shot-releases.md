@@ -81,6 +81,20 @@ python scripts/publish-snow-shot-gitee-release.py --manifest artifacts/publish-T
 token when available for authenticated reads. Keep the local manifest and
 all referenced files until both public release pages and asset downloads are verified.
 
+Gitee retains the newest Snow Shot release. After a publication passes all attachment
+checks, the publisher deletes older published Snow Shot release entries and their
+attachments. SemVer ordering protects the current version and any newer version;
+drafts and unrelated releases are excluded. Source Git tags and GitHub releases are
+retained. Verification-only runs never delete releases.
+
+If an attachment upload is explicitly rejected for exceeding Gitee's repository
+attachment quota, the publisher first checks whether that attachment was added. If
+it is still missing, it removes older Gitee releases and retries only that upload
+once. This exception runs only after the new release entry and its existing bytes
+have passed validation; the main workflow has already published and verified GitHub.
+Ambiguous upload failures do not trigger deletion or automatic retries. Ambiguous
+release deletions are reconciled by reading the exact release id before proceeding.
+
 ## Release contract
 
 ### Production Qt feature policy
