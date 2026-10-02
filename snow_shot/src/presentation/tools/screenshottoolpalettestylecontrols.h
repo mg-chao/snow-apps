@@ -312,7 +312,8 @@ class ScreenshotToolPaletteStyleControls final {
         SerialNumberFontSizeRefresh = 1u << 3,
         SerialNumberFontFamilyRefresh = 1u << 4,
         SerialNumberTypeRefresh = 1u << 5,
-        AllSerialNumberRefreshes = (1u << 6) - 1,
+        SerialNumberNumericTypeRefresh = 1u << 6,
+        AllSerialNumberRefreshes = (1u << 7) - 1,
     };
     static constexpr quint32 kAllRefreshGroups = 0xffffffffu;
 
@@ -395,6 +396,7 @@ class ScreenshotToolPaletteStyleControls final {
     void setWatermarkOpacity(double opacity);
     void setSerialNumberColor(const QColor& color);
     void setSerialNumberType(SnowCanvasSerialNumberType type);
+    void setSerialNumberNumericType(SnowCanvasSerialNumberNumericType type);
     void setSerialNumberFillColor(const QColor& color);
     void setSerialNumberFillStyle(SnowCanvasFillStyle fillStyle);
     void setSerialNumber(qint64 number);
@@ -500,6 +502,8 @@ class ScreenshotToolPaletteStyleControls final {
     std::unique_ptr<ScreenshotToolPaletteColorEditor> m_serialNumberColorEditor;
     QWidget* m_serialNumberTypeControlsContainer = nullptr;
     adqt::widgets::AdRadioButtonGroup* m_serialNumberTypeButtonGroup = nullptr;
+    QWidget* m_serialNumberNumericTypeControlsContainer = nullptr;
+    adqt::widgets::AdRadioButtonGroup* m_serialNumberNumericTypeButtonGroup = nullptr;
     std::unique_ptr<ScreenshotToolPaletteFillEditor> m_serialNumberFillEditor;
     adqt::widgets::AdLineEdit* m_serialNumberEditor = nullptr;
     std::unique_ptr<ScreenshotToolPaletteFontEditor> m_serialNumberFontEditor;

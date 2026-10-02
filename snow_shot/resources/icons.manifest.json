@@ -1015,6 +1015,46 @@
     },
     {
       "variant": "outlined",
+      "symbol": "SequenceNumberNumericArabic",
+      "name": "sequence-number-numeric-arabic",
+      "source": "../src/presentation/components/icons/resources/sequence-number-numeric-arabic.svg",
+      "colorModel": "monochrome",
+      "fit": "contain"
+    },
+    {
+      "variant": "outlined",
+      "symbol": "SequenceNumberNumericChinese",
+      "name": "sequence-number-numeric-chinese",
+      "source": "../src/presentation/components/icons/resources/sequence-number-numeric-chinese.svg",
+      "colorModel": "monochrome",
+      "fit": "contain"
+    },
+    {
+      "variant": "outlined",
+      "symbol": "SequenceNumberNumericLowercaseLetters",
+      "name": "sequence-number-numeric-lowercase-letters",
+      "source": "../src/presentation/components/icons/resources/sequence-number-numeric-lowercase-letters.svg",
+      "colorModel": "monochrome",
+      "fit": "contain"
+    },
+    {
+      "variant": "outlined",
+      "symbol": "SequenceNumberNumericRoman",
+      "name": "sequence-number-numeric-roman",
+      "source": "../src/presentation/components/icons/resources/sequence-number-numeric-roman.svg",
+      "colorModel": "monochrome",
+      "fit": "contain"
+    },
+    {
+      "variant": "outlined",
+      "symbol": "SequenceNumberNumericUppercaseLetters",
+      "name": "sequence-number-numeric-uppercase-letters",
+      "source": "../src/presentation/components/icons/resources/sequence-number-numeric-uppercase-letters.svg",
+      "colorModel": "monochrome",
+      "fit": "contain"
+    },
+    {
+      "variant": "outlined",
       "symbol": "SequenceNumberOutlinedCircle",
       "name": "sequence-number-outlined-circle",
       "source": "../src/presentation/components/icons/resources/sequence-number-outlined-circle.svg",

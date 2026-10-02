@@ -821,3 +821,259 @@ fn drag_and_toolbar_bound_labels_share_styling_and_layout() {
     assert_eq!(drag_text.layout, toolbar_text.layout);
     assert_ne!(drag_text.center, toolbar_text.center);
 }
+
+#[test]
+fn serial_number_numeric_type_survives_creation_history_templates_and_sessions() {
+    use snow_draw_engine_document::SerialNumberNumericType as Numeric;
+    let (mut engine, viewport) = setup(1.0);
+    let mut style = engine.editor.serial_number_style(&engine.model);
+    style.number = 27;
+    style.numeric_type = Numeric::LowercaseLetters;
+    engine
+        .set_viewport_serial_number_style(viewport, style)
+        .unwrap();
+    pointer(
+        &mut engine,
+        viewport,
+        PointerEventType::Down,
+        400.0,
+        300.0,
+        false,
+    );
+    pointer(
+        &mut engine,
+        viewport,
+        PointerEventType::Up,
+        400.0,
+        300.0,
+        false,
+    );
+    let id = engine.model.paint_order()[0];
+    assert_eq!(
+        engine.model.serial_number(id).unwrap().numeric_type,
+        Numeric::LowercaseLetters
+    );
+    engine
+        .select_element_with_viewport_changes(viewport, id)
+        .unwrap();
+    let before = engine.model.serial_number(id).unwrap().clone();
+    let mut style = engine.editor.serial_number_style(&engine.model);
+    style.numeric_type = Numeric::Roman;
+    engine
+        .set_viewport_serial_number_style_patch(
+            viewport,
+            style,
+            snow_draw_engine_editor::SERIAL_NUMBER_STYLE_MIXED_NUMERIC_TYPE,
+        )
+        .unwrap();
+    assert_eq!(engine.model.serial_number(id).unwrap().number, 27);
+    let patch = engine.acquire_patch(viewport, None).unwrap();
+    let displayed = patch
+        .scene
+        .ops
+        .iter()
+        .flat_map(|op| &op.insert_items)
+        .find_map(|item| {
+            if let SceneDisplayItem::SerialNumber(serial) = item {
+                Some(serial)
+            } else {
+                None
+            }
+        })
+        .unwrap();
+    assert_eq!(displayed.label, "XXVII");
+    assert_eq!(
+        displayed.diameter,
+        engine.model.serial_number(id).unwrap().diameter
+    );
+    assert!(engine.undo().unwrap());
+    assert_eq!(engine.model.serial_number(id).unwrap(), &before);
+    assert!(engine.redo().unwrap());
+    assert_eq!(
+        engine.model.serial_number(id).unwrap().numeric_type,
+        Numeric::Roman
+    );
+
+    let session = engine.serialize_document_session().unwrap();
+    let history = engine.serialize_document_history().unwrap();
+    for session_payload in [true, false] {
+        let bytes = if session_payload { &session } else { &history };
+        let restored = if session_payload {
+            Engine::from_serialized_document_session_with_config(bytes, Default::default()).unwrap()
+        } else {
+            Engine::from_serialized_document_history_with_config(bytes, Default::default()).unwrap()
+        };
+        assert_eq!(
+            restored.model.serial_number(id).unwrap().numeric_type,
+            Numeric::Roman
+        );
+        let mut legacy: serde_json::Value = serde_json::from_slice(bytes).unwrap();
+        fn remove_format(value: &mut serde_json::Value) {
+            match value {
+                serde_json::Value::Object(object) => {
+                    object.remove("numeric_type");
+                    for child in object.values_mut() {
+                        remove_format(child);
+                    }
+                }
+                serde_json::Value::Array(array) => {
+                    for child in array {
+                        remove_format(child);
+                    }
+                }
+                _ => {}
+            }
+        }
+        remove_format(&mut legacy);
+        let encoded = serde_json::to_vec(&legacy).unwrap();
+        let restored = if session_payload {
+            Engine::from_serialized_document_session_with_config(&encoded, Default::default())
+                .unwrap()
+        } else {
+            Engine::from_serialized_document_history_with_config(&encoded, Default::default())
+                .unwrap()
+        };
+        assert_eq!(
+            restored.model.serial_number(id).unwrap().numeric_type,
+            Numeric::Arabic
+        );
+    }
+    engine
+        .select_element_with_viewport_changes(viewport, id)
+        .unwrap();
+    let template = engine.serialize_selected_draw_template().unwrap();
+    engine
+        .duplicate_selected_with_viewport_changes(viewport, Point::new(100.0, 0.0))
+        .unwrap();
+    assert_eq!(
+        engine
+            .model
+            .serial_number(engine.selected_ids()[0])
+            .unwrap()
+            .numeric_type,
+        Numeric::Roman
+    );
+    engine
+        .insert_draw_template_with_viewport_changes(viewport, &template, Point::new(200.0, 0.0))
+        .unwrap();
+    assert_eq!(
+        engine
+            .model
+            .serial_number(engine.selected_ids()[0])
+            .unwrap()
+            .numeric_type,
+        Numeric::Roman
+    );
+}
+
+#[test]
+fn serial_number_numeric_type_refreshes_bounds_dirty_regions_and_attached_connector() {
+    use snow_draw_engine_display::{
+        DecorationRevision, OverlayRevision, PatchCursor, SceneRevision,
+    };
+    use snow_draw_engine_document::{
+        SerialNumberNumericType, resolve_serial_number_text_connection,
+    };
+    let (mut engine, viewport) = setup(1.0);
+    let mut style = engine.editor.serial_number_style(&engine.model);
+    style.number = 888;
+    engine
+        .set_viewport_serial_number_style(viewport, style)
+        .unwrap();
+    pointer(
+        &mut engine,
+        viewport,
+        PointerEventType::Down,
+        400.0,
+        300.0,
+        false,
+    );
+    pointer(
+        &mut engine,
+        viewport,
+        PointerEventType::Move,
+        650.0,
+        500.0,
+        false,
+    );
+    pointer(
+        &mut engine,
+        viewport,
+        PointerEventType::Up,
+        650.0,
+        500.0,
+        false,
+    );
+    let id = engine.model.paint_order()[0];
+    engine
+        .select_element_with_viewport_changes(viewport, id)
+        .unwrap();
+    let before_bounds = engine
+        .editor
+        .presentation_state(
+            &engine.model,
+            &engine.viewports.get(&viewport).unwrap().view,
+        )
+        .selection_bounds
+        .unwrap();
+    let before = engine.acquire_patch(viewport, None).unwrap();
+    let cursor = PatchCursor {
+        scene_revision: SceneRevision(before.scene.revision),
+        decoration_revision: DecorationRevision(before.decoration.revision),
+        overlay_revision: OverlayRevision(before.overlay.revision),
+    };
+    let mut style = engine.editor.serial_number_style(&engine.model);
+    style.numeric_type = SerialNumberNumericType::Chinese;
+    engine
+        .set_viewport_serial_number_style_patch(
+            viewport,
+            style,
+            snow_draw_engine_editor::SERIAL_NUMBER_STYLE_MIXED_NUMERIC_TYPE,
+        )
+        .unwrap();
+    let serial = engine.model.serial_number(id).unwrap();
+    let text = engine.model.text(serial.text_element_id.unwrap()).unwrap();
+    let expected = resolve_serial_number_text_connection(serial, text).unwrap();
+    let after_bounds = engine
+        .editor
+        .presentation_state(
+            &engine.model,
+            &engine.viewports.get(&viewport).unwrap().view,
+        )
+        .selection_bounds
+        .unwrap();
+    assert!(after_bounds.width > before_bounds.width);
+    assert_eq!(after_bounds.center, before_bounds.center);
+    let patch = engine.acquire_patch(viewport, Some(cursor)).unwrap();
+    assert!(
+        !patch.scene.reset,
+        "format changes support incremental scene updates"
+    );
+    let half = serial.diameter / 2.0;
+    assert!(
+        patch.scene.dirty_regions.iter().any(|region| {
+            region.min_x <= 400.0 - half
+                && region.max_x >= 400.0 + half
+                && region.min_y <= 300.0 - half
+                && region.max_y >= 300.0 + half
+        }),
+        "repaint covers the larger formatted badge and its previous area"
+    );
+    let connector = patch
+        .scene
+        .ops
+        .iter()
+        .flat_map(|op| &op.insert_items)
+        .find_map(|item| {
+            if let SceneDisplayItem::SerialNumberConnector(connector) = item {
+                Some(connector)
+            } else {
+                None
+            }
+        })
+        .expect("the connector must be refreshed when the badge size changes");
+    assert!((connector.start_x - expected.start.x).abs() < 1e-9);
+    assert!((connector.start_y - expected.start.y).abs() < 1e-9);
+    assert!((connector.end_x - expected.end.x).abs() < 1e-9);
+    assert!((connector.end_y - expected.end.y).abs() < 1e-9);
+}

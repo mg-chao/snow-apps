@@ -4716,6 +4716,9 @@ if(SNOW_SHOT_BUILD_TESTS)
     add_test(NAME snow-shot-region-switcher-style-tests
         COMMAND snow-shot-screenshot-tool-palette-tests --region-switcher-only -platform offscreen)
     set_tests_properties(snow-shot-region-switcher-style-tests PROPERTIES LABELS "unit" TIMEOUT 60)
+    add_test(NAME snow-shot-screenshot-serial-number-tests
+        COMMAND snow-shot-screenshot-tool-palette-tests --serial-number-only -platform offscreen)
+    set_tests_properties(snow-shot-screenshot-serial-number-tests PROPERTIES LABELS "unit" TIMEOUT 60)
     add_test(
         NAME snow-shot-screenshot-tool-palette-tests
         COMMAND snow-shot-screenshot-tool-palette-tests

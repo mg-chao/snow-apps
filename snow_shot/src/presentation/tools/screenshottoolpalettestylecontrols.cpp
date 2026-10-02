@@ -101,6 +101,7 @@ constexpr char kRoleTextAlignment[] = "text-alignment";
 constexpr char kRoleTextStroke[] = "text-stroke";
 constexpr char kRoleSerialValue[] = "serial-value";
 constexpr char kRoleSerialType[] = "serial-type";
+constexpr char kRoleSerialNumericType[] = "serial-numeric-type";
 constexpr char kRoleFilterMode[] = "filter-mode";
 constexpr char kRoleEraserMode[] = "eraser-mode";
 [[maybe_unused]] constexpr const char* kEraserTranslations[] = {
@@ -136,6 +137,7 @@ constexpr char kSignatureTextAlignment[] = "icon-options:text-align";
 constexpr char kSignatureTextStroke[] = "width-color:text-stroke";
 constexpr char kSignatureSerialValue[] = "serial-value";
 constexpr char kSignatureSerialType[] = "radio:serial-type";
+constexpr char kSignatureSerialNumericType[] = "radio:serial-numeric-type";
 constexpr char kSignatureFilterMode[] = "radio:filter-mode";
 constexpr char kSignatureEraserMode[] = "radio:eraser-mode";
 constexpr char kSignatureFilterType[] = "select:filter-types";
@@ -170,8 +172,8 @@ QVector<QByteArray> styleEditorRoles(ScreenshotToolPalette::Tool tool) {
         return {kRoleForegroundColor, kRoleTextFont, "text-alignment",
                 "text-stroke",        kRoleTextFill, kRoleCornerRadius};
     case Tool::SerialNumber:
-        return {kRoleForegroundColor, kRoleSerialType, "serial-value", kRoleTextFont,
-                kRoleTextFill};
+        return {kRoleForegroundColor, kRoleSerialType, kRoleSerialNumericType,
+                "serial-value",       kRoleTextFont,   kRoleTextFill};
     case Tool::AutoFilter:
     case Tool::RectangleFilter:
         return {"filter-mode", "filter-type", "filter-intensity"};
@@ -1204,6 +1206,7 @@ void ScreenshotToolPaletteStyleControls::stageDestinationStyleEditors(
     case Tool::SerialNumber:
         stageComponent(kRoleForegroundColor, kSignatureForegroundColor, m_serialNumberColorEditor);
         stageWidget(kRoleSerialType);
+        stageWidget(kRoleSerialNumericType);
         stageWidget(kRoleSerialValue);
         stageComponent(kRoleTextFont, kSignatureTextFont, m_serialNumberFontEditor);
         stageComponent(kRoleTextFill, kSignatureTextFill, m_serialNumberFillEditor);
@@ -2308,6 +2311,70 @@ QWidget* ScreenshotToolPaletteStyleControls::buildSerialNumberFamily(
         host.addGroupSeparator(layout);
     }
 
+    ScreenshotToolPaletteRadioEditorConfig serialNumberNumericTypeConfig;
+    serialNumberNumericTypeConfig.objectName =
+        QStringLiteral("screenshotSerialNumberNumericTypeButtonGroup");
+    serialNumberNumericTypeConfig.options = {
+        {static_cast<int>(SnowCanvasSerialNumberNumericType::Arabic),
+         ScreenshotToolPaletteTranslationText(
+             QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Arabic numerals")),
+         custom_outlined_icons::SequenceNumberNumericArabic()},
+        {static_cast<int>(SnowCanvasSerialNumberNumericType::Roman),
+         ScreenshotToolPaletteTranslationText(
+             QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Roman numerals")),
+         custom_outlined_icons::SequenceNumberNumericRoman()},
+        {static_cast<int>(SnowCanvasSerialNumberNumericType::LowercaseLetters),
+         ScreenshotToolPaletteTranslationText(
+             QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Lowercase letters")),
+         custom_outlined_icons::SequenceNumberNumericLowercaseLetters()},
+        {static_cast<int>(SnowCanvasSerialNumberNumericType::UppercaseLetters),
+         ScreenshotToolPaletteTranslationText(
+             QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Uppercase letters")),
+         custom_outlined_icons::SequenceNumberNumericUppercaseLetters()},
+        {static_cast<int>(SnowCanvasSerialNumberNumericType::Chinese),
+         ScreenshotToolPaletteTranslationText(
+             QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Chinese numerals")),
+         custom_outlined_icons::SequenceNumberNumericChinese()},
+    };
+    serialNumberNumericTypeConfig.initialId =
+        static_cast<int>(m_state.m_serialNumberStyle.numericType);
+    m_serialNumberNumericTypeControlsContainer =
+        takeReusableWidget(kRoleSerialNumericType, kSignatureSerialNumericType, layout, controls);
+    if (m_serialNumberNumericTypeControlsContainer == nullptr) {
+        const ScreenshotToolPaletteRadioEditor typeEditor = createScreenshotToolPaletteRadioEditor(
+            controls, serialNumberNumericTypeConfig, metrics);
+        m_serialNumberNumericTypeControlsContainer = typeEditor.container;
+        m_serialNumberNumericTypeButtonGroup = typeEditor.group;
+        layout->addWidget(m_serialNumberNumericTypeControlsContainer);
+    } else {
+        m_serialNumberNumericTypeButtonGroup =
+            m_serialNumberNumericTypeControlsContainer
+                ->findChild<adqt::widgets::AdRadioButtonGroup*>();
+    }
+    m_serialNumberNumericTypeControlsContainer->setObjectName(
+        serialNumberNumericTypeConfig.objectName);
+    m_serialNumberNumericTypeControlsContainer->setProperty("screenshotStyleEditorRoot", true);
+    m_serialNumberNumericTypeControlsContainer->setProperty("screenshotStyleEditorRole",
+                                                            kRoleSerialNumericType);
+    m_serialNumberNumericTypeControlsContainer->setProperty("screenshotStyleEditorSignature",
+                                                            kSignatureSerialNumericType);
+    configureScreenshotToolPaletteTooltip(
+        m_serialNumberNumericTypeControlsContainer,
+        ScreenshotToolPaletteTranslationText(
+            QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Sequence number numeric type")));
+    QObject::connect(
+        m_serialNumberNumericTypeButtonGroup, &adqt::widgets::AdRadioButtonGroup::checkedIdChanged,
+        controls, [this](int id) {
+            if (id >= static_cast<int>(SnowCanvasSerialNumberNumericType::Arabic) &&
+                id <= static_cast<int>(SnowCanvasSerialNumberNumericType::Chinese)) {
+                setSerialNumberNumericType(static_cast<SnowCanvasSerialNumberNumericType>(id));
+            }
+        });
+
+    if (host.addGroupSeparator) {
+        host.addGroupSeparator(layout);
+    }
+
     m_serialNumberEditor = qobject_cast<adqt::widgets::AdLineEdit*>(
         takeReusableWidget(kRoleSerialValue, kSignatureSerialValue, layout, controls));
     if (m_serialNumberEditor == nullptr) {
@@ -3288,12 +3355,25 @@ void ScreenshotToolPaletteStyleControls::registerSerialNumberEntries() {
                                                    mixed(SnowCanvasSerialNumberStyleMixedColor));
              }
          }},
+        {SerialNumberNumericTypeRefresh,
+         [this, mixed]() {
+             if (m_serialNumberNumericTypeButtonGroup != nullptr) {
+                 const QSignalBlocker blocker(m_serialNumberNumericTypeButtonGroup);
+                 m_serialNumberNumericTypeButtonGroup->setCheckedId(
+                     mixed(SnowCanvasSerialNumberStyleMixedNumericType)
+                         ? -1
+                         : static_cast<int>(m_state.m_serialNumberStyle.numericType));
+             }
+         }},
         {SerialNumberTypeRefresh,
          [this, mixed]() {
              SNOW_SHOT_TOOLBAR_PERF_COUNTER("style.serial_number.type_refresh");
              const bool typeMixed = mixed(SnowCanvasSerialNumberStyleMixedType);
              const bool supportsNumber = typeMixed || m_state.m_serialNumberStyle.type !=
                                                           SnowCanvasSerialNumberType::Circle;
+             if (m_serialNumberNumericTypeControlsContainer != nullptr) {
+                 m_serialNumberNumericTypeControlsContainer->setEnabled(supportsNumber);
+             }
              if (m_serialNumberEditor != nullptr) {
                  m_serialNumberEditor->setEnabled(supportsNumber);
              }
@@ -3510,6 +3590,8 @@ void ScreenshotToolPaletteStyleControls::releaseControlBindings() {
     m_serialNumberColorEditor.reset();
     m_serialNumberTypeControlsContainer = nullptr;
     m_serialNumberTypeButtonGroup = nullptr;
+    m_serialNumberNumericTypeControlsContainer = nullptr;
+    m_serialNumberNumericTypeButtonGroup = nullptr;
     m_serialNumberFillEditor.reset();
     m_serialNumberEditor = nullptr;
     m_serialNumberFontEditor.reset();
@@ -3610,6 +3692,8 @@ void ScreenshotToolPaletteStyleControls::discardBindingsExcept(int destinationTo
     if (!keepSerialNumber) {
         m_serialNumberTypeControlsContainer = nullptr;
         m_serialNumberTypeButtonGroup = nullptr;
+        m_serialNumberNumericTypeControlsContainer = nullptr;
+        m_serialNumberNumericTypeButtonGroup = nullptr;
         m_serialNumberEditor = nullptr;
     }
     if (!keepWatermark) {
@@ -4951,6 +5035,18 @@ void ScreenshotToolPaletteStyleControls::setSerialNumberColor(const QColor& colo
                                });
 }
 
+void ScreenshotToolPaletteStyleControls::setSerialNumberNumericType(
+    SnowCanvasSerialNumberNumericType type) {
+    commitSerialNumberProperty(SnowCanvasSerialNumberStyleMixedNumericType,
+                               [type](SnowCanvasSerialNumberStyle& style) {
+                                   if (style.numericType == type) {
+                                       return false;
+                                   }
+                                   style.numericType = type;
+                                   return true;
+                               });
+}
+
 void ScreenshotToolPaletteStyleControls::setSerialNumberType(SnowCanvasSerialNumberType type) {
     commitSerialNumberProperty(SnowCanvasSerialNumberStyleMixedType,
                                [type](SnowCanvasSerialNumberStyle& style) {
@@ -5083,6 +5179,9 @@ void ScreenshotToolPaletteStyleControls::setStyleToolbarState(
             if (m_state.m_serialNumberStyle.color != displayedStyle.color ||
                 (mixedChanged & SnowCanvasSerialNumberStyleMixedColor) != 0)
                 groups |= SerialNumberColorRefresh;
+            if (m_state.m_serialNumberStyle.numericType != displayedStyle.numericType ||
+                (mixedChanged & SnowCanvasSerialNumberStyleMixedNumericType) != 0)
+                groups |= SerialNumberNumericTypeRefresh;
             if (m_state.m_serialNumberStyle.type != displayedStyle.type ||
                 (mixedChanged & SnowCanvasSerialNumberStyleMixedType) != 0)
                 groups |= SerialNumberTypeRefresh;

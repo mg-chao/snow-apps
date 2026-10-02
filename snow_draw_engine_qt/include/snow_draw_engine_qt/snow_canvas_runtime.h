@@ -83,6 +83,7 @@ class SnowCanvasRuntimeEditor final {
     bool setTextStyleFromToolbar(const SnowCanvasTextStyle&,
                                  quint32 properties = SnowCanvasTextStyleAllProperties);
     bool setSerialNumberStyleFromToolbar(const SnowCanvasSerialNumberStyle&);
+    bool setSerialNumberStyleFromToolbar(const SnowCanvasSerialNumberStyle&, quint32 properties);
     bool setFilterStyleFromToolbar(const SnowCanvasFilterStyle&, quint32);
     bool
     setBrushEraserCreationStyle(const SnowCanvasBrushEraserStyle&,

@@ -6,6 +6,7 @@
 #include <QApplication>
 #include <QColor>
 #include <QImage>
+#include <QPainter>
 #include <QSet>
 #include <QStringList>
 #include <QXmlStreamReader>
@@ -96,8 +97,8 @@ void everySnowShotEntryRenders() {
     const auto registered = icons::registerWith(renderer);
     require(registered.ok(), "Snow Shot pack registration should succeed");
     const adqt::icons::IconPack* staticPack = icons::pack().staticPack();
-    require(staticPack != nullptr && staticPack->entryCount == 155,
-            "Snow Shot pack should contain all 155 project-owned assets");
+    require(staticPack != nullptr && staticPack->entryCount == 160,
+            "Snow Shot pack should contain all 160 project-owned assets");
 
     adqt::icons::IconRenderRequest request;
     request.logicalSize = QSize(32, 32);
@@ -395,11 +396,53 @@ void indentedTriangleCornersAreSymmetric() {
     }
 }
 
+void numericFormatIconsRenderAtToolbarSizes() {
+    namespace icons = snow_shot::presentation::icons::custom;
+    QImage preview(600, 240, QImage::Format_ARGB32_Premultiplied);
+    preview.fill(Qt::white);
+    QPainter painter(&preview);
+    const QColor backgrounds[] = {QColor("#ffffff"), QColor("#141414"), QColor("#e6f4ff"),
+                                  QColor("#f5f5f5")};
+    const QColor foregrounds[] = {QColor("#262626"), QColor("#f0f0f0"), QColor("#1677ff"),
+                                  QColor("#bfbfbf")};
+    for (int row = 0; row < 4; ++row) {
+        painter.fillRect(QRect(0, row * 60, 600, 60), backgrounds[row]);
+        const auto colors = adqt::icons::IconColors::primary(foregrounds[row]);
+        const QList<adqt::icons::IconRef> refs = {
+            icons::outlined::SequenceNumberNumericArabic(colors),
+            icons::outlined::SequenceNumberNumericRoman(colors),
+            icons::outlined::SequenceNumberNumericLowercaseLetters(colors),
+            icons::outlined::SequenceNumberNumericUppercaseLetters(colors),
+            icons::outlined::SequenceNumberNumericChinese(colors)};
+        for (int column = 0; column < refs.size(); ++column) {
+            const auto* descriptor = refs[column].descriptor();
+            require(descriptor != nullptr, "numeric icon is registered");
+            const QByteArray svg(descriptor->svg.data(),
+                                 static_cast<qsizetype>(descriptor->svg.size()));
+            require(svg.contains("0 0 1024 1024") && !svg.contains("<text"),
+                    "numeric icons use an Ant Design grid and vector paths");
+            for (qreal dpr : {1.0, 1.5, 2.0}) {
+                const QPixmap pixmap = render(refs[column], QSize(16, 16), dpr);
+                require(!pixmap.isNull() && opaquePixelCount(pixmap.toImage(), pixmap.rect()) > 0,
+                        "every numeric icon paints at normal and fractional DPI");
+            }
+            painter.drawPixmap(column * 120 + 24, row * 60 + 22,
+                               render(refs[column], QSize(16, 16)));
+            painter.drawPixmap(column * 120 + 60, row * 60 + 14,
+                               render(refs[column], QSize(32, 32)));
+        }
+    }
+    painter.end();
+    if (const auto path = qEnvironmentVariable("SNOW_SERIAL_NUMBER_ICON_PREVIEW"); !path.isEmpty())
+        require(preview.save(path), "save numeric icon inspection sheet");
+}
+
 } // namespace
 
 int main(int argc, char** argv) {
     QApplication application(argc, argv);
     try {
+        numericFormatIconsRenderAtToolbarSizes();
         if (application.arguments().contains(QStringLiteral("--recapture-only"))) {
             recaptureIconUsesThemeColor();
             return 0;

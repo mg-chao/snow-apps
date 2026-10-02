@@ -878,6 +878,8 @@ pub struct SerialNumberData {
     pub number: i64,
     #[serde(default, rename = "type")]
     pub serial_number_type: SerialNumberType,
+    #[serde(default)]
+    pub numeric_type: crate::SerialNumberNumericType,
     pub color: ColorRgba8,
     pub fill: ColorRgba8,
     pub fill_style: FillStyle,

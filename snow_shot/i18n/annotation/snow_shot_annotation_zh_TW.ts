@@ -64,6 +64,10 @@
             <translation>動畫錄製格式不包含音訊</translation>
         </message>
         <message>
+            <source>Arabic numerals</source>
+            <translation>阿拉伯數字</translation>
+        </message>
+        <message>
             <source>Arrow</source>
             <translation>箭頭</translation>
         </message>
@@ -146,6 +150,10 @@
         <message>
             <source>Center vertically</source>
             <translation>垂直置中</translation>
+        </message>
+        <message>
+            <source>Chinese numerals</source>
+            <translation>中文數字</translation>
         </message>
         <message>
             <source>Circle</source>
@@ -576,6 +584,10 @@
             <translation>邏輯像素選取範圍</translation>
         </message>
         <message>
+            <source>Lowercase letters</source>
+            <translation>小寫字母</translation>
+        </message>
+        <message>
             <source>Mask color</source>
             <translation>遮罩顏色</translation>
         </message>
@@ -824,6 +836,10 @@
             <translation>繼續錄製</translation>
         </message>
         <message>
+            <source>Roman numerals</source>
+            <translation>羅馬數字</translation>
+        </message>
+        <message>
             <source>Save as file</source>
             <translation>另存為檔案</translation>
         </message>
@@ -878,6 +894,10 @@
         <message>
             <source>Sequence number font size %1px</source>
             <translation>序號文字大小 %1 像素</translation>
+        </message>
+        <message>
+            <source>Sequence number numeric type</source>
+            <translation>序號數字類型</translation>
         </message>
         <message>
             <source>Sequence number type</source>
@@ -1174,6 +1194,10 @@
         <message>
             <source>Undo</source>
             <translation>復原</translation>
+        </message>
+        <message>
+            <source>Uppercase letters</source>
+            <translation>大寫字母</translation>
         </message>
         <message>
             <source>Vertical scrolling</source>

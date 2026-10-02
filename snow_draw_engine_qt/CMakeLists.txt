@@ -261,6 +261,10 @@ if(SNOW_DRAW_ENGINE_QT_BUILD_TESTS)
     )
     qt_import_plugins(snow-canvas-text-draft-tests INCLUDE Qt6::QOffscreenIntegrationPlugin)
     add_test(NAME snow-canvas-text-draft-tests COMMAND snow-canvas-text-draft-tests)
+    add_test(NAME snow-canvas-serial-number-render-tests
+        COMMAND snow-canvas-text-draft-tests --serial-number-only -platform offscreen)
+    set_tests_properties(snow-canvas-serial-number-render-tests PROPERTIES LABELS "unit" TIMEOUT 60)
+
     set_tests_properties(snow-canvas-text-draft-tests PROPERTIES
         ENVIRONMENT
             "QT_QPA_PLATFORM=offscreen;QT_QPA_PLATFORM_PLUGIN_PATH=$<TARGET_FILE_DIR:Qt6::QOffscreenIntegrationPlugin>"

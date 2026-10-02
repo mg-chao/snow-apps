@@ -159,6 +159,7 @@ impl Default for SerialNumberData {
             rotation: 0.0,
             number: 1,
             serial_number_type: crate::SerialNumberType::OutlinedCircle,
+            numeric_type: crate::SerialNumberNumericType::Arabic,
             color: ColorRgba8 {
                 r: 0xf4,
                 g: 0x21,
@@ -739,7 +740,12 @@ pub fn resolve_serial_number_stroke_width(serial: &SerialNumberData) -> f64 {
 
 pub fn resolve_serial_number_data_diameter(serial: &SerialNumberData, min_diameter: f64) -> f64 {
     if serial.serial_number_type.supports_number() {
-        resolve_serial_number_diameter(serial.number, serial.font_size, min_diameter)
+        resolve_serial_number_formatted_diameter(
+            serial.number,
+            serial.numeric_type,
+            serial.font_size,
+            min_diameter,
+        )
     } else {
         sanitize_non_negative(serial.font_size) * 0.5
     }
@@ -769,8 +775,22 @@ pub fn serial_number_with_label_style(
 }
 
 pub fn resolve_serial_number_diameter(number: i64, font_size: f64, min_diameter: f64) -> f64 {
-    let (width, height) =
-        serial_number_label_size(number.max(0), SERIAL_NUMBER_CANONICAL_FONT_SIZE);
+    resolve_serial_number_formatted_diameter(
+        number,
+        crate::SerialNumberNumericType::Arabic,
+        font_size,
+        min_diameter,
+    )
+}
+
+pub fn resolve_serial_number_formatted_diameter(
+    number: i64,
+    numeric_type: crate::SerialNumberNumericType,
+    font_size: f64,
+    min_diameter: f64,
+) -> f64 {
+    let label = crate::format_serial_number(number, numeric_type);
+    let (width, height) = serial_number_label_size(&label, SERIAL_NUMBER_CANONICAL_FONT_SIZE);
     let line_height = text_line_height(SERIAL_NUMBER_CANONICAL_FONT_SIZE);
     let base = width.max(height.max(line_height));
     let padding = line_height * SERIAL_NUMBER_DIAMETER_PADDING_PER_LINE_HEIGHT;
@@ -779,13 +799,19 @@ pub fn resolve_serial_number_diameter(number: i64, font_size: f64, min_diameter:
         .max(min_diameter.max(0.0))
 }
 
-fn serial_number_label_size(number: i64, font_size: f64) -> (f64, f64) {
-    let digit_count = number.to_string().chars().count().max(1) as f64;
+fn serial_number_label_size(label: &str, font_size: f64) -> (f64, f64) {
+    let width_em: f64 = label
+        .chars()
+        .map(|ch| {
+            if ch.is_ascii() {
+                SERIAL_NUMBER_LABEL_WIDTH_PER_EM
+            } else {
+                1.0
+            }
+        })
+        .sum();
     let line_height = text_line_height(font_size);
-    (
-        digit_count * font_size.max(1.0) * SERIAL_NUMBER_LABEL_WIDTH_PER_EM,
-        line_height,
-    )
+    (width_em * font_size.max(1.0), line_height)
 }
 
 pub fn text_hit_test(text: &TextData, point: Point<f64>, hit_tolerance: f64) -> bool {
@@ -1368,7 +1394,7 @@ mod tests {
     fn serial_number_diameter_scales_from_canonical_line_height() {
         let font_size = 24.0;
         let line_height = text_line_height(SERIAL_NUMBER_CANONICAL_FONT_SIZE);
-        let (width, height) = serial_number_label_size(1, SERIAL_NUMBER_CANONICAL_FONT_SIZE);
+        let (width, height) = serial_number_label_size("1", SERIAL_NUMBER_CANONICAL_FONT_SIZE);
         let base = width.max(height.max(line_height));
         let padding = line_height * SERIAL_NUMBER_DIAMETER_PADDING_PER_LINE_HEIGHT;
         let expected = (base + padding * 2.0) * (font_size / SERIAL_NUMBER_CANONICAL_FONT_SIZE);

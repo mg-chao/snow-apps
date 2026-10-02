@@ -357,6 +357,7 @@ pub(crate) fn scene_item_from_serial_number(
         diameter: serial.diameter,
         rotation: serial.rotation,
         number: serial.number.max(0),
+        label: snow_draw_engine_document::format_serial_number(serial.number, serial.numeric_type),
         serial_number_type: match serial.serial_number_type {
             SerialNumberType::OutlinedCircle => DisplaySerialNumberType::OutlinedCircle,
             SerialNumberType::SolidCircle => DisplaySerialNumberType::SolidCircle,

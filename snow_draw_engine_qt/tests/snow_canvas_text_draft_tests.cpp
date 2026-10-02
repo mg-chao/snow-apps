@@ -829,6 +829,58 @@ QRect darkPixelBounds(const QImage& image) {
     return bounds;
 }
 
+void serialNumberFormattedLabelsRenderAndFitBadges() {
+#if defined(Q_OS_WIN)
+    require(QFontDatabase::addApplicationFont(QStringLiteral("C:/Windows/Fonts/msyh.ttc")) >= 0,
+            "Chinese number rendering requires a CJK fallback font");
+#endif
+    const QList<QByteArray> labels = {
+        "27",        "XXVII",         "aa", "AA", QByteArray::fromHex("e4ba8ce58d81e4b883"),
+        "MMMCMXCIX", "CRPXNLSKVLJFHG"};
+    SceneDisplayInfo info{};
+    info.surface_width = 240;
+    info.surface_height = 240;
+    info.camera_zoom = 1.0;
+    for (const auto shape :
+         {SNOW_SERIAL_NUMBER_TYPE_OUTLINED_CIRCLE, SNOW_SERIAL_NUMBER_TYPE_OUTLINED_SQUARE}) {
+        for (double diameter : {40.0, 100.0}) {
+            QList<QImage> rendered;
+            for (const QByteArray& label : labels) {
+                SnowCanvasSceneItem item;
+                item.kind = SNOW_SCENE_DISPLAY_ITEM_SERIAL_NUMBER;
+                item.serial_number_type = static_cast<std::uint8_t>(shape);
+                item.serial_number = 27;
+                item.width = item.height = diameter;
+                item.font_size = 32.0;
+                item.opacity = 1.0;
+                item.stroke = SnowColorRgba8{0, 0, 0, 0};
+                item.fill = SnowColorRgba8{255, 255, 255, 255};
+                item.fill_style = SNOW_FILL_STYLE_SOLID;
+                item.text_color = SnowColorRgba8{0, 0, 0, 255};
+                item.setTextUtf8(label);
+                QImage image(240, 240, QImage::Format_ARGB32_Premultiplied);
+                image.fill(Qt::transparent);
+                QPainter painter(&image);
+                painter.setFont(QApplication::font());
+                snow_canvas_renderer::renderSceneItems(
+                    {&painter, &info, &item, 1, QRegion(image.rect())});
+                painter.end();
+                const QRect ink = darkPixelBounds(image);
+                require(!ink.isEmpty(), "each numeric label paints visible glyphs");
+                require(ink.width() <= diameter + 2 && ink.height() <= diameter + 2,
+                        "long and Chinese labels fit the badge after resizing");
+                require(std::abs(ink.center().x() - 119) <= 2 &&
+                            std::abs(ink.center().y() - 119) <= 2,
+                        "formatted glyphs remain optically centered");
+                for (const auto& previous : rendered)
+                    require(previous != image,
+                            "each notation renders its UTF-8 label instead of decimal digits");
+                rendered.append(image);
+            }
+        }
+    }
+}
+
 void bahnschriftCondensedSerialNumberUsesResolvedGlyphBounds() {
     constexpr double zoom = 1.37;
     const QString family = QStringLiteral("Bahnschrift Condensed");
@@ -4185,6 +4237,16 @@ int main(int argc, char** argv) {
             "the watermark renderer test requires a system TrueType font");
 #endif
 
+    if (app.arguments().contains(QStringLiteral("--serial-number-only"))) {
+        serialNumberFormattedLabelsRenderAndFitBadges();
+        serialNumberBackgroundUsesTextHatchTexture();
+        circleRendersFillAndStrokeWithoutNumber();
+        serialNumberTypesRenderExpectedSilhouettesAndSolidSemantics();
+        solidSerialNumberChoosesFixedContrastLabelColors();
+        textEditorConnectorBuildsSerialBoundConnector();
+        return 0;
+    }
+    serialNumberFormattedLabelsRenderAndFitBadges();
     replacementNormalizesLineBreaksAndSupportsUndoRedo();
     cursorPositionReportsOnlyRealStateChanges();
     inputMethodPreeditDoesNotCommitUntilCommitString();

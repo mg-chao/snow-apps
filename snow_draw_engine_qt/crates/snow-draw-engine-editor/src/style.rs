@@ -19,14 +19,15 @@ use crate::{
     RectangleShapeStyle, SERIAL_NUMBER_STYLE_MIXED_COLOR, SERIAL_NUMBER_STYLE_MIXED_FILL,
     SERIAL_NUMBER_STYLE_MIXED_FILL_STYLE, SERIAL_NUMBER_STYLE_MIXED_FONT_FAMILY,
     SERIAL_NUMBER_STYLE_MIXED_FONT_SIZE, SERIAL_NUMBER_STYLE_MIXED_NUMBER,
-    SERIAL_NUMBER_STYLE_MIXED_OPACITY, SERIAL_NUMBER_STYLE_MIXED_STROKE_STYLE,
-    SERIAL_NUMBER_STYLE_MIXED_STROKE_WIDTH, SERIAL_NUMBER_STYLE_MIXED_TYPE,
-    SHAPE_STYLE_MIXED_ARROW_TYPE, SHAPE_STYLE_MIXED_CORNER_RADII, SHAPE_STYLE_MIXED_END_ARROWHEAD,
-    SHAPE_STYLE_MIXED_FILL, SHAPE_STYLE_MIXED_FILL_STYLE, SHAPE_STYLE_MIXED_HIGHLIGHT_SHAPE,
-    SHAPE_STYLE_MIXED_OPACITY, SHAPE_STYLE_MIXED_SHAPE, SHAPE_STYLE_MIXED_START_ARROWHEAD,
-    SHAPE_STYLE_MIXED_STROKE, SHAPE_STYLE_MIXED_STROKE_STYLE, SHAPE_STYLE_MIXED_STROKE_WIDTH,
-    SHAPE_STYLE_PROPERTY_ARROW_TYPE, SHAPE_STYLE_PROPERTY_CORNER_RADII,
-    SHAPE_STYLE_PROPERTY_END_ARROWHEAD, SHAPE_STYLE_PROPERTY_FILL, SHAPE_STYLE_PROPERTY_FILL_STYLE,
+    SERIAL_NUMBER_STYLE_MIXED_NUMERIC_TYPE, SERIAL_NUMBER_STYLE_MIXED_OPACITY,
+    SERIAL_NUMBER_STYLE_MIXED_STROKE_STYLE, SERIAL_NUMBER_STYLE_MIXED_STROKE_WIDTH,
+    SERIAL_NUMBER_STYLE_MIXED_TYPE, SHAPE_STYLE_MIXED_ARROW_TYPE, SHAPE_STYLE_MIXED_CORNER_RADII,
+    SHAPE_STYLE_MIXED_END_ARROWHEAD, SHAPE_STYLE_MIXED_FILL, SHAPE_STYLE_MIXED_FILL_STYLE,
+    SHAPE_STYLE_MIXED_HIGHLIGHT_SHAPE, SHAPE_STYLE_MIXED_OPACITY, SHAPE_STYLE_MIXED_SHAPE,
+    SHAPE_STYLE_MIXED_START_ARROWHEAD, SHAPE_STYLE_MIXED_STROKE, SHAPE_STYLE_MIXED_STROKE_STYLE,
+    SHAPE_STYLE_MIXED_STROKE_WIDTH, SHAPE_STYLE_PROPERTY_ARROW_TYPE,
+    SHAPE_STYLE_PROPERTY_CORNER_RADII, SHAPE_STYLE_PROPERTY_END_ARROWHEAD,
+    SHAPE_STYLE_PROPERTY_FILL, SHAPE_STYLE_PROPERTY_FILL_STYLE,
     SHAPE_STYLE_PROPERTY_HIGHLIGHT_SHAPE, SHAPE_STYLE_PROPERTY_OPACITY, SHAPE_STYLE_PROPERTY_SHAPE,
     SHAPE_STYLE_PROPERTY_START_ARROWHEAD, SHAPE_STYLE_PROPERTY_STROKE,
     SHAPE_STYLE_PROPERTY_STROKE_STYLE, SHAPE_STYLE_PROPERTY_STROKE_WIDTH, SelectionArrowState,
@@ -43,6 +44,7 @@ use crate::{
 const FONT_SIZE_STEPS: [f64; 5] = [MIN_TEXT_FONT_SIZE, 16.0, 21.0, 27.0, 42.0];
 const SERIAL_NUMBER_STYLE_ALL_PROPERTIES: u32 = SERIAL_NUMBER_STYLE_MIXED_NUMBER
     | SERIAL_NUMBER_STYLE_MIXED_TYPE
+    | SERIAL_NUMBER_STYLE_MIXED_NUMERIC_TYPE
     | SERIAL_NUMBER_STYLE_MIXED_COLOR
     | SERIAL_NUMBER_STYLE_MIXED_FILL
     | SERIAL_NUMBER_STYLE_MIXED_FILL_STYLE
@@ -426,6 +428,7 @@ impl SerialNumberStyle {
         Self {
             number: serial.number.max(0),
             serial_number_type: serial.serial_number_type,
+            numeric_type: serial.numeric_type,
             color: serial.color,
             fill: serial.fill,
             fill_style: serial.fill_style,
@@ -632,6 +635,9 @@ fn serial_number_style_changed_properties(
     if current.number != next.number {
         properties |= SERIAL_NUMBER_STYLE_MIXED_NUMBER;
     }
+    if current.numeric_type != next.numeric_type {
+        properties |= SERIAL_NUMBER_STYLE_MIXED_NUMERIC_TYPE;
+    }
     if current.serial_number_type != next.serial_number_type {
         properties |= SERIAL_NUMBER_STYLE_MIXED_TYPE;
     }
@@ -683,11 +689,18 @@ fn serial_number_with_style_properties(
     } else {
         serial.font_size
     };
-    let size_affecting_style_changed = serial.number != number.max(0)
+    let numeric_type = if properties & SERIAL_NUMBER_STYLE_MIXED_NUMERIC_TYPE != 0 {
+        style.numeric_type
+    } else {
+        serial.numeric_type
+    };
+    let size_affecting_style_changed = serial.numeric_type != numeric_type
+        || serial.number != number.max(0)
         || serial.font_size != font_size
         || serial.serial_number_type.supports_number() != next_type.supports_number();
     let mut typed_serial = serial.clone();
     typed_serial.serial_number_type = next_type;
+    typed_serial.numeric_type = numeric_type;
     let mut updated = if size_affecting_style_changed {
         serial_number_with_label_style(&typed_serial, number, font_size)
     } else {
@@ -1527,6 +1540,9 @@ impl Editor {
             if style.number != first.number {
                 mixed |= SERIAL_NUMBER_STYLE_MIXED_NUMBER;
             }
+            if style.numeric_type != first.numeric_type {
+                mixed |= SERIAL_NUMBER_STYLE_MIXED_NUMERIC_TYPE;
+            }
             if style.serial_number_type != first.serial_number_type {
                 mixed |= SERIAL_NUMBER_STYLE_MIXED_TYPE;
             }
@@ -1998,10 +2014,18 @@ impl Editor {
         let changed_properties = serial_number_style_changed_properties(&current_style, &style);
         let type_only_change = changed_properties == SERIAL_NUMBER_STYLE_MIXED_TYPE
             || (changed_properties == 0 && mixed & SERIAL_NUMBER_STYLE_MIXED_TYPE != 0);
-        let properties = if type_only_change {
+        let properties = if changed_properties == SERIAL_NUMBER_STYLE_MIXED_NUMERIC_TYPE
+            || (changed_properties == 0
+                && mixed & SERIAL_NUMBER_STYLE_MIXED_NUMERIC_TYPE != 0
+                && mixed & SERIAL_NUMBER_STYLE_MIXED_TYPE == 0)
+        {
+            SERIAL_NUMBER_STYLE_MIXED_NUMERIC_TYPE
+        } else if type_only_change {
             SERIAL_NUMBER_STYLE_MIXED_TYPE
-        } else if mixed & SERIAL_NUMBER_STYLE_MIXED_TYPE != 0
-            && changed_properties & SERIAL_NUMBER_STYLE_MIXED_TYPE == 0
+        } else if (mixed & SERIAL_NUMBER_STYLE_MIXED_TYPE != 0
+            && changed_properties & SERIAL_NUMBER_STYLE_MIXED_TYPE == 0)
+            || (mixed & SERIAL_NUMBER_STYLE_MIXED_NUMERIC_TYPE != 0
+                && changed_properties & SERIAL_NUMBER_STYLE_MIXED_NUMERIC_TYPE == 0)
         {
             changed_properties
         } else {
@@ -3407,5 +3431,61 @@ mod tests {
         assert_eq!(document.filter(filter_id).unwrap().opacity, 0.75);
         assert_eq!(document.filter(second_filter_id).unwrap().opacity, 0.75);
         assert_eq!(*document.rectangle(rectangle_id).unwrap(), rectangle);
+    }
+    #[test]
+    fn serial_number_numeric_type_patches_preserve_mixed_values_and_other_styles() {
+        use snow_draw_engine_document::SerialNumberNumericType;
+        let mut document = DocumentModel::new();
+        let first_id = document.allocate_element_id();
+        let second_id = document.allocate_element_id();
+        let first = SerialNumberData {
+            number: 888,
+            ..SerialNumberData::default()
+        };
+        let second = SerialNumberData {
+            number: 27,
+            numeric_type: SerialNumberNumericType::UppercaseLetters,
+            font_size: 42.0,
+            serial_number_type: snow_draw_engine_document::SerialNumberType::SolidSquare,
+            ..SerialNumberData::default()
+        };
+        let mut insert = Transaction::new("mixed numeric formats");
+        insert.insert_serial_number(first_id, ElementMeta::default(), first.clone());
+        insert.insert_serial_number(second_id, ElementMeta::default(), second.clone());
+        document.apply_transaction(insert).unwrap();
+        let mut editor = Editor::new(Default::default()).unwrap();
+        editor.set_selection_state(vec![first_id, second_id], Some(first_id));
+        assert_ne!(
+            editor.serial_number_style_mixed(&document) & SERIAL_NUMBER_STYLE_MIXED_NUMERIC_TYPE,
+            0
+        );
+        let mut style = editor.serial_number_style(&document);
+        style.numeric_type = SerialNumberNumericType::Roman;
+        let command = editor
+            .set_serial_number_style(&document, style)
+            .unwrap()
+            .unwrap();
+        let EditorCommand::ApplyTransaction(command) = command else {
+            panic!("expected transaction")
+        };
+        document.apply_transaction(command.transaction).unwrap();
+        for (id, original) in [(first_id, first), (second_id, second)] {
+            let changed = document.serial_number(id).unwrap();
+            let mut expected = original;
+            expected.numeric_type = SerialNumberNumericType::Roman;
+            expected.diameter = snow_draw_engine_document::resolve_serial_number_data_diameter(
+                &expected,
+                SerialNumberData::default().diameter,
+            );
+            assert_eq!(changed, &expected);
+        }
+        assert_eq!(
+            editor.serial_number_style_mixed(&document) & SERIAL_NUMBER_STYLE_MIXED_NUMERIC_TYPE,
+            0
+        );
+        assert_ne!(
+            editor.serial_number_style_mixed(&document) & SERIAL_NUMBER_STYLE_MIXED_NUMBER,
+            0
+        );
     }
 }

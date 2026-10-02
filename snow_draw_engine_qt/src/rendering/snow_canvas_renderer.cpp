@@ -290,7 +290,9 @@ void drawSerialNumberText(QPainter& painter, const SnowSceneDisplayItem& item,
         return;
     }
 
-    const QString text = QString::number(qMax<std::int64_t>(0, item.serial_number));
+    const QString text = item.text_utf8 != nullptr && item.text_utf8_len > 0
+                             ? QString::fromUtf8(item.text_utf8, item.text_utf8_len)
+                             : QString::number(qMax<std::int64_t>(0, item.serial_number));
     text_layout::SingleLineLayout layout =
         text_layout::createSingleLineLayout(text, painter.font(), item, zoom);
     const QRectF layoutBounds = layout.layoutBounds;

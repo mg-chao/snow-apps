@@ -133,8 +133,14 @@ inline void snowCanvasMergeStyle(SnowCanvasSerialNumberStyle& target,
         target.fontSize = value.fontSize;
     if ((properties & SnowCanvasSerialNumberStyleMixedFontFamily) != 0)
         target.fontFamily = value.fontFamily;
+    if ((properties & SnowCanvasSerialNumberStyleMixedStrokeWidth) != 0)
+        target.strokeWidth = value.strokeWidth;
+    if ((properties & SnowCanvasSerialNumberStyleMixedStrokeStyle) != 0)
+        target.strokeStyle = value.strokeStyle;
     if ((properties & SnowCanvasSerialNumberStyleMixedOpacity) != 0)
         target.opacity = value.opacity;
+    if ((properties & SnowCanvasSerialNumberStyleMixedNumericType) != 0)
+        target.numericType = value.numericType;
     if ((properties & SnowCanvasSerialNumberStyleMixedType) != 0)
         target.type = value.type;
 }

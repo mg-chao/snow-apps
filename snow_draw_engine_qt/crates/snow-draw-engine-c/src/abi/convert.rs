@@ -788,6 +788,32 @@ impl From<TextStyle> for SnowTextStyle {
     }
 }
 
+pub(crate) fn snow_serial_number_numeric_type_to_rust(
+    value: SnowSerialNumberNumericType,
+) -> snow_draw_engine_document::SerialNumberNumericType {
+    use snow_draw_engine_document::SerialNumberNumericType as Numeric;
+    match value {
+        SnowSerialNumberNumericType::Arabic => Numeric::Arabic,
+        SnowSerialNumberNumericType::Roman => Numeric::Roman,
+        SnowSerialNumberNumericType::LowercaseLetters => Numeric::LowercaseLetters,
+        SnowSerialNumberNumericType::UppercaseLetters => Numeric::UppercaseLetters,
+        SnowSerialNumberNumericType::Chinese => Numeric::Chinese,
+    }
+}
+
+fn snow_serial_number_numeric_type_from_rust(
+    value: snow_draw_engine_document::SerialNumberNumericType,
+) -> SnowSerialNumberNumericType {
+    use snow_draw_engine_document::SerialNumberNumericType as Numeric;
+    match value {
+        Numeric::Arabic => SnowSerialNumberNumericType::Arabic,
+        Numeric::Roman => SnowSerialNumberNumericType::Roman,
+        Numeric::LowercaseLetters => SnowSerialNumberNumericType::LowercaseLetters,
+        Numeric::UppercaseLetters => SnowSerialNumberNumericType::UppercaseLetters,
+        Numeric::Chinese => SnowSerialNumberNumericType::Chinese,
+    }
+}
+
 pub(crate) fn snow_serial_number_type_to_rust(value: SnowSerialNumberType) -> SerialNumberType {
     match value {
         SnowSerialNumberType::OutlinedCircle => SerialNumberType::OutlinedCircle,
@@ -803,6 +829,7 @@ impl From<SnowSerialNumberStyle> for SerialNumberStyle {
         Self {
             number: value.number.max(0),
             serial_number_type: snow_serial_number_type_to_rust(value.serial_number_type),
+            numeric_type: snow_serial_number_numeric_type_to_rust(value.numeric_type),
             color: value.color.into(),
             fill: value.fill.into(),
             fill_style: snow_fill_style_to_rust(value.fill_style),
@@ -819,6 +846,7 @@ impl From<SerialNumberStyle> for SnowSerialNumberStyle {
     fn from(value: SerialNumberStyle) -> Self {
         let mut out = Self {
             number: value.number.max(0),
+            numeric_type: snow_serial_number_numeric_type_from_rust(value.numeric_type),
             serial_number_type: match value.serial_number_type {
                 SerialNumberType::OutlinedCircle => SnowSerialNumberType::OutlinedCircle,
                 SerialNumberType::SolidCircle => SnowSerialNumberType::SolidCircle,
@@ -926,6 +954,7 @@ unsafe fn runtime_style_default_enums_are_valid(defaults: *const SnowStyleDefaul
             && raw_c_enum_is_valid(std::ptr::addr_of!((*defaults).text.fill_style))
             && raw_c_enum_is_valid(std::ptr::addr_of!((*defaults).text.horizontal_align))
             && raw_c_enum_is_valid(std::ptr::addr_of!((*defaults).text.vertical_align))
+            && raw_c_enum_is_valid(std::ptr::addr_of!((*defaults).serial_number.numeric_type))
             && raw_c_enum_is_valid(std::ptr::addr_of!((*defaults).serial_number.fill_style))
             && raw_c_enum_is_valid(std::ptr::addr_of!((*defaults).serial_number.stroke_style))
             && raw_c_enum_is_valid(std::ptr::addr_of!(
@@ -1002,6 +1031,9 @@ pub(crate) fn runtime_config_from_c(
                 },
                 serial_number: SerialNumberStyle {
                     number: defaults.serial_number.number,
+                    numeric_type: snow_serial_number_numeric_type_to_rust(
+                        defaults.serial_number.numeric_type,
+                    ),
                     serial_number_type: match defaults.serial_number.serial_number_type {
                         SnowSerialNumberType::OutlinedCircle => SerialNumberType::OutlinedCircle,
                         SnowSerialNumberType::SolidCircle => SerialNumberType::SolidCircle,
@@ -1573,6 +1605,7 @@ mod tests {
         let serial_style: SnowSerialNumberStyle = SerialNumberStyle {
             number: 1,
             serial_number_type: SerialNumberType::OutlinedCircle,
+            numeric_type: snow_draw_engine_document::SerialNumberNumericType::Arabic,
             color: ColorRgba8::default(),
             fill: ColorRgba8::default(),
             fill_style: FillStyle::Solid,
