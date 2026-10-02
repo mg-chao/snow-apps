@@ -390,7 +390,6 @@ namespace outlined_icons = adqt::icons::antd::outlined;
 namespace custom_outlined_icons = snow_shot::presentation::icons::custom::outlined;
 
 constexpr int kControlsInset = 16;
-constexpr int kControlButtonSize = snow_shot::presentation::OverlayControlButton::controlSize;
 constexpr int kControlButtonSpacing = 8;
 constexpr int kThumbnailSize = 83;
 constexpr int kThumbnailAnimationDurationMs = 150;
