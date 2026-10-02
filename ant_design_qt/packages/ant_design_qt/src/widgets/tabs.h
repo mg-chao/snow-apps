@@ -15,6 +15,8 @@
 
 namespace adqt::widgets {
 
+// Tabs retain their natural extent along the navigation strip. Overflow scrolls
+// within the strip, and selecting a tab brings it into view.
 class AdTabs final : public QWidget {
   Q_OBJECT
 

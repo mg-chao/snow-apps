@@ -1,30 +1,36 @@
 #include "tabs.h"
 
 #include "detail/text_metrics.h"
+#include "popover.h"
+#include "scroll_area.h"
 #include "tabs_style.h"
 #include "theme/theme.h"
 
 #include "antd_icons.h"
 
 #include <QAbstractButton>
-#include <QAction>
 #include <QBoxLayout>
+#include <QCoreApplication>
 #include <QEvent>
 #include <QFocusEvent>
 #include <QHash>
 #include <QKeyEvent>
-#include <QMenu>
+#include <QListWidget>
+#include <QStyledItemDelegate>
+#include <QStyle>
 #include <QMouseEvent>
 #include <QPainter>
 #include <QPainterPath>
 #include <QResizeEvent>
+#include <QScrollArea>
+#include <QScrollBar>
+#include <QScroller>
 #include <QStackedWidget>
 #include <QVariantAnimation>
-#include <QVector>
+#include <QWheelEvent>
 
 #include <algorithm>
 #include <cstdint>
-#include <numeric>
 #include <utility>
 
 namespace adqt::widgets {
@@ -75,53 +81,361 @@ bool keyboardFocusReason(Qt::FocusReason reason) {
   return reason != Qt::MouseFocusReason && reason != Qt::NoFocusReason;
 }
 
-QVector<int> shrinkExtentsToFit(const QVector<int>& naturalExtents,
-                                const QVector<int>& minimumExtents, int available) {
-  QVector<int> result = naturalExtents;
-  if (result.isEmpty()) {
-    return result;
+// A mouse-transparent overlay stays above the moving tab content, like Ant's
+// inset overflow shadows. It indicates only the edges that can still be scrolled.
+class TabScrollEdges final : public QWidget {
+ public:
+  explicit TabScrollEdges(QWidget* parent) : QWidget(parent) {
+    setObjectName(QStringLiteral("ad-tabs-scroll-edges"));
+    setAttribute(Qt::WA_TransparentForMouseEvents);
+    setAttribute(Qt::WA_NoSystemBackground);
   }
 
-  const int naturalTotal = std::accumulate(result.cbegin(), result.cend(), 0);
-  if (naturalTotal <= available) {
-    return result;
+  void configure(bool horizontal, bool before, bool after) {
+    horizontal_ = horizontal;
+    before_ = before;
+    after_ = after;
+    update();
   }
 
-  const int minimumTotal = std::accumulate(minimumExtents.cbegin(), minimumExtents.cend(), 0);
-  if (minimumTotal >= available) {
-    return minimumExtents;
-  }
-
-  int low = 0;
-  int high = *std::max_element(naturalExtents.cbegin(), naturalExtents.cend());
-  int cap = 0;
-  while (low <= high) {
-    const int candidate = low + (high - low) / 2;
-    int total = 0;
-    for (int index = 0; index < naturalExtents.size(); ++index) {
-      total += std::clamp(candidate, minimumExtents.at(index), naturalExtents.at(index));
-    }
-    if (total <= available) {
-      cap = candidate;
-      low = candidate + 1;
-    } else {
-      high = candidate - 1;
-    }
-  }
-
-  int used = 0;
-  for (int index = 0; index < result.size(); ++index) {
-    result[index] = std::clamp(cap, minimumExtents.at(index), naturalExtents.at(index));
-    used += result.at(index);
-  }
-  for (int index = 0; used < available && index < result.size(); ++index) {
-    if (result.at(index) < naturalExtents.at(index)) {
-      ++result[index];
-      ++used;
+ protected:
+  void paintEvent(QPaintEvent*) override {
+    QPainter painter(this);
+    const int extent = std::min(10, (horizontal_ ? width() : height()) / 2);
+    for (const bool before : {true, false}) {
+      if (!(before ? before_ : after_)) {
+        continue;
+      }
+      const QPointF edge =
+          horizontal_ ? QPointF(before ? 0 : width(), 0) : QPointF(0, before ? 0 : height());
+      const QPointF inside = edge + (horizontal_ ? QPointF(before ? extent : -extent, 0)
+                                                 : QPointF(0, before ? extent : -extent));
+      QLinearGradient gradient(edge, inside);
+      gradient.setColorAt(0, QColor(0, 0, 0, 20));
+      gradient.setColorAt(1, Qt::transparent);
+      const QRect area = horizontal_ ? QRect(before ? 0 : width() - extent, 0, extent, height())
+                                     : QRect(0, before ? 0 : height() - extent, width(), extent);
+      painter.fillRect(area, gradient);
     }
   }
-  return result;
-}
+
+ private:
+  bool horizontal_ = true;
+  bool before_ = false;
+  bool after_ = false;
+};
+
+// QScrollArea owns clipping, scroll ranges and RTL positioning. Tab visibility uses
+// logical coordinates so selection and wheel input share the same scroll direction.
+class TabScrollArea final : public QScrollArea {
+ public:
+  explicit TabScrollArea(QWidget* parent)
+      : QScrollArea(parent), edges_(new TabScrollEdges(viewport())) {
+    setObjectName(QStringLiteral("ad-tabs-scroll-area"));
+    setFrameShape(QFrame::NoFrame);
+    setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    setFocusPolicy(Qt::NoFocus);
+    setAutoFillBackground(false);
+    viewport()->setAutoFillBackground(false);
+    QScroller::grabGesture(viewport(), QScroller::TouchGesture);
+    for (QScrollBar* bar : {horizontalScrollBar(), verticalScrollBar()}) {
+      connect(bar, &QScrollBar::rangeChanged, this, [this] { updateEdges(); });
+    }
+  }
+
+  void setHorizontal(bool horizontal) {
+    horizontal_ = horizontal;
+    updateEdges();
+  }
+
+  void revealTab(QWidget* tab) {
+    const QRect bounds(tab->mapTo(widget(), QPoint()), tab->size());
+    const int start =
+        horizontal_ ? (layoutDirection() == Qt::RightToLeft ? widget()->width() - bounds.right() - 1
+                                                            : bounds.left())
+                    : bounds.top();
+    const int extent = horizontal_ ? bounds.width() : bounds.height();
+    const int available = horizontal_ ? viewport()->width() : viewport()->height();
+    QScrollBar* bar = horizontal_ ? horizontalScrollBar() : verticalScrollBar();
+    if (start < bar->value() || extent > available) {
+      bar->setValue(start);
+    } else if (start + extent > bar->value() + available) {
+      bar->setValue(start + extent - available);
+    }
+  }
+
+ protected:
+  void resizeEvent(QResizeEvent* event) override {
+    QScrollArea::resizeEvent(event);
+    updateEdges();
+  }
+
+  void scrollContentsBy(int dx, int dy) override {
+    QScrollArea::scrollContentsBy(dx, dy);
+    updateEdges();
+  }
+
+  bool focusNextPrevChild(bool next) override {
+    if (!QWidget::focusNextPrevChild(next)) {
+      return false;
+    }
+    if (QWidget* focused = focusWidget(); focused && widget()->isAncestorOf(focused)) {
+      revealTab(focused);
+    }
+    return true;
+  }
+
+  void wheelEvent(QWheelEvent* event) override {
+    QScrollBar* bar = horizontal_ ? horizontalScrollBar() : verticalScrollBar();
+    const bool rightToLeft = horizontal_ && layoutDirection() == Qt::RightToLeft;
+    if (!event->pixelDelta().isNull()) {
+      // Pixel deltas already include the platform's natural scrolling preference.
+      const QPoint delta = event->pixelDelta();
+      const int distance =
+          horizontal_ && delta.x() != 0 ? delta.x() * (rightToLeft ? -1 : 1) : delta.y();
+      const int previous = bar->value();
+      bar->setValue(previous - distance);
+      event->setAccepted(bar->value() != previous);
+      return;
+    }
+
+    QPoint delta = event->angleDelta();
+    if (horizontal_ && delta.x() != 0) {
+      delta = QPoint(delta.x() * (rightToLeft ? -1 : 1), 0);
+    }
+    // Let QScrollBar apply native wheel steps and accumulate high-resolution deltas.
+    QWheelEvent forwarded(event->position(), event->globalPosition(), QPoint(), delta,
+                          event->buttons(), event->modifiers(), event->phase(), event->inverted(),
+                          event->source());
+    QCoreApplication::sendEvent(bar, &forwarded);
+    event->setAccepted(forwarded.isAccepted());
+  }
+
+ private:
+  void updateEdges() {
+    QScrollBar* bar = horizontal_ ? horizontalScrollBar() : verticalScrollBar();
+    bool before = bar->value() > bar->minimum();
+    bool after = bar->value() < bar->maximum();
+    if (horizontal_ && layoutDirection() == Qt::RightToLeft) {
+      std::swap(before, after);
+    }
+    edges_->setGeometry(viewport()->rect());
+    edges_->configure(horizontal_, before, after);
+    edges_->raise();
+  }
+
+  bool horizontal_ = true;
+  TabScrollEdges* edges_;
+};
+
+// A native item view supplies list accessibility, keyboard navigation and scrolling;
+// the delegate paints Tabs' dropdown rows without native menu/checkmark decoration.
+class TabOverflowList final : public QListWidget {
+ public:
+  enum Role { KeyRole = Qt::UserRole, ClosableRole };
+
+  explicit TabOverflowList(QWidget* parent = nullptr) : QListWidget(parent) {
+    setObjectName(QStringLiteral("ad-tabs-overflow-list"));
+    setFrameShape(QFrame::NoFrame);
+    setMouseTracking(true);
+    setUniformItemSizes(true);
+    setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    setVerticalScrollMode(QAbstractItemView::ScrollPerPixel);
+    setSelectionMode(QAbstractItemView::SingleSelection);
+    setItemDelegate(new Delegate(this));
+    setAutoFillBackground(false);
+    viewport()->setAutoFillBackground(false);
+    AdScrollArea::applyThemedScrollBar(verticalScrollBar());
+    connect(this, &QListWidget::itemClicked, this, [this](QListWidgetItem* item) {
+      if (item && item->flags().testFlag(Qt::ItemIsEnabled) && choose) {
+        choose(item->data(KeyRole).toString());
+      }
+    });
+  }
+
+  void configure(const QList<AdTabs::TabItem>& items, bool editable,
+                 const TabsAppearance& appearance) {
+    const QString currentKey = currentItem() ? currentItem()->data(KeyRole).toString() : QString();
+    appearance_ = appearance;
+    setFont(appearance.popupFont);
+    clear();
+    widthHint_ = 120;
+    for (const auto& tab : items) {
+      auto* row = new QListWidgetItem(tab.label, this);
+      row->setData(KeyRole, tab.key);
+      row->setData(ClosableRole, editable && tab.closable && tab.enabled);
+      row->setData(Qt::AccessibleTextRole, tab.label.isEmpty() ? tab.key : tab.label);
+      row->setFlags(tab.enabled ? Qt::ItemIsEnabled | Qt::ItemIsSelectable : Qt::NoItemFlags);
+      const int closeWidth = row->data(ClosableRole).toBool()
+                                 ? appearance.popupCloseSize + appearance.popupHorizontalPadding
+                                 : 0;
+      widthHint_ =
+          std::max(widthHint_, detail::singleLineTextWidth(appearance.popupFont, tab.label) +
+                                   appearance.popupHorizontalPadding * 2 + closeWidth);
+      if (tab.key == currentKey) {
+        setCurrentItem(row);
+      }
+    }
+    setFixedHeight(std::min(std::max(1, count()) * appearance.popupRowHeight,
+                            200 - appearance.popupPadding * 2));
+    updateGeometry();
+    viewport()->update();
+  }
+
+  QSize sizeHint() const override {
+    return QSize(widthHint_ + (count() * appearance_.popupRowHeight > height()
+                                   ? verticalScrollBar()->sizeHint().width()
+                                   : 0),
+                 height());
+  }
+  QSize minimumSizeHint() const override { return QSize(120, height()); }
+
+  void resetNavigation() {
+    setCurrentRow(-1);
+    clearSelection();
+  }
+
+  void navigate(int direction) {
+    int row = currentRow();
+    if (row < 0) {
+      row = direction > 0 ? -1 : count();
+    }
+    for (int attempt = 0; attempt < count(); ++attempt) {
+      row = (row + direction + count()) % count();
+      if (item(row)->flags().testFlag(Qt::ItemIsEnabled)) {
+        setCurrentRow(row);
+        scrollToItem(item(row));
+        return;
+      }
+    }
+  }
+
+  bool handleKey(QKeyEvent* event) {
+    switch (event->key()) {
+      case Qt::Key_Down:
+        navigate(1);
+        break;
+      case Qt::Key_Up:
+        navigate(-1);
+        break;
+      case Qt::Key_Escape:
+        if (dismiss) dismiss();
+        break;
+      case Qt::Key_Return:
+      case Qt::Key_Enter:
+      case Qt::Key_Space:
+        if (currentItem() && currentItem()->flags().testFlag(Qt::ItemIsEnabled) && choose) {
+          choose(currentItem()->data(KeyRole).toString());
+        }
+        break;
+      case Qt::Key_Delete:
+      case Qt::Key_Backspace:
+        if (currentItem() && currentItem()->data(ClosableRole).toBool() && close) {
+          close(currentItem()->data(KeyRole).toString());
+        }
+        break;
+      default:
+        return false;
+    }
+    event->accept();
+    return true;
+  }
+
+  std::function<void(const QString&)> choose;
+  std::function<void(const QString&)> close;
+  std::function<void()> dismiss;
+
+ protected:
+  void focusInEvent(QFocusEvent* event) override {
+    const bool hadCurrentItem = currentItem() != nullptr;
+    QListWidget::focusInEvent(event);
+    // A popup acquiring focus must not choose a row before the user navigates.
+    if (!hadCurrentItem) resetNavigation();
+  }
+
+  void keyPressEvent(QKeyEvent* event) override {
+    if (!handleKey(event)) QListWidget::keyPressEvent(event);
+  }
+
+  void mousePressEvent(QMouseEvent* event) override {
+    const QModelIndex index = indexAt(event->position().toPoint());
+    if (event->button() == Qt::LeftButton &&
+        closeRect(visualRect(index), index).contains(event->position().toPoint())) {
+      closePressed_ = index.data(KeyRole).toString();
+      event->accept();
+      return;
+    }
+    QListWidget::mousePressEvent(event);
+  }
+
+  void mouseReleaseEvent(QMouseEvent* event) override {
+    if (!closePressed_.isEmpty()) {
+      const QString key = std::exchange(closePressed_, QString());
+      const QModelIndex index = indexAt(event->position().toPoint());
+      if (event->button() == Qt::LeftButton && key == index.data(KeyRole).toString() &&
+          closeRect(visualRect(index), index).contains(event->position().toPoint()) && close) {
+        close(key);
+      }
+      event->accept();
+      return;
+    }
+    QListWidget::mouseReleaseEvent(event);
+  }
+
+ private:
+  QRect closeRect(const QRect& row, const QModelIndex& index) const {
+    if (!index.data(ClosableRole).toBool()) return {};
+    const int side = appearance_.popupCloseSize;
+    const QRect logical(row.right() + 1 - appearance_.popupHorizontalPadding - side,
+                        row.y() + (row.height() - side) / 2, side, side);
+    return QStyle::visualRect(layoutDirection(), row, logical);
+  }
+
+  class Delegate final : public QStyledItemDelegate {
+   public:
+    explicit Delegate(TabOverflowList* list) : QStyledItemDelegate(list), list_(list) {}
+    QSize sizeHint(const QStyleOptionViewItem&, const QModelIndex&) const override {
+      return QSize(list_->widthHint_, list_->appearance_.popupRowHeight);
+    }
+    void paint(QPainter* painter, const QStyleOptionViewItem& option,
+               const QModelIndex& index) const override {
+      const auto& style = list_->appearance_;
+      const bool enabled = index.flags().testFlag(Qt::ItemIsEnabled);
+      const bool active = enabled && (option.state.testFlag(QStyle::State_MouseOver) ||
+                                      option.state.testFlag(QStyle::State_Selected));
+      painter->save();
+      if (active) painter->fillRect(option.rect, style.popupHoverBackground);
+      const QColor foreground = enabled ? style.popupText : style.popupDisabledText;
+      painter->setPen(foreground);
+      painter->setFont(style.popupFont);
+      QRect textRect =
+          option.rect.adjusted(style.popupHorizontalPadding, 0, -style.popupHorizontalPadding, 0);
+      const QRect closeBounds = list_->closeRect(option.rect, index);
+      if (!closeBounds.isEmpty()) {
+        if (option.direction == Qt::RightToLeft) {
+          textRect.setLeft(closeBounds.right() + 1 + style.popupHorizontalPadding);
+        } else {
+          textRect.setRight(closeBounds.left() - 1 - style.popupHorizontalPadding);
+        }
+        auto icon = adqt::icons::antd::outlined::Close();
+        icon = icon.withColors(icon.colors().withPrimary(style.popupClose));
+        adqt::icons::paintIcon(painter, icon, closeBounds);
+      }
+      painter->drawText(
+          textRect, Qt::AlignVCenter | Qt::AlignLeading | Qt::TextSingleLine,
+          detail::elidedSingleLineText(style.popupFont, index.data().toString(), textRect.width()));
+      painter->restore();
+    }
+
+   private:
+    TabOverflowList* list_;
+  };
+
+  TabsAppearance appearance_;
+  int widthHint_ = 120;
+  QString closePressed_;
+};
 
 class TabButton final : public QAbstractButton {
  public:
@@ -479,6 +793,8 @@ class OperationButton final : public QAbstractButton {
     setAccessibleName(toolTip());
   }
 
+  std::function<bool(QKeyEvent*)> handleKey;
+
   void setAppearance(const TabsAppearance& value) {
     appearance_ = value;
     setFixedSize(appearance_.metrics.operationExtent, appearance_.metrics.operationExtent);
@@ -487,11 +803,27 @@ class OperationButton final : public QAbstractButton {
   }
 
  protected:
+  void keyPressEvent(QKeyEvent* event) override {
+    if (!handleKey || !handleKey(event)) QAbstractButton::keyPressEvent(event);
+  }
+
+  void focusInEvent(QFocusEvent* event) override {
+    focusVisible_ = keyboardFocusReason(event->reason());
+    QAbstractButton::focusInEvent(event);
+    update();
+  }
+
+  void focusOutEvent(QFocusEvent* event) override {
+    focusVisible_ = false;
+    QAbstractButton::focusOutEvent(event);
+    update();
+  }
+
   void paintEvent(QPaintEvent*) override {
     QPainter painter(this);
     painter.setRenderHint(QPainter::Antialiasing, true);
     QColor color = isEnabled() ? appearance_.item : appearance_.disabled;
-    if (isEnabled() && underMouse()) {
+    if (kind_ == Kind::Add && isEnabled() && underMouse()) {
       color = appearance_.hover;
     }
     adqt::icons::IconRef icon = kind_ == Kind::More ? adqt::icons::antd::outlined::Ellipsis()
@@ -500,7 +832,7 @@ class OperationButton final : public QAbstractButton {
     const int side = appearance_.metrics.iconSize;
     adqt::icons::paintIcon(&painter, icon,
                            QRect((width() - side) / 2, (height() - side) / 2, side, side));
-    if (hasFocus()) {
+    if (hasFocus() && focusVisible_) {
       painter.setBrush(Qt::NoBrush);
       painter.setPen(QPen(appearance_.focusOutline, appearance_.metrics.focusOutlineWidth));
       painter.drawRoundedRect(QRectF(rect()).adjusted(3, 3, -3, -3),
@@ -510,6 +842,7 @@ class OperationButton final : public QAbstractButton {
 
  private:
   Kind kind_;
+  bool focusVisible_ = false;
   TabsAppearance appearance_;
 };
 
@@ -540,16 +873,79 @@ class TabsStrip final : public QWidget {
  public:
   explicit TabsStrip(QWidget* parent = nullptr)
       : QWidget(parent),
+        scrollArea_(new TabScrollArea(this)),
+        tabContent_(new QWidget),
         moreButton_(new OperationButton(OperationButton::Kind::More, this)),
         addButton_(new OperationButton(OperationButton::Kind::Add, this)),
-        indicator_(new IndicatorWidget(this)),
+        indicator_(new IndicatorWidget(tabContent_)),
         indicatorAnimation_(new QVariantAnimation(this)) {
     setObjectName(QStringLiteral("ad-tabs-strip"));
+    tabContent_->setObjectName(QStringLiteral("ad-tabs-content"));
+    scrollArea_->setWidget(tabContent_);
+    tabContent_->setAutoFillBackground(false);
     indicator_->setObjectName(QStringLiteral("ad-tabs-indicator"));
     setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
     moreButton_->hide();
     addButton_->hide();
-    connect(moreButton_, &QAbstractButton::clicked, this, [this] { showOverflowMenu(); });
+    overflowPopup_ = new AdPopover(this);
+    overflowPopup_->setObjectName(QStringLiteral("ad-tabs-overflow-popup"));
+    overflowPopup_->setSourceWidget(moreButton_);
+    overflowPopup_->setTriggers(AdPopover::Trigger::Hover);
+    overflowPopup_->setHoverOpenDelayMs(100);
+    overflowPopup_->setHoverCloseDelayMs(100);
+    overflowPopup_->setPopupLayerMode(AdPopover::PopupLayerMode::QtTool);
+    overflowPopup_->setPlacement(AdPopover::Placement::BottomLeft);
+    overflowPopup_->setArrowVisible(false);
+    overflowPopup_->setBorderWidth(0);
+    overflowList_ = new TabOverflowList;
+    overflowList_->setAccessibleName(moreButton_->accessibleName());
+    overflowPopup_->setContentWidget(overflowList_);
+    overflowList_->choose = [this](const QString& key) {
+      overflowPopup_->hide();
+      for (int index = 0; index < items_.size(); ++index) {
+        if (items_.at(index).key == key) {
+          if (activate) activate(index);
+          break;
+        }
+      }
+      if (currentIndex_ >= 0 && currentIndex_ < buttons_.size()) {
+        scrollArea_->revealTab(buttons_.at(currentIndex_));
+        buttons_.at(currentIndex_)->setFocus(Qt::OtherFocusReason);
+      }
+    };
+    overflowList_->close = [this](const QString& key) {
+      for (int index = 0; index < items_.size(); ++index) {
+        if (items_.at(index).key == key) {
+          if (closeRequested) closeRequested(index);
+          break;
+        }
+      }
+    };
+    overflowList_->dismiss = [this] {
+      overflowPopup_->hide();
+      moreButton_->setFocus(Qt::TabFocusReason);
+    };
+    connect(overflowPopup_, &AdPopover::visibleChanged, this,
+            [this] { overflowList_->resetNavigation(); });
+    connect(moreButton_, &QAbstractButton::clicked, this, [this] {
+      if (!overflowPopup_->isVisible()) overflowPopup_->show();
+    });
+    moreButton_->handleKey = [this](QKeyEvent* event) {
+      if (!overflowPopup_->isVisible()) {
+        if (event->key() != Qt::Key_Down && event->key() != Qt::Key_Return &&
+            event->key() != Qt::Key_Enter && event->key() != Qt::Key_Space)
+          return false;
+        overflowPopup_->show();
+        event->accept();
+        return true;
+      }
+      return overflowList_->handleKey(event);
+    };
+    for (QScrollBar* bar : {scrollArea_->horizontalScrollBar(), scrollArea_->verticalScrollBar()}) {
+      connect(bar, &QScrollBar::valueChanged, this, [this] {
+        if (!layingOut_) refreshOverflowItems();
+      });
+    }
     connect(addButton_, &QAbstractButton::clicked, this, [this] {
       if (addRequested) {
         addRequested();
@@ -562,6 +958,8 @@ class TabsStrip final : public QWidget {
               applyIndicatorGeometry();
             });
   }
+
+  ~TabsStrip() override { delete overflowPopup_; }
 
   void sync(const QList<AdTabs::TabItem>& items, int currentIndex, AdTabs::Type type,
             AdTabs::Placement placement, bool centered, bool animated, bool hideAdd,
@@ -582,7 +980,7 @@ class TabsStrip final : public QWidget {
     indicator_->setColor(appearance.inkBar);
 
     while (buttons_.size() < items.size()) {
-      auto* button = new TabButton(this);
+      auto* button = new TabButton(tabContent_);
       button->activate = [this](int index) {
         if (activate) {
           activate(index);
@@ -609,6 +1007,12 @@ class TabsStrip final : public QWidget {
                                     placement, indicatorAlignment, indicatorSize, appearance);
     }
     moreButton_->setAppearance(appearance);
+    overflowList_->setLayoutDirection(layoutDirection());
+    overflowPopup_->setBackgroundColor(appearance.surface);
+    overflowPopup_->setCornerRadius(appearance.popupRadius);
+    overflowPopup_->setContentMargins(
+        QMargins(0, appearance.popupPadding, 0, appearance.popupPadding));
+    overflowPopup_->setPopupOffset(appearance.popupPadding);
     addButton_->setAppearance(appearance);
     const bool horizontal = isHorizontal(placement_);
     setSizePolicy(horizontal ? QSizePolicy::Expanding : QSizePolicy::Fixed,
@@ -765,15 +1169,22 @@ class TabsStrip final : public QWidget {
   }
 
  private:
+  static QSize constrainedWidgetHint(const QWidget* widget, bool minimum = false) {
+    QSize hint = minimum ? widget->minimumSizeHint() : widget->sizeHint();
+    if (!hint.isValid()) {
+      hint = widget->sizeHint();
+    }
+    return hint.expandedTo(widget->minimumSizeHint())
+        .expandedTo(widget->minimumSize())
+        .boundedTo(widget->maximumSize());
+  }
+
   static void addWidgetHint(const QWidget* widget, bool horizontal, int* primary, int* cross,
                             bool minimum = false) {
     if (!widget) {
       return;
     }
-    QSize hint = minimum ? widget->minimumSizeHint() : widget->sizeHint();
-    if (!hint.isValid()) {
-      hint = widget->sizeHint();
-    }
+    const QSize hint = constrainedWidgetHint(widget, minimum);
     *primary += horizontal ? hint.width() : hint.height();
     *cross = std::max(*cross, horizontal ? hint.height() : hint.width());
   }
@@ -786,7 +1197,8 @@ class TabsStrip final : public QWidget {
     if (!widget) {
       return 0;
     }
-    return isHorizontal(placement_) ? widget->sizeHint().width() : widget->sizeHint().height();
+    const QSize hint = constrainedWidgetHint(widget);
+    return isHorizontal(placement_) ? hint.width() : hint.height();
   }
 
   QRect extentRect(int start, int extent, int crossExtent) const {
@@ -802,6 +1214,7 @@ class TabsStrip final : public QWidget {
     if (width() <= 0 || height() <= 0) {
       return;
     }
+    layingOut_ = true;
     const bool horizontal = isHorizontal(placement_);
     const int totalExtent = horizontal ? width() : height();
     const int crossExtent = horizontal ? height() : width();
@@ -841,114 +1254,6 @@ class TabsStrip final : public QWidget {
     }
     int available = std::max(0, end - start);
 
-    for (TabButton* button : buttons_) {
-      button->hide();
-    }
-    hiddenIndexes_.clear();
-    if (buttons_.isEmpty() || available <= 0) {
-      moreButton_->hide();
-      return;
-    }
-
-    if (horizontal) {
-      QVector<int> naturalExtents;
-      QVector<int> minimumExtents;
-      naturalExtents.reserve(buttons_.size());
-      minimumExtents.reserve(buttons_.size());
-      for (TabButton* button : buttons_) {
-        naturalExtents.append(button->sizeHint().width());
-        minimumExtents.append(button->minimumSizeHint().width());
-      }
-
-      const int minimumExtent = std::accumulate(minimumExtents.cbegin(), minimumExtents.cend(), 0) +
-                                gutter * std::max(0, static_cast<int>(buttons_.size()) - 1);
-      QVector<int> visibleIndexes;
-      bool overflow = minimumExtent > available;
-      if (!overflow) {
-        visibleIndexes.reserve(buttons_.size());
-        for (int index = 0; index < buttons_.size(); ++index) {
-          visibleIndexes.append(index);
-        }
-      } else {
-        const int operationExtent = std::min(appearance_.metrics.operationExtent, available);
-        end -= operationExtent;
-        available = std::max(0, end - start);
-        moreButton_->setGeometry(extentRect(end, operationExtent, crossExtent));
-
-        QVector<int> candidates;
-        candidates.reserve(buttons_.size());
-        for (int index = 0; index < buttons_.size(); ++index) {
-          if (index != currentIndex_) {
-            candidates.append(index);
-          }
-        }
-        std::stable_sort(candidates.begin(), candidates.end(),
-                         [&naturalExtents](int first, int second) {
-                           return naturalExtents.at(first) < naturalExtents.at(second);
-                         });
-
-        int usedMinimum = 0;
-        const auto appendIfFits = [&](int index, bool required) {
-          if (index < 0 || index >= minimumExtents.size()) {
-            return;
-          }
-          const int needed = minimumExtents.at(index) + (visibleIndexes.isEmpty() ? 0 : gutter);
-          if (required || usedMinimum + needed <= available) {
-            visibleIndexes.append(index);
-            usedMinimum += needed;
-          }
-        };
-        appendIfFits(currentIndex_, true);
-        for (int index : std::as_const(candidates)) {
-          appendIfFits(index, visibleIndexes.isEmpty());
-        }
-        std::sort(visibleIndexes.begin(), visibleIndexes.end());
-      }
-
-      moreButton_->setVisible(overflow);
-      QVector<bool> visible(buttons_.size(), false);
-      QVector<int> visibleNaturalExtents;
-      QVector<int> visibleMinimumExtents;
-      visibleNaturalExtents.reserve(visibleIndexes.size());
-      visibleMinimumExtents.reserve(visibleIndexes.size());
-      for (int index : std::as_const(visibleIndexes)) {
-        visible[index] = true;
-        visibleNaturalExtents.append(naturalExtents.at(index));
-        visibleMinimumExtents.append(minimumExtents.at(index));
-      }
-      for (int index = 0; index < buttons_.size(); ++index) {
-        if (!visible.at(index)) {
-          hiddenIndexes_.append(index);
-        }
-      }
-
-      const int gutterExtent = gutter * std::max(0, static_cast<int>(visibleIndexes.size()) - 1);
-      const QVector<int> allocatedExtents = shrinkExtentsToFit(
-          visibleNaturalExtents, visibleMinimumExtents, std::max(0, available - gutterExtent));
-      const int usedExtent =
-          std::accumulate(allocatedExtents.cbegin(), allocatedExtents.cend(), gutterExtent);
-      int cursor = start;
-      if (centered_ && !overflow) {
-        cursor += std::max(0, (available - usedExtent) / 2);
-      }
-      for (int visiblePosition = 0; visiblePosition < visibleIndexes.size(); ++visiblePosition) {
-        if (visiblePosition > 0) {
-          cursor += gutter;
-        }
-        TabButton* button = buttons_.at(visibleIndexes.at(visiblePosition));
-        const int extent =
-            std::min(allocatedExtents.at(visiblePosition), std::max(0, end - cursor));
-        button->setGeometry(extentRect(cursor, extent, crossExtent));
-        button->show();
-        cursor += extent;
-      }
-      if (indicatorAnimation_->state() != QAbstractAnimation::Running) {
-        indicatorRect_ = targetIndicatorRect();
-        applyIndicatorGeometry();
-      }
-      return;
-    }
-
     const bool overflow = naturalExtent > available;
     moreButton_->setVisible(overflow);
     if (overflow) {
@@ -958,71 +1263,33 @@ class TabsStrip final : public QWidget {
       moreButton_->setGeometry(extentRect(end, extent, crossExtent));
     }
 
-    int first = 0;
-    int last = static_cast<int>(buttons_.size()) - 1;
-    if (overflow) {
-      const int buttonCount = static_cast<int>(buttons_.size());
-      first = std::clamp(scrollStart_, 0, std::max(0, buttonCount - 1));
-      if (currentIndex_ >= 0) {
-        first = std::min(first, currentIndex_);
-        int required = 0;
-        for (int i = first; i <= currentIndex_; ++i) {
-          required += itemExtent(buttons_.at(i));
-          if (i > first) {
-            required += gutter;
-          }
-        }
-        while (first < currentIndex_ && required > available) {
-          required -= itemExtent(buttons_.at(first)) + gutter;
-          ++first;
-        }
+    scrollArea_->setHorizontal(horizontal);
+    scrollArea_->setGeometry(extentRect(start, available, crossExtent));
+    const int contentExtent = std::max(naturalExtent, available);
+    tabContent_->resize(horizontal ? QSize(contentExtent, crossExtent)
+                                   : QSize(crossExtent, contentExtent));
+    int cursor = centered_ && !overflow ? (available - naturalExtent) / 2 : 0;
+    for (TabButton* button : buttons_) {
+      // Keep each tab's natural extent. The viewport clips overflow, never the label layout.
+      const int extent = itemExtent(button);
+      QRect geometry = horizontal ? QRect(cursor, 0, extent, crossExtent)
+                                  : QRect(0, cursor, crossExtent, extent);
+      if (horizontal && layoutDirection() == Qt::RightToLeft) {
+        geometry.moveLeft(contentExtent - cursor - extent);
       }
-      last = first - 1;
-      int used = 0;
-      for (int i = first; i < buttons_.size(); ++i) {
-        const int needed = itemExtent(buttons_.at(i)) + (i > first ? gutter : 0);
-        if (used + needed > available && last >= first) {
-          break;
-        }
-        if (needed > available && last < first) {
-          last = i;
-          break;
-        }
-        used += needed;
-        last = i;
-      }
-      scrollStart_ = first;
+      button->setGeometry(geometry);
+      button->show();
+      cursor += extent + gutter;
+    }
+    if (currentIndex_ >= 0 && currentIndex_ < buttons_.size()) {
+      scrollArea_->revealTab(buttons_.at(currentIndex_));
     }
 
-    int usedExtent = 0;
-    for (int i = first; i <= last; ++i) {
-      usedExtent += itemExtent(buttons_.at(i));
-      if (i > first) {
-        usedExtent += gutter;
-      }
-    }
-    int cursor = start;
-    if (centered_ && !overflow) {
-      cursor += std::max(0, (available - usedExtent) / 2);
-    }
-    for (int i = 0; i < buttons_.size(); ++i) {
-      if (i < first || i > last) {
-        hiddenIndexes_.append(i);
-        continue;
-      }
-      if (i > first) {
-        cursor += gutter;
-      }
-      TabButton* button = buttons_.at(i);
-      const int extent = std::min(itemExtent(button), std::max(0, end - cursor));
-      button->setGeometry(extentRect(cursor, extent, crossExtent));
-      button->show();
-      cursor += extent;
-    }
-    if (indicatorAnimation_->state() != QAbstractAnimation::Running) {
-      indicatorRect_ = targetIndicatorRect();
-      applyIndicatorGeometry();
-    }
+    indicatorAnimation_->stop();
+    indicatorRect_ = targetIndicatorRect();
+    applyIndicatorGeometry();
+    layingOut_ = false;
+    refreshOverflowItems();
   }
 
   void applyIndicatorGeometry() {
@@ -1100,7 +1367,6 @@ class TabsStrip final : public QWidget {
     for (int attempts = 0; attempts < buttonCount; ++attempts) {
       target = (target + delta + buttonCount) % buttonCount;
       if (buttons_.at(target)->isEnabled()) {
-        scrollStart_ = std::min(scrollStart_, target);
         if (activate) {
           activate(target);
         }
@@ -1110,46 +1376,20 @@ class TabsStrip final : public QWidget {
     }
   }
 
-  void showOverflowMenu() {
-    QMenu menu(this);
-    for (int index : std::as_const(hiddenIndexes_)) {
-      if (index < 0 || index >= items_.size()) {
-        continue;
-      }
-      const AdTabs::TabItem& item = items_.at(index);
-      QAction* action = menu.addAction(item.label);
-      action->setEnabled(item.enabled);
-      action->setCheckable(true);
-      action->setChecked(index == currentIndex_);
-      connect(action, &QAction::triggered, &menu, [this, index] {
-        scrollStart_ = index;
-        if (activate) {
-          activate(index);
-        }
-      });
+  void refreshOverflowItems() {
+    QList<AdTabs::TabItem> overflowItems;
+    for (int index = 0; index < buttons_.size(); ++index) {
+      TabButton* button = buttons_.at(index);
+      const QRect bounds(button->mapTo(scrollArea_->viewport(), QPoint()), button->size());
+      if (!scrollArea_->viewport()->rect().contains(bounds)) overflowItems.append(items_.at(index));
     }
-    if (menu.actions().isEmpty()) {
-      return;
-    }
-    QPoint popupPoint;
-    if (placement_ == AdTabs::Placement::Bottom) {
-      popupPoint = moreButton_->mapToGlobal(QPoint(0, -menu.sizeHint().height()));
-    } else if (!isHorizontal(placement_)) {
-      const bool stripOnLeft =
-          (placement_ == AdTabs::Placement::Start) != (layoutDirection() == Qt::RightToLeft);
-      popupPoint = moreButton_->mapToGlobal(
-          QPoint(stripOnLeft ? moreButton_->width() : -menu.sizeHint().width(), 0));
-    } else {
-      popupPoint = moreButton_->mapToGlobal(QPoint(0, moreButton_->height()));
-    }
-    menu.exec(popupPoint);
+    overflowList_->configure(overflowItems, type_ == AdTabs::Type::EditableCard, appearance_);
+    overflowPopup_->setEnabled(isEnabled() && !overflowItems.isEmpty() && !moreButton_->isHidden());
   }
 
   QList<AdTabs::TabItem> items_;
   QList<TabButton*> buttons_;
-  QList<int> hiddenIndexes_;
   int currentIndex_ = -1;
-  int scrollStart_ = 0;
   AdTabs::Type type_ = AdTabs::Type::Line;
   AdTabs::Placement placement_ = AdTabs::Placement::Top;
   bool centered_ = false;
@@ -1158,8 +1398,13 @@ class TabsStrip final : public QWidget {
   AdTabs::IndicatorAlignment indicatorAlignment_ = AdTabs::IndicatorAlignment::Fill;
   int indicatorSize_ = -1;
   TabsAppearance appearance_;
+  TabScrollArea* scrollArea_ = nullptr;
+  QWidget* tabContent_ = nullptr;
   OperationButton* moreButton_ = nullptr;
   OperationButton* addButton_ = nullptr;
+  AdPopover* overflowPopup_ = nullptr;
+  TabOverflowList* overflowList_ = nullptr;
+  bool layingOut_ = false;
   IndicatorWidget* indicator_ = nullptr;
   QVariantAnimation* indicatorAnimation_ = nullptr;
   QRectF indicatorRect_;
