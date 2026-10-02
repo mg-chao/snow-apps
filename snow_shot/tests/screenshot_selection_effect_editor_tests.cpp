@@ -311,15 +311,23 @@ void geometryAndCursorsRespectDisplayScale() {
                 "shadow cursor must rasterize at the target device scale");
         if (scale >= 1) {
             const auto pixels = shadow.pixmap().toImage();
-            require(pixels.pixelColor(qRound(6 * scale), qRound(10 * scale)).value() < 32 &&
-                        pixels.pixelColor(qRound(4 * scale), qRound(10 * scale)).value() > 200 &&
-                        pixels.pixelColor(qRound(22 * scale), qRound(20 * scale)).alpha() > 200,
-                    "shadow cursor must retain its black pointer, white outline, and opaque badge");
+            const QRect pointerRegion(0, 0, qCeil(20 * scale), qCeil(15 * scale));
+            require(pixels.copy(pointerRegion) == cursor.pixmap().toImage().copy(pointerRegion),
+                    "shadow and corner radius cursors must share the same pointer artwork");
+            const QColor foreground = pixels.pixelColor(qRound(22 * scale), qRound(20 * scale));
+            const QColor offsetShadow = pixels.pixelColor(qRound(27 * scale), qRound(27 * scale));
+            require(foreground.alpha() > 200 && foreground.value() < 32 &&
+                        offsetShadow.alpha() > 200 && offsetShadow.value() > 64 &&
+                        offsetShadow.value() < 128,
+                    "shadow cursor must retain a solid foreground and a distinct offset shadow");
         }
         const QString previewPath = qEnvironmentVariable("SNOW_TEST_EFFECT_EDITOR_PREVIEW");
-        if (scale == 2 && !previewPath.isEmpty())
+        if (scale == 2 && !previewPath.isEmpty()) {
             require(shadow.pixmap().save(previewPath + QStringLiteral(".cursor.png")),
                     "cursor visual preview must save");
+            require(cursor.pixmap().save(previewPath + QStringLiteral(".corner-cursor.png")),
+                    "corner radius cursor visual reference must save");
+        }
     }
     const auto edge = screenshotSelectionEffectLayout(QRectF(200, 50, 200, 150), 0, QTransform(),
                                                       QRectF(0, 0, 400, 300));

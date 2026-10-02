@@ -35,6 +35,16 @@ struct TabsAppearance {
   QColor border;
   QColor focusOutline;
   QColor surface;
+  QColor popupText;
+  QColor popupDisabledText;
+  QColor popupHoverBackground;
+  QColor popupClose;
+  QFont popupFont;
+  int popupRowHeight = 30;
+  int popupHorizontalPadding = 12;
+  int popupPadding = 4;
+  int popupRadius = 8;
+  int popupCloseSize = 12;
   TabsMetrics metrics;
   int motionDuration = 200;
 };

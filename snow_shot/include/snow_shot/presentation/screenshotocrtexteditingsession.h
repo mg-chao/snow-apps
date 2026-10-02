@@ -17,7 +17,7 @@ class ScreenshotOcrTextEditingSession final {
     bool replaceText(const QString& text);
     bool reset();
     bool applyInitialTransforms(const QString& formatting, const QString& punctuation);
-    bool setFormatting(const QString& value);
+    bool setFormatting(const QString& value, const QString& smartText = {});
     bool setPunctuation(const QString& value);
     void clearTransforms();
     [[nodiscard]] const QString& formatting() const;
@@ -37,6 +37,7 @@ class ScreenshotOcrTextEditingSession final {
 
     QString m_originalText;
     QString m_transformBaseline;
+    QString m_smartText;
     QString m_formatting;
     QString m_punctuation;
     QTextDocument m_document;

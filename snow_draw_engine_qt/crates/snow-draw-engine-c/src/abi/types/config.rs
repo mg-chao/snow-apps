@@ -99,6 +99,18 @@ snow_c_enum! {
     }
 }
 
+snow_c_enum! {
+    #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+    pub enum SnowSerialNumberNumericType {
+        #[default]
+        Arabic = 0,
+        Roman = 1,
+        LowercaseLetters = 2,
+        UppercaseLetters = 3,
+        Chinese = 4,
+    }
+}
+
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct SnowFilterStyle {
@@ -304,6 +316,12 @@ mod spotlight_abi_tests {
         assert_eq!(std::mem::size_of::<SnowSerialNumberStyle>(), 200);
         assert_eq!(std::mem::align_of::<SnowSerialNumberStyle>(), 8);
         assert_eq!(
+            std::mem::offset_of!(SnowSerialNumberStyle, numeric_type),
+            196
+        );
+        assert_eq!(SnowSerialNumberNumericType::Arabic as i32, 0);
+        assert_eq!(SnowSerialNumberNumericType::Chinese as i32, 4);
+        assert_eq!(
             std::mem::offset_of!(SnowSerialNumberStyle, serial_number_type),
             56
         );
@@ -326,6 +344,7 @@ pub struct SnowSerialNumberStyle {
     pub font_family_truncated: u8,
     pub reserved1: [u8; 3],
     pub font_family_utf8: [std::ffi::c_char; SNOW_FONT_FAMILY_UTF8_CAPACITY],
+    pub numeric_type: SnowSerialNumberNumericType,
 }
 
 #[repr(C)]
@@ -554,6 +573,7 @@ impl Default for SnowSerialNumberStyle {
             stroke_style: SnowStrokeStyle::Solid,
             opacity: 1.0,
             serial_number_type: SnowSerialNumberType::OutlinedCircle,
+            numeric_type: SnowSerialNumberNumericType::Arabic,
             font_family_utf8_len: 0,
             font_family_truncated: 0,
             reserved1: [0; 3],

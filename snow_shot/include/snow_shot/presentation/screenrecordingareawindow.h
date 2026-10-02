@@ -4,6 +4,7 @@
 #include "snow_shot/presentation/screenshottoolpalette.h"
 
 #include <QRect>
+#include <QImage>
 #include <QMarginsF>
 #include <QRectF>
 #include <QRegion>
@@ -44,6 +45,8 @@ class ScreenRecordingAreaWindow final : public QWidget {
     // Focus the effective input owner; pass-through and blocked areas cannot activate.
     bool activateInput();
     void setDrawingBlocked(bool blocked);
+    void setTrimming(bool enabled);
+    void setPreviewFrame(const QImage& frame);
     [[nodiscard]] bool drawingBlocked() const;
     void startCountdown(int seconds);
     void updateCountdown(qint64 remainingMilliseconds);
@@ -113,6 +116,8 @@ class ScreenRecordingAreaWindow final : public QWidget {
     ScreenshotToolPalette::RecordingState m_state = ScreenshotToolPalette::RecordingState::Idle;
     InputMode m_inputMode = InputMode::PassThrough;
     bool m_drawingBlocked = false;
+    bool m_trimming = false;
+    QImage m_previewFrame;
     bool m_gestureInProgress = false;
     bool m_cancellingRegionInteraction = false;
     bool m_settingRegion = false;

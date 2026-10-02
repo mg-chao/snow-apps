@@ -650,14 +650,14 @@ if("snow-shot-minimal" IN_LIST FEATURES)
     endif()
     string(APPEND OPTIONS
         " --disable-network"
-        " --enable-decoder=h264,hevc,gif,png,apng,webp,webp_anim"
+        " --enable-decoder=h264,hevc,gif,png,apng,webp,webp_anim,aac,mp3,pcm_s16le,pcm_f32le"
         " --enable-encoder=libx264,libx265,h264_mf,h264_nvenc,h264_amf,h264_qsv,mpeg4,gif,apng,libwebp_anim,aac,mp3_mf"
         " --enable-muxer=matroska,mp4,avi,gif,apng,webp"
         " --enable-demuxer=matroska,mov,gif,apng,webp,webp_anim"
-        " --enable-parser=h264,hevc,aac,mpegaudio"
+        " --enable-parser=h264,hevc,aac,mpegaudio,gif"
         " --enable-bsf=h264_mp4toannexb,aac_adtstoasc"
         " --enable-protocol=file"
-        " --enable-hwaccel=h264_d3d11va,h264_d3d11va2,h264_dxva2"
+        " --enable-hwaccel=h264_d3d11va,h264_d3d11va2,h264_dxva2,hevc_d3d11va,hevc_d3d11va2,hevc_dxva2"
     )
 endif()
 
@@ -671,7 +671,7 @@ if("snow-macos-media" IN_LIST FEATURES)
         " --enable-encoder=libx264,libx265,h264_videotoolbox,hevc_videotoolbox,mpeg4,gif,apng,libwebp_anim,aac,pcm_s16le"
         " --enable-muxer=matroska,mp4,avi,gif,apng,webp,wav"
         " --enable-demuxer=matroska,mov,avi,gif,apng,webp,webp_anim,wav"
-        " --enable-parser=h264,hevc,aac,mpegaudio"
+        " --enable-parser=h264,hevc,aac,mpegaudio,gif"
         " --enable-bsf=h264_mp4toannexb,hevc_mp4toannexb,aac_adtstoasc"
         " --enable-protocol=file"
         " --enable-hwaccel=h264_videotoolbox,hevc_videotoolbox"

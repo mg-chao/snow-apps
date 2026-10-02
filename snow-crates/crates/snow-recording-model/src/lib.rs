@@ -7,7 +7,9 @@ pub mod mouse;
 pub mod render;
 pub mod shared;
 pub mod source;
+pub mod trim;
 pub mod video_index;
+pub use trim::TrimRange;
 
 pub use artifact::{
     AudioSampleFormat, AudioTrackManifest, AudioTrackRole, LocalRecordingPaths, PauseInterval,

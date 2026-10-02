@@ -64,6 +64,10 @@
             <translation>Animated recording formats do not contain audio</translation>
         </message>
         <message>
+            <source>Arabic numerals</source>
+            <translation>Arabic numerals</translation>
+        </message>
+        <message>
             <source>Arrow</source>
             <translation>Arrow</translation>
         </message>
@@ -146,6 +150,10 @@
         <message>
             <source>Center vertically</source>
             <translation>Center vertically</translation>
+        </message>
+        <message>
+            <source>Chinese numerals</source>
+            <translation>Chinese numerals</translation>
         </message>
         <message>
             <source>Circle</source>
@@ -576,6 +584,10 @@
             <translation>Logical Pixel Selection</translation>
         </message>
         <message>
+            <source>Lowercase letters</source>
+            <translation>Lowercase letters</translation>
+        </message>
+        <message>
             <source>Mask color</source>
             <translation>Mask color</translation>
         </message>
@@ -824,8 +836,16 @@
             <translation>Resume recording</translation>
         </message>
         <message>
+            <source>Roman numerals</source>
+            <translation>Roman numerals</translation>
+        </message>
+        <message>
             <source>Save as file</source>
             <translation>Save as file</translation>
+        </message>
+        <message>
+            <source>Save to File</source>
+            <translation>Save to File</translation>
         </message>
         <message>
             <source>Scrolling screenshot</source>
@@ -876,6 +896,10 @@
             <translation>Sequence number font size %1px</translation>
         </message>
         <message>
+            <source>Sequence number numeric type</source>
+            <translation>Sequence number numeric type</translation>
+        </message>
+        <message>
             <source>Sequence number type</source>
             <translation>Sequence number type</translation>
         </message>
@@ -922,6 +946,10 @@
         <message>
             <source>Smart Erase</source>
             <translation>Smart Erase</translation>
+        </message>
+        <message>
+            <source>Smart Typesetting</source>
+            <translation>Smart Typesetting</translation>
         </message>
         <message>
             <source>Solid arrow stroke</source>
@@ -1160,8 +1188,16 @@
             <translation>Transparent</translation>
         </message>
         <message>
+            <source>Trim Video</source>
+            <translation>Trim Video</translation>
+        </message>
+        <message>
             <source>Undo</source>
             <translation>Undo</translation>
+        </message>
+        <message>
+            <source>Uppercase letters</source>
+            <translation>Uppercase letters</translation>
         </message>
         <message>
             <source>Vertical scrolling</source>

@@ -94,8 +94,19 @@ enum SnowCanvasSerialNumberStyleMixedFlag : quint32 {
     SnowCanvasSerialNumberStyleMixedFillStyle = 1u << 3,
     SnowCanvasSerialNumberStyleMixedFontSize = 1u << 4,
     SnowCanvasSerialNumberStyleMixedFontFamily = 1u << 5,
+    SnowCanvasSerialNumberStyleMixedStrokeWidth = 1u << 6,
+    SnowCanvasSerialNumberStyleMixedStrokeStyle = 1u << 7,
     SnowCanvasSerialNumberStyleMixedOpacity = 1u << 8,
     SnowCanvasSerialNumberStyleMixedType = 1u << 9,
+    SnowCanvasSerialNumberStyleMixedNumericType = 1u << 10,
+};
+
+enum class SnowCanvasSerialNumberNumericType : quint32 {
+    Arabic = 0,
+    Roman = 1,
+    LowercaseLetters = 2,
+    UppercaseLetters = 3,
+    Chinese = 4,
 };
 
 enum class SnowCanvasSerialNumberType : quint32 {
@@ -470,6 +481,7 @@ inline bool operator!=(const SnowCanvasTextStyle& lhs, const SnowCanvasTextStyle
 struct SnowCanvasSerialNumberStyle {
     qint64 number = 1;
     SnowCanvasSerialNumberType type = SnowCanvasSerialNumberType::OutlinedCircle;
+    SnowCanvasSerialNumberNumericType numericType = SnowCanvasSerialNumberNumericType::Arabic;
     QColor color{0xf4, 0x21, 0x2c};
     QColor fill;
     SnowCanvasFillStyle fillStyle = SnowCanvasFillStyle::Solid;
@@ -482,8 +494,8 @@ struct SnowCanvasSerialNumberStyle {
 
 inline bool operator==(const SnowCanvasSerialNumberStyle& lhs,
                        const SnowCanvasSerialNumberStyle& rhs) {
-    return lhs.number == rhs.number && lhs.type == rhs.type && lhs.color == rhs.color &&
-           lhs.fill == rhs.fill && lhs.fillStyle == rhs.fillStyle &&
+    return lhs.number == rhs.number && lhs.type == rhs.type && lhs.numericType == rhs.numericType &&
+           lhs.color == rhs.color && lhs.fill == rhs.fill && lhs.fillStyle == rhs.fillStyle &&
            snowCanvasExactDoubleEqual(lhs.fontSize, rhs.fontSize) &&
            lhs.fontFamily == rhs.fontFamily &&
            snowCanvasExactDoubleEqual(lhs.strokeWidth, rhs.strokeWidth) &&

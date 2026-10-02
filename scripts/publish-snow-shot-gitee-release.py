@@ -24,6 +24,10 @@ TAG = re.compile(r"^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)"
                  r"(?:-([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?_snow-shot$")
 
 
+class GiteeQuotaError(ValueError):
+    pass
+
+
 def run(*args: str) -> str:
     return subprocess.check_output(args, text=True).strip()
 
@@ -100,7 +104,7 @@ def sync_tag(tag: str, commit: str, token: str, username: str) -> None:
 def post_form(url: str, fields: dict[str, str], token: str, file: Path | None = None):
     if not re.fullmatch(r"[A-Za-z0-9._-]+", token):
         raise ValueError("Invalid Gitee token syntax")
-    command = ["curl", "--fail", "--progress-bar", "--show-error", "--max-time", "3600",
+    command = ["curl", "--fail-with-body", "--progress-bar", "--show-error", "--max-time", "3600",
                "--request", "POST", "--config", "-"]
     for key, value in fields.items():
         command.extend(["--form-string", f"{key}={value}"])
@@ -108,7 +112,39 @@ def post_form(url: str, fields: dict[str, str], token: str, file: Path | None = 
         command.extend(["--form", f"file=@{file}"])
     command.append(url)
     config = f'form-string = "access_token={token}"\n'
-    return json.loads(subprocess.check_output(command, input=config, text=True, encoding="utf-8"))
+    try:
+        output = subprocess.check_output(command, input=config, text=True, encoding="utf-8")
+    except subprocess.CalledProcessError as error:
+        if error.returncode == 22:
+            try:
+                message = json.loads(error.output).get("message", "")
+            except (ValueError, TypeError, AttributeError):
+                message = ""
+            if isinstance(message, str) and ("仓库附件配额" in message or
+                                             "repository attachment quota" in message.lower()):
+                raise GiteeQuotaError("Gitee repository attachment quota is full") from None
+        raise
+    return json.loads(output)
+
+
+def delete_release(release_id: int, token: str) -> None:
+    if type(release_id) is not int or release_id <= 0:
+        raise ValueError("Invalid Gitee release id for deletion")
+    if not re.fullmatch(r"[A-Za-z0-9._-]+", token):
+        raise ValueError("Invalid Gitee token syntax")
+    # Keep authentication in stdin; neither command arguments nor errors expose it.
+    command = ["curl", "--fail", "--silent", "--show-error", "--max-time", "120",
+               "--request", "DELETE", "--config", "-"]
+    config = f'url = "{GITEE_API}/{release_id}?access_token={token}"\n'
+    try:
+        subprocess.check_output(command, input=config, text=True, encoding="utf-8")
+    except (OSError, subprocess.CalledProcessError):
+        # An ambiguous mutation is reconciled by reading its exact resource,
+        # never by blindly repeating DELETE.
+        if api_json(f"{GITEE_API}/{release_id}", token) is not None:
+            raise
+    if api_json(f"{GITEE_API}/{release_id}", token) is not None:
+        raise ValueError("Gitee release deletion was not confirmed")
 
 
 def attachments(release_id: int, token: str = "") -> list[dict]:
@@ -118,20 +154,57 @@ def attachments(release_id: int, token: str = "") -> list[dict]:
     return files
 
 
-def existing_release(tag: str, token: str = ""):
-    found = None
+def release_listing(token: str = "") -> list[dict]:
+    result = []
     for page in range(1, 11):
         releases = api_json(f"{GITEE_API}?per_page=100&page={page}", token)
         if not isinstance(releases, list) or len(releases) > 100:
             raise ValueError("Gitee release listing is invalid")
-        for release in releases:
-            if release.get("tag_name") == tag:
-                if found is not None:
-                    raise ValueError("Duplicate Gitee release tag")
-                found = release
+        result.extend(releases)
         if len(releases) < 100:
-            return found
+            return result
     raise ValueError("Gitee release listing exceeds ten pages")
+
+
+def existing_release(tag: str, token: str = ""):
+    matches = [release for release in release_listing(token) if release.get("tag_name") == tag]
+    if len(matches) > 1:
+        raise ValueError("Duplicate Gitee release tag")
+    return matches[0] if matches else None
+
+
+def release_version_key(tag: str) -> tuple:
+    match = TAG.fullmatch(checked_tag(tag))
+    preview = match[4]
+    identifiers = tuple((0, int(part)) if part.isascii() and part.isdigit() else (1, part)
+                        for part in preview.split(".")) if preview else ()
+    return (int(match[1]), int(match[2]), int(match[3]), not preview, identifiers)
+
+
+def prune_old_releases(tag: str, token: str) -> int:
+    current = release_version_key(tag)
+    candidates = []
+    for release in release_listing(token):
+        previous = release.get("tag_name", "")
+        if not isinstance(previous, str) or not TAG.fullmatch(previous) or release.get("draft") is True:
+            continue
+        try:
+            version = release_version_key(previous)
+        except ValueError:
+            continue
+        if version >= current:
+            continue
+        release_id = release.get("id")
+        if type(release_id) is not int or release_id <= 0:
+            raise ValueError("Old Gitee release has no valid id")
+        candidates.append((release_id, previous))
+    if len({item[0] for item in candidates}) != len(candidates) or \
+            len({item[1] for item in candidates}) != len(candidates):
+        raise ValueError("Duplicate old Gitee releases")
+    for release_id, previous in candidates:
+        delete_release(release_id, token)
+        print(f"Deleted previous Gitee release {previous} and its attachments", flush=True)
+    return len(candidates)
 
 
 def verify_attachment(file: dict, tag: str, name: str, expected: Path, directory: Path) -> None:
@@ -336,7 +409,16 @@ def publish(release: dict, assets: dict[str, Path], token: str, username: str,
                 raise ValueError("Verification must not upload files")
             check_local_asset(descriptors[name], assets[name])
             print(f"Uploading local {name} ({assets[name].stat().st_size} bytes)", flush=True)
-            post_form(f"{GITEE_API}/{release_id}/attach_files", {}, token, assets[name])
+            try:
+                post_form(f"{GITEE_API}/{release_id}/attach_files", {}, token, assets[name])
+            except GiteeQuotaError:
+                # The new published entry and all existing bytes are already validated.
+                # Reclaim previous versions only for a definite quota rejection.
+                uploaded = [file for file in attachments(release_id, token) if file.get("name") == name]
+                if not uploaded:
+                    if not prune_old_releases(tag, token):
+                        raise
+                    post_form(f"{GITEE_API}/{release_id}/attach_files", {}, token, assets[name])
             existing = [file for file in attachments(release_id, token) if file.get("name") == name]
             if len(existing) != 1:
                 raise ValueError(f"Gitee upload did not produce exactly one asset: {name}")
@@ -348,6 +430,8 @@ def publish(release: dict, assets: dict[str, Path], token: str, username: str,
                 {file.get("name") for file in final_files} != set(assets)):
             raise ValueError("Final Gitee asset listing differs from local release")
         local_assets(release)
+    if not verify_only:
+        prune_old_releases(tag, token)
     print(f"Published and verified local release {tag} on Gitee")
 
 

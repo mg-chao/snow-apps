@@ -1379,6 +1379,10 @@ set(PROJECT_CXX_SOURCES
     src/presentation/toolbar/floatingtoolbarcontroller.cpp
     src/presentation/toolbar/screenshottoolbarwindow.cpp
     src/presentation/recording/screenrecordingareawindow.cpp
+    src/presentation/recording/recordingtrimtoolbar.cpp
+    src/presentation/recording/recordingtrimsession.cpp
+    src/presentation/recording/recordingrenderdialog.cpp
+    src/presentation/recording/recordingrenderdialog.h
     src/presentation/recording/recordingrenderjob.cpp
     src/presentation/recording/recordingrenderjob.h
     src/presentation/recording/screenrecordingcontroller.cpp
@@ -4714,6 +4718,9 @@ if(SNOW_SHOT_BUILD_TESTS)
     add_test(NAME snow-shot-region-switcher-style-tests
         COMMAND snow-shot-screenshot-tool-palette-tests --region-switcher-only -platform offscreen)
     set_tests_properties(snow-shot-region-switcher-style-tests PROPERTIES LABELS "unit" TIMEOUT 60)
+    add_test(NAME snow-shot-screenshot-serial-number-tests
+        COMMAND snow-shot-screenshot-tool-palette-tests --serial-number-only -platform offscreen)
+    set_tests_properties(snow-shot-screenshot-serial-number-tests PROPERTIES LABELS "unit" TIMEOUT 60)
     add_test(
         NAME snow-shot-screenshot-tool-palette-tests
         COMMAND snow-shot-screenshot-tool-palette-tests
@@ -5856,6 +5863,10 @@ if(SNOW_SHOT_BUILD_TESTS)
         include/snow_shot/presentation/screenrecordingtoolbarwindow.h
         include/snow_shot/presentation/screenshotfloatingtoolpalettewindow.h
         include/snow_shot/presentation/screenshottoolpalettehost.h
+        src/presentation/recording/recordingtrimtoolbar.cpp
+        src/presentation/recording/recordingtrimsession.cpp
+        src/presentation/recording/recordingrenderdialog.cpp
+        src/presentation/recording/recordingrenderdialog.h
         src/presentation/recording/recordingrenderjob.cpp
         src/presentation/recording/recordingrenderjob.h
         src/presentation/recording/screenrecordingcontroller.cpp
@@ -5915,6 +5926,10 @@ if(SNOW_SHOT_BUILD_TESTS)
         target_compile_definitions(snow-shot-screen-recording-controller-tests PRIVATE
             "snow_recording_audio_monitor_${_operation}=test_recording_audio_monitor_${_operation}")
     endforeach()
+    foreach(_operation open destroy info boundary seek acquire frame_destroy error export_start export_poll export_error export_cancel export_destroy)
+        target_compile_definitions(snow-shot-screen-recording-controller-tests PRIVATE
+            "snow_recording_clip_${_operation}=test_recording_clip_${_operation}")
+    endforeach()
     target_compile_definitions(snow-shot-screen-recording-controller-tests PRIVATE
         snow_recording_source_render_start=test_recording_source_render_start
         snow_recording_source_path=test_recording_source_path
@@ -5958,6 +5973,9 @@ if(SNOW_SHOT_BUILD_TESTS)
     add_test(NAME snow-shot-recording-style-wheel-tests
         COMMAND snow-shot-screen-recording-controller-tests --style-wheel-only -platform offscreen)
     set_tests_properties(snow-shot-recording-style-wheel-tests PROPERTIES LABELS "unit" TIMEOUT 60)
+    add_test(NAME snow-shot-recording-trimming-tests
+        COMMAND snow-shot-screen-recording-controller-tests --trim-only -platform offscreen)
+    set_tests_properties(snow-shot-recording-trimming-tests PROPERTIES LABELS "unit" TIMEOUT 60)
     add_test(NAME snow-shot-recording-post-processing-tests
         COMMAND snow-shot-screen-recording-controller-tests --post-processing-only -platform offscreen)
     set_tests_properties(snow-shot-recording-post-processing-tests PROPERTIES LABELS "unit" TIMEOUT 60)
@@ -7525,6 +7543,16 @@ if(WIN32 AND SNOW_SHOT_BUILD_BENCHMARKS)
         USES_TERMINAL
         VERBATIM
     )
+
+    add_custom_target(snow-shot-recording-trim-performance-benchmark
+        COMMAND "${CMAKE_COMMAND}" -E env
+            "CARGO_TARGET_DIR=${SNOW_RUST_CARGO_TARGET_DIR}"
+            "FFMPEG_DIR=${SNOW_FFMPEG_ROOT}"
+            "${CARGO_EXECUTABLE}" build --locked --release
+            --target x86_64-pc-windows-msvc
+            --package snow-recording-export --example recording_trim_benchmark
+        WORKING_DIRECTORY "${SNOW_SHOT_CAPTURE_CRATES_DIR}"
+        USES_TERMINAL VERBATIM)
 
     add_custom_target(snow-shot-recording-encoder-performance-benchmark
         COMMAND "${CMAKE_COMMAND}" -E env

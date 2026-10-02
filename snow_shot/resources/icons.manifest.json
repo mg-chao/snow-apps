@@ -799,6 +799,14 @@
     },
     {
       "variant": "outlined",
+      "symbol": "RecordingReplay",
+      "name": "recording-replay",
+      "source": "../src/presentation/components/icons/resources/recording-replay.svg",
+      "colorModel": "monochrome",
+      "fit": "contain"
+    },
+    {
+      "variant": "outlined",
       "symbol": "RecordingResume",
       "name": "recording-resume",
       "source": "../src/presentation/components/icons/resources/recording-resume.svg",
@@ -818,6 +826,14 @@
       "symbol": "RecordingStop",
       "name": "recording-stop",
       "source": "../src/presentation/components/icons/resources/recording-stop.svg",
+      "colorModel": "monochrome",
+      "fit": "contain"
+    },
+    {
+      "variant": "outlined",
+      "symbol": "RecordingTrim",
+      "name": "recording-trim",
+      "source": "../src/presentation/components/icons/resources/recording-trim.svg",
       "colorModel": "monochrome",
       "fit": "contain"
     },
@@ -994,6 +1010,46 @@
       "symbol": "SequenceNumberCircle",
       "name": "sequence-number-circle",
       "source": "../src/presentation/components/icons/resources/sequence-number-circle.svg",
+      "colorModel": "monochrome",
+      "fit": "contain"
+    },
+    {
+      "variant": "outlined",
+      "symbol": "SequenceNumberNumericArabic",
+      "name": "sequence-number-numeric-arabic",
+      "source": "../src/presentation/components/icons/resources/sequence-number-numeric-arabic.svg",
+      "colorModel": "monochrome",
+      "fit": "contain"
+    },
+    {
+      "variant": "outlined",
+      "symbol": "SequenceNumberNumericChinese",
+      "name": "sequence-number-numeric-chinese",
+      "source": "../src/presentation/components/icons/resources/sequence-number-numeric-chinese.svg",
+      "colorModel": "monochrome",
+      "fit": "contain"
+    },
+    {
+      "variant": "outlined",
+      "symbol": "SequenceNumberNumericLowercaseLetters",
+      "name": "sequence-number-numeric-lowercase-letters",
+      "source": "../src/presentation/components/icons/resources/sequence-number-numeric-lowercase-letters.svg",
+      "colorModel": "monochrome",
+      "fit": "contain"
+    },
+    {
+      "variant": "outlined",
+      "symbol": "SequenceNumberNumericRoman",
+      "name": "sequence-number-numeric-roman",
+      "source": "../src/presentation/components/icons/resources/sequence-number-numeric-roman.svg",
+      "colorModel": "monochrome",
+      "fit": "contain"
+    },
+    {
+      "variant": "outlined",
+      "symbol": "SequenceNumberNumericUppercaseLetters",
+      "name": "sequence-number-numeric-uppercase-letters",
+      "source": "../src/presentation/components/icons/resources/sequence-number-numeric-uppercase-letters.svg",
       "colorModel": "monochrome",
       "fit": "contain"
     },

@@ -1402,6 +1402,59 @@ void nativeWindowsGeometryAndInteraction() {
 
 } // namespace
 
+void trimmingFreezesSizeAndMakesThePreviewDraggable() {
+    ScreenRecordingAreaWindow area;
+    area.setRecordingRegion(QRect(100, 100, 320, 240));
+    area.setTrimming(true);
+    area.show();
+    QCoreApplication::processEvents();
+    auto* handle = area.findChild<QWidget*>(QStringLiteral("screenRecordingRegionDragHandle"));
+    require(handle == nullptr || !handle->isVisible(),
+            "trim preview must not show the region drag handle");
+    const QSize original = area.recordingRegion().size();
+    const QSize windowSize = area.size();
+    area.resize(windowSize + QSize(50, 50));
+    require(area.size() == windowSize && area.minimumSize() == area.maximumSize(),
+            "native and programmatic resize constraints freeze the preview window");
+#ifdef Q_OS_WIN
+    if (QGuiApplication::platformName() == QStringLiteral("windows")) {
+        const auto hwnd = reinterpret_cast<HWND>(area.winId());
+        RECT rectangle{};
+        GetWindowRect(hwnd, &rectangle);
+        require(SendMessageW(hwnd, WM_NCHITTEST, 0,
+                             MAKELPARAM(rectangle.left + 1, rectangle.top + 1)) == HTCLIENT,
+                "native trim corners remain draggable client pixels rather than resize borders");
+    }
+#endif
+    require(ScreenRecordingAreaWindowTestAccess::inputRegion(area) == QRegion(area.rect()),
+            "preview owns its whole area for dragging");
+    for (auto point : {area.rect().topLeft(), area.rect().bottomRight(), area.rect().center()})
+        require(!ScreenRecordingAreaWindowTestAccess::edges(area, point),
+                "trim preview has no resize hit targets");
+    const QPoint from = area.recordingRegion().center();
+    ScreenRecordingAreaWindowTestAccess::beginDrag(area, from, {});
+    ScreenRecordingAreaWindowTestAccess::drag(area, from + QPoint(30, 20));
+    ScreenRecordingAreaWindowTestAccess::finish(area);
+    require(area.recordingRegion().size() == original, "preview dragging preserves its size");
+    require(!area.canvas()->isVisible(), "drawing surface is hidden during preview");
+    QImage frame(32, 24, QImage::Format_RGBA8888);
+    frame.fill(Qt::red);
+    area.setPreviewFrame(frame);
+    require(area.grab().toImage().pixelColor(area.rect().center()).red() > 200,
+            "preview frame paints inside the recording area");
+    area.setInputMode(ScreenRecordingAreaWindow::InputMode::RegionEditing);
+    area.setTrimming(false);
+    handle = area.findChild<QWidget*>(QStringLiteral("screenRecordingRegionDragHandle"));
+    require(handle != nullptr && handle->isVisible(),
+            "leaving trim preview restores the region editing drag handle");
+    area.setTrimming(true);
+    require(!handle->isVisible(), "entering trim preview hides an existing region drag handle");
+    area.hide();
+    area.show();
+    QCoreApplication::processEvents();
+    require(!handle->isVisible(), "showing trim preview again must keep the drag handle hidden");
+}
+
 int main(int argc, char** argv) {
     QApplication application(argc, argv);
     QTemporaryDir storageDirectory;
@@ -1414,6 +1467,11 @@ int main(int argc, char** argv) {
                 .initialize({executableDirectory, storageDirectory.path(), 60000})
                 .success,
             "failed to initialize isolated recording area test storage");
+    if (application.arguments().contains(QStringLiteral("--trim-only"))) {
+        trimmingFreezesSizeAndMakesThePreviewDraggable();
+        snow_shot::storage::ApplicationStorage::instance().shutdown();
+        return 0;
+    }
 #if defined(Q_OS_WIN) || defined(_WIN32)
     if (application.arguments().contains(QStringLiteral("--native-geometry-only"))) {
         nativeRecordingBordersCross();
@@ -1456,6 +1514,7 @@ int main(int argc, char** argv) {
     recordingBorderInput(false);
     logicalRegionDragAndResize();
 #endif
+    trimmingFreezesSizeAndMakesThePreviewDraggable();
     controlledBordersCrossAndCancelWithoutClearingAnnotations();
     geometryAndTransparentCanvasFollowThePhysicalSelection();
     inputModesOwnOnlyDrawingInputAndRestoreRequestedState();

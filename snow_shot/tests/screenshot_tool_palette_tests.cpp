@@ -5720,6 +5720,22 @@ void ocrToolReplacesSelectionActionToolbarContents() {
     require(edit->isEnabled() && !reset->isEnabled() && textSelects.at(0)->isEnabled() &&
                 textSelects.at(1)->isEnabled(),
             "a text result should enable editing operations but not Reset");
+    formattingSelect->setCurrentValue(QStringLiteral("smart"));
+    require(formattingSelect->currentValue().toString() == QStringLiteral("smart"),
+            "OCR formatting offers Smart Typesetting");
+    auto& language = snow_shot::presentation::LanguageManager::instance();
+    for (const QString& locale :
+         {QStringLiteral("zh_CN"), QStringLiteral("zh_TW"), QStringLiteral("en_US")}) {
+        require(language.setLanguage(locale), "switch OCR formatting language");
+        QCoreApplication::processEvents();
+        require(formattingSelect->model()
+                            ->index(2, 0)
+                            .data(adqt::widgets::AdSelect::DefaultLabelRole)
+                            .toString() ==
+                        QCoreApplication::translate("ScreenshotToolPalette", "Smart Typesetting") &&
+                    formattingSelect->currentValue().toString() == QStringLiteral("smart"),
+                "Smart Typesetting retranslates without changing the selected format");
+    }
     formattingSelect->setCurrentValue(QStringLiteral("remove"));
     punctuationSelect->setCurrentValue(QStringLiteral("full"));
     require(formattingSelect->currentValue().toString() == QStringLiteral("remove") &&
@@ -9748,6 +9764,94 @@ void retainedEditorsApplyDestinationMixedStateDuringReconciliation() {
                            "the retained stroke-style editor should apply destination mixed state");
 }
 
+void serialNumberNumericTypeEditorPreservesValuesAndRetranslates() {
+    using Numeric = SnowCanvasSerialNumberNumericType;
+    ScreenshotToolPalette::Options options;
+    options.showSerialNumberTool = true;
+    options.showTextTool = true;
+    ScreenshotToolPalette palette(options);
+    palette.setActiveTool(ScreenshotToolPalette::Tool::SerialNumber);
+    SnowCanvasStyleToolbarState state;
+    state.source = SnowCanvasStyleToolbarSource::SelectedSerialNumber;
+    state.serialNumberStyle.number = 27;
+    palette.setStyleToolbarState(state);
+    palette.show();
+    QCoreApplication::processEvents();
+    auto findGroup = [&]() {
+        auto* root = palette.findChild<QWidget*>(
+            QStringLiteral("screenshotSerialNumberNumericTypeButtonGroup"));
+        require(root != nullptr, "numeric format editor exists");
+        return root->findChild<adqt::widgets::AdRadioButtonGroup*>();
+    };
+    auto* group = findGroup();
+    require(group && group->buttons().size() == 5 && group->checkedId() == 0,
+            "numeric format group starts with five choices and Arabic selected");
+    int changes = 0;
+    palette.setStyleEditHandler([&](const SnowCanvasStyleEdit& edit) {
+        const auto* serial = std::get_if<SnowCanvasSerialNumberEdit>(&edit);
+        require(serial && serial->properties == SnowCanvasSerialNumberStyleMixedNumericType,
+                "numeric choice commits only the format property");
+        require(serial->style.number == 27, "format edits keep the exact decimal value");
+        state.serialNumberStyle = serial->style;
+        palette.rememberStyleEdit(edit);
+        ++changes;
+        return true;
+    });
+    const char* labels[] = {"Arabic numerals", "Roman numerals", "Lowercase letters",
+                            "Uppercase letters", "Chinese numerals"};
+    for (int i = 1; i < 5; ++i) {
+        require(group->button(i)->accessibleName() == QString::fromLatin1(labels[i]),
+                "format buttons have descriptive accessible names");
+        group->button(i)->click();
+        require(changes == i && state.serialNumberStyle.numericType == Numeric(i),
+                "each format button emits the chosen enum");
+    }
+    auto* input =
+        qobject_cast<QLineEdit*>(controlWithTooltip(palette, "Sequence number (scroll to adjust)"));
+    require(input && input->text() == QStringLiteral("27"),
+            "formatted labels keep decimal editing");
+    state.serialNumberStyleMixed =
+        SnowCanvasSerialNumberStyleMixedNumericType | SnowCanvasSerialNumberStyleMixedNumber;
+    palette.setStyleToolbarState(state);
+    require(group->checkedId() == -1, "mixed numeric formats select no button");
+    group->button(4)->click();
+    require(changes == 5, "choosing the representative mixed format still commits");
+    state.serialNumberStyleMixed = 0;
+    state.serialNumberStyle.type = SnowCanvasSerialNumberType::Circle;
+    palette.setStyleToolbarState(state);
+    require(!group->button(0)->isEnabled() && group->checkedId() == 4,
+            "unnumbered circles disable format editing and retain the format");
+    state.serialNumberStyle.type = SnowCanvasSerialNumberType::OutlinedSquare;
+    palette.setStyleToolbarState(state);
+    require(group->button(0)->isEnabled(), "numbered badges restore format editing");
+    palette.setPhysicalScale(1.5);
+    palette.setActiveTool(ScreenshotToolPalette::Tool::Text);
+    palette.setActiveTool(ScreenshotToolPalette::Tool::SerialNumber);
+    group = findGroup();
+    require(group->checkedId() == 4, "format survives editor recreation and DPI changes");
+    auto& language = snow_shot::presentation::LanguageManager::instance();
+    for (const auto& locale :
+         {QStringLiteral("zh_CN"), QStringLiteral("zh_TW"), QStringLiteral("en_US")}) {
+        require(language.setLanguage(locale), "numeric format translation catalog loads");
+        QCoreApplication::processEvents();
+        require(group == findGroup() && group->checkedId() == 4,
+                "language changes preserve the editor");
+        const QString translated =
+            QCoreApplication::translate("ScreenshotToolPalette", "Roman numerals");
+        require(group->button(1)->accessibleName() == translated &&
+                    group->button(1)->toolTip() == translated,
+                "numeric tooltips and accessible names retranslate together");
+        require(locale == QStringLiteral("en_US") || translated != QStringLiteral("Roman numerals"),
+                "Chinese catalogs contain translated format names");
+    }
+    if (const QString path = qEnvironmentVariable("SNOW_SERIAL_NUMBER_TOOLBAR_PREVIEW");
+        !path.isEmpty()) {
+        auto* row =
+            palette.findChild<QWidget*>(QStringLiteral("screenshotSerialNumberStyleControls"));
+        require(row && row->grab().save(path), "save numeric format toolbar preview");
+    }
+}
+
 void serialNumberStyleControlsExposeAndEmitRequestedProperties() {
     ScreenshotToolPalette::Options options;
     options.showTextTool = true;
@@ -9905,12 +10009,15 @@ void serialNumberStyleControlsExposeAndEmitRequestedProperties() {
     require(fontSelect != nullptr && fontSelect->placeholder() == QStringLiteral("Font family") &&
                 fontSelect->variant() == adqt::widgets::AdSelect::Variant::Borderless,
             "sequence-number font family should reuse the text selector");
+    auto* numericRoot =
+        palette.findChild<QWidget*>(QStringLiteral("screenshotSerialNumberNumericTypeButtonGroup"));
     const QList<QFrame*> separators =
         controls->findChildren<QFrame*>(QString(), Qt::FindDirectChildrenOnly);
     auto* typeGroup =
         typeRoot != nullptr ? typeRoot->findChild<adqt::widgets::AdRadioButtonGroup*>() : nullptr;
     require(
-        separators.size() == 3 && typeRoot != nullptr && typeGroup != nullptr &&
+        separators.size() == 4 && numericRoot != nullptr && typeRoot != nullptr &&
+            typeGroup != nullptr &&
             controlWithTooltip(palette, "Sequence number type") == typeRoot &&
             controlWithTooltip(palette, "Outlined circle") != nullptr &&
             controlWithTooltip(palette, "Solid circle") != nullptr &&
@@ -9920,9 +10027,13 @@ void serialNumberStyleControlsExposeAndEmitRequestedProperties() {
                 serialNumberLayout->indexOf(separators.at(0)) &&
             serialNumberLayout->indexOf(separators.at(0)) < serialNumberLayout->indexOf(typeRoot) &&
             serialNumberLayout->indexOf(typeRoot) < serialNumberLayout->indexOf(separators.at(1)) &&
-            serialNumberLayout->indexOf(separators.at(1)) < numberEditorIndex &&
-            serialNumberLayout->indexOf(fontRoot) < serialNumberLayout->indexOf(separators.at(2)) &&
-            serialNumberLayout->indexOf(separators.at(2)) < serialNumberLayout->indexOf(fillRoot) &&
+            serialNumberLayout->indexOf(separators.at(1)) <
+                serialNumberLayout->indexOf(numericRoot) &&
+            serialNumberLayout->indexOf(numericRoot) <
+                serialNumberLayout->indexOf(separators.at(2)) &&
+            serialNumberLayout->indexOf(separators.at(2)) < numberEditorIndex &&
+            serialNumberLayout->indexOf(fontRoot) < serialNumberLayout->indexOf(separators.at(3)) &&
+            serialNumberLayout->indexOf(separators.at(3)) < serialNumberLayout->indexOf(fillRoot) &&
             fillRoot != nullptr && fillLayout != nullptr &&
             fillRoot->isAncestorOf(fillColorPicker) && solidFill != nullptr &&
             crossLineFill != nullptr && lineFill != nullptr &&
@@ -11291,18 +11402,41 @@ void selectToolExposesDedicatedActionToolbar() {
             "opacity slider should be disabled again after clearing the selection");
 }
 
-void selectionResetRemainsAvailableWithoutSelection() {
+void eraserResetRemainsAvailableWithoutSelection() {
     ScreenshotToolPalette::Options options;
     options.showSelectTool = true;
+    options.showEraserTool = true;
     ScreenshotToolPalette palette(options);
     int resetCount = 0;
     QObject::connect(&palette, &ScreenshotToolPalette::resetCanvasRequested,
                      [&resetCount]() { ++resetCount; });
-    for (const auto alternate :
-         {ScreenshotToolPalette::Tool::Ocr, ScreenshotToolPalette::Tool::Table}) {
-        palette.setActiveTool(ScreenshotToolPalette::Tool::Select);
+    palette.setActiveTool(ScreenshotToolPalette::Tool::Select);
+    palette.prepareForDisplay();
+    require(palette.actionPanel()->findChild<adqt::widgets::AdButton*>(
+                QStringLiteral("screenshotResetCanvasButton")) == nullptr,
+            "selection toolbar must not contain reset");
+    auto* selectionLayout = qobject_cast<QBoxLayout*>(palette.actionPanel()->layout());
+    QWidget* lastControl = nullptr;
+    for (int i = 0; i < selectionLayout->count(); ++i) {
+        if (auto* widget = selectionLayout->itemAt(i)->widget();
+            widget != nullptr && !widget->isHidden()) {
+            lastControl = widget;
+        }
+    }
+    require(lastControl != nullptr &&
+                lastControl->toolTip() == QStringLiteral("Delete selected elements"),
+            "selection toolbar must end with Delete without a trailing separator");
+    for (const auto tool :
+         {ScreenshotToolPalette::Tool::Eraser, ScreenshotToolPalette::Tool::RectangleEraser,
+          ScreenshotToolPalette::Tool::BrushEraser}) {
+        palette.setActiveTool(tool);
         palette.prepareForDisplay();
-        QPointer<adqt::widgets::AdButton> reset = palette.findChild<adqt::widgets::AdButton*>(
+        auto* controls = palette.stylePanel()->findChild<QWidget*>(
+            tool == ScreenshotToolPalette::Tool::BrushEraser
+                ? QStringLiteral("screenshotBrushEraserStyleControls")
+                : QStringLiteral("screenshotEraserStyleControls"));
+        require(controls != nullptr, "eraser controls should be materialized");
+        QPointer<adqt::widgets::AdButton> reset = controls->findChild<adqt::widgets::AdButton*>(
             QStringLiteral("screenshotResetCanvasButton"));
         require(reset != nullptr && !reset->isHidden() && reset->isEnabled(),
                 "canvas reset should be available without a selection");
@@ -11311,33 +11445,26 @@ void selectionResetRemainsAvailableWithoutSelection() {
         require(reset->toolTip() == QStringLiteral("Reset") &&
                     reset->accessibleName() == QStringLiteral("Reset"),
                 "canvas reset should have a tooltip and accessible name");
-        auto* layout = qobject_cast<QBoxLayout*>(palette.actionPanel()->layout());
+        auto* layout = qobject_cast<QBoxLayout*>(controls->layout());
         const int index = layout->indexOf(reset);
-        require(index >= 2, "canvas reset should follow the selection actions");
-        QPointer<QFrame> separator = qobject_cast<QFrame*>(layout->itemAt(index - 2)->widget());
-        require(separator != nullptr && !separator->isHidden() &&
-                    layout->itemAt(index - 1)->spacerItem() != nullptr,
+        require(index >= 2, "canvas reset should follow the eraser controls");
+        QFrame* separator = nullptr;
+        for (int i = index - 1; i >= 0; --i) {
+            if (QWidget* widget = layout->itemAt(i)->widget()) {
+                separator = qobject_cast<QFrame*>(widget);
+                break;
+            }
+        }
+        require(separator != nullptr && !separator->isHidden(),
                 "canvas reset should have the standard separator on its left");
         for (int i = index + 1; i < layout->count(); ++i) {
             QWidget* widget = layout->itemAt(i)->widget();
             require(widget == nullptr || widget->isHidden(),
-                    "canvas reset must be the far-right visible selection control");
+                    "canvas reset must be the far-right visible eraser control");
         }
         reset->click();
-        SnowCanvasStyleToolbarState state;
-        state.source = SnowCanvasStyleToolbarSource::SelectedRectangle;
-        palette.setStyleToolbarState(state);
-        require(reset->isEnabled(), "canvas reset should remain enabled with a selection");
-        reset->click();
-        state.source = SnowCanvasStyleToolbarSource::DefaultRectangle;
-        palette.setStyleToolbarState(state);
-        require(reset->isEnabled(), "clearing selection must not disable canvas reset");
-        palette.setActiveTool(alternate);
-        require((reset == nullptr || reset->isHidden()) &&
-                    (separator == nullptr || separator->isHidden()),
-                "recognition modes should hide canvas reset and its separator");
     }
-    require(resetCount == 4, "each reset click should emit exactly one canvas reset command");
+    require(resetCount == 3, "each reset click should emit exactly one canvas reset command");
 }
 
 void selectionAlignmentActionsFollowSelectionUnitCount() {
@@ -12369,6 +12496,7 @@ void canvasToolStylesPersistIndependentlyWithoutGlobalStyles() {
     styles.text.fontSize = 36.0;
     styles.serialNumber.number = 9'007'199'254'740'993LL;
     styles.serialNumber.type = SnowCanvasSerialNumberType::Circle;
+    styles.serialNumber.numericType = SnowCanvasSerialNumberNumericType::Chinese;
     styles.serialNumber.color = QColor(17, 18, 19, 20);
     styles.serialNumber.fontFamily = QStringLiteral("Persisted serial font");
     styles.watermark.text = QStringLiteral("must not persist");
@@ -12473,6 +12601,22 @@ void canvasToolStylesPersistIndependentlyWithoutGlobalStyles() {
                 static_cast<int>(SnowCanvasSerialNumberType::Circle),
             "the last sequence-number type should persist with its appearance");
 
+    require(savedSerialStyle.value(QStringLiteral("numeric_type")).toInt(-1) == 4,
+            "numeric type persists with the saved appearance");
+    for (const QJsonValue& invalid : {QJsonValue(), QJsonValue(1.5), QJsonValue(-1), QJsonValue(5),
+                                      QJsonValue(QStringLiteral("roman"))}) {
+        auto old = savedSerialStyle;
+        old.remove(QStringLiteral("numeric_type"));
+        if (!invalid.isNull())
+            old.insert(QStringLiteral("numeric_type"), invalid);
+        require(snow_shot::storage::ApplicationStorage::instance().configuration().setValue(
+                    serialKey, old),
+                "save legacy numeric format fixture");
+        auto arabic = expected;
+        arabic.serialNumber.numericType = SnowCanvasSerialNumberNumericType::Arabic;
+        require(snow_shot::presentation::screenshotCanvasToolStyleDefaults() == arabic,
+                "missing and invalid numeric settings default to Arabic");
+    }
     QJsonObject legacySerialStyle = savedSerialStyle;
     legacySerialStyle.remove(QStringLiteral("type"));
     legacySerialStyle.insert(QStringLiteral("number"), styles.serialNumber.number);
@@ -13478,6 +13622,7 @@ int main(int argc, char** argv) {
             "the font editor tests require a system TrueType font");
 #endif
     if (application.arguments().contains(QStringLiteral("--eraser-only"))) {
+        eraserResetRemainsAvailableWithoutSelection();
         eraserStyleToolbarHeightMatchesOtherTools();
         eraserToolsExposeRememberedModesAndIndependentWidth();
         recordingEraserActivationReturnsToSelect();
@@ -13497,6 +13642,14 @@ int main(int argc, char** argv) {
         selectedFilterTypeRemembersOnlyTheEditedProperty();
         canvasToolStylesPersistIndependentlyWithoutGlobalStyles();
         runScreenshotStylePersistenceFailureTest();
+        snow_shot::storage::ApplicationStorage::instance().shutdown();
+        return 0;
+    }
+    if (application.arguments().contains(QStringLiteral("--serial-number-only"))) {
+        serialNumberNumericTypeEditorPreservesValuesAndRetranslates();
+        serialNumberStyleControlsExposeAndEmitRequestedProperties();
+        serialNumberInputCommitsEditsAndSupportsWheel();
+        canvasToolStylesPersistIndependentlyWithoutGlobalStyles();
         snow_shot::storage::ApplicationStorage::instance().shutdown();
         return 0;
     }
@@ -13592,7 +13745,7 @@ int main(int argc, char** argv) {
         return 0;
     }
     if (application.arguments().contains(QStringLiteral("--selection-reset-only"))) {
-        selectionResetRemainsAvailableWithoutSelection();
+        eraserResetRemainsAvailableWithoutSelection();
         selectToolExposesDedicatedActionToolbar();
         selectionAlignmentActionsFollowSelectionUnitCount();
         snow_shot::storage::ApplicationStorage::instance().shutdown();
@@ -13875,6 +14028,7 @@ int main(int argc, char** argv) {
     lineStyleControlsExposeStraightAndCurveTypes();
     selectedArrowMixedPropertiesResolveIndependently();
     textStyleControlsExposeAndEmitAllRequestedProperties();
+    serialNumberNumericTypeEditorPreservesValuesAndRetranslates();
     serialNumberStyleControlsExposeAndEmitRequestedProperties();
     serialNumberInputCommitsEditsAndSupportsWheel();
     stylePopoverTriggersProvideMouseFeedback();
@@ -13887,7 +14041,7 @@ int main(int argc, char** argv) {
     toolbarScalingDoesNotRelayoutPopupContent();
     popupColorEditorButtonsKeepPopupScaleAfterToolbarDpiCommit();
     selectToolExposesDedicatedActionToolbar();
-    selectionResetRemainsAvailableWithoutSelection();
+    eraserResetRemainsAvailableWithoutSelection();
     selectionAlignmentActionsFollowSelectionUnitCount();
     secondaryToolbarsStartHiddenUntilTheirToolIsSelected();
     selectToolRemainsTheSoleOwnerOfItsSecondaryToolbar();

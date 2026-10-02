@@ -406,6 +406,16 @@ if(ADQT_BUILD_TESTS)
     set_tests_properties(adqt-progress-demo-tests PROPERTIES
         LABELS "unit" ENVIRONMENT "QT_QPA_PLATFORM=offscreen" TIMEOUT 30)
 
+    add_executable(adqt-message-clipping-tests packages/ant_design_qt/tests/message_clipping_tests.cpp)
+    set_target_properties(adqt-message-clipping-tests PROPERTIES AUTOMOC ON)
+    target_link_libraries(adqt-message-clipping-tests PRIVATE adqt::widgets Qt6::Test)
+    if(TARGET Qt6::QOffscreenIntegrationPlugin)
+        qt_import_plugins(adqt-message-clipping-tests INCLUDE Qt6::QOffscreenIntegrationPlugin)
+    endif()
+    add_test(NAME adqt-message-clipping-tests COMMAND adqt-message-clipping-tests)
+    set_tests_properties(adqt-message-clipping-tests PROPERTIES
+        LABELS "unit" ENVIRONMENT "QT_QPA_PLATFORM=offscreen" TIMEOUT 60)
+
     add_executable(adqt-pagination-tests packages/ant_design_qt/tests/tst_pagination.cpp)
     set_target_properties(adqt-pagination-tests PROPERTIES AUTOMOC ON)
     target_link_libraries(adqt-pagination-tests PRIVATE adqt::widgets Qt6::Test)

@@ -484,6 +484,13 @@ bool SnowCanvasRuntimeEditor::setSerialNumberStyleFromToolbar(
         return snow_viewport_set_serial_number_style_ex(r, v, &value, changed);
     });
 }
+bool SnowCanvasRuntimeEditor::setSerialNumberStyleFromToolbar(
+    const SnowCanvasSerialNumberStyle& style, quint32 properties) {
+    const auto value = snow_canvas_types::toEngineSerialNumberStyle(style);
+    return m_impl->mutate([&](auto r, auto v, auto changed) {
+        return snow_viewport_set_serial_number_style_patch_ex(r, v, &value, properties, changed);
+    });
+}
 bool SnowCanvasRuntimeEditor::setFilterStyleFromToolbar(const SnowCanvasFilterStyle& style,
                                                         quint32 properties) {
     const SnowFilterStyle value{static_cast<SnowFilterType>(style.type), style.strength,

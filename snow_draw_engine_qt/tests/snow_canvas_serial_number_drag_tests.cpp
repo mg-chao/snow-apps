@@ -61,6 +61,47 @@ QJsonObject payload(const SnowCanvasRuntime& runtime, const QString& kind) {
     return found.first().toObject().value(QStringLiteral("data")).toObject().value(kind).toObject();
 }
 
+void numericTypeReachesExportAndSurvivesHistory() {
+    SnowCanvasRuntime runtime;
+    SnowCanvasWidget canvas(runtime);
+    canvas.resize(600, 360);
+    canvas.show();
+    QApplication::processEvents();
+    require(canvas.setCanvasTool(SnowCanvasTool::SerialNumber), "activate sequence creation");
+    SnowCanvasSerialNumberStyle style;
+    style.number = 27;
+    style.numericType = SnowCanvasSerialNumberNumericType::LowercaseLetters;
+    require(canvas.setCanvasSerialNumberStyle(style), "set numeric format before creation");
+    mouse(canvas, QEvent::MouseButtonPress, {300.0, 180.0}, Qt::LeftButton, Qt::LeftButton);
+    mouse(canvas, QEvent::MouseButtonRelease, {300.0, 180.0}, Qt::LeftButton, Qt::NoButton);
+    const auto serial = payload(runtime, QStringLiteral("SerialNumber"));
+    require(serial.value(QStringLiteral("numeric_type")).toString() ==
+                QStringLiteral("LowercaseLetters"),
+            "creation preserves numeric type");
+    const auto center = serial.value(QStringLiteral("center")).toObject();
+    const QRectF region(center.value(QStringLiteral("x")).toDouble() - 150,
+                        center.value(QStringLiteral("y")).toDouble() - 150, 300, 300);
+    const auto id = records(runtime, QStringLiteral("SerialNumber"))
+                        .first()
+                        .toObject()
+                        .value(QStringLiteral("id"))
+                        .toObject();
+    SnowCanvasRuntimeEditor editor(runtime);
+    require(editor.select(id.value(QStringLiteral("index")).toInt(),
+                          id.value(QStringLiteral("generation")).toInt()),
+            "select formatted annotation");
+    const QImage letters = runtime.renderToImage(region, QSize(300, 300), {});
+    require(!letters.isNull(), "formatted sequence exports successfully");
+    style.numericType = SnowCanvasSerialNumberNumericType::Roman;
+    require(editor.setSerialNumberStyleFromToolbar(style), "change numeric format");
+    const QImage roman = runtime.renderToImage(region, QSize(300, 300), {});
+    require(!roman.isNull() && roman != letters, "export reflects the formatted label");
+    require(runtime.undo() && runtime.renderToImage(region, QSize(300, 300), {}) == letters,
+            "undo restores original format and geometry in export");
+    require(runtime.redo() && runtime.renderToImage(region, QSize(300, 300), {}) == roman,
+            "redo restores the new formatted export");
+}
+
 void clickAndDragLifecycle() {
     SnowCanvasRuntime runtime;
     SnowCanvasWidget canvas(runtime);
@@ -360,6 +401,7 @@ int main(int argc, char** argv) {
     }
 #endif
     QApplication app(argc, argv);
+    numericTypeReachesExportAndSurvivesHistory();
     clickAndDragLifecycle();
     releaseWithoutMoveAndCancellation();
     toolbarCreatedTextKeepsDefaultStyling();

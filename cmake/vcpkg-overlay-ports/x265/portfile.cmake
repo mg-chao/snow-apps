@@ -14,6 +14,7 @@ vcpkg_from_bitbucket(
         "${VCPKG_ROOT_DIR}/ports/x265/neon.diff"
         "${VCPKG_ROOT_DIR}/ports/x265/fix-cmake-4.patch"
         macos-arm64-deployment-target.patch
+        short-propagation-row.patch
 )
 
 vcpkg_check_features(OUT_FEATURE_OPTIONS OPTIONS

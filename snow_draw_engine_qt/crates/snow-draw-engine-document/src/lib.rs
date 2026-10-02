@@ -32,7 +32,9 @@ mod document;
 pub use auto_filter::*;
 mod document_geometry;
 mod free_draw;
+mod serial_number_format;
 mod transaction;
+pub use serial_number_format::{SerialNumberNumericType, format_serial_number};
 
 pub use arrow::{
     ArrowData, ArrowEndpointBinding, DEFAULT_ARROW_MAX_COORDINATE, LinearElementKind, arrow_bounds,

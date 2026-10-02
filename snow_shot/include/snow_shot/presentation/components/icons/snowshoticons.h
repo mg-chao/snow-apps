@@ -143,9 +143,11 @@ RecordingPostProcessing(const adqt::icons::IconColors& colors = {});
 [[nodiscard]] adqt::icons::IconRef RecordingRender(const adqt::icons::IconColors& colors = {});
 [[nodiscard]] adqt::icons::IconRef
 RecordingRenderSettings(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] adqt::icons::IconRef RecordingReplay(const adqt::icons::IconColors& colors = {});
 [[nodiscard]] adqt::icons::IconRef RecordingResume(const adqt::icons::IconColors& colors = {});
 [[nodiscard]] adqt::icons::IconRef RecordingStart(const adqt::icons::IconColors& colors = {});
 [[nodiscard]] adqt::icons::IconRef RecordingStop(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] adqt::icons::IconRef RecordingTrim(const adqt::icons::IconColors& colors = {});
 [[nodiscard]] adqt::icons::IconRef RefreshCapture(const adqt::icons::IconColors& colors = {});
 [[nodiscard]] adqt::icons::IconRef Restart(const adqt::icons::IconColors& colors = {});
 [[nodiscard]] adqt::icons::IconRef Save(const adqt::icons::IconColors& colors = {});
@@ -174,6 +176,16 @@ ScreenshotRegionReduce(const adqt::icons::IconColors& colors = {});
 [[nodiscard]] adqt::icons::IconRef SelectionRadius(const adqt::icons::IconColors& colors = {});
 [[nodiscard]] adqt::icons::IconRef SelectionShadow(const adqt::icons::IconColors& colors = {});
 [[nodiscard]] adqt::icons::IconRef SequenceNumberCircle(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] adqt::icons::IconRef
+SequenceNumberNumericArabic(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] adqt::icons::IconRef
+SequenceNumberNumericChinese(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] adqt::icons::IconRef
+SequenceNumberNumericLowercaseLetters(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] adqt::icons::IconRef
+SequenceNumberNumericRoman(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] adqt::icons::IconRef
+SequenceNumberNumericUppercaseLetters(const adqt::icons::IconColors& colors = {});
 [[nodiscard]] adqt::icons::IconRef
 SequenceNumberOutlinedCircle(const adqt::icons::IconColors& colors = {});
 [[nodiscard]] adqt::icons::IconRef

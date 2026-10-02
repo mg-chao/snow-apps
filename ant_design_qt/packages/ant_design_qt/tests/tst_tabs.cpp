@@ -3,9 +3,13 @@
 #include <QGridLayout>
 #include <QImage>
 #include <QLabel>
+#include <QListWidget>
 #include <QPointer>
+#include <QPainter>
 #include <QSet>
 #include <QSignalSpy>
+#include <QScrollArea>
+#include <QScrollBar>
 #include <QStackedWidget>
 #include <QVBoxLayout>
 #include <QtTest>
@@ -13,6 +17,7 @@
 #include "antd_icons.h"
 #include "theme/theme.h"
 #include "widgets/tabs.h"
+#include "widgets/popover.h"
 
 #include <algorithm>
 
@@ -59,8 +64,16 @@ class TabsTest final : public QObject {
   void propertiesRoundTrip();
   void sizeHintsFollowContentAndTokens();
   void extraContentTracksQObjectLifetime();
-  void widerLabelsShrinkBeforeShorterTabsOverflow();
-  void overflowCollapsesTabs();
+  void horizontalTabsKeepNaturalWidths_data();
+  void horizontalTabsKeepNaturalWidths();
+  void overflowScrollsTabs_data();
+  void overflowScrollsTabs();
+  void overflowMenuTracksScrolledTabs();
+  void oversizedTabsKeepExtraContentFixed();
+  void overflowPopupMatchesAntDesign_data();
+  void overflowPopupMatchesAntDesign();
+  void overflowPopupHoverAndLiveUpdates();
+  void overflowEdgesTrackScrollPosition();
   void startPlacementFollowsLayoutDirection();
   void rendersRepresentativeStates();
 };
@@ -317,26 +330,49 @@ void TabsTest::extraContentTracksQObjectLifetime() {
   QVERIFY(QTest::qWaitForWindowExposed(&tabs));
   QAbstractButton* button = tabButton(&tabs, QStringLiteral("Tab"));
   QVERIFY(button);
-  const int withExtraX = button->x();
+  const int withExtraX = button->mapTo(&tabs, QPoint()).x();
   QVERIFY(withExtraX >= extra->width());
 
   delete extra;
   QVERIFY(tabs.tabBarExtraContentStart() == nullptr);
-  QTRY_VERIFY(button->x() < withExtraX);
+  QTRY_VERIFY(button->mapTo(&tabs, QPoint()).x() < withExtraX);
 }
 
-void TabsTest::widerLabelsShrinkBeforeShorterTabsOverflow() {
+void TabsTest::horizontalTabsKeepNaturalWidths_data() {
+  QTest::addColumn<AdTabs::Type>("type");
+  QTest::addColumn<AdTabs::Placement>("placement");
+  QTest::addColumn<Qt::LayoutDirection>("direction");
+  for (auto type : {AdTabs::Type::Line, AdTabs::Type::Card, AdTabs::Type::EditableCard}) {
+    for (auto placement : {AdTabs::Placement::Top, AdTabs::Placement::Bottom}) {
+      for (auto direction : {Qt::LeftToRight, Qt::RightToLeft}) {
+        const QByteArray name = QByteArray::number(static_cast<int>(type)) + '-' +
+                                QByteArray::number(static_cast<int>(placement)) + '-' +
+                                QByteArray::number(static_cast<int>(direction));
+        QTest::newRow(name.constData()) << type << placement << direction;
+      }
+    }
+  }
+}
+
+void TabsTest::horizontalTabsKeepNaturalWidths() {
+  QFETCH(AdTabs::Type, type);
+  QFETCH(AdTabs::Placement, placement);
+  QFETCH(Qt::LayoutDirection, direction);
   AdTabs tabs;
+  tabs.setType(type);
+  tabs.setTabPlacement(placement);
+  tabs.setLayoutDirection(direction);
   tabs.setAnimated(false);
   tabs.setTabBarGutter(0);
-  tabs.addTab(QStringLiteral("history"), QStringLiteral("History"));
+  tabs.addTab(QStringLiteral("history"), QStringLiteral("Recent History"));
   tabs.addTab(QStringLiteral("storage-status"), QStringLiteral("Storage Status"));
+  tabs.setTabIcon(1, adqt::icons::antd::outlined::FolderOpen());
   tabs.setCurrentKey(QStringLiteral("storage-status"));
   tabs.resize(480, 160);
   tabs.show();
   QVERIFY(QTest::qWaitForWindowExposed(&tabs));
 
-  QAbstractButton* history = tabButton(&tabs, QStringLiteral("History"));
+  QAbstractButton* history = tabButton(&tabs, QStringLiteral("Recent History"));
   QAbstractButton* storageStatus = tabButton(&tabs, QStringLiteral("Storage Status"));
   QAbstractButton* more = operationButton(&tabs, QStringLiteral("More tabs"));
   QVERIFY(history);
@@ -347,20 +383,55 @@ void TabsTest::widerLabelsShrinkBeforeShorterTabsOverflow() {
   const int storageNaturalWidth = storageStatus->sizeHint().width();
   QVERIFY(storageNaturalWidth > historyNaturalWidth);
   const int reduction = std::max(1, (storageNaturalWidth - historyNaturalWidth) / 2);
-  tabs.resize(historyNaturalWidth + storageNaturalWidth - reduction, tabs.height());
+  QAbstractButton* add = operationButton(&tabs, QStringLiteral("Add tab"));
+  const int addWidth = type == AdTabs::Type::EditableCard ? add->width() : 0;
+  tabs.resize(historyNaturalWidth + storageNaturalWidth + addWidth - reduction, tabs.height());
   QCoreApplication::processEvents();
 
   QVERIFY(history->isVisible());
   QVERIFY(storageStatus->isVisible());
-  QVERIFY(more->isHidden());
+  QVERIFY(more->isVisible());
   QCOMPARE(history->width(), historyNaturalWidth);
-  QVERIFY(storageStatus->width() < storageNaturalWidth);
+  QCOMPARE(storageStatus->width(), storageNaturalWidth);
+  QCOMPARE(storageStatus->height(), storageStatus->sizeHint().height());
   QVERIFY(history->toolTip().isEmpty());
-  QCOMPARE(storageStatus->toolTip(), QStringLiteral("Storage Status"));
+  QVERIFY(storageStatus->toolTip().isEmpty());
+  auto* scroll = tabs.findChild<QScrollArea*>();
+  QVERIFY(scroll);
+  const auto visibleRect = [scroll](QWidget* button) {
+    return QRect(button->mapTo(scroll->viewport(), QPoint()), button->size());
+  };
+  QVERIFY(scroll->viewport()->rect().contains(visibleRect(storageStatus)));
+  QVERIFY(!scroll->viewport()->rect().contains(visibleRect(history)));
+
+  tabs.resize(640, tabs.height());
+  QCoreApplication::processEvents();
+  QVERIFY(more->isHidden());
+  QCOMPARE(scroll->horizontalScrollBar()->maximum(), 0);
+  QVERIFY(scroll->viewport()->rect().contains(visibleRect(history)));
+  QVERIFY(scroll->viewport()->rect().contains(visibleRect(storageStatus)));
 }
 
-void TabsTest::overflowCollapsesTabs() {
+void TabsTest::overflowScrollsTabs_data() {
+  QTest::addColumn<AdTabs::Placement>("placement");
+  QTest::addColumn<Qt::LayoutDirection>("direction");
+  for (auto placement : {AdTabs::Placement::Top, AdTabs::Placement::Bottom,
+                         AdTabs::Placement::Start, AdTabs::Placement::End}) {
+    for (auto direction : {Qt::LeftToRight, Qt::RightToLeft}) {
+      const QByteArray name = QByteArray::number(static_cast<int>(placement)) + '-' +
+                              QByteArray::number(static_cast<int>(direction));
+      QTest::newRow(name.constData()) << placement << direction;
+    }
+  }
+}
+
+void TabsTest::overflowScrollsTabs() {
+  QFETCH(AdTabs::Placement, placement);
+  QFETCH(Qt::LayoutDirection, direction);
   AdTabs tabs;
+  tabs.setAnimated(false);
+  tabs.setTabPlacement(placement);
+  tabs.setLayoutDirection(direction);
   for (int index = 0; index < 12; ++index) {
     tabs.addTab(QString::number(index), QStringLiteral("Long tab %1").arg(index));
   }
@@ -371,14 +442,321 @@ void TabsTest::overflowCollapsesTabs() {
   QAbstractButton* more = operationButton(&tabs, QStringLiteral("More tabs"));
   QVERIFY(more);
   QVERIFY(more->isVisible());
-  int hiddenTabCount = 0;
   const QList<QAbstractButton*> buttons =
       tabs.findChildren<QAbstractButton*>(QStringLiteral("ad-tabs-item"));
   for (QAbstractButton* button : buttons) {
-    hiddenTabCount += button->isHidden() ? 1 : 0;
+    QVERIFY(button->isVisible());
+    QVERIFY(button->width() >= button->sizeHint().width());
   }
-  QVERIFY(hiddenTabCount > 0);
-  QVERIFY(tabButton(&tabs, QStringLiteral("Long tab 0"))->isVisible());
+  auto* scroll = tabs.findChild<QScrollArea*>();
+  QVERIFY(scroll);
+  const bool horizontal =
+      placement == AdTabs::Placement::Top || placement == AdTabs::Placement::Bottom;
+  QScrollBar* bar = horizontal ? scroll->horizontalScrollBar() : scroll->verticalScrollBar();
+  QVERIFY(bar->maximum() > 0);
+  const QPoint position = scroll->viewport()->rect().center();
+  QWheelEvent wheel(position, scroll->viewport()->mapToGlobal(position), QPoint(), QPoint(0, -120),
+                    Qt::NoButton, Qt::NoModifier, Qt::NoScrollPhase, false);
+  QCoreApplication::sendEvent(scroll->viewport(), &wheel);
+  QVERIFY(bar->value() > 0);
+  QCOMPARE(tabs.currentIndex(), 0);
+
+  bar->setValue(0);
+  const QPoint pixelDelta =
+      horizontal ? QPoint(direction == Qt::RightToLeft ? 17 : -17, 0) : QPoint(0, -17);
+  QWheelEvent trackpad(position, scroll->viewport()->mapToGlobal(position), pixelDelta, QPoint(),
+                       Qt::NoButton, Qt::NoModifier, Qt::ScrollUpdate, false);
+  QCoreApplication::sendEvent(scroll->viewport(), &trackpad);
+  QCOMPARE(bar->value(), 17);
+  QVERIFY(trackpad.isAccepted());
+  const QPoint angleDelta =
+      horizontal ? QPoint(direction == Qt::RightToLeft ? 120 : -120, 0) : QPoint(0, -120);
+  QWheelEvent nativeWheel(position, scroll->viewport()->mapToGlobal(position), QPoint(), angleDelta,
+                          Qt::NoButton, Qt::NoModifier, Qt::NoScrollPhase, false);
+  QCoreApplication::sendEvent(scroll->viewport(), &nativeWheel);
+  QVERIFY(bar->value() > 17);
+  bar->setValue(bar->maximum());
+  QCoreApplication::sendEvent(scroll->viewport(), &trackpad);
+  QVERIFY(!trackpad.isAccepted());
+
+  tabs.setCurrentIndex(11);
+  QAbstractButton* last = tabButton(&tabs, QStringLiteral("Long tab 11"));
+  QVERIFY(last);
+  const auto visibleRect = [scroll](QWidget* button) {
+    return QRect(button->mapTo(scroll->viewport(), QPoint()), button->size());
+  };
+  QVERIFY(scroll->viewport()->rect().contains(visibleRect(last)));
+  last->setFocus(Qt::TabFocusReason);
+  QTest::keyClick(last, Qt::Key_Home);
+  QCOMPARE(tabs.currentIndex(), 0);
+  QAbstractButton* first = tabButton(&tabs, QStringLiteral("Long tab 0"));
+  QVERIFY(first->hasFocus());
+  QVERIFY(scroll->viewport()->rect().contains(visibleRect(first)));
+
+  QWidget* indicator = tabs.findChild<QWidget*>(QStringLiteral("ad-tabs-indicator"));
+  QVERIFY(indicator);
+  QVERIFY(scroll->viewport()->rect().contains(visibleRect(indicator)));
+}
+
+void TabsTest::overflowMenuTracksScrolledTabs() {
+  AdTabs tabs;
+  tabs.setAnimated(false);
+  for (int index = 0; index < 8; ++index) {
+    tabs.addTab(QString::number(index), QStringLiteral("Workspace %1").arg(index));
+  }
+  tabs.setTabEnabled(2, false);
+  tabs.resize(320, 180);
+  tabs.show();
+  QVERIFY(QTest::qWaitForWindowExposed(&tabs));
+  auto* scroll = tabs.findChild<QScrollArea*>();
+  QVERIFY(scroll);
+  auto* more = operationButton(&tabs, QStringLiteral("More tabs"));
+  QVERIFY(more);
+  scroll->horizontalScrollBar()->setValue(scroll->horizontalScrollBar()->maximum());
+
+  QStringList expected;
+  for (int index = 0; index < tabs.count(); ++index) {
+    QAbstractButton* button = tabButton(&tabs, tabs.tabText(index));
+    const QRect bounds(button->mapTo(scroll->viewport(), QPoint()), button->size());
+    if (!scroll->viewport()->rect().contains(bounds)) {
+      expected.append(tabs.tabText(index));
+    }
+  }
+  QVERIFY(expected.contains(tabs.tabText(0)));
+  QVERIFY(!expected.contains(tabs.tabText(7)));
+  auto* popup = tabs.findChild<adqt::widgets::AdPopover*>(QStringLiteral("ad-tabs-overflow-popup"));
+  QVERIFY(popup);
+  QTest::mouseClick(more, Qt::LeftButton);
+  QTRY_VERIFY(popup->isVisible());
+  auto* list = qobject_cast<QListWidget*>(popup->contentWidget());
+  QVERIFY(list);
+  QStringList actual;
+  for (int row = 0; row < list->count(); ++row) {
+    actual.append(list->item(row)->text());
+    QVERIFY(!list->item(row)->flags().testFlag(Qt::ItemIsUserCheckable));
+  }
+  QCOMPARE(actual, expected);
+  QCOMPARE(list->currentRow(), -1);
+  QVERIFY(!list->item(actual.indexOf(tabs.tabText(2)))->flags().testFlag(Qt::ItemIsEnabled));
+  QTest::mouseClick(list->viewport(), Qt::LeftButton, Qt::NoModifier,
+                    list->visualItemRect(list->item(0)).center());
+  QTRY_VERIFY(!popup->isVisible());
+  QCOMPARE(tabs.currentIndex(), 0);
+  QCOMPARE(scroll->horizontalScrollBar()->value(), 0);
+}
+
+void TabsTest::oversizedTabsKeepExtraContentFixed() {
+  AdTabs tabs;
+  tabs.setAnimated(false);
+  tabs.setType(AdTabs::Type::EditableCard);
+  tabs.setCentered(true);
+  auto* start = new QWidget;
+  start->setFixedWidth(40);
+  auto* end = new QWidget;
+  end->setFixedWidth(40);
+  tabs.setTabBarExtraContentStart(start);
+  tabs.setTabBarExtraContentEnd(end);
+  tabs.addTab(QStringLiteral("long"),
+              QStringLiteral("An unusually long workspace name ").repeated(3));
+  tabs.resize(320, 180);
+  tabs.show();
+  QVERIFY(QTest::qWaitForWindowExposed(&tabs));
+  auto* scroll = tabs.findChild<QScrollArea*>();
+  auto* button = tabButton(&tabs, tabs.tabText(0));
+  auto* more = operationButton(&tabs, QStringLiteral("More tabs"));
+  auto* add = operationButton(&tabs, QStringLiteral("Add tab"));
+  QVERIFY(scroll);
+  QVERIFY(button);
+  QVERIFY(more);
+  QVERIFY(add);
+  QCOMPARE(button->width(), button->sizeHint().width());
+  QVERIFY(button->width() > scroll->viewport()->width());
+  QVERIFY(more->isVisible());
+  QVERIFY(button->toolTip().isEmpty());
+  const QRect startGeometry = start->geometry();
+  const QRect endGeometry = end->geometry();
+  const QRect addGeometry = add->geometry();
+  QVERIFY(!scroll->geometry().intersects(startGeometry));
+  QVERIFY(!scroll->geometry().intersects(endGeometry));
+  QVERIFY(!scroll->geometry().intersects(addGeometry));
+  scroll->horizontalScrollBar()->setValue(scroll->horizontalScrollBar()->maximum());
+  QCOMPARE(start->geometry(), startGeometry);
+  QCOMPARE(end->geometry(), endGeometry);
+  QCOMPARE(add->geometry(), addGeometry);
+  QCOMPARE(button->mapTo(scroll->viewport(), button->rect().topRight()).x(),
+           scroll->viewport()->rect().right());
+
+  tabs.setTabText(0, QStringLiteral("Short"));
+  QCoreApplication::processEvents();
+  QVERIFY(more->isHidden());
+  QCOMPARE(scroll->horizontalScrollBar()->maximum(), 0);
+  const QRect centeredRect(button->mapTo(scroll->viewport(), QPoint()), button->size());
+  QVERIFY(std::abs(centeredRect.center().x() - scroll->viewport()->rect().center().x()) <= 1);
+  tabs.clear();
+  QCoreApplication::processEvents();
+  QCOMPARE(scroll->horizontalScrollBar()->maximum(), 0);
+  QVERIFY(more->isHidden());
+  QVERIFY(add->isVisible());
+  QVERIFY(tabs.findChildren<QAbstractButton*>(QStringLiteral("ad-tabs-item")).isEmpty());
+}
+
+void TabsTest::overflowPopupMatchesAntDesign_data() {
+  QTest::addColumn<bool>("dark");
+  QTest::addColumn<Qt::LayoutDirection>("direction");
+  QTest::newRow("light-ltr") << false << Qt::LeftToRight;
+  QTest::newRow("dark-ltr") << true << Qt::LeftToRight;
+  QTest::newRow("light-rtl") << false << Qt::RightToLeft;
+  QTest::newRow("dark-rtl") << true << Qt::RightToLeft;
+}
+
+void TabsTest::overflowPopupMatchesAntDesign() {
+  QFETCH(bool, dark);
+  QFETCH(Qt::LayoutDirection, direction);
+  auto& manager = adqt::theme::ThemeManager::instance();
+  const auto original = manager.config();
+  struct RestoreTheme {
+    adqt::theme::ThemeConfig config;
+    ~RestoreTheme() { adqt::theme::ThemeManager::instance().setConfig(config); }
+  } restore{original};
+  manager.setPreset(dark ? adqt::theme::ThemeScheme::Dark : adqt::theme::ThemeScheme::Light,
+                    adqt::theme::ThemeDensity::Comfortable);
+  AdTabs tabs;
+  tabs.setAnimated(false);
+  tabs.setLayoutDirection(direction);
+  tabs.setType(AdTabs::Type::EditableCard);
+  for (int i = 0; i < 12; ++i) {
+    tabs.addTab(QString::number(i), i == 0 ? QStringLiteral("Configuration")
+                                           : QStringLiteral("Data storage %1").arg(i));
+  }
+  tabs.setTabEnabled(2, false);
+  tabs.resize(240, 200);
+  tabs.show();
+  QVERIFY(QTest::qWaitForWindowExposed(&tabs));
+  auto* more = operationButton(&tabs, QStringLiteral("More tabs"));
+  QVERIFY(more);
+  more->setFocus(Qt::TabFocusReason);
+  QTest::keyClick(more, Qt::Key_Down);
+  auto* popup = tabs.findChild<adqt::widgets::AdPopover*>(QStringLiteral("ad-tabs-overflow-popup"));
+  QVERIFY(popup);
+  QTRY_VERIFY(popup->isVisible());
+  auto* list = qobject_cast<QListWidget*>(popup->contentWidget());
+  QVERIFY(list);
+  const auto theme = manager.resolveTheme(&tabs);
+  QVERIFY(!popup->arrowVisible());
+  QCOMPARE(popup->borderWidth(), 0);
+  QCOMPARE(popup->cornerRadius(), qRound(theme.borderRadiusLG));
+  QCOMPARE(popup->contentMargins(), QMargins(0, qRound(theme.sizeXXS), 0, qRound(theme.sizeXXS)));
+  QCOMPARE(list->visualItemRect(list->item(0)).height(),
+           qRound(theme.fontHeight + theme.sizeXXS * 2));
+  QVERIFY(list->height() + popup->contentMargins().top() * 2 <= 200);
+  QVERIFY(list->verticalScrollBar()->maximum() > 0);
+  QCOMPARE(list->currentRow(), -1);
+  const int originalIndex = tabs.currentIndex();
+  QTest::keyClick(more, Qt::Key_Down);
+  QVERIFY(list->currentRow() >= 0);
+  QVERIFY(list->currentItem()->flags().testFlag(Qt::ItemIsEnabled));
+  QCOMPARE(tabs.currentIndex(), originalIndex);
+
+  const QString snapshotDirectory = qEnvironmentVariable("ADQT_TABS_SNAPSHOT_DIR");
+  if (!snapshotDirectory.isEmpty()) {
+    QDir().mkpath(snapshotDirectory);
+    QCoreApplication::processEvents();
+    QVERIFY(popup->surfaceWidget()->grab().save(
+        QDir(snapshotDirectory)
+            .filePath(QStringLiteral("tabs-overflow-%1-%2.png")
+                          .arg(dark ? "dark" : "light")
+                          .arg(direction == Qt::RightToLeft ? "rtl" : "ltr"))));
+  }
+  QSignalSpy closeRequested(&tabs, &AdTabs::tabCloseRequested);
+  const QString closeKey = list->currentItem()->data(Qt::UserRole).toString();
+  QTest::keyClick(more, Qt::Key_Delete);
+  QCOMPARE(closeRequested.count(), 1);
+  QCOMPARE(closeRequested.at(0).at(0).toString(), closeKey);
+  QCOMPARE(tabs.currentIndex(), originalIndex);
+  QTest::keyClick(more, Qt::Key_Return);
+  QTRY_VERIFY(!popup->isVisible());
+  QCOMPARE(tabs.currentKey(), closeKey);
+  QTest::keyClick(more, Qt::Key_Down);
+  QTRY_VERIFY(popup->isVisible());
+  QTest::keyClick(more, Qt::Key_Escape);
+  QTRY_VERIFY(!popup->isVisible());
+}
+
+void TabsTest::overflowPopupHoverAndLiveUpdates() {
+  AdTabs tabs;
+  tabs.setAnimated(false);
+  tabs.addTab(QStringLiteral("config"), QStringLiteral("Configuration"));
+  tabs.addTab(QStringLiteral("storage"), QStringLiteral("Data storage"));
+  tabs.resize(96, 200);
+  tabs.show();
+  QVERIFY(QTest::qWaitForWindowExposed(&tabs));
+  auto* more = operationButton(&tabs, QStringLiteral("More tabs"));
+  auto* popup = tabs.findChild<adqt::widgets::AdPopover*>(QStringLiteral("ad-tabs-overflow-popup"));
+  QVERIFY(more);
+  QVERIFY(popup);
+  QTest::mouseMove(&tabs, QPoint(5, tabs.height() - 5));
+  QTest::mouseMove(more, more->rect().center());
+  QTRY_VERIFY(popup->isVisible());
+  auto* list = qobject_cast<QListWidget*>(popup->contentWidget());
+  QVERIFY(list);
+  QCOMPARE(list->count(), 2);
+  QCOMPARE(list->currentRow(), -1);
+  QTest::mouseMove(list->viewport(), list->visualItemRect(list->item(0)).center());
+  const QString directory = qEnvironmentVariable("ADQT_TABS_SNAPSHOT_DIR");
+  if (!directory.isEmpty()) {
+    QDir().mkpath(directory);
+    QVERIFY(
+        popup->surfaceWidget()->grab().save(QDir(directory).filePath("tabs-overflow-simple.png")));
+  }
+  QTest::mouseMove(&tabs, QPoint(5, tabs.height() - 5));
+  QTRY_VERIFY(!popup->isVisible());
+  QTest::mouseClick(more, Qt::LeftButton);
+  QTRY_VERIFY(popup->isVisible());
+  tabs.setTabText(1, QStringLiteral("Updated data storage"));
+  QTRY_COMPARE(list->item(1)->text(), QStringLiteral("Updated data storage"));
+  tabs.setTabEnabled(1, false);
+  QVERIFY(!list->item(1)->flags().testFlag(Qt::ItemIsEnabled));
+  tabs.resize(640, tabs.height());
+  QTRY_VERIFY(!popup->isVisible());
+  QVERIFY(more->isHidden());
+  QCOMPARE(list->count(), 0);
+}
+
+void TabsTest::overflowEdgesTrackScrollPosition() {
+  AdTabs tabs;
+  tabs.setAnimated(false);
+  for (int i = 0; i < 8; ++i) {
+    tabs.addTab(QString::number(i), QStringLiteral("Workspace %1").arg(i));
+  }
+  tabs.resize(320, 180);
+  tabs.show();
+  QVERIFY(QTest::qWaitForWindowExposed(&tabs));
+  auto* scroll = tabs.findChild<QScrollArea*>();
+  QVERIFY(scroll);
+  auto* edges = scroll->viewport()->findChild<QWidget*>(QStringLiteral("ad-tabs-scroll-edges"));
+  QVERIFY(edges);
+  QVERIFY(edges->testAttribute(Qt::WA_TransparentForMouseEvents));
+  const auto edgeAlpha = [edges](bool left) {
+    QImage image(edges->size(), QImage::Format_ARGB32_Premultiplied);
+    image.fill(Qt::transparent);
+    QPainter painter(&image);
+    edges->render(&painter, QPoint(), QRegion(), QWidget::DrawChildren);
+    return image.pixelColor(left ? 1 : image.width() - 2, image.height() / 2).alpha();
+  };
+  QCOMPARE(edgeAlpha(true), 0);
+  QVERIFY(edgeAlpha(false) > 0);
+  scroll->horizontalScrollBar()->setValue(scroll->horizontalScrollBar()->maximum());
+  QVERIFY(edgeAlpha(true) > 0);
+  QCOMPARE(edgeAlpha(false), 0);
+  tabs.setLayoutDirection(Qt::RightToLeft);
+  QCoreApplication::processEvents();
+  scroll->horizontalScrollBar()->setValue(0);
+  QVERIFY(edgeAlpha(true) > 0);
+  QCOMPARE(edgeAlpha(false), 0);
+  tabs.resize(tabs.sizeHint().width(), tabs.height());
+  QCoreApplication::processEvents();
+  QCOMPARE(edgeAlpha(true), 0);
+  QCOMPARE(edgeAlpha(false), 0);
 }
 
 void TabsTest::startPlacementFollowsLayoutDirection() {

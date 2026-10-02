@@ -307,6 +307,44 @@ makeTextSession(ControllableOcrRecognition& recognition, PromptRecorder& recorde
     return controller;
 }
 
+void smartTypesettingUsesRecognizedLayout() {
+    ControllableOcrRecognition recognition;
+    PromptRecorder recorder;
+    auto controller = makeTextSession(recognition, recorder);
+    auto presentation = std::make_shared<ScreenshotOcrPresentation>();
+    presentation->selection = QRect(0, 0, 400, 150);
+    presentation->lines = {
+        {QStringLiteral("This is trans-"), 1.0, {{0, 0}, {160, 0}, {160, 20}, {0, 20}}},
+        {QStringLiteral("lation continued!"), 1.0, {{0, 24}, {180, 24}, {180, 44}, {0, 44}}},
+        {QStringLiteral("Separate paragraph."), 1.0, {{0, 100}, {180, 100}, {180, 120}, {0, 120}}},
+    };
+    presentation->prepareForRendering();
+    ScreenshotRecognitionResults cached;
+    cached.key = QStringLiteral("session");
+    cached.text = ScreenshotOcrRecognitionResult{presentation};
+    controller->seedRecognitionResults(cached);
+    controller->activate(ScreenshotRecognitionSessionController::Mode::Text);
+    const QString original = controller->originalText();
+    controller->applyTextFormatting(QStringLiteral("smart"));
+    const QString expected = QStringLiteral("This is translation continued!\nSeparate paragraph.");
+    require(controller->editing() && controller->textDraft() == expected,
+            "Smart Typesetting enters editing and uses OCR geometry to merge paragraphs");
+    require(controller->originalText() == original && recognition.requests == 0,
+            "Smart Typesetting preserves original recognition without requesting OCR again");
+    controller->undoTextEdit();
+    require(controller->textDraft() == original, "Smart Typesetting is a single undo step");
+    controller->redoTextEdit();
+    require(controller->textDraft() == expected, "Smart Typesetting can be redone");
+    controller->applyTextFormatting(QStringLiteral("smart"));
+    controller->applyTextPunctuation(QStringLiteral("full"));
+    require(controller->textDraft() == QStringLiteral("This is translation continued") +
+                                           QChar(0xFF01) + QStringLiteral("\nSeparate paragraph") +
+                                           QChar(0xFF0E),
+            "punctuation conversion preserves smart paragraph layout");
+    controller->resetTextEditing();
+    require(controller->textDraft() == original, "reset restores original OCR line breaks");
+}
+
 void recognizedTextDefaultsApplyOnFirstEditAndOriginalCopy() {
     const snow_shot::storage::TextRecognitionSettings settings;
     const QString priorFormatting = settings.defaultFormatting();
@@ -1024,6 +1062,7 @@ int main(int argc, char** argv) {
         return 0;
     }
     if (application.arguments().contains(QStringLiteral("--ocr-defaults-only"))) {
+        smartTypesettingUsesRecognizedLayout();
         recognizedTextDefaultsApplyOnFirstEditAndOriginalCopy();
         snow_shot::storage::ApplicationStorage::instance().shutdown();
         return 0;
@@ -1043,6 +1082,7 @@ int main(int argc, char** argv) {
         snow_shot::storage::ApplicationStorage::instance().shutdown();
         return 0;
     }
+    smartTypesettingUsesRecognizedLayout();
     headlessWorkflowResultsAndEdits();
     originalImagePreviewFollowsTextSessionLifecycle();
     deactivationNotifiesOnlyOnStateTransition();

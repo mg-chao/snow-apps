@@ -160,6 +160,7 @@ pub fn editor_style_defaults() -> EditorStyleDefaults {
         serial_number: SerialNumberStyle {
             number: 1,
             serial_number_type: SerialNumberType::OutlinedCircle,
+            numeric_type: snow_draw_engine_document::SerialNumberNumericType::Arabic,
             color: stroke,
             fill: ColorRgba8::default(),
             fill_style: FillStyle::Solid,

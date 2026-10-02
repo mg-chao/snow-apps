@@ -282,6 +282,7 @@ QJsonObject serialNumberValue(const SnowCanvasSerialNumberStyle& style) {
     QJsonObject value;
     // The current number belongs to the editing session, not the saved appearance.
     putEnum(&value, QStringLiteral("type"), style.type);
+    putEnum(&value, QStringLiteral("numeric_type"), style.numericType);
     value.insert(QStringLiteral("color"), colorValue(style.color));
     value.insert(QStringLiteral("fill"), colorValue(style.fill));
     putEnum(&value, QStringLiteral("fill_style"), style.fillStyle);
@@ -296,6 +297,8 @@ QJsonObject serialNumberValue(const SnowCanvasSerialNumberStyle& style) {
 void readSerialNumberValue(const QJsonObject& object, SnowCanvasSerialNumberStyle* style) {
     if (style == nullptr)
         return;
+    readEnum(object, QStringLiteral("numeric_type"),
+             static_cast<int>(SnowCanvasSerialNumberNumericType::Chinese), &style->numericType);
     readEnum(object, QStringLiteral("type"), static_cast<int>(SnowCanvasSerialNumberType::Circle),
              &style->type);
     QColor color;

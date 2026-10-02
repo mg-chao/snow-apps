@@ -5,6 +5,7 @@
 #include "snow_canvas_viewport.h"
 #include "snow_draw_engine_qt/snow_canvas_runtime.h"
 #include "snow_draw_engine_qt/snow_canvas_types.h"
+#include "snow_draw_engine_qt/snow_canvas_style_edit.h"
 
 #include <cstdlib>
 #include <iostream>
@@ -167,6 +168,7 @@ void publicCanvasDtosUseExactCompleteEquality() {
     } while (false)
     REQUIRE_SERIAL_CHANGE(number, 2);
     REQUIRE_SERIAL_CHANGE(type, SnowCanvasSerialNumberType::SolidSquare);
+    REQUIRE_SERIAL_CHANGE(numericType, SnowCanvasSerialNumberNumericType::Roman);
     REQUIRE_SERIAL_CHANGE(color, QColor(Qt::cyan));
     REQUIRE_SERIAL_CHANGE(fill, QColor(Qt::magenta));
     REQUIRE_SERIAL_CHANGE(fillStyle, SnowCanvasFillStyle::CrossLine);
@@ -526,6 +528,23 @@ void watermarkConfigurationConversionsPreserveSnapshotsAndUtf8Boundaries() {
             "template application time must participate in C state diff detection");
 }
 
+void serialNumberStrokePatchesPreserveOtherProperties() {
+    const SnowCanvasSerialNumberStyle original;
+    auto requested = original;
+    requested.number = 27;
+    requested.numericType = SnowCanvasSerialNumberNumericType::Roman;
+    requested.strokeWidth = 4.0;
+    requested.strokeStyle = SnowCanvasStrokeStyle::Dashed;
+    auto actual = original;
+    auto expected = original;
+    expected.strokeWidth = requested.strokeWidth;
+    snowCanvasMergeStyle(actual, requested, SnowCanvasSerialNumberStyleMixedStrokeWidth);
+    require(actual == expected, "stroke width patches preserve all other serial properties");
+    expected.strokeStyle = requested.strokeStyle;
+    snowCanvasMergeStyle(actual, requested, SnowCanvasSerialNumberStyleMixedStrokeStyle);
+    require(actual == expected, "stroke style patches preserve all other serial properties");
+}
+
 void defaultRuntimeUsesGenericEngineDefaults() {
     SnowStyleDefaults expected{};
     require(snow_runtime_style_defaults_default(&expected) == SNOW_OK,
@@ -543,6 +562,7 @@ void defaultRuntimeUsesGenericEngineDefaults() {
 } // namespace
 
 int main() {
+    serialNumberStrokePatchesPreserveOtherProperties();
     filterStyleParticipatesInToolbarStateDiffs();
     publicCanvasDtosUseExactCompleteEquality();
     watermarkConfigurationConversionsPreserveSnapshotsAndUtf8Boundaries();

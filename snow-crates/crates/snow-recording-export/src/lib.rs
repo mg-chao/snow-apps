@@ -14,6 +14,7 @@ pub mod streaming;
 #[cfg(feature = "bench-timing")]
 pub mod bench_timing;
 
+mod animation;
 pub(crate) mod ffmpeg_util;
 #[cfg(any(test, feature = "bench-experiments"))]
 mod frame_converter;
@@ -45,3 +46,7 @@ pub use streaming::{
 mod videotoolbox;
 
 mod hdr;
+
+pub mod clip;
+pub(crate) mod decoder;
+pub mod playback;

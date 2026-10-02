@@ -7,6 +7,7 @@ import io
 from http.server import BaseHTTPRequestHandler, HTTPServer
 import json
 from pathlib import Path
+import subprocess
 import tempfile
 import threading
 import unittest
@@ -135,13 +136,14 @@ class PublisherTests(unittest.TestCase):
              patch.object(publisher, "existing_release", side_effect=lambda *args: remote if files else None), \
              patch.object(publisher, "post_form", side_effect=fake_post), \
              patch.object(publisher, "attachments", side_effect=lambda _, token="": list(files.values())), \
-             patch.object(publisher, "verify_attachment", side_effect=fake_verify):
+             patch.object(publisher, "verify_attachment", side_effect=fake_verify), \
+             patch.object(publisher, "prune_old_releases", side_effect=lambda *args: events.append("cleanup")):
             publisher.publish(self.release, assets, "test-token", "test-user")
             self.assertEqual(events, ["tag", "create", "package.zip", "verify:package.zip",
-                                      "latest-version.json", "verify:latest-version.json"])
+                                      "latest-version.json", "verify:latest-version.json", "cleanup"])
             events.clear()
             publisher.publish(self.release, assets, "test-token", "test-user")
-            self.assertEqual(events, ["tag", "verify:package.zip", "verify:latest-version.json"])
+            self.assertEqual(events, ["tag", "verify:package.zip", "verify:latest-version.json", "cleanup"])
             files.pop("package.zip")
             events.clear()
             with self.assertRaisesRegex(ValueError, "missing local assets"):
@@ -149,13 +151,120 @@ class PublisherTests(unittest.TestCase):
             self.assertEqual(events, ["verify:latest-version.json"])
             events.clear()
             publisher.publish(self.release, assets, "test-token", "test-user")
-            self.assertEqual(events, ["tag", "verify:latest-version.json", "package.zip", "verify:package.zip"])
+            self.assertEqual(events, ["tag", "verify:latest-version.json", "package.zip", "verify:package.zip", "cleanup"])
             files["latest-version.json"]["bytes"] = b"conflicting remote bytes"
             files.pop("package.zip")
             events.clear()
             with self.assertRaisesRegex(ValueError, "conflicting"):
                 publisher.publish(self.release, assets, "test-token", "test-user")
             self.assertEqual(events, ["tag"])
+
+    def test_semver_retention_preserves_current_newer_unrelated_and_draft_releases(self):
+        versions = ["alpha", "alpha.1", "alpha.beta", "beta", "beta.2", "beta.11", "rc.1"]
+        ordered = [f"v1.2.3-{preview}_snow-shot" for preview in versions] + [TAG]
+        self.assertEqual(sorted(ordered, key=publisher.release_version_key), ordered)
+        self.assertLess(publisher.release_version_key("v1.9.0_snow-shot"),
+                        publisher.release_version_key("v1.10.0_snow-shot"))
+        remote = [{"id": 1, "tag_name": "v1.2.2_snow-shot"},
+                  {"id": 2, "tag_name": "v1.2.3-beta.11_snow-shot"},
+                  {"id": 3, "tag_name": TAG},
+                  {"id": 4, "tag_name": "v1.10.0_snow-shot"},
+                  {"id": 5, "tag_name": "v1.0.0_other"},
+                  {"id": 6, "tag_name": "v1.2.1_snow-shot", "draft": True},
+                  {"id": 7, "tag_name": "v1.2.3-01_snow-shot"},
+                  {"id": 8, "tag_name": None}]
+        with patch.object(publisher, "release_listing", return_value=remote), \
+             patch.object(publisher, "delete_release") as delete, \
+             patch("sys.stdout", io.StringIO()):
+            self.assertEqual(publisher.prune_old_releases(TAG, "secret-token"), 2)
+        self.assertEqual([call.args for call in delete.call_args_list],
+                         [(1, "secret-token"), (2, "secret-token")])
+
+    def test_invalid_cleanup_plan_is_rejected_before_any_deletion(self):
+        old = {"id": 1, "tag_name": "v1.2.2_snow-shot"}
+        for remote in ([old, old], [old, {"id": False, "tag_name": "v1.2.1_snow-shot"}]):
+            with self.subTest(remote=remote), \
+                 patch.object(publisher, "release_listing", return_value=remote), \
+                 patch.object(publisher, "delete_release") as delete:
+                with self.assertRaises(ValueError):
+                    publisher.prune_old_releases(TAG, "secret-token")
+                delete.assert_not_called()
+
+    def test_delete_authentication_and_ambiguous_response_reconciliation(self):
+        error = subprocess.CalledProcessError(56, ["curl"])
+        with patch.object(publisher.subprocess, "check_output", side_effect=error) as request, \
+             patch.object(publisher, "api_json", return_value=None) as read:
+            publisher.delete_release(7, "secret-token")
+        request.assert_called_once()
+        self.assertNotIn("secret-token", str(request.call_args.args))
+        self.assertIn("access_token=secret-token", request.call_args.kwargs["input"])
+        self.assertEqual(read.call_args.args, (publisher.GITEE_API + "/7", "secret-token"))
+        with patch.object(publisher.subprocess, "check_output", side_effect=error) as request, \
+             patch.object(publisher, "api_json", return_value={"id": 7}):
+            with self.assertRaises(subprocess.CalledProcessError):
+                publisher.delete_release(7, "secret-token")
+        request.assert_called_once()
+
+    def test_transport_recognizes_only_explicit_attachment_quota_rejections(self):
+        error = subprocess.CalledProcessError(22, ["curl"],
+                                             output=json.dumps({"message": "仓库附件配额：1 GB"}))
+        with patch.object(publisher.subprocess, "check_output", side_effect=error):
+            with self.assertRaises(publisher.GiteeQuotaError):
+                publisher.post_form(publisher.GITEE_API, {}, "secret-token")
+        error.output = '{"message":"permission denied"}'
+        with patch.object(publisher.subprocess, "check_output", side_effect=error):
+            with self.assertRaises(subprocess.CalledProcessError):
+                publisher.post_form(publisher.GITEE_API, {}, "secret-token")
+
+    def test_quota_retry_reads_remote_state_prunes_then_retries_only_missing_upload(self):
+        for accepted in (False, True):
+            with self.subTest(accepted=accepted):
+                assets = publisher.local_assets(self.release)
+                remote = {"id": 7, "tag_name": TAG, "name": self.release["title"],
+                          "body": self.release["body"], "prerelease": False}
+                files = {}
+                events = []
+                attempts = []
+                def upload(url, fields, token, file=None):
+                    attempts.append(file.name)
+                    events.append("upload:" + file.name)
+                    if attempts == ["package.zip"]:
+                        if accepted:
+                            files[file.name] = {"name": file.name}
+                        raise publisher.GiteeQuotaError("quota")
+                    files[file.name] = {"name": file.name}
+                def cleanup(*args):
+                    events.append("cleanup")
+                    return 1
+                with patch.object(publisher, "sync_tag"), \
+                     patch.object(publisher, "existing_release", return_value=remote), \
+                     patch.object(publisher, "attachments", side_effect=lambda *args: list(files.values())), \
+                     patch.object(publisher, "post_form", side_effect=upload), \
+                     patch.object(publisher, "verify_attachment", side_effect=lambda file, tag, name, *args: events.append("verify:" + name)), \
+                     patch.object(publisher, "prune_old_releases", side_effect=cleanup):
+                    publisher.publish(self.release, assets, "test-token", "test-user")
+                if accepted:
+                    self.assertEqual(attempts, ["package.zip", "latest-version.json"])
+                    self.assertEqual(events.count("cleanup"), 1)
+                else:
+                    self.assertEqual(attempts, ["package.zip", "package.zip", "latest-version.json"])
+                    self.assertEqual(events[:3], ["upload:package.zip", "cleanup", "upload:package.zip"])
+                self.assertEqual(events[-2:], ["verify:latest-version.json", "cleanup"])
+
+    def test_failed_uploads_do_not_trigger_unrelated_or_repeated_cleanup(self):
+        remote = {"id": 7, "tag_name": TAG, "name": self.release["title"],
+                  "body": self.release["body"], "prerelease": False}
+        for error, quota in ((subprocess.CalledProcessError(22, ["curl"]), False),
+                             (publisher.GiteeQuotaError("quota"), True)):
+            with self.subTest(quota=quota), patch.object(publisher, "sync_tag"), \
+                 patch.object(publisher, "existing_release", return_value=remote), \
+                 patch.object(publisher, "attachments", return_value=[]), \
+                 patch.object(publisher, "post_form", side_effect=error) as upload, \
+                 patch.object(publisher, "prune_old_releases", return_value=0) as cleanup:
+                with self.assertRaises(type(error)):
+                    publisher.publish(self.release, publisher.local_assets(self.release), "token", "user")
+                upload.assert_called_once()
+                self.assertEqual(cleanup.call_count, int(quota))
 
     def paired_windows_release(self):
         self.release['assets'] = []

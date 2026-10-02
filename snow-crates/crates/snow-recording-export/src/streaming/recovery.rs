@@ -323,7 +323,7 @@ impl StreamingEncoder {
         self.seal_segment(false)?;
         if let Some(output) = self.audio_output.as_mut() {
             for audio in &mut self.audio {
-                audio.finish(output, &mut self.report, self.final_duration_ms)?;
+                audio.finish(output, &mut self.report, self.final_duration_us)?;
             }
             output.write_trailer().map_err(error)?;
         }
@@ -339,7 +339,7 @@ impl StreamingEncoder {
                 &state.config,
                 &normalized,
                 endpoint,
-                self.final_duration_ms,
+                self.final_duration_us.map(|us| us / 1000),
             )?;
             self.report.video_encoder = "libx264".into();
             self.report.used_hardware_video_encoder = false;
@@ -365,7 +365,7 @@ impl StreamingEncoder {
             video_start,
             endpoint,
             state.config.fps,
-            self.final_duration_ms,
+            self.final_duration_us.map(|us| us / 1000),
         )?;
         publish_unless_canceled(&assembled, &state.config.output_path, cancellation)?;
         Ok(())

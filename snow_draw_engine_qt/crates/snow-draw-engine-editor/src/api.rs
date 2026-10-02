@@ -324,6 +324,7 @@ pub const SERIAL_NUMBER_STYLE_MIXED_STROKE_WIDTH: u32 = 1 << 6;
 pub const SERIAL_NUMBER_STYLE_MIXED_STROKE_STYLE: u32 = 1 << 7;
 pub const SERIAL_NUMBER_STYLE_MIXED_OPACITY: u32 = 1 << 8;
 pub const SERIAL_NUMBER_STYLE_MIXED_TYPE: u32 = 1 << 9;
+pub const SERIAL_NUMBER_STYLE_MIXED_NUMERIC_TYPE: u32 = 1 << 10;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct HistoryState {

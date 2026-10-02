@@ -520,6 +520,7 @@ SnowCanvasSerialNumberStyle toCanvasSerialNumberStyle(const SnowSerialNumberStyl
     return SnowCanvasSerialNumberStyle{
         static_cast<qint64>(style.number),
         static_cast<SnowCanvasSerialNumberType>(style.serial_number_type),
+        static_cast<SnowCanvasSerialNumberNumericType>(style.numeric_type),
         toQColor(style.color),
         toQColor(style.fill),
         toCanvasFillStyle(style.fill_style),
@@ -536,6 +537,7 @@ SnowSerialNumberStyle toEngineSerialNumberStyle(const SnowCanvasSerialNumberStyl
     SnowSerialNumberStyle engineStyle{};
     engineStyle.number = static_cast<std::int64_t>(style.number);
     engineStyle.serial_number_type = static_cast<SnowSerialNumberType>(style.type);
+    engineStyle.numeric_type = static_cast<SnowSerialNumberNumericType>(style.numericType);
     engineStyle.color = toEngineColor(style.color);
     engineStyle.fill = toEngineColor(style.fill);
     engineStyle.fill_style = toEngineFillStyle(style.fillStyle);

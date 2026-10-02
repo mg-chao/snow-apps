@@ -322,6 +322,8 @@ pub(crate) fn snow_scene_display_item_from_rust(
             out.font_family_utf8_len = converted.font_family_utf8.len() as u32;
         }
         SceneDisplayItem::SerialNumber(item) => {
+            converted.text_utf8 = utf8_bytes(Some(&item.label));
+            out.text_utf8_len = converted.text_utf8.len() as u32;
             out.kind = SnowSceneDisplayItemKind::SerialNumber;
             out.element_id = SnowElementId {
                 index: item.id.index,
@@ -898,5 +900,21 @@ mod tests {
             false,
         );
         assert_eq!(item.view.has_bound_text_element, 0);
+    }
+    #[test]
+    fn serial_number_display_payload_owns_formatted_utf8() {
+        let label = "一百零一";
+        let source = SceneDisplayItem::SerialNumber(snow_draw_engine::SerialNumberDisplayItem {
+            label: label.to_owned(),
+            number: 101,
+            ..Default::default()
+        });
+        let item = snow_scene_display_item_from_rust(&source, false, false);
+        drop(source);
+        assert_eq!(item.view.text_utf8_len as usize, label.len());
+        let bytes =
+            unsafe { std::slice::from_raw_parts(item.view.text_utf8.cast::<u8>(), label.len()) };
+        assert_eq!(bytes, label.as_bytes());
+        assert_eq!(item.view.serial_number, 101);
     }
 }

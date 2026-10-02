@@ -244,6 +244,9 @@ void allStyleFamiliesPersistOnlyTheirPatch() {
     serial.color = Qt::cyan;
     verify(SnowCanvasTool::SerialNumber,
            SnowCanvasSerialNumberEdit{serial, SnowCanvasSerialNumberStyleMixedFontSize});
+    serial.numericType = SnowCanvasSerialNumberNumericType::Roman;
+    verify(SnowCanvasTool::SerialNumber,
+           SnowCanvasSerialNumberEdit{serial, SnowCanvasSerialNumberStyleMixedNumericType});
     auto filter = expected.rectangleFilter;
     filter.strength = 0.37;
     verify(SnowCanvasTool::RectangleFilter,

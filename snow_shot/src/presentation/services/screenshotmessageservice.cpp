@@ -73,6 +73,7 @@ void ScreenshotMessageService::loading(const QString& key, const QString& messag
     request.key = key;
     request.content = message;
     request.durationMs = 0;
+    request.hideWhenClipped = true;
     QWidget* owner = ownerFor(canvasRect, preferredOwner);
     rememberOwner(key, owner);
     showMessage(MessageKind::Loading, std::move(request), owner);
@@ -98,6 +99,7 @@ void ScreenshotMessageService::loadingFor(QWidget* owner, const QString& key,
     request.key = key;
     request.content = message;
     request.durationMs = 0;
+    request.hideWhenClipped = true;
     showMessage(MessageKind::Loading, std::move(request), owner);
 }
 

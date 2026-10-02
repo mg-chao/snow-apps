@@ -21,6 +21,7 @@ pub struct RecordedEffects {
     config: RenderConfig,
     source_size: (u32, u32),
     timeline: Option<FinalizedTimeline>,
+    playback_origin_ms: u64,
     cursor: Option<CursorFrameRecord>,
     shapes: HashMap<u64, Arc<CursorShapeRecord>>,
     shape_order: VecDeque<u64>,
@@ -103,6 +104,7 @@ impl RecordedEffects {
             config,
             source_size,
             timeline: None,
+            playback_origin_ms: 0,
             cursor: None,
             shapes: HashMap::new(),
             shape_order: VecDeque::new(),
@@ -119,6 +121,12 @@ impl RecordedEffects {
 
     pub fn with_timeline(mut self, timeline: FinalizedTimeline) -> Self {
         self.timeline = Some(timeline);
+        self
+    }
+
+    /// Input observations stay on the source clock; the playback badge uses clip time.
+    pub fn with_playback_origin(mut self, origin_ms: u64) -> Self {
+        self.playback_origin_ms = origin_ms;
         self
     }
 
@@ -266,7 +274,12 @@ impl RecordedEffects {
             draw_cursor_to(surface, cursor, shape, self.source_size)?;
         }
         self.input_effects.draw_keyboard_to(surface, now)?;
-        self.playback.draw_to(surface, frame, self.timeline)?;
+        let playback_frame = RenderFrame {
+            timestamp_ms: frame.timestamp_ms.saturating_sub(self.playback_origin_ms),
+            ..frame
+        };
+        self.playback
+            .draw_to(surface, playback_frame, self.timeline)?;
         Ok(())
     }
 
@@ -789,6 +802,23 @@ mod tests {
             .unwrap();
         assert_eq!(effects.playback_caption(), "0:00:01 / 1:00:00");
         assert_ne!(output, pixels());
+    }
+    #[test]
+    fn trimmed_time_badge_uses_a_rebased_clock_and_trimmed_total() {
+        let policy = config(PlaybackOverlay::PlaybackTime { rgba: [255; 4] });
+        let mut effects =
+            RecordedEffects::new_with_rasterizers(policy, (120, 100), None, Some(Box::new(Glyph)))
+                .unwrap()
+                .with_timeline(FinalizedTimeline::new(3000, 30).unwrap())
+                .with_playback_origin(5000);
+        effects
+            .apply_rgba(&mut pixels(), frame(0, 5000, 0.0))
+            .unwrap();
+        assert_eq!(effects.playback_caption(), "00:00 / 00:03");
+        effects
+            .apply_rgba(&mut pixels(), frame(30, 6000, 0.5))
+            .unwrap();
+        assert_eq!(effects.playback_caption(), "00:01 / 00:03");
     }
     #[test]
     fn top_badge_preserves_keycap_layout_and_fixed_insets_clip_tiny_frames() {
