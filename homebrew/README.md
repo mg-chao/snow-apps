@@ -9,6 +9,12 @@ brew upgrade --cask snow-shot
 brew uninstall --cask snow-shot
 ```
 
+If Homebrew reports that `Casks/snow-shot.rb` is missing and offers only
+`snow-shot@beta`, run `brew update` and retry the stable install. This means
+the local tap checkout has not received the published stable cask. See the
+[macOS Homebrew troubleshooting steps](https://github.com/mg-chao/snow-apps/blob/main/docs-macos-build.md#homebrew-installation)
+if it is still missing after the update.
+
 Beta releases use a separate cask:
 
 ```sh

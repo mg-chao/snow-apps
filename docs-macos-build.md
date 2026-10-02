@@ -62,6 +62,27 @@ the signing identity are retained. Each release needs its versioned DMG and a
 GitHub SHA-256 digest or matching `.sha256` asset. When both are present, both
 must match; the workflow packages only verified release assets.
 
+If Homebrew says `Casks/snow-shot.rb` does not exist and suggests only
+`snow-shot@beta`, its local tap checkout has not received the stable cask yet.
+Refresh the tap before retrying:
+
+```sh
+brew update
+brew info --cask mg-chao/tap/snow-shot
+brew install --cask mg-chao/tap/snow-shot
+```
+
+Homebrew may defer automatic updates, and `HOMEBREW_NO_AUTO_UPDATE` disables
+them. If the stable cask is still missing after `brew update`, inspect the tap
+checkout and its remote before changing or removing it:
+
+```sh
+tap_dir="$(brew --repository mg-chao/tap)"
+git -C "$tap_dir" status --short --branch
+git -C "$tap_dir" remote -v
+ls "$tap_dir/Casks/snow-shot.rb"
+```
+
 Finish recordings and quit Snow Shot before upgrading or uninstalling. Homebrew
 owns the final application placement and removal; the cask's preflight verifies
 and locally signs a staged copy. The archive includes the DMG, its checksum, and

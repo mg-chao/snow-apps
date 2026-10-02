@@ -35,8 +35,7 @@ data locations, and maintainer setup.
 
 ## Install Snow Shot on macOS
 
-After the first stable Homebrew release is published, Apple Silicon Macs running
-macOS 15 or later can install with:
+Apple Silicon Macs running macOS 15 or later can install the stable release with:
 
 ```sh
 brew update
