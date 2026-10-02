@@ -82,7 +82,7 @@ ScreenshotOverlayInputHandler::effectHandleAt(const ScreenshotOverlayWindow* ove
     const auto layout = effectLayout(overlay);
     if (!layout.available || m_context.interaction.dragging())
         return ScreenshotSelectionEffectHandle::None;
-    if (QLineF(localPosition, layout.shadow).length() <= 8)
+    if (QLineF(localPosition, layout.shadow).length() <= kScreenshotSelectionShadowControlHitRadius)
         return ScreenshotSelectionEffectHandle::Shadow;
     const auto hovered = m_context.interaction.hoveredEffectHandle();
     if (screenshotSelectionRadiusHandle(hovered) &&
@@ -102,7 +102,8 @@ bool ScreenshotOverlayInputHandler::updateEffectHover(ScreenshotOverlayWindow* o
             handle = previous;
         else
             handle = layout.nearestCorner(localPosition, 18);
-        if (QLineF(localPosition, layout.shadow).length() <= 8)
+        if (QLineF(localPosition, layout.shadow).length() <=
+            kScreenshotSelectionShadowControlHitRadius)
             handle = ScreenshotSelectionEffectHandle::Shadow;
     }
     if (m_context.interaction.hoveredEffectHandle() != handle) {
@@ -130,7 +131,7 @@ bool ScreenshotOverlayInputHandler::beginEffectDrag(ScreenshotOverlayWindow* ove
     auto* selection = &m_context.selection;
     if (!m_context.interaction.beginEffectDrag(
             {handle, virtualPositionForOverlay(overlay, localPosition), original,
-             layout.maximumRadius, layout.radiusPerCanvasUnit,
+             layout.maximumRadius, layout.radiusPerCanvasUnit, layout.shadowDragDirection,
              [this, selection, handle, original, grab] {
                  m_consumeEffectRelease = true;
                  m_effectMouseGrab.clear();
@@ -162,7 +163,7 @@ void ScreenshotOverlayInputHandler::updateEffectDrag(const QPointF& canvasPositi
     int value = gesture.originalValue;
     if (gesture.handle == ScreenshotSelectionEffectHandle::Shadow) {
         value = qRound(std::clamp(
-            value + delta.x(), 0.0,
+            value + delta.x() * gesture.shadowDragDirection, 0.0,
             static_cast<qreal>(snow_shot::presentation::kScreenshotSelectionShadowWidthMax)));
     } else if (!delta.isNull()) {
         const auto direction = screenshotSelectionRadiusInwardDirection(gesture.handle);

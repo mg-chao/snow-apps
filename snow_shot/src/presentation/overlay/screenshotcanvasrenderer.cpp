@@ -227,9 +227,10 @@ QRegion selectionEffectEditorRegion(const ScreenshotSelectionVisualState& state,
                                                         canvasToView, viewportRect);
     if (!layout.available)
         return {};
+    const qreal shadowPadding = 9.0 * kScreenshotSelectionShadowControlScale;
     QRegion damage(QRectF(layout.shadowAnchor, layout.shadow)
                        .normalized()
-                       .adjusted(-9, -9, 9, 9)
+                       .adjusted(-shadowPadding, -shadowPadding, shadowPadding, shadowPadding)
                        .toAlignedRect());
     const auto handle = screenshotSelectionRadiusHandle(state.activeEffectHandle)
                             ? state.activeEffectHandle
@@ -1989,16 +1990,18 @@ void ScreenshotCanvasRenderer::renderAfterCanvas(QPainter& painter,
                         ScreenshotSelectionEffectHandle::Shadow &&
                     m_selectionState.activeEffectHandle != ScreenshotSelectionEffectHandle::Shadow)
                     painter.setOpacity(painter.opacity() * 0.5);
-                painter.setPen(QPen(selectionAccent, 1.5));
+                painter.setPen(QPen(selectionAccent, 1.5 * kScreenshotSelectionShadowControlScale));
                 painter.drawLine(layout.shadowAnchor, layout.shadow);
+                painter.translate(layout.shadow);
+                painter.scale(kScreenshotSelectionShadowControlScale,
+                              kScreenshotSelectionShadowControlScale);
                 painter.setPen(QPen(Qt::white, 1.5));
                 painter.setBrush(selectionAccent);
-                painter.drawRoundedRect(QRectF(layout.shadow - QPointF(6, 6), QSizeF(12, 12)), 3,
-                                        3);
+                painter.drawRoundedRect(QRectF(-6, -6, 12, 12), 3, 3);
                 painter.setPen(QPen(Qt::white, 1));
                 painter.setBrush(Qt::NoBrush);
-                painter.drawRoundedRect(QRectF(layout.shadow - QPointF(2, 1), QSizeF(5, 4)), 1, 1);
-                painter.drawRoundedRect(QRectF(layout.shadow - QPointF(3, 3), QSizeF(5, 4)), 1, 1);
+                painter.drawRoundedRect(QRectF(-2, -1, 5, 4), 1, 1);
+                painter.drawRoundedRect(QRectF(-3, -3, 5, 4), 1, 1);
                 painter.restore();
                 const auto handle =
                     screenshotSelectionRadiusHandle(m_selectionState.activeEffectHandle)

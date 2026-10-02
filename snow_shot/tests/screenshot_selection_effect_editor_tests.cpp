@@ -236,7 +236,7 @@ void hoverHysteresisLimitsAndTinySelections() {
 void shadowDraggingCancellationAndPointerOwnership() {
     Fixture f;
     const QPointF point = f.layout().shadow;
-    require(point == QPointF(266, 125), "shadow editor stays 16 pixels beside the right midpoint");
+    require(point == QPointF(274, 125), "shadow editor stays 24 pixels beside the right midpoint");
     f.mouse(QEvent::MouseButtonPress, point, Qt::LeftButton, Qt::LeftButton);
     require(f.input->effectDragActive(), "native overlay dispatch must begin shadow editing");
     f.mouse(QEvent::MouseMove, point + QPointF(20, 45), Qt::NoButton, Qt::LeftButton);
@@ -296,7 +296,7 @@ void geometryAndCursorsRespectDisplayScale() {
         const auto layout = screenshotSelectionEffectLayout(QRectF(0, 0, 200, 150), 0, transform,
                                                             QRectF(0, 0, 500, 500));
         require(layout.available && layout.corners[0] == QPointF(12, 12) &&
-                    layout.shadow.x() == 200 * scale + 16,
+                    layout.shadow.x() == 200 * scale + 24,
                 "handle size and spacing must stay in viewport pixels across display scales");
         const auto cursor = snowCanvasCornerRadiusCursor(scale);
         require(cursor.shape() == Qt::BitmapCursor && cursor.hotSpot() == QPoint(3, 3) &&
@@ -323,7 +323,7 @@ void geometryAndCursorsRespectDisplayScale() {
     }
     const auto edge = screenshotSelectionEffectLayout(QRectF(200, 50, 200, 150), 0, QTransform(),
                                                       QRectF(0, 0, 400, 300));
-    require(edge.shadow == QPointF(184, 125) && edge.shadowAnchor == QPointF(200, 125),
+    require(edge.shadow == QPointF(176, 125) && edge.shadowAnchor == QPointF(200, 125),
             "screen-edge handle must move outside the left border when it fits");
     for (const qreal scale : {0.5, 1.0, 1.25, 1.5, 2.0}) {
         QTransform transform;
@@ -332,25 +332,25 @@ void geometryAndCursorsRespectDisplayScale() {
         const QRectF viewport(100, 20, 400 * scale, 300 * scale);
         const auto right =
             screenshotSelectionEffectLayout(QRectF(200, 50, 200, 150), 0, transform, viewport);
-        require(right.shadow == QPointF(100 + 200 * scale - 16, 20 + 125 * scale) &&
+        require(right.shadow == QPointF(100 + 200 * scale - 24, 20 + 125 * scale) &&
                     right.shadowAnchor == QPointF(100 + 200 * scale, 20 + 125 * scale),
                 "left placement must keep logical spacing and attach to the left midpoint");
     }
     const auto noSpace = screenshotSelectionEffectLayout(QRectF(0, 50, 400, 150), 0, QTransform(),
                                                          QRectF(0, 0, 400, 300));
-    require(noSpace.shadow == QPointF(384, 125) && noSpace.shadowAnchor == QPointF(400, 125),
+    require(noSpace.shadow == QPointF(376, 125) && noSpace.shadowAnchor == QPointF(400, 125),
             "handle must remain inside the right border when neither outside edge fits");
-    const auto leftFits = screenshotSelectionEffectLayout(QRectF(24, 50, 376, 150), 0, QTransform(),
+    const auto leftFits = screenshotSelectionEffectLayout(QRectF(36, 50, 364, 150), 0, QTransform(),
                                                           QRectF(0, 0, 400, 300));
-    require(leftFits.shadow == QPointF(8, 125) && leftFits.shadowAnchor == QPointF(24, 125),
+    require(leftFits.shadow == QPointF(12, 125) && leftFits.shadowAnchor == QPointF(36, 125),
             "left placement must allow exactly enough room for the complete hit area");
-    const auto leftClipped = screenshotSelectionEffectLayout(QRectF(23, 50, 377, 150), 0,
+    const auto leftClipped = screenshotSelectionEffectLayout(QRectF(35, 50, 365, 150), 0,
                                                              QTransform(), QRectF(0, 0, 400, 300));
-    require(leftClipped.shadow == QPointF(384, 125),
+    require(leftClipped.shadow == QPointF(376, 125),
             "left placement must not clip the hit area at the viewport edge");
-    const auto rightFits = screenshotSelectionEffectLayout(QRectF(50, 50, 326, 150), 0,
+    const auto rightFits = screenshotSelectionEffectLayout(QRectF(50, 50, 314, 150), 0,
                                                            QTransform(), QRectF(0, 0, 400, 300));
-    require(rightFits.shadow == QPointF(392, 125),
+    require(rightFits.shadow == QPointF(388, 125),
             "right placement remains preferred when its complete hit area fits");
 }
 
@@ -366,14 +366,75 @@ void leftShadowHandleSupportsHoverAndDragging() {
             "left shadow control must support hover and preview");
     f.mouse(QEvent::MouseButtonPress, point, Qt::LeftButton, Qt::LeftButton);
     require(f.input->effectDragActive(), "left shadow control must own the pointer gesture");
-    f.mouse(QEvent::MouseMove, point + QPointF(20, 45), Qt::NoButton, Qt::LeftButton);
-    require(f.selection.shadowWidth() == 20 && f.selection.normalizedSelection() == bounds &&
-                f.layout().shadow == point,
-            "left placement must preserve horizontal drag behavior and selection geometry");
-    f.mouse(QEvent::MouseButtonRelease, point + QPointF(20, 45), Qt::LeftButton, Qt::NoButton);
+    f.mouse(QEvent::MouseMove, point + QPointF(-20, 45), Qt::NoButton, Qt::LeftButton);
+    require(f.selection.shadowWidth() == 20 && f.toolbarShadow == 20 && f.writes == 0 &&
+                f.selection.normalizedSelection() == bounds && f.layout().shadow == point,
+            "leftward dragging of the left control must increase shadow width without resizing");
+    f.mouse(QEvent::MouseMove, point + QPointF(-8, -45), Qt::NoButton, Qt::LeftButton);
+    require(f.selection.shadowWidth() == 8,
+            "moving the left control rightward must reduce the preview from the original width");
+    f.mouse(QEvent::MouseMove, point + QPointF(-1000, 0), Qt::NoButton, Qt::LeftButton);
+    require(f.selection.shadowWidth() == 64, "leftward shadow dragging must clamp to its maximum");
+    f.mouse(QEvent::MouseMove, point + QPointF(1000, 0), Qt::NoButton, Qt::LeftButton);
+    require(f.selection.shadowWidth() == 0, "rightward shadow dragging must clamp to zero");
+    f.mouse(QEvent::MouseMove, point + QPointF(0, 45), Qt::NoButton, Qt::LeftButton);
+    require(f.selection.shadowWidth() == 0, "vertical dragging must leave shadow width unchanged");
+    f.mouse(QEvent::MouseButtonRelease, point + QPointF(-20, 45), Qt::LeftButton, Qt::NoButton);
     require(!f.input->effectDragActive() && f.writes == 1 && f.settings.shadowWidth() == 20 &&
                 f.interaction.hoveredEffectHandle() == Handle::None,
             "release away from the left control must commit and return it to idle");
+
+    f.mouse(QEvent::MouseButtonPress, point, Qt::LeftButton, Qt::LeftButton);
+    f.mouse(QEvent::MouseMove, point + QPointF(-12, 0), Qt::NoButton, Qt::LeftButton);
+    require(f.selection.shadowWidth() == 32,
+            "a later left drag must start from the committed width");
+    require(f.input->cancelEffectDrag() && f.selection.shadowWidth() == 20 && f.writes == 1 &&
+                f.settings.shadowWidth() == 20 && f.selection.normalizedSelection() == bounds,
+            "cancelling a left shadow drag must restore the original width without persistence");
+    f.mouse(QEvent::MouseButtonRelease, point + QPointF(-12, 0), Qt::LeftButton, Qt::NoButton);
+}
+
+void insetRightShadowHandleKeepsRightwardDragging() {
+    Fixture f;
+    f.selection.setSelectionRect(QRectF(0, 50, 400, 150));
+    f.refresh();
+    const auto bounds = f.selection.normalizedSelection();
+    const auto layout = f.layout();
+    require(layout.shadow == QPointF(376, 125) && layout.shadowAnchor == QPointF(400, 125),
+            "full-width selection must place the control inside its right border");
+    f.mouse(QEvent::MouseButtonPress, layout.shadow, Qt::LeftButton, Qt::LeftButton);
+    require(f.input->effectDragActive(), "inset right control must own the pointer gesture");
+    f.mouse(QEvent::MouseMove, layout.shadow + QPointF(10, 45), Qt::NoButton, Qt::LeftButton);
+    require(f.selection.shadowWidth() == 10 && f.selection.normalizedSelection() == bounds,
+            "rightward dragging must increase shadow width even when the right control is inset");
+    f.mouse(QEvent::MouseButtonRelease, layout.shadow + QPointF(10, 45), Qt::LeftButton,
+            Qt::NoButton);
+    require(!f.input->effectDragActive() && f.writes == 1 && f.settings.shadowWidth() == 10,
+            "inset right shadow drag must commit its preview");
+}
+
+void enlargedShadowHandleMatchesItsHitArea() {
+    for (const QRectF& bounds :
+         {QRectF(50, 50, 200, 150), QRectF(200, 50, 200, 150), QRectF(0, 50, 400, 150)}) {
+        Fixture f;
+        f.selection.setSelectionRect(bounds);
+        f.refresh();
+        const auto point = f.layout().shadow;
+        f.mouse(QEvent::MouseMove, point + QPointF(10, 0), Qt::NoButton, Qt::NoButton);
+        require(f.interaction.hoveredEffectHandle() == Handle::Shadow,
+                "the enlarged shadow hit area must reveal its hover state");
+        f.mouse(QEvent::MouseMove, point + QPointF(13, 0), Qt::NoButton, Qt::NoButton);
+        require(f.interaction.hoveredEffectHandle() == Handle::None,
+                "leaving the enlarged shadow hit area must clear hover");
+        const auto corner = point + QPointF(7, 7);
+        f.mouse(QEvent::MouseButtonPress, corner, Qt::LeftButton, Qt::LeftButton);
+        require(f.input->effectDragActive(),
+                "the newly enlarged button corners must begin shadow editing");
+        f.mouse(QEvent::MouseButtonRelease, corner, Qt::LeftButton, Qt::NoButton);
+        require(!f.input->effectDragActive() && f.writes == 0 &&
+                    f.selection.normalizedSelection() == bounds,
+                "clicking the enlarged shadow button must preserve selection geometry");
+    }
 }
 
 void escapeCancelsBeforeCaptureAndResizeRemainsSeparate() {
@@ -499,8 +560,13 @@ void shadowControlOpacityTracksHoverAndDragging() {
             require(capture() == idle, "ending shadow interaction must restore idle opacity");
             const auto layout = screenshotSelectionEffectLayout(
                 bounds, 0, canvas.canvasToViewTransform(), canvas.rect());
+            const QPoint enlargedEdge(qFloor((layout.shadow.x() + 8) * dpr),
+                                      qFloor((layout.shadow.y() + 2) * dpr));
+            require(idle.pixelColor(enlargedEdge) != withoutControl.pixelColor(enlargedEdge) &&
+                        idle.pixelColor(enlargedEdge) != hovered.pixelColor(enlargedEdge),
+                    "the enlarged shadow button edge must remain visible and translucent");
             for (const QPointF& point :
-                 {layout.shadow + QPointF(4, 2), (layout.shadowAnchor + layout.shadow) / 2}) {
+                 {layout.shadow + QPointF(6, 3), (layout.shadowAnchor + layout.shadow) / 2}) {
                 const QPoint pixel(qFloor(point.x() * dpr), qFloor(point.y() * dpr));
                 const auto base = withoutControl.pixelColor(pixel);
                 const auto faded = idle.pixelColor(pixel);
@@ -630,6 +696,8 @@ void runScreenshotSelectionEffectEditorTests() {
     shadowDraggingCancellationAndPointerOwnership();
     geometryAndCursorsRespectDisplayScale();
     leftShadowHandleSupportsHoverAndDragging();
+    insetRightShadowHandleKeepsRightwardDragging();
+    enlargedShadowHandleMatchesItsHitArea();
     escapeCancelsBeforeCaptureAndResizeRemainsSeparate();
     aspectRatioSnappingAndEffectEditingPreserveEachOther();
     shadowControlOpacityTracksHoverAndDragging();

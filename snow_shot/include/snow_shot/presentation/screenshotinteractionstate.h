@@ -57,6 +57,7 @@ class ScreenshotInteractionState final {
         int originalValue = 0;
         qreal maximumRadius = 0;
         qreal radiusPerCanvasUnit = 0;
+        qreal shadowDragDirection = 1.0;
         std::function<void()> rollback;
     };
 

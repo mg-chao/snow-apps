@@ -11,6 +11,10 @@
 #include <array>
 #include <cmath>
 
+inline constexpr qreal kScreenshotSelectionShadowControlScale = 1.5;
+inline constexpr qreal kScreenshotSelectionShadowControlHitRadius =
+    8.0 * kScreenshotSelectionShadowControlScale;
+
 enum class ScreenshotSelectionEffectHandle {
     None,
     TopLeft,
@@ -30,6 +34,7 @@ struct ScreenshotSelectionEffectLayout {
     std::array<QPointF, 4> corners;
     QPointF shadow;
     QPointF shadowAnchor;
+    qreal shadowDragDirection = 1.0;
     qreal maximumRadius = 0.0;
     qreal radiusPerCanvasUnit = 0.0;
 
@@ -75,15 +80,19 @@ screenshotSelectionEffectLayout(const QRectF& selection, int radius, const QTran
     const qreal scale = std::min(std::hypot(canvasToView.m11(), canvasToView.m12()),
                                  std::hypot(canvasToView.m21(), canvasToView.m22()));
     layout.radiusPerCanvasUnit = layout.maximumRadius * scale / (maximumInset - minimumInset);
+    const qreal shadowOffset = 16.0 * kScreenshotSelectionShadowControlScale;
     layout.shadowAnchor = QPointF(view.right(), view.center().y());
-    layout.shadow = layout.shadowAnchor + QPointF(16, 0);
-    if (!viewport.isEmpty() && layout.shadow.x() + 8 > viewport.right()) {
-        const QPointF leftShadow(view.left() - 16, view.center().y());
-        if (leftShadow.x() - 8 >= viewport.left() && leftShadow.x() + 8 <= viewport.right()) {
+    layout.shadow = layout.shadowAnchor + QPointF(shadowOffset, 0);
+    if (!viewport.isEmpty() &&
+        layout.shadow.x() + kScreenshotSelectionShadowControlHitRadius > viewport.right()) {
+        const QPointF leftShadow(view.left() - shadowOffset, view.center().y());
+        if (leftShadow.x() - kScreenshotSelectionShadowControlHitRadius >= viewport.left() &&
+            leftShadow.x() + kScreenshotSelectionShadowControlHitRadius <= viewport.right()) {
             layout.shadowAnchor = QPointF(view.left(), view.center().y());
             layout.shadow = leftShadow;
+            layout.shadowDragDirection = -1.0;
         } else {
-            layout.shadow.rx() = view.right() - 16;
+            layout.shadow.rx() = view.right() - shadowOffset;
         }
     }
     // A clipped/multi-display selection must never move its control to an unrelated viewport.
