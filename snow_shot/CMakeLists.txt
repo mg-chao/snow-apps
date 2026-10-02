@@ -6991,6 +6991,42 @@ if(SNOW_SHOT_BUILD_TESTS)
         ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
 endif()
 
+if(SNOW_SHOT_BUILD_BENCHMARKS)
+    # This executable deliberately is not registered with CTest. It creates a
+    # native widget and reports hardware-sensitive timing for explicit
+    # Release performance sessions on Windows and macOS.
+    add_executable(snow-shot-selection-render-benchmark
+        tests/screenshot_selection_render_benchmark.cpp
+        include/snow_shot/presentation/screenshotcanvasrenderer.h
+        include/snow_shot/presentation/screenshotselectionshadowrenderer.h
+        src/presentation/ocr/screenshotocrpresentation.cpp
+        src/presentation/ocr/screenshotocrtextlayout.cpp
+        src/presentation/ocr/screenshotocrtexttransform.cpp
+        src/presentation/ocr/screenshottabledocument.cpp
+        src/presentation/overlay/screenshotcanvasrenderer.cpp
+        src/presentation/overlay/screenshotimagerendering.cpp
+        src/presentation/overlay/screenshotselectionshadowrenderer.cpp
+    )
+    target_compile_definitions(snow-shot-selection-render-benchmark PRIVATE
+        NOMINMAX
+        SNOW_SHOT_BENCH_INTERNALS=1
+    )
+    target_include_directories(snow-shot-selection-render-benchmark PRIVATE
+        "${CMAKE_CURRENT_SOURCE_DIR}/include"
+        "${SNOW_SHOT_DRAW_ENGINE_QT_DIR}/src/rendering"
+        "${SNOW_SHOT_DRAW_ENGINE_QT_DIR}/crates/snow-draw-engine-c/include"
+    )
+    target_link_libraries(snow-shot-selection-render-benchmark PRIVATE
+        Qt6::Widgets
+        ant_design_qt
+        snow_draw_engine_qt_canvas
+    )
+    if(WIN32)
+        target_link_libraries(snow-shot-selection-render-benchmark PRIVATE dwmapi user32)
+    endif()
+    snow_shot_import_offscreen_platform(snow-shot-selection-render-benchmark)
+endif()
+
 if(WIN32 AND SNOW_SHOT_BUILD_BENCHMARKS)
     add_executable(snow-shot-selection-toolbar-performance-benchmark
         tests/screenshot_selection_toolbar_performance_benchmark.cpp
@@ -7016,36 +7052,6 @@ if(WIN32 AND SNOW_SHOT_BUILD_BENCHMARKS)
         tests/screenshot_decoration_area_benchmark.cpp)
     target_link_libraries(snow-shot-decoration-area-benchmark PRIVATE
         Qt6::Widgets snow_draw_engine_qt_canvas)
-
-    # This executable deliberately is not registered with CTest. It creates a
-    # native 4K widget and reports hardware-sensitive timing for explicit
-    # Windows performance sessions.
-    add_executable(snow-shot-selection-render-benchmark
-        tests/screenshot_selection_render_benchmark.cpp
-        include/snow_shot/presentation/screenshotcanvasrenderer.h
-        include/snow_shot/presentation/screenshotselectionshadowrenderer.h
-        src/presentation/ocr/screenshotocrpresentation.cpp
-        src/presentation/ocr/screenshotocrtextlayout.cpp
-        src/presentation/overlay/screenshotcanvasrenderer.cpp
-        src/presentation/overlay/screenshotselectionshadowrenderer.cpp
-    )
-    target_compile_definitions(snow-shot-selection-render-benchmark PRIVATE
-        NOMINMAX
-        SNOW_SHOT_BENCH_INTERNALS=1
-    )
-    target_include_directories(snow-shot-selection-render-benchmark PRIVATE
-        "${CMAKE_CURRENT_SOURCE_DIR}/include"
-        "${SNOW_SHOT_DRAW_ENGINE_QT_DIR}/src/rendering"
-        "${SNOW_SHOT_DRAW_ENGINE_QT_DIR}/crates/snow-draw-engine-c/include"
-    )
-    target_link_libraries(snow-shot-selection-render-benchmark PRIVATE
-        Qt6::Widgets
-        ant_design_qt
-        snow_draw_engine_qt_canvas
-        dwmapi
-        user32
-    )
-    snow_shot_import_offscreen_platform(snow-shot-selection-render-benchmark)
 
     # This executable deliberately is not registered with CTest. It creates
     # real always-on-top toolbar windows and measures real DWM presentation

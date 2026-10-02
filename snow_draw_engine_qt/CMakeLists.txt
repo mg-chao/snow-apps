@@ -467,13 +467,17 @@ if(SNOW_DRAW_ENGINE_QT_BUILD_TESTS)
     add_test(NAME snow-canvas-filter-render-tests COMMAND snow-canvas-filter-render-tests)
     add_test(NAME snow-canvas-retained-filter-paint-tests
         COMMAND snow-canvas-filter-render-tests --retained-filter-paint-only)
+    add_test(NAME snow-canvas-sparse-filter-damage-tests
+        COMMAND snow-canvas-filter-render-tests --sparse-filter-damage-only)
     set_tests_properties(
-        snow-canvas-filter-render-tests snow-canvas-retained-filter-paint-tests PROPERTIES
+        snow-canvas-filter-render-tests snow-canvas-retained-filter-paint-tests
+        snow-canvas-sparse-filter-damage-tests PROPERTIES
         ENVIRONMENT
             "QT_QPA_PLATFORM=offscreen;QT_QPA_PLATFORM_PLUGIN_PATH=$<TARGET_FILE_DIR:Qt6::QOffscreenIntegrationPlugin>"
         ENVIRONMENT_MODIFICATION
             "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
     )
+    set_tests_properties(snow-canvas-sparse-filter-damage-tests PROPERTIES LABELS "unit")
 
     add_executable(snow-canvas-spotlight-render-tests
         tests/snow_canvas_spotlight_render_tests.cpp

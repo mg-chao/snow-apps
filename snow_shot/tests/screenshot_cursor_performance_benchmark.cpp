@@ -83,7 +83,7 @@ void runScreenshotCursorBenchmark() {
             const QRect paintRect = display.cursorPixelRect.adjusted(-1, -1, 1, 1);
             canvas.render(&painter, paintRect.topLeft(), QRegion(paintRect));
             painter.end();
-            const double milliseconds = elapsed.nsecsElapsed() / 1000000.0;
+            const double milliseconds = static_cast<double>(elapsed.nsecsElapsed()) / 1000000.0;
             requireCursor(surface.pixelColor(display.cursorPixelRect.center()) ==
                               ((i % 2) != 0 ? QColor(200, 100, 50) : QColor(20, 40, 60)),
                           "measured repaint must present the requested cursor pixels");
@@ -98,7 +98,7 @@ void runScreenshotCursorBenchmark() {
                           "benchmark visibility updates must retain the original frame allocation");
         }
         std::sort(timings.begin(), timings.end());
-        const double p95 = timings[static_cast<size_t>(timings.size() * .95)];
+        const double p95 = timings[static_cast<size_t>(static_cast<double>(timings.size()) * .95)];
         requireCursor(p95 < 1000.0 / 60.0, "cursor repaint must complete within one 60 Hz frame");
         requireCursor(peakMemory <= baselineMemory + 1024 * 1024,
                       "repeated cursor toggles must retain stable memory after warmup");

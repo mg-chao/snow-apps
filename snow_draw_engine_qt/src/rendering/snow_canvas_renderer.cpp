@@ -2204,6 +2204,11 @@ void renderSceneItemsTiled(const SceneRenderRequest& request) {
                 QRectF(physicalRect.x() / dpr, physicalRect.y() / dpr, physicalRect.width() / dpr,
                        physicalRect.height() / dpr)
                     .toAlignedRect();
+            // Sparse damage can surround unchanged interior tiles. Skip their surfaces and
+            // filter replay while retaining complete sampling tiles wherever damage intersects.
+            if (!request.exposedRegion.intersects(logicalRect)) {
+                continue;
+            }
             QImage tileImage;
             try {
                 tileImage = QImage(physicalRect.size(), QImage::Format_ARGB32_Premultiplied);
