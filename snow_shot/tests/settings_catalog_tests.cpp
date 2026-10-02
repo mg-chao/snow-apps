@@ -355,9 +355,9 @@ void builtInCatalogIsCompleteAndValid() {
         }
     }
 #ifdef Q_OS_MACOS
-    require(sectionCount == 45, "macOS adds one permissions section");
+    require(sectionCount == 47, "macOS adds one permissions section");
 #else
-    require(sectionCount == 44, "catalog must contain forty-four sections");
+    require(sectionCount == 46, "catalog includes both floating toolbar sections");
 #endif
     // Keep the shared total in one place: adding a shared setting must update both platforms.
     // Explicit platform membership also catches substitutions that a total alone would miss.
@@ -387,9 +387,9 @@ void builtInCatalogIsCompleteAndValid() {
         require(itemIds.remove(id), "catalog must contain each platform-specific setting");
     for (const auto& id : excludedPlatformItems)
         require(!itemIds.contains(id), "catalog must omit settings exclusive to another platform");
-    require(itemIds.size() == 220,
+    require(itemIds.size() == 222,
             qPrintable(QStringLiteral(
-                           "catalog must contain 220 shared settings on every platform; found %1")
+                           "catalog must contain 222 shared settings on every platform; found %1")
                            .arg(itemIds.size())));
     require(foundUpdates, "catalog must contain the update mode item");
     const auto* pinnedEditor =
@@ -667,6 +667,7 @@ void builtInCatalogIsCompleteAndValid() {
                                        QStringLiteral("drawing-settings"),
                                        QStringLiteral("screen-recording-settings"),
                                        QStringLiteral("tray-settings"),
+                                       QStringLiteral("floating-toolbar-settings"),
                                        QStringLiteral("global-hotkeys")};
     require(functionPage->sections.size() == expectedSections.size(), "function section count");
     for (qsizetype i = 0; i < expectedSections.size(); ++i)
@@ -1346,15 +1347,16 @@ void builtInCatalogIsCompleteAndValid() {
     }
 
     const auto* interfacePage = catalog.page(QStringLiteral("interface-settings"));
-    require(interfacePage != nullptr && interfacePage->sections.size() == 8 &&
+    require(interfacePage != nullptr && interfacePage->sections.size() == 9 &&
                 interfacePage->sections.at(0).id == QStringLiteral("general") &&
                 interfacePage->sections.at(1).id == QStringLiteral("interface-screenshot") &&
                 interfacePage->sections.at(2).id == QStringLiteral("interface-text-recognition") &&
                 interfacePage->sections.at(3).id == QStringLiteral("toolbar") &&
                 interfacePage->sections.at(4).id == QStringLiteral("drawing") &&
                 interfacePage->sections.at(5).id == QStringLiteral("pin-to-screen") &&
-                interfacePage->sections.at(6).id == QStringLiteral("tray") &&
-                interfacePage->sections.at(7).id == QStringLiteral("skin"),
+                interfacePage->sections.at(6).id == QStringLiteral("floating-toolbar") &&
+                interfacePage->sections.at(7).id == QStringLiteral("tray") &&
+                interfacePage->sections.at(8).id == QStringLiteral("skin"),
             "Interface settings must keep the existing section order and place Skin last");
     const auto* toolbarSize =
         catalog.item({QStringLiteral("interface-settings"), QStringLiteral("toolbar"),
@@ -1435,7 +1437,7 @@ void builtInCatalogIsCompleteAndValid() {
         "the interface Screenshot section must expose a selection border color above the mask "
         "color, defaulting to #4096ff");
 
-    const auto& pinSection = interfacePage->sections.at(6);
+    const auto& pinSection = interfacePage->sections.at(5);
     const auto* pinBorderActiveColor =
         catalog.item({QStringLiteral("interface-settings"), QStringLiteral("pin-to-screen"),
                       QStringLiteral("interface.pin-to-screen.border-active-color")});
@@ -2149,6 +2151,17 @@ void searchIndexIsGeneratedAndRanked() {
     require(index.entries().size() == expectedNodes &&
                 index.search(QString()).size() == expectedNodes,
             "search must generate all visible catalog nodes in catalog order");
+    const auto floating = index.search(QStringLiteral("Floating toolbar"));
+    const auto hasFloatingSection = [&](const QString& page, const QString& section) {
+        return std::any_of(floating.cbegin(), floating.cend(), [&](const auto& result) {
+            return result.location.pageId == page && result.location.sectionId == section;
+        });
+    };
+    require(hasFloatingSection(QStringLiteral("function-settings"),
+                               QStringLiteral("floating-toolbar-settings")) &&
+                hasFloatingSection(QStringLiteral("interface-settings"),
+                                   QStringLiteral("floating-toolbar")),
+            "settings search finds both floating toolbar behavior and customization");
     const auto pdfPaper = index.search(QStringLiteral("Landscape A4"));
     require(!pdfPaper.isEmpty() && pdfPaper.constFirst().location.itemId ==
                                        QStringLiteral("screenshot-output.pdf-page-size"),

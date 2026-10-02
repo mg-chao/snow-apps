@@ -4,10 +4,11 @@
 #import <CoreGraphics/CoreGraphics.h>
 
 #include <vector>
+#include <QScreen>
 
 namespace snow_shot::platform {
 
-bool focusedFullscreenWindowExists() {
+static bool focusedFullscreenWindowMatches(QScreen* target) {
     NSRunningApplication* frontmost = NSWorkspace.sharedWorkspace.frontmostApplication;
     if (frontmost == nil || frontmost.processIdentifier <= 0) {
         return false;
@@ -49,6 +50,8 @@ bool focusedFullscreenWindowExists() {
     }
     CFRelease(rawWindows);
 
+    if (target)
+        return focusedWindowCoversDisplay(processId, snapshots, {QRectF(target->geometry())});
     uint32_t displayCount = 0;
     if (CGGetActiveDisplayList(0, nullptr, &displayCount) != kCGErrorSuccess || displayCount == 0) {
         return false;
@@ -67,4 +70,10 @@ bool focusedFullscreenWindowExists() {
     return focusedWindowCoversDisplay(processId, snapshots, bounds);
 }
 
+bool focusedFullscreenWindowExists() {
+    return focusedFullscreenWindowMatches(nullptr);
+}
+bool focusedFullscreenWindowOnScreen(QScreen* screen) {
+    return screen && focusedFullscreenWindowMatches(screen);
+}
 } // namespace snow_shot::platform

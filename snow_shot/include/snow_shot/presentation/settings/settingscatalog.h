@@ -128,6 +128,7 @@ enum class SettingsSwitchBinding {
     ScreenshotAreaTypeHint,
     ShowGuidesByDefault,
     TrayEnabled,
+    FloatingToolbarEnabled,
     ScreenshotAutoSaveAfterCopy,
     ScreenshotQuickSelectionModification,
     ScreenshotShowCursor,
@@ -357,6 +358,7 @@ enum class SettingsCustomRenderer {
     DrawingToolbarEditor,
     ScreenshotToolbarEditor,
     PinnedToolbarEditor,
+    FloatingToolbarEditor,
     TrayMenuOptions,
 };
 
@@ -448,6 +450,8 @@ enum class SettingsSectionReset {
     PinToScreenBehavior,
     Tray,
     TrayBehavior,
+    FloatingToolbarBehavior,
+    FloatingToolbarLayout,
     ScreenRecording,
     ScreenRecordingOutput,
     GlobalHotkeys,

@@ -368,6 +368,61 @@ so every moment on screen can be expressed clearly and shared easily.</source>
         </message>
     </context>
     <context>
+        <name>FloatingToolbar</name>
+        <message>
+            <source>Close</source>
+            <translation>關閉</translation>
+        </message>
+        <message>
+            <source>Customize toolbar</source>
+            <translation>自訂工具列</translation>
+        </message>
+        <message>
+            <source>Delay %1 seconds to execute</source>
+            <translation>延遲 %1 秒執行</translation>
+        </message>
+        <message>
+            <source>Floating toolbar menu</source>
+            <translation>浮動工具列選單</translation>
+        </message>
+        <message>
+            <source>Formula recognition</source>
+            <translation>公式辨識</translation>
+        </message>
+        <message>
+            <source>Hide during screenshots</source>
+            <translation>擷取螢幕時隱藏</translation>
+        </message>
+        <message>
+            <source>Hide in fullscreen</source>
+            <translation>全螢幕時隱藏</translation>
+        </message>
+        <message>
+            <source>Icon mode</source>
+            <translation>圖示模式</translation>
+        </message>
+        <message>
+            <source>More tools</source>
+            <translation>更多工具</translation>
+        </message>
+        <message>
+            <source>QR code recognition</source>
+            <translation>QR 碼辨識</translation>
+        </message>
+        <message>
+            <source>Screen recording</source>
+            <translation>螢幕錄製</translation>
+        </message>
+        <message>
+            <source>Screenshot</source>
+            <translation>螢幕擷取</translation>
+        </message>
+        <message>
+            <source>Toolbar mode</source>
+            <translation>工具列模式</translation>
+        </message>
+    </context>
+    <context>
         <name>LanguageCatalog</name>
         <message>
             <source>Language name</source>

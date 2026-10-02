@@ -5,6 +5,7 @@
 
 #include "snow_shot/presentation/components/icons/snowshoticons.h"
 #include "snow_shot/storage/settingsadapters.h"
+#include "snow_shot/storage/floatingtoolbarsettings.h"
 #include "antd_icons.h"
 
 #include <QSet>
@@ -56,6 +57,8 @@ enum class Item {
 };
 
 enum class Icon {
+    Screenshot,
+    ScreenshotDelay,
     Shape,
     Arrow,
     Line,
@@ -233,6 +236,31 @@ struct EditorDescriptor {
 
 [[nodiscard]] inline QVector<EditorDescriptor>
 editorDescriptors(storage::ScreenshotToolbarLayoutKind kind) {
+    if (kind == storage::ScreenshotToolbarLayoutKind::FloatingTools) {
+        auto result = actionDescriptors();
+        const auto ids = storage::floatingToolbarItemIds();
+        result.removeIf([&ids](const EditorDescriptor& item) {
+            return !ids.contains(QString::fromLatin1(item.id));
+        });
+        for (auto& item : result) {
+            if (QLatin1String(item.id) == QLatin1String("barcode-recognition")) {
+                item.translationContext = "FloatingToolbar";
+                item.label = QT_TRANSLATE_NOOP("FloatingToolbar", "QR code recognition");
+            } else if (QLatin1String(item.id) == QLatin1String("latex-recognition")) {
+                item.translationContext = "FloatingToolbar";
+                item.label = QT_TRANSLATE_NOOP("FloatingToolbar", "Formula recognition");
+            } else if (QLatin1String(item.id) == QLatin1String("record-screen")) {
+                item.translationContext = "FloatingToolbar";
+                item.label = QT_TRANSLATE_NOOP("FloatingToolbar", "Screen recording");
+            }
+        }
+        result.prepend({"screenshot-delay", "FloatingToolbar",
+                        QT_TRANSLATE_NOOP("FloatingToolbar", "Delay %1 seconds to execute"),
+                        Icon::ScreenshotDelay});
+        result.prepend({"screenshot", "FloatingToolbar",
+                        QT_TRANSLATE_NOOP("FloatingToolbar", "Screenshot"), Icon::Screenshot});
+        return result;
+    }
     if (kind == storage::ScreenshotToolbarLayoutKind::PinnedActionTools) {
         QVector<EditorDescriptor> result;
         for (const auto& descriptor : actionDescriptors()) {
@@ -311,6 +339,8 @@ editorDescriptors(storage::ScreenshotToolbarLayoutKind kind) {
 
 [[nodiscard]] inline QVector<QStringList>
 defaultPositions(storage::ScreenshotToolbarLayoutKind kind) {
+    if (kind == storage::ScreenshotToolbarLayoutKind::FloatingTools)
+        return storage::defaultFloatingToolbarLayout().positions;
     if (kind == storage::ScreenshotToolbarLayoutKind::PinnedActionTools) {
         return editionActionPositions({
             {QStringLiteral("convert-to-html"), QStringLiteral("convert-to-markdown"),
@@ -339,7 +369,8 @@ defaultPositions(storage::ScreenshotToolbarLayoutKind kind) {
 
 [[nodiscard]] inline storage::ScreenshotToolbarLayout
 normalizedLayout(const storage::ScreenshotToolbarLayout& input, const QStringList& defaults,
-                 const QVector<QStringList>& defaultLayout, bool migrateScreenshotLayout = false) {
+                 const QVector<QStringList>& defaultLayout, bool migrateScreenshotLayout = false,
+                 bool legacyDefaults = true) {
     const QSet<QString> known(defaults.cbegin(), defaults.cend());
     QSet<QString> positioned;
     storage::ScreenshotToolbarLayout result;
@@ -373,7 +404,8 @@ normalizedLayout(const storage::ScreenshotToolbarLayout& input, const QStringLis
         }
     }
 
-    if (app::edition::isMini && known.contains(QStringLiteral("text-recognition")) &&
+    if (legacyDefaults && app::edition::isMini &&
+        known.contains(QStringLiteral("text-recognition")) &&
         !positioned.contains(QStringLiteral("text-recognition")) &&
         !hidden.contains(QStringLiteral("text-recognition"))) {
         result.hidden.push_back(QStringLiteral("text-recognition"));
@@ -437,15 +469,15 @@ normalizedLayout(const storage::ScreenshotToolbarLayout& input, const QStringLis
     }
     // Upgrade the previous default recognition group, preserving custom arrangements.
     for (QStringList& position : result.positions) {
-        if (position == QStringList{QStringLiteral("convert-to-html"),
-                                    QStringLiteral("latex-recognition"),
-                                    QStringLiteral("convert-to-markdown"),
-                                    QStringLiteral("barcode-recognition"),
-                                    QStringLiteral("table-recognition")}) {
+        if (legacyDefaults && position == QStringList{QStringLiteral("convert-to-html"),
+                                                      QStringLiteral("latex-recognition"),
+                                                      QStringLiteral("convert-to-markdown"),
+                                                      QStringLiteral("barcode-recognition"),
+                                                      QStringLiteral("table-recognition")}) {
             position.swapItemsAt(1, 2);
         }
     }
-    if (known.contains(QStringLiteral("latex-recognition")) &&
+    if (legacyDefaults && known.contains(QStringLiteral("latex-recognition")) &&
         !positioned.contains(QStringLiteral("latex-recognition")) &&
         !hidden.contains(QStringLiteral("latex-recognition"))) {
         for (QStringList& position : result.positions) {
@@ -492,6 +524,18 @@ normalizedLayout(const storage::ScreenshotToolbarLayout& input) {
 [[nodiscard]] inline storage::ScreenshotToolbarLayout
 normalizedLayout(const storage::ScreenshotToolbarLayout& input,
                  storage::ScreenshotToolbarLayoutKind kind) {
+    if (kind == storage::ScreenshotToolbarLayoutKind::FloatingTools) {
+        auto candidate = input;
+        for (const auto& id : storage::defaultFloatingToolbarLayout().hidden) {
+            const bool positioned =
+                std::any_of(candidate.positions.cbegin(), candidate.positions.cend(),
+                            [&id](const QStringList& position) { return position.contains(id); });
+            if (!positioned && !candidate.hidden.contains(id))
+                candidate.hidden.append(id);
+        }
+        return normalizedLayout(candidate, defaultOrder(kind), defaultPositions(kind), false,
+                                false);
+    }
     return normalizedLayout(input, defaultOrder(kind), defaultPositions(kind),
                             kind == storage::ScreenshotToolbarLayoutKind::ActionTools);
 }
@@ -620,6 +664,10 @@ moveItemToHidden(const storage::ScreenshotToolbarLayout& input,
 [[nodiscard]] inline adqt::icons::IconRef icon(Icon semantic) {
     namespace custom = snow_shot::presentation::icons::custom::outlined;
     switch (semantic) {
+    case Icon::Screenshot:
+        return snow_shot::presentation::icons::custom::twotone::ScreenshotFeature();
+    case Icon::ScreenshotDelay:
+        return custom::ScreenshotDelay();
     case Icon::Shape:
         return custom::ToolRectangle();
     case Icon::Arrow:

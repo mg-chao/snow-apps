@@ -38,6 +38,7 @@
 #include "snow_shot/presentation/screenshotpinnedwindow.h"
 #include "snow_shot/presentation/screenrecordingfolder.h"
 #include "snow_shot/presentation/systemtraycontroller.h"
+#include "snow_shot/presentation/floatingtoolbarcontroller.h"
 #include "snow_shot/app/mcp/screenshotmcpserver.h"
 #include "snow_shot/app/mcp/screenshotmcpsession.h"
 #include "snow_shot/app/mcp/mcpapplicationservice.h"
@@ -153,6 +154,29 @@ class ApplicationController::Impl {
           groupManager(initializedPinnedWindowRepository()),
           systemTray(presentation::settings::builtInTrayCommandManifest(), &groupManager),
           featureRouter([this](FeatureFamily feature) { showUnavailableFeature(feature); }) {
+        QObject::connect(&floatingToolbar,
+                         &presentation::FloatingToolbarController::actionRequested, &q,
+                         [this](const QString& action) { dispatchFloatingAction(action); });
+        QObject::connect(&floatingToolbar,
+                         &presentation::FloatingToolbarController::customizeRequested, &q, [this] {
+                             ensureMainWindow().showSettingsLocation(
+                                 QStringLiteral("interface-settings"),
+                                 QStringLiteral("floating-toolbar"));
+                         });
+        QObject::connect(
+            &floatingToolbar, &presentation::FloatingToolbarController::imagesDropped, &q,
+            [this](ScreenshotClipboardContentSnapshot snapshot, QStringList paths) {
+                if (storage::ApplicationStorage::instance().directoryChanging())
+                    return;
+                static_cast<void>(featureRouter.dispatch(
+                    FeatureFamily::PinToScreen,
+                    [this, snapshot = std::move(snapshot), paths = std::move(paths)]() mutable {
+                        if (auto* controller = ensureScreenshotController())
+                            controller->pinDroppedImages(std::move(snapshot), std::move(paths));
+                    }));
+            });
+        QObject::connect(&app, &QCoreApplication::aboutToQuit, &floatingToolbar,
+                         &presentation::FloatingToolbarController::shutdown);
         QObject::connect(
             &systemTray, &presentation::SystemTrayController::screenshotRequested, &q, [this]() {
                 if (storage::ApplicationStorage::instance().directoryChanging())
@@ -492,6 +516,7 @@ class ApplicationController::Impl {
     }
 
     ~Impl() {
+        floatingToolbar.shutdown();
         stopMcp();
         platform::windows::setAdministratorRestartGuard({});
         storage::ApplicationStorage::instance().setDirectoryChangeHooks({}, {});
@@ -1285,6 +1310,9 @@ class ApplicationController::Impl {
         if (screenshotController == nullptr) {
             screenshotController = std::make_unique<ScreenshotController>(
                 &q, &groupManager, ocrRecognition.get(), apiClient());
+            QObject::connect(screenshotController.get(),
+                             &ScreenshotController::captureActivityChanged, &floatingToolbar,
+                             &presentation::FloatingToolbarController::setCaptureActive);
 #ifdef Q_OS_MACOS
             screenshotController->setRecordingPermissionCheck([this](bool microphone, bool input,
                                                                      bool notify) {
@@ -1493,6 +1521,42 @@ class ApplicationController::Impl {
         return *windowGroupSwitcher;
     }
 
+    void dispatchFloatingAction(const QString& id) {
+        using Quick = presentation::GlobalShortcutAction;
+        static const QHash<QString, Quick> quickActions{
+            {QStringLiteral("screenshot"), Quick::Screenshot},
+            {QStringLiteral("screenshot-delay"), Quick::ScreenshotDelay},
+            {QStringLiteral("pin-to-screen"), Quick::ScreenshotFixed},
+            {QStringLiteral("text-recognition"), Quick::ScreenshotOcr},
+            {QStringLiteral("text-translation"), Quick::ScreenshotTranslation},
+            {QStringLiteral("record-screen"), Quick::ScreenRecord},
+        };
+        if (const auto action = quickActions.constFind(id); action != quickActions.cend()) {
+            dispatchQuickAction(*action);
+            return;
+        }
+        using Action = ScreenshotController::CaptureAction;
+        static const QHash<QString, Action> selectionActions{
+            {QStringLiteral("scrolling-screenshot"), Action::StartScrolling},
+            {QStringLiteral("table-recognition"), Action::RecognizeTable},
+            {QStringLiteral("barcode-recognition"), Action::RecognizeQr},
+            {QStringLiteral("latex-recognition"), Action::RecognizeFormula},
+            {QStringLiteral("convert-to-markdown"), Action::ConvertMarkdown},
+            {QStringLiteral("convert-to-html"), Action::ConvertHtml},
+            {QStringLiteral("save-as-file"), Action::Save},
+        };
+        const auto action = selectionActions.constFind(id);
+        if (action == selectionActions.cend() ||
+            storage::ApplicationStorage::instance().directoryChanging() ||
+            !allowPermissions(presentation::requiredPermissions(Quick::Screenshot, false)))
+            return;
+        static_cast<void>(
+            featureRouter.dispatch(FeatureFamily::Screenshot, [this, action = *action] {
+                if (auto* controller = ensureScreenshotController())
+                    static_cast<void>(controller->captureForAction(action));
+            }));
+    }
+
     void dispatchQuickAction(presentation::GlobalShortcutAction action) {
         if (storage::ApplicationStorage::instance().directoryChanging())
             return;
@@ -1651,6 +1715,10 @@ class ApplicationController::Impl {
         if (!directCaptureController) {
             directCaptureController = std::make_unique<presentation::DirectCaptureController>(&q);
             QObject::connect(directCaptureController.get(),
+                             &presentation::DirectCaptureController::captureActivityChanged,
+                             &floatingToolbar,
+                             &presentation::FloatingToolbarController::setCaptureActive);
+            QObject::connect(directCaptureController.get(),
                              &presentation::DirectCaptureController::operationFailed, &q,
                              [this](const QString& message, bool warning) {
                                  systemTray.showCaptureMessage(message, warning);
@@ -1743,6 +1811,7 @@ class ApplicationController::Impl {
     // These services outlive the disposable configuration window.
     presentation::PinnedWindowGroupManager groupManager;
     presentation::SystemTrayController systemTray;
+    presentation::FloatingToolbarController floatingToolbar;
     FeatureActionRouter featureRouter;
     presentation::GlobalShortcutManager globalShortcutManager;
     std::unique_ptr<presentation::WindowGroupSwitcherController> windowGroupSwitcher;

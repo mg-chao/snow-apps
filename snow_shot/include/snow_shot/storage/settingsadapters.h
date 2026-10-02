@@ -70,6 +70,7 @@ enum class ScreenshotToolbarLayoutKind {
     PinnedActionTools,
     DrawingTools,
     ActionTools,
+    FloatingTools,
 };
 
 [[nodiscard]] QColor colorFromRgbaString(const QString& value);

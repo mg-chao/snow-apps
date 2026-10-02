@@ -114,6 +114,14 @@
             <translation>將剪貼簿內容固定到螢幕的佇列已滿</translation>
         </message>
         <message>
+            <source>The dropped image could not be opened</source>
+            <translation>無法開啟拖入的影像</translation>
+        </message>
+        <message>
+            <source>The dropped image could not be queued</source>
+            <translation>無法將拖入的影像加入處理佇列</translation>
+        </message>
+        <message>
             <source>The pinned window could not be restored</source>
             <translation>無法還原固定到螢幕視窗</translation>
         </message>

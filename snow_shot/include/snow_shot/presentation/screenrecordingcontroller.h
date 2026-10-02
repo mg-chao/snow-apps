@@ -40,6 +40,7 @@ class ScreenRecordingController final : public QObject {
     void detachAutomation();
 
   signals:
+    void captureActivityChanged(bool active);
     void finalized();
 
   private:

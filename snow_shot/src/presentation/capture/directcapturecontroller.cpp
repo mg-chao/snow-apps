@@ -44,9 +44,11 @@ class DirectCaptureController::Impl {
           workflow(DirectCapturePorts{
               [this](const auto& request, auto done) {
                   artifact.reset();
-                  return submit<DirectCaptureFrame>(
+                  emit owner.captureActivityChanged(QStringLiteral("direct"), true);
+                  const bool queued = submit<DirectCaptureFrame>(
                       [request]() { return captureDirectTarget(request); },
                       [this, request, done = std::move(done)](DirectCaptureFrame frame) mutable {
+                          emit owner.captureActivityChanged(QStringLiteral("direct"), false);
                           if (frame.isValid()) {
                               artifact = std::make_unique<ScreenshotExportArtifact>(
                                   ScreenshotExportSource::fromImage(frame.image),
@@ -54,6 +56,9 @@ class DirectCaptureController::Impl {
                           }
                           done(std::move(frame));
                       });
+                  if (!queued)
+                      emit owner.captureActivityChanged(QStringLiteral("direct"), false);
+                  return queued;
               },
               [this](const auto& request, const auto&, auto done) {
                   return artifact &&
@@ -223,6 +228,8 @@ class DirectCaptureController::Impl {
             return;
         thread.quit();
         thread.wait();
+        emit owner.captureActivityChanged(QStringLiteral("direct"), false);
+        emit owner.captureActivityChanged(QStringLiteral("direct-mcp"), false);
     }
 
     DirectCaptureController& owner;
@@ -329,6 +336,7 @@ bool DirectCaptureController::mcpCapture(
     auto cancellation = std::make_shared<std::atomic_bool>(false);
     m_impl->mcpCancellation = cancellation;
     m_impl->mcpActive = true;
+    emit captureActivityChanged(QStringLiteral("direct-mcp"), true);
     const bool started = m_impl->submit<DirectCaptureFrame>(
         [request, scale, cancellation] {
             if (cancellation->load(std::memory_order_acquire))
@@ -349,6 +357,7 @@ bool DirectCaptureController::mcpCapture(
         },
         [this, cancellation, completion = std::move(completion)](DirectCaptureFrame frame) {
             m_impl->mcpActive = false;
+            emit captureActivityChanged(QStringLiteral("direct-mcp"), false);
             if (cancellation->load(std::memory_order_acquire))
                 return;
             QJsonObject metadata{
@@ -363,6 +372,7 @@ bool DirectCaptureController::mcpCapture(
             completion(std::move(frame.image), metadata, frame.error);
         });
     if (!started) {
+        emit captureActivityChanged(QStringLiteral("direct-mcp"), false);
         m_impl->mcpActive = false;
         m_impl->mcpCancellation.reset();
     }

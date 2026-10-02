@@ -1,4 +1,5 @@
 #include "snow_shot/storage/settingsadapters.h"
+#include "snow_shot/storage/floatingtoolbarsettings.h"
 
 #include "snow_shot/presentation/editionfeatures.h"
 
@@ -1818,6 +1819,45 @@ bool ScreenshotToolbarSettings::setLastHighlightTool(const QString& tool) const 
     return cache().setValue(QStringLiteral("screenshot_toolbar/last_highlight_tool"), tool);
 }
 
+bool FloatingToolbarSettings::enabled() const {
+    return cache().value(QStringLiteral("floating_toolbar/enabled")).toBool();
+}
+
+bool FloatingToolbarSettings::setEnabled(bool value) const {
+    return cache().setValue(QStringLiteral("floating_toolbar/enabled"), value);
+}
+
+bool FloatingToolbarSettings::hideInFullscreen() const {
+    return cache().value(QStringLiteral("floating_toolbar/hide_in_fullscreen")).toBool();
+}
+
+bool FloatingToolbarSettings::setHideInFullscreen(bool value) const {
+    return cache().setValue(QStringLiteral("floating_toolbar/hide_in_fullscreen"), value);
+}
+
+bool FloatingToolbarSettings::hideDuringCapture() const {
+    return cache().value(QStringLiteral("floating_toolbar/hide_during_capture")).toBool();
+}
+
+bool FloatingToolbarSettings::setHideDuringCapture(bool value) const {
+    return cache().setValue(QStringLiteral("floating_toolbar/hide_during_capture"), value);
+}
+
+bool FloatingToolbarSettings::toolbarMode() const {
+    return cache().value(QStringLiteral("floating_toolbar/mode")).toString() ==
+           QStringLiteral("toolbar");
+}
+bool FloatingToolbarSettings::setToolbarMode(bool value) const {
+    return cache().setValue(QStringLiteral("floating_toolbar/mode"),
+                            value ? QStringLiteral("toolbar") : QStringLiteral("icon"));
+}
+QJsonObject FloatingToolbarSettings::placement() const {
+    return cache().value(QStringLiteral("floating_toolbar/placement")).toObject();
+}
+bool FloatingToolbarSettings::setPlacement(const QJsonObject& value) const {
+    return cache().setValue(QStringLiteral("floating_toolbar/placement"), value);
+}
+
 QString ScreenshotToolbarSettings::lastDrawingTool() const {
     return cache().value(QStringLiteral("screenshot_toolbar/last_drawing_tool")).toString();
 }
@@ -1829,6 +1869,8 @@ bool ScreenshotToolbarSettings::setLastDrawingTool(const QString& tool) const {
 namespace {
 QString screenshotToolbarLayoutKey(ScreenshotToolbarLayoutKind kind) {
     switch (kind) {
+    case ScreenshotToolbarLayoutKind::FloatingTools:
+        return QStringLiteral("floating_toolbar/layout");
     case ScreenshotToolbarLayoutKind::DrawingTools:
         return QStringLiteral("screenshot_toolbar/layout");
     case ScreenshotToolbarLayoutKind::ActionTools:

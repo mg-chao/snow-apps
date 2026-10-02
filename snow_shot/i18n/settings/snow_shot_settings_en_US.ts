@@ -370,6 +370,33 @@
         </message>
     </context>
     <context>
+        <name>FloatingToolbarEditorSettingsWidget</name>
+        <message>
+            <source>Drag tools here to hide them from the floating toolbar.</source>
+            <translation>Drag tools here to hide them from the floating toolbar.</translation>
+        </message>
+        <message>
+            <source>Drop beside a tool to create a position. Drop above a tool to stack it. The bottom tool stays on the main toolbar row.</source>
+            <translation>Drop beside a tool to create a position. Drop above a tool to stack it. The bottom tool stays on the main toolbar row.</translation>
+        </message>
+        <message>
+            <source>Floating toolbar preview</source>
+            <translation>Floating toolbar preview</translation>
+        </message>
+        <message>
+            <source>Hidden floating toolbar tools</source>
+            <translation>Hidden floating toolbar tools</translation>
+        </message>
+        <message>
+            <source>Hidden tools</source>
+            <translation>Hidden tools</translation>
+        </message>
+        <message>
+            <source>No hidden tools</source>
+            <translation>No hidden tools</translation>
+        </message>
+    </context>
+    <context>
         <name>GlobalMouseRow</name>
         <message>
             <source>%1 + %2</source>
@@ -1540,6 +1567,10 @@
             <translation>Custom translation endpoints and concurrency</translation>
         </message>
         <message>
+            <source>Customize floating toolbar tools</source>
+            <translation>Customize floating toolbar tools</translation>
+        </message>
+        <message>
             <source>Customize the main interface, toolbar rows and custom tray menu</source>
             <translation>Customize the main interface, toolbar rows and custom tray menu</translation>
         </message>
@@ -1620,6 +1651,10 @@
             <translation>Delete temporary recording files?</translation>
         </message>
         <message>
+            <source>Desktop capture tools</source>
+            <translation>Desktop capture tools</translation>
+        </message>
+        <message>
             <source>Destroy</source>
             <translation>Destroy</translation>
         </message>
@@ -1686,6 +1721,10 @@
         <message>
             <source>Drag screenshot tools to reorder them or stack them in the same toolbar position.</source>
             <translation>Drag screenshot tools to reorder them or stack them in the same toolbar position.</translation>
+        </message>
+        <message>
+            <source>Drag tools to reorder, group, or hide them on the floating toolbar.</source>
+            <translation>Drag tools to reorder, group, or hide them on the floating toolbar.</translation>
         </message>
         <message>
             <source>Draw a dashed crosshair at the pointer while guides are enabled</source>
@@ -1838,6 +1877,14 @@
         <message>
             <source>Flip vertically</source>
             <translation>Flip vertically</translation>
+        </message>
+        <message>
+            <source>Floating toolbar</source>
+            <translation>Floating toolbar</translation>
+        </message>
+        <message>
+            <source>Floating toolbar settings</source>
+            <translation>Floating toolbar settings</translation>
         </message>
         <message>
             <source>Focused window</source>
@@ -3106,6 +3153,14 @@
         <message>
             <source>Show the drawing and close buttons in the upper-right corner of pinned windows</source>
             <translation>Show the drawing and close buttons in the upper-right corner of pinned windows</translation>
+        </message>
+        <message>
+            <source>Show the floating toolbar on the desktop</source>
+            <translation>Show the floating toolbar on the desktop</translation>
+        </message>
+        <message>
+            <source>Show toolbar</source>
+            <translation>Show toolbar</translation>
         </message>
         <message>
             <source>Show window buttons</source>

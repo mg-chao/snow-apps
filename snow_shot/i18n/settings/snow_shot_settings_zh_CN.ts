@@ -370,6 +370,33 @@
         </message>
     </context>
     <context>
+        <name>FloatingToolbarEditorSettingsWidget</name>
+        <message>
+            <source>Drag tools here to hide them from the floating toolbar.</source>
+            <translation>将工具拖到此处，即可从悬浮工具栏中隐藏。</translation>
+        </message>
+        <message>
+            <source>Drop beside a tool to create a position. Drop above a tool to stack it. The bottom tool stays on the main toolbar row.</source>
+            <translation>拖到工具旁边可创建新位置，拖到工具上方可堆叠工具。最下方的工具显示在工具栏主行。</translation>
+        </message>
+        <message>
+            <source>Floating toolbar preview</source>
+            <translation>悬浮工具栏预览</translation>
+        </message>
+        <message>
+            <source>Hidden floating toolbar tools</source>
+            <translation>已隐藏的悬浮工具栏工具</translation>
+        </message>
+        <message>
+            <source>Hidden tools</source>
+            <translation>隐藏的工具</translation>
+        </message>
+        <message>
+            <source>No hidden tools</source>
+            <translation>没有隐藏的工具</translation>
+        </message>
+    </context>
+    <context>
         <name>GlobalMouseRow</name>
         <message>
             <source>%1 + %2</source>
@@ -1540,6 +1567,10 @@
             <translation>自定义翻译端点和并发数</translation>
         </message>
         <message>
+            <source>Customize floating toolbar tools</source>
+            <translation>自定义悬浮工具栏中的工具</translation>
+        </message>
+        <message>
             <source>Customize the main interface, toolbar rows and custom tray menu</source>
             <translation>自定义主界面、工具栏和自定义托盘菜单</translation>
         </message>
@@ -1620,6 +1651,10 @@
             <translation>删除屏幕录制临时文件？</translation>
         </message>
         <message>
+            <source>Desktop capture tools</source>
+            <translation>桌面截图工具</translation>
+        </message>
+        <message>
             <source>Destroy</source>
             <translation>销毁</translation>
         </message>
@@ -1686,6 +1721,10 @@
         <message>
             <source>Drag screenshot tools to reorder them or stack them in the same toolbar position.</source>
             <translation>拖动截图工具可重新排序，或将它们堆叠到同一工具栏位置。</translation>
+        </message>
+        <message>
+            <source>Drag tools to reorder, group, or hide them on the floating toolbar.</source>
+            <translation>拖动工具可调整悬浮工具栏中的顺序、分组或隐藏工具。</translation>
         </message>
         <message>
             <source>Draw a dashed crosshair at the pointer while guides are enabled</source>
@@ -1838,6 +1877,14 @@
         <message>
             <source>Flip vertically</source>
             <translation>垂直翻转</translation>
+        </message>
+        <message>
+            <source>Floating toolbar</source>
+            <translation>悬浮工具栏</translation>
+        </message>
+        <message>
+            <source>Floating toolbar settings</source>
+            <translation>悬浮工具栏设置</translation>
         </message>
         <message>
             <source>Focused window</source>
@@ -3106,6 +3153,14 @@
         <message>
             <source>Show the drawing and close buttons in the upper-right corner of pinned windows</source>
             <translation>显示贴图窗口右上角的绘图和关闭按钮</translation>
+        </message>
+        <message>
+            <source>Show the floating toolbar on the desktop</source>
+            <translation>在桌面上显示悬浮工具栏</translation>
+        </message>
+        <message>
+            <source>Show toolbar</source>
+            <translation>显示工具栏</translation>
         </message>
         <message>
             <source>Show window buttons</source>

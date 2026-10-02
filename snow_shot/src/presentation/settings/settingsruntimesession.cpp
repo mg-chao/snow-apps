@@ -23,6 +23,8 @@ SettingsCustomRenderer toolbarRenderer(storage::ScreenshotToolbarLayoutKind kind
         return SettingsCustomRenderer::DrawingToolbarEditor;
     case storage::ScreenshotToolbarLayoutKind::ActionTools:
         return SettingsCustomRenderer::ScreenshotToolbarEditor;
+    case storage::ScreenshotToolbarLayoutKind::FloatingTools:
+        return SettingsCustomRenderer::FloatingToolbarEditor;
     case storage::ScreenshotToolbarLayoutKind::PinnedActionTools:
         return SettingsCustomRenderer::PinnedToolbarEditor;
     }
@@ -973,6 +975,9 @@ QVariant SettingsRuntimeSession::readValue(const SettingsFieldDescriptor& descri
                 case SettingsCustomRenderer::DrawingToolbarEditor:
                     return QVariant::fromValue(m_backend.toolbarLayout(
                         storage::ScreenshotToolbarLayoutKind::DrawingTools));
+                case SettingsCustomRenderer::FloatingToolbarEditor:
+                    return QVariant::fromValue(m_backend.toolbarLayout(
+                        storage::ScreenshotToolbarLayoutKind::FloatingTools));
                 case SettingsCustomRenderer::PinnedToolbarEditor:
                     return QVariant::fromValue(m_backend.toolbarLayout(
                         storage::ScreenshotToolbarLayoutKind::PinnedActionTools));
@@ -1051,6 +1056,11 @@ bool SettingsRuntimeSession::writeValue(const SettingsFieldDescriptor& descripto
                 case SettingsCustomRenderer::PermissionInputMonitoring:
                 case SettingsCustomRenderer::PermissionMicrophone:
                     return {};
+                case SettingsCustomRenderer::FloatingToolbarEditor:
+                    return value.canConvert<storage::ScreenshotToolbarLayout>() &&
+                           m_backend.applyToolbarLayout(
+                               storage::ScreenshotToolbarLayoutKind::FloatingTools,
+                               value.value<storage::ScreenshotToolbarLayout>());
                 case SettingsCustomRenderer::PinnedToolbarEditor:
                     return value.canConvert<storage::ScreenshotToolbarLayout>() &&
                            m_backend.applyToolbarLayout(
@@ -1170,7 +1180,8 @@ bool SettingsRuntimeSession::valuesEqual(const SettingsFieldDescriptor& descript
         const auto& custom = std::get<SettingsCustomDefinition>(descriptor.definition->payload);
         if (custom.renderer == SettingsCustomRenderer::DrawingToolbarEditor ||
             custom.renderer == SettingsCustomRenderer::ScreenshotToolbarEditor ||
-            custom.renderer == SettingsCustomRenderer::PinnedToolbarEditor) {
+            custom.renderer == SettingsCustomRenderer::PinnedToolbarEditor ||
+            custom.renderer == SettingsCustomRenderer::FloatingToolbarEditor) {
             return first.value<storage::ScreenshotToolbarLayout>() ==
                    second.value<storage::ScreenshotToolbarLayout>();
         }

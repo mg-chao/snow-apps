@@ -368,6 +368,13 @@ void fullscreenClassificationUsesTheFocusedLayerZeroWindow() {
 
     const QVector<QRectF> displays{QRectF(0.0, 0.0, 1728.0, 1117.0),
                                    QRectF(1728.0, 0.0, 1920.0, 1080.0)};
+    const QVector<FocusedWindowSnapshot> secondMonitor{{41, 0, 1.0, displays.last()}};
+    require(focusedWindowCoversDisplay(41, secondMonitor, {displays.last()}) &&
+                !focusedWindowCoversDisplay(41, secondMonitor, {displays.first()}),
+            "monitor-scoped fullscreen detection must ignore another monitor");
+    require(!focusedWindowCoversDisplay(41, {{41, 0, 1.0, QRectF(0.0, 0.0, 1728.0, 1069.0)}},
+                                        {displays.first()}),
+            "a maximized window excluding the taskbar is not fullscreen");
     require(focusedWindowCoversDisplay(41,
                                        {{22, 0, 1.0, displays.first()},
                                         {41, 8, 1.0, displays.first()},

@@ -1,5 +1,6 @@
 #include "snow_shot/globalmouseactivationkeys.h"
 #include "snow_shot/storage/configurationschema.h"
+#include "snow_shot/storage/floatingtoolbarsettings.h"
 #include "snow_shot/app/edition.h"
 #if SNOW_SHOT_ENABLE_API_CONFIGURATION
 #include "snow_shot/serverconfiguration.h"
@@ -151,6 +152,20 @@ QString defaultOutputDirectory(QStandardPaths::StandardLocation primary) {
 }
 
 const QVector<ConfigurationSchemaEntry> kRawEntries = {
+    {QStringLiteral("floating_toolbar/enabled"), false, ConfigurationValueKind::Boolean},
+    {QStringLiteral("floating_toolbar/hide_in_fullscreen"), true, ConfigurationValueKind::Boolean},
+    {QStringLiteral("floating_toolbar/hide_during_capture"), true, ConfigurationValueKind::Boolean},
+    {QStringLiteral("floating_toolbar/mode"),
+     QStringLiteral("icon"),
+     ConfigurationValueKind::String,
+     std::nullopt,
+     {QStringLiteral("icon"), QStringLiteral("toolbar")}},
+    {QStringLiteral("floating_toolbar/placement"), QJsonObject(),
+     ConfigurationValueKind::Structured},
+    {QStringLiteral("floating_toolbar/layout"),
+     QJsonObject{{QStringLiteral("positions"), jsonArray(defaultFloatingToolbarLayout().positions)},
+                 {QStringLiteral("hidden"), jsonArray(defaultFloatingToolbarLayout().hidden)}},
+     ConfigurationValueKind::Structured},
 #if SNOW_SHOT_ENABLE_API_CONFIGURATION
     {QStringLiteral("api_configuration/server_url"), QString(), ConfigurationValueKind::String},
 #endif
@@ -1769,7 +1784,9 @@ ConfigurationNormalization normalizeTranslationLanguage(const ConfigurationSchem
 ConfigurationNormalization normalizeToolbarLayout(const QJsonValue& value,
                                                   const QStringList& itemIds,
                                                   const QVector<QStringList>& defaultPositions,
-                                                  bool migrateScreenshotLayout = false) {
+                                                  bool migrateScreenshotLayout = false,
+                                                  const QStringList& defaultHidden = {},
+                                                  bool legacyDefaults = true) {
     if (!value.isObject()) {
         return {};
     }
@@ -1837,7 +1854,9 @@ ConfigurationNormalization normalizeToolbarLayout(const QJsonValue& value,
         return {};
     }
 
-    if (app::edition::isMini && known.contains(QStringLiteral("text-recognition")) &&
+    appendHidden(defaultHidden);
+    if (legacyDefaults && app::edition::isMini &&
+        known.contains(QStringLiteral("text-recognition")) &&
         !positioned.contains(QStringLiteral("text-recognition")) &&
         !hiddenSet.contains(QStringLiteral("text-recognition"))) {
         appendHidden({QStringLiteral("text-recognition")});
@@ -1899,15 +1918,15 @@ ConfigurationNormalization normalizeToolbarLayout(const QJsonValue& value,
     }
     // Upgrade the previous default recognition group, preserving custom arrangements.
     for (QStringList& position : positions) {
-        if (position == QStringList{QStringLiteral("convert-to-html"),
-                                    QStringLiteral("latex-recognition"),
-                                    QStringLiteral("convert-to-markdown"),
-                                    QStringLiteral("barcode-recognition"),
-                                    QStringLiteral("table-recognition")}) {
+        if (legacyDefaults && position == QStringList{QStringLiteral("convert-to-html"),
+                                                      QStringLiteral("latex-recognition"),
+                                                      QStringLiteral("convert-to-markdown"),
+                                                      QStringLiteral("barcode-recognition"),
+                                                      QStringLiteral("table-recognition")}) {
             position.swapItemsAt(1, 2);
         }
     }
-    if (known.contains(QStringLiteral("latex-recognition")) &&
+    if (legacyDefaults && known.contains(QStringLiteral("latex-recognition")) &&
         !positioned.contains(QStringLiteral("latex-recognition")) &&
         !hiddenSet.contains(QStringLiteral("latex-recognition"))) {
         for (QStringList& position : positions) {
@@ -2146,6 +2165,27 @@ ConfigurationNormalization ConfigurationSchema::normalize(const QString& key,
     }
     if (key == QStringLiteral("screenshot/manual_save_format_options"))
         return normalizeManualSaveFormatOptions(value);
+    if (key == QStringLiteral("floating_toolbar/placement")) {
+        if (!value.isObject())
+            return {};
+        const auto input = value.toObject();
+        if (input.isEmpty())
+            return {input, true, false};
+        const double x = input.value(QStringLiteral("x")).toDouble(-1);
+        const double y = input.value(QStringLiteral("y")).toDouble(-1);
+        if (!std::isfinite(x) || !std::isfinite(y) || x < 0 || x > 1 || y < 0 || y > 1)
+            return {};
+        const QJsonObject result{
+            {QStringLiteral("screen"), input.value(QStringLiteral("screen")).toString()},
+            {QStringLiteral("x"), x},
+            {QStringLiteral("y"), y}};
+        return {result, true, result != input};
+    }
+    if (key == QStringLiteral("floating_toolbar/layout")) {
+        return normalizeToolbarLayout(value, floatingToolbarItemIds(),
+                                      defaultFloatingToolbarLayout().positions, false,
+                                      defaultFloatingToolbarLayout().hidden, false);
+    }
     if (key == QStringLiteral("screenshot_toolbar/layout")) {
         return normalizeToolbarLayout(value, kDrawingToolbarItemIds,
                                       defaultDrawingToolbarPositions());

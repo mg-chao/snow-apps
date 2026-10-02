@@ -65,6 +65,18 @@ namespace {
 namespace toolbar_layout = snow_shot::presentation::toolbar_layout;
 namespace storage = snow_shot::storage;
 
+[[maybe_unused]] const char* const kFloatingToolbarEditorTexts[] = {
+    QT_TRANSLATE_NOOP("FloatingToolbarEditorSettingsWidget",
+                      "Drop beside a tool to create a position. Drop above a tool to stack it. The "
+                      "bottom tool stays on the main toolbar row."),
+    QT_TRANSLATE_NOOP("FloatingToolbarEditorSettingsWidget", "Floating toolbar preview"),
+    QT_TRANSLATE_NOOP("FloatingToolbarEditorSettingsWidget", "Hidden tools"),
+    QT_TRANSLATE_NOOP("FloatingToolbarEditorSettingsWidget",
+                      "Drag tools here to hide them from the floating toolbar."),
+    QT_TRANSLATE_NOOP("FloatingToolbarEditorSettingsWidget", "No hidden tools"),
+    QT_TRANSLATE_NOOP("FloatingToolbarEditorSettingsWidget", "Hidden floating toolbar tools"),
+};
+
 constexpr char kToolbarItemMimeType[] = "application/x-snow-shot-toolbar-item";
 constexpr char kToolbarItemProperty[] = "screenshotToolbarItemId";
 constexpr int kToolbarButtonSize = 32;
@@ -920,6 +932,10 @@ struct ToolbarEditorSettingsWidget::Private {
                                    : QStringLiteral("settings-screenshot-toolbar");
         translationContext = drawing ? "DrawingToolbarEditorSettingsWidget"
                                      : "ScreenshotToolbarEditorSettingsWidget";
+        if (layoutKind == storage::ScreenshotToolbarLayoutKind::FloatingTools) {
+            objectNamePrefix = QStringLiteral("settings-floating-toolbar");
+            translationContext = "FloatingToolbarEditorSettingsWidget";
+        }
         if (layoutKind == storage::ScreenshotToolbarLayoutKind::PinnedActionTools) {
             objectNamePrefix = QStringLiteral("settings-pinned-toolbar");
             translationContext = "PinnedToolbarEditorSettingsWidget";
@@ -1147,12 +1163,16 @@ struct ToolbarEditorSettingsWidget::Private {
                 ? "Drawing toolbar preview"
             : layoutKind == storage::ScreenshotToolbarLayoutKind::PinnedActionTools
                 ? "Pin to Screen toolbar preview"
+            : layoutKind == storage::ScreenshotToolbarLayoutKind::FloatingTools
+                ? "Floating toolbar preview"
                 : "Screenshot toolbar preview"));
         hiddenTitleLabel->setText(translatedToolbarText(translationContext, "Hidden tools"));
         hiddenDescriptionLabel->setText(translatedToolbarText(
             translationContext,
             layoutKind == storage::ScreenshotToolbarLayoutKind::PinnedActionTools
                 ? "Drag tools here to hide them from the pinned toolbar."
+            : layoutKind == storage::ScreenshotToolbarLayoutKind::FloatingTools
+                ? "Drag tools here to hide them from the floating toolbar."
                 : "Drag tools here to hide them from the screenshot toolbar."));
         hiddenZone->setEmptyText(translatedToolbarText(translationContext, "No hidden tools"));
         hiddenZone->setAccessibleName(translatedToolbarText(
@@ -1161,12 +1181,16 @@ struct ToolbarEditorSettingsWidget::Private {
                 ? "Hidden drawing toolbar tools"
             : layoutKind == storage::ScreenshotToolbarLayoutKind::PinnedActionTools
                 ? "Hidden pinned toolbar tools"
+            : layoutKind == storage::ScreenshotToolbarLayoutKind::FloatingTools
+                ? "Hidden floating toolbar tools"
                 : "Hidden screenshot toolbar tools"));
         for (const toolbar_layout::EditorDescriptor& descriptor : descriptors) {
             ToolbarDragButton* button = buttons.value(QString::fromLatin1(descriptor.id));
             if (button != nullptr) {
                 const QString label =
-                    translatedToolbarText(descriptor.translationContext, descriptor.label);
+                    translatedToolbarText(descriptor.translationContext, descriptor.label)
+                        .replace(QStringLiteral("%1"),
+                                 QString::number(storage::ScreenshotSettings().delaySeconds()));
                 button->setToolTip(label);
                 button->setAccessibleName(label);
             }
@@ -1416,6 +1440,9 @@ SettingsCustomWidget* createSettingsCustomWidget(
     case SettingsCustomRenderer::DrawingToolbarEditor:
         return new ToolbarEditorSettingsWidget(
             renderer, storage::ScreenshotToolbarLayoutKind::DrawingTools, runtimeSession, parent);
+    case SettingsCustomRenderer::FloatingToolbarEditor:
+        return new ToolbarEditorSettingsWidget(
+            renderer, storage::ScreenshotToolbarLayoutKind::FloatingTools, runtimeSession, parent);
     case SettingsCustomRenderer::PinnedToolbarEditor:
         return new ToolbarEditorSettingsWidget(
             renderer, storage::ScreenshotToolbarLayoutKind::PinnedActionTools, runtimeSession,

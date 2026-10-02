@@ -4,6 +4,8 @@
 #include <QRectF>
 #include <QVector>
 
+class QScreen;
+
 namespace snow_shot::platform {
 
 struct FocusedWindowSnapshot {
@@ -19,6 +21,7 @@ struct FocusedWindowSnapshot {
 
 // Permission-free best-effort check used only to suppress configured global shortcuts.
 [[nodiscard]] bool focusedFullscreenWindowExists();
+[[nodiscard]] bool focusedFullscreenWindowOnScreen(QScreen* screen);
 
 } // namespace snow_shot::platform
 

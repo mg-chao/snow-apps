@@ -6,9 +6,12 @@
 #endif
 #include <dwmapi.h>
 #include <qt_windows.h>
+#include <QtGui/qscreen_platform.h>
 #endif
 
 #include <cstdlib>
+#include <QScreen>
+#include "snow_shot/platform/focusedfullscreenwindow.h"
 
 namespace snow_shot::platform::windows {
 namespace {
@@ -20,7 +23,7 @@ bool coordinatesMatch(LONG lhs, LONG rhs) {
 #endif
 } // namespace
 
-bool focusedFullscreenWindowExists() {
+bool focusedFullscreenWindowMatches(const QScreen* screen) {
 #if defined(Q_OS_WIN) || defined(_WIN32)
     HWND window = GetForegroundWindow();
     if (window == nullptr || IsWindow(window) == 0 || IsWindowVisible(window) == 0 ||
@@ -48,25 +51,38 @@ bool focusedFullscreenWindowExists() {
     if (monitor == nullptr) {
         return false;
     }
-    MONITORINFO monitorInfo{};
+    MONITORINFOEXW monitorInfo{};
     monitorInfo.cbSize = sizeof(monitorInfo);
-    if (GetMonitorInfoW(monitor, &monitorInfo) == 0) {
+    if (GetMonitorInfoW(monitor, reinterpret_cast<MONITORINFO*>(&monitorInfo)) == 0) {
         return false;
     }
 
+    if (screen) {
+        const auto* native = screen->nativeInterface<QNativeInterface::QWindowsScreen>();
+        if (!native || native->handle() != monitor)
+            return false;
+    }
     const RECT& bounds = monitorInfo.rcMonitor;
     return coordinatesMatch(frame.left, bounds.left) && coordinatesMatch(frame.top, bounds.top) &&
            coordinatesMatch(frame.right, bounds.right) &&
            coordinatesMatch(frame.bottom, bounds.bottom);
 #else
+    Q_UNUSED(screen);
     return false;
 #endif
+}
+
+bool focusedFullscreenWindowExists() {
+    return focusedFullscreenWindowMatches(nullptr);
 }
 
 } // namespace snow_shot::platform::windows
 
 #if defined(Q_OS_WIN) || defined(_WIN32)
 namespace snow_shot::platform {
+bool focusedFullscreenWindowOnScreen(QScreen* screen) {
+    return screen && windows::focusedFullscreenWindowMatches(screen);
+}
 bool focusedFullscreenWindowExists() {
     return windows::focusedFullscreenWindowExists();
 }

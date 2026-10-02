@@ -1217,6 +1217,7 @@ set(PROJECT_HEADERS
     include/snow_shot/presentation/styles/mainwindowcomponenttoken.h
     include/snow_shot/presentation/styles/buttonborder.h
     include/snow_shot/presentation/styles/themecolorscheme.h
+    include/snow_shot/presentation/floatingtoolbarcontroller.h
     include/snow_shot/presentation/systemtraycontroller.h
 )
 
@@ -1375,6 +1376,7 @@ set(PROJECT_CXX_SOURCES
     src/presentation/recording/recordingaudiogainpopover.cpp
     src/presentation/recording/recordingaudiogainpopover.h
     src/presentation/tools/screenshottoolpalettehost.cpp
+    src/presentation/toolbar/floatingtoolbarcontroller.cpp
     src/presentation/toolbar/screenshottoolbarwindow.cpp
     src/presentation/recording/screenrecordingareawindow.cpp
     src/presentation/recording/recordingrenderjob.cpp
@@ -9024,6 +9026,57 @@ if(SNOW_SHOT_BUILD_BENCHMARKS)
             "${CMAKE_CURRENT_SOURCE_DIR}/resources/snow-shot-tray-snow-dark.png")
     snow_shot_add_translations(snow-shot-skin-surface-performance-benchmark)
     snow_shot_import_offscreen_platform(snow-shot-skin-surface-performance-benchmark)
+endif()
+
+# Desktop floating toolbar coverage also supplies the focused Release benchmark.
+if(SNOW_SHOT_BUILD_TESTS OR SNOW_APPS_BUILD_BENCHMARKS)
+    set(_snow_floating_test_sources
+        tests/floating_toolbar_tests.cpp
+        include/snow_shot/presentation/floatingtoolbarcontroller.h
+        src/presentation/toolbar/floatingtoolbarcontroller.cpp
+        src/presentation/tools/screenshottoolbarmainpanel.cpp
+        src/presentation/tools/screenshottoolpalettebuttons.cpp
+        src/presentation/services/screenshotclipboardcontent.cpp
+        src/presentation/services/screenshotclipboardservice.cpp
+        src/presentation/services/screenshotclipboarddibdecoder_avx2.cpp)
+    set(_snow_floating_targets)
+    if(SNOW_SHOT_BUILD_TESTS)
+        add_executable(snow-shot-floating-toolbar-tests ${_snow_floating_test_sources})
+        target_compile_definitions(snow-shot-floating-toolbar-tests PRIVATE
+            SNOW_FLOATING_TEST_TRANSLATIONS_DIR="${CMAKE_CURRENT_BINARY_DIR}")
+        add_dependencies(snow-shot-floating-toolbar-tests snow_shot_release_translations)
+        list(APPEND _snow_floating_targets snow-shot-floating-toolbar-tests)
+        add_test(NAME snow-shot-floating-toolbar-tests COMMAND snow-shot-floating-toolbar-tests)
+        set_tests_properties(snow-shot-floating-toolbar-tests PROPERTIES LABELS "unit" TIMEOUT 60
+            SNOW_TEST_CROSS_PLATFORM TRUE
+            ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}"
+            ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
+        if(WIN32)
+            add_test(NAME snow-shot-floating-toolbar-native-tests
+                COMMAND snow-shot-floating-toolbar-tests --native-probe -platform windows)
+            set_tests_properties(snow-shot-floating-toolbar-native-tests PROPERTIES
+                LABELS "interactive;windows" RUN_SERIAL TRUE TIMEOUT 60
+                ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
+        endif()
+    endif()
+    if(SNOW_APPS_BUILD_BENCHMARKS)
+        add_executable(snow-shot-floating-toolbar-performance-benchmark ${_snow_floating_test_sources})
+        list(APPEND _snow_floating_targets snow-shot-floating-toolbar-performance-benchmark)
+    endif()
+    foreach(_snow_floating_target IN LISTS _snow_floating_targets)
+        target_include_directories(${_snow_floating_target} PRIVATE include src/image)
+        target_link_libraries(${_snow_floating_target} PRIVATE
+            snow_shot_settings snow_shot_image_codec snow_shot_clipboard_placement
+            snow_draw_engine_qt_canvas ant_design_qt Qt6::Widgets)
+        snow_shot_import_offscreen_platform(${_snow_floating_target})
+        snow_shot_link_macos_window_platform(${_snow_floating_target})
+        if(WIN32)
+            target_link_libraries(${_snow_floating_target} PRIVATE dwmapi gdi32 user32)
+            if(NOT SNOW_SHOT_IMAGE_CODEC_BACKEND_STATIC)
+                _snow_shot_stage_image_runtime(${_snow_floating_target})
+            endif()
+        endif()
+    endforeach()
 endif()
 
 # Toolbar and tray sources are also compiled directly by focused tests and

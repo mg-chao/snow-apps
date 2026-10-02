@@ -37,6 +37,9 @@ bool focusedWindowCoversDisplay(qint64 frontmostProcessId,
 }
 
 #if !defined(Q_OS_WIN) && !defined(Q_OS_MACOS)
+bool focusedFullscreenWindowOnScreen(QScreen*) {
+    return false;
+}
 bool focusedFullscreenWindowExists() {
     return false;
 }
