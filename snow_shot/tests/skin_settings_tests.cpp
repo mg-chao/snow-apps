@@ -9,6 +9,7 @@
 #include "snow_shot/storage/applicationstorage.h"
 #include "snow_shot/storage/configurationschema.h"
 #include "snow_shot/storage/settingsadapters.h"
+#include "widgets/form.h"
 
 #include <QApplication>
 #include <QDir>
@@ -778,7 +779,9 @@ void skinCopyFitsAfterStatusLanguageThemeAndResize() {
     page.reveal({page.pageId(), QStringLiteral("skin"), {}});
     drainEvents();
     auto* generalRow = page.findChild<QWidget*>(QStringLiteral("settings-item-interface-theme"));
-    require(generalRow != nullptr, "the General row must be materialized alongside Skin");
+    require(generalRow != nullptr &&
+                generalRow->sizePolicy().verticalPolicy() == QSizePolicy::Preferred,
+            "General rows must retain the shared form field's wrapping sizing policy");
     const QSizePolicy generalSizePolicy = generalRow->sizePolicy();
 
     auto& languages = presentation::LanguageManager::instance();
@@ -858,21 +861,36 @@ void skinCopyFitsAfterStatusLanguageThemeAndResize() {
                         require(pathDescription->height() > readyHeight,
                                 "loading and error status must expand the Skin Path description");
                     }
-                    auto* input = page.findChild<FilePathInput*>(
-                        QStringLiteral("settings-control-interface-skin-path"));
-                    require(
-                        input != nullptr &&
-                            input->lineEdit()->accessibleDescription() == pathDescription->text() &&
-                            input->lineEdit()->status() ==
-                                (status == SkinStatusBackend::Status::Error
-                                     ? adqt::widgets::AdLineEdit::Status::Error
-                                     : adqt::widgets::AdLineEdit::Status::None) &&
-                            pathDescription->palette().color(QPalette::WindowText) ==
-                                (status == SkinStatusBackend::Status::Error
-                                     ? themes.themeColorScheme().map.colorErrorText
-                                     : themes.themeColorScheme().map.colorTextSecondary),
-                        "Skin status must retranslate accessibly and keep its themed error style");
-                    require(input->text() == draftPath &&
+                    for (const auto& fieldId :
+                         {pathId, QStringLiteral("interface.skin.toolbar-path"),
+                          QStringLiteral("interface.skin.tray-menu-path")}) {
+                        auto* input = page.findChild<FilePathInput*>(settings::generatedObjectName(
+                            QStringLiteral("settings-control"), fieldId));
+                        auto* row = page.findChild<QWidget*>(settings::generatedObjectName(
+                            QStringLiteral("settings-item"), fieldId));
+                        auto* item =
+                            row != nullptr ? row->findChild<adqt::widgets::AdFormItem*>() : nullptr;
+                        auto* description =
+                            descriptionForField(page, registry, fieldId, pathStatus);
+                        const bool statusError = status == SkinStatusBackend::Status::Error;
+                        require(input != nullptr && item != nullptr &&
+                                    input->lineEdit()->accessibleDescription() ==
+                                        description->text() &&
+                                    item->validateStatus() ==
+                                        (statusError
+                                             ? adqt::widgets::AdFormItem::ValidateStatus::Error
+                                             : adqt::widgets::AdFormItem::ValidateStatus::None) &&
+                                    input->lineEdit()->status() ==
+                                        (statusError ? adqt::widgets::AdLineEdit::Status::Error
+                                                     : adqt::widgets::AdLineEdit::Status::None) &&
+                                    description->palette().color(QPalette::WindowText) ==
+                                        (statusError
+                                             ? themes.themeColorScheme().map.colorErrorText
+                                             : themes.themeColorScheme().map.colorTextSecondary),
+                                "all skin paths must retain and clear accessible, themed form and "
+                                "input error states across status, language and theme changes");
+                    }
+                    require(pathInput->text() == draftPath &&
                                 session.filePathValue(
                                     settings::SettingsFilePathBinding::SkinPath) == persistedPath &&
                                 !session.state(pathId).dirty && !session.hasPendingWrites(),

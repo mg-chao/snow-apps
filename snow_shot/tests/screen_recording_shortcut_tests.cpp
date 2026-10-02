@@ -593,6 +593,17 @@ void recordingShortcutsFollowBothWindowsAndConfiguredKeys() {
     require(area.focusPolicy() == Qt::StrongFocus &&
                 !area.testAttribute(Qt::WA_ShowWithoutActivating),
             "idle recording area must accept keyboard input for region editing");
+    auto* moveButton = area.findChild<QWidget*>(QStringLiteral("screenRecordingRegionDragHandle"));
+    require(moveButton && moveButton->isVisible() && !moveButton->isWindow() &&
+                moveButton->parentWidget() == &area,
+            "region editing must expose its child move button");
+    focus(area);
+    const int beforeRegionShortcut = shapes;
+    press(*moveButton, Qt::Key_F6);
+    require(shapes == beforeRegionShortcut + 1 &&
+                area.inputMode() == ScreenRecordingAreaWindow::InputMode::Drawing &&
+                !moveButton->isVisible(),
+            "drawing shortcuts from region controls must focus the canvas and hide the controls");
 
     for (QWidget* receiver : {static_cast<QWidget*>(&toolbar), static_cast<QWidget*>(&area),
                               static_cast<QWidget*>(canvas), palette->mainPanel()}) {

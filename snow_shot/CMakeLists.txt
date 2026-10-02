@@ -2341,6 +2341,19 @@ if(SNOW_SHOT_BUILD_TESTS)
     )
     snow_shot_import_offscreen_platform(snow-shot-settings-color-commit-tests)
 
+    add_executable(snow-shot-settings-slider-commit-tests
+        tests/settings_slider_commit_tests.cpp
+        src/presentation/services/screenshotclipboardservice.cpp)
+    target_link_libraries(snow-shot-settings-slider-commit-tests PRIVATE
+        snow_shot_settings snow_shot_image_codec)
+    snow_shot_import_offscreen_platform(snow-shot-settings-slider-commit-tests)
+    add_test(NAME snow-shot-settings-slider-commit-tests
+        COMMAND snow-shot-settings-slider-commit-tests)
+    set_tests_properties(snow-shot-settings-slider-commit-tests PROPERTIES
+        LABELS "unit" TIMEOUT 60
+        ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}"
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
+
     add_executable(snow-shot-settings-page-loading-tests
         tests/settings_page_loading_tests.cpp
         src/presentation/services/screenshotclipboardservice.cpp)
@@ -3494,6 +3507,13 @@ if(SNOW_SHOT_BUILD_TESTS)
 
     add_executable(snow-shot-screenshot-canvas-renderer-tests
         tests/screenshot_canvas_renderer_tests.cpp
+        tests/screenshot_selection_effect_editor_tests.cpp
+        src/presentation/overlay/screenshotoverlayinputhandler.cpp
+        src/presentation/overlay/screenshotoverlayinteractionadapter.cpp
+        src/presentation/overlay/screenshotoverlayshortcutcontroller.cpp
+        include/snow_shot/presentation/screenshotoverlayshortcutcontroller.h
+        src/presentation/selection/screenshotselectioneditworkflow.cpp
+        src/presentation/selection/screenshotselectionsettingsstore.cpp
         tests/screenshot_cursor_tests.cpp
         src/presentation/services/screenshotsourceimagecomposer.cpp
         src/presentation/services/screenshotimagefileservice.cpp
@@ -3549,6 +3569,12 @@ if(SNOW_SHOT_BUILD_TESTS)
     add_test(NAME snow-shot-screenshot-cursor-tests
         COMMAND snow-shot-screenshot-canvas-renderer-tests --cursor-only -platform offscreen)
     set_tests_properties(snow-shot-screenshot-cursor-tests PROPERTIES LABELS "unit")
+    add_test(NAME snow-shot-selection-effect-editor-tests
+        COMMAND snow-shot-screenshot-canvas-renderer-tests --selection-effect-editors-only -platform offscreen)
+    set_tests_properties(snow-shot-selection-effect-editor-tests PROPERTIES LABELS "unit")
+    add_test(NAME snow-shot-selection-effect-preview-tests
+        COMMAND snow-shot-screenshot-canvas-renderer-tests --selection-effect-preview-only -platform offscreen)
+    set_tests_properties(snow-shot-selection-effect-preview-tests PROPERTIES LABELS "unit")
     snow_shot_link_macos_window_platform(snow-shot-screenshot-canvas-renderer-tests)
     target_include_directories(snow-shot-screenshot-canvas-renderer-tests PRIVATE
         "${CMAKE_CURRENT_SOURCE_DIR}/include"
@@ -7004,6 +7030,42 @@ if(SNOW_SHOT_BUILD_TESTS)
         ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
 endif()
 
+if(SNOW_SHOT_BUILD_BENCHMARKS)
+    # This executable deliberately is not registered with CTest. It creates a
+    # native widget and reports hardware-sensitive timing for explicit
+    # Release performance sessions on Windows and macOS.
+    add_executable(snow-shot-selection-render-benchmark
+        tests/screenshot_selection_render_benchmark.cpp
+        include/snow_shot/presentation/screenshotcanvasrenderer.h
+        include/snow_shot/presentation/screenshotselectionshadowrenderer.h
+        src/presentation/ocr/screenshotocrpresentation.cpp
+        src/presentation/ocr/screenshotocrtextlayout.cpp
+        src/presentation/ocr/screenshotocrtexttransform.cpp
+        src/presentation/ocr/screenshottabledocument.cpp
+        src/presentation/overlay/screenshotcanvasrenderer.cpp
+        src/presentation/overlay/screenshotimagerendering.cpp
+        src/presentation/overlay/screenshotselectionshadowrenderer.cpp
+    )
+    target_compile_definitions(snow-shot-selection-render-benchmark PRIVATE
+        NOMINMAX
+        SNOW_SHOT_BENCH_INTERNALS=1
+    )
+    target_include_directories(snow-shot-selection-render-benchmark PRIVATE
+        "${CMAKE_CURRENT_SOURCE_DIR}/include"
+        "${SNOW_SHOT_DRAW_ENGINE_QT_DIR}/src/rendering"
+        "${SNOW_SHOT_DRAW_ENGINE_QT_DIR}/crates/snow-draw-engine-c/include"
+    )
+    target_link_libraries(snow-shot-selection-render-benchmark PRIVATE
+        Qt6::Widgets
+        ant_design_qt
+        snow_draw_engine_qt_canvas
+    )
+    if(WIN32)
+        target_link_libraries(snow-shot-selection-render-benchmark PRIVATE dwmapi user32)
+    endif()
+    snow_shot_import_offscreen_platform(snow-shot-selection-render-benchmark)
+endif()
+
 if(WIN32 AND SNOW_SHOT_BUILD_BENCHMARKS)
     add_executable(snow-shot-selection-toolbar-performance-benchmark
         tests/screenshot_selection_toolbar_performance_benchmark.cpp
@@ -7029,36 +7091,6 @@ if(WIN32 AND SNOW_SHOT_BUILD_BENCHMARKS)
         tests/screenshot_decoration_area_benchmark.cpp)
     target_link_libraries(snow-shot-decoration-area-benchmark PRIVATE
         Qt6::Widgets snow_draw_engine_qt_canvas)
-
-    # This executable deliberately is not registered with CTest. It creates a
-    # native 4K widget and reports hardware-sensitive timing for explicit
-    # Windows performance sessions.
-    add_executable(snow-shot-selection-render-benchmark
-        tests/screenshot_selection_render_benchmark.cpp
-        include/snow_shot/presentation/screenshotcanvasrenderer.h
-        include/snow_shot/presentation/screenshotselectionshadowrenderer.h
-        src/presentation/ocr/screenshotocrpresentation.cpp
-        src/presentation/ocr/screenshotocrtextlayout.cpp
-        src/presentation/overlay/screenshotcanvasrenderer.cpp
-        src/presentation/overlay/screenshotselectionshadowrenderer.cpp
-    )
-    target_compile_definitions(snow-shot-selection-render-benchmark PRIVATE
-        NOMINMAX
-        SNOW_SHOT_BENCH_INTERNALS=1
-    )
-    target_include_directories(snow-shot-selection-render-benchmark PRIVATE
-        "${CMAKE_CURRENT_SOURCE_DIR}/include"
-        "${SNOW_SHOT_DRAW_ENGINE_QT_DIR}/src/rendering"
-        "${SNOW_SHOT_DRAW_ENGINE_QT_DIR}/crates/snow-draw-engine-c/include"
-    )
-    target_link_libraries(snow-shot-selection-render-benchmark PRIVATE
-        Qt6::Widgets
-        ant_design_qt
-        snow_draw_engine_qt_canvas
-        dwmapi
-        user32
-    )
-    snow_shot_import_offscreen_platform(snow-shot-selection-render-benchmark)
 
     # This executable deliberately is not registered with CTest. It creates
     # real always-on-top toolbar windows and measures real DWM presentation
@@ -8529,17 +8561,23 @@ if(SNOW_SHOT_BUILD_TESTS)
     set_tests_properties(snow-shot-selection-render-tests PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen" LABELS "unit")
 endif()
 
-# Overlay hosts also own the shared region switcher and its custom icon pack.
-get_property(_region_switcher_targets DIRECTORY PROPERTY BUILDSYSTEM_TARGETS)
-foreach(_target IN LISTS _region_switcher_targets)
+# Overlay and recording hosts share widget controls and their custom icon pack.
+get_property(_overlay_widget_targets DIRECTORY PROPERTY BUILDSYSTEM_TARGETS)
+foreach(_target IN LISTS _overlay_widget_targets)
     get_target_property(_sources ${_target} SOURCES)
+    if(_sources MATCHES "screenrecordingareawindow.cpp")
+        target_sources(${_target} PRIVATE
+            src/presentation/recording/recordingregiondraghandle.cpp
+            src/presentation/recording/recordingregiondraghandle.h)
+    endif()
     if(WIN32 AND _sources MATCHES "screenshotoverlaywindow.cpp" AND
        NOT _sources MATCHES "src/platform/windows/windowchrome.cpp")
         target_sources(${_target} PRIVATE src/platform/windows/windowchrome.cpp)
         target_link_libraries(${_target} PRIVATE dwmapi user32)
     endif()
     if(NOT "${_target}" STREQUAL "snow_shot" AND
-       _sources MATCHES "screenshotoverlaywindow.cpp" AND NOT _sources MATCHES "snowshoticons.cpp")
+       _sources MATCHES "(screenshotoverlaywindow|screenrecordingareawindow).cpp" AND
+       NOT _sources MATCHES "snowshoticons.cpp")
         target_sources(${_target} PRIVATE src/presentation/components/icons/snowshoticons.cpp)
     endif()
 endforeach()

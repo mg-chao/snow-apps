@@ -30,6 +30,14 @@ class ScreenshotOverlayEventSink {
     [[nodiscard]] virtual ScreenshotOverlayRightClickResult
     handleOverlayRightClick(ScreenshotOverlayWindow* overlay, const QPointF& localPosition) = 0;
     virtual void completeRightClickCancellation() {}
+    virtual bool effectDragActive() const {
+        return false;
+    }
+    virtual void leaveEffectEditors() {}
+    virtual void cancelEffectDrag() {}
+    virtual bool handleEffectDoubleClick(ScreenshotOverlayWindow*, const QPointF&) {
+        return false;
+    }
     // Optional completion-gesture notifications. Lightweight event sinks can
     // keep the defaults when they only handle the mouse and keyboard surface.
     virtual bool handleRegionDoubleClick(ScreenshotOverlayWindow*, const QPointF&) {

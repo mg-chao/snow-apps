@@ -742,8 +742,6 @@ class SettingsPageWidget::Impl {
                              }
                              syncField(*item, &state);
                          });
-        QObject::connect(&runtimeSession, &settings::SettingsRuntimeSession::filePathStatusChanged,
-                         &q, [this] { requestVisibleSectionSync(); });
 #ifdef Q_OS_MACOS
         if (page != nullptr && page->id == QStringLiteral("app-permissions")) {
             if (auto* service = runtimeSession.appPermissions()) {

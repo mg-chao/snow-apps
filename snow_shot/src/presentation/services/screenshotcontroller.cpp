@@ -7,6 +7,7 @@
 #include "snow_shot/presentation/screenshotautofiltercontroller.h"
 #include "snow_shot/presentation/screenshotsourceimagecomposer.h"
 #include "snow_shot/presentation/screenshotcontroller.h"
+#include "snow_shot/presentation/screenshotoverlaycanvaspresenter.h"
 #include "snow_shot/presentation/screenshottoolbarpresentationstatefactory.h"
 #include "snow_shot/app/mcp/screenshotmcpselection.h"
 #include "snow_shot/platform/screenshotnative.h"
@@ -1977,6 +1978,21 @@ void ScreenshotController::Impl::createOverlayInputPipeline() {
     actions.toggleCursorVisibility = [this] {
         return setScreenshotCursorVisible(!m_displaySession.cursorVisible);
     };
+    actions.setEffectCursor = [](ScreenshotOverlayWindow* overlay,
+                                 ScreenshotSelectionEffectHandle handle) {
+        ScreenshotOverlayCanvasPresenter::setOverlayEffectCursor(overlay, handle);
+    };
+    actions.previewSelectionEffect = [this](ScreenshotSelectionEffectHandle handle, int value) {
+        m_selectionEditWorkflow->previewSelectionEffect(handle, value);
+    };
+    actions.commitSelectionEffects = [this] { m_selectionEditWorkflow->commitSelectionEffects(); };
+    actions.effectCanvas = [](const ScreenshotOverlayWindow* overlay) {
+        return overlay != nullptr ? overlay->canvas() : nullptr;
+    };
+    actions.persistSelectionAspectRatioPreference =
+        [this](ScreenshotSelectionAspectRatioPreset preset, bool locked) {
+            m_selectionSettings->setAspectRatioPreference(preset, locked);
+        };
     m_overlayInputHandler =
         std::make_unique<ScreenshotOverlayInputHandler>(ScreenshotOverlayInputHandlerContext{
             m_captureState,

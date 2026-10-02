@@ -4,6 +4,7 @@
 #include "snow_draw_engine_qt/snow_canvas_custom_renderer.h"
 #include "snow_shot/presentation/screenshotimagesource.h"
 #include "snow_shot/presentation/screenshotresultcompositor.h"
+#include "snow_shot/presentation/screenshotselectioneffectgeometry.h"
 
 #include <QColor>
 #include <QImage>
@@ -36,6 +37,10 @@ struct ScreenshotSelectionVisualState {
     int shadowWidth = 0;
     QColor shadowColor = QColor(0x33, 0x33, 0x33);
     bool toolbarHovered = false;
+    bool effectEditorsVisible = false;
+    ScreenshotSelectionEffectHandle hoveredEffectHandle = ScreenshotSelectionEffectHandle::None;
+    ScreenshotSelectionEffectHandle activeEffectHandle = ScreenshotSelectionEffectHandle::None;
+    bool effectPreviewVisible = false;
     std::optional<ScreenshotRegionGeometry> region;
     ScreenshotRegionGeometry confirmedRegion;
     QRectF marquee;
@@ -49,10 +54,13 @@ struct ScreenshotSelectionVisualState {
                handlesVisible == other.handlesVisible && borderVisible == other.borderVisible &&
                cornerRadius == other.cornerRadius && shadowWidth == other.shadowWidth &&
                shadowColor == other.shadowColor && toolbarHovered == other.toolbarHovered &&
-               region == other.region && confirmedRegion == other.confirmedRegion &&
-               marquee == other.marquee && subtracting == other.subtracting &&
-               dangerColor == other.dangerColor && draftPath == other.draftPath &&
-               draftVertices == other.draftVertices;
+               effectEditorsVisible == other.effectEditorsVisible &&
+               hoveredEffectHandle == other.hoveredEffectHandle &&
+               activeEffectHandle == other.activeEffectHandle &&
+               effectPreviewVisible == other.effectPreviewVisible && region == other.region &&
+               confirmedRegion == other.confirmedRegion && marquee == other.marquee &&
+               subtracting == other.subtracting && dangerColor == other.dangerColor &&
+               draftPath == other.draftPath && draftVertices == other.draftVertices;
     }
 
     [[nodiscard]] bool operator!=(const ScreenshotSelectionVisualState& other) const {

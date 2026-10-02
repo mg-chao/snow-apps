@@ -1399,12 +1399,18 @@ void shortcutHintStagesUseTheExactRequiredLines() {
     selectionLines.append({
         QStringLiteral("Move entire selection: Space"),
         QStringLiteral("Keep selection width and height consistent: Shift"),
+        QStringLiteral("Selection Aspect Ratio Snap: %1")
+            .arg(snow_shot::shortcuts::ShortcutDisplayService::instance().modifierText(
+                Qt::ControlModifier)),
     });
     selectionLines.append(commonLines);
     QStringList smartLines = cursorLines;
     smartLines.append({
         QStringLiteral("Switch element level: mouse wheel"),
         QStringLiteral("Select window/window sub-element: Tab"),
+        QStringLiteral("Selection Aspect Ratio Snap: %1")
+            .arg(snow_shot::shortcuts::ShortcutDisplayService::instance().modifierText(
+                Qt::ControlModifier)),
     });
     smartLines.append(commonLines);
 
@@ -5809,6 +5815,7 @@ void overlayWindowHasNoNativeShadow() {
 }
 
 void runScreenshotCursorTests();
+void runScreenshotSelectionEffectEditorTests();
 #if defined(SNOW_SHOT_CURSOR_BENCHMARK)
 void runScreenshotCursorBenchmark();
 #endif
@@ -5817,6 +5824,18 @@ int main(int argc, char** argv) {
     QApplication application(argc, argv);
     if (application.arguments().contains(QStringLiteral("--eraser-source-only"))) {
         originalEraserSourceExcludesPresentationOverlays();
+        return 0;
+    }
+    if (application.arguments().contains(QStringLiteral("--selection-effect-editors-only"))) {
+        runScreenshotSelectionEffectEditorTests();
+        return 0;
+    }
+    if (application.arguments().contains(QStringLiteral("--selection-effect-preview-only"))) {
+        hoveredSelectionToolbarHidesBorderAndRendersShadowPreview();
+        roundedSelectionPreviewKeepsTheSameContentBoundsWithAndWithoutShadow();
+        changingRoundedSelectionShadowRepaintsCornerPixels();
+        squareSelectionPreviewKeepsTheSameContentBoundsWithAndWithoutShadow();
+        changingSelectionCornerRadiusRepaintsRoundedMaskAndBorder();
         return 0;
     }
     if (application.arguments().contains(QStringLiteral("--cursor-only"))) {

@@ -3096,6 +3096,14 @@
             <translation>在新的一般螢幕擷取中預設顯示擷取的滑鼠游標。</translation>
         </message>
         <message>
+            <source>Show the drawing and close buttons in the upper-right corner of pinned windows</source>
+            <translation>顯示貼圖視窗右上角的繪圖和關閉按鈕</translation>
+        </message>
+        <message>
+            <source>Show window buttons</source>
+            <translation>顯示視窗按鈕</translation>
+        </message>
+        <message>
             <source>Shutter Sound Notification</source>
             <translation>快門聲音通知</translation>
         </message>

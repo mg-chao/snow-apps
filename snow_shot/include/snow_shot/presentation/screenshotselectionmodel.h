@@ -98,6 +98,8 @@ class ScreenshotSelectionModel final {
     void toggleAspectRatioLock(qreal minimumSelectionSize);
     [[nodiscard]] bool setAspectRatioPreset(ScreenshotSelectionAspectRatioPreset preset,
                                             const QRectF& bounds, qreal minimumSelectionSize);
+    // Commit a drag's already-constrained geometry without reshaping its preview.
+    [[nodiscard]] bool setDraggedAspectRatioPreset(ScreenshotSelectionAspectRatioPreset preset);
     [[nodiscard]] bool finalizeAspectRatio(const QRectF& bounds, qreal minimumSelectionSize);
     // Exact incoming geometry remains authoritative without losing a custom lock.
     void clearAspectRatioPresetForReplacement();

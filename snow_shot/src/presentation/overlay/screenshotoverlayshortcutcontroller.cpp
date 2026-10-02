@@ -198,6 +198,27 @@ struct ScreenshotOverlayShortcutController::Impl {
                     [this]() {
                         return inputHandler.acceptInput() && actions.cycleColorPickerFormat();
                     })));
+
+        auto snap = fixedBinding(
+            QStringLiteral("screenshot.selection_aspect_ratio_snap"),
+            {QKeyCombination(Qt::ControlModifier, Qt::Key_Control)},
+            ShortcutManager::StandardPriority::WindowCommand,
+            [this]() {
+                return (interaction.selecting() || interaction.movingSelection() ||
+                        interaction.modifyingSelection() || interaction.editing()) &&
+                       actions.localShortcutInputAllowed();
+            },
+            [this]() {
+                return inputHandler.acceptInput() &&
+                       inputHandler.activateSelectionAspectRatioSnapShortcut();
+            });
+        snap.allowModifierOnlyControl = true;
+        snap.allowedAdditionalModifiers = Qt::ShiftModifier;
+        snap.release = [this](const auto&) {
+            return inputHandler.releaseSelectionAspectRatioSnapShortcut();
+        };
+        snap.cancel = [this] { inputHandler.cancelSelectionAspectRatioSnapShortcut(); };
+        static_cast<void>(shortcutManager.addBinding(&q, std::move(snap)));
     }
 
     void registerConfiguredBindings() {
@@ -243,6 +264,9 @@ struct ScreenshotOverlayShortcutController::Impl {
             binding.priority = ShortcutManager::StandardPriority::ScreenshotShortcut;
             binding.autoRepeat = actionId.startsWith(QStringLiteral("move_cursor_"));
             binding.canActivate = [this, actionId](const auto&) {
+                if (inputHandler.effectDragActive() &&
+                    actionId != QStringLiteral("cancel_screenshot"))
+                    return false;
                 if (actionId == QStringLiteral("toggle_guides")) {
                     return !interaction.inactive() && actions.localShortcutInputAllowed();
                 }
@@ -380,7 +404,8 @@ struct ScreenshotOverlayShortcutController::Impl {
                     return true;
                 }
                 if (actionId == QStringLiteral("cancel_screenshot")) {
-                    return inputHandler.cancelRegionOperation() ||
+                    return inputHandler.cancelEffectDrag() ||
+                           inputHandler.cancelRegionOperation() ||
                            actions.cancelCaptureViaShortcut();
                 }
                 return activateToolbarShortcut(actionId, false);

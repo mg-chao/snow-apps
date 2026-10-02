@@ -73,6 +73,8 @@ struct SettingsFormField::Impl {
                         field = handle.field;
                         editor = handle.editor;
                     } else {
+                        // Keep drag previews local and apply only the completed adjustment.
+                        options.commitPolicy = fields::CommitPolicy::OnFinish;
                         const auto handle = fields::slider(metadata, numberOptions, options);
                         field = handle.field;
                         editor = handle.editor;
@@ -303,10 +305,16 @@ struct SettingsFormField::Impl {
                 std::get_if<SettingsFilePathDefinition>(&descriptor.definition->payload)) {
             const QString status = session.filePathStatus(file->binding);
             const bool statusError = session.filePathStatusError(file->binding);
-            QString description = descriptor.definition->description.translated();
-            if (!status.isEmpty())
-                description += QStringLiteral("\n") + status;
-            field->setDescriptionOverride(status.isEmpty() ? QString() : description, statusError);
+            QString description;
+            if (!status.isEmpty()) {
+                description = descriptor.definition->description.translated();
+                if (!description.isEmpty())
+                    description += QLatin1Char('\n');
+                description += status;
+            }
+            field->setDescriptionOverride(description, statusError);
+            if (statusError)
+                field->item()->setValidateStatus(adqt::widgets::AdFormItem::ValidateStatus::Error);
             qobject_cast<FilePathInput*>(editor)->lineEdit()->setStatus(
                 statusError || !error.isEmpty() ? adqt::widgets::AdLineEdit::Status::Error
                                                 : adqt::widgets::AdLineEdit::Status::None);

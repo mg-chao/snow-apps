@@ -30,6 +30,11 @@ on:
         default: v1.1.4-beta
         required: true
         type: string
+      running_app_behavior:
+        description: Expected silent upgrade behavior of the published installer
+        default: Refuse
+        type: choice
+        options: [Refuse, Restart]
 
 permissions:
   contents: read
@@ -64,9 +69,11 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ inputs.tag || 'v1.1.5-beta' }}
           PREVIOUS_TAG: ${{ inputs.previous_tag || 'v1.1.4-beta' }}
+          RUNNING_APP_BEHAVIOR: ${{ inputs.running_app_behavior || 'Refuse' }}
         run: |
           ./scripts/test-snow-shot-winget-install.ps1 -Tag $env:RELEASE_TAG `
-            -PreviousTag $env:PREVIOUS_TAG -Winget $env:WINGET_EXE -AllowUnrecognizedRelease
+            -PreviousTag $env:PREVIOUS_TAG -Winget $env:WINGET_EXE -AllowUnrecognizedRelease `
+            -RunningAppBehavior $env:RUNNING_APP_BEHAVIOR
           . scripts/snow-shot-winget.ps1
           $current = Invoke-SnowShotWingetApi "repos/mg-chao/snow-apps/releases/tags/$env:RELEASE_TAG"
           $previous = Invoke-SnowShotWingetApi "repos/mg-chao/snow-apps/releases/tags/$env:PREVIOUS_TAG"
@@ -74,7 +81,8 @@ jobs:
           $previousEditions = @(Get-SnowShotReleaseEditions $previous (Get-SnowShotWingetVersion $env:PREVIOUS_TAG))
           if ('Mini' -in $currentEditions -and 'Mini' -in $previousEditions) {
             ./scripts/test-snow-shot-winget-install.ps1 -Tag $env:RELEASE_TAG -Edition Mini `
-              -PreviousTag $env:PREVIOUS_TAG -Winget $env:WINGET_EXE -AllowUnrecognizedRelease
+              -PreviousTag $env:PREVIOUS_TAG -Winget $env:WINGET_EXE -AllowUnrecognizedRelease `
+              -RunningAppBehavior $env:RUNNING_APP_BEHAVIOR
           }
       - name: Verify generated installer quiet registration through WinGet
         if: github.event_name != 'push'

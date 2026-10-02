@@ -674,6 +674,8 @@ bool BuiltInSettingsBackend::switchValue(SettingsSwitchBinding binding) const {
         return storage::PinToScreenSettings().automaticTextRecognition();
     case SettingsSwitchBinding::PinAutoResizeWindow:
         return storage::PinToScreenSettings().autoResizeWindow();
+    case SettingsSwitchBinding::PinShowWindowButtons:
+        return storage::PinToScreenSettings().showWindowButtons();
     case SettingsSwitchBinding::StandaloneTranslationWindow:
 #if SNOW_SHOT_ENABLE_EXTENDED_FEATURES
         return storage::ExtendedFeaturesSettings().standaloneTranslationWindow();
@@ -881,6 +883,9 @@ bool BuiltInSettingsBackend::applySwitchValue(SettingsSwitchBinding binding, boo
     if (binding == SettingsSwitchBinding::PinAutoResizeWindow) {
         return storage::PinToScreenSettings().setAutoResizeWindow(value);
     }
+    if (binding == SettingsSwitchBinding::PinShowWindowButtons) {
+        return storage::PinToScreenSettings().setShowWindowButtons(value);
+    }
     if (binding == SettingsSwitchBinding::StandaloneTranslationWindow) {
 #if SNOW_SHOT_ENABLE_EXTENDED_FEATURES
         return switchEnabled(binding) &&
@@ -990,6 +995,7 @@ bool BuiltInSettingsBackend::applySwitchValue(SettingsSwitchBinding binding, boo
     case SettingsSwitchBinding::ShowOriginalImagePreview:
     case SettingsSwitchBinding::PinAutomaticTextRecognition:
     case SettingsSwitchBinding::PinAutoResizeWindow:
+    case SettingsSwitchBinding::PinShowWindowButtons:
     case SettingsSwitchBinding::TranslationPageEnabled:
     case SettingsSwitchBinding::JumpToTranslationPage:
     case SettingsSwitchBinding::StandaloneTranslationWindow:
@@ -2213,6 +2219,9 @@ bool BuiltInSettingsBackend::resetSection(SettingsSectionReset reset) {
         });
     case SettingsSectionReset::PinToScreenBehavior:
         return storage::ApplicationStorage::instance().configuration().setValues({
+            {QStringLiteral("pin_to_screen/show_window_buttons"),
+             storage::ConfigurationSchema::defaultValue(
+                 QStringLiteral("pin_to_screen/show_window_buttons"))},
             {QStringLiteral("pin_to_screen/duplicate_content_action"),
              storage::ConfigurationSchema::defaultValue(
                  QStringLiteral("pin_to_screen/duplicate_content_action"))},

@@ -2917,6 +2917,215 @@ class ExposedPatternBackdropRenderer final : public SnowCanvasCustomRenderer {
     const QImage& m_image;
 };
 
+class SparseFilterDamageBackdropRenderer final : public SnowCanvasCustomRenderer {
+  public:
+    explicit SparseFilterDamageBackdropRenderer(const QImage& image) : m_image(image) {}
+
+    void renderBeforeCanvas(QPainter& painter, const SnowCanvasRenderContext& context) override {
+        exposedRegions.push_back(context.exposedRegion);
+        painter.save();
+        painter.setClipRegion(context.exposedRegion, Qt::IntersectClip);
+        painter.drawImage(QRectF(context.viewportRect), m_image);
+        painter.restore();
+    }
+
+    std::vector<QRegion> exposedRegions;
+
+  private:
+    const QImage& m_image;
+};
+
+struct SparseFilterDamageResult {
+    QImage image;
+    snow_canvas_renderer::FilterRenderDiagnostics diagnostics;
+    std::vector<QRegion> backdropExposures;
+};
+
+SparseFilterDamageResult
+renderSparseFilterDamage(const SnowCanvasSceneItem& item, const SceneDisplayInfo& info, qreal dpr,
+                         const QRegion& exposed, bool tiled,
+                         SparseFilterDamageBackdropRenderer& backdrop,
+                         snow_canvas_filter_render::RenderWorkspace& workspace,
+                         const void* cacheNamespace, const QRegion* requestedRegion = nullptr) {
+    const QSize logicalSize(qRound(info.surface_width), qRound(info.surface_height));
+    SparseFilterDamageResult result;
+    result.image =
+        QImage(QSize(qCeil(logicalSize.width() * dpr), qCeil(logicalSize.height() * dpr)),
+               QImage::Format_ARGB32_Premultiplied);
+    result.image.setDevicePixelRatio(dpr);
+    result.image.fill(QColor(251, 239, 227));
+    backdrop.exposedRegions.clear();
+    const SnowCanvasRenderContext context{QRect(QPoint(), logicalSize), exposed, QTransform(), dpr};
+    QPainter painter(&result.image);
+    painter.setClipRegion(exposed);
+    snow_canvas_renderer::SceneRenderRequest request;
+    request.painter = &painter;
+    request.displayInfo = &info;
+    request.sceneItems = &item;
+    request.sceneItemCount = 1;
+    request.exposedRegion = requestedRegion != nullptr ? *requestedRegion : exposed;
+    request.backgroundRenderer = &backdrop;
+    request.backgroundContext = &context;
+    request.workspace = &workspace;
+    request.diagnostics = &result.diagnostics;
+    request.cacheNamespace = cacheNamespace;
+    if (tiled) {
+        snow_canvas_renderer::renderSceneItemsTiled(request);
+    } else {
+        snow_canvas_renderer::renderSceneItems(request);
+    }
+    painter.end();
+    result.backdropExposures = backdrop.exposedRegions;
+    return result;
+}
+
+std::size_t damagedFilterTileCount(const QRegion& exposed, const QSize& logicalSize, qreal dpr) {
+    // Count the union of physical tile coordinates touched by each damage rectangle. Holes
+    // and disconnected components must not contribute the tiles in their bounding box.
+    QRegion damagedTiles;
+    const int tileSize = snow_canvas_filter_tile_cache::kTilePhysicalSize;
+    for (const QRect& rect : exposed.intersected(QRect(QPoint(), logicalSize))) {
+        const int left = qFloor(rect.x() * dpr / tileSize);
+        const int top = qFloor(rect.y() * dpr / tileSize);
+        const int right = (qCeil((rect.x() + rect.width()) * dpr) - 1) / tileSize;
+        const int bottom = (qCeil((rect.y() + rect.height()) * dpr) - 1) / tileSize;
+        damagedTiles += QRect(left, top, right - left + 1, bottom - top + 1);
+    }
+    std::size_t count = 0;
+    for (const QRect& rect : damagedTiles) {
+        count += static_cast<std::size_t>(rect.width()) * static_cast<std::size_t>(rect.height());
+    }
+    return count;
+}
+
+void sparseSelectionDamageSkipsUntouchedInteriorFilters() {
+    const QSize logicalSize(820, 820);
+    const QRegion ring = QRegion(QRect(QPoint(), logicalSize)) - QRect(16, 16, 788, 788);
+    const QRegion disconnected = QRegion(QRect(6, 6, 24, 20)) + QRect(790, 782, 24, 26);
+    const QRegion outside = QRegion(QRect(-30, -30, 24, 24)) + QRect(840, 840, 18, 18);
+    for (const qreal dpr : {1.0, 1.125, 1.25, 1.5, 1.75, 2.0}) {
+        QImage background(
+            QSize(qCeil(logicalSize.width() * dpr), qCeil(logicalSize.height() * dpr)),
+            QImage::Format_ARGB32_Premultiplied);
+        background.fill(QColor(37, 89, 143));
+        SparseFilterDamageBackdropRenderer backdrop(background);
+        SceneDisplayInfo info{};
+        info.surface_width = logicalSize.width();
+        info.surface_height = logicalSize.height();
+        info.camera_zoom = 1.0;
+        SnowSceneDisplayItem raw{};
+        raw.kind = SNOW_SCENE_DISPLAY_ITEM_FILTER;
+        raw.element_id = SnowElementId{1, 1};
+        raw.width = 60;
+        raw.height = 60;
+        raw.opacity = 1.0;
+        raw.filter = snow_filter_render_spec_resolve(0, 0.7);
+        const SnowCanvasSceneItem item(raw);
+        int namespaceToken = 0;
+        snow_canvas_filter_render::RenderWorkspace workspace;
+        for (const QRegion& exposed : {ring, disconnected, ring + outside, outside}) {
+            snow_canvas_filter_tile_cache::clear();
+            const auto expected = renderSparseFilterDamage(item, info, dpr, exposed, false,
+                                                           backdrop, workspace, &namespaceToken);
+            const auto expectedTiles = damagedFilterTileCount(exposed, logicalSize, dpr);
+            for (int frame = 0; frame < 2; ++frame) {
+                const auto actual = renderSparseFilterDamage(item, info, dpr, exposed, true,
+                                                             backdrop, workspace, &namespaceToken);
+                require(actual.image == expected.image,
+                        "sparse selection paints must match direct pixels and preserve holes");
+                require(actual.backdropExposures.size() == expectedTiles,
+                        "sparse selection damage must render only the tiles touched by damage");
+                for (const QRegion& callback : actual.backdropExposures) {
+                    require(!callback.intersected(exposed).isEmpty(),
+                            "background callbacks must not render untouched interior tiles");
+                }
+                require(actual.diagnostics.effectDispatchCount == 0 &&
+                            actual.diagnostics.sourceTileVisits == 0,
+                        "untouched interior filters must not dispatch or visit retained sources");
+            }
+        }
+        snow_canvas_filter_tile_cache::clear();
+    }
+}
+
+void sparseSpatialFilterDamagePreservesHalosAndRetainedPixels() {
+    const QSize logicalSize(544, 520);
+    const QRegion ring = QRegion(QRect(5, 5, 534, 510)) - QRect(15, 15, 514, 490);
+    const QRegion disconnected = (QRegion(QRect(1, 1, 73, 61)) - QRect(19, 21, 17, 13)) +
+                                 QRect(299, 237, 53, 65) + QRect(515, 490, 24, 26);
+    for (const qreal dpr : {1.0, 1.125, 1.25, 1.5, 1.75, 2.0}) {
+        const QImage background = noisyPatternImage(
+            QSize(qCeil(logicalSize.width() * dpr), qCeil(logicalSize.height() * dpr)));
+        SparseFilterDamageBackdropRenderer backdrop(background);
+        SceneDisplayInfo info{};
+        info.surface_width = logicalSize.width();
+        info.surface_height = logicalSize.height();
+        info.camera_zoom = 1.0;
+        // The exclusive edge crosses the first physical tile by a fraction of a logical
+        // pixel (205 logical pixels at 125%). Culling must retain that final tile.
+        const int exclusiveSize =
+            qFloor(snow_canvas_filter_tile_cache::kTilePhysicalSize / dpr) + 1;
+        const QRegion exclusiveBoundary = QRegion(QRect(0, 0, exclusiveSize, exclusiveSize)) -
+                                          QRect(4, 4, exclusiveSize - 8, exclusiveSize - 8);
+        for (const int filterType : {0, 1, 4}) {
+            SnowSceneDisplayItem raw{};
+            raw.kind = SNOW_SCENE_DISPLAY_ITEM_FILTER;
+            raw.element_id = SnowElementId{1, 1};
+            raw.width = 3000;
+            raw.height = 3000;
+            raw.opacity = 1.0;
+            raw.filter =
+                snow_filter_render_spec_resolve(static_cast<std::uint32_t>(filterType), 0.7);
+            const SnowCanvasSceneItem item(raw);
+            int namespaceToken = 0;
+            snow_canvas_filter_render::RenderWorkspace workspace;
+            for (const QRegion& exposed : {ring, disconnected, exclusiveBoundary}) {
+                snow_canvas_filter_tile_cache::clear();
+                // Preserve the sparse outer painter clip while requesting the bounding tile
+                // rectangle. This reproduces the original enumeration independently of culling,
+                // including existing fractional-DPR filter-grid rounding at cropped origins.
+                const QRegion uncullTileBounds(exposed.boundingRect());
+                const auto expected =
+                    renderSparseFilterDamage(item, info, dpr, exposed, true, backdrop, workspace,
+                                             &namespaceToken, &uncullTileBounds);
+                snow_canvas_filter_tile_cache::clear();
+                const auto cold = renderSparseFilterDamage(item, info, dpr, exposed, true, backdrop,
+                                                           workspace, &namespaceToken);
+                require(cold.backdropExposures.size() ==
+                            damagedFilterTileCount(exposed, logicalSize, dpr),
+                        "spatial filters must render a sampling halo only for damaged tiles");
+                require(cold.image == expected.image,
+                        "sparse tile culling must preserve uncull spatial-filter pixels exactly");
+                QImage clipMask(cold.image.size(), QImage::Format_ARGB32_Premultiplied);
+                clipMask.setDevicePixelRatio(dpr);
+                clipMask.fill(Qt::transparent);
+                QPainter clipPainter(&clipMask);
+                clipPainter.setClipRegion(exposed);
+                clipPainter.fillRect(QRect(QPoint(), logicalSize), Qt::white);
+                clipPainter.end();
+                for (int y = 0; y < cold.image.height(); ++y) {
+                    for (int x = 0; x < cold.image.width(); ++x) {
+                        if (qAlpha(clipMask.pixel(x, y)) == 0) {
+                            require(
+                                cold.image.pixel(x, y) == qRgb(251, 239, 227),
+                                "spatial tile paints must preserve pixels outside sparse damage");
+                        }
+                    }
+                }
+                const auto warm = renderSparseFilterDamage(item, info, dpr, exposed, true, backdrop,
+                                                           workspace, &namespaceToken);
+                require(warm.image == cold.image,
+                        "retained sparse filter sources must preserve cold-render pixels exactly");
+                require(warm.diagnostics.sourceTileHits > 0 &&
+                            warm.diagnostics.sourceTileMisses == 0 &&
+                            warm.backdropExposures.empty(),
+                        "retained sparse filter sources must avoid replaying their backdrop");
+            }
+        }
+        snow_canvas_filter_tile_cache::clear();
+    }
+}
+
 void tiledFiltersCoverFractionalDevicePixels() {
     class Backdrop final : public SnowCanvasCustomRenderer {
       public:
@@ -3095,11 +3304,18 @@ int main(int argc, char** argv) {
         retainedFilterTilesRenderWithoutReopeningAnActivePainter();
         return 0;
     }
+    if (application.arguments().contains(QStringLiteral("--sparse-filter-damage-only"))) {
+        sparseSelectionDamageSkipsUntouchedInteriorFilters();
+        sparseSpatialFilterDamagePreservesHalosAndRetainedPixels();
+        return 0;
+    }
     brightnessHasNeutralMidpointAndPreservesAlpha();
     publicRegionFilterApiRestrictsEffectsToTheRequestedRegion();
     publicSingleThreadedRegionFilterMatchesDefaultAndRetainsBoundedScratch();
     regionFilterSupportPixelsMatchesGaussianPlan();
     croppedRegionFilterMatchesFullFrameRender();
+    sparseSelectionDamageSkipsUntouchedInteriorFilters();
+    sparseSpatialFilterDamagePreservesHalosAndRetainedPixels();
     tiledFiltersCoverFractionalDevicePixels();
     tiledRenderMatchesFullRender();
     inversionPreservesPremultipliedAlpha();

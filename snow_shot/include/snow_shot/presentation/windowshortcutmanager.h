@@ -54,6 +54,8 @@ class WindowShortcutManager final : public QObject {
         // Held contextual shortcuts may tolerate a narrowly scoped extra
         // modifier (for example Shift followed by Space during a resize).
         Qt::KeyboardModifiers allowedAdditionalModifiers = Qt::NoModifier;
+        // Fixed commands may opt into a standalone Ctrl/Command hold.
+        bool allowModifierOnlyControl = false;
         std::function<bool(const ActivationContext&)> canActivate = [](const ActivationContext&) {
             return true;
         };
@@ -91,7 +93,8 @@ class WindowShortcutManager final : public QObject {
     [[nodiscard]] static QList<QKeyCombination>
     keyCombinationsFromBindings(const shortcuts::ShortcutBindingList& shortcuts);
     [[nodiscard]] static shortcuts::ShortcutBindingList
-    shortcutBindingsFromKeyCombinations(const QList<QKeyCombination>& keyCombinations);
+    shortcutBindingsFromKeyCombinations(const QList<QKeyCombination>& keyCombinations,
+                                        bool allowModifierOnlyControl = false);
 
     // Returns whether keyboard focus belongs to an editable text control.
     // Read-only text surfaces remain eligible for window command shortcuts.

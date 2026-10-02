@@ -3,6 +3,7 @@
 
 #include "snow_shot/presentation/screenshotselectioneditworkflowports.h"
 #include "snow_shot/presentation/screenshotselectionaspectratio.h"
+#include "snow_shot/presentation/screenshotselectioneffectgeometry.h"
 
 #include <QRect>
 
@@ -36,6 +37,8 @@ class ScreenshotSelectionEditWorkflow final {
     void adjustSelectionFromToolbar(int minDx, int minDy, int maxDx, int maxDy);
     void setSelectionCornerRadiusFromToolbar(int radius);
     void setSelectionShadowWidthFromToolbar(int shadowWidth);
+    void previewSelectionEffect(ScreenshotSelectionEffectHandle handle, int value);
+    void commitSelectionEffects();
     void toggleSelectionAspectRatioLockFromToolbar();
     void setSelectionAspectRatioPresetFromToolbar(ScreenshotSelectionAspectRatioPreset preset);
     void openSelectionResizeModalFromToolbar();

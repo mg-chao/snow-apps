@@ -238,7 +238,11 @@ FormField::FormField(const Metadata& metadata, const Options& options, CustomBin
     state.item = new AdFormItem(itemOwner);
     state.item->setObjectName(QStringLiteral("form-field-%1").arg(metadata.id));
     state.item->setFieldKey(metadata.id);
-    state.item->setItemLayout(AdFormItem::ItemLayout::Vertical);
+    // Settings sections own row spacing. Inherit their inline form layout so the item
+    // does not also reserve a vertical form's trailing margin below the control.
+    state.item->setItemLayout(options.presentation == Presentation::SettingsRow
+                                  ? AdFormItem::ItemLayout::Inherit
+                                  : AdFormItem::ItemLayout::Vertical);
     state.item->setRequired(options.required);
     state.item->setHasFeedback(options.hasFeedback);
     state.item->setValidateOnChange(false);

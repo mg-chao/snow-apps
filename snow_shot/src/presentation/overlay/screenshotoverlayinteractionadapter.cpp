@@ -65,6 +65,25 @@ void ScreenshotOverlayEventAdapter::completeRightClickCancellation() {
     }
 }
 
+bool ScreenshotOverlayEventAdapter::effectDragActive() const {
+    return m_inputHandler != nullptr && m_inputHandler->effectDragActive();
+}
+
+void ScreenshotOverlayEventAdapter::leaveEffectEditors() {
+    if (m_inputHandler != nullptr)
+        m_inputHandler->leaveEffectEditors();
+}
+
+void ScreenshotOverlayEventAdapter::cancelEffectDrag() {
+    if (m_inputHandler != nullptr)
+        static_cast<void>(m_inputHandler->cancelEffectDrag());
+}
+
+bool ScreenshotOverlayEventAdapter::handleEffectDoubleClick(ScreenshotOverlayWindow* overlay,
+                                                            const QPointF& position) {
+    return m_inputHandler != nullptr && m_inputHandler->handleEffectDoubleClick(overlay, position);
+}
+
 void ScreenshotOverlayEventAdapter::handleUnhandledLeftDoubleClick() {
     if (m_inputHandler != nullptr) {
         m_inputHandler->handleUnhandledLeftDoubleClick();

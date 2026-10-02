@@ -6,26 +6,30 @@
 #include "snow_shot/storage/settingsadapters.h"
 #include "snow_draw_engine_qt/snow_canvas_widget.h"
 #include "../src/presentation/recording/recordingcountdownoverlay.h"
+#include "../src/presentation/recording/recordingregiondraghandle.h"
 #include "../src/presentation/recording/screenrecordinggeometry.h"
 
 #include <QApplication>
 #include <QtMath>
 #include <QCoreApplication>
+#include <QCloseEvent>
 #include <QDir>
 #include <QImage>
 #include <QKeyEvent>
 #include <QMouseEvent>
 #include <QPainter>
+#include <QPushButton>
 #include <QScreen>
 #include <QTemporaryDir>
+#include <QTranslator>
 #include <QWheelEvent>
 #include <QTimer>
 #include <QWindow>
 #include <QDebug>
-#ifdef Q_OS_MACOS
-#include "macos_native_input.h"
 #include <QElapsedTimer>
 #include <QThread>
+#ifdef Q_OS_MACOS
+#include "macos_native_input.h"
 #include <stdexcept>
 #endif
 #include "snow_draw_engine_qt/snow_canvas_runtime.h"
@@ -47,6 +51,9 @@ class ScreenRecordingAreaWindowTestAccess {
     static Qt::Edges edges(const ScreenRecordingAreaWindow& area, QPointF position) {
         return area.resizeEdgesAt(position);
     }
+    static QRegion inputRegion(const ScreenRecordingAreaWindow& area) {
+        return area.regionInteractionRegion();
+    }
     static void beginDrag(ScreenRecordingAreaWindow& area, QPoint point, Qt::Edges edges) {
         area.beginRegionDrag(point, edges);
     }
@@ -57,10 +64,10 @@ class ScreenRecordingAreaWindowTestAccess {
         area.cancelRegionInteraction();
     }
     static bool dragging(const ScreenRecordingAreaWindow& area) {
-        return area.m_controlledRegionDrag;
+        return area.m_regionDragActive;
     }
     static void begin(ScreenRecordingAreaWindow& area) {
-        area.beginRegionInteraction();
+        area.beginRegionDrag(area.recordingRegion().topLeft(), Qt::LeftEdge);
     }
     static void finish(ScreenRecordingAreaWindow& area) {
         area.finishRegionInteraction();
@@ -71,6 +78,19 @@ class ScreenRecordingAreaWindowTestAccess {
 };
 
 namespace {
+class RegionMoveTranslator final : public QTranslator {
+  public:
+    bool isEmpty() const override {
+        return false;
+    }
+    QString translate(const char* context, const char* source, const char*, int) const override {
+        if (QByteArray(context) == "RecordingRegionDragHandle" &&
+            QByteArray(source) == "Move recording area")
+            return QStringLiteral("Translated recording move");
+        return {};
+    }
+};
+
 void require(bool condition, const char* message) {
     if (!condition) {
         std::cerr << message << '\n';
@@ -235,8 +255,10 @@ void nativeLogicalDrag() {
             continue;
         for (QScreen* target : {destination, primary}) {
             const QRect origin = area.recordingRegion();
-            const QPoint start = origin.center();
-            const QPoint delta = target->availableGeometry().center() - start;
+            QWidget* button =
+                area.findChild<QWidget*>(QStringLiteral("screenRecordingRegionDragHandle"));
+            const QPoint start = button->mapToGlobal(button->rect().center());
+            const QPoint delta = target->availableGeometry().center() - origin.center();
             const int steps = qMax(1, qMax(qAbs(delta.x()), qAbs(delta.y())) / 40);
             MacMouseDrag drag(start);
             for (int step = 1; step <= steps; ++step) {
@@ -266,10 +288,12 @@ void logicalRegionDragAndResize() {
     require(initial == QRect(-231, -119, 321, 241),
             "odd logical region must survive native layout unchanged");
     const auto send = [&area](QEvent::Type type, QPoint global, Qt::MouseButton button,
-                              Qt::MouseButtons buttons) {
-        const QPoint local = area.mapFromGlobal(global);
+                              Qt::MouseButtons buttons, QWidget* target = nullptr) {
+        if (target == nullptr)
+            target = &area;
+        const QPoint local = target->mapFromGlobal(global);
         QMouseEvent event(type, local, local, global, button, buttons, Qt::NoModifier);
-        QCoreApplication::sendEvent(&area, &event);
+        QCoreApplication::sendEvent(target, &event);
         QCoreApplication::processEvents();
     };
     // A retained drawing-tool cursor must not mask the host's region cursor.
@@ -283,13 +307,15 @@ void logicalRegionDragAndResize() {
                     area.windowHandle()->cursor().shape() == expected,
                 "region hover must own the widget, canvas and native window cursors");
     };
-    hover(initial.center(), Qt::SizeAllCursor);
     hover(initial.topLeft(), Qt::SizeFDiagCursor);
     hover(QPoint(initial.left(), initial.center().y()), Qt::SizeHorCursor);
-    const QPoint center = initial.center();
-    send(QEvent::MouseButtonPress, center, Qt::LeftButton, Qt::LeftButton);
-    send(QEvent::MouseMove, center + QPoint(43, 27), Qt::NoButton, Qt::LeftButton);
-    send(QEvent::MouseButtonRelease, center + QPoint(43, 27), Qt::LeftButton, Qt::NoButton);
+    QWidget* moveButton =
+        area.findChild<QWidget*>(QStringLiteral("screenRecordingRegionDragHandle"));
+    const QPoint center = moveButton->mapToGlobal(moveButton->rect().center());
+    send(QEvent::MouseButtonPress, center, Qt::LeftButton, Qt::LeftButton, moveButton);
+    send(QEvent::MouseMove, center + QPoint(43, 27), Qt::NoButton, Qt::LeftButton, moveButton);
+    send(QEvent::MouseButtonRelease, center + QPoint(43, 27), Qt::LeftButton, Qt::NoButton,
+         moveButton);
     require(area.recordingRegion() == initial.translated(43, 27),
             "drag deltas must be logical pixels");
     const QRect moved = area.recordingRegion();
@@ -299,7 +325,12 @@ void logicalRegionDragAndResize() {
     send(QEvent::MouseButtonRelease, corner + QPoint(19, 13), Qt::LeftButton, Qt::NoButton);
     require(area.recordingRegion() == QRect(moved.topLeft(), moved.size() + QSize(19, 13)),
             "corner resize must preserve the logical origin and exact dimensions");
-    hover(area.recordingRegion().center(), Qt::SizeAllCursor);
+    QMouseEvent interiorHover(QEvent::MouseMove, area.canvas()->rect().center(),
+                              area.canvas()->mapToGlobal(area.canvas()->rect().center()),
+                              Qt::NoButton, Qt::NoButton, Qt::NoModifier);
+    QCoreApplication::sendEvent(area.canvas(), &interiorHover);
+    require(area.cursor().shape() == Qt::ArrowCursor,
+            "the recording interior must not advertise movement");
     area.setInputMode(ScreenRecordingAreaWindow::InputMode::Drawing);
     require(area.canvas()->cursor().shape() == Qt::CrossCursor,
             "leaving region editing must release the host cursor to the drawing tool");
@@ -536,9 +567,151 @@ void geometryEditingIsOneCapability() {
                 require((ScreenRecordingAreaWindowTestAccess::edges(area, {1, 1}) != Qt::Edges()) ==
                             editable,
                         "resize hit targets must never outlive movement eligibility");
+                QWidget* button =
+                    area.findChild<QWidget*>(QStringLiteral("screenRecordingRegionDragHandle"));
+                require((button && button->isVisible()) == editable,
+                        "region controls must share Export Settings idle eligibility");
             }
         }
     }
+}
+
+void childDragHandleOwnsCaptureAndPreservesAnnotations() {
+    ScreenRecordingAreaWindow area;
+    area.setRecordingRegion(testRecordingRegion());
+    area.show();
+    area.setInputMode(ScreenRecordingAreaWindow::InputMode::Drawing);
+    drawRectangle(*area.canvas(), {20, 20}, {70, 55});
+    const QByteArray history = ScreenRecordingAreaWindowTestAccess::history(area);
+    const auto windows = QApplication::topLevelWidgets();
+    area.setInputMode(ScreenRecordingAreaWindow::InputMode::RegionEditing);
+    QCoreApplication::processEvents();
+    auto* button = area.findChild<RecordingRegionDragHandle*>(
+        QStringLiteral("screenRecordingRegionDragHandle"));
+    require(button && button->isVisible(), "export settings must show the region move button");
+    require(button->parentWidget() == &area && !button->isWindow() && button->window() == &area &&
+                QApplication::topLevelWidgets().size() == windows.size(),
+            "the recording move button must be a child widget without an auxiliary window");
+    require(button->size() == QSize(32, 32) && button->iconSize() == QSize(16, 16) &&
+                button->cursor().shape() == Qt::SizeAllCursor &&
+                button->accessibleName() == QStringLiteral("Move recording area"),
+            "the move control must use the pinned window's size, icon and drag affordance");
+    RegionMoveTranslator translator;
+    require(QCoreApplication::installTranslator(&translator),
+            "the recording move translation fixture must install");
+    QCoreApplication::processEvents();
+    require(button->toolTip() == QStringLiteral("Translated recording move") &&
+                button->accessibleName() == button->toolTip(),
+            "the recording move control must retranslate its tooltip and accessible name");
+    QCoreApplication::removeTranslator(&translator);
+    QCoreApplication::processEvents();
+    int closeRequests = 0;
+    QObject::connect(&area, &ScreenRecordingAreaWindow::closeRequested, [&] { ++closeRequests; });
+    QCloseEvent close;
+    QCoreApplication::sendEvent(&area, &close);
+    require(closeRequests == 1 && !close.isAccepted() && area.isVisible(),
+            "closing the recording region must request closure through its controller");
+    require(area.selectionRect().contains(QRectF(button->geometry())) &&
+                button->geometry().right() == area.selectionRect().toRect().right() - 8 &&
+                button->geometry().bottom() == area.selectionRect().toRect().bottom() - 8,
+            "the move button must sit inside the recording region's bottom-right corner");
+    const auto requireInputRegion = [&] {
+        const QRegion input = ScreenRecordingAreaWindowTestAccess::inputRegion(area);
+        for (int y = 0; y < area.height(); ++y) {
+            for (int x = 0; x < area.width(); ++x) {
+                const QPoint point(x, y);
+                const bool target = ScreenRecordingAreaWindowTestAccess::edges(area, point) ||
+                                    button->geometry().contains(point);
+                require(input.contains(point) == target,
+                        "only resize edges and the move button may own region input");
+            }
+        }
+        require(input.contains(button->geometry().center()) && area.mask().isEmpty(),
+                "the move button must receive input without clipping recording annotations");
+    };
+    requireInputRegion();
+    require(area.inputSurfaceColor().alpha() == 0 &&
+                imageHasVisiblePixel(renderWidget(*area.canvas())),
+            "export settings must release the interior without clipping annotations");
+    const QPoint interior = area.selectionRect().center().toPoint();
+    require(!ScreenRecordingAreaWindowTestAccess::inputRegion(area).contains(interior) &&
+                renderWidget(area).pixelColor(interior).alpha() == 0,
+            "the recording interior must remain transparent outside annotations and controls");
+    int starts = 0, finishes = 0;
+    QObject::connect(&area, &ScreenRecordingAreaWindow::regionInteractionStarted,
+                     [&] { ++starts; });
+    QObject::connect(&area, &ScreenRecordingAreaWindow::regionInteractionFinished,
+                     [&] { ++finishes; });
+    const auto send = [](QWidget& target, QEvent::Type type, QPoint global, Qt::MouseButton changed,
+                         Qt::MouseButtons held) {
+        const QPoint local = target.mapFromGlobal(global);
+        QMouseEvent event(type, local, local, global, changed, held, Qt::NoModifier);
+        QCoreApplication::sendEvent(&target, &event);
+    };
+    const QRect original = area.recordingRegion();
+    const QPoint center = area.mapToGlobal(interior);
+    send(area, QEvent::MouseButtonPress, center, Qt::LeftButton, Qt::LeftButton);
+    send(area, QEvent::MouseMove, center + QPoint(24, 16), Qt::NoButton, Qt::LeftButton);
+    send(area, QEvent::MouseButtonRelease, center + QPoint(24, 16), Qt::LeftButton, Qt::NoButton);
+    require(starts == 0 && area.recordingRegion() == original,
+            "interior clicks and drags must not start movement");
+    const QPoint origin = button->mapToGlobal(button->rect().center());
+    send(*button, QEvent::MouseButtonPress, origin, Qt::LeftButton, Qt::LeftButton);
+    require(ScreenRecordingAreaWindowTestAccess::dragging(area) && button->isDown() &&
+                QWidget::mouseGrabber() == button,
+            "pressing the child drag handle must capture mouse input in that widget");
+    send(*button, QEvent::MouseMove, origin + QPoint(24, 16), Qt::NoButton, Qt::LeftButton);
+#ifdef Q_OS_MACOS
+    const QPoint delta(24, 16);
+#else
+    const QPoint delta = (QPointF(24, 16) * area.devicePixelRatioF()).toPoint();
+#endif
+    require(area.recordingRegion() == original.translated(delta),
+            "button dragging must preserve the region's size and pointer anchor");
+    send(*button, QEvent::MouseButtonRelease, origin + QPoint(24, 16), Qt::LeftButton,
+         Qt::NoButton);
+    require(!ScreenRecordingAreaWindowTestAccess::dragging(area) && !button->isDown() &&
+                starts == 1 && finishes == 1 &&
+                ScreenRecordingAreaWindowTestAccess::history(area) == history,
+            "releasing outside the button must commit once and preserve annotations");
+    require(area.selectionRect().contains(QRectF(button->geometry())) && button->window() == &area,
+            "the child move button must stay inside the recording region during drag");
+    const QPoint nextOrigin = button->mapToGlobal(button->rect().center());
+    send(*button, QEvent::MouseButtonPress, nextOrigin, Qt::LeftButton, Qt::LeftButton);
+    send(*button, QEvent::MouseMove, nextOrigin + QPoint(24, 16), Qt::NoButton, Qt::LeftButton);
+    area.setDrawingBlocked(true);
+    require(!button->isVisible() && !ScreenRecordingAreaWindowTestAccess::dragging(area) &&
+                starts == 2 && finishes == 2 &&
+                area.recordingRegion() == original.translated(delta),
+            "blocking input during a button drag must roll back and hide controls once");
+    area.setDrawingBlocked(false);
+    require(button->isVisible(), "clearing a busy state must restore region controls");
+    area.setRecordingRegion(QRect(original.topLeft(), QSize(10, 10)));
+    requireInputRegion();
+    require(button->isVisible() && button->width() > 0 &&
+                area.selectionRect().contains(QRectF(button->geometry())),
+            "minimum-size recording regions must keep their move button inside the region");
+    area.setRecordingRegion(testRecordingRegion());
+    area.move(area.x(), area.screen()->availableGeometry().bottom() - area.height() + 1);
+    QCoreApplication::processEvents();
+    require(
+        area.screen()->availableGeometry().contains(
+            QRect(button->mapToGlobal(QPoint()), button->size())),
+        "the move button must stay reachable when the recording region touches the screen bottom");
+    requireInputRegion();
+#ifdef Q_OS_MACOS
+    const QRect fullScreen = area.screen()->geometry();
+#else
+    const QRect fullScreen = ScreenshotGeometryMapper::physicalRectForScreen(*area.screen());
+#endif
+    area.setRecordingRegion(fullScreen);
+    QCoreApplication::processEvents();
+    require(
+        area.screen()->geometry().contains(QRect(button->mapToGlobal(QPoint()), button->size())),
+        "full-screen regions must keep the whole child move control inside the display");
+    area.setInputMode(ScreenRecordingAreaWindow::InputMode::Drawing);
+    require(!button->isVisible() && area.canvas()->interactionEnabled(),
+            "drawing mode must hide region controls and restore the canvas");
 }
 
 void interactionBoundariesAreIdempotentAndCancelOnStateChanges() {
@@ -554,7 +727,7 @@ void interactionBoundariesAreIdempotentAndCancelOnStateChanges() {
                      [&]() { ++finishes; });
     ScreenRecordingAreaWindowTestAccess::begin(area);
     ScreenRecordingAreaWindowTestAccess::begin(area);
-    require(starts == 1 && finishes == 0, "native entry must emit one start");
+    require(starts == 1 && finishes == 0, "drag entry must emit one start");
     area.setDrawingBlocked(true);
     require(finishes == 1, "busy transition must end an active operation");
     ScreenRecordingAreaWindowTestAccess::begin(area);
@@ -563,12 +736,72 @@ void interactionBoundariesAreIdempotentAndCancelOnStateChanges() {
     ScreenRecordingAreaWindowTestAccess::begin(area);
     area.hide();
     ScreenRecordingAreaWindowTestAccess::finish(area);
-    require(starts == 2 && finishes == 2, "hide and duplicate native exit must finish only once");
+    require(starts == 2 && finishes == 2,
+            "hide and duplicate drag completion must finish only once");
     area.show();
     area.setRecordingRegion({40, 40, 2, 2});
     require(ScreenRecordingAreaWindowTestAccess::edges(
                 area, QRectF(area.canvasGeometry()).center()) == Qt::Edges(),
             "even a minimum-size region must retain an interior drag target");
+}
+
+void dragHandleUsesWidgetEventsAndCancelsOnInterruption() {
+    ScreenRecordingAreaWindow area;
+    area.setRecordingRegion(testRecordingRegion());
+    area.show();
+    area.setInputMode(ScreenRecordingAreaWindow::InputMode::RegionEditing);
+    auto* handle = area.findChild<RecordingRegionDragHandle*>(
+        QStringLiteral("screenRecordingRegionDragHandle"));
+    require(handle != nullptr, "region editing must provide a drag handle widget");
+    const QRect original = area.recordingRegion();
+    int starts = 0, finishes = 0;
+    QObject::connect(&area, &ScreenRecordingAreaWindow::regionInteractionStarted,
+                     [&] { ++starts; });
+    QObject::connect(&area, &ScreenRecordingAreaWindow::regionInteractionFinished,
+                     [&] { ++finishes; });
+    const auto send = [](QWidget& target, QEvent::Type type, QPoint global, Qt::MouseButton button,
+                         Qt::MouseButtons buttons) {
+        const QPoint local = target.mapFromGlobal(global);
+        QMouseEvent event(type, local, local, global, button, buttons, Qt::NoModifier);
+        QCoreApplication::sendEvent(&target, &event);
+    };
+    const QPoint origin = handle->mapToGlobal(handle->rect().center());
+    send(*handle, QEvent::MouseButtonPress, origin, Qt::RightButton, Qt::RightButton);
+    require(!handle->isDragging() && starts == 0, "the drag handle must accept only left presses");
+    send(*handle, QEvent::MouseButtonPress, origin, Qt::LeftButton, Qt::LeftButton);
+    QWidget unrelated;
+    send(unrelated, QEvent::MouseMove, origin + QPoint(80, 60), Qt::NoButton, Qt::LeftButton);
+    send(unrelated, QEvent::MouseButtonRelease, origin + QPoint(80, 60), Qt::LeftButton,
+         Qt::NoButton);
+    require(handle->isDragging() && QWidget::mouseGrabber() == handle &&
+                area.recordingRegion() == original && finishes == 0,
+            "events sent to unrelated widgets must not drive or finish the handle's drag");
+    send(*handle, QEvent::MouseMove, origin + QPoint(80, 60), Qt::NoButton, Qt::LeftButton);
+    require(area.recordingRegion() != original,
+            "the captured handle must continue dragging outside its own bounds");
+    QEvent ungrab(QEvent::UngrabMouse);
+    QCoreApplication::sendEvent(handle, &ungrab);
+    require(!handle->isDragging() && !handle->isDown() && QWidget::mouseGrabber() != handle &&
+                area.recordingRegion() == original && starts == 1 && finishes == 1,
+            "losing widget capture must roll back and finish the drag once");
+    send(*handle, QEvent::MouseButtonPress, origin, Qt::LeftButton, Qt::LeftButton);
+    send(*handle, QEvent::MouseMove, origin + QPoint(80, 60), Qt::NoButton, Qt::LeftButton);
+    handle->setEnabled(false);
+    require(!handle->isDragging() && area.recordingRegion() == original && starts == 2 &&
+                finishes == 2 &&
+                !ScreenRecordingAreaWindowTestAccess::inputRegion(area).contains(
+                    handle->geometry().center()),
+            "disabling the handle must cancel its drag and release its input bounds");
+    handle->setEnabled(true);
+    send(*handle, QEvent::MouseButtonPress, origin, Qt::LeftButton, Qt::LeftButton);
+    send(*handle, QEvent::MouseMove, origin + QPoint(80, 60), Qt::NoButton, Qt::LeftButton);
+    PhysicalKeyEvent escape(QEvent::KeyPress, Qt::Key_Escape, Qt::NoModifier);
+    PhysicalKeyEvent escapeRelease(QEvent::KeyRelease, Qt::Key_Escape, Qt::NoModifier);
+    QCoreApplication::sendEvent(&area, &escape);
+    QCoreApplication::sendEvent(&area, &escapeRelease);
+    require(area.isVisible() && !handle->isDragging() && area.recordingRegion() == original &&
+                starts == 3 && finishes == 3,
+            "Escape in the recording window must cancel the child drag without closing it");
 }
 
 void controlledBordersCrossAndCancelWithoutClearingAnnotations() {
@@ -871,6 +1104,43 @@ void ordinaryWindowGeometryPreservesAnnotations() {
 }
 
 #if defined(Q_OS_WIN) || defined(_WIN32)
+template <typename Ready> bool waitForNativeRegionInput(Ready ready) {
+    QElapsedTimer timer;
+    timer.start();
+    do {
+        QCoreApplication::processEvents(QEventLoop::AllEvents, 10);
+        if (ready())
+            return true;
+        QThread::msleep(1);
+    } while (timer.elapsed() < 1000);
+    return false;
+}
+
+void pressNativeRegionControl(QWidget& target) {
+    const QPoint global = QCursor::pos();
+    const QPoint local = target.mapFromGlobal(global);
+    QMouseEvent press(QEvent::MouseButtonPress, local, local, global, Qt::LeftButton,
+                      Qt::LeftButton, Qt::NoModifier);
+    QCoreApplication::sendEvent(&target, &press);
+}
+
+void moveNativeRegionPointer(QPoint point) {
+    INPUT input{};
+    input.type = INPUT_MOUSE;
+    input.mi.dwFlags = MOUSEEVENTF_MOVE | MOUSEEVENTF_ABSOLUTE | MOUSEEVENTF_VIRTUALDESK;
+    input.mi.dx = qRound((point.x() - GetSystemMetrics(SM_XVIRTUALSCREEN) + 0.5) * 65536.0 /
+                         GetSystemMetrics(SM_CXVIRTUALSCREEN));
+    input.mi.dy = qRound((point.y() - GetSystemMetrics(SM_YVIRTUALSCREEN) + 0.5) * 65536.0 /
+                         GetSystemMetrics(SM_CYVIRTUALSCREEN));
+    require(SendInput(1, &input, sizeof(input)) == 1,
+            "native recording input must deliver a pointer move");
+    require(waitForNativeRegionInput([&] {
+                POINT actual{};
+                return GetCursorPos(&actual) && QPoint(actual.x, actual.y) == point;
+            }),
+            "native recording input must reach the requested physical point");
+}
+
 void nativeRecordingBordersCross() {
     POINT saved{};
     GetCursorPos(&saved);
@@ -892,7 +1162,7 @@ void nativeRecordingBordersCross() {
         const HWND hwnd = reinterpret_cast<HWND>(area.winId());
         const QPoint start = original.topLeft() + QPoint(original.width(), original.height());
         setPointer(start);
-        SendMessageW(hwnd, WM_NCLBUTTONDOWN, HTBOTTOMRIGHT, MAKELPARAM(start.x(), start.y()));
+        pressNativeRegionControl(area);
         require(ScreenRecordingAreaWindowTestAccess::dragging(area) && GetCapture() == hwnd,
                 "native recording border must own mouse capture");
         const QPoint crossed = original.topLeft() - QPoint(60, 30);
@@ -924,7 +1194,7 @@ void nativeRecordingBordersCross() {
                 "native recording cancellation must restore exact geometry");
         const QPoint end = original.topLeft() - QPoint(1, 1);
         setPointer(start);
-        SendMessageW(hwnd, WM_NCLBUTTONDOWN, HTBOTTOMRIGHT, MAKELPARAM(start.x(), start.y()));
+        pressNativeRegionControl(area);
         setPointer(end);
         QMouseEvent release(QEvent::MouseButtonRelease, QPointF(), QPointF(QCursor::pos()),
                             Qt::LeftButton, Qt::NoButton, Qt::NoModifier);
@@ -934,6 +1204,10 @@ void nativeRecordingBordersCross() {
                         QRect(original.topLeft() - QPoint(10, 10), QSize(10, 10)) &&
                     !ScreenRecordingAreaWindowTestAccess::dragging(area),
                 "native release must commit the crossed minimum-sized region");
+        auto* button = area.findChild<QWidget*>(QStringLiteral("screenRecordingRegionDragHandle"));
+        require(button && button->isVisible() &&
+                    area.selectionRect().contains(QRectF(button->geometry())),
+                "minimum-sized regions must keep the child handle inside at the display scale");
     }
     SetCursorPos(saved.x, saved.y);
 }
@@ -943,6 +1217,7 @@ void nativeWindowsGeometryAndInteraction() {
             "native test requires Windows QPA");
     ScreenRecordingAreaWindow area;
     area.setInputMode(ScreenRecordingAreaWindow::InputMode::RegionEditing);
+    QWidget underlying(nullptr, Qt::Tool | Qt::FramelessWindowHint);
     int starts = 0;
     int finishes = 0;
     QObject::connect(&area, &ScreenRecordingAreaWindow::regionInteractionStarted, &area,
@@ -961,14 +1236,6 @@ void nativeWindowsGeometryAndInteraction() {
                 << "observed" << area.recordingRegion() << "logical" << area.geometry();
         require(area.recordingRegion() == selected,
                 "opening on each display must preserve exact physical selection");
-        RECT initialClient{};
-        POINT initialOrigin{};
-        require(GetClientRect(handle, &initialClient) && ClientToScreen(handle, &initialOrigin),
-                "initial native geometry must exist");
-        const QMargins initialInsets(
-            selected.left() - initialOrigin.x, selected.top() - initialOrigin.y,
-            initialOrigin.x + initialClient.right - selected.x() - selected.width(),
-            initialOrigin.y + initialClient.bottom - selected.y() - selected.height());
         const auto verifyClient = [&]() {
             RECT client{};
             POINT origin{};
@@ -999,62 +1266,90 @@ void nativeWindowsGeometryAndInteraction() {
             QCoreApplication::processEvents(QEventLoop::AllEvents, 100);
             verifyClient();
         }
-        MINMAXINFO limits{};
-        SendMessageW(handle, WM_GETMINMAXINFO, 0, reinterpret_cast<LPARAM>(&limits));
-        require(
-            limits.ptMinTrackSize.x - initialInsets.left() - initialInsets.right() == 10 &&
-                limits.ptMinTrackSize.y - initialInsets.top() - initialInsets.bottom() == 10,
-            "native minimum tracking size must preserve ten capture pixels after frame padding");
         const QRect physical = area.recordingRegion();
         const int x = physical.center().x();
         const int y = physical.center().y();
         const auto hit = [&](QPoint position) {
             return SendMessageW(handle, WM_NCHITTEST, 0, MAKELPARAM(position.x(), position.y()));
         };
-        require(hit({x, y}) == HTCAPTION, "Export Settings center must delegate native movement");
-        const std::pair<QPoint, LRESULT> targets[] = {{{physical.left(), y}, HTLEFT},
-                                                      {{physical.right(), y}, HTRIGHT},
-                                                      {{x, physical.top()}, HTTOP},
-                                                      {{x, physical.bottom()}, HTBOTTOM},
-                                                      {physical.topLeft(), HTTOPLEFT},
-                                                      {physical.topRight(), HTTOPRIGHT},
-                                                      {physical.bottomLeft(), HTBOTTOMLEFT},
-                                                      {physical.bottomRight(), HTBOTTOMRIGHT},
-                                                      {{x, y}, HTCAPTION}};
-        for (const auto& [point, expected] : targets) {
-            require(hit(point) == expected,
-                    "all native hit targets must identify the correct operation");
+        require(hit({x, y}) == HTTRANSPARENT && hit(physical.topLeft()) == HTCLIENT,
+                "Export Settings must accept native input only over controls and resize edges");
+        underlying.setGeometry(area.geometry());
+        underlying.show();
+        require(SetWindowPos(reinterpret_cast<HWND>(underlying.winId()), handle, 0, 0, 0, 0,
+                             SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE) != FALSE,
+                "the click-through fixture must sit immediately below the recording area");
+        POINT saved{};
+        GetCursorPos(&saved);
+        moveNativeRegionPointer({x, y});
+        area.repaint();
+        QCoreApplication::processEvents();
+        require((GetWindowLongPtrW(handle, GWL_EXSTYLE) & WS_EX_TRANSPARENT) != 0,
+                "recording interior pixels must pass input to other applications");
+        require(WindowFromPoint(POINT{x, y}) == reinterpret_cast<HWND>(underlying.winId()),
+                "native interior hits must reach the window under the recording region");
+        const QPoint targets[] = {{physical.left(), y},  {physical.right(), y},
+                                  {x, physical.top()},   {x, physical.bottom()},
+                                  physical.topLeft(),    physical.topRight(),
+                                  physical.bottomLeft(), physical.bottomRight()};
+        for (const QPoint point : targets) {
+            moveNativeRegionPointer(point);
+            if (WindowFromPoint(POINT{point.x(), point.y()}) != handle) {
+                POINT cursor{};
+                GetCursorPos(&cursor);
+                qInfo() << "Border routing" << point << "cursor" << QPoint(cursor.x, cursor.y)
+                        << "hit" << hit(point) << "style" << GetWindowLongPtrW(handle, GWL_EXSTYLE)
+                        << "actual" << WindowFromPoint(POINT{point.x(), point.y()}) << "expected"
+                        << handle;
+            }
+            require(WindowFromPoint(POINT{point.x(), point.y()}) == handle,
+                    "native border hits must reach the recording region window");
             const int previousStarts = starts;
             const int previousFinishes = finishes;
             const QRect beforeInteraction = area.recordingRegion();
-            POINT cursor{};
-            GetCursorPos(&cursor);
-            if (expected == HTCAPTION) {
-                // SC_DRAGMOVE requires a real held mouse button. Exercise the same
-                // system move loop through its keyboard command without injecting input.
-                PostMessageW(handle, WM_SYSCOMMAND, SC_MOVE, 0);
-            } else {
-                SendMessageW(handle, WM_NCLBUTTONDOWN, static_cast<WPARAM>(expected),
-                             MAKELPARAM(point.x(), point.y()));
-            }
-            QTimer cancel;
-            QObject::connect(&cancel, &QTimer::timeout, &area,
-                             [handle]() { SendMessageW(handle, WM_CANCELMODE, 0, 0); });
-            cancel.start(0);
-            PostMessageW(handle, WM_CANCELMODE, 0, 0);
-            QCoreApplication::processEvents(QEventLoop::AllEvents, 100);
-            cancel.stop();
-            if (expected == HTCAPTION) {
-                SetCursorPos(cursor.x, cursor.y);
-            }
-            qInfo() << "Native interaction" << expected << "starts" << starts - previousStarts
-                    << "finishes" << finishes - previousFinishes;
+            pressNativeRegionControl(area);
+            require(ScreenRecordingAreaWindowTestAccess::dragging(area) && GetCapture() == handle,
+                    "the recording border must capture its controlled native resize");
+            SendMessageW(handle, WM_CANCELMODE, 0, 0);
             require(starts == previousStarts + 1 && finishes == previousFinishes + 1,
-                    "system move/resize must have one balanced interaction lifecycle");
+                    "controlled border resizing must have one balanced interaction lifecycle");
             require(area.recordingRegion() == beforeInteraction,
                     "cancelling a no-motion border drag must preserve the exact region");
             verifyClient();
         }
+        auto* button = area.findChild<QWidget*>(QStringLiteral("screenRecordingRegionDragHandle"));
+        require(button && !button->isWindow() && button->parentWidget() == &area,
+                "the native move handle must remain a child widget");
+        POINT controlOrigin{};
+        require(ClientToScreen(handle, &controlOrigin), "the native control origin must exist");
+        const auto physicalPoint = [&](QPoint local) {
+            return QPoint(controlOrigin.x, controlOrigin.y) +
+                   (QPointF(local) * area.devicePixelRatioF()).toPoint();
+        };
+        const QPoint buttonPoint = physicalPoint(button->geometry().center());
+        moveNativeRegionPointer(buttonPoint);
+        require(WindowFromPoint(POINT{buttonPoint.x(), buttonPoint.y()}) == handle,
+                "the child move button must receive native input through the recording window");
+        const int buttonStarts = starts;
+        const int buttonFinishes = finishes;
+        INPUT click{};
+        click.type = INPUT_MOUSE;
+        click.mi.dwFlags = MOUSEEVENTF_LEFTDOWN;
+        require(SendInput(1, &click, sizeof(click)) == 1,
+                "the native handle press must be delivered");
+        const bool buttonCaptured = waitForNativeRegionInput([&] {
+            return ScreenRecordingAreaWindowTestAccess::dragging(area) &&
+                   QWidget::mouseGrabber() == button && GetCapture() == handle;
+        });
+        click.mi.dwFlags = MOUSEEVENTF_LEFTUP;
+        require(SendInput(1, &click, sizeof(click)) == 1,
+                "the native handle release must be delivered");
+        const bool buttonReleased = waitForNativeRegionInput(
+            [&] { return !ScreenRecordingAreaWindowTestAccess::dragging(area); });
+        require(buttonCaptured && buttonReleased && starts == buttonStarts + 1 &&
+                    finishes == buttonFinishes + 1 && area.recordingRegion() == physical,
+                "native clicks must reach the child move button and complete one interaction");
+        SetCursorPos(saved.x, saved.y);
         area.setInputMode(ScreenRecordingAreaWindow::InputMode::Drawing);
         require(hit(physical.topLeft()) == HTCLIENT && hit({x, y}) == HTCLIENT,
                 "drawing must disable both native resize and move targets");
@@ -1065,6 +1360,26 @@ void nativeWindowsGeometryAndInteraction() {
         drawRectangle(*area.canvas(), {20, 20}, {70, 55});
         const QByteArray history = ScreenRecordingAreaWindowTestAccess::history(area);
         area.setInputMode(ScreenRecordingAreaWindow::InputMode::RegionEditing);
+        const QImage annotations = renderWidget(*area.canvas());
+        QPoint annotationLocal;
+        bool foundAnnotation = false;
+        for (int row = 0; row < annotations.height() && !foundAnnotation; ++row) {
+            for (int column = 0; column < annotations.width(); ++column) {
+                if (annotations.pixelColor(column, row).alpha() > 0) {
+                    annotationLocal = QPoint(column, row);
+                    foundAnnotation = true;
+                    break;
+                }
+            }
+        }
+        require(foundAnnotation, "the native click-through test must cover a visible annotation");
+        const QPoint annotationPoint = physicalPoint(area.canvas()->mapTo(&area, annotationLocal));
+        moveNativeRegionPointer(annotationPoint);
+        require(WindowFromPoint(POINT{annotationPoint.x(), annotationPoint.y()}) ==
+                        reinterpret_cast<HWND>(underlying.winId()) &&
+                    ScreenRecordingAreaWindowTestAccess::history(area) == history,
+                "visible annotations must preserve their pixels and pass interior input through");
+        SetCursorPos(saved.x, saved.y);
         for (QScreen* destination : QGuiApplication::screens()) {
             if (destination == display) {
                 continue;
@@ -1149,7 +1464,9 @@ int main(int argc, char** argv) {
     annotationsPersistAcrossStatesAndClearOnlyForANewRegion();
     quickSelectionFollowsTheDrawingSetting();
     geometryEditingIsOneCapability();
+    childDragHandleOwnsCaptureAndPreservesAnnotations();
     interactionBoundariesAreIdempotentAndCancelOnStateChanges();
+    dragHandleUsesWidgetEventsAndCancelsOnInterruption();
     ordinaryWindowGeometryPreservesAnnotations();
     drawingAcrossFrameEdgesRetainsDrawingOwnership();
     countdownHelpersFollowTheSecondBoundaries();

@@ -763,6 +763,11 @@ void globalMouseCombinationSchemaIsStrictAndPersistent() {
         const auto* entry = storage::ConfigurationSchema::entry(key);
         require(entry != nullptr && entry->valueKind == storage::ConfigurationValueKind::Structured,
                 "global mouse fields must be structured values");
+        const auto normalizedDefault =
+            storage::ConfigurationSchema::normalize(key, entry->defaultValue);
+        require(normalizedDefault.valid && !normalizedDefault.changed &&
+                    normalizedDefault.value == entry->defaultValue,
+                "global mouse defaults must already use their canonical persisted representation");
 #ifdef Q_OS_MACOS
         require(entry->defaultValue == QJsonObject{},
                 "macOS global mouse bindings must be unset by default");
@@ -775,10 +780,9 @@ void globalMouseCombinationSchemaIsStrictAndPersistent() {
         const QJsonObject expected =
             button.isEmpty()
                 ? QJsonObject{}
-                : QJsonObject{
-                      {QStringLiteral("activation_key"),
-                       QJsonArray{snow_shot::presentation::globalMouseActivationKeys().at(0)}},
-                      {QStringLiteral("mouse_button"), button}};
+                : QJsonObject{{QStringLiteral("activation_key"),
+                               snow_shot::presentation::globalMouseActivationKeys().at(0)},
+                              {QStringLiteral("mouse_button"), button}};
         require(entry->defaultValue == expected,
                 "copy, pin, and OCR must default to Windows plus left, middle, and right drag");
 #endif
@@ -866,6 +870,10 @@ void globalMouseCombinationSchemaIsStrictAndPersistent() {
     };
     {
         storage::ConfigurationStore store(roundTripPath, true, true, 60000);
+        require(store.flushNow().success, "persist initial global mouse defaults");
+        storage::ConfigurationStore defaultsReloaded(roundTripPath, true, true, 60000);
+        require(defaultsReloaded.snapshot() == store.snapshot(),
+                "materialized defaults must retain the same values after their first reload");
         require(store.value(key) == storage::ConfigurationSchema::defaultValue(key) &&
                     store.setValue(key, savedCombination) &&
                     !store.setValue(key, malformed.constFirst()) &&

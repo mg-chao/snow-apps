@@ -3096,6 +3096,14 @@
             <translation>Show the captured mouse cursor by default in new normal screenshots.</translation>
         </message>
         <message>
+            <source>Show the drawing and close buttons in the upper-right corner of pinned windows</source>
+            <translation>Show the drawing and close buttons in the upper-right corner of pinned windows</translation>
+        </message>
+        <message>
+            <source>Show window buttons</source>
+            <translation>Show window buttons</translation>
+        </message>
+        <message>
             <source>Shutter Sound Notification</source>
             <translation>Shutter Sound Notification</translation>
         </message>

@@ -56,15 +56,16 @@ QList<QKeyCombination> normalizedCombinations(const QList<QKeyCombination>& comb
     return result;
 }
 
-shortcuts::ShortcutBindingList normalizedBindings(const shortcuts::ShortcutBindingList& bindings) {
+shortcuts::ShortcutBindingList normalizedBindings(const shortcuts::ShortcutBindingList& bindings,
+                                                  bool allowModifierOnlyControl = false) {
     shortcuts::ShortcutBindingList result;
     for (const shortcuts::ShortcutBinding& candidate : bindings) {
         const bool modifierOnlyShift =
             candidate.portableText.compare(QStringLiteral("Shift"), Qt::CaseInsensitive) == 0;
         const bool modifierOnlyAlt =
             candidate.portableText.compare(QStringLiteral("Alt"), Qt::CaseInsensitive) == 0;
-        const shortcuts::ShortcutBinding binding =
-            shortcuts::canonicalBinding(candidate, modifierOnlyShift, modifierOnlyAlt);
+        const shortcuts::ShortcutBinding binding = shortcuts::canonicalBinding(
+            candidate, modifierOnlyShift, modifierOnlyAlt, allowModifierOnlyControl);
         if (binding.portableText.isEmpty()) {
             continue;
         }
@@ -485,9 +486,11 @@ WindowShortcutManager::BindingHandle WindowShortcutManager::addBinding(QObject* 
         return 0;
     }
     if (binding.shortcutBindings.isEmpty()) {
-        binding.shortcutBindings = shortcutBindingsFromKeyCombinations(binding.keyCombinations);
+        binding.shortcutBindings = shortcutBindingsFromKeyCombinations(
+            binding.keyCombinations, binding.allowModifierOnlyControl);
     } else {
-        binding.shortcutBindings = normalizedBindings(binding.shortcutBindings);
+        binding.shortcutBindings =
+            normalizedBindings(binding.shortcutBindings, binding.allowModifierOnlyControl);
     }
     binding.keyCombinations.clear();
 
@@ -507,14 +510,18 @@ bool WindowShortcutManager::setShortcuts(BindingHandle handle,
     if (binding == m_impl->m_bindings.end()) {
         return false;
     }
-    binding->binding.shortcutBindings = normalizedBindings(shortcuts);
+    binding->binding.shortcutBindings =
+        normalizedBindings(shortcuts, binding->binding.allowModifierOnlyControl);
     m_impl->cancelReleaseActivations(handle);
     return true;
 }
 
 bool WindowShortcutManager::setKeyCombinations(BindingHandle handle,
                                                const QList<QKeyCombination>& keyCombinations) {
-    return setShortcuts(handle, shortcutBindingsFromKeyCombinations(keyCombinations));
+    const auto* binding = m_impl->findBinding(handle);
+    return binding != nullptr &&
+           setShortcuts(handle, shortcutBindingsFromKeyCombinations(
+                                    keyCombinations, binding->binding.allowModifierOnlyControl));
 }
 
 bool WindowShortcutManager::removeBinding(BindingHandle handle) {
@@ -535,7 +542,7 @@ bool WindowShortcutManager::removeBinding(BindingHandle handle) {
 }
 
 shortcuts::ShortcutBindingList WindowShortcutManager::shortcutBindingsFromKeyCombinations(
-    const QList<QKeyCombination>& keyCombinations) {
+    const QList<QKeyCombination>& keyCombinations, bool allowModifierOnlyControl) {
     shortcuts::ShortcutBindingList bindings;
     for (const QKeyCombination combination : normalizedCombinations(keyCombinations)) {
         if (combination.key() == Qt::Key_Shift &&
@@ -548,13 +555,18 @@ shortcuts::ShortcutBindingList WindowShortcutManager::shortcutBindingsFromKeyCom
             bindings.push_back(shortcuts::ShortcutBinding{QStringLiteral("Alt")});
             continue;
         }
+        if (allowModifierOnlyControl && combination.key() == Qt::Key_Control &&
+            combination.keyboardModifiers() == Qt::ControlModifier) {
+            bindings.push_back(shortcuts::ShortcutBinding{QStringLiteral("Ctrl")});
+            continue;
+        }
         const QString portable = QKeySequence(combination).toString(QKeySequence::PortableText);
         const shortcuts::ShortcutBinding binding = shortcuts::bindingFromPortableText(portable);
         if (!binding.portableText.isEmpty()) {
             bindings.push_back(binding);
         }
     }
-    return normalizedBindings(bindings);
+    return normalizedBindings(bindings, allowModifierOnlyControl);
 }
 
 QList<QKeyCombination> WindowShortcutManager::keyCombinationsFromBindings(

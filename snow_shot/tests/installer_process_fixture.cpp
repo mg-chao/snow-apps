@@ -18,9 +18,14 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int) {
     const WNDCLASSW windowClass{.lpfnWndProc = windowProcedure,
                                 .hInstance = instance,
                                 .lpszClassName = L"SnowShotInstallerTest"};
+#ifdef SNOW_SHOT_INSTALLER_TEST_UPDATED
+    constexpr auto title = L"Snow Shot updated installer test";
+#else
+    constexpr auto title = L"Snow Shot installer test";
+#endif
     if (!RegisterClassW(&windowClass) ||
-        !CreateWindowW(windowClass.lpszClassName, L"Snow Shot installer test", WS_OVERLAPPED, 0, 0,
-                       100, 100, nullptr, nullptr, instance, nullptr)) {
+        !CreateWindowW(windowClass.lpszClassName, title, WS_OVERLAPPED, 0, 0, 100, 100, nullptr,
+                       nullptr, instance, nullptr)) {
         return 1;
     }
     wchar_t readyName[80]{};

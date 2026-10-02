@@ -76,6 +76,7 @@
     "RecordingEffectPreview",
     "RecordingRenderDialog",
     "RecordingKeyboardLabels",
+    "RecordingRegionDragHandle",
     "ScreenRecordingSettingsDialog",
     "ScreenRecordingController"
   ],

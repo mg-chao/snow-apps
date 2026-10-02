@@ -142,7 +142,8 @@ bool ScreenshotPinnedWindow::handleExportDrag(QObject* watched, QEvent* event) {
         }
         return false;
     }
-    if ((watched != this && watched != m_canvas) || event->type() != QEvent::MouseButtonPress)
+    if ((watched != this && watched != m_canvas && watched != m_recognitionContent) ||
+        event->type() != QEvent::MouseButtonPress)
         return false;
     auto* mouse = static_cast<QMouseEvent*>(event);
     if (mouse->button() != Qt::LeftButton || !mouse->modifiers().testFlag(Qt::ControlModifier) ||

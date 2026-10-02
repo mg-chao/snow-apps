@@ -38,6 +38,14 @@
       "fit": "contain"
     },
     {
+      "variant": "cursor",
+      "symbol": "SelectionShadowCursor",
+      "name": "selection-shadow-cursor",
+      "source": "../src/presentation/components/icons/resources/selection-shadow-cursor.svg",
+      "colorModel": "fullColor",
+      "fit": "contain"
+    },
+    {
       "variant": "outlined",
       "symbol": "AlignBottom",
       "name": "align-bottom",

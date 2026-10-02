@@ -151,7 +151,7 @@ if ($init.Contains('0 noOptionsPage') -or
 }
 Write-Output "PASS: shortcut-only options default on, preserve selection, and gate desktop shortcut creation."
 if ($init.IndexOf('!insertmacro MUI_LANGDLL_DISPLAY') -lt 0 -or
-    $init.IndexOf('!insertmacro MUI_LANGDLL_DISPLAY') -gt $init.IndexOf('Call SnowShotEnsureAppClosed')) {
+    $init.IndexOf('!insertmacro MUI_LANGDLL_DISPLAY') -gt $init.IndexOf('Call SnowShotEnsureMainAppClosed')) {
     throw "Language selection must precede the running-app and upgrade prompts."
 }
 $uninit = [regex]::Match($generated, '(?s)Function un\.onInit\r?\n.*?FunctionEnd').Value
@@ -173,10 +173,15 @@ if (($compileOutput -join "`n") -match 'warning 6040|LangString .*not set') {
     throw "NSIS reported missing translations."
 }
 foreach ($hook in 'MUI_FINISHPAGE_RUN_FUNCTION SnowShotLaunchDesktop',
-    '--launch-desktop --target "$INSTDIR"', '/S /SNOWUPGRADE _?=$3',
+    '/S /SNOWUPGRADE _?=$3',
     '--migrate-startup --previous "$SnowShotPreviousRoot" --target "$INSTDIR"',
     '!insertmacro SnowShotUninstallOwnedCleanup') {
     if (-not $generated.Contains($hook)) { throw "Missing privilege lifecycle hook: $hook" }
+}
+$launch = Get-Content -LiteralPath (Join-Path $packaging 'InstallerLaunch.nsh') -Raw
+if (-not $generated.Contains('!include "' + $packaging + '\InstallerLaunch.nsh"') -or
+    -not $launch.Contains('--launch-desktop --target "$INSTDIR"')) {
+    throw 'The shared installer launch function must use the desktop-shell helper.'
 }
 # The ownership-cleanup sequence is a shared fragment; missing components of
 # a partial installation must be skipped without any dedicated message, so
