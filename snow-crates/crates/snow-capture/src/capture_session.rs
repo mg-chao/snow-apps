@@ -2179,7 +2179,7 @@ mod tests {
                         crate::convert::SurfaceLayout::new(
                             raw.as_ptr(),
                             16,
-                            frame.as_mut_rgba_ptr(),
+                            frame.as_mut_rgba_bytes().as_mut_ptr(),
                             16,
                             4,
                             4,

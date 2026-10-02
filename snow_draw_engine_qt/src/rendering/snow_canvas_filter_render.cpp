@@ -1,3 +1,4 @@
+#include "snow_draw_engine_qt/snow_canvas_image.h"
 #include "snow_canvas_filter_render.h"
 #include "snow_canvas_filter_avx2.h"
 #include "snow_canvas_render_diagnostics.h"
@@ -1317,7 +1318,7 @@ QImage& RenderWorkspace::ensureImage(QImage& image, PoolEntry*& entry, int lease
                    candidate.storage.size() == bucketSize;
         });
         if (found == m_pool.end()) {
-            QImage storage(bucketSize, format);
+            QImage storage = snowCanvasAllocateImage(bucketSize, format);
             if (storage.isNull()) {
                 return image;
             }

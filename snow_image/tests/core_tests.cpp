@@ -1,3 +1,4 @@
+#include "../../test-support/virtualmemory.h"
 #include "snow/image/service.h"
 #include "snow/image/processing.h"
 #include "snow/image/resource_estimate.h"
@@ -2611,6 +2612,23 @@ void test_shared_image_ownership() {
     external.reset();
     require(!lifetime.expired() && adopted.pixels().front() == std::byte{0x33},
             "an adopted image retains its external owner");
+
+    auto large = take(snow::image::MutableImage::allocate(1025, 1025, snow::image::kRgba8),
+                      "allocate large image");
+    require(std::all_of(large.pixels().begin(), large.pixels().end(),
+                        [](std::byte byte) { return byte == std::byte{0}; }),
+            "large image storage is zero-initialized");
+    large.pixels().back() = std::byte{0x6A};
+    const auto* middle = large.pixels().data() + large.pixels().size() / 2;
+    Image large_frozen = std::move(large).freeze();
+    Image large_copy = large_frozen;
+    large_frozen = {};
+    require(snow::test_support::virtualMemoryMapped(middle) &&
+                large_copy.pixels().back() == std::byte{0x6A},
+            "frozen large image copies retain their mapped pixels");
+    large_copy = {};
+    require(!snow::test_support::virtualMemoryMapped(middle),
+            "last large image owner releases its VM region");
 }
 
 void test_transform_storage_and_precision() {
@@ -3661,6 +3679,11 @@ void test_jxl_opaque_progressive_preview(Service& service) {
 } // namespace
 
 int main(int argc, char* argv[]) {
+    if (argc == 2 && std::string_view(argv[1]) == "--ownership-only") {
+        test_shared_image_ownership();
+        test_transform_storage_and_precision();
+        return 0;
+    }
     if (argc == 2 && std::string_view(argv[1]) == "--jpeg-only") {
         Service service;
         test_jpeg_round_trip(service);
