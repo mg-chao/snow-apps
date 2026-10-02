@@ -1537,8 +1537,7 @@ void ScreenshotToolPalette::updateSelectionActionAvailability(bool hasSelection,
     m_selectedElementCount = selectedElementCount;
     for (QWidget* control : std::as_const(m_selectionActionControls)) {
         if (control != nullptr) {
-            control->setEnabled(control == m_resetCanvasButton || control == m_drawTemplateSelect ||
-                                hasSelection);
+            control->setEnabled(control == m_drawTemplateSelect || hasSelection);
         }
     }
     if (m_drawTemplateAddButton != nullptr) {
@@ -3536,6 +3535,11 @@ void ScreenshotToolPalette::applyStyleMetricsForScope(QWidget* scope) {
     }
     for (adqt::widgets::AdRadioButtonGroup* group : m_eraserModeGroups) {
         configureScreenshotToolPaletteStyleRadioButtonGroup(group, metrics);
+    }
+
+    if (auto* reset = scope->findChild<adqt::widgets::AdButton*>(
+            QStringLiteral("screenshotResetCanvasButton"))) {
+        configureScreenshotToolPaletteStyleButton(reset, "Reset", metrics);
     }
 
     if (scope == m_filterStyleControlsWidget) {
@@ -6967,7 +6971,6 @@ void ScreenshotToolPalette::clearSecondaryResourceBindings() {
     m_selectionActionControls.clear();
     m_selectionAlignControls.clear();
     m_selectionDistributeControls.clear();
-    m_resetCanvasButton = nullptr;
     m_selectionActionSpacers.clear();
     m_textActionSpacers.clear();
     m_tableActionSpacers.clear();
@@ -7495,17 +7498,6 @@ void ScreenshotToolPalette::createSelectionActionFamily() {
     addSpacing(STYLE_ITEM_SPACING);
     addSelectButton("Delete selected elements", custom_outlined_icons::Trash(),
                     &ScreenshotToolPalette::deleteSelectionRequested);
-    addSpacing(STYLE_GROUP_SPACING * 2);
-    m_selectActionLayout->addWidget(createStyleToolbarSeparator(m_selectActionPanel));
-    addSpacing(STYLE_GROUP_SPACING * 2);
-    m_resetCanvasButton = createScreenshotToolPaletteActionButton(
-        m_selectActionPanel, "Reset", outlined_icons::Reload(), true, false,
-        actionButtonMetrics(m_physicalScale));
-    m_resetCanvasButton->setObjectName(QStringLiteral("screenshotResetCanvasButton"));
-    m_selectionActionControls.push_back(m_resetCanvasButton);
-    m_selectActionLayout->addWidget(m_resetCanvasButton);
-    connect(m_resetCanvasButton, &adqt::widgets::AdButton::clicked, this,
-            &ScreenshotToolPalette::resetCanvasRequested);
     m_selectionActionAvailabilityInitialized = false;
     updateSelectionActionAvailability(m_hasSelectedElements, m_selectedElementCount);
     setSelectionOpacity(m_selectionOpacity, m_selectionOpacityMixed);
@@ -8367,11 +8359,21 @@ void ScreenshotToolPalette::createStyleFamily(Tool tool) {
 
     if ((tool == Tool::Eraser || tool == Tool::RectangleEraser || tool == Tool::BrushEraser) &&
         styleControlsForTool(tool) == nullptr) {
+        const auto host = makeHost(m_eraserModeGroups);
         QWidget* controls = m_styleControls->buildEraserFamily(
-            static_cast<int>(tool), m_rectangleStylePanel, makeHost(m_eraserModeGroups),
+            static_cast<int>(tool), m_rectangleStylePanel, host,
             [this](double width) { setBrushEraserStrokeWidth(width); },
             [this]() { static_cast<void>(stepBrushEraserStrokeWidth(1)); },
             styleButtonMetrics(m_physicalScale));
+        auto* layout = static_cast<QBoxLayout*>(controls->layout());
+        host.addGroupSeparator(layout);
+        auto* reset = createScreenshotToolPaletteActionButton(controls, "Reset",
+                                                              outlined_icons::Reload(), true, false,
+                                                              styleButtonMetrics(m_physicalScale));
+        reset->setObjectName(QStringLiteral("screenshotResetCanvasButton"));
+        layout->addWidget(reset);
+        connect(reset, &adqt::widgets::AdButton::clicked, this,
+                &ScreenshotToolPalette::resetCanvasRequested);
         if (tool == Tool::BrushEraser) {
             m_brushEraserStyleControlsWidget = controls;
             registerStyleFamily(controls, {Tool::BrushEraser});

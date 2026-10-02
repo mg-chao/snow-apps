@@ -11291,18 +11291,41 @@ void selectToolExposesDedicatedActionToolbar() {
             "opacity slider should be disabled again after clearing the selection");
 }
 
-void selectionResetRemainsAvailableWithoutSelection() {
+void eraserResetRemainsAvailableWithoutSelection() {
     ScreenshotToolPalette::Options options;
     options.showSelectTool = true;
+    options.showEraserTool = true;
     ScreenshotToolPalette palette(options);
     int resetCount = 0;
     QObject::connect(&palette, &ScreenshotToolPalette::resetCanvasRequested,
                      [&resetCount]() { ++resetCount; });
-    for (const auto alternate :
-         {ScreenshotToolPalette::Tool::Ocr, ScreenshotToolPalette::Tool::Table}) {
-        palette.setActiveTool(ScreenshotToolPalette::Tool::Select);
+    palette.setActiveTool(ScreenshotToolPalette::Tool::Select);
+    palette.prepareForDisplay();
+    require(palette.actionPanel()->findChild<adqt::widgets::AdButton*>(
+                QStringLiteral("screenshotResetCanvasButton")) == nullptr,
+            "selection toolbar must not contain reset");
+    auto* selectionLayout = qobject_cast<QBoxLayout*>(palette.actionPanel()->layout());
+    QWidget* lastControl = nullptr;
+    for (int i = 0; i < selectionLayout->count(); ++i) {
+        if (auto* widget = selectionLayout->itemAt(i)->widget();
+            widget != nullptr && !widget->isHidden()) {
+            lastControl = widget;
+        }
+    }
+    require(lastControl != nullptr &&
+                lastControl->toolTip() == QStringLiteral("Delete selected elements"),
+            "selection toolbar must end with Delete without a trailing separator");
+    for (const auto tool :
+         {ScreenshotToolPalette::Tool::Eraser, ScreenshotToolPalette::Tool::RectangleEraser,
+          ScreenshotToolPalette::Tool::BrushEraser}) {
+        palette.setActiveTool(tool);
         palette.prepareForDisplay();
-        QPointer<adqt::widgets::AdButton> reset = palette.findChild<adqt::widgets::AdButton*>(
+        auto* controls = palette.stylePanel()->findChild<QWidget*>(
+            tool == ScreenshotToolPalette::Tool::BrushEraser
+                ? QStringLiteral("screenshotBrushEraserStyleControls")
+                : QStringLiteral("screenshotEraserStyleControls"));
+        require(controls != nullptr, "eraser controls should be materialized");
+        QPointer<adqt::widgets::AdButton> reset = controls->findChild<adqt::widgets::AdButton*>(
             QStringLiteral("screenshotResetCanvasButton"));
         require(reset != nullptr && !reset->isHidden() && reset->isEnabled(),
                 "canvas reset should be available without a selection");
@@ -11311,33 +11334,26 @@ void selectionResetRemainsAvailableWithoutSelection() {
         require(reset->toolTip() == QStringLiteral("Reset") &&
                     reset->accessibleName() == QStringLiteral("Reset"),
                 "canvas reset should have a tooltip and accessible name");
-        auto* layout = qobject_cast<QBoxLayout*>(palette.actionPanel()->layout());
+        auto* layout = qobject_cast<QBoxLayout*>(controls->layout());
         const int index = layout->indexOf(reset);
-        require(index >= 2, "canvas reset should follow the selection actions");
-        QPointer<QFrame> separator = qobject_cast<QFrame*>(layout->itemAt(index - 2)->widget());
-        require(separator != nullptr && !separator->isHidden() &&
-                    layout->itemAt(index - 1)->spacerItem() != nullptr,
+        require(index >= 2, "canvas reset should follow the eraser controls");
+        QFrame* separator = nullptr;
+        for (int i = index - 1; i >= 0; --i) {
+            if (QWidget* widget = layout->itemAt(i)->widget()) {
+                separator = qobject_cast<QFrame*>(widget);
+                break;
+            }
+        }
+        require(separator != nullptr && !separator->isHidden(),
                 "canvas reset should have the standard separator on its left");
         for (int i = index + 1; i < layout->count(); ++i) {
             QWidget* widget = layout->itemAt(i)->widget();
             require(widget == nullptr || widget->isHidden(),
-                    "canvas reset must be the far-right visible selection control");
+                    "canvas reset must be the far-right visible eraser control");
         }
         reset->click();
-        SnowCanvasStyleToolbarState state;
-        state.source = SnowCanvasStyleToolbarSource::SelectedRectangle;
-        palette.setStyleToolbarState(state);
-        require(reset->isEnabled(), "canvas reset should remain enabled with a selection");
-        reset->click();
-        state.source = SnowCanvasStyleToolbarSource::DefaultRectangle;
-        palette.setStyleToolbarState(state);
-        require(reset->isEnabled(), "clearing selection must not disable canvas reset");
-        palette.setActiveTool(alternate);
-        require((reset == nullptr || reset->isHidden()) &&
-                    (separator == nullptr || separator->isHidden()),
-                "recognition modes should hide canvas reset and its separator");
     }
-    require(resetCount == 4, "each reset click should emit exactly one canvas reset command");
+    require(resetCount == 3, "each reset click should emit exactly one canvas reset command");
 }
 
 void selectionAlignmentActionsFollowSelectionUnitCount() {
@@ -13478,6 +13494,7 @@ int main(int argc, char** argv) {
             "the font editor tests require a system TrueType font");
 #endif
     if (application.arguments().contains(QStringLiteral("--eraser-only"))) {
+        eraserResetRemainsAvailableWithoutSelection();
         eraserStyleToolbarHeightMatchesOtherTools();
         eraserToolsExposeRememberedModesAndIndependentWidth();
         recordingEraserActivationReturnsToSelect();
@@ -13592,7 +13609,7 @@ int main(int argc, char** argv) {
         return 0;
     }
     if (application.arguments().contains(QStringLiteral("--selection-reset-only"))) {
-        selectionResetRemainsAvailableWithoutSelection();
+        eraserResetRemainsAvailableWithoutSelection();
         selectToolExposesDedicatedActionToolbar();
         selectionAlignmentActionsFollowSelectionUnitCount();
         snow_shot::storage::ApplicationStorage::instance().shutdown();
@@ -13887,7 +13904,7 @@ int main(int argc, char** argv) {
     toolbarScalingDoesNotRelayoutPopupContent();
     popupColorEditorButtonsKeepPopupScaleAfterToolbarDpiCommit();
     selectToolExposesDedicatedActionToolbar();
-    selectionResetRemainsAvailableWithoutSelection();
+    eraserResetRemainsAvailableWithoutSelection();
     selectionAlignmentActionsFollowSelectionUnitCount();
     secondaryToolbarsStartHiddenUntilTheirToolIsSelected();
     selectToolRemainsTheSoleOwnerOfItsSecondaryToolbar();

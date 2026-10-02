@@ -988,7 +988,6 @@ class ScreenshotToolPalette final : public QWidget,
     QVector<QWidget*> m_selectionActionControls;
     QVector<QWidget*> m_selectionAlignControls;
     QVector<QWidget*> m_selectionDistributeControls;
-    adqt::widgets::AdButton* m_resetCanvasButton = nullptr;
     QVector<QSpacerItem*> m_selectionActionSpacers;
     QVector<QSpacerItem*> m_textActionSpacers;
     QVector<QSpacerItem*> m_tableActionSpacers;

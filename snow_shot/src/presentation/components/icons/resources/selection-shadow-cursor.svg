@@ -1,11 +1,67 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32" fill="none">
-  <g stroke-linecap="round" stroke-linejoin="round">
-    <path d="M4 5 4 20 8 16 12 23 15 21 11 14 17 13Z" fill="#000000" opacity=".25"/>
-    <path d="M4 4 4 19 8 15 12 22 15 20 11 13 17 12Z" fill="#000000" stroke="#FFFFFF" stroke-width="1.6"/>
-    <rect x="22.5" y="20.5" width="8" height="7" rx="1.6" fill="#000000" opacity=".3"/>
-    <rect x="21" y="19" width="8" height="7" rx="1.6" fill="#555555" stroke="#FFFFFF" stroke-width="1.1"/>
-    <rect x="18.5" y="16.5" width="8" height="7" rx="1.6" fill="#000000" stroke="#FFFFFF" stroke-width="1.4"/>
-    <path d="M17 29H30M19 27 17 29 19 31M28 27 30 29 28 31" stroke="#FFFFFF" stroke-width="2.8"/>
-    <path d="M17 29H30M19 27 17 29 19 31M28 27 30 29 28 31" stroke="#000000" stroke-width="1"/>
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg"
+     width="32"
+     height="32"
+     viewBox="0 0 32 32"
+     fill="none">
+  <title>Shadow width cursor</title>
+  <defs>
+    <filter id="soft-black-edge"
+            x="-50%"
+            y="-50%"
+            width="200%"
+            height="200%"
+            color-interpolation-filters="sRGB">
+      <feGaussianBlur in="SourceAlpha" stdDeviation="0.32" result="blur"/>
+      <feOffset in="blur" dx="-1.5" dy="1.5" result="offset-blur"/>
+      <feFlood flood-color="#000000" flood-opacity="0.68" result="shadow-color"/>
+      <feComposite in="shadow-color" in2="offset-blur" operator="in" result="shadow"/>
+      <feMerge>
+        <feMergeNode in="shadow"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+    <filter id="soft-black-edge-light"
+            x="-50%"
+            y="-50%"
+            width="200%"
+            height="200%"
+            color-interpolation-filters="sRGB">
+      <feGaussianBlur in="SourceAlpha" stdDeviation="0.12" result="blur"/>
+      <feOffset in="blur" dx="-1.5" dy="1.5" result="offset-blur"/>
+      <feFlood flood-color="#000000" flood-opacity="0.40" result="shadow-color"/>
+      <feComposite in="shadow-color" in2="offset-blur" operator="in" result="shadow"/>
+      <feMerge>
+        <feMergeNode in="shadow"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+
+  <g transform="translate(0.5 0.5) scale(0.66)"
+     stroke-linecap="round"
+     stroke-linejoin="round">
+    <g filter="url(#soft-black-edge)">
+      <path d="M 5.72 5.50
+               C 5.36 5.36, 5.12 5.73, 5.27 6.10
+               L 12.93 25.36
+               C 13.20 26.03, 14.15 26.02, 14.41 25.35
+               L 17.52 17.79
+               C 17.64 17.48, 17.88 17.24, 18.19 17.12
+               L 25.987 14.19
+               C 26.667 13.93, 26.687 12.98, 26.007 12.71
+               Z"
+            fill="#000000"
+            stroke="#FFFFFF"
+            stroke-width="2.484375"
+            transform="matrix(1.08330 0 0 1.08330 -1.44035 -1.34575)"/>
+    </g>
+
+    <g filter="url(#soft-black-edge-light)"
+       stroke="#FFFFFF"
+       stroke-width="2.484375">
+      <rect x="31" y="31" width="12" height="12" rx="2.2" fill="#555555"/>
+      <rect x="26.5" y="26.5" width="12" height="12" rx="2.2" fill="#000000"/>
+    </g>
   </g>
 </svg>
