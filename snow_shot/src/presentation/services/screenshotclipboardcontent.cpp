@@ -4,6 +4,9 @@
 
 #include "../../image/snowimageqtcodec.h"
 #include "../pinned/screenshotpintoperfinstrumentation.h"
+#ifdef Q_OS_MACOS
+#include "../../platform/macos/imageclipboard.h"
+#endif
 
 #include <QAbstractTextDocumentLayout>
 #include <QBuffer>
@@ -901,6 +904,15 @@ snapshotClipboardOnce(QClipboard* clipboard, qreal devicePixelRatio, AllocationC
     if (clipboard == nullptr) {
         return std::nullopt;
     }
+#ifdef Q_OS_MACOS
+    // Our native TIFF is only another encoding of the same PNG. Independent
+    // foreign bitmaps must still be snapshotted in case encoded decoding fails.
+    // snapshot() checks the revision so replacement cannot invalidate this fact.
+    const bool bitmapIsDerivedFromPng =
+        snow_shot::platform::macos::imageClipboardBitmapIsDerivedFromPng();
+#else
+    constexpr bool bitmapIsDerivedFromPng = false;
+#endif
     const QColor baseColor = QGuiApplication::palette().color(QPalette::Base);
     bool rejected = false;
     const AllocationCheck checked = allocate ? AllocationCheck([&](qint64 bytes) {
@@ -963,7 +975,13 @@ snapshotClipboardOnce(QClipboard* clipboard, qreal devicePixelRatio, AllocationC
         snapshot->devicePixelRatio = devicePixelRatio;
         snapshot->baseColor = baseColor;
     }
-    if (snapshot.has_value() && !snapshot->nativeDib.has_value()) {
+    const bool capturedCanonicalPng =
+        bitmapIsDerivedFromPng && snapshot &&
+        std::any_of(snapshot->encodedImages.cbegin(), snapshot->encodedImages.cend(),
+                    [](const ScreenshotClipboardEncodedImage& encoded) {
+                        return encoded.mimeType == QStringLiteral("image/png");
+                    });
+    if (snapshot.has_value() && !snapshot->nativeDib.has_value() && !capturedCanonicalPng) {
         // Providers that expose only QMimeData::imageData() remain supported.
         SNOW_SHOT_PIN_PERF_COUNTER("clipboard.native_dib_fallback", 1);
         const auto* mime = clipboard->mimeData();
@@ -983,6 +1001,10 @@ snapshotClipboardOnce(QClipboard* clipboard, qreal devicePixelRatio, AllocationC
 std::optional<ScreenshotClipboardContentSnapshot>
 ScreenshotClipboardContentReader::snapshot(QClipboard* clipboard, qreal devicePixelRatio,
                                            AllocationCheck allocate) {
+#ifdef Q_OS_MACOS
+    // A process that has never copied an image must also recognize native PNG.
+    snow_shot::platform::macos::initializeImageClipboardConverter();
+#endif
     ensureScreenshotClipboardPlacementMimeSupport();
     ensureScreenshotClipboardAppearanceMimeSupport();
     for (int attempt = 0; attempt < 2; ++attempt) {

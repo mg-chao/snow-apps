@@ -84,9 +84,9 @@ snow_enable_clang_tidy()
 
 find_package(Qt6 6.11.1 EXACT REQUIRED COMPONENTS Widgets LinguistTools Svg Network)
 if(APPLE)
-    add_library(snow_shot_macos_clipboard STATIC src/platform/macos/imageclipboard.cpp)
+    add_library(snow_shot_macos_clipboard STATIC src/platform/macos/imageclipboard.mm)
     target_link_libraries(snow_shot_macos_clipboard PUBLIC Qt6::Gui
-        PRIVATE "-framework CoreGraphics" "-framework ImageIO")
+        PRIVATE "-framework AppKit" "-framework CoreGraphics" "-framework ImageIO")
     add_library(snow_shot_macos_cursor STATIC
         src/platform/macos/windowcursorcoordinator.cpp
         src/platform/macos/windowcursorcoordinator.mm)
@@ -8875,7 +8875,8 @@ if(SNOW_SHOT_BUILD_TESTS)
     if(APPLE)
         add_executable(snow-shot-macos-clipboard-roundtrip-tests
             tests/macos_clipboard_roundtrip_tests.mm
-            src/presentation/services/screenshotclipboardservice.cpp)
+            src/presentation/services/screenshotclipboardservice.cpp
+            src/presentation/services/screenshotclipboardcontent.cpp)
         target_include_directories(snow-shot-macos-clipboard-roundtrip-tests PRIVATE include)
         target_link_libraries(snow-shot-macos-clipboard-roundtrip-tests PRIVATE
             snow_shot_image_codec snow_shot_diagnostics Qt6::Widgets
@@ -8970,7 +8971,7 @@ foreach(_snow_target IN LISTS _snow_clipboard_consumers)
     if("${_snow_sources}" MATCHES "screenshotclipboard(service|content)\\.cpp")
         target_link_libraries(${_snow_target} PRIVATE snow_shot_clipboard_placement)
     endif()
-    if(APPLE AND "${_snow_sources}" MATCHES "screenshotclipboardservice\\.cpp")
+    if(APPLE AND "${_snow_sources}" MATCHES "screenshotclipboard(service|content)\\.cpp")
         target_link_libraries(${_snow_target} PRIVATE snow_shot_macos_clipboard)
     endif()
 endforeach()
