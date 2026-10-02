@@ -1,4 +1,5 @@
 #include "snowimagecodecbridge.h"
+#include "../../test-support/virtualmemory.h"
 
 #include <array>
 #include <cstdint>
@@ -249,7 +250,51 @@ bool roundTripRequiredFormats(const std::array<uint8_t, 3U * 2U * 4U>& pixels,
 }
 } // namespace
 
+bool largeBuffersReleaseAcrossCodecBoundary() {
+    constexpr uint32_t width = 1025;
+    constexpr uint32_t height = 513;
+    std::vector<uint8_t> pixels(static_cast<std::size_t>(width) * height * 4);
+    uint32_t random = 0x12345678;
+    for (std::size_t index = 0; index < pixels.size(); ++index) {
+        random ^= random << 13;
+        random ^= random >> 17;
+        random ^= random << 5;
+        pixels[index] = static_cast<uint8_t>(random);
+    }
+    SnowShotImageCodecEncodeOptions options{};
+    options.struct_size = sizeof(options);
+    options.abi_version = SNOW_SHOT_IMAGE_CODEC_ABI_VERSION;
+    options.format = SNOW_SHOT_IMAGE_CODEC_FORMAT_PNG;
+    options.compression_level = 1;
+    std::array<char, 512> error{};
+    SnowShotImageCodecBuffer encoded{};
+    SnowShotImageCodecBuffer decoded{};
+    if (!snow_shot_image_codec_encode_rgba8(pixels.data(), pixels.size(), width, height,
+                                            uint64_t(width) * 4, &options, &encoded, error.data(),
+                                            error.size()) ||
+        encoded.size < 1024 * 1024) {
+        snow_shot_image_codec_release_buffer(&encoded);
+        return false;
+    }
+    const bool valid = snow_shot_image_codec_decode_rgba8(
+                           encoded.data, encoded.size, SNOW_SHOT_IMAGE_CODEC_FORMAT_PNG, &decoded,
+                           error.data(), error.size()) != 0 &&
+                       decoded.size == pixels.size() &&
+                       std::memcmp(decoded.data, pixels.data(), pixels.size()) == 0;
+    const auto* encodedMiddle = encoded.data + encoded.size / 2;
+    const auto* decodedMiddle = decoded.data ? decoded.data + decoded.size / 2 : nullptr;
+    snow_shot_image_codec_release_buffer(&encoded);
+    snow_shot_image_codec_release_buffer(&decoded);
+    return valid && !snow::test_support::virtualMemoryMapped(encodedMiddle) &&
+           !snow::test_support::virtualMemoryMapped(decodedMiddle) && !encoded.data &&
+           !decoded.data;
+}
+
 int main() {
+    if (!largeBuffersReleaseAcrossCodecBoundary()) {
+        std::cerr << "Large codec buffers must preserve pixels and unmap on release\n";
+        return EXIT_FAILURE;
+    }
     constexpr std::array<uint8_t, 12> resizePixels{0, 0, 0, 255, 255, 255, 255, 255, 0, 0, 0, 255};
     std::array<uint8_t, 20> resized{};
     std::array<char, 512> resizeError{};

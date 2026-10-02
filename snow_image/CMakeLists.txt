@@ -4,6 +4,7 @@ project(snow_image VERSION 1.0.0 LANGUAGES CXX)
 
 include(GNUInstallDirs)
 include(CMakePackageConfigHelpers)
+include("${CMAKE_CURRENT_SOURCE_DIR}/../cmake/SnowPixelBuffer.cmake")
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -252,6 +253,7 @@ endif()
 function(snow_image_configure_target target_name linkage)
     add_library(${target_name} ${linkage} ${SNOW_IMAGE_PUBLIC_HEADERS} ${SNOW_IMAGE_SOURCES})
     target_compile_features(${target_name} PUBLIC cxx_std_20)
+    target_link_libraries(${target_name} PRIVATE $<BUILD_INTERFACE:snow_pixel_buffer>)
     target_include_directories(${target_name}
         PUBLIC
             $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>

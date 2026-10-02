@@ -3,6 +3,8 @@
 #include "physical_key_test_support.h"
 #include "window_close_shortcut_test_support.h"
 #include "snow_draw_engine_qt/snow_canvas_path_geometry.h"
+#include "snow_draw_engine_qt/snow_canvas_image.h"
+#include "../../test-support/virtualmemory.h"
 #include "snow_shot/presentation/screenshotselectionpin.h"
 #include "snow_shot/presentation/pinnedgeometry.h"
 #include "../src/presentation/pinned/pinnedwindowplatform.h"
@@ -14697,6 +14699,42 @@ void pinnedTransactionsReleaseSubscriptions() {
     }
 }
 
+void pinnedLargePixelsReleaseOnClose() {
+    IsolatedPinnedStorage isolated;
+    using namespace snow_shot;
+    auto& repository = storage::ApplicationStorage::instance().pinnedWindows();
+    require(storage::PinToScreenSettings().setAutomaticTextRecognition(false),
+            "disable automatic OCR for pixel lifetime fixture");
+    presentation::PinnedWindowGroupManager groups(&repository);
+    ScreenshotSelectionExportUiServices service(nullptr, nullptr, nullptr, {}, {}, &groups);
+    auto* screen = QGuiApplication::primaryScreen();
+    const QSize pixels(1600, 900);
+    const QRect geometry = physicalPinGeometry(*screen, {50, 50}, QSize(800, 450));
+    for (int cycle = 0; cycle < 8; ++cycle) {
+        QImage image = snowCanvasAllocateImage(pixels, QImage::Format_ARGB32_Premultiplied);
+        require(!image.isNull(), "allocate large pinned pixels");
+        image.fill(QColor(20 + cycle, 60, 100));
+        const auto* middle = image.constBits() + image.sizeInBytes() / 2;
+        require(service.presentPinnedImage(image, screen, geometry, pixels),
+                "large pin presentation is accepted");
+        image = {};
+        QElapsedTimer timer;
+        timer.start();
+        while (repository.summaries().size() < cycle + 1 && timer.elapsed() < 5000)
+            waitForUi(5);
+        require(repository.summaries().size() == cycle + 1, "large pin persists");
+        auto windows = groups.liveWindows();
+        require(windows.size() == 1, "pixel lifetime fixture has one live pin");
+        QPointer<ScreenshotPinnedWindow> window(windows.front());
+        pinnedMenuActionNamed(*window, QStringLiteral("screenshotPinnedCloseAction"))->trigger();
+        require(processUntilDeleted(window, 2000), "normal Close destroys the pin");
+        require(repository.flush().success, "closed pin pixels finish writing to disk");
+        QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+        require(!snow::test_support::virtualMemoryMapped(middle),
+                "normal Close must release large pixel pages while keeping the disk record");
+    }
+}
+
 void pinnedManagementLifecycle() {
     IsolatedPinnedStorage isolated;
     using namespace snow_shot;
@@ -15177,6 +15215,10 @@ int main(int argc, char* argv[]) {
         }
         if (app.arguments().contains(QStringLiteral("--pin-lifetime-only"))) {
             pinnedTransactionsReleaseSubscriptions();
+            return 0;
+        }
+        if (app.arguments().contains(QStringLiteral("--pixel-lifetime-only"))) {
+            pinnedLargePixelsReleaseOnClose();
             return 0;
         }
         if (app.arguments().contains(QStringLiteral("--selection-content-alignment-only"))) {

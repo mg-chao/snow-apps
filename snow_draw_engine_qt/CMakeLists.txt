@@ -15,6 +15,7 @@ option(SNOW_DRAW_ENGINE_QT_STRICT_COMPILE "Treat Snow Draw Engine Qt warnings as
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/../cmake")
 include(RustStaticLibrary)
 include(ProjectWarnings)
+include(SnowPixelBuffer)
 include(SnowQtOffscreenTest)
 include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/SnowCanvasQtSources.cmake")
 if(SNOW_DRAW_ENGINE_QT_STRICT_COMPILE)
@@ -51,6 +52,12 @@ if(NOT TARGET snow_draw_engine_c)
         STRIP_MSVC_DIRECTIVES
     )
 endif()
+
+add_library(snow_canvas_image STATIC
+    src/rendering/snow_canvas_image.cpp
+    include/snow_draw_engine_qt/snow_canvas_image.h)
+target_include_directories(snow_canvas_image PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include")
+target_link_libraries(snow_canvas_image PUBLIC Qt6::Gui PRIVATE $<BUILD_INTERFACE:snow_pixel_buffer>)
 
 qt_add_library(snow_draw_engine_qt_canvas STATIC
     ${SNOW_CANVAS_QT_SOURCES}
@@ -93,6 +100,7 @@ target_link_libraries(snow_draw_engine_qt_canvas
     PUBLIC
         Qt6::Widgets
     PRIVATE
+        snow_canvas_image
         Qt6::Svg
         opencv_core
         opencv_imgproc
@@ -129,6 +137,12 @@ if(SNOW_DRAW_ENGINE_QT_BUILD_DEMO)
 endif()
 
 if(SNOW_DRAW_ENGINE_QT_BUILD_BENCHMARKS)
+    add_executable(snow-canvas-image-memory-benchmark
+        tests/snow_canvas_image_memory_benchmark.cpp)
+    target_link_libraries(snow-canvas-image-memory-benchmark PRIVATE snow_canvas_image)
+    if(WIN32)
+        target_link_libraries(snow-canvas-image-memory-benchmark PRIVATE psapi)
+    endif()
     add_executable(snow-canvas-eraser-benchmark tests/snow_canvas_eraser_benchmark.cpp)
     target_include_directories(snow-canvas-eraser-benchmark PRIVATE
         ${SNOW_CANVAS_QT_PRIVATE_SOURCE_DIRS}
@@ -230,7 +244,10 @@ endif()
 
 if(SNOW_DRAW_ENGINE_QT_BUILD_TESTS)
     enable_testing()
-
+    add_executable(snow-canvas-image-tests tests/snow_canvas_image_tests.cpp)
+    target_link_libraries(snow-canvas-image-tests PRIVATE snow_canvas_image snow_pixel_buffer)
+    add_test(NAME snow-canvas-image-tests COMMAND snow-canvas-image-tests)
+    set_tests_properties(snow-canvas-image-tests PROPERTIES LABELS "unit" TIMEOUT 30)
     # Test binaries must report failures as stderr output plus a non-zero
     # exit code instead of blocking on modal dialogs.
     snow_link_test_cli_guard(qt)

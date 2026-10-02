@@ -1,3 +1,4 @@
+#include "snow_draw_engine_qt/snow_canvas_image.h"
 #include "snow_canvas_reference_scene.h"
 
 #include "snow_canvas_pen_mask_atlas.h"
@@ -81,7 +82,7 @@ bool SnowCanvasReferenceScene::render(SnowRuntime runtime,
     if (rebuild) {
         // Replace the retained surface while immutable stroke masks survive content edits.
         m_image = {};
-        QImage image(pixelSize, QImage::Format_ARGB32_Premultiplied);
+        QImage image = snowCanvasAllocateImage(pixelSize, QImage::Format_ARGB32_Premultiplied);
         if (image.isNull()) {
             return false;
         }

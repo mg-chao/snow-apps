@@ -1,3 +1,4 @@
+#include "snow_draw_engine_qt/snow_canvas_image.h"
 #include "snow_shot/presentation/screenshotcanvasrenderer.h"
 #include "snow_shot/presentation/screenshotimagerendering.h"
 
@@ -910,7 +911,8 @@ bool ScreenshotCanvasRenderer::PathRasterCache::draw(QPainter& painter, const QP
             entry.path = localPath;
             entry.color = color;
             entry.scale = scale;
-            entry.image = QImage(pixels.size(), QImage::Format_ARGB32_Premultiplied);
+            entry.image =
+                snowCanvasAllocateImage(pixels.size(), QImage::Format_ARGB32_Premultiplied);
             if (entry.image.isNull())
                 return false;
             entry.image.setDevicePixelRatio(scale);
@@ -1935,7 +1937,8 @@ void ScreenshotCanvasRenderer::renderAfterCanvas(QPainter& painter,
                                                     {},
                                                     1.0};
                         style.region = localRegion;
-                        QImage empty(bounds.size(), QImage::Format_ARGB32_Premultiplied);
+                        QImage empty = snowCanvasAllocateImage(bounds.size(),
+                                                               QImage::Format_ARGB32_Premultiplied);
                         empty.fill(Qt::transparent);
                         uncachedShadow = ScreenshotResultCompositor::compose(empty, style);
                         constexpr qsizetype kRegionHoverCacheByteLimit = 64 * 1024 * 1024;

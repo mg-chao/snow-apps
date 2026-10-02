@@ -479,6 +479,7 @@ target_include_directories(snow_shot_image_codec_backend PUBLIC
     "${CMAKE_CURRENT_SOURCE_DIR}/src/image"
 )
 target_link_libraries(snow_shot_image_codec_backend PRIVATE
+    $<BUILD_INTERFACE:snow_pixel_buffer>
     snow_image::snow_image_static
 )
 if(NOT SNOW_SHOT_IMAGE_CODEC_BACKEND_STATIC)
@@ -1592,7 +1593,7 @@ if(SNOW_SHOT_BUILD_TESTS)
         ${SNOW_SHOT_RECOGNITION_IMAGE_RENDER_SOURCES})
     target_include_directories(snow-shot-recognition-image-tests PRIVATE
         "${CMAKE_CURRENT_SOURCE_DIR}/include")
-    target_link_libraries(snow-shot-recognition-image-tests PRIVATE adqt::widgets Qt6::Gui)
+    target_link_libraries(snow-shot-recognition-image-tests PRIVATE adqt::widgets Qt6::Gui snow_canvas_image)
     snow_shot_import_offscreen_platform(snow-shot-recognition-image-tests)
     qt_import_plugins(snow-shot-recognition-image-tests
         NO_DEFAULT INCLUDE Qt6::QOffscreenIntegrationPlugin)
@@ -3225,6 +3226,7 @@ if(SNOW_SHOT_BUILD_TESTS)
         "${CMAKE_CURRENT_SOURCE_DIR}/include"
     )
     target_link_libraries(snow-shot-selection-geometry-tests PRIVATE
+        snow_canvas_image
         ant_design_qt
         Qt6::Gui
     )
@@ -3940,6 +3942,11 @@ if(SNOW_SHOT_BUILD_TESTS)
         COMMAND snow-shot-pinned-window-tests --management-only -platform offscreen)
     add_test(NAME snow-shot-pinned-transaction-lifetime-tests
         COMMAND snow-shot-pinned-window-tests --pin-lifetime-only -platform offscreen)
+    add_test(NAME snow-shot-pinned-pixel-lifetime-tests
+        COMMAND snow-shot-pinned-window-tests --pixel-lifetime-only -platform offscreen)
+    set_tests_properties(snow-shot-pinned-pixel-lifetime-tests PROPERTIES
+        LABELS "unit" TIMEOUT 60
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
     set_tests_properties(snow-shot-pinned-transaction-lifetime-tests PROPERTIES
         LABELS "unit" TIMEOUT 30
         ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
@@ -6194,6 +6201,7 @@ if(SNOW_SHOT_BUILD_TESTS)
         "${CMAKE_CURRENT_SOURCE_DIR}/include"
     )
     target_link_libraries(snow-shot-ocr-presentation-tests PRIVATE
+        snow_canvas_image
         Qt6::Widgets
     )
     add_test(
@@ -7013,7 +7021,7 @@ if(SNOW_SHOT_BUILD_BENCHMARKS)
     target_include_directories(snow-shot-recognition-image-performance-benchmark PRIVATE
         "${CMAKE_CURRENT_SOURCE_DIR}/include")
     target_link_libraries(snow-shot-recognition-image-performance-benchmark PRIVATE
-        adqt::widgets Qt6::Gui)
+        adqt::widgets Qt6::Gui snow_canvas_image)
     snow_shot_import_offscreen_platform(snow-shot-recognition-image-performance-benchmark)
     qt_import_plugins(snow-shot-recognition-image-performance-benchmark
         NO_DEFAULT INCLUDE Qt6::QOffscreenIntegrationPlugin)
@@ -8614,7 +8622,7 @@ if(SNOW_SHOT_BUILD_TESTS)
     endif()
     target_include_directories(snow-shot-selection-render-tests PRIVATE include
         "${SNOW_SHOT_CAPTURE_CRATES_DIR}/crates/snow-capture-c/include")
-    target_link_libraries(snow-shot-selection-render-tests PRIVATE Qt6::Widgets)
+    target_link_libraries(snow-shot-selection-render-tests PRIVATE Qt6::Widgets snow_canvas_image)
     snow_shot_import_offscreen_platform(snow-shot-selection-render-tests)
     add_test(NAME snow-shot-selection-render-tests COMMAND snow-shot-selection-render-tests)
     set_tests_properties(snow-shot-selection-render-tests PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen" LABELS "unit")
@@ -8671,7 +8679,7 @@ if(APPLE AND SNOW_SHOT_BUILD_TESTS)
     snow_shot_link_macos_window_platform(snow-shot-macos-screenshot-native-smoke)
     target_include_directories(snow-shot-macos-screenshot-native-smoke PRIVATE include
         "${SNOW_SHOT_CAPTURE_CRATES_DIR}/crates/snow-capture-c/include")
-    target_link_libraries(snow-shot-macos-screenshot-native-smoke PRIVATE Qt6::Widgets snow_capture_c
+    target_link_libraries(snow-shot-macos-screenshot-native-smoke PRIVATE Qt6::Widgets snow_capture_c snow_canvas_image
         "-framework AppKit" "-framework ApplicationServices")
     add_test(NAME snow-shot-macos-screenshot-native-smoke COMMAND snow-shot-macos-screenshot-native-smoke)
     set_tests_properties(snow-shot-macos-screenshot-native-smoke PROPERTIES LABELS "interactive;macos" SKIP_RETURN_CODE 77 TIMEOUT 60)
@@ -8931,7 +8939,7 @@ add_library(snow_shot_history_pin STATIC
     src/presentation/core/screenshotgeometry.cpp
     src/presentation/overlay/screenshotselectionshadowrenderer.cpp)
 target_include_directories(snow_shot_history_pin PUBLIC include)
-target_link_libraries(snow_shot_history_pin PUBLIC Qt6::Widgets PRIVATE ant_design_qt)
+target_link_libraries(snow_shot_history_pin PUBLIC Qt6::Widgets PRIVATE ant_design_qt snow_canvas_image)
 if(APPLE)
     target_link_libraries(snow_shot_history_pin PRIVATE "-framework AppKit")
 elseif(WIN32)
