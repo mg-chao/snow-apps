@@ -546,6 +546,9 @@ int main(int argc, char** argv) {
         QStringLiteral("rounded-shadow-toggle"),
         QStringLiteral("cursor-and-monitor-guide-lines"),
         QStringLiteral("monitor-center-guide-line-only"),
+        QStringLiteral("selection-center-guide-horizontal-move"),
+        QStringLiteral("selection-center-guide-vertical-move"),
+        QStringLiteral("selection-center-guide-fixed-center-resize"),
         QStringLiteral("active-spotlight"),
         QStringLiteral("live-reanchored-watermark"),
         QStringLiteral("fractional-dpr"),
@@ -887,6 +890,18 @@ int main(int argc, char** argv) {
     run(QStringLiteral("monitor-center-guide-line-only"), [&](int index) {
         renderer.setGuideLines(guideLineCenter + QPointF(index & 1, (index >> 1) & 1),
                                Qt::transparent, monitorGuideLineColor);
+    });
+    renderer.clearGuideLines();
+    QApplication::processEvents();
+
+    renderer.setSelectionCenterGuideLineColor(QColor(0x40, 0x96, 0xff));
+    run(QStringLiteral("selection-center-guide-horizontal-move"),
+        [&](int index) { renderer.setSelection(baseSelection.translated(index & 1, 0), false); });
+    run(QStringLiteral("selection-center-guide-vertical-move"),
+        [&](int index) { renderer.setSelection(baseSelection.translated(0, index & 1), false); });
+    run(QStringLiteral("selection-center-guide-fixed-center-resize"), [&](int index) {
+        const qreal offset = index & 1;
+        renderer.setSelection(baseSelection.adjusted(-offset, -offset, offset, offset), false);
     });
     renderer.clearGuideLines();
     QApplication::processEvents();

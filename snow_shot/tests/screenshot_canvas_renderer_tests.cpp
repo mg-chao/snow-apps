@@ -1562,6 +1562,8 @@ void selectionCenterGuideTracksSelectionAndRemainsOverlayOnly() {
     const QRegion damage = observer.region();
     require(damage.contains(QPoint(50, 5)) && damage.contains(QPoint(60, 5)),
             "moving the selection must invalidate both old and new full-height guides");
+    require(!damage.contains(QPoint(5, 40)),
+            "horizontal selection movement must not invalidate the unchanged horizontal guide");
     canvas.removeEventFilter(&observer);
     const QImage moved = renderCanvas(canvas);
     require(moved.pixelColor(50, 5) != guideColor && moved.pixelColor(60, 5) == guideColor,
@@ -1571,6 +1573,80 @@ void selectionCenterGuideTracksSelectionAndRemainsOverlayOnly() {
     require(hidden.pixelColor(60, 5) != guideColor,
             "transparent selection center guide color must hide the overlay");
     canvas.setCustomRenderer(nullptr);
+}
+
+void selectionCenterGuideDamageTracksOnlyVisualChanges() {
+    constexpr std::array<qreal, 5> devicePixelRatios{1.0, 1.25, 1.5, 1.75, 2.0};
+    for (const qreal devicePixelRatio : devicePixelRatios) {
+        SnowCanvasWidget canvas;
+        canvas.resize(240, 180);
+        canvas.setClearBackgroundEnabled(false);
+        require(canvas.setViewportCamera(0.0, 0.0, 1.0),
+                "selection guide damage test needs a stable camera");
+        ScreenshotCanvasRenderer renderer(canvas);
+        canvas.setCustomRenderer(&renderer);
+        renderer.setSelectionCenterGuideLineColor(QColor(0x40, 0x96, 0xff));
+        ScreenshotSelectionVisualState state;
+        state.bounds = QRectF(-20.0, -15.0, 40.0, 30.0);
+        state.present = true;
+        renderer.applySelectionState(state);
+        canvas.show();
+        QApplication::processEvents();
+        CanvasPaintRegionObserver observer;
+        canvas.installEventFilter(&observer);
+
+        const auto change = [&](const ScreenshotSelectionVisualState& next) {
+            const QImage previous = renderCanvas(canvas, devicePixelRatio);
+            observer.begin();
+            renderer.applySelectionState(next);
+            QApplication::processEvents();
+            const QRegion dirty = observer.region();
+            const QImage current = renderCanvas(canvas, devicePixelRatio);
+            requireChangedPixelsCoveredByDirtyRegion(
+                previous, current, dirty,
+                "selection guide damage must cover changed pixels at every DPR");
+            return dirty;
+        };
+
+        state.bounds.translate(0.0, 4.0);
+        QRegion dirty = change(state);
+        require(dirty.contains(QPoint(5, 90)) && dirty.contains(QPoint(5, 94)) &&
+                    !dirty.contains(QPoint(120, 5)),
+                "vertical movement must invalidate only the changed horizontal guide");
+
+        state.bounds.translate(4.0, 3.0);
+        dirty = change(state);
+        require(dirty.contains(QPoint(120, 5)) && dirty.contains(QPoint(124, 5)) &&
+                    dirty.contains(QPoint(5, 94)) && dirty.contains(QPoint(5, 97)),
+                "diagonal movement must invalidate both old and new guide axes");
+
+        state.bounds.adjust(-2.0, -2.0, 2.0, 2.0);
+        dirty = change(state);
+        require(!dirty.contains(QPoint(124, 5)) && !dirty.contains(QPoint(5, 97)),
+                "resizing around a fixed center must not invalidate guide strips");
+
+        state.bounds.translate(0.25, 0.25);
+        dirty = change(state);
+        require(!dirty.contains(QPoint(124, 5)) && !dirty.contains(QPoint(5, 97)),
+                "same-pixel center movement must not invalidate guide strips");
+
+        state.handlesVisible = true;
+        dirty = change(state);
+        require(!dirty.contains(QPoint(124, 5)) && !dirty.contains(QPoint(5, 97)),
+                "selection appearance changes must not invalidate guide strips");
+
+        state.present = false;
+        dirty = change(state);
+        require(dirty.contains(QPoint(124, 5)) && dirty.contains(QPoint(5, 97)),
+                "hiding a selection must erase both guide axes");
+        state.present = true;
+        dirty = change(state);
+        require(dirty.contains(QPoint(124, 5)) && dirty.contains(QPoint(5, 97)),
+                "showing a selection must repaint both guide axes");
+
+        canvas.removeEventFilter(&observer);
+        canvas.setCustomRenderer(nullptr);
+    }
 }
 
 void cursorGuideFollowsCanvasPointerDuringDrawingInput() {
@@ -5993,6 +6069,7 @@ int main(int argc, char** argv) {
         configurableSelectionMaskUsesRequestedPixels();
         cursorAndMonitorGuideLinesUseDashedAndSolidPixels();
         selectionCenterGuideTracksSelectionAndRemainsOverlayOnly();
+        selectionCenterGuideDamageTracksOnlyVisualChanges();
         cursorGuideFollowsCanvasPointerDuringDrawingInput();
         cursorGuideLineMovementInvalidatesOnlyChangedAxes();
         hiddenAndSamePixelCursorMovementDoesNotRepaintGuideLines();
@@ -6111,6 +6188,7 @@ int main(int argc, char** argv) {
     configurableSelectionMaskUsesRequestedPixels();
     cursorAndMonitorGuideLinesUseDashedAndSolidPixels();
     selectionCenterGuideTracksSelectionAndRemainsOverlayOnly();
+    selectionCenterGuideDamageTracksOnlyVisualChanges();
     cursorGuideFollowsCanvasPointerDuringDrawingInput();
     cursorGuideLineMovementInvalidatesOnlyChangedAxes();
     hiddenAndSamePixelCursorMovementDoesNotRepaintGuideLines();

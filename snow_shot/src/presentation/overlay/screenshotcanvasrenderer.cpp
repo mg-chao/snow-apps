@@ -362,29 +362,39 @@ std::optional<QPoint> selectionCenterGuideLinePosition(const ScreenshotSelection
     return guideLinePixelPosition(canvasToViewTransform.map(state.bounds.center()));
 }
 
+QRegion planCrosshairDamage(const QRect& viewportRect, const std::optional<QPoint>& previous,
+                            const std::optional<QPoint>& next, bool colorChanged = false) {
+    QRegion dirtyRegion;
+    const bool visibilityChanged = previous.has_value() != next.has_value();
+    if (colorChanged || visibilityChanged || (previous && next && previous->x() != next->x())) {
+        if (previous) {
+            dirtyRegion += guideLineVerticalRegion(viewportRect, previous->x());
+        }
+        if (next) {
+            dirtyRegion += guideLineVerticalRegion(viewportRect, next->x());
+        }
+    }
+    if (colorChanged || visibilityChanged || (previous && next && previous->y() != next->y())) {
+        if (previous) {
+            dirtyRegion += guideLineHorizontalRegion(viewportRect, previous->y());
+        }
+        if (next) {
+            dirtyRegion += guideLineHorizontalRegion(viewportRect, next->y());
+        }
+    }
+    return dirtyRegion;
+}
+
 QRegion planGuideLineDamage(const QRect& viewportRect, const QPoint& previousCursorPosition,
                             const QColor& previousCursorColor,
                             const QColor& previousMonitorCenterColor,
                             const QPoint& nextCursorPosition, const QColor& nextCursorColor,
                             const QColor& nextMonitorCenterColor) {
-    QRegion dirtyRegion;
-    const bool cursorColorChanged = previousCursorColor != nextCursorColor;
-    if (cursorColorChanged || previousCursorPosition.x() != nextCursorPosition.x()) {
-        if (previousCursorColor.alpha() > 0) {
-            dirtyRegion += guideLineVerticalRegion(viewportRect, previousCursorPosition.x());
-        }
-        if (nextCursorColor.alpha() > 0) {
-            dirtyRegion += guideLineVerticalRegion(viewportRect, nextCursorPosition.x());
-        }
-    }
-    if (cursorColorChanged || previousCursorPosition.y() != nextCursorPosition.y()) {
-        if (previousCursorColor.alpha() > 0) {
-            dirtyRegion += guideLineHorizontalRegion(viewportRect, previousCursorPosition.y());
-        }
-        if (nextCursorColor.alpha() > 0) {
-            dirtyRegion += guideLineHorizontalRegion(viewportRect, nextCursorPosition.y());
-        }
-    }
+    QRegion dirtyRegion = planCrosshairDamage(
+        viewportRect,
+        previousCursorColor.alpha() > 0 ? std::optional(previousCursorPosition) : std::nullopt,
+        nextCursorColor.alpha() > 0 ? std::optional(nextCursorPosition) : std::nullopt,
+        previousCursorColor != nextCursorColor);
     if (previousMonitorCenterColor != nextMonitorCenterColor &&
         (previousMonitorCenterColor.alpha() > 0 || nextMonitorCenterColor.alpha() > 0)) {
         dirtyRegion +=
@@ -1261,13 +1271,9 @@ void ScreenshotCanvasRenderer::applySelectionState(const ScreenshotSelectionVisu
     QRegion dirtyRegion = planScreenshotSelectionDamage(previous, m_selectionState, m_canvas.rect(),
                                                         canvasToViewTransform, m_maskVisible);
     if (m_selectionCenterGuideLineColor.alpha() > 0) {
-        if (const auto center = selectionCenterGuideLinePosition(previous, canvasToViewTransform)) {
-            dirtyRegion += guideLineCrosshairRegion(m_canvas.rect(), *center);
-        }
-        if (const auto center =
-                selectionCenterGuideLinePosition(m_selectionState, canvasToViewTransform)) {
-            dirtyRegion += guideLineCrosshairRegion(m_canvas.rect(), *center);
-        }
+        dirtyRegion += planCrosshairDamage(
+            m_canvas.rect(), selectionCenterGuideLinePosition(previous, canvasToViewTransform),
+            selectionCenterGuideLinePosition(m_selectionState, canvasToViewTransform));
     }
 #if defined(SNOW_SHOT_BENCH_INTERNALS)
     g_selectionDamageRegion += dirtyRegion;
