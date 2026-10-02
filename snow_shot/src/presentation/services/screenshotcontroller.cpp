@@ -441,13 +441,6 @@ struct ScreenshotController::Impl final : public ScreenshotToolbarCommandSink,
     void pinSelectedFilesToScreen(snow_shot::platform::SelectedFileTarget target);
     void cancelContentPin();
     void cancelHistoryPins();
-    [[nodiscard]] bool presentDecodedImageOnScreen(
-        QScreen* screen, const QImage& image, qreal rasterScale, bool autoResizeWindow,
-        ScreenshotClipboardOriginalContent originalContent = {},
-        ScreenshotSelectionExportDestinationPort::PinnedCompletion completion = {},
-        snow_shot::storage::PinnedWindowCreationSource source =
-            snow_shot::storage::PinnedWindowCreationSource::Other,
-        snow_shot::storage::PinnedSourceIdentity sourceIdentity = {});
     ScreenshotFilePinBatch::Present
     filePinPresenter(QScreen* screen, snow_shot::storage::PinnedWindowCreationSource source,
                      ScreenshotFilePinBatch::DuplicateFilter filter);
@@ -3318,24 +3311,6 @@ void ScreenshotController::Impl::cancelContentPin() {
     m_clipboardDecodeBeforePresentation = false;
 }
 
-bool ScreenshotController::Impl::presentDecodedImageOnScreen(
-    QScreen* screen, const QImage& image, qreal rasterScale, bool autoResizeWindow,
-    ScreenshotClipboardOriginalContent originalContent,
-    ScreenshotSelectionExportDestinationPort::PinnedCompletion completion,
-    snow_shot::storage::PinnedWindowCreationSource source,
-    snow_shot::storage::PinnedSourceIdentity sourceIdentity) {
-    if (screen == nullptr || image.isNull() || m_selectionExportUiServices == nullptr) {
-        return false;
-    }
-    const ScreenshotPinnedImageFit fit = snow_shot::presentation::fitPinnedImageOnScreen(
-        *screen, snow_shot::presentation::pinnedImageWindowSize(image, rasterScale),
-        autoResizeWindow);
-    return fit.valid && m_selectionExportUiServices->presentPinnedImage(
-                            image, screen, fit.nativeGeometry, fit.initialWindowSize, {}, {}, 1.0,
-                            std::move(originalContent), {}, std::move(completion), {}, {}, source,
-                            std::move(sourceIdentity));
-}
-
 void ScreenshotController::Impl::cancelHistoryPins() {
     ++m_historyPinEpoch;
     for (const HistoryPinRequest& request : m_historyPinJobs) {
@@ -3532,16 +3507,15 @@ ScreenshotController::Impl::filePinPresenter(QScreen* screen,
     const bool autoResizeWindow = snow_shot::storage::PinToScreenSettings().autoResizeWindow();
     return [receiver, guardedScreen, autoResizeWindow, source,
             filter = std::move(filter)](ScreenshotClipboardContent decoded) {
-        if (!receiver || !receiver->m_impl || !guardedScreen) {
+        if (!receiver || !receiver->m_impl || !guardedScreen ||
+            !receiver->m_impl->m_selectionExportUiServices) {
             return false;
         }
         if (filter.consume && filter.consume(decoded.sourceIdentity))
             return true;
-        const qreal rasterScale = decoded.isFormattedText() ? decoded.formattedTextDevicePixelRatio
-                                                            : guardedScreen->devicePixelRatio();
-        static_cast<void>(receiver->m_impl->presentDecodedImageOnScreen(
-            guardedScreen, decoded.image, rasterScale, autoResizeWindow,
-            std::move(decoded.originalContent), {}, source, std::move(decoded.sourceIdentity)));
+        static_cast<void>(
+            receiver->m_impl->m_selectionExportUiServices->presentDecodedContentOnScreen(
+                std::move(decoded), guardedScreen, autoResizeWindow, source));
         return true;
     };
 }

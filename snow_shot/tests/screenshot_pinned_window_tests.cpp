@@ -17,6 +17,7 @@
 #include "close_release_native_test_support.h"
 #include "snow_shot/presentation/screenshotpinnedwindow.h"
 #include "snow_shot/presentation/screenshotclipboardcontent.h"
+#include "snow_shot/presentation/screenshotcontentdrop.h"
 #include "snow_shot/presentation/canvasstatusreadout.h"
 #include "../src/platform/windows/pinnedwindownative.h"
 #include "../src/presentation/pinned/screenshotpinnedclickthroughgeometry.h"
@@ -430,6 +431,9 @@ class ScreenshotPinnedWindowTestAccess {
     }
     static ScreenshotRecognitionSessionController* recognition(ScreenshotPinnedWindow& window) {
         return window.m_recognitionSession.get();
+    }
+    static bool recognitionReady(const ScreenshotPinnedWindow& window) {
+        return window.m_recognitionTargetReady;
     }
     static void rejectReplacementGeometry(ScreenshotPinnedWindow& window) {
         window.m_nativeGeometryController.reset();
@@ -14326,6 +14330,113 @@ void pinnedControlledInteractionAndGestures() {
     window.close();
 }
 
+void decodedContentPresentationPreservesText() {
+    IsolatedPinnedStorage storage;
+    QTemporaryDir files;
+    QScreen* screen = QGuiApplication::primaryScreen();
+    require(screen != nullptr && files.isValid(),
+            "decoded content fixtures require a screen and directory");
+    ScreenshotSelectionExportUiServices services;
+    const auto present = [&](ScreenshotClipboardContent content,
+                             snow_shot::storage::PinnedWindowCreationSource source) {
+        const auto identity = content.sourceIdentity;
+        const auto original = content.originalContent;
+        const auto image = content.image;
+        const bool text = content.isFormattedText();
+        const QString plainText = content.plainText;
+        const qreal textDpr = content.formattedTextDevicePixelRatio;
+        const auto fit = snow_shot::presentation::fitPinnedImageOnScreen(
+            *screen,
+            snow_shot::presentation::pinnedImageWindowSize(
+                image, text ? textDpr : screen->devicePixelRatio()),
+            false);
+        require(services.presentDecodedContentOnScreen(std::move(content), screen, false, source),
+                "decoded content must be presented");
+        QPointer<ScreenshotPinnedWindow> window = services.findDuplicatePin(identity);
+        require(window, "decoded content must retain its duplicate identity");
+        QElapsedTimer deadline;
+        deadline.start();
+        while ((!window->isVisible() ||
+                !ScreenshotPinnedWindowTestAccess::recognitionReady(*window)) &&
+               deadline.elapsed() < 5000) {
+            waitForUi(5);
+        }
+        auto* session = ScreenshotPinnedWindowTestAccess::recognition(*window);
+        require(window->isVisible() && session, "decoded pin must finish presentation setup");
+        require(session->hasTextResult() == text,
+                "decoded text must be selectable without an OCR provider");
+        if (text) {
+            session->activate(ScreenshotRecognitionSessionController::Mode::Text);
+            require(session->originalText() == plainText,
+                    "text selection must use the decoded original text");
+            require(window->persistenceSnapshot().firstCreationTextDpi == textDpr,
+                    "decoded text must retain its rendering density");
+        }
+        const auto saved = window->persistenceSnapshot();
+        require(saved.originalText == original.text && saved.originalHtml == original.html &&
+                    saved.creationSource == source && saved.sourceIdentity == identity,
+                "decoded pins must retain original content and source metadata");
+        auto expectedImage = image.convertToFormat(QImage::Format_RGBA8888);
+        auto actualImage = ScreenshotPinnedWindowTestAccess::originalImage(*window).convertToFormat(
+            QImage::Format_RGBA8888);
+        expectedImage.setDevicePixelRatio(1.0);
+        actualImage.setDevicePixelRatio(1.0);
+        require(window->currentNativeGeometry() == fit.nativeGeometry &&
+                    actualImage == expectedImage,
+                "decoded pins must retain their pixels and target-screen sizing");
+        window->close();
+        require(processUntilDeleted(window, 2000), "decoded pin must close");
+        return true;
+    };
+    using Source = snow_shot::storage::PinnedWindowCreationSource;
+    for (const bool html : {false, true}) {
+        for (const qreal dpr : {1.0, 2.0}) {
+            QMimeData mime;
+            if (html)
+                mime.setHtml(QStringLiteral("<b>Dropped Unicode \u4e2d\u6587</b>"));
+            else
+                mime.setText(QStringLiteral("Dropped Unicode \u4e2d\u6587"));
+            auto snapshot =
+                ScreenshotClipboardContentReader::snapshotMimeData(&mime, dpr, Qt::white);
+            require(snapshot.has_value(), "text drop must snapshot");
+            auto content = decodeScreenshotDropContent(std::move(*snapshot));
+            require(content && content->isFormattedText(),
+                    "text drop must decode as formatted text");
+            present(std::move(*content), Source::Other);
+        }
+    }
+    QStringList paths;
+    for (const auto& suffix :
+         {QStringLiteral("txt"), QStringLiteral("html"), QStringLiteral("htm")}) {
+        const QString path = files.filePath(QStringLiteral("content.") + suffix);
+        QFile file(path);
+        require(file.open(QIODevice::WriteOnly), "text file fixture must open");
+        file.write(suffix == QStringLiteral("txt") ? "File text" : "<b>File text</b>");
+        paths.append(path);
+    }
+    ScreenshotFilePinBatch batch;
+    int presented = 0;
+    batch.start(paths, [&](ScreenshotClipboardContent content) {
+        require(content.isFormattedText(), "file batch must decode TXT and HTML as text");
+        ++presented;
+        return present(std::move(content), Source::SelectedFiles);
+    });
+    QElapsedTimer deadline;
+    deadline.start();
+    while (batch.active() && deadline.elapsed() < 10000)
+        waitForUi(5);
+    require(!batch.active() && presented == paths.size(), "every text file must be presented");
+
+    ScreenshotClipboardContent image;
+    image.image = QImage(60, 40, QImage::Format_ARGB32_Premultiplied);
+    image.image.fill(Qt::green);
+    image.image.setDevicePixelRatio(3.0);
+    image.sourceIdentity.key = QStringLiteral("decoded-image");
+    present(std::move(image), Source::Clipboard);
+    require(!services.presentDecodedContentOnScreen({}, screen, false, Source::Other),
+            "invalid decoded content must be rejected");
+}
+
 void duplicatePinActions() {
     IsolatedPinnedStorage isolated;
     using namespace snow_shot;
@@ -15327,6 +15438,10 @@ int main(int argc, char* argv[]) {
         }
         if (app.arguments().contains(QStringLiteral("--clipboard-appearance-only"))) {
             clipboardAppearancePresentationAndViewportSnapshots();
+            return 0;
+        }
+        if (app.arguments().contains(QStringLiteral("--decoded-content-only"))) {
+            decodedContentPresentationPreservesText();
             return 0;
         }
         if (app.arguments().contains(QStringLiteral("--history-selection-only"))) {

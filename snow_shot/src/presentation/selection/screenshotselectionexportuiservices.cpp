@@ -6,6 +6,7 @@
 #include "snow_shot/presentation/screenshotpinnedwindow.h"
 #include "snow_shot/presentation/screenshothistorytypes.h"
 #include "snow_shot/presentation/screenshotselectionpin.h"
+#include "snow_shot/presentation/pinnedgeometry.h"
 #include "snow_shot/presentation/pinnedwindowgroupmanager.h"
 #include "snow_shot/presentation/screenshotocrrecognitionservice.h"
 #include "snow_shot/presentation/screenshotqrrecognitionservice.h"
@@ -785,6 +786,25 @@ bool ScreenshotSelectionExportUiServices::presentPinnedImageArtifact(
     m_pendingPinCoordinator->updateSnapshot(config.persistenceId,
                                             pinnedWindow->persistenceSnapshot());
     return true;
+}
+
+bool ScreenshotSelectionExportUiServices::presentDecodedContentOnScreen(
+    ScreenshotClipboardContent content, QScreen* screen, bool autoResizeWindow,
+    snow_shot::storage::PinnedWindowCreationSource source) {
+    if (screen == nullptr || !content.isValid()) {
+        return false;
+    }
+    const qreal rasterScale = content.isFormattedText() ? content.formattedTextDevicePixelRatio
+                                                        : screen->devicePixelRatio();
+    const ScreenshotPinnedImageFit fit = snow_shot::presentation::fitPinnedImageOnScreen(
+        *screen, snow_shot::presentation::pinnedImageWindowSize(content.image, rasterScale),
+        autoResizeWindow);
+    return fit.valid &&
+           presentPinnedImage(content.image, screen, fit.nativeGeometry, fit.initialWindowSize,
+                              std::move(content.formattedDocument), content.plainText,
+                              content.formattedTextDevicePixelRatio,
+                              std::move(content.originalContent), {}, {}, {}, {}, source,
+                              std::move(content.sourceIdentity));
 }
 
 bool ScreenshotSelectionExportUiServices::presentPinnedImage(

@@ -50,6 +50,11 @@ class ScreenshotSelectionExportUiServices final : public ScreenshotSelectionExpo
     void cancelClipboardPublication();
     // Prepares one hidden native shell for the next Pin to Screen presentation.
     void prewarmPinnedWindow(QScreen* screen = nullptr);
+    // Fits decoded file or drop content on the target screen, retaining its text document.
+    [[nodiscard]] bool
+    presentDecodedContentOnScreen(ScreenshotClipboardContent content, QScreen* screen,
+                                  bool autoResizeWindow,
+                                  snow_shot::storage::PinnedWindowCreationSource source);
     // A null image is accepted when imageLoader is provided and
     // initialWindowSize supplies the known canvas dimensions.
     [[nodiscard]] bool presentPinnedImage(

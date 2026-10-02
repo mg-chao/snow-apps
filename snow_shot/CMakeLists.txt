@@ -8461,6 +8461,11 @@ if(SNOW_SHOT_BUILD_TESTS)
     set_tests_properties(snow-shot-clipboard-appearance-presentation-tests PROPERTIES
         LABELS unit SNOW_TEST_CROSS_PLATFORM TRUE RUN_SERIAL TRUE TIMEOUT 60
         ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}")
+    add_test(NAME snow-shot-decoded-content-presentation-tests
+        COMMAND snow-shot-pinned-window-tests --decoded-content-only -platform offscreen)
+    set_tests_properties(snow-shot-decoded-content-presentation-tests PROPERTIES
+        LABELS unit SNOW_TEST_CROSS_PLATFORM TRUE RUN_SERIAL TRUE TIMEOUT 60
+        ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}")
     add_test(NAME snow-shot-pinned-color-space-tests
         COMMAND snow-shot-pinned-window-tests --color-space-only -platform offscreen)
     set_tests_properties(snow-shot-pinned-color-space-tests PROPERTIES
