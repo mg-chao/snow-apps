@@ -328,6 +328,12 @@ struct SettingsActionFileOpenDefinition {
     TranslatableText fileFilter;
 };
 
+struct SettingsActionExportOptionsDefinition {
+    TranslatableText styleFieldLabel;
+    TranslatableText styleFieldDescription;
+    TranslatableText rejectText;
+};
+
 struct SettingsActionDefinition {
     SettingsActionBinding binding = SettingsActionBinding::ClearCaptureHistory;
     TranslatableText buttonText;
@@ -336,6 +342,7 @@ struct SettingsActionDefinition {
     std::optional<SettingsConfirmationDefinition> confirmation;
     std::optional<SettingsActionFileOpenDefinition> fileOpen;
     std::optional<TranslatableText> successMessage;
+    std::optional<SettingsActionExportOptionsDefinition> exportOptions;
 };
 
 enum class SettingsCustomRenderer {

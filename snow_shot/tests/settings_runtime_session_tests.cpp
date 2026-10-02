@@ -358,8 +358,8 @@ class FakeSettingsBackend final : public settings::SettingsBackend {
         return {true, false};
     }
 
-    bool triggerAction(settings::SettingsActionBinding binding,
-                       const QString& filePath = {}) override {
+    bool triggerAction(settings::SettingsActionBinding binding, const QString& filePath = {},
+                       bool = false) override {
         if (binding == settings::SettingsActionBinding::ImportConfiguration) {
             m_importConfigurationPaths.push_back(filePath);
             return m_importConfigurationAccepted;

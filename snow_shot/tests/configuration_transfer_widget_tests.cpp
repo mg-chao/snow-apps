@@ -11,14 +11,23 @@
 #include "antd_icons.h"
 #include "theme/theme_manager.h"
 #include "widgets/button.h"
+#include "widgets/form.h"
+#include "widgets/modal.h"
+#include "widgets/switch.h"
 
 #include <QAbstractButton>
 #include <QApplication>
+#include <QClipboard>
 #include <QCoreApplication>
 #include <QDir>
+#include <QElapsedTimer>
 #include <QEvent>
+#include <QJsonObject>
+#include <QLabel>
+#include <QMimeData>
 #include <QStringList>
 #include <QTemporaryDir>
+#include <QThread>
 #include <QTranslator>
 #include <QWidget>
 
@@ -166,9 +175,12 @@ class RecordingSettingsBackend final : public settings::SettingsBackend {
         }
         return {true, false};
     }
-    bool triggerAction(settings::SettingsActionBinding binding,
-                       const QString& filePath = {}) override {
+    bool triggerAction(settings::SettingsActionBinding binding, const QString& filePath = {},
+                       bool includeToolbarStyles = false) override {
         m_triggeredActions.push_back(binding);
+        if (binding == settings::SettingsActionBinding::ExportConfiguration) {
+            m_exportStyleChoices.push_back(includeToolbarStyles);
+        }
         if (!filePath.isEmpty()) {
             m_importPaths.push_back(filePath);
         }
@@ -196,10 +208,14 @@ class RecordingSettingsBackend final : public settings::SettingsBackend {
     const QStringList& importPaths() const {
         return m_importPaths;
     }
+    const QVector<bool>& exportStyleChoices() const {
+        return m_exportStyleChoices;
+    }
 
   private:
     QVector<settings::SettingsActionBinding> m_triggeredActions;
     QStringList m_importPaths;
+    QVector<bool> m_exportStyleChoices;
     bool m_configurationBusy = false;
 };
 
@@ -250,10 +266,58 @@ void configurationItemsRenderAsButtons() {
             "import configuration must use the import-config icon");
 
     exportButton->click();
+    auto* modal = page.findChild<adqt::widgets::AdModal*>(
+        QStringLiteral("settings-modal-configuration-export"));
+    require(modal != nullptr && modal->isOpen(),
+            "clicking export configuration must open an options modal");
+    require(modal->mode() == adqt::widgets::AdModal::Mode::Overlay &&
+                modal->preset() == adqt::widgets::AdModal::Preset::Plain &&
+                modal->windowTitle() == QStringLiteral("Export configuration"),
+            "export options must use a titled modal inside the settings window");
+    auto* modalTitle = page.findChild<QLabel*>(QStringLiteral("ad-modal-title"));
+    require(modalTitle != nullptr && !modalTitle->isHidden() &&
+                modalTitle->text() == QStringLiteral("Export configuration"),
+            "the export modal title must be visible above its form");
+    require(backend.triggeredActions().isEmpty(),
+            "opening the export options must not start an export");
+    require(modal->contentWidget()->findChild<adqt::widgets::AdForm*>() != nullptr,
+            "export options must use a form");
+    auto* styleSwitch = modal->contentWidget()->findChild<adqt::widgets::AdSwitch*>(
+        QStringLiteral("includeToolbarStyles"));
+    require(styleSwitch != nullptr, "export options must contain a switch field");
+    require(styleSwitch->accessibleName() == QStringLiteral("Canvas Style Configuration"),
+            "the switch field must use the canvas style configuration label");
+    require(!styleSwitch->isChecked(), "toolbar style export must default to off");
+    modal->reject();
+    flushEvents();
+    require(backend.triggeredActions().isEmpty(), "canceling must not export configuration");
+
+    exportButton->click();
+    modal = page.findChild<adqt::widgets::AdModal*>(
+        QStringLiteral("settings-modal-configuration-export"));
+    styleSwitch = modal->contentWidget()->findChild<adqt::widgets::AdSwitch*>(
+        QStringLiteral("includeToolbarStyles"));
+    require(styleSwitch != nullptr && !styleSwitch->isChecked(),
+            "reopened export options must start with styles off");
+    modal->accept();
+    flushEvents();
     require(backend.triggeredActions().size() == 1 &&
                 backend.triggeredActions().front() ==
-                    settings::SettingsActionBinding::ExportConfiguration,
-            "clicking export configuration must trigger the backend action");
+                    settings::SettingsActionBinding::ExportConfiguration &&
+                backend.exportStyleChoices() == QVector<bool>{false},
+            "accepting the default export must exclude toolbar styles");
+
+    exportButton->click();
+    modal = page.findChild<adqt::widgets::AdModal*>(
+        QStringLiteral("settings-modal-configuration-export"));
+    styleSwitch = modal->contentWidget()->findChild<adqt::widgets::AdSwitch*>(
+        QStringLiteral("includeToolbarStyles"));
+    require(styleSwitch != nullptr, "export options must retain the switch field");
+    styleSwitch->setChecked(true);
+    modal->accept();
+    flushEvents();
+    require(backend.exportStyleChoices() == (QVector<bool>{false, true}),
+            "enabling the switch must include toolbar styles in the export action");
 }
 
 void configurationBusyStateDisablesBothButtons() {
@@ -318,6 +382,62 @@ void sessionDelegatesConfigurationImports() {
         "importing a configuration must be delegated to the backend");
     require(backend.importPaths() == QStringList{archivePath},
             "the session must forward the selected archive path unchanged");
+}
+
+void realBackendExportFiltersToolbarStyles() {
+    presentation::GlobalShortcutManager shortcutManager;
+    settings::BuiltInSettingsBackend backend(shortcutManager);
+    storage::ConfigurationStore& store = storage::ApplicationStorage::instance().configuration();
+    const QString styleKey = QStringLiteral("drawing/shape_style");
+    const QJsonObject style{{QStringLiteral("test_marker"), QStringLiteral("included")}};
+    const QString ordinaryKey = QStringLiteral("drawing/remember_last_used_tool");
+    require(store.setValue(styleKey, style) && store.setValue(ordinaryKey, true),
+            "export fixtures must be accepted by the configuration store");
+
+    for (const bool includeStyles : {false, true}) {
+        bool finished = false;
+        bool succeeded = false;
+        const auto connection = QObject::connect(
+            &backend, &settings::SettingsBackend::actionFinished, &backend,
+            [&](settings::SettingsActionBinding binding, bool success, const QString&) {
+                if (binding == settings::SettingsActionBinding::ExportConfiguration) {
+                    finished = true;
+                    succeeded = success;
+                }
+            });
+        require(backend.triggerAction(settings::SettingsActionBinding::ExportConfiguration, {},
+                                      includeStyles),
+                "the built-in backend must accept configuration export");
+        QElapsedTimer timer;
+        timer.start();
+        while (!finished && timer.elapsed() < 5000) {
+            flushEvents();
+            QThread::msleep(10);
+        }
+        QObject::disconnect(connection);
+        require(finished && succeeded, "configuration export must finish successfully");
+        const auto urls = QApplication::clipboard()->mimeData()->urls();
+        require(urls.size() == 1 && urls.front().isLocalFile(),
+                "configuration export must publish its archive to the clipboard");
+        const auto archive = storage::ConfigurationArchive::read(urls.front().toLocalFile());
+        require(archive.isValid() && archive.values.value(ordinaryKey).toBool(),
+                "configuration export must retain settings unrelated to toolbar styles");
+        require(archive.values.contains(styleKey) == includeStyles,
+                "configuration export must honor the toolbar style option");
+        if (includeStyles) {
+            require(archive.values.value(styleKey).toObject() == style,
+                    "included toolbar styles must keep their configured values");
+        } else {
+            for (const storage::ConfigurationSchemaEntry& entry :
+                 storage::ConfigurationSchema::entries()) {
+                if (entry.key.startsWith(QStringLiteral("drawing/")) &&
+                    entry.key.endsWith(QStringLiteral("_style"))) {
+                    require(!archive.values.contains(entry.key),
+                            "the default export must omit every toolbar style");
+                }
+            }
+        }
+    }
 }
 
 void realBackendImportReplacesConfiguration() {
@@ -414,6 +534,7 @@ int main(int argc, char** argv) {
     configurationBusyStateDisablesBothButtons();
     buttonTextsRetranslate();
     sessionDelegatesConfigurationImports();
+    realBackendExportFiltersToolbarStyles();
     realBackendImportReplacesConfiguration();
 
     storage::ApplicationStorage::instance().shutdown();

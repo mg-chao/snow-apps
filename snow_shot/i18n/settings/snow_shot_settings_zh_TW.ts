@@ -1096,6 +1096,10 @@
             <translation>取消截圖</translation>
         </message>
         <message>
+            <source>Canvas Style Configuration</source>
+            <translation>畫布樣式設定</translation>
+        </message>
+        <message>
             <source>Capture</source>
             <translation>截圖</translation>
         </message>
@@ -1440,8 +1444,8 @@
             <translation>控制截圖色彩選擇器的顯示時機</translation>
         </message>
         <message>
-            <source>Copy all application settings as a zip archive to the clipboard</source>
-            <translation>將全部應用程式設定打包成 zip 壓縮檔並複製到剪貼簿</translation>
+            <source>Copy application settings as a zip archive to the clipboard</source>
+            <translation>將應用程式設定以 zip 封存檔形式複製到剪貼簿</translation>
         </message>
         <message>
             <source>Copy color</source>
@@ -2006,6 +2010,10 @@
         <message>
             <source>Import settings</source>
             <translation>匯入設定</translation>
+        </message>
+        <message>
+            <source>Include saved drawing styles in the configuration archive</source>
+            <translation>在設定封存檔中包含已儲存的繪圖樣式</translation>
         </message>
         <message>
             <source>Include the displayed text recognition or original-image translation result when saving an image.</source>

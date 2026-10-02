@@ -140,7 +140,8 @@ class SettingsRuntimeSession final : public QObject {
     globalMouseCombinationAvailable(SettingsGlobalMouseAction action,
                                     const SettingsGlobalMouseCombination& combination) const;
     [[nodiscard]] SettingsActionState actionState(SettingsActionBinding binding) const;
-    [[nodiscard]] bool triggerAction(SettingsActionBinding binding, const QString& filePath = {});
+    [[nodiscard]] bool triggerAction(SettingsActionBinding binding, const QString& filePath = {},
+                                     bool includeToolbarStyles = false);
 #if SNOW_SHOT_ENABLE_API_CONFIGURATION
     [[nodiscard]] CustomAiModels customAiModels() const;
     bool applyCustomAiModels(const CustomAiModels& models);

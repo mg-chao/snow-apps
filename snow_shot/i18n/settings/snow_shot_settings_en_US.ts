@@ -1096,6 +1096,10 @@
             <translation>Cancel screenshot</translation>
         </message>
         <message>
+            <source>Canvas Style Configuration</source>
+            <translation>Canvas Style Configuration</translation>
+        </message>
+        <message>
             <source>Capture</source>
             <translation>Capture</translation>
         </message>
@@ -1440,8 +1444,8 @@
             <translation>Control when the screenshot color picker is visible</translation>
         </message>
         <message>
-            <source>Copy all application settings as a zip archive to the clipboard</source>
-            <translation>Copy all application settings as a zip archive to the clipboard</translation>
+            <source>Copy application settings as a zip archive to the clipboard</source>
+            <translation>Copy application settings as a zip archive to the clipboard</translation>
         </message>
         <message>
             <source>Copy color</source>
@@ -2006,6 +2010,10 @@
         <message>
             <source>Import settings</source>
             <translation>Import settings</translation>
+        </message>
+        <message>
+            <source>Include saved drawing styles in the configuration archive</source>
+            <translation>Include saved drawing styles in the configuration archive</translation>
         </message>
         <message>
             <source>Include the displayed text recognition or original-image translation result when saving an image.</source>

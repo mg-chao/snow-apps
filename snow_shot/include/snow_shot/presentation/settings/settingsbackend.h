@@ -183,7 +183,8 @@ class SettingsBackend : public QObject {
 
     [[nodiscard]] virtual SettingsActionState actionState(SettingsActionBinding binding) const = 0;
     [[nodiscard]] virtual bool triggerAction(SettingsActionBinding binding,
-                                             const QString& filePath = {}) = 0;
+                                             const QString& filePath = {},
+                                             bool includeToolbarStyles = false) = 0;
     [[nodiscard]] virtual storage::StorageStatus storageStatus() const = 0;
     virtual void refreshPlatformSettings() {}
     virtual void refreshStorageStatus() {}
@@ -294,8 +295,8 @@ class BuiltInSettingsBackend final : public SettingsBackend {
     applyGlobalMouseCombination(SettingsGlobalMouseAction action,
                                 const SettingsGlobalMouseCombination& combination) override;
     [[nodiscard]] SettingsActionState actionState(SettingsActionBinding binding) const override;
-    [[nodiscard]] bool triggerAction(SettingsActionBinding binding,
-                                     const QString& filePath = {}) override;
+    [[nodiscard]] bool triggerAction(SettingsActionBinding binding, const QString& filePath = {},
+                                     bool includeToolbarStyles = false) override;
 #if SNOW_SHOT_ENABLE_API_CONFIGURATION
     [[nodiscard]] CustomAiModels customAiModels() const override;
     bool applyCustomAiModels(const CustomAiModels& models) override;

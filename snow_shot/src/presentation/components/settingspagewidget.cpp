@@ -6,6 +6,7 @@
 #include "snow_shot/presentation/components/globalmouserow.h"
 #include "snow_shot/presentation/components/sectionheaderwidget.h"
 #include "snow_shot/presentation/components/settingscustomwidget.h"
+#include "snow_shot/presentation/components/formfields.h"
 #include "snow_shot/presentation/components/settingspageutils.h"
 #include "snow_shot/presentation/components/shortcutkeyrow.h"
 #include "snow_shot/presentation/settings/settingsruntimesession.h"
@@ -50,6 +51,7 @@
 namespace {
 namespace settings = snow_shot::presentation::settings;
 namespace settings_ui = snow_shot::presentation::components;
+namespace form_fields = snow_shot::presentation::components::form_fields;
 
 std::optional<snow_shot::presentation::AppPermission>
 permissionForRenderer(settings::SettingsCustomRenderer renderer) {
@@ -97,6 +99,7 @@ class SettingsPageWidget::Impl {
         SettingsCustomWidget* customControl = nullptr;
         std::optional<settings::SettingsCustomRenderer> deferredRenderer;
         QPointer<adqt::widgets::AdModal> modal;
+        QPointer<form_fields::FormField> exportStyleField;
     };
 
     struct RuntimeSection {
@@ -788,6 +791,10 @@ class SettingsPageWidget::Impl {
         if (action == nullptr) {
             return;
         }
+        if (action->exportOptions.has_value()) {
+            showExportOptions(*item, *action);
+            return;
+        }
         QString filePath;
         if (action->fileOpen.has_value()) {
             filePath =
@@ -807,6 +814,60 @@ class SettingsPageWidget::Impl {
             return;
         }
         confirmItemAction(*item, *action->confirmation, runAction);
+    }
+
+    void showExportOptions(RuntimeItem& item, const settings::SettingsActionDefinition& action) {
+        auto* modal = new adqt::widgets::AdModal(&q);
+        item.modal = modal;
+        modal->setObjectName(
+            settings::generatedObjectName(QStringLiteral("settings-modal"), item.definition->id));
+        modal->setMode(adqt::widgets::AdModal::Mode::Overlay);
+        modal->setOwnerWindow(q.window());
+        modal->setCentered(true);
+        modal->setPreferredWidth(580);
+        modal->setPreset(adqt::widgets::AdModal::Preset::Plain);
+        modal->setWindowTitle(item.definition->title.translated());
+        modal->setAcceptText(action.buttonText.translated());
+        modal->setRejectText(action.exportOptions->rejectText.translated());
+        modal->setStandardButtons(adqt::widgets::AdModal::StandardButton::Ok |
+                                  adqt::widgets::AdModal::StandardButton::Cancel);
+
+        auto* body = new QWidget;
+        auto* layout = new QVBoxLayout(body);
+        layout->setContentsMargins(0, 0, 0, 0);
+        auto* form = new adqt::widgets::AdForm(body);
+        form_fields::configureForm(form);
+        form_fields::Options options;
+        options.parent = form;
+        options.form = form;
+        const auto styleField = form_fields::switchField(
+            {QStringLiteral("includeToolbarStyles"), action.exportOptions->styleFieldLabel,
+             action.exportOptions->styleFieldDescription},
+            options);
+        item.exportStyleField = styleField.field;
+        styleField.field->syncValue(false);
+        layout->addWidget(form);
+        modal->setContentWidget(body);
+
+        QObject::connect(modal, &adqt::widgets::AdModal::accepted, &q,
+                         [this, field = QPointer<form_fields::FormField>(styleField.field)] {
+                             if (field != nullptr &&
+                                 !runtimeSession.triggerAction(
+                                     settings::SettingsActionBinding::ExportConfiguration, {},
+                                     field->value().toBool())) {
+                                 syncValues();
+                             }
+                         });
+        QObject::connect(modal, &adqt::widgets::AdModal::finished, &q,
+                         [this, itemId = item.definition->id](adqt::widgets::AdModal::DialogCode) {
+                             RuntimeItem* finishedItem = runtimeItem(itemId);
+                             if (finishedItem != nullptr && finishedItem->modal != nullptr) {
+                                 finishedItem->modal->deleteLater();
+                                 finishedItem->modal = nullptr;
+                                 finishedItem->exportStyleField = nullptr;
+                             }
+                         });
+        modal->setOpen(true);
     }
 
     void confirmItemAction(RuntimeItem& item,
@@ -1096,6 +1157,13 @@ class SettingsPageWidget::Impl {
                     runtime.modal->setText(action->confirmation->message.translated());
                     runtime.modal->setAcceptText(action->confirmation->acceptText.translated());
                     runtime.modal->setRejectText(action->confirmation->rejectText.translated());
+                } else if (runtime.modal != nullptr && action->exportOptions.has_value()) {
+                    runtime.modal->setWindowTitle(definition.title.translated());
+                    runtime.modal->setAcceptText(action->buttonText.translated());
+                    runtime.modal->setRejectText(action->exportOptions->rejectText.translated());
+                    if (runtime.exportStyleField != nullptr) {
+                        runtime.exportStyleField->retranslateUi();
+                    }
                 }
             }
             if (runtime.customControl != nullptr) {

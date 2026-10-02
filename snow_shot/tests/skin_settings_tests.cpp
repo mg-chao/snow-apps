@@ -199,8 +199,9 @@ class SkinStatusBackend final : public settings::SettingsBackend {
     actionState(settings::SettingsActionBinding binding) const override {
         return m_backend.actionState(binding);
     }
-    bool triggerAction(settings::SettingsActionBinding binding, const QString& path) override {
-        return m_backend.triggerAction(binding, path);
+    bool triggerAction(settings::SettingsActionBinding binding, const QString& path,
+                       bool includeToolbarStyles = false) override {
+        return m_backend.triggerAction(binding, path, includeToolbarStyles);
     }
     storage::StorageStatus storageStatus() const override {
         return m_backend.storageStatus();

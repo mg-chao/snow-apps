@@ -1549,7 +1549,8 @@ SettingsActionState BuiltInSettingsBackend::actionState(SettingsActionBinding bi
     return {};
 }
 
-bool BuiltInSettingsBackend::triggerAction(SettingsActionBinding binding, const QString& filePath) {
+bool BuiltInSettingsBackend::triggerAction(SettingsActionBinding binding, const QString& filePath,
+                                           bool includeToolbarStyles) {
     switch (binding) {
     case SettingsActionBinding::OpenLoginItemSettings:
 #ifdef Q_OS_MACOS
@@ -1646,9 +1647,19 @@ bool BuiltInSettingsBackend::triggerAction(SettingsActionBinding binding, const 
             QStringLiteral("snow-shot-configuration-%1-%2.zip")
                 .arg(QDateTime::currentDateTime().toString(QStringLiteral("yyyyMMdd-HHmmss")),
                      QUuid::createUuid().toString(QUuid::Id128).left(8)));
+        auto values = applicationStorage.configuration().snapshot();
+        if (!includeToolbarStyles) {
+            for (auto it = values.begin(); it != values.end();) {
+                if (it.key().startsWith(QStringLiteral("drawing/")) &&
+                    it.key().endsWith(QStringLiteral("_style"))) {
+                    it = values.erase(it);
+                } else {
+                    ++it;
+                }
+            }
+        }
         const QString archiveError = storage::ConfigurationArchive::write(
-            archivePath, applicationStorage.configuration().snapshot(),
-            storage::ConfigurationStore::currentSchemaVersion());
+            archivePath, values, storage::ConfigurationStore::currentSchemaVersion());
         if (!archiveError.isEmpty()) {
             m_configurationBusy = false;
             emit synchronized();

@@ -2323,11 +2323,17 @@ SettingsItemDefinition exportConfigurationItem() {
     payload.iconFactory = []() { return custom_outlined_icons::ExportConfiguration(); };
     payload.successMessage = settingsText(
         QT_TRANSLATE_NOOP("SettingsCatalog", "Configuration exported to the clipboard."));
+    payload.exportOptions = {
+        settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Canvas Style Configuration")),
+        settingsText(QT_TRANSLATE_NOOP(
+            "SettingsCatalog", "Include saved drawing styles in the configuration archive")),
+        settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Cancel")),
+    };
     return {
         QStringLiteral("configuration.export"),
         settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Export configuration")),
         settingsText(QT_TRANSLATE_NOOP(
-            "SettingsCatalog", "Copy all application settings as a zip archive to the clipboard")),
+            "SettingsCatalog", "Copy application settings as a zip archive to the clipboard")),
         {settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Export settings")),
          settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Backup settings"))},
         {},

@@ -249,7 +249,8 @@ class FakeSettingsBackend final : public settings::SettingsBackend {
             return {!m_status.diagnostics.exporting, m_status.diagnostics.exporting};
         return {true, false};
     }
-    bool triggerAction(settings::SettingsActionBinding, const QString& = {}) override {
+    bool triggerAction(settings::SettingsActionBinding, const QString& = {},
+                       bool = false) override {
         return true;
     }
     storage::StorageStatus storageStatus() const override {

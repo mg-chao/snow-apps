@@ -1573,8 +1573,9 @@ SettingsActionState SettingsRuntimeSession::actionState(SettingsActionBinding bi
     return m_backend.actionState(binding);
 }
 
-bool SettingsRuntimeSession::triggerAction(SettingsActionBinding binding, const QString& filePath) {
-    return m_backend.triggerAction(binding, filePath);
+bool SettingsRuntimeSession::triggerAction(SettingsActionBinding binding, const QString& filePath,
+                                           bool includeToolbarStyles) {
+    return m_backend.triggerAction(binding, filePath, includeToolbarStyles);
 }
 
 #if SNOW_SHOT_ENABLE_API_CONFIGURATION

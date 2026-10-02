@@ -423,7 +423,15 @@ fn output_schema() -> serde_json::Map<String, Value> {
 
 impl ServerHandler for SnowShotMcp {
     fn supported_protocol_versions(&self) -> Cow<'static, [rmcp::model::ProtocolVersion]> {
-        Cow::Borrowed(&[rmcp::model::ProtocolVersion::V_2026_07_28])
+        // 2026-07-28 drops the stdio `initialize` handshake in favour of
+        // per-request metadata, so rmcp's stdio negotiator can only answer a
+        // client when at least one legacy (<2026-07-28) version is available to
+        // fall back to. Keep a legacy revision alongside the newest one,
+        // otherwise every stdio client fails with -32022.
+        Cow::Borrowed(&[
+            rmcp::model::ProtocolVersion::V_2026_07_28,
+            rmcp::model::ProtocolVersion::V_2025_11_25,
+        ])
     }
 
     fn get_info(&self) -> ServerConfig {
