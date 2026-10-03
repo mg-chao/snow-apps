@@ -226,7 +226,7 @@ pub(super) fn orient_frame(
     rotation: DXGI_MODE_ROTATION,
 ) -> CaptureResult<Frame> {
     let (width, height) = oriented_size(source.width(), source.height(), rotation);
-    destination.ensure_capacity(width, height, source.pixel_format())?;
+    destination.prepare_for_overwrite(width, height, source.pixel_format())?;
     orient_into(source, &mut destination, 0, 0, rotation)?;
     destination.metadata = source.metadata.clone();
     // Native damage rectangles must not escape into desktop coordinates.

@@ -172,11 +172,21 @@ Document makeFixture(const Options& options) {
     document.canvas_width = options.width;
     document.canvas_height = options.height;
     Frame frame;
-    frame.image = fixture(options.width, options.height);
+    if (options.scenario == "flatten-partial") {
+        frame.image = fixture(std::max(1U, options.width / 2), std::max(1U, options.height / 2));
+        frame.x = options.width / 4;
+        frame.y = options.height / 4;
+        frame.blend = FrameBlend::over;
+        frame.disposal = FrameDisposal::previous;
+    } else {
+        frame.image = fixture(options.width, options.height);
+    }
     document.frames.push_back(std::move(frame));
-    if (options.scenario == "flatten") {
-        // Exercise full float canvas, unpacked source, previous-disposal copy,
-        // and retained output frames, all affected by the PixelArray allocator.
+    if (options.scenario == "flatten" || options.scenario == "flatten-partial" ||
+        options.scenario == "animation-compose") {
+        // Flatten needs only the first composed frame. Full replacement and
+        // partial-first fixtures distinguish its zero-copy and bounded-frame
+        // paths from preservation, which needs a float canvas and all outputs.
         for (std::uint32_t index = 1; index < 4; ++index) {
             Frame partial;
             partial.image =
@@ -184,7 +194,7 @@ Document makeFixture(const Options& options) {
             partial.x = options.width / 8 * index;
             partial.y = options.height / 8 * index;
             partial.blend = FrameBlend::over;
-            partial.disposal = index == 2 ? FrameDisposal::previous : FrameDisposal::keep;
+            partial.disposal = index >= 2 ? FrameDisposal::previous : FrameDisposal::keep;
             document.frames.push_back(std::move(partial));
         }
     }
@@ -240,8 +250,10 @@ Document apply(const Options& options, const Document& source, const GeneratedRa
             {image.width(), image.height(), image.format(), image.row_stride(), image.pixels()}));
         return oneImage(std::move(image).freeze());
     }
-    if (scenario == "flatten")
+    if (scenario == "flatten" || scenario == "flatten-partial")
         return unwrap(flatten_animation(source));
+    if (scenario == "animation-compose")
+        return unwrap(transform(source, TransformOptions{}));
     if (scenario == "gray-region" || scenario == "yuv420-region") {
         auto image = unwrap(MutableImage::allocate(options.width, options.height, kRgba8));
         requireResult(read_rgba8_region(
@@ -320,7 +332,8 @@ int main(int argc, char** argv) {
         GeneratedRaster generated(options.width, options.height, options.scenario);
         Document source;
         if (options.scenario == "copy" || options.scenario == "resize" ||
-            options.scenario == "palette" || options.scenario == "flatten")
+            options.scenario == "palette" || options.scenario == "flatten" ||
+            options.scenario == "flatten-partial" || options.scenario == "animation-compose")
             source = makeFixture(options);
         report("fixture_baseline", options, -1, 0, 0, logicalBytes(source));
         std::vector<std::int64_t> samples;

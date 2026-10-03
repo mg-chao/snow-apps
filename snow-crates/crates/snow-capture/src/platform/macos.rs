@@ -263,7 +263,7 @@ impl MonitorCapturer for MacCapturer {
         if native.duplicate
             && let Some(cpu) = self.cpu.as_ref()
         {
-            frame.ensure_capacity(
+            frame.prepare_for_overwrite(
                 cpu.size.width,
                 cpu.size.height,
                 self.options.output_pixel_format,
@@ -271,7 +271,11 @@ impl MonitorCapturer for MacCapturer {
             copy_cpu_pixels(cpu, &mut frame)?;
         } else {
             let size = native.image.size();
-            frame.ensure_capacity(size.width, size.height, self.options.output_pixel_format)?;
+            frame.prepare_for_overwrite(
+                size.width,
+                size.height,
+                self.options.output_pixel_format,
+            )?;
             match native.image.copy_packed(frame.as_mut_bytes(), swap) {
                 Ok(()) => {
                     self.cpu = native.duplicate.then(|| cached_output(&frame));
@@ -369,6 +373,23 @@ fn copy_cpu_pixels(cpu: &snow_media::CpuFrame, frame: &mut Frame) -> CaptureResu
 mod tuning_tests {
     use super::*;
     #[test]
+    fn cached_output_remains_a_valid_source_after_overwrite_detachment() {
+        let mut frame = Frame::from_bgra8(2, 2, (1..=16).collect()).unwrap();
+        let previous = frame.clone();
+        let cpu = cached_output(&frame);
+        let pointer = frame.as_bytes().as_ptr();
+        frame
+            .prepare_for_overwrite(2, 2, CapturePixelFormat::Bgra8)
+            .unwrap();
+        assert_ne!(frame.as_bytes().as_ptr(), pointer);
+        assert!(frame.as_bytes().iter().all(|&byte| byte == 0));
+        copy_cpu_pixels(&cpu, &mut frame).unwrap();
+        assert_eq!(frame.as_bytes(), previous.as_bytes());
+        assert_eq!(cpu.bytes.as_ptr(), pointer);
+        assert_eq!(cpu.bytes.as_slice(), previous.as_bytes());
+    }
+
+    #[test]
     fn padded_cpu_frame_is_copied_without_padding_and_bad_layouts_are_rejected() {
         let mut cpu = snow_media::CpuFrame {
             size: snow_media::geometry::PixelSize::new(1, 2).unwrap(),
@@ -384,8 +405,13 @@ mod tuning_tests {
             bytes: std::sync::Arc::new([99, 10, 20, 30, 40, 98, 50, 60, 70, 80].into()),
         };
         let mut frame = Frame::from_rgba8(1, 2, vec![0; 8]).unwrap();
+        let previous = frame.clone();
+        frame
+            .prepare_for_overwrite(1, 2, CapturePixelFormat::Bgra8)
+            .unwrap();
         copy_cpu_pixels(&cpu, &mut frame).unwrap();
         assert_eq!(frame.as_bytes(), &[10, 20, 30, 40, 50, 60, 70, 80]);
+        assert_eq!(previous.as_bytes(), &[0; 8]);
         cpu.planes[0].offset = 2;
         assert!(matches!(
             copy_cpu_pixels(&cpu, &mut frame),

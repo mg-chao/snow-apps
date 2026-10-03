@@ -56,3 +56,7 @@ required-features = ["cli"]
 [[example]]
 name = "scroll_4_benchmark"
 required-features = ["full-image-io"]
+
+[[example]]
+name = "memory_reference_benchmark"
+required-features = ["perf-instrumentation"]

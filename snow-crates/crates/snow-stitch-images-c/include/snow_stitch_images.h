@@ -160,6 +160,9 @@ SnowStitchFramePool* snow_stitch_frame_pool_create(uint32_t width, uint32_t heig
 void snow_stitch_frame_pool_destroy(SnowStitchFramePool* pool);
 /* Returns NULL while all bounded slots are owned by the pipeline. */
 SnowStitchFrameBuffer* snow_stitch_frame_pool_acquire(SnowStitchFramePool* pool);
+/* Same bounded acquisition, with initialized but unspecified pixels. The caller must
+ * overwrite every packed RGBA byte before submitting the frame. */
+SnowStitchFrameBuffer* snow_stitch_frame_pool_acquire_for_overwrite(SnowStitchFramePool* pool);
 /* The writable pixel pointer remains valid until the frame is consumed/destroyed. */
 uint8_t snow_stitch_frame_buffer_info(SnowStitchFrameBuffer* frame,
                                       SnowStitchMutableImageInfo* out_info);

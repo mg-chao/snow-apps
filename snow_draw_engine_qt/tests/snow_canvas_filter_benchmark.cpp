@@ -249,11 +249,10 @@ std::uint64_t imageChecksum(const QImage& image) {
         return 0;
     }
     std::uint64_t hash = 1469598103934665603ull;
-    const int stepX = std::max(1, image.width() / 31);
-    const int stepY = std::max(1, image.height() / 29);
-    for (int y = 0; y < image.height(); y += stepY) {
-        const auto* line = reinterpret_cast<const QRgb*>(image.constScanLine(y));
-        for (int x = 0; x < image.width(); x += stepX) {
+    const qsizetype rowBytes = (qsizetype(image.width()) * image.depth() + 7) / 8;
+    for (int y = 0; y < image.height(); ++y) {
+        const auto* line = image.constScanLine(y);
+        for (qsizetype x = 0; x < rowBytes; ++x) {
             hash ^= line[x];
             hash *= 1099511628211ull;
         }

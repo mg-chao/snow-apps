@@ -949,6 +949,7 @@ std::optional<Result> runExportWorkflow(const Options& options, int width, int h
     snow_canvas_renderer::resetWatermarkRenderCacheForCurrentThread();
     const auto sample = [&](bool measured, double* milliseconds,
                             snow_canvas_renderer::WatermarkRenderDiagnostics* diagnostics) {
+        output = {}; // Release the prior export before measuring the next job.
         snow_canvas_renderer::resetWatermarkRenderDiagnosticsForCurrentThread();
         QElapsedTimer timer;
         timer.start();

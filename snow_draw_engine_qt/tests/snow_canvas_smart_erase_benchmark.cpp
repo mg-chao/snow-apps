@@ -70,6 +70,18 @@ quint64 peakWorkingBytes() {
 #endif
     return 0;
 }
+quint64 imageChecksum(const QImage& image) {
+    quint64 hash = 1469598103934665603ULL;
+    const qsizetype rowBytes = (qsizetype(image.width()) * image.depth() + 7) / 8;
+    for (int y = 0; y < image.height(); ++y) {
+        const auto* row = image.constScanLine(y);
+        for (qsizetype x = 0; x < rowBytes; ++x) {
+            hash ^= row[x];
+            hash *= 1099511628211ULL;
+        }
+    }
+    return hash;
+}
 cv::Mat3f rgb(const QImage& image) {
     cv::Mat3f result(image.height(), image.width());
     for (int y = 0; y < image.height(); ++y) {
@@ -215,8 +227,8 @@ bool run(const Scenario& scenario, const QString& directory, const QString& refe
                   << voting << ',' << d.preparationMs << ',' << d.fastPathsMs << ','
                   << d.guidePyramidMs << ',' << peakWorkingBytes() << ',' << d.croppedSize.width()
                   << ',' << d.croppedSize.height() << ',' << sizes.join('/').toStdString() << ','
-                  << searches.join('/').toStdString() << ',' << votes.join('/').toStdString()
-                  << '\n'
+                  << searches.join('/').toStdString() << ',' << votes.join('/').toStdString() << ','
+                  << imageChecksum(last.result.filled) << '\n'
                   << std::flush;
     }
     std::sort(times.begin(), times.end());
@@ -346,7 +358,7 @@ int main(int argc, char** argv) {
         << "record,scenario,iteration,jobs,elapsed_ms,working_width,working_height,masked_"
            "pixels,path,levels,passes,search_ms,vote_ms,preparation_ms,fast_paths_ms,guide_pyramid_"
            "ms,peak_working_bytes,cropped_width,cropped_height,level_sizes,level_search_ms,level_"
-           "vote_ms\n";
+           "vote_ms,checksum\n";
     bool ok = true;
     for (const auto& scenario : scenarios) {
         if (!requested.empty() && !requested.contains(QLatin1String(scenario.name)))

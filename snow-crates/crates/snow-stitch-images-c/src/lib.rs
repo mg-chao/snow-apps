@@ -112,6 +112,14 @@ impl RgbaFramePool {
     }
 
     fn acquire(&self) -> Result<RgbaFrameBuffer, StitchError> {
+        self.acquire_with_clear(true)
+    }
+
+    fn acquire_for_overwrite(&self) -> Result<RgbaFrameBuffer, StitchError> {
+        self.acquire_with_clear(false)
+    }
+
+    fn acquire_with_clear(&self, clear_pixels: bool) -> Result<RgbaFrameBuffer, StitchError> {
         let mut active = self.inner.active.load(Ordering::Acquire);
         loop {
             if active >= self.inner.capacity {
@@ -141,9 +149,11 @@ impl RgbaFramePool {
             .unwrap_or_else(|| RasterBuffer::zeroed(self.inner.length));
         let mut data = data;
         if data.len() != self.inner.length {
-            data.resize(self.inner.length, 0);
+            data.resize_for_overwrite(self.inner.length);
         }
-        data.fill(0);
+        if clear_pixels {
+            data.fill(0);
+        }
         Ok(RgbaFrameBuffer {
             dimensions: self.inner.dimensions,
             data: Some(data),
@@ -781,24 +791,30 @@ fn export_png(
             let mut stream = writer
                 .stream_writer_with_size(64 * 1024)
                 .map_err(|error| PngExportError::Failed(error.to_string()))?;
-            let row_bytes = snapshot.width() as usize * 4;
-            let chunk_bytes = row_bytes.saturating_mul(64).max(row_bytes);
+            let row_bytes = (snapshot.width() as usize)
+                .checked_mul(4)
+                .ok_or_else(|| PngExportError::Failed("PNG row length overflow".to_owned()))?;
+            let strip_rows = snapshot.height().min(64);
+            let strip_bytes = row_bytes
+                .checked_mul(strip_rows as usize)
+                .ok_or_else(|| PngExportError::Failed("PNG strip length overflow".to_owned()))?;
+            let mut strip = RasterBuffer::zeroed(strip_bytes);
             let mut rows_written = 0;
-            let materialized = snapshot
-                .materialize()
-                .map_err(|error| PngExportError::Failed(error.to_string()))?;
-            for chunk in materialized.frame.pixels().chunks(chunk_bytes) {
+            while rows_written < snapshot.height() {
                 if cancel.load(Ordering::Acquire) {
                     return Err(PngExportError::Canceled);
                 }
+                let rows = strip_rows.min(snapshot.height() - rows_written);
+                let chunk = &mut strip[..row_bytes * rows as usize];
+                snapshot
+                    .canvas
+                    .copy_rows(rows_written, rows, chunk)
+                    .map_err(|error| PngExportError::Failed(error.to_string()))?;
                 stream
                     .write_all(chunk)
                     .map_err(|error| PngExportError::Failed(error.to_string()))?;
-                rows_written += (chunk.len() / row_bytes) as u32;
-                emit(
-                    PngExportStage::Encoding,
-                    rows_written.min(snapshot.height()),
-                );
+                rows_written += rows;
+                emit(PngExportStage::Encoding, rows_written);
             }
             stream
                 .finish()
@@ -1143,15 +1159,39 @@ pub unsafe extern "C" fn snow_stitch_frame_pool_destroy(pool: *mut SnowStitchFra
 
 #[unsafe(no_mangle)]
 /// # Safety
-/// `pool` must point to a live frame pool for the duration of this call.
+/// `pool` must be null or point to a live frame pool for the duration of this call.
 pub unsafe extern "C" fn snow_stitch_frame_pool_acquire(
     pool: *mut SnowStitchFramePoolImpl,
+) -> *mut SnowStitchFrameBufferImpl {
+    unsafe { acquire_frame_buffer(pool, false) }
+}
+
+#[unsafe(no_mangle)]
+/// Acquire initialized pixels without clearing previously returned storage.
+/// The caller must overwrite every packed RGBA byte before submitting the frame.
+///
+/// # Safety
+/// `pool` must be null or point to a live frame pool for the duration of this call.
+pub unsafe extern "C" fn snow_stitch_frame_pool_acquire_for_overwrite(
+    pool: *mut SnowStitchFramePoolImpl,
+) -> *mut SnowStitchFrameBufferImpl {
+    unsafe { acquire_frame_buffer(pool, true) }
+}
+
+unsafe fn acquire_frame_buffer(
+    pool: *mut SnowStitchFramePoolImpl,
+    overwrite: bool,
 ) -> *mut SnowStitchFrameBufferImpl {
     let Some(pool) = (unsafe { pool.as_ref() }) else {
         set_last_error("RGBA frame pool is null");
         return ptr::null_mut();
     };
-    match pool.pool.acquire() {
+    let result = if overwrite {
+        pool.pool.acquire_for_overwrite()
+    } else {
+        pool.pool.acquire()
+    };
+    match result {
         Ok(buffer) => {
             clear_last_error();
             Box::into_raw(Box::new(SnowStitchFrameBufferImpl {
@@ -1964,6 +2004,214 @@ mod tests {
             assert!(reused.data.as_ref().unwrap().is_page_backed());
             assert!(frame.into_buffer().is_page_backed());
         }
+    }
+
+    #[test]
+    fn overwrite_pool_reuses_initialized_pixels_without_changing_frozen_frames() {
+        for (width, height) in [(8, 16), (1024, 256)] {
+            let pool = RgbaFramePool::new(width, height, 1).unwrap();
+            let mut buffer = pool.acquire_for_overwrite().unwrap();
+            assert!(buffer.as_mut_rgba_bytes().iter().all(|&byte| byte == 0));
+            let pointer = buffer.as_mut_rgba_bytes().as_ptr();
+            buffer.as_mut_rgba_bytes().fill(0x5a);
+            let frame = buffer.freeze().unwrap();
+
+            let mut reused = pool.acquire_for_overwrite().unwrap();
+            assert_eq!(reused.as_mut_rgba_bytes().as_ptr(), pointer);
+            assert!(reused.as_mut_rgba_bytes().iter().all(|&byte| byte == 0x5a));
+            reused.as_mut_rgba_bytes().fill(0x7f);
+            assert!(frame.pixels().iter().all(|&byte| byte == 0x5a));
+            drop(reused);
+
+            let mut cleared = pool.acquire().unwrap();
+            assert_eq!(cleared.as_mut_rgba_bytes().as_ptr(), pointer);
+            assert!(cleared.as_mut_rgba_bytes().iter().all(|&byte| byte == 0));
+        }
+    }
+
+    #[test]
+    fn overwrite_pool_bounds_and_lifetime_survive_failed_freeze() {
+        assert!(RgbaFramePool::new(0, 4, 1).is_err());
+        assert!(RgbaFramePool::new(4, 4, 0).is_err());
+        let pool = RgbaFramePool::new(4, 4, 1).unwrap();
+        let mut buffer = pool.acquire_for_overwrite().unwrap();
+        assert!(pool.acquire().is_err());
+        assert!(pool.acquire_for_overwrite().is_err());
+        assert_eq!(pool.inner.active.load(Ordering::Acquire), 1);
+        // A failed submission must return the slot and leave initialized storage reusable.
+        buffer.data.as_mut().unwrap().truncate(3);
+        assert!(buffer.freeze().is_err());
+        assert_eq!(pool.inner.active.load(Ordering::Acquire), 0);
+        let mut buffer = pool.acquire_for_overwrite().unwrap();
+        assert_eq!(buffer.as_mut_rgba_bytes().len(), 4 * 4 * 4);
+        assert!(buffer.as_mut_rgba_bytes().iter().all(|&byte| byte == 0));
+
+        let owner = Arc::downgrade(&pool.inner);
+        drop(pool);
+        assert!(owner.upgrade().is_some());
+        buffer.as_mut_rgba_bytes().fill(0x5a);
+        drop(buffer);
+        assert!(
+            owner.upgrade().is_none(),
+            "the last buffer must release the pool"
+        );
+    }
+
+    #[test]
+    fn overwrite_acquisition_ffi_validates_handles_and_retains_pool_until_buffer_drop() {
+        assert!(unsafe { snow_stitch_frame_pool_acquire_for_overwrite(ptr::null_mut()) }.is_null());
+        let pool = snow_stitch_frame_pool_create(4, 4, 1);
+        assert!(!pool.is_null());
+        let frame = unsafe { snow_stitch_frame_pool_acquire_for_overwrite(pool) };
+        assert!(!frame.is_null());
+        assert!(unsafe { snow_stitch_frame_pool_acquire_for_overwrite(pool) }.is_null());
+        let mut info = SnowStitchMutableImageInfo {
+            width: 0,
+            height: 0,
+            stride_bytes: 0,
+            rgba_bytes: ptr::null_mut(),
+            rgba_len: 0,
+        };
+        assert_eq!(
+            unsafe { snow_stitch_frame_buffer_info(frame, ptr::null_mut()) },
+            0
+        );
+        assert_eq!(
+            unsafe { snow_stitch_frame_buffer_info(frame, &mut info) },
+            1
+        );
+        assert_eq!(
+            (info.width, info.height, info.stride_bytes, info.rgba_len),
+            (4, 4, 16, 64)
+        );
+        unsafe { snow_stitch_frame_pool_destroy(pool) };
+        let pixels = unsafe { slice::from_raw_parts_mut(info.rgba_bytes, info.rgba_len) };
+        assert!(pixels.iter().all(|&byte| byte == 0));
+        pixels.fill(0x7f);
+        unsafe { snow_stitch_frame_buffer_destroy(frame) };
+    }
+
+    #[test]
+    fn streamed_png_matches_unaligned_vertical_and_horizontal_snapshots() {
+        use snow_stitch_images::CANVAS_TILE_SPAN;
+
+        let temporary = tempfile::tempdir().unwrap();
+        for axis in [StitchAxis::Vertical, StitchAxis::Horizontal] {
+            let (width, height) = match axis {
+                StitchAxis::Vertical => (7, CANVAS_TILE_SPAN * 2 + 73),
+                StitchAxis::Horizontal => (CANVAS_TILE_SPAN * 2 + 73, 137),
+            };
+            let source: Vec<_> = (0..width as usize * height as usize * 4)
+                .map(|index| ((index * 37 + index / 17) % 256) as u8)
+                .collect();
+            let frame = Frame::new(width, height, PixelFormat::Rgba8, source.clone()).unwrap();
+            let full = TiledCanvasSnapshot::from_frame_for_axis(frame, axis);
+            let extent = axis.primary_extent(width, height);
+            let canvas = full.slice_axis(13, extent - 11).unwrap();
+            drop(full);
+            let snapshot = StitchImageSnapshot { canvas };
+            let expected = match axis {
+                StitchAxis::Vertical => source
+                    [13 * width as usize * 4..(height - 11) as usize * width as usize * 4]
+                    .to_vec(),
+                StitchAxis::Horizontal => source
+                    .chunks_exact(width as usize * 4)
+                    .flat_map(|row| row[13 * 4..(width - 11) as usize * 4].iter().copied())
+                    .collect(),
+            };
+            for (index, compression) in [
+                PngCompression::Fast,
+                PngCompression::Balanced,
+                PngCompression::Best,
+            ]
+            .into_iter()
+            .enumerate()
+            {
+                let output = temporary.path().join(format!("{axis:?}-{index}.png"));
+                let (progress_tx, progress) = sync_channel(64);
+                export_png(
+                    snapshot.clone(),
+                    PngExportRequest {
+                        output_path: output.clone(),
+                        compression,
+                        overwrite: false,
+                    },
+                    Arc::new(AtomicBool::new(false)),
+                    progress_tx,
+                )
+                .unwrap();
+                let mut reader = png::Decoder::new(std::io::BufReader::new(
+                    std::fs::File::open(&output).unwrap(),
+                ))
+                .read_info()
+                .unwrap();
+                let mut decoded = vec![0; reader.output_buffer_size().unwrap()];
+                let info = reader.next_frame(&mut decoded).unwrap();
+                assert_eq!(
+                    (info.width, info.height),
+                    (snapshot.width(), snapshot.height())
+                );
+                assert_eq!(info.color_type, png::ColorType::Rgba);
+                assert_eq!(info.bit_depth, png::BitDepth::Eight);
+                assert_eq!(&decoded[..info.buffer_size()], expected.as_slice());
+                let updates: Vec<_> = progress.try_iter().collect();
+                assert!(matches!(updates[0].stage, PngExportStage::Preparing));
+                assert!(matches!(
+                    updates.last().unwrap().stage,
+                    PngExportStage::Committing
+                ));
+                let encoded_rows: Vec<_> = updates
+                    .iter()
+                    .filter(|update| matches!(update.stage, PngExportStage::Encoding))
+                    .map(|update| update.rows_written)
+                    .collect();
+                assert_eq!(encoded_rows.last(), Some(&snapshot.height()));
+                assert!(encoded_rows.windows(2).all(|rows| rows[1] - rows[0] <= 64));
+            }
+        }
+    }
+
+    #[test]
+    fn streamed_png_cancellation_and_commit_failure_leave_no_temporary_output() {
+        let temporary = tempfile::tempdir().unwrap();
+        let output = temporary.path().join("stitched.png");
+        let snapshot = StitchImageSnapshot {
+            canvas: TiledCanvasSnapshot::from_frame(
+                Frame::new(5, 137, PixelFormat::Rgba8, vec![0x7f; 5 * 137 * 4]).unwrap(),
+            ),
+        };
+        let (progress_tx, _) = sync_channel(16);
+        assert!(matches!(
+            export_png(
+                snapshot.clone(),
+                PngExportRequest {
+                    output_path: output.clone(),
+                    compression: PngCompression::Fast,
+                    overwrite: false
+                },
+                Arc::new(AtomicBool::new(true)),
+                progress_tx,
+            ),
+            Err(PngExportError::Canceled)
+        ));
+        assert_eq!(std::fs::read_dir(temporary.path()).unwrap().count(), 0);
+        std::fs::write(&output, b"original").unwrap();
+        let (progress_tx, _) = sync_channel(16);
+        assert!(matches!(
+            export_png(
+                snapshot,
+                PngExportRequest {
+                    output_path: output.clone(),
+                    compression: PngCompression::Fast,
+                    overwrite: false
+                },
+                Arc::new(AtomicBool::new(false)),
+                progress_tx,
+            ),
+            Err(PngExportError::Failed(_))
+        ));
+        assert_eq!(std::fs::read(&output).unwrap(), b"original");
+        assert_eq!(std::fs::read_dir(temporary.path()).unwrap().count(), 1);
     }
 
     #[test]

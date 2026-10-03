@@ -715,11 +715,6 @@ pub(crate) fn copy_mapped_surface_to_frame(
 ) -> CaptureResult<()> {
     let width_u32 = desc.Width;
     let height_u32 = desc.Height;
-    let frame_alloc_begin = crate::timing::stage_checkpoint();
-    frame.ensure_capacity(width_u32, height_u32, options.output_pixel_format)?;
-    crate::timing::stage_record_since("readback.frame_alloc", frame_alloc_begin);
-    mark_frame_srgb(frame);
-
     let width = usize::try_from(width_u32).map_err(|_| CaptureError::BufferOverflow)?;
     let height = usize::try_from(height_u32).map_err(|_| CaptureError::BufferOverflow)?;
 
@@ -735,6 +730,11 @@ pub(crate) fn copy_mapped_surface_to_frame(
         .ok_or(CaptureError::BufferOverflow)?;
 
     let dst_pitch = width.checked_mul(4).ok_or(CaptureError::BufferOverflow)?;
+    // Reject unsupported layouts before discarding a reusable frame's old pixels.
+    let frame_alloc_begin = crate::timing::stage_checkpoint();
+    frame.prepare_for_overwrite(width_u32, height_u32, options.output_pixel_format)?;
+    crate::timing::stage_record_since("readback.frame_alloc", frame_alloc_begin);
+    mark_frame_srgb(frame);
     unsafe {
         convert::convert_surface_to_rgba_unchecked(
             format,
@@ -1407,6 +1407,57 @@ pub(crate) fn map_staging_dirty_rects_to_frame_with_offset(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn full_surface_readback_preserves_shared_frames_and_rejects_bad_formats_before_detaching() {
+        let mut frame = Frame::from_rgba8(2, 2, vec![0x5a; 16]).unwrap();
+        let previous = frame.clone();
+        let pointer = frame.as_bytes().as_ptr();
+        let invalid = D3D11_TEXTURE2D_DESC {
+            Width: 3,
+            Height: 3,
+            Format: DXGI_FORMAT(0),
+            ..Default::default()
+        };
+        assert!(matches!(
+            copy_mapped_surface_to_frame(
+                &mut frame,
+                &invalid,
+                &D3D11_MAPPED_SUBRESOURCE::default(),
+                SurfaceConversionOptions::default(),
+            ),
+            Err(CaptureError::UnsupportedFormat(_))
+        ));
+        assert_eq!(frame.dimensions(), (2, 2));
+        assert_eq!(frame.as_bytes().as_ptr(), pointer);
+        assert_eq!(frame.as_bytes(), &[0x5a; 16]);
+
+        let mut source = [0x7f_u8; 16];
+        let desc = D3D11_TEXTURE2D_DESC {
+            Width: 2,
+            Height: 2,
+            Format: DXGI_FORMAT_B8G8R8A8_UNORM,
+            ..Default::default()
+        };
+        let mapped = D3D11_MAPPED_SUBRESOURCE {
+            pData: source.as_mut_ptr().cast(),
+            RowPitch: 8,
+            DepthPitch: 16,
+        };
+        copy_mapped_surface_to_frame(
+            &mut frame,
+            &desc,
+            &mapped,
+            SurfaceConversionOptions {
+                force_opaque_alpha: false,
+                ..SurfaceConversionOptions::default()
+            },
+        )
+        .unwrap();
+        assert_ne!(frame.as_bytes().as_ptr(), pointer);
+        assert_eq!(frame.as_bytes(), &[0x7f; 16]);
+        assert_eq!(previous.as_bytes(), &[0x5a; 16]);
+    }
 
     fn item(x: usize, y: usize, width: usize, height: usize) -> DirtyRectWorkItem {
         DirtyRectWorkItem {

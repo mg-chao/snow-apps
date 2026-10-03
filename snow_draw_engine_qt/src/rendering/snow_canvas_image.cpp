@@ -5,9 +5,19 @@
 
 #include <QPainter>
 #include <QColorTransform>
+#include <QPolygonF>
+#include <QRgba64>
 #include <QSemaphore>
 #include <QThread>
 #include <QThreadPool>
+
+#if Q_BYTE_ORDER == Q_LITTLE_ENDIAN
+#if defined(Q_PROCESSOR_ARM_64)
+#include <arm_neon.h>
+#elif defined(Q_PROCESSOR_X86_64)
+#include <emmintrin.h>
+#endif
+#endif
 
 #include <algorithm>
 #include <array>
@@ -319,6 +329,88 @@ QImage premultiplyImage(const QImage& source, QImage::Format format) {
     copyMetadata(source, result);
     return result;
 }
+
+template <bool RgbaBytes>
+void expandRgba64Rows(const uchar* source, uchar* destination, qsizetype sourceStride,
+                      qsizetype destinationStride, int width, int first, int last) {
+    for (int y = first; y < last; ++y) {
+        const uchar* input = source + qsizetype(y) * sourceStride;
+        uchar* output = destination + qsizetype(y) * destinationStride;
+        int x = 0;
+        // Replicating adjacent bytes is the native-endian RGBA64 layout. Keep
+        // this operation in SIMD registers instead of widening each channel to
+        // a scalar QRgba64 and repacking its vectorized lanes.
+#if Q_BYTE_ORDER == Q_LITTLE_ENDIAN && defined(Q_PROCESSOR_ARM_64)
+        for (; x <= width - 4; x += 4) {
+            uint8x16_t bytes = vld1q_u8(input + qsizetype(x) * 4);
+            if constexpr (!RgbaBytes) {
+                constexpr std::array<uchar, 16> order{2,  1, 0, 3,  6,  5,  4,  7,
+                                                      10, 9, 8, 11, 14, 13, 12, 15};
+                bytes = vqtbl1q_u8(bytes, vld1q_u8(order.data()));
+            }
+            vst1q_u8(output + qsizetype(x) * 8, vzip1q_u8(bytes, bytes));
+            vst1q_u8(output + qsizetype(x) * 8 + 16, vzip2q_u8(bytes, bytes));
+        }
+#elif Q_BYTE_ORDER == Q_LITTLE_ENDIAN && defined(Q_PROCESSOR_X86_64)
+        for (; x <= width - 4; x += 4) {
+            __m128i bytes;
+            std::memcpy(&bytes, input + qsizetype(x) * 4, sizeof(bytes));
+            if constexpr (!RgbaBytes) {
+                const __m128i redBlue = _mm_and_si128(bytes, _mm_set1_epi32(0x00ff00ff));
+                bytes = _mm_or_si128(
+                    _mm_and_si128(bytes, _mm_set1_epi32(~0x00ff00ff)),
+                    _mm_or_si128(_mm_slli_epi32(redBlue, 16), _mm_srli_epi32(redBlue, 16)));
+            }
+            const __m128i low = _mm_unpacklo_epi8(bytes, bytes);
+            const __m128i high = _mm_unpackhi_epi8(bytes, bytes);
+            std::memcpy(output + qsizetype(x) * 8, &low, sizeof(low));
+            std::memcpy(output + qsizetype(x) * 8 + 16, &high, sizeof(high));
+        }
+#endif
+        for (; x < width; ++x) {
+            const uchar* channels = input + qsizetype(x) * 4;
+            QRgba64 expanded;
+            if constexpr (RgbaBytes) {
+                expanded = QRgba64::fromRgba(channels[0], channels[1], channels[2], channels[3]);
+            } else {
+                QRgb pixel;
+                std::memcpy(&pixel, channels, sizeof(pixel));
+                expanded = QRgba64::fromArgb32(pixel);
+            }
+            std::memcpy(output + qsizetype(x) * 8, &expanded, sizeof(expanded));
+        }
+    }
+}
+
+QImage expandRgba64Image(const QImage& source) {
+    QImage result = snowCanvasAllocateImage(source.size(), QImage::Format_RGBA64);
+    if (result.isNull())
+        return {};
+    const uchar* sourcePixels = source.constBits();
+    uchar* destinationPixels = result.bits();
+    const qsizetype sourceStride = source.bytesPerLine();
+    const qsizetype destinationStride = result.bytesPerLine();
+    const int width = source.width();
+    const int height = source.height();
+    const bool rgbaBytes = source.format() == QImage::Format_RGBA8888;
+    constexpr int kRows = 16;
+    // Qt's direct 8-to-16-bit converter replicates each channel's byte and
+    // ignores conversion flags. Write those values into the final allocation,
+    // without a native converted raster or a second pixel transfer.
+    processChunks((qsizetype(height) + kRows - 1) / kRows, qsizetype(width) * height,
+                  [=](qsizetype chunk) {
+                      const int first = static_cast<int>(chunk) * kRows;
+                      const int last = std::min(first + kRows, height);
+                      if (rgbaBytes)
+                          expandRgba64Rows<true>(sourcePixels, destinationPixels, sourceStride,
+                                                 destinationStride, width, first, last);
+                      else
+                          expandRgba64Rows<false>(sourcePixels, destinationPixels, sourceStride,
+                                                  destinationStride, width, first, last);
+                  });
+    copyMetadata(source, result);
+    return result;
+}
 } // namespace
 
 QImage snowCanvasAllocateImage(const QSize& size, QImage::Format format) {
@@ -430,6 +522,9 @@ QImage snowCanvasConvertImage(const QImage& image, QImage::Format format,
     }
     if (!largeRaster(image.size(), image.format()) && !largeRaster(image.size(), format))
         return image.convertToFormat(format, flags);
+    if (format == QImage::Format_RGBA64 &&
+        (image.format() == QImage::Format_ARGB32 || image.format() == QImage::Format_RGBA8888))
+        return expandRgba64Image(image);
 #if Q_BYTE_ORDER == Q_LITTLE_ENDIAN
     if ((image.format() == QImage::Format_ARGB32 || image.format() == QImage::Format_RGBA8888) &&
         (format == QImage::Format_ARGB32_Premultiplied ||
@@ -494,6 +589,43 @@ QImage snowCanvasTransformImage(const QImage& image, const QTransform& transform
                                      image.format() == QImage::Format_RGBA8888_Premultiplied;
     const bool integralOrigin =
         matrix.m31() == std::floor(matrix.m31()) && matrix.m32() == std::floor(matrix.m32());
+    if (!orthogonal && matrix.isAffine() && matrix.type() == QTransform::TxRotate &&
+        matrix.determinant() > 0 && nativePainterFormat && image.width() <= 32767 &&
+        image.height() <= 32767 &&
+        (image.devicePixelRatio() == 1 || image.bytesPerLine() == qsizetype(image.width()) * 4)) {
+        // Qt paints ordinary arbitrary rotations itself. Its aligned polygon
+        // bounds include fractional edges that ceil(width/height) would omit.
+        const QPolygonF polygon(QRectF(0, 0, image.width(), image.height()));
+        const QSize paintSize = matrix.map(polygon).boundingRect().toAlignedRect().size();
+        if (!paintSize.isEmpty() && paintSize.width() <= 32767 && paintSize.height() <= 32767) {
+            const auto format = image.format() == QImage::Format_RGB32
+                                    ? QImage::Format_ARGB32_Premultiplied
+                                    : image.format();
+            QImage result = snowCanvasAllocateImage(paintSize, format);
+            if (result.isNull())
+                return {};
+            // Mapped allocations already contain transparent zeros. Only Qt's
+            // uninitialized small heap raster needs an explicit initialization.
+            if (result.sizeInBytes() < qsizetype(snow::memory::kMappedPixelBufferMinimum))
+                result.fill(0);
+            // Match Qt's DPR-neutral source view. Unusual strides with a DPR
+            // retain the native fallback rather than changing its row layout.
+            const QImage view =
+                image.devicePixelRatio() != 1
+                    ? QImage(image.constBits(), image.width(), image.height(), image.format())
+                    : image;
+            QPainter painter(&result);
+            if (mode == Qt::SmoothTransformation) {
+                painter.setRenderHint(QPainter::Antialiasing);
+                painter.setRenderHint(QPainter::SmoothPixmapTransform);
+            }
+            painter.setTransform(matrix);
+            painter.drawImage(QPoint(), view);
+            painter.end();
+            copyMetadata(image, result);
+            return result;
+        }
+    }
     const bool exactQtFallback =
         !orthogonal || !integralOrigin || image.format() < QImage::Format_RGB32 ||
         image.format() == QImage::Format_CMYK8888 ||

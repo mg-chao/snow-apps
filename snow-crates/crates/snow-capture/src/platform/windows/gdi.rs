@@ -2043,12 +2043,17 @@ impl GdiResources {
 
         let mut frame = reuse.unwrap_or_else(Frame::empty);
         frame.reset_metadata();
-        let frame_alloc_begin = stage_checkpoint();
-        frame.ensure_capacity(width_u32, height_u32, self.output_pixel_format)?;
-        stage_record_since("readback.frame_alloc", frame_alloc_begin);
         let track_incremental_history = self.output_pixel_format == CapturePixelFormat::Rgba8
             && mode != CaptureMode::Snapshot
             && pixel_count >= GDI_INCREMENTAL_MIN_PIXELS;
+        let incremental_enabled = track_incremental_history && destination_has_history;
+        let frame_alloc_begin = stage_checkpoint();
+        if incremental_enabled {
+            frame.ensure_capacity(width_u32, height_u32, self.output_pixel_format)?;
+        } else {
+            frame.prepare_for_overwrite(width_u32, height_u32, self.output_pixel_format)?;
+        }
+        stage_record_since("readback.frame_alloc", frame_alloc_begin);
         let total_bytes = if track_incremental_history {
             Some(
                 width
@@ -2059,7 +2064,6 @@ impl GdiResources {
         } else {
             None
         };
-        let incremental_enabled = track_incremental_history && destination_has_history;
         let use_surface_history = track_incremental_history;
         let mut next_too_dirty_hint = false;
         if incremental_enabled {

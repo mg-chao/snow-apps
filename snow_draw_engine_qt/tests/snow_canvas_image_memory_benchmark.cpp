@@ -179,6 +179,13 @@ QImage apply(const Options& options, const QImage& source) {
 #endif
         return source.convertToFormat(QImage::Format_ARGB32_Premultiplied);
     }
+    if (operation == "convert_rgba64") {
+#if !defined(SNOW_MEMORY_BENCHMARK_BASELINE)
+        if (managed)
+            return snowCanvasConvertImage(source, QImage::Format_RGBA64);
+#endif
+        return source.convertToFormat(QImage::Format_RGBA64);
+    }
     if (operation == "color_p3_srgb") {
 #if !defined(SNOW_MEMORY_BENCHMARK_BASELINE)
         if (managed)
@@ -187,12 +194,18 @@ QImage apply(const Options& options, const QImage& source) {
 #endif
         return source.convertedToColorSpace(QColorSpace::SRgb, QImage::Format_RGBA8888);
     }
-    if (operation == "rotate90" || operation == "flip_horizontal" ||
-        operation == "flip_horizontal_smooth") {
-        const auto transform =
-            operation == "rotate90" ? QTransform().rotate(90) : QTransform().scale(-1, 1);
-        const auto mode = operation == "flip_horizontal_smooth" ? Qt::SmoothTransformation
-                                                                : Qt::FastTransformation;
+    if (operation == "rotate90" || operation == "rotate17_smooth" ||
+        operation == "flip_horizontal" || operation == "flip_horizontal_smooth") {
+        QTransform transform;
+        if (operation == "rotate90")
+            transform.rotate(90);
+        else if (operation == "rotate17_smooth")
+            transform.rotate(17);
+        else
+            transform.scale(-1, 1);
+        const auto mode = operation == "flip_horizontal_smooth" || operation == "rotate17_smooth"
+                              ? Qt::SmoothTransformation
+                              : Qt::FastTransformation;
 #if !defined(SNOW_MEMORY_BENCHMARK_BASELINE)
         if (managed)
             return snowCanvasTransformImage(source, transform, mode);

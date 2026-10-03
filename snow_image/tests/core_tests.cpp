@@ -2167,6 +2167,129 @@ void test_flatten_first_frame() {
             "flattened managed pixels release with their final owner");
 }
 
+void test_animation_region_disposal() {
+    using snow::image::FrameBlend;
+    using snow::image::FrameDisposal;
+    using Bytes = std::array<std::byte, 4>;
+    const Bytes base{std::byte{16}, std::byte{32}, std::byte{48}, std::byte{255}};
+    const auto rgba = [](std::uint32_t width, std::uint32_t height, Bytes value) {
+        auto image = take(snow::image::MutableImage::allocate(width, height, snow::image::kRgba8),
+                          "allocate animation region fixture");
+        for (std::size_t offset = 0; offset < image.pixels().size(); offset += 4U)
+            std::copy(value.begin(), value.end(), image.pixels().data() + offset);
+        return std::move(image).freeze();
+    };
+    Document input;
+    input.canvas_width = 6;
+    input.canvas_height = 5;
+    Frame first;
+    first.image = rgba(6, 5, base);
+    input.frames.push_back(first);
+    Frame previous;
+    previous.x = 4;
+    previous.y = 3;
+    previous.blend = FrameBlend::over;
+    previous.disposal = FrameDisposal::previous;
+    // A padded BGRA view exercises byte order and clipping on two edges.
+    auto pixels = std::make_shared<std::vector<std::byte>>(24U * 4U, std::byte{0xCC});
+    for (std::size_t y = 0; y < 4; ++y)
+        for (std::size_t x = 0; x < 4; ++x) {
+            const Bytes value{std::byte{16}, std::byte{64}, std::byte{240}, std::byte{128}};
+            std::copy(value.begin(), value.end(), pixels->data() + y * 24U + x * 4U);
+        }
+    previous.image = take(Image::adopt(4, 4, snow::image::kBgra8, 24,
+                                       take(snow::image::SharedPixelBuffer::adopt(pixels, *pixels),
+                                            "adopt padded animation pixels")),
+                          "adopt padded animation frame");
+    input.frames.push_back(previous);
+    Frame background;
+    auto gray = take(snow::image::MutableImage::allocate(3, 2, snow::image::kGray16),
+                     "allocate high-depth animation frame");
+    std::fill(gray.pixels().begin(), gray.pixels().end(), std::byte{128});
+    background.image = std::move(gray).freeze();
+    background.x = 1;
+    background.y = 1;
+    background.disposal = FrameDisposal::background;
+    input.frames.push_back(background);
+    Frame blended;
+    blended.image = rgba(3, 3, {std::byte{200}, std::byte{100}, std::byte{50}, std::byte{128}});
+    blended.x = 2;
+    blended.blend = FrameBlend::over;
+    input.frames.push_back(blended);
+    for (const auto disposal : {FrameDisposal::background, FrameDisposal::previous}) {
+        Frame outside = blended;
+        outside.x = std::numeric_limits<std::uint32_t>::max();
+        outside.disposal = disposal;
+        input.frames.push_back(std::move(outside));
+    }
+    Frame final = blended;
+    final.y = std::numeric_limits<std::uint32_t>::max();
+    input.frames.push_back(std::move(final));
+    const Document result = take(snow::image::transform(input, {}), "compose clipped animation");
+    require(result.frames.size() == input.frames.size(), "all animation outputs are preserved");
+    for (std::size_t index = 0; index < result.frames.size(); ++index) {
+        const auto view = result.frames[index].image.view();
+        for (std::uint32_t y = 0; y < view.height; ++y)
+            for (std::uint32_t x = 0; x < view.width; ++x) {
+                Bytes expected = base;
+                if (index == 1 && x >= 4 && y >= 3)
+                    expected = {std::byte{128}, std::byte{48}, std::byte{32}, std::byte{255}};
+                if (index == 2 && x >= 1 && x < 4 && y >= 1 && y < 3)
+                    expected = {std::byte{128}, std::byte{128}, std::byte{128}, std::byte{255}};
+                if (index >= 3) {
+                    const bool cleared = x >= 1 && x < 4 && y >= 1 && y < 3;
+                    if (cleared)
+                        expected = {};
+                    if (x >= 2 && x < 5 && y < 3)
+                        expected = cleared ? Bytes{std::byte{200}, std::byte{100}, std::byte{50},
+                                                   std::byte{128}}
+                                           : Bytes{std::byte{108}, std::byte{66}, std::byte{49},
+                                                   std::byte{255}};
+                }
+                const auto* actual = view.pixels.data() + y * view.row_stride + x * 4U;
+                require(std::equal(expected.begin(), expected.end(), actual),
+                        "clipped previous/background disposal and mixed formats preserve pixels");
+            }
+    }
+    class CheckingSink final : public PixelSink {
+      public:
+        explicit CheckingSink(const Document& expected) : expected_(expected) {}
+        Result<void> begin(const snow::image::DocumentInfo& info) override {
+            require(info.frames.size() == expected_.frames.size(), "sink preserves frame count");
+            return {};
+        }
+        Result<void> begin_frame(std::uint32_t index, const snow::image::FrameInfo&) override {
+            current_ = index;
+            return {};
+        }
+        Result<void> write_rows(std::uint32_t first, std::uint32_t count, std::size_t stride,
+                                std::span<const std::byte> pixels) override {
+            const auto& image = expected_.frames[current_].image;
+            const auto bytes = image.pixels().subspan(first * image.row_stride(), count * stride);
+            require(stride == image.row_stride() &&
+                        std::equal(bytes.begin(), bytes.end(), pixels.begin(), pixels.end()),
+                    "sink and owning animation composition have identical pixels");
+            return {};
+        }
+        Result<void> end_frame(std::uint32_t) override {
+            return {};
+        }
+        Result<void> end() override {
+            ended = true;
+            return {};
+        }
+        bool ended = false;
+
+      private:
+        const Document& expected_;
+        std::uint32_t current_ = 0;
+    } sink(result);
+    require(snow::image::transform_to_sink(input, {}, sink).has_value() && sink.ended,
+            "sink composition shares bounded region disposal behavior");
+    require((*pixels)[16] == std::byte{0xCC} && (*pixels)[0] == std::byte{16},
+            "composition preserves padded immutable source storage");
+}
+
 void test_webp(Service& service) {
     const snow::image::EncoderInfo* info = service.encoder_info(Format::webp);
     if (!info)
@@ -3951,6 +4074,7 @@ int main(int argc, char* argv[]) {
     if (argc == 2 && std::string_view(argv[1]) == "--processing-only") {
         test_processing();
         test_flatten_first_frame();
+        test_animation_region_disposal();
         return 0;
     }
     if (argc == 2 && std::string_view(argv[1]) == "--buffer-paths-only") {
@@ -3968,6 +4092,7 @@ int main(int argc, char* argv[]) {
         test_xbitmap_formats(service);
         test_processing();
         test_flatten_first_frame();
+        test_animation_region_disposal();
         test_parallel_resize_determinism();
         test_streaming_resize();
         return 0;
@@ -4015,6 +4140,7 @@ int main(int argc, char* argv[]) {
     test_openexr(service);
     test_processing();
     test_flatten_first_frame();
+    test_animation_region_disposal();
     test_transform_storage_and_precision();
     test_parallel_resize_determinism();
     test_streaming_resize();

@@ -9,6 +9,7 @@
 #include <QThreadPool>
 
 #include <array>
+#include <cstring>
 #include <cstdlib>
 #include <iostream>
 #include <limits>
@@ -390,6 +391,119 @@ void formatsAndAlphaBoundariesMatchQt() {
     }
 }
 
+void directRgba64ExpansionMatchesQt() {
+    const std::array<Qt::ImageConversionFlags, 3> flags{
+        Qt::AutoColor, Qt::PreferDither | Qt::OrderedDither, Qt::AvoidDither | Qt::ThresholdDither};
+    for (const QSize& size :
+         {QSize(512, 256), QSize(513, 257), QSize(514, 257), QSize(1031, 517), QSize(70001, 3)}) {
+        const QImage fixture = alphaFixture(size);
+        for (const auto format : {QImage::Format_RGBA8888, QImage::Format_ARGB32}) {
+            const QImage source = fixture.convertToFormat(format);
+            const QImage original = source.copy();
+            const uchar* pixels = source.constBits();
+            for (const auto conversionFlags : flags)
+                requireEquivalent(
+                    snowCanvasConvertImage(source, QImage::Format_RGBA64, conversionFlags),
+                    source.convertToFormat(QImage::Format_RGBA64, conversionFlags),
+                    "direct RGBA64 expansion must preserve every channel and metadata");
+            require(source == original && source.constBits() == pixels,
+                    "direct RGBA64 expansion must leave its source pixels and storage unchanged");
+
+            const qsizetype stride = source.bytesPerLine() + 32;
+            constexpr qsizetype offset = 4;
+            auto storage = snow::memory::allocatePixelBuffer(
+                static_cast<std::size_t>(stride * source.height() + offset));
+            require(storage != nullptr, "padded conversion fixture must allocate");
+            uchar* paddedPixels = storage.get() + offset;
+            for (int y = 0; y < source.height(); ++y)
+                std::memcpy(paddedPixels + qsizetype(y) * stride, source.constScanLine(y),
+                            static_cast<std::size_t>(source.width()) * 4);
+            QImage readOnly(static_cast<const uchar*>(paddedPixels), source.width(),
+                            source.height(), stride, format);
+            readOnly.setColorSpace(source.colorSpace());
+            readOnly.setDevicePixelRatio(source.devicePixelRatio());
+            readOnly.setDotsPerMeterX(source.dotsPerMeterX());
+            readOnly.setDotsPerMeterY(source.dotsPerMeterY());
+            readOnly.setOffset(source.offset());
+            readOnly.setText(QStringLiteral("fixture"), source.text(QStringLiteral("fixture")));
+            requireEquivalent(snowCanvasConvertImage(readOnly, QImage::Format_RGBA64),
+                              readOnly.convertToFormat(QImage::Format_RGBA64),
+                              "direct RGBA64 expansion must respect padded read-only source rows");
+            require(readOnly.constBits() == paddedPixels && readOnly == original,
+                    "direct RGBA64 expansion must preserve a read-only lease");
+        }
+    }
+}
+
+void arbitraryRotationsMatchQt() {
+    const QImage fixture = alphaFixture(QSize(1031, 517));
+    for (const auto format :
+         {QImage::Format_RGB32, QImage::Format_ARGB32, QImage::Format_ARGB32_Premultiplied,
+          QImage::Format_RGBA8888, QImage::Format_RGBA8888_Premultiplied}) {
+        QImage source = fixture.convertToFormat(format);
+        source.detach();
+        const QImage original = source.copy();
+        const uchar* pixels = source.constBits();
+        for (const qreal dpr : {qreal{1}, qreal{1.25}}) {
+            source.setDevicePixelRatio(dpr);
+            for (const auto& transform : {QTransform().rotate(17), QTransform().rotate(89.5),
+                                          QTransform().translate(-0.25, 0.5).rotate(-33.25)})
+                for (const auto mode : {Qt::FastTransformation, Qt::SmoothTransformation})
+                    requireEquivalent(
+                        snowCanvasTransformImage(source, transform, mode),
+                        source.transformed(transform, mode),
+                        "arbitrary rotations must retain Qt bounds, alpha and metadata");
+        }
+        require(source == original && source.constBits() == pixels,
+                "arbitrary rotation must leave source pixels and storage unchanged");
+    }
+    const QImage small = alphaFixture(QSize(257, 129));
+    for (const auto mode : {Qt::FastTransformation, Qt::SmoothTransformation})
+        requireEquivalent(snowCanvasTransformImage(small, QTransform().rotate(-17), mode),
+                          small.transformed(QTransform().rotate(-17), mode),
+                          "small arbitrary rotations must initialize transparent corners");
+
+    QImage large = snowCanvasAllocateImage(QSize(3840, 2160), QImage::Format_RGBA8888);
+    large.fill(QColor(113, 79, 211, 127));
+    large.setDevicePixelRatio(1.5);
+    large.setColorSpace(QColorSpace::DisplayP3);
+    const QTransform rotation = QTransform().rotate(17);
+    const QImage expected = large.transformed(rotation, Qt::SmoothTransformation);
+    require(expected.size() == QSize(4305, 3189),
+            "Qt's aligned polygon bounds must include the fractional rotation edge");
+    requireEquivalent(snowCanvasTransformImage(large, rotation, Qt::SmoothTransformation), expected,
+                      "4K arbitrary rotation must preserve the entire aligned output");
+
+    const qsizetype stride = fixture.bytesPerLine() + 32;
+    auto storage =
+        snow::memory::allocatePixelBuffer(static_cast<std::size_t>(stride * fixture.height()));
+    require(storage != nullptr, "padded rotation fixture must allocate");
+    for (int y = 0; y < fixture.height(); ++y)
+        std::memcpy(storage.get() + qsizetype(y) * stride, fixture.constScanLine(y),
+                    static_cast<std::size_t>(fixture.width()) * 4);
+    QImage readOnly(static_cast<const uchar*>(storage.get()), fixture.width(), fixture.height(),
+                    stride, fixture.format());
+    readOnly.setColorSpace(fixture.colorSpace());
+    for (const qreal dpr : {qreal{1}, qreal{1.25}}) {
+        readOnly.setDevicePixelRatio(dpr);
+        for (const auto mode : {Qt::FastTransformation, Qt::SmoothTransformation})
+            requireEquivalent(
+                snowCanvasTransformImage(readOnly, rotation, mode),
+                readOnly.transformed(rotation, mode),
+                "padded read-only rotation sources must retain native Qt row semantics");
+    }
+    require(readOnly.constBits() == storage.get() && readOnly == fixture,
+            "rotation must preserve a read-only source lease");
+    for (const auto format :
+         {QImage::Format_RGBA64, QImage::Format_RGBA64_Premultiplied, QImage::Format_Grayscale16}) {
+        const QImage source = fixture.convertToFormat(format);
+        for (const auto mode : {Qt::FastTransformation, Qt::SmoothTransformation})
+            requireEquivalent(snowCanvasTransformImage(source, rotation, mode),
+                              source.transformed(rotation, mode),
+                              "uncommon rotation formats must retain their native Qt fallback");
+    }
+}
+
 void chunkBoundariesAndConcurrencyMatchQt() {
     for (const QSize& size : {QSize(70001, 17), QSize(17, 20001)}) {
         const QImage source = alphaFixture(size);
@@ -447,6 +561,9 @@ void chunkBoundariesAndConcurrencyMatchQt() {
     pool->setMaxThreadCount(1);
     QSemaphore complete;
     pool->start([&] {
+        requireEquivalent(snowCanvasConvertImage(source, QImage::Format_RGBA64),
+                          source.convertToFormat(QImage::Format_RGBA64),
+                          "direct RGBA64 expansion on a saturated pool must complete correctly");
         requireEquivalent(snowCanvasColorConvertedImage(source, QColorSpace::SRgb,
                                                         QImage::Format_ARGB32_Premultiplied),
                           nativeColorResult(source, QImage::Format_ARGB32_Premultiplied),
@@ -466,6 +583,8 @@ int main() {
     rasterOperationsPreservePixelsAndReleasePages();
     pixelArraysReleaseOriginalCapacity();
     formatsAndAlphaBoundariesMatchQt();
+    directRgba64ExpansionMatchesQt();
+    arbitraryRotationsMatchQt();
     chunkBoundariesAndConcurrencyMatchQt();
     return 0;
 }

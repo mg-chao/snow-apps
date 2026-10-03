@@ -620,7 +620,7 @@ class ScreenshotScrollingCaptureProducer final : public QObject {
         SnowStitchMutableImageInfo input{};
         {
             SNOW_SCROLL_SCOPE(trace, PoolAcquire);
-            frame = snow_stitch_frame_pool_acquire(m_pool);
+            frame = snow_stitch_frame_pool_acquire_for_overwrite(m_pool);
         }
         const bool acquired = frame && snow_stitch_frame_buffer_info(frame, &input) != 0 &&
                               input.rgba_bytes && input.rgba_len >= expected &&

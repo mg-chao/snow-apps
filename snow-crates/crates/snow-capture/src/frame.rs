@@ -230,12 +230,10 @@ struct FrameBuffer {
     storage: Arc<RasterBuffer>,
 }
 
-fn clone_frame_buffer_storage(source: &RasterBuffer, len: usize) -> RasterBuffer {
+fn allocate_frame_buffer_storage(len: usize) -> RasterBuffer {
     let capacity = len.checked_add(len / 8).expect("frame capacity overflow");
     let mut storage = RasterBuffer::with_capacity(capacity);
     storage.resize_for_overwrite(len);
-    let copy_len = source.len().min(len);
-    storage[..copy_len].copy_from_slice(&source[..copy_len]);
     storage
 }
 
@@ -250,7 +248,7 @@ impl FrameBuffer {
         self.storage.len()
     }
 
-    fn make_unique_with_len(&mut self, len: usize) {
+    fn make_unique_with_len(&mut self, len: usize, preserve_pixels: bool) {
         if let Some(storage) = Arc::get_mut(&mut self.storage) {
             if storage.len() == len {
                 #[cfg(feature = "stage-timing")]
@@ -264,17 +262,26 @@ impl FrameBuffer {
         }
 
         let allocation_started = crate::timing::stage_checkpoint();
-        self.storage = Arc::new(clone_frame_buffer_storage(self.storage.as_ref(), len));
+        let mut storage = allocate_frame_buffer_storage(len);
+        if preserve_pixels {
+            let copy_len = self.storage.len().min(len);
+            storage[..copy_len].copy_from_slice(&self.storage[..copy_len]);
+        }
+        self.storage = Arc::new(storage);
         crate::timing::stage_record_since("buffer.allocate", allocation_started);
     }
 
     fn ensure_len(&mut self, len: usize) {
-        self.make_unique_with_len(len);
+        self.make_unique_with_len(len, true);
+    }
+
+    fn prepare_for_overwrite(&mut self, len: usize) {
+        self.make_unique_with_len(len, false);
     }
 
     #[cfg(windows)]
     fn as_mut_ptr(&mut self) -> *mut u8 {
-        self.make_unique_with_len(self.len());
+        self.make_unique_with_len(self.len(), true);
         Arc::get_mut(&mut self.storage)
             .expect("frame buffer must be unique after make_unique_with_len")
             .as_mut_ptr()
@@ -285,7 +292,7 @@ impl FrameBuffer {
     }
 
     fn as_mut_slice(&mut self) -> &mut [u8] {
-        self.make_unique_with_len(self.len());
+        self.make_unique_with_len(self.len(), true);
         Arc::get_mut(&mut self.storage)
             .expect("frame buffer must be unique after make_unique_with_len")
             .as_mut_slice()
@@ -450,6 +457,26 @@ impl Frame {
         Ok(())
     }
 
+    /// Prepare initialized packed storage for a producer that replaces every pixel.
+    ///
+    /// Unshared storage is reused without clearing it. Shared storage detaches without
+    /// copying the old pixels, preserving every existing frame and pixel lease. The
+    /// destination's pixel contents are unspecified until the producer overwrites them;
+    /// callers that update only part of a frame must use `ensure_capacity` instead.
+    pub fn prepare_for_overwrite(
+        &mut self,
+        width: u32,
+        height: u32,
+        pixel_format: CapturePixelFormat,
+    ) -> CaptureResult<()> {
+        let len = packed_8bit_len(width, height)?;
+        self.data.prepare_for_overwrite(len);
+        self.width = width;
+        self.height = height;
+        self.pixel_format = pixel_format;
+        Ok(())
+    }
+
     /// Resize this frame's RGBA storage for `width` by `height` pixels while
     /// retaining an existing allocation when it is large enough.
     ///
@@ -462,7 +489,7 @@ impl Frame {
 
     #[cfg(test)]
     pub(crate) fn copy_from_frame(&mut self, source: &Frame) -> CaptureResult<()> {
-        self.ensure_capacity(source.width, source.height, source.pixel_format)?;
+        self.prepare_for_overwrite(source.width, source.height, source.pixel_format)?;
         self.as_mut_bytes().copy_from_slice(source.as_bytes());
         self.metadata = source.metadata.clone();
         Ok(())
@@ -730,6 +757,71 @@ mod tests {
     use proptest::prelude::*;
     use snow_core::timestamp::TickFormat;
 
+    #[test]
+    fn overwrite_preparation_detaches_without_preserving_old_pixels_and_reuses_storage() {
+        for (width, height) in [(8, 16), (1024, 256)] {
+            let mut frame = Frame::empty();
+            frame
+                .prepare_for_overwrite(width, height, CapturePixelFormat::Rgba8)
+                .unwrap();
+            assert!(frame.as_bytes().iter().all(|&byte| byte == 0));
+            frame.as_mut_bytes().fill(0x5a);
+            let old = frame.clone();
+            let lease = frame.shared_bytes();
+            let old_pointer = frame.as_bytes().as_ptr();
+
+            frame
+                .prepare_for_overwrite(width, height, CapturePixelFormat::Bgra8)
+                .unwrap();
+            assert_ne!(frame.as_bytes().as_ptr(), old_pointer);
+            assert!(frame.as_bytes().iter().all(|&byte| byte == 0));
+            assert!(old.as_bytes().iter().all(|&byte| byte == 0x5a));
+            assert!(lease.iter().all(|&byte| byte == 0x5a));
+            assert_eq!(old.pixel_format(), CapturePixelFormat::Rgba8);
+            assert_eq!(frame.pixel_format(), CapturePixelFormat::Bgra8);
+
+            frame.as_mut_bytes().fill(0x7f);
+            let pointer = frame.as_bytes().as_ptr();
+            frame
+                .prepare_for_overwrite(width, height / 2, CapturePixelFormat::Bgra8)
+                .unwrap();
+            frame
+                .prepare_for_overwrite(width, height, CapturePixelFormat::Bgra8)
+                .unwrap();
+            assert_eq!(frame.as_bytes().as_ptr(), pointer);
+            assert!(frame.as_bytes().iter().all(|&byte| byte == 0x7f));
+
+            let old_len = frame.as_bytes().len();
+            frame
+                .prepare_for_overwrite(width, height + 1, CapturePixelFormat::Bgra8)
+                .unwrap();
+            // Both test dimensions have enough headroom for one more initialized row.
+            assert_eq!(frame.as_bytes().as_ptr(), pointer);
+            assert!(frame.as_bytes()[old_len..].iter().all(|&byte| byte == 0));
+        }
+    }
+
+    #[test]
+    fn preserving_edits_keep_shared_pixels_and_failed_overwrite_keeps_the_frame() {
+        let mut frame = Frame::from_rgba8(2, 2, vec![0x5a; 16]).unwrap();
+        let old = frame.clone();
+        frame.ensure_rgba_capacity(2, 2).unwrap();
+        frame.as_mut_bytes()[0] = 0x7f;
+        assert_eq!(old.as_bytes(), &[0x5a; 16]);
+        assert_eq!(&frame.as_bytes()[1..], &[0x5a; 15]);
+
+        let pointer = frame.as_bytes().as_ptr();
+        let pixels = frame.as_bytes().to_vec();
+        assert!(matches!(
+            frame.prepare_for_overwrite(u32::MAX, u32::MAX, CapturePixelFormat::Bgra8),
+            Err(CaptureError::BufferOverflow)
+        ));
+        assert_eq!(frame.dimensions(), (2, 2));
+        assert_eq!(frame.pixel_format(), CapturePixelFormat::Rgba8);
+        assert_eq!(frame.as_bytes().as_ptr(), pointer);
+        assert_eq!(frame.as_bytes(), pixels);
+    }
+
     #[cfg(any(windows, target_os = "macos"))]
     #[test]
     fn large_frame_shares_recycles_detaches_and_releases_pages() {
@@ -775,8 +867,21 @@ mod tests {
             "last shared frame must release its VM allocation"
         );
         let detached = unsafe { frame.as_bytes().as_ptr().add(frame.as_bytes().len() / 2) };
+        let retained = frame.shared_bytes();
+        frame
+            .prepare_for_overwrite(1024, 512, CapturePixelFormat::Rgba8)
+            .unwrap();
+        assert!(is_mapped(detached));
+        assert_eq!(retained[0], 0x7f);
+        assert!(frame.as_bytes().iter().all(|&byte| byte == 0));
+        drop(retained);
+        assert!(
+            !is_mapped(detached),
+            "overwrite detachment must release pages after the final old lease"
+        );
+        let overwritten = unsafe { frame.as_bytes().as_ptr().add(frame.as_bytes().len() / 2) };
         drop(frame);
-        assert!(!is_mapped(detached));
+        assert!(!is_mapped(overwritten));
     }
 
     #[cfg(feature = "stage-timing")]

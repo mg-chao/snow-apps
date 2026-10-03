@@ -167,117 +167,6 @@ Pixel read_rgba8_pixel(const ImageView& view, std::uint32_t x, std::uint32_t y, 
     return pixel;
 }
 
-Result<snow::memory::PixelArray<Pixel>> unpack(const Image& image, bool linear_rgb,
-                                               std::stop_token stop) {
-    const ImageView view = image.view();
-    Result<void> valid = view.validate();
-    if (!valid)
-        return valid.error();
-    const PixelFormat& format = view.format;
-    if ((format.sample_type != SampleType::unsigned_integer ||
-         (format.bits_per_channel != 8 && format.bits_per_channel != 16)) &&
-        format.sample_type != SampleType::floating_point) {
-        return Status::error(ErrorCode::unsupported_feature,
-                             "Image processing does not support this sample type.");
-    }
-    if (format.channels == ChannelLayout::cmyk || format.channels == ChannelLayout::indexed) {
-        return Status::error(ErrorCode::unsupported_feature,
-                             "Image processing does not support this channel layout.");
-    }
-    snow::memory::PixelArray<Pixel> pixels;
-    try {
-        pixels.resize(static_cast<std::size_t>(view.width) * view.height);
-    } catch (const std::bad_alloc&) {
-        return Status::error(ErrorCode::out_of_memory,
-                             "Could not allocate the image processing buffer.");
-    }
-
-    const std::uint32_t channels = format.channel_count();
-    const bool bgr =
-        format.channels == ChannelLayout::bgr || format.channels == ChannelLayout::bgra;
-    const bool gray =
-        format.channels == ChannelLayout::gray || format.channels == ChannelLayout::gray_alpha;
-    const bool has_alpha = format.alpha != AlphaMode::none &&
-                           (format.channels == ChannelLayout::gray_alpha || channels == 4U);
-    const std::size_t sample_bytes = format.bits_per_channel / 8U;
-    for (std::uint32_t y = 0; y < view.height; ++y) {
-        if (stop.stop_requested()) {
-            return Status::error(ErrorCode::cancelled, "Image operation was cancelled.");
-        }
-        const std::byte* row = view.pixels.data() + static_cast<std::size_t>(y) * view.row_stride;
-        for (std::uint32_t x = 0; x < view.width; ++x) {
-            const std::byte* source = row + static_cast<std::size_t>(x) * channels * sample_bytes;
-            auto sample = [&](std::uint32_t channel) {
-                if (format.sample_type == SampleType::floating_point &&
-                    format.bits_per_channel == 32) {
-                    float result = 0.0F;
-                    std::memcpy(&result, source + static_cast<std::size_t>(channel) * 4U,
-                                sizeof(result));
-                    return result;
-                }
-                if (format.sample_type == SampleType::floating_point &&
-                    format.bits_per_channel == 16) {
-                    std::uint16_t half = 0;
-                    std::memcpy(&half, source + static_cast<std::size_t>(channel) * 2U,
-                                sizeof(half));
-                    const std::uint32_t sign = static_cast<std::uint32_t>(half & 0x8000U) << 16U;
-                    std::uint32_t exponent = (half >> 10U) & 0x1FU;
-                    std::uint32_t mantissa = half & 0x3FFU;
-                    std::uint32_t bits = 0;
-                    if (exponent == 0U) {
-                        if (mantissa != 0U) {
-                            exponent = 1U;
-                            while ((mantissa & 0x400U) == 0U) {
-                                mantissa <<= 1U;
-                                --exponent;
-                            }
-                            mantissa &= 0x3FFU;
-                            bits = sign | ((exponent + 112U) << 23U) | (mantissa << 13U);
-                        } else {
-                            bits = sign;
-                        }
-                    } else if (exponent == 31U) {
-                        bits = sign | 0x7F800000U | (mantissa << 13U);
-                    } else {
-                        bits = sign | ((exponent + 112U) << 23U) | (mantissa << 13U);
-                    }
-                    float result = 0.0F;
-                    std::memcpy(&result, &bits, sizeof(result));
-                    return result;
-                }
-                if (format.bits_per_channel == 16) {
-                    std::uint16_t value = 0;
-                    std::memcpy(&value, source + static_cast<std::size_t>(channel) * 2U,
-                                sizeof(value));
-                    return static_cast<float>(value) / 65535.0F;
-                }
-                return static_cast<float>(std::to_integer<std::uint8_t>(source[channel])) / 255.0F;
-            };
-            Pixel pixel;
-            if (gray) {
-                pixel.red = pixel.green = pixel.blue = sample(0);
-            } else {
-                pixel.red = sample(bgr ? 2U : 0U);
-                pixel.green = sample(1U);
-                pixel.blue = sample(bgr ? 0U : 2U);
-            }
-            pixel.alpha = has_alpha ? sample(channels - 1U) : 1.0F;
-            if (format.alpha == AlphaMode::premultiplied && pixel.alpha > 0.000001F) {
-                pixel.red /= pixel.alpha;
-                pixel.green /= pixel.alpha;
-                pixel.blue /= pixel.alpha;
-            }
-            if (linear_rgb && format.sample_type != SampleType::floating_point) {
-                pixel.red = srgb_to_linear(clamp_unit(pixel.red));
-                pixel.green = srgb_to_linear(clamp_unit(pixel.green));
-                pixel.blue = srgb_to_linear(clamp_unit(pixel.blue));
-            }
-            pixels[static_cast<std::size_t>(y) * view.width + x] = pixel;
-        }
-    }
-    return pixels;
-}
-
 Result<Image> pack_rgba8(const snow::memory::PixelArray<Pixel>& pixels, std::uint32_t width,
                          std::uint32_t height, bool linear_rgb) {
     Result<MutableImage> allocated = MutableImage::allocate(width, height, kRgba8);
@@ -1230,6 +1119,80 @@ Pixel over(Pixel source, Pixel destination) {
         alpha};
 }
 
+struct FrameComposition {
+    std::uint32_t width = 0;
+    std::uint32_t height = 0;
+    snow::memory::PixelArray<Pixel> previous;
+};
+
+Result<FrameComposition> blend_frame(snow::memory::PixelArray<Pixel>& canvas, std::uint32_t width,
+                                     std::uint32_t height, const Frame& frame, bool another_frame,
+                                     std::stop_token stop) {
+    const ImageView source = frame.image.view();
+    Result<void> valid = validate_processable(source);
+    if (!valid)
+        return valid.error();
+    FrameComposition region;
+    region.width = frame.x < width ? std::min(source.width, width - frame.x) : 0U;
+    region.height =
+        region.width != 0 && frame.y < height ? std::min(source.height, height - frame.y) : 0U;
+    if (frame.disposal == FrameDisposal::previous && another_frame) {
+        // Only the clipped frame rectangle is modified. Preserve its pixels
+        // without initializing or retaining another full float canvas.
+        region.previous.reserve(static_cast<std::size_t>(region.width) * region.height);
+        for (std::uint32_t y = 0; y < region.height; ++y) {
+            if (stop.stop_requested())
+                return Status::error(ErrorCode::cancelled, "Image operation was cancelled.");
+            const Pixel* row =
+                canvas.data() + static_cast<std::size_t>(frame.y + y) * width + frame.x;
+            region.previous.insert(region.previous.end(), row, row + region.width);
+        }
+    }
+    const bool rgba8 = source.format == kRgba8;
+    const bool bgra8 = source.format == kBgra8;
+    const bool replace = frame.blend == FrameBlend::source;
+    // Keep conversion and alpha blending in separate loops. Their vectorizable
+    // pixel traffic stays in a small reusable chunk instead of a full float plane.
+    constexpr std::uint32_t kPixelChunk = 4096;
+    snow::memory::PixelArray<Pixel> converted;
+    if (!replace)
+        converted.resize(std::min(region.width, kPixelChunk));
+    for (std::uint32_t y = 0; y < region.height; ++y) {
+        if (stop.stop_requested())
+            return Status::error(ErrorCode::cancelled, "Image operation was cancelled.");
+        Pixel* row = canvas.data() + static_cast<std::size_t>(frame.y + y) * width + frame.x;
+        if (replace) {
+            for (std::uint32_t x = 0; x < region.width; ++x)
+                row[x] = rgba8 || bgra8 ? read_rgba8_pixel(source, x, y, bgra8, false)
+                                        : read_pixel(source, x, y, false);
+        } else {
+            for (std::uint32_t first = 0; first < region.width;) {
+                const std::uint32_t count = std::min(kPixelChunk, region.width - first);
+                for (std::uint32_t x = 0; x < count; ++x)
+                    converted[x] = rgba8 || bgra8
+                                       ? read_rgba8_pixel(source, first + x, y, bgra8, false)
+                                       : read_pixel(source, first + x, y, false);
+                for (std::uint32_t x = 0; x < count; ++x)
+                    row[first + x] = over(converted[x], row[first + x]);
+                first += count;
+            }
+        }
+    }
+    return region;
+}
+
+void dispose_frame(snow::memory::PixelArray<Pixel>& canvas, std::uint32_t width, const Frame& frame,
+                   const FrameComposition& region) {
+    for (std::uint32_t y = 0; y < region.height; ++y) {
+        Pixel* row = canvas.data() + static_cast<std::size_t>(frame.y + y) * width + frame.x;
+        if (frame.disposal == FrameDisposal::background)
+            std::fill_n(row, region.width, Pixel{});
+        else if (!region.previous.empty())
+            std::copy_n(region.previous.data() + static_cast<std::size_t>(y) * region.width,
+                        region.width, row);
+    }
+}
+
 Result<Document>
 compose_frames(const Document& document, std::stop_token stop,
                std::size_t maximum_frames = std::numeric_limits<std::size_t>::max()) {
@@ -1268,26 +1231,11 @@ compose_frames(const Document& document, std::stop_token stop,
         if (stop.stop_requested()) {
             return Status::error(ErrorCode::cancelled, "Image operation was cancelled.");
         }
-        Result<snow::memory::PixelArray<Pixel>> source = unpack(frame.image, false, stop);
-        if (!source)
-            return source.error();
-        snow::memory::PixelArray<Pixel> previous =
-            frame.disposal == FrameDisposal::previous && result.frames.size() + 1U < frame_count
-                ? canvas
-                : snow::memory::PixelArray<Pixel>{};
-        for (std::uint32_t y = 0; y < frame.image.height(); ++y) {
-            if (frame.y + y >= height)
-                continue;
-            for (std::uint32_t x = 0; x < frame.image.width(); ++x) {
-                if (frame.x + x >= width)
-                    continue;
-                Pixel& destination =
-                    canvas[static_cast<std::size_t>(frame.y + y) * width + frame.x + x];
-                const Pixel value =
-                    source.value()[static_cast<std::size_t>(y) * frame.image.width() + x];
-                destination = frame.blend == FrameBlend::source ? value : over(value, destination);
-            }
-        }
+        const bool another_frame = result.frames.size() + 1U < frame_count;
+        Result<FrameComposition> region =
+            blend_frame(canvas, width, height, frame, another_frame, stop);
+        if (!region)
+            return region.error();
         Result<Image> packed = pack_rgba8(canvas, width, height, false);
         if (!packed)
             return packed.error();
@@ -1300,16 +1248,8 @@ compose_frames(const Document& document, std::stop_token stop,
         result.frames.push_back(std::move(composed));
         if (result.frames.size() >= maximum_frames)
             break;
-        if (frame.disposal == FrameDisposal::background) {
-            for (std::uint32_t y = 0; y < frame.image.height() && frame.y + y < height; ++y) {
-                std::fill_n(canvas.begin() +
-                                static_cast<std::ptrdiff_t>(
-                                    static_cast<std::size_t>(frame.y + y) * width + frame.x),
-                            std::min(frame.image.width(), width - frame.x), Pixel{});
-            }
-        } else if (frame.disposal == FrameDisposal::previous) {
-            canvas = std::move(previous);
-        }
+        if (another_frame)
+            dispose_frame(canvas, width, frame, region.value());
     }
     return result;
 }
@@ -1603,29 +1543,15 @@ Result<void> transform_to_sink(const Document& document, const TransformOptions&
                 return Status::error(ErrorCode::cancelled, "Image operation was cancelled.");
             }
             const Frame& frame = document.frames[index];
-            snow::memory::PixelArray<Pixel> previous;
+            FrameComposition region;
             Image working = frame.image;
             if (compose) {
-                Result<snow::memory::PixelArray<Pixel>> source = unpack(frame.image, false, stop);
-                if (!source)
-                    return source.error();
-                if (frame.disposal == FrameDisposal::previous)
-                    previous = canvas;
-                for (std::uint32_t y = 0; y < frame.image.height(); ++y) {
-                    if (frame.y + y >= document.canvas_height)
-                        continue;
-                    for (std::uint32_t x = 0; x < frame.image.width(); ++x) {
-                        if (frame.x + x >= document.canvas_width)
-                            continue;
-                        Pixel& destination =
-                            canvas[static_cast<std::size_t>(frame.y + y) * document.canvas_width +
-                                   frame.x + x];
-                        const Pixel value =
-                            source.value()[static_cast<std::size_t>(y) * frame.image.width() + x];
-                        destination =
-                            frame.blend == FrameBlend::source ? value : over(value, destination);
-                    }
-                }
+                Result<FrameComposition> blended =
+                    blend_frame(canvas, document.canvas_width, document.canvas_height, frame,
+                                index + 1U < frame_count, stop);
+                if (!blended)
+                    return blended.error();
+                region = std::move(blended).value();
                 Result<Image> packed =
                     pack_rgba8(canvas, document.canvas_width, document.canvas_height, false);
                 if (!packed)
@@ -1661,20 +1587,8 @@ Result<void> transform_to_sink(const Document& document, const TransformOptions&
             status = sink.end_frame(index);
             if (!status)
                 return status;
-            if (compose && frame.disposal == FrameDisposal::background &&
-                frame.x < document.canvas_width) {
-                for (std::uint32_t y = 0;
-                     y < frame.image.height() && frame.y + y < document.canvas_height; ++y) {
-                    std::fill_n(canvas.begin() + static_cast<std::ptrdiff_t>(
-                                                     static_cast<std::size_t>(frame.y + y) *
-                                                         document.canvas_width +
-                                                     frame.x),
-                                std::min(frame.image.width(), document.canvas_width - frame.x),
-                                Pixel{});
-                }
-            } else if (compose && frame.disposal == FrameDisposal::previous) {
-                canvas = std::move(previous);
-            }
+            if (compose && index + 1U < frame_count)
+                dispose_frame(canvas, document.canvas_width, frame, region);
         }
         return sink.end();
     } catch (const std::bad_alloc&) {
