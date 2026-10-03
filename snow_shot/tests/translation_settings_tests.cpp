@@ -391,6 +391,59 @@ void originalImagePreviewDefaultsPersistsAndResets() {
             "externally changed preview preference refreshes the settings switch");
     require(recognition.setShowOriginalImagePreview(true), "restore enabled preview default");
 }
+
+void textDetectionProcessingDefaultsPersistsAndResets() {
+    namespace storage = snow_shot::storage;
+    namespace settings = snow_shot::presentation::settings;
+    auto& applicationStorage = storage::ApplicationStorage::instance();
+    auto& configuration = applicationStorage.configuration();
+    snow_shot::presentation::GlobalShortcutManager shortcuts;
+    settings::BuiltInSettingsBackend backend(shortcuts);
+    settings::SettingsRuntimeSession session(settings::builtInSettingsRegistry(), backend);
+    constexpr auto binding = settings::SettingsSelectBinding::OcrTextDetectionProcessing;
+    const QString key = QStringLiteral("text_recognition/text_detection_processing");
+    const QString itemId = QStringLiteral("text-recognition.text-detection-processing");
+    require(backend.selectValue(binding).toString() == QStringLiteral("accuracy_first") &&
+                session.state(itemId).acceptedValue.toString() ==
+                    QStringLiteral("accuracy_first") &&
+                session.state(itemId).enabled,
+            "OCR processing defaults to enabled Accuracy First through the backend and session");
+    require(session.submitDraft(itemId, QStringLiteral("speed_first")) &&
+                backend.selectValue(binding).toString() == QStringLiteral("speed_first") &&
+                configuration.value(key).toString() == QStringLiteral("speed_first") &&
+                configuration.flushNow().success,
+            "Speed First must persist through the runtime settings session");
+    storage::ConfigurationStore reloaded(
+        QDir(applicationStorage.configurationDirectory()).filePath(QStringLiteral("config.json")),
+        true, false, 60000);
+    require(reloaded.value(key).toString() == QStringLiteral("speed_first"),
+            "OCR processing must survive configuration reload");
+    require(!backend.applySelectValue(binding, QStringLiteral("unsupported")) &&
+                backend.selectValue(binding).toString() == QStringLiteral("speed_first"),
+            "unsupported OCR processing writes must retain the saved choice");
+    require(configuration.setValue(key, QStringLiteral("accuracy_first")),
+            "an external configuration change must update OCR processing");
+    QCoreApplication::processEvents();
+    require(session.state(itemId).acceptedValue.toString() == QStringLiteral("accuracy_first"),
+            "the OCR processing selector must watch external configuration changes");
+    require(session.submitDraft(itemId, QStringLiteral("speed_first")) &&
+                session.reset(settings::SettingsSectionReset::TextRecognition),
+            "the OCR performance category reset must succeed");
+    QCoreApplication::processEvents();
+    require(backend.selectValue(binding).toString() == QStringLiteral("accuracy_first") &&
+                session.state(itemId).acceptedValue.toString() == QStringLiteral("accuracy_first"),
+            "resetting OCR performance must restore Accuracy First in the backend and session");
+    storage::ConfigurationStore imported(
+        QDir(applicationStorage.configurationDirectory())
+            .filePath(QStringLiteral("ocr-processing-import.json")),
+        false, true, 60000);
+    require(imported.applySnapshot({{key, QStringLiteral("unsupported")}}) &&
+                imported.value(key).toString() == QStringLiteral("accuracy_first"),
+            "invalid imported OCR processing values must fall back to Accuracy First");
+    require(imported.setValue(key, QStringLiteral("speed_first")) && imported.applySnapshot({}) &&
+                imported.value(key).toString() == QStringLiteral("accuracy_first"),
+            "older configuration snapshots missing OCR processing must use Accuracy First");
+}
 } // namespace
 
 int main(int argc, char** argv) {
@@ -412,7 +465,13 @@ int main(int argc, char** argv) {
         applicationStorage.shutdown();
         return 0;
     }
+    if (application.arguments().contains(QStringLiteral("--text-detection-processing-only"))) {
+        textDetectionProcessingDefaultsPersistsAndResets();
+        applicationStorage.shutdown();
+        return 0;
+    }
     originalImagePreviewDefaultsPersistsAndResets();
+    textDetectionProcessingDefaultsPersistsAndResets();
     selectedTextShortcutSettings();
     {
         snow_shot::presentation::GlobalShortcutManager shortcuts;

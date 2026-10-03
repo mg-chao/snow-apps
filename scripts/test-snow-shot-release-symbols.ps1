@@ -61,7 +61,7 @@ foreach ($external in @($false, $true)) {
             throw 'Symbol inventory is incomplete.'
         }
         if ($external -and ($null -ne $archive.GetEntry('snow-ocr-process/snow-ocr-process.exe') -or
-            $manifest.externalOcrRuntime.version -cne '1.0.8')) { throw 'External OCR runtime was misrepresented as a local build.' }
+            $manifest.externalOcrRuntime.version -cne '1.0.9')) { throw 'External OCR runtime was misrepresented as a local build.' }
         if ($manifest.product -cne $product.Product -or
             $null -eq $archive.GetEntry("$($product.Executable)/$($product.Executable).exe")) {
             throw 'Symbols archive has the wrong edition identity.'

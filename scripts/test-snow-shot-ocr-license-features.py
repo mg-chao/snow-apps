@@ -25,7 +25,7 @@ def packages(target, features):
 
 @unittest.skipUnless(shutil.which('cargo'), 'Cargo is required to inspect release dependencies')
 class OcrLicenseFeatures(unittest.TestCase):
-    def test_pinned_windows_worker_retains_its_original_dependency_notices(self):
+    def test_pinned_windows_worker_omits_unused_convenience_notices(self):
         packaging = (ROOT / 'scripts/package-snow-shot.ps1').read_text()
         selection = re.search(
             r"\$ocrCargoManifest\s*=\s*@\('--no-default-features',\s*'--features',\s*'([^']+)'\)",
@@ -33,11 +33,11 @@ class OcrLicenseFeatures(unittest.TestCase):
         )
         self.assertIsNotNone(selection, 'Windows packaging must select the OCR notice features')
         selected = packages('x86_64-pc-windows-msvc', selection.group(1))
-        self.assertTrue(LEGACY_DEPENDENCIES <= selected,
-                        f'Published worker notices are missing: {LEGACY_DEPENDENCIES - selected}')
-        self.assertTrue({'png', 'zune-jpeg'} <= selected)
-        self.assertTrue({'turbojpeg', 'ravif', 'image-webp'}.isdisjoint(selected),
-                        'The pinned worker does not include the full-image/ORT default features')
+        self.assertTrue(LEGACY_DEPENDENCIES.isdisjoint(selected),
+                        f'Unused worker notices were retained: {LEGACY_DEPENDENCIES & selected}')
+        self.assertTrue({'png', 'zune-jpeg', 'turbojpeg', 'ravif', 'image-webp'}.isdisjoint(selected))
+        self.assertIn('ort', selected)
+        self.assertIn('ort-sys', selected)
 
     def test_local_macos_worker_omits_unused_convenience_notices(self):
         selected = packages('aarch64-apple-darwin', 'static-onnx-runtime,crash-diagnostics')

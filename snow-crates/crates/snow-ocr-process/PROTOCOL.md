@@ -1,6 +1,6 @@
-# OCR protocol 4
+# OCR protocol 5
 
-Runtime 1.0.8 uses a binary stdin/stdout command channel. Diagnostics use stderr.
+Runtime 1.0.9 uses a binary stdin/stdout command channel. Diagnostics use stderr.
 The application and runtime are released together; earlier protocols are incompatible.
 All integers and IEEE-754 floats are little-endian. A string is a `u32` byte
 length followed by UTF-8. Frames have a 20-byte header: `SOCR`, version `u16`,
@@ -15,7 +15,7 @@ kind `u16`, operation ID `u64`, payload size `u32`. Payloads are capped at 1 MiB
 | 5 | Complete | Recognition token | Recognition result, described below |
 | 6 | Shutdown | 0 | Empty |
 | 7 | ShutdownAck | 0 | Empty |
-| 8 | PrepareSession | Session operation | DirectML requested `u8`, detector resize policy `u8` (0 = max, 1 = min), detector/recognizer/dictionary path strings |
+| 8 | PrepareSession | Session operation | DirectML requested `u8`, detector resize policy `u8` (0 = max, 1 = min), text detection processing `u8` (0 = accuracy first, 1 = speed first), detector/recognizer/dictionary path strings |
 | 9 | SessionReady | Session operation | Success `u8` |
 | 10 | ReleaseSession | Session operation | Empty |
 | 11 | SessionReleased | Session operation | Empty |
@@ -39,6 +39,11 @@ Session replacement drops the previous engine before creating the next one.
 Idle hot start is `ReleaseSession`, acknowledgement, then `PrepareSession` for
 the latest configuration. Session preparation accepts no image. DirectML
 initialization/inference retains the capability cache and CPU fallback policy.
+Text detection processing selects the recognizer input-width floor: accuracy first uses
+320, while speed first uses 48 before the existing 32-pixel width alignment.
+Accuracy first preserves previous recognition behavior and is the default.
+Protocols 4 and 5 are incompatible because PrepareSession adds one byte before
+the model path strings; runtimes must never decode the earlier payload layout.
 A failed session preparation leaves no usable session and does not exit the
 process. Only real recognition requests receive user-facing errors.
 

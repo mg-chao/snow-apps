@@ -28,7 +28,7 @@ if (-not $SkipBuild) {
 # updater, installer, translations, or application symbol bundles.
 $executable = Join-Path $buildRoot 'cargo/x86_64-pc-windows-msvc/release/snow-ocr-process.exe'
 $version = (& $executable --version 2>$null)
-if ($LASTEXITCODE -ne 0 -or $version -cnotmatch '^snow-ocr-process (\d+\.\d+\.\d+) windows-x86_64 protocol 4$') {
+if ($LASTEXITCODE -ne 0 -or $version -cnotmatch '^snow-ocr-process (\d+\.\d+\.\d+) windows-x86_64 protocol 5$') {
     throw "Unexpected OCR runtime identity: $version"
 }
 $runtimeVersion = $Matches[1]
@@ -71,7 +71,7 @@ $payload = @(
     (Get-RuntimeFile (Join-Path $stage 'DirectML.dll') 'DirectML.dll')
 )
 $runtimeManifest = Join-Path $stage 'runtime-manifest.json'
-[ordered]@{ schema = 1; version = $runtimeVersion; platform = $platform; protocol = 4; files = $payload } |
+[ordered]@{ schema = 1; version = $runtimeVersion; platform = $platform; protocol = 5; files = $payload } |
     ConvertTo-Json -Depth 6 | Set-Content -LiteralPath $runtimeManifest -Encoding utf8
 $files = @($payload) + @((Get-RuntimeFile $runtimeManifest 'runtime-manifest.json'))
 $stagedArchive = Join-Path $buildRoot "$archiveName.pending"
@@ -112,7 +112,7 @@ Copy-Item -LiteralPath $stagedArchive -Destination $archivePath -Force
 Copy-Item -LiteralPath $stagedArchive -Destination (Join-Path $artifactRoot $archiveName) -Force
 "$($archive.sha256)  $archiveName" | Set-Content -LiteralPath "$archivePath.sha256" -Encoding ascii
 $manifestPath = Join-Path $buildRoot "snow-ocr-runtime-$runtimeVersion-$platform.manifest.json"
-[ordered]@{ SchemaVersion = 1; RuntimeVersion = $runtimeVersion; Platform = $platform; Protocol = 4;
+[ordered]@{ SchemaVersion = 1; RuntimeVersion = $runtimeVersion; Platform = $platform; Protocol = 5;
     UploadUrl = $uploadUrl; Archive = $archive; Files = $files } |
     ConvertTo-Json -Depth 6 | Set-Content -LiteralPath $manifestPath -Encoding utf8
 Write-Output "OCR runtime upload artifact: $archivePath"

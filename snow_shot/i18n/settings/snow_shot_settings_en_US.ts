@@ -887,6 +887,10 @@
             <translation>Accessibility</translation>
         </message>
         <message>
+            <source>Accuracy First</source>
+            <translation>Accuracy First</translation>
+        </message>
+        <message>
             <source>Active window</source>
             <translation>Active window</translation>
         </message>
@@ -3395,6 +3399,14 @@
             <translation>Software version and license information</translation>
         </message>
         <message>
+            <source>Speed First</source>
+            <translation>Speed First</translation>
+        </message>
+        <message>
+            <source>Speed First reduces computation on short text and may change recognition results.</source>
+            <translation>Speed First reduces computation on short text and may change recognition results.</translation>
+        </message>
+        <message>
             <source>Spotlight</source>
             <translation>Spotlight</translation>
         </message>
@@ -3497,6 +3509,10 @@
         <message>
             <source>Text</source>
             <translation>Text</translation>
+        </message>
+        <message>
+            <source>Text Detection Processing</source>
+            <translation>Text Detection Processing</translation>
         </message>
         <message>
             <source>Text background</source>

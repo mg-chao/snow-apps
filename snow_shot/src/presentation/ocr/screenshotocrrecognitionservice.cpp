@@ -100,6 +100,7 @@ class ScreenshotOcrRecognitionService::Impl final {
         m_configuration.modelType = options.modelType;
         m_configuration.backend = preference;
         m_configuration.detectorResizePolicy = options.detectorResizePolicy;
+        m_configuration.textDetectionProcessing = options.textDetectionProcessing;
         m_queueClock.start();
         m_localPool->setMaxThreadCount(1);
         if (!options.processPath.trimmed().isEmpty() &&
@@ -349,13 +350,20 @@ class ScreenshotOcrRecognitionService::Impl final {
         setRuntimeConfiguration(configuration);
     }
 
+    void setTextDetectionProcessing(ScreenshotOcrTextDetectionProcessing processing) {
+        auto configuration = m_configuration;
+        configuration.textDetectionProcessing = processing;
+        setRuntimeConfiguration(configuration);
+    }
+
     void setRuntimeConfiguration(const ScreenshotOcrRuntimeConfiguration& configuration) {
         if (m_configuration == configuration)
             return;
         const bool modelChanged = m_modelType != configuration.modelType;
         const bool sessionChanged =
             modelChanged || m_backendPreference != configuration.backend ||
-            m_configuration.detectorResizePolicy != configuration.detectorResizePolicy;
+            m_configuration.detectorResizePolicy != configuration.detectorResizePolicy ||
+            m_configuration.textDetectionProcessing != configuration.textDetectionProcessing;
         if (sessionChanged)
             ++m_configurationGeneration;
         if (m_configuration.modelHotStart &&
@@ -708,6 +716,10 @@ class ScreenshotOcrRecognitionService::Impl final {
         appendU8(
             payload,
             m_configuration.detectorResizePolicy == ScreenshotOcrDetectorResizePolicy::Min ? 1 : 0);
+        appendU8(payload, m_configuration.textDetectionProcessing ==
+                                  ScreenshotOcrTextDetectionProcessing::SpeedFirst
+                              ? 1
+                              : 0);
         appendString(payload, m_assets.detectorModelPath);
         appendString(payload, m_assets.recognizerModelPath);
         appendString(payload, m_assets.dictionaryPath);
@@ -1407,6 +1419,12 @@ void ScreenshotOcrRecognitionService::setDetectorResizePolicy(
     ScreenshotOcrDetectorResizePolicy policy) {
     if (m_impl != nullptr)
         m_impl->setDetectorResizePolicy(policy);
+}
+
+void ScreenshotOcrRecognitionService::setTextDetectionProcessing(
+    ScreenshotOcrTextDetectionProcessing processing) {
+    if (m_impl != nullptr)
+        m_impl->setTextDetectionProcessing(processing);
 }
 int ScreenshotOcrRecognitionService::liveWorkerCount() const {
     return m_impl != nullptr ? m_impl->liveWorkerCount() : 0;

@@ -887,6 +887,10 @@
             <translation>辅助功能</translation>
         </message>
         <message>
+            <source>Accuracy First</source>
+            <translation>准确优先</translation>
+        </message>
+        <message>
             <source>Active window</source>
             <translation>活动窗口</translation>
         </message>
@@ -3395,6 +3399,14 @@
             <translation>软件版本与许可证信息</translation>
         </message>
         <message>
+            <source>Speed First</source>
+            <translation>速度优先</translation>
+        </message>
+        <message>
+            <source>Speed First reduces computation on short text and may change recognition results.</source>
+            <translation>速度优先会减少短文字的计算量，并可能改变识别结果。</translation>
+        </message>
+        <message>
             <source>Spotlight</source>
             <translation>聚光灯</translation>
         </message>
@@ -3497,6 +3509,10 @@
         <message>
             <source>Text</source>
             <translation>文本</translation>
+        </message>
+        <message>
+            <source>Text Detection Processing</source>
+            <translation>文字检测处理</translation>
         </message>
         <message>
             <source>Text background</source>

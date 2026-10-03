@@ -30,9 +30,9 @@ class MacOSOcrAssets(unittest.TestCase):
             path = self.model / name
             path.write_bytes(name.encode())
             files.append(dict(ocr.descriptor(path), url=f'https://example.invalid/{name}'))
-        self.source = dict(runtime=dict(version='1.0.8'), models=[dict(type='small', id='small-id', files=files)])
+        self.source = dict(runtime=dict(version='1.0.9'), models=[dict(type='small', id='small-id', files=files)])
         ocr.atomic_json(self.model / '.complete.json', dict(schema=1, component='small-id'))
-        self.run = patch.object(ocr, 'run', return_value='snow-ocr-process 1.0.8 macos-aarch64 protocol 4').start()
+        self.run = patch.object(ocr, 'run', return_value='snow-ocr-process 1.0.9 macos-aarch64 protocol 5').start()
         self.addCleanup(patch.stopall)
 
     def test_bundle_data_is_sealed_as_resources_with_stable_lookup_paths(self):
@@ -56,7 +56,7 @@ class MacOSOcrAssets(unittest.TestCase):
         self.assertEqual(result['schema'], 3)
         self.assertEqual(result['models'], self.source['models'])
         self.assertEqual(result['runtime']['delivery'], 'bundled')
-        self.assertEqual(result['runtime']['protocol'], 4)
+        self.assertEqual(result['runtime']['protocol'], 5)
         self.assertFalse(result['runtime']['static'])
         self.assertNotIn('archive', result['runtime'])
         with (self.runtime / 'snow-ocr-process').open('ab') as binary:
@@ -290,7 +290,7 @@ class MacOSOcrAssets(unittest.TestCase):
             ocr.verify_assets(self.source, self.runtime)
 
     def test_previous_protocol_is_rejected(self):
-        self.run.return_value = 'snow-ocr-process 1.0.8 macos-aarch64 protocol 3'
+        self.run.return_value = 'snow-ocr-process 1.0.9 macos-aarch64 protocol 4'
         with self.assertRaisesRegex(ValueError, 'version/protocol'):
             ocr.finalize(self.source, self.runtime)
 

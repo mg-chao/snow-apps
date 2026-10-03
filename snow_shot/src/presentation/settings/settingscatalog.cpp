@@ -2267,6 +2267,27 @@ SettingsItemDefinition ocrDetectorResizePolicyItem() {
     };
 }
 
+SettingsItemDefinition ocrTextDetectionProcessingItem() {
+    SettingsSelectDefinition payload;
+    payload.options = {
+        {QStringLiteral("accuracy_first"),
+         settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Accuracy First"))},
+        {QStringLiteral("speed_first"),
+         settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Speed First"))},
+    };
+    payload.binding = SettingsSelectBinding::OcrTextDetectionProcessing;
+    return {
+        QStringLiteral("text-recognition.text-detection-processing"),
+        settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Text Detection Processing")),
+        settingsText(QT_TRANSLATE_NOOP(
+            "SettingsCatalog", "Speed First reduces computation on short text and may change "
+                               "recognition results.")),
+        {},
+        QStringLiteral("text_recognition/text_detection_processing"),
+        payload,
+    };
+}
+
 SettingsItemDefinition historyIntegerItem(const QString& id, TranslatableText title,
                                           TranslatableText description, const QString& key,
                                           SettingsIntegerBinding binding, TranslatableText suffix,
@@ -2983,7 +3004,7 @@ QVector<SettingsPageDefinition> builtInPages() {
               settingsText(QT_TRANSLATE_NOOP("SettingsCatalog",
                                              "Configure text recognition models and acceleration")),
               SettingsSectionReset::TextRecognition,
-              {ocrModelTypeItem(), ocrDetectorResizePolicyItem(),
+              {ocrModelTypeItem(), ocrDetectorResizePolicyItem(), ocrTextDetectionProcessingItem(),
 #ifndef Q_OS_MACOS
                directMlAccelerationItem(),
 #endif
@@ -4126,6 +4147,9 @@ QStringList SettingsCatalog::validationErrors() const {
                         break;
                     case SettingsSelectBinding::OcrDetectorResizePolicy:
                         expectedKey = QStringLiteral("text_recognition/detector_resize_policy");
+                        break;
+                    case SettingsSelectBinding::OcrTextDetectionProcessing:
+                        expectedKey = QStringLiteral("text_recognition/text_detection_processing");
                         break;
                     case SettingsSelectBinding::ScreenshotApiMode:
                         expectedKey = QStringLiteral("screenshot/api_mode");

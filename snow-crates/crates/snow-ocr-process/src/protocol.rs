@@ -1,7 +1,7 @@
 use std::io::{self, Read, Write};
 
 pub const MAGIC: [u8; 4] = *b"SOCR";
-pub const VERSION: u16 = 4;
+pub const VERSION: u16 = 5;
 pub const MAX_FRAME: usize = 1024 * 1024;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -205,6 +205,8 @@ mod tests {
         assert!(read_frame(&mut Cursor::new(header)).is_err());
 
         header[..4].copy_from_slice(&MAGIC);
+        header[4..6].copy_from_slice(&(VERSION - 1).to_le_bytes());
+        assert!(read_frame(&mut Cursor::new(header)).is_err());
         header[4..6].copy_from_slice(&(VERSION + 1).to_le_bytes());
         assert!(read_frame(&mut Cursor::new(header)).is_err());
     }

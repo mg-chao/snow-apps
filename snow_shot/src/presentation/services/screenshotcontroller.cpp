@@ -721,6 +721,10 @@ ScreenshotController::Impl::Impl(ScreenshotController& controller,
                            m_ocrRecognition != nullptr) {
                     m_ocrRecognition->setDetectorResizePolicy(
                         screenshotOcrDetectorResizePolicyFromValue(value.toString()));
+                } else if (key == QStringLiteral("text_recognition/text_detection_processing") &&
+                           m_ocrRecognition != nullptr) {
+                    m_ocrRecognition->setTextDetectionProcessing(
+                        screenshotOcrTextDetectionProcessingFromValue(value.toString()));
                 } else if (key == QStringLiteral("network/proxy")) {
                     if (m_ocrRecognition != nullptr) {
                         m_ocrRecognition->setProxyUrl(resolvedOcrProxyUrl(value.toString()));
@@ -1165,6 +1169,10 @@ bool ScreenshotController::Impl::ensureRecognitionFeature() {
     ocrOptions.detectorResizePolicy = screenshotOcrDetectorResizePolicyFromValue(
         applicationStorage.configuration()
             .value(QStringLiteral("text_recognition/detector_resize_policy"))
+            .toString());
+    ocrOptions.textDetectionProcessing = screenshotOcrTextDetectionProcessingFromValue(
+        applicationStorage.configuration()
+            .value(QStringLiteral("text_recognition/text_detection_processing"))
             .toString());
     ocrOptions.offlineRoot =
         QDir(QCoreApplication::applicationDirPath()).filePath(QStringLiteral("assets/ocr"));

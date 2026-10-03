@@ -30,6 +30,7 @@ use std::{
 struct Config {
     directml: bool,
     detector_resize_policy: DetectorResizePolicy,
+    text_detection_processing: TextDetectionProcessing,
     directml_enabled: Arc<AtomicBool>,
     directml_cache: Arc<DirectMlCapabilityCache>,
     detector_model: PathBuf,
@@ -59,6 +60,33 @@ impl DetectorResizePolicy {
         match self {
             Self::Max => "max",
             Self::Min => "min",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+enum TextDetectionProcessing {
+    #[default]
+    AccuracyFirst,
+    SpeedFirst,
+}
+
+impl TextDetectionProcessing {
+    fn from_wire(value: u8) -> io::Result<Self> {
+        match value {
+            0 => Ok(Self::AccuracyFirst),
+            1 => Ok(Self::SpeedFirst),
+            _ => Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "invalid OCR text detection processing",
+            )),
+        }
+    }
+
+    fn recognition_width(self) -> usize {
+        match self {
+            Self::AccuracyFirst => 320,
+            Self::SpeedFirst => 48,
         }
     }
 }
@@ -236,6 +264,7 @@ fn make_engine(
         directml,
         thread_budget,
         config.detector_resize_policy,
+        config.text_detection_processing,
     )
 }
 
@@ -246,7 +275,37 @@ fn make_engine_for_models(
     directml: bool,
     thread_budget: usize,
     detector_resize_policy: DetectorResizePolicy,
+    text_detection_processing: TextDetectionProcessing,
 ) -> rapid_ocr_rs::Result<RapidOcr> {
+    let engine = engine_config_for_models(
+        detector_model,
+        recognizer_model,
+        dictionary,
+        directml,
+        thread_budget,
+        detector_resize_policy,
+        text_detection_processing,
+    );
+    RapidOcr::new_with_sources(
+        engine,
+        PipelineSources {
+            det: Some(ModelSource::File(detector_model)),
+            cls: None,
+            rec: Some(ModelSource::File(recognizer_model)),
+            rec_dictionary: Some(DictionarySource::File(dictionary)),
+        },
+    )
+}
+
+fn engine_config_for_models(
+    detector_model: &Path,
+    recognizer_model: &Path,
+    dictionary: &Path,
+    directml: bool,
+    thread_budget: usize,
+    detector_resize_policy: DetectorResizePolicy,
+    text_detection_processing: TextDetectionProcessing,
+) -> EngineConfig {
     let mut engine = EngineConfig::default();
     engine.global.use_det = true;
     engine.global.use_cls = false;
@@ -263,6 +322,7 @@ fn make_engine_for_models(
     engine.rec.model.allow_download = false;
     engine.rec.model.model_path = Some(recognizer_model.to_path_buf());
     engine.rec.model.rec_keys_path = Some(dictionary.to_path_buf());
+    engine.rec.rec_img_shape[2] = text_detection_processing.recognition_width();
     let budget = thread_budget.max(1);
     for runtime in [
         &mut engine.det.runtime,
@@ -286,15 +346,7 @@ fn make_engine_for_models(
             runtime.fail_if_provider_unavailable = false;
         }
     }
-    RapidOcr::new_with_sources(
-        engine,
-        PipelineSources {
-            det: Some(ModelSource::File(detector_model)),
-            cls: None,
-            rec: Some(ModelSource::File(recognizer_model)),
-            rec_dictionary: Some(DictionarySource::File(dictionary)),
-        },
-    )
+    engine
 }
 
 fn run_unless_cancelled<T>(
@@ -438,6 +490,7 @@ fn session_config(payload: &[u8], state: &str) -> io::Result<Config> {
     let mut d = Decoder::new(payload);
     let directml = d.u8()? != 0;
     let detector_resize_policy = DetectorResizePolicy::from_wire(d.u8()?)?;
+    let text_detection_processing = TextDetectionProcessing::from_wire(d.u8()?)?;
     let detector_model = PathBuf::from(d.string()?);
     let recognizer_model = PathBuf::from(d.string()?);
     let dictionary = PathBuf::from(d.string()?);
@@ -448,6 +501,7 @@ fn session_config(payload: &[u8], state: &str) -> io::Result<Config> {
     Ok(Config {
         directml,
         detector_resize_policy,
+        text_detection_processing,
         directml_enabled: Arc::new(AtomicBool::new(false)),
         directml_cache: Arc::new(DirectMlCapabilityCache::new(state_dir.as_deref())),
         detector_model,
@@ -573,6 +627,7 @@ fn main() -> io::Result<()> {
             false,
             1,
             DetectorResizePolicy::Max,
+            TextDetectionProcessing::default(),
         )
         .map_err(|error| io::Error::other(error.to_string()))?;
         return Ok(());
@@ -770,8 +825,21 @@ fn main() -> io::Result<()> {
 
 #[cfg(test)]
 mod tests {
-    use super::{DetectorResizePolicy, session_config};
+    use super::{
+        DetectorResizePolicy, TextDetectionProcessing, engine_config_for_models, session_config,
+    };
     use crate::protocol::{put_string, put_u8};
+
+    fn session_payload(detector_resize_policy: u8, text_detection_processing: u8) -> Vec<u8> {
+        let mut payload = Vec::new();
+        put_u8(&mut payload, 1);
+        put_u8(&mut payload, detector_resize_policy);
+        put_u8(&mut payload, text_detection_processing);
+        for path in ["det.onnx", "rec.onnx", "dict.txt"] {
+            put_string(&mut payload, path);
+        }
+        payload
+    }
 
     #[test]
     fn session_config_selects_and_validates_detector_resize_policy() {
@@ -779,16 +847,107 @@ mod tests {
             (0, DetectorResizePolicy::Max),
             (1, DetectorResizePolicy::Min),
         ] {
-            let mut payload = Vec::new();
-            put_u8(&mut payload, 0);
-            put_u8(&mut payload, wire);
-            for path in ["det.onnx", "rec.onnx", "dict.txt"] {
-                put_string(&mut payload, path);
-            }
+            let mut payload = session_payload(wire, 0);
             let config = session_config(&payload, "").unwrap();
             assert_eq!(config.detector_resize_policy, expected);
             payload[1] = 2;
             assert!(session_config(&payload, "").is_err());
+        }
+    }
+
+    #[test]
+    fn session_config_selects_and_validates_text_detection_processing() {
+        for (wire, expected) in [
+            (0, TextDetectionProcessing::AccuracyFirst),
+            (1, TextDetectionProcessing::SpeedFirst),
+        ] {
+            for detector_policy in [0, 1] {
+                let mut payload = session_payload(detector_policy, wire);
+                let config = session_config(&payload, "").unwrap();
+                assert!(config.directml);
+                assert_eq!(config.text_detection_processing, expected);
+                assert_eq!(config.detector_model, PathBuf::from("det.onnx"));
+                assert_eq!(config.recognizer_model, PathBuf::from("rec.onnx"));
+                assert_eq!(config.dictionary, PathBuf::from("dict.txt"));
+                payload[2] = 2;
+                assert_eq!(
+                    session_config(&payload, "").err().unwrap().kind(),
+                    io::ErrorKind::InvalidData
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn session_config_rejects_missing_processing_and_truncated_paths() {
+        for processing in [0, 1] {
+            let payload = session_payload(0, processing);
+            for length in 0..payload.len() {
+                assert_eq!(
+                    session_config(&payload[..length], "").err().unwrap().kind(),
+                    io::ErrorKind::UnexpectedEof,
+                    "truncated session configuration length {length}"
+                );
+            }
+        }
+    }
+
+    fn engine_config(
+        directml: bool,
+        processing: TextDetectionProcessing,
+    ) -> rapid_ocr_rs::EngineConfig {
+        engine_config_for_models(
+            std::path::Path::new("det.onnx"),
+            std::path::Path::new("rec.onnx"),
+            std::path::Path::new("dict.txt"),
+            directml,
+            8,
+            DetectorResizePolicy::Max,
+            processing,
+        )
+    }
+
+    #[test]
+    fn accuracy_first_preserves_default_recognition_shape_and_batching() {
+        assert_eq!(
+            TextDetectionProcessing::default(),
+            TextDetectionProcessing::AccuracyFirst
+        );
+        let config = engine_config(false, TextDetectionProcessing::default());
+        assert_eq!(config.rec.rec_img_shape, [3, 48, 320]);
+        assert_eq!(config.rec.rec_batch_num, 6);
+        assert_eq!(config.rec.rec_width_alignment, 32);
+        assert!(config.global.use_det && config.global.use_rec);
+        assert!(!config.global.use_cls);
+        assert_eq!(config.det.limit_type, "max");
+    }
+
+    #[test]
+    fn speed_first_changes_only_recognition_width_on_cpu_and_directml() {
+        for directml in [false, true] {
+            let mut accuracy = engine_config(directml, TextDetectionProcessing::AccuracyFirst);
+            let speed = engine_config(directml, TextDetectionProcessing::SpeedFirst);
+            assert_eq!(accuracy.rec.rec_img_shape, [3, 48, 320]);
+            assert_eq!(speed.rec.rec_img_shape, [3, 48, 48]);
+            accuracy.rec.rec_img_shape[2] = 48;
+            assert_eq!(
+                serde_json::to_value(&accuracy).unwrap(),
+                serde_json::to_value(&speed).unwrap(),
+                "processing choice must preserve the detector, models, batching and runtime"
+            );
+            assert_eq!(
+                speed.cls.runtime.provider_preference,
+                rapid_ocr_rs::ProviderPreference::Cpu
+            );
+            assert_eq!(speed.cls.runtime.rayon_threads, Some(8));
+            assert_eq!(
+                speed.rec.runtime.provider_preference,
+                if directml {
+                    rapid_ocr_rs::ProviderPreference::DirectMl { device_id: 0 }
+                } else {
+                    rapid_ocr_rs::ProviderPreference::Cpu
+                }
+            );
         }
     }
 

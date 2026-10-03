@@ -440,9 +440,9 @@ void builtInCatalogIsCompleteAndValid() {
         require(itemIds.remove(id), "catalog must contain each platform-specific setting");
     for (const auto& id : excludedPlatformItems)
         require(!itemIds.contains(id), "catalog must omit settings exclusive to another platform");
-    require(itemIds.size() == 225,
+    require(itemIds.size() == 226,
             qPrintable(QStringLiteral(
-                           "catalog must contain 225 shared settings on every platform; found %1")
+                           "catalog must contain 226 shared settings on every platform; found %1")
                            .arg(itemIds.size())));
     require(foundUpdates, "catalog must contain the update mode item");
     const auto* pinnedEditor =
@@ -1092,6 +1092,13 @@ void builtInCatalogIsCompleteAndValid() {
         resizePolicy != nullptr
             ? std::get_if<settings::SettingsSelectDefinition>(&resizePolicy->payload)
             : nullptr;
+    const auto* textDetectionProcessing = catalog.item(
+        {QStringLiteral("text-recognition-translation"), QStringLiteral("text-recognition"),
+         QStringLiteral("text-recognition.text-detection-processing")});
+    const auto* textDetectionProcessingSelect =
+        textDetectionProcessing != nullptr
+            ? std::get_if<settings::SettingsSelectDefinition>(&textDetectionProcessing->payload)
+            : nullptr;
     require(
         systemPage != nullptr && systemPage->sections.size() == 3 &&
             systemPage->sections.at(0).id == QStringLiteral("language") &&
@@ -1105,18 +1112,20 @@ void builtInCatalogIsCompleteAndValid() {
             textRecognition != nullptr &&
             textRecognition->reset == settings::SettingsSectionReset::TextRecognition &&
 #ifdef Q_OS_MACOS
-            textRecognition->items.size() == 4 &&
+            textRecognition->items.size() == 5 &&
             catalog.item({QStringLiteral("text-recognition-translation"),
                           QStringLiteral("text-recognition"),
                           QStringLiteral("text-recognition.direct-ml-acceleration")}) == nullptr &&
 #else
-            textRecognition->items.size() == 5 &&
-            textRecognition->items.at(2).id ==
+            textRecognition->items.size() == 6 &&
+            textRecognition->items.at(3).id ==
                 QStringLiteral("text-recognition.direct-ml-acceleration") &&
 #endif
             textRecognition->items.at(0).id == QStringLiteral("text-recognition.model-type") &&
             textRecognition->items.at(1).id ==
                 QStringLiteral("text-recognition.detector-resize-policy") &&
+            textRecognition->items.at(2).id ==
+                QStringLiteral("text-recognition.text-detection-processing") &&
             resizePolicy != nullptr &&
             resizePolicy->configurationKey ==
                 QStringLiteral("text_recognition/detector_resize_policy") &&
@@ -1139,6 +1148,29 @@ void builtInCatalogIsCompleteAndValid() {
             modelTypeSelect->options.at(5).value == QStringLiteral("small_v4") &&
             modelTypeSelect->options.at(6).value == QStringLiteral("medium_v4"),
         "System settings must expose the ordered OCR model and acceleration controls");
+    require(
+        textDetectionProcessing != nullptr &&
+            textDetectionProcessing->title.translated() ==
+                QStringLiteral("Text Detection Processing") &&
+            textDetectionProcessing->configurationKey ==
+                QStringLiteral("text_recognition/text_detection_processing") &&
+            textDetectionProcessingSelect != nullptr &&
+            textDetectionProcessingSelect->binding ==
+                settings::SettingsSelectBinding::OcrTextDetectionProcessing &&
+            textDetectionProcessingSelect->options.size() == 2 &&
+            textDetectionProcessingSelect->options.at(0).value ==
+                QStringLiteral("accuracy_first") &&
+            textDetectionProcessingSelect->options.at(0).label.translated() ==
+                QStringLiteral("Accuracy First") &&
+            textDetectionProcessingSelect->options.at(1).value == QStringLiteral("speed_first") &&
+            textDetectionProcessingSelect->options.at(1).label.translated() ==
+                QStringLiteral("Speed First") &&
+            storage::ConfigurationSchema::defaultValue(textDetectionProcessing->configurationKey)
+                    .toString() == QStringLiteral("accuracy_first") &&
+            storage::ConfigurationSchema::entry(textDetectionProcessing->configurationKey)
+                    ->allowedStringValues ==
+                QStringList{QStringLiteral("accuracy_first"), QStringLiteral("speed_first")},
+        "OCR processing must offer accuracy first by default followed by speed first");
     const auto* mcp =
         catalog.section(QStringLiteral("connections-services"), QStringLiteral("mcp"));
     require(mcp != nullptr && mcp->items.size() == 2 &&
@@ -2364,6 +2396,14 @@ void searchIndexIsGeneratedAndRanked() {
     require(!ocrModel.isEmpty() && ocrModel.constFirst().location.itemId ==
                                        QStringLiteral("text-recognition.model-type"),
             "OCR model labels and aliases must find the Model Type setting");
+    for (const auto& query : {QStringLiteral("Text Detection Processing"),
+                              QStringLiteral("Accuracy First"), QStringLiteral("Speed First")}) {
+        const auto processing = index.search(query);
+        require(!processing.isEmpty() &&
+                    processing.constFirst().location.itemId ==
+                        QStringLiteral("text-recognition.text-detection-processing"),
+                "OCR processing title and option labels must find its setting");
+    }
     const auto multipleTokens = index.search(QStringLiteral("storage error"));
     require(!multipleTokens.isEmpty() &&
                 multipleTokens.constFirst().location.itemId == QStringLiteral("storage.status"),

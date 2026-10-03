@@ -263,6 +263,11 @@ const QVector<ConfigurationSchemaEntry> kRawEntries = {
      ConfigurationValueKind::String,
      std::nullopt,
      {QStringLiteral("max"), QStringLiteral("min")}},
+    {QStringLiteral("text_recognition/text_detection_processing"),
+     QStringLiteral("accuracy_first"),
+     ConfigurationValueKind::String,
+     std::nullopt,
+     {QStringLiteral("accuracy_first"), QStringLiteral("speed_first")}},
 #if SNOW_SHOT_ENABLE_TEXT_TRANSLATION
     {QStringLiteral("screenshot_translation/source_language"),
      QStringLiteral("auto"),

@@ -97,12 +97,12 @@ void writeAssetManifest(const QString& root, bool completePayload) {
     const QByteArray recognizer("recognizer");
     const QByteArray dictionary("dictionary");
     const QString runtimeDirectory =
-        QDir(root).filePath(QStringLiteral("runtimes/1.0.8/windows-x64"));
+        QDir(root).filePath(QStringLiteral("runtimes/1.0.9/windows-x64"));
     const QString modelDirectory =
         QDir(root).filePath(QStringLiteral("models/ppocrv6-small-463ea9f"));
     if (completePayload) {
         writeFixture(QDir(runtimeDirectory)
-                         .filePath(QStringLiteral("snow-ocr-process-1.0.8-windows-x64.exe")),
+                         .filePath(QStringLiteral("snow-ocr-process-1.0.9-windows-x64.exe")),
                      process);
         writeFixture(QDir(runtimeDirectory).filePath(QStringLiteral("DirectML.dll")), directMl);
         writeFixture(QDir(runtimeDirectory).filePath(QStringLiteral("runtime-manifest.json")),
@@ -113,12 +113,12 @@ void writeAssetManifest(const QString& root, bool completePayload) {
                      recognizer);
         writeFixture(QDir(modelDirectory).filePath(QStringLiteral("ppocrv6_dict.txt")), dictionary);
         writeFixture(QDir(runtimeDirectory).filePath(QStringLiteral(".complete.json")),
-                     R"({"schema":1,"component":"1.0.8"})");
+                     R"({"schema":1,"component":"1.0.9"})");
         writeFixture(QDir(modelDirectory).filePath(QStringLiteral(".complete.json")),
                      R"({"schema":1,"component":"ppocrv6-small-463ea9f"})");
     }
     const QJsonArray runtimeFiles{
-        assetFile(QStringLiteral("snow-ocr-process-1.0.8-windows-x64.exe"), process),
+        assetFile(QStringLiteral("snow-ocr-process-1.0.9-windows-x64.exe"), process),
         assetFile(QStringLiteral("DirectML.dll"), directMl),
         assetFile(QStringLiteral("runtime-manifest.json"), runtimeManifest)};
     const auto model = [](const QString& type, const QString& id, const QString& detectorName,
@@ -147,10 +147,10 @@ void writeAssetManifest(const QString& root, bool completePayload) {
         {QStringLiteral("schema"), 2},
         {QStringLiteral("default_model"), QStringLiteral("small")},
         {QStringLiteral("runtime"),
-         QJsonObject{{QStringLiteral("version"), QStringLiteral("1.0.8")},
+         QJsonObject{{QStringLiteral("version"), QStringLiteral("1.0.9")},
                      {QStringLiteral("platform"), QStringLiteral("windows-x64")},
                      {QStringLiteral("archive"),
-                      assetFile(QStringLiteral("snow-ocr-runtime-1.0.8-windows-x64.zip"), archive,
+                      assetFile(QStringLiteral("snow-ocr-runtime-1.0.9-windows-x64.zip"), archive,
                                 QStringLiteral("https://example.invalid/runtime"))},
                      {QStringLiteral("files"), runtimeFiles}}},
         {QStringLiteral("models"),
@@ -197,10 +197,10 @@ void writeAssetManifest(const QString& root, bool completePayload) {
     manifest.insert(QStringLiteral("schema"), 3);
     manifest.insert(
         QStringLiteral("runtime"),
-        QJsonObject{{QStringLiteral("version"), QStringLiteral("1.0.8")},
+        QJsonObject{{QStringLiteral("version"), QStringLiteral("1.0.9")},
                     {QStringLiteral("platform"), QStringLiteral("macos-arm64")},
                     {QStringLiteral("delivery"), QStringLiteral("bundled")},
-                    {QStringLiteral("protocol"), 4},
+                    {QStringLiteral("protocol"), 5},
                     {QStringLiteral("executable"), kWorkerName},
                     {QStringLiteral("files"),
                      QJsonArray{assetFile(kWorkerName, macProcess),
@@ -249,7 +249,7 @@ bool writeDownloadedModelFixture(const QString& destination, QString* error) {
 // path encoding choices made by the production archive reader.
 [[maybe_unused]] QByteArray buildRuntimeArchiveBytes() {
     const QList<QPair<QString, QByteArray>> entries{
-        {QStringLiteral("snow-ocr-process-1.0.8-windows-x64.exe"), QByteArray("process")},
+        {QStringLiteral("snow-ocr-process-1.0.9-windows-x64.exe"), QByteArray("process")},
         {QStringLiteral("DirectML.dll"), QByteArray("directml")},
         {QStringLiteral("runtime-manifest.json"), QByteArray("runtime")},
     };

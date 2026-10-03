@@ -533,7 +533,7 @@ remain available for media harness development.
 
 ## Apple Silicon OCR validation
 
-The runtime uses protocol 4. Its generated schema-3 manifest records
+The runtime uses protocol 5. Its generated schema-3 manifest records
 `macos-arm64`, `delivery: bundled`, static linkage, the executable name, and the
 size/SHA-256 of the worker. ONNX Runtime is linked into the worker in release
 packages; shared development builds still stage `libonnxruntime.dylib`. The

@@ -26,7 +26,7 @@ try {
     Remove-Item -LiteralPath $forbidden
     # The current OCR runtime archive and completion records are not PE files.
     # They must also be rejected when accidentally staged elsewhere inside bin.
-    foreach ($name in @('bin/snow-ocr-runtime-1.0.8-windows-x64.zip',
+    foreach ($name in @('bin/snow-ocr-runtime-1.0.9-windows-x64.zip',
             'bin/runtime-manifest.json', 'bin/.complete.json',
             'share/snow-shot/assets/qrcode/detect.prototxt',
             'share/snow-shot-mini/assets/ocr/models/engine.onnx',

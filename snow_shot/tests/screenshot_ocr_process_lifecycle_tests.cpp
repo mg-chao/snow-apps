@@ -78,7 +78,7 @@ int runOcrLifecycleChild() {
         QByteArray frame;
         QDataStream stream(&frame, QIODevice::WriteOnly);
         stream.setByteOrder(QDataStream::LittleEndian);
-        stream << quint32(0x52434f53) << quint16(4) << kind << token << quint32(payload.size());
+        stream << quint32(0x52434f53) << quint16(5) << kind << token << quint32(payload.size());
         frame.append(payload);
         std::fwrite(frame.constData(), 1, static_cast<std::size_t>(frame.size()), stdout);
         std::fflush(stdout);
@@ -106,7 +106,7 @@ int runOcrLifecycleChild() {
         quint16 version = 0, kind = 0;
         quint64 token = 0;
         input >> magic >> version >> kind >> token >> size;
-        if (magic != 0x52434f53 || version != 4 || size > 1024 * 1024)
+        if (magic != 0x52434f53 || version != 5 || size > 1024 * 1024)
             return 2;
         QByteArray payload(size, '\0');
         if (std::fread(payload.data(), 1, size, stdin) != size)
@@ -131,8 +131,8 @@ int runOcrLifecycleChild() {
             QDataStream output(&ready, QIODevice::WriteOnly);
             output.setByteOrder(QDataStream::LittleEndian);
             output << quint8(1) << quint8(0) << quint32(0) << quint32(5);
-            output.writeRawData("1.0.8", 5);
-            output << quint32(4);
+            output.writeRawData("1.0.9", 5);
+            output << quint32(5);
             reply(2, 0, ready);
         } else if (kind == 8) {
             event("prepare " + payload.toHex());
@@ -235,6 +235,21 @@ int runOcrLifecycleChild() {
 
 void ocrProcessLifecycleTests() {
     using namespace snow_shot::diagnostics;
+    require(ScreenshotOcrRuntimeConfiguration{}.textDetectionProcessing ==
+                    ScreenshotOcrTextDetectionProcessing::AccuracyFirst &&
+                ScreenshotOcrRecognitionService::Options{}.textDetectionProcessing ==
+                    ScreenshotOcrTextDetectionProcessing::AccuracyFirst,
+            "OCR processing must default to accuracy first for runtime and initial options");
+    require(
+        screenshotOcrTextDetectionProcessingFromValue(QStringLiteral("speed_first")) ==
+                ScreenshotOcrTextDetectionProcessing::SpeedFirst &&
+            screenshotOcrTextDetectionProcessingFromValue(QStringLiteral("accuracy_first")) ==
+                ScreenshotOcrTextDetectionProcessing::AccuracyFirst &&
+            screenshotOcrTextDetectionProcessingFromValue(QString()) ==
+                ScreenshotOcrTextDetectionProcessing::AccuracyFirst &&
+            screenshotOcrTextDetectionProcessingFromValue(QStringLiteral("invalid")) ==
+                ScreenshotOcrTextDetectionProcessing::AccuracyFirst,
+        "OCR processing values must preserve the accuracy default for missing or invalid settings");
     QTemporaryDir directory;
     require(directory.isValid(), "lifecycle fixture directory must exist");
     const auto markerPath = directory.filePath(QStringLiteral("submitted"));
@@ -517,8 +532,9 @@ void ocrProcessLifecycleTests() {
         }
         require(releaseIndex >= 0 && releaseIndex < lastPrepare,
                 "the old engine must be released before the next warm session is created");
-        require(before.at(lastPrepare).startsWith("prepare 0000"),
-                "default warm session must request the max-side detector policy");
+        require(
+            before.at(lastPrepare).startsWith("prepare 000000"),
+            "default warm session must request max-side detection and accuracy-first processing");
         configuration.backend = ScreenshotOcrBackendPreference::DirectMl;
         service.setRuntimeConfiguration(configuration);
         require(waitUntil([&] { return countEvent("prepare ") == initialLoads + 3; }),
@@ -533,8 +549,32 @@ void ocrProcessLifecycleTests() {
             if (event.startsWith("prepare "))
                 latestPrepare = event;
         }
-        require(latestPrepare.startsWith("prepare 0101") && service.processId() == warmedPid,
+        require(latestPrepare.startsWith("prepare 010100") && service.processId() == warmedPid,
                 "the min-side detector policy must reach the existing worker process");
+        configuration.textDetectionProcessing = ScreenshotOcrTextDetectionProcessing::SpeedFirst;
+        service.setRuntimeConfiguration(configuration);
+        require(waitUntil([&] { return countEvent("prepare ") == initialLoads + 5; }),
+                "processing change must rebuild the idle warm session");
+        for (const auto& event : events()) {
+            if (event.startsWith("prepare "))
+                latestPrepare = event;
+        }
+        require(latestPrepare.startsWith("prepare 010101") && service.processId() == warmedPid,
+                "speed-first processing must reach the existing worker without changing detection");
+        service.setTextDetectionProcessing(ScreenshotOcrTextDetectionProcessing::SpeedFirst);
+        QCoreApplication::processEvents();
+        require(countEvent("prepare ") == initialLoads + 5,
+                "reapplying the selected processing mode must preserve the existing warm session");
+        configuration.textDetectionProcessing = ScreenshotOcrTextDetectionProcessing::AccuracyFirst;
+        service.setTextDetectionProcessing(configuration.textDetectionProcessing);
+        require(waitUntil([&] { return countEvent("prepare ") == initialLoads + 6; }),
+                "restoring accuracy first must rebuild the warm session");
+        for (const auto& event : events()) {
+            if (event.startsWith("prepare "))
+                latestPrepare = event;
+        }
+        require(latestPrepare.startsWith("prepare 010100") && service.processId() == warmedPid,
+                "accuracy-first processing must be restored without replacing the worker");
         configuration.modelHotStart = false;
         const int released = countEvent("release");
         service.setRuntimeConfiguration(configuration);
@@ -589,6 +629,7 @@ void ocrProcessLifecycleTests() {
                 "growth must use exactly the largest pending image capacity");
         configuration.backend = ScreenshotOcrBackendPreference::DirectMl;
         configuration.modelType = ScreenshotOcrModelType::Medium;
+        configuration.textDetectionProcessing = ScreenshotOcrTextDetectionProcessing::SpeedFirst;
         service.setRuntimeConfiguration(configuration);
         service.cancel(first);
         require(service.processId() == pid, "resident cancellation must preserve its child");
@@ -599,6 +640,14 @@ void ocrProcessLifecycleTests() {
         require(
             countEvent("prepare ") == initialLoads + 2,
             "queued inference must load the latest configuration after the old inference drains");
+        QByteArray latestPrepare;
+        for (const auto& event : events()) {
+            if (event.startsWith("prepare "))
+                latestPrepare = event;
+        }
+        require(
+            latestPrepare.startsWith("prepare 010001"),
+            "pending recognition must use the new processing mode after active inference drains");
         touch(QStringLiteral("finish-%1").arg(second));
         require(waitUntil([&] {
                     return completed == QList<int>({32}) &&

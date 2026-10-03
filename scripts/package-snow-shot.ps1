@@ -325,11 +325,9 @@ $updaterCargoManifest = Join-Path $repoRoot "snow_shot\rust\snow-shot-updater\Ca
     -CargoManifest @((Join-Path $repoRoot "snow_rust_ffi\Cargo.toml"), $ocrCargoManifest,
         $updaterCargoManifest, (Join-Path $repoRoot "snow_shot\rust\snow-shot-mcp\Cargo.toml")) `
     -CargoOptions @{ (Join-Path $repoRoot "snow_rust_ffi\Cargo.toml") = @('--features', 'selected-text');
-        # The immutable published 1.0.8 worker still contains RapidOCR's former
-        # convenience dependencies. Collect its notices even though the local
-        # raw-pixel worker no longer enables those features.
+        # Runtime 1.0.9 ships the raw-pixel worker without convenience dependencies.
         $ocrCargoManifest = @('--no-default-features', '--features',
-        'static-onnx-runtime,directml-provider,crash-diagnostics,rapid-ocr-rs/cli') } `
+        'static-onnx-runtime,directml-provider,crash-diagnostics') } `
     -AntDesignNotice (Join-Path $repoRoot "ant_design_qt\THIRD_PARTY_NOTICES.md") `
     -FallbackLicenseDirectory (Join-Path $repoRoot "licenses")
 if ($LASTEXITCODE -ne 0) {
@@ -681,7 +679,7 @@ if ($versionInfo.FileVersion -ne "$packageVersionNumeric.0" -or
     throw "Snow Shot binary version '$($versionInfo.FileVersion)'/'$($versionInfo.ProductVersion)' does not match package version '$packageVersion'."
 }
 
-$ocrRuntimeVersion = "1.0.8"
+$ocrRuntimeVersion = "1.0.9"
 $ocrPlatform = "windows-x64"
 $ocrDefaultModelType = "small"
 $ocrDefaultModelId = "ppocrv6-small-463ea9f"
@@ -948,18 +946,18 @@ foreach ($binary in @(Get-ChildItem -LiteralPath $runtimeWork -File | Where-Obje
 
 $ocrVersionOutput = & (Join-Path $runtimeWork $ocrRuntimeFileName) --version 2>$null
 if ($LASTEXITCODE -ne 0 -or $ocrVersionOutput -cne
-    "snow-ocr-process $ocrRuntimeVersion windows-x86_64 protocol 4") {
+    "snow-ocr-process $ocrRuntimeVersion windows-x86_64 protocol 5") {
     throw "The staged OCR runtime reported an unexpected version: $ocrVersionOutput"
 }
 $ocrRuntimeVersionInfo = (Get-Item -LiteralPath (Join-Path $runtimeWork $ocrRuntimeFileName)).VersionInfo
 $expectedOcrMetadata = @{
     CompanyName = "Snow Apps"
     FileDescription = "Snow Shot OCR runtime"
-    FileVersion = "1.0.8.0"
+    FileVersion = "1.0.9.0"
     InternalName = "snow-ocr-process"
     OriginalFilename = $ocrRuntimeFileName
     ProductName = "Snow Shot OCR Runtime"
-    ProductVersion = "1.0.8"
+    ProductVersion = "1.0.9"
 }
 foreach ($property in $expectedOcrMetadata.Keys) {
     if ($ocrRuntimeVersionInfo.$property -ne $expectedOcrMetadata[$property]) {
@@ -992,7 +990,7 @@ $runtimeReleaseManifest = Join-Path $buildDirectory "snow-ocr-runtime-$ocrRuntim
     SchemaVersion = 1
     RuntimeVersion = $ocrRuntimeVersion
     Platform = $ocrPlatform
-    Protocol = 4
+    Protocol = 5
     UploadUrl = $ocrRuntimeUrl
     Archive = $runtimeArchive
     Files = $runtimeFiles

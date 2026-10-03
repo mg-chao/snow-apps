@@ -127,6 +127,8 @@ const QString kFullscreenSuppressionKey =
 const QString kOcrModelTypeKey = QStringLiteral("text_recognition/model_type");
 const QString kOcrDetectorResizePolicyKey =
     QStringLiteral("text_recognition/detector_resize_policy");
+const QString kOcrTextDetectionProcessingKey =
+    QStringLiteral("text_recognition/text_detection_processing");
 const QString kOcrDirectMlKey = QStringLiteral("text_recognition/direct_ml_acceleration");
 const QString kMcpEnabledKey = QStringLiteral("mcp/enabled");
 
@@ -339,6 +341,8 @@ class ApplicationController::Impl {
                 .toString());
         ocrOptions.detectorResizePolicy = screenshotOcrDetectorResizePolicyFromValue(
             applicationStorage.configuration().value(kOcrDetectorResizePolicyKey).toString());
+        ocrOptions.textDetectionProcessing = screenshotOcrTextDetectionProcessingFromValue(
+            applicationStorage.configuration().value(kOcrTextDetectionProcessingKey).toString());
         const auto backendPreference =
             applicationStorage.configuration()
                     .value(QStringLiteral("text_recognition/direct_ml_acceleration"))
@@ -545,7 +549,9 @@ class ApplicationController::Impl {
              screenshotOcrDetectorResizePolicyFromValue(
                  configuration.value(kOcrDetectorResizePolicyKey).toString()),
              configuration.value(QStringLiteral("text_recognition/resident_process")).toBool(),
-             configuration.value(QStringLiteral("text_recognition/model_hot_start")).toBool()});
+             configuration.value(QStringLiteral("text_recognition/model_hot_start")).toBool(),
+             screenshotOcrTextDetectionProcessingFromValue(
+                 configuration.value(kOcrTextDetectionProcessingKey).toString())});
     }
 
     void startMcp() {
@@ -1421,7 +1427,7 @@ class ApplicationController::Impl {
                 presentation::GlobalShortcutAction::ToggleDisableOnFocusedFullscreenWindow,
                 value.toBool());
         } else if (key == kOcrModelTypeKey || key == kOcrDirectMlKey ||
-                   key == kOcrDetectorResizePolicyKey ||
+                   key == kOcrDetectorResizePolicyKey || key == kOcrTextDetectionProcessingKey ||
                    key == QStringLiteral("text_recognition/resident_process") ||
                    key == QStringLiteral("text_recognition/model_hot_start")) {
             if (started)

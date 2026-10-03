@@ -367,6 +367,13 @@ QVariant BuiltInSettingsBackend::selectValue(SettingsSelectBinding binding) cons
             .configuration()
             .value(QStringLiteral("text_recognition/detector_resize_policy"))
             .toString();
+    case SettingsSelectBinding::OcrTextDetectionProcessing:
+        return storage::ApplicationStorage::instance()
+                           .configuration()
+                           .value(QStringLiteral("text_recognition/text_detection_processing"))
+                           .toString() == QStringLiteral("speed_first")
+                   ? QStringLiteral("speed_first")
+                   : QStringLiteral("accuracy_first");
     case SettingsSelectBinding::ScreenshotApiMode:
         return storage::ScreenshotSettings().apiMode();
     case SettingsSelectBinding::ScreenRecordingApiMode:
@@ -545,6 +552,9 @@ bool BuiltInSettingsBackend::applySelectValue(SettingsSelectBinding binding,
     case SettingsSelectBinding::OcrDetectorResizePolicy:
         return storage::ApplicationStorage::instance().configuration().setValue(
             QStringLiteral("text_recognition/detector_resize_policy"), value.toString());
+    case SettingsSelectBinding::OcrTextDetectionProcessing:
+        return storage::ApplicationStorage::instance().configuration().setValue(
+            QStringLiteral("text_recognition/text_detection_processing"), value.toString());
     case SettingsSelectBinding::ScreenshotApiMode:
         return storage::ScreenshotSettings().setApiMode(value.toString());
     case SettingsSelectBinding::ScreenRecordingApiMode:
@@ -2529,6 +2539,9 @@ bool BuiltInSettingsBackend::resetSection(SettingsSectionReset reset) {
             {QStringLiteral("text_recognition/detector_resize_policy"),
              storage::ConfigurationSchema::defaultValue(
                  QStringLiteral("text_recognition/detector_resize_policy"))},
+            {QStringLiteral("text_recognition/text_detection_processing"),
+             storage::ConfigurationSchema::defaultValue(
+                 QStringLiteral("text_recognition/text_detection_processing"))},
             {QStringLiteral("text_recognition/direct_ml_acceleration"),
              storage::ConfigurationSchema::defaultValue(
                  QStringLiteral("text_recognition/direct_ml_acceleration"))},

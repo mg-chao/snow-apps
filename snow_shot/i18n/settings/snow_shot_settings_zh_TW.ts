@@ -887,6 +887,10 @@
             <translation>輔助使用</translation>
         </message>
         <message>
+            <source>Accuracy First</source>
+            <translation>準確優先</translation>
+        </message>
+        <message>
             <source>Active window</source>
             <translation>作用中視窗</translation>
         </message>
@@ -3395,6 +3399,14 @@
             <translation>軟體版本與授權資訊</translation>
         </message>
         <message>
+            <source>Speed First</source>
+            <translation>速度優先</translation>
+        </message>
+        <message>
+            <source>Speed First reduces computation on short text and may change recognition results.</source>
+            <translation>速度優先會減少短文字的計算量，並可能改變辨識結果。</translation>
+        </message>
+        <message>
             <source>Spotlight</source>
             <translation>聚光燈</translation>
         </message>
@@ -3497,6 +3509,10 @@
         <message>
             <source>Text</source>
             <translation>文字</translation>
+        </message>
+        <message>
+            <source>Text Detection Processing</source>
+            <translation>文字偵測處理</translation>
         </message>
         <message>
             <source>Text background</source>
