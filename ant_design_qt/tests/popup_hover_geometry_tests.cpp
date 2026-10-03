@@ -127,6 +127,14 @@ void verifyGeometryAndOwnership(QScreen* screen) {
   setPopupInteractionHostOpen(&parent, true);
   setPopupInteractionHostOpen(&child, true);
   require(parent.open && child.open, "opening a nested popup must preserve its parent owner");
+  require(popupInteractionContainsGlobalPos(&window, trigger.mapToGlobal(QPoint(5, 5))) &&
+              popupInteractionContainsGlobalPos(&window, surface.mapToGlobal(QPoint(300, 50))) &&
+              popupInteractionContainsGlobalPos(&window, nestedAnchor.mapToGlobal(QPoint(5, 5))),
+          "scope hit testing must include both active and suspended popup owners");
+  require(!popupInteractionContainsGlobalPos(&owner, nestedAnchor.mapToGlobal(QPoint(5, 5))) &&
+              !popupInteractionContainsGlobalPos(nullptr, trigger.mapToGlobal(QPoint(5, 5))) &&
+              !popupInteractionContainsGlobalPos(&window, window.mapToGlobal(QPoint(500, 50))),
+          "popup ownership must not include unrelated scopes or blank canvas pixels");
   require(popupDescendantContainsPointer(&parent, &nestedAnchor,
                                          nestedAnchor.mapToGlobal(QPoint(5, 5))),
           "a parent hover session must include an interactive nested popup owner");
@@ -138,6 +146,8 @@ void verifyGeometryAndOwnership(QScreen* screen) {
   QApplication::sendEvent(&window, &press);
   require(!parent.open && !child.open && parent.closes == 1 && child.closes == 1,
           "a visible in-scope outside press must dismiss the entire nested popup chain");
+  require(!popupInteractionContainsGlobalPos(&window, surface.mapToGlobal(QPoint(300, 50))),
+          "closed popup owners must immediately release their scope hit-test regions");
 
   // Exercise small overlay anchors on either side of the boundary (the same
   // projection used by the Windows-only isolated busy indicator).

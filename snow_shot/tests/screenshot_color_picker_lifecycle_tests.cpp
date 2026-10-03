@@ -23,10 +23,15 @@
 #include "widgets/select.h"
 #include "widgets/tooltip.h"
 #include "widgets/button.h"
+#include "widgets/detail/overlay_popup_surface.h"
 
 #include <QApplication>
 #include <QBackingStore>
 #include <QDir>
+#include <QEnterEvent>
+#include <QHoverEvent>
+#include <QListView>
+#include <QMouseEvent>
 #include <QPointer>
 #include <QScreen>
 #include <QTemporaryDir>
@@ -138,7 +143,9 @@ class StyleToolbarCommands final : public ScreenshotToolbarCommandSink,
     void incrementSelectedSerialNumbers() override {}
     void createTextForSelectedSerialNumber() override {}
     void repositionToolbarForContentChange() override {}
-    void hideColorPickersForScreenshotUi() override {}
+    void hideColorPickersForScreenshotUi() override {
+        hidePickers();
+    }
 
     void toggleSelectionAspectRatioLockFromToolbar() override {}
     void setSelectionAspectRatioPresetFromToolbar(ScreenshotSelectionAspectRatioPreset) override {}
@@ -150,7 +157,208 @@ class StyleToolbarCommands final : public ScreenshotToolbarCommandSink,
     int moveToolCount = 0;
     int selectToolCount = 0;
     int shapeToolCount = 0;
+    std::function<void()> hidePickers = [] {};
 };
+
+void toolbarPopoversSuppressPickerAcrossWindowBoundaries() {
+    QTemporaryDir temporary;
+    auto& storage = snow_shot::storage::ApplicationStorage::instance();
+    require(temporary.isValid() &&
+                storage.initialize({temporary.path(), temporary.path(), 60000}).success,
+            "toolbar hover tests require isolated settings");
+    {
+        NoopOverlayEventSink sink;
+        SnowCanvasRuntime canvas;
+        snow_shot::presentation::WindowShortcutManager shortcuts;
+        ScreenshotOverlayWindow overlay(sink, new SnowCanvasWidget);
+        overlay.setGeometry(0, 0, 1200, 800);
+        overlay.show();
+        CapturedDisplayModel display;
+        display.logicalRect = overlay.geometry();
+        display.physicalRect = display.logicalRect;
+        display.active = true;
+        display.geometryResolved = true;
+        display.image = QImage(display.physicalRect.size(), QImage::Format_RGB32);
+        display.image.fill(Qt::red);
+        ScreenshotDisplaySession displays;
+        displays.appendDisplay(display, &overlay);
+        ScreenshotGeometryMapper geometry;
+        geometry.rebuild(displays);
+        snow_shot::platform::PhysicalCursor cursor;
+        StyleToolbarCommands commands;
+        ScreenshotOverlayCoordinator coordinator(sink, canvas, shortcuts);
+        commands.hidePickers = [&]() { coordinator.hideColorPicker(); };
+        coordinator.setToolbarCommandSinks(commands, commands);
+        coordinator.attachToolbarToOverlay(&overlay);
+        auto* toolbar = coordinator.toolbar();
+        toolbar->moveContentTo(QPoint(100, 300));
+        coordinator.showToolbar();
+        coordinator.createColorPicker(QPoint(50, 50));
+        coordinator.prepareColorPickerSurface(displays);
+        QCoreApplication::processEvents();
+        ScreenshotColorPickerController controller(coordinator, geometry, displays, cursor);
+        ScreenshotColorPickerContext context;
+        context.active = true;
+        context.moveToolActive = true;
+        context.manualSelecting = true;
+
+        auto* trigger = toolbar->findChild<adqt::widgets::AdButton*>(
+            QStringLiteral("screenshotArrowLineButton"));
+        require(trigger && trigger->isVisible(), "drawing group trigger must be visible");
+        auto* popover = trigger->findChild<adqt::widgets::AdPopover*>();
+        require(popover, "drawing group must own a popover");
+        popover->preparePopup();
+        popover->show();
+        auto* surface = popover->surfaceWidget();
+        require(surface && surface->isVisible(), "drawing group popover must be visible");
+
+        const QPoint triggerPoint = trigger->mapToGlobal(trigger->rect().center());
+        const QPoint gapPoint(trigger->mapToGlobal(QPoint()).x(),
+                              trigger->parentWidget()->mapToGlobal(QPoint()).y() - 2);
+        require(!coordinator.screenshotUiContainsGlobalPoint(gapPoint),
+                "the blank gap must remain part of the screenshot canvas");
+        controller.updateAfterCursorMove(gapPoint, context);
+        require(coordinator.colorPicker()->isVisible(),
+                "crossing the canvas gap must be able to reveal the screenshot picker");
+
+        const QPoint popupPoint = surface->mapToGlobal(surface->rect().center());
+        QEnterEvent enter(surface->mapFromGlobal(popupPoint), surface->mapFromGlobal(popupPoint),
+                          popupPoint);
+        QApplication::sendEvent(surface, &enter);
+        require(!coordinator.colorPicker()->isVisible(),
+                "entering the separate group popover must immediately hide the screenshot picker");
+        require(coordinator.screenshotUiContainsGlobalPoint(popupPoint),
+                "the popover body must belong to screenshot UI");
+        controller.updateAfterCursorMove(popupPoint, context);
+        require(!coordinator.colorPicker()->isVisible(),
+                "picker updates over a popover must keep it hidden");
+
+        const auto revealPickerInGap = [&]() {
+            controller.updateAfterCursorMove(gapPoint, context);
+            require(coordinator.colorPicker()->isVisible(),
+                    "returning to the canvas gap must restore the picker");
+        };
+        const auto enterWidget = [&](QWidget* receiver) {
+            const QPoint local = receiver->rect().center();
+            const QPoint global = receiver->mapToGlobal(local);
+            QEnterEvent event(local, receiver->window()->mapFromGlobal(global), global);
+            QApplication::sendEvent(receiver, &event);
+            require(!coordinator.colorPicker()->isVisible(),
+                    "entering owned screenshot UI must hide the picker without a canvas move");
+            controller.updateAfterCursorMove(global, context);
+            require(!coordinator.colorPicker()->isVisible(),
+                    "subsequent picker updates must respect owned screenshot UI");
+        };
+        auto* content = popover->contentWidget();
+        require(content && content->isVisible(), "group popover content must be visible");
+        revealPickerInGap();
+        const QPoint local = content->rect().center();
+        const QPoint global = content->mapToGlobal(local);
+        QMouseEvent move(QEvent::MouseMove, local, content->window()->mapFromGlobal(global), global,
+                         Qt::NoButton, Qt::NoButton, Qt::NoModifier);
+        QApplication::sendEvent(content, &move);
+        require(!coordinator.colorPicker()->isVisible(),
+                "moving inside a popup child must also hide the picker");
+        for (auto type : {QEvent::HoverEnter, QEvent::HoverMove}) {
+            revealPickerInGap();
+            QHoverEvent hover(type, local, global, QPointF(-1, -1), Qt::NoModifier);
+            QApplication::sendEvent(content, &hover);
+            require(!coordinator.colorPicker()->isVisible(),
+                    "hover events in popup children must hide the picker");
+        }
+
+        // Painted popup shadows are canvas input, even when the native popup
+        // frame covers them. Do not suppress the picker merely for that frame.
+        auto* popupSurface = dynamic_cast<adqt::widgets::detail::OverlayPopupSurface*>(surface);
+        require(popupSurface, "group must expose its painted popup interaction surface");
+        const QPoint shadow = surface->mapToGlobal(QPoint(0, 0));
+        require(!popupSurface->containsInteractiveGlobalPos(shadow) &&
+                    !coordinator.screenshotUiContainsGlobalPoint(shadow),
+                "popup shadows must remain outside screenshot UI");
+        controller.updateAfterCursorMove(shadow, context);
+        require(coordinator.colorPicker()->isVisible(),
+                "picker must remain available in the popup's transparent margin");
+        QMouseEvent shadowMove(QEvent::MouseMove, QPoint(0, 0), QPoint(0, 0), shadow, Qt::NoButton,
+                               Qt::NoButton, Qt::NoModifier);
+        QApplication::sendEvent(surface, &shadowMove);
+        require(coordinator.colorPicker()->isVisible(),
+                "a pointer event over popup shadow must not hide the picker");
+
+        // Nested QtTool popovers have a host on the parent surface rather than
+        // on the toolbar window. Their input still belongs to this capture UI.
+        {
+            auto* nestedTrigger = content->findChild<adqt::widgets::AdButton*>();
+            require(nestedTrigger && nestedTrigger->isVisible(),
+                    "nested popup anchor must be visible");
+            adqt::widgets::AdPopover nested(nestedTrigger);
+            nested.setSourceWidget(nestedTrigger);
+            nested.setTriggers(adqt::widgets::AdPopover::Trigger::Click);
+            nested.setPopupLayerMode(adqt::widgets::AdPopover::PopupLayerMode::QtTool);
+            nested.setPlacement(adqt::widgets::AdPopover::Placement::Right);
+            auto* nestedContent = new QWidget;
+            nestedContent->setFixedSize(120, 70);
+            nested.setContentWidget(nestedContent);
+            nested.show();
+            require(nested.surfaceWidget() && nested.surfaceWidget()->isVisible() &&
+                        surface->isVisible(),
+                    "nested popup and its parent must stay visible together");
+            const QPoint nestedPoint = nestedContent->mapToGlobal(nestedContent->rect().center());
+            require(coordinator.screenshotUiContainsGlobalPoint(nestedPoint),
+                    "nested top-level popup input must belong to the original toolbar scope");
+            revealPickerInGap();
+            enterWidget(nestedContent);
+            nested.hide();
+            require(!coordinator.screenshotUiContainsGlobalPoint(nestedPoint),
+                    "a closed nested popup must release its interaction region");
+        }
+
+        popover->hide();
+        require(!coordinator.screenshotUiContainsGlobalPoint(popupPoint),
+                "a closed group popup must release its interaction region");
+        controller.updateAfterCursorMove(popupPoint, context);
+        require(coordinator.colorPicker()->isVisible(),
+                "closing the group popup must restore canvas magnification there");
+        enterWidget(trigger);
+
+        // Select popups use another owner implementation but the same host.
+        adqt::widgets::AdSelect select(toolbar);
+        select.move(toolbar->mapFromGlobal(trigger->mapToGlobal(QPoint())));
+        select.setFixedSize(120, 30);
+        select.setOptions({{QStringLiteral("first"), QStringLiteral("First")},
+                           {QStringLiteral("second"), QStringLiteral("Second")}});
+        select.setPopupLayerMode(adqt::widgets::AdSelect::PopupLayerMode::QtTool);
+        select.show();
+        select.showPopup();
+        require(select.popupVisible() && select.view() && select.view()->isVisible(),
+                "toolbar select popup must be visible");
+        const QPoint selectPoint = select.view()->mapToGlobal(select.view()->rect().center());
+        require(coordinator.screenshotUiContainsGlobalPoint(selectPoint),
+                "select popup input must also belong to screenshot UI");
+        revealPickerInGap();
+        enterWidget(select.view()->viewport());
+        select.hidePopup();
+        select.hide();
+
+        // Reuse the toolbar and popup for another capture; closed or hidden UI
+        // must never retain suppression from an earlier interaction.
+        coordinator.hideToolbar();
+        coordinator.resetToolbarForNewCapture();
+        coordinator.showToolbar();
+        popover->show();
+        require(popover->surfaceWidget() && popover->surfaceWidget()->isVisible(),
+                "group popover must reopen after capture reset");
+        revealPickerInGap();
+        enterWidget(popover->contentWidget());
+        coordinator.hideToolbar();
+        require(!coordinator.screenshotUiContainsGlobalPoint(triggerPoint) &&
+                    !coordinator.screenshotUiContainsGlobalPoint(popupPoint),
+                "hidden screenshot toolbar must release its entire popup interaction surface");
+        controller.updateAfterCursorMove(triggerPoint, context);
+        require(coordinator.colorPicker()->isVisible(),
+                "hidden toolbar must not suppress canvas magnification");
+    }
+    storage.shutdown();
+}
 
 void screenshotStyleBindingFollowsToolbarAttachment() {
     QTemporaryDir temporary;
@@ -812,6 +1020,10 @@ void auxiliaryWindowsPreserveOwnerStacking() {
 
 int main(int argc, char** argv) {
     QApplication application(argc, argv);
+    if (application.arguments().contains(QStringLiteral("--toolbar-picker-hover-only"))) {
+        toolbarPopoversSuppressPickerAcrossWindowBoundaries();
+        return 0;
+    }
     if (application.arguments().contains(QStringLiteral("--style-binding-only"))) {
         screenshotStyleBindingFollowsToolbarAttachment();
         return 0;

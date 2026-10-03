@@ -7,6 +7,7 @@
 #include <QColor>
 #include <QImage>
 #include <QMetaObject>
+#include <QObject>
 #include <QObjectCleanupHandler>
 #include <QPoint>
 #include <QPointF>
@@ -22,10 +23,10 @@ class ScreenshotToolbarCommandSink;
 class ScreenshotToolbarWindow;
 class SnowCanvasWidget;
 
-class ScreenshotOverlayUiHost final {
+class ScreenshotOverlayUiHost final : public QObject {
   public:
     ScreenshotOverlayUiHost();
-    ~ScreenshotOverlayUiHost();
+    ~ScreenshotOverlayUiHost() override;
 
     void setToolbarCommandSinks(ScreenshotToolbarCommandSink& toolbarCommands,
                                 ScreenshotSelectionToolbarCommandSink& selectionToolbarCommands);
@@ -72,6 +73,9 @@ class ScreenshotOverlayUiHost final {
     void raiseSelectionToolbar();
     void detachOverlayTransientUi(ScreenshotOverlayWindow* overlay);
     void destroyUiResources();
+
+  protected:
+    bool eventFilter(QObject* watched, QEvent* event) override;
 
   private:
     void raiseColorPickerAboveToolbar();

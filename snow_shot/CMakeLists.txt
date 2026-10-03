@@ -5389,6 +5389,13 @@ if(SNOW_SHOT_BUILD_TESTS)
     snow_shot_import_offscreen_platform(snow-shot-color-picker-lifecycle-tests)
     add_test(NAME snow-shot-color-picker-lifecycle-tests
         COMMAND snow-shot-color-picker-lifecycle-tests)
+    add_test(NAME snow-shot-toolbar-picker-hover-tests
+        COMMAND snow-shot-color-picker-lifecycle-tests --toolbar-picker-hover-only)
+    set_tests_properties(snow-shot-toolbar-picker-hover-tests PROPERTIES
+        LABELS "unit"
+        ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}"
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+        TIMEOUT 60)
     if(WIN32)
         add_test(NAME snow-shot-tool-stacking-native-tests
             COMMAND snow-shot-color-picker-lifecycle-tests --stacking-only -platform windows)

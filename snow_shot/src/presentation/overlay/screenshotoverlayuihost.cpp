@@ -11,6 +11,7 @@
 #include "snow_shot/presentation/screenshotoverlaywindow.h"
 #include "snow_shot/presentation/screenshottoolbarcommands.h"
 #include "snow_shot/presentation/screenshottoolbarwindow.h"
+#include "widgets/detail/pointer_region.h"
 
 #include <algorithm>
 #include <optional>
@@ -317,10 +318,32 @@ void showPreparedChildWidget(QWidget* widget) {
 }
 } // namespace
 
-ScreenshotOverlayUiHost::ScreenshotOverlayUiHost() = default;
+ScreenshotOverlayUiHost::ScreenshotOverlayUiHost() {
+    if (QCoreApplication::instance() != nullptr) {
+        QCoreApplication::instance()->installEventFilter(this);
+    }
+}
 
 ScreenshotOverlayUiHost::~ScreenshotOverlayUiHost() {
+    if (QCoreApplication::instance() != nullptr) {
+        QCoreApplication::instance()->removeEventFilter(this);
+    }
     destroyUiResources();
+}
+
+bool ScreenshotOverlayUiHost::eventFilter(QObject* watched, QEvent* event) {
+    // Popovers receive pointer events in separate windows, so the overlay's
+    // mouse-move path and the toolbar's enter handler cannot observe this boundary.
+    if (m_colorPicker != nullptr && m_colorPicker->isVisible() && event != nullptr) {
+        if (const auto* receiver = qobject_cast<QWidget*>(watched)) {
+            const auto position =
+                adqt::widgets::detail::pointerEventGlobalPosition(receiver, event);
+            if (position && screenshotUiContainsGlobalPoint(*position)) {
+                hideColorPicker();
+            }
+        }
+    }
+    return QObject::eventFilter(watched, event);
 }
 
 void ScreenshotOverlayUiHost::setToolbarCommandSinks(

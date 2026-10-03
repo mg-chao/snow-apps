@@ -99,6 +99,9 @@ bool isScrollBarActivityEvent(QEvent::Type type) {
   }
 }
 
+class PopupInteractionHost;
+PopupInteractionHost* hostForScope(const QWidget* scopeWindow);
+
 class PopupInteractionHost final : public QObject {
  public:
   explicit PopupInteractionHost(QWidget* scopeWindow)
@@ -111,6 +114,27 @@ class PopupInteractionHost final : public QObject {
     return std::any_of(
         suspendedOwners_.cbegin(), suspendedOwners_.cend(),
         [owner](const SuspendedOwnerState& suspended) { return suspended.owner == owner; });
+  }
+
+  bool containsGlobalPos(const QPoint& position, QSet<const PopupInteractionHost*>& visited) const {
+    if (!scopeWindow_ || !scopeWindow_->isVisible() || visited.contains(this)) return false;
+    visited.insert(this);
+    const auto contains = [&](const PopupInteractionOwner* owner) {
+      if (!owner || !owner->popupIsVisible()) return false;
+      QWidget* surface = owner->popupSurfaceWidget();
+      if (surface && (surface->testAttribute(Qt::WA_TransparentForMouseEvents) ||
+                      surface->windowFlags().testFlag(Qt::WindowTransparentForInput)))
+        return false;
+      if (owner->popupContainsGlobalPos(position)) return true;
+      // A top-level child's anchor belongs to its parent's surface window, which
+      // has its own host. Overlay children share the current host instead.
+      const auto* childHost = surface ? hostForScope(surface->window()) : nullptr;
+      return childHost && childHost->containsGlobalPos(position, visited);
+    };
+    for (const auto& suspended : suspendedOwners_) {
+      if (suspended.ownerObject && contains(suspended.owner)) return true;
+    }
+    return activeOwnerObject_ && contains(activeOwner_);
   }
 
   bool descendantContainsPointer(const PopupInteractionOwner* owner, const QWidget* target,
@@ -660,11 +684,11 @@ QHash<QWidget*, PopupInteractionHost*>& popupHostMap() {
   return hosts;
 }
 
-PopupInteractionHost* hostForScope(QWidget* scopeWindow) {
+PopupInteractionHost* hostForScope(const QWidget* scopeWindow) {
   if (!scopeWindow) {
     return nullptr;
   }
-  return popupHostMap().value(scopeWindow, nullptr);
+  return popupHostMap().value(const_cast<QWidget*>(scopeWindow), nullptr);
 }
 
 PopupInteractionHost* ensureHostForScope(QWidget* scopeWindow) {
@@ -698,6 +722,12 @@ PopupInteractionHost* hostForOwner(const PopupInteractionOwner* owner) {
 }
 
 }  // namespace
+
+bool popupInteractionContainsGlobalPos(const QWidget* scopeWindow, const QPoint& globalPosition) {
+  const auto* host = hostForScope(scopeWindow);
+  QSet<const PopupInteractionHost*> visited;
+  return host && host->containsGlobalPos(globalPosition, visited);
+}
 
 bool popupDescendantContainsPointer(const PopupInteractionOwner* owner, const QWidget* target,
                                     const QPoint& globalPosition) {

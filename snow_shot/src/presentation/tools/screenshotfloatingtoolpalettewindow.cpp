@@ -13,6 +13,7 @@
 #include "widgets/dpi_stable_window_controller.h"
 #include "widgets/button.h"
 #include "widgets/detail/top_level_popup_window.h"
+#include "widgets/popup_interaction_host.h"
 #if defined(Q_OS_MACOS)
 #include "widgets/detail/window_surface_mac_p.h"
 #include "snow_shot/platform/screenshotnative.h"
@@ -404,7 +405,8 @@ QSize ScreenshotFloatingToolPaletteWindow::windowSizeHint() const {
 
 bool ScreenshotFloatingToolPaletteWindow::containsInteractiveGlobalPoint(
     const QPoint& globalPosition) const {
-    return isPointInInteractiveContent(mapFromGlobal(globalPosition));
+    return isPointInInteractiveContent(mapFromGlobal(globalPosition)) ||
+           adqt::widgets::detail::popupInteractionContainsGlobalPos(this, globalPosition);
 }
 
 bool ScreenshotFloatingToolPaletteWindow::stepStrokeWidth(int direction) {
