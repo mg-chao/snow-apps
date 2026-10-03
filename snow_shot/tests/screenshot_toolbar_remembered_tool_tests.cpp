@@ -16,6 +16,7 @@
 
 #include <QApplication>
 #include "widgets/radio_button_group.h"
+#include "widgets/modal.h"
 #include <QAbstractButton>
 #include <QScopeGuard>
 #include <QTemporaryDir>
@@ -147,6 +148,19 @@ void scrollingIntervalRestoresAndReachesCommands() {
         window.resetForNewCapture();
         require(palette->scrollingAutoScrollIntervalMs() == 470,
                 "new captures must retain the selected interval");
+        QWidget owner;
+        window.setTransientOwnerWindow(&owner);
+        palette->setScrollingScreenshotMode(true);
+        auto* settingsButton = palette->findChild<QAbstractButton*>(
+            QStringLiteral("screenshotScrollingSettingsButton"));
+        require(settingsButton != nullptr, "scrolling toolbar must expose settings");
+        settingsButton->click();
+        auto* modal = palette->findChild<adqt::widgets::AdModal*>(
+            QStringLiteral("screenshotScrollingSettingsModal"));
+        require(modal && modal->ownerWindow() == &owner,
+                "scrolling settings must use the toolbar's overlay owner for popup alignment");
+        window.setTransientOwnerWindow(nullptr);
+        require(!modal->isOpen(), "detaching the overlay must dismiss scrolling settings");
     }
     ScreenshotToolbarWindow restored(commands);
     require(restored.palette()->scrollingAutoScrollIntervalMs() == 470,

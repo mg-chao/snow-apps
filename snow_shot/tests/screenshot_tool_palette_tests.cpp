@@ -79,6 +79,7 @@
 #include "widgets/radio_button_group.h"
 #include "widgets/select.h"
 #include "widgets/slider.h"
+#include "widgets/switch.h"
 #include "widgets/tooltip.h"
 
 #include <tuple>
@@ -5128,6 +5129,142 @@ void scrollingIntervalContentsScaleProportionally() {
     }
 }
 
+void scrollingSettingsUseCenteredFormAndPersistOnAccept() {
+    using namespace adqt::widgets;
+    const snow_shot::storage::ScreenshotSettings settings;
+    const bool original = settings.captureUiInScrollingScreenshot();
+    const auto cleanup = qScopeGuard([&] {
+        static_cast<void>(settings.setCaptureUiInScrollingScreenshot(original));
+        static_cast<void>(snow_shot::presentation::LanguageManager::instance().setLanguage(
+            QStringLiteral("en_US")));
+    });
+    require(settings.setCaptureUiInScrollingScreenshot(false), "seed scrolling UI capture");
+    QWidget owner;
+    owner.setGeometry(40, 60, 640, 480);
+    owner.show();
+    ScreenshotToolPalette::Options options;
+    options.showScrollingScreenshotTool = true;
+    options.showOcrTool = true;
+    ScreenshotToolPalette palette(options);
+    palette.setScrollingSettingsOwnerWindow(&owner);
+    palette.setScrollingScreenshotMode(true);
+    palette.show();
+    QCoreApplication::processEvents();
+    auto* button =
+        palette.findChild<AdButton*>(QStringLiteral("screenshotScrollingSettingsButton"));
+    auto* controls = button ? button->parentWidget() : nullptr;
+    auto* separator =
+        palette.findChild<QFrame*>(QStringLiteral("screenshotScrollingSettingsSeparator"));
+    auto* movement =
+        palette.findChild<AdButton*>(QStringLiteral("screenshotScrollingMoveVerticalButton"));
+    require(button && separator && movement && button->text().isEmpty() &&
+                button->accessibleName() == QStringLiteral("Settings") &&
+                controls->layout()->itemAt(controls->layout()->count() - 1)->widget() == button &&
+                separator->x() - (movement->x() + movement->width()) == 16 &&
+                button->x() - (separator->x() + separator->width()) == 16,
+            "scrolling settings must follow a spaced separator at the far right");
+    const auto findModal = [&] {
+        return palette.findChild<AdModal*>(QStringLiteral("screenshotScrollingSettingsModal"));
+    };
+    const auto flushDeletes = [] {
+        QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+        QCoreApplication::processEvents();
+    };
+    require(findModal() == nullptr, "scrolling settings must be built only when clicked");
+    const auto open = [&] {
+        button->click();
+        QCoreApplication::processEvents();
+        auto* modal = findModal();
+        require(modal && modal->isOpen(), "clicking scrolling settings must open its modal");
+        return modal;
+    };
+    auto* modal = open();
+    auto* form = modal->contentWidget()->findChild<AdForm*>(
+        QStringLiteral("screenshotScrollingSettingsForm"));
+    auto* captureInterface = modal->contentWidget()->findChild<AdSwitch*>(
+        QStringLiteral("screenshotScrollingCaptureInterface"));
+    require(form && captureInterface && !captureInterface->isChecked() &&
+                form->formLayout() == AdForm::FormLayout::Vertical &&
+                form->field(QStringLiteral("captureInterface"))->label() ==
+                    QStringLiteral("Capture interface during scrolling screenshot"),
+            "scrolling settings must expose the persisted option through a form switch");
+    require(captureInterface->controlSize() == AdSwitch::ControlSize::Medium,
+            "scrolling settings must use the generic form's medium-sized switch");
+    form->setDisabled(true);
+    form->setDisabled(false);
+    require(captureInterface->isEnabled() &&
+                captureInterface->controlSize() == AdSwitch::ControlSize::Medium,
+            "form refreshes must preserve the generic switch's size and enabled state");
+    require(modal->mode() == AdModal::Mode::Window && modal->centered() &&
+                modal->windowModality() == Qt::ApplicationModal && modal->ownerWindow() == &owner &&
+                modal->preferredWidth() == 440 && !modal->maskVisible() &&
+                !modal->closeOnMaskClick() &&
+                modal->standardButtons() == (AdModal::StandardButtons(AdModal::StandardButton::Ok) |
+                                             AdModal::StandardButton::Cancel) &&
+                (modal->contentWidget()->window()->frameGeometry().center() -
+                 owner.frameGeometry().center())
+                        .manhattanLength() <= 4,
+            "scrolling settings must match text recognition settings presentation and alignment");
+    require(open() == modal, "repeated settings clicks must reuse the open popup");
+    captureInterface->setChecked(true);
+    require(form->value(QStringLiteral("captureInterface")).toBool() &&
+                !settings.captureUiInScrollingScreenshot(),
+            "switch edits must update the form draft without persisting");
+    modal->rejectButton()->click();
+    flushDeletes();
+    require(findModal() == nullptr && !settings.captureUiInScrollingScreenshot(),
+            "Cancel must discard the draft and release the popup");
+    modal = open();
+    captureInterface = modal->contentWidget()->findChild<AdSwitch*>();
+    require(!captureInterface->isChecked(), "reopening must restore the persisted value");
+    captureInterface->setChecked(true);
+    modal->acceptButton()->click();
+    flushDeletes();
+    require(findModal() == nullptr && settings.captureUiInScrollingScreenshot(),
+            "OK must persist the existing scrolling UI capture setting");
+    modal = open();
+    captureInterface = modal->contentWidget()->findChild<AdSwitch*>();
+    require(captureInterface->isChecked(), "reopening must reflect the accepted value");
+    form = modal->contentWidget()->findChild<AdForm*>();
+    auto& language = snow_shot::presentation::LanguageManager::instance();
+    for (const auto& locale :
+         {QStringLiteral("zh_CN"), QStringLiteral("zh_TW"), QStringLiteral("en_US")}) {
+        require(language.setLanguage(locale), "load scrolling settings language");
+        QCoreApplication::processEvents();
+        const QString label = QCoreApplication::translate(
+            "ScreenshotToolPalette", "Capture interface during scrolling screenshot");
+        require(form->field(QStringLiteral("captureInterface"))->label() == label &&
+                    captureInterface->accessibleName() == label &&
+                    modal->windowTitle() ==
+                        QCoreApplication::translate("ScreenshotToolPalette",
+                                                    "Scrolling screenshot settings"),
+                "open scrolling settings must retranslate its label and title");
+        require(locale == QStringLiteral("en_US") ||
+                    label != QStringLiteral("Capture interface during scrolling screenshot"),
+                "each Chinese catalog must translate the new setting");
+    }
+    const QString snapshotDirectory =
+        qEnvironmentVariable("SNOW_SHOT_SCROLLING_SETTINGS_SNAPSHOT_DIR");
+    if (!snapshotDirectory.isEmpty()) {
+        require(QDir().mkpath(snapshotDirectory) &&
+                    palette.grab().save(QDir(snapshotDirectory).filePath("toolbar.png")) &&
+                    modal->contentWidget()->window()->grab().save(
+                        QDir(snapshotDirectory).filePath("settings.png")),
+                "save scrolling settings visual fixtures");
+    }
+    captureInterface->setChecked(false);
+    palette.setActiveTool(ScreenshotToolPalette::Tool::Ocr);
+    flushDeletes();
+    require(findModal() == nullptr && settings.captureUiInScrollingScreenshot(),
+            "leaving scrolling tools must close settings and discard unapplied edits");
+    palette.setActiveTool(ScreenshotToolPalette::Tool::ScrollingScreenshot);
+    button = palette.findChild<AdButton*>(QStringLiteral("screenshotScrollingSettingsButton"));
+    static_cast<void>(open());
+    palette.clearActiveTool();
+    flushDeletes();
+    require(findModal() == nullptr, "evicting toolbar controls must close scrolling settings");
+}
+
 void scrollingScreenshotExposesAxisRecognitionModes() {
     ScreenshotToolPalette::Options options;
     options.showScrollingScreenshotTool = true;
@@ -5164,7 +5301,7 @@ void scrollingScreenshotExposesAxisRecognitionModes() {
                                  : nullptr;
     require(controls != nullptr &&
                 controls->findChild<adqt::widgets::AdRadioButtonGroup*>() == nullptr &&
-                modeButtons.size() == 6 && verticalButton != nullptr && horizontalButton != nullptr,
+                modeButtons.size() == 7 && verticalButton != nullptr && horizontalButton != nullptr,
             "scrolling screenshot should expose two independent mode buttons");
     auto* autoScroll = controls->findChild<adqt::widgets::AdButton*>(
         QStringLiteral("screenshotScrollingAutoScrollButton"));
@@ -13955,6 +14092,7 @@ int main(int argc, char** argv) {
         return 0;
     }
     if (application.arguments().contains(QStringLiteral("--scrolling-only"))) {
+        scrollingSettingsUseCenteredFormAndPersistOnAccept();
         scrollingSelectionButtonsDragAndLockAxis();
         scrollingIntervalContentsScaleProportionally();
         scrollingScreenshotExposesAxisRecognitionModes();
@@ -13987,6 +14125,7 @@ int main(int argc, char** argv) {
     scrollingScreenshotKeepsDrawingToolsAvailable();
     recognitionToolsKeepDrawingToolsAvailable();
     scrollingSelectionButtonsDragAndLockAxis();
+    scrollingSettingsUseCenteredFormAndPersistOnAccept();
     scrollingScreenshotExposesAxisRecognitionModes();
     screenshotToolbarUsesCanonicalOrderAndSectionSeparators();
     moveToolPresentationUsesTheOwningShortcutScope();

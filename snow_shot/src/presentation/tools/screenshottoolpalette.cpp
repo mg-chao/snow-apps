@@ -16,6 +16,7 @@
 #include "screenshottoolpalettestylepresets.h"
 #include "snow_shot/presentation/components/icons/iconrenderutils.h"
 #include "snow_shot/presentation/components/icons/snowshoticons.h"
+#include "snow_shot/presentation/components/formfields.h"
 #include "snow_shot/presentation/screenshottoolbarlayoutmodel.h"
 #include "snow_shot/presentation/styles/themecolorscheme.h"
 #include "snow_shot/presentation/styles/thememanager.h"
@@ -74,6 +75,19 @@
 #include <utility>
 
 namespace {
+class ScrollingSettingsBody final : public QWidget {
+  public:
+    std::function<void()> retranslate;
+
+  protected:
+    void changeEvent(QEvent* event) override {
+        QWidget::changeEvent(event);
+        if (event->type() == QEvent::LanguageChange && retranslate) {
+            retranslate();
+        }
+    }
+};
+
 // Match the selection-area editor's modal and two-column form dimensions.
 constexpr int kRecordingSettingsModalWidth = 500;
 constexpr int kRecordingSettingsContentWidth = 452;
@@ -1018,6 +1032,7 @@ ScreenshotToolPalette::ScreenshotToolPalette(const Options& options, QWidget* pa
 }
 
 ScreenshotToolPalette::~ScreenshotToolPalette() {
+    closeScrollingSettings();
     finishScrollingSelectionMove();
     m_destroying = true;
     m_styleControls->clearTextStylePopupInteractions();
@@ -1041,6 +1056,7 @@ ScreenshotToolPalette::~ScreenshotToolPalette() {
 }
 
 void ScreenshotToolPalette::hideEvent(QHideEvent* event) {
+    closeScrollingSettings();
     m_styleControls->clearTextStylePopupInteractions();
     QWidget::hideEvent(event);
 }
@@ -1499,6 +1515,9 @@ bool ScreenshotToolPalette::setSecondaryToolbarVisibility(bool actionToolbarVisi
     }
     if (m_scrollingRecognitionControls != nullptr) {
         m_scrollingRecognitionControls->setVisible(scrollingVisible);
+    }
+    if (!scrollingVisible || !actionToolbarVisible) {
+        closeScrollingSettings();
     }
     // The OCR mode shares the selection action panel so both modes keep a
     // single action row, but it must not retain selection-only separators
@@ -7106,6 +7125,7 @@ bool ScreenshotToolPalette::evictSecondaryToolbarContents() {
         return false;
     }
 
+    closeScrollingSettings();
     m_releasingSecondaryResources = true;
     m_styleReconcilePending = false;
     m_styleReconcileSource.reset();
@@ -8284,12 +8304,24 @@ void ScreenshotToolPalette::createScrollingRecognitionActionFamily() {
     layout->addWidget(m_scrollingMoveHorizontalButton);
     addStyleToolbarSpacing(layout, STYLE_ITEM_SPACING);
     layout->addWidget(m_scrollingMoveVerticalButton);
+    addStyleToolbarSpacing(layout, STYLE_GROUP_SPACING * 2);
+    auto* settingsSeparator = createStyleToolbarSeparator(m_scrollingRecognitionControls);
+    settingsSeparator->setObjectName(QStringLiteral("screenshotScrollingSettingsSeparator"));
+    layout->addWidget(settingsSeparator);
+    addStyleToolbarSpacing(layout, STYLE_GROUP_SPACING * 2);
+    auto* settingsButton = createScreenshotToolPaletteStyleActionButton(
+        m_scrollingRecognitionControls, QT_TR_NOOP("Settings"), outlined_icons::Setting(),
+        actionButtonMetrics(m_physicalScale));
+    settingsButton->setObjectName(QStringLiteral("screenshotScrollingSettingsButton"));
+    layout->addWidget(settingsButton);
+    connect(settingsButton, &adqt::widgets::AdButton::clicked, this,
+            &ScreenshotToolPalette::openScrollingSettings);
     m_selectActionLayout->addWidget(m_scrollingRecognitionControls);
     stampScreenshotToolbarReferenceWidth(
         m_scrollingRecognitionControls,
-        actionButtonMetrics(1.0).buttonSize * 5 +
+        actionButtonMetrics(1.0).buttonSize * 6 +
             screenshotToolbarReferenceWidth(m_scrollingAutoScrollIntervalEditor) +
-            STYLE_GROUP_SPACING * 8 + STYLE_ITEM_SPACING * 3 + TOOLBAR_SEPARATOR_WIDTH * 2);
+            STYLE_GROUP_SPACING * 12 + STYLE_ITEM_SPACING * 3 + TOOLBAR_SEPARATOR_WIDTH * 3);
     connect(m_scrollingAutoScrollButton, &adqt::widgets::AdButton::clicked, this, [this]() {
         m_scrollingAutoScroll = !m_scrollingAutoScroll;
         updateScrollingRecognitionButtons();
@@ -8302,6 +8334,106 @@ void ScreenshotToolPalette::createScrollingRecognitionActionFamily() {
         setScrollingRecognitionMode(ScreenshotScrollingRecognitionMode::Horizontal);
     });
     updateScrollingRecognitionButtons();
+}
+
+void ScreenshotToolPalette::setScrollingSettingsOwnerWindow(QWidget* owner) {
+    if (m_scrollingSettingsOwnerWindow != owner) {
+        closeScrollingSettings();
+        m_scrollingSettingsOwnerWindow = owner;
+    }
+}
+
+void ScreenshotToolPalette::closeScrollingSettings() {
+    if (m_scrollingSettingsModal != nullptr) {
+        m_scrollingSettingsModal->reject();
+    }
+}
+
+void ScreenshotToolPalette::openScrollingSettings() {
+    namespace fields = snow_shot::presentation::components::form_fields;
+    if (m_scrollingSettingsModal != nullptr) {
+        m_scrollingSettingsModal->present();
+        return;
+    }
+    auto* modal = new adqt::widgets::AdModal(this);
+    m_scrollingSettingsModal = modal;
+    modal->setObjectName(QStringLiteral("screenshotScrollingSettingsModal"));
+    modal->setOwnerWindow(m_scrollingSettingsOwnerWindow != nullptr
+                              ? m_scrollingSettingsOwnerWindow.data()
+                              : window());
+    modal->setMode(adqt::widgets::AdModal::Mode::Window);
+    modal->setWindowModality(Qt::ApplicationModal);
+    modal->setCentered(true);
+    modal->setPreferredWidth(440);
+    modal->setMaskVisible(false);
+    modal->setCloseOnMaskClick(false);
+    modal->setClosePolicy(adqt::widgets::AdModal::ClosePolicy::Manual);
+    modal->setStandardButtons(
+        adqt::widgets::AdModal::StandardButtons(adqt::widgets::AdModal::StandardButton::Ok) |
+        adqt::widgets::AdModal::StandardButton::Cancel);
+
+    auto* body = new ScrollingSettingsBody;
+    auto* layout = new QVBoxLayout(body);
+    layout->setContentsMargins(0, 0, 0, 0);
+    auto* error = new adqt::widgets::AdAlert(body);
+    error->setObjectName(QStringLiteral("screenshotScrollingSettingsError"));
+    error->setSeverity(adqt::widgets::AdAlert::Severity::Error);
+    error->hide();
+    layout->addWidget(error);
+    auto* form = new adqt::widgets::AdForm(body);
+    form->setObjectName(QStringLiteral("screenshotScrollingSettingsForm"));
+    fields::configureForm(form);
+    fields::Options options;
+    options.parent = form;
+    options.form = form;
+    options.commitPolicy = fields::CommitPolicy::Explicit;
+    const auto captureInterfaceField =
+        fields::switchField({QStringLiteral("captureInterface"),
+                             {"ScreenshotToolPalette",
+                              QT_TRANSLATE_NOOP("ScreenshotToolPalette",
+                                                "Capture interface during scrolling screenshot")}},
+                            options);
+    auto* captureInterface = captureInterfaceField.editor;
+    captureInterface->setObjectName(QStringLiteral("screenshotScrollingCaptureInterface"));
+    captureInterfaceField.field->syncValue(
+        snow_shot::storage::ScreenshotSettings().captureUiInScrollingScreenshot());
+    layout->addWidget(form);
+    modal->setContentWidget(body);
+    modal->setInitialFocusWidget(captureInterface);
+    body->retranslate = [this, modal, error] {
+        modal->setWindowTitle(tr("Scrolling screenshot settings"));
+        error->setText(tr("Unable to save scrolling screenshot settings"));
+    };
+    body->retranslate();
+    connect(
+        modal, &adqt::widgets::AdModal::closeRequested, modal,
+        [modal, field = captureInterfaceField.field,
+         error](adqt::widgets::AdModal::CloseReason reason) {
+            if (reason != adqt::widgets::AdModal::CloseReason::OkAction) {
+                modal->reject();
+            } else if (snow_shot::storage::ScreenshotSettings().setCaptureUiInScrollingScreenshot(
+                           field->value().toBool())) {
+                field->notifyCommitted();
+                modal->accept();
+            } else {
+                error->show();
+            }
+        });
+    connect(modal, &adqt::widgets::AdModal::finished, this, [this, modal, body] {
+        body->retranslate = {};
+        m_scrollingSettingsModal = nullptr;
+        modal->deleteLater();
+    });
+    body->ensurePolished();
+    const auto children = body->findChildren<QWidget*>();
+    for (auto it = children.crbegin(); it != children.crend(); ++it) {
+        (*it)->ensurePolished();
+        if ((*it)->layout() != nullptr) {
+            (*it)->layout()->activate();
+        }
+    }
+    layout->activate();
+    modal->open();
 }
 
 bool ScreenshotToolPalette::ensureStyleFamily(Tool tool) {

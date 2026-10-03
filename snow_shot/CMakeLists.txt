@@ -8382,6 +8382,26 @@ foreach(_conversion_controller_target IN ITEMS snow_shot
     endif()
 endforeach()
 
+# Standalone palette hosts need the same shared form fields as the scrolling settings dialog.
+# Hosts linked to Settings already own their widget implementations and Qt metaobjects.
+get_property(_palette_form_host_targets DIRECTORY PROPERTY BUILDSYSTEM_TARGETS)
+foreach(_palette_form_host_target IN LISTS _palette_form_host_targets)
+    get_target_property(_palette_form_host_sources ${_palette_form_host_target} SOURCES)
+    if(NOT "${_palette_form_host_sources}" MATCHES "presentation/tools/screenshottoolpalette\\.cpp")
+        continue()
+    endif()
+    get_target_property(_palette_form_host_libraries ${_palette_form_host_target} LINK_LIBRARIES)
+    if(NOT "snow_shot_settings" IN_LIST _palette_form_host_libraries AND
+       NOT "${_palette_form_host_sources}" MATCHES "presentation/components/formfields\\.cpp")
+        target_sources(${_palette_form_host_target} PRIVATE
+            include/snow_shot/presentation/components/formfields.h
+            src/presentation/components/formfields.cpp
+            include/snow_shot/presentation/components/pathinput.h
+            src/presentation/components/pathinput.cpp)
+        target_link_libraries(${_palette_form_host_target} PRIVATE snow_shot_settings_catalog)
+    endif()
+endforeach()
+
 qt_finalize_executable(snow_shot)
 
 if(SNOW_SHOT_BUILD_TESTS)

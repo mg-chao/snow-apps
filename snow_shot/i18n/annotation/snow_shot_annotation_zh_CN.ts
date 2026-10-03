@@ -148,6 +148,10 @@
             <translation>取消截图</translation>
         </message>
         <message>
+            <source>Capture interface during scrolling screenshot</source>
+            <translation>滚动截图时捕获界面</translation>
+        </message>
+        <message>
             <source>Center horizontally</source>
             <translation>水平居中</translation>
         </message>
@@ -836,6 +840,10 @@
             <translation>滚动截图</translation>
         </message>
         <message>
+            <source>Scrolling screenshot settings</source>
+            <translation>滚动截图设置</translation>
+        </message>
+        <message>
             <source>Select elements</source>
             <translation>选择元素</translation>
         </message>
@@ -1170,6 +1178,10 @@
         <message>
             <source>Trim Video</source>
             <translation>裁剪视频</translation>
+        </message>
+        <message>
+            <source>Unable to save scrolling screenshot settings</source>
+            <translation>无法保存滚动截图设置</translation>
         </message>
         <message>
             <source>Undo</source>

@@ -329,6 +329,7 @@ class ScreenshotToolPalette final : public QWidget,
     [[nodiscard]] bool activateRememberedDrawingTool();
     void setScrollingAutoScrollIntervalMs(int milliseconds);
     [[nodiscard]] int scrollingAutoScrollIntervalMs() const;
+    void setScrollingSettingsOwnerWindow(QWidget* owner);
     void setCursorVisible(bool enabled);
     void setCursorAvailable(bool available);
     void setScreenshotRegionType(ScreenshotRegionType type);
@@ -616,6 +617,8 @@ class ScreenshotToolPalette final : public QWidget,
     void createImageConversionActionFamily();
 #endif
     void createScrollingRecognitionActionFamily();
+    void openScrollingSettings();
+    void closeScrollingSettings();
     void createStyleFamily(Tool tool);
     void registerStyleFamily(QWidget* controls, std::initializer_list<Tool> tools);
     void replayMaterializedState(Tool tool);
@@ -915,6 +918,8 @@ class ScreenshotToolPalette final : public QWidget,
     adqt::widgets::AdButton* m_scrollingMoveVerticalButton = nullptr;
     QPointer<adqt::widgets::AdButton> m_scrollingMoveButton;
     QWidget* m_scrollingRecognitionControls = nullptr;
+    adqt::widgets::AdModal* m_scrollingSettingsModal = nullptr;
+    QPointer<QWidget> m_scrollingSettingsOwnerWindow;
     adqt::widgets::AdButton* m_scrollingVerticalButton = nullptr;
     adqt::widgets::AdButton* m_scrollingHorizontalButton = nullptr;
     adqt::widgets::AdButton* m_screenRecordButton = nullptr;

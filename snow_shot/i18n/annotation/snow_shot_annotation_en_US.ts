@@ -148,6 +148,10 @@
             <translation>Cancel screenshot</translation>
         </message>
         <message>
+            <source>Capture interface during scrolling screenshot</source>
+            <translation>Capture interface during scrolling screenshot</translation>
+        </message>
+        <message>
             <source>Center horizontally</source>
             <translation>Center horizontally</translation>
         </message>
@@ -836,6 +840,10 @@
             <translation>Scrolling screenshot</translation>
         </message>
         <message>
+            <source>Scrolling screenshot settings</source>
+            <translation>Scrolling screenshot settings</translation>
+        </message>
+        <message>
             <source>Select elements</source>
             <translation>Select elements</translation>
         </message>
@@ -1170,6 +1178,10 @@
         <message>
             <source>Trim Video</source>
             <translation>Trim Video</translation>
+        </message>
+        <message>
+            <source>Unable to save scrolling screenshot settings</source>
+            <translation>Unable to save scrolling screenshot settings</translation>
         </message>
         <message>
             <source>Undo</source>
