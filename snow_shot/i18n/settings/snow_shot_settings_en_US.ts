@@ -895,6 +895,10 @@
             <translation>Adjust MP4 quality and file size</translation>
         </message>
         <message>
+            <source>Adjust the font size throughout the application</source>
+            <translation>Adjust the font size throughout the application</translation>
+        </message>
+        <message>
             <source>Adjust the image opacity for all three skins.</source>
             <translation>Adjust the image opacity for all three skins.</translation>
         </message>
@@ -1933,6 +1937,10 @@
         <message>
             <source>Follow system</source>
             <translation>Follow system</translation>
+        </message>
+        <message>
+            <source>Font Size</source>
+            <translation>Font Size</translation>
         </message>
         <message>
             <source>Frame rate</source>

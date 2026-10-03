@@ -360,6 +360,14 @@ bool InterfaceSettings::setAppFontFamily(const QString& family) const {
     return cache().setValue(QStringLiteral("interface/app_font"), family.trimmed());
 }
 
+int InterfaceSettings::appFontSizePercentage() const {
+    return cache().value(QStringLiteral("interface/app_font_size_percentage")).toInt(100);
+}
+
+bool InterfaceSettings::setAppFontSizePercentage(int percentage) const {
+    return cache().setValue(QStringLiteral("interface/app_font_size_percentage"), percentage);
+}
+
 QString InterfaceSettings::themeMode() const {
     return cache().value(QStringLiteral("interface/theme_mode")).toString();
 }

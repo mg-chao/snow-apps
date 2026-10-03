@@ -21,6 +21,7 @@
 #include "widgets/navigation_menu.h"
 #include "widgets/scroll_area.h"
 #include "widgets/select.h"
+#include "widgets/slider.h"
 #include "snowimageqtcodec.h"
 
 #include <QAbstractButton>
@@ -415,6 +416,50 @@ void mainWindowTitlesKeepSmoothRendering() {
     flushEvents();
     require(window.font().family() == applicationFont.family(),
             "main window restores the platform family");
+}
+
+void mainWindowFontSizeUpdates() {
+    auto& themeManager = styles::ThemeManager::instance();
+    const QFont originalFont = QApplication::font();
+    const int originalTitleSize = themeManager.themeColorScheme().metricAlias.fontSizeLG;
+    const auto& registry = settings::builtInSettingsRegistry();
+    snow_shot::presentation::GlobalShortcutManager shortcuts;
+    settings::BuiltInSettingsBackend backend(shortcuts);
+    settings::SettingsRuntimeSession session(registry, backend);
+    MainWindow window(registry, session);
+    window.showSettingsLocation(QStringLiteral("general-appearance"), QStringLiteral("general"));
+    window.show();
+    flushEvents();
+    auto* card = window.findChild<ContentCardWidget*>();
+    auto* slider = window.findChild<adqt::widgets::AdSlider*>(settings::generatedObjectName(
+        QStringLiteral("settings-control"), QStringLiteral("interface.app-font-size")));
+    require(card && slider && slider->minimum() == 100 && slider->maximum() == 200,
+            "the main window exposes the font size slider in Appearance");
+    auto* valueLabel =
+        slider->parentWidget()->findChild<QLabel*>(QStringLiteral("form-field-value"));
+    require(valueLabel, "font size slider has a percentage preview");
+    const QString previews = qEnvironmentVariable("SNOW_SHOT_FONT_SIZE_PREVIEWS");
+    if (!previews.isEmpty()) {
+        require(QDir().mkpath(previews), "create the font size preview directory");
+    }
+    for (const int percentage : {100, 150, 200, 100}) {
+        require(themeManager.setAppFontSizePercentage(percentage), "change the live app font size");
+        flushEvents();
+        const int titleSize = themeManager.themeColorScheme().metricAlias.fontSizeLG;
+        requireSmoothTitles(*card, titleSize);
+        require(
+            (percentage == 100 ? titleSize == originalTitleSize : titleSize > originalTitleSize) &&
+                slider->value() == percentage &&
+                valueLabel->text() == QStringLiteral("%1%").arg(percentage),
+            "existing title fonts and slider state follow external font size changes");
+        if (!previews.isEmpty()) {
+            require(window.grab().save(QDir(previews).filePath(
+                        QStringLiteral("font-size-%1.png").arg(percentage))),
+                    "save a font size preview");
+        }
+    }
+    require(QApplication::font() == originalFont,
+            "restoring 100 percent restores application font");
 }
 
 void mainWindowSkinIsContinuousAndRestoresTheme(const QString& previewDirectory) {
@@ -963,6 +1008,7 @@ int main(int argc, char** argv) {
     titleBarBackgroundMatchesNavigationMenu();
     skinMasksCompositeOnceAndSurviveThemeChanges();
     mainWindowTitlesKeepSmoothRendering();
+    mainWindowFontSizeUpdates();
     QString skinPreviewDirectory;
     const QStringList arguments = application.arguments();
     const auto previewArgument = arguments.indexOf(QStringLiteral("--skin-previews"));

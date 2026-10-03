@@ -212,12 +212,15 @@ ThemeManager::ThemeManager(QObject* parent)
     : QObject(parent), m_config(toThemeStyleConfig(adqt::theme::makeResolvedTheme(
                            adqt::theme::ThemeManager::instance().config()))),
       m_scheme(generateThemeColorScheme(m_config)),
-      m_mode(decodeThemeMode(snow_shot::storage::InterfaceSettings().themeMode())) {
+      m_mode(decodeThemeMode(snow_shot::storage::InterfaceSettings().themeMode())),
+      m_baseAppFont(QApplication::font()), m_baseFontSize(m_config.fontSize),
+      m_appFontSizePercentage(storage::InterfaceSettings().appFontSizePercentage()) {
     m_config.colorPrimary = storage::InterfaceSettings().themePrimaryColor();
     const QString family = storage::InterfaceSettings().appFontFamily();
     if (!family.isEmpty()) {
         m_config.appFont.setFamily(family);
     }
+    applyFontSize(m_config);
     auto& adqtThemeManager = adqt::theme::ThemeManager::instance();
     adqtThemeManager.setConfig(toAdqtThemeConfig(m_config));
     m_config = toThemeStyleConfig(adqt::theme::makeResolvedTheme(adqtThemeManager.config()));
@@ -280,10 +283,45 @@ bool ThemeManager::setAppFontFamily(const QString& family) {
         if (!normalized.isEmpty()) {
             config.appFont.setFamily(normalized);
         }
+        applyFontSize(config);
         setThemeStyleConfig(config);
         emit appFontFamilyChanged(normalized);
     }
     return true;
+}
+
+int ThemeManager::appFontSizePercentage() const {
+    return m_appFontSizePercentage;
+}
+
+bool ThemeManager::setAppFontSizePercentage(int percentage) {
+    if (!storage::InterfaceSettings().setAppFontSizePercentage(percentage)) {
+        return false;
+    }
+    if (m_appFontSizePercentage != percentage) {
+        m_appFontSizePercentage = percentage;
+        auto config = m_config;
+        applyFontSize(config);
+        setThemeStyleConfig(config);
+        emit appFontSizePercentageChanged(percentage);
+    }
+    return true;
+}
+
+void ThemeManager::applyFontSize(ThemeStyleConfig& config) const {
+    const qreal scale = m_appFontSizePercentage / 100.0;
+    config.fontSize = qRound(m_baseFontSize * scale);
+    // Always scale the original font, so repeated edits never compound. At 100%, let
+    // application and native popup fonts resolve their original platform sizes again.
+    if (m_baseAppFont.pointSizeF() > 0) {
+        config.appFont.setPointSizeF(m_baseAppFont.pointSizeF() * scale);
+    } else if (m_baseAppFont.pixelSize() > 0) {
+        config.appFont.setPixelSize(qRound(m_baseAppFont.pixelSize() * scale));
+    }
+    if (m_appFontSizePercentage == 100) {
+        config.appFont.setResolveMask(config.appFont.resolveMask() &
+                                      ~static_cast<uint>(QFont::SizeResolved));
+    }
 }
 
 bool ThemeManager::setThemePrimaryColor(const QColor& color) {

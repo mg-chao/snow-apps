@@ -895,6 +895,10 @@
             <translation>調整 MP4 畫質與檔案大小</translation>
         </message>
         <message>
+            <source>Adjust the font size throughout the application</source>
+            <translation>調整整個應用程式的字型大小</translation>
+        </message>
+        <message>
             <source>Adjust the image opacity for all three skins.</source>
             <translation>調整三種皮膚的影像不透明度。</translation>
         </message>
@@ -1933,6 +1937,10 @@
         <message>
             <source>Follow system</source>
             <translation>跟隨系統</translation>
+        </message>
+        <message>
+            <source>Font Size</source>
+            <translation>字型大小</translation>
         </message>
         <message>
             <source>Frame rate</source>

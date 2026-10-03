@@ -449,6 +449,17 @@ SettingsItemDefinition appFontItem() {
             payload};
 }
 
+SettingsItemDefinition appFontSizeItem() {
+    return {QStringLiteral("interface.app-font-size"),
+            settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Font Size")),
+            settingsText(QT_TRANSLATE_NOOP("SettingsCatalog",
+                                           "Adjust the font size throughout the application")),
+            {},
+            QStringLiteral("interface/app_font_size_percentage"),
+            SettingsSliderDefinition{SettingsSliderBinding::AppFontSize,
+                                     settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "%"))}};
+}
+
 SettingsItemDefinition screenshotToolbarSizeItem() {
     SettingsSelectDefinition payload;
     payload.binding = SettingsSelectBinding::ScreenshotToolbarSize;
@@ -2656,7 +2667,7 @@ QVector<SettingsPageDefinition> builtInPages() {
                  settingsText(QT_TRANSLATE_NOOP("SettingsCatalog",
                                                 "Theme, accent color and application font")),
                  SettingsSectionReset::GeneralSettings,
-                 {themeItem(), themePrimaryColorItem(), appFontItem()},
+                 {themeItem(), themePrimaryColorItem(), appFontItem(), appFontSizeItem()},
              },
              {
                  QStringLiteral("toolbar"),
@@ -4548,6 +4559,9 @@ QStringList SettingsCatalog::validationErrors() const {
                         std::get_if<SettingsSliderDefinition>(&itemDefinition.payload)) {
                     QString expectedKey;
                     switch (slider->binding) {
+                    case SettingsSliderBinding::AppFontSize:
+                        expectedKey = QStringLiteral("interface/app_font_size_percentage");
+                        break;
                     case SettingsSliderBinding::ShortcutHintOpacity:
                         expectedKey = QStringLiteral("screenshot_ui/shortcut_hint_opacity");
                         break;

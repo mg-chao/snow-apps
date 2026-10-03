@@ -252,6 +252,8 @@ BuiltInSettingsBackend::BuiltInSettingsBackend(
 
     connect(&themeManager, &styles::ThemeManager::appFontFamilyChanged, this,
             [this](const QString&) { emit synchronized(); });
+    connect(&themeManager, &styles::ThemeManager::appFontSizePercentageChanged, this,
+            [this](int) { emit synchronized(); });
 
     auto& languageManager = LanguageManager::instance();
     connect(&languageManager, &LanguageManager::languageChanged, this,
@@ -1121,6 +1123,8 @@ bool BuiltInSettingsBackend::applyMultiSelectValue(SettingsMultiSelectBinding bi
 
 int BuiltInSettingsBackend::sliderValue(SettingsSliderBinding binding) const {
     switch (binding) {
+    case SettingsSliderBinding::AppFontSize:
+        return styles::ThemeManager::instance().appFontSizePercentage();
     case SettingsSliderBinding::SkinOpacity:
         return storage::InterfaceSettings().skinOpacity();
     case SettingsSliderBinding::SkinBlurLevel:
@@ -1141,6 +1145,8 @@ int BuiltInSettingsBackend::sliderValue(SettingsSliderBinding binding) const {
 
 bool BuiltInSettingsBackend::applySliderValue(SettingsSliderBinding binding, int value) {
     switch (binding) {
+    case SettingsSliderBinding::AppFontSize:
+        return styles::ThemeManager::instance().setAppFontSizePercentage(value);
     case SettingsSliderBinding::SkinOpacity:
         return storage::InterfaceSettings().setSkinOpacity(value);
     case SettingsSliderBinding::SkinBlurLevel:
@@ -1805,6 +1811,10 @@ bool BuiltInSettingsBackend::importConfigurationSnapshot(
     applyRuntimeValue(QStringLiteral("interface/app_font"), [&](const QJsonValue& value) {
         return applySelectValue(SettingsSelectBinding::AppFont, value.toVariant());
     });
+    applyRuntimeValue(
+        QStringLiteral("interface/app_font_size_percentage"), [&](const QJsonValue& value) {
+            return applySliderValue(SettingsSliderBinding::AppFontSize, value.toInt());
+        });
     applyRuntimeValue(QStringLiteral("interface/language"), [&](const QJsonValue& value) {
         return applySelectValue(SettingsSelectBinding::Language, value.toVariant());
     });
@@ -2002,7 +2012,12 @@ bool BuiltInSettingsBackend::resetSection(SettingsSectionReset reset) {
         const bool fontAccepted = applySelectValue(
             SettingsSelectBinding::AppFont,
             storage::ConfigurationSchema::defaultValue(QStringLiteral("interface/app_font")));
-        return themeAccepted && primaryColorAccepted && fontAccepted;
+        const bool fontSizeAccepted =
+            applySliderValue(SettingsSliderBinding::AppFontSize,
+                             storage::ConfigurationSchema::defaultValue(
+                                 QStringLiteral("interface/app_font_size_percentage"))
+                                 .toInt());
+        return themeAccepted && primaryColorAccepted && fontAccepted && fontSizeAccepted;
     }
     case SettingsSectionReset::Language:
         return applySelectValue(

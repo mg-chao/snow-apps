@@ -160,7 +160,7 @@ void settingsSlidersCommitOnCompletion() {
         QObject::disconnect(commitConnection);
         ++tested;
     }
-    require(tested == 7, "cover all seven settings sliders");
+    require(tested == 8, "cover all eight settings sliders");
 }
 } // namespace
 
