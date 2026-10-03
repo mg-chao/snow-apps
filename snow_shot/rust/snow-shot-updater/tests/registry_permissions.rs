@@ -246,6 +246,7 @@ fn registry_permissions_and_transaction_recovery() {
             TransactionHooks {
                 probe: Some(&|| true),
                 checkpoint: None,
+                progress: None,
             },
         )
         .unwrap_err();
@@ -286,6 +287,7 @@ fn registry_permissions_and_transaction_recovery() {
         TransactionHooks {
             probe: Some(&|| false),
             checkpoint: None,
+            progress: None,
         },
     )
     .unwrap_err();
@@ -307,6 +309,7 @@ fn registry_permissions_and_transaction_recovery() {
         TransactionHooks {
             probe: Some(&|| true),
             checkpoint: None,
+            progress: None,
         },
     )
     .unwrap();

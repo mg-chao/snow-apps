@@ -38,7 +38,9 @@ endif()
 
 add_library(snow_shot_updates STATIC
     "${CMAKE_CURRENT_SOURCE_DIR}/include/snow_shot/update/updateservice.h"
+    "${CMAKE_CURRENT_SOURCE_DIR}/include/snow_shot/update/startupupdate.h"
     ${_snow_update_source}
+    src/update/startupupdate.cpp
     # This file is an extraction-only inventory for stable translated Rust error messages.
     src/update/updateerrors.cpp)
 target_include_directories(snow_shot_updates PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include")
@@ -84,8 +86,17 @@ if(SNOW_SHOT_BUILD_UPDATE_TESTS)
         add_test(NAME snow-shot-macos-update-tests COMMAND snow-shot-macos-update-tests)
         set_tests_properties(snow-shot-macos-update-tests PROPERTIES LABELS "unit" TIMEOUT 30)
         add_executable(snow-shot-update-adapter-tests tests/update_adapter_tests.cpp)
+        add_executable(snow-shot-startup-update-tests tests/startup_update_tests.cpp
+            src/app/singleinstancecoordinator.cpp
+            include/snow_shot/app/singleinstancecoordinator.h)
+        target_link_libraries(snow-shot-startup-update-tests PRIVATE
+            snow_shot_updates Qt6::Core Qt6::Network)
+        add_test(NAME snow-shot-startup-update-tests COMMAND snow-shot-startup-update-tests)
+        set_tests_properties(snow-shot-startup-update-tests PROPERTIES LABELS "unit" TIMEOUT 30)
     endif()
     target_link_libraries(snow-shot-update-adapter-tests PRIVATE snow_shot_updates Qt6::Core)
     add_test(NAME snow-shot-update-adapter-tests COMMAND snow-shot-update-adapter-tests)
-    set_tests_properties(snow-shot-update-adapter-tests PROPERTIES LABELS "unit" TIMEOUT 30)
+    # This process fixture launches a helper for each operation and policy case.
+    # Leave headroom for debug process startup while each assertion keeps its own deadline.
+    set_tests_properties(snow-shot-update-adapter-tests PROPERTIES LABELS "unit" TIMEOUT 60)
 endif()

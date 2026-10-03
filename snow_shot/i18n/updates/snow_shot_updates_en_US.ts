@@ -396,6 +396,10 @@
             <translation>The update target does not match its application process</translation>
         </message>
         <message>
+            <source>The update worker failed</source>
+            <translation>The update worker failed</translation>
+        </message>
+        <message>
             <source>This copy does not have valid Snow Shot installation metadata</source>
             <translation>This copy does not have valid Snow Shot installation metadata</translation>
         </message>
@@ -466,6 +470,69 @@
         <message>
             <source>Update permission was declined or could not be obtained</source>
             <translation>Update permission was declined or could not be obtained</translation>
+        </message>
+    </context>
+    <context>
+        <name>UpdateProgress</name>
+        <message>
+            <source>%1 / %2 bytes</source>
+            <translation>%1 / %2 bytes</translation>
+        </message>
+        <message>
+            <source>%1 / %2 files</source>
+            <translation>%1 / %2 files</translation>
+        </message>
+        <message>
+            <source>Backing up application files</source>
+            <translation>Backing up application files</translation>
+        </message>
+        <message>
+            <source>Checking the updated application</source>
+            <translation>Checking the updated application</translation>
+        </message>
+        <message>
+            <source>Downloading update</source>
+            <translation>Downloading update</translation>
+        </message>
+        <message>
+            <source>Extracting update</source>
+            <translation>Extracting update</translation>
+        </message>
+        <message>
+            <source>Installing update</source>
+            <translation>Installing update</translation>
+        </message>
+        <message>
+            <source>Preparing update</source>
+            <translation>Preparing update</translation>
+        </message>
+        <message>
+            <source>Restoring the previous version</source>
+            <translation>Restoring the previous version</translation>
+        </message>
+        <message>
+            <source>Update complete</source>
+            <translation>Update complete</translation>
+        </message>
+        <message>
+            <source>Update failed</source>
+            <translation>Update failed</translation>
+        </message>
+        <message>
+            <source>Update ready</source>
+            <translation>Update ready</translation>
+        </message>
+        <message>
+            <source>Updating %1</source>
+            <translation>Updating %1</translation>
+        </message>
+        <message>
+            <source>Verifying update</source>
+            <translation>Verifying update</translation>
+        </message>
+        <message>
+            <source>Waiting for %1 to close</source>
+            <translation>Waiting for %1 to close</translation>
         </message>
     </context>
     <context>

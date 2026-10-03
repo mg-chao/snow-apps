@@ -172,6 +172,45 @@ fn service_handshake_rejects_duplicate_ids_and_shuts_down_orderly() {
 }
 
 #[test]
+fn next_launch_startup_without_a_cache_finishes_without_network_or_handoff() {
+    let (_temporary, mut service) = ServiceProcess::start();
+    assert_eq!(service.read()["type"], "hello");
+    assert_eq!(service.read()["status"]["state"], "Idle");
+    service.send(&json!({
+        "protocol": 2,
+        "id": 1,
+        "command": "configure",
+        "mode": "next_launch",
+        "progressTexts": { "title": "Translated updater title" },
+        "progressAppearance": {
+            "background": 0x141414,
+            "text": 0xffffff,
+            "primary": 0x52c41a,
+            "motion": false
+        }
+    }));
+    assert_eq!(service.read()["ok"], true);
+    assert_eq!(service.read()["status"]["state"], "Idle");
+    service.send(&json!({
+        "protocol": 2,
+        "id": 2,
+        "command": "execute",
+        "operation": "apply",
+        "trigger": "startup",
+        "mode": "next_launch",
+        "systemProxy": false,
+        "progressAppearance": { "fontSize": "malformed optional cosmetic value" }
+    }));
+    assert_eq!(service.read()["ok"], true);
+    assert_eq!(service.read()["status"]["state"], "Idle");
+    let completion = service.read();
+    assert_eq!(completion["type"], "operation_complete");
+    assert_eq!(completion["operation"], "apply");
+    assert_eq!(completion["outcome"], "success");
+    assert!(service.wait().success());
+}
+
+#[test]
 fn malformed_frame_emits_fatal_and_closes() {
     let (_temporary, mut service) = ServiceProcess::start();
     let _hello = service.read();

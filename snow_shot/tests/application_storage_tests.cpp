@@ -74,6 +74,39 @@ void writeBytes(const QString& path, const QByteArray& bytes) {
     require(file.write(bytes) == bytes.size(), "failed to write test file");
 }
 
+void updateSettingsPersistAndValidate() {
+    QTemporaryDir temporary;
+    require(temporary.isValid(), "update settings require isolated storage");
+    const QString path = temporary.filePath(QStringLiteral("config.json"));
+    const QString key = QStringLiteral("updates/mode");
+#ifdef Q_OS_MACOS
+    const QString defaultMode = QStringLiteral("check");
+    const QString nextLaunchMode = QStringLiteral("check");
+#else
+    const QString defaultMode = QStringLiteral("download");
+    const QString nextLaunchMode = QStringLiteral("next_launch");
+#endif
+    {
+        storage::ConfigurationStore store(path, true, true, 60000);
+        require(store.value(key) == defaultMode, "existing update default must be preserved");
+        require(store.setValue(key, QStringLiteral("next_launch")) &&
+                    store.value(key) == nextLaunchMode,
+                "next-launch update policy must normalize for the current platform");
+        require(!store.setValue(key, QStringLiteral("invalid")) && !store.setValue(key, true) &&
+                    store.value(key) == nextLaunchMode,
+                "invalid policy writes must preserve the accepted update policy");
+        require(store.flushNow().success, "update policy must flush to disk");
+    }
+    {
+        storage::ConfigurationStore reloaded(path, true, true, 60000);
+        require(reloaded.value(key) == nextLaunchMode,
+                "next-launch update policy must survive configuration reload");
+        require(reloaded.setValue(key, storage::ConfigurationSchema::defaultValue(key)) &&
+                    reloaded.value(key) == defaultMode,
+                "update policy reset must restore its original default");
+    }
+}
+
 void scrollingIntervalSettingsPersistAndValidate() {
     QTemporaryDir temporary;
     require(temporary.isValid(), "interval settings require an isolated directory");
@@ -2709,6 +2742,10 @@ int main(int argc, char** argv) {
     }
 #endif
     LifetimeObservedApplication application(argc, argv);
+    if (application.arguments().contains(QStringLiteral("--update-settings-only"))) {
+        updateSettingsPersistAndValidate();
+        return 0;
+    }
     if (application.arguments().contains(QStringLiteral("--recording-audio-only"))) {
         recordingGainSettingsPersistAndValidate();
         return 0;
@@ -2767,6 +2804,7 @@ int main(int argc, char** argv) {
         return 0;
     }
     pinnedManagementConfigurationAndTrayMigration();
+    updateSettingsPersistAndValidate();
     markerResolutionAndStatus();
     defaultsAndTypedRoundTrip();
     selectionAspectRatioSettingsValidateAndPreserveLegacyLock();

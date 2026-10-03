@@ -4,6 +4,7 @@
 #include <QDir>
 #include <QElapsedTimer>
 #include <QEventLoop>
+#include <QEvent>
 #include <QFile>
 #include <QJsonArray>
 #include <QJsonDocument>
@@ -81,6 +82,19 @@ void touch(const QString& path) {
     require(file.open(QIODevice::WriteOnly), "create fake-sidecar marker");
 }
 
+void writeJson(const QString& path, const QJsonObject& value) {
+    QDir().mkpath(QFileInfo(path).absolutePath());
+    QFile file(path);
+    require(file.open(QIODevice::WriteOnly | QIODevice::Truncate), "write fake-sidecar command");
+    file.write(QJsonDocument(value).toJson(QJsonDocument::Compact));
+}
+
+QJsonObject readJson(const QString& path) {
+    QFile file(path);
+    return file.open(QIODevice::ReadOnly) ? QJsonDocument::fromJson(file.readAll()).object()
+                                          : QJsonObject{};
+}
+
 int incrementCounter(const QString& path) {
     QDir().mkpath(QFileInfo(path).absolutePath());
     QFile file(path);
@@ -116,20 +130,30 @@ int fakeSidecar(int argc, char** argv) {
         const auto command = QJsonDocument::fromJson(QByteArray::fromStdString(line)).object();
         const qint64 id = command.value(QStringLiteral("id")).toInteger();
         const QString name = command.value(QStringLiteral("command")).toString();
+        if (name == u"handoff_decision") {
+            writeJson(QDir(cache).filePath(QStringLiteral("handoff.json")), command);
+            if (scenario == u"delayed-handoff")
+                QThread::msleep(80);
+        }
         frame({{QStringLiteral("protocol"), 2},
                {QStringLiteral("type"), QStringLiteral("command_result")},
                {QStringLiteral("id"), id},
                {QStringLiteral("ok"), true}});
         if (name == u"execute") {
+            writeJson(QDir(cache).filePath(QStringLiteral("execute.json")), command);
             const QString operation = command.value(QStringLiteral("operation")).toString();
             const QString trigger = command.value(QStringLiteral("trigger")).toString();
             const QString operationCounter =
                 QDir(cache).filePath(operation + u'-' + trigger + QStringLiteral("-count"));
             const QString completionCounter =
                 QDir(cache).filePath(operation + u'-' + trigger + QStringLiteral("-complete"));
-            incrementCounter(operationCounter);
+            const int operationCount = incrementCounter(operationCounter);
             if (operation == u"probe") {
-                const char* probeState = scenario == u"available" ? "Available" : "Idle";
+                const char* probeState = scenario == u"available" || scenario == u"slow-download" ||
+                                                 scenario == u"policy-resume"
+                                             ? "Available"
+                                         : scenario == u"ready" ? "Ready"
+                                                                : "Idle";
                 status(probeState);
                 complete(operation, "success", probeState);
                 incrementCounter(completionCounter);
@@ -150,6 +174,9 @@ int fakeSidecar(int argc, char** argv) {
             }
             if (operation == u"download") {
                 status("Downloading", 12, 24);
+                if (scenario == u"slow-download" ||
+                    (scenario == u"policy-resume" && operationCount == 1))
+                    continue;
                 status("Ready", 24, 24);
                 frame({{QStringLiteral("protocol"), 2},
                        {QStringLiteral("type"), QStringLiteral("update_ready")}});
@@ -242,12 +269,21 @@ int fakeSidecar(int argc, char** argv) {
                 incrementCounter(completionCounter);
                 return 0;
             }
+        } else if (name == u"configure") {
+            incrementCounter(QDir(cache).filePath(QStringLiteral("configure-count")));
+            writeJson(QDir(cache).filePath(QStringLiteral("configure.json")), command);
+        } else if (name == u"cancel") {
+            incrementCounter(QDir(cache).filePath(QStringLiteral("cancel-count")));
+            if (scenario == u"policy-resume")
+                QThread::msleep(80);
+            complete(QStringLiteral("download"), "cancelled", "Available");
+            return 0;
         } else if (name == u"handoff_decision") {
             status(command.value(QStringLiteral("proceed")).toBool() ? "Applying" : "Ready");
             if (!command.value(QStringLiteral("proceed")).toBool()) {
                 complete(QStringLiteral("apply"), "cancelled", "Ready");
+                return 0;
             }
-            return 0;
         } else if (name == u"shutdown") {
             if (scenario == u"graceful-shutdown") {
                 touch(QDir(cache).filePath(QStringLiteral("shutdown")));
@@ -664,6 +700,201 @@ int main(int argc, char** argv) {
                 "enabling automatic download launches an immediate short-lived download");
         require(announced.isEmpty() && readyCount == 1,
                 "switching to automatic download preserves the ready notification");
+    }
+
+    {
+        auto quietOptions = options(QStringLiteral("adapter-download-policy"));
+        const QString cache = quietOptions.cacheDirectory;
+        UpdateService service(std::move(quietOptions));
+        int availableCount = 0;
+        int readyCount = 0;
+        QObject::connect(&service, &UpdateService::automaticUpdateAvailable, &app,
+                         [&](const QString&) { ++availableCount; });
+        QObject::connect(&service, &UpdateService::updateReady, &app, [&] { ++readyCount; });
+        service.setMode(QStringLiteral("next_launch"));
+        service.start();
+        require(waitUntil([&] { return !service.busy(); }), "quiet startup probe completes");
+        service.check(false);
+        require(waitUntil([&] {
+                    return service.status().state == UpdateState::Ready && !service.busy();
+                }),
+                "next-launch policy downloads updates automatically");
+        require(availableCount == 0 && readyCount == 0,
+                "next-launch updates suppress both available and ready notifications");
+        require(counterValue(QDir(cache).filePath(QStringLiteral("apply-startup-count"))) == 0 &&
+                    counterValue(QDir(cache).filePath(QStringLiteral("apply-user-count"))) == 0,
+                "newly downloaded updates are not applied in the running session");
+    }
+
+    {
+        UpdateService service(options(QStringLiteral("ready")));
+        int readyCount = 0;
+        QObject::connect(&service, &UpdateService::updateReady, &app, [&] { ++readyCount; });
+        service.setMode(QStringLiteral("next_launch"));
+        service.start();
+        require(waitUntil([&] { return !service.busy(); }), "quiet cached probe completes");
+        require(service.status().state == UpdateState::Ready && readyCount == 0,
+                "cached-ready completion also suppresses its notification");
+    }
+
+    {
+        auto slowOptions = options(QStringLiteral("slow-download"));
+        const QString cache = slowOptions.cacheDirectory;
+        UpdateService service(std::move(slowOptions));
+        const QJsonObject initialAppearance{
+            {QStringLiteral("background"), 0xffffff},
+            {QStringLiteral("primary"), 0x1677ff},
+            {QStringLiteral("fontFamily"), QStringLiteral("Segoe UI")},
+            {QStringLiteral("fontSize"), 14}};
+        service.setProgressAppearance(initialAppearance);
+        service.setMode(QStringLiteral("manual"));
+        service.start();
+        require(waitUntil([&] { return !service.busy(); }), "slow-download probe completes");
+        require(readJson(QDir(cache).filePath(QStringLiteral("execute.json")))
+                        .value(QStringLiteral("progressAppearance"))
+                        .toObject() == initialAppearance,
+                "initial appearance accompanies the first operation");
+        service.setMode(QStringLiteral("download"));
+        require(waitUntil([&] { return service.status().state == UpdateState::Downloading; }),
+                "slow payload download begins");
+        service.setMode(QStringLiteral("next_launch"));
+        service.setMode(QStringLiteral("download"));
+        service.setMode(QStringLiteral("next_launch"));
+        QJsonObject changedAppearance = initialAppearance;
+        changedAppearance.insert(QStringLiteral("background"), 0x1f1f1f);
+        changedAppearance.insert(QStringLiteral("primary"), 0x722ed1);
+        service.setProgressAppearance(changedAppearance);
+        service.setProgressAppearance(changedAppearance);
+        const QJsonObject oversizedAppearance{
+            {QStringLiteral("fontFamily"), QString(64 * 1024, QLatin1Char('A'))}};
+        service.setProgressAppearance(oversizedAppearance);
+        require(service.busy() && service.status().state == UpdateState::Downloading,
+                "oversized cosmetic configuration never interrupts the active update");
+        QEvent languageChange(QEvent::LanguageChange);
+        QCoreApplication::sendEvent(&service, &languageChange);
+        const QString configured = QDir(cache).filePath(QStringLiteral("configure.json"));
+        require(waitUntil([&] {
+                    return counterValue(QDir(cache).filePath(QStringLiteral("configure-count"))) >=
+                           5;
+                }),
+                "policy, appearance, and language changes configure the running updater");
+        const auto command = readJson(configured);
+        require(
+            command.value(QStringLiteral("mode")).toString() == u"next_launch" &&
+                command.value(QStringLiteral("progressTexts")).toObject().size() == 15 &&
+                command.value(QStringLiteral("progressAppearance")).toObject() ==
+                    changedAppearance &&
+                counterValue(QDir(cache).filePath(QStringLiteral("configure-count"))) == 5 &&
+                counterValue(QDir(cache).filePath(QStringLiteral("cancel-count"))) == 0,
+            "live appearance changes preserve downloads and ignore redundant or oversized data");
+        service.setProgressAppearance({});
+        require(waitUntil([&] {
+                    const auto configuration = readJson(configured);
+                    return counterValue(QDir(cache).filePath(QStringLiteral("configure-count"))) ==
+                               6 &&
+                           configuration.contains(QStringLiteral("progressAppearance")) &&
+                           configuration.value(QStringLiteral("progressAppearance"))
+                               .toObject()
+                               .isEmpty();
+                }),
+                "clearing appearance explicitly restores updater defaults");
+        service.setMode(QStringLiteral("check"));
+        require(waitUntil([&] { return !service.busy(); }),
+                "leaving automatic download policies cancels the automatic payload operation");
+    }
+
+    for (const int behavior : {0, 1, 2}) {
+        const bool explicitCancel = behavior == 1;
+        const bool reenableAtCompletion = behavior == 2;
+        auto resumeOptions = options(QStringLiteral("policy-resume"));
+        const QString cache = resumeOptions.cacheDirectory;
+        UpdateService service(std::move(resumeOptions));
+        QObject::connect(&service, &UpdateService::operationFinished, &app,
+                         [&](const QString& operation, const QString& outcome) {
+                             if (reenableAtCompletion && operation == u"download" &&
+                                 outcome == u"cancelled")
+                                 service.setMode(QStringLiteral("next_launch"));
+                         });
+        service.setMode(QStringLiteral("manual"));
+        service.start();
+        require(waitUntil([&] { return !service.busy(); }), "policy-resume probe completes");
+        service.setMode(QStringLiteral("download"));
+        require(waitUntil([&] { return service.status().state == UpdateState::Downloading; }),
+                "automatic download starts before its policy cancellation");
+        if (explicitCancel) {
+            service.cancel();
+            service.setMode(QStringLiteral("next_launch"));
+        } else {
+            service.setMode(QStringLiteral("check"));
+            if (!reenableAtCompletion)
+                service.setMode(QStringLiteral("next_launch"));
+        }
+        require(waitUntil([&] {
+                    return !service.busy() &&
+                           service.status().state ==
+                               (explicitCancel ? UpdateState::Available : UpdateState::Ready) &&
+                           counterValue(QDir(cache).filePath(QStringLiteral(
+                               "download-policyChange-count"))) == (explicitCancel ? 1 : 2);
+                }),
+                "download cancellation and any requested resumption finish");
+        processFor(100);
+        require(counterValue(QDir(cache).filePath(QStringLiteral("download-policyChange-count"))) ==
+                    (explicitCancel ? 1 : 2),
+                "only a reversed policy cancellation resumes the automatic download exactly once");
+        require(service.status().state ==
+                    (explicitCancel ? UpdateState::Available : UpdateState::Ready),
+                "explicit cancellation stays stopped while re-enabled automatic policy downloads");
+    }
+
+    {
+        auto pendingOptions = options(QStringLiteral("available"));
+        const QString cache = pendingOptions.cacheDirectory;
+        UpdateService service(std::move(pendingOptions));
+        service.setMode(QStringLiteral("manual"));
+        service.start();
+        require(waitUntil([&] { return !service.busy(); }), "pending policy probe completes");
+        service.setMode(QStringLiteral("download"));
+        service.setMode(QStringLiteral("check"));
+        service.setMode(QStringLiteral("next_launch"));
+        require(waitUntil([&] { return !service.busy(); }),
+                "policy cancellation withdrawn before handshake finishes");
+        require(counterValue(QDir(cache).filePath(QStringLiteral("cancel-count"))) == 0 &&
+                    counterValue(
+                        QDir(cache).filePath(QStringLiteral("download-policyChange-count"))) == 1 &&
+                    service.status().state == UpdateState::Ready,
+                "unsent policy cancellation keeps the original download without a replacement");
+    }
+
+    {
+        auto handoffOptions = options(QStringLiteral("delayed-handoff"));
+        const QString cache = handoffOptions.cacheDirectory;
+        UpdateService service(std::move(handoffOptions));
+        bool prepared = false;
+        bool committed = false;
+        QObject::connect(&service, &UpdateService::handoffReady, &app, [&] {
+            prepared = true;
+            require(!committed, "handoff preparation does not imply acceptance");
+            service.setRelaunchArguments(
+                {QStringLiteral("--autostart"), QStringLiteral("--skip-startup-update")});
+        });
+        QObject::connect(&service, &UpdateService::handoffCommitted, &app,
+                         [&] { committed = true; });
+        service.setMode(QStringLiteral("next_launch"));
+        service.applyAtStartup();
+        require(waitUntil([&] { return prepared; }), "cached startup apply prepares handoff");
+        require(!committed, "application remains alive before updater handoff acknowledgement");
+        require(waitUntil([&] { return committed; }), "updater acknowledges committed handoff");
+        const auto execute = readJson(QDir(cache).filePath(QStringLiteral("execute.json")));
+        require(execute.value(QStringLiteral("operation")).toString() == u"apply" &&
+                    execute.value(QStringLiteral("trigger")).toString() == u"startup" &&
+                    execute.value(QStringLiteral("mode")).toString() == u"next_launch" &&
+                    execute.value(QStringLiteral("progressTexts")).toObject().size() == 15,
+                "startup apply uses the cached-only protocol and translated progress text");
+        const auto decision = readJson(QDir(cache).filePath(QStringLiteral("handoff.json")));
+        require(
+            decision.value(QStringLiteral("relaunchArguments")).toArray() ==
+                QJsonArray{QStringLiteral("--autostart"), QStringLiteral("--skip-startup-update")},
+            "the final handoff includes arguments chosen by preparation callbacks");
     }
 
     {

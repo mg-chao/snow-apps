@@ -502,6 +502,14 @@ void UpdateService::cancel() {
 void UpdateService::download() {}
 void UpdateService::requestRestart() {}
 void UpdateService::beginApply() {}
+void UpdateService::applyAtStartup() {
+    emit operationFinished(QStringLiteral("apply"), QStringLiteral("success"));
+}
+void UpdateService::setRelaunchArguments(const QStringList&) {}
+bool UpdateService::handoffPending() const {
+    return false;
+}
+void UpdateService::setProgressAppearance(const QJsonObject&) {}
 void UpdateService::reportBlocked(const QString&) {}
 bool UpdateService::event(QEvent* event) {
     if (event->type() == QEvent::LanguageChange && !m_impl->errorSource.isEmpty()) {

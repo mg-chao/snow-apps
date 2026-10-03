@@ -74,8 +74,12 @@ bool FeatureGate::allow(FeatureFamily feature, bool notify) const {
 FeatureActionRouter::FeatureActionRouter(FeatureGate::UnavailableHandler unavailableHandler)
     : m_gate(std::move(unavailableHandler)) {}
 
+void FeatureActionRouter::setSuspended(bool suspended) {
+    m_suspended = suspended;
+}
+
 bool FeatureActionRouter::dispatch(FeatureFamily feature, Action action, bool notify) const {
-    if (!m_gate.allow(feature, notify)) {
+    if (m_suspended || !m_gate.allow(feature, notify)) {
         return false;
     }
     if (action) {
@@ -85,7 +89,7 @@ bool FeatureActionRouter::dispatch(FeatureFamily feature, Action action, bool no
 }
 
 bool FeatureActionRouter::beginGesture(FeatureFamily feature, Action cancel, Action action) const {
-    if (!m_gate.allow(feature)) {
+    if (m_suspended || !m_gate.allow(feature)) {
         if (cancel) {
             cancel();
         }

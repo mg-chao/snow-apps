@@ -1,8 +1,9 @@
-﻿#ifndef SNOW_SHOT_PRESENTATION_STYLES_THEMEMANAGER_H
+#ifndef SNOW_SHOT_PRESENTATION_STYLES_THEMEMANAGER_H
 #define SNOW_SHOT_PRESENTATION_STYLES_THEMEMANAGER_H
 
 #include <QObject>
 #include <QMetaObject>
+#include <QJsonObject>
 
 #include "snow_shot/presentation/styles/themecolorscheme.h"
 
@@ -20,6 +21,7 @@ class ThemeManager : public QObject {
     [[nodiscard]] QString appFontFamily() const;
     [[nodiscard]] ThemeMode themeMode() const;
     [[nodiscard]] ThemeColorScheme themeColorScheme() const;
+    [[nodiscard]] QJsonObject updateProgressAppearance() const;
 
   public slots:
     void setThemeStyleConfig(const ThemeStyleConfig& config);

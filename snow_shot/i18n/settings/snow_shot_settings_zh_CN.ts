@@ -1067,6 +1067,10 @@
             <translation>自动保存图像文件名格式</translation>
         </message>
         <message>
+            <source>Auto-update on next launch</source>
+            <translation>下次启动时自动更新</translation>
+        </message>
+        <message>
             <source>Automatic disabling</source>
             <translation>自动禁用</translation>
         </message>
@@ -1261,6 +1265,10 @@
         <message>
             <source>Choose how the dragged selection border follows the mouse while resizing</source>
             <translation>控制调整选区大小时拖动的边框如何跟随鼠标</translation>
+        </message>
+        <message>
+            <source>Choose how updates are downloaded and installed</source>
+            <translation>选择更新的下载和安装方式</translation>
         </message>
         <message>
             <source>Choose the OCR model version and size to balance recognition speed and accuracy</source>
@@ -1745,10 +1753,6 @@
         <message>
             <source>Download automatically</source>
             <translation>自动下载</translation>
-        </message>
-        <message>
-            <source>Download new versions automatically and ask before restarting</source>
-            <translation>自动下载新版本，并在重启前询问</translation>
         </message>
         <message>
             <source>Drag annotation tools to reorder them or stack them in the same toolbar position.</source>

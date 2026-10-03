@@ -1,10 +1,78 @@
 #[cfg(not(windows))]
 use crate::error::{Result, UpdateError};
+use crate::progress::{ProgressAppearance, ProgressTexts};
+#[cfg(any(windows, test))]
+use serde::{Deserialize, Serialize};
+
+#[cfg(any(windows, test))]
+#[derive(Default, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase", default)]
+struct ProgressContext {
+    #[serde(flatten)]
+    texts: ProgressTexts,
+    #[serde(
+        default,
+        deserialize_with = "crate::protocol::deserialize_progress_appearance"
+    )]
+    appearance: Option<ProgressAppearance>,
+}
+
+#[cfg(any(windows, test))]
+#[derive(Default, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct HandoffDecision {
+    relaunch_arguments: Vec<String>,
+}
+
+#[cfg(any(windows, test))]
+fn decision_line(proceed: bool, arguments: Option<Vec<String>>) -> crate::Result<String> {
+    if !proceed {
+        return Ok("cancel".to_owned());
+    }
+    let Some(relaunch_arguments) = arguments else {
+        return Ok("go".to_owned());
+    };
+    crate::protocol::validate_relaunch_arguments(&relaunch_arguments)?;
+    let payload =
+        serde_json::to_string(&HandoffDecision { relaunch_arguments }).map_err(|error| {
+            crate::UpdateError::new(
+                "invalid_updater_argument",
+                "Invalid updater command argument",
+            )
+            .detail(error)
+        })?;
+    Ok(format!("go:{payload}"))
+}
+
+#[cfg(any(windows, test))]
+fn parse_decision(line: &str, service_coordinator: bool) -> crate::Result<Option<Vec<String>>> {
+    if line == "go" {
+        return Ok(None);
+    }
+    crate::error::require(
+        service_coordinator && line.starts_with("go:"),
+        "invalid_updater_argument",
+        "Invalid updater command argument",
+    )?;
+    let decision: HandoffDecision = serde_json::from_str(&line[3..]).map_err(|error| {
+        crate::UpdateError::new(
+            "invalid_updater_argument",
+            "Invalid updater command argument",
+        )
+        .detail(error)
+    })?;
+    crate::protocol::validate_relaunch_arguments(&decision.relaunch_arguments)?;
+    Ok(Some(decision.relaunch_arguments))
+}
 
 #[cfg(windows)]
 mod windows_coordination {
+    use super::{
+        ProgressAppearance, ProgressContext, ProgressTexts, decision_line, parse_decision,
+    };
     use crate::contract::{compare_versions, verify_release_file};
     use crate::error::{Result, UpdateError, io_error, require};
+    use crate::progress::{Progress, ProgressPhase, ProgressWindow};
     use crate::{fsutil, platform, transaction};
     use std::ffi::c_void;
     use std::fs::{self, OpenOptions};
@@ -42,6 +110,7 @@ mod windows_coordination {
     const MAX_CONTROL_LINE: usize = 4096;
     const DETACHED_PROCESS: u32 = 0x0000_0008;
     const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+    const PROGRESS_CONTEXT: &str = "progress.json";
 
     struct OwnedHandle(HANDLE);
 
@@ -155,6 +224,7 @@ mod windows_coordination {
                 "--archive",
                 "--result",
                 "--coordinator",
+                "--progress-context",
             ],
             &["--recovery", "--preapproved", "--service-coordinator"],
             &required,
@@ -559,6 +629,38 @@ mod windows_coordination {
         read_line(stream, timeout).await
     }
 
+    async fn read_transaction_status<T: AsyncRead + Unpin>(
+        stream: &mut T,
+        progress_window: &ProgressWindow,
+        timeout: Duration,
+    ) -> Result<String> {
+        let deadline = Instant::now() + timeout;
+        loop {
+            // Progress does not extend the transaction deadline. Invalid presentation frames
+            // are ignored, without affecting recovery or installation control messages.
+            let remaining = deadline.saturating_duration_since(Instant::now());
+            require(
+                !remaining.is_zero(),
+                "coordinator_ack_failed",
+                "The update handoff was not acknowledged",
+            )?;
+            let line = read_line(stream, remaining).await?;
+            if let Some(payload) = line.strip_prefix("progress:") {
+                if let Ok(progress) = serde_json::from_str::<Progress>(payload)
+                    && (progress.total == 0 || progress.completed <= progress.total)
+                {
+                    progress_window.update(progress);
+                }
+                continue;
+            }
+            if line == "success" || line.starts_with("failed:") {
+                return Ok(line);
+            }
+            // A cancelled cosmetic write can leave less than the "progress:" prefix. Only
+            // explicit terminal frames end the operation; presentation noise remains cosmetic.
+        }
+    }
+
     fn pipe_handle(raw: *mut c_void) -> HANDLE {
         HANDLE(raw)
     }
@@ -664,10 +766,11 @@ mod windows_coordination {
         fsutil::write_atomic(path, value.as_bytes())
     }
 
-    fn relaunch(root: &Path) -> Result<()> {
+    fn relaunch(root: &Path, arguments: Option<&[String]>) -> Result<()> {
+        let default_arguments = ["--show-main-window".to_owned()];
         spawn_detached(
             &root.join(crate::edition::APP_PATH),
-            &["--show-main-window".to_owned()],
+            arguments.unwrap_or(&default_arguments),
             Some(root),
         )
     }
@@ -702,12 +805,25 @@ mod windows_coordination {
                 .is_ok_and(|value| value.is_file() && !value.file_type().is_symlink())
                 && fs::remove_file(&executable).is_ok()
             {
+                let context = entry.path().join(PROGRESS_CONTEXT);
+                if fs::symlink_metadata(&context)
+                    .is_ok_and(|value| value.is_file() && !value.file_type().is_symlink())
+                {
+                    let _ = fs::remove_file(context);
+                }
                 let _ = fs::remove_dir(entry.path());
             }
         }
     }
 
     pub fn launch(args: &[String]) -> Result<i32> {
+        launch_with_presentation(args, None)
+    }
+
+    fn launch_with_presentation(
+        args: &[String],
+        presentation: Option<ProgressContext>,
+    ) -> Result<i32> {
         validate_operation_shape(args, "--launch", false)?;
         prune_coordinators();
         let directory = Builder::new()
@@ -749,6 +865,20 @@ mod windows_coordination {
             "--coordinator",
             executable.to_string_lossy().to_string(),
         );
+        if let Some(presentation) = presentation {
+            let context = directory.path().join(PROGRESS_CONTEXT);
+            // Presentation must never turn a valid update into a failed handoff.
+            if let Ok(bytes) = serde_json::to_vec(&presentation)
+                && bytes.len() <= crate::protocol::MAX_FRAME_BYTES
+                && fsutil::write_atomic(&context, &bytes).is_ok()
+            {
+                append_option(
+                    &mut broker_args,
+                    "--progress-context",
+                    context.to_string_lossy().to_string(),
+                );
+            }
+        }
         spawn_detached(&executable, &broker_args, Some(directory.path()))?;
         let _ = directory.keep();
         Ok(0)
@@ -759,17 +889,69 @@ mod windows_coordination {
     }
 
     impl ServiceHandoff {
-        pub async fn decide(mut self, proceed: bool) -> Result<()> {
-            write_line(&mut self.connection, if proceed { "go" } else { "cancel" }).await
+        pub async fn decide(
+            &mut self,
+            proceed: bool,
+            arguments: Option<Vec<String>>,
+        ) -> Result<()> {
+            write_line(&mut self.connection, &decision_line(proceed, arguments)?).await?;
+            if !proceed {
+                return Ok(());
+            }
+            let acknowledgement = read_line(&mut self.connection, ACK_TIMEOUT).await?;
+            if let Some(message) = acknowledgement.strip_prefix("failed:") {
+                return Err(UpdateError::from_handoff_message(message));
+            }
+            require(
+                acknowledgement == "committed",
+                "coordinator_ack_failed",
+                "The update handoff was not acknowledged",
+            )
+        }
+
+        pub async fn set_relaunch_arguments(&mut self, arguments: Vec<String>) -> Result<()> {
+            let decision = decision_line(true, Some(arguments))?;
+            require(
+                exchange_line(&mut self.connection, &decision, ACK_TIMEOUT).await? == "accepted",
+                "coordinator_ack_failed",
+                "The update handoff was not acknowledged",
+            )
         }
     }
 
-    pub async fn prepare_service_handoff(mut args: Vec<String>) -> Result<ServiceHandoff> {
+    async fn receive_relaunch_arguments<T: AsyncRead + AsyncWrite + Unpin>(
+        mut application: T,
+        arguments: tokio::sync::watch::Sender<Option<Vec<String>>>,
+    ) -> Result<()> {
+        loop {
+            let decision = read_line(&mut application, TRANSACTION_TIMEOUT).await?;
+            let updated = parse_decision(&decision, true)?;
+            require(
+                updated.is_some(),
+                "invalid_updater_argument",
+                "Invalid updater command argument",
+            )?;
+            arguments.send_replace(updated);
+            write_line(&mut application, "accepted").await?;
+        }
+    }
+
+    pub async fn prepare_service_handoff(
+        mut args: Vec<String>,
+        texts: ProgressTexts,
+        appearance: ProgressAppearance,
+    ) -> Result<ServiceHandoff> {
         let pipe = format!("snow-shot-service-{}", Uuid::new_v4().simple());
         let mut server = secure_server(&pipe_path(&pipe))?;
         append_option(&mut args, "--pipe", pipe);
         args.push("--service-coordinator".to_owned());
-        launch(&args)?;
+        launch_with_presentation(
+            &args,
+            Some(ProgressContext {
+                texts,
+                appearance: Some(appearance),
+            }),
+        )?;
         tokio::time::timeout(PRE_HANDOFF_TIMEOUT, server.connect())
             .await
             .map_err(|_| UpdateError::new("updater_timeout", "The update helper timed out"))?
@@ -813,6 +995,32 @@ mod windows_coordination {
             "coordinator_identity_invalid",
             "The update coordinator identity could not be verified",
         )?;
+        let context: ProgressContext = path_option(args, "--progress-context")
+            .ok()
+            .filter(|path| {
+                platform::path_eq(
+                    path,
+                    &current
+                        .parent()
+                        .unwrap_or(Path::new("."))
+                        .join(PROGRESS_CONTEXT),
+                )
+            })
+            .and_then(|path| {
+                fsutil::read_limited(&path, crate::protocol::MAX_FRAME_BYTES as u64).ok()
+            })
+            .and_then(|bytes| serde_json::from_slice(&bytes).ok())
+            .unwrap_or_default();
+        let progress_window = ProgressWindow::new_with_appearance(
+            context.texts,
+            context.appearance.unwrap_or_default(),
+        );
+        progress_window.update(Progress {
+            phase: ProgressPhase::Preparing,
+            completed: 0,
+            total: 0,
+        });
+        progress_window.set_visible(true);
         let digest = fsutil::sha256_file(&coordinator)?;
         let installed = root.join(crate::edition::UPDATER_PATH);
         spawn_detached(&installed, &replace_mode(args, "--bootstrap"), Some(&root))?;
@@ -889,24 +1097,71 @@ mod windows_coordination {
             )
             .await?
         };
-        write_line(&mut server, &answer).await?;
-        if answer != "go" {
+        if answer == "cancel" {
+            write_line(&mut server, "cancel").await?;
             let status = "failed:Application cancelled the update handoff";
             write_result(&path_option(args, "--result")?, status)?;
             return Ok(1);
         }
-        let status = match read_line(&mut server, TRANSACTION_TIMEOUT).await {
-            Ok(status) => status,
+        let service_coordinator = args
+            .iter()
+            .any(|argument| argument == "--service-coordinator");
+        let relaunch_arguments = match parse_decision(&answer, service_coordinator) {
+            Ok(arguments) => arguments,
             Err(error) => {
+                let _ = write_line(&mut server, "cancel").await;
                 let status = format!("failed:{}", error.handoff_message());
                 write_result(&path_option(args, "--result")?, &status)?;
+                if let Some(application) = application.as_mut() {
+                    let _ = write_line(application, &status).await;
+                }
                 return Ok(1);
             }
         };
+        let (relaunch_sender, relaunch_receiver) = tokio::sync::watch::channel(relaunch_arguments);
+        write_line(&mut server, "go").await?;
+        if service_coordinator {
+            write_line(
+                application.as_mut().expect("verified service pipe"),
+                "committed",
+            )
+            .await?;
+            // Keep the authenticated service channel alive until the application exits.
+            // A launch received during commitment can still change the replacement's intent.
+            let application = application.take().expect("verified service pipe");
+            tokio::spawn(async move {
+                let _ = receive_relaunch_arguments(application, relaunch_sender).await;
+            });
+        }
+        progress_window.update(Progress {
+            phase: ProgressPhase::Waiting,
+            completed: 0,
+            total: 0,
+        });
+        let status =
+            match read_transaction_status(&mut server, &progress_window, TRANSACTION_TIMEOUT).await
+            {
+                Ok(status) => status,
+                Err(error) => {
+                    let status = format!("failed:{}", error.handoff_message());
+                    write_result(&path_option(args, "--result")?, &status)?;
+                    return Ok(1);
+                }
+            };
         write_line(&mut server, "done").await?;
         write_result(&path_option(args, "--result")?, &status)?;
+        progress_window.update(Progress {
+            phase: if status == "success" {
+                ProgressPhase::Complete
+            } else {
+                ProgressPhase::Failed
+            },
+            completed: 0,
+            total: 0,
+        });
+        progress_window.finish();
         if !transaction::transaction_pending(&root) {
-            relaunch(&root)?;
+            relaunch(&root, relaunch_receiver.borrow().as_deref())?;
         }
         Ok(i32::from(status != "success"))
     }
@@ -1082,22 +1337,68 @@ mod windows_coordination {
             }
             return Ok(1);
         }
-        let status = (|| {
+        let parents_exited = (|| {
             parent.wait_for_exit(PARENT_EXIT_TIMEOUT)?;
             if let Some(service) = service {
                 service.wait_for_exit(PARENT_EXIT_TIMEOUT)?;
             }
-            if recovery {
-                transaction::recover_transaction(&root)
-            } else {
-                transaction::apply_transaction(
-                    &root,
-                    staged_archive.as_ref().expect("staged archive"),
-                    release.as_ref().expect("verified release"),
-                    transaction::TransactionHooks::default(),
-                )
-            }
+            Ok(())
         })();
+        let status = if let Err(error) = parents_exited {
+            Err(error)
+        } else {
+            let (progress_sender, mut progress_receiver) = tokio::sync::watch::channel(Progress {
+                phase: ProgressPhase::Preparing,
+                completed: 0,
+                total: 0,
+            });
+            let transaction_root = root.clone();
+            let transaction_archive = staged_archive.clone();
+            let mut operation = tokio::task::spawn_blocking(move || {
+                let report = |progress| {
+                    progress_sender.send_replace(progress);
+                };
+                let hooks = transaction::TransactionHooks {
+                    progress: Some(&report),
+                    ..transaction::TransactionHooks::default()
+                };
+                if recovery {
+                    transaction::recover_with_hooks(&transaction_root, hooks)
+                } else {
+                    transaction::apply_transaction(
+                        &transaction_root,
+                        transaction_archive.as_ref().expect("staged archive"),
+                        release.as_ref().expect("verified release"),
+                        hooks,
+                    )
+                }
+            });
+            let mut forwarding_progress = true;
+            loop {
+                tokio::select! {
+                    result = &mut operation => {
+                        break result.unwrap_or_else(|error| {
+                            Err(UpdateError::new("update_worker_failed", "The update worker failed")
+                                .detail(error))
+                        });
+                    }
+                    changed = progress_receiver.changed(), if forwarding_progress => {
+                        if changed.is_err() {
+                            forwarding_progress = false;
+                            continue;
+                        }
+                        let progress = *progress_receiver.borrow_and_update();
+                        if let Ok(payload) = serde_json::to_string(&progress)
+                            && let Err(error) = write_line(&mut coordinator, &format!("progress:{payload}")).await
+                        {
+                            // Keep installing or recovering even if the cosmetic channel fails.
+                            tracing::warn!("could not send update progress: {error}");
+                            forwarding_progress = false;
+                        }
+                    }
+                }
+            }
+        };
         if let Some(path) = staged_archive {
             let _ = fs::remove_file(path);
         }
@@ -1107,7 +1408,8 @@ mod windows_coordination {
             "success".to_owned()
         };
         require(
-            exchange_line(&mut coordinator, &text, ACK_TIMEOUT).await? == "done",
+            // Reestablish a frame boundary after any partially written cosmetic progress.
+            exchange_line(&mut coordinator, &format!("\n{text}"), ACK_TIMEOUT).await? == "done",
             "coordinator_ack_failed",
             "The update handoff was not acknowledged",
         )?;
@@ -1127,6 +1429,97 @@ mod windows_coordination {
             let coordinator = directory.path().join("coordinator.exe");
             assert!(narrow_coordinator_path(&coordinator));
         }
+
+        #[tokio::test]
+        async fn transaction_progress_frames_do_not_replace_the_terminal_result() {
+            let window = ProgressWindow::new(ProgressTexts::default());
+            let (mut writer, mut reader) = tokio::io::duplex(4096);
+            writer.write_all(
+                b"progress:not-json\nprogress:{\"phase\":\"installing\",\"completed\":2,\"total\":1}\nprogress:{\"phase\":\"extracting\",\"completed\":2,\"total\":4}\nsuccess\n"
+            ).await.unwrap();
+            assert_eq!(
+                read_transaction_status(&mut reader, &window, Duration::from_secs(1))
+                    .await
+                    .unwrap(),
+                "success"
+            );
+            window.finish();
+        }
+
+        #[tokio::test]
+        async fn committed_handoff_accepts_late_intent_and_rejects_unsafe_relaunches() {
+            let original = Some(vec![
+                "--autostart".to_owned(),
+                "--skip-startup-update".to_owned(),
+            ]);
+            let (sender, receiver) = tokio::sync::watch::channel(original);
+            let (mut application, broker) = tokio::io::duplex(4096);
+            let relay = tokio::spawn(receive_relaunch_arguments(broker, sender));
+            let foreground = vec![
+                "--show-main-window".to_owned(),
+                "--skip-startup-update".to_owned(),
+            ];
+            write_line(
+                &mut application,
+                &decision_line(true, Some(foreground.clone())).unwrap(),
+            )
+            .await
+            .unwrap();
+            assert_eq!(
+                read_line(&mut application, ACK_TIMEOUT).await.unwrap(),
+                "accepted"
+            );
+            assert_eq!(*receiver.borrow(), Some(foreground.clone()));
+            write_line(
+                &mut application,
+                r#"go:{"relaunchArguments":["--update-probe"]}"#,
+            )
+            .await
+            .unwrap();
+            assert!(relay.await.unwrap().is_err());
+            assert_eq!(*receiver.borrow(), Some(foreground));
+        }
+
+        #[tokio::test]
+        async fn expired_transaction_deadline_rejects_even_buffered_progress() {
+            let window = ProgressWindow::new(ProgressTexts::default());
+            let (mut writer, mut reader) = tokio::io::duplex(256);
+            writer
+                .write_all(b"progress:not-json\nsuccess\n")
+                .await
+                .unwrap();
+            assert!(
+                read_transaction_status(&mut reader, &window, Duration::ZERO)
+                    .await
+                    .is_err()
+            );
+            window.finish();
+        }
+
+        #[tokio::test]
+        async fn aborted_cosmetic_frame_cannot_consume_the_terminal_result() {
+            let window = ProgressWindow::new(ProgressTexts::default());
+            let (mut writer, mut reader) = tokio::io::duplex(4);
+            let mut partial = Box::pin(writer.write_all(b"progress:interrupted cosmetic frame\n"));
+            futures_util::future::poll_fn(|context| {
+                use std::future::Future;
+                assert!(partial.as_mut().poll(context).is_pending());
+                std::task::Poll::Ready(())
+            })
+            .await;
+            drop(partial);
+            let terminal = tokio::spawn(async move {
+                write_line(&mut writer, "\nsuccess").await.unwrap();
+            });
+            assert_eq!(
+                read_transaction_status(&mut reader, &window, Duration::from_secs(1))
+                    .await
+                    .unwrap(),
+                "success"
+            );
+            terminal.await.unwrap();
+            window.finish();
+        }
     }
 }
 
@@ -1140,13 +1533,21 @@ pub struct ServiceHandoff;
 
 #[cfg(not(windows))]
 impl ServiceHandoff {
-    pub async fn decide(self, _proceed: bool) -> Result<()> {
+    pub async fn decide(&mut self, _proceed: bool, _arguments: Option<Vec<String>>) -> Result<()> {
+        launch(&[]).map(|_| ())
+    }
+
+    pub async fn set_relaunch_arguments(&mut self, _arguments: Vec<String>) -> Result<()> {
         launch(&[]).map(|_| ())
     }
 }
 
 #[cfg(not(windows))]
-pub async fn prepare_service_handoff(_args: Vec<String>) -> Result<ServiceHandoff> {
+pub async fn prepare_service_handoff(
+    _args: Vec<String>,
+    _texts: ProgressTexts,
+    _appearance: ProgressAppearance,
+) -> Result<ServiceHandoff> {
     launch(&[]).map(|_| ServiceHandoff)
 }
 
@@ -1171,4 +1572,66 @@ pub fn bootstrap(_args: &[String], _elevated: bool) -> Result<i32> {
 #[cfg(not(windows))]
 pub async fn worker(_args: &[String]) -> Result<i32> {
     launch(&[])
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn broker_context_preserves_the_theme_and_localized_text_after_application_exit() {
+        let context = ProgressContext {
+            texts: ProgressTexts {
+                title: "正在更新 Snow Shot".to_owned(),
+                ..Default::default()
+            },
+            appearance: Some(ProgressAppearance {
+                background: 0x141414,
+                text: 0xffffff,
+                primary: 0x52c41a,
+                motion: false,
+                ..Default::default()
+            }),
+        };
+        let bytes = serde_json::to_vec(&context).unwrap();
+        assert!(bytes.len() < crate::protocol::MAX_FRAME_BYTES);
+        let restored: ProgressContext = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(restored.texts.title, context.texts.title);
+        assert_eq!(restored.appearance, context.appearance);
+        let legacy = serde_json::to_vec(&context.texts).unwrap();
+        let restored: ProgressContext = serde_json::from_slice(&legacy).unwrap();
+        assert_eq!(restored.texts.title, context.texts.title);
+        assert!(restored.appearance.is_none());
+        let malformed: ProgressContext = serde_json::from_str(
+            r#"{"title":"Translated update title","appearance":{"fontSize":"invalid"}}"#,
+        )
+        .unwrap();
+        assert_eq!(malformed.texts.title, "Translated update title");
+        assert!(malformed.appearance.is_none());
+    }
+
+    #[test]
+    fn relaunch_intent_is_accepted_only_on_the_authenticated_service_channel() {
+        let arguments = vec!["--autostart".to_owned(), "--skip-startup-update".to_owned()];
+        let line = decision_line(true, Some(arguments.clone())).unwrap();
+        assert_eq!(parse_decision(&line, true).unwrap(), Some(arguments));
+        assert!(parse_decision(&line, false).is_err());
+        assert_eq!(decision_line(true, None).unwrap(), "go");
+        assert_eq!(parse_decision("go", false).unwrap(), None);
+        assert_eq!(decision_line(false, None).unwrap(), "cancel");
+        assert_eq!(
+            parse_decision(&decision_line(true, Some(Vec::new())).unwrap(), true).unwrap(),
+            Some(Vec::new())
+        );
+    }
+
+    #[test]
+    fn invalid_relaunch_intent_is_rejected_before_committing() {
+        assert!(decision_line(true, Some(vec!["--restart-helper".to_owned()])).is_err());
+        assert!(parse_decision("go:not-json", true).is_err());
+        assert!(parse_decision(r#"go:{"relaunchArguments":["--update-probe"]}"#, true).is_err());
+        assert!(
+            parse_decision(r#"go:{"relaunchArguments":[],"target":"elsewhere"}"#, true).is_err()
+        );
+    }
 }

@@ -389,16 +389,21 @@ void builtInCatalogIsCompleteAndValid() {
                     require(migrated.valid && migrated.changed &&
                                 migrated.value == QStringLiteral("check"),
                             "legacy automatic download migrates to check");
+                    const auto nextLaunch = storage::ConfigurationSchema::normalize(
+                        item.configurationKey, QStringLiteral("next_launch"));
+                    require(nextLaunch.valid && nextLaunch.changed &&
+                                nextLaunch.value == QStringLiteral("check"),
+                            "Windows next-launch installation migrates to checks on macOS");
 #else
-                    require(
-                        select.binding == settings::SettingsSelectBinding::UpdateMode &&
-                            select.options.size() == 3 &&
-                            select.options[0].value == QStringLiteral("manual") &&
-                            select.options[1].value == QStringLiteral("check") &&
-                            select.options[2].value == QStringLiteral("download") &&
-                            storage::ConfigurationSchema::defaultValue(item.configurationKey) ==
-                                QStringLiteral("download"),
-                        "update policy exposes all three modes with automatic download default");
+                    require(select.binding == settings::SettingsSelectBinding::UpdateMode &&
+                                select.options.size() == 4 &&
+                                select.options[0].value == QStringLiteral("manual") &&
+                                select.options[1].value == QStringLiteral("check") &&
+                                select.options[2].value == QStringLiteral("download") &&
+                                select.options[3].value == QStringLiteral("next_launch") &&
+                                storage::ConfigurationSchema::defaultValue(item.configurationKey) ==
+                                    QStringLiteral("download"),
+                            "update policy exposes all four modes with automatic download default");
 #endif
                     foundUpdates = true;
                 }
@@ -2264,6 +2269,12 @@ void searchIndexIsGeneratedAndRanked() {
     require(!updates.isEmpty() &&
                 updates.constFirst().location.itemId == QStringLiteral("updates.mode"),
             "update policy is directly discoverable through settings search");
+#ifndef Q_OS_MACOS
+    const auto nextLaunchUpdates = index.search(QStringLiteral("Auto-update on next launch"));
+    require(!nextLaunchUpdates.isEmpty() &&
+                nextLaunchUpdates.constFirst().location.itemId == QStringLiteral("updates.mode"),
+            "next-launch updates must be searchable by their option label");
+#endif
     const auto selectedText = index.search(QStringLiteral("Translate Selected Text"));
     require(!selectedText.isEmpty() &&
                 selectedText.constFirst().location ==

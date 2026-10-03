@@ -5,6 +5,7 @@ use crate::contract::{
 use crate::error::{Result, UpdateError, io_error, require};
 use crate::fsutil::{copy_and_persist, read_limited, sha256_file, verify_file, write_atomic};
 use crate::platform;
+use crate::progress::{Progress, ProgressPhase};
 use fs2::FileExt;
 use path_clean::PathClean;
 use serde::{Deserialize, Serialize};
@@ -64,6 +65,18 @@ fn registry_restore_default() -> bool {
 pub struct TransactionHooks<'a> {
     pub probe: Option<&'a dyn Fn() -> bool>,
     pub checkpoint: Option<&'a dyn Fn(&str)>,
+    pub progress: Option<&'a dyn Fn(Progress)>,
+}
+
+fn report_progress(
+    callback: Option<&dyn Fn(Progress)>,
+    phase: ProgressPhase,
+    completed: u64,
+    total: u64,
+) {
+    if let Some(callback) = callback {
+        callback(Progress::new(phase, completed, total));
+    }
 }
 
 fn work_path(root: &Path, leaf: impl AsRef<Path>) -> PathBuf {
@@ -385,6 +398,15 @@ fn verify_record_inventory(record: &InstallationRecord, package: &UpdatePackage)
 }
 
 fn extract(archive_path: &Path, destination: &Path, package: &UpdatePackage) -> Result<()> {
+    extract_with_progress(archive_path, destination, package, None)
+}
+
+fn extract_with_progress(
+    archive_path: &Path,
+    destination: &Path,
+    package: &UpdatePackage,
+    progress: Option<&dyn Fn(Progress)>,
+) -> Result<()> {
     let archive_file = File::open(archive_path).map_err(|error| {
         io_error(
             "archive_open_failed",
@@ -449,6 +471,12 @@ fn extract(archive_path: &Path, destination: &Path, package: &UpdatePackage) -> 
         .iter()
         .map(|file| (file.path.as_str(), file))
         .collect();
+    let expected_bytes = package
+        .files
+        .iter()
+        .fold(0_u64, |total, file| total.saturating_add(file.size));
+    let mut extracted_bytes = 0_u64;
+    report_progress(progress, ProgressPhase::Extracting, 0, expected_bytes);
     for index in 0..archive.len() {
         let mut entry = archive.by_index(index).map_err(|error| {
             io_error(
@@ -516,6 +544,13 @@ fn extract(archive_path: &Path, destination: &Path, package: &UpdatePackage) -> 
                     error,
                 )
             })?;
+            extracted_bytes = extracted_bytes.saturating_add(count as u64);
+            report_progress(
+                progress,
+                ProgressPhase::Extracting,
+                extracted_bytes,
+                expected_bytes,
+            );
         }
         file.flush().map_err(|error| {
             io_error(
@@ -542,6 +577,10 @@ fn save_journal(root: &Path, journal: &Journal) -> Result<()> {
 }
 
 fn restore(root: &Path) -> Result<()> {
+    restore_with_progress(root, None)
+}
+
+fn restore_with_progress(root: &Path, progress: Option<&dyn Fn(Progress)>) -> Result<()> {
     let journal: Journal = serde_json::from_slice(&read_limited(
         &work_path(root, "journal.json"),
         8 * 1024 * 1024,
@@ -567,6 +606,8 @@ fn restore(root: &Path) -> Result<()> {
         })?;
         return Ok(());
     }
+    let total = journal.files.len() as u64;
+    report_progress(progress, ProgressPhase::Restoring, 0, total);
     for entry in &journal.files {
         validate_target_path(root, &entry.path)?;
         if entry.existed {
@@ -579,7 +620,7 @@ fn restore(root: &Path) -> Result<()> {
             )?;
         }
     }
-    for entry in &journal.files {
+    for (index, entry) in journal.files.iter().enumerate() {
         let destination = root.join(&entry.path);
         if entry.existed {
             atomic_copy(
@@ -595,6 +636,7 @@ fn restore(root: &Path) -> Result<()> {
                 )
             })?;
         }
+        report_progress(progress, ProgressPhase::Restoring, index as u64 + 1, total);
     }
     if journal.restore_registry {
         platform::write_registered_version(root, &journal.previous_version)?;
@@ -613,10 +655,14 @@ fn restore(root: &Path) -> Result<()> {
 }
 
 pub fn recover_transaction(root: &Path) -> Result<()> {
+    recover_with_hooks(root, TransactionHooks::default())
+}
+
+pub fn recover_with_hooks(root: &Path, hooks: TransactionHooks<'_>) -> Result<()> {
     validate_root(root)?;
     let _lock = acquire_lock(root, "Another update transaction is running")?;
     if transaction_pending(root) {
-        restore(root)?;
+        restore_with_progress(root, hooks.progress)?;
     }
     Ok(())
 }
@@ -647,6 +693,7 @@ pub fn apply_transaction(
     release: &UpdateRelease,
     hooks: TransactionHooks<'_>,
 ) -> Result<()> {
+    report_progress(hooks.progress, ProgressPhase::Preparing, 0, 0);
     validate_root(root)?;
     fs::create_dir_all(root.join(UPDATE_WORK)).map_err(|error| {
         io_error(
@@ -657,7 +704,7 @@ pub fn apply_transaction(
     })?;
     let _lock = acquire_lock(root, "Another update transaction is running")?;
     if transaction_pending(root) {
-        restore(root)?;
+        restore_with_progress(root, hooks.progress)?;
     }
     let installed = installation_record(root)?;
     require(
@@ -666,7 +713,9 @@ pub fn apply_transaction(
         "The update must be newer than the installed release",
     )?;
     let package = release.update_package(&installed.variant)?;
+    report_progress(hooks.progress, ProgressPhase::Verifying, 0, 0);
     verify_file(archive, package.size, &package.sha256)?;
+    report_progress(hooks.progress, ProgressPhase::Preparing, 0, 0);
     let needed = package.files.iter().try_fold(package.size, |total, file| {
         file.size
             .checked_mul(3)
@@ -688,7 +737,7 @@ pub fn apply_transaction(
             error,
         )
     })?;
-    extract(archive, &stage, package)?;
+    extract_with_progress(archive, &stage, package, hooks.progress)?;
     let staged_record = installation_record(&stage)?;
     verify_record_inventory(&staged_record, package)?;
     require(
@@ -725,7 +774,13 @@ pub fn apply_transaction(
     }
 
     let mut entries = Vec::with_capacity(paths.len());
-    for name in &paths {
+    report_progress(
+        hooks.progress,
+        ProgressPhase::BackingUp,
+        0,
+        paths.len() as u64,
+    );
+    for (index, name) in paths.iter().enumerate() {
         let original = root.join(name);
         let existed = original.exists();
         require(
@@ -764,6 +819,12 @@ pub fn apply_transaction(
             entry.sha256 = Some(hash);
         }
         entries.push(entry);
+        report_progress(
+            hooks.progress,
+            ProgressPhase::BackingUp,
+            index as u64 + 1,
+            paths.len() as u64,
+        );
     }
     let mut journal = Journal {
         schema: 1,
@@ -778,7 +839,13 @@ pub fn apply_transaction(
         if let Some(checkpoint) = hooks.checkpoint {
             checkpoint("prepared");
         }
-        for name in &paths {
+        report_progress(
+            hooks.progress,
+            ProgressPhase::Installing,
+            0,
+            paths.len() as u64,
+        );
+        for (index, name) in paths.iter().enumerate() {
             let destination = root.join(name);
             if let Some(file) = next.get(name) {
                 atomic_copy(&stage.join(name), &destination)?;
@@ -795,6 +862,12 @@ pub fn apply_transaction(
             if let Some(checkpoint) = hooks.checkpoint {
                 checkpoint(name);
             }
+            report_progress(
+                hooks.progress,
+                ProgressPhase::Installing,
+                index as u64 + 1,
+                paths.len() as u64,
+            );
         }
         journal.restore_registry = true;
         save_journal(root, &journal)?;
@@ -808,6 +881,7 @@ pub fn apply_transaction(
         if let Some(checkpoint) = hooks.checkpoint {
             checkpoint("registry");
         }
+        report_progress(hooks.progress, ProgressPhase::Probing, 0, 0);
         let ready = hooks.probe.map_or_else(
             || {
                 run_with_timeout(
@@ -839,9 +913,11 @@ pub fn apply_transaction(
         Ok(())
     })();
     if let Err(error) = result {
-        restore(root)?;
+        restore_with_progress(root, hooks.progress)?;
+        report_progress(hooks.progress, ProgressPhase::Failed, 0, 0);
         return Err(error);
     }
+    report_progress(hooks.progress, ProgressPhase::Complete, 1, 1);
     Ok(())
 }
 
@@ -1128,7 +1204,25 @@ mod tests {
         )
         .unwrap();
 
-        recover_transaction(&root).unwrap();
+        let progress = std::cell::RefCell::new(Vec::new());
+        let report = |value| progress.borrow_mut().push(value);
+        recover_with_hooks(
+            &root,
+            TransactionHooks {
+                progress: Some(&report),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        let progress = progress.into_inner();
+        assert!(
+            progress
+                .iter()
+                .all(|value| value.phase == ProgressPhase::Restoring)
+        );
+        assert_eq!(progress.first().unwrap().completed, 0);
+        assert_eq!(progress.last().unwrap().completed, 2);
+        assert_eq!(progress.last().unwrap().total, 2);
         assert_eq!(fs::read(root.join("bin/application.dat")).unwrap(), b"old");
         assert!(!root.join("bin/added.dat").exists());
         assert_eq!(
@@ -1204,6 +1298,7 @@ mod tests {
             TransactionHooks {
                 probe: Some(&probe),
                 checkpoint: None,
+                progress: None,
             },
         )
         .unwrap();
@@ -1283,6 +1378,8 @@ mod tests {
                 envelope: Vec::new(),
             };
             let probe = || probe_succeeds;
+            let progress = std::cell::RefCell::new(Vec::new());
+            let report = |value| progress.borrow_mut().push(value);
             let result = apply_transaction(
                 &root,
                 &archive,
@@ -1290,7 +1387,56 @@ mod tests {
                 TransactionHooks {
                     probe: Some(&probe),
                     checkpoint: None,
+                    progress: Some(&report),
                 },
+            );
+            let progress = progress.into_inner();
+            for phase in [
+                ProgressPhase::Preparing,
+                ProgressPhase::Verifying,
+                ProgressPhase::Extracting,
+                ProgressPhase::BackingUp,
+                ProgressPhase::Installing,
+                ProgressPhase::Probing,
+            ] {
+                assert!(
+                    progress.iter().any(|value| value.phase == phase),
+                    "missing {phase:?}"
+                );
+            }
+            for phase in [
+                ProgressPhase::Extracting,
+                ProgressPhase::BackingUp,
+                ProgressPhase::Installing,
+            ] {
+                let values: Vec<_> = progress
+                    .iter()
+                    .filter(|value| value.phase == phase)
+                    .collect();
+                assert_eq!(values.first().unwrap().completed, 0);
+                assert_eq!(
+                    values.last().unwrap().completed,
+                    values.last().unwrap().total
+                );
+                assert!(
+                    values
+                        .windows(2)
+                        .all(|pair| pair[0].completed <= pair[1].completed)
+                );
+            }
+            assert_eq!(
+                progress.last().unwrap().phase,
+                if probe_succeeds {
+                    ProgressPhase::Complete
+                } else {
+                    ProgressPhase::Failed
+                }
+            );
+            assert_eq!(
+                progress
+                    .iter()
+                    .any(|value| value.phase == ProgressPhase::Restoring),
+                !probe_succeeds
             );
             if probe_succeeds {
                 result.unwrap();

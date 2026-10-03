@@ -396,6 +396,10 @@
             <translation>更新目標與應用程式處理程序不匹配</translation>
         </message>
         <message>
+            <source>The update worker failed</source>
+            <translation>更新工作處理程序失敗</translation>
+        </message>
+        <message>
             <source>This copy does not have valid Snow Shot installation metadata</source>
             <translation>此副本缺少有效的 Snow Shot 安裝中繼資料</translation>
         </message>
@@ -466,6 +470,69 @@
         <message>
             <source>Update permission was declined or could not be obtained</source>
             <translation>更新權限被拒絕，或無法獲取權限</translation>
+        </message>
+    </context>
+    <context>
+        <name>UpdateProgress</name>
+        <message>
+            <source>%1 / %2 bytes</source>
+            <translation>%1 / %2 位元組</translation>
+        </message>
+        <message>
+            <source>%1 / %2 files</source>
+            <translation>%1 / %2 個檔案</translation>
+        </message>
+        <message>
+            <source>Backing up application files</source>
+            <translation>正在備份應用程式檔案</translation>
+        </message>
+        <message>
+            <source>Checking the updated application</source>
+            <translation>正在檢查更新後的應用程式</translation>
+        </message>
+        <message>
+            <source>Downloading update</source>
+            <translation>正在下載更新</translation>
+        </message>
+        <message>
+            <source>Extracting update</source>
+            <translation>正在解壓縮更新</translation>
+        </message>
+        <message>
+            <source>Installing update</source>
+            <translation>正在安裝更新</translation>
+        </message>
+        <message>
+            <source>Preparing update</source>
+            <translation>正在準備更新</translation>
+        </message>
+        <message>
+            <source>Restoring the previous version</source>
+            <translation>正在還原先前的版本</translation>
+        </message>
+        <message>
+            <source>Update complete</source>
+            <translation>更新完成</translation>
+        </message>
+        <message>
+            <source>Update failed</source>
+            <translation>更新失敗</translation>
+        </message>
+        <message>
+            <source>Update ready</source>
+            <translation>更新已準備就緒</translation>
+        </message>
+        <message>
+            <source>Updating %1</source>
+            <translation>正在更新 %1</translation>
+        </message>
+        <message>
+            <source>Verifying update</source>
+            <translation>正在驗證更新</translation>
+        </message>
+        <message>
+            <source>Waiting for %1 to close</source>
+            <translation>正在等待 %1 關閉</translation>
         </message>
     </context>
     <context>

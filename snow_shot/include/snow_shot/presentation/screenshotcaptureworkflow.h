@@ -56,6 +56,8 @@ class ScreenshotCaptureWorkflow final : private ScreenshotCaptureWorkerEventSink
     ~ScreenshotCaptureWorkflow() override;
 
     void prewarmResources();
+    void setCaptureSuspended(bool suspended);
+    [[nodiscard]] bool captureSuspended() const;
     enum class StartMode { Normal, ExternalDrag };
     enum class ToolbarPreparation { Prewarm, OnDemand };
     enum class ToolbarVisibility { ShowAfterSelection, Suppressed };
@@ -115,6 +117,7 @@ class ScreenshotCaptureWorkflow final : private ScreenshotCaptureWorkerEventSink
     bool m_layoutRefreshInFlight = false;
     bool m_refreshAfterCapture = false;
     bool m_recaptureInProgress = false;
+    bool m_captureSuspended = false;
     quint64 m_recaptureRequestId = 0;
     quint64 m_nextRecaptureRequestId = 0;
     quint64 m_layoutChangeSerial = 0;

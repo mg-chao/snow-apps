@@ -1999,7 +1999,45 @@ void silentCaptureSuppressesAllPresentationAndRestoresVisibleMode() {
             "normal capture after a silent session restores presentation");
 }
 
+void suspendedCaptureDoesNotStartAndRestoresAfterFailedHandoff() {
+    ScreenshotCaptureState state;
+    ScreenshotDisplaySession displays;
+    ScreenshotGeometryMapper geometry;
+    ScreenshotInteractionState interaction;
+    ScreenshotSelectionModel selection;
+    ScreenshotIntelligentSelectionModel intelligent;
+    CaptureRuntime runtime;
+    auto workflow =
+        makeWorkflow(state, displays, geometry, interaction, selection, intelligent, runtime);
+
+    workflow.setCaptureSuspended(true);
+    for (const auto mode : {ScreenshotCaptureWorkflow::StartMode::Normal,
+                            ScreenshotCaptureWorkflow::StartMode::ExternalDrag}) {
+        workflow.startCapture(mode);
+        require(workflow.captureSuspended() && !state.captureInProgress &&
+                    runtime.prepareAsyncCalls == 0 && runtime.captureAllAsyncCalls == 0 &&
+                    runtime.createColorPickerCalls == 0 && interaction.inactive(),
+                "queued capture during handoff must leave native acquisition and UI idle");
+    }
+
+    workflow.setCaptureSuspended(false);
+    workflow.startCapture();
+    require(!workflow.captureSuspended() && state.captureInProgress &&
+                runtime.captureAllAsyncCalls == 1,
+            "failed handoff must allow capture again");
+    workflow.cancelCapture();
+    state.sessionState = ScreenshotSessionState::Editing;
+    interaction.setMoveTool(true, false);
+    workflow.setCaptureSuspended(true);
+    require(!workflow.startRecapture() && runtime.captureAllAsyncCalls == 1,
+            "suspended recapture must not enter native acquisition");
+    workflow.setCaptureSuspended(false);
+    require(workflow.startRecapture() && runtime.captureAllAsyncCalls == 2,
+            "resuming capture must also restore recapture acquisition");
+}
+
 int main() {
+    suspendedCaptureDoesNotStartAndRestoresAfterFailedHandoff();
     captureCompletionReleasesHistoryBeforeExportsFinish();
     silentCaptureSuppressesAllPresentationAndRestoresVisibleMode();
     toolbarPresentationTracksSelectionDragLifetime();

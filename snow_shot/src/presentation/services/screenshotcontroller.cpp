@@ -5283,7 +5283,8 @@ void ScreenshotController::Impl::resetPendingCaptureRequest() {
 }
 
 bool ScreenshotController::Impl::canBeginCapture() const {
-    if (m_captureState.captureInProgress || !m_interaction.inactive() ||
+    if ((m_captureWorkflow && m_captureWorkflow->captureSuspended()) ||
+        m_captureState.captureInProgress || !m_interaction.inactive() ||
         (m_captureState.sessionState != ScreenshotSessionState::IdleCold &&
          m_captureState.sessionState != ScreenshotSessionState::IdlePrepared)) {
         return false;
@@ -5673,6 +5674,13 @@ void ScreenshotController::restoreActivePinnedGroupWindows() {
 
 bool ScreenshotController::captureAvailable() const {
     return m_impl->canBeginCapture();
+}
+
+void ScreenshotController::setCaptureSuspended(bool suspended) {
+    if (!m_impl->m_captureWorkflow || m_impl->m_captureWorkflow->captureSuspended() == suspended)
+        return;
+    m_impl->m_captureWorkflow->setCaptureSuspended(suspended);
+    emit captureAvailabilityChanged(captureAvailable());
 }
 
 bool ScreenshotController::blocksApplicationUpdate() const {

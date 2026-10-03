@@ -1067,6 +1067,10 @@
             <translation>Auto-save image filename format</translation>
         </message>
         <message>
+            <source>Auto-update on next launch</source>
+            <translation>Auto-update on next launch</translation>
+        </message>
+        <message>
             <source>Automatic disabling</source>
             <translation>Automatic disabling</translation>
         </message>
@@ -1261,6 +1265,10 @@
         <message>
             <source>Choose how the dragged selection border follows the mouse while resizing</source>
             <translation>Choose how the dragged selection border follows the mouse while resizing</translation>
+        </message>
+        <message>
+            <source>Choose how updates are downloaded and installed</source>
+            <translation>Choose how updates are downloaded and installed</translation>
         </message>
         <message>
             <source>Choose the OCR model version and size to balance recognition speed and accuracy</source>
@@ -1745,10 +1753,6 @@
         <message>
             <source>Download automatically</source>
             <translation>Download automatically</translation>
-        </message>
-        <message>
-            <source>Download new versions automatically and ask before restarting</source>
-            <translation>Download new versions automatically and ask before restarting</translation>
         </message>
         <message>
             <source>Drag annotation tools to reorder them or stack them in the same toolbar position.</source>

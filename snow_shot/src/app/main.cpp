@@ -18,6 +18,7 @@
 #include "widgets/platform_compatibility.h"
 #include "snow_shot/presentation/components/screenshothistorypagewidget.h"
 #include "snow_shot/storage/applicationstorage.h"
+#include "snow_shot/update/startupupdate.h"
 #include "snow_shot/diagnostics/diagnostics.h"
 #include "diagnosticsbridge.h"
 #include "snow_shot/storage/settingsadapters.h"
@@ -28,6 +29,7 @@
 #include "icon_renderer.h"
 #include "locale/locale.h"
 #include "widgets/tooltip.h"
+#include "theme/theme_manager.h"
 
 #include <QApplication>
 #include <QCoreApplication>
@@ -40,6 +42,7 @@
 #include <QTimer>
 #include <QSysInfo>
 #include <optional>
+#include <utility>
 #include "snow_capture.h"
 #include "snow_recording.h"
 #ifdef SNOW_SHOT_MCP_TEST_FIXTURE
@@ -505,6 +508,8 @@ int main(int argc, char* argv[]) {
     auto launchArguments =
         applicationRestart ? snow_shot::app::normalApplicationArguments(QApplication::arguments())
                            : QApplication::arguments();
+    const bool updaterRelaunch = snow_shot::update::isStartupUpdateRelaunch(launchArguments);
+    launchArguments = snow_shot::update::normalStartupArguments(std::move(launchArguments));
 #ifdef Q_OS_MACOS
     launchArguments = snow_shot::platform::macos::loginItemLaunchArguments(
         launchArguments, snow_shot::platform::macos::initialNativeLoginItemLaunch());
@@ -545,6 +550,56 @@ int main(int argc, char* argv[]) {
 #endif
     adqt::locale::LocaleManager::instance().applyTo(app);
     snow_shot::presentation::LanguageManager::instance().initialize();
+    snow_shot::presentation::styles::ThemeManager::instance().initialize(app);
+#ifdef Q_OS_WIN
+    auto& applicationStorage = snow_shot::storage::ApplicationStorage::instance();
+    if (!updaterRelaunch &&
+        applicationStorage.configuration().value(QStringLiteral("updates/mode")).toString() ==
+            u"next_launch") {
+        snow_shot::update::UpdateService startupUpdate(
+            snow_shot::update::defaultUpdateServiceOptions());
+        startupUpdate.setMode(QStringLiteral("next_launch"));
+        startupUpdate.setProgressAppearance(
+            snow_shot::presentation::styles::ThemeManager::instance().updateProgressAppearance());
+        QObject::connect(&adqt::theme::ThemeManager::instance(),
+                         &adqt::theme::ThemeManager::themeChanged, &startupUpdate,
+                         [&startupUpdate] {
+                             startupUpdate.setProgressAppearance(
+                                 snow_shot::presentation::styles::ThemeManager::instance()
+                                     .updateProgressAppearance());
+                         });
+        startupUpdate.setSystemProxy(
+            applicationStorage.configuration().value(QStringLiteral("network/proxy")).toString() ==
+            u"system");
+        bool foregroundRequested = administratorRestart;
+        const auto relaunchArguments = [&] {
+            QStringList arguments;
+            const bool autostart = launchArguments.contains(QStringLiteral("--autostart"));
+            if (autostart && !foregroundRequested)
+                arguments.append(QStringLiteral("--autostart"));
+            else if (foregroundRequested ||
+                     launchArguments.contains(QStringLiteral("--show-main-window")))
+                arguments.append(QStringLiteral("--show-main-window"));
+            return arguments;
+        };
+        const auto forwardedLaunch = QObject::connect(
+            &singleInstance, &snow_shot::app::SingleInstanceCoordinator::launchRequestReceived,
+            &app, [&](const QStringList& arguments) {
+                foregroundRequested =
+                    foregroundRequested || !arguments.contains(QStringLiteral("--autostart"));
+                startupUpdate.setRelaunchArguments(
+                    snow_shot::update::startupUpdateRelaunchArguments(relaunchArguments()));
+            });
+        const auto startupUpdateResult = snow_shot::update::runStartupUpdate(
+            startupUpdate, [&applicationStorage] { return applicationStorage.flushNow().success; },
+            relaunchArguments);
+        QObject::disconnect(forwardedLaunch);
+        if (startupUpdateResult == snow_shot::update::StartupUpdateResult::ExitForUpdate)
+            return 0;
+    }
+#else
+    static_cast<void>(updaterRelaunch);
+#endif
     const auto startupSettings = snow_shot::storage::SystemSettings();
 #ifdef Q_OS_MACOS
     const auto startupResult =
@@ -560,12 +615,12 @@ int main(int argc, char* argv[]) {
             : snow_shot::platform::windows::StartupMode::Registry);
 #endif
 
-    snow_shot::presentation::styles::ThemeManager::instance().initialize(app);
     adqt::widgets::AdTooltip::installApplicationTooltips();
 
     snow_shot::app::ApplicationController applicationController(app);
     singleInstance.setLaunchRequestHandler([&applicationController](const QStringList& arguments) {
-        applicationController.handleLaunchRequest(arguments);
+        applicationController.handleLaunchRequest(
+            snow_shot::update::normalStartupArguments(arguments));
     });
     applicationController.start();
     if (!startupResult.success) {
@@ -584,7 +639,7 @@ int main(int argc, char* argv[]) {
     snow_shot::diagnostics::logEvent(QStringLiteral("snow_shot.app"),
                                      QStringLiteral("application.ready"));
     if (!launchArguments.contains(QStringLiteral("--autostart")) &&
-        QApplication::arguments().contains(QStringLiteral("--show-main-window"))) {
+        launchArguments.contains(QStringLiteral("--show-main-window"))) {
         applicationController.showMainWindow();
     }
     return QApplication::exec();

@@ -114,6 +114,7 @@
   ],
   "updates": [
     "UpdateErrors",
+    "UpdateProgress",
     "UpdateService",
     "snow_shot::update::UpdateService"
   ]

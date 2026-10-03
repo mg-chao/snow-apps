@@ -123,6 +123,7 @@ namespace {
     QT_TRANSLATE_NOOP("UpdateErrors", "Update permission was declined or could not be obtained"),
     QT_TRANSLATE_NOOP("UpdateErrors", "Could not create update worker directory"),
     QT_TRANSLATE_NOOP("UpdateErrors", "Could not launch update worker"),
+    QT_TRANSLATE_NOOP("UpdateErrors", "The update worker failed"),
     QT_TRANSLATE_NOOP("UpdateErrors", "Elevation is unavailable on this platform"),
     QT_TRANSLATE_NOOP("UpdateErrors", "Unknown updater operation"),
     QT_TRANSLATE_NOOP("UpdateErrors", "The update helper timed out"),

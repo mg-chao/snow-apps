@@ -3,6 +3,7 @@
 #include "snow_shot/app/applicationrestart.h"
 #include "snow_shot/app/updateconfirmationdialog.h"
 #include "snow_shot/app/featureavailability.h"
+#include "snow_shot/app/applicationinputguard.h"
 #include "snow_shot/presentation/apppermissionservice.h"
 #ifdef Q_OS_MACOS
 #include "snow_shot/platform/macos/applicationactivation.h"
@@ -13,11 +14,12 @@
 #include "snow_shot/translation/translationservice.h"
 #endif
 #include "snow_shot/presentation/languagemanager.h"
+#include "snow_shot/presentation/styles/thememanager.h"
+#include "theme/theme_manager.h"
 #include "snow_shot/update/updateservice.h"
+#include "snow_shot/update/startupupdate.h"
 #include "snow_shot/presentation/screenshotexportcoordinator.h"
 #include "snow_shot/presentation/screenshotexportartifact.h"
-#include <QStandardPaths>
-#include <QCryptographicHash>
 
 #include "snow_shot/presentation/globalshortcutmanager.h"
 #include "snow_shot/presentation/globalcanvascontroller.h"
@@ -83,36 +85,6 @@
 
 namespace snow_shot::app {
 namespace {
-// A migration keeps the event loop painting while preventing user-driven mutations
-// and all ordinary close/quit paths, including other top-level pinned windows.
-class StorageMigrationInputGuard final : public QObject {
-  public:
-    explicit StorageMigrationInputGuard(QObject* parent) : QObject(parent) {}
-    bool active = false;
-    bool eventFilter(QObject*, QEvent* event) override {
-        if (!active)
-            return false;
-        switch (event->type()) {
-        case QEvent::Close:
-        case QEvent::Quit:
-            event->ignore();
-            return true;
-        case QEvent::KeyPress:
-        case QEvent::KeyRelease:
-        case QEvent::Shortcut:
-        case QEvent::ShortcutOverride:
-        case QEvent::MouseButtonPress:
-        case QEvent::MouseButtonRelease:
-        case QEvent::MouseButtonDblClick:
-        case QEvent::Wheel:
-        case QEvent::Drop:
-        case QEvent::TouchBegin:
-            return true;
-        default:
-            return false;
-        }
-    }
-};
 const QString kPinBorderColorKey = QStringLiteral("pin_to_screen/border_color");
 const QString kPinBorderActiveColorKey = QStringLiteral("pin_to_screen/border_active_color");
 const QString kTrayEnabledKey = QStringLiteral("tray/enabled");
@@ -348,20 +320,24 @@ class ApplicationController::Impl {
         ocrRecognition =
             std::make_unique<ScreenshotOcrRecognitionService>(ocrOptions, backendPreference, &q);
         auto& configuration = applicationStorage.configuration();
-        update::UpdateService::Options updateOptions;
-        updateOptions.applicationDirectory = QCoreApplication::applicationDirPath();
-        updateOptions.root = QFileInfo(updateOptions.applicationDirectory).dir().absolutePath();
-        const QString updateId = QString::fromLatin1(
-            QCryptographicHash::hash(updateOptions.root.toUtf8(), QCryptographicHash::Sha256)
-                .toHex()
-                .left(24));
-        updateOptions.cacheDirectory =
-            QDir(QStandardPaths::writableLocation(QStandardPaths::CacheLocation))
-                .filePath(QStringLiteral("updates/") + updateId);
-        updates = new update::UpdateService(std::move(updateOptions), &app);
+        updates = new update::UpdateService(update::defaultUpdateServiceOptions(), &app);
+        updates->setProgressAppearance(
+            presentation::styles::ThemeManager::instance().updateProgressAppearance());
+        QObject::connect(
+            &adqt::theme::ThemeManager::instance(), &adqt::theme::ThemeManager::themeChanged,
+            updates, [updateService = updates] {
+                updateService->setProgressAppearance(
+                    presentation::styles::ThemeManager::instance().updateProgressAppearance());
+            });
         updates->setMode(configuration.value(QStringLiteral("updates/mode")).toString());
         updates->setSystemProxy(configuration.value(QStringLiteral("network/proxy")).toString() ==
                                 u"system");
+        QObject::connect(&presentation::LanguageManager::instance(),
+                         &presentation::LanguageManager::languageChanged, updates,
+                         [updateService = updates] {
+                             QEvent event(QEvent::LanguageChange);
+                             QCoreApplication::sendEvent(updateService, &event);
+                         });
         QObject::connect(
             updates, &update::UpdateService::automaticUpdateAvailable, &q,
             [this](const QString& version) {
@@ -387,7 +363,7 @@ class ApplicationController::Impl {
 #endif
         platform::windows::setAdministratorRestartGuard([this] { return restartAllowed(); });
 #ifdef Q_OS_WIN
-        migrationInput = new StorageMigrationInputGuard(&q);
+        migrationInput = new ApplicationInputGuard(&q);
         app.installEventFilter(migrationInput);
         applicationStorage.setDirectoryChangeHooks(
             [this] {
@@ -457,16 +433,24 @@ class ApplicationController::Impl {
             }
             updates->beginApply();
         });
+        handoffInput = new ApplicationInputGuard(&q);
+        app.installEventFilter(handoffInput);
+        QObject::connect(updates, &update::UpdateService::handoffPendingChanged, &q,
+                         [this](bool pending) { setUpdateHandoffPending(pending); });
         QObject::connect(updates, &update::UpdateService::handoffReady, &q, [this] {
             if ((screenshotController != nullptr &&
                  screenshotController->blocksApplicationUpdate()) ||
                 (directCaptureController != nullptr &&
                  directCaptureController->blocksApplicationUpdate()) ||
+                mcpSourceWork != 0 || (mcpJobs && mcpJobs->hasRunningJobs()) ||
                 !storage::ApplicationStorage::instance().flushNow().success) {
                 updates->reportBlocked(ApplicationController::tr(
                     "Finish capturing, recording, or exporting before updating."));
                 return;
             }
+        });
+        QObject::connect(updates, &update::UpdateService::handoffCommitted, &q, [this] {
+            handoffInput->active = false;
             globalShortcutManager.setGlobalHotkeysEnabled(false);
             globalMouseManager.shutdown();
             QApplication::quit();
@@ -533,6 +517,35 @@ class ApplicationController::Impl {
                !(directCaptureController && directCaptureController->blocksApplicationUpdate());
     }
 
+    void setUpdateHandoffPending(bool pending) {
+        handoffInput->active = pending;
+        featureRouter.setSuspended(pending);
+        if (screenshotController)
+            screenshotController->setCaptureSuspended(pending);
+        if (pending) {
+            handoffShortcuts = globalShortcutManager.suspendRegistrations();
+            globalMouseManager.setCaptureAvailable(false);
+            systemTray.setEnabled(false);
+            handoffMcp = mcpServer && mcpServer->isRunning();
+            stopMcp();
+        } else {
+            globalShortcutManager.resumeRegistrations(handoffShortcuts);
+            handoffShortcuts = 0;
+            globalMouseManager.setCaptureAvailable(!screenshotController ||
+                                                   screenshotController->captureAvailable());
+            systemTray.setEnabled(storage::ApplicationStorage::instance()
+                                      .configuration()
+                                      .value(kTrayEnabledKey)
+                                      .toBool());
+            if (handoffMcp && storage::ApplicationStorage::instance()
+                                  .configuration()
+                                  .value(kMcpEnabledKey)
+                                  .toBool())
+                startMcp();
+            handoffMcp = false;
+        }
+    }
+
     void applyOcrConfiguration() {
         if (ocrRecognition == nullptr)
             return;
@@ -549,6 +562,8 @@ class ApplicationController::Impl {
     }
 
     void startMcp() {
+        if (updates && updates->handoffPending())
+            return;
         if (mcpServer && mcpServer->isRunning())
             return;
         auto* controller = ensureScreenshotController();
@@ -1310,6 +1325,7 @@ class ApplicationController::Impl {
         if (screenshotController == nullptr) {
             screenshotController = std::make_unique<ScreenshotController>(
                 &q, &groupManager, ocrRecognition.get(), apiClient());
+            screenshotController->setCaptureSuspended(updates && updates->handoffPending());
             QObject::connect(screenshotController.get(),
                              &ScreenshotController::captureActivityChanged, &floatingToolbar,
                              &presentation::FloatingToolbarController::setCaptureActive);
@@ -1558,7 +1574,8 @@ class ApplicationController::Impl {
     }
 
     void dispatchQuickAction(presentation::GlobalShortcutAction action) {
-        if (storage::ApplicationStorage::instance().directoryChanging())
+        if (storage::ApplicationStorage::instance().directoryChanging() ||
+            (updates && updates->handoffPending()))
             return;
         if (!allowPermissions(
                 presentation::requiredPermissions(action, permissions.microphoneEnabled())))
@@ -1804,7 +1821,10 @@ class ApplicationController::Impl {
     ApplicationController& q;
     QApplication& app;
     ApplicationRestartCoordinator restartCoordinator;
-    StorageMigrationInputGuard* migrationInput = nullptr;
+    ApplicationInputGuard* migrationInput = nullptr;
+    ApplicationInputGuard* handoffInput = nullptr;
+    quint64 handoffShortcuts = 0;
+    bool handoffMcp = false;
     quint64 migrationShortcuts = 0;
     bool migrationMcp = false;
     QString migrationSource;

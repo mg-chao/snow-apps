@@ -1,7 +1,9 @@
 #pragma once
 
 #include <QObject>
+#include <QJsonObject>
 #include <QString>
+#include <QStringList>
 #include <QUrl>
 #include <chrono>
 #include <memory>
@@ -56,14 +58,20 @@ class UpdateService final : public QObject {
     ~UpdateService() override;
     const UpdateStatus& status() const;
     bool busy() const;
+    bool handoffPending() const;
     void start();
     void setMode(const QString& mode);
     void setSystemProxy(bool enabled);
+    void setProgressAppearance(const QJsonObject& appearance);
     void check(bool manual = true);
     void download();
     void cancel();
     void requestRestart();
     void beginApply();
+    // Applies only an update that was already verified and ready before this launch.
+    // Does not start network checks, downloads, or the background schedule.
+    void applyAtStartup();
+    void setRelaunchArguments(const QStringList& arguments);
     void reportBlocked(const QString& reason);
 
   signals:
@@ -73,6 +81,8 @@ class UpdateService final : public QObject {
     void automaticUpdateAvailable(const QString& version);
     void restartRequested();
     void handoffReady();
+    void handoffPendingChanged(bool pending);
+    void handoffCommitted();
 
   protected:
     bool event(QEvent* event) override;

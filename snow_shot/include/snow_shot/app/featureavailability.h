@@ -32,12 +32,14 @@ class FeatureActionRouter final {
     using Action = std::function<void()>;
 
     explicit FeatureActionRouter(FeatureGate::UnavailableHandler unavailableHandler = {});
+    void setSuspended(bool suspended);
     [[nodiscard]] bool dispatch(FeatureFamily feature, Action action = {},
                                 bool notify = true) const;
     [[nodiscard]] bool beginGesture(FeatureFamily feature, Action cancel, Action action = {}) const;
 
   private:
     FeatureGate m_gate;
+    bool m_suspended = false;
 };
 } // namespace snow_shot::app
 

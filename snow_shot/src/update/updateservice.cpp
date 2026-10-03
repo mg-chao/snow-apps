@@ -6,17 +6,51 @@
 #include <QEvent>
 #include <QFileInfo>
 #include <QHash>
+#include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QLoggingCategory>
 #include <QProcess>
+#include <QSet>
 #include <QTimer>
+#include <optional>
 
 namespace snow_shot::update {
 namespace {
 constexpr int kProtocolVersion = 2;
 constexpr qsizetype kMaximumFrameBytes = 64 * 1024;
 constexpr qsizetype kMaximumDiagnosticBytes = 8 * 1024;
+
+QJsonObject progressTexts() {
+    return {
+        {QStringLiteral("title"), QCoreApplication::translate("UpdateProgress", "Updating %1")
+                                      .arg(app::edition::productName())},
+        {QStringLiteral("downloading"),
+         QCoreApplication::translate("UpdateProgress", "Downloading update")},
+        {QStringLiteral("verifying"),
+         QCoreApplication::translate("UpdateProgress", "Verifying update")},
+        {QStringLiteral("preparing"),
+         QCoreApplication::translate("UpdateProgress", "Preparing update")},
+        {QStringLiteral("waiting"),
+         QCoreApplication::translate("UpdateProgress", "Waiting for %1 to close")
+             .arg(app::edition::productName())},
+        {QStringLiteral("extracting"),
+         QCoreApplication::translate("UpdateProgress", "Extracting update")},
+        {QStringLiteral("backingUp"),
+         QCoreApplication::translate("UpdateProgress", "Backing up application files")},
+        {QStringLiteral("installing"),
+         QCoreApplication::translate("UpdateProgress", "Installing update")},
+        {QStringLiteral("probing"),
+         QCoreApplication::translate("UpdateProgress", "Checking the updated application")},
+        {QStringLiteral("restoring"),
+         QCoreApplication::translate("UpdateProgress", "Restoring the previous version")},
+        {QStringLiteral("complete"),
+         QCoreApplication::translate("UpdateProgress", "Update complete")},
+        {QStringLiteral("ready"), QCoreApplication::translate("UpdateProgress", "Update ready")},
+        {QStringLiteral("failed"), QCoreApplication::translate("UpdateProgress", "Update failed")},
+        {QStringLiteral("bytes"), QCoreApplication::translate("UpdateProgress", "%1 / %2 bytes")},
+        {QStringLiteral("files"), QCoreApplication::translate("UpdateProgress", "%1 / %2 files")}};
+}
 
 UpdateState stateFromName(const QString& name, bool* valid) {
     static const QHash<QString, UpdateState> states{
@@ -126,7 +160,8 @@ struct UpdateService::Impl {
                 }
                 const Operation finishedOperation = activeOperation;
                 const Trigger finishedTrigger = activeTrigger;
-                const bool intentional = stopping || handedOff || preserveStatusOnExit ||
+                const bool intentional = stopping || handoffCommittedReported ||
+                                         preserveStatusOnExit ||
                                          lifecycle == Lifecycle::ExpectedExit;
                 handshakeTimeout.stop();
                 handshakeComplete = false;
@@ -220,6 +255,18 @@ struct UpdateService::Impl {
         return mode != u"manual";
     }
 
+    bool automaticDownloadEnabled() const {
+        return mode == u"download" || mode == u"next_launch";
+    }
+
+    void notifyReady() {
+        if (mode != u"next_launch" && status.state == UpdateState::Ready &&
+            !status.version.isEmpty() && notifiedVersion != status.version) {
+            notifiedVersion = status.version;
+            emit q.updateReady();
+        }
+    }
+
     void armStartupCheck() {
         if (started && automaticEnabled()) {
             automaticCheckDue = false;
@@ -289,11 +336,7 @@ struct UpdateService::Impl {
                 pendingOperation = Operation::None;
             }
         }
-        if (status.state == UpdateState::Ready && !status.version.isEmpty() &&
-            notifiedVersion != status.version) {
-            notifiedVersion = status.version;
-            emit q.updateReady();
-        }
+        notifyReady();
         if (activeOperation == Operation::Check &&
             (activeTrigger == Trigger::Startup || activeTrigger == Trigger::Periodic)) {
             armAutomaticInterval();
@@ -308,11 +351,21 @@ struct UpdateService::Impl {
                    activeTrigger == Trigger::PolicyChange) {
             armAutomaticInterval();
         }
-        if ((activeOperation == Operation::Check || activeOperation == Operation::Apply) &&
-            mode == u"download" && status.state == UpdateState::Available) {
+        if ((activeOperation == Operation::Check ||
+             (activeOperation == Operation::Apply && activeTrigger != Trigger::Startup)) &&
+            automaticDownloadEnabled() && status.state == UpdateState::Available) {
             pendingOperation = Operation::Download;
             pendingTrigger = Trigger::PolicyChange;
         }
+        if (activeOperation == Operation::Download && activeTrigger != Trigger::User &&
+            outcome == u"cancelled" && resumePolicyCancelledDownload &&
+            automaticDownloadEnabled() && status.state == UpdateState::Available &&
+            pendingOperation == Operation::None) {
+            pendingOperation = Operation::Download;
+            pendingTrigger = Trigger::PolicyChange;
+        }
+        policyDownloadCancellation = false;
+        resumePolicyCancelledDownload = false;
         queueDueAutomaticCheck();
         lifecycle = Lifecycle::ExpectedExit;
         reportCompletion(outcome);
@@ -330,6 +383,11 @@ struct UpdateService::Impl {
         handshakeComplete = false;
         helloSeen = false;
         cancelWhenRunning = false;
+        policyDownloadCancellation = false;
+        resumePolicyCancelledDownload = false;
+        pendingHandoffRequestId = 0;
+        pendingRelaunchRequestIds.clear();
+        handoffCommittedReported = false;
         stdoutBuffer.clear();
         stderrBuffer.clear();
         QStringList arguments{
@@ -362,22 +420,35 @@ struct UpdateService::Impl {
         }
     }
 
-    void send(const QString& command, QJsonObject payload = {}) {
+    quint64 send(const QString& command, QJsonObject payload = {}) {
         if (!handshakeComplete || process.state() != QProcess::Running) {
-            return;
+            return 0;
         }
+        const quint64 requestId = nextRequestId++;
         payload.insert(QStringLiteral("protocol"), kProtocolVersion);
-        payload.insert(QStringLiteral("id"), static_cast<qint64>(nextRequestId++));
+        payload.insert(QStringLiteral("id"), static_cast<qint64>(requestId));
         payload.insert(QStringLiteral("command"), command);
         QByteArray frame = QJsonDocument(payload).toJson(QJsonDocument::Compact);
         if (frame.size() > kMaximumFrameBytes) {
             protocolFailure();
-            return;
+            return 0;
         }
         frame.append('\n');
         if (process.write(frame) != frame.size()) {
             fail(QCoreApplication::translate("UpdateErrors", "Could not send updater status"));
+            return 0;
         }
+        return requestId;
+    }
+
+    QJsonObject progressConfiguration() const {
+        return {{QStringLiteral("mode"), mode},
+                {QStringLiteral("progressTexts"), progressTexts()},
+                {QStringLiteral("progressAppearance"), progressAppearance}};
+    }
+
+    void configureProgress() {
+        send(QStringLiteral("configure"), progressConfiguration());
     }
 
     void readProtocol() {
@@ -451,11 +522,11 @@ struct UpdateService::Impl {
             handshakeComplete = true;
             lifecycle = Lifecycle::Running;
             handshakeTimeout.stop();
-            send(QStringLiteral("execute"),
-                 {{QStringLiteral("operation"), operationName(activeOperation)},
-                  {QStringLiteral("trigger"), triggerName(activeTrigger)},
-                  {QStringLiteral("mode"), mode},
-                  {QStringLiteral("systemProxy"), systemProxy}});
+            QJsonObject command = progressConfiguration();
+            command.insert(QStringLiteral("operation"), operationName(activeOperation));
+            command.insert(QStringLiteral("trigger"), triggerName(activeTrigger));
+            command.insert(QStringLiteral("systemProxy"), systemProxy);
+            send(QStringLiteral("execute"), command);
             if (cancelWhenRunning) {
                 cancelWhenRunning = false;
                 send(QStringLiteral("cancel"));
@@ -465,10 +536,7 @@ struct UpdateService::Impl {
         if (type == u"status") {
             applyStatus(event.value(QStringLiteral("status")).toObject());
         } else if (type == u"update_ready") {
-            if (!status.version.isEmpty() && notifiedVersion != status.version) {
-                notifiedVersion = status.version;
-                emit q.updateReady();
-            }
+            notifyReady();
         } else if (type == u"operation_complete") {
             const QString outcome = event.value(QStringLiteral("outcome")).toString();
             if (lifecycle != Lifecycle::Running ||
@@ -484,8 +552,13 @@ struct UpdateService::Impl {
             emit q.handoffReady();
             const bool proceed = status.state == UpdateState::Applying;
             if (proceed) {
-                handedOff = true;
-                send(QStringLiteral("handoff_decision"), {{QStringLiteral("proceed"), true}});
+                setHandoffPending(true);
+                QJsonObject decision{{QStringLiteral("proceed"), true}};
+                if (relaunchArguments.has_value()) {
+                    decision.insert(QStringLiteral("relaunchArguments"),
+                                    QJsonArray::fromStringList(*relaunchArguments));
+                }
+                pendingHandoffRequestId = send(QStringLiteral("handoff_decision"), decision);
             }
         } else if (type == u"fatal") {
             const auto error = event.value(QStringLiteral("error")).toObject();
@@ -506,6 +579,23 @@ struct UpdateService::Impl {
             stopProcess();
         } else if (type != u"command_result") {
             protocolFailure();
+        } else if (pendingHandoffRequestId != 0 &&
+                   event.value(QStringLiteral("id")).toInteger(-1) ==
+                       static_cast<qint64>(pendingHandoffRequestId)) {
+            pendingHandoffRequestId = 0;
+            if (!event.value(QStringLiteral("ok")).toBool(false)) {
+                fail(translatedError(event.value(QStringLiteral("error")).toObject()));
+                return;
+            }
+            handedOff = true;
+            commitHandoffIfReady();
+        } else if (pendingRelaunchRequestIds.remove(
+                       static_cast<quint64>(event.value(QStringLiteral("id")).toInteger(0)))) {
+            if (!event.value(QStringLiteral("ok")).toBool(false)) {
+                fail(translatedError(event.value(QStringLiteral("error")).toObject()));
+                return;
+            }
+            commitHandoffIfReady();
         } else if (!event.value(QStringLiteral("ok")).toBool(true)) {
             const auto error = event.value(QStringLiteral("error")).toObject();
             const QString detail = error.value(QStringLiteral("detail")).toString();
@@ -569,7 +659,23 @@ struct UpdateService::Impl {
             return;
         }
         operationFinishedReported = true;
+        setHandoffPending(false);
         emit q.operationFinished(operationName(activeOperation), outcome);
+    }
+
+    void setHandoffPending(bool pending) {
+        if (handoffPending == pending)
+            return;
+        handoffPending = pending;
+        emit q.handoffPendingChanged(pending);
+    }
+
+    void commitHandoffIfReady() {
+        if (handedOff && handoffPending && !handoffCommittedReported &&
+            pendingRelaunchRequestIds.isEmpty()) {
+            handoffCommittedReported = true;
+            emit q.handoffCommitted();
+        }
     }
 
     void fail(const QString& error) {
@@ -598,9 +704,13 @@ struct UpdateService::Impl {
     QByteArray stderrBuffer;
     QByteArray errorSource;
     QString mode = QStringLiteral("download");
+    QJsonObject progressAppearance;
     QString notifiedVersion;
     QString announcedVersion;
     quint64 nextRequestId = 1;
+    quint64 pendingHandoffRequestId = 0;
+    QSet<quint64> pendingRelaunchRequestIds;
+    std::optional<QStringList> relaunchArguments;
     Operation activeOperation = Operation::None;
     Trigger activeTrigger = Trigger::Startup;
     Operation pendingOperation = Operation::None;
@@ -614,6 +724,10 @@ struct UpdateService::Impl {
     bool operationFinishedReported = false;
     bool preserveStatusOnExit = false;
     bool cancelWhenRunning = false;
+    bool handoffPending = false;
+    bool handoffCommittedReported = false;
+    bool policyDownloadCancellation = false;
+    bool resumePolicyCancelledDownload = false;
     bool automaticCheckDue = false;
     Lifecycle lifecycle = Lifecycle::Stopped;
 };
@@ -631,10 +745,13 @@ UpdateService::~UpdateService() {
 }
 
 bool UpdateService::event(QEvent* event) {
-    if (event->type() == QEvent::LanguageChange && !m_impl->errorSource.isEmpty()) {
-        m_impl->status.error =
-            QCoreApplication::translate("UpdateErrors", m_impl->errorSource.constData());
-        emit statusChanged();
+    if (event->type() == QEvent::LanguageChange) {
+        if (!m_impl->errorSource.isEmpty()) {
+            m_impl->status.error =
+                QCoreApplication::translate("UpdateErrors", m_impl->errorSource.constData());
+            emit statusChanged();
+        }
+        m_impl->configureProgress();
     }
     return QObject::event(event);
 }
@@ -647,6 +764,10 @@ bool UpdateService::busy() const {
            m_impl->lifecycle != Lifecycle::Stopped || m_impl->pendingOperation != Operation::None;
 }
 
+bool UpdateService::handoffPending() const {
+    return m_impl->handoffPending;
+}
+
 void UpdateService::start() {
     if (m_impl->started) {
         return;
@@ -657,11 +778,12 @@ void UpdateService::start() {
 }
 
 void UpdateService::setMode(const QString& mode) {
-    if (mode != u"manual" && mode != u"check" && mode != u"download") {
+    if (mode != u"manual" && mode != u"check" && mode != u"download" && mode != u"next_launch") {
         return;
     }
     const QString previous = m_impl->mode;
     m_impl->mode = mode;
+    m_impl->configureProgress();
     if (!m_impl->started) {
         return;
     }
@@ -674,28 +796,40 @@ void UpdateService::setMode(const QString& mode) {
         if (m_impl->activeOperation == Operation::Download &&
             m_impl->activeTrigger != Trigger::User) {
             if (m_impl->handshakeComplete) {
-                m_impl->send(QStringLiteral("cancel"));
+                m_impl->policyDownloadCancellation = m_impl->send(QStringLiteral("cancel")) != 0;
             } else {
+                m_impl->policyDownloadCancellation = true;
                 m_impl->cancelWhenRunning = true;
             }
         }
         return;
     }
-    if (mode != u"download" && m_impl->activeOperation == Operation::Download &&
+    if (!m_impl->automaticDownloadEnabled() && m_impl->activeOperation == Operation::Download &&
         m_impl->activeTrigger != Trigger::User) {
         if (m_impl->handshakeComplete) {
-            m_impl->send(QStringLiteral("cancel"));
+            m_impl->policyDownloadCancellation = m_impl->send(QStringLiteral("cancel")) != 0;
         } else {
+            m_impl->policyDownloadCancellation = true;
             m_impl->cancelWhenRunning = true;
         }
-    } else if (mode == u"download") {
-        m_impl->cancelWhenRunning = false;
+    } else if (m_impl->automaticDownloadEnabled() && m_impl->policyDownloadCancellation) {
+        if (m_impl->cancelWhenRunning) {
+            // A queued policy cancellation can still be withdrawn before the handshake.
+            m_impl->cancelWhenRunning = false;
+            m_impl->policyDownloadCancellation = false;
+        } else {
+            // A sent cancellation cannot be withdrawn; resume after its completion instead.
+            m_impl->resumePolicyCancelledDownload = true;
+        }
     }
-    if (mode != u"download" && m_impl->pendingOperation == Operation::Download &&
+    if (!m_impl->automaticDownloadEnabled() && m_impl->pendingOperation == Operation::Download &&
         m_impl->pendingTrigger != Trigger::User) {
         m_impl->pendingOperation = Operation::None;
     }
-    if (mode == u"download" && m_impl->status.state == UpdateState::Available) {
+    if (m_impl->automaticDownloadEnabled() && m_impl->status.state == UpdateState::Available &&
+        (m_impl->activeOperation != Operation::Download ||
+         m_impl->lifecycle == Lifecycle::ExpectedExit) &&
+        m_impl->pendingOperation != Operation::Download) {
         m_impl->scheduleTimer.stop();
         m_impl->request(Operation::Download, Trigger::PolicyChange);
     } else if (previous == u"manual") {
@@ -707,6 +841,19 @@ void UpdateService::setSystemProxy(bool enabled) {
     m_impl->systemProxy = enabled;
 }
 
+void UpdateService::setProgressAppearance(const QJsonObject& appearance) {
+    if (m_impl->progressAppearance == appearance) {
+        return;
+    }
+    // Cosmetic configuration must leave room for the operation and translated
+    // progress text rather than invalidate the updater's protocol connection.
+    if (QJsonDocument(appearance).toJson(QJsonDocument::Compact).size() > kMaximumFrameBytes / 2) {
+        return;
+    }
+    m_impl->progressAppearance = appearance;
+    m_impl->configureProgress();
+}
+
 void UpdateService::check(bool manual) {
     m_impl->request(Operation::Check, manual ? Trigger::User : Trigger::Periodic);
 }
@@ -716,6 +863,8 @@ void UpdateService::download() {
 }
 
 void UpdateService::cancel() {
+    m_impl->policyDownloadCancellation = false;
+    m_impl->resumePolicyCancelledDownload = false;
     if (m_impl->activeOperation == Operation::None) {
         return;
     }
@@ -732,6 +881,23 @@ void UpdateService::requestRestart() {
 
 void UpdateService::beginApply() {
     m_impl->request(Operation::Apply, Trigger::User);
+}
+
+void UpdateService::applyAtStartup() {
+    m_impl->request(Operation::Apply, Trigger::Startup);
+}
+
+void UpdateService::setRelaunchArguments(const QStringList& arguments) {
+    if (m_impl->relaunchArguments == arguments)
+        return;
+    m_impl->relaunchArguments = arguments;
+    if (m_impl->pendingHandoffRequestId != 0 || (m_impl->handedOff && m_impl->handoffPending)) {
+        const quint64 requestId = m_impl->send(
+            QStringLiteral("relaunch_arguments"),
+            {{QStringLiteral("relaunchArguments"), QJsonArray::fromStringList(arguments)}});
+        if (requestId != 0)
+            m_impl->pendingRelaunchRequestIds.insert(requestId);
+    }
 }
 
 void UpdateService::reportBlocked(const QString& reason) {

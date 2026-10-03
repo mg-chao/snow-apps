@@ -6,6 +6,7 @@ pub mod fsutil;
 mod gitee;
 mod github;
 pub mod platform;
+pub mod progress;
 pub mod protocol;
 pub mod service;
 pub mod transaction;

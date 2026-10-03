@@ -256,6 +256,39 @@ ThemeColorScheme ThemeManager::themeColorScheme() const {
     return m_scheme;
 }
 
+QJsonObject ThemeManager::updateProgressAppearance() const {
+    const auto& resolved = adqt::theme::ThemeManager::instance().globalResolvedTheme();
+    const auto& colors = resolved.theme.palette;
+    const auto& metrics = resolved.theme.metrics;
+    const QColor background = resolved.semantic.surfaceElevated;
+    // The native updater paints opaque RGB surfaces. Flatten Ant's translucent
+    // text and fill tokens over the same elevated background used by Qt popups.
+    const auto rgb = [&background](const QColor& color) {
+        const float alpha = color.alphaF();
+        QColor mixed;
+        mixed.setRedF(color.redF() * alpha + background.redF() * (1.0F - alpha));
+        mixed.setGreenF(color.greenF() * alpha + background.greenF() * (1.0F - alpha));
+        mixed.setBlueF(color.blueF() * alpha + background.blueF() * (1.0F - alpha));
+        return static_cast<int>(mixed.rgb() & 0xffffffU);
+    };
+    return {{QStringLiteral("background"), rgb(background)},
+            {QStringLiteral("border"), rgb(colors.colorBorderSecondary)},
+            {QStringLiteral("text"), rgb(colors.colorText)},
+            {QStringLiteral("textSecondary"), rgb(colors.colorTextSecondary)},
+            {QStringLiteral("textTertiary"), rgb(colors.colorTextTertiary)},
+            {QStringLiteral("fillSecondary"), rgb(colors.colorFillSecondary)},
+            {QStringLiteral("fillTertiary"), rgb(colors.colorFillTertiary)},
+            {QStringLiteral("primary"), rgb(colors.colorPrimary)},
+            {QStringLiteral("primaryBackground"), rgb(colors.colorPrimaryBg)},
+            {QStringLiteral("success"), rgb(colors.colorSuccess)},
+            {QStringLiteral("error"), rgb(colors.colorError)},
+            {QStringLiteral("fontFamily"), QApplication::font().family().left(63)},
+            {QStringLiteral("fontSize"), qRound(metrics.fontSize)},
+            {QStringLiteral("smallFontSize"), qRound(metrics.fontSizeSM)},
+            {QStringLiteral("borderRadius"), qRound(metrics.borderRadiusLG)},
+            {QStringLiteral("motion"), resolved.config.motion}};
+}
+
 void ThemeManager::setThemeStyleConfig(const ThemeStyleConfig& config) {
     auto& adqtThemeManager = adqt::theme::ThemeManager::instance();
     adqtThemeManager.setConfig(toAdqtThemeConfig(config));

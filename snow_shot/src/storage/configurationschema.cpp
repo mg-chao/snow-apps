@@ -238,7 +238,8 @@ const QVector<ConfigurationSchemaEntry> kRawEntries = {
      QStringLiteral("download"),
      ConfigurationValueKind::String,
      std::nullopt,
-     {QStringLiteral("manual"), QStringLiteral("check"), QStringLiteral("download")}},
+     {QStringLiteral("manual"), QStringLiteral("check"), QStringLiteral("download"),
+      QStringLiteral("next_launch")}},
 #endif
     {QStringLiteral("network/proxy"),
      QStringLiteral("none"),
@@ -322,16 +323,10 @@ const QVector<ConfigurationSchemaEntry> kRawEntries = {
      ConfigurationValueKind::Boolean},
     {QStringLiteral("text_recognition/show_original_image_preview"), true,
      ConfigurationValueKind::Boolean},
-    {QStringLiteral("text_recognition/default_formatting"),
-     QStringLiteral("none"),
-     ConfigurationValueKind::String,
-     std::nullopt,
-     ocrTextOptionValues(ocrFormattingOptions())},
-    {QStringLiteral("text_recognition/default_punctuation"),
-     QStringLiteral("none"),
-     ConfigurationValueKind::String,
-     std::nullopt,
-     ocrTextOptionValues(ocrPunctuationOptions())},
+    {QStringLiteral("text_recognition/default_formatting"), QStringLiteral("none"),
+     ConfigurationValueKind::String, std::nullopt, ocrTextOptionValues(ocrFormattingOptions())},
+    {QStringLiteral("text_recognition/default_punctuation"), QStringLiteral("none"),
+     ConfigurationValueKind::String, std::nullopt, ocrTextOptionValues(ocrPunctuationOptions())},
     {QStringLiteral("text_recognition/fill_style"),
      QStringLiteral("background_fill"),
      ConfigurationValueKind::String,
@@ -2117,7 +2112,8 @@ ConfigurationNormalization ConfigurationSchema::normalize(const QString& key,
         return {};
     }
 #ifdef Q_OS_MACOS
-    if (key == u"updates/mode" && value.toString() == u"download") {
+    if (key == u"updates/mode" &&
+        (value.toString() == u"download" || value.toString() == u"next_launch")) {
         return {QStringLiteral("check"), true, true};
     }
 #endif

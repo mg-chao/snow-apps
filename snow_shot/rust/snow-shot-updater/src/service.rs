@@ -7,6 +7,7 @@ use crate::error::{Result, UpdateError, io_error, require};
 use crate::fsutil;
 use crate::gitee;
 use crate::github;
+use crate::progress::{Progress, ProgressAppearance, ProgressPhase, ProgressTexts, ProgressWindow};
 use crate::protocol::{Command, FrameDecoder, MAX_FRAME_BYTES, PROTOCOL_VERSION, Status};
 use crate::transaction;
 use bytes::Bytes;
@@ -215,6 +216,7 @@ enum Mode {
     Manual,
     Check,
     Download,
+    NextLaunch,
 }
 
 impl Mode {
@@ -223,6 +225,7 @@ impl Mode {
             "manual" => Some(Self::Manual),
             "check" => Some(Self::Check),
             "download" => Some(Self::Download),
+            "next_launch" => Some(Self::NextLaunch),
             _ => None,
         }
     }
@@ -329,6 +332,10 @@ struct Service {
     available: Option<AvailableUpdate>,
     status: Status,
     mode: Mode,
+    trigger: Trigger,
+    progress_texts: ProgressTexts,
+    progress_appearance: ProgressAppearance,
+    progress_window: Option<ProgressWindow>,
     system_proxy: bool,
     active: Option<ActiveOperation>,
     cancellation: Option<CancellationToken>,
@@ -501,6 +508,10 @@ impl Service {
                 ..Status::default()
             },
             mode: Mode::Download,
+            trigger: Trigger::Startup,
+            progress_texts: ProgressTexts::default(),
+            progress_appearance: ProgressAppearance::default(),
+            progress_window: None,
             system_proxy: false,
             active: None,
             cancellation: None,
@@ -586,6 +597,46 @@ impl Service {
         if !matches!(state, "Downloading" | "Verifying") {
             self.status.received = 0;
             self.status.total = 0;
+        }
+        self.refresh_progress();
+    }
+
+    fn download_progress_visible(&self) -> bool {
+        self.trigger == Trigger::User || self.mode == Mode::Download
+    }
+
+    fn download_progress(&self) -> Option<Progress> {
+        match self.status.state.as_str() {
+            "Downloading" => Some(Progress {
+                phase: ProgressPhase::Downloading,
+                completed: self.status.received,
+                total: self.status.total,
+            }),
+            "Verifying" => Some(Progress {
+                phase: ProgressPhase::Verifying,
+                completed: 0,
+                total: 0,
+            }),
+            _ => None,
+        }
+    }
+
+    fn refresh_progress(&mut self) {
+        if let Some(progress) = self.download_progress() {
+            if self.download_progress_visible() {
+                let window = self.progress_window.get_or_insert_with(|| {
+                    ProgressWindow::new_with_appearance(
+                        self.progress_texts.clone(),
+                        self.progress_appearance.clone(),
+                    )
+                });
+                window.set_visible(true);
+                window.update(progress);
+            } else if let Some(window) = &self.progress_window {
+                window.set_visible(false);
+            }
+        } else if let Some(window) = self.progress_window.take() {
+            window.finish();
         }
     }
 }
@@ -1485,6 +1536,7 @@ fn start_download(
     service.active = Some(ActiveOperation::Download);
     service.set_state("Downloading", None);
     service.status.total = package.size;
+    service.refresh_progress();
     let cancellation = CancellationToken::new();
     service.cancellation = Some(cancellation.clone());
     tokio::spawn(download_package(
@@ -1587,11 +1639,22 @@ fn prepare_apply(
         result.to_string_lossy().to_string(),
     ];
     let sender = operation_sender.clone();
+    let texts = service.progress_texts.clone();
+    let appearance = service.progress_appearance.clone();
     tokio::spawn(async move {
-        let result = crate::coordination::prepare_service_handoff(args).await;
+        let result = crate::coordination::prepare_service_handoff(args, texts, appearance).await;
         let _ = sender.send(OperationMessage::HandoffPrepared(result)).await;
     });
     Ok(())
+}
+
+fn start_cached_apply(service: &mut Service) -> bool {
+    if service.status.state != "Ready" || service.active.is_some() {
+        return false;
+    }
+    service.active = Some(ActiveOperation::Apply);
+    service.set_state("Applying", None);
+    true
 }
 
 async fn handle_command(
@@ -1651,7 +1714,14 @@ async fn handle_command(
                 Ok((operation, trigger, mode, system_proxy)) => {
                     service.requested = Some(operation);
                     service.mode = mode;
+                    service.trigger = trigger;
                     service.system_proxy = system_proxy;
+                    if let Some(texts) = command.progress_texts {
+                        service.progress_texts = texts;
+                    }
+                    if let Some(appearance) = command.progress_appearance {
+                        service.progress_appearance = appearance;
+                    }
                     let started = match operation {
                         RequestedOperation::Probe => Ok(()),
                         RequestedOperation::Check => {
@@ -1661,7 +1731,9 @@ async fn handle_command(
                             let failed_version = service.available.as_ref().is_some_and(|update| {
                                 is_failed_version(&service.options.root, &update.version)
                             });
-                            if release_retry_is_allowed(trigger.user_initiated(), failed_version) {
+                            let explicit_retry = trigger == Trigger::User
+                                || (mode != Mode::NextLaunch && trigger.user_initiated());
+                            if release_retry_is_allowed(explicit_retry, failed_version) {
                                 start_download(service, operation_sender)
                             } else {
                                 complete = Some("success");
@@ -1669,7 +1741,16 @@ async fn handle_command(
                             }
                         }
                         RequestedOperation::Apply => {
-                            if service.status.state != "Ready" || service.active.is_some() {
+                            if trigger == Trigger::Startup && mode == Mode::NextLaunch {
+                                if start_cached_apply(service) {
+                                    prepare_apply(service, operation_sender)
+                                } else {
+                                    // Next-launch updates use only an already verified cache. A
+                                    // missing, stale, partial, or failed release is a startup no-op.
+                                    complete = Some("success");
+                                    Ok(())
+                                }
+                            } else if service.status.state != "Ready" || service.active.is_some() {
                                 Err(UpdateError::new(
                                     "protocol_state_invalid",
                                     "Invalid updater command argument",
@@ -1687,6 +1768,30 @@ async fn handle_command(
                 Err(error) => Err(error),
             }
         }
+        "configure" => (|| {
+            let mode = command
+                .mode
+                .as_deref()
+                .and_then(Mode::parse)
+                .ok_or_else(|| {
+                    UpdateError::new("protocol_enum_invalid", "Invalid updater command argument")
+                })?;
+            service.mode = mode;
+            if let Some(texts) = command.progress_texts {
+                service.progress_texts = texts;
+                if let Some(window) = &service.progress_window {
+                    window.set_texts(service.progress_texts.clone());
+                }
+            }
+            if let Some(appearance) = command.progress_appearance {
+                service.progress_appearance = appearance;
+                if let Some(window) = &service.progress_window {
+                    window.set_appearance(service.progress_appearance.clone());
+                }
+            }
+            service.refresh_progress();
+            Ok(())
+        })(),
         "cancel" => {
             if let Some(cancellation) = service.cancellation.as_ref() {
                 cancellation.cancel();
@@ -1702,12 +1807,13 @@ async fn handle_command(
                 )?;
                 service.awaiting_handoff = false;
                 let proceed = command.proceed.unwrap_or(false);
-                let handoff = service.handoff.take().ok_or_else(|| {
+                let handoff = service.handoff.as_mut().ok_or_else(|| {
                     UpdateError::new("protocol_state_invalid", "Invalid updater command argument")
                 })?;
-                match handoff.decide(proceed).await {
+                match handoff.decide(proceed, command.relaunch_arguments).await {
                     Ok(()) if proceed => {}
                     Ok(()) => {
+                        service.handoff = None;
                         service.set_state(
                             "Ready",
                             command.reason.as_deref().map(UpdateError::from_message),
@@ -1715,6 +1821,7 @@ async fn handle_command(
                         complete = Some("cancelled");
                     }
                     Err(error) => {
+                        service.handoff = None;
                         service.set_state("Failed", Some(error.clone()));
                         complete = Some("failed");
                         return Err(error);
@@ -1723,6 +1830,32 @@ async fn handle_command(
                 Ok(())
             };
             decision.await
+        }
+        "relaunch_arguments" => {
+            let update = async {
+                require(
+                    !service.awaiting_handoff && service.status.state == "Applying",
+                    "protocol_state_invalid",
+                    "Invalid updater command argument",
+                )?;
+                let arguments = command.relaunch_arguments.ok_or_else(|| {
+                    UpdateError::new(
+                        "invalid_updater_argument",
+                        "Invalid updater command argument",
+                    )
+                })?;
+                let handoff = service.handoff.as_mut().ok_or_else(|| {
+                    UpdateError::new("protocol_state_invalid", "Invalid updater command argument")
+                })?;
+                handoff.set_relaunch_arguments(arguments).await
+            };
+            let result = update.await;
+            if let Err(error) = &result {
+                service.handoff = None;
+                service.set_state("Failed", Some(error.clone()));
+                complete = Some("failed");
+            }
+            result
         }
         "shutdown" => Ok(()),
         _ => Err(UpdateError::new(
@@ -1743,11 +1876,7 @@ async fn handle_command(
         write_completion(writer, operation, outcome, &service.status).await?;
         return Ok(true);
     }
-    if command.command == "shutdown"
-        || (command.command == "handoff_decision"
-            && command.proceed == Some(true)
-            && result.is_ok())
-    {
+    if command.command == "shutdown" {
         return Ok(true);
     }
     Ok(false)
@@ -1817,6 +1946,7 @@ async fn handle_operation(
             if service.active == Some(ActiveOperation::Download) {
                 service.status.received = received;
                 service.status.total = total;
+                service.refresh_progress();
                 write_status(writer, &service.status).await?;
             }
         }
@@ -1831,6 +1961,7 @@ async fn handle_operation(
             service.set_state("Verifying", None);
             service.status.received = package.size;
             service.status.total = package.size;
+            service.refresh_progress();
             write_status(writer, &service.status).await?;
             let verification_path = partial.clone();
             let verification_package = package.clone();
@@ -1907,8 +2038,8 @@ async fn handle_operation(
                 )
                 .await?;
             }
-            Ok(handoff) => {
-                let _ = handoff.decide(false).await;
+            Ok(mut handoff) => {
+                let _ = handoff.decide(false, None).await;
             }
             Err(error) => {
                 service.active = None;
@@ -2332,6 +2463,10 @@ mod tests {
                 ..Status::default()
             },
             mode: Mode::Download,
+            trigger: Trigger::Startup,
+            progress_texts: ProgressTexts::default(),
+            progress_appearance: ProgressAppearance::default(),
+            progress_window: None,
             system_proxy: false,
             active: None,
             cancellation: None,
@@ -2352,6 +2487,239 @@ mod tests {
             "systemProxy": false
         }))
         .unwrap()
+    }
+
+    fn startup_apply_command() -> Command {
+        serde_json::from_value(json!({
+            "protocol": PROTOCOL_VERSION,
+            "id": 1,
+            "command": "execute",
+            "operation": "apply",
+            "trigger": "startup",
+            "mode": "next_launch",
+            "systemProxy": false
+        }))
+        .unwrap()
+    }
+
+    #[tokio::test]
+    async fn relaunch_updates_require_a_committed_handoff() {
+        let temporary = TempDir::new().unwrap();
+        let mut service = ready_service(&temporary, FakeNetwork::new([]));
+        service.requested = Some(RequestedOperation::Apply);
+        service.active = Some(ActiveOperation::Apply);
+        service.status.state = "Applying".to_owned();
+        let command = serde_json::from_value(json!({
+            "protocol": PROTOCOL_VERSION, "id": 2, "command": "relaunch_arguments",
+            "relaunchArguments": ["--show-main-window", "--skip-startup-update"]
+        }))
+        .unwrap();
+        let (sender, _receiver) = mpsc::channel(4);
+        let mut writer = BufWriter::new(tokio::io::stdout());
+        assert!(
+            handle_command(&mut service, command, &mut writer, &sender)
+                .await
+                .unwrap()
+        );
+        assert_eq!(service.status.state, "Failed");
+        assert!(service.handoff.is_none());
+    }
+
+    #[tokio::test]
+    async fn next_launch_startup_without_a_ready_cache_is_an_offline_no_op() {
+        for state in ["Idle", "Available", "Failed"] {
+            let temporary = TempDir::new().unwrap();
+            let network = FakeNetwork::new([]);
+            let mut service = ready_service(&temporary, network.clone());
+            service.status.state = state.to_owned();
+            let mut writer = BufWriter::new(tokio::io::stdout());
+            let (sender, mut receiver) = mpsc::channel(4);
+            assert!(
+                handle_command(&mut service, startup_apply_command(), &mut writer, &sender)
+                    .await
+                    .unwrap()
+            );
+            assert_eq!(service.status.state, state);
+            assert!(service.active.is_none());
+            assert!(receiver.try_recv().is_err());
+            assert!(network.requests().is_empty());
+        }
+    }
+
+    #[test]
+    fn next_launch_cached_apply_starts_without_a_network_check() {
+        let temporary = TempDir::new().unwrap();
+        let network = FakeNetwork::new([]);
+        let mut service = ready_service(&temporary, network.clone());
+        assert!(start_cached_apply(&mut service));
+        assert_eq!(service.active, Some(ActiveOperation::Apply));
+        assert_eq!(service.status.state, "Applying");
+        assert!(network.requests().is_empty());
+        assert!(!start_cached_apply(&mut service));
+    }
+
+    #[test]
+    fn next_launch_cache_readiness_rejects_partial_stale_and_failed_releases() {
+        for scenario in [
+            "ready",
+            "missing",
+            "corrupt",
+            "stale",
+            "wrong_variant",
+            "failed",
+        ] {
+            let temporary = TempDir::new().unwrap();
+            let mut service = ready_service(&temporary, FakeNetwork::new([]));
+            let update = service.available.take().unwrap();
+            let release = UpdateRelease {
+                version: update.version.clone(),
+                packages: vec![UpdatePackage {
+                    variant: if scenario == "wrong_variant" {
+                        "offline"
+                    } else {
+                        "portable"
+                    }
+                    .to_owned(),
+                    kind: "portable".to_owned(),
+                    path: update.path.clone(),
+                    size: update.size,
+                    sha256: update.sha256.clone(),
+                    files: Vec::new(),
+                }],
+                envelope: Vec::new(),
+            };
+            let payload = cache_path(&service.options, format!("{}.zip", update.sha256));
+            match scenario {
+                "missing" => {
+                    std::fs::rename(&payload, payload.with_extension("part")).unwrap();
+                }
+                "corrupt" => std::fs::write(&payload, b"corrupt payload").unwrap(),
+                "stale" => service.installed_version.clone_from(&update.version),
+                "failed" => {
+                    std::fs::create_dir_all(
+                        failed_version_path(&service.options.root).parent().unwrap(),
+                    )
+                    .unwrap();
+                    std::fs::write(failed_version_path(&service.options.root), &update.version)
+                        .unwrap();
+                }
+                _ => {}
+            }
+            service.status = Status {
+                state: "Idle".to_owned(),
+                ..Status::default()
+            };
+            service.restore_verified_release(release);
+            assert_eq!(
+                service.status.state == "Ready",
+                scenario == "ready",
+                "{scenario}"
+            );
+            assert_eq!(
+                start_cached_apply(&mut service),
+                scenario == "ready",
+                "{scenario}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn next_launch_policy_change_does_not_retry_a_failed_release() {
+        let temporary = TempDir::new().unwrap();
+        let network = FakeNetwork::new([]);
+        let mut service = ready_service(&temporary, network.clone());
+        std::fs::create_dir_all(failed_version_path(&service.options.root).parent().unwrap())
+            .unwrap();
+        std::fs::write(failed_version_path(&service.options.root), "2.0.0").unwrap();
+        service.status.state = "Available".to_owned();
+        let command = serde_json::from_value(json!({
+            "protocol": PROTOCOL_VERSION, "id": 1, "command": "execute",
+            "operation": "download", "trigger": "policyChange", "mode": "next_launch",
+            "systemProxy": false
+        }))
+        .unwrap();
+        let (sender, mut receiver) = mpsc::channel(4);
+        let mut writer = BufWriter::new(tokio::io::stdout());
+        assert!(
+            handle_command(&mut service, command, &mut writer, &sender)
+                .await
+                .unwrap()
+        );
+        assert!(service.active.is_none());
+        assert!(receiver.try_recv().is_err());
+        assert!(network.requests().is_empty());
+    }
+
+    #[tokio::test]
+    async fn configure_changes_download_visibility_without_restarting_the_operation() {
+        let temporary = TempDir::new().unwrap();
+        let network = FakeNetwork::new([]);
+        let mut service = ready_service(&temporary, network.clone());
+        service.requested = Some(RequestedOperation::Download);
+        service.trigger = Trigger::PolicyChange;
+        service.active = Some(ActiveOperation::Download);
+        // Test policy independently of native HWND creation.
+        service.status.state = "Available".to_owned();
+        let (sender, _receiver) = mpsc::channel(4);
+        let mut writer = BufWriter::new(tokio::io::stdout());
+        for (id, mode, visible) in [
+            (1, "next_launch", false),
+            (2, "download", true),
+            (3, "manual", false),
+        ] {
+            let command = serde_json::from_value(json!({
+                "protocol": PROTOCOL_VERSION,
+                "id": id,
+                "command": "configure",
+                "mode": mode,
+                "progressTexts": {"title": "Translated update title"},
+                "progressAppearance": {
+                    "background": if id == 2 { 0x141414 } else { 0xffffff },
+                    "primary": 0x52c41a,
+                    "motion": false
+                }
+            }))
+            .unwrap();
+            assert!(
+                !handle_command(&mut service, command, &mut writer, &sender)
+                    .await
+                    .unwrap()
+            );
+            assert_eq!(service.download_progress_visible(), visible);
+            assert_eq!(service.active, Some(ActiveOperation::Download));
+            assert_eq!(service.requested, Some(RequestedOperation::Download));
+            assert_eq!(service.progress_texts.title, "Translated update title");
+            assert_eq!(
+                service.progress_appearance.background,
+                if id == 2 { 0x141414 } else { 0xffffff }
+            );
+            assert_eq!(service.progress_appearance.primary, 0x52c41a);
+            assert!(!service.progress_appearance.motion);
+        }
+        service.trigger = Trigger::User;
+        service.mode = Mode::NextLaunch;
+        assert!(service.download_progress_visible());
+        assert!(network.requests().is_empty());
+    }
+
+    #[test]
+    fn verification_progress_is_indeterminate_without_changing_protocol_bytes() {
+        let temporary = TempDir::new().unwrap();
+        let mut service = ready_service(&temporary, FakeNetwork::new([]));
+        service.status.state = "Verifying".to_owned();
+        service.status.received = 11;
+        service.status.total = 11;
+        assert_eq!(
+            service.download_progress(),
+            Some(Progress::new(ProgressPhase::Verifying, 0, 0))
+        );
+        assert_eq!((service.status.received, service.status.total), (11, 11));
+        service.status.state = "Downloading".to_owned();
+        service.status.received = 4;
+        assert_eq!(
+            service.download_progress(),
+            Some(Progress::new(ProgressPhase::Downloading, 4, 11))
+        );
     }
 
     #[tokio::test]

@@ -1084,6 +1084,7 @@ set(PROJECT_HEADERS
     include/snow_shot/app/mcp/mcpjobregistry.h
     include/snow_shot/app/mcp/mcpmediaservice.h
     include/snow_shot/app/featureavailability.h
+    include/snow_shot/app/applicationinputguard.h
     include/snow_shot/presentation/screenshotencodingsettings.h
     include/snow_shot/presentation/directcapturecontroller.h
     include/snow_shot/presentation/directcaptureworkflow.h
@@ -1733,6 +1734,10 @@ if(SNOW_SHOT_BUILD_TESTS)
         tests/application_storage_tests.cpp
     )
     target_link_libraries(snow-shot-application-storage-tests PRIVATE snow_shot_storage Qt6::Core)
+    add_test(NAME snow-shot-update-settings-tests
+        COMMAND snow-shot-application-storage-tests --update-settings-only)
+    set_tests_properties(snow-shot-update-settings-tests PROPERTIES LABELS "unit" TIMEOUT 30
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
     if(APPLE)
         add_test(NAME snow-shot-storage-startup-directory-tests
             COMMAND snow-shot-application-storage-tests --directory-resolution-only)
@@ -8455,6 +8460,13 @@ if(SNOW_SHOT_BUILD_TESTS)
     target_include_directories(snow-shot-pinned-placement-tests PRIVATE include src)
     target_link_libraries(snow-shot-pinned-placement-tests PRIVATE Qt6::Gui)
     add_test(NAME snow-shot-pinned-placement-tests COMMAND snow-shot-pinned-placement-tests)
+    add_executable(snow-shot-feature-action-router-tests tests/feature_action_router_tests.cpp
+        src/app/featureavailability.cpp)
+    target_include_directories(snow-shot-feature-action-router-tests PRIVATE include)
+    target_link_libraries(snow-shot-feature-action-router-tests PRIVATE Qt6::Gui)
+    add_test(NAME snow-shot-feature-action-router-tests COMMAND snow-shot-feature-action-router-tests)
+    set_tests_properties(snow-shot-feature-action-router-tests PROPERTIES
+        LABELS unit SNOW_TEST_CROSS_PLATFORM TRUE)
     add_test(NAME snow-shot-pinned-controlled-interaction-tests
         COMMAND snow-shot-pinned-window-tests --controlled-interaction-only -platform offscreen)
     add_test(NAME snow-shot-pinned-pointer-routing-tests

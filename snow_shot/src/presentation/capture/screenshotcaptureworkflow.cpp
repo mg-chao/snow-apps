@@ -57,9 +57,19 @@ bool ScreenshotCaptureWorkflow::suppressCaptureToolbar() const {
     return m_toolbarVisibility == ToolbarVisibility::Suppressed;
 }
 
+void ScreenshotCaptureWorkflow::setCaptureSuspended(bool suspended) {
+    m_captureSuspended = suspended;
+}
+
+bool ScreenshotCaptureWorkflow::captureSuspended() const {
+    return m_captureSuspended;
+}
+
 void ScreenshotCaptureWorkflow::startCapture(StartMode mode, ToolbarPreparation toolbarPreparation,
                                              ToolbarVisibility toolbarVisibility,
                                              PresentationMode presentation) {
+    if (m_captureSuspended)
+        return;
     const QPoint initialCursorGlobalPosition = m_context.cursorPosition();
     completeRecapture(false);
     if (m_deferredExportCleanup) {
@@ -112,7 +122,7 @@ void ScreenshotCaptureWorkflow::startCapture(StartMode mode, ToolbarPreparation 
 }
 
 bool ScreenshotCaptureWorkflow::startRecapture(const QVector<std::uint32_t>& excludedWindowIds) {
-    if (m_recaptureInProgress || m_state.captureInProgress ||
+    if (m_captureSuspended || m_recaptureInProgress || m_state.captureInProgress ||
         m_state.sessionState != ScreenshotSessionState::Editing ||
         !m_context.interaction.moveToolActive()) {
         return false;
