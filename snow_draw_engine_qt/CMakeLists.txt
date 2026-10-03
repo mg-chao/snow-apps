@@ -15,6 +15,7 @@ option(SNOW_DRAW_ENGINE_QT_STRICT_COMPILE "Treat Snow Draw Engine Qt warnings as
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/../cmake")
 include(RustStaticLibrary)
 include(ProjectWarnings)
+include(SnowPixelBuffer)
 include(SnowQtOffscreenTest)
 include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/SnowCanvasQtSources.cmake")
 if(SNOW_DRAW_ENGINE_QT_STRICT_COMPILE)
@@ -51,6 +52,12 @@ if(NOT TARGET snow_draw_engine_c)
         STRIP_MSVC_DIRECTIVES
     )
 endif()
+
+add_library(snow_canvas_image STATIC
+    src/rendering/snow_canvas_image.cpp
+    include/snow_draw_engine_qt/snow_canvas_image.h)
+target_include_directories(snow_canvas_image PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include")
+target_link_libraries(snow_canvas_image PUBLIC Qt6::Gui $<BUILD_INTERFACE:snow_pixel_buffer>)
 
 qt_add_library(snow_draw_engine_qt_canvas STATIC
     ${SNOW_CANVAS_QT_SOURCES}
@@ -92,7 +99,9 @@ target_include_directories(snow_draw_engine_qt_canvas
 target_link_libraries(snow_draw_engine_qt_canvas
     PUBLIC
         Qt6::Widgets
+        $<BUILD_INTERFACE:snow_pixel_buffer>
     PRIVATE
+        snow_canvas_image
         Qt6::Svg
         opencv_core
         opencv_imgproc
@@ -129,6 +138,12 @@ if(SNOW_DRAW_ENGINE_QT_BUILD_DEMO)
 endif()
 
 if(SNOW_DRAW_ENGINE_QT_BUILD_BENCHMARKS)
+    add_executable(snow-canvas-image-memory-benchmark
+        tests/snow_canvas_image_memory_benchmark.cpp)
+    target_link_libraries(snow-canvas-image-memory-benchmark PRIVATE snow_canvas_image)
+    if(WIN32)
+        target_link_libraries(snow-canvas-image-memory-benchmark PRIVATE psapi)
+    endif()
     add_executable(snow-canvas-eraser-benchmark tests/snow_canvas_eraser_benchmark.cpp)
     target_include_directories(snow-canvas-eraser-benchmark PRIVATE
         ${SNOW_CANVAS_QT_PRIVATE_SOURCE_DIRS}
@@ -169,7 +184,8 @@ if(SNOW_DRAW_ENGINE_QT_BUILD_BENCHMARKS)
         "${CMAKE_CURRENT_SOURCE_DIR}/crates/snow-draw-engine-c/include"
     )
     target_link_libraries(snow-canvas-smart-erase-benchmark PRIVATE
-        snow_draw_engine_c Qt6::Widgets opencv_core opencv_imgproc
+        snow_draw_engine_c snow_canvas_image $<BUILD_INTERFACE:snow_pixel_buffer>
+        Qt6::Widgets opencv_core opencv_imgproc
     )
     add_executable(snow-canvas-rectangle-benchmark
         tests/snow_canvas_rectangle_benchmark.cpp
@@ -230,7 +246,10 @@ endif()
 
 if(SNOW_DRAW_ENGINE_QT_BUILD_TESTS)
     enable_testing()
-
+    add_executable(snow-canvas-image-tests tests/snow_canvas_image_tests.cpp)
+    target_link_libraries(snow-canvas-image-tests PRIVATE snow_canvas_image snow_pixel_buffer)
+    add_test(NAME snow-canvas-image-tests COMMAND snow-canvas-image-tests)
+    set_tests_properties(snow-canvas-image-tests PROPERTIES LABELS "unit" TIMEOUT 30)
     # Test binaries must report failures as stderr output plus a non-zero
     # exit code instead of blocking on modal dialogs.
     snow_link_test_cli_guard(qt)
@@ -408,7 +427,8 @@ if(SNOW_DRAW_ENGINE_QT_BUILD_TESTS)
         src/rendering/snow_canvas_filter_avx2.cpp
         src/rendering/snow_canvas_render_diagnostics.cpp
     )
-    target_link_libraries(snow-canvas-filter-safety-tests PRIVATE Qt6::Gui)
+    target_link_libraries(snow-canvas-filter-safety-tests PRIVATE
+        snow_canvas_image snow_pixel_buffer Qt6::Gui)
     add_test(NAME snow-canvas-filter-barrier-safety-tests
         COMMAND snow-canvas-filter-safety-tests barrier)
     add_test(NAME snow-canvas-filter-cache-safety-tests
@@ -430,7 +450,8 @@ if(SNOW_DRAW_ENGINE_QT_BUILD_TESTS)
         ${SNOW_CANVAS_QT_PRIVATE_SOURCE_DIRS}
         "${CMAKE_CURRENT_SOURCE_DIR}/crates/snow-draw-engine-c/include"
     )
-    target_link_libraries(snow-canvas-smart-erase-tests PRIVATE snow_draw_engine_qt_canvas)
+    target_link_libraries(snow-canvas-smart-erase-tests PRIVATE
+        snow_draw_engine_qt_canvas snow_canvas_image opencv_core opencv_imgproc)
     snow_shot_import_offscreen_platform(snow-canvas-smart-erase-tests)
     add_test(NAME snow-canvas-smart-erase-tests COMMAND snow-canvas-smart-erase-tests)
     set_tests_properties(snow-canvas-smart-erase-tests PROPERTIES TIMEOUT 90 LABELS unit
@@ -448,7 +469,8 @@ if(SNOW_DRAW_ENGINE_QT_BUILD_TESTS)
     target_link_libraries(snow-canvas-smart-erase-quality-tests PRIVATE
         # snow_canvas_render_geometry resolves text paint bounds through the
         # engine's C ABI, so the Rust static library must be linked in.
-        snow_draw_engine_c Qt6::Widgets opencv_core opencv_imgproc)
+        snow_draw_engine_c snow_canvas_image $<BUILD_INTERFACE:snow_pixel_buffer>
+        Qt6::Widgets opencv_core opencv_imgproc)
     add_test(NAME snow-canvas-smart-erase-quality-tests COMMAND snow-canvas-smart-erase-quality-tests)
     set_tests_properties(snow-canvas-smart-erase-quality-tests PROPERTIES TIMEOUT 180 LABELS unit
         ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:opencv_core>")
@@ -488,6 +510,7 @@ if(SNOW_DRAW_ENGINE_QT_BUILD_TESTS)
         "${CMAKE_CURRENT_SOURCE_DIR}/crates/snow-draw-engine-c/include"
     )
     target_link_libraries(snow-canvas-filter-render-tests PRIVATE
+        snow_pixel_buffer snow_canvas_image
         snow_draw_engine_qt_canvas
     )
     snow_shot_import_offscreen_platform(snow-canvas-filter-render-tests)

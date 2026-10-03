@@ -1,5 +1,7 @@
 #include "snow/image/processing.h"
 
+#include <snow/memory/pixel_array.h>
+
 #include "alpha_analysis.h"
 
 #include "snow/image/codec.h"
@@ -165,7 +167,8 @@ Pixel read_rgba8_pixel(const ImageView& view, std::uint32_t x, std::uint32_t y, 
     return pixel;
 }
 
-Result<std::vector<Pixel>> unpack(const Image& image, bool linear_rgb, std::stop_token stop) {
+Result<snow::memory::PixelArray<Pixel>> unpack(const Image& image, bool linear_rgb,
+                                               std::stop_token stop) {
     const ImageView view = image.view();
     Result<void> valid = view.validate();
     if (!valid)
@@ -181,7 +184,7 @@ Result<std::vector<Pixel>> unpack(const Image& image, bool linear_rgb, std::stop
         return Status::error(ErrorCode::unsupported_feature,
                              "Image processing does not support this channel layout.");
     }
-    std::vector<Pixel> pixels;
+    snow::memory::PixelArray<Pixel> pixels;
     try {
         pixels.resize(static_cast<std::size_t>(view.width) * view.height);
     } catch (const std::bad_alloc&) {
@@ -275,7 +278,7 @@ Result<std::vector<Pixel>> unpack(const Image& image, bool linear_rgb, std::stop
     return pixels;
 }
 
-Result<Image> pack_rgba8(const std::vector<Pixel>& pixels, std::uint32_t width,
+Result<Image> pack_rgba8(const snow::memory::PixelArray<Pixel>& pixels, std::uint32_t width,
                          std::uint32_t height, bool linear_rgb) {
     Result<MutableImage> allocated = MutableImage::allocate(width, height, kRgba8);
     if (!allocated)
@@ -609,11 +612,13 @@ bool filter_horizontal_row(const ImageView& source, std::uint32_t source_y,
     return true;
 }
 
-Result<void> filter_horizontal_input_row(
-    const ImageView* image_source, const RasterSource* raster_source, std::uint32_t source_width,
-    const PixelFormat& source_format, std::size_t source_row_bytes, std::uint32_t source_y,
-    const PackedWeights& horizontal, const ResizeOptions& options, bool specialized_rgba8,
-    bool bgra8, std::span<Pixel> output, std::vector<std::byte>& scratch, std::stop_token stop) {
+Result<void>
+filter_horizontal_input_row(const ImageView* image_source, const RasterSource* raster_source,
+                            std::uint32_t source_width, const PixelFormat& source_format,
+                            std::size_t source_row_bytes, std::uint32_t source_y,
+                            const PackedWeights& horizontal, const ResizeOptions& options,
+                            bool specialized_rgba8, bool bgra8, std::span<Pixel> output,
+                            snow::memory::PixelArray<std::byte>& scratch, std::stop_token stop) {
     if (image_source != nullptr) {
         if (!filter_horizontal_row(*image_source, source_y, horizontal, options, specialized_rgba8,
                                    bgra8, output, stop)) {
@@ -771,9 +776,9 @@ Result<void> resize_packed_into(const ImageView* image_source, const RasterSourc
                                  "Streaming resize accumulator size overflows.");
         }
         try {
-            std::vector<Pixel> horizontal_row(options.width);
-            std::vector<std::byte> source_row;
-            std::vector<Pixel> accumulators(active_rows * options.width);
+            snow::memory::PixelArray<Pixel> horizontal_row(options.width);
+            snow::memory::PixelArray<std::byte> source_row;
+            snow::memory::PixelArray<Pixel> accumulators(active_rows * options.width);
             constexpr std::size_t kNoSlot = std::numeric_limits<std::size_t>::max();
             std::vector<std::size_t> target_slots(options.height, kNoSlot);
             std::vector<std::size_t> free_slots;
@@ -862,9 +867,9 @@ Result<void> resize_packed_into(const ImageView* image_source, const RasterSourc
 
     const auto run_band = [&](std::uint32_t first_y, std::uint32_t last_y) {
         try {
-            std::vector<Pixel> ring(ring_rows * options.width);
+            snow::memory::PixelArray<Pixel> ring(ring_rows * options.width);
             std::vector<int> ring_sources(ring_rows, -1);
-            std::vector<std::byte> source_row;
+            snow::memory::PixelArray<std::byte> source_row;
             std::unordered_map<int, std::size_t> source_slots;
             const bool indexed_slots = ring_rows > 32U;
             if (indexed_slots)
@@ -1157,8 +1162,8 @@ Result<Image> reduce_palette(const Image& source, const PaletteOptions& options,
     if (!allocated)
         return allocated.error();
     MutableImage output = std::move(allocated).value();
-    std::vector<std::array<float, 4>> next_error(width + 2U);
-    std::vector<std::array<float, 4>> current_error(width + 2U);
+    snow::memory::PixelArray<std::array<float, 4>> next_error(width + 2U);
+    snow::memory::PixelArray<std::array<float, 4>> current_error(width + 2U);
     for (std::uint32_t y = 0; y < height; ++y) {
         if (stop.stop_requested()) {
             return Status::error(ErrorCode::cancelled, "Image operation was cancelled.");
@@ -1190,7 +1195,8 @@ Result<Image> reduce_palette(const Image& source, const PaletteOptions& options,
                 value.red - quantized.red, value.green - quantized.green,
                 value.blue - quantized.blue, value.alpha - quantized.alpha};
             const int direction = reverse ? -1 : 1;
-            auto diffuse = [&](std::vector<std::array<float, 4>>& row, int position, float factor) {
+            auto diffuse = [&](snow::memory::PixelArray<std::array<float, 4>>& row, int position,
+                               float factor) {
                 if (position < 0 || position >= static_cast<int>(row.size()))
                     return;
                 for (std::size_t channel = 0; channel < 4U; ++channel) {
@@ -1235,18 +1241,40 @@ compose_frames(const Document& document, std::stop_token stop,
     if (width == 0 || height == 0) {
         return Status::error(ErrorCode::invalid_argument, "Document canvas is empty.");
     }
-    std::vector<Pixel> canvas(static_cast<std::size_t>(width) * height);
+    if (stop.stop_requested()) {
+        return Status::error(ErrorCode::cancelled, "Image operation was cancelled.");
+    }
+    const std::size_t frame_count = std::min(maximum_frames, document.frames.size());
+    const Frame& first = document.frames.front();
+    // A full source replacement is already the composed first frame. Immutable
+    // pixel ownership can cross this boundary without a float canvas or a copy.
+    if (frame_count == 1 && first.x == 0 && first.y == 0 && first.image.width() == width &&
+        first.image.height() == height && first.blend == FrameBlend::source &&
+        first.image.format() == kRgba8 &&
+        first.image.row_stride() == static_cast<std::size_t>(width) * 4U &&
+        first.image.pixels().size() == first.image.row_stride() * height) {
+        Result<void> valid = first.image.view().validate();
+        if (!valid)
+            return valid.error();
+        Document result = document;
+        result.frames.resize(1);
+        result.frames.front().disposal = FrameDisposal::keep;
+        return result;
+    }
+    snow::memory::PixelArray<Pixel> canvas(static_cast<std::size_t>(width) * height);
     Document result = document;
     result.frames.clear();
     for (const Frame& frame : document.frames) {
         if (stop.stop_requested()) {
             return Status::error(ErrorCode::cancelled, "Image operation was cancelled.");
         }
-        Result<std::vector<Pixel>> source = unpack(frame.image, false, stop);
+        Result<snow::memory::PixelArray<Pixel>> source = unpack(frame.image, false, stop);
         if (!source)
             return source.error();
-        const std::vector<Pixel> previous =
-            frame.disposal == FrameDisposal::previous ? canvas : std::vector<Pixel>{};
+        snow::memory::PixelArray<Pixel> previous =
+            frame.disposal == FrameDisposal::previous && result.frames.size() + 1U < frame_count
+                ? canvas
+                : snow::memory::PixelArray<Pixel>{};
         for (std::uint32_t y = 0; y < frame.image.height(); ++y) {
             if (frame.y + y >= height)
                 continue;
@@ -1280,7 +1308,7 @@ compose_frames(const Document& document, std::stop_token stop,
                             std::min(frame.image.width(), width - frame.x), Pixel{});
             }
         } else if (frame.disposal == FrameDisposal::previous) {
-            canvas = previous;
+            canvas = std::move(previous);
         }
     }
     return result;
@@ -1561,7 +1589,7 @@ Result<void> transform_to_sink(const Document& document, const TransformOptions&
         Result<void> status = sink.begin(info);
         if (!status)
             return status;
-        std::vector<Pixel> canvas;
+        snow::memory::PixelArray<Pixel> canvas;
         if (compose) {
             const std::uint64_t canvas_pixels =
                 static_cast<std::uint64_t>(document.canvas_width) * document.canvas_height;
@@ -1575,10 +1603,10 @@ Result<void> transform_to_sink(const Document& document, const TransformOptions&
                 return Status::error(ErrorCode::cancelled, "Image operation was cancelled.");
             }
             const Frame& frame = document.frames[index];
-            std::vector<Pixel> previous;
+            snow::memory::PixelArray<Pixel> previous;
             Image working = frame.image;
             if (compose) {
-                Result<std::vector<Pixel>> source = unpack(frame.image, false, stop);
+                Result<snow::memory::PixelArray<Pixel>> source = unpack(frame.image, false, stop);
                 if (!source)
                     return source.error();
                 if (frame.disposal == FrameDisposal::previous)
@@ -1657,7 +1685,7 @@ Result<void> transform_to_sink(const Document& document, const TransformOptions&
 }
 
 Result<Document> flatten_animation(const Document& document, std::stop_token stop) {
-    Result<Document> composed = compose_frames(document, stop);
+    Result<Document> composed = compose_frames(document, stop, 1U);
     if (!composed)
         return composed.error();
     Document result = std::move(composed).value();

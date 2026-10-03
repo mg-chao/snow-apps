@@ -1,6 +1,7 @@
 #include "snow/image/image.h"
 
 #include "alpha_analysis.h"
+#include <snow/memory/pixel_buffer.h>
 
 #include <algorithm>
 #include <limits>
@@ -166,15 +167,17 @@ Result<MutableImage> MutableImage::allocate(std::uint32_t width, std::uint32_t h
     }
 
     try {
-        auto allocation = std::make_shared<std::vector<std::byte>>(allocation_size.value());
+        auto allocation = snow::memory::allocatePixelBuffer(allocation_size.value());
+        if (!allocation)
+            return Status::error(ErrorCode::out_of_memory, "Could not allocate the image buffer.");
         MutableImage image;
         image.width_ = width;
         image.height_ = height;
         image.format_ = format;
         image.row_stride_ = row_stride;
-        image.writable_ = allocation->data();
-        image.pixels_ =
-            SharedPixelBuffer(std::move(allocation), image.writable_, allocation_size.value());
+        image.writable_ = reinterpret_cast<std::byte*>(allocation.get());
+        image.pixels_ = SharedPixelBuffer(std::shared_ptr<const void>(std::move(allocation)),
+                                          image.writable_, allocation_size.value());
         image.alpha_analysis_ = make_alpha_analysis(format);
         return image;
     } catch (const std::bad_alloc&) {

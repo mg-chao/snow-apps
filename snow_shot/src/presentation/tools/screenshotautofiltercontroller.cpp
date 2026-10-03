@@ -1,3 +1,4 @@
+#include "snow_draw_engine_qt/snow_canvas_image.h"
 #include "snow_shot/presentation/screenshotautofiltercontroller.h"
 #include "snow_draw_engine_qt/snow_canvas_widget.h"
 #include "snow_visual_region_detector.h"
@@ -27,7 +28,7 @@ ScreenshotExportJobHandle detect(QObject* receiver, QImage image,
                 return ScreenshotExportTaskResult::failure(ScreenshotExportFailureStage::Cancelled,
                                                            {});
             }
-            image = image.convertToFormat(QImage::Format_BGR888);
+            image = snowCanvasConvertImage(image, QImage::Format_BGR888);
             if (cancellation.isCancellationRequested()) {
                 return ScreenshotExportTaskResult::failure(ScreenshotExportFailureStage::Cancelled,
                                                            {});

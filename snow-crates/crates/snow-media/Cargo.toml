@@ -5,6 +5,7 @@ edition = "2024"
 license.workspace = true
 
 [dependencies]
+snow-memory = { path = "../snow-memory" }
 serde = { workspace = true, features = ["derive"] }
 thiserror.workspace = true
 

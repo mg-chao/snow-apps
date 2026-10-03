@@ -2,6 +2,8 @@
 #include "../src/presentation/services/screenshotclipboardcontentsnapshot.h"
 #include "snowimageqtcodec.h"
 #include "snowimagecodecbridge.h"
+#include "snow_draw_engine_qt/snow_canvas_image.h"
+#include "../../test-support/virtualmemory.h"
 
 #include <QAbstractTextDocumentLayout>
 #include <QApplication>
@@ -59,6 +61,59 @@ bool imageContainsColor(const QImage& image, const QColor& expected) {
     return false;
 }
 
+void embeddedImagesUseManagedCachedPixels() {
+    QImage source(QSize(1025, 513), QImage::Format_ARGB32);
+    std::uint32_t random = 0x12345678U;
+    for (int y = 0; y < source.height(); ++y) {
+        auto* row = reinterpret_cast<QRgb*>(source.scanLine(y));
+        for (int x = 0; x < source.width(); ++x) {
+            random ^= random << 13U;
+            random ^= random >> 17U;
+            random ^= random << 5U;
+            row[x] = random;
+        }
+    }
+    source.setColorSpace(QColorSpace(QColorSpace::DisplayP3));
+    const QByteArray png = pngBytes(source);
+    const QImage expected = QImage::fromData(png, "PNG");
+    const QByteArray base64 = png.toBase64();
+    require(base64.size() > 2 * 1024 * 1024,
+            "the default embedded-image fixture must exceed the automation-only URL limit");
+    const std::array urls{
+        QByteArray("data:image/png;base64,") + base64,
+        QByteArray("data:image/png;%42ASE64%20,") +
+            base64.toPercentEncoding(QByteArray{}, QByteArray("+/=")),
+        QByteArray("data:image/png,") + png.toPercentEncoding(),
+    };
+    for (const QByteArray& encodedUrl : urls) {
+        const QUrl url = QUrl::fromEncoded(encodedUrl);
+        QMimeData mime;
+        mime.setHtml(QStringLiteral("before <img width=\"17\" height=\"11\" src=\"%1\"> after")
+                         .arg(QString::fromLatin1(encodedUrl)));
+        auto content = ScreenshotClipboardContentReader::readMimeData(&mime, 1.0);
+        require(content && content->isFormattedText(),
+                "default clipboard data URLs must decode without automation-only limits");
+        QImage retained =
+            content->formattedDocument->resource(QTextDocument::ImageResource, url).value<QImage>();
+        require(retained == expected && retained.colorSpace() == expected.colorSpace(),
+                "embedded images must retain exact pixels and source color metadata");
+        {
+            const QImage again =
+                content->formattedDocument->resource(QTextDocument::ImageResource, url)
+                    .value<QImage>();
+            require(again.constBits() == retained.constBits(),
+                    "document resources must share cached pixels instead of decoding again");
+        }
+        const void* midpoint = retained.constBits() + retained.sizeInBytes() / 2;
+        content.reset();
+        require(snow::test_support::virtualMemoryMapped(midpoint),
+                "a retained resource image must outlive its formatted document");
+        retained = {};
+        require(!snow::test_support::virtualMemoryMapped(midpoint),
+                "embedded pixels must unmap after their document and image owners are dropped");
+    }
+}
+
 void localTextFilesAreSupported() {
     QTemporaryDir directory;
     require(directory.isValid(), "text file directory exists");
@@ -110,6 +165,113 @@ void localTextFilesAreSupported() {
             "BOM-marked UTF-16 text decodes correctly");
 }
 
+void directImageSharesImmutableOwner() {
+    std::optional<ScreenshotClipboardContent> content;
+    const QColor original(200, 100, 50);
+    const QColorSpace colorSpace(QColorSpace::DisplayP3);
+    const uchar* pixels = nullptr;
+    {
+        QMimeData mime;
+        QImage source(QSize(1025, 513), QImage::Format_ARGB32_Premultiplied);
+        source.fill(original);
+        source.setColorSpace(colorSpace);
+        source.setDotsPerMeterX(4321);
+        source.setText(QStringLiteral("Author"), QStringLiteral("clipboard owner"));
+        pixels = source.constBits();
+        mime.setImageData(source);
+        content = ScreenshotClipboardContentReader::readMimeData(&mime, 1.0);
+        require(content && content->image.constBits() == pixels && content->image == source &&
+                    content->image.colorSpace() == colorSpace &&
+                    content->image.dotsPerMeterX() == 4321 &&
+                    content->image.text(QStringLiteral("Author")) ==
+                        QStringLiteral("clipboard owner"),
+                "immutable clipboard imports must share the existing owner and metadata");
+        source.fill(Qt::blue);
+        require(content->image.constBits() == pixels &&
+                    content->image.pixelColor(0, 0) == original &&
+                    source.pixelColor(0, 0) == QColor(Qt::blue),
+                "source mutation must detach without changing the clipboard snapshot");
+        QImage writable = content->image;
+        require(snowCanvasDetachImage(writable), "clipboard consumers must be able to detach");
+        writable.fill(Qt::green);
+        require(writable.constBits() != pixels && content->image.pixelColor(0, 0) == original &&
+                    mime.imageData().value<QImage>().constBits() == pixels,
+                "consumer mutation must preserve the shared clipboard provider and content");
+    }
+    require(content->image.constBits() == pixels && content->image.pixelColor(0, 0) == original,
+            "clipboard content must outlive its source and MIME provider");
+}
+
+void directManagedImageKeepsSharedStorage() {
+    std::optional<ScreenshotClipboardContent> content;
+    const uchar* pixels = nullptr;
+    const void* middle = nullptr;
+    {
+        QMimeData mime;
+        QImage source =
+            snowCanvasAllocateImage(QSize(1025, 513), QImage::Format_ARGB32_Premultiplied);
+        require(!source.isNull(), "managed clipboard fixture must allocate");
+        source.fill(Qt::red);
+        pixels = source.constBits();
+        middle = pixels + source.sizeInBytes() / 2;
+        mime.setImageData(source);
+        content = ScreenshotClipboardContentReader::readMimeData(&mime, 1.0);
+        require(content && content->image.constBits() == pixels,
+                "managed clipboard images must retain their existing allocation");
+    }
+    require(snow::test_support::virtualMemoryMapped(middle) &&
+                content->image.pixelColor(0, 0) == QColor(Qt::red),
+            "the imported content must retain managed pixels after provider destruction");
+    content.reset();
+    require(!snow::test_support::virtualMemoryMapped(middle),
+            "managed clipboard pixels must unmap after their final shared owner drops");
+}
+
+void directReadOnlyImageRetainsCleanupOwner() {
+    struct Owner {
+        QImage image;
+        bool* released;
+    };
+    bool released = false;
+    std::optional<ScreenshotClipboardContent> content;
+    const uchar* pixels = nullptr;
+    const void* middle = nullptr;
+    {
+        QMimeData mime;
+        auto* owner = new Owner{
+            snowCanvasAllocateImage(QSize(1025, 513), QImage::Format_ARGB32_Premultiplied),
+            &released};
+        require(!owner->image.isNull(), "read-only clipboard fixture must allocate");
+        owner->image.fill(Qt::red);
+        pixels = owner->image.constBits();
+        middle = pixels + owner->image.sizeInBytes() / 2;
+        QImage source(
+            pixels, owner->image.width(), owner->image.height(), owner->image.bytesPerLine(),
+            owner->image.format(),
+            [](void* raw) {
+                auto* retained = static_cast<Owner*>(raw);
+                *retained->released = true;
+                delete retained;
+            },
+            owner);
+        mime.setImageData(source);
+        content = ScreenshotClipboardContentReader::readMimeData(&mime, 1.0);
+        require(content && content->image.constBits() == pixels && !released,
+                "read-only external clipboard images must share their cleanup owner");
+    }
+    require(!released && snow::test_support::virtualMemoryMapped(middle),
+            "clipboard content must retain a read-only external image's cleanup owner");
+    QImage writable = content->image;
+    require(snowCanvasDetachImage(writable), "read-only clipboard images must detach for writing");
+    writable.fill(Qt::blue);
+    require(writable.constBits() != pixels && content->image.pixelColor(0, 0) == QColor(Qt::red) &&
+                !released,
+            "writing a detached image must preserve the external clipboard snapshot");
+    content.reset();
+    require(released && !snow::test_support::virtualMemoryMapped(middle),
+            "external clipboard cleanup must run after the final original owner drops");
+}
+
 void directImageWinsOverRichText() {
     QMimeData mime;
     QImage image(QSize(3, 2), QImage::Format_RGBA8888);
@@ -124,7 +286,7 @@ void directImageWinsOverRichText() {
 }
 
 void imageSourceDensitySurvivesDecode() {
-    QImage image(QSize(600, 400), QImage::Format_RGB32);
+    QImage image(QSize(1025, 513), QImage::Format_RGB32);
     image.fill(Qt::red);
     image.setDevicePixelRatio(2);
     QMimeData mime;
@@ -133,11 +295,13 @@ void imageSourceDensitySurvivesDecode() {
     require(content && content->image.size() == image.size(),
             "clipboard decode must retain the raster");
 #if defined(Q_OS_MACOS)
-    require(content->image.devicePixelRatio() == 2.,
+    require(content->image.devicePixelRatio() == 2. &&
+                content->image.constBits() == image.constBits(),
             "macOS pin imports need the source's logical size");
 #else
-    require(content->image.devicePixelRatio() == 1.,
-            "Windows clipboard raster behavior is unchanged");
+    require(content->image.devicePixelRatio() == 1. && image.devicePixelRatio() == 2. &&
+                content->image.constBits() != image.constBits(),
+            "normalizing clipboard density must detach without changing the provider");
 #endif
 }
 
@@ -872,12 +1036,19 @@ void nativeDibMaskColoredPixelsRemainPixels() {
 int main(int argc, char** argv) {
     QApplication application(argc, argv);
     QApplication::setQuitOnLastWindowClosed(false);
+    embeddedImagesUseManagedCachedPixels();
+    if (application.arguments().contains(QStringLiteral("--embedded-images-only"))) {
+        return EXIT_SUCCESS;
+    }
     if (!application.arguments().contains(QStringLiteral("--mime-data-only"))) {
         liveSnapshotRetainsBitmapFallback();
     }
     localTextFilesAreSupported();
     imageSourceDensitySurvivesDecode();
     directImageWinsOverRichText();
+    directImageSharesImmutableOwner();
+    directManagedImageKeepsSharedStorage();
+    directReadOnlyImageRetainsCleanupOwner();
     oversizedDirectImagesAreIgnored();
     automationAdmissionPrecedesDecodeAndRasterization();
     encodedImageAndTextAreSupported();

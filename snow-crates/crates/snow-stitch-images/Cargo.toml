@@ -36,6 +36,7 @@ full-image-io = [
 ]
 
 [dependencies]
+snow-memory = { path = "../snow-memory" }
 anyhow.workspace = true
 image.workspace = true
 rayon.workspace = true

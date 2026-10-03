@@ -1,4 +1,5 @@
 #include "snowimagecodecbridge.h"
+#include <snow/memory/pixel_buffer.h>
 
 #include <snow/image/codec.h>
 #include <snow/image/image.h>
@@ -338,13 +339,13 @@ bool publishBytes(std::span<const std::byte> source, SnowShotImageCodecBuffer* o
         setError(error, errorCapacity, "The image encoder produced no data.");
         return false;
     }
-    auto* bytes = new (std::nothrow) uint8_t[source.size()];
-    if (bytes == nullptr) {
+    auto bytes = snow::memory::allocatePixelBuffer(source.size());
+    if (!bytes) {
         setError(error, errorCapacity, "The image output could not be allocated.");
         return false;
     }
-    std::memcpy(bytes, source.data(), source.size());
-    output->data = bytes;
+    std::memcpy(bytes.get(), source.data(), source.size());
+    output->data = bytes.release();
     output->size = static_cast<uint64_t>(source.size());
     return true;
 }
@@ -592,7 +593,7 @@ class PackedDecodeSink final : public snow::image::PixelSink {
             return snow::image::Status::error(snow::image::ErrorCode::limit_exceeded,
                                               "The decoded image exceeds its output limit.");
         }
-        pixels_.reset(new (std::nothrow) std::uint8_t[outputSize]);
+        pixels_ = snow::memory::allocatePixelBuffer(outputSize);
         if (!pixels_) {
             return snow::image::Status::error(snow::image::ErrorCode::out_of_memory,
                                               "The decoded image could not be allocated.");
@@ -722,7 +723,7 @@ class PackedDecodeSink final : public snow::image::PixelSink {
     snow::image::PixelFormat expectedPixelFormat_;
     bool firstFrameOnly_ = false;
     std::uint64_t maximumOutputBytes_ = std::numeric_limits<std::uint64_t>::max();
-    std::unique_ptr<std::uint8_t[]> pixels_;
+    snow::memory::PixelBuffer pixels_;
     std::unique_ptr<std::uint8_t[]> iccProfile_;
     SnowShotImageCodecColorEncoding color_{};
     std::uint32_t width_ = 0;
@@ -1450,7 +1451,7 @@ void snow_shot_image_codec_release_buffer(SnowShotImageCodecBuffer* buffer) {
     if (buffer == nullptr) {
         return;
     }
-    delete[] buffer->data;
+    snow::memory::releasePixelBuffer(buffer->data, static_cast<std::size_t>(buffer->size));
     delete[] buffer->color.icc_profile;
     *buffer = {};
 }

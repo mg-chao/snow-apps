@@ -1,4 +1,6 @@
 //! Clean recording followed by a retryable, deterministic rendering task.
+#[cfg(not(target_os = "macos"))]
+use snow_memory::RasterBuffer;
 use std::collections::VecDeque;
 use std::io::{BufWriter, Write};
 use std::path::{Path, PathBuf};
@@ -860,7 +862,7 @@ fn run_capture(
                     clean.1,
                 )?;
             }
-            canvas.pixels = encoder.push_owned_rgba_frame_at_pts(slot.pts, pixels)?;
+            canvas.pixels = encoder.push_raster_rgba_frame_at_pts(slot.pts, pixels)?;
             frame_index.push(slot.pts)?;
             admitted = true;
         }
@@ -1014,9 +1016,9 @@ impl FrameIndexWriter {
 struct CleanCanvas {
     logical: (u32, u32),
     coded: (u32, u32),
-    pixels: Vec<u8>,
-    rgba: Vec<u8>,
-    scaled: Vec<u8>,
+    pixels: RasterBuffer,
+    rgba: RasterBuffer,
+    scaled: RasterBuffer,
     resize: Option<snow_recording_export::resize::NearestResizePlan>,
 }
 #[cfg(not(target_os = "macos"))]
@@ -1025,13 +1027,13 @@ impl CleanCanvas {
         Self {
             logical,
             coded,
-            pixels: Vec::new(),
-            rgba: Vec::new(),
-            scaled: Vec::new(),
+            pixels: RasterBuffer::new(),
+            rgba: RasterBuffer::new(),
+            scaled: RasterBuffer::new(),
             resize: None,
         }
     }
-    fn compose(&mut self, frame: &snow_capture::CapturedFrame) -> Result<Vec<u8>> {
+    fn compose(&mut self, frame: &snow_capture::CapturedFrame) -> Result<RasterBuffer> {
         use snow_media::geometry::{PixelSize, aspect_fit};
         let size = frame.dimensions();
         let destination = aspect_fit(

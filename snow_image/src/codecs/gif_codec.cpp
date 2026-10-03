@@ -1,5 +1,7 @@
 #include "codecs/gif_codec.h"
 
+#include <snow/memory/pixel_array.h>
+
 #include <gif_lib.h>
 
 #include <algorithm>
@@ -238,7 +240,7 @@ Result<GifStreamInspection> inspect_gif_stream(std::span<const std::byte> bytes,
     result.info.canvas_width = static_cast<std::uint32_t>(context.file->SWidth);
     result.info.canvas_height = static_cast<std::uint32_t>(context.file->SHeight);
     GifExtensionState extensions;
-    std::vector<GifByteType> row(static_cast<std::size_t>(context.file->SWidth));
+    snow::memory::PixelArray<GifByteType> row(static_cast<std::size_t>(context.file->SWidth));
     std::uint32_t source_index = 0;
     for (;;) {
         if (stop.stop_requested())
@@ -348,7 +350,7 @@ Result<void> stream_gif_frames(std::span<const std::byte> bytes,
     if (!status)
         return status;
     GifExtensionState extensions;
-    std::vector<GifByteType> discard_row;
+    snow::memory::PixelArray<GifByteType> discard_row;
     std::uint32_t source_index = 0;
     std::uint32_t sink_index = 0;
     for (;;) {
@@ -429,7 +431,7 @@ Result<void> stream_gif_frames(std::span<const std::byte> bytes,
                 "One GIF frame exceeds the configured streaming working-memory limit.", "giflib");
         try {
             if (direct_storage) {
-                std::vector<GifByteType> indices(width);
+                snow::memory::PixelArray<GifByteType> indices(width);
                 for (int encoded_y = 0; encoded_y < descriptor.Height; ++encoded_y) {
                     if (stop.stop_requested())
                         return cancelled_status();
@@ -446,7 +448,7 @@ Result<void> stream_gif_frames(std::span<const std::byte> bytes,
                         return status;
                 }
             } else if (interlaced) {
-                std::vector<GifByteType> indices(width * height);
+                snow::memory::PixelArray<GifByteType> indices(width * height);
                 std::vector<std::byte> rgba(rgba_row_bytes);
                 for (int encoded_y = 0; encoded_y < descriptor.Height; ++encoded_y) {
                     if (stop.stop_requested())
@@ -470,7 +472,7 @@ Result<void> stream_gif_frames(std::span<const std::byte> bytes,
                         return status;
                 }
             } else {
-                std::vector<GifByteType> indices(width);
+                snow::memory::PixelArray<GifByteType> indices(width);
                 std::vector<std::byte> rgba(rgba_row_bytes);
                 for (std::uint32_t y = 0; y < frame.height; ++y) {
                     if (stop.stop_requested())
@@ -597,7 +599,8 @@ std::array<GifColorType, 256> fixed_palette() {
     return palette;
 }
 
-Result<std::vector<GifByteType>> indexed_frame(const ImageView& view, bool* has_transparency) {
+Result<snow::memory::PixelArray<GifByteType>> indexed_frame(const ImageView& view,
+                                                            bool* has_transparency) {
     Result<void> valid = view.validate();
     if (!valid)
         return valid.error();
@@ -612,7 +615,8 @@ Result<std::vector<GifByteType>> indexed_frame(const ImageView& view, bool* has_
             ErrorCode::unsupported_feature,
             "GIF encoding requires packed 8-bit gray, RGB, BGR, RGBA, or BGRA pixels.", "giflib");
     }
-    std::vector<GifByteType> indices(static_cast<std::size_t>(view.width) * view.height);
+    snow::memory::PixelArray<GifByteType> indices(static_cast<std::size_t>(view.width) *
+                                                  view.height);
     *has_transparency = false;
     const std::size_t channels = view.format.channel_count();
     const bool bgr =
@@ -786,7 +790,7 @@ Result<EncodedArtifactReceipt> GifCodec::encode_to_sink(const Document& document
                                  "giflib");
         }
         bool transparent = false;
-        Result<std::vector<GifByteType>> indexed = indexed_frame(view, &transparent);
+        Result<snow::memory::PixelArray<GifByteType>> indexed = indexed_frame(view, &transparent);
         if (!indexed)
             return indexed.error();
         GraphicsControlBlock control{};

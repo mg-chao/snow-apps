@@ -1,0 +1,16 @@
+[package]
+name = "snow-memory"
+version = "0.1.0"
+edition = "2024"
+license.workspace = true
+description = "Explicit OS-page ownership for large CPU raster buffers"
+
+[features]
+serde = ["dep:serde"]
+
+[dependencies]
+serde = { workspace = true, optional = true }
+
+[dev-dependencies]
+bincode.workspace = true
+serde_json.workspace = true

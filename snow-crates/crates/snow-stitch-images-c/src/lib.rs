@@ -1,3 +1,4 @@
+use snow_memory::RasterBuffer;
 use std::cell::RefCell;
 use std::ffi::{CStr, CString, c_char};
 use std::io::Write;
@@ -79,7 +80,7 @@ struct FramePoolInner {
     length: usize,
     capacity: usize,
     active: AtomicUsize,
-    returned: Mutex<Vec<Vec<u8>>>,
+    returned: Mutex<Vec<RasterBuffer>>,
 }
 
 struct RgbaFramePool {
@@ -137,7 +138,7 @@ impl RgbaFramePool {
             .lock()
             .expect("frame pool mutex poisoned")
             .pop()
-            .unwrap_or_else(|| vec![0; self.inner.length]);
+            .unwrap_or_else(|| RasterBuffer::zeroed(self.inner.length));
         let mut data = data;
         if data.len() != self.inner.length {
             data.resize(self.inner.length, 0);
@@ -153,7 +154,7 @@ impl RgbaFramePool {
 
 struct RgbaFrameBuffer {
     dimensions: FrameDimensions,
-    data: Option<Vec<u8>>,
+    data: Option<RasterBuffer>,
     pool: Arc<FramePoolInner>,
 }
 
@@ -175,7 +176,7 @@ impl RgbaFrameBuffer {
             .data
             .take()
             .expect("live RGBA frame buffer owns its pixels");
-        let result = Frame::new(
+        let result = Frame::from_buffer(
             self.dimensions.width,
             self.dimensions.height,
             PixelFormat::Rgba8,
@@ -1943,6 +1944,25 @@ mod tests {
             snow_stitch_snapshot_destroy(slice);
             snow_stitch_snapshot_destroy(snapshot);
             snow_stitch_frame_pool_destroy(pool);
+        }
+    }
+
+    #[test]
+    fn large_pool_freeze_preserves_pixels_and_recycles_mapped_storage() {
+        let pool = RgbaFramePool::new(1024, 256, 1).unwrap();
+        let mut buffer = pool.acquire().unwrap();
+        let pointer = buffer.as_mut_rgba_bytes().as_ptr();
+        buffer.as_mut_rgba_bytes().fill(0x5a);
+        let frame = buffer.freeze().unwrap();
+        assert_ne!(frame.pixels().as_ptr(), pointer);
+        assert!(frame.pixels().iter().all(|&byte| byte == 0x5a));
+        let mut reused = pool.acquire().unwrap();
+        assert_eq!(reused.as_mut_rgba_bytes().as_ptr(), pointer);
+        assert!(reused.as_mut_rgba_bytes().iter().all(|&byte| byte == 0));
+        #[cfg(any(windows, target_os = "macos", target_os = "linux"))]
+        {
+            assert!(reused.data.as_ref().unwrap().is_page_backed());
+            assert!(frame.into_buffer().is_page_backed());
         }
     }
 

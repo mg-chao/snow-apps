@@ -1,4 +1,5 @@
 use rayon::prelude::*;
+use snow_memory::RasterBuffer;
 
 use crate::{Geometry, StitchAxis, orb::Image};
 
@@ -105,7 +106,8 @@ impl SamplingPlan {
             StitchAxis::Vertical => (self.target as usize, image.height),
             StitchAxis::Horizontal => (image.width, self.target as usize),
         };
-        let mut pixels = vec![0; width * height];
+        let source_pixels = image.pixels.as_slice();
+        let mut pixels = RasterBuffer::zeroed(width * height);
         pixels
             .par_chunks_mut(width)
             .enumerate()
@@ -120,13 +122,13 @@ impl SamplingPlan {
                         .iter()
                         .enumerate()
                         .map(|(index, weight)| {
-                            u64::from(image.pixels[base + (bin.first + index) * stride]) * weight
+                            u64::from(source_pixels[base + (bin.first + index) * stride]) * weight
                         })
                         .sum();
                     *value = ((sum + u64::from(self.source) / 2) / u64::from(self.source)) as u8;
                 }
             });
-        Image::new(width, height, pixels)
+        Image::from_buffer(width, height, pixels)
     }
 }
 

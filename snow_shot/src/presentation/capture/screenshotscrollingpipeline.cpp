@@ -1,3 +1,4 @@
+#include "snow_draw_engine_qt/snow_canvas_image.h"
 #include "snow_shot/platform/applicationqos.h"
 #include "screenshotscrollingpipeline.h"
 #include "screenshotscrollingdiagnostics.h"
@@ -289,7 +290,7 @@ class ScreenshotScrollingCaptureWorker final : public QObject {
         const int sourceEnd = std::clamp(end, 0, extent);
         QImage padded;
         if (sourceStart != start || sourceEnd != end) {
-            padded = QImage(size, QImage::Format_RGBA8888);
+            padded = snowCanvasAllocateImage(size, QImage::Format_RGBA8888);
             if (padded.isNull())
                 return {};
             padded.fill(Qt::black);

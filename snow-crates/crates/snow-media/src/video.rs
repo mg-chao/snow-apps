@@ -103,7 +103,7 @@ pub struct CpuFrame {
     pub format: PixelFormat,
     pub color: ColorDescription,
     pub planes: Vec<PlaneLayout>,
-    pub bytes: std::sync::Arc<[u8]>,
+    pub bytes: std::sync::Arc<snow_memory::RasterBuffer>,
 }
 impl CpuFrame {
     /// Return only readable plane bytes, excluding trailing row padding.
@@ -155,6 +155,30 @@ pub enum CpuFormatError {
 mod tests {
     use super::*;
     #[test]
+    fn large_channel_conversion_detaches_into_page_storage() {
+        let mut pixels = snow_memory::RasterBuffer::zeroed(1024 * 256 * 4);
+        pixels[..4].copy_from_slice(&[10, 20, 30, 40]);
+        let original = CpuFrame {
+            size: PixelSize::new(1024, 256).unwrap(),
+            format: PixelFormat::Bgra8,
+            color: ColorDescription::SRGB,
+            planes: vec![PlaneLayout {
+                offset: 0,
+                width: 1024,
+                height: 256,
+                stride: 4096,
+                row_bytes: 4096,
+            }],
+            bytes: std::sync::Arc::new(pixels),
+        };
+        let copy = original.clone().into_format(PixelFormat::Rgba8).unwrap();
+        assert_eq!(&original.bytes[..4], &[10, 20, 30, 40]);
+        assert_eq!(&copy.bytes[..4], &[30, 20, 10, 40]);
+        assert_ne!(copy.bytes.as_ptr(), original.bytes.as_ptr());
+        #[cfg(any(windows, target_os = "macos", target_os = "linux"))]
+        assert!(copy.bytes.is_page_backed() && original.bytes.is_page_backed());
+    }
+    #[test]
     fn cpu_channel_conversion_preserves_padding_alpha_and_other_leases() {
         let source = CpuFrame {
             size: PixelSize::new(1, 2).unwrap(),
@@ -167,10 +191,13 @@ mod tests {
                 stride: 5,
                 row_bytes: 4,
             }],
-            bytes: std::sync::Arc::from([99, 10, 20, 30, 40, 98, 50, 60, 70, 80]),
+            bytes: std::sync::Arc::new([99, 10, 20, 30, 40, 98, 50, 60, 70, 80].into()),
         };
         let converted = source.clone().into_format(PixelFormat::Rgba8).unwrap();
-        assert_eq!(&*converted.bytes, &[99, 30, 20, 10, 40, 98, 70, 60, 50, 80]);
+        assert_eq!(
+            converted.bytes.as_slice(),
+            &[99, 30, 20, 10, 40, 98, 70, 60, 50, 80]
+        );
         assert_eq!(source.bytes[1], 10);
         assert_eq!(converted.color, source.color);
         assert_eq!(
@@ -210,7 +237,7 @@ mod tests {
                     row_bytes: 2,
                 },
             ],
-            bytes: std::sync::Arc::from([1, 2, 0, 0, 3, 4, 0, 0, 128, 128]),
+            bytes: std::sync::Arc::new([1, 2, 0, 0, 3, 4, 0, 0, 128, 128].into()),
         };
         assert_eq!(frame.plane_bytes(0).unwrap(), &[1, 2, 0, 0, 3, 4]);
         assert_eq!(frame.plane_bytes(1).unwrap(), &[128, 128]);

@@ -1,5 +1,7 @@
 #pragma once
 
+#include <snow/memory/pixel_array.h>
+
 #include <QImage>
 #include <QPointF>
 #include <QRect>
@@ -98,7 +100,8 @@ class RenderWorkspace {
     QImage& preLayerScratch(const QSize& size, qreal devicePixelRatio = 1.0);
     QImage& originalBackgroundScratch(const QSize& size, qreal devicePixelRatio = 1.0);
     QImage& alphaScratch(const QSize& size, qreal devicePixelRatio = 1.0);
-    std::vector<QRgb>& mosaicSampleScratch(std::size_t count);
+    snow::memory::PixelArray<QRgb>& mosaicSampleScratch(std::size_t count);
+    bool ownsWritablePixels(QImage& image);
     // Releases all canvas-owned scratch images and sample storage.
     void clear();
     void finishFrame(bool releaseAll = false);
@@ -128,7 +131,7 @@ class RenderWorkspace {
     PoolEntry* m_preLayerEntry = nullptr;
     PoolEntry* m_originalBackgroundEntry = nullptr;
     PoolEntry* m_alphaEntry = nullptr;
-    std::vector<QRgb> m_mosaicSamples;
+    snow::memory::PixelArray<QRgb> m_mosaicSamples;
     KernelDiagnostics m_diagnostics;
     bool m_failAllocationsForTests = false;
 };

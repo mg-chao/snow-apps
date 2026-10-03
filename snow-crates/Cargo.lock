@@ -2684,6 +2684,7 @@ dependencies = [
  "serde_json",
  "serde_yaml",
  "sha2",
+ "snow-memory",
  "tempfile",
  "thiserror 2.0.20",
  "turbojpeg",
@@ -3194,6 +3195,7 @@ dependencies = [
  "snow-d3d11",
  "snow-macos",
  "snow-media",
+ "snow-memory",
  "windows",
 ]
 
@@ -3285,7 +3287,17 @@ dependencies = [
  "objc2-core-foundation",
  "objc2-core-video",
  "serde",
+ "snow-memory",
  "thiserror 2.0.20",
+]
+
+[[package]]
+name = "snow-memory"
+version = "0.1.0"
+dependencies = [
+ "bincode",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
@@ -3298,6 +3310,7 @@ dependencies = [
  "serde",
  "serde_json",
  "snow-diagnostics",
+ "snow-memory",
  "windows-sys 0.61.2",
  "winres",
 ]
@@ -3323,6 +3336,7 @@ dependencies = [
  "snow-capture",
  "snow-macos",
  "snow-media",
+ "snow-memory",
  "snow-recording-export",
  "snow-screen-recorder",
 ]
@@ -3363,6 +3377,7 @@ dependencies = [
  "snow-d3d11",
  "snow-macos",
  "snow-media",
+ "snow-memory",
  "snow-recording-effects",
  "snow-recording-model",
  "symphonia",
@@ -3381,6 +3396,7 @@ dependencies = [
  "proptest",
  "serde",
  "snow-media",
+ "snow-memory",
  "thiserror 2.0.20",
  "uuid",
 ]
@@ -3403,6 +3419,7 @@ dependencies = [
  "snow-d3d11",
  "snow-macos",
  "snow-media",
+ "snow-memory",
  "snow-pipeline",
  "snow-recording-effects",
  "snow-recording-export",
@@ -3460,6 +3477,7 @@ dependencies = [
  "rayon",
  "serde",
  "serde_json",
+ "snow-memory",
  "tempfile",
  "thiserror 2.0.20",
 ]
@@ -3470,6 +3488,7 @@ version = "0.1.0"
 dependencies = [
  "png",
  "snow-core",
+ "snow-memory",
  "snow-stitch-images",
  "tempfile",
 ]

@@ -137,7 +137,8 @@ impl PixelBuffer {
         if count != expected {
             return Err(PixelBufferError::Layout);
         }
-        let mut bytes = Vec::new();
+        let mut total_bytes = 0usize;
+        let mut sources = Vec::with_capacity(count);
         let mut planes = Vec::with_capacity(count);
         for index in 0..count {
             let (width, height, stride, ptr) = if planar {
@@ -175,7 +176,7 @@ impl PixelBuffer {
             };
             let row_bytes = width.checked_mul(unit).ok_or(PixelBufferError::Layout)?;
             let plane = PlaneLayout {
-                offset: bytes.len(),
+                offset: total_bytes,
                 width,
                 height,
                 stride,
@@ -189,16 +190,23 @@ impl PixelBuffer {
             let length = row_bytes
                 .checked_mul(height)
                 .ok_or(PixelBufferError::Layout)?;
-            bytes
-                .try_reserve(length)
-                .map_err(|_| PixelBufferError::Layout)?;
-            for row in 0..height {
-                bytes.extend_from_slice(&source[row * stride..row * stride + row_bytes]);
-            }
+            total_bytes = total_bytes
+                .checked_add(length)
+                .ok_or(PixelBufferError::Layout)?;
+            sources.push((source, stride));
             planes.push(PlaneLayout {
                 stride: row_bytes,
                 ..plane
             });
+        }
+        let mut bytes = snow_memory::RasterBuffer::try_with_capacity(total_bytes)
+            .map_err(|_| PixelBufferError::Layout)?;
+        for (plane, (source, source_stride)) in planes.iter().zip(sources) {
+            for row in 0..plane.height {
+                bytes.extend_from_slice(
+                    &source[row * source_stride..row * source_stride + plane.row_bytes],
+                );
+            }
         }
         Ok(CpuFrame {
             size: self.size,
@@ -390,7 +398,7 @@ mod tests {
         let image = padded_bgra(3, 2);
         let mut packed = vec![0; 3 * 2 * 4];
         image.copy_packed(&mut packed, false).unwrap();
-        assert_eq!(packed, image.to_cpu().unwrap().bytes.as_ref());
+        assert_eq!(packed, image.to_cpu().unwrap().bytes.as_slice());
         let mut swapped = vec![0; packed.len()];
         image.copy_packed(&mut swapped, true).unwrap();
         let mut reference = packed.clone();

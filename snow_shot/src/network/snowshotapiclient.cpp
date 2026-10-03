@@ -1,3 +1,4 @@
+#include "snow_draw_engine_qt/snow_canvas_image.h"
 #include "snow_shot/platform/applicationqos.h"
 #include "snow_shot/network/snowshotapiclient.h"
 #include "snow_shot/serverconfiguration.h"
@@ -51,7 +52,7 @@ QImage prepareLatexImage(const QImage& image) {
                                   static_cast<double>(image.height()) / maximumHeight);
     const QSize size(std::max(1, static_cast<int>(image.width() / ratio)),
                      std::max(1, static_cast<int>(image.height() / ratio)));
-    return image.scaled(size, Qt::IgnoreAspectRatio, Qt::SmoothTransformation);
+    return snowCanvasScaleImage(image, size, Qt::IgnoreAspectRatio, Qt::SmoothTransformation);
 }
 
 QByteArray imageConversionBody(const SnowShotImageConversionRequest& input) {
@@ -346,7 +347,8 @@ QImage SnowShotApiClient::prepareImage(const QImage& image) {
     if (longestSide <= kMaximumSide) {
         return image;
     }
-    return image.scaled(kMaximumSide, kMaximumSide, Qt::KeepAspectRatio, Qt::SmoothTransformation);
+    return snowCanvasScaleImage(image, QSize(kMaximumSide, kMaximumSide), Qt::KeepAspectRatio,
+                                Qt::SmoothTransformation);
 }
 
 QByteArray SnowShotApiClient::encodeWebp(const QImage& image) {

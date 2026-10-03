@@ -136,7 +136,7 @@ impl OwnedEncoder {
             .record_worker_queue_time(frame.admitted.elapsed());
         let pixels = self
             .encoder
-            .push_owned_rgba_frame_at_pts(frame.pts, frame.pixels.pixels)?;
+            .push_raster_rgba_frame_at_pts(frame.pts, frame.pixels.pixels)?;
         let history = std::mem::replace(&mut self.pending_history, frame.pixels.history);
         Ok(VideoBuffer {
             history: (!pixels.is_empty()).then_some(history).flatten(),
@@ -909,7 +909,7 @@ mod tests {
         };
         worker.mailbox.lock().unwrap().before_video = Some((entered, proceed));
         let buffer = |value| VideoBuffer {
-            pixels: vec![value as u8; 16 * 16 * 4],
+            pixels: vec![value as u8; 16 * 16 * 4].into(),
             history: Some(History {
                 generation: value,
                 overlays: Rows::new((16, 16)),

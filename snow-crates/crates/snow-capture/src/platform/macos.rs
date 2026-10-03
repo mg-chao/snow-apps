@@ -339,7 +339,7 @@ fn cached_output(frame: &Frame) -> snow_media::CpuFrame {
             stride: row_bytes,
             row_bytes,
         }],
-        bytes: std::sync::Arc::from(frame.as_bytes()),
+        bytes: frame.shared_bytes(),
     }
 }
 
@@ -381,7 +381,7 @@ mod tuning_tests {
                 stride: 5,
                 row_bytes: 4,
             }],
-            bytes: std::sync::Arc::from([99, 10, 20, 30, 40, 98, 50, 60, 70, 80]),
+            bytes: std::sync::Arc::new([99, 10, 20, 30, 40, 98, 50, 60, 70, 80].into()),
         };
         let mut frame = Frame::from_rgba8(1, 2, vec![0; 8]).unwrap();
         copy_cpu_pixels(&cpu, &mut frame).unwrap();

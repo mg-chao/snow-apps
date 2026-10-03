@@ -1,5 +1,7 @@
 #include "codecs/pnm_codec.h"
 
+#include <snow/memory/pixel_array.h>
+
 #include <algorithm>
 #include <charconv>
 #include <cctype>
@@ -381,7 +383,7 @@ Result<EncodedArtifactReceipt> PnmCodec::encode_to_sink(const Document& document
         format_ == Format::pbm
             ? (static_cast<std::size_t>(view.width) + 7U) / 8U
             : static_cast<std::size_t>(view.width) * output_channels * output_sample_bytes;
-    std::vector<std::byte> row(output_row_bytes);
+    snow::memory::PixelArray<std::byte> row(output_row_bytes);
     for (std::uint32_t y = 0; y < view.height; ++y) {
         if (stop.stop_requested())
             return cancelled_status();

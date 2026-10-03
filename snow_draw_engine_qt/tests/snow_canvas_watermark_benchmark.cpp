@@ -256,7 +256,8 @@ Statistics calculateStatistics(const std::vector<double>& samples) {
     std::sort(sorted.begin(), sorted.end());
     const auto percentile = [&sorted](double fraction) {
         const std::size_t index = std::min(
-            sorted.size() - 1, static_cast<std::size_t>(std::ceil(sorted.size() * fraction) - 1.0));
+            sorted.size() - 1, static_cast<std::size_t>(
+                                   std::ceil(static_cast<double>(sorted.size()) * fraction) - 1.0));
         return sorted[index];
     };
     result.meanMs =
@@ -507,7 +508,7 @@ std::optional<Result> runRendererCase(const Options& options, const RendererCase
         const qint64 elapsed = timer.nsecsElapsed();
         painter.end();
         if (measured) {
-            *milliseconds = elapsed / 1'000'000.0;
+            *milliseconds = static_cast<double>(elapsed) / 1'000'000.0;
             *diagnostics = snow_canvas_renderer::watermarkRenderDiagnosticsForCurrentThread();
         }
     };
@@ -519,7 +520,7 @@ std::optional<Result> runRendererCase(const Options& options, const RendererCase
     }
 
     std::vector<double> samples;
-    samples.reserve(options.measuredIterations);
+    samples.reserve(static_cast<std::size_t>(options.measuredIterations));
     snow_canvas_renderer::WatermarkRenderDiagnostics aggregateDiagnostics;
     for (int iteration = 0; iteration < options.measuredIterations; ++iteration) {
         double milliseconds = 0.0;
@@ -609,7 +610,7 @@ std::optional<Result> runCommitWorkflow(const Options& options, std::string& err
         QElapsedTimer timer;
         timer.start();
         const bool success = canvas.setCanvasWatermarkConfig(configs[sequence & 1]);
-        *milliseconds = timer.nsecsElapsed() / 1'000'000.0;
+        *milliseconds = static_cast<double>(timer.nsecsElapsed()) / 1'000'000.0;
         return success;
     };
     for (int iteration = 0; iteration < options.warmupIterations; ++iteration) {
@@ -620,7 +621,7 @@ std::optional<Result> runCommitWorkflow(const Options& options, std::string& err
         }
     }
     std::vector<double> samples;
-    samples.reserve(options.measuredIterations);
+    samples.reserve(static_cast<std::size_t>(options.measuredIterations));
     for (int iteration = 0; iteration < options.measuredIterations; ++iteration) {
         double milliseconds = 0.0;
         if (!sample(options.warmupIterations + iteration, &milliseconds)) {
@@ -630,7 +631,7 @@ std::optional<Result> runCommitWorkflow(const Options& options, std::string& err
         samples.push_back(milliseconds);
     }
     Result result = makeWorkflowResult(options, "workflow_commit_alternating", "commit", samples);
-    result.textBytes = canvas.canvasWatermarkConfig().text.toUtf8().size();
+    result.textBytes = static_cast<int>(canvas.canvasWatermarkConfig().text.toUtf8().size());
     result.checksum = byteChecksum(canvas.canvasWatermarkConfig().text.toUtf8());
     return result;
 }
@@ -652,7 +653,7 @@ std::optional<Result> runPreviewBurstWorkflow(const Options& options, std::strin
         }
         const qint64 enqueueElapsed = timer.nsecsElapsed();
         const bool delivered = waitForPreviewApplication(appliedCount, before + 1);
-        *milliseconds = enqueueElapsed / 1'000'000.0;
+        *milliseconds = static_cast<double>(enqueueElapsed) / 1'000'000.0;
         return delivered;
     };
     for (int iteration = 0; iteration < options.warmupIterations; ++iteration) {
@@ -663,7 +664,7 @@ std::optional<Result> runPreviewBurstWorkflow(const Options& options, std::strin
         }
     }
     std::vector<double> samples;
-    samples.reserve(options.measuredIterations);
+    samples.reserve(static_cast<std::size_t>(options.measuredIterations));
     for (int iteration = 0; iteration < options.measuredIterations; ++iteration) {
         double milliseconds = 0.0;
         if (!sample(options.warmupIterations + iteration, &milliseconds)) {
@@ -674,7 +675,7 @@ std::optional<Result> runPreviewBurstWorkflow(const Options& options, std::strin
     }
     Result result = makeWorkflowResult(options, "workflow_preview_burst_16", "preview_apply",
                                        samples, kPreviewBurstSize);
-    result.textBytes = QStringLiteral("PREVIEW 0 15").toUtf8().size();
+    result.textBytes = static_cast<int>(QStringLiteral("PREVIEW 0 15").toUtf8().size());
     result.fontSize = 18.0;
     result.angle = 25.0;
     result.gap = 56.0;
@@ -714,7 +715,7 @@ std::optional<Result> runPreviewPaintWorkflow(const Options& options, int width,
         canvas.render(&image);
         const qint64 elapsed = timer.nsecsElapsed();
         if (measured) {
-            *milliseconds = elapsed / 1'000'000.0;
+            *milliseconds = static_cast<double>(elapsed) / 1'000'000.0;
             *diagnostics = snow_canvas_renderer::watermarkRenderDiagnosticsForCurrentThread();
         }
         return delivered;
@@ -728,7 +729,7 @@ std::optional<Result> runPreviewPaintWorkflow(const Options& options, int width,
         }
     }
     std::vector<double> samples;
-    samples.reserve(options.measuredIterations);
+    samples.reserve(static_cast<std::size_t>(options.measuredIterations));
     snow_canvas_renderer::WatermarkRenderDiagnostics aggregateDiagnostics;
     for (int iteration = 0; iteration < options.measuredIterations; ++iteration) {
         double milliseconds = 0.0;
@@ -755,7 +756,7 @@ std::optional<Result> runPreviewPaintWorkflow(const Options& options, int width,
     result.renderAreaHeight = watermarkArea.isValid() && !watermarkArea.isEmpty()
                                   ? qRound(watermarkArea.height())
                                   : height;
-    result.textBytes = QByteArray("PREVIEW PAINT").size();
+    result.textBytes = static_cast<int>(QByteArray("PREVIEW PAINT").size());
     result.fontSize = 18.0;
     result.angle = 30.0 + (kPreviewBurstSize - 1) * 0.25;
     result.gap = 56.0;
@@ -793,7 +794,7 @@ std::optional<Result> runWidgetPaintWorkflow(const Options& options, int width, 
         canvas.render(&image);
         const qint64 elapsed = timer.nsecsElapsed();
         if (measured) {
-            *milliseconds = elapsed / 1'000'000.0;
+            *milliseconds = static_cast<double>(elapsed) / 1'000'000.0;
             *diagnostics = snow_canvas_renderer::watermarkRenderDiagnosticsForCurrentThread();
         }
         return mutationApplied;
@@ -809,7 +810,7 @@ std::optional<Result> runWidgetPaintWorkflow(const Options& options, int width, 
     }
 
     std::vector<double> samples;
-    samples.reserve(options.measuredIterations);
+    samples.reserve(static_cast<std::size_t>(options.measuredIterations));
     snow_canvas_renderer::WatermarkRenderDiagnostics aggregateDiagnostics;
     for (int iteration = 0; iteration < options.measuredIterations; ++iteration) {
         double milliseconds = 0.0;
@@ -834,7 +835,7 @@ std::optional<Result> runWidgetPaintWorkflow(const Options& options, int width, 
     result.physicalHeight = height;
     result.renderAreaWidth = width;
     result.renderAreaHeight = height;
-    result.textBytes = QByteArray("WIDGET PAINT").size();
+    result.textBytes = static_cast<int>(QByteArray("WIDGET PAINT").size());
     result.fontSize = 18.0;
     result.angle = 30.0;
     result.gap = 56.0;
@@ -874,7 +875,7 @@ std::optional<Result> runMultiCanvasWorkflow(const Options& options, int width, 
         second.render(&secondImage);
         const qint64 elapsed = timer.nsecsElapsed();
         if (measured) {
-            *milliseconds = elapsed / 1'000'000.0;
+            *milliseconds = static_cast<double>(elapsed) / 1'000'000.0;
             *diagnostics = snow_canvas_renderer::watermarkRenderDiagnosticsForCurrentThread();
         }
         return hasVisiblePixel(firstImage) && hasVisiblePixel(secondImage);
@@ -889,7 +890,7 @@ std::optional<Result> runMultiCanvasWorkflow(const Options& options, int width, 
     }
 
     std::vector<double> samples;
-    samples.reserve(options.measuredIterations);
+    samples.reserve(static_cast<std::size_t>(options.measuredIterations));
     snow_canvas_renderer::WatermarkRenderDiagnostics aggregateDiagnostics;
     for (int iteration = 0; iteration < options.measuredIterations; ++iteration) {
         double milliseconds = 0.0;
@@ -909,7 +910,7 @@ std::optional<Result> runMultiCanvasWorkflow(const Options& options, int width, 
     result.physicalHeight = height;
     result.renderAreaWidth = width;
     result.renderAreaHeight = height;
-    result.textBytes = config.text.toUtf8().size();
+    result.textBytes = static_cast<int>(config.text.toUtf8().size());
     result.fontSize = config.fontSize;
     result.angle = config.angle;
     result.gap = config.gap;
@@ -954,7 +955,7 @@ std::optional<Result> runExportWorkflow(const Options& options, int width, int h
         output = runtime.renderToImage(selection, QSize(width, height), sources);
         const qint64 elapsed = timer.nsecsElapsed();
         if (measured) {
-            *milliseconds = elapsed / 1'000'000.0;
+            *milliseconds = static_cast<double>(elapsed) / 1'000'000.0;
             *diagnostics = snow_canvas_renderer::watermarkRenderDiagnosticsForCurrentThread();
         }
         return !output.isNull();
@@ -968,7 +969,7 @@ std::optional<Result> runExportWorkflow(const Options& options, int width, int h
         }
     }
     std::vector<double> samples;
-    samples.reserve(options.measuredIterations);
+    samples.reserve(static_cast<std::size_t>(options.measuredIterations));
     snow_canvas_renderer::WatermarkRenderDiagnostics aggregateDiagnostics;
     for (int iteration = 0; iteration < options.measuredIterations; ++iteration) {
         double milliseconds = 0.0;
@@ -998,7 +999,7 @@ std::optional<Result> runExportWorkflow(const Options& options, int width, int h
     result.physicalHeight = height;
     result.renderAreaWidth = width;
     result.renderAreaHeight = height;
-    result.textBytes = config.text.toUtf8().size();
+    result.textBytes = static_cast<int>(config.text.toUtf8().size());
     result.fontSize = config.fontSize;
     result.angle = config.angle;
     result.gap = config.gap;
@@ -1224,8 +1225,9 @@ std::vector<Scenario> makeScenarios() {
             return runMultiCanvasWorkflow(options, 1920, 1080, error);
         },
     });
-    for (const auto& [width, height] :
-         {std::pair<int, int>{1920, 1080}, std::pair<int, int>{3840, 2160}}) {
+    for (const auto& size : {std::pair<int, int>{1920, 1080}, std::pair<int, int>{3840, 2160}}) {
+        const int width = size.first;
+        const int height = size.second;
         for (bool visible : {false, true}) {
             const std::string scenario = std::string("workflow_export_") +
                                          (visible ? "watermark_" : "hidden_") +

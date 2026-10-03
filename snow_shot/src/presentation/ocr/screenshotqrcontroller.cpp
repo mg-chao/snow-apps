@@ -1,3 +1,4 @@
+#include "snow_draw_engine_qt/snow_canvas_image.h"
 #include "snow_shot/platform/applicationqos.h"
 #include "snow_shot/shortcuts/shortcutbinding.h"
 #include "snow_shot/presentation/screenshotqrcontroller.h"
@@ -323,7 +324,7 @@ QImage ScreenshotQrController::prepareImage(const Snapshot& snapshot,
         {1.0, std::sqrt(1920.0 * 1080.0 / (width * height)), 2560.0 / std::max(width, height)});
     const QSize pixels(std::max(1, int(std::floor(width * scale))),
                        std::max(1, int(std::floor(height * scale))));
-    QImage image(pixels, QImage::Format_RGB32);
+    QImage image = snowCanvasAllocateImage(pixels, QImage::Format_RGB32);
     if (image.isNull())
         return {};
     image.fill(Qt::white);

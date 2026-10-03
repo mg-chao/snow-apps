@@ -1,5 +1,7 @@
 #include "snow/image/raster_conversion.h"
 
+#include <snow/memory/pixel_array.h>
+
 #if defined(SNOW_IMAGE_HAS_LIBYUV)
 #include <libyuv/convert_argb.h>
 #endif
@@ -49,25 +51,22 @@ bool gray_plane(const PlaneDescriptor& plane, PlaneSemantic semantic) {
     return plane.semantic == semantic && plane.format == kGray8 && plane.significant_bits == 8;
 }
 
-Result<std::vector<std::byte>> read_plane_region(const RasterSource& source,
-                                                 std::uint32_t frame_index,
-                                                 std::uint32_t plane_index, RasterRect region,
-                                                 std::stop_token stop) {
-    if (region.width > std::numeric_limits<std::size_t>::max() / region.height)
-        return Status::error(ErrorCode::limit_exceeded,
-                             "Raster conversion plane allocation overflows.", "raster conversion");
-    try {
-        std::vector<std::byte> pixels(static_cast<std::size_t>(region.width) * region.height);
-        MutablePlaneView view{region.width, region.height, kGray8, region.width, pixels};
-        Result<void> read = source.read_region(frame_index, plane_index, region, view, stop);
-        if (!read)
-            return read.error();
-        return pixels;
-    } catch (const std::bad_alloc&) {
-        return Status::error(ErrorCode::out_of_memory,
-                             "Could not allocate bounded raster conversion planes.",
-                             "raster conversion");
-    }
+// Reuse a small working set rather than faulting and releasing whole temporary
+// planes. A sampling group is the minimum when a single very wide row exceeds
+// the budget; storage otherwise stays independent of the requested height.
+constexpr std::size_t kConversionScratchBytes = 256U * 1024U;
+
+std::uint32_t scratch_rows(std::size_t group_bytes, std::uint32_t group_height,
+                           std::uint32_t height) {
+    const std::size_t groups = std::max<std::size_t>(1U, kConversionScratchBytes / group_bytes);
+    return static_cast<std::uint32_t>(std::min<std::size_t>(height, groups * group_height));
+}
+
+Result<void> read_plane_region(const RasterSource& source, std::uint32_t frame_index,
+                               std::uint32_t plane_index, RasterRect region, std::size_t stride,
+                               std::span<std::byte> pixels, std::stop_token stop) {
+    MutablePlaneView view{region.width, region.height, kGray8, stride, pixels};
+    return source.read_region(frame_index, plane_index, region, view, stop);
 }
 
 int convert_ycbcr(const RasterLayout& layout, const std::byte* y, int y_stride, const std::byte* cb,
@@ -263,17 +262,38 @@ Result<void> read_rgba8_region(const RasterSource& source, std::uint32_t frame_i
     }
     if (layout.color_model == ColorModel::gray && layout.planes.size() == 1 &&
         gray_plane(layout.planes.front(), PlaneSemantic::gray)) {
-        Result<std::vector<std::byte>> gray =
-            read_plane_region(source, frame_index, 0, region, stop);
-        if (!gray)
-            return gray.error();
-        const int converted =
-            convert_gray(gray.value().data(), static_cast<int>(region.width),
-                         destination.pixels.data(), static_cast<int>(destination.row_stride),
-                         static_cast<int>(region.width), static_cast<int>(region.height));
-        return converted == 0 ? Result<void>{}
-                              : Status::error(ErrorCode::decode_failed,
-                                              "Grayscale raster conversion failed.", "libyuv");
+        try {
+            const std::uint32_t rows = scratch_rows(region.width, 1U, region.height);
+            snow::memory::PixelArray<std::byte> gray(static_cast<std::size_t>(region.width) * rows);
+            for (std::uint32_t first = 0; first < region.height; first += rows) {
+                if (stop.stop_requested())
+                    return Status::error(ErrorCode::cancelled, "Raster conversion was cancelled.",
+                                         "raster conversion");
+                const std::uint32_t count = std::min(rows, region.height - first);
+                Result<void> read = read_plane_region(
+                    source, frame_index, 0, {region.x, region.y + first, region.width, count},
+                    region.width, gray, stop);
+                if (!read)
+                    return read.error();
+                if (stop.stop_requested())
+                    return Status::error(ErrorCode::cancelled, "Raster conversion was cancelled.",
+                                         "raster conversion");
+                const int converted =
+                    convert_gray(gray.data(), static_cast<int>(region.width),
+                                 destination.pixels.data() +
+                                     static_cast<std::size_t>(first) * destination.row_stride,
+                                 static_cast<int>(destination.row_stride),
+                                 static_cast<int>(region.width), static_cast<int>(count));
+                if (converted != 0)
+                    return Status::error(ErrorCode::decode_failed,
+                                         "Grayscale raster conversion failed.", "libyuv");
+            }
+            return {};
+        } catch (const std::bad_alloc&) {
+            return Status::error(ErrorCode::out_of_memory,
+                                 "Could not allocate bounded raster conversion planes.",
+                                 "raster conversion");
+        }
     }
     const bool has_alpha = layout.alpha == AlphaMode::straight;
     if (layout.color_model != ColorModel::ycbcr ||
@@ -327,106 +347,159 @@ Result<void> read_rgba8_region(const RasterSource& source, std::uint32_t frame_i
     const RasterRect chroma_region{left / horizontal, top / vertical,
                                    (right + horizontal - 1U) / horizontal - left / horizontal,
                                    (bottom + vertical - 1U) / vertical - top / vertical};
-    Result<std::vector<std::byte>> y = read_plane_region(source, frame_index, 0, luma_region, stop);
-    if (!y)
-        return y.error();
-    Result<std::vector<std::byte>> cb =
-        read_plane_region(source, frame_index, 1, chroma_region, stop);
-    if (!cb)
-        return cb.error();
-    Result<std::vector<std::byte>> cr =
-        read_plane_region(source, frame_index, 2, chroma_region, stop);
-    if (!cr)
-        return cr.error();
-    std::vector<std::byte> alpha;
-    if (has_alpha) {
-        Result<std::vector<std::byte>> read_alpha =
-            read_plane_region(source, frame_index, 3, region, stop);
-        if (!read_alpha)
-            return read_alpha.error();
-        alpha = std::move(read_alpha).value();
-    }
-    if (stop.stop_requested())
-        return Status::error(ErrorCode::cancelled, "Raster conversion was cancelled.",
+    // TurboJPEG's planar conversion uses box upsampling. Libyuv and the
+    // scalar fallback also use one chroma sample per sampling group, so aligned
+    // stripes preserve the full conversion's pixels without rereading halos.
+    const bool direct = left == region.x && top == region.y && luma_region.width == region.width &&
+                        luma_region.height == region.height;
+    const bool uncommon = layout.chroma_subsampling != ChromaSubsampling::yuv444 &&
+                          layout.chroma_subsampling != ChromaSubsampling::yuv422 &&
+                          layout.chroma_subsampling != ChromaSubsampling::yuv420;
+    const std::size_t y_stride =
+        (static_cast<std::size_t>(luma_region.width) + horizontal - 1U) / horizontal * horizontal;
+    const std::size_t rgba_stride = static_cast<std::size_t>(luma_region.width) * 4U;
+    if (y_stride > static_cast<std::size_t>(std::numeric_limits<int>::max()) ||
+        rgba_stride > static_cast<std::size_t>(std::numeric_limits<int>::max()))
+        return Status::error(ErrorCode::limit_exceeded,
+                             "Raster conversion aligned rows exceed backend limits.",
                              "raster conversion");
-
+    const std::size_t group_bytes =
+        y_stride * vertical + static_cast<std::size_t>(chroma_region.width) * 2U +
+        (direct ? 0U : rgba_stride * vertical) +
+        (has_alpha ? static_cast<std::size_t>(region.width) * vertical : 0U) +
+        (uncommon ? static_cast<std::size_t>(luma_region.width) * vertical * 2U : 0U);
+    const std::uint32_t rows = scratch_rows(group_bytes, vertical, luma_region.height);
+    const std::uint32_t padded_rows = (rows + vertical - 1U) / vertical * vertical;
     try {
-        const std::size_t rgba_stride = static_cast<std::size_t>(luma_region.width) * 4U;
-        const bool direct = left == region.x && top == region.y &&
-                            luma_region.width == region.width &&
-                            luma_region.height == region.height;
-        std::vector<std::byte> rgba;
-        std::byte* output = destination.pixels.data();
-        int output_stride = static_cast<int>(destination.row_stride);
-        if (!direct) {
-            rgba.resize(rgba_stride * luma_region.height);
-            output = rgba.data();
-            output_stride = static_cast<int>(rgba_stride);
-        }
+        snow::memory::PixelArray<std::byte> y(y_stride * padded_rows);
+        snow::memory::PixelArray<std::byte> cb(static_cast<std::size_t>(chroma_region.width) *
+                                               (padded_rows / vertical));
+        snow::memory::PixelArray<std::byte> cr(cb.size());
+        snow::memory::PixelArray<std::byte> alpha;
+        snow::memory::PixelArray<std::byte> rgba;
+        snow::memory::PixelArray<std::byte> expanded_cb;
+        snow::memory::PixelArray<std::byte> expanded_cr;
+        if (has_alpha)
+            alpha.resize(static_cast<std::size_t>(region.width) * rows);
+        if (!direct)
+            rgba.resize(rgba_stride * rows);
 
-        int converted = -1;
-        converted = convert_ycbcr(layout, y.value().data(), static_cast<int>(luma_region.width),
-                                  cb.value().data(), static_cast<int>(chroma_region.width),
-                                  cr.value().data(), static_cast<int>(chroma_region.width), output,
-                                  output_stride, static_cast<int>(luma_region.width),
-                                  static_cast<int>(luma_region.height));
-        if (converted != 0 && layout.chroma_subsampling != ChromaSubsampling::yuv444 &&
-            layout.chroma_subsampling != ChromaSubsampling::yuv422 &&
-            layout.chroma_subsampling != ChromaSubsampling::yuv420) {
-            std::vector<std::byte> expanded_cb(static_cast<std::size_t>(luma_region.width) *
-                                               luma_region.height);
-            std::vector<std::byte> expanded_cr(expanded_cb.size());
-            for (std::uint32_t row = 0; row < luma_region.height; ++row) {
-                if (stop.stop_requested())
-                    return Status::error(ErrorCode::cancelled, "Raster conversion was cancelled.",
-                                         "raster conversion");
-                const std::size_t chroma_row = row / vertical;
-                for (std::uint32_t column = 0; column < luma_region.width; ++column) {
-                    const std::size_t chroma_offset =
-                        chroma_row * chroma_region.width + column / horizontal;
-                    const std::size_t offset =
-                        static_cast<std::size_t>(row) * luma_region.width + column;
-                    expanded_cb[offset] = cb.value()[chroma_offset];
-                    expanded_cr[offset] = cr.value()[chroma_offset];
+        for (std::uint32_t first = 0; first < luma_region.height; first += rows) {
+            if (stop.stop_requested())
+                return Status::error(ErrorCode::cancelled, "Raster conversion was cancelled.",
+                                     "raster conversion");
+            const std::uint32_t count = std::min(rows, luma_region.height - first);
+            const RasterRect y_region{left, top + first, luma_region.width, count};
+            const RasterRect uv_region{chroma_region.x, (top + first) / vertical,
+                                       chroma_region.width, (count + vertical - 1U) / vertical};
+            Result<void> read =
+                read_plane_region(source, frame_index, 0, y_region, y_stride, y, stop);
+            if (!read)
+                return read.error();
+            read =
+                read_plane_region(source, frame_index, 1, uv_region, chroma_region.width, cb, stop);
+            if (!read)
+                return read.error();
+            read =
+                read_plane_region(source, frame_index, 2, uv_region, chroma_region.width, cr, stop);
+            if (!read)
+                return read.error();
+
+            // Tight odd planes still need the padding required by TurboJPEG's
+            // YUV API. Replicate edges without reading outside source geometry.
+            for (std::uint32_t row = 0; row < count; ++row) {
+                std::byte* y_row = y.data() + static_cast<std::size_t>(row) * y_stride;
+                std::fill(y_row + luma_region.width, y_row + y_stride,
+                          y_row[luma_region.width - 1U]);
+            }
+            const std::uint32_t aligned_count = (count + vertical - 1U) / vertical * vertical;
+            for (std::uint32_t row = count; row < aligned_count; ++row)
+                std::memcpy(y.data() + static_cast<std::size_t>(row) * y_stride,
+                            y.data() + static_cast<std::size_t>(count - 1U) * y_stride, y_stride);
+
+            const std::uint32_t output_top = std::max(y_region.y, region.y);
+            const std::uint32_t output_bottom = std::min(y_region.y + count, region_bottom);
+            const std::uint32_t output_rows = output_bottom - output_top;
+            const std::uint32_t destination_first = output_top - region.y;
+            if (has_alpha) {
+                read = read_plane_region(source, frame_index, 3,
+                                         {region.x, output_top, region.width, output_rows},
+                                         region.width, alpha, stop);
+                if (!read)
+                    return read.error();
+            }
+            if (stop.stop_requested())
+                return Status::error(ErrorCode::cancelled, "Raster conversion was cancelled.",
+                                     "raster conversion");
+
+            std::byte* output = direct
+                                    ? destination.pixels.data() +
+                                          static_cast<std::size_t>(first) * destination.row_stride
+                                    : rgba.data();
+            const int output_stride =
+                static_cast<int>(direct ? destination.row_stride : rgba_stride);
+            int converted =
+                convert_ycbcr(layout, y.data(), static_cast<int>(y_stride), cb.data(),
+                              static_cast<int>(chroma_region.width), cr.data(),
+                              static_cast<int>(chroma_region.width), output, output_stride,
+                              static_cast<int>(luma_region.width), static_cast<int>(count));
+            if (converted != 0 && uncommon) {
+                expanded_cb.resize(static_cast<std::size_t>(luma_region.width) * count);
+                expanded_cr.resize(expanded_cb.size());
+                for (std::uint32_t row = 0; row < count; ++row) {
+                    if (stop.stop_requested())
+                        return Status::error(ErrorCode::cancelled,
+                                             "Raster conversion was cancelled.",
+                                             "raster conversion");
+                    const std::size_t chroma_row = row / vertical;
+                    for (std::uint32_t column = 0; column < luma_region.width; ++column) {
+                        const std::size_t chroma_offset =
+                            chroma_row * chroma_region.width + column / horizontal;
+                        const std::size_t offset =
+                            static_cast<std::size_t>(row) * luma_region.width + column;
+                        expanded_cb[offset] = cb[chroma_offset];
+                        expanded_cr[offset] = cr[chroma_offset];
+                    }
                 }
+                RasterLayout expanded_layout = layout;
+                expanded_layout.chroma_subsampling = ChromaSubsampling::yuv444;
+                converted = convert_ycbcr(
+                    expanded_layout, y.data(), static_cast<int>(y_stride), expanded_cb.data(),
+                    static_cast<int>(luma_region.width), expanded_cr.data(),
+                    static_cast<int>(luma_region.width), output, output_stride,
+                    static_cast<int>(luma_region.width), static_cast<int>(count));
             }
-            RasterLayout expanded_layout = layout;
-            expanded_layout.chroma_subsampling = ChromaSubsampling::yuv444;
-            converted = convert_ycbcr(
-                expanded_layout, y.value().data(), static_cast<int>(luma_region.width),
-                expanded_cb.data(), static_cast<int>(luma_region.width), expanded_cr.data(),
-                static_cast<int>(luma_region.width), output, output_stride,
-                static_cast<int>(luma_region.width), static_cast<int>(luma_region.height));
-        }
-        if (converted != 0)
-            return Status::error(ErrorCode::decode_failed, "YCbCr raster conversion failed.",
-                                 "libyuv");
-        if (!direct) {
-            const std::size_t source_x = static_cast<std::size_t>(region.x - left) * 4U;
-            const std::size_t source_y = region.y - top;
-            const std::size_t row_bytes = static_cast<std::size_t>(region.width) * 4U;
-            for (std::uint32_t row = 0; row < region.height; ++row) {
-                std::memcpy(destination.pixels.data() +
-                                static_cast<std::size_t>(row) * destination.row_stride,
-                            rgba.data() + (source_y + row) * rgba_stride + source_x, row_bytes);
+            if (converted != 0)
+                return Status::error(ErrorCode::decode_failed, "YCbCr raster conversion failed.",
+                                     "libyuv");
+            if (!direct) {
+                const std::size_t source_x = static_cast<std::size_t>(region.x - left) * 4U;
+                const std::size_t source_y = output_top - y_region.y;
+                const std::size_t row_bytes = static_cast<std::size_t>(region.width) * 4U;
+                for (std::uint32_t row = 0; row < output_rows; ++row)
+                    std::memcpy(destination.pixels.data() +
+                                    static_cast<std::size_t>(destination_first + row) *
+                                        destination.row_stride,
+                                rgba.data() + (source_y + row) * rgba_stride + source_x, row_bytes);
             }
-        }
-        if (has_alpha) {
-            for (std::uint32_t row = 0; row < region.height; ++row) {
-                std::byte* destination_row = destination.pixels.data() +
-                                             static_cast<std::size_t>(row) * destination.row_stride;
-                const std::byte* alpha_row =
-                    alpha.data() + static_cast<std::size_t>(row) * region.width;
-                for (std::uint32_t column = 0; column < region.width; ++column) {
-                    const std::uint8_t value = std::to_integer<std::uint8_t>(alpha_row[column]);
-                    const std::size_t offset = static_cast<std::size_t>(column) * 4U;
-                    destination_row[offset + 3U] = alpha_row[column];
-                    if (options.output_alpha == AlphaMode::premultiplied) {
-                        for (std::size_t channel = 0; channel < 3; ++channel) {
-                            const std::uint32_t sample =
-                                std::to_integer<std::uint8_t>(destination_row[offset + channel]);
-                            destination_row[offset + channel] =
-                                static_cast<std::byte>((sample * value + 127U) / 255U);
+            if (has_alpha) {
+                for (std::uint32_t row = 0; row < output_rows; ++row) {
+                    std::byte* destination_row =
+                        destination.pixels.data() +
+                        static_cast<std::size_t>(destination_first + row) * destination.row_stride;
+                    const std::byte* alpha_row =
+                        alpha.data() + static_cast<std::size_t>(row) * region.width;
+                    for (std::uint32_t column = 0; column < region.width; ++column) {
+                        const std::uint8_t value = std::to_integer<std::uint8_t>(alpha_row[column]);
+                        const std::size_t offset = static_cast<std::size_t>(column) * 4U;
+                        destination_row[offset + 3U] = alpha_row[column];
+                        if (options.output_alpha == AlphaMode::premultiplied) {
+                            for (std::size_t channel = 0; channel < 3; ++channel) {
+                                const std::uint32_t sample = std::to_integer<std::uint8_t>(
+                                    destination_row[offset + channel]);
+                                destination_row[offset + channel] =
+                                    static_cast<std::byte>((sample * value + 127U) / 255U);
+                            }
                         }
                     }
                 }

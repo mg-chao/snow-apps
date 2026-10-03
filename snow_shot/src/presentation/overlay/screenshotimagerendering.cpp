@@ -1,3 +1,4 @@
+#include "snow_draw_engine_qt/snow_canvas_image.h"
 #include "snow_shot/presentation/screenshotimagerendering.h"
 
 #include <QColorSpace>
@@ -49,7 +50,7 @@ QImage imageWindow(const QImage& image, const QRect& bounds) {
         }
     }
 
-    QImage copy = image.copy(bounds);
+    QImage copy = snowCanvasCopyImage(image, bounds);
     if (!copy.isNull()) {
         copy.setDevicePixelRatio(1.0);
     }
@@ -86,8 +87,8 @@ void paintScaledSourceWindow(QPainter& painter, const QRectF& targetWindow, cons
     const Qt::TransformationMode mode = painter.testRenderHint(QPainter::SmoothPixmapTransform)
                                             ? Qt::SmoothTransformation
                                             : Qt::FastTransformation;
-    QImage scaled =
-        sourceWindow.scaled(QSize(scaledWidth, scaledHeight), Qt::IgnoreAspectRatio, mode);
+    QImage scaled = snowCanvasScaleImage(sourceWindow, QSize(scaledWidth, scaledHeight),
+                                         Qt::IgnoreAspectRatio, mode);
     if (scaled.isNull()) {
         return;
     }

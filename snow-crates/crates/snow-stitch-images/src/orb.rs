@@ -1,5 +1,4 @@
-#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-use std::mem::MaybeUninit;
+use snow_memory::{RasterArray, RasterBuffer};
 use std::sync::OnceLock;
 
 use rayon::prelude::*;
@@ -51,11 +50,16 @@ const ORB_PATTERN_BASE64: &str = "CP0JBQQCB/T1CfgCB/QM8wLzAgwB+QEG/vb+/PPz9fjz/f
 pub(crate) struct Image {
     pub(super) width: usize,
     pub(super) height: usize,
-    pub(super) pixels: Vec<u8>,
+    pub(super) pixels: RasterBuffer,
 }
 
 impl Image {
+    #[cfg(test)]
     pub(crate) fn new(width: usize, height: usize, pixels: Vec<u8>) -> Self {
+        Self::from_buffer(width, height, pixels.into())
+    }
+
+    pub(crate) fn from_buffer(width: usize, height: usize, pixels: RasterBuffer) -> Self {
         assert_eq!(pixels.len(), width.saturating_mul(height));
         Self {
             width,
@@ -64,6 +68,7 @@ impl Image {
         }
     }
 
+    #[cfg(test)]
     fn at(&self, x: usize, y: usize) -> u8 {
         self.pixels[y * self.width + x]
     }
@@ -148,15 +153,17 @@ fn grayscale_pixel(pixel: &[u8]) -> u8 {
 fn grayscale_scalar(frame: &Frame) -> Image {
     let channels = frame.pixel_format().channels() as usize;
     let pixel_format = frame.pixel_format();
-    let pixels = frame
-        .pixels()
-        .par_chunks_exact(channels)
-        .map(|pixel| match pixel_format {
-            PixelFormat::Gray8 => pixel[0],
-            PixelFormat::Rgb8 | PixelFormat::Rgba8 => grayscale_pixel(pixel),
-        })
-        .collect();
-    Image::new(frame.width() as usize, frame.height() as usize, pixels)
+    let mut pixels = RasterBuffer::zeroed(frame.width() as usize * frame.height() as usize);
+    pixels
+        .par_iter_mut()
+        .zip(frame.pixels().par_chunks_exact(channels))
+        .for_each(|(target, pixel)| {
+            *target = match pixel_format {
+                PixelFormat::Gray8 => pixel[0],
+                PixelFormat::Rgb8 | PixelFormat::Rgba8 => grayscale_pixel(pixel),
+            };
+        });
+    Image::from_buffer(frame.width() as usize, frame.height() as usize, pixels)
 }
 
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
@@ -210,13 +217,13 @@ unsafe fn grayscale_avx2(frame: &Frame) -> Image {
     const OUTPUT_CHUNK: usize = 32 * 1024;
     let channels = frame.pixel_format().channels() as usize;
     if channels == 1 {
-        return Image::new(
+        return Image::from_buffer(
             frame.width() as usize,
             frame.height() as usize,
-            frame.pixels().to_vec(),
+            RasterBuffer::from(frame.pixels()),
         );
     }
-    let mut pixels = vec![0_u8; frame.width() as usize * frame.height() as usize];
+    let mut pixels = RasterBuffer::zeroed(frame.width() as usize * frame.height() as usize);
     pixels
         .par_chunks_mut(OUTPUT_CHUNK)
         .enumerate()
@@ -225,7 +232,7 @@ unsafe fn grayscale_avx2(frame: &Frame) -> Image {
             let source = &frame.pixels()[source_start..source_start + output.len() * channels];
             unsafe { grayscale_chunk_avx2(source, output, channels) };
         });
-    Image::new(frame.width() as usize, frame.height() as usize, pixels)
+    Image::from_buffer(frame.width() as usize, frame.height() as usize, pixels)
 }
 
 pub(crate) fn grayscale(frame: &Frame) -> Image {
@@ -331,8 +338,8 @@ fn score_fast_row_scalar(width: u32, pixels: &[u8], row: &mut [u8], y: u32, thre
     }
 }
 
-fn fast_scores_scalar(width: u32, height: u32, pixels: &[u8], threshold: i16) -> Vec<u8> {
-    let mut scores = vec![0_u8; pixels.len()];
+fn fast_scores_scalar(width: u32, height: u32, pixels: &[u8], threshold: i16) -> RasterBuffer {
+    let mut scores = RasterBuffer::zeroed(pixels.len());
     scores
         .par_chunks_mut(width as usize)
         .enumerate()
@@ -405,8 +412,8 @@ unsafe fn score_fast_row_avx2(width: u32, pixels: &[u8], row: &mut [u8], y: u32,
 }
 
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-unsafe fn fast_scores_avx2(width: u32, height: u32, pixels: &[u8], threshold: i16) -> Vec<u8> {
-    let mut scores = vec![0_u8; pixels.len()];
+unsafe fn fast_scores_avx2(width: u32, height: u32, pixels: &[u8], threshold: i16) -> RasterBuffer {
+    let mut scores = RasterBuffer::zeroed(pixels.len());
     scores
         .par_chunks_mut(width as usize)
         .enumerate()
@@ -437,6 +444,7 @@ pub(crate) fn fast_9_16(
     };
     #[cfg(not(any(target_arch = "x86", target_arch = "x86_64")))]
     let scores = fast_scores_scalar(width, height, pixels, i16::from(threshold));
+    let scores = scores.as_slice();
     const ROWS_PER_TASK: u32 = 16;
     (0..(height - 6).div_ceil(ROWS_PER_TASK))
         .into_par_iter()
@@ -541,7 +549,8 @@ fn resize_linear_exact(source: &Image, plan: &ResizePlan) -> Image {
     if source.width == plan.width && source.height == plan.height {
         return source.clone();
     }
-    let mut pixels = vec![0_u8; plan.width * plan.height];
+    let source_pixels = source.pixels.as_slice();
+    let mut pixels = RasterBuffer::zeroed(plan.width * plan.height);
     pixels
         .par_chunks_mut(plan.width)
         .enumerate()
@@ -552,18 +561,20 @@ fn resize_linear_exact(source: &Image, plan: &ResizePlan) -> Image {
             for (target_x, &horizontal) in plan.horizontal.iter().enumerate() {
                 let source_x = horizontal.first as usize;
                 let next_x = horizontal.second as usize;
-                let top_value = u32::from(source.at(source_x, source_y))
+                let top_value = u32::from(source_pixels[source_y * source.width + source_x])
                     * u32::from(horizontal.first_weight)
-                    + u32::from(source.at(next_x, source_y)) * u32::from(horizontal.second_weight);
-                let bottom_value = u32::from(source.at(source_x, next_y))
+                    + u32::from(source_pixels[source_y * source.width + next_x])
+                        * u32::from(horizontal.second_weight);
+                let bottom_value = u32::from(source_pixels[next_y * source.width + source_x])
                     * u32::from(horizontal.first_weight)
-                    + u32::from(source.at(next_x, next_y)) * u32::from(horizontal.second_weight);
+                    + u32::from(source_pixels[next_y * source.width + next_x])
+                        * u32::from(horizontal.second_weight);
                 let value = top_value * u32::from(vertical.first_weight)
                     + bottom_value * u32::from(vertical.second_weight);
                 output[target_x] = ((value + (1_u32 << 15)) >> 16) as u8;
             }
         });
-    Image::new(plan.width, plan.height, pixels)
+    Image::from_buffer(plan.width, plan.height, pixels)
 }
 
 fn reflect_101(index: isize, length: usize) -> usize {
@@ -586,7 +597,7 @@ fn reflect_101(index: isize, length: usize) -> usize {
 fn padded(image: &Image) -> Image {
     let width = image.width + BORDER * 2;
     let height = image.height + BORDER * 2;
-    let mut pixels = vec![0_u8; width * height];
+    let mut pixels = RasterBuffer::zeroed(width * height);
     pixels
         .par_chunks_mut(width)
         .enumerate()
@@ -609,7 +620,7 @@ fn padded(image: &Image) -> Image {
                 *output_pixel = image.pixels[source_start + source_x];
             }
         });
-    Image::new(width, height, pixels)
+    Image::from_buffer(width, height, pixels)
 }
 
 fn scale_for_level(level: usize) -> f32 {
@@ -701,6 +712,7 @@ fn filter_border(keypoints: &mut Vec<Keypoint>, image: &Image) {
 }
 
 fn harris_moments(image: &Image, x: usize, y: usize) -> (i32, i32, i32) {
+    let pixels = image.pixels.as_slice();
     let stride = image.width;
     let radius = HARRIS_BLOCK_SIZE / 2;
     let mut horizontal = 0_i32;
@@ -709,19 +721,17 @@ fn harris_moments(image: &Image, x: usize, y: usize) -> (i32, i32, i32) {
     for offset_y in 0..HARRIS_BLOCK_SIZE {
         for offset_x in 0..HARRIS_BLOCK_SIZE {
             let center = (y + offset_y - radius) * stride + x + offset_x - radius;
-            let intensity_x =
-                (i32::from(image.pixels[center + 1]) - i32::from(image.pixels[center - 1])) * 2
-                    + i32::from(image.pixels[center - stride + 1])
-                    - i32::from(image.pixels[center - stride - 1])
-                    + i32::from(image.pixels[center + stride + 1])
-                    - i32::from(image.pixels[center + stride - 1]);
-            let intensity_y = (i32::from(image.pixels[center + stride])
-                - i32::from(image.pixels[center - stride]))
-                * 2
-                + i32::from(image.pixels[center + stride - 1])
-                - i32::from(image.pixels[center - stride - 1])
-                + i32::from(image.pixels[center + stride + 1])
-                - i32::from(image.pixels[center - stride + 1]);
+            let intensity_x = (i32::from(pixels[center + 1]) - i32::from(pixels[center - 1])) * 2
+                + i32::from(pixels[center - stride + 1])
+                - i32::from(pixels[center - stride - 1])
+                + i32::from(pixels[center + stride + 1])
+                - i32::from(pixels[center + stride - 1]);
+            let intensity_y =
+                (i32::from(pixels[center + stride]) - i32::from(pixels[center - stride])) * 2
+                    + i32::from(pixels[center + stride - 1])
+                    - i32::from(pixels[center - stride - 1])
+                    + i32::from(pixels[center + stride + 1])
+                    - i32::from(pixels[center - stride + 1]);
             horizontal += intensity_x * intensity_x;
             vertical += intensity_y * intensity_y;
             cross += intensity_x * intensity_y;
@@ -796,6 +806,7 @@ fn fast_atan2(y: f32, x: f32) -> f32 {
 }
 
 fn orient(image: &Image, keypoint: &mut Keypoint, maximum_x: &[usize]) {
+    let pixels = image.pixels.as_slice();
     let x = cv_round(keypoint.x) as usize;
     let y = cv_round(keypoint.y) as usize;
     let center = y * image.width + x;
@@ -803,21 +814,17 @@ fn orient(image: &Image, keypoint: &mut Keypoint, maximum_x: &[usize]) {
     let mut moment_y = 0_i32;
     let mut moment_x = 0_i32;
     for horizontal in -(half as isize)..=half as isize {
-        moment_x +=
-            horizontal as i32 * i32::from(image.pixels[(center as isize + horizontal) as usize]);
+        moment_x += horizontal as i32 * i32::from(pixels[(center as isize + horizontal) as usize]);
     }
     for (vertical, &horizontal_maximum) in maximum_x.iter().enumerate().take(half + 1).skip(1) {
         let mut sum = 0_i32;
         for horizontal in -(horizontal_maximum as isize)..=horizontal_maximum as isize {
             let above = i32::from(
-                image.pixels[(center as isize
-                    + horizontal
-                    + vertical as isize * image.width as isize)
+                pixels[(center as isize + horizontal + vertical as isize * image.width as isize)
                     as usize],
             );
             let below = i32::from(
-                image.pixels[(center as isize + horizontal
-                    - vertical as isize * image.width as isize)
+                pixels[(center as isize + horizontal - vertical as isize * image.width as isize)
                     as usize],
             );
             sum += above - below;
@@ -829,112 +836,117 @@ fn orient(image: &Image, keypoint: &mut Keypoint, maximum_x: &[usize]) {
 }
 
 #[inline]
-fn horizontal_blur_reflected(image: &Image, x: usize, y: usize) -> f32 {
+fn horizontal_blur_reflected(pixels: &[u8], width: usize, x: usize, y: usize) -> f32 {
     let mut value = 0_f32;
     for (offset, weight) in BLUR_KERNEL.iter().enumerate() {
-        let source_x = reflect_101(x as isize + offset as isize - 3, image.width);
-        value += f32::from(image.at(source_x, y)) * *weight;
+        let source_x = reflect_101(x as isize + offset as isize - 3, width);
+        value += f32::from(pixels[y * width + source_x]) * *weight;
     }
     value
+}
+
+fn horizontal_blur_row_scalar(pixels: &[u8], width: usize, row: &mut [f32], y: usize) {
+    if width <= 6 {
+        for (x, output) in row.iter_mut().enumerate() {
+            *output = horizontal_blur_reflected(pixels, width, x, y);
+        }
+        return;
+    }
+    for (x, output) in row.iter_mut().enumerate().take(3) {
+        *output = horizontal_blur_reflected(pixels, width, x, y);
+    }
+    for (x, output) in row.iter_mut().enumerate().take(width - 3).skip(3) {
+        let center = y * width + x;
+        let mut value = f32::from(pixels[center - 3]) * BLUR_KERNEL[0];
+        value += f32::from(pixels[center - 2]) * BLUR_KERNEL[1];
+        value += f32::from(pixels[center - 1]) * BLUR_KERNEL[2];
+        value += f32::from(pixels[center]) * BLUR_KERNEL[3];
+        value += f32::from(pixels[center + 1]) * BLUR_KERNEL[4];
+        value += f32::from(pixels[center + 2]) * BLUR_KERNEL[5];
+        value += f32::from(pixels[center + 3]) * BLUR_KERNEL[6];
+        *output = value;
+    }
+    for (x, output) in row.iter_mut().enumerate().skip(width - 3) {
+        *output = horizontal_blur_reflected(pixels, width, x, y);
+    }
 }
 
 #[inline]
-fn vertical_blur_reflected(
-    horizontal: &[f32],
-    width: usize,
-    height: usize,
-    x: usize,
-    y: usize,
-) -> f32 {
-    let mut value = horizontal[y * width + x] * BLUR_KERNEL[3];
-    for offset in 1..=3 {
-        let above = reflect_101(y as isize - offset as isize, height);
-        let below = reflect_101(y as isize + offset as isize, height);
-        value += (horizontal[above * width + x] + horizontal[below * width + x])
-            * BLUR_KERNEL[3 + offset];
+fn vertical_blur_pixel(rows: &[&[f32]; 7], x: usize) -> u8 {
+    let mut value = rows[3][x] * BLUR_KERNEL[3];
+    value += (rows[2][x] + rows[4][x]) * BLUR_KERNEL[4];
+    value += (rows[1][x] + rows[5][x]) * BLUR_KERNEL[5];
+    value += (rows[0][x] + rows[6][x]) * BLUR_KERNEL[6];
+    cv_round(value).clamp(0, 255) as u8
+}
+
+/// A separable seven-tap blur needs seven horizontal rows, regardless of height.
+/// The slots are exclusively owned by this blur; reflected border rows can share
+/// a slot because each live source row has a distinct index modulo seven.
+fn blur_with_rows(
+    image: &Image,
+    mut horizontal_row: impl FnMut(&mut [f32], usize),
+    mut vertical_row: impl FnMut([&[f32]; 7], &mut [u8]),
+) -> Image {
+    let mut horizontal = RasterArray::<f32>::zeroed(image.width * 7);
+    let horizontal = &mut *horizontal;
+    let mut cached_rows = [usize::MAX; 7];
+    let mut pixels = RasterBuffer::zeroed(image.pixels.len());
+    for (y, output) in pixels.as_mut_slice().chunks_mut(image.width).enumerate() {
+        let sources: [usize; 7] = std::array::from_fn(|offset| {
+            reflect_101(y as isize + offset as isize - 3, image.height)
+        });
+        for source in sources {
+            let slot = source % 7;
+            if cached_rows[slot] != source {
+                let start = slot * image.width;
+                horizontal_row(&mut horizontal[start..start + image.width], source);
+                cached_rows[slot] = source;
+            }
+        }
+        let rows = sources.map(|source| {
+            let start = source % 7 * image.width;
+            &horizontal[start..start + image.width]
+        });
+        vertical_row(rows, output);
     }
-    value
+    Image::from_buffer(image.width, image.height, pixels)
 }
 
 fn blur_scalar(image: &Image) -> Image {
-    let mut horizontal = vec![0_f32; image.pixels.len()];
-    horizontal
-        .chunks_mut(image.width)
-        .enumerate()
-        .for_each(|(y, row)| {
-            if image.width > 6 {
-                for (x, output_pixel) in row.iter_mut().enumerate().take(3) {
-                    *output_pixel = horizontal_blur_reflected(image, x, y);
-                }
-                for (x, output_pixel) in row.iter_mut().enumerate().take(image.width - 3).skip(3) {
-                    let center = y * image.width + x;
-                    let mut value = f32::from(image.pixels[center - 3]) * BLUR_KERNEL[0];
-                    value += f32::from(image.pixels[center - 2]) * BLUR_KERNEL[1];
-                    value += f32::from(image.pixels[center - 1]) * BLUR_KERNEL[2];
-                    value += f32::from(image.pixels[center]) * BLUR_KERNEL[3];
-                    value += f32::from(image.pixels[center + 1]) * BLUR_KERNEL[4];
-                    value += f32::from(image.pixels[center + 2]) * BLUR_KERNEL[5];
-                    value += f32::from(image.pixels[center + 3]) * BLUR_KERNEL[6];
-                    *output_pixel = value;
-                }
-                for (x, output_pixel) in row
-                    .iter_mut()
-                    .enumerate()
-                    .take(image.width)
-                    .skip(image.width - 3)
-                {
-                    *output_pixel = horizontal_blur_reflected(image, x, y);
-                }
-            } else {
-                for (x, output_pixel) in row.iter_mut().enumerate().take(image.width) {
-                    *output_pixel = horizontal_blur_reflected(image, x, y);
-                }
+    let source = image.pixels.as_slice();
+    blur_with_rows(
+        image,
+        |row, y| horizontal_blur_row_scalar(source, image.width, row, y),
+        |rows, output| {
+            for (x, value) in output.iter_mut().enumerate() {
+                *value = vertical_blur_pixel(&rows, x);
             }
-        });
-    let mut pixels = vec![0_u8; image.pixels.len()];
-    pixels
-        .chunks_mut(image.width)
-        .enumerate()
-        .for_each(|(y, output)| {
-            if image.height > 6 && y >= 3 && y < image.height - 3 {
-                for (x, output_pixel) in output.iter_mut().enumerate().take(image.width) {
-                    let center = y * image.width + x;
-                    let mut value = horizontal[center] * BLUR_KERNEL[3];
-                    value += (horizontal[center - image.width] + horizontal[center + image.width])
-                        * BLUR_KERNEL[4];
-                    value += (horizontal[center - image.width * 2]
-                        + horizontal[center + image.width * 2])
-                        * BLUR_KERNEL[5];
-                    value += (horizontal[center - image.width * 3]
-                        + horizontal[center + image.width * 3])
-                        * BLUR_KERNEL[6];
-                    *output_pixel = cv_round(value).clamp(0, 255) as u8;
-                }
-            } else {
-                for (x, output_pixel) in output.iter_mut().enumerate().take(image.width) {
-                    let value =
-                        vertical_blur_reflected(&horizontal, image.width, image.height, x, y);
-                    *output_pixel = cv_round(value).clamp(0, 255) as u8;
-                }
-            }
-        });
-    Image::new(image.width, image.height, pixels)
+        },
+    )
 }
 
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 #[target_feature(enable = "avx2")]
 unsafe fn horizontal_blur_row_avx2(image: &Image, row: *mut f32, y: usize) {
+    let pixels = image.pixels.as_slice();
     if image.width <= 6 {
         for x in 0..image.width {
-            unsafe { row.add(x).write(horizontal_blur_reflected(image, x, y)) };
+            unsafe {
+                row.add(x)
+                    .write(horizontal_blur_reflected(pixels, image.width, x, y))
+            };
         }
         return;
     }
 
     for x in 0..3 {
-        unsafe { row.add(x).write(horizontal_blur_reflected(image, x, y)) };
+        unsafe {
+            row.add(x)
+                .write(horizontal_blur_reflected(pixels, image.width, x, y))
+        };
     }
-    let source = unsafe { image.pixels.as_ptr().add(y * image.width) };
+    let source = unsafe { pixels.as_ptr().add(y * image.width) };
     let mut x = 3;
     while x + 8 <= image.width - 3 {
         let load = |offset: usize| unsafe {
@@ -971,57 +983,36 @@ unsafe fn horizontal_blur_row_avx2(image: &Image, row: *mut f32, y: usize) {
     }
     while x < image.width - 3 {
         let center = y * image.width + x;
-        let mut value = f32::from(image.pixels[center - 3]) * BLUR_KERNEL[0];
-        value += f32::from(image.pixels[center - 2]) * BLUR_KERNEL[1];
-        value += f32::from(image.pixels[center - 1]) * BLUR_KERNEL[2];
-        value += f32::from(image.pixels[center]) * BLUR_KERNEL[3];
-        value += f32::from(image.pixels[center + 1]) * BLUR_KERNEL[4];
-        value += f32::from(image.pixels[center + 2]) * BLUR_KERNEL[5];
-        value += f32::from(image.pixels[center + 3]) * BLUR_KERNEL[6];
+        let mut value = f32::from(pixels[center - 3]) * BLUR_KERNEL[0];
+        value += f32::from(pixels[center - 2]) * BLUR_KERNEL[1];
+        value += f32::from(pixels[center - 1]) * BLUR_KERNEL[2];
+        value += f32::from(pixels[center]) * BLUR_KERNEL[3];
+        value += f32::from(pixels[center + 1]) * BLUR_KERNEL[4];
+        value += f32::from(pixels[center + 2]) * BLUR_KERNEL[5];
+        value += f32::from(pixels[center + 3]) * BLUR_KERNEL[6];
         unsafe { row.add(x).write(value) };
         x += 1;
     }
     for x in image.width.saturating_sub(3)..image.width {
-        unsafe { row.add(x).write(horizontal_blur_reflected(image, x, y)) };
+        unsafe {
+            row.add(x)
+                .write(horizontal_blur_reflected(pixels, image.width, x, y))
+        };
     }
-}
-
-#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-unsafe fn assume_init_vec<T>(mut values: Vec<MaybeUninit<T>>) -> Vec<T> {
-    let pointer = values.as_mut_ptr().cast::<T>();
-    let length = values.len();
-    let capacity = values.capacity();
-    std::mem::forget(values);
-    unsafe { Vec::from_raw_parts(pointer, length, capacity) }
 }
 
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 #[target_feature(enable = "avx2")]
-unsafe fn vertical_blur_row_avx2(
-    horizontal: &[f32],
-    width: usize,
-    height: usize,
-    output: &mut [u8],
-    y: usize,
-) {
-    if height <= 6 || y < 3 || y >= height - 3 {
-        for (x, value) in output.iter_mut().enumerate() {
-            *value = cv_round(vertical_blur_reflected(horizontal, width, height, x, y))
-                .clamp(0, 255) as u8;
-        }
-        return;
-    }
-
+unsafe fn vertical_blur_row_avx2(rows: [&[f32]; 7], output: &mut [u8]) {
     let mut x = 0;
-    while x + 8 <= width {
-        let load =
-            |row: usize| unsafe { _mm256_loadu_ps(horizontal.as_ptr().add(row * width + x)) };
-        let mut value = _mm256_mul_ps(load(y), _mm256_set1_ps(BLUR_KERNEL[3]));
-        let pair = _mm256_add_ps(load(y - 1), load(y + 1));
+    while x + 8 <= output.len() {
+        let load = |row: usize| unsafe { _mm256_loadu_ps(rows[row].as_ptr().add(x)) };
+        let mut value = _mm256_mul_ps(load(3), _mm256_set1_ps(BLUR_KERNEL[3]));
+        let pair = _mm256_add_ps(load(2), load(4));
         value = _mm256_add_ps(value, _mm256_mul_ps(pair, _mm256_set1_ps(BLUR_KERNEL[4])));
-        let pair = _mm256_add_ps(load(y - 2), load(y + 2));
+        let pair = _mm256_add_ps(load(1), load(5));
         value = _mm256_add_ps(value, _mm256_mul_ps(pair, _mm256_set1_ps(BLUR_KERNEL[5])));
-        let pair = _mm256_add_ps(load(y - 3), load(y + 3));
+        let pair = _mm256_add_ps(load(0), load(6));
         value = _mm256_add_ps(value, _mm256_mul_ps(pair, _mm256_set1_ps(BLUR_KERNEL[6])));
         let mut values = [0.0_f32; 8];
         unsafe { _mm256_storeu_ps(values.as_mut_ptr(), value) };
@@ -1030,13 +1021,8 @@ unsafe fn vertical_blur_row_avx2(
         }
         x += 8;
     }
-    while x < width {
-        let center = y * width + x;
-        let mut value = horizontal[center] * BLUR_KERNEL[3];
-        value += (horizontal[center - width] + horizontal[center + width]) * BLUR_KERNEL[4];
-        value += (horizontal[center - width * 2] + horizontal[center + width * 2]) * BLUR_KERNEL[5];
-        value += (horizontal[center - width * 3] + horizontal[center + width * 3]) * BLUR_KERNEL[6];
-        output[x] = cv_round(value).clamp(0, 255) as u8;
+    while x < output.len() {
+        output[x] = vertical_blur_pixel(&rows, x);
         x += 1;
     }
 }
@@ -1044,22 +1030,11 @@ unsafe fn vertical_blur_row_avx2(
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 #[target_feature(enable = "avx2")]
 unsafe fn blur_avx2(image: &Image) -> Image {
-    let mut horizontal = vec![MaybeUninit::<f32>::uninit(); image.pixels.len()];
-    horizontal
-        .chunks_mut(image.width)
-        .enumerate()
-        .for_each(|(y, row)| unsafe {
-            horizontal_blur_row_avx2(image, row.as_mut_ptr().cast::<f32>(), y)
-        });
-    let horizontal = unsafe { assume_init_vec(horizontal) };
-    let mut pixels = vec![0_u8; image.pixels.len()];
-    pixels
-        .chunks_mut(image.width)
-        .enumerate()
-        .for_each(|(y, row)| unsafe {
-            vertical_blur_row_avx2(&horizontal, image.width, image.height, row, y)
-        });
-    Image::new(image.width, image.height, pixels)
+    blur_with_rows(
+        image,
+        |row, y| unsafe { horizontal_blur_row_avx2(image, row.as_mut_ptr(), y) },
+        |rows, output| unsafe { vertical_blur_row_avx2(rows, output) },
+    )
 }
 
 pub(crate) fn blur(image: &Image) -> Image {
@@ -1129,13 +1104,11 @@ fn descriptor_scalar(image: &Image, keypoint: Keypoint) -> [u8; 32] {
     let cosine = radians.cos();
     let sine = radians.sin();
     let pattern = orb_pattern();
+    let pixels = image.pixels.as_slice();
     let sample = |point: (i8, i8)| {
         let x = cv_round(f32::from(point.0) * cosine - f32::from(point.1) * sine) as isize;
         let y = cv_round(f32::from(point.0) * sine + f32::from(point.1) * cosine) as isize;
-        image.at(
-            (center_x as isize + x) as usize,
-            (center_y as isize + y) as usize,
-        )
+        pixels[(center_y as isize + y) as usize * image.width + (center_x as isize + x) as usize]
     };
     let mut bytes = [0_u8; 32];
     for (index, byte) in bytes.iter_mut().enumerate() {
@@ -1202,10 +1175,12 @@ unsafe fn descriptor_avx2(image: &Image, keypoint: Keypoint) -> [u8; 32] {
     bytes
 }
 
-pub(crate) fn pyramid(image: &Image, plan: &PyramidPlan) -> Vec<Image> {
+pub(crate) fn pyramid(image: Image, plan: &PyramidPlan) -> Vec<Image> {
     debug_assert_eq!((image.width, image.height), (plan.width, plan.height));
     let mut levels = Vec::with_capacity(LEVELS);
-    levels.push(image.clone());
+    // Detection exclusively owns the base image. Move its raster into level
+    // zero so constructing the pyramid does not keep a duplicate plane alive.
+    levels.push(image);
     for resize_plan in &plan.levels {
         let previous = levels.last().expect("base pyramid level exists");
         levels.push(resize_linear_exact(previous, resize_plan));
@@ -1214,7 +1189,7 @@ pub(crate) fn pyramid(image: &Image, plan: &PyramidPlan) -> Vec<Image> {
 }
 
 pub(crate) fn detect(
-    image: &Image,
+    image: Image,
     max_features: usize,
     pyramid_plan: &PyramidPlan,
 ) -> OrbDetection {
@@ -1267,28 +1242,44 @@ impl OrbDetection {
     }
 
     pub(crate) fn compute(self, keypoints: impl IntoIterator<Item = Keypoint>) -> Vec<OrbFeature> {
-        let blurred = self.levels.par_iter().map(blur).collect::<Vec<_>>();
+        let keypoints = keypoints.into_iter().collect::<Vec<_>>();
+        let mut required = vec![false; self.levels.len()];
+        for keypoint in &keypoints {
+            required[keypoint.octave] = true;
+        }
+        // Consuming the levels drops each unblurred source as soon as its output
+        // is ready, instead of retaining both full pyramids during descriptors.
+        let blurred = self
+            .levels
+            .into_par_iter()
+            .enumerate()
+            .map(|(level, image)| required[level].then(|| blur(&image)))
+            .collect::<Vec<_>>();
         #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
         let use_avx2 = std::arch::is_x86_feature_detected!("avx2")
             && blurred
                 .iter()
+                .flatten()
                 .all(|image| image.pixels.len() <= i32::MAX as usize - 3);
         keypoints
-            .into_iter()
-            .collect::<Vec<_>>()
             .into_par_iter()
-            .map(|keypoint| OrbFeature {
-                descriptor: {
-                    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-                    if use_avx2 {
-                        unsafe { descriptor_avx2(&blurred[keypoint.octave], keypoint) }
-                    } else {
-                        descriptor_scalar(&blurred[keypoint.octave], keypoint)
-                    }
-                    #[cfg(not(any(target_arch = "x86", target_arch = "x86_64")))]
-                    descriptor_scalar(&blurred[keypoint.octave], keypoint)
-                },
-                keypoint,
+            .map(|keypoint| {
+                let image = blurred[keypoint.octave]
+                    .as_ref()
+                    .expect("selected octave has a blurred image");
+                OrbFeature {
+                    descriptor: {
+                        #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+                        if use_avx2 {
+                            unsafe { descriptor_avx2(image, keypoint) }
+                        } else {
+                            descriptor_scalar(image, keypoint)
+                        }
+                        #[cfg(not(any(target_arch = "x86", target_arch = "x86_64")))]
+                        descriptor_scalar(image, keypoint)
+                    },
+                    keypoint,
+                }
             })
             .collect()
     }
@@ -1296,6 +1287,25 @@ impl OrbDetection {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn large_grayscale_scores_and_blur_preserve_mapped_storage() {
+        let mut source = RasterBuffer::zeroed(1024 * 1024 * 4);
+        source.fill(90);
+        let frame = Frame::from_buffer(1024, 1024, PixelFormat::Rgba8, source).unwrap();
+        let gray = grayscale(&frame);
+        let scores = fast_scores_scalar(1024, 1024, &gray.pixels, 20);
+        let blurred = blur(&gray);
+        assert!(gray.pixels.iter().all(|&pixel| pixel == 90));
+        assert!(scores.iter().all(|&score| score == 0));
+        assert!(blurred.pixels.iter().all(|&pixel| pixel == 90));
+        #[cfg(any(windows, target_os = "macos", target_os = "linux"))]
+        assert!(
+            gray.pixels.is_page_backed()
+                && scores.is_page_backed()
+                && blurred.pixels.is_page_backed()
+        );
+    }
+
     use super::*;
 
     #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
@@ -1467,6 +1477,85 @@ mod tests {
     }
 
     #[test]
+    fn selected_octave_descriptors_match_full_pyramid_blurring() {
+        let image = Image::new(
+            96,
+            80,
+            (0..96 * 80)
+                .map(|index| ((index * 37 + 19) % 256) as u8)
+                .collect(),
+        );
+        let plan = PyramidPlan::new(image.width, image.height);
+        let levels = pyramid(image.clone(), &plan);
+        let keypoints = [
+            Keypoint {
+                x: 43.0,
+                y: 40.0,
+                response: 17.0,
+                angle: 123.0,
+                octave: 1,
+            },
+            Keypoint {
+                x: 48.0,
+                y: 39.0,
+                response: 9.0,
+                angle: 33.0,
+                octave: 0,
+            },
+        ];
+        let expected: Vec<_> = keypoints
+            .into_iter()
+            .map(|keypoint| {
+                let image = reference_blur(&levels[keypoint.octave]);
+                OrbFeature {
+                    keypoint,
+                    descriptor: descriptor_scalar(&image, keypoint),
+                }
+            })
+            .collect();
+        let actual = OrbDetection {
+            levels,
+            keypoints: Vec::new(),
+        }
+        .compute(keypoints);
+        assert_eq!(actual, expected);
+        let empty = OrbDetection {
+            levels: pyramid(image, &plan),
+            keypoints: Vec::new(),
+        }
+        .compute([]);
+        assert!(empty.is_empty());
+    }
+
+    #[test]
+    fn streaming_blur_matches_full_raster_for_reflections_and_ring_wraps() {
+        for (width, height) in [
+            (1, 1),
+            (1, 17),
+            (2, 2),
+            (5, 3),
+            (7, 6),
+            (17, 7),
+            (31, 29),
+            (67, 113),
+        ] {
+            let image = Image::new(
+                width,
+                height,
+                (0..width * height)
+                    .map(|index| ((index * 37 + index / width * 11 + 19) % 256) as u8)
+                    .collect(),
+            );
+            let expected = reference_blur(&image);
+            assert_eq!(blur_scalar(&image), expected);
+            #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+            if std::arch::is_x86_feature_detected!("avx2") {
+                assert_eq!(unsafe { blur_avx2(&image) }, expected);
+            }
+        }
+    }
+
+    #[test]
     fn blur_interior_matches_reflected_reference() {
         let image = Image::new(
             13,
@@ -1481,7 +1570,7 @@ mod tests {
 
     #[test]
     fn planned_pyramid_matches_on_demand_coefficients() {
-        for (width, height) in [(5, 5), (17, 13), (63, 47), (321, 225)] {
+        for (width, height) in [(5, 5), (17, 13), (63, 47), (321, 225), (1024, 1024)] {
             let image = Image::new(
                 width,
                 height,
@@ -1490,8 +1579,34 @@ mod tests {
                     .collect(),
             );
             let plan = PyramidPlan::new(width, height);
-            assert_eq!(pyramid(&image, &plan), reference_pyramid(&image));
+            let expected = reference_pyramid(&image);
+            let base_pointer = image.pixels.as_ptr();
+            let levels = pyramid(image, &plan);
+            assert_eq!(levels, expected);
+            assert_eq!(
+                levels[0].pixels.as_ptr(),
+                base_pointer,
+                "pyramid must reuse its owned base raster"
+            );
         }
+    }
+
+    #[test]
+    fn detection_preserves_owned_base_raster() {
+        let image = Image::new(
+            1024,
+            1024,
+            (0..1024 * 1024)
+                .map(|index| ((index * 37 + index / 1024 * 11 + 19) % 256) as u8)
+                .collect(),
+        );
+        let plan = PyramidPlan::new(image.width, image.height);
+        let base_pointer = image.pixels.as_ptr();
+        let detection = detect(image, 128, &plan);
+        assert_eq!(detection.levels[0].pixels.as_ptr(), base_pointer);
+        assert!(!detection.keypoints().is_empty());
+        let keypoints = detection.keypoints.clone();
+        assert!(!detection.compute(keypoints).is_empty());
     }
 
     #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]

@@ -1,3 +1,4 @@
+#include "snow_draw_engine_qt/snow_canvas_image.h"
 #include "snow_shot/platform/applicationqos.h"
 #include "snow_shot/presentation/screenshotqrrecognitionservice.h"
 
@@ -126,13 +127,14 @@ ScreenshotQrRecognitionResult recognizeImage(QImage source, const std::atomic_bo
             return {};
         }
         if (source.size() != detectorSize) {
-            source = source.scaled(detectorSize, Qt::IgnoreAspectRatio, Qt::SmoothTransformation);
+            source = snowCanvasScaleImage(source, detectorSize, Qt::IgnoreAspectRatio,
+                                          Qt::SmoothTransformation);
         }
         if (cancellation.load(std::memory_order_relaxed)) {
             return {};
         }
         if (source.format() != QImage::Format_Grayscale8) {
-            source = source.convertToFormat(QImage::Format_Grayscale8);
+            source = snowCanvasConvertImage(source, QImage::Format_Grayscale8);
         }
         if (source.isNull() || cancellation.load(std::memory_order_relaxed)) {
             return {};

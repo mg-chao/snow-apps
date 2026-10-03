@@ -213,7 +213,7 @@ fn hdr_editable_round_trip(native: bool, overlays: bool) {
                 row_bytes: 256,
             },
         ],
-        bytes: bytes.into(),
+        bytes: std::sync::Arc::new(bytes.into()),
     };
     for pts in 0..3 {
         if let Some(compositor) = compositor.as_mut() {
@@ -509,7 +509,7 @@ fn software_hdr_padded_p010_round_trip_preserves_depth_color_and_timeline() {
                 row_bytes: 128,
             },
         ],
-        bytes: bytes.into(),
+        bytes: std::sync::Arc::new(bytes.into()),
     };
     image.color = ColorDescription::SRGB;
     assert!(encoder.push_cpu_hdr_frame_at_pts(0, &image).is_err());

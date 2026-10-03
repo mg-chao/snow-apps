@@ -1,5 +1,7 @@
 #include "codecs/bmp_codec.h"
 
+#include <snow/memory/pixel_array.h>
+
 #include <algorithm>
 #include <array>
 #include <cstring>
@@ -305,8 +307,9 @@ Result<void> BmpCodec::decode_to_sink(const Input& input, PixelSink& sink,
     const std::uint64_t rows_by_limit = options.limits.maximum_working_bytes / per_row_working;
     const std::uint32_t stripe_rows = static_cast<std::uint32_t>(
         std::max<std::uint64_t>(1, std::min<std::uint64_t>(kPreferredStripeRows, rows_by_limit)));
-    std::vector<std::byte> source_rows(static_cast<std::size_t>(stripe_rows) * info.row_stride);
-    std::vector<std::byte> row(output_row_bytes);
+    snow::memory::PixelArray<std::byte> source_rows(static_cast<std::size_t>(stripe_rows) *
+                                                    info.row_stride);
+    snow::memory::PixelArray<std::byte> row(output_row_bytes);
     for (std::uint32_t y = 0; y < info.height;) {
         if (stop.stop_requested())
             return cancelled_status();
@@ -382,7 +385,7 @@ Result<EncodedArtifactReceipt> BmpCodec::encode_to_sink(const Document& document
     if (!status)
         return status.error();
 
-    std::vector<std::byte> row(static_cast<std::size_t>(row_bytes64));
+    snow::memory::PixelArray<std::byte> row(static_cast<std::size_t>(row_bytes64));
     const std::size_t channel_count = view.format.channel_count();
     for (std::uint32_t y = 0; y < view.height; ++y) {
         if (stop.stop_requested())

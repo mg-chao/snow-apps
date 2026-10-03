@@ -631,16 +631,16 @@ fn normalize(
                     .run(&decoded, &mut rgba)
                     .map_err(error)?;
                 let row_bytes = config.width as usize * 4;
-                let mut pixels = Vec::with_capacity(row_bytes * config.height as usize);
+                let mut pixels = RasterBuffer::with_capacity(row_bytes * config.height as usize);
                 for row in 0..config.height as usize {
                     pixels.extend_from_slice(
                         &rgba.data(0)[row * rgba.stride(0)..row * rgba.stride(0) + row_bytes],
                     );
                 }
                 if last_pts.is_none() && pts > 0 {
-                    output.push_owned_rgba_frame_at_pts(0, pixels.clone())?;
+                    output.push_raster_rgba_frame_at_pts(0, pixels.clone())?;
                 }
-                output.push_owned_rgba_frame_at_pts(pts as u64, pixels)?;
+                output.push_raster_rgba_frame_at_pts(pts as u64, pixels)?;
                 last_pts = Some(pts);
             }
             Ok(())

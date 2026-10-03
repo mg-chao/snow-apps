@@ -1,5 +1,7 @@
 #include "codecs/xbitmap_codec.h"
 
+#include <snow/memory/pixel_array.h>
+
 #include <algorithm>
 #include <array>
 #include <charconv>
@@ -634,7 +636,8 @@ Result<EncodedArtifactReceipt> XpmCodec::encode_to_sink(const Document& document
                              "snow XPM");
     }
     std::map<std::uint32_t, std::size_t> colors;
-    std::vector<std::uint32_t> pixels(static_cast<std::size_t>(view.width) * view.height);
+    snow::memory::PixelArray<std::uint32_t> pixels(static_cast<std::size_t>(view.width) *
+                                                   view.height);
     const std::size_t channels = view.format.channel_count();
     const bool bgr =
         view.format.channels == ChannelLayout::bgr || view.format.channels == ChannelLayout::bgra;

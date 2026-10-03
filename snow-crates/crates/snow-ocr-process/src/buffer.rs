@@ -1,4 +1,5 @@
 use memmap2::Mmap;
+use snow_memory::RasterBuffer;
 use std::{
     io,
     sync::{
@@ -30,7 +31,7 @@ impl SharedImage {
         height: usize,
         stride: usize,
         sequence: u64,
-    ) -> io::Result<Vec<u8>> {
+    ) -> io::Result<RasterBuffer> {
         if width == 0
             || height == 0
             || width
@@ -107,11 +108,14 @@ impl SharedImage {
             ));
         }
         let source = &self.mmap[start..end];
-        let mut bgr = Vec::with_capacity(width * height * 3);
-        for row in source.chunks(stride).take(height) {
-            for pixel in row[..width * 4].chunks_exact(4) {
-                bgr.extend_from_slice(&[pixel[2], pixel[1], pixel[0]]);
-            }
+        let mut bgr = RasterBuffer::try_zeroed(width * height * 3)?;
+        // The packed layout and complete byte range have already been checked.
+        // Borrow once so each pixel writes directly into its final allocation.
+        for (pixel, output) in source
+            .chunks_exact(4)
+            .zip(bgr.as_mut_slice().chunks_exact_mut(3))
+        {
+            output.copy_from_slice(&[pixel[2], pixel[1], pixel[0]]);
         }
         Ok(bgr)
     }
@@ -121,6 +125,49 @@ impl SharedImage {
 mod tests {
     use super::*;
     use memmap2::MmapMut;
+
+    #[test]
+    fn large_bgr_transfer_keeps_mapped_ownership_through_recognition_input() {
+        let (width, height) = (1024, 512);
+        let stride = width * 4;
+        let size = stride * height;
+        let mut map = MmapMut::map_anon(SLOT_HEADER + size).unwrap();
+        map[SLOT_SEQUENCE..SLOT_SEQUENCE + 8].copy_from_slice(&7_u64.to_le_bytes());
+        for (offset, value) in [
+            (SLOT_STATE, SLOT_READY),
+            (SLOT_WIDTH, width as u32),
+            (SLOT_HEIGHT, height as u32),
+            (SLOT_STRIDE, stride as u32),
+            (SLOT_BYTES, size as u32),
+            (SLOT_MAGIC, SLOT_MAGIC_VALUE),
+        ] {
+            map[offset..offset + 4].copy_from_slice(&value.to_le_bytes());
+        }
+        for pixel in map[SLOT_HEADER..].chunks_exact_mut(4) {
+            pixel.copy_from_slice(&[1, 2, 3, 255]);
+        }
+        let mapped = SharedImage {
+            mmap: Arc::new(map.make_read_only().unwrap()),
+            slot_bytes: SLOT_HEADER + size,
+        };
+        let pixels = mapped.read_bgr(0, width, height, stride, 7).unwrap();
+        let pointer = pixels.as_ptr();
+        #[cfg(any(windows, target_os = "macos", target_os = "linux"))]
+        assert!(pixels.is_page_backed());
+        drop(mapped);
+        let image = rapid_ocr_rs::RecImage::from_bgr_buffer(width, height, pixels).unwrap();
+        assert_eq!(
+            image.as_bytes().as_ptr(),
+            pointer,
+            "staging must not copy the raster again"
+        );
+        assert!(
+            image
+                .as_bytes()
+                .chunks_exact(3)
+                .all(|pixel| pixel == [3, 2, 1])
+        );
+    }
 
     fn image(change: impl FnOnce(&mut [u8])) -> SharedImage {
         let mut map = MmapMut::map_anon(SLOT_HEADER + 8).unwrap();
@@ -149,6 +196,50 @@ mod tests {
         let pixels = mapped.read_bgr(0, 2, 1, 8, 7).unwrap();
         drop(mapped);
         assert_eq!(pixels, [3, 2, 1, 6, 5, 4]);
+    }
+
+    #[test]
+    fn packed_odd_rows_and_slot_offsets_preserve_bgr_and_ignore_alpha() {
+        for (width, height) in [(1, 1), (3, 2), (7, 3), (1921, 1)] {
+            let stride = width * 4;
+            let size = stride * height;
+            let slot_bytes = SLOT_HEADER + size;
+            let mut map = MmapMut::map_anon(slot_bytes * 2).unwrap();
+            map[..slot_bytes].fill(0xab);
+            let header = &mut map[slot_bytes..slot_bytes + SLOT_HEADER];
+            header[SLOT_SEQUENCE..SLOT_SEQUENCE + 8].copy_from_slice(&9_u64.to_le_bytes());
+            for (offset, value) in [
+                (SLOT_STATE, SLOT_READY),
+                (SLOT_WIDTH, width as u32),
+                (SLOT_HEIGHT, height as u32),
+                (SLOT_STRIDE, stride as u32),
+                (SLOT_BYTES, size as u32),
+                (SLOT_MAGIC, SLOT_MAGIC_VALUE),
+            ] {
+                header[offset..offset + 4].copy_from_slice(&value.to_le_bytes());
+            }
+            let mut expected = Vec::with_capacity(width * height * 3);
+            for (index, pixel) in map[slot_bytes + SLOT_HEADER..]
+                .chunks_exact_mut(4)
+                .enumerate()
+            {
+                let red = (index % 251) as u8;
+                let green = ((index * 3 + 5) % 251) as u8;
+                let blue = ((index * 7 + 11) % 251) as u8;
+                let alpha = ((index * 13) % 256) as u8;
+                pixel.copy_from_slice(&[red, green, blue, alpha]);
+                expected.extend_from_slice(&[blue, green, red]);
+            }
+            let image = SharedImage {
+                mmap: Arc::new(map.make_read_only().unwrap()),
+                slot_bytes,
+            };
+            let pixels = image.read_bgr(1, width, height, stride, 9).unwrap();
+            assert_eq!(pixels.len(), width * height * 3);
+            assert_eq!(pixels, expected);
+            assert!(image.read_bgr(1, width, height, stride + 1, 9).is_err());
+            assert!(image.read_bgr(1, width, height, stride - 1, 9).is_err());
+        }
     }
 
     #[test]

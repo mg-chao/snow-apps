@@ -1,3 +1,4 @@
+#include "snow_draw_engine_qt/snow_canvas_image.h"
 #include "snow_canvas_watermark_renderer.h"
 
 #include "snow_canvas_render_diagnostics.h"
@@ -325,7 +326,10 @@ std::shared_ptr<UnitEntry> buildUnit(const UnitKey& key,
         const int contentEnd = std::min(width, contentStart + kChunkLimit);
         const int imageStart = std::max(0, contentStart - 1);
         const int imageEnd = std::min(width, contentEnd + 1);
-        QImage alpha(QSize(imageEnd - imageStart, height), QImage::Format_ARGB32_Premultiplied);
+        QImage alpha = snowCanvasAllocateImage(QSize(imageEnd - imageStart, height),
+                                               QImage::Format_ARGB32_Premultiplied);
+        if (alpha.isNull())
+            return {};
         alpha.fill(Qt::transparent);
         QPainter unitPainter(&alpha);
         unitPainter.setRenderHint(QPainter::TextAntialiasing, true);
@@ -501,7 +505,9 @@ QVector<TintedChunk> tintedChunksFor(UnitEntry& entry, QRgb tintKey, const QColo
     QVector<TintedChunk> built;
     built.reserve(entry.alphaChunks.size());
     for (const UnitChunk& chunk : entry.alphaChunks) {
-        QImage tinted = chunk.alpha.copy();
+        QImage tinted = snowCanvasCopyImage(chunk.alpha);
+        if (tinted.isNull())
+            return {};
         QPainter tintPainter(&tinted);
         tintPainter.setCompositionMode(QPainter::CompositionMode_SourceIn);
         tintPainter.fillRect(tinted.rect(), color);
@@ -690,7 +696,10 @@ QImage repeatCellFor(UnitEntry& entry, const QVector<TintedChunk>& chunks, QRgb 
         height > kRepeatCellDimensionLimit || bytes > kRepeatCellByteLimit) {
         return {};
     }
-    QImage cell(QSize(width, height), QImage::Format_ARGB32_Premultiplied);
+    QImage cell =
+        snowCanvasAllocateImage(QSize(width, height), QImage::Format_ARGB32_Premultiplied);
+    if (cell.isNull())
+        return {};
     cell.fill(Qt::transparent);
     QPainter cellPainter(&cell);
     const auto drawUnit = [&](double x, double y) {

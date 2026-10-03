@@ -1,5 +1,6 @@
 [workspace]
 members = [
+    "crates/snow-memory",
     "crates/snow-media",
     "crates/snow-macos",
     "crates/visual-region-detector",

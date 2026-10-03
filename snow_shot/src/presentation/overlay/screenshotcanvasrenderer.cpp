@@ -1,3 +1,4 @@
+#include "snow_draw_engine_qt/snow_canvas_image.h"
 #include "snow_shot/presentation/screenshotcanvasrenderer.h"
 #include "snow_shot/presentation/screenshotimagerendering.h"
 
@@ -910,7 +911,8 @@ bool ScreenshotCanvasRenderer::PathRasterCache::draw(QPainter& painter, const QP
             entry.path = localPath;
             entry.color = color;
             entry.scale = scale;
-            entry.image = QImage(pixels.size(), QImage::Format_ARGB32_Premultiplied);
+            entry.image =
+                snowCanvasAllocateImage(pixels.size(), QImage::Format_ARGB32_Premultiplied);
             if (entry.image.isNull())
                 return false;
             entry.image.setDevicePixelRatio(scale);
@@ -1006,6 +1008,8 @@ void ScreenshotCanvasRenderer::setScrollingResultPreview(QImage image, const QRe
     const bool originalChanged = m_scrollingResultPreviewImage.cacheKey() != image.cacheKey() ||
                                  m_scrollingResultPreviewCanvasRect != target;
     if (image.devicePixelRatio() != 1.0) {
+        if (!snowCanvasDetachImage(image))
+            return;
         image.setDevicePixelRatio(1.0);
     }
     m_scrollingResultPreviewImage = std::move(image);
@@ -1036,7 +1040,9 @@ bool ScreenshotCanvasRenderer::hasScrollingResultPreview() const {
 }
 
 void ScreenshotCanvasRenderer::setImageSource(ScreenshotImageSource source, const QRectF& damage) {
-    if (source.isMaterialized()) {
+    if (source.isMaterialized() && source.materializedImage.devicePixelRatio() != 1.0) {
+        if (!snowCanvasDetachImage(source.materializedImage))
+            return;
         source.materializedImage.setDevicePixelRatio(1.0);
     }
     m_imageSource = std::move(source);
@@ -1412,6 +1418,8 @@ void ScreenshotCanvasRenderer::setOcrFilteredImage(QImage image, const QRectF& c
     const QRectF previousCanvasRect = m_ocrFilteredCanvasRect;
     QRegion dirtyRegion;
     if (!image.isNull() && canvasRect.isValid() && !canvasRect.isEmpty()) {
+        if (image.devicePixelRatio() != 1.0 && !snowCanvasDetachImage(image))
+            return;
         image.setDevicePixelRatio(1.0);
         m_ocrFilteredImage = std::move(image);
         m_ocrFilteredCanvasRect = canvasRect.normalized();
@@ -1935,7 +1943,8 @@ void ScreenshotCanvasRenderer::renderAfterCanvas(QPainter& painter,
                                                     {},
                                                     1.0};
                         style.region = localRegion;
-                        QImage empty(bounds.size(), QImage::Format_ARGB32_Premultiplied);
+                        QImage empty = snowCanvasAllocateImage(bounds.size(),
+                                                               QImage::Format_ARGB32_Premultiplied);
                         empty.fill(Qt::transparent);
                         uncachedShadow = ScreenshotResultCompositor::compose(empty, style);
                         constexpr qsizetype kRegionHoverCacheByteLimit = 64 * 1024 * 1024;

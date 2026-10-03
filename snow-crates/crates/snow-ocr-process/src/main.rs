@@ -694,11 +694,10 @@ fn main() -> io::Result<()> {
                 last_sequence = sequence;
                 staged = Some((
                     frame.request_id,
-                    OcrInput::BgrU8 {
-                        width,
-                        height,
-                        data,
-                    },
+                    OcrInput::Image(
+                        rapid_ocr_rs::RecImage::from_bgr_buffer(width, height, data)
+                            .map_err(io::Error::other)?,
+                    ),
                 ));
                 let mut ack = Vec::new();
                 ack.extend_from_slice(&generation.to_le_bytes());

@@ -1,4 +1,5 @@
 use rayon::prelude::*;
+use snow_memory::RasterArray;
 
 use crate::{Frame, PixelFormat, RegionDiagnostics, StitchAxis, StitchError};
 
@@ -75,8 +76,8 @@ impl TileLayout {
 pub(crate) struct GrayImage {
     width: usize,
     height: usize,
-    pixels: Vec<f32>,
-    gradients: Vec<f32>,
+    pixels: RasterArray<f32>,
+    gradients: RasterArray<f32>,
 }
 
 impl GrayImage {
@@ -138,8 +139,8 @@ fn downsample_row_scalar(frame: &Frame, scaled_y: usize, output: &mut [f32], fir
     }
 }
 
-fn downsample_pixels_scalar(frame: &Frame, width: usize, height: usize) -> Vec<f32> {
-    let mut pixels = vec![0.0; width.saturating_mul(height)];
+fn downsample_pixels_scalar(frame: &Frame, width: usize, height: usize) -> RasterArray<f32> {
+    let mut pixels = RasterArray::<f32>::zeroed(width.saturating_mul(height));
     pixels
         .par_chunks_mut(width)
         .enumerate()
@@ -149,7 +150,7 @@ fn downsample_pixels_scalar(frame: &Frame, width: usize, height: usize) -> Vec<f
 
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 #[target_feature(enable = "avx2")]
-unsafe fn downsample_pixels_avx2(frame: &Frame, width: usize, height: usize) -> Vec<f32> {
+unsafe fn downsample_pixels_avx2(frame: &Frame, width: usize, height: usize) -> RasterArray<f32> {
     let source_width = frame.width() as usize;
     let source_height = frame.height() as usize;
     let channels = frame.pixel_format().channels() as usize;
@@ -169,7 +170,7 @@ unsafe fn downsample_pixels_avx2(frame: &Frame, width: usize, height: usize) -> 
     let green_weight = _mm256_set1_ps(0.587);
     let blue_weight = _mm256_set1_ps(0.114);
     let divisor = _mm256_set1_ps(16.0);
-    let mut pixels = vec![0.0; width.saturating_mul(height)];
+    let mut pixels = RasterArray::<f32>::zeroed(width.saturating_mul(height));
     pixels
         .par_chunks_mut(width)
         .enumerate()
@@ -269,8 +270,8 @@ fn blur_row_scalar(
     }
 }
 
-fn blur_3x3_scalar(source: &[f32], width: usize, height: usize) -> Vec<f32> {
-    let mut output = vec![0.0; source.len()];
+fn blur_3x3_scalar(source: &[f32], width: usize, height: usize) -> RasterArray<f32> {
+    let mut output = RasterArray::<f32>::zeroed(source.len());
     if width == 0 {
         return output;
     }
@@ -283,8 +284,8 @@ fn blur_3x3_scalar(source: &[f32], width: usize, height: usize) -> Vec<f32> {
 
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 #[target_feature(enable = "avx2")]
-unsafe fn blur_3x3_avx2(source: &[f32], width: usize, height: usize) -> Vec<f32> {
-    let mut output = vec![0.0; source.len()];
+unsafe fn blur_3x3_avx2(source: &[f32], width: usize, height: usize) -> RasterArray<f32> {
+    let mut output = RasterArray::<f32>::zeroed(source.len());
     if width == 0 {
         return output;
     }
@@ -325,7 +326,7 @@ unsafe fn blur_3x3_avx2(source: &[f32], width: usize, height: usize) -> Vec<f32>
     output
 }
 
-fn blur_3x3(source: &[f32], width: usize, height: usize) -> Vec<f32> {
+fn blur_3x3(source: &[f32], width: usize, height: usize) -> RasterArray<f32> {
     #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
     if std::arch::is_x86_feature_detected!("avx2") {
         return unsafe { blur_3x3_avx2(source, width, height) };
@@ -360,8 +361,8 @@ fn sobel_row_scalar(
     }
 }
 
-fn sobel_magnitude_scalar(source: &[f32], width: usize, height: usize) -> Vec<f32> {
-    let mut output = vec![0.0; source.len()];
+fn sobel_magnitude_scalar(source: &[f32], width: usize, height: usize) -> RasterArray<f32> {
+    let mut output = RasterArray::<f32>::zeroed(source.len());
     if width < 3 || height < 3 {
         return output;
     }
@@ -374,8 +375,8 @@ fn sobel_magnitude_scalar(source: &[f32], width: usize, height: usize) -> Vec<f3
 
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 #[target_feature(enable = "avx2")]
-unsafe fn sobel_magnitude_avx2(source: &[f32], width: usize, height: usize) -> Vec<f32> {
-    let mut output = vec![0.0; source.len()];
+unsafe fn sobel_magnitude_avx2(source: &[f32], width: usize, height: usize) -> RasterArray<f32> {
+    let mut output = RasterArray::<f32>::zeroed(source.len());
     if width < 3 || height < 3 {
         return output;
     }
@@ -432,7 +433,7 @@ unsafe fn sobel_magnitude_avx2(source: &[f32], width: usize, height: usize) -> V
     output
 }
 
-fn sobel_magnitude(source: &[f32], width: usize, height: usize) -> Vec<f32> {
+fn sobel_magnitude(source: &[f32], width: usize, height: usize) -> RasterArray<f32> {
     #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
     if std::arch::is_x86_feature_detected!("avx2") {
         return unsafe { sobel_magnitude_avx2(source, width, height) };
@@ -456,6 +457,10 @@ fn similarity_for_tile(
     scaled_offset: f32,
     tile: usize,
 ) -> Option<(f32, f32)> {
+    let reference_pixels = &*reference.pixels;
+    let reference_gradients = &*reference.gradients;
+    let incoming_pixels = &*incoming.pixels;
+    let incoming_gradients = &*incoming.gradients;
     let (x0, y0, x1, y1) = layout.tile_bounds(tile);
     let scaled_x0 = (x0 / DOWNSAMPLE) as usize;
     let scaled_y0 = (y0 / DOWNSAMPLE) as usize;
@@ -474,7 +479,7 @@ fn similarity_for_tile(
                 StitchAxis::Horizontal => (x as f32 - scaled_offset, y as f32),
             };
             let Some(reference_value) = bilinear_axis_sample(
-                &reference.pixels,
+                reference_pixels,
                 reference.width,
                 reference.height,
                 reference_x,
@@ -484,7 +489,7 @@ fn similarity_for_tile(
                 continue;
             };
             reference_sum += reference_value;
-            incoming_sum += incoming.pixels[incoming_row + x];
+            incoming_sum += incoming_pixels[incoming_row + x];
             sample_count += 1;
         }
     }
@@ -508,7 +513,7 @@ fn similarity_for_tile(
                 StitchAxis::Horizontal => (x as f32 - scaled_offset, y as f32),
             };
             let Some(reference_value) = bilinear_axis_sample(
-                &reference.pixels,
+                reference_pixels,
                 reference.width,
                 reference.height,
                 reference_x,
@@ -518,7 +523,7 @@ fn similarity_for_tile(
                 continue;
             };
             let reference_gradient = bilinear_axis_sample(
-                &reference.gradients,
+                reference_gradients,
                 reference.width,
                 reference.height,
                 reference_x,
@@ -526,8 +531,8 @@ fn similarity_for_tile(
                 axis,
             )?;
             let index = incoming_row + x;
-            let incoming_value = incoming.pixels[index];
-            let incoming_gradient = incoming.gradients[index];
+            let incoming_value = incoming_pixels[index];
+            let incoming_gradient = incoming_gradients[index];
             let reference_delta = reference_value - mean_reference;
             let incoming_delta = incoming_value - mean_incoming;
             reference_variance += reference_delta * reference_delta;
@@ -897,14 +902,32 @@ mod tests {
     }
 
     #[test]
+    fn large_region_rasters_use_pages_and_preserve_constant_pixels() {
+        let mut pixels = snow_memory::RasterBuffer::zeroed(1024 * 4096);
+        pixels.fill(73);
+        let frame = Frame::from_buffer(1024, 4096, PixelFormat::Gray8, pixels).unwrap();
+        let downsampled = downsample_pixels_scalar(&frame, 256, 1024);
+        let gray = GrayImage::from_frame(&frame).unwrap();
+        #[cfg(any(windows, target_os = "macos", target_os = "linux"))]
+        {
+            assert!(downsampled.is_page_backed());
+            assert!(gray.pixels.is_page_backed());
+            assert!(gray.gradients.is_page_backed());
+        }
+        assert!(downsampled.iter().all(|&pixel| pixel == 73.0));
+        assert!(gray.pixels.iter().all(|&pixel| pixel == 73.0));
+        assert!(gray.gradients.iter().all(|&gradient| gradient == 0.0));
+    }
+
+    #[test]
     fn specialized_blur_matches_clamped_reference_exactly() {
         for (width, height) in [(1, 1), (2, 5), (7, 3), (19, 11)] {
             let source = (0..width * height)
                 .map(|index| ((index * 37 + 11) % 251) as f32 / 3.0)
                 .collect::<Vec<_>>();
             assert_eq!(
-                blur_3x3(&source, width, height),
-                reference_blur_3x3(&source, width, height)
+                &*blur_3x3(&source, width, height),
+                reference_blur_3x3(&source, width, height).as_slice()
             );
         }
     }
@@ -920,8 +943,8 @@ mod tests {
                 .map(|index| ((index * 37 + index / 7 * 19 + 11) % 1021) as f32 / 4.0)
                 .collect::<Vec<_>>();
             assert_eq!(
-                unsafe { blur_3x3_avx2(&source, width, height) },
-                blur_3x3_scalar(&source, width, height),
+                &*unsafe { blur_3x3_avx2(&source, width, height) },
+                &*blur_3x3_scalar(&source, width, height),
                 "{width}x{height}"
             );
         }
@@ -950,8 +973,8 @@ mod tests {
                 let scaled_width = width.div_ceil(DOWNSAMPLE) as usize;
                 let scaled_height = height.div_ceil(DOWNSAMPLE) as usize;
                 assert_eq!(
-                    unsafe { downsample_pixels_avx2(&frame, scaled_width, scaled_height) },
-                    downsample_pixels_scalar(&frame, scaled_width, scaled_height),
+                    &*unsafe { downsample_pixels_avx2(&frame, scaled_width, scaled_height) },
+                    &*downsample_pixels_scalar(&frame, scaled_width, scaled_height),
                     "{pixel_format:?}, {width}x{height}"
                 );
             }
@@ -969,8 +992,8 @@ mod tests {
                 .map(|index| ((index * 37 + index / 7 * 19 + 11) % 1021) as f32 / 4.0)
                 .collect::<Vec<_>>();
             assert_eq!(
-                unsafe { sobel_magnitude_avx2(&source, width, height) },
-                sobel_magnitude_scalar(&source, width, height),
+                &*unsafe { sobel_magnitude_avx2(&source, width, height) },
+                &*sobel_magnitude_scalar(&source, width, height),
                 "{width}x{height}"
             );
         }

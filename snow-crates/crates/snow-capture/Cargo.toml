@@ -5,6 +5,7 @@ edition = "2024"
 license.workspace = true
 
 [dependencies]
+snow-memory = { path = "../snow-memory" }
 snow-media = { path = "../snow-media" }
 snow-core = { path = "../snow-core" }
 snow-cursor = { path = "../snow-cursor" }

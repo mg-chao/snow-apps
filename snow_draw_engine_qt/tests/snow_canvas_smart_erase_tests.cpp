@@ -3,6 +3,9 @@
 #include "snow_draw_engine_qt/snow_canvas_runtime.h"
 #include "snow_draw_engine_qt/snow_canvas_widget.h"
 #include "snow_canvas_runtime_access.h"
+#include "snow_canvas_mat_allocator.h"
+#include "../../test-support/virtualmemory.h"
+#include <opencv2/imgproc.hpp>
 
 #include <QApplication>
 #include <QElapsedTimer>
@@ -43,6 +46,59 @@ SnowCanvasSceneItem rectangle() {
     item.opacity = 1;
     item.filter = snow_filter_render_spec_resolve(5, 0.9);
     return SnowCanvasSceneItem(item);
+}
+
+void reconstructionBuffersReturnMappedPages() {
+    using namespace snow_canvas_smart_erase;
+    using snow::test_support::virtualMemoryMapped;
+    auto source = pixelMatrix<cv::Vec3f>(cv::Size(1024, 1024), cv::Vec3f(0.2F, 0.4F, 0.6F));
+    const auto* originalMiddle = source.data + source.total() * source.elemSize() / 2;
+    auto converted = pixelMatrix<cv::Vec3f>();
+    cv::cvtColor(source, converted, cv::COLOR_RGB2Lab);
+    require(converted.u != nullptr && converted.u->currAllocator == &pixelMatAllocator(),
+            "OpenCV output creation must use the local pixel allocator");
+    auto copied = pixelMatrixCopy(converted);
+    require(copied(0, 0) == converted(0, 0) && copied.data != converted.data,
+            "matrix copies must preserve pixels with independent ownership");
+    const auto* convertedMiddle = converted.data + converted.total() * converted.elemSize() / 2;
+    const auto* copiedMiddle = copied.data + copied.total() * copied.elemSize() / 2;
+    auto roi = source(cv::Rect(1, 1, 100, 100));
+    source.release();
+    require(virtualMemoryMapped(originalMiddle), "matrix ROI must retain its original allocation");
+    roi.release();
+    require(!virtualMemoryMapped(originalMiddle), "final matrix ROI release must unmap its pixels");
+    converted.release();
+    require(!virtualMemoryMapped(convertedMiddle),
+            "conversion matrix release must unmap its pixels");
+    copied.release();
+    require(!virtualMemoryMapped(copiedMiddle), "matrix clone release must unmap its pixels");
+
+    QImage background(QSize(1024, 1024), QImage::Format_ARGB32);
+    background.fill(Qt::green);
+    {
+        QPainter painter(&background);
+        painter.fillRect(QRect(162, 162, 700, 700), Qt::blue);
+    }
+    auto item = rectangle();
+    item.center_x = item.center_y = 512;
+    item.width = item.height = 700;
+    item.rebuildLocalRectangleGeometry();
+    std::atomic_bool cancelled{false};
+    auto result = reconstruct(item, {{background, QRectF(0, 0, 1024, 1024), {}}}, cancelled);
+    require(result.success && result.original.size() == QSize(700, 700) &&
+                result.filled.size() == result.original.size(),
+            "reconstruction must publish only the affected before and after crops");
+    require(result.original.pixelColor(350, 350) == QColor(Qt::blue) &&
+                result.filled.pixelColor(350, 350) == QColor(Qt::green),
+            "mapped reconstruction must preserve original pixels and restore the surface");
+    const auto* beforeMiddle = result.original.constBits() + result.original.sizeInBytes() / 2;
+    const auto* afterMiddle = result.filled.constBits() + result.filled.sizeInBytes() / 2;
+    QImage retained = result.filled;
+    result = {};
+    require(!virtualMemoryMapped(beforeMiddle), "released original crop must unmap immediately");
+    require(virtualMemoryMapped(afterMiddle), "export sharing must retain the reconstructed crop");
+    retained = {};
+    require(!virtualMemoryMapped(afterMiddle), "final reconstructed crop owner must unmap pixels");
 }
 QImage render(const SnowCanvasSceneItem& item, const SnowCanvasSmartEraseSnapshot& snapshot = {},
               qreal dpr = 1) {
@@ -435,6 +491,11 @@ void widgetAndWorkerExport() {
 
 int main(int argc, char** argv) {
     QApplication app(argc, argv);
+    if (app.arguments().contains(QStringLiteral("--memory-ownership-only"))) {
+        reconstructionBuffersReturnMappedPages();
+        return 0;
+    }
+    reconstructionBuffersReturnMappedPages();
     placeholders();
     asynchronousLifecycle();
     historicalCacheCleanup();

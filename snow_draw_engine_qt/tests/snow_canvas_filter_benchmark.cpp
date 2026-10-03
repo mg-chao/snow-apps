@@ -207,7 +207,8 @@ Statistics calculateStatistics(const std::vector<double>& samples) {
     std::sort(sorted.begin(), sorted.end());
     const auto percentile = [&sorted](double fraction) {
         const std::size_t index = std::min(
-            sorted.size() - 1, static_cast<std::size_t>(std::ceil(sorted.size() * fraction) - 1.0));
+            sorted.size() - 1, static_cast<std::size_t>(
+                                   std::ceil(static_cast<double>(sorted.size()) * fraction) - 1.0));
         return sorted[index];
     };
     result.meanMs =
@@ -273,7 +274,8 @@ bool hasNonTransparentPixel(const QImage& image) {
 }
 
 void restoreImage(QImage& destination, const QImage& source) {
-    std::memcpy(destination.bits(), source.constBits(), source.sizeInBytes());
+    std::memcpy(destination.bits(), source.constBits(),
+                static_cast<std::size_t>(source.sizeInBytes()));
 }
 
 Result finishResult(Result result, const std::vector<double>& samples, std::uint64_t pixels) {
@@ -315,13 +317,13 @@ Runner makeKernelRunner(std::string scenario, std::uint32_t type, int width, int
             operation();
         }
         std::vector<double> samples;
-        samples.reserve(options.measuredIterations);
+        samples.reserve(static_cast<std::size_t>(options.measuredIterations));
         for (int iteration = 0; iteration < options.measuredIterations; ++iteration) {
             restoreImage(working, source);
             QElapsedTimer timer;
             timer.start();
             operation();
-            samples.push_back(timer.nsecsElapsed() / 1'000'000.0);
+            samples.push_back(static_cast<double>(timer.nsecsElapsed()) / 1'000'000.0);
         }
         Result result;
         result.suite = "kernel";
@@ -338,7 +340,8 @@ Runner makeKernelRunner(std::string scenario, std::uint32_t type, int width, int
             error = "kernel scenario produced an unexpected change/no-change result: " + scenario;
             return std::nullopt;
         }
-        return finishResult(std::move(result), samples, static_cast<std::uint64_t>(width) * height);
+        return finishResult(std::move(result), samples,
+                            static_cast<std::uint64_t>(width) * static_cast<std::uint64_t>(height));
     };
 }
 
@@ -349,7 +352,7 @@ Runner makeMaskedMosaicRunner(std::string scenario, int width, int height, int m
         const QImage originalDestination = makePatternedImage(width, height, 1.0, 97);
         QImage working = originalDestination.copy();
         QImage mask(width, height, QImage::Format_Alpha8);
-        mask.fill(maskAlpha);
+        mask.fill(static_cast<uint>(maskAlpha));
         snow_canvas_filter_render::Parameters parameters;
         parameters.type = 0;
         parameters.logicalBlockSize = 7.0;
@@ -363,13 +366,13 @@ Runner makeMaskedMosaicRunner(std::string scenario, int width, int height, int m
             operation();
         }
         std::vector<double> samples;
-        samples.reserve(options.measuredIterations);
+        samples.reserve(static_cast<std::size_t>(options.measuredIterations));
         for (int iteration = 0; iteration < options.measuredIterations; ++iteration) {
             restoreImage(working, originalDestination);
             QElapsedTimer timer;
             timer.start();
             operation();
-            samples.push_back(timer.nsecsElapsed() / 1'000'000.0);
+            samples.push_back(static_cast<double>(timer.nsecsElapsed()) / 1'000'000.0);
         }
         Result result;
         result.suite = "kernel";
@@ -384,7 +387,8 @@ Runner makeMaskedMosaicRunner(std::string scenario, int width, int height, int m
             error = "masked mosaic scenario did not transform its input: " + scenario;
             return std::nullopt;
         }
-        return finishResult(std::move(result), samples, static_cast<std::uint64_t>(width) * height);
+        return finishResult(std::move(result), samples,
+                            static_cast<std::uint64_t>(width) * static_cast<std::uint64_t>(height));
     };
 }
 
@@ -396,7 +400,7 @@ Runner makeMaskedColorRunner(std::string scenario, std::uint32_t type, int width
         const QImage originalDestination = makePatternedImage(width, height, 1.0, 97);
         QImage working = originalDestination.copy();
         QImage mask(width, height, QImage::Format_Alpha8);
-        mask.fill(maskAlpha);
+        mask.fill(static_cast<uint>(maskAlpha));
         snow_canvas_filter_render::Parameters parameters;
         parameters.type = type;
         parameters.strength = strength;
@@ -410,13 +414,13 @@ Runner makeMaskedColorRunner(std::string scenario, std::uint32_t type, int width
             operation();
         }
         std::vector<double> samples;
-        samples.reserve(options.measuredIterations);
+        samples.reserve(static_cast<std::size_t>(options.measuredIterations));
         for (int iteration = 0; iteration < options.measuredIterations; ++iteration) {
             restoreImage(working, originalDestination);
             QElapsedTimer timer;
             timer.start();
             operation();
-            samples.push_back(timer.nsecsElapsed() / 1'000'000.0);
+            samples.push_back(static_cast<double>(timer.nsecsElapsed()) / 1'000'000.0);
         }
         Result result;
         result.suite = "kernel";
@@ -431,7 +435,8 @@ Runner makeMaskedColorRunner(std::string scenario, std::uint32_t type, int width
             error = "masked color scenario did not transform its input: " + scenario;
             return std::nullopt;
         }
-        return finishResult(std::move(result), samples, static_cast<std::uint64_t>(width) * height);
+        return finishResult(std::move(result), samples,
+                            static_cast<std::uint64_t>(width) * static_cast<std::uint64_t>(height));
     };
 }
 
@@ -465,7 +470,7 @@ Runner makeRendererRunner(RendererConfig config) {
             makePatternedImage(physicalWidth, physicalHeight, config.devicePixelRatio);
 
         std::vector<SnowCanvasSceneItem> items;
-        items.reserve(config.filterCount + config.offscreenItemCount + 1);
+        items.reserve(static_cast<std::size_t>(config.filterCount + config.offscreenItemCount + 1));
         for (int index = 0; index < config.offscreenItemCount; ++index) {
             SnowSceneDisplayItem rectangle{};
             rectangle.kind = SNOW_SCENE_DISPLAY_ITEM_DRAW_RECT;
@@ -515,7 +520,8 @@ Runner makeRendererRunner(RendererConfig config) {
         const QRegion exposed = config.exposed;
         std::vector<std::uint32_t> spatialCandidates;
         if (config.offscreenItemCount > 0) {
-            spatialCandidates.reserve(items.size() - config.offscreenItemCount);
+            spatialCandidates.reserve(items.size() -
+                                      static_cast<std::size_t>(config.offscreenItemCount));
             for (std::uint32_t index = static_cast<std::uint32_t>(config.offscreenItemCount);
                  index < items.size(); ++index) {
                 spatialCandidates.push_back(index);
@@ -561,12 +567,12 @@ Runner makeRendererRunner(RendererConfig config) {
             render();
         }
         std::vector<double> samples;
-        samples.reserve(options.measuredIterations);
+        samples.reserve(static_cast<std::size_t>(options.measuredIterations));
         for (int iteration = 0; iteration < options.measuredIterations; ++iteration) {
             QElapsedTimer timer;
             timer.start();
             render();
-            samples.push_back(timer.nsecsElapsed() / 1'000'000.0);
+            samples.push_back(static_cast<double>(timer.nsecsElapsed()) / 1'000'000.0);
         }
 
         Result result;
@@ -729,7 +735,7 @@ Runner makePenAppendRunner(std::uint32_t type) {
             }
         }
         std::vector<double> samples;
-        samples.reserve(options.measuredIterations);
+        samples.reserve(static_cast<std::size_t>(options.measuredIterations));
         for (int iteration = 0; iteration < options.measuredIterations; ++iteration) {
             prepareBase();
             QElapsedTimer timer;
@@ -738,7 +744,7 @@ Runner makePenAppendRunner(std::uint32_t type) {
                 error = "Pen Filter append scenario could not apply its append patch";
                 return std::nullopt;
             }
-            samples.push_back(timer.nsecsElapsed() / 1'000'000.0);
+            samples.push_back(static_cast<double>(timer.nsecsElapsed()) / 1'000'000.0);
         }
 
         Result result;
@@ -1059,16 +1065,22 @@ void printResults(const std::vector<Result>& results) {
                       << " gaussian_passes=" << result.diagnostics.gaussianPasses
                       << " downsample_avx2=" << result.diagnostics.gaussianDownsampleAvx2Executions
                       << " reconstruction_avx2="
-                      << result.diagnostics.gaussianReconstructionAvx2Executions
-                      << " replay_ms=" << result.diagnostics.sceneReplayNanoseconds / 1.0e6
-                      << " path_ms=" << result.diagnostics.pathConstructionNanoseconds / 1.0e6
-                      << " mask_ms=" << result.diagnostics.maskConstructionNanoseconds / 1.0e6
-                      << " mask_scan_ms=" << result.diagnostics.maskScanNanoseconds / 1.0e6
-                      << " downsample_ms=" << result.diagnostics.downsampleNanoseconds / 1.0e6
-                      << " reduced_blur_ms=" << result.diagnostics.reducedBlurNanoseconds / 1.0e6
+                      << result.diagnostics.gaussianReconstructionAvx2Executions << " replay_ms="
+                      << static_cast<double>(result.diagnostics.sceneReplayNanoseconds) / 1.0e6
+                      << " path_ms="
+                      << static_cast<double>(result.diagnostics.pathConstructionNanoseconds) / 1.0e6
+                      << " mask_ms="
+                      << static_cast<double>(result.diagnostics.maskConstructionNanoseconds) / 1.0e6
+                      << " mask_scan_ms="
+                      << static_cast<double>(result.diagnostics.maskScanNanoseconds) / 1.0e6
+                      << " downsample_ms="
+                      << static_cast<double>(result.diagnostics.downsampleNanoseconds) / 1.0e6
+                      << " reduced_blur_ms="
+                      << static_cast<double>(result.diagnostics.reducedBlurNanoseconds) / 1.0e6
                       << " reconstruction_ms="
-                      << result.diagnostics.reconstructionNanoseconds / 1.0e6
-                      << " presentation_ms=" << result.diagnostics.presentationNanoseconds / 1.0e6
+                      << static_cast<double>(result.diagnostics.reconstructionNanoseconds) / 1.0e6
+                      << " presentation_ms="
+                      << static_cast<double>(result.diagnostics.presentationNanoseconds) / 1.0e6
                       << " simd=" << result.diagnostics.simdBackend
                       << " plan_builds=" << result.diagnostics.executionPlanBuildCount
                       << " dependency_visits=" << result.diagnostics.dependencyItemVisits

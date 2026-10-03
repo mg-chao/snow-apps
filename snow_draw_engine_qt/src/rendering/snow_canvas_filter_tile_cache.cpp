@@ -1,3 +1,4 @@
+#include "snow_draw_engine_qt/snow_canvas_image.h"
 #include "snow_canvas_filter_tile_cache.h"
 
 #include <algorithm>
@@ -123,7 +124,7 @@ bool store(const Key& key, const QImage& image, const QRect& physicalRect,
     std::size_t bytes = 0;
     try {
         retainedEntry = std::make_shared<Entry>();
-        retainedEntry->image = image.copy();
+        retainedEntry->image = snowCanvasCopyImage(image);
         retainedEntry->physicalRect = physicalRect;
         if (retainedEntry->image.isNull()) {
             return false;

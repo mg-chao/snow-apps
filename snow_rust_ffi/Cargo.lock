@@ -1154,6 +1154,7 @@ dependencies = [
  "snow-d3d11",
  "snow-macos",
  "snow-media",
+ "snow-memory",
  "windows",
 ]
 
@@ -1318,7 +1319,15 @@ dependencies = [
  "objc2-core-foundation",
  "objc2-core-video",
  "serde",
+ "snow-memory",
  "thiserror",
+]
+
+[[package]]
+name = "snow-memory"
+version = "0.1.0"
+dependencies = [
+ "serde",
 ]
 
 [[package]]
@@ -1341,6 +1350,7 @@ dependencies = [
  "snow-capture",
  "snow-macos",
  "snow-media",
+ "snow-memory",
  "snow-recording-export",
  "snow-screen-recorder",
 ]
@@ -1377,6 +1387,7 @@ dependencies = [
  "snow-core",
  "snow-d3d11",
  "snow-media",
+ "snow-memory",
  "snow-recording-effects",
  "snow-recording-model",
  "tempfile",
@@ -1393,6 +1404,7 @@ dependencies = [
  "bincode",
  "serde",
  "snow-media",
+ "snow-memory",
  "thiserror",
 ]
 
@@ -1412,6 +1424,7 @@ dependencies = [
  "snow-d3d11",
  "snow-macos",
  "snow-media",
+ "snow-memory",
  "snow-pipeline",
  "snow-recording-effects",
  "snow-recording-export",
@@ -1478,6 +1491,7 @@ dependencies = [
  "rayon",
  "serde",
  "serde_json",
+ "snow-memory",
  "thiserror",
 ]
 
@@ -1487,6 +1501,7 @@ version = "0.1.0"
 dependencies = [
  "png",
  "snow-core",
+ "snow-memory",
  "snow-stitch-images",
  "tempfile",
 ]

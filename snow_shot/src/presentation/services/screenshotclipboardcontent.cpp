@@ -1,3 +1,4 @@
+#include "snow_draw_engine_qt/snow_canvas_image.h"
 #include "snow_shot/platform/applicationqos.h"
 #include "snow_shot/presentation/screenshotclipboardcontent.h"
 #include "screenshotclipboardcontentsnapshot.h"
@@ -114,27 +115,43 @@ class RestrictedTextDocument final : public QTextDocument {
         // Qt can perform I/O. The clipboard snapshot does not inject any
         // external resources, so an empty QVariant is the safe cache miss.
         if (scheme == QStringLiteral("data")) {
-            if (m_allocate && type == QTextDocument::ImageResource) {
+            if (type == QTextDocument::ImageResource) {
                 // Qt's default data-URL loader decodes before exposing dimensions.
                 // Inspect the immutable encoded bytes before admitting its raster.
+                if (!name.host().isEmpty())
+                    return {};
                 const auto data = name.toEncoded();
                 const auto comma = data.indexOf(',');
-                if (comma < 0 || data.size() > 2 * 1024 * 1024) {
-                    m_failed = true;
+                if (comma < 0 || (m_allocate && data.size() > 2 * 1024 * 1024)) {
+                    m_failed = static_cast<bool>(m_allocate);
                     return {};
                 }
-                auto encoded = data.left(comma).endsWith(";base64")
-                                   ? QByteArray::fromBase64(data.mid(comma + 1))
-                                   : QByteArray::fromPercentEncoding(data.mid(comma + 1));
+                // Match Qt's data-URL rules: metadata and payload can both be
+                // percent encoded, and the trailing base64 marker ignores case.
+                const auto metadata = QByteArray::fromPercentEncoding(data.left(comma)).trimmed();
+                auto encoded = QByteArray::fromPercentEncoding(data.mid(comma + 1));
+                if (metadata.toLower().endsWith(";base64")) {
+                    auto decoded = QByteArray::fromBase64Encoding(std::move(encoded));
+                    if (!decoded)
+                        return {};
+                    encoded = std::move(decoded.decoded);
+                }
                 QBuffer buffer(&encoded);
                 buffer.open(QIODevice::ReadOnly);
                 QImageReader reader(&buffer);
                 const auto size = reader.size();
-                if (!admitImage(size, m_retained + m_resourceBytes + encoded.size(), m_allocate)) {
+                if (m_allocate &&
+                    !admitImage(size, m_retained + m_resourceBytes + encoded.size(), m_allocate)) {
                     m_failed = true;
                     return {};
                 }
-                auto image = reader.read();
+                auto image = snow_shot::image_codec::readManagedImage(reader);
+                if (image.isNull())
+                    return m_allocate ? QVariant::fromValue(image)
+                                      : QTextDocument::loadResource(type, name);
+                // resource() does not cache a virtual loadResource() result.
+                // Share this owner across layout, painting and later consumers.
+                addResource(type, name, image);
                 m_resourceBytes += image.sizeInBytes();
                 return image;
             }
@@ -200,8 +217,16 @@ QImage normalizedImage(QImage image) {
         image.sizeInBytes() > kMaximumClipboardImageBytes) {
         return {};
     }
+    // The immutable clipboard snapshot already retains its QImage owner. Share
+    // those pixels instead of allocating a second raster while the provider or
+    // snapshot still owns the first. Decoded and rendered images retain their
+    // managed storage; foreign Qt owners keep their native allocation policy.
 #if !defined(Q_OS_MACOS)
-    image.setDevicePixelRatio(1.0);
+    if (image.devicePixelRatio() != 1.0) {
+        if (!snowCanvasDetachImage(image))
+            return {};
+        image.setDevicePixelRatio(1.0);
+    }
 #endif
     return image;
 }
@@ -319,7 +344,7 @@ renderTextDocument(std::shared_ptr<QTextDocument> document, QString plainText,
     if (restricted->allocationFailed() ||
         !admitImage(physicalSize, retained + restricted->resourceBytes(), allocate))
         return std::nullopt;
-    QImage image(physicalSize, QImage::Format_ARGB32_Premultiplied);
+    QImage image = snowCanvasAllocateImage(physicalSize, QImage::Format_ARGB32_Premultiplied);
     if (image.isNull()) {
         return std::nullopt;
     }
@@ -796,7 +821,7 @@ QImage decodeNativeDib(const ScreenshotClipboardNativeDib& native) {
 #else
     const bool useAvx2 = false;
 #endif
-    QImage image(native.size, QImage::Format_ARGB32_Premultiplied);
+    QImage image = snowCanvasAllocateImage(native.size, QImage::Format_ARGB32_Premultiplied);
     if (image.isNull())
         return {};
     const auto decodeRows = [&](int firstRow, int lastRow) {

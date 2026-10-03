@@ -1,3 +1,4 @@
+#include "snow_draw_engine_qt/snow_canvas_image.h"
 #include "snow_shot/platform/applicationqos.h"
 #include "snow_shot/presentation/screenshotocrrecognitionservice.h"
 #include "screenshotocrtransport.h"
@@ -69,6 +70,8 @@ QImage renderFilteredImage(QImage source, const QRectF& canvasRect,
     if (filteredImageCanvasRect != nullptr)
         *filteredImageCanvasRect = {};
     if (source.isNull() || presentation == nullptr || !canvasRect.isValid() || canvasRect.isEmpty())
+        return {};
+    if (source.devicePixelRatio() != 1.0 && !snowCanvasDetachImage(source))
         return {};
     source.setDevicePixelRatio(1.0);
     const QRectF normalized = canvasRect.normalized();

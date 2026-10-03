@@ -1,3 +1,4 @@
+#include "snow_draw_engine_qt/snow_canvas_image.h"
 #include "snow_shot/presentation/screenshotpdfexport.h"
 #include "snowimageqtcodec.h"
 #include <QBuffer>
@@ -135,7 +136,7 @@ std::shared_ptr<Payload> prepare(const ScreenshotImageRowSource& source, int qua
                 return {};
             const QRect rect(x, y, qMin(2048, source.size.width() - x),
                              qMin(2048, source.size.height() - y));
-            QImage image(rect.size(), QImage::Format_RGBA8888);
+            QImage image = snowCanvasAllocateImage(rect.size(), QImage::Format_RGBA8888);
             if (image.isNull()) {
                 fail(error);
                 return {};
@@ -302,7 +303,7 @@ bool decodeTiles(const Payload& payload, const std::function<bool(QRect, const Q
         if (payload.quality < 100) {
             image =
                 snow_shot::image_codec::decode(color, snow::image::Format::jpeg, "pdf-tile.jpg");
-            image = image.convertToFormat(QImage::Format_RGBA8888);
+            image = snowCanvasConvertImage(image, QImage::Format_RGBA8888);
         } else {
             const qsizetype count = qsizetype(tile.rect.width()) * tile.rect.height();
             color = inflate(color, count * 3);
@@ -310,7 +311,7 @@ bool decodeTiles(const Payload& payload, const std::function<bool(QRect, const Q
                 alpha = inflate(alpha, count);
             if (color.size() != count * 3 || (tile.alphaBytes && alpha.size() != count))
                 return fail(error);
-            image = QImage(tile.rect.size(), QImage::Format_RGBA8888);
+            image = snowCanvasAllocateImage(tile.rect.size(), QImage::Format_RGBA8888);
             if (image.isNull())
                 return fail(error);
             for (int row = 0; row < image.height(); ++row) {

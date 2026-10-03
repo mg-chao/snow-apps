@@ -1,4 +1,6 @@
 #include "codecs/jpeg_codec.h"
+
+#include <snow/memory/pixel_array.h>
 #include "planar_raster_io.h"
 
 #include <csetjmp>
@@ -688,7 +690,7 @@ Result<void> JpegCodec::decode_to_sink(const Input& input, PixelSink& sink,
         return status;
 
     std::span<std::byte> target = sink.frame_storage(0, row_stride, output_bytes);
-    std::vector<std::byte> owned;
+    snow::memory::PixelArray<std::byte> owned;
     if (target.size() != output_bytes) {
         if (output_bytes > options.limits.maximum_owned_output_bytes) {
             return Status::error(
@@ -871,7 +873,7 @@ Result<EncodedArtifactReceipt> JpegCodec::encode_raster_to_sink(const RasterSour
         if (!selected)
             return selected.error();
         const ChromaSubsampling sampling = selected.value();
-        std::vector<std::byte> row(row_bytes);
+        snow::memory::PixelArray<std::byte> row(row_bytes);
         auto context = std::make_unique<JpegEncoderContext>();
         context->compressor.err = jpeg_std_error(&context->error.base);
         context->error.base.error_exit = jpeg_error_exit;
@@ -982,7 +984,7 @@ Result<EncodedArtifactReceipt> JpegCodec::encode_raster_to_sink(const RasterSour
     const int y_vertical = resolved == ChromaSubsampling::yuv420 ? 2 : 1;
     const std::array<int, 3> vertical_factors{y_vertical, 1, 1};
     const std::size_t plane_count = grayscale ? 1U : 3U;
-    std::array<std::vector<JSAMPLE>, 3> buffers;
+    std::array<snow::memory::PixelArray<JSAMPLE>, 3> buffers;
     std::array<std::vector<JSAMPROW>, 3> rows;
     std::array<std::size_t, 3> padded_widths{};
     std::array<JSAMPARRAY, 3> image_rows{};

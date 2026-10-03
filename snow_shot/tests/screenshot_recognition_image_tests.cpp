@@ -1,4 +1,6 @@
 #include "snow_shot/presentation/screenshotrecognitionimage.h"
+#include "snow_draw_engine_qt/snow_canvas_image.h"
+#include "../../test-support/virtualmemory.h"
 #include <QGuiApplication>
 #include <QFontDatabase>
 #include <QPainter>
@@ -153,6 +155,27 @@ void sourceRowsSurviveImageExportOnWorkers() {
     require(renderScreenshotRecognitionImage(snapshot) == fallback,
             "image export falls back to paragraph layout for overlapping source rows");
 }
+void largeWorkerOutputRetainsManagedOwnership() {
+    auto snapshot = fixture();
+    snapshot.image = snowCanvasAllocateImage(QSize(1025, 513), QImage::Format_ARGB32_Premultiplied);
+    require(!snapshot.image.isNull(), "large recognition fixture must allocate");
+    snapshot.image.fill(Qt::white);
+    snapshot.image.setDevicePixelRatio(2.0);
+    const auto* original = snapshot.image.constBits();
+    auto worker = std::async(std::launch::async,
+                             [snapshot] { return renderScreenshotRecognitionImage(snapshot); });
+    QImage rendered = worker.get();
+    require(!rendered.isNull() && rendered.constBits() != original &&
+                snapshot.image.constBits() == original && snapshot.image.devicePixelRatio() == 2.0,
+            "recognition must detach into owned output without altering its capture lease");
+    const auto* middle = rendered.constBits() + rendered.sizeInBytes() / 2;
+    require(snow::test_support::virtualMemoryMapped(middle),
+            "recognition output must own live mapped storage");
+    rendered = {};
+    require(!snow::test_support::virtualMemoryMapped(middle),
+            "completed worker output must release its final pixel pages");
+}
+
 void cancellationAndInvalidInputNeverPublishPartialImages() {
     auto snapshot = fixture();
     int polls = 0;
@@ -183,6 +206,7 @@ int main(int argc, char** argv) {
         layoutModesAndTransformsRenderOnWorkers();
         sourceRowsSurviveImageExportOnWorkers();
         cancellationAndInvalidInputNeverPublishPartialImages();
+        largeWorkerOutputRetainsManagedOwnership();
     } catch (const std::exception& error) {
         std::cerr << error.what() << '\n';
         return 1;

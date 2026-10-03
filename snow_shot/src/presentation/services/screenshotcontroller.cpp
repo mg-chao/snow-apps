@@ -1,3 +1,4 @@
+#include "snow_draw_engine_qt/snow_canvas_image.h"
 #include "snow_shot/presentation/screenshotcursorimagesource.h"
 #include "../pinned/screenshotclipboardplacementgeometry.h"
 #include "snow_shot/presentation/screenshotstylebinding.h"
@@ -6362,9 +6363,9 @@ std::shared_ptr<ScreenshotExportArtifact> ScreenshotController::mcpExportArtifac
                                     return result;
                                 result.image = snapshot.materialize();
                                 if (!qFuzzyCompare(scale, 1.0) && !result.image.isNull())
-                                    result.image = result.image.scaled(result.image.size() * scale,
-                                                                       Qt::IgnoreAspectRatio,
-                                                                       Qt::SmoothTransformation);
+                                    result.image = snowCanvasScaleImage(
+                                        result.image, result.image.size() * scale,
+                                        Qt::IgnoreAspectRatio, Qt::SmoothTransformation);
                                 return result;
                             },
                             [done = std::move(done)](ScreenshotExportTaskResult result) {
