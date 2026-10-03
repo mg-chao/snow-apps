@@ -1208,7 +1208,7 @@ bool ScreenshotRecognitionWindow::copyVisibleContentToClipboard() {
         if (m_ocrCopyDefaultsEnabled) {
             const snow_shot::storage::TextRecognitionSettings settings;
             text = snow_shot::presentation::applyOcrTextTransforms(
-                text, settings.defaultFormatting(), settings.defaultPunctuation());
+                *m_ocrPresentation, settings.defaultFormatting(), settings.defaultPunctuation());
         }
     }
     if (!contentAvailable) {

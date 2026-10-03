@@ -1,4 +1,5 @@
 #include "snow_shot/presentation/settings/settingscatalog.h"
+#include "snow_shot/ocrtextoptions.h"
 #include "snow_shot/presentation/settings/settingsregistry.h"
 #include "snow_shot/presentation/settings/settingssearchindex.h"
 #include "snow_shot/presentation/components/icons/snowshoticons.h"
@@ -68,6 +69,54 @@ class CatalogTranslator final : public QTranslator {
         return {};
     }
 };
+
+void ocrDefaultOptionsShareToolbarSource(const settings::SettingsCatalog& catalog) {
+    const auto* section = catalog.section(QStringLiteral("text-recognition-translation"),
+                                          QStringLiteral("text-recognition-settings"));
+    require(section != nullptr, "OCR settings section exists");
+    const auto& recognition = *section;
+    const auto checkRecognitionDefault =
+        [&](qsizetype index, const QString& title, const QString& key,
+            settings::SettingsSelectBinding binding,
+            const QVector<snow_shot::OcrTextOption>& sharedOptions) {
+            const auto& item = recognition.items.at(index);
+            const auto& select = std::get<settings::SettingsSelectDefinition>(item.payload);
+            QStringList options;
+            require(select.options.size() == sharedOptions.size(),
+                    "OCR settings expose every shared toolbar choice");
+            for (qsizetype optionIndex = 0; optionIndex < select.options.size(); ++optionIndex) {
+                const auto& option = select.options.at(optionIndex);
+                const auto& shared = sharedOptions.at(optionIndex);
+                options.append(option.value.toString());
+                require(option.value.toString() == shared.value &&
+                            QString::fromLatin1(option.label.context) ==
+                                QString::fromLatin1(snow_shot::kOcrTextOptionsTranslationContext) &&
+                            QString::fromUtf8(option.label.source) ==
+                                QString::fromUtf8(shared.label),
+                        "OCR settings use shared option values, order and translation sources");
+            }
+            require(
+                item.title.translated() == title && item.configurationKey == key &&
+                    select.binding == binding &&
+                    options == snow_shot::ocrTextOptionValues(sharedOptions) &&
+                    storage::ConfigurationSchema::entry(key)->allowedStringValues == options &&
+                    storage::ConfigurationSchema::defaultValue(key).toString() ==
+                        QStringLiteral("none"),
+                "recognized-text defaults must expose all validated choices and default to None");
+        };
+    checkRecognitionDefault(1, QStringLiteral("Default Formatting"),
+                            QStringLiteral("text_recognition/default_formatting"),
+                            settings::SettingsSelectBinding::OcrDefaultFormatting,
+                            snow_shot::ocrFormattingOptions());
+    checkRecognitionDefault(2, QStringLiteral("Default Punctuation"),
+                            QStringLiteral("text_recognition/default_punctuation"),
+                            settings::SettingsSelectBinding::OcrDefaultPunctuation,
+                            snow_shot::ocrPunctuationOptions());
+    require(snow_shot::ocrTextOptionValues(snow_shot::ocrFormattingOptions()) ==
+                QStringList{QStringLiteral("none"), QStringLiteral("keep"),
+                            QStringLiteral("remove"), QStringLiteral("smart")},
+            "default formatting includes Smart Typesetting after the line-break choices");
+}
 
 void builtInCatalogIsCompleteAndValid() {
     const settings::SettingsCatalog& catalog = settings::builtInSettingsRegistry().catalog();
@@ -194,9 +243,9 @@ void builtInCatalogIsCompleteAndValid() {
             }) != screenshotInterface->items.cend(),
         "selection center guide color must appear immediately below cursor guide color");
 #ifdef Q_OS_MACOS
-    require(catalog.pages().size() == 16, "macOS includes App Permissions");
+    require(catalog.pages().size() == 17, "macOS includes App Permissions");
 #else
-    require(catalog.pages().size() == 15, "other platforms include pin management");
+    require(catalog.pages().size() == 16, "other platforms include pin management");
 #endif
 
     for (const auto& pageId :
@@ -275,6 +324,7 @@ void builtInCatalogIsCompleteAndValid() {
     const auto* quickModificationSection =
         catalog.section(QStringLiteral("screenshots"), QStringLiteral("screenshot-settings"));
     require(quickModificationSection &&
+                quickModificationSection->title.translated() == QStringLiteral("Interaction") &&
                 quickModificationSection->items.at(4).id ==
                     QStringLiteral("screenshot.middle-mouse-button-action") &&
                 quickModificationSection->items.at(5).id == quickModification->id,
@@ -356,10 +406,10 @@ void builtInCatalogIsCompleteAndValid() {
         }
     }
 #ifdef Q_OS_MACOS
-    require(sectionCount == 49, "macOS includes permissions and separate recording groups");
+    require(sectionCount == 48, "macOS includes permissions and merged storage and desktop groups");
 #else
-    require(sectionCount == 49,
-            "catalog includes feature-local advanced capture and recording groups");
+    require(sectionCount == 48,
+            "catalog includes capture and recording groups with merged storage and desktop groups");
 #endif
     // Keep the shared total in one place: adding a shared setting must update both platforms.
     // Explicit platform membership also catches substitutions that a total alone would miss.
@@ -396,7 +446,7 @@ void builtInCatalogIsCompleteAndValid() {
                            .arg(itemIds.size())));
     require(foundUpdates, "catalog must contain the update mode item");
     const auto* pinnedEditor =
-        catalog.item({QStringLiteral("pinned-windows"), QStringLiteral("pin-to-screen"),
+        catalog.item({QStringLiteral("pinned-windows"), QStringLiteral("pin-to-screen-toolbar"),
                       QStringLiteral("interface.pin-to-screen.pinned-toolbar-editor")});
     require(pinnedEditor != nullptr &&
                 pinnedEditor->configurationKey ==
@@ -464,6 +514,7 @@ void builtInCatalogIsCompleteAndValid() {
     require(apiMode == nullptr, "macOS must omit Windows-only capture backends");
 #else
     require(apiMode != nullptr &&
+                apiMode->title.translated() == QStringLiteral("Screenshot capture API") &&
                 apiMode->configurationKey == QStringLiteral("screenshot/api_mode") &&
                 std::get<settings::SettingsSelectDefinition>(apiMode->payload).binding ==
                     settings::SettingsSelectBinding::ScreenshotApiMode,
@@ -513,6 +564,7 @@ void builtInCatalogIsCompleteAndValid() {
         catalog.section(QStringLiteral("screenshots"), QStringLiteral("screenshot-capture"));
     require(
         captureCursor != nullptr && screenshotCaptureSection != nullptr &&
+            screenshotCaptureSection->title.translated() == QStringLiteral("Capture content") &&
             screenshotCaptureSection->items.size() == 2 &&
             screenshotCaptureSection->items.at(0).id ==
                 QStringLiteral("screenshot.capture-cursor") &&
@@ -555,7 +607,7 @@ void builtInCatalogIsCompleteAndValid() {
 #else
     require(recordingApiMode != nullptr &&
                 recordingApiMode->configurationKey == QStringLiteral("screen_recording/api_mode") &&
-                recordingApiMode->title.translated() == QStringLiteral("API Mode"),
+                recordingApiMode->title.translated() == QStringLiteral("Recording capture API"),
             "system Screen recording must expose its own API mode");
     const auto& recordingApiSelect =
         std::get<settings::SettingsSelectDefinition>(recordingApiMode->payload);
@@ -570,11 +622,13 @@ void builtInCatalogIsCompleteAndValid() {
 #endif
     require(
         recordingToolbarCapture != nullptr && recordingCaptureSection != nullptr &&
-            recordingCaptureSection->title.translated() ==
-                QStringLiteral("Capture compatibility & toolbar") &&
+            recordingCaptureSection->title.translated() == QStringLiteral("Recording content") &&
             recordingCaptureSection->reset ==
                 settings::SettingsSectionReset::ScreenRecordingCapture &&
             recordingCaptureSection->items.size() == (recordingApiMode != nullptr ? 2 : 1) &&
+            recordingCaptureSection->items.at(0).id == recordingToolbarCapture->id &&
+            (recordingApiMode == nullptr ||
+             recordingCaptureSection->items.at(1).id == recordingApiMode->id) &&
             recordingToolbarCapture->title.translated() ==
                 QStringLiteral("Capture toolbar during recording") &&
             recordingToolbarCapture->configurationKey ==
@@ -697,7 +751,7 @@ void builtInCatalogIsCompleteAndValid() {
     const auto& recognition = *catalog.section(QStringLiteral("text-recognition-translation"),
                                                QStringLiteral("text-recognition-settings"));
     require(recognition.reset == settings::SettingsSectionReset::TextRecognitionBehavior &&
-                recognition.title.translated() == QStringLiteral("Recognized text & formatting") &&
+                recognition.title.translated() == QStringLiteral("Recognition output") &&
                 recognition.items.size() == 4,
             "dedicated recognition behavior section");
     const auto& recognitionSave = recognition.items.front();
@@ -719,32 +773,7 @@ void builtInCatalogIsCompleteAndValid() {
                 storage::ConfigurationSchema::defaultValue(recognitionPreview.configurationKey)
                     .toBool(),
             "original image preview belongs to recognition behavior and defaults on");
-    const auto checkRecognitionDefault = [&](qsizetype index, const QString& title,
-                                             const QString& key,
-                                             settings::SettingsSelectBinding binding,
-                                             const QStringList& values) {
-        const auto& item = recognition.items.at(index);
-        const auto& select = std::get<settings::SettingsSelectDefinition>(item.payload);
-        QStringList options;
-        for (const auto& option : select.options) {
-            options.append(option.value.toString());
-        }
-        require(item.title.translated() == title && item.configurationKey == key &&
-                    select.binding == binding && options == values &&
-                    storage::ConfigurationSchema::defaultValue(key).toString() ==
-                        QStringLiteral("none"),
-                "recognized-text defaults must expose all validated choices and default to None");
-    };
-    checkRecognitionDefault(
-        1, QStringLiteral("Default Formatting"),
-        QStringLiteral("text_recognition/default_formatting"),
-        settings::SettingsSelectBinding::OcrDefaultFormatting,
-        {QStringLiteral("none"), QStringLiteral("keep"), QStringLiteral("remove")});
-    checkRecognitionDefault(
-        2, QStringLiteral("Default Punctuation"),
-        QStringLiteral("text_recognition/default_punctuation"),
-        settings::SettingsSelectBinding::OcrDefaultPunctuation,
-        {QStringLiteral("none"), QStringLiteral("half"), QStringLiteral("full")});
+    ocrDefaultOptionsShareToolbarSource(catalog);
     const auto* translation = catalog.item({QStringLiteral("text-recognition-translation"),
                                             QStringLiteral("translation-settings"),
                                             QStringLiteral("translation.original-image")});
@@ -815,9 +844,9 @@ void builtInCatalogIsCompleteAndValid() {
                           QStringLiteral("drawing.quick-selection-disabled-tools")}) != nullptr &&
             catalog.item({QStringLiteral("screenshots"), QStringLiteral("drawing-settings"),
                           QStringLiteral("drawing.remember-last-used-tool")}) != nullptr &&
-            catalog.item({QStringLiteral("desktop-tools"), QStringLiteral("tray-settings"),
+            catalog.item({QStringLiteral("desktop-tools"), QStringLiteral("tray"),
                           QStringLiteral("tray.left-click-action")}) != nullptr &&
-            catalog.item({QStringLiteral("desktop-tools"), QStringLiteral("tray-settings"),
+            catalog.item({QStringLiteral("desktop-tools"), QStringLiteral("tray"),
                           QStringLiteral("tray.menu-options")}) != nullptr,
         "Function settings must own the moved Pin to screen, Drawing, and Tray controls");
 
@@ -835,16 +864,16 @@ void builtInCatalogIsCompleteAndValid() {
         "Drawing settings must expose the default-off remembered drawing tool switch");
 
     const auto& traySection =
-        *catalog.section(QStringLiteral("desktop-tools"), QStringLiteral("tray-settings"));
-    require(traySection.items.size() == 3 &&
-                traySection.items.at(0).id == QStringLiteral("tray.left-click-action") &&
-                traySection.items.at(1).id == QStringLiteral("tray.middle-click-action") &&
-                traySection.items.at(2).id == QStringLiteral("tray.menu-options"),
+        *catalog.section(QStringLiteral("desktop-tools"), QStringLiteral("tray"));
+    require(traySection.items.size() == 6 &&
+                traySection.items.at(3).id == QStringLiteral("tray.left-click-action") &&
+                traySection.items.at(4).id == QStringLiteral("tray.middle-click-action") &&
+                traySection.items.at(5).id == QStringLiteral("tray.menu-options"),
             "middle-click action must appear immediately below left-click action");
     const auto& leftTray =
-        std::get<settings::SettingsSelectDefinition>(traySection.items.at(0).payload);
+        std::get<settings::SettingsSelectDefinition>(traySection.items.at(3).payload);
     const auto& middleTray =
-        std::get<settings::SettingsSelectDefinition>(traySection.items.at(1).payload);
+        std::get<settings::SettingsSelectDefinition>(traySection.items.at(4).payload);
     require(leftTray.binding == settings::SettingsSelectBinding::TrayLeftClickAction &&
                 middleTray.binding == settings::SettingsSelectBinding::TrayMiddleClickAction &&
                 leftTray.options.size() == 5 && middleTray.options.size() == 5,
@@ -929,7 +958,7 @@ void builtInCatalogIsCompleteAndValid() {
         catalog.item({QStringLiteral("files-history"), QStringLiteral("screen-recording-output"),
                       QStringLiteral("screen-recording-output.video-filename-format")});
     require(
-        storagePage != nullptr && storagePage->sections.size() == 6 &&
+        storagePage != nullptr && storagePage->sections.size() == 5 &&
             storagePage->sections.at(0).id == QStringLiteral("screenshots") &&
             storagePage->sections.at(1).id == QStringLiteral("screen-recording-output") &&
             storagePage->sections.at(2).id == QStringLiteral("history") &&
@@ -938,11 +967,9 @@ void builtInCatalogIsCompleteAndValid() {
                 QStringLiteral("Screenshot history") &&
             storagePage->sections.at(3).id == QStringLiteral("pinned-history") &&
             storagePage->sections.at(4).id == QStringLiteral("storage-status") &&
-            storagePage->sections.at(5).id == QStringLiteral("configuration") &&
             imageFormat != nullptr && imageDirectory != nullptr && autoSaveAfterCopy != nullptr &&
             copyImageFile != nullptr && saveDialog != nullptr && videoFilename != nullptr &&
-            storagePage->sections.at(0).title.translated() ==
-                QStringLiteral("Image saving & clipboard") &&
+            storagePage->sections.at(0).title.translated() == QStringLiteral("Image export") &&
             storagePage->sections.at(0).searchDescription.translated() ==
                 QStringLiteral(
                     "Shared image export settings for screenshot and pin-to-screen windows") &&
@@ -969,18 +996,22 @@ void builtInCatalogIsCompleteAndValid() {
                 settings::SettingsTextBinding::ScreenRecordingVideoFilenameFormat,
         "Storage and privacy must expose ordered screenshot and recording output settings");
 
+    const auto* configurationSection =
+        catalog.section(QStringLiteral("files-history"), QStringLiteral("storage-status"));
     const auto* exportConfiguration =
-        catalog.item({QStringLiteral("files-history"), QStringLiteral("configuration"),
+        catalog.item({QStringLiteral("files-history"), QStringLiteral("storage-status"),
                       QStringLiteral("configuration.export")});
     const auto* importConfiguration =
-        catalog.item({QStringLiteral("files-history"), QStringLiteral("configuration"),
+        catalog.item({QStringLiteral("files-history"), QStringLiteral("storage-status"),
                       QStringLiteral("configuration.import")});
-    require(exportConfiguration != nullptr && importConfiguration != nullptr &&
-                storagePage->sections.at(5).items.at(0).id == exportConfiguration->id &&
-                storagePage->sections.at(5).items.at(1).id == importConfiguration->id &&
+    require(configurationSection != nullptr && exportConfiguration != nullptr &&
+                importConfiguration != nullptr &&
+                configurationSection->items.at(0).id == exportConfiguration->id &&
+                configurationSection->items.at(1).id == importConfiguration->id &&
+                configurationSection->items.at(2).id == QStringLiteral("storage.status") &&
                 exportConfiguration->configurationKey.isEmpty() &&
                 importConfiguration->configurationKey.isEmpty(),
-            "the configuration section must lead with export followed by import");
+            "data storage leads with export and import before the storage-directory widget");
     const auto* exportAction =
         std::get_if<settings::SettingsActionDefinition>(&exportConfiguration->payload);
     const auto* importAction =
@@ -1040,7 +1071,7 @@ void builtInCatalogIsCompleteAndValid() {
                 paper.options[2].label.translated() == QStringLiteral("Landscape A4"),
             "PDF page options must expose the specified order and labels");
 
-    const auto* systemPage = catalog.page(QStringLiteral("general-appearance"));
+    const auto* systemPage = catalog.page(QStringLiteral("general"));
     const auto* proxy = catalog.item({QStringLiteral("connections-services"),
                                       QStringLiteral("network"), QStringLiteral("network.proxy")});
     const auto* proxySelect = proxy != nullptr
@@ -1062,12 +1093,10 @@ void builtInCatalogIsCompleteAndValid() {
             ? std::get_if<settings::SettingsSelectDefinition>(&resizePolicy->payload)
             : nullptr;
     require(
-        systemPage != nullptr && systemPage->sections.size() == 5 &&
-            systemPage->sections.at(0).id == QStringLiteral("general") &&
+        systemPage != nullptr && systemPage->sections.size() == 3 &&
+            systemPage->sections.at(0).id == QStringLiteral("language") &&
             systemPage->sections.at(1).id == QStringLiteral("system-general") &&
-            systemPage->sections.at(2).id == QStringLiteral("toolbar") &&
-            systemPage->sections.at(3).id == QStringLiteral("skin") &&
-            systemPage->sections.at(4).id == QStringLiteral("core") && proxy != nullptr &&
+            systemPage->sections.at(2).id == QStringLiteral("core") && proxy != nullptr &&
             proxy->configurationKey == QStringLiteral("network/proxy") && proxySelect != nullptr &&
             proxySelect->binding == settings::SettingsSelectBinding::Proxy &&
             proxySelect->options.size() == 2 &&
@@ -1112,16 +1141,15 @@ void builtInCatalogIsCompleteAndValid() {
         "System settings must expose the ordered OCR model and acceleration controls");
     const auto* mcp =
         catalog.section(QStringLiteral("connections-services"), QStringLiteral("mcp"));
-    require(
-        mcp != nullptr && mcp->items.size() == 2 &&
-            mcp->items.at(0).id == QStringLiteral("system.mcp-enabled") &&
-            mcp->items.at(1).id == QStringLiteral("system.mcp-status") &&
-            mcp->items.at(0).configurationKey == QStringLiteral("mcp/enabled") &&
-            catalog.item({QStringLiteral("general-appearance"), QStringLiteral("system-general"),
-                          QStringLiteral("system.mcp-enabled")}) == nullptr &&
-            catalog.item({QStringLiteral("general-appearance"), QStringLiteral("system-general"),
-                          QStringLiteral("system.mcp-status")}) == nullptr,
-        "MCP controls must live together below Core, outside General");
+    require(mcp != nullptr && mcp->items.size() == 2 &&
+                mcp->items.at(0).id == QStringLiteral("system.mcp-enabled") &&
+                mcp->items.at(1).id == QStringLiteral("system.mcp-status") &&
+                mcp->items.at(0).configurationKey == QStringLiteral("mcp/enabled") &&
+                catalog.item({QStringLiteral("general"), QStringLiteral("system-general"),
+                              QStringLiteral("system.mcp-enabled")}) == nullptr &&
+                catalog.item({QStringLiteral("general"), QStringLiteral("system-general"),
+                              QStringLiteral("system.mcp-status")}) == nullptr,
+            "MCP controls must live together below Core, outside General");
     const QStringList modelLabels{QStringLiteral("Ultra Small V6"), QStringLiteral("Small V6"),
                                   QStringLiteral("Medium V6"),      QStringLiteral("Small V5"),
                                   QStringLiteral("Medium V5"),      QStringLiteral("Small V4"),
@@ -1139,34 +1167,35 @@ void builtInCatalogIsCompleteAndValid() {
             break;
         }
     }
-    require(settingsGroup != nullptr && settingsGroup->pages.size() >= 2 &&
-                settingsGroup->pages.at(0).pageId == QStringLiteral("general-appearance") &&
-                settingsGroup->pages.at(1).pageId == QStringLiteral("screenshots"),
-            "Function settings must appear below Interface settings in the Settings navigation");
+    require(settingsGroup != nullptr && settingsGroup->pages.size() >= 3 &&
+                settingsGroup->pages.at(0).pageId == QStringLiteral("general") &&
+                settingsGroup->pages.at(1).pageId == QStringLiteral("general-appearance") &&
+                settingsGroup->pages.at(2).pageId == QStringLiteral("screenshots"),
+            "Screenshots must appear below General and Appearance in the Settings navigation");
 #ifdef Q_OS_MACOS
-    constexpr int expectedSettingsPages = 10;
+    constexpr int expectedSettingsPages = 11;
     require(settingsGroup->pages.constLast().pageId == QStringLiteral("app-permissions"),
             "macOS App Permissions follows System settings");
 #else
-    constexpr int expectedSettingsPages = 9;
+    constexpr int expectedSettingsPages = 10;
 #endif
     require(settingsGroup->title.translated() == QStringLiteral("Settings") &&
                 settingsGroup->pages.size() == expectedSettingsPages &&
-                settingsGroup->pages.at(2).pageId == QStringLiteral("pinned-windows") &&
-                settingsGroup->pages.at(3).pageId == QStringLiteral("screen-recording") &&
-                settingsGroup->pages.at(4).pageId ==
+                settingsGroup->pages.at(3).pageId == QStringLiteral("pinned-windows") &&
+                settingsGroup->pages.at(4).pageId == QStringLiteral("screen-recording") &&
+                settingsGroup->pages.at(5).pageId ==
                     QStringLiteral("text-recognition-translation") &&
-                settingsGroup->pages.at(5).pageId == QStringLiteral("shortcuts-mouse") &&
-                settingsGroup->pages.at(6).pageId == QStringLiteral("desktop-tools") &&
-                settingsGroup->pages.at(7).pageId == QStringLiteral("files-history") &&
-                settingsGroup->pages.at(8).pageId == QStringLiteral("connections-services"),
+                settingsGroup->pages.at(6).pageId == QStringLiteral("shortcuts-mouse") &&
+                settingsGroup->pages.at(7).pageId == QStringLiteral("desktop-tools") &&
+                settingsGroup->pages.at(8).pageId == QStringLiteral("files-history") &&
+                settingsGroup->pages.at(9).pageId == QStringLiteral("connections-services"),
             "Settings navigation must group feature controls and shared preferences predictably");
     const auto* applicationShortcutsPage = catalog.page(QStringLiteral("shortcuts-mouse"));
     require(applicationShortcutsPage != nullptr &&
                 applicationShortcutsPage->route == QStringLiteral("/settings/shortcuts-mouse") &&
                 applicationShortcutsPage->title.translated() ==
-                    QStringLiteral("Shortcuts & mouse") &&
-                settingsGroup->pages.at(5).id == QStringLiteral("nav.shortcuts-mouse"),
+                    QStringLiteral("Application shortcuts") &&
+                settingsGroup->pages.at(6).id == QStringLiteral("nav.shortcuts-mouse"),
             "Application shortcuts must expose the renamed title, route, and navigation");
     const auto* drawingShortcuts =
         catalog.section(QStringLiteral("shortcuts-mouse"), QStringLiteral("drawing-shortcuts"));
@@ -1200,8 +1229,7 @@ void builtInCatalogIsCompleteAndValid() {
         std::all_of(
             applicationShortcutsPage->sections.cbegin(), applicationShortcutsPage->sections.cend(),
             [](const settings::SettingsSectionDefinition& section) {
-                return section.id == QStringLiteral("global-hotkeys") ||
-                       section.itemLayout == settings::SettingsSectionItemLayout::TwoColumnGrid;
+                return section.itemLayout == settings::SettingsSectionItemLayout::TwoColumnGrid;
             });
     struct ScreenshotShortcutContract {
         int index;
@@ -1249,7 +1277,7 @@ void builtInCatalogIsCompleteAndValid() {
                 QString::fromLatin1(contract.configurationKey);
     }
     require(
-        applicationShortcutsPage != nullptr && applicationShortcutsPage->sections.size() == 6 &&
+        applicationShortcutsPage != nullptr && applicationShortcutsPage->sections.size() == 5 &&
             everyHotkeySectionUsesTwoColumns && screenshotShortcuts != nullptr &&
             screenshotShortcuts->items.size() == 24 &&
             screenshotShortcuts->itemLayout == settings::SettingsSectionItemLayout::TwoColumnGrid &&
@@ -1301,7 +1329,7 @@ void builtInCatalogIsCompleteAndValid() {
             pinToScreenShortcuts != nullptr && pinToScreenShortcuts->items.size() == 26 &&
             pinToScreenShortcuts->itemLayout ==
                 settings::SettingsSectionItemLayout::TwoColumnGrid &&
-            pinToScreenShortcuts->title.translated() == QStringLiteral("Pinned-window shortcuts") &&
+            pinToScreenShortcuts->title.translated() == QStringLiteral("Pin to screen") &&
             pinToScreenShortcuts->reset == settings::SettingsSectionReset::PinToScreenShortcuts &&
             pinToScreenShortcuts->items.constFirst().id ==
                 QStringLiteral("pin-to-screen-shortcut.copy_to_clipboard") &&
@@ -1359,8 +1387,7 @@ void builtInCatalogIsCompleteAndValid() {
             otherShortcutSection != nullptr && otherShortcutSection->items.size() == 6 &&
             otherShortcutSection->itemLayout ==
                 settings::SettingsSectionItemLayout::TwoColumnGrid &&
-            otherShortcutSection->title.translated() ==
-                QStringLiteral("Recognition & action shortcuts") &&
+            otherShortcutSection->title.translated() == QStringLiteral("Recognition & actions") &&
             otherShortcutSection->items.at(4).id == QStringLiteral("screenshot-shortcut.undo") &&
             otherShortcutSection->items.at(5).id == QStringLiteral("screenshot-shortcut.redo") &&
             drawingShortcuts->items.constFirst().id == QStringLiteral("drawing-shortcut.select") &&
@@ -1387,13 +1414,11 @@ void builtInCatalogIsCompleteAndValid() {
     }
 
     const auto* interfacePage = catalog.page(QStringLiteral("general-appearance"));
-    require(interfacePage != nullptr && interfacePage->sections.size() == 5 &&
+    require(interfacePage != nullptr && interfacePage->sections.size() == 3 &&
                 interfacePage->sections.at(0).id == QStringLiteral("general") &&
-                interfacePage->sections.at(1).id == QStringLiteral("system-general") &&
-                interfacePage->sections.at(2).id == QStringLiteral("toolbar") &&
-                interfacePage->sections.at(3).id == QStringLiteral("skin") &&
-                interfacePage->sections.at(4).id == QStringLiteral("core"),
-            "General settings must contain app-wide preferences only");
+                interfacePage->sections.at(1).id == QStringLiteral("toolbar") &&
+                interfacePage->sections.at(2).id == QStringLiteral("skin"),
+            "Appearance must contain only visual preferences");
     const auto* toolbarSize =
         catalog.item({QStringLiteral("general-appearance"), QStringLiteral("toolbar"),
                       QStringLiteral("interface.screenshot.toolbar-size")});
@@ -1405,7 +1430,7 @@ void builtInCatalogIsCompleteAndValid() {
                       QStringLiteral("interface.screenshot.screenshot-toolbar-editor")});
     const auto& screenshotSection =
         *catalog.section(QStringLiteral("screenshots"), QStringLiteral("interface-screenshot"));
-    const auto& toolbarSection = interfacePage->sections.at(2);
+    const auto& toolbarSection = interfacePage->sections.at(1);
     const auto* trayIcon = catalog.item({QStringLiteral("desktop-tools"), QStringLiteral("tray"),
                                          QStringLiteral("interface.tray.icon")});
     require(
@@ -1416,20 +1441,20 @@ void builtInCatalogIsCompleteAndValid() {
                           QStringLiteral("drawing.quick-selection-disabled-tools")}) == nullptr &&
             catalog.item({QStringLiteral("pinned-windows"), QStringLiteral("pin-to-screen"),
                           QStringLiteral("pin-to-screen.mouse-wheel-zoom-mode")}) == nullptr &&
-            catalog.item({QStringLiteral("desktop-tools"), QStringLiteral("tray"),
-                          QStringLiteral("tray.left-click-action")}) == nullptr &&
+            catalog.section(QStringLiteral("desktop-tools"), QStringLiteral("tray-settings")) ==
+                nullptr &&
             toolbarSize->configurationKey == QStringLiteral("screenshot_ui/toolbar_size") &&
             toolbarEditor->configurationKey == QStringLiteral("screenshot_toolbar/layout") &&
-            toolbarSection.title.translated() == QStringLiteral("Shared toolbar size") &&
+            toolbarSection.title.translated() == QStringLiteral("Toolbar size") &&
             toolbarSection.searchDescription.translated() ==
                 QStringLiteral("Configure the screenshot, pinned, and recording toolbars") &&
-            toolbarEditor->title.translated() == QStringLiteral("Drawing toolbar settings") &&
+            toolbarEditor->title.translated() == QStringLiteral("Annotation toolbar settings") &&
             toolbarEditor->description.translated() ==
-                QStringLiteral("Drag drawing tools to reorder them or stack them in the same "
+                QStringLiteral("Drag annotation tools to reorder them or stack them in the same "
                                "toolbar position.") &&
             toolbarEditor->aliases.size() == 2 &&
             toolbarEditor->aliases.at(0).translated() == QStringLiteral("Tool positions") &&
-            toolbarEditor->aliases.at(1).translated() == QStringLiteral("Stack drawing tools") &&
+            toolbarEditor->aliases.at(1).translated() == QStringLiteral("Stack annotation tools") &&
             screenshotToolbarEditor->configurationKey ==
                 QStringLiteral("screenshot_toolbar/action_tools_layout") &&
             screenshotToolbarEditor->title.translated() ==
@@ -1475,11 +1500,42 @@ void builtInCatalogIsCompleteAndValid() {
 
     const auto& pinSection =
         *catalog.section(QStringLiteral("pinned-windows"), QStringLiteral("pin-to-screen"));
+    const auto* pinPage = catalog.page(QStringLiteral("pinned-windows"));
+    require(pinPage != nullptr && pinPage->sections.size() == 3 &&
+                pinPage->sections.at(0).id == QStringLiteral("pin-to-screen-settings") &&
+                pinPage->sections.at(0).title.translated() == QStringLiteral("Interaction") &&
+                pinPage->sections.at(0).items.size() == 8 &&
+                pinPage->sections.at(1).id == pinSection.id &&
+                pinSection.title.translated() == QStringLiteral("Window interface") &&
+                pinPage->sections.at(2).id == QStringLiteral("pin-to-screen-toolbar") &&
+                pinPage->sections.at(2).title.translated() ==
+                    QStringLiteral("Annotation toolbar") &&
+                pinPage->sections.at(2).items.size() == 1 &&
+                pinPage->sections.at(2).items.constFirst().id == pinnedEditor->id &&
+                pinSection.reset == settings::SettingsSectionReset::PinToScreen &&
+                pinPage->sections.at(2).reset == settings::SettingsSectionReset::PinToScreenToolbar,
+            "pinned settings separate interaction, window interface and annotation toolbar");
+    const auto& pinRegistry = settings::builtInSettingsRegistry();
+    for (const auto& section : pinPage->sections) {
+        const auto& fields = pinRegistry.fieldsForReset(section.reset);
+        require(fields.size() == section.items.size(), "pinned resets cover only their own fields");
+        for (const int fieldIndex : fields) {
+            require(pinRegistry.fields().at(fieldIndex).sectionId == section.id,
+                    "pinned reset scopes must remain independent");
+        }
+    }
+    const settings::SettingsSearchIndex pinSearch(pinRegistry);
+    const auto pinnedToolbarResults = pinSearch.search(QStringLiteral("custom pinned toolbar"));
+    require(!pinnedToolbarResults.isEmpty() &&
+                pinnedToolbarResults.constFirst().location ==
+                    settings::SettingsLocation{pinPage->id, pinPage->sections.at(2).id,
+                                               pinnedEditor->id},
+            "pinned toolbar search navigates to its separate section");
     const auto* pinBorderActiveColor =
         catalog.item({QStringLiteral("pinned-windows"), QStringLiteral("pin-to-screen"),
                       QStringLiteral("interface.pin-to-screen.border-active-color")});
     require(
-        pinSection.items.size() == 3 && pinBorderActiveColor != nullptr &&
+        pinSection.items.size() == 2 && pinBorderActiveColor != nullptr &&
             pinBorderActiveColor->configurationKey ==
                 QStringLiteral("pin_to_screen/border_active_color") &&
             std::get<settings::SettingsColorDefinition>(pinBorderActiveColor->payload).binding ==
@@ -2135,7 +2191,7 @@ void invalidCatalogReportsAllConformanceErrors() {
         storagePage.sections.begin(), storagePage.sections.end(),
         [](const auto& section) { return section.id == QStringLiteral("storage-status"); });
     require(statusSection != storagePage.sections.end(), "storage status fixture must exist");
-    auto& custom = std::get<settings::SettingsCustomDefinition>(statusSection->items[0].payload);
+    auto& custom = std::get<settings::SettingsCustomDefinition>(statusSection->items[2].payload);
     custom.renderer = static_cast<settings::SettingsCustomRenderer>(999);
     pages.push_back({QStringLiteral("empty-page"),
                      QStringLiteral("relative-route"),
@@ -2194,11 +2250,8 @@ void searchIndexIsGeneratedAndRanked() {
             return result.location.pageId == page && result.location.sectionId == section;
         });
     };
-    require(
-        hasFloatingSection(QStringLiteral("desktop-tools"),
-                           QStringLiteral("floating-toolbar-settings")) &&
-            hasFloatingSection(QStringLiteral("desktop-tools"), QStringLiteral("floating-toolbar")),
-        "settings search finds both floating toolbar behavior and customization");
+    require(hasFloatingSection(QStringLiteral("desktop-tools"), QStringLiteral("floating-toolbar")),
+            "settings search finds the unified floating toolbar section");
     const auto pdfPaper = index.search(QStringLiteral("Landscape A4"));
     require(!pdfPaper.isEmpty() && pdfPaper.constFirst().location.itemId ==
                                        QStringLiteral("screenshot-output.pdf-page-size"),
@@ -2317,7 +2370,7 @@ void searchIndexIsGeneratedAndRanked() {
             "every query token must match an indexed field");
     require(index.search(QStringLiteral("storage nonexistent-token")).isEmpty(),
             "a query must be rejected when any token does not match");
-    const auto drawingToolbar = index.search(QStringLiteral("stack drawing tools"));
+    const auto drawingToolbar = index.search(QStringLiteral("stack annotation tools"));
     require(!drawingToolbar.isEmpty() &&
                 drawingToolbar.constFirst().location.itemId ==
                     QStringLiteral("interface.toolbar.drawing-toolbar-editor"),
@@ -2360,10 +2413,14 @@ void searchIndexRebuildsLocalizedFields() {
                 index.search(QStringLiteral("night mode")).constFirst().id ==
                     QStringLiteral("item:interface.theme"),
             "search rebuilds must replace localized select-option labels");
-    require(!index.search(QStringLiteral("visual style")).isEmpty() &&
-                index.search(QStringLiteral("visual style")).constFirst().id ==
-                    QStringLiteral("item:interface.theme"),
-            "search rebuilds must replace localized aliases");
+    const auto appearanceResults = index.search(QStringLiteral("visual style"));
+    require(!appearanceResults.isEmpty() &&
+                appearanceResults.constFirst().id == QStringLiteral("page:general-appearance") &&
+                std::any_of(appearanceResults.cbegin(), appearanceResults.cend(),
+                            [](const auto& result) {
+                                return result.id == QStringLiteral("item:interface.theme");
+                            }),
+            "localized page titles rank first while localized item aliases remain searchable");
     for (const QString& query :
          {QStringLiteral("Localized Middle Action"), QStringLiteral("Localized Zoom Reset")}) {
         const auto result = index.search(query);
@@ -2762,7 +2819,7 @@ void featureNavigationAndSearchAreConsistent() {
          {Destination{"Mouse pointer", "screenshot.capture-cursor", "screenshots"},
           Destination{"Screenshot folder", "screenshot-output.image-save-directory",
                       "files-history"},
-          Destination{"Autostart", "system.auto-start-at-boot", "general-appearance"},
+          Destination{"Autostart", "system.auto-start-at-boot", "general"},
           Destination{"GIF frame rate", "screen-recording.animated-image-frame-rate",
                       "screen-recording"}}) {
         const auto hits = search.search(QString::fromLatin1(expected.query));
@@ -2771,10 +2828,67 @@ void featureNavigationAndSearchAreConsistent() {
                     hits.first().location.pageId == QString::fromLatin1(expected.page),
                 "everyday search terms prioritize the exact setting over matching categories");
     }
+    const auto* language = registry.fieldForSelect(settings::SettingsSelectBinding::Language);
+    const auto* theme = registry.fieldForSelect(settings::SettingsSelectBinding::Theme);
+    require(language != nullptr && theme != nullptr &&
+                language->pageId == QStringLiteral("general") &&
+                language->sectionId == QStringLiteral("language") &&
+                language->reset == settings::SettingsSectionReset::Language &&
+                theme->pageId == QStringLiteral("general-appearance") &&
+                theme->reset != language->reset &&
+                registry.fieldsForReset(language->reset).size() == 1 &&
+                registry.fieldsForReset(theme->reset).size() == 3,
+            "language and appearance have separate destinations and reset scopes");
+    require(catalog.section(QStringLiteral("general"), QStringLiteral("configuration")) ==
+                    nullptr &&
+                catalog.section(QStringLiteral("files-history"), QStringLiteral("configuration")) ==
+                    nullptr,
+            "backup and restore no longer has an independent settings category");
+    for (const QString& id :
+         {QStringLiteral("configuration.export"), QStringLiteral("configuration.import")}) {
+        const auto* field = registry.field(id);
+        require(field && field->pageId == QStringLiteral("files-history") &&
+                    field->sectionId == QStringLiteral("storage-status"),
+                "backup and restore fields belong to the data storage category");
+        const auto hits = search.search(field->definition->title.translated());
+        require(!hits.isEmpty() && hits.first().location.itemId == id &&
+                    hits.first().location.pageId == field->pageId &&
+                    hits.first().location.sectionId == field->sectionId,
+                "search locates backup and restore in data storage");
+    }
+    const auto* fullscreen =
+        registry.fieldForSwitch(settings::SettingsSwitchBinding::DisableHotkeysOnFocusedFullscreen);
+    require(fullscreen != nullptr && fullscreen->pageId == QStringLiteral("global-hotkeys") &&
+                fullscreen->sectionId == QStringLiteral("global-hotkeys") &&
+                fullscreen->reset == settings::SettingsSectionReset::GlobalHotkeys &&
+                fullscreen->configurationKey ==
+                    QStringLiteral("global_shortcuts/disable_on_focused_fullscreen_window") &&
+                catalog.section(QStringLiteral("shortcuts-mouse"),
+                                QStringLiteral("global-hotkeys")) == nullptr,
+            "full-screen suppression moves to Global Hotkeys with its original setting and reset");
+    const auto fullscreenHits = search.search(
+        QStringLiteral("Automatically disable when a focused fullscreen window exists"));
+    require(!fullscreenHits.isEmpty() && fullscreenHits.first().location.itemId == fullscreen->id &&
+                fullscreenHits.first().location.pageId == QStringLiteral("global-hotkeys"),
+            "search navigates to the relocated full-screen control");
+    for (const auto& node : catalog.navigation()) {
+        const auto* group = std::get_if<settings::SettingsNavigationGroupDefinition>(&node);
+        if (group == nullptr || group->id != QStringLiteral("nav.settings"))
+            continue;
+        for (const auto& entry : group->pages) {
+            const auto* page = catalog.page(entry.pageId);
+            require(page != nullptr && (!entry.title.isValid() ||
+                                        entry.title.translated() == page->title.translated()),
+                    "Settings sidebar labels match their page titles");
+        }
+    }
     const auto oldName = search.search(QStringLiteral("Function settings"));
     require(!oldName.isEmpty() && oldName.first().location.pageId == QStringLiteral("screenshots"),
             "legacy category names remain searchable after reorganization");
     for (const auto& page : catalog.pages()) {
+        for (const auto& section : page.sections) {
+            require(!section.collapsedByDefault, "all built-in settings categories start expanded");
+        }
         for (const auto& link : page.relatedLinks) {
             const auto resolved = catalog.resolveLocation(link.location);
             require(resolved.pageId == link.location.pageId &&
@@ -2783,6 +2897,14 @@ void featureNavigationAndSearchAreConsistent() {
                     "every related link reaches its intended page and section");
         }
     }
+    const auto* tray = catalog.section(QStringLiteral("desktop-tools"), QStringLiteral("tray"));
+    const auto* floating =
+        catalog.section(QStringLiteral("desktop-tools"), QStringLiteral("floating-toolbar"));
+    require(tray && floating && tray->reset == settings::SettingsSectionReset::Tray &&
+                floating->reset == settings::SettingsSectionReset::FloatingToolbar &&
+                registry.fieldsForReset(tray->reset).size() == 6 &&
+                registry.fieldsForReset(floating->reset).size() == 3,
+            "merged desktop categories include every control in their reset scopes");
     auto pages = catalog.pages();
     auto page = std::find_if(pages.begin(), pages.end(), [](const auto& definition) {
         return definition.id == QStringLiteral("screenshots");
@@ -2798,30 +2920,33 @@ void featureNavigationAndSearchAreConsistent() {
 
 int main(int argc, char** argv) {
     QCoreApplication application(argc, argv);
+    if (application.arguments().contains(QStringLiteral("--ocr-text-options-only"))) {
+        ocrDefaultOptionsShareToolbarSource(settings::buildBuiltInSettingsCatalog());
+        return 0;
+    }
     if (application.arguments().contains(QStringLiteral("--storage-directory-only"))) {
         const auto& catalog = settings::builtInSettingsRegistry().catalog();
         const auto* section =
             catalog.section(QStringLiteral("files-history"), QStringLiteral("storage-status"));
-        require(section && !section->items.isEmpty() &&
-                    section->items.front().id == u"storage.status",
-                "storage section identifiers and first status widget remain stable");
+        require(section && section->items.size() == 5 &&
+                    section->items.at(0).id == u"configuration.export" &&
+                    section->items.at(1).id == u"configuration.import" &&
+                    section->items.at(2).id == u"storage.status",
+                "backup and restore precede storage status in the shared category");
 #ifdef Q_OS_WIN
-        require(section->title.translated() == u"Storage & cleanup" &&
-                    section->items.front().title.translated() == u"Data storage",
+        require(section->title.translated() == u"Data storage" &&
+                    section->items.at(2).title.translated() == u"Data storage",
                 "storage cleanup retains the Windows data-directory control");
 #else
-        require(section->title.translated() == u"Storage & cleanup",
-                "storage cleanup is discoverable");
+        require(section->title.translated() == u"Data storage", "storage cleanup is discoverable");
 #endif
         return 0;
     }
     const auto adminCatalog = settings::buildBuiltInSettingsCatalog();
-    const auto* qos =
-        adminCatalog.item({QStringLiteral("general-appearance"), QStringLiteral("core"),
-                           QStringLiteral("system.application-qos")});
-    const auto* priority =
-        adminCatalog.item({QStringLiteral("general-appearance"), QStringLiteral("core"),
-                           QStringLiteral("system.application-priority")});
+    const auto* qos = adminCatalog.item({QStringLiteral("general"), QStringLiteral("core"),
+                                         QStringLiteral("system.application-qos")});
+    const auto* priority = adminCatalog.item({QStringLiteral("general"), QStringLiteral("core"),
+                                              QStringLiteral("system.application-priority")});
     require(storage::ConfigurationSchema::defaultValue(QStringLiteral("system/application_qos")) ==
                 QJsonValue(QStringLiteral("user_interactive")),
             "QoS defaults to Responsive on every platform's shared schema");
@@ -2855,10 +2980,10 @@ int main(int argc, char** argv) {
 
 #ifdef Q_OS_MACOS
     const auto* login =
-        adminCatalog.item({QStringLiteral("general-appearance"), QStringLiteral("system-general"),
+        adminCatalog.item({QStringLiteral("general"), QStringLiteral("system-general"),
                            QStringLiteral("system.auto-start-at-boot")});
     const auto* loginSettings =
-        adminCatalog.item({QStringLiteral("general-appearance"), QStringLiteral("system-general"),
+        adminCatalog.item({QStringLiteral("general"), QStringLiteral("system-general"),
                            QStringLiteral("system.login-item-settings")});
     require(login && QString::fromUtf8(login->title.source) == u"Launch at login" &&
                 QString::fromUtf8(login->description.source) ==
@@ -2869,13 +2994,11 @@ int main(int argc, char** argv) {
                 std::get<settings::SettingsActionDefinition>(loginSettings->payload).binding ==
                     settings::SettingsActionBinding::OpenLoginItemSettings,
             "macOS exposes the native login settings action");
-    require(
-        adminCatalog.item({QStringLiteral("general-appearance"), QStringLiteral("system-general"),
-                           QStringLiteral("system.launch-as-administrator")}) == nullptr &&
-            adminCatalog.item({QStringLiteral("general-appearance"),
-                               QStringLiteral("system-general"),
-                               QStringLiteral("system.restart-as-administrator")}) == nullptr,
-        "macOS must omit Windows-only administrator controls");
+    require(adminCatalog.item({QStringLiteral("general"), QStringLiteral("system-general"),
+                               QStringLiteral("system.launch-as-administrator")}) == nullptr &&
+                adminCatalog.item({QStringLiteral("general"), QStringLiteral("system-general"),
+                                   QStringLiteral("system.restart-as-administrator")}) == nullptr,
+            "macOS must omit Windows-only administrator controls");
 #else
     bool foundAdministratorControls = false;
     for (const auto& page : adminCatalog.pages()) {

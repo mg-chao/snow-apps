@@ -1,4 +1,5 @@
 #include "snow_shot/presentation/screenshotocrpresentation.h"
+#include "snow_shot/presentation/screenshotocrtexttransform.h"
 #include "snow_shot/presentation/screenshotrecognitionwindow.h"
 #include <QTextEdit>
 #include <QMimeData>
@@ -343,6 +344,45 @@ void smartTypesettingUsesRecognizedLayout() {
             "punctuation conversion preserves smart paragraph layout");
     controller->resetTextEditing();
     require(controller->textDraft() == original, "reset restores original OCR line breaks");
+
+    const snow_shot::storage::TextRecognitionSettings settings;
+    const QString priorFormatting = settings.defaultFormatting();
+    const QString priorPunctuation = settings.defaultPunctuation();
+    require(settings.setDefaultFormatting(QStringLiteral("smart")) &&
+                settings.setDefaultPunctuation(QStringLiteral("full")),
+            "Smart Typesetting is a supported OCR default");
+    auto defaultController = makeTextSession(recognition, recorder);
+    defaultController->seedRecognitionResults(cached);
+    defaultController->activate(ScreenshotRecognitionSessionController::Mode::Text);
+    const QString expectedDefault = snow_shot::presentation::convertOcrPunctuation(expected, true);
+    require(defaultController->recognitionClipboardMimeData()->text() == expectedDefault,
+            "default Smart Typesetting copy uses the same paragraphs as the toolbar");
+    ScreenshotRecognitionWindow window({});
+    window.setOcrPresentation(presentation);
+    require(window.copyVisibleContentToClipboard() &&
+                QApplication::clipboard()->text() == expectedDefault,
+            "recognition window copy applies default Smart Typesetting and punctuation");
+    presentation->beginTextSelection(ScreenshotOcrTextPosition{0, 8});
+    presentation->updateTextSelection(ScreenshotOcrTextPosition{1, 6});
+    presentation->finishTextSelection();
+    require(window.copyVisibleContentToClipboard() &&
+                QApplication::clipboard()->text() == QStringLiteral("translation") &&
+                defaultController->recognitionClipboardMimeData(presentation.get())->text() ==
+                    QStringLiteral("translation"),
+            "default Smart Typesetting copies only selected characters across OCR lines");
+    presentation->clearTextSelection();
+    defaultController->beginTextEditing();
+    require(defaultController->textDraft() == expectedDefault,
+            "default Smart Typesetting applies on the first edit entry");
+    defaultController->undoTextEdit();
+    require(defaultController->textDraft() == original,
+            "one undo reverses default Smart Typesetting and punctuation together");
+    defaultController->redoTextEdit();
+    require(defaultController->textDraft() == expectedDefault,
+            "default Smart Typesetting can be redone");
+    require(settings.setDefaultFormatting(priorFormatting) &&
+                settings.setDefaultPunctuation(priorPunctuation),
+            "restore OCR defaults after Smart Typesetting coverage");
 }
 
 void recognizedTextDefaultsApplyOnFirstEditAndOriginalCopy() {

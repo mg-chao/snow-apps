@@ -1156,6 +1156,7 @@ set(PROJECT_HEADERS
     include/snow_shot/presentation/screenshotqrrecognitionservice.h
     include/snow_shot/presentation/screenshotmessageservice.h
     include/snow_shot/presentation/screenshotocrpresentation.h
+    include/snow_shot/ocrtextoptions.h
     include/snow_shot/presentation/screenshotocrtexteditingsession.h
     include/snow_shot/presentation/screenshotocrvisuals.h
     include/snow_shot/presentation/screenshotocrtextlayer.h
@@ -2268,6 +2269,10 @@ if(SNOW_SHOT_BUILD_TESTS)
         ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
     add_test(NAME snow-shot-settings-catalog-tests
              COMMAND snow-shot-settings-catalog-tests)
+    add_test(NAME snow-shot-ocr-text-options-catalog-tests
+             COMMAND snow-shot-settings-catalog-tests --ocr-text-options-only)
+    set_tests_properties(snow-shot-ocr-text-options-catalog-tests PROPERTIES LABELS "unit" TIMEOUT 30
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
     set_tests_properties(snow-shot-settings-catalog-tests PROPERTIES
         ENVIRONMENT_MODIFICATION
             "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
@@ -4744,6 +4749,10 @@ if(SNOW_SHOT_BUILD_TESTS)
         snow_draw_engine_qt_canvas
     )
     snow_shot_add_translations(snow-shot-screenshot-tool-palette-tests)
+    add_test(NAME snow-shot-ocr-text-options-toolbar-tests
+        COMMAND snow-shot-screenshot-tool-palette-tests --ocr-translation-only -platform offscreen)
+    set_tests_properties(snow-shot-ocr-text-options-toolbar-tests PROPERTIES LABELS "unit" TIMEOUT 60
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
     add_test(NAME snow-shot-selection-display-unit-toolbar-tests
         COMMAND snow-shot-floating-toolbar-drag-tests --selection-unit-only -platform offscreen)
     set_tests_properties(snow-shot-selection-display-unit-toolbar-tests PROPERTIES LABELS "unit" TIMEOUT 60)
@@ -6204,6 +6213,7 @@ if(SNOW_SHOT_BUILD_TESTS)
         src/presentation/ocr/screenshotocrtexteditingsession.cpp
         src/presentation/ocr/screenshottabledocument.cpp
         src/presentation/ocr/screenshotocrtexttransform.cpp
+        src/presentation/ocr/screenshotocrlayout.cpp
         src/presentation/services/screenshotsourceimagecomposer.cpp
     )
     target_include_directories(snow-shot-ocr-presentation-tests PRIVATE
@@ -6236,6 +6246,7 @@ if(SNOW_SHOT_BUILD_TESTS)
         src/presentation/core/screenshotgeometry.cpp
         src/presentation/ocr/screenshotocrpresentation.cpp
         src/presentation/ocr/screenshotocrtexttransform.cpp
+        src/presentation/ocr/screenshotocrlayout.cpp
         src/presentation/ocr/screenshotocrvisuals.cpp
         src/presentation/ocr/screenshottabledocument.cpp
         src/presentation/ocr/screenshottableeditor.cpp
@@ -7101,6 +7112,7 @@ if(SNOW_SHOT_BUILD_BENCHMARKS)
         src/presentation/ocr/screenshotocrpresentation.cpp
         src/presentation/ocr/screenshotocrtextlayout.cpp
         src/presentation/ocr/screenshotocrtexttransform.cpp
+        src/presentation/ocr/screenshotocrlayout.cpp
         src/presentation/ocr/screenshottabledocument.cpp
         src/presentation/overlay/screenshotcanvasrenderer.cpp
         src/presentation/overlay/screenshotimagerendering.cpp

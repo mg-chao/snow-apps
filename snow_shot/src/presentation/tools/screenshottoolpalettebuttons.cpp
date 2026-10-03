@@ -1284,6 +1284,18 @@ void setScreenshotToolPaletteItemTranslationSource(
     item->setData(text.translated(), adqt::widgets::AdSelect::DefaultLabelRole);
 }
 
+void setScreenshotToolPaletteItemTranslationSource(QStandardItem* item, const char* source,
+                                                   const char* context) {
+    if (item == nullptr || source == nullptr || source[0] == '\0') {
+        return;
+    }
+    item->setData(QString::fromUtf8(source), kItemTranslationSourceRole);
+    item->setData(QStringList{}, kItemTranslationArgumentsRole);
+    item->setData(QString::fromLatin1(context), kItemTranslationContextRole);
+    item->setData(QCoreApplication::translate(context, source),
+                  adqt::widgets::AdSelect::DefaultLabelRole);
+}
+
 void retranslateScreenshotToolPalette(QWidget* root) {
     if (root == nullptr) {
         return;

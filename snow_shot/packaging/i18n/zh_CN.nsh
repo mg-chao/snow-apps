@@ -1,4 +1,4 @@
-LangString SnowShotClosePrompt 2052 "${SNOW_SHOT_INSTALLER_PRODUCT_NAME} 正在运行。是否关闭它以继续安装？未保存的截图和录屏可能会丢失。"
+LangString SnowShotClosePrompt 2052 "${SNOW_SHOT_INSTALLER_PRODUCT_NAME} 正在运行。是否关闭它以继续安装？未保存的截图和屏幕录制可能会丢失。"
 LangString SnowShotCloseFailed 2052 "安装程序无法关闭 ${SNOW_SHOT_INSTALLER_PRODUCT_NAME} 或检查其运行状态。请手动关闭 ${SNOW_SHOT_INSTALLER_PRODUCT_NAME}，然后重新运行安装程序。"
 LangString SnowShotLanguageTitle 2052 "${SNOW_SHOT_INSTALLER_PRODUCT_NAME} 安装语言"
 LangString SnowShotLanguagePrompt 2052 "请选择语言。"

@@ -70,9 +70,10 @@ int main(int argc, char** argv) {
             "app font is registered in interface settings");
     const auto* page = registry.catalog().page(QStringLiteral("general-appearance"));
     const auto& general = page->sections.first();
-    require(general.items.last().id == field->id && general.items.at(general.items.size() - 2).id ==
-                                                        QStringLiteral("interface.language"),
-            "app font follows language in General");
+    require(general.items.last().id == field->id &&
+                general.items.at(general.items.size() - 2).id ==
+                    QStringLiteral("interface.theme-primary-color"),
+            "app font follows theme controls in Appearance");
     QLabel existing(QStringLiteral("Existing label"));
     QMenu menu;
     const auto binding = settings::SettingsSelectBinding::AppFont;

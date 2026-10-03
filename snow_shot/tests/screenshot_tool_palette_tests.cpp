@@ -1,6 +1,7 @@
 #include "physical_key_test_support.h"
 #include "snow_shot/presentation/screenshotregiontypecontrol.h"
 #include "snow_shot/presentation/screenshottoolpalette.h"
+#include "snow_shot/ocrtextoptions.h"
 #include "snow_shot/presentation/screenshotcanvastoolstyles.h"
 #include "snow_shot/presentation/screenshotstylebinding.h"
 #include "snow_shot/presentation/screenshotdefaultstyles.h"
@@ -5724,17 +5725,31 @@ void ocrToolReplacesSelectionActionToolbarContents() {
     require(formattingSelect->currentValue().toString() == QStringLiteral("smart"),
             "OCR formatting offers Smart Typesetting");
     auto& language = snow_shot::presentation::LanguageManager::instance();
+    punctuationSelect->setCurrentValue(QStringLiteral("full"));
+    const auto checkSharedOptions = [](const adqt::widgets::AdSelect* select,
+                                       const QVector<snow_shot::OcrTextOption>& sharedOptions) {
+        require(select->model()->rowCount() == sharedOptions.size(),
+                "OCR toolbar exposes every shared settings choice");
+        for (int row = 0; row < sharedOptions.size(); ++row) {
+            const auto& option = sharedOptions.at(row);
+            const auto index = select->model()->index(row, 0);
+            require(
+                index.data(adqt::widgets::AdSelect::DefaultValueRole).toString() == option.value &&
+                    index.data(adqt::widgets::AdSelect::DefaultLabelRole).toString() ==
+                        QCoreApplication::translate(snow_shot::kOcrTextOptionsTranslationContext,
+                                                    option.label),
+                "OCR toolbar uses shared values, order and localized labels");
+        }
+    };
     for (const QString& locale :
          {QStringLiteral("zh_CN"), QStringLiteral("zh_TW"), QStringLiteral("en_US")}) {
         require(language.setLanguage(locale), "switch OCR formatting language");
         QCoreApplication::processEvents();
-        require(formattingSelect->model()
-                            ->index(2, 0)
-                            .data(adqt::widgets::AdSelect::DefaultLabelRole)
-                            .toString() ==
-                        QCoreApplication::translate("ScreenshotToolPalette", "Smart Typesetting") &&
-                    formattingSelect->currentValue().toString() == QStringLiteral("smart"),
-                "Smart Typesetting retranslates without changing the selected format");
+        checkSharedOptions(formattingSelect, snow_shot::ocrFormattingOptions());
+        checkSharedOptions(punctuationSelect, snow_shot::ocrPunctuationOptions());
+        require(formattingSelect->currentValue().toString() == QStringLiteral("smart") &&
+                    punctuationSelect->currentValue().toString() == QStringLiteral("full"),
+                "OCR options retranslate without changing either selected transform");
     }
     formattingSelect->setCurrentValue(QStringLiteral("remove"));
     punctuationSelect->setCurrentValue(QStringLiteral("full"));
@@ -5745,6 +5760,18 @@ void ocrToolReplacesSelectionActionToolbarContents() {
     require(!formattingSelect->currentValue().isValid() &&
                 !punctuationSelect->currentValue().isValid(),
             "published manual-edit state should clear both OCR transform selections");
+    QString requestedFormatting;
+    QString requestedPunctuation;
+    QObject::connect(&palette, &ScreenshotToolPalette::textFormattingRequested,
+                     [&requestedFormatting](const QString& value) { requestedFormatting = value; });
+    QObject::connect(
+        &palette, &ScreenshotToolPalette::textPunctuationRequested,
+        [&requestedPunctuation](const QString& value) { requestedPunctuation = value; });
+    formattingSelect->setCurrentValue(QStringLiteral("none"));
+    punctuationSelect->setCurrentValue(QStringLiteral("none"));
+    require(requestedFormatting == QStringLiteral("none") &&
+                requestedPunctuation == QStringLiteral("none"),
+            "both toolbars can explicitly request the shared None choice");
     palette.setTextEditingState(true, true);
     palette.setTextTranslationState(true, false, false, false, false, false);
     require(edit->buttonStyle() == adqt::widgets::AdButton::ButtonStyle::Solid &&
@@ -8378,7 +8405,7 @@ void drawTemplateSelectSavesFiltersInsertsAndDeletes() {
     auto* layout =
         select == nullptr ? nullptr : qobject_cast<QBoxLayout*>(select->parentWidget()->layout());
     require(select != nullptr && opacity != nullptr && layout != nullptr &&
-                select->placeholder() == QStringLiteral("Draw Template") &&
+                select->placeholder() == QStringLiteral("Annotation Template") &&
                 select->searchEnabled() && select->isEnabled() &&
                 layout->indexOf(select) < layout->indexOf(opacity),
             "Draw Template should be an enabled searchable select left of opacity");
@@ -8418,7 +8445,7 @@ void drawTemplateSelectSavesFiltersInsertsAndDeletes() {
     require(language.setLanguage(QStringLiteral("zh_CN")),
             "Draw Template popup should load Simplified Chinese");
     QCoreApplication::processEvents();
-    require(select->placeholder() == QStringLiteral("绘图模板") &&
+    require(select->placeholder() == QStringLiteral("标注模板") &&
                 add->text() == QStringLiteral("添加模板"),
             "an open Draw Template popup should retranslate its field and footer");
     require(language.setLanguage(QStringLiteral("en_US")),
@@ -8442,7 +8469,7 @@ void drawTemplateSelectSavesFiltersInsertsAndDeletes() {
             "Draw Template modal should load Traditional Chinese");
     QCoreApplication::processEvents();
     require(modal->windowTitle() == QStringLiteral("新增範本") &&
-                select->placeholder() == QStringLiteral("繪圖範本"),
+                select->placeholder() == QStringLiteral("標註範本"),
             "an open Add Template modal should retranslate without closing");
     require(language.setLanguage(QStringLiteral("en_US")),
             "Draw Template test should restore English");

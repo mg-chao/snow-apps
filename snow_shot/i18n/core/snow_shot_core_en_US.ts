@@ -457,10 +457,6 @@ so every moment on screen can be expressed clearly and shared easily.</translati
             <translation>%1 cannot be registered as a global shortcut, try another key</translation>
         </message>
         <message>
-            <source>%1 cannot be used as a drawing shortcut, try another key</source>
-            <translation>%1 cannot be used as a drawing shortcut, try another key</translation>
-        </message>
-        <message>
             <source>%1 cannot be used as a pinned window shortcut, try another key</source>
             <translation>%1 cannot be used as a pinned window shortcut, try another key</translation>
         </message>
@@ -473,8 +469,12 @@ so every moment on screen can be expressed clearly and shared easily.</translati
             <translation>%1 cannot be used as a screenshot shortcut, try another key</translation>
         </message>
         <message>
-            <source>%1 is already assigned to another drawing tool, try another key</source>
-            <translation>%1 is already assigned to another drawing tool, try another key</translation>
+            <source>%1 cannot be used as an annotation shortcut, try another key</source>
+            <translation>%1 cannot be used as an annotation shortcut, try another key</translation>
+        </message>
+        <message>
+            <source>%1 is already assigned to another annotation tool, try another key</source>
+            <translation>%1 is already assigned to another annotation tool, try another key</translation>
         </message>
         <message>
             <source>%1 is already assigned to another pinned window action, try another key</source>
@@ -497,8 +497,8 @@ so every moment on screen can be expressed clearly and shared easily.</translati
             <translation>Global shortcuts are not supported on this platform</translation>
         </message>
         <message>
-            <source>Invalid drawing shortcut</source>
-            <translation>Invalid drawing shortcut</translation>
+            <source>Invalid annotation shortcut</source>
+            <translation>Invalid annotation shortcut</translation>
         </message>
         <message>
             <source>Invalid global shortcut</source>
@@ -525,10 +525,6 @@ so every moment on screen can be expressed clearly and shared easily.</translati
             <translation>This key cannot be registered as a global shortcut, try another key</translation>
         </message>
         <message>
-            <source>This key cannot be used as a drawing shortcut, try another key</source>
-            <translation>This key cannot be used as a drawing shortcut, try another key</translation>
-        </message>
-        <message>
             <source>This key cannot be used as a pinned window shortcut, try another key</source>
             <translation>This key cannot be used as a pinned window shortcut, try another key</translation>
         </message>
@@ -541,8 +537,12 @@ so every moment on screen can be expressed clearly and shared easily.</translati
             <translation>This key cannot be used as a screenshot shortcut, try another key</translation>
         </message>
         <message>
-            <source>This key is already assigned to another drawing tool, try another key</source>
-            <translation>This key is already assigned to another drawing tool, try another key</translation>
+            <source>This key cannot be used as an annotation shortcut, try another key</source>
+            <translation>This key cannot be used as an annotation shortcut, try another key</translation>
+        </message>
+        <message>
+            <source>This key is already assigned to another annotation tool, try another key</source>
+            <translation>This key is already assigned to another annotation tool, try another key</translation>
         </message>
         <message>
             <source>This key is already assigned to another pinned window action, try another key</source>

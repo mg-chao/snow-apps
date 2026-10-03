@@ -64,6 +64,10 @@
             <translation>Animated recording formats do not contain audio</translation>
         </message>
         <message>
+            <source>Annotation Template</source>
+            <translation>Annotation Template</translation>
+        </message>
+        <message>
             <source>Arabic numerals</source>
             <translation>Arabic numerals</translation>
         </message>
@@ -200,12 +204,12 @@
             <translation>Could not capture selected elements</translation>
         </message>
         <message>
-            <source>Could not delete the draw template</source>
-            <translation>Could not delete the draw template</translation>
+            <source>Could not delete the annotation template</source>
+            <translation>Could not delete the annotation template</translation>
         </message>
         <message>
-            <source>Could not save the draw template</source>
-            <translation>Could not save the draw template</translation>
+            <source>Could not save the annotation template</source>
+            <translation>Could not save the annotation template</translation>
         </message>
         <message>
             <source>Cross-line fill</source>
@@ -288,12 +292,12 @@
             <translation>Delete</translation>
         </message>
         <message>
-            <source>Delete Draw Template</source>
-            <translation>Delete Draw Template</translation>
+            <source>Delete Annotation Template</source>
+            <translation>Delete Annotation Template</translation>
         </message>
         <message>
-            <source>Delete draw template "%1"? This action cannot be undone.</source>
-            <translation>Delete draw template "%1"? This action cannot be undone.</translation>
+            <source>Delete annotation template "%1"? This action cannot be undone.</source>
+            <translation>Delete annotation template "%1"? This action cannot be undone.</translation>
         </message>
         <message>
             <source>Delete selected elements</source>
@@ -330,10 +334,6 @@
         <message>
             <source>Drag toolbar</source>
             <translation>Drag toolbar</translation>
-        </message>
-        <message>
-            <source>Draw Template</source>
-            <translation>Draw Template</translation>
         </message>
         <message>
             <source>Edit</source>
@@ -476,10 +476,6 @@
             <translation>Freehand region</translation>
         </message>
         <message>
-            <source>Full-width</source>
-            <translation>Full-width</translation>
-        </message>
-        <message>
             <source>Gaussian blur</source>
             <translation>Gaussian blur</translation>
         </message>
@@ -490,10 +486,6 @@
         <message>
             <source>Green</source>
             <translation>Green</translation>
-        </message>
-        <message>
-            <source>Half-width</source>
-            <translation>Half-width</translation>
         </message>
         <message>
             <source>Hide selection toolbar</source>
@@ -542,10 +534,6 @@
         <message>
             <source>Jump to Translation Page</source>
             <translation>Jump to Translation Page</translation>
-        </message>
-        <message>
-            <source>Keep line breaks</source>
-            <translation>Keep line breaks</translation>
         </message>
         <message>
             <source>Keyboard Background Color</source>
@@ -820,10 +808,6 @@
             <translation>Redo</translation>
         </message>
         <message>
-            <source>Remove line breaks</source>
-            <translation>Remove line breaks</translation>
-        </message>
-        <message>
             <source>Reset</source>
             <translation>Reset</translation>
         </message>
@@ -946,10 +930,6 @@
         <message>
             <source>Smart Erase</source>
             <translation>Smart Erase</translation>
-        </message>
-        <message>
-            <source>Smart Typesetting</source>
-            <translation>Smart Typesetting</translation>
         </message>
         <message>
             <source>Solid arrow stroke</source>

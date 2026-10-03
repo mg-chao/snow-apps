@@ -141,15 +141,16 @@ shortcutValidationMessage(const snow_shot::presentation::GlobalShortcutValidatio
         if (validation.failureReason ==
             snow_shot::presentation::GlobalShortcutFailureReason::AlreadyInUse) {
             return displayShortcut.isEmpty()
-                       ? QObject::tr("This key is already assigned to another drawing tool, try "
+                       ? QObject::tr("This key is already assigned to another annotation tool, try "
                                      "another key")
                        : QObject::tr(
-                             "%1 is already assigned to another drawing tool, try another key")
+                             "%1 is already assigned to another annotation tool, try another key")
                              .arg(displayShortcut);
         }
         return displayShortcut.isEmpty()
-                   ? QObject::tr("This key cannot be used as a drawing shortcut, try another key")
-                   : QObject::tr("%1 cannot be used as a drawing shortcut, try another key")
+                   ? QObject::tr(
+                         "This key cannot be used as an annotation shortcut, try another key")
+                   : QObject::tr("%1 cannot be used as an annotation shortcut, try another key")
                          .arg(displayShortcut);
     }
     if (validationScope == ShortcutKeyRowConfig::ValidationScope::PinnedWindowShortcut) {
@@ -208,7 +209,7 @@ class ShortcutConfigInfoButton final : public adqt::widgets::AdButton {
         if (validationScope == ShortcutKeyRowConfig::ValidationScope::ScreenshotShortcut) {
             m_info->setAccessibleName(QObject::tr("Invalid screenshot shortcut"));
         } else if (validationScope == ShortcutKeyRowConfig::ValidationScope::DrawingShortcut) {
-            m_info->setAccessibleName(QObject::tr("Invalid drawing shortcut"));
+            m_info->setAccessibleName(QObject::tr("Invalid annotation shortcut"));
         } else if (validationScope == ShortcutKeyRowConfig::ValidationScope::PinnedWindowShortcut) {
             m_info->setAccessibleName(QObject::tr("Invalid pinned window shortcut"));
         } else if (validationScope == ShortcutKeyRowConfig::ValidationScope::RecordingShortcut) {

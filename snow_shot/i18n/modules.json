@@ -85,6 +85,7 @@
     "ScreenRecordingSettingsDialog"
   ],
   "recognition": [
+    "OcrTextOptions",
     "ScreenshotImageConversionController",
     "ScreenshotImageConversionView",
     "ScreenshotOcrController",

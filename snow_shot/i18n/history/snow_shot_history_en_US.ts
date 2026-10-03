@@ -435,6 +435,10 @@
             <translation>Always on Top</translation>
         </message>
         <message>
+            <source>Annotation mode</source>
+            <translation>Annotation mode</translation>
+        </message>
+        <message>
             <source>Cancel</source>
             <translation>Cancel</translation>
         </message>
@@ -503,12 +507,8 @@
             <translation>Display text recognition results</translation>
         </message>
         <message>
-            <source>Drawing mode</source>
-            <translation>Drawing mode</translation>
-        </message>
-        <message>
-            <source>Enable drawing mode</source>
-            <translation>Enable drawing mode</translation>
+            <source>Enable annotation mode</source>
+            <translation>Enable annotation mode</translation>
         </message>
         <message>
             <source>Exit click-through mode</source>

@@ -2,6 +2,33 @@
 <!DOCTYPE TS>
 <TS version="2.1" language="en_US" sourcelanguage="en_US">
     <context>
+        <name>OcrTextOptions</name>
+        <message>
+            <source>Full-width</source>
+            <translation>Full-width</translation>
+        </message>
+        <message>
+            <source>Half-width</source>
+            <translation>Half-width</translation>
+        </message>
+        <message>
+            <source>Keep line breaks</source>
+            <translation>Keep line breaks</translation>
+        </message>
+        <message>
+            <source>None</source>
+            <translation>None</translation>
+        </message>
+        <message>
+            <source>Remove line breaks</source>
+            <translation>Remove line breaks</translation>
+        </message>
+        <message>
+            <source>Smart Typesetting</source>
+            <translation>Smart Typesetting</translation>
+        </message>
+    </context>
+    <context>
         <name>ScreenshotImageConversionController</name>
         <message>
             <source>Cancel</source>

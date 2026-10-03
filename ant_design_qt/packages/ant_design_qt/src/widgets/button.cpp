@@ -50,7 +50,8 @@ bool buttonStyleInputsEqual(const detail::ButtonStyleInput& lhs,
   return lhs.buttonStyle == rhs.buttonStyle && lhs.accentRole == rhs.accentRole &&
          lhs.sizeClass == rhs.sizeClass && lhs.flat == rhs.flat &&
          lhs.defaultButton == rhs.defaultButton && lhs.hasMenu == rhs.hasMenu &&
-         lhs.joinsEdges == rhs.joinsEdges && lhs.baseFont == rhs.baseFont;
+         lhs.joinsEdges == rhs.joinsEdges &&
+         lhs.contentPaddingEnabled == rhs.contentPaddingEnabled && lhs.baseFont == rhs.baseFont;
 }
 
 struct ButtonIconRenderState {
@@ -451,6 +452,7 @@ struct AdButton::Private {
   AccentRole accentRole = AccentRole::Neutral;
   Shape shape = Shape::Rounded;
   SizeClass sizeClass = SizeClass::Medium;
+  bool contentPaddingEnabled = true;
   IconPosition iconPosition = IconPosition::Leading;
   detail::SegmentPosition segmentPosition = detail::SegmentPosition::Standalone;
   bool interactionBackgroundVisible = true;
@@ -647,6 +649,17 @@ void AdButton::setSizeClass(SizeClass value) {
   d_->sizeClass = value;
   refreshAfterPropertyChange();
   emit sizeClassChanged(d_->sizeClass);
+}
+
+bool AdButton::contentPaddingEnabled() const { return d_->contentPaddingEnabled; }
+
+void AdButton::setContentPaddingEnabled(bool value) {
+  if (d_->contentPaddingEnabled == value) {
+    return;
+  }
+  d_->contentPaddingEnabled = value;
+  refreshAfterPropertyChange();
+  emit contentPaddingEnabledChanged(value);
 }
 
 bool AdButton::interactionBackgroundVisible() const { return d_->interactionBackgroundVisible; }
@@ -1373,6 +1386,7 @@ detail::ButtonStyleInput AdButton::buildStyleInput() const {
   input.defaultButton = isDefault();
   input.hasMenu = QPushButton::menu() != nullptr;
   input.joinsEdges = joinsLeftEdge() || joinsRightEdge();
+  input.contentPaddingEnabled = d_->contentPaddingEnabled;
   input.baseFont = font();
   return input;
 }

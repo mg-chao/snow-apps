@@ -42,8 +42,8 @@
             <translation>Cancel</translation>
         </message>
         <message>
-            <source>Could not insert the draw template</source>
-            <translation>Could not insert the draw template</translation>
+            <source>Could not insert the annotation template</source>
+            <translation>Could not insert the annotation template</translation>
         </message>
         <message>
             <source>Could not read the selected files from Finder. Please try again.</source>

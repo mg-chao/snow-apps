@@ -4,6 +4,7 @@
 #include "widgets/popover.h"
 
 #include <QApplication>
+#include <QFontMetrics>
 #include <QCursor>
 #include <QEnterEvent>
 #include <QHBoxLayout>
@@ -23,6 +24,31 @@ namespace {
 
 void require(bool condition, const char* message) {
   if (!condition) throw std::runtime_error(message);
+}
+
+void unpaddedButtonsSizeToText() {
+  using adqt::widgets::AdButton;
+  for (const auto buttonStyle : {AdButton::ButtonStyle::Text, AdButton::ButtonStyle::Link}) {
+    AdButton button(QStringLiteral("Related settings"));
+    button.setButtonStyle(buttonStyle);
+    const QSize padded = button.sizeHint();
+    adqt::widgets::detail::ButtonStyleInput input;
+    input.buttonStyle = buttonStyle;
+    input.baseFont = button.font();
+    const auto style = adqt::widgets::detail::resolveButtonVisualStyle(input);
+    const QFontMetrics metrics(style.metrics.font);
+    button.setContentPaddingEnabled(false);
+    require(button.sizeHint() == QSize(metrics.horizontalAdvance(button.text()), metrics.height()),
+            "unpadded text and link buttons must fit their content");
+    require(button.minimumSizeHint() == button.sizeHint(),
+            "unpadded buttons must not reserve their old minimum width");
+    button.setContentPaddingEnabled(true);
+    require(button.sizeHint() == padded, "restoring padding must refresh the size hint cache");
+    button.setButtonStyle(AdButton::ButtonStyle::Outline);
+    const QSize bordered = button.sizeHint();
+    button.setContentPaddingEnabled(false);
+    require(button.sizeHint() == bordered, "bordered buttons retain their control dimensions");
+  }
 }
 
 void cursorOverlayMayBeDestroyedBeforeButton() {
@@ -185,6 +211,7 @@ int main(int argc, char* argv[]) {
                 successStyle.hover.text == QColor("#234567") &&
                 successStyle.active.text == QColor("#345678"),
             "success buttons must use semantic success tokens");
+    unpaddedButtonsSizeToText();
     activationMayDestroyButton();
     cursorOverlayMayBeDestroyedBeforeButton();
     retainedPopoverButtonsForgetHover();

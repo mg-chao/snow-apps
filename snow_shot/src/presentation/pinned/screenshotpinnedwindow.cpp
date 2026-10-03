@@ -460,7 +460,7 @@ bool paintFirstFrameSynchronously() {
 }
 
 [[maybe_unused]] constexpr const char* kPinnedTranslations[] = {
-    QT_TRANSLATE_NOOP("ScreenshotPinnedWindow", "Enable drawing mode"),
+    QT_TRANSLATE_NOOP("ScreenshotPinnedWindow", "Enable annotation mode"),
     QT_TRANSLATE_NOOP("ScreenshotPinnedWindow", "Move window"),
     QT_TRANSLATE_NOOP("ScreenshotPinnedWindow", "Exit click-through mode"),
     QT_TRANSLATE_NOOP("ScreenshotPinnedWindow", "Close"),
@@ -933,7 +933,7 @@ ScreenshotPinnedWindow::ScreenshotPinnedWindow(QWidget* parent)
             const auto tools = snow_shot::presentation::screenshotQuickSelectionDisabledTools(
                 snow_shot::storage::DrawingSettings().quickSelectionDisabledTools());
             if (!m_runtime.setQuickSelectionDisabledTools(tools)) {
-                qWarning("Failed to apply pinned drawing quick-selection preferences");
+                qWarning("Failed to apply pinned annotation quick-selection preferences");
             }
         };
         applyDrawingPreferences();
@@ -2736,7 +2736,7 @@ void ScreenshotPinnedWindow::createUi() {
     controlsLayout->setContentsMargins(0, 0, 0, 0);
     controlsLayout->setSpacing(kControlButtonSpacing);
     m_editButton =
-        createControlButton(m_controlsPanel, "Enable drawing mode", outlined_icons::Edit(),
+        createControlButton(m_controlsPanel, "Enable annotation mode", outlined_icons::Edit(),
                             OverlayControlButton::Intent::Primary);
     m_editButton->setAttribute(Qt::WA_NativeWindow, false);
     m_editButton->setObjectName(QStringLiteral("screenshotPinnedEditButton"));
@@ -2797,8 +2797,8 @@ void ScreenshotPinnedWindow::createContextMenu() {
 
     m_contextMenu->addSeparator();
 
-    m_drawingAction = m_contextMenu->addItem(tr("Drawing mode"), outlined_icons::Edit());
-    setActionTranslationSource(m_drawingAction, "Drawing mode");
+    m_drawingAction = m_contextMenu->addItem(tr("Annotation mode"), outlined_icons::Edit());
+    setActionTranslationSource(m_drawingAction, "Annotation mode");
     m_drawingAction->setObjectName(QStringLiteral("screenshotPinnedDrawingAction"));
     m_drawingAction->setCheckable(true);
     connect(m_drawingAction, &QAction::toggled, this,
@@ -4856,7 +4856,7 @@ bool ScreenshotPinnedWindow::copyHiddenTextSelection() {
     if (QClipboard* clipboard = QApplication::clipboard()) {
         const snow_shot::storage::TextRecognitionSettings settings;
         clipboard->setText(snow_shot::presentation::applyOcrTextTransforms(
-            m_displayOcrPresentation->selectedText(), settings.defaultFormatting(),
+            *m_displayOcrPresentation, settings.defaultFormatting(),
             settings.defaultPunctuation()));
     }
     return true;
@@ -7737,7 +7737,7 @@ ScreenshotPinnedWindow::automationClipboardMimeData(bool original) const {
                m_displayOcrPresentation->hasTextSelection()) {
         const snow_shot::storage::TextRecognitionSettings settings;
         mime->setText(snow_shot::presentation::applyOcrTextTransforms(
-            m_displayOcrPresentation->selectedText(), settings.defaultFormatting(),
+            *m_displayOcrPresentation, settings.defaultFormatting(),
             settings.defaultPunctuation()));
     } else if (m_ocrMode && m_recognitionSession && m_recognitionSession->active()) {
         return m_recognitionSession->recognitionClipboardMimeData(m_displayOcrPresentation.get());

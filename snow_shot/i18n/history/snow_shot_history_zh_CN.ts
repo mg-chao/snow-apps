@@ -429,6 +429,10 @@
             <translation>始终置顶</translation>
         </message>
         <message>
+            <source>Annotation mode</source>
+            <translation>标注模式</translation>
+        </message>
+        <message>
             <source>Cancel</source>
             <translation>取消</translation>
         </message>
@@ -497,12 +501,8 @@
             <translation>显示文本识别结果</translation>
         </message>
         <message>
-            <source>Drawing mode</source>
-            <translation>绘制模式</translation>
-        </message>
-        <message>
-            <source>Enable drawing mode</source>
-            <translation>启用绘制模式</translation>
+            <source>Enable annotation mode</source>
+            <translation>启用标注模式</translation>
         </message>
         <message>
             <source>Exit click-through mode</source>

@@ -457,10 +457,6 @@ so every moment on screen can be expressed clearly and shared easily.</source>
             <translation>無法將 %1 註冊為全域快速鍵，請嘗試其他按鍵</translation>
         </message>
         <message>
-            <source>%1 cannot be used as a drawing shortcut, try another key</source>
-            <translation>%1 不能用作繪圖快速鍵，請嘗試其他按鍵</translation>
-        </message>
-        <message>
             <source>%1 cannot be used as a pinned window shortcut, try another key</source>
             <translation>%1 無法用作固定到螢幕視窗快速鍵，請嘗試其他快速鍵</translation>
         </message>
@@ -473,8 +469,12 @@ so every moment on screen can be expressed clearly and shared easily.</source>
             <translation>%1 不能用作截圖快速鍵，請嘗試其他按鍵</translation>
         </message>
         <message>
-            <source>%1 is already assigned to another drawing tool, try another key</source>
-            <translation>%1 已指派給另一個繪圖工具，請嘗試其他按鍵</translation>
+            <source>%1 cannot be used as an annotation shortcut, try another key</source>
+            <translation>%1 不能用作標註快速鍵，請嘗試其他按鍵</translation>
+        </message>
+        <message>
+            <source>%1 is already assigned to another annotation tool, try another key</source>
+            <translation>%1 已指派給另一個標註工具，請嘗試其他按鍵</translation>
         </message>
         <message>
             <source>%1 is already assigned to another pinned window action, try another key</source>
@@ -497,8 +497,8 @@ so every moment on screen can be expressed clearly and shared easily.</source>
             <translation>此平台不支援全域快速鍵</translation>
         </message>
         <message>
-            <source>Invalid drawing shortcut</source>
-            <translation>無效的繪圖快速鍵</translation>
+            <source>Invalid annotation shortcut</source>
+            <translation>無效的標註快速鍵</translation>
         </message>
         <message>
             <source>Invalid global shortcut</source>
@@ -525,10 +525,6 @@ so every moment on screen can be expressed clearly and shared easily.</source>
             <translation>無法將此按鍵註冊為全域快速鍵，請嘗試其他按鍵</translation>
         </message>
         <message>
-            <source>This key cannot be used as a drawing shortcut, try another key</source>
-            <translation>此按鍵不能用作繪圖快速鍵，請嘗試其他按鍵</translation>
-        </message>
-        <message>
             <source>This key cannot be used as a pinned window shortcut, try another key</source>
             <translation>此快速鍵無法用作固定到螢幕視窗快速鍵，請嘗試其他快速鍵</translation>
         </message>
@@ -541,8 +537,12 @@ so every moment on screen can be expressed clearly and shared easily.</source>
             <translation>此按鍵不能用作截圖快速鍵，請嘗試其他按鍵</translation>
         </message>
         <message>
-            <source>This key is already assigned to another drawing tool, try another key</source>
-            <translation>此按鍵已指派給另一個繪圖工具，請嘗試其他按鍵</translation>
+            <source>This key cannot be used as an annotation shortcut, try another key</source>
+            <translation>此按鍵不能用作標註快速鍵，請嘗試其他按鍵</translation>
+        </message>
+        <message>
+            <source>This key is already assigned to another annotation tool, try another key</source>
+            <translation>此按鍵已指派給另一個標註工具，請嘗試其他按鍵</translation>
         </message>
         <message>
             <source>This key is already assigned to another pinned window action, try another key</source>

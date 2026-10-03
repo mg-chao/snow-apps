@@ -64,6 +64,10 @@
             <translation>動畫錄製格式不包含音訊</translation>
         </message>
         <message>
+            <source>Annotation Template</source>
+            <translation>標註範本</translation>
+        </message>
+        <message>
             <source>Arabic numerals</source>
             <translation>阿拉伯數字</translation>
         </message>
@@ -200,12 +204,12 @@
             <translation>無法擷取所選元素</translation>
         </message>
         <message>
-            <source>Could not delete the draw template</source>
-            <translation>無法刪除繪圖範本</translation>
+            <source>Could not delete the annotation template</source>
+            <translation>無法刪除標註範本</translation>
         </message>
         <message>
-            <source>Could not save the draw template</source>
-            <translation>無法儲存繪圖範本</translation>
+            <source>Could not save the annotation template</source>
+            <translation>無法儲存標註範本</translation>
         </message>
         <message>
             <source>Cross-line fill</source>
@@ -288,12 +292,12 @@
             <translation>刪除</translation>
         </message>
         <message>
-            <source>Delete Draw Template</source>
-            <translation>刪除繪圖範本</translation>
+            <source>Delete Annotation Template</source>
+            <translation>刪除標註範本</translation>
         </message>
         <message>
-            <source>Delete draw template "%1"? This action cannot be undone.</source>
-            <translation>刪除繪圖範本「%1」？此操作無法復原。</translation>
+            <source>Delete annotation template "%1"? This action cannot be undone.</source>
+            <translation>刪除標註範本「%1」？此操作無法復原。</translation>
         </message>
         <message>
             <source>Delete selected elements</source>
@@ -330,10 +334,6 @@
         <message>
             <source>Drag toolbar</source>
             <translation>拖曳工具列</translation>
-        </message>
-        <message>
-            <source>Draw Template</source>
-            <translation>繪圖範本</translation>
         </message>
         <message>
             <source>Edit</source>
@@ -476,10 +476,6 @@
             <translation>自由繪製區域</translation>
         </message>
         <message>
-            <source>Full-width</source>
-            <translation>全形</translation>
-        </message>
-        <message>
             <source>Gaussian blur</source>
             <translation>高斯模糊</translation>
         </message>
@@ -490,10 +486,6 @@
         <message>
             <source>Green</source>
             <translation>綠色</translation>
-        </message>
-        <message>
-            <source>Half-width</source>
-            <translation>半形</translation>
         </message>
         <message>
             <source>Hide selection toolbar</source>
@@ -542,10 +534,6 @@
         <message>
             <source>Jump to Translation Page</source>
             <translation>跳轉至翻譯頁面</translation>
-        </message>
-        <message>
-            <source>Keep line breaks</source>
-            <translation>保留換行</translation>
         </message>
         <message>
             <source>Keyboard Background Color</source>
@@ -820,10 +808,6 @@
             <translation>重做</translation>
         </message>
         <message>
-            <source>Remove line breaks</source>
-            <translation>移除換行</translation>
-        </message>
-        <message>
             <source>Reset</source>
             <translation>重設</translation>
         </message>
@@ -946,10 +930,6 @@
         <message>
             <source>Smart Erase</source>
             <translation>智慧擦除</translation>
-        </message>
-        <message>
-            <source>Smart Typesetting</source>
-            <translation>智慧排版</translation>
         </message>
         <message>
             <source>Solid arrow stroke</source>

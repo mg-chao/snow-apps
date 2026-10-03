@@ -749,7 +749,7 @@ void ScreenshotController::Impl::reloadDrawingPreferences() {
         snow_shot::storage::DrawingSettings().quickSelectionDisabledTools());
     m_quickSelectionDisabledTools = tools;
     if (!m_canvasRuntime.setQuickSelectionDisabledTools(tools)) {
-        qWarning("Failed to apply screenshot drawing quick-selection preferences");
+        qWarning("Failed to apply screenshot annotation quick-selection preferences");
     }
     if (m_presentationServices != nullptr) {
         m_presentationServices->setQuickSelectionDisabledTools(tools);
@@ -1478,66 +1478,61 @@ void ScreenshotController::Impl::createSelectorWorkflow() {
 }
 
 void ScreenshotController::Impl::createToolCommandWorkflow() {
-    m_toolCommandWorkflow =
-        std::make_unique<ScreenshotToolCommandWorkflow>(ScreenshotToolCommandWorkflowContext{
-            m_captureState,
-            ScreenshotToolCommandActions{
-                [this]() { return m_selectorCoordinator->ready(); },
-                [this]() { m_selectorWorkflow->startRefresh(); },
-                [this](const QPoint& physicalPoint) {
-                    static_cast<void>(m_selectorWorkflow->updateSelectionAt(physicalPoint));
-                },
-                [this]() { m_selectorWorkflow->clearSelection(); },
-                [this](bool enabled) {
-                    m_overlayCoordinator->setCanvasInteractionEnabled(m_displaySession, enabled);
-                },
-                [this](SnowCanvasTool tool) {
-                    m_overlayCoordinator->setCanvasTool(m_displaySession, tool);
-                },
-                [this](SnowCanvasShapeStyle* outStyle) {
-                    return m_overlayCoordinator->tryCurrentRectangleStyle(m_displaySession,
-                                                                          outStyle);
-                },
-                [this](const SnowCanvasShapeStyle& style, quint32 properties,
-                       SnowCanvasShapeKind kind) {
-                    m_overlayCoordinator->setShapeStylePatch(m_displaySession, style, properties,
-                                                             kind);
-                },
-                [this](const SnowCanvasFilterStyle& style, quint32 properties) {
-                    m_overlayCoordinator->setFilterStyle(m_displaySession, style, properties);
-                },
-                [this](const SnowCanvasWatermarkConfig& config) {
-                    m_overlayCoordinator->setWatermarkConfig(m_displaySession, config);
-                },
-                [this](const SnowCanvasSpotlightConfig& config) {
-                    m_overlayCoordinator->setSpotlightConfig(m_displaySession, config);
-                },
-                [this](const SnowCanvasTextStyle& style, quint32 properties) {
-                    m_overlayCoordinator->setTextStyle(m_displaySession, style, properties);
-                },
-                [this](const SnowCanvasSerialNumberStyle& style,
-                       std::optional<quint32> properties) {
-                    m_overlayCoordinator->setSerialNumberStyle(m_displaySession, style, properties);
-                },
-                [this](qint64 delta) {
-                    m_overlayCoordinator->adjustSelectedSerialNumbers(m_displaySession, delta);
-                },
-                [this]() {
-                    m_overlayCoordinator->createTextForSelectedSerialNumber(m_displaySession);
-                },
-                [this](int direction) {
-                    return m_overlayCoordinator->stepToolbarStrokeWidth(direction);
-                },
-                [this]() { m_presentationServices->updateOverlayState(); },
-                [this]() { m_presentationServices->updateOverlayCursors(); },
-                [this]() { m_presentationServices->raiseToolbarForCanvasInteraction(); },
+    m_toolCommandWorkflow = std::make_unique<
+        ScreenshotToolCommandWorkflow>(ScreenshotToolCommandWorkflowContext{
+        m_captureState,
+        ScreenshotToolCommandActions{
+            [this]() { return m_selectorCoordinator->ready(); },
+            [this]() { m_selectorWorkflow->startRefresh(); },
+            [this](const QPoint& physicalPoint) {
+                static_cast<void>(m_selectorWorkflow->updateSelectionAt(physicalPoint));
             },
-            m_displaySession,
-            m_geometry,
-            m_interaction,
-            m_selection,
-            m_intelligentSelection,
-        });
+            [this]() { m_selectorWorkflow->clearSelection(); },
+            [this](bool enabled) {
+                m_overlayCoordinator->setCanvasInteractionEnabled(m_displaySession, enabled);
+            },
+            [this](SnowCanvasTool tool) {
+                m_overlayCoordinator->setCanvasTool(m_displaySession, tool);
+            },
+            [this](SnowCanvasShapeStyle* outStyle) {
+                return m_overlayCoordinator->tryCurrentRectangleStyle(m_displaySession, outStyle);
+            },
+            [this](const SnowCanvasShapeStyle& style, quint32 properties,
+                   SnowCanvasShapeKind kind) {
+                m_overlayCoordinator->setShapeStylePatch(m_displaySession, style, properties, kind);
+            },
+            [this](const SnowCanvasFilterStyle& style, quint32 properties) {
+                m_overlayCoordinator->setFilterStyle(m_displaySession, style, properties);
+            },
+            [this](const SnowCanvasWatermarkConfig& config) {
+                m_overlayCoordinator->setWatermarkConfig(m_displaySession, config);
+            },
+            [this](const SnowCanvasSpotlightConfig& config) {
+                m_overlayCoordinator->setSpotlightConfig(m_displaySession, config);
+            },
+            [this](const SnowCanvasTextStyle& style, quint32 properties) {
+                m_overlayCoordinator->setTextStyle(m_displaySession, style, properties);
+            },
+            [this](const SnowCanvasSerialNumberStyle& style, std::optional<quint32> properties) {
+                m_overlayCoordinator->setSerialNumberStyle(m_displaySession, style, properties);
+            },
+            [this](qint64 delta) {
+                m_overlayCoordinator->adjustSelectedSerialNumbers(m_displaySession, delta);
+            },
+            [this]() { m_overlayCoordinator->createTextForSelectedSerialNumber(m_displaySession); },
+            [this](int direction) {
+                return m_overlayCoordinator->stepToolbarStrokeWidth(direction);
+            },
+            [this]() { m_presentationServices->updateOverlayState(); },
+            [this]() { m_presentationServices->updateOverlayCursors(); },
+            [this]() { m_presentationServices->raiseToolbarForCanvasInteraction(); },
+        },
+        m_displaySession,
+        m_geometry,
+        m_interaction,
+        m_selection,
+        m_intelligentSelection,
+    });
 }
 
 void ScreenshotController::Impl::createCaptureRuntimeAdapter() {
@@ -5959,9 +5954,10 @@ void ScreenshotController::Impl::insertDrawTemplate(const QByteArray& payload) {
     if (!m_selection.hasPixelSelection() || overlay == nullptr || overlay->canvas() == nullptr ||
         !overlay->canvas()->insertDrawTemplate(payload, selection.center())) {
         if (m_messages != nullptr) {
-            m_messages->error(QStringLiteral("draw-template"),
-                              QCoreApplication::translate("ScreenshotController",
-                                                          "Could not insert the draw template"));
+            m_messages->error(
+                QStringLiteral("draw-template"),
+                QCoreApplication::translate("ScreenshotController",
+                                            "Could not insert the annotation template"));
         }
     }
 }

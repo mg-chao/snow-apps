@@ -1,5 +1,6 @@
 #include "snow_shot/globalmouseactivationkeys.h"
 #include "snow_shot/storage/configurationschema.h"
+#include "snow_shot/ocrtextoptions.h"
 #include "snow_shot/storage/floatingtoolbarsettings.h"
 #include "snow_shot/app/edition.h"
 #if SNOW_SHOT_ENABLE_API_CONFIGURATION
@@ -325,12 +326,12 @@ const QVector<ConfigurationSchemaEntry> kRawEntries = {
      QStringLiteral("none"),
      ConfigurationValueKind::String,
      std::nullopt,
-     {QStringLiteral("none"), QStringLiteral("keep"), QStringLiteral("remove")}},
+     ocrTextOptionValues(ocrFormattingOptions())},
     {QStringLiteral("text_recognition/default_punctuation"),
      QStringLiteral("none"),
      ConfigurationValueKind::String,
      std::nullopt,
-     {QStringLiteral("none"), QStringLiteral("half"), QStringLiteral("full")}},
+     ocrTextOptionValues(ocrPunctuationOptions())},
     {QStringLiteral("text_recognition/fill_style"),
      QStringLiteral("background_fill"),
      ConfigurationValueKind::String,

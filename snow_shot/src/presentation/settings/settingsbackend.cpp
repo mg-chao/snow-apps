@@ -1882,7 +1882,8 @@ bool BuiltInSettingsBackend::resetSection(SettingsSectionReset reset) {
     case SettingsSectionReset::ScreenshotCaptureCompatibility:
     case SettingsSectionReset::ScreenRecordingVideo:
     case SettingsSectionReset::ScreenRecordingAnimation:
-    case SettingsSectionReset::ScreenRecordingEncoding: {
+    case SettingsSectionReset::ScreenRecordingEncoding:
+    case SettingsSectionReset::PinToScreenToolbar: {
         QMap<QString, QJsonValue> defaults;
         const auto& registry = builtInSettingsRegistry();
         for (int fieldIndex : registry.fieldsForReset(reset)) {
@@ -1993,9 +1994,6 @@ bool BuiltInSettingsBackend::resetSection(SettingsSectionReset reset) {
         const bool themeAccepted = applySelectValue(
             SettingsSelectBinding::Theme,
             storage::ConfigurationSchema::defaultValue(QStringLiteral("interface/theme_mode")));
-        const bool languageAccepted = applySelectValue(
-            SettingsSelectBinding::Language,
-            storage::ConfigurationSchema::defaultValue(QStringLiteral("interface/language")));
         const bool primaryColorAccepted = applyColorValue(
             SettingsColorBinding::ThemePrimaryColor,
             storage::colorFromRgbaString(storage::ConfigurationSchema::defaultValue(
@@ -2004,8 +2002,12 @@ bool BuiltInSettingsBackend::resetSection(SettingsSectionReset reset) {
         const bool fontAccepted = applySelectValue(
             SettingsSelectBinding::AppFont,
             storage::ConfigurationSchema::defaultValue(QStringLiteral("interface/app_font")));
-        return themeAccepted && languageAccepted && primaryColorAccepted && fontAccepted;
+        return themeAccepted && primaryColorAccepted && fontAccepted;
     }
+    case SettingsSectionReset::Language:
+        return applySelectValue(
+            SettingsSelectBinding::Language,
+            storage::ConfigurationSchema::defaultValue(QStringLiteral("interface/language")));
     case SettingsSectionReset::HistoryPolicy:
         return storage::ApplicationStorage::instance().requestCaptureHistoryPolicy(
                    defaultHistoryPolicy()) &&
@@ -2246,9 +2248,6 @@ bool BuiltInSettingsBackend::resetSection(SettingsSectionReset reset) {
     }
     case SettingsSectionReset::PinToScreen:
         return storage::ApplicationStorage::instance().configuration().setValues({
-            {QStringLiteral("pin_to_screen/action_tools_layout"),
-             storage::ConfigurationSchema::defaultValue(
-                 QStringLiteral("pin_to_screen/action_tools_layout"))},
             {QStringLiteral("pin_to_screen/border_color"),
              storage::ConfigurationSchema::defaultValue(
                  QStringLiteral("pin_to_screen/border_color"))},
@@ -2319,23 +2318,6 @@ bool BuiltInSettingsBackend::resetSection(SettingsSectionReset reset) {
              storage::ConfigurationSchema::defaultValue(QStringLiteral("tray/icon"))},
             {QStringLiteral("tray/custom_icon"),
              storage::ConfigurationSchema::defaultValue(QStringLiteral("tray/custom_icon"))},
-        });
-    case SettingsSectionReset::FloatingToolbarBehavior:
-        return storage::ApplicationStorage::instance().configuration().setValues({
-            {QStringLiteral("floating_toolbar/enabled"), false},
-            {QStringLiteral("floating_toolbar/hide_in_fullscreen"), true},
-            {QStringLiteral("floating_toolbar/hide_during_capture"), true},
-        });
-    case SettingsSectionReset::FloatingToolbarLayout:
-        return storage::ApplicationStorage::instance().configuration().setValues({
-            {QStringLiteral("floating_toolbar/layout"),
-             storage::ConfigurationSchema::defaultValue(QStringLiteral("floating_toolbar/layout"))},
-            {QStringLiteral("floating_toolbar/opacity"),
-             storage::ConfigurationSchema::defaultValue(
-                 QStringLiteral("floating_toolbar/opacity"))},
-        });
-    case SettingsSectionReset::TrayBehavior:
-        return storage::ApplicationStorage::instance().configuration().setValues({
             {QStringLiteral("tray/left_click_action"),
              storage::ConfigurationSchema::defaultValue(QStringLiteral("tray/left_click_action"))},
             {QStringLiteral("tray/middle_click_action"),
@@ -2343,6 +2325,17 @@ bool BuiltInSettingsBackend::resetSection(SettingsSectionReset reset) {
                  QStringLiteral("tray/middle_click_action"))},
             {QStringLiteral("tray/menu_options"),
              storage::ConfigurationSchema::defaultValue(QStringLiteral("tray/menu_options"))},
+        });
+    case SettingsSectionReset::FloatingToolbar:
+        return storage::ApplicationStorage::instance().configuration().setValues({
+            {QStringLiteral("floating_toolbar/enabled"), false},
+            {QStringLiteral("floating_toolbar/hide_in_fullscreen"), true},
+            {QStringLiteral("floating_toolbar/hide_during_capture"), true},
+            {QStringLiteral("floating_toolbar/layout"),
+             storage::ConfigurationSchema::defaultValue(QStringLiteral("floating_toolbar/layout"))},
+            {QStringLiteral("floating_toolbar/opacity"),
+             storage::ConfigurationSchema::defaultValue(
+                 QStringLiteral("floating_toolbar/opacity"))},
         });
     case SettingsSectionReset::ScreenRecording:
         return storage::ApplicationStorage::instance().configuration().setValues({

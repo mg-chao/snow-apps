@@ -265,6 +265,18 @@ void configurationItemsRenderAsButtons() {
                     QStringLiteral("import-configuration"),
             "import configuration must use the import-config icon");
 
+#ifdef Q_OS_WIN
+    page.show();
+    flushEvents();
+    auto* directoryRow = page.findChild<QWidget*>(QStringLiteral("settings-storage-directory-row"));
+    require(directoryRow != nullptr, "data storage includes the storage-directory row");
+    require(exportRow->mapTo(&page, QPoint()).y() + exportRow->height() <=
+                    importRow->mapTo(&page, QPoint()).y() &&
+                importRow->mapTo(&page, QPoint()).y() + importRow->height() <=
+                    directoryRow->mapTo(&page, QPoint()).y(),
+            "export and import appear directly above the storage-directory row");
+#endif
+
     exportButton->click();
     auto* modal = page.findChild<adqt::widgets::AdModal*>(
         QStringLiteral("settings-modal-configuration-export"));

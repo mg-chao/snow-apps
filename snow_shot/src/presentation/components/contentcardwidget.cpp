@@ -268,7 +268,7 @@ void ContentCardWidget::showScreenshotSettings() {
 }
 
 void ContentCardWidget::showGeneralSettings() {
-    navigateTo({QStringLiteral("general-appearance"), QStringLiteral("general"), {}});
+    navigateTo({QStringLiteral("general"), QStringLiteral("language"), {}});
 }
 
 void ContentCardWidget::handleCommand(

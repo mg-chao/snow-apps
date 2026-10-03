@@ -112,7 +112,7 @@ void headerPlacesSearchAboveAntDesignTabs() {
                 filteredOptions.constFirst().value.toString() ==
                     QStringLiteral("item:interface.theme") &&
                 filteredOptions.constFirst().metadata.value(categoryRole).toString() ==
-                    QStringLiteral("General & appearance / Theme & language"),
+                    QStringLiteral("Appearance / Theme configuration"),
             "typed searches should still include matching section and item entries");
     select->setSearchText(QString());
     flushEvents();
@@ -185,7 +185,7 @@ void headerPlacesSearchAboveAntDesignTabs() {
     snow_shot::presentation::settings::SettingsLocation activatedLocation;
     QObject::connect(search, &ApplicationSearchWidget::locationActivated, &header,
                      [&activatedLocation](const auto& location) { activatedLocation = location; });
-    select->selected(QStringLiteral("page:files-history"), QStringLiteral("Files & history"));
+    select->selected(QStringLiteral("page:files-history"), QStringLiteral("Export & storage"));
     require(activatedLocation.pageId == QStringLiteral("files-history") &&
                 activatedLocation.sectionId.isEmpty() && activatedLocation.itemId.isEmpty(),
             "global search should activate a structured storage page location");

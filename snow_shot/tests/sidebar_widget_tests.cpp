@@ -99,10 +99,10 @@ void navigationUsesAntDesignDefaultsAndCollapseTriggerStyle() {
             QStringLiteral("screenshots"));
     require(capture.isValid() && capturePage != nullptr &&
                 capture.data(Qt::ToolTipRole).toString() == capturePage->title.translated() &&
-                capture.data(Qt::DisplayRole).toString() != capturePage->title.translated() &&
+                capture.data(Qt::DisplayRole).toString() == capturePage->title.translated() &&
                 capture.data(Qt::AccessibleDescriptionRole).toString() ==
                     capturePage->description.translated(),
-            "concise sidebar labels retain the full title and accessible description");
+            "sidebar labels match page titles and retain accessible descriptions");
     require(history.isValid() && history.data(Qt::DecorationRole).isValid() &&
                 history.data(adqt::widgets::AdNavigationMenu::StableIdRole).toString() ==
                     QStringLiteral("/history") &&

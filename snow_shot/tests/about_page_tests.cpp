@@ -9,6 +9,7 @@
 #include "snow_shot/presentation/settings/settingssearchindex.h"
 #include "snow_shot/presentation/styles/thememanager.h"
 #include "snow_shot/storage/applicationstorage.h"
+#include "snow_shot/storage/configurationschema.h"
 #include "snow_shot/update/updateservice.h"
 
 #include "widgets/button.h"
@@ -28,6 +29,7 @@
 #include <QImage>
 #include <QFontDatabase>
 #include <QJsonObject>
+#include <QJsonArray>
 #include <QLabel>
 #include <QKeyEvent>
 #include <QPointer>
@@ -685,8 +687,7 @@ void traySettingsAndFunctionNavigation() {
     settings::SettingsRuntimeSession session(registry, backend);
     const auto left = settings::SettingsSelectBinding::TrayLeftClickAction;
     const auto middle = settings::SettingsSelectBinding::TrayMiddleClickAction;
-    require(backend.resetSection(settings::SettingsSectionReset::TrayBehavior),
-            "reset tray settings");
+    require(backend.resetSection(settings::SettingsSectionReset::Tray), "reset tray settings");
     require(backend.selectValue(left).toString() == QStringLiteral("screenshot") &&
                 backend.selectValue(middle).toString() == QStringLiteral("screenshot_fixed"),
             "tray reset must restore distinct defaults");
@@ -705,12 +706,31 @@ void traySettingsAndFunctionNavigation() {
     require(!backend.applySelectValue(middle, QStringLiteral("invalid")) &&
                 backend.selectValue(middle).toString() == QStringLiteral("open_function_settings"),
             "invalid writes must preserve the last valid setting");
-    require(backend.resetSection(settings::SettingsSectionReset::TrayBehavior) &&
+    auto& configuration = snow_shot::storage::ApplicationStorage::instance().configuration();
+    require(
+        configuration.setValues({{QStringLiteral("tray/enabled"), false},
+                                 {QStringLiteral("tray/icon"), QStringLiteral("dark")},
+                                 {QStringLiteral("tray/custom_icon"), QStringLiteral("test.ico")},
+                                 {QStringLiteral("tray/menu_options"), QJsonArray{}}}),
+        "modify the icon and menu settings in the merged tray section");
+    require(session.reset(settings::SettingsSectionReset::Tray) &&
                 backend.selectValue(left).toString() == QStringLiteral("screenshot") &&
                 backend.selectValue(middle).toString() == QStringLiteral("screenshot_fixed"),
             "reset must restore both modified tray settings");
+    for (const QString& key :
+         {QStringLiteral("tray/enabled"), QStringLiteral("tray/icon"),
+          QStringLiteral("tray/custom_icon"), QStringLiteral("tray/menu_options")}) {
+        require(configuration.value(key) ==
+                    snow_shot::storage::ConfigurationSchema::defaultValue(key),
+                "the merged tray reset also restores its icon and menu settings");
+    }
     MainWindow window(registry, session);
     window.showGeneralSettings();
+    auto* generalCard = window.findChild<ContentCardWidget*>();
+    require(generalCard != nullptr &&
+                generalCard->currentLocation().pageId == QStringLiteral("general") &&
+                generalCard->currentLocation().sectionId == QStringLiteral("language"),
+            "the General settings action opens the new General page");
     window.hide();
     window.showScreenshotSettings();
     flushEvents();

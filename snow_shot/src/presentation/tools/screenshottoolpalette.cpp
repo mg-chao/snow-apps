@@ -1,5 +1,6 @@
 #include "snow_shot/shortcuts/shortcutbinding.h"
 #include "snow_shot/presentation/screenshottoolpalette.h"
+#include "snow_shot/ocrtextoptions.h"
 #include "../recording/recordingaudiogainpopover.h"
 #include "snow_shot/presentation/shortcutdisplaytext.h"
 
@@ -147,12 +148,7 @@ constexpr int TOOLBAR_ITEM_SPACING = 8;
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Split cells"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Reset"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Formatting"),
-    QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Keep line breaks"),
-    QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Remove line breaks"),
-    QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Smart Typesetting"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Punctuation"),
-    QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Half-width"),
-    QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Full-width"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Scrolling screenshot"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Save as file"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Quick save"),
@@ -7555,9 +7551,9 @@ void ScreenshotToolPalette::createSelectionActionFamily() {
 void ScreenshotToolPalette::createDrawTemplateSelect() {
     ScreenshotToolPaletteSelectEditorConfig config;
     config.objectName = QStringLiteral("screenshotDrawTemplateSelect");
-    config.accessibleName = QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Draw Template");
-    config.tooltip = QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Draw Template");
-    config.placeholder = QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Draw Template");
+    config.accessibleName = QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Annotation Template");
+    config.tooltip = QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Annotation Template");
+    config.placeholder = QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Annotation Template");
     config.baseWidth = TEXT_TRANSFORM_SELECT_WIDTH;
     config.compact = false;
     config.searchEnabled = true;
@@ -7811,12 +7807,12 @@ void ScreenshotToolPalette::openDeleteDrawTemplateModal(int index) {
                 const snow_shot::storage::DrawTemplateSettings settings;
                 QVector<snow_shot::storage::DrawTemplate> templates = settings.templates();
                 if (index >= templates.size() || templates.at(index) != target) {
-                    modal->setText(tr("Could not delete the draw template"));
+                    modal->setText(tr("Could not delete the annotation template"));
                     return;
                 }
                 templates.removeAt(index);
                 if (!settings.setTemplates(templates)) {
-                    modal->setText(tr("Could not delete the draw template"));
+                    modal->setText(tr("Could not delete the annotation template"));
                     return;
                 }
                 refreshDrawTemplateOptions();
@@ -7857,13 +7853,13 @@ void ScreenshotToolPalette::retranslateDrawTemplateUi() {
     if (m_drawTemplateAlert != nullptr) {
         m_drawTemplateAlert->setText(m_drawTemplateAlertKind == 1
                                          ? tr("Could not capture selected elements")
-                                         : tr("Could not save the draw template"));
+                                         : tr("Could not save the annotation template"));
         m_drawTemplateAlert->setVisible(m_drawTemplateAlertKind != 0);
     }
     if (m_deleteDrawTemplateModal != nullptr) {
-        m_deleteDrawTemplateModal->setWindowTitle(tr("Delete Draw Template"));
+        m_deleteDrawTemplateModal->setWindowTitle(tr("Delete Annotation Template"));
         m_deleteDrawTemplateModal->setText(
-            tr("Delete draw template \"%1\"? This action cannot be undone.")
+            tr("Delete annotation template \"%1\"? This action cannot be undone.")
                 .arg(m_deleteDrawTemplateName));
         m_deleteDrawTemplateModal->setAcceptText(tr("Delete"));
         m_deleteDrawTemplateModal->setRejectText(tr("Cancel"));
@@ -7930,19 +7926,19 @@ void ScreenshotToolPalette::createTextRecognitionActionFamily() {
         createScreenshotToolPaletteSelectEditor(m_selectActionPanel, formattingConfig,
                                                 actionButtonMetrics(m_physicalScale))
             .select;
-    auto* formattingModel = new QStandardItemModel(m_textFormattingSelect);
-    const char* formattingKeys[] = {"keep", "remove", "smart"};
-    const char* formattingLabels[] = {"Keep line breaks", "Remove line breaks",
-                                      "Smart Typesetting"};
-    for (int i = 0; i < 3; ++i) {
-        const ScreenshotToolPaletteTranslationText text(formattingLabels[i]);
-        auto* item = new QStandardItem(text.translated());
-        setScreenshotToolPaletteItemTranslationSource(item, text);
-        item->setData(QString::fromLatin1(formattingKeys[i]),
-                      adqt::widgets::AdSelect::DefaultValueRole);
-        formattingModel->appendRow(item);
-    }
-    m_textFormattingSelect->setModel(formattingModel);
+    const auto setTransformOptions = [](adqt::widgets::AdSelect* select,
+                                        const QVector<snow_shot::OcrTextOption>& options) {
+        auto* model = new QStandardItemModel(select);
+        for (const auto& option : options) {
+            auto* item = new QStandardItem;
+            setScreenshotToolPaletteItemTranslationSource(
+                item, option.label, snow_shot::kOcrTextOptionsTranslationContext);
+            item->setData(option.value, adqt::widgets::AdSelect::DefaultValueRole);
+            model->appendRow(item);
+        }
+        select->setModel(model);
+    };
+    setTransformOptions(m_textFormattingSelect, snow_shot::ocrFormattingOptions());
     m_textFormattingSelect->setAllowClear(true);
     m_selectActionLayout->addWidget(m_textFormattingSelect);
     m_textActionSpacers.push_back(addStyleToolbarSpacing(m_selectActionLayout, STYLE_ITEM_SPACING));
@@ -7956,8 +7952,7 @@ void ScreenshotToolPalette::createTextRecognitionActionFamily() {
         createScreenshotToolPaletteSelectEditor(m_selectActionPanel, punctuationConfig,
                                                 actionButtonMetrics(m_physicalScale))
             .select;
-    m_textPunctuationSelect->setOptions(
-        {{QStringLiteral("half"), tr("Half-width")}, {QStringLiteral("full"), tr("Full-width")}});
+    setTransformOptions(m_textPunctuationSelect, snow_shot::ocrPunctuationOptions());
     m_textPunctuationSelect->setAllowClear(true);
     m_selectActionLayout->addWidget(m_textPunctuationSelect);
     m_textActionSpacers.push_back(addStyleToolbarSpacing(m_selectActionLayout, STYLE_ITEM_SPACING));

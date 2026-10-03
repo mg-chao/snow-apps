@@ -4,6 +4,7 @@
 #include "theme/theme_color_utils.h"
 
 #include <QHash>
+#include <QFontMetrics>
 
 #include <algorithm>
 #include <cstddef>
@@ -633,6 +634,11 @@ ButtonVisualStyle resolveButtonVisualStyle(const ButtonStyleInput& input,
 
   style.role = resolveRole(input);
   style.metrics = resolveMetrics(input, map);
+  if (style.role.unbordered && !input.contentPaddingEnabled) {
+    style.metrics.horizontalPadding = 0;
+    style.metrics.borderWidth = 0;
+    style.metrics.height = QFontMetrics(style.metrics.font).height();
+  }
 
   const ColorFamily family = makeFamily(style.role.accentRole, map, seed);
   applyVariantStyle(style, style.role, family, map);

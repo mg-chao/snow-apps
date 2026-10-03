@@ -145,11 +145,9 @@ void verifySettings() {
         session.applySwitchValue(settings::SettingsSwitchBinding::FloatingToolbarEnabled, true) &&
             stored.enabled(),
         "settings runtime writes visibility");
-    require(backend.resetSection(settings::SettingsSectionReset::FloatingToolbarBehavior) &&
+    require(backend.resetSection(settings::SettingsSectionReset::FloatingToolbar) &&
                 !stored.enabled(),
-            "behavior reset turns toolbar off");
-    require(backend.resetSection(settings::SettingsSectionReset::FloatingToolbarLayout),
-            "layout reset succeeds");
+            "the unified toolbar reset turns the toolbar off");
     require(stored.opacity() == 50, "interface section reset restores default toolbar opacity");
     require(storage::ScreenshotToolbarSettings().layout(
                 storage::ScreenshotToolbarLayoutKind::FloatingTools) == defaults,
@@ -158,18 +156,13 @@ void verifySettings() {
     require(catalog.validationErrors().isEmpty(), "settings catalog validates");
     const auto* desktopTools = catalog.page(QStringLiteral("desktop-tools"));
     require(desktopTools != nullptr, "desktop tools settings page exists");
-    auto after = [](const auto& sections, const QString& before, const QString& next) {
-        for (qsizetype index = 1; index < sections.size(); ++index)
-            if (sections[index - 1].id == before && sections[index].id == next)
-                return true;
-        return false;
-    };
-    require(after(desktopTools->sections, QStringLiteral("tray-settings"),
-                  QStringLiteral("floating-toolbar-settings")),
-            "floating toolbar behavior follows tray actions");
-    require(after(desktopTools->sections, QStringLiteral("floating-toolbar-settings"),
-                  QStringLiteral("floating-toolbar")),
-            "floating toolbar layout follows its behavior");
+    require(desktopTools->sections.size() == 2 &&
+                desktopTools->sections.at(0).id == QStringLiteral("tray") &&
+                desktopTools->sections.at(1).id == QStringLiteral("floating-toolbar") &&
+                desktopTools->sections.at(1).items.size() == 3 &&
+                desktopTools->sections.at(1).items.at(0).id ==
+                    QStringLiteral("floating-toolbar.enabled"),
+            "the unified floating toolbar section follows the unified tray section");
 }
 void verifyOpacity() {
     const storage::FloatingToolbarSettings stored;

@@ -2,6 +2,33 @@
 <!DOCTYPE TS>
 <TS version="2.1" language="zh_TW" sourcelanguage="en_US">
     <context>
+        <name>OcrTextOptions</name>
+        <message>
+            <source>Full-width</source>
+            <translation>全形</translation>
+        </message>
+        <message>
+            <source>Half-width</source>
+            <translation>半形</translation>
+        </message>
+        <message>
+            <source>Keep line breaks</source>
+            <translation>保留換行</translation>
+        </message>
+        <message>
+            <source>None</source>
+            <translation>無</translation>
+        </message>
+        <message>
+            <source>Remove line breaks</source>
+            <translation>移除換行</translation>
+        </message>
+        <message>
+            <source>Smart Typesetting</source>
+            <translation>智慧排版</translation>
+        </message>
+    </context>
+    <context>
         <name>ScreenshotImageConversionController</name>
         <message>
             <source>Cancel</source>

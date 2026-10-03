@@ -111,7 +111,7 @@ class ToolbarEditorTranslator final : public QTranslator {
             if (source == QStringLiteral("Shape")) {
                 return QStringLiteral("Translated drawing shape");
             }
-            if (source == QStringLiteral("Drawing toolbar preview")) {
+            if (source == QStringLiteral("Annotation toolbar preview")) {
                 return QStringLiteral("Translated drawing preview");
             }
         }

@@ -385,6 +385,9 @@ void setScreenshotToolPalettePlaceholderSource(QWidget* widget, const char* sour
 
 void setScreenshotToolPaletteItemTranslationSource(QStandardItem* item, const char* source);
 
+void setScreenshotToolPaletteItemTranslationSource(QStandardItem* item, const char* source,
+                                                   const char* context);
+
 void setScreenshotToolPaletteItemTranslationSource(
     QStandardItem* item, const ScreenshotToolPaletteTranslationText& text);
 

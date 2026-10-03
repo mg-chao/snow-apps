@@ -1594,9 +1594,9 @@ void drawingRecorderUsesLocalValidationLanguage() {
         keyButton != nullptr && validationInfo != nullptr &&
             keyButton->property("shortcutValidationState").toString() ==
                 QStringLiteral("invalid") &&
-            validationInfo->accessibleName() == QStringLiteral("Invalid drawing shortcut") &&
+            validationInfo->accessibleName() == QStringLiteral("Invalid annotation shortcut") &&
             validationInfo->tooltipText().contains(
-                QStringLiteral("already assigned to another drawing tool")) &&
+                QStringLiteral("already assigned to another annotation tool")) &&
             !validationInfo->tooltipText().contains(QStringLiteral("Windows global shortcut")) &&
             keyButton->accessibleDescription() == validationInfo->tooltipText(),
         "drawing shortcut conflicts must use local validation and accessibility wording");

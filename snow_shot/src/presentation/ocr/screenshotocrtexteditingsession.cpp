@@ -44,8 +44,10 @@ bool ScreenshotOcrTextEditingSession::reset() {
 }
 
 bool ScreenshotOcrTextEditingSession::applyInitialTransforms(const QString& formatting,
-                                                             const QString& punctuation) {
-    m_formatting = formatting == QStringLiteral("keep") || formatting == QStringLiteral("remove")
+                                                             const QString& punctuation,
+                                                             const QString& smartText) {
+    m_formatting = formatting == QStringLiteral("keep") || formatting == QStringLiteral("remove") ||
+                           formatting == QStringLiteral("smart")
                        ? formatting
                        : QString{};
     m_punctuation = punctuation == QStringLiteral("half") || punctuation == QStringLiteral("full")
@@ -56,6 +58,7 @@ bool ScreenshotOcrTextEditingSession::applyInitialTransforms(const QString& form
         return false;
     }
     m_transformBaseline = text();
+    m_smartText = smartText;
     return replaceText(transformedText());
 }
 

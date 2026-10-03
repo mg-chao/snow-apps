@@ -33,6 +33,7 @@
 #include <QHideEvent>
 #include <QLabel>
 #include <QPointer>
+#include <QPainter>
 
 #include <QScrollBar>
 #include <QScopedValueRollback>
@@ -53,6 +54,33 @@ namespace {
 namespace settings = snow_shot::presentation::settings;
 namespace settings_ui = snow_shot::presentation::components;
 namespace form_fields = snow_shot::presentation::components::form_fields;
+
+class RelatedSettingsPanel final : public QWidget {
+  public:
+    explicit RelatedSettingsPanel(QWidget* parent) : QWidget(parent) {
+        setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
+    }
+
+    void applyTheme(const snow_shot::presentation::styles::ThemeColorScheme& scheme) {
+        background = scheme.map.colorFillQuaternary;
+        radius = scheme.metricAlias.borderRadiusLG;
+        update();
+    }
+
+  protected:
+    void paintEvent(QPaintEvent*) override {
+        QPainter painter(this);
+        painter.setRenderHint(QPainter::Antialiasing);
+        painter.setPen(Qt::NoPen);
+        painter.setBrush(
+            snow_shot::presentation::styles::mainWindowBackgroundColor(this, background));
+        painter.drawRoundedRect(QRectF(rect()), radius, radius);
+    }
+
+  private:
+    QColor background;
+    int radius = 0;
+};
 
 std::optional<snow_shot::presentation::AppPermission>
 permissionForRenderer(settings::SettingsCustomRenderer renderer) {
@@ -173,16 +201,28 @@ class SettingsPageWidget::Impl {
         contentLayout->setSpacing(0);
 
         if (!page->relatedLinks.isEmpty()) {
-            auto* links = new QWidget(contentWidget);
+            relatedPanel = new RelatedSettingsPanel(contentWidget);
+            relatedPanel->setObjectName(
+                settings::generatedObjectName(QStringLiteral("settings-related"), page->id));
+            auto* panelLayout = new QVBoxLayout(relatedPanel);
+            panelLayout->setContentsMargins(metric.padding, metric.paddingSM, metric.padding,
+                                            metric.paddingSM);
+            panelLayout->setSpacing(metric.marginXS);
+            relatedHeader = new QLabel(q.tr("Related settings"), relatedPanel);
+            relatedHeader->setObjectName(QStringLiteral("settingsRelatedHeading"));
+            relatedHeader->setWordWrap(true);
+            panelLayout->addWidget(relatedHeader);
+            auto* links = new QWidget(relatedPanel);
             auto* linksLayout =
-                new adqt::widgets::detail::FlowLayout(links, 0, metric.marginXS, metric.marginXS);
-            relatedHeader = new QLabel(q.tr("Related settings"), links);
-            linksLayout->addWidget(relatedHeader);
-            contentLayout->addWidget(links);
+                new adqt::widgets::detail::FlowLayout(links, 0, metric.paddingContentHorizontal, 0);
+            panelLayout->addWidget(links);
+            contentLayout->addSpacing(metric.marginSM);
+            contentLayout->addWidget(relatedPanel);
             for (const auto& link : page->relatedLinks) {
                 auto* button = new adqt::widgets::AdButton(links);
                 button->setButtonStyle(adqt::widgets::AdButton::ButtonStyle::Link);
                 button->setAccentRole(adqt::widgets::AdButton::AccentRole::Primary);
+                button->setContentPaddingEnabled(false);
                 button->setObjectName(settings::generatedObjectName(
                     QStringLiteral("settings-link"), page->id + QLatin1Char('-') +
                                                          link.location.pageId + QLatin1Char('-') +
@@ -1160,6 +1200,7 @@ class SettingsPageWidget::Impl {
     void retranslateUi(int firstItem = 0) {
         if (relatedHeader != nullptr) {
             relatedHeader->setText(q.tr("Related settings"));
+            relatedPanel->setAccessibleName(relatedHeader->text());
             for (int index = 0; index < relatedButtons.size(); ++index) {
                 const QString title = page->relatedLinks.at(index).title.translated();
                 relatedButtons.at(index)->setText(
@@ -1238,9 +1279,14 @@ class SettingsPageWidget::Impl {
         colorScheme = scheme;
         if (firstItem == 0) {
             if (relatedHeader != nullptr) {
+                relatedPanel->applyTheme(scheme);
                 QPalette palette = relatedHeader->palette();
                 palette.setColor(QPalette::WindowText, scheme.map.colorTextSecondary);
                 relatedHeader->setPalette(palette);
+                QFont font = relatedHeader->font();
+                font.setPixelSize(scheme.metricAlias.fontSizeSM);
+                font.setWeight(QFont::DemiBold);
+                relatedHeader->setFont(font);
             }
             for (RuntimeSection& runtime : sections) {
                 // Headers subscribe to ThemeManager themselves.
@@ -1598,6 +1644,7 @@ class SettingsPageWidget::Impl {
     adqt::widgets::AdScrollArea* scrollArea = nullptr;
     QWidget* contentWidget = nullptr;
     QVBoxLayout* contentLayout = nullptr;
+    RelatedSettingsPanel* relatedPanel = nullptr;
     QLabel* relatedHeader = nullptr;
     QVector<adqt::widgets::AdButton*> relatedButtons;
     QPointer<QFrame> searchHighlight;

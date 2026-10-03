@@ -93,12 +93,12 @@ constexpr int kHiddenZoneHeight = 56;
         "DrawingToolbarEditorSettingsWidget",
         "Drop beside a tool to create a position. Drop above a tool to stack it. The bottom "
         "tool stays on the main toolbar row. Separator Component occupies its own position."),
-    QT_TRANSLATE_NOOP("DrawingToolbarEditorSettingsWidget", "Drawing toolbar preview"),
+    QT_TRANSLATE_NOOP("DrawingToolbarEditorSettingsWidget", "Annotation toolbar preview"),
     QT_TRANSLATE_NOOP("DrawingToolbarEditorSettingsWidget", "Hidden tools"),
     QT_TRANSLATE_NOOP("DrawingToolbarEditorSettingsWidget",
                       "Drag tools here to hide them from the screenshot toolbar."),
     QT_TRANSLATE_NOOP("DrawingToolbarEditorSettingsWidget", "No hidden tools"),
-    QT_TRANSLATE_NOOP("DrawingToolbarEditorSettingsWidget", "Hidden drawing toolbar tools"),
+    QT_TRANSLATE_NOOP("DrawingToolbarEditorSettingsWidget", "Hidden annotation toolbar tools"),
 };
 
 [[maybe_unused]] constexpr const char* kScreenshotEditorTranslations[] = {
@@ -1160,7 +1160,7 @@ struct ToolbarEditorSettingsWidget::Private {
         toolbarSurface->setAccessibleName(translatedToolbarText(
             translationContext,
             layoutKind == storage::ScreenshotToolbarLayoutKind::DrawingTools
-                ? "Drawing toolbar preview"
+                ? "Annotation toolbar preview"
             : layoutKind == storage::ScreenshotToolbarLayoutKind::PinnedActionTools
                 ? "Pin to Screen toolbar preview"
             : layoutKind == storage::ScreenshotToolbarLayoutKind::FloatingTools
@@ -1178,7 +1178,7 @@ struct ToolbarEditorSettingsWidget::Private {
         hiddenZone->setAccessibleName(translatedToolbarText(
             translationContext,
             layoutKind == storage::ScreenshotToolbarLayoutKind::DrawingTools
-                ? "Hidden drawing toolbar tools"
+                ? "Hidden annotation toolbar tools"
             : layoutKind == storage::ScreenshotToolbarLayoutKind::PinnedActionTools
                 ? "Hidden pinned toolbar tools"
             : layoutKind == storage::ScreenshotToolbarLayoutKind::FloatingTools

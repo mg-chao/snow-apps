@@ -467,6 +467,11 @@ int main(int argc, char** argv) {
                     storage::TextRecognitionSettings().defaultPunctuation() ==
                         QStringLiteral("full"),
                 "recognized-text defaults persist through the settings backend");
+        require(backend.applySelectValue(defaultFormatting, QStringLiteral("smart")) &&
+                    backend.selectValue(defaultFormatting).toString() == QStringLiteral("smart") &&
+                    storage::TextRecognitionSettings().defaultFormatting() ==
+                        QStringLiteral("smart"),
+                "Smart Typesetting persists through the settings backend and schema");
         const auto oldFill =
             applicationStorage.configuration().value(QStringLiteral("text_recognition/fill_style"));
         require(applicationStorage.configuration().setValue(

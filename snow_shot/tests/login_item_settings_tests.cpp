@@ -111,7 +111,7 @@ int main(int argc, char** argv) {
             "external removal refresh never re-registers");
     const auto registry = settings::buildBuiltInSettingsRegistry();
     settings::SettingsRuntimeSession session(registry, backend);
-    SettingsPageWidget page(registry, QStringLiteral("general-appearance"), session);
+    SettingsPageWidget page(registry, QStringLiteral("general"), session);
     native = {LoginItemStatus::Unavailable, QStringLiteral("install app")};
     page.show();
     require(!backend.switchEnabled(binding) && backend.switchHint(binding) == u"install app",

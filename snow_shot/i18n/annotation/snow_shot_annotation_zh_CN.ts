@@ -64,6 +64,10 @@
             <translation>动画录制格式不包含音频</translation>
         </message>
         <message>
+            <source>Annotation Template</source>
+            <translation>标注模板</translation>
+        </message>
+        <message>
             <source>Arabic numerals</source>
             <translation>阿拉伯数字</translation>
         </message>
@@ -200,12 +204,12 @@
             <translation>无法捕获所选元素</translation>
         </message>
         <message>
-            <source>Could not delete the draw template</source>
-            <translation>无法删除绘图模板</translation>
+            <source>Could not delete the annotation template</source>
+            <translation>无法删除标注模板</translation>
         </message>
         <message>
-            <source>Could not save the draw template</source>
-            <translation>无法保存绘图模板</translation>
+            <source>Could not save the annotation template</source>
+            <translation>无法保存标注模板</translation>
         </message>
         <message>
             <source>Cross-line fill</source>
@@ -288,12 +292,12 @@
             <translation>删除</translation>
         </message>
         <message>
-            <source>Delete Draw Template</source>
-            <translation>删除绘图模板</translation>
+            <source>Delete Annotation Template</source>
+            <translation>删除标注模板</translation>
         </message>
         <message>
-            <source>Delete draw template "%1"? This action cannot be undone.</source>
-            <translation>删除绘图模板“%1”？此操作无法撤销。</translation>
+            <source>Delete annotation template "%1"? This action cannot be undone.</source>
+            <translation>删除标注模板“%1”？此操作无法撤销。</translation>
         </message>
         <message>
             <source>Delete selected elements</source>
@@ -330,10 +334,6 @@
         <message>
             <source>Drag toolbar</source>
             <translation>拖动工具栏</translation>
-        </message>
-        <message>
-            <source>Draw Template</source>
-            <translation>绘图模板</translation>
         </message>
         <message>
             <source>Edit</source>
@@ -476,10 +476,6 @@
             <translation>自由绘制区域</translation>
         </message>
         <message>
-            <source>Full-width</source>
-            <translation>全角</translation>
-        </message>
-        <message>
             <source>Gaussian blur</source>
             <translation>高斯模糊</translation>
         </message>
@@ -490,10 +486,6 @@
         <message>
             <source>Green</source>
             <translation>绿色</translation>
-        </message>
-        <message>
-            <source>Half-width</source>
-            <translation>半角</translation>
         </message>
         <message>
             <source>Hide selection toolbar</source>
@@ -542,10 +534,6 @@
         <message>
             <source>Jump to Translation Page</source>
             <translation>跳转到翻译页面</translation>
-        </message>
-        <message>
-            <source>Keep line breaks</source>
-            <translation>保留换行</translation>
         </message>
         <message>
             <source>Keyboard Background Color</source>
@@ -789,7 +777,7 @@
         </message>
         <message>
             <source>Recording settings</source>
-            <translation>录屏设置</translation>
+            <translation>屏幕录制设置</translation>
         </message>
         <message>
             <source>Rectangle</source>
@@ -818,10 +806,6 @@
         <message>
             <source>Redo</source>
             <translation>重做</translation>
-        </message>
-        <message>
-            <source>Remove line breaks</source>
-            <translation>移除换行</translation>
         </message>
         <message>
             <source>Reset</source>
@@ -946,10 +930,6 @@
         <message>
             <source>Smart Erase</source>
             <translation>智能擦除</translation>
-        </message>
-        <message>
-            <source>Smart Typesetting</source>
-            <translation>智能排版</translation>
         </message>
         <message>
             <source>Solid arrow stroke</source>

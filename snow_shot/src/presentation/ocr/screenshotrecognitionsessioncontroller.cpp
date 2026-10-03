@@ -899,8 +899,12 @@ void ScreenshotRecognitionSessionController::beginTextEditing() {
         if (!it->formatted && !it->defaultTransformsApplied && it->editingSession != nullptr) {
             it->defaultTransformsApplied = true;
             const snow_shot::storage::TextRecognitionSettings settings;
+            const QString formatting = settings.defaultFormatting();
+            const QString smartText = formatting == QStringLiteral("smart") && it->presentation
+                                          ? snow_shot::presentation::smartOcrText(*it->presentation)
+                                          : QString{};
             static_cast<void>(it->editingSession->applyInitialTransforms(
-                settings.defaultFormatting(), settings.defaultPunctuation()));
+                formatting, settings.defaultPunctuation(), smartText));
         }
         m_textDocument = it->editingSession != nullptr ? it->editingSession->document() : nullptr;
     }
@@ -1379,21 +1383,16 @@ void ScreenshotRecognitionSessionController::applyTextFormatting(const QString& 
     if (session != nullptr && !streaming) {
         QString smartText;
         if (value == QStringLiteral("smart") && entry.presentation != nullptr) {
-            auto lines = entry.presentation->lines;
+            auto presentation = *entry.presentation;
             if (m_translating) {
                 // Translated drafts have no per-line OCR geometry of their own.
                 const QRectF bounds(entry.presentation->selection);
-                lines = {{session->text(),
-                          1.0,
-                          {bounds.topLeft(), bounds.topRight(), bounds.bottomRight(),
-                           bounds.bottomLeft()}}};
+                presentation.lines = {{session->text(),
+                                       1.0,
+                                       {bounds.topLeft(), bounds.topRight(), bounds.bottomRight(),
+                                        bounds.bottomLeft()}}};
             }
-            QStringList paragraphs;
-            for (const auto& line : snow_shot::presentation::mergeOcrLayout(
-                     lines, entry.presentation->selection.topLeft())) {
-                paragraphs.push_back(line.text);
-            }
-            smartText = paragraphs.join(QChar('\n'));
+            smartText = snow_shot::presentation::smartOcrText(presentation);
         }
         static_cast<void>(session->setFormatting(value, smartText));
         updateTextState();
@@ -1587,8 +1586,14 @@ std::unique_ptr<QMimeData> ScreenshotRecognitionSessionController::recognitionCl
     const QString key = m_textCacheKey.isEmpty() ? m_target.key : m_textCacheKey;
     if (!editing() && !originalImageTranslationActive() && !m_textCache.value(key).formatted) {
         const snow_shot::storage::TextRecognitionSettings settings;
-        text = snow_shot::presentation::applyOcrTextTransforms(text, settings.defaultFormatting(),
-                                                               settings.defaultPunctuation());
+        const auto* presentation = displayedPresentation != nullptr
+                                       ? displayedPresentation
+                                       : m_textCache.value(key).presentation.get();
+        text = presentation != nullptr
+                   ? snow_shot::presentation::applyOcrTextTransforms(
+                         *presentation, settings.defaultFormatting(), settings.defaultPunctuation())
+                   : snow_shot::presentation::applyOcrTextTransforms(
+                         text, settings.defaultFormatting(), settings.defaultPunctuation());
     }
     mimeData->setText(text);
     return mimeData;

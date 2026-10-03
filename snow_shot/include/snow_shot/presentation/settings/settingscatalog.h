@@ -451,9 +451,7 @@ enum class SettingsSectionReset {
     PinToScreen,
     PinToScreenBehavior,
     Tray,
-    TrayBehavior,
-    FloatingToolbarBehavior,
-    FloatingToolbarLayout,
+    FloatingToolbar,
     ScreenRecording,
     ScreenRecordingOutput,
     GlobalHotkeys,
@@ -472,6 +470,8 @@ enum class SettingsSectionReset {
     ScreenRecordingVideo,
     ScreenRecordingAnimation,
     ScreenRecordingEncoding,
+    Language,
+    PinToScreenToolbar,
 };
 
 enum class SettingsSectionItemLayout {

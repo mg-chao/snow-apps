@@ -54,7 +54,7 @@
         <name>RecordingRegionDragHandle</name>
         <message>
             <source>Move recording area</source>
-            <translation>移动录屏区域</translation>
+            <translation>移动屏幕录制区域</translation>
         </message>
     </context>
     <context>
@@ -190,7 +190,7 @@ Keep this folder to recover the recording.</source>
         </message>
         <message>
             <source>Unable to exclude audio controls from recording</source>
-            <translation>无法从录屏中排除音频控件</translation>
+            <translation>无法从屏幕录制中排除音频控件</translation>
         </message>
         <message>
             <source>Unknown recording error</source>
@@ -205,7 +205,7 @@ Keep this folder to recover the recording.</source>
         </message>
         <message>
             <source>Recording settings</source>
-            <translation>录屏设置</translation>
+            <translation>屏幕录制设置</translation>
         </message>
     </context>
 </TS>

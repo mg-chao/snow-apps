@@ -38,6 +38,8 @@ class AdButton : public QPushButton, public AdControlScaleParticipant {
   Q_PROPERTY(AccentRole accentRole READ accentRole WRITE setAccentRole NOTIFY accentRoleChanged)
   Q_PROPERTY(Shape shape READ shape WRITE setShape NOTIFY shapeChanged)
   Q_PROPERTY(SizeClass sizeClass READ sizeClass WRITE setSizeClass NOTIFY sizeClassChanged)
+  Q_PROPERTY(bool contentPaddingEnabled READ contentPaddingEnabled WRITE setContentPaddingEnabled
+                 NOTIFY contentPaddingEnabledChanged)
   Q_PROPERTY(bool interactionBackgroundVisible READ interactionBackgroundVisible WRITE
                  setInteractionBackgroundVisible NOTIFY interactionBackgroundVisibleChanged)
   Q_PROPERTY(bool checkedUsesActiveStyle READ checkedUsesActiveStyle WRITE setCheckedUsesActiveStyle
@@ -129,6 +131,10 @@ class AdButton : public QPushButton, public AdControlScaleParticipant {
   SizeClass sizeClass() const;
   void setSizeClass(SizeClass value);
 
+  // Text and link buttons can size directly to their content without padding.
+  bool contentPaddingEnabled() const;
+  void setContentPaddingEnabled(bool value);
+
   bool interactionBackgroundVisible() const;
   void setInteractionBackgroundVisible(bool value);
 
@@ -168,6 +174,7 @@ class AdButton : public QPushButton, public AdControlScaleParticipant {
   void accentRoleChanged(AccentRole value);
   void shapeChanged(Shape value);
   void sizeClassChanged(SizeClass value);
+  void contentPaddingEnabledChanged(bool value);
   void interactionBackgroundVisibleChanged(bool value);
   void checkedUsesActiveStyleChanged(bool value);
   void busyChanged(bool value);
