@@ -136,6 +136,7 @@
 #if defined(Q_OS_WIN) || defined(_WIN32)
 #include <qt_windows.h>
 #include <dwmapi.h>
+#include <commctrl.h>
 #endif
 
 void runPinnedOriginalImageTranslationTests();
@@ -255,6 +256,13 @@ class ObservedPinnedPlatform final : public snow_shot::presentation::PinnedWindo
 // installing the Windows HWND hooks required by present().
 class ScreenshotPinnedWindowTestAccess {
   public:
+    static void persistNow(ScreenshotPinnedWindow& window) {
+        window.persistNow();
+    }
+    static QByteArray applyAnnotationTransaction(ScreenshotPinnedWindow& window,
+                                                 const QByteArray& payload) {
+        return window.m_runtime.applyAnnotationTransaction(payload);
+    }
     static void beginAuxiliaryInteraction(ScreenshotPinnedWindow& window) {
         window.beginAuxiliaryWindowInteraction();
     }
@@ -3240,6 +3248,44 @@ void fileBatchCreatesIndependentCenteredWindows() {
         waitForUi(100);
     }
 }
+
+#if defined(Q_OS_WIN) || defined(_WIN32)
+LRESULT CALLBACK observeResizeFrameChanges(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam,
+                                           UINT_PTR, DWORD_PTR data) {
+    if (message == WM_WINDOWPOSCHANGED &&
+        (reinterpret_cast<const WINDOWPOS*>(lParam)->flags & SWP_FRAMECHANGED) != 0)
+        ++*reinterpret_cast<int*>(data);
+    return DefSubclassProc(hwnd, message, wParam, lParam);
+}
+
+void pinnedResizeStyleDoesNotRecalculateAnUnchangedFrame() {
+    // A hidden Win32 fixture also runs under Qt's offscreen platform.
+    const HWND hwnd = CreateWindowExW(0, L"STATIC", L"", WS_POPUP, 20, 20, 160, 100, nullptr,
+                                      nullptr, GetModuleHandleW(nullptr), nullptr);
+    require(hwnd != nullptr, "create hidden native resize-style fixture");
+    int frameChanges = 0;
+    const auto cleanup = qScopeGuard([hwnd] { DestroyWindow(hwnd); });
+    require(SetWindowSubclass(hwnd, observeResizeFrameChanges, 1,
+                              reinterpret_cast<DWORD_PTR>(&frameChanges)) != FALSE,
+            "observe native frame recalculation");
+    const auto id = reinterpret_cast<WId>(hwnd);
+    const LONG_PTR originalStyle = GetWindowLongPtrW(hwnd, GWL_STYLE);
+    require(screenshot_pinned_window_native::applySystemResizeStyle(id),
+            "apply native resize style");
+    require(GetWindowLongPtrW(hwnd, GWL_STYLE) == (originalStyle | WS_THICKFRAME) &&
+                frameChanges == 1,
+            "initial resize-style change recalculates the frame exactly once");
+    const QRect geometry = screenshot_pinned_window_native::currentWindowGeometry(id);
+    require(screenshot_pinned_window_native::applySystemResizeStyle(id) && frameChanges == 1 &&
+                screenshot_pinned_window_native::currentWindowGeometry(id) == geometry,
+            "repeated native attachment preserves the frame without recalculation");
+    SetWindowLongPtrW(hwnd, GWL_STYLE, originalStyle);
+    require(screenshot_pinned_window_native::applySystemResizeStyle(id) && frameChanges == 2,
+            "reapply resize style if another owner actually changed it");
+    require(!screenshot_pinned_window_native::applySystemResizeStyle(0),
+            "invalid native windows cannot accept resize styles");
+}
+#endif
 
 void pinnedWindowPoolReusesAndReplenishesPreparedShell() {
     QScreen* screen = QGuiApplication::primaryScreen();
@@ -8145,6 +8191,81 @@ void closeRestoredPinnedWindow(ScreenshotPinnedWindow* window, const QString& re
     QPointer<ScreenshotPinnedWindow> guardedWindow(window);
     window->close();
     require(processUntilDeleted(guardedWindow, 2000), "restored pinned window was not deleted");
+}
+
+void restoredStateSavePreservesSourceRevision() {
+    IsolatedPinnedStorage isolated;
+    auto& repository = snow_shot::storage::ApplicationStorage::instance().pinnedWindows();
+    QScreen* screen = QGuiApplication::primaryScreen();
+    require(screen, "restored state persistence requires a screen");
+    auto record = savedPinnedRecord(*screen, 1.0, QSize(160, 100), 100.0, QPoint(40, 40));
+    require(repository.upsert(record).success && repository.flush().success,
+            "commit source before restoring from disk");
+    const auto committed = repository.loadRecord(record.id);
+    require(committed.has_value(), "load committed source pixels");
+    const auto sourceRevision = repository.previewSourceRevision(record.id);
+    require(sourceRevision.has_value(), "seeded source has a preview revision");
+    ScreenshotSelectionExportUiServices services;
+    require(services.restoreRecord(record.id, false), "restore committed source");
+    QPointer<ScreenshotPinnedWindow> window;
+    QElapsedTimer timer;
+    timer.start();
+    while (timer.elapsed() < 5000) {
+        QCoreApplication::processEvents();
+        for (auto* candidate : topLevelPinnedWindows()) {
+            if (candidate->persistenceId() == record.id &&
+                candidate->automationState().value(QStringLiteral("ready")).toBool()) {
+                window = candidate;
+                break;
+            }
+        }
+        if (window)
+            break;
+        QThread::msleep(1);
+    }
+    require(window, "committed source restored and ready");
+    require(window->persistenceSnapshot().image.cacheKey() != record.image.cacheKey(),
+            "disk restore must exercise a newly decoded image identity");
+    QString error;
+    require(window->automationUpdate({{QStringLiteral("opacity_percent"), 75}}, &error),
+            "change restored window state");
+    require(
+        !ScreenshotPinnedWindowTestAccess::applyAnnotationTransaction(
+             *window, R"({"version":1,"operations":[{"type":"rectangle","bounds":[8,8,24,24]}]})")
+             .isEmpty(),
+        "edit restored document before its state save");
+    const auto expected = window->persistenceSnapshot();
+    ScreenshotPinnedWindowTestAccess::persistNow(*window);
+    require(repository.previewSourceRevision(record.id) == sourceRevision,
+            "restored state saves must not replace the immutable source or invalidate previews");
+    require(repository.flush().success, "commit restored state save");
+    const auto saved = repository.loadRecord(record.id);
+    require(saved && saved->image == committed->image,
+            "state-only saves preserve committed source pixels");
+    require(saved->opacityPercent == 75, "state-only saves persist window state");
+    require(saved->canvasSession == expected.canvasSession,
+            "state-only saves persist document changes");
+    ScreenshotClipboardContent replacement;
+    replacement.image = QImage(record.image.size(), QImage::Format_RGB32);
+    replacement.image.fill(QColor(90, 180, 120));
+    const QImage replacementImage = replacement.image;
+    require(window->automationReplaceContent(std::move(replacement)), "replace restored source");
+    ScreenshotPinnedWindowTestAccess::persistNow(*window);
+    require(repository.previewSourceRevision(record.id) != sourceRevision &&
+                repository.flush().success,
+            "explicit replacement still updates and commits the source revision");
+    const auto replaced = repository.loadRecord(record.id);
+    require(replaced && replaced->image.size() == replacementImage.size(),
+            "explicit replacement persists the new source dimensions");
+    // PNG decoding can change the storage format and color-space metadata.
+    // Compare the complete pixel content independently of that representation.
+    for (int y = 0; y < replacementImage.height(); ++y) {
+        for (int x = 0; x < replacementImage.width(); ++x) {
+            require(replaced->image.pixelColor(x, y) == replacementImage.pixelColor(x, y),
+                    "explicit replacement persists the new source pixels");
+        }
+    }
+    closeRestoredPinnedWindow(window, record.id);
 }
 
 void restoredSelectionPreservesShapeAndCreationSource() {
@@ -15330,6 +15451,10 @@ int main(int argc, char* argv[]) {
             return 0;
         }
 #ifdef Q_OS_WIN
+        if (app.arguments().contains(QStringLiteral("--resize-style-only"))) {
+            pinnedResizeStyleDoesNotRecalculateAnUnchangedFrame();
+            return 0;
+        }
         if (app.arguments().contains(QStringLiteral("--close-release-native"))) {
             pinnedCloseReleaseNative();
             return 0;
@@ -15633,6 +15758,10 @@ int main(int argc, char* argv[]) {
             restoredSelectionPreservesShapeAndCreationSource();
             return 0;
         }
+        if (app.arguments().contains(QStringLiteral("--restored-state-persistence-only"))) {
+            restoredStateSavePreservesSourceRevision();
+            return 0;
+        }
         if (app.arguments().contains(QStringLiteral("--restore-wiring-only"))) {
             restoredPinnedWindowIgnoresMonitorDpiChange(sourceRuntime);
             restoredThumbnailScaleMenuStaysConsistentThroughExit(sourceRuntime);
@@ -15704,6 +15833,7 @@ int main(int argc, char* argv[]) {
         pinnedWheelScalingUsesConfiguredAnchor(sourceRuntime);
         pinnedFollowsPerMonitorDpiScaling(sourceRuntime);
         restoredSelectionPreservesShapeAndCreationSource();
+        restoredStateSavePreservesSourceRevision();
         restoredPinnedWindowIgnoresMonitorDpiChange(sourceRuntime);
         restoredThumbnailScaleMenuStaysConsistentThroughExit(sourceRuntime);
         restoredFractionalScaleCopiesTheDisplayedViewport(sourceRuntime);

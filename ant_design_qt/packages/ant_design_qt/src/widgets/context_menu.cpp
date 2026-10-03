@@ -832,11 +832,9 @@ void AdContextMenu::setActionIcon(QAction* action, const adqt::icons::IconRef& i
     action->setProperty(kActionIconProperty, QVariant());
     action->setIcon(QIcon());
   }
-  if (!d_->useNativeMenu) {
-    // Cocoa synchronizes the changed QAction itself. Rebuilding every icon here
-    // makes populating a native menu quadratic and changes unrelated actions.
-    refreshVisuals(true);
-  }
+  // QAction::setIcon already sends ActionChanged to every associated menu,
+  // invalidating Qt's complete item geometry (including the shared icon column).
+  // Sending that event for unrelated actions makes menu population quadratic.
 }
 
 adqt::icons::IconRef AdContextMenu::actionIcon(const QAction* action) const {

@@ -118,6 +118,68 @@ pub unsafe extern "C" fn snow_runtime_serialize_document_session(
     })
 }
 
+/// Serializes once into an immutable snapshot independent of the runtime.
+///
+/// # Safety
+/// `runtime` must be a live runtime and `out_bytes` must be writable. Release the
+/// returned handle with `snow_serialized_bytes_destroy`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn snow_runtime_serialize_document_session_bytes(
+    runtime: SnowRuntime,
+    out_bytes: *mut SnowSerializedBytes,
+) -> SnowError {
+    ffi_error(|| {
+        if out_bytes.is_null() {
+            return SnowError::InvalidArgument;
+        }
+        write_out(out_bytes, std::ptr::null_mut());
+        let bytes = match with_runtime_ref(runtime, |runtime| {
+            runtime
+                .serialize_document_session()
+                .map_err(SnowError::from)
+        }) {
+            Ok(bytes) => bytes,
+            Err(error) => return error,
+        };
+        write_out(
+            out_bytes,
+            Box::into_raw(Box::new(SnowSerializedBytesImpl { bytes })),
+        );
+        SnowError::Ok
+    })
+}
+
+/// # Safety
+/// `bytes` must be a live snapshot handle. Output pointers must be writable.
+/// The returned data is read-only and remains valid until the handle is destroyed.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn snow_serialized_bytes_data(
+    bytes: SnowSerializedBytes,
+    out_data: *mut *const u8,
+    out_size: *mut usize,
+) -> SnowError {
+    ffi_error(|| {
+        if bytes.is_null() || out_data.is_null() || out_size.is_null() {
+            return SnowError::InvalidArgument;
+        }
+        let bytes = unsafe { &(*bytes).bytes };
+        write_out(out_data, bytes.as_ptr());
+        write_out(out_size, bytes.len());
+        SnowError::Ok
+    })
+}
+
+/// # Safety
+/// A non-null handle must be live and must not have been destroyed previously.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn snow_serialized_bytes_destroy(bytes: SnowSerializedBytes) {
+    ffi_void(|| {
+        if !bytes.is_null() {
+            drop(unsafe { Box::from_raw(bytes) });
+        }
+    });
+}
+
 /// Serializes the selected editable elements as a versioned draw template.
 /// A null buffer with zero capacity queries the required byte count.
 #[unsafe(no_mangle)]
@@ -718,6 +780,53 @@ pub unsafe extern "C" fn snow_changed_viewports_get(
 #[cfg(test)]
 mod session_tests {
     use super::*;
+
+    #[test]
+    fn session_bytes_snapshot_outlives_runtime_and_rejects_bad_input() {
+        unsafe {
+            let mut runtime = std::ptr::null_mut();
+            assert_eq!(snow_runtime_create(&mut runtime), SnowError::Ok);
+            let expected = (*runtime).runtime.serialize_document_session().unwrap();
+            let mut snapshot = std::ptr::null_mut();
+            assert_eq!(
+                snow_runtime_serialize_document_session_bytes(runtime, &mut snapshot),
+                SnowError::Ok
+            );
+            assert!(!snapshot.is_null());
+            assert_eq!(
+                snow_runtime_serialize_document_session_bytes(runtime, std::ptr::null_mut()),
+                SnowError::InvalidArgument
+            );
+            snow_runtime_destroy(runtime);
+            let mut data = std::ptr::null();
+            let mut size = 0;
+            assert_eq!(
+                snow_serialized_bytes_data(snapshot, &mut data, &mut size),
+                SnowError::Ok
+            );
+            assert_eq!(std::slice::from_raw_parts(data, size), expected);
+            assert_eq!(
+                snow_serialized_bytes_data(snapshot, std::ptr::null_mut(), &mut size),
+                SnowError::InvalidArgument
+            );
+            assert_eq!(
+                snow_serialized_bytes_data(snapshot, &mut data, std::ptr::null_mut()),
+                SnowError::InvalidArgument
+            );
+            assert_eq!(
+                snow_serialized_bytes_data(std::ptr::null_mut(), &mut data, &mut size),
+                SnowError::InvalidArgument
+            );
+            snow_serialized_bytes_destroy(snapshot);
+            // Failure must clear an output slot rather than leave a stale handle.
+            assert_eq!(
+                snow_runtime_serialize_document_session_bytes(std::ptr::null_mut(), &mut snapshot),
+                SnowError::InvalidArgument
+            );
+            assert!(snapshot.is_null());
+            snow_serialized_bytes_destroy(std::ptr::null_mut());
+        }
+    }
     use snow_draw_engine::ActiveTool;
 
     #[test]

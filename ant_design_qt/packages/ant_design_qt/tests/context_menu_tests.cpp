@@ -1,4 +1,5 @@
 #include <QContextMenuEvent>
+#include <QActionEvent>
 #include <QCoreApplication>
 #include <QDir>
 #include <QFrame>
@@ -40,6 +41,7 @@ class ContextMenuTests final : public QObject {
  private slots:
   void actionMetadataAndNativeStateCoexist();
   void iconsCanBeReplacedAndCleared();
+  void iconUpdatesInvalidateOnlyTheChangedAction();
   void popupDismissalPreservesActions();
   void macMenuUsesPlatformDefaults();
   void macMultitoneIconsUseMenuForeground();
@@ -110,6 +112,52 @@ void ContextMenuTests::iconsCanBeReplacedAndCleared() {
   QVERIFY(!menu.actionIcon(action).isValid());
   QVERIFY(action->icon().isNull());
   QCoreApplication::setAttribute(Qt::AA_DontShowIconsInMenus, previous);
+}
+
+void ContextMenuTests::iconUpdatesInvalidateOnlyTheChangedAction() {
+  AdContextMenu menu;
+  menu.setNativeMenuEnabled(false);
+  AdContextMenu::ComponentTokens tokens;
+  tokens.minimumWidth = 1;
+  menu.setComponentTokens(tokens);
+  QAction* first = menu.addItem(QStringLiteral("An existing disabled action"));
+  first->setEnabled(false);
+  QAction* second = menu.addItem(QStringLiteral("Second"));
+  const QSize withoutIcon = menu.sizeHint();
+  class Observer final : public QObject {
+   public:
+    QAction* watchedAction = nullptr;
+    int unrelatedChanges = 0;
+    bool eventFilter(QObject*, QEvent* event) override {
+      if (event->type() == QEvent::ActionChanged &&
+          static_cast<QActionEvent*>(event)->action() == watchedAction)
+        ++unrelatedChanges;
+      return false;
+    }
+  } observer;
+  observer.watchedAction = first;
+  menu.installEventFilter(&observer);
+  menu.setActionIcon(second, outlined_icons::Copy());
+  QVERIFY(menu.sizeHint().width() > withoutIcon.width());
+  QCOMPARE(menu.sizeHint().height(), withoutIcon.height());
+  menu.setActionIcon(second, outlined_icons::Edit());
+  QVERIFY(!second->icon().pixmap(16, 16).isNull());
+  menu.setActionIcon(second, {});
+  QCOMPARE(menu.sizeHint(), withoutIcon);
+  QVERIFY(!first->isEnabled());
+  QCOMPARE(observer.unrelatedChanges, 0);
+  menu.popupAt(QPoint(20, 20));
+  QVERIFY(menu.isVisible());
+  const int visibleWidth = menu.width();
+  observer.unrelatedChanges = 0;
+  menu.setActionIcon(second, outlined_icons::Copy());
+  QCoreApplication::processEvents();
+  QVERIFY(menu.width() > visibleWidth);
+  menu.setActionIcon(second, {});
+  QCoreApplication::processEvents();
+  QCOMPARE(menu.width(), visibleWidth);
+  QCOMPARE(observer.unrelatedChanges, 0);
+  menu.hide();
 }
 
 void ContextMenuTests::popupDismissalPreservesActions() {

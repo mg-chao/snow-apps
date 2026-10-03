@@ -9,6 +9,11 @@ pub type SnowRuntime = *mut SnowRuntimeImpl;
 pub type SnowViewport = *mut SnowViewportImpl;
 pub type SnowPatchHandle = *mut SnowPatchHandleImpl;
 pub type SnowChangedViewportList = *mut SnowChangedViewportListImpl;
+pub type SnowSerializedBytes = *mut SnowSerializedBytesImpl;
+
+pub struct SnowSerializedBytesImpl {
+    pub(crate) bytes: Vec<u8>,
+}
 
 pub struct SnowRuntimeImpl {
     pub(crate) runtime: Runtime,

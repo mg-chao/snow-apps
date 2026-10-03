@@ -1146,7 +1146,10 @@ bool ScreenshotSelectionExportUiServices::presentRestoredRecord(
     config.qrRecognition = m_qrRecognition;
     config.tableRecognition = m_tableRecognition;
     config.recognitionProvider = m_recognitionProvider;
-    applyPersistence(&config, record.id);
+    // A disk decode has a new QImage cache key, but the repository still owns
+    // the same immutable source. Save state without replacing/re-encoding it.
+    // Explicit content replacement uses replacementPersistenceWriter instead.
+    applyPersistence(&config, record.id, true);
 
     std::shared_ptr<QTextDocument> formattedDocument;
     if (record.sourceKind == snow_shot::storage::PinnedWindowSourceKind::ClipboardText) {

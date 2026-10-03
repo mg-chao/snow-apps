@@ -10,6 +10,7 @@
 #include <condition_variable>
 #include <deque>
 #include <limits>
+#include <memory>
 #include <mutex>
 #include <thread>
 #include <utility>
@@ -247,20 +248,19 @@ QByteArray RuntimeSession::serializeDocumentSession() const {
     if (m_runtime.get() == nullptr) {
         return {};
     }
+    SnowSerializedBytes bytes = nullptr;
+    if (snow_runtime_serialize_document_session_bytes(m_runtime.get(), &bytes) != SNOW_OK) {
+        return {};
+    }
+    const std::unique_ptr<SnowSerializedBytesImpl, decltype(&snow_serialized_bytes_destroy)>
+        snapshot(bytes, &snow_serialized_bytes_destroy);
+    const std::uint8_t* data = nullptr;
     std::size_t size = 0;
-    if (snow_runtime_serialize_document_session(m_runtime.get(), nullptr, 0, &size) != SNOW_OK ||
-        size == 0 || size > static_cast<std::size_t>(std::numeric_limits<int>::max())) {
+    if (snow_serialized_bytes_data(snapshot.get(), &data, &size) != SNOW_OK || size == 0 ||
+        size > static_cast<std::size_t>(std::numeric_limits<int>::max())) {
         return {};
     }
-    QByteArray payload(static_cast<int>(size), Qt::Uninitialized);
-    std::size_t written = 0;
-    if (snow_runtime_serialize_document_session(m_runtime.get(),
-                                                reinterpret_cast<std::uint8_t*>(payload.data()),
-                                                size, &written) != SNOW_OK ||
-        written != size) {
-        return {};
-    }
-    return payload;
+    return QByteArray(reinterpret_cast<const char*>(data), static_cast<int>(size));
 }
 
 QByteArray RuntimeSession::serializeSelectedDrawTemplate() const {

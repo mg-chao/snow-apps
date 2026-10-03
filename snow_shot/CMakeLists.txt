@@ -4400,6 +4400,16 @@ if(SNOW_SHOT_BUILD_TESTS)
         LABELS "unit" TIMEOUT 60)
     add_test(NAME snow-shot-pinned-selection-restore-tests
         COMMAND snow-shot-pinned-window-tests --selection-restore-only -platform offscreen)
+    add_test(NAME snow-shot-pinned-restored-state-persistence-tests
+        COMMAND snow-shot-pinned-window-tests --restored-state-persistence-only -platform offscreen)
+    set_tests_properties(snow-shot-pinned-restored-state-persistence-tests PROPERTIES
+        LABELS "unit" TIMEOUT 60)
+    if(WIN32)
+        add_test(NAME snow-shot-pinned-resize-style-tests
+            COMMAND snow-shot-pinned-window-tests --resize-style-only -platform offscreen)
+        set_tests_properties(snow-shot-pinned-resize-style-tests PROPERTIES
+            LABELS "unit;windows" TIMEOUT 60)
+    endif()
     add_test(
         NAME snow-shot-pinned-restore-wiring-tests
         COMMAND snow-shot-pinned-window-tests --restore-wiring-only
@@ -7437,6 +7447,7 @@ if(WIN32 AND SNOW_SHOT_BUILD_BENCHMARKS)
     )
     target_include_directories(snow-shot-file-pin-batch-performance-benchmark PRIVATE
         "${CMAKE_CURRENT_SOURCE_DIR}/include"
+        "${CMAKE_CURRENT_SOURCE_DIR}/../snow_draw_engine_qt/crates/snow-draw-engine-c/include"
     )
     target_link_libraries(snow-shot-file-pin-batch-performance-benchmark PRIVATE
         ${SNOW_SELECTED_FILES_LIBRARIES}

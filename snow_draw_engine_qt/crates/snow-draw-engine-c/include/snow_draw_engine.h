@@ -21,6 +21,9 @@ typedef struct SnowPatchHandleImpl SnowPatchHandleImpl;
 typedef SnowPatchHandleImpl* SnowPatchHandle;
 typedef struct SnowChangedViewportListImpl SnowChangedViewportListImpl;
 typedef SnowChangedViewportListImpl* SnowChangedViewportList;
+
+typedef struct SnowSerializedBytesImpl SnowSerializedBytesImpl;
+typedef SnowSerializedBytesImpl* SnowSerializedBytes;
 typedef struct SnowRuntimeConfig SnowRuntimeConfig;
 
 typedef enum SnowError {
@@ -36,6 +39,15 @@ typedef enum SnowError {
 
 SnowError snow_runtime_serialize_document_session(SnowRuntime runtime, uint8_t* buffer,
                                                   size_t buffer_capacity, size_t* out_size);
+// Serializes once into an independent snapshot owned by the returned handle.
+// Release it with snow_serialized_bytes_destroy after copying/consuming its data.
+SnowError snow_runtime_serialize_document_session_bytes(SnowRuntime runtime,
+                                                        SnowSerializedBytes* out_bytes);
+// The read-only data remains valid until the handle is destroyed, even if the
+// originating runtime changes or is destroyed.
+SnowError snow_serialized_bytes_data(SnowSerializedBytes bytes, const uint8_t** out_data,
+                                     size_t* out_size);
+void snow_serialized_bytes_destroy(SnowSerializedBytes bytes);
 SnowError snow_runtime_serialize_selected_draw_template(SnowRuntime runtime, uint8_t* buffer,
                                                         size_t buffer_capacity, size_t* out_size);
 SnowError snow_runtime_serialize_selected_element_ids(SnowRuntime runtime, uint8_t* buffer,

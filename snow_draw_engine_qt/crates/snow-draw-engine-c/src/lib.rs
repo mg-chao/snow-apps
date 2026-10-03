@@ -24,7 +24,9 @@ pub use abi::annotation_exports::*;
 pub use abi::auto_filter_exports::*;
 pub use abi::document_exports::*;
 pub use abi::exports::*;
-pub use abi::handles::{SnowChangedViewportList, SnowPatchHandle, SnowRuntime, SnowViewport};
+pub use abi::handles::{
+    SnowChangedViewportList, SnowPatchHandle, SnowRuntime, SnowSerializedBytes, SnowViewport,
+};
 pub use abi::history_exports::*;
 pub use abi::input_exports::*;
 pub use abi::patch_exports::*;

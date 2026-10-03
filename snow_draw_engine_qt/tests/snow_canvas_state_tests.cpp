@@ -559,6 +559,32 @@ void defaultRuntimeUsesGenericEngineDefaults() {
                 state.shape_style.stroke_width == expected.rectangle.stroke_width,
             "default runtime creation should retain generic engine defaults");
 }
+
+void serializedSnapshotsOwnBytesAndPreserveUndoAndRedo() {
+    SnowCanvasRuntime runtime;
+    const QByteArray annotation =
+        R"({"version":1,"operations":[{"type":"rectangle","bounds":[10,20,30,40]}]})";
+    require(!runtime.applyAnnotationTransaction(annotation).isEmpty() &&
+                !runtime.applyAnnotationTransaction(annotation).isEmpty() && runtime.undo(),
+            "create a document with both undo and redo history");
+    const QByteArray snapshot = runtime.serializeDocumentSession();
+    const auto handle = snow_canvas_runtime::Access::handle(runtime);
+    std::size_t size = 0;
+    require(snow_runtime_serialize_document_session(handle, nullptr, 0, &size) == SNOW_OK,
+            "query legacy snapshot size");
+    QByteArray legacy(qsizetype(size), Qt::Uninitialized);
+    require(snow_runtime_serialize_document_session(
+                handle, reinterpret_cast<std::uint8_t*>(legacy.data()), size, &size) == SNOW_OK &&
+                snapshot == legacy,
+            "single-serialization snapshots preserve every legacy session byte");
+    runtime.destroyAsync();
+    SnowCanvasRuntime restored;
+    require(restored.restoreDocumentSession(snapshot) && restored.canUndo() && restored.canRedo(),
+            "snapshot owns independent bytes after its source runtime is destroyed");
+    require(restored.redo() && !restored.canRedo() && restored.undo() && restored.undo() &&
+                !restored.canUndo() && restored.redo() && restored.redo() && !restored.canRedo(),
+            "restored snapshots retain complete undo and redo transactions");
+}
 } // namespace
 
 int main() {
@@ -568,5 +594,6 @@ int main() {
     watermarkConfigurationConversionsPreserveSnapshotsAndUtf8Boundaries();
     configuredRuntimeProfileFollowsRestoreAndResetLifecycle();
     defaultRuntimeUsesGenericEngineDefaults();
+    serializedSnapshotsOwnBytesAndPreserveUndoAndRedo();
     return 0;
 }

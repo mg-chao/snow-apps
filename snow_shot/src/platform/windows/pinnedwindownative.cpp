@@ -278,14 +278,20 @@ bool screenshot_pinned_window_native::applySystemResizeStyle(WId windowId) {
         return false;
     }
 
+    SetLastError(ERROR_SUCCESS);
     const LONG_PTR currentStyle = GetWindowLongPtr(hwnd, GWL_STYLE);
-    if ((currentStyle & WS_THICKFRAME) == 0) {
-        SetLastError(ERROR_SUCCESS);
-        const LONG_PTR previousStyle =
-            SetWindowLongPtr(hwnd, GWL_STYLE, currentStyle | WS_THICKFRAME);
-        if (previousStyle == 0 && GetLastError() != ERROR_SUCCESS) {
-            return false;
-        }
+    if (currentStyle == 0 && GetLastError() != ERROR_SUCCESS) {
+        return false;
+    }
+    // Pool acquisition and presentation attach the same prepared HWND again.
+    // Its frame only needs recalculating when the resize style actually changes.
+    if ((currentStyle & WS_THICKFRAME) != 0) {
+        return true;
+    }
+    SetLastError(ERROR_SUCCESS);
+    const LONG_PTR previousStyle = SetWindowLongPtr(hwnd, GWL_STYLE, currentStyle | WS_THICKFRAME);
+    if (previousStyle == 0 && GetLastError() != ERROR_SUCCESS) {
+        return false;
     }
 
     return SetWindowPos(hwnd, nullptr, 0, 0, 0, 0,
