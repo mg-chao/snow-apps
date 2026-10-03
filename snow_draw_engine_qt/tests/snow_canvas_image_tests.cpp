@@ -3,6 +3,7 @@
 #include <snow/memory/pixel_array.h>
 #include "../../test-support/virtualmemory.h"
 
+#include <QBuffer>
 #include <QColorSpace>
 #include <QPainter>
 #include <QSemaphore>
@@ -115,6 +116,58 @@ void imageLayoutAndInvalidSizes() {
         image = {};
         require(!virtualMemoryMapped(middle),
                 "every storage format reaching one megabyte must return its pages");
+    }
+}
+
+void monochromeImagesPreserveDefaultPalette() {
+    for (const auto format : {QImage::Format_Mono, QImage::Format_MonoLSB}) {
+        for (const auto size :
+             {QSize(4096, 2047), QSize(4096, 2048), QSize(4096, 2049), QSize(4097, 2048)}) {
+            QImage image = snowCanvasAllocateImage(size, format);
+            QImage reference(size, format);
+            require(!image.isNull() && image.colorTable() == reference.colorTable(),
+                    "monochrome allocation must retain Qt's default palette at every size");
+            const auto* pixels = image.constBits();
+            image.fill(1);
+            reference.fill(1);
+            image.setPixel(0, 0, 0);
+            reference.setPixel(0, 0, 0);
+            image.setPixel(size.width() - 1, size.height() - 1, 0);
+            reference.setPixel(size.width() - 1, size.height() - 1, 0);
+            require(image == reference && image.pixelColor(0, 0) == QColor(Qt::black) &&
+                        image.pixelColor(1, 0) == QColor(Qt::white),
+                    "both monochrome bit orders must expose the same black and white pixels");
+
+            QByteArray encoded;
+            QBuffer buffer(&encoded);
+            require(buffer.open(QIODevice::WriteOnly) && image.save(&buffer, "PNG"),
+                    "allocated monochrome images must encode with their default palette");
+            const QImage decoded = QImage::fromData(encoded, "PNG");
+            require(decoded.size() == size && decoded.pixelColor(0, 0) == QColor(Qt::black) &&
+                        decoded.pixelColor(1, 0) == QColor(Qt::white) &&
+                        decoded.pixelColor(size.width() - 1, size.height() - 1) ==
+                            QColor(Qt::black),
+                    "monochrome PNG round trips must preserve palette colors and edge pixels");
+
+            image.setColorTable({qRgb(255, 0, 0), qRgb(0, 0, 255)});
+            const QImage fresh = snowCanvasAllocateImage(size, format);
+            require(image.pixelColor(0, 0) == QColor(Qt::red) &&
+                        fresh.colorTable() == reference.colorTable(),
+                    "customizing one image's palette must preserve subsequent default palettes");
+            {
+                const QImage copied = snowCanvasCopyImage(image);
+                require(copied == image && copied.colorTable() == image.colorTable(),
+                        "copying a monochrome image must retain its customized palette");
+            }
+            require(image.constBits() == pixels,
+                    "palette changes must retain unique writable pixel storage");
+            if (image.sizeInBytes() >= qsizetype(snow::memory::kMappedPixelBufferMinimum)) {
+                const auto* middle = pixels + image.sizeInBytes() / 2;
+                image = {};
+                require(!virtualMemoryMapped(middle),
+                        "monochrome palette initialization must preserve final page release");
+            }
+        }
     }
 }
 
@@ -580,6 +633,7 @@ int main() {
     rawBuffersReturnPages();
     imageSharingAndPaintingPreserveOwnership();
     imageLayoutAndInvalidSizes();
+    monochromeImagesPreserveDefaultPalette();
     rasterOperationsPreservePixelsAndReleasePages();
     pixelArraysReleaseOriginalCapacity();
     formatsAndAlphaBoundariesMatchQt();

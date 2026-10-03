@@ -5,6 +5,7 @@
 
 #include <QPainter>
 #include <QColorTransform>
+#include <QList>
 #include <QPolygonF>
 #include <QRgba64>
 #include <QSemaphore>
@@ -89,22 +90,29 @@ void copyMetadata(const QImage& source, QImage& destination) {
         destination.setText(key, source.text(key));
 }
 
-quint64 storageDepth(QImage::Format format) {
+struct ImageFormatInfo {
+    quint8 depth = 0;
+    QList<QRgb> defaultColorTable;
+};
+
+const ImageFormatInfo& imageFormatInfo(QImage::Format format) {
     // Pixel-format channel bits omit unused storage bits (RGB444 is stored in
-    // sixteen bits, RGB666 in twenty-four). Use Qt's public raster depth once
-    // per format for allocation, stride validation, and threshold decisions.
-    static const auto depths = [] {
-        std::array<quint8, QImage::NImageFormats> result{};
-        for (int index = 1; index < QImage::NImageFormats; ++index)
-            result[static_cast<std::size_t>(index)] =
-                static_cast<quint8>(QImage(1, 1, static_cast<QImage::Format>(index)).depth());
+    // sixteen bits, RGB666 in twenty-four). Derive both storage depth and the
+    // default palette from Qt so external allocations retain its format contract.
+    static const auto formats = [] {
+        std::array<ImageFormatInfo, QImage::NImageFormats> result{};
+        for (int index = 1; index < QImage::NImageFormats; ++index) {
+            const QImage prototype(1, 1, static_cast<QImage::Format>(index));
+            result[static_cast<std::size_t>(index)] = {static_cast<quint8>(prototype.depth()),
+                                                       prototype.colorTable()};
+        }
         return result;
     }();
-    return depths[static_cast<std::size_t>(format)];
+    return formats[static_cast<std::size_t>(format)];
 }
 
 bool largeRaster(const QSize& size, QImage::Format format) {
-    const quint64 depth = storageDepth(format);
+    const quint64 depth = imageFormatInfo(format).depth;
     const quint64 stride = ((static_cast<quint64>(size.width()) * depth + 31) / 32) * 4;
     return stride != 0 && static_cast<quint64>(size.height()) >=
                               (snow::memory::kMappedPixelBufferMinimum + stride - 1) / stride;
@@ -417,7 +425,8 @@ QImage snowCanvasAllocateImage(const QSize& size, QImage::Format format) {
     if (size.width() <= 0 || size.height() <= 0 || format <= QImage::Format_Invalid ||
         format >= QImage::NImageFormats)
         return {};
-    const quint64 depth = storageDepth(format);
+    const auto& info = imageFormatInfo(format);
+    const quint64 depth = info.depth;
     const quint64 stride = ((static_cast<quint64>(size.width()) * depth + 31) / 32) * 4;
     const auto maximum = static_cast<quint64>(std::numeric_limits<qsizetype>::max());
     if (stride == 0 || stride > maximum / static_cast<quint64>(size.height()))
@@ -442,6 +451,8 @@ QImage snowCanvasAllocateImage(const QSize& size, QImage::Format format) {
             const std::lock_guard<std::mutex> lock(holder->registry->mutex);
             holder->registry->writableImages.insert(holder->imageIdentity);
         }
+        if (!info.defaultColorTable.isEmpty())
+            image.setColorTable(info.defaultColorTable);
         return image;
     } catch (const std::bad_alloc&) {
         return {};

@@ -151,17 +151,65 @@ impl Frame {
 
     pub fn encode(&self, path: impl AsRef<Path>) -> Result<(), StitchError> {
         let path = path.as_ref();
+        self.encode_file(path)
+            .map_err(|source| StitchError::Encode {
+                path: path.to_path_buf(),
+                source,
+            })
+    }
+
+    fn encode_file(&self, path: &Path) -> image::ImageResult<()> {
+        let format = image::ImageFormat::from_path(path)?;
+        // full-image-io guarantees the concrete JPEG image-view API is available.
+        #[cfg(feature = "full-image-io")]
+        if format == image::ImageFormat::Jpeg {
+            use std::{fs::File, io::BufWriter, io::Write};
+
+            let mut output = BufWriter::new(File::create(path)?);
+            match self.pixel_format {
+                PixelFormat::Gray8 => self.encode_jpeg::<image::Luma<u8>>(&mut output)?,
+                PixelFormat::Rgb8 => self.encode_jpeg::<image::Rgb<u8>>(&mut output)?,
+                PixelFormat::Rgba8 => self.encode_jpeg::<image::Rgba<u8>>(&mut output)?,
+            }
+            return Ok(output.flush()?);
+        }
+        #[cfg(not(feature = "full-image-io"))]
+        if format == image::ImageFormat::Jpeg
+            && format.writing_enabled()
+            && self.pixel_format == PixelFormat::Rgba8
+        {
+            // Cargo feature unification can enable JPEG without full-image-io. Its concrete API
+            // cannot be named here; allocate only the RGB destination, preserving raster policy.
+            let mut rgb = RasterBuffer::zeroed(self.pixels.len() / 4 * 3);
+            for (source, target) in self.pixels.chunks_exact(4).zip(rgb.chunks_exact_mut(3)) {
+                target.copy_from_slice(&source[..3]);
+            }
+            return image::save_buffer_with_format(
+                path,
+                &rgb,
+                self.width,
+                self.height,
+                image::ColorType::Rgb8,
+                format,
+            );
+        }
         let color = match self.pixel_format {
             PixelFormat::Gray8 => image::ColorType::L8,
             PixelFormat::Rgb8 => image::ColorType::Rgb8,
             PixelFormat::Rgba8 => image::ColorType::Rgba8,
         };
-        image::save_buffer(path, &self.pixels, self.width, self.height, color).map_err(|source| {
-            StitchError::Encode {
-                path: path.to_path_buf(),
-                source,
-            }
-        })
+        image::save_buffer_with_format(path, &self.pixels, self.width, self.height, color, format)
+    }
+
+    #[cfg(feature = "full-image-io")]
+    fn encode_jpeg<P>(&self, output: &mut impl std::io::Write) -> image::ImageResult<()>
+    where
+        P: image::PixelWithColorType<Subpixel = u8>,
+    {
+        let borrowed = image::ImageBuffer::<P, _>::from_raw(self.width, self.height, self.pixels())
+            .expect("frame storage was validated against its geometry");
+        // The JPEG image-view API drops alpha one block at a time, without copying the raster.
+        image::codecs::jpeg::JpegEncoder::new(output).encode_image(&borrowed)
     }
 
     pub const fn width(&self) -> u32 {
@@ -385,6 +433,225 @@ impl Frame {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn sample_frame(pixel_format: PixelFormat) -> Frame {
+        let pixels = match pixel_format {
+            PixelFormat::Gray8 => vec![0, 45, 123, 255],
+            PixelFormat::Rgb8 => vec![255, 0, 0, 0, 255, 0, 0, 0, 255, 45, 123, 200],
+            PixelFormat::Rgba8 => {
+                vec![
+                    255, 0, 0, 0, 0, 255, 0, 64, 0, 0, 255, 128, 45, 123, 200, 255,
+                ]
+            }
+        };
+        Frame::new(2, 2, pixel_format, pixels).unwrap()
+    }
+
+    #[test]
+    fn encode_png_preserves_all_frame_formats() {
+        let directory = tempfile::tempdir().unwrap();
+        for pixel_format in [PixelFormat::Gray8, PixelFormat::Rgb8, PixelFormat::Rgba8] {
+            let frame = sample_frame(pixel_format);
+            let path = directory.path().join(format!("{pixel_format}.png"));
+            frame.encode(&path).unwrap();
+            let decoded = image::open(&path).unwrap();
+            assert_eq!((decoded.width(), decoded.height()), (2, 2));
+            assert_eq!(decoded.as_bytes(), frame.pixels());
+        }
+    }
+
+    #[test]
+    fn encode_png_preserves_page_backed_rgba_pixels() {
+        let directory = tempfile::tempdir().unwrap();
+        let mut pixels = RasterBuffer::zeroed(snow_memory::MIN_PAGE_BUFFER_BYTES);
+        for pixel in pixels.chunks_exact_mut(4) {
+            pixel.copy_from_slice(&[45, 123, 200, 64]);
+        }
+        let pointer = pixels.as_ptr();
+        let page_backed = pixels.is_page_backed();
+        let frame = Frame::from_buffer(512, 512, PixelFormat::Rgba8, pixels).unwrap();
+        let path = directory.path().join("pages.png");
+        frame.encode(&path).unwrap();
+        assert_eq!(image::open(path).unwrap().as_bytes(), frame.pixels());
+        let pixels = frame.into_buffer();
+        assert_eq!(pixels.as_ptr(), pointer);
+        assert_eq!(pixels.is_page_backed(), page_backed);
+    }
+
+    #[test]
+    fn encode_jpeg_matches_dynamic_image_color_conversion() {
+        if !image::ImageFormat::Jpeg.writing_enabled() {
+            return;
+        }
+        let directory = tempfile::tempdir().unwrap();
+        for pixel_format in [PixelFormat::Gray8, PixelFormat::Rgb8, PixelFormat::Rgba8] {
+            let frame = sample_frame(pixel_format);
+            let reference = match pixel_format {
+                PixelFormat::Gray8 => image::DynamicImage::ImageLuma8(
+                    image::GrayImage::from_raw(2, 2, frame.pixels().to_vec()).unwrap(),
+                ),
+                PixelFormat::Rgb8 => image::DynamicImage::ImageRgb8(
+                    image::RgbImage::from_raw(2, 2, frame.pixels().to_vec()).unwrap(),
+                ),
+                PixelFormat::Rgba8 => image::DynamicImage::ImageRgba8(
+                    image::RgbaImage::from_raw(2, 2, frame.pixels().to_vec()).unwrap(),
+                ),
+            };
+            let expected_path = directory
+                .path()
+                .join(format!("expected-{pixel_format}.jpg"));
+            reference.save(&expected_path).unwrap();
+            let path = directory.path().join(format!("{pixel_format}.jpg"));
+            frame.encode(&path).unwrap();
+            assert_eq!(
+                std::fs::read(path).unwrap(),
+                std::fs::read(expected_path).unwrap()
+            );
+        }
+    }
+
+    #[test]
+    fn encode_jpeg_discards_alpha_without_changing_page_backed_rgb() {
+        if !image::ImageFormat::Jpeg.writing_enabled() {
+            return;
+        }
+        let directory = tempfile::tempdir().unwrap();
+        let mut pixels = RasterBuffer::zeroed(snow_memory::MIN_PAGE_BUFFER_BYTES);
+        for pixel in pixels.chunks_exact_mut(4) {
+            pixel.copy_from_slice(&[45, 123, 200, 0]);
+        }
+        let pointer = pixels.as_ptr();
+        let page_backed = pixels.is_page_backed();
+        let frame = Frame::from_buffer(512, 512, PixelFormat::Rgba8, pixels).unwrap();
+        let path = directory.path().join("transparent.jpg");
+        frame.encode(&path).unwrap();
+        let opaque = Frame::new(
+            512,
+            512,
+            PixelFormat::Rgb8,
+            [45, 123, 200].repeat(512 * 512),
+        )
+        .unwrap();
+        let opaque_path = directory.path().join("opaque.jpg");
+        opaque.encode(&opaque_path).unwrap();
+        assert_eq!(
+            std::fs::read(path).unwrap(),
+            std::fs::read(opaque_path).unwrap()
+        );
+        let pixels = frame.into_buffer();
+        assert_eq!(pixels.as_ptr(), pointer);
+        assert_eq!(pixels.is_page_backed(), page_backed);
+        assert!(
+            pixels
+                .chunks_exact(4)
+                .all(|pixel| pixel == [45, 123, 200, 0])
+        );
+    }
+
+    #[test]
+    #[cfg(feature = "full-image-io")]
+    fn encode_webp_preserves_all_frame_colors() {
+        let directory = tempfile::tempdir().unwrap();
+        for pixel_format in [PixelFormat::Gray8, PixelFormat::Rgb8, PixelFormat::Rgba8] {
+            let frame = sample_frame(pixel_format);
+            let path = directory.path().join(format!("{pixel_format}.webp"));
+            frame.encode(&path).unwrap();
+            let decoded = image::open(path).unwrap();
+            assert_eq!((decoded.width(), decoded.height()), (2, 2));
+            match pixel_format {
+                PixelFormat::Gray8 => {
+                    let expected: Vec<u8> =
+                        frame.pixels().iter().flat_map(|&v| [v, v, v]).collect();
+                    assert_eq!(decoded.to_rgb8().as_raw(), &expected);
+                }
+                PixelFormat::Rgb8 => assert_eq!(decoded.to_rgb8().as_raw(), frame.pixels()),
+                PixelFormat::Rgba8 => assert_eq!(decoded.to_rgba8().as_raw(), frame.pixels()),
+            }
+        }
+    }
+
+    #[test]
+    fn encode_errors_keep_requested_path_and_cause() {
+        let directory = tempfile::tempdir().unwrap();
+        let frame = sample_frame(PixelFormat::Rgba8);
+        let invalid_extension = directory.path().join("output.unsupported");
+        assert!(matches!(
+            frame.encode(&invalid_extension),
+            Err(StitchError::Encode { path, source: image::ImageError::Unsupported(_) })
+                if path == invalid_extension
+        ));
+        let missing_directory = directory.path().join("missing").join("output.png");
+        assert!(matches!(
+            frame.encode(&missing_directory),
+            Err(StitchError::Encode { path, source: image::ImageError::IoError(_) })
+                if path == missing_directory
+        ));
+    }
+
+    #[test]
+    fn encode_jpeg_errors_keep_requested_path_and_cause() {
+        if !image::ImageFormat::Jpeg.writing_enabled() {
+            return;
+        }
+        let directory = tempfile::tempdir().unwrap();
+        let frame = sample_frame(PixelFormat::Rgba8);
+        let missing_directory = directory.path().join("missing").join("output.JPG");
+        assert!(matches!(
+            frame.encode(&missing_directory),
+            Err(StitchError::Encode { path, source: image::ImageError::IoError(_) })
+                if path == missing_directory
+        ));
+        for (width, height) in [(0, 0), (65_536, 1)] {
+            let frame = Frame::new(
+                width,
+                height,
+                PixelFormat::Rgba8,
+                vec![0; width as usize * height as usize * 4],
+            )
+            .unwrap();
+            let path = directory.path().join(format!("{width}x{height}.jpg"));
+            assert!(matches!(
+                frame.encode(&path),
+                Err(StitchError::Encode { path: actual, source: image::ImageError::Encoding(_) })
+                    if actual == path
+            ));
+        }
+    }
+
+    #[test]
+    #[cfg(feature = "full-image-io")]
+    fn encode_unsupported_frame_colors_remain_errors() {
+        let directory = tempfile::tempdir().unwrap();
+        let frame = sample_frame(PixelFormat::Gray8);
+        for extension in ["gif", "qoi", "hdr", "ff"] {
+            let path = directory.path().join(format!("gray.{extension}"));
+            assert!(matches!(
+                frame.encode(&path),
+                Err(StitchError::Encode { path: actual, source: image::ImageError::Unsupported(_) })
+                    if actual == path
+            ));
+        }
+    }
+
+    #[test]
+    fn encode_jpeg_respects_encoder_availability() {
+        let directory = tempfile::tempdir().unwrap();
+        for pixel_format in [PixelFormat::Gray8, PixelFormat::Rgb8, PixelFormat::Rgba8] {
+            let frame = sample_frame(pixel_format);
+            let path = directory.path().join(format!("{pixel_format}.jpg"));
+            if image::ImageFormat::Jpeg.writing_enabled() {
+                frame.encode(&path).unwrap();
+                let decoded = image::open(path).unwrap();
+                assert_eq!((decoded.width(), decoded.height()), (2, 2));
+                continue;
+            }
+            assert!(matches!(
+                frame.encode(&path),
+                Err(StitchError::Encode { path: actual, source: image::ImageError::Unsupported(_) })
+                    if actual == path
+            ));
+        }
+    }
 
     #[test]
     fn visible_equality_preserves_color() {
