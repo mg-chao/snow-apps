@@ -301,6 +301,59 @@ bool containsOpaqueColor(const QImage& image, const QColor& color) {
 }
 #endif
 
+void verifyLazyGroupMenuRefresh() {
+    snow_shot::presentation::PinnedWindowGroupManager groups;
+    snow_shot::presentation::SystemTrayController controller(
+        snow_shot::presentation::settings::builtInTrayCommandManifest(), &groups);
+    adqt::widgets::AdContextMenu* menu = nullptr;
+    for (QWidget* widget : QApplication::topLevelWidgets())
+        if (widget->objectName() == QStringLiteral("systemTrayMenu"))
+            menu = qobject_cast<adqt::widgets::AdContextMenu*>(widget);
+    require(menu != nullptr, "the group refresh fixture owns a tray menu");
+    menu->setNativeMenuEnabled(false);
+    auto* groupMenu =
+        menu->findChild<adqt::widgets::AdContextMenu*>(QStringLiteral("systemTrayWindowGroupMenu"));
+    require(groupMenu != nullptr, "the group refresh fixture owns a group submenu");
+    const auto defaultAction = [groupMenu]() {
+        for (QAction* action : groupMenu->actions())
+            if (action->objectName() == QStringLiteral("systemTrayGroupAction-default"))
+                return action;
+        return static_cast<QAction*>(nullptr);
+    };
+    QPointer<QAction> originalDefault = defaultAction();
+    for (int index = 0; index < 20; ++index)
+        groups.registerPendingPin(QStringLiteral("lazy-tray-%1").arg(index),
+                                  QStringLiteral("default"));
+    QApplication::processEvents();
+    require(!originalDefault.isNull() && defaultAction() == originalDefault &&
+                originalDefault->text() == QStringLiteral("Default\t0/0"),
+            "hidden group count changes must preserve the existing menu action tree");
+    QMetaObject::invokeMethod(menu, "aboutToShow", Qt::DirectConnection);
+    require(originalDefault.isNull(), "opening the parent tray menu materializes dirty groups");
+    requireActionText(defaultAction(), QStringLiteral("Default\t20/20"),
+                      "the parent tray opening supplies current counts before submenu tracking");
+    QPointer<QAction> currentDefault = defaultAction();
+    QMetaObject::invokeMethod(groupMenu, "aboutToShow", Qt::DirectConnection);
+    require(defaultAction() == currentDefault && !currentDefault.isNull(),
+            "opening an unchanged group submenu must retain its actions");
+
+    for (int index = 0; index < 20; ++index)
+        groups.completePendingPin(QStringLiteral("lazy-tray-%1").arg(index));
+    QApplication::processEvents();
+    groupMenu->popup(QPoint(12, 12));
+    QApplication::processEvents();
+    require(groupMenu->isPopupVisible(), "the visible group regression opens its widget menu");
+    requireActionText(defaultAction(), QStringLiteral("Default\t0/0"),
+                      "opening the submenu reconciles all hidden completions");
+    groups.registerPendingPin(QStringLiteral("visible-tray-pin"), QStringLiteral("default"));
+    QApplication::processEvents();
+    requireActionText(defaultAction(), QStringLiteral("Default\t1/1"),
+                      "visible group menus reflect count changes immediately");
+    groupMenu->hide();
+    groups.completePendingPin(QStringLiteral("visible-tray-pin"));
+    QApplication::processEvents();
+}
+
 } // namespace
 
 int main(int argc, char* argv[]) {
@@ -325,6 +378,11 @@ int main(int argc, char* argv[]) {
     require(languageManager.setLanguage(QStringLiteral("en_US")),
             "English should be available from the English catalog");
 
+    if (application.arguments().contains(QStringLiteral("--group-refresh-only"))) {
+        verifyLazyGroupMenuRefresh();
+        snow_shot::storage::ApplicationStorage::instance().shutdown();
+        return 0;
+    }
     snow_shot::presentation::SystemTrayController controller;
 #ifdef Q_OS_MACOS
     if (application.arguments().contains(QStringLiteral("--native-menu"))) {
@@ -846,6 +904,8 @@ int main(int argc, char* argv[]) {
         menu->findChild<adqt::widgets::AdContextMenu*>(QStringLiteral("systemTrayWindowGroupMenu"));
     require(windowGroupMenu != nullptr, "the tray menu should own a window group submenu");
     const auto groupActionNamed = [windowGroupMenu](const QString& name) {
+        // Materialize the lazy submenu as an actual opening would.
+        QMetaObject::invokeMethod(windowGroupMenu, "aboutToShow", Qt::DirectConnection);
         for (QAction* action : windowGroupMenu->actions()) {
             if (action != nullptr && action->objectName() == name) {
                 return action;
@@ -914,7 +974,9 @@ int main(int argc, char* argv[]) {
     require(trayDeleteSpecifiedMenu != nullptr &&
                 !trayDeleteSpecifiedMenu->menuAction()->icon().isNull(),
             "tray Delete Specified Group should expose the supplied icon");
-    const auto deleteSpecifiedActionNamed = [trayDeleteSpecifiedMenu](const QString& name) {
+    const auto deleteSpecifiedActionNamed = [windowGroupMenu,
+                                             trayDeleteSpecifiedMenu](const QString& name) {
+        QMetaObject::invokeMethod(windowGroupMenu, "aboutToShow", Qt::DirectConnection);
         for (QAction* action : trayDeleteSpecifiedMenu->actions()) {
             if (action != nullptr && action->objectName() == name) {
                 return action;

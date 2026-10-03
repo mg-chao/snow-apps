@@ -38,16 +38,31 @@ struct PinnedWindowPreviewSource final {
     double firstCreationTextDpi = 1.0;
 };
 
+enum class PinnedWindowOperation {
+    PayloadReadAdmission,
+    PayloadRead,
+    PayloadWrite,
+    RetentionWait,
+    RetentionScan,
+    StorageReadDrain
+};
+
 class PinnedWindowRepository final {
   public:
-    explicit PinnedWindowRepository(QString configurationDirectory, bool writeAvailable = true,
-                                    int debounceMilliseconds = 1000);
+    // Optional diagnostics hook runs on the operation's thread, outside metadata
+    // locks. Hooks must not reenter payload reads, flush, retention, or storage
+    // suspension because payload operations keep their file lease while the hook runs.
+    explicit PinnedWindowRepository(
+        QString configurationDirectory, bool writeAvailable = true, int debounceMilliseconds = 1000,
+        std::function<void(PinnedWindowOperation)> operationObserved = {});
     ~PinnedWindowRepository();
 
     [[nodiscard]] static constexpr int maximumGroupCount() {
         return 128;
     }
 
+    // Allocation admission runs while the payload revision is leased; the
+    // callback must not start another payload read, flush, retention, or storage suspension.
     [[nodiscard]] std::optional<PinnedWindowRecord>
     loadRecord(const QString& id, std::function<bool(qint64)> allocationCheck = {}) const;
     [[nodiscard]] std::optional<PinnedWindowPreviewSource>
@@ -102,6 +117,8 @@ class PinnedWindowRepository final {
     [[nodiscard]] StorageResult enforcePolicy(QDateTime now = QDateTime::currentDateTimeUtc());
     [[nodiscard]] StorageResult clearClosed();
     [[nodiscard]] StorageResult flush();
+    // Suspension rejects new payload reads and drains admitted readers before
+    // migration may remove this generation's backing files.
     void suspendWrites(bool suspended);
     // Called with writers suspended, after flush, and with a prepared destination.
     void exchangeStorage(PinnedWindowRepository& prepared);
@@ -117,7 +134,8 @@ class PinnedWindowRepository final {
     mutable std::recursive_mutex m_accessMutex;
     bool m_suspended = false;
     struct Impl;
-    std::unique_ptr<Impl> m_impl;
+    // Readers retain the admitted storage generation across migration.
+    std::shared_ptr<Impl> m_impl;
 };
 
 } // namespace snow_shot::storage

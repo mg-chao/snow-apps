@@ -29,6 +29,8 @@
 #include <stdexcept>
 #include <vector>
 
+int runPinnedLifecyclePerformanceBenchmark(QApplication& application);
+
 namespace {
 
 struct Scenario final {
@@ -243,6 +245,14 @@ int main(int argc, char* argv[]) {
     return 2;
 #endif
     QApplication application(argc, argv);
+    if (application.arguments().contains(QStringLiteral("--lifecycle"))) {
+        try {
+            return runPinnedLifecyclePerformanceBenchmark(application);
+        } catch (const std::exception& error) {
+            std::cerr << error.what() << '\n';
+            return 1;
+        }
+    }
     QCommandLineParser parser;
     parser.addHelpOption();
     QCommandLineOption samplesOption(QStringLiteral("samples"),

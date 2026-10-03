@@ -4517,6 +4517,77 @@ void clipboardAppearancePresentationAndViewportSnapshots() {
     }
 }
 
+void pinnedCloseHidesBeforePersistence() {
+    for (const bool userClose : {false, true}) {
+        ScreenshotPinnedWindow window;
+        window.setAttribute(Qt::WA_DeleteOnClose, false);
+        auto config = cachedOcrPinConfig(nullptr);
+        SnowCanvasRuntime editedRuntime;
+        const QByteArray transaction =
+            R"({"version":1,"operations":[{"type":"rectangle","bounds":[8,8,24,24]}]})";
+        require(!editedRuntime.applyAnnotationTransaction(transaction).isEmpty() &&
+                    editedRuntime.canUndo(),
+                "close persistence fixture must contain an edited document and history");
+        config.initialCanvasSession = editedRuntime.serializeDocumentSession();
+        config.persistenceId = QUuid::createUuid().toString(QUuid::WithoutBraces);
+        bool closing = false;
+        int saves = 0;
+        int signalCount = 0;
+        bool hiddenDuringPersistence = true;
+        bool hiddenDuringSignal = true;
+        bool hiddenAfterUserClose = true;
+        std::optional<snow_shot::storage::PinnedWindowRecord> saved;
+        std::optional<snow_shot::storage::PinnedWindowRecord> published;
+        const auto save = [&](const auto& snapshot) {
+            if (!closing)
+                return;
+            hiddenDuringPersistence &= !window.isVisible() && !window.sourcePinAvailable();
+            saved = snapshot;
+            ++saves;
+        };
+        config.persistenceWriter = save;
+        if (userClose)
+            config.persistenceCloser = save;
+        QObject::connect(
+            &window, &ScreenshotPinnedWindow::closingForPersistence,
+            [&](const auto& snapshot, auto intent) {
+                hiddenDuringSignal &= !window.isVisible();
+                require(intent == (userClose
+                                       ? snow_shot::storage::PinnedWindowCloseIntent::Close
+                                       : snow_shot::storage::PinnedWindowCloseIntent::Preserve),
+                        "close must retain its user or application intent");
+                published = snapshot;
+                ++signalCount;
+            });
+        require(window.present(config), "present close persistence fixture");
+        QCoreApplication::processEvents();
+        const auto finalState = window.persistenceSnapshot();
+        closing = true;
+        if (userClose) {
+            auto* closeAction =
+                window.findChild<QAction*>(QStringLiteral("screenshotPinnedCloseAction"));
+            require(closeAction, "close persistence fixture exposes close action");
+            closeAction->trigger();
+            closeAction->trigger();
+            hiddenAfterUserClose = !window.isVisible();
+            QCoreApplication::processEvents();
+        } else {
+            window.close();
+        }
+        require(hiddenDuringPersistence && hiddenDuringSignal && hiddenAfterUserClose,
+                "close must withdraw the window before persistence or the next event turn");
+        require(saves == 1 && signalCount == 1 && saved && published,
+                "each close must persist and publish its final state once");
+        for (const auto* snapshot : {&*saved, &*published}) {
+            require(snapshot->canvasSession == finalState.canvasSession &&
+                        snapshot->recognitionResults == finalState.recognitionResults &&
+                        snapshot->nativeGeometry == finalState.nativeGeometry &&
+                        snapshot->placement == finalState.placement,
+                    "teardown must preserve the final document, recognition and placement");
+        }
+    }
+}
+
 void deferredPinUserCloseCancelsLateMaterialization() {
     QScreen* screen = QGuiApplication::primaryScreen();
     require(screen != nullptr, "a primary screen is required");
@@ -15533,6 +15604,7 @@ int main(int argc, char* argv[]) {
             return 0;
         }
         if (app.arguments().contains(QStringLiteral("--deferred-user-close-only"))) {
+            pinnedCloseHidesBeforePersistence();
             deferredPinUserCloseCancelsLateMaterialization();
             return 0;
         }

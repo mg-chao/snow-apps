@@ -27,6 +27,7 @@
 #include <QMouseEvent>
 #include <QPointer>
 #include <QPainter>
+#include <QSemaphore>
 #include <QStackedWidget>
 #include <QStringList>
 #include <algorithm>
@@ -46,19 +47,27 @@ class Fixture final : public PinnedWindowManagementDataSource {
     QVector<QString> removed;
     QVector<QSize> previewSizes;
     int fullImageRequests = 0;
+    bool previewFailure = false;
+    mutable int recordRequests = 0;
+    QHash<QString, quint64> previewRevisions;
     QString lastFullImageId;
     QVector<storage::PinnedWindowSummary> records() const override {
+        ++recordRequests;
         return items;
     }
     QVector<storage::PinnedWindowGroup> groups() const override {
         return {{QStringLiteral("default"), QStringLiteral("Default"), true},
                 {QStringLiteral("work"), QStringLiteral("Work"), false}};
     }
-    std::optional<quint64> previewRevision(const QString&) const override {
-        return 1;
+    std::optional<quint64> previewRevision(const QString& id) const override {
+        return previewRevisions.value(id, 1);
     }
     void requestPreview(const QString& id, quint64 requestId, const QSize& targetSize) override {
         previewSizes.push_back(targetSize);
+        if (previewFailure) {
+            emit previewReady(id, requestId, {}, {});
+            return;
+        }
         QImage image(120, 60, QImage::Format_RGB32);
         image.fill(Qt::green);
         emit previewReady(id, requestId, image, image.size());
@@ -178,9 +187,208 @@ void pinnedRowsRespectSkinMask(const QVector<storage::PinnedWindowSummary>& reco
     manager.clearScopeOverride(&backdrop);
 }
 
+void pinnedChangesRefreshOnlyVisiblePages(const QVector<storage::PinnedWindowSummary>& records) {
+    Fixture source;
+    source.items = records;
+    QWidget owner;
+    owner.resize(980, 640);
+    auto* layout = new QVBoxLayout(&owner);
+    auto* page = new PinnedWindowManagementPageWidget(&source, &owner);
+    layout->addWidget(page);
+    auto* viewer = page->findChild<adqt::widgets::AdImageViewer*>();
+    auto* model = page->findChild<adqt::widgets::AdImageListModel*>();
+    require(source.recordRequests == 1 && viewer != nullptr && model != nullptr,
+            "constructing a hidden page prepares its initial records");
+    for (int index = 0; index < 20; ++index)
+        emit source.changed();
+    QApplication::processEvents();
+    require(source.recordRequests == 1, "a hidden page must defer a burst of repository snapshots");
+    owner.show();
+    QApplication::processEvents();
+    require(source.recordRequests == 2,
+            "showing a dirty page takes one current repository snapshot");
+
+    viewer->openAt(0);
+    QApplication::processEvents();
+    const QString previewId = viewer->itemAt(0).source.path();
+    int modelResets = 0;
+    QObject::connect(model, &QAbstractItemModel::modelReset, page,
+                     [&modelResets]() { ++modelResets; });
+    for (auto& record : source.items)
+        if (record.id == previewId)
+            record.ignored = !record.ignored;
+    emit source.changed();
+    require(source.recordRequests == 3 && viewer->isVisible() && modelResets == 0,
+            "visible metadata changes refresh immediately and preserve the current preview");
+    source.previewRevisions.insert(previewId, 2);
+    emit source.changed();
+    require(!viewer->isVisible() && modelResets == 0,
+            "changed image pixels invalidate the preview without resetting an unchanged list");
+
+    viewer->openAt(0);
+    owner.hide();
+    require(!viewer->isVisible(), "hiding the page closes its independent image viewer");
+    const int requestsBeforeHiddenChanges = source.recordRequests;
+    auto newest = records.front();
+    newest.id = QStringLiteral("latest-visible-refresh");
+    source.items = {newest};
+    for (int index = 0; index < 20; ++index)
+        emit source.changed();
+    QApplication::processEvents();
+    require(source.recordRequests == requestsBeforeHiddenChanges && viewer->rowCount() == 2,
+            "parent-window hiding suppresses catalog and preview-list rebuilding");
+    owner.show();
+    QApplication::processEvents();
+    require(source.recordRequests == requestsBeforeHiddenChanges + 1 && viewer->rowCount() == 1 &&
+                viewer->itemAt(0).source.path() == newest.id,
+            "showing the page reconciles all hidden changes with one fresh snapshot");
+}
+
+void pinnedFailedPreviewsRetryOnRefresh(const QVector<storage::PinnedWindowSummary>& records) {
+    Fixture source;
+    source.items = records;
+    source.previewFailure = true;
+    PinnedWindowManagementPageWidget page(&source, nullptr);
+    page.resize(980, 640);
+    page.show();
+    QCoreApplication::processEvents();
+    QPointer<adqt::widgets::AdImage> failedPreview =
+        page.findChild<adqt::widgets::AdImage*>(QStringLiteral("pinnedManagementPreview"));
+    QElapsedTimer timer;
+    timer.start();
+    while (failedPreview && !failedPreview->loadFailed() && timer.elapsed() < 5000) {
+        failedPreview->grab();
+        QCoreApplication::processEvents();
+        QThread::msleep(1);
+    }
+    require(failedPreview && failedPreview->loadFailed(), "seed a transient preview failure");
+    source.previewFailure = false;
+    emit source.changed();
+    QCoreApplication::processEvents();
+    auto* recovered =
+        page.findChild<adqt::widgets::AdImage*>(QStringLiteral("pinnedManagementPreview"));
+    timer.restart();
+    while (recovered && (recovered->loading() || source.previewSizes.size() < 3) &&
+           timer.elapsed() < 5000) {
+        recovered->grab();
+        QCoreApplication::processEvents();
+        QThread::msleep(1);
+    }
+    require(failedPreview.isNull() && recovered && !recovered->loading() &&
+                !recovered->loadFailed(),
+            "refresh retries a failed preview with unchanged record IDs and payload revisions");
+    const QPointer<adqt::widgets::AdImage> successfulPreview = recovered;
+    emit source.changed();
+    require(!successfulPreview.isNull(), "refresh preserves a successfully recovered preview");
+}
+
+void pinnedPreviewRetriesAcrossStorageMigration(const QString& destination) {
+    auto& applicationStorage = storage::ApplicationStorage::instance();
+    auto& repository = applicationStorage.pinnedWindows();
+    storage::PinnedWindowRecord record;
+    record.id = QUuid::createUuid().toString(QUuid::WithoutBraces);
+    record.image = QImage(64, 32, QImage::Format_RGB32);
+    record.image.fill(Qt::yellow);
+    record.nativeGeometry = QRect(QPoint(0, 0), record.image.size());
+    record.canvasSourceRect = QRectF(record.nativeGeometry);
+    record.contentCanvasRect = record.canvasSourceRect;
+    record.surfaceCanvasRect = record.canvasSourceRect;
+    record.initialWindowSize = record.image.size();
+    require(repository.upsert(record).success && repository.flush().success,
+            "seed a persisted preview for migration recovery");
+    const auto payloadRevision = repository.previewSourceRevision(record.id);
+    PinnedWindowManagementPageWidget page;
+    auto* source = page.findChild<PinnedWindowManagementDataSource*>();
+    int replies = 0;
+    bool lastSucceeded = false;
+    QObject::connect(source, &PinnedWindowManagementDataSource::previewReady, &page,
+                     [&](const QString&, quint64, const QImage& image, const QSize&) {
+                         ++replies;
+                         lastSucceeded = !image.isNull();
+                     });
+
+    repository.suspendWrites(true);
+    source->requestPreview(record.id, 700000, QSize(31, 13));
+    require(applicationStorage.pinnedPreviewPool().waitForDone(5000),
+            "queue a rejected preview before delivering the completion generation");
+    repository.suspendWrites(false);
+    // Deliver the migration completion before the already queued worker reply.
+    emit applicationStorage.directoryChangeFinished({true, {}, {}});
+    QElapsedTimer timer;
+    timer.start();
+    while (replies == 0 && timer.elapsed() < 5000) {
+        QCoreApplication::processEvents();
+        QThread::msleep(1);
+    }
+    require(replies == 1 && lastSucceeded,
+            "a failed reply delivered after migration finishes retries the current generation");
+    repository.suspendWrites(true);
+    source->requestPreview(record.id, 700003, QSize(37, 19));
+    require(applicationStorage.pinnedPreviewPool().waitForDone(5000),
+            "queue a preview that remains unavailable after completion");
+    emit applicationStorage.directoryChangeFinished({false, {}, {}});
+    timer.restart();
+    while (replies < 2 && timer.elapsed() < 5000) {
+        QCoreApplication::processEvents();
+        QThread::msleep(1);
+    }
+    require(replies == 2 && !lastSucceeded,
+            "an unavailable preview reports failure after one migration retry");
+    repository.suspendWrites(false);
+
+#ifdef Q_OS_WIN
+    PinnedWindowManagementPageWidget cancelledPage;
+    auto* cancelledSource = cancelledPage.findChild<PinnedWindowManagementDataSource*>();
+    int cancelledReplies = 0;
+    QObject::connect(cancelledSource, &PinnedWindowManagementDataSource::previewReady,
+                     &cancelledPage,
+                     [&](const auto&, auto, const auto&, const auto&) { ++cancelledReplies; });
+    repository.suspendWrites(true);
+    source->requestPreview(record.id, 700001, QSize(33, 15));
+    cancelledSource->requestPreview(record.id, 700002, QSize(35, 17));
+    require(applicationStorage.pinnedPreviewPool().waitForDone(5000),
+            "queue rejected previews before the migration drain");
+    QSemaphore migrationDrain;
+    applicationStorage.setDirectoryChangeHooks([]() { return storage::StorageResult::ok(); }, {},
+                                               [&]() { migrationDrain.acquire(); });
+    bool finished = false;
+    bool succeeded = false;
+    const auto connection =
+        QObject::connect(&applicationStorage, &storage::ApplicationStorage::directoryChangeFinished,
+                         &page, [&](const auto& result) {
+                             finished = true;
+                             succeeded = result.success;
+                         });
+    require(applicationStorage.requestDirectoryChange(destination, true).success,
+            "start a migration held at its drain boundary");
+    QCoreApplication::processEvents();
+    require(applicationStorage.directoryChanging() && replies == 2 && cancelledReplies == 0,
+            "rejected previews wait while migration is active");
+    cancelledSource->cancelPreviews();
+    migrationDrain.release();
+    timer.restart();
+    while ((!finished || replies < 3) && timer.elapsed() < 15000) {
+        QCoreApplication::processEvents();
+        QThread::msleep(1);
+    }
+    applicationStorage.setDirectoryChangeHooks({}, {}, {});
+    QObject::disconnect(connection);
+    require(finished && succeeded && replies == 3 && lastSucceeded && cancelledReplies == 0,
+            "migration retries a waiting preview once and respects cancellation");
+    require(repository.previewSourceRevision(record.id) == payloadRevision,
+            "migration recovery does not depend on a changed payload revision");
+#else
+    Q_UNUSED(destination);
+    Q_UNUSED(payloadRevision);
+#endif
+    require(repository.remove(record.id).success && repository.flush().success,
+            "remove the migration recovery fixture");
+}
+
 int main(int argc, char** argv) {
     QApplication application(argc, argv);
     QTemporaryDir directory;
+    QTemporaryDir migratedDirectory;
     require(storage::ApplicationStorage::instance()
                 .initialize({directory.path(), directory.path(), 30000})
                 .success,
@@ -201,6 +409,9 @@ int main(int argc, char** argv) {
     fixture.items = {first, second};
     pinnedThemeChangesDoNotRestyleTwice(fixture.items);
     pinnedRowsRespectSkinMask(fixture.items);
+    pinnedChangesRefreshOnlyVisiblePages(fixture.items);
+    pinnedFailedPreviewsRetryOnRefresh(fixture.items);
+    pinnedPreviewRetriesAcrossStorageMigration(migratedDirectory.path());
     {
         Fixture many;
         for (int index = 0; index < 15; ++index) {

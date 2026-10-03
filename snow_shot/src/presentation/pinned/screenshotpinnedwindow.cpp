@@ -1873,6 +1873,8 @@ bool ScreenshotPinnedWindow::present(const Config& requestedConfig,
     m_persistenceEnabled = true;
     m_persistenceRemovalRequested = false;
     m_closeIntent = snow_shot::storage::PinnedWindowCloseIntent::Preserve;
+    m_closeSnapshot.reset();
+    m_closeStatePersisted = false;
     m_deferredInactiveGroupClose = false;
     m_inactiveGroupClosing = false;
     applyRuntimeBorderColor();
@@ -2445,32 +2447,39 @@ void ScreenshotPinnedWindow::contextMenuEvent(QContextMenuEvent* event) {
 void ScreenshotPinnedWindow::closeEvent(QCloseEvent* event) {
     stopAttentionShake();
     m_sourcePinAvailable = false;
-    bool savedForClose = false;
     if (event->spontaneous() && !m_inactiveGroupClosing &&
         m_closeIntent == snow_shot::storage::PinnedWindowCloseIntent::Preserve) {
         m_closeIntent = snow_shot::storage::PinnedWindowCloseIntent::Close;
         if (m_groupManager)
             m_groupManager->markWindowClosing(this);
-        if (m_persistenceCloser) {
-            m_persistenceCloser(persistenceRecord());
-            savedForClose = true;
-        }
+    }
+    // Freeze the final document before recognition and render state are torn down.
+    // User-close entry points have already captured this snapshot before hiding.
+    const auto snapshot = m_closeSnapshot ? *m_closeSnapshot : persistenceRecord();
+    hideForClosing();
+    if (!m_closeStatePersisted &&
+        m_closeIntent == snow_shot::storage::PinnedWindowCloseIntent::Close &&
+        m_persistenceCloser) {
+        m_closeStatePersisted = true;
+        m_persistenceCloser(snapshot);
     }
     setFileDragActive(false);
-    emit closingForPersistence(persistenceRecord(), m_closeIntent);
+    emit closingForPersistence(snapshot, m_closeIntent);
     if (m_persistenceRemovalRequested) {
         removePersistence();
     }
     if (!m_persistenceRemovalRequested && m_presented && m_persistenceTimer != nullptr &&
-        !savedForClose) {
+        !m_closeStatePersisted) {
         m_persistenceTimer->stop();
-        persistNow();
+        if (!m_storageWritesSuspended && m_persistenceEnabled && m_persistenceWriter &&
+            !m_persistenceId.isEmpty() &&
+            (!m_originalImage.isNull() || !m_originalClipboardContent.isEmpty())) {
+            m_closeStatePersisted = true;
+            m_persistenceWriter(snapshot);
+        }
     }
-    m_hideToTop->shutdown();
     shutdownClickThrough();
-    m_closing = true;
     m_nonClientPointerInside = false;
-    m_pointerPresence->setActive(false);
     m_deferredInactiveGroupClose = false;
     m_firstContentFramePublished = false;
     m_firstFramePaintPending = false;
@@ -2497,7 +2506,6 @@ void ScreenshotPinnedWindow::closeEvent(QCloseEvent* event) {
     endAuxiliaryWindowInteraction();
     clearWindowDragCursor();
     m_systemSizingActive = false;
-    stopRecognition();
     // Recognition callbacks still target the renderer and canvas. Finish their
     // teardown before those backing objects are destroyed below.
     if (m_recognitionSession != nullptr) {
@@ -2518,6 +2526,7 @@ void ScreenshotPinnedWindow::closeEvent(QCloseEvent* event) {
     m_editController = nullptr;
     destroyCanvas();
     m_runtime.destroyAsync();
+    m_closeSnapshot.reset();
     QWidget::closeEvent(event);
 }
 
@@ -6933,20 +6942,40 @@ void ScreenshotPinnedWindow::closeAllPinnedWindows() {
     schedulePersistence();
 }
 
+void ScreenshotPinnedWindow::hideForClosing() {
+    const bool firstClose = !m_closing;
+    m_closing = true;
+    m_pointerPresence->setActive(false);
+    m_hideToTop->shutdown();
+    if (m_editController != nullptr && m_editController->toolbarWindow() != nullptr)
+        m_editController->toolbarWindow()->hide();
+    if (m_clickThroughExitButton != nullptr)
+        m_clickThroughExitButton->hide();
+    if (m_clickThroughOpacityEditor != nullptr)
+        m_clickThroughOpacityEditor->hide();
+    hide();
+    if (firstClose)
+        stopRecognition();
+}
+
 void ScreenshotPinnedWindow::requestUserClose() {
     if (m_closing) {
         return;
     }
     m_inactiveGroupClosing = false;
+    stopAttentionShake();
     if (m_groupManager)
         m_groupManager->markWindowClosing(this);
     m_closeIntent = snow_shot::storage::PinnedWindowCloseIntent::Close;
     if (m_persistenceTimer)
         m_persistenceTimer->stop();
-    if (m_persistenceCloser)
-        m_persistenceCloser(persistenceRecord());
-    m_closing = true;
-    stopRecognition();
+    m_closeSnapshot = persistenceRecord();
+    m_sourcePinAvailable = false;
+    hideForClosing();
+    if (m_persistenceCloser) {
+        m_closeStatePersisted = true;
+        m_persistenceCloser(*m_closeSnapshot);
+    }
     QTimer::singleShot(0, this, [this]() { close(); });
 }
 

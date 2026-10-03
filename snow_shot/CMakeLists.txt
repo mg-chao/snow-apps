@@ -2662,8 +2662,13 @@ if(SNOW_SHOT_BUILD_TESTS)
     )
     add_test(NAME snow-shot-tray-skin-tests
         COMMAND snow-shot-system-tray-controller-tests --skin-only -platform offscreen)
+    add_test(NAME snow-shot-tray-group-refresh-tests
+        COMMAND snow-shot-system-tray-controller-tests --group-refresh-only -platform offscreen)
     snow_shot_import_offscreen_platform(snow-shot-system-tray-controller-tests)
     set_tests_properties(snow-shot-tray-skin-tests PROPERTIES LABELS "unit" TIMEOUT 60
+        ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}"
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
+    set_tests_properties(snow-shot-tray-group-refresh-tests PROPERTIES LABELS "unit" TIMEOUT 60
         ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}"
         ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
     if(WIN32)
@@ -3938,6 +3943,11 @@ if(SNOW_SHOT_BUILD_TESTS)
         LABELS "interactive;windows" RUN_SERIAL TRUE TIMEOUT 60)
     add_test(NAME snow-shot-pinned-management-lifecycle-tests
         COMMAND snow-shot-pinned-window-tests --management-only -platform offscreen)
+    add_test(NAME snow-shot-pinned-close-persistence-tests
+        COMMAND snow-shot-pinned-window-tests --deferred-user-close-only -platform offscreen)
+    set_tests_properties(snow-shot-pinned-close-persistence-tests PROPERTIES
+        LABELS "unit" RUN_SERIAL TRUE TIMEOUT 30
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
     add_test(NAME snow-shot-pinned-transaction-lifetime-tests
         COMMAND snow-shot-pinned-window-tests --pin-lifetime-only -platform offscreen)
     set_tests_properties(snow-shot-pinned-transaction-lifetime-tests PROPERTIES
@@ -7287,6 +7297,7 @@ if(WIN32 AND SNOW_SHOT_BUILD_BENCHMARKS)
     # sessions.
     add_executable(snow-shot-file-pin-batch-performance-benchmark
         tests/screenshot_file_pin_batch_performance_benchmark.cpp
+        tests/screenshot_pinned_lifecycle_performance_benchmark.cpp
         src/presentation/pinned/screenshotpinnedclickthroughgeometry.cpp
         ${SNOW_SELECTED_FILES_SOURCES}
         src/presentation/services/screenshotfilepinbatch.cpp

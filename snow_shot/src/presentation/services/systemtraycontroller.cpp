@@ -540,31 +540,49 @@ class SystemTrayController::Impl {
         if (showMainWindow != nullptr) {
             menu->insertAction(showMainWindow, groupMenuAction);
         }
-        QObject::connect(groupMenu, &QMenu::aboutToShow, &q, [this]() { rebuildGroupMenu(); });
+        const auto refreshPendingGroups = [this]() {
+            if (groupMenuDirty)
+                rebuildGroupMenu();
+        };
+        QObject::connect(menu.get(), &QMenu::aboutToShow, &q, refreshPendingGroups);
+        QObject::connect(groupMenu, &QMenu::aboutToShow, &q, refreshPendingGroups);
         rebuildGroupMenu();
+    }
+
+    void updateGroupMenuTitle() {
+        groupMenuAction->setText(
+            QCoreApplication::translate("SystemTrayController", "Window Group: %1")
+                .arg(groupManager->displayName(groupManager->activeGroupId())));
+    }
+
+    void requestGroupMenuRefresh() {
+        groupMenuDirty = true;
+        updateGroupMenuTitle();
+        if (menu->isPopupVisible() || groupMenu->isPopupVisible())
+            rebuildGroupMenu();
     }
 
     void rebuildGroupMenu() {
         if (groupMenu == nullptr || groupManager == nullptr) {
             return;
         }
+        groupMenuDirty = false;
         if (deleteSpecifiedGroupMenu != nullptr) {
             deleteSpecifiedGroupMenu->clear();
         }
         groupMenu->clear();
-        groupMenuAction->setText(
-            QCoreApplication::translate("SystemTrayController", "Window Group: %1")
-                .arg(groupManager->displayName(groupManager->activeGroupId())));
-        const auto currentGroups = groupManager->groupsSortedForDisplay();
+        updateGroupMenuTitle();
+        const auto currentGroups = groupManager->displaySnapshot();
         bool hasDeletableEmptyGroups = false;
         for (const auto& group : currentGroups) {
-            const auto counts = groupManager->windowCounts(group.id);
+            const auto counts = group.counts;
             hasDeletableEmptyGroups =
-                hasDeletableEmptyGroups || (!group.builtIn && counts.nonIgnored == 0);
-            QAction* action = groupMenu->addItem(QStringLiteral("%1\t%2/%3")
-                                                     .arg(groupManager->displayName(group.id),
-                                                          QString::number(counts.nonIgnored),
-                                                          QString::number(counts.total)));
+                hasDeletableEmptyGroups ||
+                (group.id != QStringLiteral("default") && counts.nonIgnored == 0);
+            QAction* action =
+                groupMenu->addItem(QStringLiteral("%1\t%2/%3")
+                                       .arg(group.name, QString::number(counts.nonIgnored),
+                                            QString::number(counts.total)));
             action->setObjectName(QStringLiteral("systemTrayGroupAction-%1").arg(group.id));
             action->setData(group.id);
             action->setCheckable(true);
@@ -605,10 +623,10 @@ class SystemTrayController::Impl {
                                      custom_outlined_icons::Delete());
         }
         for (const auto& group : currentGroups) {
-            const auto counts = groupManager->windowCounts(group.id);
+            const auto counts = group.counts;
             QAction* action = deleteSpecifiedGroupMenu->addItem(
                 QStringLiteral("%1\t%2/%3")
-                    .arg(groupManager->displayName(group.id), QString::number(counts.nonIgnored),
+                    .arg(group.name, QString::number(counts.nonIgnored),
                          QString::number(counts.total)));
             action->setObjectName(
                 QStringLiteral("systemTrayDeleteSpecifiedGroupAction-%1").arg(group.id));
@@ -625,9 +643,9 @@ class SystemTrayController::Impl {
         }
         QObject::disconnect(groupManager, nullptr, &q, nullptr);
         QObject::connect(groupManager, &PinnedWindowGroupManager::groupsChanged, &q,
-                         [this]() { rebuildGroupMenu(); });
+                         [this]() { requestGroupMenuRefresh(); });
         QObject::connect(groupManager, &PinnedWindowGroupManager::activeGroupChanged, &q,
-                         [this](const QString&) { rebuildGroupMenu(); });
+                         [this](const QString&) { requestGroupMenuRefresh(); });
     }
 
     void retranslateUi() {
@@ -759,6 +777,7 @@ class SystemTrayController::Impl {
     BalloonKind lastBalloonKind = BalloonKind::None;
     bool enabled = true;
     bool globalShortcutsDisabled = false;
+    bool groupMenuDirty = false;
 };
 
 SystemTrayController::SystemTrayController(QObject* parent)
