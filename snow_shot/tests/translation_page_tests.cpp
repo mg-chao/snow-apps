@@ -447,11 +447,11 @@ void selectedTextNavigation() {
     require(!hasSearchLabel(QStringLiteral("Translate Selected Text")) &&
                 hasSearchLabel(QStringLiteral("Translation Page")),
             "disabled search hides shortcut but exposes the opt-in toggle");
-    require(card->currentRoute() == QStringLiteral("/settings/extended-features") &&
+    require(card->currentRoute() == QStringLiteral("/settings/text-recognition-translation") &&
                 window.findChild<TranslationPageWidget*>() == nullptr,
             "disabled direct handoff redirects to feature settings");
     card->setCurrentRoute(QStringLiteral("/tools/translation"));
-    require(card->currentRoute() == QStringLiteral("/settings/extended-features"),
+    require(card->currentRoute() == QStringLiteral("/settings/text-recognition-translation"),
             "disabled direct route is guarded");
     require(snow_shot::storage::ExtendedFeaturesSettings().setTranslationPageEnabled(true),
             "enable translation page");
@@ -478,7 +478,7 @@ void selectedTextNavigation() {
             "disable active page");
     flushEvents();
     require(oldPage.isNull() &&
-                card->currentRoute() == QStringLiteral("/settings/extended-features"),
+                card->currentRoute() == QStringLiteral("/settings/text-recognition-translation"),
             "disabling active page disposes it and redirects");
     require(snow_shot::storage::ExtendedFeaturesSettings().setTranslationPageEnabled(true),
             "restore page");

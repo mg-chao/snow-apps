@@ -384,7 +384,7 @@ void mainWindowTitlesKeepSmoothRendering() {
         styles::ThemeManager::instance().setThemeAppearance(appearance);
         for (bool settingsPage : {false, true, false}) {
             if (settingsPage) {
-                window.showInterfaceSettings();
+                window.showGeneralSettings();
             } else {
                 card->setCurrentRoute(shortcutRoute);
             }
@@ -460,7 +460,7 @@ void mainWindowSkinIsContinuousAndRestoresTheme(const QString& previewDirectory)
     settings::BuiltInSettingsBackend backend(shortcuts);
     settings::SettingsRuntimeSession session(registry, backend);
     MainWindow window(registry, session);
-    window.showFunctionSettings();
+    window.showScreenshotSettings();
     flushEvents();
     // Offscreen screens can constrain the initial show at fractional DPI.
     // Resize the visible window so these checks use the real 900 by 640 layout.
@@ -561,7 +561,7 @@ void mainWindowSkinIsContinuousAndRestoresTheme(const QString& previewDirectory)
             "reentrant opacity restoration must retain the active skin appearance");
 
     QPointer<MainWindow> closingWindow = new MainWindow(registry, session);
-    closingWindow->showFunctionSettings();
+    closingWindow->showScreenshotSettings();
     waitUntil([&] {
         auto* skin = closingWindow->findChild<presentation::MainWindowSkinWidget*>();
         return skin && skin->skinActive() && !controller->diagnostics().busy;
@@ -679,7 +679,7 @@ void mainWindowSkinIsContinuousAndRestoresTheme(const QString& previewDirectory)
             "expose the skin for scrolling alignment verification");
     waitUntil([&] { return !controller->diagnostics().busy && controller->maskOpacity() == 0.0; });
     auto* pageScroll = card->findChild<adqt::widgets::AdScrollArea*>(settings::generatedObjectName(
-        QStringLiteral("settings-scroll"), QStringLiteral("function-settings")));
+        QStringLiteral("settings-scroll"), QStringLiteral("screenshots")));
     require(pageScroll && pageScroll->verticalScrollBar()->maximum() > 0,
             "the actual function settings page must provide real scrolling content");
     const QImage beforeScroll = root->grab().toImage();
@@ -714,7 +714,7 @@ void mainWindowSkinIsContinuousAndRestoresTheme(const QString& previewDirectory)
     };
     for (const auto appearance : {styles::ThemeAppearance::Light, styles::ThemeAppearance::Dark}) {
         themeManager.setThemeAppearance(appearance);
-        window.showSettingsLocation(QStringLiteral("interface-settings"), QStringLiteral("skin"));
+        window.showSettingsLocation(QStringLiteral("general-appearance"), QStringLiteral("skin"));
         require(configuration.setValue(QStringLiteral("interface/skin_mask_opacity"), 100),
                 "restore control backgrounds before taking their reference");
         waitUntil([&] { return controller->maskOpacity() == 1.0; });
@@ -799,7 +799,7 @@ void mainWindowSkinIsContinuousAndRestoresTheme(const QString& previewDirectory)
             const QString theme = appearance == styles::ThemeAppearance::Light
                                       ? QStringLiteral("light")
                                       : QStringLiteral("dark");
-            window.showSettingsLocation(QStringLiteral("interface-settings"),
+            window.showSettingsLocation(QStringLiteral("general-appearance"),
                                         QStringLiteral("skin"));
             for (const QString& mode : {QStringLiteral("overlay"), QStringLiteral("contain")}) {
                 require(
@@ -858,7 +858,7 @@ void mainWindowSkinIsContinuousAndRestoresTheme(const QString& previewDirectory)
     }
 
     themeManager.setThemeAppearance(previousAppearance);
-    window.showFunctionSettings();
+    window.showScreenshotSettings();
     require(configuration.setValues(savedSkin), "restore the original skin preferences");
     require(configuration.setValue(QStringLiteral("extended_features/translation_page_enabled"),
                                    savedTranslationPage),

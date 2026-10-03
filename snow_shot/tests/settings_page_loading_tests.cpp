@@ -16,6 +16,9 @@
 #include <QListView>
 #include <QLineEdit>
 #include "widgets/switch.h"
+#include "widgets/button.h"
+#include "snow_shot/presentation/components/sectionheaderwidget.h"
+#include "snow_shot/storage/configurationschema.h"
 
 #include <QApplication>
 #include <QDir>
@@ -52,7 +55,7 @@ void drainEvents() {
 
 void settingsRowsHaveOnlySectionSpacing(const settings::SettingsRegistry& registry,
                                         settings::SettingsRuntimeSession& session) {
-    SettingsPageWidget page(registry, QStringLiteral("interface-settings"), session);
+    SettingsPageWidget page(registry, QStringLiteral("general-appearance"), session);
     page.resize(880, 760);
     page.show();
     drainEvents();
@@ -129,11 +132,11 @@ class TestTranslator final : public QTranslator {
 
 void deferredStateAndKeyboard(const settings::SettingsRegistry& registry,
                               settings::SettingsRuntimeSession& session) {
-    SettingsPageWidget page(registry, QStringLiteral("interface-settings"), session);
+    SettingsPageWidget page(registry, QStringLiteral("desktop-tools"), session);
     page.resize(880, 760);
     page.show();
     drainEvents();
-    const QString trayId = QStringLiteral("interface.tray.enabled");
+    const QString trayId = QStringLiteral("floating-toolbar.enabled");
     const auto* tray = registry.field(trayId);
     require(tray != nullptr, "tray field is registered");
     const bool original = session.state(trayId).draftValue.toBool();
@@ -142,8 +145,8 @@ void deferredStateAndKeyboard(const settings::SettingsRegistry& registry,
     TestTranslator translator;
     QCoreApplication::installTranslator(&translator);
     drainEvents();
-    auto* shell =
-        page.findChild<QWidget*>(QStringLiteral("settings-section-list-interface-settings-tray"));
+    auto* shell = page.findChild<QWidget*>(
+        QStringLiteral("settings-section-list-desktop-tools-floating-toolbar-settings"));
     require(shell != nullptr && shell->focusPolicy() == Qt::TabFocus,
             "deferred section participates in keyboard traversal");
     shell->setFocus(Qt::TabFocusReason);
@@ -166,7 +169,7 @@ void deferredStateAndKeyboard(const settings::SettingsRegistry& registry,
 
 void scrollingLoadsSections(const settings::SettingsRegistry& registry,
                             settings::SettingsRuntimeSession& session) {
-    SettingsPageWidget page(registry, QStringLiteral("interface-settings"), session);
+    SettingsPageWidget page(registry, QStringLiteral("files-history"), session);
     page.resize(880, 420);
     page.show();
     drainEvents();
@@ -192,7 +195,7 @@ void scrollingLoadsSections(const settings::SettingsRegistry& registry,
 
 void deferredSections(const settings::SettingsRegistry& registry,
                       settings::SettingsRuntimeSession& session) {
-    SettingsPageWidget page(registry, QStringLiteral("interface-settings"), session);
+    SettingsPageWidget page(registry, QStringLiteral("screenshots"), session);
     page.resize(880, 760);
     page.show();
     drainEvents();
@@ -242,7 +245,7 @@ void deferredSections(const settings::SettingsRegistry& registry,
     page.reveal({page.pageId(), QStringLiteral("drawing"), drawing});
     drainEvents();
     require(page.findChild<QWidget*>(drawingObject) == editor &&
-                page.findChildren<QWidget*>().size() == fullCount,
+                page.findChildren<QWidget*>().size() == fullCount + 1,
             "revisiting a section must reuse its controls");
     page.reveal({page.pageId(), {}, {}});
     drainEvents();
@@ -260,7 +263,7 @@ bool hasSelectableOption(const QAbstractItemModel* model) {
 
 void fontPreviewAndFiltering(const settings::SettingsRegistry& registry,
                              settings::SettingsRuntimeSession& session) {
-    SettingsPageWidget page(registry, QStringLiteral("interface-settings"), session);
+    SettingsPageWidget page(registry, QStringLiteral("general-appearance"), session);
     page.resize(880, 760);
     page.show();
     drainEvents();
@@ -337,7 +340,7 @@ void fontPreviewAndFiltering(const settings::SettingsRegistry& registry,
     require(session.selectValue(settings::SettingsSelectBinding::AppFont).toString() == family,
             "choosing a font commits the setting");
     {
-        SettingsPageWidget unopened(registry, QStringLiteral("interface-settings"), session);
+        SettingsPageWidget unopened(registry, QStringLiteral("general-appearance"), session);
         unopened.resize(880, 760);
         unopened.show();
         drainEvents();
@@ -461,7 +464,7 @@ void multiSettingsSelectsSearch(const settings::SettingsRegistry& registry,
 void unchangedPresentation(const settings::SettingsRegistry& registry,
                            settings::SettingsRuntimeSession& session) {
     CountingStyle style;
-    SettingsPageWidget page(registry, QStringLiteral("interface-settings"), session);
+    SettingsPageWidget page(registry, QStringLiteral("general-appearance"), session);
     page.resize(880, 760);
     page.show();
     drainEvents();
@@ -480,7 +483,7 @@ void unchangedPresentation(const settings::SettingsRegistry& registry,
 
 void skinControlsCommitAndRetranslate(const settings::SettingsRegistry& registry,
                                       settings::SettingsRuntimeSession& session) {
-    SettingsPageWidget page(registry, QStringLiteral("interface-settings"), session);
+    SettingsPageWidget page(registry, QStringLiteral("general-appearance"), session);
     page.resize(880, 520);
     page.show();
     page.reveal({page.pageId(), QStringLiteral("skin"), QStringLiteral("interface.skin.path")});
@@ -569,6 +572,99 @@ void skinControlsCommitAndRetranslate(const settings::SettingsRegistry& registry
                 session.reset(settings::SettingsSectionReset::Skin),
             "skin controls must restore English and the independent Skin defaults");
 }
+void featureLinksAdvancedControlsAndResets(const settings::SettingsRegistry& registry,
+                                           settings::SettingsRuntimeSession& session) {
+    SettingsPageWidget page(registry, QStringLiteral("screen-recording"), session);
+    page.resize(880, 760);
+    page.show();
+    drainEvents();
+    auto* encoding =
+        page.findChild<QWidget*>(QStringLiteral("settings-section-list-screen-recording-encoding"));
+    require(encoding != nullptr && encoding->isHidden(),
+            "specialist encoding controls start collapsed");
+    page.reveal(
+        {page.pageId(), QStringLiteral("encoding"), QStringLiteral("screen-recording.encoder")});
+    drainEvents();
+    auto* encoder =
+        page.findChild<QWidget*>(QStringLiteral("settings-control-screen-recording-encoder"));
+    require(encoding->isVisible() && encoder != nullptr && encoder->isVisible() &&
+                page.findChild<QFrame*>(QStringLiteral("settingsSearchHighlight")) != nullptr,
+            "search expands advanced controls and highlights its exact destination");
+    auto* header = page.findChild<SectionHeaderWidget*>(
+        QStringLiteral("settings-section-screen-recording-encoding"));
+    auto* expand =
+        header->findChild<adqt::widgets::AdButton*>(QStringLiteral("sectionExpandButton"));
+    require(expand && expand->isChecked() && expand->focusPolicy() != Qt::NoFocus,
+            "advanced sections expose a keyboard-accessible expanded state");
+    expand->click();
+    require(encoding->isHidden(), "advanced controls can be collapsed again");
+
+    settings::SettingsLocation destination;
+    QObject::connect(
+        &page, &SettingsPageWidget::commandRequested, &page,
+        [&](const settings::SettingsCommand& command) { destination = command.location; });
+    auto* link = page.findChild<adqt::widgets::AdButton*>(
+        QStringLiteral("settings-link-screen-recording-files-history-screen-recording-output"));
+    require(link != nullptr, "recording preferences link to the shared output settings");
+    TestTranslator translator;
+    QCoreApplication::installTranslator(&translator);
+    drainEvents();
+    require(link->text() == QStringLiteral("Translated: Recording folder && filenames") &&
+                link->accessibleName() ==
+                    QStringLiteral("Translated: Recording folder & filenames"),
+            "related links retranslate accessibly and display literal ampersands");
+    link->click();
+    require(destination == settings::SettingsLocation{QStringLiteral("files-history"),
+                                                      QStringLiteral("screen-recording-output"),
+                                                      {}},
+            "related links navigate to the canonical section without duplicating controls");
+    QCoreApplication::removeTranslator(&translator);
+    drainEvents();
+
+    auto& configuration = snow_shot::storage::ApplicationStorage::instance().configuration();
+    const QString video = QStringLiteral("screen_recording/video_quality");
+    const QString animation = QStringLiteral("screen_recording/animated_image_frame_rate");
+    const QString codec = QStringLiteral("screen_recording/encoder");
+    const QString overlay = QStringLiteral("screen_recording/show_keyboard");
+    require(configuration.setValues(
+                {{video, 37}, {animation, 5}, {codec, QStringLiteral("h265")}, {overlay, true}}),
+            "prepare distinct recording preferences");
+    require(session.reset(settings::SettingsSectionReset::ScreenRecordingVideo) &&
+                configuration.value(video) ==
+                    snow_shot::storage::ConfigurationSchema::defaultValue(video) &&
+                configuration.value(animation).toInt() == 5 &&
+                configuration.value(codec).toString() == QStringLiteral("h265") &&
+                configuration.value(overlay).toBool(),
+            "video reset preserves animation, advanced encoding and recording overlay preferences");
+    require(session.reset(settings::SettingsSectionReset::ScreenRecordingAnimation) &&
+                configuration.value(animation) ==
+                    snow_shot::storage::ConfigurationSchema::defaultValue(animation) &&
+                configuration.value(codec).toString() == QStringLiteral("h265"),
+            "animation reset preserves the selected video encoder");
+    require(session.reset(settings::SettingsSectionReset::ScreenRecordingEncoding) &&
+                configuration.value(codec) ==
+                    snow_shot::storage::ConfigurationSchema::defaultValue(codec),
+            "encoding reset restores its own defaults");
+#ifndef Q_OS_MACOS
+    const QString cursor = QStringLiteral("screenshot/capture_cursor");
+    const QString captureApi = QStringLiteral("screenshot/api_mode");
+    const QString alternateApi =
+        snow_shot::storage::ConfigurationSchema::defaultValue(captureApi).toString() == u"gdi"
+            ? QStringLiteral("dxgi")
+            : QStringLiteral("gdi");
+    require(configuration.setValues({{cursor, true}, {captureApi, alternateApi}}) &&
+                session.reset(settings::SettingsSectionReset::ScreenshotCaptureBehavior) &&
+                !configuration.value(cursor).toBool() &&
+                configuration.value(captureApi).toString() == alternateApi,
+            "ordinary capture reset leaves the compatibility backend unchanged");
+    require(configuration.setValue(cursor, true) &&
+                session.reset(settings::SettingsSectionReset::ScreenshotCaptureCompatibility) &&
+                configuration.value(cursor).toBool() &&
+                configuration.value(captureApi) ==
+                    snow_shot::storage::ConfigurationSchema::defaultValue(captureApi),
+            "advanced capture reset preserves cursor visibility");
+#endif
+}
 } // namespace
 
 int main(int argc, char** argv) {
@@ -593,6 +689,11 @@ int main(int argc, char** argv) {
     settings::BuiltInSettingsBackend backend(shortcuts);
     const auto registry = settings::buildBuiltInSettingsRegistry();
     settings::SettingsRuntimeSession session(registry, backend);
+    if (application.arguments().contains(QStringLiteral("--navigation-only"))) {
+        featureLinksAdvancedControlsAndResets(registry, session);
+        storage.shutdown();
+        return 0;
+    }
     if (application.arguments().contains(QStringLiteral("--selects-only"))) {
         fontPreviewAndFiltering(registry, session);
         multiSettingsSelectsSearch(registry, session);

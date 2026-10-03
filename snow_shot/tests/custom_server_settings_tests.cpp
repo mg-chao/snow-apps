@@ -42,9 +42,10 @@ void serverSettings(const QTemporaryDir& temporary) {
     require(configuration.value(key).toString().isEmpty() && backend.textValue(binding).isEmpty(),
             "empty stored value uses the configured default");
 
-    SettingsPageWidget page(registry, QStringLiteral("api-configuration"), session);
+    SettingsPageWidget page(registry, QStringLiteral("connections-services"), session);
     page.resize(1000, 800);
     page.show();
+    page.reveal({page.pageId(), QStringLiteral("snow-shot-server"), fieldId});
     QApplication::processEvents();
     QLineEdit* serverControl = nullptr;
     for (auto* control : page.findChildren<QLineEdit*>()) {

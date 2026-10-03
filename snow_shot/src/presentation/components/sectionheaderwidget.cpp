@@ -24,6 +24,7 @@ SectionHeaderWidget::SectionHeaderWidget(
     QWidget* parent)
     : QFrame(parent), m_title(title), m_titleLabel(new QLabel(title, this)),
       m_resetButton(new ThemedHeaderIconButton(metric, outlined_icons::Reload(), this)),
+      m_expandButton(new ThemedHeaderIconButton(metric, outlined_icons::Down(), this)),
       m_resetPopconfirm(new adqt::widgets::AdPopconfirm(this)) {
     setAutoFillBackground(false);
     setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
@@ -32,6 +33,12 @@ SectionHeaderWidget::SectionHeaderWidget(
     headerLayout->setContentsMargins(0, metric.marginMD, 0, metric.marginMD);
     headerLayout->setSpacing(metric.marginXS);
 
+    m_expandButton->setObjectName(QStringLiteral("sectionExpandButton"));
+    m_expandButton->setCheckable(true);
+    m_expandButton->setFocusPolicy(Qt::StrongFocus);
+    m_expandButton->setChecked(true);
+    m_expandButton->hide();
+    headerLayout->addWidget(m_expandButton);
     headerLayout->addWidget(m_titleLabel);
     headerLayout->addStretch();
 
@@ -49,6 +56,11 @@ SectionHeaderWidget::SectionHeaderWidget(
             emit refreshRequested();
         }
     });
+    connect(m_expandButton, &QAbstractButton::toggled, this, [this](bool expanded) {
+        m_expandButton->setIconRef(expanded ? outlined_icons::Down() : outlined_icons::Right());
+        retranslateUi();
+        emit expandedChanged(expanded);
+    });
 
     const auto& themeManager = snow_shot::presentation::styles::ThemeManager::instance();
     connect(&themeManager, &snow_shot::presentation::styles::ThemeManager::themeChanged, this,
@@ -62,7 +74,15 @@ void SectionHeaderWidget::setTitle(const QString& title) {
     if (m_titleLabel != nullptr) {
         m_titleLabel->setText(m_title);
     }
-    updateResetConfirmationText();
+    retranslateUi();
+}
+
+void SectionHeaderWidget::setCollapsible(bool collapsible) {
+    m_expandButton->setVisible(collapsible);
+}
+
+void SectionHeaderWidget::setExpanded(bool expanded) {
+    m_expandButton->setChecked(expanded);
 }
 
 void SectionHeaderWidget::setTrailingAction(TrailingAction action) {
@@ -96,6 +116,10 @@ void SectionHeaderWidget::retranslateUi() {
         m_trailingAction == TrailingAction::Refresh ? tr("Refresh") : tr("Reset");
     m_resetButton->setToolTip(actionText);
     m_resetButton->setAccessibleName(actionText);
+    const QString expansionText =
+        m_expandButton->isChecked() ? tr("Collapse %1").arg(m_title) : tr("Expand %1").arg(m_title);
+    m_expandButton->setAccessibleName(expansionText);
+    m_expandButton->setToolTip(expansionText);
     updateResetConfirmationText();
 }
 

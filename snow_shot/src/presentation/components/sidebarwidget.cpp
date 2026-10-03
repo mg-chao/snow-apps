@@ -200,7 +200,11 @@ void SidebarWidget::rebuildNavigationModel() {
             const adqt::icons::IconRef icon = parent == nullptr && navigationPage.iconFactory
                                                   ? navigationPage.iconFactory()
                                                   : adqt::icons::IconRef();
-            QStandardItem* item = createActionItem(page->route, page->title.translated(), icon);
+            const QString title = navigationPage.title.isValid() ? navigationPage.title.translated()
+                                                                 : page->title.translated();
+            QStandardItem* item = createActionItem(page->route, title, icon);
+            item->setData(page->title.translated(), Qt::ToolTipRole);
+            item->setData(page->description.translated(), Qt::AccessibleDescriptionRole);
             if (parent != nullptr) {
                 parent->appendRow(item);
             } else {
@@ -427,7 +431,7 @@ SidebarWidget::SidebarWidget(const snow_shot::presentation::settings::SettingsRe
                 const QString route =
                     m_currentRoute == QStringLiteral("/tools/translation") &&
                             !snow_shot::storage::ExtendedFeaturesSettings().translationPageEnabled()
-                        ? QStringLiteral("/settings/extended-features")
+                        ? QStringLiteral("/settings/text-recognition-translation")
                         : m_currentRoute;
                 rebuildNavigationModel();
                 applyRouteSelection(route, route != m_currentRoute);

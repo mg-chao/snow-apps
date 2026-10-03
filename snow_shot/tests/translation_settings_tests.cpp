@@ -206,15 +206,21 @@ void selectedTextShortcutSettings() {
                     manager.state(action).status == GlobalShortcutStatus::Registered,
                 "editing selected text bindings updates storage and native registrations");
         {
-            SettingsPageWidget page(registry, QStringLiteral("extended-features"), session);
+            SettingsPageWidget page(registry, QStringLiteral("text-recognition-translation"),
+                                    session);
             page.resize(880, 760);
             page.show();
+            page.reveal({page.pageId(), QStringLiteral("translation"),
+                         QStringLiteral("extended-features.translation-page")});
             QCoreApplication::processEvents();
-            auto* header = page.findChild<SectionHeaderWidget*>();
+            auto* header = page.findChild<SectionHeaderWidget*>(
+                QStringLiteral("settings-section-text-recognition-translation-translation"));
+            require(header != nullptr, "translation section exposes its own header");
             auto* reset =
                 header->findChild<adqt::widgets::AdButton*>(QStringLiteral("sectionResetButton"));
             auto* confirmation = header->findChild<adqt::widgets::AdPopconfirm*>();
-            auto* toggle = page.findChild<adqt::widgets::AdSwitch*>();
+            auto* toggle = page.findChild<adqt::widgets::AdSwitch*>(
+                QStringLiteral("settings-control-extended-features-translation-page"));
             require(reset != nullptr && reset->isVisible() && reset->isEnabled() &&
                         confirmation != nullptr && toggle != nullptr && toggle->isChecked() &&
                         reset->geometry().right() == header->contentsRect().right(),

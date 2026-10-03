@@ -467,6 +467,11 @@ enum class SettingsSectionReset {
     CustomAiModels,
     TextTranslationConfigurations,
     ExtendedTranslation,
+    ScreenshotCaptureBehavior,
+    ScreenshotCaptureCompatibility,
+    ScreenRecordingVideo,
+    ScreenRecordingAnimation,
+    ScreenRecordingEncoding,
 };
 
 enum class SettingsSectionItemLayout {
@@ -482,6 +487,7 @@ struct SettingsSectionDefinition {
     SettingsSectionReset reset = SettingsSectionReset::None;
     QVector<SettingsItemDefinition> items;
     SettingsSectionItemLayout itemLayout = SettingsSectionItemLayout::VerticalList;
+    bool collapsedByDefault = false;
 };
 
 enum class SettingsPageKind {
@@ -492,6 +498,12 @@ enum class SettingsPageKind {
     Translation,
 };
 
+// Links share the canonical destination instead of duplicating controls or state.
+struct SettingsRelatedLink {
+    TranslatableText title;
+    SettingsLocation location;
+};
+
 struct SettingsPageDefinition {
     QString id;
     QString route;
@@ -499,12 +511,16 @@ struct SettingsPageDefinition {
     TranslatableText description;
     QVector<SettingsSectionDefinition> sections;
     SettingsPageKind kind = SettingsPageKind::GeneratedSettings;
+    QVector<SettingsRelatedLink> relatedLinks = {};
+    QVector<TranslatableText> aliases = {};
 };
 
 struct SettingsNavigationPageDefinition {
     QString id;
     QString pageId;
     std::function<adqt::icons::IconRef()> iconFactory;
+    // Optional concise sidebar label; search keeps the full page title.
+    TranslatableText title = {};
 };
 
 struct SettingsNavigationGroupDefinition {

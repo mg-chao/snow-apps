@@ -35,6 +35,14 @@ void settingsExcludeRemovedFeatures() {
                                 QStringLiteral("extended-features")}) {
         require(catalog.page(page) == nullptr, "removed settings pages must be unavailable");
     }
+    require(
+        catalog.page(QStringLiteral("text-recognition-translation"))->title.translated() ==
+                QStringLiteral("Text recognition") &&
+            catalog.section(QStringLiteral("connections-services"), QStringLiteral("network")) &&
+            !catalog.section(QStringLiteral("connections-services"), QStringLiteral("ai-model")) &&
+            !catalog.section(QStringLiteral("text-recognition-translation"),
+                             QStringLiteral("translation")),
+        "Mini keeps OCR and network settings without advertising unavailable providers");
     require(catalog.itemForShortcut(snow_shot::presentation::GlobalShortcutAction::ScreenshotOcr) !=
                 nullptr,
             "manual text recognition shortcut must remain available");
@@ -45,6 +53,8 @@ void settingsExcludeRemovedFeatures() {
                     nullptr,
             "translation shortcuts must not be exposed");
     const settings::SettingsSearchIndex index(registry);
+    require(index.search(QStringLiteral("API Key")).isEmpty(),
+            "Mini search must not advertise credentials for unavailable online providers");
     for (const auto& entry : index.entries()) {
         const auto* item = catalog.item(entry.location);
         require(

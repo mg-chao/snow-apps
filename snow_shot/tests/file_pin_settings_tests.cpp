@@ -51,12 +51,12 @@ void windowButtonSettings() {
     settings::BuiltInSettingsBackend backend(manager);
     settings::SettingsRuntimeSession session(settings::builtInSettingsRegistry(), backend);
     const auto* field = settings::builtInSettingsRegistry().fieldForSwitch(binding);
-    require(field && field->pageId == QStringLiteral("function-settings") &&
+    require(field && field->pageId == QStringLiteral("pinned-windows") &&
                 field->sectionId == QStringLiteral("pin-to-screen-settings") &&
                 field->id == QStringLiteral("pin-to-screen.show-window-buttons") &&
                 field->configurationKey == QStringLiteral("pin_to_screen/show_window_buttons") &&
                 field->reset == settings::SettingsSectionReset::PinToScreenBehavior,
-            "window buttons switch belongs to Pin to screen in function settings");
+            "window buttons switch belongs to the Pin to screen preferences");
     require(stored.showWindowButtons() && backend.switchValue(binding) &&
                 session.state(field->id).visible && session.state(field->id).enabled,
             "window buttons default on and their setting is available");

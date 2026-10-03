@@ -160,7 +160,7 @@ class ApplicationController::Impl {
         QObject::connect(&floatingToolbar,
                          &presentation::FloatingToolbarController::customizeRequested, &q, [this] {
                              ensureMainWindow().showSettingsLocation(
-                                 QStringLiteral("interface-settings"),
+                                 QStringLiteral("desktop-tools"),
                                  QStringLiteral("floating-toolbar"));
                          });
         QObject::connect(
@@ -205,7 +205,7 @@ class ApplicationController::Impl {
             });
         QObject::connect(&systemTray,
                          &presentation::SystemTrayController::openFunctionSettingsRequested, &q,
-                         [this]() { ensureMainWindow().showFunctionSettings(); });
+                         [this]() { ensureMainWindow().showScreenshotSettings(); });
         QObject::connect(&systemTray, &presentation::SystemTrayController::openAboutRequested, &q,
                          [this]() { ensureMainWindow().showAbout(); });
         QObject::connect(&systemTray, &presentation::SystemTrayController::exitRequested, &q,
@@ -587,7 +587,7 @@ class ApplicationController::Impl {
                 } else if (action == u"show_settings") {
                     const auto page = params.value(QStringLiteral("page_id")).toString();
                     if (page.isEmpty())
-                        ensureMainWindow().showFunctionSettings();
+                        ensureMainWindow().showScreenshotSettings();
                     else if (settingsRegistry->catalog().page(page))
                         ensureMainWindow().showSettingsLocation(
                             page, params.value(QStringLiteral("section_id")).toString());
@@ -1651,7 +1651,7 @@ class ApplicationController::Impl {
             ensureMainWindow().showPinToScreenManagement();
             break;
         case presentation::GlobalShortcutAction::OpenSettings:
-            showInterfaceSettings();
+            showGeneralSettings();
             break;
         case presentation::GlobalShortcutAction::TranslateSelectedText:
 #if SNOW_SHOT_ENABLE_TEXT_TRANSLATION
@@ -1797,8 +1797,8 @@ class ApplicationController::Impl {
         showUnavailableFeatureInWindow(window, feature);
     }
 
-    void showInterfaceSettings() {
-        ensureMainWindow().showInterfaceSettings();
+    void showGeneralSettings() {
+        ensureMainWindow().showGeneralSettings();
     }
 
     ApplicationController& q;

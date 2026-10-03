@@ -20,6 +20,7 @@
 #include "widgets/divider.h"
 #include "widgets/modal.h"
 #include "widgets/scroll_area.h"
+#include "widgets/detail/flow_layout.h"
 
 #include <QAbstractButton>
 #include <QApplication>
@@ -112,6 +113,7 @@ class SettingsPageWidget::Impl {
         const settings::SettingsSectionPlan* plan = nullptr;
         QWidget* list = nullptr;
         bool materialized = false;
+        bool expanded = true;
     };
 
     Impl(SettingsPageWidget& owner, const settings::SettingsRegistry& sourceRegistry,
@@ -170,6 +172,30 @@ class SettingsPageWidget::Impl {
         contentLayout = pageContainer->contentLayout();
         contentLayout->setSpacing(0);
 
+        if (!page->relatedLinks.isEmpty()) {
+            auto* links = new QWidget(contentWidget);
+            auto* linksLayout =
+                new adqt::widgets::detail::FlowLayout(links, 0, metric.marginXS, metric.marginXS);
+            relatedHeader = new QLabel(q.tr("Related settings"), links);
+            linksLayout->addWidget(relatedHeader);
+            contentLayout->addWidget(links);
+            for (const auto& link : page->relatedLinks) {
+                auto* button = new adqt::widgets::AdButton(links);
+                button->setButtonStyle(adqt::widgets::AdButton::ButtonStyle::Link);
+                button->setAccentRole(adqt::widgets::AdButton::AccentRole::Primary);
+                button->setObjectName(settings::generatedObjectName(
+                    QStringLiteral("settings-link"), page->id + QLatin1Char('-') +
+                                                         link.location.pageId + QLatin1Char('-') +
+                                                         link.location.sectionId));
+                button->setSizePolicy(QSizePolicy::Maximum, QSizePolicy::Fixed);
+                connect(button, &QAbstractButton::clicked, &q, [this, location = link.location] {
+                    emit q.commandRequested({settings::SettingsCommandKind::Navigate, location});
+                });
+                linksLayout->addWidget(button);
+                relatedButtons.push_back(button);
+            }
+        }
+
 #ifdef Q_OS_MACOS
         if (page->id == QStringLiteral("global-mouse") ||
             page->id == QStringLiteral("global-hotkeys")) {
@@ -222,7 +248,7 @@ class SettingsPageWidget::Impl {
             }
         }
         pageLayout->addWidget(pageContainer, 1);
-        if (!sections.isEmpty()) {
+        if (!sections.isEmpty() && sections.first().expanded) {
             materializeSection(sections.first());
         }
         scrollMarginX = metric.paddingSM;
@@ -241,12 +267,15 @@ class SettingsPageWidget::Impl {
         runtimeSection.definition = &sectionDefinition;
         runtimeSection.reset = reset;
         runtimeSection.itemLayout = itemLayout;
+        runtimeSection.expanded = !sectionDefinition.collapsedByDefault;
         runtimeSection.header =
             new SectionHeaderWidget(sectionDefinition.title.translated(), metric, contentWidget);
         runtimeSection.header->setObjectName(settings::generatedObjectName(
             QStringLiteral("settings-section"),
             QStringLiteral("%1-%2").arg(page->id, sectionDefinition.id)));
         runtimeSection.header->setResetVisible(reset != settings::SettingsSectionReset::None);
+        runtimeSection.header->setCollapsible(sectionDefinition.collapsedByDefault);
+        runtimeSection.header->setExpanded(runtimeSection.expanded);
 #ifdef Q_OS_MACOS
         if (page->id == QStringLiteral("app-permissions")) {
             runtimeSection.header->setTrailingAction(SectionHeaderWidget::TrailingAction::Refresh);
@@ -274,6 +303,21 @@ class SettingsPageWidget::Impl {
         sections.push_back(runtimeSection);
         sectionIndexes.insert(sectionDefinition.id, static_cast<int>(sections.size()) - 1);
         contentLayout->addWidget(list);
+        list->setVisible(runtimeSection.expanded);
+        connect(runtimeSection.header, &SectionHeaderWidget::expandedChanged, &q,
+                [this, id = sectionDefinition.id](bool expanded) {
+                    auto* section = this->runtimeSection(id);
+                    if (section == nullptr) {
+                        return;
+                    }
+                    section->expanded = expanded;
+                    section->list->setVisible(expanded);
+                    if (expanded) {
+                        materializeSection(*section);
+                    }
+                    settleLayout();
+                    requestVisibleSectionSync();
+                });
     }
 
     int estimatedSectionHeight(const RuntimeSection& section) const {
@@ -1114,6 +1158,15 @@ class SettingsPageWidget::Impl {
     }
 
     void retranslateUi(int firstItem = 0) {
+        if (relatedHeader != nullptr) {
+            relatedHeader->setText(q.tr("Related settings"));
+            for (int index = 0; index < relatedButtons.size(); ++index) {
+                const QString title = page->relatedLinks.at(index).title.translated();
+                relatedButtons.at(index)->setText(
+                    QString(title).replace(u'&', QStringLiteral("&&")));
+                relatedButtons.at(index)->setAccessibleName(title);
+            }
+        }
         if (firstItem == 0) {
             for (RuntimeSection& runtime : sections) {
                 runtime.header->setTitle(runtime.definition->title.translated());
@@ -1184,6 +1237,11 @@ class SettingsPageWidget::Impl {
                     int firstItem = 0) {
         colorScheme = scheme;
         if (firstItem == 0) {
+            if (relatedHeader != nullptr) {
+                QPalette palette = relatedHeader->palette();
+                palette.setColor(QPalette::WindowText, scheme.map.colorTextSecondary);
+                relatedHeader->setPalette(palette);
+            }
             for (RuntimeSection& runtime : sections) {
                 // Headers subscribe to ThemeManager themselves.
                 if (!runtime.materialized) {
@@ -1240,6 +1298,12 @@ class SettingsPageWidget::Impl {
 
     void rebuildTabOrder() {
         QWidget* previous = nullptr;
+        for (auto* button : relatedButtons) {
+            if (previous != nullptr) {
+                QWidget::setTabOrder(previous, button);
+            }
+            previous = button;
+        }
         for (const RuntimeSection& section : sections) {
             for (QWidget* parent : {static_cast<QWidget*>(section.header), section.list}) {
                 const auto widgets = tabWidgets(parent);
@@ -1296,7 +1360,7 @@ class SettingsPageWidget::Impl {
         // without constructing another entire screen of expensive editors.
         const int overscan = colorScheme.metricAlias.controlHeight;
         for (RuntimeSection& section : sections) {
-            if (section.materialized) {
+            if (section.materialized || !section.expanded) {
                 continue;
             }
             const int top = section.list->y();
@@ -1455,8 +1519,10 @@ class SettingsPageWidget::Impl {
         if (location.pageId != page->id || scrollArea == nullptr) {
             return;
         }
+        delete searchHighlight.data();
         if (!requested.sectionId.isEmpty() || !requested.itemId.isEmpty()) {
             if (RuntimeSection* section = runtimeSection(location.sectionId)) {
+                section->header->setExpanded(true);
                 materializeSection(*section);
                 if (RuntimeItem* item = runtimeItem(location.itemId)) {
                     materializeCustom(*item);
@@ -1507,6 +1573,18 @@ class SettingsPageWidget::Impl {
                 focusWidget->setFocus(Qt::ShortcutFocusReason);
             }
         }
+        if (target != nullptr && !requested.itemId.isEmpty()) {
+            searchHighlight = new QFrame(target);
+            searchHighlight->setObjectName(QStringLiteral("settingsSearchHighlight"));
+            searchHighlight->setAttribute(Qt::WA_TransparentForMouseEvents);
+            searchHighlight->setGeometry(target->rect());
+            searchHighlight->setStyleSheet(
+                QStringLiteral("QFrame#settingsSearchHighlight { border: 2px solid %1; "
+                               "border-radius: 4px; background: transparent; }")
+                    .arg(colorScheme.map.colorPrimary.name()));
+            searchHighlight->show();
+            QTimer::singleShot(1500, searchHighlight, &QObject::deleteLater);
+        }
         suppressVisibleSectionTracking = previousSuppression;
         lastVisibleSectionId = visibleSectionId();
     }
@@ -1520,6 +1598,9 @@ class SettingsPageWidget::Impl {
     adqt::widgets::AdScrollArea* scrollArea = nullptr;
     QWidget* contentWidget = nullptr;
     QVBoxLayout* contentLayout = nullptr;
+    QLabel* relatedHeader = nullptr;
+    QVector<adqt::widgets::AdButton*> relatedButtons;
+    QPointer<QFrame> searchHighlight;
     QVector<RuntimeSection> sections;
     QVector<RuntimeItem> items;
     QHash<QString, int> sectionIndexes;

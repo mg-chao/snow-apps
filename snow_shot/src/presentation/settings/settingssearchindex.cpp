@@ -179,7 +179,7 @@ void SettingsSearchIndex::rebuild() {
             page.title.translated(),
             page.description.translated(),
             pages,
-            {},
+            translatedAliases(page.aliases),
             {},
             order++,
         });
@@ -352,6 +352,13 @@ QVector<SettingsSearchEntry> SettingsSearchIndex::search(const QString& query) c
               [](const RankedEntry& first, const RankedEntry& second) {
                   if (first.score != second.score) {
                       return first.score > second.score;
+                  }
+                  // When a category and one of its controls match equally well,
+                  // take the user directly to the more specific destination.
+                  if (first.entry.kind != second.entry.kind) {
+                      return first.entry.kind == SettingsSearchNodeKind::Item ||
+                             (first.entry.kind == SettingsSearchNodeKind::Section &&
+                              second.entry.kind == SettingsSearchNodeKind::Page);
                   }
                   if (first.entry.catalogOrder != second.entry.catalogOrder) {
                       return first.entry.catalogOrder < second.entry.catalogOrder;

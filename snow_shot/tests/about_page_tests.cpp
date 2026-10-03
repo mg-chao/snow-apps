@@ -710,16 +710,16 @@ void traySettingsAndFunctionNavigation() {
                 backend.selectValue(middle).toString() == QStringLiteral("screenshot_fixed"),
             "reset must restore both modified tray settings");
     MainWindow window(registry, session);
-    window.showInterfaceSettings();
+    window.showGeneralSettings();
     window.hide();
-    window.showFunctionSettings();
+    window.showScreenshotSettings();
     flushEvents();
     auto* card = window.findChild<ContentCardWidget*>();
     auto* sidebar = window.findChild<SidebarWidget*>();
     require(window.isVisible() && card != nullptr && sidebar != nullptr &&
-                card->currentLocation().pageId == QStringLiteral("function-settings") &&
+                card->currentLocation().pageId == QStringLiteral("screenshots") &&
                 card->currentLocation().sectionId == QStringLiteral("screenshot-settings") &&
-                sidebar->currentRoute() == QStringLiteral("/settings/functionSettings"),
+                sidebar->currentRoute() == QStringLiteral("/settings/screenshots"),
             "function settings action must show a hidden window and navigate from another page");
     window.hide();
     window.showAbout();
@@ -802,7 +802,7 @@ void mainNavigationSearchThemesAndLanguages() {
     });
     require(aboutResult != results.cend(), "version search finds About");
     QPointer<AboutPageWidget> previous(page);
-    card->setCurrentRoute(QStringLiteral("/settings/generalSettings"));
+    card->setCurrentRoute(QStringLiteral("/settings/general-appearance"));
     flushEvents();
     require(previous.isNull(), "leaving About releases its page and connections");
     header->locationRequested(aboutResult->location);

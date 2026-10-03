@@ -59,8 +59,9 @@ ContentCardWidget::ContentCardWidget(
                 if (key == QStringLiteral("extended_features/translation_page_enabled") &&
                     m_currentLocation.pageId == QStringLiteral("translation") &&
                     !snow_shot::storage::ExtendedFeaturesSettings().translationPageEnabled()) {
-                    navigateTo(
-                        {QStringLiteral("extended-features"), QStringLiteral("translation"), {}});
+                    navigateTo({QStringLiteral("text-recognition-translation"),
+                                QStringLiteral("translation"),
+                                {}});
                 }
             });
 
@@ -116,7 +117,7 @@ void ContentCardWidget::navigateTo(
     if (resolved.pageId == QStringLiteral("translation") &&
         !snow_shot::storage::ExtendedFeaturesSettings().translationPageEnabled()) {
         resolved = m_registry.catalog().resolveLocation(
-            {QStringLiteral("extended-features"), QStringLiteral("translation"), {}});
+            {QStringLiteral("text-recognition-translation"), QStringLiteral("translation"), {}});
     }
 #endif
     const auto* pageDefinition = m_registry.catalog().page(resolved.pageId);
@@ -262,12 +263,12 @@ void ContentCardWidget::showTranslation(const QString& text) {
 #endif
 }
 
-void ContentCardWidget::showFunctionSettings() {
-    navigateTo({QStringLiteral("function-settings"), QStringLiteral("screenshot-settings"), {}});
+void ContentCardWidget::showScreenshotSettings() {
+    navigateTo({QStringLiteral("screenshots"), QStringLiteral("screenshot-settings"), {}});
 }
 
-void ContentCardWidget::showInterfaceSettings() {
-    navigateTo({QStringLiteral("interface-settings"), QStringLiteral("general"), {}});
+void ContentCardWidget::showGeneralSettings() {
+    navigateTo({QStringLiteral("general-appearance"), QStringLiteral("general"), {}});
 }
 
 void ContentCardWidget::handleCommand(

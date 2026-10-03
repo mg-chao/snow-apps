@@ -37,8 +37,8 @@ class MainWindow : public QMainWindow {
                QWidget* parent = nullptr, SnowShotApiClient* translationClient = nullptr);
 
     void showAndActivate();
-    void showInterfaceSettings();
-    void showFunctionSettings();
+    void showGeneralSettings();
+    void showScreenshotSettings();
     void showSettingsLocation(const QString& pageId, const QString& sectionId = {});
     void showAbout();
     void showAppPermissions(const QString& permissionId = {});

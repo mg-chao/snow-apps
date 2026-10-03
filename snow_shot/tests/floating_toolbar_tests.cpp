@@ -156,21 +156,20 @@ void verifySettings() {
             "reset restores hidden tools and grouping");
     const auto& catalog = settings::builtInSettingsRegistry().catalog();
     require(catalog.validationErrors().isEmpty(), "settings catalog validates");
-    const auto* function = catalog.page(QStringLiteral("function-settings"));
-    const auto* interfacePage = catalog.page(QStringLiteral("interface-settings"));
-    require(function && interfacePage, "both settings pages exist");
+    const auto* desktopTools = catalog.page(QStringLiteral("desktop-tools"));
+    require(desktopTools != nullptr, "desktop tools settings page exists");
     auto after = [](const auto& sections, const QString& before, const QString& next) {
         for (qsizetype index = 1; index < sections.size(); ++index)
             if (sections[index - 1].id == before && sections[index].id == next)
                 return true;
         return false;
     };
-    require(after(function->sections, QStringLiteral("tray-settings"),
+    require(after(desktopTools->sections, QStringLiteral("tray-settings"),
                   QStringLiteral("floating-toolbar-settings")),
-            "function category follows Tray");
-    require(after(interfacePage->sections, QStringLiteral("pin-to-screen"),
+            "floating toolbar behavior follows tray actions");
+    require(after(desktopTools->sections, QStringLiteral("floating-toolbar-settings"),
                   QStringLiteral("floating-toolbar")),
-            "interface category follows Pin to screen");
+            "floating toolbar layout follows its behavior");
 }
 void verifyOpacity() {
     const storage::FloatingToolbarSettings stored;

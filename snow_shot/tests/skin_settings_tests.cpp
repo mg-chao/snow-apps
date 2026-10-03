@@ -310,7 +310,7 @@ void emptySkinSettingsStayLazy(const QString& path) {
                 session.applyFilePathValue(skin, QString()),
             "empty Skin status and same-path reload must remain harmless");
     session.refreshAll();
-    SettingsPageWidget page(registry, QStringLiteral("interface-settings"), session);
+    SettingsPageWidget page(registry, QStringLiteral("general-appearance"), session);
     page.resize(560, 640);
     page.reveal({page.pageId(), QStringLiteral("skin"), {}});
     require(presentation::MainWindowSkinController::existingInstance() == nullptr,
@@ -774,7 +774,7 @@ void skinCopyFitsAfterStatusLanguageThemeAndResize() {
     SkinStatusBackend backend(builtIn);
     const auto registry = settings::buildBuiltInSettingsRegistry();
     settings::SettingsRuntimeSession session(registry, backend);
-    SettingsPageWidget page(registry, QStringLiteral("interface-settings"), session);
+    SettingsPageWidget page(registry, QStringLiteral("general-appearance"), session);
     page.resize(560, 640);
     page.show();
     page.reveal({page.pageId(), QStringLiteral("skin"), {}});

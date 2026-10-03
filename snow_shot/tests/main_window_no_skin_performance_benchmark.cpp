@@ -129,7 +129,7 @@ QJsonObject measure(QApplication& application, const QString& theme, const QStri
     settings::SettingsRuntimeSession session(registry, backend);
     MainWindow window(registry, session);
     const double constructionMs = milliseconds(startup);
-    window.showFunctionSettings();
+    window.showScreenshotSettings();
     flushEvents();
     // Offscreen screens can clamp the initial show. Resize the visible window so
     // the baseline and feature builds render the same logical surface at any DPR.
@@ -169,7 +169,7 @@ QJsonObject measure(QApplication& application, const QString& theme, const QStri
     requireNoSkinObjects(application, window);
     return {{QStringLiteral("label"), label},
             {QStringLiteral("theme"), theme},
-            {QStringLiteral("route"), QStringLiteral("function-settings")},
+            {QStringLiteral("route"), QStringLiteral("screenshots")},
             {QStringLiteral("qt_version"), QString::fromLatin1(qVersion())},
             {QStringLiteral("platform"), QApplication::platformName()},
             {QStringLiteral("root_class"), QString::fromLatin1(central->metaObject()->className())},

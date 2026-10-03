@@ -377,9 +377,9 @@ void MainWindow::showAppPermissions(const QString& permissionId) {
 #endif
 }
 
-void MainWindow::showFunctionSettings() {
+void MainWindow::showScreenshotSettings() {
     if (m_contentCard != nullptr) {
-        m_contentCard->showFunctionSettings();
+        m_contentCard->showScreenshotSettings();
     }
     showAndActivate();
 }
@@ -390,9 +390,9 @@ void MainWindow::showSettingsLocation(const QString& pageId, const QString& sect
     showAndActivate();
 }
 
-void MainWindow::showInterfaceSettings() {
+void MainWindow::showGeneralSettings() {
     if (m_contentCard != nullptr) {
-        m_contentCard->showInterfaceSettings();
+        m_contentCard->showGeneralSettings();
     }
 
     showAndActivate();

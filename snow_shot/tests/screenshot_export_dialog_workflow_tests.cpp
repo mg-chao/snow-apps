@@ -151,7 +151,7 @@ void reusablePathInputsAndSettings() {
     settings::BuiltInSettingsBackend backend(shortcuts);
     const auto& registry = settings::builtInSettingsRegistry();
     settings::SettingsRuntimeSession session(registry, backend);
-    SettingsPageWidget storagePage(registry, QStringLiteral("storage-and-privacy"), session);
+    SettingsPageWidget storagePage(registry, QStringLiteral("files-history"), session);
     storagePage.reveal({storagePage.pageId(), QStringLiteral("screen-recording-output"), {}});
     const auto directoryControls = storagePage.findChildren<DirectoryPathInput*>();
     require(directoryControls.size() == 2,
@@ -163,9 +163,9 @@ void reusablePathInputsAndSettings() {
                 "directory settings must use the directory-specific path control");
     }
 
-    SettingsPageWidget interfacePage(registry, QStringLiteral("interface-settings"), session);
-    interfacePage.reveal({interfacePage.pageId(), QStringLiteral("tray"), {}});
-    const auto fileControls = interfacePage.findChildren<FilePathInput*>();
+    SettingsPageWidget desktopPage(registry, QStringLiteral("desktop-tools"), session);
+    desktopPage.reveal({desktopPage.pageId(), QStringLiteral("tray"), {}});
+    const auto fileControls = desktopPage.findChildren<FilePathInput*>();
     require(fileControls.size() == 1 &&
                 adqt::icons::describeIcon(fileControls.constFirst()->browseButton()->iconRef())
                         .key.name == QStringLiteral("file-add"),

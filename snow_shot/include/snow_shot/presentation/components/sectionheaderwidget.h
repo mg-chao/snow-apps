@@ -30,11 +30,14 @@ class SectionHeaderWidget : public QFrame {
     void setTrailingAction(TrailingAction action);
     void setResetVisible(bool visible);
     void setResetEnabled(bool enabled);
+    void setCollapsible(bool collapsible);
+    void setExpanded(bool expanded);
     void applyTheme(const snow_shot::presentation::styles::ThemeColorScheme& scheme);
 
   signals:
     void resetRequested();
     void refreshRequested();
+    void expandedChanged(bool expanded);
 
   protected:
     void changeEvent(QEvent* event) override;
@@ -46,6 +49,7 @@ class SectionHeaderWidget : public QFrame {
     QString m_title;
     QLabel* m_titleLabel = nullptr;
     adqt::widgets::AdButton* m_resetButton = nullptr;
+    adqt::widgets::AdButton* m_expandButton = nullptr;
     adqt::widgets::AdPopconfirm* m_resetPopconfirm = nullptr;
     TrailingAction m_trailingAction = TrailingAction::Reset;
 };

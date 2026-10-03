@@ -112,7 +112,7 @@ void headerPlacesSearchAboveAntDesignTabs() {
                 filteredOptions.constFirst().value.toString() ==
                     QStringLiteral("item:interface.theme") &&
                 filteredOptions.constFirst().metadata.value(categoryRole).toString() ==
-                    QStringLiteral("Interface settings / General"),
+                    QStringLiteral("General & appearance / Theme & language"),
             "typed searches should still include matching section and item entries");
     select->setSearchText(QString());
     flushEvents();
@@ -185,9 +185,8 @@ void headerPlacesSearchAboveAntDesignTabs() {
     snow_shot::presentation::settings::SettingsLocation activatedLocation;
     QObject::connect(search, &ApplicationSearchWidget::locationActivated, &header,
                      [&activatedLocation](const auto& location) { activatedLocation = location; });
-    select->selected(QStringLiteral("page:storage-and-privacy"),
-                     QStringLiteral("Storage and privacy"));
-    require(activatedLocation.pageId == QStringLiteral("storage-and-privacy") &&
+    select->selected(QStringLiteral("page:files-history"), QStringLiteral("Files & history"));
+    require(activatedLocation.pageId == QStringLiteral("files-history") &&
                 activatedLocation.sectionId.isEmpty() && activatedLocation.itemId.isEmpty(),
             "global search should activate a structured storage page location");
 
@@ -244,7 +243,7 @@ void tabsRequestCategoriesWithoutChangingPages() {
     require(header.currentSection() == QStringLiteral("screenshot"),
             "unknown categories should resolve to the first current-page category");
 
-    const auto interfaceSections = catalog().sectionSummaries(QStringLiteral("interface-settings"));
+    const auto interfaceSections = catalog().sectionSummaries(QStringLiteral("general-appearance"));
     header.setSections(interfaceSections);
     require(tabs->count() == interfaceSections.size(),
             "Interface settings tabs should cover every registry section");

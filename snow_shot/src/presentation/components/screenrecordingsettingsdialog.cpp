@@ -24,16 +24,14 @@ using namespace adqt::widgets;
 settings::SettingsRegistry recordingRegistry() {
     QVector<settings::SettingsPageDefinition> pages;
     for (const auto& page : settings::builtInSettingsRegistry().pages()) {
-        auto recordingPage = page;
-        recordingPage.sections.clear();
-        for (const auto& section : page.sections) {
-            if (section.reset == settings::SettingsSectionReset::ScreenRecording ||
-                section.reset == settings::SettingsSectionReset::ScreenRecordingCapture) {
-                recordingPage.sections.append(section);
-            }
+        if (page.id != QStringLiteral("screen-recording")) {
+            continue;
         }
-        if (!recordingPage.sections.isEmpty())
-            pages.append(std::move(recordingPage));
+        auto recordingPage = page;
+        // The feature page owns all recording controls, independent of how its
+        // sections are grouped or reset. The compact dialog has no navigation.
+        recordingPage.relatedLinks.clear();
+        pages.append(std::move(recordingPage));
     }
     const settings::SettingsLocation initial{
         pages.first().id, pages.first().sections.first().id, {}};

@@ -45,9 +45,11 @@ void contracts(QApplication& app) {
         settings::BuiltInSettingsBackend backend(shortcuts);
         const auto registry = settings::buildBuiltInSettingsRegistry();
         settings::SettingsRuntimeSession session(registry, backend);
-        SettingsPageWidget page(registry, QStringLiteral("api-configuration"), session);
+        SettingsPageWidget page(registry, QStringLiteral("connections-services"), session);
         page.resize(880, 900);
         page.show();
+        page.reveal({page.pageId(), QStringLiteral("text-translation"),
+                     QStringLiteral("api.text-translation")});
         settle();
         auto* widget = page.findChild<TextTranslationSettingsWidget*>();
         require(widget, "text translation category rendered");

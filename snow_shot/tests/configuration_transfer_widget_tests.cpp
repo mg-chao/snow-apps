@@ -223,7 +223,7 @@ void configurationItemsRenderAsButtons() {
     const settings::SettingsRegistry& registry = settings::builtInSettingsRegistry();
     RecordingSettingsBackend backend;
     settings::SettingsRuntimeSession session(registry, backend);
-    SettingsPageWidget page(registry, QStringLiteral("storage-and-privacy"), session);
+    SettingsPageWidget page(registry, QStringLiteral("files-history"), session);
     page.reveal({page.pageId(), registry.field(QStringLiteral("configuration.export"))->sectionId,
                  QStringLiteral("configuration.export")});
     page.resize(960, 480);
@@ -324,7 +324,7 @@ void configurationBusyStateDisablesBothButtons() {
     const settings::SettingsRegistry& registry = settings::builtInSettingsRegistry();
     RecordingSettingsBackend backend;
     settings::SettingsRuntimeSession session(registry, backend);
-    SettingsPageWidget page(registry, QStringLiteral("storage-and-privacy"), session);
+    SettingsPageWidget page(registry, QStringLiteral("files-history"), session);
     page.reveal({page.pageId(), registry.field(QStringLiteral("configuration.export"))->sectionId,
                  QStringLiteral("configuration.export")});
 
@@ -352,7 +352,7 @@ void buttonTextsRetranslate() {
     const settings::SettingsRegistry& registry = settings::builtInSettingsRegistry();
     RecordingSettingsBackend backend;
     settings::SettingsRuntimeSession session(registry, backend);
-    SettingsPageWidget page(registry, QStringLiteral("storage-and-privacy"), session);
+    SettingsPageWidget page(registry, QStringLiteral("files-history"), session);
     page.reveal({page.pageId(), registry.field(QStringLiteral("configuration.export"))->sectionId,
                  QStringLiteral("configuration.export")});
 
@@ -511,7 +511,7 @@ int main(int argc, char** argv) {
             const settings::SettingsRegistry& registry = settings::builtInSettingsRegistry();
             RecordingSettingsBackend backend;
             settings::SettingsRuntimeSession session(registry, backend);
-            SettingsPageWidget page(registry, QStringLiteral("storage-and-privacy"), session);
+            SettingsPageWidget page(registry, QStringLiteral("files-history"), session);
             page.reveal({page.pageId(),
                          registry.field(QStringLiteral("configuration.export"))->sectionId,
                          QStringLiteral("configuration.export")});

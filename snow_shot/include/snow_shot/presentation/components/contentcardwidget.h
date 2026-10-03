@@ -37,8 +37,8 @@ class ContentCardWidget final : public QFrame {
     void setCurrentRoute(const QString& route);
     void activateSection(const QString& sectionId);
     void navigateTo(const snow_shot::presentation::settings::SettingsLocation& location);
-    void showInterfaceSettings();
-    void showFunctionSettings();
+    void showGeneralSettings();
+    void showScreenshotSettings();
     void showTranslation(const QString& text);
     void applyTheme(const snow_shot::presentation::styles::ThemeColorScheme& scheme);
     void setSkinMaskOpacity(qreal opacity);

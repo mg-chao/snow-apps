@@ -65,10 +65,10 @@ int main(int argc, char** argv) {
     settings::BuiltInSettingsBackend backend(shortcuts);
     const auto registry = settings::buildBuiltInSettingsRegistry();
     const auto* field = registry.field(QStringLiteral("interface.app-font"));
-    require(field != nullptr && field->pageId == QStringLiteral("interface-settings") &&
+    require(field != nullptr && field->pageId == QStringLiteral("general-appearance") &&
                 field->definition->configurationKey == QStringLiteral("interface/app_font"),
             "app font is registered in interface settings");
-    const auto* page = registry.catalog().page(QStringLiteral("interface-settings"));
+    const auto* page = registry.catalog().page(QStringLiteral("general-appearance"));
     const auto& general = page->sections.first();
     require(general.items.last().id == field->id && general.items.at(general.items.size() - 2).id ==
                                                         QStringLiteral("interface.language"),

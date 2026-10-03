@@ -1878,6 +1878,19 @@ bool BuiltInSettingsBackend::resetSection(SettingsSectionReset reset) {
         return false;
 #endif
     switch (reset) {
+    case SettingsSectionReset::ScreenshotCaptureBehavior:
+    case SettingsSectionReset::ScreenshotCaptureCompatibility:
+    case SettingsSectionReset::ScreenRecordingVideo:
+    case SettingsSectionReset::ScreenRecordingAnimation:
+    case SettingsSectionReset::ScreenRecordingEncoding: {
+        QMap<QString, QJsonValue> defaults;
+        const auto& registry = builtInSettingsRegistry();
+        for (int fieldIndex : registry.fieldsForReset(reset)) {
+            const auto& field = registry.fields().at(fieldIndex);
+            defaults.insert(field.configurationKey, field.defaultValue);
+        }
+        return storage::ApplicationStorage::instance().configuration().setValues(defaults);
+    }
     case SettingsSectionReset::Skin: {
         QMap<QString, QJsonValue> defaults;
         for (const auto* key :

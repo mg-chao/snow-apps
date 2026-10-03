@@ -87,11 +87,11 @@ void customAiModelRowsRespectSkinMask(const settings::SettingsRegistry& registry
                                       settings::SettingsRuntimeSession& session) {
     SkinBackdrop backdrop;
     backdrop.resize(880, 760);
-    SettingsPageWidget page(registry, QStringLiteral("api-configuration"), session, &backdrop);
+    SettingsPageWidget page(registry, QStringLiteral("connections-services"), session, &backdrop);
     page.resize(backdrop.size());
     backdrop.show();
     page.show();
-    page.reveal({QStringLiteral("api-configuration"), QStringLiteral("ai-model"), {}});
+    page.reveal({QStringLiteral("connections-services"), QStringLiteral("ai-model"), {}});
     flush();
     auto* row = page.findChild<QWidget*>(QStringLiteral("customAiModelRow:") +
                                          session.customAiModels().first().id);
@@ -277,14 +277,14 @@ void widgetContracts(QApplication& application) {
         settings::BuiltInSettingsBackend backend(shortcuts);
         const auto registry = settings::buildBuiltInSettingsRegistry();
         settings::SettingsRuntimeSession session(registry, backend);
-        SettingsPageWidget page(registry, QStringLiteral("api-configuration"), session);
+        SettingsPageWidget page(registry, QStringLiteral("connections-services"), session);
         page.resize(880, 760);
         page.show();
         flush();
         auto* widget = page.findChild<CustomAiModelsSettingsWidget*>();
         require(widget != nullptr, "page constructs custom model renderer");
         auto* header = page.findChild<SectionHeaderWidget*>(settings::generatedObjectName(
-            QStringLiteral("settings-section"), QStringLiteral("api-configuration-ai-model")));
+            QStringLiteral("settings-section"), QStringLiteral("connections-services-ai-model")));
         require(header != nullptr, "AI model category header exists");
         auto* reset = header->findChild<AdButton*>(QStringLiteral("sectionResetButton"));
         auto* confirmation = header->findChild<AdPopconfirm*>();

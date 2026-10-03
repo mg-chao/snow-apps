@@ -564,6 +564,14 @@ so every moment on screen can be expressed clearly and shared easily.</source>
     <context>
         <name>SectionHeaderWidget</name>
         <message>
+            <source>Collapse %1</source>
+            <translation>收合%1</translation>
+        </message>
+        <message>
+            <source>Expand %1</source>
+            <translation>展開%1</translation>
+        </message>
+        <message>
             <source>Refresh</source>
             <translation>重新整理</translation>
         </message>

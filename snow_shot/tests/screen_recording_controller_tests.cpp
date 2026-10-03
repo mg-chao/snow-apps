@@ -2255,8 +2255,7 @@ void recordingSettingsDialog() {
     const auto& registry = settings::builtInSettingsRegistry();
     int expectedCount = 0;
     for (const auto& descriptor : registry.fields()) {
-        if (descriptor.reset != settings::SettingsSectionReset::ScreenRecording &&
-            descriptor.reset != settings::SettingsSectionReset::ScreenRecordingCapture)
+        if (descriptor.pageId != QStringLiteral("screen-recording"))
             continue;
         ++expectedCount;
         require(form->field(descriptor.id) != nullptr,
