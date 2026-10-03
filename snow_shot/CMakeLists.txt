@@ -5722,7 +5722,7 @@ if(SNOW_SHOT_BUILD_TESTS)
     )
     target_link_libraries(snow-shot-sidebar-widget-tests PRIVATE
         ant_design_qt
-        snow_shot_settings_catalog
+        snow_shot_settings_search
         Qt6::Widgets
     )
     add_test(
@@ -5745,8 +5745,31 @@ if(SNOW_SHOT_BUILD_TESTS)
         )
     endif()
 
+    add_executable(snow-shot-application-search-tests
+        tests/application_search_tests.cpp
+        "${CMAKE_CURRENT_SOURCE_DIR}/../test-support/fonts/recording_test_fonts.qrc"
+        include/snow_shot/presentation/styles/thememanager.h
+        src/presentation/styles/themecolorscheme.cpp
+        src/presentation/styles/thememanager.cpp
+    )
+    target_link_libraries(snow-shot-application-search-tests PRIVATE
+        snow_shot_settings_search
+    )
+    snow_shot_import_offscreen_platform(snow-shot-application-search-tests)
+    add_test(
+        NAME snow-shot-application-search-tests
+        COMMAND snow-shot-application-search-tests -platform offscreen
+    )
+    set_tests_properties(snow-shot-application-search-tests PROPERTIES
+        ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}"
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+        LABELS "unit"
+    )
+
     add_executable(snow-shot-main-content-header-tests
         tests/main_content_header_tests.cpp
+        include/snow_shot/presentation/components/sidebarwidget.h
+        src/presentation/components/sidebarwidget.cpp
         include/snow_shot/presentation/components/maincontentheaderwidget.h
         include/snow_shot/presentation/styles/themecolorscheme.h
         include/snow_shot/presentation/styles/thememanager.h
@@ -5764,6 +5787,7 @@ if(SNOW_SHOT_BUILD_TESTS)
         Qt6::Widgets
         snow_shot_storage
     )
+    snow_shot_import_offscreen_platform(snow-shot-main-content-header-tests)
     add_test(
         NAME snow-shot-main-content-header-tests
         COMMAND snow-shot-main-content-header-tests

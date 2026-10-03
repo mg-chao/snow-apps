@@ -1,11 +1,17 @@
 #include "snow_shot/presentation/components/maincontentheaderwidget.h"
 #include "snow_shot/presentation/components/applicationsearchwidget.h"
+#include "snow_shot/presentation/components/sidebarwidget.h"
+#include "widgets/button.h"
+#include "widgets/scroll_area.h"
+#include <QHBoxLayout>
+#include <QTranslator>
 #include "snow_shot/presentation/settings/settingsregistry.h"
 #include "snow_shot/presentation/styles/thememanager.h"
 #include "snow_shot/storage/applicationstorage.h"
 #include "snow_shot/storage/settingsadapters.h"
 
 #include "widgets/select.h"
+#include "widgets/detail/popup_shadow.h"
 #include "widgets/tabs.h"
 
 #include <QApplication>
@@ -14,6 +20,7 @@
 #include <QImage>
 #include <QFontMetrics>
 #include <QLayout>
+#include <QScrollBar>
 #include <QListView>
 #include <QPalette>
 #include <QPainter>
@@ -52,17 +59,25 @@ void flushEvents() {
     QCoreApplication::processEvents();
 }
 
-void headerPlacesSearchAboveAntDesignTabs() {
+void sidebarPlacesSearchAboveNavigation() {
     using snow_shot::presentation::styles::ThemeManager;
 
-    MainContentHeaderWidget header(registry(),
-                                   ThemeManager::instance().themeColorScheme().metricAlias);
+    QWidget host;
+    MainContentHeaderWidget header(ThemeManager::instance().themeColorScheme().metricAlias);
+    auto* layout = new QHBoxLayout(&host);
+    layout->setContentsMargins(0, 0, 0, 0);
+    layout->setSpacing(0);
+    SidebarWidget sidebar(registry());
+    sidebar.setCollapsed(false);
+    layout->addWidget(&sidebar);
+    layout->addWidget(&header, 1, Qt::AlignTop);
     header.setSections(globalHotkeySections());
-    header.resize(680, header.sizeHint().height());
-    header.show();
+    host.resize(900, 540);
+    host.show();
     flushEvents();
 
-    auto* search = header.findChild<ApplicationSearchWidget*>(QStringLiteral("globalTopSearchBar"));
+    auto* search =
+        sidebar.findChild<ApplicationSearchWidget*>(QStringLiteral("globalTopSearchBar"));
     auto* select = search != nullptr ? search->findChild<adqt::widgets::AdSelect*>() : nullptr;
     auto* tabs = header.findChild<adqt::widgets::AdTabs*>(QStringLiteral("mainSectionTabs"));
 
@@ -70,15 +85,25 @@ void headerPlacesSearchAboveAntDesignTabs() {
                 header.autoFillBackground(),
             "the content header should be an independent themed surface");
     require(search != nullptr && select != nullptr,
-            "the content header should expose the promoted global search");
+            "the sidebar should expose global search above its navigation");
     require(tabs != nullptr && tabs->type() == adqt::widgets::AdTabs::Type::Line,
             "the content header should use ant_design_qt line tabs");
     require(tabs->animated(),
             "the content header should keep ant_design_qt tab transitions enabled");
-    require(search->geometry().bottom() <= tabs->geometry().top(),
-            "the global search should sit above the page tabs");
-    require(search->width() >= 280 && search->width() <= 400,
-            "the global search should retain a stable readable width");
+    auto* scroll = sidebar.findChild<adqt::widgets::AdScrollArea*>();
+    require(scroll != nullptr &&
+                search->mapTo(&sidebar, search->rect().bottomLeft()).y() < scroll->geometry().top(),
+            "search should sit above the independently scrollable navigation");
+    const auto& metric = ThemeManager::instance().themeColorScheme().metricAlias;
+    require(search->width() == sidebar.width() - 2 * metric.paddingSM &&
+                search->mapTo(&sidebar, QPoint()).x() == metric.paddingSM &&
+                search->mapTo(&sidebar, QPoint()).y() == metric.paddingXS,
+            "sidebar search should have compact top spacing and balanced side spacing");
+    require(select->placeholder() == QStringLiteral("Search Function") &&
+                select->accessibleName() == QStringLiteral("Search Function"),
+            "the search placeholder and accessible name should use the requested copy");
+    require(header.findChild<ApplicationSearchWidget*>() == nullptr,
+            "the page header should only contain page tabs");
     const auto globalHotkeySectionsForPage = globalHotkeySections();
     require(tabs->count() == globalHotkeySectionsForPage.size(),
             "tabs should cover every category on the current global-hotkeys page");
@@ -158,10 +183,10 @@ void headerPlacesSearchAboveAntDesignTabs() {
             "the default search popup should render one row per page without group headers");
     require(resultList->sizeHintForRow(0) >= 52,
             "search result rows should be tall enough for title and description text");
-    require(select->popupMatchSelectWidth() && resultList->width() <= select->width(),
-            "the search popup should match the control while its list respects popup padding");
+    require(!select->popupMatchSelectWidth() && resultList->width() > select->width(),
+            "sidebar search results should retain a readable width beyond the narrow field");
     QWidget* resultPopup = resultList->window();
-    if (resultPopup == &header) {
+    if (resultPopup == &host) {
         QWidget* candidate = resultList;
         while (candidate != nullptr &&
                candidate->objectName() != QStringLiteral("adselect-popup")) {
@@ -171,10 +196,15 @@ void headerPlacesSearchAboveAntDesignTabs() {
     }
     require(resultPopup != nullptr,
             "the search result list should belong to an Ant Design popup surface");
-    const int selectCenter = select->mapTo(&header, select->rect().center()).x();
-    const int popupCenter = resultPopup->mapTo(&header, resultPopup->rect().center()).x();
-    require(std::abs(selectCenter - popupCenter) <= 1,
-            "the search result popup should be horizontally centered under the search control");
+    const int selectLeft = select->mapToGlobal(QPoint()).x();
+    const int popupLeft =
+        resultPopup
+            ->mapToGlobal(adqt::widgets::detail::antPopupShadowVisualRect(resultPopup->rect())
+                              .topLeft()
+                              .toPoint())
+            .x();
+    require(std::abs(selectLeft - popupLeft) <= 1,
+            "search results should align with the left edge of the sidebar field");
     const QString resultsSnapshotPath = qEnvironmentVariable("SNOW_SHOT_SEARCH_RESULTS_SNAPSHOT");
     if (!resultsSnapshotPath.isEmpty()) {
         const QImage snapshot = resultList->grab().toImage();
@@ -183,7 +213,7 @@ void headerPlacesSearchAboveAntDesignTabs() {
     }
     select->hidePopup();
     snow_shot::presentation::settings::SettingsLocation activatedLocation;
-    QObject::connect(search, &ApplicationSearchWidget::locationActivated, &header,
+    QObject::connect(&sidebar, &SidebarWidget::locationRequested, &host,
                      [&activatedLocation](const auto& location) { activatedLocation = location; });
     select->selected(QStringLiteral("page:files-history"), QStringLiteral("Export & storage"));
     require(activatedLocation.pageId == QStringLiteral("files-history") &&
@@ -192,22 +222,53 @@ void headerPlacesSearchAboveAntDesignTabs() {
 
     const QString snapshotPath = qEnvironmentVariable("SNOW_SHOT_MAIN_HEADER_SNAPSHOT");
     if (!snapshotPath.isEmpty()) {
-        const QImage snapshot = header.grab().toImage();
+        const QImage snapshot = host.grab().toImage();
         require(!snapshot.isNull() && snapshot.save(snapshotPath),
                 "the main content header snapshot should be writable");
     }
 
-    header.resize(292, header.sizeHint().height());
+    host.resize(512, 316);
     flushEvents();
-    require(search->geometry().left() >= 0 && search->geometry().right() < header.width(),
-            "the global search should remain inside the header at minimum content width");
-    require(search->geometry().bottom() <= tabs->geometry().top(),
-            "search and tabs should not overlap at minimum content width");
-
+    require(search->mapTo(&sidebar, search->rect().topLeft()).x() >= 0 &&
+                search->mapTo(&sidebar, search->rect().topRight()).x() < sidebar.width(),
+            "the search should remain inside the sidebar at minimum window size");
+    require(header.geometry().right() < host.width(),
+            "tabs should fit the remaining content width at minimum window size");
+    const auto verifyFixedSearchGap = [&](QWidget* searchControl) {
+        const QPoint searchPosition = searchControl->mapTo(&sidebar, QPoint());
+        require(scroll->verticalScrollBar()->maximum() > 0,
+                "the spacing regression should exercise overflowing navigation");
+        for (const int position : {0, scroll->verticalScrollBar()->maximum()}) {
+            scroll->verticalScrollBar()->setValue(position);
+            flushEvents();
+            const int searchBottom =
+                searchControl->mapTo(&sidebar, searchControl->rect().bottomLeft()).y() + 1;
+            require(scroll->mapTo(&sidebar, QPoint()).y() - searchBottom == metric.paddingXXS &&
+                        searchControl->mapTo(&sidebar, QPoint()) == searchPosition,
+                    "search must own a fixed gap above the menu at every scroll position");
+        }
+        scroll->verticalScrollBar()->setValue(0);
+    };
+    verifyFixedSearchGap(search);
+    sidebar.setCollapsed(true);
+    flushEvents();
+    auto* searchButton =
+        sidebar.findChild<adqt::widgets::AdButton*>(QStringLiteral("sidebarSearchButton"));
+    require(searchButton != nullptr && searchButton->isVisible() && search->isHidden() &&
+                sidebar.width() == 80,
+            "collapsed navigation should offer an accessible search icon without clipping text");
+    verifyFixedSearchGap(searchButton);
+    searchButton->click();
+    flushEvents();
+    require(!sidebar.isCollapsed() && search->isVisible() && searchButton->isHidden() &&
+                (select->hasFocus() || select->isAncestorOf(QApplication::focusWidget())),
+            "the collapsed search button should expand navigation and focus search");
     const QString narrowSnapshotPath =
         qEnvironmentVariable("SNOW_SHOT_MAIN_HEADER_NARROW_SNAPSHOT");
     if (!narrowSnapshotPath.isEmpty()) {
-        const QImage snapshot = header.grab().toImage();
+        scroll->verticalScrollBar()->setValue(scroll->verticalScrollBar()->maximum());
+        flushEvents();
+        const QImage snapshot = host.grab().toImage();
         require(!snapshot.isNull() && snapshot.save(narrowSnapshotPath),
                 "the narrow main content header snapshot should be writable");
     }
@@ -216,8 +277,8 @@ void headerPlacesSearchAboveAntDesignTabs() {
 void tabsRequestCategoriesWithoutChangingPages() {
     using snow_shot::presentation::styles::ThemeManager;
 
-    MainContentHeaderWidget header(registry(),
-                                   ThemeManager::instance().themeColorScheme().metricAlias);
+    MainContentHeaderWidget header(ThemeManager::instance().themeColorScheme().metricAlias);
+    require(header.isHidden(), "a new header should not reserve space before it has tabs");
     header.setSections(globalHotkeySections());
     auto* tabs = header.findChild<adqt::widgets::AdTabs*>(QStringLiteral("mainSectionTabs"));
     require(tabs != nullptr, "section tabs should exist");
@@ -258,15 +319,41 @@ void tabsRequestCategoriesWithoutChangingPages() {
             "rebuilding categories should select the first anchor without emitting a request");
 
     header.setSections(catalog().sectionSummaries(QStringLiteral("screenshot-history")));
-    require(tabs->count() == 0 && tabs->isHidden() && header.layout() != nullptr &&
-                header.layout()->contentsMargins().bottom() ==
-                    header.layout()->contentsMargins().top(),
-            "pages without sections should hide the tabs and preserve balanced search spacing");
+    require(tabs->count() == 0 && tabs->isHidden() && header.isHidden(),
+            "pages without sections should hide the entire top component");
 
     header.setSections(globalHotkeySections());
     require(tabs->count() == globalHotkeySections().size() && !tabs->isHidden() &&
-                header.layout()->contentsMargins().bottom() == 0,
+                !header.isHidden() && header.layout()->contentsMargins().bottom() == 0,
             "section tabs should become visible again with their original header spacing");
+}
+
+void searchRetranslatesWithNavigation() {
+    class SearchTranslator final : public QTranslator {
+      public:
+        bool isEmpty() const override {
+            return false;
+        }
+        QString translate(const char* context, const char* source, const char*,
+                          int) const override {
+            if (qstrcmp(context, "SidebarWidget") == 0 && qstrcmp(source, "Search Function") == 0) {
+                return QStringLiteral("Translated search");
+            }
+            return {};
+        }
+    } translator;
+    SidebarWidget sidebar(registry());
+    auto* select = sidebar.findChild<adqt::widgets::AdSelect*>();
+    auto* button =
+        sidebar.findChild<adqt::widgets::AdButton*>(QStringLiteral("sidebarSearchButton"));
+    QCoreApplication::installTranslator(&translator);
+    QEvent languageChange(QEvent::LanguageChange);
+    QCoreApplication::sendEvent(&sidebar, &languageChange);
+    require(select->placeholder() == QStringLiteral("Translated search") &&
+                button->accessibleName() == select->placeholder() &&
+                button->toolTip() == select->placeholder(),
+            "search copy should retranslate in both expanded and collapsed navigation");
+    QCoreApplication::removeTranslator(&translator);
 }
 
 void headerSurfaceFollowsTheme() {
@@ -274,7 +361,7 @@ void headerSurfaceFollowsTheme() {
     using snow_shot::presentation::styles::ThemeManager;
 
     auto& themeManager = ThemeManager::instance();
-    MainContentHeaderWidget header(registry(), themeManager.themeColorScheme().metricAlias);
+    MainContentHeaderWidget header(themeManager.themeColorScheme().metricAlias);
 
     themeManager.setThemeAppearance(ThemeAppearance::Dark);
     flushEvents();
@@ -292,8 +379,9 @@ void headerSurfaceFollowsTheme() {
 void searchTagsLeaveDescriptionsFullWidth() {
     using snow_shot::presentation::styles::ThemeAppearance;
     auto& themeManager = snow_shot::presentation::styles::ThemeManager::instance();
-    MainContentHeaderWidget header(registry(), themeManager.themeColorScheme().metricAlias);
-    auto* search = header.findChild<ApplicationSearchWidget*>(QStringLiteral("globalTopSearchBar"));
+    SidebarWidget sidebar(registry());
+    auto* search =
+        sidebar.findChild<ApplicationSearchWidget*>(QStringLiteral("globalTopSearchBar"));
     auto* select = search->findChild<adqt::widgets::AdSelect*>();
     QStandardItemModel model(1, 1);
     const QModelIndex index = model.index(0, 0);
@@ -361,8 +449,9 @@ int main(int argc, char** argv) {
             "translation page should be enabled for the search expectations");
     snow_shot::presentation::styles::ThemeManager::instance().initialize(application);
 
-    headerPlacesSearchAboveAntDesignTabs();
+    sidebarPlacesSearchAboveNavigation();
     tabsRequestCategoriesWithoutChangingPages();
+    searchRetranslatesWithNavigation();
     headerSurfaceFollowsTheme();
     searchTagsLeaveDescriptionsFullWidth();
     snow_shot::storage::ApplicationStorage::instance().shutdown();

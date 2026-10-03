@@ -426,13 +426,6 @@ so every moment on screen can be expressed clearly and shared easily.</translati
         </message>
     </context>
     <context>
-        <name>MainContentHeaderWidget</name>
-        <message>
-            <source>Search settings and functions</source>
-            <translation>Search settings and functions</translation>
-        </message>
-    </context>
-    <context>
         <name>MainWindow</name>
         <message>
             <source>Failed to retrieve selected text</source>
@@ -593,6 +586,10 @@ so every moment on screen can be expressed clearly and shared easily.</translati
         <message>
             <source>Expand navigation</source>
             <translation>Expand navigation</translation>
+        </message>
+        <message>
+            <source>Search Function</source>
+            <translation>Search Function</translation>
         </message>
     </context>
     <context>

@@ -1,13 +1,10 @@
 #include "snow_shot/presentation/components/maincontentheaderwidget.h"
 
-#include "snow_shot/presentation/components/applicationsearchwidget.h"
 #include "snow_shot/presentation/styles/thememanager.h"
 #include "snow_shot/presentation/settings/settingsregistry.h"
 
 #include "widgets/tabs.h"
 
-#include <QEvent>
-#include <QHBoxLayout>
 #include <QPalette>
 #include <QSignalBlocker>
 #include <QSizePolicy>
@@ -16,16 +13,9 @@
 #include <algorithm>
 #include <cmath>
 
-namespace {
-constexpr int GLOBAL_SEARCH_MAX_WIDTH = 400;
-constexpr int GLOBAL_SEARCH_MIN_WIDTH = 280;
-} // namespace
-
 MainContentHeaderWidget::MainContentHeaderWidget(
-    const snow_shot::presentation::settings::SettingsRegistry& registry,
     const snow_shot::presentation::styles::ThemeAliasMetricToken& metric, QWidget* parent)
-    : QFrame(parent), m_tabs(new adqt::widgets::AdTabs(this)),
-      m_globalSearch(new ApplicationSearchWidget(registry, metric, this)) {
+    : QFrame(parent), m_tabs(new adqt::widgets::AdTabs(this)) {
     setObjectName(QStringLiteral("mainContentHeader"));
     setFrameShape(QFrame::NoFrame);
     setAutoFillBackground(true);
@@ -34,19 +24,6 @@ MainContentHeaderWidget::MainContentHeaderWidget(
     auto* rootLayout = new QVBoxLayout(this);
     rootLayout->setContentsMargins(metric.padding, metric.paddingXS, metric.padding, 0);
     rootLayout->setSpacing(0);
-
-    auto* searchRow = new QHBoxLayout;
-    searchRow->setContentsMargins(0, 0, 0, 0);
-    searchRow->setSpacing(0);
-    searchRow->addStretch(1);
-
-    m_globalSearch->setObjectName(QStringLiteral("globalTopSearchBar"));
-    m_globalSearch->setMinimumWidth(GLOBAL_SEARCH_MIN_WIDTH);
-    m_globalSearch->setMaximumWidth(GLOBAL_SEARCH_MAX_WIDTH);
-    m_globalSearch->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Fixed);
-    searchRow->addWidget(m_globalSearch, 0, Qt::AlignHCenter | Qt::AlignVCenter);
-    searchRow->addStretch(1);
-    rootLayout->addLayout(searchRow);
 
     m_tabs->setObjectName(QStringLiteral("mainSectionTabs"));
     m_tabs->setType(adqt::widgets::AdTabs::Type::Line);
@@ -58,13 +35,11 @@ MainContentHeaderWidget::MainContentHeaderWidget(
 
     connect(m_tabs, &adqt::widgets::AdTabs::tabClicked, this,
             [this](const QString& sectionId) { emit sectionRequested(sectionId); });
-    connect(m_globalSearch, &ApplicationSearchWidget::locationActivated, this,
-            &MainContentHeaderWidget::locationRequested);
 
     const auto& themeManager = snow_shot::presentation::styles::ThemeManager::instance();
     connect(&themeManager, &snow_shot::presentation::styles::ThemeManager::themeChanged, this,
             &MainContentHeaderWidget::applyTheme);
-    retranslateUi();
+    hide();
     applyTheme(themeManager.themeColorScheme());
 }
 
@@ -95,6 +70,7 @@ void MainContentHeaderWidget::setSections(
         m_tabs->setCurrentIndex(0);
     }
     m_tabs->setVisible(m_tabs->count() > 0);
+    setVisible(m_tabs->count() > 0);
     updateLayoutMargins(
         snow_shot::presentation::styles::ThemeManager::instance().themeColorScheme().metricAlias);
 }
@@ -113,9 +89,6 @@ void MainContentHeaderWidget::applyTheme(
     m_surfaceColor = scheme.map.colorBgContainer;
     updateSkinMask();
     updateLayoutMargins(scheme.metricAlias);
-    if (m_globalSearch != nullptr) {
-        m_globalSearch->applyTheme(scheme);
-    }
     update();
 }
 
@@ -144,19 +117,5 @@ void MainContentHeaderWidget::updateLayoutMargins(
     if (layout() == nullptr) {
         return;
     }
-    const int bottomMargin = m_tabs != nullptr && m_tabs->count() > 0 ? 0 : metric.paddingXS;
-    layout()->setContentsMargins(metric.padding, metric.paddingXS, metric.padding, bottomMargin);
-}
-
-void MainContentHeaderWidget::retranslateUi() {
-    if (m_globalSearch != nullptr) {
-        m_globalSearch->setPlaceholderText(tr("Search settings and functions"));
-    }
-}
-
-void MainContentHeaderWidget::changeEvent(QEvent* event) {
-    QFrame::changeEvent(event);
-    if (event->type() == QEvent::LanguageChange) {
-        retranslateUi();
-    }
+    layout()->setContentsMargins(metric.padding, metric.paddingXS, metric.padding, 0);
 }

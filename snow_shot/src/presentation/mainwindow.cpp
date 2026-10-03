@@ -233,7 +233,7 @@ void MainWindow::buildUi() {
     contentShellLayout->setContentsMargins(0, 0, 0, 0);
     contentShellLayout->setSpacing(0);
 
-    auto* contentHeader = new MainContentHeaderWidget(m_settingsRegistry, metric, contentShell);
+    auto* contentHeader = new MainContentHeaderWidget(metric, contentShell);
     contentShellLayout->addWidget(contentHeader, 0);
     m_contentHeader = contentHeader;
 
@@ -258,7 +258,7 @@ void MainWindow::buildUi() {
             &ContentCardWidget::setCurrentRoute);
     connect(m_contentHeader, &MainContentHeaderWidget::sectionRequested, m_contentCard,
             &ContentCardWidget::activateSection);
-    connect(m_contentHeader, &MainContentHeaderWidget::locationRequested, m_contentCard,
+    connect(m_sidebar, &SidebarWidget::locationRequested, m_contentCard,
             &ContentCardWidget::navigateTo);
     connect(m_contentCard, &ContentCardWidget::routeChanged, m_sidebar,
             &SidebarWidget::setCurrentRoute);

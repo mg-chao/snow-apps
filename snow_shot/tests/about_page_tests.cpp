@@ -18,6 +18,7 @@
 #include "theme/theme.h"
 #include "widgets/navigation_menu.h"
 #include "widgets/scroll_area.h"
+#include "widgets/select.h"
 #include "widgets/tabs.h"
 
 #include <QApplication>
@@ -811,9 +812,9 @@ void mainNavigationSearchThemesAndLanguages() {
                 card->currentRoute() == QStringLiteral("/about") &&
                 sidebar->currentRoute() == QStringLiteral("/about"),
             "sidebar activation opens the About page in the main interface");
-    require(card->currentSections().isEmpty() &&
+    require(card->currentSections().isEmpty() && header->isHidden() &&
                 !child<adqt::widgets::AdTabs>(*header, "mainSectionTabs")->isVisible(),
-            "About hides settings section tabs");
+            "About hides the entire content header when there are no section tabs");
 
     const settings::SettingsSearchIndex search(registry);
     const auto results = search.search(QStringLiteral("version"));
@@ -825,7 +826,11 @@ void mainNavigationSearchThemesAndLanguages() {
     card->setCurrentRoute(QStringLiteral("/settings/general-appearance"));
     flushEvents();
     require(previous.isNull(), "leaving About releases its page and connections");
-    header->locationRequested(aboutResult->location);
+    require(header->isVisible(), "returning to settings restores the section header");
+    snapshot(window, QStringLiteral("navigation-search-with-tabs"));
+    auto* searchSelect = sidebar->findChild<adqt::widgets::AdSelect*>();
+    require(searchSelect != nullptr, "global search belongs to the navigation sidebar");
+    searchSelect->selected(QStringLiteral("page:about"), QStringLiteral("About Snow Shot"));
     flushEvents();
     page = window.findChild<AboutPageWidget*>();
     require(page != nullptr && sidebar->currentRoute() == QStringLiteral("/about"),
@@ -876,6 +881,9 @@ void mainNavigationSearchThemesAndLanguages() {
                 "load a compiled application translation catalog");
         QCoreApplication::installTranslator(&translator);
         flushEvents();
+        require(searchSelect->placeholder() ==
+                    translator.translate("SidebarWidget", "Search Function"),
+                "sidebar search retranslates with each application catalog");
         const QString translatedTitle = translator.translate("AboutPageWidget", "About Snow Shot");
         require(!translatedTitle.isEmpty() && page->accessibleName() == translatedTitle,
                 "an open About page retranslates immediately");

@@ -11,6 +11,7 @@
 
 #include <QEvent>
 #include <QFontMetrics>
+#include <QFontMetricsF>
 #include <QHBoxLayout>
 #include <QPainter>
 #include <QPixmap>
@@ -193,11 +194,19 @@ class SearchResultItemDelegate final : public QStyledItemDelegate {
         const QFontMetrics supportingMetrics(supportingFont);
         const QFontMetrics titleMetrics(titleFont);
         const int tagPadding = 6;
-        const int categoryWidth =
-            category.isEmpty()
-                ? 0
-                : std::min(supportingMetrics.horizontalAdvance(category) + 2 * tagPadding,
-                           std::max(0, contentRect.width() / 2));
+        // Round advances up: elidedText compares against the fractional glyph width.
+        const int titleTextWidth =
+            static_cast<int>(std::ceil(QFontMetricsF(titleFont).horizontalAdvance(title)));
+        const int categoryTextWidth =
+            static_cast<int>(std::ceil(QFontMetricsF(supportingFont).horizontalAdvance(category)));
+        const int sharedTextWidth = std::max(0, contentRect.width() - m_columnGap);
+        // Short titles leave their unused space to the category. Long titles
+        // retain at least half of the shared line when both texts need elision.
+        const int reservedTitleWidth = std::min(titleTextWidth, sharedTextWidth / 2);
+        const int categoryWidth = category.isEmpty()
+                                      ? 0
+                                      : std::min(categoryTextWidth + 2 * tagPadding,
+                                                 sharedTextWidth - reservedTitleWidth);
         const int titleWidth = std::max(0, contentRect.width() - categoryWidth -
                                                (categoryWidth > 0 ? m_columnGap : 0));
         const int titleHeight = std::max(titleMetrics.height(), supportingMetrics.height() + 4);
@@ -286,8 +295,9 @@ ApplicationSearchWidget::ApplicationSearchWidget(
     m_select->setSearchPolicy(adqt::widgets::AdSelect::SearchPolicy::External);
     m_select->setAllowClear(true);
     m_select->setAutoClearSearchValue(true);
-    m_select->setPopupMatchSelectWidth(true);
-    m_select->setPlacement(adqt::widgets::AdSelect::Placement::BottomCenter);
+    m_select->setPopupMatchSelectWidth(false);
+    m_select->setPopupWidth(400);
+    m_select->setPlacement(adqt::widgets::AdSelect::Placement::BottomLeft);
     m_select->setPrefixIconRef(outlined_icons::Search());
     m_select->setSearchRoles({
         adqt::widgets::AdSelect::DefaultLabelRole,
@@ -301,6 +311,7 @@ ApplicationSearchWidget::ApplicationSearchWidget(
     m_select->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
 
     rootLayout->addWidget(m_select, 1);
+    setFocusProxy(m_select);
 
     connect(m_select, &adqt::widgets::AdSelect::searchTextChanged, this,
             [this](const QString& rawText) {
@@ -337,6 +348,7 @@ ApplicationSearchWidget::~ApplicationSearchWidget() = default;
 void ApplicationSearchWidget::setPlaceholderText(const QString& text) {
     if (m_select != nullptr) {
         m_select->setPlaceholder(text);
+        m_select->setAccessibleName(text);
     }
 }
 

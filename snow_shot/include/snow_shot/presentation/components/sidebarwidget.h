@@ -6,6 +6,7 @@
 
 #include "snow_shot/presentation/settings/settingsregistry.h"
 
+class ApplicationSearchWidget;
 class QItemSelectionModel;
 class QEvent;
 class QString;
@@ -35,6 +36,7 @@ class SidebarWidget : public QFrame {
   signals:
     void collapsedChanged(bool collapsed);
     void routeSelected(const QString& routeKey);
+    void locationRequested(const snow_shot::presentation::settings::SettingsLocation& location);
 
   protected:
     void changeEvent(QEvent* event) override;
@@ -49,6 +51,9 @@ class SidebarWidget : public QFrame {
     QString m_currentRoute;
     QStringList m_leafRoutes;
     bool m_isCollapsed = false;
+    QWidget* m_searchContainer = nullptr;
+    ApplicationSearchWidget* m_globalSearch = nullptr;
+    adqt::widgets::AdButton* m_searchButton = nullptr;
     QFrame* m_collapseTrigger = nullptr;
     adqt::widgets::AdButton* m_collapseButton = nullptr;
     adqt::widgets::AdNavigationMenu* m_menu = nullptr;

@@ -277,7 +277,8 @@ void skinMasksCompositeOnceAndSurviveThemeChanges() {
     titleBar.resize(host.width(), titleBar.height());
     SidebarWidget sidebar(registry, &host);
     sidebar.setGeometry(0, 50, 220, 500);
-    MainContentHeaderWidget header(registry, themeManager.themeColorScheme().metricAlias, &host);
+    MainContentHeaderWidget header(themeManager.themeColorScheme().metricAlias, &host);
+    header.setSections(registry.catalog().sectionSummaries(QStringLiteral("global-hotkeys")));
     header.setGeometry(230, 50, 650, 90);
     ContentCardWidget card(registry, session, &host);
     card.setGeometry(230, 150, 650, 400);
@@ -722,7 +723,7 @@ void mainWindowSkinIsContinuousAndRestoresTheme(const QString& previewDirectory)
             QStringLiteral("settings-control"), QStringLiteral("interface.skin.display-mode")));
         auto* button =
             card->findChild<adqt::widgets::AdButton*>(QStringLiteral("pathInputBrowseButton"));
-        auto* search = header->findChild<adqt::widgets::AdSelect*>();
+        auto* search = sidebar->findChild<adqt::widgets::AdSelect*>();
         require(select && button && search, "review real settings buttons, selects and search");
         const QList<QWidget*> controls{select, button, search};
         QList<QImage> references;

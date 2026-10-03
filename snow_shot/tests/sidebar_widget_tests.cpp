@@ -27,7 +27,6 @@
 
 namespace {
 constexpr int SIDEBAR_EXPANDED_WIDTH = 220;
-constexpr int FIRST_TOP_LEVEL_MENU_TOP_SPACING = 8;
 constexpr int COLLAPSE_TRIGGER_HEIGHT = 48;
 constexpr int COLLAPSE_TRIGGER_ICON_SIZE = 18;
 
@@ -135,7 +134,7 @@ void navigationUsesAntDesignDefaultsAndCollapseTriggerStyle() {
     require(!menuTokens.metrics.itemHeight.has_value() &&
                 !menuTokens.metrics.itemPaddingInline.has_value() &&
                 !menuTokens.metrics.indentation.has_value() &&
-                menuTokens.metrics.rootPaddingBlockStart == FIRST_TOP_LEVEL_MENU_TOP_SPACING &&
+                menuTokens.metrics.rootPaddingBlockStart == 0 &&
                 !menuTokens.colors.shared.itemBackground.has_value() &&
                 !menuTokens.colors.shared.itemSelectedBackground.has_value(),
             "sidebar should only override the root content top padding token");
@@ -202,9 +201,8 @@ void sidebarBaseLayersUseTopLevelMenuBackground() {
     const QRect firstItemRect = inlineView->visualRect(firstItemIndex);
     require(firstItemIndex.isValid() && firstItemRect.isValid(),
             "global hotkeys should be visible");
-    require(inlineView->viewport()->mapTo(menu, firstItemRect.topLeft()).y() ==
-                FIRST_TOP_LEVEL_MENU_TOP_SPACING,
-            "the first top-level item should begin after the configured top spacing");
+    require(inlineView->viewport()->mapTo(menu, firstItemRect.topLeft()).y() == 0,
+            "menu items should start immediately because the fixed search container owns the gap");
 
     auto* trigger = sidebar.findChild<QFrame*>(QStringLiteral("sidebarCollapseTrigger"));
     require(trigger != nullptr, "sidebar should expose a collapse trigger background");

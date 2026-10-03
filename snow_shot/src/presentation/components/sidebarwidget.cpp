@@ -1,4 +1,5 @@
 #include "snow_shot/presentation/components/sidebarwidget.h"
+#include "snow_shot/presentation/components/applicationsearchwidget.h"
 #include "snow_shot/storage/settingsadapters.h"
 #include "snow_shot/storage/applicationstorage.h"
 
@@ -28,7 +29,6 @@ namespace outlined_icons = adqt::icons::antd::outlined;
 
 constexpr int SIDEBAR_EXPANDED_WIDTH = 220;
 constexpr int SIDEBAR_COLLAPSED_WIDTH = 80;
-constexpr int FIRST_TOP_LEVEL_MENU_TOP_SPACING = 8;
 constexpr int COLLAPSE_TRIGGER_HEIGHT = 48;
 constexpr int COLLAPSE_TRIGGER_ICON_SIZE = 18;
 
@@ -264,7 +264,15 @@ void SidebarWidget::applyRouteSelection(const QString& routeKey, bool revealAnce
     m_currentRoute = resolvedRouteKey;
 }
 
-void SidebarWidget::applyTheme(const snow_shot::presentation::styles::ThemeColorScheme&) {
+void SidebarWidget::applyTheme(const snow_shot::presentation::styles::ThemeColorScheme& scheme) {
+    if (m_globalSearch != nullptr) {
+        m_globalSearch->applyTheme(scheme);
+        m_searchButton->setFixedSize(scheme.metricAlias.controlHeight,
+                                     scheme.metricAlias.controlHeight);
+        m_searchContainer->layout()->setContentsMargins(
+            scheme.metricAlias.paddingSM, scheme.metricAlias.paddingXS,
+            scheme.metricAlias.paddingSM, scheme.metricAlias.paddingXXS);
+    }
     if (m_menu == nullptr) {
         return;
     }
@@ -353,11 +361,36 @@ SidebarWidget::SidebarWidget(const snow_shot::presentation::settings::SettingsRe
     sidebarLayout->setContentsMargins(0, 0, 0, 0);
     sidebarLayout->setSpacing(0);
 
+    const auto& metric =
+        snow_shot::presentation::styles::ThemeManager::instance().themeColorScheme().metricAlias;
+    m_searchContainer = new QWidget(this);
+    m_searchContainer->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+    auto* searchLayout = new QVBoxLayout(m_searchContainer);
+    searchLayout->setSpacing(0);
+    m_globalSearch = new ApplicationSearchWidget(registry, metric, m_searchContainer);
+    m_globalSearch->setObjectName(QStringLiteral("globalTopSearchBar"));
+    m_globalSearch->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+    searchLayout->addWidget(m_globalSearch);
+    m_searchButton = new adqt::widgets::AdButton(m_searchContainer);
+    m_searchButton->setObjectName(QStringLiteral("sidebarSearchButton"));
+    m_searchButton->setButtonStyle(adqt::widgets::AdButton::ButtonStyle::Text);
+    m_searchButton->setAccentRole(adqt::widgets::AdButton::AccentRole::Neutral);
+    m_searchButton->setIconRef(outlined_icons::Search());
+    searchLayout->addWidget(m_searchButton, 0, Qt::AlignHCenter);
+    sidebarLayout->addWidget(m_searchContainer);
+    connect(m_globalSearch, &ApplicationSearchWidget::locationActivated, this,
+            &SidebarWidget::locationRequested);
+    connect(m_searchButton, &adqt::widgets::AdButton::clicked, this, [this] {
+        setCollapsed(false);
+        m_globalSearch->setFocus(Qt::ShortcutFocusReason);
+    });
+
     m_menu = new AdNavigationMenu(this);
     m_menu->setMode(AdNavigationMenu::Mode::Inline);
     m_menu->setAutoFillBackground(true);
     auto menuTokens = m_menu->componentTokens();
-    menuTokens.metrics.rootPaddingBlockStart = FIRST_TOP_LEVEL_MENU_TOP_SPACING;
+    // The fixed search container owns the gap so it cannot scroll out of view.
+    menuTokens.metrics.rootPaddingBlockStart = 0;
     m_menu->setComponentTokens(menuTokens);
     m_menu->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
 
@@ -452,6 +485,14 @@ void SidebarWidget::changeEvent(QEvent* event) {
 }
 
 void SidebarWidget::syncCollapsedPresentation() {
+    if (m_globalSearch != nullptr) {
+        const QString searchText = tr("Search Function");
+        m_globalSearch->setPlaceholderText(searchText);
+        m_globalSearch->setVisible(!m_isCollapsed);
+        m_searchButton->setVisible(m_isCollapsed);
+        m_searchButton->setToolTip(searchText);
+        m_searchButton->setAccessibleName(searchText);
+    }
     if (m_menu != nullptr) {
         const int width = m_isCollapsed ? SIDEBAR_COLLAPSED_WIDTH : SIDEBAR_EXPANDED_WIDTH;
         setFixedWidth(width);
