@@ -9,8 +9,6 @@
 #include "../../platform/macos/imageclipboard.h"
 #endif
 
-#include <snow/memory/pixel_buffer.h>
-
 #include <QAbstractTextDocumentLayout>
 #include <QBuffer>
 #include <QClipboard>
@@ -219,13 +217,16 @@ QImage normalizedImage(QImage image) {
         image.sizeInBytes() > kMaximumClipboardImageBytes) {
         return {};
     }
-    // Foreign clipboard images can already own a large Qt heap raster. Import
-    // them once into our storage policy before a pin retains the original.
-    if (image.sizeInBytes() >= qsizetype(snow::memory::kMappedPixelBufferMinimum) &&
-        !snowCanvasDetachImage(image))
-        return {};
+    // The immutable clipboard snapshot already retains its QImage owner. Share
+    // those pixels instead of allocating a second raster while the provider or
+    // snapshot still owns the first. Decoded and rendered images retain their
+    // managed storage; foreign Qt owners keep their native allocation policy.
 #if !defined(Q_OS_MACOS)
-    image.setDevicePixelRatio(1.0);
+    if (image.devicePixelRatio() != 1.0) {
+        if (!snowCanvasDetachImage(image))
+            return {};
+        image.setDevicePixelRatio(1.0);
+    }
 #endif
     return image;
 }

@@ -1241,6 +1241,26 @@ compose_frames(const Document& document, std::stop_token stop,
     if (width == 0 || height == 0) {
         return Status::error(ErrorCode::invalid_argument, "Document canvas is empty.");
     }
+    if (stop.stop_requested()) {
+        return Status::error(ErrorCode::cancelled, "Image operation was cancelled.");
+    }
+    const std::size_t frame_count = std::min(maximum_frames, document.frames.size());
+    const Frame& first = document.frames.front();
+    // A full source replacement is already the composed first frame. Immutable
+    // pixel ownership can cross this boundary without a float canvas or a copy.
+    if (frame_count == 1 && first.x == 0 && first.y == 0 && first.image.width() == width &&
+        first.image.height() == height && first.blend == FrameBlend::source &&
+        first.image.format() == kRgba8 &&
+        first.image.row_stride() == static_cast<std::size_t>(width) * 4U &&
+        first.image.pixels().size() == first.image.row_stride() * height) {
+        Result<void> valid = first.image.view().validate();
+        if (!valid)
+            return valid.error();
+        Document result = document;
+        result.frames.resize(1);
+        result.frames.front().disposal = FrameDisposal::keep;
+        return result;
+    }
     snow::memory::PixelArray<Pixel> canvas(static_cast<std::size_t>(width) * height);
     Document result = document;
     result.frames.clear();
@@ -1251,8 +1271,10 @@ compose_frames(const Document& document, std::stop_token stop,
         Result<snow::memory::PixelArray<Pixel>> source = unpack(frame.image, false, stop);
         if (!source)
             return source.error();
-        const snow::memory::PixelArray<Pixel> previous =
-            frame.disposal == FrameDisposal::previous ? canvas : snow::memory::PixelArray<Pixel>{};
+        snow::memory::PixelArray<Pixel> previous =
+            frame.disposal == FrameDisposal::previous && result.frames.size() + 1U < frame_count
+                ? canvas
+                : snow::memory::PixelArray<Pixel>{};
         for (std::uint32_t y = 0; y < frame.image.height(); ++y) {
             if (frame.y + y >= height)
                 continue;
@@ -1286,7 +1308,7 @@ compose_frames(const Document& document, std::stop_token stop,
                             std::min(frame.image.width(), width - frame.x), Pixel{});
             }
         } else if (frame.disposal == FrameDisposal::previous) {
-            canvas = previous;
+            canvas = std::move(previous);
         }
     }
     return result;
@@ -1663,7 +1685,7 @@ Result<void> transform_to_sink(const Document& document, const TransformOptions&
 }
 
 Result<Document> flatten_animation(const Document& document, std::stop_token stop) {
-    Result<Document> composed = compose_frames(document, stop);
+    Result<Document> composed = compose_frames(document, stop, 1U);
     if (!composed)
         return composed.error();
     Document result = std::move(composed).value();

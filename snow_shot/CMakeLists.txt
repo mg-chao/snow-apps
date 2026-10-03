@@ -7042,6 +7042,28 @@ if(SNOW_SHOT_BUILD_BENCHMARKS)
     snow_shot_import_offscreen_platform(snow-shot-recognition-image-performance-benchmark)
     qt_import_plugins(snow-shot-recognition-image-performance-benchmark
         NO_DEFAULT INCLUDE Qt6::QOffscreenIntegrationPlugin)
+
+    add_executable(snow-shot-memory-performance-benchmark
+        tests/screenshot_memory_performance_benchmark.cpp
+        src/presentation/services/screenshotclipboardcontent.cpp
+        src/presentation/services/screenshotclipboarddibdecoder_avx2.cpp
+        ${SNOW_SHOT_RECOGNITION_IMAGE_RENDER_SOURCES})
+    target_include_directories(snow-shot-memory-performance-benchmark PRIVATE
+        "${CMAKE_CURRENT_SOURCE_DIR}/include")
+    target_compile_definitions(snow-shot-memory-performance-benchmark PRIVATE
+        SNOW_SHOT_BENCHMARK_MANAGED_READER=1)
+    target_link_libraries(snow-shot-memory-performance-benchmark PRIVATE
+        adqt::widgets snow_shot_image_codec snow_shot_diagnostics Qt6::Widgets)
+    if(WIN32)
+        target_link_libraries(snow-shot-memory-performance-benchmark PRIVATE user32 psapi)
+    endif()
+    snow_shot_import_offscreen_platform(snow-shot-memory-performance-benchmark)
+    add_test(NAME snow-shot-memory-performance-benchmark
+        COMMAND snow-shot-memory-performance-benchmark -platform offscreen)
+    set_tests_properties(snow-shot-memory-performance-benchmark PROPERTIES
+        LABELS "benchmark" RUN_SERIAL TRUE TIMEOUT 180
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
+
     add_executable(snow-shot-translation-page-streaming-benchmark
         tests/translation_page_streaming_benchmark.cpp
         src/presentation/services/screenshotclipboardservice.cpp)

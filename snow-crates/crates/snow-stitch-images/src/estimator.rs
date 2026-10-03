@@ -371,8 +371,7 @@ fn detect_balanced_rust(
     } else {
         image
     };
-    let detection = crate::orb::detect(&image, candidate_limit, pyramid_plan);
-    drop(image);
+    let detection = crate::orb::detect(image, candidate_limit, pyramid_plan);
     let mut ranked = detection
         .keypoints()
         .iter()

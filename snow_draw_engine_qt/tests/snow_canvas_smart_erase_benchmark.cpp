@@ -112,8 +112,8 @@ bool compare(const QImage& actual, const QImage& expected, const QImage& mask, c
             differences.push_back(delta);
             sum += delta;
             const auto da = a(y, x) - smoothA(y, x), db = b(y, x) - smoothB(y, x);
-            energyA += da.dot(da);
-            energyB += db.dot(db);
+            energyA += static_cast<double>(da.dot(da));
+            energyB += static_cast<double>(db.dot(db));
         }
     }
     if (differences.empty())

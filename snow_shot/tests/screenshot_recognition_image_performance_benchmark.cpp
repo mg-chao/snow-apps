@@ -41,13 +41,13 @@ int main(int argc, char** argv) {
                 QElapsedTimer timer;
                 timer.start();
                 auto frozen = snapshot;
-                const double copyUs = timer.nsecsElapsed() / 1000.0;
+                const double copyUs = static_cast<double>(timer.nsecsElapsed()) / 1000.0;
                 if (frozen.image.constBits() != snapshot.image.constBits() ||
                     frozen.lines.constData() != snapshot.lines.constData())
                     return 2;
                 timer.restart();
                 const QImage result = renderScreenshotRecognitionImage(frozen);
-                const double renderMs = timer.nsecsElapsed() / 1000000.0;
+                const double renderMs = static_cast<double>(timer.nsecsElapsed()) / 1000000.0;
                 if (result.isNull())
                     return 1;
                 if (run >= 2) {

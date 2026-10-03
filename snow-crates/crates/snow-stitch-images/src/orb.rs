@@ -1175,10 +1175,12 @@ unsafe fn descriptor_avx2(image: &Image, keypoint: Keypoint) -> [u8; 32] {
     bytes
 }
 
-pub(crate) fn pyramid(image: &Image, plan: &PyramidPlan) -> Vec<Image> {
+pub(crate) fn pyramid(image: Image, plan: &PyramidPlan) -> Vec<Image> {
     debug_assert_eq!((image.width, image.height), (plan.width, plan.height));
     let mut levels = Vec::with_capacity(LEVELS);
-    levels.push(image.clone());
+    // Detection exclusively owns the base image. Move its raster into level
+    // zero so constructing the pyramid does not keep a duplicate plane alive.
+    levels.push(image);
     for resize_plan in &plan.levels {
         let previous = levels.last().expect("base pyramid level exists");
         levels.push(resize_linear_exact(previous, resize_plan));
@@ -1187,7 +1189,7 @@ pub(crate) fn pyramid(image: &Image, plan: &PyramidPlan) -> Vec<Image> {
 }
 
 pub(crate) fn detect(
-    image: &Image,
+    image: Image,
     max_features: usize,
     pyramid_plan: &PyramidPlan,
 ) -> OrbDetection {
@@ -1484,7 +1486,7 @@ mod tests {
                 .collect(),
         );
         let plan = PyramidPlan::new(image.width, image.height);
-        let levels = pyramid(&image, &plan);
+        let levels = pyramid(image.clone(), &plan);
         let keypoints = [
             Keypoint {
                 x: 43.0,
@@ -1518,7 +1520,7 @@ mod tests {
         .compute(keypoints);
         assert_eq!(actual, expected);
         let empty = OrbDetection {
-            levels: pyramid(&image, &plan),
+            levels: pyramid(image, &plan),
             keypoints: Vec::new(),
         }
         .compute([]);
@@ -1568,7 +1570,7 @@ mod tests {
 
     #[test]
     fn planned_pyramid_matches_on_demand_coefficients() {
-        for (width, height) in [(5, 5), (17, 13), (63, 47), (321, 225)] {
+        for (width, height) in [(5, 5), (17, 13), (63, 47), (321, 225), (1024, 1024)] {
             let image = Image::new(
                 width,
                 height,
@@ -1577,8 +1579,34 @@ mod tests {
                     .collect(),
             );
             let plan = PyramidPlan::new(width, height);
-            assert_eq!(pyramid(&image, &plan), reference_pyramid(&image));
+            let expected = reference_pyramid(&image);
+            let base_pointer = image.pixels.as_ptr();
+            let levels = pyramid(image, &plan);
+            assert_eq!(levels, expected);
+            assert_eq!(
+                levels[0].pixels.as_ptr(),
+                base_pointer,
+                "pyramid must reuse its owned base raster"
+            );
         }
+    }
+
+    #[test]
+    fn detection_preserves_owned_base_raster() {
+        let image = Image::new(
+            1024,
+            1024,
+            (0..1024 * 1024)
+                .map(|index| ((index * 37 + index / 1024 * 11 + 19) % 256) as u8)
+                .collect(),
+        );
+        let plan = PyramidPlan::new(image.width, image.height);
+        let base_pointer = image.pixels.as_ptr();
+        let detection = detect(image, 128, &plan);
+        assert_eq!(detection.levels[0].pixels.as_ptr(), base_pointer);
+        assert!(!detection.keypoints().is_empty());
+        let keypoints = detection.keypoints.clone();
+        assert!(!detection.compute(keypoints).is_empty());
     }
 
     #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]

@@ -2034,6 +2034,139 @@ void test_processing() {
             "zero resize dimensions are rejected");
 }
 
+void test_flatten_first_frame() {
+    Document animation = sample_document();
+    animation.loop_count = 7;
+    animation.metadata.comment = "animation metadata";
+    animation.frames.front().duration = std::chrono::milliseconds(40);
+    animation.frames.front().metadata.comment = "first frame metadata";
+    animation.frames.front().disposal = snow::image::FrameDisposal::previous;
+    const Image original = animation.frames.front().image;
+    for (int index = 0; index < 3; ++index) {
+        Frame later = animation.frames.front();
+        later.blend = snow::image::FrameBlend::over;
+        animation.frames.push_back(std::move(later));
+    }
+    const Document flattened = take(snow::image::flatten_animation(animation), "flatten first");
+    require(flattened.frames.size() == 1 && flattened.loop_count == 1 &&
+                flattened.frames.front().duration.count() == 0 &&
+                flattened.frames.front().disposal == snow::image::FrameDisposal::keep &&
+                flattened.metadata.comment == animation.metadata.comment &&
+                flattened.frames.front().metadata.comment == "first frame metadata",
+            "flattening returns the static first frame and preserves metadata");
+    require(flattened.frames.front().image.storage().owner() == original.storage().owner() &&
+                flattened.frames.front().image.pixels().data() == original.pixels().data(),
+            "a complete immutable RGBA first frame needs no composition allocation");
+
+    for (const auto blend : {snow::image::FrameBlend::source, snow::image::FrameBlend::over}) {
+        Document partial = animation;
+        partial.canvas_width = 4;
+        partial.canvas_height = 3;
+        partial.frames.front().x = 1;
+        partial.frames.front().y = 1;
+        partial.frames.front().blend = blend;
+        const Document output = take(snow::image::flatten_animation(partial), "flatten offset");
+        const auto view = output.frames.front().image.view();
+        require(view.width == 4 && view.height == 3 && view.format == snow::image::kRgba8 &&
+                    output.frames.front().x == 0 && output.frames.front().y == 0,
+                "partial first frames are composed into the full RGBA canvas");
+        for (std::uint32_t y = 0; y < view.height; ++y) {
+            for (std::uint32_t x = 0; x < view.width; ++x) {
+                const auto* actual = view.pixels.data() + y * view.row_stride + x * 4U;
+                std::array<std::byte, 4> expected{};
+                if (x >= 1 && x < 3 && y >= 1) {
+                    const auto* source =
+                        original.pixels().data() + (y - 1U) * original.row_stride() + (x - 1U) * 4U;
+                    if (blend == snow::image::FrameBlend::source || source[3] != std::byte{0})
+                        std::copy_n(source, 4U, expected.begin());
+                }
+                require(std::equal(expected.begin(), expected.end(), actual),
+                        "offset composition preserves straight alpha and transparent padding");
+            }
+        }
+    }
+
+    auto gray = take(snow::image::MutableImage::allocate(2, 2, snow::image::kGray8),
+                     "allocate gray first frame");
+    std::fill(gray.pixels().begin(), gray.pixels().end(), std::byte{0x50});
+    Document gray_animation = animation;
+    gray_animation.frames.front().image = std::move(gray).freeze();
+    const Document converted =
+        take(snow::image::flatten_animation(gray_animation), "flatten gray first");
+    const auto gray_pixels = converted.frames.front().image.pixels();
+    require(converted.frames.front().image.format() == snow::image::kRgba8,
+            "non-RGBA first frames retain canonical RGBA conversion");
+    for (std::size_t offset = 0; offset < gray_pixels.size(); offset += 4U)
+        require(gray_pixels[offset] == std::byte{0x50} &&
+                    gray_pixels[offset + 1U] == std::byte{0x50} &&
+                    gray_pixels[offset + 2U] == std::byte{0x50} &&
+                    gray_pixels[offset + 3U] == std::byte{0xFF},
+                "first-frame grayscale conversion preserves every channel");
+
+    auto oversized_pixels = std::make_shared<std::vector<std::byte>>(32U, std::byte{0x50});
+    auto oversized_owner =
+        take(snow::image::SharedPixelBuffer::adopt(oversized_pixels, *oversized_pixels),
+             "adopt oversized first-frame storage");
+    Document oversized = animation;
+    oversized.frames.front().image =
+        take(Image::adopt(2, 2, snow::image::kRgba8, 8U, std::move(oversized_owner)),
+             "adopt oversized first frame");
+    const Document bounded =
+        take(snow::image::flatten_animation(oversized), "flatten oversized first");
+    require(bounded.frames.front().image.pixels().size() == 16U &&
+                bounded.frames.front().image.pixels().data() != oversized_pixels->data(),
+            "flattening does not retain unused trailing pixels in adopted storage");
+
+    Document disposed = sample_document();
+    Frame temporary = disposed.frames.front();
+    temporary.x = 1;
+    temporary.y = 1;
+    temporary.disposal = snow::image::FrameDisposal::previous;
+    disposed.frames.push_back(temporary);
+    Frame later = temporary;
+    later.x = 0;
+    later.y = 1;
+    later.disposal = snow::image::FrameDisposal::keep;
+    disposed.frames.push_back(std::move(later));
+    const Document composed =
+        take(snow::image::transform(disposed, {}), "compose previous disposal");
+    require(composed.frames.size() == 3U &&
+                std::equal(original.pixels().begin(), original.pixels().begin() + 8U,
+                           composed.frames.back().image.pixels().begin()) &&
+                std::equal(original.pixels().begin(), original.pixels().begin() + 8U,
+                           composed.frames.back().image.pixels().begin() + 8U),
+            "previous disposal restores the pre-frame canvas before the next blend");
+
+    std::stop_source cancelled;
+    cancelled.request_stop();
+    for (const Document* input : {&animation, &gray_animation}) {
+        const auto result = snow::image::flatten_animation(*input, cancelled.get_token());
+        require(!result && result.error().code == ErrorCode::cancelled,
+                "both shared and composed flatten paths honor cancellation");
+    }
+    require(!snow::image::flatten_animation(Document{}), "empty animations are rejected");
+
+    auto large = take(snow::image::MutableImage::allocate(1025, 513, snow::image::kRgba8),
+                      "allocate managed flatten fixture");
+    const void* middle = large.pixels().data() + large.pixels().size() / 2U;
+    Document owned;
+    owned.canvas_width = large.width();
+    owned.canvas_height = large.height();
+    Frame frame;
+    frame.image = std::move(large).freeze();
+    owned.frames.push_back(std::move(frame));
+    Document shared = take(snow::image::flatten_animation(owned), "flatten managed first");
+    require(shared.frames.front().image.storage().owner() ==
+                owned.frames.front().image.storage().owner(),
+            "managed flattening retains the original pixel owner");
+    owned = {};
+    require(snow::test_support::virtualMemoryMapped(middle),
+            "flattened pixels outlive their source document");
+    shared = {};
+    require(!snow::test_support::virtualMemoryMapped(middle),
+            "flattened managed pixels release with their final owner");
+}
+
 void test_webp(Service& service) {
     const snow::image::EncoderInfo* info = service.encoder_info(Format::webp);
     if (!info)
@@ -3815,6 +3948,11 @@ void test_jxl_opaque_progressive_preview(Service& service) {
 } // namespace
 
 int main(int argc, char* argv[]) {
+    if (argc == 2 && std::string_view(argv[1]) == "--processing-only") {
+        test_processing();
+        test_flatten_first_frame();
+        return 0;
+    }
     if (argc == 2 && std::string_view(argv[1]) == "--buffer-paths-only") {
         Service service;
         test_codec_scratch_lifetime(service);
@@ -3829,6 +3967,7 @@ int main(int argc, char* argv[]) {
         test_webp(service);
         test_xbitmap_formats(service);
         test_processing();
+        test_flatten_first_frame();
         test_parallel_resize_determinism();
         test_streaming_resize();
         return 0;
@@ -3875,6 +4014,7 @@ int main(int argc, char* argv[]) {
     test_jpeg_xl(service);
     test_openexr(service);
     test_processing();
+    test_flatten_first_frame();
     test_transform_storage_and_precision();
     test_parallel_resize_determinism();
     test_streaming_resize();
