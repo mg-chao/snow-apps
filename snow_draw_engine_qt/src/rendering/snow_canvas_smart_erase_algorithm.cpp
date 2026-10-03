@@ -1,4 +1,7 @@
 #include "snow_canvas_smart_erase.h"
+#include "snow_canvas_mat_allocator.h"
+#include <snow/memory/pixel_array.h>
+#include "snow_draw_engine_qt/snow_canvas_image.h"
 
 #include <opencv2/core.hpp>
 #include <opencv2/imgproc.hpp>
@@ -43,18 +46,32 @@ void checkCancelled(const std::atomic_bool& cancelled) {
     }
 }
 
+// Scan order matches findNonZero without forcing its std::vector allocator on
+// potentially full-frame coordinate storage.
+void collectMaskPoints(const cv::Mat1b& mask, snow::memory::PixelArray<cv::Point>& points) {
+    points.clear();
+    points.reserve(static_cast<std::size_t>(cv::countNonZero(mask)));
+    for (int y = 0; y < mask.rows; ++y) {
+        const auto* row = mask.ptr<unsigned char>(y);
+        for (int x = 0; x < mask.cols; ++x) {
+            if (row[x])
+                points.emplace_back(x, y);
+        }
+    }
+}
+
 // A surface is accepted using surrounding observations, never pixels inside the hole.
 // Robust fitting tolerates a few foreground/antialiasing pixels on the outer boundary.
-cv::Mat3f surfaceFill(const cv::Mat3f& source, const cv::Mat1b& hole, const cv::Mat1b& known,
-                      const std::atomic_bool& cancelled) {
+bool surfaceFill(cv::Mat3f& source, const cv::Mat1b& hole, const cv::Mat1b& known,
+                 const std::atomic_bool& cancelled) {
     const auto bounds = cv::boundingRect(hole);
-    cv::Mat1b ring;
+    cv::Mat1b ring = pixelMatrix<unsigned char>();
     cv::dilate(hole, ring, cv::getStructuringElement(cv::MORPH_ELLIPSE, cv::Size(9, 9)));
     cv::bitwise_and(ring, known, ring);
-    std::vector<cv::Point> boundary;
-    cv::findNonZero(ring, boundary);
+    snow::memory::PixelArray<cv::Point> boundary;
+    collectMaskPoints(ring, boundary);
     if (boundary.size() < 12)
-        return {};
+        return false;
     const auto basis = [&](cv::Point p) {
         return cv::Vec3d(1, static_cast<double>(p.x - bounds.x) / bounds.width,
                          static_cast<double>(p.y - bounds.y) / bounds.height);
@@ -75,7 +92,7 @@ cv::Mat3f surfaceFill(const cv::Mat3f& source, const cv::Mat1b& hole, const cv::
             rhs += weight * b * value.t();
         }
         if (!cv::solve(normal, rhs, coefficients, cv::DECOMP_CHOLESKY))
-            return {};
+            return false;
     }
     std::size_t inliers = 0, count = 0;
     double squaredError = 0;
@@ -90,32 +107,31 @@ cv::Mat3f surfaceFill(const cv::Mat3f& source, const cv::Mat1b& hole, const cv::
     }
     if (inliers * 100 < count * 97 ||
         squaredError > static_cast<double>(inliers) * 6.0 / (255 * 255))
-        return {};
-    cv::Mat3f result = source.clone();
+        return false;
     for (int y = bounds.y; y < bounds.y + bounds.height; ++y) {
         checkCancelled(cancelled);
         for (int x = bounds.x; x < bounds.x + bounds.width; ++x) {
             if (hole(y, x))
-                result(y, x) = cv::Vec3f(coefficients.t() * basis({x, y}));
+                source(y, x) = cv::Vec3f(coefficients.t() * basis({x, y}));
         }
     }
-    return result;
+    return true;
 }
 
 // Buffer coverage and donor eligibility are separate. Start locally and expand only
 // if no usable patches remain (e.g. a stroke beside a source edge).
 cv::Mat1b donorDomain(const cv::Mat1b& hole, const cv::Mat1b& known,
                       const std::atomic_bool& cancelled) {
-    cv::Mat1f distance;
-    cv::distanceTransform(~hole, distance, cv::DIST_L2, 5);
+    cv::Mat1f distance = pixelMatrix<float>();
+    cv::distanceTransform(pixelMatrixNot(hole), distance, cv::DIST_L2, 5);
     const auto bounds = cv::boundingRect(hole);
     int reach = std::clamp(std::min(bounds.width, bounds.height) / 2, 16, 96);
-    cv::Mat1b domain;
+    cv::Mat1b domain = pixelMatrix<unsigned char>();
     for (;;) {
         checkCancelled(cancelled);
         cv::compare(distance, reach, domain, cv::CMP_LE);
         cv::bitwise_and(domain, known, domain);
-        cv::Mat1b patches;
+        cv::Mat1b patches = pixelMatrix<unsigned char>();
         cv::erode(domain, patches, cv::getStructuringElement(cv::MORPH_RECT, {7, 7}), {-1, -1}, 1,
                   cv::BORDER_CONSTANT, cv::Scalar(0));
         if (cv::countNonZero(patches) >= 64 || reach >= 512)
@@ -128,8 +144,8 @@ cv::Mat1b donorDomain(const cv::Mat1b& hole, const cv::Mat1b& known,
 // Verify a short translation throughout the known donor domain before using it.
 cv::Mat3f periodicFill(const cv::Mat3f& source, const cv::Mat1b& hole, const cv::Mat1b& domain,
                        const std::atomic_bool& cancelled) {
-    std::vector<cv::Point> points;
-    cv::findNonZero(domain, points);
+    snow::memory::PixelArray<cv::Point> points;
+    collectMaskPoints(domain, points);
     for (const auto direction : {cv::Point(1, 0), cv::Point(0, 1)}) {
         for (int period = 2; period <= 64; ++period) {
             checkCancelled(cancelled);
@@ -151,7 +167,7 @@ cv::Mat3f periodicFill(const cv::Mat3f& source, const cv::Mat1b& hole, const cv:
             }
             if (count < 64 || error > count * 0.5 / (255 * 255))
                 continue;
-            cv::Mat3f output = source.clone();
+            cv::Mat3f output = pixelMatrixCopy(source);
             bool complete = true;
             for (int y = 0; y < source.rows && complete; ++y) {
                 checkCancelled(cancelled);
@@ -186,7 +202,7 @@ cv::Mat3f periodicFill(const cv::Mat3f& source, const cv::Mat1b& hole, const cv:
 cv::Mat3f observedBackground(const cv::Mat3f& source, const cv::Mat1b& known, int radius,
                              const std::atomic_bool& cancelled, cv::Mat1f& weights) {
     known.convertTo(weights, CV_32F, 1.0 / 255);
-    cv::Mat3f weighted(source.size(), cv::Vec3f(0, 0, 0));
+    auto weighted = pixelMatrix<cv::Vec3f>(source.size(), cv::Vec3f(0, 0, 0));
     source.copyTo(weighted, known);
     const cv::Size kernel(2 * radius + 1, 2 * radius + 1);
     cv::GaussianBlur(weighted, weighted, kernel, radius / 2.0);
@@ -202,7 +218,7 @@ cv::Mat3f observedBackground(const cv::Mat3f& source, const cv::Mat1b& known, in
 cv::Mat1f backgroundVariation(const cv::Mat3f& source, const cv::Mat3f& mean,
                               const cv::Mat1b& known, int radius, const std::atomic_bool& cancelled,
                               const cv::Mat1f& weights) {
-    cv::Mat1f squared(source.size(), 0.0F);
+    auto squared = pixelMatrix<float>(source.size(), 0.0F);
     for (int y = 0; y < source.rows; ++y) {
         checkCancelled(cancelled);
         for (int x = 0; x < source.cols; ++x)
@@ -221,8 +237,8 @@ cv::Mat1f backgroundVariation(const cv::Mat3f& source, const cv::Mat3f& mean,
 }
 
 struct BackgroundGuide {
-    cv::Mat3f color;
-    cv::Mat1f variation;
+    cv::Mat3f color = pixelMatrix<cv::Vec3f>();
+    cv::Mat1f variation = pixelMatrix<float>();
 };
 
 // Continue compatible observations across each hole along four directions. Choosing
@@ -230,9 +246,9 @@ struct BackgroundGuide {
 BackgroundGuide backgroundGuide(const cv::Mat3f& observed, const cv::Mat1f& variation,
                                 const cv::Mat1b& hole, const cv::Mat1b& known,
                                 const std::atomic_bool& cancelled) {
-    cv::Mat3f guide = observed.clone();
-    cv::Mat1f texture = variation.clone();
-    cv::Mat1f costs(observed.size(), std::numeric_limits<float>::max());
+    cv::Mat3f guide = pixelMatrixCopy(observed);
+    cv::Mat1f texture = pixelMatrixCopy(variation);
+    auto costs = pixelMatrix<float>(observed.size(), std::numeric_limits<float>::max());
     const cv::Rect image({}, observed.size());
     for (const auto step : {cv::Point(1, 0), cv::Point(0, 1), cv::Point(1, 1), cv::Point(-1, 1)}) {
         for (int y = 0; y < observed.rows; ++y) {
@@ -285,8 +301,8 @@ BackgroundGuide backgroundGuide(const cv::Mat3f& observed, const cv::Mat1f& vari
 }
 
 struct LevelResult {
-    cv::Mat3f image;
-    cv::Mat_<cv::Vec2i> matches;
+    cv::Mat3f image = pixelMatrix<cv::Vec3f>();
+    cv::Mat_<cv::Vec2i> matches = pixelMatrix<cv::Vec2i>();
 };
 
 struct MaskSpan {
@@ -319,21 +335,21 @@ LevelResult fillLevel(const cv::Mat3f& source, const cv::Mat1b& hole, const cv::
                       LevelDiagnostics* diagnostics) {
     const auto& guide = background.color;
     const auto& variation = background.variation;
-    cv::Mat1b donors;
-    std::vector<cv::Point> candidates;
+    cv::Mat1b donors = pixelMatrix<unsigned char>();
+    snow::memory::PixelArray<cv::Point> candidates;
     int radius = 3;
     for (; radius >= 0; --radius) {
         cv::erode(domain, donors,
                   cv::getStructuringElement(cv::MORPH_RECT, {2 * radius + 1, 2 * radius + 1}),
                   {-1, -1}, 1, cv::BORDER_CONSTANT, cv::Scalar(0));
-        cv::findNonZero(donors, candidates);
+        collectMaskPoints(donors, candidates);
         if (!candidates.empty())
             break;
     }
     if (candidates.empty())
         throw std::runtime_error("no source patches");
-    std::vector<MaskSpan> spans;
-    std::vector<PatchCoverage> patches;
+    snow::memory::PixelArray<MaskSpan> spans;
+    snow::memory::PixelArray<PatchCoverage> patches;
     for (int y = 0; y < hole.rows; ++y) {
         checkCancelled(cancelled);
         const auto* row = hole.ptr<unsigned char>(y);
@@ -368,22 +384,23 @@ LevelResult fillLevel(const cv::Mat3f& source, const cv::Mat1b& hole, const cv::
             spans.push_back({y, begin, x, offset});
         }
     }
-    cv::Mat3f output = source.clone();
+    cv::Mat3f output = pixelMatrixCopy(source);
     if (!previous.image.empty()) {
-        cv::Mat3f enlarged;
+        cv::Mat3f enlarged = pixelMatrix<cv::Vec3f>();
         cv::resize(previous.image, enlarged, source.size(), 0, 0, cv::INTER_LINEAR);
         enlarged.copyTo(output, hole);
     }
-    cv::Mat1f distance;
-    cv::Mat1i labels;
-    cv::distanceTransform(~donors, distance, labels, cv::DIST_L2, 5, cv::DIST_LABEL_PIXEL);
-    std::vector<cv::Point> nearest(candidates.size() + 1);
+    cv::Mat1f distance = pixelMatrix<float>();
+    cv::Mat1i labels = pixelMatrix<int>();
+    cv::distanceTransform(pixelMatrixNot(donors), distance, labels, cv::DIST_L2, 5,
+                          cv::DIST_LABEL_PIXEL);
+    snow::memory::PixelArray<cv::Point> nearest(candidates.size() + 1);
     for (const auto p : candidates)
         nearest.at(static_cast<std::size_t>(labels(p))) = p;
-    cv::Mat_<cv::Vec2i> matches(source.size(), cv::Vec2i(-1, -1));
-    cv::Mat1f costs(source.size(), std::numeric_limits<float>::max());
+    auto matches = pixelMatrix<cv::Vec2i>(source.size(), cv::Vec2i(-1, -1));
+    auto costs = pixelMatrix<float>(source.size(), std::numeric_limits<float>::max());
     // Counts are converted in place to penalties after each complete usage pass.
-    cv::Mat1f reusePenalty(source.size(), 0.0F);
+    auto reusePenalty = pixelMatrix<float>(source.size(), 0.0F);
     const float expectedUsage =
         std::max(1.0F, static_cast<float>(patches.size()) / static_cast<float>(candidates.size()));
     std::mt19937 random(0x534e4f57U);
@@ -494,7 +511,7 @@ LevelResult fillLevel(const cv::Mat3f& source, const cv::Mat1b& hole, const cv::
             }
         }
     }
-    cv::Mat3f next = source.clone();
+    cv::Mat3f next = pixelMatrixCopy(source);
     for (int iteration = 0; iteration < passes; ++iteration) {
         {
             StageTimer searchTimer(diagnostics ? &diagnostics->searchMs : nullptr);
@@ -677,7 +694,7 @@ Result reconstructWithOptions(const SnowCanvasSceneItem& item,
             static_cast<qint64>(size.width()) * size.height() > kMaximumWorkingPixels)
             return {};
         checkCancelled(cancelled);
-        QImage original(size, QImage::Format_ARGB32);
+        QImage original = snowCanvasAllocateImage(size, QImage::Format_ARGB32);
         if (original.isNull())
             return {};
         original.fill(Qt::transparent);
@@ -697,7 +714,7 @@ Result reconstructWithOptions(const SnowCanvasSceneItem& item,
                 painter.restore();
             }
         }
-        QImage mask(size, QImage::Format_Grayscale8);
+        QImage mask = snowCanvasAllocateImage(size, QImage::Format_Grayscale8);
         if (mask.isNull())
             return {};
         mask.fill(0);
@@ -707,8 +724,9 @@ Result reconstructWithOptions(const SnowCanvasSceneItem& item,
             painter.setWorldTransform(mapping);
             painter.fillPath(shape, Qt::white);
         }
-        cv::Mat1b hole(size.height(), size.width()), coverage(size.height(), size.width());
-        cv::Mat3f rgb(size.height(), size.width());
+        auto hole = pixelMatrix<unsigned char>(cv::Size(size.width(), size.height()));
+        auto coverage = pixelMatrix<unsigned char>(hole.size());
+        auto rgb = pixelMatrix<cv::Vec3f>(hole.size());
         for (int y = 0; y < size.height(); ++y) {
             checkCancelled(cancelled);
             const auto* row = reinterpret_cast<const QRgb*>(original.constScanLine(y));
@@ -723,10 +741,17 @@ Result reconstructWithOptions(const SnowCanvasSceneItem& item,
         }
         if (cv::countNonZero(hole) == 0)
             return {{}, {}, {}, true};
-        cv::Mat1b known;
-        cv::bitwise_and(coverage, ~hole, known);
+        cv::Mat1b known = pixelMatrix<unsigned char>();
+        cv::bitwise_and(coverage, pixelMatrixNot(hole), known);
         if (cv::countNonZero(known) == 0)
             return {};
+        const QRect crop = mapping.mapRect(target).toAlignedRect().intersected(original.rect());
+        const QRectF canvasCrop = mapping.inverted().mapRect(QRectF(crop));
+        QImage before = snowCanvasCopyImage(original, crop);
+        if (before.isNull())
+            return {};
+        original = {};
+        mask = {};
         if (diagnostics) {
             diagnostics->workingSize = size;
             diagnostics->croppedSize = size;
@@ -737,22 +762,24 @@ Result reconstructWithOptions(const SnowCanvasSceneItem& item,
         }
         auto fastStart = diagnostics ? std::chrono::steady_clock::now()
                                      : std::chrono::steady_clock::time_point{};
-        cv::Mat3f surface = surfaceFill(rgb, hole, known, cancelled);
-        if (diagnostics && !surface.empty())
+        // The validated surface model needs no second full-frame float image.
+        const bool surfaceReady = surfaceFill(rgb, hole, known, cancelled);
+        if (diagnostics && surfaceReady)
             diagnostics->path = ReconstructionDiagnostics::Path::Surface;
-        const auto domain = surface.empty() ? donorDomain(hole, known, cancelled) : cv::Mat1b();
-        if (surface.empty()) {
-            surface = periodicFill(rgb, hole, domain, cancelled);
-            if (diagnostics && !surface.empty())
+        const auto domain = surfaceReady ? cv::Mat1b() : donorDomain(hole, known, cancelled);
+        cv::Mat3f periodic;
+        if (!surfaceReady) {
+            periodic = periodicFill(rgb, hole, domain, cancelled);
+            if (diagnostics && !periodic.empty())
                 diagnostics->path = ReconstructionDiagnostics::Path::Periodic;
         }
         if (diagnostics)
             diagnostics->fastPathsMs = std::chrono::duration<double, std::milli>(
                                            std::chrono::steady_clock::now() - fastStart)
                                            .count();
-        if (!surface.empty()) {
-            rgb = std::move(surface);
-        } else {
+        if (!periodic.empty()) {
+            rgb = std::move(periodic);
+        } else if (!surfaceReady) {
             auto guideStart = diagnostics ? std::chrono::steady_clock::now()
                                           : std::chrono::steady_clock::time_point{};
             if (diagnostics)
@@ -762,7 +789,9 @@ Result reconstructWithOptions(const SnowCanvasSceneItem& item,
             if (options.cropContext) {
                 // Keep all eligible donors and the observations needed by the guide
                 // and patch kernels. The original source mapping and hole stay intact.
-                const auto active = cv::boundingRect(hole | domain);
+                auto activeMask = pixelMatrix<unsigned char>();
+                cv::bitwise_or(hole, domain, activeMask);
+                const auto active = cv::boundingRect(activeMask);
                 const int margin = guideRadius + 3;
                 reconstructionRect =
                     cv::Rect(active.x - margin, active.y - margin, active.width + 2 * margin,
@@ -775,31 +804,38 @@ Result reconstructWithOptions(const SnowCanvasSceneItem& item,
             const auto patchHole = hole(reconstructionRect);
             const auto patchCoverage = coverage(reconstructionRect);
             const auto patchKnown = known(reconstructionRect);
-            cv::Mat3f lab;
+            cv::Mat3f lab = pixelMatrix<cv::Vec3f>();
             cv::cvtColor(rgb(reconstructionRect), lab, cv::COLOR_RGB2Lab);
             rgb.release();
-            cv::Mat1f weights;
-            const auto mean = observedBackground(lab, patchKnown, guideRadius, cancelled, weights);
-            const auto variation =
+            cv::Mat1f weights = pixelMatrix<float>();
+            auto mean = observedBackground(lab, patchKnown, guideRadius, cancelled, weights);
+            auto variation =
                 backgroundVariation(lab, mean, patchKnown, guideRadius, cancelled, weights);
             weights.release();
-            const auto guide = backgroundGuide(mean, variation, patchHole, patchKnown, cancelled);
-            std::vector<cv::Mat3f> images{lab};
-            std::vector<BackgroundGuide> guides{guide};
+            auto guide = backgroundGuide(mean, variation, patchHole, patchKnown, cancelled);
+            mean.release();
+            variation.release();
+            std::vector<cv::Mat3f> images;
+            images.push_back(std::move(lab));
+            std::vector<BackgroundGuide> guides;
+            guides.push_back(std::move(guide));
             std::vector<cv::Mat1b> holes{patchHole}, coverages{patchCoverage};
             std::vector<cv::Mat1b> domains{domain(reconstructionRect)};
             while (std::max(images.back().cols, images.back().rows) > 64 &&
                    std::min(images.back().cols, images.back().rows) > 8) {
                 checkCancelled(cancelled);
-                cv::Mat3f reduced;
+                cv::Mat3f reduced = pixelMatrix<cv::Vec3f>();
                 cv::pyrDown(images.back(), reduced);
-                cv::Mat1b reducedHole, reducedCoverage, reducedDomain;
-                cv::Mat1b expandedHole;
+                auto reducedHole = pixelMatrix<unsigned char>();
+                auto reducedCoverage = pixelMatrix<unsigned char>();
+                auto reducedDomain = pixelMatrix<unsigned char>();
+                cv::Mat1b expandedHole = pixelMatrix<unsigned char>();
                 cv::dilate(holes.back(), expandedHole,
                            cv::getStructuringElement(cv::MORPH_RECT, cv::Size(5, 5)));
                 cv::resize(expandedHole, reducedHole, reduced.size(), 0, 0, cv::INTER_AREA);
                 cv::threshold(reducedHole, reducedHole, 0, 255, cv::THRESH_BINARY);
-                cv::Mat1b interiorCoverage, interiorDomain;
+                auto interiorCoverage = pixelMatrix<unsigned char>();
+                auto interiorDomain = pixelMatrix<unsigned char>();
                 const auto kernel = cv::getStructuringElement(cv::MORPH_RECT, cv::Size(5, 5));
                 cv::erode(coverages.back(), interiorCoverage, kernel, {-1, -1}, 1,
                           cv::BORDER_CONSTANT, cv::Scalar(0));
@@ -809,8 +845,10 @@ Result reconstructWithOptions(const SnowCanvasSceneItem& item,
                           cv::Scalar(0));
                 cv::resize(interiorDomain, reducedDomain, reduced.size(), 0, 0, cv::INTER_AREA);
                 cv::threshold(reducedDomain, reducedDomain, 254, 255, cv::THRESH_BINARY);
-                cv::bitwise_and(reducedDomain, reducedCoverage & ~reducedHole, reducedDomain);
-                cv::Mat1b patches;
+                auto eligibleCoverage = pixelMatrixNot(reducedHole);
+                cv::bitwise_and(reducedCoverage, eligibleCoverage, eligibleCoverage);
+                cv::bitwise_and(reducedDomain, eligibleCoverage, reducedDomain);
+                cv::Mat1b patches = pixelMatrix<unsigned char>();
                 cv::erode(reducedDomain, patches, cv::getStructuringElement(cv::MORPH_RECT, {7, 7}),
                           {-1, -1}, 1, cv::BORDER_CONSTANT, cv::Scalar(0));
                 if (cv::countNonZero(patches) < 16)
@@ -843,28 +881,38 @@ Result reconstructWithOptions(const SnowCanvasSceneItem& item,
                 }
                 filled = fillLevel(images[i], holes[i], coverages[i], domains[i], guides[i], filled,
                                    cancelled, options, passes, level);
+                // Finer levels use the synthesized result, not these completed
+                // pyramid observations and guides.
+                images[i].release();
+                guides[i].color.release();
+                guides[i].variation.release();
+                holes[i].release();
+                coverages[i].release();
+                domains[i].release();
             }
             cv::cvtColor(filled.image, rgb, cv::COLOR_Lab2RGB);
         }
-        QImage output = original.copy();
-        if (output.isNull())
+        // Retain only the affected bounds. A full-sized output duplicates donor
+        // context that is never published or used after reconstruction.
+        QImage output = snowCanvasCopyImage(before);
+        if (before.isNull() || output.isNull())
             return {};
-        for (int y = 0; y < size.height(); ++y) {
+        for (int y = 0; y < crop.height(); ++y) {
             checkCancelled(cancelled);
             auto* row = reinterpret_cast<QRgb*>(output.scanLine(y));
-            for (int x = 0; x < size.width(); ++x) {
-                if (!hole(y, x))
+            const int sourceY = y + crop.top();
+            for (int x = 0; x < crop.width(); ++x) {
+                const int sourceX = x + crop.left();
+                if (!hole(sourceY, sourceX))
                     continue;
-                const auto& color = rgb(y - reconstructionRect.y, x - reconstructionRect.x);
+                const auto& color =
+                    rgb(sourceY - reconstructionRect.y, sourceX - reconstructionRect.x);
                 row[x] = qRgba(std::clamp(qRound(color[0] * 255), 0, 255),
                                std::clamp(qRound(color[1] * 255), 0, 255),
                                std::clamp(qRound(color[2] * 255), 0, 255), qAlpha(row[x]));
             }
         }
-        // Cache only the affected bounds; surrounding donor pixels are job-local.
-        const QRect crop = mapping.mapRect(target).toAlignedRect().intersected(original.rect());
-        const QRectF canvasCrop = mapping.inverted().mapRect(QRectF(crop));
-        return {original.copy(crop), output.copy(crop), canvasCrop, true};
+        return {std::move(before), std::move(output), canvasCrop, true};
     } catch (const std::exception&) {
         return {};
     }

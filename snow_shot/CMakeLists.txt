@@ -526,10 +526,14 @@ target_include_directories(snow_shot_image_codec PUBLIC
 )
 target_link_libraries(snow_shot_image_codec PUBLIC
     snow_shot_image_codec_backend
+    snow_canvas_image
     Qt6::Core
     Qt6::Gui
 )
 target_compile_features(snow_shot_image_codec PUBLIC cxx_std_20)
+if(APPLE)
+    target_link_libraries(snow_shot_macos_clipboard PRIVATE snow_shot_image_codec)
+endif()
 
 if(WIN32 AND NOT SNOW_SHOT_IMAGE_CODEC_BACKEND_STATIC)
     set(_SNOW_SHOT_IMAGE_RUNTIME_STAGING_SCRIPT
@@ -2147,7 +2151,7 @@ if(SNOW_SHOT_BUILD_TESTS)
     target_include_directories(snow-shot-canvas-color-sampler-tests PRIVATE
         "${CMAKE_CURRENT_SOURCE_DIR}/include"
     )
-    target_link_libraries(snow-shot-canvas-color-sampler-tests PRIVATE Qt6::Widgets)
+    target_link_libraries(snow-shot-canvas-color-sampler-tests PRIVATE Qt6::Widgets snow_canvas_image)
     add_test(NAME snow-shot-canvas-color-sampler-tests
              COMMAND snow-shot-canvas-color-sampler-tests)
 
@@ -2278,6 +2282,9 @@ if(SNOW_SHOT_BUILD_TESTS)
     target_link_libraries(snow-shot-main-window-skin-codec-tests PRIVATE snow_shot_image_codec)
     add_test(NAME snow-shot-main-window-skin-codec-tests COMMAND snow-shot-main-window-skin-codec-tests)
     set_tests_properties(snow-shot-main-window-skin-codec-tests PROPERTIES LABELS unit TIMEOUT 60)
+    add_test(NAME snow-shot-managed-image-reader-tests
+        COMMAND snow-shot-main-window-skin-codec-tests --managed-reader-only)
+    set_tests_properties(snow-shot-managed-image-reader-tests PROPERTIES LABELS unit TIMEOUT 60)
 
     add_executable(snow-shot-main-window-skin-tests tests/main_window_skin_tests.cpp)
     target_link_libraries(snow-shot-main-window-skin-tests PRIVATE
@@ -3448,6 +3455,7 @@ if(SNOW_SHOT_BUILD_TESTS)
         "${CMAKE_CURRENT_SOURCE_DIR}/include"
     )
     target_link_libraries(snow-shot-scrolling-preview-benchmark PRIVATE
+        snow_canvas_image
         ant_design_qt
         Qt6::Widgets
     )
@@ -4287,6 +4295,13 @@ if(SNOW_SHOT_BUILD_TESTS)
     snow_shot_import_offscreen_platform(snow-shot-clipboard-content-tests)
     add_test(NAME snow-shot-clipboard-mime-data-tests
              COMMAND snow-shot-clipboard-content-tests --mime-data-only)
+    add_test(NAME snow-shot-clipboard-embedded-images-tests
+             COMMAND snow-shot-clipboard-content-tests --embedded-images-only)
+    set_tests_properties(snow-shot-clipboard-embedded-images-tests PROPERTIES
+        LABELS unit
+        ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}"
+        ENVIRONMENT_MODIFICATION
+            "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
     set_tests_properties(snow-shot-clipboard-mime-data-tests PROPERTIES
         ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}"
         ENVIRONMENT_MODIFICATION
@@ -5857,6 +5872,7 @@ if(SNOW_SHOT_BUILD_TESTS)
         include src "${SNOW_SHOT_CAPTURE_CRATES_DIR}/crates/snow-capture-c/include"
         "${SNOW_SHOT_CAPTURE_CRATES_DIR}/crates/snow-stitch-images-c/include")
     target_link_libraries(snow-shot-scrolling-capture-exclusion-tests PRIVATE
+        snow_canvas_image
         Qt6::Widgets snow_stitch_images_c snow_shot_diagnostics)
     foreach(_capture_test_function IN ITEMS stream_create_region stream_receive stream_stop
             stream_destroy stream_stats stream_set_target_fps stream_frame_info
@@ -6602,6 +6618,7 @@ if(SNOW_SHOT_BUILD_TESTS)
         "${CMAKE_CURRENT_SOURCE_DIR}/include"
     )
     target_link_libraries(snow-shot-qr-recognition-service-tests PRIVATE
+        snow_canvas_image
         opencv_wechat_qrcode
         opencv_objdetect
         Qt6::Core
@@ -7060,7 +7077,8 @@ if(SNOW_SHOT_BUILD_TESTS)
     target_include_directories(snow-shot-scrolling-hover-geometry-tests PRIVATE include)
     target_compile_definitions(snow-shot-scrolling-hover-geometry-tests PRIVATE
         SNOW_SHOT_BENCH_INTERNALS=1)
-    target_link_libraries(snow-shot-scrolling-hover-geometry-tests PRIVATE ant_design_qt Qt6::Widgets)
+    target_link_libraries(snow-shot-scrolling-hover-geometry-tests PRIVATE
+        snow_canvas_image ant_design_qt Qt6::Widgets)
     snow_shot_import_offscreen_platform(snow-shot-scrolling-hover-geometry-tests)
     add_test(NAME snow-shot-scrolling-hover-geometry-tests
         COMMAND snow-shot-scrolling-hover-geometry-tests -platform offscreen)
@@ -9153,7 +9171,8 @@ add_library(snow_shot_original_image_preview STATIC
     src/presentation/ocr/screenshotoriginalimagepreviewwindow.cpp
     src/presentation/overlay/screenshotimagerendering.cpp)
 target_include_directories(snow_shot_original_image_preview PUBLIC include)
-target_link_libraries(snow_shot_original_image_preview PUBLIC Qt6::Widgets PRIVATE adqt::dpi_window)
+target_link_libraries(snow_shot_original_image_preview PUBLIC Qt6::Widgets
+    PRIVATE snow_canvas_image adqt::dpi_window)
 snow_shot_link_macos_window_platform(snow_shot_original_image_preview)
 if(WIN32)
     target_link_libraries(snow_shot_original_image_preview PRIVATE user32 gdi32)

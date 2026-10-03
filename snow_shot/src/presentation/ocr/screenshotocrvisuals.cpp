@@ -1,3 +1,4 @@
+#include "snow_draw_engine_qt/snow_canvas_image.h"
 #include "snow_shot/presentation/screenshotocrvisuals.h"
 
 #include "snow_draw_engine_qt/snow_canvas_region_filter.h"
@@ -515,12 +516,16 @@ QImage materializeScreenshotImageSource(const ScreenshotImageSource& source,
         source.materializedImage.size() == pixelSize) {
         QImage image = source.materializedImage;
         if (image.format() != QImage::Format_ARGB32_Premultiplied) {
-            image = image.convertToFormat(QImage::Format_ARGB32_Premultiplied);
+            image = snowCanvasConvertImage(image, QImage::Format_ARGB32_Premultiplied);
         }
+        if (image.devicePixelRatio() != 1.0 && !snowCanvasDetachImage(image))
+            return {};
         image.setDevicePixelRatio(1.0);
         return image;
     }
-    QImage image(pixelSize, QImage::Format_ARGB32_Premultiplied);
+    QImage image = snowCanvasAllocateImage(pixelSize, QImage::Format_ARGB32_Premultiplied);
+    if (image.isNull())
+        return {};
     image.setDevicePixelRatio(1.0);
     image.fill(Qt::transparent);
     const qreal scaleX = pixelSize.width() / normalized.width();
@@ -669,12 +674,12 @@ QImage renderScreenshotOcrFilteredImage(const QImage& source, const QRectF& canv
         }
         return source.format() == QImage::Format_ARGB32_Premultiplied
                    ? source
-                   : source.convertToFormat(QImage::Format_ARGB32_Premultiplied);
+                   : snowCanvasConvertImage(source, QImage::Format_ARGB32_Premultiplied);
     }
 
-    QImage filtered = source.copy(crop);
+    QImage filtered = snowCanvasCopyImage(source, crop);
     if (filtered.format() != QImage::Format_ARGB32_Premultiplied) {
-        filtered = filtered.convertToFormat(QImage::Format_ARGB32_Premultiplied);
+        filtered = snowCanvasConvertImage(filtered, QImage::Format_ARGB32_Premultiplied);
     }
     filtered.setDevicePixelRatio(1.0);
     // Sharing with blurInput is safe: the engine detaches destination before its

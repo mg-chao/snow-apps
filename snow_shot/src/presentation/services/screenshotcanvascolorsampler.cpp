@@ -1,3 +1,4 @@
+#include "snow_draw_engine_qt/snow_canvas_image.h"
 #include "snow_shot/presentation/screenshotcanvascolorsampler.h"
 
 #include <QPixmap>
@@ -39,6 +40,10 @@ bool ScreenshotCanvasColorSampler::ensureSnapshot(QWidget& canvas, const QRect& 
 
     QImage raster = canvas.grab().toImage();
     if (raster.isNull()) {
+        reset();
+        return false;
+    }
+    if (!snowCanvasDetachImage(raster)) {
         reset();
         return false;
     }

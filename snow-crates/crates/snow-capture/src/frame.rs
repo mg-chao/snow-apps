@@ -1,5 +1,4 @@
-#[cfg(any(windows, target_os = "macos"))]
-use crate::frame_pages::{MIN_PAGE_BUFFER_BYTES, PageAllocation};
+use snow_memory::RasterBuffer;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -228,101 +227,22 @@ impl Clone for Frame {
 /// captures recycle the same capacity. Writes detach only while pixels are shared.
 #[derive(Clone)]
 struct FrameBuffer {
-    storage: Arc<FrameBufferStorage>,
+    storage: Arc<RasterBuffer>,
 }
 
-enum FrameBufferStorage {
-    Vec(Vec<u8>),
-    #[cfg(any(windows, target_os = "macos"))]
-    Pages(PageAllocation),
-}
-
-impl FrameBufferStorage {
-    fn len(&self) -> usize {
-        match self {
-            FrameBufferStorage::Vec(v) => v.len(),
-            #[cfg(any(windows, target_os = "macos"))]
-            FrameBufferStorage::Pages(lp) => lp.len,
-        }
-    }
-
-    fn capacity(&self) -> usize {
-        match self {
-            FrameBufferStorage::Vec(v) => v.capacity(),
-            #[cfg(any(windows, target_os = "macos"))]
-            FrameBufferStorage::Pages(lp) => lp.capacity,
-        }
-    }
-
-    fn set_len(&mut self, len: usize) {
-        match self {
-            FrameBufferStorage::Vec(v) => unsafe { v.set_len(len) },
-            #[cfg(any(windows, target_os = "macos"))]
-            FrameBufferStorage::Pages(lp) => lp.len = len,
-        }
-    }
-
-    #[cfg(windows)]
-    fn as_mut_ptr(&mut self) -> *mut u8 {
-        match self {
-            FrameBufferStorage::Vec(v) => v.as_mut_ptr(),
-            #[cfg(any(windows, target_os = "macos"))]
-            FrameBufferStorage::Pages(lp) => lp.ptr,
-        }
-    }
-
-    fn as_slice(&self) -> &[u8] {
-        match self {
-            FrameBufferStorage::Vec(v) => v.as_slice(),
-            #[cfg(any(windows, target_os = "macos"))]
-            FrameBufferStorage::Pages(lp) => unsafe { std::slice::from_raw_parts(lp.ptr, lp.len) },
-        }
-    }
-
-    fn as_mut_slice(&mut self) -> &mut [u8] {
-        match self {
-            FrameBufferStorage::Vec(v) => v.as_mut_slice(),
-            #[cfg(any(windows, target_os = "macos"))]
-            FrameBufferStorage::Pages(lp) => unsafe {
-                std::slice::from_raw_parts_mut(lp.ptr, lp.len)
-            },
-        }
-    }
-}
-
-fn alloc_frame_buffer_storage(len: usize) -> FrameBufferStorage {
-    #[cfg(any(windows, target_os = "macos"))]
-    if len >= MIN_PAGE_BUFFER_BYTES {
-        let capacity = len.checked_add(len / 8).expect("frame capacity overflow");
-        let mut pages = PageAllocation::new(capacity).unwrap_or_else(|| {
-            std::alloc::handle_alloc_error(
-                std::alloc::Layout::array::<u8>(capacity)
-                    .expect("frame allocation exceeds addressable size"),
-            )
-        });
-        pages.len = len;
-        return FrameBufferStorage::Pages(pages);
-    }
-
-    let headroom = len / 8;
-    let mut v = Vec::with_capacity(len + headroom);
-    v.resize(len, 0);
-    FrameBufferStorage::Vec(v)
-}
-
-fn clone_frame_buffer_storage(source: &FrameBufferStorage, len: usize) -> FrameBufferStorage {
+fn clone_frame_buffer_storage(source: &RasterBuffer, len: usize) -> RasterBuffer {
+    let capacity = len.checked_add(len / 8).expect("frame capacity overflow");
+    let mut storage = RasterBuffer::with_capacity(capacity);
+    storage.resize_for_overwrite(len);
     let copy_len = source.len().min(len);
-    let mut storage = alloc_frame_buffer_storage(len);
-    if copy_len != 0 {
-        storage.as_mut_slice()[..copy_len].copy_from_slice(&source.as_slice()[..copy_len]);
-    }
+    storage[..copy_len].copy_from_slice(&source[..copy_len]);
     storage
 }
 
 impl FrameBuffer {
     fn new() -> Self {
         Self {
-            storage: Arc::new(FrameBufferStorage::Vec(Vec::new())),
+            storage: Arc::new(RasterBuffer::new()),
         }
     }
 
@@ -338,7 +258,7 @@ impl FrameBuffer {
                 return;
             }
             if len <= storage.capacity() {
-                storage.set_len(len);
+                storage.resize_for_overwrite(len);
                 return;
             }
         }
@@ -397,7 +317,7 @@ impl Frame {
 
         Ok(Self {
             data: FrameBuffer {
-                storage: Arc::new(FrameBufferStorage::Vec(data)),
+                storage: Arc::new(RasterBuffer::from(data)),
             },
             width,
             height,
@@ -420,11 +340,39 @@ impl Frame {
 
         Ok(Self {
             data: FrameBuffer {
-                storage: Arc::new(FrameBufferStorage::Vec(data)),
+                storage: Arc::new(RasterBuffer::from(data)),
             },
             width,
             height,
             pixel_format: CapturePixelFormat::Bgra8,
+            metadata: FrameMetadata::default(),
+        })
+    }
+
+    /// Transfer initialized packed pixels without converting their allocator.
+    pub fn from_buffer(
+        width: u32,
+        height: u32,
+        pixel_format: CapturePixelFormat,
+        data: RasterBuffer,
+    ) -> CaptureResult<Self> {
+        let expected = packed_8bit_len(width, height)?;
+        if data.len() != expected {
+            return Err(CaptureError::InvalidConfig(format!(
+                "frame data length mismatch: got {}, expected {} for {}x{}",
+                data.len(),
+                expected,
+                width,
+                height
+            )));
+        }
+        Ok(Self {
+            data: FrameBuffer {
+                storage: Arc::new(data),
+            },
+            width,
+            height,
+            pixel_format,
             metadata: FrameMetadata::default(),
         })
     }
@@ -447,6 +395,12 @@ impl Frame {
 
     pub fn as_bytes(&self) -> &[u8] {
         self.data.as_slice()
+    }
+
+    /// Lease the pixels without a copy. Writes through either frame detach
+    /// while this lease remains alive, preserving the captured contents.
+    pub fn shared_bytes(&self) -> Arc<RasterBuffer> {
+        Arc::clone(&self.data.storage)
     }
 
     pub fn as_mut_bytes(&mut self) -> &mut [u8] {
@@ -780,6 +734,20 @@ mod tests {
     #[test]
     fn large_frame_shares_recycles_detaches_and_releases_pages() {
         use crate::frame_pages::is_mapped;
+        const CHILD: &str = "SNOW_CAPTURE_RELEASE_TEST_CHILD";
+        if std::env::var_os(CHILD).is_none() {
+            let status = std::process::Command::new(std::env::current_exe().unwrap())
+                .args([
+                    "--exact",
+                    "frame::tests::large_frame_shares_recycles_detaches_and_releases_pages",
+                    "--test-threads=1",
+                ])
+                .env(CHILD, "1")
+                .status()
+                .unwrap();
+            assert!(status.success());
+            return;
+        }
         let mut frame = Frame::empty();
         frame
             .ensure_capacity(1024, 512, CapturePixelFormat::Rgba8)

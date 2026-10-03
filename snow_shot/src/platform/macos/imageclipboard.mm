@@ -1,8 +1,11 @@
 #include "imageclipboard.h"
+#include "snowimageqtcodec.h"
 
+#include <QBuffer>
 #include <QClipboard>
 #include <QGuiApplication>
 #include <QImage>
+#include <QImageReader>
 #include <QObject>
 #include <QPointer>
 #include <QUtiMimeConverter>
@@ -94,8 +97,14 @@ class ImageClipboardConverter final : public QObject, public QUtiMimeConverter {
         CfPointer<CGImageRef> image(CGImageSourceCreateImageAtIndex(source.get(), 0, nullptr),
                                     CFRelease);
         // ImageIO accepts native TIFF variants without requiring a Qt TIFF
-        // plugin. PNG bridges back to QImage while retaining alpha and color metadata.
-        return QImage::fromData(encodeImage(image.get(), CFSTR("public.png")), "PNG");
+        // plugin. Decode the PNG directly into managed QImage storage while
+        // retaining Qt's alpha, 16-bit color and metadata behavior.
+        QByteArray png = encodeImage(image.get(), CFSTR("public.png"));
+        QBuffer buffer(&png);
+        if (!buffer.open(QIODevice::ReadOnly))
+            return {};
+        QImageReader reader(&buffer, "PNG");
+        return image_codec::readManagedImage(reader);
     }
 };
 } // namespace

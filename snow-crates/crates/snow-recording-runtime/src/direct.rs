@@ -1,3 +1,4 @@
+use snow_memory::RasterBuffer;
 use std::collections::{BTreeMap, VecDeque};
 use std::path::PathBuf;
 use std::sync::atomic::AtomicU64;
@@ -2614,8 +2615,8 @@ impl ResizeFrameDomain {
 
 struct VisualCompositor {
     output_size: (u32, u32),
-    background: Vec<u8>,
-    rgba: Vec<u8>,
+    background: RasterBuffer,
+    rgba: RasterBuffer,
     resize_plan: Option<NearestResizePlan>,
     resize_pool: Option<rayon::ThreadPool>,
     resize_domain: Option<ResizeFrameDomain>,
@@ -2645,8 +2646,8 @@ impl VisualCompositor {
     fn new(output_size: (u32, u32)) -> Self {
         Self {
             output_size,
-            background: Vec::new(),
-            rgba: Vec::new(),
+            background: RasterBuffer::new(),
+            rgba: RasterBuffer::new(),
             resize_plan: None,
             resize_pool: None,
             resize_domain: None,
@@ -2679,7 +2680,7 @@ impl VisualCompositor {
         config: &DirectRecordingConfig,
         frame: &CapturedFrame,
         timestamp_ms: u64,
-    ) -> Result<Vec<u8>> {
+    ) -> Result<RasterBuffer> {
         self.compose_with_cursor(config, frame, timestamp_ms, frame.metadata().cursor())
     }
 
@@ -2689,7 +2690,7 @@ impl VisualCompositor {
         frame: &CapturedFrame,
         timestamp_ms: u64,
         cursor: Option<&AttachedCursorSample>,
-    ) -> Result<Vec<u8>> {
+    ) -> Result<RasterBuffer> {
         let fallback;
         let effects = if let Some(effects) = &self.effects {
             effects
@@ -3058,13 +3059,13 @@ impl VisualCompositor {
 }
 
 #[cfg(test)]
-fn resize_rgba(source: &[u8], source_size: (u32, u32), output_size: (u32, u32)) -> Vec<u8> {
+fn resize_rgba(source: &[u8], source_size: (u32, u32), output_size: (u32, u32)) -> RasterBuffer {
     let (source_width, source_height) = source_size;
     let (output_width, output_height) = output_size;
     if source_size == output_size {
-        return source.to_vec();
+        return RasterBuffer::from(source);
     }
-    let mut output = vec![0u8; output_width as usize * output_height as usize * 4];
+    let mut output = RasterBuffer::zeroed(output_width as usize * output_height as usize * 4);
     for y in 0..output_height {
         let source_y = (u64::from(y) * u64::from(source_height) / u64::from(output_height)) as u32;
         for x in 0..output_width {

@@ -6,6 +6,7 @@ license.workspace = true
 build = "build.rs"
 
 [dependencies]
+snow-memory = { path = "../snow-memory" }
 tempfile.workspace = true
 snow-media = { path = "../snow-media" }
 snow-recording-effects = { path = "../snow-recording-effects" }

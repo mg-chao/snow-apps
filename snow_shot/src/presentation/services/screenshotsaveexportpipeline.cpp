@@ -1,3 +1,4 @@
+#include "snow_draw_engine_qt/snow_canvas_image.h"
 #include "screenshotsaveexportpipeline.h"
 #include "snowimagecodecbridge.h"
 #include "snowimageqtcodec.h"
@@ -148,13 +149,14 @@ Source prepare(const ScreenshotImageRowSource& rows,
             classifyAlpha(rows.backingImage.constScanLine(first), rows.size.width(), count,
                           rows.backingImage.bytesPerLine(), &alpha);
         }
-        QImage preview = size == rows.size ? rows.backingImage
-                                           : rows.backingImage.scaled(size, Qt::IgnoreAspectRatio,
-                                                                      Qt::SmoothTransformation);
+        QImage preview = size == rows.size
+                             ? rows.backingImage
+                             : snowCanvasScaleImage(rows.backingImage, size, Qt::IgnoreAspectRatio,
+                                                    Qt::SmoothTransformation);
         return preview.isNull() ? Source{} : Source{rows, std::move(preview), alpha};
     }
     if (size == rows.size) {
-        QImage preview(size, QImage::Format_RGBA8888);
+        QImage preview = snowCanvasAllocateImage(size, QImage::Format_RGBA8888);
         if (preview.isNull() || !rows.readRows(0, size.height(), preview.bytesPerLine(),
                                                preview.bits(), preview.sizeInBytes())) {
             *error = QCoreApplication::translate("ScreenshotSaveAsFileDialog",
@@ -166,7 +168,7 @@ Source prepare(const ScreenshotImageRowSource& rows,
         preview.setColorSpace(QColorSpace::SRgb);
         return {rows, preview, alpha};
     }
-    QImage preview(size, QImage::Format_RGBA8888_Premultiplied);
+    QImage preview = snowCanvasAllocateImage(size, QImage::Format_RGBA8888_Premultiplied);
     if (preview.isNull())
         return {};
     // Retain the immutable row source. Downsample in bounded strips without materializing
@@ -180,7 +182,8 @@ Source prepare(const ScreenshotImageRowSource& rows,
             if (cancellation.isCancellationRequested())
                 return {};
             const int count = qMin(64, end - row);
-            QImage strip(rows.size.width(), count, QImage::Format_RGBA8888);
+            QImage strip =
+                snowCanvasAllocateImage(QSize(rows.size.width(), count), QImage::Format_RGBA8888);
             if (strip.isNull() || !rows.readRows(row, count, strip.bytesPerLine(), strip.bits(),
                                                  strip.sizeInBytes())) {
                 *error = QCoreApplication::translate("ScreenshotSaveAsFileDialog",
@@ -189,10 +192,10 @@ Source prepare(const ScreenshotImageRowSource& rows,
             }
             classifyAlpha(strip.constBits(), strip.width(), strip.height(), strip.bytesPerLine(),
                           &alpha);
-            strip = strip.convertToFormat(QImage::Format_RGBA8888_Premultiplied);
+            strip = snowCanvasConvertImage(strip, QImage::Format_RGBA8888_Premultiplied);
             if (strip.width() != size.width())
-                strip = strip.scaled(size.width(), count, Qt::IgnoreAspectRatio,
-                                     Qt::SmoothTransformation);
+                strip = snowCanvasScaleImage(strip, QSize(size.width(), count),
+                                             Qt::IgnoreAspectRatio, Qt::SmoothTransformation);
             for (int line = 0; line < count; ++line) {
                 const uchar* pixels = strip.constScanLine(line);
                 for (size_t x = 0; x < sums.size(); ++x)
@@ -204,7 +207,7 @@ Source prepare(const ScreenshotImageRowSource& rows,
             pixels[x] = uchar((sums[x] + static_cast<quint64>((end - first) / 2)) /
                               static_cast<quint64>(end - first));
     }
-    preview = preview.convertToFormat(QImage::Format_RGBA8888);
+    preview = snowCanvasConvertImage(preview, QImage::Format_RGBA8888);
     preview.setColorSpace(QColorSpace::SRgb);
     return {rows, preview, alpha};
 }

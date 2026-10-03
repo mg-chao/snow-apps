@@ -273,7 +273,7 @@ pub struct RecognizeOptions {
 pub struct RecImage {
     width: usize,
     height: usize,
-    data: Vec<u8>,
+    data: snow_memory::RasterBuffer,
     color_order: ColorOrder,
 }
 
@@ -295,16 +295,11 @@ impl RecImage {
             .to_rgb8();
 
         let (width, height) = image.dimensions();
-        let raw = image.into_raw();
-
-        let mut bgr = vec![0_u8; raw.len()];
-        for (src, dst) in raw.chunks_exact(3).zip(bgr.chunks_exact_mut(3)) {
-            dst[0] = src[2];
-            dst[1] = src[1];
-            dst[2] = src[0];
+        let mut bgr = snow_memory::RasterBuffer::from(image.into_raw());
+        for pixel in bgr.chunks_exact_mut(3) {
+            pixel.swap(0, 2);
         }
-
-        Self::new(width as usize, height as usize, bgr, ColorOrder::Bgr)
+        Self::from_bgr_buffer(width as usize, height as usize, bgr)
     }
 
     pub fn new(
@@ -313,6 +308,34 @@ impl RecImage {
         data: Vec<u8>,
         color_order: ColorOrder,
     ) -> Result<Self> {
+        Self::validate_buffer(width, height, data.len())?;
+        Self::from_buffer(width, height, data.into(), color_order)
+    }
+
+    pub fn from_bgr_buffer(
+        width: usize,
+        height: usize,
+        data: snow_memory::RasterBuffer,
+    ) -> Result<Self> {
+        Self::from_buffer(width, height, data, ColorOrder::Bgr)
+    }
+
+    pub fn from_buffer(
+        width: usize,
+        height: usize,
+        data: snow_memory::RasterBuffer,
+        color_order: ColorOrder,
+    ) -> Result<Self> {
+        Self::validate_buffer(width, height, data.len())?;
+        Ok(Self {
+            width,
+            height,
+            data,
+            color_order,
+        })
+    }
+
+    fn validate_buffer(width: usize, height: usize, length: usize) -> Result<()> {
         if width == 0 || height == 0 {
             return Err(RapidOcrError::InvalidImage(
                 "image width and height must be greater than zero".to_string(),
@@ -324,19 +347,14 @@ impl RecImage {
             .and_then(|v| v.checked_mul(3))
             .ok_or_else(|| RapidOcrError::InvalidImage("image dimensions overflow".to_string()))?;
 
-        if data.len() != expected {
+        if length != expected {
             return Err(RapidOcrError::InvalidImage(format!(
                 "image data size mismatch: expected {expected}, got {}",
-                data.len()
+                length
             )));
         }
 
-        Ok(Self {
-            width,
-            height,
-            data,
-            color_order,
-        })
+        Ok(())
     }
 
     pub fn width(&self) -> usize {
@@ -356,7 +374,7 @@ impl RecImage {
     }
 
     pub fn into_bytes(self) -> Vec<u8> {
-        self.data
+        self.data.into_vec()
     }
     pub fn as_bgr_cow(&self) -> Cow<'_, [u8]> {
         match self.color_order {
@@ -387,6 +405,27 @@ mod tests {
     use std::borrow::Cow;
 
     use super::{ColorOrder, RecImage, RuntimeBackend, RuntimeConfig, VisionBackend};
+
+    #[cfg(feature = "image-io")]
+    #[test]
+    fn decoded_image_converts_to_bgr_in_owned_raster_storage() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("large-rgb.png");
+        image::RgbImage::from_pixel(1024, 512, image::Rgb([17, 43, 91]))
+            .save(&path)
+            .unwrap();
+        let image = RecImage::from_path(path).unwrap();
+        assert_eq!((image.width(), image.height()), (1024, 512));
+        assert_eq!(image.color_order(), ColorOrder::Bgr);
+        assert!(
+            image
+                .as_bytes()
+                .chunks_exact(3)
+                .all(|pixel| pixel == [91, 43, 17])
+        );
+        #[cfg(any(windows, target_os = "macos", target_os = "linux"))]
+        assert!(image.data.is_page_backed());
+    }
 
     #[test]
     fn rec_image_rejects_zero_dimension() {

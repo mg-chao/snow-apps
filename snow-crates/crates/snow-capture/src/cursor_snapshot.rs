@@ -177,16 +177,13 @@ impl ScreenshotCursorSnapshot {
         }
         let width = (right - left) as u32;
         let height = (bottom - top) as u32;
-        let mut bytes = Vec::with_capacity(width as usize * height as usize * 4);
+        let mut bytes =
+            snow_memory::RasterBuffer::with_capacity(width as usize * height as usize * 4);
         for row in top..bottom {
             let offset = (row as usize * frame.width() as usize + left as usize) * 4;
             bytes.extend_from_slice(&frame.as_bytes()[offset..offset + width as usize * 4]);
         }
-        let mut patch = match frame.pixel_format() {
-            crate::frame::CapturePixelFormat::Rgba8 => Frame::from_rgba8(width, height, bytes),
-            crate::frame::CapturePixelFormat::Bgra8 => Frame::from_bgra8(width, height, bytes),
-        }
-        .ok()?;
+        let mut patch = Frame::from_buffer(width, height, frame.pixel_format(), bytes).ok()?;
         observed.absolute_x -= left as i32;
         observed.absolute_y -= top as i32;
         Self::from_snapshot(observed)

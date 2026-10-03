@@ -1,5 +1,6 @@
 #pragma once
 
+#include "snow_draw_engine_qt/snow_canvas_image.h"
 #include "screenshotocrprotocol.h"
 #include "screenshotocrtransferbuffer.h"
 #include "snow_shot/presentation/screenshotocrassets.h"
@@ -96,7 +97,7 @@ class ScreenshotOcrTransport final : public QObject {
     void submit(QImage image, quint64 sequence, quint64 token) {
         if (m_process == nullptr || m_process->state() != QProcess::Running)
             return;
-        image = image.convertToFormat(QImage::Format_RGBA8888);
+        image = snowCanvasConvertImage(image, QImage::Format_RGBA8888);
         const qsizetype stride = static_cast<qsizetype>(image.width()) * 4;
         if (image.isNull() || stride * image.height() > m_buffer.capacity() - kSlotHeaderBytes) {
             post(m_callbacks.failed, QStringLiteral("image_transfer"));

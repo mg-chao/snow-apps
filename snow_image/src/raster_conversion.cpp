@@ -1,5 +1,7 @@
 #include "snow/image/raster_conversion.h"
 
+#include <snow/memory/pixel_array.h>
+
 #if defined(SNOW_IMAGE_HAS_LIBYUV)
 #include <libyuv/convert_argb.h>
 #endif
@@ -49,15 +51,15 @@ bool gray_plane(const PlaneDescriptor& plane, PlaneSemantic semantic) {
     return plane.semantic == semantic && plane.format == kGray8 && plane.significant_bits == 8;
 }
 
-Result<std::vector<std::byte>> read_plane_region(const RasterSource& source,
-                                                 std::uint32_t frame_index,
-                                                 std::uint32_t plane_index, RasterRect region,
-                                                 std::stop_token stop) {
+Result<snow::memory::PixelArray<std::byte>>
+read_plane_region(const RasterSource& source, std::uint32_t frame_index, std::uint32_t plane_index,
+                  RasterRect region, std::stop_token stop) {
     if (region.width > std::numeric_limits<std::size_t>::max() / region.height)
         return Status::error(ErrorCode::limit_exceeded,
                              "Raster conversion plane allocation overflows.", "raster conversion");
     try {
-        std::vector<std::byte> pixels(static_cast<std::size_t>(region.width) * region.height);
+        snow::memory::PixelArray<std::byte> pixels(static_cast<std::size_t>(region.width) *
+                                                   region.height);
         MutablePlaneView view{region.width, region.height, kGray8, region.width, pixels};
         Result<void> read = source.read_region(frame_index, plane_index, region, view, stop);
         if (!read)
@@ -263,7 +265,7 @@ Result<void> read_rgba8_region(const RasterSource& source, std::uint32_t frame_i
     }
     if (layout.color_model == ColorModel::gray && layout.planes.size() == 1 &&
         gray_plane(layout.planes.front(), PlaneSemantic::gray)) {
-        Result<std::vector<std::byte>> gray =
+        Result<snow::memory::PixelArray<std::byte>> gray =
             read_plane_region(source, frame_index, 0, region, stop);
         if (!gray)
             return gray.error();
@@ -327,20 +329,21 @@ Result<void> read_rgba8_region(const RasterSource& source, std::uint32_t frame_i
     const RasterRect chroma_region{left / horizontal, top / vertical,
                                    (right + horizontal - 1U) / horizontal - left / horizontal,
                                    (bottom + vertical - 1U) / vertical - top / vertical};
-    Result<std::vector<std::byte>> y = read_plane_region(source, frame_index, 0, luma_region, stop);
+    Result<snow::memory::PixelArray<std::byte>> y =
+        read_plane_region(source, frame_index, 0, luma_region, stop);
     if (!y)
         return y.error();
-    Result<std::vector<std::byte>> cb =
+    Result<snow::memory::PixelArray<std::byte>> cb =
         read_plane_region(source, frame_index, 1, chroma_region, stop);
     if (!cb)
         return cb.error();
-    Result<std::vector<std::byte>> cr =
+    Result<snow::memory::PixelArray<std::byte>> cr =
         read_plane_region(source, frame_index, 2, chroma_region, stop);
     if (!cr)
         return cr.error();
-    std::vector<std::byte> alpha;
+    snow::memory::PixelArray<std::byte> alpha;
     if (has_alpha) {
-        Result<std::vector<std::byte>> read_alpha =
+        Result<snow::memory::PixelArray<std::byte>> read_alpha =
             read_plane_region(source, frame_index, 3, region, stop);
         if (!read_alpha)
             return read_alpha.error();
@@ -355,7 +358,7 @@ Result<void> read_rgba8_region(const RasterSource& source, std::uint32_t frame_i
         const bool direct = left == region.x && top == region.y &&
                             luma_region.width == region.width &&
                             luma_region.height == region.height;
-        std::vector<std::byte> rgba;
+        snow::memory::PixelArray<std::byte> rgba;
         std::byte* output = destination.pixels.data();
         int output_stride = static_cast<int>(destination.row_stride);
         if (!direct) {
@@ -373,9 +376,9 @@ Result<void> read_rgba8_region(const RasterSource& source, std::uint32_t frame_i
         if (converted != 0 && layout.chroma_subsampling != ChromaSubsampling::yuv444 &&
             layout.chroma_subsampling != ChromaSubsampling::yuv422 &&
             layout.chroma_subsampling != ChromaSubsampling::yuv420) {
-            std::vector<std::byte> expanded_cb(static_cast<std::size_t>(luma_region.width) *
-                                               luma_region.height);
-            std::vector<std::byte> expanded_cr(expanded_cb.size());
+            snow::memory::PixelArray<std::byte> expanded_cb(
+                static_cast<std::size_t>(luma_region.width) * luma_region.height);
+            snow::memory::PixelArray<std::byte> expanded_cr(expanded_cb.size());
             for (std::uint32_t row = 0; row < luma_region.height; ++row) {
                 if (stop.stop_requested())
                     return Status::error(ErrorCode::cancelled, "Raster conversion was cancelled.",

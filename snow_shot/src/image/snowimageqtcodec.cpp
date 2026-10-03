@@ -1,7 +1,11 @@
+#include "snow_draw_engine_qt/snow_canvas_image.h"
 #include "snowimageqtcodec.h"
 
 #include "snowimagecodecbridge.h"
 
+#include <snow/memory/pixel_buffer.h>
+
+#include <algorithm>
 #include <array>
 #include <cstdint>
 #include <cstring>
@@ -15,6 +19,7 @@
 #include <QBuffer>
 #include <QColorSpace>
 #include <QIODevice>
+#include <QImageReader>
 #include <QPainter>
 #include <QTransform>
 
@@ -548,11 +553,13 @@ QByteArray encodePng(const QImage& image, int compressionLevel) {
 ScreenshotImageRowSource srgbRowSource(const QImage& image) {
     const QColorSpace srgb(QColorSpace::SRgb);
     QImage rgba = image.colorSpace().isValid() && image.colorSpace() != srgb
-                      ? image.convertedToColorSpace(srgb, QImage::Format_RGBA8888)
-                      : image.convertToFormat(QImage::Format_RGBA8888);
+                      ? snowCanvasColorConvertedImage(image, srgb, QImage::Format_RGBA8888)
+                      : snowCanvasConvertImage(image, QImage::Format_RGBA8888);
     if (rgba.isNull()) {
         return {};
     }
+    if (rgba.colorSpace() != srgb && !snowCanvasDetachImage(rgba))
+        return {};
     rgba.setColorSpace(srgb);
     ScreenshotImageRowSource source;
     source.size = rgba.size();
@@ -596,6 +603,46 @@ QImage decode(const QByteArray& encoded, snow::image::Format expectedFormat,
               const char* /*nameHint*/) {
     return decodeBytes(encoded, expectedFormat);
 }
+
+QImage readManagedImage(QImageReader& reader) {
+    const auto fallback = [&reader] {
+        QImage image = reader.read();
+        return image.sizeInBytes() < qsizetype(snow::memory::kMappedPixelBufferMinimum)
+                   ? image
+                   : snowCanvasCopyImage(image);
+    };
+    const QSize size = reader.size();
+    const QImage::Format format = reader.imageFormat();
+    if (size.isEmpty() || format <= QImage::Format_Invalid || format >= QImage::NImageFormats)
+        return fallback();
+
+    // Qt checks this limit only when its handler allocates a new image. Reusing
+    // our allocation must enforce the same effective depth and aligned stride.
+    const quint64 depth =
+        std::max(quint64{32}, quint64{QImage::toPixelFormat(format).bitsPerPixel()});
+    const quint64 stride = ((static_cast<quint64>(size.width()) * depth + 31) / 32) * 4;
+    if (stride == 0 || static_cast<quint64>(size.height()) >
+                           static_cast<quint64>(std::numeric_limits<qsizetype>::max()) / stride)
+        return fallback();
+    const quint64 bytes = stride * static_cast<quint64>(size.height());
+    const int limit = QImageReader::allocationLimit();
+    if (limit > 0 && bytes > static_cast<quint64>(limit) * 1024 * 1024)
+        return fallback();
+
+    QImage result = snowCanvasAllocateImage(size, format);
+    if (result.isNull())
+        return fallback();
+    const uchar* pixels = result.constBits();
+    if (!reader.read(&result))
+        return {};
+    // Some plugins cannot reuse storage, and automatic orientation or reader
+    // scaling can replace it after decoding. Preserve those results exactly.
+    return result.constBits() == pixels ||
+                   result.sizeInBytes() < qsizetype(snow::memory::kMappedPixelBufferMinimum)
+               ? result
+               : snowCanvasCopyImage(result);
+}
+
 QImage decodeIconFile(const QString& path, uint32_t preferredExtent) {
     if (preferredExtent == 0)
         return {};
@@ -691,18 +738,21 @@ SkinDecodeResult decodeSkinFile(const QString& path) {
         const QSize framePreview(qMax(1, qRound(decodedSize.width() * scaleX)),
                                  qMax(1, qRound(decodedSize.height() * scaleY)));
         if (framePreview != image.size())
-            image = image.scaled(framePreview, Qt::IgnoreAspectRatio, Qt::SmoothTransformation);
+            image = snowCanvasScaleImage(image, framePreview, Qt::IgnoreAspectRatio,
+                                         Qt::SmoothTransformation);
         if (image.isNull())
             return {{}, SkinDecodeError::ResourceLimit};
         const QColorSpace srgb(QColorSpace::SRgb);
-        image = image.colorSpace().isValid() && image.colorSpace() != srgb
-                    ? image.convertedToColorSpace(srgb, QImage::Format_ARGB32_Premultiplied)
-                    : image.convertToFormat(QImage::Format_ARGB32_Premultiplied);
+        image =
+            image.colorSpace().isValid() && image.colorSpace() != srgb
+                ? snowCanvasColorConvertedImage(image, srgb, QImage::Format_ARGB32_Premultiplied)
+                : snowCanvasConvertImage(image, QImage::Format_ARGB32_Premultiplied);
         if (image.isNull())
             return {{}, SkinDecodeError::ResourceLimit};
         image.setColorSpace(srgb);
         if (info.frame_x != 0 || info.frame_y != 0 || decodedSize != canvasSize) {
-            QImage canvas(previewCanvas, QImage::Format_ARGB32_Premultiplied);
+            QImage canvas =
+                snowCanvasAllocateImage(previewCanvas, QImage::Format_ARGB32_Premultiplied);
             if (canvas.isNull())
                 return {{}, SkinDecodeError::ResourceLimit};
             canvas.fill(Qt::transparent);
@@ -742,7 +792,7 @@ SkinDecodeResult decodeSkinFile(const QString& path) {
             break;
         }
         if (!orientation.isIdentity())
-            image = image.transformed(orientation, Qt::FastTransformation);
+            image = snowCanvasTransformImage(image, orientation, Qt::FastTransformation);
         if (image.isNull())
             return {{}, SkinDecodeError::ResourceLimit};
         image.setDevicePixelRatio(1.0);

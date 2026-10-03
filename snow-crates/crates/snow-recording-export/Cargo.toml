@@ -10,6 +10,7 @@ bench-timing = []
 bench-experiments = []
 
 [dependencies]
+snow-memory = { path = "../snow-memory" }
 snow-core = { path = "../snow-core" }
 snow-audio-recorder = { path = "../snow-audio-recorder" }
 snow-recording-model = { path = "../snow-recording-model" }

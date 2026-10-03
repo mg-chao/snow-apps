@@ -1,10 +1,13 @@
 #include "snowimageqtcodec.h"
+#include "../../test-support/virtualmemory.h"
 
 #include <QBuffer>
 #include <QColorSpace>
 #include <QCoreApplication>
 #include <QFile>
 #include <QImageWriter>
+#include <QImageReader>
+#include <QRgba64>
 #include <QTemporaryDir>
 
 #include <algorithm>
@@ -35,6 +38,88 @@ QByteArray pngBytes(const QImage& image) {
     QImageWriter writer(&output, "png");
     require(writer.write(image), "encode PNG fixture with its source color profile");
     return bytes;
+}
+
+void managedQtReader() {
+    for (const auto format :
+         {QImage::Format_RGBA8888, QImage::Format_RGBA64, QImage::Format_Grayscale16}) {
+        QImage source(QSize(1025, 513), format);
+        source.fill(QColor::fromRgba64(QRgba64::fromRgba64(0x1234, 0x4567, 0x89ab, 0xcdef)));
+        source.setPixelColor(
+            1024, 512, QColor::fromRgba64(QRgba64::fromRgba64(0xfedc, 0xba98, 0x7654, 0x4321)));
+        if (format != QImage::Format_Grayscale16)
+            source.setColorSpace(QColorSpace(QColorSpace::DisplayP3));
+        source.setDotsPerMeterX(4321);
+        source.setDotsPerMeterY(5678);
+        source.setOffset(QPoint(3, 7));
+        source.setText(QStringLiteral("Author"), QStringLiteral("Managed image fixture"));
+        const QByteArray encoded = pngBytes(source);
+        const QImage expected = QImage::fromData(encoded, "PNG");
+        require(!expected.isNull(), "Qt must decode the managed reader reference fixture");
+        const void* midpoint = nullptr;
+        {
+            QBuffer input;
+            input.setData(encoded);
+            require(input.open(QIODevice::ReadOnly), "open the managed reader fixture");
+            QImageReader reader(&input, "PNG");
+            QImage decoded = snow_shot::image_codec::readManagedImage(reader);
+            require(decoded == expected && decoded.format() == expected.format(),
+                    "managed decoding must preserve Qt's exact pixels and 16-bit precision");
+            require(decoded.colorSpace() == expected.colorSpace() &&
+                        decoded.dotsPerMeterX() == expected.dotsPerMeterX() &&
+                        decoded.dotsPerMeterY() == expected.dotsPerMeterY() &&
+                        decoded.offset() == expected.offset() &&
+                        decoded.text(QStringLiteral("Author")) ==
+                            expected.text(QStringLiteral("Author")),
+                    "managed decoding must preserve Qt's color, resolution and text metadata");
+            midpoint = decoded.constBits() + decoded.sizeInBytes() / 2;
+            require(snow::test_support::virtualMemoryMapped(midpoint),
+                    "managed reader pixels must remain mapped while an image owns them");
+        }
+        require(!snow::test_support::virtualMemoryMapped(midpoint),
+                "dropping the decoded image must unmap its large pixel allocation");
+
+        // Reader scaling may replace the preallocation. Its final image still
+        // needs managed storage and must retain the exact Qt scaling result.
+        QBuffer scaledInput;
+        scaledInput.setData(encoded);
+        require(scaledInput.open(QIODevice::ReadOnly), "open the scaled reader fixture");
+        QImageReader scaledReader(&scaledInput, "PNG");
+        scaledReader.setScaledSize(QSize(1023, 511));
+        QImage scaled = snow_shot::image_codec::readManagedImage(scaledReader);
+        require(scaled == expected.scaled(QSize(1023, 511), Qt::IgnoreAspectRatio,
+                                          Qt::SmoothTransformation),
+                "managed decoding must preserve the reader's fallback scaling result");
+        if (scaled.sizeInBytes() >= 1024 * 1024) {
+            midpoint = scaled.constBits() + scaled.sizeInBytes() / 2;
+            scaled = {};
+            require(!snow::test_support::virtualMemoryMapped(midpoint),
+                    "the reader's replacement raster must release its large allocation");
+        }
+    }
+
+    const QByteArray encoded = pngBytes(solid(Qt::red, QSize(1025, 513)));
+    const int oldLimit = QImageReader::allocationLimit();
+    struct RestoreLimit final {
+        int limit;
+        ~RestoreLimit() {
+            QImageReader::setAllocationLimit(limit);
+        }
+    } restore{oldLimit};
+    QImageReader::setAllocationLimit(1);
+    QBuffer input;
+    input.setData(encoded);
+    require(input.open(QIODevice::ReadOnly), "open the allocation-limit fixture");
+    QImageReader reader(&input, "PNG");
+    require(snow_shot::image_codec::readManagedImage(reader).isNull() &&
+                reader.error() == QImageReader::InvalidDataError,
+            "managed preallocation must preserve Qt's allocation limit and decode error");
+    QBuffer corrupt;
+    corrupt.setData(QByteArray("invalid PNG"));
+    require(corrupt.open(QIODevice::ReadOnly), "open the corrupt reader fixture");
+    QImageReader corruptReader(&corrupt, "PNG");
+    require(snow_shot::image_codec::readManagedImage(corruptReader).isNull(),
+            "managed decoding must reject a corrupt image");
 }
 
 QByteArray jpegBytes(const QImage& image) {
@@ -328,6 +413,9 @@ void resourceAndFailureClassification(const QTemporaryDir& directory) {
 int main(int argc, char** argv) {
     QCoreApplication application(argc, argv);
     try {
+        managedQtReader();
+        if (application.arguments().contains(QStringLiteral("--managed-reader-only")))
+            return 0;
         QTemporaryDir directory;
         require(directory.isValid(), "create the skin codec fixture directory");
         supportedFormatsAndPreviewBounds(directory);

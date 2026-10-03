@@ -1,3 +1,4 @@
+use snow_memory::RasterBuffer;
 use std::collections::VecDeque;
 use std::fs::{self, OpenOptions};
 use std::path::{Path, PathBuf};
@@ -405,7 +406,7 @@ pub(crate) unsafe fn swscale_thread_count(
 
 struct PendingFrame {
     pts: i64,
-    rgba: Vec<u8>,
+    rgba: RasterBuffer,
     gpu: Option<ffmpeg::frame::Video>,
     reuse_cpu_pixels: bool,
 }
@@ -455,7 +456,7 @@ pub struct StreamingEncoder {
     pending: Option<PendingFrame>,
     reuse_identical_rgba: bool,
     admitted_frames: u64,
-    spare_rgba: Vec<u8>,
+    spare_rgba: RasterBuffer,
     pending_timed_durations: VideoPacketDurations,
     audio: Vec<StreamingAudioState>,
     staging_path: Option<PathBuf>,
@@ -989,7 +990,7 @@ impl StreamingEncoder {
             pending: None,
             reuse_identical_rgba: false,
             admitted_frames: 0,
-            spare_rgba: Vec::new(),
+            spare_rgba: RasterBuffer::new(),
             pending_timed_durations: VideoPacketDurations::default(),
             audio,
             staging_path: None,
@@ -1125,7 +1126,7 @@ impl StreamingEncoder {
                 .timings
                 .record("encode.pending_copy", copy_started);
         }
-        self.spare_rgba = self.push_owned_rgba_frame_at_pts(pts, owned)?;
+        self.spare_rgba = self.push_raster_rgba_frame_at_pts(pts, owned)?;
         Ok(())
     }
 
@@ -1134,6 +1135,16 @@ impl StreamingEncoder {
     /// return an empty vector; subsequent calls return the previous image's storage.
     /// Storage may grow on first use to provide FFmpeg's SIMD tail padding.
     pub fn push_owned_rgba_frame_at_pts(&mut self, pts: u64, rgba: Vec<u8>) -> Result<Vec<u8>> {
+        self.push_raster_rgba_frame_at_pts(pts, rgba.into())
+            .map(RasterBuffer::into_vec)
+    }
+
+    /// Transfer mapped raster ownership and return the previous reusable buffer.
+    pub fn push_raster_rgba_frame_at_pts(
+        &mut self,
+        pts: u64,
+        rgba: RasterBuffer,
+    ) -> Result<RasterBuffer> {
         if self.cpu_hdr_input {
             return Err(RecordingExportError::InvalidConfig(
                 "HDR encoder requires P010 BT.2020/PQ input".into(),
@@ -1407,7 +1418,7 @@ impl StreamingEncoder {
         self.admitted_frames += 1;
         self.pending = Some(PendingFrame {
             pts,
-            rgba: Vec::new(),
+            rgba: RasterBuffer::new(),
             gpu: Some(native),
             reuse_cpu_pixels: false,
         });
@@ -1487,7 +1498,7 @@ impl StreamingEncoder {
         self.admitted_frames += 1;
         self.pending = Some(PendingFrame {
             pts,
-            rgba: Vec::new(),
+            rgba: RasterBuffer::new(),
             gpu: Some(native),
             reuse_cpu_pixels: false,
         });
@@ -2002,11 +2013,12 @@ impl StreamingEncoder {
     }
 }
 
-fn pad_owned_rgba(rgba: &mut Vec<u8>) {
+fn pad_owned_rgba(rgba: &mut RasterBuffer) {
     // swscale permits SIMD reads past the last plane. Reserve initialized tail
     // padding without doubling a full-size image's capacity on its first use.
     let padding = ffmpeg::ffi::AV_INPUT_BUFFER_PADDING_SIZE as usize;
-    rgba.reserve_exact(padding);
+    rgba.try_reserve(padding)
+        .expect("RGBA padding allocation failed");
     rgba.resize(rgba.len() + padding, 0);
 }
 
@@ -2862,10 +2874,11 @@ mod tests {
             fs::File::create(std::env::var("SNOW_CONVERSION_BENCH_OUTPUT").unwrap()).unwrap();
         writeln!(csv, "pair,variant,iterations,nanoseconds_per_frame").unwrap();
         let (width, height) = (1920, 1080);
-        let mut pixels: Vec<u8> = (0..width * height * 4)
+        let pixels: Vec<u8> = (0..width * height * 4)
             .map(|index| (index % 251) as u8)
             .collect();
         let visible = pixels.len();
+        let mut pixels: RasterBuffer = pixels.into();
         pad_owned_rgba(&mut pixels);
         let mut rgba_frame = ffmpeg::frame::Video::new(ffmpeg::format::Pixel::RGBA, width, height);
         let mut output = ffmpeg::frame::Video::new(ffmpeg::format::Pixel::YUV420P, width, height);
@@ -2926,7 +2939,7 @@ mod tests {
                 .collect();
             let mut source = ffmpeg::frame::Video::new(ffmpeg::format::Pixel::RGBA, width, height);
             copy_rgba_into_frame(&mut source, width, &pixels);
-            let mut padded = pixels.clone();
+            let mut padded: RasterBuffer = pixels.clone().into();
             pad_owned_rgba(&mut padded);
             for format in [
                 ffmpeg::format::Pixel::YUV420P,
@@ -3673,6 +3686,37 @@ mod tests {
             );
         }
         assert_eq!(packets[0], packets[1]);
+    }
+
+    #[test]
+    fn mapped_submission_recycles_page_storage_after_conversion() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("mapped.mp4");
+        let mut config = encoder_config(path.clone(), ExportFormat::Mp4);
+        config.width = 1024;
+        config.height = 256;
+        let mut encoder = StreamingEncoder::create(config).unwrap();
+        let mut first = RasterBuffer::zeroed(1024 * 256 * 4);
+        first.fill(0x5a);
+        let pointer = first.as_ptr();
+        assert!(
+            encoder
+                .push_raster_rgba_frame_at_pts(0, first)
+                .unwrap()
+                .is_empty()
+        );
+        let second = RasterBuffer::zeroed(1024 * 256 * 4);
+        let returned = encoder.push_raster_rgba_frame_at_pts(1, second).unwrap();
+        assert_eq!(
+            returned.as_ptr(),
+            pointer,
+            "SIMD padding must not copy the full raster"
+        );
+        assert!(returned.iter().all(|&byte| byte == 0x5a));
+        #[cfg(any(windows, target_os = "macos", target_os = "linux"))]
+        assert!(returned.is_page_backed());
+        assert_eq!(encoder.finish_at_pts(2).unwrap().encoded_frames, 2);
+        assert_eq!(decoded_video_frame_count(&path).0, 2);
     }
 
     #[test]

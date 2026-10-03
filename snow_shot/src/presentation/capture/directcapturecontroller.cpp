@@ -1,3 +1,4 @@
+#include "snow_draw_engine_qt/snow_canvas_image.h"
 #include "snow_shot/platform/applicationqos.h"
 #include "snow_shot/presentation/directcapturecontroller.h"
 #include "snow_shot/presentation/screenshotencodingsettings.h"
@@ -350,8 +351,8 @@ bool DirectCaptureController::mcpCapture(
                 if (static_cast<qint64>(size.width()) * size.height() > 100000000) {
                     frame.image = {};
                 } else
-                    frame.image =
-                        frame.image.scaled(size, Qt::IgnoreAspectRatio, Qt::SmoothTransformation);
+                    frame.image = snowCanvasScaleImage(frame.image, size, Qt::IgnoreAspectRatio,
+                                                       Qt::SmoothTransformation);
             }
             return frame;
         },

@@ -1,3 +1,4 @@
+use snow_memory::RasterBuffer;
 use std::collections::VecDeque;
 use std::sync::Arc;
 
@@ -6,9 +7,19 @@ use crate::{Frame, PixelFormat, StitchAxis, StitchError};
 pub const CANVAS_TILE_SPAN: u32 = 256;
 pub const CANVAS_TILE_ROWS: u32 = CANVAS_TILE_SPAN;
 
+// Active scrolling can replace the trailing band repeatedly. Keep only a small
+// owner-local working set, never tiles leased by immutable snapshots.
+const MAX_SPARE_TILES: usize = 2;
+const MAX_SPARE_TILE_BYTES: usize = 8 * 1024 * 1024;
+
+fn tile_capacity_limit(length: usize) -> usize {
+    // Match the raster allocator's bounded growth headroom plus its SIMD tail.
+    length.saturating_add(length / 8).saturating_add(64)
+}
+
 #[derive(Debug, Clone)]
 struct CanvasTile {
-    pixels: Vec<u8>,
+    pixels: RasterBuffer,
     span: u32,
 }
 
@@ -23,13 +34,27 @@ pub struct TiledCanvasSnapshot {
     end: u32,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct TiledCanvas {
     axis: StitchAxis,
     cross_extent: u32,
     pixel_format: PixelFormat,
     extent: u32,
     tiles: VecDeque<Arc<CanvasTile>>,
+    spare_tiles: Vec<CanvasTile>,
+}
+
+impl Clone for TiledCanvas {
+    fn clone(&self) -> Self {
+        Self {
+            axis: self.axis,
+            cross_extent: self.cross_extent,
+            pixel_format: self.pixel_format,
+            extent: self.extent,
+            tiles: self.tiles.clone(),
+            spare_tiles: Vec::new(),
+        }
+    }
 }
 
 impl TiledCanvas {
@@ -49,6 +74,7 @@ impl TiledCanvas {
             pixel_format: frame.pixel_format(),
             extent: 0,
             tiles: VecDeque::new(),
+            spare_tiles: Vec::new(),
         };
         canvas.append_axis(&frame, 0, frame_extent)?;
         Ok(canvas)
@@ -102,76 +128,107 @@ impl TiledCanvas {
         Ok(())
     }
 
-    fn extract_axis_range(
-        &self,
-        frame: &Frame,
-        start: u32,
-        end: u32,
-    ) -> Result<Vec<u8>, StitchError> {
-        self.validate_axis_range(frame, start, end)?;
-        let channels = self.channels();
-        match self.axis {
-            StitchAxis::Vertical => {
-                let row_bytes = frame.width() as usize * channels;
-                Ok(frame.pixels()[start as usize * row_bytes..end as usize * row_bytes].to_vec())
-            }
-            StitchAxis::Horizontal => {
-                let span_bytes = (end - start) as usize * channels;
-                let source_row_bytes = frame.width() as usize * channels;
-                let mut pixels = Vec::with_capacity(span_bytes * frame.height() as usize);
-                for y in 0..frame.height() as usize {
-                    let row = y * source_row_bytes;
-                    let first = row + start as usize * channels;
-                    pixels.extend_from_slice(&frame.pixels()[first..first + span_bytes]);
-                }
-                Ok(pixels)
-            }
+    fn take_tile_pixels(&mut self, span: u32) -> RasterBuffer {
+        let length = span as usize * self.cross_extent as usize * self.channels();
+        if let Some(index) = self.spare_tiles.iter().position(|tile| {
+            tile.pixels.capacity() >= length
+                && (tile.span == span || tile.pixels.capacity() <= tile_capacity_limit(length))
+        }) {
+            let mut pixels = self.spare_tiles.swap_remove(index).pixels;
+            pixels.resize_for_overwrite(length);
+            pixels
+        } else {
+            RasterBuffer::zeroed(length)
+        }
+    }
+
+    fn recycle_tile(&mut self, tile: Arc<CanvasTile>) {
+        if self.spare_tiles.len() >= MAX_SPARE_TILES {
+            return;
+        }
+        let capacity = tile.pixels.capacity();
+        let retained: usize = self
+            .spare_tiles
+            .iter()
+            .map(|tile| tile.pixels.capacity())
+            .sum();
+        if capacity > MAX_SPARE_TILE_BYTES.saturating_sub(retained) {
+            return;
+        }
+        // A snapshot or cloned canvas owns its own lease. Those pixels must stay
+        // immutable; they are released by the final lease instead of recycled.
+        if let Ok(tile) = Arc::try_unwrap(tile) {
+            self.spare_tiles.push(tile);
         }
     }
 
     fn make_tiles(
-        &self,
+        &mut self,
         frame: &Frame,
         start: u32,
         end: u32,
     ) -> Result<VecDeque<Arc<CanvasTile>>, StitchError> {
         self.validate_axis_range(frame, start, end)?;
+        let channels = self.channels();
+        let source = frame.pixels();
         let mut tiles = VecDeque::new();
         let mut cursor = start;
         while cursor < end {
             let span = CANVAS_TILE_SPAN.min(end - cursor);
-            tiles.push_back(Arc::new(CanvasTile {
-                pixels: self.extract_axis_range(frame, cursor, cursor + span)?,
-                span,
-            }));
+            let mut pixels = self.take_tile_pixels(span);
+            let output = pixels.as_mut_slice();
+            match self.axis {
+                StitchAxis::Vertical => {
+                    let row_bytes = frame.width() as usize * channels;
+                    output.copy_from_slice(
+                        &source[cursor as usize * row_bytes..(cursor + span) as usize * row_bytes],
+                    );
+                }
+                StitchAxis::Horizontal => {
+                    let span_bytes = span as usize * channels;
+                    let source_row_bytes = frame.width() as usize * channels;
+                    let first = cursor as usize * channels;
+                    for (row, target) in source
+                        .chunks_exact(source_row_bytes)
+                        .zip(output.chunks_exact_mut(span_bytes))
+                    {
+                        target.copy_from_slice(&row[first..first + span_bytes]);
+                    }
+                }
+            }
+            tiles.push_back(Arc::new(CanvasTile { pixels, span }));
             cursor += span;
         }
         Ok(tiles)
     }
 
     pub fn append_axis(&mut self, frame: &Frame, start: u32, end: u32) -> Result<(), StitchError> {
-        let mut tiles = self.make_tiles(frame, start, end)?;
-        self.tiles.append(&mut tiles);
-        self.extent = self
+        self.validate_axis_range(frame, start, end)?;
+        let new_extent = self
             .extent
             .checked_add(end - start)
             .ok_or(StitchError::Arithmetic {
                 operation: "calculating tiled canvas extent",
             })?;
+        let mut tiles = self.make_tiles(frame, start, end)?;
+        self.tiles.append(&mut tiles);
+        self.extent = new_extent;
         Ok(())
     }
 
     pub fn prepend_axis(&mut self, frame: &Frame, start: u32, end: u32) -> Result<(), StitchError> {
-        let mut tiles = self.make_tiles(frame, start, end)?;
-        while let Some(tile) = tiles.pop_back() {
-            self.tiles.push_front(tile);
-        }
-        self.extent = self
+        self.validate_axis_range(frame, start, end)?;
+        let new_extent = self
             .extent
             .checked_add(end - start)
             .ok_or(StitchError::Arithmetic {
                 operation: "calculating tiled canvas extent",
             })?;
+        let mut tiles = self.make_tiles(frame, start, end)?;
+        while let Some(tile) = tiles.pop_back() {
+            self.tiles.push_front(tile);
+        }
+        self.extent = new_extent;
         Ok(())
     }
 
@@ -188,16 +245,16 @@ impl TiledCanvas {
             let remove = self.extent - new_extent;
             if last.span <= remove {
                 self.extent -= last.span;
-                self.tiles.pop_back();
+                let removed = self.tiles.pop_back().expect("trailing tile exists");
+                self.recycle_tile(removed);
                 continue;
             }
             let keep = last.span - remove;
-            let replacement = self.tile_slice(last, 0, keep)?;
-            *self
-                .tiles
-                .back_mut()
-                .expect("partially retained tile remains present") = Arc::new(replacement);
+            self.slice_tile_in_place(false, 0, keep)?;
             self.extent = new_extent;
+        }
+        if self.extent == 0 {
+            self.spare_tiles.clear();
         }
         Ok(())
     }
@@ -215,17 +272,73 @@ impl TiledCanvas {
             };
             if front.span <= remove {
                 remove -= front.span;
-                self.tiles.pop_front();
+                let removed = self.tiles.pop_front().expect("leading tile exists");
+                self.recycle_tile(removed);
                 continue;
             }
-            let replacement = self.tile_slice(front, remove, front.span)?;
-            *self
-                .tiles
-                .front_mut()
-                .expect("partially retained tile remains present") = Arc::new(replacement);
+            self.slice_tile_in_place(true, remove, front.span)?;
             remove = 0;
         }
         self.extent -= span;
+        if self.extent == 0 {
+            self.spare_tiles.clear();
+        }
+        Ok(())
+    }
+
+    fn slice_tile_in_place(
+        &mut self,
+        front: bool,
+        start: u32,
+        end: u32,
+    ) -> Result<(), StitchError> {
+        let channels = self.channels();
+        let selected = if front {
+            self.tiles.front_mut()
+        } else {
+            self.tiles.back_mut()
+        }
+        .expect("partially retained tile remains present");
+        let length = (end - start) as usize * self.cross_extent as usize * channels;
+        // Do not let repeated small crops leave full tiles behind tiny spans.
+        // Minor trims may retain the existing active allocation; larger trims
+        // release its oversized capacity once the last snapshot lease drops.
+        if selected.pixels.capacity() <= tile_capacity_limit(length)
+            && let Some(tile) = Arc::get_mut(selected)
+        {
+            let pixels = tile.pixels.as_mut_slice();
+            match self.axis {
+                StitchAxis::Vertical => {
+                    let row_bytes = self.cross_extent as usize * channels;
+                    pixels.copy_within(start as usize * row_bytes..end as usize * row_bytes, 0);
+                }
+                StitchAxis::Horizontal => {
+                    let source_row_bytes = tile.span as usize * channels;
+                    let row_bytes = (end - start) as usize * channels;
+                    for y in 0..self.cross_extent as usize {
+                        let source = y * source_row_bytes + start as usize * channels;
+                        pixels.copy_within(source..source + row_bytes, y * row_bytes);
+                    }
+                }
+            }
+            tile.pixels.truncate(length);
+            tile.span = end - start;
+            return Ok(());
+        }
+        let tile = if front {
+            self.tiles.front()
+        } else {
+            self.tiles.back()
+        }
+        .expect("partially retained tile remains present");
+        let replacement = Arc::new(self.tile_slice(tile, start, end)?);
+        let selected = if front {
+            self.tiles.front_mut()
+        } else {
+            self.tiles.back_mut()
+        }
+        .expect("partially retained tile remains present");
+        *selected = replacement;
         Ok(())
     }
 
@@ -240,15 +353,22 @@ impl TiledCanvas {
         let pixels = match self.axis {
             StitchAxis::Vertical => {
                 let row_bytes = self.cross_extent as usize * channels;
-                tile.pixels[start as usize * row_bytes..end as usize * row_bytes].to_vec()
+                RasterBuffer::from(
+                    &tile.pixels[start as usize * row_bytes..end as usize * row_bytes],
+                )
             }
             StitchAxis::Horizontal => {
                 let source_row_bytes = tile.span as usize * channels;
                 let slice_row_bytes = (end - start) as usize * channels;
-                let mut pixels = Vec::with_capacity(slice_row_bytes * self.cross_extent as usize);
-                for y in 0..self.cross_extent as usize {
+                let mut pixels = RasterBuffer::zeroed(slice_row_bytes * self.cross_extent as usize);
+                let source = tile.pixels.as_slice();
+                for (y, target) in pixels
+                    .as_mut_slice()
+                    .chunks_exact_mut(slice_row_bytes)
+                    .enumerate()
+                {
                     let first = y * source_row_bytes + start as usize * channels;
-                    pixels.extend_from_slice(&tile.pixels[first..first + slice_row_bytes]);
+                    target.copy_from_slice(&source[first..first + slice_row_bytes]);
                 }
                 pixels
             }
@@ -274,9 +394,11 @@ impl TiledCanvas {
             StitchAxis::Vertical => (self.cross_extent, selected_extent),
             StitchAxis::Horizontal => (selected_extent, self.cross_extent),
         };
-        let mut pixels = vec![0; width as usize * height as usize * channels];
+        let mut pixels = RasterBuffer::zeroed(width as usize * height as usize * channels);
+        let output = pixels.as_mut_slice();
         let mut global = 0_u32;
         for tile in &self.tiles {
+            let source_pixels = tile.pixels.as_slice();
             let tile_end = global + tile.span;
             let copy_start = start.max(global);
             let copy_end = end.min(tile_end);
@@ -290,8 +412,8 @@ impl TiledCanvas {
                         let source = local_start as usize * row_bytes;
                         let destination = destination_start as usize * row_bytes;
                         let length = span as usize * row_bytes;
-                        pixels[destination..destination + length]
-                            .copy_from_slice(&tile.pixels[source..source + length]);
+                        output[destination..destination + length]
+                            .copy_from_slice(&source_pixels[source..source + length]);
                     }
                     StitchAxis::Horizontal => {
                         let tile_row_bytes = tile.span as usize * channels;
@@ -301,8 +423,8 @@ impl TiledCanvas {
                             let source = y * tile_row_bytes + local_start as usize * channels;
                             let destination =
                                 y * output_row_bytes + destination_start as usize * channels;
-                            pixels[destination..destination + copy_bytes]
-                                .copy_from_slice(&tile.pixels[source..source + copy_bytes]);
+                            output[destination..destination + copy_bytes]
+                                .copy_from_slice(&source_pixels[source..source + copy_bytes]);
                         }
                     }
                 }
@@ -312,7 +434,7 @@ impl TiledCanvas {
                 break;
             }
         }
-        Frame::new(width, height, self.pixel_format, pixels)
+        Frame::from_buffer(width, height, self.pixel_format, pixels)
     }
 
     pub fn materialize(&self) -> Result<Frame, StitchError> {
@@ -328,15 +450,14 @@ impl TiledCanvas {
                 ),
             });
         }
-        Ok(TiledCanvasSnapshot {
-            axis: self.axis,
-            cross_extent: self.cross_extent,
-            pixel_format: self.pixel_format,
-            extent: self.extent,
-            tiles: self.tiles.clone(),
+        Ok(TiledCanvasSnapshot::retained_range(
+            self.axis,
+            self.cross_extent,
+            self.pixel_format,
+            &self.tiles,
             start,
             end,
-        })
+        ))
     }
 
     pub fn append_rows(&mut self, frame: &Frame, top: u32, bottom: u32) -> Result<(), StitchError> {
@@ -409,6 +530,43 @@ impl TiledCanvas {
 }
 
 impl TiledCanvasSnapshot {
+    fn retained_range(
+        axis: StitchAxis,
+        cross_extent: u32,
+        pixel_format: PixelFormat,
+        source: &VecDeque<Arc<CanvasTile>>,
+        start: u32,
+        end: u32,
+    ) -> Self {
+        let mut tiles = VecDeque::new();
+        let mut position = 0;
+        let mut origin = 0;
+        let mut extent = 0;
+        for tile in source {
+            let tile_end = position + tile.span;
+            if position < end && tile_end > start {
+                if tiles.is_empty() {
+                    origin = position;
+                }
+                extent += tile.span;
+                tiles.push_back(Arc::clone(tile));
+            }
+            position = tile_end;
+            if position >= end {
+                break;
+            }
+        }
+        Self {
+            axis,
+            cross_extent,
+            pixel_format,
+            extent,
+            tiles,
+            start: start - origin,
+            end: end - origin,
+        }
+    }
+
     pub fn from_frame(frame: Frame) -> Self {
         Self::from_frame_for_axis(frame, StitchAxis::Vertical)
     }
@@ -460,15 +618,14 @@ impl TiledCanvasSnapshot {
                 ),
             });
         }
-        Ok(Self {
-            axis: self.axis,
-            cross_extent: self.cross_extent,
-            pixel_format: self.pixel_format,
-            extent: self.extent,
-            tiles: self.tiles.clone(),
-            start: self.start + start,
-            end: self.start + end,
-        })
+        Ok(Self::retained_range(
+            self.axis,
+            self.cross_extent,
+            self.pixel_format,
+            &self.tiles,
+            self.start + start,
+            self.start + end,
+        ))
     }
 
     pub fn slice_rows(&self, top: u32, bottom: u32) -> Result<Self, StitchError> {
@@ -627,26 +784,31 @@ impl TiledCanvasSnapshot {
                     tile_start += tile.span as usize;
                     tile = tiles.next().expect("sample lies inside snapshot");
                 }
-                (tile.as_ref(), source - tile_start)
+                (
+                    tile.pixels.as_slice(),
+                    tile.span as usize,
+                    source - tile_start,
+                )
             })
             .collect();
-        let mut pixels = vec![0; width as usize * height as usize * 4];
+        let mut pixels = RasterBuffer::zeroed(width as usize * height as usize * 4);
+        let output = pixels.as_mut_slice();
         for y in 0..height as usize {
             let sy = y * self.height() as usize / height as usize;
             for x in 0..width as usize {
-                let (tile, source_offset) = match self.axis {
+                let (source, source_offset) = match self.axis {
                     StitchAxis::Vertical => {
-                        let (tile, row) = locations[y];
+                        let (source, _, row) = locations[y];
                         let sx = x * self.width() as usize / width as usize;
-                        (tile, (row * self.cross_extent as usize + sx) * channels)
+                        (source, (row * self.cross_extent as usize + sx) * channels)
                     }
                     StitchAxis::Horizontal => {
-                        let (tile, column) = locations[x];
-                        (tile, (sy * tile.span as usize + column) * channels)
+                        let (source, span, column) = locations[x];
+                        (source, (sy * span + column) * channels)
                     }
                 };
-                let source_pixel = &tile.pixels[source_offset..source_offset + channels];
-                let target = &mut pixels[(y * width as usize + x) * 4..][..4];
+                let source_pixel = &source[source_offset..source_offset + channels];
+                let target = &mut output[(y * width as usize + x) * 4..][..4];
                 match self.pixel_format {
                     PixelFormat::Gray8 => target.copy_from_slice(&[
                         source_pixel[0],
@@ -664,7 +826,7 @@ impl TiledCanvasSnapshot {
                 }
             }
         }
-        Frame::new(width, height, PixelFormat::Rgba8, pixels)
+        Frame::from_buffer(width, height, PixelFormat::Rgba8, pixels)
     }
 
     fn canvas(&self) -> TiledCanvas {
@@ -674,6 +836,7 @@ impl TiledCanvasSnapshot {
             pixel_format: self.pixel_format,
             extent: self.extent,
             tiles: self.tiles.clone(),
+            spare_tiles: Vec::new(),
         }
     }
 }
@@ -681,6 +844,245 @@ impl TiledCanvasSnapshot {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn filled_frame(width: u32, height: u32, value: u8) -> Frame {
+        let mut pixels = RasterBuffer::zeroed(width as usize * height as usize * 4);
+        pixels.fill(value);
+        Frame::from_buffer(width, height, PixelFormat::Rgba8, pixels).unwrap()
+    }
+
+    #[test]
+    fn cropped_snapshots_release_tiles_outside_their_selected_range() {
+        for axis in [StitchAxis::Vertical, StitchAxis::Horizontal] {
+            let (width, height) = match axis {
+                StitchAxis::Vertical => (3, CANVAS_TILE_SPAN * 3),
+                StitchAxis::Horizontal => (CANVAS_TILE_SPAN * 3, 3),
+            };
+            let source = Frame::new(
+                width,
+                height,
+                PixelFormat::Gray8,
+                (0..width as usize * height as usize)
+                    .map(|index| (index % 251) as u8)
+                    .collect(),
+            )
+            .unwrap();
+            let canvas = TiledCanvas::new_for_axis(source.clone(), axis).unwrap();
+            let first = Arc::downgrade(&canvas.tiles[0]);
+            let middle = Arc::downgrade(&canvas.tiles[1]);
+            let last = Arc::downgrade(&canvas.tiles[2]);
+            let whole = canvas.snapshot_axis(0, CANVAS_TILE_SPAN * 3).unwrap();
+            let selected = whole
+                .slice_axis(CANVAS_TILE_SPAN + 5, CANVAS_TILE_SPAN * 2 - 7)
+                .unwrap();
+            assert_eq!(selected.tiles.len(), 1);
+            let direct = canvas
+                .snapshot_axis(CANVAS_TILE_SPAN + 5, CANVAS_TILE_SPAN * 2 - 7)
+                .unwrap();
+            assert_eq!(direct.tiles.len(), 1);
+            assert_eq!(
+                direct.materialize().unwrap(),
+                selected.materialize().unwrap()
+            );
+            let expected = match axis {
+                StitchAxis::Vertical => source
+                    .crop(0, CANVAS_TILE_SPAN + 5, width, CANVAS_TILE_SPAN - 12)
+                    .unwrap(),
+                StitchAxis::Horizontal => source
+                    .crop(CANVAS_TILE_SPAN + 5, 0, CANVAS_TILE_SPAN - 12, height)
+                    .unwrap(),
+            };
+            assert_eq!(selected.materialize().unwrap(), expected);
+            drop(canvas);
+            drop(whole);
+            drop(direct);
+            assert!(first.upgrade().is_none());
+            assert!(last.upgrade().is_none());
+            assert!(middle.upgrade().is_some());
+            drop(selected);
+            assert!(middle.upgrade().is_none());
+        }
+    }
+
+    #[test]
+    fn active_canvas_reuses_unique_tiles_with_count_and_byte_limits() {
+        let mut canvas = TiledCanvas::new(filled_frame(1536, CANVAS_TILE_SPAN, 17)).unwrap();
+        let incoming = filled_frame(1536, CANVAS_TILE_SPAN * 3, 91);
+        canvas.append_axis(&incoming, 0, incoming.height()).unwrap();
+        let original: Vec<_> = canvas
+            .tiles
+            .iter()
+            .skip(1)
+            .map(|tile| tile.pixels.as_ptr())
+            .collect();
+        canvas.truncate_end(CANVAS_TILE_SPAN).unwrap();
+        assert_eq!(canvas.spare_tiles.len(), MAX_SPARE_TILES);
+        assert!(
+            canvas
+                .spare_tiles
+                .iter()
+                .map(|tile| tile.pixels.capacity())
+                .sum::<usize>()
+                <= MAX_SPARE_TILE_BYTES
+        );
+        assert!(canvas.clone().spare_tiles.is_empty());
+        let spare: Vec<_> = canvas
+            .spare_tiles
+            .iter()
+            .map(|tile| tile.pixels.as_ptr())
+            .collect();
+        assert!(spare.iter().all(|pointer| original.contains(pointer)));
+        canvas
+            .append_axis(&incoming, 0, CANVAS_TILE_SPAN * 2)
+            .unwrap();
+        assert!(canvas.spare_tiles.is_empty());
+        let reused: Vec<_> = canvas
+            .tiles
+            .iter()
+            .skip(1)
+            .map(|tile| tile.pixels.as_ptr())
+            .collect();
+        assert!(spare.iter().all(|pointer| reused.contains(pointer)));
+        assert_eq!(
+            canvas.materialize().unwrap().pixels()[CANVAS_TILE_SPAN as usize * 1536 * 4],
+            91
+        );
+        canvas.truncate_end(0).unwrap();
+        assert!(canvas.tiles.is_empty());
+        assert!(canvas.spare_tiles.is_empty());
+
+        // The SIMD tail belongs to the byte budget too. Two nominal 4 MiB
+        // mappings would exceed eight MiB once those tails are included.
+        let mut wide = TiledCanvas::new(filled_frame(4096, CANVAS_TILE_SPAN, 17)).unwrap();
+        let incoming = filled_frame(4096, CANVAS_TILE_SPAN * 2, 91);
+        wide.append_axis(&incoming, 0, incoming.height()).unwrap();
+        wide.truncate_end(CANVAS_TILE_SPAN).unwrap();
+        assert!(wide.spare_tiles.len() < MAX_SPARE_TILES);
+        assert!(
+            wide.spare_tiles
+                .iter()
+                .map(|tile| tile.pixels.capacity())
+                .sum::<usize>()
+                <= MAX_SPARE_TILE_BYTES
+        );
+    }
+
+    #[test]
+    fn substantial_partial_crops_release_oversized_tile_capacity() {
+        let mut canvas = TiledCanvas::new(filled_frame(1536, CANVAS_TILE_SPAN, 17)).unwrap();
+        let original = canvas.tiles[0].pixels.as_ptr();
+        canvas.truncate_end(3).unwrap();
+        assert_ne!(canvas.tiles[0].pixels.as_ptr(), original);
+        assert!(canvas.tiles[0].pixels.capacity() <= tile_capacity_limit(1536 * 3 * 4));
+        let incoming = filled_frame(1536, CANVAS_TILE_SPAN, 91);
+        canvas.append_axis(&incoming, 0, CANVAS_TILE_SPAN).unwrap();
+        canvas.truncate_end(3).unwrap();
+        assert_eq!(canvas.spare_tiles.len(), 1);
+        canvas.append_axis(&incoming, 0, 1).unwrap();
+        assert_eq!(canvas.spare_tiles.len(), 1);
+        assert!(canvas.tiles[1].pixels.capacity() <= tile_capacity_limit(1536 * 4));
+    }
+
+    #[test]
+    fn snapshots_prevent_recycling_and_partial_tile_mutation() {
+        for axis in [StitchAxis::Vertical, StitchAxis::Horizontal] {
+            let (width, height) = match axis {
+                StitchAxis::Vertical => (1024, CANVAS_TILE_SPAN),
+                StitchAxis::Horizontal => (CANVAS_TILE_SPAN, 1024),
+            };
+            let source = filled_frame(width, height, 17);
+            let mut canvas = TiledCanvas::new_for_axis(source.clone(), axis).unwrap();
+            canvas.append_axis(&source, 0, CANVAS_TILE_SPAN).unwrap();
+            let snapshot = canvas.snapshot_axis(0, canvas.extent()).unwrap();
+            canvas.truncate_end(CANVAS_TILE_SPAN + 7).unwrap();
+            canvas.truncate_start(5).unwrap();
+            assert!(canvas.spare_tiles.is_empty());
+            assert!(
+                snapshot
+                    .materialize()
+                    .unwrap()
+                    .pixels()
+                    .iter()
+                    .all(|byte| *byte == 17)
+            );
+            canvas.truncate_end(CANVAS_TILE_SPAN - 5).unwrap();
+            assert!(canvas.spare_tiles.len() <= 1);
+            assert!(
+                snapshot
+                    .materialize()
+                    .unwrap()
+                    .pixels()
+                    .iter()
+                    .all(|byte| *byte == 17)
+            );
+            // The original leased tile is still held by the snapshot. Only the
+            // replacement created for the partial crop can enter the pool.
+            for spare in &canvas.spare_tiles {
+                assert!(
+                    snapshot
+                        .tiles
+                        .iter()
+                        .all(|tile| tile.pixels.as_ptr() != spare.pixels.as_ptr())
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn unique_partial_tiles_compact_in_place_and_match_shared_crops() {
+        for axis in [StitchAxis::Vertical, StitchAxis::Horizontal] {
+            let (width, height) = match axis {
+                StitchAxis::Vertical => (23, 47),
+                StitchAxis::Horizontal => (47, 23),
+            };
+            let source = Frame::new(
+                width,
+                height,
+                PixelFormat::Rgba8,
+                (0..width as usize * height as usize * 4)
+                    .map(|index| (index % 251) as u8)
+                    .collect(),
+            )
+            .unwrap();
+            let mut unique = TiledCanvas::new_for_axis(source, axis).unwrap();
+            let shared = unique.clone();
+            let lease = shared.snapshot_axis(0, shared.extent()).unwrap();
+            drop(shared);
+            let pointer = unique.tiles[0].pixels.as_ptr();
+            // Drop all leases before exercising the unique path.
+            let reference = lease.materialize().unwrap();
+            drop(lease);
+            unique.truncate_start(2).unwrap();
+            unique.truncate_end(43).unwrap();
+            assert_eq!(pointer, unique.tiles[0].pixels.as_ptr());
+            let expected = match axis {
+                StitchAxis::Vertical => reference.crop(0, 2, width, 43).unwrap(),
+                StitchAxis::Horizontal => reference.crop(2, 0, 43, height).unwrap(),
+            };
+            assert_eq!(unique.materialize().unwrap(), expected);
+        }
+    }
+
+    #[test]
+    fn large_tiles_materialized_crops_and_previews_keep_page_ownership() {
+        let pixels = RasterBuffer::zeroed(1024 * 512 * 4);
+        let pointer = pixels.as_ptr();
+        let frame = Frame::from_buffer(1024, 512, PixelFormat::Rgba8, pixels).unwrap();
+        assert_eq!(frame.pixels().as_ptr(), pointer);
+        let canvas = TiledCanvas::new(frame).unwrap();
+        #[cfg(any(windows, target_os = "macos", target_os = "linux"))]
+        assert!(canvas.tiles.iter().all(|tile| tile.pixels.is_page_backed()));
+        let snapshot = canvas.snapshot_axis(0, 512).unwrap();
+        drop(canvas);
+        let materialized = snapshot.materialize().unwrap();
+        let crop = materialized.crop(0, 0, 1024, 256).unwrap();
+        let preview = snapshot.render_scaled(1024, 256).unwrap();
+        for output in [materialized, crop, preview] {
+            assert!(output.pixels().iter().all(|&byte| byte == 0));
+            #[cfg(any(windows, target_os = "macos", target_os = "linux"))]
+            assert!(output.into_buffer().is_page_backed());
+        }
+    }
 
     fn rows(values: &[u8]) -> Frame {
         Frame::new(

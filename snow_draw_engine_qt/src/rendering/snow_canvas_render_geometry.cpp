@@ -11,7 +11,6 @@
 namespace snow_canvas_render_geometry {
 namespace {
 
-constexpr double kRadiansToDegrees = 180.0 / 3.14159265358979323846;
 struct CurveSegment {
     QPointF start;
     QPointF control1;

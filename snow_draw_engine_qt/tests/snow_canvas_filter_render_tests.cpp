@@ -10,6 +10,8 @@
 #include "snow_draw_engine_qt/snow_canvas_region_filter.h"
 #include "snow_draw_engine_qt/snow_canvas_runtime.h"
 #include "snow_draw_engine_qt/snow_canvas_widget.h"
+#include "snow_draw_engine_qt/snow_canvas_image.h"
+#include "../../test-support/virtualmemory.h"
 
 #include <QApplication>
 #include <QColor>
@@ -36,6 +38,84 @@ void require(bool condition, const char* message) {
         std::cerr << message << '\n';
         std::exit(1);
     }
+}
+
+void filteredImagesReturnMappedStorageAfterDetaching() {
+    using namespace snow_canvas_filter_render;
+    using snow::test_support::virtualMemoryMapped;
+    QImage source = snowCanvasAllocateImage(QSize(1024, 768), QImage::Format_ARGB32_Premultiplied);
+    source.fill(QColor(40, 80, 120, 200));
+    {
+        QPainter painter(&source);
+        painter.fillRect(QRect(400, 0, 200, source.height()), QColor(180, 30, 60, 230));
+    }
+    const QRgb original = source.pixel(450, 350);
+    ExecutionOptions serial;
+    serial.singleThreaded = true;
+    for (std::uint32_t type : {0u, 1u, 2u, 3u, 4u, 6u}) {
+        Parameters parameters;
+        parameters.type = type;
+        parameters.strength = 0.75;
+        parameters.logicalBlockSize = 4;
+        parameters.logicalSigma = 3;
+        parameters.logicalSamplingRadius = 2;
+        for (bool region : {false, true}) {
+            if (region && type == 0)
+                continue;
+            QImage filtered = source;
+            RenderWorkspace workspace(0);
+            if (region) {
+                require(applyRegion(source, filtered, QRegion(QRect(300, 200, 400, 300)),
+                                    parameters, &workspace, serial),
+                        "shared large region filters must succeed");
+            } else {
+                apply(filtered, parameters, &workspace, serial);
+            }
+            require(filtered.constBits() != source.constBits() &&
+                        source.pixel(450, 350) == original,
+                    "filter detachment must preserve immutable source pixels");
+            const auto* middle = filtered.constBits() + filtered.sizeInBytes() / 2;
+            require(virtualMemoryMapped(middle), "filtered large pixels must be mapped while live");
+            workspace.finishFrame(true);
+            require(virtualMemoryMapped(middle),
+                    "workspace release must preserve final filter output");
+            filtered = {};
+            require(!virtualMemoryMapped(middle),
+                    "detached filter output must unmap when its last owner releases it");
+        }
+    }
+
+    // Exercise the renderer's borrowed scratch view, then publish the detached
+    // emboss result beyond the workspace lifetime.
+    {
+        RenderWorkspace pooled(0);
+        QImage& scene = pooled.sceneScratch(source.size());
+        scene.fill(Qt::blue);
+        const auto* sceneMiddle = scene.constBits() + scene.sizeInBytes() / 2;
+        Parameters emboss;
+        emboss.type = 4;
+        emboss.strength = 0.75;
+        apply(scene, emboss, &pooled, serial);
+        const auto* outputMiddle = scene.constBits() + scene.sizeInBytes() / 2;
+        require(outputMiddle != sceneMiddle,
+                "spatial filtering must preserve immutable workspace source pixels");
+        QImage published = scene;
+        pooled.finishFrame(true);
+        require(!virtualMemoryMapped(sceneMiddle) && virtualMemoryMapped(outputMiddle),
+                "frame release must free original scratch and retain published filtered pixels");
+        published = {};
+        require(!virtualMemoryMapped(outputMiddle),
+                "published detached scratch must unmap after its final owner releases it");
+    }
+
+    RenderWorkspace workspace(0);
+    auto& samples = workspace.mosaicSampleScratch(1024u * 1024u);
+    const auto* middle = samples.data() + samples.size() / 2;
+    samples.front() = qRgb(1, 2, 3);
+    require(workspace.retainedBytes() >= samples.capacity() * sizeof(QRgb),
+            "mosaic scratch must account for its retained capacity");
+    workspace.finishFrame(true);
+    require(!virtualMemoryMapped(middle), "large mosaic samples must unmap on frame release");
 }
 
 void brightnessHasNeutralMidpointAndPreservesAlpha() {
@@ -3309,6 +3389,11 @@ int main(int argc, char** argv) {
         sparseSpatialFilterDamagePreservesHalosAndRetainedPixels();
         return 0;
     }
+    if (application.arguments().contains(QStringLiteral("--memory-ownership-only"))) {
+        filteredImagesReturnMappedStorageAfterDetaching();
+        return 0;
+    }
+    filteredImagesReturnMappedStorageAfterDetaching();
     brightnessHasNeutralMidpointAndPreservesAlpha();
     publicRegionFilterApiRestrictsEffectsToTheRequestedRegion();
     publicSingleThreadedRegionFilterMatchesDefaultAndRetainsBoundedScratch();

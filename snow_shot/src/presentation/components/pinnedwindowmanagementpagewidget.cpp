@@ -1,3 +1,4 @@
+#include "snow_draw_engine_qt/snow_canvas_image.h"
 #include "snow_shot/platform/applicationqos.h"
 #include "snow_shot/presentation/components/pinnedwindowmanagementpagewidget.h"
 
@@ -202,8 +203,8 @@ class ApplicationPinnedDataSource final : public PinnedWindowManagementDataSourc
                 naturalSize = image.size();
                 if (!image.isNull() && (image.width() > boundedSize.width() ||
                                         image.height() > boundedSize.height())) {
-                    image =
-                        image.scaled(boundedSize, Qt::KeepAspectRatio, Qt::SmoothTransformation);
+                    image = snowCanvasScaleImage(image, boundedSize, Qt::KeepAspectRatio,
+                                                 Qt::SmoothTransformation);
                 }
                 if (!image.isNull())
                     thumbnail_cache::persist(cachePath, image, naturalSize);

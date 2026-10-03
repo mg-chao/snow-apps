@@ -1,4 +1,6 @@
 #include "codecs/webp_codec.h"
+
+#include <snow/memory/pixel_array.h>
 #include "exif_orientation.h"
 #include "planar_raster_io.h"
 
@@ -305,7 +307,7 @@ Result<std::vector<std::byte>> input_bytes(const Input& input, const DecodeOptio
     return read_all(*input.source, options.limits.maximum_input_bytes);
 }
 
-Result<std::vector<std::uint8_t>> rgba_pixels(const ImageView& view) {
+Result<snow::memory::PixelArray<std::uint8_t>> rgba_pixels(const ImageView& view) {
     Result<void> valid = view.validate();
     if (!valid)
         return valid.error();
@@ -321,7 +323,8 @@ Result<std::vector<std::uint8_t>> rgba_pixels(const ImageView& view) {
         return webp_error(ErrorCode::unsupported_feature,
                           "WebP encoding does not support this pixel layout.");
     }
-    std::vector<std::uint8_t> pixels(static_cast<std::size_t>(view.width) * view.height * 4U);
+    snow::memory::PixelArray<std::uint8_t> pixels(static_cast<std::size_t>(view.width) *
+                                                  view.height * 4U);
     const bool bgr =
         view.format.channels == ChannelLayout::bgr || view.format.channels == ChannelLayout::bgra;
     for (std::uint32_t y = 0; y < view.height; ++y) {
@@ -388,7 +391,7 @@ Result<Picture> import_picture(const ImageView& view) {
         return picture;
     }
 
-    Result<std::vector<std::uint8_t>> converted = rgba_pixels(view);
+    Result<snow::memory::PixelArray<std::uint8_t>> converted = rgba_pixels(view);
     if (!converted)
         return converted.error();
     if (!WebPPictureImportRGBA(picture.get(), converted.value().data(),
@@ -885,7 +888,7 @@ Result<void> WebpCodec::decode_to_sink(const Input& input, PixelSink& sink,
         return webp_error(ErrorCode::limit_exceeded, "WebP output size overflows.");
     const std::size_t output_bytes = row_stride * height;
     std::span<std::byte> target = sink.frame_storage(0, row_stride, output_bytes);
-    std::vector<std::byte> owned;
+    snow::memory::PixelArray<std::byte> owned;
     if (target.size() != output_bytes) {
         if (output_bytes > options.limits.maximum_owned_output_bytes) {
             return webp_error(

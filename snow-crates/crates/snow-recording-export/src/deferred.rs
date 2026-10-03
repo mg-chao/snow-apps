@@ -1,5 +1,6 @@
 //! Bounded, deterministic replay of a finalized clean recording.
 //! Capture and replay share `StreamingEncoder`; publication is transactional.
+use snow_memory::RasterBuffer;
 #[cfg(test)]
 mod tests;
 use std::fs::File;
@@ -421,7 +422,7 @@ pub fn render_bundle_range(
     video.seek_to(first, cancellation)?;
     let mut audio = AudioReplay::open(path, &footer, &config)?;
     audio.skip_samples(range.sample_offset(48_000))?;
-    let mut rgba = vec![0; config.width as usize * config.height as usize * 4];
+    let mut rgba = RasterBuffer::zeroed(config.width as usize * config.height as usize * 4);
     let mut hdr_conversion = if output_hdr {
         let mut conversion = ffmpeg::software::scaling::Context::get(
             ffmpeg::format::Pixel::RGB48LE,
@@ -537,7 +538,7 @@ pub fn render_bundle_range(
             }
             #[cfg(feature = "bench-timing")]
             let stage_started = Instant::now();
-            rgba = encoder.push_owned_rgba_frame_at_pts(frame.pts, rgba)?;
+            rgba = encoder.push_raster_rgba_frame_at_pts(frame.pts, rgba)?;
             rgba.resize(config.width as usize * config.height as usize * 4, 0);
             #[cfg(feature = "bench-timing")]
             {

@@ -1,3 +1,4 @@
+#include "snow_draw_engine_qt/snow_canvas_image.h"
 #include "snow_shot/presentation/screenshotoriginalimagepreviewwindow.h"
 
 #include "snow_shot/presentation/screenshotimagerendering.h"
@@ -516,7 +517,7 @@ bool ScreenshotOriginalImagePreviewWindow::refreshRaster() {
         viewport = NativeSurface::imageFor(nativeSurface);
     } else
 #endif
-        viewport = QImage(pixelSize, QImage::Format_ARGB32_Premultiplied);
+        viewport = snowCanvasAllocateImage(pixelSize, QImage::Format_ARGB32_Premultiplied);
     if (viewport.isNull())
         return false;
     viewport.fill(Qt::transparent);

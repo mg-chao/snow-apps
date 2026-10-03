@@ -9,7 +9,7 @@ pub mod cursor_snapshot;
 pub mod error;
 pub mod exclusions;
 pub mod frame;
-#[cfg(any(windows, target_os = "macos"))]
+#[cfg(all(test, any(windows, target_os = "macos")))]
 mod frame_pages;
 #[cfg(windows)]
 pub mod gpu;

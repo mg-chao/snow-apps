@@ -1,3 +1,4 @@
+#include "snow_draw_engine_qt/snow_canvas_image.h"
 #include "snow_shot/presentation/screenshotcontentdrop.h"
 #include "snow_shot/shortcuts/shortcutbinding.h"
 #include "snow_shot/presentation/windowcloseshortcut.h"
@@ -1920,7 +1921,9 @@ bool ScreenshotPinnedWindow::present(const Config& requestedConfig,
     m_originalImage = !m_imageLoader && m_imageSource.isMaterialized()
                           ? m_imageSource.materializedImage
                           : QImage();
-    if (!m_originalImage.isNull()) {
+    if (!m_originalImage.isNull() && m_originalImage.devicePixelRatio() != 1.0) {
+        if (!snowCanvasDetachImage(m_originalImage))
+            m_originalImage = {};
         m_originalImage.setDevicePixelRatio(1.0);
     }
     m_transformedImage = ScreenshotResultCompositor::normalizeImage(m_originalImage);
@@ -3596,6 +3599,8 @@ bool ScreenshotPinnedWindow::installMaterializedImage(QImage image) {
     }
     m_originalImage = std::move(image);
     if (m_originalImage.devicePixelRatio() != 1.0) {
+        if (!snowCanvasDetachImage(m_originalImage))
+            return false;
         m_originalImage.setDevicePixelRatio(1.0);
     }
     m_originalPixelSize = m_originalImage.size();
@@ -5453,10 +5458,12 @@ bool ScreenshotPinnedWindow::replaceContent(ScreenshotClipboardContent content) 
     const QSize replacementWindowSize = pinned_platform::pinnedImageWindowSize(
         content.image,
         content.isFormattedText() ? content.formattedTextDevicePixelRatio : devicePixelRatioF());
+    if (content.image.devicePixelRatio() != 1.0 && !snowCanvasDetachImage(content.image))
+        return false;
     content.image.setDevicePixelRatio(1.0);
     const QTransform transform = normalizedImageTransform(m_imageTransform, content.image.size());
     QImage transformed = ScreenshotResultCompositor::normalizeImage(
-        content.image.transformed(transform, Qt::SmoothTransformation));
+        snowCanvasTransformImage(content.image, transform, Qt::SmoothTransformation));
     if (transformed.isNull()) {
         return false;
     }
@@ -5851,7 +5858,8 @@ void ScreenshotPinnedWindow::rebuildTransformedImage() {
         return;
     }
     invalidatePendingCopy();
-    m_transformedImage = m_originalImage.transformed(m_imageTransform, Qt::SmoothTransformation);
+    m_transformedImage =
+        snowCanvasTransformImage(m_originalImage, m_imageTransform, Qt::SmoothTransformation);
     m_transformedImage = ScreenshotResultCompositor::normalizeImage(m_transformedImage);
     const qreal scaleX =
         m_originalImage.width() > 0 ? m_canvasSourceRect.width() / m_originalImage.width() : 1.0;

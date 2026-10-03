@@ -2,6 +2,7 @@
 #include "../src/presentation/services/screenshotclipboardcontentsnapshot.h"
 #include "snowimageqtcodec.h"
 #include "snowimagecodecbridge.h"
+#include "../../test-support/virtualmemory.h"
 
 #include <QAbstractTextDocumentLayout>
 #include <QApplication>
@@ -59,6 +60,59 @@ bool imageContainsColor(const QImage& image, const QColor& expected) {
     return false;
 }
 
+void embeddedImagesUseManagedCachedPixels() {
+    QImage source(QSize(1025, 513), QImage::Format_ARGB32);
+    std::uint32_t random = 0x12345678U;
+    for (int y = 0; y < source.height(); ++y) {
+        auto* row = reinterpret_cast<QRgb*>(source.scanLine(y));
+        for (int x = 0; x < source.width(); ++x) {
+            random ^= random << 13U;
+            random ^= random >> 17U;
+            random ^= random << 5U;
+            row[x] = random;
+        }
+    }
+    source.setColorSpace(QColorSpace(QColorSpace::DisplayP3));
+    const QByteArray png = pngBytes(source);
+    const QImage expected = QImage::fromData(png, "PNG");
+    const QByteArray base64 = png.toBase64();
+    require(base64.size() > 2 * 1024 * 1024,
+            "the default embedded-image fixture must exceed the automation-only URL limit");
+    const std::array urls{
+        QByteArray("data:image/png;base64,") + base64,
+        QByteArray("data:image/png;%42ASE64%20,") +
+            base64.toPercentEncoding(QByteArray{}, QByteArray("+/=")),
+        QByteArray("data:image/png,") + png.toPercentEncoding(),
+    };
+    for (const QByteArray& encodedUrl : urls) {
+        const QUrl url = QUrl::fromEncoded(encodedUrl);
+        QMimeData mime;
+        mime.setHtml(QStringLiteral("before <img width=\"17\" height=\"11\" src=\"%1\"> after")
+                         .arg(QString::fromLatin1(encodedUrl)));
+        auto content = ScreenshotClipboardContentReader::readMimeData(&mime, 1.0);
+        require(content && content->isFormattedText(),
+                "default clipboard data URLs must decode without automation-only limits");
+        QImage retained =
+            content->formattedDocument->resource(QTextDocument::ImageResource, url).value<QImage>();
+        require(retained == expected && retained.colorSpace() == expected.colorSpace(),
+                "embedded images must retain exact pixels and source color metadata");
+        {
+            const QImage again =
+                content->formattedDocument->resource(QTextDocument::ImageResource, url)
+                    .value<QImage>();
+            require(again.constBits() == retained.constBits(),
+                    "document resources must share cached pixels instead of decoding again");
+        }
+        const void* midpoint = retained.constBits() + retained.sizeInBytes() / 2;
+        content.reset();
+        require(snow::test_support::virtualMemoryMapped(midpoint),
+                "a retained resource image must outlive its formatted document");
+        retained = {};
+        require(!snow::test_support::virtualMemoryMapped(midpoint),
+                "embedded pixels must unmap after their document and image owners are dropped");
+    }
+}
+
 void localTextFilesAreSupported() {
     QTemporaryDir directory;
     require(directory.isValid(), "text file directory exists");
@@ -108,6 +162,22 @@ void localTextFilesAreSupported() {
     auto decoded = ScreenshotClipboardContentReader::decode(snapshot);
     require(decoded && decoded->plainText == QStringLiteral("Hi \u4e2d\u6587"),
             "BOM-marked UTF-16 text decodes correctly");
+}
+
+void directImageUsesOwnedRasterStorage() {
+    QMimeData mime;
+    QImage source(QSize(1025, 513), QImage::Format_ARGB32_Premultiplied);
+    source.fill(QColor(200, 100, 50));
+    mime.setImageData(source);
+    auto content = ScreenshotClipboardContentReader::readMimeData(&mime, 1.0);
+    require(content && content->image == source && content->image.constBits() != source.constBits(),
+            "large foreign clipboard rasters must import into independent managed storage");
+    const auto* middle = content->image.constBits() + content->image.sizeInBytes() / 2;
+    require(snow::test_support::virtualMemoryMapped(middle),
+            "clipboard content must retain live managed pages");
+    content.reset();
+    require(!snow::test_support::virtualMemoryMapped(middle),
+            "releasing imported clipboard content must unmap its final pixels");
 }
 
 void directImageWinsOverRichText() {
@@ -872,12 +942,17 @@ void nativeDibMaskColoredPixelsRemainPixels() {
 int main(int argc, char** argv) {
     QApplication application(argc, argv);
     QApplication::setQuitOnLastWindowClosed(false);
+    embeddedImagesUseManagedCachedPixels();
+    if (application.arguments().contains(QStringLiteral("--embedded-images-only"))) {
+        return EXIT_SUCCESS;
+    }
     if (!application.arguments().contains(QStringLiteral("--mime-data-only"))) {
         liveSnapshotRetainsBitmapFallback();
     }
     localTextFilesAreSupported();
     imageSourceDensitySurvivesDecode();
     directImageWinsOverRichText();
+    directImageUsesOwnedRasterStorage();
     oversizedDirectImagesAreIgnored();
     automationAdmissionPrecedesDecodeAndRasterization();
     encodedImageAndTextAreSupported();

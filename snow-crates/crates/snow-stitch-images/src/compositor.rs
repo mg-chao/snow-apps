@@ -1,4 +1,5 @@
 use crate::{Frame, StitchAxis, StitchError};
+use snow_memory::RasterBuffer;
 
 pub fn band_size(viewport_extent: u32, shift: u32) -> Result<u32, StitchError> {
     band_height(viewport_extent, shift)
@@ -472,7 +473,7 @@ fn from_column_ranges(
         operation: "calculating composed width",
     })?;
     let channels = pixel_format.channels() as usize;
-    let mut pixels = Vec::with_capacity(width as usize * height as usize * channels);
+    let mut pixels = RasterBuffer::with_capacity(width as usize * height as usize * channels);
     for y in 0..height {
         for (frame, range) in ranges {
             if frame.height() != height
@@ -495,7 +496,7 @@ fn from_column_ranges(
             pixels.extend_from_slice(&row[start..end]);
         }
     }
-    Frame::new(width, height, pixel_format, pixels)
+    Frame::from_buffer(width, height, pixel_format, pixels)
 }
 
 #[cfg(test)]

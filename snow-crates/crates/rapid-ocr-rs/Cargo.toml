@@ -10,6 +10,7 @@ repository = "https://gitee.com/mg-chao/snow-shot-workspaces"
 authors = ["mg-chao <chao@mgchao.top>"]
 
 [dependencies]
+snow-memory = { path = "../snow-memory" }
 geo-clipper = "0.9.0"
 geo-types = "0.7"
 image = { version = "0.25", default-features = false }

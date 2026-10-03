@@ -1,3 +1,4 @@
+#include "snow_draw_engine_qt/snow_canvas_image.h"
 #include "snow_shot/presentation/screenshotscrollingthumbnailwidget.h"
 #include "screenshotscrollingperfinstrumentation.h"
 
@@ -284,15 +285,17 @@ void ScreenshotScrollingThumbnailWidget::replacePreview(const QImage& image) {
     }
     const QImage normalized = image.format() == QImage::Format_RGBA8888
                                   ? image
-                                  : image.convertToFormat(QImage::Format_RGBA8888);
+                                  : snowCanvasConvertImage(image, QImage::Format_RGBA8888);
     if (normalized.isNull()) {
         return;
     }
     const int extent = imageExtent(normalized, m_mode);
     for (int start = 0; start < extent; start += kPreviewTileSpan) {
         const int span = std::min(kPreviewTileSpan, extent - start);
-        QImage tile = horizontal(m_mode) ? normalized.copy(start, 0, span, kThumbnailExtent)
-                                         : normalized.copy(0, start, kThumbnailExtent, span);
+        QImage tile =
+            horizontal(m_mode)
+                ? snowCanvasCopyImage(normalized, QRect(start, 0, span, kThumbnailExtent))
+                : snowCanvasCopyImage(normalized, QRect(0, start, kThumbnailExtent, span));
         if (tile.isNull()) {
             m_previewTiles.clear();
             m_previewExtent = 0;
@@ -352,9 +355,12 @@ void ScreenshotScrollingThumbnailWidget::compactActiveTile() {
     if (tile.firstSpan == 0 && tile.spanCount == imageExtent(tile.image, m_mode)) {
         return;
     }
-    QImage compacted = horizontal(m_mode)
-                           ? tile.image.copy(tile.firstSpan, 0, tile.spanCount, kThumbnailExtent)
-                           : tile.image.copy(0, tile.firstSpan, kThumbnailExtent, tile.spanCount);
+    QImage compacted =
+        horizontal(m_mode)
+            ? snowCanvasCopyImage(tile.image,
+                                  QRect(tile.firstSpan, 0, tile.spanCount, kThumbnailExtent))
+            : snowCanvasCopyImage(tile.image,
+                                  QRect(0, tile.firstSpan, kThumbnailExtent, tile.spanCount));
     if (!compacted.isNull()) {
         tile.image = std::move(compacted);
         tile.firstSpan = 0;
@@ -368,7 +374,7 @@ void ScreenshotScrollingThumbnailWidget::appendPreview(const QImage& image) {
     }
     const QImage normalized = image.format() == QImage::Format_RGBA8888
                                   ? image
-                                  : image.convertToFormat(QImage::Format_RGBA8888);
+                                  : snowCanvasConvertImage(image, QImage::Format_RGBA8888);
     if (normalized.isNull()) {
         return;
     }
@@ -409,7 +415,7 @@ void ScreenshotScrollingThumbnailWidget::prependPreview(const QImage& image) {
     }
     const QImage normalized = image.format() == QImage::Format_RGBA8888
                                   ? image
-                                  : image.convertToFormat(QImage::Format_RGBA8888);
+                                  : snowCanvasConvertImage(image, QImage::Format_RGBA8888);
     if (normalized.isNull()) {
         return;
     }

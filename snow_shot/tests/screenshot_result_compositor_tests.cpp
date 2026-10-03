@@ -1,3 +1,5 @@
+#include "snow_draw_engine_qt/snow_canvas_image.h"
+#include "../../test-support/virtualmemory.h"
 #include "snow_shot/presentation/screenshotresultcompositor.h"
 #include "snow_shot/presentation/screenshotselectionshadowrenderer.h"
 
@@ -224,12 +226,30 @@ void liveSurfacePreservesTranslatedFractionalContent() {
     require(surface == expected, "camera roundoff must not erase translated content");
 }
 
+void sharedMetadataAndOpacityKeepMappedOwnership() {
+    QImage source = snowCanvasAllocateImage(QSize(1025, 513), QImage::Format_ARGB32_Premultiplied);
+    require(!source.isNull(), "large composition fixture must allocate");
+    source.fill(QColor(200, 100, 50));
+    source.setDevicePixelRatio(2.0);
+    QImage result = ScreenshotResultCompositor::compose(source, {}, 1.0, 0.5);
+    require(!result.isNull() && source.devicePixelRatio() == 2.0 &&
+                source.pixelColor(0, 0).alpha() == 255 && result.pixelColor(0, 0).alpha() == 128,
+            "metadata normalization and opacity must preserve the shared source");
+    const auto* middle = result.constBits() + result.sizeInBytes() / 2;
+    require(snow::test_support::virtualMemoryMapped(middle),
+            "compositor mutations must retain managed output storage");
+    result = {};
+    require(!snow::test_support::virtualMemoryMapped(middle),
+            "compositor output must release its final pixel pages");
+}
+
 } // namespace
 
 int main(int argc, char** argv) {
     QApplication application(argc, argv);
     try {
         squareResultPreservesPhysicalPixels();
+        sharedMetadataAndOpacityKeepMappedOwnership();
         roundedAndShadowedResultHasRealTransparency();
         previewAssetsAreReleasedAfterCapture();
         layoutScalesOnlyEffectsForFractionalDpr();

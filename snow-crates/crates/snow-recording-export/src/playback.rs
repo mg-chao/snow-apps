@@ -2,6 +2,7 @@
 use crate::clip::{AudioReader, ClipSource, VideoReader};
 use crate::error::{RecordingExportError, Result};
 use snow_core::cancellation::CancellationToken;
+use snow_memory::RasterBuffer;
 use std::sync::{Arc, Condvar, Mutex};
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
@@ -34,7 +35,7 @@ pub struct PreviewSnapshot {
     pub revision: u64,
     pub position_us: u64,
     pub playing: bool,
-    pub pixels: Arc<Vec<u8>>,
+    pub pixels: Arc<RasterBuffer>,
     pub error: String,
 }
 
@@ -174,7 +175,7 @@ fn run(
     let mut playing = false;
     let mut next_audio = 0;
     let mut last_frame = None;
-    let mut pixels = Vec::new();
+    let mut pixels = RasterBuffer::new();
     let mut mixed = vec![0i16; 960 * 2];
     loop {
         let command = state.command.lock().unwrap_or_else(|e| e.into_inner());
@@ -229,7 +230,7 @@ fn run(
         let render = (|| -> Result<()> {
             if last_frame != Some(frame) {
                 video.read(source.boundary(frame), &token)?;
-                video.copy_rgba(&mut pixels)?;
+                video.copy_rgba_buffer(&mut pixels)?;
                 if last_frame.is_none() {
                     started = clock();
                     audio_advanced = started;

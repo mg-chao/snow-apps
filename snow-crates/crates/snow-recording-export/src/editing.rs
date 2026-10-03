@@ -4,6 +4,7 @@ use crate::config::ExportExecutionMode;
 use crate::decoder::*;
 use crate::resize::{NearestResizePlan, resize_rgba_fast_into};
 use snow_core::cancellation::CancellationToken;
+use snow_memory::RasterBuffer;
 use std::cell::Cell;
 use std::collections::HashMap;
 use std::ffi::OsString;
@@ -565,9 +566,9 @@ impl EditingSession {
         // Cache the resized base frame so repeated source indices avoid redundant scaling.
         let mut resized_cache_key = None::<(usize, u32, u32)>;
         let mut resized_cache = if needs_resize {
-            vec![0u8; output_len]
+            RasterBuffer::zeroed(output_len)
         } else {
-            Vec::new()
+            RasterBuffer::new()
         };
 
         let telemetry = match export_video_generated(
@@ -1100,7 +1101,7 @@ impl DecodeWorkerControl {
 
 struct StreamingVideoFrameSource {
     rx: Option<Receiver<DecodedFrameMessage>>,
-    recycle_tx: Sender<Vec<u8>>,
+    recycle_tx: Sender<RasterBuffer>,
     current_index: Option<usize>,
     current_frame: Option<StoredFrame>,
     control: DecodeWorkerControl,
@@ -1120,7 +1121,7 @@ impl StreamingVideoFrameSource {
         let (tx, rx) = crossbeam_channel::bounded(depth);
         let (recycle_tx, recycle_rx) = crossbeam_channel::bounded(depth);
         for _ in 0..depth {
-            let _ = recycle_tx.try_send(Vec::new());
+            let _ = recycle_tx.try_send(RasterBuffer::new());
         }
         let path = video_path.to_path_buf();
         let control = DecodeWorkerControl::new(cancel_flag);
@@ -1213,7 +1214,7 @@ fn decode_video_stream_worker(
     decode_threads: u8,
     control: DecodeWorkerControl,
     tx: crossbeam_channel::Sender<DecodedFrameMessage>,
-    recycle_rx: crossbeam_channel::Receiver<Vec<u8>>,
+    recycle_rx: crossbeam_channel::Receiver<RasterBuffer>,
 ) {
     let result = (|| -> Result<()> {
         control.check_canceled()?;
@@ -1400,7 +1401,7 @@ fn decoded_to_stored_frame(
     scaler: &mut Option<ffmpeg::software::scaling::Context>,
     rgba_frame: &mut Option<ffmpeg::frame::Video>,
     last_timestamp_ms: &mut Option<u64>,
-    recycle_rx: &crossbeam_channel::Receiver<Vec<u8>>,
+    recycle_rx: &crossbeam_channel::Receiver<RasterBuffer>,
 ) -> Result<StoredFrame> {
     let width = decoded.width();
     let height = decoded.height();
@@ -1670,7 +1671,7 @@ fn prepare_overlay_base_rgba(
     resize_plan: Option<&NearestResizePlan>,
     process_pool: Option<&rayon::ThreadPool>,
     resized_cache_key: &mut Option<(usize, u32, u32)>,
-    resized_cache: &mut Vec<u8>,
+    resized_cache: &mut RasterBuffer,
     output_rgba: &mut [u8],
 ) {
     if source.width == output_w && source.height == output_h {
@@ -2546,7 +2547,8 @@ fn compile_trail_segments(
     let width_usize = width as usize;
     let height_i32 = height.min(i32::MAX as u32) as i32;
     let width_i32 = width.min(i32::MAX as u32) as i32;
-    let mut latest_ts_keys = vec![0u32; width as usize * height as usize];
+    let mut latest_ts_keys =
+        snow_memory::RasterArray::<u32>::zeroed(width as usize * height as usize);
 
     for pair in smoothed.windows(2) {
         let a = pair[0];
@@ -5240,14 +5242,14 @@ where
         progress_tx,
     )?;
     let rgba_len = width as usize * height as usize * 4;
-    let mut rgba = vec![0u8; rgba_len];
+    let mut rgba = RasterBuffer::zeroed(rgba_len);
     for index in 0..frame_count {
         check_canceled(cancel_flag)?;
         rgba.resize(rgba_len, 0);
         rgba_provider(index, &mut rgba)?;
         rgba = encoder
             .encoder
-            .push_owned_rgba_frame_at_pts(index as u64, rgba)?;
+            .push_raster_rgba_frame_at_pts(index as u64, rgba)?;
         encoder.pump_audio(index.saturating_add(1))?;
         encoder.progress(index.saturating_add(1));
     }
@@ -5715,11 +5717,11 @@ fn export_video_generated_from_source_with_overlay(
     let rgba_len = rgba_row_bytes * height as usize;
     let rgba_stride = rgba_frame.stride(0);
     let can_write_direct_rgba = rgba_stride == rgba_row_bytes;
-    let mut base_rgba = vec![0u8; rgba_len];
+    let mut base_rgba = RasterBuffer::zeroed(rgba_len);
     let mut generated_rgba = if can_write_direct_rgba {
-        Vec::new()
+        RasterBuffer::new()
     } else {
-        vec![0u8; rgba_len]
+        RasterBuffer::zeroed(rgba_len)
     };
     let mut overlay_state = OverlaySearchState::default();
     let mut decode_rgba_scaler = None::<ffmpeg::software::scaling::Context>;
@@ -6500,7 +6502,7 @@ mod tests {
                     duration_ms: 33,
                     width: 2,
                     height: 2,
-                    rgba: vec![0x40; 16],
+                    rgba: vec![0x40; 16].into(),
                 },
             })
             .unwrap();
@@ -6579,7 +6581,7 @@ mod tests {
                     duration_ms: 33,
                     width: 2,
                     height: 2,
-                    rgba: vec![0x40; 16],
+                    rgba: vec![0x40; 16].into(),
                 },
             })
             .unwrap();
@@ -7371,18 +7373,18 @@ mod tests {
             duration_ms: 16,
             width: 1,
             height: 1,
-            rgba: vec![10, 20, 30, 255],
+            rgba: vec![10, 20, 30, 255].into(),
         };
         let changed = StoredFrame {
             timestamp_ms: 1,
             duration_ms: 16,
             width: 1,
             height: 1,
-            rgba: vec![220, 210, 200, 255],
+            rgba: vec![220, 210, 200, 255].into(),
         };
         let plan = NearestResizePlan::new(1, 1, 2, 2);
         let mut cache_key = None::<(usize, u32, u32)>;
-        let mut cache = Vec::<u8>::new();
+        let mut cache = RasterBuffer::new();
         let mut output = vec![0u8; 2 * 2 * 4];
 
         prepare_overlay_base_rgba(
@@ -7419,18 +7421,18 @@ mod tests {
             duration_ms: 16,
             width: 1,
             height: 1,
-            rgba: vec![5, 6, 7, 255],
+            rgba: vec![5, 6, 7, 255].into(),
         };
         let second_source = StoredFrame {
             timestamp_ms: 1,
             duration_ms: 16,
             width: 1,
             height: 1,
-            rgba: vec![50, 60, 70, 255],
+            rgba: vec![50, 60, 70, 255].into(),
         };
         let plan = NearestResizePlan::new(1, 1, 2, 2);
         let mut cache_key = None::<(usize, u32, u32)>;
-        let mut cache = Vec::<u8>::new();
+        let mut cache = RasterBuffer::new();
         let mut output = vec![0u8; 2 * 2 * 4];
 
         prepare_overlay_base_rgba(
@@ -7940,7 +7942,7 @@ mod tests {
             duration_ms: 16,
             width: 4,
             height: 4,
-            rgba: vec![0; 4 * 4 * 4],
+            rgba: vec![0; 4 * 4 * 4].into(),
         };
         let store = MouseStore {
             cursor_shapes: vec![CursorShapeRecord {
@@ -7985,7 +7987,7 @@ mod tests {
             duration_ms: 16,
             width: 16,
             height: 16,
-            rgba: vec![0; 16 * 16 * 4],
+            rgba: vec![0; 16 * 16 * 4].into(),
         };
         let store = MouseStore {
             cursor_shapes: vec![CursorShapeRecord {
@@ -8037,7 +8039,8 @@ mod tests {
             rgba: vec![
                 10, 20, 30, 255, 20, 40, 60, 255, 100, 120, 140, 255, 0, 0, 0, 255, // row 1
                 0, 0, 0, 255, 0, 0, 0, 255, 0, 0, 0, 255, 0, 0, 0, 255,
-            ],
+            ]
+            .into(),
         };
         let store = MouseStore {
             cursor_shapes: vec![CursorShapeRecord {
@@ -8087,7 +8090,7 @@ mod tests {
             duration_ms: 16,
             width: 16,
             height: 16,
-            rgba: vec![0; 16 * 16 * 4],
+            rgba: vec![0; 16 * 16 * 4].into(),
         };
         let store = MouseStore {
             cursor_shapes: vec![CursorShapeRecord {
@@ -8134,7 +8137,7 @@ mod tests {
             duration_ms: 16,
             width: 32,
             height: 32,
-            rgba: vec![0; 32 * 32 * 4],
+            rgba: vec![0; 32 * 32 * 4].into(),
         };
         let store = MouseStore {
             cursor_shapes: vec![],

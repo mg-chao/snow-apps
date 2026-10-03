@@ -544,7 +544,7 @@ class DocumentWorker final : public QObject {
                     return {failure(request, QStringLiteral("canceled")), {}};
                 source.image = native
                                    ? snow_shot::image_codec::decode(encoded, nativeFormat, nullptr)
-                                   : reader.read();
+                                   : snow_shot::image_codec::readManagedImage(reader);
             }
             encoded.clear();
             source.metadata = {{QStringLiteral("kind"), QStringLiteral("file")},

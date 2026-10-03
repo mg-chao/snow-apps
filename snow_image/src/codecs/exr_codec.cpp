@@ -1,5 +1,7 @@
 #include "codecs/exr_codec.h"
 
+#include <snow/memory/pixel_array.h>
+
 #include <OpenEXR/ImfAttribute.h>
 #include <OpenEXR/ImfChannelList.h>
 #include <OpenEXR/ImfDeepFrameBuffer.h>
@@ -393,7 +395,7 @@ Result<DeepSamples> read_deep_channels(const Imf::Header& header, const Imath::B
         }
         total_samples += count;
     }
-    std::vector<std::vector<char*>> pointers;
+    std::vector<snow::memory::PixelArray<char*>> pointers;
     std::size_t channel_count = 0;
     for (auto iterator = header.channels().begin(); iterator != header.channels().end();
          ++iterator) {
@@ -957,7 +959,7 @@ Imf::FrameBuffer flat_frame_buffer(const std::vector<ExrChannel>& channels,
 
 struct DeepBufferStorage final {
     Imf::DeepFrameBuffer buffer;
-    std::vector<std::vector<char*>> pointers;
+    std::vector<snow::memory::PixelArray<char*>> pointers;
 };
 
 DeepBufferStorage deep_frame_buffer(const DeepSamples& deep, const Imath::Box2i& window) {
@@ -985,7 +987,7 @@ DeepBufferStorage deep_frame_buffer(const DeepSamples& deep, const Imath::Box2i&
         if (channel.samples.size() < total * bytes) {
             throw IEX_NAMESPACE::ArgExc("OpenEXR deep channel sample buffer is too small.");
         }
-        std::vector<char*>& pointers = storage.pointers[channel_index];
+        snow::memory::PixelArray<char*>& pointers = storage.pointers[channel_index];
         pointers.resize(deep.counts.size(), nullptr);
         std::uint64_t offset = 0;
         for (std::size_t pixel = 0; pixel < deep.counts.size(); ++pixel) {

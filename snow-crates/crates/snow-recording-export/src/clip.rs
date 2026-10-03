@@ -7,6 +7,7 @@ use crate::{ExportPerformanceConfig, StreamingEncoder, StreamingEncoderConfig};
 use ffmpeg::Rescale;
 use ffmpeg_next as ffmpeg;
 use snow_core::cancellation::CancellationToken;
+use snow_memory::RasterBuffer;
 use snow_recording_model::{RenderMetadata, TrimRange};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -247,7 +248,7 @@ impl ClipSource {
         } else {
             self.frame_at(range.end_us)
         };
-        let mut pixels = Vec::new();
+        let mut pixels = RasterBuffer::new();
         let mut hdr_conversion = None;
         let mut hdr_frame =
             ffmpeg::frame::Video::new(encoder.input_pixel_format(), config.width, config.height);
@@ -283,7 +284,7 @@ impl ClipSource {
                 crate::hdr::frame(&mut hdr_frame, true);
                 encoder.push_prepared_video_frame_ref_at_pts(pts, &hdr_frame)?;
             } else {
-                reader.copy_rgba(&mut pixels)?;
+                reader.copy_rgba_buffer(&mut pixels)?;
                 encoder.push_rgba_frame_at_pts(pts, &pixels)?;
             }
             let audio_end = (u128::from(self.boundary(index + 1).min(range.end_us)) * 48_000
@@ -494,6 +495,26 @@ impl VideoReader {
     }
 
     pub fn copy_rgba(&mut self, pixels: &mut Vec<u8>) -> Result<()> {
+        self.prepare_rgba()?;
+        pixels.resize(
+            self.source.config.width as usize * self.source.config.height as usize * 4,
+            0,
+        );
+        self.copy_prepared_rgba(pixels);
+        Ok(())
+    }
+
+    pub fn copy_rgba_buffer(&mut self, pixels: &mut RasterBuffer) -> Result<()> {
+        self.prepare_rgba()?;
+        pixels.resize(
+            self.source.config.width as usize * self.source.config.height as usize * 4,
+            0,
+        );
+        self.copy_prepared_rgba(pixels);
+        Ok(())
+    }
+
+    fn prepare_rgba(&mut self) -> Result<()> {
         let frame = &self
             .current
             .as_ref()
@@ -504,8 +525,6 @@ impl VideoReader {
         } else {
             frame
         };
-        let width = self.source.config.width;
-        let height = self.source.config.height;
         if self
             .scaler
             .as_ref()
@@ -549,14 +568,18 @@ impl VideoReader {
             .unwrap()
             .run(frame, &mut self.converted)
             .map_err(media_error)?;
-        pixels.resize(width as usize * height as usize * 4, 0);
+        Ok(())
+    }
+
+    fn copy_prepared_rgba(&self, pixels: &mut [u8]) {
+        let width = self.source.config.width;
+        let height = self.source.config.height;
         for y in 0..height as usize {
             let stride = self.converted.stride(0);
             let len = width as usize * 4;
             pixels[y * len..(y + 1) * len]
                 .copy_from_slice(&self.converted.data(0)[y * stride..y * stride + len]);
         }
-        Ok(())
     }
 }
 

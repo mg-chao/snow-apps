@@ -8,6 +8,7 @@ license.workspace = true
 crate-type = ["staticlib", "rlib"]
 
 [dependencies]
+snow-memory = { path = "../snow-memory" }
 snow-core = { path = "../snow-core" }
 png.workspace = true
 snow-stitch-images = { path = "../snow-stitch-images", default-features = false }

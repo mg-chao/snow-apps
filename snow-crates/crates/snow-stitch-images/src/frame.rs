@@ -1,7 +1,7 @@
 use std::{fmt, path::Path};
 
-use image::{DynamicImage, GrayImage, RgbImage, RgbaImage};
 use serde::{Deserialize, Serialize};
+use snow_memory::RasterBuffer;
 
 use crate::StitchError;
 
@@ -51,7 +51,7 @@ pub struct Frame {
     width: u32,
     height: u32,
     pixel_format: PixelFormat,
-    pixels: Vec<u8>,
+    pixels: RasterBuffer,
 }
 
 impl Frame {
@@ -61,24 +61,42 @@ impl Frame {
         pixel_format: PixelFormat,
         pixels: Vec<u8>,
     ) -> Result<Self, StitchError> {
-        let expected = Self::buffer_len(width, height, pixel_format)?;
-        if pixels.len() != expected {
-            return Err(StitchError::InvalidFrame {
-                message: format!(
-                    "{}x{} {} requires {expected} bytes, got {}",
-                    width,
-                    height,
-                    pixel_format,
-                    pixels.len()
-                ),
-            });
-        }
+        Self::validate_buffer(width, height, pixel_format, pixels.len())?;
+        Self::from_buffer(width, height, pixel_format, pixels.into())
+    }
+
+    /// Preserve raster ownership without converting mapped pixels to a Vec.
+    pub fn from_buffer(
+        width: u32,
+        height: u32,
+        pixel_format: PixelFormat,
+        pixels: RasterBuffer,
+    ) -> Result<Self, StitchError> {
+        Self::validate_buffer(width, height, pixel_format, pixels.len())?;
         Ok(Self {
             width,
             height,
             pixel_format,
             pixels,
         })
+    }
+
+    fn validate_buffer(
+        width: u32,
+        height: u32,
+        pixel_format: PixelFormat,
+        length: usize,
+    ) -> Result<(), StitchError> {
+        let expected = Self::buffer_len(width, height, pixel_format)?;
+        if length != expected {
+            return Err(StitchError::InvalidFrame {
+                message: format!(
+                    "{}x{} {} requires {expected} bytes, got {}",
+                    width, height, pixel_format, length
+                ),
+            });
+        }
+        Ok(())
     }
 
     pub fn from_strided(
@@ -108,14 +126,17 @@ impl Frame {
                 ),
             });
         }
-        let mut pixels = Vec::with_capacity(Self::buffer_len(width, height, pixel_format)?);
-        for y in 0..height as usize {
-            let start = y.checked_mul(row_stride).ok_or(StitchError::Arithmetic {
-                operation: "calculating strided row offset",
-            })?;
-            pixels.extend_from_slice(&storage[start..start + packed_row]);
+        let mut pixels = RasterBuffer::zeroed(Self::buffer_len(width, height, pixel_format)?);
+        if packed_row == 0 {
+            return Self::from_buffer(width, height, pixel_format, pixels);
         }
-        Self::new(width, height, pixel_format, pixels)
+        for (source, target) in storage[..storage_len]
+            .chunks_exact(row_stride)
+            .zip(pixels.as_mut_slice().chunks_exact_mut(packed_row))
+        {
+            target.copy_from_slice(&source[..packed_row]);
+        }
+        Self::from_buffer(width, height, pixel_format, pixels)
     }
 
     pub fn decode(path: impl AsRef<Path>) -> Result<Self, StitchError> {
@@ -130,32 +151,16 @@ impl Frame {
 
     pub fn encode(&self, path: impl AsRef<Path>) -> Result<(), StitchError> {
         let path = path.as_ref();
-        let image = match self.pixel_format {
-            PixelFormat::Gray8 => DynamicImage::ImageLuma8(
-                GrayImage::from_raw(self.width, self.height, self.pixels.clone()).ok_or_else(
-                    || StitchError::InvalidFrame {
-                        message: "could not create gray encoder buffer".to_owned(),
-                    },
-                )?,
-            ),
-            PixelFormat::Rgb8 => DynamicImage::ImageRgb8(
-                RgbImage::from_raw(self.width, self.height, self.pixels.clone()).ok_or_else(
-                    || StitchError::InvalidFrame {
-                        message: "could not create RGB encoder buffer".to_owned(),
-                    },
-                )?,
-            ),
-            PixelFormat::Rgba8 => DynamicImage::ImageRgba8(
-                RgbaImage::from_raw(self.width, self.height, self.pixels.clone()).ok_or_else(
-                    || StitchError::InvalidFrame {
-                        message: "could not create RGBA encoder buffer".to_owned(),
-                    },
-                )?,
-            ),
+        let color = match self.pixel_format {
+            PixelFormat::Gray8 => image::ColorType::L8,
+            PixelFormat::Rgb8 => image::ColorType::Rgb8,
+            PixelFormat::Rgba8 => image::ColorType::Rgba8,
         };
-        image.save(path).map_err(|source| StitchError::Encode {
-            path: path.to_path_buf(),
-            source,
+        image::save_buffer(path, &self.pixels, self.width, self.height, color).map_err(|source| {
+            StitchError::Encode {
+                path: path.to_path_buf(),
+                source,
+            }
         })
     }
 
@@ -184,10 +189,14 @@ impl Frame {
     }
 
     pub fn into_pixels(self) -> Vec<u8> {
+        self.pixels.into_vec()
+    }
+
+    pub fn into_buffer(self) -> RasterBuffer {
         self.pixels
     }
 
-    pub(crate) fn pixels_mut(&mut self) -> &mut Vec<u8> {
+    pub(crate) fn pixels_mut(&mut self) -> &mut RasterBuffer {
         &mut self.pixels
     }
 
@@ -258,17 +267,17 @@ impl Frame {
                 .ok_or(StitchError::Arithmetic {
                     operation: "allocating cropped image",
                 })?;
-        let mut output = Vec::with_capacity(capacity);
-        for source_y in y..y + height {
-            let row_start = (source_y as usize)
-                .checked_mul(source_row_len)
-                .and_then(|value| value.checked_add(x_bytes))
-                .ok_or(StitchError::Arithmetic {
-                    operation: "calculating crop row offset",
-                })?;
-            output.extend_from_slice(&self.pixels[row_start..row_start + output_row_len]);
+        let mut output = RasterBuffer::zeroed(capacity);
+        let source = self.pixels.as_slice();
+        for (row, target) in output
+            .as_mut_slice()
+            .chunks_exact_mut(output_row_len)
+            .enumerate()
+        {
+            let row_start = (y as usize + row) * source_row_len + x_bytes;
+            target.copy_from_slice(&source[row_start..row_start + output_row_len]);
         }
-        Self::new(width, height, self.pixel_format, output)
+        Self::from_buffer(width, height, self.pixel_format, output)
     }
 
     pub fn visible_pixels_equal(&self, other: &Self) -> bool {
@@ -326,7 +335,7 @@ impl Frame {
             operation: "calculating composed height",
         })?;
         let capacity = Self::buffer_len(width, height, pixel_format)?;
-        let mut pixels = Vec::with_capacity(capacity);
+        let mut pixels = RasterBuffer::with_capacity(capacity);
         for (frame, range) in ranges {
             if frame.width != width
                 || frame.pixel_format != pixel_format
@@ -346,7 +355,7 @@ impl Frame {
             let end = range.end as usize * row_len;
             pixels.extend_from_slice(&frame.pixels[start..end]);
         }
-        Self::new(width, height, pixel_format, pixels)
+        Self::from_buffer(width, height, pixel_format, pixels)
     }
 
     fn row_len(&self) -> Result<usize, StitchError> {

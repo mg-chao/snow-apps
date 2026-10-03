@@ -183,6 +183,85 @@ class CountingSink final : public PixelSink {
     std::size_t bytes = 0;
 };
 
+class ScratchLifetimeSink final : public PixelSink {
+  public:
+    explicit ScratchLifetimeSink(std::span<const std::byte> expected, bool reject = false)
+        : expected_(expected), reject_(reject) {}
+
+    Result<void> begin(const snow::image::DocumentInfo&) override {
+        return {};
+    }
+    Result<void> begin_frame(std::uint32_t, const snow::image::FrameInfo&) override {
+        return {};
+    }
+    Result<void> write_rows(std::uint32_t first, std::uint32_t count, std::size_t stride,
+                            std::span<const std::byte> pixels) override {
+        require(first == 0 && count == 512 && stride == 4096,
+                "large codec scratch preserves its full frame layout");
+        require(pixels.size() == expected_.size() &&
+                    std::equal(pixels.begin(), pixels.end(), expected_.begin()),
+                "large codec scratch preserves every decoded sample");
+        address = pixels.data() + pixels.size() / 2;
+        require(snow::test_support::virtualMemoryMapped(address),
+                "codec scratch remains mapped throughout the row callback");
+        return reject_ ? Status::error(ErrorCode::cancelled, "reject scratch frame")
+                       : Result<void>{};
+    }
+    Result<void> end_frame(std::uint32_t) override {
+        return {};
+    }
+    Result<void> end() override {
+        return {};
+    }
+
+    const std::byte* address = nullptr;
+
+  private:
+    std::span<const std::byte> expected_;
+    bool reject_ = false;
+};
+
+class ScratchLifetimeSource final : public snow::image::RasterSource {
+  public:
+    explicit ScratchLifetimeSource(Image image) : image_(std::move(image)) {
+        descriptor_.format = Format::jxl;
+        descriptor_.canvas_width = image_.width();
+        descriptor_.canvas_height = image_.height();
+        snow::image::RasterFrameDescriptor frame;
+        frame.width = image_.width();
+        frame.height = image_.height();
+        frame.layout.planes.push_back({snow::image::PlaneSemantic::packed, image_.width(),
+                                       image_.height(), image_.format(), 8});
+        descriptor_.frames.push_back(std::move(frame));
+    }
+    const snow::image::DocumentDescriptor& descriptor() const noexcept override {
+        return descriptor_;
+    }
+    snow::image::RasterAccess access() const noexcept override {
+        return snow::image::RasterAccess::random_rows;
+    }
+    Result<void> read_rows(std::uint32_t frame, std::uint32_t plane, std::uint32_t first,
+                           std::uint32_t count, std::size_t stride,
+                           std::span<std::byte> destination, std::stop_token stop) const override {
+        if (stop.stop_requested())
+            return Status::error(ErrorCode::cancelled, "scratch raster read cancelled");
+        require(frame == 0 && plane == 0 && stride == image_.row_stride() &&
+                    destination.size() == static_cast<std::size_t>(count) * stride,
+                "native JXL staging reads tightly packed source rows");
+        if (first == 0)
+            address = destination.data() + destination.size() / 2;
+        std::memcpy(destination.data(), image_.pixels().data() + first * stride,
+                    destination.size());
+        return {};
+    }
+
+    mutable const std::byte* address = nullptr;
+
+  private:
+    Image image_;
+    snow::image::DocumentDescriptor descriptor_;
+};
+
 class MappedOnlySource final : public snow::image::RasterSource {
   public:
     explicit MappedOnlySource(std::shared_ptr<snow::image::RasterStore> store)
@@ -2631,6 +2710,63 @@ void test_shared_image_ownership() {
             "last large image owner releases its VM region");
 }
 
+void test_codec_scratch_lifetime(Service& service) {
+    auto pixels = take(snow::image::MutableImage::allocate(1024, 512, snow::image::kRgba8),
+                       "allocate codec scratch fixture");
+    for (std::size_t offset = 0; offset < pixels.pixels().size(); offset += 4) {
+        pixels.pixels()[offset] = std::byte{0x25};
+        pixels.pixels()[offset + 1] = std::byte{0x56};
+        pixels.pixels()[offset + 2] = std::byte{0xA8};
+        pixels.pixels()[offset + 3] = std::byte{0x80};
+    }
+    Document document;
+    document.canvas_width = pixels.width();
+    document.canvas_height = pixels.height();
+    Frame frame;
+    frame.image = std::move(pixels).freeze();
+    document.frames.push_back(std::move(frame));
+    for (const Format format : {Format::png, Format::webp}) {
+        if (!supports(service, format, snow::image::CodecCapability::encode))
+            continue;
+        snow::image::EncodeOptions encode;
+        encode.format = format;
+        encode.lossless = true;
+        encode.interlaced = format == Format::png;
+        auto encoded = std::make_shared<std::vector<std::byte>>();
+        require(service.encode(document, snow::image::memory_output(encoded), encode).has_value(),
+                "encode large codec scratch fixture");
+        for (const bool reject : {false, true}) {
+            ScratchLifetimeSink sink(document.frames.front().image.pixels(), reject);
+            const Result<void> decoded =
+                service.decode_to_sink(snow::image::memory_input(encoded), sink);
+            require(reject ? !decoded && decoded.error().code == ErrorCode::cancelled
+                           : decoded.has_value(),
+                    "scratch row callback status reaches the caller");
+            require(sink.address && !snow::test_support::virtualMemoryMapped(sink.address),
+                    "large codec scratch releases its pages on success and row rejection");
+        }
+    }
+    if (supports(service, Format::jxl, snow::image::CodecCapability::encode)) {
+        ScratchLifetimeSource source(document.frames.front().image);
+        snow::image::EncodeOptions options;
+        options.format = Format::jxl;
+        options.lossless = true;
+        options.verified_alpha_content = snow::image::AlphaContent::non_opaque;
+        auto encoded = std::make_shared<std::vector<std::byte>>();
+        const auto status = service.encode(source, snow::image::memory_output(encoded), options);
+        require(status.has_value() && source.address,
+                "native JPEG XL encode stages large source rows successfully");
+        require(!snow::test_support::virtualMemoryMapped(source.address),
+                "native JPEG XL encode releases its full raster staging allocation");
+        Document decoded = take(service.decode(snow::image::memory_input(encoded)),
+                                "decode staged JPEG XL fixture");
+        require(std::equal(decoded.frames.front().image.pixels().begin(),
+                           decoded.frames.front().image.pixels().end(),
+                           document.frames.front().image.pixels().begin()),
+                "mapped native JPEG XL staging preserves all input pixels");
+    }
+}
+
 void test_transform_storage_and_precision() {
     Document source = sample_document();
     const std::byte* original = source.frames.front().image.pixels().data();
@@ -3679,6 +3815,24 @@ void test_jxl_opaque_progressive_preview(Service& service) {
 } // namespace
 
 int main(int argc, char* argv[]) {
+    if (argc == 2 && std::string_view(argv[1]) == "--buffer-paths-only") {
+        Service service;
+        test_codec_scratch_lifetime(service);
+        test_bmp_round_trip(service);
+        test_netpbm(service);
+        test_png_round_trip(service);
+        test_jpeg_round_trip(service);
+        test_gif_animation(service);
+        test_jpeg_xl(service);
+        test_jxl_opaque_progressive_preview(service);
+        test_openexr(service);
+        test_webp(service);
+        test_xbitmap_formats(service);
+        test_processing();
+        test_parallel_resize_determinism();
+        test_streaming_resize();
+        return 0;
+    }
     if (argc == 2 && std::string_view(argv[1]) == "--ownership-only") {
         test_shared_image_ownership();
         test_transform_storage_and_precision();
@@ -3704,6 +3858,7 @@ int main(int argc, char* argv[]) {
     test_raster_buffer_store();
     test_format_mapping();
     Service service;
+    test_codec_scratch_lifetime(service);
     test_bmp_round_trip(service);
     test_netpbm(service);
     test_limits(service);

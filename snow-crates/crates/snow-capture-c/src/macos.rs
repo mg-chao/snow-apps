@@ -745,7 +745,7 @@ mod tests {
                                     stride: 4,
                                     row_bytes: 4,
                                 }],
-                                bytes: Arc::from([10, 20, 30, 40]),
+                                bytes: Arc::new([10, 20, 30, 40].into()),
                             })
                         })
                         .unwrap();

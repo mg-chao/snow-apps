@@ -1,3 +1,4 @@
+#include "snow_draw_engine_qt/snow_canvas_image.h"
 #include "snow_shot/app/edition.h"
 #include "snow_shot/app/applicationcontroller.h"
 #include "snow_shot/app/applicationrestart.h"
@@ -1166,8 +1167,8 @@ class ApplicationController::Impl {
                                        record->originalHtml.size() + record->originalText.size())))
                         return Source{};
                     if (!record->imageTransform.isIdentity())
-                        result.image = result.image.transformed(record->imageTransform,
-                                                                Qt::SmoothTransformation);
+                        result.image = snowCanvasTransformImage(
+                            result.image, record->imageTransform, Qt::SmoothTransformation);
                     const auto style = decodeScreenshotResultStyle(record->resultStyle);
                     if (result.image.isNull() || !style)
                         return Source{};

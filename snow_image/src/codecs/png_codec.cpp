@@ -1,4 +1,6 @@
 #include "codecs/png_codec.h"
+
+#include <snow/memory/pixel_array.h>
 #include "exif_orientation.h"
 
 #include "snow/image/processing.h"
@@ -58,8 +60,8 @@ struct PngReadState final {
     std::stop_token stop;
     Status failure;
     DocumentInfo document;
-    std::vector<std::byte> pixels;
-    std::vector<std::byte> row;
+    snow::memory::PixelArray<std::byte> pixels;
+    snow::memory::PixelArray<std::byte> row;
     std::vector<png_bytep> rows;
 };
 
@@ -1012,7 +1014,7 @@ Result<EncodedArtifactReceipt> PngCodec::encode_raster_to_sink(const RasterSourc
                                  "PNG dimensions or stride exceed libpng limits.", "libpng");
         }
 
-        std::vector<std::byte> row(row_bytes);
+        snow::memory::PixelArray<std::byte> row(row_bytes);
         png_structp png = png_create_write_struct(PNG_LIBPNG_VER_STRING, nullptr, nullptr, nullptr);
         if (!png) {
             return Status::error(ErrorCode::out_of_memory, "Could not create PNG writer.",

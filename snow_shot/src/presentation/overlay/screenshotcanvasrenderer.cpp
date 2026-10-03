@@ -1008,6 +1008,8 @@ void ScreenshotCanvasRenderer::setScrollingResultPreview(QImage image, const QRe
     const bool originalChanged = m_scrollingResultPreviewImage.cacheKey() != image.cacheKey() ||
                                  m_scrollingResultPreviewCanvasRect != target;
     if (image.devicePixelRatio() != 1.0) {
+        if (!snowCanvasDetachImage(image))
+            return;
         image.setDevicePixelRatio(1.0);
     }
     m_scrollingResultPreviewImage = std::move(image);
@@ -1038,7 +1040,9 @@ bool ScreenshotCanvasRenderer::hasScrollingResultPreview() const {
 }
 
 void ScreenshotCanvasRenderer::setImageSource(ScreenshotImageSource source, const QRectF& damage) {
-    if (source.isMaterialized()) {
+    if (source.isMaterialized() && source.materializedImage.devicePixelRatio() != 1.0) {
+        if (!snowCanvasDetachImage(source.materializedImage))
+            return;
         source.materializedImage.setDevicePixelRatio(1.0);
     }
     m_imageSource = std::move(source);
@@ -1414,6 +1418,8 @@ void ScreenshotCanvasRenderer::setOcrFilteredImage(QImage image, const QRectF& c
     const QRectF previousCanvasRect = m_ocrFilteredCanvasRect;
     QRegion dirtyRegion;
     if (!image.isNull() && canvasRect.isValid() && !canvasRect.isEmpty()) {
+        if (image.devicePixelRatio() != 1.0 && !snowCanvasDetachImage(image))
+            return;
         image.setDevicePixelRatio(1.0);
         m_ocrFilteredImage = std::move(image);
         m_ocrFilteredCanvasRect = canvasRect.normalized();

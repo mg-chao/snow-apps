@@ -1,3 +1,4 @@
+#include "snow_draw_engine_qt/snow_canvas_image.h"
 #include "snow_shot/presentation/mainwindowskincontroller.h"
 
 #include "snow_shot/storage/applicationstorage.h"
@@ -147,7 +148,8 @@ MainWindowSkinFrame prepareMainWindowSkin(const QImage& source, const QSize& log
     const QRectF sampled((source.width() - sampledSize.width()) * cropFactors.x(),
                          (source.height() - sampledSize.height()) * cropFactors.y(),
                          sampledSize.width(), sampledSize.height());
-    QImage prepared(content + QSize(padding * 2, padding * 2), QImage::Format_ARGB32_Premultiplied);
+    QImage prepared = snowCanvasAllocateImage(content + QSize(padding * 2, padding * 2),
+                                              QImage::Format_ARGB32_Premultiplied);
     if (prepared.isNull()) {
         return {};
     }
@@ -156,7 +158,7 @@ MainWindowSkinFrame prepareMainWindowSkin(const QImage& source, const QSize& log
                      sampled.adjusted(-padding / imageScale, -padding / imageScale,
                                       padding / imageScale, padding / imageScale));
     if (padding > 0) {
-        QImage filtered = prepared.copy();
+        QImage filtered = snowCanvasCopyImage(prepared);
         std::optional<SnowCanvasRegionFilterScratch> temporaryScratch;
         if (scratch == nullptr) {
             temporaryScratch.emplace(0);
@@ -170,7 +172,7 @@ MainWindowSkinFrame prepareMainWindowSkin(const QImage& source, const QSize& log
         if (!succeeded) {
             return {};
         }
-        prepared = filtered.copy(QRect(QPoint(padding, padding), content));
+        prepared = snowCanvasCopyImage(filtered, QRect(QPoint(padding, padding), content));
     }
     const QRectF placement((viewport.width() - content.width()) * factors.x() / viewport.width(),
                            (viewport.height() - content.height()) * factors.y() / viewport.height(),

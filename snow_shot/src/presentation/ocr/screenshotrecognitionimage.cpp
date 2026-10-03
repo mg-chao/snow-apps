@@ -1,3 +1,4 @@
+#include "snow_draw_engine_qt/snow_canvas_image.h"
 #include "snow_shot/presentation/screenshotrecognitionimage.h"
 #include "snow_shot/presentation/screenshotocrtextlayout.h"
 #include <QPainter>
@@ -13,7 +14,9 @@ QImage renderScreenshotRecognitionImage(const ScreenshotRecognitionImageSnapshot
         stopped()) {
         return {};
     }
-    QImage image = snapshot.image.convertToFormat(QImage::Format_ARGB32_Premultiplied);
+    QImage image = snowCanvasConvertImage(snapshot.image, QImage::Format_ARGB32_Premultiplied);
+    if (!snowCanvasDetachImage(image))
+        return {};
     image.setDevicePixelRatio(1.0);
     QPainter painter(&image);
     if (!painter.isActive())

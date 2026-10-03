@@ -36,7 +36,7 @@ pub struct SnowRecordingClipImpl {
     playback: Playback,
 }
 pub struct SnowRecordingClipFrameImpl {
-    _pixels: Arc<Vec<u8>>,
+    _pixels: Arc<snow_memory::RasterBuffer>,
 }
 pub struct SnowRecordingClipExportImpl {
     task: ClipExportTask,

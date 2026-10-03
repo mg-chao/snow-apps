@@ -1,3 +1,4 @@
+#include "snow_draw_engine_qt/snow_canvas_image.h"
 #include "snow_canvas_smart_erase.h"
 #include "snow_canvas_renderer.h"
 #include "snow_canvas_background_restore.h"
@@ -1671,7 +1672,9 @@ bool applyPenTilesDirect(const QImage& source, QImage& destination, const QRect&
     if (snow_canvas_filter_render::samplingRadiusPixels(parameters) > 0 &&
         source.constBits() == destination.constBits()) {
         immutableSource = source;
-        destination.detach();
+        if (!snowCanvasDetachImage(destination, workspace.ownsWritablePixels(destination))) {
+            return false;
+        }
         sampledSource = &immutableSource;
     }
     const QRect globalMask = maskPixels.translated(surfacePixelBounds.topLeft());

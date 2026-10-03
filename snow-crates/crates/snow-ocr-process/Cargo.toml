@@ -21,6 +21,7 @@ static-onnx-runtime = ["rapid-ocr-rs/static-onnx-runtime"]
 directml-provider = ["rapid-ocr-rs/directml-provider"]
 
 [dependencies]
+snow-memory = { path = "../snow-memory" }
 snow-diagnostics = { path = "../snow-diagnostics" }
 memmap2 = "0.9"
 num_cpus = "1.17"
