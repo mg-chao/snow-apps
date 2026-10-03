@@ -29,6 +29,7 @@ set(SNOW_CANVAS_QT_SOURCES
     src/core/snow_canvas_runtime_access.h
     src/core/snow_canvas_runtime_clients.cpp
     src/core/snow_canvas_runtime_clients.h
+    src/core/snow_canvas_runtime_cleanup.h
     src/core/snow_canvas_runtime_session.cpp
     src/core/snow_canvas_runtime_session.h
     src/core/snow_canvas_runtime_thread_affinity.cpp

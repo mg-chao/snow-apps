@@ -16,6 +16,9 @@
 
 #include <atomic>
 #include <cstdlib>
+#include <chrono>
+#include <cstring>
+#include <future>
 #include <iostream>
 #include <memory>
 
@@ -56,8 +59,18 @@ QImage trackedImage(std::weak_ptr<int>* lifetime, int seed) {
 }
 
 bool samePixels(const QImage& first, const QImage& second) {
-    return first.size() == second.size() && first.convertToFormat(QImage::Format_ARGB32) ==
-                                                second.convertToFormat(QImage::Format_ARGB32);
+    if (first.size() != second.size())
+        return false;
+    // QImage equality also checks color metadata. These round trips assert the
+    // pixel contents independently of the decoder's explicit sRGB tag.
+    const auto firstArgb = first.convertToFormat(QImage::Format_ARGB32);
+    const auto secondArgb = second.convertToFormat(QImage::Format_ARGB32);
+    const auto rowBytes = static_cast<std::size_t>(first.width()) * sizeof(QRgb);
+    for (int row = 0; row < first.height(); ++row) {
+        if (std::memcmp(firstArgb.constScanLine(row), secondArgb.constScanLine(row), rowBytes) != 0)
+            return false;
+    }
+    return true;
 }
 
 storage::PinnedWindowRecord recordWithId(const QString& id, const QImage& image) {
@@ -1565,10 +1578,342 @@ void canceledCreationReleasesLifecycleState() {
             "clearing closed pins must revoke an outstanding first save");
 }
 
+class OperationBarrier final {
+  public:
+    explicit OperationBarrier(storage::PinnedWindowOperation operation)
+        : m_operation(operation), m_entered(m_entry.get_future()),
+          m_released(m_release.get_future().share()) {}
+
+    void arm() {
+        m_armed.store(true);
+    }
+
+    void observe(storage::PinnedWindowOperation operation) {
+        if (operation == m_operation && m_armed.exchange(false)) {
+            m_entry.set_value();
+            m_released.wait();
+        }
+    }
+
+    void waitUntilEntered() {
+        require(m_entered.wait_for(std::chrono::seconds(5)) == std::future_status::ready,
+                "repository operation did not reach its barrier");
+    }
+
+    void release() {
+        m_release.set_value();
+    }
+
+  private:
+    storage::PinnedWindowOperation m_operation;
+    std::atomic_bool m_armed = false;
+    std::promise<void> m_entry;
+    std::future<void> m_entered;
+    std::promise<void> m_release;
+    std::shared_future<void> m_released;
+};
+
+void payloadReadsKeepTheirRevisionWithoutBlockingMetadata() {
+    for (const bool preview : {false, true}) {
+        QTemporaryDir directory;
+        OperationBarrier barrier(storage::PinnedWindowOperation::PayloadRead);
+        storage::PinnedWindowRepository repository(
+            directory.path(), true, 30000,
+            [&barrier](storage::PinnedWindowOperation operation) { barrier.observe(operation); });
+        auto record = recordWithId(QUuid::createUuid().toString(QUuid::WithoutBraces),
+                                   patternedImage({19, 13}, 29));
+        record.canvasSession = QByteArrayLiteral("original canvas revision");
+        const auto original = record;
+        require(repository.upsert(record).success && repository.flush().success,
+                "commit the original payload read revision");
+        barrier.arm();
+        auto reading = std::async(std::launch::async, [&repository, &record, preview]() {
+            if (preview) {
+                const auto source = repository.loadPreviewSource(record.id);
+                return source ? source->image : QImage();
+            }
+            const auto loaded = repository.loadRecord(record.id);
+            require(loaded &&
+                        loaded->canvasSession == QByteArrayLiteral("original canvas revision"),
+                    "admitted full reads must keep their original canvas revision");
+            return loaded->image;
+        });
+        barrier.waitUntilEntered();
+        record.image = patternedImage({19, 13}, 31);
+        record.canvasSession = QByteArrayLiteral("replacement canvas revision");
+        auto mutation = std::async(std::launch::async, [&repository, record]() {
+            return repository.upsertExisting(record).success &&
+                   repository.markClosedDeferred(record.id).success &&
+                   repository.beginRestore(record.id).success &&
+                   repository.markRestored(record.id).success;
+        });
+        const bool responsive =
+            mutation.wait_for(std::chrono::seconds(5)) == std::future_status::ready;
+        auto writing =
+            std::async(std::launch::async, [&repository]() { return repository.flush(); });
+        barrier.release();
+        const auto image = reading.get();
+        require(responsive && mutation.get(),
+                "payload reads must not block source updates, close, or restore metadata");
+        const auto writeResult = writing.get();
+        require(writeResult.success, "commit the replacement after the admitted read finishes");
+        require(samePixels(image, original.image),
+                "an admitted read must finish before its files are overwritten");
+        const auto replaced = repository.loadRecord(record.id);
+        require(replaced && samePixels(replaced->image, record.image) &&
+                    replaced->canvasSession == record.canvasSession && !replaced->ignored,
+                "later reads must see the complete replacement revision and restored lifecycle");
+    }
+}
+
+void recordDeletionDoesNotInvalidateAdmittedPayloadRead() {
+    QTemporaryDir directory;
+    OperationBarrier barrier(storage::PinnedWindowOperation::PayloadRead);
+    storage::PinnedWindowRepository repository(
+        directory.path(), true, 30000,
+        [&barrier](storage::PinnedWindowOperation operation) { barrier.observe(operation); });
+    const auto record = recordWithId(QUuid::createUuid().toString(QUuid::WithoutBraces),
+                                     patternedImage({17, 11}, 33));
+    require(repository.upsert(record).success && repository.flush().success,
+            "commit a payload before its concurrent deletion");
+    barrier.arm();
+    auto reading = std::async(
+        std::launch::async, [&repository, &record]() { return repository.loadRecord(record.id); });
+    barrier.waitUntilEntered();
+    auto removing = std::async(std::launch::async, [&repository, &record]() {
+        return repository.remove(record.id).success && !repository.upsertExisting(record).success &&
+               repository.summaries().isEmpty();
+    });
+    const bool responsive = removing.wait_for(std::chrono::seconds(5)) == std::future_status::ready;
+    auto writing = std::async(std::launch::async, [&repository]() { return repository.flush(); });
+    barrier.release();
+    const auto loaded = reading.get();
+    require(responsive && removing.get(),
+            "deletion must complete while an admitted read is paused");
+    require(
+        writing.get().success && loaded && samePixels(loaded->image, record.image) &&
+            !repository.loadRecord(record.id) &&
+            !QFileInfo::exists(payloadFilePath(directory.path(), record.id)),
+        "deletion must reclaim files after admitted readers finish without resurrecting records");
+}
+
+void retentionWorkDoesNotBlockLifecycleUpdates() {
+    enum class Entry { Sweep, Close, Policy };
+    for (const auto entry : {Entry::Sweep, Entry::Close, Entry::Policy}) {
+        for (const bool waitForWriter : {false, true}) {
+            QTemporaryDir directory;
+            OperationBarrier barrier(waitForWriter ? storage::PinnedWindowOperation::PayloadWrite
+                                                   : storage::PinnedWindowOperation::RetentionScan);
+            std::promise<void> retentionWait;
+            auto waiting = retentionWait.get_future();
+            std::atomic_bool waitObserved = false;
+            storage::PinnedWindowRepository repository(
+                directory.path(), true, 30000,
+                [&barrier, &retentionWait,
+                 &waitObserved](storage::PinnedWindowOperation operation) {
+                    barrier.observe(operation);
+                    if (operation == storage::PinnedWindowOperation::RetentionWait &&
+                        !waitObserved.exchange(true))
+                        retentionWait.set_value();
+                });
+            auto record = recordWithId(QUuid::createUuid().toString(QUuid::WithoutBraces),
+                                       patternedImage({13, 9}, 35));
+            require(repository.upsert(record).success && repository.flush().success &&
+                        repository.markClosedDeferred(record.id).success,
+                    "seed a closed record for concurrent maintenance");
+            auto policy = repository.policy();
+            policy.maxEntries = 1;
+            require(repository.setPolicy(policy, false).success,
+                    "defer the single-entry retention policy");
+            barrier.arm();
+            std::future<storage::StorageResult> writing;
+            if (waitForWriter) {
+                writing =
+                    std::async(std::launch::async, [&repository]() { return repository.flush(); });
+                barrier.waitUntilEntered();
+            }
+            auto maintenance =
+                std::async(std::launch::async, [&repository, record, policy, entry]() {
+                    switch (entry) {
+                    case Entry::Close:
+                        return repository.markClosed(record.id);
+                    case Entry::Policy:
+                        return repository.setPolicy(policy);
+                    case Entry::Sweep:
+                        return repository.enforcePolicy();
+                    }
+                    return storage::StorageResult::failure(
+                        QStringLiteral("Unknown retention test entry"));
+                });
+            if (waitForWriter) {
+                require(waiting.wait_for(std::chrono::seconds(5)) == std::future_status::ready,
+                        "retention must reach its active-writer wait");
+            } else {
+                barrier.waitUntilEntered();
+            }
+            auto pending = recordWithId(QUuid::createUuid().toString(QUuid::WithoutBraces),
+                                        patternedImage({13, 9}, 37));
+            const auto prepared = storage::PreparedPngImage::fromBytes(pending.image.size(),
+                                                                       pngBytes(pending.image, 6));
+            require(prepared.has_value(), "prepare the late pinned source");
+            auto mutation =
+                std::async(std::launch::async, [&repository, record, pending, prepared]() mutable {
+                    if (!repository.beginRestore(record.id).success ||
+                        !repository.markRestored(record.id).success)
+                        return false;
+                    record.canvasSession =
+                        QByteArrayLiteral("updated while maintenance was paused");
+                    if (!repository.updateState(record).success)
+                        return false;
+                    repository.reserveCreation(pending.id);
+                    if (!repository.markClosedDeferred(pending.id).success ||
+                        !repository.createReserved(pending, *prepared).success)
+                        return false;
+                    pending.id = QUuid::createUuid().toString(QUuid::WithoutBraces);
+                    repository.reserveCreation(pending.id);
+                    return repository.markClosedDeferred(pending.id).success &&
+                           repository.remove(pending.id).success &&
+                           !repository.createReserved(pending, *prepared).success;
+                });
+            const bool responsive =
+                mutation.wait_for(std::chrono::seconds(5)) == std::future_status::ready;
+            barrier.release();
+            require(responsive && mutation.get(),
+                    "retention scans and writer waits must not block lifecycle mutations");
+            if (writing.valid())
+                require(writing.get().success,
+                        "commit concurrent metadata after the writer resumes");
+            require(maintenance.get().success && repository.flush().success,
+                    "complete concurrent maintenance and payload commits");
+            const auto restored = repository.loadRecord(record.id);
+            const auto lateClosed = repository.loadRecord(pending.id);
+            require(
+                restored && !restored->ignored && lateClosed && lateClosed->ignored &&
+                    repository.summaries().size() == 2,
+                "stale sweeps must protect restored records and preserve closes before first save");
+        }
+    }
+}
+
+void disabledRetentionDoesNotWaitForActiveWriter() {
+    for (const bool permanent : {false, true}) {
+        QTemporaryDir directory;
+        OperationBarrier barrier(storage::PinnedWindowOperation::PayloadWrite);
+        storage::PinnedWindowRepository repository(
+            directory.path(), true, 30000,
+            [&barrier](storage::PinnedWindowOperation operation) { barrier.observe(operation); });
+        const auto record = recordWithId(QUuid::createUuid().toString(QUuid::WithoutBraces),
+                                         patternedImage({11, 7}, 39));
+        require(repository.upsert(record).success, "create a record before a paused write");
+        auto policy = repository.policy();
+        policy.enabled = permanent;
+        policy.keepPermanently = permanent;
+        require(repository.setPolicy(policy, false).success, "defer bypassed retention settings");
+        barrier.arm();
+        auto writing =
+            std::async(std::launch::async, [&repository]() { return repository.flush(); });
+        barrier.waitUntilEntered();
+        auto maintenance =
+            std::async(std::launch::async, [&repository]() { return repository.enforcePolicy(); });
+        const bool responsive =
+            maintenance.wait_for(std::chrono::seconds(5)) == std::future_status::ready;
+        barrier.release();
+        require(responsive && maintenance.get().success && writing.get().success,
+                "disabled and permanent retention must bypass active-writer waits");
+    }
+}
+
+void storageExchangeDrainsReadersAndRejectsStaleAdmissions() {
+    for (const bool preview : {false, true}) {
+        for (const bool leased : {false, true}) {
+            QTemporaryDir sourceDirectory;
+            QTemporaryDir destinationDirectory;
+            OperationBarrier barrier(leased ? storage::PinnedWindowOperation::PayloadRead
+                                            : storage::PinnedWindowOperation::PayloadReadAdmission);
+            std::promise<void> drainReached;
+            auto draining = drainReached.get_future();
+            std::atomic_bool drainObserved = false;
+            std::atomic_bool oldPayloadRead = false;
+            storage::PinnedWindowRepository repository(
+                sourceDirectory.path(), true, 30000,
+                [&barrier, &drainReached, &drainObserved,
+                 &oldPayloadRead](storage::PinnedWindowOperation operation) {
+                    if (operation == storage::PinnedWindowOperation::PayloadRead)
+                        oldPayloadRead.store(true);
+                    barrier.observe(operation);
+                    if (operation == storage::PinnedWindowOperation::StorageReadDrain &&
+                        !drainObserved.exchange(true))
+                        drainReached.set_value();
+                });
+            auto prepared = std::make_unique<storage::PinnedWindowRepository>(
+                destinationDirectory.path(), true, 30000);
+            auto record = recordWithId(QUuid::createUuid().toString(QUuid::WithoutBraces),
+                                       patternedImage({9, 5}, 41));
+            const auto originalImage = record.image;
+            require(repository.upsert(record).success && repository.flush().success,
+                    "commit the original storage generation");
+            record.image = patternedImage({9, 5}, 43);
+            require(prepared->upsert(record).success && prepared->flush().success,
+                    "commit the prepared storage generation");
+            barrier.arm();
+            auto reading = std::async(
+                std::launch::async, [&repository, &record, preview]() -> std::optional<QImage> {
+                    if (preview) {
+                        const auto source = repository.loadPreviewSource(record.id);
+                        return source ? std::optional<QImage>(source->image) : std::nullopt;
+                    }
+                    const auto loaded = repository.loadRecord(record.id);
+                    return loaded ? std::optional<QImage>(loaded->image) : std::nullopt;
+                });
+            barrier.waitUntilEntered();
+            auto exchanging =
+                std::async(std::launch::async, [&repository, &prepared, &sourceDirectory]() {
+                    repository.suspendWrites(true);
+                    repository.exchangeStorage(*prepared);
+                    prepared.reset();
+                    // The real migration removes old files after activation.
+                    const bool removed = QDir(sourceDirectory.path()).removeRecursively();
+                    repository.suspendWrites(false);
+                    return removed;
+                });
+            require(draining.wait_for(std::chrono::seconds(5)) == std::future_status::ready,
+                    "migration must fence new readers before draining its payload leases");
+            if (leased) {
+                require(!repository.loadRecord(record.id) &&
+                            !repository.loadPreviewSource(record.id) &&
+                            repository.summaries().size() == 1 &&
+                            exchanging.wait_for(std::chrono::milliseconds(0)) !=
+                                std::future_status::ready,
+                        "migration must wait for admitted readers while metadata queries proceed");
+                barrier.release();
+                const auto original = reading.get();
+                require(original && samePixels(*original, originalImage) && exchanging.get(),
+                        "admitted reads must finish before migration unlinks their source files");
+            } else {
+                require(exchanging.wait_for(std::chrono::seconds(5)) == std::future_status::ready &&
+                            exchanging.get(),
+                        "a captured generation without a file lease must not block migration");
+                barrier.release();
+                require(
+                    !reading.get() && !oldPayloadRead.load(),
+                    "stale full and preview captures must revalidate before reading old payloads");
+            }
+            const auto current = repository.loadRecord(record.id);
+            require(current && samePixels(current->image, record.image),
+                    "new reads must use the activated storage generation after old-file cleanup");
+        }
+    }
+}
+
 } // namespace
 
 int main(int argc, char* argv[]) {
     QCoreApplication application(argc, argv);
+    payloadReadsKeepTheirRevisionWithoutBlockingMetadata();
+    recordDeletionDoesNotInvalidateAdmittedPayloadRead();
+    retentionWorkDoesNotBlockLifecycleUpdates();
+    disabledRetentionDoesNotWaitForActiveWriter();
+    storageExchangeDrainsReadersAndRejectsStaleAdmissions();
     managementLifecycleAndRetention();
     managementHasNoTotalRecordCap();
     previewsReadOnlySourcePayloadAndKeepStableRevision();

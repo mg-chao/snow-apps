@@ -32,6 +32,7 @@
 #include <QWidget>
 
 #include <memory>
+#include <optional>
 #include <functional>
 #include <vector>
 
@@ -302,6 +303,7 @@ class ScreenshotPinnedWindow final : public QWidget {
     void setControlsPointerInside(bool inside);
     void updateControlsVisibility();
     void destroyCanvas();
+    void hideForClosing();
     using MaterializationCallback = std::function<void(bool)>;
     using PresentationCompletion = std::function<void(bool, QImage)>;
     void requestMaterializedImage(MaterializationCallback callback);
@@ -623,6 +625,8 @@ class ScreenshotPinnedWindow final : public QWidget {
     bool m_preserveScaleForSettledGeometry = false;
     bool m_presented = false;
     bool m_closing = false;
+    std::optional<snow_shot::storage::PinnedWindowRecord> m_closeSnapshot;
+    bool m_closeStatePersisted = false;
     bool m_deferredInactiveGroupClose = false;
     bool m_inactiveGroupClosing = false;
     QString m_persistenceId;

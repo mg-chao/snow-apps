@@ -8,6 +8,7 @@
 #include "snow_canvas_fill_render.h"
 #include "snow_canvas_watermark_renderer.h"
 #include "snow_canvas_runtime_access.h"
+#include "snow_canvas_runtime_cleanup.h"
 #include "snow_canvas_viewport.h"
 #include "icons/draw_engine_icons.h"
 #include "icon_renderer.h"
@@ -29,8 +30,10 @@
 
 #include <algorithm>
 #include <atomic>
+#include <chrono>
 #include <cmath>
 #include <cstdlib>
+#include <future>
 #include <iostream>
 #include <memory>
 #include <thread>
@@ -519,6 +522,57 @@ void documentResetReleasesDrawingCaches() {
         QThread::msleep(1);
     }
     exportWorker.join();
+}
+
+void runtimeOwnersDoNotWaitForPendingCleanup() {
+    std::promise<void> workerStarted;
+    std::promise<void> releaseWorker;
+    const std::shared_future<void> release = releaseWorker.get_future().share();
+    std::thread::id cleanupThread;
+    snow_canvas_runtime::enqueueRuntimeCleanup([&] {
+        cleanupThread = std::this_thread::get_id();
+        workerStarted.set_value();
+        release.wait();
+    });
+    workerStarted.get_future().wait();
+
+    std::promise<void> ownersDestroyed;
+    std::future<void> destroyed = ownersDestroyed.get_future();
+    bool ownerOperationsSucceeded = true;
+    std::thread owners([&] {
+        for (int cycle = 0; cycle < 16; ++cycle) {
+            SnowCanvasRuntime runtime;
+            ownerOperationsSucceeded = runtime.isValid() && ownerOperationsSucceeded;
+            if (cycle % 2 == 0) {
+                runtime.destroyAsync();
+                runtime.destroyAsync();
+                ownerOperationsSucceeded = !runtime.isValid() && ownerOperationsSucceeded;
+                ownerOperationsSucceeded = runtime.reset() && ownerOperationsSucceeded;
+            }
+        }
+        ownersDestroyed.set_value();
+    });
+    const bool returnedBeforeCleanup =
+        destroyed.wait_for(std::chrono::seconds(5)) == std::future_status::ready;
+    bool stayedOnCleanupThread = false;
+    snow_canvas_runtime::enqueueRuntimeCleanup(
+        [&] { stayedOnCleanupThread = std::this_thread::get_id() == cleanupThread; });
+    releaseWorker.set_value();
+    owners.join();
+    snow_canvas_runtime::waitForRuntimeCleanup();
+    require(returnedBeforeCleanup,
+            "runtime reset and owner destruction must return while detached cleanup is blocked");
+    require(ownerOperationsSucceeded,
+            "asynchronous destruction must detach valid runtimes and permit immediate reset");
+    require(stayedOnCleanupThread,
+            "rapid runtime cleanup must reuse the process worker instead of spawning per owner");
+
+    auto owner = std::make_unique<SnowCanvasRuntime>();
+    SnowCanvasWidget view(*owner);
+    owner.reset();
+    require(!view.setCanvasTool(SnowCanvasTool::Select),
+            "owner destruction must detach surviving canvas clients before background cleanup");
+    snow_canvas_runtime::waitForRuntimeCleanup();
 }
 
 void documentResetReleasesRetainedDisplayStorage() {
@@ -1298,6 +1352,7 @@ int main(int argc, char** argv) {
         return 0;
     }
     if (application.arguments().contains(QStringLiteral("--document-reset-only"))) {
+        runtimeOwnersDoNotWaitForPendingCleanup();
         documentResetClearsElementsAndPreservesViews();
         documentResetReleasesDrawingCaches();
         documentResetReleasesRetainedDisplayStorage();
@@ -1318,6 +1373,7 @@ int main(int argc, char** argv) {
     runtimeExportUsesTheRequestedCanvasOrigin();
     canvasContentVisibilityPreservesCustomRenderingAndState();
     documentResetClearsElementsAndPreservesViews();
+    runtimeOwnersDoNotWaitForPendingCleanup();
     documentResetReleasesDrawingCaches();
     documentResetReleasesRetainedDisplayStorage();
     renderStateCleanupPreservesDocument();

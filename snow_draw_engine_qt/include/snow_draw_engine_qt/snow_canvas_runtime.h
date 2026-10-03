@@ -51,6 +51,8 @@ class SnowCanvasRuntime {
     bool canRedo() const;
     quint64 documentRevision() const;
     void setDocumentChangedHandler(std::function<void()> handler);
+    // Detaches clients immediately. Engine storage is released by the process cleanup worker,
+    // without waiting in the runtime owner's destructor.
     void destroyAsync();
     void setBaseImageSources(const QList<SnowCanvasBaseImageSource>& sources);
     SnowCanvasSmartEraseSnapshot smartEraseSnapshot() const;

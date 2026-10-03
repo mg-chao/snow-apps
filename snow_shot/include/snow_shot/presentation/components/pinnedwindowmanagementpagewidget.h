@@ -64,9 +64,13 @@ class PinnedWindowManagementPageWidget final : public QWidget {
 
   protected:
     void changeEvent(QEvent* event) override;
+    void showEvent(QShowEvent* event) override;
+    void hideEvent(QHideEvent* event) override;
     bool eventFilter(QObject* watched, QEvent* event) override;
 
   private:
+    void handleSourceChanged();
+    void captureActivePreviewRevision();
     void updateSkinBackgrounds();
     void rebuildFilteredRecords(bool resetPage);
     void rebuildEntries();
@@ -116,6 +120,10 @@ class PinnedWindowManagementPageWidget final : public QWidget {
     adqt::widgets::AdImageViewer* m_previewViewer = nullptr;
     adqt::widgets::AdImageListModel* m_previewModel = nullptr;
     QHash<QString, int> m_previewRows;
+    QString m_previewAltText;
+    QString m_activePreviewId;
+    std::optional<quint64> m_activePreviewRevision;
+    bool m_dirty = false;
     bool m_updatingPagination = false;
 };
 
