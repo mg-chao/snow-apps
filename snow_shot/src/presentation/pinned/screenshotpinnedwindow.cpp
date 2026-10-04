@@ -2341,6 +2341,11 @@ bool ScreenshotPinnedWindow::eventFilter(QObject* watched, QEvent* event) {
         if (watched == m_recognitionContent) {
             return QWidget::eventFilter(watched, event);
         }
+        if (m_canvas != nullptr && m_canvas->interactionEnabled()) {
+            // The canvas consumes menus belonging to its right-button selection;
+            // unhandled menus still propagate to contextMenuEvent below.
+            return false;
+        }
         auto* contextEvent = static_cast<QContextMenuEvent*>(event);
         showContextMenu(contextEvent->globalPos());
         contextEvent->accept();

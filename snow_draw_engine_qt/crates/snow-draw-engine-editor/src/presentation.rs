@@ -1304,6 +1304,7 @@ mod tests {
         editor.state.interaction = InteractionState::EditingSelection(EditSelectionState {
             duplicate: false,
             pointer_id: 1,
+            button: snow_draw_engine_interaction::PointerButton::Primary,
             original_elements: vec![SelectionRectState {
                 id: text_id,
                 rect: original_rect,
@@ -1374,6 +1375,7 @@ mod tests {
         editor.state.interaction = InteractionState::EditingSelection(EditSelectionState {
             duplicate: false,
             pointer_id: 1,
+            button: snow_draw_engine_interaction::PointerButton::Primary,
             original_elements: vec![SelectionRectState {
                 id: text_id,
                 rect: original_rect,

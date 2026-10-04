@@ -332,7 +332,9 @@ mod tests {
                 ),
             )
             .unwrap();
-        assert!(!secondary.interaction.consumed);
+        assert!(secondary.interaction.consumed);
+        assert!(secondary.command.is_none());
+        assert_eq!(editor.selected_ids().len(), 1);
         let up = editor
             .process_input(
                 &document,

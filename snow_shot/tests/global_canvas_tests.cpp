@@ -1,3 +1,4 @@
+#include "../../test-support/canvas_quick_selection_test_support.h"
 #include "snow_shot/presentation/globalcanvascontroller.h"
 #include "eraser_toolbar_test_support.h"
 #include "../src/presentation/globalcanvas/globalcanvasplatform.h"
@@ -867,6 +868,18 @@ void canvasHistoryShortcuts(QApplication& app) {
             "restore settings");
 }
 
+void canvasRightQuickSelection(QApplication& app) {
+    presentation::GlobalCanvasController controller(
+        nullptr, {[&]() { return app.primaryScreen(); }, [](QWidget*, bool) { return true; }});
+    controller.activate();
+    app.processEvents();
+    auto* canvas = controller.canvas();
+    canvas_quick_selection_test::drawStroke(*canvas);
+    canvas_quick_selection_test::selectAndDragStroke(*canvas);
+    require(controller.active(), "right selection preserves global canvas session");
+    controller.shutdown();
+}
+
 int main(int argc, char** argv) {
     QApplication app(argc, argv);
     app.setQuitOnLastWindowClosed(false);
@@ -904,6 +917,11 @@ int main(int argc, char** argv) {
         return 0;
     }
 #endif
+    if (app.arguments().contains(QStringLiteral("--right-quick-selection-only"))) {
+        canvasRightQuickSelection(app);
+        storage.shutdown();
+        return 0;
+    }
     if (app.arguments().contains(QStringLiteral("--history-shortcuts-only"))) {
         canvasHistoryShortcuts(app);
         storage.shutdown();

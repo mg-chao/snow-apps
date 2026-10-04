@@ -1,3 +1,4 @@
+#include "../../test-support/canvas_quick_selection_test_support.h"
 #include "snow_shot/presentation/screenshotcanvastoolstyles.h"
 #include "eraser_toolbar_test_support.h"
 #include "physical_key_test_support.h"
@@ -14265,6 +14266,50 @@ void pinnedNativePointerDragging() {
 }
 #endif
 
+void pinnedRightQuickSelection() {
+    auto* screen = QGuiApplication::primaryScreen();
+    ScreenshotPinnedWindow pin;
+    pin.setAttribute(Qt::WA_DeleteOnClose, false);
+    QImage image(360, 220, QImage::Format_ARGB32_Premultiplied);
+    image.fill(Qt::white);
+    ScreenshotPinnedWindow::Config config;
+    config.screen = screen;
+    config.nativeGeometry = physicalPinGeometry(*screen, QPoint(40, 40), image.size());
+    config.canvasSourceRect = QRectF(QPointF(), QSizeF(image.size()));
+    config.initialWindowSize = image.size();
+    config.imageSource = ScreenshotImageSource::fromImage(image, config.canvasSourceRect);
+    config.automaticTextRecognition = false;
+    config.enableEditing = true;
+    require(pin.present(config), "present right selection pin");
+    waitForUi(30);
+    ScreenshotPinnedWindowTestAccess::editSelectionOffscreen(pin, true);
+    auto* editController = pin.findChild<ScreenshotPinnedEditController*>();
+    require(editController != nullptr && editController->toolbarWindow() != nullptr,
+            "pin owns annotation toolbar");
+    editController->toolbarWindow()->palette()->freeDrawRequested();
+    auto* canvas = pin.findChild<SnowCanvasWidget*>();
+    require(canvas != nullptr, "pin owns drawing canvas");
+    canvas_quick_selection_test::drawStroke(*canvas);
+    canvas_quick_selection_test::selectAndDragStroke(*canvas);
+    auto* menu =
+        pin.findChild<adqt::widgets::AdContextMenu*>(QStringLiteral("screenshotPinnedContextMenu"));
+    require(menu != nullptr, "pin owns context menu");
+    int menus = 0;
+    QObject::connect(menu, &adqt::widgets::AdContextMenu::aboutToShow, &pin, [&]() { ++menus; });
+    QContextMenuEvent consumed(QContextMenuEvent::Mouse, {120, 135},
+                               canvas->mapToGlobal(QPoint(120, 135)));
+    QApplication::sendEvent(canvas, &consumed);
+    require(menus == 0, "selected right gesture suppresses pin menu");
+    canvas_quick_selection_test::mouse(*canvas, QEvent::MouseButtonPress, {25, 40}, Qt::RightButton,
+                                       Qt::RightButton);
+    canvas_quick_selection_test::mouse(*canvas, QEvent::MouseButtonRelease, {25, 40},
+                                       Qt::RightButton, Qt::NoButton);
+    QContextMenuEvent miss(QContextMenuEvent::Mouse, {25, 40}, canvas->mapToGlobal(QPoint(25, 40)));
+    QApplication::sendEvent(canvas, &miss);
+    require(menus == 1, "miss preserves pin context menu");
+    pin.close();
+}
+
 void pinnedInteractionsReleasePointerRouting() {
     class HoverWindow final : public QWidget {
       public:
@@ -15629,6 +15674,10 @@ int main(int argc, char* argv[]) {
             return 0;
         }
 #endif
+        if (app.arguments().contains(QStringLiteral("--right-quick-selection-only"))) {
+            pinnedRightQuickSelection();
+            return 0;
+        }
         if (app.arguments().contains(QStringLiteral("--pointer-routing-only"))) {
             pinnedInteractionsReleasePointerRouting();
             return 0;

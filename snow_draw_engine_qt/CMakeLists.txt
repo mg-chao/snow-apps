@@ -268,6 +268,12 @@ if(SNOW_DRAW_ENGINE_QT_BUILD_TESTS)
         LABELS "unit"
     )
 
+    add_executable(snow-canvas-quick-selection-tests tests/snow_canvas_quick_selection_tests.cpp)
+    target_link_libraries(snow-canvas-quick-selection-tests PRIVATE snow_draw_engine_qt_canvas)
+    snow_shot_import_offscreen_platform(snow-canvas-quick-selection-tests)
+    add_test(NAME snow-canvas-quick-selection-tests COMMAND snow-canvas-quick-selection-tests -platform offscreen)
+    set_tests_properties(snow-canvas-quick-selection-tests PROPERTIES LABELS "unit" TIMEOUT 60)
+
     add_executable(snow-canvas-text-draft-tests
         tests/snow_canvas_text_draft_tests.cpp
     )

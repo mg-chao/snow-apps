@@ -9514,5 +9514,24 @@ foreach(_snow_target IN LISTS _snow_clipboard_consumers)
     endif()
 endforeach()
 
+foreach(_right_selection_host IN ITEMS overlay pinned recording global)
+    if(_right_selection_host STREQUAL "overlay")
+        set(_right_selection_target snow-shot-screenshot-canvas-renderer-tests)
+    elseif(_right_selection_host STREQUAL "pinned")
+        set(_right_selection_target snow-shot-pinned-window-tests)
+    elseif(_right_selection_host STREQUAL "recording")
+        set(_right_selection_target snow-shot-screen-recording-area-window-tests)
+    else()
+        set(_right_selection_target snow-shot-global-canvas-tests)
+    endif()
+    if(TARGET ${_right_selection_target})
+        add_test(NAME snow-shot-${_right_selection_host}-right-quick-selection-tests
+            COMMAND ${_right_selection_target} --right-quick-selection-only -platform offscreen)
+        set_tests_properties(snow-shot-${_right_selection_host}-right-quick-selection-tests PROPERTIES
+            LABELS unit SNOW_TEST_CROSS_PLATFORM TRUE RUN_SERIAL TRUE TIMEOUT 60
+            ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
+    endif()
+endforeach()
+
 include("${CMAKE_CURRENT_SOURCE_DIR}/../cmake/SnowShotReleaseOptimization.cmake")
 include("${CMAKE_CURRENT_SOURCE_DIR}/../cmake/SnowShotMini.cmake")

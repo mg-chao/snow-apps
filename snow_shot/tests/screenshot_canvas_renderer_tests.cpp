@@ -1,3 +1,7 @@
+#include "../../test-support/canvas_quick_selection_test_support.h"
+#include "snow_shot/presentation/screenshotoverlayinputhandler.h"
+#include "snow_shot/presentation/screenshotcapturestate.h"
+#include "snow_shot/presentation/screenshotintelligentselectionmodel.h"
 #include "snow_shot/presentation/windowshortcutmanager.h"
 #include "close_release_native_test_support.h"
 #include "snow_shot/presentation/screenshotcanvasrenderer.h"
@@ -101,6 +105,8 @@ QImage testRenderOcrFilteredImage(const QImage& source, const QRectF& canvasRect
 class NoopOverlayEventSink : public ScreenshotOverlayEventSink {
   public:
     ScreenshotOverlayRightClickResult rightClickResult = ScreenshotOverlayRightClickResult::Ignored;
+    std::function<ScreenshotOverlayRightClickResult(ScreenshotOverlayWindow*, const QPointF&)>
+        rightClick;
     bool consumeWheel = false;
     int wheelCalls = 0;
     std::function<void()> cancel = [] {};
@@ -118,9 +124,9 @@ class NoopOverlayEventSink : public ScreenshotOverlayEventSink {
 
     void handleOverlayMouseRelease(ScreenshotOverlayWindow*, const QPointF&) override {}
 
-    ScreenshotOverlayRightClickResult handleOverlayRightClick(ScreenshotOverlayWindow*,
-                                                              const QPointF&) override {
-        return rightClickResult;
+    ScreenshotOverlayRightClickResult handleOverlayRightClick(ScreenshotOverlayWindow* overlay,
+                                                              const QPointF& point) override {
+        return rightClick ? rightClick(overlay, point) : rightClickResult;
     }
 
     bool handleOverlayWheel(ScreenshotOverlayWindow*, const QPointF&, const QPoint&,
@@ -5363,6 +5369,55 @@ void resettingDisplaySessionEditingStateResetsEveryCanvas() {
                 reusableCanvas->canvasTool() == SnowCanvasTool::Select,
             "resetting display editing state must include active and reusable canvases");
 }
+void overlayRightQuickSelection() {
+    using namespace snow_shot::presentation;
+    ScreenshotCaptureState capture;
+    ScreenshotInteractionState interaction;
+    ScreenshotSelectionModel selection;
+    ScreenshotIntelligentSelectionModel intelligent;
+    ScreenshotGeometryMapper geometry;
+    ScreenshotDisplaySession displays;
+    interaction.enterOverlayVisible(true);
+    selection.setSelectionRect(QRectF(0, 0, 400, 300));
+    interaction.confirmSelection();
+    int fallbacks = 0;
+    ScreenshotOverlayInputActions actions;
+    actions.returnToIntelligentSelection = [&](const QPoint&) {
+        ++fallbacks;
+        return true;
+    };
+    ScreenshotOverlayInputHandler handler(
+        {capture, interaction, selection, intelligent, geometry, displays, actions});
+    NoopOverlayEventSink sink;
+    sink.rightClick = [&](ScreenshotOverlayWindow* window, const QPointF& point) {
+        return handler.handleRightClick(window, point);
+    };
+    SnowCanvasRuntime runtime;
+    require(runtime.setQuickSelectionDisabledTools({SnowCanvasTool::FreeDraw}),
+            "disable left stroke selection in overlay");
+    ScreenshotOverlayWindow overlay(sink, new SnowCanvasWidget(runtime));
+    overlay.resize(400, 300);
+    QImage image(400, 300, QImage::Format_ARGB32_Premultiplied);
+    image.fill(Qt::white);
+    overlay.setScreenshotImage(image, QRectF(image.rect()));
+    overlay.show();
+    QApplication::processEvents();
+    auto* canvas = overlay.canvas();
+    canvas->setInteractionEnabled(true);
+    canvas_quick_selection_test::drawStroke(*canvas);
+    canvas_quick_selection_test::selectAndDragStroke(*canvas);
+    require(fallbacks == 0, "eligible right hit precedes screenshot selection fallback");
+    canvas_quick_selection_test::mouse(*canvas, QEvent::MouseButtonPress, {25, 40}, Qt::RightButton,
+                                       Qt::RightButton);
+    canvas_quick_selection_test::mouse(*canvas, QEvent::MouseButtonRelease, {25, 40},
+                                       Qt::RightButton, Qt::NoButton);
+    require(fallbacks == 1, "miss retains screenshot selection fallback");
+    handler.armCanvasColorSampling();
+    require(handler.handleRightClick(&overlay, {120, 135}) ==
+                ScreenshotOverlayRightClickResult::Handled,
+            "color sampling cancellation keeps priority over element selection");
+}
+
 void overlayRightClickClosesOnRelease(bool native = false) {
     using namespace snow_shot::presentation;
     NoopOverlayEventSink sink;
@@ -6004,6 +6059,10 @@ int main(int argc, char** argv) {
     }
 #endif
 
+    if (application.arguments().contains(QStringLiteral("--right-quick-selection-only"))) {
+        overlayRightQuickSelection();
+        return 0;
+    }
     if (application.arguments().contains(QStringLiteral("--close-release-only")) ||
         application.arguments().contains(QStringLiteral("--close-release-native"))) {
 #ifdef Q_OS_WIN

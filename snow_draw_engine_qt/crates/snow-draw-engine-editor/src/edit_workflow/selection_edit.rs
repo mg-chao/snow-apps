@@ -71,6 +71,7 @@ impl Editor {
         EditSelectionState {
             duplicate: false,
             pointer_id: request.pointer_id,
+            button: request.button,
             preview_elements: request.original_elements.clone(),
             preview_arrows: request.original_arrows.clone(),
             original_elements: request.original_elements,
@@ -976,6 +977,7 @@ mod tests {
         let state = EditSelectionState {
             duplicate: false,
             pointer_id: 1,
+            button: snow_draw_engine_interaction::PointerButton::Primary,
             original_elements: vec![SelectionRectState {
                 id: ElementId::default(),
                 rect,
@@ -1500,6 +1502,7 @@ mod tests {
         editor.state.interaction = InteractionState::EditingSelection(EditSelectionState {
             duplicate: false,
             pointer_id: 1,
+            button: snow_draw_engine_interaction::PointerButton::Primary,
             original_elements: vec![SelectionRectState {
                 id: text_id,
                 rect: original_rect,
@@ -1571,6 +1574,7 @@ mod tests {
         editor.state.interaction = InteractionState::EditingSelection(EditSelectionState {
             duplicate: false,
             pointer_id: 1,
+            button: snow_draw_engine_interaction::PointerButton::Primary,
             original_elements: vec![SelectionRectState {
                 id: text_id,
                 rect: original_rect,
@@ -1648,6 +1652,7 @@ mod tests {
         editor.state.interaction = InteractionState::EditingSelection(EditSelectionState {
             duplicate: false,
             pointer_id: 1,
+            button: snow_draw_engine_interaction::PointerButton::Primary,
             original_elements: vec![SelectionRectState {
                 id: text_id,
                 rect: original_rect,
@@ -1820,6 +1825,7 @@ mod tests {
         editor.state.interaction = InteractionState::EditingSelection(EditSelectionState {
             duplicate: false,
             pointer_id: 1,
+            button: snow_draw_engine_interaction::PointerButton::Primary,
             original_elements: vec![SelectionRectState {
                 id: text_id,
                 rect: original_rect,

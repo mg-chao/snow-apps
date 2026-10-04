@@ -8,6 +8,10 @@ pub(crate) struct AutoFilterInteraction {
 }
 
 impl Editor {
+    pub(crate) fn auto_filter_gesture_active(&self) -> bool {
+        self.state.auto_filter.start.is_some()
+    }
+
     pub(crate) fn process_auto_filter_pointer_event(
         &mut self,
         document: &DocumentModel,

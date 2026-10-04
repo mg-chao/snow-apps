@@ -761,6 +761,10 @@ ScreenshotOverlayInputHandler::handleRightClick(ScreenshotOverlayWindow* overlay
     if (cancelRegionOperation()) {
         return ScreenshotOverlayRightClickResult::Handled;
     }
+    if (overlay != nullptr && overlay->canvas() != nullptr &&
+        overlay->canvas()->hasQuickSelectionTargetAt(localPosition, Qt::RightButton)) {
+        return ScreenshotOverlayRightClickResult::Ignored;
+    }
     if (!m_context.interaction.moveToolActive()) {
         return ScreenshotOverlayRightClickResult::Ignored;
     }

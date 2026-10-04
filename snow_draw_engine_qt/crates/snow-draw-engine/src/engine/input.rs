@@ -1,6 +1,18 @@
 use super::*;
 
 impl Engine {
+    pub fn hit_quick_selection_at(
+        &self,
+        id: ViewportId,
+        point: Point<f64>,
+        button: snow_draw_engine_interaction::PointerButton,
+    ) -> Result<Option<ElementId>, ErrorCode> {
+        let view = &self.viewport_slot(id)?.view;
+        Ok(self
+            .editor
+            .hit_quick_selection_at(&self.model, view, point, button))
+    }
+
     pub fn process_pointer_move_batch_with_viewport_changes(
         &mut self,
         id: ViewportId,
@@ -118,6 +130,58 @@ mod tests {
             buttons: PointerButtons(PointerButtons::PRIMARY),
             modifiers: Modifiers::default(),
         })
+    }
+
+    #[test]
+    fn right_quick_selection_query_uses_requested_viewport_zoom_without_mutation() {
+        let mut engine = Engine::default();
+        let first = engine.create_viewport(ViewportConfig::default()).unwrap();
+        engine.set_viewport_surface_size(first, 200, 200).unwrap();
+        engine
+            .set_viewport_active_tool(first, ActiveTool::Shape)
+            .unwrap();
+        for (kind, x, y) in [
+            (PointerEventType::Down, 80.0, 80.0),
+            (PointerEventType::Move, 120.0, 120.0),
+            (PointerEventType::Up, 120.0, 120.0),
+        ] {
+            engine.process_input(first, pointer(kind, x, y)).unwrap();
+        }
+        let second = engine.create_viewport(ViewportConfig::default()).unwrap();
+        engine.set_viewport_surface_size(second, 200, 200).unwrap();
+        engine
+            .set_viewport_camera(
+                second,
+                Camera {
+                    zoom: 4.0,
+                    ..Camera::default()
+                },
+            )
+            .unwrap();
+        engine
+            .set_quick_selection_disabled_tools(ActiveTool::Shape.policy_bit())
+            .unwrap();
+        let selection = engine.selected_ids();
+        let point = Point::new(0.0, -24.0);
+        assert!(
+            engine
+                .hit_quick_selection_at(first, point, PointerButton::Secondary)
+                .unwrap()
+                .is_some()
+        );
+        assert!(
+            engine
+                .hit_quick_selection_at(second, point, PointerButton::Secondary)
+                .unwrap()
+                .is_none()
+        );
+        assert!(
+            engine
+                .hit_quick_selection_at(first, point, PointerButton::Primary)
+                .unwrap()
+                .is_none()
+        );
+        assert_eq!(engine.selected_ids(), selection);
     }
 
     #[test]

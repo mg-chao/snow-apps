@@ -36,6 +36,7 @@
 #include <QByteArray>
 #include <QApplication>
 #include <QCursor>
+#include <QContextMenuEvent>
 #include <QEnterEvent>
 #include <QEvent>
 #include <QFocusEvent>
@@ -384,6 +385,8 @@ struct SnowCanvasWidget::Impl : public snow_canvas_runtime::Client {
     bool setCanvasGridConfig(const SnowCanvasGridConfig& config);
     bool interactionEnabled() const;
     void setInteractionEnabled(bool enabled);
+    bool hasQuickSelectionTargetAt(const QPointF& viewPosition, Qt::MouseButton button) const;
+    bool handleContextMenu(QContextMenuEvent* event);
     bool wheelZoomEnabled() const;
     void setWheelZoomEnabled(bool enabled);
     bool canvasContentVisible() const;
@@ -508,6 +511,7 @@ struct SnowCanvasWidget::Impl : public snow_canvas_runtime::Client {
     bool canvasClearBackgroundEnabled = true;
     bool suppressNextTextToolCreate = false;
     bool restoredSelectionForNextTextToolPress = false;
+    bool suppressMouseContextMenu = false;
     SnowCanvasTool requestedCanvasTool = SnowCanvasTool::Select;
     SnowCanvasCustomRenderer* installedCustomRenderer = nullptr;
     std::optional<QRectF> configuredWatermarkRenderArea;
@@ -1228,6 +1232,35 @@ bool SnowCanvasWidget::Impl::interactionEnabled() const {
 
 bool SnowCanvasWidget::interactionEnabled() const {
     return m_impl->interactionEnabled();
+}
+
+bool SnowCanvasWidget::hasQuickSelectionTargetAt(const QPointF& viewPosition,
+                                                 Qt::MouseButton button) const {
+    return m_impl->hasQuickSelectionTargetAt(viewPosition, button);
+}
+
+bool SnowCanvasWidget::Impl::hasQuickSelectionTargetAt(const QPointF& viewPosition,
+                                                       Qt::MouseButton button) const {
+    if (!interactionEnabled() || !hasViewport() ||
+        (button != Qt::LeftButton && button != Qt::RightButton)) {
+        return false;
+    }
+    const QPointF canvasPoint = canvasToViewTransform().inverted().map(viewPosition);
+    SnowElementId id{};
+    std::uint8_t hit = 0;
+    return snow_viewport_hit_quick_selection(
+               runtimeBinding.engine(), runtimeBinding.viewportHandle(), canvasPoint.x(),
+               canvasPoint.y(), snow_canvas_input::mapButton(button), &id, &hit) == SNOW_OK &&
+           hit != 0;
+}
+
+bool SnowCanvasWidget::Impl::handleContextMenu(QContextMenuEvent* event) {
+    if (event->reason() != QContextMenuEvent::Mouse || !suppressMouseContextMenu) {
+        return false;
+    }
+    suppressMouseContextMenu = false;
+    event->accept();
+    return true;
 }
 
 void SnowCanvasWidget::Impl::setInteractionEnabled(bool enabled) {
@@ -2340,6 +2373,10 @@ void SnowCanvasWidget::paintEvent(QPaintEvent* event) {
 }
 
 bool SnowCanvasWidget::event(QEvent* event) {
+    if (m_impl && event->type() == QEvent::ContextMenu &&
+        m_impl->handleContextMenu(static_cast<QContextMenuEvent*>(event))) {
+        return true;
+    }
     const bool handled = QWidget::event(event);
     if (m_impl && event->type() == QEvent::DevicePixelRatioChange) {
         m_impl->refreshCursorDevicePixelRatio();
@@ -2363,6 +2400,12 @@ bool SnowCanvasWidget::Impl::handleMousePress(QMouseEvent* event) {
     }
 
     clearTextStylePopupInteraction();
+    if (event->button() == Qt::RightButton) {
+        suppressMouseContextMenu = false;
+    }
+    const bool rightQuickSelectionEligible =
+        event->button() == Qt::RightButton &&
+        hasQuickSelectionTargetAt(event->position(), Qt::RightButton);
 
     const bool textEditorActive = textInteraction.isActive();
     const bool pointerInsideTextEditor =
@@ -2392,6 +2435,7 @@ bool SnowCanvasWidget::Impl::handleMousePress(QMouseEvent* event) {
             restoredSelectionForNextTextToolPress,
             pointerHitsSelectedText,
             selectionTarget,
+            rightQuickSelectionEligible,
         });
     if (plan.shouldHandleEditorPress) {
         return textInteraction.handleEditorMousePress(event, displayState.displayCache(),
@@ -2446,6 +2490,9 @@ bool SnowCanvasWidget::Impl::handleMousePress(QMouseEvent* event) {
     }
     const bool handled =
         dispatchInput(event, snow_canvas_input::makePointerInput(*event, SNOW_POINTER_EVENT_DOWN));
+    if (handled && rightQuickSelectionEligible) {
+        suppressMouseContextMenu = true;
+    }
     if (handled && plan.shouldBeginText && plan.allowCreateText) {
         const SnowTextStyle textStyle = displayState.snapshot().styleToolbarState.text_style;
         SnowCanvasWidgetTextInteraction::BeginResult draft =
@@ -2521,6 +2568,10 @@ void SnowCanvasWidget::Impl::flushEraserMove() {
 bool SnowCanvasWidget::Impl::handleMouseDoubleClick(QMouseEvent* event) {
     if (event == nullptr || !interactionEnabled()) {
         return false;
+    }
+    if (event->button() == Qt::RightButton &&
+        hasQuickSelectionTargetAt(event->position(), Qt::RightButton)) {
+        return handleMousePress(event);
     }
     if (textInteraction.isActive()) {
         event->accept();

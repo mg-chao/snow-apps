@@ -118,7 +118,7 @@ class ScreenRecordingAreaWindow final : public QWidget {
     bool m_drawingBlocked = false;
     bool m_trimming = false;
     QImage m_previewFrame;
-    bool m_gestureInProgress = false;
+    Qt::MouseButton m_gestureButton = Qt::NoButton;
     bool m_cancellingRegionInteraction = false;
     bool m_settingRegion = false;
     bool m_geometrySyncPending = false;

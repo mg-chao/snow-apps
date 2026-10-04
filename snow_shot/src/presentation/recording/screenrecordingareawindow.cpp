@@ -339,7 +339,7 @@ void ScreenRecordingAreaWindow::setInputMode(InputMode mode) {
     }
     m_inputMode = mode;
     cancelRegionInteraction();
-    m_gestureInProgress = false;
+    m_gestureButton = Qt::NoButton;
     applyInputMode();
 }
 
@@ -353,7 +353,7 @@ void ScreenRecordingAreaWindow::setDrawingBlocked(bool blocked) {
     }
     m_drawingBlocked = blocked;
     cancelRegionInteraction();
-    m_gestureInProgress = false;
+    m_gestureButton = Qt::NoButton;
     applyInputMode();
 }
 
@@ -516,15 +516,18 @@ bool ScreenRecordingAreaWindow::eventFilter(QObject* watched, QEvent* event) {
     case QEvent::MouseButtonPress:
     case QEvent::MouseButtonDblClick: {
         const auto* mouse = static_cast<QMouseEvent*>(event);
-        if (mouse->button() == Qt::LeftButton) {
-            m_gestureInProgress = true;
+        if (m_gestureButton == Qt::NoButton &&
+            (mouse->button() == Qt::LeftButton ||
+             (mouse->button() == Qt::RightButton &&
+              m_canvas->hasQuickSelectionTargetAt(mouse->position(), Qt::RightButton)))) {
+            m_gestureButton = mouse->button();
         }
         break;
     }
     case QEvent::MouseButtonRelease: {
         const auto* mouse = static_cast<QMouseEvent*>(event);
-        if (mouse->button() == Qt::LeftButton) {
-            m_gestureInProgress = false;
+        if (mouse->button() == m_gestureButton) {
+            m_gestureButton = Qt::NoButton;
         }
         break;
     }
@@ -549,8 +552,8 @@ bool ScreenRecordingAreaWindow::eventFilter(QObject* watched, QEvent* event) {
         if (m_canvas->hasActiveTextEditing()) {
             return false;
         }
-        if (m_gestureInProgress) {
-            m_gestureInProgress = false;
+        if (m_gestureButton != Qt::NoButton) {
+            m_gestureButton = Qt::NoButton;
             return false;
         }
         emit drawingDeactivationRequested();

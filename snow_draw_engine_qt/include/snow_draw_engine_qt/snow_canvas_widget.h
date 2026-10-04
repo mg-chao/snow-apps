@@ -136,6 +136,9 @@ class SnowCanvasWidget : public QWidget {
 
     bool interactionEnabled() const;
     void setInteractionEnabled(bool enabled);
+    // Tests element bodies using the active tool and the requested button's policy.
+    [[nodiscard]] bool hasQuickSelectionTargetAt(const QPointF& viewPosition,
+                                                 Qt::MouseButton button) const;
     bool wheelZoomEnabled() const;
     void setWheelZoomEnabled(bool enabled);
     // Controls engine-owned scene, overlay, editor, and auxiliary content.
