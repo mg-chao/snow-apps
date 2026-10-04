@@ -377,6 +377,9 @@ export SNOW_QT_STATIC_DIR="$HOME/Qt/6.12.0/macos-static-arm64/lib/cmake/Qt6"
 scripts/build.sh snow-shot-macos-arm64-release --parallel 8
 ```
 
+`SNOW_QT_STATIC_DIR` takes precedence over `Qt6_DIR` for release and fast builds.
+Keep `Qt6_DIR` pointed at the shared kit for Debug and performance builds.
+
 Use `x64` and `macos-static-x64` for an Intel build. The static Qt script pins
 the architecture and Qt's supported 14.4 library deployment target (the Snow Shot
 app still targets macOS 15.0), enables LTO and system libpng/zlib, installs Qt

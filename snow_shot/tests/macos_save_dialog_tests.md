@@ -38,7 +38,7 @@ enabled. A warning records any recovery for further diagnosis.
 This is a compatibility repair for the observed failure mechanism, not proof
 that the original source of cache corruption has been eliminated. It depends on
 Qt's private cache API, already available through AdQt's macOS `GuiPrivate`
-dependency. Qt 6.11.1 is the validated version; CMake warns on other versions
+dependency. Qt 6.12.0 is the validated version; CMake warns on other versions
 without silently disabling protection. A missing private cleanup method fails
 explicitly in release builds as well as debug builds instead of continuing into
 the known invalid dereference.

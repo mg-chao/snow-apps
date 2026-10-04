@@ -7,7 +7,7 @@ physical-size controller is not installed on macOS. Both platforms use the fixed
 1242 × 142 frame preset, scaled by the toolbar size setting. On macOS a panel mask
 excludes the unused native frame from input routing, while Cocoa draws the shadow.
 
-Build the affected targets with the provisioned Qt 6.11.1 kit:
+Build the affected targets with the provisioned Qt 6.12.0 kit:
 
 ```sh
 scripts/build.sh snow-shot-macos-arm64-performance --target snow-shot-floating-toolbar-drag-tests

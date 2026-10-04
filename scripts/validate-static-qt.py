@@ -58,8 +58,11 @@ def installed_version(prefix, version):
         for suffix in ('ConfigVersion.cmake', 'ConfigVersionImpl.cmake'):
             path = directory / (module + suffix)
             if path.is_file():
-                versions.extend(re.findall(r'set\(PACKAGE_VERSION\s+"([^"]+)"\)',
-                                           path.read_text(encoding='utf-8')))
+                # CMake also assigns computed pointer-size diagnostics to
+                # PACKAGE_VERSION. Only literal version declarations identify the kit.
+                versions.extend(re.findall(
+                    r'^\s*set\s*\(\s*PACKAGE_VERSION\s+"([0-9]+\.[0-9]+\.[0-9]+)"\s*\)',
+                    path.read_text(encoding='utf-8'), re.MULTILINE))
         if not versions or set(versions) != {version}:
             raise ValueError(f'The installed {module} package must be Qt '
                              f'{version}: {directory}')
@@ -144,18 +147,25 @@ def validate_kit(prefix, arch=None, require_static=False):
         raise ValueError('The installed Qt Core targets must describe the required library linkage.')
     if not arch:
         return
-    # A static release kit must expose the audited Release artifact. Qt's shared
-    # macOS kit also supplies a Release binary to Debug consumers.
-    configuration = directory / 'Qt6CoreTargets-release.cmake'
-    release = configuration.read_text(encoding='utf-8')
-    location = re.search(r'IMPORTED_LOCATION_RELEASE\s+"([^"]+)"', release)
+    # Static kits must expose the audited Release artifact. Official shared
+    # macOS kits can supply their non-Debug framework as RelWithDebInfo.
+    configurations = ('release',) if require_static else ('release', 'relwithdebinfo')
+    for name in configurations:
+        configuration = directory / f'Qt6CoreTargets-{name}.cmake'
+        if configuration.is_file():
+            break
+    else:
+        required = 'Release' if require_static else 'non-Debug'
+        raise ValueError(f'The Qt Core {required} artifact configuration is missing: {directory}')
+    exported_targets = configuration.read_text(encoding='utf-8')
+    location = re.search(rf'IMPORTED_LOCATION_{name.upper()}\s+"([^"]+)"', exported_targets)
     if not location:
-        raise ValueError(f'The Qt Core Release artifact is missing from {configuration}')
+        raise ValueError(f'The Qt Core {name} artifact is missing from {configuration}')
     library = Path(location[1].replace('${_IMPORT_PREFIX}', str(prefix)))
     if '$' in str(library) or not library.is_absolute():
-        raise ValueError(f'The Qt Core Release artifact has an unsupported path: {location[1]}')
+        raise ValueError(f'The Qt Core {name} artifact has an unsupported path: {location[1]}')
     if arch not in binary_architectures(library):
-        raise ValueError(f'The installed Qt Core Release binary does not support {arch}: {library}')
+        raise ValueError(f'The installed Qt Core {name} binary does not support {arch}: {library}')
 
 
 def feature_fingerprint():

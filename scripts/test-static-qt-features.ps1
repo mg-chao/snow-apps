@@ -288,8 +288,14 @@ QT_DISABLED_PRIVATE_FEATURES "timezone_locale"
 finally {
     $resolvedTestRoot = [System.IO.Path]::GetFullPath($testRoot)
     $resolvedBuildRoot = [System.IO.Path]::GetFullPath((Join-Path $script:SnowRepoRoot "build"))
-    if (-not $resolvedTestRoot.StartsWith($resolvedBuildRoot.TrimEnd('\') + '\',
-            [System.StringComparison]::OrdinalIgnoreCase)) {
+    $separator = [System.IO.Path]::DirectorySeparatorChar
+    $comparison = if ($separator -eq '\') {
+        [System.StringComparison]::OrdinalIgnoreCase
+    } else {
+        [System.StringComparison]::Ordinal
+    }
+    if (-not $resolvedTestRoot.StartsWith($resolvedBuildRoot.TrimEnd($separator) + $separator,
+            $comparison)) {
         throw "Refusing to remove a test directory outside $resolvedBuildRoot"
     }
     if (Test-Path -LiteralPath $resolvedTestRoot) {

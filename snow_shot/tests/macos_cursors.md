@@ -8,7 +8,7 @@ time so pooled controls follow their current owner.
 
 ## Native compatibility boundary
 
-The adapter is qualified against the repository's exactly pinned Qt 6.11.1.
+The repository's current Qt kit is exactly pinned to Qt 6.12.0.
 `QCocoaWindow::setWindowCursor` caches the converted cursor on its native view,
 but gates immediate application on key-window or titled-utility status. The
 adapter calls the public `NSResponder::cursorUpdate:` callback to apply that
