@@ -509,6 +509,7 @@ $allowedSystemImports = @(
     "kernel32.dll",
     "magnification.dll",
     "mpr.dll",
+    "mscms.dll",
     "mswsock.dll",
     "ncrypt.dll",
     "netapi32.dll",
