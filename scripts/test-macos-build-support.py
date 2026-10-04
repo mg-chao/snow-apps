@@ -41,7 +41,12 @@ def write_qt_kit(prefix, static=True, architectures=('arm64', 'x64')):
         directory.mkdir(parents=True, exist_ok=True)
         (directory / (module + 'Config.cmake')).touch()
         (directory / (module + 'ConfigVersionImpl.cmake')).write_text(
-            f'set(PACKAGE_VERSION "{QT_VERSION}")\n')
+            f'set(PACKAGE_VERSION "{QT_VERSION}")\n'
+            'if(NOT CMAKE_SIZEOF_VOID_P STREQUAL "8")\n'
+            '  math(EXPR installedBits "8 * 8")\n'
+            '  set(PACKAGE_VERSION "${PACKAGE_VERSION} (${installedBits}bit)")\n'
+            '  set(PACKAGE_VERSION_UNSUITABLE TRUE)\n'
+            'endif()\n')
     core = prefix / 'lib/cmake/Qt6Core'
     linkage = 'STATIC' if static else 'SHARED'
     (core / 'Qt6CoreTargets.cmake').write_text(f'add_library(Qt6::Core {linkage} IMPORTED)\n')
@@ -137,6 +142,26 @@ class QtKitValidation(unittest.TestCase):
                     self.assertIn(f'The installed {module} package must be Qt', result.stderr)
             path.write_text(original)
 
+    def test_cmake_version_diagnostics_require_a_literal_package_version(self):
+        for module in ('Qt6', 'Qt6Core'):
+            config = self.prefix / 'lib/cmake' / module / (module + 'ConfigVersionImpl.cmake')
+            original = config.read_text()
+            wrapper = config.with_name(module + 'ConfigVersion.cmake')
+            wrapper.write_text(
+                f'include("${{CMAKE_CURRENT_LIST_DIR}}/{config.name}")\n'
+                '# set(PACKAGE_VERSION "6.11.1")\n')
+            for mode in ((), ('--kit-only',), ('--features-only',)):
+                with self.subTest(module=module, mode=mode, literal=True):
+                    self.run_validator(*mode)
+            config.write_text(
+                f'# set(PACKAGE_VERSION "{QT_VERSION}")\n'
+                'set(PACKAGE_VERSION "${PACKAGE_VERSION} (${installedBits}bit)")\n')
+            for mode in ((), ('--kit-only',), ('--features-only',)):
+                with self.subTest(module=module, mode=mode, literal=False):
+                    result = self.run_validator(*mode, success=False)
+                    self.assertIn(f'The installed {module} package must be Qt', result.stderr)
+            config.write_text(original)
+
     def test_stock_dialog_catalogs_are_required_without_an_english_catalog(self):
         self.assertFalse((self.prefix / 'translations/qtbase_en_US.qm').exists())
         self.run_validator('--kit-only')
@@ -163,6 +188,34 @@ class QtKitValidation(unittest.TestCase):
         self.assertIn('does not support arm64', result.stderr)
         result = self.run_validator('--kit-only', success=False)
         self.assertIn('does not support arm64', result.stderr)
+
+    def test_shared_framework_relwithdebinfo_artifact_is_validated(self):
+        write_qt_kit(self.prefix, static=False, architectures=('arm64',))
+        core = self.prefix / 'lib/cmake/Qt6Core'
+        release = core / 'Qt6CoreTargets-release.cmake'
+        release.unlink()
+        configuration = core / 'Qt6CoreTargets-relwithdebinfo.cmake'
+        framework = self.prefix / 'lib/QtCore.framework/Versions/A/QtCore'
+        framework.parent.mkdir(parents=True)
+        (self.prefix / 'lib/libQt6Core.a').rename(framework)
+        configuration.write_text(
+            'IMPORTED_LOCATION_RELWITHDEBINFO '
+            '"${_IMPORT_PREFIX}/lib/QtCore.framework/Versions/A/QtCore"\n')
+        self.run_validator('--kit-only')
+        framework.write_bytes(struct.pack('<8I', 0xfeedfacf, 0x01000007, 0, 1, 0, 0, 0, 0))
+        result = self.run_validator('--kit-only', success=False)
+        self.assertIn('does not support arm64', result.stderr)
+        configuration.unlink()
+        self.run_validator('--kit-only', success=False)
+
+    def test_static_kit_requires_the_audited_release_artifact(self):
+        core = self.prefix / 'lib/cmake/Qt6Core'
+        release = core / 'Qt6CoreTargets-release.cmake'
+        configuration = core / 'Qt6CoreTargets-relwithdebinfo.cmake'
+        configuration.write_text(release.read_text().replace('_RELEASE', '_RELWITHDEBINFO'))
+        release.unlink()
+        self.run_validator(success=False)
+        self.run_validator('--features-only', success=False)
 
     def test_release_artifact_and_supported_linkage_are_required(self):
         targets = self.prefix / 'lib/cmake/Qt6Core/Qt6CoreTargets.cmake'
@@ -320,6 +373,33 @@ class QtLicenseMetadata(unittest.TestCase):
 
 
 class MacOSBundleMetadata(unittest.TestCase):
+    def test_native_deployment_fixture_has_no_mcp_bridge_requirement(self):
+        fixture = (ROOT / 'test-support/macos-build/CMakeLists.txt').read_text()
+        setup = fixture.split('if(NOT SNOW_FFMPEG_ROOT)', 1)[0]
+        setup = '\n'.join(line for line in setup.splitlines()
+                          if not line.startswith(('cmake_minimum_required(', 'project(')))
+        deployment = (ROOT / 'cmake/DeploySnowShotMacOS.cmake.in').read_text()
+        preconditions = deployment.split('set(_snow_codesign_identity ', 1)[0]
+        managed_cmake = ROOT / '.tools/macos-dev/bin/cmake'
+        cmake = str(managed_cmake) if managed_cmake.is_file() else shutil.which('cmake')
+        self.assertIsNotNone(cmake)
+        with tempfile.TemporaryDirectory(prefix='snow fixture deployment ') as directory:
+            root = Path(directory)
+            template = root / 'deploy.cmake.in'
+            template.write_text(preconditions)
+            script = root / 'check.cmake'
+            script.write_text(
+                'cmake_minimum_required(VERSION 4.2)\n' + setup + '\n'
+                f'set(CMAKE_INSTALL_PREFIX [==[{root}]==])\n'
+                f'configure_file([==[{template}]==] [==[{root / "deploy.cmake"}]==] @ONLY)\n'
+                f'include([==[{root / "deploy.cmake"}]==])\n'
+                'if(_snow_mcp_deploy_arguments)\n'
+                '  message(FATAL_ERROR "The native fixture does not build an MCP bridge")\n'
+                'endif()\n')
+            result = subprocess.run([cmake, '-P', str(script)], text=True,
+                                    capture_output=True, env=dict(os.environ, DESTDIR=''))
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
     def test_mini_product_metadata_and_native_translations(self):
         resources = ROOT / 'snow_shot/packaging/macos'
         plist = plistlib.loads((resources / 'Info-mini.plist.in').read_bytes())
@@ -625,7 +705,8 @@ if name == 'openssl':
         write_static_qt_feature_targets(self.root / 'Qt kit')
         (self.root / "Qt kit/share/snow-apps/qt-licenses").mkdir()
         self.env = dict(os.environ, PATH=f"{self.bin}:{os.environ['PATH']}",
-                        Qt6_DIR=str(qt), SNOW_TEST_LOG=str(self.log),
+                        Qt6_DIR=str(qt), SNOW_QT_STATIC_DIR=str(qt),
+                        SNOW_TEST_LOG=str(self.log),
                         SNOW_TEST_ROOT=str(self.root),
                         SNOW_LAUNCH_SERVICES_REGISTER=str(self.bin / 'lsregister'))
 
@@ -687,6 +768,19 @@ if name == 'openssl':
         calls = self.run_script("bootstrap-macos.sh", "snow-shot-macos-x64-release")
         rustup = next(c for c in calls if c[:3] == ['rustup', 'toolchain', 'install'])
         self.assertIn('x86_64-apple-darwin', rustup)
+
+    def test_release_build_prefers_static_qt_over_shared_qt_dir(self):
+        static_qt = self.env['Qt6_DIR']
+        shared_qt = self.root / 'shared Qt/lib/cmake/Qt6'
+        shared_qt.mkdir(parents=True)
+        (shared_qt / 'Qt6Config.cmake').touch()
+        self.env['Qt6_DIR'] = str(shared_qt)
+        self.env['SNOW_QT_STATIC_DIR'] = static_qt
+        calls = self.run_script('build.sh', 'snow-shot-macos-arm64-release',
+                                '--skip-bootstrap')
+        configure = next(call for call in calls if call[0] == 'cmake' and '--preset' in call
+                         and '--build' not in call)
+        self.assertIn(f'Qt6_DIR={static_qt}', configure)
 
     def test_package_builds_before_cpack(self):
         stale = self.root / 'build/snow-shot-macos-arm64-release/stale-bundle-file'

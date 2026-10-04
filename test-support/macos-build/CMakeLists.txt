@@ -10,6 +10,8 @@ set(SNOW_SHOT_COPYRIGHT "Copyright (C) 2025-2026 mg-chao")
 set(SNOW_SHOT_RELEASE_STATIC OFF)
 set(SNOW_SHOT_QT_STATIC OFF)
 set(SNOW_SHOT_OCR_STATIC_ONNXRUNTIME OFF)
+# The deployment fixture contains no MCP bridge target or helper.
+set(SNOW_SHOT_ENABLE_MCP OFF)
 if(NOT SNOW_FFMPEG_ROOT)
     message(FATAL_ERROR "Pass SNOW_FFMPEG_ROOT to the provisioned native FFmpeg prefix")
 endif()

@@ -7430,7 +7430,7 @@ void filterStyleEditorsMatchShapeAndSpotlightMetrics() {
         snapshot.panelHeight = palette.stylePanel()->height();
         snapshot.iconSize = icon->size();
         snapshot.sliderSize = slider->size();
-        snapshot.pixmap = icon->pixmap(Qt::ReturnByValue);
+        snapshot.pixmap = icon->pixmap();
         return snapshot;
     };
     const auto pixmapHasVisiblePixel = [](const QPixmap& pixmap) {

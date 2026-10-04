@@ -8400,7 +8400,7 @@ void ScreenshotToolPalette::openScrollingSettings() {
     layout->addWidget(form);
     modal->setContentWidget(body);
     modal->setInitialFocusWidget(captureInterface);
-    body->retranslate = [this, modal, error] {
+    body->retranslate = [modal, error] {
         modal->setWindowTitle(tr("Scrolling screenshot settings"));
         error->setText(tr("Unable to save scrolling screenshot settings"));
     };
