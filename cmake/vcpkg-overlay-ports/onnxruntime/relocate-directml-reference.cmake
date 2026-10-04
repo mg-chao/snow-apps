@@ -1,0 +1,27 @@
+# Windows paths are case insensitive, but ORT exports ARM64-win while vcpkg
+# identifies the target as arm64. Match the full restored import path with
+# Windows path semantics and preserve the casing of every unrelated value.
+function(snow_onnxruntime_relocate_directml_reference output content import_library)
+    file(TO_CMAKE_PATH "${import_library}" _import_path)
+    if(NOT IS_ABSOLUTE "${_import_path}")
+        message(FATAL_ERROR "The restored DirectML import library must use an absolute path.")
+    endif()
+    string(TOLOWER "${_import_path}" _import_path_lower)
+    string(LENGTH "${_import_path}" _import_path_length)
+    if(_import_path_length EQUAL 0)
+        message(FATAL_ERROR "The restored DirectML import library path is required.")
+    endif()
+
+    set(_content "${content}")
+    string(TOLOWER "${_content}" _content_lower)
+    string(FIND "${_content_lower}" "${_import_path_lower}" _position)
+    while(NOT _position EQUAL -1)
+        string(SUBSTRING "${_content}" 0 ${_position} _before)
+        math(EXPR _after_position "${_position} + ${_import_path_length}")
+        string(SUBSTRING "${_content}" ${_after_position} -1 _after)
+        set(_content "${_before}\${_IMPORT_PREFIX}/lib/DirectML.lib${_after}")
+        string(TOLOWER "${_content}" _content_lower)
+        string(FIND "${_content_lower}" "${_import_path_lower}" _position)
+    endwhile()
+    set(${output} "${_content}" PARENT_SCOPE)
+endfunction()

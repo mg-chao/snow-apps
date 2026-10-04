@@ -12,6 +12,9 @@ endif()
 
 project(snow_apps VERSION 0.2.0 LANGUAGES CXX)
 
+include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/SnowWindowsArchitecture.cmake")
+snow_configure_windows_architecture()
+
 set(SNOW_SHOT_VERSION "1.2.2")
 if(NOT SNOW_SHOT_VERSION MATCHES "^([0-9]+\\.[0-9]+\\.[0-9]+)(-[0-9A-Za-z.-]+)?$")
     message(FATAL_ERROR "SNOW_SHOT_VERSION must be a semantic version such as 0.8.0-dev")
@@ -428,7 +431,7 @@ if(SNOW_APPS_PACKAGE_SNOW_SHOT AND NOT APPLE)
     set(CPACK_PACKAGE_VERSION "${SNOW_SHOT_VERSION}")
     set(CPACK_PACKAGE_INSTALL_DIRECTORY "SnowShot")
     set(CPACK_PACKAGE_INSTALL_REGISTRY_KEY "SnowShot")
-    set(CPACK_PACKAGE_FILE_NAME "snow-shot-${SNOW_SHOT_VERSION}-windows-x64")
+    set(CPACK_PACKAGE_FILE_NAME "snow-shot-${SNOW_SHOT_VERSION}-${SNOW_WINDOWS_PLATFORM}")
     set(CPACK_PACKAGE_DIRECTORY "${CMAKE_BINARY_DIR}")
     set(CPACK_PACKAGE_CHECKSUM "SHA256")
     set(CPACK_PACKAGE_DESCRIPTION_FILE

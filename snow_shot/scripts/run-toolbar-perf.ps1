@@ -11,7 +11,8 @@ param(
     [switch]$ForceCompare,
     [switch]$NoGate,
     [switch]$ListScenarios,
-    [switch]$SelfTest
+    [switch]$SelfTest,
+    [ValidateSet("x64", "arm64")][string]$Architecture = "x64"
 )
 
 $ErrorActionPreference = "Stop"
@@ -19,9 +20,11 @@ $ErrorActionPreference = "Stop"
 $shot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 $workspace = (Resolve-Path (Join-Path $PSScriptRoot "..\..")).Path
 . (Join-Path $PSScriptRoot "performance-environment.ps1")
+$performanceTarget = Get-SnowPerformanceTarget -Architecture $Architecture -RequireNative
+$performanceBuildDirectory = Join-Path $workspace "build/$($performanceTarget.Preset)"
 if ([string]::IsNullOrWhiteSpace($OutputDirectory)) {
     $stamp = Get-Date -Format "yyyyMMdd-HHmmss"
-    $OutputDirectory = Join-Path $shot "build\toolbar-perf\$stamp"
+    $OutputDirectory = Join-Path $shot "build/toolbar-perf/$(if ($Architecture -eq 'arm64') { 'windows-arm64/' })$stamp"
 }
 $OutputDirectory = [System.IO.Path]::GetFullPath($OutputDirectory)
 
@@ -37,22 +40,24 @@ if (![string]::IsNullOrWhiteSpace($Baseline)) {
 
 Push-Location $workspace
 try {
-    & (Join-Path $shot "scripts/configure-msvc-perf.ps1") -Fresh -QtBin $QtBin
+    & (Join-Path $shot "scripts/configure-msvc-perf.ps1") -Fresh -QtBin $QtBin -Architecture $Architecture
     if ($LASTEXITCODE -ne 0) {
         throw "The msvc-perf configuration failed"
     }
 
-    & cmake --build build/windows-msvc-performance --config Release --target `
+    & cmake --build $performanceBuildDirectory --config Release --target `
         snow-shot-screenshot-toolbar-render-benchmark --parallel
     if ($LASTEXITCODE -ne 0) {
         throw "The toolbar benchmark target failed to build"
     }
 
-    $release = Join-Path $workspace "build\windows-msvc-performance\snow_shot\test-bin\Release"
+    $release = Join-Path $performanceBuildDirectory "snow_shot/test-bin/Release"
     $executable = Join-Path $release "snow-shot-screenshot-toolbar-render-benchmark.exe"
     if (!(Test-Path $executable)) {
         throw "Benchmark executable was not produced: $executable"
     }
+
+    Assert-SnowPerformanceExecutable -Path $executable -Architecture $Architecture
 
     $savedCommit = $env:SNOW_SHOT_PERF_GIT_COMMIT
     $savedDirty = $env:SNOW_SHOT_PERF_GIT_DIRTY
@@ -77,7 +82,7 @@ try {
 
     Add-Type -AssemblyName System.Windows.Forms
     $cursorPosition = [System.Windows.Forms.Cursor]::Position
-    $qtRuntime = Set-SnowPerformanceQtRuntime
+    $qtRuntime = Set-SnowPerformanceQtRuntime -Architecture $Architecture
     try {
         $arguments = @(
             "--output", $OutputDirectory,

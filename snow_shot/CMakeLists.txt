@@ -14,6 +14,36 @@ project(snow_shot VERSION ${SNOW_SHOT_VERSION_NUMERIC} LANGUAGES CXX)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/../cmake")
 include(RustStaticLibrary)
+snow_configure_windows_architecture()
+snow_detect_rust_target(SNOW_SHOT_RUST_TARGET)
+
+if(WIN32)
+    if(SNOW_WINDOWS_ARCHITECTURE STREQUAL "arm64")
+        set(_snow_ocr_manifest_default
+            "${CMAKE_CURRENT_SOURCE_DIR}/packaging/snow-shot-ocr-asset-manifest-arm64.json")
+    else()
+        set(_snow_ocr_manifest_default
+            "${CMAKE_CURRENT_SOURCE_DIR}/packaging/snow-shot-ocr-asset-manifest.json")
+    endif()
+    set(SNOW_SHOT_OCR_ASSET_MANIFEST "${_snow_ocr_manifest_default}" CACHE FILEPATH
+        "Verified OCR asset manifest for the selected Windows architecture.")
+    set(_snow_ocr_artifacts_directory "${CMAKE_CURRENT_SOURCE_DIR}/../artifacts")
+    if(SNOW_WINDOWS_ARCHITECTURE STREQUAL "arm64")
+        string(APPEND _snow_ocr_artifacts_directory "/windows-arm64")
+    endif()
+    if(EXISTS "${SNOW_SHOT_OCR_ASSET_MANIFEST}")
+        file(READ "${SNOW_SHOT_OCR_ASSET_MANIFEST}" _snow_ocr_manifest)
+        string(JSON _snow_ocr_manifest_platform GET "${_snow_ocr_manifest}" runtime platform)
+        if(NOT _snow_ocr_manifest_platform STREQUAL SNOW_WINDOWS_PLATFORM)
+            message(FATAL_ERROR
+                "OCR asset manifest platform ${_snow_ocr_manifest_platform} disagrees with ${SNOW_WINDOWS_PLATFORM}")
+        endif()
+    else()
+        message(WARNING
+            "Verified ${SNOW_WINDOWS_PLATFORM} OCR assets are not prepared. Build the release OCR runtime, "
+            "generate its audited asset manifest, then configure SNOW_SHOT_OCR_ASSET_MANIFEST to stage managed OCR assets.")
+    endif()
+endif()
 
 set(CMAKE_AUTOUIC OFF)
 set(CMAKE_AUTOMOC ON)
@@ -214,14 +244,13 @@ if(NOT TARGET snow_draw_engine_qt_canvas)
 endif()
 
 if(WIN32)
+    snow_resolve_rust_libclang_directory(_snow_shot_libclang_dir)
     set(SNOW_SHOT_LIBCLANG_DIR
-        "${SNOW_LIBCLANG_BIN_DIR}"
+        "${_snow_shot_libclang_dir}"
         CACHE PATH
-        "Directory containing libclang.dll for ffmpeg-sys bindgen."
+        "Directory containing host-compatible libclang.dll for ffmpeg-sys bindgen."
+        FORCE
     )
-    if(EXISTS "${SNOW_SHOT_LIBCLANG_DIR}/libclang.dll")
-        set(ENV{LIBCLANG_PATH} "${SNOW_SHOT_LIBCLANG_DIR}")
-    endif()
 endif()
 
 if(NOT TARGET snow_capture_c)
@@ -1417,10 +1446,10 @@ if(APPLE)
     list(APPEND PROJECT_HEADERS include/snow_shot/platform/macos/applicationactivation.h)
 endif()
 
-if(MSVC)
+if(MSVC AND SNOW_WINDOWS_ARCHITECTURE STREQUAL "x64")
     set_source_files_properties(src/presentation/services/screenshotclipboarddibdecoder_avx2.cpp
         PROPERTIES COMPILE_OPTIONS "/arch:AVX2")
-elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86_64|AMD64|amd64|i.86)$")
+elseif(NOT MSVC AND CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86_64|AMD64|amd64|i.86)$")
     set_source_files_properties(src/presentation/services/screenshotclipboarddibdecoder_avx2.cpp
         PROPERTIES COMPILE_OPTIONS "-mavx2")
 endif()
@@ -1571,6 +1600,11 @@ if(SNOW_SHOT_BUILD_TESTS)
     set_tests_properties(snow-shot-translation-catalog-tests PROPERTIES LABELS "unit")
 
     if(WIN32)
+        add_test(NAME snow-shot-windows-architecture-tests
+            COMMAND "${Python3_EXECUTABLE}"
+                "${CMAKE_CURRENT_SOURCE_DIR}/../scripts/test-windows-architecture.py")
+        set_tests_properties(snow-shot-windows-architecture-tests PROPERTIES
+            LABELS "unit;windows" TIMEOUT 120)
         find_program(SNOW_SHOT_INSTALLER_TEST_POWERSHELL NAMES pwsh powershell REQUIRED)
         add_test(NAME snow-shot-installer-running-app-tests
             COMMAND "${SNOW_SHOT_INSTALLER_TEST_POWERSHELL}" -NoProfile -ExecutionPolicy Bypass
@@ -6544,6 +6578,21 @@ if(SNOW_SHOT_BUILD_TESTS)
     add_test(NAME snow-shot-ocr-assets-tests COMMAND snow-shot-ocr-assets-tests)
     set_tests_properties(snow-shot-ocr-assets-tests PROPERTIES TIMEOUT 60 LABELS "unit"
         ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
+    if(WIN32 AND SNOW_WINDOWS_ARCHITECTURE STREQUAL "x64")
+        add_executable(snow-shot-ocr-assets-arm64-contract-tests
+            tests/screenshot_ocr_assets_arm64_tests.cpp
+            tests/screenshot_ocr_assets_arm64_fixture.cpp
+            include/snow_shot/presentation/screenshotocrassets.h)
+        target_include_directories(snow-shot-ocr-assets-arm64-contract-tests PRIVATE
+            "${CMAKE_CURRENT_SOURCE_DIR}/include")
+        target_link_libraries(snow-shot-ocr-assets-arm64-contract-tests PRIVATE
+            Qt6::Core Qt6::Network MINIZIP::minizip-ng)
+        add_test(NAME snow-shot-ocr-assets-arm64-contract-tests
+            COMMAND snow-shot-ocr-assets-arm64-contract-tests)
+        set_tests_properties(snow-shot-ocr-assets-arm64-contract-tests PROPERTIES
+            TIMEOUT 60 LABELS "unit;windows"
+            ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
+    endif()
     add_test(NAME snow-shot-ocr-managed-runtime-tests
         COMMAND snow-shot-ocr-recognition-service-tests --managed-runtime-only)
     add_test(NAME snow-shot-ocr-managed-directml-runtime-tests
@@ -7691,6 +7740,8 @@ if(SNOW_SHOT_ENABLE_MCP)
 endif()
 
 if(WIN32 AND SNOW_SHOT_BUILD_BENCHMARKS)
+    snow_windows_rust_environment(_snow_shot_benchmark_environment "${SNOW_SHOT_RUST_TARGET}")
+    list(APPEND _snow_shot_benchmark_environment "LIBCLANG_PATH=${SNOW_SHOT_LIBCLANG_DIR}")
     add_executable(snow-shot-uia-qt-performance-fixture
         tests/screenshot_uia_qt_performance_fixture.cpp
     )
@@ -7698,10 +7749,10 @@ if(WIN32 AND SNOW_SHOT_BUILD_BENCHMARKS)
     target_compile_definitions(snow-shot-uia-qt-performance-fixture PRIVATE NOMINMAX)
 
     add_custom_target(snow-shot-uia-performance-benchmark
-        COMMAND "${CMAKE_COMMAND}" -E env
+        COMMAND "${CMAKE_COMMAND}" -E env ${_snow_shot_benchmark_environment}
             "CARGO_TARGET_DIR=${SNOW_RUST_CARGO_TARGET_DIR}"
             "${CARGO_EXECUTABLE}" build --locked --release
-            --target x86_64-pc-windows-msvc
+            --target ${SNOW_SHOT_RUST_TARGET}
             --package snow-ui-selector --example hit_bench --features windows-examples
         WORKING_DIRECTORY "${SNOW_SHOT_CAPTURE_CRATES_DIR}"
         USES_TERMINAL
@@ -7710,14 +7761,14 @@ if(WIN32 AND SNOW_SHOT_BUILD_BENCHMARKS)
 
     # A standalone selector archive avoids pulling the recording/FFmpeg umbrella
     # into this focused benchmark and matches the preserved baseline archive.
-    set(_uia_phased_lib "${CMAKE_BINARY_DIR}/selector-cargo/x86_64-pc-windows-msvc/release/snow_ui_selector_c.lib")
+    set(_uia_phased_lib "${CMAKE_BINARY_DIR}/selector-cargo/${SNOW_SHOT_RUST_TARGET}/release/snow_ui_selector_c.lib")
     file(GLOB_RECURSE _uia_selector_sources CONFIGURE_DEPENDS
         "${SNOW_SHOT_CAPTURE_CRATES_DIR}/crates/snow-ui-selector/src/*.rs"
         "${SNOW_SHOT_CAPTURE_CRATES_DIR}/crates/snow-ui-selector-c/src/*.rs")
     add_custom_command(OUTPUT "${_uia_phased_lib}"
-        COMMAND "${CMAKE_COMMAND}" -E env "CARGO_TARGET_DIR=${CMAKE_BINARY_DIR}/selector-cargo"
+        COMMAND "${CMAKE_COMMAND}" -E env ${_snow_shot_benchmark_environment} "CARGO_TARGET_DIR=${CMAKE_BINARY_DIR}/selector-cargo"
             "RUSTFLAGS=-C target-feature=+crt-static"
-            "${CARGO_EXECUTABLE}" build --locked --release --target x86_64-pc-windows-msvc
+            "${CARGO_EXECUTABLE}" build --locked --release --target ${SNOW_SHOT_RUST_TARGET}
             --manifest-path "${SNOW_SHOT_CAPTURE_CRATES_DIR}/Cargo.toml" -p snow-ui-selector-c
         DEPENDS ${_uia_selector_sources}
             "${SNOW_SHOT_CAPTURE_CRATES_DIR}/Cargo.lock"
@@ -7744,11 +7795,11 @@ if(WIN32 AND SNOW_SHOT_BUILD_BENCHMARKS)
 
     set(SNOW_SHOT_UIA_BASELINE_DIR "" CACHE PATH "Preserved pre-refactor selector sources and standalone Rust workspace for comparison.")
     if(SNOW_SHOT_UIA_BASELINE_DIR)
-        set(_uia_baseline_lib "${SNOW_SHOT_UIA_BASELINE_DIR}/target/x86_64-pc-windows-msvc/release/snow_ui_selector_c.lib")
+        set(_uia_baseline_lib "${SNOW_SHOT_UIA_BASELINE_DIR}/target/${SNOW_SHOT_RUST_TARGET}/release/snow_ui_selector_c.lib")
         add_custom_command(OUTPUT "${_uia_baseline_lib}"
-            COMMAND "${CMAKE_COMMAND}" -E env "CARGO_TARGET_DIR=${SNOW_SHOT_UIA_BASELINE_DIR}/target"
+            COMMAND "${CMAKE_COMMAND}" -E env ${_snow_shot_benchmark_environment} "CARGO_TARGET_DIR=${SNOW_SHOT_UIA_BASELINE_DIR}/target"
                 "RUSTFLAGS=-C target-feature=+crt-static"
-                "${CARGO_EXECUTABLE}" build --offline --release --target x86_64-pc-windows-msvc
+                "${CARGO_EXECUTABLE}" build --offline --release --target ${SNOW_SHOT_RUST_TARGET}
                 --manifest-path "${SNOW_SHOT_UIA_BASELINE_DIR}/Cargo.toml" -p snow-ui-selector-c
             VERBATIM)
         add_custom_target(snow-shot-selector-baseline-rust DEPENDS "${_uia_baseline_lib}")
@@ -7773,11 +7824,11 @@ if(WIN32 AND SNOW_SHOT_BUILD_BENCHMARKS)
     # Not registered with CTest: this generates final-container fixtures through
     # the streaming encoder used by direct recording and reports Release metrics.
     add_custom_target(snow-shot-direct-recording-performance-benchmark
-        COMMAND "${CMAKE_COMMAND}" -E env
+        COMMAND "${CMAKE_COMMAND}" -E env ${_snow_shot_benchmark_environment}
             "CARGO_TARGET_DIR=${SNOW_RUST_CARGO_TARGET_DIR}"
             "FFMPEG_DIR=${SNOW_FFMPEG_ROOT}"
             "${CARGO_EXECUTABLE}" build --locked --release
-            --target x86_64-pc-windows-msvc
+            --target ${SNOW_SHOT_RUST_TARGET}
             --package snow-recording-export --example direct_recording_benchmark
         WORKING_DIRECTORY "${SNOW_SHOT_CAPTURE_CRATES_DIR}"
         USES_TERMINAL
@@ -7785,21 +7836,21 @@ if(WIN32 AND SNOW_SHOT_BUILD_BENCHMARKS)
     )
 
     add_custom_target(snow-shot-recording-trim-performance-benchmark
-        COMMAND "${CMAKE_COMMAND}" -E env
+        COMMAND "${CMAKE_COMMAND}" -E env ${_snow_shot_benchmark_environment}
             "CARGO_TARGET_DIR=${SNOW_RUST_CARGO_TARGET_DIR}"
             "FFMPEG_DIR=${SNOW_FFMPEG_ROOT}"
             "${CARGO_EXECUTABLE}" build --locked --release
-            --target x86_64-pc-windows-msvc
+            --target ${SNOW_SHOT_RUST_TARGET}
             --package snow-recording-export --example recording_trim_benchmark
         WORKING_DIRECTORY "${SNOW_SHOT_CAPTURE_CRATES_DIR}"
         USES_TERMINAL VERBATIM)
 
     add_custom_target(snow-shot-recording-encoder-performance-benchmark
-        COMMAND "${CMAKE_COMMAND}" -E env
+        COMMAND "${CMAKE_COMMAND}" -E env ${_snow_shot_benchmark_environment}
             "CARGO_TARGET_DIR=${SNOW_RUST_CARGO_TARGET_DIR}"
             "FFMPEG_DIR=${SNOW_FFMPEG_ROOT}"
             "${CARGO_EXECUTABLE}" build --locked --release
-            --target x86_64-pc-windows-msvc
+            --target ${SNOW_SHOT_RUST_TARGET}
             --package snow-recording-export --example recording_encoder_benchmark
         WORKING_DIRECTORY "${SNOW_SHOT_CAPTURE_CRATES_DIR}"
         USES_TERMINAL
@@ -7807,12 +7858,12 @@ if(WIN32 AND SNOW_SHOT_BUILD_BENCHMARKS)
     )
 
     add_custom_target(snow-shot-gif-encoding-performance-benchmark
-        COMMAND "${CMAKE_COMMAND}" -E env
+        COMMAND "${CMAKE_COMMAND}" -E env ${_snow_shot_benchmark_environment}
             "CARGO_TARGET_DIR=${SNOW_RUST_CARGO_TARGET_DIR}"
             "FFMPEG_DIR=${SNOW_FFMPEG_ROOT}"
             "SNOW_GIF_BENCH_OUTPUT=${CMAKE_BINARY_DIR}/gif-encoding-performance"
             "${CARGO_EXECUTABLE}" test --locked --release
-            --target x86_64-pc-windows-msvc
+            --target ${SNOW_SHOT_RUST_TARGET}
             --package snow-recording-export --test gif_encoding
             gif_encoding_release_comparison -- --ignored --exact --nocapture
         WORKING_DIRECTORY "${SNOW_SHOT_CAPTURE_CRATES_DIR}"
@@ -7821,18 +7872,18 @@ if(WIN32 AND SNOW_SHOT_BUILD_BENCHMARKS)
     )
 
     add_custom_target(snow-shot-recording-effects-performance-benchmark
-        COMMAND "${CMAKE_COMMAND}" -E env
+        COMMAND "${CMAKE_COMMAND}" -E env ${_snow_shot_benchmark_environment}
             "CARGO_TARGET_DIR=${SNOW_RUST_CARGO_TARGET_DIR}"
             "${CARGO_EXECUTABLE}" build --locked --release
-            --target x86_64-pc-windows-msvc
+            --target ${SNOW_SHOT_RUST_TARGET}
             --package snow-recording-effects --example effects_benchmark
         WORKING_DIRECTORY "${SNOW_SHOT_CAPTURE_CRATES_DIR}"
         USES_TERMINAL VERBATIM)
     add_custom_target(snow-shot-recording-postprocessing-performance-benchmark
-        COMMAND "${CMAKE_COMMAND}" -E env
+        COMMAND "${CMAKE_COMMAND}" -E env ${_snow_shot_benchmark_environment}
             "CARGO_TARGET_DIR=${SNOW_RUST_CARGO_TARGET_DIR}"
             "${CARGO_EXECUTABLE}" build --locked --release
-            --target x86_64-pc-windows-msvc
+            --target ${SNOW_SHOT_RUST_TARGET}
             --package snow-recording-effects --example postprocessing_benchmark
         WORKING_DIRECTORY "${SNOW_SHOT_CAPTURE_CRATES_DIR}"
         USES_TERMINAL VERBATIM)
@@ -7850,7 +7901,7 @@ if(WIN32 AND SNOW_SHOT_BUILD_BENCHMARKS)
             ENVIRONMENT "QT_QPA_PLATFORM=windows"
             ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:${SNOW_FFMPEG_ROOT}/bin")
         add_test(NAME snow-shot-recording-effects-rasterization-benchmark
-            COMMAND "${SNOW_RUST_CARGO_TARGET_DIR}/x86_64-pc-windows-msvc/release/examples/effects_benchmark.exe")
+            COMMAND "${SNOW_RUST_CARGO_TARGET_DIR}/${SNOW_SHOT_RUST_TARGET}/release/examples/effects_benchmark.exe")
         set_tests_properties(snow-shot-recording-effects-rasterization-benchmark PROPERTIES
             LABELS "benchmark;windows" RUN_SERIAL TRUE TIMEOUT 90)
     endif()
@@ -7880,11 +7931,11 @@ if(WIN32 AND SNOW_SHOT_BUILD_BENCHMARKS)
     endif()
 
     add_custom_target(snow-shot-keyboard-recording-performance-benchmark
-        COMMAND "${CMAKE_COMMAND}" -E env
+        COMMAND "${CMAKE_COMMAND}" -E env ${_snow_shot_benchmark_environment}
             "CARGO_TARGET_DIR=${SNOW_RUST_CARGO_TARGET_DIR}"
             "FFMPEG_DIR=${SNOW_FFMPEG_ROOT}"
             "${CARGO_EXECUTABLE}" build --locked --release
-            --target x86_64-pc-windows-msvc
+            --target ${SNOW_SHOT_RUST_TARGET}
             --package snow-recording-runtime --example keyboard_overlay_benchmark
         WORKING_DIRECTORY "${SNOW_SHOT_CAPTURE_CRATES_DIR}"
         USES_TERMINAL
@@ -7897,11 +7948,11 @@ if(WIN32 AND SNOW_SHOT_BUILD_BENCHMARKS)
     # groups are compile-time cargo features so each is measured without
     # the instrumentation overhead of the others.
     add_custom_target(snow-shot-realtime-recording-performance-benchmark
-        COMMAND "${CMAKE_COMMAND}" -E env
+        COMMAND "${CMAKE_COMMAND}" -E env ${_snow_shot_benchmark_environment}
             "CARGO_TARGET_DIR=${SNOW_RUST_CARGO_TARGET_DIR}"
             "FFMPEG_DIR=${SNOW_FFMPEG_ROOT}"
             "${CARGO_EXECUTABLE}" build --locked --release
-            --target x86_64-pc-windows-msvc
+            --target ${SNOW_SHOT_RUST_TARGET}
             --package snow-recording-runtime
             --features bench-stage-timing,bench-compositor-timing,bench-pipeline-timing
             --example realtime_recording_benchmark
@@ -7912,7 +7963,7 @@ if(WIN32 AND SNOW_SHOT_BUILD_BENCHMARKS)
     # Seizes the primary monitor and injects input; interactive label keeps it
     # out of default test presets.
     add_test(NAME snow-shot-realtime-recording-performance-benchmark
-        COMMAND "${SNOW_RUST_CARGO_TARGET_DIR}/x86_64-pc-windows-msvc/release/examples/realtime_recording_benchmark.exe"
+        COMMAND "${SNOW_RUST_CARGO_TARGET_DIR}/${SNOW_SHOT_RUST_TARGET}/release/examples/realtime_recording_benchmark.exe"
             --duration-seconds 4 --warmup-seconds 1)
     set_tests_properties(snow-shot-realtime-recording-performance-benchmark PROPERTIES
         LABELS "benchmark;interactive;windows" RUN_SERIAL TRUE TIMEOUT 300
@@ -8021,11 +8072,12 @@ foreach(_ocr_process_host_target IN ITEMS snow_shot snow-shot-ocr-recognition-se
         # builds must stage the same payload explicitly, otherwise the managed
         # asset pipeline finds no manifest and rejects every OCR request with
         # "Text recognition components could not be prepared".
-        if(WIN32)
+        if(WIN32 AND EXISTS "${SNOW_SHOT_OCR_ASSET_MANIFEST}")
             add_custom_command(TARGET ${_ocr_process_host_target} POST_BUILD
                 COMMAND "${CMAKE_COMMAND}"
-                    -D "SNOW_OCR_ASSET_MANIFEST=${CMAKE_CURRENT_SOURCE_DIR}/packaging/snow-shot-ocr-asset-manifest.json"
-                    -D "SNOW_OCR_ARTIFACTS_DIR=${CMAKE_CURRENT_SOURCE_DIR}/../artifacts"
+                    -D "SNOW_OCR_ASSET_MANIFEST=${SNOW_SHOT_OCR_ASSET_MANIFEST}"
+                    -D "SNOW_OCR_PLATFORM=${SNOW_WINDOWS_PLATFORM}"
+                    -D "SNOW_OCR_ARTIFACTS_DIR=${_snow_ocr_artifacts_directory}"
                     -D "SNOW_OCR_DESTINATION=$<TARGET_FILE_DIR:${_ocr_process_host_target}>/assets/ocr"
                     -P "${CMAKE_CURRENT_SOURCE_DIR}/../cmake/StageSnowShotOcrAssets.cmake"
                 COMMENT "Staging verified OCR assets for ${_ocr_process_host_target}"
@@ -8111,25 +8163,27 @@ if(WIN32)
         CACHE PATH
         "Directory containing the FFmpeg runtime DLLs used by snow-screen-recorder."
     )
+    if(VCPKG_HOST_TRIPLET)
+        set(_snow_pkgconf_host_triplet "${VCPKG_HOST_TRIPLET}")
+    else()
+        snow_windows_normalize_architecture(_snow_pkgconf_host_arch "${CMAKE_HOST_SYSTEM_PROCESSOR}")
+        set(_snow_pkgconf_host_triplet "${_snow_pkgconf_host_arch}-windows")
+    endif()
     find_program(PKG_CONFIG_EXECUTABLE
         NAMES pkgconf pkg-config
-        HINTS "${VCPKG_INSTALLED_DIR}/x64-windows/tools/pkgconf"
+        HINTS "${VCPKG_INSTALLED_DIR}/${_snow_pkgconf_host_triplet}/tools/pkgconf"
         NO_DEFAULT_PATH
         REQUIRED
     )
     set(_SNOW_SHOT_SAVED_PKG_CONFIG_PATH "$ENV{PKG_CONFIG_PATH}")
     set(ENV{PKG_CONFIG_PATH} "${SNOW_FFMPEG_ROOT}/lib/pkgconfig")
     find_package(PkgConfig REQUIRED)
-    pkg_check_modules(SNOW_SHOT_FFMPEG REQUIRED IMPORTED_TARGET GLOBAL
-        libavformat
-        libavcodec
-        libswresample
-        libswscale
-        libavutil
-        # FFmpeg's generated static .pc files omit this private QSV dependency.
-        # Keep it on the shared imported target for every Rust FFI consumer.
-        vpl
-    )
+    set(_snow_ffmpeg_modules libavformat libavcodec libswresample libswscale libavutil)
+    if(SNOW_WINDOWS_ARCHITECTURE STREQUAL "x64")
+        # FFmpeg's static .pc files omit this private QSV dependency.
+        list(APPEND _snow_ffmpeg_modules vpl)
+    endif()
+    pkg_check_modules(SNOW_SHOT_FFMPEG REQUIRED IMPORTED_TARGET GLOBAL ${_snow_ffmpeg_modules})
     set(ENV{PKG_CONFIG_PATH} "${_SNOW_SHOT_SAVED_PKG_CONFIG_PATH}")
     unset(_SNOW_SHOT_SAVED_PKG_CONFIG_PATH)
     # Canvas-only consumers also reach recording symbols in the bundled archive.

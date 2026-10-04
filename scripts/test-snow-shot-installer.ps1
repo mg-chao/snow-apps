@@ -1,5 +1,5 @@
 [CmdletBinding()]
-param([switch]$ReproduceOnly)
+param([switch]$ReproduceOnly, [ValidateSet('x64', 'arm64')][string]$Architecture = 'x64')
 
 $ErrorActionPreference = "Stop"
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
@@ -105,7 +105,8 @@ function Compile-RestartInstaller {
 }
 
 . (Join-Path $PSScriptRoot "snow-build-environment.ps1")
-$null = Set-SnowBuildEnvironment -Preset "windows-msvc-debug"
+if ((Get-SnowWindowsHostArchitecture) -cne $Architecture) { throw 'Installer behavior tests require the matching native Windows host.' }
+$null = Add-SnowMsvcToolsToPath -Architecture $Architecture
 & cl /nologo /std:c++20 /W4 /WX /O2 /MT /DUNICODE /D_UNICODE "/Fe:$fixture" "/Fo:$testRoot\fixture.obj" `
     "$repoRoot\snow_shot\tests\installer_process_fixture.cpp" /link /SUBSYSTEM:WINDOWS user32.lib
 if ($LASTEXITCODE -ne 0) { throw "Fixture compilation failed." }
@@ -367,7 +368,7 @@ if (-not $ReproduceOnly) {
     }
 
     $cpackBuild = Join-Path $testRoot "cpack"
-    & cmake -S "$repoRoot\snow_shot\tests\installer_packaging" -B $cpackBuild
+    & cmake -S "$repoRoot\snow_shot\tests\installer_packaging" -B $cpackBuild "-DSNOW_WINDOWS_ARCHITECTURE=$Architecture"
     if ($LASTEXITCODE -ne 0) { throw "Installer integration configuration failed." }
     & cpack --config "$cpackBuild\CPackConfig.cmake" -G NSIS -B $cpackBuild
     if ($LASTEXITCODE -ne 0) { throw "CPack installer compilation failed." }

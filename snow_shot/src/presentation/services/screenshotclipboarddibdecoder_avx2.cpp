@@ -1,6 +1,6 @@
 #include <cstdint>
 
-#if defined(_MSC_VER)
+#if defined(_MSC_VER) && (defined(_M_X64) || defined(_M_IX86))
 #include <intrin.h>
 #include <immintrin.h>
 #elif defined(__AVX2__)

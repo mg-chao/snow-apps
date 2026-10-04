@@ -1,5 +1,7 @@
 LangString SnowShotClosePrompt 1033 "${SNOW_SHOT_INSTALLER_PRODUCT_NAME} is running. Close it to continue setup? Unsaved screenshots and recordings may be lost."
 LangString SnowShotCloseFailed 1033 "Setup could not close ${SNOW_SHOT_INSTALLER_PRODUCT_NAME} or check whether it is running. Close ${SNOW_SHOT_INSTALLER_PRODUCT_NAME} manually, then run setup again."
+LangString SnowShotArm64Required 1033 "This installer requires Windows 11 or later on ARM64."
+LangString SnowShot64BitRequired 1033 "This installer requires 64-bit Windows."
 LangString SnowShotLanguageTitle 1033 "${SNOW_SHOT_INSTALLER_PRODUCT_NAME} Setup Language"
 LangString SnowShotLanguagePrompt 1033 "Please select a language."
 LangString SnowShotUpgradePrompt 1033 "$1 is already installed. $\n$\nDo you want to uninstall the old version before installing the new one?"

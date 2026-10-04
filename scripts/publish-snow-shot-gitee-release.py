@@ -317,7 +317,7 @@ def prepare_homebrew(release: dict, assets: dict[str, Path], output: Path) -> No
 
 
 def verify_local_release(release: dict, assets: dict[str, Path], auditor: Path,
-                         mini_auditor: Path | None = None) -> None:
+                         mini_auditor: Path | None = None, *, require_complete: bool = False) -> None:
     tag = release["tag"]
     version = tag[1:-len("_snow-shot")]
     paired = any(name.startswith('snow-shot-mini-') or name == 'latest-version-mini.json' for name in assets)
@@ -326,9 +326,21 @@ def verify_local_release(release: dict, assets: dict[str, Path], auditor: Path,
         if mini_auditor is None or 'latest-version-mini.json' not in assets:
             raise ValueError('Paired release requires signed Mini metadata and its compiled auditor')
         editions.append(('snow-shot-mini', 'latest-version-mini.json', mini_auditor))
-    for product, feed, helper in editions:
+    architectures = ['x64']
+    if any('windows-arm64' in name for name in assets):
+        architectures.append('arm64')
+    if require_complete and (not paired or architectures != ['x64', 'arm64']):
+        raise ValueError('New Windows releases require both editions and both x64/ARM64 architectures')
+    editions = [(product, feed if arch == 'x64' else feed[:-5] + '-windows-arm64.json', helper, arch)
+                for arch in architectures for product, feed, helper in editions]
+    for product, feed, helper, architecture in editions:
+        if feed not in assets:
+            raise ValueError(f'ARM64 release requires signed metadata: {feed}')
         envelope = json.loads(assets[feed].read_text(encoding='utf-8-sig'))
         payload = json.loads(base64.b64decode(envelope['payload'], validate=True))
+        platform = 'windows-' + architecture
+        if payload.get('platform', 'windows-x64') != platform:
+            raise ValueError('Signed metadata platform differs from its feed')
         if payload.get('version') != version:
             raise ValueError('Local signed metadata and release tag versions differ')
         if product == 'snow-shot-mini' and payload.get('product') != product:
@@ -342,14 +354,33 @@ def verify_local_release(release: dict, assets: dict[str, Path], auditor: Path,
                              else 'Signed Mini metadata must describe three Windows packages')
         for package in packages:
             suffix = '.exe' if package['kind'] == 'installer' else ('-update.zip' if package['kind'] == 'update' else '.zip')
-            name = f"{product}-{version}-windows-x64-{package['variant']}{suffix}"
-            if package['path'] != f"setup/{product}_windows-x64-{package['variant']}{suffix}":
+            name = f"{product}-{version}-{platform}-{package['variant']}{suffix}"
+            if package['path'] != f"setup/{product}_{platform}-{package['variant']}{suffix}":
                 raise ValueError('Unexpected signed package path')
             if name not in assets or assets[name].stat().st_size != package['size'] or sha256(assets[name]) != package['sha256']:
                 raise ValueError(f'Local Windows package differs from signed metadata: {name}')
         if not helper.is_file():
             raise ValueError('The compiled release auditor is required')
-        run(str(helper), '--verify-release', '--manifest', str(assets[feed]))
+        run(str(helper), '--verify-release', '--platform', platform, '--manifest', str(assets[feed]))
+    # Native execution evidence must bind the final installer/archive bytes.
+    # Historical x64-only releases without this new evidence remain verifiable.
+    proofs = release.get('nativeValidation', [])
+    if 'arm64' in architectures and not proofs:
+        raise ValueError('ARM64 publication requires native validation evidence')
+    if proofs:
+        for product, feed, helper, architecture in editions:
+            platform = 'windows-' + architecture
+            payload = json.loads(base64.b64decode(json.loads(assets[feed].read_text(encoding='utf-8-sig'))['payload']))
+            for package in payload['packages']:
+                suffix = '.exe' if package['kind'] == 'installer' else '-update.zip' if package['kind'] == 'update' else '.zip'
+                name = f"{product}-{version}-{platform}-{package['variant']}{suffix}"
+                matches = [item for proof in proofs
+                           if proof.get('Passed') is True and proof.get('Platform') == platform
+                           and proof.get('HostPlatform') == platform
+                           for item in proof.get('Artifacts', []) if item.get('Name') == name
+                           and item.get('Bytes') == package['size'] and item.get('Sha256') == package['sha256']]
+                if not matches:
+                    raise ValueError(f'Native validation does not match published bytes: {name}')
     for name, path in assets.items():
         if name.endswith(".dmg"):
             checksum = assets.get(name + ".sha256")
@@ -404,7 +435,7 @@ def publish(release: dict, assets: dict[str, Path], token: str, username: str,
             raise ValueError("Published Gitee release is missing local assets")
         descriptors = {item["name"]: item for item in release["assets"]}
         for name in sorted(set(assets) - set(names),
-                           key=lambda item: (item in ("latest-version.json", "latest-version-mini.json"), item)):
+                           key=lambda item: (item.startswith('latest-version') and item.endswith('.json'), item)):
             if verify_only:
                 raise ValueError("Verification must not upload files")
             check_local_asset(descriptors[name], assets[name])
@@ -453,7 +484,8 @@ if __name__ == "__main__":
                 raise ValueError("--manifest and --auditor are required")
             release = json.loads(arguments.manifest.read_text(encoding="utf-8-sig"))
             assets = local_assets(release)
-            verify_local_release(release, assets, arguments.auditor, arguments.mini_auditor)
+            verify_local_release(release, assets, arguments.auditor, arguments.mini_auditor,
+                                 require_complete=not arguments.verify_only)
             if arguments.prepare_homebrew:
                 prepare_homebrew(release, assets, arguments.manifest.parent / "homebrew-local")
                 arguments.manifest.write_text(json.dumps(release, ensure_ascii=False, indent=2) + "\n",

@@ -5,7 +5,7 @@
 
 #include <csetjmp>
 #include <cstdio>
-#include <jpeglib.h>
+#include "jpeg_headers.h"
 #include <turbojpeg.h>
 
 #include <algorithm>
@@ -303,6 +303,7 @@ Result<int> turbo_pixel_format(const PixelFormat& format) {
 }
 
 constexpr std::size_t kJpegDestinationBytes = std::size_t{256} << 10U;
+using JpegBoolean = decltype(jpeg_compress_struct::raw_data_in);
 
 struct JpegErrorManager final {
     jpeg_error_mgr base{};
@@ -343,7 +344,7 @@ void jpeg_init_destination(j_compress_ptr compressor) {
     destination->base.free_in_buffer = destination->buffer.size();
 }
 
-boolean jpeg_empty_output_buffer(j_compress_ptr compressor) {
+JpegBoolean jpeg_empty_output_buffer(j_compress_ptr compressor) {
     auto* destination = reinterpret_cast<JpegDestinationManager*>(compressor->dest);
     Status failure;
     bool failed = false;

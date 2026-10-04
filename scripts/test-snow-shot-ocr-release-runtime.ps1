@@ -1,10 +1,10 @@
 [CmdletBinding()]
-param()
+param([ValidateSet('x64', 'arm64')][string]$Architecture = 'x64')
 $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'snow-shot-ocr-release-runtime.ps1')
 $testRoot = Join-Path (Split-Path -Parent $PSScriptRoot) "build/ocr-runtime-import-tests-$([guid]::NewGuid().ToString('N'))"
 $null = New-Item -ItemType Directory -Path $testRoot
-$names = @('snow-ocr-process-1.0.5-windows-x64.exe', 'DirectML.dll', 'runtime-manifest.json')
+$names = @("snow-ocr-process-1.0.5-windows-$Architecture.exe", 'DirectML.dll', 'runtime-manifest.json')
 $payload = [Text.Encoding]::UTF8.GetBytes('immutable fixture')
 $payloadHash = [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData($payload)).ToLowerInvariant()
 foreach ($case in @('valid', 'archive-hash', 'archive-size', 'entry-hash', 'entry-size', 'duplicate', 'traversal', 'case-collision', 'symlink', 'directory', 'missing', 'nonempty')) {
@@ -32,7 +32,7 @@ foreach ($case in @('valid', 'archive-hash', 'archive-size', 'entry-hash', 'entr
         }
     } finally { $archive.Dispose(); $stream.Dispose() }
     $runtime = [pscustomobject]@{
-        version = '1.0.5'; platform = 'windows-x64'
+        version = '1.0.5'; platform = "windows-$Architecture"
         archive = [pscustomobject]@{ size = (Get-Item -LiteralPath $archivePath).Length; sha256 = (Get-FileHash -LiteralPath $archivePath).Hash.ToLowerInvariant() }
         files = @($names | ForEach-Object { [pscustomobject]@{ name = $_; size = $payload.Length; sha256 = $payloadHash } })
     }

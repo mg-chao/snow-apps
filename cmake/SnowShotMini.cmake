@@ -228,13 +228,15 @@ if(WIN32)
     if(NOT SNOW_SHOT_IMAGE_CODEC_BACKEND_STATIC)
         _snow_shot_stage_image_runtime(snow_shot_mini)
     endif()
-    add_custom_command(TARGET snow_shot_mini POST_BUILD
-        COMMAND "${CMAKE_COMMAND}" -E make_directory "$<TARGET_FILE_DIR:snow_shot_mini>/assets/ocr"
-        COMMAND "${CMAKE_COMMAND}" -E copy_if_different
-            "${CMAKE_CURRENT_SOURCE_DIR}/packaging/snow-shot-ocr-asset-manifest.json"
-            "$<TARGET_FILE_DIR:snow_shot_mini>/assets/ocr/asset-manifest.json" VERBATIM)
-    install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/packaging/snow-shot-ocr-asset-manifest.json"
-        DESTINATION "${_mini_bindir}/assets/ocr" RENAME asset-manifest.json COMPONENT SnowShotMini)
+    if(EXISTS "${SNOW_SHOT_OCR_ASSET_MANIFEST}")
+        add_custom_command(TARGET snow_shot_mini POST_BUILD
+            COMMAND "${CMAKE_COMMAND}" -E make_directory "$<TARGET_FILE_DIR:snow_shot_mini>/assets/ocr"
+            COMMAND "${CMAKE_COMMAND}" -E copy_if_different
+                "${SNOW_SHOT_OCR_ASSET_MANIFEST}"
+                "$<TARGET_FILE_DIR:snow_shot_mini>/assets/ocr/asset-manifest.json" VERBATIM)
+        install(FILES "${SNOW_SHOT_OCR_ASSET_MANIFEST}"
+            DESTINATION "${_mini_bindir}/assets/ocr" RENAME asset-manifest.json COMPONENT SnowShotMini)
+    endif()
     if(NOT SNOW_SHOT_RELEASE_STATIC)
         add_custom_command(TARGET snow_shot_mini POST_BUILD
             COMMAND "${CMAKE_COMMAND}" -E copy_if_different $<TARGET_RUNTIME_DLLS:snow_shot_mini>

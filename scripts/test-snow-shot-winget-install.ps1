@@ -6,6 +6,8 @@ param(
     [string]$Winget = 'winget.exe',
     [switch]$AllowUnrecognizedRelease,
     [ValidateSet('Full', 'Mini')][string]$Edition = 'Full',
+    [ValidateSet('x64', 'arm64')][string]$Architecture = 'x64',
+    [switch]$SkipUpgrade,
     # Historical release fixtures refuse; newly built installers close and restart.
     [ValidateSet('Refuse', 'Restart')][string]$RunningAppBehavior = 'Refuse'
 )
@@ -16,11 +18,13 @@ if ($env:RUNNER_ENVIRONMENT -ne 'github-hosted' -or $env:RUNNER_OS -ne 'Windows'
     throw 'Real installation tests require a disposable GitHub-hosted Windows runner.'
 }
 . (Join-Path $PSScriptRoot 'snow-shot-winget.ps1')
-$product = Get-SnowShotEdition $Edition
+$hostArchitecture = [Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString().ToLowerInvariant()
+if ($hostArchitecture -cne $Architecture) { throw 'WinGet lifecycle validation must run on the matching native Windows host.' }
+$product = Get-SnowShotEdition $Edition $Architecture
 $installerVariant = if ($Edition -eq 'Mini') { 'online' } else { 'offline' }
 $version = Get-SnowShotWingetVersion $Tag
-$previousVersion = Get-SnowShotWingetVersion $PreviousTag
-if ($version -eq $previousVersion) { throw 'The upgrade fixture requires two different releases.' }
+$previousVersion = if ($SkipUpgrade) { $version } else { Get-SnowShotWingetVersion $PreviousTag }
+if (-not $SkipUpgrade -and $version -eq $previousVersion) { throw 'The upgrade fixture requires two different releases.' }
 $registryPaths = @(
     "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\$($product.Registry)",
     "HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\$($product.Registry)"
@@ -95,8 +99,10 @@ function Invoke-WingetBounded([string[]]$Arguments) {
             if ($manifestIndex -lt 0) { throw 'Installer consent requires a validated local manifest.' }
             $manifest = Get-Content -LiteralPath (Join-Path $Arguments[$manifestIndex + 1] "$($product.Winget).installer.yaml") -Raw
             $packageVersion = [regex]::Match($manifest, "(?m)^PackageVersion: '([^']+)'$").Groups[1].Value
-            $expectedHash = [regex]::Match($manifest, '(?m)^    InstallerSha256: ([A-Fa-f0-9]{64})$').Groups[1].Value
-            $fileName = "$($product.Product)-$packageVersion-windows-x64-$installerVariant.exe"
+            $nativeEntry = [regex]::Match($manifest, "(?ms)^  - Architecture: $Architecture\r?\n(?<entry>.*?)(?=^  - Architecture: |\z)").Groups['entry'].Value
+            $expectedHash = [regex]::Match($nativeEntry, '(?m)^    InstallerSha256: ([A-Fa-f0-9]{64})$').Groups[1].Value
+            if (-not $expectedHash) { throw 'The manifest has no matching native installer.' }
+            $fileName = "$($product.Product)-$packageVersion-windows-$Architecture-$installerVariant.exe"
             $cachedInstaller = Join-Path $env:TEMP "WinGet/$($product.Winget).$packageVersion/$fileName"
             if ((Get-FileHash -LiteralPath $cachedInstaller -Algorithm SHA256).Hash -ine $expectedHash) {
                 throw 'Refusing consent: the cached installer hash does not match the manifest.'
@@ -153,7 +159,11 @@ function Assert-InstalledVersion([string]$Expected) {
 }
 try {
     $current = New-SnowShotWingetManifest $Tag $output $Edition
-    $previous = New-SnowShotWingetManifest $PreviousTag $output $Edition
+    $previous = if ($SkipUpgrade) { $current } else { New-SnowShotWingetManifest $PreviousTag $output $Edition }
+    foreach ($directory in @($current, $previous)) {
+        $installerManifest = Get-Content -Raw -LiteralPath (Join-Path $directory "$($product.Winget).installer.yaml")
+        if ($installerManifest -notmatch "(?m)^  - Architecture: $Architecture$") { throw 'The release does not provide a native installer.' }
+    }
     Invoke-WingetChecked @('validate', '--manifest', $current)
     Invoke-WingetChecked @('validate', '--manifest', $previous)
     if ($AllowUnrecognizedRelease) {
@@ -174,6 +184,11 @@ try {
     Assert-InstalledVersion $previousVersion
     $executable = Join-Path $installDirectory "bin/$($product.Executable).exe"
     if (-not (Test-Path -LiteralPath $executable)) { throw 'Custom installation directory was ignored.' }
+    $pe = [IO.File]::ReadAllBytes($executable)
+    $peOffset = [BitConverter]::ToInt32($pe, 0x3c)
+    $machine = [BitConverter]::ToUInt16($pe, $peOffset + 4)
+    $expectedMachine = if ($Architecture -eq 'arm64') { 0xaa64 } else { 0x8664 }
+    if ($machine -ne $expectedMachine) { throw 'WinGet selected a different executable architecture.' }
     if (Get-Process $product.Executable -ErrorAction SilentlyContinue) { throw 'Silent installation launched Snow Shot.' }
     $userData = Join-Path $env:APPDATA "$($product.Registry)/$($product.Executable)"
     $null = New-Item -ItemType Directory -Force -Path $userData
@@ -181,6 +196,7 @@ try {
     $sentinelValue = [guid]::NewGuid().ToString('N')
     [IO.File]::WriteAllText($sentinel, $sentinelValue)
 
+    if (-not $SkipUpgrade) {
     $app = Start-Process -FilePath $executable -WindowStyle Hidden -PassThru
     Start-Sleep -Seconds 5
     if ($app.HasExited) { throw 'The installed app did not remain running for the upgrade test.' }
@@ -215,9 +231,10 @@ try {
         Stop-Process -Id $app.Id
         $app.WaitForExit()
     }
+    }
     $app = $null
 
-    if ($RunningAppBehavior -eq 'Refuse') {
+    if (-not $SkipUpgrade -and $RunningAppBehavior -eq 'Refuse') {
         Invoke-WingetChecked @('upgrade', '--manifest', $current, '--silent',
             '--accept-package-agreements', '--accept-source-agreements')
     }
@@ -248,7 +265,17 @@ try {
         throw 'Uninstall left the executable or registration behind.'
     }
     if ([IO.File]::ReadAllText($sentinel) -cne $sentinelValue) { throw 'Uninstall changed user data.' }
-    Write-Output "PASS: real WinGet install, detection, running-app behavior ($RunningAppBehavior), upgrade, uninstall, and data preservation."
+    if ($registration.PSObject.Properties['QuietUninstallString']) {
+    Invoke-WingetChecked @('install', '--manifest', $current, '--silent', '--location',
+        $installDirectory, '--accept-package-agreements', '--accept-source-agreements')
+    Assert-InstalledVersion $version
+    if ([IO.File]::ReadAllText($sentinel) -cne $sentinelValue) { throw 'Reinstall changed user data.' }
+    Invoke-WingetChecked @('uninstall', '--id', $product.Winget, '--exact', '--silent')
+    $removalDeadline = [DateTime]::UtcNow.AddSeconds(30)
+    while ((Test-Path -LiteralPath $executable) -and [DateTime]::UtcNow -lt $removalDeadline) { Start-Sleep -Milliseconds 100 }
+    if ((Test-Path -LiteralPath $executable) -or [IO.File]::ReadAllText($sentinel) -cne $sentinelValue) { throw 'Reinstalled package removal failed to preserve user data.' }
+    }
+    Write-Output "PASS: real native $Architecture WinGet install, detection, upgrade when requested, uninstall, reinstall, and data preservation."
 } finally {
     if ($app -and -not $app.HasExited) { Stop-Process -Id $app.Id }
     if ($savedReputationPolicy) {

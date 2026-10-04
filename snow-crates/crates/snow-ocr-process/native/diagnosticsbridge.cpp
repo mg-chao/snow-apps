@@ -23,6 +23,7 @@
 #include "client/crashpad_info.h"
 #include "client/simple_string_dictionary.h"
 #include "util/misc/capture_context.h"
+#include "util/win/context_wrappers.h"
 
 namespace {
 crashpad::CrashpadClient client;
@@ -300,7 +301,7 @@ void snow_diag_panic(const unsigned char* location, size_t length) {
     EXCEPTION_RECORD exception{};
     exception.ExceptionCode = 0xE0534E4F;
     exception.ExceptionFlags = EXCEPTION_NONCONTINUABLE;
-    exception.ExceptionAddress = reinterpret_cast<void*>(context.Rip);
+    exception.ExceptionAddress = crashpad::ProgramCounterFromCONTEXT(&context);
     EXCEPTION_POINTERS pointers{&exception, &context};
     crashpad::CrashpadClient::DumpAndCrash(&pointers);
 #else

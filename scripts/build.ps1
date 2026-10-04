@@ -5,7 +5,11 @@ param(
         "windows-msvc-performance",
         "windows-clang-portability",
         "snow-shot-msvc-release",
-        "snow-shot-msvc-fast"
+        "snow-shot-msvc-fast",
+        "snow-shot-msvc-arm64-debug",
+        "snow-shot-msvc-arm64-performance",
+        "snow-shot-msvc-arm64-release",
+        "snow-shot-msvc-arm64-fast"
     )]
     [string]$Preset = "windows-msvc-debug",
     [string]$Target = "",
@@ -15,6 +19,7 @@ param(
 
 $ErrorActionPreference = "Stop"
 . (Join-Path $PSScriptRoot "snow-build-environment.ps1")
+$windowsTarget = Get-SnowWindowsTarget -Preset $Preset
 Set-SnowBuildEnvironment -Preset $Preset | Out-Null
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 $buildDirectory = Join-Path $repoRoot "build/$Preset"
@@ -29,13 +34,14 @@ if ($Clean -and (Test-Path -LiteralPath $buildDirectory)) {
 }
 
 if (-not $SkipBootstrap) {
-    $vcpkgVariant = if ($Preset -in @("snow-shot-msvc-release", "snow-shot-msvc-fast")) {
+    $vcpkgVariant = if ($windowsTarget.IsStatic) {
         "Static"
     }
     else {
         "Dynamic"
     }
-    & (Join-Path $PSScriptRoot "bootstrap.ps1") -SkipDependencyInstall -VcpkgVariants $vcpkgVariant
+    & (Join-Path $PSScriptRoot "bootstrap.ps1") -SkipDependencyInstall -VcpkgVariants $vcpkgVariant `
+        -Architecture $windowsTarget.Architecture -Preset $Preset
     if ($LASTEXITCODE -ne 0) {
         throw "Build environment bootstrap failed."
     }
@@ -53,7 +59,7 @@ try {
     if (-not [string]::IsNullOrWhiteSpace($Target)) {
         $buildArguments += @("--target", $Target)
     }
-    elseif ($Preset -in @('snow-shot-msvc-release', 'snow-shot-msvc-fast') -and
+    elseif ($windowsTarget.IsStatic -and
         -not (Select-String -LiteralPath (Join-Path $buildDirectory 'CMakeCache.txt') `
             -Pattern '^SNOW_APPS_BUILD_SNOW_SHOT_MINI:BOOL=(ON|TRUE|1)$' -Quiet)) {
         $buildArguments += @('--target', 'snow_shot')

@@ -1,3 +1,4 @@
+#requires -Version 7.2
 param(
     [string]$QtBin = "",
     [string]$OutputDirectory = "",
@@ -7,21 +8,25 @@ param(
     [int]$CycleSweeps = 12,
     [int]$ColdSamples = 8,
     [int]$CountdownSeconds = 3,
-    [switch]$ListScenarios
+    [switch]$ListScenarios,
+    [ValidateSet("x64", "arm64")][string]$Architecture = "x64"
 )
 
 # One-command runner for the screenshot toolbar display benchmark
 # (creation -> first displayed frame, and per-drawing-tool sub-toolbar display).
-# Configures the windows-msvc-performance preset, builds only the benchmark
+# Configures the matching performance preset, builds only the benchmark
 # target, stamps environment metadata, and runs it with the native windows QPA.
 
 $ErrorActionPreference = "Stop"
 
 $shot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 $workspace = (Resolve-Path (Join-Path $PSScriptRoot "..\..")).Path
+. (Join-Path $PSScriptRoot "performance-environment.ps1")
+$performanceTarget = Get-SnowPerformanceTarget -Architecture $Architecture -RequireNative
+$performanceBuildDirectory = Join-Path $workspace "build/$($performanceTarget.Preset)"
 if ([string]::IsNullOrWhiteSpace($OutputDirectory)) {
     $stamp = Get-Date -Format "yyyyMMdd-HHmmss"
-    $OutputDirectory = Join-Path $shot "build\toolbar-display-perf\$stamp"
+    $OutputDirectory = Join-Path $shot "build/toolbar-display-perf/$(if ($Architecture -eq 'arm64') { 'windows-arm64/' })$stamp"
 }
 $OutputDirectory = [System.IO.Path]::GetFullPath($OutputDirectory)
 
@@ -31,34 +36,28 @@ if ($Warmups -lt 0 -or $Samples -le 0 -or $CycleSweeps -le 0 -or $ColdSamples -l
 
 Push-Location $workspace
 try {
-    & cmake --preset windows-msvc-performance
+    & (Join-Path $PSScriptRoot "configure-msvc-perf.ps1") -QtBin $QtBin -Architecture $Architecture
     if ($LASTEXITCODE -ne 0) {
-        throw "The windows-msvc-performance configuration failed"
+        throw "The $($performanceTarget.Preset) configuration failed"
     }
 
-    & cmake --build build/windows-msvc-performance --config Release --target `
+    & cmake --build $performanceBuildDirectory --config Release --target `
         snow-shot-screenshot-toolbar-display-benchmark --parallel
     if ($LASTEXITCODE -ne 0) {
         throw "The toolbar display benchmark target failed to build"
     }
 
-    $release = Join-Path $workspace "build\windows-msvc-performance\snow_shot\Release"
+    $release = Join-Path $performanceBuildDirectory "snow_shot/Release"
     $executable = Join-Path $release "snow-shot-screenshot-toolbar-display-benchmark.exe"
     if (!(Test-Path $executable)) {
         throw "Benchmark executable was not produced: $executable"
     }
 
-    $savedPath = $env:PATH
-    $savedPlatform = $env:QT_QPA_PLATFORM
+    Assert-SnowPerformanceExecutable -Path $executable -Architecture $Architecture
+    $qtRuntime = Set-SnowPerformanceQtRuntime -Architecture $Architecture
     $savedCommit = $env:SNOW_SHOT_PERF_GIT_COMMIT
     $savedGpuDriver = $env:SNOW_SHOT_PERF_GPU_DRIVER
     $savedPowerPlan = $env:SNOW_SHOT_PERF_POWER_PLAN
-    # Qt is linked statically in the perf preset; QtBin only matters for
-    # dynamic-Qt environments, so it is optional here.
-    if (![string]::IsNullOrWhiteSpace($QtBin)) {
-        $env:PATH = "$QtBin;$env:PATH"
-    }
-    $env:QT_QPA_PLATFORM = "windows"
     try {
         $env:SNOW_SHOT_PERF_GIT_COMMIT = (& git rev-parse HEAD).Trim()
     }
@@ -104,8 +103,7 @@ try {
         $benchmarkExitCode = $LASTEXITCODE
     }
     finally {
-        $env:PATH = $savedPath
-        $env:QT_QPA_PLATFORM = $savedPlatform
+        Restore-SnowPerformanceQtRuntime -Snapshot $qtRuntime
         $env:SNOW_SHOT_PERF_GIT_COMMIT = $savedCommit
         $env:SNOW_SHOT_PERF_GPU_DRIVER = $savedGpuDriver
         $env:SNOW_SHOT_PERF_POWER_PLAN = $savedPowerPlan

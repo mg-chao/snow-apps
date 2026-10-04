@@ -1,4 +1,5 @@
 include_guard(GLOBAL)
+include("${CMAKE_CURRENT_LIST_DIR}/SnowRustLibclang.cmake")
 
 function(snow_workspace_configure_paths)
     set(_vcpkg_default "${CMAKE_CURRENT_SOURCE_DIR}/.tools/vcpkg")
@@ -16,8 +17,9 @@ function(snow_workspace_configure_paths)
         "Snow Draw Engine Qt source directory.")
     set(SNOW_CAPTURE_CRATES_DIR "${CMAKE_CURRENT_SOURCE_DIR}/snow-crates" CACHE PATH
         "Snow crates workspace directory.")
-    set(SNOW_LIBCLANG_BIN_DIR "${SNOW_VCPKG_ROOT}/../llvm/bin" CACHE PATH
-        "Directory containing libclang.dll for Rust bindgen.")
+    snow_default_rust_libclang_directory(_snow_libclang_default)
+    set(SNOW_LIBCLANG_BIN_DIR "${_snow_libclang_default}" CACHE PATH
+        "Directory containing libclang.dll for the host Rust bindgen process.")
 
     if(NOT DEFINED VCPKG_TARGET_TRIPLET OR VCPKG_TARGET_TRIPLET STREQUAL "")
         if(APPLE)
@@ -27,6 +29,10 @@ function(snow_workspace_configure_paths)
             else()
                 set(_snow_default_triplet "arm64-osx-snow-shot")
             endif()
+        elseif(WIN32)
+            include(SnowWindowsArchitecture)
+            snow_configure_windows_architecture()
+            set(_snow_default_triplet "${SNOW_WINDOWS_ARCHITECTURE}-windows")
         else()
             set(_snow_default_triplet "x64-windows")
         endif()
@@ -120,10 +126,10 @@ function(snow_workspace_configure_options)
             "MSVC runtime used for static release builds." FORCE)
     endif()
 
-    if(SNOW_APPS_RELEASE_STATIC AND VCPKG_TARGET_TRIPLET STREQUAL "x64-windows")
+    if(SNOW_APPS_RELEASE_STATIC AND VCPKG_TARGET_TRIPLET MATCHES "^(x64|arm64)-windows$")
         message(WARNING
-            "SNOW_APPS_RELEASE_STATIC is enabled with x64-windows. "
-            "Use the snow-shot-msvc-release preset for static vcpkg libraries.")
+            "SNOW_APPS_RELEASE_STATIC is enabled with ${VCPKG_TARGET_TRIPLET}. "
+            "Use the matching Snow Shot release preset for static vcpkg libraries.")
     endif()
 
     if(SNOW_APPS_API_BASE_URL STREQUAL "")

@@ -18,6 +18,8 @@ if(_snow_nsis_init_position EQUAL -1)
 endif()
 string(REPLACE "${_snow_nsis_init}" [=[Function .onInit
   !insertmacro SnowShotLanguageContext
+  !insertmacro SnowShotCheckArchitecture
+  SetRegView 64
   !insertmacro SnowShotRestoreInstallDirectory "Software\@CPACK_PACKAGE_VENDOR@\@CPACK_PACKAGE_INSTALL_REGISTRY_KEY@" "@CPACK_NSIS_INSTALL_ROOT@\@CPACK_PACKAGE_INSTALL_DIRECTORY@"
   !insertmacro MUI_LANGDLL_DISPLAY
   Push $0
@@ -61,8 +63,10 @@ if(_snow_nsis_uninit_end EQUAL -1)
 endif()
 math(EXPR _snow_nsis_uninit_length "${_snow_nsis_uninit_end} + 11")
 string(SUBSTRING "${_snow_nsis_uninit}" 0 ${_snow_nsis_uninit_length} _snow_nsis_uninit)
-string(REPLACE "FunctionEnd" "  !insertmacro MUI_UNGETLANGUAGE\nFunctionEnd"
+string(REPLACE "Function un.onInit\n" "Function un.onInit\n  SetRegView 64\n"
     _snow_nsis_localized_uninit "${_snow_nsis_uninit}")
+string(REPLACE "FunctionEnd" "  !insertmacro MUI_UNGETLANGUAGE\nFunctionEnd"
+    _snow_nsis_localized_uninit "${_snow_nsis_localized_uninit}")
 snow_shot_nsis_replace("${_snow_nsis_uninit}" "${_snow_nsis_localized_uninit}")
 snow_shot_nsis_replace([=["$1 is already installed. $\n$\nDo you want to uninstall the old version before installing the new one?"]=]
     [=["$(SnowShotUpgradePrompt)"]=])
@@ -146,11 +150,18 @@ set(_snow_nsis_localization "${CMAKE_CURRENT_LIST_DIR}/../snow_shot/packaging/In
 cmake_path(NATIVE_PATH _snow_nsis_localization NORMALIZE _snow_nsis_localization_native)
 set(_snow_nsis_directory "${CMAKE_CURRENT_LIST_DIR}/../snow_shot/packaging/InstallDirectory.nsh")
 cmake_path(NATIVE_PATH _snow_nsis_directory NORMALIZE _snow_nsis_directory_native)
+set(_snow_nsis_architecture "${CMAKE_CURRENT_LIST_DIR}/../snow_shot/packaging/InstallerArchitecture.nsh")
+cmake_path(NATIVE_PATH _snow_nsis_architecture NORMALIZE _snow_nsis_architecture_native)
+if(NOT SNOW_WINDOWS_ARCHITECTURE)
+    set(SNOW_WINDOWS_ARCHITECTURE x64)
+endif()
 string(APPEND CPACK_NSIS_DEFINES "\nVar SnowShotPreviousRoot\nUnicode true\n!include \"${_snow_nsis_guard_native}\"\n"
     "!include \"${_snow_nsis_launch_native}\"\n"
     "!include \"${_snow_nsis_owned_cleanup_native}\"\n"
     "!include \"${_snow_nsis_directory_native}\"\n"
     "!include \"${_snow_nsis_localization_native}\"\n"
+    "!define SNOW_SHOT_INSTALLER_ARCHITECTURE \"${SNOW_WINDOWS_ARCHITECTURE}\"\n"
+    "!include \"${_snow_nsis_architecture_native}\"\n"
     "!define MUI_LANGDLL_REGISTRY_ROOT SHCTX\n"
     "!define MUI_LANGDLL_REGISTRY_KEY \"Software\\${CPACK_PACKAGE_VENDOR}\\${CPACK_PACKAGE_INSTALL_REGISTRY_KEY}\"\n"
     "!define MUI_LANGDLL_REGISTRY_VALUENAME \"InstallerLanguage\"\n")

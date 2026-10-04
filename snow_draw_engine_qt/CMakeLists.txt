@@ -14,6 +14,7 @@ option(SNOW_DRAW_ENGINE_QT_STRICT_COMPILE "Treat Snow Draw Engine Qt warnings as
 
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/../cmake")
 include(RustStaticLibrary)
+snow_configure_windows_architecture()
 include(ProjectWarnings)
 include(SnowPixelBuffer)
 include(SnowQtOffscreenTest)
@@ -66,7 +67,7 @@ qt_add_library(snow_draw_engine_qt_canvas STATIC
     src/icons/draw_engine_icons.h
 )
 
-if(MSVC AND CMAKE_SIZEOF_VOID_P EQUAL 8)
+if(MSVC AND SNOW_WINDOWS_ARCHITECTURE STREQUAL "x64")
     set_source_files_properties(
         src/rendering/snow_canvas_filter_avx2.cpp
         src/rendering/snow_canvas_pen_mask_avx2.cpp
@@ -81,7 +82,7 @@ if(MSVC AND CMAKE_SIZEOF_VOID_P EQUAL 8)
             src/rendering/snow_canvas_pen_mask_avx2.cpp
             PROPERTIES SKIP_PRECOMPILE_HEADERS ON)
     endif()
-elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86_64|AMD64|amd64|i.86)$")
+elseif(NOT MSVC AND CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86_64|AMD64|amd64|i.86)$")
     set_source_files_properties(
         src/rendering/snow_canvas_filter_avx2.cpp
         src/rendering/snow_canvas_pen_mask_avx2.cpp

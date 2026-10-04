@@ -31,6 +31,15 @@
 #include <mz_zip_rw.h>
 
 namespace {
+#if defined(Q_OS_WIN) && defined(Q_PROCESSOR_ARM_64)
+const QString kWindowsPlatform = QStringLiteral("windows-arm64");
+#else
+const QString kWindowsPlatform = QStringLiteral("windows-x64");
+#endif
+const QString kWindowsWorkerName =
+    QStringLiteral("snow-ocr-process-1.0.9-%1.exe").arg(kWindowsPlatform);
+const QString kWindowsArchiveName =
+    QStringLiteral("snow-ocr-runtime-1.0.9-%1.zip").arg(kWindowsPlatform);
 #ifdef Q_OS_MACOS
 const QString kWorkerName = QStringLiteral("snow-ocr-process");
 #endif
@@ -97,13 +106,11 @@ void writeAssetManifest(const QString& root, bool completePayload) {
     const QByteArray recognizer("recognizer");
     const QByteArray dictionary("dictionary");
     const QString runtimeDirectory =
-        QDir(root).filePath(QStringLiteral("runtimes/1.0.9/windows-x64"));
+        QDir(root).filePath(QStringLiteral("runtimes/1.0.9/%1").arg(kWindowsPlatform));
     const QString modelDirectory =
         QDir(root).filePath(QStringLiteral("models/ppocrv6-small-463ea9f"));
     if (completePayload) {
-        writeFixture(QDir(runtimeDirectory)
-                         .filePath(QStringLiteral("snow-ocr-process-1.0.9-windows-x64.exe")),
-                     process);
+        writeFixture(QDir(runtimeDirectory).filePath(kWindowsWorkerName), process);
         writeFixture(QDir(runtimeDirectory).filePath(QStringLiteral("DirectML.dll")), directMl);
         writeFixture(QDir(runtimeDirectory).filePath(QStringLiteral("runtime-manifest.json")),
                      runtimeManifest);
@@ -118,8 +125,7 @@ void writeAssetManifest(const QString& root, bool completePayload) {
                      R"({"schema":1,"component":"ppocrv6-small-463ea9f"})");
     }
     const QJsonArray runtimeFiles{
-        assetFile(QStringLiteral("snow-ocr-process-1.0.9-windows-x64.exe"), process),
-        assetFile(QStringLiteral("DirectML.dll"), directMl),
+        assetFile(kWindowsWorkerName, process), assetFile(QStringLiteral("DirectML.dll"), directMl),
         assetFile(QStringLiteral("runtime-manifest.json"), runtimeManifest)};
     const auto model = [](const QString& type, const QString& id, const QString& detectorName,
                           const QByteArray& detectorContents, const QString& recognizerName,
@@ -148,9 +154,9 @@ void writeAssetManifest(const QString& root, bool completePayload) {
         {QStringLiteral("default_model"), QStringLiteral("small")},
         {QStringLiteral("runtime"),
          QJsonObject{{QStringLiteral("version"), QStringLiteral("1.0.9")},
-                     {QStringLiteral("platform"), QStringLiteral("windows-x64")},
+                     {QStringLiteral("platform"), kWindowsPlatform},
                      {QStringLiteral("archive"),
-                      assetFile(QStringLiteral("snow-ocr-runtime-1.0.9-windows-x64.zip"), archive,
+                      assetFile(kWindowsArchiveName, archive,
                                 QStringLiteral("https://example.invalid/runtime"))},
                      {QStringLiteral("files"), runtimeFiles}}},
         {QStringLiteral("models"),
@@ -249,7 +255,7 @@ bool writeDownloadedModelFixture(const QString& destination, QString* error) {
 // path encoding choices made by the production archive reader.
 [[maybe_unused]] QByteArray buildRuntimeArchiveBytes() {
     const QList<QPair<QString, QByteArray>> entries{
-        {QStringLiteral("snow-ocr-process-1.0.9-windows-x64.exe"), QByteArray("process")},
+        {kWindowsWorkerName, QByteArray("process")},
         {QStringLiteral("DirectML.dll"), QByteArray("directml")},
         {QStringLiteral("runtime-manifest.json"), QByteArray("runtime")},
     };
@@ -302,6 +308,10 @@ void validOfflineAssetsAreSelectedWithoutNetwork() {
     ScreenshotOcrAssets assets(options);
     QObject::connect(&assets, &ScreenshotOcrAssets::ready, &assets,
                      [&](const ScreenshotOcrResolvedAssets& result) {
+#ifdef Q_OS_WIN
+                         require(QFileInfo(result.processPath).fileName() == kWindowsWorkerName,
+                                 "resolved OCR worker must match the compiled Windows platform");
+#endif
                          ready = result.offline && result.valid();
                      });
     QObject::connect(&assets, &ScreenshotOcrAssets::failed, &assets,
@@ -536,6 +546,16 @@ void invalidSchemaTwoManifestsAreRejectedBeforeDownloading() {
     };
 
     rejectMutation([](QJsonObject* manifest) { manifest->insert(QStringLiteral("schema"), 1); });
+#ifdef Q_OS_WIN
+    rejectMutation([](QJsonObject* manifest) {
+        QJsonObject runtime = manifest->value(QStringLiteral("runtime")).toObject();
+        runtime.insert(QStringLiteral("platform"),
+                       kWindowsPlatform == QStringLiteral("windows-arm64")
+                           ? QStringLiteral("windows-x64")
+                           : QStringLiteral("windows-arm64"));
+        manifest->insert(QStringLiteral("runtime"), runtime);
+    });
+#endif
     rejectMutation([](QJsonObject* manifest) {
         manifest->insert(QStringLiteral("default_model"), QStringLiteral("medium"));
     });

@@ -1,4 +1,6 @@
 include_guard(GLOBAL)
+include("${CMAKE_CURRENT_LIST_DIR}/SnowWindowsArchitecture.cmake")
+include("${CMAKE_CURRENT_LIST_DIR}/SnowRustLibclang.cmake")
 
 # A Rust staticlib includes its dependencies and runtime. Consumers must select
 # one archive for the final host rather than relying on link order to avoid
@@ -79,7 +81,25 @@ endfunction()
 # GCC on Linux is not a MinGW cross compiler. Build universal macOS archives
 # as two explicit Cargo targets and combine them with lipo at packaging time.
 function(snow_detect_rust_target out_var)
+    if(WIN32)
+        snow_configure_windows_architecture()
+        if(MSVC)
+            if(SNOW_WINDOWS_ARCHITECTURE STREQUAL "arm64")
+                set(_windows_target aarch64-pc-windows-msvc)
+            else()
+                set(_windows_target x86_64-pc-windows-msvc)
+            endif()
+        elseif(SNOW_WINDOWS_ARCHITECTURE STREQUAL "x64")
+            set(_windows_target x86_64-pc-windows-gnu)
+        else()
+            message(FATAL_ERROR "Windows ARM64 requires the MSVC Rust target")
+        endif()
+    endif()
     if(DEFINED SNOW_RUST_TARGET AND NOT SNOW_RUST_TARGET STREQUAL "")
+        if(WIN32 AND NOT SNOW_RUST_TARGET STREQUAL _windows_target)
+            message(FATAL_ERROR
+                "SNOW_RUST_TARGET=${SNOW_RUST_TARGET} disagrees with the ${SNOW_WINDOWS_ARCHITECTURE} C++ compiler; use ${_windows_target}")
+        endif()
         set(${out_var} "${SNOW_RUST_TARGET}" PARENT_SCOPE)
         return()
     endif()
@@ -96,11 +116,7 @@ function(snow_detect_rust_target out_var)
             message(FATAL_ERROR "Select one macOS architecture per Rust build: arm64 or x86_64")
         endif()
     elseif(WIN32)
-        if(MSVC)
-            set(_target x86_64-pc-windows-msvc)
-        else()
-            set(_target x86_64-pc-windows-gnu)
-        endif()
+        set(_target "${_windows_target}")
     elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux")
         if(CMAKE_SYSTEM_PROCESSOR MATCHES "^(arm64|aarch64)$")
             set(_target aarch64-unknown-linux-gnu)
@@ -156,10 +172,6 @@ function(snow_add_rust_static_libraries batch_name)
             set(SNOW_FFMPEG_ROOT "${SNOW_VCPKG_ROOT}/installed/${VCPKG_TARGET_TRIPLET}")
         endif()
     endif()
-    if(NOT DEFINED SNOW_LIBCLANG_BIN_DIR OR SNOW_LIBCLANG_BIN_DIR STREQUAL "")
-        set(SNOW_LIBCLANG_BIN_DIR "${SNOW_VCPKG_ROOT}/../llvm/bin")
-    endif()
-
     snow_detect_rust_target(SNOW_RUST_TARGET)
 
     execute_process(
@@ -213,21 +225,7 @@ function(snow_add_rust_static_libraries batch_name)
             "${SNOW_RUST_CARGO_TARGET_DIR}/${SNOW_RUST_TARGET}/${SNOW_RUST_RELEASE_PROFILE}/${_lib_prefix}${_output_stem}${_lib_suffix}")
     endforeach()
 
-    set(_libclang_dir "")
-    if(EXISTS "${SNOW_LIBCLANG_BIN_DIR}/libclang.dll")
-        set(_libclang_dir "${SNOW_LIBCLANG_BIN_DIR}")
-    else()
-        find_file(_libclang_dll
-            NAMES libclang.dll clang.dll
-            HINTS
-                "$ENV{LIBCLANG_PATH}"
-                "$ENV{LLVMInstallDir}/bin"
-                "C:/Program Files/LLVM/bin"
-        )
-        if(_libclang_dll)
-            get_filename_component(_libclang_dir "${_libclang_dll}" DIRECTORY)
-        endif()
-    endif()
+    snow_resolve_rust_libclang_directory(_libclang_dir)
 
     set(_snow_rust_static_crt FALSE)
     if(SNOW_APPS_RELEASE_STATIC OR SNOW_SHOT_RELEASE_STATIC OR
@@ -247,6 +245,8 @@ function(snow_add_rust_static_libraries batch_name)
         "FFMPEG_DIR=${SNOW_FFMPEG_ROOT}"
         "CARGO_TARGET_DIR=${SNOW_RUST_CARGO_TARGET_DIR}"
     )
+    snow_windows_rust_environment(_windows_cargo_environment "${SNOW_RUST_TARGET}")
+    list(APPEND _cargo_environment ${_windows_cargo_environment})
     if(APPLE)
         set(_snow_rust_deployment_target "15.0")
         if(CMAKE_OSX_DEPLOYMENT_TARGET)
@@ -428,6 +428,12 @@ function(snow_add_rust_executable target_name)
         "${SNOW_RUST_CARGO_TARGET_DIR}/${_rust_target}/${_selected_release_profile}/${SNOW_RUST_OUTPUT_NAME}${_binary_suffix}")
     set(_cargo_environment
         "CARGO_TARGET_DIR=${SNOW_RUST_CARGO_TARGET_DIR}")
+    snow_windows_rust_environment(_windows_cargo_environment "${_rust_target}")
+    list(APPEND _cargo_environment ${_windows_cargo_environment})
+    if(WIN32 AND (SNOW_LIBCLANG_BIN_DIR OR DEFINED ENV{LIBCLANG_PATH}))
+        snow_resolve_rust_libclang_directory(_libclang_dir)
+        list(APPEND _cargo_environment "LIBCLANG_PATH=${_libclang_dir}")
+    endif()
     if(DEFINED VCPKG_ROOT)
         list(APPEND _cargo_environment "VCPKG_ROOT=${VCPKG_ROOT}")
     elseif(DEFINED ENV{VCPKG_ROOT})

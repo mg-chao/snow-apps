@@ -323,6 +323,124 @@
         "SNOW_RUST_RELEASE_PROFILE": "release-fast",
         "SNOW_APPS_BUILD_SNOW_SHOT_MINI": "OFF"
       }
+    },
+    {
+      "name": "snow-shot-msvc-arm64-base",
+      "hidden": true,
+      "generator": "Visual Studio 18 2026",
+      "architecture": "ARM64",
+      "toolset": "version=14.51",
+      "binaryDir": "${sourceDir}/build/${presetName}",
+      "toolchainFile": "${sourceDir}/.tools/vcpkg/scripts/buildsystems/vcpkg.cmake",
+      "environment": {
+        "VCPKG_ROOT": "${sourceDir}/.tools/vcpkg"
+      },
+      "cacheVariables": {
+        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
+        "CMAKE_CXX_EXTENSIONS": "OFF",
+        "SNOW_APPS_ENABLE_RELEASE_OPTIMIZATION": "ON",
+        "SNOW_APPS_ENABLE_RELEASE_SIZE_OPTIMIZATION": "OFF",
+        "VCPKG_TARGET_TRIPLET": "arm64-windows",
+        "VCPKG_INSTALLED_DIR": "${sourceDir}/.tools/vcpkg/installed/arm64/dynamic",
+        "VCPKG_OVERLAY_PORTS": "${sourceDir}/cmake/vcpkg-overlay-ports/crashpad;${sourceDir}/cmake/vcpkg-overlay-ports/ffmpeg;${sourceDir}/cmake/vcpkg-overlay-ports/ffmpeg-bin2c;${sourceDir}/cmake/vcpkg-overlay-ports/libde265;${sourceDir}/cmake/vcpkg-overlay-ports/libheif;${sourceDir}/cmake/vcpkg-overlay-ports/libjxl;${sourceDir}/cmake/vcpkg-overlay-ports/libvpl;${sourceDir}/cmake/vcpkg-overlay-ports/amd-amf;${sourceDir}/cmake/vcpkg-overlay-ports/minizip-ng;${sourceDir}/cmake/vcpkg-overlay-ports/onnx;${sourceDir}/cmake/vcpkg-overlay-ports/onnxruntime;${sourceDir}/cmake/vcpkg-overlay-ports/opencv4;${sourceDir}/cmake/vcpkg-overlay-ports/x264;${sourceDir}/cmake/vcpkg-overlay-ports/x265;${sourceDir}/cmake/vcpkg-overlay-ports/zlib",
+        "VCPKG_OVERLAY_TRIPLETS": "${sourceDir}/cmake/vcpkg-overlay-triplets",
+        "VCPKG_MANIFEST_INSTALL": "ON",
+        "VCPKG_MANIFEST_FEATURES": "snow-shot",
+        "SNOW_APPS_STRICT_COMPILE": "ON",
+        "SNOW_APPS_ENABLE_CLANG_TIDY": "OFF",
+        "SNOW_APPS_BUILD_ANT_DESIGN_QT": "ON",
+        "SNOW_APPS_BUILD_SNOW_IMAGE": "ON",
+        "SNOW_APPS_BUILD_DRAW_ENGINE": "ON",
+        "SNOW_APPS_BUILD_IMAGE_VIEWER": "OFF",
+        "SNOW_APPS_BUILD_SNOW_SHOT": "ON",
+        "SNOW_APPS_BUILD_SNOW_SHOT_MINI": "ON",
+        "SNOW_RUST_TARGET": "aarch64-pc-windows-msvc"
+      },
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Windows"
+      }
+    },
+    {
+      "name": "snow-shot-msvc-arm64-debug",
+      "displayName": "Snow Shot MSVC ARM64 Debug",
+      "inherits": "snow-shot-msvc-arm64-base",
+      "cacheVariables": {
+        "CMAKE_CONFIGURATION_TYPES": "Debug",
+        "CMAKE_MSVC_RUNTIME_LIBRARY": "MultiThreadedDebugDLL",
+        "SNOW_APPS_BUILD_TESTS": "ON",
+        "SNOW_APPS_BUILD_BENCHMARKS": "OFF",
+        "SNOW_APPS_RELEASE_STATIC": "OFF",
+        "SNOW_APPS_PACKAGE_SNOW_SHOT": "OFF",
+        "SNOW_APPS_API_BASE_URL": "http://localhost:8080",
+        "SNOW_IMAGE_PROFILE": "full",
+        "SNOW_IMAGE_DEFAULT_LINKAGE": "static",
+        "VCPKG_MANIFEST_FEATURES": "snow-shot;full-codecs",
+        "SNOW_APPS_BUILD_IMAGE_VIEWER": "OFF"
+      }
+    },
+    {
+      "name": "snow-shot-msvc-arm64-performance",
+      "displayName": "Snow Shot MSVC ARM64 Performance",
+      "inherits": "snow-shot-msvc-arm64-base",
+      "cacheVariables": {
+        "CMAKE_CONFIGURATION_TYPES": "Release",
+        "CMAKE_MSVC_RUNTIME_LIBRARY": "MultiThreadedDLL",
+        "SNOW_APPS_BUILD_TESTS": "ON",
+        "SNOW_APPS_BUILD_BENCHMARKS": "ON",
+        "CMAKE_INTERPROCEDURAL_OPTIMIZATION_RELEASE": "ON",
+        "SNOW_APPS_RELEASE_STATIC": "OFF",
+        "SNOW_APPS_PACKAGE_SNOW_SHOT": "OFF",
+        "SNOW_APPS_API_BASE_URL": "https://snowshot.top",
+        "SNOW_IMAGE_PROFILE": "full",
+        "SNOW_IMAGE_DEFAULT_LINKAGE": "static",
+        "VCPKG_MANIFEST_FEATURES": "snow-shot;full-codecs",
+        "SNOW_APPS_BUILD_IMAGE_VIEWER": "OFF"
+      }
+    },
+    {
+      "name": "snow-shot-msvc-arm64-release",
+      "displayName": "Snow Shot MSVC ARM64 Release",
+      "inherits": "snow-shot-msvc-arm64-base",
+      "cacheVariables": {
+        "CMAKE_CONFIGURATION_TYPES": "Release",
+        "CMAKE_MSVC_RUNTIME_LIBRARY": "MultiThreaded",
+        "VCPKG_TARGET_TRIPLET": "arm64-windows-static",
+        "VCPKG_INSTALLED_DIR": "${sourceDir}/.tools/vcpkg/installed/arm64/static",
+        "VCPKG_MANIFEST_FEATURES": "snow-shot",
+        "SNOW_APPS_BUILD_ANT_DESIGN_QT": "ON",
+        "SNOW_APPS_BUILD_SNOW_IMAGE": "ON",
+        "SNOW_APPS_BUILD_DRAW_ENGINE": "ON",
+        "SNOW_APPS_BUILD_IMAGE_VIEWER": "OFF",
+        "SNOW_APPS_BUILD_SNOW_SHOT": "ON",
+        "SNOW_APPS_BUILD_TESTS": "OFF",
+        "SNOW_APPS_BUILD_BENCHMARKS": "OFF",
+        "CMAKE_INTERPROCEDURAL_OPTIMIZATION_RELEASE": "ON",
+        "SNOW_APPS_ENABLE_RELEASE_SIZE_OPTIMIZATION": "ON",
+        "SNOW_APPS_RELEASE_STATIC": "ON",
+        "SNOW_APPS_QT_STATIC": "ON",
+        "SNOW_APPS_PACKAGE_SNOW_SHOT": "ON",
+        "SNOW_APPS_API_BASE_URL": "https://snowshot.top",
+        "SNOW_IMAGE_PROFILE": "redistributable",
+        "SNOW_IMAGE_DEFAULT_LINKAGE": "static",
+        "SNOW_APPS_BUILD_SNOW_SHOT_MINI": "ON"
+      }
+    },
+    {
+      "name": "snow-shot-msvc-arm64-fast",
+      "displayName": "Snow Shot MSVC ARM64 Fast",
+      "inherits": "snow-shot-msvc-arm64-release",
+      "binaryDir": "${sourceDir}/build/${presetName}",
+      "cacheVariables": {
+        "SNOW_APPS_ENABLE_RELEASE_OPTIMIZATION": "OFF",
+        "SNOW_APPS_ENABLE_RELEASE_SIZE_OPTIMIZATION": "OFF",
+        "CMAKE_INTERPROCEDURAL_OPTIMIZATION_RELEASE": "OFF",
+        "SNOW_APPS_PACKAGE_SNOW_SHOT": "OFF",
+        "SNOW_RUST_RELEASE_PROFILE": "release-fast",
+        "VCPKG_MANIFEST_FEATURES": "snow-shot",
+        "SNOW_APPS_BUILD_IMAGE_VIEWER": "OFF"
+      }
     }
   ],
   "buildPresets": [
@@ -426,6 +544,42 @@
       "targets": [
         "snow_shot"
       ]
+    },
+    {
+      "name": "build-snow-shot-msvc-arm64-debug",
+      "configurePreset": "snow-shot-msvc-arm64-debug",
+      "configuration": "Debug",
+      "targets": [
+        "snow_shot",
+        "snow_shot_mini"
+      ]
+    },
+    {
+      "name": "build-snow-shot-msvc-arm64-performance",
+      "configurePreset": "snow-shot-msvc-arm64-performance",
+      "configuration": "Release",
+      "targets": [
+        "snow_shot",
+        "snow_shot_mini"
+      ]
+    },
+    {
+      "name": "build-snow-shot-msvc-arm64-release",
+      "configurePreset": "snow-shot-msvc-arm64-release",
+      "configuration": "Release",
+      "targets": [
+        "snow_shot",
+        "snow_shot_mini"
+      ]
+    },
+    {
+      "name": "build-snow-shot-msvc-arm64-fast",
+      "configurePreset": "snow-shot-msvc-arm64-fast",
+      "configuration": "Release",
+      "targets": [
+        "snow_shot",
+        "snow_shot_mini"
+      ]
     }
   ],
   "testPresets": [
@@ -515,6 +669,32 @@
           "label": "interactive|e2e|benchmark|windows"
         }
       }
+    },
+    {
+      "name": "test-snow-shot-msvc-arm64-debug",
+      "configurePreset": "snow-shot-msvc-arm64-debug",
+      "configuration": "Debug",
+      "output": {
+        "outputOnFailure": true
+      },
+      "filter": {
+        "exclude": {
+          "label": "interactive|e2e|benchmark"
+        }
+      }
+    },
+    {
+      "name": "test-snow-shot-msvc-arm64-performance",
+      "configurePreset": "snow-shot-msvc-arm64-performance",
+      "configuration": "Release",
+      "output": {
+        "outputOnFailure": true
+      },
+      "filter": {
+        "exclude": {
+          "label": "interactive|e2e|benchmark"
+        }
+      }
     }
   ],
   "packagePresets": [
@@ -537,6 +717,13 @@
       "configurePreset": "snow-shot-macos-x64-release",
       "generators": [
         "DragNDrop"
+      ]
+    },
+    {
+      "name": "package-snow-shot-msvc-arm64-release",
+      "configurePreset": "snow-shot-msvc-arm64-release",
+      "generators": [
+        "NSIS"
       ]
     }
   ]

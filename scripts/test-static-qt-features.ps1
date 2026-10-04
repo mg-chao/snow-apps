@@ -33,6 +33,8 @@ Import-ScriptFunction (Join-Path $PSScriptRoot "build-static-qt.ps1") "Test-Inst
 Import-ScriptFunction (Join-Path $PSScriptRoot "build-static-qt.ps1") "Install-QtLicenseBundle"
 Import-ScriptFunction (Join-Path $PSScriptRoot "build-static-qt.ps1") "Test-PathIsSameOrDescendant"
 Import-ScriptFunction (Join-Path $PSScriptRoot "build-static-qt.ps1") "Get-NormalizedDirectoryPath"
+Import-ScriptFunction (Join-Path $PSScriptRoot "build-static-qt.ps1") "Assert-QtDirectoryIsolation"
+Import-ScriptFunction (Join-Path $PSScriptRoot "build-static-qt.ps1") "Assert-QtDependencyArchitecture"
 Import-ScriptFunction (Join-Path $PSScriptRoot "package-snow-shot.ps1") "Get-ValidatedStaticQtStamp"
 
 function Require-Rejected([scriptblock]$Action, [string]$Message) {
@@ -43,8 +45,45 @@ function Require-Rejected([scriptblock]$Action, [string]$Message) {
 
 $testRoot = Join-Path $script:SnowRepoRoot ("build/static-qt-feature-tests-" + [guid]::NewGuid().ToString("N"))
 try {
+    $sourceFixture = Join-Path $testRoot 'source-isolated'
+    $buildFixture = Join-Path $testRoot 'build-isolated'
+    $installFixture = Join-Path $testRoot 'target-isolated'
+    Assert-QtDirectoryIsolation -Source $sourceFixture -Build $buildFixture -Install $installFixture `
+        -HostPrefix (Join-Path $testRoot 'host-isolated')
+    foreach ($hostPrefix in @($installFixture, (Join-Path $installFixture 'nested-host'), $testRoot,
+            (Join-Path $buildFixture 'nested-host'), (Join-Path $sourceFixture 'nested-host'))) {
+        Require-Rejected { Assert-QtDirectoryIsolation -Source $sourceFixture -Build $buildFixture `
+            -Install $installFixture -HostPrefix $hostPrefix } 'Qt source/build/install paths cannot overlap required host tools.'
+    }
     $corruptArchive = Join-Path $testRoot "corrupt-source.tar.xz"
     $null = New-Item -ItemType Directory -Path $testRoot -Force
+    if (-not (Get-Command dumpbin.exe -ErrorAction SilentlyContinue)) {
+        Add-SnowMsvcToolsToPath -Architecture x64 | Out-Null
+    }
+    # Valid minimal COFF headers exercise the real host inspector without
+    # requiring either target compiler or executing a target binary.
+    $dependencyPrefix = Join-Path $testRoot 'dependencies'
+    $dependencyLib = Join-Path $dependencyPrefix 'lib'
+    $null = New-Item -ItemType Directory -Path $dependencyLib -Force
+    foreach ($architecture in @('x64', 'arm64')) {
+        $coff = [byte[]]::new(20)
+        $machine = if ($architecture -eq 'arm64') { 0xaa64 } else { 0x8664 }
+        [BitConverter]::GetBytes([uint16]$machine).CopyTo($coff, 0)
+        foreach ($name in @('zlibstatic.lib', 'libpng16.lib')) {
+            [IO.File]::WriteAllBytes((Join-Path $dependencyLib $name), $coff)
+        }
+        Assert-QtDependencyArchitecture -Prefix $dependencyPrefix -Architecture $architecture
+        $opposite = if ($architecture -eq 'arm64') { 'x64' } else { 'arm64' }
+        Require-Rejected {
+            Assert-QtDependencyArchitecture -Prefix $dependencyPrefix -Architecture $opposite
+        } 'Static Qt must reject libraries for the opposite target.'
+        Move-Item -LiteralPath (Join-Path $dependencyLib 'zlibstatic.lib') `
+            -Destination (Join-Path $dependencyLib 'zlib.lib')
+        Require-Rejected {
+            Assert-QtDependencyArchitecture -Prefix $dependencyPrefix -Architecture $architecture
+        } 'Static Qt requires the pinned static zlib library, not an import library with a similar name.'
+        Remove-Item -LiteralPath (Join-Path $dependencyLib 'zlib.lib')
+    }
     [IO.File]::WriteAllText($corruptArchive, "incomplete or altered download")
     Require-Rejected { Assert-QtSourceArchive -Path $corruptArchive } `
         "A downloaded or cached source archive must match the release SHA256 before extraction."
@@ -52,6 +91,16 @@ try {
     $coreDir = Join-Path $testRoot "lib/cmake/Qt6Core"
     $guiDir = Join-Path $testRoot "lib/cmake/Qt6Gui"
     $null = New-Item -ItemType Directory -Path $qtDir, $coreDir, $guiDir -Force
+    # Kit selection checks the actual machine independently of feature metadata.
+    # These PE headers are inert fixtures; no Qt binary is loaded or executed.
+    $qtBin = Join-Path $testRoot 'bin'
+    $null = New-Item -ItemType Directory -Path $qtBin -Force
+    $pe = [byte[]]::new(128)
+    $pe[0] = 0x4D; $pe[1] = 0x5A; $pe[0x3C] = 64
+    $pe[64] = 0x50; $pe[65] = 0x45; $pe[68] = 0x64; $pe[69] = 0x86
+    foreach ($name in @('Qt6Core.dll', 'Qt6Cored.dll')) {
+        [IO.File]::WriteAllBytes((Join-Path $qtBin $name), $pe)
+    }
     $patchSource = Join-Path $testRoot "source"
     $patchTarget = Join-Path $patchSource "qtbase/src/corelib/time/qtimezoneprivate_win.cpp"
     $null = New-Item -ItemType Directory -Path (Split-Path -Parent $patchTarget) -Force
@@ -141,11 +190,41 @@ QT_DISABLED_PRIVATE_FEATURES "timezone_locale"
     Require (-not (Test-SnowQtTranslationKit $qtDir)) "Both Chinese Qt stock-dialog catalogs are required."
     Set-Content -LiteralPath $traditionalCatalog -Value "fixture"
     $stampPath = Join-Path $testRoot "share/snow-apps/static-qt-build.json"
+    $null = New-Item -ItemType Directory -Force -Path (Join-Path $testRoot 'bin')
+    foreach ($name in @('moc', 'rcc', 'uic', 'lrelease', 'lupdate')) {
+        [IO.File]::WriteAllText((Join-Path $testRoot "bin/$name.exe"), 'host tool fixture')
+    }
     Write-StaticQtBuildStamp -Path $stampPath -Version "6.12.0" -BuildConfiguration Release `
-        -Fingerprint "dependencies" -SourceArchive "https://example.invalid/qt.tar.xz" -BuildParallelism 4
+        -Fingerprint "dependencies" -SourceArchive "https://example.invalid/qt.tar.xz" -BuildParallelism 4 -HostArchitecture x64
     $originalStamp = Get-Content -LiteralPath $stampPath -Raw
+    $nativeStamp = $originalStamp | ConvertFrom-Json
+    Require (Test-SnowQtHostToolHashes -Stamp $nativeStamp -Prefix $testRoot) 'Native host-tool hashes must match their stamp.'
+    $nativeTool = Join-Path $testRoot 'bin/moc.exe'
+    [IO.File]::WriteAllText($nativeTool, 'replaced host tool')
+    Require (-not (Test-SnowQtHostToolHashes -Stamp $nativeStamp -Prefix $testRoot)) 'Replaced native host tools must invalidate Qt reuse.'
+    Remove-Item -LiteralPath $nativeTool
+    Require (-not (Test-SnowQtHostToolHashes -Stamp $nativeStamp -Prefix $testRoot)) 'Missing native host tools must invalidate Qt reuse.'
+    [IO.File]::WriteAllText($nativeTool, 'host tool fixture')
+    $crossStamp = $originalStamp | ConvertFrom-Json
+    $crossStamp.Architecture = 'arm64'
+    $crossStamp.HostArchitecture = 'x64'
+    Require (Test-SnowStaticQtStamp -Stamp $crossStamp -Architecture arm64 -HostArchitecture x64) `
+        'Cross-built Qt must retain all five host-tool hashes.'
+    Require (-not (Test-SnowStaticQtStamp -Stamp $crossStamp -Architecture x64)) `
+        'Qt stamps must reject the opposite target architecture.'
+    Require (-not (Test-SnowStaticQtStamp -Stamp $crossStamp -Architecture arm64 -HostArchitecture arm64)) `
+        'Qt build reuse must bind the host architecture.'
+    $crossStamp.HostTools[1].Name = 'moc.exe'
+    Require (-not (Test-SnowStaticQtStamp -Stamp $crossStamp -Architecture arm64)) `
+        'Duplicate host-tool records cannot replace missing provenance.'
+    $crossStamp = $originalStamp | ConvertFrom-Json
+    $crossStamp.Architecture = 'arm64'
+    $crossStamp.HostArchitecture = 'x64'
+    $crossStamp.HostTools[0].SHA256 = 'invalid'
+    Require (-not (Test-SnowStaticQtStamp -Stamp $crossStamp -Architecture arm64)) `
+        'Cross-built Qt must reject malformed host-tool hashes.'
     Write-StaticQtBuildStamp -Path $stampPath -Version $script:SnowQtVersion -BuildConfiguration Debug `
-        -Fingerprint "dependencies" -SourceArchive "https://example.invalid/qt.tar.xz" -BuildParallelism 4
+        -Fingerprint "dependencies" -SourceArchive "https://example.invalid/qt.tar.xz" -BuildParallelism 4 -HostArchitecture x64
     $debugStamp = Get-Content -LiteralPath $stampPath -Raw | ConvertFrom-Json
     Require (Test-SnowStaticQtStamp -Stamp $debugStamp -Configuration Debug) `
         "Debug provenance must reflect Qt's supported non-LTCG configuration."

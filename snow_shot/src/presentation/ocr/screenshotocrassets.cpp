@@ -43,6 +43,8 @@ namespace {
 constexpr auto kManifestName = "asset-manifest.json";
 #if defined(Q_OS_MACOS) && defined(Q_PROCESSOR_ARM_64)
 constexpr auto kPlatform = "macos-arm64";
+#elif defined(Q_OS_WIN) && defined(Q_PROCESSOR_ARM_64)
+constexpr auto kPlatform = "windows-arm64";
 #else
 constexpr auto kPlatform = "windows-x64";
 #endif
@@ -263,10 +265,10 @@ std::optional<Descriptor> loadDescriptor(const QString& root, QString* error) {
 #else
     constexpr bool expectedStaticRuntime = false;
 #endif
-    result.executable =
-        result.bundled
-            ? QStringLiteral("snow-ocr-process")
-            : QStringLiteral("snow-ocr-process-%1-windows-x64.exe").arg(result.runtimeVersion);
+    result.executable = result.bundled
+                            ? QStringLiteral("snow-ocr-process")
+                            : QStringLiteral("snow-ocr-process-%1-%2.exe")
+                                  .arg(result.runtimeVersion, QString::fromLatin1(kPlatform));
     const auto defaultModel =
         parseModelType(rootObject.value(QStringLiteral("default_model")).toString());
     if (rootObject.value(QStringLiteral("schema")).toInt() != (result.bundled ? 3 : 2) ||

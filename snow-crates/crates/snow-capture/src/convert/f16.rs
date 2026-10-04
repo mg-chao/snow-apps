@@ -115,7 +115,7 @@ impl HdrPreparedContext {
     }
 
     #[inline(always)]
-    #[cfg(any(windows, target_arch = "x86_64"))]
+    #[cfg(target_arch = "x86_64")]
     pub(crate) fn use_lut(&self) -> bool {
         self.luma_lut.is_some()
     }

@@ -5,6 +5,8 @@ param(
     [string]$SourceDirectory = "",
     [string]$BuildDirectory = "",
     [string]$DependencyPrefix = "",
+    [ValidateSet("x64", "arm64")][string]$Architecture = "x64",
+    [string]$HostQtPrefix = "",
     [ValidateSet("Debug", "Release")][string]$Configuration = "Release",
     [string]$QtMirrorBaseUrl = "https://qt.mirror.constant.com/official_releases",
     [ValidateRange(1, 256)][int]$Parallelism = 4,
@@ -19,7 +21,11 @@ if ([string]::IsNullOrWhiteSpace($QtVersion)) { $QtVersion = $script:SnowQtVersi
 if ($QtVersion -cne $script:SnowQtVersion) {
     throw "The audited Qt toolchain requires Qt $script:SnowQtVersion, requested $QtVersion."
 }
-Add-SnowMsvcToolsToPath | Out-Null
+$hostArchitecture = Get-SnowWindowsHostArchitecture
+$crossCompilation = $Architecture -cne $hostArchitecture
+if ($crossCompilation) { $HostQtPrefix = Resolve-SnowQtHostPrefix -HostQtPrefix $HostQtPrefix }
+else { $HostQtPrefix = "" }
+Add-SnowMsvcToolsToPath -Architecture $Architecture | Out-Null
 $enableDevelopmentModules = $DevelopmentModules -or $Configuration -eq "Debug"
 
 function Invoke-Checked {
@@ -100,6 +106,26 @@ function Assert-SafeRecursiveRemovalTarget {
     foreach ($protectedPath in $protectedPaths) {
         if (Test-PathIsSameOrDescendant -Path $protectedPath -Parent $normalizedPath) {
             throw "$Description cannot be a protected path or one of its ancestors: $normalizedPath"
+        }
+    }
+}
+
+function Assert-QtDirectoryIsolation {
+    param([Parameter(Mandatory = $true)][string]$Source,
+        [Parameter(Mandatory = $true)][string]$Build,
+        [Parameter(Mandatory = $true)][string]$Install,
+        [string]$HostPrefix = '')
+    $directories = [ordered]@{ Source = $Source; Build = $Build; Install = $Install }
+    if ($HostPrefix) { $directories.Host = $HostPrefix }
+    $names = @($directories.Keys)
+    for ($left = 0; $left -lt $names.Count; $left++) {
+        for ($right = $left + 1; $right -lt $names.Count; $right++) {
+            $leftPath = $directories[$names[$left]]
+            $rightPath = $directories[$names[$right]]
+            if ((Test-PathIsSameOrDescendant -Path $leftPath -Parent $rightPath) -or
+                (Test-PathIsSameOrDescendant -Path $rightPath -Parent $leftPath)) {
+                throw "Qt $($names[$left]) and $($names[$right]) directories must be distinct and non-overlapping: '$leftPath', '$rightPath'."
+            }
         }
     }
 }
@@ -185,6 +211,19 @@ function Get-DependencyFingerprint {
     return [Convert]::ToHexString(
         [System.Security.Cryptography.SHA256]::HashData($bytes)
     ).ToLowerInvariant()
+}
+
+function Assert-QtDependencyArchitecture {
+    param([Parameter(Mandatory = $true)][string]$Prefix,
+        [ValidateSet('x64', 'arm64')][string]$Architecture = 'x64')
+
+    # The pinned zlib-ng port names its static MSVC library zlibstatic.lib.
+    foreach ($library in @('zlibstatic.lib', 'libpng16.lib')) {
+        if (-not (Test-SnowWindowsLibraryArchitecture -Path (Join-Path $Prefix "lib/$library") `
+                -Architecture $Architecture)) {
+            throw "Static Qt dependency $library does not match target architecture $Architecture."
+        }
+    }
 }
 
 function Assert-QtSourceArchive {
@@ -347,16 +386,31 @@ function Write-StaticQtBuildStamp {
         [Parameter(Mandatory = $true)][string]$Fingerprint,
         [Parameter(Mandatory = $true)][string]$SourceArchive,
         [Parameter(Mandatory = $true)][int]$BuildParallelism,
-        [bool]$WithDevelopmentModules = ($BuildConfiguration -eq "Debug")
+        [bool]$WithDevelopmentModules = ($BuildConfiguration -eq "Debug"),
+        [ValidateSet("x64", "arm64")][string]$Architecture = "x64",
+        [string]$HostArchitecture = (Get-SnowWindowsHostArchitecture),
+        [string]$HostQtPrefix = ""
     )
 
     $stampDirectory = Split-Path -Parent $Path
     New-Item -ItemType Directory -Force -Path $stampDirectory | Out-Null
+    if (-not $HostQtPrefix -and $Architecture -ceq $HostArchitecture) {
+        $HostQtPrefix = Split-Path -Parent (Split-Path -Parent $stampDirectory)
+    }
     [ordered]@{
         SchemaVersion = $script:SnowStaticQtSchemaVersion
         QtVersion = $Version
         SourceArchiveSha256 = $script:SnowQtToolchain.sourceArchiveSha256
         Configuration = $BuildConfiguration
+        Architecture = $Architecture
+        HostArchitecture = $HostArchitecture
+        HostQtPrefix = $HostQtPrefix
+        HostTools = if ($HostQtPrefix) {
+            @(foreach ($name in @("moc", "rcc", "uic", "lrelease", "lupdate")) {
+                [ordered]@{ Name = "$name.exe"; SHA256 = (Get-FileHash -Algorithm SHA256 `
+                    -LiteralPath (Join-Path $HostQtPrefix "bin/$name.exe")).Hash.ToLowerInvariant() }
+            })
+        } else { @() }
         DevelopmentModules = $WithDevelopmentModules
         DependencyFingerprint = $Fingerprint
         FeatureFingerprint = $script:SnowStaticQtFeatureFingerprint
@@ -408,7 +462,8 @@ function Assert-CacheEntry {
 }
 
 if ([string]::IsNullOrWhiteSpace($DependencyPrefix)) {
-    $DependencyPrefix = Join-Path $repoRoot ".tools\vcpkg\installed\static\x64-windows-static"
+    $releaseTarget = Get-SnowWindowsTarget -Architecture $Architecture
+    $DependencyPrefix = Join-Path $releaseTarget.InstalledRoot $releaseTarget.Triplet
 }
 $dependencyPrefix = [System.IO.Path]::GetFullPath($DependencyPrefix)
 foreach ($requiredDependencyFile in @(
@@ -422,6 +477,7 @@ foreach ($requiredDependencyFile in @(
     }
 }
 $dependencyFingerprint = Get-DependencyFingerprint -Prefix $dependencyPrefix
+Assert-QtDependencyArchitecture -Prefix $dependencyPrefix -Architecture $Architecture
 
 $installPrefix = [System.IO.Path]::GetFullPath($InstallPrefix)
 $qtConfig = Join-Path $installPrefix "lib\cmake\Qt6\Qt6Config.cmake"
@@ -434,32 +490,16 @@ else {
     [System.IO.Path]::GetTempPath()
 }
 if ([string]::IsNullOrWhiteSpace($SourceDirectory)) {
-    $SourceDirectory = Join-Path $workRoot "qt-everywhere-src-$QtVersion"
+    $SourceDirectory = Join-Path $workRoot "snow-qt-$QtVersion-$Architecture/qt-everywhere-src-$QtVersion"
 }
 $sourceDirectory = [System.IO.Path]::GetFullPath($SourceDirectory)
 if ([string]::IsNullOrWhiteSpace($BuildDirectory)) {
-    $BuildDirectory = Join-Path $workRoot "qt-build-$QtVersion-static-system-codecs-no-timezone-locale-$($Configuration.ToLowerInvariant())"
+    $BuildDirectory = Join-Path $workRoot "qt-build-$QtVersion-$Architecture-static-system-codecs-no-timezone-locale-$($Configuration.ToLowerInvariant())"
 }
 $buildDirectory = [System.IO.Path]::GetFullPath($BuildDirectory)
 
-$qtDirectories = [ordered]@{
-    Source = $sourceDirectory
-    Build = $buildDirectory
-    Install = $installPrefix
-}
-$qtDirectoryNames = @($qtDirectories.Keys)
-for ($leftIndex = 0; $leftIndex -lt $qtDirectoryNames.Count; $leftIndex++) {
-    for ($rightIndex = $leftIndex + 1; $rightIndex -lt $qtDirectoryNames.Count; $rightIndex++) {
-        $leftName = $qtDirectoryNames[$leftIndex]
-        $rightName = $qtDirectoryNames[$rightIndex]
-        $leftPath = $qtDirectories[$leftName]
-        $rightPath = $qtDirectories[$rightName]
-        if ((Test-PathIsSameOrDescendant -Path $leftPath -Parent $rightPath) -or
-            (Test-PathIsSameOrDescendant -Path $rightPath -Parent $leftPath)) {
-            throw "Qt $leftName and $rightName directories must be distinct and non-overlapping: '$leftPath', '$rightPath'."
-        }
-    }
-}
+Assert-QtDirectoryIsolation -Source $sourceDirectory -Build $buildDirectory `
+    -Install $installPrefix -HostPrefix $HostQtPrefix
 Assert-SafeRecursiveRemovalTarget -Path $installPrefix -Description "Qt install prefix"
 Assert-SafeRecursiveRemovalTarget -Path $buildDirectory -Description "Qt build directory"
 
@@ -470,13 +510,20 @@ if (Test-Path -LiteralPath $qtConfig -PathType Leaf) {
     if (Test-Path -LiteralPath $stampPath -PathType Leaf) {
         $stamp = Get-Content -LiteralPath $stampPath -Raw | ConvertFrom-Json
         $binaryStampMatches = (Test-SnowStaticQtStamp -Stamp $stamp -Version $QtVersion `
-            -Configuration $Configuration) -and
+            -Configuration $Configuration -Architecture $Architecture -HostArchitecture $hostArchitecture) -and
             $stamp.DependencyFingerprint -eq $dependencyFingerprint
+        if ($binaryStampMatches) {
+            $toolPrefix = if ($crossCompilation) { $HostQtPrefix } else { $installPrefix }
+            $binaryStampMatches = Test-SnowQtHostToolHashes -Stamp $stamp -Prefix $toolPrefix
+            if ($crossCompilation) { $binaryStampMatches = $binaryStampMatches -and $stamp.HostQtPrefix -ceq $HostQtPrefix }
+        }
         $stampMatches = $binaryStampMatches
     }
     $systemCodecsMatch = Test-InstalledQtSystemCodecs -Prefix $installPrefix -Configuration $Configuration
     $systemCodecsMatch = $systemCodecsMatch -and
-        (Get-SnowQtKitVersion -Qt6Dir (Join-Path $installPrefix "lib/cmake/Qt6")) -ceq $QtVersion
+        (Get-SnowQtKitVersion -Qt6Dir (Join-Path $installPrefix "lib/cmake/Qt6")) -ceq $QtVersion -and
+        (Test-SnowQtArchitecture -Qt6Dir (Join-Path $installPrefix "lib/cmake/Qt6") `
+            -Architecture $Architecture -Configuration $Configuration)
     $developmentModulesMatch = -not $enableDevelopmentModules -or
         (Test-SnowQtDevelopmentModules -Qt6Dir (Join-Path $installPrefix "lib/cmake/Qt6"))
     $translationsMatch = Test-SnowQtTranslationKit -Qt6Dir (Join-Path $installPrefix "lib/cmake/Qt6")
@@ -563,6 +610,7 @@ if ($refreshLicenseBundleOnly) {
     Write-StaticQtBuildStamp -Path $stampPath -Version $QtVersion `
         -BuildConfiguration $Configuration -Fingerprint $dependencyFingerprint `
         -SourceArchive $sourceUrls[-1] -BuildParallelism $Parallelism `
+        -Architecture $Architecture -HostArchitecture $hostArchitecture -HostQtPrefix $HostQtPrefix `
         -WithDevelopmentModules (Test-SnowQtDevelopmentModules -Qt6Dir (Join-Path $installPrefix "lib/cmake/Qt6"))
     Write-Output "Validated static Qt $QtVersion ($Configuration) and refreshed its license provenance at $installPrefix"
     exit 0
@@ -621,6 +669,17 @@ $configureArguments = @(
     "-DQT_FEATURE_qtdiag=OFF",
     "-DQT_FEATURE_qtplugininfo=OFF"
 )
+if ($crossCompilation) {
+    # configure's platform switches belong before the CMake argument delimiter.
+    $delimiter = [Array]::IndexOf($configureArguments, "--")
+    $targetSpec = if ($Architecture -eq "arm64") { "win32-arm64-msvc" } else { "win32-msvc" }
+    $targetProcessor = if ($Architecture -eq "arm64") { "ARM64" } else { "AMD64" }
+    $configureArguments = @($configureArguments[0..($delimiter - 1)]) +
+        @("-xplatform", $targetSpec, "-qt-host-path", $HostQtPrefix) +
+        @($configureArguments[$delimiter..($configureArguments.Count - 1)]) +
+        @("-DCMAKE_SYSTEM_NAME=Windows", "-DCMAKE_SYSTEM_PROCESSOR=$targetProcessor",
+            "-DQT_HOST_PATH:PATH=$HostQtPrefix")
+}
 Invoke-Checked -Command (Join-Path $sourceDirectory "configure.bat") `
     -Arguments $configureArguments -WorkingDirectory $buildDirectory
 
@@ -701,6 +760,10 @@ if (-not (Test-SnowQtTranslationKit -Qt6Dir (Join-Path $installPrefix "lib/cmake
 if (-not (Test-InstalledQtSystemCodecs -Prefix $installPrefix -Configuration $Configuration)) {
     throw "The installed Qt targets do not export the audited $Configuration codec/LTCG/timezone feature policy."
 }
+if (-not (Test-SnowQtArchitecture -Qt6Dir (Join-Path $installPrefix "lib/cmake/Qt6") `
+        -Architecture $Architecture -Configuration $Configuration)) {
+    throw "The installed Qt libraries do not match the requested $Architecture target."
+}
 
 Install-QtLicenseBundle -Source $sourceDirectory -Prefix $installPrefix `
     -Version $QtVersion -SourceArchive $sourceUrls[-1]
@@ -710,6 +773,7 @@ if (-not (Test-InstalledQtLicenseBundle -Prefix $installPrefix)) {
 
 Write-StaticQtBuildStamp -Path $stampPath -Version $QtVersion `
     -BuildConfiguration $Configuration -Fingerprint $dependencyFingerprint `
-    -SourceArchive $sourceUrls[-1] -BuildParallelism $Parallelism -WithDevelopmentModules $enableDevelopmentModules
+    -SourceArchive $sourceUrls[-1] -BuildParallelism $Parallelism -WithDevelopmentModules $enableDevelopmentModules `
+    -Architecture $Architecture -HostArchitecture $hostArchitecture -HostQtPrefix $HostQtPrefix
 
 Write-Output "Static Qt $QtVersion ($Configuration) installed at $installPrefix"

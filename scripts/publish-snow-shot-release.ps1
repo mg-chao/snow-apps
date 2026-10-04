@@ -4,6 +4,9 @@ param(
     [ValidatePattern('^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$')][string]$GitHubRepository = 'mg-chao/snow-apps',
     [string]$Version = '',
     [string]$BuildDirectory = 'build/snow-shot-msvc-release',
+    [string]$Arm64BuildDirectory = 'build/snow-shot-msvc-arm64-release',
+    [string]$Arm64OcrRuntimeArchive = '',
+    [string]$NativeValidationDirectory = '',
     [string]$SigningKeyPath,
     [switch]$SkipBuild,
     [ValidatePattern('^[A-Za-z0-9][A-Za-z0-9.-]*$')][string]$MacHost,
@@ -24,7 +27,16 @@ Set-StrictMode -Version Latest
 if ($AuditOnly -and $Operation -ne 'Publish') { throw 'AuditOnly can only be used with Publish.' }
 . (Join-Path $PSScriptRoot 'snow-shot-github-release.ps1')
 . (Join-Path $PSScriptRoot 'snow-shot-editions.ps1')
+. (Join-Path $PSScriptRoot 'snow-shot-native-validation.ps1')
+. (Join-Path $PSScriptRoot 'snow-build-environment.ps1')
 $repo = Split-Path -Parent $PSScriptRoot
+$buildDirectories = @{}
+foreach ($architecture in @('x64', 'arm64')) {
+    $directory = if ($architecture -eq 'x64') { $BuildDirectory } else { $Arm64BuildDirectory }
+    if (-not [IO.Path]::IsPathRooted($directory)) { $directory = Join-Path $repo $directory }
+    $buildDirectories[$architecture] = [IO.Path]::GetFullPath($directory)
+}
+$hostArchitecture = Get-SnowWindowsHostArchitecture
 $publicKeys = Join-Path $repo 'snow_shot/resources/update-trusted-keys.json'
 $sourceVersion = [regex]::Match((Get-Content -Raw (Join-Path $repo 'CMakeLists.txt')), 'set\(SNOW_SHOT_VERSION "([^"]+)"\)').Groups[1].Value
 if (-not $Version) { $Version = $sourceVersion }
@@ -38,19 +50,21 @@ if ($MacHost) {
 } elseif ($MacProjectDirectory) { throw 'MacHost is required with MacProjectDirectory.' }
 $destinations = if ($SkipGitee -or $Operation -eq 'Verify') { 'GitHub' } else { 'GitHub and Gitee' }
 if (-not $PSCmdlet.ShouldProcess("Snow Shot $Version on $destinations", $Operation)) {
+        foreach ($architecture in @('x64', 'arm64')) {
         foreach ($edition in @('Full', 'Mini')) {
-            $product = Get-SnowShotEdition $edition
+            $product = Get-SnowShotEdition $edition $architecture
             foreach ($variant in $product.Variants) {
-                $base = "$($product.Product)-$Version-windows-x64-$variant"
+                $base = "$($product.Product)-$Version-windows-$architecture-$variant"
                 $suffixes = if ($variant -eq 'portable') { @('.zip', '.zip.sha256', '.manifest.json') }
                     else { @('.exe', '.exe.sha256', '.manifest.json', '-update.zip', '-update.zip.sha256', '-update.manifest.json') }
                 $suffixes | ForEach-Object { Write-Output "$base$_" }
             }
             Write-Output $product.Feed
-            if ($MacHost) {
+            if ($MacHost -and $architecture -eq 'x64') {
                 Write-Output "$($product.Product)-$Version-macos-arm64.dmg"
                 Write-Output "$($product.Product)-$Version-macos-arm64.dmg.sha256"
             }
+        }
         }
         if ($MacHost) { Write-Output 'install-snow-shot-macos.sh' }
         if ($DeployWebsite -and $Operation -eq 'Publish' -and -not $AuditOnly) {
@@ -71,12 +85,13 @@ if ($Operation -eq 'Verify') {
         $release = Get-SnowGitHubRelease $GitHubRepository $Version
         if (-not $release -or $release.draft) { throw 'Expected a published GitHub release.' }
         $verifyDirectory = Join-Path $repo "artifacts/github-verify-$([guid]::NewGuid().ToString('N'))"
+        foreach ($architecture in @(Get-SnowShotReleaseArchitectures $release $Version)) {
         foreach ($edition in @(Get-SnowShotReleaseEditions $release $Version)) {
-            $product = Get-SnowShotEdition $edition
+            $product = Get-SnowShotEdition $edition $architecture
             $manifestPath = Get-SnowGitHubAsset $GitHubRepository $Version $product.Feed $verifyDirectory
             $helperName = if ($edition -eq 'Mini') { 'snow-shot-mini-updater' } else { 'snow-shot-updater' }
-            $auditor = Join-Path $BuildDirectory "$($product.Executable)/Release/$helperName.exe"
-            & $auditor --verify-release --manifest $manifestPath
+            $auditor = Join-Path $buildDirectories[$hostArchitecture] "$($product.Executable)/Release/$helperName.exe"
+            & $auditor --verify-release --platform "windows-$architecture" --manifest $manifestPath
             if ($LASTEXITCODE -ne 0) { throw 'GitHub update signature verification failed.' }
             $envelope = Get-Content -Raw -LiteralPath $manifestPath | ConvertFrom-Json
             $payload = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($envelope.payload)) | ConvertFrom-Json
@@ -101,13 +116,25 @@ if ($Operation -eq 'Verify') {
                 }
             }
         }
+        }
         Write-Output "Verified signed GitHub packages for $Version."
     return
 }
 if (-not $SigningKeyPath -or -not (Test-Path -LiteralPath $SigningKeyPath -PathType Leaf)) { throw 'A local release signing key is required.' }
 # Online installations must be able to obtain the immutable runtime advertised by this
 # source release. Fail before an expensive build if it is unavailable.
-$ocrManifest = Get-Content -Raw (Join-Path $repo 'snow_shot/packaging/snow-shot-ocr-asset-manifest.json') | ConvertFrom-Json
+foreach ($architecture in @('x64', 'arm64')) {
+    $descriptorPath = if ($architecture -eq 'x64') { 'snow_shot/packaging/snow-shot-ocr-asset-manifest.json' } else { 'snow_shot/packaging/snow-shot-ocr-asset-manifest-arm64.json' }
+    if ($architecture -eq 'arm64' -and $Arm64OcrRuntimeArchive) {
+        . (Join-Path $PSScriptRoot 'snow-shot-ocr-release-runtime.ps1')
+        $descriptorPath = Resolve-SnowOcrAssetManifest -ArchivePath $Arm64OcrRuntimeArchive -Architecture arm64 `
+            -PinnedManifestPath (Join-Path $repo $descriptorPath) `
+            -OutputPath (Join-Path $buildDirectories.arm64 'snow-shot-ocr-asset-manifest-windows-arm64.json')
+    } elseif ($architecture -eq 'arm64' -and -not (Test-Path -LiteralPath (Join-Path $repo $descriptorPath) -PathType Leaf)) {
+        $descriptorPath = Join-Path $buildDirectories.arm64 'snow-shot-ocr-asset-manifest-windows-arm64.json'
+    }
+    if (-not [IO.Path]::IsPathRooted($descriptorPath)) { $descriptorPath = Join-Path $repo $descriptorPath }
+$ocrManifest = Get-Content -Raw $descriptorPath | ConvertFrom-Json
 $runtimePreflight = Join-Path ([IO.Path]::GetTempPath()) ("snow-shot-ocr-preflight-$([guid]::NewGuid().ToString('N')).zip")
 try {
     $runtimeUri = [uri]$ocrManifest.runtime.archive.url
@@ -121,6 +148,7 @@ try {
     throw "Release preflight failed: OCR runtime $($ocrManifest.runtime.version) is unavailable or differs from the checked-in manifest. Restore the exact approved asset or complete a separately authorized OCR release; do not replace pinned hashes to bypass this check. $($_.Exception.Message)"
 } finally {
     if (Test-Path -LiteralPath $runtimePreflight -PathType Leaf) { Remove-Item -LiteralPath $runtimePreflight }
+}
 }
 if (-not [IO.Path]::IsPathRooted($BuildDirectory)) { $BuildDirectory = Join-Path $repo $BuildDirectory }
 $BuildDirectory = [IO.Path]::GetFullPath($BuildDirectory)
@@ -142,8 +170,11 @@ try {
         Write-Output "macOS packaging runs alongside Windows. Log: $releaseDirectory/setup/macos-build.log"
     }
     if (-not $SkipBuild) {
-        & (Join-Path $PSScriptRoot 'package-snow-shot.ps1') -BuildDirectory $BuildDirectory -Parallelism $Parallelism
-        if ($LASTEXITCODE -ne 0) { throw 'Packaging failed.' }
+        foreach ($architecture in @('x64', 'arm64')) {
+            $ocrArguments = if ($architecture -eq 'arm64' -and $Arm64OcrRuntimeArchive) { @{ OcrRuntimeArchive = $Arm64OcrRuntimeArchive } } else { @{} }
+            & (Join-Path $PSScriptRoot 'package-snow-shot.ps1') -Architecture $architecture -BuildDirectory $buildDirectories[$architecture] -Parallelism $Parallelism @ocrArguments
+            if ($LASTEXITCODE -ne 0) { throw "Packaging failed for $architecture." }
+        }
     }
 } finally {
     # Join even if Windows fails: do not leave an unattended SSH packaging process.
@@ -160,26 +191,31 @@ if ($MacHost) {
     [IO.File]::WriteAllText((Join-Path $releaseDirectory 'setup/install-snow-shot-macos.sh'), $installer, [Text.UTF8Encoding]::new($false))
 }
 $githubAssets = @{}
+$nativeValidation = @()
+foreach ($architecture in @('x64', 'arm64')) {
+    $BuildDirectory = $buildDirectories[$architecture]
+    $releasePreset = (Get-SnowWindowsTarget -Architecture $architecture).ReleasePreset
 foreach ($edition in @('Full', 'Mini')) {
-    $product = Get-SnowShotEdition $edition
+    $product = Get-SnowShotEdition $edition $architecture
     $packages = @()
     foreach ($variant in $product.Variants) {
         $kinds = if ($variant -eq 'portable') { @('portable') } else { @('installer', 'update') }
         foreach ($kind in $kinds) {
             $suffix = if ($kind -eq 'installer') { '.exe' } elseif ($kind -eq 'update') { '-update.zip' } else { '.zip' }
-            $base = "$($product.Product)-$Version-windows-x64-$variant"
+            $base = "$($product.Product)-$Version-windows-$architecture-$variant"
             $source = Join-Path $BuildDirectory "$base$suffix"
             $manifestSuffix = if ($kind -eq 'update') { '-update.manifest.json' } else { '.manifest.json' }
             $manifest = Get-Content -Raw (Join-Path $BuildDirectory "$base$manifestSuffix") | ConvertFrom-Json
             if ($manifest.PackageVersion -cne $Version -or $manifest.Variant -cne $variant) { throw 'Mixed package versions or variants.' }
-            if ($kind -eq 'installer' -and ($manifest.Preset -cne 'snow-shot-msvc-release' -or
-                -not $manifest.StaticCrt -or -not $manifest.StaticQt -or $manifest.Architecture -cne 'x64')) {
-                throw 'Only audited static Windows x64 release installers may be published.'
+            if ($kind -eq 'installer' -and ($manifest.Preset -cne $releasePreset -or
+                -not $manifest.StaticCrt -or -not $manifest.StaticQt -or $manifest.Architecture -cne $architecture)) {
+                throw 'Only audited static Windows release installers may be published.'
             }
             $descriptor = if ($kind -eq 'installer') { $manifest.Installer } else { $manifest.Archive }
             $hash = (Get-FileHash -LiteralPath $source -Algorithm SHA256).Hash.ToLowerInvariant()
             if ($hash -cne $descriptor.Sha256 -or (Get-Item -LiteralPath $source).Length -ne $descriptor.Bytes) { throw 'Package audit manifest mismatch.' }
-            $path = "setup/$($product.Product)_windows-x64-$variant$suffix"
+            $nativeValidation += Assert-SnowShotNativeValidation -Manifest $manifest -ArtifactPath $source -Platform "windows-$architecture" -ProofDirectory $NativeValidationDirectory
+            $path = "setup/$($product.Product)_windows-$architecture-$variant$suffix"
             Copy-Item -LiteralPath $source -Destination (Join-Path $releaseDirectory $path)
                 $githubDirectory = Join-Path $releaseDirectory 'github-assets'
                 $null = New-Item -ItemType Directory -Force -Path $githubDirectory
@@ -204,7 +240,7 @@ foreach ($edition in @('Full', 'Mini')) {
         }
     }
     $payload = [Text.Encoding]::UTF8.GetBytes(([ordered]@{ schema = 1; product = $product.Product; version = $Version;
-        publishedAt = [DateTime]::UtcNow.ToString('yyyy-MM-ddTHH:mm:ssZ'); platform = 'windows-x64'; packages = $packages } |
+        publishedAt = [DateTime]::UtcNow.ToString('yyyy-MM-ddTHH:mm:ssZ'); platform = "windows-$architecture"; packages = $packages } |
         ConvertTo-Json -Depth 12 -Compress))
     $rsa = [Security.Cryptography.RSA]::Create()
     try {
@@ -226,7 +262,7 @@ foreach ($edition in @('Full', 'Mini')) {
     # authenticates it and the complete package contract before any upload.
     $githubRelease = Get-SnowGitHubRelease $GitHubRepository $Version
     if ($githubRelease -and @($githubRelease.assets | Where-Object { $_.name -ceq $product.Feed }).Count -eq 1) {
-        $existing = Get-SnowGitHubAsset $GitHubRepository $Version $product.Feed (Join-Path $releaseDirectory "existing-github-$edition")
+        $existing = Get-SnowGitHubAsset $GitHubRepository $Version $product.Feed (Join-Path $releaseDirectory "existing-github-$edition-$architecture")
         $published = [IO.File]::ReadAllBytes($existing)
     }
     if ($published) {
@@ -240,10 +276,11 @@ foreach ($edition in @('Full', 'Mini')) {
             [IO.File]::WriteAllBytes((Join-Path $releaseDirectory $product.Feed), $published)
     }
     $helperName = if ($edition -eq 'Mini') { 'snow-shot-mini-updater' } else { 'snow-shot-updater' }
-    $auditor = Join-Path $BuildDirectory "$($product.Executable)/Release/$helperName.exe"
-    $auditErrors = Join-Path $releaseDirectory "audit-errors-$edition.log"
-    $audit = Start-Process -FilePath $auditor -ArgumentList @('--audit-release', '--directory', "`"$releaseDirectory`"",
-        '--manifest', "`"$(Join-Path $releaseDirectory $product.Feed)`"") -WindowStyle Hidden -PassThru -RedirectStandardError $auditErrors
+    $auditor = Join-Path $buildDirectories[$hostArchitecture] "$($product.Executable)/Release/$helperName.exe"
+    $auditErrors = Join-Path $releaseDirectory "audit-errors-$edition-$architecture.log"
+    $auditArguments = @('--audit-release', '--platform', "windows-$architecture", '--static-only')
+    $audit = Start-Process -FilePath $auditor -ArgumentList ($auditArguments + @('--directory', "`"$releaseDirectory`"",
+        '--manifest', "`"$(Join-Path $releaseDirectory $product.Feed)`"")) -WindowStyle Hidden -PassThru -RedirectStandardError $auditErrors
     if (-not $audit.WaitForExit(300000) -or $audit.ExitCode -ne 0) {
         if (-not $audit.HasExited) { $audit.Kill() }
         $detail = if (Test-Path -LiteralPath $auditErrors) { (Get-Content -LiteralPath $auditErrors -TotalCount 20) -join ' ' } else { '' }
@@ -251,8 +288,9 @@ foreach ($edition in @('Full', 'Mini')) {
     }
     $githubAssets[$product.Feed] = Join-Path $releaseDirectory $product.Feed
 }
-$auditor = Join-Path $BuildDirectory 'snow_shot/Release/snow-shot-updater.exe'
-$miniAuditor = Join-Path $BuildDirectory 'snow_shot_mini/Release/snow-shot-mini-updater.exe'
+}
+$auditor = Join-Path $buildDirectories[$hostArchitecture] 'snow_shot/Release/snow-shot-updater.exe'
+$miniAuditor = Join-Path $buildDirectories[$hostArchitecture] 'snow_shot_mini/Release/snow-shot-mini-updater.exe'
 if ($AuditOnly) {
     Write-Output "Audited Snow Shot $Version without staging or publishing. Signed release: $releaseDirectory"
     return
@@ -289,7 +327,7 @@ if ($AuditOnly) {
             @{ name = $name; path = $path; size = (Get-Item -LiteralPath $path).Length;
                 sha256 = (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash.ToLowerInvariant() }
         }
-        @{ schema = 1; tag = $tag; sourceCommit = $head; title = "Snow Shot $Version";
+        @{ schema = 1; tag = $tag; sourceCommit = $head; title = "Snow Shot $Version"; nativeValidation = $nativeValidation;
             body = [IO.File]::ReadAllText($ReleaseNotesPath); assets = @($descriptors) } |
             ConvertTo-Json -Depth 12 | Set-Content -LiteralPath $localManifestPath -Encoding utf8NoBOM
         & python (Join-Path $PSScriptRoot 'publish-snow-shot-gitee-release.py') --manifest $localManifestPath --auditor $auditor --mini-auditor $miniAuditor --prepare-homebrew

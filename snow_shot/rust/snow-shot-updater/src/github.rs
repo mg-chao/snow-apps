@@ -74,8 +74,9 @@ pub fn package_name(version: &str, path: &str) -> Result<String> {
         "Could not download signed update metadata",
     )?;
     Ok(format!(
-        "{}-{version}-windows-x64-{suffix}",
-        crate::edition::PRODUCT
+        "{}-{version}-{}-{suffix}",
+        crate::edition::PRODUCT,
+        crate::edition::PLATFORM
     ))
 }
 
@@ -139,8 +140,9 @@ mod tests {
             )
             .unwrap(),
             format!(
-                "{}-2.0.0-windows-x64-online-update.zip",
-                crate::edition::PRODUCT
+                "{}-2.0.0-{}-online-update.zip",
+                crate::edition::PRODUCT,
+                crate::edition::PLATFORM
             )
         );
         assert!(package_name("2.0.0", "../evil.zip").is_err());

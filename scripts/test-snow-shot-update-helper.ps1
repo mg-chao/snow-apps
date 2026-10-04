@@ -1,10 +1,15 @@
 [CmdletBinding()]
 param(
     [string]$HelperPath = 'build/snow-shot-msvc-release/snow_shot/Release/snow-shot-updater.exe',
-    [ValidateSet('None', 'Cancel', 'Approve')][string]$ElevationAction = 'None'
+    [ValidateSet('None', 'Cancel', 'Approve')][string]$ElevationAction = 'None',
+    [ValidateSet('x64', 'arm64')][string]$Architecture = 'x64'
 )
 $ErrorActionPreference = 'Stop'
 $repo = Split-Path -Parent $PSScriptRoot
+. (Join-Path $PSScriptRoot 'snow-build-environment.ps1')
+if (-not $PSBoundParameters.ContainsKey('HelperPath')) {
+    $HelperPath = Join-Path $repo "build/$((Get-SnowWindowsTarget -Architecture $Architecture).ReleasePreset)/snow_shot/Release/snow-shot-updater.exe"
+}
 $helper = (Resolve-Path -LiteralPath $HelperPath).Path
 $testElevation = $ElevationAction -ne 'None'
 $registrationPath = 'Software\Snow Apps\SnowShot'
@@ -27,8 +32,7 @@ if ($testElevation) {
 }
 $testRoot = Join-Path $repo "build/update-helper-tests-$([guid]::NewGuid().ToString('N'))"
 $null = New-Item -ItemType Directory -Path $testRoot
-. (Join-Path $PSScriptRoot 'snow-build-environment.ps1')
-$null = Set-SnowBuildEnvironment -Preset 'snow-shot-msvc-release'
+$null = Set-SnowBuildEnvironment -Preset (Get-SnowWindowsTarget -Architecture $Architecture).ReleasePreset
 $fixture = Join-Path $testRoot 'fixture.exe'
 & cl /nologo /std:c++20 /W4 /WX /O2 /MT /DUNICODE /D_UNICODE "/Fe:$fixture" "/Fo:$testRoot/fixture.obj" `
     (Join-Path $repo 'snow_shot/tests/update_helper_fixture.cpp') /link advapi32.lib
@@ -75,7 +79,7 @@ foreach ($variant in $variants) {
             @{ path = "bin/$_"; size = (Get-Item -LiteralPath $path).Length; sha256 = (Get-FileHash -LiteralPath $path).Hash.ToLowerInvariant() }
         }
         Write-CanaryFile (Join-Path $root 'snow-shot-installation.json') (@{
-            schema = 1; variant = $variant; version = '1.0.0-alpha'; files = @($owned)
+            schema = 1; platform = "windows-$Architecture"; variant = $variant; version = '1.0.0-alpha'; files = @($owned)
         } | ConvertTo-Json -Depth 5)
         Write-CanaryFile (Join-Path $root 'user-note.txt') 'preserve user data'
         Write-CanaryFile (Join-Path $bin 'recovered.txt') 'incomplete replacement'

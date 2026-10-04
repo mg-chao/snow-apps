@@ -1,0 +1,73 @@
+include_guard(GLOBAL)
+
+function(snow_windows_normalize_architecture output value)
+    string(TOLOWER "${value}" _architecture)
+    if(_architecture MATCHES "^(x64|amd64|x86_64)$")
+        set(_architecture x64)
+    elseif(_architecture MATCHES "^(arm64|aarch64)$")
+        set(_architecture arm64)
+    else()
+        message(FATAL_ERROR "Unsupported Windows architecture '${value}': use x64 or arm64")
+    endif()
+    set(${output} "${_architecture}" PARENT_SCOPE)
+endfunction()
+
+# Compiler metadata is authoritative: CMAKE_SYSTEM_PROCESSOR can still describe
+# the build host when a Ninja build selects the cross compiler through PATH.
+function(snow_configure_windows_architecture)
+    if(NOT WIN32)
+        return()
+    endif()
+    if(CMAKE_CXX_COMPILER_ARCHITECTURE_ID)
+        set(_compiler_architecture "${CMAKE_CXX_COMPILER_ARCHITECTURE_ID}")
+    elseif(MSVC_CXX_ARCHITECTURE_ID)
+        set(_compiler_architecture "${MSVC_CXX_ARCHITECTURE_ID}")
+    elseif(CMAKE_GENERATOR_PLATFORM)
+        set(_compiler_architecture "${CMAKE_GENERATOR_PLATFORM}")
+    else()
+        set(_compiler_architecture "${CMAKE_SYSTEM_PROCESSOR}")
+    endif()
+    snow_windows_normalize_architecture(_detected "${_compiler_architecture}")
+    if(SNOW_WINDOWS_ARCHITECTURE)
+        snow_windows_normalize_architecture(_selected "${SNOW_WINDOWS_ARCHITECTURE}")
+        if(NOT _selected STREQUAL _detected)
+            message(FATAL_ERROR
+                "SNOW_WINDOWS_ARCHITECTURE=${_selected} disagrees with the ${_detected} C++ compiler")
+        endif()
+    endif()
+    if(DEFINED CMAKE_SIZEOF_VOID_P AND NOT CMAKE_SIZEOF_VOID_P EQUAL 8)
+        message(FATAL_ERROR "Snow Shot requires a 64-bit Windows compiler")
+    endif()
+    if(VCPKG_TARGET_TRIPLET)
+        if(NOT VCPKG_TARGET_TRIPLET MATCHES "^(x64|arm64)-windows(-.*)?$")
+            message(FATAL_ERROR "Unsupported Windows vcpkg target triplet: ${VCPKG_TARGET_TRIPLET}")
+        endif()
+        if(NOT CMAKE_MATCH_1 STREQUAL _detected)
+            message(FATAL_ERROR
+                "VCPKG_TARGET_TRIPLET=${VCPKG_TARGET_TRIPLET} disagrees with the ${_detected} C++ compiler")
+        endif()
+    endif()
+    set(SNOW_WINDOWS_ARCHITECTURE "${_detected}" CACHE STRING
+        "Windows target architecture: x64 or arm64." FORCE)
+    set_property(CACHE SNOW_WINDOWS_ARCHITECTURE PROPERTY STRINGS x64 arm64)
+    set(SNOW_WINDOWS_PLATFORM "windows-${_detected}" CACHE INTERNAL
+        "Windows release platform selected by the C++ compiler." FORCE)
+endfunction()
+
+function(snow_windows_rust_environment output target)
+    set(_environment)
+    if(WIN32 AND MSVC)
+        set(_c_compiler "${CMAKE_C_COMPILER}")
+        if(NOT _c_compiler)
+            set(_c_compiler "${CMAKE_CXX_COMPILER}")
+        endif()
+        string(REPLACE "-" "_" _target_key "${target}")
+        string(TOUPPER "${_target_key}" _cargo_target_key)
+        list(APPEND _environment
+            "CARGO_TARGET_${_cargo_target_key}_LINKER=${CMAKE_LINKER}"
+            "CC_${_target_key}=${_c_compiler}"
+            "CXX_${_target_key}=${CMAKE_CXX_COMPILER}"
+            "AR_${_target_key}=${CMAKE_AR}")
+    endif()
+    set(${output} "${_environment}" PARENT_SCOPE)
+endfunction()

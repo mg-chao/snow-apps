@@ -100,9 +100,17 @@ try {
     $packaging = Join-Path $fixture 'snow_shot/packaging'
     $build = Join-Path $fixture 'build'
     foreach ($directory in @($fixtureScripts, $resources, $packaging, $build)) { $null = New-Item -ItemType Directory -Force -Path $directory }
-    foreach ($name in @('publish-snow-shot-release.ps1','snow-shot-github-release.ps1','snow-shot-editions.ps1')) {
+    foreach ($name in @('publish-snow-shot-release.ps1','snow-shot-github-release.ps1','snow-shot-editions.ps1','snow-shot-native-validation.ps1')) {
         Copy-Item -LiteralPath (Join-Path $PSScriptRoot $name) -Destination $fixtureScripts
     }
+    @'
+function Get-SnowWindowsHostArchitecture { return 'x64' }
+function Get-SnowWindowsTarget {
+    param($Architecture)
+    $preset = if ($Architecture -eq 'arm64') { 'snow-shot-msvc-arm64-release' } else { 'snow-shot-msvc-release' }
+    return [pscustomobject]@{ ReleasePreset = $preset }
+}
+'@ | Set-Content -LiteralPath (Join-Path $fixtureScripts 'snow-build-environment.ps1')
     @'
 param($Version, $WebsiteDirectory)
 Require ($Version -ceq '2.0.0' -and $WebsiteDirectory -ceq 'fixture-site') 'Forward the release website identity.'
@@ -120,22 +128,28 @@ $global:SnowGitHubTestEvents.Add('website')
     [IO.File]::WriteAllText($global:SnowGitHubTestOcr, 'ocr')
     @{ runtime = @{ version = '1'; archive = @{ url = 'https://example.invalid/ocr'; size = 3; sha256 = (Get-FileHash $global:SnowGitHubTestOcr).Hash.ToLowerInvariant() } } } |
         ConvertTo-Json -Depth 5 | Set-Content -LiteralPath (Join-Path $packaging 'snow-shot-ocr-asset-manifest.json')
+    Copy-Item -LiteralPath (Join-Path $packaging 'snow-shot-ocr-asset-manifest.json') -Destination (Join-Path $packaging 'snow-shot-ocr-asset-manifest-arm64.json')
+    foreach ($architecture in @('x64', 'arm64')) {
     foreach ($prefix in @('snow-shot', 'snow-shot-mini')) {
     $variants = if ($prefix -eq 'snow-shot-mini') { @('online','portable') } else { @('online','offline','portable') }
     foreach ($variant in $variants) {
         $kinds = if ($variant -eq 'portable') { @('portable') } else { @('installer','update') }
         foreach ($kind in $kinds) {
             $suffix = if ($kind -eq 'installer') { '.exe' } elseif ($kind -eq 'update') { '-update.zip' } else { '.zip' }
-            $base = "$prefix-2.0.0-windows-x64-$variant"
+            $base = "$prefix-2.0.0-windows-$architecture-$variant"
             $package = Join-Path $build "$base$suffix"
             [IO.File]::WriteAllText($package, 'package')
             $hash = (Get-FileHash $package).Hash.ToLowerInvariant()
             [IO.File]::WriteAllText("$package.sha256", "$hash  $base$suffix`n")
-            $manifest = @{ PackageVersion = '2.0.0'; Variant = $variant; Preset = 'snow-shot-msvc-release'; StaticCrt = $true; StaticQt = $true;
-                Architecture = 'x64'; Installer = @{ Sha256 = $hash; Bytes = 7 }; Archive = @{ Sha256 = $hash; Bytes = 7 }; InstallFiles = @() }
+            $preset = if ($architecture -eq 'arm64') { 'snow-shot-msvc-arm64-release' } else { 'snow-shot-msvc-release' }
+            $manifest = @{ PackageVersion = '2.0.0'; Variant = $variant; Preset = $preset; StaticCrt = $true; StaticQt = $true;
+                Architecture = $architecture; Installer = @{ Sha256 = $hash; Bytes = 7 }; Archive = @{ Sha256 = $hash; Bytes = 7 }; InstallFiles = @();
+                NativeValidationRequired = $false; NativeValidation = @{ Platform = "windows-$architecture"; HostPlatform = "windows-$architecture"; Passed = $true;
+                    Artifacts = @(@{ Name = "$base$suffix"; Bytes = 7; Sha256 = $hash }) } }
             $manifestSuffix = if ($kind -eq 'update') { '-update.manifest.json' } else { '.manifest.json' }
-            $manifest | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath (Join-Path $build "$base$manifestSuffix")
+            $manifest | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath (Join-Path $build "$base$manifestSuffix")
         }
+    }
     }
     }
     function global:Invoke-WebRequest { param($Uri, $OutFile, $TimeoutSec, $MaximumRedirection)
@@ -146,6 +160,7 @@ $global:SnowGitHubTestEvents.Add('website')
     function global:Start-Process { param($FilePath, $ArgumentList, $WindowStyle, [switch]$PassThru, $RedirectStandardError)
         Require ($FilePath.EndsWith('snow-shot-updater.exe') -or $FilePath.EndsWith('snow-shot-mini-updater.exe')) 'Only the local auditor can run.'
         Require (-not $global:SnowGitHubTestEvents.Contains('upload')) 'Audit must precede every upload.'
+        Require ($ArgumentList -contains '--static-only' -and $ArgumentList -contains '--platform') 'Offline cross-architecture audit must keep executable probes separate from native proof.'
         $global:SnowGitHubTestEvents.Add('audit')
         $manifestPath = $ArgumentList[[array]::IndexOf($ArgumentList, '--manifest') + 1].Trim('"')
         $envelope = Get-Content -Raw -LiteralPath $manifestPath | ConvertFrom-Json
@@ -158,15 +173,15 @@ $global:SnowGitHubTestEvents.Add('website')
     $global:SnowGitHubTestRelease = $null
     $global:SnowGitHubTestBytes = @{}
     $global:SnowGitHubTestEvents.Clear()
-    & (Join-Path $fixtureScripts 'publish-snow-shot-release.ps1') -BuildDirectory $build -SigningKeyPath $keyPath -SkipBuild -SkipGitee
+    & (Join-Path $fixtureScripts 'publish-snow-shot-release.ps1') -BuildDirectory $build -Arm64BuildDirectory $build -SigningKeyPath $keyPath -SkipBuild -SkipGitee
     Require ($global:SnowGitHubTestEvents[0] -eq 'audit' -and $global:SnowGitHubTestEvents[-1] -eq 'edit') 'GitHub-only publication audits before publishing.'
-    Require ($global:SnowGitHubTestBytes.ContainsKey('latest-version.json') -and $global:SnowGitHubTestBytes.Count -eq 26) 'Publish all eight packages, sidecars, audit manifests, and both signed feeds.'
+    Require ($global:SnowGitHubTestBytes.ContainsKey('latest-version.json') -and $global:SnowGitHubTestBytes.ContainsKey('latest-version-windows-arm64.json') -and $global:SnowGitHubTestBytes.Count -eq 52) 'Publish all sixteen packages, sidecars, audit manifests, and four signed feeds.'
     $miniEnvelope = [Text.Encoding]::UTF8.GetString($global:SnowGitHubTestBytes['latest-version-mini.json']) | ConvertFrom-Json
     $miniPayload = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($miniEnvelope.payload)) | ConvertFrom-Json
     Require ($miniPayload.product -ceq 'snow-shot-mini' -and $miniPayload.packages.Count -eq 3) 'Mini signs its three packages with a product identity.'
     $previousEnvelope = [Convert]::ToBase64String($global:SnowGitHubTestBytes['latest-version.json'])
     $global:SnowGitHubTestEvents.Clear()
-    & (Join-Path $fixtureScripts 'publish-snow-shot-release.ps1') -BuildDirectory $build -SigningKeyPath $keyPath -SkipBuild -AuditOnly -DeployWebsite -WebsiteDirectory 'fixture-site'
+    & (Join-Path $fixtureScripts 'publish-snow-shot-release.ps1') -BuildDirectory $build -Arm64BuildDirectory $build -SigningKeyPath $keyPath -SkipBuild -AuditOnly -DeployWebsite -WebsiteDirectory 'fixture-site'
     Require (-not $global:SnowGitHubTestEvents.Contains('upload') -and -not $global:SnowGitHubTestEvents.Contains('edit')) 'AuditOnly never mutates GitHub.'
     Require (-not $global:SnowGitHubTestEvents.Contains('website')) 'AuditOnly never deploys the website.'
     Require ([Convert]::ToBase64String($global:SnowGitHubTestBytes['latest-version.json']) -ceq $previousEnvelope) 'Retry preserves authenticated envelope.'
@@ -185,7 +200,7 @@ $global:SnowGitHubTestEvents.Add('website')
         }
         $manifest = Get-Content -Raw -LiteralPath $arguments[[array]::IndexOf($arguments, '--manifest') + 1] | ConvertFrom-Json
         Require ($manifest.body -ceq $global:SnowGitHubTestNotes) 'Both destinations use identical local notes.'
-        Require ($manifest.sourceCommit -ceq ('a' * 40) -and $manifest.assets.Count -eq 26) 'Preserve the complete audited source and asset contract.'
+        Require ($manifest.sourceCommit -ceq ('a' * 40) -and $manifest.assets.Count -eq 52 -and $manifest.nativeValidation.Count -eq 16) 'Preserve the complete audited source, native proof, and asset contract.'
         foreach ($asset in $manifest.assets) {
             Require ((Get-FileHash -LiteralPath $asset.path).Hash.ToLowerInvariant() -ceq $asset.sha256) 'Gitee files must match local audited bytes.'
         }
@@ -201,7 +216,7 @@ $global:SnowGitHubTestEvents.Add('website')
     $global:SnowGitHubTestEvents.Clear()
     $global:SnowGitHubTestRelease = $null
     $global:SnowGitHubTestBytes = @{}
-    & (Join-Path $fixtureScripts 'publish-snow-shot-release.ps1') -BuildDirectory $build -SigningKeyPath $keyPath -SkipBuild -ReleaseNotesPath $notesPath -DeployWebsite -WebsiteDirectory 'fixture-site'
+    & (Join-Path $fixtureScripts 'publish-snow-shot-release.ps1') -BuildDirectory $build -Arm64BuildDirectory $build -SigningKeyPath $keyPath -SkipBuild -ReleaseNotesPath $notesPath -DeployWebsite -WebsiteDirectory 'fixture-site'
     Require ($global:SnowGitHubTestEvents[0] -eq 'gitee-auth' -and $global:SnowGitHubTestEvents[-2] -eq 'gitee-publish' -and
         $global:SnowGitHubTestEvents[-1] -eq 'website') 'Website deployment follows verified publication to both release destinations.'
     Must-Fail { Publish-SnowGitHubRelease 'mg-chao/snow-apps' '2.0.0' @{ 'latest-version.json' = $path } $verify -NotesPath $keyPath }

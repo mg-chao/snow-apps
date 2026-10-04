@@ -1,7 +1,8 @@
 # Invoked by package-snow-shot.ps1 after auditing the shared static toolchain.
 param([switch]$FunctionsOnly)
 
-function Assert-SnowShotMiniPayload([string]$Stage) {
+function Assert-SnowShotMiniPayload([string]$Stage,
+    [ValidateSet('x64', 'arm64')][string]$Architecture = 'x64', [string]$OcrAssetManifest) {
     $files = @(Get-ChildItem -LiteralPath $Stage -Recurse -File -Force)
     $binaries = @($files | Where-Object { $_.Extension -in @('.exe', '.dll') } |
         ForEach-Object { [IO.Path]::GetRelativePath($Stage, $_.FullName).Replace('\', '/') })
@@ -30,6 +31,16 @@ function Assert-SnowShotMiniPayload([string]$Stage) {
     }
     $manifest = Join-Path $Stage 'bin/assets/ocr/asset-manifest.json'
     if (-not (Test-Path -LiteralPath $manifest -PathType Leaf)) { throw 'Mini is missing its trusted OCR descriptor.' }
+    if ($OcrAssetManifest) {
+        $trusted = Get-Content -LiteralPath $OcrAssetManifest -Raw | ConvertFrom-Json
+        $staged = Get-Content -LiteralPath $manifest -Raw | ConvertFrom-Json
+        if ($trusted.runtime.platform -cne "windows-$Architecture" -or
+            $staged.runtime.platform -cne "windows-$Architecture" -or
+            (Get-FileHash -LiteralPath $manifest -Algorithm SHA256).Hash -cne
+                (Get-FileHash -LiteralPath $OcrAssetManifest -Algorithm SHA256).Hash) {
+            throw 'Mini OCR descriptor must match the selected trusted target manifest exactly.'
+        }
+    }
     if (-not (Test-Path -LiteralPath (Join-Path $Stage 'share/snow-shot-mini/licenses/LICENSE'))) {
         throw 'Mini is missing its license bundle.'
     }
@@ -40,13 +51,14 @@ function Invoke-SnowShotMiniPackaging {
     Reset-ReleaseDirectory $miniInstall
     & cmake --install $buildDirectory --config Release --component SnowShotMini --prefix $miniInstall
     if ($LASTEXITCODE -ne 0) { throw 'Snow Shot Mini install failed.' }
-    Assert-SnowShotMiniPayload $miniInstall
+    Assert-SnowShotMiniPayload -Stage $miniInstall -Architecture $Architecture -OcrAssetManifest $ocrAssetManifestPath
     $main = Join-Path $miniInstall 'bin/snow_shot_mini.exe'
     $metadata = (Get-Item -LiteralPath $main).VersionInfo
     if ($metadata.ProductName -cne 'Snow Shot Mini' -or $metadata.OriginalFilename -cne 'snow_shot_mini.exe' -or
         $metadata.ProductVersion -cne $packageVersion) { throw 'Mini binary identity/version differs from this release.' }
     Assert-NoPeExports $main
     foreach ($binary in @(Get-ChildItem -LiteralPath (Join-Path $miniInstall 'bin') -File -Filter '*.exe' -Force)) {
+        Assert-SnowPeArchitecture -Path $binary.FullName -Architecture $Architecture
         $imports = @(& $script:DumpbinPath /nologo /dependents $binary.FullName 2>&1)
         if ($LASTEXITCODE -ne 0) { throw "Mini PE dependency inspection failed: $($binary.Name)" }
         foreach ($line in $imports) {
@@ -61,9 +73,9 @@ function Invoke-SnowShotMiniPackaging {
         }
     }
     & (Join-Path $PSScriptRoot 'collect-snow-shot-symbols.ps1') -BuildDirectory $buildDirectory `
-        -InstallDirectory $miniInstall -Edition Mini `
-        -OcrAssetManifest (Join-Path $repoRoot 'snow_shot/packaging/snow-shot-ocr-asset-manifest.json') `
-        -UpdaterProfileDirectory (Join-Path $buildDirectory 'cargo-mini\x86_64-pc-windows-msvc\release-size')
+        -InstallDirectory $miniInstall -Edition Mini -Architecture $Architecture `
+        -OcrAssetManifest $ocrAssetManifestPath `
+        -UpdaterProfileDirectory (Join-Path $buildDirectory "cargo-mini\$($windowsTarget.RustTarget)\release-size")
     $config = Join-Path $buildDirectory 'CPackSnowShotMiniConfig.cmake'
     if (-not (Test-Path -LiteralPath $config)) { throw "Mini CPack configuration was not generated: $config" }
     foreach ($variant in @('online', 'portable')) {
@@ -73,13 +85,14 @@ function Invoke-SnowShotMiniPackaging {
         if ($variant -eq 'portable') {
             [IO.File]::WriteAllText((Join-Path $stage 'bin/__mini_data_directory'), 'portable', [Text.UTF8Encoding]::new($false))
         }
-        Assert-SnowShotMiniPayload $stage
+        Assert-SnowShotMiniPayload -Stage $stage -Architecture $Architecture -OcrAssetManifest $ocrAssetManifestPath
         $owned = @(Get-ReleaseTreeFileManifest $stage | ForEach-Object {
             [ordered]@{ path = $_.Path; size = $_.Bytes; sha256 = $_.Sha256 }
         })
-        [ordered]@{ schema = 1; product = 'snow-shot-mini'; version = $packageVersion; variant = $variant; files = $owned } |
+        [ordered]@{ schema = 1; product = 'snow-shot-mini'; platform = $ocrPlatform; version = $packageVersion; variant = $variant; files = $owned } |
             ConvertTo-Json -Depth 8 | Set-Content (Join-Path $stage 'snow-shot-mini-installation.json') -Encoding utf8NoBOM
-        $base = "snow-shot-mini-$packageVersion-windows-x64-$variant"
+        Assert-SnowNativeStartup -Stage $stage -Executable snow_shot_mini -Updater snow-shot-mini-updater -Version $packageVersion
+        $base = "snow-shot-mini-$packageVersion-$ocrPlatform-$variant"
         $zipBase = if ($variant -eq 'online') { "$base-update" } else { $base }
         $zip = Join-Path $buildDirectory "$zipBase.zip"
         New-DeterministicZip $stage $zip
@@ -88,7 +101,8 @@ function Invoke-SnowShotMiniPackaging {
         $hash = (Get-FileHash $zip -Algorithm SHA256).Hash.ToLowerInvariant()
         "$hash  $zipBase.zip" | Set-Content "$zip.sha256" -Encoding ascii
         $audit = [ordered]@{ SchemaVersion = 3; Product = 'snow-shot-mini'; PackageVersion = $packageVersion;
-            Variant = $variant; Preset = 'snow-shot-msvc-release'; Architecture = 'x64'; StaticCrt = $true;
+            Variant = $variant; Preset = $releasePreset; Architecture = $Architecture; Platform = $ocrPlatform; StaticCrt = $true;
+            NativeValidationRequired = (-not $nativeTarget); NativeValidation = (New-SnowNativeValidation $zip);
             StaticQt = $true; InstallFiles = $files; Archive = [ordered]@{ Path = "$zipBase.zip";
                 Bytes = (Get-Item $zip).Length; Sha256 = $hash } }
         $audit | ConvertTo-Json -Depth 8 | Set-Content (Join-Path $buildDirectory "$zipBase.manifest.json") -Encoding utf8NoBOM
@@ -103,7 +117,7 @@ set(CPACK_INSTALL_CMAKE_PROJECTS "")
 set(CPACK_INSTALLED_DIRECTORIES "$stagePath;/")
 set(CPACK_PACKAGE_DIRECTORY "$nsisWork")
 set(CPACK_PACKAGE_FILE_NAME "$base")
-string(REPLACE "snow-shot-mini-$packageVersion-windows-x64.exe" "$base.exe" CPACK_NSIS_DEFINES "`${CPACK_NSIS_DEFINES}")
+string(REPLACE "snow-shot-mini-$packageVersion-$ocrPlatform.exe" "$base.exe" CPACK_NSIS_DEFINES "`${CPACK_NSIS_DEFINES}")
 "@ | Set-Content $variantConfig -Encoding utf8NoBOM
             & cpack --config $variantConfig -G NSIS -C Release
             if ($LASTEXITCODE -ne 0) { throw 'Mini NSIS packaging failed.' }
@@ -119,6 +133,7 @@ string(REPLACE "snow-shot-mini-$packageVersion-windows-x64.exe" "$base.exe" CPAC
             "$exeHash  $base.exe" | Set-Content "$exe.sha256" -Encoding ascii
             $audit.Remove('Archive')
             $audit.Installer = [ordered]@{ Path = "$base.exe"; Bytes = (Get-Item $exe).Length; Sha256 = $exeHash }
+            $audit.NativeValidation = New-SnowNativeValidation $exe
             $audit | ConvertTo-Json -Depth 8 | Set-Content (Join-Path $buildDirectory "$base.manifest.json") -Encoding utf8NoBOM
         }
     }

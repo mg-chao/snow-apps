@@ -53,6 +53,24 @@ try {
     [IO.File]::WriteAllText((Join-Path $fixture 'bin/snow_shot.exe'), 'wrong edition')
     Must-Fail { Assert-SnowShotMiniPayload $fixture }
     Remove-Item -LiteralPath (Join-Path $fixture 'bin/snow_shot.exe')
+    $manifest = Join-Path $fixture 'bin/assets/ocr/asset-manifest.json'
+    $repoRoot = Split-Path -Parent $PSScriptRoot
+    foreach ($architecture in @('x64', 'arm64')) {
+        $sourceName = if ($architecture -eq 'arm64') { 'snow-shot-ocr-asset-manifest-arm64.json' } else { 'snow-shot-ocr-asset-manifest.json' }
+        $trusted = Join-Path $repoRoot "snow_shot/packaging/$sourceName"
+        Copy-Item -LiteralPath $trusted -Destination $manifest -Force
+        Assert-SnowShotMiniPayload -Stage $fixture -Architecture $architecture -OcrAssetManifest $trusted
+        $opposite = if ($architecture -eq 'arm64') { 'x64' } else { 'arm64' }
+        Must-Fail { Assert-SnowShotMiniPayload -Stage $fixture -Architecture $opposite -OcrAssetManifest $trusted }
+        $tampered = Get-Content -LiteralPath $trusted -Raw | ConvertFrom-Json
+        $tampered.models[0].files[0].sha256 = '0' * 64
+        $tampered | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath $manifest -Encoding utf8NoBOM
+        Must-Fail { Assert-SnowShotMiniPayload -Stage $fixture -Architecture $architecture -OcrAssetManifest $trusted }
+    }
+    $armTrusted = Join-Path $repoRoot 'snow_shot/packaging/snow-shot-ocr-asset-manifest-arm64.json'
+    Copy-Item -LiteralPath (Join-Path $repoRoot 'snow_shot/packaging/snow-shot-ocr-asset-manifest.json') -Destination $manifest -Force
+    Must-Fail { Assert-SnowShotMiniPayload -Stage $fixture -Architecture arm64 -OcrAssetManifest $armTrusted }
+    Write-Output 'PASS: Mini trusted descriptor target, opposite architecture, and tampered model pin gates.'
     $mini = Get-SnowShotEdition Mini
     Require ($mini.Variants.Count -eq 2 -and $mini.Marker -ceq '__mini_data_directory') 'Mini has only online and portable variants and its own data marker.'
     $manifest = New-SnowShotScoopManifestObject '1.2.3' 'https://fixture.invalid/mini.zip' ('0' * 64) Mini

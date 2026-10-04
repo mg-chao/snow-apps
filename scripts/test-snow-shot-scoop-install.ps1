@@ -1,10 +1,17 @@
 #Requires -Version 7.0
-param([Parameter(Mandatory)][string]$ScoopRoot, [ValidateSet('Full', 'Mini')][string]$Edition = 'Full')
+param(
+    [Parameter(Mandatory)][string]$ScoopRoot,
+    [ValidateSet('Full', 'Mini')][string]$Edition = 'Full',
+    [ValidateSet('x64', 'arm64')][string]$Architecture = 'x64'
+)
 # Exercise pinned Scoop's real install, shim, shortcut and persistence functions.
 # Only OS integration boundaries (Start Menu location and persistent PATH writes)
 # are redirected. No existing Scoop config, installation or user data is touched.
 $ErrorActionPreference = 'Stop'
 if (-not $IsWindows) { throw 'The Scoop lifecycle smoke test requires Windows.' }
+$hostArchitecture = [Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString().ToLowerInvariant()
+if ($hostArchitecture -cne $Architecture) { throw 'Scoop lifecycle validation must run on the matching native Windows host.' }
+$scoopArchitecture = if ($Architecture -eq 'arm64') { 'arm64' } else { '64bit' }
 $ScoopRoot = (Resolve-Path -LiteralPath $ScoopRoot).Path
 $root = Join-Path ([IO.Path]::GetTempPath()) "snow-shot-scoop-install-$([guid]::NewGuid().ToString('N'))"
 $null = New-Item -ItemType Directory -Path $root
@@ -45,12 +52,13 @@ try {
     }
     . (Join-Path $PSScriptRoot 'snow-shot-scoop.ps1')
     Set-StrictMode -Off
-    $product = Get-SnowShotEdition $Edition
+    $product = Get-SnowShotEdition $Edition $Architecture
     $appName = $product.Scoop
     $executable = $product.Executable
     $marker = $product.Marker
     $fixtureManifest = Join-Path $root "$appName.json"
-    $manifest = New-SnowShotScoopManifestObject '0.0.1' 'https://fixture.invalid/portable.zip' ('0' * 64) $Edition |
+    $manifest = New-SnowShotScoopManifestObject '0.0.1' 'https://fixture.invalid/portable-x64.zip' ('0' * 64) $Edition `
+        'https://fixture.invalid/portable-arm64.zip' ('0' * 64) |
         ConvertTo-Json -Depth 8 | ConvertFrom-Json
     # The executable is inert: use the OS's existing executable as a valid PE fixture,
     # but never launch it. The real release ZIP is independently verified by the generator.
@@ -62,14 +70,14 @@ try {
         $archive = Join-Path $root "$version.zip"
         [IO.Compression.ZipFile]::CreateFromDirectory($stage, $archive)
         $manifest.version = $version
-        $manifest.architecture.'64bit'.url = "https://fixture.invalid/$($product.Product)-$version.zip"
-        $manifest.architecture.'64bit'.hash = (Get-FileHash $archive -Algorithm SHA256).Hash
+        $manifest.architecture.$scoopArchitecture.url = "https://fixture.invalid/$($product.Product)-$version-windows-$Architecture.zip"
+        $manifest.architecture.$scoopArchitecture.hash = (Get-FileHash $archive -Algorithm SHA256).Hash
         $manifest | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $fixtureManifest
         # Populate Scoop's isolated cache; download still runs its normal hash check.
-        $cacheFile = cache_path $appName $version $manifest.architecture.'64bit'.url
+        $cacheFile = cache_path $appName $version $manifest.architecture.$scoopArchitecture.url
         Assert-FixturePath $cacheFile
         Copy-Item -LiteralPath $archive -Destination $cacheFile
-        install_app $fixtureManifest '64bit' $false @{}
+        install_app $fixtureManifest $scoopArchitecture $false @{}
         $current = Join-Path $env:SCOOP "apps/$appName/current"
         Require ((Get-Content "$current/manifest.json" -Raw | ConvertFrom-Json).version -ceq $version) 'Current version did not advance'
         Require ((Get-Content "$current/bin/$marker" -Raw) -ceq 'portable') 'Portable marker changed'
@@ -91,8 +99,8 @@ try {
     }
     # Use the same removal primitives as scoop-uninstall without reloading its
     # real Start Menu boundary. Unlink persisted data before removing any version.
-    rm_shims $appName $manifest $false '64bit'
-    rm_startmenu_shortcuts $manifest $false '64bit'
+    rm_shims $appName $manifest $false $scoopArchitecture
+    rm_startmenu_shortcuts $manifest $false $scoopArchitecture
     $null = unlink_current (Join-Path $env:SCOOP "apps/$appName/0.0.2-beta")
     foreach ($version in @('0.0.1-beta', '0.0.2-beta')) {
         $directory = Join-Path $env:SCOOP "apps/$appName/$version"
@@ -107,20 +115,20 @@ try {
     Require ((Get-Content "$persisted/history.fixture" -Raw) -ceq 'history') 'Uninstall removed history'
     # Changing buckets requires uninstall/reinstall of the same app name.
     # Reinstall must reconnect the data left by ordinary uninstall.
-    install_app $fixtureManifest '64bit' $false @{}
+    install_app $fixtureManifest $scoopArchitecture $false @{}
     $current = Join-Path $env:SCOOP "apps/$appName/current"
     $data = Join-Path $current 'bin/portable'
     Require ((Get-Item $data).LinkType -eq 'Junction') 'Reinstall did not reconnect portable data'
     Require ((Get-Content "$data/settings.json" -Raw) -ceq '{"fixture":"retained"}') 'Reinstall lost settings'
     Require ((Get-Content "$data/history.fixture" -Raw) -ceq 'history') 'Reinstall lost history'
-    rm_shims $appName $manifest $false '64bit'
-    rm_startmenu_shortcuts $manifest $false '64bit'
+    rm_shims $appName $manifest $false $scoopArchitecture
+    rm_startmenu_shortcuts $manifest $false $scoopArchitecture
     $directory = Join-Path $env:SCOOP "apps/$appName/0.0.2-beta"
     Assert-FixturePath $directory
     $null = unlink_current $directory
     unlink_persist_data $manifest $directory
     Remove-Item -LiteralPath $directory -Recurse -Force
-    Write-Output "Isolated $($product.Name) Scoop install, upgrade, uninstall, and migration reinstall smoke test passed."
+    Write-Output "Isolated $($product.Name) Scoop $Architecture install, upgrade, uninstall, and migration reinstall smoke test passed."
 } finally {
     foreach ($key in $saved.Keys) { [Environment]::SetEnvironmentVariable($key, $saved[$key], 'Process') }
     # The root is created by this test. Remove junctions first, including on failure.

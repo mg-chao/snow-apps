@@ -23,7 +23,7 @@
       ]
     },
     "snow-shot": {
-      "description": "Build the minimal native dependency set required by Snow Shot.",
+      "description": "Build the minimal native dependency set required by Snow Shot on the selected architecture.",
       "dependencies": [
         { "name": "crashpad", "platform": "windows | osx" },
         {

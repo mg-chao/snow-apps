@@ -29,6 +29,7 @@ jobs:
         run: |
           ./scripts/test-snow-shot-winget.ps1
           ./scripts/test-snow-shot-mini-release.ps1
+          ./scripts/test-snow-shot-arm64-distribution.ps1
       - name: Resolve Snow Shot tag
         id: release
         shell: pwsh
@@ -49,7 +50,7 @@ jobs:
           'eligible=true' >> $env:GITHUB_OUTPUT
 
   submit:
-    needs: resolve
+    needs: [resolve, install]
     if: needs.resolve.outputs.eligible == 'true'
     runs-on: windows-2025
     concurrency:
@@ -110,3 +111,70 @@ jobs:
             ./scripts/submit-snow-shot-winget.ps1 -Tag $env:RELEASE_TAG -Edition $item.edition `
               -ManifestDirectory $item.directory -WingetCreate ./build/winget/wingetcreate.exe
           }
+
+  install:
+    needs: resolve
+    if: needs.resolve.outputs.eligible == 'true'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - architecture: x64
+            runner: windows-2025-vs2026
+          - architecture: arm64
+            runner: windows-11-vs2026-arm
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+      - name: Resolve matching native release
+        id: native
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ needs.resolve.outputs.tag }}
+        run: |
+          . ./scripts/snow-shot-winget.ps1
+          $release = Invoke-SnowShotWingetApi "repos/mg-chao/snow-apps/releases/tags/$env:RELEASE_TAG"
+          $architectures = @(Get-SnowShotReleaseArchitectures $release '${{ needs.resolve.outputs.version }}')
+          "available=$('${{ matrix.architecture }}' -in $architectures)" >> $env:GITHUB_OUTPUT
+      - name: Provision native WinGet
+        if: steps.native.outputs.available == 'True'
+        shell: pwsh
+        run: |
+          $path = ./scripts/initialize-snow-shot-winget.ps1
+          "WINGET_EXE=$path" >> $env:GITHUB_ENV
+      - name: Verify native install, uninstall, reinstall and data retention
+        if: steps.native.outputs.available == 'True'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ needs.resolve.outputs.tag }}
+        run: |
+          . ./scripts/snow-shot-winget.ps1
+          $release = Invoke-SnowShotWingetApi "repos/mg-chao/snow-apps/releases/tags/$env:RELEASE_TAG"
+          foreach ($edition in @(Get-SnowShotReleaseEditions $release '${{ needs.resolve.outputs.version }}')) {
+            $previous = $null
+            foreach ($candidate in @(Invoke-SnowShotWingetApi 'repos/mg-chao/snow-apps/releases?per_page=100')) {
+              if ($candidate.draft -or $candidate.tag_name -ceq $env:RELEASE_TAG) { continue }
+              try {
+                $version = Get-SnowShotWingetVersion $candidate.tag_name
+                if ([Management.Automation.SemanticVersion]::Parse($version) -ge
+                    [Management.Automation.SemanticVersion]::Parse('${{ needs.resolve.outputs.version }}')) { continue }
+                if ('${{ matrix.architecture }}' -in @(Get-SnowShotReleaseArchitectures $candidate $version) -and
+                    $edition -in @(Get-SnowShotReleaseEditions $candidate $version)) { $previous = $candidate; break }
+              } catch { continue }
+            }
+            $upgrade = if ($previous) { @{ PreviousTag = $previous.tag_name; RunningAppBehavior = 'Restart' } } else { @{ SkipUpgrade = $true } }
+            ./scripts/test-snow-shot-winget-install.ps1 -Tag $env:RELEASE_TAG -Edition $edition `
+              -Architecture ${{ matrix.architecture }} -Winget $env:WINGET_EXE -AllowUnrecognizedRelease @upgrade
+          }
+      - name: Preserve native lifecycle diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: snow-shot-winget-lifecycle-${{ matrix.architecture }}
+          path: build/winget-install-test
+          if-no-files-found: ignore

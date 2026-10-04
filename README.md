@@ -2,6 +2,10 @@
 
 Snow Apps repository, providing source code for Snow Shot and Snow Image Viewer.
 
+For native Windows ARM64 builds and packages, see
+[Windows ARM64 build support](docs-windows-arm64-build.md), including cross compilation,
+OCR preparation, and release validation prerequisites.
+
 <div style="font-size: 128px">🏗️🚧🦺</div>
 
 ## Install Snow Shot on Windows

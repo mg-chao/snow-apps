@@ -266,21 +266,26 @@ class PublisherTests(unittest.TestCase):
                 upload.assert_called_once()
                 self.assertEqual(cleanup.call_count, int(quota))
 
-    def paired_windows_release(self):
+    def paired_windows_release(self, architectures=('x64',)):
+        self.release.pop('nativeValidation', None)
         self.release['assets'] = []
-        for product, feed in (('snow-shot', 'latest-version.json'),
+        for architecture in architectures:
+          platform = 'windows-' + architecture
+          for product, feed in (('snow-shot', 'latest-version.json'),
                               ('snow-shot-mini', 'latest-version-mini.json')):
+            if architecture == 'arm64':
+                feed = feed[:-5] + '-windows-arm64.json'
             packages = []
             kinds = [('online', 'installer'), ('online', 'update'), ('portable', 'portable')]
             if product == 'snow-shot':
                 kinds += [('offline', 'installer'), ('offline', 'update')]
             for variant, kind in kinds:
                 suffix = '.exe' if kind == 'installer' else '-update.zip' if kind == 'update' else '.zip'
-                path = self.add_asset(f'{product}-1.2.3-windows-x64-{variant}{suffix}', b'fixture')
+                path = self.add_asset(f'{product}-1.2.3-{platform}-{variant}{suffix}', b'fixture')
                 packages.append({'variant': variant, 'kind': kind,
-                                 'path': f'setup/{product}_windows-x64-{variant}{suffix}',
+                                 'path': f'setup/{product}_{platform}-{variant}{suffix}',
                                  'size': path.stat().st_size, 'sha256': publisher.sha256(path)})
-            payload = {'version': '1.2.3', 'product': product, 'packages': packages}
+            payload = {'platform': platform, 'version': '1.2.3', 'product': product, 'packages': packages}
             self.add_asset(feed, json.dumps({'payload': base64.b64encode(
                 json.dumps(payload).encode()).decode()}).encode())
         auditors = [self.directory / 'full-auditor.exe', self.directory / 'mini-auditor.exe']
@@ -288,15 +293,61 @@ class PublisherTests(unittest.TestCase):
             auditor.write_bytes(b'fixture')
         return publisher.local_assets(self.release), auditors
 
+    def test_dual_architecture_release_requires_native_proof_for_exact_bytes(self):
+        assets, auditors = self.paired_windows_release(('x64', 'arm64'))
+        invoke = lambda *args: 'a' * 40 if args[0] == 'git' else ''
+        with patch.object(publisher, 'run', side_effect=invoke):
+            with self.assertRaisesRegex(ValueError, 'native validation evidence'):
+                publisher.verify_local_release(self.release, assets, *auditors)
+            proofs = []
+            for platform in ('windows-x64', 'windows-arm64'):
+                artifacts = [{'Name': name, 'Bytes': path.stat().st_size, 'Sha256': publisher.sha256(path)}
+                             for name, path in assets.items() if platform in name and name.endswith(('.exe', '.zip'))]
+                proofs.append({'Platform': platform, 'HostPlatform': platform, 'Passed': True, 'Artifacts': artifacts})
+            self.release['nativeValidation'] = proofs
+            publisher.verify_local_release(self.release, assets, *auditors, require_complete=True)
+            proofs[1]['HostPlatform'] = 'windows-x64'
+            with self.assertRaisesRegex(ValueError, 'does not match published bytes'):
+                publisher.verify_local_release(self.release, assets, *auditors)
+            proofs[1]['HostPlatform'] = 'windows-arm64'
+            proofs[1]['Artifacts'][0]['Sha256'] = '0' * 64
+            with self.assertRaisesRegex(ValueError, 'does not match published bytes'):
+                publisher.verify_local_release(self.release, assets, *auditors)
+
+    def test_historical_x64_verification_cannot_authorize_new_publication(self):
+        assets, auditors = self.paired_windows_release()
+        invoke = lambda *args: 'a' * 40 if args[0] == 'git' else ''
+        with patch.object(publisher, 'run', side_effect=invoke):
+            publisher.verify_local_release(self.release, assets, *auditors)
+            with self.assertRaisesRegex(ValueError, 'both editions and both x64/ARM64'):
+                publisher.verify_local_release(self.release, assets, *auditors, require_complete=True)
+
+    def test_partial_arm_release_and_feed_platform_mismatch_are_rejected(self):
+        assets, auditors = self.paired_windows_release(('x64', 'arm64'))
+        assets.pop('latest-version-mini-windows-arm64.json')
+        with patch.object(publisher, 'run', return_value=''):
+            with self.assertRaisesRegex(ValueError, 'requires signed metadata'):
+                publisher.verify_local_release(self.release, assets, *auditors)
+        assets, auditors = self.paired_windows_release(('x64', 'arm64'))
+        feed = assets['latest-version-windows-arm64.json']
+        envelope = json.loads(feed.read_text())
+        payload = json.loads(base64.b64decode(envelope['payload']))
+        payload['platform'] = 'windows-x64'
+        envelope['payload'] = base64.b64encode(json.dumps(payload).encode()).decode()
+        feed.write_text(json.dumps(envelope))
+        with patch.object(publisher, 'run', return_value=''):
+            with self.assertRaisesRegex(ValueError, 'platform differs'):
+                publisher.verify_local_release(self.release, assets, *auditors)
+
     def test_paired_release_uses_each_compiled_product_auditor(self):
         assets, auditors = self.paired_windows_release()
         with patch.object(publisher, 'run', side_effect=['', '', 'a' * 40]) as invoke:
             publisher.verify_local_release(self.release, assets, *auditors)
         self.assertEqual(invoke.call_args_list[0].args,
-                         (str(auditors[0]), '--verify-release', '--manifest',
+                         (str(auditors[0]), '--verify-release', '--platform', 'windows-x64', '--manifest',
                           str(assets['latest-version.json'])))
         self.assertEqual(invoke.call_args_list[1].args,
-                         (str(auditors[1]), '--verify-release', '--manifest',
+                         (str(auditors[1]), '--verify-release', '--platform', 'windows-x64', '--manifest',
                           str(assets['latest-version-mini.json'])))
         self.assertEqual(invoke.call_args_list[2].args, ('git', 'rev-list', '-n', '1', TAG))
 

@@ -7,6 +7,7 @@ on:
       - 'scripts/*winget*.ps1'
       - 'scripts/snow-shot-editions.ps1'
       - 'scripts/test-snow-shot-mini-release.ps1'
+      - 'scripts/test-snow-shot-arm64-distribution.ps1'
       - '.github/workflows/snow-shot-winget*.yml'
       - 'cmake/SnowShotInstaller.cmake'
       - 'snow_shot/tests/installer_packaging/**'
@@ -15,6 +16,7 @@ on:
       - 'scripts/*winget*.ps1'
       - 'scripts/snow-shot-editions.ps1'
       - 'scripts/test-snow-shot-mini-release.ps1'
+      - 'scripts/test-snow-shot-arm64-distribution.ps1'
       - '.github/workflows/snow-shot-winget*.yml'
       - 'cmake/SnowShotInstaller.cmake'
       - 'snow_shot/tests/installer_packaging/**'
@@ -35,13 +37,18 @@ on:
         default: Refuse
         type: choice
         options: [Refuse, Restart]
+      architecture:
+        description: Native Windows architecture of both upgrade releases
+        default: x64
+        type: choice
+        options: [x64, arm64]
 
 permissions:
   contents: read
 
 jobs:
   install:
-    runs-on: windows-2025
+    runs-on: ${{ inputs.architecture == 'arm64' && 'windows-11-vs2026-arm' || 'windows-2025-vs2026' }}
     timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
@@ -50,6 +57,7 @@ jobs:
         run: |
           ./scripts/test-snow-shot-winget.ps1
           ./scripts/test-snow-shot-mini-release.ps1
+          ./scripts/test-snow-shot-arm64-distribution.ps1
       - name: Verify submission credentials without submitting
         if: github.event_name != 'pull_request'
         shell: pwsh
@@ -70,10 +78,11 @@ jobs:
           RELEASE_TAG: ${{ inputs.tag || 'v1.1.5-beta' }}
           PREVIOUS_TAG: ${{ inputs.previous_tag || 'v1.1.4-beta' }}
           RUNNING_APP_BEHAVIOR: ${{ inputs.running_app_behavior || 'Refuse' }}
+          SNOW_ARCHITECTURE: ${{ inputs.architecture || 'x64' }}
         run: |
           ./scripts/test-snow-shot-winget-install.ps1 -Tag $env:RELEASE_TAG `
             -PreviousTag $env:PREVIOUS_TAG -Winget $env:WINGET_EXE -AllowUnrecognizedRelease `
-            -RunningAppBehavior $env:RUNNING_APP_BEHAVIOR
+            -Architecture $env:SNOW_ARCHITECTURE -RunningAppBehavior $env:RUNNING_APP_BEHAVIOR
           . scripts/snow-shot-winget.ps1
           $current = Invoke-SnowShotWingetApi "repos/mg-chao/snow-apps/releases/tags/$env:RELEASE_TAG"
           $previous = Invoke-SnowShotWingetApi "repos/mg-chao/snow-apps/releases/tags/$env:PREVIOUS_TAG"
@@ -82,7 +91,7 @@ jobs:
           if ('Mini' -in $currentEditions -and 'Mini' -in $previousEditions) {
             ./scripts/test-snow-shot-winget-install.ps1 -Tag $env:RELEASE_TAG -Edition Mini `
               -PreviousTag $env:PREVIOUS_TAG -Winget $env:WINGET_EXE -AllowUnrecognizedRelease `
-              -RunningAppBehavior $env:RUNNING_APP_BEHAVIOR
+              -Architecture $env:SNOW_ARCHITECTURE -RunningAppBehavior $env:RUNNING_APP_BEHAVIOR
           }
       - name: Verify generated installer quiet registration through WinGet
         if: github.event_name != 'push'

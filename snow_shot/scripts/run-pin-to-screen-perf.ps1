@@ -10,37 +10,42 @@ param(
     [string]$Scenarios = "all",
     [int]$ScrollSteps = 8,
     [int]$ScrollDistance = 96,
-    [switch]$SelfTest
+    [switch]$SelfTest,
+    [ValidateSet("x64", "arm64")][string]$Architecture = "x64"
 )
 
 $ErrorActionPreference = "Stop"
 $shot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 $workspace = (Resolve-Path (Join-Path $shot "..")).Path
 . (Join-Path $PSScriptRoot "performance-environment.ps1")
+$performanceTarget = Get-SnowPerformanceTarget -Architecture $Architecture -RequireNative
+$performanceBuildDirectory = Join-Path $workspace "build/$($performanceTarget.Preset)"
 if ([string]::IsNullOrWhiteSpace($OutputDirectory)) {
-    $OutputDirectory = Join-Path $shot ("build\pin-to-screen-perf\" + (Get-Date -Format "yyyyMMdd-HHmmss"))
+    $OutputDirectory = Join-Path $shot ("build/pin-to-screen-perf/" + $(if ($Architecture -eq "arm64") { "windows-arm64/" } else { "" }) + (Get-Date -Format "yyyyMMdd-HHmmss"))
 }
 $OutputDirectory = [System.IO.Path]::GetFullPath($OutputDirectory)
 
-& (Join-Path $shot "scripts/configure-msvc-perf.ps1") -Fresh -QtBin $QtBin
+& (Join-Path $shot "scripts/configure-msvc-perf.ps1") -Fresh -QtBin $QtBin -Architecture $Architecture
 if ($LASTEXITCODE -ne 0) { throw "The performance configuration failed" }
-& cmake --build (Join-Path $workspace "build\windows-msvc-performance") --config Release --target `
+& cmake --build ($performanceBuildDirectory) --config Release --target `
     snow_shot snow-shot-pin-to-screen-performance-benchmark --parallel
 if ($LASTEXITCODE -ne 0) { throw "The pin-to-screen benchmark build failed" }
 
-$release = Join-Path $workspace "build\windows-msvc-performance\snow_shot\test-bin\Release"
+$release = Join-Path $performanceBuildDirectory "snow_shot/test-bin/Release"
 $benchmark = Join-Path $release "snow-shot-pin-to-screen-performance-benchmark.exe"
 $application = Join-Path $release "snow_shot.exe"
 if (!(Test-Path $benchmark)) {
-    $benchmark = (Get-ChildItem -Path (Join-Path $workspace "build\windows-msvc-performance") -Recurse -Filter "snow-shot-pin-to-screen-performance-benchmark.exe" | Select-Object -First 1).FullName
+    $benchmark = (Get-ChildItem -Path ($performanceBuildDirectory) -Recurse -Filter "snow-shot-pin-to-screen-performance-benchmark.exe" | Select-Object -First 1).FullName
 }
 if (!(Test-Path $application)) {
-    $application = (Get-ChildItem -Path (Join-Path $workspace "build\windows-msvc-performance") -Recurse -Filter "snow_shot.exe" | Select-Object -First 1).FullName
+    $application = (Get-ChildItem -Path ($performanceBuildDirectory) -Recurse -Filter "snow_shot.exe" | Select-Object -First 1).FullName
 }
 if (!(Test-Path $benchmark) -or !(Test-Path $application)) { throw "Expected benchmark binaries were not produced" }
 
+Assert-SnowPerformanceExecutable -Path $benchmark -Architecture $Architecture
+Assert-SnowPerformanceExecutable -Path $application -Architecture $Architecture
 Add-Type -AssemblyName System.Windows.Forms
-$qtRuntime = Set-SnowPerformanceQtRuntime
+$qtRuntime = Set-SnowPerformanceQtRuntime -Architecture $Architecture
 $savedTrace = $env:SNOW_SHOT_PIN_PERF_TRACE; $cursor = [System.Windows.Forms.Cursor]::Position
 try {
     New-Item -ItemType Directory -Force -Path $OutputDirectory | Out-Null
