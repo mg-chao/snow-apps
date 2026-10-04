@@ -1,4 +1,5 @@
 #include "snow_shot/platform/macos/systemtraymenu.h"
+#include "widgets/context_menu.h"
 
 #include <QGuiApplication>
 #include <QMenu>
@@ -22,43 +23,50 @@ NSStatusBarButton* statusButton(NSView* view) {
 }
 } // namespace
 
-void showSystemTrayMenu(QSystemTrayIcon* trayIcon, QMenu* menu) {
+void showSystemTrayMenu(QSystemTrayIcon* trayIcon, adqt::widgets::AdContextMenu* menu) {
     // Qt emits Context again when the attached native menu starts tracking.
     if (!trayIcon || !menu || trayIcon->contextMenu() ||
         QGuiApplication::platformName() != QStringLiteral("cocoa")) {
+        if (menu)
+            menu->dismissPopup();
         return;
     }
     @autoreleasepool {
         NSEvent* event = NSApp.currentEvent;
         if (event.type != NSEventTypeRightMouseDown) {
+            menu->dismissPopup();
             return;
         }
         NSStatusBarButton* button = statusButton(event.window.contentView);
         if (!button) {
+            menu->dismissPopup();
             return;
         }
         QPointer<QSystemTrayIcon> trayGuard(trayIcon);
-        QPointer<QMenu> menuGuard(menu);
+        QPointer<adqt::widgets::AdContextMenu> menuGuard(menu);
         // Qt signals on mouse-down, inside the button's tracking loop. Present in
         // default mode after that loop has consumed mouse-up; nesting menu tracking
         // here would swallow the release and leave the button tracking indefinitely.
         // The copied block retains the button; QPointers protect its Qt owners.
-        [NSRunLoop.mainRunLoop performInModes:@[ NSDefaultRunLoopMode ]
-                                        block:^{
-                                          if (!trayGuard || !menuGuard || !trayGuard->isVisible() ||
-                                              trayGuard->contextMenu() || !button.window) {
-                                              return;
-                                          }
-                                          // Qt maps setContextMenu to NSStatusItem.menu. Its button
-                                          // presents a pull-down; NSMenu.popUp is a different path.
-                                          // https://developer.apple.com/documentation/appkit/nsstatusitem/menu
-                                          trayGuard->setContextMenu(menuGuard);
-                                          [button performClick:nil];
-                                          // A permanent menu overrides left/middle click actions.
-                                          if (trayGuard && trayGuard->contextMenu() == menuGuard) {
-                                              trayGuard->setContextMenu(nullptr);
-                                          }
-                                        }];
+        [NSRunLoop.mainRunLoop
+            performInModes:@[ NSDefaultRunLoopMode ]
+                     block:^{
+                       if (!trayGuard || !menuGuard || !trayGuard->isVisible() ||
+                           trayGuard->contextMenu() || !button.window) {
+                           if (menuGuard)
+                               menuGuard->dismissPopup();
+                           return;
+                       }
+                       // Qt maps setContextMenu to NSStatusItem.menu. Its button
+                       // presents a pull-down; NSMenu.popUp is a different path.
+                       // https://developer.apple.com/documentation/appkit/nsstatusitem/menu
+                       trayGuard->setContextMenu(menuGuard);
+                       menuGuard->execNativePopup([button]() { [button performClick:nil]; });
+                       // A permanent menu overrides left/middle click actions.
+                       if (trayGuard && trayGuard->contextMenu() == menuGuard) {
+                           trayGuard->setContextMenu(nullptr);
+                       }
+                     }];
     }
 }
 } // namespace snow_shot::platform::macos

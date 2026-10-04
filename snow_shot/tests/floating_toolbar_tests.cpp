@@ -30,6 +30,7 @@
 #include <QEnterEvent>
 #include <QJsonDocument>
 #include <QMenu>
+#include <QPointer>
 #include <QMimeData>
 #include <QMouseEvent>
 #include <QScreen>
@@ -238,7 +239,7 @@ void verifyOpacity() {
     expectOpacity(icon, 0.25, "leaving both surfaces restores idle icon opacity");
     expectOpacity(toolbar, 0.25, "leaving both surfaces restores idle toolbar opacity");
 
-    auto* menu = context(icon);
+    QPointer<adqt::widgets::AdContextMenu> menu = context(icon);
     require(menu && menu->isVisible(), "toolbar context menu opens for opacity test");
     leave(icon);
     leave(toolbar);
@@ -484,6 +485,7 @@ void verifyDropIdentity() {
     require(!decodeScreenshotDropContent(first, [] { return true; }),
             "cancelled image decoding is discarded");
 }
+
 void verifyCustomizedActions() {
     const storage::FloatingToolbarSettings stored;
     stored.setToolbarMode(true);
@@ -685,6 +687,57 @@ void reveal(FloatingToolbarController& controller) {
     QApplication::sendEvent(icon, &event);
     timer(controller, "floatingToolbarRevealTimer");
 }
+void verifyMenuLifecycle() {
+    const storage::FloatingToolbarSettings stored;
+    stored.setHideInFullscreen(false);
+    FloatingToolbarController controller(nullptr, [](QScreen*) { return false; });
+    stored.setEnabled(true);
+    pump();
+    auto* icon = window("floatingToolbarIconWindow")
+                     ->findChild<QAbstractButton*>(QStringLiteral("floatingToolbarSnowflake"));
+    require(icon && icon->findChildren<QMenu*>().isEmpty(), "startup allocates no popup menus");
+    for (int opening = 0; opening < 2; ++opening) {
+        QPointer<adqt::widgets::AdContextMenu> popup = context(icon);
+        require(popup && popup->isPopupVisible(), "each context request creates a fresh popup");
+        QPointer<QAction> action = popup->actions().first();
+        popup->dismissPopup();
+        QCoreApplication::sendPostedEvents(nullptr, QEvent::MetaCall);
+        QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+        require(!popup && !action && !window("floatingToolbarContextMenu"),
+                "context dismissal releases actions and popup resources");
+    }
+    storage::ScreenshotToolbarLayout separateTools;
+    for (const auto& id : storage::floatingToolbarItemIds())
+        separateTools.positions.append(QStringList{id});
+    require(storage::ScreenshotToolbarSettings().setLayout(
+                storage::ScreenshotToolbarLayoutKind::FloatingTools, separateTools),
+            "separate tool positions create the overflow fixture");
+    pump();
+    reveal(controller);
+    auto* toolbar = window("floatingToolbarWindow");
+    adqt::widgets::AdButton* overflow = nullptr;
+    for (auto* candidate : toolbar->findChildren<adqt::widgets::AdButton*>())
+        if (candidate->accessibleName() == QStringLiteral("More tools"))
+            overflow = candidate;
+    require(overflow && overflow->isVisible() && toolbar->findChildren<QMenu*>().isEmpty(),
+            "a narrow desktop needs overflow without allocating its menu");
+    for (int opening = 0; opening < 2; ++opening) {
+        overflow->click();
+        QPointer<adqt::widgets::AdContextMenu> popup =
+            overflow->findChild<adqt::widgets::AdContextMenu*>();
+        require(popup && popup->isPopupVisible() && !popup->actions().isEmpty(),
+                "each overflow request creates its current tools");
+        QPointer<QAction> action = popup->actions().first();
+        popup->dismissPopup();
+        QCoreApplication::sendPostedEvents(nullptr, QEvent::MetaCall);
+        QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+        require(!popup && !action && toolbar->findChildren<QMenu*>().isEmpty(),
+                "overflow dismissal releases actions and popup resources");
+    }
+    stored.setEnabled(false);
+    pump();
+}
+
 void verifyHoverPlacement() {
     const storage::FloatingToolbarSettings stored;
     stored.setToolbarMode(false);
@@ -743,7 +796,7 @@ void verifyHoverPlacement() {
                 require(icon->mapToGlobal(QPoint()) == shown && iconWindow->geometry() == iconFrame,
                         "hover preserves icon position and partial clipping at either edge");
                 const QRect toolbarFrame = toolbar->geometry();
-                auto* menu = context(icon);
+                QPointer<adqt::widgets::AdContextMenu> menu = context(icon);
                 require(menu && menu->isVisible(), "icon context menu opens");
                 require(icon->mapToGlobal(QPoint()) == shown &&
                             iconWindow->geometry() == iconFrame &&
@@ -1220,16 +1273,14 @@ void verifyWindows(const QString& visualDirectory) {
             "missing monitor falls back to primary and left-side icon expands right");
     const QPoint preservedAnchor = icon->mapToGlobal(QPoint());
 
-    auto* menu = context(icon);
+    QPointer<adqt::widgets::AdContextMenu> menu = context(icon);
     require(menu && menu->actions().size() == 6 && menu->actions()[2]->isSeparator(),
             "Ant Design context menu preserves action order and separator");
     require(menu->actions()[3]->isCheckable() && menu->actions()[3]->isChecked() &&
                 menu->actions()[4]->isCheckable() && menu->actions()[4]->isChecked(),
             "Ant Design context menu reflects fullscreen and capture preferences");
-    const auto overflowMenus = toolbar->findChildren<QMenu*>();
-    require(overflowMenus.size() == 1 &&
-                qobject_cast<adqt::widgets::AdContextMenu*>(overflowMenus.front()),
-            "overflow tools use the same Ant Design menu component");
+    require(toolbar->findChildren<QMenu*>().isEmpty(),
+            "overflow menus are allocated only when opened");
     QEvent leave(QEvent::Leave);
     QApplication::sendEvent(iconWindow, &leave);
     timer(controller, "floatingToolbarRetreatTimer");
@@ -1243,6 +1294,8 @@ void verifyWindows(const QString& visualDirectory) {
     menu->actions()[0]->trigger();
     menu->close();
     pump();
+    QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+    require(!menu, "hiding the floating context menu releases its session");
     toolbar = window("floatingToolbarWindow");
     require(stored.toolbarMode() && toolbar->isVisible() && !iconWindow->isVisible(),
             "toolbar mode has one visible desktop window");
@@ -1436,6 +1489,8 @@ int main(int argc, char** argv) {
     styles::ThemeManager::instance().initialize(app);
     if (app.arguments().contains(QStringLiteral("--benchmark"))) {
         benchmark();
+    } else if (app.arguments().contains(QStringLiteral("--menu-lifecycle-only"))) {
+        verifyMenuLifecycle();
     } else if (app.arguments().contains(QStringLiteral("--native-probe"))) {
         nativeProbe();
     } else if (app.arguments().contains(QStringLiteral("--toolbar-edge-placement-only"))) {

@@ -606,8 +606,6 @@ class SaveContent final : public QWidget {
     AdContextMenu* createShortcutMenu(AdButton* trigger, int index) {
         if (index < 0 || index >= m_shortcuts.size())
             return nullptr;
-        if (m_menu)
-            m_menu->deleteLater();
         auto* menu = new AdContextMenu(this);
         m_menu = menu;
         menu->setObjectName(QStringLiteral("savePathMenu"));

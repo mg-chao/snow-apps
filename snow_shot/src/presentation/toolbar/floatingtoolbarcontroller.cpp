@@ -479,6 +479,8 @@ class FloatingToolbarController::Impl {
     }
     adqt::widgets::AdContextMenu* makeMenu(QWidget* parent) {
         auto* menu = new adqt::widgets::AdContextMenu(parent);
+        menu->setDeleteOnHide();
+        menus.removeIf([](const auto& entry) { return entry.isNull(); });
         menus.push_back(menu);
         QObject::connect(menu, &QMenu::aboutToShow, &q, [this] {
             ++menuDepth;
@@ -609,8 +611,12 @@ class FloatingToolbarController::Impl {
         overflow = button(adqt::icons::antd::outlined::Ellipsis());
         overflow->setAccessibleName(text(QT_TRANSLATE_NOOP("FloatingToolbar", "More tools")));
         overflow->setToolTip(overflow->accessibleName());
-        overflowMenu = makeMenu(overflow);
         QObject::connect(overflow, &adqt::widgets::AdButton::clicked, &q, [this] {
+            if (overflowMenu && overflowMenu->isPopupVisible())
+                return;
+            overflowMenu = makeMenu(overflow);
+            for (int index = visibleGroupCount; index < groups.size(); ++index)
+                addMenuTools(overflowMenu, index);
             overflowMenu->popupAt(overflow->mapToGlobal(QPoint(0, overflow->height())));
         });
         applyScale();
@@ -727,7 +733,9 @@ class FloatingToolbarController::Impl {
         toolbarIcon->setVisible(toolbarMode);
         if (toolbarMode && !right())
             row->addWidget(toolbarIcon);
-        overflowMenu->clear();
+        visibleGroupCount = visibleCount;
+        if (overflowMenu)
+            overflowMenu->dismissPopup();
         for (int index = 0; index < groups.size(); ++index) {
             auto& group = groups[index];
             group.widget->setVisible(index < visibleCount);
@@ -735,8 +743,7 @@ class FloatingToolbarController::Impl {
                 if (row->count())
                     panel->addSpacing(8);
                 row->addWidget(group.widget);
-            } else
-                addMenuTools(overflowMenu, index);
+            }
         }
         const bool hasOverflow = visibleCount < groups.size();
         overflow->setVisible(hasOverflow);
@@ -871,11 +878,10 @@ class FloatingToolbarController::Impl {
         if (!visibleAllowed() || dragging)
             return;
         reveal.stop();
-        if (!context) {
-            context = makeMenu(iconWindow.get());
-            context->setObjectName(QStringLiteral("floatingToolbarContextMenu"));
-        }
-        context->clear();
+        if (context && context->isPopupVisible())
+            return;
+        context = makeMenu(iconWindow.get());
+        context->setObjectName(QStringLiteral("floatingToolbarContextMenu"));
         auto* mode = context->addAction(
             toolbarMode ? text(QT_TRANSLATE_NOOP("FloatingToolbar", "Toolbar mode"))
                         : text(QT_TRANSLATE_NOOP("FloatingToolbar", "Icon mode")));
@@ -987,6 +993,7 @@ class FloatingToolbarController::Impl {
     ScreenshotToolbarMainPanel* panel = nullptr;
     adqt::widgets::AdControlScaleScope* scaleScope = nullptr;
     adqt::widgets::AdButton* overflow = nullptr;
+    int visibleGroupCount = 0;
     QPointer<adqt::widgets::AdContextMenu> overflowMenu, context;
     QVector<QPointer<adqt::widgets::AdContextMenu>> menus;
     QVector<Group> groups;

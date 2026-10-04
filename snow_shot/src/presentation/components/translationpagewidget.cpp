@@ -209,14 +209,22 @@ TranslationPageWidget::TranslationPageWidget(QWidget* parent, SnowShotApiClient*
     m_floating->setIconRef(translation::icons::custom::outlined::Keyboard());
     m_floating->setShape(AdButton::Shape::Circle);
     m_floating->setFocusPolicy(Qt::StrongFocus);
-    m_menu = new AdContextMenu(this);
-    m_menu->setObjectName(QStringLiteral("translationActionsMenu"));
-    m_copy = m_menu->addItem({});
-    m_copy->setObjectName(QStringLiteral("translationCopy"));
-    m_copyClose = m_menu->addItem({});
-    m_copyClose->setObjectName(QStringLiteral("translationCopyAndClose"));
     new translation::ActionPopupMenu(
-        m_floating, [this] { return m_menu; }, translation::ActionPopupMenu::Placement::TopRight);
+        m_floating,
+        [this] {
+            m_menu = new AdContextMenu(this);
+            m_menu->setObjectName(QStringLiteral("translationActionsMenu"));
+            m_copy = m_menu->addItem({});
+            m_copy->setObjectName(QStringLiteral("translationCopy"));
+            m_copyClose = m_menu->addItem({});
+            m_copyClose->setObjectName(QStringLiteral("translationCopyAndClose"));
+            connect(m_copy, &QAction::triggered, this, [this]() { copyResult(false); });
+            connect(m_copyClose, &QAction::triggered, this, [this]() { copyResult(true); });
+            retranslateActions();
+            syncResultActions();
+            return m_menu.data();
+        },
+        translation::ActionPopupMenu::Placement::TopRight);
 
     connect(m_swap, &AdButton::clicked, m_controller,
             &translation::TranslationPageController::swapLanguages);
@@ -224,8 +232,6 @@ TranslationPageWidget::TranslationPageWidget(QWidget* parent, SnowShotApiClient*
             &translation::TranslationPageController::setSourceText);
     connect(m_retry, &AdButton::clicked, m_controller,
             &translation::TranslationPageController::retry);
-    connect(m_copy, &QAction::triggered, this, [this]() { copyResult(false); });
-    connect(m_copyClose, &QAction::triggered, this, [this]() { copyResult(true); });
     connect(m_resultCopy, &AdButton::clicked, this, [this]() { copyResult(false); });
     // Do not restart an active timer: a continuous stream must still make visible progress.
     m_resultUpdate.setSingleShot(true);
@@ -274,7 +280,8 @@ void TranslationPageWidget::deactivate() {
 }
 
 void TranslationPageWidget::dismissPopups() {
-    m_menu->dismissPopup();
+    if (m_menu)
+        m_menu->dismissPopup();
     for (auto* select : m_selects) {
         select->setPopupVisible(false);
     }
@@ -290,7 +297,8 @@ void TranslationPageWidget::copyResult(bool closeWindow) {
         return;
     }
     QApplication::clipboard()->setText(m_controller->resultText());
-    m_menu->dismissPopup();
+    if (m_menu)
+        m_menu->dismissPopup();
     if (closeWindow) {
         emit closeWindowRequested();
     }
@@ -298,7 +306,7 @@ void TranslationPageWidget::copyResult(bool closeWindow) {
 
 bool TranslationPageWidget::ownsFocusWidget(const QWidget* widget) const {
     return widget != nullptr && (widget->window() == window() || isAncestorOf(widget) ||
-                                 widget == m_menu || m_menu->isAncestorOf(widget));
+                                 (m_menu && (widget == m_menu || m_menu->isAncestorOf(widget))));
 }
 
 bool TranslationPageWidget::eventFilter(QObject* watched, QEvent* event) {
@@ -388,8 +396,10 @@ void TranslationPageWidget::updateResult(const QString& text) {
 
 void TranslationPageWidget::syncResultActions() {
     const bool hasResult = !m_controller->resultText().isEmpty();
-    m_copy->setEnabled(hasResult);
-    m_copyClose->setEnabled(hasResult);
+    if (m_copy)
+        m_copy->setEnabled(hasResult);
+    if (m_copyClose)
+        m_copyClose->setEnabled(hasResult);
     m_resultCopy->setEnabled(hasResult);
     m_resultCopy->setVisible(hasResult);
 }
@@ -399,7 +409,7 @@ void TranslationPageWidget::scheduleResultUpdate() {
         return;
     }
     // Copy uses the controller's latest text, including tokens awaiting the next visual update.
-    if (!m_copy->isEnabled()) {
+    if (!m_resultCopy->isEnabled()) {
         syncResultActions();
     }
     if (!m_resultUpdate.isActive()) {
@@ -484,18 +494,24 @@ void TranslationPageWidget::retranslateUi() {
     m_floating->setAccessibleName(tr("Translation actions"));
     m_resultCopy->setAccessibleName(tr("Copy translated text"));
     m_resultCopy->setToolTip(tr("Copy translated text"));
+    retranslateActions();
+    m_retry->setText(tr("Retry"));
+    m_controller->setLocale(translation::LanguageManager::instance().currentLocale());
+    syncState();
+}
+
+void TranslationPageWidget::retranslateActions() {
     const auto copyBinding =
         snow_shot::shortcuts::bindingFromPortableText(QStringLiteral("Ctrl+C"));
     const auto copyCloseBinding =
         snow_shot::shortcuts::bindingFromPortableText(QStringLiteral("Ctrl+Q"));
-    m_copy->setText(
-        tr("Copy (%1)").arg(snow_shot::shortcuts::formatShortcutDisplayText(copyBinding)));
-    m_copyClose->setText(
-        tr("Copy and Close (%1)")
-            .arg(snow_shot::shortcuts::formatShortcutDisplayText(copyCloseBinding)));
-    m_retry->setText(tr("Retry"));
-    m_controller->setLocale(translation::LanguageManager::instance().currentLocale());
-    syncState();
+    if (m_copy)
+        m_copy->setText(
+            tr("Copy (%1)").arg(snow_shot::shortcuts::formatShortcutDisplayText(copyBinding)));
+    if (m_copyClose)
+        m_copyClose->setText(
+            tr("Copy and Close (%1)")
+                .arg(snow_shot::shortcuts::formatShortcutDisplayText(copyCloseBinding)));
 }
 
 void TranslationPageWidget::applyTheme(const translation::styles::ThemeColorScheme& scheme) {

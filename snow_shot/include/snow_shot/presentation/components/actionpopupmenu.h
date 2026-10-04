@@ -7,11 +7,13 @@
 #include <QAbstractButton>
 #include <QApplication>
 #include <QCursor>
+#include <QContextMenuEvent>
 #include <QKeyEvent>
 #include <QMouseEvent>
 #include <QPointer>
 #include <QTimer>
 #include <functional>
+#include <optional>
 #include <utility>
 
 namespace snow_shot::presentation {
@@ -22,6 +24,7 @@ class ActionPopupMenu final : public QObject {
     enum class Placement { BottomLeft, TopRight };
     // Platform keeps the macOS native menu. Widget uses the shared hover menu on every platform.
     enum class Surface { Platform, Widget };
+    // The factory returns a fresh heap-owned menu for each popup session.
     ActionPopupMenu(QAbstractButton* trigger,
                     std::function<adqt::widgets::AdContextMenu*()> createMenu,
                     Placement placement = Placement::BottomLeft,
@@ -48,7 +51,7 @@ class ActionPopupMenu final : public QObject {
             m_menu->dismissPopup();
     }
 
-    void open(bool keyboard = false) {
+    void open(bool keyboard = false, std::optional<QPoint> globalPosition = std::nullopt) {
         m_closeTimer.stop();
         m_keyboard = keyboard;
         if (!m_trigger->isVisible() || !m_trigger->isEnabled())
@@ -59,6 +62,7 @@ class ActionPopupMenu final : public QObject {
                 return;
             if (!m_nativeMenu)
                 m_menu->setNativeMenuEnabled(false);
+            m_menu->setDeleteOnHide();
             m_menu->setTriggerWidget(m_trigger);
             m_menu->installEventFilter(this);
             connect(m_menu, &QMenu::aboutToHide, &m_closeTimer, &QTimer::stop,
@@ -76,7 +80,7 @@ class ActionPopupMenu final : public QObject {
             }
             if (!keyboard)
                 m_menu->setActiveAction(nullptr);
-            m_menu->popupAt(m_trigger->mapToGlobal(position));
+            m_menu->popupAt(globalPosition.value_or(m_trigger->mapToGlobal(position)));
         }
         if (keyboard) {
             for (auto* action : m_menu->actions()) {
@@ -92,6 +96,12 @@ class ActionPopupMenu final : public QObject {
 
   protected:
     bool eventFilter(QObject* watched, QEvent* event) override {
+        if (watched == m_trigger && event->type() == QEvent::ContextMenu) {
+            auto* context = static_cast<QContextMenuEvent*>(event);
+            open(false, context->globalPos());
+            context->accept();
+            return true;
+        }
         if (!m_nativeMenu && watched == m_trigger && event->type() == QEvent::Enter &&
             pointerOverMenuOrTrigger(QCursor::pos())) {
             open();

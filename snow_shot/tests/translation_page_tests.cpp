@@ -70,6 +70,16 @@ template <typename T> T* child(QObject& owner, const char* name) {
     return widget;
 }
 
+AdContextMenu* visibleTranslationActionsMenu(QObject& owner) {
+    for (auto* menu :
+         owner.findChildren<AdContextMenu*>(QStringLiteral("translationActionsMenu"))) {
+        if (menu->isPopupVisible() && !menu->isRetiring()) {
+            return menu;
+        }
+    }
+    return nullptr;
+}
+
 void key(QWidget* widget, int value, Qt::KeyboardModifiers modifiers = Qt::NoModifier) {
     PhysicalKeyEvent press(QEvent::KeyPress, value, modifiers);
     QApplication::sendEvent(widget, &press);
@@ -583,14 +593,33 @@ void editorAndShortcutBehavior() {
     auto* result = child<AdTextEdit>(*page, "translationResultText");
     auto* spin = child<AdSpin>(*page, "translationResultSpin");
     require(!spin->spinning() && spin->isHidden(), "idle translation has no loading indicator");
-    auto* copy = child<QAction>(*page, "translationCopy");
-    auto* copyClose = child<QAction>(*page, "translationCopyAndClose");
     auto* floating = child<AdButton>(*page, "translationActions");
-    auto* menu = child<AdContextMenu>(*page, "translationActionsMenu");
-    require(!menu->actionIcon(copy).isValid() && !menu->actionIcon(copyClose).isValid(),
-            "translation menu actions have no leading icons");
+    require(page->findChild<AdContextMenu*>(QStringLiteral("translationActionsMenu")) == nullptr,
+            "translation actions allocate no menu before opening");
+    QPointer<AdContextMenu> menu;
+    QPointer<QAction> copy, copyClose;
+    const auto refreshActions = [&]() {
+        menu = visibleTranslationActionsMenu(*page);
+        if (menu) {
+            copy = child<QAction>(*menu, "translationCopy");
+            copyClose = child<QAction>(*menu, "translationCopyAndClose");
+        }
+    };
+    const auto openActions = [&]() {
+        floating->click();
+        refreshActions();
+        require(menu != nullptr, "the action trigger creates a fresh menu session");
+    };
+    openActions();
+    require(!menu->actionIcon(copy).isValid() && !menu->actionIcon(copyClose).isValid() &&
+                !copy->isEnabled(),
+            "an empty translation menu has unadorned disabled copy actions");
+    menu->dismissPopup();
+    flushEvents();
+    flushEvents();
+    require(!menu && !copy && !copyClose, "hiding translation actions releases the complete menu");
     auto* controller = page->findChild<snow_shot::presentation::TranslationPageController*>();
-    require(controller != nullptr && result->isReadOnly() && !copy->isEnabled() &&
+    require(controller != nullptr && result->isReadOnly() &&
                 !child<AdButton>(*page, "translationResultCopy")->isEnabled(),
             "empty page has read-only result and disabled copy actions");
     QApplication::clipboard()->setText(QStringLiteral("sentinel"));
@@ -638,7 +667,10 @@ void editorAndShortcutBehavior() {
     server.delta(0, QStringLiteral("你好，"));
     waitUntil([&]() { return result->toPlainText() == QStringLiteral("你好，"); },
               "show partial result");
+    openActions();
     require(copy->isEnabled() && copyClose->isEnabled(), "partial results are copyable");
+    menu->dismissPopup();
+    flushEvents();
     require(spin->spinning() && spin->isVisible(), "Spin stays visible while tokens stream");
     source->setFocus();
     source->selectAll();
@@ -675,6 +707,7 @@ void editorAndShortcutBehavior() {
             "streaming preserves output selection");
     key(result, Qt::Key_C, Qt::ControlModifier);
     require(QApplication::clipboard()->text() == selected, "Ctrl+C copies the selected output");
+    openActions();
     copy->trigger();
     require(QApplication::clipboard()->text() == result->toPlainText(),
             "floating Copy always copies the whole result despite a selection");
@@ -684,10 +717,11 @@ void editorAndShortcutBehavior() {
     QEnterEvent hover(local, local, floating->mapToGlobal(local.toPoint()));
     QApplication::sendEvent(floating, &hover);
 #ifdef Q_OS_MACOS
-    require(!menu->isPopupVisible(), "macOS action menus do not open on hover");
+    require(!menu || !menu->isPopupVisible(), "macOS action menus do not open on hover");
     floating->click();
 #endif
-    waitUntil([&]() { return menu->isPopupVisible(); }, "trigger reveals actions");
+    refreshActions();
+    waitUntil([&]() { return menu && menu->isPopupVisible(); }, "trigger reveals actions");
     require(menu->geometry().bottom() < floating->mapToGlobal(QPoint()).y(),
             "translation actions open above the floating trigger");
     require(menu->triggerWidget() == floating && menu->actions().size() == 2,
@@ -701,12 +735,13 @@ void editorAndShortcutBehavior() {
     flushEvents();
     require(menu->isVisible(), "pointer can travel from floating button to action");
     key(menu, Qt::Key_Escape);
-    require(!menu->isVisible() && owner.focusWidget() == floating,
+    require((!menu || !menu->isVisible()) && owner.focusWidget() == floating,
             "Escape dismisses the action popup and restores trigger focus");
     QCursor::setPos(owner.mapToGlobal(QPoint(2, 2)));
     flushEvents();
     key(floating, Qt::Key_Return);
-    require(menu->isVisible() && menu->activeAction() == copy,
+    refreshActions();
+    require(menu && menu->isVisible() && menu->activeAction() == copy,
             "keyboard activation reveals actions and selects Copy");
     QApplication::sendEvent(menu, &leave);
     QEventLoop settle;
@@ -715,19 +750,22 @@ void editorAndShortcutBehavior() {
     require(menu->isVisible(), "keyboard navigation does not require pointer hover");
     key(menu, Qt::Key_Escape);
     key(floating, Qt::Key_Space);
-    require(menu->isVisible(), "Space also reveals the actions");
+    refreshActions();
+    require(menu && menu->isVisible(), "Space also reveals the actions");
     QApplication::clipboard()->setText(QStringLiteral("before keyboard action"));
     key(menu, Qt::Key_Return);
-    require(!menu->isVisible() && QApplication::clipboard()->text() == result->toPlainText(),
+    require((!menu || !menu->isVisible()) &&
+                QApplication::clipboard()->text() == result->toPlainText(),
             "Enter activates a focused popup action");
-    floating->click();
+    openActions();
     require(menu->isVisible(), "click opens the same action menu");
     key(menu, Qt::Key_C, Qt::ControlModifier);
-    require(!menu->isVisible() && QApplication::clipboard()->text() == result->toPlainText(),
+    require((!menu || !menu->isVisible()) &&
+                QApplication::clipboard()->text() == result->toPlainText(),
             "Ctrl+C works while the context menu owns focus");
-    floating->click();
+    openActions();
     owner.hide();
-    require(!menu->isVisible(), "hiding the owner dismisses the action menu");
+    require(!menu || !menu->isVisible(), "hiding the owner dismisses the action menu");
     owner.show();
     const int shortResultHeight = result->height();
     server.delta(0, QStringLiteral("\nA line of translated text.").repeated(80));
@@ -759,10 +797,10 @@ void editorAndShortcutBehavior() {
     owner.show();
     require(!source->toPlainText().isEmpty() && !result->toPlainText().isEmpty(),
             "non-deleting test owner retains its draft after closing");
-    floating->click();
+    openActions();
     require(menu->isVisible(), "actions reopen before deactivation");
     page->deactivate();
-    require(!menu->isVisible(), "deactivation dismisses the action menu");
+    require(!menu || !menu->isVisible(), "deactivation dismisses the action menu");
     source->setPlainText(QStringLiteral("after deactivation"));
     QApplication::clipboard()->setText(QStringLiteral("untouched"));
     key(source, Qt::Key_Q, Qt::ControlModifier);
@@ -937,6 +975,7 @@ void navigationThemesLanguagesAndGeometry() {
                 flushEvents();
                 const QString copyCloseShortcut = snow_shot::shortcuts::formatShortcutDisplayText(
                     snow_shot::shortcuts::bindingFromPortableText(QStringLiteral("Ctrl+Q")));
+                child<AdButton>(*page, "translationActions")->click();
                 auto* copyAction = child<QAction>(*page, "translationCopy");
                 auto* copyCloseAction = child<QAction>(*page, "translationCopyAndClose");
                 require(copyCloseAction->text() ==
@@ -1118,8 +1157,10 @@ void navigationThemesLanguagesAndGeometry() {
                   "receive a partial translation before closing");
         if (useShortcut)
             key(closingSource, Qt::Key_Q, Qt::ControlModifier);
-        else
+        else {
+            child<AdButton>(*closingPage, "translationActions")->click();
             child<QAction>(*closingPage, "translationCopyAndClose")->trigger();
+        }
         flushEvents();
         require(
             closing.isNull() && closingPage.isNull() &&
@@ -1169,13 +1210,28 @@ void nativeWindowInteraction() {
     waitUntil([&]() { return !result->toPlainText().isEmpty(); },
               "native page displays streamed text");
     auto* floating = child<AdButton>(*page, "translationActions");
-    auto* menu = child<AdContextMenu>(*page, "translationActionsMenu");
-    QCursor::setPos(floating->mapToGlobal(floating->rect().center()));
-    waitUntil([&]() { return menu->isVisible(); }, "native pointer hover opens the popup");
+    QPointer<AdContextMenu> menu;
+    const auto openActions = [&]() {
+        QCursor::setPos(owner.mapToGlobal(QPoint(8, 8)));
+        flushEvents();
+        QCursor::setPos(floating->mapToGlobal(floating->rect().center()));
+        waitUntil(
+            [&]() {
+                menu = visibleTranslationActionsMenu(*page);
+                return menu && menu->isVisible();
+            },
+            "native pointer hover opens a fresh popup");
+    };
+    openActions();
     snapshot(owner, QStringLiteral("translation-native-hover"));
-    auto nativeClick = [menu](QAction* action) {
+    auto nativeClick = [&menu](QAction* action) {
+        QPointer<QAction> actionLifetime = action;
+        require(menu && actionLifetime && menu->actions().contains(action),
+                "native clicks target an action in the current popup session");
         QCursor::setPos(menu->mapToGlobal(menu->actionGeometry(action).center()));
         flushEvents();
+        require(menu && menu->isVisible() && actionLifetime,
+                "the native popup and its action remain alive before mouse input");
         INPUT input[2]{};
         input[0].type = INPUT_MOUSE;
         input[0].mi.dwFlags = MOUSEEVENTF_LEFTDOWN;
@@ -1198,9 +1254,10 @@ void nativeWindowInteraction() {
         require(SendInput(4, input, sizeof(INPUT)) == 4, "send native copy shortcut");
     };
     QApplication::clipboard()->setText(QStringLiteral("before native copy"));
-    nativeClick(child<QAction>(*page, "translationCopy"));
+    nativeClick(child<QAction>(*menu, "translationCopy"));
     waitUntil([&]() { return QApplication::clipboard()->text() == result->toPlainText(); },
               "native hover action copies the partial translation");
+    waitUntil([&]() { return !menu; }, "native Copy retires its menu session");
     source->setFocus();
     source->selectAll();
     nativeCopy('C');
@@ -1219,13 +1276,10 @@ void nativeWindowInteraction() {
     owner.raise();
     owner.activateWindow();
     waitUntil(activate, "reactivate the native translation test after hiding");
-    QCursor::setPos(owner.mapToGlobal(QPoint(8, 8)));
-    flushEvents();
-    QCursor::setPos(floating->mapToGlobal(floating->rect().center()));
-    waitUntil([&]() { return menu->isVisible(); }, "native hover works after hide and reopen");
-    nativeClick(child<QAction>(*page, "translationCopyAndClose"));
-    waitUntil([&]() { return !owner.isVisible(); },
-              "native Copy and Close action closes the window");
+    openActions();
+    nativeClick(child<QAction>(*menu, "translationCopyAndClose"));
+    waitUntil([&]() { return !owner.isVisible() && !menu; },
+              "native Copy and Close closes the window and retires its menu session");
 }
 #endif
 } // namespace

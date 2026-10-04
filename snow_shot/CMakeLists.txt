@@ -2059,6 +2059,12 @@ if(SNOW_SHOT_BUILD_TESTS)
         ENVIRONMENT_MODIFICATION
             "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
     )
+    add_test(NAME snow-shot-screenshot-history-context-menu-tests
+        COMMAND snow-shot-screenshot-history-page-tests --context-menu-only -platform offscreen)
+    set_tests_properties(snow-shot-screenshot-history-context-menu-tests PROPERTIES
+        LABELS "unit" TIMEOUT 30
+        ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}"
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
     snow_shot_add_translations(snow-shot-screenshot-history-page-tests)
     snow_shot_import_offscreen_platform(snow-shot-screenshot-history-page-tests)
 
@@ -2808,11 +2814,17 @@ if(SNOW_SHOT_BUILD_TESTS)
         COMMAND snow-shot-system-tray-controller-tests --skin-only -platform offscreen)
     add_test(NAME snow-shot-tray-group-refresh-tests
         COMMAND snow-shot-system-tray-controller-tests --group-refresh-only -platform offscreen)
+    add_test(NAME snow-shot-tray-menu-position-tests
+        COMMAND snow-shot-system-tray-controller-tests --menu-position-only -platform offscreen)
     snow_shot_import_offscreen_platform(snow-shot-system-tray-controller-tests)
     set_tests_properties(snow-shot-tray-skin-tests PROPERTIES LABELS "unit" TIMEOUT 60
         ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}"
         ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
     set_tests_properties(snow-shot-tray-group-refresh-tests PROPERTIES LABELS "unit" TIMEOUT 60
+        ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}"
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
+    set_tests_properties(snow-shot-tray-menu-position-tests PROPERTIES
+        LABELS "unit" TIMEOUT 30 SNOW_TEST_CROSS_PLATFORM TRUE
         ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}"
         ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
     if(WIN32)
@@ -4228,6 +4240,12 @@ if(SNOW_SHOT_BUILD_TESTS)
     add_test(NAME snow-shot-pinned-shortcut-display-tests
         COMMAND snow-shot-pinned-window-tests --shortcut-display-only -platform offscreen)
     set_tests_properties(snow-shot-pinned-shortcut-display-tests PROPERTIES LABELS "unit")
+    add_test(NAME snow-shot-pinned-menu-language-tests
+        COMMAND snow-shot-pinned-window-tests --menu-language-only -platform offscreen)
+    set_tests_properties(snow-shot-pinned-menu-language-tests PROPERTIES
+        LABELS "unit" TIMEOUT 30 SNOW_TEST_CROSS_PLATFORM TRUE
+        ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}"
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
     add_test(NAME snow-shot-pinned-destroy-shortcut-tests
         COMMAND snow-shot-pinned-window-tests --pinned-destroy-shortcut-only -platform offscreen)
     set_tests_properties(snow-shot-pinned-destroy-shortcut-tests PROPERTIES LABELS "unit")
@@ -9540,6 +9558,16 @@ if(SNOW_SHOT_BUILD_TESTS OR SNOW_APPS_BUILD_BENCHMARKS)
             COMMAND snow-shot-floating-toolbar-tests --icon-activation-only -platform offscreen)
         set_tests_properties(snow-shot-floating-toolbar-icon-activation-tests PROPERTIES
             LABELS "unit" TIMEOUT 60 SNOW_TEST_CROSS_PLATFORM TRUE
+            ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}"
+            ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
+        file(GENERATE OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/test-support/menu-screen.json"
+            CONTENT "{\"screens\":[{\"name\":\"menu-screen\",\"width\":240,\"height\":600,\"dpr\":1.0}]}\n")
+        add_test(NAME snow-shot-floating-toolbar-menu-lifecycle-tests
+            COMMAND snow-shot-floating-toolbar-tests --menu-lifecycle-only
+                -platform "offscreen:configfile=menu-screen.json")
+        set_tests_properties(snow-shot-floating-toolbar-menu-lifecycle-tests PROPERTIES
+            LABELS "unit" TIMEOUT 30 SNOW_TEST_CROSS_PLATFORM TRUE
+            WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/test-support"
             ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}"
             ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
         add_test(NAME snow-shot-floating-toolbar-content-drop-tests

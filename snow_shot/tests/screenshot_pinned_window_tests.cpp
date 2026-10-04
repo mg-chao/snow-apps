@@ -274,6 +274,12 @@ class ObservedPinnedPlatform final : public snow_shot::presentation::PinnedWindo
 // installing the Windows HWND hooks required by present().
 class ScreenshotPinnedWindowTestAccess {
   public:
+    static adqt::widgets::AdContextMenu* contextMenu(ScreenshotPinnedWindow& window) {
+        if (!window.m_contextMenu || window.m_contextMenu->isRetiring())
+            window.createContextMenu();
+        window.refreshContextMenu();
+        return window.m_contextMenu;
+    }
     static void persistNow(ScreenshotPinnedWindow& window) {
         window.persistNow();
     }
@@ -1134,6 +1140,36 @@ void groupedPinnedWindowSignalConnectionsDoNotAssert() {
             "the signal-test group should not leak into later sections");
 }
 
+adqt::widgets::AdContextMenu* openPinnedContextMenu(ScreenshotPinnedWindow& window) {
+    for (auto* menu : window.findChildren<adqt::widgets::AdContextMenu*>(
+             QStringLiteral("screenshotPinnedContextMenu")))
+        if (menu->isPopupVisible() && !menu->isRetiring())
+            return menu;
+    QContextMenuEvent event(QContextMenuEvent::Mouse, QPoint(8, 8),
+                            window.mapToGlobal(QPoint(8, 8)));
+    QApplication::sendEvent(&window, &event);
+    for (auto* menu : window.findChildren<adqt::widgets::AdContextMenu*>(
+             QStringLiteral("screenshotPinnedContextMenu")))
+        if (menu->isPopupVisible() && !menu->isRetiring())
+            return menu;
+    return nullptr;
+}
+
+void materializePinnedMenuTree(ScreenshotPinnedWindow& window) {
+    auto* menu = ScreenshotPinnedWindowTestAccess::contextMenu(window);
+    const auto populate = [](auto&& self, QMenu* current) -> void {
+        const auto actions = current->actions();
+        for (auto* action : actions) {
+            if (auto* submenu = action->menu()) {
+                if (submenu->actions().isEmpty())
+                    QMetaObject::invokeMethod(submenu, "aboutToShow", Qt::DirectConnection);
+                self(self, submenu);
+            }
+        }
+    };
+    populate(populate, menu);
+}
+
 void groupMenuActionsExposeIconsAndCleanupState() {
     QScreen* screen = QGuiApplication::primaryScreen();
     require(screen != nullptr, "a primary screen is required");
@@ -1166,220 +1202,94 @@ void groupMenuActionsExposeIconsAndCleanupState() {
                 groupManager.windowCounts(QStringLiteral("default")).total == 1,
             "a live window with a saved record should count only once");
 
-    auto* groupMenu = pinnedWindow->findChild<adqt::widgets::AdContextMenu*>(
-        QStringLiteral("screenshotPinnedGroupMenu"));
-    require(groupMenu != nullptr, "the pinned context menu should own a group submenu");
-    const auto groupMenuActionNamed = [groupMenu](const QString& name) {
-        for (QAction* action : groupMenu->actions()) {
-            if (action != nullptr && action->objectName() == name) {
+    require(pinnedWindow->findChildren<adqt::widgets::AdContextMenu*>().isEmpty(),
+            "presenting a pin must not construct any context menus");
+    QPointer<adqt::widgets::AdContextMenu> root = openPinnedContextMenu(*pinnedWindow);
+    require(root && root->isVisible(), "right-click creates the pinned root popup");
+    const auto named = [](QMenu* menu, const QString& name) -> QAction* {
+        for (auto* action : menu->actions())
+            if (action->objectName() == name)
                 return action;
-            }
-        }
-        return static_cast<QAction*>(nullptr);
+        return nullptr;
     };
-    // The submenu clears and recreates its actions on rebuild, so every state
-    // check must resolve its QAction again after the refresh.
-    const auto refreshGroupMenu = [groupMenu, &groupMenuActionNamed](const QString& name) {
-        require(QMetaObject::invokeMethod(groupMenu, "aboutToShow", Qt::DirectConnection),
-                "the group submenu rebuild should be triggerable");
-        return groupMenuActionNamed(name);
-    };
+    auto* header = named(root, QStringLiteral("screenshotPinnedGroupAction"));
+    require(header && !header->icon().isNull() && header->menu() &&
+                header->menu()->actions().isEmpty(),
+            "the group entry has an icon and no contents until opened");
+    auto* process = named(root, QStringLiteral("screenshotPinnedProcessImageMenu"));
+    require(process && process->menu()->actions().isEmpty(),
+            "opening the root must not populate image processing submenus");
+    auto* thumbnail = named(root, QStringLiteral("screenshotPinnedThumbnailAction"));
+    require(root->actions().indexOf(header) + 1 == root->actions().indexOf(thumbnail),
+            "grouping remains immediately above Thumbnail mode");
+    auto* close = named(root, QStringLiteral("screenshotPinnedCloseAction"));
+    auto* destroy = named(root, QStringLiteral("screenshotPinnedDestroyAction"));
+    require(close && destroy && !root->actionDanger(close) && root->actionDanger(destroy),
+            "Close and Destroy keep their distinct danger presentation");
 
-    QAction* groupHeader = groupMenu->menuAction();
-    require(groupHeader != nullptr &&
-                groupHeader->objectName() == QStringLiteral("screenshotPinnedGroupAction") &&
-                !groupHeader->icon().isNull(),
-            "the group submenu header should carry an icon");
-
-    auto* contextMenu = pinnedWindow->findChild<adqt::widgets::AdContextMenu*>(
-        QStringLiteral("screenshotPinnedContextMenu"));
-    require(contextMenu != nullptr, "the pinned window should own its context menu");
-    const QList<QAction*> contextActions = contextMenu->actions();
-    const qsizetype groupIndex = contextActions.indexOf(groupHeader);
-    require(groupIndex >= 0 && groupIndex + 1 < contextActions.size() &&
-                contextActions.at(groupIndex + 1)->objectName() ==
-                    QStringLiteral("screenshotPinnedThumbnailAction"),
-            "the group submenu should sit directly above Thumbnail mode");
-    auto* closeAction =
-        pinnedWindow->findChild<QAction*>(QStringLiteral("screenshotPinnedCloseAction"));
-    auto* destroyAction =
-        pinnedWindow->findChild<QAction*>(QStringLiteral("screenshotPinnedDestroyAction"));
-    require(closeAction != nullptr && destroyAction != nullptr &&
-                contextActions.indexOf(destroyAction) == contextActions.indexOf(closeAction) + 1 &&
-                !contextMenu->actionDanger(closeAction) && contextMenu->actionDanger(destroyAction),
-            "Destroy should sit below Close and own the danger color");
-    auto* defaultGroup =
-        groupMenuActionNamed(QStringLiteral("screenshotPinnedGroupAction-default"));
-    require(defaultGroup != nullptr && defaultGroup->text() == QStringLiteral("Default") &&
-                groupMenu->actionBadge(defaultGroup) == QStringLiteral("1/1") &&
-                defaultGroup->shortcut().isEmpty(),
-            "a live pinned window should appear in both group counts");
-
-    QAction* newGroup = groupMenuActionNamed(QStringLiteral("screenshotPinnedNewGroupAction"));
-    require(newGroup != nullptr && !newGroup->icon().isNull() && newGroup->isEnabled(),
-            "New Group should expose an icon and stay actionable");
-    QAction* deleteEmpty =
-        groupMenuActionNamed(QStringLiteral("screenshotPinnedDeleteEmptyGroupsAction"));
-    require(deleteEmpty != nullptr && !deleteEmpty->icon().isNull(),
-            "Delete Empty Groups should expose an icon");
-    require(!deleteEmpty->isEnabled(),
-            "Delete Empty Groups should start disabled while only the built-in group exists");
-
-    auto* deleteSpecifiedMenu = groupMenu->findChild<adqt::widgets::AdContextMenu*>(
-        QStringLiteral("screenshotPinnedDeleteSpecifiedGroupMenu"));
-    require(deleteSpecifiedMenu != nullptr && !deleteSpecifiedMenu->menuAction()->icon().isNull(),
-            "Delete Specified Group should expose the supplied icon");
-    const auto deleteSpecifiedActionNamed = [deleteSpecifiedMenu](const QString& name) {
-        for (QAction* action : deleteSpecifiedMenu->actions()) {
-            if (action != nullptr && action->objectName() == name) {
-                return action;
-            }
-        }
-        return static_cast<QAction*>(nullptr);
-    };
-    const QList<QAction*> initialGroupActions = groupMenu->actions();
-    require(initialGroupActions.indexOf(deleteEmpty) + 1 ==
-                initialGroupActions.indexOf(deleteSpecifiedMenu->menuAction()),
-            "Delete Specified Group should sit directly below Delete Empty Groups");
-    QAction* deleteDefault = deleteSpecifiedActionNamed(
-        QStringLiteral("screenshotPinnedDeleteSpecifiedGroupAction-default"));
-    require(deleteSpecifiedMenu->actions().size() == 1 && deleteDefault != nullptr &&
-                deleteDefault->data().toString() == QStringLiteral("default") &&
-                deleteDefault->text() == QStringLiteral("Default") &&
-                deleteSpecifiedMenu->actionBadge(deleteDefault) == QStringLiteral("1/1"),
-            "Delete Specified Group should list Default with its live window count");
-
-    const auto specifiedId = groupManager.createGroup(QStringLiteral("Specified"));
-    require(specifiedId.has_value(), "a custom group should be created for specified deletion");
-    refreshGroupMenu(QStringLiteral("screenshotPinnedDeleteSpecifiedGroupAction"));
-    QAction* deleteSpecified = deleteSpecifiedActionNamed(
-        QStringLiteral("screenshotPinnedDeleteSpecifiedGroupAction-%1").arg(*specifiedId));
-    require(deleteSpecified != nullptr && deleteSpecified->data().toString() == *specifiedId &&
-                deleteSpecified->text() == QStringLiteral("Specified") &&
-                deleteSpecifiedMenu->actionBadge(deleteSpecified) == QStringLiteral("0/0"),
-            "the specified-deletion submenu should list every custom group with its count");
-    deleteSpecified->trigger();
-    QCoreApplication::processEvents();
-    auto* specifiedModal = pinnedWindow->findChild<adqt::widgets::AdModal*>(
-        QStringLiteral("pinnedWindowGroupDeleteSpecifiedModal"));
-    require(specifiedModal != nullptr && specifiedModal->ownerWindow() == pinnedWindow &&
-                specifiedModal->centered() &&
-                specifiedModal->acceptAccentRole() == adqt::widgets::AdButton::AccentRole::Danger &&
-                specifiedModal->text().contains(QStringLiteral("Specified")) &&
-                specifiedModal->text().contains(QStringLiteral("including closed windows")) &&
-                groupManager.contains(*specifiedId),
-            "specified-group deletion should await confirmation");
-    specifiedModal->reject();
+    QPointer<adqt::widgets::AdContextMenu> group =
+        qobject_cast<adqt::widgets::AdContextMenu*>(header->menu());
+    root->setActiveAction(header);
+    QKeyEvent right(QEvent::KeyPress, Qt::Key_Right, Qt::NoModifier);
+    QApplication::sendEvent(root, &right);
+    auto* defaultGroup = named(group, QStringLiteral("screenshotPinnedGroupAction-default"));
+    require(defaultGroup && defaultGroup->isChecked() &&
+                defaultGroup->text().endsWith(QStringLiteral("1/1")),
+            "opening a group submenu snapshots current membership and counts");
+    auto* deleteEmpty = named(group, QStringLiteral("screenshotPinnedDeleteEmptyGroupsAction"));
+    auto* deleteSpecified =
+        named(group, QStringLiteral("screenshotPinnedDeleteSpecifiedGroupAction"));
+    require(deleteEmpty && !deleteEmpty->isEnabled() && deleteSpecified &&
+                !deleteSpecified->icon().isNull() && deleteSpecified->menu()->actions().isEmpty(),
+            "cleanup state is current and nested deletion contents remain lazy");
+    const auto custom = groupManager.createGroup(QStringLiteral("Menu lifecycle"));
+    require(custom.has_value(), "create a group while the submenu is visible");
+    waitForUi(20);
+    defaultGroup = named(group, QStringLiteral("screenshotPinnedGroupAction-default"));
+    require(
+        defaultGroup &&
+            named(group, QStringLiteral("screenshotPinnedGroupAction-%1").arg(*custom)) &&
+            named(group, QStringLiteral("screenshotPinnedDeleteEmptyGroupsAction"))->isEnabled(),
+        "a visible group submenu follows owner state changes");
+    deleteSpecified = named(group, QStringLiteral("screenshotPinnedDeleteSpecifiedGroupAction"));
+    QPointer<adqt::widgets::AdContextMenu> deletion =
+        qobject_cast<adqt::widgets::AdContextMenu*>(deleteSpecified->menu());
+    group->setActiveAction(deleteSpecified);
+    QApplication::sendEvent(group, &right);
+    require(named(deletion, QStringLiteral("screenshotPinnedDeleteSpecifiedGroupAction-default")) &&
+                named(deletion,
+                      QStringLiteral("screenshotPinnedDeleteSpecifiedGroupAction-%1").arg(*custom)),
+            "the nested deletion submenu snapshots every group when opened");
+    QPointer<QAction> oldDefault = defaultGroup;
+    deletion->dismissPopup();
+    group->dismissPopup();
+    QCoreApplication::sendPostedEvents(nullptr, QEvent::MetaCall);
     QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
-    require(groupManager.contains(*specifiedId),
-            "canceling specified-group deletion should preserve the group");
-    deleteSpecified = deleteSpecifiedActionNamed(
-        QStringLiteral("screenshotPinnedDeleteSpecifiedGroupAction-%1").arg(*specifiedId));
-    require(deleteSpecified != nullptr, "specified-group action should survive menu refresh");
-    deleteSpecified->trigger();
-    specifiedModal = pinnedWindow->findChild<adqt::widgets::AdModal*>(
-        QStringLiteral("pinnedWindowGroupDeleteSpecifiedModal"));
-    require(specifiedModal != nullptr, "specified-group confirmation should reopen");
-    specifiedModal->accept();
-    require(!groupManager.contains(*specifiedId),
-            "accepting specified-group deletion should delete the group");
-
-    QPointer<QAction> hiddenDefaultGroup(
-        groupMenuActionNamed(QStringLiteral("screenshotPinnedGroupAction-default")));
-    require(hiddenDefaultGroup && !groupMenu->isVisible(),
-            "the group menu should be closed before a background group update");
-    const auto cleanupId = groupManager.createGroup(QStringLiteral("Cleanup"));
-    require(cleanupId.has_value(), "an empty custom group should be created for the cleanup state");
-    QCoreApplication::processEvents(QEventLoop::AllEvents, 20);
-    require(hiddenDefaultGroup &&
-                groupMenuActionNamed(QStringLiteral("screenshotPinnedGroupAction-default")) ==
-                    hiddenDefaultGroup.data(),
-            "a closed pinned group menu should defer rebuilding until it is opened");
-    auto ignored = pinnedWindow->persistenceSnapshot();
-    ignored.id = QUuid::createUuid().toString(QUuid::WithoutBraces);
-    ignored.groupId = *cleanupId;
-    require(repository.upsert(ignored).success && repository.markClosed(ignored.id).success,
-            "an ignored pin should be saved in the cleanup group");
-    deleteEmpty = refreshGroupMenu(QStringLiteral("screenshotPinnedDeleteEmptyGroupsAction"));
-    require(deleteEmpty != nullptr && deleteEmpty->isEnabled(),
-            "Delete Empty Groups should enable for an ignored-only group");
-    auto* cleanupGroup =
-        groupMenuActionNamed(QStringLiteral("screenshotPinnedGroupAction-%1").arg(*cleanupId));
-    require(cleanupGroup != nullptr && cleanupGroup->text() == QStringLiteral("Cleanup") &&
-                groupMenu->actionBadge(cleanupGroup) == QStringLiteral("0/1"),
-            "ignored pins should appear only in the total count");
-    QAction* deleteCleanup = deleteSpecifiedActionNamed(
-        QStringLiteral("screenshotPinnedDeleteSpecifiedGroupAction-%1").arg(*cleanupId));
-    require(deleteCleanup != nullptr && deleteCleanup->text() == QStringLiteral("Cleanup") &&
-                deleteSpecifiedMenu->actionBadge(deleteCleanup) == QStringLiteral("0/1"),
-            "specified-deletion rows should use the same count format");
-
-    deleteEmpty->trigger();
-    auto* emptyModal = pinnedWindow->findChild<adqt::widgets::AdModal*>(
-        QStringLiteral("pinnedWindowGroupDeleteEmptyModal"));
-    require(emptyModal != nullptr && emptyModal->centered() &&
-                emptyModal->acceptAccentRole() == adqt::widgets::AdButton::AccentRole::Danger &&
-                emptyModal->text().contains(
-                    QStringLiteral("no pinned windows other than closed ones")) &&
-                emptyModal->text().contains(QStringLiteral("Closed pinned windows saved")) &&
-                groupManager.contains(*cleanupId) && repository.loadRecord(ignored.id).has_value(),
-            "empty-group deletion should await confirmation without removing ignored pins");
-    emptyModal->reject();
+    require(!group && !deletion && !oldDefault, "hiding a submenu releases its full tree");
+    require(root && root->isVisible(), "hiding a submenu leaves its parent open");
+    require(header->menu() && header->menu()->actions().isEmpty(),
+            "hiding a submenu leaves an empty entry in the open parent");
+    require(groupManager.deleteEmptyGroups(),
+            "background cleanup should work without menu objects");
+    group = qobject_cast<adqt::widgets::AdContextMenu*>(header->menu());
+    root->setActiveAction(header);
+    QApplication::sendEvent(root, &right);
+    require(
+        !named(group, QStringLiteral("screenshotPinnedGroupAction-%1").arg(*custom)) &&
+            !named(group, QStringLiteral("screenshotPinnedDeleteEmptyGroupsAction"))->isEnabled(),
+        "reopening the group submenu uses fresh owner state");
+    root->dismissPopup();
+    QCoreApplication::sendPostedEvents(nullptr, QEvent::MetaCall);
     QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
-    require(groupManager.contains(*cleanupId),
-            "canceling empty-group deletion should preserve the group");
-    deleteEmpty = groupMenuActionNamed(QStringLiteral("screenshotPinnedDeleteEmptyGroupsAction"));
-    require(deleteEmpty != nullptr, "empty-group action should survive menu refresh");
-    deleteEmpty->trigger();
-    emptyModal = pinnedWindow->findChild<adqt::widgets::AdModal*>(
-        QStringLiteral("pinnedWindowGroupDeleteEmptyModal"));
-    require(emptyModal != nullptr, "empty-group confirmation should reopen");
-    groupManager.registerPendingPin(QStringLiteral("pending-cleanup"), *cleanupId);
-    emptyModal->accept();
-    require(groupManager.contains(*cleanupId) && repository.loadRecord(ignored.id).has_value(),
-            "empty-group deletion should recheck the non-ignored count on confirmation");
-    QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
-    groupManager.completePendingPin(QStringLiteral("pending-cleanup"));
-    deleteEmpty = refreshGroupMenu(QStringLiteral("screenshotPinnedDeleteEmptyGroupsAction"));
-    require(deleteEmpty != nullptr && deleteEmpty->isEnabled(),
-            "ignored-only cleanup should remain available after the pending pin completes");
-    deleteEmpty->trigger();
-    emptyModal = pinnedWindow->findChild<adqt::widgets::AdModal*>(
-        QStringLiteral("pinnedWindowGroupDeleteEmptyModal"));
-    require(emptyModal != nullptr, "empty-group confirmation should reopen after rechecking");
-    emptyModal->accept();
-    require(!groupManager.contains(*cleanupId) && !repository.loadRecord(ignored.id).has_value(),
-            "confirming empty-group deletion should remove ignored pins");
-    deleteEmpty = refreshGroupMenu(QStringLiteral("screenshotPinnedDeleteEmptyGroupsAction"));
-    require(deleteEmpty != nullptr && !deleteEmpty->isEnabled(),
-            "Delete Empty Groups should disable again after the cleanup");
-
-    deleteDefault = deleteSpecifiedActionNamed(
-        QStringLiteral("screenshotPinnedDeleteSpecifiedGroupAction-default"));
-    require(deleteDefault != nullptr, "Default should remain available for specified clearing");
-    deleteDefault->trigger();
-    auto* defaultModal = pinnedWindow->findChild<adqt::widgets::AdModal*>(
-        QStringLiteral("pinnedWindowGroupDeleteSpecifiedModal"));
-    require(defaultModal != nullptr &&
-                defaultModal->text().contains(QStringLiteral("Default group will remain")) &&
-                defaultModal->text().contains(QStringLiteral("including closed windows")) &&
-                guardedWindow != nullptr && groupManager.contains(QStringLiteral("default")),
-            "clearing Default should wait for confirmation and retain the group");
-    defaultModal->reject();
-    QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
-    require(guardedWindow != nullptr, "canceling Default clearing should preserve its window");
-    deleteDefault = deleteSpecifiedActionNamed(
-        QStringLiteral("screenshotPinnedDeleteSpecifiedGroupAction-default"));
-    require(deleteDefault != nullptr, "Default action should survive menu refresh");
-    deleteDefault->trigger();
-    defaultModal = pinnedWindow->findChild<adqt::widgets::AdModal*>(
-        QStringLiteral("pinnedWindowGroupDeleteSpecifiedModal"));
-    require(defaultModal != nullptr, "Default clearing confirmation should reopen");
-    defaultModal->accept();
-    require(processUntilDeleted(guardedWindow, 2000),
-            "clearing Default should destructively close its matching live pinned window");
-    require(groupManager.contains(QStringLiteral("default")),
-            "clearing Default should preserve the built-in group");
+    require(!root && !group &&
+                pinnedWindow->findChildren<adqt::widgets::AdContextMenu*>().isEmpty(),
+            "hiding the root releases all pinned menu resources");
+    root = openPinnedContextMenu(*pinnedWindow);
+    require(root && named(root, QStringLiteral("screenshotPinnedOcrAction")),
+            "a later right-click creates a complete fresh popup");
+    root->dismissPopup();
+    pinnedWindow->close();
+    require(processUntilDeleted(guardedWindow, 2000), "the lifecycle fixture pin must close");
 }
 
 adqt::widgets::AdButton* toolbarButtonNamed(ScreenshotToolPalette& toolbar,
@@ -1409,8 +1319,7 @@ class IdleOcrRecognition final : public ScreenshotOcrRecognitionPort {
 };
 
 QAction* pinnedMenuActionNamed(ScreenshotPinnedWindow& window, const QString& name) {
-    auto* menu = window.findChild<adqt::widgets::AdContextMenu*>(
-        QStringLiteral("screenshotPinnedContextMenu"));
+    auto* menu = ScreenshotPinnedWindowTestAccess::contextMenu(window);
     if (menu == nullptr) {
         return nullptr;
     }
@@ -2070,6 +1979,7 @@ void pinnedOriginalImagePreviewFollowsViewAndAuxiliaryLifecycle() {
          {"screenshotPinnedRotateClockwiseAction", "screenshotPinnedFlipHorizontalAction",
           "screenshotPinnedFlipVerticalAction", "screenshotPinnedIncreaseScaleAction",
           "screenshotPinnedDecreaseScaleAction"}) {
+        materializePinnedMenuTree(window);
         auto* action = window.findChild<QAction*>(QString::fromLatin1(actionName));
         require(action != nullptr, "the preview fixture needs image transform actions");
         action->trigger();
@@ -2176,13 +2086,11 @@ void pinnedRecognitionContextMenuCopiesLocally() {
         QStringLiteral("screenshotPinnedRecognitionContent"));
     require(content != nullptr && content->isVisible() && session->active(),
             "cached OCR should be visible before opening its pinned context menu");
-    auto* pinnedMenu = window.findChild<adqt::widgets::AdContextMenu*>(
-        QStringLiteral("screenshotPinnedContextMenu"));
-    require(pinnedMenu != nullptr, "pinned recognition context menu test needs the image menu");
-    int pinnedMenuShows = 0;
-    QObject::connect(pinnedMenu, &QMenu::aboutToShow, &window,
-                     [&pinnedMenuShows]() { ++pinnedMenuShows; });
+    require(window.findChild<adqt::widgets::AdContextMenu*>(
+                QStringLiteral("screenshotPinnedContextMenu")) == nullptr,
+            "recognition must not eagerly construct the image menu");
 
+    content->setShowOriginalImage(false);
     QApplication::clipboard()->setText(QStringLiteral("stale"));
     bool inspected = false;
     QTimer::singleShot(0, &window, [&]() {
@@ -2217,7 +2125,9 @@ void pinnedRecognitionContextMenuCopiesLocally() {
     QApplication::sendEvent(content, &event);
     QApplication::processEvents();
 
-    require(inspected && event.isAccepted() && pinnedMenuShows == 0,
+    require(inspected && event.isAccepted() &&
+                window.findChild<adqt::widgets::AdContextMenu*>(
+                    QStringLiteral("screenshotPinnedContextMenu")) == nullptr,
             "embedded recognition should consume context menus before the pinned image menu");
     require(QApplication::clipboard()->text() == QStringLiteral("Saved OCR") && session->active() &&
                 window.isVisible() && content->isVisible(),
@@ -2259,8 +2169,11 @@ void pinnedRecognitionContextMenuCopiesLocally() {
                                 cellEditor->viewport()->mapToGlobal(cellPosition));
     QApplication::sendEvent(cellEditor->viewport(), &cellEvent);
     QApplication::processEvents();
-    require(inspected && cellEvent.isAccepted() && pinnedMenuShows == 0 && session->active() &&
-                session->tableModeActive() && content->isVisible() && window.isVisible(),
+    require(inspected && cellEvent.isAccepted() &&
+                window.findChild<adqt::widgets::AdContextMenu*>(
+                    QStringLiteral("screenshotPinnedContextMenu")) == nullptr &&
+                session->active() && session->tableModeActive() && content->isVisible() &&
+                window.isVisible(),
             "pinned inline table editing should consume its menu without closing recognition");
     require(QApplication::clipboard()->text() == QStringLiteral("Saved table"),
             "pinned inline table context Copy should copy the selected cell text locally");
@@ -2466,7 +2379,7 @@ void pinnedEraserToolsPreserveIndependentDefaults() {
         auto* window = new ScreenshotPinnedWindow();
         QPointer<ScreenshotPinnedWindow> guardedWindow(window);
         require(window->present(config), "present a real pinned eraser image");
-        auto* editButton = buttonNamed(*window, QStringLiteral("Enable drawing mode"));
+        auto* editButton = buttonNamed(*window, QStringLiteral("Enable annotation mode"));
         require(editButton != nullptr, "pinned image exposes drawing mode");
         editButton->click();
         QCoreApplication::processEvents();
@@ -2823,7 +2736,7 @@ void pinnedRecognitionShortcutTogglesResults() {
         }
     });
     if (offscreen) {
-        window->show();
+        ScreenshotPinnedWindowTestAccess::hiddenSelectionOffscreen(*window, config);
         window->activateWindow();
     } else {
         require(window->present(config), "the recognition shortcut pin should present");
@@ -2831,12 +2744,6 @@ void pinnedRecognitionShortcutTogglesResults() {
     waitForUi(50);
     auto* canvas = window->findChild<SnowCanvasWidget*>();
     QAction* action = pinnedMenuActionNamed(*window, QStringLiteral("screenshotPinnedOcrAction"));
-    if (offscreen && action != nullptr) {
-        // Native image presentation requires an HWND. Exercise shortcut/action parity here;
-        // the native run additionally verifies the actual recognition visibility.
-        QObject::disconnect(action, nullptr, window, nullptr);
-        action->setEnabled(true);
-    }
     require(canvas != nullptr && action != nullptr && action->isEnabled(),
             "the recognition shortcut fixture should expose cached OCR");
     require(!window->persistenceSnapshot().recognitionVisible,
@@ -3104,13 +3011,18 @@ void pinnedTransformGeometryIsAtomic() {
     Access::restoreOffscreen(window, config);
     auto* platform = Access::installObservedPlatform(window);
     platform->observed = config.nativeGeometry;
+    materializePinnedMenuTree(window);
     auto* clockwise =
         window.findChild<QAction*>(QStringLiteral("screenshotPinnedRotateClockwiseAction"));
+    materializePinnedMenuTree(window);
     auto* counterclockwise =
         window.findChild<QAction*>(QStringLiteral("screenshotPinnedRotateCounterClockwiseAction"));
+    materializePinnedMenuTree(window);
     auto* flip = window.findChild<QAction*>(QStringLiteral("screenshotPinnedFlipHorizontalAction"));
+    materializePinnedMenuTree(window);
     auto* flipVertical =
         window.findChild<QAction*>(QStringLiteral("screenshotPinnedFlipVerticalAction"));
+    materializePinnedMenuTree(window);
     auto* reset =
         window.findChild<QAction*>(QStringLiteral("screenshotPinnedResetTransformAction"));
     require(clockwise && counterclockwise && flip && flipVertical && reset,
@@ -3183,14 +3095,19 @@ void pinnedTransformResetPersistsWithoutResize() {
     });
     require(window->present(config), "the transform reset fixture should present");
     waitForUi(400);
+    materializePinnedMenuTree(*window);
     auto* menu = window->findChild<adqt::widgets::AdContextMenu*>(
         QStringLiteral("screenshotPinnedProcessImageMenu"));
+    materializePinnedMenuTree(*window);
     auto* flipHorizontal =
         window->findChild<QAction*>(QStringLiteral("screenshotPinnedFlipHorizontalAction"));
+    materializePinnedMenuTree(*window);
     auto* flipVertical =
         window->findChild<QAction*>(QStringLiteral("screenshotPinnedFlipVerticalAction"));
+    materializePinnedMenuTree(*window);
     auto* rotateClockwise =
         window->findChild<QAction*>(QStringLiteral("screenshotPinnedRotateClockwiseAction"));
+    materializePinnedMenuTree(*window);
     auto* resetTransform =
         window->findChild<QAction*>(QStringLiteral("screenshotPinnedResetTransformAction"));
     require(menu != nullptr && flipHorizontal != nullptr && flipVertical != nullptr &&
@@ -3206,8 +3123,15 @@ void pinnedTransformResetPersistsWithoutResize() {
         if (operation == rotateClockwise) {
             operation->trigger();
         }
-        waitForUi(400);
-        require(!lastWritten.imageTransform.isIdentity() && lastWritten.nativeGeometry == geometry,
+        QElapsedTimer persistenceWait;
+        persistenceWait.start();
+        while (lastWritten.imageTransform.isIdentity() && persistenceWait.elapsed() < 2000) {
+            QCoreApplication::processEvents(QEventLoop::AllEvents, 20);
+            QThread::msleep(1);
+        }
+        require(!lastWritten.imageTransform.isIdentity(),
+                "the flip or half-turn must persist its transform");
+        require(lastWritten.nativeGeometry == geometry,
                 "the flip or half-turn must persist without changing the window size");
         const int previousWrites = writeCount;
         resetTransform->trigger();
@@ -3276,8 +3200,10 @@ void transformedPinnedOcrTracksCanvasViewport() {
         };
         verifyAlignment();
         for (int rotation = 0; rotation < 4; ++rotation) {
+            materializePinnedMenuTree(*window);
             auto* menu = window->findChild<adqt::widgets::AdContextMenu*>(
                 QStringLiteral("screenshotPinnedProcessImageMenu"));
+            materializePinnedMenuTree(*window);
             auto* rotateClockwise = window->findChild<QAction*>(
                 QStringLiteral("screenshotPinnedRotateClockwiseAction"));
             require(menu != nullptr && rotateClockwise != nullptr,
@@ -3463,8 +3389,10 @@ void pinnedWindowPoolReusesAndReplenishesPreparedShell() {
                 topLevelPinnedWindows().size() == 2,
             "prewarming a replenished pool should not exceed one spare");
 
+    materializePinnedMenuTree(*firstPrepared);
     auto* firstManagementMenu = firstPrepared->findChild<adqt::widgets::AdContextMenu*>(
         QStringLiteral("screenshotPinnedWindowManagementMenu"));
+    materializePinnedMenuTree(*firstPrepared);
     auto* firstShowAll =
         firstPrepared->findChild<QAction*>(QStringLiteral("screenshotPinnedShowAllWindowsAction"));
     require(firstManagementMenu != nullptr && firstShowAll != nullptr &&
@@ -3499,8 +3427,10 @@ void pinnedWindowPoolReusesAndReplenishesPreparedShell() {
         hiddenPinnedWindowExcept({firstPrepared, secondPrepared}));
     require(finalPrepared != nullptr && topLevelPinnedWindows().size() == 3,
             "the pool should replenish after every successful presentation");
+    materializePinnedMenuTree(*secondPrepared);
     auto* secondManagementMenu = secondPrepared->findChild<adqt::widgets::AdContextMenu*>(
         QStringLiteral("screenshotPinnedWindowManagementMenu"));
+    materializePinnedMenuTree(*secondPrepared);
     auto* secondCloseAll = secondPrepared->findChild<QAction*>(
         QStringLiteral("screenshotPinnedCloseAllWindowsAction"));
     require(secondManagementMenu != nullptr && secondCloseAll != nullptr &&
@@ -3727,7 +3657,7 @@ void pinnedLargeImageRemainsOpenWhenEnteringDrawingMode(SnowCanvasRuntime&) {
     require(pinnedWindow->present(config), "large pinned window presentation failed");
     QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
 
-    QPushButton* editButton = buttonNamed(*pinnedWindow, QStringLiteral("Enable drawing mode"));
+    QPushButton* editButton = buttonNamed(*pinnedWindow, QStringLiteral("Enable annotation mode"));
     require(editButton != nullptr, "large pinned window edit button was not found");
     editButton->click();
     waitForUi(500);
@@ -3844,7 +3774,7 @@ void pinnedCopyIncludesSourceCanvasDrawing() {
     require(sourceRuntime.serializeDocumentSession() == sourceSessionBeforePin,
             "presenting a pinned image should not alter the source runtime");
 
-    QPushButton* editButton = buttonNamed(*pinnedWindow, QStringLiteral("Enable drawing mode"));
+    QPushButton* editButton = buttonNamed(*pinnedWindow, QStringLiteral("Enable annotation mode"));
     require(editButton != nullptr, "pinned edit button was not found before independence check");
     editButton->click();
     QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
@@ -4205,6 +4135,7 @@ void pinnedContextMenuPreservesNativeGeometry(SnowCanvasRuntime&) {
     waitForUi(50);
     require(!guardedWindow.isNull(), "native geometry restore closed the context menu pin");
 
+    materializePinnedMenuTree(*pinnedWindow);
     auto* menu = pinnedWindow->findChild<adqt::widgets::AdContextMenu*>(
         QStringLiteral("screenshotPinnedContextMenu"));
     const HWND pinnedHwnd = toNativeHwnd(pinnedWindow->winId());
@@ -4739,6 +4670,7 @@ void pinnedCloseHidesBeforePersistence() {
         const auto finalState = window.persistenceSnapshot();
         closing = true;
         if (userClose) {
+            materializePinnedMenuTree(window);
             auto* closeAction =
                 window.findChild<QAction*>(QStringLiteral("screenshotPinnedCloseAction"));
             require(closeAction, "close persistence fixture exposes close action");
@@ -4794,6 +4726,7 @@ void deferredPinUserCloseCancelsLateMaterialization() {
     require(window != nullptr, "the pending pinned shell was not discoverable");
     const QString persistenceId = window->persistenceId();
     QPointer<ScreenshotPinnedWindow> guardedWindow(window);
+    materializePinnedMenuTree(*window);
     auto* closeAction = window->findChild<QAction*>(QStringLiteral("screenshotPinnedCloseAction"));
     require(closeAction != nullptr, "the pending pinned close action was not found");
     closeAction->trigger();
@@ -5065,6 +4998,14 @@ void pinnedImageProcessingShortcuts() {
     require(canvas != nullptr, "image commands need a canvas");
     canvas->setFocus();
     waitForUi(20);
+    require(window.findChildren<adqt::widgets::AdContextMenu*>().isEmpty(),
+            "image commands start without any menus");
+    Access::setGeneralOpacity(window, 50);
+    sendShortcut(*canvas, Qt::Key_BracketRight);
+    require(Access::opacity(window) == 60 &&
+                window.findChildren<adqt::widgets::AdContextMenu*>().isEmpty(),
+            "keyboard commands execute before the first context menu opens");
+    materializePinnedMenuTree(window);
     const auto action = [&](const char* name) {
         auto* result = window.findChild<QAction*>(QString::fromLatin1(name));
         require(result != nullptr, "image command action must exist");
@@ -5120,17 +5061,29 @@ void pinnedImageProcessingShortcuts() {
             QObject::connect(target, &QAction::triggered, &window, [&]() { ++activations; });
         sendShortcut(*canvas, command.key);
         const auto keyed = window.persistenceSnapshot();
-        require(activations == 1 && clicked.opacityPercent == keyed.opacityPercent &&
+        require(activations == 0 && clicked.opacityPercent == keyed.opacityPercent &&
                     clicked.scalePercent == keyed.scalePercent &&
                     clicked.imageTransform == keyed.imageTransform &&
                     clicked.quarterTurns == keyed.quarterTurns,
-                "each keyboard command must execute its menu action exactly once");
+                "each keyboard command matches its menu command without activating the view");
         require(settings.setShortcuts(id, {QStringLiteral("Ctrl+Alt+9")}),
                 "each image command must support remapping");
+        reset();
+        activations = 0;
+        const auto beforeRemapped = window.persistenceSnapshot();
         sendShortcut(*canvas, command.key);
-        require(activations == 1, "the previous shortcut must stop activating after remapping");
+        const auto afterOldKey = window.persistenceSnapshot();
+        require(beforeRemapped.opacityPercent == afterOldKey.opacityPercent &&
+                    beforeRemapped.scalePercent == afterOldKey.scalePercent &&
+                    beforeRemapped.imageTransform == afterOldKey.imageTransform,
+                "the previous shortcut stops executing after remapping");
         sendShortcut(*canvas, Qt::Key_9, Qt::ControlModifier | Qt::AltModifier);
-        require(activations == 2, "remapped shortcuts must take effect immediately");
+        const auto remapped = window.persistenceSnapshot();
+        require(activations == 0 && clicked.opacityPercent == remapped.opacityPercent &&
+                    clicked.scalePercent == remapped.scalePercent &&
+                    clicked.imageTransform == remapped.imageTransform &&
+                    clicked.quarterTurns == remapped.quarterTurns,
+                "remapped shortcuts immediately execute the same owner command");
         require(settings.setShortcuts(id, original), "restore the default image shortcut");
         QEvent languageChange(QEvent::LanguageChange);
         QCoreApplication::sendEvent(&window, &languageChange);
@@ -5138,6 +5091,11 @@ void pinnedImageProcessingShortcuts() {
                 "language changes must retain restored shortcut hints");
         QObject::disconnect(connection);
     }
+    ScreenshotPinnedWindowTestAccess::contextMenu(window)->dismissPopup();
+    QCoreApplication::sendPostedEvents(nullptr, QEvent::MetaCall);
+    QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+    require(window.findChildren<adqt::widgets::AdContextMenu*>().isEmpty(),
+            "shortcut commands need no retained menu tree");
     Access::setGeneralOpacity(window, 50);
     sendShortcut(*canvas, Qt::Key_BracketRight);
     require(Access::opacity(window) == 60, "opacity increase must add ten percentage points");
@@ -5187,28 +5145,84 @@ void pinnedImageProcessingShortcuts() {
     const auto originalShapeShortcut = drawingSettings.shortcuts(QStringLiteral("shape"));
     require(drawingSettings.setShortcuts(QStringLiteral("shape"), {QStringLiteral("1")}),
             "drawing precedence fixture must bind Shape to 1");
-    action("screenshotPinnedDrawingAction")->setChecked(true);
+    Access::editSelectionOffscreen(window, true);
     const auto beforeDrawing = window.persistenceSnapshot();
     sendShortcut(*canvas, Qt::Key_1);
     require(canvas->canvasTool() == SnowCanvasTool::Shape &&
                 window.persistenceSnapshot().imageTransform == beforeDrawing.imageTransform,
             "active drawing shortcuts must take precedence over image transforms");
-    action("screenshotPinnedDrawingAction")->setChecked(false);
+    Access::editSelectionOffscreen(window, false);
     require(drawingSettings.setShortcuts(QStringLiteral("shape"), originalShapeShortcut),
             "restore the drawing shortcut");
     Access::recognitionOffscreen(window, cachedOcrPinConfig(nullptr));
     QEvent languageChange(QEvent::LanguageChange);
     QCoreApplication::sendEvent(&window, &languageChange);
+    materializePinnedMenuTree(window);
     auto* scaleMenu = window.findChild<adqt::widgets::AdContextMenu*>(
         QStringLiteral("screenshotPinnedScaleMenu"));
-    require(!scaleMenu->menuAction()->isEnabled(), "OCR must disable scale commands");
+    auto* processMenu = window.findChild<adqt::widgets::AdContextMenu*>(
+        QStringLiteral("screenshotPinnedProcessImageMenu"));
+    require(scaleMenu != nullptr && processMenu != nullptr, "OCR scale menu should be available");
+    const auto headers = processMenu->actions();
+    const auto scaleHeader =
+        std::find_if(headers.cbegin(), headers.cend(),
+                     [scaleMenu](const auto* item) { return item->menu() == scaleMenu; });
+    require(scaleHeader != headers.cend() && !(*scaleHeader)->isEnabled(),
+            "OCR must disable scale commands");
     sendShortcut(*canvas, Qt::Key_Period);
     action("screenshotPinnedIncreaseScaleAction")->trigger();
     require(Access::scale(window) == 100, "neither shortcut nor menu may bypass OCR restrictions");
 }
 
+void pinnedLazyMenuHeadersRetranslate() {
+    ScreenshotPinnedWindow window;
+    materializePinnedMenuTree(window);
+    const QStringList menuNames{QStringLiteral("screenshotPinnedOpacityMenu"),
+                                QStringLiteral("screenshotPinnedScaleMenu"),
+                                QStringLiteral("screenshotPinnedLoadContentMenu")};
+    QList<QPointer<QAction>> headers;
+    QStringList originalLabels;
+    for (const auto& name : menuNames) {
+        auto* menu = window.findChild<adqt::widgets::AdContextMenu*>(name);
+        require(menu != nullptr, "the lazy menu header must exist before changing languages");
+        headers.append(menu->menuAction());
+        originalLabels.append(menu->menuAction()->text());
+    }
+    class MenuTranslator final : public QTranslator {
+      public:
+        QString translate(const char* context, const char* source, const char*,
+                          int) const override {
+            if (QByteArray(context) == "ScreenshotPinnedWindow" &&
+                (QByteArray(source) == "Opacity" || QByteArray(source) == "Scale" ||
+                 QByteArray(source) == "Load new content")) {
+                return QStringLiteral("Translated ") + QString::fromUtf8(source);
+            }
+            return {};
+        }
+    } translator;
+    QCoreApplication::installTranslator(&translator);
+    auto removeTranslator = qScopeGuard([&]() { QCoreApplication::removeTranslator(&translator); });
+    QEvent languageChange(QEvent::LanguageChange);
+    QCoreApplication::sendEvent(&window, &languageChange);
+    const QStringList translatedLabels{QStringLiteral("Translated Opacity"),
+                                       QStringLiteral("Translated Scale"),
+                                       QStringLiteral("Translated Load new content")};
+    for (int index = 0; index < headers.size(); ++index) {
+        require(headers.at(index) && headers.at(index)->text() == translatedLabels.at(index),
+                "an existing lazy submenu header must follow LanguageChange");
+    }
+    QCoreApplication::removeTranslator(&translator);
+    removeTranslator.dismiss();
+    QCoreApplication::sendEvent(&window, &languageChange);
+    for (int index = 0; index < headers.size(); ++index) {
+        require(headers.at(index)->text() == originalLabels.at(index),
+                "lazy submenu headers must restore their original language");
+    }
+}
+
 void pinnedShortcutDisplayUsesSettingsFormat() {
     ScreenshotPinnedWindow window;
+    materializePinnedMenuTree(window);
     auto* action = window.findChild<QAction*>(QStringLiteral("screenshotPinnedDrawingAction"));
     require(action != nullptr, "the pinned menu should be available without showing a window");
     const snow_shot::storage::PinToScreenShortcutSettings shortcuts;
@@ -5245,6 +5259,7 @@ void pinnedConfiguredShortcutUpdatesImmediately(SnowCanvasRuntime&) {
     config.enableEditing = true;
     require(pinnedWindow->present(config), "shortcut test pin presentation failed");
     auto* canvas = pinnedWindow->findChild<SnowCanvasWidget*>();
+    materializePinnedMenuTree(*pinnedWindow);
     auto* drawingAction =
         pinnedWindow->findChild<QAction*>(QStringLiteral("screenshotPinnedDrawingAction"));
     require(canvas != nullptr && drawingAction != nullptr,
@@ -5549,10 +5564,13 @@ void pinnedDestroyShortcutUsesDestructiveMenuColor() {
     config.screen = screen;
     require(pinnedWindow->present(config), "Destroy shortcut test pin presentation failed");
     auto* canvas = pinnedWindow->findChild<SnowCanvasWidget*>();
+    materializePinnedMenuTree(*pinnedWindow);
     auto* menu = pinnedWindow->findChild<adqt::widgets::AdContextMenu*>(
         QStringLiteral("screenshotPinnedContextMenu"));
+    materializePinnedMenuTree(*pinnedWindow);
     auto* closeAction =
         pinnedWindow->findChild<QAction*>(QStringLiteral("screenshotPinnedCloseAction"));
+    materializePinnedMenuTree(*pinnedWindow);
     auto* destroyAction =
         pinnedWindow->findChild<QAction*>(QStringLiteral("screenshotPinnedDestroyAction"));
     require(canvas != nullptr && menu != nullptr && closeAction != nullptr &&
@@ -5931,6 +5949,7 @@ void pinnedSystemMoveLoopAcceptsMovementShortcuts() {
     SetKeyboardState(probe.keyboardState);
     require(shortcuts.setShortcuts(actionId, previousShortcuts),
             "system move loop custom shortcuts could not be restored");
+    materializePinnedMenuTree(*pinnedWindow);
     const auto* drawingAction =
         pinnedWindow->findChild<QAction*>(QStringLiteral("screenshotPinnedDrawingAction"));
     const bool drawingInactive = drawingAction != nullptr && !drawingAction->isChecked();
@@ -6075,6 +6094,7 @@ void pinnedMiddleClickActions() {
     }
     waitForUi(200);
     auto* canvas = window->findChild<SnowCanvasWidget*>();
+    materializePinnedMenuTree(*window);
     auto* thumbnail =
         window->findChild<QAction*>(QStringLiteral("screenshotPinnedThumbnailAction"));
     auto* scale = window->findChild<adqt::widgets::AdContextMenu*>(
@@ -6136,6 +6156,7 @@ void pinnedMiddleClickActions() {
         send(window, QEvent::MouseButtonPress, controls->mapTo(window, controls->rect().center()));
         press(controls);
         require(!thumbnail->isChecked(), "controls must not dispatch middle-click actions");
+        materializePinnedMenuTree(*window);
         auto* drawing =
             window->findChild<QAction*>(QStringLiteral("screenshotPinnedDrawingAction"));
         require(drawing != nullptr, "drawing action missing");
@@ -6214,6 +6235,7 @@ void pinnedOffscreenDoubleClickActions() {
     window->show();
     waitForUi(30);
     auto* canvas = window->findChild<SnowCanvasWidget*>();
+    materializePinnedMenuTree(*window);
     auto* thumbnail =
         window->findChild<QAction*>(QStringLiteral("screenshotPinnedThumbnailAction"));
     require(canvas != nullptr && thumbnail != nullptr, "offscreen double-click controls missing");
@@ -6447,6 +6469,7 @@ void enlargedPinnedThumbnailRemainsVisible() {
     require(guarded && window->isVisible(), "enlarged pin must start visible");
     const QRect original = window->currentNativeGeometry();
     setSystemCursorPosition(screenRect.center());
+    materializePinnedMenuTree(*window);
     auto* thumbnail =
         window->findChild<QAction*>(QStringLiteral("screenshotPinnedThumbnailAction"));
     require(thumbnail != nullptr, "enlarged thumbnail action missing");
@@ -6479,6 +6502,7 @@ void pinnedThumbnailTracksCurrentMousePosition() {
     ScreenshotPinnedWindow window;
     require(window.present(config), "thumbnail anchoring pin presentation failed");
     waitForUi(200);
+    materializePinnedMenuTree(window);
     auto* thumbnail = window.findChild<QAction*>(QStringLiteral("screenshotPinnedThumbnailAction"));
     require(thumbnail != nullptr, "thumbnail anchoring action missing");
     const auto requireAnchor = [](const QRect& before, const QRect& after, const QPoint& cursor) {
@@ -6527,6 +6551,7 @@ void pinnedDoubleClickActions() {
     require(window->present(config), "double-click pin presentation failed");
     waitForUi(200);
     auto* canvas = window->findChild<SnowCanvasWidget*>();
+    materializePinnedMenuTree(*window);
     auto* thumbnail =
         window->findChild<QAction*>(QStringLiteral("screenshotPinnedThumbnailAction"));
     require(canvas != nullptr && thumbnail != nullptr, "double-click pin controls missing");
@@ -6563,6 +6588,7 @@ void pinnedDoubleClickActions() {
     require(controls != nullptr && controls->isVisible(), "double-click controls must be visible");
     send(window, controls->mapTo(window, controls->rect().center()));
     require(!thumbnail->isChecked(), "control panel must not trigger the double-click action");
+    materializePinnedMenuTree(*window);
     auto* drawing = window->findChild<QAction*>(QStringLiteral("screenshotPinnedDrawingAction"));
     require(drawing != nullptr, "drawing action missing");
     drawing->setChecked(true);
@@ -6674,6 +6700,7 @@ void pinnedThumbnailUsesOpaqueThemeBackground(SnowCanvasRuntime&) {
     require(checkerColor(renderWidget(*pinnedWindow).pixelColor(pinnedWindow->rect().center())),
             "transparent pinned content should show the checkerboard");
 
+    materializePinnedMenuTree(*pinnedWindow);
     auto* thumbnailAction =
         pinnedWindow->findChild<QAction*>(QStringLiteral("screenshotPinnedThumbnailAction"));
     require(thumbnailAction != nullptr, "pinned thumbnail action was not found");
@@ -7405,7 +7432,8 @@ void closePinnedWindow(SnowCanvasRuntime&, bool enableEditing, bool enterEditMod
     QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
 
     if (enterEditMode) {
-        QPushButton* editButton = buttonNamed(*pinnedWindow, QStringLiteral("Enable drawing mode"));
+        QPushButton* editButton =
+            buttonNamed(*pinnedWindow, QStringLiteral("Enable annotation mode"));
         require(editButton != nullptr, "edit button was not found");
         editButton->click();
         QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
@@ -7481,6 +7509,7 @@ void pinnedScalingAndAspectLockedResizing(SnowCanvasRuntime&) {
     auto* canvas = pinnedWindow->findChild<SnowCanvasWidget*>();
     auto* scaleLabel =
         pinnedWindow->findChild<QLabel*>(QStringLiteral("screenshotPinnedScaleLabel"));
+    materializePinnedMenuTree(*pinnedWindow);
     auto* menu = pinnedWindow->findChild<adqt::widgets::AdContextMenu*>(
         QStringLiteral("screenshotPinnedContextMenu"));
     auto* scaleMenu = pinnedWindow->findChild<adqt::widgets::AdContextMenu*>(
@@ -7604,6 +7633,7 @@ void pinnedScalingAndAspectLockedResizing(SnowCanvasRuntime&) {
         pinnedMenuActionNamed(*pinnedWindow, QStringLiteral("screenshotPinnedProcessImageMenu"));
     auto* processMenu = qobject_cast<adqt::widgets::AdContextMenu*>(
         processAction != nullptr ? processAction->menu() : nullptr);
+    materializePinnedMenuTree(*pinnedWindow);
     auto* rotateClockwise =
         pinnedWindow->findChild<QAction*>(QStringLiteral("screenshotPinnedRotateClockwiseAction"));
     require(processMenu != nullptr && rotateClockwise != nullptr,
@@ -8016,6 +8046,7 @@ void pinnedScalingAndAspectLockedResizing(SnowCanvasRuntime&) {
             "thumbnail wheel input should restore the pin and apply cursor scaling");
 #endif
 
+    materializePinnedMenuTree(*pinnedWindow);
     auto* closeAction =
         pinnedWindow->findChild<QAction*>(QStringLiteral("screenshotPinnedCloseAction"));
     require(closeAction != nullptr, "scaling pin close action was not found");
@@ -8570,6 +8601,7 @@ restoreSeededPinnedWindow(ScreenshotSelectionExportUiServices& services,
 // Reads the "Current: N%" entry the way a user sees it: opening the context
 // menu is what refreshes the readout from the window state.
 QString scaleMenuReadout(ScreenshotPinnedWindow& window) {
+    materializePinnedMenuTree(window);
     auto* contextMenu = window.findChild<adqt::widgets::AdContextMenu*>(
         QStringLiteral("screenshotPinnedContextMenu"));
     auto* scaleMenu = window.findChild<adqt::widgets::AdContextMenu*>(
@@ -8786,8 +8818,11 @@ void pinnedHideToTopIntegration(bool native) {
         window.show();
     }
     auto& controller = ScreenshotPinnedWindowTestAccess::hideToTop(window);
+    materializePinnedMenuTree(window);
     auto* action = window.findChild<QAction*>(QStringLiteral("screenshotPinnedHideToTopAction"));
+    materializePinnedMenuTree(window);
     auto* thumbnail = window.findChild<QAction*>(QStringLiteral("screenshotPinnedThumbnailAction"));
+    materializePinnedMenuTree(window);
     auto* menu = window.findChild<adqt::widgets::AdContextMenu*>(
         QStringLiteral("screenshotPinnedContextMenu"));
     require(action && thumbnail && menu &&
@@ -9815,12 +9850,17 @@ void pinnedClickThroughOffscreen() {
     window.show();
     waitForUi(20);
 
+    materializePinnedMenuTree(window);
     auto* menu = window.findChild<adqt::widgets::AdContextMenu*>(
         QStringLiteral("screenshotPinnedContextMenu"));
+    materializePinnedMenuTree(window);
     auto* hideToTop = window.findChild<QAction*>(QStringLiteral("screenshotPinnedHideToTopAction"));
+    materializePinnedMenuTree(window);
     auto* clickThrough =
         window.findChild<QAction*>(QStringLiteral("screenshotPinnedClickThroughAction"));
+    materializePinnedMenuTree(window);
     auto* thumbnail = window.findChild<QAction*>(QStringLiteral("screenshotPinnedThumbnailAction"));
+    materializePinnedMenuTree(window);
     auto* drawing = window.findChild<QAction*>(QStringLiteral("screenshotPinnedDrawingAction"));
     auto* controls = window.findChild<QFrame*>(QStringLiteral("screenshotPinnedControlsPanel"));
     require(menu != nullptr && hideToTop != nullptr && clickThrough != nullptr &&
@@ -10070,10 +10110,13 @@ void pinnedAlwaysOnTopOffscreen() {
     window.show();
     waitForUi(20);
 
+    materializePinnedMenuTree(window);
     auto* menu = window.findChild<adqt::widgets::AdContextMenu*>(
         QStringLiteral("screenshotPinnedContextMenu"));
+    materializePinnedMenuTree(window);
     auto* alwaysOnTop =
         window.findChild<QAction*>(QStringLiteral("screenshotPinnedAlwaysOnTopAction"));
+    materializePinnedMenuTree(window);
     auto* management =
         window.findChild<QAction*>(QStringLiteral("screenshotPinnedWindowManagementAction"));
     require(menu != nullptr && alwaysOnTop != nullptr && management != nullptr &&
@@ -10450,6 +10493,7 @@ void pinnedThumbnailBorderContainsBackgroundOffscreen() {
                     requireColorNear(raster.pixelColor(point), color, 0,
                                      "thumbnail border must enclose the opaque square background");
             };
+            materializePinnedMenuTree(window);
             auto* thumbnail =
                 window.findChild<QAction*>(QStringLiteral("screenshotPinnedThumbnailAction"));
             require(thumbnail != nullptr, "thumbnail action missing");
@@ -10502,6 +10546,7 @@ void pinnedSelectionBorderOffscreen() {
             Access::prepareReplacement(window, config);
             window.show();
             waitForUi(20);
+            materializePinnedMenuTree(window);
             auto* action =
                 window.findChild<QAction*>(QStringLiteral("screenshotPinnedShowBorderAction"));
             require(action && window.persistenceSnapshot().showBorder == (padding == 0) &&
@@ -10594,6 +10639,7 @@ void pinnedSelectionBorderOffscreen() {
         Access::prepareReplacement(window, config);
         window.show();
         waitForUi(20);
+        materializePinnedMenuTree(window);
         auto* action =
             window.findChild<QAction*>(QStringLiteral("screenshotPinnedShowBorderAction"));
         require(action && action->isChecked() && window.persistenceSnapshot().showBorder,
@@ -10664,12 +10710,16 @@ void pinnedShowBorderOffscreen() {
     window.show();
     waitForUi(20);
 
+    materializePinnedMenuTree(window);
     auto* menu = window.findChild<adqt::widgets::AdContextMenu*>(
         QStringLiteral("screenshotPinnedContextMenu"));
+    materializePinnedMenuTree(window);
     auto* alwaysOnTop =
         window.findChild<QAction*>(QStringLiteral("screenshotPinnedAlwaysOnTopAction"));
+    materializePinnedMenuTree(window);
     auto* showBorder =
         window.findChild<QAction*>(QStringLiteral("screenshotPinnedShowBorderAction"));
+    materializePinnedMenuTree(window);
     auto* management =
         window.findChild<QAction*>(QStringLiteral("screenshotPinnedWindowManagementAction"));
     require(menu != nullptr && alwaysOnTop != nullptr && showBorder != nullptr &&
@@ -10933,6 +10983,7 @@ void restoredThumbnailStateOffscreen(const QString& scenario) {
     ScreenshotPinnedWindow window;
     ScreenshotPinnedWindowTestAccess::restoreOffscreen(window, config);
     if (scenario == QStringLiteral("appearance")) {
+        materializePinnedMenuTree(window);
         auto* thumbnail =
             window.findChild<QAction*>(QStringLiteral("screenshotPinnedThumbnailAction"));
         auto* canvas = window.findChild<SnowCanvasWidget*>();
@@ -10967,6 +11018,7 @@ void restoredThumbnailStateOffscreen(const QString& scenario) {
         require(!ScreenshotPinnedWindowTestAccess::isGeometryAnimating(window),
                 "an immediate command must finish expansion even after the mode flag is cleared");
     } else if (scenario == QStringLiteral("copy")) {
+        materializePinnedMenuTree(window);
         auto* copy = window.findChild<QAction*>(QStringLiteral("screenshotPinnedCopyAction"));
         require(copy != nullptr, "restored thumbnail copy action missing");
         static_cast<void>(renderWidget(*window.findChild<SnowCanvasWidget*>()));
@@ -11013,6 +11065,7 @@ void thumbnailAnimationSurvivesRecreation(bool entering) {
     record.image.fill(Qt::transparent);
     ScreenshotSelectionExportUiServices services;
     auto* window = restoreSeededPinnedWindow(services, record);
+    materializePinnedMenuTree(*window);
     auto* thumbnail =
         window->findChild<QAction*>(QStringLiteral("screenshotPinnedThumbnailAction"));
     require(thumbnail != nullptr, "thumbnail recreation action missing");
@@ -11054,6 +11107,7 @@ void thumbnailReentryPreservesExpandedGeometry(bool scaleDuringExpansion = false
     ScreenshotSelectionExportUiServices services;
     auto* window = restoreSeededPinnedWindow(services, record);
     static_cast<void>(scaleMenuReadout(*window));
+    materializePinnedMenuTree(*window);
     auto* thumbnail =
         window->findChild<QAction*>(QStringLiteral("screenshotPinnedThumbnailAction"));
     thumbnail->setChecked(false);
@@ -11242,7 +11296,7 @@ void pinnedTemplateDialogs() {
     config.enableEditing = true;
     config.automaticTextRecognition = false;
     require(window.present(config), "template fixture must present");
-    buttonNamed(window, QStringLiteral("Enable drawing mode"))->click();
+    buttonNamed(window, QStringLiteral("Enable annotation mode"))->click();
     auto* controller = window.findChild<ScreenshotPinnedEditController*>();
     auto* palette = controller->toolbarWindow()->palette();
     require(palette->activateToolShortcut(ScreenshotToolPalette::Tool::Watermark),
@@ -11344,7 +11398,7 @@ void pinnedDrawingToolbarMatchesCaptureInteractions(SnowCanvasRuntime&, bool rot
     config.automaticTextRecognition = false;
     require(pinnedWindow->present(config), "pinned window presentation failed");
     QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
-    QPushButton* editButton = buttonNamed(*pinnedWindow, QStringLiteral("Enable drawing mode"));
+    QPushButton* editButton = buttonNamed(*pinnedWindow, QStringLiteral("Enable annotation mode"));
     require(editButton != nullptr, "edit button was not found");
     auto* controlsPanel =
         pinnedWindow->findChild<QFrame*>(QStringLiteral("screenshotPinnedControlsPanel"));
@@ -11758,7 +11812,7 @@ void pinnedEditToolbarControlsCanvasHistory(SnowCanvasRuntime&) {
     config.enableEditing = true;
     require(pinnedWindow->present(config), "pinned window presentation failed");
     QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
-    QPushButton* editButton = buttonNamed(*pinnedWindow, QStringLiteral("Enable drawing mode"));
+    QPushButton* editButton = buttonNamed(*pinnedWindow, QStringLiteral("Enable annotation mode"));
     require(editButton != nullptr, "edit button was not found");
     auto* controlsPanel =
         pinnedWindow->findChild<QFrame*>(QStringLiteral("screenshotPinnedControlsPanel"));
@@ -11786,6 +11840,7 @@ void pinnedEditToolbarControlsCanvasHistory(SnowCanvasRuntime&) {
     const QPoint toolbarPositionBeforeRotation = toolbarWindow->contentPosition();
     const QPoint pinnedPositionBeforeRotation = pinnedWindow->pos();
 
+    materializePinnedMenuTree(*pinnedWindow);
     auto* contextMenu = pinnedWindow->findChild<adqt::widgets::AdContextMenu*>(
         QStringLiteral("screenshotPinnedContextMenu"));
     require(contextMenu != nullptr, "pinned context menu was not found");
@@ -11793,6 +11848,7 @@ void pinnedEditToolbarControlsCanvasHistory(SnowCanvasRuntime&) {
         pinnedMenuActionNamed(*pinnedWindow, QStringLiteral("screenshotPinnedProcessImageMenu"));
     auto* processMenu = qobject_cast<adqt::widgets::AdContextMenu*>(
         processAction != nullptr ? processAction->menu() : nullptr);
+    materializePinnedMenuTree(*pinnedWindow);
     auto* rotateClockwise =
         pinnedWindow->findChild<QAction*>(QStringLiteral("screenshotPinnedRotateClockwiseAction"));
     require(processMenu != nullptr && rotateClockwise != nullptr,
@@ -11952,6 +12008,7 @@ void pinnedEditToolbarControlsCanvasHistory(SnowCanvasRuntime&) {
                                                QStringLiteral("screenshotUndoButton")) != nullptr,
             "a recreated drawing toolbar should restore its command controls");
 
+    materializePinnedMenuTree(*pinnedWindow);
     auto* thumbnailAction =
         pinnedWindow->findChild<QAction*>(QStringLiteral("screenshotPinnedThumbnailAction"));
     require(thumbnailAction != nullptr, "pinned thumbnail action was not found");
@@ -13507,7 +13564,7 @@ void pinnedQuickSaveKeepsWindowAndConfiguredOutput() {
     config.enableEditing = true;
     require(window->present(config), "pinned quick-save source unavailable");
     waitForUi(50);
-    auto* edit = buttonNamed(*window, QStringLiteral("Enable drawing mode"));
+    auto* edit = buttonNamed(*window, QStringLiteral("Enable annotation mode"));
     require(edit, "pinned drawing control unavailable");
     edit->click();
     waitForUi(50);
@@ -13690,7 +13747,7 @@ void pinnedSaveDialogRoutingAndCancellation() {
     require(settings.setLastManualSaveFormat(QStringLiteral("png")) &&
                 settings.setSaveAsFileDialog(QStringLiteral("snow_shot")),
             "Snow Shot routing setup failed");
-    auto* editButton = buttonNamed(*window, QStringLiteral("Enable drawing mode"));
+    auto* editButton = buttonNamed(*window, QStringLiteral("Enable annotation mode"));
     require(editButton, "pinned save test drawing button missing");
     editButton->click();
     waitForUi(30);
@@ -14099,15 +14156,22 @@ void pinnedContentReplacement() {
         require(!Access::replacementPending(window), "replacement job must finish");
         QCoreApplication::processEvents();
     };
+    materializePinnedMenuTree(window);
     auto* menu = window.findChild<adqt::widgets::AdContextMenu*>(
         QStringLiteral("screenshotPinnedContextMenu"));
+    materializePinnedMenuTree(window);
     auto* load = window.findChild<QAction*>(QStringLiteral("screenshotPinnedLoadContentAction"));
+    materializePinnedMenuTree(window);
     auto* file = window.findChild<QAction*>(QStringLiteral("screenshotPinnedLoadImageFileAction"));
+    materializePinnedMenuTree(window);
     auto* clipboard =
         window.findChild<QAction*>(QStringLiteral("screenshotPinnedLoadClipboardAction"));
+    materializePinnedMenuTree(window);
     auto* close = window.findChild<QAction*>(QStringLiteral("screenshotPinnedCloseAction"));
+    materializePinnedMenuTree(window);
     auto* management =
         window.findChild<QAction*>(QStringLiteral("screenshotPinnedWindowManagementAction"));
+    materializePinnedMenuTree(window);
     auto* showMain =
         window.findChild<QAction*>(QStringLiteral("screenshotPinnedShowMainInterfaceAction"));
     require(menu && load && file && clipboard && close && management && showMain &&
@@ -14366,6 +14430,7 @@ void pinnedContentReplacement() {
     require(window.persistenceSnapshot().originalText == QStringLiteral("Replacement text") &&
                 session->hasTextResult(),
             "clipboard text must supply fresh selectable text");
+    materializePinnedMenuTree(window);
     auto* copyOriginal =
         window.findChild<QAction*>(QStringLiteral("screenshotPinnedCopyOriginalAction"));
     require(copyOriginal != nullptr, "Copy Original Content action must exist");
@@ -14956,6 +15021,7 @@ void pinnedOddPixelExtentRemainsSharp() {
         waitForUi(20);
         require(window.geometry() == beforeBackingChange,
                 "backing notifications must not clamp cross-display or oversized selections");
+        materializePinnedMenuTree(window);
         auto* showBorder =
             window.findChild<QAction*>(QStringLiteral("screenshotPinnedShowBorderAction"));
         require(showBorder && showBorder->isChecked(),
@@ -19177,6 +19243,10 @@ int main(int argc, char* argv[]) {
         }
         if (app.arguments().contains(QStringLiteral("--shortcut-display-only"))) {
             pinnedShortcutDisplayUsesSettingsFormat();
+            return 0;
+        }
+        if (app.arguments().contains(QStringLiteral("--menu-language-only"))) {
+            pinnedLazyMenuHeadersRetranslate();
             return 0;
         }
         if (app.arguments().contains(QStringLiteral("--pinned-shortcut-only"))) {

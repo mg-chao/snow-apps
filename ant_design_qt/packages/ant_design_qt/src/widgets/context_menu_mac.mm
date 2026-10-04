@@ -221,13 +221,13 @@ void dismissNativeContextMenu(QMenu* menu) {
     }
 }
 
-QAction* execNativeContextMenu(AdContextMenu* menu, const QPoint& globalPosition,
-                               QAction* initialAction) {
+QAction* trackNativeContextMenu(AdContextMenu* menu, const std::function<void()>& presenter) {
     @autoreleasepool {
         // Keep AppKit's menu alive if a signal handler destroys its Qt owner while tracking.
         NSMenu* native = [[menu->toNSMenu() retain] autorelease];
         if (!native) {
-            return menu->QMenu::exec(globalPosition, initialAction);
+            presenter();
+            return nullptr;
         }
         QPointer<AdContextMenu> guard(menu);
         QPointer<QAction> selected;
@@ -235,6 +235,36 @@ QAction* execNativeContextMenu(AdContextMenu* menu, const QPoint& globalPosition
         QObject::connect(menu, &QMenu::triggered, &observer,
                          [&selected](QAction* action) { selected = action; });
 
+        presenter();
+
+        // Cocoa queues QPlatformMenuItem::activated, which Qt then queues to QAction.
+        // Drain both hops before returning from execAt; otherwise a stack-owned menu
+        // can be destroyed before its selected action is ever triggered. Include items
+        // added dynamically by a submenu's aboutToShow handler.
+        // Guard each action: triggering one can delete the menu or any of its siblings.
+        if (guard) {
+            const auto actions = menuActions(guard);
+            for (const auto& entry : actions) {
+                if (entry.item) {
+                    QCoreApplication::sendPostedEvents(entry.item, QEvent::MetaCall);
+                }
+                if (entry.action) {
+                    QCoreApplication::sendPostedEvents(entry.action, QEvent::MetaCall);
+                }
+            }
+        }
+        return selected;
+    }
+}
+
+QAction* execNativeContextMenu(AdContextMenu* menu, const QPoint& globalPosition,
+                               QAction* initialAction) {
+    return trackNativeContextMenu(menu, [menu, globalPosition, initialAction]() {
+        NSMenu* native = menu->toNSMenu();
+        if (!native) {
+            menu->QMenu::exec(globalPosition, initialAction);
+            return;
+        }
         QWidget* owner = menu->triggerWidget() ? menu->triggerWidget() : menu->parentWidget();
         while (qobject_cast<QMenu*>(owner)) {
             owner = owner->parentWidget();
@@ -261,25 +291,7 @@ QAction* execNativeContextMenu(AdContextMenu* menu, const QPoint& globalPosition
                 index >= 0 && index < native.numberOfItems ? [native itemAtIndex:index] : nil;
             [native popUpMenuPositioningItem:initialItem atLocation:point inView:nil];
         }
-
-        // Cocoa queues QPlatformMenuItem::activated, which Qt then queues to QAction.
-        // Drain both hops before returning from execAt; otherwise a stack-owned menu
-        // can be destroyed before its selected action is ever triggered. Include items
-        // added dynamically by a submenu's aboutToShow handler.
-        // Guard each action: triggering one can delete the menu or any of its siblings.
-        if (guard) {
-            const auto actions = menuActions(guard);
-            for (const auto& entry : actions) {
-                if (entry.item) {
-                    QCoreApplication::sendPostedEvents(entry.item, QEvent::MetaCall);
-                }
-                if (entry.action) {
-                    QCoreApplication::sendPostedEvents(entry.action, QEvent::MetaCall);
-                }
-            }
-        }
-        return selected;
-    }
+    });
 }
 
 } // namespace adqt::widgets::detail

@@ -1,4 +1,5 @@
 #pragma once
+#include <functional>
 
 #include <QPoint>
 #include <QSize>
@@ -23,5 +24,6 @@ QSize nativeContextMenuSize(QMenu* menu);
 QAction* execNativeContextMenu(AdContextMenu* menu, const QPoint& globalPosition,
                                QAction* initialAction);
 void dismissNativeContextMenu(QMenu* menu);
+QAction* trackNativeContextMenu(AdContextMenu* menu, const std::function<void()>& presenter);
 }  // namespace detail
 }  // namespace adqt::widgets

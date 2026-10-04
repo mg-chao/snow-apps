@@ -13,6 +13,9 @@
 namespace snow_shot::presentation::settings {
 struct TrayCommandManifest;
 }
+namespace adqt::widgets {
+class AdContextMenu;
+}
 
 namespace snow_shot::presentation {
 class PinnedWindowGroupManager;
@@ -28,6 +31,8 @@ class SystemTrayController final : public QObject {
     SystemTrayController(const settings::TrayCommandManifest& manifest,
                          PinnedWindowGroupManager* groupManager, QObject* parent = nullptr);
     void setGroupManager(PinnedWindowGroupManager* groupManager);
+    // Creates a fresh popup session; the menu retires itself after hiding.
+    adqt::widgets::AdContextMenu* createContextMenu();
     ~SystemTrayController() override;
 
     void show();

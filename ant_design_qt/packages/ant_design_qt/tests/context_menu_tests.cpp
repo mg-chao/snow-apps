@@ -11,6 +11,7 @@
 #include <QTest>
 #include <QVBoxLayout>
 #include <QWidget>
+#include <QWindow>
 
 #include "antd_icons.h"
 #include "widgets/context_menu.h"
@@ -55,6 +56,8 @@ class ContextMenuTests final : public QObject {
   void longLabelsRespectTrailingColumnsInConstrainedMenus();
   void widgetMenuHonorsComponentTokens();
   void widgetSurfaceFollowsExistingSubmenus();
+  void lazySubmenusHaveTranslucentSurfaces_data();
+  void lazySubmenusHaveTranslucentSurfaces();
   void preparedBackgroundClipsAndComposites();
   void preparedBackgroundPreservesItemStates();
   void preparedBackgroundDoesNotSelectNativeSurface();
@@ -541,6 +544,77 @@ void ContextMenuTests::widgetSurfaceFollowsExistingSubmenus() {
 #ifdef Q_OS_MACOS
   QVERIFY(!action->icon().isMask());
 #endif
+}
+
+void ContextMenuTests::lazySubmenusHaveTranslucentSurfaces_data() {
+  QTest::addColumn<bool>("keyboard");
+  QTest::addColumn<bool>("dark");
+  QTest::newRow("popup-light") << false << false;
+  QTest::newRow("popup-dark") << false << true;
+  QTest::newRow("keyboard-light") << true << false;
+  QTest::newRow("keyboard-dark") << true << true;
+}
+
+void ContextMenuTests::lazySubmenusHaveTranslucentSurfaces() {
+  QFETCH(bool, keyboard);
+  QFETCH(bool, dark);
+  AdContextMenu menu;
+  menu.setNativeMenuEnabled(false);
+  menu.setColorScheme(dark ? AdContextMenu::ColorScheme::Dark : AdContextMenu::ColorScheme::Light);
+  int openings = 0;
+  auto* entry = menu.addLazySubMenu(QStringLiteral("Child"), [&](AdContextMenu* child) {
+    ++openings;
+    child->addLazySubMenu(QStringLiteral("Nested"), [](AdContextMenu* nested) {
+      nested->addItem(QStringLiteral("Command"));
+    });
+  });
+  const auto openSubmenu = [keyboard](AdContextMenu* parent, QAction* action) {
+    if (keyboard) {
+      parent->setActiveAction(action);
+      QTest::keyClick(parent, Qt::Key_Right);
+    } else {
+      auto* child = qobject_cast<AdContextMenu*>(action->menu());
+      child->popupAt(parent->mapToGlobal(QPoint(parent->width(), 0)));
+    }
+  };
+  const auto verifySurface = [](AdContextMenu* popup) {
+    QVERIFY(popup->isVisible());
+    QVERIFY(popup->windowHandle());
+    // grab() renders into its own ARGB pixmap and alone cannot detect a native
+    // popup created without an alpha channel before aboutToShow.
+    QVERIFY(popup->windowHandle()->format().hasAlpha());
+    const QImage image = popup->grab().toImage();
+    QVERIFY(!image.isNull());
+    QCOMPARE(image.pixelColor(image.rect().topLeft()).alpha(), 0);
+    QCOMPARE(image.pixelColor(image.rect().topRight()).alpha(), 0);
+    QCOMPARE(image.pixelColor(image.rect().bottomLeft()).alpha(), 0);
+    QCOMPARE(image.pixelColor(image.rect().bottomRight()).alpha(), 0);
+    QCOMPARE(image.pixelColor(image.rect().center()).alpha(), 255);
+  };
+
+  menu.popupAt(QPoint(100, 100));
+  QTRY_VERIFY(menu.isVisible());
+  for (int opening = 1; opening <= 2; ++opening) {
+    auto* child = qobject_cast<AdContextMenu*>(entry->menu());
+    QVERIFY(child);
+    QVERIFY(child->actions().isEmpty());
+    QVERIFY(!child->windowHandle());
+    openSubmenu(&menu, entry);
+    QCOMPARE(openings, opening);
+    verifySurface(child);
+    auto* nestedEntry = child->actions().first();
+    auto* nested = qobject_cast<AdContextMenu*>(nestedEntry->menu());
+    QVERIFY(nested);
+    QVERIFY(nested->actions().isEmpty());
+    QVERIFY(!nested->windowHandle());
+    openSubmenu(child, nestedEntry);
+    verifySurface(nested);
+    child->dismissPopup();
+    QCoreApplication::sendPostedEvents(nullptr, QEvent::MetaCall);
+    QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+    QVERIFY(menu.isVisible());
+  }
+  menu.dismissPopup();
 }
 
 void ContextMenuTests::preparedBackgroundClipsAndComposites() {

@@ -1130,10 +1130,18 @@ void ScreenshotPinnedWindow::registerWindowShortcuts() {
     recognition.id = QStringLiteral("pinned.show_recognition");
     recognition.priority = ShortcutManager::StandardPriority::WindowCommand;
     recognition.canActivate = [this, localCommandsAllowed](const auto& context) {
-        return localCommandsAllowed(context) && m_ocrAction != nullptr && m_ocrAction->isEnabled();
+        return localCommandsAllowed(context) &&
+               recognitionModeAvailable(
+                   static_cast<int>(ScreenshotRecognitionSessionController::Mode::Text));
     };
     recognition.activate = [this](const auto&) {
-        m_ocrAction->trigger();
+        if (m_recognitionSession != nullptr && m_recognitionSession->active() &&
+            m_recognitionSession->mode() == ScreenshotRecognitionSessionController::Mode::Text) {
+            deactivateRecognition();
+        } else {
+            activateRecognitionMode(
+                static_cast<int>(ScreenshotRecognitionSessionController::Mode::Text), false);
+        }
         return true;
     };
     m_pinnedShortcutBindings.insert(QStringLiteral("show_text_recognition_results"),
@@ -1143,11 +1151,10 @@ void ScreenshotPinnedWindow::registerWindowShortcuts() {
     drawing.id = QStringLiteral("pinned.drawing_mode");
     drawing.priority = ShortcutManager::StandardPriority::WindowCommand;
     drawing.canActivate = [this, localCommandsAllowed](const auto& context) {
-        return localCommandsAllowed(context) && m_drawingAction != nullptr &&
-               m_drawingAction->isEnabled();
+        return localCommandsAllowed(context) && m_editingEnabled;
     };
     drawing.activate = [this](const auto&) {
-        m_drawingAction->trigger();
+        setEditMode(m_editController == nullptr || !m_editController->editMode());
         return true;
     };
     m_pinnedShortcutBindings.insert(QStringLiteral("drawing_mode"),
@@ -1263,34 +1270,24 @@ void ScreenshotPinnedWindow::registerWindowShortcuts() {
     m_pinnedShortcutBindings.insert(QStringLiteral("destroy_window"),
                                     m_shortcutManager->addBinding(this, std::move(destroyWindow)));
 
-    const struct {
-        const char* id;
-        const char* actionObjectName;
-    } imageCommands[] = {
-        {"increase_opacity", "screenshotPinnedIncreaseOpacityAction"},
-        {"decrease_opacity", "screenshotPinnedDecreaseOpacityAction"},
-        {"increase_scale", "screenshotPinnedIncreaseScaleAction"},
-        {"decrease_scale", "screenshotPinnedDecreaseScaleAction"},
-        {"rotate_clockwise", "screenshotPinnedRotateClockwiseAction"},
-        {"rotate_counterclockwise", "screenshotPinnedRotateCounterClockwiseAction"},
-        {"flip_horizontal", "screenshotPinnedFlipHorizontalAction"},
-        {"flip_vertical", "screenshotPinnedFlipVerticalAction"},
-        {"reset_transform", "screenshotPinnedResetTransformAction"},
-    };
-    for (const auto& command : imageCommands) {
-        const QString actionId = QString::fromLatin1(command.id);
-        QAction* action = findChild<QAction*>(QString::fromLatin1(command.actionObjectName));
+    const char* imageCommands[] = {
+        "increase_opacity", "decrease_opacity", "increase_scale",
+        "decrease_scale",   "rotate_clockwise", "rotate_counterclockwise",
+        "flip_horizontal",  "flip_vertical",    "reset_transform"};
+    for (const auto* command : imageCommands) {
+        const QString actionId = QString::fromLatin1(command);
         ShortcutManager::Binding binding;
         binding.id = QStringLiteral("pinned.") + actionId;
         // Drawing tools keep their configured keys while the editor is active.
         binding.priority = ShortcutManager::StandardPriority::ContextualFallback;
-        binding.canActivate = [this, localCommandsAllowed, action, actionId](const auto& context) {
-            return localCommandsAllowed(context) && action != nullptr && action->isEnabled() &&
-                   (!actionId.endsWith(QStringLiteral("_scale")) ||
-                    (m_scaleMenuAction != nullptr && m_scaleMenuAction->isEnabled()));
+        binding.canActivate = [this, localCommandsAllowed, actionId](const auto& context) {
+            return localCommandsAllowed(context) &&
+                   (!actionId.endsWith(QStringLiteral("_scale")) || !m_ocrMode ||
+                    (m_recognitionSession != nullptr &&
+                     m_recognitionSession->originalImageTranslationActive()));
         };
-        binding.activate = [action](const auto&) {
-            action->trigger();
+        binding.activate = [this, actionId](const auto&) {
+            executeImageCommand(actionId);
             return true;
         };
         m_pinnedShortcutBindings.insert(actionId,
@@ -1430,12 +1427,23 @@ void ScreenshotPinnedWindow::reloadPinnedWindowShortcuts() {
             static_cast<void>(m_shortcutManager->setShortcuts(binding.value(), shortcuts));
         }
         if (action.actionObjectName != nullptr) {
-            setActionShortcutDisplay(
-                findChild<QAction*>(QString::fromLatin1(action.actionObjectName)),
+            m_pinnedShortcutDisplays.insert(
+                QString::fromLatin1(action.actionObjectName),
                 snow_shot::presentation::formatShortcutListDisplayText(shortcuts));
         }
     }
     m_platform->setMoveKeyCombinations(movementCombinations);
+    refreshMenuShortcutDisplays();
+}
+
+void ScreenshotPinnedWindow::refreshMenuShortcutDisplays() {
+    if (!m_contextMenu || m_contextMenu->isRetiring())
+        return;
+    for (auto* action : m_contextMenu->findChildren<QAction*>()) {
+        const auto legend = m_pinnedShortcutDisplays.constFind(action->objectName());
+        if (legend != m_pinnedShortcutDisplays.cend())
+            setActionShortcutDisplay(action, legend.value());
+    }
 }
 
 bool ScreenshotPinnedWindow::prewarm(QScreen* screen) {
@@ -2127,7 +2135,6 @@ bool ScreenshotPinnedWindow::present(const Config& requestedConfig,
         connect(m_groupManager,
                 &snow_shot::presentation::PinnedWindowGroupManager::groupDeletionRequested, this,
                 &ScreenshotPinnedWindow::deleteIfInGroup, Qt::UniqueConnection);
-        rebuildGroupMenu();
     }
     if (m_recognitionResults.text.has_value()) {
         m_recognitionResults.text->filteredImage = {};
@@ -2924,11 +2931,40 @@ void ScreenshotPinnedWindow::createUi() {
         if (m_selectionController)
             m_selectionController->deselectWindow(this);
     });
-    createContextMenu();
+}
+
+void ScreenshotPinnedWindow::executeImageCommand(const QString& id) {
+    if (id == QStringLiteral("increase_opacity") || id == QStringLiteral("decrease_opacity")) {
+        setOpacityPercent(
+            qBound(kMinimumOpacityPercent,
+                   m_opacityPercent + (id == QStringLiteral("increase_opacity") ? 10 : -10),
+                   kMaximumOpacityPercent));
+    } else if (id == QStringLiteral("increase_scale") || id == QStringLiteral("decrease_scale")) {
+        applyScale(
+            qBound(kMinimumScalePercent,
+                   qRound(m_scalePercent) + (id == QStringLiteral("increase_scale") ? 10 : -10),
+                   kMaximumScalePercent));
+    } else if (id == QStringLiteral("reset_transform")) {
+        resetImageTransform();
+    } else {
+        QTransform operation;
+        int quarterTurns = 0;
+        if (id == QStringLiteral("rotate_clockwise") ||
+            id == QStringLiteral("rotate_counterclockwise")) {
+            quarterTurns = id == QStringLiteral("rotate_clockwise") ? 1 : -1;
+            operation.rotate(90.0 * quarterTurns);
+        } else if (id == QStringLiteral("flip_horizontal")) {
+            operation.scale(-1.0, 1.0);
+        } else if (id == QStringLiteral("flip_vertical")) {
+            operation.scale(1.0, -1.0);
+        }
+        applyImageOperation(operation, quarterTurns);
+    }
 }
 
 void ScreenshotPinnedWindow::createContextMenu() {
     m_contextMenu = new adqt::widgets::AdContextMenu(this);
+    m_contextMenu->setDeleteOnHide();
     m_contextMenu->setObjectName(QStringLiteral("screenshotPinnedContextMenu"));
     m_contextMenu->setFixedWidth(300);
 
@@ -2973,132 +3009,149 @@ void ScreenshotPinnedWindow::createContextMenu() {
     connect(m_drawingAction, &QAction::toggled, this,
             [this](bool enabled) { setEditMode(enabled); });
 
-    auto* processMenu = m_contextMenu->addSubMenu(tr("Process image"), outlined_icons::Picture());
-    setActionTranslationSource(processMenu->menuAction(), "Process image");
-    processMenu->setObjectName(QStringLiteral("screenshotPinnedProcessImageMenu"));
-    processMenu->menuAction()->setObjectName(QStringLiteral("screenshotPinnedProcessImageMenu"));
-    auto* opacityMenu = processMenu->addSubMenu(tr("Opacity"), outlined_icons::BgColors());
-    setActionTranslationSource(opacityMenu->menuAction(), "Opacity");
-    opacityMenu->setObjectName(QStringLiteral("screenshotPinnedOpacityMenu"));
-    QAction* increaseOpacity = opacityMenu->addItem(tr("Increase 10%"));
-    setActionTranslationSource(increaseOpacity, "Increase 10%");
-    increaseOpacity->setObjectName(QStringLiteral("screenshotPinnedIncreaseOpacityAction"));
-    connect(increaseOpacity, &QAction::triggered, this, [this]() {
-        setOpacityPercent(
-            qBound(kMinimumOpacityPercent, m_opacityPercent + 10, kMaximumOpacityPercent));
-    });
-    QAction* decreaseOpacity = opacityMenu->addItem(tr("Decrease 10%"));
-    setActionTranslationSource(decreaseOpacity, "Decrease 10%");
-    decreaseOpacity->setObjectName(QStringLiteral("screenshotPinnedDecreaseOpacityAction"));
-    connect(decreaseOpacity, &QAction::triggered, this, [this]() {
-        setOpacityPercent(
-            qBound(kMinimumOpacityPercent, m_opacityPercent - 10, kMaximumOpacityPercent));
-    });
-    opacityMenu->addSeparator();
-    m_opacityActions = new QActionGroup(opacityMenu);
-    m_opacityActions->setExclusive(true);
-    for (int percent : {25, 50, 75, 100}) {
-        QAction* action = opacityMenu->addItem(tr("%1%").arg(percent));
-        action->setCheckable(true);
-        action->setData(percent);
-        m_opacityActions->addAction(action);
-    }
-    connect(m_opacityActions, &QActionGroup::triggered, this, [this](QAction* action) {
-        if (action != nullptr) {
-            setOpacityPercent(action->data().toInt());
-        }
-    });
-    opacityMenu->addSeparator();
-    m_opacityReadoutAction = opacityMenu->addItem(tr("Current: %1%").arg(m_opacityPercent));
-    m_opacityReadoutAction->setObjectName(QStringLiteral("screenshotPinnedOpacityReadoutAction"));
-    m_opacityReadoutAction->setEnabled(false);
+    auto* processAction = m_contextMenu->addLazySubMenu(
+        tr("Process image"),
+        [this](auto* processMenu) {
+            processMenu->setObjectName(QStringLiteral("screenshotPinnedProcessImageMenu"));
+            auto* opacityAction = processMenu->addLazySubMenu(
+                tr("Opacity"),
+                [this](auto* opacityMenu) {
+                    opacityMenu->setObjectName(QStringLiteral("screenshotPinnedOpacityMenu"));
+                    QAction* increaseOpacity = opacityMenu->addItem(tr("Increase 10%"));
+                    setActionTranslationSource(increaseOpacity, "Increase 10%");
+                    increaseOpacity->setObjectName(
+                        QStringLiteral("screenshotPinnedIncreaseOpacityAction"));
+                    connect(increaseOpacity, &QAction::triggered, this,
+                            [this]() { executeImageCommand(QStringLiteral("increase_opacity")); });
+                    QAction* decreaseOpacity = opacityMenu->addItem(tr("Decrease 10%"));
+                    setActionTranslationSource(decreaseOpacity, "Decrease 10%");
+                    decreaseOpacity->setObjectName(
+                        QStringLiteral("screenshotPinnedDecreaseOpacityAction"));
+                    connect(decreaseOpacity, &QAction::triggered, this,
+                            [this]() { executeImageCommand(QStringLiteral("decrease_opacity")); });
+                    opacityMenu->addSeparator();
+                    m_opacityActions = new QActionGroup(opacityMenu);
+                    m_opacityActions->setExclusive(true);
+                    for (int percent : {25, 50, 75, 100}) {
+                        QAction* action = opacityMenu->addItem(tr("%1%").arg(percent));
+                        action->setCheckable(true);
+                        action->setData(percent);
+                        m_opacityActions->addAction(action);
+                    }
+                    connect(m_opacityActions, &QActionGroup::triggered, this,
+                            [this](QAction* action) {
+                                if (action != nullptr) {
+                                    setOpacityPercent(action->data().toInt());
+                                }
+                            });
+                    opacityMenu->addSeparator();
+                    m_opacityReadoutAction =
+                        opacityMenu->addItem(tr("Current: %1%").arg(m_opacityPercent));
+                    m_opacityReadoutAction->setObjectName(
+                        QStringLiteral("screenshotPinnedOpacityReadoutAction"));
+                    m_opacityReadoutAction->setEnabled(false);
 
-    auto* scaleMenu = processMenu->addSubMenu(tr("Scale"), outlined_icons::Percentage());
-    setActionTranslationSource(scaleMenu->menuAction(), "Scale");
-    scaleMenu->setObjectName(QStringLiteral("screenshotPinnedScaleMenu"));
-    m_scaleMenuAction = scaleMenu->menuAction();
-    QAction* increaseScale = scaleMenu->addItem(tr("Increase 10%"));
-    setActionTranslationSource(increaseScale, "Increase 10%");
-    increaseScale->setObjectName(QStringLiteral("screenshotPinnedIncreaseScaleAction"));
-    connect(increaseScale, &QAction::triggered, this, [this]() {
-        applyScale(qBound(kMinimumScalePercent, qRound(m_scalePercent) + 10, kMaximumScalePercent));
-    });
-    QAction* decreaseScale = scaleMenu->addItem(tr("Decrease 10%"));
-    setActionTranslationSource(decreaseScale, "Decrease 10%");
-    decreaseScale->setObjectName(QStringLiteral("screenshotPinnedDecreaseScaleAction"));
-    connect(decreaseScale, &QAction::triggered, this, [this]() {
-        applyScale(qBound(kMinimumScalePercent, qRound(m_scalePercent) - 10, kMaximumScalePercent));
-    });
-    scaleMenu->addSeparator();
-    m_scaleActions = new QActionGroup(scaleMenu);
-    m_scaleActions->setExclusive(true);
-    for (int percent : {25, 50, 75, 100}) {
-        QAction* action = scaleMenu->addItem(tr("%1%").arg(percent));
-        action->setCheckable(true);
-        action->setData(percent);
-        m_scaleActions->addAction(action);
-    }
-    connect(m_scaleActions, &QActionGroup::triggered, this, [this](QAction* action) {
-        if (action != nullptr) {
-            applyScale(action->data().toInt());
-        }
-    });
-    scaleMenu->addSeparator();
-    m_scaleReadoutAction = scaleMenu->addItem(tr("Current: %1%").arg(qRound(m_scalePercent)));
-    m_scaleReadoutAction->setObjectName(QStringLiteral("screenshotPinnedScaleReadoutAction"));
-    m_scaleReadoutAction->setEnabled(false);
+                    refreshMenuShortcutDisplays();
+                    refreshContextMenu();
+                },
+                outlined_icons::BgColors());
+            setActionTranslationSource(opacityAction, "Opacity");
 
-    processMenu->addSeparator();
-    QAction* rotateClockwise =
-        processMenu->addItem(tr("Rotate clockwise"), outlined_icons::RotateRight());
-    setActionTranslationSource(rotateClockwise, "Rotate clockwise");
-    rotateClockwise->setObjectName(QStringLiteral("screenshotPinnedRotateClockwiseAction"));
-    connect(rotateClockwise, &QAction::triggered, this, [this]() {
-        QTransform operation;
-        operation.rotate(90.0);
-        applyImageOperation(operation, 1);
-    });
-    QAction* rotateCounterClockwise =
-        processMenu->addItem(tr("Rotate counterclockwise"), outlined_icons::RotateLeft());
-    setActionTranslationSource(rotateCounterClockwise, "Rotate counterclockwise");
-    rotateCounterClockwise->setObjectName(
-        QStringLiteral("screenshotPinnedRotateCounterClockwiseAction"));
-    connect(rotateCounterClockwise, &QAction::triggered, this, [this]() {
-        QTransform operation;
-        operation.rotate(-90.0);
-        applyImageOperation(operation, -1);
-    });
-    QAction* flipHorizontal = processMenu->addItem(tr("Flip horizontally"), outlined_icons::Swap());
-    setActionTranslationSource(flipHorizontal, "Flip horizontally");
-    flipHorizontal->setObjectName(QStringLiteral("screenshotPinnedFlipHorizontalAction"));
-    connect(flipHorizontal, &QAction::triggered, this, [this]() {
-        QTransform operation;
-        operation.scale(-1.0, 1.0);
-        applyImageOperation(operation);
-    });
-    QAction* flipVertical =
-        processMenu->addItem(tr("Flip vertically"), custom_outlined_icons::FlipVertical());
-    setActionTranslationSource(flipVertical, "Flip vertically");
-    flipVertical->setObjectName(QStringLiteral("screenshotPinnedFlipVerticalAction"));
-    connect(flipVertical, &QAction::triggered, this, [this]() {
-        QTransform operation;
-        operation.scale(1.0, -1.0);
-        applyImageOperation(operation);
-    });
-    QAction* resetTransform = processMenu->addItem(tr("Reset transform"), outlined_icons::Reload());
-    setActionTranslationSource(resetTransform, "Reset transform");
-    resetTransform->setObjectName(QStringLiteral("screenshotPinnedResetTransformAction"));
-    connect(resetTransform, &QAction::triggered, this,
-            &ScreenshotPinnedWindow::resetImageTransform);
+            m_scaleMenuAction = processMenu->addLazySubMenu(
+                tr("Scale"),
+                [this](auto* scaleMenu) {
+                    scaleMenu->setObjectName(QStringLiteral("screenshotPinnedScaleMenu"));
+                    QAction* increaseScale = scaleMenu->addItem(tr("Increase 10%"));
+                    setActionTranslationSource(increaseScale, "Increase 10%");
+                    increaseScale->setObjectName(
+                        QStringLiteral("screenshotPinnedIncreaseScaleAction"));
+                    connect(increaseScale, &QAction::triggered, this,
+                            [this]() { executeImageCommand(QStringLiteral("increase_scale")); });
+                    QAction* decreaseScale = scaleMenu->addItem(tr("Decrease 10%"));
+                    setActionTranslationSource(decreaseScale, "Decrease 10%");
+                    decreaseScale->setObjectName(
+                        QStringLiteral("screenshotPinnedDecreaseScaleAction"));
+                    connect(decreaseScale, &QAction::triggered, this,
+                            [this]() { executeImageCommand(QStringLiteral("decrease_scale")); });
+                    scaleMenu->addSeparator();
+                    m_scaleActions = new QActionGroup(scaleMenu);
+                    m_scaleActions->setExclusive(true);
+                    for (int percent : {25, 50, 75, 100}) {
+                        QAction* action = scaleMenu->addItem(tr("%1%").arg(percent));
+                        action->setCheckable(true);
+                        action->setData(percent);
+                        m_scaleActions->addAction(action);
+                    }
+                    connect(m_scaleActions, &QActionGroup::triggered, this,
+                            [this](QAction* action) {
+                                if (action != nullptr) {
+                                    applyScale(action->data().toInt());
+                                }
+                            });
+                    scaleMenu->addSeparator();
+                    m_scaleReadoutAction =
+                        scaleMenu->addItem(tr("Current: %1%").arg(qRound(m_scalePercent)));
+                    m_scaleReadoutAction->setObjectName(
+                        QStringLiteral("screenshotPinnedScaleReadoutAction"));
+                    m_scaleReadoutAction->setEnabled(false);
+
+                    refreshMenuShortcutDisplays();
+                    refreshContextMenu();
+                },
+                outlined_icons::Percentage());
+            setActionTranslationSource(m_scaleMenuAction, "Scale");
+            refreshContextMenu();
+
+            processMenu->addSeparator();
+            QAction* rotateClockwise =
+                processMenu->addItem(tr("Rotate clockwise"), outlined_icons::RotateRight());
+            setActionTranslationSource(rotateClockwise, "Rotate clockwise");
+            rotateClockwise->setObjectName(QStringLiteral("screenshotPinnedRotateClockwiseAction"));
+            connect(rotateClockwise, &QAction::triggered, this,
+                    [this]() { executeImageCommand(QStringLiteral("rotate_clockwise")); });
+            QAction* rotateCounterClockwise =
+                processMenu->addItem(tr("Rotate counterclockwise"), outlined_icons::RotateLeft());
+            setActionTranslationSource(rotateCounterClockwise, "Rotate counterclockwise");
+            rotateCounterClockwise->setObjectName(
+                QStringLiteral("screenshotPinnedRotateCounterClockwiseAction"));
+            connect(rotateCounterClockwise, &QAction::triggered, this,
+                    [this]() { executeImageCommand(QStringLiteral("rotate_counterclockwise")); });
+            QAction* flipHorizontal =
+                processMenu->addItem(tr("Flip horizontally"), outlined_icons::Swap());
+            setActionTranslationSource(flipHorizontal, "Flip horizontally");
+            flipHorizontal->setObjectName(QStringLiteral("screenshotPinnedFlipHorizontalAction"));
+            connect(flipHorizontal, &QAction::triggered, this,
+                    [this]() { executeImageCommand(QStringLiteral("flip_horizontal")); });
+            QAction* flipVertical =
+                processMenu->addItem(tr("Flip vertically"), custom_outlined_icons::FlipVertical());
+            setActionTranslationSource(flipVertical, "Flip vertically");
+            flipVertical->setObjectName(QStringLiteral("screenshotPinnedFlipVerticalAction"));
+            connect(flipVertical, &QAction::triggered, this,
+                    [this]() { executeImageCommand(QStringLiteral("flip_vertical")); });
+            QAction* resetTransform =
+                processMenu->addItem(tr("Reset transform"), outlined_icons::Reload());
+            setActionTranslationSource(resetTransform, "Reset transform");
+            resetTransform->setObjectName(QStringLiteral("screenshotPinnedResetTransformAction"));
+            connect(resetTransform, &QAction::triggered, this,
+                    &ScreenshotPinnedWindow::resetImageTransform);
+            refreshMenuShortcutDisplays();
+        },
+        outlined_icons::Picture());
+    setActionTranslationSource(processAction, "Process image");
+    processAction->setObjectName(QStringLiteral("screenshotPinnedProcessImageMenu"));
 
     m_contextMenu->addSeparator();
 
-    m_groupMenu = m_contextMenu->addSubMenu(QString(), custom_outlined_icons::Group());
-    m_groupMenu->setObjectName(QStringLiteral("screenshotPinnedGroupMenu"));
-    m_groupMenu->menuAction()->setObjectName(QStringLiteral("screenshotPinnedGroupAction"));
-    m_groupMenu->setMinimumWidth(300);
-    connect(m_groupMenu, &QMenu::aboutToShow, this, &ScreenshotPinnedWindow::rebuildGroupMenu);
-    rebuildGroupMenu();
+    m_groupMenuAction = m_contextMenu->addLazySubMenu(
+        QString(),
+        [this](auto* menu) {
+            m_groupMenu = menu;
+            menu->setObjectName(QStringLiteral("screenshotPinnedGroupMenu"));
+            menu->setMinimumWidth(300);
+            rebuildGroupMenu();
+        },
+        custom_outlined_icons::Group());
+    m_groupMenuAction->setObjectName(QStringLiteral("screenshotPinnedGroupAction"));
 
     m_thumbnailAction = m_contextMenu->addItem(tr("Thumbnail mode"), outlined_icons::Compress());
     setActionTranslationSource(m_thumbnailAction, "Thumbnail mode");
@@ -3127,68 +3180,83 @@ void ScreenshotPinnedWindow::createContextMenu() {
     m_lockAction->setCheckable(true);
     connect(m_lockAction, &QAction::toggled, this, &ScreenshotPinnedWindow::setLockedMode);
 
-    auto* windowManagementMenu =
-        m_contextMenu->addSubMenu(tr("Window Management"), outlined_icons::Apartment());
-    setActionTranslationSource(windowManagementMenu->menuAction(), "Window Management");
-    windowManagementMenu->setObjectName(QStringLiteral("screenshotPinnedWindowManagementMenu"));
-    windowManagementMenu->menuAction()->setObjectName(
-        QStringLiteral("screenshotPinnedWindowManagementAction"));
-    m_alwaysOnTopAction =
-        windowManagementMenu->addItem(tr("Always on Top"), outlined_icons::ToTop());
-    setActionTranslationSource(m_alwaysOnTopAction, "Always on Top");
-    m_alwaysOnTopAction->setObjectName(QStringLiteral("screenshotPinnedAlwaysOnTopAction"));
-    m_alwaysOnTopAction->setCheckable(true);
-    connect(m_alwaysOnTopAction, &QAction::triggered, this,
-            &ScreenshotPinnedWindow::toggleAlwaysOnTop);
-    m_showBorderAction =
-        windowManagementMenu->addItem(tr("Show border"), outlined_icons::BorderOuter());
-    setActionTranslationSource(m_showBorderAction, "Show border");
-    m_showBorderAction->setObjectName(QStringLiteral("screenshotPinnedShowBorderAction"));
-    m_showBorderAction->setCheckable(true);
-    connect(m_showBorderAction, &QAction::triggered, this,
-            &ScreenshotPinnedWindow::toggleShowBorder);
-    windowManagementMenu->addSeparator();
-    auto* loadMenu =
-        windowManagementMenu->addSubMenu(tr("Load new content"), outlined_icons::Reload());
-    loadMenu->setObjectName(QStringLiteral("screenshotPinnedLoadContentMenu"));
-    m_loadContentAction = loadMenu->menuAction();
-    setActionTranslationSource(m_loadContentAction, "Load new content");
-    m_loadContentAction->setObjectName(QStringLiteral("screenshotPinnedLoadContentAction"));
-    QAction* loadFile = loadMenu->addItem(tr("Image file"), outlined_icons::FileImage());
-    setActionTranslationSource(loadFile, "Image file");
-    loadFile->setObjectName(QStringLiteral("screenshotPinnedLoadImageFileAction"));
-    connect(loadFile, &QAction::triggered, this, &ScreenshotPinnedWindow::loadImageFile);
-    QAction* loadClipboard =
-        loadMenu->addItem(tr("Clipboard"), custom_outlined_icons::PinClipboard());
-    setActionTranslationSource(loadClipboard, "Clipboard");
-    loadClipboard->setObjectName(QStringLiteral("screenshotPinnedLoadClipboardAction"));
-    connect(loadClipboard, &QAction::triggered, this,
-            &ScreenshotPinnedWindow::loadClipboardContent);
-    windowManagementMenu->addSeparator();
-    QAction* showAllWindows =
-        windowManagementMenu->addItem(tr("Show all windows"), outlined_icons::Expand());
-    setActionTranslationSource(showAllWindows, "Show all windows");
-    showAllWindows->setObjectName(QStringLiteral("screenshotPinnedShowAllWindowsAction"));
-    connect(showAllWindows, &QAction::triggered, this,
-            &ScreenshotPinnedWindow::showAllPinnedWindows);
-    QAction* hideOtherWindows =
-        windowManagementMenu->addItem(tr("Hide other windows"), outlined_icons::EyeInvisible());
-    setActionTranslationSource(hideOtherWindows, "Hide other windows");
-    hideOtherWindows->setObjectName(QStringLiteral("screenshotPinnedHideOtherWindowsAction"));
-    connect(hideOtherWindows, &QAction::triggered, this,
-            &ScreenshotPinnedWindow::hideOtherPinnedWindows);
-    QAction* closeOtherWindows =
-        windowManagementMenu->addItem(tr("Close other windows"), outlined_icons::Close());
-    setActionTranslationSource(closeOtherWindows, "Close other windows");
-    closeOtherWindows->setObjectName(QStringLiteral("screenshotPinnedCloseOtherWindowsAction"));
-    connect(closeOtherWindows, &QAction::triggered, this,
-            &ScreenshotPinnedWindow::closeOtherPinnedWindows);
-    QAction* closeAll =
-        windowManagementMenu->addItem(tr("Close all windows"), outlined_icons::CloseCircle());
-    setActionTranslationSource(closeAll, "Close all windows");
-    closeAll->setObjectName(QStringLiteral("screenshotPinnedCloseAllWindowsAction"));
-    windowManagementMenu->setActionDanger(closeAll);
-    connect(closeAll, &QAction::triggered, this, &ScreenshotPinnedWindow::closeAllPinnedWindows);
+    auto* managementAction = m_contextMenu->addLazySubMenu(
+        tr("Window Management"),
+        [this](auto* windowManagementMenu) {
+            windowManagementMenu->setObjectName(
+                QStringLiteral("screenshotPinnedWindowManagementMenu"));
+            m_alwaysOnTopAction =
+                windowManagementMenu->addItem(tr("Always on Top"), outlined_icons::ToTop());
+            setActionTranslationSource(m_alwaysOnTopAction, "Always on Top");
+            m_alwaysOnTopAction->setObjectName(QStringLiteral("screenshotPinnedAlwaysOnTopAction"));
+            m_alwaysOnTopAction->setCheckable(true);
+            connect(m_alwaysOnTopAction, &QAction::triggered, this,
+                    &ScreenshotPinnedWindow::toggleAlwaysOnTop);
+            m_showBorderAction =
+                windowManagementMenu->addItem(tr("Show border"), outlined_icons::BorderOuter());
+            setActionTranslationSource(m_showBorderAction, "Show border");
+            m_showBorderAction->setObjectName(QStringLiteral("screenshotPinnedShowBorderAction"));
+            m_showBorderAction->setCheckable(true);
+            connect(m_showBorderAction, &QAction::triggered, this,
+                    &ScreenshotPinnedWindow::toggleShowBorder);
+            windowManagementMenu->addSeparator();
+            m_loadContentAction = windowManagementMenu->addLazySubMenu(
+                tr("Load new content"),
+                [this](auto* loadMenu) {
+                    loadMenu->setObjectName(QStringLiteral("screenshotPinnedLoadContentMenu"));
+                    QAction* loadFile =
+                        loadMenu->addItem(tr("Image file"), outlined_icons::FileImage());
+                    setActionTranslationSource(loadFile, "Image file");
+                    loadFile->setObjectName(QStringLiteral("screenshotPinnedLoadImageFileAction"));
+                    connect(loadFile, &QAction::triggered, this,
+                            &ScreenshotPinnedWindow::loadImageFile);
+                    QAction* loadClipboard =
+                        loadMenu->addItem(tr("Clipboard"), custom_outlined_icons::PinClipboard());
+                    setActionTranslationSource(loadClipboard, "Clipboard");
+                    loadClipboard->setObjectName(
+                        QStringLiteral("screenshotPinnedLoadClipboardAction"));
+                    connect(loadClipboard, &QAction::triggered, this,
+                            &ScreenshotPinnedWindow::loadClipboardContent);
+                },
+                outlined_icons::Reload());
+            setActionTranslationSource(m_loadContentAction, "Load new content");
+            m_loadContentAction->setObjectName(QStringLiteral("screenshotPinnedLoadContentAction"));
+
+            windowManagementMenu->addSeparator();
+            QAction* showAllWindows =
+                windowManagementMenu->addItem(tr("Show all windows"), outlined_icons::Expand());
+            setActionTranslationSource(showAllWindows, "Show all windows");
+            showAllWindows->setObjectName(QStringLiteral("screenshotPinnedShowAllWindowsAction"));
+            connect(showAllWindows, &QAction::triggered, this,
+                    &ScreenshotPinnedWindow::showAllPinnedWindows);
+            QAction* hideOtherWindows = windowManagementMenu->addItem(
+                tr("Hide other windows"), outlined_icons::EyeInvisible());
+            setActionTranslationSource(hideOtherWindows, "Hide other windows");
+            hideOtherWindows->setObjectName(
+                QStringLiteral("screenshotPinnedHideOtherWindowsAction"));
+            connect(hideOtherWindows, &QAction::triggered, this,
+                    &ScreenshotPinnedWindow::hideOtherPinnedWindows);
+            QAction* closeOtherWindows =
+                windowManagementMenu->addItem(tr("Close other windows"), outlined_icons::Close());
+            setActionTranslationSource(closeOtherWindows, "Close other windows");
+            closeOtherWindows->setObjectName(
+                QStringLiteral("screenshotPinnedCloseOtherWindowsAction"));
+            connect(closeOtherWindows, &QAction::triggered, this,
+                    &ScreenshotPinnedWindow::closeOtherPinnedWindows);
+            QAction* closeAll = windowManagementMenu->addItem(tr("Close all windows"),
+                                                              outlined_icons::CloseCircle());
+            setActionTranslationSource(closeAll, "Close all windows");
+            closeAll->setObjectName(QStringLiteral("screenshotPinnedCloseAllWindowsAction"));
+            windowManagementMenu->setActionDanger(closeAll);
+            connect(closeAll, &QAction::triggered, this,
+                    &ScreenshotPinnedWindow::closeAllPinnedWindows);
+
+            refreshMenuShortcutDisplays();
+            refreshContextMenu();
+        },
+        outlined_icons::Apartment());
+    setActionTranslationSource(managementAction, "Window Management");
+    managementAction->setObjectName(QStringLiteral("screenshotPinnedWindowManagementAction"));
 
     m_contextMenu->addSeparator();
     m_showMainInterfaceAction =
@@ -3209,6 +3277,7 @@ void ScreenshotPinnedWindow::createContextMenu() {
     destroyAction->setObjectName(QStringLiteral("screenshotPinnedDestroyAction"));
     m_contextMenu->setActionDanger(destroyAction);
     connect(destroyAction, &QAction::triggered, this, &ScreenshotPinnedWindow::confirmDestroy);
+    refreshMenuShortcutDisplays();
     updateShowMainInterfaceAction();
     connect(m_contextMenu, &QMenu::aboutToShow, this, [this] {
         exitHideToTop();
@@ -3242,11 +3311,20 @@ void ScreenshotPinnedWindow::updateShowMainInterfaceAction() {
 }
 
 void ScreenshotPinnedWindow::refreshContextMenu() {
+    if (m_contextMenu == nullptr || m_contextMenu->isRetiring())
+        return;
+    if (m_groupMenuAction != nullptr) {
+        m_groupMenuAction->setText(tr("Group: %1")
+                                       .arg(m_groupManager != nullptr
+                                                ? m_groupManager->displayName(m_groupId)
+                                                : tr("Default")));
+    }
     if (m_loadContentAction != nullptr) {
         m_loadContentAction->setEnabled(m_firstContentFramePublished && !m_originalImage.isNull() &&
                                         !m_closing);
     }
-    rebuildGroupMenu();
+    if (m_groupMenu && m_groupMenu->isPopupVisible() && !m_groupMenu->isRetiring())
+        rebuildGroupMenu();
     updateShowMainInterfaceAction();
     if (m_ocrAction != nullptr) {
         const bool textAvailable = recognitionModeAvailable(
@@ -3326,7 +3404,7 @@ void ScreenshotPinnedWindow::refreshContextMenuForGroup(const QString& groupId) 
 }
 
 void ScreenshotPinnedWindow::refreshContextMenuIfVisible() {
-    if (m_contextMenu != nullptr && m_contextMenu->isVisible())
+    if (m_contextMenu != nullptr && m_contextMenu->isPopupVisible())
         refreshContextMenu();
 }
 
@@ -3339,9 +3417,6 @@ void ScreenshotPinnedWindow::deleteIfInGroup(const QString& groupId) {
 void ScreenshotPinnedWindow::rebuildGroupMenu() {
     if (m_groupMenu == nullptr) {
         return;
-    }
-    if (m_deleteSpecifiedGroupMenu != nullptr) {
-        m_deleteSpecifiedGroupMenu->clear();
     }
     m_groupMenu->clear();
     snow_shot::presentation::PinnedWindowGroupManager* manager = m_groupManager;
@@ -3380,33 +3455,27 @@ void ScreenshotPinnedWindow::rebuildGroupMenu() {
     connect(deleteEmpty, &QAction::triggered, this,
             [this, manager]() { manager->openDeleteEmptyGroupsConfirmation(this); });
 
-    const QString deleteSpecifiedText = tr("Delete Specified Group");
-    if (m_deleteSpecifiedGroupMenu == nullptr) {
-        m_deleteSpecifiedGroupMenu =
-            m_groupMenu->addSubMenu(deleteSpecifiedText, custom_outlined_icons::Delete());
-        m_deleteSpecifiedGroupMenu->setObjectName(
-            QStringLiteral("screenshotPinnedDeleteSpecifiedGroupMenu"));
-        m_deleteSpecifiedGroupMenu->menuAction()->setObjectName(
-            QStringLiteral("screenshotPinnedDeleteSpecifiedGroupAction"));
-        m_deleteSpecifiedGroupMenu->setMinimumWidth(300);
-    } else {
-        m_deleteSpecifiedGroupMenu->setTitle(deleteSpecifiedText);
-        m_groupMenu->addMenu(m_deleteSpecifiedGroupMenu);
-        m_groupMenu->setActionIcon(m_deleteSpecifiedGroupMenu->menuAction(),
-                                   custom_outlined_icons::Delete());
-    }
-    for (const auto& group : groups) {
-        const auto counts = manager->windowCounts(group.id);
-        QAction* action = m_deleteSpecifiedGroupMenu->addItem(manager->displayName(group.id));
-        m_deleteSpecifiedGroupMenu->setActionBadge(
-            action, QStringLiteral("%1/%2").arg(counts.nonIgnored).arg(counts.total));
-        action->setObjectName(
-            QStringLiteral("screenshotPinnedDeleteSpecifiedGroupAction-%1").arg(group.id));
-        action->setData(group.id);
-        connect(action, &QAction::triggered, this, [this, manager, groupId = group.id]() {
-            manager->openDeleteSpecifiedGroupConfirmation(groupId, this);
-        });
-    }
+    auto* deleteSpecified = m_groupMenu->addLazySubMenu(
+        tr("Delete Specified Group"),
+        [this, manager](auto* menu) {
+            menu->setObjectName(QStringLiteral("screenshotPinnedDeleteSpecifiedGroupMenu"));
+            menu->setMinimumWidth(300);
+            for (const auto& group : manager->groupsSortedForDisplay()) {
+                const auto counts = manager->windowCounts(group.id);
+                QAction* action = menu->addItem(QStringLiteral("%1\t%2/%3")
+                                                    .arg(manager->displayName(group.id),
+                                                         QString::number(counts.nonIgnored),
+                                                         QString::number(counts.total)));
+                action->setObjectName(
+                    QStringLiteral("screenshotPinnedDeleteSpecifiedGroupAction-%1").arg(group.id));
+                action->setData(group.id);
+                connect(action, &QAction::triggered, this, [this, manager, groupId = group.id]() {
+                    manager->openDeleteSpecifiedGroupConfirmation(groupId, this);
+                });
+            }
+        },
+        custom_outlined_icons::Delete());
+    deleteSpecified->setObjectName(QStringLiteral("screenshotPinnedDeleteSpecifiedGroupAction"));
 }
 
 void ScreenshotPinnedWindow::setRuntimeBorderColor(const QColor& color) {
@@ -3451,9 +3520,11 @@ void ScreenshotPinnedWindow::showContextMenu(const QPoint& globalPosition) {
     if (m_selectionController && m_selectionController->showContextMenu(this, globalPosition))
         return;
     exitHideToTop();
-    if (m_contextMenu == nullptr || m_closing) {
+    if (m_closing)
         return;
-    }
+    if (m_contextMenu && m_contextMenu->isPopupVisible())
+        return;
+    createContextMenu();
     refreshContextMenu();
     m_contextMenu->popupAt(globalPosition);
 }

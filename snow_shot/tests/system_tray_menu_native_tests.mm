@@ -4,6 +4,7 @@
 
 #include <QApplication>
 #include <QElapsedTimer>
+#include <QPointer>
 #include <QSystemTrayIcon>
 #include <QThread>
 
@@ -82,13 +83,9 @@ int runNativeSystemTrayMenuTests(snow_shot::presentation::SystemTrayController& 
         try {
             using snow_shot::presentation::SystemTrayController;
             auto* tray = controller.findChild<QSystemTrayIcon*>();
-            adqt::widgets::AdContextMenu* menu = nullptr;
-            for (QWidget* widget : QApplication::topLevelWidgets()) {
-                if (widget->objectName() == QStringLiteral("systemTrayMenu")) {
-                    menu = dynamic_cast<adqt::widgets::AdContextMenu*>(widget);
-                }
-            }
-            require(tray && menu, "the native fixture must exercise the controller's actual tray");
+            QPointer<adqt::widgets::AdContextMenu> menu;
+            require(tray && tray->contextMenu() == nullptr,
+                    "the native fixture must start without a tray menu");
             controller.setMenuOptions(snow_shot::storage::TraySettings().menuOptions());
             controller.show();
             NSStatusBarButton* button = nil;
@@ -120,31 +117,47 @@ int runNativeSystemTrayMenuTests(snow_shot::presentation::SystemTrayController& 
                              [&]() { ++mainRequests; });
             QObject::connect(&controller, &SystemTrayController::openFunctionSettingsRequested,
                              &observer, [&]() { ++settingsRequests; });
-            QObject::connect(menu, &QMenu::aboutToHide, &observer, [&]() { ++hidden; });
-            QObject::connect(menu, &QMenu::aboutToShow, &observer, [&]() {
-                ++shown;
-                attachedDuringShow = tray->contextMenu() == menu;
-                // Inspect after AppKit has created the menu window, inside native tracking.
-                NSTimer* timer = [NSTimer
-                    timerWithTimeInterval:0.1
-                                  repeats:NO
-                                    block:^(NSTimer*) {
-                                      frame = visibleMenuFrame();
-                                      nativeVisible = menu->isPopupVisible() && !menu->isVisible();
-                                      if (selectAction) {
-                                          NSMenu* native = menu->toNSMenu();
-                                          for (NSMenuItem* item in native.itemArray) {
-                                              if ([item.title
-                                                      isEqualToString:@"Show main interface"]) {
-                                                  [native performActionForItemAtIndex:
-                                                              [native indexOfItem:item]];
-                                                  break;
+            const auto observeMenu = [&](adqt::widgets::AdContextMenu* popup) {
+                menu = popup;
+                QObject::connect(menu, &QMenu::aboutToHide, &observer, [&]() { ++hidden; });
+                QObject::connect(menu, &QMenu::aboutToShow, &observer, [&]() {
+                    ++shown;
+                    attachedDuringShow = tray->contextMenu() == menu;
+                    // Inspect after AppKit has created the menu window, inside native tracking.
+                    NSTimer* timer = [NSTimer
+                        timerWithTimeInterval:0.1
+                                      repeats:NO
+                                        block:^(NSTimer*) {
+                                          frame = visibleMenuFrame();
+                                          nativeVisible =
+                                              menu->isPopupVisible() && !menu->isVisible();
+                                          if (selectAction) {
+                                              NSMenu* native = menu->toNSMenu();
+                                              for (NSMenuItem* item in native.itemArray) {
+                                                  if ([item.title
+                                                          isEqualToString:@"Show main interface"]) {
+                                                      [native performActionForItemAtIndex:
+                                                                  [native indexOfItem:item]];
+                                                      break;
+                                                  }
                                               }
                                           }
-                                      }
-                                      [menu->toNSMenu() cancelTracking];
-                                    }];
-                [NSRunLoop.mainRunLoop addTimer:timer forMode:NSEventTrackingRunLoopMode];
+                                          [menu->toNSMenu() cancelTracking];
+                                        }];
+                    [NSRunLoop.mainRunLoop addTimer:timer forMode:NSEventTrackingRunLoopMode];
+                });
+            };
+            QObject::connect(tray, &QSystemTrayIcon::activated, &observer, [&](auto reason) {
+                if (reason != QSystemTrayIcon::Context || tray->contextMenu())
+                    return;
+                for (auto* widget : QApplication::topLevelWidgets()) {
+                    auto* popup = qobject_cast<adqt::widgets::AdContextMenu*>(widget);
+                    if (popup && popup->objectName() == QStringLiteral("systemTrayMenu") &&
+                        !popup->isRetiring()) {
+                        observeMenu(popup);
+                        break;
+                    }
+                }
             });
 
             const auto openAndClose = [&](NSPoint position) {
@@ -153,7 +166,8 @@ int runNativeSystemTrayMenuTests(snow_shot::presentation::SystemTrayController& 
                 frame = NSZeroRect;
                 attachedDuringShow = nativeVisible = false;
                 if (tray->contextMenu()) {
-                    [button performClick:nil];
+                    menu->execNativePopup([button] { [button performClick:nil]; });
+                    tray->setContextMenu(nullptr);
                 } else {
                     click(button, NSEventTypeRightMouseDown, NSEventTypeRightMouseUp, position);
                 }
@@ -163,12 +177,15 @@ int runNativeSystemTrayMenuTests(snow_shot::presentation::SystemTrayController& 
                         "one right-click must produce exactly one native menu lifecycle");
                 require(attachedDuringShow && nativeVisible && !NSIsEmptyRect(frame),
                         "the menu must track as the status item's attached native menu");
-                require(!menu->isPopupVisible(), "native cancellation must close the menu");
+                QCoreApplication::sendPostedEvents(nullptr, QEvent::MetaCall);
+                QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+                require(!menu, "native cancellation must release the complete menu session");
                 return frame;
             };
 
             // Reference placement comes from the documented Qt -> NSStatusItem.menu path.
             // Compare to AppKit itself instead of assuming a gap, inset, scale, or display origin.
+            observeMenu(controller.createContextMenu());
             tray->setContextMenu(menu);
             const NSRect reference = openAndClose(center);
             tray->setContextMenu(nullptr);

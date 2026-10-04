@@ -1,5 +1,6 @@
 #include "snow_shot/app/edition.h"
 #include "snow_shot/presentation/systemtraycontroller.h"
+#include "systemtraymenuposition.h"
 #include "snowimageqtcodec.h"
 #include "snow_shot/storage/settingsadapters.h"
 #include "snow_shot/presentation/shortcutdisplaytext.h"
@@ -22,6 +23,7 @@
 #include <QAction>
 #include <QApplication>
 #include <QCoreApplication>
+#include <QCursor>
 #include <QDateTime>
 #include <QFileInfo>
 #include <QHash>
@@ -383,30 +385,21 @@ class SystemTrayController::Impl {
   public:
     Impl(SystemTrayController& owner, const settings::TrayCommandManifest& sourceManifest,
          PinnedWindowGroupManager* groupManager)
-        : q(owner), menu(std::make_unique<adqt::widgets::AdContextMenu>()),
-          trayIcon(new QSystemTrayIcon(&owner)), manifest(sourceManifest), groups(manifest.groups),
-          groupManager(groupManager) {
+        : q(owner), trayIcon(new QSystemTrayIcon(&owner)), manifest(sourceManifest),
+          groups(manifest.groups), groupManager(groupManager) {
         if (this->groupManager == nullptr) {
             ownedGroupManager = std::make_unique<PinnedWindowGroupManager>();
             this->groupManager = ownedGroupManager.get();
         }
         q.setObjectName(QStringLiteral("systemTrayController"));
-        menu->setObjectName(QStringLiteral("systemTrayMenu"));
-        menu->setMinimumWidth(300);
-        new TrayMenuSkinBinding(menu.get());
         trayIcon->setObjectName(QStringLiteral("snowShotSystemTrayIcon"));
         trayIcon->setToolTip(app::edition::isMini ? app::edition::productName()
                                                   : QStringLiteral("SnowShot"));
         updateIcon();
 
-        buildMenu();
-        retranslateUi();
         setMenuOptions({});
 
         // Cocoa opens an attached menu on left-click too. Handle Context explicitly there.
-#ifndef Q_OS_MACOS
-        trayIcon->setContextMenu(menu.get());
-#endif
         QObject::connect(trayIcon, &QSystemTrayIcon::activated, &q,
                          [this](QSystemTrayIcon::ActivationReason reason) {
 #ifdef Q_OS_MACOS
@@ -420,9 +413,15 @@ class SystemTrayController::Impl {
                                  dispatchClickAction(leftClickAction);
                              } else if (reason == QSystemTrayIcon::MiddleClick) {
                                  dispatchClickAction(middleClickAction);
-#ifdef Q_OS_MACOS
                              } else if (reason == QSystemTrayIcon::Context) {
-                                 platform::macos::showSystemTrayMenu(trayIcon, menu.get());
+                                 if (menu && menu->isPopupVisible())
+                                     return;
+                                 auto* popup = createMenu();
+#ifdef Q_OS_MACOS
+                                 platform::macos::showSystemTrayMenu(trayIcon, popup);
+#else
+                                 popup->popupAt(
+                                     systemTrayMenuPosition(trayIcon->geometry(), QCursor::pos()));
 #endif
                              }
                          });
@@ -442,6 +441,27 @@ class SystemTrayController::Impl {
     ~Impl() {
         trayIcon->hide();
         trayIcon->setContextMenu(nullptr);
+        for (const auto& popup : menus)
+            delete popup.data();
+    }
+
+    adqt::widgets::AdContextMenu* createMenu() {
+        if (menu)
+            menu->dismissPopup();
+        menu = new adqt::widgets::AdContextMenu;
+        menus.removeIf([](const auto& popup) { return popup.isNull(); });
+        menus.append(menu);
+        menu->setDeleteOnHide();
+        menu->setObjectName(QStringLiteral("systemTrayMenu"));
+        menu->setMinimumWidth(300);
+        new TrayMenuSkinBinding(menu);
+        actions.clear();
+        checkableQuickActions.clear();
+        separatorsBeforeGroup.clear();
+        buildMenu();
+        retranslateUi();
+        setMenuOptions(menuOptions);
+        return menu;
     }
 
     void dispatchClickAction(const QString& action) {
@@ -504,6 +524,7 @@ class SystemTrayController::Impl {
                         // The checkmark is a view of owner state; nothing
                         // listens to toggled() here.
                         action->setCheckable(true);
+                        action->setChecked(checkedQuickActions.value(option.shortcutAction));
                         checkableQuickActions.insert(option.shortcutAction, action);
                     }
                     break;
@@ -526,51 +547,42 @@ class SystemTrayController::Impl {
             }
         }
         QAction* showMainWindow = actions.value(QStringLiteral("tray.show-main-window"));
-        groupMenu = new adqt::widgets::AdContextMenu(menu.get());
-        groupMenu->setObjectName(QStringLiteral("systemTrayWindowGroupMenu"));
-        groupMenu->setMinimumWidth(300);
-        new TrayMenuSkinBinding(groupMenu);
-        groupMenuAction = menu->addMenu(groupMenu);
+        groupMenuAction = menu->addLazySubMenu(
+            QString(),
+            [this](auto* popup) {
+                groupMenu = popup;
+                popup->setObjectName(QStringLiteral("systemTrayWindowGroupMenu"));
+                popup->setMinimumWidth(300);
+                new TrayMenuSkinBinding(popup);
+                rebuildGroupMenu();
+            },
+            custom_outlined_icons::Group());
         groupMenuAction->setObjectName(QStringLiteral("systemTrayWindowGroupAction"));
-        menu->setActionIcon(groupMenuAction, custom_outlined_icons::Group());
         if (!windowGroupingOptionId.isEmpty()) {
             groupMenuAction->setData(windowGroupingOptionId);
             actions.insert(windowGroupingOptionId, groupMenuAction);
         }
-        // Window grouping sits above the window commands so pinned windows
-        // can be re-grouped without scrolling past them.
-        if (showMainWindow != nullptr) {
+        if (showMainWindow != nullptr)
             menu->insertAction(showMainWindow, groupMenuAction);
-        }
-        const auto refreshPendingGroups = [this]() {
-            if (groupMenuDirty)
-                rebuildGroupMenu();
-        };
-        QObject::connect(menu.get(), &QMenu::aboutToShow, &q, refreshPendingGroups);
-        QObject::connect(groupMenu, &QMenu::aboutToShow, &q, refreshPendingGroups);
-        rebuildGroupMenu();
+        updateGroupMenuTitle();
     }
 
     void updateGroupMenuTitle() {
-        groupMenuAction->setText(
-            QCoreApplication::translate("SystemTrayController", "Window Group: %1")
-                .arg(groupManager->displayName(groupManager->activeGroupId())));
+        if (groupMenuAction)
+            groupMenuAction->setText(
+                QCoreApplication::translate("SystemTrayController", "Window Group: %1")
+                    .arg(groupManager->displayName(groupManager->activeGroupId())));
     }
 
     void requestGroupMenuRefresh() {
-        groupMenuDirty = true;
         updateGroupMenuTitle();
-        if (menu->isPopupVisible() || groupMenu->isPopupVisible())
+        if (groupMenu && groupMenu->isPopupVisible() && !groupMenu->isRetiring())
             rebuildGroupMenu();
     }
 
     void rebuildGroupMenu() {
         if (groupMenu == nullptr || groupManager == nullptr) {
             return;
-        }
-        groupMenuDirty = false;
-        if (deleteSpecifiedGroupMenu != nullptr) {
-            deleteSpecifiedGroupMenu->clear();
         }
         groupMenu->clear();
         updateGroupMenuTitle();
@@ -606,35 +618,28 @@ class SystemTrayController::Impl {
         QObject::connect(deleteEmpty, &QAction::triggered, &q,
                          [this]() { groupManager->openDeleteEmptyGroupsConfirmation(nullptr); });
 
-        const QString deleteSpecifiedText =
-            QCoreApplication::translate("SystemTrayController", "Delete Specified Group");
-        if (deleteSpecifiedGroupMenu == nullptr) {
-            deleteSpecifiedGroupMenu =
-                groupMenu->addSubMenu(deleteSpecifiedText, custom_outlined_icons::Delete());
-            deleteSpecifiedGroupMenu->setObjectName(
-                QStringLiteral("systemTrayDeleteSpecifiedGroupMenu"));
-            deleteSpecifiedGroupMenu->menuAction()->setObjectName(
-                QStringLiteral("systemTrayDeleteSpecifiedGroupAction"));
-            deleteSpecifiedGroupMenu->setMinimumWidth(300);
-            new TrayMenuSkinBinding(deleteSpecifiedGroupMenu);
-        } else {
-            deleteSpecifiedGroupMenu->setTitle(deleteSpecifiedText);
-            groupMenu->addMenu(deleteSpecifiedGroupMenu);
-            groupMenu->setActionIcon(deleteSpecifiedGroupMenu->menuAction(),
-                                     custom_outlined_icons::Delete());
-        }
-        for (const auto& group : currentGroups) {
-            const auto counts = group.counts;
-            QAction* action = deleteSpecifiedGroupMenu->addItem(group.name);
-            deleteSpecifiedGroupMenu->setActionBadge(
-                action, QStringLiteral("%1/%2").arg(counts.nonIgnored).arg(counts.total));
-            action->setObjectName(
-                QStringLiteral("systemTrayDeleteSpecifiedGroupAction-%1").arg(group.id));
-            action->setData(group.id);
-            QObject::connect(action, &QAction::triggered, &q, [this, id = group.id]() {
-                groupManager->openDeleteSpecifiedGroupConfirmation(id, nullptr);
-            });
-        }
+        auto* deleteSpecified = groupMenu->addLazySubMenu(
+            QCoreApplication::translate("SystemTrayController", "Delete Specified Group"),
+            [this](auto* popup) {
+                popup->setObjectName(QStringLiteral("systemTrayDeleteSpecifiedGroupMenu"));
+                popup->setMinimumWidth(300);
+                new TrayMenuSkinBinding(popup);
+                for (const auto& group : groupManager->displaySnapshot()) {
+                    const auto counts = group.counts;
+                    QAction* action =
+                        popup->addItem(QStringLiteral("%1\t%2/%3")
+                                           .arg(group.name, QString::number(counts.nonIgnored),
+                                                QString::number(counts.total)));
+                    action->setObjectName(
+                        QStringLiteral("systemTrayDeleteSpecifiedGroupAction-%1").arg(group.id));
+                    action->setData(group.id);
+                    QObject::connect(action, &QAction::triggered, &q, [this, id = group.id]() {
+                        groupManager->openDeleteSpecifiedGroupConfirmation(id, nullptr);
+                    });
+                }
+            },
+            custom_outlined_icons::Delete());
+        deleteSpecified->setObjectName(QStringLiteral("systemTrayDeleteSpecifiedGroupAction"));
     }
 
     void connectGroupManagerSignals() {
@@ -670,24 +675,27 @@ class SystemTrayController::Impl {
                 }
             }
         }
-        rebuildGroupMenu();
+        requestGroupMenuRefresh();
     }
 
     void setMenuOptions(const QStringList& options) {
         const QSet<QString> requested(options.cbegin(), options.cend());
         QStringList normalized;
         QVector<bool> visibleGroups(groups.size(), false);
+        bool toggleVisible = false;
         for (int groupIndex = 0; groupIndex < groups.size(); ++groupIndex) {
             for (const settings::SettingsTrayMenuOptionDefinition& option :
                  groups.at(groupIndex).options) {
-                QAction* action = actions.value(option.id);
+                QAction* action = actions.value(option.id).data();
                 const bool visible =
-                    action != nullptr && requested.contains(option.id)
+                    requested.contains(option.id)
 #if SNOW_SHOT_ENABLE_EXTENDED_FEATURES
                     && (option.shortcutAction != GlobalShortcutAction::TranslateSelectedText ||
                         snow_shot::storage::ExtendedFeaturesSettings().translationPageEnabled())
 #endif
                     ;
+                if (option.shortcutAction == GlobalShortcutAction::ToggleGlobalHotkeys)
+                    toggleVisible = visible;
                 if (action != nullptr) {
                     action->setVisible(visible);
                 }
@@ -711,10 +719,12 @@ class SystemTrayController::Impl {
         // checked ToggleGlobalHotkeys re-enables through the same quick action.
         // Persisted checkables such as fullscreen suppression must not be
         // flipped by menu visibility.
-        if (QAction* toggleAction =
-                checkableQuickActions.value(GlobalShortcutAction::ToggleGlobalHotkeys);
-            toggleAction != nullptr && !toggleAction->isVisible() && toggleAction->isChecked()) {
-            toggleAction->setChecked(false);
+        if (checkedQuickActions.value(GlobalShortcutAction::ToggleGlobalHotkeys) &&
+            !toggleVisible) {
+            checkedQuickActions.insert(GlobalShortcutAction::ToggleGlobalHotkeys, false);
+            if (auto* action =
+                    checkableQuickActions.value(GlobalShortcutAction::ToggleGlobalHotkeys).data())
+                action->setChecked(false);
             emit q.quickActionRequested(GlobalShortcutAction::ToggleGlobalHotkeys);
         }
     }
@@ -754,19 +764,20 @@ class SystemTrayController::Impl {
     }
 
     SystemTrayController& q;
-    std::unique_ptr<adqt::widgets::AdContextMenu> menu;
+    QPointer<adqt::widgets::AdContextMenu> menu;
+    QList<QPointer<adqt::widgets::AdContextMenu>> menus;
     QSystemTrayIcon* trayIcon = nullptr;
     settings::TrayCommandManifest manifest;
     QVector<settings::SettingsTrayMenuGroupDefinition> groups;
     std::unique_ptr<PinnedWindowGroupManager> ownedGroupManager;
     PinnedWindowGroupManager* groupManager = nullptr;
-    adqt::widgets::AdContextMenu* groupMenu = nullptr;
-    adqt::widgets::AdContextMenu* deleteSpecifiedGroupMenu = nullptr;
-    QAction* groupMenuAction = nullptr;
-    QHash<QString, QAction*> actions;
+    QPointer<adqt::widgets::AdContextMenu> groupMenu;
+    QPointer<QAction> groupMenuAction;
+    QHash<QString, QPointer<QAction>> actions;
     QHash<GlobalShortcutAction, shortcuts::ShortcutBindingList> shortcutBindings;
-    QHash<GlobalShortcutAction, QAction*> checkableQuickActions;
-    QVector<QAction*> separatorsBeforeGroup;
+    QHash<GlobalShortcutAction, QPointer<QAction>> checkableQuickActions;
+    QHash<GlobalShortcutAction, bool> checkedQuickActions;
+    QVector<QPointer<QAction>> separatorsBeforeGroup;
     TrayImageCache iconCache;
     QStringList menuOptions;
     QString iconSelection = QString::fromLatin1(DEFAULT_TRAY_ICON);
@@ -777,7 +788,6 @@ class SystemTrayController::Impl {
     BalloonKind lastBalloonKind = BalloonKind::None;
     bool enabled = true;
     bool globalShortcutsDisabled = false;
-    bool groupMenuDirty = false;
 };
 
 SystemTrayController::SystemTrayController(QObject* parent)
@@ -797,6 +807,12 @@ SystemTrayController::SystemTrayController(const settings::TrayCommandManifest& 
 
 SystemTrayController::~SystemTrayController() = default;
 
+adqt::widgets::AdContextMenu* SystemTrayController::createContextMenu() {
+    if (m_impl->menu && m_impl->menu->isPopupVisible())
+        return m_impl->menu;
+    return m_impl->createMenu();
+}
+
 void SystemTrayController::setGroupManager(PinnedWindowGroupManager* groupManager) {
     if (groupManager == nullptr) {
         return;
@@ -810,7 +826,7 @@ void SystemTrayController::setGroupManager(PinnedWindowGroupManager* groupManage
     m_impl->ownedGroupManager.reset();
     m_impl->groupManager = groupManager;
     m_impl->connectGroupManagerSignals();
-    m_impl->rebuildGroupMenu();
+    m_impl->requestGroupMenuRefresh();
 }
 
 void SystemTrayController::show() {
@@ -823,6 +839,8 @@ void SystemTrayController::show() {
 }
 
 void SystemTrayController::hide() {
+    if (m_impl->menu)
+        m_impl->menu->dismissPopup();
     m_impl->trayIcon->hide();
 }
 
@@ -941,6 +959,7 @@ void SystemTrayController::setQuickActionChecked(GlobalShortcutAction action, bo
         m_impl->globalShortcutsDisabled = checked;
         m_impl->updateIcon();
     }
+    m_impl->checkedQuickActions.insert(action, checked);
     // Pure view update: owners announce changes; the checkmark only mirrors
     // them, so this must not dispatch anything.
     if (QAction* trayAction = m_impl->checkableQuickActions.value(action)) {

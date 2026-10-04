@@ -1094,9 +1094,6 @@ class HistoryEntryWidget final : public QFrame {
     }
 
     adqt::widgets::AdContextMenu* createMoreMenu() {
-        if (m_moreMenu != nullptr) {
-            m_moreMenu->deleteLater();
-        }
         auto* menu = new adqt::widgets::AdContextMenu(this);
         m_moreMenu = menu;
         menu->setObjectName(QStringLiteral("screenshotHistoryEntryMoreMenu"));

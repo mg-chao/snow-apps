@@ -4,6 +4,7 @@
 #include "snow_shot/presentation/styles/themecolorscheme.h"
 
 #include <QWidget>
+#include <QPointer>
 #include <QTimer>
 
 class QAction;
@@ -51,6 +52,7 @@ class TranslationPageWidget final : public QWidget {
     void scheduleResultUpdate();
     void flushResultUpdate();
     void syncResultActions();
+    void retranslateActions();
     void updateLayout();
     void updateResultOverlays();
     void updateResult(const QString& text);
@@ -72,11 +74,11 @@ class TranslationPageWidget final : public QWidget {
     adqt::widgets::AdButton* m_swap = nullptr;
     adqt::widgets::AdButton* m_resultCopy = nullptr;
     adqt::widgets::AdButton* m_floating = nullptr;
-    QAction* m_copy = nullptr;
-    QAction* m_copyClose = nullptr;
+    QPointer<QAction> m_copy;
+    QPointer<QAction> m_copyClose;
     adqt::widgets::AdButton* m_retry = nullptr;
     adqt::widgets::AdAlert* m_error = nullptr;
-    adqt::widgets::AdContextMenu* m_menu = nullptr;
+    QPointer<adqt::widgets::AdContextMenu> m_menu;
     QLabel* m_status = nullptr;
     QTimer m_resultUpdate;
     QString m_renderedResult;

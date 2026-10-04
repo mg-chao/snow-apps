@@ -8,6 +8,7 @@
 #include <QRectF>
 #include <memory>
 #include <optional>
+#include <functional>
 
 #include "icon_core.h"
 
@@ -101,6 +102,13 @@ class AdContextMenu final : public QMenu {
   QAction* addItem(const QString& text, const adqt::icons::IconRef& icon = {},
                    const QKeySequence& shortcut = {});
   AdContextMenu* addSubMenu(const QString& text, const adqt::icons::IconRef& icon = {});
+  using ContentFactory = std::function<void(AdContextMenu*)>;
+  // Qt requires an empty submenu shell for its arrow and keyboard navigation.
+  // Populate only when opened; retire the populated shell on hide and replace
+  // it with an empty one if the parent popup is still open.
+  // Restore retired shells when a persistent parent popup opens again.
+  QAction* addLazySubMenu(const QString& text, ContentFactory factory,
+                          const adqt::icons::IconRef& icon = {});
 
   void setActionIcon(QAction* action, const adqt::icons::IconRef& icon);
   adqt::icons::IconRef actionIcon(const QAction* action) const;
@@ -116,15 +124,23 @@ class AdContextMenu final : public QMenu {
   // Native menus track outside QWidget visibility on macOS.
   bool isPopupVisible() const;
   void dismissPopup();
+  // Heap-owned popup sessions retire after hiding and action delivery. Do not
+  // enable this for stack-owned menus displayed with execAt().
+  void setDeleteOnHide(bool enabled = true);
+  bool isRetiring() const;
   QSize sizeHint() const override;
 
   void popupAt(const QPoint& globalPosition);
   QAction* execAt(const QPoint& globalPosition, QAction* initialAction = nullptr);
+  // Platform adapters (for example NSStatusItem) keep the same action-delivery
+  // and retirement ordering while supplying their own native presenter.
+  QAction* execNativePopup(const std::function<void()>& presenter);
 
  signals:
   void colorSchemeChanged(ColorScheme value);
   void componentTokensChanged();
   void triggerWidgetChanged(QWidget* widget);
+  void popupFinished();
 
  protected:
   void actionEvent(QActionEvent* event) override;
@@ -138,9 +154,13 @@ class AdContextMenu final : public QMenu {
   friend class detail::AdContextMenuStyle;
 
   void refreshVisuals(bool relayout);
+  void configureSurfaceAttributes();
   void configureCustomSurface();
   void configurePlatformSurface();
   void applyStoredActionIcon(QAction* action);
+  void retirePopup();
+  AdContextMenu(QWidget* parent, bool deferredSurface);
+  class LazySubMenu;
 
   class Private;
   std::unique_ptr<Private> d_;

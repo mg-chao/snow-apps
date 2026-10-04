@@ -4,6 +4,7 @@
 #include "snow_shot/presentation/pinnedwindowgroupmanager.h"
 #include "snow_shot/presentation/settings/settingsregistry.h"
 #include "snow_shot/presentation/systemtraycontroller.h"
+#include "../src/presentation/services/systemtraymenuposition.h"
 #include "snow_shot/presentation/mainwindowskincontroller.h"
 #include "snow_shot/storage/applicationstorage.h"
 #include "snow_shot/storage/settingsadapters.h"
@@ -98,201 +99,207 @@ void waitFor(const std::function<bool()>& predicate, const char* message) {
     require(predicate(), message);
 }
 
-void verifyTraySkins(adqt::widgets::AdContextMenu* menu, adqt::widgets::AdContextMenu* groupMenu,
-                     adqt::widgets::AdContextMenu* deletionMenu, const QTemporaryDir& directory) {
+QAction* menuActionNamed(QMenu* menu, const QString& name) {
+    for (auto* action : menu->actions())
+        if (action->objectName() == name)
+            return action;
+    return nullptr;
+}
+
+void drainMenus() {
+    QCoreApplication::sendPostedEvents(nullptr, QEvent::MetaCall);
+    QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+}
+
+void verifyTrayMenuPosition() {
+    using snow_shot::presentation::systemTrayMenuPosition;
+    const QRect icon(1800, 1040, 24, 24);
+    require(systemTrayMenuPosition(icon, QPoint(100, 100)) == icon.center(),
+            "keyboard context requests must stay at the tray icon when the pointer is elsewhere");
+    require(systemTrayMenuPosition(icon, QPoint(-1500, 500)) == icon.center(),
+            "a pointer on another monitor must not move a keyboard tray menu to that monitor");
+    const QRect secondaryIcon(-120, -40, 24, 24);
+    require(systemTrayMenuPosition(secondaryIcon, QPoint(100, 100)) == secondaryIcon.center(),
+            "tray menu anchors must preserve negative coordinates on secondary monitors");
+    const QPoint mouseClick = icon.topLeft() + QPoint(3, 5);
+    require(systemTrayMenuPosition(icon, mouseClick) == mouseClick,
+            "mouse context requests inside the icon must retain their pointer position");
+    require(systemTrayMenuPosition(QRect(), mouseClick) == mouseClick,
+            "platforms without tray geometry must keep a usable pointer-based placement");
+}
+
+void verifyTraySkins(snow_shot::presentation::SystemTrayController& controller,
+                     const QTemporaryDir& directory) {
     using snow_shot::presentation::MainWindowSkinController;
     auto& configuration = snow_shot::storage::ApplicationStorage::instance().configuration();
+    QPointer<adqt::widgets::AdContextMenu> menu = controller.createContextMenu();
     if (menu->nativeMenuEnabled()) {
-        auto* previousController = MainWindowSkinController::existingInstance();
+        auto* previous = MainWindowSkinController::existingInstance();
         QStyle* previousStyle = menu->style();
         require(configuration.setValue(QStringLiteral("interface/tray_menu_skin_path"),
                                        directory.filePath(QStringLiteral("native-skin.png"))),
-                "the native tray fixture must accept a configured skin path");
-        QApplication::processEvents();
-        require(menu->nativeMenuEnabled() && menu->style() == previousStyle &&
-                    menu->backgroundFrame().image.isNull() &&
-                    MainWindowSkinController::existingInstance() == previousController,
-                "native tray menus must ignore skin settings without creating a renderer");
+                "the native skin fixture accepts a configured path");
+        require(menu->style() == previousStyle && menu->backgroundFrame().image.isNull() &&
+                    MainWindowSkinController::existingInstance() == previous,
+                "native tray menus ignore skins without allocating a renderer");
         require(configuration.setValue(QStringLiteral("interface/tray_menu_skin_path"), QString()),
-                "the native tray fixture must restore its empty skin path");
+                "restore the empty native skin path");
     }
     menu->setNativeMenuEnabled(false);
     auto* previousController = MainWindowSkinController::existingInstance();
     menu->popupAt(QPoint(20, 20));
-    QApplication::processEvents();
-    require(menu->isVisible() && menu->backgroundFrame().image.isNull() &&
+    require(menu->backgroundFrame().image.isNull() &&
                 MainWindowSkinController::existingInstance() == previousController,
-            "an unskinned tray popup must not create a skin service or background frame");
-    menu->hide();
+            "an unskinned popup allocates no skin service");
+    menu->dismissPopup();
+    drainMenus();
+    require(!menu, "an unskinned tray popup retires completely after hiding");
 
     const QString skinPath = directory.filePath(QStringLiteral("tray-skin.png"));
     QImage skin(64, 64, QImage::Format_ARGB32_Premultiplied);
     skin.fill(QColor(213, 43, 79));
-    require(skin.save(skinPath), "the tray skin fixture must be writable");
+    require(skin.save(skinPath), "the tray skin fixture is writable");
     require(configuration.setValues({{QStringLiteral("interface/skin_opacity"), 0},
                                      {QStringLiteral("interface/tray_menu_skin_path"), skinPath}}),
-            "configure a zero-opacity tray skin before its first popup");
-    for (auto* popup : {menu, groupMenu, deletionMenu}) {
-        popup->popupAt(QPoint(20, 20));
-        QApplication::processEvents();
+            "configure a skin without opacity");
+    for (int depth = 0; depth < 3; ++depth) {
+        menu = controller.createContextMenu();
+        menu->setNativeMenuEnabled(false);
+        menu->popupAt(QPoint(20, 20));
+        auto* popup = menu.data();
+        if (depth >= 1) {
+            popup = qobject_cast<adqt::widgets::AdContextMenu*>(
+                menuActionNamed(popup, QStringLiteral("systemTrayWindowGroupAction"))->menu());
+            popup->popupAt(QPoint(330, 20));
+        }
+        if (depth >= 2) {
+            popup = qobject_cast<adqt::widgets::AdContextMenu*>(
+                menuActionNamed(popup, QStringLiteral("systemTrayDeleteSpecifiedGroupAction"))
+                    ->menu());
+            popup->popupAt(QPoint(640, 20));
+        }
         require(popup->backgroundFrame().image.isNull() &&
                     MainWindowSkinController::existingInstance() == previousController,
-                "initial zero-opacity tray skins must create no renderer on any popup");
-        popup->hide();
+                "zero-opacity menus at every depth allocate no renderer");
+        menu->dismissPopup();
+        drainMenus();
+        require(!menu, "each zero-opacity popup tree retires after hiding");
     }
-    require(configuration.setValue(QStringLiteral("interface/skin_display_mode"),
-                                   QStringLiteral("contain")) &&
-                configuration.setValue(QStringLiteral("interface/skin_blur_level"), 0) &&
-                configuration.setValue(QStringLiteral("interface/skin_mask_opacity"), 20) &&
-                configuration.setValue(QStringLiteral("interface/skin_opacity"), 73) &&
-                configuration.setValue(QStringLiteral("interface/skin_position"),
-                                       QStringLiteral("bottom_right")) &&
-                configuration.setValue(QStringLiteral("interface/tray_menu_skin_position"),
-                                       QStringLiteral("top_left")) &&
-                configuration.setValue(QStringLiteral("interface/tray_menu_skin_path"), skinPath),
-            "tray skin configuration must support an independent path and position");
-
-    adqt::widgets::AdContextMenu unrelated;
-    unrelated.setNativeMenuEnabled(false);
-    unrelated.addItem(QStringLiteral("Unrelated context menu"));
-    unrelated.show();
-    QApplication::processEvents();
-    require(unrelated.backgroundFrame().image.isNull(),
-            "tray skin settings must not affect unrelated SnowShot context menus");
-    unrelated.hide();
-
-    const auto open = [](adqt::widgets::AdContextMenu* popup, const QPoint& position) {
-        popup->popupAt(position);
-        waitFor([popup]() { return !popup->backgroundFrame().image.isNull(); },
-                "each tray popup must prepare its own skin frame");
+    require(
+        configuration.setValues(
+            {{QStringLiteral("interface/skin_display_mode"), QStringLiteral("contain")},
+             {QStringLiteral("interface/skin_blur_level"), 0},
+             {QStringLiteral("interface/skin_mask_opacity"), 20},
+             {QStringLiteral("interface/skin_opacity"), 73},
+             {QStringLiteral("interface/tray_menu_skin_position"), QStringLiteral("top_left")}}),
+        "configure shared skin effects and independent tray placement");
+    menu = controller.createContextMenu();
+    menu->setNativeMenuEnabled(false);
+    menu->popupAt(QPoint(20, 20));
+    QPointer<adqt::widgets::AdContextMenu> group = qobject_cast<adqt::widgets::AdContextMenu*>(
+        menuActionNamed(menu, QStringLiteral("systemTrayWindowGroupAction"))->menu());
+    group->popupAt(QPoint(330, 20));
+    QPointer<adqt::widgets::AdContextMenu> deletion = qobject_cast<adqt::widgets::AdContextMenu*>(
+        menuActionNamed(group, QStringLiteral("systemTrayDeleteSpecifiedGroupAction"))->menu());
+    deletion->popupAt(QPoint(640, 20));
+    waitFor(
+        [&] {
+            return !menu->backgroundFrame().image.isNull() &&
+                   !group->backgroundFrame().image.isNull() &&
+                   !deletion->backgroundFrame().image.isNull();
+        },
+        "each visible popup prepares its own frame");
+    auto* skinController = MainWindowSkinController::existingInstance();
+    require(skinController && skinController->diagnostics().decodeJobs == 1,
+            "one popup tree shares a single decoded skin source");
+    for (auto* popup : {menu.data(), group.data(), deletion.data()}) {
         const auto frame = popup->backgroundFrame();
         require(qAbs(frame.normalizedPlacement.x()) < 0.001 &&
-                    qAbs(frame.normalizedPlacement.y()) < 0.001,
-                "tray placement must use its own top-left setting");
-        require(qAbs(frame.imageOpacity - 0.73) < 0.001 && qAbs(frame.maskOpacity - 0.20) < 0.001,
-                "tray skins must use the common image and readability effects");
-    };
-    open(menu, QPoint(20, 20));
-    open(groupMenu, QPoint(330, 20));
-    open(deletionMenu, QPoint(640, 20));
-    auto* skinController = MainWindowSkinController::existingInstance();
-    require(skinController != nullptr, "visible skinned tray menus must have a skin service");
-    const auto decoded = skinController->diagnostics().decodeJobs;
-    require(decoded == 1, "a tray menu tree must share a single decoded skin source");
-    require(configuration.setValue(QStringLiteral("interface/skin_opacity"), 0),
-            "disable loaded tray skins without clearing their path");
-    waitFor([skinController] { return !skinController->diagnostics().busy; },
-            "invisible tray rendering resources must retire");
-    for (auto* popup : {menu, groupMenu, deletionMenu}) {
-        require(popup->backgroundFrame().image.isNull() && !skinController->skinActive(popup),
-                "zero opacity must remove every tray popup frame");
+                    qAbs(frame.normalizedPlacement.y()) < 0.001 &&
+                    qAbs(frame.imageOpacity - 0.73) < 0.001 &&
+                    qAbs(frame.maskOpacity - 0.20) < 0.001,
+                "every menu uses independent placement with common effects");
     }
+    require(configuration.setValue(QStringLiteral("interface/skin_opacity"), 0),
+            "disable loaded skins");
+    waitFor([&] { return !skinController->diagnostics().busy; },
+            "retire invisible render resources");
     require(skinController->diagnostics().retainedBytes == 0 &&
                 skinController->diagnostics().executorCount == 0 &&
                 skinController->diagnostics().scratchRetainedBytes == 0,
-            "zero-opacity tray skins must retain no image or worker resources");
+            "zero opacity releases decoded images, workers and scratch buffers");
     require(configuration.setValue(QStringLiteral("interface/skin_opacity"), 73),
-            "reactivate the tray skin without reopening visible popups");
-    waitFor([menu] { return !menu->backgroundFrame().image.isNull(); },
-            "restoring opacity must reattach an existing visible tray popup");
-    // Reactivation decodes once because invisible skins retain no decoded raster.
-    const auto reactivatedDecodes = skinController->diagnostics().decodeJobs;
-
+            "reactivate visible skins");
+    waitFor([&] { return !deletion->backgroundFrame().image.isNull(); },
+            "reattach visible submenu frames");
+    const auto decoded = skinController->diagnostics().decodeJobs;
     require(configuration.setValue(QStringLiteral("interface/tray_menu_skin_position"),
                                    QStringLiteral("bottom_right")),
-            "tray position must support live changes");
+            "change tray placement live");
     waitFor(
-        [deletionMenu]() {
-            const auto frame = deletionMenu->backgroundFrame();
+        [&] {
+            const auto frame = deletion->backgroundFrame();
             return !frame.image.isNull() &&
                    qAbs(frame.normalizedPlacement.x() + frame.normalizedPlacement.width() - 1.0) <
                        0.001 &&
                    qAbs(frame.normalizedPlacement.y() + frame.normalizedPlacement.height() - 1.0) <
                        0.001;
         },
-        "a visible tray submenu must follow live position changes");
-    require(skinController->diagnostics().decodeJobs == reactivatedDecodes,
-            "placement changes must not decode the source again");
-
-    for (auto* popup : {deletionMenu, groupMenu, menu}) {
-        popup->hide();
-        require(popup->backgroundFrame().image.isNull() && !skinController->skinActive(popup),
-                "hidden tray popups must release their view-owned skin frame");
-    }
-    menu->popupAt(QPoint(20, 20));
-    waitFor([menu]() { return !menu->backgroundFrame().image.isNull(); },
-            "reopening a tray popup must restore its skin");
-    require(skinController->diagnostics().decodeJobs == reactivatedDecodes,
-            "reopening a tray menu must reuse the decoded source");
+        "a visible nested submenu follows live placement changes");
+    require(skinController->diagnostics().decodeJobs == decoded,
+            "placement changes reuse decoded source");
+    deletion->dismissPopup();
+    drainMenus();
+    require(!deletion && group && menu, "a hidden nested submenu releases its frame and object");
+    group->dismissPopup();
+    drainMenus();
+    require(!group && menu, "a hidden group submenu releases its frame and object");
     menu->resize(menu->width() + 37, menu->height() + 11);
-    const int expectedExtent =
-        qRound(std::min(menu->width(), menu->height()) * menu->devicePixelRatioF());
-    waitFor(
-        [menu, expectedExtent]() {
-            return menu->backgroundFrame().image.size() == QSize(expectedExtent, expectedExtent);
-        },
-        "resizing a tray popup must prepare a frame for its new viewport");
-    require(skinController->diagnostics().decodeJobs == reactivatedDecodes,
-            "tray viewport changes must not decode the shared source again");
+    const int extent = qRound(std::min(menu->width(), menu->height()) * menu->devicePixelRatioF());
+    waitFor([&] { return menu->backgroundFrame().image.size() == QSize(extent, extent); },
+            "viewport changes prepare a new frame without decoding the source");
+    require(skinController->diagnostics().decodeJobs == decoded,
+            "resizing reuses the shared source");
     require(configuration.setValue(QStringLiteral("interface/tray_menu_skin_path"),
                                    directory.filePath(QStringLiteral("missing-tray-skin.png"))),
-            "the tray failure fixture must accept a replacement source");
+            "replace the skin with a failing source");
     waitFor(
-        [menu, skinController]() {
+        [&] {
             return skinController->hasError(snow_shot::presentation::SkinSurface::TrayMenu) &&
                    menu->backgroundFrame().image.isNull();
         },
-        "a failed replacement skin must restore the themed tray surface without a stale frame");
-    require(!skinController->skinActive(menu),
-            "a failed source must release the tray view's prepared frame");
+        "a failed replacement releases stale frames and restores the themed menu");
     require(configuration.setValue(QStringLiteral("interface/tray_menu_skin_path"), QString()),
-            "tray skin can be removed while its popup is visible");
-    require(menu->backgroundFrame().image.isNull() && !skinController->skinActive(menu),
-            "clearing a tray skin must immediately restore its normal themed surface");
-
-    const QPointer<MainWindowSkinController> retiringController(skinController);
+            "clear the failed skin");
+    QPointer<MainWindowSkinController> retiring = skinController;
     waitFor([] { return MainWindowSkinController::existingInstance() == nullptr; },
-            "clearing the last skin must retire its controller");
-    // processEvents() leaves deferred deletion pending, so re-enable while the
-    // previous controller is still alive but no longer accepts attachments.
-    require(retiringController != nullptr,
-            "the retired controller must remain alive before deferred deletion");
+            "retire the last skin controller");
     require(configuration.setValue(QStringLiteral("interface/tray_menu_skin_path"), skinPath),
-            "re-enable the tray skin before the retired controller is deleted");
-    const QPointer<MainWindowSkinController> reenabledController(
-        MainWindowSkinController::existingInstance());
-    require(reenabledController != nullptr && reenabledController != retiringController,
-            "a visible tray menu must acquire the active controller when its skin is re-enabled");
-    QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
-    require(retiringController.isNull(), "deferred deletion must release the retired controller");
-    waitFor(
-        [menu, reenabledController] {
-            return reenabledController && !reenabledController->diagnostics().busy &&
-                   reenabledController->skinActive(menu) && !menu->backgroundFrame().image.isNull();
-        },
-        "a re-enabled tray skin must return without hiding or reopening the visible menu");
-    require(menu->isVisible() &&
-                menu->backgroundFrame().image.toImage().pixelColor(0, 0) == QColor(213, 43, 79),
-            "rapid re-enabling must restore the configured image on the existing popup");
-    for (auto* popup : {groupMenu, deletionMenu}) {
-        popup->popupAt(QPoint(330, 20));
-        waitFor([popup] { return !popup->backgroundFrame().image.isNull(); },
-                "previously hidden tray submenus must acquire the replacement controller");
-        popup->hide();
-    }
-    require(configuration.setValue(QStringLiteral("interface/tray_menu_skin_path"), QString()),
-            "clear the re-enabled tray skin fixture");
-    menu->hide();
-    require(configuration.setValue(QStringLiteral("interface/skin_display_mode"),
-                                   QStringLiteral("overlay")) &&
-                configuration.setValue(QStringLiteral("interface/skin_mask_opacity"), 80) &&
-                configuration.setValue(QStringLiteral("interface/skin_opacity"), 100) &&
-                configuration.setValue(QStringLiteral("interface/skin_position"),
-                                       QStringLiteral("center")) &&
-                configuration.setValue(QStringLiteral("interface/tray_menu_skin_position"),
-                                       QStringLiteral("center")),
-            "tray skin fixture settings must be restored");
-    QApplication::processEvents();
+            "reenable while the previous controller is retiring");
+    auto* reenabled = MainWindowSkinController::existingInstance();
+    require(reenabled && reenabled != retiring,
+            "a visible popup attaches to the new active controller");
+    drainMenus();
+    require(!retiring, "release the retired skin controller");
+    waitFor([&] { return !menu->backgroundFrame().image.isNull(); },
+            "restore the visible popup skin");
+    menu->dismissPopup();
+    drainMenus();
+    require(!menu, "hiding a skinned root releases its entire popup session");
+    menu = controller.createContextMenu();
+    menu->setNativeMenuEnabled(false);
+    menu->popupAt(QPoint(20, 20));
+    waitFor([&] { return !menu->backgroundFrame().image.isNull(); },
+            "a fresh popup restores its configured skin");
+    menu->dismissPopup();
+    drainMenus();
+    require(configuration.setValues(
+                {{QStringLiteral("interface/tray_menu_skin_path"), QString()},
+                 {QStringLiteral("interface/skin_display_mode"), QStringLiteral("overlay")},
+                 {QStringLiteral("interface/skin_mask_opacity"), 80},
+                 {QStringLiteral("interface/skin_opacity"), 100},
+                 {QStringLiteral("interface/tray_menu_skin_position"), QStringLiteral("center")}}),
+            "restore skin settings");
 }
 
 #ifdef Q_OS_MACOS
@@ -309,59 +316,56 @@ bool containsOpaqueColor(const QImage& image, const QColor& color) {
 }
 #endif
 
+bool hasTrayMenu() {
+    for (auto* widget : QApplication::topLevelWidgets())
+        if (widget->objectName() == QStringLiteral("systemTrayMenu"))
+            return true;
+    return false;
+}
+
 void verifyLazyGroupMenuRefresh() {
     snow_shot::presentation::PinnedWindowGroupManager groups;
     snow_shot::presentation::SystemTrayController controller(
         snow_shot::presentation::settings::builtInTrayCommandManifest(), &groups);
-    adqt::widgets::AdContextMenu* menu = nullptr;
-    for (QWidget* widget : QApplication::topLevelWidgets())
-        if (widget->objectName() == QStringLiteral("systemTrayMenu"))
-            menu = qobject_cast<adqt::widgets::AdContextMenu*>(widget);
-    require(menu != nullptr, "the group refresh fixture owns a tray menu");
-    menu->setNativeMenuEnabled(false);
-    auto* groupMenu =
-        menu->findChild<adqt::widgets::AdContextMenu*>(QStringLiteral("systemTrayWindowGroupMenu"));
-    require(groupMenu != nullptr, "the group refresh fixture owns a group submenu");
-    const auto defaultAction = [groupMenu]() {
-        for (QAction* action : groupMenu->actions())
-            if (action->objectName() == QStringLiteral("systemTrayGroupAction-default"))
-                return action;
-        return static_cast<QAction*>(nullptr);
-    };
-    QPointer<QAction> originalDefault = defaultAction();
+    require(!hasTrayMenu(), "constructing a tray allocates no menus");
     for (int index = 0; index < 20; ++index)
         groups.registerPendingPin(QStringLiteral("lazy-tray-%1").arg(index),
                                   QStringLiteral("default"));
-    QApplication::processEvents();
-    require(!originalDefault.isNull() && defaultAction() == originalDefault &&
-                originalDefault->text() == QStringLiteral("Default") &&
-                groupMenu->actionBadge(originalDefault) == QStringLiteral("0/0"),
-            "hidden group count changes must preserve the existing menu action tree");
-    QMetaObject::invokeMethod(menu, "aboutToShow", Qt::DirectConnection);
-    require(originalDefault.isNull(), "opening the parent tray menu materializes dirty groups");
-    requireGroupAction(groupMenu, defaultAction(), QStringLiteral("Default"),
-                       QStringLiteral("20/20"),
-                       "the parent tray opening supplies current counts before submenu tracking");
-    QPointer<QAction> currentDefault = defaultAction();
-    QMetaObject::invokeMethod(groupMenu, "aboutToShow", Qt::DirectConnection);
-    require(defaultAction() == currentDefault && !currentDefault.isNull(),
-            "opening an unchanged group submenu must retain its actions");
-
-    for (int index = 0; index < 20; ++index)
+    require(!hasTrayMenu(), "background state changes allocate no hidden menus");
+    controller.setMenuOptions(snow_shot::storage::TraySettings().menuOptions());
+    QPointer<adqt::widgets::AdContextMenu> menu = controller.createContextMenu();
+    menu->setNativeMenuEnabled(false);
+    menu->popupAt(QPoint(20, 20));
+    auto* header = menuActionNamed(menu, QStringLiteral("systemTrayWindowGroupAction"));
+    require(header && header->menu()->actions().isEmpty(),
+            "root opening leaves group content unallocated");
+    QPointer<adqt::widgets::AdContextMenu> group =
+        qobject_cast<adqt::widgets::AdContextMenu*>(header->menu());
+    group->popupAt(QPoint(330, 20));
+    requireActionText(menuActionNamed(group, QStringLiteral("systemTrayGroupAction-default")),
+                      QStringLiteral("Default\t20/20"),
+                      "submenu opening snapshots the latest pending counts");
+    groups.completePendingPin(QStringLiteral("lazy-tray-0"));
+    QCoreApplication::processEvents();
+    requireActionText(menuActionNamed(group, QStringLiteral("systemTrayGroupAction-default")),
+                      QStringLiteral("Default\t19/19"), "visible groups follow owner updates");
+    QPointer<QAction> previous =
+        menuActionNamed(group, QStringLiteral("systemTrayGroupAction-default"));
+    group->dismissPopup();
+    drainMenus();
+    require(!group && !previous && menu && header->menu()->actions().isEmpty(),
+            "hiding groups retires their actions and leaves an empty shell");
+    groups.completePendingPin(QStringLiteral("lazy-tray-1"));
+    group = qobject_cast<adqt::widgets::AdContextMenu*>(header->menu());
+    group->popupAt(QPoint(330, 20));
+    requireActionText(menuActionNamed(group, QStringLiteral("systemTrayGroupAction-default")),
+                      QStringLiteral("Default\t18/18"),
+                      "reopening groups creates a fresh snapshot");
+    menu->dismissPopup();
+    drainMenus();
+    require(!menu && !group && !hasTrayMenu(), "hiding the tray root releases every menu resource");
+    for (int index = 2; index < 20; ++index)
         groups.completePendingPin(QStringLiteral("lazy-tray-%1").arg(index));
-    QApplication::processEvents();
-    groupMenu->popup(QPoint(12, 12));
-    QApplication::processEvents();
-    require(groupMenu->isPopupVisible(), "the visible group regression opens its widget menu");
-    requireGroupAction(groupMenu, defaultAction(), QStringLiteral("Default"), QStringLiteral("0/0"),
-                       "opening the submenu reconciles all hidden completions");
-    groups.registerPendingPin(QStringLiteral("visible-tray-pin"), QStringLiteral("default"));
-    QApplication::processEvents();
-    requireGroupAction(groupMenu, defaultAction(), QStringLiteral("Default"), QStringLiteral("1/1"),
-                       "visible group menus reflect count changes immediately");
-    groupMenu->hide();
-    groups.completePendingPin(QStringLiteral("visible-tray-pin"));
-    QApplication::processEvents();
 }
 
 } // namespace
@@ -373,6 +377,10 @@ int main(int argc, char* argv[]) {
     QCoreApplication::setApplicationName(applicationName);
 
     QApplication application(argc, argv);
+    verifyTrayMenuPosition();
+    if (application.arguments().contains(QStringLiteral("--menu-position-only"))) {
+        return 0;
+    }
     if (application.arguments().contains(QStringLiteral("--skin-only"))) {
         snow_shot::presentation::SystemTrayController beforeStorage;
         require(!snow_shot::storage::ApplicationStorage::instance().isInitialized() &&
@@ -408,22 +416,7 @@ int main(int argc, char* argv[]) {
 #endif
     if (application.arguments().contains(QStringLiteral("--skin-only"))) {
         controller.setMenuOptions(snow_shot::storage::TraySettings().menuOptions());
-        adqt::widgets::AdContextMenu* menu = nullptr;
-        for (QWidget* widget : QApplication::topLevelWidgets()) {
-            if (widget->objectName() == QStringLiteral("systemTrayMenu")) {
-                menu = qobject_cast<adqt::widgets::AdContextMenu*>(widget);
-                break;
-            }
-        }
-        require(menu != nullptr,
-                "the skin fixture must exercise the controller's actual tray menu");
-        auto* groupMenu = menu->findChild<adqt::widgets::AdContextMenu*>(
-            QStringLiteral("systemTrayWindowGroupMenu"));
-        auto* deletionMenu = menu->findChild<adqt::widgets::AdContextMenu*>(
-            QStringLiteral("systemTrayDeleteSpecifiedGroupMenu"));
-        require(groupMenu && deletionMenu,
-                "the skin fixture must include the actual tray submenus");
-        verifyTraySkins(menu, groupMenu, deletionMenu, storageDirectory);
+        verifyTraySkins(controller, storageDirectory);
         snow_shot::storage::ApplicationStorage::instance().shutdown();
         return 0;
     }
@@ -745,19 +738,8 @@ int main(int argc, char* argv[]) {
                 QStringLiteral(":/snow-shot/app-icons/snow-shot-tray-light.png"),
             "a readable custom image outside PNG and ICO should use the bundled fallback");
 
-#ifdef Q_OS_MACOS
-    require(trayIcon->contextMenu() == nullptr,
-            "macOS must not attach a native menu that also opens on left-click");
-    adqt::widgets::AdContextMenu* menu = nullptr;
-    for (QWidget* widget : QApplication::topLevelWidgets()) {
-        if (widget->objectName() == QStringLiteral("systemTrayMenu")) {
-            menu = dynamic_cast<adqt::widgets::AdContextMenu*>(widget);
-            break;
-        }
-    }
-#else
-    auto* menu = dynamic_cast<adqt::widgets::AdContextMenu*>(trayIcon->contextMenu());
-#endif
+    require(trayIcon->contextMenu() == nullptr, "the tray must not retain an attached popup");
+    auto* menu = controller.createContextMenu();
     require(menu != nullptr, "the tray should use the Ant Design context menu");
     require(menu->minimumWidth() == 300,
             "tray context menu should retain its 300-pixel minimum width");
@@ -931,7 +913,8 @@ int main(int argc, char* argv[]) {
     snow_shot::presentation::PinnedWindowGroupManager groupManager;
     controller.setGroupManager(&groupManager);
     auto* windowGroupMenu =
-        menu->findChild<adqt::widgets::AdContextMenu*>(QStringLiteral("systemTrayWindowGroupMenu"));
+        qobject_cast<adqt::widgets::AdContextMenu*>(windowGroupMenuAction->menu());
+    QMetaObject::invokeMethod(windowGroupMenu, "aboutToShow", Qt::DirectConnection);
     require(windowGroupMenu != nullptr, "the tray menu should own a window group submenu");
     const auto groupActionNamed = [windowGroupMenu](const QString& name) {
         // Materialize the lazy submenu as an actual opening would.
@@ -1000,19 +983,24 @@ int main(int argc, char* argv[]) {
             "tray Delete Empty Groups should start disabled while only the built-in group "
             "exists");
 
-    auto* trayDeleteSpecifiedMenu = windowGroupMenu->findChild<adqt::widgets::AdContextMenu*>(
-        QStringLiteral("systemTrayDeleteSpecifiedGroupMenu"));
+    QPointer<adqt::widgets::AdContextMenu> trayDeleteSpecifiedMenu =
+        qobject_cast<adqt::widgets::AdContextMenu*>(
+            windowGroupMenu
+                ->findChild<QAction*>(QStringLiteral("systemTrayDeleteSpecifiedGroupAction"))
+                ->menu());
+    QMetaObject::invokeMethod(trayDeleteSpecifiedMenu, "aboutToShow", Qt::DirectConnection);
     require(trayDeleteSpecifiedMenu != nullptr &&
                 !trayDeleteSpecifiedMenu->menuAction()->icon().isNull(),
             "tray Delete Specified Group should expose the supplied icon");
     const auto deleteSpecifiedActionNamed = [windowGroupMenu,
-                                             trayDeleteSpecifiedMenu](const QString& name) {
-        QMetaObject::invokeMethod(windowGroupMenu, "aboutToShow", Qt::DirectConnection);
-        for (QAction* action : trayDeleteSpecifiedMenu->actions()) {
-            if (action != nullptr && action->objectName() == name) {
+                                             &trayDeleteSpecifiedMenu](const QString& name) {
+        auto* header = windowGroupMenu->findChild<QAction*>(
+            QStringLiteral("systemTrayDeleteSpecifiedGroupAction"));
+        trayDeleteSpecifiedMenu = qobject_cast<adqt::widgets::AdContextMenu*>(header->menu());
+        QMetaObject::invokeMethod(trayDeleteSpecifiedMenu, "aboutToShow", Qt::DirectConnection);
+        for (QAction* action : trayDeleteSpecifiedMenu->actions())
+            if (action->objectName() == name)
                 return action;
-            }
-        }
         return static_cast<QAction*>(nullptr);
     };
     const auto requireTrayModalCentered = [](adqt::widgets::AdModal* modal, const char* message) {
@@ -1035,7 +1023,8 @@ int main(int argc, char* argv[]) {
     };
     const QList<QAction*> initialGroupActions = windowGroupMenu->actions();
     require(initialGroupActions.indexOf(trayDeleteEmpty) + 1 ==
-                initialGroupActions.indexOf(trayDeleteSpecifiedMenu->menuAction()),
+                initialGroupActions.indexOf(windowGroupMenu->findChild<QAction*>(
+                    QStringLiteral("systemTrayDeleteSpecifiedGroupAction"))),
             "tray Delete Specified Group should sit directly below Delete Empty Groups");
     requireGroupAction(
         trayDeleteSpecifiedMenu,
@@ -1156,11 +1145,7 @@ int main(int argc, char* argv[]) {
     require(trayGroupCreated, "accepting the tray New Group dialog should create the group");
 
 #ifdef Q_OS_MACOS
-    // A synthetic Qt activation has no NSStatusBarButton to present a native menu.
     // Real status-item presentation and placement are covered by the Cocoa fixture.
-    trayIcon->activated(QSystemTrayIcon::Context);
-    require(trayIcon->contextMenu() == nullptr && !menu->isPopupVisible(),
-            "a context signal without a native status-item event must not open a detached popup");
 #endif
 
     int screenshotRequests = 0;
@@ -1232,8 +1217,6 @@ int main(int argc, char* argv[]) {
     require(controller.middleClickAction() == QStringLiteral("screenshot_fixed"),
             "invalid middle click must fall back to capture and pin");
     trayIcon->activated(QSystemTrayIcon::Trigger);
-    trayIcon->activated(QSystemTrayIcon::Context);
-    menu->dismissPopup();
     trayIcon->activated(QSystemTrayIcon::DoubleClick);
     trayIcon->activated(QSystemTrayIcon::MiddleClick);
     trayIcon->activated(QSystemTrayIcon::Unknown);
@@ -1411,7 +1394,8 @@ int main(int argc, char* argv[]) {
     requireActionText(groupActionNamed(QStringLiteral("systemTrayDeleteEmptyGroupsAction")),
                       QStringLiteral("\u5220\u9664\u7a7a\u5206\u7ec4"),
                       "tray Delete Empty Groups should translate to Simplified Chinese");
-    requireActionText(trayDeleteSpecifiedMenu->menuAction(),
+    requireActionText(windowGroupMenu->findChild<QAction*>(
+                          QStringLiteral("systemTrayDeleteSpecifiedGroupAction")),
                       QStringLiteral("\u5220\u9664\u6307\u5b9a\u5206\u7ec4"),
                       "tray Delete Specified Group should translate to Simplified Chinese");
     requireActionText(
@@ -1481,7 +1465,8 @@ int main(int argc, char* argv[]) {
     requireActionText(groupActionNamed(QStringLiteral("systemTrayDeleteEmptyGroupsAction")),
                       QStringLiteral("\u522a\u9664\u7a7a\u7fa4\u7d44"),
                       "tray Delete Empty Groups should translate to Traditional Chinese");
-    requireActionText(trayDeleteSpecifiedMenu->menuAction(),
+    requireActionText(windowGroupMenu->findChild<QAction*>(
+                          QStringLiteral("systemTrayDeleteSpecifiedGroupAction")),
                       QStringLiteral("\u522a\u9664\u6307\u5b9a\u7fa4\u7d44"),
                       "tray Delete Specified Group should translate to Traditional Chinese");
     requireActionText(
@@ -1491,7 +1476,22 @@ int main(int argc, char* argv[]) {
     controller.setGlobalShortcuts(snow_shot::presentation::GlobalShortcutAction::Screenshot, {});
     requireActionText(screenshotMenuAction, QStringLiteral("\u622a\u5716"),
                       "clearing a global shortcut should remove its tray menu hint");
-    verifyTraySkins(menu, windowGroupMenu, trayDeleteSpecifiedMenu, storageDirectory);
+    menu->dismissPopup();
+    drainMenus();
+    const auto beforeContext = quickActions.size();
+    trayIcon->activated(QSystemTrayIcon::Context);
+#ifndef Q_OS_MACOS
+    QPointer<adqt::widgets::AdContextMenu> requested = controller.createContextMenu();
+    require(requested && requested->isPopupVisible(), "a tray context request creates a popup");
+    requested->dismissPopup();
+    drainMenus();
+    require(!requested, "a tray context session releases its menu after dismissal");
+#else
+    drainMenus();
+    require(!hasTrayMenu(), "a synthetic Context cancels its unpresented native session");
+#endif
+    require(quickActions.size() == beforeContext, "right-click never dispatches a click action");
+    verifyTraySkins(controller, storageDirectory);
     snow_shot::storage::ApplicationStorage::instance().shutdown();
     return 0;
 }

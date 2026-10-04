@@ -36,6 +36,7 @@
 #include <QImage>
 #include <QColorSpace>
 #include <QPainter>
+#include <QPointer>
 #include <QRegion>
 #include <QScopeGuard>
 #include <QStringList>
@@ -811,7 +812,7 @@ void moreMenuOffersPinAndDelete() {
     };
     hover(more);
     flushEvents();
-    auto* menu = visibleMenu(pinnableEntry);
+    QPointer<adqt::widgets::AdContextMenu> menu = visibleMenu(pinnableEntry);
     require(menu != nullptr && menu->actions().size() == 2 && !menu->nativeMenuEnabled(),
             "hovering More must show the shared widget action menu");
     QAction* pin = menu->actions().at(0);
@@ -829,7 +830,8 @@ void moreMenuOffersPinAndDelete() {
             "an open More menu must keep its own action labels when the language changes");
     activate(menu, pin);
     flushEvents();
-    require(pinnedId == QStringLiteral("record-0") && !menu->isPopupVisible(),
+    QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+    require(pinnedId == QStringLiteral("record-0") && !menu,
             "Pin to screen must request that history entry and close the menu");
 
     auto* plainMore = plainEntry->findChild<adqt::widgets::AdButton*>(
@@ -851,9 +853,10 @@ void moreMenuOffersPinAndDelete() {
     require(menu != nullptr, "More must reopen its action menu");
     activate(menu, menu->actions().at(1));
     flushEvents();
+    QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
     adqt::widgets::AdButton* confirmDelete =
         confirmation->button(adqt::widgets::AdPopconfirm::StandardButton::Ok);
-    require(confirmation->isVisible() && confirmDelete != nullptr && !menu->isPopupVisible(),
+    require(confirmation->isVisible() && confirmDelete != nullptr && !menu,
             "Delete must close the action menu and ask for confirmation");
     confirmDelete->click();
     flushEvents();
@@ -1122,6 +1125,12 @@ int main(int argc, char** argv) {
                 .initialize({temporary.path(), temporary.path(), 8000})
                 .success,
             "isolated application storage must initialize");
+    if (application.arguments().contains(QStringLiteral("--context-menu-only"))) {
+        moreMenuOffersPinAndDelete();
+        storage::ApplicationStorage::instance().shutdown();
+        QCoreApplication::removeTranslator(&englishTranslator);
+        return 0;
+    }
     historyThemeChangesDoNotRestyleTwice();
     historyRowsRespectSkinMask();
     continuousHistoryPreview();
