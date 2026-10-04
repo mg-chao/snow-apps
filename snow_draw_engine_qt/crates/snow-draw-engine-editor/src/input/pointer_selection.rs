@@ -14,6 +14,13 @@ impl Editor {
         document: &DocumentModel,
         event: PointerEvent,
     ) -> Result<InteractionOutput, ErrorCode> {
+        if self.selection_pointer_button() == Some(PointerButton::Secondary)
+            && !event
+                .buttons
+                .contains(snow_draw_engine_interaction::PointerButtons::SECONDARY)
+        {
+            return self.handle_select_pointer_cancel(document, event);
+        }
         if let InteractionState::MarqueeSelection(state) = &self.state.interaction {
             if state.pointer_id != event.pointer_id {
                 return Ok(InteractionOutput::default());
@@ -52,6 +59,7 @@ impl Editor {
             self.state.interaction = InteractionState::EditingSelection(
                 self.begin_selection_edit_state(BeginSelectionEditRequest {
                     pointer_id: event.pointer_id,
+                    button: state.button,
                     original_elements: state.original_elements,
                     original_arrows: state.original_arrows,
                     original_bounds: state.original_bounds,
@@ -165,6 +173,12 @@ impl Editor {
         document: &DocumentModel,
         event: PointerEvent,
     ) -> Result<InteractionOutput, ErrorCode> {
+        if let Some(button) = self.selection_pointer_button()
+            && event.button != Some(button)
+            && !(button == PointerButton::Primary && event.button.is_none())
+        {
+            return Ok(InteractionOutput::default());
+        }
         if let InteractionState::MarqueeSelection(state) = &self.state.interaction {
             if state.pointer_id != event.pointer_id {
                 return Ok(InteractionOutput::default());

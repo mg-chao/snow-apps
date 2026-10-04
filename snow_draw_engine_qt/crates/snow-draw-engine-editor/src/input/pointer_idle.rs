@@ -61,6 +61,7 @@ impl Editor {
                 InteractionState::PendingSelectionMove(PendingSelectionMoveState {
                     duplicate: false,
                     pointer_id: request.pointer_id,
+                    button: request.button,
                     original_elements: request.original_elements,
                     original_arrows: request.original_arrows,
                     original_bounds: request.original_bounds,
@@ -71,6 +72,7 @@ impl Editor {
             _ => InteractionState::EditingSelection(self.begin_selection_edit_state(
                 BeginSelectionEditRequest {
                     pointer_id: request.pointer_id,
+                    button: request.button,
                     original_elements: request.original_elements,
                     original_arrows: request.original_arrows,
                     original_bounds: request.original_bounds,
@@ -184,6 +186,7 @@ impl Editor {
         );
         self.begin_selection_interaction(BeginSelectionInteractionRequest {
             pointer_id: event.pointer_id,
+            button: event.button.unwrap_or(PointerButton::Primary),
             start_view_position: event.position,
             original_elements,
             original_arrows,
@@ -218,6 +221,7 @@ impl Editor {
         );
         self.begin_selection_interaction(BeginSelectionInteractionRequest {
             pointer_id: event.pointer_id,
+            button: event.button.unwrap_or(PointerButton::Primary),
             start_view_position: event.position,
             original_elements,
             original_arrows,

@@ -14,6 +14,12 @@ PressPlan planPress(const PressRequest& request) {
     }
 
     plan.shouldFocusWidget = true;
+    if (request.button == Qt::RightButton && request.rightQuickSelectionEligible) {
+        plan.shouldCommitTextEditor = request.textEditorActive;
+        plan.shouldRestoreSelectionOnCommit = request.textEditorActive;
+        plan.shouldDispatchToEngine = true;
+        return plan;
+    }
     using snow_canvas_widget_selection_hit_testing::SelectionInteractionTarget;
     const bool copySelectedText =
         isSelectedTextCopyGesture(request.button, request.modifiers) &&

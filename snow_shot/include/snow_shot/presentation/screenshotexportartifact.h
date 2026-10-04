@@ -106,6 +106,7 @@ class ScreenshotExportArtifact final : public QObject {
     using ImageCallback = std::function<void(ScreenshotExportImageResult)>;
     using EncodingCallback = std::function<void(ScreenshotExportEncodingResult)>;
     using ClipboardCallback = std::function<void(ScreenshotExportClipboardResult)>;
+    using ClipboardFileCallback = std::function<void(std::unique_ptr<QMimeData>, QString)>;
 
     explicit ScreenshotExportArtifact(ScreenshotExportSource source, QObject* parent = nullptr);
     ScreenshotExportArtifact(ScreenshotExportSource source,
@@ -131,6 +132,12 @@ class ScreenshotExportArtifact final : public QObject {
     [[nodiscard]] bool requestPng(QObject* receiver, ScreenshotCompressionLevel compression,
                                   EncodingCallback callback);
     [[nodiscard]] bool requestClipboard(QObject* receiver, ClipboardCallback callback);
+    [[nodiscard]] bool requestClipboardFile(QObject* receiver, ScreenshotImageFileFormat format,
+                                            QString filenameFormat,
+                                            ScreenshotImageEncodingOptions encoding,
+                                            ClipboardFileCallback callback,
+                                            ScreenshotPdfOptions pdf = {},
+                                            QDateTime requestedAt = {});
     [[nodiscard]] std::optional<ScreenshotClipboardPlacement> clipboardPlacement() const;
     [[nodiscard]] std::optional<ScreenshotClipboardAppearance> clipboardAppearance() const;
     // Used by file-URL clipboard publications after the export has completed.
@@ -161,6 +168,12 @@ class ScreenshotExportArtifact final : public QObject {
     [[nodiscard]] bool requestFileSource(ScreenshotImageFileFormat format,
                                          ScreenshotCompressionLevel compression,
                                          FileSourceCallback callback);
+    [[nodiscard]] bool requestFileSave(QObject* receiver, QStringList directories,
+                                       ScreenshotImageFileFormat format, QString filenameFormat,
+                                       ScreenshotImageEncodingOptions encoding,
+                                       ScreenshotExportCoordinator::Completion callback,
+                                       ScreenshotPdfOptions pdf, QDateTime requestedAt,
+                                       ScreenshotExportCoordinator::Priority priority);
     struct Impl;
     std::unique_ptr<Impl> m_impl;
 

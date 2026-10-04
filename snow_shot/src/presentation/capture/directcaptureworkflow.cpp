@@ -64,10 +64,7 @@ void DirectCaptureWorkflow::startNext() {
             return;
         }
         self->m_frame = std::move(frame);
-        if (self->m_queue.front().copyFile)
-            self->save();
-        else
-            self->copy();
+        self->copy();
     };
     if (!m_ports.acquire(m_queue.front(), complete))
         complete(DirectCaptureFrame{{}, {}, {}, 0, queueError()});
@@ -76,7 +73,7 @@ void DirectCaptureWorkflow::startNext() {
 void DirectCaptureWorkflow::save() {
     if (m_phase != Phase::Acquiring && m_phase != Phase::Copying)
         return;
-    if (!m_queue.front().autoSave && !m_queue.front().copyFile) {
+    if (!m_queue.front().autoSave) {
         publishHistory();
         return;
     }
@@ -86,26 +83,18 @@ void DirectCaptureWorkflow::save() {
     auto complete = [self, generation](QString path, QString error) {
         if (!self || self->m_generation != generation || self->m_phase != Phase::Saving)
             return;
-        const bool copyFile = self->m_queue.front().copyFile;
         if (path.isEmpty() || !error.isEmpty()) {
-            self->report(error.isEmpty() ? queueError() : error, !copyFile);
+            self->report(error.isEmpty() ? queueError() : error, true);
             if (!self || self->m_phase != Phase::Saving)
                 return;
-            if (copyFile) {
-                self->finish();
-                return;
-            }
         }
-        if (copyFile)
-            self->copy(path);
-        else
-            self->publishHistory();
+        self->publishHistory();
     };
     if (!m_ports.save(m_queue.front(), m_frame, complete))
         complete({}, queueError());
 }
 
-void DirectCaptureWorkflow::copy(const QString& path) {
+void DirectCaptureWorkflow::copy() {
     m_phase = Phase::Copying;
     const quint64 generation = m_generation;
     const QPointer<DirectCaptureWorkflow> self(this);
@@ -118,12 +107,9 @@ void DirectCaptureWorkflow::copy(const QString& path) {
                 return;
         }
         self->m_copySucceeded = error.isEmpty();
-        if (self->m_queue.front().copyFile)
-            self->publishHistory();
-        else
-            self->save();
+        self->save();
     };
-    if (!m_ports.copy(m_queue.front(), m_frame, path, complete))
+    if (!m_ports.copy(m_queue.front(), m_frame, complete))
         complete(queueError());
 }
 

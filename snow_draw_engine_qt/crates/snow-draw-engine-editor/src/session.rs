@@ -387,6 +387,18 @@ impl EditorSession {
         self.editor.hit_text_at(document, point)
     }
 
+    pub fn hit_quick_selection_at(
+        &self,
+        document: &DocumentModel,
+        view: &EditorViewportState,
+        point: Point<f64>,
+        button: snow_draw_engine_interaction::PointerButton,
+    ) -> Option<ElementId> {
+        let mut editor = self.editor.clone();
+        editor.view = *view;
+        editor.hit_quick_selection_at(document, point, button)
+    }
+
     pub fn selected_ids(&self) -> Vec<ElementId> {
         self.editor.selected_ids()
     }

@@ -65,9 +65,7 @@ struct DirectCapturePorts {
     std::function<bool(const DirectCaptureRequest&, const DirectCaptureFrame&,
                        std::function<void(QString, QString)>)>
         save;
-    std::function<bool(const DirectCaptureRequest&, const DirectCaptureFrame&, const QString&,
-                       Completion)>
-        copy;
+    std::function<bool(const DirectCaptureRequest&, const DirectCaptureFrame&, Completion)> copy;
     std::function<bool(const DirectCaptureRequest&, const DirectCaptureFrame&, Completion)> history;
     std::function<void(const QString&, bool)> report;
     std::function<void()> captureRequested;
@@ -85,7 +83,7 @@ class DirectCaptureWorkflow final : public QObject {
     enum class Phase { Idle, Acquiring, Saving, Copying, History, Stopped };
     void startNext();
     void save();
-    void copy(const QString& path = {});
+    void copy();
     void publishHistory();
     void finish();
     void report(const QString& error, bool warning = false);

@@ -4665,17 +4665,18 @@ void ScreenshotController::Impl::saveArtifactForCopy(
     const QPointer<ScreenshotController> receiver(&owner);
     std::erase_if(m_saveArtifacts, [](const auto& weak) { return weak.expired(); });
     m_saveArtifacts.push_back(artifact);
-    const bool scheduled = artifact->requestAutomaticSave(
-        &owner, ScreenshotImageFileService::automaticDirectories(settings.imageSaveDirectory()),
-        ScreenshotImageFileService::formatForKey(settings.imageFormat()),
-        settings.autoSaveFilenameFormat(),
-        snow_shot::presentation::screenshotEncodingOptions(settings),
-        [receiver, artifact, generation, copyFileToClipboard, historySource, historyCandidate,
-         scrolling](ScreenshotExportTaskResult result) mutable {
-            if (receiver.isNull() || receiver->m_impl == nullptr)
-                return;
-            auto& impl = *receiver->m_impl;
-            if (!copyFileToClipboard) {
+    const auto format = ScreenshotImageFileService::formatForKey(settings.imageFormat());
+    const auto encoding = snow_shot::presentation::screenshotEncodingOptions(settings);
+    const ScreenshotPdfOptions pdf{screenshot_pdf::pageSizeForKey(settings.pdfPageSize())};
+    const QString filenameFormat = settings.autoSaveFilenameFormat();
+    if (settings.autoSaveAfterCopy()) {
+        const bool scheduled = artifact->requestAutomaticSave(
+            &owner, ScreenshotImageFileService::automaticDirectories(settings.imageSaveDirectory()),
+            format, filenameFormat, encoding,
+            [receiver, artifact, generation](ScreenshotExportTaskResult result) {
+                if (receiver.isNull() || receiver->m_impl == nullptr)
+                    return;
+                auto& impl = *receiver->m_impl;
                 if (!result.succeeded() && impl.imageExportNotificationCurrent(generation)) {
                     impl.m_messages->warning(
                         QString::fromLatin1(kSaveMessageKey),
@@ -4683,27 +4684,43 @@ void ScreenshotController::Impl::saveArtifactForCopy(
                                                     "Automatic screenshot saving failed: %1")
                             .arg(result.error));
                 }
+            },
+            pdf);
+        if (!scheduled) {
+            m_messages->warning(
+                QString::fromLatin1(kSaveMessageKey),
+                QCoreApplication::translate(
+                    "ScreenshotController",
+                    "The screenshot will be copied, but automatic saving could not be queued"));
+        }
+    }
+    if (!copyFileToClipboard) {
+        copyArtifactToClipboard(std::move(artifact), generation, historySource,
+                                std::move(historyCandidate), scrolling);
+        return;
+    }
+    const bool scheduled = artifact->requestClipboardFile(
+        &owner, format, filenameFormat, encoding,
+        [receiver, artifact, generation, historySource, historyCandidate,
+         scrolling](std::unique_ptr<QMimeData> mime, QString error) mutable {
+            if (receiver.isNull() || receiver->m_impl == nullptr ||
+                !receiver->m_impl->imageExportCurrent(generation))
                 return;
-            }
-            if (!impl.imageExportCurrent(generation))
-                return;
-            if (!result.succeeded()) {
+            auto& impl = *receiver->m_impl;
+            if (!mime) {
                 if (impl.imageExportNotificationCurrent(generation)) {
                     impl.m_messages->error(
                         QString::fromLatin1(kCopyMessageKey),
                         QCoreApplication::translate("ScreenshotController",
                                                     "The screenshot could not be copied: %1")
-                            .arg(result.error));
+                            .arg(error));
                 }
                 impl.completeCopyExport(false, generation, historySource, historyCandidate,
                                         scrolling, artifact);
                 return;
             }
-            auto* mime = new QMimeData();
-            mime->setUrls({QUrl::fromLocalFile(QFileInfo(result.savedPath).absoluteFilePath())});
-            artifact->setClipboardFileMetadata(*mime, result.savedPath);
             const auto handle = impl.m_clipboardScope.commitMimeData(
-                QApplication::clipboard(), receiver, mime,
+                QApplication::clipboard(), receiver, mime.release(),
                 [receiver, artifact, generation, historySource, historyCandidate,
                  scrolling](ScreenshotClipboardCommitResult commit) mutable {
                     if (receiver.isNull() || receiver->m_impl == nullptr ||
@@ -4726,22 +4743,9 @@ void ScreenshotController::Impl::saveArtifactForCopy(
                                         scrolling, artifact);
             }
         },
-        ScreenshotPdfOptions{screenshot_pdf::pageSizeForKey(settings.pdfPageSize())});
+        pdf);
     if (!scheduled) {
-        if (copyFileToClipboard) {
-            completeCopyExport(false, generation, historySource, historyCandidate, scrolling,
-                               artifact);
-            return;
-        }
-        m_messages->warning(
-            QString::fromLatin1(kSaveMessageKey),
-            QCoreApplication::translate(
-                "ScreenshotController",
-                "The screenshot will be copied, but automatic saving could not be queued"));
-    }
-    if (!copyFileToClipboard) {
-        copyArtifactToClipboard(std::move(artifact), generation, historySource,
-                                std::move(historyCandidate), scrolling);
+        completeCopyExport(false, generation, historySource, historyCandidate, scrolling, artifact);
     }
 }
 

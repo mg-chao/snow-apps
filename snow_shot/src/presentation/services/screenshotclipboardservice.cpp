@@ -19,6 +19,7 @@
 #include <QPointer>
 #include <QThread>
 #include <QTimer>
+#include <QTemporaryDir>
 #include <QUrl>
 
 #include <algorithm>
@@ -40,6 +41,30 @@ struct ScreenshotClipboardCommitScopeState {
 };
 
 namespace {
+class TemporaryFileClipboardMimeData final : public QMimeData {
+  public:
+    explicit TemporaryFileClipboardMimeData(std::shared_ptr<QTemporaryDir> directory)
+        : m_directory(std::move(directory)) {
+        if (qobject_cast<QGuiApplication*>(QCoreApplication::instance())) {
+            connect(QCoreApplication::instance(), &QCoreApplication::aboutToQuit, this, [this] {
+                const auto* clipboard = QGuiApplication::clipboard();
+                if (m_directory && clipboard && clipboard->mimeData() == this) {
+                    // Native clipboards outlive the app. Leave the current file in system
+                    // temporary storage so shutdown does not invalidate an unpasted URL.
+                    m_directory->setAutoRemove(false);
+                }
+            });
+        }
+    }
+
+    [[nodiscard]] std::shared_ptr<QTemporaryDir> directory() const {
+        return m_directory;
+    }
+
+  private:
+    std::shared_ptr<QTemporaryDir> m_directory;
+};
+
 #if !defined(Q_OS_WIN)
 // Keep canonical PNG bytes for native consumers and lazily provide Qt's image
 // representation when a reader requests it. Decoded pixels belong to that reader.
@@ -701,9 +726,11 @@ ScreenshotClipboardService::commitMimeData(QClipboard* clipboard, QObject* recei
     const QList<QUrl> fileUrls = fileOnly ? mimeData->urls() : QList<QUrl>{};
     const QByteArray placementBytes = fileOnly ? mimeData->data(placementFormat) : QByteArray{};
     const QByteArray appearanceBytes = fileOnly ? mimeData->data(appearanceFormat) : QByteArray{};
+    const auto* temporaryMime = dynamic_cast<TemporaryFileClipboardMimeData*>(mimeData);
+    const auto directory = temporaryMime ? temporaryMime->directory() : nullptr;
     const QPointer<QClipboard> guardedClipboard(clipboard);
     auto attempt = [guardedClipboard, holder, publicationId, fileUrls, placementFormat,
-                    placementBytes, appearanceFormat, appearanceBytes]() {
+                    placementBytes, appearanceFormat, appearanceBytes, directory]() {
         if (publicationId != g_latestPublicationId.load(std::memory_order_acquire)) {
             return ClipboardPublishAttempt{};
         }
@@ -716,7 +743,8 @@ ScreenshotClipboardService::commitMimeData(QClipboard* clipboard, QObject* recei
         }
         if (!fileUrls.isEmpty()) {
             // Qt owns each attempted MIME object, including failed native publications.
-            auto* attemptMime = new QMimeData();
+            auto* attemptMime =
+                directory ? new TemporaryFileClipboardMimeData(directory) : new QMimeData();
             attemptMime->setUrls(fileUrls);
             if (!placementBytes.isEmpty())
                 attemptMime->setData(placementFormat, placementBytes);
@@ -735,6 +763,14 @@ ScreenshotClipboardService::commitMimeData(QClipboard* clipboard, QObject* recei
         new ClipboardCommitOperation(receiver, state, std::move(attempt), std::move(completion));
     operation->start();
     return ScreenshotClipboardCommitHandle(std::move(state));
+}
+
+std::unique_ptr<QMimeData>
+ScreenshotClipboardService::temporaryFileMimeData(const QString& path,
+                                                  std::shared_ptr<QTemporaryDir> directory) {
+    auto mime = std::make_unique<TemporaryFileClipboardMimeData>(std::move(directory));
+    mime->setUrls({QUrl::fromLocalFile(path)});
+    return mime;
 }
 
 bool ScreenshotClipboardService::publish(QClipboard* clipboard,

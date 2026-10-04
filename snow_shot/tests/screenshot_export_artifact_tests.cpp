@@ -434,6 +434,72 @@ void manualPngSavesUseTheirRequestedCompression() {
     }
 }
 
+void clipboardFilesUseTemporaryStorageAndKeepExportOptions() {
+    const QImage image = testImage();
+    QObject receiver;
+    QTemporaryDir output;
+    require(output.isValid(), "clipboard file export fixture unavailable");
+    const QDateTime requestedAt =
+        QDateTime::fromString(QStringLiteral("2026-10-04T12:34:56"), Qt::ISODate);
+    for (bool streaming : {false, true}) {
+        for (const auto format : {ScreenshotImageFileFormat::Png, ScreenshotImageFileFormat::Jpeg,
+                                  ScreenshotImageFileFormat::Bmp, ScreenshotImageFileFormat::Pdf}) {
+            auto artifact = std::make_unique<ScreenshotExportArtifact>(
+                ScreenshotExportSource::fromImage(image), ScreenshotCompressionLevel::Low,
+                ScreenshotExportArtifact::PngCachePolicy{streaming ? 1 : 64 * 1024 * 1024, {}});
+            const ScreenshotImageEncodingOptions encoding{35, ScreenshotCompressionLevel::High};
+            const QString filename = QStringLiteral("clipboard_{yyyy}-{MM}-{dd}_{HH}-{mm}-{ss}");
+            std::unique_ptr<QMimeData> mime;
+            bool copied = false;
+            require(artifact->requestClipboardFile(
+                        &receiver, format, filename, encoding,
+                        [&](std::unique_ptr<QMimeData> result, QString error) {
+                            require(result && error.isEmpty(), "temporary clipboard file failed");
+                            mime = std::move(result);
+                            copied = true;
+                        },
+                        {}, requestedAt),
+                    "temporary clipboard file request rejected");
+            processUntil([&] { return copied; });
+            require(mime->urls().size() == 1 && mime->urls().front().isLocalFile() &&
+                        !mime->hasImage(),
+                    "file copy must publish one local URL without image data");
+            const QString path = mime->urls().front().toLocalFile();
+            require(path.startsWith(QDir::tempPath() + QDir::separator()) &&
+                        QFileInfo(path).fileName() ==
+                            ScreenshotImageFileService::suggestedBaseName(filename, requestedAt) +
+                                QLatin1Char('.') + ScreenshotImageFileService::extension(format) &&
+                        QDir(output.path()).entryList(QDir::Files).isEmpty(),
+                    "clipboard files must use temporary storage and the requested filename");
+            artifact.reset();
+            QFile file(path);
+            require(file.open(QIODevice::ReadOnly),
+                    "clipboard files must outlive their source artifact");
+            const QByteArray bytes = file.readAll();
+            file.close();
+            if (format == ScreenshotImageFileFormat::Pdf) {
+                require(bytes.startsWith("%PDF-") && bytes.contains("/DCTDecode"),
+                        "temporary PDF must honor the requested quality");
+            } else {
+                const QString reference = output.filePath(
+                    QStringLiteral("reference.") + ScreenshotImageFileService::extension(format));
+                require(
+                    ScreenshotImageFileService::write(image, reference, format, {}, {}, encoding)
+                        .succeeded(),
+                    "clipboard file encoding reference failed");
+                QFile referenceFile(reference);
+                require(referenceFile.open(QIODevice::ReadOnly) && referenceFile.readAll() == bytes,
+                        "temporary file must retain the requested format and encoding settings");
+                referenceFile.close();
+                require(QFile::remove(reference), "reference file cleanup failed");
+            }
+            mime.reset();
+            require(!QFileInfo::exists(path) && !QFileInfo::exists(QFileInfo(path).path()),
+                    "discarded clipboard payloads must remove their temporary directory");
+        }
+    }
+}
+
 void automaticSavesUseRequestedEncoding() {
     const QImage image = testImage();
     QTemporaryDir directory;
@@ -1489,6 +1555,7 @@ int main(int argc, char** argv) {
             return EXIT_SUCCESS;
         }
         quickSaveUsesOnlyConfiguredOutput();
+        clipboardFilesUseTemporaryStorageAndKeepExportOptions();
         automaticSavesUseRequestedEncoding();
         clipboardUsesConfiguredCompression();
         manualPngSavesUseTheirRequestedCompression();

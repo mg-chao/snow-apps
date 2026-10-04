@@ -1,3 +1,4 @@
+#include "../../test-support/canvas_quick_selection_test_support.h"
 #include "physical_key_test_support.h"
 #include "snow_shot/presentation/screenrecordingareawindow.h"
 
@@ -1455,6 +1456,36 @@ void trimmingFreezesSizeAndMakesThePreviewDraggable() {
     require(!handle->isVisible(), "showing trim preview again must keep the drag handle hidden");
 }
 
+namespace {
+void recordingRightQuickSelection() {
+    ScreenRecordingAreaWindow area;
+    area.setRecordingRegion(testRecordingRegion());
+    area.show();
+    area.setInputMode(ScreenRecordingAreaWindow::InputMode::Drawing);
+    QApplication::processEvents();
+    auto* canvas = area.canvas();
+    canvas_quick_selection_test::drawStroke(*canvas);
+    canvas_quick_selection_test::selectAndDragStroke(*canvas);
+    int deactivations = 0;
+    QObject::connect(&area, &ScreenRecordingAreaWindow::drawingDeactivationRequested, &area,
+                     [&]() { ++deactivations; });
+    canvas_quick_selection_test::mouse(*canvas, QEvent::MouseButtonPress, {120, 135},
+                                       Qt::RightButton, Qt::RightButton);
+    canvas_quick_selection_test::mouse(*canvas, QEvent::MouseMove, {120, 160}, Qt::NoButton,
+                                       Qt::RightButton);
+    canvas_quick_selection_test::mouse(*canvas, QEvent::MouseButtonRelease, {120, 160},
+                                       Qt::LeftButton, Qt::RightButton);
+    PhysicalKeyEvent escape(QEvent::KeyPress, Qt::Key_Escape, Qt::NoModifier);
+    QApplication::sendEvent(canvas, &escape);
+    require(deactivations == 0 && canvas->hasQuickSelectionTargetAt({120, 135}, Qt::RightButton),
+            "Escape cancels right drag without leaving drawing mode");
+    PhysicalKeyEvent secondEscape(QEvent::KeyPress, Qt::Key_Escape, Qt::NoModifier);
+    QApplication::sendEvent(canvas, &secondEscape);
+    require(deactivations == 1, "next Escape can leave drawing mode");
+}
+
+} // namespace
+
 int main(int argc, char** argv) {
     QApplication application(argc, argv);
     QTemporaryDir storageDirectory;
@@ -1467,6 +1498,11 @@ int main(int argc, char** argv) {
                 .initialize({executableDirectory, storageDirectory.path(), 60000})
                 .success,
             "failed to initialize isolated recording area test storage");
+    if (application.arguments().contains(QStringLiteral("--right-quick-selection-only"))) {
+        recordingRightQuickSelection();
+        snow_shot::storage::ApplicationStorage::instance().shutdown();
+        return 0;
+    }
     if (application.arguments().contains(QStringLiteral("--trim-only"))) {
         trimmingFreezesSizeAndMakesThePreviewDraggable();
         snow_shot::storage::ApplicationStorage::instance().shutdown();

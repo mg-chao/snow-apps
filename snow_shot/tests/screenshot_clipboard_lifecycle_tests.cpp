@@ -7,6 +7,12 @@
 #include <QMimeData>
 #include <QPointer>
 #include <QTimer>
+#include <QDir>
+#include <QFile>
+#include <QFileInfo>
+#include <QTemporaryDir>
+#include <QUrl>
+#include <QProcess>
 
 #include <cstdlib>
 #include <iostream>
@@ -68,6 +74,65 @@ void abandonedReceiversReleaseInputsAndFinishHandles() {
             "destroying the receiver must release the queued input and finish its handle");
     QCoreApplication::processEvents();
     require(!called, "destroyed receivers must not receive completion callbacks");
+}
+
+void temporaryClipboardFilesFollowPublicationOwnership() {
+    for (bool cancel : {false, true}) {
+        auto receiver = std::make_unique<QObject>();
+        auto directory = std::make_shared<QTemporaryDir>(
+            QDir::temp().filePath(QStringLiteral("snow-shot-clipboard-test-XXXXXX")));
+        require(directory->isValid(), "temporary clipboard directory must be available");
+        const QString path = directory->filePath(QStringLiteral("image.png"));
+        QFile file(path);
+        require(file.open(QIODevice::WriteOnly) && file.write("image") == 5,
+                "temporary clipboard fixture must be writable");
+        file.close();
+        auto mime = ScreenshotClipboardService::temporaryFileMimeData(path, directory);
+        directory.reset();
+        QEventLoop loop;
+        bool completed = false;
+        const auto handle = ScreenshotClipboardService::commitMimeData(
+            QApplication::clipboard(), receiver.get(), mime.release(),
+            [&](ScreenshotClipboardCommitResult result) {
+                require(cancel ? result.failure == ScreenshotClipboardCommitFailure::Cancelled
+                               : result.succeeded(),
+                        "temporary file publication must report its actual outcome");
+                completed = true;
+                loop.quit();
+            });
+        require(handle.isValid() && QFileInfo::exists(path),
+                "queued publication must retain its temporary file");
+        if (cancel)
+            handle.cancel();
+        QTimer::singleShot(2000, &loop, &QEventLoop::quit);
+        loop.exec();
+        require(completed, "temporary file publication timed out");
+        receiver.reset();
+        QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+        if (!cancel) {
+            require(QFileInfo::exists(path) && QApplication::clipboard()->mimeData()->urls() ==
+                                                   QList<QUrl>{QUrl::fromLocalFile(path)},
+                    "published files must outlive the export receiver and commit operation");
+            QApplication::clipboard()->clear();
+        }
+        require(!QFileInfo::exists(path) && !QFileInfo::exists(QFileInfo(path).path()),
+                "cancelled or replaced publications must clean up their temporary directory");
+    }
+}
+
+void currentTemporaryClipboardFileSurvivesApplicationExit() {
+    QTemporaryDir directory;
+    require(directory.isValid(), "shutdown clipboard fixture must be available");
+    QProcess child;
+    child.start(QCoreApplication::applicationFilePath(),
+                {QStringLiteral("--temporary-file-shutdown"), directory.path(),
+                 QStringLiteral("-platform"), QStringLiteral("offscreen")});
+    require(child.waitForStarted(2000) && child.waitForFinished(5000) &&
+                child.exitStatus() == QProcess::NormalExit && child.exitCode() == 0,
+            "temporary clipboard shutdown process must complete successfully");
+    const QString path = QString::fromUtf8(child.readAllStandardOutput()).trimmed();
+    require(path.startsWith(directory.path() + QDir::separator()) && QFileInfo::exists(path),
+            "application exit must preserve the current temporary clipboard file for pasting");
 }
 
 void failedCommitsFinishHandles() {
@@ -349,9 +414,33 @@ void receiverDestructionDuringPublicationKeepsActiveInputsAlive(bool drainDeferr
 
 int main(int argc, char** argv) {
     QApplication app(argc, argv);
+    if (app.arguments().contains(QStringLiteral("--temporary-file-shutdown"))) {
+        const auto index = app.arguments().indexOf(QStringLiteral("--temporary-file-shutdown"));
+        auto directory = std::make_shared<QTemporaryDir>(
+            QDir(app.arguments().at(index + 1)).filePath(QStringLiteral("clipboard-XXXXXX")));
+        require(directory->isValid(), "shutdown clipboard directory must be available");
+        const QString path = directory->filePath(QStringLiteral("image.png"));
+        QFile file(path);
+        require(file.open(QIODevice::WriteOnly) && file.write("image") == 5,
+                "shutdown clipboard fixture must be writable");
+        file.close();
+        auto mime = ScreenshotClipboardService::temporaryFileMimeData(path, std::move(directory));
+        const auto handle = ScreenshotClipboardService::commitMimeData(
+            QApplication::clipboard(), &app, mime.release(),
+            [path](ScreenshotClipboardCommitResult result) {
+                require(result.succeeded(), "shutdown clipboard publication must succeed");
+                std::cout << path.toStdString() << '\n';
+                QCoreApplication::quit();
+            });
+        require(handle.isValid(), "shutdown clipboard publication must start");
+        QTimer::singleShot(2000, &app, [] { require(false, "shutdown publication timed out"); });
+        return app.exec();
+    }
     require(ScreenshotClipboardCommitHandle{}.isFinished(), "an empty handle has no pending work");
     commitCompletionMarksFinishedAndReleasesInputs();
     abandonedReceiversReleaseInputsAndFinishHandles();
+    temporaryClipboardFilesFollowPublicationOwnership();
+    currentTemporaryClipboardFileSurvivesApplicationExit();
     failedCommitsFinishHandles();
     scopedCommitsReleaseTrackingAndCallbacksOnEveryOutcome();
     scopedAbandonedAndRejectedCommitsReleaseOwnership();

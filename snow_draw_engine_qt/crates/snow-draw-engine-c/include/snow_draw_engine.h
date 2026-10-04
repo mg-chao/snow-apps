@@ -1366,6 +1366,13 @@ SnowError snow_viewport_create_text(SnowRuntime runtime, SnowViewport viewport, 
 SnowError snow_viewport_hit_text(SnowRuntime runtime, SnowViewport viewport, double canvas_x,
                                  double canvas_y, SnowElementId* out_id, uint8_t* out_hit);
 
+// Body selection only. Uses the viewport zoom and active tool scope; secondary
+// selection ignores the disabled-tools policy. Misses return out_hit = 0.
+SnowError snow_viewport_hit_quick_selection(SnowRuntime runtime, SnowViewport viewport,
+                                            double canvas_x, double canvas_y,
+                                            SnowPointerButton button, SnowElementId* out_id,
+                                            uint8_t* out_hit);
+
 SnowError snow_viewport_is_element_selected(SnowRuntime runtime, SnowViewport viewport,
                                             SnowElementId id, uint8_t* out_selected);
 

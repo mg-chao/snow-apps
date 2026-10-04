@@ -11,6 +11,14 @@ impl Editor {
         policy
     }
 
+    pub(crate) fn quick_selection_policy(&self, button: PointerButton) -> ToolPolicy {
+        let mut policy = self.tool_policy();
+        if button == PointerButton::Secondary {
+            policy.quick_selection_enabled = true;
+        }
+        policy
+    }
+
     /// Whether a press on empty canvas is currently spent on deselecting an
     /// existing selection instead of beginning the active tool's creation
     /// workflow. The empty-canvas press handler is the only caller: host

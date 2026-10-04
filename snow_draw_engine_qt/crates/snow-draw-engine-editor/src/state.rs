@@ -4,7 +4,7 @@ use snow_draw_engine_document::{
     ArrowData, ArrowSuggestedBinding, ElementId, ElementKind, FilterData, PenFilterData,
     RectangleData, SerialNumberData, TextData,
 };
-use snow_draw_engine_interaction::CursorStyle;
+use snow_draw_engine_interaction::{CursorStyle, PointerButton};
 use snow_draw_engine_model::DocumentModel;
 use std::collections::{HashMap, HashSet};
 
@@ -220,6 +220,7 @@ pub(crate) enum SelectionEditMode {
 pub(crate) struct EditSelectionState {
     pub(crate) duplicate: bool,
     pub(crate) pointer_id: u32,
+    pub(crate) button: PointerButton,
     pub(crate) original_elements: Vec<SelectionRectState>,
     pub(crate) preview_elements: Vec<SelectionRectState>,
     pub(crate) original_arrows: Vec<SelectionArrowState>,
@@ -231,6 +232,7 @@ pub(crate) struct EditSelectionState {
 
 pub(crate) struct BeginSelectionEditRequest {
     pub(crate) pointer_id: u32,
+    pub(crate) button: PointerButton,
     pub(crate) original_elements: Vec<SelectionRectState>,
     pub(crate) original_arrows: Vec<SelectionArrowState>,
     pub(crate) original_bounds: SelectionBounds,
@@ -241,6 +243,7 @@ pub(crate) struct BeginSelectionEditRequest {
 
 pub(crate) struct BeginSelectionInteractionRequest {
     pub(crate) pointer_id: u32,
+    pub(crate) button: PointerButton,
     pub(crate) start_view_position: Point<f64>,
     pub(crate) original_elements: Vec<SelectionRectState>,
     pub(crate) original_arrows: Vec<SelectionArrowState>,
@@ -254,6 +257,7 @@ pub(crate) struct BeginSelectionInteractionRequest {
 pub(crate) struct PendingSelectionMoveState {
     pub(crate) duplicate: bool,
     pub(crate) pointer_id: u32,
+    pub(crate) button: PointerButton,
     pub(crate) original_elements: Vec<SelectionRectState>,
     pub(crate) original_arrows: Vec<SelectionArrowState>,
     pub(crate) original_bounds: SelectionBounds,

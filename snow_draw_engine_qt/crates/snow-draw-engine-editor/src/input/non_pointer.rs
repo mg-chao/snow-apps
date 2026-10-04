@@ -113,6 +113,8 @@ impl Editor {
             return Ok(InteractionOutput::default());
         }
 
+        let cancel_secondary_selection = event.key_code == KeyCode::Escape
+            && self.selection_pointer_button() == Some(PointerButton::Secondary);
         let handled = match event.key_code {
             KeyCode::Character('z') | KeyCode::Character('Z') if event.modifiers.ctrl => {
                 if event.modifiers.shift {
@@ -137,7 +139,11 @@ impl Editor {
 
         Ok(InteractionOutput {
             consumed: handled,
-            capture: PointerCaptureCommand::NoChange,
+            capture: if cancel_secondary_selection {
+                self.release_capture_command()
+            } else {
+                PointerCaptureCommand::NoChange
+            },
             cursor: CursorCommand::NoChange,
         })
     }

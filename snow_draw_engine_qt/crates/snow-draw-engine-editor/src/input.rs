@@ -6,6 +6,7 @@ mod pointer_idle;
 mod pointer_intent;
 mod pointer_selection;
 mod policy;
+mod quick_selection;
 
 impl Editor {
     pub fn process_input(
@@ -37,6 +38,17 @@ impl Editor {
         document: &DocumentModel,
         event: PointerEvent,
     ) -> Result<InteractionOutput, ErrorCode> {
+        if self.selection_pointer_button() == Some(PointerButton::Secondary) {
+            return self.process_selection_pointer_event(document, event);
+        }
+        if matches!(
+            event.event_type,
+            PointerEventType::Down | PointerEventType::DoubleClick
+        ) && event.button == Some(PointerButton::Secondary)
+            && self.can_start_quick_selection()
+        {
+            return self.handle_secondary_selection_pointer_down(document, event);
+        }
         if self.state.active_tool == ActiveTool::AutoFilter {
             return self.process_auto_filter_pointer_event(document, event);
         }

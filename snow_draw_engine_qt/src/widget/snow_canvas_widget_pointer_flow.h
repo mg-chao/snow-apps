@@ -20,6 +20,7 @@ struct PressRequest {
     bool pointerHitsSelectedText = false;
     snow_canvas_widget_selection_hit_testing::SelectionInteractionTarget selectionTarget =
         snow_canvas_widget_selection_hit_testing::SelectionInteractionTarget::None;
+    bool rightQuickSelectionEligible = false;
 };
 
 struct PressPlan {
