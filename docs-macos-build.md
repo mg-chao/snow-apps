@@ -44,9 +44,11 @@ staging, use `cmake --install build/<preset> --component SnowShotMini --prefix
 The project tap is `mg-chao/homebrew-tap`. Stable releases update `snow-shot`;
 beta releases update `snow-shot@beta`, independently of the stable channel.
 Tags accept `v<version>` with an optional `_snow-shot` suffix; beta versions use
-`-beta` or `-beta.<number>`. Other prerelease versions are not supported. Initially,
-Homebrew installation supports Apple Silicon and macOS 15 or later only. Keep
-Homebrew current with `brew update`.
+`-beta` or `-beta.<number>`. Other prerelease versions are not supported.
+Homebrew installation supports Apple Silicon and Intel on macOS 15 or later
+when the matching release includes that architecture. Historical releases may
+contain only Apple Silicon packages. Snow Shot Mini remains Apple Silicon-only.
+Keep Homebrew current with `brew update`.
 
 ```sh
 brew update
@@ -380,7 +382,32 @@ scripts/build.sh snow-shot-macos-arm64-release --parallel 8
 `SNOW_QT_STATIC_DIR` takes precedence over `Qt6_DIR` for release and fast builds.
 Keep `Qt6_DIR` pointed at the shared kit for Debug and performance builds.
 
-Use `x64` and `macos-static-x64` for an Intel build. The static Qt script pins
+For an Intel build on either Intel or Apple Silicon, provision the x64 static
+dependencies and Qt kit separately:
+
+```sh
+scripts/bootstrap-macos.sh snow-shot-macos-x64-release --skip-qt-validation
+scripts/build-static-qt.sh --arch x64 \
+  --install-prefix "$HOME/Qt/6.12.0/macos-static-x64" --parallel 4
+export SNOW_QT_STATIC_DIR="$HOME/Qt/6.12.0/macos-static-x64/lib/cmake/Qt6"
+scripts/package-snow-shot.sh snow-shot-macos-x64-release --parallel 4
+```
+
+Apple Silicon x64 builds require Rosetta because Qt build tools and the OCR
+worker execute during the build. The entry points verify Rosetta before starting;
+if it is missing, install it with
+`softwareupdate --install-rosetta --agree-to-license`. The static Qt builder
+disables Qt's implicit cross-compilation mode for this direction and builds its
+own x64 tools. Its fresh configure avoids reusing a failed cross-compilation cache.
+Native Intel builds do not require Rosetta. The resulting package is
+`snow-shot-<version>-macos-x86_64.dmg` with an adjacent `.sha256` file; Mini is
+not built for Intel.
+
+The Intel static codec build keeps x264's assembly and 64-byte stack alignment,
+but emits native x264 objects to avoid conflicting LLVM LTO module flags. Qt,
+the application, and the other dependencies retain their LTO settings.
+
+The static Qt script pins
 the architecture and Qt's supported 14.4 library deployment target (the Snow Shot
 app still targets macOS 15.0), enables LTO and system libpng/zlib, installs Qt
 source-license metadata, disables the macOS-27-only `dup3` path for compatibility
@@ -431,6 +458,40 @@ SNOW_TEST_MACOS_BUNDLE=1 python3 scripts/test-macos-build-support.py MacOSBundle
 The native deployment fixture tests the packaging rules with a small Qt executable
 and a simulated versioned OCR library; it does not validate the full app.
 It requires CMake, Ninja, pkg-config and CPack on PATH.
+
+To validate a production static kit without QtTest or unrelated UI tests, use a
+separate tree with only the shared OCR and crash diagnostics tests enabled:
+
+```sh
+cmake --preset snow-shot-macos-x64-release \
+  -B build/snow-shot-macos-x64-validation \
+  -DQt6_DIR="$SNOW_QT_STATIC_DIR" \
+  -DSNOW_APPS_BUILD_TESTS=OFF -DSNOW_SHOT_BUILD_RUNTIME_TESTS=ON \
+  -DSNOW_APPS_PACKAGE_SNOW_SHOT=OFF
+cmake --build build/snow-shot-macos-x64-validation --parallel 4 \
+  --target snow-shot-ocr-assets-tests snow-shot-ocr-recognition-service-tests \
+  snow-shot-diagnostics-crash-tests
+ctest --test-dir build/snow-shot-macos-x64-validation --output-on-failure \
+  --no-tests=error \
+  -R '^(snow-shot-ocr-(assets|managed-runtime|cpu-recognition-service|process-lifecycle|storage-relocation)-tests|snow-shot-diagnostics-crash-tests)$'
+```
+
+Set `SNOW_QT_STATIC_DIR` to the audited x64 kit first and put the build tools on
+PATH, as for direct CMake use. The x64 test executables run through Rosetta on
+Apple Silicon; passing them does not qualify native Intel hardware. The focused
+option defaults to `OFF` and is independent of the general test option.
+
+Crash diagnostics need particular care under Rosetta. A [Crashpad maintainer
+documented that Rosetta 2 crash collection was unsupported in December
+2021](https://groups.google.com/a/chromium.org/g/crashpad-dev/c/kJSzcSaqqoY).
+In the current x64 validation on Apple Silicon with macOS 27.0.1, Crashpad startup
+succeeded but access and abort fixtures produced no minidump; the unchanged
+`snow-shot-diagnostics-crash-tests` failed its one-dump assertion. The same
+failure occurred with CTest explicitly running as x86_64. This is consistent
+with the documented limitation, although the precise current exception handoff
+failure has not been established. Keep this test enabled and run it on native
+Intel hardware before qualifying Intel crash capture. Passing OCR tests and
+package checks under Rosetta does not establish that qualification.
 
 Only run tests covering your change. Test presets exclude Windows-only,
 interactive, end-to-end and benchmark labels. Build a benchmark explicitly with
@@ -515,11 +576,12 @@ rebuild; use the run script's local signing identity for subsequent builds to
 avoid that identity change. Switching from ad-hoc to certificate signing requires
 granting permission to the new identity once; later rebuilds retain that grant.
 
-Apple Silicon OCR uses native CPU inference with all seven existing V4/V5/V6
-models. Both ARM64 editions bundle their worker and ONNX Runtime. Full also
-bundles Small V6; Mini bundles no model files. Missing selected models download
+macOS OCR uses CPU inference with all seven existing V4/V5/V6 models. Full on
+both architectures and Mini on ARM64 bundle their worker and ONNX Runtime.
+Full also bundles Small V6; Mini bundles no model files. Missing selected models download
 on demand into application storage. No OCR runtime code
-is downloaded on macOS. Intel OCR qualification is outside this delivery.
+is downloaded on macOS. An Intel package built on Apple Silicon is validated
+through Rosetta; that validation does not establish native Intel hardware qualification.
 The Windows updater/installer and DirectML remain Windows-only.
 
 macOS diagnostics use the shared rotating JSON log service and a bundled Crashpad
@@ -545,11 +607,11 @@ The crash fixtures use temporary storage and intentionally crash isolated childr
 The standalone `bootstrap-macos-media.sh` and `build-macos-media.sh` workflows
 remain available for media harness development.
 
-## Apple Silicon OCR validation
+## macOS OCR validation
 
 The runtime uses protocol 5. Its generated schema-3 manifest records
-`macos-arm64`, `delivery: bundled`, static linkage, the executable name, and the
-size/SHA-256 of the worker. ONNX Runtime is linked into the worker in release
+`macos-arm64` or `macos-x64`, `delivery: bundled`, static linkage, the executable
+name, and the size/SHA-256 of the worker. ONNX Runtime is linked into the worker in release
 packages; shared development builds still stage `libonnxruntime.dylib`. The
 existing Windows schema-2 manifest remains the
 source of the seven pinned model contracts; its Windows runtime is never staged

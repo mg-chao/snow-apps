@@ -8,6 +8,7 @@ import json
 import os
 from pathlib import Path
 import re
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -286,34 +287,61 @@ def check_local_asset(descriptor: dict, path: Path) -> None:
 
 def prepare_homebrew(release: dict, assets: dict[str, Path], output: Path) -> None:
     """Reproduce the distribution archive from local audited bytes and tagged source."""
-    if not any(name.endswith("-macos-arm64.dmg") for name in assets):
+    if not any(re.search(r"-macos-(?:arm64|x86_64|x64)\.dmg(?:\.sha256)?$", name)
+               for name in assets):
         return
     spec = importlib.util.spec_from_file_location(
         "snow_homebrew", Path(__file__).with_name("snow-shot-homebrew.py"))
     homebrew = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(homebrew)
     with tempfile.TemporaryDirectory(prefix="snow-homebrew-local-") as temporary:
-        source = Path(temporary)
+        source = Path(temporary) / "source"
+        staging = Path(temporary) / "assets"
+        packaged_output = Path(temporary) / "prepared"
+        staging.mkdir()
         for name in ("CMakeLists.txt", "scripts/install-snow-shot-macos.sh",
                      "scripts/prepare-snow-shot-homebrew.sh"):
             path = source / name
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_bytes(subprocess.check_output(("git", "show", f"{release['tag']}:{name}")))
+        for descriptor in release["assets"]:
+            check_local_asset(descriptor, assets[descriptor["name"]])
         metadata = {"tag_name": release["tag"], "draft": False,
                     "prerelease": "-" in release["tag"][1:-len("_snow-shot")],
                     "assets": [{"name": name, "digest": "sha256:" + sha256(path)}
                                for name, path in assets.items()]}
-        for edition in homebrew.products_for_release(metadata):
-            archive, _ = homebrew.package(metadata, source, next(iter(assets.values())).parent,
-                                          output, source / ('absent-' + edition + '-cask.rb'), edition)
-            descriptor = {"name": archive.name, "path": str(archive.resolve()),
-                          "size": archive.stat().st_size, "sha256": sha256(archive)}
-            old = next((item for item in release["assets"] if item["name"] == archive.name), None)
-            if old is not None:
-                if old["size"] != descriptor["size"] or old["sha256"] != descriptor["sha256"]:
-                    raise ValueError("Existing local Homebrew archive differs from tagged source")
-            else:
-                release["assets"].append(descriptor)
+        editions = homebrew.products_for_release(metadata)
+        for edition in editions:
+            for architecture in homebrew.architectures_for_release(
+                    metadata, homebrew.release_version(metadata), edition):
+                name = homebrew.required_assets(metadata, homebrew.release_version(metadata),
+                                               edition, architecture)
+                for candidate in (name, name + ".sha256"):
+                    if candidate in assets:
+                        shutil.copyfile(assets[candidate], staging / candidate)
+        prepared = []
+        packaged = []
+        for edition in editions:
+            archives, _ = homebrew.package_all(metadata, source, staging, packaged_output,
+                                               source / ('absent-' + edition + '-cask.rb'), edition)
+            for archive in archives:
+                descriptor = {"name": archive.name, "path": str((output / archive.name).resolve()),
+                              "size": archive.stat().st_size, "sha256": sha256(archive)}
+                old = next((item for item in release["assets"] if item["name"] == archive.name), None)
+                if old is not None:
+                    if old["size"] != descriptor["size"] or old["sha256"] != descriptor["sha256"]:
+                        raise ValueError("Existing local Homebrew archive differs from tagged source")
+                else:
+                    prepared.append(descriptor)
+                packaged.append(archive)
+        # A later product or architecture failure must leave release metadata unchanged.
+        output.mkdir(parents=True, exist_ok=True)
+        for archive in packaged:
+            shutil.copyfile(archive, output / archive.name)
+        (output / "Casks").mkdir(exist_ok=True)
+        for generated in (packaged_output / "Casks").iterdir():
+            shutil.copyfile(generated, output / "Casks" / generated.name)
+        release["assets"].extend(prepared)
 
 
 def verify_local_release(release: dict, assets: dict[str, Path], auditor: Path,

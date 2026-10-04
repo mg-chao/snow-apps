@@ -42,6 +42,17 @@ const QString kWindowsArchiveName =
     QStringLiteral("snow-ocr-runtime-1.0.9-%1.zip").arg(kWindowsPlatform);
 #ifdef Q_OS_MACOS
 const QString kWorkerName = QStringLiteral("snow-ocr-process");
+#if defined(Q_PROCESSOR_ARM_64)
+const QString kMacPlatform = QStringLiteral("macos-arm64");
+const QString kOtherMacPlatform = QStringLiteral("macos-x64");
+const QByteArray kMacHeader = QByteArray::fromHex("cffaedfe0c000001") + QByteArray(24, '\0');
+const QByteArray kOtherMacHeader = QByteArray::fromHex("cffaedfe07000001") + QByteArray(24, '\0');
+#else
+const QString kMacPlatform = QStringLiteral("macos-x64");
+const QString kOtherMacPlatform = QStringLiteral("macos-arm64");
+const QByteArray kMacHeader = QByteArray::fromHex("cffaedfe07000001") + QByteArray(24, '\0');
+const QByteArray kOtherMacHeader = QByteArray::fromHex("cffaedfe0c000001") + QByteArray(24, '\0');
+#endif
 #endif
 void require(bool condition, const char* message) {
     if (!condition) {
@@ -191,9 +202,8 @@ void writeAssetManifest(const QString& root, bool completePayload) {
                    QStringLiteral("ppocr_keys_v1.txt"), dictionary),
          }}};
 #ifdef Q_OS_MACOS
-    const QByteArray armHeader = QByteArray::fromHex("cffaedfe0c000001") + QByteArray(24, '\0');
-    const QByteArray macProcess = armHeader + process;
-    const QByteArray macLibrary = armHeader + directMl;
+    const QByteArray macProcess = kMacHeader + process;
+    const QByteArray macLibrary = kMacHeader + directMl;
     writeFixture(QDir(root).filePath(kWorkerName), macProcess);
     require(QFile::setPermissions(QDir(root).filePath(kWorkerName), QFileDevice::ReadOwner |
                                                                         QFileDevice::WriteOwner |
@@ -204,7 +214,7 @@ void writeAssetManifest(const QString& root, bool completePayload) {
     manifest.insert(
         QStringLiteral("runtime"),
         QJsonObject{{QStringLiteral("version"), QStringLiteral("1.0.9")},
-                    {QStringLiteral("platform"), QStringLiteral("macos-arm64")},
+                    {QStringLiteral("platform"), kMacPlatform},
                     {QStringLiteral("delivery"), QStringLiteral("bundled")},
                     {QStringLiteral("protocol"), 5},
                     {QStringLiteral("executable"), kWorkerName},
@@ -983,6 +993,11 @@ void macosBundledRuntimeTests() {
         runtime.insert(QStringLiteral("protocol"), 3);
         manifest.insert(QStringLiteral("runtime"), runtime);
     });
+    rejects([&](QJsonObject& manifest) {
+        auto runtime = manifest.value(QStringLiteral("runtime")).toObject();
+        runtime.insert(QStringLiteral("platform"), kOtherMacPlatform);
+        manifest.insert(QStringLiteral("runtime"), runtime);
+    });
     rejects([&](QJsonObject&) { QFile::remove(QDir(root.path()).filePath(kWorkerName)); });
     rejects([&](QJsonObject&) {
         QFile::setPermissions(QDir(root.path()).filePath(kWorkerName), QFileDevice::ReadOwner);
@@ -990,15 +1005,20 @@ void macosBundledRuntimeTests() {
     rejects([&](QJsonObject&) {
         writeFixture(QDir(root.path()).filePath(QStringLiteral("libonnxruntime.dylib")), "corrupt");
     });
-    rejects([&](QJsonObject& manifest) {
-        const QByteArray intel = QByteArray::fromHex("cffaedfe07000001") + QByteArray(32, '\0');
-        writeFixture(QDir(root.path()).filePath(QStringLiteral("libonnxruntime.dylib")), intel);
-        auto runtime = manifest.value(QStringLiteral("runtime")).toObject();
-        auto files = runtime.value(QStringLiteral("files")).toArray();
-        files.replace(1, assetFile(QStringLiteral("libonnxruntime.dylib"), intel));
-        runtime.insert(QStringLiteral("files"), files);
-        manifest.insert(QStringLiteral("runtime"), runtime);
-    });
+    for (const auto& name : {kWorkerName, QStringLiteral("libonnxruntime.dylib")}) {
+        rejects([&](QJsonObject& manifest) {
+            const QByteArray otherBinary = kOtherMacHeader + QByteArray("other-architecture");
+            writeFixture(QDir(root.path()).filePath(name), otherBinary);
+            auto runtime = manifest.value(QStringLiteral("runtime")).toObject();
+            auto files = runtime.value(QStringLiteral("files")).toArray();
+            for (int index = 0; index < files.size(); ++index) {
+                if (files.at(index).toObject().value(QStringLiteral("name")).toString() == name)
+                    files.replace(index, assetFile(name, otherBinary));
+            }
+            runtime.insert(QStringLiteral("files"), files);
+            manifest.insert(QStringLiteral("runtime"), runtime);
+        });
+    }
 
     // A read-only bundle must recognize offline without writing state alongside code.
     writeAssetManifest(root.path(), true);

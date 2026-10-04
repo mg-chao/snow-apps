@@ -1,6 +1,8 @@
 # Snow Shot Homebrew tap
 
-Apple Silicon and macOS 15 or later are required. After the first stable cask is published:
+Snow Shot supports Apple Silicon and Intel Macs running macOS 15 or later when
+the release provides the corresponding package. Snow Shot Mini requires Apple
+Silicon. After the first stable cask is published:
 
 ```sh
 brew update
@@ -46,3 +48,8 @@ The publisher verifies the downloaded DMG against GitHub's asset SHA-256 digest
 and the `.sha256` sidecar when present. At least one checksum source is required;
 if both exist, both must match. The Homebrew archive always includes a checksum
 sidecar for the installer, even when the original release uses only GitHub's digest.
+Each architecture has its own reproducible archive. Full casks select the Apple
+Silicon or Intel archive automatically when both are present; releases containing
+only one architecture retain that requirement. Existing archives and casks cannot
+change at the same version, so Intel support for an ARM64-only published version
+must be added in a new release.

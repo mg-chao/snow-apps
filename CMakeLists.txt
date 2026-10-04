@@ -63,6 +63,8 @@ if(SNOW_APPS_BUILD_SNOW_SHOT_MINI AND APPLE AND NOT CMAKE_OSX_ARCHITECTURES STRE
     message(FATAL_ERROR "Snow Shot Mini supports Apple Silicon (arm64) only on macOS")
 endif()
 option(SNOW_APPS_BUILD_TESTS "Build tests for all enabled projects." ON)
+option(SNOW_SHOT_BUILD_RUNTIME_TESTS
+    "Build focused OCR and crash diagnostics tests without unrelated test targets." OFF)
 option(SNOW_APPS_BUILD_BENCHMARKS "Build opt-in benchmark targets." OFF)
 option(SNOW_SHOT_SCROLLING_PERF_DETAIL "Compile detailed scrolling C++ and Rust timings." OFF)
 option(SNOW_APPS_STRICT_COMPILE "Enable strict warnings for all projects." ON)
@@ -162,7 +164,7 @@ unset(_snow_image_codec_value)
 unset(_snow_workspace_all_image_codecs)
 unset(_snow_workspace_image_codecs)
 
-if(SNOW_APPS_BUILD_TESTS)
+if(SNOW_APPS_BUILD_TESTS OR SNOW_SHOT_BUILD_RUNTIME_TESTS)
     enable_testing()
 endif()
 
@@ -327,7 +329,7 @@ function(_snow_apply_test_labels directory)
     endforeach()
 endfunction()
 
-if(SNOW_APPS_BUILD_TESTS)
+if(SNOW_APPS_BUILD_TESTS OR SNOW_SHOT_BUILD_RUNTIME_TESTS)
     _snow_apply_test_labels("${CMAKE_CURRENT_BINARY_DIR}")
 endif()
 

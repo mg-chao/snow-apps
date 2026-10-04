@@ -98,6 +98,7 @@ if(@SNOW_MACOS_OCR_ASSETS_ENABLED@)
     # Deployment has finalized and signed the nested Mach-O files. Pin those
     # final bytes, then seal the changed resources without re-signing the worker.
     execute_process(COMMAND "@Python3_EXECUTABLE@" "@SNOW_MACOS_OCR_TOOL@" finalize --deployed
+        --arch "@SNOW_MACOS_OCR_ARCH@"
         --manifest "@SNOW_MACOS_OCR_MANIFEST@"
         --runtime-dir "${_app}/Contents/MacOS"
         ${_snow_ocr_runtime_arguments}
@@ -105,6 +106,7 @@ if(@SNOW_MACOS_OCR_ASSETS_ENABLED@)
     execute_process(COMMAND /usr/bin/codesign --force --sign "${_snow_codesign_identity}" "${_app}"
         COMMAND_ERROR_IS_FATAL ANY)
     execute_process(COMMAND "@Python3_EXECUTABLE@" "@SNOW_MACOS_OCR_TOOL@" verify
+        --arch "@SNOW_MACOS_OCR_ARCH@"
         --manifest "@SNOW_MACOS_OCR_MANIFEST@"
         --runtime-dir "${_app}/Contents/MacOS" --app "${_app}"
         --report "@CMAKE_BINARY_DIR@/macos-ocr-verification.json"

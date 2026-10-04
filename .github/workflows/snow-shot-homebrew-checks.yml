@@ -48,9 +48,10 @@ jobs:
           path = Path(os.environ['CASK_FIXTURE'])
           path.parent.mkdir(parents=True)
           # Syntax/metadata fixture only: never uploaded, installed, or audited online.
-          path.write_text(helper.cask('1.2.3', '0' * 64), encoding='utf-8')
+          checksums = {'arm64': '0' * 64, 'x64': '1' * 64}
+          path.write_text(helper.cask('1.2.3', checksums), encoding='utf-8')
           path.with_name('snow-shot@beta.rb').write_text(
-              helper.cask('1.2.4-beta.2', '0' * 64, 'v1.2.4-beta.2'), encoding='utf-8')
+              helper.cask('1.2.4-beta.2', checksums, 'v1.2.4-beta.2'), encoding='utf-8')
           path.with_name('snow-shot-mini.rb').write_text(
               helper.cask('1.2.3', '0' * 64, edition='mini'), encoding='utf-8')
           path.with_name('snow-shot-mini@beta.rb').write_text(
@@ -61,14 +62,14 @@ jobs:
           brew trust --cask mg-chao/preflight/snow-shot
           # The official-tap declarative-only rule excludes supported third-party Ruby hooks.
           brew style --cask --except Cask/InstallSteps mg-chao/preflight/snow-shot
-          brew audit --cask mg-chao/preflight/snow-shot
+          brew audit --cask --arch=all mg-chao/preflight/snow-shot
           brew trust --cask mg-chao/preflight/snow-shot@beta
           brew style --cask --except Cask/InstallSteps mg-chao/preflight/snow-shot@beta
-          brew audit --cask mg-chao/preflight/snow-shot@beta
+          brew audit --cask --arch=all mg-chao/preflight/snow-shot@beta
           for cask in snow-shot-mini snow-shot-mini@beta; do
             brew trust --cask "mg-chao/preflight/$cask"
             brew style --cask --except Cask/InstallSteps "mg-chao/preflight/$cask"
-            brew audit --cask "mg-chao/preflight/$cask"
+            brew audit --cask --arch=all "mg-chao/preflight/$cask"
           done
       - name: Verify native preflight preserves the installing account
         run: brew ruby scripts/test-snow-shot-homebrew-preflight.rb "$GITHUB_WORKSPACE/scripts/prepare-snow-shot-homebrew.sh"

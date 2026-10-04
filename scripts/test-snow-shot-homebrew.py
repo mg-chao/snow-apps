@@ -248,6 +248,161 @@ load ARGV[0]
         (self.assets / (name + '.sha256')).write_text(sha + '  ' + name + '\n')
         self.release['assets'] += [dict(name=name), dict(name=name + '.sha256')]
 
+    def add_intel(self):
+        name = 'snow-shot-1.2.3-macos-x86_64.dmg'
+        (self.assets / name).write_bytes(b'intel dmg')
+        sha = brew.digest(self.assets / name)
+        (self.assets / (name + '.sha256')).write_text(sha + '  ' + name + '\n')
+        self.release['assets'] += [dict(name=name, digest='sha256:' + sha),
+                                   dict(name=name + '.sha256')]
+        return name
+
+    def test_dual_archives_preserve_arm_bytes_and_use_architecture_cask(self):
+        arm_archive, historical_cask = self.package()
+        historical_bytes = arm_archive.read_bytes()
+        intel = self.add_intel()
+        archives, generated = brew.package_all(self.release, self.source, self.assets,
+                                               self.output, self.current)
+        self.assertEqual([archive.name for archive in archives], [
+            'snow-shot-1.2.3-macos-arm64-homebrew.tar.gz',
+            'snow-shot-1.2.3-macos-x86_64-homebrew.tar.gz'])
+        self.assertEqual(archives[0].read_bytes(), historical_bytes)
+        self.assertEqual(brew.cask('1.2.3', brew.digest(archives[0])), historical_cask)
+        self.assertIn('arch arm: "arm64", intel: "x86_64"', generated)
+        self.assertIn(f'sha256 arm:   "{brew.digest(archives[0])}"', generated)
+        self.assertIn(f'intel: "{brew.digest(archives[1])}"', generated)
+        self.assertIn('macos-#{arch}-homebrew.tar.gz', generated)
+        self.assertIn('staged_path.join("snow-shot-#{version}-macos-#{arch}.dmg")', generated)
+        self.assertNotIn('depends_on arch:', generated)
+        with tarfile.open(archives[1]) as tar:
+            self.assertEqual(tar.extractfile(intel).read(), b'intel dmg')
+            self.assertEqual(tar.extractfile(intel + '.sha256').read(),
+                             (brew.digest(self.assets / intel) + '  ' + intel + '\n').encode())
+        first = [archive.read_bytes() for archive in archives]
+        self.assertEqual(brew.package_all(self.release, self.source, self.assets,
+                                          self.output, self.current), (archives, generated))
+        self.assertEqual(first, [archive.read_bytes() for archive in archives])
+
+    @unittest.skipUnless(shutil.which('ruby'), 'Requires Ruby for preflight execution')
+    def test_dual_cask_preflight_selects_the_local_architecture(self):
+        self.add_intel()
+        brew.package_all(self.release, self.source, self.assets, self.output, self.current)
+        runner = self.root / 'dual-preflight.rb'
+        runner.write_text('''require "json"
+require "pathname"
+class Fixture
+  def version(value = nil)
+    @version = value if value
+    @version
+  end
+  def arch(arm: nil, intel: nil)
+    @arch = ARGV[2] == "x64" ? intel : arm if arm || intel
+    @arch
+  end
+  def method_missing(*); end
+  def staged_path; Pathname(ARGV[1]); end
+  def preflight(&block); instance_eval(&block); end
+  def system_command(executable, **options)
+    puts JSON.generate([executable, options])
+  end
+end
+def cask(_name, &block)
+  Fixture.new.instance_eval(&block)
+end
+load ARGV[0]
+''')
+        for architecture, suffix in brew.ARCHITECTURES.items():
+            with self.subTest(architecture=architecture):
+                result = subprocess.run(['ruby', str(runner),
+                                         str(self.output / 'Casks/snow-shot.rb'),
+                                         str(self.output), architecture],
+                                        capture_output=True, text=True, check=True)
+                _, options = json.loads(result.stdout)
+                self.assertEqual(options['args'][1],
+                                 str(self.output / f'snow-shot-1.2.3-macos-{suffix}.dmg'))
+
+    def test_intel_only_release_with_windows_mini_prepares_only_full(self):
+        self.release['assets'] = []
+        intel = self.add_intel()
+        self.release['assets'] += [dict(name='snow-shot-mini-1.2.3-windows-x64-online.exe'),
+                                   dict(name='latest-version-mini.json')]
+        self.assertEqual(brew.products_for_release(self.release), ['full'])
+        archives, generated = brew.package_all(self.release, self.source, self.assets,
+                                               self.output, self.current)
+        self.assertEqual(len(archives), 1)
+        self.assertIn('macos-x86_64-homebrew.tar.gz', generated)
+        self.assertIn('depends_on arch: :x86_64', generated)
+        self.assertIn(f'staged_path.join("{intel.replace("1.2.3", "#{version}")}")', generated)
+        self.assertNotIn('#{arch}', generated)
+        self.assertEqual(brew.package(self.release, self.source, self.assets, self.output,
+                                     self.current, architecture='x64'), (archives[0], generated))
+        with patch.object(brew, 'run', side_effect=self.fake_run) as run:
+            brew.publish('v1.2.3_snow-shot', self.source, self.tap, self.output)
+        uploads = [call.args for call in run.call_args_list
+                   if call.args[:3] == ('gh', 'release', 'upload')]
+        self.assertEqual(len(uploads), 1)
+        self.assertFalse((self.tap / 'Casks/snow-shot-mini.rb').exists())
+
+    def test_architecture_discovery_rejects_partial_duplicate_and_invalid_intel_assets(self):
+        name = self.add_intel()
+        valid = self.release['assets']
+        for assets in ([asset for asset in valid if asset['name'] != name],
+                       [dict(name=name)] + [asset for asset in valid
+                                            if not asset['name'].startswith(name)],
+                       valid + [dict(name=name)], valid + [dict(name=name + '.sha256')],
+                       [asset | dict(digest='sha512:' + self.sha) if asset['name'] == name
+                        else asset for asset in valid]):
+            with self.subTest(assets=assets), self.assertRaises(ValueError):
+                brew.products_for_release(self.release | dict(assets=assets))
+
+    def test_intel_checksum_failure_prevents_all_archives(self):
+        name = self.add_intel()
+        (self.assets / (name + '.sha256')).write_text('0' * 64)
+        with self.assertRaisesRegex(ValueError, 'checksum mismatch'):
+            brew.package_all(self.release, self.source, self.assets, self.output, self.current)
+        self.assertFalse(self.output.exists())
+
+    def test_mini_intel_assets_are_rejected(self):
+        self.add_mini()
+        for suffix in ('.dmg', '.dmg.sha256', '-homebrew.tar.gz'):
+            name = 'snow-shot-mini-1.2.3-macos-x86_64' + suffix
+            self.release['assets'].append(dict(name=name))
+            with self.subTest(name=name), self.assertRaisesRegex(ValueError, 'only.*ARM64'):
+                brew.products_for_release(self.release)
+            self.release['assets'].pop()
+        with self.assertRaisesRegex(ValueError, 'only.*ARM64'):
+            brew.cask('1.2.3', {'arm64': self.sha, 'x64': self.sha}, edition='mini')
+
+    def test_adding_intel_to_same_cask_version_is_rejected(self):
+        _, generated = self.package()
+        self.current.parent.mkdir(parents=True)
+        self.current.write_text(generated)
+        self.add_intel()
+        with patch.object(brew, 'run', side_effect=self.fake_run) as run:
+            with self.assertRaisesRegex(ValueError, 'already published'):
+                brew.publish('v1.2.3_snow-shot', self.source, self.tap, self.output)
+        self.assertEqual(self.current.read_text(), generated)
+        self.assertFalse(any(call.args[:3] == ('gh', 'release', 'upload')
+                             for call in run.call_args_list))
+
+    def test_dual_full_and_arm_mini_publish_all_archives_before_tap_changes(self):
+        self.add_intel()
+        self.add_mini()
+        with patch.object(brew, 'run', side_effect=self.fake_run) as run:
+            brew.publish('v1.2.3_snow-shot', self.source, self.tap, self.output)
+        commands = [call.args for call in run.call_args_list]
+        downloads = next(args for args in commands if args[:3] == ('gh', 'release', 'download'))
+        for name in (self.name, 'snow-shot-1.2.3-macos-x86_64.dmg',
+                     'snow-shot-mini-1.2.3-macos-arm64.dmg'):
+            self.assertIn(name, downloads)
+            self.assertIn(name + '.sha256', downloads)
+        uploads = [i for i, args in enumerate(commands) if args[:3] == ('gh', 'release', 'upload')]
+        tap_change = next(i for i, args in enumerate(commands) if args[:2] == ('git', 'add'))
+        self.assertEqual(len(uploads), 3)
+        self.assertLess(max(uploads), tap_change)
+        self.assertIn('macos-#{arch}', self.current.read_text())
+        self.assertIn('depends_on arch: :arm64', (self.tap / 'Casks/snow-shot-mini.rb').read_text())
+
     def test_mini_identity_and_paired_publication(self):
         self.add_mini()
         archive, cask = brew.package(self.release, self.source, self.assets, self.output,

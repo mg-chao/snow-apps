@@ -36,6 +36,7 @@ if(NOT SNOW_MACOS_CODESIGN_IDENTITY STREQUAL "-")
 endif()
 add_custom_target(snow_shot_mini-ocr-assets
     COMMAND "${Python3_EXECUTABLE}" "${SNOW_MACOS_OCR_TOOL}" stage
+        --arch "${SNOW_MACOS_OCR_ARCH}"
         --manifest "${SNOW_MACOS_OCR_MANIFEST}"
         --runtime-dir "$<TARGET_FILE_DIR:snow_shot_mini>"
         --worker "$<TARGET_FILE:snow_ocr_process>" --runtime-only ${_snow_macos_ocr_runtime_arguments}

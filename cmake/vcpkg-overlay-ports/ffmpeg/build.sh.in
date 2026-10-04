@@ -120,7 +120,12 @@ build_ffmpeg() {
 
 cd "$PATH_TO_BUILD_DIR"
 
-if [ $OSX_ARCH_COUNT -gt 0 ]; then
+if [ $OSX_ARCH_COUNT -eq 1 ]; then
+    # A thin macOS build is already installed for the requested architecture.
+    # Collecting and merging it is unnecessary, and Apple's lipo can crash while
+    # inspecting static archives containing LTO objects.
+    build_ffmpeg "$OSX_ARCHS" --extra-cflags=-arch --extra-cflags="$OSX_ARCHS" --extra-ldflags=-arch --extra-ldflags="$OSX_ARCHS"
+elif [ $OSX_ARCH_COUNT -gt 1 ]; then
     for ARCH in $OSX_ARCHS; do
         echo "=== CLEANING FOR $ARCH ==="
 

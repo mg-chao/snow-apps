@@ -8,6 +8,7 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 import json
 from pathlib import Path
 import subprocess
+import tarfile
 import tempfile
 import threading
 import unittest
@@ -402,6 +403,109 @@ class PublisherTests(unittest.TestCase):
             publisher.prepare_homebrew(self.release, publisher.local_assets(self.release), self.directory)
         self.assertEqual(self.release["assets"][-1], first)
         self.assertEqual(first["name"], "snow-shot-1.2.3-macos-arm64-homebrew.tar.gz")
+
+    def tagged_homebrew_source(self, edition_aware=True):
+        sources = {"CMakeLists.txt": b'set(SNOW_SHOT_VERSION "1.2.3")\n',
+                   "scripts/install-snow-shot-macos.sh": b"--prepare-app)\n" +
+                   (b"--edition)\n" if edition_aware else b""),
+                   "scripts/prepare-snow-shot-homebrew.sh": b"#!/bin/sh\n"}
+        def fake_git(command):
+            self.assertEqual(command[:2], ("git", "show"))
+            tag, name = command[2].split(":", 1)
+            self.assertEqual(tag, TAG)
+            return sources[name]
+        return patch.object(publisher.subprocess, "check_output", side_effect=fake_git)
+
+    def add_homebrew_dmg(self, architecture, edition="snow-shot"):
+        name = f"{edition}-1.2.3-macos-{architecture}.dmg"
+        path = self.add_asset(name, (edition + " " + architecture + " audited dmg").encode())
+        self.add_asset(name + ".sha256", (publisher.sha256(path) + "  " + name + "\n").encode())
+        return path
+
+    def test_homebrew_preparation_supports_intel_only_with_windows_mini(self):
+        dmg = self.add_homebrew_dmg("x86_64")
+        self.add_asset("snow-shot-mini-1.2.3-windows-x64-online.exe", b"windows mini")
+        self.add_asset("latest-version-mini.json", b"mini signed metadata")
+        with self.tagged_homebrew_source(), patch.object(publisher, "urlopen") as remote:
+            publisher.prepare_homebrew(self.release, publisher.local_assets(self.release), self.directory)
+            remote.assert_not_called()
+        self.assertEqual(self.release["assets"][-1]["name"],
+                         "snow-shot-1.2.3-macos-x86_64-homebrew.tar.gz")
+        with tarfile.open(self.release["assets"][-1]["path"]) as archive:
+            self.assertEqual(archive.extractfile(dmg.name).read(), dmg.read_bytes())
+        self.assertIn("depends_on arch: :x86_64", (self.directory / "Casks/snow-shot.rb").read_text())
+        self.assertFalse((self.directory / "Casks/snow-shot-mini.rb").exists())
+
+    def test_homebrew_preparation_reproduces_dual_full_and_arm_mini_from_separate_paths(self):
+        self.add_homebrew_dmg("arm64")
+        intel = self.add_homebrew_dmg("x86_64")
+        self.add_homebrew_dmg("arm64", "snow-shot-mini")
+        separate = self.directory / "separate-input"
+        separate.mkdir()
+        intel = intel.rename(separate / intel.name)
+        next(item for item in self.release["assets"] if item["name"] == intel.name)["path"] = str(intel)
+        before = len(self.release["assets"])
+        output = self.directory / "homebrew-output"
+        with self.tagged_homebrew_source(), patch.object(publisher, "urlopen") as remote:
+            publisher.prepare_homebrew(self.release, publisher.local_assets(self.release), output)
+            first = [item.copy() for item in self.release["assets"][before:]]
+            publisher.prepare_homebrew(self.release, publisher.local_assets(self.release), output)
+            remote.assert_not_called()
+        self.assertEqual(self.release["assets"][before:], first)
+        self.assertEqual([item["name"] for item in first], [
+            "snow-shot-1.2.3-macos-arm64-homebrew.tar.gz",
+            "snow-shot-1.2.3-macos-x86_64-homebrew.tar.gz",
+            "snow-shot-mini-1.2.3-macos-arm64-homebrew.tar.gz"])
+        for descriptor in first:
+            self.assertEqual(publisher.sha256(Path(descriptor["path"])), descriptor["sha256"])
+        self.assertIn('arch arm: "arm64", intel: "x86_64"', (output / "Casks/snow-shot.rb").read_text())
+        self.assertIn('depends_on arch: :arm64', (output / "Casks/snow-shot-mini.rb").read_text())
+
+    def test_homebrew_preparation_keeps_metadata_and_archives_on_late_product_failure(self):
+        self.add_homebrew_dmg("arm64")
+        self.add_homebrew_dmg("x86_64")
+        self.add_homebrew_dmg("arm64", "snow-shot-mini")
+        before = [item.copy() for item in self.release["assets"]]
+        output = self.directory / "homebrew-output"
+        with self.tagged_homebrew_source(edition_aware=False):
+            with self.assertRaisesRegex(ValueError, "edition-aware"):
+                publisher.prepare_homebrew(self.release, publisher.local_assets(self.release), output)
+        self.assertEqual(self.release["assets"], before)
+        self.assertFalse(output.exists())
+
+    def test_homebrew_preparation_never_overwrites_audited_archive_on_conflict(self):
+        self.add_homebrew_dmg("arm64")
+        existing = self.add_asset("snow-shot-1.2.3-macos-arm64-homebrew.tar.gz", b"original immutable archive")
+        before = [item.copy() for item in self.release["assets"]]
+        with self.tagged_homebrew_source():
+            with self.assertRaisesRegex(ValueError, "archive differs"):
+                publisher.prepare_homebrew(self.release, publisher.local_assets(self.release), self.directory)
+        self.assertEqual(self.release["assets"], before)
+        self.assertEqual(existing.read_bytes(), b"original immutable archive")
+
+    def test_homebrew_preparation_rechecks_audited_inputs(self):
+        dmg = self.add_homebrew_dmg("x86_64")
+        assets = publisher.local_assets(self.release)
+        dmg.write_bytes(b"changed after audit")
+        before = [item.copy() for item in self.release["assets"]]
+        with self.tagged_homebrew_source():
+            with self.assertRaisesRegex(ValueError, "differs from its audit"):
+                publisher.prepare_homebrew(self.release, assets, self.directory / "homebrew-output")
+        self.assertEqual(self.release["assets"], before)
+
+    def test_homebrew_preparation_rejects_intel_mini_and_partial_architecture_pairs(self):
+        self.add_homebrew_dmg("arm64")
+        self.add_homebrew_dmg("x86_64", "snow-shot-mini")
+        before = [item.copy() for item in self.release["assets"]]
+        with self.tagged_homebrew_source():
+            with self.assertRaisesRegex(ValueError, "only.*ARM64"):
+                publisher.prepare_homebrew(self.release, publisher.local_assets(self.release), self.directory)
+        self.assertEqual(self.release["assets"], before)
+        self.release["assets"] = [item for item in before if not item["name"].startswith("snow-shot-mini-")]
+        self.add_asset("snow-shot-1.2.3-macos-x86_64.dmg.sha256", b"0" * 64)
+        with self.tagged_homebrew_source():
+            with self.assertRaisesRegex(ValueError, "Missing or duplicate"):
+                publisher.prepare_homebrew(self.release, publisher.local_assets(self.release), self.directory)
 
     def test_api_reads_authenticate_and_retry_only_transient_read_failures(self):
         url = publisher.GITEE_API + "?per_page=100"

@@ -15,6 +15,7 @@ param(
     [string]$MacIdentityFile,
     [string]$MacKnownHostsFile,
     [string]$MacProjectDirectory,
+    [ValidateNotNullOrEmpty()][ValidateSet('arm64', 'x64')][string[]]$MacArchitectures = @('arm64', 'x64'),
     [switch]$AuditOnly,
     [string]$ReleaseNotesPath,
     [switch]$SkipGitee,
@@ -48,6 +49,19 @@ if ($MacHost) {
         throw 'MacProjectDirectory must be an absolute POSIX path without spaces or traversal.'
     }
 } elseif ($MacProjectDirectory) { throw 'MacHost is required with MacProjectDirectory.' }
+$MacArchitectures = @($MacArchitectures | ForEach-Object { $_.ToLowerInvariant() })
+if (@($MacArchitectures | Select-Object -Unique).Count -ne $MacArchitectures.Count) {
+    throw 'MacArchitectures must not contain duplicate architectures.'
+}
+$macPackages = @(if ($MacHost) {
+    foreach ($macArchitecture in $MacArchitectures) {
+        $assetArchitecture = if ($macArchitecture -eq 'arm64') { 'arm64' } else { 'x86_64' }
+        $products = if ($macArchitecture -eq 'arm64') { @('snow-shot', 'snow-shot-mini') } else { @('snow-shot') }
+        foreach ($product in $products) {
+            [pscustomobject]@{ Product = $product; Architecture = $macArchitecture; AssetArchitecture = $assetArchitecture }
+        }
+    }
+})
 $destinations = if ($SkipGitee -or $Operation -eq 'Verify') { 'GitHub' } else { 'GitHub and Gitee' }
 if (-not $PSCmdlet.ShouldProcess("Snow Shot $Version on $destinations", $Operation)) {
         foreach ($architecture in @('x64', 'arm64')) {
@@ -60,11 +74,12 @@ if (-not $PSCmdlet.ShouldProcess("Snow Shot $Version on $destinations", $Operati
                 $suffixes | ForEach-Object { Write-Output "$base$_" }
             }
             Write-Output $product.Feed
-            if ($MacHost -and $architecture -eq 'x64') {
-                Write-Output "$($product.Product)-$Version-macos-arm64.dmg"
-                Write-Output "$($product.Product)-$Version-macos-arm64.dmg.sha256"
-            }
         }
+        }
+        foreach ($package in $macPackages) {
+            $name = "$($package.Product)-$Version-macos-$($package.AssetArchitecture).dmg"
+            Write-Output $name
+            Write-Output "$name.sha256"
         }
         if ($MacHost) { Write-Output 'install-snow-shot-macos.sh' }
         if ($DeployWebsite -and $Operation -eq 'Publish' -and -not $AuditOnly) {
@@ -85,6 +100,7 @@ if ($Operation -eq 'Verify') {
         $release = Get-SnowGitHubRelease $GitHubRepository $Version
         if (-not $release -or $release.draft) { throw 'Expected a published GitHub release.' }
         $verifyDirectory = Join-Path $repo "artifacts/github-verify-$([guid]::NewGuid().ToString('N'))"
+        $verifiedMacPackages = @{}
         foreach ($architecture in @(Get-SnowShotReleaseArchitectures $release $Version)) {
         foreach ($edition in @(Get-SnowShotReleaseEditions $release $Version)) {
             $product = Get-SnowShotEdition $edition $architecture
@@ -104,9 +120,10 @@ if ($Operation -eq 'Verify') {
                     throw "GitHub package failed signed verification: $name"
                 }
             }
-            foreach ($arch in @('arm64', 'x64')) {
+            foreach ($arch in @('arm64', 'x86_64')) {
                 $name = "$($product.Product)-$Version-macos-$arch.dmg"
                 if (@($release.assets | Where-Object { $_.name -ceq $name }).Count -eq 0) { continue }
+                if ($verifiedMacPackages.ContainsKey($name)) { continue }
                 $image = Get-SnowGitHubAsset $GitHubRepository $Version $name $verifyDirectory
                 $checksum = Get-SnowGitHubAsset $GitHubRepository $Version "$name.sha256" $verifyDirectory
                 $expected = ((Get-Content -Raw $checksum).Trim() -split '\s+')[0]
@@ -114,6 +131,7 @@ if ($Operation -eq 'Verify') {
                     (Get-FileHash $image -Algorithm SHA256).Hash.ToLowerInvariant() -cne $expected.ToLowerInvariant()) {
                     throw "GitHub macOS checksum failed: $name"
                 }
+                $verifiedMacPackages[$name] = $true
             }
         }
         }
@@ -163,11 +181,24 @@ try {
             MacProjectDirectory = $MacProjectDirectory; Version = $Version; Parallelism = $Parallelism;
             OutputDirectory = (Join-Path $releaseDirectory 'setup'); SkipBuild = [bool]$SkipBuild }
         $macJob = Start-Job -ScriptBlock {
-            param($script, $parameters)
+            param($script, $parameters, $architectures)
             $ErrorActionPreference = 'Stop'
-            & $script @parameters
-        } -ArgumentList (Join-Path $PSScriptRoot 'package-snow-shot-remote-macos.ps1'), $macParameters
-        Write-Output "macOS packaging runs alongside Windows. Log: $releaseDirectory/setup/macos-build.log"
+            # The remote checkout serializes release builds. Keep both macOS
+            # architectures inside one job while Windows packages concurrently.
+            $source = $null
+            foreach ($architecture in $architectures) {
+                $parameters.Architecture = $architecture
+                & $script @parameters
+                $metadataBase = if ($architecture -eq 'arm64') { 'macos-build' } else { 'macos-x64-build' }
+                $packaged = Get-Content -Raw (Join-Path $parameters.OutputDirectory "$metadataBase.json") | ConvertFrom-Json
+                if ($source -and ($source.commit -cne $packaged.source.commit -or
+                    $source.workingTreeSha256 -cne $packaged.source.workingTreeSha256)) {
+                    throw 'macOS architectures were packaged from different source checkouts.'
+                }
+                $source = $packaged.source
+            }
+        } -ArgumentList (Join-Path $PSScriptRoot 'package-snow-shot-remote-macos.ps1'), $macParameters, $MacArchitectures
+        Write-Output "macOS packaging ($($MacArchitectures -join ', ')) runs alongside Windows. Logs: $releaseDirectory/setup/macos*-build.log"
     }
     if (-not $SkipBuild) {
         foreach ($architecture in @('x64', 'arm64')) {
@@ -181,7 +212,7 @@ try {
     if ($macJob) {
         try {
             $macJob | Wait-Job | Receive-Job -ErrorAction Stop
-            if ($macJob.State -ne 'Completed') { throw "macOS packaging failed; see $releaseDirectory/setup/macos-build.log" }
+            if ($macJob.State -ne 'Completed') { throw "macOS packaging failed; see $releaseDirectory/setup/macos*-build.log" }
         } finally { Remove-Job $macJob }
     }
 }
@@ -296,10 +327,12 @@ if ($AuditOnly) {
     return
 }
     if ($MacHost) {
-        foreach ($prefix in @('snow-shot', 'snow-shot-mini')) {
-            $name = "$prefix-$Version-macos-arm64.dmg"
+        foreach ($package in $macPackages) {
+            $prefix = $package.Product
+            $assetArchitecture = $package.AssetArchitecture
+            $name = "$prefix-$Version-macos-$assetArchitecture.dmg"
             $path = Join-Path $releaseDirectory $name
-            Copy-Item -LiteralPath (Join-Path $releaseDirectory "setup/${prefix}_macos-arm64.dmg") -Destination $path
+            Copy-Item -LiteralPath (Join-Path $releaseDirectory "setup/${prefix}_macos-$assetArchitecture.dmg") -Destination $path
             $hash = (Get-FileHash $path -Algorithm SHA256).Hash.ToLowerInvariant()
             [IO.File]::WriteAllText("$path.sha256", "$hash  $name`n", [Text.UTF8Encoding]::new($false))
             $githubAssets[$name] = $path

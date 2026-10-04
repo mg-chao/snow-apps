@@ -81,6 +81,8 @@ endif()
 
 option(SNOW_SHOT_ENABLE_STRICT_COMPILE "Enable strict compiler warnings and treat warnings as errors." ON)
 option(SNOW_SHOT_BUILD_TESTS "Build Snow Shot test executables." OFF)
+option(SNOW_SHOT_BUILD_RUNTIME_TESTS
+    "Build focused OCR and crash diagnostics tests without unrelated test targets." OFF)
 option(SNOW_SHOT_BUILD_IMAGE_CODEC_SMOKE_TEST
     "Build the Snow Shot image-codec smoke test without the full QtTest suite." OFF)
 option(SNOW_SHOT_BUILD_BENCHMARKS "Build opt-in native Snow Shot benchmarks." OFF)
@@ -1446,13 +1448,8 @@ if(APPLE)
     list(APPEND PROJECT_HEADERS include/snow_shot/platform/macos/applicationactivation.h)
 endif()
 
-if(MSVC AND SNOW_WINDOWS_ARCHITECTURE STREQUAL "x64")
-    set_source_files_properties(src/presentation/services/screenshotclipboarddibdecoder_avx2.cpp
-        PROPERTIES COMPILE_OPTIONS "/arch:AVX2")
-elseif(NOT MSVC AND CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86_64|AMD64|amd64|i.86)$")
-    set_source_files_properties(src/presentation/services/screenshotclipboarddibdecoder_avx2.cpp
-        PROPERTIES COMPILE_OPTIONS "-mavx2")
-endif()
+include(SnowSimd)
+snow_configure_avx2_sources(src/presentation/services/screenshotclipboarddibdecoder_avx2.cpp)
 
 set(PROJECT_RCC_SOURCES)
 
@@ -1584,6 +1581,8 @@ set(SNOW_SHOT_RECOGNITION_IMAGE_RENDER_SOURCES
     src/presentation/ocr/screenshotocrtextlayout.cpp
     src/presentation/ocr/screenshotocrpresentation.cpp
     src/presentation/overlay/screenshotselectionshadowrenderer.cpp)
+
+include("${CMAKE_CURRENT_SOURCE_DIR}/../cmake/SnowShotRuntimeTests.cmake")
 
 if(SNOW_SHOT_BUILD_TESTS)
     # Private C ABI names keep these fixtures' mocks distinct from the real
@@ -1725,29 +1724,7 @@ if(SNOW_SHOT_BUILD_TESTS)
         set_tests_properties(snow-shot-diagnostics-tests PROPERTIES
             ENVIRONMENT "PATH=$<TARGET_FILE_DIR:Qt6::Core>\;$ENV{PATH}")
     endif()
-    if(WIN32 OR APPLE)
-        add_executable(snow-shot-diagnostics-crash-tests tests/diagnostics_crash_tests.cpp)
-        snow_add_rust_static_library(snow_diagnostics_test
-            PACKAGE snow-diagnostics-test
-            MANIFEST_DIR "${SNOW_SHOT_CAPTURE_CRATES_DIR}"
-            OUTPUT_NAME snow_diagnostics_test
-            STRIP_MSVC_DIRECTIVES)
-        target_link_libraries(snow-shot-diagnostics-crash-tests PRIVATE snow_diagnostics_test)
-        target_link_libraries(snow-shot-diagnostics-crash-tests PRIVATE snow_shot_diagnostics snow_shot_crash_bridge)
-        if(APPLE)
-            set_property(TARGET snow-shot-diagnostics-crash-tests PROPERTY
-                SNOW_RUST_BUNDLE_OVERRIDE snow_diagnostics_test)
-        endif()
-        target_compile_definitions(snow-shot-diagnostics-crash-tests PRIVATE
-            SNOW_TEST_CRASHPAD_HANDLER="${SNOW_CRASHPAD_HANDLER}")
-        add_test(NAME snow-shot-diagnostics-crash-tests COMMAND snow-shot-diagnostics-crash-tests)
-        set_tests_properties(snow-shot-diagnostics-crash-tests PROPERTIES LABELS "unit;crash" TIMEOUT 180)
-        if(APPLE)
-            set_property(TEST snow-shot-diagnostics-crash-tests APPEND PROPERTY LABELS macos)
-        else()
-            set_property(TEST snow-shot-diagnostics-crash-tests APPEND PROPERTY LABELS windows)
-        endif()
-    endif()
+    snow_shot_add_diagnostics_crash_tests()
 
     snow_shot_offscreen_qpa_environment(_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT)
 
@@ -6528,110 +6505,7 @@ if(SNOW_SHOT_BUILD_TESTS)
         )
     endif()
 
-    add_executable(snow-shot-ocr-recognition-service-tests
-        tests/screenshot_ocr_recognition_service_tests.cpp
-        tests/screenshot_ocr_process_lifecycle_tests.cpp
-        include/snow_shot/presentation/screenshotocrpresentation.h
-        include/snow_shot/presentation/screenshotocrrecognitionservice.h
-        include/snow_shot/presentation/screenshotocrassets.h
-        src/presentation/ocr/screenshotocrpresentation.cpp
-        src/presentation/ocr/screenshotocrrecognitionservice.cpp
-        src/presentation/ocr/screenshotocrassets.cpp
-        src/presentation/ocr/screenshotocrvisuals.cpp
-    )
-    target_include_directories(snow-shot-ocr-recognition-service-tests PRIVATE
-        "${CMAKE_CURRENT_SOURCE_DIR}/include"
-        "${SNOW_DRAW_ENGINE_SOURCE_DIR}/include"
-    )
-    target_compile_definitions(snow-shot-ocr-recognition-service-tests PRIVATE
-        SNOW_TEST_OCR_EXECUTABLE="$<TARGET_FILE:snow_ocr_process>")
-    if(SNOW_SHOT_BUILD_BENCHMARKS AND CMAKE_BUILD_TYPE STREQUAL "Release")
-        target_compile_definitions(snow-shot-ocr-recognition-service-tests PRIVATE SNOW_TEST_OCR_PERFORMANCE=1)
-    endif()
-    target_link_libraries(snow-shot-ocr-recognition-service-tests PRIVATE
-        snow_shot_diagnostics
-        snow_draw_engine_qt_canvas
-        Qt6::Core
-        Qt6::Gui
-        Qt6::Network
-        MINIZIP::minizip-ng
-    )
-    if(WIN32)
-        target_link_libraries(snow-shot-ocr-recognition-service-tests PRIVATE
-            bcrypt
-            ntdll
-        )
-        target_compile_definitions(snow-shot-ocr-recognition-service-tests PRIVATE
-            SNOW_TEST_CRASHPAD_HANDLER="${SNOW_CRASHPAD_HANDLER}")
-        add_test(NAME snow-shot-ocr-crash-tests COMMAND snow-shot-ocr-recognition-service-tests --native-crash)
-        set_tests_properties(snow-shot-ocr-crash-tests PROPERTIES TIMEOUT 60 LABELS "unit;windows")
-    endif()
-    add_test(
-        NAME snow-shot-ocr-cpu-recognition-service-tests
-        COMMAND snow-shot-ocr-recognition-service-tests
-    )
-    add_test(
-        NAME snow-shot-ocr-directml-recognition-service-tests
-        COMMAND snow-shot-ocr-recognition-service-tests --directml
-    )
-    set_tests_properties(snow-shot-ocr-cpu-recognition-service-tests PROPERTIES
-        TIMEOUT 120
-        ENVIRONMENT_MODIFICATION
-            "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
-    )
-    set_tests_properties(snow-shot-ocr-directml-recognition-service-tests PROPERTIES
-        TIMEOUT 120
-        ENVIRONMENT_MODIFICATION
-            "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
-    )
-    add_test(NAME snow-shot-ocr-storage-relocation-tests
-        COMMAND snow-shot-ocr-recognition-service-tests --storage-relocation-only)
-    set_tests_properties(snow-shot-ocr-storage-relocation-tests PROPERTIES LABELS "unit" TIMEOUT 30
-        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
-    add_test(NAME snow-shot-ocr-process-lifecycle-tests
-        COMMAND snow-shot-ocr-recognition-service-tests --process-lifecycle)
-    add_executable(snow-shot-ocr-assets-tests
-        tests/screenshot_ocr_assets_tests.cpp
-        include/snow_shot/presentation/screenshotocrassets.h
-        src/presentation/ocr/screenshotocrassets.cpp)
-    target_include_directories(snow-shot-ocr-assets-tests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/include")
-    target_link_libraries(snow-shot-ocr-assets-tests PRIVATE Qt6::Core Qt6::Network MINIZIP::minizip-ng)
-    if(APPLE)
-        target_link_libraries(snow-shot-ocr-assets-tests PRIVATE snow_shot_rust_ffi_selector)
-    endif()
-    add_test(NAME snow-shot-ocr-assets-tests COMMAND snow-shot-ocr-assets-tests)
-    set_tests_properties(snow-shot-ocr-assets-tests PROPERTIES TIMEOUT 60 LABELS "unit"
-        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
-    if(WIN32 AND SNOW_WINDOWS_ARCHITECTURE STREQUAL "x64")
-        add_executable(snow-shot-ocr-assets-arm64-contract-tests
-            tests/screenshot_ocr_assets_arm64_tests.cpp
-            tests/screenshot_ocr_assets_arm64_fixture.cpp
-            include/snow_shot/presentation/screenshotocrassets.h)
-        target_include_directories(snow-shot-ocr-assets-arm64-contract-tests PRIVATE
-            "${CMAKE_CURRENT_SOURCE_DIR}/include")
-        target_link_libraries(snow-shot-ocr-assets-arm64-contract-tests PRIVATE
-            Qt6::Core Qt6::Network MINIZIP::minizip-ng)
-        add_test(NAME snow-shot-ocr-assets-arm64-contract-tests
-            COMMAND snow-shot-ocr-assets-arm64-contract-tests)
-        set_tests_properties(snow-shot-ocr-assets-arm64-contract-tests PROPERTIES
-            TIMEOUT 60 LABELS "unit;windows"
-            ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
-    endif()
-    add_test(NAME snow-shot-ocr-managed-runtime-tests
-        COMMAND snow-shot-ocr-recognition-service-tests --managed-runtime-only)
-    add_test(NAME snow-shot-ocr-managed-directml-runtime-tests
-        COMMAND snow-shot-ocr-recognition-service-tests --managed-runtime-only --directml)
-    set_tests_properties(snow-shot-ocr-managed-runtime-tests
-        snow-shot-ocr-managed-directml-runtime-tests PROPERTIES
-        TIMEOUT 60 LABELS "unit;windows"
-        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
-    if(APPLE)
-        set_tests_properties(snow-shot-ocr-managed-runtime-tests PROPERTIES LABELS "unit")
-        set_tests_properties(snow-shot-ocr-directml-recognition-service-tests PROPERTIES LABELS "unit;windows")
-    endif()
-    set_tests_properties(snow-shot-ocr-process-lifecycle-tests PROPERTIES TIMEOUT 30
-        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
-    add_dependencies(snow-shot-ocr-recognition-service-tests snow_ocr_process)
+    snow_shot_add_ocr_runtime_tests()
 
     add_executable(snow-shot-ocr-layout-tests
         tests/screenshot_ocr_layout_tests.cpp

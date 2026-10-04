@@ -43,6 +43,8 @@ namespace {
 constexpr auto kManifestName = "asset-manifest.json";
 #if defined(Q_OS_MACOS) && defined(Q_PROCESSOR_ARM_64)
 constexpr auto kPlatform = "macos-arm64";
+#elif defined(Q_OS_MACOS) && defined(Q_PROCESSOR_X86_64)
+constexpr auto kPlatform = "macos-x64";
 #elif defined(Q_OS_WIN) && defined(Q_PROCESSOR_ARM_64)
 constexpr auto kPlatform = "windows-arm64";
 #else
@@ -257,7 +259,7 @@ std::optional<Descriptor> loadDescriptor(const QString& root, QString* error) {
     result.runtimeVersion = runtime.value(QStringLiteral("version")).toString();
     result.platform = runtime.value(QStringLiteral("platform")).toString();
     const bool staticRuntime = runtime.value(QStringLiteral("static")).toBool();
-#if defined(Q_OS_MACOS) && defined(Q_PROCESSOR_ARM_64)
+#ifdef Q_OS_MACOS
     result.bundled = true;
 #endif
 #if defined(SNOW_SHOT_OCR_STATIC_ONNXRUNTIME)
@@ -439,17 +441,24 @@ bool validateBundledRuntime(const QString& directory, const Descriptor& descript
         !QFileInfo(QDir(directory).filePath(descriptor.executable)).isExecutable()) {
         return false;
     }
-    // The ARM64 bundle contract uses thin, little-endian Mach-O files. Check
-    // both binaries before launching, rather than relying on Rosetta or dyld.
+#ifdef Q_OS_MACOS
+    // Bundled runtimes use thin, little-endian Mach-O files matching the app.
+    // Check both binaries before launching, rather than relying on Rosetta or dyld.
+#if defined(Q_PROCESSOR_ARM_64)
+    const QByteArray expectedHeader = QByteArray::fromHex("cffaedfe0c000001");
+#else
+    const QByteArray expectedHeader = QByteArray::fromHex("cffaedfe07000001");
+#endif
     for (const auto& item : descriptor.runtimeFiles) {
         QFile file(QDir(directory).filePath(item.name));
         if (!file.open(QIODevice::ReadOnly))
             return false;
         const QByteArray header = file.read(32);
-        if (header.size() != 32 || header.first(8) != QByteArray::fromHex("cffaedfe0c000001")) {
+        if (header.size() != 32 || header.first(8) != expectedHeader) {
             return false;
         }
     }
+#endif
     return true;
 }
 
@@ -946,7 +955,7 @@ class ScreenshotOcrAssets::Impl final {
             return false;
         auto descriptor = loadDescriptor(options.offlineRoot, error);
         if (!descriptor.has_value()) {
-#if defined(Q_OS_MACOS) && defined(Q_PROCESSOR_ARM_64)
+#ifdef Q_OS_MACOS
             *error = QStringLiteral("bundled_runtime_invalid");
 #endif
             return false;

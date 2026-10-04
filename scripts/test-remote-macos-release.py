@@ -69,6 +69,93 @@ class RemotePackageTests(unittest.TestCase):
             remote.package(self.request)
         self.run.assert_not_called()
 
+    def select_intel(self):
+        self.request['architecture'] = 'x64'
+        self.build = self.repo / 'build/snow-shot-macos-x64-release'
+        self.build.mkdir(parents=True)
+        self.image = self.build / 'snow-shot-1.2.3-beta-macos-x86_64.dmg'
+
+    def test_intel_build_on_apple_silicon_stages_only_full(self):
+        self.select_intel()
+        result = remote.package(self.request)
+        self.assertEqual(result['architecture'], 'x64')
+        self.assertEqual([item['product'] for item in result['images']], ['snow-shot'])
+        self.assertEqual(len(result['symbols']), 2)
+        self.assertEqual(Path(result['path']).name, 'snow-shot_macos-x86_64.dmg')
+        build = self.run.call_args_list[0].args[0]
+        self.assertEqual(build[2], 'snow-shot-macos-x64-release')
+        self.assertEqual(json.loads((self.build / 'remote-release-source.json').read_text())
+                         ['architecture'], 'x64')
+        self.assertFalse(list(Path(result['path']).parent.glob('*mini*')))
+
+    def test_intel_release_runs_on_an_intel_host(self):
+        self.select_intel()
+        with patch.object(remote.os, 'uname', return_value=SimpleNamespace(machine='x86_64')):
+            result = remote.package(self.request)
+        self.assertEqual(result['architecture'], 'x64')
+
+    def test_intel_rejects_mini_before_build_or_staging(self):
+        self.request.update(architecture='x64', editions=['Full', 'Mini'])
+        with self.assertRaisesRegex(ValueError, 'Full edition only'):
+            remote.package(self.request)
+        self.run.assert_not_called()
+        self.assertFalse((self.repo / 'artifacts').exists())
+
+    def test_invalid_architecture_and_unsupported_hosts_fail_before_build(self):
+        self.request['architecture'] = 'x86_64'
+        with self.assertRaisesRegex(ValueError, 'architecture'):
+            remote.package(self.request)
+        self.request['architecture'] = 'arm64'
+        with patch.object(remote.os, 'uname', return_value=SimpleNamespace(machine='x86_64')):
+            with self.assertRaisesRegex(ValueError, 'Apple Silicon'):
+                remote.package(self.request)
+        with patch.object(remote.sys, 'platform', 'linux'):
+            with self.assertRaisesRegex(ValueError, 'supported Mac'):
+                remote.package(self.request)
+        self.run.assert_not_called()
+
+    def test_historical_receipt_remains_valid_for_arm64_only(self):
+        remote.package(self.request)
+        receipt = self.build / 'remote-release-source.json'
+        previous = json.loads(receipt.read_text())
+        previous.pop('architecture')
+        receipt.write_text(json.dumps(previous))
+        self.request.update(skipBuild=True, id='b' * 32)
+        self.run.reset_mock()
+        self.assertEqual(remote.package(self.request)['architecture'], 'arm64')
+        self.assertEqual([call.args[0][0] for call in self.run.call_args_list],
+                         ['hdiutil', 'codesign'])
+
+    def test_intel_cached_package_requires_an_explicit_matching_architecture(self):
+        self.select_intel()
+        remote.package(self.request)
+        receipt = self.build / 'remote-release-source.json'
+        original = json.loads(receipt.read_text())
+        self.request.update(skipBuild=True, id='b' * 32)
+        for architecture in ('arm64', None):
+            previous = original.copy()
+            if architecture is None:
+                previous.pop('architecture')
+            else:
+                previous['architecture'] = architecture
+            receipt.write_text(json.dumps(previous))
+            self.run.reset_mock()
+            with self.subTest(architecture=architecture), self.assertRaisesRegex(ValueError,
+                                                                                'architecture'):
+                remote.package(self.request)
+            self.run.assert_not_called()
+
+    def test_intel_cached_receipt_still_pins_package_bytes_and_symbols(self):
+        self.select_intel()
+        remote.package(self.request)
+        self.request.update(skipBuild=True, id='b' * 32)
+        binary = self.build / 'symbols/snow_shot.dSYM/Contents/Resources/DWARF/snow_shot'
+        binary.write_bytes(b'changed diagnostics')
+        self.run.reset_mock()
+        with self.assertRaisesRegex(ValueError, 'symbols differ'):
+            remote.package(self.request)
+        self.run.assert_not_called()
+
     def test_cargo_worker_symbols_retain_the_hashed_executable_name(self):
         self.write_package()
         path = self.build / 'symbols/snow-ocr-process.dSYM/Contents/Resources/DWARF/snow-ocr-process'

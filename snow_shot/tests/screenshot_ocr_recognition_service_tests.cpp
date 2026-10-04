@@ -92,12 +92,13 @@ void stageSourceRuntime(const QString& directory) {
     sourceWorkerPath = executable == QStringLiteral(SNOW_TEST_OCR_EXECUTABLE)
                            ? application.filePath(kWorkerName)
                            : executable;
-    require(
-        QFileInfo(sourceWorkerPath).isExecutable() &&
-            QFileInfo(
+    require(QFileInfo(sourceWorkerPath).isExecutable(), "the native OCR worker must be staged");
+#if !defined(SNOW_SHOT_OCR_STATIC_ONNXRUNTIME)
+    require(QFileInfo(
                 QFileInfo(sourceWorkerPath).dir().filePath(QStringLiteral("libonnxruntime.dylib")))
                 .isFile(),
-        "the native worker and adjacent ONNX library must be staged");
+            "the dynamic OCR worker's adjacent ONNX library must be staged");
+#endif
 #else
     require(QFile::copy(executable, destination.filePath(kWorkerName)),
             "the source OCR worker must be copied from the build target into the test fixture");

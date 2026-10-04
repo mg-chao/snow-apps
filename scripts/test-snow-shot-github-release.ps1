@@ -230,7 +230,7 @@ $global:SnowGitHubTestEvents.Add('website')
     foreach ($name in @('gh','git','python','Invoke-WebRequest','Start-Process')) { Remove-Item "Function:/$name" -ErrorAction SilentlyContinue }
     Remove-Variable -Scope Global -Name 'SnowGitHubTest*' -ErrorAction SilentlyContinue
     $resolved = [IO.Path]::GetFullPath($root)
-    $temporary = [IO.Path]::GetFullPath([IO.Path]::GetTempPath()).TrimEnd('\') + '\'
+    $temporary = [IO.Path]::GetFullPath([IO.Path]::GetTempPath()).TrimEnd('\', '/') + [IO.Path]::DirectorySeparatorChar
     if (-not $resolved.StartsWith($temporary, [StringComparison]::OrdinalIgnoreCase)) { throw 'Refusing to remove fixture outside temp.' }
     Remove-Item -LiteralPath $resolved -Recurse -Force
 }
