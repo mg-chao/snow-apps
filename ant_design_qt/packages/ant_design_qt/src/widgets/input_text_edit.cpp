@@ -992,10 +992,8 @@ void AdTextEdit::applyEditorPalette() {
   palette.setColor(QPalette::Disabled, QPalette::Base, transparent);
   palette.setColor(QPalette::Disabled, QPalette::Window, transparent);
   palette.setColor(QPalette::Disabled, QPalette::Text, textColor);
-#if QT_VERSION >= QT_VERSION_CHECK(5, 12, 0)
   palette.setColor(QPalette::PlaceholderText, placeholderColor);
   palette.setColor(QPalette::Disabled, QPalette::PlaceholderText, placeholderColor);
-#endif
   setPalette(palette);
   viewport()->setPalette(palette);
 }

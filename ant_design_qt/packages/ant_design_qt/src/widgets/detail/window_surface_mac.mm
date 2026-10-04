@@ -14,7 +14,7 @@ void releaseMacWindowSurfaceCursor(QWindow* surface) {
         return;
     }
     auto* view = reinterpret_cast<NSView*>(surface->winId());
-    // QNSView retains its cursor but Qt 6.11.1 does not release that property
+    // QNSView retains its cursor but Qt 6.11.1 and 6.12.0 do not release that property
     // in dealloc. SurfaceAboutToBeDestroyed is the last point where it is live.
     // Use the property setter so its retain is balanced without touching Qt's
     // shared cursor cache or the application's override cursor stack.

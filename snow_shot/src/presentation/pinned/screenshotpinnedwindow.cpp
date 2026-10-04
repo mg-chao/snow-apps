@@ -178,6 +178,9 @@ QByteArray serializeRecognitionResults(const ScreenshotRecognitionResults& sourc
     }
     QByteArray bytes;
     QDataStream stream(&bytes, QIODevice::WriteOnly);
+    // Pinned records do not store a Qt stream version alongside their recognition payload.
+    // Preserve the existing wire format independently of the Qt version compiling this code.
+    stream.setVersion(QDataStream::Qt_6_11);
     stream << results.key << quint8(results.text.has_value() ? 1 : 0)
            << quint8(results.table.has_value() ? 1 : 0) << quint8(results.qr.has_value() ? 1 : 0);
     if (results.text.has_value() && results.text->presentation != nullptr) {
@@ -238,6 +241,7 @@ ScreenshotRecognitionResults deserializeRecognitionResults(const QByteArray& byt
         return results;
     }
     QDataStream stream(bytes);
+    stream.setVersion(QDataStream::Qt_6_11);
     quint8 hasText = 0, hasTable = 0, hasQr = 0;
     stream >> results.key >> hasText >> hasTable >> hasQr;
     if (stream.status() != QDataStream::Ok) {

@@ -184,13 +184,15 @@ if(CMAKE_OSX_ARCHITECTURES STREQUAL "arm64" AND TARGET snow_ocr_process)
 endif()
 
 if(NOT SNOW_SHOT_QT_STATIC)
-    get_target_property(_snow_qmake Qt6::qmake IMPORTED_LOCATION)
-    get_filename_component(_snow_qt_bin "${_snow_qmake}" DIRECTORY)
-    find_file(SNOW_QT_OFFSCREEN_PLUGIN NAMES libqoffscreen.dylib
-        HINTS "${_snow_qt_bin}/../plugins/platforms" NO_DEFAULT_PATH REQUIRED)
-    install(FILES "${SNOW_QT_OFFSCREEN_PLUGIN}"
+    include("${CMAKE_CURRENT_LIST_DIR}/SnowQt.cmake")
+    snow_qt_bin_directory(_snow_qt_bin)
+    if(NOT TARGET Qt6::QOffscreenIntegrationPlugin)
+        message(FATAL_ERROR "The selected Qt kit does not provide the offscreen platform plugin")
+    endif()
+    install(FILES "$<TARGET_FILE:Qt6::QOffscreenIntegrationPlugin>"
         DESTINATION "snow_shot.app/Contents/PlugIns/platforms" COMPONENT SnowShot)
-    find_program(SNOW_MACDEPLOYQT NAMES macdeployqt HINTS "${_snow_qt_bin}" REQUIRED)
+    find_program(SNOW_MACDEPLOYQT NAMES macdeployqt HINTS "${_snow_qt_bin}"
+        NO_DEFAULT_PATH REQUIRED)
 else()
     set(SNOW_MACDEPLOYQT "")
 endif()

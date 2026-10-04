@@ -15,6 +15,11 @@ share/snow-shot/licenses/third-party/
 license file. The bundle includes the Ant Design Icons MIT notice from
 `ant_design_qt/THIRD_PARTY_NOTICES.md`.
 
+The Qt 6.12 LTS toolchain is pinned by `scripts/qt-toolchain.json`. The Qt notice
+bundle preserves the source archive version and digest, license texts, and
+upstream licensing metadata for Qt Base, Qt SVG, Qt Tools, and Qt Translations.
+Qt Translations uses `licenseRule.json`; the other modules use REUSE metadata.
+
 Screen color restoration uses nalgebra (Apache-2.0) for fixed-size matrix
 inversion and validation. Its license and resolved dependencies are included
 in the generated Rust dependency notice bundle.

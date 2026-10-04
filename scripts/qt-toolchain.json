@@ -1,0 +1,7 @@
+{
+  "schemaVersion": 1,
+  "qtVersion": "6.12.0",
+  "deprecationVersion": "0x060c00",
+  "macosQtDeploymentTarget": "14.4",
+  "sourceArchiveSha256": "98ff4f44bac6ec3e1e62ee2a4316ae0e3d15badb015d753cc0268a20db52f165"
+}

@@ -62,11 +62,7 @@ namespace outlined_icons = adqt::icons::antd::outlined;
 namespace filled_icons = adqt::icons::antd::filled;
 
 QPoint mouseEventPos(const QMouseEvent* event) {
-#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
   return event ? event->position().toPoint() : QPoint();
-#else
-  return event ? event->pos() : QPoint();
-#endif
 }
 
 bool widgetInTree(const QWidget* candidate, const QWidget* root) {
@@ -82,11 +78,7 @@ void applyAccessibleIdentifier(QWidget* widget, const QString& value) {
   if (!widget) {
     return;
   }
-#if QT_VERSION >= QT_VERSION_CHECK(6, 9, 0)
   widget->setAccessibleIdentifier(value);
-#else
-  Q_UNUSED(value)
-#endif
 }
 
 detail::OverlayPopupPlacement toOverlayPopupPlacement(AdDatePicker::Placement placement) {

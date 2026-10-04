@@ -2,8 +2,9 @@
 set -euo pipefail
 source "$(dirname "$0")/snow-build-environment.sh"
 if [[ "${1:-}" == --help ]]; then
+    snow_load_qt_policy
     echo 'Usage: bootstrap-macos.sh [macOS-preset] [--skip-dependency-install] [--skip-qt-validation]'
-    echo 'Requires Xcode command-line tools, Rust (rustup), Qt 6.11.1, CMake >= 4.2, Ninja and pkg-config.'
+    printf 'Requires Xcode command-line tools, Rust (rustup), Qt %s, CMake >= 4.2, Ninja and pkg-config.\n' "$snow_qt_version"
     exit 0
 fi
 snow_require_macos

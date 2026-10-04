@@ -2,6 +2,7 @@
 #define SNOW_SHOT_PRESENTATION_SCREENSHOTRESULTCOMPOSITOR_H
 
 #include <QColor>
+#include <QDataStream>
 #include <QImage>
 #include <QMargins>
 #include <QRect>
@@ -26,6 +27,9 @@ struct ScreenshotResultStyle {
 inline QByteArray encodeScreenshotResultStyle(const ScreenshotResultStyle& style) {
     QByteArray bytes;
     QDataStream stream(&bytes, QIODevice::WriteOnly);
+    // These bytes are persisted without a Qt stream-version header. Keep the format used by
+    // existing records when upgrading Qt.
+    stream.setVersion(QDataStream::Qt_6_11);
     stream << style.cornerRadius << style.shadowWidth << style.shadowColor;
     stream << quint32(0x53535247) << quint8(1) << style.regionScale
            << (style.region ? QJsonDocument(style.region->toJson()).toJson(QJsonDocument::Compact)
@@ -40,6 +44,7 @@ inline std::optional<ScreenshotResultStyle> decodeScreenshotResultStyle(const QB
     if (bytes.isEmpty())
         return style;
     QDataStream stream(bytes);
+    stream.setVersion(QDataStream::Qt_6_11);
     stream >> style.cornerRadius >> style.shadowWidth >> style.shadowColor;
     if (stream.status() != QDataStream::Ok)
         return std::nullopt;

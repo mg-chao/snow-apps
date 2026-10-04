@@ -71,7 +71,7 @@ class ImageClipboardConverter final : public QObject, public QUtiMimeConverter {
             return {};
         if (mime == QStringLiteral("image/png"))
             return {data.toByteArray()};
-        // Qt 6.11.1's TIFF converter loses this retained CGImage. Keep the
+        // Qt 6.11.1 and 6.12.0's TIFF converters lose this retained CGImage. Keep the
         // native representation and its pixel provider owned through encoding.
         const QImage source = qvariant_cast<QImage>(data);
         CfPointer<CGImageRef> image(source.toCGImage(), CFRelease);

@@ -327,10 +327,12 @@ or privacy grants.
 
 ## Prerequisites
 
-- Xcode command-line tools (`xcode-select --install`) or Xcode, with a macOS 15+ SDK.
+- Xcode 16+ or Apple Command Line Tools (`xcode-select --install`), with a macOS 15+ SDK.
+  The static Qt builder permits Command Line Tools without full Xcode and retains
+  Qt's SDK version checks.
 - Rust installed through rustup. The checked-in toolchain pins Rust 1.97.1.
 - CMake 4.2+, Ninja, pkg-config, Git and Python 3. Intel codec builds also need NASM.
-- The official **Qt 6.11.1 macOS** kit, including Qt SVG and Linguist tools,
+- The official **Qt 6.12.0 LTS macOS** kit, including Qt SVG and Linguist tools,
   for Debug and performance builds. Release and fast builds use the repository's
   audited static Qt build for the selected architecture.
 
@@ -338,10 +340,10 @@ For example, install host tools with `brew install cmake ninja pkgconf nasm`.
 The scripts also recognize tools already installed under `.tools/macos-dev/bin`
 and `.tools/macos-media/host/bin`. They do not modify global tool installations.
 
-Set `Qt6_DIR` if Qt is not at `$HOME/Qt/6.11.1/macos/lib/cmake/Qt6`:
+Set `Qt6_DIR` if Qt is not at `$HOME/Qt/6.12.0/macos/lib/cmake/Qt6`:
 
 ```sh
-export Qt6_DIR=/path/to/Qt/6.11.1/macos/lib/cmake/Qt6
+export Qt6_DIR=/path/to/Qt/6.12.0/macos/lib/cmake/Qt6
 scripts/bootstrap-macos.sh
 scripts/build.sh
 scripts/run-snow-shot.sh
@@ -369,20 +371,29 @@ dependency closure:
 scripts/bootstrap-macos.sh snow-shot-macos-arm64-release --skip-qt-validation
 scripts/build-static-qt.sh \
   --arch arm64 \
-  --install-prefix "$HOME/Qt/6.11.1/macos-static-arm64" \
+  --install-prefix "$HOME/Qt/6.12.0/macos-static-arm64" \
   --parallel 8
-export SNOW_QT_STATIC_DIR="$HOME/Qt/6.11.1/macos-static-arm64/lib/cmake/Qt6"
+export SNOW_QT_STATIC_DIR="$HOME/Qt/6.12.0/macos-static-arm64/lib/cmake/Qt6"
 scripts/build.sh snow-shot-macos-arm64-release --parallel 8
 ```
 
 Use `x64` and `macos-static-x64` for an Intel build. The static Qt script pins
-the architecture and Qt's required 14.0 library deployment target (the Snow Shot
+the architecture and Qt's supported 14.4 library deployment target (the Snow Shot
 app still targets macOS 15.0), enables LTO and system libpng/zlib, installs Qt
 source-license metadata, disables the macOS-27-only `dup3` path for compatibility
 with the supported deployment range, and records an audited build stamp. It
 reuses a matching installation; pass `--force` only when intentionally replacing
 that prefix. Release and fast entry points reject a shared, unstamped, wrong-arch,
 or wrong-version Qt kit.
+
+`scripts/qt-toolchain.json` pins the Qt version, official source-archive
+SHA-256, and macOS Qt library deployment target. The static builder verifies the
+archive before extracting it and checks an existing source tree's qtbase version
+and supported macOS runtime floor before configuring. Shared and static entry
+points check the installed Qt package
+versions and the actual Release binary's architecture, independently of an
+audited stamp. A kit from the previous Qt release must be rebuilt in its own
+6.12.0 install prefix.
 
 The feature-policy fingerprint and installed Qt target exports are also checked
 before reusing a production kit. Time-zone handling remains enabled; Cocoa

@@ -1,6 +1,7 @@
 # Editable feature catalogs are merged only in the build tree. Each edition
 # shares its lrelease rule while retaining the same runtime resource names.
 set(QT_I18N_SOURCE_LANGUAGE en_US)
+include("${CMAKE_CURRENT_LIST_DIR}/SnowShotTranslationRelease.cmake")
 set(_snow_shot_catalog_dir "${CMAKE_CURRENT_SOURCE_DIR}/i18n")
 set(_snow_shot_catalog_tool "${CMAKE_CURRENT_SOURCE_DIR}/scripts/translation_catalogs.py")
 set(_snow_shot_merged_dir "${CMAKE_CURRENT_BINARY_DIR}/i18n/merged")
@@ -29,14 +30,8 @@ add_custom_command(
     COMMENT "Merging Snow Shot feature translation catalogs"
     VERBATIM
 )
-qt_add_lrelease(
-    TS_FILES ${_snow_shot_merged_ts}
-    LRELEASE_TARGET snow_shot_release_translations
-    QM_FILES_OUTPUT_VARIABLE _snow_shot_qm_files
-    QM_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
-    MERGE_QT_TRANSLATIONS
-    OPTIONS -fail-on-unfinished
-)
+snow_shot_release_translation_catalogs(snow_shot_release_translations
+    "${_snow_shot_merged_dir}" "${CMAKE_CURRENT_BINARY_DIR}" _snow_shot_qm_files)
 
 if(SNOW_APPS_BUILD_SNOW_SHOT_MINI)
     set(_snow_shot_mini_merged_dir "${CMAKE_CURRENT_BINARY_DIR}/i18n/mini-merged")
@@ -66,13 +61,8 @@ if(SNOW_APPS_BUILD_SNOW_SHOT_MINI)
         DEPENDS ${TS_FILES} "${_snow_shot_catalog_dir}/modules.json" "${_snow_shot_catalog_tool}"
         COMMENT "Merging Mini translation catalogs without excluded feature contexts"
         VERBATIM)
-    qt_add_lrelease(
-        TS_FILES ${_snow_shot_mini_merged_ts}
-        LRELEASE_TARGET snow_shot_mini_release_translations
-        QM_FILES_OUTPUT_VARIABLE _snow_shot_mini_qm_files
-        QM_OUTPUT_DIRECTORY "${_snow_shot_mini_qm_dir}"
-        MERGE_QT_TRANSLATIONS
-        OPTIONS -fail-on-unfinished)
+    snow_shot_release_translation_catalogs(snow_shot_mini_release_translations
+        "${_snow_shot_mini_merged_dir}" "${_snow_shot_mini_qm_dir}" _snow_shot_mini_qm_files)
 endif()
 
 function(snow_shot_add_translations target)

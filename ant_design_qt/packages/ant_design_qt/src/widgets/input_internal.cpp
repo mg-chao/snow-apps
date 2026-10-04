@@ -122,11 +122,7 @@ bool iconRefsEqual(const adqt::icons::IconRef& lhs, const adqt::icons::IconRef& 
 }
 
 QPoint mouseEventPos(const QMouseEvent* event) {
-#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
   return event ? event->position().toPoint() : QPoint();
-#else
-  return event ? event->pos() : QPoint();
-#endif
 }
 
 bool isLeftMouseActivationEvent(const QEvent* event) {

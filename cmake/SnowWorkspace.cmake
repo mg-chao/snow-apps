@@ -76,59 +76,46 @@ function(snow_workspace_configure_options)
     set(SNOW_IMAGE_DEFAULT_LINKAGE static CACHE STRING
         "Default Snow Image target linkage." FORCE)
 
-    # Development workspace presets use static Qt kits whose GUI module ships
-    # bundled image codecs. Avoid propagating second vcpkg archives from the
-    # static Snow Image target, which otherwise produces duplicate png_*
-    # static Snow Image target, which otherwise produces duplicate codec
-    # symbols in the final executable. Production static Qt is validated to
-    # use system codecs and keeps the normal Snow Image dependencies.
+    # Static Qt kits can carry bundled image codecs. Avoid linking second
+    # archives with the same symbols; production kits use the system codecs.
+    # Read the resolved kit's imported targets rather than its generated files.
     set(SNOW_IMAGE_LINK_PNG_DEPENDENCIES ON CACHE BOOL
         "Link the PNG dependency into the static Snow Image target." FORCE)
     set(SNOW_IMAGE_LINK_JPEG_DEPENDENCIES ON CACHE BOOL
         "Link JPEG dependencies into the static Snow Image target." FORCE)
-    set(_snow_workspace_qt_gui_targets "")
-    if(DEFINED Qt6_DIR AND NOT Qt6_DIR STREQUAL "")
-        set(_snow_workspace_qt_gui_targets
-            "${Qt6_DIR}/../Qt6Gui/Qt6GuiTargets.cmake")
-    elseif(DEFINED ENV{SNOW_QT_STATIC_DIR} AND
-           NOT "$ENV{SNOW_QT_STATIC_DIR}" STREQUAL "")
-        set(_snow_workspace_qt_gui_targets
-            "$ENV{SNOW_QT_STATIC_DIR}/../Qt6Gui/Qt6GuiTargets.cmake")
-    endif()
-    if(EXISTS "${_snow_workspace_qt_gui_targets}")
-        file(READ "${_snow_workspace_qt_gui_targets}" _snow_workspace_qt_gui_text)
-        if(_snow_workspace_qt_gui_text MATCHES
-           "add_library\\(Qt6::Gui STATIC IMPORTED\\)")
-            if(NOT _snow_workspace_qt_gui_text MATCHES
-               "QT_ENABLED_PRIVATE_FEATURES \"[^\"]*system_png")
+    if(TARGET Qt6::Gui)
+        get_target_property(_snow_workspace_qt_gui_type Qt6::Gui TYPE)
+        get_target_property(_snow_workspace_qt_gui_features Qt6::Gui QT_ENABLED_PRIVATE_FEATURES)
+        if(_snow_workspace_qt_gui_type STREQUAL "STATIC_LIBRARY")
+            if(NOT "system_png" IN_LIST _snow_workspace_qt_gui_features)
                 set(SNOW_IMAGE_LINK_PNG_DEPENDENCIES OFF CACHE BOOL
                     "Link the PNG dependency into the static Snow Image target." FORCE)
             endif()
-            if(NOT _snow_workspace_qt_gui_text MATCHES
-               "QT_ENABLED_PRIVATE_FEATURES \"[^\"]*system_jpeg")
+            if(NOT "system_jpeg" IN_LIST _snow_workspace_qt_gui_features)
                 set(SNOW_IMAGE_LINK_JPEG_DEPENDENCIES OFF CACHE BOOL
                     "Link JPEG dependencies into the static Snow Image target." FORCE)
             endif()
         endif()
-        unset(_snow_workspace_qt_gui_text)
     endif()
-    unset(_snow_workspace_qt_gui_targets)
 
-    # The repository's portable Qt kit is static. Qt's imported targets carry
-    # a static CRT requirement, so align every workspace target before nested
-    # projects are added. Otherwise a static-CRT executable can link against
-    # a dynamic-CRT Snow Image library and fail on standard CRT symbols.
-    if(MSVC AND (SNOW_APPS_QT_STATIC OR
-                 (DEFINED Qt6_DIR AND Qt6_DIR MATCHES "[Ss][Tt][Aa][Tt][Ii][Cc]") OR
-                 (DEFINED ENV{SNOW_QT_STATIC_DIR} AND
-                  "$ENV{SNOW_QT_STATIC_DIR}" MATCHES "[Ss][Tt][Aa][Tt][Ii][Cc]")))
-        set(CMAKE_MSVC_RUNTIME_LIBRARY
-            "MultiThreaded$<$<CONFIG:Debug>:Debug>"
-            CACHE STRING
-            "MSVC runtime used with the static Qt kit." FORCE)
+    # Static Qt can use either CRT linkage. Its static_runtime feature is the
+    # authority, independent of the kit's directory name or library linkage.
+    if(MSVC AND TARGET Qt6::Core)
+        get_target_property(_snow_workspace_qt_core_features Qt6::Core QT_ENABLED_PUBLIC_FEATURES)
+        if("static_runtime" IN_LIST _snow_workspace_qt_core_features)
+            set(_snow_workspace_crt "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+        else()
+            set(_snow_workspace_crt "MultiThreaded$<$<CONFIG:Debug>:Debug>DLL")
+        endif()
+        set(CMAKE_MSVC_RUNTIME_LIBRARY "${_snow_workspace_crt}" CACHE STRING
+            "MSVC runtime matching the resolved Qt kit." FORCE)
     endif()
 
     if(SNOW_APPS_RELEASE_STATIC AND MSVC)
+        if(TARGET Qt6::Core AND NOT "static_runtime" IN_LIST _snow_workspace_qt_core_features)
+            message(FATAL_ERROR
+                "SNOW_APPS_RELEASE_STATIC requires a Qt kit built with the static MSVC runtime")
+        endif()
         set(CMAKE_MSVC_RUNTIME_LIBRARY MultiThreaded CACHE STRING
             "MSVC runtime used for static release builds." FORCE)
     endif()

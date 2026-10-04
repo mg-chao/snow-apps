@@ -1,11 +1,18 @@
 Set-StrictMode -Version Latest
 
 $script:SnowRepoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
-$script:SnowQtVersion = "6.11.1"
+$script:SnowQtToolchain = Get-Content -Raw -LiteralPath (
+    Join-Path $PSScriptRoot "qt-toolchain.json") | ConvertFrom-Json
+if ($script:SnowQtToolchain.schemaVersion -cne 1 -or
+    $script:SnowQtToolchain.qtVersion -cnotmatch '^6\.[0-9]+\.[0-9]+$' -or
+    $script:SnowQtToolchain.sourceArchiveSha256 -cnotmatch '^[a-f0-9]{64}$') {
+    throw "The repository Qt toolchain manifest is invalid."
+}
+$script:SnowQtVersion = $script:SnowQtToolchain.qtVersion
 $script:SnowMsvcToolset = "14.51"
 $script:SnowRustToolchain = "1.97.1"
 $script:SnowRustTarget = "x86_64-pc-windows-msvc"
-$script:SnowStaticQtSchemaVersion = 4
+$script:SnowStaticQtSchemaVersion = 5
 $script:SnowStaticQtFeaturePolicy = Get-Content -Raw -LiteralPath (
     Join-Path $PSScriptRoot "static-qt-features.json") | ConvertFrom-Json
 $script:SnowStaticQtSourcePatches = @($script:SnowStaticQtFeaturePolicy.windowsSourcePatches |
@@ -41,6 +48,47 @@ function Test-SnowQtTargetFeature {
             ($oppositeMatch.Groups[1].Value -csplit ';') -cnotcontains $Feature)
 }
 
+function Get-SnowQtKitVersion {
+    param([Parameter(Mandatory = $true)][string]$Qt6Dir)
+
+    foreach ($name in @("Qt6ConfigVersionImpl.cmake", "Qt6ConfigVersion.cmake")) {
+        $path = Join-Path $Qt6Dir $name
+        if (-not (Test-Path -LiteralPath $path -PathType Leaf)) { continue }
+        $match = [regex]::Match((Get-Content -LiteralPath $path -Raw),
+            '(?m)^\s*set\s*\(\s*PACKAGE_VERSION\s+"([0-9]+\.[0-9]+\.[0-9]+)"\s*\)')
+        if ($match.Success) { return $match.Groups[1].Value }
+    }
+    return ""
+}
+
+function Test-SnowQtDevelopmentModules {
+    param([Parameter(Mandatory = $true)][string]$Qt6Dir)
+
+    foreach ($component in @("Qt6Concurrent", "Qt6Test")) {
+        if (-not (Test-Path -LiteralPath (Join-Path $Qt6Dir "../$component/$($component)Config.cmake"))) {
+            return $false
+        }
+    }
+    $corePath = Join-Path $Qt6Dir "../Qt6Core/Qt6CoreTargets.cmake"
+    if (-not (Test-Path -LiteralPath $corePath)) { return $false }
+    $coreText = Get-Content -LiteralPath $corePath -Raw
+    return (Test-SnowQtTargetFeature $coreText "PUBLIC" "concurrent" $true) -and
+        (Test-SnowQtTargetFeature $coreText "PRIVATE" "testlib" $true)
+}
+
+function Test-SnowQtTranslationKit {
+    param([Parameter(Mandatory = $true)][string]$Qt6Dir)
+
+    $prefix = [IO.Path]::GetFullPath((Join-Path $Qt6Dir "../../.."))
+    foreach ($language in @("zh_CN", "zh_TW")) {
+        $catalog = Join-Path $prefix "translations/qtbase_$language.qm"
+        if (-not (Test-Path -LiteralPath $catalog -PathType Leaf)) {
+            return $false
+        }
+    }
+    return $true
+}
+
 function Test-SnowStaticQtStamp {
     param(
         [Parameter(Mandatory = $true)][object]$Stamp,
@@ -51,11 +99,12 @@ function Test-SnowStaticQtStamp {
     $expected = [ordered]@{
         SchemaVersion = $script:SnowStaticQtSchemaVersion
         QtVersion = $Version
+        SourceArchiveSha256 = $script:SnowQtToolchain.sourceArchiveSha256
         Configuration = $Configuration
         FeatureFingerprint = $script:SnowStaticQtFeatureFingerprint
-        Ltcg = $true
-        SystemPng = $true
-        SystemZlib = $true
+        Ltcg = ($Configuration -eq "Release")
+        SystemPng = ($Configuration -eq "Release")
+        SystemZlib = ($Configuration -eq "Release")
         Timezone = $true
         TimezoneLocale = $false
     }
@@ -81,7 +130,10 @@ function Test-SnowStaticQtStamp {
 }
 
 function Test-SnowQtSystemCodecKit {
-    param([Parameter(Mandatory = $true)][string]$Qt6Dir)
+    param(
+        [Parameter(Mandatory = $true)][string]$Qt6Dir,
+        [ValidateSet("Debug", "Release")][string]$Configuration = "Release"
+    )
 
     $coreTargets = Join-Path $Qt6Dir "..\Qt6Core\Qt6CoreTargets.cmake"
     $guiTargets = Join-Path $Qt6Dir "..\Qt6Gui\Qt6GuiTargets.cmake"
@@ -91,10 +143,23 @@ function Test-SnowQtSystemCodecKit {
     }
     $coreText = Get-Content -LiteralPath $coreTargets -Raw
     $guiText = Get-Content -LiteralPath $guiTargets -Raw
+    foreach ($feature in @("static", "static_runtime")) {
+        if (-not (Test-SnowQtTargetFeature $coreText "PUBLIC" $feature $true)) { return $false }
+    }
     foreach ($feature in $script:SnowStaticQtFeaturePolicy.features.PSObject.Properties) {
+        if ($feature.Name -ceq "ltcg" -and $Configuration -eq "Debug") {
+            # Qt omits this configuration-dependent feature from Debug exports.
+            $enabledFeatures = [regex]::Match($coreText, 'QT_ENABLED_PRIVATE_FEATURES "([^"]*)"')
+            if (-not $enabledFeatures.Success -or
+                ($enabledFeatures.Groups[1].Value -csplit ';') -ccontains "ltcg") { return $false }
+            continue
+        }
         $text = if ($feature.Name -ceq "system_png") { $guiText } else { $coreText }
         $visibility = if ($feature.Name -ceq "timezone") { "PUBLIC" } else { "PRIVATE" }
-        if (-not (Test-SnowQtTargetFeature $text $visibility $feature.Name $feature.Value)) {
+        $enabled = if ($feature.Name -cin @("ltcg", "system_png", "system_zlib")) {
+            $Configuration -eq "Release"
+        } else { $feature.Value }
+        if (-not (Test-SnowQtTargetFeature $text $visibility $feature.Name $enabled)) {
             return $false
         }
     }
@@ -104,7 +169,9 @@ function Test-SnowQtSystemCodecKit {
 function Test-SnowValidatedStaticQtKit {
     param([Parameter(Mandatory = $true)][string]$Qt6Dir)
 
-    if (-not (Test-SnowQtSystemCodecKit -Qt6Dir $Qt6Dir)) { return $false }
+    if ((Get-SnowQtKitVersion -Qt6Dir $Qt6Dir) -cne $script:SnowQtVersion -or
+        -not (Test-SnowQtSystemCodecKit -Qt6Dir $Qt6Dir) -or
+        -not (Test-SnowQtTranslationKit -Qt6Dir $Qt6Dir)) { return $false }
     $prefix = [System.IO.Path]::GetFullPath((Join-Path $Qt6Dir "..\..\.."))
     $stampPath = Join-Path $prefix "share\snow-apps\static-qt-build.json"
     if (-not (Test-Path -LiteralPath $stampPath -PathType Leaf)) { return $false }
@@ -134,6 +201,7 @@ function Resolve-SnowQtDir {
         ) | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }
         $searchRoots = @(
             $env:SNOW_QT_ROOT,
+            (Join-Path $script:SnowRepoRoot ".tools/qt"),
             $(if (-not [string]::IsNullOrWhiteSpace($env:ProgramFiles)) {
                 Join-Path $env:ProgramFiles "Qt"
             }),
@@ -173,21 +241,17 @@ function Resolve-SnowQtDir {
         }
         $config = Join-Path $resolved "Qt6Config.cmake"
         if (-not (Test-Path -LiteralPath $config -PathType Leaf)) { continue }
-        $versionFiles = @(
-            (Join-Path $resolved "Qt6ConfigVersion.cmake"),
-            (Join-Path $resolved "Qt6ConfigVersionImpl.cmake")
-        ) | Where-Object { Test-Path -LiteralPath $_ -PathType Leaf }
-        $versionText = ($versionFiles | ForEach-Object { Get-Content -LiteralPath $_ -Raw }) -join "`n"
-        $expectedVersion = [regex]::Escape($script:SnowQtVersion)
-        if ($versionText -notmatch "(?m)^\s*set\s*\(\s*PACKAGE_VERSION\s+`"$expectedVersion`"\s*\)") {
-            continue
-        }
+        if ((Get-SnowQtKitVersion -Qt6Dir $resolved) -cne $script:SnowQtVersion) { continue }
 
         if (-not [string]::IsNullOrWhiteSpace($requiredConfiguration)) {
             $configurationTargets = Join-Path $resolved (
                 "..\Qt6Core\Qt6CoreTargets-{0}.cmake" -f $requiredConfiguration.ToLowerInvariant()
             )
             if (-not (Test-Path -LiteralPath $configurationTargets -PathType Leaf)) { continue }
+        }
+        if ($Preset -eq "windows-msvc-performance" -and
+            -not (Test-SnowQtDevelopmentModules -Qt6Dir $resolved)) {
+            continue
         }
         if ($Preset -in @("snow-shot-msvc-release", "snow-shot-msvc-fast") -and
             -not (Test-SnowValidatedStaticQtKit -Qt6Dir $resolved)) {

@@ -1506,7 +1506,25 @@ void pinnedSelectionRendersCachedOcrInCanvasCoordinates(bool restoreFromStorage 
                 require(record.recognitionVisible, "a visible OCR overlay must be persisted");
                 require(!record.recognitionResults.isEmpty(),
                         "the pinned snapshot should serialize its cached recognition results");
+                QByteArray expectedPayload;
+                QDataStream expected(&expectedPayload, QIODevice::WriteOnly);
+                expected.setVersion(QDataStream::Qt_6_11);
+                const auto saved = window->recognitionSnapshot();
+                expected << saved.key << quint8(1) << quint8(saved.table.has_value())
+                         << quint8(saved.qr.has_value()) << saved.text->error
+                         << presentation->selection << qint64(presentation->lines.size());
+                for (const auto& savedLine : presentation->lines)
+                    expected << savedLine.text << savedLine.confidence << savedLine.quad
+                             << quint8(savedLine.direction == ScreenshotOcrTextDirection::Vertical);
+                if (saved.table)
+                    expected << saved.table->html << saved.table->error << saved.table->code
+                             << saved.table->httpStatus;
+                if (saved.qr)
+                    expected << saved.qr->contents << saved.qr->error;
+                require(record.recognitionResults == expectedPayload,
+                        "persisted recognition must keep the Qt 6.11 binary format");
                 QDataStream payload(record.recognitionResults);
+                payload.setVersion(QDataStream::Qt_6_11);
                 QString savedKey;
                 quint8 hasText = 0, hasTable = 0, hasQr = 0;
                 QString savedError;
@@ -2862,6 +2880,7 @@ void restoredInvalidOcrDoesNotSuppressRecognition() {
         auto config = cachedOcrPinConfig(&recognition);
         const auto presentation = config.recognitionResults.text->presentation;
         QDataStream stream(&config.persistedRecognitionResults, QIODevice::WriteOnly);
+        stream.setVersion(QDataStream::Qt_6_11);
         stream << config.recognitionResults.key << quint8(1) << quint8(0) << quint8(0)
                << (trailingBytes ? QString() : QStringLiteral("Recognition failed"))
                << presentation->selection << qint64(trailingBytes ? 0 : 1);
@@ -8103,6 +8122,27 @@ class IsolatedPinnedStorage final {
 };
 
 void restoredPinnedSelectionRendersCachedOcrAfterStorageRestart() {
+    // Captured with the Qt 6.11.1 default stream format, before stream versioning became
+    // explicit. A fixed payload exercises upgrade compatibility rather than just a round trip.
+    const QByteArray legacy = QByteArray::fromHex(
+        "0000001200710074003600310031002d00700069006e010000ffffffffffffffec0000000a"
+        "000000630000003100000000000000010000001400530061007600650064002000740065"
+        "007800743fe800000000000000000004c024000000000000402e00000000000040540000"
+        "00000000402e00000000000040540000000000004041800000000000c024000000000000"
+        "404180000000000000");
+    const auto restored = ScreenshotPinnedWindow::decodeRecognitionSnapshot(legacy);
+    require(restored.key == QStringLiteral("qt611-pin") && restored.text &&
+                restored.text->presentation &&
+                restored.text->presentation->selection == QRect(-20, 10, 120, 40) &&
+                restored.text->presentation->lines.size() == 1 &&
+                restored.text->presentation->lines.front().text == QStringLiteral("Saved text") &&
+                restored.text->presentation->lines.front().confidence == 0.75 &&
+                restored.text->presentation->lines.front().quad ==
+                    QPolygonF{QPointF(-10, 15), QPointF(80, 15), QPointF(80, 35), QPointF(-10, 35)},
+            "Qt 6.11 recognition records must retain their text and canvas geometry");
+    require(
+        ScreenshotPinnedWindow::decodeRecognitionSnapshot(legacy.left(legacy.size() - 1)).isEmpty(),
+        "truncated Qt 6.11 recognition records must remain rejected");
     IsolatedPinnedStorage storage;
     pinnedSelectionRendersCachedOcrInCanvasCoordinates(true);
     pinnedSelectionRendersCachedOcrInCanvasCoordinates(true, true);
@@ -12737,7 +12777,7 @@ void pinnedFileDrop() {
     mime.setUrls({QUrl::fromLocalFile(second)});
     const auto enter = [&](QWidget* target, const QMimeData& data,
                            Qt::DropActions actions = Qt::CopyAction | Qt::MoveAction) {
-        QDragEnterEvent event(QPoint(10, 10), actions, &data, Qt::LeftButton, Qt::ShiftModifier);
+        QDragEnterEvent event(QPointF(10, 10), actions, &data, Qt::LeftButton, Qt::ShiftModifier);
         QApplication::sendEvent(target, &event);
         if (event.isAccepted()) {
             require(event.dropAction() == Qt::CopyAction, "file drops must always copy");
@@ -12816,7 +12856,7 @@ void pinnedFileDrop() {
     require(!enter(&window, unsupported), "unsupported file and remote URLs must reject");
     require(!enter(&window, mime, Qt::MoveAction), "move-only sources must reject");
     require(enter(&window, mime), "valid drag before invalid move");
-    QDragMoveEvent rejectedMove(QPoint(10, 10), Qt::MoveAction, &mime, Qt::LeftButton,
+    QDragMoveEvent rejectedMove(QPointF(10, 10), Qt::MoveAction, &mime, Qt::LeftButton,
                                 Qt::NoModifier);
     QApplication::sendEvent(&window, &rejectedMove);
     require(!rejectedMove.isAccepted() && !Access::fileDragActive(window),
@@ -12836,7 +12876,7 @@ void pinnedFileDrop() {
     require(canvas && control && !canvas->acceptDrops() && !control->acceptDrops(),
             "embedded surfaces must delegate drops to the pin");
     require(enter(canvas, mime), "canvas must route enter to pin");
-    QDragMoveEvent move(QPoint(1, 1), Qt::CopyAction | Qt::MoveAction, &mime, Qt::LeftButton,
+    QDragMoveEvent move(QPointF(1, 1), Qt::CopyAction | Qt::MoveAction, &mime, Qt::LeftButton,
                         Qt::ShiftModifier);
     QApplication::sendEvent(control, &move);
     require(move.isAccepted() && Access::fileDragActive(window),

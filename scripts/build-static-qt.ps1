@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-    [ValidateSet("6.11.1")][string]$QtVersion = "6.11.1",
+    [string]$QtVersion = "",
     [Parameter(Mandatory = $true)][string]$InstallPrefix,
     [string]$SourceDirectory = "",
     [string]$BuildDirectory = "",
@@ -8,13 +8,19 @@ param(
     [ValidateSet("Debug", "Release")][string]$Configuration = "Release",
     [string]$QtMirrorBaseUrl = "https://qt.mirror.constant.com/official_releases",
     [ValidateRange(1, 256)][int]$Parallelism = 4,
+    [switch]$DevelopmentModules,
     [switch]$Force
 )
 
 $ErrorActionPreference = "Stop"
 $repoRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot ".."))
 . (Join-Path $PSScriptRoot "snow-build-environment.ps1")
+if ([string]::IsNullOrWhiteSpace($QtVersion)) { $QtVersion = $script:SnowQtVersion }
+if ($QtVersion -cne $script:SnowQtVersion) {
+    throw "The audited Qt toolchain requires Qt $script:SnowQtVersion, requested $QtVersion."
+}
 Add-SnowMsvcToolsToPath | Out-Null
+$enableDevelopmentModules = $DevelopmentModules -or $Configuration -eq "Debug"
 
 function Invoke-Checked {
     param(
@@ -181,10 +187,23 @@ function Get-DependencyFingerprint {
     ).ToLowerInvariant()
 }
 
-function Test-InstalledQtSystemCodecs {
-    param([Parameter(Mandatory = $true)][string]$Prefix)
+function Assert-QtSourceArchive {
+    param([Parameter(Mandatory = $true)][string]$Path)
 
-    return Test-SnowQtSystemCodecKit -Qt6Dir (Join-Path $Prefix "lib\cmake\Qt6")
+    $actualHash = (Get-FileHash -LiteralPath $Path -Algorithm SHA256).Hash.ToLowerInvariant()
+    if ($actualHash -cne $script:SnowQtToolchain.sourceArchiveSha256) {
+        throw "Qt $script:SnowQtVersion source archive SHA256 mismatch: $Path"
+    }
+}
+
+function Test-InstalledQtSystemCodecs {
+    param(
+        [Parameter(Mandatory = $true)][string]$Prefix,
+        [ValidateSet("Debug", "Release")][string]$Configuration = "Release"
+    )
+
+    return Test-SnowQtSystemCodecKit -Qt6Dir (Join-Path $Prefix "lib\cmake\Qt6") `
+        -Configuration $Configuration
 }
 
 function Test-InstalledQtLicenseBundle {
@@ -197,11 +216,25 @@ function Test-InstalledQtLicenseBundle {
             "root\LICENSES\GPL-3.0-only.txt",
             "qtbase\REUSE.toml",
             "qtsvg\REUSE.toml",
-            "qttools\REUSE.toml")) {
+            "qttools\REUSE.toml",
+            "qttranslations\licenseRule.json",
+            "qttranslations\LICENSES\GPL-3.0-only.txt")) {
         if (-not (Test-Path -LiteralPath (Join-Path $licenseRoot $requiredLicenseFile) -PathType Leaf)) {
             return $false
         }
     }
+    try {
+        $manifest = Get-Content -LiteralPath (Join-Path $licenseRoot "manifest.json") -Raw |
+            ConvertFrom-Json
+        if ($manifest.SchemaVersion -ne 1 -or $manifest.QtVersion -cne $script:SnowQtVersion -or
+            $manifest.SourceArchiveSha256 -cne $script:SnowQtToolchain.sourceArchiveSha256) {
+            return $false
+        }
+        foreach ($component in @("root", "qtbase", "qtsvg", "qttools", "qttranslations")) {
+            if ($component -cnotin $manifest.Components) { return $false }
+        }
+    }
+    catch { return $false }
     foreach ($patch in $script:SnowStaticQtSourcePatches) {
         $patchPath = Join-Path $licenseRoot "patches\$($patch.File)"
         if (-not (Test-Path -LiteralPath $patchPath -PathType Leaf) -or
@@ -258,29 +291,36 @@ function Install-QtLicenseBundle {
     if (-not (Test-PathIsSameOrDescendant -Path $licenseRoot -Parent $Prefix)) {
         throw "The Qt license bundle destination escapes the install prefix: $licenseRoot"
     }
-    if (Test-Path -LiteralPath $licenseRoot) {
-        Remove-Item -LiteralPath $licenseRoot -Recurse -Force
-    }
-    New-Item -ItemType Directory -Path $licenseRoot -Force | Out-Null
-
     $licenseSources = [ordered]@{
         root = $Source
         qtbase = Join-Path $Source "qtbase"
         qtsvg = Join-Path $Source "qtsvg"
         qttools = Join-Path $Source "qttools"
+        qttranslations = Join-Path $Source "qttranslations"
     }
     foreach ($component in $licenseSources.Keys) {
         $componentSource = $licenseSources[$component]
-        $reuseFile = Join-Path $componentSource "REUSE.toml"
+        # Qt Translations retains its upstream license-rule metadata rather than REUSE.toml.
+        $metadataName = if ($component -eq "qttranslations") { "licenseRule.json" } else { "REUSE.toml" }
+        $metadataFile = Join-Path $componentSource $metadataName
         $licensesDirectory = Join-Path $componentSource "LICENSES"
-        if (-not (Test-Path -LiteralPath $reuseFile -PathType Leaf) -or
+        if (-not (Test-Path -LiteralPath $metadataFile -PathType Leaf) -or
             -not (Test-Path -LiteralPath $licensesDirectory -PathType Container)) {
             throw "Qt licensing metadata is incomplete for $component at $componentSource"
         }
+    }
+    # Validate every component before replacing a previously usable bundle.
+    if (Test-Path -LiteralPath $licenseRoot) {
+        Remove-Item -LiteralPath $licenseRoot -Recurse -Force
+    }
+    New-Item -ItemType Directory -Path $licenseRoot -Force | Out-Null
+    foreach ($component in $licenseSources.Keys) {
+        $componentSource = $licenseSources[$component]
+        $metadataName = if ($component -eq "qttranslations") { "licenseRule.json" } else { "REUSE.toml" }
         $componentDestination = Join-Path $licenseRoot $component
         New-Item -ItemType Directory -Path $componentDestination -Force | Out-Null
-        Copy-Item -LiteralPath $reuseFile -Destination $componentDestination
-        Copy-Item -LiteralPath $licensesDirectory -Destination $componentDestination -Recurse
+        Copy-Item -LiteralPath (Join-Path $componentSource $metadataName) -Destination $componentDestination
+        Copy-Item -LiteralPath (Join-Path $componentSource "LICENSES") -Destination $componentDestination -Recurse
     }
     $patchesDirectory = Join-Path $licenseRoot "patches"
     New-Item -ItemType Directory -Path $patchesDirectory -Force | Out-Null
@@ -291,6 +331,7 @@ function Install-QtLicenseBundle {
     [ordered]@{
         SchemaVersion = 1
         QtVersion = $Version
+        SourceArchiveSha256 = $script:SnowQtToolchain.sourceArchiveSha256
         SourceArchive = $SourceArchive
         Components = @($licenseSources.Keys)
         SourcePatches = $script:SnowStaticQtSourcePatches
@@ -305,7 +346,8 @@ function Write-StaticQtBuildStamp {
         [Parameter(Mandatory = $true)][string]$BuildConfiguration,
         [Parameter(Mandatory = $true)][string]$Fingerprint,
         [Parameter(Mandatory = $true)][string]$SourceArchive,
-        [Parameter(Mandatory = $true)][int]$BuildParallelism
+        [Parameter(Mandatory = $true)][int]$BuildParallelism,
+        [bool]$WithDevelopmentModules = ($BuildConfiguration -eq "Debug")
     )
 
     $stampDirectory = Split-Path -Parent $Path
@@ -313,18 +355,20 @@ function Write-StaticQtBuildStamp {
     [ordered]@{
         SchemaVersion = $script:SnowStaticQtSchemaVersion
         QtVersion = $Version
+        SourceArchiveSha256 = $script:SnowQtToolchain.sourceArchiveSha256
         Configuration = $BuildConfiguration
+        DevelopmentModules = $WithDevelopmentModules
         DependencyFingerprint = $Fingerprint
         FeatureFingerprint = $script:SnowStaticQtFeatureFingerprint
         SourcePatches = $script:SnowStaticQtSourcePatches
-        Ltcg = $true
-        SystemPng = $true
-        SystemZlib = $true
+        Ltcg = ($BuildConfiguration -eq "Release")
+        SystemPng = ($BuildConfiguration -eq "Release")
+        SystemZlib = ($BuildConfiguration -eq "Release")
         Timezone = $true
         TimezoneLocale = $false
         LicenseBundle = "share/snow-apps/qt-licenses"
         SourceArchive = $SourceArchive
-        Submodules = @("qtbase", "qtsvg", "qttools")
+        Submodules = @("qtbase", "qtsvg", "qttools", "qttranslations")
         SkippedSubmodules = @(
             "qtactiveqt",
             "qtdeclarative",
@@ -347,7 +391,7 @@ function Write-StaticQtBuildStamp {
             "timezone_locale",
             "wasmdeployqt",
             "windeployqt"
-        )
+        ) | Where-Object { $_ -notin @("testlib", "concurrent") -or -not $WithDevelopmentModules }
         Parallelism = $BuildParallelism
     } | ConvertTo-Json -Depth 3 | Set-Content -LiteralPath $Path -Encoding utf8
 }
@@ -427,24 +471,31 @@ if (Test-Path -LiteralPath $qtConfig -PathType Leaf) {
         $stamp = Get-Content -LiteralPath $stampPath -Raw | ConvertFrom-Json
         $binaryStampMatches = (Test-SnowStaticQtStamp -Stamp $stamp -Version $QtVersion `
             -Configuration $Configuration) -and
-            $stamp.DependencyFingerprint -eq $dependencyFingerprint -and
-            $stamp.Ltcg -eq $true -and
-            $stamp.SystemPng -eq $true -and
-            $stamp.SystemZlib -eq $true
+            $stamp.DependencyFingerprint -eq $dependencyFingerprint
         $stampMatches = $binaryStampMatches
     }
-    $systemCodecsMatch = Test-InstalledQtSystemCodecs -Prefix $installPrefix
+    $systemCodecsMatch = Test-InstalledQtSystemCodecs -Prefix $installPrefix -Configuration $Configuration
+    $systemCodecsMatch = $systemCodecsMatch -and
+        (Get-SnowQtKitVersion -Qt6Dir (Join-Path $installPrefix "lib/cmake/Qt6")) -ceq $QtVersion
+    $developmentModulesMatch = -not $enableDevelopmentModules -or
+        (Test-SnowQtDevelopmentModules -Qt6Dir (Join-Path $installPrefix "lib/cmake/Qt6"))
+    $translationsMatch = Test-SnowQtTranslationKit -Qt6Dir (Join-Path $installPrefix "lib/cmake/Qt6")
     if ($stampMatches -and $systemCodecsMatch -and
+        $developmentModulesMatch -and $translationsMatch -and
         (Test-InstalledQtLicenseBundle -Prefix $installPrefix)) {
         Write-Output "Validated static Qt $QtVersion ($Configuration) at $installPrefix"
         exit 0
     }
     if ($binaryStampMatches -and $systemCodecsMatch -and -not $Force) {
-        $refreshLicenseBundleOnly = $true
-        Write-Output "Refreshing the audited Qt source-license bundle without rebuilding validated binaries."
+        $refreshLicenseBundleOnly = $developmentModulesMatch -and $translationsMatch
+        if ($refreshLicenseBundleOnly) {
+            Write-Output "Refreshing the audited Qt source-license bundle without rebuilding validated binaries."
+        } else {
+            Write-Output "Adding missing development modules or stock-dialog translations to the validated Qt kit."
+        }
     }
     elseif (-not $Force) {
-        throw "The Qt installation at $installPrefix is not the validated system-codec/LTCG/timezone build without localized time-zone names. Use a distinct prefix or pass -Force to replace it."
+        throw "The Qt installation at $installPrefix does not match the audited $Configuration feature policy. Use a distinct prefix or pass -Force to replace it."
     }
     else {
         Remove-Item -LiteralPath $installPrefix -Recurse -Force
@@ -456,6 +507,9 @@ if ($Force -and (Test-Path -LiteralPath $buildDirectory -PathType Container)) {
 }
 
 $configurationArgument = if ($Configuration -eq "Debug") { "-debug" } else { "-release" }
+$ltcgArgument = if ($Configuration -eq "Debug") { "-no-ltcg" } else { "-ltcg" }
+$zlibArgument = if ($Configuration -eq "Debug") { "-qt-zlib" } else { "-system-zlib" }
+$pngArgument = if ($Configuration -eq "Debug") { "-qt-libpng" } else { "-system-libpng" }
 $archivePath = Join-Path ([System.IO.Path]::GetDirectoryName($sourceDirectory)) "qt-everywhere-src-$QtVersion.tar.xz"
 $sourceRelativePath = "qt/$($QtVersion.Substring(0, $QtVersion.LastIndexOf('.')))/$QtVersion/single/qt-everywhere-src-$QtVersion.tar.xz"
 $sourceUrls = @(
@@ -469,6 +523,7 @@ if (-not (Test-Path -LiteralPath $sourceDirectory -PathType Container)) {
         foreach ($sourceUrl in $sourceUrls) {
             try {
                 Save-RemoteFile -Uri $sourceUrl -Destination $archivePath
+                Assert-QtSourceArchive -Path $archivePath
                 $downloaded = $true
                 break
             }
@@ -481,6 +536,7 @@ if (-not (Test-Path -LiteralPath $sourceDirectory -PathType Container)) {
             throw "All Qt source mirrors failed."
         }
     }
+    Assert-QtSourceArchive -Path $archivePath
     $sourceParent = Split-Path -Parent $sourceDirectory
     $extractedSourceDirectory = Join-Path $sourceParent "qt-everywhere-src-$QtVersion"
     New-Item -ItemType Directory -Force -Path $sourceParent | Out-Null
@@ -506,7 +562,8 @@ if ($refreshLicenseBundleOnly) {
     }
     Write-StaticQtBuildStamp -Path $stampPath -Version $QtVersion `
         -BuildConfiguration $Configuration -Fingerprint $dependencyFingerprint `
-        -SourceArchive $sourceUrls[-1] -BuildParallelism $Parallelism
+        -SourceArchive $sourceUrls[-1] -BuildParallelism $Parallelism `
+        -WithDevelopmentModules (Test-SnowQtDevelopmentModules -Qt6Dir (Join-Path $installPrefix "lib/cmake/Qt6"))
     Write-Output "Validated static Qt $QtVersion ($Configuration) and refreshed its license provenance at $installPrefix"
     exit 0
 }
@@ -516,16 +573,16 @@ $configureArguments = @(
     "-static",
     $configurationArgument,
     "-static-runtime",
-    "-ltcg",
-    "-system-zlib",
-    "-system-libpng",
+    $ltcgArgument,
+    $zlibArgument,
+    $pngArgument,
     "-no-opengl",
     "-no-feature-androiddeployqt",
     "-no-feature-wasmdeployqt",
     "-opensource",
     "-confirm-license",
     "-prefix", $installPrefix,
-    "-submodules", "qtbase,qtsvg,qttools",
+    "-submodules", "qtbase,qtsvg,qttools,qttranslations",
     "-skip", "qtactiveqt",
     "-skip", "qtdeclarative",
     "-skip", "qtimageformats",
@@ -544,14 +601,14 @@ $configureArguments = @(
     "-DCMAKE_FIND_PACKAGE_PREFER_CONFIG=ON",
     "-DFEATURE_timezone=ON",
     "-DFEATURE_timezone_locale=OFF",
-    "-DQT_FEATURE_concurrent=OFF",
+    "-DQT_FEATURE_concurrent=$(if ($enableDevelopmentModules) { 'ON' } else { 'OFF' })",
     "-DQT_FEATURE_dbus=OFF",
     "-DQT_FEATURE_linguist=ON",
     "-DQT_FEATURE_printsupport=OFF",
     "-DQT_FEATURE_qdoc=OFF",
     "-DQT_FEATURE_qmake=OFF",
     "-DQT_FEATURE_sql=OFF",
-    "-DQT_FEATURE_testlib=OFF",
+    "-DQT_FEATURE_testlib=$(if ($enableDevelopmentModules) { 'ON' } else { 'OFF' })",
     "-DQT_FEATURE_windeployqt=OFF",
     "-DQT_FEATURE_assistant=OFF",
     "-DQT_FEATURE_designer=OFF",
@@ -572,12 +629,13 @@ if (-not (Test-Path -LiteralPath $cachePath -PathType Leaf)) {
     throw "Qt configure did not produce $cachePath."
 }
 $cache = Get-Content -LiteralPath $cachePath -Raw
-Assert-CacheEntry -Cache $cache -Pattern '(?m)^FEATURE_ltcg:BOOL=ON\r?$' -Description "LTCG"
-Assert-CacheEntry -Cache $cache -Pattern '(?m)^QT_FEATURE_ltcg:INTERNAL=ON\r?$' -Description "the internal LTCG feature"
-Assert-CacheEntry -Cache $cache -Pattern '(?m)^FEATURE_system_png:BOOL=ON\r?$' -Description "system libpng"
-Assert-CacheEntry -Cache $cache -Pattern '(?m)^QT_FEATURE_system_png:INTERNAL=ON\r?$' -Description "the internal system libpng feature"
-Assert-CacheEntry -Cache $cache -Pattern '(?m)^FEATURE_system_zlib:BOOL=ON\r?$' -Description "system zlib"
-Assert-CacheEntry -Cache $cache -Pattern '(?m)^QT_FEATURE_system_zlib:INTERNAL=ON\r?$' -Description "the internal system zlib feature"
+$ltcgState = if ($Configuration -eq "Release") { "ON" } else { "OFF" }
+Assert-CacheEntry -Cache $cache -Pattern "(?m)^FEATURE_ltcg:BOOL=$ltcgState\r?`$" -Description "$Configuration LTCG policy"
+Assert-CacheEntry -Cache $cache -Pattern "(?m)^QT_FEATURE_ltcg:INTERNAL=$ltcgState\r?`$" -Description "the internal $Configuration LTCG policy"
+Assert-CacheEntry -Cache $cache -Pattern "(?m)^FEATURE_system_png:BOOL=$ltcgState\r?`$" -Description "$Configuration libpng linkage"
+Assert-CacheEntry -Cache $cache -Pattern "(?m)^QT_FEATURE_system_png:INTERNAL=$ltcgState\r?`$" -Description "the internal $Configuration libpng linkage"
+Assert-CacheEntry -Cache $cache -Pattern "(?m)^FEATURE_system_zlib:BOOL=$ltcgState\r?`$" -Description "$Configuration zlib linkage"
+Assert-CacheEntry -Cache $cache -Pattern "(?m)^QT_FEATURE_system_zlib:INTERNAL=$ltcgState\r?`$" -Description "the internal $Configuration zlib linkage"
 Assert-CacheEntry -Cache $cache -Pattern '(?m)^FEATURE_timezone:BOOL=ON\r?$' -Description "time-zone handling"
 Assert-CacheEntry -Cache $cache -Pattern '(?m)^QT_FEATURE_timezone:INTERNAL=ON\r?$' -Description "the internal time-zone feature"
 Assert-CacheEntry -Cache $cache -Pattern '(?m)^FEATURE_timezone_locale:BOOL=OFF\r?$' -Description "disabled localized time-zone display names"
@@ -599,6 +657,12 @@ foreach ($disabledFeature in @(
         "timezone_locale",
         "wasmdeployqt",
         "windeployqt")) {
+    if ($disabledFeature -in @("testlib", "concurrent") -and $enableDevelopmentModules) {
+        Assert-CacheEntry -Cache $cache `
+            -Pattern "(?m)^QT_FEATURE_${disabledFeature}:(?:INTERNAL|UNINITIALIZED)=ON\r?`$" `
+            -Description "the development $disabledFeature feature"
+        continue
+    }
     Assert-CacheEntry -Cache $cache `
         -Pattern "(?m)^QT_FEATURE_$([regex]::Escape($disabledFeature)):(?:INTERNAL|UNINITIALIZED)=OFF\r?`$" `
         -Description "the disabled $disabledFeature feature"
@@ -631,8 +695,11 @@ Invoke-Checked -Command "cmake" -Arguments @(
 if (-not (Test-Path -LiteralPath $qtConfig -PathType Leaf)) {
     throw "Qt $QtVersion installation did not produce $qtConfig"
 }
-if (-not (Test-InstalledQtSystemCodecs -Prefix $installPrefix)) {
-    throw "The installed Qt targets do not export the audited system-codec/LTCG/timezone features with timezone_locale disabled."
+if (-not (Test-SnowQtTranslationKit -Qt6Dir (Join-Path $installPrefix "lib/cmake/Qt6"))) {
+    throw "The installed Qt kit does not provide Simplified and Traditional Chinese stock-dialog translations."
+}
+if (-not (Test-InstalledQtSystemCodecs -Prefix $installPrefix -Configuration $Configuration)) {
+    throw "The installed Qt targets do not export the audited $Configuration codec/LTCG/timezone feature policy."
 }
 
 Install-QtLicenseBundle -Source $sourceDirectory -Prefix $installPrefix `
@@ -643,6 +710,6 @@ if (-not (Test-InstalledQtLicenseBundle -Prefix $installPrefix)) {
 
 Write-StaticQtBuildStamp -Path $stampPath -Version $QtVersion `
     -BuildConfiguration $Configuration -Fingerprint $dependencyFingerprint `
-    -SourceArchive $sourceUrls[-1] -BuildParallelism $Parallelism
+    -SourceArchive $sourceUrls[-1] -BuildParallelism $Parallelism -WithDevelopmentModules $enableDevelopmentModules
 
 Write-Output "Static Qt $QtVersion ($Configuration) installed at $installPrefix"

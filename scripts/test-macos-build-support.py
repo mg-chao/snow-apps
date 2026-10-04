@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Offscreen build-script contract tests; no compiler, Qt, or network required."""
 import hashlib
+import importlib.util
 import json
 import os
 import platform
@@ -10,18 +11,63 @@ import signal
 import shutil
 import struct
 import subprocess
+import sys
 import tempfile
 import threading
 import unittest
 import xml.etree.ElementTree as ET
 
 ROOT = Path(__file__).resolve().parents[1]
+QT_POLICY = json.loads((ROOT / 'scripts/qt-toolchain.json').read_bytes())
+QT_VERSION = QT_POLICY['qtVersion']
+QT_MACOS_DEPLOYMENT_TARGET = QT_POLICY['macosQtDeploymentTarget']
+
+
+def bash_executable():
+    if os.name == 'nt':
+        candidates = [Path(os.environ.get('ProgramFiles', 'C:/Program Files')) / 'Git/bin/bash.exe',
+                      Path(os.environ.get('LOCALAPPDATA', '')) / 'Programs/Git/bin/bash.exe']
+        return next((str(path) for path in candidates if path.is_file()), None)
+    return shutil.which('bash')
+
+
+def write_qt_kit(prefix, static=True, architectures=('arm64', 'x64')):
+    translations = prefix / 'translations'
+    translations.mkdir(parents=True, exist_ok=True)
+    for language in ('zh_CN', 'zh_TW'):
+        (translations / f'qtbase_{language}.qm').touch()
+    for module in ('Qt6', 'Qt6Core'):
+        directory = prefix / 'lib/cmake' / module
+        directory.mkdir(parents=True, exist_ok=True)
+        (directory / (module + 'Config.cmake')).touch()
+        (directory / (module + 'ConfigVersionImpl.cmake')).write_text(
+            f'set(PACKAGE_VERSION "{QT_VERSION}")\n')
+    core = prefix / 'lib/cmake/Qt6Core'
+    linkage = 'STATIC' if static else 'SHARED'
+    (core / 'Qt6CoreTargets.cmake').write_text(f'add_library(Qt6::Core {linkage} IMPORTED)\n')
+    (core / 'Qt6CoreTargets-release.cmake').write_text(
+        'IMPORTED_LOCATION_RELEASE "${_IMPORT_PREFIX}/lib/libQt6Core.a"\n')
+    cpus = {'arm64': 0x0100000c, 'x64': 0x01000007}
+    objects = [struct.pack('<8I', 0xfeedfacf, cpus[arch], 0, 1, 0, 0, 0, 0)
+               for arch in architectures]
+    if len(objects) == 1:
+        binary = objects[0]
+    else:
+        offset = 8 + len(objects) * 20
+        entries = []
+        for arch, obj in zip(architectures, objects):
+            entries.append(struct.pack('>5I', cpus[arch], 0, offset, len(obj), 0))
+            offset += len(obj)
+        binary = struct.pack('>2I', 0xcafebabe, len(objects)) + b''.join(entries + objects)
+    (prefix / 'lib/libQt6Core.a').write_bytes(binary)
 
 
 def write_static_qt_feature_targets(prefix):
+    write_qt_kit(prefix)
     core = prefix / 'lib/cmake/Qt6Core/Qt6CoreTargets.cmake'
     core.parent.mkdir(parents=True, exist_ok=True)
-    core.write_text('QT_ENABLED_PUBLIC_FEATURES "timezone;static"\n'
+    core.write_text('add_library(Qt6::Core STATIC IMPORTED)\n'
+                    'QT_ENABLED_PUBLIC_FEATURES "timezone;static"\n'
                     'QT_ENABLED_PRIVATE_FEATURES "ltcg;system_zlib"\n'
                     'QT_DISABLED_PRIVATE_FEATURES "timezone_locale"\n')
     gui = prefix / 'lib/cmake/Qt6Gui/Qt6GuiTargets.cmake'
@@ -35,6 +81,242 @@ def static_qt_feature_fingerprint():
     hashes.extend(hashlib.sha256((ROOT / 'scripts' / name).read_bytes()).hexdigest()
                   for name in json.loads(policy_bytes)['windowsSourcePatches'])
     return hashlib.sha256('|'.join(hashes).encode('utf-8')).hexdigest()
+
+
+class QtKitValidation(unittest.TestCase):
+    """Qt upgrade guards runnable on every host without a compiler or shell."""
+
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory(prefix='snow Qt validation ')
+        self.addCleanup(self.temp.cleanup)
+        self.prefix = Path(self.temp.name) / 'Qt kit'
+        write_static_qt_feature_targets(self.prefix)
+        stamp = self.prefix / 'share/snow-apps/static-qt-build.json'
+        stamp.parent.mkdir(parents=True)
+        stamp.write_text(json.dumps({
+            'SchemaVersion': 3, 'QtVersion': QT_VERSION, 'Architecture': 'arm64',
+            'SourceArchiveSha256': QT_POLICY['sourceArchiveSha256'],
+            'Configuration': 'Release', 'DeploymentTarget': QT_MACOS_DEPLOYMENT_TARGET,
+            'Dup3': False,
+            'Ltcg': True, 'SystemPng': True, 'SystemZlib': True,
+            'Timezone': True, 'TimezoneLocale': False,
+            'FeatureFingerprint': static_qt_feature_fingerprint(),
+        }))
+        (self.prefix / 'share/snow-apps/qt-licenses').mkdir()
+        spec = importlib.util.spec_from_file_location(
+            'snow_qt_validator', ROOT / 'scripts/validate-static-qt.py')
+        self.validator = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(self.validator)
+
+    def run_validator(self, *args, success=True):
+        result = subprocess.run([sys.executable, str(ROOT / 'scripts/validate-static-qt.py'),
+                                 '--prefix', str(self.prefix), '--arch', 'arm64', *args],
+                                text=True, capture_output=True)
+        if success:
+            self.assertEqual(result.returncode, 0, result.stderr)
+        else:
+            self.assertNotEqual(result.returncode, 0, result.stdout)
+        return result
+
+    def test_static_and_shared_kits_use_the_pinned_version(self):
+        self.run_validator()
+        self.run_validator('--features-only')
+        write_qt_kit(self.prefix, static=False, architectures=('arm64',))
+        self.run_validator('--kit-only')
+        self.run_validator(success=False)
+        self.assertEqual(self.validator.toolchain_policy()['qtVersion'], QT_VERSION)
+
+    def test_stale_installed_version_cannot_be_hidden_by_a_current_stamp(self):
+        for module in ('Qt6', 'Qt6Core'):
+            path = self.prefix / 'lib/cmake' / module / (module + 'ConfigVersionImpl.cmake')
+            original = path.read_text()
+            path.write_text('set(PACKAGE_VERSION "6.11.1")\n')
+            for mode in ((), ('--kit-only',), ('--features-only',)):
+                with self.subTest(module=module, mode=mode):
+                    result = self.run_validator(*mode, success=False)
+                    self.assertIn(f'The installed {module} package must be Qt', result.stderr)
+            path.write_text(original)
+
+    def test_stock_dialog_catalogs_are_required_without_an_english_catalog(self):
+        self.assertFalse((self.prefix / 'translations/qtbase_en_US.qm').exists())
+        self.run_validator('--kit-only')
+        for language in ('zh_CN', 'zh_TW'):
+            path = self.prefix / 'translations' / f'qtbase_{language}.qm'
+            path.unlink()
+            result = self.run_validator('--kit-only', success=False)
+            self.assertIn('stock-dialog translation catalog is missing', result.stderr)
+            path.touch()
+
+    def test_missing_or_conflicting_package_metadata_is_rejected(self):
+        config = self.prefix / 'lib/cmake/Qt6/Qt6ConfigVersionImpl.cmake'
+        config.unlink()
+        self.run_validator('--kit-only', success=False)
+        config.write_text(f'set(PACKAGE_VERSION "{QT_VERSION}")\n')
+        wrapper = config.with_name('Qt6ConfigVersion.cmake')
+        wrapper.write_text('set(PACKAGE_VERSION "6.11.1")\n')
+        self.run_validator('--kit-only', success=False)
+
+    def test_release_binary_architecture_is_verified_independently_of_stamp(self):
+        path = self.prefix / 'lib/libQt6Core.a'
+        path.write_bytes(struct.pack('<8I', 0xfeedfacf, 0x01000007, 0, 1, 0, 0, 0, 0))
+        result = self.run_validator(success=False)
+        self.assertIn('does not support arm64', result.stderr)
+        result = self.run_validator('--kit-only', success=False)
+        self.assertIn('does not support arm64', result.stderr)
+
+    def test_release_artifact_and_supported_linkage_are_required(self):
+        targets = self.prefix / 'lib/cmake/Qt6Core/Qt6CoreTargets.cmake'
+        targets.write_text('add_library(Qt6::Core INTERFACE IMPORTED)\n')
+        self.run_validator('--kit-only', success=False)
+        write_static_qt_feature_targets(self.prefix)
+        release = targets.with_name('Qt6CoreTargets-release.cmake')
+        release.unlink()
+        self.run_validator('--kit-only', success=False)
+        release.write_text('IMPORTED_LOCATION_DEBUG "${_IMPORT_PREFIX}/lib/libQt6Core.a"\n')
+        self.run_validator('--kit-only', success=False)
+
+    def test_thin_bsd_archive_and_universal_headers_are_supported(self):
+        path = self.prefix / 'lib/libQt6Core.a'
+        self.assertEqual(self.validator.binary_architectures(path), {'arm64', 'x64'})
+        obj = struct.pack('<8I', 0xfeedfacf, 0x0100000c, 0, 1, 0, 0, 0, 0)
+        name = b'qcore.o\0'
+        member = f"{'#1/' + str(len(name)):<16}{0:<12}{0:<6}{0:<6}{100644:<8}{len(name + obj):<10}`\n".encode()
+        path.write_bytes(b'!<arch>\n' + member + name + obj)
+        self.assertEqual(self.validator.binary_architectures(path), {'arm64'})
+        self.run_validator()
+
+    def test_truncated_or_non_macho_artifacts_are_rejected(self):
+        path = self.prefix / 'lib/libQt6Core.a'
+        for payload in (b'not a macOS library', struct.pack('>2I', 0xcafebabe, 2),
+                        b'!<arch>\n' + b' ' * 60):
+            with self.subTest(payload=payload):
+                path.write_bytes(payload)
+                self.run_validator('--kit-only', success=False)
+
+    def test_darwin_lto_objects_retain_their_actual_architecture(self):
+        path = self.prefix / 'lib/libQt6Core.a'
+        bitcode = b'BC\xc0\xde'
+        wrapper = struct.pack('<5I', 0x0b17c0de, 0, 20, len(bitcode), 0x0100000c)
+        member = f"{'qcore.o/':<16}{0:<12}{0:<6}{0:<6}{100644:<8}{len(wrapper + bitcode):<10}`\n".encode()
+        path.write_bytes(b'!<arch>\n' + member + wrapper + bitcode)
+        self.assertEqual(self.validator.binary_architectures(path), {'arm64'})
+        self.run_validator()
+        path.write_bytes(struct.pack('<5I', 0x0b17c0de, 0, 20, 1000, 0x0100000c))
+        self.run_validator('--kit-only', success=False)
+
+    def test_stamp_cannot_claim_a_different_source_archive(self):
+        path = self.prefix / 'share/snow-apps/static-qt-build.json'
+        stamp = json.loads(path.read_text())
+        for field, value in (('SchemaVersion', 2), ('SourceArchiveSha256', '0' * 64),
+                             ('Configuration', 'Debug'), ('Architecture', 'x64'),
+                             ('DeploymentTarget', '14.0')):
+            with self.subTest(field=field):
+                path.write_text(json.dumps(dict(stamp, **{field: value})))
+                result = self.run_validator(success=False)
+                self.assertIn(f"Static Qt build stamp '{field}'", result.stderr)
+
+    def test_existing_source_tree_must_match_the_toolchain_policy(self):
+        source = Path(self.temp.name) / 'Qt source'
+        metadata = source / 'qtbase/.cmake.conf'
+        metadata.parent.mkdir(parents=True)
+        metadata.write_text(f'set(QT_REPO_MODULE_VERSION "{QT_VERSION}")\n'
+                            f'set(QT_SUPPORTED_MIN_MACOS_VERSION "{QT_MACOS_DEPLOYMENT_TARGET}")\n')
+        self.run_validator('--source-dir', str(source))
+        metadata.write_text('set(QT_REPO_MODULE_VERSION "6.11.1")\n')
+        result = self.run_validator('--source-dir', str(source), success=False)
+        self.assertIn(f'Qt sources must be qtbase {QT_VERSION}', result.stderr)
+
+    def test_source_runtime_floor_cannot_exceed_the_audited_deployment_target(self):
+        source = Path(self.temp.name) / 'Qt source'
+        metadata = source / 'qtbase/.cmake.conf'
+        metadata.parent.mkdir(parents=True)
+        for minimum in ('14.0', QT_MACOS_DEPLOYMENT_TARGET, QT_MACOS_DEPLOYMENT_TARGET + '.0'):
+            with self.subTest(minimum=minimum):
+                metadata.write_text(f'set(QT_REPO_MODULE_VERSION "{QT_VERSION}")\n'
+                                    f'set(QT_SUPPORTED_MIN_MACOS_VERSION "{minimum}")\n')
+                self.run_validator('--source-dir', str(source))
+        metadata.write_text(f'set(QT_REPO_MODULE_VERSION "{QT_VERSION}")\n'
+                            'set(QT_SUPPORTED_MIN_MACOS_VERSION "15.0")\n')
+        result = self.run_validator('--source-dir', str(source), success=False)
+        self.assertIn('Qt sources require macOS 15.0 or newer', result.stderr)
+        for declaration in ('', 'set(QT_SUPPORTED_MIN_MACOS_VERSION "unsupported")\n'):
+            with self.subTest(declaration=declaration):
+                metadata.write_text(f'set(QT_REPO_MODULE_VERSION "{QT_VERSION}")\n' + declaration)
+                result = self.run_validator('--source-dir', str(source), success=False)
+                self.assertIn('must declare their supported macOS runtime floor', result.stderr)
+
+    def test_source_archive_must_match_its_pinned_digest_before_extraction(self):
+        archive = Path(self.temp.name) / 'qt source archive.tar.xz'
+        payload = b'Qt archive fixture' * 100000
+        archive.write_bytes(payload)
+        self.validator.validate_archive(archive, hashlib.sha256(payload).hexdigest())
+        with self.assertRaisesRegex(ValueError, 'SHA-256 mismatch'):
+            self.validator.validate_archive(archive, '0' * 64)
+        result = self.run_validator('--source-archive', str(archive), success=False)
+        self.assertIn('SHA-256 mismatch', result.stderr)
+
+
+class QtMacOSDeploymentPolicy(unittest.TestCase):
+    def test_shell_loader_exports_the_audited_qt_target(self):
+        bash = bash_executable()
+        if not bash:
+            self.skipTest('Bash is required for the Qt deployment policy fixture')
+        result = subprocess.run([
+            bash, '-c',
+            'snow_fixture_python="$2"; python3() { "$snow_fixture_python" "$@"; }; '
+            'source "$1"; snow_load_qt_policy; '
+            'printf "%s\\n" "$snow_qt_deployment_target" "$snow_qt_version" "$snow_qt_source_sha256"',
+            'qt-policy-fixture', (ROOT / 'scripts/snow-build-environment.sh').as_posix(),
+            Path(sys.executable).as_posix()], text=True, capture_output=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout.splitlines(),
+                         [QT_MACOS_DEPLOYMENT_TARGET, QT_VERSION, QT_POLICY['sourceArchiveSha256']])
+
+
+class QtLicenseMetadata(unittest.TestCase):
+    """Test source-license copying on macOS, Linux, or Windows with Git Bash."""
+
+    def setUp(self):
+        self.bash = bash_executable()
+        if not self.bash:
+            self.skipTest('Bash is required for the source-license copying fixture')
+        self.temporary = tempfile.TemporaryDirectory(prefix='snow Qt license metadata ')
+        self.addCleanup(self.temporary.cleanup)
+        self.root = Path(self.temporary.name)
+        self.source = self.root / 'Qt source'
+        self.destination = self.root / 'license bundle'
+        for component in ('root', 'qtbase', 'qtsvg', 'qttools', 'qttranslations'):
+            directory = self.source if component == 'root' else self.source / component
+            (directory / 'LICENSES').mkdir(parents=True)
+            (directory / 'LICENSES/GPL-3.0-only.txt').write_text('upstream license text\n')
+            metadata = 'licenseRule.json' if component == 'qttranslations' else 'REUSE.toml'
+            (directory / metadata).write_text(f'upstream {component} metadata\n')
+
+    def copy(self):
+        return subprocess.run([self.bash, '-c',
+                               'source "$1"; snow_install_qt_license_metadata "$2" "$3"',
+                               'qt-license-fixture',
+                               (ROOT / 'scripts/snow-build-environment.sh').as_posix(),
+                               self.source.as_posix(), self.destination.as_posix()],
+                              text=True, capture_output=True)
+
+    def test_translation_license_rules_and_license_texts_are_preserved(self):
+        result = self.copy()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        for source in self.source.rglob('*'):
+            if source.is_file():
+                relative = source.relative_to(self.source)
+                if relative.parts[0] not in ('qtbase', 'qtsvg', 'qttools', 'qttranslations'):
+                    relative = Path('root') / relative
+                self.assertEqual((self.destination / relative).read_bytes(), source.read_bytes())
+        self.assertFalse((self.destination / 'qttranslations/REUSE.toml').exists())
+
+    def test_incomplete_source_metadata_is_rejected_before_copying(self):
+        (self.source / 'qttranslations/licenseRule.json').unlink()
+        result = self.copy()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('incomplete for qttranslations', result.stderr)
+        self.assertFalse(self.destination.exists())
 
 
 class MacOSBundleMetadata(unittest.TestCase):
@@ -332,9 +614,10 @@ if name == 'openssl':
         (qt / "Qt6Config.cmake").touch()
         stamp = self.root / "Qt kit/share/snow-apps/static-qt-build.json"
         stamp.parent.mkdir(parents=True)
-        stamp.write_text(json.dumps({"SchemaVersion": 2, "QtVersion": "6.11.1",
+        stamp.write_text(json.dumps({"SchemaVersion": 3, "QtVersion": QT_VERSION,
+                                     "SourceArchiveSha256": QT_POLICY['sourceArchiveSha256'],
                                      "Architecture": "arm64", "Configuration": "Release",
-                                     "DeploymentTarget": "14.0",
+                                     "DeploymentTarget": QT_MACOS_DEPLOYMENT_TARGET,
                                      "Dup3": False,
                                      "Ltcg": True, "SystemPng": True, "SystemZlib": True,
                                      "Timezone": True, "TimezoneLocale": False,
@@ -515,8 +798,9 @@ if name == 'openssl':
         (prefix / 'share/snow-apps/qt-licenses').mkdir(parents=True)
         stamp = prefix / 'share/snow-apps/static-qt-build.json'
         stamp.write_text(json.dumps({
-            'SchemaVersion': 2, 'QtVersion': '6.11.1', 'Architecture': 'arm64',
-            'Configuration': 'Release', 'DeploymentTarget': '14.0',
+            'SchemaVersion': 3, 'QtVersion': QT_VERSION, 'Architecture': 'arm64',
+            'SourceArchiveSha256': QT_POLICY['sourceArchiveSha256'],
+            'Configuration': 'Release', 'DeploymentTarget': QT_MACOS_DEPLOYMENT_TARGET,
             'Dup3': False,
             'DependencyFingerprint': fingerprint,
             'Ltcg': True, 'SystemPng': True, 'SystemZlib': True,
@@ -527,12 +811,14 @@ if name == 'openssl':
         calls = self.run_script('build-static-qt.sh', '--install-prefix', str(prefix),
                                 '--dependency-prefix', str(dependencies))
         self.assertFalse(any(call[0] == 'cmake' for call in calls))
-        self.assertIn('Validated static Qt 6.11.1 (arm64)', self.last_result.stdout)
+        self.assertIn(f'Validated static Qt {QT_VERSION} (arm64)', self.last_result.stdout)
 
     def test_release_build_rejects_stale_or_untrimmed_static_qt_stamps(self):
         stamp = self.root / 'Qt kit/share/snow-apps/static-qt-build.json'
         original = json.loads(stamp.read_text())
-        for name, value in (('SchemaVersion', 1), ('Timezone', False),
+        for name, value in (('SchemaVersion', 2), ('QtVersion', '6.11.1'),
+                            ('DeploymentTarget', '14.0'),
+                            ('SourceArchiveSha256', 'stale-source'), ('Timezone', False),
                             ('TimezoneLocale', True), ('TimezoneLocale', 'false'),
                             ('FeatureFingerprint', 'stale-policy')):
             with self.subTest(field=name, value=value):
@@ -565,7 +851,7 @@ if name == 'openssl':
         self.assertIn('xcrun --show-sdk-path', builder)
         self.assertIn('qt_apple_options+=(-DQT_NO_XCODE_MIN_VERSION_CHECK=ON)', builder)
         self.assertIn('"${qt_apple_options[@]}"', builder)
-        self.assertIn('qt_deployment_target=14.0', builder)
+        self.assertIn('qt_deployment_target="$snow_qt_deployment_target"', builder)
         self.assertIn('-DCMAKE_OSX_DEPLOYMENT_TARGET="$qt_deployment_target"', builder)
         self.assertIn('-DFEATURE_dup3=OFF', builder)
         self.assertIn("'FEATURE_dup3:BOOL=OFF' 'QT_FEATURE_dup3:INTERNAL=OFF'", builder)
@@ -1036,7 +1322,7 @@ class MacOSBundle(unittest.TestCase):
     def test_deploy_helpers_and_package(self):
         arch = "arm64" if os.uname().machine == "arm64" else "x64"
         prefix = ROOT / f".tools/macos/installed/dynamic/{arch}-osx-snow-shot"
-        qt = os.environ.get("Qt6_DIR", str(Path.home() / "Qt/6.11.1/macos/lib/cmake/Qt6"))
+        qt = os.environ.get("Qt6_DIR", str(Path.home() / f"Qt/{QT_VERSION}/macos/lib/cmake/Qt6"))
         with tempfile.TemporaryDirectory(prefix="snow bundle test ") as temp:
             out = Path(temp) / "build"
             stage = Path(temp) / "stage"

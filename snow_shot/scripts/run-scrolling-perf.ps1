@@ -1,3 +1,4 @@
+#requires -Version 7.2
 param(
     [string]$QtBin = "",
     [string]$OutputDirectory = "",
@@ -24,6 +25,7 @@ function Invoke-Checked {
 }
 
 $workspace = (Resolve-Path (Join-Path $PSScriptRoot "..\..")).Path
+. (Join-Path $PSScriptRoot "performance-environment.ps1")
 $crates = Join-Path $workspace "snow-crates"
 $shot = Join-Path $workspace "snow_shot"
 if ([string]::IsNullOrWhiteSpace($OutputDirectory)) {
@@ -45,7 +47,7 @@ try {
             $LiveWarmups -lt 0 -or $LiveSamples -le 0) {
             throw "Live capture dimensions and sample counts are invalid"
         }
-        if ($RegionX.HasValue -ne $RegionY.HasValue) {
+        if (($null -ne $RegionX) -ne ($null -ne $RegionY)) {
             throw "RegionX and RegionY must be supplied together"
         }
         $liveArguments = @(
@@ -57,10 +59,10 @@ try {
             "--warmups", $LiveWarmups.ToString(),
             "--samples", $LiveSamples.ToString()
         )
-        if ($RegionX.HasValue) {
+        if ($null -ne $RegionX) {
             $liveArguments += @(
-                "--x", $RegionX.Value.ToString(),
-                "--y", $RegionY.Value.ToString()
+                "--x", $RegionX.ToString(),
+                "--y", $RegionY.ToString()
             )
         }
         Invoke-Checked "cargo" $liveArguments
@@ -72,12 +74,10 @@ finally {
 
 Push-Location $workspace
 try {
-    Invoke-Checked "powershell" @(
-        "-NoProfile",
-        "-ExecutionPolicy", "Bypass",
-        "-File", (Join-Path $shot "scripts\configure-msvc-perf.ps1"),
-        "-Fresh"
-    )
+    & (Join-Path $shot "scripts/configure-msvc-perf.ps1") -Fresh -QtBin $QtBin
+    if ($LASTEXITCODE -ne 0) {
+        throw "The performance configuration failed"
+    }
 
     Invoke-Checked "cmake" @(
         "--build", "build/windows-msvc-performance", "--config", "Release", "--target",
@@ -87,29 +87,29 @@ try {
         "--parallel"
     )
 
-    if (!(Test-Path (Join-Path $QtBin "Qt6Core.dll"))) {
-        throw "Qt 6.11.1 runtime was not found in QtBin: $QtBin"
-    }
-    $env:PATH = "$QtBin;$env:PATH"
-    $qtRoot = Split-Path $QtBin -Parent
-    $env:QT_QPA_PLATFORM = "offscreen"
-    $env:QT_QPA_PLATFORM_PLUGIN_PATH = Join-Path $qtRoot "plugins\platforms"
     $release = Join-Path $workspace "build\windows-msvc-performance\snow_shot\test-bin\Release"
 
-    $env:SNOW_SCROLLING_PERF_OUTPUT =
-        Join-Path $OutputDirectory "async-result.json"
-    Invoke-Checked (Join-Path $release "snow-shot-scrolling-result-async-benchmark.exe") @()
+    $qtRuntime = Set-SnowPerformanceQtRuntime -Platform "offscreen"
+    $savedOutput = $env:SNOW_SCROLLING_PERF_OUTPUT
+    try {
+        $env:SNOW_SCROLLING_PERF_OUTPUT =
+            Join-Path $OutputDirectory "async-result.json"
+        Invoke-Checked (Join-Path $release "snow-shot-scrolling-result-async-benchmark.exe") @()
 
-    $env:SNOW_SCROLLING_PERF_OUTPUT =
-        Join-Path $OutputDirectory "tiled-preview.json"
-    Invoke-Checked (Join-Path $release "snow-shot-scrolling-preview-benchmark.exe") @()
+        $env:SNOW_SCROLLING_PERF_OUTPUT =
+            Join-Path $OutputDirectory "tiled-preview.json"
+        Invoke-Checked (Join-Path $release "snow-shot-scrolling-preview-benchmark.exe") @()
 
-    $env:SNOW_SCROLLING_PERF_OUTPUT =
-        Join-Path $OutputDirectory "backpressure.json"
-    Invoke-Checked (Join-Path $release "snow-shot-latest-bridge-mailbox-tests.exe") @()
+        $env:SNOW_SCROLLING_PERF_OUTPUT =
+            Join-Path $OutputDirectory "backpressure.json"
+        Invoke-Checked (Join-Path $release "snow-shot-latest-bridge-mailbox-tests.exe") @()
+    }
+    finally {
+        Restore-SnowPerformanceQtRuntime -Snapshot $qtRuntime
+        $env:SNOW_SCROLLING_PERF_OUTPUT = $savedOutput
+    }
 }
 finally {
-    Remove-Item Env:SNOW_SCROLLING_PERF_OUTPUT -ErrorAction SilentlyContinue
     Pop-Location
 }
 

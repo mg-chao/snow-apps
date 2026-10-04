@@ -56,7 +56,7 @@ class WidgetAccessibilityRepair final : public QObject {
       return false;
     }
 
-    // Qt 6.11 can return an expired interface for a reused QObject address. Its
+    // Qt 6.11 and 6.12 can return an expired interface for a reused QObject address. Their
     // setWindowTitle_sys() then calls QAccessibleWidget::text() without checking
     // validity. SurfaceCreated precedes that lookup during QWidget::create();
     // WinIdChange and Polish are too late on some platform paths.

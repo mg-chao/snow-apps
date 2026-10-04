@@ -558,7 +558,7 @@ void editorAndShortcutBehavior() {
     source->clear();
     QMimeData dropText;
     dropText.setText(boundary + QStringLiteral("drop overflow"));
-    QDragEnterEvent enter(QPoint(10, 10), Qt::CopyAction, &dropText, Qt::LeftButton,
+    QDragEnterEvent enter(QPointF(10, 10), Qt::CopyAction, &dropText, Qt::LeftButton,
                           Qt::NoModifier);
     QApplication::sendEvent(source->viewport(), &enter);
     QDropEvent drop(QPointF(10, 10), Qt::CopyAction, &dropText, Qt::LeftButton, Qt::NoModifier);

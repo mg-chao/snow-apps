@@ -26,6 +26,27 @@ QImage solidContent(const QSize& size = QSize(80, 48)) {
     return image;
 }
 
+void persistedStylePreservesQt611Format() {
+    // Captured using the Qt 6.11.1 default stream format. Keep fixtures independent of the
+    // running Qt version so an upgrade cannot silently change restored pin appearance.
+    const QByteArray legacy = QByteArray::fromHex("0000000c0000000601dcdc14141e1e28280000");
+    const auto restored = decodeScreenshotResultStyle(legacy);
+    require(restored && restored->cornerRadius == 12 && restored->shadowWidth == 6 &&
+                restored->shadowColor == QColor(20, 30, 40, 220) && !restored->region &&
+                restored->regionScale == 1.0,
+            "Qt 6.11 style records must restore their original effects");
+
+    const QByteArray extended = QByteArray::fromHex(
+        "0000000c0000000601dcdc14141e1e2828000053535247013ff4000000000000ffffffff");
+    const auto current = decodeScreenshotResultStyle(extended);
+    require(current && current->regionScale == 1.25 && !current->region,
+            "Qt 6.11 extended style records must restore their geometry scale");
+    require(encodeScreenshotResultStyle(*current) == extended,
+            "writing a restored style must preserve the existing Qt 6.11 bytes");
+    require(!decodeScreenshotResultStyle(extended.left(extended.size() - 1)),
+            "truncated persisted geometry must remain rejected after a Qt upgrade");
+}
+
 void squareResultPreservesPhysicalPixels() {
     const QImage result = ScreenshotResultCompositor::compose(solidContent(), {});
     require(result.size() == QSize(80, 48), "square output dimensions changed");
@@ -229,6 +250,7 @@ void liveSurfacePreservesTranslatedFractionalContent() {
 int main(int argc, char** argv) {
     QApplication application(argc, argv);
     try {
+        persistedStylePreservesQt611Format();
         squareResultPreservesPhysicalPixels();
         roundedAndShadowedResultHasRealTransparency();
         previewAssetsAreReleasedAfterCapture();

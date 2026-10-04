@@ -158,7 +158,7 @@ class TrayImageCache final {
             return {};
         }
 
-        const QSize sourceSize = reader.size();
+        const QSize sourceSize = reader.effectiveSize();
         if (!sourceSize.isValid() || sourceSize.width() <= 0 || sourceSize.height() <= 0 ||
             sourceSize.width() > 16384 || sourceSize.height() > 16384 ||
             static_cast<qint64>(sourceSize.width()) * sourceSize.height() > 64LL * 1024 * 1024) {
@@ -166,7 +166,9 @@ class TrayImageCache final {
             return {};
         }
 
-        const QSize bounded = sourceSize.scaled(QSize(256, 256), Qt::KeepAspectRatio);
+        // The decoded size accounts for orientation; Qt applies setScaledSize before that
+        // transformation, so request scaling in the encoded image's coordinate system.
+        const QSize bounded = reader.size().scaled(QSize(256, 256), Qt::KeepAspectRatio);
         if (sourceSize.width() > 256 || sourceSize.height() > 256) {
             reader.setScaledSize(bounded);
         }

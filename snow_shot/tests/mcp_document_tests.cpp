@@ -1,4 +1,5 @@
 #include "snow_shot/app/mcp/mcpdocumentservice.h"
+#include "image_orientation_fixture.h"
 #include "snow_shot/app/mcp/mcpjobregistry.h"
 #include "snow_shot/app/mcp/mcpapplicationservice.h"
 #include "snow_shot/presentation/settings/settingsruntimesession.h"
@@ -379,6 +380,66 @@ int serve(QApplication& application, const QString& directory) {
     documents.shutdown();
     return result;
 }
+void orientedFileDocuments(const QString& directory) {
+    QImage image(64, 32, QImage::Format_RGB32);
+    image.fill(Qt::blue);
+    for (int y = 0; y < image.height(); ++y)
+        for (int x = 0; x < image.width() / 2; ++x)
+            image.setPixelColor(x, y, Qt::red);
+    McpDocumentService service({});
+    quint64 sequence = 0;
+    const auto call = [&](QString method, QJsonObject params) {
+        ScreenshotMcpRequest request;
+        request.connectionId = 1;
+        request.requestId = QString::number(++sequence);
+        request.idempotencyKey = request.requestId;
+        request.method = std::move(method);
+        request.params = std::move(params);
+        request.expectedRevision = 1;
+        std::optional<ScreenshotMcpResponse> response;
+        service.request(request, [&](auto value) { response = std::move(value); });
+        QElapsedTimer timer;
+        timer.start();
+        while (!response && timer.elapsed() < 5000) {
+            QCoreApplication::processEvents();
+            QThread::msleep(1);
+        }
+        require(response.has_value(), "oriented document operation completed");
+        return *response;
+    };
+    for (const quint8 orientation : {quint8(6), quint8(8)}) {
+        const QByteArray encoded =
+            image_orientation_fixture::jpegWithExifOrientation(image, orientation);
+        const QString path =
+            QDir(directory).filePath(QStringLiteral("oriented-source-%1.jpg").arg(orientation));
+        QFile file(path);
+        require(!encoded.isEmpty() && file.open(QIODevice::WriteOnly) &&
+                    file.write(encoded) == encoded.size(),
+                "oriented document fixture is writable");
+        file.close();
+        const auto opened = call(
+            QStringLiteral("snow_shot_document_open"),
+            {{QStringLiteral("source"), QStringLiteral("file")}, {QStringLiteral("path"), path}});
+        require(opened.ok && opened.result.value(QStringLiteral("canvas_bounds")) ==
+                                 QJsonArray{0, 0, 32, 64},
+                "admitted document canvas must use EXIF transformed dimensions");
+        const QJsonObject document{{QStringLiteral("document_id"),
+                                    opened.result.value(QStringLiteral("document_id")).toString()}};
+        const auto rendered = call(QStringLiteral("snow_shot_document_render"), document);
+        const QImage raster = QImage::fromData(rendered.attachment);
+        require(rendered.ok && raster.size() == QSize(32, 64),
+                "oriented document output must match its admitted canvas dimensions");
+        const QColor top = raster.pixelColor(16, 16);
+        const QColor bottom = raster.pixelColor(16, 48);
+        require(orientation == 6 ? top.red() > 240 && bottom.blue() > 240
+                                 : top.blue() > 240 && bottom.red() > 240,
+                "document imports must preserve both EXIF quarter-turn directions");
+        require(call(QStringLiteral("snow_shot_document_close"), document).ok,
+                "oriented source releases its document slot");
+    }
+    service.shutdown();
+}
+
 void documentReservations(const QString& directory) {
     QImage image(16, 16, QImage::Format_ARGB32_Premultiplied);
     image.fill(Qt::white);
@@ -1705,6 +1766,7 @@ int main(int argc, char** argv) {
         snow_shot::storage::ApplicationStorage::instance().shutdown();
         return 0;
     }
+    orientedFileDocuments(temporary.path());
     documentReservations(temporary.path());
     documentCacheWork(temporary.path());
     documentConcurrency();

@@ -133,7 +133,10 @@ function Get-ValidatedStaticQtStamp {
             -Configuration $ExpectedConfiguration)) {
         throw "The static Qt build stamp must describe the current feature policy with timezone_locale disabled."
     }
-    if (-not (Test-SnowQtSystemCodecKit -Qt6Dir (Join-Path $Prefix "lib\cmake\Qt6"))) {
+    $qtDir = Join-Path $Prefix "lib/cmake/Qt6"
+    if ((Get-SnowQtKitVersion -Qt6Dir $qtDir) -cne $ExpectedVersion -or
+        -not (Test-SnowQtSystemCodecKit -Qt6Dir $qtDir) -or
+        -not (Test-SnowQtTranslationKit -Qt6Dir $qtDir)) {
         throw "The installed Qt targets do not match the audited system-codec/LTCG/timezone feature policy."
     }
     foreach ($patch in $script:SnowStaticQtSourcePatches) {
@@ -259,7 +262,7 @@ $staticVcpkgPrefix = Join-Path $staticVcpkgInstalledRoot "x64-windows-static"
 Assert-SnowShotStaticDependencies -InstalledRoot $staticVcpkgInstalledRoot -Prefix $staticVcpkgPrefix
 $qtPrefix = [System.IO.Path]::GetFullPath((Join-Path $buildEnvironment.Qt6Dir "..\..\.."))
 $qtStamp = Get-ValidatedStaticQtStamp -Prefix $qtPrefix `
-    -ExpectedVersion "6.11.1" -ExpectedConfiguration "Release"
+    -ExpectedVersion $script:SnowQtVersion -ExpectedConfiguration "Release"
 
 $cachePath = Join-Path $buildDirectory "CMakeCache.txt"
 if (-not $SkipBuild) {

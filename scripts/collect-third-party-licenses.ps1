@@ -146,7 +146,7 @@ foreach ($licenseFile in $qtLicenseFiles) {
     $package = if ($segments.Count -gt 1) { $segments[0] } else { "qt" }
     $relativeName = ($segments -join "__")
     Copy-LicenseNotice -Category "qt" -Package $package `
-        -DeclaredLicense "See Qt REUSE metadata and collected license texts" `
+        -DeclaredLicense "See upstream Qt licensing metadata and collected license texts" `
         -Source $licenseFile.FullName -RelativeName $relativeName
 }
 

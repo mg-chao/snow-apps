@@ -99,20 +99,30 @@ release deletions are reconciled by reading the exact release id before proceedi
 
 ### Production Qt feature policy
 
-Windows production Qt 6.11.1 keeps time-zone handling and native Windows zone
+Windows production Qt 6.12.0 LTS keeps time-zone handling and native Windows zone
 mappings and daylight-saving rules, while omitting the bundled CLDR localized
 time-zone display-name tables. The audited source patch preserves the native
 registry's long names in the system language and supplies unambiguous UTC-offset
 fallbacks for short and offset names in every requested locale. Numeric timestamps,
 UTC storage, local conversions, and daylight-saving transitions retain their behavior.
 
-`scripts/build-static-qt.ps1` pins the Qt version supported by the patch, applies
-it idempotently, and installs it under the kit's source-license bundle. The build
+`scripts/qt-toolchain.json` is the version and source-archive SHA256 contract for
+CMake, Windows/macOS provisioning, and release CI. Both source builders verify
+the archive before extraction. `scripts/build-static-qt.ps1` applies the patch
+idempotently and installs it under the kit's source-license bundle. The build
 stamp fingerprints the feature policy and patch contents. Bootstrap and packaging
-verify the installed feature exports as well as the stamp; packaging also checks
-the installed patch hashes. Rebuild into a distinct installation prefix when
-upgrading an older kit. Development and performance presets can still use their
-existing kits.
+verify the installed Qt version and feature exports as well as the stamp;
+packaging also checks the installed patch hashes. Rebuild into a distinct
+installation prefix when upgrading an older kit. All presets require Qt 6.12.0;
+Debug source kits include Qt Test and Concurrent for the widget tests and image
+viewer and use bundled codecs to match the Debug runtime. Windows bootstrap also
+discovers kits under `.tools/qt/<version>/`.
+
+For a Release development kit used by `windows-msvc-performance`, pass
+`-DevelopmentModules` to `scripts/build-static-qt.ps1`. It enables Test and
+Concurrent and can add them incrementally to an already validated production
+kit. Performance discovery requires these modules. They are separate static
+libraries and are not linked into the production Snow Shot executable.
 
 macOS continues using Cocoa time-zone names; Qt already excludes these CLDR
 tables on Apple platforms. Its static kit uses the same feature policy and

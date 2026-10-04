@@ -62,22 +62,30 @@ jobs:
         shell: pwsh
         run: .\scripts\bootstrap.ps1 -VcpkgVariants Static -SkipQtValidation
 
+      - name: Resolve repository Qt toolchain
+        id: qt-toolchain
+        shell: pwsh
+        run: |
+          . scripts/snow-build-environment.ps1
+          "version=$script:SnowQtVersion" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+
       - name: Cache static Qt kit
         uses: actions/cache@v4
         with:
-          path: ${{ runner.tool_cache }}\snow-qt\6.11.1\msvc2026_64-static-system-codecs
-          key: snow-qt-static-system-codecs-v3-6.11.1-msvc2026-x64-${{ runner.os }}-${{ hashFiles('scripts/build-static-qt.ps1', 'scripts/snow-build-environment.ps1', 'scripts/static-qt-features.json', 'scripts/qtbase-timezone-without-cldr.patch', 'scripts/bootstrap.ps1', 'vcpkg.json', 'cmake/vcpkg-overlay-triplets/x64-windows-static.cmake', 'cmake/vcpkg-overlay-ports/zlib/**') }}
+          path: ${{ runner.tool_cache }}\snow-qt\${{ steps.qt-toolchain.outputs.version }}\msvc2026_64-static-system-codecs
+          key: snow-qt-static-system-codecs-v5-${{ steps.qt-toolchain.outputs.version }}-msvc2026-x64-${{ runner.os }}-${{ hashFiles('scripts/qt-toolchain.json', 'scripts/build-static-qt.ps1', 'scripts/snow-build-environment.ps1', 'scripts/static-qt-features.json', 'scripts/qtbase-timezone-without-cldr.patch', 'scripts/bootstrap.ps1', 'vcpkg.json', 'cmake/vcpkg-overlay-triplets/x64-windows-static.cmake', 'cmake/vcpkg-overlay-ports/zlib/**') }}
 
-      - name: Prepare Qt 6.11.1 static kit
+      - name: Prepare Qt LTS static kit
         shell: pwsh
         run: |
-          $prefix = Join-Path $env:RUNNER_TOOL_CACHE "snow-qt\6.11.1\msvc2026_64-static-system-codecs"
+          . scripts/snow-build-environment.ps1
+          $prefix = Join-Path $env:RUNNER_TOOL_CACHE "snow-qt\$script:SnowQtVersion\msvc2026_64-static-system-codecs"
           $dependencies = Join-Path $env:GITHUB_WORKSPACE ".tools\vcpkg\installed\static\x64-windows-static"
-          & "$env:GITHUB_WORKSPACE\scripts\build-static-qt.ps1" -QtVersion 6.11.1 -InstallPrefix $prefix -DependencyPrefix $dependencies
+          & "$env:GITHUB_WORKSPACE\scripts\build-static-qt.ps1" -InstallPrefix $prefix -DependencyPrefix $dependencies
           if ($LASTEXITCODE -ne 0) { throw "Static Qt bootstrap failed." }
           $qtDir = Join-Path $prefix "lib\cmake\Qt6"
           if (-not (Test-Path -LiteralPath (Join-Path $qtDir "Qt6Config.cmake") -PathType Leaf)) {
-            throw "Qt 6.11.1 static CMake package was not found at $qtDir"
+            throw "Qt $script:SnowQtVersion static CMake package was not found at $qtDir"
           }
           "SNOW_QT_STATIC_DIR=$qtDir" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
           "Qt6_DIR=$qtDir" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
@@ -112,6 +120,12 @@ jobs:
           python -m unittest discover -s ant_design_qt/tools/tests -p test_generate_icon_pack.py
           if ($LASTEXITCODE -ne 0) { throw "Icon pack generator tests failed." }
           & scripts/test-static-qt-features.ps1
+          python scripts/test-qt-cmake-contract.py
+          if ($LASTEXITCODE -ne 0) { throw "Qt toolchain CMake contract tests failed." }
+          python scripts/test-qt-translation-release.py
+          if ($LASTEXITCODE -ne 0) { throw "Qt stock-dialog translation tests failed." }
+          & scripts/test-performance-qt-environment.ps1
+          & scripts/test-qt-shader-contract.ps1
           & scripts/test-snow-shot-package-compression.ps1
           python scripts/test-snow-shot-gitee-release.py
           if ($LASTEXITCODE -ne 0) { throw "Gitee mirror tests failed." }

@@ -82,7 +82,8 @@ if(SNOW_SHOT_ENABLE_STRICT_COMPILE)
 endif()
 snow_enable_clang_tidy()
 
-find_package(Qt6 6.11.1 EXACT REQUIRED COMPONENTS Widgets LinguistTools Svg Network)
+include("${CMAKE_CURRENT_SOURCE_DIR}/../cmake/SnowQt.cmake")
+snow_find_qt(COMPONENTS Widgets LinguistTools Svg Network)
 if(APPLE)
     add_library(snow_shot_macos_clipboard STATIC src/platform/macos/imageclipboard.mm)
     target_link_libraries(snow_shot_macos_clipboard PUBLIC Qt6::Gui
@@ -136,7 +137,7 @@ endif()
 if(SNOW_SHOT_QT_STATIC)
     if(NOT QT_FEATURE_static)
         message(FATAL_ERROR
-            "SNOW_SHOT_QT_STATIC requires a static Qt 6.11.1 kit. "
+            "SNOW_SHOT_QT_STATIC requires a static Qt ${SNOW_QT_VERSION} kit. "
             "Set SNOW_QT_STATIC_DIR or Qt6_DIR to its lib/cmake/Qt6 directory.")
     endif()
     foreach(_snow_shot_static_qt_plugin IN LISTS _snow_shot_static_qt_plugins)
@@ -177,10 +178,7 @@ if(NOT DEFINED SNOW_SHOT_API_BASE_URL OR SNOW_SHOT_API_BASE_URL STREQUAL "")
             "Snow Shot API base URL." FORCE)
     endif()
 endif()
-find_package(Qt6GuiPrivate 6.11.1 EXACT REQUIRED CONFIG
-    PATHS "${Qt6_DIR}/.."
-    NO_DEFAULT_PATH
-)
+snow_find_qt_private(Gui)
 set(SNOW_SHOT_DRAW_ENGINE_QT_DIR
     "${SNOW_DRAW_ENGINE_SOURCE_DIR}"
     CACHE PATH
@@ -2784,7 +2782,7 @@ if(SNOW_SHOT_BUILD_TESTS)
     )
 
     if(APPLE)
-        find_package(Qt6 REQUIRED COMPONENTS Test)
+        snow_find_qt(COMPONENTS Test)
         add_executable(snow-shot-action-popup-native-tests tests/action_popup_menu_native_tests.mm)
         target_include_directories(snow-shot-action-popup-native-tests PRIVATE
             "${CMAKE_CURRENT_SOURCE_DIR}/include")
@@ -9117,7 +9115,7 @@ if(SNOW_SHOT_BUILD_TESTS)
 endif()
 
 if(SNOW_SHOT_BUILD_TESTS)
-    find_package(Qt6 REQUIRED COMPONENTS Test)
+    snow_find_qt(COMPONENTS Test)
     add_executable(snow-shot-recording-audio-gain-popover-tests
         tests/recording_audio_gain_popover_tests.cpp
         src/presentation/recording/recordingaudiogainpopover.cpp

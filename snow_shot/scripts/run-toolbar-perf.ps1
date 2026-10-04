@@ -1,3 +1,4 @@
+#requires -Version 7.2
 param(
     [string]$QtBin = "",
     [string]$OutputDirectory = "",
@@ -17,6 +18,7 @@ $ErrorActionPreference = "Stop"
 
 $shot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 $workspace = (Resolve-Path (Join-Path $PSScriptRoot "..\..")).Path
+. (Join-Path $PSScriptRoot "performance-environment.ps1")
 if ([string]::IsNullOrWhiteSpace($OutputDirectory)) {
     $stamp = Get-Date -Format "yyyyMMdd-HHmmss"
     $OutputDirectory = Join-Path $shot "build\toolbar-perf\$stamp"
@@ -29,17 +31,13 @@ if ($Warmups -lt 0 -or $Samples -le 0) {
 if ($ScreenIndex -lt 0) {
     throw "ScreenIndex must be nonnegative"
 }
-if (!(Test-Path (Join-Path $QtBin "Qt6Core.dll"))) {
-    throw "Qt runtime not found in QtBin: $QtBin"
-}
 if (![string]::IsNullOrWhiteSpace($Baseline)) {
     $Baseline = (Resolve-Path $Baseline).Path
 }
 
 Push-Location $workspace
 try {
-    & powershell -NoProfile -ExecutionPolicy Bypass -File `
-        (Join-Path $shot "scripts\configure-msvc-perf.ps1") -Fresh
+    & (Join-Path $shot "scripts/configure-msvc-perf.ps1") -Fresh -QtBin $QtBin
     if ($LASTEXITCODE -ne 0) {
         throw "The msvc-perf configuration failed"
     }
@@ -56,17 +54,10 @@ try {
         throw "Benchmark executable was not produced: $executable"
     }
 
-    $qtRoot = Split-Path $QtBin -Parent
-    $savedPath = $env:PATH
-    $savedPlatform = $env:QT_QPA_PLATFORM
-    $savedPluginPath = $env:QT_QPA_PLATFORM_PLUGIN_PATH
     $savedCommit = $env:SNOW_SHOT_PERF_GIT_COMMIT
     $savedDirty = $env:SNOW_SHOT_PERF_GIT_DIRTY
     $savedGpuDriver = $env:SNOW_SHOT_PERF_GPU_DRIVER
     $savedPowerPlan = $env:SNOW_SHOT_PERF_POWER_PLAN
-    $env:PATH = "$QtBin;$env:PATH"
-    $env:QT_QPA_PLATFORM = "windows"
-    $env:QT_QPA_PLATFORM_PLUGIN_PATH = Join-Path $qtRoot "plugins\platforms"
     $env:SNOW_SHOT_PERF_GIT_COMMIT = (& git rev-parse HEAD).Trim()
     $env:SNOW_SHOT_PERF_GIT_DIRTY = if ([string]::IsNullOrWhiteSpace((& git status --porcelain))) { "0" } else { "1" }
     try {
@@ -86,6 +77,7 @@ try {
 
     Add-Type -AssemblyName System.Windows.Forms
     $cursorPosition = [System.Windows.Forms.Cursor]::Position
+    $qtRuntime = Set-SnowPerformanceQtRuntime
     try {
         $arguments = @(
             "--output", $OutputDirectory,
@@ -116,9 +108,7 @@ try {
     }
     finally {
         [System.Windows.Forms.Cursor]::Position = $cursorPosition
-        $env:PATH = $savedPath
-        $env:QT_QPA_PLATFORM = $savedPlatform
-        $env:QT_QPA_PLATFORM_PLUGIN_PATH = $savedPluginPath
+        Restore-SnowPerformanceQtRuntime -Snapshot $qtRuntime
         $env:SNOW_SHOT_PERF_GIT_COMMIT = $savedCommit
         $env:SNOW_SHOT_PERF_GIT_DIRTY = $savedDirty
         $env:SNOW_SHOT_PERF_GPU_DRIVER = $savedGpuDriver

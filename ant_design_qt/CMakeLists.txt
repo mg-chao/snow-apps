@@ -15,7 +15,8 @@ snow_enable_clang_tidy()
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
-find_package(Qt6 REQUIRED COMPONENTS Widgets Svg Network LinguistTools)
+include("${CMAKE_CURRENT_SOURCE_DIR}/../cmake/SnowQt.cmake")
+snow_find_qt(COMPONENTS Widgets Svg Network LinguistTools)
 if(NOT TARGET snow_image::snow_image)
     find_package(snow_image CONFIG REQUIRED)
 endif()
@@ -101,15 +102,15 @@ snow_apply_release_options(ant_design_qt)
 # popup hover use Qt's complete modal stack on every platform. Consumers finalize
 # executables in sibling directories, so this static library's private link
 # dependency must remain visible there as well.
-find_package(Qt6 REQUIRED COMPONENTS GuiPrivate GLOBAL)
+snow_find_qt_private(Gui)
 target_link_libraries(ant_design_qt PRIVATE Qt6::GuiPrivate)
 if(APPLE)
-    # This repair uses QAccessibleCache's private destruction slot. Do not
-    # silently disable it on upgrades: review the upstream fix and run the
-    # accessibility regression before changing the validated version here.
-    if(NOT Qt6Gui_VERSION VERSION_EQUAL "6.11.1")
+    # Qt 6.12.0's source retains QAccessibleCache's private destruction slot and
+    # stale-interface lookup. Keep the repair and review its ABI again on upgrades;
+    # source review does not replace the native macOS accessibility regression.
+    if(NOT Qt6Gui_VERSION VERSION_EQUAL "6.12.0")
         message(WARNING
-            "AdQt macOS accessibility compatibility was validated with Qt 6.11.1; "
+            "AdQt macOS accessibility repair's source ABI was reviewed with Qt 6.12.0; "
             "review widgets/platform_compatibility.cpp and run "
             "adqt-widget-accessibility-repair-tests with Qt ${Qt6Gui_VERSION}.")
     endif()
@@ -186,7 +187,7 @@ endif()
 
 if(ADQT_BUILD_TESTS)
     enable_testing()
-    find_package(Qt6 REQUIRED COMPONENTS Test)
+    snow_find_qt(COMPONENTS Test)
     # Test binaries must report failures as stderr output plus a non-zero
     # exit code instead of blocking on modal dialogs.
     snow_link_test_cli_guard(qt)
@@ -588,6 +589,9 @@ if(ADQT_BUILD_TESTS)
         packages/ant_design_qt/tests/tst_date_picker_performance.cpp)
     set_target_properties(adqt-date-picker-performance-tests PROPERTIES AUTOMOC ON)
     target_link_libraries(adqt-date-picker-performance-tests PRIVATE adqt::widgets Qt6::Test)
+    if(TARGET Qt6::QOffscreenIntegrationPlugin)
+        qt_import_plugins(adqt-date-picker-performance-tests INCLUDE Qt6::QOffscreenIntegrationPlugin)
+    endif()
     add_test(NAME adqt-date-picker-performance-tests COMMAND adqt-date-picker-performance-tests)
     set_tests_properties(adqt-date-picker-performance-tests PROPERTIES
         ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
@@ -676,4 +680,7 @@ if(ADQT_BUILD_BENCHMARKS)
         LABELS "benchmark" ENVIRONMENT "QT_QPA_PLATFORM=offscreen" TIMEOUT 60)
     add_executable(adqt-date-picker-perf tools/date-picker-perf/main.cpp)
     target_link_libraries(adqt-date-picker-perf PRIVATE adqt::widgets Qt6::Widgets)
+    if(TARGET Qt6::QOffscreenIntegrationPlugin)
+        qt_import_plugins(adqt-date-picker-perf INCLUDE Qt6::QOffscreenIntegrationPlugin)
+    endif()
 endif()

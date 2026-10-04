@@ -26,11 +26,7 @@ namespace detail {
 struct IconRefAccess;
 }
 
-#if QT_VERSION < QT_VERSION_CHECK(6, 0, 0)
-using IconHashValue = uint;
-#else
 using IconHashValue = size_t;
-#endif
 
 inline IconHashValue iconHashCombine(IconHashValue seed, IconHashValue value) {
   return seed ^ (value + static_cast<IconHashValue>(0x9e3779b9u) + (seed << 6) + (seed >> 2));

@@ -278,7 +278,8 @@ function(snow_image_configure_target target_name linkage)
         # The bundled Qt library and its headers must be selected together.
         # Compiling with vcpkg's libjpeg-62 headers and resolving those symbols
         # to Qt's libjpeg-80 fails at jpeg_create_compress (the structs differ).
-        find_package(Qt6 REQUIRED COMPONENTS Core BundledLibjpeg)
+        include("${CMAKE_CURRENT_SOURCE_DIR}/../cmake/SnowQt.cmake")
+        snow_find_qt(COMPONENTS Core BundledLibjpeg)
         find_path(_snow_image_qt_jpeg_include NAMES jpeglib.h
             PATHS ${Qt6Core_INCLUDE_DIRS} PATH_SUFFIXES QtJpeg
             NO_DEFAULT_PATH NO_CACHE REQUIRED)

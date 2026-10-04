@@ -1,4 +1,5 @@
 #include "snow_shot/presentation/languagemanager.h"
+#include "image_orientation_fixture.h"
 #include "snow_shot/presentation/globalshortcutmanager.h"
 #include "snow_shot/presentation/pinnedwindowgroupmanager.h"
 #include "snow_shot/presentation/settings/settingsregistry.h"
@@ -585,6 +586,26 @@ int main(int argc, char* argv[]) {
     require(trayIcon->property("customIconSourcePixelSize").toSize() == QSize(1024, 512) &&
                 trayIcon->property("customIconDecodedPixelSize").toSize() == QSize(256, 128),
             "a large custom image should retain no raster larger than 256 by 256");
+
+    for (const quint8 orientation : {quint8(6), quint8(8)}) {
+        // The supported suffix uses QImageReader's content detection. JPEG provides the EXIF
+        // metadata needed to exercise both quarter-turns through that existing decode path.
+        const QString orientedPath =
+            storageDirectory.filePath(QStringLiteral("oriented-icon-%1.png").arg(orientation));
+        const QByteArray encoded =
+            image_orientation_fixture::jpegWithExifOrientation(largeImage, orientation);
+        QFile oriented(orientedPath);
+        require(!encoded.isEmpty() && oriented.open(QIODevice::WriteOnly) &&
+                    oriented.write(encoded) == encoded.size(),
+                "the oriented tray image fixture should be writable");
+        oriented.close();
+        controller.setCustomIconPath(orientedPath);
+        require(
+            trayIcon->property("customIconSourcePixelSize").toSize() == QSize(512, 1024) &&
+                trayIcon->property("customIconDecodedPixelSize").toSize() == QSize(128, 256) &&
+                trayIcon->icon().pixmap(QSize(128, 256), 1.0).size() == QSize(128, 256),
+            "tray metadata must match orientation while scaling remains bounded before rotation");
+    }
 
     const QString icoPath = QFileInfo(QString::fromUtf8(__FILE__))
                                 .dir()

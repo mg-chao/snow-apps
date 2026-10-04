@@ -39,6 +39,7 @@ endif()
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 include(ProjectWarnings)
 include(SnowWorkspace)
+include(SnowQt)
 include(RustStaticLibrary)
 
 option(SNOW_APPS_BUILD_ANT_DESIGN_QT "Build the Ant Design Qt libraries." ON)
@@ -103,6 +104,12 @@ set(SNOW_RUST_RELEASE_PROFILE "release" CACHE STRING
     "Cargo profile used for non-Debug Rust builds.")
 
 snow_workspace_configure_paths()
+# Resolve imported metadata before configuring codecs, CRT linkage, or creating
+# any workspace targets. Subprojects also use this contract when built alone.
+if(SNOW_APPS_BUILD_ANT_DESIGN_QT OR SNOW_APPS_BUILD_DRAW_ENGINE OR
+   SNOW_APPS_BUILD_IMAGE_VIEWER OR SNOW_APPS_BUILD_SNOW_SHOT)
+    snow_find_qt(COMPONENTS Core Gui GLOBAL)
+endif()
 snow_workspace_configure_options()
 
 if(SNOW_APPS_ENABLE_RELEASE_OPTIMIZATION)
