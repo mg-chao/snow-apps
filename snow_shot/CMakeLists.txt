@@ -4179,6 +4179,8 @@ if(SNOW_SHOT_BUILD_TESTS)
         NAME snow-shot-pinned-drawing-shortcut-toggle-tests
         COMMAND snow-shot-pinned-window-tests --drawing-shortcut-toggle-only
     )
+    add_test(NAME snow-shot-pinned-history-shortcut-tests
+        COMMAND snow-shot-pinned-window-tests --history-shortcuts-only -platform offscreen)
     if(WIN32)
         add_test(
             NAME snow-shot-pinned-native-drag-shortcut-tests
@@ -4599,6 +4601,7 @@ if(SNOW_SHOT_BUILD_TESTS)
         snow-shot-pinned-toolbar-parity-tests
         snow-shot-pinned-movement-shortcut-tests
         snow-shot-pinned-drawing-shortcut-toggle-tests
+        snow-shot-pinned-history-shortcut-tests
     )
     if(WIN32)
         list(APPEND _snow_shot_pinned_window_test_names
@@ -5182,6 +5185,10 @@ if(SNOW_SHOT_BUILD_TESTS)
     add_test(NAME snow-shot-global-canvas-window-shadow-tests
         COMMAND snow-shot-global-canvas-tests --window-shadow-only -platform offscreen)
     set_tests_properties(snow-shot-global-canvas-window-shadow-tests PROPERTIES LABELS "unit")
+    add_test(NAME snow-shot-global-canvas-history-shortcut-tests
+        COMMAND snow-shot-global-canvas-tests --history-shortcuts-only -platform offscreen)
+    set_tests_properties(snow-shot-global-canvas-history-shortcut-tests PROPERTIES
+        LABELS "unit" TIMEOUT 90 RUN_SERIAL TRUE)
     add_test(NAME snow-shot-global-canvas-tests COMMAND snow-shot-global-canvas-tests -platform offscreen)
     set_tests_properties(snow-shot-global-canvas-tests PROPERTIES LABELS "unit" TIMEOUT 90
         ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
@@ -5394,7 +5401,10 @@ if(SNOW_SHOT_BUILD_TESTS)
         set(_snow_recording_shortcut_platform windows)
         set(_snow_recording_shortcut_os windows)
     endif()
-    set_tests_properties(snow-shot-screen-recording-shortcut-tests PROPERTIES
+    add_test(NAME snow-shot-recording-history-shortcut-tests
+        COMMAND snow-shot-screen-recording-shortcut-tests --history-shortcuts-only)
+    set_tests_properties(snow-shot-screen-recording-shortcut-tests
+        snow-shot-recording-history-shortcut-tests PROPERTIES
         # The shortcut gating asserts real keyboard focus ownership, which the
         # non-activating floating toolbar only supports on a native platform.
         LABELS "interactive;e2e;${_snow_recording_shortcut_os}" RUN_SERIAL TRUE TIMEOUT 60

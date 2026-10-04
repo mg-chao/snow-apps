@@ -10587,6 +10587,99 @@ void pinnedDrawingToolbarMatchesCaptureInteractions(SnowCanvasRuntime&, bool rot
             "pinned window was not deleted after the Spotlight wheel test");
 }
 
+void pinnedHistoryShortcutsFollowSettings() {
+    QScreen* screen = QGuiApplication::primaryScreen();
+    require(screen != nullptr, "a primary screen is required");
+    auto* window = new ScreenshotPinnedWindow();
+    QPointer<ScreenshotPinnedWindow> guardedWindow(window);
+    QImage background(320, 180, QImage::Format_ARGB32_Premultiplied);
+    background.fill(Qt::white);
+    ScreenshotPinnedWindow::Config config;
+    config.nativeGeometry = physicalPinGeometry(*screen, QPoint(40, 40), background.size());
+    config.canvasSourceRect = QRectF(QPointF(), QSizeF(background.size()));
+    config.imageSource = ScreenshotImageSource::fromImage(background, config.canvasSourceRect);
+    config.screen = screen;
+    config.enableEditing = true;
+    require(window->present(config), "shortcut test pin presentation failed");
+    auto* editButton =
+        window->findChild<QPushButton*>(QStringLiteral("screenshotPinnedEditButton"));
+    require(editButton != nullptr, "drawing mode button was not found");
+    editButton->click();
+    QCoreApplication::processEvents();
+
+    auto* canvas = window->findChild<SnowCanvasWidget*>();
+    auto* controller = window->findChild<ScreenshotPinnedEditController*>();
+    require(canvas != nullptr && controller != nullptr && controller->toolbarWindow() != nullptr,
+            "drawing shortcut fixture should expose a canvas and toolbar");
+    auto* palette = controller->toolbarWindow()->palette();
+    require(palette != nullptr, "drawing shortcut fixture should expose its palette");
+    const auto press = [](QWidget& receiver, Qt::Key key, Qt::KeyboardModifiers modifiers) {
+        PhysicalKeyEvent down(QEvent::KeyPress, key, modifiers);
+        QCoreApplication::sendEvent(&receiver, &down);
+        PhysicalKeyEvent up(QEvent::KeyRelease, key, modifiers);
+        QCoreApplication::sendEvent(&receiver, &up);
+    };
+    snow_shot::storage::ScreenshotShortcutSettings settings;
+    const auto originalUndo = settings.shortcuts(QStringLiteral("undo"));
+    const auto originalRedo = settings.shortcuts(QStringLiteral("redo"));
+    const auto bind = [&](const QString& id, const QString& keys) {
+        require(settings.setShortcuts(id, snow_shot::shortcuts::bindingsFromPortableText({keys})),
+                "history shortcut must be configurable");
+    };
+    bind(QStringLiteral("undo"), QStringLiteral("Ctrl+Z"));
+    bind(QStringLiteral("redo"), QStringLiteral("Ctrl+Y"));
+    const auto initial = canvas->canvasWatermarkConfig();
+    auto edited = initial;
+    edited.text = QStringLiteral("PINNED SHORTCUT HISTORY");
+    require(canvas->setCanvasWatermarkConfig(edited), "history fixture must commit an edit");
+    press(*canvas, Qt::Key_Z, Qt::ControlModifier);
+    require(canvas->canvasWatermarkConfig().text == initial.text,
+            "configured undo must work in pinned drawing mode, including Resize window");
+    press(*controller->toolbarWindow(), Qt::Key_Y, Qt::ControlModifier);
+    require(canvas->canvasWatermarkConfig().text == edited.text,
+            "configured redo must work from the floating toolbar");
+
+    bind(QStringLiteral("undo"), QStringLiteral("Ctrl+Alt+U"));
+    bind(QStringLiteral("redo"), QStringLiteral("Ctrl+Alt+R"));
+    press(*canvas, Qt::Key_Z, Qt::ControlModifier);
+    require(canvas->canvasWatermarkConfig().text == edited.text,
+            "remapping undo must remove the old binding immediately");
+    const auto modifiers = Qt::ControlModifier | Qt::AltModifier;
+    press(*controller->toolbarWindow(), Qt::Key_U, modifiers);
+    require(canvas->canvasWatermarkConfig().text == initial.text,
+            "remapped undo must work from the floating toolbar");
+    press(*canvas, Qt::Key_R, modifiers);
+    require(canvas->canvasWatermarkConfig().text == edited.text,
+            "remapped redo must work from the canvas");
+    QLineEdit input(controller->toolbarWindow());
+    input.show();
+    input.setFocus();
+    press(input, Qt::Key_U, modifiers);
+    require(canvas->canvasWatermarkConfig().text == edited.text,
+            "history shortcuts must not steal input from toolbar text fields");
+    input.hide();
+    input.setParent(nullptr);
+    canvas->setFocus();
+    require(settings.setShortcuts(QStringLiteral("undo"), {}), "undo must support disabling");
+    press(*canvas, Qt::Key_U, modifiers);
+    require(canvas->canvasWatermarkConfig().text == edited.text,
+            "disabled undo must not alter canvas history");
+    bind(QStringLiteral("undo"), QStringLiteral("Ctrl+Alt+U"));
+    controller->setEditMode(false);
+    press(*window, Qt::Key_U, modifiers);
+    require(canvas->canvasWatermarkConfig().text == edited.text,
+            "drawing history shortcuts must be inactive outside drawing mode");
+    controller->setEditMode(true);
+    press(*canvas, Qt::Key_U, modifiers);
+    require(canvas->canvasWatermarkConfig().text == initial.text,
+            "history shortcuts must survive leaving and reentering drawing mode");
+    require(settings.setShortcuts(QStringLiteral("undo"), originalUndo) &&
+                settings.setShortcuts(QStringLiteral("redo"), originalRedo),
+            "restore history shortcuts");
+    window->close();
+    require(processUntilDeleted(guardedWindow, 2000), "history shortcut test pin should close");
+}
+
 void pinnedDrawingShortcutsToggleActiveTool() {
     QScreen* screen = QGuiApplication::primaryScreen();
     require(screen != nullptr, "a primary screen is required");
@@ -10601,7 +10694,8 @@ void pinnedDrawingShortcutsToggleActiveTool() {
     config.screen = screen;
     config.enableEditing = true;
     require(window->present(config), "shortcut test pin presentation failed");
-    auto* editButton = buttonNamed(*window, QStringLiteral("Enable drawing mode"));
+    auto* editButton =
+        window->findChild<QPushButton*>(QStringLiteral("screenshotPinnedEditButton"));
     require(editButton != nullptr, "drawing mode button was not found");
     editButton->click();
     QCoreApplication::processEvents();
@@ -15716,6 +15810,10 @@ int main(int argc, char* argv[]) {
         }
         if (app.arguments().contains(QStringLiteral("--movement-shortcut-only"))) {
             pinnedMovementShortcutsMoveIdleWindow();
+            return 0;
+        }
+        if (app.arguments().contains(QStringLiteral("--history-shortcuts-only"))) {
+            pinnedHistoryShortcutsFollowSettings();
             return 0;
         }
         if (app.arguments().contains(QStringLiteral("--drawing-shortcut-toggle-only"))) {

@@ -1,3 +1,4 @@
+#include "snow_shot/presentation/canvashistoryshortcuts.h"
 #include "snow_shot/shortcuts/shortcutbinding.h"
 #include "snow_shot/presentation/screenshotoverlayshortcutcontroller.h"
 
@@ -70,6 +71,12 @@ struct ScreenshotOverlayShortcutController::Impl {
           intelligentSelection(intelligent), actions(std::move(inputActions)) {
         registerFixedBindings();
         registerConfiguredBindings();
+        new snow_shot::presentation::CanvasHistoryShortcuts(
+            shortcutManager, &q,
+            [this](const auto&) {
+                return !inputHandler.effectDragActive() && toolbarToolShortcutState();
+            },
+            [this](const QString& action) { return activateToolbarShortcut(action, false); });
         reloadConfiguredShortcuts();
 
         auto& storage = snow_shot::storage::ApplicationStorage::instance();
@@ -230,8 +237,6 @@ struct ScreenshotOverlayShortcutController::Impl {
             QStringLiteral("pin_to_screen"),
             QStringLiteral("cancel_screenshot"),
             QStringLiteral("copy_to_clipboard"),
-            QStringLiteral("undo"),
-            QStringLiteral("redo"),
         };
         for (const QString& actionId : screenshotIds) {
             ShortcutManager::Binding binding;

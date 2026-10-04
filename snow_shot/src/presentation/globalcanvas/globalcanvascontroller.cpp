@@ -1,3 +1,4 @@
+#include "snow_shot/presentation/canvashistoryshortcuts.h"
 #include "snow_shot/presentation/globalcanvascontroller.h"
 #include "globalcanvasplatform.h"
 #include "snow_shot/platform/screenshotnative.h"
@@ -485,6 +486,12 @@ class GlobalCanvasController::Session final : public QWidget, public SnowCanvasC
             return true;
         };
         static_cast<void>(shortcuts.addBinding(this, std::move(exit)));
+        new CanvasHistoryShortcuts(
+            shortcuts, this,
+            [this](const auto&) {
+                return !transparent && !sampleTarget && !drawing->hasActiveTextEditing();
+            },
+            [this](const QString& action) { return palette->activateScreenshotShortcut(action); });
         const auto bindings = storage::DrawingShortcutSettings().allShortcuts();
         for (auto it = bindings.cbegin(); it != bindings.cend(); ++it) {
             WindowShortcutManager::Binding binding;

@@ -808,6 +808,11 @@ int main(int argc, char* argv[]) {
 #ifdef Q_OS_MACOS
     nativeRecordingWindowPoliciesSurviveInputAndVisibilityChanges();
 #endif
+    if (app.arguments().contains(QStringLiteral("--history-shortcuts-only"))) {
+        recordingShortcutsFollowBothWindowsAndConfiguredKeys();
+        storage.shutdown();
+        return 0;
+    }
     recordingToolbarTakesFocusWhenOpenedOrStarted();
     recordingToolbarKeepsFocusAfterEditingAndSurfaceRestoration();
     recordingSelectionEditsAnnotationsAndPreservesPassThrough();

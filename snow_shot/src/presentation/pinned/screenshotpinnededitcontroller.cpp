@@ -1,3 +1,4 @@
+#include "snow_shot/presentation/canvashistoryshortcuts.h"
 #include "snow_shot/shortcuts/shortcutbinding.h"
 #include "snow_shot/presentation/pinnedgeometry.h"
 #include "snow_shot/presentation/screenshotautofiltercontroller.h"
@@ -128,10 +129,19 @@ ScreenshotPinnedEditController::ScreenshotPinnedEditController(
         }
     });
 
+    new snow_shot::presentation::CanvasHistoryShortcuts(
+        m_shortcutManager, this,
+        [this](const auto&) {
+            return m_editMode && !canvasColorSamplingActive() && !m_canvas.hasActiveTextEditing() &&
+                   m_toolbarWindow && m_toolbarWindow->palette();
+        },
+        [this](const QString& action) {
+            return m_toolbarWindow->palette()->activateScreenshotShortcut(action);
+        });
     registerDrawingShortcuts();
     reloadDrawingShortcuts();
-    registerRecognitionShortcuts();
-    reloadRecognitionShortcuts();
+    registerScreenshotShortcuts();
+    reloadScreenshotShortcuts();
     auto& storage = snow_shot::storage::ApplicationStorage::instance();
     if (storage.isInitialized()) {
         connect(&storage.configuration(), &snow_shot::storage::ConfigurationStore::valueChanged,
@@ -147,7 +157,7 @@ ScreenshotPinnedEditController::ScreenshotPinnedEditController(
                     } else if (key.startsWith(QStringLiteral("drawing_shortcuts/"))) {
                         reloadDrawingShortcuts();
                     } else if (key.startsWith(QStringLiteral("screenshot_shortcuts/"))) {
-                        reloadRecognitionShortcuts();
+                        reloadScreenshotShortcuts();
                     }
                 });
     }
@@ -275,7 +285,7 @@ void ScreenshotPinnedEditController::reloadDrawingShortcuts() {
     }
 }
 
-void ScreenshotPinnedEditController::registerRecognitionShortcuts() {
+void ScreenshotPinnedEditController::registerScreenshotShortcuts() {
     const auto shortcuts = snow_shot::storage::ScreenshotShortcutSettings().allShortcuts();
     for (const QString& actionId :
          {QStringLiteral("table_recognition"), QStringLiteral("qr_code_recognition"),
@@ -297,15 +307,15 @@ void ScreenshotPinnedEditController::registerRecognitionShortcuts() {
         binding.activate = [this, actionId](const auto&) {
             return m_toolbarWindow->palette()->activateScreenshotShortcut(actionId);
         };
-        m_recognitionShortcutBindings.insert(
-            actionId, m_shortcutManager.addBinding(this, std::move(binding)));
+        m_screenshotShortcutBindings.insert(actionId,
+                                            m_shortcutManager.addBinding(this, std::move(binding)));
     }
 }
 
-void ScreenshotPinnedEditController::reloadRecognitionShortcuts() {
+void ScreenshotPinnedEditController::reloadScreenshotShortcuts() {
     const snow_shot::storage::ScreenshotShortcutSettings settings;
-    for (auto binding = m_recognitionShortcutBindings.cbegin();
-         binding != m_recognitionShortcutBindings.cend(); ++binding) {
+    for (auto binding = m_screenshotShortcutBindings.cbegin();
+         binding != m_screenshotShortcutBindings.cend(); ++binding) {
         static_cast<void>(
             m_shortcutManager.setShortcuts(binding.value(), settings.shortcuts(binding.key())));
     }

@@ -25,7 +25,6 @@ class ScreenRecordingShortcutController final : public QObject {
     ShortcutManager m_shortcutManager;
     QMap<QString, ShortcutManager::BindingHandle> m_recordingBindings;
     QMap<QString, ShortcutManager::BindingHandle> m_drawingBindings;
-    QMap<QString, ShortcutManager::BindingHandle> m_historyBindings;
 };
 
 #endif // SNOW_SHOT_PRESENTATION_SCREENRECORDINGSHORTCUTCONTROLLER_H

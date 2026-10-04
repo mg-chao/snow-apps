@@ -80,8 +80,8 @@ class ScreenshotPinnedEditController final : public QObject {
     void resetAutoFilterSession();
     void registerDrawingShortcuts();
     void reloadDrawingShortcuts();
-    void registerRecognitionShortcuts();
-    void reloadRecognitionShortcuts();
+    void registerScreenshotShortcuts();
+    void reloadScreenshotShortcuts();
     QScreen* placementScreen() const;
     QRect placementLogicalBounds() const;
     QRect placementPhysicalBounds() const;
@@ -105,7 +105,7 @@ class ScreenshotPinnedEditController final : public QObject {
     SnowCanvasWidget& m_canvas;
     snow_shot::presentation::WindowShortcutManager& m_shortcutManager;
     QMap<QString, quint64> m_drawingShortcutBindings;
-    QMap<QString, quint64> m_recognitionShortcutBindings;
+    QMap<QString, quint64> m_screenshotShortcutBindings;
     ScreenshotFloatingToolPaletteWindow* m_toolbarWindow = nullptr;
     std::unique_ptr<ScreenshotCanvasColorSamplerWindow> m_canvasColorSamplerWindow;
     ScreenshotCanvasColorSampler m_canvasColorSampler;

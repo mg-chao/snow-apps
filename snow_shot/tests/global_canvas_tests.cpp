@@ -12,6 +12,7 @@
 #include "widgets/select.h"
 #include <QApplication>
 #include <QDir>
+#include <QLineEdit>
 #include <QFontDatabase>
 #include "physical_key_test_support.h"
 #include <QMouseEvent>
@@ -792,6 +793,80 @@ void canvasEraserTools(QApplication& app) {
             "new canvas sessions restore the eraser variant and independent width");
 }
 
+void canvasHistoryShortcuts(QApplication& app) {
+    presentation::GlobalCanvasController controller(
+        nullptr, {[&]() { return app.primaryScreen(); }, [](QWidget*, bool) { return true; }});
+    storage::ScreenshotShortcutSettings settings;
+    const auto originalUndo = settings.shortcuts(QStringLiteral("undo"));
+    const auto originalRedo = settings.shortcuts(QStringLiteral("redo"));
+    const auto press = [](QWidget* receiver, Qt::Key key, Qt::KeyboardModifiers modifiers) {
+        PhysicalKeyEvent down(QEvent::KeyPress, key, modifiers);
+        QApplication::sendEvent(receiver, &down);
+        PhysicalKeyEvent up(QEvent::KeyRelease, key, modifiers);
+        QApplication::sendEvent(receiver, &up);
+    };
+    require(settings.setShortcuts(QStringLiteral("undo"), {QStringLiteral("Ctrl+Z")}) &&
+                settings.setShortcuts(QStringLiteral("redo"), {QStringLiteral("Ctrl+Y")}),
+            "set default history keys");
+    for (int session = 0; session < 2; ++session) {
+        controller.activate();
+        app.processEvents();
+        auto* canvas = controller.canvas();
+        auto* toolbar = controller.toolbar();
+        auto initial = canvas->canvasWatermarkConfig();
+        auto edited = initial;
+        edited.text = QStringLiteral("GLOBAL HISTORY");
+        require(canvas->setCanvasWatermarkConfig(edited), "commit history edit");
+        press(canvas, Qt::Key_Z, Qt::ControlModifier);
+        require(canvas->canvasWatermarkConfig().text == initial.text, "canvas keyboard undo");
+        press(toolbar, Qt::Key_Y, Qt::ControlModifier);
+        require(canvas->canvasWatermarkConfig().text == edited.text, "toolbar keyboard redo");
+        require(settings.setShortcuts(QStringLiteral("undo"), {QStringLiteral("Ctrl+F10")}),
+                "remap undo while the canvas is open");
+        press(toolbar, Qt::Key_Z, Qt::ControlModifier);
+        require(canvas->canvasWatermarkConfig().text == edited.text, "old binding removed");
+        {
+            QLineEdit input(controller.window());
+            input.show();
+            controller.window()->activateWindow();
+            input.setFocus();
+            app.processEvents();
+            require(input.hasFocus(), "text input owns keyboard focus");
+            press(&input, Qt::Key_F10, Qt::ControlModifier);
+            require(canvas->canvasWatermarkConfig().text == edited.text,
+                    "text fields retain history input");
+        }
+        canvas->setFocus();
+        toolbar->palette()->globalCanvasClickThroughRequested();
+        press(toolbar, Qt::Key_F10, Qt::ControlModifier);
+        require(canvas->canvasWatermarkConfig().text == edited.text,
+                "click-through blocks drawing history shortcuts");
+        controller.activate();
+        adqt::widgets::AdColorPicker picker;
+        toolbar->palette()->canvasColorSamplingRequested(&picker);
+        press(canvas, Qt::Key_F10, Qt::ControlModifier);
+        require(canvas->canvasWatermarkConfig().text == edited.text,
+                "color sampling blocks history shortcuts");
+        press(canvas, Qt::Key_Escape, Qt::NoModifier);
+        press(toolbar, Qt::Key_F10, Qt::ControlModifier);
+        require(canvas->canvasWatermarkConfig().text == initial.text, "remapped undo works");
+        require(settings.setShortcuts(QStringLiteral("redo"), {}), "disable redo");
+        press(toolbar, Qt::Key_Y, Qt::ControlModifier);
+        require(canvas->canvasWatermarkConfig().text == initial.text, "disabled redo ignored");
+        require(settings.setShortcuts(QStringLiteral("redo"), {QStringLiteral("Ctrl+F11")}),
+                "remap redo");
+        press(canvas, Qt::Key_F11, Qt::ControlModifier);
+        require(canvas->canvasWatermarkConfig().text == edited.text, "remapped redo works");
+        require(settings.setShortcuts(QStringLiteral("undo"), {QStringLiteral("Ctrl+Z")}) &&
+                    settings.setShortcuts(QStringLiteral("redo"), {QStringLiteral("Ctrl+Y")}),
+                "restore default keys before recreating session");
+        controller.shutdown();
+    }
+    require(settings.setShortcuts(QStringLiteral("undo"), originalUndo) &&
+                settings.setShortcuts(QStringLiteral("redo"), originalRedo),
+            "restore settings");
+}
+
 int main(int argc, char** argv) {
     QApplication app(argc, argv);
     app.setQuitOnLastWindowClosed(false);
@@ -829,6 +904,11 @@ int main(int argc, char** argv) {
         return 0;
     }
 #endif
+    if (app.arguments().contains(QStringLiteral("--history-shortcuts-only"))) {
+        canvasHistoryShortcuts(app);
+        storage.shutdown();
+        return 0;
+    }
     if (app.arguments().contains(QStringLiteral("--eraser-only"))) {
         canvasEraserTools(app);
         storage.shutdown();

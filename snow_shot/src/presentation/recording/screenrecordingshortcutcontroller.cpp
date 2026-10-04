@@ -1,3 +1,4 @@
+#include "snow_shot/presentation/canvashistoryshortcuts.h"
 #include "snow_shot/presentation/screenrecordingshortcutcontroller.h"
 #include "recordingaudiogainpopover.h"
 #include "widgets/popover.h"
@@ -34,18 +35,12 @@ ScreenRecordingShortcutController::ScreenRecordingShortcutController(
         m_drawingBindings.insert(tool.key(),
                                  m_shortcutManager.addBinding(this, std::move(binding)));
     }
-    for (const QString& action : {QStringLiteral("undo"), QStringLiteral("redo")}) {
-        ShortcutManager::Binding binding;
-        binding.id = QStringLiteral("recording.") + action;
-        binding.priority = ShortcutManager::StandardPriority::ScreenshotShortcut;
-        binding.canActivate = [this](const auto& context) {
-            return canActivate(context) && !m_area->drawingBlocked();
-        };
-        binding.activate = [this, action](const auto&) {
+    new snow_shot::presentation::CanvasHistoryShortcuts(
+        m_shortcutManager, this,
+        [this](const auto& context) { return canActivate(context) && !m_area->drawingBlocked(); },
+        [this](const QString& action) {
             return m_toolbar->palette()->activateScreenshotShortcut(action);
-        };
-        m_historyBindings.insert(action, m_shortcutManager.addBinding(this, std::move(binding)));
-    }
+        });
     const auto recordingShortcuts =
         snow_shot::storage::ScreenRecordingShortcutSettings().allShortcuts();
     for (auto action = recordingShortcuts.cbegin(); action != recordingShortcuts.cend(); ++action) {
@@ -70,8 +65,6 @@ ScreenRecordingShortcutController::ScreenRecordingShortcutController(
     connect(&storage.configuration(), &snow_shot::storage::ConfigurationStore::valueChanged, this,
             [this](const QString& key, const QJsonValue&) {
                 if (key.startsWith(QStringLiteral("drawing_shortcuts/")) ||
-                    key == QStringLiteral("screenshot_shortcuts/undo") ||
-                    key == QStringLiteral("screenshot_shortcuts/redo") ||
                     key.startsWith(QStringLiteral("screen_recording_shortcuts/"))) {
                     reloadConfiguredShortcuts();
                 }
@@ -110,11 +103,5 @@ void ScreenRecordingShortcutController::reloadConfiguredShortcuts() {
          ++binding) {
         static_cast<void>(
             m_shortcutManager.setShortcuts(binding.value(), drawing.shortcuts(binding.key())));
-    }
-    const snow_shot::storage::ScreenshotShortcutSettings history;
-    for (auto binding = m_historyBindings.cbegin(); binding != m_historyBindings.cend();
-         ++binding) {
-        static_cast<void>(
-            m_shortcutManager.setShortcuts(binding.value(), history.shortcuts(binding.key())));
     }
 }
