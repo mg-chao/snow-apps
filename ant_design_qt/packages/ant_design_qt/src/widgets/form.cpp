@@ -1350,7 +1350,6 @@ void AdFormItem::setItemLayout(ItemLayout value) {
     return;
   }
   itemLayout_ = value;
-  rebuildItemLayout();
   emit itemLayoutChanged(itemLayout_);
   refresh();
 }
@@ -1678,10 +1677,13 @@ void AdFormItem::resetValidation() {
 void AdFormItem::refresh() {
   ensureUi();
   QWidget::setVisible(!itemHidden_);
-  rebuildItemLayout();
-  refreshLabel();
-  refreshMessages();
-  refreshFeedbackIcon();
+  // Resolve once for this refresh transaction; nothing is retained for later refreshes.
+  const auto style =
+      resolveStyleFor(this, form_ ? form_->controlSize() : AdForm::ControlSize::Medium);
+  rebuildItemLayout(&style);
+  refreshLabel(&style);
+  refreshMessages(&style);
+  refreshFeedbackIcon(&style);
   refreshControlStyle();
   refreshNoStyleDescendantStatus();
   refreshAccessibility();
@@ -1826,26 +1828,45 @@ void AdFormItem::ensureUi() {
   rebuildItemLayout();
 }
 
-void AdFormItem::rebuildItemLayout() {
+void AdFormItem::rebuildItemLayout(const detail::FormVisualStyle* resolvedStyle) {
   ensureUi();
   const AdForm::ControlSize controlSize =
       form_ ? form_->controlSize() : AdForm::ControlSize::Medium;
-  const detail::FormVisualStyle style = resolveStyleFor(this, controlSize);
+  const detail::FormVisualStyle style =
+      resolvedStyle ? *resolvedStyle : resolveStyleFor(this, controlSize);
   const bool vertical = effectiveVerticalLayout();
   const bool inlineLayout = effectiveInlineLayout();
   const bool hasLabel = !label_.trimmed().isEmpty();
   const bool hasNullLabelOffset = !hasLabel && label_.isNull() && !vertical && !inlineLayout &&
                                   form_ && form_->labelColumnWidth() > 0;
 
-  if (itemLayoutGrid_) {
-    while (QLayoutItem* layoutItem = itemLayoutGrid_->takeAt(0)) {
-      delete layoutItem;
-    }
-    delete itemLayoutGrid_;
-    itemLayoutGrid_ = nullptr;
+  if (!itemLayoutGrid_) {
+    itemLayoutGrid_ = new QGridLayout(this);
   }
-
-  itemLayoutGrid_ = new QGridLayout(this);
+  // Refresh also runs for value feedback, fonts and palettes. Keep the grid and
+  // its widget items; only move a host when the effective layout changes.
+  const auto place = [this](QWidget* host, int row, int column, Qt::Alignment alignment = {}) {
+    const int index = itemLayoutGrid_->indexOf(host);
+    if (index >= 0) {
+      int previousRow = 0, previousColumn = 0, rowSpan = 0, columnSpan = 0;
+      itemLayoutGrid_->getItemPosition(index, &previousRow, &previousColumn, &rowSpan, &columnSpan);
+      if (previousRow == row && previousColumn == column && rowSpan == 1 && columnSpan == 1) {
+        if (itemLayoutGrid_->itemAt(index)->alignment() != alignment) {
+          itemLayoutGrid_->setAlignment(host, alignment);
+        }
+        return;
+      }
+      delete itemLayoutGrid_->takeAt(index);
+    }
+    itemLayoutGrid_->addWidget(host, row, column, alignment);
+  };
+  const auto remove = [this](QWidget* host) {
+    const int index = itemLayoutGrid_->indexOf(host);
+    if (index >= 0) {
+      delete itemLayoutGrid_->takeAt(index);
+    }
+    host->hide();
+  };
   itemLayoutGrid_->setContentsMargins(
       0, 0, 0,
       noStyle_
@@ -1853,34 +1874,33 @@ void AdFormItem::rebuildItemLayout() {
           : (inlineLayout ? style.metrics.inlineItemMarginBottom : style.metrics.itemMarginBottom));
   itemLayoutGrid_->setHorizontalSpacing(0);
   itemLayoutGrid_->setVerticalSpacing(0);
+  itemLayoutGrid_->setColumnMinimumWidth(
+      0, hasNullLabelOffset && !noStyle_ ? effectiveLabelColumnWidth(form_) : 0);
+  itemLayoutGrid_->setColumnStretch(
+      0, !noStyle_ && (hasNullLabelOffset || (hasLabel && !vertical)) ? 0 : 1);
+  itemLayoutGrid_->setColumnStretch(
+      1, !noStyle_ && (hasNullLabelOffset || (hasLabel && !vertical)) ? 1 : 0);
 
   if (noStyle_) {
-    itemLayoutGrid_->addWidget(controlHost_, 0, 0);
-    labelHost_->hide();
-    additionalHost_->hide();
+    place(controlHost_, 0, 0);
+    remove(labelHost_);
+    remove(additionalHost_);
   } else if (hasNullLabelOffset) {
-    itemLayoutGrid_->addWidget(controlHost_, 0, 1);
-    itemLayoutGrid_->addWidget(additionalHost_, 1, 1);
-    itemLayoutGrid_->setColumnMinimumWidth(0, effectiveLabelColumnWidth(form_));
-    itemLayoutGrid_->setColumnStretch(0, 0);
-    itemLayoutGrid_->setColumnStretch(1, 1);
-    labelHost_->hide();
+    place(controlHost_, 0, 1);
+    place(additionalHost_, 1, 1);
+    remove(labelHost_);
   } else if (!hasLabel) {
-    itemLayoutGrid_->addWidget(controlHost_, 0, 0);
-    itemLayoutGrid_->addWidget(additionalHost_, 1, 0);
-    itemLayoutGrid_->setColumnStretch(0, 1);
-    labelHost_->hide();
+    place(controlHost_, 0, 0);
+    place(additionalHost_, 1, 0);
+    remove(labelHost_);
   } else if (vertical) {
-    itemLayoutGrid_->addWidget(labelHost_, 0, 0, Qt::AlignTop);
-    itemLayoutGrid_->addWidget(controlHost_, 1, 0);
-    itemLayoutGrid_->addWidget(additionalHost_, 2, 0);
-    itemLayoutGrid_->setColumnStretch(0, 1);
+    place(labelHost_, 0, 0, Qt::AlignTop);
+    place(controlHost_, 1, 0);
+    place(additionalHost_, 2, 0);
   } else {
-    itemLayoutGrid_->addWidget(labelHost_, 0, 0, Qt::AlignTop);
-    itemLayoutGrid_->addWidget(controlHost_, 0, 1);
-    itemLayoutGrid_->addWidget(additionalHost_, 1, 1);
-    itemLayoutGrid_->setColumnStretch(0, 0);
-    itemLayoutGrid_->setColumnStretch(1, 1);
+    place(labelHost_, 0, 0, Qt::AlignTop);
+    place(controlHost_, 0, 1);
+    place(additionalHost_, 1, 1);
   }
 
   if (labelHost_) {
@@ -1907,14 +1927,15 @@ void AdFormItem::rebuildItemLayout() {
   if (controlLayout_) {
     controlLayout_->setSpacing(style.metrics.feedbackIconGap);
   }
-  updateAdditionalSpacing();
+  updateAdditionalSpacing(&style);
 }
 
-void AdFormItem::refreshLabel() {
+void AdFormItem::refreshLabel(const detail::FormVisualStyle* resolvedStyle) {
   ensureUi();
   const AdForm::ControlSize controlSize =
       form_ ? form_->controlSize() : AdForm::ControlSize::Medium;
-  const detail::FormVisualStyle style = resolveStyleFor(this, controlSize);
+  const detail::FormVisualStyle style =
+      resolvedStyle ? *resolvedStyle : resolveStyleFor(this, controlSize);
   const bool vertical = effectiveVerticalLayout();
   const bool hasLabel = !label_.trimmed().isEmpty();
 
@@ -2001,11 +2022,12 @@ void AdFormItem::refreshLabel() {
   }
 }
 
-void AdFormItem::refreshMessages() {
+void AdFormItem::refreshMessages(const detail::FormVisualStyle* resolvedStyle) {
   ensureUi();
   const AdForm::ControlSize controlSize =
       form_ ? form_->controlSize() : AdForm::ControlSize::Medium;
-  const detail::FormVisualStyle style = resolveStyleFor(this, controlSize);
+  const detail::FormVisualStyle style =
+      resolvedStyle ? *resolvedStyle : resolveStyleFor(this, controlSize);
 
   helpWidget_->setFont(style.metrics.messageFont);
   extraWidget_->setFont(style.metrics.messageFont);
@@ -2041,17 +2063,18 @@ void AdFormItem::refreshMessages() {
   helpWidget_->setVisible(!noStyle_ && !helpText.isEmpty());
   extraWidget_->setVisible(!noStyle_ && !extraText_.trimmed().isEmpty());
   additionalHost_->setVisible(!noStyle_ && hasVisibleAdditionalText());
-  updateAdditionalSpacing();
+  updateAdditionalSpacing(&style);
 }
 
-void AdFormItem::updateAdditionalSpacing() {
+void AdFormItem::updateAdditionalSpacing(const detail::FormVisualStyle* resolvedStyle) {
   if (!itemLayoutGrid_) {
     return;
   }
 
   const AdForm::ControlSize controlSize =
       form_ ? form_->controlSize() : AdForm::ControlSize::Medium;
-  const detail::FormVisualStyle style = resolveStyleFor(this, controlSize);
+  const detail::FormVisualStyle style =
+      resolvedStyle ? *resolvedStyle : resolveStyleFor(this, controlSize);
   const bool inlineLayout = effectiveInlineLayout();
   const bool helpVisible = hasVisibleHelpMessage();
   const int bottomMargin =
@@ -2066,11 +2089,12 @@ void AdFormItem::updateAdditionalSpacing() {
   updateGeometry();
 }
 
-void AdFormItem::refreshFeedbackIcon() {
+void AdFormItem::refreshFeedbackIcon(const detail::FormVisualStyle* resolvedStyle) {
   ensureUi();
   const AdForm::ControlSize controlSize =
       form_ ? form_->controlSize() : AdForm::ControlSize::Medium;
-  const detail::FormVisualStyle style = resolveStyleFor(this, controlSize);
+  const detail::FormVisualStyle style =
+      resolvedStyle ? *resolvedStyle : resolveStyleFor(this, controlSize);
   const ValidateStatus visualStatus = effectiveVisualStatus();
   const bool delegateFeedbackToNoStyleChildren =
       !noStyle_ && hasNoStyleDescendantItems() && !canHostFeedbackIcon(controlWidget_.data());

@@ -129,7 +129,6 @@ class ScreenshotHistoryPageWidget final : public QWidget {
     void queueRefresh();
     void updateEmptyStateText();
     void updateEmptyStateMinimumHeight();
-    [[nodiscard]] bool matchesFilters(const snow_shot::storage::CaptureHistoryRecord& record) const;
 
     QLabel* m_titleLabel = nullptr;
     QLabel* m_countLabel = nullptr;

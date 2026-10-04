@@ -73,17 +73,22 @@ void applyTextTheme(const TextControls& controls, const styles::ThemeColorScheme
     setColor(controls.emptyDescription, scheme.map.colorTextSecondary);
 }
 
-static bool matchesDateRange(const QDate& date, const adqt::widgets::AdDateRangePicker* filter) {
-    const QDate start = filter->startDate();
-    const QDate end = filter->endDate();
+bool RecordFilter::matches(const QVariant& source, const QDateTime& timestamp) const {
+    if (!sources.isEmpty() && !sources.contains(source)) {
+        return false;
+    }
+    // Initial display has no date constraint. Only resolve the platform's local
+    // timezone when an active date filter actually needs the local date.
+    if (!start.isValid() && !end.isValid()) {
+        return true;
+    }
+    const QDate date = timestamp.toLocalTime().date();
     return (!start.isValid() || date >= start) && (!end.isValid() || date <= end);
 }
 
-bool matchesFilters(const QVariant& source, const QDate& date,
-                    const adqt::widgets::AdSelect* sourceFilter,
-                    const adqt::widgets::AdDateRangePicker* dateFilter) {
-    const QVariantList sources = sourceFilter->currentValues();
-    return (sources.isEmpty() || sources.contains(source)) && matchesDateRange(date, dateFilter);
+RecordFilter currentFilter(const adqt::widgets::AdSelect* sourceFilter,
+                           const adqt::widgets::AdDateRangePicker* dateFilter) {
+    return {sourceFilter->currentValues(), dateFilter->startDate(), dateFilter->endDate()};
 }
 
 void updatePagination(adqt::widgets::AdPagination* pagination, int total, bool resetPage,

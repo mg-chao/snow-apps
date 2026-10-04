@@ -29,6 +29,7 @@
 #include <QTcpSocket>
 #include <QElapsedTimer>
 #include <QApplication>
+#include <QPointer>
 #include <QMouseEvent>
 #include <QDir>
 #include <QFile>
@@ -528,6 +529,21 @@ void widgetContracts(QApplication& application) {
                     original.supportsReasoning && original.model == QStringLiteral("local-id") &&
                     original.concurrency == 2,
                 "key, capabilities, and concurrency persist");
+        QPointer<QWidget> originalRow(row);
+        auto* editAction = row->findChild<AdButton*>(QStringLiteral("edit:") + original.id);
+        page.activateWindow();
+        flush();
+        editAction->setFocus();
+        require(QApplication::focusWidget() == editAction, "focus the model action before theming");
+        auto& themes = presentation::styles::ThemeManager::instance();
+        const auto initialMode = themes.themeMode();
+        themes.setThemeMode(presentation::styles::ThemeMode::Dark);
+        flush();
+        require(originalRow, "theme changes do not rebuild existing model rows");
+        require(QApplication::focusWidget() == editAction,
+                "theme changes preserve the focused model action");
+        themes.setThemeMode(initialMode);
+        flush();
         widget->findChild<AdButton*>(QStringLiteral("copy:") + original.id)->click();
         flush();
         widget->findChild<AdButton*>(QStringLiteral("copy:") + original.id)->click();

@@ -14,6 +14,7 @@
 #include "widgets/input_number.h"
 #include "widgets/combo_box.h"
 #include <QApplication>
+#include <QPointer>
 #include <QFontDatabase>
 #include <QDir>
 #include <QTemporaryDir>
@@ -118,6 +119,22 @@ void contracts(QApplication& app) {
         const auto original = session.textTranslationConfigurations().first();
         require(original.provider == QStringLiteral("baidu") && original.concurrency == 16,
                 "provider and limit persisted");
+        auto* editAction = widget->findChild<AdButton*>(QStringLiteral("edit:") + original.id);
+        QPointer<AdButton> originalAction(editAction);
+        page.activateWindow();
+        settle();
+        editAction->setFocus();
+        require(QApplication::focusWidget() == editAction,
+                "focus the translation action before theming");
+        auto& themes = presentation::styles::ThemeManager::instance();
+        const auto initialMode = themes.themeMode();
+        themes.setThemeMode(presentation::styles::ThemeMode::Dark);
+        settle();
+        require(originalAction, "theme changes do not rebuild the translation action");
+        require(QApplication::focusWidget() == originalAction,
+                "theme changes preserve the focused translation action");
+        themes.setThemeMode(initialMode);
+        settle();
         widget->findChild<AdButton*>(QStringLiteral("copy:") + original.id)->click();
         settle();
         require(session.textTranslationConfigurations().size() == 2 &&

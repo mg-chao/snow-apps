@@ -4,6 +4,7 @@
 #include "snow_shot/presentation/styles/themecolorscheme.h"
 
 #include <QDate>
+#include <QDateTime>
 #include <QSet>
 #include <QString>
 #include <QVariant>
@@ -56,9 +57,16 @@ void configureSelectionAction(adqt::widgets::AdButton* button, bool destructive)
 void configureDeleteConfirmation(adqt::widgets::AdPopconfirm* confirmation);
 void applyTextTheme(const TextControls& controls, const styles::ThemeColorScheme& scheme);
 
-[[nodiscard]] bool matchesFilters(const QVariant& source, const QDate& date,
-                                  const adqt::widgets::AdSelect* sourceFilter,
-                                  const adqt::widgets::AdDateRangePicker* dateFilter);
+struct RecordFilter {
+    QVariantList sources;
+    QDate start;
+    QDate end;
+
+    [[nodiscard]] bool matches(const QVariant& source, const QDateTime& timestamp) const;
+};
+
+[[nodiscard]] RecordFilter currentFilter(const adqt::widgets::AdSelect* sourceFilter,
+                                         const adqt::widgets::AdDateRangePicker* dateFilter);
 void updatePagination(adqt::widgets::AdPagination* pagination, int total, bool resetPage,
                       bool& updating);
 [[nodiscard]] PageRange pageRange(const adqt::widgets::AdPagination* pagination, int total);

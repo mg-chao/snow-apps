@@ -16,6 +16,7 @@
 #include <QCursor>
 #include <QEvent>
 #include <QLayout>
+#include <QPointer>
 #include <QListView>
 #include <QMouseEvent>
 #include <QResizeEvent>
@@ -679,6 +680,45 @@ void horizontalLabelsUseIntrinsicWidthWithoutExtraGridGap() {
     require(shortLabel->width() == 96 && longLabel->width() == 96,
             "an explicit Qt label column width should continue to align horizontal labels");
 }
+
+void itemRefreshPreservesLayoutAndHandlesTransitions() {
+    AdForm form;
+    form.setLabelColumnWidth(96);
+    auto* control = new adqt::widgets::AdLineEdit;
+    auto* item = form.addField(QString(), control);
+    layoutForm(form, 400);
+    QPointer<QLayout> originalLayout = item->layout();
+    auto* host = itemPart(item, "ad-form-item-control");
+    require(host->x() == 96, "a null horizontal label reserves the form label column");
+    control->setText(QStringLiteral("draft"));
+    control->setFocus();
+    item->setErrorMessages({QStringLiteral("Invalid value")});
+    item->refresh();
+    flushEvents();
+    require(originalLayout && item->layout() == originalLayout,
+            "feedback refresh must not destroy and rebuild the form layout");
+    require(control->text() == QStringLiteral("draft") && hasFocusWithin(control),
+            "feedback refresh preserves editing state and focus");
+    item->setLabel(QStringLiteral("Label"));
+    item->setItemLayout(AdFormItem::ItemLayout::Vertical);
+    layoutForm(form, 400);
+    auto* label = itemPart(item, "ad-form-item-label-host");
+    require(host->x() == 0 && host->y() >= label->geometry().bottom(),
+            "vertical layout removes the former horizontal label offset");
+    item->setNoStyle(true);
+    layoutForm(form, 400);
+    require(host->x() == 0 && host->y() == 0 && !label->isVisible(),
+            "no-style layout contains only the control");
+    item->setNoStyle(false);
+    item->setItemLayout(AdFormItem::ItemLayout::Horizontal);
+    item->setLabel(QStringLiteral(""));
+    item->setErrorMessages({});
+    layoutForm(form, 400);
+    require(host->x() == 0 && !label->isVisible(),
+            "an explicitly empty label leaves no stale grid column or host");
+    require(originalLayout && item->layout() == originalLayout,
+            "layout transitions update the existing grid");
+}
 } // namespace
 
 int main(int argc, char* argv[]) {
@@ -686,6 +726,7 @@ int main(int argc, char* argv[]) {
     QCursor::setPos(0, 0);
     flushEvents();
     nestedFormsRestoreExplicitControlEnabledState();
+    itemRefreshPreservesLayoutAndHandlesTransitions();
     inlineFormPreservesAntItemLayoutPrecedence();
     verticalLabelsUseAvailableColumnWidth();
     inlineItemEndMarginParticipatesInWrapping();

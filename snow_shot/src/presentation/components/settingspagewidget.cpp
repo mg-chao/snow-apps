@@ -154,8 +154,10 @@ class SettingsPageWidget::Impl {
         Q_ASSERT(page == nullptr || page->id == sourcePageId);
         build();
         connectServices();
-        retranslateUi();
-        applyTheme(colorScheme);
+        // Field and custom-widget constructors already initialize their own copy,
+        // values and styling. Only initialize the page-owned parts here.
+        retranslateUi(0, true);
+        applyTheme(colorScheme, 0, true);
         initialized = true;
     }
 
@@ -443,8 +445,8 @@ class SettingsPageWidget::Impl {
             }
         }
         if (initialized) {
-            retranslateUi(firstItem);
-            applyTheme(colorScheme, firstItem);
+            retranslateUi(firstItem, true);
+            applyTheme(colorScheme, firstItem, true);
         }
         auto* shellLayout = new QVBoxLayout(shell);
         shellLayout->setContentsMargins(0, 0, 0, 0);
@@ -1181,10 +1183,12 @@ class SettingsPageWidget::Impl {
         permissionBanner->setVisible(bannerVisible);
     }
 
-    void syncValues(int firstItem = 0) {
+    void syncValues(int firstItem = 0, bool initializing = false) {
         const auto storageStatus = runtimeSession.storageStatus();
         for (int index = firstItem; index < items.size(); ++index) {
-            syncField(items[index]);
+            if (!initializing || items[index].formField == nullptr) {
+                syncField(items[index]);
+            }
         }
         for (RuntimeSection& runtime : sections) {
             if (runtime.reset != settings::SettingsSectionReset::None) {
@@ -1197,7 +1201,7 @@ class SettingsPageWidget::Impl {
         }
     }
 
-    void retranslateUi(int firstItem = 0) {
+    void retranslateUi(int firstItem = 0, bool initializing = false) {
         if (relatedHeader != nullptr) {
             relatedHeader->setText(q.tr("Related settings"));
             relatedPanel->setAccessibleName(relatedHeader->text());
@@ -1217,7 +1221,9 @@ class SettingsPageWidget::Impl {
         for (int runtimeIndex = firstItem; runtimeIndex < items.size(); ++runtimeIndex) {
             RuntimeItem& runtime = items[runtimeIndex];
             if (runtime.formField != nullptr) {
-                runtime.formField->retranslateUi();
+                if (!initializing) {
+                    runtime.formField->retranslateUi();
+                }
                 continue;
             }
             const settings::SettingsItemDefinition& definition = *runtime.definition;
@@ -1236,11 +1242,12 @@ class SettingsPageWidget::Impl {
             if (runtime.shortcutControl != nullptr) {
                 runtime.shortcutControl->setTitle(title);
                 runtime.shortcutControl->setAccessibleDescription(description);
-                runtime.shortcutControl->retranslateUi();
+                if (!initializing) {
+                    runtime.shortcutControl->retranslateUi();
+                }
             }
             if (runtime.globalMouseControl != nullptr) {
                 runtime.globalMouseControl->setTitle(title);
-                runtime.globalMouseControl->retranslateUi();
             }
             if (runtime.actionControl != nullptr) {
                 const auto* action =
@@ -1261,7 +1268,7 @@ class SettingsPageWidget::Impl {
                     }
                 }
             }
-            if (runtime.customControl != nullptr) {
+            if (runtime.customControl != nullptr && !initializing) {
                 runtime.customControl->retranslateUi();
             }
         }
@@ -1270,12 +1277,12 @@ class SettingsPageWidget::Impl {
             permissionButton->setAccessibleName(permissionButton->text());
             syncMousePermission();
         }
-        syncValues(firstItem);
+        syncValues(firstItem, initializing);
         requestVisibleSectionSync();
     }
 
     void applyTheme(const snow_shot::presentation::styles::ThemeColorScheme& scheme,
-                    int firstItem = 0) {
+                    int firstItem = 0, bool initializing = false) {
         colorScheme = scheme;
         if (firstItem == 0) {
             if (relatedHeader != nullptr) {
@@ -1298,16 +1305,18 @@ class SettingsPageWidget::Impl {
         for (int runtimeIndex = firstItem; runtimeIndex < items.size(); ++runtimeIndex) {
             RuntimeItem& runtime = items[runtimeIndex];
             if (runtime.formField != nullptr) {
-                runtime.formField->controller()->applyTheme(scheme);
+                if (!initializing) {
+                    runtime.formField->controller()->applyTheme(scheme);
+                }
                 continue;
             }
             if (runtime.title != nullptr && runtime.description != nullptr) {
                 settings_ui::applySettingItemTheme(runtime.title, runtime.description, scheme);
             }
-            if (runtime.shortcutControl != nullptr) {
+            if (runtime.shortcutControl != nullptr && !initializing) {
                 runtime.shortcutControl->applyTheme(scheme);
             }
-            if (runtime.globalMouseControl != nullptr) {
+            if (runtime.globalMouseControl != nullptr && !initializing) {
                 runtime.globalMouseControl->applyTheme(scheme);
             }
             if (runtime.customControl != nullptr) {

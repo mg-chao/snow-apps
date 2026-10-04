@@ -645,11 +645,14 @@ void PinnedWindowManagementPageWidget::refresh() {
     }
     m_dirty = false;
     m_records = m_source->records();
-    QSet<QString> ids;
-    for (const auto& record : std::as_const(m_records)) {
-        ids.insert(record.id);
+    if (!m_selected.isEmpty()) {
+        QSet<QString> ids;
+        ids.reserve(m_records.size());
+        for (const auto& record : std::as_const(m_records)) {
+            ids.insert(record.id);
+        }
+        m_selected.intersect(ids);
     }
-    m_selected.intersect(ids);
     std::sort(m_records.begin(), m_records.end(), [](const auto& left, const auto& right) {
         if (left.activitySequence != right.activitySequence) {
             return left.activitySequence > right.activitySequence;
@@ -681,10 +684,9 @@ void PinnedWindowManagementPageWidget::captureActivePreviewRevision() {
 
 void PinnedWindowManagementPageWidget::rebuildFilteredRecords(bool resetPage) {
     m_filteredRecords.clear();
+    const auto filter = history_page::currentFilter(m_sourceFilter, m_dates);
     for (const auto& record : std::as_const(m_records)) {
-        if (!history_page::matchesFilters(static_cast<int>(record.creationSource),
-                                          record.activityUtc().toLocalTime().date(), m_sourceFilter,
-                                          m_dates)) {
+        if (!filter.matches(static_cast<int>(record.creationSource), record.activityUtc())) {
             continue;
         }
         m_filteredRecords.push_back(record);

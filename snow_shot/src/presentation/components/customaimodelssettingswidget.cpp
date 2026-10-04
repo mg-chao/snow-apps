@@ -43,6 +43,11 @@ class ModelRow final : public QWidget {
                 this, [this] { update(); });
     }
 
+    void applyTheme(const presentation::styles::ThemeColorScheme& scheme) {
+        m_scheme = scheme;
+        update();
+    }
+
   protected:
     void paintEvent(QPaintEvent*) override {
         QPainter painter(this);
@@ -133,7 +138,11 @@ void CustomAiModelsSettingsWidget::applyTheme(
     QPalette colors = palette();
     colors.setColor(QPalette::WindowText, scheme.map.colorText);
     setPalette(colors);
-    rebuild();
+    for (int index = 0; index < m_rows->count(); ++index) {
+        if (auto* row = dynamic_cast<ModelRow*>(m_rows->itemAt(index)->widget())) {
+            row->applyTheme(scheme);
+        }
+    }
     update();
 }
 

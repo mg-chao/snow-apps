@@ -190,7 +190,6 @@ struct SettingsFormField::Impl {
                              sync();
                          });
         retranslateUi();
-        sync();
     }
 
     void commitBrowsedPath(const QString& path) {

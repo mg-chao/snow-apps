@@ -38,6 +38,11 @@ class ConfigurationRow final : public QWidget {
                 this, [this] { update(); });
     }
 
+    void applyTheme(const presentation::styles::ThemeColorScheme& scheme) {
+        m_scheme = scheme;
+        update();
+    }
+
   protected:
     void paintEvent(QPaintEvent*) override {
         QPainter painter(this);
@@ -128,7 +133,11 @@ void TextTranslationSettingsWidget::applyTheme(
     QPalette colors = palette();
     colors.setColor(QPalette::WindowText, scheme.map.colorText);
     setPalette(colors);
-    rebuild();
+    for (int index = 0; index < m_rows->count(); ++index) {
+        if (auto* row = dynamic_cast<ConfigurationRow*>(m_rows->itemAt(index)->widget())) {
+            row->applyTheme(scheme);
+        }
+    }
     update();
 }
 

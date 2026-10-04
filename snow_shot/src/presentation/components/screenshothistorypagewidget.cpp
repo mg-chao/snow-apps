@@ -1397,12 +1397,14 @@ void ScreenshotHistoryPageWidget::refresh() {
     m_resolvedAssets.clear();
     m_records = m_dataSource != nullptr ? m_dataSource->records()
                                         : QVector<storage::CaptureHistoryRecord>{};
-    QSet<QString> existingIds;
-    existingIds.reserve(m_records.size());
-    for (const storage::CaptureHistoryRecord& record : std::as_const(m_records)) {
-        existingIds.insert(record.id);
+    if (!m_selectedRecordIds.isEmpty()) {
+        QSet<QString> existingIds;
+        existingIds.reserve(m_records.size());
+        for (const storage::CaptureHistoryRecord& record : std::as_const(m_records)) {
+            existingIds.insert(record.id);
+        }
+        m_selectedRecordIds.intersect(existingIds);
     }
-    m_selectedRecordIds.intersect(existingIds);
     rebuildFilteredRecords(false);
 }
 
@@ -1454,17 +1456,11 @@ void ScreenshotHistoryPageWidget::queueRefresh() {
     });
 }
 
-bool ScreenshotHistoryPageWidget::matchesFilters(
-    const storage::CaptureHistoryRecord& record) const {
-    return history_page::matchesFilters(sourceKey(record.source),
-                                        record.createdUtc.toLocalTime().date(), m_sourceFilter,
-                                        m_dateRangeFilter);
-}
-
 void ScreenshotHistoryPageWidget::rebuildFilteredRecords(bool resetPage) {
     m_filteredRecords.clear();
+    const auto filter = history_page::currentFilter(m_sourceFilter, m_dateRangeFilter);
     for (const storage::CaptureHistoryRecord& record : m_records) {
-        if (matchesFilters(record)) {
+        if (filter.matches(sourceKey(record.source), record.createdUtc)) {
             m_filteredRecords.push_back(record);
         }
     }

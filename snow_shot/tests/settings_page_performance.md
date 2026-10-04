@@ -79,6 +79,60 @@ color, configuration-transfer, shortcut, theme, translation, custom-model, and e
 cover the surrounding behaviors. Tests that inspect offscreen controls explicitly navigate to the
 relevant section before inspecting them.
 
+## Initial-load changes (2026-10-04)
+
+This follow-up removes work from fresh page construction. It introduces no page cache or data
+cache for later visits, and does not change the existing section-level deferral policy.
+
+Form items keep their existing grid while refreshing feedback, labels, and styling. One theme
+resolution supplies the layout, label, message, and feedback steps of each refresh; the resolved
+style is local to that call. Settings pages avoid repeating the initialization already performed
+by their field and custom-widget constructors. Model and translation configuration rows receive
+theme updates in place instead of being destroyed and rebuilt.
+
+History and pinned management take one filter snapshot per filtering pass and convert record
+timestamps to local dates only when a date boundary is active. They also skip building a set of
+every record ID when there is no selection to reconcile.
+
+The added `snow-shot-main-page-performance-benchmark` covers About, Translation, and empty and
+populated history/pinned pages. It uses the same fresh-instance, four-event-pass measurement as
+the settings benchmark. Synthetic sources with 100 and 10,000 records exclude repository reads
+and thumbnail completion; Translation uses a pending local catalog request. These timings measure
+initial UI work, not complete image loading, network response time, or application startup.
+
+```powershell
+cmake --build --preset build-windows-msvc-performance `
+    --target snow-shot-settings-page-performance-benchmark snow-shot-main-page-performance-benchmark `
+    --parallel 12
+$env:QT_QPA_PLATFORM = 'offscreen'
+./build/windows-msvc-performance/snow_shot/Release/snow-shot-settings-page-performance-benchmark.exe `
+    --samples 11 --output build/settings-initial-load.json
+./build/windows-msvc-performance/snow_shot/Release/snow-shot-main-page-performance-benchmark.exe `
+    --samples 11 --output build/main-pages-initial-load.json
+```
+
+The comparison script's notification-coalescing thresholds above belong to the September change;
+that optimization is already present in this follow-up's baseline.
+
+Validation passed 12 focused CTest cases in the Release performance build: shared form fields
+and layout, settings loading/navigation/selectors, color and slider commits, skin settings,
+custom models, translation configurations, pinned management, and history page loading. The
+color test now follows each field's registered page and covers all nine current pickers.
+Changed C++ formatting and `git diff --check` passed. The full suite was not run.
+
+`snow-shot-screenshot-history-page-loading-tests` exercises the existing history rendering,
+filtering, empty-state, preview, and cross-page selection checks together with local-date
+boundary coverage. The original full history target remains intact. Its offscreen run failed
+at the clipboard check: Windows publishes to the native clipboard, while that check reads
+Qt's offscreen clipboard. A Windows-platform attempt stopped at the synthetic More-menu hover
+check. These full-history checks are not claimed as passing.
+
+Both benchmark executables built and ran successfully. Final wall-clock comparisons are
+unverified: unrelated compiler and linker processes were continuously active during the final
+runs and materially increased timings, including on unchanged pages. Those contended results
+are not reported as optimization gains. Rerun the commands above on an idle machine before
+using this revision's timings for a performance threshold.
+
 ## Measured results (2026-09-28)
 
 Windows 11 (10.0.26200), AMD Ryzen 9 5950X with 12 physical cores reported by Windows,

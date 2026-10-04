@@ -1966,7 +1966,10 @@ if(SNOW_SHOT_BUILD_TESTS)
         NAME snow-shot-screenshot-history-page-tests
         COMMAND snow-shot-screenshot-history-page-tests
     )
-    set_tests_properties(snow-shot-screenshot-history-page-tests PROPERTIES
+    add_test(NAME snow-shot-screenshot-history-page-loading-tests
+        COMMAND snow-shot-screenshot-history-page-tests --loading-only)
+    set_tests_properties(snow-shot-screenshot-history-page-tests
+        snow-shot-screenshot-history-page-loading-tests PROPERTIES
         ENVIRONMENT
             "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}"
         ENVIRONMENT_MODIFICATION
@@ -7008,6 +7011,13 @@ if(SNOW_SHOT_BUILD_BENCHMARKS)
     target_link_libraries(snow-shot-settings-page-performance-benchmark PRIVATE
         snow_shot_settings snow_shot_image_codec)
     snow_shot_import_offscreen_platform(snow-shot-settings-page-performance-benchmark)
+
+    add_executable(snow-shot-main-page-performance-benchmark
+        tests/main_page_performance_benchmark.cpp
+        src/presentation/services/screenshotclipboardservice.cpp)
+    target_link_libraries(snow-shot-main-page-performance-benchmark PRIVATE
+        snow_shot_settings snow_shot_image_codec)
+    snow_shot_import_offscreen_platform(snow-shot-main-page-performance-benchmark)
 
     add_executable(snow-shot-main-window-skin-performance-benchmark
         tests/main_window_skin_performance_benchmark.cpp)

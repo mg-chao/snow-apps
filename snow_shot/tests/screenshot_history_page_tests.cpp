@@ -1,4 +1,5 @@
 #include "snow_shot/presentation/components/screenshothistorypagewidget.h"
+#include "snow_shot/presentation/components/historypagecommon.h"
 #include "snow_shot/presentation/components/thumbnailcache.h"
 #include "snow_shot/presentation/components/pinnedwindowmanagementpagewidget.h"
 #include "snow_shot/storage/applicationstorage.h"
@@ -65,6 +66,27 @@ void flushEvents() {
     QCoreApplication::sendPostedEvents(nullptr, QEvent::PolishRequest);
     QCoreApplication::sendPostedEvents(nullptr, QEvent::LayoutRequest);
     QCoreApplication::processEvents();
+}
+
+void recordFiltersPreserveLocalDateBoundaries() {
+    using snow_shot::presentation::components::history_page::RecordFilter;
+    const QDate day(2026, 10, 4);
+    const QDateTime timestamp(day, QTime(0, 30));
+    const QVariant source = QStringLiteral("copy");
+    const RecordFilter unrestricted;
+    require(unrestricted.matches(source, timestamp.toUTC()),
+            "unfiltered history includes every source and date");
+    const RecordFilter exact{{source}, day, day};
+    require(exact.matches(source, timestamp.toUTC()),
+            "date boundaries include the selected local day even for UTC records");
+    require(exact.matches(source, QDateTime(day, QTime(23, 30)).toUTC()),
+            "both ends of the local day are included regardless of their UTC date");
+    require(!exact.matches(QStringLiteral("save"), timestamp),
+            "source and date restrictions are combined");
+    require(!RecordFilter{{}, day.addDays(1), {}}.matches(source, timestamp),
+            "an open-ended start date excludes earlier records");
+    require(!RecordFilter{{}, {}, day.addDays(-1)}.matches(source, timestamp),
+            "an open-ended end date excludes later records");
 }
 
 class MutableHistoryDataSource : public ScreenshotHistoryPageDataSource {
@@ -1089,6 +1111,7 @@ void shutdownDrainsBacklogThenRejectsNewWork() {
 
 int main(int argc, char** argv) {
     QApplication application(argc, argv);
+    recordFiltersPreserveLocalDateBoundaries();
     QTranslator englishTranslator;
     require(englishTranslator.load(QStringLiteral(":/i18n/snow_shot_en_US.qm")),
             "load the English application translations");
@@ -1104,6 +1127,12 @@ int main(int argc, char** argv) {
     continuousHistoryPreview();
     emptyStateRemainsVisibleAfterFilteringEmptyHistory();
     pageTextAndEmptyStateMatchPinnedWindowManagement();
+    if (application.arguments().contains(QStringLiteral("--loading-only"))) {
+        entriesUseBordersAndSupportCrossPageSelection();
+        storage::ApplicationStorage::instance().shutdown();
+        QCoreApplication::removeTranslator(&englishTranslator);
+        return 0;
+    }
     moreMenuOffersPinAndDelete();
     entriesUseBordersAndSupportCrossPageSelection();
     historyCopiesPreservePositionAndAppearance();

@@ -44,14 +44,13 @@ void settingsColorsCommitOnPopupClose(QApplication& application) {
         std::cout << "Checking " << field.id.toStdString() << '\n';
         const auto& definition =
             std::get<settings::SettingsColorDefinition>(field.definition->payload);
-        if (!page) {
+        if (!page || colorPageId != field.pageId) {
             colorPageId = field.pageId;
             page = std::make_unique<SettingsPageWidget>(registry, colorPageId, session);
             page->resize(880, 760);
             page->show();
             application.processEvents();
         }
-        require(field.pageId == colorPageId, "color settings use the same interface page");
         page->reveal({field.pageId, field.sectionId, field.id});
         application.processEvents();
         auto* row = page->findChild<QWidget*>(
@@ -111,7 +110,7 @@ void settingsColorsCommitOnPopupClose(QApplication& application) {
         QObject::disconnect(themeConnection);
         ++tested;
     }
-    require(tested == 8, "cover all eight settings color pickers");
+    require(tested == 9, "cover all nine settings color pickers");
 }
 } // namespace
 

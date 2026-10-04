@@ -26,6 +26,10 @@ class QVBoxLayout;
 
 namespace adqt::widgets {
 
+namespace detail {
+struct FormVisualStyle;
+}
+
 class AdFormItem;
 class AdFormList;
 
@@ -454,13 +458,13 @@ class AdFormItem final : public QWidget {
 
   void attachForm(AdForm* form);
   void ensureUi();
-  void rebuildItemLayout();
-  void refreshLabel();
-  void refreshMessages();
-  void refreshFeedbackIcon();
+  void rebuildItemLayout(const detail::FormVisualStyle* resolvedStyle = nullptr);
+  void refreshLabel(const detail::FormVisualStyle* resolvedStyle = nullptr);
+  void refreshMessages(const detail::FormVisualStyle* resolvedStyle = nullptr);
+  void refreshFeedbackIcon(const detail::FormVisualStyle* resolvedStyle = nullptr);
   void refreshControlStyle();
   void refreshAccessibility();
-  void updateAdditionalSpacing();
+  void updateAdditionalSpacing(const detail::FormVisualStyle* resolvedStyle = nullptr);
   void clearControlFeedbackIcon();
   void setFallbackFeedbackSpinnerActive(bool active);
   void refreshNoStyleDescendantStatus();
