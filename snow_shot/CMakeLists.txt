@@ -4334,6 +4334,19 @@ if(SNOW_SHOT_BUILD_TESTS)
         ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}"
         ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
 
+    add_executable(snow-shot-edit-selection-toolbar-settings-tests
+        tests/edit_selection_toolbar_settings_tests.cpp
+        src/presentation/services/screenshotclipboardservice.cpp)
+    target_link_libraries(snow-shot-edit-selection-toolbar-settings-tests PRIVATE
+        snow_shot_settings snow_shot_image_codec)
+    snow_shot_import_offscreen_platform(snow-shot-edit-selection-toolbar-settings-tests)
+    add_test(NAME snow-shot-edit-selection-toolbar-settings-tests
+             COMMAND snow-shot-edit-selection-toolbar-settings-tests)
+    set_tests_properties(snow-shot-edit-selection-toolbar-settings-tests PROPERTIES
+        LABELS "unit"
+        ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}"
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
+
     add_executable(snow-shot-file-pin-batch-tests
         tests/screenshot_file_pin_batch_tests.cpp
         ${SNOW_SELECTED_FILES_SOURCES}
@@ -5121,6 +5134,12 @@ if(SNOW_SHOT_BUILD_TESTS)
     snow_shot_import_offscreen_platform(snow-shot-screenshot-toolbar-remembered-tool-tests)
     add_test(NAME snow-shot-scrolling-interval-command-tests
         COMMAND snow-shot-screenshot-toolbar-remembered-tool-tests --scrolling-interval-only -platform offscreen)
+    add_test(NAME snow-shot-edit-selection-toolbar-visibility-tests
+        COMMAND snow-shot-screenshot-toolbar-remembered-tool-tests --edit-selection-toolbar-only -platform offscreen)
+    set_tests_properties(snow-shot-edit-selection-toolbar-visibility-tests PROPERTIES
+        LABELS "unit" TIMEOUT 60
+        ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}"
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
     add_test(NAME snow-shot-eraser-commands-tests
         COMMAND snow-shot-screenshot-toolbar-remembered-tool-tests --eraser-only -platform offscreen)
     set_tests_properties(snow-shot-eraser-commands-tests PROPERTIES LABELS "unit" TIMEOUT 60)
@@ -5522,6 +5541,9 @@ if(SNOW_SHOT_BUILD_TESTS)
     add_test(NAME snow-shot-screenshot-style-binding-tests
         COMMAND snow-shot-color-picker-lifecycle-tests --style-binding-only -platform offscreen)
     set_tests_properties(snow-shot-screenshot-style-binding-tests PROPERTIES LABELS "unit" TIMEOUT 60)
+    add_test(NAME snow-shot-selection-toolbar-visibility-tests
+        COMMAND snow-shot-color-picker-lifecycle-tests --selection-toolbar-visibility-only -platform offscreen)
+    set_tests_properties(snow-shot-selection-toolbar-visibility-tests PROPERTIES LABELS "unit" TIMEOUT 60)
     snow_shot_link_macos_window_platform(snow-shot-color-picker-lifecycle-tests)
     target_include_directories(snow-shot-color-picker-lifecycle-tests PRIVATE include)
     target_link_libraries(snow-shot-color-picker-lifecycle-tests PRIVATE

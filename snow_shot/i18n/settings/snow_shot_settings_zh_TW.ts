@@ -3291,6 +3291,10 @@
             <translation>顯示游標</translation>
         </message>
         <message>
+            <source>Show Edit Selection Toolbar</source>
+            <translation>顯示編輯選取範圍工具列</translation>
+        </message>
+        <message>
             <source>Show Guides by Default</source>
             <translation>預設顯示輔助線</translation>
         </message>
@@ -3341,6 +3345,10 @@
         <message>
             <source>Show the floating toolbar on the desktop</source>
             <translation>在桌面上顯示浮動工具列</translation>
+        </message>
+        <message>
+            <source>Show the sub-toolbar for the Edit Selection tool</source>
+            <translation>顯示編輯選取範圍工具的子工具列</translation>
         </message>
         <message>
             <source>Show toolbar</source>

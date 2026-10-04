@@ -804,6 +804,8 @@ bool BuiltInSettingsBackend::switchValue(SettingsSwitchBinding binding) const {
         return storage::ScreenshotUiSettings().screenshotAreaTypeHintEnabled();
     case SettingsSwitchBinding::ShowGuidesByDefault:
         return storage::ScreenshotUiSettings().showGuidesByDefault();
+    case SettingsSwitchBinding::ShowEditSelectionToolbar:
+        return storage::ScreenshotUiSettings().showEditSelectionToolbar();
     case SettingsSwitchBinding::FloatingToolbarEnabled:
         return storage::FloatingToolbarSettings().enabled();
     case SettingsSwitchBinding::TrayEnabled:
@@ -1023,6 +1025,9 @@ bool BuiltInSettingsBackend::applySwitchValue(SettingsSwitchBinding binding, boo
     if (binding == SettingsSwitchBinding::ShowGuidesByDefault) {
         return storage::ScreenshotUiSettings().setShowGuidesByDefault(value);
     }
+    if (binding == SettingsSwitchBinding::ShowEditSelectionToolbar) {
+        return storage::ScreenshotUiSettings().setShowEditSelectionToolbar(value);
+    }
     if (binding == SettingsSwitchBinding::FloatingToolbarEnabled)
         return storage::FloatingToolbarSettings().setEnabled(value);
     if (binding == SettingsSwitchBinding::TrayEnabled) {
@@ -1147,6 +1152,7 @@ bool BuiltInSettingsBackend::applySwitchValue(SettingsSwitchBinding binding, boo
     case SettingsSwitchBinding::SelectionTransitionAnimation:
     case SettingsSwitchBinding::ScreenshotAreaTypeHint:
     case SettingsSwitchBinding::ShowGuidesByDefault:
+    case SettingsSwitchBinding::ShowEditSelectionToolbar:
     case SettingsSwitchBinding::FloatingToolbarEnabled:
     case SettingsSwitchBinding::TrayEnabled:
     case SettingsSwitchBinding::ScreenshotAutoSaveAfterCopy:
@@ -2292,6 +2298,9 @@ bool BuiltInSettingsBackend::resetSection(SettingsSectionReset reset) {
             {QStringLiteral("screenshot_ui/color_picker_center_guide_line_color"),
              storage::ConfigurationSchema::defaultValue(
                  QStringLiteral("screenshot_ui/color_picker_center_guide_line_color"))},
+            {QStringLiteral("screenshot_ui/show_edit_selection_toolbar"),
+             storage::ConfigurationSchema::defaultValue(
+                 QStringLiteral("screenshot_ui/show_edit_selection_toolbar"))},
             {QStringLiteral("screenshot_toolbar/action_tools_layout"),
              storage::ConfigurationSchema::defaultValue(
                  QStringLiteral("screenshot_toolbar/action_tools_layout"))},

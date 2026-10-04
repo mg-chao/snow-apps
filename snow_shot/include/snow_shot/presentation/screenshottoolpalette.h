@@ -223,7 +223,7 @@ class ScreenshotToolPalette final : public QWidget,
         bool showDragHandle = false;
         bool showHistoryActions = false;
         bool showMoveTool = false;
-        bool showMoveOptionsToolbar = false;
+        bool enableMoveOptionsToolbar = false;
         MoveToolPresentation moveToolPresentation = MoveToolPresentation::EditSelection;
         bool showSelectTool = true;
         bool showShapeTool = true;
@@ -316,6 +316,7 @@ class ScreenshotToolPalette final : public QWidget,
     void setStyleToolbarVisible(bool visible);
     bool styleToolbarVisible() const;
     bool actionToolbarVisible() const;
+    void setMoveOptionsToolbarVisible(bool visible);
     bool recordingExportSettingsVisible() const;
     void setActiveTool(Tool tool);
     void refreshConfirmShortcutHint();
@@ -655,7 +656,7 @@ class ScreenshotToolPalette final : public QWidget,
     bool activateDrawingItem(const QString& itemId, bool toggleVisibleButton = true);
     [[nodiscard]] bool historyActionEnabled(const QString& itemId) const;
     [[nodiscard]] bool canActivateHistoryItem(const QString& itemId) const;
-    [[nodiscard]] adqt::widgets::AdButton* screenshotShortcutButton(const QString& actionId);
+    [[nodiscard]] adqt::widgets::AdButton* screenshotShortcutButton(const QString& actionId) const;
     void refreshDrawingToolGroup(int groupIndex);
     void addRecordingControls(QBoxLayout* layout);
     void createRecordingExportSettingsToolbar();
@@ -1107,6 +1108,7 @@ class ScreenshotToolPalette final : public QWidget,
     SnowCanvasHistoryState m_canvasHistoryState;
     const SnowCanvasStyleDefaults m_styleDefaults;
     const Options m_options;
+    bool m_moveOptionsToolbarVisible = false;
     std::optional<snow_shot::storage::ScreenshotToolbarLayout> m_toolbarLayout;
     snow_shot::storage::ScreenshotToolbarLayout m_actionToolsLayout;
     bool m_actionToolsLayoutExplicit = false;

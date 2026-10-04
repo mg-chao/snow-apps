@@ -233,6 +233,28 @@ void builtInCatalogIsCompleteAndValid() {
                                    QStringLiteral("interface.screenshot.cursor-guide-line-color");
                     }) != screenshotInterface->items.cend(),
             "show guides by default must appear immediately above cursor guide color");
+    const auto* editSelectionToolbar =
+        catalog.item({QStringLiteral("screenshots"), QStringLiteral("interface-screenshot"),
+                      QStringLiteral("interface.screenshot.show-edit-selection-toolbar")});
+    require(
+        editSelectionToolbar != nullptr &&
+            editSelectionToolbar->configurationKey ==
+                QStringLiteral("screenshot_ui/show_edit_selection_toolbar") &&
+            std::get<settings::SettingsSwitchDefinition>(editSelectionToolbar->payload).binding ==
+                settings::SettingsSwitchBinding::ShowEditSelectionToolbar &&
+            storage::ConfigurationSchema::defaultValue(editSelectionToolbar->configurationKey)
+                .toBool(),
+        "screenshot interface settings must expose an enabled edit selection toolbar switch");
+    require(std::adjacent_find(
+                screenshotInterface->items.cbegin(), screenshotInterface->items.cend(),
+                [](const auto& first, const auto& second) {
+                    return first.id ==
+                               QStringLiteral(
+                                   "interface.screenshot.color-picker-center-guide-line-color") &&
+                           second.id ==
+                               QStringLiteral("interface.screenshot.show-edit-selection-toolbar");
+                }) != screenshotInterface->items.cend(),
+            "show edit selection toolbar must appear immediately below color picker guide color");
     require(
         std::adjacent_find(
             screenshotInterface->items.cbegin(), screenshotInterface->items.cend(),
@@ -445,9 +467,9 @@ void builtInCatalogIsCompleteAndValid() {
         require(itemIds.remove(id), "catalog must contain each platform-specific setting");
     for (const auto& id : excludedPlatformItems)
         require(!itemIds.contains(id), "catalog must omit settings exclusive to another platform");
-    require(itemIds.size() == 232,
+    require(itemIds.size() == 233,
             qPrintable(QStringLiteral(
-                           "catalog must contain 232 shared settings on every platform; found %1")
+                           "catalog must contain 233 shared settings on every platform; found %1")
                            .arg(itemIds.size())));
     require(foundUpdates, "catalog must contain the update mode item");
     const auto* pinnedEditor =

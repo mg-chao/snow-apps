@@ -1422,6 +1422,14 @@ bool ScreenshotUiSettings::setSelectionDisplayUnit(const QString& unit) const {
     return cache().setValue(QStringLiteral("screenshot_ui/selection_display_unit"), unit);
 }
 
+bool ScreenshotUiSettings::selectionToolbarHidden() const {
+    return cache().value(QStringLiteral("screenshot_ui/selection_toolbar_hidden")).toBool();
+}
+
+bool ScreenshotUiSettings::setSelectionToolbarHidden(bool hidden) const {
+    return cache().setValue(QStringLiteral("screenshot_ui/selection_toolbar_hidden"), hidden);
+}
+
 QString ScreenshotUiSettings::colorPickerDisplayMode() const {
     return cache().value(QStringLiteral("screenshot_ui/color_picker_display_mode")).toString();
 }
@@ -1517,6 +1525,14 @@ QColor ScreenshotUiSettings::colorPickerCenterGuideLineColor() const {
 bool ScreenshotUiSettings::setColorPickerCenterGuideLineColor(const QColor& color) const {
     return setColorValue(QStringLiteral("screenshot_ui/color_picker_center_guide_line_color"),
                          color);
+}
+
+bool ScreenshotUiSettings::showEditSelectionToolbar() const {
+    return cache().value(QStringLiteral("screenshot_ui/show_edit_selection_toolbar")).toBool();
+}
+
+bool ScreenshotUiSettings::setShowEditSelectionToolbar(bool show) const {
+    return cache().setValue(QStringLiteral("screenshot_ui/show_edit_selection_toolbar"), show);
 }
 
 bool RecordingSettings::microphoneEnabled() const {

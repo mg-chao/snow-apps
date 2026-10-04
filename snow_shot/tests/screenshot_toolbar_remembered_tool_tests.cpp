@@ -83,6 +83,9 @@ class RecordingToolbarCommands : public ScreenshotToolbarCommandSink {
     void createTextForSelectedSerialNumber() override {}
     void repositionToolbarForContentChange() override {}
     void hideColorPickersForScreenshotUi() override {}
+    void requestRecapture() override {
+        ++recaptureCount;
+    }
 
     void setScrollingScreenshotAutoScrollIntervalMs(int milliseconds) override {
         interval = milliseconds;
@@ -96,7 +99,144 @@ class RecordingToolbarCommands : public ScreenshotToolbarCommandSink {
     int elementEraserCount = 0;
     int rectangleEraserCount = 0;
     int brushEraserCount = 0;
+    int recaptureCount = 0;
 };
+
+void editSelectionToolbarFollowsSetting() {
+    using Tool = ScreenshotToolPalette::Tool;
+    const storage::ScreenshotUiSettings settings;
+    const bool original = settings.showEditSelectionToolbar();
+    const auto cleanup =
+        qScopeGuard([&] { static_cast<void>(settings.setShowEditSelectionToolbar(original)); });
+    require(original, "the edit selection toolbar defaults to shown");
+    RecordingToolbarCommands commands;
+    ScreenshotToolbarWindow window(commands);
+    window.resetForNewCapture();
+    auto* palette = window.palette();
+    const auto moveControls = [&] {
+        return palette->findChild<QWidget*>(QStringLiteral("screenshotMoveActionControls"));
+    };
+    require(palette->activeTool() == Tool::Move && palette->actionToolbarVisible() &&
+                moveControls() != nullptr && !moveControls()->isHidden(),
+            "the default capture must show the edit selection sub-toolbar");
+    const int shownHeight = palette->sizeHint().height();
+    int contentChanges = 0;
+    QObject::connect(palette, &ScreenshotToolPalette::visibleContentChanged,
+                     [&] { ++contentChanges; });
+    require(settings.setShowEditSelectionToolbar(false) && palette->activeTool() == Tool::Move &&
+                !palette->actionToolbarVisible() && moveControls()->isHidden() &&
+                palette->sizeHint().height() < shownHeight && contentChanges > 0,
+            "disabling the setting must immediately hide the row and shrink the toolbar");
+    require(commands.moveToolCount == 0,
+            "changing toolbar visibility must not issue a tool command");
+    require(settings.setShowEditSelectionToolbar(true) && palette->actionToolbarVisible() &&
+                !moveControls()->isHidden() && palette->sizeHint().height() == shownHeight,
+            "re-enabling the active edit selection row must restore its controls and height");
+    require(settings.setShowEditSelectionToolbar(false), "hide the row before a new capture");
+    window.resetForNewCapture();
+    require(!palette->actionToolbarVisible(),
+            "a new capture must preserve the disabled toolbar preference");
+    window.setActiveTool(Tool::Shape);
+    require(palette->styleToolbarVisible(), "drawing styles remain available");
+    require(settings.setShowEditSelectionToolbar(true) && palette->activeTool() == Tool::Shape &&
+                palette->styleToolbarVisible() && !palette->actionToolbarVisible(),
+            "enabling the edit selection toolbar must preserve the active drawing tool");
+    window.setActiveTool(Tool::Move);
+    require(palette->actionToolbarVisible() && moveControls() != nullptr &&
+                !moveControls()->isHidden(),
+            "returning to edit selection must show its enabled sub-toolbar");
+    require(settings.setShowEditSelectionToolbar(false), "disable toolbar before construction");
+    ScreenshotToolbarWindow hiddenWindow(commands);
+    hiddenWindow.resetForNewCapture();
+    auto* hiddenPalette = hiddenWindow.palette();
+    require(hiddenPalette->activeTool() == Tool::Move && !hiddenPalette->actionToolbarVisible() &&
+                hiddenPalette->findChild<QWidget*>(
+                    QStringLiteral("screenshotMoveActionControls")) == nullptr,
+            "a toolbar constructed while disabled must not materialize edit selection controls");
+    const QString recapture = QStringLiteral("recapture");
+    for (int check = 0; check < 3; ++check) {
+        require(hiddenPalette->canActivateScreenshotShortcut(recapture) &&
+                    commands.recaptureCount == 0 && !hiddenPalette->actionToolbarVisible() &&
+                    hiddenPalette->findChild<QWidget*>(
+                        QStringLiteral("screenshotMoveActionControls")) == nullptr,
+                "recapture availability must not materialize a hidden edit selection row");
+    }
+    require(
+        hiddenPalette->activateScreenshotShortcut(recapture) && commands.recaptureCount == 1 &&
+            hiddenPalette->activeTool() == Tool::Move && !hiddenPalette->actionToolbarVisible() &&
+            hiddenPalette->findChild<QWidget*>(QStringLiteral("screenshotMoveActionControls")) ==
+                nullptr,
+        "recapture must dispatch once without materializing or showing the hidden row");
+    hiddenWindow.setRecaptureBusy(true);
+    require(!hiddenPalette->canActivateScreenshotShortcut(recapture) &&
+                !hiddenPalette->activateScreenshotShortcut(recapture) &&
+                commands.recaptureCount == 1,
+            "busy recapture must reject shortcuts while the edit selection row is hidden");
+    hiddenWindow.setRecaptureBusy(false);
+    require(settings.setShowEditSelectionToolbar(true) && hiddenPalette->actionToolbarVisible() &&
+                hiddenPalette->findChild<QWidget*>(
+                    QStringLiteral("screenshotMoveActionControls")) != nullptr &&
+                hiddenPalette->canActivateScreenshotShortcut(recapture),
+            "enabling the row after hidden shortcuts must immediately restore its controls");
+    auto* recaptureButton = hiddenPalette->findChild<adqt::widgets::AdButton*>(
+        QStringLiteral("screenshotRecaptureButton"));
+    require(recaptureButton != nullptr, "the shown edit selection row must expose recapture");
+    recaptureButton->click();
+    require(commands.recaptureCount == 2, "pointer and shortcut recapture must dispatch once each");
+    require(settings.setShowEditSelectionToolbar(false),
+            "hide the materialized edit selection row");
+    hiddenWindow.resetForNewCapture();
+    require(!hiddenPalette->actionToolbarVisible() &&
+                hiddenPalette->activateScreenshotShortcut(recapture) &&
+                commands.recaptureCount == 3,
+            "capture resets must keep recapture available while the row remains hidden");
+    hiddenWindow.setActiveTool(Tool::Select);
+    require(hiddenPalette->actionToolbarVisible() &&
+                !hiddenPalette->canActivateScreenshotShortcut(recapture) &&
+                !hiddenPalette->activateScreenshotShortcut(recapture) &&
+                commands.recaptureCount == 3,
+            "annotation selection actions must remain available without enabling recapture");
+    hiddenWindow.setActiveTool(Tool::Move);
+    require(
+        !hiddenPalette->actionToolbarVisible() &&
+            hiddenPalette->findChild<QWidget*>(QStringLiteral("screenshotMoveActionControls")) ==
+                nullptr &&
+            hiddenPalette->activateScreenshotShortcut(recapture) && commands.recaptureCount == 4,
+        "recapture must remain available after tool changes without rebuilding the hidden row");
+    require(settings.setShowEditSelectionToolbar(true) && hiddenPalette->actionToolbarVisible() &&
+                hiddenPalette->findChild<QWidget*>(
+                    QStringLiteral("screenshotMoveActionControls")) != nullptr,
+            "enabling the setting must materialize and show the active edit selection row");
+}
+
+void moveOptionsCapabilityIsIndependentOfVisibility() {
+    using Tool = ScreenshotToolPalette::Tool;
+    using Family = ScreenshotToolPalette::ActionFamily;
+    const QString recapture = QStringLiteral("recapture");
+    ScreenshotToolPalette::Options options;
+    options.showMoveTool = true;
+    ScreenshotToolPalette unsupported(options);
+    unsupported.setMoveOptionsToolbarVisible(true);
+    unsupported.setActiveTool(Tool::Move);
+    require(!unsupported.actionToolbarVisible() && !unsupported.ensureActionFamily(Family::Move) &&
+                !unsupported.canActivateScreenshotShortcut(recapture) &&
+                !unsupported.activateScreenshotShortcut(recapture),
+            "palettes without screenshot capture options must not enable the row or recapture");
+
+    options.enableMoveOptionsToolbar = true;
+    ScreenshotToolPalette supported(options);
+    supported.setMoveOptionsToolbarVisible(false);
+    supported.setActiveTool(Tool::Move);
+    require(supported.ensureActionFamily(Family::Move),
+            "explicit move control materialization must succeed while the row is hidden");
+    auto* controls = supported.findChild<QWidget*>(QStringLiteral("screenshotMoveActionControls"));
+    require(controls != nullptr && controls->isHidden() && !supported.actionToolbarVisible(),
+            "materializing supported controls must preserve the row's hidden state");
+    supported.setMoveOptionsToolbarVisible(true);
+    require(supported.actionToolbarVisible() && !controls->isHidden() &&
+                supported.canActivateScreenshotShortcut(recapture),
+            "enabling a materialized row must immediately reveal its controls");
+}
 
 void eraserSubtoolsReachToolbarCommands() {
     using Tool = ScreenshotToolPalette::Tool;
@@ -452,6 +592,12 @@ int main(int argc, char** argv) {
         applicationStorage.shutdown();
         return 0;
     }
+    if (application.arguments().contains(QStringLiteral("--edit-selection-toolbar-only"))) {
+        editSelectionToolbarFollowsSetting();
+        moveOptionsCapabilityIsIndependentOfVisibility();
+        applicationStorage.shutdown();
+        return 0;
+    }
     if (application.arguments().contains(QStringLiteral("--hidden-tools-only"))) {
         selectionShortcutsReachToolbarCommands(true);
         applicationStorage.shutdown();
@@ -463,6 +609,8 @@ int main(int argc, char** argv) {
         return 0;
     }
     eraserSubtoolsReachToolbarCommands();
+    editSelectionToolbarFollowsSetting();
+    moveOptionsCapabilityIsIndependentOfVisibility();
     rememberedDrawingToolRestoresOncePerCapture();
     selectionShortcutsReachToolbarCommands();
     applicationStorage.shutdown();

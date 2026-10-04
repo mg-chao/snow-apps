@@ -554,6 +554,16 @@ SettingsItemDefinition showGuidesByDefaultItem() {
             SettingsSwitchDefinition{SettingsSwitchBinding::ShowGuidesByDefault}};
 }
 
+SettingsItemDefinition showEditSelectionToolbarItem() {
+    return {QStringLiteral("interface.screenshot.show-edit-selection-toolbar"),
+            settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Show Edit Selection Toolbar")),
+            settingsText(QT_TRANSLATE_NOOP("SettingsCatalog",
+                                           "Show the sub-toolbar for the Edit Selection tool")),
+            {},
+            QStringLiteral("screenshot_ui/show_edit_selection_toolbar"),
+            SettingsSwitchDefinition{SettingsSwitchBinding::ShowEditSelectionToolbar}};
+}
+
 SettingsItemDefinition drawingToolbarEditorItem() {
     return {
         QStringLiteral("interface.toolbar.drawing-toolbar-editor"),
@@ -2832,6 +2842,7 @@ QVector<SettingsPageDefinition> builtInPages() {
                              "Draw four guide segments around the sampled center pixel"),
                          QStringLiteral("screenshot_ui/color_picker_center_guide_line_color"),
                          SettingsColorBinding::ColorPickerCenterGuideLineColor),
+                     showEditSelectionToolbarItem(),
                      screenshotToolbarEditorItem(),
                  },
              },
@@ -4397,6 +4408,9 @@ QStringList SettingsCatalog::validationErrors() const {
                         break;
                     case SettingsSwitchBinding::ShowGuidesByDefault:
                         expectedKey = QStringLiteral("screenshot_ui/show_guides_by_default");
+                        break;
+                    case SettingsSwitchBinding::ShowEditSelectionToolbar:
+                        expectedKey = QStringLiteral("screenshot_ui/show_edit_selection_toolbar");
                         break;
                     case SettingsSwitchBinding::FloatingToolbarEnabled:
                         expectedKey = QStringLiteral("floating_toolbar/enabled");

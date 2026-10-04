@@ -384,6 +384,8 @@ class ScreenshotUiSettings final {
     bool setSelectionTransitionAnimationEnabled(bool enabled) const;
     [[nodiscard]] QString selectionDisplayUnit() const;
     bool setSelectionDisplayUnit(const QString& unit) const;
+    [[nodiscard]] bool selectionToolbarHidden() const;
+    bool setSelectionToolbarHidden(bool hidden) const;
     [[nodiscard]] QString colorPickerDisplayMode() const;
     bool setColorPickerDisplayMode(const QString& mode) const;
     [[nodiscard]] QString colorPickerCoordinateMode() const;
@@ -408,6 +410,8 @@ class ScreenshotUiSettings final {
     bool setMonitorCenterGuideLineColor(const QColor& color) const;
     [[nodiscard]] QColor colorPickerCenterGuideLineColor() const;
     bool setColorPickerCenterGuideLineColor(const QColor& color) const;
+    [[nodiscard]] bool showEditSelectionToolbar() const;
+    bool setShowEditSelectionToolbar(bool show) const;
 };
 
 class RecordingSettings final {

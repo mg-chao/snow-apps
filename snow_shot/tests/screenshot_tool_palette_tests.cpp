@@ -1616,7 +1616,7 @@ void dynamicToolbarLabelsUseEveryTranslationCatalog() {
 
     ScreenshotToolPalette::Options cursorOptions;
     cursorOptions.showMoveTool = true;
-    cursorOptions.showMoveOptionsToolbar = true;
+    cursorOptions.enableMoveOptionsToolbar = true;
     ScreenshotToolPalette cursorPalette(cursorOptions);
     cursorPalette.setActiveTool(ScreenshotToolPalette::Tool::Move);
     auto* cursorButton = cursorPalette.findChild<adqt::widgets::AdButton*>(
@@ -13628,7 +13628,7 @@ void regionControlsFollowTheActiveCaptureType() {
         floating.setType(type);
         ScreenshotToolPalette::Options options;
         options.showMoveTool = true;
-        options.showMoveOptionsToolbar = true;
+        options.enableMoveOptionsToolbar = true;
         ScreenshotToolPalette palette(options);
         int commands = 0;
         QObject::connect(&palette, &ScreenshotToolPalette::screenshotRegionTypeRequested,
@@ -13675,7 +13675,7 @@ void regionControlsFollowTheActiveCaptureType() {
 void moveToolExposesCaptureCursorAndRecaptureOptions() {
     ScreenshotToolPalette::Options options;
     options.showMoveTool = true;
-    options.showMoveOptionsToolbar = true;
+    options.enableMoveOptionsToolbar = true;
     ScreenshotToolPalette palette(options);
     palette.setCursorVisible(false);
     palette.setActiveTool(ScreenshotToolPalette::Tool::Move);
@@ -13891,7 +13891,7 @@ void moveToolExposesCaptureCursorAndRecaptureOptions() {
             "busy recapture must disable both pointer and shortcut activation");
     palette.setRecaptureBusy(false);
     require(palette.activateScreenshotShortcut(QStringLiteral("recapture")) && recaptures == 2,
-            "the shortcut must invoke the same Recapture button signal path");
+            "the shortcut must emit the same Recapture command as the button");
 
     // Move mode leaves the canvas engine on a non-drawing tool, so the engine
     // reports DefaultRectangle, and selector refresh can report selection-based
@@ -14100,7 +14100,7 @@ void regionSwitcherRetranslatesAndRenders() {
     floating.show();
     ScreenshotToolPalette::Options options;
     options.showMoveTool = true;
-    options.showMoveOptionsToolbar = true;
+    options.enableMoveOptionsToolbar = true;
     ScreenshotToolPalette palette(options);
     palette.setActiveTool(ScreenshotToolPalette::Tool::Move);
     palette.show();

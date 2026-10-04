@@ -37,7 +37,7 @@ class ScreenshotToolbarCommandSink {
         return false;
     }
     virtual void setSelectionDisplayUnit(ScreenshotSelectionDisplayUnit) {}
-    virtual void setSelectionToolbarHiddenForSession(bool) {}
+    virtual void setSelectionToolbarHidden(bool) {}
     virtual void setMoveTool() = 0;
     virtual void setSelectTool() = 0;
     virtual void setShapeTool() = 0;

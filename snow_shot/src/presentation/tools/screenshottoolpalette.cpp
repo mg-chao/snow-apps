@@ -288,8 +288,8 @@ bool filterTypeSupportsIntensity(SnowCanvasFilterType type) {
            type != SnowCanvasFilterType::SmartErase;
 }
 
-bool toolUsesActionToolbar(ScreenshotToolPalette::Tool tool, bool showMoveOptionsToolbar) {
-    return (tool == ScreenshotToolPalette::Tool::Move && showMoveOptionsToolbar) ||
+bool toolUsesActionToolbar(ScreenshotToolPalette::Tool tool, bool moveOptionsToolbarVisible) {
+    return (tool == ScreenshotToolPalette::Tool::Move && moveOptionsToolbarVisible) ||
            tool == ScreenshotToolPalette::Tool::Select ||
            tool == ScreenshotToolPalette::Tool::Ocr ||
            tool == ScreenshotToolPalette::Tool::TextTranslation ||
@@ -893,6 +893,7 @@ class DrawTemplateOptionActionDelegate final : public QAbstractItemDelegate {
 
 ScreenshotToolPalette::ScreenshotToolPalette(const Options& options, QWidget* parent)
     : QWidget(parent), m_styleDefaults(options.styleDefaults), m_options(options),
+      m_moveOptionsToolbarVisible(options.enableMoveOptionsToolbar),
       m_toolbarLayout(initialToolbarLayout(options)),
       m_actionToolsLayout(initialActionToolsLayout(options)),
       m_actionToolsLayoutExplicit(options.actionToolsLayout.has_value()) {
@@ -1437,6 +1438,17 @@ bool ScreenshotToolPalette::actionToolbarVisible() const {
     return m_actionToolbarTargetVisible;
 }
 
+void ScreenshotToolPalette::setMoveOptionsToolbarVisible(bool visible) {
+    visible = visible && m_options.enableMoveOptionsToolbar;
+    if (m_moveOptionsToolbarVisible == visible) {
+        return;
+    }
+    m_moveOptionsToolbarVisible = visible;
+    if (m_activeTool == Tool::Move) {
+        setActiveTool(Tool::Move);
+    }
+}
+
 bool ScreenshotToolPalette::recordingExportSettingsVisible() const {
     return m_recordExportSettingsVisible;
 }
@@ -1455,7 +1467,7 @@ bool ScreenshotToolPalette::setSecondaryToolbarVisibility(bool actionToolbarVisi
     const bool conversionVisible = m_activeTool == Tool::Markdown || m_activeTool == Tool::Html;
     const bool originalVisible = ocrVisible || tableVisible || qrVisible || conversionVisible;
     const bool scrollingVisible = m_activeTool == Tool::ScrollingScreenshot;
-    const bool moveVisible = m_activeTool == Tool::Move && m_options.showMoveOptionsToolbar;
+    const bool moveVisible = m_activeTool == Tool::Move && m_moveOptionsToolbarVisible;
     const bool recognitionActionVisible = ocrVisible || tableVisible || qrVisible ||
                                           scrollingVisible || conversionVisible || moveVisible;
     const bool recognitionControlsMatch =
@@ -1814,7 +1826,7 @@ void ScreenshotToolPalette::setActiveTool(Tool tool) {
         }
     }
     if (const std::optional<ActionFamily> family = actionFamilyForTool(tool);
-        family.has_value() && toolUsesActionToolbar(tool, m_options.showMoveOptionsToolbar)) {
+        family.has_value() && toolUsesActionToolbar(tool, m_moveOptionsToolbarVisible)) {
         static_cast<void>(ensureActionFamily(*family));
     }
     if (toolUsesStyleToolbar(tool)) {
@@ -5944,20 +5956,17 @@ QString screenshotShortcutActionItem(const QString& actionId) {
 }
 } // namespace
 
-adqt::widgets::AdButton* ScreenshotToolPalette::screenshotShortcutButton(const QString& actionId) {
-    if (actionId == QStringLiteral("recapture")) {
-        if (m_activeTool != Tool::Move) {
-            return nullptr;
-        }
-        static_cast<void>(ensureActionFamily(ActionFamily::Move));
-        return m_recaptureButton;
-    }
+adqt::widgets::AdButton*
+ScreenshotToolPalette::screenshotShortcutButton(const QString& actionId) const {
     return actionId == QStringLiteral("cancel_screenshot")   ? m_cancelButton
            : actionId == QStringLiteral("copy_to_clipboard") ? m_copyButton
                                                              : nullptr;
 }
 
 bool ScreenshotToolPalette::canActivateScreenshotShortcut(const QString& actionId) {
+    if (actionId == QStringLiteral("recapture")) {
+        return m_options.enableMoveOptionsToolbar && m_activeTool == Tool::Move && !m_recaptureBusy;
+    }
     if (actionId == QStringLiteral("undo") || actionId == QStringLiteral("redo")) {
         return canActivateHistoryItem(actionId);
     }
@@ -5975,6 +5984,10 @@ bool ScreenshotToolPalette::canActivateScreenshotShortcut(const QString& actionI
 bool ScreenshotToolPalette::activateScreenshotShortcut(const QString& actionId) {
     if (!canActivateScreenshotShortcut(actionId))
         return false;
+    if (actionId == QStringLiteral("recapture")) {
+        emit recaptureRequested();
+        return true;
+    }
     if (actionId == QStringLiteral("undo") || actionId == QStringLiteral("redo")) {
         return activateDrawingItem(actionId);
     }
@@ -7405,6 +7418,9 @@ void ScreenshotToolPalette::registerStyleFamily(QWidget* controls,
 }
 
 bool ScreenshotToolPalette::ensureActionFamily(ActionFamily family) {
+    if (family == ActionFamily::Move && !m_options.enableMoveOptionsToolbar) {
+        return false;
+    }
 #if !SNOW_SHOT_ENABLE_TABLE_RECOGNITION
     if (family == ActionFamily::TableRecognition)
         return false;
@@ -8153,12 +8169,12 @@ void ScreenshotToolPalette::createTableRecognitionActionFamily() {
 #endif
 
 void ScreenshotToolPalette::createMoveActionFamily() {
-    if (!m_options.showMoveOptionsToolbar || m_selectActionLayout == nullptr ||
-        m_moveActionControls != nullptr) {
+    if (m_selectActionLayout == nullptr || m_moveActionControls != nullptr) {
         return;
     }
     m_moveActionControls = new QWidget(m_selectActionPanel);
     m_moveActionControls->setObjectName(QStringLiteral("screenshotMoveActionControls"));
+    m_moveActionControls->hide();
     auto* layout = new QHBoxLayout(m_moveActionControls);
     layout->setContentsMargins(0, 0, 0, 0);
     layout->setSpacing(0);
@@ -9242,7 +9258,7 @@ bool ScreenshotToolPalette::applyActiveToolSecondaryToolbarVisibility() {
         return setSecondaryToolbarVisibility(false, false);
     }
     return setSecondaryToolbarVisibility(
-        toolUsesActionToolbar(*m_activeTool, m_options.showMoveOptionsToolbar),
+        toolUsesActionToolbar(*m_activeTool, m_moveOptionsToolbarVisible),
         toolUsesStyleToolbar(*m_activeTool));
 }
 

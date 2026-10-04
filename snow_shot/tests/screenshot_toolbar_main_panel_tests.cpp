@@ -1293,7 +1293,7 @@ void toolbarSkinProfilesAndLifecycle() {
         options.showDragHandle = true;
         options.showHistoryActions = true;
         options.showMoveTool = index < 2;
-        options.showMoveOptionsToolbar = index == 0;
+        options.enableMoveOptionsToolbar = index == 0;
         options.showLineTool = true;
         options.showFreeDrawTool = true;
         options.showHighlightTool = true;

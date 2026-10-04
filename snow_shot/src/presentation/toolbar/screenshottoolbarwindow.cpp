@@ -20,7 +20,7 @@ ScreenshotToolPalette::Options screenshotToolbarOptions() {
     options.showDragHandle = true;
     options.showHistoryActions = true;
     options.showMoveTool = true;
-    options.showMoveOptionsToolbar = true;
+    options.enableMoveOptionsToolbar = true;
     options.showSelectTool = true;
     options.showShapeTool = true;
     options.showArrowTool = true;
@@ -71,6 +71,16 @@ ScreenshotToolbarWindow::ScreenshotToolbarWindow(ScreenshotToolbarCommandSink& c
                 } else if (key == QStringLiteral("screenshot_ui/selection_display_unit")) {
                     setSelectionDisplayUnit(screenshotSelectionDisplayUnitFromId(
                         snow_shot::storage::ScreenshotUiSettings().selectionDisplayUnit()));
+                } else if (key == QStringLiteral("screenshot_ui/show_edit_selection_toolbar")) {
+                    if (auto* toolPalette = palette()) {
+                        toolPalette->setMoveOptionsToolbarVisible(
+                            snow_shot::storage::ScreenshotUiSettings().showEditSelectionToolbar());
+                    }
+                } else if (key == QStringLiteral("screenshot_ui/selection_toolbar_hidden")) {
+                    if (auto* toolPalette = palette()) {
+                        toolPalette->setSelectionToolbarHidden(
+                            snow_shot::storage::ScreenshotUiSettings().selectionToolbarHidden());
+                    }
                 } else if (key == QStringLiteral("screenshot_toolbar/layout")) {
                     setToolbarLayout(snow_shot::storage::ScreenshotToolbarSettings().layout(
                         snow_shot::storage::ScreenshotToolbarLayoutKind::DrawingTools));
@@ -124,6 +134,8 @@ void ScreenshotToolbarWindow::initializePalette() {
         [this]() { return m_commands.selectedDrawTemplatePayload(); },
         [this](const QByteArray& payload) { m_commands.insertDrawTemplate(payload); });
 
+    toolPalette->setMoveOptionsToolbarVisible(
+        snow_shot::storage::ScreenshotUiSettings().showEditSelectionToolbar());
     resetForNewCapture();
     synchronizeCursorState();
 
@@ -153,7 +165,14 @@ void ScreenshotToolbarWindow::initializePalette() {
         toolPalette, &ScreenshotToolPalette::selectionDisplayUnitChanged, this,
         [this](ScreenshotSelectionDisplayUnit unit) { m_commands.setSelectionDisplayUnit(unit); });
     connect(toolPalette, &ScreenshotToolPalette::selectionToolbarHiddenChanged, this,
-            [this](bool hidden) { m_commands.setSelectionToolbarHiddenForSession(hidden); });
+            [this, toolPalette](bool hidden) {
+                const snow_shot::storage::ScreenshotUiSettings settings;
+                if (!settings.setSelectionToolbarHidden(hidden)) {
+                    hidden = settings.selectionToolbarHidden();
+                    toolPalette->setSelectionToolbarHidden(hidden);
+                }
+                m_commands.setSelectionToolbarHidden(hidden);
+            });
     connect(host, &ScreenshotToolPaletteHost::dragStarted, this,
             [this](const QPoint&) { m_manuallyDragged = true; });
 }
@@ -488,7 +507,8 @@ void ScreenshotToolbarWindow::resetForNewCapture() {
     setHistoryState(SnowCanvasHistoryState{});
     m_rememberedDrawingToolRestorePending = true;
     if (ScreenshotToolPalette* toolPalette = palette()) {
-        toolPalette->setSelectionToolbarHidden(false);
+        toolPalette->setSelectionToolbarHidden(
+            snow_shot::storage::ScreenshotUiSettings().selectionToolbarHidden());
         toolPalette->setQrCodeState(false, true);
     }
     prepareForDisplay();

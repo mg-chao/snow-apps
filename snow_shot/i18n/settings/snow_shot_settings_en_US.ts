@@ -3291,6 +3291,10 @@
             <translation>Show Cursor</translation>
         </message>
         <message>
+            <source>Show Edit Selection Toolbar</source>
+            <translation>Show Edit Selection Toolbar</translation>
+        </message>
+        <message>
             <source>Show Guides by Default</source>
             <translation>Show Guides by Default</translation>
         </message>
@@ -3341,6 +3345,10 @@
         <message>
             <source>Show the floating toolbar on the desktop</source>
             <translation>Show the floating toolbar on the desktop</translation>
+        </message>
+        <message>
+            <source>Show the sub-toolbar for the Edit Selection tool</source>
+            <translation>Show the sub-toolbar for the Edit Selection tool</translation>
         </message>
         <message>
             <source>Show toolbar</source>

@@ -378,7 +378,7 @@ struct ScreenshotController::Impl final : public ScreenshotToolbarCommandSink,
         m_overlayInputHandler->beginRegionOperation(true);
     }
     void setSelectionDisplayUnit(ScreenshotSelectionDisplayUnit unit) override;
-    void setSelectionToolbarHiddenForSession(bool hidden) override;
+    void setSelectionToolbarHidden(bool hidden) override;
     void setMoveTool() override;
     void setSelectTool() override;
     void setShapeTool() override;
@@ -2085,9 +2085,9 @@ void ScreenshotController::Impl::setSelectionDisplayUnit(ScreenshotSelectionDisp
     }
 }
 
-void ScreenshotController::Impl::setSelectionToolbarHiddenForSession(bool hidden) {
+void ScreenshotController::Impl::setSelectionToolbarHidden(bool hidden) {
     if (m_overlayCoordinator != nullptr) {
-        m_overlayCoordinator->setSelectionToolbarHiddenForSession(hidden);
+        m_overlayCoordinator->setSelectionToolbarHidden(hidden);
     }
     if (!hidden && m_presentationServices != nullptr) {
         m_presentationServices->showSelectionToolbar();
