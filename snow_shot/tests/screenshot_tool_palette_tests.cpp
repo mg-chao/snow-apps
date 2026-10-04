@@ -12824,12 +12824,78 @@ void drawingColorsPreserveAlphaAcrossEditsAndToolSwitches() {
     }
 }
 
+void arrowShaftEditorPersistsAcrossReopening() {
+    using namespace snow_shot::presentation;
+    const auto original = screenshotCanvasToolStyleDefaults();
+    const auto restore =
+        qScopeGuard([&] { static_cast<void>(persistScreenshotCanvasToolStyles(original)); });
+    auto defaults = screenshotCanvasStyleDefaults();
+    defaults.arrow.arrowRatio = 2.3;
+    require(persistScreenshotCanvasToolStyles(defaults), "prepare saved arrow defaults");
+    ScreenshotToolPalette::Options options;
+    options.styleDefaults = screenshotCanvasToolStyleDefaults();
+    ScreenshotToolPalette palette(options);
+    SnowCanvasWidget canvas;
+    ScreenshotStyleBinding binding(palette, canvas, &palette);
+    applyScreenshotCanvasToolStyles(canvas, options.styleDefaults);
+    QObject::connect(&canvas, &SnowCanvasWidget::styleToolbarStateChanged, &palette,
+                     [&] { palette.setStyleToolbarState(canvas.canvasStyleToolbarState()); });
+    require(canvas.setCanvasTool(SnowCanvasTool::Arrow), "activate arrow for shaft edit");
+    palette.setActiveTool(ScreenshotToolPalette::Tool::Arrow);
+    auto* shaftTrigger = controlWithAccessibleName(palette, "Arrow shaft type");
+    clickPopoverStyleControl(showPopoverForTrigger(shaftTrigger), "Tapered shaft");
+    require(binding.lastSaveSucceeded() == true &&
+                screenshotCanvasToolStyleDefaults().arrow.arrowShaftType ==
+                    SnowCanvasArrowShaftType::Tapered,
+            "shaft control must save its choice through the canvas style binding");
+    clickStyleControl(palette, "Arrow stroke width 4");
+    require(screenshotCanvasToolStyleDefaults().arrow.arrowShaftType ==
+                SnowCanvasArrowShaftType::Tapered,
+            "another property edit must preserve the saved shaft preference");
+
+    auto& storage = snow_shot::storage::ApplicationStorage::instance();
+    require(storage.configuration().flushNow().success, "flush arrow preferences to disk");
+    snow_shot::storage::ConfigurationStore reopened(
+        QDir(storage.configurationDirectory()).filePath(QStringLiteral("config.json")), true,
+        false);
+    require(reopened.value(QStringLiteral("drawing/arrow_style")) ==
+                storage.configuration().value(QStringLiteral("drawing/arrow_style")),
+            "the saved arrow style must survive loading a new configuration store");
+
+    options.styleDefaults = screenshotCanvasToolStyleDefaults();
+    ScreenshotToolPalette freshPalette(options);
+    SnowCanvasWidget freshCanvas;
+    ScreenshotStyleBinding freshBinding(freshPalette, freshCanvas, &freshPalette);
+    applyScreenshotCanvasToolStyles(freshCanvas, options.styleDefaults);
+    require(freshCanvas.setCanvasTool(SnowCanvasTool::Arrow), "activate reopened arrow editor");
+    freshPalette.setActiveTool(ScreenshotToolPalette::Tool::Arrow);
+    freshPalette.setStyleToolbarState(freshCanvas.canvasStyleToolbarState());
+    const auto restoredStyle = freshCanvas.canvasStyleToolbarState().shapeStyle;
+    require(restoredStyle.arrowShaftType == SnowCanvasArrowShaftType::Tapered &&
+                restoredStyle.arrowRatio == defaults.arrow.arrowRatio &&
+                freshPalette.creationStyleDefaults().arrow == options.styleDefaults.arrow,
+            "reopening must restore saved shaft and ratio to both palette and canvas");
+    auto* freshShaftPopover =
+        showPopoverForTrigger(controlWithAccessibleName(freshPalette, "Arrow shaft type"));
+    auto* taperedOption = popoverButtonWithTooltip(freshShaftPopover, "Tapered shaft");
+    require(taperedOption != nullptr &&
+                taperedOption->buttonStyle() == adqt::widgets::AdButton::ButtonStyle::Tonal,
+            "the reopened shaft control must show the saved tapered option as active");
+    clickPopoverStyleControl(freshShaftPopover, "Plain shaft");
+    require(freshBinding.lastSaveSucceeded() == true &&
+                screenshotCanvasToolStyleDefaults().arrow.arrowShaftType ==
+                    SnowCanvasArrowShaftType::Plain &&
+                screenshotCanvasToolStyleDefaults().arrow.arrowRatio == defaults.arrow.arrowRatio,
+            "switching back to plain must persist without changing the ratio");
+}
+
 void canvasToolStylesPersistIndependentlyWithoutGlobalStyles() {
     SnowCanvasStyleDefaults styles = snow_shot::presentation::screenshotCanvasStyleDefaults();
     styles.rectangle.stroke = QColor(1, 2, 3, 4);
     styles.rectangle.strokeWidth = 3.0;
     styles.arrow.stroke = QColor(5, 6, 7, 8);
     styles.arrow.strokeWidth = 4.0;
+    styles.arrow.arrowShaftType = SnowCanvasArrowShaftType::Tapered;
     styles.arrow.arrowRatio = 2.3;
     styles.arrow.startArrowhead = SnowCanvasArrowhead::IndentedTriangle;
     styles.arrow.endArrowhead = SnowCanvasArrowhead::IndentedTriangle;
@@ -12924,6 +12990,24 @@ void canvasToolStylesPersistIndependentlyWithoutGlobalStyles() {
 
     const QString arrowKey = QStringLiteral("drawing/arrow_style");
     const QJsonObject savedArrowStyle = configuration.value(arrowKey).toObject();
+    require(savedArrowStyle.value(QStringLiteral("arrow_shaft_type")).toInt(-1) ==
+                static_cast<int>(SnowCanvasArrowShaftType::Tapered),
+            "arrow shaft type must be serialized with its appearance");
+    for (const QJsonValue& shaftType : {QJsonValue(), QJsonValue(1.5), QJsonValue(-1),
+                                        QJsonValue(2), QJsonValue(QStringLiteral("tapered"))}) {
+        auto legacyArrow = savedArrowStyle;
+        if (shaftType.isNull())
+            legacyArrow.remove(QStringLiteral("arrow_shaft_type"));
+        else
+            legacyArrow.insert(QStringLiteral("arrow_shaft_type"), shaftType);
+        require(snow_shot::storage::ApplicationStorage::instance().configuration().setValue(
+                    arrowKey, legacyArrow),
+                "save legacy or invalid shaft fixture");
+        auto legacyExpected = expected;
+        legacyExpected.arrow.arrowShaftType = SnowCanvasArrowShaftType::Plain;
+        require(snow_shot::presentation::screenshotCanvasToolStyleDefaults() == legacyExpected,
+                "missing or invalid shaft types must default to plain and preserve other styles");
+    }
     for (const QJsonValue& ratio :
          {QJsonValue(), QJsonValue(-1.0), QJsonValue(4.0), QJsonValue(QStringLiteral("bad"))}) {
         auto legacyArrow = savedArrowStyle;
@@ -13980,6 +14064,7 @@ int main(int argc, char** argv) {
     }
     if (application.arguments().contains(QStringLiteral("--style-commit-only"))) {
         runScreenshotStyleBindingTests();
+        arrowShaftEditorPersistsAcrossReopening();
         selectedStyleEditsAreReflectedInTheCreationStyleContext();
         arrowStyleControlsExposeAndEmitAllStyleProperties();
         selectedArrowMixedPropertiesResolveIndependently();
@@ -14140,6 +14225,7 @@ int main(int argc, char** argv) {
     if (application.arguments().contains(QStringLiteral("--canvas-style-persistence-only"))) {
         screenshotProductStyleProfileIsComplete();
         canvasToolStylesPersistIndependentlyWithoutGlobalStyles();
+        arrowShaftEditorPersistsAcrossReopening();
         snow_shot::storage::ApplicationStorage::instance().shutdown();
         return 0;
     }
@@ -14418,5 +14504,6 @@ int main(int argc, char** argv) {
     tableQrEntrySelectionPersistsAcrossPaletteInstances();
     drawingColorsPreserveAlphaAcrossEditsAndToolSwitches();
     canvasToolStylesPersistIndependentlyWithoutGlobalStyles();
+    arrowShaftEditorPersistsAcrossReopening();
     return 0;
 }

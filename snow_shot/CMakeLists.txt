@@ -5192,6 +5192,10 @@ if(SNOW_SHOT_BUILD_TESTS)
         COMMAND snow-shot-global-canvas-tests --history-shortcuts-only -platform offscreen)
     set_tests_properties(snow-shot-global-canvas-history-shortcut-tests PROPERTIES
         LABELS "unit" TIMEOUT 90 RUN_SERIAL TRUE)
+    add_test(NAME snow-shot-global-canvas-saved-style-tests
+        COMMAND snow-shot-global-canvas-tests --saved-styles-only -platform offscreen)
+    set_tests_properties(snow-shot-global-canvas-saved-style-tests PROPERTIES LABELS "unit" TIMEOUT 30
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
     add_test(NAME snow-shot-global-canvas-tests COMMAND snow-shot-global-canvas-tests -platform offscreen)
     set_tests_properties(snow-shot-global-canvas-tests PROPERTIES LABELS "unit" TIMEOUT 90
         ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")

@@ -1,5 +1,6 @@
 #include "../../test-support/canvas_quick_selection_test_support.h"
 #include "snow_shot/presentation/globalcanvascontroller.h"
+#include "snow_shot/presentation/screenshotcanvastoolstyles.h"
 #include "eraser_toolbar_test_support.h"
 #include "../src/presentation/globalcanvas/globalcanvasplatform.h"
 #include "snow_shot/presentation/screenshotfloatingtoolpalettewindow.h"
@@ -11,6 +12,7 @@
 #include "widgets/button.h"
 #include "widgets/color_picker.h"
 #include "widgets/select.h"
+#include "widgets/slider.h"
 #include <QApplication>
 #include <QDir>
 #include <QLineEdit>
@@ -18,6 +20,7 @@
 #include "physical_key_test_support.h"
 #include <QMouseEvent>
 #include <QScreen>
+#include <QScopeGuard>
 #include <QTemporaryDir>
 #include <QTranslator>
 #include <qpa/qplatformscreen.h>
@@ -794,6 +797,87 @@ void canvasEraserTools(QApplication& app) {
             "new canvas sessions restore the eraser variant and independent width");
 }
 
+void savedCanvasStylesSurviveReopening(QApplication& app) {
+    const auto original = presentation::screenshotCanvasToolStyleDefaults();
+    const auto restore = qScopeGuard(
+        [&] { static_cast<void>(presentation::persistScreenshotCanvasToolStyles(original)); });
+    auto expected = original;
+    expected.watermark.color = QColor(25, 51, 77, 128);
+    expected.watermark.fontSize = 41;
+    expected.watermark.fontFamily = QStringLiteral("Helvetica");
+    expected.watermark.angle = -35;
+    expected.watermark.gap = 88;
+    expected.watermark.opacity = 0.31;
+    expected.spotlight.color = QColor(21, 43, 65, 160);
+    expected.spotlight.opacity = 0.24;
+    expected.spotlightShape = SnowCanvasRectangleShape::Diamond;
+    expected.arrow.arrowShaftType = SnowCanvasArrowShaftType::Tapered;
+    expected.arrow.arrowRatio = 2.3;
+    require(presentation::persistScreenshotCanvasToolStyles(expected), "save canvas style fixture");
+    presentation::GlobalCanvasController controller(
+        nullptr, {[&]() { return app.primaryScreen(); }, [](QWidget*, bool) { return true; }});
+    for (int session = 0; session < 2; ++session) {
+        controller.activate();
+        app.processEvents();
+        auto* canvas = controller.canvas();
+        auto* palette = controller.toolbar()->palette();
+        require(canvas->canvasWatermarkConfig() == expected.watermark,
+                "new global canvas sessions must restore every saved watermark appearance field");
+        require(canvas->canvasSpotlightConfig() == expected.spotlight,
+                "new global canvas sessions must restore saved spotlight color and opacity");
+        require(palette->creationStyleDefaults().watermark == expected.watermark &&
+                    palette->creationStyleDefaults().spotlight == expected.spotlight,
+                "canvas and palette must start with matching saved appearance preferences");
+        require(!canvas->canvasHistoryState().canUndo,
+                "restoring saved appearance must not add document history");
+        require(palette->activateDrawingShortcut(QStringLiteral("watermark")),
+                "activate restored watermark controls");
+        auto* watermarkColor = palette->findChild<adqt::widgets::AdColorPicker*>(
+            QStringLiteral("screenshotWatermarkColorPicker"));
+        auto* watermarkOpacity = palette->findChild<adqt::widgets::AdSlider*>(
+            QStringLiteral("screenshotWatermarkOpacitySlider"));
+        require(watermarkColor && watermarkColor->value().solidColor == expected.watermark.color &&
+                    watermarkOpacity && watermarkOpacity->value() == 31,
+                "watermark controls must display the saved color and opacity");
+        require(palette->activateToolShortcut(ScreenshotToolPalette::Tool::Spotlight),
+                "activate restored spotlight controls");
+        auto* spotlightColor = palette->findChild<adqt::widgets::AdColorPicker*>(
+            QStringLiteral("screenshotSpotlightColorPicker"));
+        auto* spotlightOpacity = palette->findChild<adqt::widgets::AdSlider*>(
+            QStringLiteral("screenshotSpotlightOpacitySlider"));
+        require(spotlightColor && spotlightColor->value().solidColor == expected.spotlight.color &&
+                    spotlightOpacity &&
+                    spotlightOpacity->value() == expected.spotlight.opacity * 100,
+                "spotlight controls must display the saved color and opacity");
+        require(canvas->canvasStyleToolbarState().shapeStyle.shape == expected.spotlightShape,
+                "restoring spotlight appearance must retain its saved cutout shape");
+        require(palette->activateDrawingShortcut(QStringLiteral("arrow")),
+                "activate restored arrow defaults");
+        const auto arrow = canvas->canvasStyleToolbarState().shapeStyle;
+        require(arrow.arrowShaftType == expected.arrow.arrowShaftType &&
+                    arrow.arrowRatio == expected.arrow.arrowRatio,
+                "global canvas sessions must also restore saved arrow shaft and ratio");
+        if (session == 0) {
+            require(palette->activateDrawingShortcut(QStringLiteral("watermark")),
+                    "activate watermark for an appearance edit");
+            expected.watermark.fontSize = 53;
+            require(canvas->commitStyleEdit(
+                        SnowCanvasWatermarkEdit{expected.watermark, SnowCanvasWatermarkFontSize}),
+                    "commit watermark appearance through the shared style binding");
+            require(palette->activateToolShortcut(ScreenshotToolPalette::Tool::Spotlight),
+                    "activate spotlight for an appearance edit");
+            expected.spotlight.opacity = 0.42;
+            require(canvas->commitStyleEdit(
+                        SnowCanvasSpotlightEdit{expected.spotlight, SnowCanvasSpotlightOpacity}),
+                    "commit spotlight appearance through the shared style binding");
+            const auto saved = presentation::screenshotCanvasToolStyleDefaults();
+            require(saved.watermark == expected.watermark && saved.spotlight == expected.spotlight,
+                    "explicit appearance edits must preserve the other saved fields");
+        }
+        controller.shutdown();
+    }
+}
+
 void canvasHistoryShortcuts(QApplication& app) {
     presentation::GlobalCanvasController controller(
         nullptr, {[&]() { return app.primaryScreen(); }, [](QWidget*, bool) { return true; }});
@@ -922,6 +1006,11 @@ int main(int argc, char** argv) {
         storage.shutdown();
         return 0;
     }
+    if (app.arguments().contains(QStringLiteral("--saved-styles-only"))) {
+        savedCanvasStylesSurviveReopening(app);
+        storage.shutdown();
+        return 0;
+    }
     if (app.arguments().contains(QStringLiteral("--history-shortcuts-only"))) {
         canvasHistoryShortcuts(app);
         storage.shutdown();
@@ -968,6 +1057,7 @@ int main(int argc, char** argv) {
         storage.shutdown();
         return 0;
     }
+    savedCanvasStylesSurviveReopening(app);
     canvasColorSamplingLifecycle(app);
     textEscapePreservesAnnotations(app);
     savedToolbarLayout(app);

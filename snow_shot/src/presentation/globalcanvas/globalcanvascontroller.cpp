@@ -68,7 +68,8 @@ class GlobalCanvasController::Session final : public QWidget, public SnowCanvasC
   public:
     Session(GlobalCanvasController& controller, QScreen* screen)
         : QWidget(nullptr, Qt::Tool | Qt::FramelessWindowHint | Qt::WindowStaysOnTopHint),
-          owner(controller), drawing(std::make_unique<SnowCanvasWidget>(runtime, this)),
+          owner(controller), runtime(SnowCanvasRuntimeConfig{screenshotCanvasToolStyleDefaults()}),
+          drawing(std::make_unique<SnowCanvasWidget>(runtime, this)),
           tools(std::make_unique<ScreenshotFloatingToolPaletteWindow>(canvasOptions())),
           shortcuts(this) {
 #ifdef Q_OS_MACOS

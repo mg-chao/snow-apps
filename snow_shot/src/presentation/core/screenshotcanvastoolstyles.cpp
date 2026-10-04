@@ -22,7 +22,8 @@ constexpr quint32 kRectangleShapeProperties =
 constexpr quint32 kArrowShapeProperties =
     SnowCanvasShapeStylePropertyStrokeColor | SnowCanvasShapeStylePropertyStrokeWidth |
     SnowCanvasShapeStylePropertyStartArrowhead | SnowCanvasShapeStylePropertyEndArrowhead |
-    SnowCanvasShapeStylePropertyStrokeStyle | SnowCanvasShapeStylePropertyArrowType;
+    SnowCanvasShapeStylePropertyStrokeStyle | SnowCanvasShapeStylePropertyArrowType |
+    SnowCanvasShapeStylePropertyArrowShaftType | SnowCanvasShapeStylePropertyArrowRatio;
 constexpr quint32 kLineShapeProperties =
     SnowCanvasShapeStylePropertyFillColor | SnowCanvasShapeStylePropertyFillStyle |
     SnowCanvasShapeStylePropertyStrokeColor | SnowCanvasShapeStylePropertyStrokeWidth |
@@ -159,6 +160,7 @@ QJsonObject shapeValue(const SnowCanvasShapeStyle& style) {
     putEnum(&value, QStringLiteral("end_arrowhead"), style.endArrowhead);
     putEnum(&value, QStringLiteral("stroke_style"), style.strokeStyle);
     putEnum(&value, QStringLiteral("arrow_type"), style.arrowType);
+    putEnum(&value, QStringLiteral("arrow_shaft_type"), style.arrowShaftType);
     putDouble(&value, QStringLiteral("arrow_ratio"),
               std::isfinite(style.arrowRatio) ? std::clamp(style.arrowRatio, 1.0, 3.0) : 1.0);
     putDouble(&value, QStringLiteral("opacity"), style.opacity);
@@ -198,6 +200,8 @@ void readShapeValue(const QJsonObject& object, SnowCanvasShapeStyle* style) {
              static_cast<int>(SnowCanvasStrokeStyle::Dotted), &style->strokeStyle);
     readEnum(object, QStringLiteral("arrow_type"), static_cast<int>(SnowCanvasArrowType::Elbow),
              &style->arrowType);
+    readEnum(object, QStringLiteral("arrow_shaft_type"),
+             static_cast<int>(SnowCanvasArrowShaftType::Tapered), &style->arrowShaftType);
     readDouble(object, QStringLiteral("opacity"), &style->opacity);
     readEnum(object, QStringLiteral("highlight_shape"),
              static_cast<int>(SnowCanvasHighlightShape::Ellipse), &style->highlightShape);
