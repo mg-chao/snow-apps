@@ -15,6 +15,7 @@ import sys
 import tempfile
 import threading
 import unittest
+from unittest import mock
 import xml.etree.ElementTree as ET
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -256,6 +257,73 @@ class QtKitValidation(unittest.TestCase):
         self.run_validator()
         path.write_bytes(struct.pack('<5I', 0x0b17c0de, 0, 20, 1000, 0x0100000c))
         self.run_validator('--kit-only', success=False)
+
+    def test_unspecified_lto_cpu_uses_the_module_target_not_archive_neighbors(self):
+        path = self.prefix / 'lib/libQt6Core.a'
+        bitcode = b'BC\xc0\xde' + b'fixture payload'
+        wrapper = struct.pack('<5I', 0x0b17c0de, 0, 20, len(bitcode), 0xffffffff)
+        obj = struct.pack('<8I', 0xfeedfacf, 0x0100000c, 0, 1, 0, 0, 0, 0)
+
+        def member(name, data):
+            header = f"{name:<16}{0:<12}{0:<6}{0:<6}{100644:<8}{len(data):<10}`\n".encode()
+            return header + data + (b'\n' if len(data) % 2 else b'')
+
+        path.write_bytes(b'!<arch>\n' + member('native.o/', obj) +
+                         member('lto.o/', wrapper + bitcode))
+        for architecture in ('arm64', 'x64'):
+            with self.subTest(architecture=architecture), mock.patch.object(
+                    self.validator, 'darwin_lto_architecture', return_value=architecture) as reader:
+                self.assertEqual(self.validator.binary_architectures(path),
+                                 {'arm64', architecture})
+                reader.assert_called_once_with(bitcode)
+        with mock.patch.object(self.validator, 'darwin_lto_architecture',
+                               return_value='unsupported'):
+            with self.assertRaises(ValueError):
+                self.validator.binary_architectures(path)
+        with mock.patch.object(self.validator, 'darwin_lto_architecture',
+                               side_effect=ValueError('invalid bitcode')):
+            with self.assertRaisesRegex(ValueError, 'invalid bitcode'):
+                self.validator.binary_architectures(path)
+
+    def test_lto_target_triples_are_validated_and_modules_are_disposed(self):
+        reader = mock.Mock()
+        reader.lto_module_create_from_memory.return_value = 1
+        triples = {b'arm64-apple-macosx14.4.0': 'arm64',
+                   b'aarch64-apple-darwin': 'arm64',
+                   b'x86_64-apple-macosx14.4.0': 'x64',
+                   b'arm64-apple-ios18.0.0': 'unsupported',
+                   b'x86_64-pc-linux-gnu': 'unsupported',
+                   b'powerpc-apple-darwin': 'unsupported'}
+        with mock.patch.object(self.validator, 'darwin_lto_reader', return_value=reader):
+            for triple, architecture in triples.items():
+                with self.subTest(triple=triple):
+                    reader.reset_mock()
+                    reader.lto_module_get_target_triple.return_value = triple
+                    self.assertEqual(self.validator.darwin_lto_architecture(b'bitcode'),
+                                     architecture)
+                    reader.lto_module_dispose.assert_called_once_with(1)
+            reader.lto_module_get_target_triple.return_value = None
+            with self.assertRaisesRegex(ValueError, 'no target triple'):
+                self.validator.darwin_lto_architecture(b'bitcode')
+            reader.reset_mock()
+            reader.lto_module_create_from_memory.return_value = None
+            with self.assertRaisesRegex(ValueError, 'rejected'):
+                self.validator.darwin_lto_architecture(b'bitcode')
+            reader.lto_module_dispose.assert_not_called()
+
+    @unittest.skipUnless(sys.platform == 'darwin', 'Darwin LTO requires the Apple toolchain')
+    def test_native_apple_lto_objects_report_their_compiled_target(self):
+        source = self.prefix / 'lto.c'
+        source.write_text('int qt_lto_probe(void) { return 1; }\n')
+        for target, architecture in (('arm64', 'arm64'), ('x86_64', 'x64')):
+            with self.subTest(target=target):
+                obj = self.prefix / (target + '.o')
+                subprocess.run(['xcrun', 'clang', '-target', target + '-apple-macosx' +
+                                QT_MACOS_DEPLOYMENT_TARGET, '-flto', '-c', str(source),
+                                '-o', str(obj)], check=True, capture_output=True)
+                self.assertEqual(self.validator.darwin_lto_architecture(obj.read_bytes()),
+                                 architecture)
+                self.assertEqual(self.validator.binary_architectures(obj), {architecture})
 
     def test_stamp_cannot_claim_a_different_source_archive(self):
         path = self.prefix / 'share/snow-apps/static-qt-build.json'

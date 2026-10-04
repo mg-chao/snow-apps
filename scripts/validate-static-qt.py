@@ -1,11 +1,14 @@
 #!/usr/bin/env python3
 """Validate the audited macOS Qt kit without loading or executing its libraries."""
 import argparse
+import ctypes
+from functools import lru_cache
 import hashlib
 import json
 from pathlib import Path
 import re
 import struct
+import subprocess
 import sys
 
 
@@ -68,6 +71,46 @@ def installed_version(prefix, version):
                              f'{version}: {directory}')
 
 
+@lru_cache(maxsize=1)
+def darwin_lto_reader():
+    """Use the selected Apple toolchain to inspect bitcode, never load Qt code."""
+    if sys.platform != 'darwin':
+        raise ValueError('Inspecting Darwin LTO target triples requires the Apple toolchain.')
+    try:
+        clang = Path(subprocess.check_output(
+            ['xcrun', '--find', 'clang'], text=True, timeout=10).strip())
+        reader = ctypes.CDLL(str(clang.parent.parent / 'lib/libLTO.dylib'))
+    except (OSError, subprocess.SubprocessError) as error:
+        raise ValueError('The selected Apple toolchain must provide libLTO.dylib.') from error
+    reader.lto_module_create_from_memory.argtypes = [ctypes.c_void_p, ctypes.c_size_t]
+    reader.lto_module_create_from_memory.restype = ctypes.c_void_p
+    reader.lto_module_get_target_triple.argtypes = [ctypes.c_void_p]
+    reader.lto_module_get_target_triple.restype = ctypes.c_char_p
+    reader.lto_module_dispose.argtypes = [ctypes.c_void_p]
+    reader.lto_module_dispose.restype = None
+    return reader
+
+
+def darwin_lto_architecture(data):
+    reader = darwin_lto_reader()
+    buffer = ctypes.create_string_buffer(data)
+    module = reader.lto_module_create_from_memory(buffer, len(data))
+    if not module:
+        raise ValueError('The Apple toolchain rejected the Darwin LTO object.')
+    try:
+        triple = reader.lto_module_get_target_triple(module)
+        if not triple:
+            raise ValueError('The Darwin LTO object has no target triple.')
+        parts = triple.decode('ascii').split('-')
+        if len(parts) < 3 or parts[1] != 'apple' or not re.fullmatch(
+                r'(?:macosx|darwin)[0-9.]*', parts[2]):
+            return 'unsupported'
+        return {'arm64': 'arm64', 'aarch64': 'arm64', 'x86_64': 'x64'}.get(
+            parts[0], 'unsupported')
+    finally:
+        reader.lto_module_dispose(module)
+
+
 def binary_architectures(path):
     """Read Mach-O, Darwin LTO and archive headers without executing Qt tools."""
     cpus = {0x0100000c: 'arm64', 0x01000007: 'x64'}
@@ -92,7 +135,16 @@ def binary_architectures(path):
             start, length, cpu = struct.unpack('<3I', remainder)
             if start < 20 or start + length > size:
                 raise ValueError(f'Invalid Darwin LTO header: {path}')
+            if cpu == 0xffffffff:
+                # Apple Clang can leave the wrapper CPU unspecified. Resolve
+                # the actual module triple instead of trusting the kit stamp
+                # or the other archive members' architectures.
+                stream.seek(offset + start)
+                return {darwin_lto_architecture(stream.read(length))}
             return {cpus.get(cpu, 'unsupported')}
+        if magic == b'BC\xc0\xde':
+            stream.seek(offset)
+            return {darwin_lto_architecture(stream.read(size))}
         if magic in (b'\xca\xfe\xba\xbe', b'\xbe\xba\xfe\xca',
                      b'\xca\xfe\xba\xbf', b'\xbf\xba\xfe\xca'):
             endian = '>' if magic[0] == 0xca else '<'
