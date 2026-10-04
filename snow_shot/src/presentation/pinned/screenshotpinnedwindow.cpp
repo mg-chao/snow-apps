@@ -5060,7 +5060,7 @@ void ScreenshotPinnedWindow::copyRenderedImage(std::shared_ptr<ScreenshotExportA
     const bool autoSave = settings.autoSaveAfterCopy();
     // Image publication and automatic saving finish independently. Keep the artifact
     // cancellable until both complete, even when the clipboard wins the race.
-    const auto pending = std::make_shared<int>(!copyFile && autoSave ? 2 : 1);
+    const auto pending = std::make_shared<int>(autoSave ? 2 : 1);
     const auto current = [this, artifact] { return !m_closing && m_exportArtifact == artifact; };
     const auto finish = [this, current, pending] {
         if (current() && --*pending == 0)
@@ -5081,57 +5081,61 @@ void ScreenshotPinnedWindow::copyRenderedImage(std::shared_ptr<ScreenshotExportA
             copyError(result.errorString());
         finish();
     };
-    if (autoSave || copyFile) {
-        const auto saved = [this, current, finish, copyError, committed,
-                            copyFile](ScreenshotExportTaskResult result) {
+    const auto format = ScreenshotImageFileService::formatForKey(settings.imageFormat());
+    const QString filenameFormat = settings.autoSaveFilenameFormat();
+    const auto encoding = snow_shot::presentation::screenshotEncodingOptions(settings);
+    const ScreenshotPdfOptions pdf{screenshot_pdf::pageSizeForKey(settings.pdfPageSize())};
+    if (autoSave) {
+        const auto saved = [this, current, finish](ScreenshotExportTaskResult result) {
             if (!current())
                 return;
-            if (!result.succeeded()) {
-                if (result.failureStage != ScreenshotExportFailureStage::Cancelled) {
-                    if (copyFile) {
-                        copyError(result.error);
-                    } else {
-                        showPinnedRecognitionMessage(
-                            this,
-                            QCoreApplication::translate(
-                                "ScreenshotPinnedWindow",
-                                "The image could not be saved automatically: %1")
-                                .arg(result.error),
-                            true);
-                    }
-                }
-                finish();
-                return;
+            if (!result.succeeded() &&
+                result.failureStage != ScreenshotExportFailureStage::Cancelled) {
+                showPinnedRecognitionMessage(
+                    this,
+                    QCoreApplication::translate("ScreenshotPinnedWindow",
+                                                "The image could not be saved automatically: %1")
+                        .arg(result.error),
+                    true);
             }
-            if (!copyFile) {
-                finish();
-                return;
-            }
-            auto* mime = new QMimeData();
-            mime->setUrls({QUrl::fromLocalFile(QFileInfo(result.savedPath).absoluteFilePath())});
-            m_exportArtifact->setClipboardFileMetadata(*mime, result.savedPath);
-            m_clipboardCommit = ScreenshotClipboardService::commitMimeData(
-                QApplication::clipboard(), this, mime, committed);
-            if (!m_clipboardCommit.isValid()) {
-                copyError(translatePinnedText("The pinned image copy could not be started"));
-                finish();
-            }
+            finish();
         };
         if (!artifact->requestAutomaticSave(
                 this,
                 ScreenshotImageFileService::automaticDirectories(settings.imageSaveDirectory()),
-                ScreenshotImageFileService::formatForKey(settings.imageFormat()),
-                settings.autoSaveFilenameFormat(),
-                snow_shot::presentation::screenshotEncodingOptions(settings), saved,
-                ScreenshotPdfOptions{screenshot_pdf::pageSizeForKey(settings.pdfPageSize())})) {
+                format, filenameFormat, encoding, saved, pdf)) {
             saved(ScreenshotExportTaskResult::failure(
                 ScreenshotExportFailureStage::Queue,
                 QCoreApplication::translate("ScreenshotController",
                                             "The screenshot export queue is full")));
         }
     }
-    if (copyFile)
+    if (copyFile) {
+        if (!artifact->requestClipboardFile(
+                this, format, filenameFormat, encoding,
+                [this, current, finish, copyError, committed](std::unique_ptr<QMimeData> mime,
+                                                              QString error) {
+                    if (!current())
+                        return;
+                    if (!mime) {
+                        copyError(error);
+                        finish();
+                        return;
+                    }
+                    m_clipboardCommit = ScreenshotClipboardService::commitMimeData(
+                        QApplication::clipboard(), this, mime.release(), committed);
+                    if (!m_clipboardCommit.isValid()) {
+                        copyError(
+                            translatePinnedText("The pinned image copy could not be started"));
+                        finish();
+                    }
+                },
+                pdf)) {
+            copyError(translatePinnedText("The pinned image copy could not be started"));
+            finish();
+        }
         return;
+    }
     if (!artifact->requestClipboard(this, [this, current, finish, copyError,
                                            committed](ScreenshotExportClipboardResult result) {
             if (!current())

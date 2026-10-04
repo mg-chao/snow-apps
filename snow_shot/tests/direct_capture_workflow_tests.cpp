@@ -31,7 +31,6 @@ struct Fixture {
     QVector<DirectCaptureRequest> copyRequests;
     QStringList events;
     QImage output;
-    QString copiedPath;
     bool acceptAcquire = true;
     bool acceptSave = true;
     bool acceptCopy = true;
@@ -53,11 +52,10 @@ struct Fixture {
             saved = std::move(done);
             return acceptSave;
         },
-        [this](const auto& request, const auto& result, const auto& path, auto done) {
+        [this](const auto& request, const auto& result, auto done) {
             events << "copy";
             copyRequests.push_back(request);
             output = result.image;
-            copiedPath = path;
             copied = std::move(done);
             return acceptCopy;
         },
@@ -151,7 +149,7 @@ void outputsKeepRawPixelsAndProcessEveryRequest() {
     require(f.output == frame().image, "capture pixels were styled or resampled");
     require(f.events.back() == "copy" && !f.saved,
             "automatic saving delayed clipboard publication");
-    require(f.copiedPath.isEmpty(), "auto save incorrectly selected file clipboard mode");
+    require(!f.copyRequests.back().copyFile, "auto save incorrectly selected file clipboard mode");
     f.copied({});
     require(f.saveRequests.size() == 1 && !f.saveRequests.front().copyFile &&
                 f.saveRequests.front().encoding.quality == 35 &&
@@ -174,56 +172,62 @@ void outputsKeepRawPixelsAndProcessEveryRequest() {
 }
 
 void queuedCopiesRetainCaptureTargets() {
-    for (bool autoSave : {false, true}) {
-        Fixture f;
-        const DirectCaptureTarget targets[] = {
-            DirectCaptureTarget::FocusedWindow, DirectCaptureTarget::CurrentMonitor,
-            DirectCaptureTarget::FocusedWindow, DirectCaptureTarget::CurrentMonitor};
-        for (auto target : targets) {
-            DirectCaptureRequest request;
-            request.target = target;
-            request.autoSave = autoSave;
-            f.workflow.enqueue(request);
-            request.target = DirectCaptureTarget::FocusedWindow;
+    for (bool copyFile : {false, true}) {
+        for (bool autoSave : {false, true}) {
+            Fixture f;
+            const DirectCaptureTarget targets[] = {
+                DirectCaptureTarget::FocusedWindow, DirectCaptureTarget::CurrentMonitor,
+                DirectCaptureTarget::FocusedWindow, DirectCaptureTarget::CurrentMonitor};
+            for (auto target : targets) {
+                DirectCaptureRequest request;
+                request.target = target;
+                request.autoSave = autoSave;
+                request.copyFile = copyFile;
+                f.workflow.enqueue(request);
+                request.target = DirectCaptureTarget::FocusedWindow;
+            }
+            for (auto target : targets) {
+                QCoreApplication::processEvents();
+                f.acquired(frame());
+                require(f.copyRequests.back().target == target &&
+                            f.copyRequests.back().autoSave == autoSave &&
+                            f.copyRequests.back().copyFile == copyFile,
+                        "clipboard copy lost the active request's capture target or save setting");
+                f.copied({});
+                if (autoSave)
+                    f.saved(QStringLiteral("saved.png"), {});
+            }
+            require(f.copyRequests.size() == 4 && f.workflow.pendingCount() == 0,
+                    "queued clipboard copies were dropped or left pending");
         }
-        for (auto target : targets) {
-            QCoreApplication::processEvents();
-            f.acquired(frame());
-            require(f.copyRequests.back().target == target &&
-                        f.copyRequests.back().autoSave == autoSave,
-                    "clipboard copy lost the active request's capture target or save setting");
-            require(f.copiedPath.isEmpty(), "automatic saving changed bitmap copy to file copy");
-            f.copied({});
-            if (autoSave)
-                f.saved(QStringLiteral("saved.png"), {});
-        }
-        require(f.copyRequests.size() == 4 && f.workflow.pendingCount() == 0,
-                "queued clipboard copies were dropped or left pending");
     }
 }
 
 void clipboardFailureStillAttemptsAutomaticSave() {
-    for (bool accepted : {false, true}) {
-        for (bool saveSucceeds : {false, true}) {
-            Fixture f;
-            f.acceptCopy = accepted;
-            DirectCaptureRequest request;
-            request.autoSave = true;
-            request.historyEnabled = true;
-            f.workflow.enqueue(request);
-            f.workflow.enqueue({});
-            f.acquired(frame());
-            if (accepted)
-                f.copied(QStringLiteral("clipboard failed"));
-            require(f.events.back() == "save" && f.workflow.pendingCount() == 2,
-                    "clipboard failure skipped automatic saving");
-            f.saved(saveSucceeds ? QStringLiteral("saved.png") : QString(),
-                    saveSucceeds ? QString() : QStringLiteral("save failed"));
-            require(!f.events.contains("history") && f.completed == 1,
-                    "failed clipboard copy published history or did not finish");
-            QCoreApplication::processEvents();
-            require(f.requests.size() == 2, "clipboard failure blocked the next capture");
-            f.workflow.shutdown();
+    for (bool copyFile : {false, true}) {
+        for (bool accepted : {false, true}) {
+            for (bool saveSucceeds : {false, true}) {
+                Fixture f;
+                f.acceptCopy = accepted;
+                DirectCaptureRequest request;
+                request.autoSave = true;
+                request.copyFile = copyFile;
+                request.historyEnabled = true;
+                f.workflow.enqueue(request);
+                f.workflow.enqueue({});
+                f.acquired(frame());
+                if (accepted)
+                    f.copied(QStringLiteral("clipboard failed"));
+                require(f.events.back() == "save" && f.workflow.pendingCount() == 2,
+                        "clipboard failure skipped automatic saving");
+                f.saved(saveSucceeds ? QStringLiteral("saved.png") : QString(),
+                        saveSucceeds ? QString() : QStringLiteral("save failed"));
+                require(!f.events.contains("history") && f.completed == 1,
+                        "failed clipboard copy published history or did not finish");
+                QCoreApplication::processEvents();
+                require(f.requests.size() == 2, "clipboard failure blocked the next capture");
+                f.workflow.shutdown();
+            }
         }
     }
 }
@@ -238,19 +242,13 @@ void failuresDoNotBlockLaterRequests() {
         f.workflow.enqueue(request);
         f.workflow.enqueue({});
         f.acquired(frame());
-        if (!file) {
-            require(f.events.back() == "copy" && !f.saved,
-                    "image copy waited for automatic saving");
-            f.copied({});
-            f.saved({}, QStringLiteral("save failed"));
-            require(f.events.contains("warning") && f.events.back() == "history",
-                    "auto save failure discarded a successful copy's history");
-            f.recorded({});
-        } else {
-            f.saved({}, QStringLiteral("save failed"));
-            require(!f.events.contains("copy") && !f.events.contains("history"),
-                    "failed file save published clipboard or history");
-        }
+        require(f.events.back() == "copy" && !f.saved,
+                "clipboard copy waited for automatic saving");
+        f.copied({});
+        f.saved({}, QStringLiteral("save failed"));
+        require(f.events.contains("warning") && f.events.back() == "history",
+                "auto save failure discarded a successful copy's history");
+        f.recorded({});
         QCoreApplication::processEvents();
         require(f.requests.size() == 2, "failure stalled the FIFO");
         f.acquired({});
@@ -266,8 +264,8 @@ void fileCopyHistoryFailureAndLateCallbacks() {
     f.workflow.enqueue(request);
     auto oldAcquired = f.acquired;
     f.acquired(frame());
-    f.saved(QStringLiteral("image.png"), {});
-    require(f.copiedPath == QStringLiteral("image.png"), "file mode lost saved path");
+    require(f.copyRequests.back().copyFile && !f.saved,
+            "file copy must prepare its own temporary file without automatic saving");
     f.copied({});
     auto oldRecorded = f.recorded;
     f.recorded(QStringLiteral("history failed"));
@@ -288,19 +286,22 @@ void rejectedOperationsFinishAndDestroyedReceiversIgnoreResults() {
     for (int stage = 0; stage < 4; ++stage) {
         Fixture f;
         f.acceptAcquire = stage != 0;
-        f.acceptSave = stage != 1;
-        f.acceptCopy = stage != 2;
+        f.acceptSave = stage != 2;
+        f.acceptCopy = stage != 1;
         f.acceptHistory = stage != 3;
         DirectCaptureRequest request;
         request.copyFile = true;
+        request.autoSave = true;
         request.historyEnabled = true;
         f.workflow.enqueue(request);
         if (stage > 0)
             f.acquired(frame());
         if (stage > 1)
-            f.saved(QStringLiteral("file.png"), {});
-        if (stage > 2)
             f.copied({});
+        if (stage > 0 && stage != 2)
+            f.saved(QStringLiteral("file.png"), {});
+        if (stage == 2)
+            f.recorded({});
         require(f.workflow.pendingCount() == 0, "rejected operation left the request stuck");
     }
     std::function<void(DirectCaptureFrame)> late;
@@ -351,8 +352,8 @@ void queuedRequestsRetainTargetsAndOutputSettings() {
                     queued.filenameFormat == QStringLiteral("original-filename"),
                 "queued target or settings changed after invocation");
         f.acquired(frame());
-        f.saved(QStringLiteral("saved.png"), {});
         f.copied({});
+        f.saved(QStringLiteral("saved.png"), {});
         f.recorded({});
     }
     require(f.requests.size() == 13 && f.workflow.pendingCount() == 0,

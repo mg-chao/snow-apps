@@ -20,6 +20,7 @@
 class QClipboard;
 class QMimeData;
 class QObject;
+class QTemporaryDir;
 struct ScreenshotClipboardPayloadTestAccess;
 struct ScreenshotClipboardCommitState;
 struct ScreenshotClipboardCommitScopeState;
@@ -134,6 +135,9 @@ class ScreenshotClipboardService final {
     [[nodiscard]] static ScreenshotClipboardCommitHandle
     commitMimeData(QClipboard* clipboard, QObject* receiver, QMimeData* mimeData,
                    PublicationId publicationId, CommitCompletion completion);
+    // Clipboard ownership, including publication retries, retains the temporary file.
+    [[nodiscard]] static std::unique_ptr<QMimeData>
+    temporaryFileMimeData(const QString& path, std::shared_ptr<QTemporaryDir> directory);
     [[nodiscard]] static bool publish(QClipboard* clipboard, ScreenshotClipboardPayload payload);
     [[nodiscard]] static bool publishImage(QClipboard* clipboard, const QImage& image,
                                            ScreenshotImageEncodingOptions encoding = {});

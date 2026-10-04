@@ -17,10 +17,8 @@
 
 #include <QApplication>
 #include <QDebug>
-#include <QFileInfo>
 #include <QMimeData>
 #include <QThread>
-#include <QUrl>
 
 #include <atomic>
 #include <exception>
@@ -72,8 +70,8 @@ class DirectCaptureController::Impl {
                              },
                              request.pdf, request.requestedAt);
               },
-              [this](const auto& request, const auto& frame, const auto& path, auto done) {
-                  return copy(request, frame, path, std::move(done));
+              [this](const auto& request, const auto&, auto done) {
+                  return copy(request, std::move(done));
               },
               [this](const auto& request, const auto& frame, auto done) {
                   return artifact &&
@@ -163,17 +161,28 @@ class DirectCaptureController::Impl {
             Qt::QueuedConnection);
     }
 
-    bool copy(const DirectCaptureRequest&, const DirectCaptureFrame&, const QString& path,
-              DirectCapturePorts::Completion done) {
-        if (!path.isEmpty()) {
-            auto* mime = new QMimeData;
-            mime->setUrls({QUrl::fromLocalFile(QFileInfo(path).absoluteFilePath())});
-            clipboard = ScreenshotClipboardService::commitMimeData(
-                QApplication::clipboard(), &owner, mime,
-                [done](ScreenshotClipboardCommitResult result) {
-                    done(result.succeeded() ? QString() : result.errorString());
-                });
-            return clipboard.isValid();
+    bool copy(const DirectCaptureRequest& request, DirectCapturePorts::Completion done) {
+        if (request.copyFile) {
+            return artifact &&
+                   artifact->requestClipboardFile(
+                       &owner, ScreenshotImageFileService::formatForKey(request.imageFormat),
+                       request.filenameFormat, request.encoding,
+                       [this, done = std::move(done)](std::unique_ptr<QMimeData> mime,
+                                                      QString error) {
+                           if (!mime) {
+                               done(std::move(error));
+                               return;
+                           }
+                           clipboard = ScreenshotClipboardService::commitMimeData(
+                               QApplication::clipboard(), &owner, mime.release(),
+                               [done](ScreenshotClipboardCommitResult result) {
+                                   done(result.succeeded() ? QString() : result.errorString());
+                               });
+                           if (!clipboard.isValid())
+                               done(DirectCaptureController::tr(
+                                   "The clipboard publication could not be queued"));
+                       },
+                       request.pdf, request.requestedAt);
         }
         return artifact &&
                artifact->requestClipboard(

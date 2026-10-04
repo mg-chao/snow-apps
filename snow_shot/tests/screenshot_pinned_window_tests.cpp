@@ -12320,7 +12320,9 @@ void pinnedSharedImageExportOffscreen() {
         QApplication::clipboard()->setText(QStringLiteral("unchanged"));
     };
     ScreenshotPinnedWindow window;
-    const auto config = cachedOcrPinConfig(nullptr);
+    auto config = cachedOcrPinConfig(nullptr);
+    // Captures carry sRGB metadata, which PNG clipboard decoding also retains.
+    config.imageSource.materializedImage.setColorSpace(QColorSpace::SRgb);
     Access::restoreOffscreen(window, config);
     Access::setGeneralOpacity(window, 75);
     for (bool autoSave : {false, true}) {
@@ -12344,9 +12346,9 @@ void pinnedSharedImageExportOffscreen() {
             wait([&] { return !Access::exportArtifact(window) && !rendered.isNull(); },
                  "copy and automatic save both complete");
             const QString path = directory.filePath(name + QStringLiteral(".png"));
-            require(QFileInfo::exists(path) == (autoSave || copyFile),
-                    "only enabled copy export options write a file");
-            if (autoSave || copyFile) {
+            require(QFileInfo::exists(path) == autoSave,
+                    "only automatic saving writes to the image export directory");
+            if (autoSave) {
                 require(normalized(QImage(path)) == normalized(rendered),
                         "automatic save contains the same rendered viewport including opacity");
                 require(QDir(directory.path())
@@ -12362,9 +12364,20 @@ void pinnedSharedImageExportOffscreen() {
                         copied->placement->windowRect == window.currentNativeGeometry(),
                     "viewport image or file copy loses appearance and position");
             if (copyFile) {
-                require(QApplication::clipboard()->mimeData()->urls() ==
-                            QList<QUrl>{QUrl::fromLocalFile(path)},
-                        "file copy publishes the saved file URL");
+                const auto urls = QApplication::clipboard()->mimeData()->urls();
+                require(urls.size() == 1 && urls.front().isLocalFile(),
+                        "file copy publishes one local file URL");
+                const QString temporaryPath = urls.front().toLocalFile();
+                require(temporaryPath != path &&
+                            temporaryPath.startsWith(QDir::tempPath() + QDir::separator()) &&
+                            QFileInfo(temporaryPath).fileName() == name + QStringLiteral(".png") &&
+                            normalized(QImage(temporaryPath)) == normalized(rendered),
+                        "file copy retains the rendered viewport in a temporary directory");
+                QApplication::clipboard()->clear();
+                wait([&] { return !QFileInfo::exists(temporaryPath); },
+                     "replacing the clipboard cleans up its temporary image file");
+                require(QFileInfo::exists(path) == autoSave,
+                        "clipboard cleanup must preserve any automatic save");
             } else {
                 wait([&] { return normalized(exportedClipboardImage()) == normalized(rendered); },
                      "image copy publishes the rendered viewport");
@@ -12431,11 +12444,18 @@ void pinnedSharedImageExportOffscreen() {
     wait([&] { return !Access::exportArtifact(window); }, "snapshot copy completes");
     const QString snapshotPath = directory.filePath(QStringLiteral("snapshot.bmp"));
     QFile snapshotFile(snapshotPath);
+    const auto snapshotUrls = QApplication::clipboard()->mimeData()->urls();
+    require(snapshotUrls.size() == 1, "deferred file copy publishes one URL");
+    const QString temporarySnapshotPath = snapshotUrls.front().toLocalFile();
+    QFile temporarySnapshot(temporarySnapshotPath);
     require(snapshotFile.open(QIODevice::ReadOnly) && snapshotFile.read(2) == QByteArray("BM") &&
                 QImage(snapshotPath).size() == config.imageSource.materializedImage.size() &&
-                QApplication::clipboard()->mimeData()->urls() ==
-                    QList<QUrl>{QUrl::fromLocalFile(snapshotPath)},
-            "file copy snapshots format, filename, and clipboard mode at invocation");
+                temporarySnapshotPath != snapshotPath &&
+                QFileInfo(temporarySnapshotPath).fileName() == QStringLiteral("snapshot.bmp") &&
+                temporarySnapshot.open(QIODevice::ReadOnly) &&
+                temporarySnapshot.read(2) == QByteArray("BM"),
+            "file copy and automatic save independently snapshot format and filename");
+    temporarySnapshot.close();
     snapshotFile.close();
     require(settings.setCopyImageFileToClipboard(true), "restore file-copy mode");
     require(settings.setAutoSaveFilenameFormat(QStringLiteral("cancelled")), "cancel filename");
