@@ -8005,6 +8005,8 @@ void ScreenshotToolPalette::createTextRecognitionActionFamily() {
         setScreenshotToolPaletteItemTranslationSource(item, language.name, "TranslationLanguages");
         item->setData(QString::fromLatin1(language.code),
                       adqt::widgets::AdSelect::DefaultValueRole);
+        item->setData(QString::fromLatin1(language.code).left(1).toUpper(),
+                      adqt::widgets::AdSelect::DefaultGroupRole);
         languageModel->appendRow(item);
     }
     m_textTargetLanguageSelect->setModel(languageModel);

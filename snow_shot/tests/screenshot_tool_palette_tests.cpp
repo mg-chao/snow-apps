@@ -5909,12 +5909,16 @@ void ocrToolReplacesSelectionActionToolbarContents() {
             require(index.data(adqt::widgets::AdSelect::DefaultValueRole) ==
                             QString::fromLatin1(option.code) &&
                         index.data(adqt::widgets::AdSelect::DefaultLabelRole) ==
-                            QCoreApplication::translate("TranslationLanguages", option.name),
-                    "quick target shares language codes and retranslates option labels");
+                            QCoreApplication::translate("TranslationLanguages", option.name) &&
+                        index.data(adqt::widgets::AdSelect::DefaultGroupRole) ==
+                            QString::fromLatin1(option.code).left(1).toUpper(),
+                    "quick target shares language codes, localized labels and code initial groups");
         }
         require(formattingSelect->currentValue().toString() == QStringLiteral("smart") &&
-                    punctuationSelect->currentValue().toString() == QStringLiteral("full"),
-                "OCR options retranslate without changing either selected transform");
+                    punctuationSelect->currentValue().toString() == QStringLiteral("full") &&
+                    targetSelect->currentValue().toString() == QStringLiteral("zh-Hant") &&
+                    targetRequests == 0,
+                "OCR options retranslate without changing selections or requesting a target save");
     }
     formattingSelect->setCurrentValue(QStringLiteral("remove"));
     punctuationSelect->setCurrentValue(QStringLiteral("full"));
