@@ -89,6 +89,20 @@ shortcuts::ShortcutBindingList shortcutListDefault(const QString& key) {
         nullptr, key == QStringLiteral("screenshot_shortcuts/toggle_guides"));
 }
 
+template <typename ShortcutSettings>
+bool resetLocalShortcutSection(SettingsSectionReset reset, const ShortcutSettings& settings) {
+    auto all = settings.allShortcuts();
+    const auto& registry = builtInSettingsRegistry();
+    // Use the same section membership as the controls and runtime refresh,
+    // while preserving sibling sections in the same shortcut map.
+    for (const int index : registry.fieldsForReset(reset)) {
+        const auto& field = registry.fields().at(index);
+        const auto& local = std::get<SettingsLocalShortcutDefinition>(field.definition->payload);
+        all.insert(local.shortcutId, shortcutListDefault(field.configurationKey));
+    }
+    return settings.setAllShortcutsAtomic(all);
+}
+
 bool resetAvailableConfigurationValues(QMap<QString, QJsonValue> values) {
     for (auto it = values.begin(); it != values.end();) {
         if (!storage::ConfigurationSchema::contains(it.key()))
@@ -2326,86 +2340,15 @@ bool BuiltInSettingsBackend::resetSection(SettingsSectionReset reset) {
              storage::ConfigurationSchema::defaultValue(
                  QStringLiteral("drawing/remember_last_used_tool"))},
         });
-    case SettingsSectionReset::ScreenshotEditorShortcuts: {
-        shortcuts::ShortcutBindingMap defaults;
-        for (const QString& actionId :
-             {QStringLiteral("move_tool"),
-              QStringLiteral("move_cursor_up"),
-              QStringLiteral("move_cursor_down"),
-              QStringLiteral("move_cursor_left"),
-              QStringLiteral("move_cursor_right"),
-              QStringLiteral("move_entire_selection"),
-              QStringLiteral("keep_selection_width_and_height_consistent"),
-              QStringLiteral("selection_aspect_ratio_snap"),
-              QStringLiteral("switch_selection_between_window_and_window_sub_element"),
-              QStringLiteral("previous_screenshot_history"),
-              QStringLiteral("next_screenshot_history"),
-              QStringLiteral("select_previously_selected_area"),
-              QStringLiteral("recapture"),
-              QStringLiteral("copy_color"),
-              QStringLiteral("toggle_coordinate_mode"),
-              QStringLiteral("toggle_guides"),
-              QStringLiteral("pin_to_screen"),
-              QStringLiteral("video_recording"),
-              QStringLiteral("scrolling_screenshot"),
-              QStringLiteral("quick_save"),
-              QStringLiteral("save_as_file"),
-              QStringLiteral("cancel_screenshot"),
-              QStringLiteral("copy_to_clipboard")}) {
-            const QString key = QStringLiteral("screenshot_shortcuts/") + actionId;
-            if (storage::ConfigurationSchema::contains(key))
-                defaults.insert(actionId, shortcutListDefault(key));
-        }
-        shortcuts::ShortcutBindingMap all = storage::ScreenshotShortcutSettings().allShortcuts();
-        for (auto it = defaults.cbegin(); it != defaults.cend(); ++it) {
-            all.insert(it.key(), it.value());
-        }
-        return storage::ScreenshotShortcutSettings().setAllShortcutsAtomic(all);
-    }
-    case SettingsSectionReset::ScreenshotOtherShortcuts: {
-        shortcuts::ShortcutBindingMap defaults;
-        for (const QString& actionId :
-             {QStringLiteral("table_recognition"), QStringLiteral("qr_code_recognition"),
-              QStringLiteral("text_recognition"), QStringLiteral("text_translation"),
-              QStringLiteral("undo"), QStringLiteral("redo")}) {
-            const QString key = QStringLiteral("screenshot_shortcuts/") + actionId;
-            if (storage::ConfigurationSchema::contains(key))
-                defaults.insert(actionId, shortcutListDefault(key));
-        }
-        shortcuts::ShortcutBindingMap all = storage::ScreenshotShortcutSettings().allShortcuts();
-        for (auto it = defaults.cbegin(); it != defaults.cend(); ++it) {
-            all.insert(it.key(), it.value());
-        }
-        return storage::ScreenshotShortcutSettings().setAllShortcutsAtomic(all);
-    }
-    case SettingsSectionReset::DrawingShortcuts: {
-        shortcuts::ShortcutBindingMap defaults;
-        for (const QString& toolId :
-             {QStringLiteral("select"), QStringLiteral("shape"), QStringLiteral("arrow"),
-              QStringLiteral("brush"), QStringLiteral("highlight"), QStringLiteral("text"),
-              QStringLiteral("serial_number"), QStringLiteral("filter"), QStringLiteral("eraser"),
-              QStringLiteral("watermark")}) {
-            defaults.insert(toolId,
-                            shortcutListDefault(QStringLiteral("drawing_shortcuts/") + toolId));
-        }
-        return storage::DrawingShortcutSettings().setAllShortcutsAtomic(defaults);
-    }
-    case SettingsSectionReset::ScreenRecordingShortcuts: {
-        auto defaults = storage::ScreenRecordingShortcutSettings().allShortcuts();
-        for (auto it = defaults.begin(); it != defaults.end(); ++it) {
-            it.value() =
-                shortcutListDefault(QStringLiteral("screen_recording_shortcuts/") + it.key());
-        }
-        return storage::ScreenRecordingShortcutSettings().setAllShortcutsAtomic(defaults);
-    }
-    case SettingsSectionReset::PinToScreenShortcuts: {
-        shortcuts::ShortcutBindingMap defaults =
-            storage::PinToScreenShortcutSettings().allShortcuts();
-        for (auto it = defaults.begin(); it != defaults.end(); ++it) {
-            it.value() = shortcutListDefault(QStringLiteral("pin_to_screen_shortcuts/") + it.key());
-        }
-        return storage::PinToScreenShortcutSettings().setAllShortcutsAtomic(defaults);
-    }
+    case SettingsSectionReset::ScreenshotEditorShortcuts:
+    case SettingsSectionReset::ScreenshotOtherShortcuts:
+        return resetLocalShortcutSection(reset, storage::ScreenshotShortcutSettings());
+    case SettingsSectionReset::DrawingShortcuts:
+        return resetLocalShortcutSection(reset, storage::DrawingShortcutSettings());
+    case SettingsSectionReset::ScreenRecordingShortcuts:
+        return resetLocalShortcutSection(reset, storage::ScreenRecordingShortcutSettings());
+    case SettingsSectionReset::PinToScreenShortcuts:
+        return resetLocalShortcutSection(reset, storage::PinToScreenShortcutSettings());
     case SettingsSectionReset::PinToScreen:
         return storage::ApplicationStorage::instance().configuration().setValues({
             {QStringLiteral("pin_to_screen/border_color"),

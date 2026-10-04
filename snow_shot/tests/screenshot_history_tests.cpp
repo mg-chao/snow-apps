@@ -2602,6 +2602,7 @@ void configuredSelectionShortcutsRouteTabHistoryAndColorActions(bool targetSwitc
     int copyColorCalls = 0;
     int coordinateToggles = 0;
     int coordinateCancelCalls = 0;
+    int printCalls = 0;
     int brushCalls = 0;
     bool coordinateInputAllowed = true;
     int selectorHitTestRequests = 0;
@@ -2641,6 +2642,13 @@ void configuredSelectionShortcutsRouteTabHistoryAndColorActions(bool targetSwitc
     };
     actions.cancelCapture = [&]() { ++coordinateCancelCalls; };
     actions.localShortcutInputAllowed = [&]() { return coordinateInputAllowed; };
+    actions.activateScreenshotShortcut = [&](const QString& id) {
+        if (id == QStringLiteral("print")) {
+            ++printCalls;
+            return true;
+        }
+        return false;
+    };
     actions.activateDrawingShortcut = [&](const QString& id) {
         if (id == QStringLiteral("brush")) {
             ++brushCalls;
@@ -2747,16 +2755,16 @@ void configuredSelectionShortcutsRouteTabHistoryAndColorActions(bool targetSwitc
     require(dispatchShortcut(shortcutWindow, Qt::Key_R) && previousSelectionCalls == 2 &&
                 !intelligent.pressActive(),
             "R did not request the previously selected area in Move mode");
-    require(!dispatchShortcut(shortcutWindow, Qt::Key_P, Qt::ShiftModifier) &&
-                coordinateToggles == 0,
-            "Shift+P must not toggle coordinates by default");
-    require(dispatchShortcut(shortcutWindow, Qt::Key_P, Qt::ControlModifier) &&
+    require(dispatchShortcut(shortcutWindow, Qt::Key_P, Qt::ControlModifier) && printCalls == 1 &&
+                coordinateToggles == 0 && coordinateCancelCalls == 0 && copyColorCalls == 0,
+            "Ctrl+P must print without toggling coordinates or copying color");
+    require(dispatchShortcut(shortcutWindow, Qt::Key_P, Qt::ShiftModifier) &&
                 coordinateToggles == 1 && coordinateCancelCalls == 0 && copyColorCalls == 0,
-            "Ctrl+P must toggle coordinates without copying or ending capture");
-    static_cast<void>(dispatchShortcut(shortcutWindow, Qt::Key_P, Qt::ControlModifier, true));
+            "Shift+P must toggle coordinates without copying or ending capture");
+    static_cast<void>(dispatchShortcut(shortcutWindow, Qt::Key_P, Qt::ShiftModifier, true));
     require(coordinateToggles == 1, "coordinate toggle must ignore auto-repeat");
     coordinateInputAllowed = false;
-    require(!dispatchShortcut(shortcutWindow, Qt::Key_P, Qt::ControlModifier) &&
+    require(!dispatchShortcut(shortcutWindow, Qt::Key_P, Qt::ShiftModifier) &&
                 coordinateToggles == 1,
             "coordinate shortcut must respect local input restrictions");
     coordinateInputAllowed = true;
@@ -2767,7 +2775,7 @@ void configuredSelectionShortcutsRouteTabHistoryAndColorActions(bool targetSwitc
             "C did not copy the color-picker color in Move mode");
 
     interaction.setCanvasTool(ScreenshotActiveTool::Shape);
-    require(!dispatchShortcut(shortcutWindow, Qt::Key_P, Qt::ControlModifier) &&
+    require(!dispatchShortcut(shortcutWindow, Qt::Key_P, Qt::ShiftModifier) &&
                 coordinateToggles == 1,
             "coordinate toggle must be inactive in drawing modes");
     require(!dispatchShortcut(shortcutWindow, Qt::Key_R) &&
@@ -2802,10 +2810,10 @@ void configuredSelectionShortcutsRouteTabHistoryAndColorActions(bool targetSwitc
                 dispatchShortcut(shortcutWindow, Qt::Key_J) && selectorHitTestRequests == 6,
             "remapped Tab shortcut did not replace the default key");
     interaction.confirmSelection();
-    require(!dispatchShortcut(shortcutWindow, Qt::Key_P, Qt::ControlModifier) &&
+    require(!dispatchShortcut(shortcutWindow, Qt::Key_P, Qt::ShiftModifier) &&
                 dispatchShortcut(shortcutWindow, Qt::Key_P, Qt::AltModifier) &&
                 coordinateToggles == 2,
-            "configured coordinate shortcut must replace Ctrl+P");
+            "configured coordinate shortcut must replace Shift+P");
     require(shortcutSettings.setShortcuts(QStringLiteral("toggle_coordinate_mode"), {}),
             "failed to disable coordinate shortcut");
     shortcutController.reloadConfiguredShortcuts();

@@ -91,6 +91,7 @@ const QStringList& screenshotShortcutActionIds() {
             QStringLiteral("text_translation"),
             QStringLiteral("scrolling_screenshot"),
             QStringLiteral("quick_save"),
+            QStringLiteral("print"),
             QStringLiteral("save_as_file"),
             QStringLiteral("pin_to_screen"),
             QStringLiteral("cancel_screenshot"),
@@ -111,6 +112,7 @@ const QStringList& pinToScreenShortcutActionIds() {
     static const QStringList ids = {
         QStringLiteral("copy_to_clipboard"),
         QStringLiteral("copy_original_content"),
+        QStringLiteral("print"),
         QStringLiteral("save_as_file"),
         QStringLiteral("show_text_recognition_results"),
         QStringLiteral("drawing_mode"),

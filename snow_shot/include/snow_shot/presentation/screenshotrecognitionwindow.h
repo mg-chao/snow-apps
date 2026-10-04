@@ -129,6 +129,10 @@ class ScreenshotRecognitionWindow final : public QWidget {
     [[nodiscard]] std::optional<ScreenshotRecognitionImageSnapshot>
     imageSnapshot(QImage image, const QRectF& canvasRect, QImage filteredImage,
                   const QRectF& filteredCanvasRect, const ScreenshotResultStyle& style) const;
+    [[nodiscard]] QImage printViewportSnapshot(QImage background = {},
+                                               const QRectF& canvasRect = {}, QImage filtered = {},
+                                               const QRectF& filteredRect = {},
+                                               qreal contentOpacity = 1.0);
     void showFormattedText(std::shared_ptr<QTextDocument> document);
     void clearFormattedText();
 

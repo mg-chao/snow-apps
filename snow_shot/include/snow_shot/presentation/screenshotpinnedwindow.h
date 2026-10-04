@@ -84,6 +84,7 @@ class ScreenshotRecognitionSessionController;
 class ScreenshotPinnedEditController;
 class ScreenshotFloatingToolPaletteWindow;
 class ScreenshotExportArtifact;
+class ScreenshotPrintService;
 class ScreenshotPinnedDragExport;
 class ScreenshotPinnedHideToTopController;
 class ScreenshotPinnedControlsPresence;
@@ -142,6 +143,7 @@ class ScreenshotPinnedWindow final : public QWidget {
         QString mouseWheelZoomMode = QStringLiteral("mouse_position");
         ScreenshotImageSource imageSource;
         ScreenshotImageLoader imageLoader;
+        ScreenshotPrintService* printService = nullptr;
         QScreen* screen = nullptr;
         bool enableEditing = true;
         bool automaticTextRecognition = !snow_shot::app::edition::isMini;
@@ -355,9 +357,11 @@ class ScreenshotPinnedWindow final : public QWidget {
                                    std::optional<ScreenshotClipboardContentSnapshot> snapshot = {});
     bool replaceContent(ScreenshotClipboardContent content);
     void cancelContentReplacement();
+    void printContent();
     void saveAsFile();
     [[nodiscard]] std::shared_ptr<ScreenshotExportArtifact> fileSaveArtifact();
-    [[nodiscard]] std::shared_ptr<ScreenshotExportArtifact> viewportArtifact();
+    [[nodiscard]] std::shared_ptr<ScreenshotExportArtifact>
+    viewportArtifact(bool applyWindowOpacity = true);
     void quickSave();
     void invalidatePendingCopy();
     void copyRenderedImage(std::shared_ptr<ScreenshotExportArtifact> artifact);
@@ -483,6 +487,9 @@ class ScreenshotPinnedWindow final : public QWidget {
     std::unique_ptr<snow_shot::platform::PhysicalCursor> m_physicalCursor;
     QMap<QString, quint64> m_pinnedShortcutBindings;
     std::shared_ptr<ScreenshotExportArtifact> m_exportArtifact;
+    std::shared_ptr<ScreenshotExportArtifact> m_printArtifact;
+    QPointer<ScreenshotPrintService> m_printService;
+    bool m_printPending = false;
     ScreenshotExportJobHandle m_materializationJob;
     ScreenshotExportJobHandle m_contentReplacementJob;
     quint64 m_contentReplacementGeneration = 0;

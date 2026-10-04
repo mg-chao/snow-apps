@@ -465,7 +465,8 @@ void clipboardFilesUseTemporaryStorageAndKeepExportOptions() {
                         !mime->hasImage(),
                     "file copy must publish one local URL without image data");
             const QString path = mime->urls().front().toLocalFile();
-            require(path.startsWith(QDir::tempPath() + QDir::separator()) &&
+            require(QDir::fromNativeSeparators(path).startsWith(
+                        QDir::fromNativeSeparators(QDir::tempPath()) + QLatin1Char('/')) &&
                         QFileInfo(path).fileName() ==
                             ScreenshotImageFileService::suggestedBaseName(filename, requestedAt) +
                                 QLatin1Char('.') + ScreenshotImageFileService::extension(format) &&
@@ -1540,6 +1541,11 @@ int main(int argc, char** argv) {
             require(cancellations == 1, "a pending export must log cancellation exactly once");
         }
         diagnostics.shutdown();
+        if (application.arguments().contains(QStringLiteral("--print-snapshots-only"))) {
+            pinnedViewportSourceRendersExpectedPixels();
+            pinnedViewportExportsReleaseImportedSnapshots();
+            return EXIT_SUCCESS;
+        }
         if (application.arguments().contains(QStringLiteral("--pinned-lifetime-only"))) {
             pinnedViewportExportsReleaseImportedSnapshots();
             return EXIT_SUCCESS;

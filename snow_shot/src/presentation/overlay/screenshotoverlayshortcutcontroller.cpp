@@ -233,6 +233,7 @@ struct ScreenshotOverlayShortcutController::Impl {
             QStringLiteral("text_translation"),
             QStringLiteral("scrolling_screenshot"),
             QStringLiteral("quick_save"),
+            QStringLiteral("print"),
             QStringLiteral("save_as_file"),
             QStringLiteral("pin_to_screen"),
             QStringLiteral("cancel_screenshot"),

@@ -102,6 +102,7 @@ class ScreenshotToolbarCommandSink {
     virtual void updateScrollingSelectionMove(QPoint) {}
     virtual void endScrollingSelectionMove() {}
     virtual void pinSelectionToScreen() = 0;
+    virtual void printSelection() {}
     virtual void saveSelectionToFile() {}
     virtual void quickSaveSelection() {}
     virtual void cancelCapture() = 0;

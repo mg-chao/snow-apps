@@ -1,4 +1,13 @@
 #include "snow_shot/presentation/screenshotrecognitionwindow.h"
+#include "snow_shot/presentation/screenshotocrtextlayout.h"
+#include <QAbstractTextDocumentLayout>
+#include <QAbstractItemDelegate>
+#include <QScrollBar>
+#include <QTableView>
+#include <QStyleOptionViewItem>
+#include <QPainter>
+#include <QSet>
+
 #if SNOW_SHOT_ENABLE_IMAGE_CONVERSION
 #include "snow_shot/presentation/screenshotimageconversionview.h"
 #endif
@@ -180,6 +189,17 @@ class ScreenshotFormattedTextLayer final : public QGraphicsView {
         m_textItem->setPos(m_canvasRect.topLeft());
         m_textItem->setScale(devicePixelRatio);
         m_textItem->show();
+    }
+
+    void paintPrintViewport(QPainter& painter) const {
+        if (!m_document)
+            return;
+        painter.save();
+        painter.setTransform(m_textItem->sceneTransform() * viewportTransform(), true);
+        QAbstractTextDocumentLayout::PaintContext context;
+        context.palette = palette();
+        m_document->documentLayout()->draw(&painter, context);
+        painter.restore();
     }
 
     void clearDocument() {
@@ -562,6 +582,121 @@ ScreenshotRecognitionWindow::imageSnapshot(QImage image, const QRectF& canvasRec
     snapshot.font = QApplication::font();
     snapshot.textColor = m_textLayer->textColor();
     snapshot.resultStyle = style;
+    return snapshot;
+}
+
+QImage ScreenshotRecognitionWindow::printViewportSnapshot(QImage background,
+                                                          const QRectF& canvasRect, QImage filtered,
+                                                          const QRectF& filteredRect,
+                                                          qreal contentOpacity) {
+    if (m_showOriginalImage || !m_stack->currentWidget())
+        return {};
+    QWidget* content = m_stack->currentWidget();
+    QTextEdit* text = qobject_cast<QTextEdit*>(content);
+    if (!text) {
+        for (auto* candidate : content->findChildren<QTextEdit*>()) {
+            if (candidate->isVisibleTo(content)) {
+                text = candidate;
+                break;
+            }
+        }
+    }
+    auto* table = qobject_cast<QTableView*>(content);
+#if SNOW_SHOT_ENABLE_TABLE_RECOGNITION
+    if (table && table == m_tableEditor && m_tableEditor->isEditingCell() &&
+        !m_tableEditor->commitActiveEdit())
+        return {};
+#endif
+    QWidget* viewport = content;
+    if (auto* scroll = qobject_cast<QAbstractScrollArea*>(content))
+        viewport = scroll->viewport();
+    if (text)
+        viewport = text->viewport();
+    const qreal dpr = viewport->devicePixelRatioF();
+    QImage snapshot(viewport->size() * dpr, QImage::Format_ARGB32_Premultiplied);
+    if (snapshot.isNull())
+        return {};
+    snapshot.fill(Qt::transparent);
+    QPainter painter(&snapshot);
+    painter.scale(dpr, dpr);
+    painter.setRenderHint(QPainter::Antialiasing);
+    painter.setRenderHint(QPainter::TextAntialiasing);
+    if (content == m_textLayer) {
+        const auto transform = canvasToLocalTransform();
+        painter.save();
+        painter.setTransform(transform, true);
+        if (!background.isNull() && !canvasRect.isEmpty())
+            painter.drawImage(canvasRect, background);
+        if (!filtered.isNull() && !filteredRect.isEmpty())
+            painter.drawImage(filteredRect, filtered);
+        painter.restore();
+        if (!m_selectionOnly && m_ocrPresentation) {
+            for (const auto& line : m_ocrPresentation->lines) {
+                ScreenshotOcrTextLayout layout;
+                QTransform textTransform;
+                if (configureScreenshotOcrTextLayout(layout, line, transform, QApplication::font(),
+                                                     m_textLayer->textColor(), {},
+                                                     &textTransform)) {
+                    painter.save();
+                    painter.setTransform(textTransform, true);
+                    layout.paint(&painter);
+                    painter.restore();
+                }
+            }
+        }
+    } else if (content == m_formattedTextLayer) {
+        painter.fillRect(viewport->rect(), viewport->palette().base());
+        m_formattedTextLayer->paintPrintViewport(painter);
+    } else if (text) {
+        // AdTextEdit has a transparent base; its visible background belongs to
+        // the editor container. Other recognition browsers paint their own base.
+        painter.fillRect(viewport->rect(), text == m_textEditor
+                                               ? m_textEditorContainer->palette().window()
+                                               : text->palette().base());
+        painter.save();
+        painter.translate(-text->horizontalScrollBar()->value(),
+                          -text->verticalScrollBar()->value());
+        QAbstractTextDocumentLayout::PaintContext context;
+        context.palette = text->palette();
+        text->document()->documentLayout()->draw(&painter, context);
+        painter.restore();
+    } else if (table && table->model()) {
+        painter.fillRect(viewport->rect(), table->palette().base());
+        QSet<QModelIndex> painted;
+        const int firstRow = std::max(0, table->rowAt(0));
+        const int firstColumn = std::max(0, table->columnAt(0));
+        const int bottom = table->rowAt(viewport->height() - 1);
+        const int right = table->columnAt(viewport->width() - 1);
+        const int lastRow = bottom < 0 ? table->model()->rowCount() - 1 : bottom;
+        const int lastColumn = right < 0 ? table->model()->columnCount() - 1 : right;
+        for (int row = firstRow; row <= lastRow; ++row) {
+            for (int column = firstColumn; column <= lastColumn; ++column) {
+                const auto index = table->model()->index(row, column);
+                const QRect rect = table->visualRect(index);
+                const QRect visible = rect.intersected(viewport->rect());
+                if (visible.isEmpty())
+                    continue;
+                const auto anchor = table->indexAt(visible.center());
+                if (!anchor.isValid() || painted.contains(anchor))
+                    continue;
+                painted.insert(anchor);
+                QStyleOptionViewItem option;
+                option.initFrom(table);
+                option.state = QStyle::State_Enabled;
+                option.rect = table->visualRect(anchor);
+                option.font = table->font();
+                option.widget = table;
+                table->itemDelegate()->paint(&painter, option, anchor);
+            }
+        }
+    } else {
+        viewport->render(&painter);
+    }
+    if (contentOpacity < 1.0) {
+        painter.setCompositionMode(QPainter::CompositionMode_DestinationIn);
+        painter.fillRect(viewport->rect(),
+                         QColor(0, 0, 0, qRound(255 * std::clamp(contentOpacity, 0.0, 1.0))));
+    }
     return snapshot;
 }
 

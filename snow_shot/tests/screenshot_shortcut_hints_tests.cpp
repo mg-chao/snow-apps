@@ -197,6 +197,7 @@ void configuredShortcutRowsUseActualValues() {
          shortcutBindings({QStringLiteral("G"), QStringLiteral("Ctrl+Alt+Q")})},
         {QStringLiteral("select_previously_selected_area"),
          shortcutBindings({QStringLiteral("P")})},
+        {QStringLiteral("print"), shortcutBindings({QStringLiteral("Ctrl+Alt+P")})},
         {QStringLiteral("copy_color"), shortcutBindings({QStringLiteral("Alt+C")})},
         {QStringLiteral("toggle_coordinate_mode"), shortcutBindings({QStringLiteral("Alt+P")})},
         {QStringLiteral("previous_screenshot_history"),
@@ -258,7 +259,7 @@ void coordinateHintFollowsCopyColor() {
         });
         require(copy != rows.cend() && copy + 1 != rows.cend() &&
                     (copy + 1)->label == QStringLiteral("Toggle Global/Relative Coordinates") &&
-                    (copy + 1)->shortcut == shortcutDisplay({QStringLiteral("Ctrl+P")}),
+                    (copy + 1)->shortcut == shortcutDisplay({QStringLiteral("Shift+P")}),
                 "coordinate toggle must follow Copy color in both selection modes");
         const snow_shot::shortcuts::ShortcutBindingMap disabled{
             {QStringLiteral("toggle_coordinate_mode"), {}}};
@@ -270,6 +271,21 @@ void coordinateHintFollowsCopyColor() {
                                             QStringLiteral("Toggle Global/Relative Coordinates");
                                  }),
                 "disabled coordinate shortcut must not leave a stale hint");
+    }
+}
+
+void printShortcutIsNotHinted() {
+    const snow_shot::shortcuts::ShortcutBindingMap configured{
+        {QStringLiteral("print"), shortcutBindings({QStringLiteral("Ctrl+Alt+P")})}};
+    for (const auto mode :
+         {ScreenshotShortcutHintMode::Selection, ScreenshotShortcutHintMode::SmartSelection}) {
+        for (const auto& rows :
+             {screenshotShortcutHintRows(mode), screenshotShortcutHintRows(mode, configured)}) {
+            require(
+                std::none_of(rows.cbegin(), rows.cend(),
+                             [](const auto& row) { return row.label == QStringLiteral("Print"); }),
+                "selection hints must omit Print for default and configured shortcuts");
+        }
     }
 }
 
@@ -458,6 +474,7 @@ int main(int argc, char** argv) {
     toolMatrixMatchesRequestedVisibility();
     configuredShortcutRowsUseActualValues();
     coordinateHintFollowsCopyColor();
+    printShortcutIsNotHinted();
     defaultHistoryShortcutUsesSeparateChips();
     unassignedConfiguredShortcutIsNotHinted();
     unconfiguredRowsFallBackToSchemaDefaults();

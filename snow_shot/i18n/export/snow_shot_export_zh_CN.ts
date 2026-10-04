@@ -106,6 +106,29 @@
         </message>
     </context>
     <context>
+        <name>ScreenshotPrintService</name>
+        <message>
+            <source>The image could not be prepared for printing</source>
+            <translation>无法准备要打印的图像</translation>
+        </message>
+        <message>
+            <source>The image could not be printed: %1</source>
+            <translation>无法打印图像：%1</translation>
+        </message>
+        <message>
+            <source>The native print interface is unavailable</source>
+            <translation>系统打印接口不可用</translation>
+        </message>
+        <message>
+            <source>The native print operation failed</source>
+            <translation>系统打印操作失败</translation>
+        </message>
+        <message>
+            <source>Windows printing failed (%1)</source>
+            <translation>Windows 打印失败（%1）</translation>
+        </message>
+    </context>
+    <context>
         <name>ScreenshotRecognitionFileExport</name>
         <message>
             <source>An existing output file could not be replaced</source>

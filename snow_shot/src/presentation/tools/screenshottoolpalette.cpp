@@ -96,6 +96,7 @@ constexpr int kRecordingSettingsColumnWidth = 218;
 constexpr int kRecordingSettingsColumnGap = 16;
 constexpr int kRecordingSettingsColorPickerWidth = 154;
 [[maybe_unused]] constexpr const char* kScreenshotToolPaletteTranslations[] = {
+    QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Print"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Pen filter"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Rectangle filter"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Auto Filter"),
@@ -440,6 +441,9 @@ QString actionToolShortcutId(const QString& itemId) {
     }
     if (itemId == QStringLiteral("scrolling-screenshot")) {
         return QStringLiteral("scrolling_screenshot");
+    }
+    if (itemId == QStringLiteral("print")) {
+        return QStringLiteral("print");
     }
     if (itemId == QStringLiteral("save-as-file")) {
         return QStringLiteral("save_as_file");
@@ -4904,6 +4908,9 @@ ScreenshotToolPalette::actionToolSourceButton(const QString& itemId) const {
     if (itemId == QStringLiteral("scrolling-screenshot")) {
         return m_scrollingScreenshotButton;
     }
+    if (itemId == QStringLiteral("print")) {
+        return m_printButton;
+    }
     if (itemId == QStringLiteral("save-as-file")) {
         return m_saveButton;
     }
@@ -4980,6 +4987,8 @@ bool ScreenshotToolPalette::activateActionTool(const QString& itemId, bool toggl
         return activateToolFromToolbar(Tool::ScrollingScreenshot, toggleVisibleButton);
     } else if (itemId == QStringLiteral("quick-save")) {
         emit quickSaveRequested();
+    } else if (itemId == QStringLiteral("print")) {
+        emit printRequested();
     } else if (itemId == QStringLiteral("save-as-file")) {
         emit saveRequested();
     } else if (itemId == QStringLiteral("copy")) {
@@ -5393,10 +5402,19 @@ void ScreenshotToolPalette::applyMainToolbarLayout(bool notify) {
         m_options.actionToolsLayoutKind ==
         snow_shot::storage::ScreenshotToolbarLayoutKind::PinnedActionTools;
     const QVector<adqt::widgets::AdButton*> actionSources{
-        m_tableButton, m_markdownButton,        m_latexButton,
-        m_htmlButton,  m_screenRecordButton,    m_pinButton,
-        m_ocrButton,   m_textTranslationButton, m_scrollingScreenshotButton,
-        m_saveButton,  m_quickSaveButton,       configurableResultActions ? m_copyButton : nullptr,
+        m_tableButton,
+        m_markdownButton,
+        m_latexButton,
+        m_htmlButton,
+        m_screenRecordButton,
+        m_pinButton,
+        m_ocrButton,
+        m_textTranslationButton,
+        m_scrollingScreenshotButton,
+        m_printButton,
+        m_saveButton,
+        m_quickSaveButton,
+        configurableResultActions ? m_copyButton : nullptr,
     };
     for (adqt::widgets::AdButton* source : actionSources) {
         if (source != nullptr) {
@@ -5442,7 +5460,8 @@ void ScreenshotToolPalette::applyMainToolbarLayout(bool notify) {
     QVector<QWidget*> resultActions{
         m_cancelButton,
         m_options.saveButtonWithResultActions && !configurableResultActions
-            ? createActionToolGroup({QStringLiteral("quick-save"), QStringLiteral("save-as-file")})
+            ? createActionToolGroup({QStringLiteral("print"), QStringLiteral("quick-save"),
+                                     QStringLiteral("save-as-file")})
             : nullptr,
         configurableResultActions ? nullptr : m_copyButton,
         m_confirmButton,
@@ -5821,6 +5840,13 @@ bool ScreenshotToolPalette::addMainSecondaryButtons(const Options& options, QBox
     }
 
     if (options.showSaveButton && !options.saveButtonWithResultActions) {
+        m_printButton = addActionButton("Print", outlined_icons::Printer());
+        applyScreenshotShortcutTooltip(m_printButton, QStringLiteral("Print"),
+                                       QStringLiteral("print"));
+        m_printButton->setObjectName(QStringLiteral("screenshotPrintButton"));
+        m_printButton->hide();
+        connect(m_printButton, &adqt::widgets::AdButton::clicked, this,
+                [this]() { activateActionTool(QStringLiteral("print")); });
         m_quickSaveButton = addActionButton("Quick save", custom_outlined_icons::QuickSave());
         applyScreenshotShortcutTooltip(m_quickSaveButton, QStringLiteral("Quick save"),
                                        QStringLiteral("quick_save"));
@@ -5935,6 +5961,7 @@ QString screenshotShortcutActionItem(const QString& actionId) {
         {QStringLiteral("video_recording"), QStringLiteral("record-screen")},
         {QStringLiteral("scrolling_screenshot"), QStringLiteral("scrolling-screenshot")},
         {QStringLiteral("quick_save"), QStringLiteral("quick-save")},
+        {QStringLiteral("print"), QStringLiteral("print")},
         {QStringLiteral("save_as_file"), QStringLiteral("save-as-file")},
         {QStringLiteral("pin_to_screen"), QStringLiteral("pin-to-screen")},
     };
@@ -6035,6 +6062,13 @@ void ScreenshotToolPalette::addMainActionButtons(const Options& options, QBoxLay
     }
 
     if (options.showSaveButton && options.saveButtonWithResultActions) {
+        m_printButton = addActionButton("Print", outlined_icons::Printer());
+        applyScreenshotShortcutTooltip(m_printButton, QStringLiteral("Print"),
+                                       QStringLiteral("print"));
+        m_printButton->setObjectName(QStringLiteral("screenshotPrintButton"));
+        m_printButton->hide();
+        connect(m_printButton, &adqt::widgets::AdButton::clicked, this,
+                [this]() { activateActionTool(QStringLiteral("print")); });
         m_quickSaveButton = addActionButton("Quick save", custom_outlined_icons::QuickSave());
         applyScreenshotShortcutTooltip(m_quickSaveButton, QStringLiteral("Quick save"),
                                        QStringLiteral("quick_save"));

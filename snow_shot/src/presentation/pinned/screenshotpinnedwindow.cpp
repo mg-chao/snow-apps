@@ -7,6 +7,8 @@
 #include "snow_shot/presentation/pinnedgeometry.h"
 #include "snow_shot/presentation/canvasstatusreadout.h"
 #include "snow_shot/presentation/screenshotpinnedwindow.h"
+#include "snow_shot/presentation/screenshotprintservice.h"
+#include "../services/screenshotprintinteractionguard.h"
 #include "snow_shot/presentation/automationrevision.h"
 #include "snow_shot/app/mcp/mcpstylepatch.h"
 #include "screenshotpinnedhidetotopcontroller.h"
@@ -1037,7 +1039,8 @@ void ScreenshotPinnedWindow::registerWindowShortcuts() {
     using ShortcutManager = snow_shot::presentation::WindowShortcutManager;
 
     const auto localCommandsAllowed = [this](const ShortcutManager::ActivationContext& context) {
-        return !m_closing && !ShortcutManager::focusAcceptsTextInput(context.focusWidget) &&
+        return !m_closing && !m_printPending && !property("saveDialogOpen").toBool() &&
+               !ShortcutManager::focusAcceptsTextInput(context.focusWidget) &&
                (m_canvas == nullptr || !m_canvas->hasActiveTextEditing());
     };
     const auto ocrCommandsAllowed = [this](const ShortcutManager::ActivationContext& context) {
@@ -1072,6 +1075,19 @@ void ScreenshotPinnedWindow::registerWindowShortcuts() {
     };
     m_pinnedShortcutBindings.insert(QStringLiteral("copy_original_content"),
                                     m_shortcutManager->addBinding(this, std::move(copyOriginal)));
+
+    ShortcutManager::Binding print;
+    print.id = QStringLiteral("pinned.print");
+    print.priority = ShortcutManager::StandardPriority::WindowCommand;
+    print.canActivate = [localCommandsAllowed](const auto& context) {
+        return QApplication::activeModalWidget() == nullptr && localCommandsAllowed(context);
+    };
+    print.activate = [this](const auto&) {
+        printContent();
+        return true;
+    };
+    m_pinnedShortcutBindings.insert(QStringLiteral("print"),
+                                    m_shortcutManager->addBinding(this, std::move(print)));
 
     ShortcutManager::Binding save;
     save.id = QStringLiteral("pinned.save_as_file");
@@ -1331,6 +1347,7 @@ void ScreenshotPinnedWindow::reloadPinnedWindowShortcuts() {
         {"copy_to_clipboard", "screenshotPinnedCopyAction"},
         {"copy_original_content", "screenshotPinnedCopyOriginalAction"},
         {"save_as_file", "screenshotPinnedSaveAsFileAction"},
+        {"print", nullptr},
         {"show_text_recognition_results", "screenshotPinnedOcrAction"},
         {"drawing_mode", "screenshotPinnedDrawingAction"},
         {"resize_window", nullptr},
@@ -1914,6 +1931,7 @@ bool ScreenshotPinnedWindow::present(const Config& requestedConfig,
     m_imageSource = std::move(imageSource);
     m_presentationCompletion = std::move(completion);
     m_imageLoader = config.imageLoader;
+    m_printService = config.printService;
     ++m_presentationGeneration;
     m_deferredPresentationSetupScheduled = false;
     m_recognitionTargetReady = false;
@@ -3949,6 +3967,8 @@ void ScreenshotPinnedWindow::configureEditToolbar(
     ScreenshotToolPalette* toolbar = toolbarWindow->palette();
     connect(toolbar, &ScreenshotToolPalette::quickSaveRequested, this,
             &ScreenshotPinnedWindow::quickSave);
+    connect(toolbar, &ScreenshotToolPalette::printRequested, this,
+            &ScreenshotPinnedWindow::printContent);
     connect(toolbar, &ScreenshotToolPalette::saveRequested, this,
             &ScreenshotPinnedWindow::saveAsFile);
     connect(toolbar, &ScreenshotToolPalette::copyRequested, this,
@@ -4887,7 +4907,8 @@ bool ScreenshotPinnedWindow::copyHiddenTextSelection() {
     return true;
 }
 
-std::shared_ptr<ScreenshotExportArtifact> ScreenshotPinnedWindow::viewportArtifact() {
+std::shared_ptr<ScreenshotExportArtifact>
+ScreenshotPinnedWindow::viewportArtifact(bool applyWindowOpacity) {
     if (m_transformedImage.isNull()) {
         return {};
     }
@@ -4919,8 +4940,8 @@ std::shared_ptr<ScreenshotExportArtifact> ScreenshotPinnedWindow::viewportArtifa
         return {};
     }
     QByteArray documentSession = m_runtime.serializeDocumentSession();
-    const PinnedExportAppearance appearance =
-        pinnedExportAppearance(m_resultStyle, m_opacityPercent, surfaceScale);
+    const PinnedExportAppearance appearance = pinnedExportAppearance(
+        m_resultStyle, applyWindowOpacity ? m_opacityPercent : 100, surfaceScale);
     ScreenshotPinnedViewportExportSource request{
         std::move(documentSession), m_transformedImage,
         m_backgroundCanvasRect,     contentPixelSize,
@@ -5270,7 +5291,7 @@ std::shared_ptr<ScreenshotExportArtifact> ScreenshotPinnedWindow::fileSaveArtifa
 }
 
 void ScreenshotPinnedWindow::quickSave() {
-    if (m_closing || m_quickSavePending || property("saveDialogOpen").toBool())
+    if (m_closing || m_printPending || m_quickSavePending || property("saveDialogOpen").toBool())
         return;
 #if SNOW_SHOT_ENABLE_IMAGE_CONVERSION || SNOW_SHOT_ENABLE_LATEX_RECOGNITION ||                     \
     SNOW_SHOT_ENABLE_QR_RECOGNITION
@@ -5617,8 +5638,115 @@ bool ScreenshotPinnedWindow::replaceContent(ScreenshotClipboardContent content) 
     return true;
 }
 
+void ScreenshotPinnedWindow::printContent() {
+    auto& service = m_printService ? *m_printService : ScreenshotPrintService::shared();
+    if (m_closing || m_printPending || property("saveDialogOpen").toBool() || service.busy() ||
+        QApplication::activeModalWidget())
+        return;
+    m_printPending = true;
+    setProperty("saveDialogOpen", true);
+    const auto suspension = m_shortcutManager->suspendInput();
+    const quint64 generation = m_presentationGeneration;
+    const quint64 replacement = m_contentReplacementGeneration;
+    const QPointer<ScreenshotPinnedWindow> receiver(this);
+    const QPointer<ScreenshotPrintService> printer(&service);
+    const auto completed = std::make_shared<bool>(false);
+    const QPointer<QWidget> previousFocus(QApplication::focusWidget());
+    const auto interactionGuard = std::make_shared<ScreenshotPrintInteractionGuard>(
+        QList<QWidget*>{this, m_editController ? m_editController->toolbarWindow() : nullptr});
+    beginAuxiliaryWindowInteraction();
+    const auto finished = [receiver, previousFocus, suspension, generation, replacement, completed,
+                           interactionGuard](ScreenshotPrintService::Result result) {
+        if (std::exchange(*completed, true))
+            return;
+        interactionGuard->release();
+        if (!receiver)
+            return;
+        receiver->m_printPending = false;
+        receiver->setProperty("saveDialogOpen", false);
+        receiver->m_printArtifact.reset();
+        receiver->m_shortcutManager->resumeInput(suspension);
+        receiver->endAuxiliaryWindowInteraction();
+        if (receiver->m_closing || !receiver->isVisible() ||
+            receiver->m_presentationGeneration != generation ||
+            receiver->m_contentReplacementGeneration != replacement)
+            return;
+        receiver->activateWindow();
+        if (previousFocus && previousFocus->isVisible())
+            previousFocus->setFocus(Qt::OtherFocusReason);
+        else
+            receiver->setFocus(Qt::OtherFocusReason);
+        if (result.status == ScreenshotPrintService::Status::Failed)
+            showPinnedRecognitionMessage(
+                receiver,
+                QCoreApplication::translate("ScreenshotPrintService",
+                                            "The image could not be printed: %1")
+                    .arg(result.error),
+                true);
+    };
+    const auto ready = [receiver, generation, replacement, printer, completed,
+                        finished](ScreenshotExportImageResult result) {
+        if (*completed || !receiver)
+            return;
+        if (receiver->m_closing || receiver->m_presentationGeneration != generation ||
+            receiver->m_contentReplacementGeneration != replacement) {
+            finished({ScreenshotPrintService::Status::Cancelled, {}});
+            return;
+        }
+        if (!result.succeeded() || !printer ||
+            !printer->printImage(receiver, receiver, std::move(result.image), finished))
+            finished({ScreenshotPrintService::Status::Failed,
+                      result.error.isEmpty() ? QCoreApplication::translate(
+                                                   "ScreenshotPrintService",
+                                                   "The image could not be prepared for printing")
+                                             : result.error});
+    };
+    requestMaterializedImage([receiver, generation, replacement, ready](bool succeeded) {
+        if (!receiver)
+            return;
+        if (receiver->m_closing || receiver->m_presentationGeneration != generation ||
+            receiver->m_contentReplacementGeneration != replacement) {
+            ready({});
+            return;
+        }
+        const bool recognitionVisible = receiver->m_recognitionContent &&
+                                        receiver->m_recognitionSession &&
+                                        receiver->m_recognitionSession->active() &&
+                                        !receiver->m_recognitionSession->showOriginalImage();
+        receiver->m_printArtifact =
+            succeeded ? receiver->viewportArtifact(!recognitionVisible) : nullptr;
+        const auto snapshotReady = [receiver, generation, replacement, recognitionVisible,
+                                    ready](ScreenshotExportImageResult result) {
+            if (!receiver)
+                return;
+            if (receiver->m_closing || receiver->m_presentationGeneration != generation ||
+                receiver->m_contentReplacementGeneration != replacement) {
+                ready({});
+                return;
+            }
+            if (result.succeeded() && recognitionVisible) {
+                QImage snapshot = receiver->m_recognitionContent->printViewportSnapshot(
+                    result.image, receiver->m_resultSurfaceCanvasRect,
+                    receiver->m_screenshotRenderer->ocrFilteredImage(),
+                    receiver->m_screenshotRenderer->ocrFilteredCanvasRect(),
+                    receiver->m_opacityPercent / 100.0);
+                result.image = std::move(snapshot);
+                if (result.image.isNull())
+                    result.error = QCoreApplication::translate(
+                        "ScreenshotPrintService", "The image could not be prepared for printing");
+            }
+            ready(std::move(result));
+        };
+        if (!receiver->m_printArtifact ||
+            !receiver->m_printArtifact->requestImage(receiver, snapshotReady))
+            ready({{},
+                   QCoreApplication::translate("ScreenshotPrintService",
+                                               "The image could not be prepared for printing")});
+    });
+}
+
 void ScreenshotPinnedWindow::saveAsFile() {
-    if (property("saveDialogOpen").toBool())
+    if (m_printPending || property("saveDialogOpen").toBool())
         return;
 #if SNOW_SHOT_ENABLE_IMAGE_CONVERSION || SNOW_SHOT_ENABLE_LATEX_RECOGNITION ||                     \
     SNOW_SHOT_ENABLE_QR_RECOGNITION

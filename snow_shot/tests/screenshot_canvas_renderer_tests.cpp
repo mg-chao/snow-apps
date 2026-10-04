@@ -1402,8 +1402,9 @@ void shortcutHintStagesUseTheExactRequiredLines() {
     const QStringList commonLines{
         QStringLiteral("Select previously selected area: R"),
         QStringLiteral("Copy color: C"),
-        keyLine(QStringLiteral("Toggle Global/Relative Coordinates"), {QStringLiteral("Ctrl+P")}),
+        keyLine(QStringLiteral("Toggle Global/Relative Coordinates"), {QStringLiteral("Shift+P")}),
         keyLine(QStringLiteral("Toggle cursor visibility"), {QStringLiteral("`")}),
+        keyLine(QStringLiteral("Print"), {QStringLiteral("Ctrl+P")}),
         QStringLiteral("Switch color format: %1")
             .arg(snow_shot::shortcuts::ShortcutDisplayService::instance().modifierText(
                 Qt::ShiftModifier)),

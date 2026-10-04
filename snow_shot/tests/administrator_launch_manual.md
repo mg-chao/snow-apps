@@ -44,9 +44,10 @@ The automated tests do not approve UAC or modify live startup registrations.
 4. While recording/exporting or handing off an update, verify that restart cannot
    close the active work. Verify duplicate requests do not create extra helpers.
 5. In the VM, interrupt a startup transition. On the next launch, verify that an
-   inconsistent registration produces an actionable recovery message without a
-   silent UAC prompt or a second startup mode. Reapplying the setting with consent
-   must clear the recovery record and establish the selected mode.
+   inconsistent registration writes the recovery message to the log without opening
+   the main window or an error notification, prompting for UAC, or creating a second
+   startup mode. Reapplying the setting with consent must clear the recovery record
+   and establish the selected mode.
 
 ## Installer and updater
 
