@@ -601,7 +601,7 @@ void recognitionFileSnapshotTracksPartialConversionAndQrValues() {
     ScreenshotRecognitionResults results;
     results.key = QStringLiteral("file-export");
     results.qr =
-        ScreenshotQrRecognitionResult{{QStringLiteral("first"), QStringLiteral("second")}, {}};
+        ScreenshotQrRecognitionResult{{QStringLiteral("first"), QStringLiteral("second")}, {}, {}};
     session.seedRecognitionResults(results);
     for (const auto mode : {Mode::Markdown, Mode::Html}) {
         session.activate(mode);
@@ -1001,7 +1001,7 @@ void runLatexRecognitionTests() {
     session.setTarget({QStringLiteral("latex-image"), sampleImage(), QRectF(0, 0, 240, 120)});
     ScreenshotRecognitionResults seed;
     seed.key = QStringLiteral("latex-image");
-    seed.latex = SnowShotLatexResult{source};
+    seed.latex = SnowShotLatexResult{source, {}, {}};
     session.seedRecognitionResults(seed);
     session.activate(Mode::Latex);
     auto* browser = window.findChild<QTextBrowser*>(QStringLiteral("screenshotQrContents"));

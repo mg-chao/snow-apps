@@ -537,7 +537,9 @@ void TabsTest::overflowMenuTracksScrolledTabs() {
   }
   QCOMPARE(actual, expected);
   QCOMPARE(list->currentRow(), -1);
-  QVERIFY(!list->item(actual.indexOf(tabs.tabText(2)))->flags().testFlag(Qt::ItemIsEnabled));
+  QVERIFY(!list->item(static_cast<int>(actual.indexOf(tabs.tabText(2))))
+               ->flags()
+               .testFlag(Qt::ItemIsEnabled));
   QTest::mouseClick(list->viewport(), Qt::LeftButton, Qt::NoModifier,
                     list->visualItemRect(list->item(0)).center());
   QTRY_VERIFY(!popup->isVisible());

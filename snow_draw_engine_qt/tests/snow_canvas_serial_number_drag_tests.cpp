@@ -87,8 +87,8 @@ void numericTypeReachesExportAndSurvivesHistory() {
                         .value(QStringLiteral("id"))
                         .toObject();
     SnowCanvasRuntimeEditor editor(runtime);
-    require(editor.select(id.value(QStringLiteral("index")).toInt(),
-                          id.value(QStringLiteral("generation")).toInt()),
+    require(editor.select(id.value(QStringLiteral("index")).toVariant().toUInt(),
+                          id.value(QStringLiteral("generation")).toVariant().toUInt()),
             "select formatted annotation");
     const QImage letters = runtime.renderToImage(region, QSize(300, 300), {});
     require(!letters.isNull(), "formatted sequence exports successfully");

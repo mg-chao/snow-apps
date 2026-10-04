@@ -202,9 +202,7 @@ impl Default for RasterBuffer {
 }
 impl Clone for RasterBuffer {
     fn clone(&self) -> Self {
-        let mut copy = Self::zeroed(self.len);
-        copy.copy_from_slice(self);
-        copy
+        Self::from(self.as_slice())
     }
 }
 impl Deref for RasterBuffer {
@@ -252,6 +250,14 @@ impl From<Vec<u8>> for RasterBuffer {
 }
 impl From<&[u8]> for RasterBuffer {
     fn from(bytes: &[u8]) -> Self {
+        if bytes.len() < MIN_PAGE_BUFFER_BYTES {
+            // The copy initializes every exposed capacity byte. Avoid clearing
+            // the heap destination before replacing its complete contents.
+            return Self {
+                storage: Storage::Heap(bytes.to_vec()),
+                len: bytes.len(),
+            };
+        }
         let mut buffer = Self::zeroed(bytes.len());
         buffer.copy_from_slice(bytes);
         buffer
@@ -432,6 +438,42 @@ mod tests {
         let empty = RasterBuffer::from(Vec::with_capacity(MIN_PAGE_BUFFER_BYTES));
         assert!(empty.is_empty());
         assert_eq!(empty.capacity(), 0);
+    }
+
+    #[test]
+    fn copied_rasters_preserve_pixels_storage_threshold_and_initialized_capacity() {
+        for len in [
+            0,
+            3,
+            MIN_PAGE_BUFFER_BYTES - 1,
+            MIN_PAGE_BUFFER_BYTES,
+            MIN_PAGE_BUFFER_BYTES + 7,
+        ] {
+            let pixels: Vec<u8> = (0..len).map(|index| (index % 251) as u8).collect();
+            let imported = RasterBuffer::from(pixels.as_slice());
+            let cloned = imported.clone();
+            for mut buffer in [imported, cloned] {
+                assert_eq!(buffer, pixels);
+                #[cfg(any(windows, target_os = "macos", target_os = "linux"))]
+                assert_eq!(buffer.is_page_backed(), len >= MIN_PAGE_BUFFER_BYTES);
+                let capacity = buffer.capacity();
+                buffer.resize_for_overwrite(capacity);
+                assert_eq!(&buffer[..len], pixels.as_slice());
+                assert!(buffer[len..].iter().all(|&byte| byte == 0));
+                buffer.truncate(len / 2);
+                buffer.resize(len, 0x5a);
+                assert_eq!(&buffer[..len / 2], &pixels[..len / 2]);
+                assert!(buffer[len / 2..].iter().all(|&byte| byte == 0x5a));
+            }
+        }
+
+        let mut large = RasterBuffer::zeroed(MIN_PAGE_BUFFER_BYTES);
+        large[..3].copy_from_slice(&[17, 43, 91]);
+        large.truncate(3);
+        let compact = large.clone();
+        assert_eq!(compact, [17, 43, 91]);
+        assert_eq!(compact.capacity(), 3);
+        assert!(!compact.is_page_backed());
     }
 
     #[cfg(feature = "serde")]

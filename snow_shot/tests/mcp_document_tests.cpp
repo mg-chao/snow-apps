@@ -165,7 +165,7 @@ class FixtureQr final : public ScreenshotQrRecognitionPort {
         const auto token = ++m_next;
         QTimer::singleShot(100, receiver, [this, token, completion = std::move(completion)] {
             if (!m_canceled.remove(token))
-                completion({{QStringLiteral("fixture-qr-payload")}, {}});
+                completion({{QStringLiteral("fixture-qr-payload")}, {}, {}});
         });
         return token;
     }

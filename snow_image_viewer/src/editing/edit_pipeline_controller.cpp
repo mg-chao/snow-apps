@@ -297,7 +297,7 @@ std::size_t defaultEditingBudget() {
         total = status.ullTotalPhys;
         available = status.ullAvailPhys;
     }
-#elif defined(Q_OS_UNIX)
+#elif defined(Q_OS_UNIX) && defined(_SC_AVPHYS_PAGES)
     const long pages = sysconf(_SC_PHYS_PAGES);
     const long availablePages = sysconf(_SC_AVPHYS_PAGES);
     const long pageSize = sysconf(_SC_PAGE_SIZE);

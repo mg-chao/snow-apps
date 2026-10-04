@@ -339,14 +339,14 @@ class ImageTests final : public QObject {
     QSignalSpy firstFinished(first, &AdImageReply::finished);
     QVERIFY(firstFinished.wait());
     QVERIFY(first->isSuccessful());
-    const quint64 firstKey = first->image().cacheKey();
+    const qint64 firstKey = first->image().cacheKey();
 
     AdImageReply* second = defaultAdImageLoader()->load(url, AdImageLoadOptions{}, &owner);
     QVERIFY(!second->isFinished());
     QSignalSpy secondFinished(second, &AdImageReply::finished);
     QVERIFY(secondFinished.wait());
     QVERIFY(second->isSuccessful());
-    QVERIFY(static_cast<quint64>(second->image().cacheKey()) != firstKey);
+    QVERIFY(second->image().cacheKey() != firstKey);
   }
 
   void destroyedWidgetCancelsAndReleasesReply() {

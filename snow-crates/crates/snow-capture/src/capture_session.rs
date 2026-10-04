@@ -1602,7 +1602,13 @@ impl CaptureSession {
             && out_frame.pixel_format() == self.config.output_pixel_format
             && !out_frame.as_rgba_bytes().is_empty();
         self.region_runtime_mut().output_history_seq = None;
-        out_frame.ensure_capacity(out_w, out_h, self.config.output_pixel_format)?;
+        if destination_has_history {
+            out_frame.ensure_capacity(out_w, out_h, self.config.output_pixel_format)?;
+        } else {
+            // Capture replaces every covered pixel, and uncovered pixels are
+            // cleared below. Shared stale storage need not be copied first.
+            out_frame.prepare_for_overwrite(out_w, out_h, self.config.output_pixel_format)?;
+        }
         out_frame.reset_metadata();
         if !destination_has_history && !region_fully_covered {
             out_frame.as_mut_rgba_bytes().fill(0);
@@ -1819,6 +1825,10 @@ fn append_exact_sample_damage(
     }
     Ok(())
 }
+
+#[cfg(test)]
+#[path = "capture_region_memory_benchmark.rs"]
+mod region_memory_benchmark;
 
 #[cfg(test)]
 mod tests {
@@ -2471,11 +2481,13 @@ mod tests {
         monitor: MonitorId,
         observed_zero_before_write: Arc<Mutex<Vec<bool>>>,
         fill_byte: u8,
+        incremental: bool,
     }
 
     struct RegionClearBehaviorCapturer {
         observed_zero_before_write: Arc<Mutex<Vec<bool>>>,
         fill_byte: u8,
+        incremental: bool,
     }
 
     impl MonitorCapturer for RegionHistoryCapturer {
@@ -2563,7 +2575,7 @@ mod tests {
             &mut self,
             blit: CaptureBlitRegion,
             destination: &mut Frame,
-            _destination_has_history: bool,
+            destination_has_history: bool,
         ) -> CaptureResult<Option<CaptureSampleMetadata>> {
             let was_zero = destination.as_rgba_bytes().iter().all(|&byte| byte == 0);
             self.observed_zero_before_write
@@ -2574,8 +2586,9 @@ mod tests {
             let dst_width = destination.width() as usize;
             let dst_x = blit.dst_x as usize;
             let dst_y = blit.dst_y as usize;
-            let copy_w = blit.width as usize;
-            let copy_h = blit.height as usize;
+            let incremental = self.incremental && destination_has_history;
+            let copy_w = if incremental { 1 } else { blit.width as usize };
+            let copy_h = if incremental { 1 } else { blit.height as usize };
             let row_bytes = copy_w * 4;
             let dst_stride = dst_width * 4;
             let fill_row = vec![self.fill_byte; row_bytes];
@@ -2590,7 +2603,16 @@ mod tests {
                 raw_os_ticks: Some(0),
                 tick_format: TickFormat::RawQpc,
                 is_duplicate: false,
-                dirty_rects: Vec::new(),
+                dirty_rects: if incremental {
+                    vec![DirtyRect {
+                        x: 0,
+                        y: 0,
+                        width: 1,
+                        height: 1,
+                    }]
+                } else {
+                    Vec::new()
+                },
             }))
         }
     }
@@ -2615,6 +2637,7 @@ mod tests {
             Ok(Box::new(RegionClearBehaviorCapturer {
                 observed_zero_before_write: Arc::clone(&self.observed_zero_before_write),
                 fill_byte: self.fill_byte,
+                incremental: self.incremental,
             }))
         }
     }
@@ -2966,6 +2989,7 @@ mod tests {
             monitor: monitor.clone(),
             observed_zero_before_write: Arc::clone(&observed_zero_before_write),
             fill_byte: 0x11,
+            incremental: false,
         });
         let mut session = CaptureSession::builder()
             .target(CaptureTarget::Region(CaptureRegion::new(0, 0, 4, 4)?))
@@ -2987,6 +3011,90 @@ mod tests {
     }
 
     #[test]
+    fn fully_covered_region_capture_detaches_stale_shared_storage_without_copying()
+    -> CaptureResult<()> {
+        let observed_zero_before_write = Arc::new(Mutex::new(Vec::new()));
+        let monitor = MonitorId::from_parts(11, 13, 0, "shared-clear-monitor", true);
+        let backend: Arc<dyn CaptureBackend> = Arc::new(RegionClearBehaviorBackend {
+            monitor: monitor.clone(),
+            observed_zero_before_write: Arc::clone(&observed_zero_before_write),
+            fill_byte: 0x11,
+            incremental: false,
+        });
+        let (width, height) = (1024, 256);
+        let mut session = CaptureSession::builder()
+            .target(CaptureTarget::Region(CaptureRegion::new(
+                0, 0, width, height,
+            )?))
+            .with_backend(backend)
+            .build()?;
+        session.set_region_layout_for_test(mock_layout(&monitor, 0, 0, width, height));
+
+        let mut reuse = Frame::empty();
+        reuse.ensure_rgba_capacity(width, height)?;
+        reuse.as_mut_rgba_bytes().fill(0xAB);
+        let previous = reuse.clone();
+        let lease = reuse.shared_bytes();
+
+        let frame = session.capture_reuse(reuse)?;
+        assert!(frame.as_rgba_bytes().iter().all(|&byte| byte == 0x11));
+        assert_ne!(frame.as_rgba_bytes().as_ptr(), lease.as_ptr());
+        assert!(previous.as_rgba_bytes().iter().all(|&byte| byte == 0xAB));
+        assert!(lease.iter().all(|&byte| byte == 0xAB));
+        // Newly detached storage is initialized, rather than populated by a
+        // copy of stale pixels immediately replaced by the backend.
+        assert_eq!(
+            observed_zero_before_write.lock().unwrap().as_slice(),
+            &[true]
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn region_capture_preserves_shared_history_for_incremental_damage() -> CaptureResult<()> {
+        let observed_zero_before_write = Arc::new(Mutex::new(Vec::new()));
+        let monitor = MonitorId::from_parts(11, 13, 0, "incremental-monitor", true);
+        let backend: Arc<dyn CaptureBackend> = Arc::new(RegionClearBehaviorBackend {
+            monitor: monitor.clone(),
+            observed_zero_before_write: Arc::clone(&observed_zero_before_write),
+            fill_byte: 0x11,
+            incremental: true,
+        });
+        let mut session = CaptureSession::builder()
+            .target(CaptureTarget::Region(CaptureRegion::new(0, 0, 4, 4)?))
+            .with_backend(backend)
+            .build()?;
+        session.set_region_layout_for_test(mock_layout(&monitor, 0, 0, 4, 4));
+        let mut frame = Frame::empty();
+        session.capture_into(&mut frame)?;
+        frame.as_mut_rgba_bytes().fill(0xAB);
+        let previous = frame.clone();
+        let lease = frame.shared_bytes();
+
+        session.capture_into(&mut frame)?;
+        assert_eq!(&frame.as_rgba_bytes()[..4], &[0x11; 4]);
+        assert!(frame.as_rgba_bytes()[4..].iter().all(|&byte| byte == 0xAB));
+        assert_ne!(frame.as_rgba_bytes().as_ptr(), lease.as_ptr());
+        assert!(previous.as_rgba_bytes().iter().all(|&byte| byte == 0xAB));
+        assert!(lease.iter().all(|&byte| byte == 0xAB));
+        assert_eq!(
+            frame.metadata.dirty_rects,
+            vec![DirtyRect {
+                x: 0,
+                y: 0,
+                width: 1,
+                height: 1,
+            }]
+        );
+        assert_eq!(
+            observed_zero_before_write.lock().unwrap().as_slice(),
+            &[true, false]
+        );
+        assert!(session.region_output_cache_is_none());
+        Ok(())
+    }
+
+    #[test]
     fn partially_covered_region_capture_still_clears_initial_output() -> CaptureResult<()> {
         let observed_zero_before_write = Arc::new(Mutex::new(Vec::new()));
         let monitor = MonitorId::from_parts(17, 19, 0, "partial-clear-monitor", true);
@@ -2994,6 +3102,7 @@ mod tests {
             monitor: monitor.clone(),
             observed_zero_before_write: Arc::clone(&observed_zero_before_write),
             fill_byte: 0x22,
+            incremental: false,
         });
         let mut session = CaptureSession::builder()
             .target(CaptureTarget::Region(CaptureRegion::new(0, 0, 4, 4)?))
@@ -3004,8 +3113,12 @@ mod tests {
         let mut reuse = Frame::empty();
         reuse.ensure_rgba_capacity(4, 4)?;
         reuse.as_mut_rgba_bytes().fill(0xAB);
+        let previous = reuse.clone();
+        let lease = reuse.shared_bytes();
 
         let frame = session.capture_reuse(reuse)?;
+        assert!(previous.as_rgba_bytes().iter().all(|&byte| byte == 0xAB));
+        assert!(lease.iter().all(|&byte| byte == 0xAB));
         let bytes = frame.as_rgba_bytes();
         assert_eq!(
             observed_zero_before_write.lock().unwrap().as_slice(),

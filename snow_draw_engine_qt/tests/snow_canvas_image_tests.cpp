@@ -9,12 +9,14 @@
 #include <QSemaphore>
 #include <QThreadPool>
 
+#include <algorithm>
 #include <array>
 #include <cstring>
 #include <cstdlib>
 #include <iostream>
 #include <limits>
 #include <thread>
+#include <vector>
 
 namespace {
 void require(bool condition, const char* message) {
@@ -319,6 +321,175 @@ QImage alphaFixture(const QSize& size) {
     image.setOffset(QPoint(17, 29));
     image.setText(QStringLiteral("fixture"), QStringLiteral("alpha boundaries"));
     return image;
+}
+
+void zeroedImagesInitializePixelsAndPadding() {
+    require(snowCanvasAllocateZeroedImage({}, QImage::Format_RGBA8888).isNull(),
+            "empty zeroed images must fail");
+    require(snowCanvasAllocateZeroedImage(QSize(1, 1), QImage::Format_Invalid).isNull(),
+            "invalid zeroed image formats must fail");
+    for (int index = 1; index < QImage::NImageFormats; ++index) {
+        const auto format = static_cast<QImage::Format>(index);
+        const QImage row(33, 1, format);
+        const int largeHeight = static_cast<int>(
+            (qsizetype(snow::memory::kMappedPixelBufferMinimum) + row.bytesPerLine() - 1) /
+            row.bytesPerLine());
+        for (const QSize& size : {QSize(33, 5), QSize(33, largeHeight)}) {
+            QImage image = snowCanvasAllocateZeroedImage(size, format);
+            require(!image.isNull(), "zeroed images must allocate every valid format");
+            const uchar* pixels = image.constBits();
+            require(std::all_of(pixels, pixels + image.sizeInBytes(),
+                                [](uchar byte) { return byte == 0; }),
+                    "zeroed images must initialize every byte, including row padding");
+            if (image.hasAlphaChannel())
+                require(image.pixelColor(0, 0).alpha() == 0,
+                        "zeroed alpha images must start transparent");
+            if (image.sizeInBytes() >= qsizetype(snow::memory::kMappedPixelBufferMinimum)) {
+                const uchar* middle = pixels + image.sizeInBytes() / 2;
+                image = {};
+                require(!virtualMemoryMapped(middle),
+                        "zeroed large images must preserve immediate final page release");
+            }
+        }
+    }
+}
+
+void requireRgbaRowsEquivalent(const QImage& source, int firstRow, int rowCount,
+                               const QColorSpace& target = {},
+                               Qt::ImageConversionFlags flags = Qt::AutoColor) {
+    // Qt 6.11's const indexed color converter changes its source palette. Keep
+    // reference metadata independent so comparison never modifies the input.
+    const QImage reference = source.copy();
+    const auto originalPalette = source.colorTable();
+    const QImage expected =
+        target.isValid() ? reference.convertedToColorSpace(target, QImage::Format_RGBA8888, flags)
+                         : reference.convertToFormat(QImage::Format_RGBA8888, flags);
+    require(!expected.isNull(), "row reference must convert");
+    const qsizetype rowBytes = qsizetype(source.width()) * 4;
+    const qsizetype stride = rowBytes + 23;
+    constexpr qsizetype prefix = 17;
+    constexpr qsizetype suffix = 19;
+    constexpr uchar sentinel = 0xa7;
+    const qsizetype capacity = stride * rowCount;
+    std::vector<uchar> output(static_cast<std::size_t>(prefix + capacity + suffix), sentinel);
+    const uchar* sourcePixels = source.constBits();
+    require(snowCanvasCopyRgba8888Rows(source, firstRow, rowCount, output.data() + prefix, capacity,
+                                       stride, target, flags),
+            "borrowed RGBA rows must convert");
+    for (int row = 0; row < rowCount; ++row) {
+        const uchar* actual = output.data() + prefix + qsizetype(row) * stride;
+        if (std::memcmp(actual, expected.constScanLine(firstRow + row),
+                        static_cast<std::size_t>(rowBytes)) != 0) {
+            std::cerr << "row conversion source=" << source.format() << " size=" << source.width()
+                      << 'x' << source.height() << " target=" << target.isValid()
+                      << " source-profile=" << source.colorSpace().description().toStdString()
+                      << " equal-profile=" << (source.colorSpace() == target)
+                      << " first=" << firstRow << " count=" << rowCount << " row=" << row << '\n';
+            for (qsizetype byte = 0; byte < rowBytes; ++byte)
+                if (actual[byte] != expected.constScanLine(firstRow + row)[byte]) {
+                    std::cerr << "first differing byte=" << byte
+                              << " actual=" << static_cast<int>(actual[byte]) << " expected="
+                              << static_cast<int>(expected.constScanLine(firstRow + row)[byte])
+                              << '\n';
+                    break;
+                }
+        }
+        require(std::memcmp(actual, expected.constScanLine(firstRow + row),
+                            static_cast<std::size_t>(rowBytes)) == 0,
+                "borrowed RGBA rows must exactly match Qt pixel/color/alpha rounding");
+        require(std::all_of(actual + rowBytes, actual + stride,
+                            [](uchar byte) { return byte == sentinel; }),
+                "row conversion must leave destination padding unchanged");
+    }
+    require(std::all_of(output.begin(), output.begin() + prefix,
+                        [](uchar byte) { return byte == sentinel; }) &&
+                std::all_of(output.end() - suffix, output.end(),
+                            [](uchar byte) { return byte == sentinel; }),
+            "row conversion must remain within borrowed destination bounds");
+    require(source.constBits() == sourcePixels && source.colorTable() == originalPalette,
+            "row conversion must retain source storage, palette and lifetime");
+
+    // The last row does not need trailing padding in the destination capacity.
+    const qsizetype exactCapacity = (rowCount - 1) * stride + rowBytes;
+    require(snowCanvasCopyRgba8888Rows(source, firstRow, rowCount, output.data() + prefix,
+                                       exactCapacity, stride, target, flags),
+            "row conversion must accept a destination ending at the last pixel");
+}
+
+void borrowedRgbaRowsMatchQt() {
+    const QImage small = alphaFixture(QSize(65, 41));
+    for (int index = 1; index < QImage::NImageFormats; ++index) {
+        const QImage source = small.convertToFormat(static_cast<QImage::Format>(index));
+        require(!source.isNull(), "row format fixture must convert");
+        requireRgbaRowsEquivalent(source, 3, 31);
+    }
+    for (const QSize& size : {QSize(1031, 263), QSize(70001, 7), QSize(17, 20001)}) {
+        const QImage fixture = alphaFixture(size);
+        for (const auto format :
+             {QImage::Format_RGBA8888, QImage::Format_ARGB32_Premultiplied,
+              QImage::Format_RGBA64_Premultiplied, QImage::Format_RGBA16FPx4_Premultiplied,
+              QImage::Format_RGBA32FPx4, QImage::Format_Grayscale16, QImage::Format_Mono,
+              QImage::Format_MonoLSB, QImage::Format_Indexed8}) {
+            const QImage source = fixture.convertToFormat(format);
+            requireRgbaRowsEquivalent(source, 1, source.height() - 2);
+            requireRgbaRowsEquivalent(source, 1, source.height() - 2, QColorSpace::SRgb);
+        }
+    }
+    const auto dither =
+        Qt::ImageConversionFlags(Qt::PreferDither | Qt::OrderedDither | Qt::OrderedAlphaDither);
+    requireRgbaRowsEquivalent(small, 7, 23, {}, dither);
+    requireRgbaRowsEquivalent(small, 7, 23, QColorSpace::SRgb, dither);
+    const QImage indexed = small.convertToFormat(QImage::Format_Indexed8);
+    requireRgbaRowsEquivalent(indexed, 7, 23, QColorSpace::SRgb, dither);
+
+    const qsizetype paddedStride = small.bytesPerLine() + 32;
+    std::vector<uchar> storage(static_cast<std::size_t>(paddedStride * small.height()), 0x5a);
+    for (int y = 0; y < small.height(); ++y)
+        std::memcpy(storage.data() + qsizetype(y) * paddedStride, small.constScanLine(y),
+                    static_cast<std::size_t>(small.width()) * 4);
+    const auto original = storage;
+    QImage readOnly(static_cast<const uchar*>(storage.data()), small.width(), small.height(),
+                    paddedStride, small.format());
+    readOnly.setColorSpace(small.colorSpace());
+    requireRgbaRowsEquivalent(readOnly, 3, 29, QColorSpace::SRgb);
+    require(storage == original, "row conversion must not modify a padded read-only source");
+}
+
+void borrowedRgbaRowsRejectInvalidBoundsAndAliasing() {
+    QImage image = alphaFixture(QSize(17, 11));
+    constexpr qsizetype stride = 17 * 4 + 12;
+    std::array<uchar, static_cast<std::size_t>(stride * 11)> output{};
+    const auto before = output;
+    const auto reject = [&](int first, int count, uchar* destination, qsizetype capacity,
+                            qsizetype rowStride, const QColorSpace& target = {}) {
+        require(!snowCanvasCopyRgba8888Rows(image, first, count, destination, capacity, rowStride,
+                                            target),
+                "invalid or overlapping row destinations must fail");
+        require(output == before, "validation failure must leave destination untouched");
+    };
+    reject(-1, 1, output.data(), static_cast<qsizetype>(output.size()), stride);
+    reject(0, -1, output.data(), static_cast<qsizetype>(output.size()), stride);
+    reject(0, 0, output.data(), static_cast<qsizetype>(output.size()), stride);
+    reject(10, 2, output.data(), static_cast<qsizetype>(output.size()), stride);
+    reject(std::numeric_limits<int>::max(), 1, output.data(), static_cast<qsizetype>(output.size()),
+           stride);
+    reject(0, 1, nullptr, static_cast<qsizetype>(output.size()), stride);
+    reject(0, 1, output.data(), -1, stride);
+    reject(0, 1, output.data(), 17 * 4 - 1, stride);
+    reject(0, 1, output.data(), static_cast<qsizetype>(output.size()), -stride);
+    reject(0, 1, output.data(), static_cast<qsizetype>(output.size()), 17 * 4 - 1);
+    reject(0, 11, output.data(), static_cast<qsizetype>(output.size()),
+           std::numeric_limits<qsizetype>::max());
+    reject(0, 1, image.bits(), image.sizeInBytes(), image.bytesPerLine());
+    reject(0, 1, image.bits() + 1, image.sizeInBytes(), image.bytesPerLine());
+    image.setColorSpace({});
+    reject(0, 1, output.data(), static_cast<qsizetype>(output.size()), stride, QColorSpace::SRgb);
+    require(snowCanvasCopyRgba8888Rows(image, 0, 11, output.data(),
+                                       static_cast<qsizetype>(output.size()), stride),
+            "unprofiled images must support format-only row transfer");
+    require(!snowCanvasCopyRgba8888Rows({}, 0, 1, output.data(),
+                                        static_cast<qsizetype>(output.size()), stride),
+            "null row sources must fail");
 }
 
 void requireEquivalent(QImage actual, const QImage& expected, const char* message) {
@@ -636,6 +807,9 @@ int main() {
     monochromeImagesPreserveDefaultPalette();
     rasterOperationsPreservePixelsAndReleasePages();
     pixelArraysReleaseOriginalCapacity();
+    zeroedImagesInitializePixelsAndPadding();
+    borrowedRgbaRowsMatchQt();
+    borrowedRgbaRowsRejectInvalidBoundsAndAliasing();
     formatsAndAlphaBoundariesMatchQt();
     directRgba64ExpansionMatchesQt();
     arbitraryRotationsMatchQt();

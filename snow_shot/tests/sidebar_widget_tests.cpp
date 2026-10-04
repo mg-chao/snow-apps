@@ -72,7 +72,7 @@ int settingsNavigationPageCount() {
             std::get_if<snow_shot::presentation::settings::SettingsNavigationGroupDefinition>(
                 &node);
         if (group != nullptr && group->id == QStringLiteral("nav.settings")) {
-            return group->pages.size();
+            return static_cast<int>(group->pages.size());
         }
     }
     return 0;

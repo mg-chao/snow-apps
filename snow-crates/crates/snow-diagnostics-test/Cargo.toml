@@ -18,4 +18,5 @@ default = ["crash-diagnostics"]
 crash-diagnostics = []
 
 [dependencies]
+snow-core = { path = "../snow-core" }
 snow-diagnostics = { path = "../snow-diagnostics" }

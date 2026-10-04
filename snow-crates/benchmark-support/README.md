@@ -1,9 +1,17 @@
 # Memory optimization benchmarks
 
 These examples run deterministic workloads through production APIs. They compile
-against both the memory optimization branch and its parent revision. Each scenario
+against both the memory optimization branch and its pre-optimization revision. Each scenario
 must run in its own process. Build both checkouts with the same Rust toolchain,
-workspace release profile, lockfile, feature set, and environment.
+workspace release profile, third-party dependency versions, feature set, and environment.
+
+For this branch the full comparison is `5aff3a15` (the merged main branch before
+memory optimization) against `8c90efb6`. The intermediate `865805a0` already uses
+page-backed raster storage; comparing against it measures only the later copy
+reductions. Do not label that comparison as the complete branch improvement.
+The lockfiles differ by the added local `snow-memory` crate and references to it;
+all registry/Git package identities and checksums should match. Use each revision's
+locked file and record both hashes rather than substituting a mismatched lockfile.
 
 ```sh
 cd snow-crates
@@ -15,8 +23,8 @@ cargo build --release --locked --no-default-features \
   --features snow-ocr-process/dynamic-onnx-runtime
 ```
 
-The repository Cargo configuration places the executables in
-`build/cargo/release/examples/`. Invoke each executable with `SCENARIO SAMPLES`.
+Use an explicit, separate `CARGO_TARGET_DIR` for each revision; executables are
+then in its `release/examples/` directory. Invoke each executable with `SCENARIO SAMPLES`.
 The default is 31 samples; three warmups precede measurement. Debug builds are
 rejected. Baseline copies need the five example sources and this shared directory;
 they do not require manifest changes.
@@ -78,9 +86,10 @@ includes the canvas, old result, and new result, and its timing includes destruc
 of the old result. This models repeated result replacement; it does not measure
 the minimum memory for a single export.
 
-## Performance follow-up fixtures
+## Complete comparison including copy reductions
 
-The additional fixtures compare the branch before and after the production fixes.
+The additional fixtures measure the later production copy reductions and can
+also run against the full pre-optimization baseline.
 Copy the same sources and shared support directory into the comparison checkout.
 The reference example also needs its `[[example]]` entry with
 `required-features = ["perf-instrumentation"]` in that checkout's Cargo manifest.
@@ -88,11 +97,24 @@ The reference example also needs its `[[example]]` entry with
 ```sh
 CARGO_TARGET_DIR=/absolute/path/to/output cargo build --release --locked -j4 \
   --no-default-features \
-  -p snow-capture --example memory_overwrite_benchmark \
-  -p snow-stitch-images --example memory_reference_benchmark \
+  -p snow-capture --example memory_buffer_benchmark --example memory_overwrite_benchmark \
+  -p snow-stitch-images --example memory_paths_benchmark \
+    --example memory_snapshot_benchmark --example memory_reference_benchmark \
   -p snow-stitch-images-c --example memory_png_benchmark \
-  --features snow-stitch-images/perf-instrumentation
+  -p snow-recording-model --example memory_decode_benchmark \
+  -p snow-ocr-process --example memory_transfer_benchmark \
+  --features snow-stitch-images/perf-instrumentation,snow-ocr-process/dynamic-onnx-runtime
 ```
+
+Copy all eight example sources and `benchmark-support/memory.rs` unchanged into
+the baseline checkout. The pre-optimization stitch crate already has the same
+`perf-instrumentation` feature and production timing scopes; only the example
+registration is needed. Save the copied-source hashes, baseline-only manifest
+patch, build commands, compiler version, deployment target, lockfile hashes, and
+binary hashes with the results. Keep the production source at its exact revision.
+On macOS use the same `MACOSX_DEPLOYMENT_TARGET=15.0` for both builds and the same
+`RAYON_NUM_THREADS=4` when running the paired processes. Run the preserving capture
+mode as a control alongside the overwrite mode.
 
 Prefer separate target directories for comparison checkouts. When sharing a target
 directory, freeze each version's executables and force the changed packages to

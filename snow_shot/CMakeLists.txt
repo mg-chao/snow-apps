@@ -515,6 +515,7 @@ set_target_properties(snow_shot_image_codec_backend PROPERTIES
 set(SNOW_SHOT_IMAGE_CODEC_SOURCES
     src/image/snowimageqtcodec.h
     src/image/snowimageqtcodec.cpp
+    src/image/snowimageqtsrgbrowreader.h
     src/image/screenshotimageencoding.cpp
 )
 add_library(snow_shot_image_codec STATIC ${SNOW_SHOT_IMAGE_CODEC_SOURCES})
@@ -1555,6 +1556,15 @@ set(SNOW_SHOT_RECOGNITION_IMAGE_RENDER_SOURCES
     src/presentation/overlay/screenshotselectionshadowrenderer.cpp)
 
 if(SNOW_SHOT_BUILD_TESTS)
+    # Private C ABI names keep these fixtures' mocks distinct from the real
+    # exports in the Rust bundle used by unrelated transitive dependencies.
+    function(snow_shot_alias_test_rust_ffi target)
+        foreach(symbol IN LISTS ARGN)
+            string(REGEX REPLACE "^snow_" "snow_test_" alias "${symbol}")
+            target_compile_definitions(${target} PRIVATE "${symbol}=${alias}")
+        endforeach()
+    endfunction()
+
     add_test(NAME snow-shot-translation-catalog-tests
         COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tests/translation_catalog_tests.py")
     set_tests_properties(snow-shot-translation-catalog-tests PROPERTIES LABELS "unit")
@@ -1689,6 +1699,10 @@ if(SNOW_SHOT_BUILD_TESTS)
             STRIP_MSVC_DIRECTIVES)
         target_link_libraries(snow-shot-diagnostics-crash-tests PRIVATE snow_diagnostics_test)
         target_link_libraries(snow-shot-diagnostics-crash-tests PRIVATE snow_shot_diagnostics snow_shot_crash_bridge)
+        if(APPLE)
+            set_property(TARGET snow-shot-diagnostics-crash-tests PROPERTY
+                SNOW_RUST_BUNDLE_OVERRIDE snow_diagnostics_test)
+        endif()
         target_compile_definitions(snow-shot-diagnostics-crash-tests PRIVATE
             SNOW_TEST_CRASHPAD_HANDLER="${SNOW_CRASHPAD_HANDLER}")
         add_test(NAME snow-shot-diagnostics-crash-tests COMMAND snow-shot-diagnostics-crash-tests)
@@ -2594,6 +2608,15 @@ if(SNOW_SHOT_BUILD_TESTS)
         src/presentation/selector/screenshotselectorserviceclient.cpp
         src/presentation/services/screenshotclipboardservice.cpp
     )
+    snow_shot_alias_test_rust_ffi(snow-shot-window-element-api-tests
+        snow_ui_selector_service_create
+        snow_ui_selector_service_destroy
+        snow_ui_selector_service_invalidate_refinement
+        snow_ui_selector_service_query
+        snow_ui_selector_service_refine
+        snow_ui_selector_service_refresh
+        snow_ui_selector_service_refresh_with_displays
+        snow_ui_selector_service_release_cache)
     target_include_directories(snow-shot-window-element-api-tests PRIVATE
         "${CMAKE_CURRENT_SOURCE_DIR}/src/image"
         "${SNOW_SHOT_CAPTURE_CRATES_DIR}/crates/snow-ui-selector-c/include"
@@ -3010,6 +3033,20 @@ if(SNOW_SHOT_BUILD_TESTS)
         src/presentation/services/screenshotimagefileservice.cpp
         src/presentation/services/screenshotpdfexport.cpp
         src/presentation/capture/directcapturenative.cpp)
+    snow_shot_alias_test_rust_ffi(snow-shot-direct-capture-native-tests
+        snow_capture_desktop_session_capture
+        snow_capture_desktop_session_create
+        snow_capture_desktop_session_destroy
+        snow_capture_frame_lease_release
+        snow_capture_last_error_message
+        snow_capture_screenshot_result_destroy
+        snow_capture_screenshot_result_display_count
+        snow_capture_screenshot_result_display_geometry
+        snow_capture_screenshot_result_display_info
+        snow_capture_screenshot_result_display_retain
+        snow_capture_screenshot_result_focused_window_geometry
+        snow_capture_screenshot_result_focused_window_info
+        snow_capture_screenshot_result_focused_window_retain)
     target_include_directories(snow-shot-direct-capture-native-tests PRIVATE
         "${CMAKE_CURRENT_SOURCE_DIR}/include"
         "${CMAKE_CURRENT_SOURCE_DIR}/src/presentation/capture"
@@ -3043,6 +3080,34 @@ if(SNOW_SHOT_BUILD_TESTS)
         src/presentation/capture/screenshotcaptureworker.cpp
         src/presentation/capture/screenshotcapturepolicy.cpp
     )
+    snow_shot_alias_test_rust_ffi(snow-shot-capture-worker-tests
+        snow_capture_cancellation_token_cancel
+        snow_capture_cancellation_token_create
+        snow_capture_cancellation_token_destroy
+        snow_capture_cursor_snapshot_create
+        snow_capture_cursor_snapshot_destroy
+        snow_capture_desktop_layout_count
+        snow_capture_desktop_layout_destroy
+        snow_capture_desktop_layout_display
+        snow_capture_desktop_session_capture
+        snow_capture_desktop_session_capture_with_layout
+        snow_capture_desktop_session_create
+        snow_capture_desktop_session_destroy
+        snow_capture_desktop_session_layout_snapshot
+        snow_capture_desktop_session_prepare
+        snow_capture_desktop_session_refresh_layout
+        snow_capture_desktop_session_reset_to_prepared
+        snow_capture_desktop_session_state
+        snow_capture_frame_lease_release
+        snow_capture_last_error_message
+        snow_capture_screenshot_result_composite_cursor
+        snow_capture_screenshot_result_cursor_patch
+        snow_capture_screenshot_result_destroy
+        snow_capture_screenshot_result_display_count
+        snow_capture_screenshot_result_display_geometry
+        snow_capture_screenshot_result_display_info
+        snow_capture_screenshot_result_display_retain
+        snow_capture_screenshot_result_focused_window_geometry)
     target_include_directories(snow-shot-capture-worker-tests PRIVATE
         "${CMAKE_CURRENT_SOURCE_DIR}/include"
         "${CMAKE_CURRENT_SOURCE_DIR}/src/presentation/capture"
@@ -4619,6 +4684,7 @@ if(SNOW_SHOT_BUILD_TESTS)
         src/presentation/ocr/screenshotocrpresentation.cpp
         src/presentation/ocr/screenshotocrtextlayout.cpp
         tests/screenshot_export_artifact_tests.cpp
+        tests/screenshot_export_row_performance_benchmark.cpp
         include/snow_shot/presentation/screenshotclipboardservice.h
         include/snow_shot/presentation/screenshotexportartifact.h
         include/snow_shot/presentation/screenshotexportcoordinator.h
@@ -4654,7 +4720,8 @@ if(SNOW_SHOT_BUILD_TESTS)
         LABELS "unit" TIMEOUT 30
         ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
     get_target_property(_snow_mcp_test_sources snow-shot-export-artifact-tests SOURCES)
-    list(REMOVE_ITEM _snow_mcp_test_sources tests/screenshot_export_artifact_tests.cpp)
+    list(REMOVE_ITEM _snow_mcp_test_sources tests/screenshot_export_artifact_tests.cpp
+        tests/screenshot_export_row_performance_benchmark.cpp)
     add_executable(snow-shot-mcp-tests ${_snow_mcp_test_sources}
         tests/screenshot_mcp_tests.cpp
         include/snow_shot/app/mcp/screenshotmcpserver.h
@@ -8499,7 +8566,7 @@ if(APPLE AND SNOW_SHOT_BUILD_TESTS)
         include/snow_shot/app/featureavailability.h
         src/app/featureavailability.cpp)
     target_include_directories(snow-shot-macos-shell-policy-tests PRIVATE include)
-    target_link_libraries(snow-shot-macos-shell-policy-tests PRIVATE Qt6::Core)
+    target_link_libraries(snow-shot-macos-shell-policy-tests PRIVATE Qt6::Core Qt6::Gui)
     add_test(NAME snow-shot-macos-shell-policy-tests
         COMMAND snow-shot-macos-shell-policy-tests)
     set_tests_properties(snow-shot-macos-shell-policy-tests PROPERTIES
@@ -8731,6 +8798,7 @@ if(APPLE AND SNOW_SHOT_BUILD_TESTS)
     target_include_directories(snow-shot-macos-screenshot-native-smoke PRIVATE include
         "${SNOW_SHOT_CAPTURE_CRATES_DIR}/crates/snow-capture-c/include")
     target_link_libraries(snow-shot-macos-screenshot-native-smoke PRIVATE Qt6::Widgets snow_capture_c snow_canvas_image
+        snow_image::snow_image_static
         "-framework AppKit" "-framework ApplicationServices")
     add_test(NAME snow-shot-macos-screenshot-native-smoke COMMAND snow-shot-macos-screenshot-native-smoke)
     set_tests_properties(snow-shot-macos-screenshot-native-smoke PROPERTIES LABELS "interactive;macos" SKIP_RETURN_CODE 77 TIMEOUT 60)
@@ -8756,6 +8824,7 @@ if(APPLE AND SNOW_SHOT_BUILD_TESTS)
     target_include_directories(snow-shot-macos-recapture-native-tests PRIVATE include
         "${SNOW_SHOT_CAPTURE_CRATES_DIR}/crates/snow-capture-c/include")
     target_link_libraries(snow-shot-macos-recapture-native-tests PRIVATE Qt6::Widgets snow_capture_c
+        snow_shot_login_item
         "-framework AppKit" "-framework ApplicationServices")
     add_test(NAME snow-shot-macos-recapture-native-tests COMMAND snow-shot-macos-recapture-native-tests)
     set_tests_properties(snow-shot-macos-recapture-native-tests PROPERTIES
@@ -9140,9 +9209,7 @@ if(SNOW_SHOT_BUILD_TESTS OR SNOW_APPS_BUILD_BENCHMARKS)
         src/presentation/toolbar/floatingtoolbarcontroller.cpp
         src/presentation/tools/screenshottoolbarmainpanel.cpp
         src/presentation/tools/screenshottoolpalettebuttons.cpp
-        src/presentation/services/screenshotclipboardcontent.cpp
-        src/presentation/services/screenshotclipboardservice.cpp
-        src/presentation/services/screenshotclipboarddibdecoder_avx2.cpp)
+        src/presentation/services/screenshotclipboardservice.cpp)
     set(_snow_floating_targets)
     if(SNOW_SHOT_BUILD_TESTS)
         add_executable(snow-shot-floating-toolbar-tests ${_snow_floating_test_sources})

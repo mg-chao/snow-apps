@@ -6,8 +6,10 @@
 //! `cargo run --release -p snow-stitch-images --no-default-features
 //! --features perf-instrumentation --example memory_reference_benchmark --
 //! stitch-reference-vertical 31`
-//! Also supports stitch-reference-horizontal. Copy this same source and example
-//! declaration to the comparison checkout and enable its existing perf feature.
+//! Also supports stitch-reference-horizontal, stitch-reference-vertical-4k and
+//! stitch-reference-horizontal-4k. The 4K cases exercise a 31.6 MiB comparison
+//! viewport. Copy this same source and example declaration to the comparison
+//! checkout and enable its existing perf feature.
 
 #[path = "../../../benchmark-support/memory.rs"]
 mod memory;
@@ -47,8 +49,13 @@ fn main() {
     let (width, height, axis) = match scenario.as_str() {
         "stitch-reference-vertical" => (1024, 512, StitchAxis::Vertical),
         "stitch-reference-horizontal" => (512, 1024, StitchAxis::Horizontal),
+        "stitch-reference-vertical-4k" => (3840, 2160, StitchAxis::Vertical),
+        "stitch-reference-horizontal-4k" => (2160, 3840, StitchAxis::Horizontal),
         _ => panic!("unknown reference scenario: {scenario}"),
     };
+    const CONTAINED_POSITIONS: [u32; 4] = [32, 64, 48, 80];
+    assert!(axis.primary_extent(width, height) > 128);
+    assert!(CONTAINED_POSITIONS.iter().all(|position| *position < 128));
     memory::phase(&scenario, "empty", width, height, 0);
     let mut stitcher = Stitcher::new(StitchOptions {
         axis,
@@ -67,7 +74,8 @@ fn main() {
             .accepted_offset
             .is_some_and(|offset| (offset + 128).abs() <= 2)
     );
-    let frames: Vec<_> = [32, 64, 48, 80]
+    let completed_dimensions = stitcher.image_dimensions().unwrap();
+    let frames: Vec<_> = CONTAINED_POSITIONS
         .into_iter()
         .map(|position| texture(width, height, position, axis))
         .collect();
@@ -77,6 +85,7 @@ fn main() {
     for frame in &frames {
         let decision = stitcher.push(frame.clone()).unwrap().unwrap();
         assert_eq!(decision.branch, StitchBranch::Contained);
+        assert_eq!(stitcher.image_dimensions(), Some(completed_dimensions));
     }
     stitcher.clear_decisions();
     let expected_output = stitcher.image().unwrap();
@@ -85,8 +94,10 @@ fn main() {
     let canvas_dimensions = stitcher.image_dimensions().unwrap();
     let viewport_bytes = width as usize * height as usize * 4;
     // Four input fixtures, two live viewport frames, the live tiled canvas,
-    // and the independent retained validation output. Estimator internals and
-    // spare tile capacity are observed by allocator/RSS metrics, not this count.
+    // and the independent retained validation output. This shared logical count
+    // deliberately excludes implementation scratch: the private comparison
+    // cache (one 31.6 MiB viewport at 4K), estimator internals and spare tiles are
+    // observed by RSS/allocator metrics rather than hidden in a fixed estimate.
     let logical_bytes = viewport_bytes * (frames.len() + 2) + expected_output.pixels().len() * 2;
     memory::phase(&scenario, "setup", width, height, logical_bytes);
     let mut scopes = Vec::with_capacity(repetitions + 3);
@@ -152,6 +163,18 @@ fn main() {
     assert_eq!(stitcher.image().unwrap(), expected_output);
     drop(expected_output);
     drop(frames);
+    if scenario.ends_with("-4k") {
+        // With fixture and validation owners released, isolate the active
+        // session's residency, including any retained comparison viewport.
+        let canvas_bytes = canvas_dimensions.0 as usize * canvas_dimensions.1 as usize * 4;
+        memory::phase(
+            &scenario,
+            "session",
+            width,
+            height,
+            viewport_bytes * 2 + canvas_bytes,
+        );
+    }
     drop(stitcher);
     memory::phase(&scenario, "drop", width, height, 0);
 }

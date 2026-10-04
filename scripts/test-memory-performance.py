@@ -69,6 +69,22 @@ class CampaignTests(unittest.TestCase):
         REPORT.summarize(root, list(overlays), root, sampled_memory_phases)
         return json.loads((root / "summary.json").read_text())
 
+    def test_process_without_parsed_timing_is_rejected_even_when_outputs_pair(self):
+        for name, rows in (("unrecognized", "Unrecognized human-readable report"),
+                           ("memory-only", [self.checkpoint(100, "live")])):
+            with self.subTest(name=name):
+                root = self.campaign(name=name, rows=rows)
+                with self.assertRaisesRegex(ValueError, "No parsed timing for process"):
+                    self.summary(root)
+                self.assertFalse((root / "summary.json").exists())
+
+    def test_missing_timing_in_same_round_of_both_versions_is_rejected(self):
+        root = self.campaign(rounds=3, rows=lambda _, index: (
+            "Unrecognized human-readable report" if index == 2 else [sample()]))
+        with self.assertRaisesRegex(ValueError, "No parsed timing for process: job/after/round-2"):
+            self.summary(root)
+        self.assertFalse((root / "summary.json").exists())
+
     def test_dimensions_and_iteration_checksums_are_not_pooled(self):
         rows = [sample(width=10, iteration=0, checksum=11),
                 sample(width=10, iteration=1, checksum=12),
@@ -370,20 +386,39 @@ class PlanTests(unittest.TestCase):
         examples = {path.stem: path for path in
                     (ROOT.parent / "snow-crates/crates").glob("*/examples/memory_*benchmark.rs")}
         rust_jobs = [job for job in plan["jobs"] if job["name"].startswith("rust-")]
-        self.assertEqual(len(rust_jobs), 14)
+        self.assertEqual(len(rust_jobs), 19)
         selected = {}
         for job in rust_jobs:
             command = job["commands"]["before"]
             binary = Path(command[0]).name
             self.assertIn(binary, examples)
-            supported = set(re.findall(r'"((?:capture|stitch|recording|ocr)-[a-z-]+)"',
+            supported = set(re.findall(r'"((?:capture|stitch|recording|ocr|scrolling)-[a-z-]+|overwrite|preserve)"',
                                        examples[binary].read_text()))
+            if binary == "memory_overwrite_benchmark":
+                supported.discard("capture-full-overwrite")
             self.assertIn(command[1], supported)
             selected.setdefault(binary, set()).add(command[1])
         for binary, scenarios in selected.items():
-            supported = set(re.findall(r'"((?:capture|stitch|recording|ocr)-[a-z-]+)"',
+            supported = set(re.findall(r'"((?:capture|stitch|recording|ocr|scrolling)-[a-z-]+|overwrite|preserve)"',
                                        examples[binary].read_text()))
+            if binary == "memory_overwrite_benchmark":
+                supported.discard("capture-full-overwrite")
             self.assertEqual(scenarios, supported)
+
+    def test_production_overwrite_reference_and_export_paths_are_paired(self):
+        plan = self.generate(("--before-rust", str(self.root / "rust-before"),
+                              "--after-rust", str(self.root / "rust-after"), "--samples", "23"))
+        jobs = {job["name"]: job for job in plan["jobs"]}
+        for name, argument, samples in (
+            ("rust-capture-full-overwrite", "overwrite", "23"),
+            ("rust-capture-full-preserve", "preserve", "23"),
+            ("rust-stitch-reference-vertical", "stitch-reference-vertical", "23"),
+            ("rust-stitch-reference-horizontal", "stitch-reference-horizontal", "23"),
+            ("rust-scrolling-png-export", "scrolling-png-export", "7"),
+        ):
+            before, after = jobs[name]["commands"].values()
+            self.assertEqual(before[1:], [argument, samples])
+            self.assertEqual(after[1:], before[1:])
 
     def test_all_jobs_pair_identical_arguments_and_absolute_executables(self):
         plan = self.generate(("--samples", "23"))

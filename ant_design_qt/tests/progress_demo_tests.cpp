@@ -234,7 +234,7 @@ int main(int argc, char** argv) {
   languageChangePreservesState(app, page);
   circularLayoutStaysCompact(page);
   const QStringList arguments = app.arguments();
-  const int renderIndex = arguments.indexOf(QStringLiteral("--render-dir"));
+  const qsizetype renderIndex = arguments.indexOf(QStringLiteral("--render-dir"));
   if (renderIndex >= 0) {
     require(renderIndex + 1 < arguments.size(), "--render-dir requires a directory path");
     const QString directory = arguments.at(renderIndex + 1);

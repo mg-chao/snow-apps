@@ -1,5 +1,6 @@
 #include "snow_shot/presentation/screenshotocrrecognitionservice.h"
 #include "snow_shot/diagnostics/diagnostics.h"
+#include "../src/presentation/ocr/screenshotocrtransport.h"
 
 #include <QCoreApplication>
 #include <QDataStream>
@@ -15,12 +16,15 @@
 #include <QTemporaryDir>
 #include <QThread>
 
+#include <algorithm>
 #include <cstdio>
+#include <array>
 #include <cstdlib>
 #include <functional>
 #include <iostream>
 #include <thread>
 #include <mutex>
+#include <vector>
 #ifdef Q_OS_WIN
 #include <Windows.h>
 #include <fcntl.h>
@@ -60,6 +64,82 @@ QList<QJsonObject> recordsFor(const QString& event) {
 }
 QList<QJsonObject> processExits() {
     return recordsFor(QStringLiteral("ocr.process_exit"));
+}
+
+void imageTransfersConvertDirectlyWithoutPublishingReady() {
+    using namespace snow_shot::ocr;
+    QImage fixture(17, 11, QImage::Format_RGBA8888);
+    for (int y = 0; y < fixture.height(); ++y)
+        for (int x = 0; x < fixture.width(); ++x)
+            fixture.setPixelColor(
+                x, y,
+                QColor((x * 17) % 256, (y * 23) % 256, (x + y) % 256, (x * 13 + y * 11) % 256));
+    const qsizetype bytes = fixture.width() * fixture.height() * 4;
+    constexpr qsizetype trailingGuard = 17;
+    constexpr uchar sentinel = 0xa9;
+    for (const auto format :
+         {QImage::Format_RGBA8888, QImage::Format_ARGB32_Premultiplied, QImage::Format_RGB888,
+          QImage::Format_RGBA64_Premultiplied, QImage::Format_RGBA32FPx4}) {
+        const QImage source = fixture.convertToFormat(format);
+        const QImage expected = source.convertToFormat(QImage::Format_RGBA8888);
+        std::vector<uchar> slot(static_cast<std::size_t>(kSlotHeaderBytes + bytes + trailingGuard),
+                                sentinel);
+        writeU32(slot.data() + kSlotStateOffset, kSlotReady);
+        require(transport_detail::copyImageToTransferSlot(source, slot.data(),
+                                                          kSlotHeaderBytes + bytes, 0xabcdef0123),
+                "OCR staging must directly convert every supported source format");
+        const QByteArray header(reinterpret_cast<const char*>(slot.data()), kSlotHeaderBytes);
+        const auto field = [&header](qsizetype offset) {
+            quint32 value = 0;
+            require(takeU32(header, offset, &value), "OCR slot field must fit its header");
+            return value;
+        };
+        qsizetype sequenceOffset = kSlotSequenceOffset;
+        quint64 sequence = 0;
+        require(takeU64(header, sequenceOffset, &sequence) && sequence == 0xabcdef0123 &&
+                    field(kSlotStateOffset) == kSlotFree &&
+                    field(kSlotWidthOffset) == static_cast<quint32>(source.width()) &&
+                    field(kSlotHeightOffset) == static_cast<quint32>(source.height()) &&
+                    field(kSlotStrideOffset) == static_cast<quint32>(source.width()) * 4 &&
+                    field(kSlotBytesOffset) == static_cast<quint32>(bytes) &&
+                    field(kSlotMagicOffset) == kSlotMagic,
+                "OCR staging must write exact geometry without publishing Ready");
+        for (int row = 0; row < source.height(); ++row)
+            require(std::memcmp(slot.data() + kSlotHeaderBytes + row * source.width() * 4,
+                                expected.constScanLine(row),
+                                static_cast<std::size_t>(source.width()) * 4) == 0,
+                    "direct OCR transfer must match Qt alpha and format conversion");
+        require(std::all_of(slot.end() - trailingGuard, slot.end(),
+                            [](uchar value) { return value == sentinel; }),
+                "OCR staging must stay within slot capacity");
+    }
+    std::array<uchar, 64> slot{};
+    const auto failUnpublished = [&](const QImage& source, qsizetype capacity) {
+        slot.fill(sentinel);
+        writeU32(slot.data() + kSlotStateOffset, kSlotReady);
+        require(!transport_detail::copyImageToTransferSlot(source, slot.data(), capacity, 7),
+                "invalid OCR transfer staging must fail");
+        const QByteArray header(reinterpret_cast<const char*>(slot.data()), kSlotHeaderBytes);
+        qsizetype stateOffset = kSlotStateOffset;
+        quint32 state = kSlotReady;
+        require(takeU32(header, stateOffset, &state) && state == kSlotFree,
+                "failed OCR staging must leave Ready unpublished");
+        require(std::all_of(slot.begin() + kSlotHeaderBytes, slot.end(),
+                            [](uchar value) { return value == sentinel; }),
+                "OCR capacity failure must not write pixel bytes");
+    };
+    failUnpublished(fixture, static_cast<qsizetype>(slot.size()));
+    failUnpublished({}, static_cast<qsizetype>(slot.size()));
+    // An independently wrapped shared slot must not be reused as its own
+    // conversion source. This fails after staging has marked the slot Free.
+    const QImage overlapping(static_cast<const uchar*>(slot.data() + kSlotHeaderBytes), 1, 1, 4,
+                             QImage::Format_RGBA8888);
+    failUnpublished(overlapping, static_cast<qsizetype>(slot.size()));
+    require(!transport_detail::copyImageToTransferSlot(fixture, nullptr, 0, 7),
+            "absent OCR mappings must reject staging");
+    require(
+        !transport_detail::copyImageToTransferSlot(fixture, slot.data(), kSlotHeaderBytes - 1, 7),
+        "OCR mappings shorter than a header must reject staging");
 }
 } // namespace
 
@@ -234,6 +314,7 @@ int runOcrLifecycleChild() {
 }
 
 void ocrProcessLifecycleTests() {
+    imageTransfersConvertDirectlyWithoutPublishingReady();
     using namespace snow_shot::diagnostics;
     QTemporaryDir directory;
     require(directory.isValid(), "lifecycle fixture directory must exist");

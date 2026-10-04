@@ -68,19 +68,20 @@ inline TextureArrayTilePlan textureArrayTilePlan(const QSize& imageSize, int max
     std::uint64_t bestCost = std::numeric_limits<std::uint64_t>::max();
     std::uint64_t bestLayers = std::numeric_limits<std::uint64_t>::max();
     for (const int tileHeight : dimensions) {
-        const std::uint64_t rows =
-            (static_cast<std::uint64_t>(imageSize.height()) + tileHeight - 1U) /
-            static_cast<std::uint64_t>(tileHeight);
+        const std::uint64_t rows = (static_cast<std::uint64_t>(imageSize.height()) +
+                                    static_cast<std::uint64_t>(tileHeight) - 1U) /
+                                   static_cast<std::uint64_t>(tileHeight);
         if (rows > static_cast<std::uint64_t>(maximumLayers))
             continue;
         for (const int tileWidth : dimensions) {
-            const std::uint64_t columns =
-                (static_cast<std::uint64_t>(imageSize.width()) + tileWidth - 1U) /
-                static_cast<std::uint64_t>(tileWidth);
+            const std::uint64_t columns = (static_cast<std::uint64_t>(imageSize.width()) +
+                                           static_cast<std::uint64_t>(tileWidth) - 1U) /
+                                          static_cast<std::uint64_t>(tileWidth);
             if (columns > static_cast<std::uint64_t>(maximumLayers) / rows)
                 continue;
             const std::uint64_t layers = columns * rows;
-            const std::uint64_t layerPixels = static_cast<std::uint64_t>(tileWidth) * tileHeight;
+            const std::uint64_t layerPixels =
+                static_cast<std::uint64_t>(tileWidth) * static_cast<std::uint64_t>(tileHeight);
             if (layerPixels >
                 (std::numeric_limits<std::uint64_t>::max() - layers * kLayerPenaltyPixels) /
                     layers) {
@@ -99,7 +100,8 @@ inline TextureArrayTilePlan textureArrayTilePlan(const QSize& imageSize, int max
     if (!best.layerSize.isValid())
         return {};
 
-    best.tiles.reserve(static_cast<std::size_t>(best.columns) * best.rows);
+    best.tiles.reserve(static_cast<std::size_t>(best.columns) *
+                       static_cast<std::size_t>(best.rows));
     for (int row = 0; row < best.rows; ++row) {
         const int y = row * best.layerSize.height();
         const int height = std::min(best.layerSize.height(), imageSize.height() - y);

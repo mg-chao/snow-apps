@@ -412,7 +412,7 @@ bool receiptFromJson(const QJsonValue& value, snow::image::EncodedArtifactReceip
     if (sampling >= 0) {
         parsed.jpeg_chroma_subsampling = static_cast<snow::image::ChromaSubsampling>(sampling);
     }
-    parsed.emitted_frame_extents.reserve(frames.size());
+    parsed.emitted_frame_extents.reserve(static_cast<std::size_t>(frames.size()));
     for (const auto& frameValue : frames) {
         if (!frameValue.isObject()) {
             setError(error, QStringLiteral("The encoded artifact frame extent is malformed."));

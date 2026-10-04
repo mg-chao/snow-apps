@@ -24,6 +24,7 @@
 #include <array>
 #include <atomic>
 #include <cmath>
+#include <cstdint>
 #include <cstring>
 #include <limits>
 #include <mutex>
@@ -459,6 +460,123 @@ QImage snowCanvasAllocateImage(const QSize& size, QImage::Format format) {
     }
 }
 
+QImage snowCanvasAllocateZeroedImage(const QSize& size, QImage::Format format) {
+    QImage image = snowCanvasAllocateImage(size, format);
+    if (!image.isNull() && image.sizeInBytes() < qsizetype(snow::memory::kMappedPixelBufferMinimum))
+        std::memset(image.bits(), 0, static_cast<std::size_t>(image.sizeInBytes()));
+    return image;
+}
+
+bool snowCanvasCopyRgba8888Rows(const QImage& image, int firstRow, int rowCount, uchar* destination,
+                                qsizetype destinationBytes, qsizetype destinationStride,
+                                const QColorSpace& colorSpace, Qt::ImageConversionFlags flags) {
+    if (image.isNull() || firstRow < 0 || rowCount <= 0 || rowCount > image.height() ||
+        firstRow > image.height() - rowCount || destination == nullptr || destinationBytes < 0)
+        return false;
+    constexpr auto maximum = std::numeric_limits<qsizetype>::max();
+    if (qsizetype(image.width()) > maximum / 4)
+        return false;
+    const qsizetype rowBytes = qsizetype(image.width()) * 4;
+    if (destinationStride < rowBytes ||
+        qsizetype(rowCount - 1) > (maximum - rowBytes) / destinationStride)
+        return false;
+    const qsizetype required = qsizetype(rowCount - 1) * destinationStride + rowBytes;
+    if (destinationBytes < required || (colorSpace.isValid() && !image.colorSpace().isValid()))
+        return false;
+    const auto sourceAddress = reinterpret_cast<std::uintptr_t>(image.constBits());
+    const auto destinationAddress = reinterpret_cast<std::uintptr_t>(destination);
+    constexpr auto addressMaximum = std::numeric_limits<std::uintptr_t>::max();
+    const auto sourceBytes = static_cast<std::uintptr_t>(image.sizeInBytes());
+    const auto destinationExtent = static_cast<std::uintptr_t>(required);
+    if (sourceBytes > addressMaximum - sourceAddress ||
+        destinationExtent > addressMaximum - destinationAddress ||
+        (sourceAddress < destinationAddress + destinationExtent &&
+         destinationAddress < sourceAddress + sourceBytes))
+        return false;
+
+    const bool transformColor = colorSpace.isValid() && image.colorSpace() != colorSpace;
+    const auto copyRows = [&](const QImage& converted) {
+        if (converted.isNull())
+            return false;
+        for (int row = 0; row < rowCount; ++row)
+            std::memcpy(destination + qsizetype(row) * destinationStride,
+                        converted.constScanLine(firstRow + row),
+                        static_cast<std::size_t>(rowBytes));
+        return true;
+    };
+    if (!transformColor && image.format() == QImage::Format_RGBA8888)
+        return copyRows(image);
+
+    try {
+        if ((flags & Qt::PreferDither) && (flags & Qt::Dither_Mask) != Qt::ThresholdDither) {
+            // Qt 6.11's indexed color converter writes the palette of its
+            // shallow source copy. Give that path independent image metadata
+            // while borrowing the same immutable pixels for this call.
+            QImage view(image.constBits(), image.width(), image.height(), image.bytesPerLine(),
+                        image.format());
+            view.setColorTable(image.colorTable());
+            view.setColorSpace(image.colorSpace());
+            return copyRows(transformColor ? view.convertedToColorSpace(
+                                                 colorSpace, QImage::Format_RGBA8888, flags)
+                                           : view.convertToFormat(QImage::Format_RGBA8888, flags));
+        }
+
+        // A tile, including Qt's highest-precision intermediate format, is at
+        // most 256 KiB. Columns are byte-aligned even for monochrome sources.
+        constexpr int maximumColumns = 256 * 1024 / 16;
+        const int columns = std::min(image.width(), maximumColumns);
+        const int rows = 256 * 1024 / (columns * 16);
+        const qsizetype columnsOfTiles = (qsizetype(image.width()) + columns - 1) / columns;
+        const qsizetype rowsOfTiles = (qsizetype(rowCount) + rows - 1) / rows;
+        const auto palette = image.colorTable();
+        const auto sourceColorSpace = image.colorSpace();
+        const QColorTransform transform =
+            transformColor ? sourceColorSpace.transformationToColorSpace(colorSpace)
+                           : QColorTransform{};
+        const uchar* source = image.constBits();
+        const qsizetype sourceStride = image.bytesPerLine();
+        const int sourceDepth = image.depth();
+        std::atomic<bool> failed{false};
+        processChunks(
+            columnsOfTiles * rowsOfTiles, qsizetype(image.width()) * rowCount,
+            [&](qsizetype chunk) {
+                if (failed.load(std::memory_order_relaxed))
+                    return;
+                try {
+                    const int x = static_cast<int>(chunk % columnsOfTiles) * columns;
+                    const int y = static_cast<int>(chunk / columnsOfTiles) * rows;
+                    const int width = std::min(columns, image.width() - x);
+                    const int height = std::min(rows, rowCount - y);
+                    QImage view(source + qsizetype(firstRow + y) * sourceStride +
+                                    qsizetype(x) * sourceDepth / 8,
+                                width, height, sourceStride, image.format());
+                    view.setColorTable(palette);
+                    view.setColorSpace(sourceColorSpace);
+                    const QImage converted =
+                        !transformColor ? view.convertToFormat(QImage::Format_RGBA8888, flags)
+                        : image.format() <= QImage::Format_Indexed8
+                            // Qt converts the global palette before expanding
+                            // pixels; colorTransformed follows a different route.
+                            ? view.convertedToColorSpace(colorSpace, QImage::Format_RGBA8888, flags)
+                            : view.colorTransformed(transform, QImage::Format_RGBA8888, flags);
+                    if (converted.isNull()) {
+                        failed.store(true, std::memory_order_relaxed);
+                        return;
+                    }
+                    for (int row = 0; row < height; ++row)
+                        std::memcpy(
+                            destination + qsizetype(y + row) * destinationStride + qsizetype(x) * 4,
+                            converted.constScanLine(row), static_cast<std::size_t>(width) * 4);
+                } catch (const std::bad_alloc&) {
+                    failed.store(true, std::memory_order_relaxed);
+                }
+            });
+        return !failed.load(std::memory_order_relaxed);
+    } catch (const std::bad_alloc&) {
+        return false;
+    }
+}
+
 QImage snowCanvasCopyImage(const QImage& image, const QRect& rect) {
     if (image.isNull())
         return {};
@@ -612,13 +730,9 @@ QImage snowCanvasTransformImage(const QImage& image, const QTransform& transform
             const auto format = image.format() == QImage::Format_RGB32
                                     ? QImage::Format_ARGB32_Premultiplied
                                     : image.format();
-            QImage result = snowCanvasAllocateImage(paintSize, format);
+            QImage result = snowCanvasAllocateZeroedImage(paintSize, format);
             if (result.isNull())
                 return {};
-            // Mapped allocations already contain transparent zeros. Only Qt's
-            // uninitialized small heap raster needs an explicit initialization.
-            if (result.sizeInBytes() < qsizetype(snow::memory::kMappedPixelBufferMinimum))
-                result.fill(0);
             // Match Qt's DPR-neutral source view. Unusual strides with a DPR
             // retain the native fallback rather than changing its row layout.
             const QImage view =
@@ -740,10 +854,15 @@ QImage snowCanvasTransformImage(const QImage& image, const QTransform& transform
         format = image.depth() > 32 ? QImage::Format_RGBA64_Premultiplied
                                     : QImage::Format_ARGB32_Premultiplied;
     }
-    QImage result = snowCanvasAllocateImage(size, format);
+    const bool transparentZero = image.hasAlphaChannel() ||
+                                 format == QImage::Format_ARGB32_Premultiplied ||
+                                 format == QImage::Format_RGBA64_Premultiplied;
+    QImage result = transparentZero ? snowCanvasAllocateZeroedImage(size, format)
+                                    : snowCanvasAllocateImage(size, format);
     if (result.isNull())
         return {};
-    result.fill(Qt::transparent);
+    if (!transparentZero)
+        result.fill(Qt::transparent);
     QPainter painter(&result);
     painter.setRenderHint(QPainter::Antialiasing, mode == Qt::SmoothTransformation);
     painter.setRenderHint(QPainter::SmoothPixmapTransform, mode == Qt::SmoothTransformation);

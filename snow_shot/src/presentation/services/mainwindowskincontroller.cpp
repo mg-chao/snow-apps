@@ -148,17 +148,16 @@ MainWindowSkinFrame prepareMainWindowSkin(const QImage& source, const QSize& log
     const QRectF sampled((source.width() - sampledSize.width()) * cropFactors.x(),
                          (source.height() - sampledSize.height()) * cropFactors.y(),
                          sampledSize.width(), sampledSize.height());
-    QImage prepared = snowCanvasAllocateImage(content + QSize(padding * 2, padding * 2),
-                                              QImage::Format_ARGB32_Premultiplied);
+    QImage prepared = snowCanvasAllocateZeroedImage(content + QSize(padding * 2, padding * 2),
+                                                    QImage::Format_ARGB32_Premultiplied);
     if (prepared.isNull()) {
         return {};
     }
-    prepared.fill(Qt::transparent);
     drawClampedImage(prepared, source,
                      sampled.adjusted(-padding / imageScale, -padding / imageScale,
                                       padding / imageScale, padding / imageScale));
     if (padding > 0) {
-        QImage filtered = snowCanvasCopyImage(prepared);
+        QImage filtered = snowCanvasAllocateZeroedImage(prepared.size(), prepared.format());
         std::optional<SnowCanvasRegionFilterScratch> temporaryScratch;
         if (scratch == nullptr) {
             temporaryScratch.emplace(0);

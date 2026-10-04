@@ -466,7 +466,7 @@ int main(int argc, char** argv) {
     styles::ThemeManager::instance().initialize(app);
     LanguageManager::instance().initialize();
     const auto args = app.arguments();
-    const int render = args.indexOf(QStringLiteral("--render"));
+    const qsizetype render = args.indexOf(QStringLiteral("--render"));
 #ifdef Q_OS_WIN
     if (args.contains(QStringLiteral("--native"))) {
         try {

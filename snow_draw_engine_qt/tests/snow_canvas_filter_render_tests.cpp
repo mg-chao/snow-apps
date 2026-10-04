@@ -240,6 +240,37 @@ void publicSingleThreadedRegionFilterMatchesDefaultAndRetainsBoundedScratch() {
             "public scratch diagnostics should report its bounded retained workspace");
 }
 
+void fullGaussianDestinationDoesNotNeedSourceCopy() {
+    for (const QSize size : {QSize(73, 51), QSize(1025, 513)}) {
+        QImage source(size, QImage::Format_ARGB32_Premultiplied);
+        for (int y = 0; y < size.height(); ++y) {
+            for (int x = 0; x < size.width(); ++x) {
+                source.setPixelColor(x, y,
+                                     QColor((x * 17 + y) % 256, (x + y * 13) % 256,
+                                            (x * 3 + y * 5) % 256, (x + y * 7) % 256));
+            }
+        }
+        const QImage original = source.copy();
+        for (const bool singleThreaded : {false, true}) {
+            for (const double sigma : {0.0, 0.5, 3.0, 17.0}) {
+                SnowCanvasRegionFilterParameters parameters;
+                parameters.logicalSigma = sigma;
+                parameters.devicePixelRatio = 1.5;
+                QImage expected = source.copy();
+                QImage actual = snowCanvasAllocateZeroedImage(size, source.format());
+                require(applySnowCanvasRegionFilter(source, expected, QRegion(source.rect()),
+                                                    parameters, nullptr, singleThreaded) &&
+                            applySnowCanvasRegionFilter(source, actual, QRegion(source.rect()),
+                                                        parameters, nullptr, singleThreaded),
+                        "full Gaussian filtering must accept a zeroed destination");
+                require(actual == expected,
+                        "full Gaussian filtering must overwrite every pixel without a source copy");
+                require(source == original, "full Gaussian filtering must preserve the source");
+            }
+        }
+    }
+}
+
 void regionFilterSupportPixelsMatchesGaussianPlan() {
     SnowCanvasRegionFilterParameters parameters;
     parameters.type = SnowCanvasFilterType::GaussianBlur;
@@ -3375,6 +3406,7 @@ int main(int argc, char** argv) {
     if (application.arguments().contains(QStringLiteral("--public-region-api-only"))) {
         publicRegionFilterApiRestrictsEffectsToTheRequestedRegion();
         publicSingleThreadedRegionFilterMatchesDefaultAndRetainsBoundedScratch();
+        fullGaussianDestinationDoesNotNeedSourceCopy();
         regionFilterSupportPixelsMatchesGaussianPlan();
         croppedRegionFilterMatchesFullFrameRender();
         return 0;
@@ -3397,6 +3429,7 @@ int main(int argc, char** argv) {
     brightnessHasNeutralMidpointAndPreservesAlpha();
     publicRegionFilterApiRestrictsEffectsToTheRequestedRegion();
     publicSingleThreadedRegionFilterMatchesDefaultAndRetainsBoundedScratch();
+    fullGaussianDestinationDoesNotNeedSourceCopy();
     regionFilterSupportPixelsMatchesGaussianPlan();
     croppedRegionFilterMatchesFullFrameRender();
     sparseSelectionDamageSkipsUntouchedInteriorFilters();

@@ -176,7 +176,7 @@ void lazyPackAccessIsThreadSafe() {
     threads.emplace_back([&, index] {
       ready.fetch_add(1, std::memory_order_release);
       while (!start.load(std::memory_order_acquire)) std::this_thread::yield();
-      refs[index] = pack.icon(kWide);
+      refs[static_cast<std::size_t>(index)] = pack.icon(kWide);
     });
   }
   while (ready.load(std::memory_order_acquire) != threadCount) std::this_thread::yield();

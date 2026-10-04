@@ -846,8 +846,8 @@ std::uint64_t RhiImageWindow::sourceTextureBytes() const {
         int width = imageVirtualTexture_->plan.layerSize.width();
         int height = imageVirtualTexture_->plan.layerSize.height();
         for (;;) {
-            total += static_cast<std::uint64_t>(width) * height * bytesPerPixel *
-                     imageVirtualTexture_->plan.tiles.size();
+            total += static_cast<std::uint64_t>(width) * static_cast<std::uint64_t>(height) *
+                     bytesPerPixel * imageVirtualTexture_->plan.tiles.size();
             if (width == 1 && height == 1)
                 break;
             width = std::max(1, width / 2);
@@ -955,9 +955,11 @@ std::shared_ptr<RhiImageWindow::ExactRasterResources> RhiImageWindow::exactRaste
             const QSize mipSize(std::max(1, sourceSize.width() >> resources->mipLevel),
                                 std::max(1, sourceSize.height() >> resources->mipLevel));
             const std::uint64_t horizontalFirstPixels =
-                static_cast<std::uint64_t>(targetSize.width()) * mipSize.height();
+                static_cast<std::uint64_t>(targetSize.width()) *
+                static_cast<std::uint64_t>(mipSize.height());
             const std::uint64_t verticalFirstPixels =
-                static_cast<std::uint64_t>(mipSize.width()) * targetSize.height();
+                static_cast<std::uint64_t>(mipSize.width()) *
+                static_cast<std::uint64_t>(targetSize.height());
             const bool horizontalFirst = horizontalFirstPixels <= verticalFirstPixels;
             resources->firstAxis = horizontalFirst ? 1 : 2;
             resources->secondAxis = horizontalFirst ? 2 : 1;
@@ -2541,8 +2543,9 @@ RhiImageWindow::UniformData RhiImageWindow::buildUniformData(const DecodedImage&
     projection.ortho(0.0F, static_cast<float>(pixelSize.width()),
                      static_cast<float>(pixelSize.height()), 0.0F, -1.0F, 1.0F);
     QMatrix4x4 model;
-    model.translate(static_cast<float>((width() / 2.0 + viewTransform_.pan().x()) * dpr),
-                    static_cast<float>((height() / 2.0 + viewTransform_.pan().y()) * dpr));
+    model.translate(
+        static_cast<float>((width() / 2.0 + viewTransform_.pan().x()) * static_cast<double>(dpr)),
+        static_cast<float>((height() / 2.0 + viewTransform_.pan().y()) * static_cast<double>(dpr)));
     model.rotate(static_cast<float>(viewTransform_.quarterTurns() * 90), 0.0F, 0.0F, 1.0F);
     model.scale(static_cast<float>(image_.sourceSize.width() * viewTransform_.zoom()),
                 static_cast<float>(image_.sourceSize.height() * viewTransform_.zoom()));

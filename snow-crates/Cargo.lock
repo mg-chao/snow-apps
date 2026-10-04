@@ -3249,6 +3249,7 @@ version = "0.1.0"
 name = "snow-diagnostics-test"
 version = "0.1.0"
 dependencies = [
+ "snow-core",
  "snow-diagnostics",
 ]
 

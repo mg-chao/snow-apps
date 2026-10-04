@@ -22,6 +22,8 @@ bool isCancelled(const DecodeCancellation* cancellation) {
     return cancellation && cancellation->isCancelled();
 }
 
+#if defined(Q_OS_WIN)
+
 QImage prepareThumbnailPixels(QImage pixels) {
     if (pixels.isNull()) {
         return {};
@@ -35,8 +37,6 @@ QImage prepareThumbnailPixels(QImage pixels) {
     pixels.setColorSpace(QColorSpace(QColorSpace::SRgb));
     return pixels;
 }
-
-#if defined(Q_OS_WIN)
 
 class ComApartment final {
   public:

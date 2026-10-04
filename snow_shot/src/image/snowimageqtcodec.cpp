@@ -1,5 +1,6 @@
 #include "snow_draw_engine_qt/snow_canvas_image.h"
 #include "snowimageqtcodec.h"
+#include "snowimageqtsrgbrowreader.h"
 
 #include "snowimagecodecbridge.h"
 
@@ -551,33 +552,23 @@ QByteArray encodePng(const QImage& image, int compressionLevel) {
 }
 
 ScreenshotImageRowSource srgbRowSource(const QImage& image) {
+    if (image.isNull())
+        return {};
     const QColorSpace srgb(QColorSpace::SRgb);
-    QImage rgba = image.colorSpace().isValid() && image.colorSpace() != srgb
-                      ? snowCanvasColorConvertedImage(image, srgb, QImage::Format_RGBA8888)
-                      : snowCanvasConvertImage(image, QImage::Format_RGBA8888);
-    if (rgba.isNull()) {
-        return {};
-    }
-    if (rgba.colorSpace() != srgb && !snowCanvasDetachImage(rgba))
-        return {};
-    rgba.setColorSpace(srgb);
+    const bool convertColor = image.colorSpace().isValid() && image.colorSpace() != srgb;
     ScreenshotImageRowSource source;
-    source.size = rgba.size();
-    source.backingImage = rgba;
-    source.readRows = [rgba](int first, int count, qsizetype stride, uchar* destination,
-                             qsizetype capacity) {
-        const qsizetype rowBytes = static_cast<qsizetype>(rgba.width()) * 4;
-        if (first < 0 || count <= 0 || first > rgba.height() || count > rgba.height() - first ||
-            destination == nullptr || stride < rowBytes || capacity < rowBytes ||
-            count - 1 > (capacity - rowBytes) / stride) {
-            return false;
-        }
-        for (int row = 0; row < count; ++row) {
-            std::memcpy(destination + row * stride, rgba.constScanLine(first + row),
-                        static_cast<std::size_t>(rowBytes));
-        }
-        return true;
-    };
+    source.size = image.size();
+    // Untagged images retain the existing assumption that their pixels are
+    // sRGB. Retagging a shared image here would detach its complete raster.
+    if (!convertColor && image.format() == QImage::Format_RGBA8888) {
+        source.backingImage = image;
+        source.readRows = [image](int first, int count, qsizetype stride, uchar* destination,
+                                  qsizetype capacity) {
+            return snowCanvasCopyRgba8888Rows(image, first, count, destination, capacity, stride);
+        };
+    } else {
+        source.readRows = detail::BoundedSrgbRowReader(image);
+    }
     return source;
 }
 
@@ -752,10 +743,9 @@ SkinDecodeResult decodeSkinFile(const QString& path) {
         image.setColorSpace(srgb);
         if (info.frame_x != 0 || info.frame_y != 0 || decodedSize != canvasSize) {
             QImage canvas =
-                snowCanvasAllocateImage(previewCanvas, QImage::Format_ARGB32_Premultiplied);
+                snowCanvasAllocateZeroedImage(previewCanvas, QImage::Format_ARGB32_Premultiplied);
             if (canvas.isNull())
                 return {{}, SkinDecodeError::ResourceLimit};
-            canvas.fill(Qt::transparent);
             canvas.setColorSpace(srgb);
             QPainter painter(&canvas);
             painter.setRenderHint(QPainter::SmoothPixmapTransform);

@@ -87,7 +87,7 @@ void headlessWorkflowResultsAndEdits() {
     table.html =
         QStringLiteral("<table><tr><td>A</td><td>B</td></tr><tr><td>C</td><td>D</td></tr></table>");
     results.table = table;
-    results.qr = ScreenshotQrRecognitionResult{{QStringLiteral("payload")}, {}};
+    results.qr = ScreenshotQrRecognitionResult{{QStringLiteral("payload")}, {}, {}};
     session.seedRecognitionResults(results);
     session.activate(ScreenshotRecognitionSessionController::Mode::Text);
     require(session.workflowResult().value(QStringLiteral("lines")).toArray().size() == 1,
@@ -212,7 +212,7 @@ void tablePreparationPreservesSessionAndSiblingPopovers() {
         if (scenario == 3) {
             ScreenshotRecognitionResults cached;
             cached.key = QStringLiteral("first");
-            cached.qr = ScreenshotQrRecognitionResult{{QStringLiteral("Cached QR")}, {}};
+            cached.qr = ScreenshotQrRecognitionResult{{QStringLiteral("Cached QR")}, {}, {}};
             session.seedRecognitionResults(cached);
             session.activate(Mode::Qr);
         }
@@ -665,7 +665,7 @@ void deactivationNotifiesOnlyOnStateTransition() {
     session.setTarget({QStringLiteral("deactivation"), image, QRectF(0, 0, 32, 32)});
     ScreenshotRecognitionResults results;
     results.key = QStringLiteral("deactivation");
-    results.qr = ScreenshotQrRecognitionResult{{QStringLiteral("Cached QR")}, {}};
+    results.qr = ScreenshotQrRecognitionResult{{QStringLiteral("Cached QR")}, {}, {}};
     session.seedRecognitionResults(results);
     for (int cycle = 1; cycle <= 2; ++cycle) {
         session.activate(ScreenshotRecognitionSessionController::Mode::Qr);
@@ -759,7 +759,7 @@ void displayedRecognitionSnapshotPreservesCachedResults() {
     SnowShotTableResult table;
     table.html = QStringLiteral("<table><tr><td>Cached table</td></tr></table>");
     cached.table = table;
-    cached.qr = ScreenshotQrRecognitionResult{{QStringLiteral("Cached QR")}, {}};
+    cached.qr = ScreenshotQrRecognitionResult{{QStringLiteral("Cached QR")}, {}, {}};
     cached.translatedText = std::make_shared<ScreenshotOcrPresentation>();
     cached.translatedText->selection = presentation->selection;
     cached.translatedText->lines = presentation->lines;

@@ -6,9 +6,11 @@
 #include <QApplication>
 #include <QImage>
 #include <QPainter>
+#include <QPainterPath>
 #include <QTransform>
 
 #include <cstdlib>
+#include <algorithm>
 #include <iostream>
 #include <limits>
 #include <stdexcept>
@@ -53,6 +55,95 @@ void roundedAndShadowedResultHasRealTransparency() {
             "content center became transparent");
     const int shadowAlpha = result.pixelColor(11, 12 + 24).alpha();
     require(shadowAlpha > 0 && shadowAlpha < 255, "shadow edge is not semitransparent");
+}
+
+void roundedAlphaMaskMatchesArgbReference() {
+    for (const QSize size : {QSize(41, 29), QSize(1025, 513)}) {
+        QImage source(size, QImage::Format_ARGB32_Premultiplied);
+        for (int y = 0; y < size.height(); ++y) {
+            for (int x = 0; x < size.width(); ++x) {
+                source.setPixelColor(x, y,
+                                     QColor((x * 17 + y) % 256, (x + y * 13) % 256,
+                                            (x * 3 + y * 5) % 256, (x + y * 7) % 256));
+            }
+        }
+        const QImage original = source.copy();
+        for (const qreal dpr : {1.0, 1.25, 1.75, 2.0}) {
+            for (const int radius : {1, 13, 2000}) {
+                const ScreenshotResultStyle style{radius, 0, QColor()};
+                const auto layout = ScreenshotResultCompositor::layoutForContent(size, style, dpr);
+                QImage expected(layout.outputRect.size(), QImage::Format_ARGB32_Premultiplied);
+                expected.fill(Qt::transparent);
+                QImage mask(expected.size(), QImage::Format_ARGB32_Premultiplied);
+                mask.fill(Qt::transparent);
+                QPainterPath path;
+                const qreal physicalRadius = std::min<qreal>(
+                    ScreenshotResultCompositor::normalizedStyle(style).cornerRadius *
+                        layout.devicePixelRatio,
+                    std::min(layout.contentRect.width(), layout.contentRect.height()) / 2.0);
+                path.addRoundedRect(layout.contentRect, physicalRadius, physicalRadius,
+                                    Qt::AbsoluteSize);
+                {
+                    QPainter painter(&mask);
+                    painter.setRenderHint(QPainter::Antialiasing, true);
+                    painter.setPen(Qt::NoPen);
+                    painter.setBrush(Qt::white);
+                    painter.drawPath(path);
+                }
+                {
+                    QPainter painter(&expected);
+                    painter.setRenderHint(QPainter::Antialiasing, true);
+                    painter.drawImage(layout.contentRect, source);
+                    painter.setCompositionMode(QPainter::CompositionMode_DestinationIn);
+                    painter.drawImage(QPoint(), mask);
+                }
+                const QImage actual = ScreenshotResultCompositor::compose(source, style, dpr);
+                require(actual == expected,
+                        "Alpha8 rounded masks must exactly preserve ARGB mask pixels and alpha");
+                require(source == original, "rounded composition must preserve its source");
+            }
+        }
+    }
+}
+
+void compoundCompositionStartsTransparentForSmallAndLargeImages() {
+    for (const QSize size : {QSize(80, 48), QSize(1025, 513)}) {
+        QImage source(size, QImage::Format_ARGB32_Premultiplied);
+        source.fill(QColor(30, 100, 210, 128));
+        const QRect inset = source.rect().adjusted(4, 6, -8, -10);
+        QPainterPath ellipse;
+        ellipse.addEllipse(inset);
+        for (const ScreenshotRegionGeometry& region :
+             {ScreenshotRegionGeometry(QRegion(inset).subtracted(QRect(10, 10, 8, 8))),
+              ScreenshotRegionGeometry::fromPath(ellipse, ScreenshotRegionType::Curve)}) {
+            ScreenshotResultStyle style;
+            style.region = region;
+            QImage expected(size, QImage::Format_ARGB32_Premultiplied);
+            expected.fill(Qt::transparent);
+            QImage mask(size, QImage::Format_Alpha8);
+            mask.fill(0);
+            {
+                QPainter painter(&mask);
+                painter.setRenderHint(QPainter::Antialiasing, true);
+                painter.setPen(Qt::NoPen);
+                painter.setBrush(Qt::white);
+                painter.drawPath(region.custom() ? region.path() : screenshotRegionPath(region));
+            }
+            {
+                QPainter painter(&expected);
+                painter.drawImage(QPoint(), source);
+                painter.setCompositionMode(QPainter::CompositionMode_DestinationIn);
+                painter.drawImage(QPoint(), mask);
+            }
+            for (int iteration = 0; iteration < 3; ++iteration) {
+                if (iteration == 0)
+                    ScreenshotSelectionShadowRenderer::resetCacheForCurrentThread();
+                require(ScreenshotResultCompositor::compose(source, style) == expected,
+                        "compound composition must start transparent and preserve source alpha");
+            }
+        }
+    }
+    ScreenshotSelectionShadowRenderer::resetCacheForCurrentThread();
 }
 
 void previewAssetsAreReleasedAfterCapture() {
@@ -251,6 +342,8 @@ int main(int argc, char** argv) {
         squareResultPreservesPhysicalPixels();
         sharedMetadataAndOpacityKeepMappedOwnership();
         roundedAndShadowedResultHasRealTransparency();
+        roundedAlphaMaskMatchesArgbReference();
+        compoundCompositionStartsTransparentForSmallAndLargeImages();
         previewAssetsAreReleasedAfterCapture();
         layoutScalesOnlyEffectsForFractionalDpr();
         noEffectResultSharesNormalizedStorage();

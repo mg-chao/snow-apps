@@ -1303,7 +1303,7 @@ void benchmark() {
     stored.setEnabled(true);
     pump();
     reveal(controller);
-    const double first = clock.nsecsElapsed() / 1e6;
+    const double first = static_cast<double>(clock.nsecsElapsed()) / 1e6;
     QVector<double> samples;
     for (int iteration = 0; iteration < 200; ++iteration) {
         controller.setCaptureActive(QStringLiteral("benchmark"), true);
@@ -1311,7 +1311,7 @@ void benchmark() {
         controller.setCaptureActive(QStringLiteral("benchmark"), false);
         pump();
         reveal(controller);
-        samples.append(clock.nsecsElapsed() / 1e6);
+        samples.append(static_cast<double>(clock.nsecsElapsed()) / 1e6);
     }
     std::sort(samples.begin(), samples.end());
     const auto baseline = QApplication::allWidgets().size();
@@ -1323,7 +1323,7 @@ void benchmark() {
     for (int iteration = 0; iteration < 200; ++iteration)
         mouse(icon, QEvent::MouseMove, start - QPoint(40 + iteration % 80, 40), Qt::NoButton,
               Qt::LeftButton);
-    const double drag = clock.nsecsElapsed() / 1e6 / 200;
+    const double drag = static_cast<double>(clock.nsecsElapsed()) / 1e6 / 200;
     mouse(icon, QEvent::MouseButtonRelease, start - QPoint(80, 40), Qt::LeftButton, Qt::NoButton);
     pump();
     clock.restart();
@@ -1331,7 +1331,7 @@ void benchmark() {
         stored.setToolbarMode(iteration % 2 == 0);
         pump();
     }
-    const double modeChange = clock.nsecsElapsed() / 1e6 / 100;
+    const double modeChange = static_cast<double>(clock.nsecsElapsed()) / 1e6 / 100;
     require(QApplication::allWidgets().size() <= baseline + 1,
             "repeated mode changes do not accumulate widgets");
     class PaintCounter final : public QObject {
@@ -1382,7 +1382,7 @@ int main(int argc, char** argv) {
         verifyToolbarEdgePlacement();
     } else if (app.arguments().contains(QStringLiteral("--content-drops-only"))) {
         verifyDropIdentity();
-        const int visual = app.arguments().indexOf(QStringLiteral("--visual-output"));
+        const qsizetype visual = app.arguments().indexOf(QStringLiteral("--visual-output"));
         verifyContentDrops(visual >= 0 ? app.arguments().value(visual + 1) : QString());
     } else if (app.arguments().contains(QStringLiteral("--icon-activation-only"))) {
         verifyIconActivation();
@@ -1399,7 +1399,7 @@ int main(int argc, char** argv) {
         verifyToolbarEdgePlacement();
         verifyHoverPlacement();
         verifyToolbarIconSizing();
-        const int visual = app.arguments().indexOf(QStringLiteral("--visual-output"));
+        const qsizetype visual = app.arguments().indexOf(QStringLiteral("--visual-output"));
         verifyWindows(visual >= 0 ? app.arguments().value(visual + 1) : QString());
         verifyCustomizedActions();
     }

@@ -11,6 +11,8 @@
 #include <QMimeData>
 
 #include "snow_draw_engine_qt/snow_canvas_runtime.h"
+#include "snow_draw_engine_qt/snow_canvas_image.h"
+#include "../../test-support/virtualmemory.h"
 
 #include <QCoreApplication>
 #include <QEventLoop>
@@ -776,8 +778,8 @@ void rowRequestsCoalesceAndReuseBackingImage() {
                                           }),
             "concurrent row requests were rejected");
     processUntil([&] { return callbacks == 2; });
-    require(imageCalls == 1 && firstPixels != nullptr && firstPixels == secondPixels,
-            "row requests did not share one converted immutable backing image");
+    require(imageCalls == 1 && firstPixels == image.constBits() && firstPixels == secondPixels,
+            "compatible row requests must reuse the original immutable backing image");
 
     require(artifact.requestRowSource(
                 &firstReceiver,
@@ -788,6 +790,60 @@ void rowRequestsCoalesceAndReuseBackingImage() {
                 }),
             "ready row request was rejected");
     require(callbacks == 3 && imageCalls == 1, "ready row result was recomputed");
+}
+
+void convertedRowSourcesRetainOriginalPixelsWithoutMaterializing() {
+    using snow::test_support::virtualMemoryMapped;
+    for (const auto format :
+         {QImage::Format_ARGB32_Premultiplied, QImage::Format_RGBA64_Premultiplied}) {
+        QImage image = snowCanvasAllocateImage(QSize(1031, 517), format);
+        require(!image.isNull(), "converted row lifetime fixture must allocate");
+        image.fill(QColor(31, 117, 211, 127));
+        image.setPixelColor(0, 0, QColor(249, 3, 61, 0));
+        image.setPixelColor(1030, 516, QColor(7, 247, 81, 253));
+        image.setColorSpace(QColorSpace::DisplayP3);
+        const QImage expected =
+            image.convertedToColorSpace(QColorSpace::SRgb, QImage::Format_RGBA8888);
+        const uchar* middle = image.constBits() + image.sizeInBytes() / 2;
+        auto rows = snow_shot::image_codec::srgbRowSource(image);
+        require(rows.isValid() && rows.backingImage.isNull(),
+                "converted row sources must avoid a full converted backing raster");
+        image.fill(Qt::red);
+        image = {};
+        require(virtualMemoryMapped(middle),
+                "lazy converted rows must own the original immutable source after caller release");
+        QImage actual(rows.size, QImage::Format_RGBA8888);
+        for (int first = 0; first < rows.size.height(); first += 37) {
+            const int count = qMin(37, rows.size.height() - first);
+            require(rows.readRows(first, count, actual.bytesPerLine(), actual.scanLine(first),
+                                  actual.sizeInBytes() - first * actual.bytesPerLine()),
+                    "lazy color conversion must support independent row ranges");
+        }
+        require(
+            hasSamePixels(actual, expected),
+            "lazy converted rows must retain Qt color and alpha rounding after source mutation");
+        const QByteArray png = snow_shot::image_codec::encodePng(rows, 0);
+        require(!png.isEmpty() && hasSamePixels(QImage::fromData(png, "PNG"), expected),
+                "encoding lazy converted rows must preserve the expected sRGB pixels");
+        auto copy = rows;
+        rows = {};
+        require(virtualMemoryMapped(middle), "copying a row callback must retain source ownership");
+        copy = {};
+        require(!virtualMemoryMapped(middle),
+                "last converted row callback release must return original managed pages");
+    }
+    QImage untagged = testImage();
+    untagged.setColorSpace({});
+    const auto untaggedRows = snow_shot::image_codec::srgbRowSource(untagged);
+    require(untaggedRows.backingImage.constBits() == untagged.constBits(),
+            "untagged RGBA8 pixels assumed to be sRGB must not detach for metadata retagging");
+    QImage actual(untagged.size(), QImage::Format_RGBA8888);
+    require(untaggedRows.readRows(0, actual.height(), actual.bytesPerLine(), actual.bits(),
+                                  actual.sizeInBytes()) &&
+                hasSamePixels(actual, untagged),
+            "untagged compatible rows must preserve every source pixel");
+    require(!snow_shot::image_codec::srgbRowSource({}).isValid(),
+            "null images must not create valid lazy row sources");
 }
 
 void pngCacheBudgetEvictsLeastRecentlyUsedResults() {
@@ -1347,8 +1403,13 @@ void clipboardPlacementIsAnImmutableArtifactProperty() {
             "ordinary image artifacts invent clipboard metadata");
 }
 
+void boundedExportRowsTests();
+int runExportRowBenchmark(const QStringList& arguments);
+
 int main(int argc, char** argv) {
     QCoreApplication application(argc, argv);
+    if (application.arguments().contains(QStringLiteral("--row-export-benchmark")))
+        return runExportRowBenchmark(application.arguments());
     try {
         QTemporaryDir logs;
         snow_shot::diagnostics::DiagnosticsOptions logging;
@@ -1421,6 +1482,12 @@ int main(int argc, char** argv) {
             quickSaveUsesOnlyConfiguredOutput();
             return EXIT_SUCCESS;
         }
+        if (application.arguments().contains(QStringLiteral("--row-source-only"))) {
+            rowRequestsCoalesceAndReuseBackingImage();
+            convertedRowSourcesRetainOriginalPixelsWithoutMaterializing();
+            boundedExportRowsTests();
+            return EXIT_SUCCESS;
+        }
         quickSaveUsesOnlyConfiguredOutput();
         automaticSavesUseRequestedEncoding();
         clipboardUsesConfiguredCompression();
@@ -1441,6 +1508,8 @@ int main(int argc, char** argv) {
         canonicalEncodingCoalescesAndPreservesBufferIdentity();
         encodingFailureFansOutOnce();
         rowRequestsCoalesceAndReuseBackingImage();
+        convertedRowSourcesRetainOriginalPixelsWithoutMaterializing();
+        boundedExportRowsTests();
         pngCacheBudgetEvictsLeastRecentlyUsedResults();
         oversizedPngStillFansOutWithoutRetention();
         fileOutputsStreamBeyondCacheBudget();

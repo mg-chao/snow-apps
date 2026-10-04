@@ -128,10 +128,18 @@ def main():
             ("memory_snapshot_benchmark", ("stitch-small-snapshot",)),
             ("memory_decode_benchmark", ("recording-decode",)),
             ("memory_transfer_benchmark", ("ocr-transfer",)),
+            ("memory_overwrite_benchmark", ("overwrite", "preserve")),
+            ("memory_reference_benchmark", ("stitch-reference-vertical",
+                                            "stitch-reference-horizontal")),
+            ("memory_png_benchmark", ("scrolling-png-export",)),
         ):
             paths = {label: rust[label] / binary for label in builds}
             for scenario in scenarios:
-                add("rust-" + scenario, paths, [scenario, args.samples])
+                # PNG includes durable file output and needs fewer repetitions
+                # than CPU buffer operations. Both revisions keep equal counts.
+                samples = min(args.samples, 7) if binary == "memory_png_benchmark" else args.samples
+                name = "capture-full-" + scenario if binary == "memory_overwrite_benchmark" else scenario
+                add("rust-" + name, paths, [scenario, samples])
     plan = {"versions": {label: {"revision": revision, "cwd": str(builds[label])}
                          for label, revision in (("before", args.before_revision),
                                                  ("after", args.after_revision))},

@@ -732,7 +732,7 @@ int main(int argc, char** argv) {
     hoverDragAndDeactivateKeepInteractionSafe(app);
     openEditorRetranslatesWithoutResettingGain(app);
     displayTopologyClosesBeforeNativeReroute(app);
-    const int snapshot = app.arguments().indexOf(QStringLiteral("--snapshot-dir"));
+    const qsizetype snapshot = app.arguments().indexOf(QStringLiteral("--snapshot-dir"));
     if (snapshot >= 0 && snapshot + 1 < app.arguments().size())
         renderSnapshots(app.arguments().at(snapshot + 1));
     return 0;

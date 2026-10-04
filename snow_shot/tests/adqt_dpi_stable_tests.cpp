@@ -888,7 +888,8 @@ void concurrentIconMissesRasterizeOnce() {
             while (!start.load(std::memory_order_acquire)) {
                 std::this_thread::yield();
             }
-            results[index] = registry.renderIconPixmap(ref, iconRequest(QSize(32, 32), 1.0));
+            results[static_cast<std::size_t>(index)] =
+                registry.renderIconPixmap(ref, iconRequest(QSize(32, 32), 1.0));
         });
     }
     while (ready.load(std::memory_order_acquire) != threadCount) {

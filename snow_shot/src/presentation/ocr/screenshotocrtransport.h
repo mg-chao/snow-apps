@@ -14,10 +14,40 @@
 #include <QTimer>
 #include <atomic>
 #include <functional>
+#include <limits>
 #include <memory>
 
 namespace snow_shot::ocr {
 using namespace protocol;
+
+namespace transport_detail {
+// Populate the private slot without publishing Ready. The process notification
+// and release fence remain in submit(), after every pixel and header field fits.
+inline bool copyImageToTransferSlot(const QImage& image, uchar* header, qsizetype capacity,
+                                    quint64 sequence) {
+    if (header == nullptr || capacity < kSlotHeaderBytes)
+        return false;
+    writeU32(header + kSlotStateOffset, kSlotFree);
+    if (image.isNull())
+        return false;
+    const quint64 stride = static_cast<quint64>(image.width()) * 4;
+    const quint64 bytes = stride * static_cast<quint64>(image.height());
+    if (stride > std::numeric_limits<quint32>::max() ||
+        bytes > std::numeric_limits<quint32>::max() ||
+        bytes > static_cast<quint64>(capacity - kSlotHeaderBytes))
+        return false;
+    if (!snowCanvasCopyRgba8888Rows(image, 0, image.height(), header + kSlotHeaderBytes,
+                                    capacity - kSlotHeaderBytes, static_cast<qsizetype>(stride)))
+        return false;
+    writeU64(header + kSlotSequenceOffset, sequence);
+    writeU32(header + kSlotWidthOffset, static_cast<quint32>(image.width()));
+    writeU32(header + kSlotHeightOffset, static_cast<quint32>(image.height()));
+    writeU32(header + kSlotStrideOffset, static_cast<quint32>(stride));
+    writeU32(header + kSlotBytesOffset, static_cast<quint32>(bytes));
+    writeU32(header + kSlotMagicOffset, kSlotMagic);
+    return true;
+}
+} // namespace transport_detail
 
 // Private transport: every method and all Qt/file objects belong to its I/O thread.
 // The service retains scheduling and receiver ownership on the application thread.
@@ -97,28 +127,18 @@ class ScreenshotOcrTransport final : public QObject {
     void submit(QImage image, quint64 sequence, quint64 token) {
         if (m_process == nullptr || m_process->state() != QProcess::Running)
             return;
-        image = snowCanvasConvertImage(image, QImage::Format_RGBA8888);
-        const qsizetype stride = static_cast<qsizetype>(image.width()) * 4;
-        if (image.isNull() || stride * image.height() > m_buffer.capacity() - kSlotHeaderBytes) {
+        uchar* header = m_buffer.data();
+        if (!transport_detail::copyImageToTransferSlot(image, header, m_buffer.capacity(),
+                                                       sequence)) {
             post(m_callbacks.failed, QStringLiteral("image_transfer"));
             return;
         }
-        uchar* header = m_buffer.data();
-        writeU32(header + kSlotStateOffset, kSlotFree);
-        for (int row = 0; row < image.height(); ++row)
-            std::memcpy(header + kSlotHeaderBytes + row * stride, image.constScanLine(row),
-                        static_cast<std::size_t>(stride));
-        writeU64(header + kSlotSequenceOffset, sequence);
-        writeU32(header + kSlotWidthOffset, static_cast<quint32>(image.width()));
-        writeU32(header + kSlotHeightOffset, static_cast<quint32>(image.height()));
-        writeU32(header + kSlotStrideOffset, static_cast<quint32>(stride));
-        writeU32(header + kSlotBytesOffset, static_cast<quint32>(stride * image.height()));
-        writeU32(header + kSlotMagicOffset, kSlotMagic);
+        const quint32 stride = static_cast<quint32>(image.width()) * 4;
         QByteArray payload;
         appendU64(payload, m_buffer.generation());
         appendU32(payload, static_cast<quint32>(image.width()));
         appendU32(payload, static_cast<quint32>(image.height()));
-        appendU32(payload, static_cast<quint32>(stride));
+        appendU32(payload, stride);
         appendU64(payload, sequence);
         std::atomic_thread_fence(std::memory_order_release);
         writeU32(header + kSlotStateOffset, kSlotReady);

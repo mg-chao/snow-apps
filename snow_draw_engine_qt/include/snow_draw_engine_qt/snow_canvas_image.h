@@ -11,6 +11,12 @@
 // detached copy must be allocated explicitly if its storage policy matters.
 [[nodiscard]] QImage snowCanvasAllocateImage(const QSize& size, QImage::Format format);
 
+// Initialize every storage byte, including row padding, to zero. Alpha formats
+// start transparent; opaque and indexed formats interpret zero according to
+// their format/palette. This is not QImage::fill(0), which also sets opaque bits
+// in some RGB formats. Fresh managed pages are already zeroed by the OS.
+[[nodiscard]] QImage snowCanvasAllocateZeroedImage(const QSize& size, QImage::Format format);
+
 // Copy/crop into exclusively writable storage, preserving QImage's layout and
 // metadata. A null rectangle means the entire image, as with QImage::copy().
 [[nodiscard]] QImage snowCanvasCopyImage(const QImage& image, const QRect& rect = {});
@@ -29,6 +35,20 @@
                                                    const QColorSpace& colorSpace,
                                                    QImage::Format format,
                                                    Qt::ImageConversionFlags flags = Qt::AutoColor);
+
+// Synchronously copy/convert complete source rows into borrowed RGBA8888 bytes.
+// No destination ownership is taken and padding is left unchanged. The caller
+// must provide writable storage that does not overlap the source. A valid target
+// color space requires a valid source profile; an invalid target means format
+// conversion only. Default direct-color conversions use bounded temporary
+// tiles, including palette expansion. Explicit non-threshold dithering retains
+// Qt's global palette/phase behavior through a full fallback.
+// On failure the destination may contain partially converted rows.
+[[nodiscard]] bool snowCanvasCopyRgba8888Rows(const QImage& image, int firstRow, int rowCount,
+                                              uchar* destination, qsizetype destinationBytes,
+                                              qsizetype destinationStride,
+                                              const QColorSpace& colorSpace = {},
+                                              Qt::ImageConversionFlags flags = Qt::AutoColor);
 
 // Quarter-turn rotations use tiled pixel copies into their final storage.
 // Large smooth flips use bounded conversion chunks to retain Qt's alpha rounding.

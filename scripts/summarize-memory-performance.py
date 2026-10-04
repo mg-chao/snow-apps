@@ -275,6 +275,7 @@ def summarize(root, overlays, output_root, sampled_memory_phases=()):
     duplicate_reports = []
     for (round_index, version, name), files in sorted(artifacts.items()):
         seen_reports = {}
+        timings_before = sum(len(runs) for runs in measurements.timing.values())
         for path in files:
             # Some benchmarks emit the same complete report to stdout and a
             # sidecar. Count that measurement once, but never deduplicate a
@@ -287,6 +288,10 @@ def summarize(root, overlays, output_root, sampled_memory_phases=()):
                     continue
                 seen_reports[content] = path
             measurements.parse(version, name, f"round-{round_index}", path)
+        # Process completeness is separate from case pairing: if both versions
+        # emit an unknown report, their missing cases would otherwise disappear.
+        if sum(len(runs) for runs in measurements.timing.values()) == timings_before:
+            raise ValueError(f"No parsed timing for process: {name}/{version}/round-{round_index}")
     output_root.mkdir(parents=True, exist_ok=True)
 
     def write_json(name, value):

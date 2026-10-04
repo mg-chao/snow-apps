@@ -16,6 +16,7 @@
 #include <charconv>
 #include <chrono>
 #include <cstdint>
+#include <cstring>
 #include <iostream>
 #include <stdexcept>
 #include <string>
@@ -143,6 +144,17 @@ void touch(const QImage& image) {
 QImage apply(const Options& options, const QImage& source) {
     const bool managed = options.managed;
     const auto& operation = options.scenario;
+    if (operation == "fresh_allocate_zero_release") {
+#if !defined(SNOW_MEMORY_BENCHMARK_BASELINE)
+        if (managed)
+            return snowCanvasAllocateZeroedImage(QSize(options.width, options.height),
+                                                 QImage::Format_RGBA8888);
+#endif
+        QImage output(QSize(options.width, options.height), QImage::Format_RGBA8888);
+        if (!output.isNull())
+            std::memset(output.bits(), 0, static_cast<std::size_t>(output.sizeInBytes()));
+        return output;
+    }
     if (operation == "fresh_allocate_fill_release" || operation == "mixed-allocate") {
         QImage output =
             allocate(QSize(options.width, options.height), QImage::Format_RGBA8888, managed);
@@ -224,6 +236,35 @@ QImage apply(const Options& options, const QImage& source) {
     throw std::runtime_error("unknown scenario: " + operation);
 }
 
+bool borrowedRowsScenario(const Options& options) {
+    return options.scenario == "copy_rgba_rows_reuse" ||
+           options.scenario == "convert_premul_rgba_rows_reuse" ||
+           options.scenario == "color_p3_srgb_rows_reuse";
+}
+
+void copyBorrowedRows(const Options& options, const QImage& source, QImage& destination) {
+    const QColorSpace target = options.scenario == "color_p3_srgb_rows_reuse"
+                                   ? QColorSpace(QColorSpace::SRgb)
+                                   : QColorSpace{};
+#if !defined(SNOW_MEMORY_BENCHMARK_BASELINE)
+    if (options.managed) {
+        if (!snowCanvasCopyRgba8888Rows(source, 0, source.height(), destination.bits(),
+                                        destination.sizeInBytes(), destination.bytesPerLine(),
+                                        target))
+            throw std::runtime_error("borrowed row conversion failed");
+        return;
+    }
+#endif
+    const QImage converted = target.isValid()
+                                 ? source.convertedToColorSpace(target, QImage::Format_RGBA8888)
+                                 : source.convertToFormat(QImage::Format_RGBA8888);
+    if (converted.isNull())
+        throw std::runtime_error("native borrowed row conversion failed");
+    for (int row = 0; row < source.height(); ++row)
+        std::memcpy(destination.scanLine(row), converted.constScanLine(row),
+                    static_cast<std::size_t>(source.width()) * 4);
+}
+
 void report(const char* record, const Options& options, int iteration, std::int64_t elapsed = 0,
             std::uint64_t hash = 0, std::uint64_t logicalBytes = 0) {
     const auto memory = memorySnapshot();
@@ -252,13 +293,38 @@ int main(int argc, char** argv) {
             reused.fill(qRgba(11, 22, 33, 255));
             touch(reused);
         } else if (options.scenario != "fresh_allocate_fill_release" &&
+                   options.scenario != "fresh_allocate_zero_release" &&
                    options.scenario != "mixed-allocate") {
             source = seedImage(QSize(options.width, options.height), options.managed);
+        }
+        if (borrowedRowsScenario(options)) {
+            if (options.scenario == "convert_premul_rgba_rows_reuse")
+                source = source.convertToFormat(QImage::Format_ARGB32_Premultiplied);
+            reused = allocate(source.size(), QImage::Format_RGBA8888, options.managed);
+            if (reused.isNull())
+                throw std::runtime_error("borrowed row destination allocation failed");
+            reused.fill(0);
+            reused.setColorSpace(options.scenario == "color_p3_srgb_rows_reuse"
+                                     ? QColorSpace(QColorSpace::SRgb)
+                                     : source.colorSpace());
         }
         report("fixture_baseline", options, -1);
         if (options.verifyOnly) {
             if (options.scenario == "reuse_fill") {
                 report("verified", options, -1, 0, checksum(reused));
+                return 0;
+            }
+            if (borrowedRowsScenario(options)) {
+                const QImage reference =
+                    options.scenario == "color_p3_srgb_rows_reuse"
+                        ? source.convertedToColorSpace(QColorSpace::SRgb, QImage::Format_RGBA8888)
+                        : source.convertToFormat(QImage::Format_RGBA8888);
+                copyBorrowedRows(options, source, reused);
+                const auto hash = checksum(reused);
+                if (reference.isNull() || hash != checksum(reference) ||
+                    reused.colorSpace() != reference.colorSpace())
+                    throw std::runtime_error("borrowed row Qt equivalence failed");
+                report("verified", options, -1, 0, hash);
                 return 0;
             }
             Options native = options;
@@ -278,6 +344,9 @@ int main(int argc, char** argv) {
             const auto start = Clock::now();
             if (options.scenario == "reuse_fill") {
                 reused.fill(qRgba(11, 22, 33, 255));
+                touch(reused);
+            } else if (borrowedRowsScenario(options)) {
+                copyBorrowedRows(options, source, reused);
                 touch(reused);
             } else if (options.scenario == "mixed-allocate") {
                 std::array<QImage, 3> images;
@@ -317,8 +386,11 @@ int main(int argc, char** argv) {
             }
             report("output_live", options, -1, 0, hash, logicalBytes);
         } else {
-            const QImage output =
-                options.scenario == "reuse_fill" ? reused : apply(options, source);
+            if (borrowedRowsScenario(options))
+                copyBorrowedRows(options, source, reused);
+            const QImage output = options.scenario == "reuse_fill" || borrowedRowsScenario(options)
+                                      ? reused
+                                      : apply(options, source);
             report("output_live", options, -1, 0, checksum(output),
                    static_cast<std::uint64_t>(output.sizeInBytes()));
         }

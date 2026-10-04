@@ -66,6 +66,7 @@ struct FieldEvents {
     int commits = 0;
 };
 
+#ifdef Q_OS_WIN
 void observeField(QObject& owner, const char* id, FieldEvents& events) {
     fields::FormField* field = nullptr;
     for (auto* candidate : owner.findChildren<fields::FormField*>()) {
@@ -77,6 +78,7 @@ void observeField(QObject& owner, const char* id, FieldEvents& events) {
     QObject::connect(field, &fields::FormField::valueCommitted, field,
                      [&events] { ++events.commits; });
 }
+#endif
 
 void flushEvents() {
     QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
