@@ -701,6 +701,8 @@ void savedToolbarLayout(QApplication& app) {
     const storage::ScreenshotToolbarSettings settings;
     const auto kind = storage::ScreenshotToolbarLayoutKind::DrawingTools;
     const auto original = settings.layout(kind);
+    const storage::DrawingShortcutSettings shortcuts;
+    const auto originalArrow = shortcuts.arrow();
     auto visible = original;
     for (auto& position : visible.positions)
         position.removeAll(QStringLiteral("arrow"));
@@ -720,8 +722,50 @@ void savedToolbarLayout(QApplication& app) {
         palette->findChild<adqt::widgets::AdButton*>(QStringLiteral("screenshotArrowButton"));
     require(arrow && arrow->isVisible(), "canvas loads saved drawing tool layout");
     require(settings.setLayout(kind, hidden), "hide arrow tool");
+    const auto savedHiddenLayout = settings.layout(kind);
     app.processEvents();
     require(!arrow->isVisible(), "open canvas hides tools removed from the layout");
+    require(shortcuts.setArrow({QStringLiteral("Ctrl+Alt+F12")}), "assign hidden arrow hotkey");
+    const auto press = [&](Qt::Key key) {
+        PhysicalKeyEvent down(QEvent::KeyPress, key, Qt::ControlModifier | Qt::AltModifier);
+        QApplication::sendEvent(controller.canvas(), &down);
+        PhysicalKeyEvent up(QEvent::KeyRelease, key, Qt::ControlModifier | Qt::AltModifier);
+        QApplication::sendEvent(controller.canvas(), &up);
+    };
+    int arrows = 0;
+    QObject::connect(palette, &ScreenshotToolPalette::arrowRequested, [&] { ++arrows; });
+    press(Qt::Key_F12);
+    require(arrows == 1 && controller.canvas()->canvasTool() == SnowCanvasTool::Arrow &&
+                palette->stylePanel()->isVisible() && arrow->isHidden() &&
+                settings.layout(kind) == savedHiddenLayout,
+            "hidden canvas hotkey activates once with settings and preserves the layout");
+    press(Qt::Key_F12);
+    require(arrows == 1 && controller.canvas()->canvasTool() == SnowCanvasTool::Select &&
+                arrow->isHidden(),
+            "hidden canvas hotkey toggles back to Select without revealing the button");
+    require(shortcuts.setArrow({QStringLiteral("Ctrl+Alt+F11")}), "remap hidden arrow hotkey");
+    press(Qt::Key_F12);
+    require(arrows == 1, "old hidden canvas hotkey stops activating after remapping");
+    press(Qt::Key_F11);
+    require(arrows == 2, "new hidden canvas hotkey activates without restoring the button");
+    palette->globalCanvasClickThroughRequested();
+    press(Qt::Key_F11);
+    require(arrows == 2, "hidden drawing hotkeys respect canvas click-through mode");
+    controller.activate();
+    {
+        QLineEdit input(controller.window());
+        input.show();
+        controller.window()->activateWindow();
+        input.setFocus();
+        app.processEvents();
+        require(input.hasFocus(), "hidden hotkey fixture focuses a text field");
+        PhysicalKeyEvent down(QEvent::KeyPress, Qt::Key_F11, Qt::ControlModifier | Qt::AltModifier);
+        QApplication::sendEvent(&input, &down);
+        PhysicalKeyEvent up(QEvent::KeyRelease, Qt::Key_F11, Qt::ControlModifier | Qt::AltModifier);
+        QApplication::sendEvent(&input, &up);
+        require(arrows == 2, "hidden drawing hotkeys leave focused text input untouched");
+    }
+    require(shortcuts.setArrow(originalArrow), "restore arrow hotkey");
     require(settings.setLayout(kind, visible), "restore visible arrow tool");
     app.processEvents();
     require(arrow->isVisible(), "open canvas follows drawing layout changes");
@@ -940,7 +984,8 @@ int main(int argc, char** argv) {
         storage.shutdown();
         return 0;
     }
-    if (app.arguments().contains(QStringLiteral("--saved-layout-only"))) {
+    if (app.arguments().contains(QStringLiteral("--saved-layout-only")) ||
+        app.arguments().contains(QStringLiteral("--hidden-tools-only"))) {
         savedToolbarLayout(app);
         storage.shutdown();
         return 0;

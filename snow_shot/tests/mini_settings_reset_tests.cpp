@@ -175,6 +175,33 @@ void shortcutAndMouseResets(settings::BuiltInSettingsBackend& backend) {
     }
 }
 
+void annotationResetRejectsHistoryCollisions(settings::BuiltInSettingsBackend& backend) {
+    auto& configuration = storage::ApplicationStorage::instance().configuration();
+    const auto original = configuration.snapshot();
+    const auto drawingDefaults = storage::DrawingShortcutSettings().allShortcuts();
+    constexpr auto drawing = settings::SettingsLocalShortcutScope::Drawing;
+    constexpr auto screenshot = settings::SettingsLocalShortcutScope::Screenshot;
+    const auto redoDefault = backend.localShortcuts(screenshot, QStringLiteral("redo"));
+    require(backend.applyLocalShortcuts(drawing, QStringLiteral("line"),
+                                        {QStringLiteral("Ctrl+Alt+F11")}) &&
+                backend.applyLocalShortcuts(screenshot, QStringLiteral("redo"), {}) &&
+                backend.applyLocalShortcuts(screenshot, QStringLiteral("text_recognition"),
+                                            redoDefault),
+            "configure a Mini annotation reset collision with manual OCR");
+    const auto before = configuration.snapshot();
+    const auto revision = configuration.revision();
+    require(!backend.resetSection(settings::SettingsSectionReset::DrawingShortcuts) &&
+                configuration.snapshot() == before && configuration.revision() == revision,
+            "Mini Annotation reset must reject history collisions without changing any scope");
+    require(backend.applyLocalShortcuts(screenshot, QStringLiteral("text_recognition"), {}) &&
+                backend.resetSection(settings::SettingsSectionReset::DrawingShortcuts) &&
+                storage::DrawingShortcutSettings().allShortcuts() == drawingDefaults &&
+                backend.localShortcuts(screenshot, QStringLiteral("redo")) == redoDefault &&
+                backend.localShortcuts(screenshot, QStringLiteral("text_recognition")).isEmpty(),
+            "Mini Annotation reset must restore only its available drawing and history defaults");
+    require(configuration.applySnapshot(original), "restore Mini annotation reset fixture");
+}
+
 void screenshotBehaviorReset(settings::BuiltInSettingsBackend& backend) {
     auto& configuration = storage::ApplicationStorage::instance().configuration();
     for (const QString& key : {QStringLiteral("screenshot_selection/smart_selection"),
@@ -246,6 +273,7 @@ int main(int argc, char** argv) {
         settings::BuiltInSettingsBackend backend(shortcuts);
         unsupportedSettingsRemainInert(backend);
         shortcutAndMouseResets(backend);
+        annotationResetRejectsHistoryCollisions(backend);
         screenshotBehaviorReset(backend);
         recognitionOptInResets(backend);
     }

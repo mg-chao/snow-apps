@@ -12,6 +12,7 @@
 #include <QColor>
 #include <QByteArray>
 #include <QJsonObject>
+#include <QJsonValue>
 #include <QMap>
 #include <QString>
 #include <QStringList>
@@ -267,6 +268,10 @@ class DrawingSettings final {
     [[nodiscard]] bool rememberLastUsedTool() const;
     bool setRememberLastUsedTool(bool enabled) const;
 };
+
+// Applies partial updates across local shortcut scopes in one commit. Each affected
+// scope is validated against its complete resulting assignment before any values change.
+[[nodiscard]] bool setLocalShortcutValuesAtomic(const QMap<QString, QJsonValue>& values);
 
 class ScreenshotShortcutSettings final {
   public:

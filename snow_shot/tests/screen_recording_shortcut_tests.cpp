@@ -3,6 +3,7 @@
 #include "snow_shot/presentation/screenrecordingshortcutcontroller.h"
 #include "snow_shot/presentation/screenrecordingtoolbarwindow.h"
 #include "snow_shot/presentation/screenshotgeometry.h"
+#include "snow_shot/presentation/screenshottoolbarlayoutmodel.h"
 #include "snow_shot/storage/applicationstorage.h"
 #include "snow_shot/storage/settingsadapters.h"
 #include "snow_shot/shortcuts/shortcutdisplayservice.h"
@@ -540,6 +541,76 @@ void recordingControlShortcutsFollowButtonsAndSettings() {
     require(settings.setAllShortcutsAtomic(defaults), "recording defaults must be restorable");
 }
 
+void hiddenRecordingToolsRetainShortcuts() {
+    namespace storage = snow_shot::storage;
+    const storage::ScreenshotToolbarSettings settings;
+    const auto kind = storage::ScreenshotToolbarLayoutKind::DrawingTools;
+    require(
+        settings.setLayout(kind, {{}, snow_shot::presentation::toolbar_layout::defaultOrder(kind)}),
+        "hide recording annotations before creating the toolbar");
+    const auto savedLayout = settings.layout(kind);
+    const storage::DrawingShortcutSettings drawing;
+    require(drawing.setShape({QStringLiteral("F6")}), "configure hidden recording shape shortcut");
+    ScreenRecordingAreaWindow area;
+    ScreenRecordingToolbarWindow toolbar;
+    area.setRecordingRegion(QRect(20, 20, 400, 300));
+    auto* palette = toolbar.palette();
+    int shapes = 0;
+    snow_shot::presentation::recording::connectScreenRecordingSelection(*palette, area, area);
+    QObject::connect(palette, &ScreenshotToolPalette::shapeRequested, &area, [&] {
+        ++shapes;
+        static_cast<void>(area.canvas()->setCanvasTool(SnowCanvasTool::Shape));
+        area.setInputMode(ScreenRecordingAreaWindow::InputMode::Drawing);
+    });
+    ScreenRecordingShortcutController shortcuts(area, toolbar);
+    area.show();
+    toolbar.show();
+    focus(toolbar);
+    for (auto* receiver : {static_cast<QWidget*>(&toolbar), static_cast<QWidget*>(&area),
+                           static_cast<QWidget*>(area.canvas())}) {
+        palette->clearActiveTool();
+        const int before = shapes;
+        press(*receiver, Qt::Key_F6);
+        require(shapes == before + 1 && area.canvas()->canvasTool() == SnowCanvasTool::Shape &&
+                    palette->activeTool() == ScreenshotToolPalette::Tool::Shape &&
+                    palette->stylePanel()->isVisible(),
+                "hidden recording tool hotkey activates once from each recording surface");
+        press(*receiver, Qt::Key_F6);
+        require(shapes == before + 1 && !palette->activeTool() &&
+                    palette->recordingExportSettingsVisible(),
+                "hidden recording hotkeys retain their Export Settings toggle");
+        require(settings.layout(kind) == savedLayout,
+                "recording hotkeys do not alter the saved hidden layout");
+        for (auto* button : palette->mainPanel()->findChildren<adqt::widgets::AdButton*>()) {
+            if (savedLayout.hidden.contains(button->property("screenshotToolbarItemId").toString()))
+                require(button->isHidden(), "recording hotkeys do not reveal hidden annotations");
+        }
+    }
+    require(drawing.setShape({QStringLiteral("F7")}), "remap hidden recording tool shortcut");
+    const int before = shapes;
+    press(toolbar, Qt::Key_F6);
+    require(shapes == before, "old hidden recording shortcut stops activating");
+    press(toolbar, Qt::Key_F7);
+    require(shapes == before + 1, "remapped hidden recording shortcut activates immediately");
+    area.setDrawingBlocked(true);
+    palette->clearActiveTool();
+    press(toolbar, Qt::Key_F7);
+    require(shapes == before + 1, "busy recording operations block hidden tools");
+    area.setDrawingBlocked(false);
+    {
+        QLineEdit input(&toolbar);
+        input.show();
+        focus(input);
+        require(input.hasFocus(), "hidden recording fixture focuses a text editor");
+        press(input, Qt::Key_F7);
+        require(shapes == before + 1, "text editing blocks hidden recording tools");
+    }
+    toolbar.hide();
+    press(area, Qt::Key_F7);
+    require(shapes == before + 1,
+            "hiding the recording window preserves shortcut scope restrictions");
+}
+
 void recordingShortcutsFollowBothWindowsAndConfiguredKeys() {
     const snow_shot::storage::DrawingShortcutSettings drawing;
     const snow_shot::storage::ScreenshotShortcutSettings history;
@@ -782,6 +853,11 @@ int main(int argc, char* argv[]) {
     auto& storage = snow_shot::storage::ApplicationStorage::instance();
     require(storage.initialize({executableDirectory, temporary.path(), 60000}).success,
             "isolated recording shortcut settings must initialize");
+    if (app.arguments().contains(QStringLiteral("--hidden-tools-only"))) {
+        hiddenRecordingToolsRetainShortcuts();
+        storage.shutdown();
+        return 0;
+    }
 #ifdef Q_OS_WIN
     if (app.arguments().contains(QStringLiteral("--close-release-native"))) {
         const int result = close_release_native_test::run([&] {

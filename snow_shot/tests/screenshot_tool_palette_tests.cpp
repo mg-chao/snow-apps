@@ -2744,6 +2744,16 @@ void groupedToolbarHoverSwitchesWithVisibleTooltips() {
 }
 
 void groupedDrawingOptionsShowShortcutTooltips() {
+    const snow_shot::storage::DrawingShortcutSettings settings;
+    const auto originalLine = settings.shortcuts(QStringLiteral("line"));
+    const auto originalSpotlight = settings.shortcuts(QStringLiteral("spotlight"));
+    const auto cleanup = qScopeGuard([&] {
+        static_cast<void>(settings.setShortcuts(QStringLiteral("line"), originalLine));
+        static_cast<void>(settings.setShortcuts(QStringLiteral("spotlight"), originalSpotlight));
+    });
+    require(settings.setShortcuts(QStringLiteral("line"), {QStringLiteral("Ctrl+Alt+L")}) &&
+                settings.setShortcuts(QStringLiteral("spotlight"), {QStringLiteral("Ctrl+Alt+S")}),
+            "new annotation shortcuts must be configurable for grouped tooltip coverage");
     adqt::widgets::AdTooltip::installApplicationTooltips();
     ScreenshotToolPalette::Options options;
     options.showLineTool = true;
@@ -2758,9 +2768,13 @@ void groupedDrawingOptionsShowShortcutTooltips() {
 
     const QMap<QString, QString> expectedTooltips{
         {QStringLiteral("arrow"), QStringLiteral("Arrow (2)")},
-        {QStringLiteral("line"), QStringLiteral("Line")},
+        {QStringLiteral("line"), QStringLiteral("Line (%1)")
+                                     .arg(snow_shot::shortcuts::formatShortcutListDisplayText(
+                                         settings.shortcuts(QStringLiteral("line"))))},
         {QStringLiteral("highlighter"), QStringLiteral("Highlight (4 / H)")},
-        {QStringLiteral("spotlight"), QStringLiteral("Spotlight")},
+        {QStringLiteral("spotlight"), QStringLiteral("Spotlight (%1)")
+                                          .arg(snow_shot::shortcuts::formatShortcutListDisplayText(
+                                              settings.shortcuts(QStringLiteral("spotlight"))))},
     };
     for (const char* triggerName : {"screenshotArrowLineButton", "screenshotHighlightButton"}) {
         auto* trigger =
@@ -6085,6 +6099,8 @@ void repeatingDrawingShortcutsReturnsToSelect() {
                 toolbarSettings.setLastHighlightTool(QStringLiteral("pen-highlight")),
             "drawing shortcut tests must start from the default remembered modes");
     ScreenshotToolPalette::Options options;
+    options.showLineTool = true;
+    options.showSpotlightTool = true;
     options.showFreeDrawTool = true;
     options.showHighlightTool = true;
     options.showTextTool = true;
@@ -6099,6 +6115,7 @@ void repeatingDrawingShortcutsReturnsToSelect() {
                      [&selectRequests]() { ++selectRequests; });
 
     const std::pair<const char*, Tool> shortcuts[] = {
+        {"line", Tool::Line},           {"spotlight", Tool::Spotlight},
         {"shape", Tool::Shape},         {"arrow", Tool::Arrow},
         {"brush", Tool::FreeDraw},      {"highlight", Tool::PenHighlight},
         {"text", Tool::Text},           {"serial_number", Tool::SerialNumber},
@@ -6109,7 +6126,8 @@ void repeatingDrawingShortcutsReturnsToSelect() {
         palette.setActiveTool(Tool::Select);
         require(palette.activateDrawingShortcut(QString::fromLatin1(id)) &&
                     palette.activeToolForTests() == tool,
-                "a drawing shortcut should activate its tool");
+                qPrintable(QStringLiteral("the %1 drawing shortcut must activate its tool")
+                               .arg(QString::fromLatin1(id))));
         const int previousSelectRequests = selectRequests;
         require(palette.activateDrawingShortcut(QString::fromLatin1(id)) &&
                     palette.activeToolForTests() == Tool::Select &&
@@ -6163,18 +6181,30 @@ void repeatingActionShortcutsReturnsToSelect() {
 
 void groupedToolShortcutsToggleOnlyTheRequestedTool() {
     using Tool = ScreenshotToolPalette::Tool;
+    const snow_shot::storage::ScreenshotToolbarSettings settings;
+    const QString originalHighlight = settings.lastHighlightTool();
+    const QString originalFilter = settings.lastFilterTool();
+    const auto cleanup = qScopeGuard([&] {
+        static_cast<void>(settings.setLastHighlightTool(originalHighlight));
+        static_cast<void>(settings.setLastFilterTool(originalFilter));
+    });
+    require(settings.setLastHighlightTool(QStringLiteral("pen-highlight")) &&
+                settings.setLastFilterTool(QStringLiteral("pen-filter")),
+            "grouped shortcut tests must start from known remembered drawing modes");
     ScreenshotToolPalette::Options options;
     options.showLineTool = true;
     options.showHighlightTool = true;
+    options.showSpotlightTool = true;
     options.showRectangleHighlightTool = true;
     options.showPenHighlightTool = true;
     options.showFilterTool = true;
+    options.showWatermarkTool = true;
     options.enableStyleToolbar = false;
     options.toolbarLayout = snow_shot::storage::ScreenshotToolbarLayout{
         {{QStringLiteral("select")},
          {QStringLiteral("shape"), QStringLiteral("arrow"), QStringLiteral("line")},
-         {QStringLiteral("highlighter")},
-         {QStringLiteral("filter")}},
+         {QStringLiteral("highlighter"), QStringLiteral("spotlight")},
+         {QStringLiteral("filter"), QStringLiteral("watermark")}},
         {}};
     ScreenshotToolPalette palette(options);
     palette.setActiveTool(Tool::Line);
@@ -6184,6 +6214,15 @@ void groupedToolShortcutsToggleOnlyTheRequestedTool() {
     require(palette.activateDrawingShortcut(QStringLiteral("arrow")) &&
                 palette.activeToolForTests() == Tool::Select,
             "repeating a grouped tool shortcut should return to Select");
+
+    for (const auto& [id, sibling, tool] :
+         {std::tuple{"highlight", Tool::Spotlight, Tool::PenHighlight},
+          std::tuple{"filter", Tool::Watermark, Tool::PenFilter}}) {
+        palette.setActiveTool(sibling);
+        require(palette.activateDrawingShortcut(QString::fromLatin1(id)) &&
+                    palette.activeToolForTests() == tool,
+                "named annotation shortcuts must activate their family instead of a stack sibling");
+    }
 
     for (const auto& [id, tool] : {std::pair{"highlight", Tool::RectangleHighlight},
                                    std::pair{"filter", Tool::RectangleFilter}}) {
@@ -6209,6 +6248,198 @@ void groupedToolShortcutsToggleOnlyTheRequestedTool() {
                 (recordingPalette.activeToolForTests() == Tool::RectangleHighlight ||
                  recordingPalette.activeToolForTests() == Tool::PenHighlight),
             "recording highlight shortcuts should activate the canvas tool");
+}
+
+void hiddenToolShortcutsUseCommandAvailability() {
+    using Tool = ScreenshotToolPalette::Tool;
+    namespace layout = snow_shot::presentation::toolbar_layout;
+    using snow_shot::storage::ScreenshotToolbarLayoutKind;
+    ScreenshotToolPalette::Options options;
+    options.showHistoryActions = true;
+    options.toolbarLayout = snow_shot::storage::ScreenshotToolbarLayout{
+        {{QStringLiteral("shape"), QStringLiteral("undo")}}, {}};
+    ScreenshotToolPalette palette(options);
+    palette.show();
+    QCoreApplication::processEvents();
+    palette.setHistoryState({true, true});
+    auto* shape = qobject_cast<adqt::widgets::AdButton*>(controlWithTooltip(palette, "Shape"));
+    require(shape != nullptr, "grouped shape retains its underlying command control");
+    int shapes = 0;
+    QObject::connect(&palette, &ScreenshotToolPalette::shapeRequested, [&] { ++shapes; });
+    shape->setEnabled(false);
+    require(!palette.canActivateDrawingShortcut(QStringLiteral("shape")) &&
+                !palette.activateDrawingShortcut(QStringLiteral("shape")) && shapes == 0,
+            "an enabled stack must not make a disabled drawing command available");
+    const snow_shot::storage::ScreenshotToolbarLayout hidden{
+        {}, layout::defaultOrder(ScreenshotToolbarLayoutKind::DrawingTools)};
+    palette.setToolbarLayout(hidden);
+    require(!palette.canActivateDrawingShortcut(QStringLiteral("shape")) &&
+                !palette.activateDrawingShortcut(QStringLiteral("shape")) && shapes == 0,
+            "hiding a disabled drawing command must preserve its availability");
+    shape->setEnabled(true);
+    require(palette.canActivateDrawingShortcut(QStringLiteral("shape")) &&
+                palette.activateDrawingShortcut(QStringLiteral("shape")) && shapes == 1 &&
+                palette.activeTool() == Tool::Shape && shape->isHidden(),
+            "a hidden enabled drawing command activates once without revealing its button");
+    require(palette.stylePanel()->isVisible(), "a hidden drawing tool retains its style settings");
+    require(palette.activateDrawingShortcut(QStringLiteral("shape")) && shapes == 1 &&
+                palette.activeTool() == Tool::Select && shape->isHidden(),
+            "repeating a hidden drawing shortcut returns to Select without revealing it");
+}
+
+void hiddenToolbarShortcutsPreserveToolsAndLayouts() {
+    using Tool = ScreenshotToolPalette::Tool;
+    using snow_shot::storage::ScreenshotToolbarLayout;
+    using snow_shot::storage::ScreenshotToolbarLayoutKind;
+    namespace layout = snow_shot::presentation::toolbar_layout;
+    const snow_shot::storage::ScreenshotToolbarSettings settings;
+    const auto drawingKind = ScreenshotToolbarLayoutKind::DrawingTools;
+    const auto savedDrawing = settings.layout(drawingKind);
+    const auto savedActions = settings.layout(ScreenshotToolbarLayoutKind::ActionTools);
+    const auto savedPinned = settings.layout(ScreenshotToolbarLayoutKind::PinnedActionTools);
+    const auto savedHighlight = settings.lastHighlightTool();
+    const auto savedFilter = settings.lastFilterTool();
+    const auto savedEraser = settings.lastEraserTool();
+    const auto savedTool = settings.lastDrawingTool();
+    const auto restore = qScopeGuard([&] {
+        static_cast<void>(settings.setLayout(drawingKind, savedDrawing));
+        static_cast<void>(
+            settings.setLayout(ScreenshotToolbarLayoutKind::ActionTools, savedActions));
+        static_cast<void>(
+            settings.setLayout(ScreenshotToolbarLayoutKind::PinnedActionTools, savedPinned));
+        static_cast<void>(settings.setLastHighlightTool(savedHighlight));
+        static_cast<void>(settings.setLastFilterTool(savedFilter));
+        static_cast<void>(settings.setLastEraserTool(savedEraser));
+        static_cast<void>(settings.setLastDrawingTool(savedTool));
+    });
+    require(settings.setLastHighlightTool(QStringLiteral("rectangle-highlight")) &&
+                settings.setLastFilterTool(QStringLiteral("auto-filter")) &&
+                settings.setLastEraserTool(QStringLiteral("brush-eraser")),
+            "seed remembered hidden drawing modes");
+    const ScreenshotToolbarLayout hiddenDrawing{{}, layout::defaultOrder(drawingKind)};
+    for (const auto actionKind : {ScreenshotToolbarLayoutKind::ActionTools,
+                                  ScreenshotToolbarLayoutKind::PinnedActionTools}) {
+        const ScreenshotToolbarLayout hiddenActions{{}, layout::defaultOrder(actionKind)};
+        require(settings.setLayout(drawingKind, hiddenDrawing) &&
+                    settings.setLayout(actionKind, hiddenActions),
+                "persist hidden toolbar layouts");
+        const auto expectedDrawing = settings.layout(drawingKind);
+        const auto expectedActions = settings.layout(actionKind);
+        for (const bool initiallyHidden : {false, true}) {
+            ScreenshotToolPalette::Options options;
+            options.showMoveTool = options.showLineTool = options.showFreeDrawTool = true;
+            options.showHighlightTool = options.showSpotlightTool = options.showEraserTool = true;
+            options.showFilterTool = options.showWatermarkTool = options.showTextTool = true;
+            options.showSerialNumberTool = options.showOcrTool = options.showTextTranslationTool =
+                true;
+            options.showTableTool = options.showQrTool = options.showScrollingScreenshotTool = true;
+            options.showScreenRecordButton = options.showSaveButton = options.showHistoryActions =
+                true;
+            options.actions = ScreenshotToolPalette::PinAction | ScreenshotToolPalette::CopyAction |
+                              ScreenshotToolPalette::CancelAction;
+            options.actionToolsLayoutKind = actionKind;
+            options.toolbarLayout = initiallyHidden ? hiddenDrawing : layout::normalizedLayout({});
+            options.actionToolsLayout =
+                initiallyHidden ? hiddenActions : layout::normalizedLayout({}, actionKind);
+            ScreenshotToolPalette palette(options);
+            palette.show();
+            QCoreApplication::processEvents();
+            if (!initiallyHidden) {
+                palette.setToolbarLayout(hiddenDrawing);
+                palette.setActionToolsLayout(hiddenActions);
+            }
+            const auto verifyHidden = [&] {
+                require(mainDrawingToolbarButtons(palette).isEmpty() &&
+                            mainActionToolbarButtons(palette).isEmpty(),
+                        "hidden tools must have no main toolbar slot after hotkey activation");
+                require(settings.layout(drawingKind) == expectedDrawing &&
+                            settings.layout(actionKind) == expectedActions,
+                        "hotkeys must not rewrite saved hidden layouts");
+            };
+            struct DrawingCommand {
+                const char* id;
+                Tool tool;
+                void (ScreenshotToolPalette::*signal)();
+            };
+            const DrawingCommand drawingCommands[] = {
+                {"shape", Tool::Shape, &ScreenshotToolPalette::shapeRequested},
+                {"arrow", Tool::Arrow, &ScreenshotToolPalette::arrowRequested},
+                {"brush", Tool::FreeDraw, &ScreenshotToolPalette::freeDrawRequested},
+                {"highlight", Tool::RectangleHighlight, &ScreenshotToolPalette::highlightRequested},
+                {"text", Tool::Text, &ScreenshotToolPalette::textRequested},
+                {"serial_number", Tool::SerialNumber,
+                 &ScreenshotToolPalette::serialNumberRequested},
+                {"filter", Tool::AutoFilter, &ScreenshotToolPalette::autoFilterRequested},
+                {"eraser", Tool::BrushEraser, &ScreenshotToolPalette::brushEraserRequested},
+                {"watermark", Tool::Watermark, &ScreenshotToolPalette::watermarkRequested},
+            };
+            for (const auto& command : drawingCommands) {
+                palette.setActiveTool(Tool::Select);
+                int requests = 0;
+                const auto connection =
+                    QObject::connect(&palette, command.signal, &palette, [&] { ++requests; });
+                const auto id = QString::fromLatin1(command.id);
+                require(
+                    palette.canActivateDrawingShortcut(id) && requests == 0 &&
+                        palette.activateDrawingShortcut(id) && requests == 1 &&
+                        palette.activeTool() == command.tool && palette.stylePanel()->isVisible(),
+                    "each hidden drawing hotkey activates its remembered tool once with settings");
+                verifyHidden();
+                require(palette.activateDrawingShortcut(id) && requests == 1 &&
+                            palette.activeTool() == Tool::Select,
+                        "each hidden drawing hotkey retains toggle-to-Select behavior");
+                QObject::disconnect(connection);
+            }
+            struct ActionCommand {
+                const char* id;
+                void (ScreenshotToolPalette::*signal)();
+            };
+            const ActionCommand actionCommands[] = {
+                {"move_tool", &ScreenshotToolPalette::moveRequested},
+                {"text_recognition", &ScreenshotToolPalette::ocrRequested},
+                {"text_translation", &ScreenshotToolPalette::textTranslationRequested},
+                {"table_recognition", &ScreenshotToolPalette::tableRequested},
+                {"qr_code_recognition", &ScreenshotToolPalette::qrRequested},
+                {"scrolling_screenshot", &ScreenshotToolPalette::scrollingScreenshotRequested},
+                {"video_recording", &ScreenshotToolPalette::screenRecordRequested},
+                {"pin_to_screen", &ScreenshotToolPalette::pinRequested},
+                {"quick_save", &ScreenshotToolPalette::quickSaveRequested},
+                {"save_as_file", &ScreenshotToolPalette::saveRequested},
+                {"copy_to_clipboard", &ScreenshotToolPalette::copyRequested},
+                {"cancel_screenshot", &ScreenshotToolPalette::cancelRequested},
+                {"undo", &ScreenshotToolPalette::undoRequested},
+                {"redo", &ScreenshotToolPalette::redoRequested},
+            };
+            for (const auto& command : actionCommands) {
+                palette.setActiveTool(Tool::Select);
+                palette.setHistoryState({true, true});
+                int requests = 0;
+                const auto connection =
+                    QObject::connect(&palette, command.signal, &palette, [&] { ++requests; });
+                const auto id = QString::fromLatin1(command.id);
+                require(palette.canActivateScreenshotShortcut(id) && requests == 0 &&
+                            palette.activateScreenshotShortcut(id) && requests == 1,
+                        "each existing screenshot hotkey activates once with configurable tools "
+                        "hidden");
+                verifyHidden();
+                QObject::disconnect(connection);
+            }
+            palette.setOcrEnabled(false);
+            palette.setTableEnabled(false);
+            palette.setQrEnabled(false);
+            for (const auto* id : {"text_recognition", "text_translation", "table_recognition",
+                                   "qr_code_recognition"}) {
+                require(!palette.canActivateScreenshotShortcut(QString::fromLatin1(id)) &&
+                            !palette.activateScreenshotShortcut(QString::fromLatin1(id)),
+                        "hidden recognition hotkeys retain each command's disabled state");
+            }
+            palette.setToolbarLayout(layout::normalizedLayout({}));
+            palette.setActionToolsLayout(layout::normalizedLayout({}, actionKind));
+            require(!mainDrawingToolbarButtons(palette).isEmpty() &&
+                        !mainActionToolbarButtons(palette).isEmpty(),
+                    "hidden tools can be restored after using their hotkeys");
+        }
+    }
 }
 
 void screenshotShortcutsShareButtonCommandsAndAvailability() {
@@ -13897,6 +14128,12 @@ int main(int argc, char** argv) {
     }
     if (application.arguments().contains(QStringLiteral("--quick-save-only"))) {
         quickSaveStacksAndLayoutMigration();
+        snow_shot::storage::ApplicationStorage::instance().shutdown();
+        return 0;
+    }
+    if (application.arguments().contains(QStringLiteral("--hidden-tools-only"))) {
+        hiddenToolShortcutsUseCommandAvailability();
+        hiddenToolbarShortcutsPreserveToolsAndLayouts();
         snow_shot::storage::ApplicationStorage::instance().shutdown();
         return 0;
     }

@@ -445,9 +445,9 @@ void builtInCatalogIsCompleteAndValid() {
         require(itemIds.remove(id), "catalog must contain each platform-specific setting");
     for (const auto& id : excludedPlatformItems)
         require(!itemIds.contains(id), "catalog must omit settings exclusive to another platform");
-    require(itemIds.size() == 230,
+    require(itemIds.size() == 232,
             qPrintable(QStringLiteral(
-                           "catalog must contain 230 shared settings on every platform; found %1")
+                           "catalog must contain 232 shared settings on every platform; found %1")
                            .arg(itemIds.size())));
     require(foundUpdates, "catalog must contain the update mode item");
     const auto* pinnedEditor =
@@ -1361,7 +1361,7 @@ void builtInCatalogIsCompleteAndValid() {
             std::get<settings::SettingsLocalShortcutDefinition>(
                 screenshotShortcuts->items.constFirst().payload)
                     .scope == settings::SettingsLocalShortcutScope::Screenshot &&
-            drawingShortcuts != nullptr && drawingShortcuts->items.size() == 10 &&
+            drawingShortcuts != nullptr && drawingShortcuts->items.size() == 14 &&
             drawingShortcuts->itemLayout == settings::SettingsSectionItemLayout::TwoColumnGrid &&
             pinToScreenShortcuts != nullptr && pinToScreenShortcuts->items.size() == 26 &&
             pinToScreenShortcuts->itemLayout ==
@@ -1421,12 +1421,16 @@ void builtInCatalogIsCompleteAndValid() {
             std::get<settings::SettingsLocalShortcutDefinition>(
                 pinToScreenShortcuts->items.constFirst().payload)
                     .scope == settings::SettingsLocalShortcutScope::PinToScreen &&
-            otherShortcutSection != nullptr && otherShortcutSection->items.size() == 6 &&
+            otherShortcutSection != nullptr && otherShortcutSection->items.size() == 4 &&
             otherShortcutSection->itemLayout ==
                 settings::SettingsSectionItemLayout::TwoColumnGrid &&
-            otherShortcutSection->title.translated() == QStringLiteral("Recognition & actions") &&
-            otherShortcutSection->items.at(4).id == QStringLiteral("screenshot-shortcut.undo") &&
-            otherShortcutSection->items.at(5).id == QStringLiteral("screenshot-shortcut.redo") &&
+            otherShortcutSection->title.translated() == QStringLiteral("Image Recognition") &&
+            drawingShortcuts->items.at(12).id == QStringLiteral("screenshot-shortcut.undo") &&
+            drawingShortcuts->items.at(13).id == QStringLiteral("screenshot-shortcut.redo") &&
+            drawingShortcuts->items.at(3).configurationKey ==
+                QStringLiteral("drawing_shortcuts/line") &&
+            drawingShortcuts->items.at(6).configurationKey ==
+                QStringLiteral("drawing_shortcuts/spotlight") &&
             drawingShortcuts->items.constFirst().id == QStringLiteral("drawing-shortcut.select") &&
             drawingShortcuts->items.at(1).id == QStringLiteral("drawing-shortcut.shape"),
         "Application shortcuts must expose Screenshot before Drawing with stable local shortcuts");

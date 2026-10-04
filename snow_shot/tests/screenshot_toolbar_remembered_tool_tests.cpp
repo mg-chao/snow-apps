@@ -11,12 +11,14 @@
 #include "snow_shot/presentation/windowshortcutmanager.h"
 #include "snow_shot/presentation/screenshottoolbarcommands.h"
 #include "snow_shot/presentation/screenshottoolbarwindow.h"
+#include "snow_shot/presentation/screenshottoolbarlayoutmodel.h"
 #include "snow_shot/storage/applicationstorage.h"
 #include "snow_shot/storage/settingsadapters.h"
 
 #include <QApplication>
 #include "widgets/radio_button_group.h"
 #include "widgets/modal.h"
+#include "widgets/button.h"
 #include <QAbstractButton>
 #include <QScopeGuard>
 #include <QTemporaryDir>
@@ -233,7 +235,7 @@ void rememberedDrawingToolRestoresOncePerCapture() {
 }
 // Exercise production keyboard routing and toolbar signal connections together.
 // Only the command sink substitutes for external recognition/export services.
-void selectionShortcutsReachToolbarCommands() {
+void selectionShortcutsReachToolbarCommands(bool hiddenTools = false) {
     using Tool = ScreenshotToolPalette::Tool;
     const storage::ScreenshotShortcutSettings screenshotSettings;
     const storage::DrawingShortcutSettings drawingSettings;
@@ -243,13 +245,30 @@ void selectionShortcutsReachToolbarCommands() {
     const auto originalDrawing = drawingSettings.allShortcuts();
     const bool originalRemember = drawingPreferences.rememberLastUsedTool();
     const QString originalTool = toolbarSettings.lastDrawingTool();
+    const auto drawingKind = storage::ScreenshotToolbarLayoutKind::DrawingTools;
+    const auto actionKind = storage::ScreenshotToolbarLayoutKind::ActionTools;
+    const auto originalDrawingLayout = toolbarSettings.layout(drawingKind);
+    const auto originalActionLayout = toolbarSettings.layout(actionKind);
     const auto cleanup = qScopeGuard([&] {
         static_cast<void>(screenshotSettings.setAllShortcutsAtomic(originalScreenshot));
         static_cast<void>(drawingSettings.setAllShortcutsAtomic(originalDrawing));
         static_cast<void>(drawingPreferences.setRememberLastUsedTool(originalRemember));
         static_cast<void>(toolbarSettings.setLastDrawingTool(originalTool));
+        static_cast<void>(toolbarSettings.setLayout(drawingKind, originalDrawingLayout));
+        static_cast<void>(toolbarSettings.setLayout(actionKind, originalActionLayout));
     });
     require(drawingPreferences.setRememberLastUsedTool(true), "enable remembered tool fixture");
+    if (hiddenTools) {
+        require(toolbarSettings.setLayout(
+                    drawingKind,
+                    {{}, snow_shot::presentation::toolbar_layout::defaultOrder(drawingKind)}) &&
+                    toolbarSettings.setLayout(
+                        actionKind,
+                        {{}, snow_shot::presentation::toolbar_layout::defaultOrder(actionKind)}),
+                "hide configurable capture tools before constructing the toolbar");
+    }
+    const auto drawingLayout = toolbarSettings.layout(drawingKind);
+    const auto actionLayout = toolbarSettings.layout(actionKind);
 
     for (const QString& id :
          {QStringLiteral("shape"), QStringLiteral("text_recognition"),
@@ -342,6 +361,8 @@ void selectionShortcutsReachToolbarCommands() {
             require(commands.calls == 1, "command must execute before toolbar presentation");
             ++presentations;
             window.restoreRememberedDrawingTool();
+            if (hiddenTools)
+                window.show();
         };
         actions.selectionConfirmed = [&] { ++confirmations; };
         ScreenshotOverlayInputHandler handler(
@@ -399,6 +420,21 @@ void selectionShortcutsReachToolbarCommands() {
             require(id == QStringLiteral("copy_to_clipboard") ? interaction.inactive()
                                                               : capture.presentationSuppressed,
                     "completion shortcut must reach the correct command sink operation");
+        if (hiddenTools) {
+            require(toolbarSettings.layout(drawingKind) == drawingLayout &&
+                        toolbarSettings.layout(actionKind) == actionLayout,
+                    "capture hotkeys must preserve the saved hidden layouts");
+            for (auto* button :
+                 window.palette()->mainPanel()->findChildren<adqt::widgets::AdButton*>()) {
+                if (!button->property("screenshotToolbarItemId").toString().isEmpty())
+                    require(button->isHidden(), "capture hotkeys must not reveal hidden buttons");
+            }
+            if (!completion) {
+                require(dispatch() && commands.calls == 1 &&
+                            window.palette()->activeTool() == Tool::Select,
+                        "hidden tool hotkeys toggle back to Select after selection is committed");
+            }
+        }
     }
 }
 } // namespace
@@ -413,6 +449,11 @@ int main(int argc, char** argv) {
                                        storageDirectory.filePath(QStringLiteral("data")), 60000}));
     if (application.arguments().contains(QStringLiteral("--eraser-only"))) {
         eraserSubtoolsReachToolbarCommands();
+        applicationStorage.shutdown();
+        return 0;
+    }
+    if (application.arguments().contains(QStringLiteral("--hidden-tools-only"))) {
+        selectionShortcutsReachToolbarCommands(true);
         applicationStorage.shutdown();
         return 0;
     }

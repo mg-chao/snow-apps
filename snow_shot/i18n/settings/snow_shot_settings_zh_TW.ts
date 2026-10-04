@@ -2087,6 +2087,10 @@
             <translation>焦點視窗占滿整個螢幕時忽略全域快速鍵</translation>
         </message>
         <message>
+            <source>Image Recognition</source>
+            <translation>影像辨識</translation>
+        </message>
+        <message>
             <source>Image export</source>
             <translation>影像匯出</translation>
         </message>
@@ -2735,10 +2739,6 @@
             <translation>重新擷取</translation>
         </message>
         <message>
-            <source>Recognition &amp; actions</source>
-            <translation>辨識與操作</translation>
-        </message>
-        <message>
             <source>Recognition output</source>
             <translation>辨識結果</translation>
         </message>
@@ -3271,12 +3271,12 @@
             <translation>標註工具快速鍵</translation>
         </message>
         <message>
-            <source>Shortcut keys for pinned-to-screen windows</source>
-            <translation>固定到螢幕視窗的快速鍵</translation>
+            <source>Shortcut keys for image recognition tools</source>
+            <translation>影像辨識工具的快捷鍵</translation>
         </message>
         <message>
-            <source>Shortcut keys for recognition and screenshot actions</source>
-            <translation>辨識和截圖操作的快速鍵</translation>
+            <source>Shortcut keys for pinned-to-screen windows</source>
+            <translation>固定到螢幕視窗的快速鍵</translation>
         </message>
         <message>
             <source>Shortcut keys for recording controls</source>
@@ -3977,6 +3977,10 @@ Change the shortcut and try again</source>
             <translation>未設定</translation>
         </message>
         <message>
+            <source>Not set</source>
+            <translation>未設定</translation>
+        </message>
+        <message>
             <source>OK</source>
             <translation>確定</translation>
         </message>
@@ -3999,10 +4003,6 @@ Unavailable: %2</source>
             <translation>部分快速鍵無法使用
 可用：%1
 不可用：%2</translation>
-        </message>
-        <message>
-            <source>Unset</source>
-            <translation>未設定</translation>
         </message>
         <message>
             <source>already used by another application or action</source>

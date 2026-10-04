@@ -33,6 +33,7 @@
 #include <QLayout>
 #include <QString>
 #include <QTranslator>
+#include <QVector>
 #include <QWheelEvent>
 
 #include <algorithm>
@@ -79,6 +80,80 @@ QStringList portableText(const shortcut_domain::ShortcutBindingList& values) {
 
 QString displayText(const QString& portable) {
     return shortcut_domain::formatShortcutDisplayText(binding(portable));
+}
+
+void shortcutPopupLayoutRemainsStable() {
+    class LayoutObserver final : public QObject {
+      public:
+        QVector<int> visiblePanelHeights;
+
+      protected:
+        bool eventFilter(QObject* watched, QEvent* event) override {
+            auto* widget = qobject_cast<QWidget*>(watched);
+            if (widget != nullptr && widget->objectName() == QStringLiteral("ad-modal-panel") &&
+                widget->isVisible() &&
+                (event->type() == QEvent::Show || event->type() == QEvent::Resize)) {
+                visiblePanelHeights.push_back(widget->height());
+            }
+            return false;
+        }
+    };
+    const auto scheme = styles::ThemeManager::instance().themeColorScheme();
+    constexpr std::array scenarios = {std::pair{1, 0}, std::pair{1, 1}, std::pair{2, 0},
+                                      std::pair{2, 1}, std::pair{2, 2}};
+    for (const auto& [maxShortcutCount, count] : scenarios) {
+        QWidget host;
+        host.resize(900, 700);
+        ShortcutKeyRowConfig config;
+        config.title = QStringLiteral("Screenshot");
+        config.maxShortcutCount = maxShortcutCount;
+        config.showRegistrationStatus = false;
+        config.validationScope = ShortcutKeyRowConfig::ValidationScope::ScreenshotShortcut;
+        if (count >= 1) {
+            config.shortcuts.push_back(binding(QStringLiteral("Ctrl+F1")));
+        }
+        if (count >= 2) {
+            config.shortcuts.push_back(binding(QStringLiteral("Ctrl+F2")));
+        }
+        ShortcutKeyRow row(config, scheme.metricAlias,
+                           styles::buildMainWindowComponentMetricToken(scheme), &host);
+        row.resize(720, row.sizeHint().height());
+        host.show();
+        QApplication::processEvents();
+        auto* openButton =
+            row.findChild<adqt::widgets::AdButton*>(QStringLiteral("shortcutKeyButton"));
+        require(openButton != nullptr, "the shortcut settings row must expose its editor");
+        LayoutObserver observer;
+        qApp->installEventFilter(&observer);
+        openButton->click();
+        auto* modal = row.findChild<adqt::widgets::AdModal*>();
+        auto* content = modal ? modal->contentWidget()->findChild<QWidget*>(
+                                    QStringLiteral("shortcutConfigContent"))
+                              : nullptr;
+        QWidget* panel = content;
+        while (panel != nullptr && panel->objectName() != QStringLiteral("ad-modal-panel")) {
+            panel = panel->parentWidget();
+        }
+        require(modal != nullptr && content != nullptr && panel != nullptr,
+                "the shortcut editor must expose its content and panel");
+        require(content->height() == content->sizeHint().height(),
+                "the shortcut controls must have their full height when the popup opens");
+        const int openingHeight = panel->height();
+        for (int stage = 0; stage < 6; ++stage) {
+            QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+            QApplication::processEvents();
+        }
+        require(panel->height() == openingHeight,
+                "opening the shortcut editor must use its settled layout height immediately");
+        require(!observer.visiblePanelHeights.isEmpty() &&
+                    std::all_of(observer.visiblePanelHeights.cbegin(),
+                                observer.visiblePanelHeights.cend(),
+                                [openingHeight](int height) { return height == openingHeight; }),
+                "the shortcut popup height must stay stable from its first visible frame");
+        modal->reject();
+        QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+        QApplication::processEvents();
+    }
 }
 
 void sharedShortcutFieldTracksDraftAndCommitsOnAcceptance() {
@@ -589,8 +664,9 @@ void statusPresentationUsesSemanticTokens() {
     QApplication::processEvents();
     require(!statusTrigger->isVisible() && statusTrigger->tooltipText().isEmpty(),
             "unset shortcuts should not display a registration tooltip trigger");
-    require(shortcutButton->accentRole() == adqt::widgets::AdButton::AccentRole::Neutral,
-            "unset shortcuts should use the reference default dashed-button role");
+    require(shortcutButton->text() == QStringLiteral("Not set") &&
+                shortcutButton->accentRole() == adqt::widgets::AdButton::AccentRole::Neutral,
+            "unset global shortcuts must show Not set with neutral styling");
 }
 
 void recorderAcceptsOnlyBackendSupportedShortcuts() {
@@ -1647,11 +1723,33 @@ void compactTitleAndKeyButtonStylesMatchReference() {
 
     row.setRegistrationState({});
     QApplication::processEvents();
-    require(shortcutButton->text().isEmpty() &&
-                shortcutButton->accentRole() == adqt::widgets::AdButton::AccentRole::Danger &&
+    require(shortcutButton->text() == QStringLiteral("Not set") &&
+                shortcutButton->accentRole() == adqt::widgets::AdButton::AccentRole::Neutral &&
                 shortcutButton->property("registrationStatus").toInt() ==
                     static_cast<int>(shortcuts::GlobalShortcutStatus::Unset),
-            "unset compact shortcuts must use the reference icon-only danger button");
+            "unset compact shortcuts must show Not set with neutral styling");
+
+    class UnsetTranslator final : public QTranslator {
+      public:
+        bool isEmpty() const override {
+            return false;
+        }
+        QString translate(const char* context, const char* source, const char*,
+                          int) const override {
+            return QByteArray(context) == QByteArrayLiteral("ShortcutKeyRow") &&
+                           QByteArray(source) == QByteArrayLiteral("Not set")
+                       ? QStringLiteral("Localized unset shortcut")
+                       : QString();
+        }
+    } translator;
+    QCoreApplication::installTranslator(&translator);
+    QApplication::processEvents();
+    require(shortcutButton->text() == QStringLiteral("Localized unset shortcut"),
+            "empty shortcut labels must retranslate when the language changes");
+    QCoreApplication::removeTranslator(&translator);
+    QApplication::processEvents();
+    require(shortcutButton->text() == QStringLiteral("Not set"),
+            "empty shortcut labels must return to the source language");
 }
 
 void adjustableDelayUsesWheelAndClampsRange() {
@@ -1802,6 +1900,7 @@ int main(int argc, char** argv) {
         return 0;
     }
 
+    shortcutPopupLayoutRemainsStable();
     keyDisplayUsesCanonicalLabels();
     sharedShortcutFieldTracksDraftAndCommitsOnAcceptance();
     displayRefreshUpdatesTheSettingsRowAndOpenEditor();

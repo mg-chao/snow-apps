@@ -1289,14 +1289,10 @@ void ShortcutKeyRow::syncRegistrationStatus() {
 
     if (m_shortcutButton != nullptr) {
         auto* const button = static_cast<ShortcutConfigurationButton*>(m_shortcutButton);
-        button->setText(m_compactPresentation
-                            ? shortcutText
-                            : (shortcutText.isEmpty() ? tr("Unset") : shortcutText));
+        button->setText(shortcutText.isEmpty() ? tr("Not set") : shortcutText);
         button->setRegistrationStatus(status);
         if (!m_showRegistrationStatus) {
-            button->setAccentRole(shortcutText.isEmpty()
-                                      ? adqt::widgets::AdButton::AccentRole::Danger
-                                      : adqt::widgets::AdButton::AccentRole::Neutral);
+            button->setAccentRole(adqt::widgets::AdButton::AccentRole::Neutral);
         }
         button->setTheme(m_colorScheme);
     }

@@ -2425,6 +2425,19 @@ if(SNOW_SHOT_BUILD_TESTS)
         ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}"
         ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
 
+    add_executable(snow-shot-annotation-shortcut-settings-tests
+        tests/annotation_shortcut_settings_tests.cpp
+        src/presentation/services/screenshotclipboardservice.cpp)
+    target_link_libraries(snow-shot-annotation-shortcut-settings-tests PRIVATE
+        snow_shot_settings snow_shot_image_codec)
+    snow_shot_import_offscreen_platform(snow-shot-annotation-shortcut-settings-tests)
+    add_test(NAME snow-shot-annotation-shortcut-settings-tests
+             COMMAND snow-shot-annotation-shortcut-settings-tests)
+    set_tests_properties(snow-shot-annotation-shortcut-settings-tests PROPERTIES
+        LABELS "unit" TIMEOUT 30
+        ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}"
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
+
     add_executable(snow-shot-screen-recording-shortcut-settings-tests
         tests/screen_recording_shortcut_settings_tests.cpp
         src/presentation/services/screenshotclipboardservice.cpp
@@ -4943,6 +4956,9 @@ if(SNOW_SHOT_BUILD_TESTS)
         NAME snow-shot-screenshot-tool-shortcut-toggle-tests
         COMMAND snow-shot-screenshot-tool-palette-tests --tool-shortcuts-only
     )
+    add_test(NAME snow-shot-hidden-toolbar-shortcut-tests
+        COMMAND snow-shot-screenshot-tool-palette-tests --hidden-tools-only -platform offscreen)
+    set_tests_properties(snow-shot-hidden-toolbar-shortcut-tests PROPERTIES LABELS "unit" TIMEOUT 60)
     add_test(NAME snow-shot-screenshot-action-shortcut-display-tests
         COMMAND snow-shot-screenshot-tool-palette-tests --screenshot-actions-tooltips-only
             -platform offscreen)
@@ -4973,6 +4989,7 @@ if(SNOW_SHOT_BUILD_TESTS)
         snow-shot-screenshot-tool-palette-remembered-drawing-tool-tests
         snow-shot-screenshot-action-toolbar-layout-tests
         snow-shot-screenshot-tool-shortcut-toggle-tests
+        snow-shot-hidden-toolbar-shortcut-tests
         snow-shot-screenshot-shortcut-tooltip-tests
         snow-shot-screenshot-selection-reset-tests
         snow-shot-screen-recording-toolbar-tests
@@ -9511,6 +9528,24 @@ foreach(_snow_target IN LISTS _snow_clipboard_consumers)
     endif()
     if(APPLE AND "${_snow_sources}" MATCHES "screenshotclipboard(service|content)\\.cpp")
         target_link_libraries(${_snow_target} PRIVATE snow_shot_macos_clipboard)
+    endif()
+endforeach()
+
+foreach(_snow_hidden_shortcut_pair IN ITEMS
+        "capture|snow-shot-screenshot-toolbar-remembered-tool-tests"
+        "pinned|snow-shot-pinned-window-tests"
+        "recording|snow-shot-screen-recording-shortcut-tests"
+        "global-canvas|snow-shot-global-canvas-tests"
+        "floating|snow-shot-global-shortcut-manager-tests")
+    string(REPLACE "|" ";" _snow_hidden_shortcut_parts "${_snow_hidden_shortcut_pair}")
+    list(GET _snow_hidden_shortcut_parts 0 _snow_hidden_shortcut_context)
+    list(GET _snow_hidden_shortcut_parts 1 _snow_hidden_shortcut_target)
+    if(TARGET ${_snow_hidden_shortcut_target})
+        add_test(NAME snow-shot-${_snow_hidden_shortcut_context}-hidden-tool-shortcut-tests
+            COMMAND ${_snow_hidden_shortcut_target} --hidden-tools-only -platform offscreen)
+        set_tests_properties(snow-shot-${_snow_hidden_shortcut_context}-hidden-tool-shortcut-tests
+            PROPERTIES LABELS "unit" RUN_SERIAL TRUE TIMEOUT 60
+            ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
     endif()
 endforeach()
 

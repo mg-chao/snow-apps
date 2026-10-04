@@ -16,6 +16,8 @@
 #include <QSet>
 
 #include <algorithm>
+#include <array>
+#include <cstdint>
 
 namespace snow_shot::storage {
 namespace {
@@ -59,7 +61,7 @@ const QStringList& drawingShortcutToolIds() {
         QStringLiteral("select"),        QStringLiteral("shape"),     QStringLiteral("arrow"),
         QStringLiteral("brush"),         QStringLiteral("highlight"), QStringLiteral("text"),
         QStringLiteral("serial_number"), QStringLiteral("filter"),    QStringLiteral("eraser"),
-        QStringLiteral("watermark"),
+        QStringLiteral("watermark"),     QStringLiteral("line"),      QStringLiteral("spotlight"),
     };
     return ids;
 }
@@ -170,6 +172,52 @@ QString pinToScreenShortcutKey(const QString& actionId) {
     return pinToScreenShortcutActionIds().contains(actionId)
                ? QStringLiteral("pin_to_screen_shortcuts/") + actionId
                : QString();
+}
+
+enum class LocalShortcutPolicy : std::uint8_t { Screenshot, Drawing, WindowCommand };
+
+struct LocalShortcutGroup {
+    QString prefix;
+    const QStringList& ids;
+    LocalShortcutPolicy policy;
+};
+
+const std::array<LocalShortcutGroup, 4>& localShortcutGroups() {
+    static const std::array<LocalShortcutGroup, 4> groups{{
+        {QStringLiteral("screenshot_shortcuts/"), screenshotShortcutActionIds(),
+         LocalShortcutPolicy::Screenshot},
+        {QStringLiteral("drawing_shortcuts/"), drawingShortcutToolIds(),
+         LocalShortcutPolicy::Drawing},
+        {QStringLiteral("pin_to_screen_shortcuts/"), pinToScreenShortcutActionIds(),
+         LocalShortcutPolicy::WindowCommand},
+        {QStringLiteral("screen_recording_shortcuts/"), screenRecordingShortcutActionIds(),
+         LocalShortcutPolicy::WindowCommand},
+    }};
+    return groups;
+}
+
+const LocalShortcutGroup* localShortcutGroup(const QString& key) {
+    for (const auto& group : localShortcutGroups()) {
+        if (key.startsWith(group.prefix) && group.ids.contains(key.mid(group.prefix.size()))) {
+            return &group;
+        }
+    }
+    return nullptr;
+}
+
+bool setAllLocalShortcutsAtomic(const QString& prefix, const QStringList& ids,
+                                const shortcuts::ShortcutBindingMap& bindings) {
+    if (bindings.size() != ids.size()) {
+        return false;
+    }
+    QMap<QString, QJsonValue> values;
+    for (const QString& id : ids) {
+        if (!bindings.contains(id)) {
+            return false;
+        }
+        values.insert(prefix + id, shortcuts::shortcutBindingsToJson(bindings.value(id)));
+    }
+    return setLocalShortcutValuesAtomic(values);
 }
 
 bool shortcutUsesKey(const shortcuts::ShortcutBinding& shortcut, Qt::Key key) {
@@ -1152,20 +1200,71 @@ bool ScreenshotShortcutSettings::isReservedShortcutAllowed(
     return false;
 }
 
+bool setLocalShortcutValuesAtomic(const QMap<QString, QJsonValue>& values) {
+    auto& configuration = cache();
+    return configuration.mutateIfRevision(configuration.revision(), [&configuration, &values]() {
+        QMap<QString, QJsonValue> normalizedValues;
+        QSet<QString> affectedGroups;
+        for (auto it = values.cbegin(); it != values.cend(); ++it) {
+            const auto* group = localShortcutGroup(it.key());
+            if (group == nullptr) {
+                return false;
+            }
+            const auto normalized = ConfigurationSchema::normalize(it.key(), it.value());
+            if (!normalized.valid) {
+                return false;
+            }
+            normalizedValues.insert(it.key(), normalized.value);
+            affectedGroups.insert(group->prefix);
+        }
+
+        const auto current = configuration.snapshot();
+        for (const auto& group : localShortcutGroups()) {
+            if (!affectedGroups.contains(group.prefix)) {
+                continue;
+            }
+            shortcuts::ShortcutBindingList seen;
+            for (const QString& id : group.ids) {
+                const QString key = group.prefix + id;
+                const auto value = normalizedValues.contains(key) ? normalizedValues.value(key)
+                                                                  : current.value(key);
+                const auto bindings = shortcuts::shortcutBindingsFromJson(
+                    value, group.policy == LocalShortcutPolicy::Screenshot, -1, nullptr, nullptr,
+                    key == QStringLiteral("screenshot_shortcuts/toggle_guides"));
+                for (const auto& binding : bindings) {
+                    if (group.policy == LocalShortcutPolicy::Drawing &&
+                        DrawingShortcutSettings::isReservedShortcut(binding)) {
+                        return false;
+                    }
+                    if (group.policy == LocalShortcutPolicy::Screenshot &&
+                        ScreenshotShortcutSettings::isReservedShortcut(binding) &&
+                        !ScreenshotShortcutSettings::isReservedShortcutAllowed(id, binding)) {
+                        return false;
+                    }
+                    if (std::any_of(seen.cbegin(), seen.cend(), [&binding](const auto& existing) {
+                            return shortcuts::bindingsConflict(existing, binding);
+                        })) {
+                        return false;
+                    }
+                    seen.push_back(binding);
+                }
+            }
+        }
+        return configuration.setValues(normalizedValues);
+    });
+}
+
 shortcuts::ShortcutBindingList
 ScreenshotShortcutSettings::shortcuts(const QString& actionId) const {
     const QString key = screenshotShortcutKey(actionId);
     return key.isEmpty() ? shortcuts::ShortcutBindingList{} : shortcutValue(key);
 }
 
-bool ScreenshotShortcutSettings::setShortcuts(const QString& actionId,
-                                              const shortcuts::ShortcutBindingList& value) const {
-    if (screenshotShortcutKey(actionId).isEmpty()) {
-        return false;
-    }
-    shortcuts::ShortcutBindingMap next = allShortcuts();
-    next.insert(actionId, value);
-    return setAllShortcutsAtomic(next);
+bool ScreenshotShortcutSettings::setShortcuts(
+    const QString& actionId, const shortcuts::ShortcutBindingList& bindings) const {
+    const QString key = screenshotShortcutKey(actionId);
+    return !key.isEmpty() &&
+           setLocalShortcutValuesAtomic({{key, shortcuts::shortcutBindingsToJson(bindings)}});
 }
 
 shortcuts::ShortcutBindingMap ScreenshotShortcutSettings::allShortcuts() const {
@@ -1178,38 +1277,8 @@ shortcuts::ShortcutBindingMap ScreenshotShortcutSettings::allShortcuts() const {
 
 bool ScreenshotShortcutSettings::setAllShortcutsAtomic(
     const shortcuts::ShortcutBindingMap& shortcutsByAction) const {
-    if (shortcutsByAction.size() != screenshotShortcutActionIds().size()) {
-        return false;
-    }
-    QMap<QString, QJsonValue> values;
-    shortcuts::ShortcutBindingList seen;
-    for (const QString& actionId : screenshotShortcutActionIds()) {
-        if (!shortcutsByAction.contains(actionId)) {
-            return false;
-        }
-        const QString key = screenshotShortcutKey(actionId);
-        const ConfigurationNormalization normalized = ConfigurationSchema::normalize(
-            key, shortcuts::shortcutBindingsToJson(shortcutsByAction.value(actionId)));
-        if (!normalized.valid) {
-            return false;
-        }
-        const auto normalizedBindings =
-            shortcuts::shortcutBindingsFromJson(normalized.value, true, -1, nullptr, nullptr,
-                                                actionId == QStringLiteral("toggle_guides"));
-        for (const auto& binding : normalizedBindings) {
-            const bool duplicate =
-                std::any_of(seen.cbegin(), seen.cend(), [&binding](const auto& existing) {
-                    return shortcuts::bindingsConflict(existing, binding);
-                });
-            if ((isReservedShortcut(binding) && !isReservedShortcutAllowed(actionId, binding)) ||
-                duplicate) {
-                return false;
-            }
-            seen.push_back(binding);
-        }
-        values.insert(key, normalized.value);
-    }
-    return cache().setValues(values);
+    return setAllLocalShortcutsAtomic(QStringLiteral("screenshot_shortcuts/"),
+                                      screenshotShortcutActionIds(), shortcutsByAction);
 }
 
 shortcuts::ShortcutBindingList DrawingShortcutSettings::select() const {
@@ -1254,13 +1323,10 @@ shortcuts::ShortcutBindingList DrawingShortcutSettings::shortcuts(const QString&
 }
 
 bool DrawingShortcutSettings::setShortcuts(const QString& toolId,
-                                           const shortcuts::ShortcutBindingList& value) const {
-    if (drawingShortcutKey(toolId).isEmpty()) {
-        return false;
-    }
-    shortcuts::ShortcutBindingMap next = allShortcuts();
-    next.insert(toolId, value);
-    return setAllShortcutsAtomic(next);
+                                           const shortcuts::ShortcutBindingList& bindings) const {
+    const QString key = drawingShortcutKey(toolId);
+    return !key.isEmpty() &&
+           setLocalShortcutValuesAtomic({{key, shortcuts::shortcutBindingsToJson(bindings)}});
 }
 
 shortcuts::ShortcutBindingMap DrawingShortcutSettings::allShortcuts() const {
@@ -1273,39 +1339,8 @@ shortcuts::ShortcutBindingMap DrawingShortcutSettings::allShortcuts() const {
 
 bool DrawingShortcutSettings::setAllShortcutsAtomic(
     const shortcuts::ShortcutBindingMap& shortcutsByTool) const {
-    if (shortcutsByTool.size() != drawingShortcutToolIds().size()) {
-        return false;
-    }
-    QMap<QString, QJsonValue> values;
-    shortcuts::ShortcutBindingList seen;
-    for (const QString& toolId : drawingShortcutToolIds()) {
-        if (!shortcutsByTool.contains(toolId)) {
-            return false;
-        }
-        const QString key = drawingShortcutKey(toolId);
-        const ConfigurationNormalization normalized = ConfigurationSchema::normalize(
-            key, shortcuts::shortcutBindingsToJson(shortcutsByTool.value(toolId)));
-        if (!normalized.valid) {
-            return false;
-        }
-        const auto normalizedBindings =
-            shortcuts::shortcutBindingsFromJson(normalized.value, false);
-        for (const auto& binding : normalizedBindings) {
-            if (isReservedShortcut(binding)) {
-                return false;
-            }
-            const bool duplicate =
-                std::any_of(seen.cbegin(), seen.cend(), [&binding](const auto& existing) {
-                    return shortcuts::bindingsConflict(existing, binding);
-                });
-            if (duplicate) {
-                return false;
-            }
-            seen.push_back(binding);
-        }
-        values.insert(key, normalized.value);
-    }
-    return cache().setValues(values);
+    return setAllLocalShortcutsAtomic(QStringLiteral("drawing_shortcuts/"),
+                                      drawingShortcutToolIds(), shortcutsByTool);
 }
 
 shortcuts::ShortcutBindingList
@@ -1314,14 +1349,11 @@ PinToScreenShortcutSettings::shortcuts(const QString& actionId) const {
     return key.isEmpty() ? shortcuts::ShortcutBindingList{} : shortcutValue(key);
 }
 
-bool PinToScreenShortcutSettings::setShortcuts(const QString& actionId,
-                                               const shortcuts::ShortcutBindingList& value) const {
-    if (pinToScreenShortcutKey(actionId).isEmpty()) {
-        return false;
-    }
-    shortcuts::ShortcutBindingMap next = allShortcuts();
-    next.insert(actionId, value);
-    return setAllShortcutsAtomic(next);
+bool PinToScreenShortcutSettings::setShortcuts(
+    const QString& actionId, const shortcuts::ShortcutBindingList& bindings) const {
+    const QString key = pinToScreenShortcutKey(actionId);
+    return !key.isEmpty() &&
+           setLocalShortcutValuesAtomic({{key, shortcuts::shortcutBindingsToJson(bindings)}});
 }
 
 shortcuts::ShortcutBindingMap PinToScreenShortcutSettings::allShortcuts() const {
@@ -1334,36 +1366,8 @@ shortcuts::ShortcutBindingMap PinToScreenShortcutSettings::allShortcuts() const 
 
 bool PinToScreenShortcutSettings::setAllShortcutsAtomic(
     const shortcuts::ShortcutBindingMap& shortcutsByAction) const {
-    if (shortcutsByAction.size() != pinToScreenShortcutActionIds().size()) {
-        return false;
-    }
-    QMap<QString, QJsonValue> values;
-    shortcuts::ShortcutBindingList seen;
-    for (const QString& actionId : pinToScreenShortcutActionIds()) {
-        if (!shortcutsByAction.contains(actionId)) {
-            return false;
-        }
-        const QString key = pinToScreenShortcutKey(actionId);
-        const ConfigurationNormalization normalized = ConfigurationSchema::normalize(
-            key, shortcuts::shortcutBindingsToJson(shortcutsByAction.value(actionId)));
-        if (!normalized.valid) {
-            return false;
-        }
-        const auto normalizedBindings =
-            shortcuts::shortcutBindingsFromJson(normalized.value, false);
-        for (const auto& binding : normalizedBindings) {
-            const bool duplicate =
-                std::any_of(seen.cbegin(), seen.cend(), [&binding](const auto& existing) {
-                    return shortcuts::bindingsConflict(existing, binding);
-                });
-            if (duplicate) {
-                return false;
-            }
-            seen.push_back(binding);
-        }
-        values.insert(key, normalized.value);
-    }
-    return cache().setValues(values);
+    return setAllLocalShortcutsAtomic(QStringLiteral("pin_to_screen_shortcuts/"),
+                                      pinToScreenShortcutActionIds(), shortcutsByAction);
 }
 
 shortcuts::ShortcutBindingList
@@ -1373,13 +1377,10 @@ ScreenRecordingShortcutSettings::shortcuts(const QString& actionId) const {
 }
 
 bool ScreenRecordingShortcutSettings::setShortcuts(
-    const QString& actionId, const shortcuts::ShortcutBindingList& value) const {
-    if (screenRecordingShortcutKey(actionId).isEmpty()) {
-        return false;
-    }
-    shortcuts::ShortcutBindingMap next = allShortcuts();
-    next.insert(actionId, value);
-    return setAllShortcutsAtomic(next);
+    const QString& actionId, const shortcuts::ShortcutBindingList& bindings) const {
+    const QString key = screenRecordingShortcutKey(actionId);
+    return !key.isEmpty() &&
+           setLocalShortcutValuesAtomic({{key, shortcuts::shortcutBindingsToJson(bindings)}});
 }
 
 shortcuts::ShortcutBindingMap ScreenRecordingShortcutSettings::allShortcuts() const {
@@ -1392,36 +1393,8 @@ shortcuts::ShortcutBindingMap ScreenRecordingShortcutSettings::allShortcuts() co
 
 bool ScreenRecordingShortcutSettings::setAllShortcutsAtomic(
     const shortcuts::ShortcutBindingMap& shortcutsByAction) const {
-    if (shortcutsByAction.size() != screenRecordingShortcutActionIds().size()) {
-        return false;
-    }
-    QMap<QString, QJsonValue> values;
-    shortcuts::ShortcutBindingList seen;
-    for (const QString& actionId : screenRecordingShortcutActionIds()) {
-        if (!shortcutsByAction.contains(actionId)) {
-            return false;
-        }
-        const QString key = screenRecordingShortcutKey(actionId);
-        const ConfigurationNormalization normalized = ConfigurationSchema::normalize(
-            key, shortcuts::shortcutBindingsToJson(shortcutsByAction.value(actionId)));
-        if (!normalized.valid) {
-            return false;
-        }
-        const auto normalizedBindings =
-            shortcuts::shortcutBindingsFromJson(normalized.value, false);
-        for (const auto& binding : normalizedBindings) {
-            const bool duplicate =
-                std::any_of(seen.cbegin(), seen.cend(), [&binding](const auto& existing) {
-                    return shortcuts::bindingsConflict(existing, binding);
-                });
-            if (duplicate) {
-                return false;
-            }
-            seen.push_back(binding);
-        }
-        values.insert(key, normalized.value);
-    }
-    return cache().setValues(values);
+    return setAllLocalShortcutsAtomic(QStringLiteral("screen_recording_shortcuts/"),
+                                      screenRecordingShortcutActionIds(), shortcutsByAction);
 }
 
 QString ScreenshotUiSettings::toolbarSize() const {

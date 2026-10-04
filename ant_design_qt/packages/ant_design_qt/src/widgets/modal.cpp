@@ -2406,6 +2406,9 @@ void AdModal::syncOverlayGeometry() {
   if (overlay_->geometry() != rect) {
     overlay_->setGeometry(rect);
   }
+  // Nested form layouts must propagate their minimum sizes before the panel
+  // is shown, just as they do for a window surface.
+  activateWidgetLayouts(overlay_);
 }
 
 void AdModal::syncWindowModeGeometry() {

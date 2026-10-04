@@ -465,6 +465,8 @@ void settingsSchemaDefaultsAndValidationAreComplete() {
         "new settings defaults do not match the requested contract");
 
     const QMap<QString, QJsonArray> drawingShortcutDefaults{
+        {QStringLiteral("line"), QJsonArray()},
+        {QStringLiteral("spotlight"), QJsonArray()},
         {QStringLiteral("select"), QJsonArray{QStringLiteral("V")}},
         {QStringLiteral("shape"), QJsonArray{QStringLiteral("1")}},
         {QStringLiteral("arrow"), QJsonArray{QStringLiteral("2")}},
@@ -1896,7 +1898,10 @@ void settingsAdaptersRoundTripAndRejectInvalidValues() {
 
     const shortcuts::ShortcutBindingMap defaults = drawingShortcuts.allShortcuts();
     require(
-        defaults.size() == 10 &&
+        defaults.size() == 12 && defaults.contains(QStringLiteral("line")) &&
+            defaults.value(QStringLiteral("line")).isEmpty() &&
+            defaults.contains(QStringLiteral("spotlight")) &&
+            defaults.value(QStringLiteral("spotlight")).isEmpty() &&
             portable(defaults.value(QStringLiteral("select"))) ==
                 QStringList{QStringLiteral("V")} &&
             portable(defaults.value(QStringLiteral("shape"))) == QStringList{QStringLiteral("1")} &&
@@ -1905,7 +1910,7 @@ void settingsAdaptersRoundTripAndRejectInvalidValues() {
                 QStringList{QStringLiteral("9")} &&
             drawingShortcuts.shortcuts(QStringLiteral("unsupported")).isEmpty() &&
             !drawingShortcuts.setShortcuts(QStringLiteral("unsupported"), {QStringLiteral("Q")}),
-        "drawing shortcut adapter must expose ten stable tools only");
+        "drawing shortcut adapter must expose all twelve tools with empty new defaults");
 
     require(drawingShortcuts.setSelect({QStringLiteral("Ctrl+Shift+V")}) &&
                 portable(drawingShortcuts.select()) == QStringList{QStringLiteral("Ctrl+Shift+V")},
@@ -1935,7 +1940,7 @@ void settingsAdaptersRoundTripAndRejectInvalidValues() {
     incomplete.remove(QStringLiteral("watermark"));
     require(!drawingShortcuts.setAllShortcutsAtomic(incomplete) &&
                 drawingShortcuts.allShortcuts() == beforeCollision,
-            "atomic drawing shortcut updates must require all ten tools");
+            "atomic drawing shortcut updates must require all twelve tools");
 
     shortcuts::ShortcutBindingMap emptyAssignment = beforeCollision;
     emptyAssignment.insert(QStringLiteral("shape"), {});

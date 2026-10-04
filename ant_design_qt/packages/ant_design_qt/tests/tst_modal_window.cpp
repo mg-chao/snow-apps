@@ -23,6 +23,7 @@
 #endif
 
 #include "widgets/modal.h"
+#include "widgets/form.h"
 
 using adqt::widgets::AdModal;
 
@@ -197,6 +198,50 @@ class TstModalWindow : public QObject {
     modal.setMode(AdModal::Mode::Window);
     modal.setWindowModeDetached(true);
     requireOpenProducesVisibleWindow(modal, QStringLiteral("Ownerless detached"));
+  }
+
+  void overlayModeFitsNestedFormBeforeShowing() {
+    for (const bool centered : {false, true}) {
+      for (const int rowCount : {1, 2}) {
+        QWidget owner;
+        owner.resize(900, 700);
+        owner.show();
+        qApp->processEvents();
+
+        AdModal modal(&owner);
+        modal.setOwnerWindow(&owner);
+        modal.setWindowTitle(QStringLiteral("Nested form"));
+        modal.setCentered(centered);
+        auto* form = new adqt::widgets::AdForm;
+        form->setFormLayout(adqt::widgets::AdForm::FormLayout::Vertical);
+        auto* content = new QWidget;
+        auto* contentLayout = new QVBoxLayout(content);
+        contentLayout->setContentsMargins(0, 0, 0, 0);
+        contentLayout->setSpacing(16);
+        for (int row = 0; row < rowCount; ++row) {
+          auto* control = new QWidget(content);
+          control->setFixedHeight(32);
+          contentLayout->addWidget(control);
+        }
+        auto* item = new adqt::widgets::AdFormItem(form);
+        item->setControlWidget(content);
+        form->addItem(item);
+        modal.setContentWidget(form);
+        modal.open();
+
+        auto* panel = modalSection(&owner, "ad-modal-panel");
+        QVERIFY(panel);
+        const int expectedContentHeight = rowCount * 32 + (rowCount - 1) * 16;
+        QCOMPARE(content->height(), expectedContentHeight);
+        const QRect openingGeometry = panel->geometry();
+        for (int turn = 0; turn < 6; ++turn) {
+          qApp->processEvents();
+          QCOMPARE(panel->geometry(), openingGeometry);
+          QCOMPARE(content->height(), expectedContentHeight);
+        }
+        modal.close();
+      }
+    }
   }
 
   void windowModeRefreshPreservesHeightForWidthGeometry() {

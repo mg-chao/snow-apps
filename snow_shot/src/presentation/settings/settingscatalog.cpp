@@ -2042,12 +2042,6 @@ QVector<SettingsItemDefinition> screenshotOtherShortcutItems() {
                           QT_TRANSLATE_NOOP("SettingsCatalog", "Text translation"),
                           []() { return custom_outlined_icons::OcrTranslate(); }),
 #endif
-        localShortcutItem(SettingsLocalShortcutScope::Screenshot, QStringLiteral("undo"),
-                          QT_TRANSLATE_NOOP("SettingsCatalog", "Undo"),
-                          []() { return outlined_icons::Undo(); }),
-        localShortcutItem(SettingsLocalShortcutScope::Screenshot, QStringLiteral("redo"),
-                          QT_TRANSLATE_NOOP("SettingsCatalog", "Redo"),
-                          []() { return outlined_icons::Redo(); }),
     };
 }
 
@@ -2062,12 +2056,18 @@ QVector<SettingsItemDefinition> drawingShortcutItems() {
         localShortcutItem(SettingsLocalShortcutScope::Drawing, QStringLiteral("arrow"),
                           QT_TRANSLATE_NOOP("SettingsCatalog", "Arrow"),
                           []() { return custom_outlined_icons::ToolArrow(); }),
+        localShortcutItem(SettingsLocalShortcutScope::Drawing, QStringLiteral("line"),
+                          QT_TRANSLATE_NOOP("SettingsCatalog", "Line"),
+                          []() { return custom_outlined_icons::ToolLine(); }),
         localShortcutItem(SettingsLocalShortcutScope::Drawing, QStringLiteral("brush"),
                           QT_TRANSLATE_NOOP("SettingsCatalog", "Pen"),
                           []() { return custom_outlined_icons::ToolFreeDraw(); }),
         localShortcutItem(SettingsLocalShortcutScope::Drawing, QStringLiteral("highlight"),
                           QT_TRANSLATE_NOOP("SettingsCatalog", "Highlight"),
                           []() { return custom_outlined_icons::ToolHighlight(); }),
+        localShortcutItem(SettingsLocalShortcutScope::Drawing, QStringLiteral("spotlight"),
+                          QT_TRANSLATE_NOOP("SettingsCatalog", "Spotlight"),
+                          []() { return custom_outlined_icons::ToolSpotlight(); }),
         localShortcutItem(SettingsLocalShortcutScope::Drawing, QStringLiteral("text"),
                           QT_TRANSLATE_NOOP("SettingsCatalog", "Text"),
                           []() { return custom_outlined_icons::ToolText(); }),
@@ -2083,6 +2083,12 @@ QVector<SettingsItemDefinition> drawingShortcutItems() {
         localShortcutItem(SettingsLocalShortcutScope::Drawing, QStringLiteral("watermark"),
                           QT_TRANSLATE_NOOP("SettingsCatalog", "Watermark"),
                           []() { return custom_outlined_icons::ToolWatermark(); }),
+        localShortcutItem(SettingsLocalShortcutScope::Screenshot, QStringLiteral("undo"),
+                          QT_TRANSLATE_NOOP("SettingsCatalog", "Undo"),
+                          []() { return outlined_icons::Undo(); }),
+        localShortcutItem(SettingsLocalShortcutScope::Screenshot, QStringLiteral("redo"),
+                          QT_TRANSLATE_NOOP("SettingsCatalog", "Redo"),
+                          []() { return outlined_icons::Redo(); }),
     };
 }
 
@@ -3121,9 +3127,9 @@ QVector<SettingsPageDefinition> builtInPages() {
              },
              {
                  QStringLiteral("other-shortcuts"),
-                 settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Recognition & actions")),
-                 settingsText(QT_TRANSLATE_NOOP(
-                     "SettingsCatalog", "Shortcut keys for recognition and screenshot actions")),
+                 settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Image Recognition")),
+                 settingsText(QT_TRANSLATE_NOOP("SettingsCatalog",
+                                                "Shortcut keys for image recognition tools")),
                  SettingsSectionReset::ScreenshotOtherShortcuts,
                  screenshotOtherShortcutItems(),
                  SettingsSectionItemLayout::TwoColumnGrid,
