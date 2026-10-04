@@ -143,6 +143,7 @@ class AdContextMenu final : public QMenu {
   void popupFinished();
 
  protected:
+  bool event(QEvent* event) override;
   void actionEvent(QActionEvent* event) override;
   bool eventFilter(QObject* watched, QEvent* event) override;
   void changeEvent(QEvent* event) override;

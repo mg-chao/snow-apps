@@ -342,13 +342,15 @@ void verifyLazyGroupMenuRefresh() {
     QPointer<adqt::widgets::AdContextMenu> group =
         qobject_cast<adqt::widgets::AdContextMenu*>(header->menu());
     group->popupAt(QPoint(330, 20));
-    requireActionText(menuActionNamed(group, QStringLiteral("systemTrayGroupAction-default")),
-                      QStringLiteral("Default\t20/20"),
-                      "submenu opening snapshots the latest pending counts");
+    requireGroupAction(group,
+                       menuActionNamed(group, QStringLiteral("systemTrayGroupAction-default")),
+                       QStringLiteral("Default"), QStringLiteral("20/20"),
+                       "submenu opening snapshots the latest pending counts");
     groups.completePendingPin(QStringLiteral("lazy-tray-0"));
     QCoreApplication::processEvents();
-    requireActionText(menuActionNamed(group, QStringLiteral("systemTrayGroupAction-default")),
-                      QStringLiteral("Default\t19/19"), "visible groups follow owner updates");
+    requireGroupAction(
+        group, menuActionNamed(group, QStringLiteral("systemTrayGroupAction-default")),
+        QStringLiteral("Default"), QStringLiteral("19/19"), "visible groups follow owner updates");
     QPointer<QAction> previous =
         menuActionNamed(group, QStringLiteral("systemTrayGroupAction-default"));
     group->dismissPopup();
@@ -358,9 +360,10 @@ void verifyLazyGroupMenuRefresh() {
     groups.completePendingPin(QStringLiteral("lazy-tray-1"));
     group = qobject_cast<adqt::widgets::AdContextMenu*>(header->menu());
     group->popupAt(QPoint(330, 20));
-    requireActionText(menuActionNamed(group, QStringLiteral("systemTrayGroupAction-default")),
-                      QStringLiteral("Default\t18/18"),
-                      "reopening groups creates a fresh snapshot");
+    requireGroupAction(group,
+                       menuActionNamed(group, QStringLiteral("systemTrayGroupAction-default")),
+                       QStringLiteral("Default"), QStringLiteral("18/18"),
+                       "reopening groups creates a fresh snapshot");
     menu->dismissPopup();
     drainMenus();
     require(!menu && !group && !hasTrayMenu(), "hiding the tray root releases every menu resource");
@@ -1398,9 +1401,11 @@ int main(int argc, char* argv[]) {
                           QStringLiteral("systemTrayDeleteSpecifiedGroupAction")),
                       QStringLiteral("\u5220\u9664\u6307\u5b9a\u5206\u7ec4"),
                       "tray Delete Specified Group should translate to Simplified Chinese");
-    requireActionText(
-        deleteSpecifiedActionNamed(QStringLiteral("systemTrayDeleteSpecifiedGroupAction-default")),
-        QStringLiteral("\u9ed8\u8ba4\t0/0"),
+    auto* simplifiedDefaultDeletion =
+        deleteSpecifiedActionNamed(QStringLiteral("systemTrayDeleteSpecifiedGroupAction-default"));
+    requireGroupAction(
+        trayDeleteSpecifiedMenu, simplifiedDefaultDeletion, QStringLiteral("\u9ed8\u8ba4"),
+        QStringLiteral("0/0"),
         "tray specified deletion should translate its Default entry to Simplified Chinese");
     require(QString::fromLatin1(groupManager.metaObject()->className()) ==
                     QStringLiteral("snow_shot::presentation::PinnedWindowGroupManager") &&
@@ -1469,9 +1474,11 @@ int main(int argc, char* argv[]) {
                           QStringLiteral("systemTrayDeleteSpecifiedGroupAction")),
                       QStringLiteral("\u522a\u9664\u6307\u5b9a\u7fa4\u7d44"),
                       "tray Delete Specified Group should translate to Traditional Chinese");
-    requireActionText(
-        deleteSpecifiedActionNamed(QStringLiteral("systemTrayDeleteSpecifiedGroupAction-default")),
-        QStringLiteral("\u9810\u8a2d\t0/0"),
+    auto* traditionalDefaultDeletion =
+        deleteSpecifiedActionNamed(QStringLiteral("systemTrayDeleteSpecifiedGroupAction-default"));
+    requireGroupAction(
+        trayDeleteSpecifiedMenu, traditionalDefaultDeletion, QStringLiteral("\u9810\u8a2d"),
+        QStringLiteral("0/0"),
         "tray specified deletion should translate its Default entry to Traditional Chinese");
     controller.setGlobalShortcuts(snow_shot::presentation::GlobalShortcutAction::Screenshot, {});
     requireActionText(screenshotMenuAction, QStringLiteral("\u622a\u5716"),

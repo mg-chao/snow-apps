@@ -20,6 +20,7 @@
 #include <QProxyStyle>
 #include <QShowEvent>
 #include <QStyleOptionMenuItem>
+#include <QVarLengthArray>
 #include <algorithm>
 #include <cmath>
 
@@ -160,36 +161,6 @@ ContextMenuVisualStyle resolveVisualStyle(const AdContextMenu* menu) {
   return style;
 }
 
-QAction* actionForOption(const QMenu* menu, const QStyleOptionMenuItem* option) {
-  if (!menu || !option) {
-    return nullptr;
-  }
-  for (QAction* action : menu->actions()) {
-    if (!action || !action->isVisible()) {
-      continue;
-    }
-    const QRect actionRect = menu->actionGeometry(action);
-    if (actionRect == option->rect || actionRect.contains(option->rect.center())) {
-      return action;
-    }
-  }
-  return menu->actionAt(option->rect.center());
-}
-
-bool menuUsesIconColumn(const QMenu* menu) {
-  if (!menu) {
-    return false;
-  }
-  for (const QAction* action : menu->actions()) {
-    if (action && action->isVisible() &&
-        (action->isCheckable() || !action->icon().isNull() ||
-         action->property(kActionIconProperty).isValid())) {
-      return true;
-    }
-  }
-  return false;
-}
-
 QString actionShortcutText(const QAction* action, const QString& optionText,
                            bool includeBadge = true) {
   const QString badge =
@@ -212,17 +183,32 @@ QString actionLabelText(const QString& optionText) {
   return tab >= 0 ? optionText.left(tab) : optionText;
 }
 
-int maximumShortcutWidth(const QMenu* menu, const QFontMetrics& metrics, bool includeBadge = true) {
-  int result = 0;
+struct ContextMenuLayoutMetrics {
+  int maximumShortcutWidth = 0;
+  int qtShortcutWidth = 0;
+  bool iconColumn = false;
+};
+
+ContextMenuLayoutMetrics resolveLayoutMetrics(const QMenu* menu, const QFontMetrics& metrics) {
+  ContextMenuLayoutMetrics result;
   if (!menu) {
     return result;
   }
+  const QFontMetrics qtMetrics(menu->font());
   for (const QAction* action : menu->actions()) {
-    if (!action || !action->isVisible() || action->isSeparator()) {
+    if (!action || !action->isVisible()) {
       continue;
     }
-    const QString shortcut = actionShortcutText(action, action->text(), includeBadge);
-    result = std::max(result, metrics.horizontalAdvance(shortcut));
+    result.iconColumn = result.iconColumn || action->isCheckable() || !action->icon().isNull() ||
+                        action->property(kActionIconProperty).isValid();
+    if (!action->isSeparator()) {
+      result.maximumShortcutWidth =
+          std::max(result.maximumShortcutWidth,
+                   metrics.horizontalAdvance(actionShortcutText(action, action->text())));
+      result.qtShortcutWidth =
+          std::max(result.qtShortcutWidth,
+                   qtMetrics.horizontalAdvance(actionShortcutText(action, action->text(), false)));
+    }
   }
   return result;
 }
@@ -294,6 +280,13 @@ class AdContextMenuStyle final : public QProxyStyle {
  public:
   explicit AdContextMenuStyle(AdContextMenu* menu) : menu_(menu) { setParent(menu); }
 
+  void invalidateVisuals() {
+    visual_.reset();
+    invalidateActions();
+  }
+
+  void invalidateActions() { layoutMetrics_.reset(); }
+
   void polish(QWidget* widget) override {
     QProxyStyle::polish(widget);
     if (widget == menu_) {
@@ -303,19 +296,18 @@ class AdContextMenuStyle final : public QProxyStyle {
 
   int pixelMetric(PixelMetric metric, const QStyleOption* option = nullptr,
                   const QWidget* widget = nullptr) const override {
-    const ContextMenuVisualStyle visual = resolveVisualStyle(menu_);
     switch (metric) {
       case PM_MenuHMargin:
       case PM_MenuVMargin:
-        return visual.menuPadding;
+        return visualStyle().menuPadding;
       case PM_MenuPanelWidth:
         return 0;
       case PM_SmallIconSize:
-        return visual.iconSize;
+        return visualStyle().iconSize;
       case PM_MenuButtonIndicator:
-        return visual.arrowColumnWidth;
+        return visualStyle().arrowColumnWidth;
       case PM_MenuScrollerHeight:
-        return visual.itemHeight;
+        return visualStyle().itemHeight;
       default:
         return QProxyStyle::pixelMetric(metric, option, widget);
     }
@@ -333,7 +325,7 @@ class AdContextMenuStyle final : public QProxyStyle {
       return QProxyStyle::sizeFromContents(type, option, contentsSize, widget);
     }
 
-    const ContextMenuVisualStyle visual = resolveVisualStyle(menu_);
+    const ContextMenuVisualStyle& visual = visualStyle();
     if (menuOption->menuItemType == QStyleOptionMenuItem::Separator) {
       return QSize(std::max(1, visual.minimumWidth - visual.menuPadding * 2),
                    visual.separatorHeight);
@@ -343,12 +335,13 @@ class AdContextMenuStyle final : public QProxyStyle {
     const QString label = withoutMnemonicMarkers(actionLabelText(menuOption->text));
     // Elision uses fractional advances, so rounding down can truncate a content-sized item.
     const int labelWidth = qCeil(QFontMetricsF(visual.font).horizontalAdvance(label));
+    const auto sharedMetrics = layoutMetrics(menu);
     const int shortcutWidth =
-        std::max(maximumShortcutWidth(menu, metrics),
+        std::max(sharedMetrics.maximumShortcutWidth,
                  metrics.horizontalAdvance(actionShortcutText(nullptr, menuOption->text)));
 
     int width = visual.horizontalPadding * 2 + labelWidth;
-    if (menuUsesIconColumn(menu)) {
+    if (sharedMetrics.iconColumn) {
       width += visual.iconSize + visual.iconTextGap;
     }
     if (shortcutWidth > 0) {
@@ -360,7 +353,7 @@ class AdContextMenuStyle final : public QProxyStyle {
     width = std::max(visual.minimumWidth - visual.menuPadding * 2, width);
     // QMenu adds its own shortcut column after asking the style for item sizes.
     // Badge metadata is invisible to that calculation, so reserve the remainder here.
-    const int qtShortcutWidth = maximumShortcutWidth(menu, QFontMetrics(menu->font()), false);
+    const int qtShortcutWidth = sharedMetrics.qtShortcutWidth;
     width += std::max(0, shortcutWidth - qtShortcutWidth);
     width = constrainedMenuItemWidth(menu, visual, width, qtShortcutWidth);
     return QSize(width, visual.itemHeight);
@@ -376,7 +369,7 @@ class AdContextMenuStyle final : public QProxyStyle {
       return;
     }
 
-    const ContextMenuVisualStyle visual = resolveVisualStyle(menu_);
+    const ContextMenuVisualStyle& visual = visualStyle();
     const qreal devicePixelRatio =
         painter->device() ? painter->device()->devicePixelRatioF() : menu_->devicePixelRatioF();
     const qreal logicalBorderWidth =
@@ -445,7 +438,7 @@ class AdContextMenuStyle final : public QProxyStyle {
       return;
     }
 
-    const ContextMenuVisualStyle visual = resolveVisualStyle(menu_);
+    const ContextMenuVisualStyle& visual = visualStyle();
     if (menuOption->menuItemType == QStyleOptionMenuItem::Separator) {
       const qreal devicePixelRatio =
           painter->device() ? painter->device()->devicePixelRatioF() : menu_->devicePixelRatioF();
@@ -462,7 +455,7 @@ class AdContextMenuStyle final : public QProxyStyle {
       return;
     }
 
-    QAction* action = actionForOption(menu, menuOption);
+    QAction* action = menu->actionAt(menuOption->rect.center());
     const bool enabled = menuOption->state.testFlag(State_Enabled);
     const bool selected = enabled && menuOption->state.testFlag(State_Selected);
     const bool danger = action && action->property(kActionDangerProperty).toBool();
@@ -489,7 +482,7 @@ class AdContextMenuStyle final : public QProxyStyle {
       painter->restore();
     }
 
-    const bool iconColumn = menuUsesIconColumn(menu);
+    const bool iconColumn = layoutMetrics(menu).iconColumn;
     const bool submenuItem = menuOption->menuItemType == QStyleOptionMenuItem::SubMenu;
     const QFontMetrics metrics(visual.font);
     const QString shortcut = actionShortcutText(action, menuOption->text);
@@ -577,6 +570,52 @@ class AdContextMenuStyle final : public QProxyStyle {
   }
 
  private:
+  ContextMenuVisualStyle visualStyle() const {
+    const auto& manager = adqt::theme::ThemeManager::instance();
+    const QFont font = menu_->font();
+    const QWidget* owner = menu_->triggerWidget() ? menu_->triggerWidget() : menu_->parentWidget();
+    if (!visual_ || themeRevision_ != manager.themeRevision() || sourceFont_ != font ||
+        !ownerChainMatches(owner)) {
+      // Keep only compact menu tokens, never a resolved theme/palette or raster.
+      visual_ = resolveVisualStyle(menu_);
+      themeRevision_ = manager.themeRevision();
+      sourceFont_ = font;
+      ownerChain_.clear();
+      for (const QObject* cursor = owner; cursor; cursor = cursor->parent())
+        ownerChain_.append(cursor);
+      layoutMetrics_.reset();
+    }
+    // Paint callbacks may synchronously change the theme or component tokens.
+    // Give each consumer a stable value snapshot across that invalidation.
+    return *visual_;
+  }
+
+  ContextMenuLayoutMetrics layoutMetrics(const QMenu* menu) const {
+    const auto& visual = visualStyle();
+    // A plain QMenu can inherit this style, but its mutations do not reach our
+    // actionEvent override. Keep its columns independent of the popup owner.
+    if (menu != menu_) return resolveLayoutMetrics(menu, QFontMetrics(visual.font));
+    if (!layoutMetrics_) layoutMetrics_ = resolveLayoutMetrics(menu_, QFontMetrics(visual.font));
+    return *layoutMetrics_;
+  }
+
+  bool ownerChainMatches(const QObject* owner) const {
+    for (const QObject* cached : ownerChain_) {
+      if (owner != cached) return false;
+      owner = owner->parent();
+    }
+    return owner == nullptr;
+  }
+
+  // Both snapshots belong to this popup and disappear when it retires. Action
+  // events invalidate only shared geometry; appearance changes invalidate both.
+  mutable std::optional<ContextMenuVisualStyle> visual_;
+  mutable std::optional<ContextMenuLayoutMetrics> layoutMetrics_;
+  mutable quint64 themeRevision_ = 0;
+  mutable QFont sourceFont_;
+  // Scope inheritance follows the entire owner chain. Inline storage covers
+  // ordinary popups without allocating a map or connecting to every ancestor.
+  mutable QVarLengthArray<const QObject*, 8> ownerChain_;
   QPointer<AdContextMenu> menu_;
 };
 
@@ -831,7 +870,7 @@ void AdContextMenu::setTriggerWidget(QWidget* widget) {
   if (d_->triggerWidget) {
     d_->triggerWidget->installEventFilter(this);
   }
-  refreshVisuals(false);
+  refreshVisuals(true);
   emit triggerWidgetChanged(widget);
 }
 
@@ -945,7 +984,9 @@ void AdContextMenu::setActionDanger(QAction* action, bool danger) {
     return;
   }
   action->setProperty(kActionDangerProperty, danger);
-  update(actionGeometry(action));
+  // Geometry would force a complete layout before population and shortcuts
+  // finish. The first paint already reads the metadata of a hidden menu.
+  if (isVisible()) update(actionGeometry(action));
 }
 
 bool AdContextMenu::actionDanger(const QAction* action) const {
@@ -973,7 +1014,11 @@ QString AdContextMenu::actionBadge(const QAction* action) const {
 }
 
 void AdContextMenu::actionEvent(QActionEvent* event) {
+  if (d_ && d_->menuStyle) d_->menuStyle->invalidateActions();
   QMenu::actionEvent(event);
+  // Qt may query geometry while handling the mutation. Retire any intermediate
+  // snapshot as well, especially when a shared action is added or removed.
+  if (d_ && d_->menuStyle) d_->menuStyle->invalidateActions();
 #ifdef Q_OS_MACOS
   if (d_->useNativeMenu && detail::usesNativeContextMenu() &&
       event->type() != QEvent::ActionRemoved &&
@@ -1108,7 +1153,23 @@ QAction* AdContextMenu::execNativePopup(const std::function<void()>& presenter) 
   return selected;
 }
 
+bool AdContextMenu::event(QEvent* event) {
+  if (d_ && event && d_->menuStyle &&
+      (event->type() == QEvent::ParentChange || event->type() == QEvent::StyleChange ||
+       event->type() == QEvent::FontChange || event->type() == QEvent::ApplicationFontChange ||
+       event->type() == QEvent::PaletteChange ||
+       event->type() == QEvent::ApplicationPaletteChange ||
+       event->type() == QEvent::LayoutDirectionChange || event->type() == QEvent::LanguageChange ||
+       event->type() == QEvent::DevicePixelRatioChange)) {
+    d_->menuStyle->invalidateVisuals();
+  }
+  return QMenu::event(event);
+}
+
 bool AdContextMenu::eventFilter(QObject* watched, QEvent* event) {
+  if (watched == d_->triggerWidget && event && event->type() == QEvent::ParentChange) {
+    refreshVisuals(true);
+  }
   if (watched == d_->triggerWidget && event && event->type() == QEvent::ContextMenu) {
     auto* contextEvent = static_cast<QContextMenuEvent*>(event);
     if (!d_->deleteOnHide && !d_->retiring && d_->triggerWidget && d_->triggerWidget->isEnabled() &&
@@ -1192,6 +1253,7 @@ void AdContextMenu::applyStoredActionIcon(QAction* action) {
 }
 
 void AdContextMenu::refreshVisuals(bool relayout) {
+  if (d_->menuStyle) d_->menuStyle->invalidateVisuals();
   if (d_->deferredSurface) return;
   if (d_->useNativeMenu) {
 #ifdef Q_OS_MACOS

@@ -1596,7 +1596,7 @@ bool ScreenshotRecognitionWindow::eventFilter(QObject* watched, QEvent* event) {
             installSelectionResizeEventFilters(childWidget);
         }
     }
-    if (event != nullptr && event->type() == QEvent::ContextMenu &&
+    if (event != nullptr && event->type() == QEvent::ContextMenu && watched != this &&
         m_presentationMode == PresentationMode::EmbeddedChild &&
         !activeContentOwnsContextMenu(watched)) {
         auto* contextMenuEvent = static_cast<QContextMenuEvent*>(event);

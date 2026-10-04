@@ -1234,7 +1234,8 @@ void groupMenuActionsExposeIconsAndCleanupState() {
     QApplication::sendEvent(root, &right);
     auto* defaultGroup = named(group, QStringLiteral("screenshotPinnedGroupAction-default"));
     require(defaultGroup && defaultGroup->isChecked() &&
-                defaultGroup->text().endsWith(QStringLiteral("1/1")),
+                defaultGroup->text() == QStringLiteral("Default") &&
+                group->actionBadge(defaultGroup) == QStringLiteral("1/1"),
             "opening a group submenu snapshots current membership and counts");
     auto* deleteEmpty = named(group, QStringLiteral("screenshotPinnedDeleteEmptyGroupsAction"));
     auto* deleteSpecified =
@@ -1288,8 +1289,64 @@ void groupMenuActionsExposeIconsAndCleanupState() {
     require(root && named(root, QStringLiteral("screenshotPinnedOcrAction")),
             "a later right-click creates a complete fresh popup");
     root->dismissPopup();
-    pinnedWindow->close();
-    require(processUntilDeleted(guardedWindow, 2000), "the lifecycle fixture pin must close");
+    const auto deletionAction = [&](const QString& id) {
+        // Each confirmation starts from a fresh snapshot after the previous popup retires.
+        ScreenshotPinnedWindowTestAccess::contextMenu(*pinnedWindow)->dismissPopup();
+        QCoreApplication::sendPostedEvents(nullptr, QEvent::MetaCall);
+        QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+        materializePinnedMenuTree(*pinnedWindow);
+        auto* action = pinnedWindow->findChild<QAction*>(
+            QStringLiteral("screenshotPinnedDeleteSpecifiedGroupAction-%1").arg(id));
+        require(action != nullptr, "a fresh deletion submenu must contain the requested group");
+        return action;
+    };
+    const auto specifiedId = groupManager.createGroup(QStringLiteral("Specified"));
+    require(specifiedId.has_value(), "create a group for specified deletion");
+    auto ignored = pinnedWindow->persistenceSnapshot();
+    ignored.id = QUuid::createUuid().toString(QUuid::WithoutBraces);
+    ignored.groupId = *specifiedId;
+    require(repository.upsert(ignored).success && repository.markClosed(ignored.id).success,
+            "save a closed pin in the specified group");
+    auto* specifiedAction = deletionAction(*specifiedId);
+    auto* deletionMenu = pinnedWindow->findChild<adqt::widgets::AdContextMenu*>(
+        QStringLiteral("screenshotPinnedDeleteSpecifiedGroupMenu"));
+    require(specifiedAction->text() == QStringLiteral("Specified") &&
+                deletionMenu->actionBadge(specifiedAction) == QStringLiteral("0/1"),
+            "fresh deletion rows preserve labels and closed-window count badges");
+    specifiedAction->trigger();
+    auto* specifiedModal = pinnedWindow->findChild<adqt::widgets::AdModal*>(
+        QStringLiteral("pinnedWindowGroupDeleteSpecifiedModal"));
+    require(specifiedModal && specifiedModal->ownerWindow() == pinnedWindow &&
+                specifiedModal->acceptAccentRole() == adqt::widgets::AdButton::AccentRole::Danger &&
+                groupManager.contains(*specifiedId),
+            "specified deletion keeps its owner and waits for confirmation");
+    specifiedModal->reject();
+    QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+    require(groupManager.contains(*specifiedId) && repository.loadRecord(ignored.id).has_value(),
+            "canceling specified deletion preserves the group and closed pin");
+    deletionAction(*specifiedId)->trigger();
+    specifiedModal = pinnedWindow->findChild<adqt::widgets::AdModal*>(
+        QStringLiteral("pinnedWindowGroupDeleteSpecifiedModal"));
+    require(specifiedModal != nullptr, "specified deletion reopens from a fresh popup");
+    specifiedModal->accept();
+    require(!groupManager.contains(*specifiedId) && !repository.loadRecord(ignored.id).has_value(),
+            "confirming specified deletion removes its group and closed pins");
+    deletionAction(QStringLiteral("default"))->trigger();
+    auto* defaultModal = pinnedWindow->findChild<adqt::widgets::AdModal*>(
+        QStringLiteral("pinnedWindowGroupDeleteSpecifiedModal"));
+    require(defaultModal != nullptr, "clearing Default still requires confirmation");
+    defaultModal->reject();
+    QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+    require(guardedWindow != nullptr, "canceling Default clearing preserves its live pin");
+    deletionAction(QStringLiteral("default"))->trigger();
+    defaultModal = pinnedWindow->findChild<adqt::widgets::AdModal*>(
+        QStringLiteral("pinnedWindowGroupDeleteSpecifiedModal"));
+    require(defaultModal != nullptr, "Default clearing reopens from a fresh popup");
+    defaultModal->accept();
+    require(processUntilDeleted(guardedWindow, 2000),
+            "confirming Default clearing destroys its matching live pin");
+    require(groupManager.contains(QStringLiteral("default")),
+            "clearing Default preserves the built-in group");
 }
 
 adqt::widgets::AdButton* toolbarButtonNamed(ScreenshotToolPalette& toolbar,
@@ -5359,6 +5416,7 @@ void pinnedWindowConfirmationPreferences() {
             const QString modalName = destroy
                                           ? QStringLiteral("screenshotPinnedDestroyConfirmation")
                                           : QStringLiteral("screenshotPinnedCloseConfirmation");
+            materializePinnedMenuTree(window);
             auto* action = window.findChild<QAction*>(actionName);
             require(action, "confirmation fixture must expose its window action");
             action->trigger();
@@ -5504,6 +5562,7 @@ void pinnedWindowDontAskAgainPreferences() {
             const QString modalName = destroy
                                           ? QStringLiteral("screenshotPinnedDestroyConfirmation")
                                           : QStringLiteral("screenshotPinnedCloseConfirmation");
+            materializePinnedMenuTree(window);
             window.findChild<QAction*>(actionName)->trigger();
             QCoreApplication::processEvents();
             auto* modal = window.findChild<adqt::widgets::AdModal*>(modalName);
@@ -9340,6 +9399,7 @@ void pinnedLockOffscreen() {
     canvas->setFocus();
     waitForUi(20);
     const auto action = [&](const char* name) {
+        materializePinnedMenuTree(window);
         auto* result = window.findChild<QAction*>(QString::fromLatin1(name));
         require(result != nullptr, "lock fixture action must exist");
         return result;
@@ -15261,22 +15321,20 @@ void pinnedRightQuickSelection() {
     require(canvas != nullptr, "pin owns drawing canvas");
     canvas_quick_selection_test::drawStroke(*canvas);
     canvas_quick_selection_test::selectAndDragStroke(*canvas);
-    auto* menu =
-        pin.findChild<adqt::widgets::AdContextMenu*>(QStringLiteral("screenshotPinnedContextMenu"));
-    require(menu != nullptr, "pin owns context menu");
-    int menus = 0;
-    QObject::connect(menu, &adqt::widgets::AdContextMenu::aboutToShow, &pin, [&]() { ++menus; });
     QContextMenuEvent consumed(QContextMenuEvent::Mouse, {120, 135},
                                canvas->mapToGlobal(QPoint(120, 135)));
     QApplication::sendEvent(canvas, &consumed);
-    require(menus == 0, "selected right gesture suppresses pin menu");
+    require(pin.findChildren<adqt::widgets::AdContextMenu*>().isEmpty(),
+            "selected right gesture must not allocate a pin menu");
     canvas_quick_selection_test::mouse(*canvas, QEvent::MouseButtonPress, {25, 40}, Qt::RightButton,
                                        Qt::RightButton);
     canvas_quick_selection_test::mouse(*canvas, QEvent::MouseButtonRelease, {25, 40},
                                        Qt::RightButton, Qt::NoButton);
     QContextMenuEvent miss(QContextMenuEvent::Mouse, {25, 40}, canvas->mapToGlobal(QPoint(25, 40)));
     QApplication::sendEvent(canvas, &miss);
-    require(menus == 1, "miss preserves pin context menu");
+    auto* menu =
+        pin.findChild<adqt::widgets::AdContextMenu*>(QStringLiteral("screenshotPinnedContextMenu"));
+    require(menu && menu->isPopupVisible(), "miss preserves pin context menu");
     pin.close();
 }
 
@@ -16667,6 +16725,7 @@ void pinnedPrintMatchesTransformedViewport() {
                 "print fixture must contain an annotation");
         Access::editSelectionOffscreen(window, false);
         Access::setGeneralOpacity(window, 60);
+        materializePinnedMenuTree(window);
         window.findChild<QAction*>(QStringLiteral("screenshotPinnedRotateClockwiseAction"))
             ->trigger();
         Access::setFractionalScale(window, 125);
@@ -16890,12 +16949,6 @@ void pinnedRightQuickSelectionPreservesWindowSelection() {
             const int selectedCount = selectDrawingWindow ? 2 : 1;
             require(fixture.selection.selectedCount() == selectedCount,
                     "seed window selection independently of canvas selection");
-            auto* menu = pin.findChild<adqt::widgets::AdContextMenu*>(
-                QStringLiteral("screenshotPinnedContextMenu"));
-            require(menu != nullptr, "registered pin owns its context menu");
-            int menus = 0;
-            QObject::connect(menu, &adqt::widgets::AdContextMenu::aboutToShow, &pin,
-                             [&]() { ++menus; });
             const auto contextMenu = [&](QPoint point) {
                 QContextMenuEvent event(QContextMenuEvent::Mouse, point,
                                         canvas->mapToGlobal(point));
@@ -16913,7 +16966,8 @@ void pinnedRightQuickSelectionPreservesWindowSelection() {
             mouse(*canvas, QEvent::MouseButtonRelease, {120, 135}, Qt::RightButton, Qt::NoButton);
             if (!contextBeforeRelease)
                 contextMenu({120, 135});
-            require(menus == 0 &&
+            require(!pin.findChild<adqt::widgets::AdContextMenu*>(
+                        QStringLiteral("screenshotPinnedContextMenu")) &&
                         !pin.findChild<adqt::widgets::AdContextMenu*>(
                             QStringLiteral("screenshotPinnedMultiSelectionMenu")) &&
                         fixture.selection.selectedCount() == selectedCount &&
@@ -16932,13 +16986,17 @@ void pinnedRightQuickSelectionPreservesWindowSelection() {
             auto* batchMenu = pin.findChild<adqt::widgets::AdContextMenu*>(
                 QStringLiteral("screenshotPinnedMultiSelectionMenu"));
             if (selectDrawingWindow) {
-                require(menus == 0 && batchMenu && batchMenu->isVisible() &&
+                require(!pin.findChild<adqt::widgets::AdContextMenu*>(
+                            QStringLiteral("screenshotPinnedContextMenu")) &&
+                            batchMenu && batchMenu->isVisible() &&
                             fixture.selection.selectedCount() == 2,
                         "a canvas miss on selected pins must open the batch menu");
                 batchMenu->hide();
             } else {
+                auto* menu = pin.findChild<adqt::widgets::AdContextMenu*>(
+                    QStringLiteral("screenshotPinnedContextMenu"));
                 require(
-                    menus == 1 && menu->isVisible() && !batchMenu &&
+                    menu && menu->isPopupVisible() && !batchMenu &&
                         fixture.selection.selectedCount() == 0,
                     "a canvas miss on an unselected pin must clear selection and open its menu");
                 menu->hide();
@@ -16967,12 +17025,6 @@ void pinnedLinearCreationConsumesRightClick() {
             canvas_quick_selection_test::beginLinearCreation(*canvas, tool);
             fixture.selection.toggleSelection(&pin);
             fixture.selection.toggleSelection(&peer);
-            auto* menu = pin.findChild<adqt::widgets::AdContextMenu*>(
-                QStringLiteral("screenshotPinnedContextMenu"));
-            require(menu != nullptr, "linear creation pin owns its context menu");
-            int menus = 0;
-            QObject::connect(menu, &adqt::widgets::AdContextMenu::aboutToShow, &pin,
-                             [&]() { ++menus; });
             const auto contextMenu = [&]() {
                 QContextMenuEvent event(QContextMenuEvent::Mouse, {25, 180},
                                         canvas->mapToGlobal(QPoint(25, 180)));
@@ -16988,7 +17040,8 @@ void pinnedLinearCreationConsumesRightClick() {
             mouse(*canvas, QEvent::MouseButtonRelease, {25, 180}, Qt::RightButton, Qt::NoButton);
             if (!contextBeforeRelease)
                 contextMenu();
-            require(menus == 0 &&
+            require(!pin.findChild<adqt::widgets::AdContextMenu*>(
+                        QStringLiteral("screenshotPinnedContextMenu")) &&
                         !pin.findChild<adqt::widgets::AdContextMenu*>(
                             QStringLiteral("screenshotPinnedMultiSelectionMenu")) &&
                         fixture.selection.selectedCount() == 2 &&
@@ -17000,7 +17053,9 @@ void pinnedLinearCreationConsumesRightClick() {
             contextMenu();
             auto* batchMenu = pin.findChild<adqt::widgets::AdContextMenu*>(
                 QStringLiteral("screenshotPinnedMultiSelectionMenu"));
-            require(menus == 0 && batchMenu && batchMenu->isVisible() &&
+            require(!pin.findChild<adqt::widgets::AdContextMenu*>(
+                        QStringLiteral("screenshotPinnedContextMenu")) &&
+                        batchMenu && batchMenu->isVisible() &&
                         fixture.selection.selectedCount() == 2,
                     "the next idle right click must open the selected pins' menu");
             batchMenu->hide();
@@ -17617,6 +17672,7 @@ void pinnedMultiSelectionCloseConfirmation() {
         modal->reject();
         require(processUntilDeleted(modal, 2000), "dismiss selected close confirmation");
     };
+    materializePinnedMenuTree(first);
     auto* close = first.findChild<QAction*>(QStringLiteral("screenshotPinnedCloseAction"));
     require(close != nullptr, "selected pin exposes its individual close action");
     close->trigger();

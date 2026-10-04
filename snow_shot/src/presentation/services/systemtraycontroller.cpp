@@ -626,10 +626,9 @@ class SystemTrayController::Impl {
                 new TrayMenuSkinBinding(popup);
                 for (const auto& group : groupManager->displaySnapshot()) {
                     const auto counts = group.counts;
-                    QAction* action =
-                        popup->addItem(QStringLiteral("%1\t%2/%3")
-                                           .arg(group.name, QString::number(counts.nonIgnored),
-                                                QString::number(counts.total)));
+                    QAction* action = popup->addItem(group.name);
+                    popup->setActionBadge(
+                        action, QStringLiteral("%1/%2").arg(counts.nonIgnored).arg(counts.total));
                     action->setObjectName(
                         QStringLiteral("systemTrayDeleteSpecifiedGroupAction-%1").arg(group.id));
                     action->setData(group.id);

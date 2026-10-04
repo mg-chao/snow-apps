@@ -676,6 +676,19 @@ if(ADQT_BUILD_TESTS)
 endif()
 
 if(ADQT_BUILD_BENCHMARKS)
+    add_executable(adqt-context-menu-performance-benchmark
+        tests/context_menu_performance_benchmark.cpp)
+    target_link_libraries(adqt-context-menu-performance-benchmark PRIVATE adqt::widgets Qt6::Widgets)
+    if(WIN32)
+        target_link_libraries(adqt-context-menu-performance-benchmark PRIVATE psapi)
+    endif()
+    if(TARGET Qt6::QOffscreenIntegrationPlugin)
+        qt_import_plugins(adqt-context-menu-performance-benchmark INCLUDE Qt6::QOffscreenIntegrationPlugin)
+    endif()
+    add_test(NAME adqt-context-menu-performance-benchmark
+        COMMAND adqt-context-menu-performance-benchmark)
+    set_tests_properties(adqt-context-menu-performance-benchmark PROPERTIES
+        LABELS "benchmark" ENVIRONMENT "QT_QPA_PLATFORM=offscreen" TIMEOUT 60)
     add_executable(adqt-progress-benchmark tests/progress_performance_benchmark.cpp)
     target_link_libraries(adqt-progress-benchmark PRIVATE adqt::widgets Qt6::Widgets)
     if(TARGET Qt6::QOffscreenIntegrationPlugin)

@@ -3462,10 +3462,9 @@ void ScreenshotPinnedWindow::rebuildGroupMenu() {
             menu->setMinimumWidth(300);
             for (const auto& group : manager->groupsSortedForDisplay()) {
                 const auto counts = manager->windowCounts(group.id);
-                QAction* action = menu->addItem(QStringLiteral("%1\t%2/%3")
-                                                    .arg(manager->displayName(group.id),
-                                                         QString::number(counts.nonIgnored),
-                                                         QString::number(counts.total)));
+                QAction* action = menu->addItem(manager->displayName(group.id));
+                menu->setActionBadge(
+                    action, QStringLiteral("%1/%2").arg(counts.nonIgnored).arg(counts.total));
                 action->setObjectName(
                     QStringLiteral("screenshotPinnedDeleteSpecifiedGroupAction-%1").arg(group.id));
                 action->setData(group.id);
