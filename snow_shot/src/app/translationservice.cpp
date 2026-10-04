@@ -11,6 +11,8 @@ namespace snow_shot::translation {
 namespace {
 const QString sourceKey = QStringLiteral("screenshot_translation/source_language");
 const QString targetKey = QStringLiteral("screenshot_translation/target_language");
+const QString secondaryTargetKey =
+    QStringLiteral("screenshot_translation/secondary_target_language");
 const QString modelKey = QStringLiteral("screenshot_translation/model");
 const QString customKey = QStringLiteral("api_configuration/custom_models");
 const QString textKey = QStringLiteral("api_configuration/text_translation");
@@ -54,7 +56,8 @@ TranslationService::TranslationService(SnowShotApiClient& client,
                 } else if (key == proxyKey) {
                     m_client->setUseSystemProxy(m_settings->value(proxyKey).toString() ==
                                                 QStringLiteral("system"));
-                } else if (!m_saving && (key == sourceKey || key == targetKey || key == modelKey)) {
+                } else if (!m_saving && (key == sourceKey || key == targetKey ||
+                                         key == secondaryTargetKey || key == modelKey)) {
                     syncPreferences(ChangeReason::UserPreferences);
                 }
             });
@@ -87,13 +90,15 @@ TranslationService::~TranslationService() {
 void TranslationService::syncPreferences(ChangeReason reason) {
     if (m_settings == nullptr)
         return;
-    TranslationPreferences next{m_settings->value(sourceKey).toString(),
-                                m_settings->value(targetKey).toString(),
-                                m_settings->value(modelKey).toString()};
+    TranslationPreferences next{
+        m_settings->value(sourceKey).toString(), m_settings->value(targetKey).toString(),
+        m_settings->value(modelKey).toString(), m_settings->value(secondaryTargetKey).toString()};
     if (next.sourceLanguage.isEmpty())
         next.sourceLanguage = QStringLiteral("auto");
     if (next.targetLanguage.isEmpty())
         next.targetLanguage = m_defaultTarget;
+    if (next.secondaryTargetLanguage.isEmpty())
+        next.secondaryTargetLanguage = QStringLiteral("en");
     if (next != m_preferences) {
         m_preferences = next;
         emit preferencesChanged(reason);
@@ -104,9 +109,11 @@ bool TranslationService::savePreferences(const TranslationPreferences& preferenc
     if (m_settings == nullptr)
         return false;
     m_saving = true;
-    const bool saved = m_settings->setValues({{sourceKey, preferences.sourceLanguage},
-                                              {targetKey, preferences.targetLanguage},
-                                              {modelKey, preferences.modelId}});
+    const bool saved =
+        m_settings->setValues({{sourceKey, preferences.sourceLanguage},
+                               {targetKey, preferences.targetLanguage},
+                               {secondaryTargetKey, preferences.secondaryTargetLanguage},
+                               {modelKey, preferences.modelId}});
     m_saving = false;
     m_storageError = !saved;
     syncPreferences(ChangeReason::UserPreferences);
@@ -334,9 +341,12 @@ void TranslationJob::pump() {
             continue;
         unit.state = State::Streaming;
         unit.text.clear();
-        const SnowShotTranslationRequest request{
-            m_preferences.modelId, m_preferences.sourceLanguage, m_preferences.targetLanguage,
-            unit.sourceText, m_translationMode};
+        const SnowShotTranslationRequest request{m_preferences.modelId,
+                                                 m_preferences.sourceLanguage,
+                                                 m_preferences.targetLanguage,
+                                                 unit.sourceText,
+                                                 m_translationMode,
+                                                 m_preferences.secondaryTargetLanguage};
         const auto token = m_client->streamTranslation(
             request, this,
             [this, generation, index](const QString& delta) {

@@ -14,6 +14,7 @@
 #include <QSignalBlocker>
 #include <QStandardItemModel>
 #include <QStyle>
+#include <QTimer>
 
 #include <algorithm>
 #include <type_traits>
@@ -36,6 +37,15 @@ struct SettingsFormField::Impl {
                     const auto handle = fields::select(metadata, {}, options);
                     field = handle.field;
                     editor = handle.editor;
+                    if (payload.binding == SettingsSelectBinding::TranslationService) {
+                        QTimer::singleShot(0, &q, [this, binding = payload.binding] {
+                            session.requestSelectOptions(binding);
+                        });
+                        QObject::connect(handle.editor, &adqt::widgets::AdSelect::popupOpening, &q,
+                                         [this, binding = payload.binding] {
+                                             session.requestSelectOptions(binding);
+                                         });
+                    }
                     if (payload.binding == SettingsSelectBinding::AppFont) {
                         field->setChoiceUpdater(
                             [this](const auto& choices) { updateFontModel(choices); });
@@ -189,6 +199,9 @@ struct SettingsFormField::Impl {
                              syncChoices();
                              sync();
                          });
+        const auto initialOptions = session.options(descriptor.id);
+        optionsError = initialOptions.error;
+        optionsLoading = initialOptions.loading;
         retranslateUi();
     }
 

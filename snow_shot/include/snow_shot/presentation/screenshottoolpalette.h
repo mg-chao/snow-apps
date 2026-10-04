@@ -425,6 +425,7 @@ class ScreenshotToolPalette final : public QWidget,
                                  bool originalImage = false);
     void setJumpToTranslationPageVisible(bool visible);
     void setTextTransformSelections(const QString& formatting, const QString& punctuation);
+    void setTextTargetLanguage(const QString& language);
     [[nodiscard]] bool ensureActionFamily(ActionFamily family);
     [[nodiscard]] bool ensureStyleFamily(Tool tool);
 
@@ -502,6 +503,7 @@ class ScreenshotToolPalette final : public QWidget,
     void textSettingsRequested();
     void textFormattingRequested(const QString& value);
     void textPunctuationRequested(const QString& value);
+    void textTargetLanguageRequested(const QString& language);
     void scrollingScreenshotRequested();
     void saveRequested();
     void quickSaveRequested();
@@ -910,6 +912,8 @@ class ScreenshotToolPalette final : public QWidget,
     adqt::widgets::AdButton* m_tableResetButton = nullptr;
     adqt::widgets::AdSelect* m_textFormattingSelect = nullptr;
     adqt::widgets::AdSelect* m_textPunctuationSelect = nullptr;
+    adqt::widgets::AdSelect* m_textTargetLanguageSelect = nullptr;
+    QSpacerItem* m_textTargetLanguageSpacer = nullptr;
     adqt::widgets::AdButton* m_scrollingScreenshotButton = nullptr;
     adqt::widgets::AdButton* m_saveButton = nullptr;
     adqt::widgets::AdButton* m_quickSaveButton = nullptr;
@@ -1091,6 +1095,7 @@ class ScreenshotToolPalette final : public QWidget,
     bool m_tableCanReset = false;
     QString m_textFormattingSelection;
     QString m_textPunctuationSelection;
+    QString m_textTargetLanguageSelection = QStringLiteral("en");
     qint64 m_recordingDurationMilliseconds = 0;
     bool m_replayingMaterializedState = false;
     bool m_releasingSecondaryResources = false;

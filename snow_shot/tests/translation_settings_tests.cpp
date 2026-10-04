@@ -670,8 +670,13 @@ int main(int argc, char** argv) {
                     backend.applySwitchValue(binding, false) && !backend.switchValue(binding),
                 "backend should persist the display toggle");
         require(backend.resetSection(settings::SettingsSectionReset::Translation) &&
-                    backend.switchValue(binding) && translation.configuration() == languages,
-                "reset Translation should restore only the display toggle");
+                    backend.switchValue(binding) &&
+                    translation.configuration().sourceLanguage == QStringLiteral("auto") &&
+                    translation.configuration().targetLanguage.isEmpty() &&
+                    translation.configuration().secondaryTargetLanguage == QStringLiteral("en") &&
+                    translation.configuration().modelId.isEmpty() &&
+                    translation.configuration().layoutProcessing == QStringLiteral("smart_merge"),
+                "reset Translation restores all six settings");
 
         const auto resizeBinding = settings::SettingsSelectBinding::OcrDetectorResizePolicy;
         require(backend.selectValue(resizeBinding).toString() == QStringLiteral("max") &&

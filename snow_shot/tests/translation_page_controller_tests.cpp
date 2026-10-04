@@ -59,6 +59,9 @@ void coalescedEditsAndCancellation(const QString& directory) {
             "save a preferred service before discovery");
     auto controller =
         std::make_unique<TranslationPageController>(client, settings, QLocale::English, nullptr, 0);
+    require(settings.setValue(QStringLiteral("screenshot_translation/secondary_target_language"),
+                              QStringLiteral("ko")),
+            "set a nondefault secondary target before page edits");
     controller->activate();
     controller->setSourceText(QStringLiteral("pending"));
     controller->setSourceText({});
@@ -97,8 +100,9 @@ void coalescedEditsAndCancellation(const QString& directory) {
     QObject::disconnect(connection);
     waitUntil([&]() { return server.streams.size() == 2; },
               "atomic swap starts just one translation");
-    require(atomicSwap && controller->sourceText() == QStringLiteral("latest edit"),
-            "swap observers see both committed languages and unchanged source text");
+    require(atomicSwap && controller->sourceText() == QStringLiteral("latest edit") &&
+                controller->preferences().secondaryTargetLanguage == QStringLiteral("ko"),
+            "page edits and swaps preserve secondary target and source text");
     server.delta(1, QStringLiteral("queued stale text"));
     server.finish(1);
     controller->setSourceText({});

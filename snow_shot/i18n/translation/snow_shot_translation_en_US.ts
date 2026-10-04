@@ -16,16 +16,20 @@
             <translation>Original Image Translation</translation>
         </message>
         <message>
+            <source>Primary Target Language</source>
+            <translation>Primary Target Language</translation>
+        </message>
+        <message>
             <source>Retry</source>
             <translation>Retry</translation>
         </message>
         <message>
-            <source>Source language</source>
-            <translation>Source language</translation>
+            <source>Secondary Target Language</source>
+            <translation>Secondary Target Language</translation>
         </message>
         <message>
-            <source>Target language</source>
-            <translation>Target language</translation>
+            <source>Source language</source>
+            <translation>Source language</translation>
         </message>
         <message>
             <source>Translation service</source>

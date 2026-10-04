@@ -198,6 +198,7 @@ void ScreenshotRecognitionSessionController::setProviders(
                             entry->translationConfiguration !=
                                 snow_shot::storage::ScreenshotTranslationSettings().configuration())
                             invalidateCurrentTranslation(m_translating);
+                        updateTextState();
                     });
                 });
         connect(m_translationService, &TranslationService::modelInvalidated, this,
@@ -1089,6 +1090,23 @@ void ScreenshotRecognitionSessionController::resetTextEditing() {
         }
     }
     updateTextState();
+}
+
+void ScreenshotRecognitionSessionController::applyTextTargetLanguage(const QString& language) {
+#if SNOW_SHOT_ENABLE_TEXT_TRANSLATION
+    if (m_translationService == nullptr)
+        return;
+    auto preferences = m_translationService->preferences();
+    if (preferences.targetLanguage != language) {
+        preferences.targetLanguage = language;
+        if (!m_translationService->savePreferences(preferences))
+            showStatus(m_translationService->errorText(), true);
+    }
+    if (m_actions.setTextTargetLanguage)
+        m_actions.setTextTargetLanguage(m_translationService->preferences().targetLanguage);
+#else
+    Q_UNUSED(language);
+#endif
 }
 
 void ScreenshotRecognitionSessionController::openTranslationSettings() {
@@ -2190,6 +2208,8 @@ void ScreenshotRecognitionSessionController::updateTextState() const {
     const bool available = hasTextResult() && m_active && m_mode == Mode::Text;
     const auto entry = m_textCache.value(m_editingKey);
 #if SNOW_SHOT_ENABLE_TEXT_TRANSLATION
+    if (m_translationService != nullptr && m_actions.setTextTargetLanguage)
+        m_actions.setTextTargetLanguage(m_translationService->preferences().targetLanguage);
     const bool overlay = originalImageTranslationActive();
     const auto translation = m_textCache.constFind(m_translationKey);
     const bool streaming = translation != m_textCache.cend() &&

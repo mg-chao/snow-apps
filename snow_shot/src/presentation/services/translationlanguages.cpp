@@ -3,25 +3,6 @@
 #include <QCoreApplication>
 
 namespace snow_shot::translation {
-const QVector<TranslationLanguage>& translationLanguages() {
-    static const QVector<TranslationLanguage> languages{
-        {"ar", QT_TRANSLATE_NOOP("TranslationLanguages", "Arabic")},
-        {"de", QT_TRANSLATE_NOOP("TranslationLanguages", "German")},
-        {"en", QT_TRANSLATE_NOOP("TranslationLanguages", "English")},
-        {"es", QT_TRANSLATE_NOOP("TranslationLanguages", "Spanish")},
-        {"fr", QT_TRANSLATE_NOOP("TranslationLanguages", "French")},
-        {"it", QT_TRANSLATE_NOOP("TranslationLanguages", "Italian")},
-        {"ja", QT_TRANSLATE_NOOP("TranslationLanguages", "Japanese")},
-        {"ko", QT_TRANSLATE_NOOP("TranslationLanguages", "Korean")},
-        {"pt", QT_TRANSLATE_NOOP("TranslationLanguages", "Portuguese")},
-        {"ru", QT_TRANSLATE_NOOP("TranslationLanguages", "Russian")},
-        {"tr", QT_TRANSLATE_NOOP("TranslationLanguages", "Turkish")},
-        {"zh-Hans", QT_TRANSLATE_NOOP("TranslationLanguages", "Simplified Chinese")},
-        {"zh-Hant", QT_TRANSLATE_NOOP("TranslationLanguages", "Traditional Chinese")},
-    };
-    return languages;
-}
-
 QString translationLanguageName(const QString& code) {
     if (code == QStringLiteral("auto")) {
         return QCoreApplication::translate("TranslationLanguages", "Auto-detect language");

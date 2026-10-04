@@ -60,6 +60,7 @@ enum class SettingsSelectSource {
     Fixed,
     LanguageCatalog,
     FontFamilies,
+    TranslationServices,
 };
 
 enum class SettingsSelectBinding {
@@ -104,6 +105,10 @@ enum class SettingsSelectBinding {
     TrayLeftClickAction,
     TrayMiddleClickAction,
     TranslationLayoutProcessing,
+    TranslationSourceLanguage,
+    TranslationPrimaryTargetLanguage,
+    TranslationSecondaryTargetLanguage,
+    TranslationService,
     ScreenshotSelectionResizeMode,
     SkinDisplayMode,
     SkinPosition,

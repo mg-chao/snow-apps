@@ -1080,6 +1080,10 @@
             <translation>漸寬箭桿支援標準、三角形、空心三角形和內凹三角形箭頭。</translation>
         </message>
         <message>
+            <source>Target Language</source>
+            <translation>目標語言</translation>
+        </message>
+        <message>
             <source>Template</source>
             <translation>範本</translation>
         </message>

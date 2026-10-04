@@ -256,6 +256,10 @@ ScreenshotOcrController::ScreenshotOcrController(ScreenshotOcrControllerContext 
                         }
                     });
             },
+            [this](const QString& language) {
+                if (auto* toolbar = m_context.overlayCoordinator.toolbar())
+                    toolbar->setTextTargetLanguage(language);
+            },
         },
         this);
     connect(m_session.get(), &ScreenshotRecognitionSessionController::textEditingChanged, this,
@@ -548,6 +552,10 @@ void ScreenshotOcrController::resetTextEditing() {
 
 void ScreenshotOcrController::applyTextFormatting(const QString& value) {
     m_session->applyTextFormatting(value);
+}
+
+void ScreenshotOcrController::applyTextTargetLanguage(const QString& language) {
+    m_session->applyTextTargetLanguage(language);
 }
 
 void ScreenshotOcrController::applyTextPunctuation(const QString& value) {

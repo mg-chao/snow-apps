@@ -249,6 +249,8 @@ void ScreenshotToolbarWindow::connectToolCommands(ScreenshotToolPalette& toolPal
             [this](const QString& value) { m_commands.applyTextFormatting(value); });
     connect(&toolPalette, &ScreenshotToolPalette::textPunctuationRequested, this,
             [this](const QString& value) { m_commands.applyTextPunctuation(value); });
+    connect(&toolPalette, &ScreenshotToolPalette::textTargetLanguageRequested, this,
+            [this](const QString& language) { m_commands.applyTextTargetLanguage(language); });
 #if SNOW_SHOT_ENABLE_TABLE_RECOGNITION
     connect(&toolPalette, &ScreenshotToolPalette::tableMergeRequested, this,
             [this]() { m_commands.mergeTableSelection(); });
@@ -626,6 +628,11 @@ void ScreenshotToolbarWindow::setTextTransformSelections(const QString& formatti
     if (ScreenshotToolPalette* toolPalette = palette()) {
         toolPalette->setTextTransformSelections(formatting, punctuation);
     }
+}
+
+void ScreenshotToolbarWindow::setTextTargetLanguage(const QString& language) {
+    if (auto* toolPalette = palette())
+        toolPalette->setTextTargetLanguage(language);
 }
 
 void ScreenshotToolbarWindow::setQrBusy(bool busy) {

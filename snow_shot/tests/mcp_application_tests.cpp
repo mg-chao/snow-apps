@@ -56,6 +56,12 @@ void runMcpApplicationTests() {
     ports.jobs = &jobs;
     ports.translation = &translation;
     ports.updates = &updates;
+    int selectionCaptures = 0;
+    ports.selectedText = [&](auto completion) {
+        ++selectionCaptures;
+        completion(QStringLiteral("こんにちは"), {});
+        return std::function<void()>{};
+    };
     int lifecycleActions = 0;
     ports.restartAllowed = [] { return true; };
     ports.action = [&](const QString&, const QJsonObject&) {
@@ -260,10 +266,13 @@ void runMcpApplicationTests() {
     require(call(QStringLiteral("translation_catalog")).ok, "translation catalog available");
     translation_tests::waitUntil([&] { return !translation.loadingModels(); },
                                  "deterministic provider catalog completes");
+    auto capturedPreferences = translation.preferences();
+    capturedPreferences.secondaryTargetLanguage = QStringLiteral("fr");
+    require(translation.savePreferences(capturedPreferences), "set original secondary target");
     const auto started = call(QStringLiteral("translation_start"),
-                              {{QStringLiteral("texts"), QJsonArray{QStringLiteral("hello")}},
+                              {{QStringLiteral("texts"), QJsonArray{QStringLiteral("こんにちは")}},
                                {QStringLiteral("model_id"), QStringLiteral("general")},
-                               {QStringLiteral("source_language"), QStringLiteral("en")},
+                               {QStringLiteral("source_language"), QStringLiteral("ja")},
                                {QStringLiteral("target_language"), QStringLiteral("ja")}});
     require(started.ok, "translation returns an owned job");
     const auto translationId = started.result.value(QStringLiteral("job_id")).toString();
@@ -290,14 +299,18 @@ void runMcpApplicationTests() {
         },
         "provider failure produces terminal job");
     const auto snapshotInput = jobs.input(71, translationId);
-    require(snapshotInput.has_value() && !jobs.input(72, translationId),
-            "retained retry input checks ownership");
+    require(snapshotInput.has_value() &&
+                snapshotInput->value(QStringLiteral("secondary_target_language")) ==
+                    QStringLiteral("fr") &&
+                !jobs.input(72, translationId),
+            "retained retry input captures secondary target and checks ownership");
     require(call(QStringLiteral("translation_start"),
                  {{QStringLiteral("retry_job_id"), translationId}}, {}, {}, 72)
                     .errorCode == QStringLiteral("job_not_found"),
             "wrong-owner retry does not disclose private job");
     auto changedPreferences = translation.preferences();
     changedPreferences.targetLanguage = QStringLiteral("de");
+    changedPreferences.secondaryTargetLanguage = QStringLiteral("de");
     require(translation.savePreferences(changedPreferences), "UI changes translation preferences");
     const auto retried = call(QStringLiteral("translation_start"),
                               {{QStringLiteral("retry_job_id"), translationId}});
@@ -307,6 +320,8 @@ void runMcpApplicationTests() {
             "retry owns a new handle and preserves captured preferences");
     translation_tests::waitUntil([&] { return provider.streams.size() == 2; },
                                  "retry reaches provider");
+    require(provider.streams.at(1).body == provider.streams.at(0).body,
+            "retry restores original text and both targets after shared preferences change");
     provider.delta(1, QStringLiteral("translated"));
     provider.finish(1);
     translation_tests::waitUntil(
@@ -315,16 +330,54 @@ void runMcpApplicationTests() {
                    QStringLiteral("completed");
         },
         "retry completes");
+    changedPreferences.secondaryTargetLanguage = QStringLiteral("pt");
+    require(translation.savePreferences(changedPreferences), "change targets before chained retry");
     const auto canceled =
         call(QStringLiteral("translation_start"), {{QStringLiteral("retry_job_id"), retryId}});
     const auto canceledId = canceled.result.value(QStringLiteral("job_id")).toString();
     translation_tests::waitUntil([&] { return provider.streams.size() == 3; },
                                  "cancel fixture starts");
+    require(provider.streams.at(2).body == provider.streams.at(0).body,
+            "chained retry preserves the original secondary target");
     require(jobs.cancel(71, canceledId), "translation cancellation accepted");
     translation_tests::waitUntil([&] { return provider.disconnected(2); },
                                  "translation cancellation releases provider request");
     require(jobs.get(71, canceledId)->value(QStringLiteral("status")) == QStringLiteral("canceled"),
             "translation cancellation remains distinct from provider failure");
+    const auto selected = call(QStringLiteral("translation_start"),
+                               {{QStringLiteral("source"), QStringLiteral("selection")},
+                                {QStringLiteral("model_id"), QStringLiteral("general")},
+                                {QStringLiteral("source_language"), QStringLiteral("ja")},
+                                {QStringLiteral("target_language"), QStringLiteral("ja")}});
+    require(selected.ok, "selected text returns a translation job");
+    const auto selectedId = selected.result.value(QStringLiteral("job_id")).toString();
+    translation_tests::waitUntil([&] { return provider.streams.size() == 4; },
+                                 "selected text reaches provider");
+    provider.fail(3);
+    translation_tests::waitUntil(
+        [&] {
+            return jobs.get(71, selectedId)->value(QStringLiteral("status")) ==
+                   QStringLiteral("failed");
+        },
+        "selected text failure produces a retryable job");
+    changedPreferences.secondaryTargetLanguage = QStringLiteral("ko");
+    require(translation.savePreferences(changedPreferences), "change target after selection");
+    const auto selectedRetry =
+        call(QStringLiteral("translation_start"), {{QStringLiteral("retry_job_id"), selectedId}});
+    require(selectedRetry.ok, "selected text can retry from retained input");
+    translation_tests::waitUntil([&] { return provider.streams.size() == 5; },
+                                 "selected text retry reaches provider");
+    require(selectionCaptures == 1 && provider.streams.at(4).body == provider.streams.at(3).body,
+            "selected text retry retains both targets without recapturing the selection");
+    provider.delta(4, QStringLiteral("selected translation"));
+    provider.finish(4);
+    const auto selectedRetryId = selectedRetry.result.value(QStringLiteral("job_id")).toString();
+    translation_tests::waitUntil(
+        [&] {
+            return jobs.get(71, selectedRetryId)->value(QStringLiteral("status")) ==
+                   QStringLiteral("completed");
+        },
+        "selected text retry completes");
     require(call(QStringLiteral("updates_action"),
                  {{QStringLiteral("action"), QStringLiteral("download")}})
                     .errorCode ==

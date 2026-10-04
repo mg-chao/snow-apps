@@ -1513,6 +1513,9 @@ class ApplicationController::Impl {
         if (settingsBackend == nullptr) {
             settingsBackend = std::make_unique<presentation::settings::BuiltInSettingsBackend>(
                 globalShortcutManager, nullptr, &globalMouseManager, &permissions);
+#if SNOW_SHOT_ENABLE_TEXT_TRANSLATION
+            settingsBackend->setTranslationService(translationService);
+#endif
         }
         if (runtimeSession == nullptr) {
             runtimeSession = std::make_unique<presentation::settings::SettingsRuntimeSession>(

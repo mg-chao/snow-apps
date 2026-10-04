@@ -276,8 +276,8 @@ const QVector<ConfigurationSchemaEntry> kRawEntries = {
      std::nullopt,
      {QStringLiteral("auto"), QStringLiteral("ar"), QStringLiteral("de"), QStringLiteral("en"),
       QStringLiteral("es"), QStringLiteral("fr"), QStringLiteral("it"), QStringLiteral("ja"),
-      QStringLiteral("pt"), QStringLiteral("ru"), QStringLiteral("tr"), QStringLiteral("zh-Hans"),
-      QStringLiteral("zh-Hant")}},
+      QStringLiteral("ko"), QStringLiteral("pt"), QStringLiteral("ru"), QStringLiteral("tr"),
+      QStringLiteral("zh-Hans"), QStringLiteral("zh-Hant")}},
 #endif
 #if SNOW_SHOT_ENABLE_TEXT_TRANSLATION
     {QStringLiteral("screenshot_translation/target_language"),
@@ -285,11 +285,19 @@ const QVector<ConfigurationSchemaEntry> kRawEntries = {
      ConfigurationValueKind::String,
      std::nullopt,
      {QStringLiteral("ar"), QStringLiteral("de"), QStringLiteral("en"), QStringLiteral("es"),
-      QStringLiteral("fr"), QStringLiteral("it"), QStringLiteral("ja"), QStringLiteral("pt"),
-      QStringLiteral("ru"), QStringLiteral("tr"), QStringLiteral("zh-Hans"),
+      QStringLiteral("fr"), QStringLiteral("it"), QStringLiteral("ja"), QStringLiteral("ko"),
+      QStringLiteral("pt"), QStringLiteral("ru"), QStringLiteral("tr"), QStringLiteral("zh-Hans"),
       QStringLiteral("zh-Hant")}},
 #endif
 #if SNOW_SHOT_ENABLE_TEXT_TRANSLATION
+    {QStringLiteral("screenshot_translation/secondary_target_language"),
+     QStringLiteral("en"),
+     ConfigurationValueKind::String,
+     std::nullopt,
+     {QStringLiteral("ar"), QStringLiteral("de"), QStringLiteral("en"), QStringLiteral("es"),
+      QStringLiteral("fr"), QStringLiteral("it"), QStringLiteral("ja"), QStringLiteral("ko"),
+      QStringLiteral("pt"), QStringLiteral("ru"), QStringLiteral("tr"), QStringLiteral("zh-Hans"),
+      QStringLiteral("zh-Hant")}},
     {QStringLiteral("screenshot_translation/model"), QString(), ConfigurationValueKind::String},
 #endif
 #if SNOW_SHOT_ENABLE_IMAGE_CONVERSION
@@ -2226,7 +2234,11 @@ ConfigurationNormalization ConfigurationSchema::normalize(const QString& key,
     }
 #if SNOW_SHOT_ENABLE_TEXT_TRANSLATION
     if (key == QStringLiteral("screenshot_translation/source_language") ||
-        key == QStringLiteral("screenshot_translation/target_language")) {
+        key == QStringLiteral("screenshot_translation/target_language") ||
+        key == QStringLiteral("screenshot_translation/secondary_target_language")) {
+        if (key == QStringLiteral("screenshot_translation/target_language") && value.isString() &&
+            value.toString().isEmpty())
+            return {QString(), true, false};
         return normalizeTranslationLanguage(*schemaEntry, value);
     }
 #endif

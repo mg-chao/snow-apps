@@ -1,6 +1,10 @@
 #include "snow_shot/presentation/globalmousemanager.h"
 #include "snow_shot/presentation/settings/settingsbackend.h"
 #include "snow_shot/app/edition.h"
+#if SNOW_SHOT_ENABLE_TEXT_TRANSLATION
+#include "snow_shot/translation/translationservice.h"
+#include "snow_shot/translation/translationlanguages.h"
+#endif
 #include "snow_shot/presentation/fontfamilies.h"
 #include "snow_shot/presentation/settings/settingsregistry.h"
 #include "snow_shot/presentation/settings/applicationpriority.h"
@@ -314,8 +318,101 @@ void BuiltInSettingsBackend::connectSkinControllerIfNeeded() {
                                      &SettingsBackend::synchronized);
 }
 
+#if SNOW_SHOT_ENABLE_TEXT_TRANSLATION
+void BuiltInSettingsBackend::setTranslationService(translation::TranslationService* service) {
+    if (m_translationService == service)
+        return;
+    if (m_translationService != nullptr)
+        disconnect(m_translationService, nullptr, this, nullptr);
+    m_translationService = service;
+    if (service != nullptr) {
+        connect(service, &translation::TranslationService::catalogChanged, this,
+                &SettingsBackend::synchronized);
+        connect(service, &translation::TranslationService::preferencesChanged, this,
+                &SettingsBackend::synchronized);
+        connect(service, &QObject::destroyed, this, &SettingsBackend::synchronized);
+    }
+    emit synchronized();
+}
+#endif
+
+void BuiltInSettingsBackend::requestSelectOptions(SettingsSelectBinding binding) {
+#if SNOW_SHOT_ENABLE_TEXT_TRANSLATION
+    if (binding == SettingsSelectBinding::TranslationService && m_translationService != nullptr)
+        m_translationService->refreshModels();
+#else
+    Q_UNUSED(binding);
+#endif
+}
+
+bool BuiltInSettingsBackend::selectOptionsLoading(SettingsSelectBinding binding) const {
+#if SNOW_SHOT_ENABLE_TEXT_TRANSLATION
+    return binding == SettingsSelectBinding::TranslationService &&
+           m_translationService != nullptr && m_translationService->loadingModels();
+#else
+    Q_UNUSED(binding);
+    return false;
+#endif
+}
+
+QString BuiltInSettingsBackend::selectOptionsError(SettingsSelectBinding binding) const {
+#if SNOW_SHOT_ENABLE_TEXT_TRANSLATION
+    if (binding == SettingsSelectBinding::TranslationService)
+        return m_translationService != nullptr
+                   ? m_translationService->errorText()
+                   : QCoreApplication::translate("SettingsBackend",
+                                                 "Translation service is unavailable");
+#else
+    Q_UNUSED(binding);
+#endif
+    return {};
+}
+
+bool BuiltInSettingsBackend::selectEnabled(SettingsSelectBinding binding) const {
+#if SNOW_SHOT_ENABLE_TEXT_TRANSLATION
+    return binding != SettingsSelectBinding::TranslationService || m_translationService != nullptr;
+#else
+    Q_UNUSED(binding);
+    return true;
+#endif
+}
+
 QVariant BuiltInSettingsBackend::selectValue(SettingsSelectBinding binding) const {
     switch (binding) {
+    case SettingsSelectBinding::TranslationSourceLanguage:
+    case SettingsSelectBinding::TranslationPrimaryTargetLanguage:
+    case SettingsSelectBinding::TranslationSecondaryTargetLanguage:
+    case SettingsSelectBinding::TranslationService:
+#if SNOW_SHOT_ENABLE_TEXT_TRANSLATION
+    {
+        const auto config = storage::ScreenshotTranslationSettings().configuration();
+        const translation::TranslationPreferences preferences =
+            m_translationService != nullptr
+                ? m_translationService->preferences()
+                : translation::TranslationPreferences{
+                      config.sourceLanguage,
+                      config.targetLanguage.isEmpty()
+                          ? translation::defaultTranslationTargetLanguage(
+                                LanguageManager::instance().currentLocale())
+                          : config.targetLanguage,
+                      config.modelId, config.secondaryTargetLanguage};
+        if (binding == SettingsSelectBinding::TranslationSourceLanguage)
+            return preferences.sourceLanguage;
+        if (binding == SettingsSelectBinding::TranslationPrimaryTargetLanguage)
+            return preferences.targetLanguage;
+        if (binding == SettingsSelectBinding::TranslationSecondaryTargetLanguage)
+            return preferences.secondaryTargetLanguage;
+        if (m_translationService != nullptr) {
+            const int index = translation::translationModelIndex(m_translationService->models(),
+                                                                 preferences.modelId);
+            if (index >= 0)
+                return m_translationService->models()[index].id;
+        }
+        return preferences.modelId;
+    }
+#else
+        return {};
+#endif
     case SettingsSelectBinding::TranslationLayoutProcessing:
 #if SNOW_SHOT_ENABLE_TEXT_TRANSLATION
         return storage::ScreenshotTranslationSettings().layoutProcessing();
@@ -452,6 +549,13 @@ QVariant BuiltInSettingsBackend::selectValue(SettingsSelectBinding binding) cons
 QVector<SettingsRuntimeOption>
 BuiltInSettingsBackend::dynamicSelectOptions(SettingsSelectBinding binding) const {
     QVector<SettingsRuntimeOption> result;
+#if SNOW_SHOT_ENABLE_TEXT_TRANSLATION
+    if (binding == SettingsSelectBinding::TranslationService && m_translationService != nullptr) {
+        for (const auto& model : m_translationService->models())
+            result.append({model.id, model.name});
+        return result;
+    }
+#endif
     if (binding == SettingsSelectBinding::AppFont) {
         QStringList families = applicationFontFamilies();
         const QString saved = styles::ThemeManager::instance().appFontFamily();
@@ -479,6 +583,37 @@ BuiltInSettingsBackend::dynamicSelectOptions(SettingsSelectBinding binding) cons
 bool BuiltInSettingsBackend::applySelectValue(SettingsSelectBinding binding,
                                               const QVariant& value) {
     switch (binding) {
+    case SettingsSelectBinding::TranslationSourceLanguage:
+    case SettingsSelectBinding::TranslationPrimaryTargetLanguage:
+    case SettingsSelectBinding::TranslationSecondaryTargetLanguage:
+    case SettingsSelectBinding::TranslationService:
+#if SNOW_SHOT_ENABLE_TEXT_TRANSLATION
+    {
+        if (m_translationService != nullptr) {
+            auto preferences = m_translationService->preferences();
+            if (binding == SettingsSelectBinding::TranslationSourceLanguage)
+                preferences.sourceLanguage = value.toString();
+            else if (binding == SettingsSelectBinding::TranslationPrimaryTargetLanguage)
+                preferences.targetLanguage = value.toString();
+            else if (binding == SettingsSelectBinding::TranslationSecondaryTargetLanguage)
+                preferences.secondaryTargetLanguage = value.toString();
+            else
+                preferences.modelId = value.toString();
+            return m_translationService->savePreferences(preferences);
+        }
+        const QString key = binding == SettingsSelectBinding::TranslationSourceLanguage
+                                ? QStringLiteral("screenshot_translation/source_language")
+                            : binding == SettingsSelectBinding::TranslationPrimaryTargetLanguage
+                                ? QStringLiteral("screenshot_translation/target_language")
+                            : binding == SettingsSelectBinding::TranslationSecondaryTargetLanguage
+                                ? QStringLiteral("screenshot_translation/secondary_target_language")
+                                : QStringLiteral("screenshot_translation/model");
+        return storage::ApplicationStorage::instance().configuration().setValue(key,
+                                                                                value.toString());
+    }
+#else
+        return false;
+#endif
     case SettingsSelectBinding::SkinDisplayMode:
         return storage::InterfaceSettings().setSkinDisplayMode(value.toString());
     case SettingsSelectBinding::SkinPosition:
@@ -2310,6 +2445,18 @@ bool BuiltInSettingsBackend::resetSection(SettingsSectionReset reset) {
     case SettingsSectionReset::Translation:
 #if SNOW_SHOT_ENABLE_TEXT_TRANSLATION
         return storage::ApplicationStorage::instance().configuration().setValues({
+            {QStringLiteral("screenshot_translation/source_language"),
+             storage::ConfigurationSchema::defaultValue(
+                 QStringLiteral("screenshot_translation/source_language"))},
+            {QStringLiteral("screenshot_translation/target_language"),
+             storage::ConfigurationSchema::defaultValue(
+                 QStringLiteral("screenshot_translation/target_language"))},
+            {QStringLiteral("screenshot_translation/secondary_target_language"),
+             storage::ConfigurationSchema::defaultValue(
+                 QStringLiteral("screenshot_translation/secondary_target_language"))},
+            {QStringLiteral("screenshot_translation/model"),
+             storage::ConfigurationSchema::defaultValue(
+                 QStringLiteral("screenshot_translation/model"))},
             {QStringLiteral("screenshot_translation/original_image_translation"),
              storage::ConfigurationSchema::defaultValue(
                  QStringLiteral("screenshot_translation/original_image_translation"))},

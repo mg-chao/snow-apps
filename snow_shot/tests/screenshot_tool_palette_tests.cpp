@@ -2,6 +2,7 @@
 #include "snow_shot/presentation/screenshotregiontypecontrol.h"
 #include "snow_shot/presentation/screenshottoolpalette.h"
 #include "snow_shot/ocrtextoptions.h"
+#include "snow_shot/translation/translationlanguagecatalog.h"
 #include "snow_shot/presentation/screenshotcanvastoolstyles.h"
 #include "snow_shot/presentation/screenshotstylebinding.h"
 #include "snow_shot/presentation/screenshotdefaultstyles.h"
@@ -5823,10 +5824,12 @@ void ocrToolReplacesSelectionActionToolbarContents() {
         QStringLiteral("screenshotOcrTextFormattingSelect"));
     auto* punctuationSelect = palette.findChild<adqt::widgets::AdSelect*>(
         QStringLiteral("screenshotOcrTextPunctuationSelect"));
+    auto* targetSelect = palette.findChild<adqt::widgets::AdSelect*>(
+        QStringLiteral("screenshotTranslationQuickTargetLanguageSelect"));
     require(sendToBack == nullptr && edit != nullptr && translate != nullptr && reset != nullptr &&
                 settings != nullptr && undo != nullptr && redo != nullptr &&
-                textSelects.size() == 2 && formattingSelect != nullptr &&
-                punctuationSelect != nullptr,
+                textSelects.size() == 3 && formattingSelect != nullptr &&
+                punctuationSelect != nullptr && targetSelect != nullptr && targetSelect->isHidden(),
             "the shared action panel should contain the OCR editing controls");
     require(
         undo->toolTip() == shortcutTooltip(QStringLiteral("Undo"), {QStringLiteral("Ctrl+Z")}) &&
@@ -5837,6 +5840,22 @@ void ocrToolReplacesSelectionActionToolbarContents() {
                 !textSelects.at(1)->isHidden(),
             "OCR mode should replace selection actions with text editing controls");
     QLayout* actionLayout = actionPanel->layout();
+    require(actionLayout->indexOf(punctuationSelect) < actionLayout->indexOf(targetSelect) &&
+                actionLayout->indexOf(targetSelect) < actionLayout->indexOf(reset),
+            "quick target language follows punctuation and precedes Reset");
+    int targetRequests = 0;
+    QString requestedTarget;
+    QObject::connect(&palette, &ScreenshotToolPalette::textTargetLanguageRequested,
+                     [&](const QString& value) {
+                         ++targetRequests;
+                         requestedTarget = value;
+                     });
+    palette.setTextTargetLanguage(QStringLiteral("zh-Hant"));
+    require(targetRequests == 0 && targetSelect->currentValue() == QStringLiteral("zh-Hant"),
+            "publishing primary target updates the selector without requesting another save");
+    require(targetSelect->model()->rowCount() ==
+                snow_shot::translation::translationLanguages().size(),
+            "quick target exposes every shared language without Auto-detect");
     require(
         actionLayout != nullptr && actionLayout->indexOf(edit) < actionLayout->indexOf(translate) &&
             actionLayout->indexOf(translate) < actionLayout->indexOf(textSelects.at(0)) &&
@@ -5884,6 +5903,15 @@ void ocrToolReplacesSelectionActionToolbarContents() {
         QCoreApplication::processEvents();
         checkSharedOptions(formattingSelect, snow_shot::ocrFormattingOptions());
         checkSharedOptions(punctuationSelect, snow_shot::ocrPunctuationOptions());
+        for (int row = 0; row < targetSelect->model()->rowCount(); ++row) {
+            const auto& option = snow_shot::translation::translationLanguages()[row];
+            const auto index = targetSelect->model()->index(row, 0);
+            require(index.data(adqt::widgets::AdSelect::DefaultValueRole) ==
+                            QString::fromLatin1(option.code) &&
+                        index.data(adqt::widgets::AdSelect::DefaultLabelRole) ==
+                            QCoreApplication::translate("TranslationLanguages", option.name),
+                    "quick target shares language codes and retranslates option labels");
+        }
         require(formattingSelect->currentValue().toString() == QStringLiteral("smart") &&
                     punctuationSelect->currentValue().toString() == QStringLiteral("full"),
                 "OCR options retranslate without changing either selected transform");
@@ -5929,6 +5957,11 @@ void ocrToolReplacesSelectionActionToolbarContents() {
             "OCR editing should expose the text document's undo state on the toolbar");
     palette.setTextEditingState(true, false);
     palette.setTextTranslationState(true, true, true, false, false, false);
+    require(!targetSelect->isHidden() && targetSelect->isEnabled() && targetSelect->searchEnabled(),
+            "quick target is visible and remains searchable during streaming");
+    targetSelect->setCurrentValue(QStringLiteral("ko"));
+    require(targetRequests == 1 && requestedTarget == QStringLiteral("ko"),
+            "quick target publishes a primary-language change");
     require(translate->isEnabled() &&
                 translate->buttonStyle() == adqt::widgets::AdButton::ButtonStyle::Solid &&
                 !reset->isEnabled() && !textSelects.at(0)->isEnabled() &&
@@ -5949,6 +5982,8 @@ void ocrToolReplacesSelectionActionToolbarContents() {
                 edit->accentRole() == adqt::widgets::AdButton::AccentRole::Neutral &&
                 !reset->isEnabled(),
             "Edit should return to its inactive state after text editing exits");
+    palette.setActiveTool(ScreenshotToolPalette::Tool::Ocr);
+    require(targetSelect->isHidden(), "quick target is hidden outside Text Translation");
 }
 
 void recognitionToolsKeepDrawingToolsAvailable() {

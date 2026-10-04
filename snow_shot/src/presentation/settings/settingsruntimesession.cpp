@@ -133,6 +133,11 @@ const SettingsRegistry& SettingsRuntimeSession::registry() const {
     return m_registry;
 }
 
+SettingsOptions SettingsRuntimeSession::options(const QString& fieldId) const {
+    const auto* descriptor = descriptorFor(fieldId);
+    return descriptor != nullptr ? buildOptions(*descriptor) : SettingsOptions{};
+}
+
 SettingsFieldState SettingsRuntimeSession::state(const QString& fieldId) const {
     const auto found = m_states.constFind(fieldId);
     if (found != m_states.cend()) {
@@ -748,6 +753,9 @@ void SettingsRuntimeSession::refreshField(const QString& fieldId,
     } else {
         next.enabled = currentStatus.writeAvailable;
         if (const auto* select =
+                std::get_if<SettingsSelectDefinition>(&descriptor->definition->payload))
+            next.enabled = next.enabled && m_backend.selectEnabled(select->binding);
+        if (const auto* select =
                 std::get_if<SettingsSelectDefinition>(&descriptor->definition->payload);
             select != nullptr &&
             select->binding == SettingsSelectBinding::TranslationLayoutProcessing) {
@@ -1224,6 +1232,8 @@ SettingsRuntimeSession::buildOptions(const SettingsFieldDescriptor& descriptor) 
             result.values.push_back({option.value, option.label.translated()});
         }
         result.values.append(dynamicSelectOptions(select->binding));
+        result.loading = m_backend.selectOptionsLoading(select->binding);
+        result.error = m_backend.selectOptionsError(select->binding);
     } else if (const auto* multi =
                    std::get_if<SettingsMultiSelectDefinition>(&descriptor.definition->payload)) {
         for (const SettingsOptionDefinition& option : multi->options) {

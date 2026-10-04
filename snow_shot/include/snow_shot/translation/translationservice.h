@@ -21,6 +21,7 @@ struct TranslationPreferences {
     QString sourceLanguage;
     QString targetLanguage;
     QString modelId;
+    QString secondaryTargetLanguage = QStringLiteral("en");
     friend bool operator==(const TranslationPreferences&, const TranslationPreferences&) = default;
 };
 

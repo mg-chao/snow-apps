@@ -1945,7 +1945,10 @@ ScreenshotTranslationConfiguration ScreenshotTranslationSettings::configuration(
     return {cache().value(QStringLiteral("screenshot_translation/source_language")).toString(),
             cache().value(QStringLiteral("screenshot_translation/target_language")).toString(),
             cache().value(QStringLiteral("screenshot_translation/model")).toString(),
-            layoutProcessing()};
+            layoutProcessing(),
+            cache()
+                .value(QStringLiteral("screenshot_translation/secondary_target_language"))
+                .toString()};
 }
 #endif
 
@@ -1967,6 +1970,8 @@ bool ScreenshotTranslationSettings::setConfiguration(
     return cache().setValues({
         {QStringLiteral("screenshot_translation/source_language"), configuration.sourceLanguage},
         {QStringLiteral("screenshot_translation/target_language"), configuration.targetLanguage},
+        {QStringLiteral("screenshot_translation/secondary_target_language"),
+         configuration.secondaryTargetLanguage},
         {QStringLiteral("screenshot_translation/model"), configuration.modelId},
         {QStringLiteral("screenshot_translation/layout_processing"),
          configuration.layoutProcessing},

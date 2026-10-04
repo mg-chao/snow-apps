@@ -14,6 +14,7 @@
 #include "snow_shot/presentation/languagemanager.h"
 #include "snow_shot/presentation/settings/settingsbackend.h"
 #include "snow_shot/presentation/settings/settingsruntimesession.h"
+#include "snow_shot/presentation/components/settingspagewidget.h"
 #include "snow_shot/presentation/styles/thememanager.h"
 #include "snow_shot/presentation/translationpagecontroller.h"
 #include "snow_shot/storage/applicationstorage.h"
@@ -105,13 +106,36 @@ void sharedServiceSelectors() {
     require(service.savePreferences(
                 {QStringLiteral("auto"), QStringLiteral("ja"), model.selectionId()}),
             "select shared custom model");
+    snow_shot::presentation::GlobalShortcutManager shortcuts;
+    settings::BuiltInSettingsBackend backend(shortcuts);
+    backend.setTranslationService(&service);
+    const auto& registry = settings::builtInSettingsRegistry();
+    settings::SettingsRuntimeSession runtime(registry, backend);
+    SettingsPageWidget settingsPage(registry, QStringLiteral("text-recognition-translation"),
+                                    runtime);
+    const auto* definition =
+        registry.catalog().page(QStringLiteral("text-recognition-translation"));
+    require(definition->sections[1].id == QStringLiteral("interface-text-recognition") &&
+                definition->sections[2].id == QStringLiteral("translation-settings") &&
+                definition->sections[2].items.size() == 6 &&
+                definition->sections[2].items[0].id ==
+                    QStringLiteral("translation.source-language") &&
+                definition->sections[2].items[1].id ==
+                    QStringLiteral("translation.primary-target-language") &&
+                definition->sections[2].items[2].id ==
+                    QStringLiteral("translation.secondary-target-language") &&
+                definition->sections[2].items[3].id == QStringLiteral("translation.service"),
+            "expanded Translation Settings follows Text background in the requested order");
+    require(runtime.state(QStringLiteral("translation.secondary-target-language")).acceptedValue ==
+                QStringLiteral("en"),
+            "generated settings shows shared secondary default");
     auto* modal = snow_shot::presentation::createScreenshotTranslationSettingsDialog(service, &page,
                                                                                      &page, {});
     int sharedEdits = 0;
     int sharedCommits = 0;
     const auto watchSharedFields = [&](AdModal* editor) {
         const auto fields = editor->contentWidget()->findChildren<form_fields::FormField*>();
-        require(fields.size() == 4, "screenshot settings uses four shared fields");
+        require(fields.size() == 5, "screenshot settings uses five shared fields");
         for (auto* field : fields) {
             require(!field->item()->isTouched() && !field->item()->isDirty(),
                     "screenshot settings initializes a clean AdForm baseline");
@@ -122,6 +146,22 @@ void sharedServiceSelectors() {
         }
     };
     watchSharedFields(modal);
+    auto* primaryTarget =
+        child<AdSelect>(*modal->contentWidget(), "screenshotTranslationTargetLanguage");
+    auto* secondaryTarget =
+        child<AdSelect>(*modal->contentWidget(), "screenshotTranslationSecondaryTargetLanguage");
+    const auto primaryOptions = primaryTarget->options();
+    const auto secondaryOptions = secondaryTarget->options();
+    require(primaryOptions.size() == secondaryOptions.size() &&
+                secondaryTarget->currentValue() == QStringLiteral("en"),
+            "dialog target options match and secondary defaults to English");
+    for (int index = 0; index < primaryOptions.size(); ++index) {
+        const auto& primary = primaryOptions[index];
+        const auto& secondary = secondaryOptions[index];
+        require(primary.value == secondary.value && primary.label == secondary.label &&
+                    primary.group == secondary.group,
+                "dialog targets share values, translated labels, and grouping");
+    }
     auto* pageSelect = child<AdSelect>(page, "translationService");
     auto* screenshotSelect =
         child<AdSelect>(*modal->contentWidget(), "screenshotTranslationService");
@@ -133,6 +173,14 @@ void sharedServiceSelectors() {
             require(first[i].value == second[i].value && first[i].label == second[i].label &&
                         first[i].group == second[i].group,
                     "service identity, label, and group match across views");
+        const auto mainOptions =
+            runtime.dynamicSelectOptions(settings::SettingsSelectBinding::TranslationService);
+        require(mainOptions.size() == first.size(),
+                "main settings exposes the shared service catalog");
+        for (int i = 0; i < first.size(); ++i)
+            require(mainOptions[i].value == first[i].value &&
+                        mainOptions[i].label == first[i].label,
+                    "main settings shares service identities, labels, and ordering");
     };
     compare();
     require(pageSelect->isEnabled() && screenshotSelect->isEnabled() &&
@@ -146,8 +194,13 @@ void sharedServiceSelectors() {
     require(pageSelect->options().first().label == model.name,
             "open selectors reflect model edits");
     waitUntil([&] { return server.modelRequests == 1; }, "both views share one pending discovery");
+    require(runtime.options(QStringLiteral("translation.service")).loading,
+            "main settings tracks shared service discovery");
     server.respondModels();
     waitUntil([&] { return !service.loadingModels(); }, "finish discovery for both views");
+    require(!runtime.options(QStringLiteral("translation.service")).loading &&
+                runtime.options(QStringLiteral("translation.service")).error.isEmpty(),
+            "completed catalog clears loading and feedback in main settings");
     compare();
     QSet<QString> completedGroups;
     QString currentGroup;
@@ -186,16 +239,19 @@ void sharedServiceSelectors() {
         sharedEdits == 0 && sharedCommits == 0,
         "catalog changes and external preferences must not report shared user edits or commits");
     screenshotSelect->setCurrentValue(QStringLiteral("specialist"));
+    secondaryTarget->setCurrentValue(QStringLiteral("pt"));
     require(service.savePreferences(
                 {QStringLiteral("en"), QStringLiteral("de"), QStringLiteral("general")}),
             "commit preferences while the screenshot dialog has a model draft");
     require(screenshotSelect->currentValue().toString() == QStringLiteral("specialist") &&
-                pageSelect->currentValue().toString() == QStringLiteral("general"),
+                pageSelect->currentValue().toString() == QStringLiteral("general") &&
+                secondaryTarget->currentValue() == QStringLiteral("pt"),
             "an uncommitted dialog edit remains local until OK");
     modal->reject();
     flushEvents();
-    require(sharedEdits == 1 && sharedCommits == 0 &&
-                service.preferences().modelId == QStringLiteral("general"),
+    require(sharedEdits == 2 && sharedCommits == 0 &&
+                service.preferences().modelId == QStringLiteral("general") &&
+                service.preferences().secondaryTargetLanguage == QStringLiteral("en"),
             "cancelling a model draft must not commit it or replace shared preferences");
     sharedEdits = 0;
     modal = snow_shot::presentation::createScreenshotTranslationSettingsDialog(service, &page,
@@ -205,13 +261,24 @@ void sharedServiceSelectors() {
         ->setCurrentValue(QStringLiteral("specialist"));
     child<AdSelect>(*modal->contentWidget(), "screenshotTranslationTargetLanguage")
         ->setCurrentValue(QStringLiteral("ja"));
-    require(sharedEdits == 2 && sharedCommits == 0,
+    child<AdSelect>(*modal->contentWidget(), "screenshotTranslationSecondaryTargetLanguage")
+        ->setCurrentValue(QStringLiteral("ko"));
+    require(sharedEdits == 3 && sharedCommits == 0,
             "screenshot preference edits remain local until OK");
     modal->acceptButton()->click();
     flushEvents();
-    require(sharedCommits == 2 && service.preferences().modelId == QStringLiteral("specialist") &&
-                service.preferences().targetLanguage == QStringLiteral("ja"),
+    require(sharedCommits == 3 && service.preferences().modelId == QStringLiteral("specialist") &&
+                service.preferences().targetLanguage == QStringLiteral("ja") &&
+                service.preferences().secondaryTargetLanguage == QStringLiteral("ko"),
             "successful screenshot save commits only changed shared fields once");
+    require(runtime.state(QStringLiteral("translation.secondary-target-language")).acceptedValue ==
+                    QStringLiteral("ko") &&
+                runtime.applySelectValue(
+                    settings::SettingsSelectBinding::TranslationPrimaryTargetLanguage,
+                    QStringLiteral("zh-Hant")) &&
+                service.preferences().targetLanguage == QStringLiteral("zh-Hant") &&
+                service.preferences().secondaryTargetLanguage == QStringLiteral("ko"),
+            "main settings and dialog synchronize without resetting the secondary target");
     require(configuration.setValue(customKey, previousModels), "restore custom models");
     require(
         snow_shot::storage::ScreenshotTranslationSettings().setConfiguration(previousPreferences),
@@ -258,7 +325,7 @@ void screenshotSettingsGeometry() {
         require(qAbs(body->height() - body->sizeHint().height()) <= 1,
                 "screenshot settings body fits its content without vertical blank space");
         const auto labels = body->findChildren<QLabel*>(QStringLiteral("ad-form-item-label"));
-        require(labels.size() == 4, "screenshot settings has four form labels");
+        require(labels.size() == 5, "screenshot settings has five form labels");
         for (auto* label : labels) {
             require(label->width() >= label->fontMetrics().horizontalAdvance(label->text()) &&
                         label->height() >= label->fontMetrics().height(),

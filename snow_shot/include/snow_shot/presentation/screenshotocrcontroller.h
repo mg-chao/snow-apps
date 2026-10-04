@@ -108,6 +108,7 @@ class ScreenshotOcrController final : public QObject {
     void resetTextEditing();
     void applyTextFormatting(const QString& value);
     void applyTextPunctuation(const QString& value);
+    void applyTextTargetLanguage(const QString& language);
     [[nodiscard]] bool editing() const;
     [[nodiscard]] bool translating() const;
     [[nodiscard]] bool hasTextResult() const;

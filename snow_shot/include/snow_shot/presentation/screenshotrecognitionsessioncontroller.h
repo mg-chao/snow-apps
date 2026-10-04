@@ -86,6 +86,7 @@ struct ScreenshotRecognitionSessionActions {
     std::function<void(int, const QString&)> updateOcrText;
     std::function<void(bool, bool, SnowShotImageConversionFormat)> setConversionState;
     std::function<void(bool)> setShowOriginalImage;
+    std::function<void(const QString&)> setTextTargetLanguage;
 };
 
 class ScreenshotRecognitionSessionController final : public QObject {
@@ -141,6 +142,7 @@ class ScreenshotRecognitionSessionController final : public QObject {
     void resetTextEditing();
     void applyTextFormatting(const QString& value);
     void applyTextPunctuation(const QString& value);
+    void applyTextTargetLanguage(const QString& language);
     [[nodiscard]] bool editing() const;
     [[nodiscard]] bool translating() const;
     [[nodiscard]] bool originalImageTranslationActive() const;

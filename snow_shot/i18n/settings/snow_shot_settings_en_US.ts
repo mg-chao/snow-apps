@@ -787,6 +787,10 @@
             <source>The configuration could not be imported.</source>
             <translation>The configuration could not be imported.</translation>
         </message>
+        <message>
+            <source>Translation service is unavailable</source>
+            <translation>Translation service is unavailable</translation>
+        </message>
     </context>
     <context>
         <name>SettingsCatalog</name>
@@ -1355,6 +1359,10 @@
             <translation>Choose the primary color used throughout the theme</translation>
         </message>
         <message>
+            <source>Choose the primary language for translation</source>
+            <translation>Choose the primary language for translation</translation>
+        </message>
+        <message>
             <source>Choose the scheduling level for the interface and application workers. Changes take effect after restarting Snow Shot.</source>
             <translation>Choose the scheduling level for the interface and application workers. Changes take effect after restarting Snow Shot.</translation>
         </message>
@@ -1365,6 +1373,14 @@
         <message>
             <source>Choose the size of the screenshot, pinned, and recording toolbars</source>
             <translation>Choose the size of the screenshot, pinned, and recording toolbars</translation>
+        </message>
+        <message>
+            <source>Choose the source language or detect it automatically</source>
+            <translation>Choose the source language or detect it automatically</translation>
+        </message>
+        <message>
+            <source>Choose the translation service or AI model</source>
+            <translation>Choose the translation service or AI model</translation>
         </message>
         <message>
             <source>Choose the video encoder</source>
@@ -2679,8 +2695,16 @@
             <translation>Previous screenshot history</translation>
         </message>
         <message>
+            <source>Primary Target Language</source>
+            <translation>Primary Target Language</translation>
+        </message>
+        <message>
             <source>Process priority</source>
             <translation>Process priority</translation>
+        </message>
+        <message>
+            <source>Prompt-capable models use this language when the input matches the primary target language</source>
+            <translation>Prompt-capable models use this language when the input matches the primary target language</translation>
         </message>
         <message>
             <source>Proxy</source>
@@ -3067,10 +3091,6 @@
             <translation>Screenshot toolbar settings</translation>
         </message>
         <message>
-            <source>Screenshot translation</source>
-            <translation>Screenshot translation</translation>
-        </message>
-        <message>
             <source>Screenshot translation settings</source>
             <translation>Screenshot translation settings</translation>
         </message>
@@ -3081,6 +3101,10 @@
         <message>
             <source>Scrolling screenshot</source>
             <translation>Scrolling screenshot</translation>
+        </message>
+        <message>
+            <source>Secondary Target Language</source>
+            <translation>Secondary Target Language</translation>
         </message>
         <message>
             <source>Select child elements within a window while taking a screenshot</source>
@@ -3403,6 +3427,10 @@
             <translation>Software version and license information</translation>
         </message>
         <message>
+            <source>Source Language</source>
+            <translation>Source Language</translation>
+        </message>
+        <message>
             <source>Speed First</source>
             <translation>Speed First</translation>
         </message>
@@ -3665,6 +3693,14 @@
         <message>
             <source>Translation Page</source>
             <translation>Translation Page</translation>
+        </message>
+        <message>
+            <source>Translation Service</source>
+            <translation>Translation Service</translation>
+        </message>
+        <message>
+            <source>Translation Settings</source>
+            <translation>Translation Settings</translation>
         </message>
         <message>
             <source>Translation extensions</source>

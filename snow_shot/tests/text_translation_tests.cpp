@@ -162,7 +162,8 @@ void protocols() {
         bool done = false;
         const QString source = QString::fromUtf8("Hello + & \xE4\xBD\xA0\xE5\xA5\xBD");
         const auto token = client.streamTranslation(
-            {value.selectionId(), QStringLiteral("auto"), QStringLiteral("zh-Hant"), source},
+            {value.selectionId(), QStringLiteral("auto"), QStringLiteral("zh-Hant"), source,
+             QStringLiteral("default"), QStringLiteral("ja")},
             &receiver, [&](const QString& delta) { text += delta; },
             [&](auto response) {
                 result = response;

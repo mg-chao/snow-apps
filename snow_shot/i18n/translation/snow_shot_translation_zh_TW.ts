@@ -16,16 +16,20 @@
             <translation>原圖翻譯</translation>
         </message>
         <message>
+            <source>Primary Target Language</source>
+            <translation>主要目標語言</translation>
+        </message>
+        <message>
             <source>Retry</source>
             <translation>重試</translation>
         </message>
         <message>
-            <source>Source language</source>
-            <translation>來源語言</translation>
+            <source>Secondary Target Language</source>
+            <translation>次要目標語言</translation>
         </message>
         <message>
-            <source>Target language</source>
-            <translation>目標語言</translation>
+            <source>Source language</source>
+            <translation>來源語言</translation>
         </message>
         <message>
             <source>Translation service</source>

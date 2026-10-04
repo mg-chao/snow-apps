@@ -1080,6 +1080,10 @@
             <translation>渐宽箭杆支持标准、三角形、空心三角形和内凹三角形箭头。</translation>
         </message>
         <message>
+            <source>Target Language</source>
+            <translation>目标语言</translation>
+        </message>
+        <message>
             <source>Template</source>
             <translation>模板</translation>
         </message>

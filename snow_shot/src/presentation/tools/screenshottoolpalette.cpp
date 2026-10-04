@@ -1,6 +1,7 @@
 #include "snow_shot/shortcuts/shortcutbinding.h"
 #include "snow_shot/presentation/screenshottoolpalette.h"
 #include "snow_shot/ocrtextoptions.h"
+#include "snow_shot/translation/translationlanguagecatalog.h"
 #include "../recording/recordingaudiogainpopover.h"
 #include "snow_shot/presentation/shortcutdisplaytext.h"
 
@@ -163,6 +164,7 @@ constexpr int TOOLBAR_ITEM_SPACING = 8;
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Reset"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Formatting"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Punctuation"),
+    QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Target Language"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Scrolling screenshot"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Save as file"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Quick save"),
@@ -1438,6 +1440,7 @@ bool ScreenshotToolPalette::setSecondaryToolbarVisibility(bool actionToolbarVisi
     }
 
     const bool ocrVisible = m_activeTool == Tool::Ocr || m_activeTool == Tool::TextTranslation;
+    const bool targetLanguageVisible = m_activeTool == Tool::TextTranslation;
     const bool tableVisible = m_activeTool == Tool::Table;
     const bool qrVisible = m_activeTool == Tool::Qr || m_activeTool == Tool::Latex;
     const bool conversionVisible = m_activeTool == Tool::Markdown || m_activeTool == Tool::Html;
@@ -1453,6 +1456,8 @@ bool ScreenshotToolPalette::setSecondaryToolbarVisibility(bool actionToolbarVisi
         (m_conversionSettingsButton == nullptr ||
          m_conversionSettingsButton->isHidden() == !conversionVisible) &&
         (m_textEditButton == nullptr || m_textEditButton->isHidden() == !ocrVisible) &&
+        (m_textTargetLanguageSelect == nullptr ||
+         m_textTargetLanguageSelect->isHidden() == !targetLanguageVisible) &&
         (m_jumpToTranslationPageButton == nullptr ||
          m_jumpToTranslationPageButton->isHidden() ==
              !(ocrVisible && m_jumpToTranslationPageVisible)) &&
@@ -1504,6 +1509,9 @@ bool ScreenshotToolPalette::setSecondaryToolbarVisibility(bool actionToolbarVisi
     if (m_textPunctuationSelect != nullptr) {
         m_textPunctuationSelect->setVisible(ocrVisible);
     }
+    if (m_textTargetLanguageSelect != nullptr)
+        m_textTargetLanguageSelect->setVisible(targetLanguageVisible);
+    setStyleToolbarSpacingVisible(m_textTargetLanguageSpacer, targetLanguageVisible);
     if (m_tableMergeButton != nullptr) {
         m_tableMergeButton->setVisible(tableVisible);
     }
@@ -2748,7 +2756,7 @@ void ScreenshotToolPalette::setTextTranslationState(bool available, bool transla
     if (m_textSettingsButton != nullptr) {
         m_textSettingsButton->setEnabled(available);
     }
-    if (translating && m_textTranslationButton != nullptr && m_activeTool == Tool::Ocr) {
+    if (translating && m_activeTool == Tool::Ocr) {
         setActiveTool(Tool::TextTranslation);
     } else {
         updateTextRecognitionBusy();
@@ -3425,8 +3433,8 @@ void ScreenshotToolPalette::applyScaledToolbarMetrics() {
                 configureScreenshotToolPaletteStyleButton(button, tooltip.constData(), metrics);
             }
         }
-        for (adqt::widgets::AdSelect* select :
-             {m_textFormattingSelect, m_textPunctuationSelect, m_drawTemplateSelect}) {
+        for (adqt::widgets::AdSelect* select : {m_textFormattingSelect, m_textPunctuationSelect,
+                                                m_textTargetLanguageSelect, m_drawTemplateSelect}) {
             ScreenshotToolPaletteSelectEditor editor{select, TEXT_TRANSFORM_SELECT_WIDTH};
             configureScreenshotToolPaletteSelectEditor(editor, metrics);
         }
@@ -7072,6 +7080,8 @@ void ScreenshotToolPalette::clearSecondaryResourceBindings() {
     m_tableResetButton = nullptr;
     m_textFormattingSelect = nullptr;
     m_textPunctuationSelect = nullptr;
+    m_textTargetLanguageSelect = nullptr;
+    m_textTargetLanguageSpacer = nullptr;
     finishScrollingSelectionMove();
     m_scrollingMoveHorizontalButton = nullptr;
     m_scrollingMoveVerticalButton = nullptr;
@@ -7975,6 +7985,38 @@ void ScreenshotToolPalette::createTextRecognitionActionFamily() {
     setTransformOptions(m_textPunctuationSelect, snow_shot::ocrPunctuationOptions());
     m_textPunctuationSelect->setAllowClear(true);
     m_selectActionLayout->addWidget(m_textPunctuationSelect);
+#if SNOW_SHOT_ENABLE_TEXT_TRANSLATION
+    m_textTargetLanguageSpacer = addStyleToolbarSpacing(m_selectActionLayout, STYLE_ITEM_SPACING);
+    ScreenshotToolPaletteSelectEditorConfig targetConfig;
+    targetConfig.objectName = QStringLiteral("screenshotTranslationQuickTargetLanguageSelect");
+    targetConfig.placeholder = QStringLiteral("Target Language");
+    targetConfig.baseWidth = TEXT_TRANSFORM_SELECT_WIDTH;
+    targetConfig.compact = false;
+    targetConfig.popupMatchSelectWidth = false;
+    m_textTargetLanguageSelect =
+        createScreenshotToolPaletteSelectEditor(m_selectActionPanel, targetConfig,
+                                                actionButtonMetrics(m_physicalScale))
+            .select;
+    m_textTargetLanguageSelect->setSearchEnabled(true);
+    m_textTargetLanguageSelect->setSearchFilterFields({QStringLiteral("label")});
+    auto* languageModel = new QStandardItemModel(m_textTargetLanguageSelect);
+    for (const auto& language : snow_shot::translation::translationLanguages()) {
+        auto* item = new QStandardItem;
+        setScreenshotToolPaletteItemTranslationSource(item, language.name, "TranslationLanguages");
+        item->setData(QString::fromLatin1(language.code),
+                      adqt::widgets::AdSelect::DefaultValueRole);
+        languageModel->appendRow(item);
+    }
+    m_textTargetLanguageSelect->setModel(languageModel);
+    m_textTargetLanguageSelect->setAllowClear(false);
+    m_selectActionLayout->addWidget(m_textTargetLanguageSelect);
+    connect(m_textTargetLanguageSelect, &adqt::widgets::AdSelect::currentValueChanged, this,
+            [this](const QVariant& value) {
+                if (!m_replayingMaterializedState)
+                    emit textTargetLanguageRequested(value.toString());
+            });
+    setTextTargetLanguage(m_textTargetLanguageSelection);
+#endif
     m_textActionSpacers.push_back(addStyleToolbarSpacing(m_selectActionLayout, STYLE_ITEM_SPACING));
     m_textResetButton = addButton("Reset", outlined_icons::Reload(),
                                   QStringLiteral("screenshotOcrTextResetButton"));
@@ -8019,6 +8061,14 @@ void ScreenshotToolPalette::createTextRecognitionActionFamily() {
                             m_textCanUndo, m_textCanRedo, m_textCanReset, m_textTranslationInImage);
     setTextTransformSelections(m_textFormattingSelection, m_textPunctuationSelection);
     static_cast<void>(applyActiveToolSecondaryToolbarVisibility());
+}
+
+void ScreenshotToolPalette::setTextTargetLanguage(const QString& language) {
+    m_textTargetLanguageSelection = language;
+    if (m_textTargetLanguageSelect != nullptr) {
+        const QSignalBlocker blocker(m_textTargetLanguageSelect);
+        m_textTargetLanguageSelect->setCurrentValue(language);
+    }
 }
 
 void ScreenshotToolPalette::setImageConversionEnabled(bool enabled) {

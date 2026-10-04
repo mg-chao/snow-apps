@@ -238,6 +238,7 @@ struct SessionProbe {
     std::shared_ptr<ScreenshotOcrPresentation> displayed;
     std::unique_ptr<ScreenshotRecognitionSessionController> controller;
     QStringList errors;
+    QString primaryTarget;
     int textUpdates = 0;
     int backgrounds = 0;
     bool streaming = false;
@@ -251,6 +252,9 @@ struct SessionProbe {
                  bool formatted = false, ScreenshotOcrRecognitionPort* ocr = nullptr,
                  QWidget* settingsOwner = nullptr) {
         ScreenshotRecognitionSessionActions actions;
+        actions.setTextTargetLanguage = [this](const QString& language) {
+            primaryTarget = language;
+        };
         actions.translationSettingsOwner = [settingsOwner]() { return settingsOwner; };
         actions.applyOcrPresentation = [this](auto presentation) {
             displayed = std::move(presentation);
@@ -804,6 +808,50 @@ void invalidationAndModeChangesCancelOldWork() {
             "invalidated queue must never dispatch its remaining box");
 }
 
+void quickPrimaryTargetRestartsOriginalBlocks() {
+    configureTranslation();
+    const snow_shot::storage::ScreenshotTranslationSettings settings;
+    auto configuration = settings.configuration();
+    configuration.secondaryTargetLanguage = QStringLiteral("ja");
+    require(settings.setConfiguration(configuration), "save a secondary target for quick changes");
+    TranslationServer server;
+    SnowShotApiClient api(server.url());
+    SessionProbe session(&api, 2);
+    session.controller->beginTextTranslation();
+    server.waitForStreams(2);
+    server.delta(0, QStringLiteral("old partial"));
+    waitUntil([&] { return session.textUpdates == 1; }, "show the old partial result");
+    server.delta(1, QStringLiteral("queued stale output"));
+    session.controller->applyTextTargetLanguage(QStringLiteral("zh-Hant"));
+    server.waitForStreams(4);
+    require(settings.configuration().targetLanguage == QStringLiteral("zh-Hant") &&
+                settings.configuration().secondaryTargetLanguage == QStringLiteral("ja") &&
+                session.primaryTarget == QStringLiteral("zh-Hant") &&
+                session.displayed->lines[0].text == QStringLiteral("source 0") &&
+                session.displayed->lines[1].text == QStringLiteral("source 1"),
+            "quick primary changes preserve secondary and discard old output");
+    for (int index = 0; index < 2; ++index) {
+        waitUntil([&] { return server.disconnected(index); }, "quick changes cancel stale streams");
+        const auto& request = server.streams[index + 2];
+        const auto prompt = request.body.value(QStringLiteral("messages"))
+                                .toArray()
+                                .first()
+                                .toObject()
+                                .value(QStringLiteral("content"))
+                                .toString();
+        require(request.text == session.source->lines[index].text &&
+                    prompt.contains(QStringLiteral("Primary target language: zh-Hant")) &&
+                    prompt.contains(QStringLiteral("Secondary target language: ja")),
+                "retranslation uses each original block and the latest shared targets");
+    }
+    session.controller->applyTextTargetLanguage(QStringLiteral("auto"));
+    require(settings.configuration().targetLanguage == QStringLiteral("zh-Hant") &&
+                session.primaryTarget == QStringLiteral("zh-Hant") && !session.errors.isEmpty() &&
+                server.streams.size() == 4,
+            "rejected quick-target writes restore the accepted selection without restarting "
+            "translation");
+}
+
 void languageChangesRestartAndProviderDestructionCancels() {
     configureTranslation();
     TranslationServer server;
@@ -976,6 +1024,7 @@ void fragmentedUnicodeStreamsUpdateOnlyCompleteEvents() {
 } // namespace
 
 void runOriginalImageTranslationTests() {
+    quickPrimaryTargetRestartsOriginalBlocks();
     customModelPageAndScreenshotParity(false);
     customModelPageAndScreenshotParity(true);
     translationSettingsSwitchKeepsReadableSize();

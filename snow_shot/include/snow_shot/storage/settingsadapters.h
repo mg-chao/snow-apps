@@ -345,6 +345,7 @@ struct ScreenshotTranslationConfiguration {
     QString targetLanguage;
     QString modelId;
     QString layoutProcessing = QStringLiteral("smart_merge");
+    QString secondaryTargetLanguage = QStringLiteral("en");
 
     friend bool operator==(const ScreenshotTranslationConfiguration& first,
                            const ScreenshotTranslationConfiguration& second) = default;

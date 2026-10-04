@@ -67,6 +67,7 @@ class SettingsRuntimeSession final : public QObject {
 
     [[nodiscard]] const SettingsRegistry& registry() const;
     [[nodiscard]] SettingsFieldState state(const QString& fieldId) const;
+    [[nodiscard]] SettingsOptions options(const QString& fieldId) const;
     [[nodiscard]] bool hasDirtyFields() const;
     [[nodiscard]] bool hasPendingWrites() const;
     [[nodiscard]] QStringList dirtyFieldIds() const;
@@ -87,6 +88,9 @@ class SettingsRuntimeSession final : public QObject {
     [[nodiscard]] QVector<SettingsRuntimeOption>
     dynamicSelectOptions(SettingsSelectBinding binding) const;
     void requestFontOptions();
+    void requestSelectOptions(SettingsSelectBinding binding) {
+        m_backend.requestSelectOptions(binding);
+    }
     [[nodiscard]] bool applySelectValue(SettingsSelectBinding binding, const QVariant& value);
     [[nodiscard]] bool switchValue(SettingsSwitchBinding binding) const;
     [[nodiscard]] bool switchEnabled(SettingsSwitchBinding binding) const;

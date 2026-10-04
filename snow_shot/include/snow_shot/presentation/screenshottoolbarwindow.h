@@ -52,6 +52,7 @@ class ScreenshotToolbarWindow final : public ScreenshotFloatingToolPaletteWindow
                                  bool canUndo = false, bool canRedo = false, bool canReset = false,
                                  bool originalImage = false);
     void setTextTransformSelections(const QString& formatting, const QString& punctuation);
+    void setTextTargetLanguage(const QString& language);
     void setPlacementContext(QScreen* screen, const QRect& logicalBounds,
                              const QRect& physicalBounds = QRect());
     void setMovementBounds(const QRect& logicalBounds, const QRect& physicalBounds = QRect());

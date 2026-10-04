@@ -37,6 +37,7 @@ struct TranslationSettingsDraft {
     bool applying = false;
     bool sourceEdited = false;
     bool targetEdited = false;
+    bool secondaryTargetEdited = false;
     bool modelEdited = false;
 };
 QString text(const char* source) {
@@ -90,14 +91,18 @@ createScreenshotTranslationSettingsDialog(translation::TranslationService& servi
     options.popupInModal = true;
     const auto sourceField = fields::select({QStringLiteral("source")}, {}, options);
     const auto targetField = fields::select({QStringLiteral("target")}, {}, options);
+    const auto secondaryTargetField =
+        fields::select({QStringLiteral("secondaryTarget")}, {}, options);
     const auto modelsField = fields::select({QStringLiteral("service")}, {}, options);
     auto* source = sourceField.editor;
     auto* target = targetField.editor;
+    auto* secondaryTarget = secondaryTargetField.editor;
     auto* models = modelsField.editor;
     source->setObjectName(QStringLiteral("screenshotTranslationSourceLanguage"));
     target->setObjectName(QStringLiteral("screenshotTranslationTargetLanguage"));
+    secondaryTarget->setObjectName(QStringLiteral("screenshotTranslationSecondaryTargetLanguage"));
     models->setObjectName(QStringLiteral("screenshotTranslationService"));
-    for (auto* select : {source, target, models}) {
+    for (auto* select : {source, target, secondaryTarget, models}) {
         select->setSearchEnabled(true);
         select->setSearchFilterFields({QStringLiteral("label")});
     }
@@ -120,12 +125,14 @@ createScreenshotTranslationSettingsDialog(translation::TranslationService& servi
         retry->setText(text(QT_TRANSLATE_NOOP("ScreenshotTranslationSettingsDialog", "Retry")));
         const char* labels[] = {
             QT_TRANSLATE_NOOP("ScreenshotTranslationSettingsDialog", "Source language"),
-            QT_TRANSLATE_NOOP("ScreenshotTranslationSettingsDialog", "Target language"),
+            QT_TRANSLATE_NOOP("ScreenshotTranslationSettingsDialog", "Primary Target Language"),
+            QT_TRANSLATE_NOOP("ScreenshotTranslationSettingsDialog", "Secondary Target Language"),
             QT_TRANSLATE_NOOP("ScreenshotTranslationSettingsDialog", "Translation service"),
             QT_TRANSLATE_NOOP("ScreenshotTranslationSettingsDialog", "Original Image Translation")};
         fields::FormField* const fieldControllers[] = {sourceField.field, targetField.field,
+                                                       secondaryTargetField.field,
                                                        modelsField.field, imageField.field};
-        for (int i = 0; i < 4; ++i) {
+        for (int i = 0; i < 5; ++i) {
             auto* field = fieldControllers[i];
             auto metadata = field->metadata();
             metadata.label = {"ScreenshotTranslationSettingsDialog", labels[i]};
@@ -133,6 +140,7 @@ createScreenshotTranslationSettingsDialog(translation::TranslationService& servi
         }
         const auto selectedSource = source->currentValue();
         const auto selectedTarget = target->currentValue();
+        const auto selectedSecondaryTarget = secondaryTarget->currentValue();
         QVector<AdSelect::Option> sources{
             {QStringLiteral("auto"), translation::translationLanguageName(QStringLiteral("auto"))}};
         QVector<AdSelect::Option> targets;
@@ -154,6 +162,13 @@ createScreenshotTranslationSettingsDialog(translation::TranslationService& servi
             target->setCurrentValue(selectedTarget.isValid()
                                         ? selectedTarget
                                         : QVariant(service.preferences().targetLanguage));
+        });
+        secondaryTargetField.field->synchronize([&] {
+            secondaryTarget->setOptions(targets);
+            secondaryTarget->setCurrentValue(
+                selectedSecondaryTarget.isValid()
+                    ? selectedSecondaryTarget
+                    : QVariant(service.preferences().secondaryTargetLanguage));
         });
     };
     const auto sync = [=, &service] {
@@ -188,6 +203,9 @@ createScreenshotTranslationSettingsDialog(translation::TranslationService& servi
                              sourceField.field->syncValue(service.preferences().sourceLanguage);
                          if (!draft->targetEdited)
                              targetField.field->syncValue(service.preferences().targetLanguage);
+                         if (!draft->secondaryTargetEdited)
+                             secondaryTargetField.field->syncValue(
+                                 service.preferences().secondaryTargetLanguage);
                          sync();
                      });
     QObject::connect(source, &AdSelect::currentValueChanged, modal, [draft] {
@@ -197,6 +215,10 @@ createScreenshotTranslationSettingsDialog(translation::TranslationService& servi
     QObject::connect(target, &AdSelect::currentValueChanged, modal, [draft] {
         if (!draft->applying)
             draft->targetEdited = true;
+    });
+    QObject::connect(secondaryTarget, &AdSelect::currentValueChanged, modal, [draft] {
+        if (!draft->applying)
+            draft->secondaryTargetEdited = true;
     });
     QObject::connect(models, &AdSelect::currentValueChanged, modal, [draft] {
         if (!draft->applying)
@@ -229,9 +251,9 @@ createScreenshotTranslationSettingsDialog(translation::TranslationService& servi
         }
         if (!models->isEnabled())
             return;
-        if (!liveService->savePreferences({source->currentValue().toString(),
-                                           target->currentValue().toString(),
-                                           models->currentValue().toString()}))
+        if (!liveService->savePreferences(
+                {source->currentValue().toString(), target->currentValue().toString(),
+                 models->currentValue().toString(), secondaryTarget->currentValue().toString()}))
             return;
         const storage::ScreenshotTranslationSettings settings;
         const bool changed = settings.originalImageTranslationEnabled() != image->isChecked();
@@ -247,8 +269,8 @@ createScreenshotTranslationSettingsDialog(translation::TranslationService& servi
             displayModeChanged(true);
             displayModeChanged(false);
         }
-        for (auto* field :
-             {sourceField.field, targetField.field, modelsField.field, imageField.field})
+        for (auto* field : {sourceField.field, targetField.field, secondaryTargetField.field,
+                            modelsField.field, imageField.field})
             field->notifyCommitted();
         modal->accept();
     });

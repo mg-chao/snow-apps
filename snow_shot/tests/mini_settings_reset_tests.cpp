@@ -95,6 +95,17 @@ void unsupportedSettingsRemainInert(settings::BuiltInSettingsBackend& backend) {
                 !backend.applyTextValue(settings::SettingsTextBinding::ServerUrl,
                                         QStringLiteral("https://example.test")),
             "Mini backend must reject unavailable translation and API configuration writes");
+    for (const auto binding : {settings::SettingsSelectBinding::TranslationSourceLanguage,
+                               settings::SettingsSelectBinding::TranslationPrimaryTargetLanguage,
+                               settings::SettingsSelectBinding::TranslationSecondaryTargetLanguage,
+                               settings::SettingsSelectBinding::TranslationService}) {
+        require(!backend.selectValue(binding).isValid() &&
+                    !backend.applySelectValue(binding, QStringLiteral("en")),
+                "Mini backend must reject shared translation settings");
+    }
+    require(!storage::ConfigurationSchema::contains(
+                QStringLiteral("screenshot_translation/secondary_target_language")),
+            "Mini schema must omit secondary translation targets");
     for (const auto reset :
          {settings::SettingsSectionReset::Translation, settings::SettingsSectionReset::Server,
           settings::SettingsSectionReset::CustomAiModels,
@@ -203,7 +214,7 @@ void recognitionOptInResets(settings::BuiltInSettingsBackend& backend) {
             "Mini toolbar OCR can be explicitly enabled");
         const auto reset = kind == storage::ScreenshotToolbarLayoutKind::ActionTools
                                ? settings::SettingsSectionReset::ScreenshotInterfaceSettings
-                               : settings::SettingsSectionReset::PinToScreen;
+                               : settings::SettingsSectionReset::PinToScreenToolbar;
         require(backend.resetSection(reset) &&
                     backend.toolbarLayout(kind).hidden.contains(QStringLiteral("text-recognition")),
                 "Mini toolbar reset must restore hidden default OCR");

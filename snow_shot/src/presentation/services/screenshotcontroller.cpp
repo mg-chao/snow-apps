@@ -426,6 +426,7 @@ struct ScreenshotController::Impl final : public ScreenshotToolbarCommandSink,
     void openTextTranslationSettings() override;
     void applyTextFormatting(const QString& value) override;
     void applyTextPunctuation(const QString& value) override;
+    void applyTextTargetLanguage(const QString& language) override;
     void startScrollingScreenshot() override;
     void setScrollingScreenshotRecognitionMode(ScreenshotScrollingRecognitionMode mode) override;
     void setScrollingScreenshotAutoScroll(bool enabled) override;
@@ -2815,6 +2816,11 @@ void ScreenshotController::Impl::applyTextFormatting(const QString& value) {
     if (m_ocrController != nullptr) {
         m_ocrController->applyTextFormatting(value);
     }
+}
+
+void ScreenshotController::Impl::applyTextTargetLanguage(const QString& language) {
+    if (m_ocrController != nullptr)
+        m_ocrController->applyTextTargetLanguage(language);
 }
 
 void ScreenshotController::Impl::applyTextPunctuation(const QString& value) {

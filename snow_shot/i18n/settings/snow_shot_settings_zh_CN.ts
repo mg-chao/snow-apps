@@ -787,6 +787,10 @@
             <source>The configuration could not be imported.</source>
             <translation>无法导入配置。</translation>
         </message>
+        <message>
+            <source>Translation service is unavailable</source>
+            <translation>翻译服务不可用</translation>
+        </message>
     </context>
     <context>
         <name>SettingsCatalog</name>
@@ -1355,6 +1359,10 @@
             <translation>选择整个主题使用的主色</translation>
         </message>
         <message>
+            <source>Choose the primary language for translation</source>
+            <translation>选择翻译的主要目标语言</translation>
+        </message>
+        <message>
             <source>Choose the scheduling level for the interface and application workers. Changes take effect after restarting Snow Shot.</source>
             <translation>选择界面和应用工作线程的调度级别。更改将在重启 Snow Shot 后生效。</translation>
         </message>
@@ -1365,6 +1373,14 @@
         <message>
             <source>Choose the size of the screenshot, pinned, and recording toolbars</source>
             <translation>选择截图、固定到屏幕和屏幕录制工具栏的大小</translation>
+        </message>
+        <message>
+            <source>Choose the source language or detect it automatically</source>
+            <translation>选择源语言或自动检测</translation>
+        </message>
+        <message>
+            <source>Choose the translation service or AI model</source>
+            <translation>选择翻译服务或 AI 模型</translation>
         </message>
         <message>
             <source>Choose the video encoder</source>
@@ -2679,8 +2695,16 @@
             <translation>上一条截图历史</translation>
         </message>
         <message>
+            <source>Primary Target Language</source>
+            <translation>主要目标语言</translation>
+        </message>
+        <message>
             <source>Process priority</source>
             <translation>进程优先级</translation>
+        </message>
+        <message>
+            <source>Prompt-capable models use this language when the input matches the primary target language</source>
+            <translation>支持提示词的模型会在输入语言与主要目标语言一致时使用此语言</translation>
         </message>
         <message>
             <source>Proxy</source>
@@ -3067,10 +3091,6 @@
             <translation>截图工具栏设置</translation>
         </message>
         <message>
-            <source>Screenshot translation</source>
-            <translation>截图翻译</translation>
-        </message>
-        <message>
             <source>Screenshot translation settings</source>
             <translation>截图翻译设置</translation>
         </message>
@@ -3081,6 +3101,10 @@
         <message>
             <source>Scrolling screenshot</source>
             <translation>滚动截图</translation>
+        </message>
+        <message>
+            <source>Secondary Target Language</source>
+            <translation>次要目标语言</translation>
         </message>
         <message>
             <source>Select child elements within a window while taking a screenshot</source>
@@ -3403,6 +3427,10 @@
             <translation>软件版本与许可证信息</translation>
         </message>
         <message>
+            <source>Source Language</source>
+            <translation>源语言</translation>
+        </message>
+        <message>
             <source>Speed First</source>
             <translation>速度优先</translation>
         </message>
@@ -3665,6 +3693,14 @@
         <message>
             <source>Translation Page</source>
             <translation>翻译页面</translation>
+        </message>
+        <message>
+            <source>Translation Service</source>
+            <translation>翻译服务</translation>
+        </message>
+        <message>
+            <source>Translation Settings</source>
+            <translation>翻译设置</translation>
         </message>
         <message>
             <source>Translation extensions</source>

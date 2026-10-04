@@ -750,6 +750,7 @@ target_link_libraries(snow_shot_storage PUBLIC
 add_library(snow_shot_translation STATIC
     include/snow_shot/translation/translationservice.h
     include/snow_shot/translation/translationlanguages.h
+    include/snow_shot/translation/translationlanguagecatalog.h
     src/app/translationservice.cpp
     include/snow_shot/presentation/selectedtexttranslationcontroller.h
     src/presentation/services/selectedtexttranslationcontroller.cpp

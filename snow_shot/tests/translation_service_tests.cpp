@@ -1,6 +1,7 @@
 #include "translation_test_support.h"
 #include "snow_shot/translation/translationservice.h"
 #include "snow_shot/storage/configurationstore.h"
+#include "snow_shot/translation/translationlanguages.h"
 #include <QTemporaryDir>
 #include <memory>
 
@@ -9,6 +10,56 @@ using namespace snow_shot::translation;
 using snow_shot::storage::ConfigurationStore;
 
 namespace {
+void secondaryTargetsPersistAndReachEveryUnit(const QString& directory) {
+    Server server;
+    SnowShotApiClient client(server.url());
+    ConfigurationStore settings(directory + QStringLiteral("/secondary.json"), true, true, 60000);
+    require(settings.setValue(QStringLiteral("screenshot_translation/target_language"),
+                              QStringLiteral("zh-Hant")),
+            "save an existing primary target");
+    auto& service = TranslationService::forClient(client, settings, QLocale::English);
+    require(service.preferences().targetLanguage == QStringLiteral("zh-Hant") &&
+                service.preferences().secondaryTargetLanguage == QStringLiteral("en"),
+            "new secondary default preserves an existing primary selection");
+    for (const auto& language : translationLanguages()) {
+        const QString code = QString::fromLatin1(language.code);
+        require(
+            settings.setValue(QStringLiteral("screenshot_translation/source_language"), code) &&
+                settings.setValue(QStringLiteral("screenshot_translation/target_language"), code) &&
+                settings.setValue(
+                    QStringLiteral("screenshot_translation/secondary_target_language"), code),
+            "primary and secondary accept the entire language catalog, including identical "
+            "targets");
+    }
+    require(!settings.setValue(QStringLiteral("screenshot_translation/secondary_target_language"),
+                               QStringLiteral("auto")),
+            "secondary target cannot auto-detect");
+    auto preferences = service.preferences();
+    preferences.sourceLanguage = QStringLiteral("auto");
+    preferences.targetLanguage = QStringLiteral("zh-Hans");
+    preferences.secondaryTargetLanguage = QStringLiteral("ja");
+    preferences.modelId = QStringLiteral("general");
+    require(service.savePreferences(preferences), "save shared secondary preferences");
+    QObject owner;
+    auto* job = service.createJob({QStringLiteral("中文"), QStringLiteral("Hello")}, &owner);
+    job->start();
+    waitUntil([&] { return server.streams.size() == 2; }, "each input block has its own request");
+    for (const auto& stream : server.streams) {
+        const auto messages = stream.body.value(QStringLiteral("messages")).toArray();
+        const auto prompt = messages.first().toObject().value(QStringLiteral("content")).toString();
+        require(prompt.contains(QStringLiteral("Primary target language: zh-Hans")) &&
+                    prompt.contains(QStringLiteral("Secondary target language: ja")) &&
+                    prompt.contains(QStringLiteral("independent text block")),
+                "every unit receives both shared targets and independent routing instructions");
+    }
+    job->cancel();
+    require(settings.flushNow().success, "persist secondary preference before reopening");
+    ConfigurationStore reopened(directory + QStringLiteral("/secondary.json"), true, true, 60000);
+    require(reopened.value(QStringLiteral("screenshot_translation/secondary_target_language")) ==
+                QStringLiteral("ja"),
+            "secondary preference survives storage reload");
+}
+
 void customModelsStayAvailableAndInvalidateTogether(const QString& directory) {
     Server builtIn;
     builtIn.holdModels = true;
@@ -209,6 +260,7 @@ int main(int argc, char** argv) {
     QCoreApplication application(argc, argv);
     QTemporaryDir directory;
     require(directory.isValid(), "isolated translation service settings");
+    secondaryTargetsPersistAndReachEveryUnit(directory.path());
     customModelsStayAvailableAndInvalidateTogether(directory.path());
     failuresAndOwnerLifetimes(directory.path());
     serverChangesRefreshModelsAndPreserveStreams(directory.path());

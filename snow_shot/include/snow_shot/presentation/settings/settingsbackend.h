@@ -19,6 +19,10 @@
 #include <QVector>
 #include <future>
 
+namespace snow_shot::translation {
+class TranslationService;
+}
+
 namespace snow_shot::presentation {
 class GlobalShortcutManager;
 class GlobalMouseManager;
@@ -57,6 +61,16 @@ class SettingsBackend : public QObject {
     [[nodiscard]] virtual QVariant selectValue(SettingsSelectBinding binding) const = 0;
     [[nodiscard]] QVector<SettingsRuntimeOption> virtual dynamicSelectOptions(
         SettingsSelectBinding binding) const = 0;
+    virtual void requestSelectOptions(SettingsSelectBinding) {}
+    virtual bool selectOptionsLoading(SettingsSelectBinding) const {
+        return false;
+    }
+    virtual QString selectOptionsError(SettingsSelectBinding) const {
+        return {};
+    }
+    virtual bool selectEnabled(SettingsSelectBinding) const {
+        return true;
+    }
     [[nodiscard]] virtual bool applySelectValue(SettingsSelectBinding binding,
                                                 const QVariant& value) = 0;
 
@@ -221,6 +235,13 @@ class SettingsBackend : public QObject {
 
 class BuiltInSettingsBackend final : public SettingsBackend {
   public:
+#if SNOW_SHOT_ENABLE_TEXT_TRANSLATION
+    void setTranslationService(translation::TranslationService* service);
+#endif
+    void requestSelectOptions(SettingsSelectBinding binding) override;
+    bool selectOptionsLoading(SettingsSelectBinding binding) const override;
+    QString selectOptionsError(SettingsSelectBinding binding) const override;
+    bool selectEnabled(SettingsSelectBinding binding) const override;
     explicit BuiltInSettingsBackend(
         ::snow_shot::presentation::GlobalShortcutManager& shortcutManager,
         QObject* parent = nullptr, GlobalMouseManager* mouseManager = nullptr,
@@ -325,6 +346,9 @@ class BuiltInSettingsBackend final : public SettingsBackend {
     QMetaObject::Connection m_skinStatusConnection;
     bool m_copyLogBusy = false;
     bool m_configurationBusy = false;
+#if SNOW_SHOT_ENABLE_TEXT_TRANSLATION
+    QPointer<translation::TranslationService> m_translationService;
+#endif
 };
 
 } // namespace settings

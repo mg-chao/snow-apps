@@ -1080,6 +1080,10 @@
             <translation>Tapered shafts support standard, triangle, triangle outline, and indented triangle arrowheads.</translation>
         </message>
         <message>
+            <source>Target Language</source>
+            <translation>Target Language</translation>
+        </message>
+        <message>
             <source>Template</source>
             <translation>Template</translation>
         </message>

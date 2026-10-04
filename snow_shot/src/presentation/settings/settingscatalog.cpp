@@ -1,5 +1,6 @@
 #include "snow_shot/presentation/settings/settingscatalog.h"
 #include "snow_shot/ocrtextoptions.h"
+#include "snow_shot/translation/translationlanguagecatalog.h"
 
 #include "snow_shot/presentation/editionfeatures.h"
 
@@ -1633,6 +1634,30 @@ SettingsItemDefinition trayMiddleClickItem() {
 }
 
 #if SNOW_SHOT_ENABLE_TEXT_TRANSLATION
+QVector<SettingsOptionDefinition> translationLanguageOptions(bool source) {
+    QVector<SettingsOptionDefinition> options;
+    if (source)
+        options.append({QStringLiteral("auto"),
+                        {"TranslationLanguages",
+                         QT_TRANSLATE_NOOP("TranslationLanguages", "Auto-detect language")}});
+    for (const auto& language : translation::translationLanguages())
+        options.append(
+            {QString::fromLatin1(language.code), {"TranslationLanguages", language.name}});
+    return options;
+}
+
+SettingsItemDefinition translationServiceItem() {
+    auto item = fixedSelectItem(
+        QStringLiteral("translation.service"),
+        QT_TRANSLATE_NOOP("SettingsCatalog", "Translation Service"),
+        QT_TRANSLATE_NOOP("SettingsCatalog", "Choose the translation service or AI model"),
+        QStringLiteral("screenshot_translation/model"), SettingsSelectBinding::TranslationService,
+        {});
+    std::get<SettingsSelectDefinition>(item.payload).source =
+        SettingsSelectSource::TranslationServices;
+    return item;
+}
+
 SettingsItemDefinition translationLayoutProcessingItem() {
     return fixedSelectItem(
         QStringLiteral("translation.layout-processing"),
@@ -2961,11 +2986,36 @@ QVector<SettingsPageDefinition> builtInPages() {
 #if SNOW_SHOT_ENABLE_TEXT_TRANSLATION
              {
                  QStringLiteral("translation-settings"),
-                 settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Screenshot translation")),
+                 settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Translation Settings")),
                  settingsText(
                      QT_TRANSLATE_NOOP("SettingsCatalog", "Screenshot translation settings")),
                  SettingsSectionReset::Translation,
-                 {originalImageTranslationItem(), translationLayoutProcessingItem()},
+                 {fixedSelectItem(
+                      QStringLiteral("translation.source-language"),
+                      QT_TRANSLATE_NOOP("SettingsCatalog", "Source Language"),
+                      QT_TRANSLATE_NOOP("SettingsCatalog",
+                                        "Choose the source language or detect it automatically"),
+                      QStringLiteral("screenshot_translation/source_language"),
+                      SettingsSelectBinding::TranslationSourceLanguage,
+                      translationLanguageOptions(true)),
+                  fixedSelectItem(QStringLiteral("translation.primary-target-language"),
+                                  QT_TRANSLATE_NOOP("SettingsCatalog", "Primary Target Language"),
+                                  QT_TRANSLATE_NOOP("SettingsCatalog",
+                                                    "Choose the primary language for translation"),
+                                  QStringLiteral("screenshot_translation/target_language"),
+                                  SettingsSelectBinding::TranslationPrimaryTargetLanguage,
+                                  translationLanguageOptions(false)),
+                  fixedSelectItem(
+                      QStringLiteral("translation.secondary-target-language"),
+                      QT_TRANSLATE_NOOP("SettingsCatalog", "Secondary Target Language"),
+                      QT_TRANSLATE_NOOP("SettingsCatalog",
+                                        "Prompt-capable models use this language when the input "
+                                        "matches the primary target language"),
+                      QStringLiteral("screenshot_translation/secondary_target_language"),
+                      SettingsSelectBinding::TranslationSecondaryTargetLanguage,
+                      translationLanguageOptions(false)),
+                  translationServiceItem(), originalImageTranslationItem(),
+                  translationLayoutProcessingItem()},
              },
 #endif
 
@@ -4247,6 +4297,20 @@ QStringList SettingsCatalog::validationErrors() const {
                     case SettingsSelectBinding::TranslationLayoutProcessing:
                         expectedKey = QStringLiteral("screenshot_translation/layout_processing");
                         break;
+                    case SettingsSelectBinding::TranslationSourceLanguage:
+                        expectedKey = QStringLiteral("screenshot_translation/source_language");
+                        break;
+                    case SettingsSelectBinding::TranslationPrimaryTargetLanguage:
+                        expectedKey = QStringLiteral("screenshot_translation/target_language");
+                        break;
+                    case SettingsSelectBinding::TranslationSecondaryTargetLanguage:
+                        expectedKey =
+                            QStringLiteral("screenshot_translation/secondary_target_language");
+                        break;
+                    case SettingsSelectBinding::TranslationService:
+                        expectedKey = QStringLiteral("screenshot_translation/model");
+                        expectedSource = SettingsSelectSource::TranslationServices;
+                        break;
                     case SettingsSelectBinding::ScreenshotSelectionResizeMode:
                         expectedKey = QStringLiteral("screenshot/selection_resize_mode");
                         break;
@@ -4254,7 +4318,8 @@ QStringList SettingsCatalog::validationErrors() const {
                     if (schemaEntry == nullptr ||
                         (schemaEntry->valueKind != storage::ConfigurationValueKind::String &&
                          schemaEntry->valueKind != storage::ConfigurationValueKind::Integer) ||
-                        select->options.isEmpty()) {
+                        (select->options.isEmpty() &&
+                         select->source != SettingsSelectSource::TranslationServices)) {
                         errors.push_back(
                             QStringLiteral("select item is incomplete: %1").arg(itemDefinition.id));
                     }

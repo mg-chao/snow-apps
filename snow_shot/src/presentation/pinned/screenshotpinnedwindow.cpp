@@ -3979,6 +3979,11 @@ void ScreenshotPinnedWindow::configureEditToolbar(
             &ScreenshotPinnedWindow::handleTextFormattingRequested);
     connect(toolbar, &ScreenshotToolPalette::textPunctuationRequested, this,
             &ScreenshotPinnedWindow::handleTextPunctuationRequested);
+    connect(toolbar, &ScreenshotToolPalette::textTargetLanguageRequested, this,
+            [this](const QString& language) {
+                if (m_recognitionSession != nullptr)
+                    m_recognitionSession->applyTextTargetLanguage(language);
+            });
     connect(toolbar, &ScreenshotToolPalette::tableMergeRequested, this,
             &ScreenshotPinnedWindow::handleTableMergeRequested);
     connect(toolbar, &ScreenshotToolPalette::tableSplitRequested, this,
@@ -4591,6 +4596,12 @@ void ScreenshotPinnedWindow::configureRecognitionSession() {
                     if (auto* palette = m_editController->toolbarWindow()->palette()) {
                         palette->setShowOriginalImage(show);
                     }
+                }
+            },
+            [this](const QString& language) {
+                if (m_editController != nullptr && m_editController->toolbarWindow() != nullptr) {
+                    if (auto* palette = m_editController->toolbarWindow()->palette())
+                        palette->setTextTargetLanguage(language);
                 }
             },
         },
