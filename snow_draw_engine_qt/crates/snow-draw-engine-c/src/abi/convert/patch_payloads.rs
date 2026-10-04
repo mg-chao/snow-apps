@@ -155,6 +155,12 @@ pub(crate) fn snow_spotlight_cutout_from_rust(
         width: value.width,
         height: value.height,
         rotation: value.rotation,
+        shape: match value.shape {
+            snow_draw_engine::DisplayRectangleShape::Rectangle => SnowDisplayRectShape::Rectangle,
+            snow_draw_engine::DisplayRectangleShape::Ellipse => SnowDisplayRectShape::Ellipse,
+            snow_draw_engine::DisplayRectangleShape::Diamond => SnowDisplayRectShape::Diamond,
+        } as u8,
+        reserved: [0; 7],
     }
 }
 
@@ -562,6 +568,7 @@ mod tests {
                     start: 2,
                     delete_count: 1,
                     insert_items: vec![DisplaySpotlightCutout {
+                        shape: snow_draw_engine::DisplayRectangleShape::Diamond,
                         center_x: 10.0,
                         center_y: 20.0,
                         width: 30.0,
@@ -603,6 +610,11 @@ mod tests {
         assert_eq!(payload.spotlight_cutouts.len(), 1);
         assert_eq!(payload.spotlight_cutouts[0].center_x, 10.0);
         assert_eq!(payload.spotlight_cutouts[0].rotation, 0.5);
+        assert_eq!(
+            payload.spotlight_cutouts[0].shape,
+            SnowDisplayRectShape::Diamond as u8
+        );
+        assert_eq!(payload.spotlight_cutouts[0].reserved, [0; 7]);
     }
 
     #[test]

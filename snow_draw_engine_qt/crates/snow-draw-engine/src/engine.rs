@@ -29,6 +29,8 @@ mod filter_snap_tests;
 mod free_draw_continuation_tests;
 mod input;
 mod mutations;
+#[cfg(test)]
+mod spotlight_shape_tests;
 mod text_commands;
 mod viewports;
 

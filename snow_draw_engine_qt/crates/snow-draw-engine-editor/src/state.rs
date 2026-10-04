@@ -452,6 +452,7 @@ pub(crate) struct EditorState {
     pub(crate) arrow_text_measurements: Vec<crate::arrow_text::ArrowTextMeasurement>,
     pub(crate) arrow_text_measurement_generation: u64,
     pub(crate) default_rectangle_shape_style: RectangleShapeStyle,
+    pub(crate) default_spotlight_shape: snow_draw_engine_document::HighlightShape,
     pub(crate) default_arrow_style: ArrowStyle,
     pub(crate) default_line_style: ShapeStyle,
     pub(crate) default_free_draw_style: ShapeStyle,
@@ -542,6 +543,7 @@ impl EditorState {
             arrow_text_measurements: Vec::new(),
             arrow_text_measurement_generation: 0,
             default_rectangle_shape_style: default_styles.rectangle,
+            default_spotlight_shape: default_styles.spotlight_shape,
             default_arrow_style: ArrowStyle {
                 arrow_ratio: snow_draw_engine_core::arrow::normalize_arrow_ratio(
                     default_styles.arrow.arrow_ratio,

@@ -522,6 +522,7 @@ struct SnowCanvasStyleDefaults {
     SnowCanvasWatermarkConfig watermark;
     SnowCanvasSpotlightConfig spotlight;
     SnowCanvasBrushEraserStyle brushEraser;
+    SnowCanvasRectangleShape spotlightShape = SnowCanvasRectangleShape::Rectangle;
 };
 
 inline bool operator==(const SnowCanvasStyleDefaults& lhs, const SnowCanvasStyleDefaults& rhs) {
@@ -530,7 +531,8 @@ inline bool operator==(const SnowCanvasStyleDefaults& lhs, const SnowCanvasStyle
            lhs.penHighlight == rhs.penHighlight && lhs.rectangleFilter == rhs.rectangleFilter &&
            lhs.penFilter == rhs.penFilter && lhs.text == rhs.text &&
            lhs.serialNumber == rhs.serialNumber && lhs.watermark == rhs.watermark &&
-           lhs.spotlight == rhs.spotlight && lhs.brushEraser == rhs.brushEraser;
+           lhs.spotlight == rhs.spotlight && lhs.brushEraser == rhs.brushEraser &&
+           lhs.spotlightShape == rhs.spotlightShape;
 }
 
 inline bool operator!=(const SnowCanvasStyleDefaults& lhs, const SnowCanvasStyleDefaults& rhs) {

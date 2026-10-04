@@ -263,6 +263,11 @@ void allStyleFamiliesPersistOnlyTheirPatch() {
     spotlight.opacity = 0.37;
     verify(SnowCanvasTool::Spotlight,
            SnowCanvasSpotlightEdit{spotlight, SnowCanvasSpotlightOpacity});
+    auto spotlightStyle = expected.rectangle;
+    spotlightStyle.shape = SnowCanvasRectangleShape::Diamond;
+    verify(SnowCanvasTool::Spotlight,
+           SnowCanvasShapeEdit{spotlightStyle, SnowCanvasShapeStylePropertyShape,
+                               SnowCanvasShapeKind::Spotlight});
 }
 void sharedScreenshotRuntimeKeepsDraftEditsTransient() {
     SnowCanvasRuntime runtime;

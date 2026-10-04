@@ -2099,6 +2099,13 @@ void styleToolReuseMapPreservesEveryCompatibleRole() {
                     "the destination should retain the source editor root for every shared role");
         }
         const auto stats = palette.lastStyleReconcileStatsForTests();
+        if (stats.retained != retainedRoles.size() || stats.destroyed != destroyed ||
+            stats.created != created) {
+            std::cerr << "style reuse " << static_cast<int>(source) << " -> "
+                      << static_cast<int>(destination) << ": retained " << stats.retained
+                      << ", destroyed " << stats.destroyed << ", created " << stats.created
+                      << std::endl;
+        }
         require(stats.retained == retainedRoles.size() && stats.destroyed == destroyed &&
                     stats.created == created,
                 "the style reuse map should report exact retained/created/destroyed counts");
@@ -2108,9 +2115,10 @@ void styleToolReuseMapPreservesEveryCompatibleRole() {
            1);
     verify(Tool::RectangleFilter, Tool::PenFilter,
            {"filter-mode", "filter-type", "filter-intensity"}, 0, 1);
-    verify(Tool::Text, Tool::SerialNumber, {"foreground-color", "text-font", "text-fill"}, 3, 2);
+    verify(Tool::Text, Tool::SerialNumber, {"foreground-color", "text-font", "text-fill"}, 3, 3);
     verify(Tool::PenHighlight, Tool::PenFilter, {"brush-width"}, 2, 3);
-    verify(Tool::Spotlight, Tool::Watermark, {"opacity"}, 1, 6);
+    verify(Tool::Spotlight, Tool::Watermark, {"opacity"}, 2, 6);
+    verify(Tool::Shape, Tool::Spotlight, {"shape-kind"}, 4, 2);
     verify(Tool::Shape, Tool::Text, {"corner-radius"}, 4, 5);
     verify(Tool::Text, Tool::Watermark, {"foreground-color"}, 5, 6);
 }
@@ -7621,9 +7629,10 @@ void spotlightControlsMatchMaskConfigurationBehavior() {
     QWidget* maskColorRoot = styleEditorRoot(spotlightControls, "mask-color");
     require(spotlightControls != nullptr && spotlightControls->layout() != nullptr &&
                 spotlightControls->layout()->itemAt(0) != nullptr &&
-                spotlightControls->layout()->itemAt(0)->widget() == maskColorRoot &&
+                spotlightControls->layout()->itemAt(0)->widget() ==
+                    styleEditorRoot(spotlightControls, "shape-kind") &&
                 maskColorRoot->isAncestorOf(colorPicker),
-            "Spotlight style controls should not start with an extra separator");
+            "Spotlight style controls should start with the shape selector");
     require(colorPicker->value().isSolid() &&
                 colorPicker->value().solidColor == QColor(Qt::black) &&
                 opacitySlider->value() == 64 &&
@@ -8895,6 +8904,143 @@ void shapeSelectorIsTheLeftmostStyleGroup() {
     require(emittedProperties == SnowCanvasShapeStylePropertyShape &&
                 emittedStyle.shape == SnowCanvasRectangleShape::Diamond,
             "diamond control should emit only the shape property");
+}
+
+void spotlightShapeSelectorMatchesShapeAndRebindsEdits() {
+    using Tool = ScreenshotToolPalette::Tool;
+    ScreenshotToolPalette::Options options;
+    options.showSpotlightTool = true;
+    options.styleDefaults = snow_shot::presentation::screenshotCanvasStyleDefaults();
+    ScreenshotToolPalette palette(options);
+    palette.setActiveTool(Tool::Shape);
+    auto* rectangle =
+        qobject_cast<adqt::widgets::AdRadio*>(controlWithTooltip(palette, "Rectangle"));
+    require(rectangle != nullptr, "Shape must materialize its reference selector");
+    const QSize referenceSize = rectangle->size();
+    const QSize referenceIcon = rectangle->iconSize();
+    QPointer<QWidget> sharedRoot = styleEditorRoot(
+        palette.findChild<QWidget*>(QStringLiteral("screenshotRectangleStyleControls")),
+        "shape-kind");
+    int edits = 0;
+    SnowCanvasShapeKind lastKind = SnowCanvasShapeKind::Rectangle;
+    SnowCanvasRectangleShape lastShape = SnowCanvasRectangleShape::Rectangle;
+    QObject::connect(
+        &palette, &ScreenshotToolPalette::shapeStyleChanged,
+        [&](const SnowCanvasShapeStyle& style, quint32 properties, SnowCanvasShapeKind kind) {
+            require(properties == SnowCanvasShapeStylePropertyShape,
+                    "shape selectors must emit only the shape property");
+            ++edits;
+            lastKind = kind;
+            lastShape = style.shape;
+        });
+    qobject_cast<QAbstractButton*>(controlWithTooltip(palette, "Diamond"))->click();
+    require(edits == 1 && lastKind == SnowCanvasShapeKind::Rectangle,
+            "the reference selector must edit Shape");
+    for (int iteration = 0; iteration < 8; ++iteration) {
+        if (iteration % 2 != 0) {
+            require(palette.ensureStyleFamily(Tool::Spotlight),
+                    "Spotlight selectors must also support prewarmed destination rows");
+        }
+        palette.setActiveTool(Tool::Spotlight);
+        auto* row = palette.findChild<QWidget*>(QStringLiteral("screenshotSpotlightStyleControls"));
+        QWidget* group = styleEditorRoot(row, "shape-kind");
+        QWidget* color = styleEditorRoot(row, "mask-color");
+        auto* opacity = palette.findChild<adqt::widgets::AdSlider*>(
+            QStringLiteral("screenshotSpotlightOpacitySlider"));
+        const auto separators = row->findChildren<QFrame*>(QString(), Qt::FindDirectChildrenOnly);
+        require(group == sharedRoot &&
+                    group->objectName() == QStringLiteral("screenshotSpotlightShapeButtonGroup") &&
+                    separators.size() == 2 && opacity != nullptr,
+                "Spotlight must reuse the shape selector and expose two separators");
+        QLayout* layout = row->layout();
+        require(layout->itemAt(0)->widget() == group &&
+                    layout->indexOf(group) < layout->indexOf(separators[0]) &&
+                    layout->indexOf(separators[0]) < layout->indexOf(color) &&
+                    layout->indexOf(color) < layout->indexOf(separators[1]) &&
+                    layout->indexOf(separators[1]) < layout->indexOf(opacity->parentWidget()),
+                "Spotlight must order shape, mask color, and opacity with matching separators");
+        require(palette.creationStyleDefaults().rectangle.shape ==
+                    SnowCanvasRectangleShape::Diamond,
+                "switching to Spotlight must preserve the Shape default");
+        SnowCanvasStyleToolbarState state;
+        state.source = SnowCanvasStyleToolbarSource::SelectedSpotlight;
+        state.shapeStyle.shape = SnowCanvasRectangleShape::Ellipse;
+        state.shapeStyleMixed = SnowCanvasShapeStyleMixedShape;
+        const int before = edits;
+        palette.setStyleToolbarState(state);
+        auto* ellipse =
+            qobject_cast<adqt::widgets::AdRadio*>(controlWithTooltip(palette, "Ellipse"));
+        require(ellipse != nullptr && edits == before && !ellipse->isChecked(),
+                "mixed Spotlight state must synchronize silently and permit choosing any shape");
+        ellipse->click();
+        require(edits == before + 1 && lastKind == SnowCanvasShapeKind::Spotlight &&
+                    lastShape == SnowCanvasRectangleShape::Ellipse &&
+                    palette.creationStyleDefaults().spotlightShape ==
+                        SnowCanvasRectangleShape::Ellipse,
+                "the reused selector must emit one Spotlight edit and remember its independent "
+                "default");
+        for (const char* name : {"Rectangle", "Ellipse", "Diamond"}) {
+            auto* option = qobject_cast<adqt::widgets::AdRadio*>(controlWithTooltip(palette, name));
+            require(option != nullptr && option->text().isEmpty() && !option->icon().isNull() &&
+                        option->size() == referenceSize && option->iconSize() == referenceIcon,
+                    "Spotlight must use the same icon-only options and metrics as Shape");
+        }
+        palette.setActiveTool(Tool::Shape);
+        auto* diamond =
+            qobject_cast<adqt::widgets::AdRadio*>(controlWithTooltip(palette, "Diamond"));
+        require(diamond != nullptr && diamond->isChecked() && edits == before + 1,
+                "returning to Shape must restore its own value without emitting an edit");
+    }
+    palette.setActiveTool(Tool::Spotlight);
+    auto restoredDefaults = palette.creationStyleDefaults();
+    restoredDefaults.spotlightShape = SnowCanvasRectangleShape::Diamond;
+    const int beforeRestore = edits;
+    palette.setCreationStyleDefaults(restoredDefaults);
+    require(qobject_cast<QAbstractButton*>(controlWithTooltip(palette, "Diamond"))->isChecked() &&
+                edits == beforeRestore,
+            "restored Spotlight defaults must update the selector without emitting edits");
+    require(palette.setPhysicalScale(1.5), "Spotlight physical scale should change");
+    rectangle = qobject_cast<adqt::widgets::AdRadio*>(controlWithTooltip(palette, "Rectangle"));
+    require(rectangle != nullptr &&
+                rectangle->size() == QSize(qRound(referenceSize.width() * 1.5),
+                                           qRound(referenceSize.height() * 1.5)) &&
+                rectangle->iconSize() == QSize(qRound(referenceIcon.width() * 1.5),
+                                               qRound(referenceIcon.height() * 1.5)),
+            "Spotlight shape options must follow the toolbar physical scale");
+}
+
+void spotlightShapePreferencesRoundTripAndAcceptLegacySettings() {
+    using namespace snow_shot::presentation;
+    auto& configuration = snow_shot::storage::ApplicationStorage::instance().configuration();
+    const auto original = screenshotCanvasToolStyleDefaults();
+    const auto restore =
+        qScopeGuard([&] { static_cast<void>(persistScreenshotCanvasToolStyles(original)); });
+    auto styles = screenshotCanvasStyleDefaults();
+    styles.rectangle.shape = SnowCanvasRectangleShape::Ellipse;
+    styles.spotlightShape = SnowCanvasRectangleShape::Diamond;
+    require(persistScreenshotCanvasToolStyles(styles), "Spotlight shape defaults must persist");
+    require(screenshotCanvasToolStyleDefaults().spotlightShape ==
+                    SnowCanvasRectangleShape::Diamond &&
+                screenshotCanvasToolStyleDefaults().rectangle.shape ==
+                    SnowCanvasRectangleShape::Ellipse,
+            "Spotlight and Shape must round-trip independent defaults");
+    const QString key = QStringLiteral("drawing/spotlight_style");
+    QJsonObject value = configuration.snapshot().value(key).toObject();
+    require(value.value(QStringLiteral("shape")).toInt(-1) == 2,
+            "the Spotlight shape must use the existing three-value enum");
+    value.remove(QStringLiteral("shape"));
+    require(configuration.setValue(key, value) &&
+                screenshotCanvasToolStyleDefaults().spotlightShape ==
+                    SnowCanvasRectangleShape::Rectangle,
+            "legacy Spotlight preferences must use Rectangle");
+    for (const QJsonValue& invalid :
+         {QJsonValue(-1), QJsonValue(3), QJsonValue(1.5), QJsonValue(QStringLiteral("1"))}) {
+        value.insert(QStringLiteral("shape"), invalid);
+        require(configuration.setValue(key, value) &&
+                    screenshotCanvasToolStyleDefaults().spotlightShape ==
+                        SnowCanvasRectangleShape::Rectangle,
+                "invalid Spotlight shapes must use Rectangle");
+    }
 }
 
 void shapeSelectorIsExclusiveToTheShapeTool() {
@@ -14075,6 +14221,14 @@ int main(int argc, char** argv) {
         snow_shot::storage::ApplicationStorage::instance().shutdown();
         return 0;
     }
+    if (application.arguments().contains(QStringLiteral("--spotlight-shape-only"))) {
+        spotlightShapeSelectorMatchesShapeAndRebindsEdits();
+        spotlightShapePreferencesRoundTripAndAcceptLegacySettings();
+        shapeSelectorIsTheLeftmostStyleGroup();
+        shapeSelectorIsExclusiveToTheShapeTool();
+        snow_shot::storage::ApplicationStorage::instance().shutdown();
+        return 0;
+    }
     if (application.arguments().contains(QStringLiteral("--watermark-template-only"))) {
         watermarkTemplateLibraryAndEditorApplySnapshotsDeterministically();
         snow_shot::storage::ApplicationStorage::instance().shutdown();
@@ -14226,6 +14380,8 @@ int main(int argc, char** argv) {
     selectPopupPreservesModelFontRole();
     rectangleStyleUsesScreenshotCreationDefaults();
     shapeSelectorIsTheLeftmostStyleGroup();
+    spotlightShapeSelectorMatchesShapeAndRebindsEdits();
+    spotlightShapePreferencesRoundTripAndAcceptLegacySettings();
     shapeSelectorIsExclusiveToTheShapeTool();
     arrowStyleUsesScreenshotCreationColorOverride();
     arrowRatioEditorAdjustsAndResets();

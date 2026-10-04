@@ -167,7 +167,7 @@ QVector<QByteArray> styleEditorRoles(ScreenshotToolPalette::Tool tool) {
     case Tool::PenHighlight:
         return {kRoleHighlightMode, kRoleHighlightColor, kRoleBrushWidth};
     case Tool::Spotlight:
-        return {kRoleMaskColor, kRoleOpacity};
+        return {kRoleShapeKind, kRoleMaskColor, kRoleOpacity};
     case Tool::Text:
         return {kRoleForegroundColor, kRoleTextFont, "text-alignment",
                 "text-stroke",        kRoleTextFill, kRoleCornerRadius};
@@ -1036,6 +1036,17 @@ void ScreenshotToolPaletteStyleControls::prepareStyleReconcile(int sourceTool, i
             stageComponent(kRoleOutlineWidth, kSignatureStrokeWidth, m_shapeStrokeWidthEditor);
         }
     }
+    if (shared(kRoleShapeKind)) {
+        auto*& container = source == ScreenshotToolPalette::Tool::Spotlight
+                               ? m_spotlightShapeControlsContainer
+                               : m_shapeControlsContainer;
+        auto*& group = source == ScreenshotToolPalette::Tool::Spotlight
+                           ? m_spotlightShapeButtonGroup
+                           : m_shapeButtonGroup;
+        stageReusableWidget(kRoleShapeKind, kSignatureShapeKind, container);
+        container = nullptr;
+        group = nullptr;
+    }
     if (shared(kRoleShapeFill)) {
         stageComponent(kRoleShapeFill, kSignatureShapeFill, m_shapeFillEditor);
     }
@@ -1192,6 +1203,7 @@ void ScreenshotToolPaletteStyleControls::stageDestinationStyleEditors(
         stageComponent(kRoleBrushWidth, kSignatureBrushWidth, m_penHighlightStrokeWidthEditor);
         break;
     case Tool::Spotlight:
+        stageWidget(kRoleShapeKind);
         stageComponent(kRoleMaskColor, kSignatureMaskColor, m_spotlightColorEditor);
         stageWidget(kRoleOpacity);
         break;
@@ -1300,6 +1312,65 @@ void ScreenshotToolPaletteStyleControls::addToolbarSpacing(
         ToolbarSpacingItem{spacer, layout->parentWidget(), baseSpacing});
 }
 
+ScreenshotToolPaletteShapeFamilyResult ScreenshotToolPaletteStyleControls::buildShapeSelector(
+    QWidget* controls, const ScreenshotToolPaletteStyleFamilyHost& host,
+    const ScreenshotToolPaletteButtonMetrics& metrics, bool spotlight) {
+    ScreenshotToolPaletteShapeFamilyResult result;
+    result.controls = controls;
+    auto* layout = static_cast<QHBoxLayout*>(controls->layout());
+    auto*& container = spotlight ? m_spotlightShapeControlsContainer : m_shapeControlsContainer;
+    auto*& group = spotlight ? m_spotlightShapeButtonGroup : m_shapeButtonGroup;
+    ScreenshotToolPaletteRadioEditorConfig shapeConfig;
+    shapeConfig.objectName = spotlight ? QStringLiteral("screenshotSpotlightShapeButtonGroup")
+                                       : QStringLiteral("screenshotShapeButtonGroup");
+    shapeConfig.options = {
+        {0, QStringLiteral("Rectangle"), custom_outlined_icons::ShapeRectangle()},
+        {1, QStringLiteral("Ellipse"), custom_outlined_icons::ShapeEllipse()},
+        {2, QStringLiteral("Diamond"), custom_outlined_icons::ShapeDiamond()},
+    };
+    shapeConfig.initialId = 0;
+    container = takeReusableWidget(kRoleShapeKind, kSignatureShapeKind, layout, controls);
+    if (container == nullptr) {
+        const ScreenshotToolPaletteRadioEditor shapeEditor =
+            createScreenshotToolPaletteRadioEditor(controls, shapeConfig, metrics);
+        container = shapeEditor.container;
+        group = shapeEditor.group;
+        layout->addWidget(container);
+    } else {
+        group = container->findChild<adqt::widgets::AdRadioButtonGroup*>();
+    }
+    container->setObjectName(shapeConfig.objectName);
+    container->setProperty("screenshotStyleEditorRoot", true);
+    container->setProperty("screenshotStyleEditorRole", kRoleShapeKind);
+    container->setProperty("screenshotStyleEditorSignature", kSignatureShapeKind);
+    QObject::disconnect(group, &adqt::widgets::AdRadioButtonGroup::checkedIdChanged, nullptr,
+                        nullptr);
+    QObject::connect(group, &adqt::widgets::AdRadioButtonGroup::checkedIdChanged, controls,
+                     [this, spotlight](int id) {
+                         const auto shape = id == 1   ? SnowCanvasRectangleShape::Ellipse
+                                            : id == 2 ? SnowCanvasRectangleShape::Diamond
+                                                      : SnowCanvasRectangleShape::Rectangle;
+                         if (spotlight)
+                             setSpotlightShape(shape);
+                         else
+                             setShape(shape);
+                     });
+
+    if (host.addGroupSpacing) {
+        result.shapeGroupSeparatorLeadingSpacing = host.addGroupSpacing(layout);
+    }
+    if (host.createSeparator) {
+        result.shapeGroupSeparator = host.createSeparator(
+            controls, spotlight ? QStringLiteral("screenshotSpotlightShapeStyleGroupSeparator")
+                                : QStringLiteral("screenshotShapeStyleGroupSeparator"));
+        layout->addWidget(result.shapeGroupSeparator);
+    }
+    if (host.addGroupSpacing) {
+        result.shapeGroupSeparatorTrailingSpacing = host.addGroupSpacing(layout);
+    }
+    return result;
+}
+
 ScreenshotToolPaletteShapeFamilyResult ScreenshotToolPaletteStyleControls::buildShapeFamily(
     int tool, QWidget* panel, const ScreenshotToolPaletteStyleFamilyHost& host,
     const ScreenshotToolPaletteButtonMetrics& metrics) {
@@ -1320,49 +1391,7 @@ ScreenshotToolPaletteShapeFamilyResult ScreenshotToolPaletteStyleControls::build
     auto* layout = static_cast<QHBoxLayout*>(controls->layout());
 
     if (includeShapeOnlyEditors) {
-        ScreenshotToolPaletteRadioEditorConfig shapeConfig;
-        shapeConfig.objectName = QStringLiteral("screenshotShapeButtonGroup");
-        shapeConfig.options = {
-            {0, QStringLiteral("Rectangle"), custom_outlined_icons::ShapeRectangle()},
-            {1, QStringLiteral("Ellipse"), custom_outlined_icons::ShapeEllipse()},
-            {2, QStringLiteral("Diamond"), custom_outlined_icons::ShapeDiamond()},
-        };
-        shapeConfig.initialId = 0;
-        m_shapeControlsContainer =
-            takeReusableWidget(kRoleShapeKind, kSignatureShapeKind, layout, controls);
-        if (m_shapeControlsContainer == nullptr) {
-            const ScreenshotToolPaletteRadioEditor shapeEditor =
-                createScreenshotToolPaletteRadioEditor(controls, shapeConfig, metrics);
-            m_shapeControlsContainer = shapeEditor.container;
-            m_shapeButtonGroup = shapeEditor.group;
-            layout->addWidget(m_shapeControlsContainer);
-        } else {
-            m_shapeButtonGroup =
-                m_shapeControlsContainer->findChild<adqt::widgets::AdRadioButtonGroup*>();
-        }
-        m_shapeControlsContainer->setObjectName(shapeConfig.objectName);
-        m_shapeControlsContainer->setProperty("screenshotStyleEditorRoot", true);
-        m_shapeControlsContainer->setProperty("screenshotStyleEditorRole", kRoleShapeKind);
-        m_shapeControlsContainer->setProperty("screenshotStyleEditorSignature",
-                                              kSignatureShapeKind);
-        QObject::connect(m_shapeButtonGroup, &adqt::widgets::AdRadioButtonGroup::checkedIdChanged,
-                         controls, [this](int id) {
-                             setShape(id == 1   ? SnowCanvasRectangleShape::Ellipse
-                                      : id == 2 ? SnowCanvasRectangleShape::Diamond
-                                                : SnowCanvasRectangleShape::Rectangle);
-                         });
-
-        if (host.addGroupSpacing) {
-            result.shapeGroupSeparatorLeadingSpacing = host.addGroupSpacing(layout);
-        }
-        if (host.createSeparator) {
-            result.shapeGroupSeparator = host.createSeparator(
-                controls, QStringLiteral("screenshotShapeStyleGroupSeparator"));
-            layout->addWidget(result.shapeGroupSeparator);
-        }
-        if (host.addGroupSpacing) {
-            result.shapeGroupSeparatorTrailingSpacing = host.addGroupSpacing(layout);
-        }
+        result = buildShapeSelector(controls, host, metrics, false);
     }
 
     ScreenshotToolPaletteStrokeEditorConfig strokeConfig;
@@ -1946,6 +1975,9 @@ QWidget* ScreenshotToolPaletteStyleControls::buildSpotlightFamily(
     QWidget* controls =
         createRowWidget(panel, QStringLiteral("screenshotSpotlightStyleControls"), host);
     auto* layout = static_cast<QHBoxLayout*>(controls->layout());
+
+    static_cast<void>(buildShapeSelector(controls, host, metrics, true));
+    updateSpotlightShapeControls();
 
     ScreenshotToolPaletteColorEditorConfig spotlightColorConfig;
     spotlightColorConfig.accessibleName = QStringLiteral("Mask color");
@@ -3541,6 +3573,7 @@ void ScreenshotToolPaletteStyleControls::updateRectangleOnlyControlsVisibility()
 void ScreenshotToolPaletteStyleControls::reset() {
     clearTextStylePopupInteractions();
     m_state.reset(m_defaults);
+    updateSpotlightShapeControls();
     updateRectangleStyleControls();
     updateArrowStyleControls();
     updateTextStyleControls();
@@ -3568,6 +3601,8 @@ void ScreenshotToolPaletteStyleControls::releaseControlBindings() {
     m_highlightColorEditor.reset();
     m_spotlightColorEditor.reset();
     m_shapeButtonGroup = nullptr;
+    m_spotlightShapeControlsContainer = nullptr;
+    m_spotlightShapeButtonGroup = nullptr;
     m_lineTypeButtonGroup = nullptr;
     m_highlightStrokeEditor.reset();
     m_penHighlightColorEditor.reset();
@@ -3679,6 +3714,10 @@ void ScreenshotToolPaletteStyleControls::discardBindingsExcept(int destinationTo
         m_shapeControlsContainer = nullptr;
         m_shapeButtonGroup = nullptr;
     }
+    if (!keepSpotlight) {
+        m_spotlightShapeControlsContainer = nullptr;
+        m_spotlightShapeButtonGroup = nullptr;
+    }
     if (destination != Tool::Line) {
         m_lineTypeButtonGroup = nullptr;
     }
@@ -3742,6 +3781,7 @@ void ScreenshotToolPaletteStyleControls::setCreationStyleDefaults(
     m_state.reset(defaults);
     m_state.m_watermarkConfig = watermark;
     m_state.spotlightConfig = spotlight;
+    updateSpotlightShapeControls();
     updateRectangleStyleControls();
     updateArrowStyleControls();
     updateHighlightStyleControls();
@@ -4074,6 +4114,7 @@ SnowCanvasStyleDefaults ScreenshotToolPaletteStyleControls::creationStyleDefault
     defaults.brushEraser = m_state.creationBrushEraserStyle;
     defaults.watermark = m_state.creationWatermarkConfig;
     defaults.spotlight = m_state.creationSpotlightConfig;
+    defaults.spotlightShape = m_state.creationSpotlightShape;
     return defaults;
 }
 
@@ -4094,6 +4135,7 @@ void ScreenshotToolPaletteStyleControls::rememberStyleEdit(const SnowCanvasStyle
     m_state.creationBrushEraserStyle = remembered.creationBrushEraserStyle;
     m_state.creationWatermarkConfig = defaults.watermark;
     m_state.creationSpotlightConfig = defaults.spotlight;
+    m_state.creationSpotlightShape = defaults.spotlightShape;
 }
 
 void ScreenshotToolPaletteStyleControls::setRectangleStyle(const SnowCanvasShapeStyle& style) {
@@ -4162,6 +4204,7 @@ void ScreenshotToolPaletteStyleControls::refreshToolbarMetrics(
     }
 
     configureScreenshotToolPaletteStyleRadioButtonGroup(m_shapeButtonGroup, metrics);
+    configureScreenshotToolPaletteStyleRadioButtonGroup(m_spotlightShapeButtonGroup, metrics);
     configureScreenshotToolPaletteStyleRadioButtonGroup(m_lineTypeButtonGroup, metrics);
     configureScreenshotToolPaletteStyleRadioButtonGroup(m_arrowTypeButtonGroup, metrics);
 
@@ -4405,6 +4448,29 @@ void ScreenshotToolPaletteStyleControls::setShape(SnowCanvasRectangleShape shape
     updateRectangleStyleControls();
     notifyShapeStyleChanged(m_state.m_rectangleStyle.rectangleStyle(),
                             SnowCanvasShapeStylePropertyShape, SnowCanvasShapeKind::Rectangle);
+}
+
+void ScreenshotToolPaletteStyleControls::updateSpotlightShapeControls() {
+    if (m_spotlightShapeButtonGroup == nullptr)
+        return;
+    const QSignalBlocker blocker(m_spotlightShapeButtonGroup);
+    const auto shape = m_state.spotlightShape;
+    m_spotlightShapeButtonGroup->setCheckedId(m_state.spotlightShapeMixed != 0             ? -1
+                                              : shape == SnowCanvasRectangleShape::Ellipse ? 1
+                                              : shape == SnowCanvasRectangleShape::Diamond ? 2
+                                                                                           : 0);
+}
+
+void ScreenshotToolPaletteStyleControls::setSpotlightShape(SnowCanvasRectangleShape shape) {
+    if (m_state.spotlightShape == shape && m_state.spotlightShapeMixed == 0)
+        return;
+    m_state.spotlightShape = shape;
+    m_state.spotlightShapeMixed = 0;
+    updateSpotlightShapeControls();
+    SnowCanvasShapeStyle style;
+    style.shape = shape;
+    notifyShapeStyleChanged(style, SnowCanvasShapeStylePropertyShape,
+                            SnowCanvasShapeKind::Spotlight);
 }
 
 void ScreenshotToolPaletteStyleControls::setPenHighlightColor(const QColor& color) {
@@ -5142,6 +5208,19 @@ void ScreenshotToolPaletteStyleControls::setSerialNumberFontFamily(const QString
 
 void ScreenshotToolPaletteStyleControls::setStyleToolbarState(
     const SnowCanvasStyleToolbarState& state) {
+    if (state.source == SnowCanvasStyleToolbarSource::DefaultSpotlight ||
+        state.source == SnowCanvasStyleToolbarSource::SelectedSpotlight) {
+        m_state.showingSelectedSpotlight =
+            state.source == SnowCanvasStyleToolbarSource::SelectedSpotlight;
+        m_state.spotlightShape = state.shapeStyle.shape;
+        m_state.spotlightShapeMixed = m_state.showingSelectedSpotlight
+                                          ? state.shapeStyleMixed & SnowCanvasShapeStyleMixedShape
+                                          : 0;
+        if (!m_state.showingSelectedSpotlight)
+            m_state.creationSpotlightShape = state.shapeStyle.shape;
+        updateSpotlightShapeControls();
+        return;
+    }
     const auto editorInteracting = [](const auto& editor) {
         return editor != nullptr && editor->isInteracting();
     };

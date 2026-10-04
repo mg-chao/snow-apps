@@ -220,6 +220,8 @@ inline void snowCanvasMergeStyleEdit(SnowCanvasStyleDefaults& defaults,
                     target = &defaults.penHighlight;
                     break;
                 case SnowCanvasShapeKind::Spotlight:
+                    if ((patch.properties & SnowCanvasShapeStylePropertyShape) != 0)
+                        defaults.spotlightShape = patch.style.shape;
                     break;
                 }
                 if (target != nullptr)

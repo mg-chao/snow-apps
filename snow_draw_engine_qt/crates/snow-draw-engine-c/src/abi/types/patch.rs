@@ -147,4 +147,6 @@ pub struct SnowSpotlightCutout {
     pub width: f64,
     pub height: f64,
     pub rotation: f64,
+    pub shape: u8,
+    pub reserved: [u8; 7],
 }

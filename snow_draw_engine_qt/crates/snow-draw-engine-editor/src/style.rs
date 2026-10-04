@@ -1182,7 +1182,8 @@ impl Editor {
     }
 
     pub fn shape_style(&self, document: &DocumentModel) -> ShapeStyle {
-        self.selected_rectangle_style(document)
+        self.selected_spotlight_style(document)
+            .or_else(|| self.selected_rectangle_style(document))
             .or_else(|| self.selected_rectangle_highlight_style(document))
             .or_else(|| self.selected_pen_highlight_style(document))
             .or_else(|| self.selected_line_style(document))
@@ -1192,6 +1193,14 @@ impl Editor {
                     ShapeStyle::from_rectangle_shape_style(self.state.default_rectangle_shape_style)
                         .with_arrow_style(style)
                         .with_opacity(self.selected_arrow_opacity(document).unwrap_or(1.0))
+                })
+            })
+            .or_else(|| {
+                (self.state.active_tool == ActiveTool::Spotlight).then(|| ShapeStyle {
+                    shape: self.state.default_spotlight_shape,
+                    ..ShapeStyle::from_rectangle_shape_style(
+                        self.state.default_rectangle_shape_style,
+                    )
                 })
             })
             .or_else(|| {
@@ -1243,7 +1252,12 @@ impl Editor {
                 StyleToolbarSource::SelectedRectangle => document
                     .rectangle(*id)
                     .ok()
-                    .filter(|rect| !rect.is_highlight())
+                    .filter(|rect| !rect.is_highlight() && !rect.is_spotlight())
+                    .map(ShapeStyleSample::from_rectangle),
+                StyleToolbarSource::SelectedSpotlight => document
+                    .rectangle(*id)
+                    .ok()
+                    .filter(|rect| rect.is_spotlight())
                     .map(ShapeStyleSample::from_rectangle),
                 StyleToolbarSource::SelectedRectangleHighlight => document
                     .rectangle(*id)
@@ -1325,7 +1339,7 @@ impl Editor {
     fn selected_rectangle_style(&self, document: &DocumentModel) -> Option<ShapeStyle> {
         self.selected_primary_rectangle_snapshot(document)
             .map(|(_, rectangle)| rectangle)
-            .filter(|rectangle| !rectangle.is_highlight())
+            .filter(|rectangle| !rectangle.is_highlight() && !rectangle.is_spotlight())
             .or_else(|| {
                 self.state
                     .selection
@@ -1335,9 +1349,25 @@ impl Editor {
                         document
                             .rectangle(*id)
                             .ok()
-                            .filter(|rect| !rect.is_highlight())
+                            .filter(|rect| !rect.is_highlight() && !rect.is_spotlight())
                     })
                     .cloned()
+            })
+            .map(|rectangle| ShapeStyle::from_rectangle(&rectangle))
+    }
+
+    fn selected_spotlight_style(&self, document: &DocumentModel) -> Option<ShapeStyle> {
+        self.selected_primary_rectangle_snapshot(document)
+            .map(|(_, rectangle)| rectangle)
+            .filter(RectangleData::is_spotlight)
+            .or_else(|| {
+                self.state.selection.ids.iter().find_map(|id| {
+                    document
+                        .rectangle(*id)
+                        .ok()
+                        .filter(|rect| rect.is_spotlight())
+                        .copied()
+                })
             })
             .map(|rectangle| ShapeStyle::from_rectangle(&rectangle))
     }
@@ -1593,7 +1623,7 @@ impl Editor {
         let bindables = self.bindable_elements(document, &[]);
         let arrow_context = self.arrow_engine_context(Modifiers::default());
         let preview_changed = match self.state.creation_preview.as_mut() {
-            Some(ElementCreationPreview::Rectangle(preview)) => {
+            Some(ElementCreationPreview::Rectangle(preview)) if !preview.is_spotlight() => {
                 let next = rectangle_with_style(preview, rectangle_style);
                 if *preview != next {
                     *preview = next;
@@ -1679,7 +1709,17 @@ impl Editor {
                 self.state.default_pen_highlight_style =
                     patch.apply_to_line(self.state.default_pen_highlight_style);
             }
-            ShapeKind::Spotlight => {}
+            ShapeKind::Spotlight => {
+                self.state.default_spotlight_shape = patch.style.shape;
+                if let Some(ElementCreationPreview::Rectangle(preview)) =
+                    self.state.creation_preview.as_mut()
+                    && preview.is_spotlight()
+                    && preview.highlight_shape != patch.style.shape
+                {
+                    preview.highlight_shape = patch.style.shape;
+                    self.bump_scene_state_revision();
+                }
+            }
         }
 
         let bindables = self.bindable_elements(document, &[]);
@@ -1692,9 +1732,11 @@ impl Editor {
             for id in self.state.selection.ids.iter().copied() {
                 if let Ok(current_rect) = document.rectangle(id) {
                     let matches_kind = (patch.kind == ShapeKind::Rectangle
-                        && !current_rect.is_highlight())
+                        && !current_rect.is_highlight()
+                        && !current_rect.is_spotlight())
                         || (patch.kind == ShapeKind::RectangleHighlight
-                            && current_rect.is_highlight());
+                            && current_rect.is_highlight())
+                        || (patch.kind == ShapeKind::Spotlight && current_rect.is_spotlight());
                     let updated_rect = if matches_kind {
                         rectangle_with_style(
                             current_rect,
@@ -1846,7 +1888,11 @@ impl Editor {
 
             for id in self.state.selection.ids.iter().copied() {
                 if let Ok(current_rect) = document.rectangle(id) {
-                    let updated_rect = rectangle_with_style(current_rect, style);
+                    let updated_rect = if current_rect.is_spotlight() {
+                        *current_rect
+                    } else {
+                        rectangle_with_style(current_rect, style)
+                    };
                     next_selection_elements.push(SelectionRectState {
                         id,
                         rect: updated_rect,
@@ -2124,6 +2170,104 @@ mod tests {
             (actual - expected).abs() <= f64::EPSILON,
             "expected {actual} to equal {expected}"
         );
+    }
+
+    #[test]
+    fn spotlight_shape_patch_updates_only_selected_cutouts_and_its_default() {
+        use snow_draw_engine_document::{HighlightShape, RectangleElementKind};
+        let mut document = DocumentModel::new();
+        let base = RectangleData {
+            rectangle_kind: RectangleElementKind::Rectangle,
+            highlight_shape: HighlightShape::Rectangle,
+            center: Point::default(),
+            width: 80.0,
+            height: 40.0,
+            rotation: 0.0,
+            fill: ColorRgba8::default(),
+            stroke: ColorRgba8::default(),
+            stroke_width: 0.0,
+            fill_style: FillStyle::Solid,
+            stroke_style: StrokeStyle::Solid,
+            corner_radii: CornerRadii::default(),
+            opacity: 1.0,
+        };
+        let ids: Vec<_> = (0..4).map(|_| document.allocate_element_id()).collect();
+        let mut insert = Transaction::new("spotlight shape fixture");
+        insert.insert_rectangle(ids[0], ElementMeta::default(), base.into_spotlight());
+        insert.insert_rectangle(
+            ids[1],
+            ElementMeta::default(),
+            RectangleData {
+                highlight_shape: HighlightShape::Ellipse,
+                ..base
+            }
+            .into_spotlight(),
+        );
+        insert.insert_rectangle(ids[2], ElementMeta::default(), base);
+        insert.insert_rectangle(ids[3], ElementMeta::default(), base.into_spotlight());
+        document.apply_transaction(insert).unwrap();
+        let mut editor = Editor::new(Default::default()).unwrap();
+        editor.set_selection_state_with_document(Some(&document), ids[..3].to_vec(), Some(ids[0]));
+        assert_eq!(editor.shape_style_mixed(&document), SHAPE_STYLE_MIXED_SHAPE);
+        let mut style = editor.shape_style(&document);
+        style.shape = HighlightShape::Diamond;
+        let patch = ShapeStylePatch {
+            kind: ShapeKind::Spotlight,
+            style,
+            properties: SHAPE_STYLE_PROPERTY_SHAPE,
+        };
+        let Some(EditorCommand::ApplyTransaction(command)) =
+            editor.set_shape_style_patch(&document, patch).unwrap()
+        else {
+            panic!("a spotlight shape edit must create one transaction");
+        };
+        let result = document.apply_transaction(command.transaction).unwrap();
+        assert_eq!(
+            document.rectangle(ids[0]).unwrap().highlight_shape,
+            HighlightShape::Diamond
+        );
+        assert_eq!(
+            document.rectangle(ids[1]).unwrap().highlight_shape,
+            HighlightShape::Diamond
+        );
+        assert_eq!(*document.rectangle(ids[2]).unwrap(), base);
+        assert_eq!(
+            document.rectangle(ids[3]).unwrap().highlight_shape,
+            HighlightShape::Rectangle
+        );
+        assert_eq!(editor.shape_style_mixed(&document), 0);
+        assert_eq!(
+            editor.state.default_spotlight_shape,
+            HighlightShape::Diamond
+        );
+        assert_eq!(
+            editor.state.default_rectangle_shape_style.shape,
+            HighlightShape::Rectangle
+        );
+        document.apply_transaction(result.inverse).unwrap();
+        assert_eq!(
+            document.rectangle(ids[1]).unwrap().highlight_shape,
+            HighlightShape::Ellipse
+        );
+        assert_eq!(
+            ShapeKind::Spotlight.supported_properties(),
+            SHAPE_STYLE_PROPERTY_SHAPE
+        );
+        for bit in 0..14 {
+            let properties = 1 << bit;
+            if properties != SHAPE_STYLE_PROPERTY_SHAPE {
+                assert_eq!(
+                    editor.set_shape_style_patch(
+                        &document,
+                        ShapeStylePatch {
+                            properties,
+                            ..patch
+                        }
+                    ),
+                    Err(ErrorCode::InvalidArgument)
+                );
+            }
+        }
     }
 
     #[test]

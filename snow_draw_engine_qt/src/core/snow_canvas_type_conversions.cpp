@@ -700,6 +700,8 @@ bool toEngineStyleDefaults(const SnowCanvasStyleDefaults& defaults,
     if (std::any_of(
             std::begin(shapes), std::end(shapes),
             [](const SnowCanvasShapeStyle* style) { return !validShapeStyleEnums(*style); }) ||
+        !enumInRange(defaults.spotlightShape, SnowCanvasRectangleShape::Rectangle,
+                     SnowCanvasRectangleShape::Diamond) ||
         !std::isfinite(defaults.brushEraser.strokeWidth) ||
         defaults.brushEraser.strokeWidth < 1.0 || defaults.brushEraser.strokeWidth > 72.0 ||
         !enumInRange(defaults.rectangleFilter.type, SnowCanvasFilterType::Mosaic,
@@ -772,6 +774,7 @@ bool toEngineStyleDefaults(const SnowCanvasStyleDefaults& defaults,
     engineDefaults.watermark = toEngineWatermarkConfig(defaults.watermark);
     engineDefaults.spotlight = toEngineSpotlightConfig(defaults.spotlight);
     engineDefaults.brush_eraser = SnowBrushEraserStyle{defaults.brushEraser.strokeWidth};
+    engineDefaults.spotlight_shape = static_cast<SnowRectangleShape>(defaults.spotlightShape);
     return true;
 }
 
