@@ -10,7 +10,7 @@ use windows::Win32::Foundation::{
 };
 use windows::Win32::Globalization::{CSTR_EQUAL, CompareStringOrdinal};
 use windows::Win32::Storage::FileSystem::{
-    FILE_ATTRIBUTE_REPARSE_POINT, GetFileAttributesW, INVALID_FILE_ATTRIBUTES,
+    FILE_ATTRIBUTE_REPARSE_POINT, GetFileAttributesW, INVALID_FILE_ATTRIBUTES, MOVE_FILE_FLAGS,
     MOVEFILE_REPLACE_EXISTING, MOVEFILE_WRITE_THROUGH, MoveFileExW,
 };
 use windows::Win32::System::Registry::{
@@ -59,23 +59,85 @@ pub fn path_eq(left: &Path, right: &Path) -> bool {
     unsafe { CompareStringOrdinal(&left, &right, true) == CSTR_EQUAL }
 }
 
-pub fn replace_file(source: &Path, destination: &Path) -> Result<()> {
+fn move_file(
+    source: &Path,
+    destination: &Path,
+    flags: MOVE_FILE_FLAGS,
+) -> windows::core::Result<()> {
     let source = wide(absolute(source));
     let destination = wide(absolute(destination));
-    unsafe {
-        MoveFileExW(
-            PCWSTR(source.as_ptr()),
-            PCWSTR(destination.as_ptr()),
-            MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH,
-        )
-        .map_err(|error| {
-            io_error(
-                "update_file_replace_failed",
-                "Could not replace an update file; close applications using it",
-                error,
-            )
-        })
+    unsafe { MoveFileExW(PCWSTR(source.as_ptr()), PCWSTR(destination.as_ptr()), flags) }
+}
+
+fn replacement_error(
+    source: &Path,
+    destination: &Path,
+    error: impl std::fmt::Display,
+) -> UpdateError {
+    io_error(
+        "update_file_replace_failed",
+        "Could not replace an update file; close applications using it",
+        format!("{} -> {}: {error}", source.display(), destination.display()),
+    )
+}
+
+pub fn replace_file(source: &Path, destination: &Path) -> Result<()> {
+    move_file(
+        source,
+        destination,
+        MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH,
+    )
+    .map_err(|error| replacement_error(source, destination, error))
+}
+
+pub fn replace_application_file(source: &Path, destination: &Path, retired: &Path) -> Result<()> {
+    match move_file(
+        source,
+        destination,
+        MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH,
+    ) {
+        Ok(()) => return Ok(()),
+        Err(error) if error.code() == ERROR_ACCESS_DENIED.to_hresult() && destination.is_file() => {
+        }
+        Err(error) => return Err(replacement_error(source, destination, error)),
     }
+    // Windows cannot delete a mapped executable, but it can rename it. The transaction's
+    // durable backup and journal cover the gap between retiring the old name and publishing
+    // its replacement. Existing external clients keep their original mapped image.
+    move_file(destination, retired, MOVEFILE_WRITE_THROUGH)
+        .map_err(|error| replacement_error(destination, retired, error))?;
+    if let Err(error) = move_file(source, destination, MOVEFILE_WRITE_THROUGH) {
+        if let Err(restore) = move_file(retired, destination, MOVEFILE_WRITE_THROUGH) {
+            return Err(replacement_error(
+                source,
+                destination,
+                format!("{error}; restoring the retired file failed: {restore}"),
+            ));
+        }
+        return Err(replacement_error(source, destination, error));
+    }
+    // Mapped images are retained until their clients exit. prune_update_work retries only
+    // these reserved files on later updates; their lifetime never blocks commit or recovery.
+    let _ = std::fs::remove_file(retired);
+    Ok(())
+}
+
+pub fn remove_application_file(destination: &Path, retired: &Path) -> Result<()> {
+    match std::fs::remove_file(destination) {
+        Ok(()) => return Ok(()),
+        Err(error) if error.kind() == std::io::ErrorKind::PermissionDenied => {}
+        Err(error) => {
+            return Err(io_error(
+                "obsolete_file_remove_failed",
+                "Could not remove obsolete application file",
+                error,
+            ));
+        }
+    }
+    move_file(destination, retired, MOVEFILE_WRITE_THROUGH)
+        .map_err(|error| replacement_error(destination, retired, error))?;
+    let _ = std::fs::remove_file(retired);
+    Ok(())
 }
 
 pub fn path_has_reparse(path: &Path) -> bool {
@@ -380,7 +442,76 @@ pub fn launch_on_interactive_desktop(executable: &Path) -> Result<bool> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::io::{BufRead, BufReader};
     use std::process::Command;
+    use std::process::Stdio;
+
+    #[test]
+    fn application_file_changes_preserve_running_images() {
+        for remove in [false, true] {
+            let directory = tempfile::tempdir().unwrap();
+            let destination = directory.path().join("running image.exe");
+            let source = directory.path().join("replacement.exe");
+            let command = std::env::var_os("ComSpec").unwrap_or_else(|| "cmd.exe".into());
+            std::fs::copy(command, &destination).unwrap();
+            let mut child = Command::new(&destination)
+                .args(["/d", "/q", "/c", "echo ready & set /p input="])
+                .stdin(Stdio::piped())
+                .stdout(Stdio::piped())
+                .spawn()
+                .unwrap();
+            let mut ready = String::new();
+            BufReader::new(child.stdout.take().unwrap())
+                .read_line(&mut ready)
+                .unwrap();
+            assert_eq!(ready.trim(), "ready");
+            std::fs::write(&source, b"new image").unwrap();
+            let retired = directory.path().join("retired.exe");
+            let result = if remove {
+                remove_application_file(&destination, &retired)
+            } else {
+                replace_application_file(&source, &destination, &retired)
+            };
+            let still_running = child.try_wait().unwrap().is_none();
+            let retained_image = retired.exists();
+            drop(child.stdin.take());
+            child.wait().unwrap();
+            result.unwrap();
+            assert!(still_running);
+            assert!(retained_image);
+            if remove {
+                assert!(!destination.exists());
+            } else {
+                assert_eq!(std::fs::read(destination).unwrap(), b"new image");
+                assert!(!source.exists());
+            }
+            std::fs::remove_file(retired).unwrap();
+        }
+    }
+
+    #[test]
+    fn application_file_changes_respect_handles_that_deny_delete_sharing() {
+        use std::os::windows::fs::OpenOptionsExt;
+        use windows::Win32::Storage::FileSystem::FILE_SHARE_READ;
+
+        let directory = tempfile::tempdir().unwrap();
+        let destination = directory.path().join("locked.dll");
+        let source = directory.path().join("replacement.dll");
+        let retired = directory.path().join("retired.file");
+        std::fs::write(&destination, b"original").unwrap();
+        std::fs::write(&source, b"replacement").unwrap();
+        let locked = std::fs::OpenOptions::new()
+            .read(true)
+            .share_mode(FILE_SHARE_READ.0)
+            .open(&destination)
+            .unwrap();
+        assert!(replace_application_file(&source, &destination, &retired).is_err());
+        assert!(remove_application_file(&destination, &retired).is_err());
+        assert_eq!(std::fs::read(&destination).unwrap(), b"original");
+        assert_eq!(std::fs::read(&source).unwrap(), b"replacement");
+        assert!(!retired.exists());
+        drop(locked);
+    }
 
     #[test]
     fn validated_process_handle_survives_process_exit() {

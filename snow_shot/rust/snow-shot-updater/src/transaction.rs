@@ -313,7 +313,13 @@ fn acquire_lock(root: &Path, message: &'static str) -> Result<File> {
     Ok(lock)
 }
 
-fn atomic_copy(source: &Path, destination: &Path) -> Result<()> {
+fn retired_path(root: &Path) -> Result<PathBuf> {
+    let path = work_path(root, format!("retired-{}.file", Uuid::new_v4().simple()));
+    no_links(&path)?;
+    Ok(path)
+}
+
+fn atomic_copy(root: &Path, source: &Path, destination: &Path) -> Result<()> {
     no_links(destination)?;
     if let Some(parent) = destination.parent() {
         fs::create_dir_all(parent).map_err(|error| {
@@ -333,7 +339,7 @@ fn atomic_copy(source: &Path, destination: &Path) -> Result<()> {
         Uuid::new_v4().simple()
     ));
     copy_and_persist(source, &temporary)?;
-    let result = platform::replace_file(&temporary, destination);
+    let result = platform::replace_application_file(&temporary, destination, &retired_path(root)?);
     if result.is_err() {
         let _ = fs::remove_file(&temporary);
     }
@@ -623,18 +629,31 @@ fn restore_with_progress(root: &Path, progress: Option<&dyn Fn(Progress)>) -> Re
     for (index, entry) in journal.files.iter().enumerate() {
         let destination = root.join(&entry.path);
         if entry.existed {
-            atomic_copy(
-                &work_path(root, Path::new("backup").join(&entry.path)),
+            // A failed replacement can leave this file untouched and still locked. Recovery
+            // restores contents, so an already verified original needs no replacement.
+            if verify_file(
                 &destination,
-            )?;
+                entry.size.unwrap_or(u64::MAX),
+                entry.sha256.as_deref().unwrap_or_default(),
+            )
+            .is_err()
+            {
+                atomic_copy(
+                    root,
+                    &work_path(root, Path::new("backup").join(&entry.path)),
+                    &destination,
+                )?;
+            }
         } else if destination.exists() {
-            fs::remove_file(&destination).map_err(|error| {
-                io_error(
-                    "incomplete_file_remove_failed",
-                    "Could not remove an incomplete update file",
-                    error,
-                )
-            })?;
+            platform::remove_application_file(&destination, &retired_path(root)?).map_err(
+                |error| {
+                    UpdateError::new(
+                        "incomplete_file_remove_failed",
+                        "Could not remove an incomplete update file",
+                    )
+                    .detail(error.detail.as_deref().unwrap_or(error.message.as_ref()))
+                },
+            )?;
         }
         report_progress(progress, ProgressPhase::Restoring, index as u64 + 1, total);
     }
@@ -848,16 +867,10 @@ pub fn apply_transaction(
         for (index, name) in paths.iter().enumerate() {
             let destination = root.join(name);
             if let Some(file) = next.get(name) {
-                atomic_copy(&stage.join(name), &destination)?;
+                atomic_copy(root, &stage.join(name), &destination)?;
                 verify_file(&destination, file.size, &file.sha256)?;
             } else if destination.exists() {
-                fs::remove_file(&destination).map_err(|error| {
-                    io_error(
-                        "obsolete_file_remove_failed",
-                        "Could not remove obsolete application file",
-                        error,
-                    )
-                })?;
+                platform::remove_application_file(&destination, &retired_path(root)?)?;
             }
             if let Some(checkpoint) = hooks.checkpoint {
                 checkpoint(name);
@@ -933,6 +946,7 @@ pub fn prune_update_work(root: &Path) -> Result<()> {
     let now = std::time::SystemTime::now();
     let pattern = regex::Regex::new(r"^(worker-[a-f0-9]{32}\.exe|input-[a-f0-9]{32}\.zip)$")
         .expect("valid regex");
+    let retired_pattern = regex::Regex::new(r"^retired-[a-f0-9]{32}\.file$").expect("valid regex");
     for entry in fs::read_dir(&work).into_iter().flatten().flatten() {
         let path = entry.path();
         let name = entry.file_name().to_string_lossy().into_owned();
@@ -942,7 +956,7 @@ pub fn prune_update_work(root: &Path) -> Result<()> {
             .ok()
             .and_then(|modified| now.duration_since(modified).ok())
             .is_some_and(|age| age > Duration::from_secs(86_400));
-        if old && pattern.is_match(&name) {
+        if (old && pattern.is_match(&name)) || retired_pattern.is_match(&name) {
             no_links(&path)?;
             let _ = fs::remove_file(path);
         }
@@ -1135,6 +1149,158 @@ mod tests {
             installation_root(Path::new("C:/SnowShot/bin")),
             PathBuf::from("C:/SnowShot")
         );
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn recovery_leaves_unchanged_locked_files_in_place() {
+        use std::os::windows::fs::OpenOptionsExt;
+        use windows::Win32::Storage::FileSystem::FILE_SHARE_READ;
+
+        let directory = tempfile::tempdir().unwrap();
+        let root = directory.path().join("SnowShot");
+        fs::create_dir_all(root.join("bin")).unwrap();
+        let old_app = b"old application";
+        let blocker = "bin/zz-locked.dll";
+        let unchanged = b"unchanged locked file";
+        fs::write(root.join(crate::edition::APP_PATH), b"partial update").unwrap();
+        fs::write(root.join(blocker), unchanged).unwrap();
+        let record = InstallationRecord {
+            schema: 1,
+            product: crate::edition::PRODUCT.to_owned(),
+            variant: "portable".to_owned(),
+            version: "1.0.0".to_owned(),
+            files: vec![
+                descriptor(crate::edition::APP_PATH, old_app),
+                descriptor(blocker, unchanged),
+            ],
+        };
+        fs::write(
+            root.join(INSTALLATION_RECORD),
+            serde_json::to_vec(&record).unwrap(),
+        )
+        .unwrap();
+        let mut entries = Vec::new();
+        for (path, bytes) in [
+            (crate::edition::APP_PATH, old_app.as_slice()),
+            (blocker, unchanged.as_slice()),
+        ] {
+            let backup = work_path(&root, Path::new("backup").join(path));
+            fs::create_dir_all(backup.parent().unwrap()).unwrap();
+            fs::write(&backup, bytes).unwrap();
+            entries.push(JournalEntry {
+                path: path.to_owned(),
+                existed: true,
+                size: Some(bytes.len() as u64),
+                sha256: Some(sha256_file(&backup).unwrap()),
+            });
+        }
+        save_journal(
+            &root,
+            &Journal {
+                schema: 1,
+                state: "applying".to_owned(),
+                version: "2.0.0".to_owned(),
+                previous_version: "1.0.0".to_owned(),
+                restore_registry: false,
+                files: entries,
+            },
+        )
+        .unwrap();
+        let locked = OpenOptions::new()
+            .read(true)
+            .share_mode(FILE_SHARE_READ.0)
+            .open(root.join(blocker))
+            .unwrap();
+        let result = recover_transaction(&root);
+        drop(locked);
+        result.unwrap();
+        assert_eq!(
+            fs::read(root.join(crate::edition::APP_PATH)).unwrap(),
+            old_app
+        );
+        assert_eq!(fs::read(root.join(blocker)).unwrap(), unchanged);
+        assert!(!transaction_pending(&root));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn retired_files_are_pruned_after_their_handles_close() {
+        use std::os::windows::fs::OpenOptionsExt;
+        use windows::Win32::Storage::FileSystem::FILE_SHARE_READ;
+
+        let directory = tempfile::tempdir().unwrap();
+        let root = directory.path().join("SnowShot");
+        fs::create_dir_all(root.join("bin")).unwrap();
+        fs::write(root.join(crate::edition::APP_PATH), b"app").unwrap();
+        fs::create_dir_all(root.join(UPDATE_WORK)).unwrap();
+        let retired = retired_path(&root).unwrap();
+        fs::write(&retired, b"retired image").unwrap();
+        let user_file = work_path(&root, "user-note.txt");
+        fs::write(&user_file, b"preserve").unwrap();
+        let locked = OpenOptions::new()
+            .read(true)
+            .share_mode(FILE_SHARE_READ.0)
+            .open(&retired)
+            .unwrap();
+        prune_update_work(&root).unwrap();
+        assert!(retired.exists());
+        drop(locked);
+        prune_update_work(&root).unwrap();
+        assert!(!retired.exists());
+        assert_eq!(fs::read(user_file).unwrap(), b"preserve");
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn recovery_removes_a_running_image_introduced_by_the_update() {
+        use std::io::{BufRead, BufReader};
+
+        let directory = tempfile::tempdir().unwrap();
+        let root = directory.path().join("SnowShot");
+        fs::create_dir_all(root.join("bin")).unwrap();
+        fs::write(root.join(crate::edition::APP_PATH), b"old app").unwrap();
+        let introduced = "bin/introduced.exe";
+        let image = root.join(introduced);
+        let command = std::env::var_os("ComSpec").unwrap_or_else(|| "cmd.exe".into());
+        fs::copy(command, &image).unwrap();
+        save_journal(
+            &root,
+            &Journal {
+                schema: 1,
+                state: "applying".to_owned(),
+                version: "2.0.0".to_owned(),
+                previous_version: "1.0.0".to_owned(),
+                restore_registry: false,
+                files: vec![JournalEntry {
+                    path: introduced.to_owned(),
+                    existed: false,
+                    size: None,
+                    sha256: None,
+                }],
+            },
+        )
+        .unwrap();
+        let mut child = Command::new(&image)
+            .args(["/d", "/q", "/c", "echo ready & set /p input="])
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .spawn()
+            .unwrap();
+        let mut ready = String::new();
+        BufReader::new(child.stdout.take().unwrap())
+            .read_line(&mut ready)
+            .unwrap();
+        assert_eq!(ready.trim(), "ready");
+        let result = recover_transaction(&root);
+        let still_running = child.try_wait().unwrap().is_none();
+        drop(child.stdin.take());
+        child.wait().unwrap();
+        result.unwrap();
+        assert!(still_running);
+        assert!(!image.exists());
+        assert!(!transaction_pending(&root));
+        prune_update_work(&root).unwrap();
     }
 
     #[test]

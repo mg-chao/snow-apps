@@ -29,6 +29,22 @@ pub fn path_has_reparse(_path: &Path) -> bool {
 }
 
 #[cfg(not(windows))]
+pub fn replace_application_file(source: &Path, destination: &Path, _retired: &Path) -> Result<()> {
+    replace_file(source, destination)
+}
+
+#[cfg(not(windows))]
+pub fn remove_application_file(destination: &Path, _retired: &Path) -> Result<()> {
+    std::fs::remove_file(destination).map_err(|error| {
+        io_error(
+            "obsolete_file_remove_failed",
+            "Could not remove obsolete application file",
+            error,
+        )
+    })
+}
+
+#[cfg(not(windows))]
 pub fn write_registered_version(_root: &Path, _version: &str) -> Result<()> {
     Ok(())
 }

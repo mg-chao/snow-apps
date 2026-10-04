@@ -572,27 +572,17 @@ int main(int argc, char* argv[]) {
             applicationStorage.configuration().value(QStringLiteral("network/proxy")).toString() ==
             u"system");
         bool foregroundRequested = administratorRestart;
-        const auto relaunchArguments = [&] {
-            QStringList arguments;
-            const bool autostart = launchArguments.contains(QStringLiteral("--autostart"));
-            if (autostart && !foregroundRequested)
-                arguments.append(QStringLiteral("--autostart"));
-            else if (foregroundRequested ||
-                     launchArguments.contains(QStringLiteral("--show-main-window")))
-                arguments.append(QStringLiteral("--show-main-window"));
-            return arguments;
-        };
         const auto forwardedLaunch = QObject::connect(
             &singleInstance, &snow_shot::app::SingleInstanceCoordinator::launchRequestReceived,
             &app, [&](const QStringList& arguments) {
                 foregroundRequested =
                     foregroundRequested || !arguments.contains(QStringLiteral("--autostart"));
                 startupUpdate.setRelaunchArguments(
-                    snow_shot::update::startupUpdateRelaunchArguments(relaunchArguments()));
+                    snow_shot::update::startupUpdateRelaunchArguments(foregroundRequested));
             });
         const auto startupUpdateResult = snow_shot::update::runStartupUpdate(
             startupUpdate, [&applicationStorage] { return applicationStorage.flushNow().success; },
-            relaunchArguments);
+            [&] { return foregroundRequested; });
         QObject::disconnect(forwardedLaunch);
         if (startupUpdateResult == snow_shot::update::StartupUpdateResult::ExitForUpdate)
             return 0;

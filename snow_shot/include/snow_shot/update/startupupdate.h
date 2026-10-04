@@ -12,7 +12,8 @@ namespace snow_shot::update {
 // Internal updater relaunches skip the startup gate once, including after rollback.
 [[nodiscard]] bool isStartupUpdateRelaunch(const QStringList& arguments);
 [[nodiscard]] QStringList normalStartupArguments(QStringList arguments);
-[[nodiscard]] QStringList startupUpdateRelaunchArguments(QStringList arguments);
+// Automatic updates return to the tray unless a new launch requests the main window.
+[[nodiscard]] QStringList startupUpdateRelaunchArguments(bool foregroundRequested = false);
 
 enum class StartupUpdateResult { ContinueStartup, ExitForUpdate };
 
@@ -20,7 +21,7 @@ enum class StartupUpdateResult { ContinueStartup, ExitForUpdate };
 // Only a committed handoff ends startup; errors and cancellation continue normally.
 [[nodiscard]] StartupUpdateResult
 runStartupUpdate(UpdateService& service, const std::function<bool()>& flush,
-                 const std::function<QStringList()>& relaunchArguments,
+                 const std::function<bool()>& foregroundRequested = {},
                  std::chrono::milliseconds timeout = std::chrono::seconds(210));
 
 } // namespace snow_shot::update

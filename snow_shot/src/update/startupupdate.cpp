@@ -7,7 +7,6 @@
 #include <QFileInfo>
 #include <QStandardPaths>
 #include <QTimer>
-#include <utility>
 
 namespace snow_shot::update {
 namespace {
@@ -36,14 +35,14 @@ QStringList normalStartupArguments(QStringList arguments) {
     return arguments;
 }
 
-QStringList startupUpdateRelaunchArguments(QStringList arguments) {
-    arguments = normalStartupArguments(std::move(arguments));
-    arguments.append(QString::fromLatin1(kSkipStartupUpdate));
-    return arguments;
+QStringList startupUpdateRelaunchArguments(bool foregroundRequested) {
+    return {foregroundRequested ? QStringLiteral("--show-main-window")
+                                : QStringLiteral("--autostart"),
+            QString::fromLatin1(kSkipStartupUpdate)};
 }
 
 StartupUpdateResult runStartupUpdate(UpdateService& service, const std::function<bool()>& flush,
-                                     const std::function<QStringList()>& relaunchArguments,
+                                     const std::function<bool()>& foregroundRequested,
                                      std::chrono::milliseconds timeout) {
     QEventLoop loop;
     QTimer deadline;
@@ -64,8 +63,8 @@ StartupUpdateResult runStartupUpdate(UpdateService& service, const std::function
                 "Your settings could not be saved. Please retry before updating."));
             return;
         }
-        service.setRelaunchArguments(startupUpdateRelaunchArguments(
-            relaunchArguments ? relaunchArguments() : QStringList{}));
+        service.setRelaunchArguments(
+            startupUpdateRelaunchArguments(foregroundRequested && foregroundRequested()));
     });
     QObject::connect(&service, &UpdateService::handoffCommitted, &loop, [&] {
         result = StartupUpdateResult::ExitForUpdate;

@@ -601,6 +601,17 @@ impl Service {
         self.refresh_progress();
     }
 
+    fn cached_payload_matches(&self) -> bool {
+        self.available.as_ref().is_some_and(|package| {
+            fsutil::verify_file(
+                &cache_path(&self.options, format!("{}.zip", package.sha256)),
+                package.size,
+                &package.sha256,
+            )
+            .is_ok()
+        })
+    }
+
     fn download_progress_visible(&self) -> bool {
         self.trigger == Trigger::User || self.mode == Mode::Download
     }
@@ -1750,7 +1761,15 @@ async fn handle_command(
                                     complete = Some("success");
                                     Ok(())
                                 }
-                            } else if service.status.state != "Ready" || service.active.is_some() {
+                            } else if service.active.is_some()
+                                || !(service.status.state == "Ready"
+                                    || (trigger == Trigger::User
+                                        && matches!(
+                                            service.status.state.as_str(),
+                                            "Available" | "Failed"
+                                        )
+                                        && service.cached_payload_matches()))
+                            {
                                 Err(UpdateError::new(
                                     "protocol_state_invalid",
                                     "Invalid updater command argument",
@@ -2771,6 +2790,29 @@ mod tests {
         assert_eq!(service.status.version, "3.0.0");
         assert_eq!(service.available.as_ref().unwrap().version, "3.0.0");
         assert!(!cache_path(&service.options, format!("{old_hash}.zip")).exists());
+    }
+
+    #[tokio::test]
+    async fn manual_apply_revalidates_a_cached_payload_after_a_failed_installation() {
+        for state in ["Available", "Failed"] {
+            let temporary = TempDir::new().unwrap();
+            let network = FakeNetwork::new([FakeReply::Pending, FakeReply::Pending]);
+            let mut service = ready_service(&temporary, network.clone());
+            fsutil::write_atomic(&failed_version_path(&service.options.root), b"2.0.0").unwrap();
+            service.status.state = state.to_owned();
+            let mut writer = BufWriter::new(tokio::io::stdout());
+            let (sender, _receiver) = mpsc::channel(4);
+            assert!(
+                !handle_command(&mut service, apply_command(), &mut writer, &sender)
+                    .await
+                    .unwrap()
+            );
+            tokio::task::yield_now().await;
+            assert_eq!(service.active, Some(ActiveOperation::Check));
+            assert_eq!(service.status.state, "Checking");
+            assert_eq!(network.requests().len(), 2);
+            assert!(!service.awaiting_handoff);
+        }
     }
 
     #[tokio::test]

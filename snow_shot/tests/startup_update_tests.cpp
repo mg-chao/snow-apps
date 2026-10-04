@@ -200,10 +200,13 @@ int main(int argc, char** argv) {
     require(snow_shot::update::normalStartupArguments(original) ==
                 QStringList{QStringLiteral("snow-shot"), QStringLiteral("--autostart")},
             "strip updater guard before ordinary launch processing");
-    require(snow_shot::update::startupUpdateRelaunchArguments(
-                {QStringLiteral("--autostart"), QStringLiteral("--skip-startup-update")}) ==
+    require(snow_shot::update::startupUpdateRelaunchArguments() ==
                 QStringList{QStringLiteral("--autostart"), QStringLiteral("--skip-startup-update")},
-            "updater relaunch guard remains one-shot");
+            "automatic updates relaunch in the tray and skip the startup gate once");
+    require(snow_shot::update::startupUpdateRelaunchArguments(true) ==
+                QStringList{QStringLiteral("--show-main-window"),
+                            QStringLiteral("--skip-startup-update")},
+            "a new foreground request opens the replacement and skips the startup gate once");
     const auto defaults = snow_shot::update::defaultUpdateServiceOptions();
     require(defaults.root == QFileInfo(defaults.applicationDirectory).dir().absolutePath() &&
                 QFileInfo(defaults.cacheDirectory).fileName().size() == 24,
@@ -241,12 +244,27 @@ int main(int argc, char** argv) {
                 ++flushes;
                 return true;
             },
-            [] { return QStringList{}; },
-            scenario == u"timeout" ? std::chrono::milliseconds(100) : std::chrono::seconds(5));
+            {}, scenario == u"timeout" ? std::chrono::milliseconds(100) : std::chrono::seconds(5));
         require(result == StartupUpdateResult::ContinueStartup,
                 "cache no-op, rejected handoff, malformed response, and timeout continue startup");
         require(flushes == (scenario == u"commit-failed" ? 1 : 0),
                 "only a prepared handoff flushes application storage");
+    }
+
+    for (const bool foregroundRequested : {false, true}) {
+        auto value = options(QStringLiteral("ready"));
+        const QString cache = value.cacheDirectory;
+        UpdateService service(std::move(value));
+        service.setMode(QStringLiteral("next_launch"));
+        const auto result = snow_shot::update::runStartupUpdate(
+            service, [] { return true; }, [&] { return foregroundRequested; });
+        require(result == StartupUpdateResult::ExitForUpdate,
+                "automatic update commits the requested launch behavior");
+        require(handoff(cache).value(QStringLiteral("relaunchArguments")).toArray() ==
+                    QJsonArray{foregroundRequested ? QStringLiteral("--show-main-window")
+                                                   : QStringLiteral("--autostart"),
+                               QStringLiteral("--skip-startup-update")},
+                "automatic update stays in the tray unless a new foreground request arrives");
     }
 
     for (const bool flushSucceeds : {false, true}) {
@@ -255,13 +273,10 @@ int main(int argc, char** argv) {
         UpdateService service(std::move(value));
         service.setMode(QStringLiteral("next_launch"));
         int flushes = 0;
-        const auto result = snow_shot::update::runStartupUpdate(
-            service,
-            [&] {
-                ++flushes;
-                return flushSucceeds;
-            },
-            [] { return QStringList{QStringLiteral("--autostart")}; });
+        const auto result = snow_shot::update::runStartupUpdate(service, [&] {
+            ++flushes;
+            return flushSucceeds;
+        });
         require(flushes == 1, "startup handoff flushes exactly once");
         require(result == (flushSucceeds ? StartupUpdateResult::ExitForUpdate
                                          : StartupUpdateResult::ContinueStartup),
@@ -301,11 +316,7 @@ int main(int argc, char** argv) {
             &primary, &snow_shot::app::SingleInstanceCoordinator::launchRequestReceived, &app,
             [&](const QStringList&) { foreground = true; });
         const auto result = snow_shot::update::runStartupUpdate(
-            service, [&] { return flushSucceeds; },
-            [&] {
-                return QStringList{foreground ? QStringLiteral("--show-main-window")
-                                              : QStringLiteral("--autostart")};
-            });
+            service, [&] { return flushSucceeds; }, [&] { return foreground; });
         QObject::disconnect(connection);
         require(secondaryStarted && foreground, "duplicate launch forwards during startup apply");
         require((secondary.state() == QProcess::NotRunning || secondary.waitForFinished(3000)) &&
@@ -357,8 +368,8 @@ int main(int argc, char** argv) {
             [&](const QStringList&) {
                 require(suspended && commits == 0, "forwarded launch arrives during commitment");
                 foreground = true;
-                service.setRelaunchArguments({QStringLiteral("--show-main-window"),
-                                              QStringLiteral("--skip-startup-update")});
+                service.setRelaunchArguments(
+                    snow_shot::update::startupUpdateRelaunchArguments(foreground));
                 QFile marker(QDir(cache).filePath(QStringLiteral("forwarded")));
                 require(marker.open(QIODevice::WriteOnly),
                         "acknowledge late forwarding to fixture");
@@ -367,9 +378,7 @@ int main(int argc, char** argv) {
             require(foreground && suspended, "commit follows the accepted late relaunch intent");
             ++commits;
         });
-        const auto result = snow_shot::update::runStartupUpdate(
-            service, [] { return true; },
-            [] { return QStringList{QStringLiteral("--autostart")}; });
+        const auto result = snow_shot::update::runStartupUpdate(service, [] { return true; });
         QObject::disconnect(connection);
         require(
             foreground &&
