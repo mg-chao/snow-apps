@@ -1042,6 +1042,13 @@ if(APPLE)
         "-framework ApplicationServices"
         "-framework AVFoundation")
 endif()
+find_package(Qt6 REQUIRED COMPONENTS Concurrent)
+add_library(snow_shot_cloud_upload STATIC
+    include/snow_shot/presentation/screenshotclouduploadservice.h
+    src/presentation/services/screenshotclouduploadservice.cpp)
+target_include_directories(snow_shot_cloud_upload PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include")
+target_link_libraries(snow_shot_cloud_upload PUBLIC snow_shot_storage Qt6::Network Qt6::Concurrent)
+
 add_library(snow_shot_settings STATIC ${SNOW_SHOT_SETTINGS_SOURCES}
     include/snow_shot/presentation/permissionguidecontroller.h
     include/snow_shot/presentation/components/permissionguidewidget.h
@@ -1050,6 +1057,9 @@ add_library(snow_shot_settings STATIC ${SNOW_SHOT_SETTINGS_SOURCES}
 if(APPLE)
     target_sources(snow_shot_settings PRIVATE src/platform/macos/permissionguideplatform.mm)
 endif()
+target_sources(snow_shot_settings PRIVATE
+    include/snow_shot/presentation/components/clouduploadsettingswidget.h
+    src/presentation/components/clouduploadsettingswidget.cpp)
 target_link_libraries(snow_shot_settings PUBLIC snow_shot_permissions snow_shot_login_item)
 qt_add_resources(snow_shot_settings "snow_shot_about_assets"
     PREFIX "/snow_shot/about"
@@ -4570,6 +4580,10 @@ if(SNOW_SHOT_BUILD_TESTS)
         COMMAND snow-shot-pinned-window-tests --invalid-ocr-restore-only)
     add_test(NAME snow-shot-pinned-cached-ocr-provider-tests
         COMMAND snow-shot-pinned-window-tests --cached-ocr-provider-only)
+    add_test(NAME snow-shot-pinned-cloud-upload-tests COMMAND snow-shot-pinned-window-tests --cloud-upload-only -platform offscreen)
+    set_tests_properties(snow-shot-pinned-cloud-upload-tests PROPERTIES LABELS "unit" TIMEOUT 45
+        ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}"
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
     add_test(NAME snow-shot-pinned-toolbar-layout-tests
         COMMAND snow-shot-pinned-window-tests --pinned-toolbar-layout-only)
     set_tests_properties(snow-shot-pinned-toolbar-layout-tests PROPERTIES
@@ -4847,6 +4861,22 @@ if(SNOW_SHOT_BUILD_TESTS)
     get_target_property(_snow_mcp_test_sources snow-shot-export-artifact-tests SOURCES)
     list(REMOVE_ITEM _snow_mcp_test_sources tests/screenshot_export_artifact_tests.cpp
         tests/screenshot_export_row_performance_benchmark.cpp)
+    add_executable(snow-shot-cloud-upload-tests ${_snow_mcp_test_sources} tests/cloud_upload_tests.cpp)
+    target_include_directories(snow-shot-cloud-upload-tests PRIVATE include src/image)
+    target_link_libraries(snow-shot-cloud-upload-tests PRIVATE snow_shot_cloud_upload snow_shot_settings
+        snow_shot_diagnostics snow_shot_image_codec snow_shot_storage snow_draw_engine_qt_canvas ant_design_qt Qt6::Widgets)
+    if(WIN32)
+        target_link_libraries(snow-shot-cloud-upload-tests PRIVATE user32)
+    endif()
+    snow_shot_add_translations(snow-shot-cloud-upload-tests)
+    snow_shot_import_offscreen_platform(snow-shot-cloud-upload-tests)
+    add_test(NAME snow-shot-cloud-upload-tests COMMAND snow-shot-cloud-upload-tests -platform offscreen)
+    add_test(NAME snow-shot-cloud-upload-settings-tests
+        COMMAND snow-shot-cloud-upload-tests --settings-only -platform offscreen)
+    set_tests_properties(snow-shot-cloud-upload-tests snow-shot-cloud-upload-settings-tests
+        PROPERTIES LABELS "unit" TIMEOUT 90
+        ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}"
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
     add_executable(snow-shot-mcp-tests ${_snow_mcp_test_sources}
         tests/screenshot_mcp_tests.cpp
         include/snow_shot/app/mcp/screenshotmcpserver.h
@@ -5021,6 +5051,11 @@ if(SNOW_SHOT_BUILD_TESTS)
             -platform offscreen)
     set_tests_properties(snow-shot-toolbar-popover-hover-switching-tests PROPERTIES LABELS "unit"
         TIMEOUT 30
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
+    add_test(NAME snow-shot-cloud-upload-toolbar-tests
+        COMMAND snow-shot-screenshot-tool-palette-tests --cloud-upload-only -platform offscreen)
+    set_tests_properties(snow-shot-cloud-upload-toolbar-tests PROPERTIES LABELS "unit" TIMEOUT 45
+        ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}"
         ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
     add_test(
         NAME snow-shot-screenshot-action-toolbar-layout-tests
@@ -7295,6 +7330,11 @@ if(SNOW_SHOT_BUILD_TESTS)
     add_executable(snow-shot-scrolling-image-replay-tests tests/scrolling_image_replay_tests.cpp)
     snow_shot_configure_scrolling_replay_target(snow-shot-scrolling-image-replay-tests)
     add_test(NAME snow-shot-scrolling-image-replay-tests COMMAND snow-shot-scrolling-image-replay-tests)
+    add_test(NAME snow-shot-scrolling-snapshot-lifetime-tests
+        COMMAND snow-shot-scrolling-image-replay-tests --snapshot-teardown-only)
+    set_tests_properties(snow-shot-scrolling-snapshot-lifetime-tests PROPERTIES
+        LABELS "unit" ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}"
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
     add_test(NAME snow-shot-scrolling-thumbnail-drag-tests
         COMMAND snow-shot-scrolling-image-replay-tests --thumbnail-drag-only)
     add_test(NAME snow-shot-scrolling-hover-pipeline-tests
@@ -9585,6 +9625,18 @@ foreach(_right_selection_host IN ITEMS overlay pinned recording global)
 endforeach()
 
 include("${CMAKE_CURRENT_SOURCE_DIR}/../cmake/SnowShotReleaseOptimization.cmake")
+# Standalone test targets reuse the pinned/controller sources as well as the application.
+get_property(_snow_cloud_targets DIRECTORY PROPERTY BUILDSYSTEM_TARGETS)
+foreach(_snow_cloud_target IN LISTS _snow_cloud_targets)
+    get_target_property(_snow_cloud_sources ${_snow_cloud_target} SOURCES)
+    foreach(_snow_cloud_source IN LISTS _snow_cloud_sources)
+        if(_snow_cloud_source MATCHES "screenshot(pinnedwindow|controller)\\.cpp$")
+            target_link_libraries(${_snow_cloud_target} PRIVATE snow_shot_cloud_upload)
+            break()
+        endif()
+    endforeach()
+endforeach()
+
 include("${CMAKE_CURRENT_SOURCE_DIR}/../cmake/SnowShotMini.cmake")
 
 # Controllers and their focused fixtures compile the same sources independently.

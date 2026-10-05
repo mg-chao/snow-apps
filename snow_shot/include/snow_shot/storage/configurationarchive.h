@@ -14,10 +14,8 @@ struct ConfigurationArchiveReadResult {
     QMap<QString, QJsonValue> values;
     int schemaVersion = 0;
     QString error;
-#if SNOW_SHOT_ENABLE_API_CONFIGURATION
     QStringList redactedCredentialIds;
     void preserveOmittedCredentials(const QMap<QString, QJsonValue>& current);
-#endif
 
     [[nodiscard]] bool isValid() const {
         return error.isEmpty();

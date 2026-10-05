@@ -1,6 +1,7 @@
 #ifndef SNOW_SHOT_PRESENTATION_SCREENSHOTPINNEDWINDOW_H
 #define SNOW_SHOT_PRESENTATION_SCREENSHOTPINNEDWINDOW_H
 
+#include "snow_shot/presentation/screenshotclouduploadservice.h"
 #include "snow_shot/presentation/editionfeatures.h"
 
 #include "snow_draw_engine_qt/snow_canvas_runtime.h"
@@ -361,6 +362,8 @@ class ScreenshotPinnedWindow final : public QWidget {
     void cancelContentReplacement();
     void printContent();
     void saveAsFile();
+    void uploadToCloud();
+    void cancelCloudUpload();
     [[nodiscard]] std::shared_ptr<ScreenshotExportArtifact> fileSaveArtifact();
     [[nodiscard]] std::shared_ptr<ScreenshotExportArtifact>
     viewportArtifact(bool applyWindowOpacity = true);
@@ -505,6 +508,8 @@ class ScreenshotPinnedWindow final : public QWidget {
     ScreenshotExportJobHandle m_fileSaveJob;
     std::shared_ptr<ScreenshotExportArtifact> m_quickSaveArtifact;
     bool m_quickSavePending = false;
+    QPointer<ScreenshotCloudUploadJob> m_cloudUploadJob;
+    bool m_cloudUploadPreparing = false;
     ScreenshotClipboardCommitHandle m_clipboardCommit;
     std::vector<MaterializationCallback> m_materializationCallbacks;
     PresentationCompletion m_presentationCompletion;

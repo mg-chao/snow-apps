@@ -882,12 +882,13 @@ bool ScreenshotExportArtifact::requestSaveToPath(QObject* receiver, QString path
                                                  ScreenshotImageFileFormat format,
                                                  ScreenshotImageEncodingOptions encoding,
                                                  ScreenshotExportCoordinator::Completion callback,
-                                                 ScreenshotPdfOptions pdf) {
+                                                 ScreenshotPdfOptions pdf,
+                                                 std::shared_ptr<void> keepAlive) {
     if (receiver == nullptr || !callback || isCancelled())
         return false;
     const QPointer<ScreenshotExportArtifact> guarded(this);
     const QPointer<QObject> target(receiver);
-    auto schedule = [guarded, target, path = std::move(path), format, encoding, pdf,
+    auto schedule = [guarded, target, path = std::move(path), format, encoding, pdf, keepAlive,
                      callback = std::move(callback)](snow_shot::storage::PreparedPngImage png,
                                                      ScreenshotImageRowSource rows,
                                                      QString error) mutable {
@@ -903,13 +904,14 @@ bool ScreenshotExportArtifact::requestSaveToPath(QObject* receiver, QString path
             std::make_shared<ScreenshotExportCoordinator::Completion>(std::move(callback));
         const ScreenshotExportJobHandle job = ScreenshotExportCoordinator::shared().submit(
             target, ScreenshotExportCoordinator::Priority::Foreground,
-            [path, format, encoding, pdf, png = std::move(png),
+            [path, format, encoding, pdf, keepAlive, png = std::move(png),
              rows = std::move(rows)](const ScreenshotExportCancellation& cancellation) mutable {
                 if (cancellation.isCancellationRequested()) {
                     return ScreenshotExportTaskResult::failure(
                         ScreenshotExportFailureStage::Cancelled,
                         QStringLiteral("The screenshot save was cancelled"));
                 }
+                Q_UNUSED(keepAlive);
                 ScreenshotImageFileSaveResult saved;
                 if (png.isValid()) {
                     saved = ScreenshotImageFileService::write(png, path, [&cancellation] {

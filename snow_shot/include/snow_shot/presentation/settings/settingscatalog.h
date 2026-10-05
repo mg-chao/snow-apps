@@ -358,6 +358,7 @@ struct SettingsActionDefinition {
 };
 
 enum class SettingsCustomRenderer {
+    CloudUploadConfigurations,
     McpStatus,
     PermissionScreenRecording,
     PermissionAccessibility,

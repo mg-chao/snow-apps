@@ -11,13 +11,16 @@
 #include <utility>
 
 namespace {
-enum class MessageKind { Warning, Error, Loading };
+enum class MessageKind { Success, Warning, Error, Loading };
 
 void showMessage(MessageKind kind, adqt::widgets::AdMessage::Request request, QWidget* owner) {
     if (owner == nullptr) {
         return;
     }
     switch (kind) {
+    case MessageKind::Success:
+        adqt::widgets::AdMessageService::success(std::move(request), owner);
+        return;
     case MessageKind::Warning:
         adqt::widgets::AdMessageService::warning(std::move(request), owner);
         return;
@@ -37,6 +40,17 @@ ScreenshotMessageService::ScreenshotMessageService(ScreenshotDisplaySession& dis
                                                    std::function<QWidget*()> toolbarFallback)
     : m_displaySession(displaySession), m_geometry(geometry), m_selection(selection),
       m_toolbarFallback(std::move(toolbarFallback)) {}
+
+void ScreenshotMessageService::success(const QString& key, const QString& message) const {
+    if (message.isEmpty())
+        return;
+    adqt::widgets::AdMessage::Request request;
+    request.key = key;
+    request.content = message;
+    QWidget* owner = ownerFor({}, nullptr);
+    rememberOwner(key, owner);
+    showMessage(MessageKind::Success, std::move(request), owner);
+}
 
 void ScreenshotMessageService::warning(const QString& key, const QString& message,
                                        const QRectF& canvasRect, QWidget* preferredOwner) const {

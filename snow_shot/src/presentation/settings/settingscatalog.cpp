@@ -1208,6 +1208,13 @@ QVector<SettingsItemDefinition> screenshotOutputItems() {
                               "Set the generated filename used by automatic image file saves"),
             QStringLiteral("screenshot/auto_save_filename_format"),
             SettingsTextBinding::ScreenshotAutoFilenameFormat),
+        {QStringLiteral("screenshot-output.cloud-upload"),
+         settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Cloud Upload")),
+         settingsText(
+             QT_TRANSLATE_NOOP("SettingsCatalog", "Configure S3-compatible upload destinations")),
+         {},
+         QStringLiteral("cloud_upload/configuration"),
+         SettingsCustomDefinition{SettingsCustomRenderer::CloudUploadConfigurations}},
     };
 }
 
@@ -2027,6 +2034,9 @@ QVector<SettingsItemDefinition> screenshotShortcutItems() {
         localShortcutItem(SettingsLocalShortcutScope::Screenshot, QStringLiteral("print"),
                           QT_TRANSLATE_NOOP("SettingsCatalog", "Print"),
                           []() { return outlined_icons::Printer(); }),
+        localShortcutItem(SettingsLocalShortcutScope::Screenshot, QStringLiteral("upload_to_cloud"),
+                          QT_TRANSLATE_NOOP("SettingsCatalog", "Upload to Cloud"),
+                          []() { return adqt::icons::antd::outlined::CloudUpload(); }),
         localShortcutItem(SettingsLocalShortcutScope::Screenshot, QStringLiteral("save_as_file"),
                           QT_TRANSLATE_NOOP("SettingsCatalog", "Save as file"),
                           []() { return custom_outlined_icons::Save(); }),
@@ -2148,6 +2158,10 @@ QVector<SettingsItemDefinition> pinToScreenShortcutItems() {
         localShortcutItem(SettingsLocalShortcutScope::PinToScreen, QStringLiteral("print"),
                           QT_TRANSLATE_NOOP("SettingsCatalog", "Print"),
                           []() { return outlined_icons::Printer(); }),
+        localShortcutItem(SettingsLocalShortcutScope::PinToScreen,
+                          QStringLiteral("upload_to_cloud"),
+                          QT_TRANSLATE_NOOP("SettingsCatalog", "Upload to Cloud"),
+                          []() { return adqt::icons::antd::outlined::CloudUpload(); }),
         localShortcutItem(SettingsLocalShortcutScope::PinToScreen, QStringLiteral("save_as_file"),
                           QT_TRANSLATE_NOOP("SettingsCatalog", "Save as file"),
                           []() { return custom_outlined_icons::Save(); }),
@@ -4897,6 +4911,10 @@ QStringList SettingsCatalog::validationErrors() const {
                     storage::ConfigurationValueKind expectedKind =
                         storage::ConfigurationValueKind::Structured;
                     switch (custom->renderer) {
+                    case SettingsCustomRenderer::CloudUploadConfigurations:
+                        rendererSupported = true;
+                        expectedKey = QStringLiteral("cloud_upload/configuration");
+                        break;
                     case SettingsCustomRenderer::TextTranslationConfigurations:
                         rendererSupported = true;
                         expectedKey = QStringLiteral("api_configuration/text_translation");

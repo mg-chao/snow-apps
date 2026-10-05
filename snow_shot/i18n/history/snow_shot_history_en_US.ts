@@ -579,6 +579,10 @@
             <translation>Opacity: %1%</translation>
         </message>
         <message>
+            <source>Preparing cloud upload...</source>
+            <translation>Preparing cloud upload...</translation>
+        </message>
+        <message>
             <source>Process image</source>
             <translation>Process image</translation>
         </message>
@@ -653,6 +657,14 @@
         <message>
             <source>Thumbnail mode</source>
             <translation>Thumbnail mode</translation>
+        </message>
+        <message>
+            <source>Uploaded to cloud. Link copied to clipboard.</source>
+            <translation>Uploaded to cloud. Link copied to clipboard.</translation>
+        </message>
+        <message>
+            <source>Uploading to cloud... %1%</source>
+            <translation>Uploading to cloud... %1%</translation>
         </message>
         <message>
             <source>Window Management</source>

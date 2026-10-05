@@ -74,6 +74,10 @@
             <translation>沒有可複製的辨識結果</translation>
         </message>
         <message>
+            <source>Preparing cloud upload...</source>
+            <translation>正在準備雲端上傳…</translation>
+        </message>
+        <message>
             <source>Save recognition text</source>
             <translation>儲存辨識文字</translation>
         </message>
@@ -168,6 +172,14 @@
         <message>
             <source>This screenshot cannot be pinned</source>
             <translation>此截圖無法固定到螢幕</translation>
+        </message>
+        <message>
+            <source>Uploaded to cloud. Link copied to clipboard.</source>
+            <translation>已上傳至雲端，連結已複製到剪貼簿。</translation>
+        </message>
+        <message>
+            <source>Uploading to cloud... %1%</source>
+            <translation>正在上傳至雲端… %1%</translation>
         </message>
         <message>
             <source>Your current screenshot will be discarded.</source>

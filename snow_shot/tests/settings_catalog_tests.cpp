@@ -470,9 +470,13 @@ void builtInCatalogIsCompleteAndValid() {
     require(itemIds.contains(QStringLiteral("screenshot-shortcut.print")) &&
                 itemIds.contains(QStringLiteral("pin-to-screen-shortcut.print")),
             "printing must expose a shared shortcut setting in both local scopes");
-    require(itemIds.size() == 237,
+    require(itemIds.contains(QStringLiteral("screenshot-output.cloud-upload")) &&
+                itemIds.contains(QStringLiteral("screenshot-shortcut.upload_to_cloud")) &&
+                itemIds.contains(QStringLiteral("pin-to-screen-shortcut.upload_to_cloud")),
+            "cloud upload must expose its configuration and shortcuts in both local scopes");
+    require(itemIds.size() == 240,
             qPrintable(QStringLiteral(
-                           "catalog must contain 237 shared settings on every platform; found %1")
+                           "catalog must contain 240 shared settings on every platform; found %1")
                            .arg(itemIds.size())));
     require(foundUpdates, "catalog must contain the update mode item");
     const auto* pinnedEditor =
@@ -1326,9 +1330,10 @@ void builtInCatalogIsCompleteAndValid() {
          "screenshot_shortcuts/scrolling_screenshot"},
         {20, "screenshot-shortcut.quick_save", "screenshot_shortcuts/quick_save"},
         {21, "screenshot-shortcut.print", "screenshot_shortcuts/print"},
-        {22, "screenshot-shortcut.save_as_file", "screenshot_shortcuts/save_as_file"},
-        {23, "screenshot-shortcut.cancel_screenshot", "screenshot_shortcuts/cancel_screenshot"},
-        {24, "screenshot-shortcut.copy_to_clipboard", "screenshot_shortcuts/copy_to_clipboard"},
+        {22, "screenshot-shortcut.upload_to_cloud", "screenshot_shortcuts/upload_to_cloud"},
+        {23, "screenshot-shortcut.save_as_file", "screenshot_shortcuts/save_as_file"},
+        {24, "screenshot-shortcut.cancel_screenshot", "screenshot_shortcuts/cancel_screenshot"},
+        {25, "screenshot-shortcut.copy_to_clipboard", "screenshot_shortcuts/copy_to_clipboard"},
     };
     bool newScreenshotShortcutContractsMatch = screenshotShortcuts != nullptr;
     for (const ScreenshotShortcutContract& contract : newScreenshotShortcutContracts) {
@@ -1342,7 +1347,7 @@ void builtInCatalogIsCompleteAndValid() {
     require(
         applicationShortcutsPage != nullptr && applicationShortcutsPage->sections.size() == 5 &&
             everyHotkeySectionUsesTwoColumns && screenshotShortcuts != nullptr &&
-            screenshotShortcuts->items.size() == 25 &&
+            screenshotShortcuts->items.size() == 26 &&
             screenshotShortcuts->itemLayout == settings::SettingsSectionItemLayout::TwoColumnGrid &&
             screenshotShortcuts->items.constFirst().id ==
                 QStringLiteral("screenshot-shortcut.move_tool") &&
@@ -1379,10 +1384,12 @@ void builtInCatalogIsCompleteAndValid() {
             screenshotShortcuts->items.at(20).title.translated() == QStringLiteral("Quick save") &&
             screenshotShortcuts->items.at(21).title.translated() == QStringLiteral("Print") &&
             screenshotShortcuts->items.at(22).title.translated() ==
-                QStringLiteral("Save as file") &&
+                QStringLiteral("Upload to Cloud") &&
             screenshotShortcuts->items.at(23).title.translated() ==
-                QStringLiteral("Cancel screenshot") &&
+                QStringLiteral("Save as file") &&
             screenshotShortcuts->items.at(24).title.translated() ==
+                QStringLiteral("Cancel screenshot") &&
+            screenshotShortcuts->items.at(25).title.translated() ==
                 QStringLiteral("Copy to clipboard") &&
             newScreenshotShortcutContractsMatch &&
             std::get<settings::SettingsLocalShortcutDefinition>(
@@ -1390,7 +1397,7 @@ void builtInCatalogIsCompleteAndValid() {
                     .scope == settings::SettingsLocalShortcutScope::Screenshot &&
             drawingShortcuts != nullptr && drawingShortcuts->items.size() == 14 &&
             drawingShortcuts->itemLayout == settings::SettingsSectionItemLayout::TwoColumnGrid &&
-            pinToScreenShortcuts != nullptr && pinToScreenShortcuts->items.size() == 28 &&
+            pinToScreenShortcuts != nullptr && pinToScreenShortcuts->items.size() == 29 &&
             pinToScreenShortcuts->itemLayout ==
                 settings::SettingsSectionItemLayout::TwoColumnGrid &&
             pinToScreenShortcuts->title.translated() == QStringLiteral("Pin to screen") &&
@@ -1400,58 +1407,64 @@ void builtInCatalogIsCompleteAndValid() {
             pinToScreenShortcuts->items.at(2).configurationKey ==
                 QStringLiteral("pin_to_screen_shortcuts/print") &&
             pinToScreenShortcuts->items.at(2).title.translated() == QStringLiteral("Print") &&
+            pinToScreenShortcuts->items.at(3).id ==
+                QStringLiteral("pin-to-screen-shortcut.upload_to_cloud") &&
             pinToScreenShortcuts->items.at(3).configurationKey ==
-                QStringLiteral("pin_to_screen_shortcuts/save_as_file") &&
+                QStringLiteral("pin_to_screen_shortcuts/upload_to_cloud") &&
+            pinToScreenShortcuts->items.at(3).title.translated() ==
+                QStringLiteral("Upload to Cloud") &&
             pinToScreenShortcuts->items.at(4).configurationKey ==
+                QStringLiteral("pin_to_screen_shortcuts/save_as_file") &&
+            pinToScreenShortcuts->items.at(5).configurationKey ==
                 QStringLiteral("pin_to_screen_shortcuts/show_text_recognition_results") &&
-            pinToScreenShortcuts->items.at(5).id ==
-                QStringLiteral("pin-to-screen-shortcut.drawing_mode") &&
             pinToScreenShortcuts->items.at(6).id ==
+                QStringLiteral("pin-to-screen-shortcut.drawing_mode") &&
+            pinToScreenShortcuts->items.at(7).id ==
                 QStringLiteral("pin-to-screen-shortcut.resize_window") &&
-            pinToScreenShortcuts->items.at(6).title.translated() ==
+            pinToScreenShortcuts->items.at(7).title.translated() ==
                 QStringLiteral("Resize window") &&
-            pinToScreenShortcuts->items.at(6).configurationKey ==
+            pinToScreenShortcuts->items.at(7).configurationKey ==
                 QStringLiteral("pin_to_screen_shortcuts/resize_window") &&
             std::get<settings::SettingsLocalShortcutDefinition>(
-                pinToScreenShortcuts->items.at(6).payload)
+                pinToScreenShortcuts->items.at(7).payload)
                 .iconFactory &&
             std::get<settings::SettingsLocalShortcutDefinition>(
-                pinToScreenShortcuts->items.at(6).payload)
+                pinToScreenShortcuts->items.at(7).payload)
                     .iconFactory() ==
                 snow_shot::presentation::icons::custom::outlined::ToolMove() &&
-            pinToScreenShortcuts->items.at(9).id ==
-                QStringLiteral("pin-to-screen-shortcut.toggle_click_through") &&
-            pinToScreenShortcuts->items.at(9).title.translated() ==
-                QStringLiteral("Click-through") &&
-            pinToScreenShortcuts->items.at(9).configurationKey ==
-                QStringLiteral("pin_to_screen_shortcuts/toggle_click_through") &&
             pinToScreenShortcuts->items.at(10).id ==
-                QStringLiteral("pin-to-screen-shortcut.toggle_lock") &&
-            pinToScreenShortcuts->items.at(10).title.translated() == QStringLiteral("Lock mode") &&
+                QStringLiteral("pin-to-screen-shortcut.toggle_click_through") &&
+            pinToScreenShortcuts->items.at(10).title.translated() ==
+                QStringLiteral("Click-through") &&
             pinToScreenShortcuts->items.at(10).configurationKey ==
-                QStringLiteral("pin_to_screen_shortcuts/toggle_lock") &&
+                QStringLiteral("pin_to_screen_shortcuts/toggle_click_through") &&
             pinToScreenShortcuts->items.at(11).id ==
-                QStringLiteral("pin-to-screen-shortcut.always_on_top") &&
-            pinToScreenShortcuts->items.at(11).title.translated() ==
-                QStringLiteral("Always on Top") &&
+                QStringLiteral("pin-to-screen-shortcut.toggle_lock") &&
+            pinToScreenShortcuts->items.at(11).title.translated() == QStringLiteral("Lock mode") &&
             pinToScreenShortcuts->items.at(11).configurationKey ==
-                QStringLiteral("pin_to_screen_shortcuts/always_on_top") &&
+                QStringLiteral("pin_to_screen_shortcuts/toggle_lock") &&
             pinToScreenShortcuts->items.at(12).id ==
-                QStringLiteral("pin-to-screen-shortcut.show_border") &&
+                QStringLiteral("pin-to-screen-shortcut.always_on_top") &&
             pinToScreenShortcuts->items.at(12).title.translated() ==
-                QStringLiteral("Show border") &&
+                QStringLiteral("Always on Top") &&
             pinToScreenShortcuts->items.at(12).configurationKey ==
+                QStringLiteral("pin_to_screen_shortcuts/always_on_top") &&
+            pinToScreenShortcuts->items.at(13).id ==
+                QStringLiteral("pin-to-screen-shortcut.show_border") &&
+            pinToScreenShortcuts->items.at(13).title.translated() ==
+                QStringLiteral("Show border") &&
+            pinToScreenShortcuts->items.at(13).configurationKey ==
                 QStringLiteral("pin_to_screen_shortcuts/show_border") &&
-            pinToScreenShortcuts->items.at(14).id ==
+            pinToScreenShortcuts->items.at(15).id ==
                 QStringLiteral("pin-to-screen-shortcut.destroy_window") &&
-            pinToScreenShortcuts->items.at(14).title.translated() == QStringLiteral("Destroy") &&
-            pinToScreenShortcuts->items.at(14).configurationKey ==
+            pinToScreenShortcuts->items.at(15).title.translated() == QStringLiteral("Destroy") &&
+            pinToScreenShortcuts->items.at(15).configurationKey ==
                 QStringLiteral("pin_to_screen_shortcuts/destroy_window") &&
             std::get<settings::SettingsLocalShortcutDefinition>(
-                pinToScreenShortcuts->items.at(9).payload)
+                pinToScreenShortcuts->items.at(10).payload)
                 .iconFactory &&
             std::get<settings::SettingsLocalShortcutDefinition>(
-                pinToScreenShortcuts->items.at(9).payload)
+                pinToScreenShortcuts->items.at(10).payload)
                     .iconFactory() == snow_shot::presentation::icons::custom::outlined::Mouse() &&
             std::get<settings::SettingsLocalShortcutDefinition>(
                 pinToScreenShortcuts->items.constFirst().payload)

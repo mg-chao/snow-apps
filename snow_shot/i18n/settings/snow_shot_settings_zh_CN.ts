@@ -132,6 +132,161 @@
         </message>
     </context>
     <context>
+        <name>CloudUploadSettingsWidget</name>
+        <message>
+            <source>%1 (Copy %2)</source>
+            <translation>%1（副本 %2）</translation>
+        </message>
+        <message>
+            <source>%1 (Copy)</source>
+            <translation>%1（副本）</translation>
+        </message>
+        <message>
+            <source>%1 configuration %2</source>
+            <translation>%1配置 %2</translation>
+        </message>
+        <message>
+            <source>A configuration with this name already exists.</source>
+            <translation>已存在同名配置。</translation>
+        </message>
+        <message>
+            <source>Access Key ID</source>
+            <translation>访问密钥 ID</translation>
+        </message>
+        <message>
+            <source>Add cloud upload configuration</source>
+            <translation>添加云上传配置</translation>
+        </message>
+        <message>
+            <source>Add configuration</source>
+            <translation>添加配置</translation>
+        </message>
+        <message>
+            <source>Addressing Style</source>
+            <translation>寻址方式</translation>
+        </message>
+        <message>
+            <source>Bucket</source>
+            <translation>存储桶</translation>
+        </message>
+        <message>
+            <source>Cancel</source>
+            <translation>取消</translation>
+        </message>
+        <message>
+            <source>Check the region, bucket, addressing style, and credentials. Fields must not contain line breaks.</source>
+            <translation>请检查区域、存储桶、寻址方式和凭据。字段不能包含换行符。</translation>
+        </message>
+        <message>
+            <source>Choose the configuration used for cloud uploads</source>
+            <translation>选择云上传时使用的配置</translation>
+        </message>
+        <message>
+            <source>Configuration Name</source>
+            <translation>配置名称</translation>
+        </message>
+        <message>
+            <source>Copy</source>
+            <translation>复制</translation>
+        </message>
+        <message>
+            <source>Default destination</source>
+            <translation>默认上传目标</translation>
+        </message>
+        <message>
+            <source>Delete</source>
+            <translation>删除</translation>
+        </message>
+        <message>
+            <source>Delete configuration</source>
+            <translation>删除配置</translation>
+        </message>
+        <message>
+            <source>Delete this cloud upload configuration?</source>
+            <translation>删除此云上传配置？</translation>
+        </message>
+        <message>
+            <source>Edit</source>
+            <translation>编辑</translation>
+        </message>
+        <message>
+            <source>Edit cloud upload configuration</source>
+            <translation>编辑云上传配置</translation>
+        </message>
+        <message>
+            <source>Enter a full HTTP or HTTPS URL without credentials, a query, or a fragment.</source>
+            <translation>请输入完整的 HTTP 或 HTTPS URL，不含凭据、查询参数或片段。</translation>
+        </message>
+        <message>
+            <source>No cloud upload configurations added</source>
+            <translation>尚未添加云上传配置</translation>
+        </message>
+        <message>
+            <source>None</source>
+            <translation>无</translation>
+        </message>
+        <message>
+            <source>Object Key Prefix</source>
+            <translation>对象键前缀</translation>
+        </message>
+        <message>
+            <source>Optional bucket-root URL. Link access follows your bucket or CDN policy.</source>
+            <translation>可选的存储桶根 URL。链接访问权限由存储桶或 CDN 策略决定。</translation>
+        </message>
+        <message>
+            <source>Path style</source>
+            <translation>路径式</translation>
+        </message>
+        <message>
+            <source>Protocol</source>
+            <translation>协议</translation>
+        </message>
+        <message>
+            <source>Public / CDN Base URL</source>
+            <translation>公共 / CDN 基础 URL</translation>
+        </message>
+        <message>
+            <source>S3</source>
+            <translation>S3</translation>
+        </message>
+        <message>
+            <source>Save</source>
+            <translation>保存</translation>
+        </message>
+        <message>
+            <source>Secret Access Key</source>
+            <translation>秘密访问密钥</translation>
+        </message>
+        <message>
+            <source>Service Endpoint</source>
+            <translation>服务端点</translation>
+        </message>
+        <message>
+            <source>Session Token</source>
+            <translation>会话令牌</translation>
+        </message>
+        <message>
+            <source>Signing Region</source>
+            <translation>签名区域</translation>
+        </message>
+        <message>
+            <source>This field is required.</source>
+            <translation>此字段为必填项。</translation>
+        </message>
+        <message>
+            <source>Unable to save configurations. Check that configuration storage is writable and try again.</source>
+            <translation>无法保存配置。请检查配置存储是否可写，然后重试。</translation>
+        </message>
+        <message>
+            <source>Upload Configurations</source>
+            <translation>上传配置</translation>
+        </message>
+        <message>
+            <source>Virtual hosted</source>
+            <translation>虚拟主机式</translation>
+        </message>
+    </context>
+    <context>
         <name>CustomAiModelsSettingsWidget</name>
         <message>
             <source>%1 (Copy %2)</source>
@@ -775,6 +930,10 @@
         <message>
             <source>Text translation</source>
             <translation>文本翻译</translation>
+        </message>
+        <message>
+            <source>Upload to Cloud</source>
+            <translation>上传到云端</translation>
         </message>
     </context>
     <context>
@@ -1483,6 +1642,10 @@
             <translation>已关闭窗口数量</translation>
         </message>
         <message>
+            <source>Cloud Upload</source>
+            <translation>云上传</translation>
+        </message>
+        <message>
             <source>Color mode</source>
             <translation>颜色模式</translation>
         </message>
@@ -1505,6 +1668,10 @@
         <message>
             <source>Configuration imported.</source>
             <translation>配置已导入。</translation>
+        </message>
+        <message>
+            <source>Configure S3-compatible upload destinations</source>
+            <translation>配置兼容 S3 的上传目标</translation>
         </message>
         <message>
             <source>Configure annotation tools and the screenshot annotation toolbar</source>
@@ -3801,6 +3968,10 @@
         <message>
             <source>Updates</source>
             <translation>更新</translation>
+        </message>
+        <message>
+            <source>Upload to Cloud</source>
+            <translation>上传到云端</translation>
         </message>
         <message>
             <source>Use DirectML for GPU-accelerated text recognition when available</source>

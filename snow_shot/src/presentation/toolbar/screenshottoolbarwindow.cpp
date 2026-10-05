@@ -303,6 +303,8 @@ void ScreenshotToolbarWindow::connectActionCommands(ScreenshotToolPalette& toolP
             [this]() { m_commands.quickSaveSelection(); });
     connect(&toolPalette, &ScreenshotToolPalette::printRequested, this,
             [this]() { m_commands.printSelection(); });
+    connect(&toolPalette, &ScreenshotToolPalette::cloudUploadRequested, this,
+            [this] { m_commands.uploadSelectionToCloud(); });
     connect(&toolPalette, &ScreenshotToolPalette::saveRequested, this,
             [this]() { m_commands.saveSelectionToFile(); });
     connect(&toolPalette, &ScreenshotToolPalette::cancelRequested, this,

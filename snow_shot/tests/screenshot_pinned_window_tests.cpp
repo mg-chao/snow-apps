@@ -1,3 +1,4 @@
+#include "cloud_upload_test_support.h"
 #include "../../test-support/canvas_quick_selection_test_support.h"
 #include "snow_shot/presentation/screenshotcanvastoolstyles.h"
 #include "eraser_toolbar_test_support.h"
@@ -82,6 +83,7 @@
 #include <QAbstractButton>
 #include <QActionGroup>
 #include <QApplication>
+#include <QLayout>
 #include <QBackingStore>
 #include <QClipboard>
 #include <QColorSpace>
@@ -2270,7 +2272,11 @@ void pinnedToolbarLayoutReloadsAndResetsIndependently() {
     const auto positions = [&]() {
         QVector<QStringList> result;
         auto* panel = controller.toolbarWindow()->palette()->mainPanel();
-        for (auto* button : panel->findChildren<adqt::widgets::AdButton*>()) {
+        for (int i = 0; i < panel->layout()->count(); ++i) {
+            auto* button =
+                qobject_cast<adqt::widgets::AdButton*>(panel->layout()->itemAt(i)->widget());
+            if (!button)
+                continue;
             const auto ids = button->property("screenshotToolbarPositionItems").toStringList();
             if (!button->isHidden() && !ids.isEmpty() &&
                 layout::defaultOrder(kind).contains(ids.first()))
@@ -2281,26 +2287,31 @@ void pinnedToolbarLayoutReloadsAndResetsIndependently() {
     controller.setEditMode(true);
     require(positions().isEmpty(), "lazy pinned toolbar must load the saved hidden layout");
     const storage::ScreenshotToolbarLayout custom{
-        {{QStringLiteral("copy"), QStringLiteral("save-as-file"), QStringLiteral("quick-save")},
+        {{QStringLiteral("upload-to-cloud"), QStringLiteral("copy"), QStringLiteral("save-as-file"),
+          QStringLiteral("quick-save")},
          {QStringLiteral("text-translation"), QStringLiteral("table-recognition")}},
         {QStringLiteral("text-recognition"), QStringLiteral("barcode-recognition"),
          QStringLiteral("convert-to-markdown"), QStringLiteral("convert-to-html"),
-         QStringLiteral("latex-recognition"), QStringLiteral("separator")}};
+         QStringLiteral("latex-recognition"), QStringLiteral("print"),
+         QStringLiteral("separator")}};
     require(toolbarSettings.setLayout(kind, custom), "must save the custom pinned layout");
     QCoreApplication::processEvents();
-    require(positions() == custom.positions,
+    require(positions() == layout::normalizedLayout(custom, kind).positions,
             "existing pinned toolbar must reload its custom layout");
     require(toolbarSettings.setLayout(storage::ScreenshotToolbarLayoutKind::ActionTools, {}),
             "must update screenshot settings independently");
-    require(positions() == custom.positions, "screenshot settings must not change pinned groups");
+    require(positions() == layout::normalizedLayout(custom, kind).positions,
+            "screenshot settings must not change pinned groups");
     controller.setEditMode(false);
     controller.setEditMode(true);
-    require(positions() == custom.positions,
+    require(positions() == layout::normalizedLayout(custom, kind).positions,
             "recreated pinned toolbar must reload the persisted layout");
     require(toolbarSettings.setLayout(kind, {}) &&
                 toolbarSettings.layout(kind) == layout::normalizedLayout({}, kind),
             "pinned toolbar defaults must be restorable");
-    require(positions().size() == 5, "restoring defaults must refresh an existing pinned toolbar");
+    auto defaults = layout::defaultPositions(kind);
+    defaults.removeAll(QStringList{QStringLiteral("separator")});
+    require(positions() == defaults, "restoring defaults must refresh an existing pinned toolbar");
     controller.setEditMode(false);
 }
 
@@ -16308,6 +16319,134 @@ void recognitionPrintPreservesScrollAndExcludesSelection() {
 }
 } // namespace
 
+void pinnedCloudUploadHiddenToolbar() {
+    cloud_upload_tests::S3Server server;
+    server.hold = true;
+    const snow_shot::storage::CloudUploadConfigurationSettings cloudSettings;
+    const auto previous = cloudSettings.settings();
+    const auto restore =
+        qScopeGuard([&] { static_cast<void>(cloudSettings.setSettings(previous)); });
+    auto profile = cloud_upload_tests::configuration(server.url());
+    profile.publicBaseUrl = QStringLiteral("https://cdn.test/");
+    require(cloudSettings.setSettings({{profile}, profile.id}), "configure pinned cloud upload");
+    const snow_shot::storage::ScreenshotSettings exportSettings;
+    const auto previousFormat = exportSettings.imageFormat();
+    const auto restoreFormat =
+        qScopeGuard([&] { static_cast<void>(exportSettings.setImageFormat(previousFormat)); });
+    require(exportSettings.setImageFormat(QStringLiteral("png")), "upload pin as PNG");
+    ScreenshotPinnedWindow window;
+    auto config = cachedOcrPinConfig(nullptr);
+    config.recognitionResults = {};
+    ScreenshotPinnedWindowTestAccess::prepareReplacement(window, config);
+    window.show();
+    window.activateWindow();
+    window.setFocus();
+    waitForUi(30);
+    require(window.findChild<ScreenshotToolPalette*>() == nullptr,
+            "upload shortcut needs no materialized toolbar");
+    require(!ScreenshotPinnedWindowTestAccess::applyAnnotationTransaction(
+                 window,
+                 R"({"version":1,"operations":[{"type":"rectangle","bounds":[660,380,50,60]}]})")
+                 .isEmpty(),
+            "annotate pinned upload source");
+    QImage expected;
+    const auto artifact = ScreenshotPinnedWindowTestAccess::fileSave(window);
+    require(artifact->requestImage(
+                &window, [&](ScreenshotExportImageResult result) { expected = result.image; }),
+            "prepare annotated file-export reference");
+    translation_tests::waitUntil([&] { return !expected.isNull(); },
+                                 "render annotated pinned export");
+    require(expected.pixelColor(20, 20) != QColor(42, 84, 126),
+            "pinned upload fixture includes visible annotations");
+    QApplication::clipboard()->setText(QStringLiteral("before-upload"));
+    sendShortcut(window, Qt::Key_U, Qt::ControlModifier);
+    translation_tests::waitUntil([&] { return server.count == 1; },
+                                 "Ctrl+U uploads from pin with hidden toolbar");
+    sendShortcut(window, Qt::Key_U, Qt::ControlModifier);
+    waitForUi(30);
+    require(server.count == 1, "repeated upload shortcut does not create another pending request");
+    const auto actual = QImage::fromData(server.body).convertToFormat(QImage::Format_RGBA8888);
+    expected = expected.convertToFormat(QImage::Format_RGBA8888);
+    require(actual.size() == expected.size(), "uploaded annotated pin has file-export dimensions");
+    for (int y = 0; y < expected.height(); ++y)
+        require(std::memcmp(actual.constScanLine(y), expected.constScanLine(y),
+                            static_cast<size_t>(expected.width()) * 4) == 0,
+                "upload pin with committed annotations using file-export pixels");
+    // Complete the server-held request and verify clipboard and source lifetime.
+    for (auto* socket : server.server.findChildren<QTcpSocket*>()) {
+        socket->write("HTTP/1.1 200 OK\r\nContent-Length: 0\r\nConnection: close\r\n\r\n");
+        socket->disconnectFromHost();
+    }
+    translation_tests::waitUntil(
+        [&] {
+            return QApplication::clipboard()->text().startsWith(
+                QStringLiteral("https://cdn.test/"));
+        },
+        "successful pin upload copies permanent link");
+    require(window.isVisible(), "cloud upload keeps pinned window open");
+    require(cloudSettings.setSettings({}), "clear cloud destination");
+    sendShortcut(window, Qt::Key_U, Qt::ControlModifier);
+    waitForUi(30);
+    require(server.count == 1, "unconfigured upload shortcut performs no request");
+    require(cloudSettings.setSettings({{profile}, profile.id}),
+            "restore upload destination for cancellation");
+    QApplication::clipboard()->setText(QStringLiteral("cancelled-upload"));
+    sendShortcut(window, Qt::Key_U, Qt::ControlModifier);
+    translation_tests::waitUntil([&] { return server.count == 2; },
+                                 "start upload before replacing pin");
+    auto* pending = window.findChild<ScreenshotCloudUploadJob*>();
+    require(pending, "pin owns pending upload");
+    const auto path = pending->preparedPath();
+    ScreenshotClipboardContent replacement;
+    replacement.image = expected;
+    require(ScreenshotPinnedWindowTestAccess::replace(window, std::move(replacement)),
+            "replace pinned content during upload");
+    translation_tests::waitUntil([&] { return !QFileInfo::exists(path); },
+                                 "replacement cancels and cleans upload");
+    require(QApplication::clipboard()->text() == QStringLiteral("cancelled-upload"),
+            "replacement suppresses stale clipboard publication");
+    sendShortcut(window, Qt::Key_U, Qt::ControlModifier);
+    translation_tests::waitUntil([&] { return server.count == 3; },
+                                 "start upload before closing pin");
+    pending = window.findChild<ScreenshotCloudUploadJob*>();
+    require(pending, "closing pin has pending upload");
+    const auto closingPath = pending->preparedPath();
+    window.close();
+    translation_tests::waitUntil([&] { return !QFileInfo::exists(closingPath); },
+                                 "closing source cleans upload");
+    require(QApplication::clipboard()->text() == QStringLiteral("cancelled-upload"),
+            "closed source cannot copy stale link");
+
+    // Clipboard observers can synchronously destroy the source during success publication.
+    auto clipboardClosingWindow = std::make_unique<ScreenshotPinnedWindow>();
+    ScreenshotPinnedWindowTestAccess::prepareReplacement(*clipboardClosingWindow, config);
+    clipboardClosingWindow->show();
+    clipboardClosingWindow->activateWindow();
+    clipboardClosingWindow->setFocus();
+    waitForUi(30);
+    sendShortcut(*clipboardClosingWindow, Qt::Key_U, Qt::ControlModifier);
+    translation_tests::waitUntil([&] { return server.count == 4; },
+                                 "prepare clipboard-close upload before server response");
+    auto* finalJob = clipboardClosingWindow->findChild<ScreenshotCloudUploadJob*>();
+    require(finalJob, "clipboard-close fixture starts upload");
+    const auto finalPath = finalJob->preparedPath();
+    const auto clipboardConnection =
+        QObject::connect(QApplication::clipboard(), &QClipboard::dataChanged,
+                         QApplication::instance(), [&] { clipboardClosingWindow.reset(); });
+    const auto disconnectClipboard = qScopeGuard([&] { QObject::disconnect(clipboardConnection); });
+    for (auto* socket : server.server.findChildren<QTcpSocket*>()) {
+        if (socket->state() != QAbstractSocket::ConnectedState)
+            continue;
+        socket->write("HTTP/1.1 200 OK\r\nContent-Length: 0\r\nConnection: close\r\n\r\n");
+        socket->disconnectFromHost();
+    }
+    translation_tests::waitUntil([&] { return !clipboardClosingWindow; },
+                                 "clipboard observer may destroy source after successful upload");
+    require(!finalPath.isEmpty(), "clipboard-close upload retains its prepared image");
+    translation_tests::waitUntil([&] { return !QFileInfo::exists(finalPath); },
+                                 "clipboard observer destruction cleans uploaded file");
+}
+
 int main(int argc, char* argv[]) {
 
     PinnedWindowTestApplication app(argc, argv);
@@ -16324,6 +16463,10 @@ int main(int argc, char* argv[]) {
         // without this, lazily initialized storage lands in the developer's
         // real AppData (see IsolatedPinnedStorage).
         IsolatedPinnedStorage processStorage;
+        if (app.arguments().contains(QStringLiteral("--cloud-upload-only"))) {
+            pinnedCloudUploadHiddenToolbar();
+            return 0;
+        }
         if (app.arguments().contains(QStringLiteral("--print-only"))) {
             const int font = QFontDatabase::addApplicationFont(
                 QStringLiteral(":/recording-test-fonts/SnowRecordingTestSans-Regular.ttf"));

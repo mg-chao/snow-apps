@@ -2,6 +2,7 @@
 #define SNOW_SHOT_STORAGE_SETTINGSADAPTERS_H
 
 #include "snow_shot/app/edition.h"
+#include "snow_shot/clouduploadconfiguration.h"
 #if SNOW_SHOT_ENABLE_API_CONFIGURATION
 #include "snow_shot/customaimodelconfiguration.h"
 #include "snow_shot/texttranslationconfiguration.h"
@@ -22,6 +23,11 @@
 #include <optional>
 
 namespace snow_shot::storage {
+class CloudUploadConfigurationSettings final {
+  public:
+    [[nodiscard]] CloudUploadSettings settings() const;
+    bool setSettings(const CloudUploadSettings& values) const;
+};
 #if SNOW_SHOT_ENABLE_EXTENDED_FEATURES
 class ExtendedFeaturesSettings final {
   public:

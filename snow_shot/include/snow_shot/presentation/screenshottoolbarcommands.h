@@ -105,6 +105,7 @@ class ScreenshotToolbarCommandSink {
     virtual void printSelection() {}
     virtual void saveSelectionToFile() {}
     virtual void quickSaveSelection() {}
+    virtual void uploadSelectionToCloud() {}
     virtual void cancelCapture() = 0;
     virtual void copySelectionToClipboard() = 0;
     virtual void startScreenRecording() = 0;

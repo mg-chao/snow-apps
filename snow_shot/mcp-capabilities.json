@@ -181,7 +181,9 @@
         "ScreenshotToolbarEditor",
         "PinnedToolbarEditor",
         "TrayMenuOptions",
-        "TextTranslationConfigurations"
+        "TextTranslationConfigurations",
+        "FloatingToolbarEditor",
+        "CloudUploadConfigurations"
       ]
     },
     "canvas_style_sources": {
@@ -212,7 +214,9 @@
         "DefaultPenFilter",
         "SelectedPenFilter",
         "DefaultSpotlight",
-        "SelectedSpotlight"
+        "SelectedSpotlight",
+        "DefaultRectangleEraser",
+        "DefaultBrushEraser"
       ]
     },
     "canvas_tools": {
@@ -234,7 +238,9 @@
         "PenHighlight": "PenHighlight",
         "PenFilter": "PenFilter",
         "Spotlight": "Spotlight",
-        "AutoFilter": "AutoFilter"
+        "AutoFilter": "AutoFilter",
+        "RectangleEraser": "RectangleEraser",
+        "BrushEraser": "BrushEraser"
       }
     },
     "recording_options": {

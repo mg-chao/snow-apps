@@ -1,4 +1,5 @@
 #include "physical_key_test_support.h"
+#include "cloud_upload_test_support.h"
 #include "snow_shot/presentation/screenshotregiontypecontrol.h"
 #include "snow_shot/presentation/screenshottoolpalette.h"
 #include "snow_shot/ocrtextoptions.h"
@@ -2295,11 +2296,18 @@ QList<adqt::widgets::AdButton*> mainDrawingToolbarButtons(ScreenshotToolPalette&
 
 QList<adqt::widgets::AdButton*> mainActionToolbarButtons(ScreenshotToolPalette& palette) {
     const QStringList actionIds{
-        QStringLiteral("barcode-recognition"),  QStringLiteral("table-recognition"),
-        QStringLiteral("record-screen"),        QStringLiteral("pin-to-screen"),
-        QStringLiteral("text-recognition"),     QStringLiteral("text-translation"),
-        QStringLiteral("scrolling-screenshot"), QStringLiteral("quick-save"),
-        QStringLiteral("save-as-file"),         QStringLiteral("copy"),
+        QStringLiteral("barcode-recognition"),
+        QStringLiteral("table-recognition"),
+        QStringLiteral("record-screen"),
+        QStringLiteral("pin-to-screen"),
+        QStringLiteral("text-recognition"),
+        QStringLiteral("text-translation"),
+        QStringLiteral("scrolling-screenshot"),
+        QStringLiteral("quick-save"),
+        QStringLiteral("save-as-file"),
+        QStringLiteral("copy"),
+        QStringLiteral("print"),
+        QStringLiteral("upload-to-cloud"),
     };
     QList<adqt::widgets::AdButton*> buttons;
     for (adqt::widgets::AdButton* button : mainToolbarButtons(palette)) {
@@ -4359,7 +4367,8 @@ void pinnedActionLayoutUsesGenericStacks() {
                                       {translation}},
                                      {}};
     expected.positions.append({QStringLiteral("separator")});
-    expected.positions.append({QStringLiteral("quick-save"), QStringLiteral("save-as-file")});
+    expected.positions.append({QStringLiteral("upload-to-cloud"), QStringLiteral("print"),
+                               QStringLiteral("quick-save"), QStringLiteral("save-as-file")});
     expected.positions.append({QStringLiteral("copy")});
     const auto buttonPositions = [](ScreenshotToolbarLayout value) {
         value.positions.removeAll(QStringList{QStringLiteral("separator")});
@@ -4520,11 +4529,82 @@ void pinnedActionLayoutUsesGenericStacks() {
             "Copy shortcut must remain available after rearranging exports");
 }
 
+void cloudUploadToolbarContracts() {
+    const snow_shot::storage::CloudUploadConfigurationSettings storage;
+    const auto previous = storage.settings();
+    const auto restore = qScopeGuard([&] { static_cast<void>(storage.setSettings(previous)); });
+    for (const bool pinned : {false, true}) {
+        require(storage.setSettings({}), "empty cloud toolbar configuration");
+        ScreenshotToolPalette::Options options;
+        options.showSaveButton = true;
+        options.saveButtonWithResultActions = pinned;
+        options.actionToolsLayoutKind =
+            pinned ? snow_shot::storage::ScreenshotToolbarLayoutKind::PinnedActionTools
+                   : snow_shot::storage::ScreenshotToolbarLayoutKind::ActionTools;
+        ScreenshotToolPalette palette(options);
+        palette.show();
+        QCoreApplication::processEvents();
+        adqt::widgets::AdButton* trigger = nullptr;
+        for (auto* button : mainToolbarButtons(palette))
+            if (button->property("screenshotToolbarPositionItems")
+                    .toStringList()
+                    .contains(QStringLiteral("upload-to-cloud")))
+                trigger = button;
+        require(trigger && trigger->accessibleName() == QStringLiteral("Save as file"),
+                "cloud tool retains initial Save primary action");
+        materializeLazyPopover(trigger);
+        auto* popover = popoverForTrigger(trigger);
+        auto* option = popoverButtonWithTooltip(popover, "Upload to Cloud");
+        const auto* optionLayout = popover->contentWidget()->layout();
+        require(option && !option->isEnabled() &&
+                    optionLayout->indexOf(option) == optionLayout->count() - 1,
+                "cloud upload is last save-group option and disabled without credentials");
+        int requests = 0;
+        QObject::connect(&palette, &ScreenshotToolPalette::cloudUploadRequested,
+                         [&] { ++requests; });
+        require(!palette.activateScreenshotShortcut(QStringLiteral("upload_to_cloud")),
+                "unconfigured toolbar upload shortcut is disabled");
+        const auto profile = cloud_upload_tests::configuration();
+        require(storage.setSettings({{profile}, profile.id}),
+                "configure toolbar cloud destination");
+        QCoreApplication::processEvents();
+        require(option->isEnabled(), "cloud settings enable both toolbar editions");
+        option->click();
+        require(requests == 1, "cloud popover dispatches upload request once");
+        palette.setCloudUploadBusy(true);
+        require(!palette.activateScreenshotShortcut(QStringLiteral("upload_to_cloud")),
+                "busy toolbar guards upload shortcut");
+        materializeLazyPopover(trigger);
+        option = popoverButtonWithTooltip(popover, "Upload to Cloud");
+        require(option && !option->isEnabled(), "busy toolbar disables cloud popover option");
+        palette.setCloudUploadBusy(false);
+        require(palette.activateScreenshotShortcut(QStringLiteral("upload_to_cloud")) &&
+                    requests == 2,
+                "cloud shortcut shares toolbar request");
+        materializeLazyPopover(trigger);
+        option = popoverButtonWithTooltip(popover, "Upload to Cloud");
+        auto& language = snow_shot::presentation::LanguageManager::instance();
+        require(language.setLanguage(QStringLiteral("zh_CN")), "translate cloud toolbar");
+        QCoreApplication::processEvents();
+        require(option->accessibleName() == QString::fromUtf8("上传到云端"),
+                "materialized cloud option retranslates");
+        require(language.setLanguage(QStringLiteral("en_US")), "restore toolbar language");
+        QCoreApplication::processEvents();
+        auto redacted = profile;
+        redacted.secretAccessKey.clear();
+        require(storage.setSettings({{redacted}, redacted.id}), "redacted toolbar destination");
+        QCoreApplication::processEvents();
+        require(!palette.activateScreenshotShortcut(QStringLiteral("upload_to_cloud")),
+                "redacted destination disables upload");
+    }
+}
+
 void quickSaveStacksAndLayoutMigration() {
     using namespace snow_shot::presentation::toolbar_layout;
     using snow_shot::storage::ScreenshotToolbarLayout;
     using snow_shot::storage::ScreenshotToolbarLayoutKind;
     const auto kind = ScreenshotToolbarLayoutKind::ActionTools;
+    const QString cloud = QStringLiteral("upload-to-cloud");
     const QString print = QStringLiteral("print");
     const QString quick = QStringLiteral("quick-save");
     const QString save = QStringLiteral("save-as-file");
@@ -4532,14 +4612,14 @@ void quickSaveStacksAndLayoutMigration() {
     for (auto& position : legacy.positions)
         position.removeAll(quick);
     const auto upgraded = normalizedLayout(legacy, kind);
-    require(upgraded.positions.constLast() == QStringList{print, quick, save} &&
+    require(upgraded.positions.constLast() == QStringList{cloud, print, quick, save} &&
                 normalizedLayout(upgraded, kind) == upgraded,
             "legacy default saves must upgrade to an idempotent quick-save stack");
     auto custom = legacy;
     custom.positions.last().prepend(QStringLiteral("record-screen"));
     custom.positions.removeAt(1);
     require(normalizedLayout(custom, kind).positions.constLast() ==
-                QStringList{QStringLiteral("record-screen"), print, quick, save},
+                QStringList{QStringLiteral("record-screen"), cloud, print, quick, save},
             "custom save placements must gain Quick save immediately above Save");
     legacy.positions.removeLast();
     legacy.hidden = {save};
@@ -4567,7 +4647,7 @@ void quickSaveStacksAndLayoutMigration() {
         adqt::widgets::AdButton* trigger = nullptr;
         for (auto* button : mainToolbarButtons(palette)) {
             if (button->property("screenshotToolbarPositionItems").toStringList() ==
-                QStringList{print, quick, save})
+                QStringList{cloud, print, quick, save})
                 trigger = button;
         }
         require(trigger && trigger->accessibleName() == QStringLiteral("Save as file"),
@@ -4631,13 +4711,14 @@ void configurableScreenshotActionLayoutSupportsStacksHidingAndRuntimeReplacement
                       ScreenshotToolPalette::CopyAction;
     options.actionToolsLayout = snow_shot::storage::ScreenshotToolbarLayout{
         {
-            {QStringLiteral("record-screen"), QStringLiteral("quick-save"),
-             QStringLiteral("save-as-file"), QStringLiteral("table-recognition")},
+            {QStringLiteral("upload-to-cloud"), QStringLiteral("record-screen"),
+             QStringLiteral("quick-save"), QStringLiteral("save-as-file"),
+             QStringLiteral("table-recognition")},
             {QStringLiteral("barcode-recognition")},
             {QStringLiteral("text-translation"), QStringLiteral("text-recognition")},
             {QStringLiteral("pin-to-screen")},
         },
-        {QStringLiteral("scrolling-screenshot")},
+        {QStringLiteral("scrolling-screenshot"), QStringLiteral("print")},
     };
 
     ScreenshotToolPalette palette(options);
@@ -4656,8 +4737,8 @@ void configurableScreenshotActionLayoutSupportsStacksHidingAndRuntimeReplacement
                 mixedTrigger->toolTip() == shortcutTooltip(QStringLiteral("Table recognition"),
                                                            {QStringLiteral("Ctrl+X")}) &&
                 mixedTrigger->property("screenshotToolbarPositionItems").toStringList() ==
-                    QStringList{QStringLiteral("record-screen"), QStringLiteral("quick-save"),
-                                QStringLiteral("save-as-file"),
+                    QStringList{QStringLiteral("upload-to-cloud"), QStringLiteral("record-screen"),
+                                QStringLiteral("quick-save"), QStringLiteral("save-as-file"),
                                 QStringLiteral("table-recognition")} &&
                 textTrigger->accessibleName() == QStringLiteral("Text recognition") &&
                 palette
@@ -4752,7 +4833,7 @@ void configurableScreenshotActionLayoutSupportsStacksHidingAndRuntimeReplacement
             {QStringLiteral("scrolling-screenshot")},
             {QStringLiteral("save-as-file")},
         },
-        {},
+        {QStringLiteral("print")},
     };
     palette.setActionToolsLayout(unstacked);
     QCoreApplication::processEvents();
@@ -4798,7 +4879,8 @@ void configurableScreenshotActionLayoutSupportsStacksHidingAndRuntimeReplacement
         QStringLiteral("record-screen"),        QStringLiteral("pin-to-screen"),
         QStringLiteral("text-recognition"),     QStringLiteral("text-translation"),
         QStringLiteral("scrolling-screenshot"), QStringLiteral("quick-save"),
-        QStringLiteral("save-as-file"),
+        QStringLiteral("save-as-file"),         QStringLiteral("print"),
+        QStringLiteral("upload-to-cloud"),
     };
     ScreenshotToolPalette::Options hiddenOptions;
     hiddenOptions.showSelectTool = true;
@@ -14355,6 +14437,11 @@ int main(int argc, char** argv) {
     }
     if (application.arguments().contains(QStringLiteral("--color-input-only"))) {
         colorPickerChannelKeyboardInput();
+        snow_shot::storage::ApplicationStorage::instance().shutdown();
+        return 0;
+    }
+    if (application.arguments().contains(QStringLiteral("--cloud-upload-only"))) {
+        cloudUploadToolbarContracts();
         snow_shot::storage::ApplicationStorage::instance().shutdown();
         return 0;
     }

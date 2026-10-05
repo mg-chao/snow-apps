@@ -21,6 +21,7 @@
   "settings": [
     "AdministratorLaunch",
     "AppPermissions",
+    "CloudUploadSettingsWidget",
     "CustomAiModelsSettingsWidget",
     "DrawingToolbarEditorSettingsWidget",
     "FloatingToolbarEditorSettingsWidget",
@@ -66,6 +67,7 @@
   ],
   "export": [
     "ScreenshotClipboardService",
+    "ScreenshotCloudUploadJob",
     "ScreenshotExportArtifact",
     "ScreenshotImageFileService",
     "ScreenshotPdfExport",

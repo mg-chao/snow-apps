@@ -116,9 +116,26 @@ QString ConfigurationArchive::write(const QString& archivePath,
         configuration.insert(it.key(), it.value());
     }
     QJsonObject manifest;
+    QJsonArray cloudOmitted;
+    if (redactCredentials) {
+        auto cloud = configuration.value(QStringLiteral("cloud_upload/configuration")).toObject();
+        auto profiles = cloud.value(QStringLiteral("configurations")).toArray();
+        for (qsizetype i = 0; i < profiles.size(); ++i) {
+            auto profile = profiles[i].toObject();
+            cloudOmitted.append(QStringLiteral("cloud:") +
+                                profile.value(QStringLiteral("id")).toString());
+            for (const auto* key : {"access_key_id", "secret_access_key", "session_token"})
+                profile.insert(QLatin1StringView(key), QString());
+            profiles[i] = profile;
+        }
+        cloud.insert(QStringLiteral("configurations"), profiles);
+        if (configuration.contains(QStringLiteral("cloud_upload/configuration")))
+            configuration.insert(QStringLiteral("cloud_upload/configuration"), cloud);
+        manifest.insert(QStringLiteral("redacted_credentials"), cloudOmitted);
+    }
 #if SNOW_SHOT_ENABLE_API_CONFIGURATION
     if (redactCredentials) {
-        QJsonArray omitted;
+        QJsonArray omitted = cloudOmitted;
         for (const auto& key : {QStringLiteral("api_configuration/custom_models"),
                                 QStringLiteral("api_configuration/text_translation")}) {
             auto models = configuration.value(key).toArray();
@@ -291,13 +308,11 @@ ConfigurationArchiveReadResult ConfigurationArchive::read(const QString& archive
             "The configuration archive was created by a newer version of Snow Shot.")));
     }
     result.schemaVersion = schemaVersion;
-#if SNOW_SHOT_ENABLE_API_CONFIGURATION
     for (const auto& id : manifest.value(QStringLiteral("redacted_credentials")).toArray()) {
         if (!id.isString())
             return fail(invalidArchive);
         result.redactedCredentialIds.append(id.toString());
     }
-#endif
 
     bool configurationOk = false;
     const QJsonObject configuration = configArchiveJsonObject(configurationBytes, &configurationOk);
@@ -323,9 +338,9 @@ ConfigurationArchiveReadResult ConfigurationArchive::read(const QString& archive
     return result;
 }
 
-#if SNOW_SHOT_ENABLE_API_CONFIGURATION
 void ConfigurationArchiveReadResult::preserveOmittedCredentials(
     const QMap<QString, QJsonValue>& current) {
+#if SNOW_SHOT_ENABLE_API_CONFIGURATION
     for (const auto& key : {QStringLiteral("api_configuration/custom_models"),
                             QStringLiteral("api_configuration/text_translation")}) {
         const bool translation = key.endsWith(QStringLiteral("text_translation"));
@@ -358,7 +373,36 @@ void ConfigurationArchiveReadResult::preserveOmittedCredentials(
         if (values.contains(key))
             values.insert(key, models);
     }
-}
 #endif
+    const QString key = QStringLiteral("cloud_upload/configuration");
+    if (!values.contains(key))
+        return;
+    auto cloud = values.value(key).toObject();
+    auto profiles = cloud.value(QStringLiteral("configurations")).toArray();
+    const auto previousProfiles =
+        current.value(key).toObject().value(QStringLiteral("configurations")).toArray();
+    for (qsizetype i = 0; i < profiles.size(); ++i) {
+        auto profile = profiles[i].toObject();
+        if (!redactedCredentialIds.contains(QStringLiteral("cloud:") +
+                                            profile.value(QStringLiteral("id")).toString()))
+            continue;
+        for (const auto& item : previousProfiles) {
+            const auto previous = item.toObject();
+            bool same = true;
+            for (const auto* field :
+                 {"id", "protocol", "endpoint", "region", "bucket", "addressing_style"})
+                same = same && previous.value(QLatin1StringView(field)) ==
+                                   profile.value(QLatin1StringView(field));
+            if (!same)
+                continue;
+            for (const auto* field : {"access_key_id", "secret_access_key", "session_token"})
+                profile.insert(QLatin1StringView(field), previous.value(QLatin1StringView(field)));
+            break;
+        }
+        profiles[i] = profile;
+    }
+    cloud.insert(QStringLiteral("configurations"), profiles);
+    values.insert(key, cloud);
+}
 
 } // namespace snow_shot::storage

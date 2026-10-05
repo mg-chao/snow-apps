@@ -3,6 +3,7 @@
 #include "snow_shot/ocrtextoptions.h"
 #include "snow_shot/storage/floatingtoolbarsettings.h"
 #include "snow_shot/app/edition.h"
+#include "snow_shot/clouduploadconfiguration.h"
 #if SNOW_SHOT_ENABLE_API_CONFIGURATION
 #include "snow_shot/serverconfiguration.h"
 #include "snow_shot/customaimodelconfiguration.h"
@@ -73,7 +74,9 @@ const QStringList kActionToolbarItemIds = editionActionIds({
     QStringLiteral("text-translation"),
     QStringLiteral("scrolling-screenshot"),
     QStringLiteral("quick-save"),
+    QStringLiteral("print"),
     QStringLiteral("save-as-file"),
+    QStringLiteral("upload-to-cloud"),
 });
 
 QJsonArray jsonArray(const QStringList& values) {
@@ -113,7 +116,8 @@ QVector<QStringList> defaultActionToolbarPositions() {
         {QStringLiteral("text-recognition")},
         {QStringLiteral("text-translation")},
         {QStringLiteral("scrolling-screenshot")},
-        {QStringLiteral("quick-save"), QStringLiteral("save-as-file")},
+        {QStringLiteral("upload-to-cloud"), QStringLiteral("print"), QStringLiteral("quick-save"),
+         QStringLiteral("save-as-file")},
     });
 }
 
@@ -121,8 +125,9 @@ const QStringList kPinnedActionToolbarItemIds = editionActionIds(
     {QStringLiteral("barcode-recognition"), QStringLiteral("table-recognition"),
      QStringLiteral("convert-to-markdown"), QStringLiteral("latex-recognition"),
      QStringLiteral("convert-to-html"), QStringLiteral("text-recognition"),
-     QStringLiteral("text-translation"), QStringLiteral("separator"), QStringLiteral("quick-save"),
-     QStringLiteral("save-as-file"), QStringLiteral("copy")});
+     QStringLiteral("text-translation"), QStringLiteral("separator"), QStringLiteral("print"),
+     QStringLiteral("quick-save"), QStringLiteral("save-as-file"),
+     QStringLiteral("upload-to-cloud"), QStringLiteral("copy")});
 
 QVector<QStringList> defaultPinnedActionToolbarPositions() {
     return editionActionPositions({
@@ -132,7 +137,8 @@ QVector<QStringList> defaultPinnedActionToolbarPositions() {
         {QStringLiteral("text-recognition")},
         {QStringLiteral("text-translation")},
         {QStringLiteral("separator")},
-        {QStringLiteral("quick-save"), QStringLiteral("save-as-file")},
+        {QStringLiteral("upload-to-cloud"), QStringLiteral("print"), QStringLiteral("quick-save"),
+         QStringLiteral("save-as-file")},
         {QStringLiteral("copy")},
     });
 }
@@ -153,6 +159,20 @@ QString defaultOutputDirectory(QStandardPaths::StandardLocation primary) {
 }
 
 const QVector<ConfigurationSchemaEntry> kRawEntries = {
+    {QStringLiteral("cloud_upload/configuration"), cloudUploadSettingsToJson({}),
+     ConfigurationValueKind::Structured},
+    {QStringLiteral("screenshot_shortcuts/upload_to_cloud"),
+     QJsonArray{QStringLiteral("Ctrl+U")},
+     ConfigurationValueKind::StringList,
+     std::nullopt,
+     {},
+     2},
+    {QStringLiteral("pin_to_screen_shortcuts/upload_to_cloud"),
+     QJsonArray{QStringLiteral("Ctrl+U")},
+     ConfigurationValueKind::StringList,
+     std::nullopt,
+     {},
+     2},
     {QStringLiteral("floating_toolbar/enabled"), false, ConfigurationValueKind::Boolean},
     {QStringLiteral("floating_toolbar/opacity"), 50, ConfigurationValueKind::Integer,
      ConfigurationIntegerRange{10, 100, 1}},
@@ -1923,6 +1943,22 @@ ConfigurationNormalization normalizeToolbarLayout(const QJsonValue& value,
         appendHidden({QStringLiteral("text-recognition")});
     }
 
+    if (known.contains(QStringLiteral("upload-to-cloud")) &&
+        !positioned.contains(QStringLiteral("upload-to-cloud")) &&
+        !hiddenSet.contains(QStringLiteral("upload-to-cloud"))) {
+        for (QStringList& position : positions) {
+            if (position.contains(QStringLiteral("save-as-file"))) {
+                position.prepend(QStringLiteral("upload-to-cloud"));
+                positioned.insert(QStringLiteral("upload-to-cloud"));
+                break;
+            }
+        }
+        if (!positioned.contains(QStringLiteral("upload-to-cloud")) &&
+            hiddenSet.contains(QStringLiteral("save-as-file"))) {
+            hidden.push_back(QStringLiteral("upload-to-cloud"));
+            hiddenSet.insert(QStringLiteral("upload-to-cloud"));
+        }
+    }
     if (known.contains(QStringLiteral("quick-save")) &&
         !positioned.contains(QStringLiteral("quick-save")) &&
         !hiddenSet.contains(QStringLiteral("quick-save"))) {
@@ -2169,6 +2205,12 @@ ConfigurationNormalization ConfigurationSchema::normalize(const QString& key,
         return {QStringLiteral("check"), true, true};
     }
 #endif
+    if (key == QStringLiteral("cloud_upload/configuration")) {
+        bool valid = false;
+        const auto values = cloudUploadSettingsFromJson(value, &valid);
+        const auto normalized = cloudUploadSettingsToJson(values);
+        return {normalized, valid, normalized != value};
+    }
 #if SNOW_SHOT_ENABLE_API_CONFIGURATION
     if (key == QStringLiteral("api_configuration/server_url")) {
         const auto normalized = normalizedServerUrl(value.toString());

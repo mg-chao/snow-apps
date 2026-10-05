@@ -1,3 +1,4 @@
+#include "snow_shot/presentation/screenshotmessageservice.h"
 #include "snow_draw_engine_qt/snow_canvas_image.h"
 #include "snow_shot/presentation/screenshotcontentdrop.h"
 #include "snow_shot/shortcuts/shortcutbinding.h"
@@ -1095,6 +1096,21 @@ void ScreenshotPinnedWindow::registerWindowShortcuts() {
     m_pinnedShortcutBindings.insert(QStringLiteral("print"),
                                     m_shortcutManager->addBinding(this, std::move(print)));
 
+    ShortcutManager::Binding upload;
+    upload.id = QStringLiteral("pinned.upload_to_cloud");
+    upload.priority = ShortcutManager::StandardPriority::WindowCommand;
+    upload.canActivate = [this, localCommandsAllowed](const auto& context) {
+        return localCommandsAllowed(context) && !m_closing && !m_cloudUploadPreparing &&
+               !m_cloudUploadJob && !m_printPending && !property("saveDialogOpen").toBool() &&
+               ScreenshotCloudUploadService::configuration().has_value();
+    };
+    upload.activate = [this](const auto&) {
+        uploadToCloud();
+        return true;
+    };
+    m_pinnedShortcutBindings.insert(QStringLiteral("upload_to_cloud"),
+                                    m_shortcutManager->addBinding(this, std::move(upload)));
+
     ShortcutManager::Binding save;
     save.id = QStringLiteral("pinned.save_as_file");
     save.priority = ShortcutManager::StandardPriority::WindowCommand;
@@ -1371,6 +1387,7 @@ void ScreenshotPinnedWindow::reloadPinnedWindowShortcuts() {
         {"copy_to_clipboard", "screenshotPinnedCopyAction"},
         {"copy_original_content", "screenshotPinnedCopyOriginalAction"},
         {"save_as_file", "screenshotPinnedSaveAsFileAction"},
+        {"upload_to_cloud", nullptr},
         {"print", nullptr},
         {"show_text_recognition_results", "screenshotPinnedOcrAction"},
         {"drawing_mode", "screenshotPinnedDrawingAction"},
@@ -1972,6 +1989,7 @@ bool ScreenshotPinnedWindow::present(const Config& requestedConfig,
     m_presentationCompletion = std::move(completion);
     m_imageLoader = config.imageLoader;
     m_printService = config.printService;
+    cancelCloudUpload();
     ++m_presentationGeneration;
     m_deferredPresentationSetupScheduled = false;
     m_recognitionTargetReady = false;
@@ -4034,6 +4052,9 @@ void ScreenshotPinnedWindow::configureEditToolbar(
             &ScreenshotPinnedWindow::quickSave);
     connect(toolbar, &ScreenshotToolPalette::printRequested, this,
             &ScreenshotPinnedWindow::printContent);
+    toolbar->setCloudUploadBusy(m_cloudUploadPreparing || m_cloudUploadJob);
+    connect(toolbar, &ScreenshotToolPalette::cloudUploadRequested, this,
+            &ScreenshotPinnedWindow::uploadToCloud);
     connect(toolbar, &ScreenshotToolPalette::saveRequested, this,
             &ScreenshotPinnedWindow::saveAsFile);
     connect(toolbar, &ScreenshotToolPalette::copyRequested, this,
@@ -5421,6 +5442,7 @@ void ScreenshotPinnedWindow::quickSave() {
 }
 
 void ScreenshotPinnedWindow::cancelContentReplacement() {
+    cancelCloudUpload();
     ++m_contentReplacementGeneration;
     m_contentReplacementJob.cancel();
     m_contentReplacementJob = {};
@@ -5652,6 +5674,7 @@ bool ScreenshotPinnedWindow::replaceContent(ScreenshotClipboardContent content,
         m_quickSaveArtifact.reset();
     }
     m_quickSavePending = false;
+    cancelCloudUpload();
     ++m_presentationGeneration;
     m_deferredPresentationSetupScheduled = false;
     stopRecognition();
@@ -5818,6 +5841,74 @@ void ScreenshotPinnedWindow::printContent() {
             ready({{},
                    QCoreApplication::translate("ScreenshotPrintService",
                                                "The image could not be prepared for printing")});
+    });
+}
+
+void ScreenshotPinnedWindow::cancelCloudUpload() {
+    m_cloudUploadPreparing = false;
+    if (m_cloudUploadJob)
+        m_cloudUploadJob->cancel();
+    m_cloudUploadJob.clear();
+    ScreenshotMessageService::destroyFor(this, QStringLiteral("cloud-upload"));
+    if (m_editController && m_editController->toolbarWindow())
+        m_editController->toolbarWindow()->palette()->setCloudUploadBusy(false);
+}
+void ScreenshotPinnedWindow::uploadToCloud() {
+    if (m_closing || m_cloudUploadPreparing || m_cloudUploadJob || m_printPending ||
+        property("saveDialogOpen").toBool())
+        return;
+    const auto config = ScreenshotCloudUploadService::configuration();
+    if (!config)
+        return;
+    m_cloudUploadPreparing = true;
+    if (m_editController && m_editController->toolbarWindow())
+        m_editController->toolbarWindow()->palette()->setCloudUploadBusy(true);
+    const auto replacement = m_contentReplacementGeneration;
+    const auto generation = m_presentationGeneration;
+    const auto options = ScreenshotCloudUploadService::currentOptions();
+    requestMaterializedImage([this, replacement, generation, config = *config,
+                              options](bool succeeded) {
+        if (m_closing || m_contentReplacementGeneration != replacement ||
+            m_presentationGeneration != generation)
+            return;
+        m_cloudUploadPreparing = false;
+        if (!succeeded || (m_canvas && !m_canvas->resetEditingStatePreservingTool())) {
+            cancelCloudUpload();
+            showPinnedRecognitionMessage(this, tr("The pinned image could not be prepared"), true);
+            return;
+        }
+        m_cloudUploadJob =
+            ScreenshotCloudUploadService::upload(fileSaveArtifact(), config, options, this);
+        ScreenshotMessageService::loadingFor(this, QStringLiteral("cloud-upload"),
+                                             tr("Preparing cloud upload..."));
+        connect(m_cloudUploadJob, &ScreenshotCloudUploadJob::progress, this, [this](int percent) {
+            if (!m_closing)
+                ScreenshotMessageService::loadingFor(this, QStringLiteral("cloud-upload"),
+                                                     tr("Uploading to cloud... %1%").arg(percent));
+        });
+        connect(m_cloudUploadJob, &ScreenshotCloudUploadJob::finished, this,
+                [this, replacement, generation](const ScreenshotCloudUploadResult& result) {
+                    m_cloudUploadJob.clear();
+                    if (m_closing || replacement != m_contentReplacementGeneration ||
+                        generation != m_presentationGeneration)
+                        return;
+                    ScreenshotMessageService::destroyFor(this, QStringLiteral("cloud-upload"));
+                    if (m_editController && m_editController->toolbarWindow())
+                        m_editController->toolbarWindow()->palette()->setCloudUploadBusy(false);
+                    if (result.status == ScreenshotCloudUploadResult::Status::Succeeded) {
+                        const QPointer<ScreenshotPinnedWindow> lifetime(this);
+                        QApplication::clipboard()->setText(result.url.toString(QUrl::FullyEncoded));
+                        if (!lifetime || m_closing ||
+                            replacement != m_contentReplacementGeneration ||
+                            generation != m_presentationGeneration)
+                            return;
+                        adqt::widgets::AdMessage::Request message;
+                        message.key = QStringLiteral("cloud-upload");
+                        message.content = tr("Uploaded to cloud. Link copied to clipboard.");
+                        adqt::widgets::AdMessageService::success(std::move(message), this);
+                    } else if (result.status == ScreenshotCloudUploadResult::Status::Failed)
+                        showPinnedRecognitionMessage(this, result.error, true);
+                });
     });
 }
 
