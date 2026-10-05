@@ -9051,6 +9051,14 @@ if(APPLE AND SNOW_SHOT_BUILD_TESTS)
         COMMAND snow-shot-macos-overlay-initialization-tests --modal-stacking-only -platform cocoa)
     set_tests_properties(snow-shot-macos-modal-stacking-native-tests PROPERTIES
         LABELS "interactive;macos" RUN_SERIAL TRUE TIMEOUT 60)
+    add_test(NAME snow-shot-macos-file-panel-stacking-tests
+        COMMAND snow-shot-macos-overlay-initialization-tests --native-file-panels-only -platform offscreen)
+    set_tests_properties(snow-shot-macos-file-panel-stacking-tests PROPERTIES
+        LABELS "unit;macos" TIMEOUT 60)
+    add_test(NAME snow-shot-macos-file-panel-stacking-native-tests
+        COMMAND snow-shot-macos-overlay-initialization-tests --native-file-panels-only -platform cocoa)
+    set_tests_properties(snow-shot-macos-file-panel-stacking-native-tests PROPERTIES
+        LABELS "interactive;macos" RUN_SERIAL TRUE TIMEOUT 60)
 endif()
 
 # Physical cursor warps enter Qt's platform input path so Qt's pointer state and
@@ -9597,6 +9605,21 @@ if(SNOW_SHOT_BUILD_TESTS)
         ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}")
     add_executable(snow-shot-native-print-smoke tests/native_print_smoke.cpp)
     target_link_libraries(snow-shot-native-print-smoke PRIVATE snow_shot_print)
+    if(APPLE)
+        add_executable(snow-shot-macos-native-print-stacking-tests
+            tests/macos_native_print_stacking_tests.mm)
+        target_include_directories(snow-shot-macos-native-print-stacking-tests PRIVATE include src)
+        target_link_libraries(snow-shot-macos-native-print-stacking-tests PRIVATE
+            snow_shot_print snow_shot_macos_window_platform "-framework AppKit")
+        add_test(NAME snow-shot-macos-native-print-stacking-tests
+            COMMAND snow-shot-macos-native-print-stacking-tests -platform offscreen)
+        set_tests_properties(snow-shot-macos-native-print-stacking-tests PROPERTIES
+            LABELS "unit;macos" TIMEOUT 30)
+        add_test(NAME snow-shot-macos-native-print-stacking-native-tests
+            COMMAND snow-shot-macos-native-print-stacking-tests -platform cocoa)
+        set_tests_properties(snow-shot-macos-native-print-stacking-native-tests PROPERTIES
+            LABELS "interactive;macos" RUN_SERIAL TRUE TIMEOUT 60)
+    endif()
     if(WIN32)
         add_executable(snow-shot-windows-print-document-tests
             tests/windows_print_document_tests.cpp)

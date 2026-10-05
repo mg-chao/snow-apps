@@ -73,5 +73,15 @@ inline CaptureLayer captureLayer(QWindow* window, const ModalFloors& floors = {}
         result.layer = std::max(result.layer, floors[result.index()]);
     return result;
 }
+
+// AppKit sheets have no QWindow transient parent. Use the originating capture's
+// modal floor, including its floating tools, and keep nested sheets above it.
+inline CaptureLayer nativePanelLayer(CaptureLayer owner, const ModalFloors& floors,
+                                     int sheetDepth = 1) {
+    if (!owner.valid())
+        return {};
+    owner.layer = std::max(owner.layer + 1, floors[owner.index()]) + sheetDepth - 1;
+    return owner;
+}
 } // namespace snow_shot::platform::detail
 #endif

@@ -41,6 +41,7 @@ struct ScreenshotNativeSettings {
     bool applying;
     bool unconstrainedFrame;
     bool immediatePresentation;
+    bool nativePanel;
     NSWindowAnimationBehavior defaultAnimation;
     snow_shot::platform::detail::CaptureLayer captureRole;
 }
@@ -61,6 +62,8 @@ SnowScreenshotWindowPolicy* nativePolicyState(NSWindow* window) {
 }
 
 NSWindowAnimationBehavior managedAnimation(SnowScreenshotWindowPolicy* state) {
+    if (state->nativePanel)
+        return state->requested.animationBehavior;
     return captureWindowAnimation(state->captureRole, state->requested.animationBehavior,
                                   state->defaultAnimation, state->immediatePresentation);
 }
@@ -147,6 +150,20 @@ void applyNativeSettings(NSWindow* window, const ScreenshotNativeSettings& setti
         window.animationBehavior = settings.animationBehavior;
 }
 
+void rememberNativePanelSettings(NSWindow* window, SnowScreenshotWindowPolicy* state) {
+    // AppKit owns these panels and can change settings as it detaches a sheet.
+    // Unlike Qt capture windows, their setters are not intercepted. Preserve
+    // changes AppKit made after our override rather than restoring a stale value.
+    if (window.level != state->required.level)
+        state->requested.level = window.level;
+    if (window.collectionBehavior != state->required.collectionBehavior)
+        state->requested.collectionBehavior = window.collectionBehavior;
+    if (window.hidesOnDeactivate != state->required.hidesOnDeactivate)
+        state->requested.hidesOnDeactivate = window.hidesOnDeactivate;
+    if (window.animationBehavior != state->required.animationBehavior)
+        state->requested.animationBehavior = window.animationBehavior;
+}
+
 void applyNativeWindowPolicy(
     NSWindow* window, NSInteger level, bool enforceQtSettings = true,
     NSWindowAnimationBehavior defaultAnimation = NSWindowAnimationBehaviorDefault,
@@ -156,6 +173,7 @@ void applyNativeWindowPolicy(
     auto* state = nativePolicyState(window);
     if (!state) {
         state = [SnowScreenshotWindowPolicy new];
+        state->nativePanel = !enforceQtSettings;
         state->requested = {window.level, window.collectionBehavior, window.hidesOnDeactivate,
                             window.animationBehavior};
         objc_setAssociatedObject(window, &nativePolicyKey, state,
@@ -163,6 +181,8 @@ void applyNativeWindowPolicy(
         [state release];
         if (enforceQtSettings)
             attachNativeWindowPolicy(window);
+    } else if (state->nativePanel) {
+        rememberNativePanelSettings(window, state);
     }
     state->defaultAnimation = defaultAnimation;
     state->captureRole = captureRole;
@@ -177,6 +197,8 @@ void applyNativeWindowPolicy(
 
 void releaseNativeWindowPolicy(NSWindow* window) {
     if (auto* state = nativePolicyState(window)) {
+        if (state->nativePanel)
+            rememberNativePanelSettings(window, state);
         const ScreenshotNativeSettings requested = state->requested;
         // Remove enforcement before restoring all settings, including Space membership
         // and deactivation behavior. Subsequent ownership starts with a fresh snapshot.
@@ -197,6 +219,26 @@ CaptureLayer widgetCaptureLayer(QWidget* widget, const ModalFloors& floors = {})
     if (result.valid() && widget->windowModality() != Qt::NonModal)
         result.layer = std::max(result.layer, floors[result.index()]);
     return result;
+}
+
+CaptureLayer nativePanelOwner(NSWindow* panel, const QList<QWidget*>& widgets, int& sheetDepth) {
+    sheetDepth = 1;
+    CaptureLayer fallbackOwner;
+    for (NSWindow* owner = panel.sheetParent ? panel.sheetParent : panel.parentWindow; owner;
+         owner = owner.sheetParent ? owner.sheetParent : owner.parentWindow) {
+        for (QWidget* widget : widgets) {
+            if (widget->internalWinId() &&
+                reinterpret_cast<NSView*>(widget->internalWinId()).window == owner)
+                return widgetCaptureLayer(widget);
+        }
+        // A native file panel can have a Qt modal owner without a native parent.
+        // Keep walking to resolve nested sheets from the current capture floor,
+        // independently of NSApp.windows iteration order and previous levels.
+        if (auto* state = nativePolicyState(owner); state && state->nativePanel)
+            fallbackOwner = state->captureRole;
+        ++sheetDepth;
+    }
+    return fallbackOwner;
 }
 
 void applyScreenshotLayer(QWidget* widget, const ModalFloors& floors) {
@@ -268,12 +310,14 @@ void synchronizeScreenshotLayers() {
             modalFloors[role.index()] = std::max(modalFloors[role.index()], role.layer + 1);
     }
     std::array<NSInteger, static_cast<std::size_t>(CaptureFamily::Count)> panelLevels{};
+    ModalFloors panelFloors{};
     for (QWidget* widget : windows) {
         applyScreenshotLayer(widget, modalFloors);
         if (widget->isVisible() && widget->internalWinId()) {
             NSWindow* native = reinterpret_cast<NSView*>(widget->internalWinId()).window;
             const CaptureLayer role = widgetCaptureLayer(widget, modalFloors);
             if (role.valid() && nativePolicyState(native)) {
+                panelFloors[role.index()] = std::max(panelFloors[role.index()], role.layer + 1);
                 auto& level = panelLevels[role.index()];
                 level = std::max(level, native.level + 1);
                 if (role.family != CaptureFamily::Screenshot)
@@ -282,30 +326,35 @@ void synchronizeScreenshotLayers() {
             }
         }
     }
-    // QFileDialog's Cocoa helper presents NSSavePanel/NSOpenPanel without a
-    // QWidget native surface or Qt transient parent. Include them explicitly,
-    // above even the deepest screenshot modal. Do not swizzle AppKit classes.
+    // File panels and AppKit print sheets have no Qt transient parent. Include
+    // native sheets in the same capture family above its tools and Qt modals.
+    // Leave AppKit classes intact; lifecycle notifications reapply the policy.
     for (NSWindow* window in NSApp.windows) {
-        if (![window isKindOfClass:[NSSavePanel class]])
+        auto* state = nativePolicyState(window);
+        if (state && !state->nativePanel)
             continue;
+        const bool filePanel = [window isKindOfClass:[NSSavePanel class]];
+        if (!filePanel && !window.sheetParent && !state)
+            continue;
+        int sheetDepth = 1;
+        CaptureLayer owner = nativePanelOwner(window, windows, sheetDepth);
         // QFileDialog retains its Qt modal owner even when Cocoa supplies the
         // actual panel. Keep that family's band when both captures are visible.
-        CaptureLayer owner = captureLayer(QGuiApplication::modalWindow());
-        if (!owner.valid() && window.parentWindow) {
-            for (QWidget* widget : windows) {
-                if (widget->internalWinId() &&
-                    reinterpret_cast<NSView*>(widget->internalWinId()).window ==
-                        window.parentWindow) {
-                    owner = widgetCaptureLayer(widget);
-                    break;
-                }
+        if (filePanel) {
+            const auto modalOwner = captureLayer(QGuiApplication::modalWindow());
+            if (modalOwner.valid()) {
+                owner = modalOwner;
+                sheetDepth = 1;
             }
         }
-        const NSInteger panelLevel =
-            owner.valid() ? panelLevels[owner.index()]
-                          : *std::max_element(panelLevels.begin(), panelLevels.end());
+        const auto panelRole = nativePanelLayer(owner, panelFloors, sheetDepth);
+        const NSInteger panelLevel = panelRole.valid() ? captureWindowLevel(panelRole)
+                                     : filePanel
+                                         ? *std::max_element(panelLevels.begin(), panelLevels.end())
+                                         : 0;
         if (panelLevel && window.visible)
-            applyNativeWindowPolicy(window, panelLevel, false);
+            applyNativeWindowPolicy(window, panelLevel, false, NSWindowAnimationBehaviorDefault,
+                                    owner);
         else
             releaseNativeWindowPolicy(window);
     }
@@ -329,13 +378,14 @@ class ScreenshotStackingPolicy final : public QObject {
                     owner->requestActivate();
                 });
         NSNotificationCenter* center = NSNotificationCenter.defaultCenter;
-        // Native file panels bypass Qt show/expose events, including in exec().
+        // Native panels bypass Qt show/expose events, including in exec().
         m_panelShown =
             [center addObserverForName:NSWindowDidBecomeKeyNotification
                                 object:nil
                                  queue:nil
                             usingBlock:^(NSNotification* notification) {
-                              if ([notification.object isKindOfClass:[NSSavePanel class]])
+                              NSWindow* window = static_cast<NSWindow*>(notification.object);
+                              if ([window isKindOfClass:[NSSavePanel class]] || window.sheetParent)
                                   synchronizeScreenshotLayers();
                             }];
         m_panelClosed = [center
@@ -343,16 +393,33 @@ class ScreenshotStackingPolicy final : public QObject {
                         object:nil
                          queue:nil
                     usingBlock:^(NSNotification* notification) {
-                      if ([notification.object isKindOfClass:[NSSavePanel class]])
-                          releaseNativeWindowPolicy(static_cast<NSWindow*>(notification.object));
+                      NSWindow* window = static_cast<NSWindow*>(notification.object);
+                      if (auto* state = nativePolicyState(window); state && state->nativePanel)
+                          releaseNativeWindowPolicy(window);
                     }];
+        for (NSNotificationName name :
+             {NSWindowWillBeginSheetNotification, NSWindowDidEndSheetNotification}) {
+            id observer =
+                [center addObserverForName:name
+                                    object:nil
+                                     queue:nil
+                                usingBlock:^(NSNotification*) {
+                                  // Both notifications originate from the owner. Resolve
+                                  // the sheet after AppKit finishes attaching/detaching it.
+                                  QMetaObject::invokeMethod(this, &synchronizeScreenshotLayers,
+                                                            Qt::QueuedConnection);
+                                }];
+            m_sheetObservers.append(observer);
+        }
     }
 
     ~ScreenshotStackingPolicy() override {
         [NSNotificationCenter.defaultCenter removeObserver:m_panelShown];
         [NSNotificationCenter.defaultCenter removeObserver:m_panelClosed];
+        for (id observer : m_sheetObservers)
+            [NSNotificationCenter.defaultCenter removeObserver:observer];
         for (NSWindow* window in NSApp.windows)
-            if ([window isKindOfClass:[NSSavePanel class]])
+            if (auto* state = nativePolicyState(window); state && state->nativePanel)
                 releaseNativeWindowPolicy(window);
     }
 
@@ -381,6 +448,7 @@ class ScreenshotStackingPolicy final : public QObject {
     QPointer<QWindow> m_focusOwner;
     id m_panelShown = nil;
     id m_panelClosed = nil;
+    QList<id> m_sheetObservers;
 };
 
 void registerScreenshotLayer(QWidget* widget, int layer,

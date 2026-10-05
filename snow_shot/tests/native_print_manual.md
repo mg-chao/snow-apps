@@ -53,6 +53,20 @@ use `--legacy` to match the application's current print dialog.
 
 ## macOS
 
+Run the deterministic print-service and native-panel ownership checks with
+`ctest --preset test-snow-shot-macos-arm64-debug -R
+'^snow-shot-(print-service|macos-native-print-stacking|macos-file-panel-stacking)-tests$'
+--output-on-failure`. Use the matching x64 preset on Intel.
+
+Build `snow-shot-macos-native-print-stacking-tests` and run
+`ctest --test-dir build/snow-shot-macos-arm64-debug -R
+'^snow-shot-macos-native-print-stacking-native-tests$' --output-on-failure`
+for an automated AppKit regression. It opens and cancels the real print panel
+twice from both a screenshot and a topmost pin, with floating tools visible.
+It checks that the sheet remains above the toolbar and popups after a toolbar
+raise, preserves capture levels and native handles, and releases its override
+after cancellation. It never submits a printer job.
+
 Run the smoke fixture on macOS 15+ and repeat paper/orientation, PDF, cancellation,
 reopen, stacking, screenshot, pinned viewport, and recognition checks above. Confirm
 the native AppKit print panel belongs to the originating window, fits one page,

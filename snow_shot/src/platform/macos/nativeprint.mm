@@ -8,7 +8,6 @@
 #import <AppKit/AppKit.h>
 
 #include <cstring>
-#include <vector>
 #include <utility>
 
 @interface SnowShotPrintImageView : NSView
@@ -54,7 +53,6 @@
 @interface SnowShotPrintCompletion : NSObject {
   @public
     ScreenshotPrintService::Completion completion;
-    std::vector<std::pair<NSWindow*, NSInteger>> levels;
     QMetaObject::Connection ownerDestroyed;
 }
 - (void)printOperationDidRun:(NSPrintOperation*)operation
@@ -67,8 +65,6 @@
                      success:(BOOL)success
                  contextInfo:(void*)context {
     QObject::disconnect(ownerDestroyed);
-    for (const auto& entry : levels)
-        entry.first.level = entry.second;
     const bool cancelled = [operation.printInfo.jobDisposition isEqualToString:NSPrintCancelJob];
     const auto status = success     ? ScreenshotPrintService::Status::Submitted
                         : cancelled ? ScreenshotPrintService::Status::Cancelled
@@ -121,8 +117,8 @@ ScreenshotPrintService::Backend screenshotNativePrintBackend(bool legacy) {
                     [[NSImage alloc] initWithSize:NSMakeSize(image.width(), image.height())];
                 [nativeImage addRepresentation:bitmap];
                 NSPrintInfo* info = [NSPrintInfo.sharedPrintInfo copy];
-                info.horizontalPagination = NSFitPagination;
-                info.verticalPagination = NSFitPagination;
+                info.horizontalPagination = NSPrintingPaginationModeFit;
+                info.verticalPagination = NSPrintingPaginationModeFit;
                 info.horizontallyCentered = YES;
                 info.verticallyCentered = YES;
                 SnowShotPrintImageView* view = [[SnowShotPrintImageView alloc]
@@ -137,12 +133,6 @@ ScreenshotPrintService::Backend screenshotNativePrintBackend(bool legacy) {
                 operation.canSpawnSeparateThread = NO;
                 delegate = [SnowShotPrintCompletion new];
                 delegate->completion = std::move(completion);
-                for (NSWindow* window in NSApp.windows) {
-                    if (window.isVisible && window.level > NSNormalWindowLevel) {
-                        delegate->levels.emplace_back(window, window.level);
-                        window.level = NSNormalWindowLevel;
-                    }
-                }
                 __weak NSPrintOperation* weakOperation = operation;
                 __weak NSWindow* weakWindow = ownerWindow;
                 delegate->ownerDestroyed =
@@ -153,18 +143,16 @@ ScreenshotPrintService::Backend screenshotNativePrintBackend(bool legacy) {
                         if (window.attachedSheet)
                             [window endSheet:window.attachedSheet returnCode:NSModalResponseCancel];
                     });
-                retainedDelegate = (void*)CFBridgingRetain(delegate);
-                [operation runOperationModalForWindow:ownerWindow
-                                             delegate:delegate
-                                       didRunSelector:@selector(printOperationDidRun:
-                                                                             success:contextInfo:)
-                                          contextInfo:retainedDelegate];
+                retainedDelegate = (__bridge_retained void*)delegate;
+                [operation
+                    runOperationModalForWindow:ownerWindow
+                                      delegate:delegate
+                                didRunSelector:@selector(printOperationDidRun:success:contextInfo:)
+                                   contextInfo:retainedDelegate];
             } @catch (NSException* exception) {
                 (void)exception;
                 if (delegate) {
                     QObject::disconnect(delegate->ownerDestroyed);
-                    for (const auto& entry : delegate->levels)
-                        entry.first.level = entry.second;
                     completion = std::move(delegate->completion);
                 }
                 if (retainedDelegate)
