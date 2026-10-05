@@ -2,6 +2,7 @@
 #include "cloud_upload_test_support.h"
 #include "snow_shot/presentation/screenshotregiontypecontrol.h"
 #include "snow_shot/presentation/screenshottoolpalette.h"
+#include "snow_shot/presentation/screenshottoolbarmainpanel.h"
 #include "snow_shot/ocrtextoptions.h"
 #include "snow_shot/translation/translationlanguagecatalog.h"
 #include "snow_shot/presentation/screenshotcanvastoolstyles.h"
@@ -20,6 +21,7 @@
 #include "../src/presentation/tools/screenshottoolpalettebuttons.h"
 #include "../src/presentation/tools/screenshottoolpalettestylecomponents.h"
 #include "../src/presentation/tools/screenshottoolpalettestylepresets.h"
+#include "../src/presentation/recording/recordingaudiogainpopover.h"
 
 #include "antd_icons.h"
 #include "widgets/select.h"
@@ -2513,6 +2515,315 @@ adqt::widgets::AdButton* popoverButtonWithTooltip(adqt::widgets::AdPopover* popo
         }
     }
     return nullptr;
+}
+
+void recordingActionLayoutSupportsStacksHidingAndStatefulSlots() {
+    namespace layout = snow_shot::presentation::toolbar_layout;
+    using snow_shot::storage::ScreenshotToolbarLayout;
+    using snow_shot::storage::ScreenshotToolbarLayoutKind;
+    using Status = ScreenshotToolPalette::RecordingSessionStatus;
+    const auto kind = ScreenshotToolbarLayoutKind::RecordingActionTools;
+    const QString start = QStringLiteral("start-stop");
+    const QString pause = QStringLiteral("pause-resume");
+    const QString copy = QStringLiteral("copy");
+    const QString close = QStringLiteral("close");
+    const QString duration = QStringLiteral("duration");
+    const auto customLayout = [&](QVector<QStringList> positions) {
+        QStringList hidden = layout::defaultOrder(kind);
+        for (const auto& position : positions) {
+            for (const auto& id : position)
+                hidden.removeAll(id);
+        }
+        return ScreenshotToolbarLayout{positions, hidden};
+    };
+    ScreenshotToolPalette::Options options;
+    options.showRecordingControls = true;
+    options.showShapeTool = true;
+    options.enableStyleToolbar = false;
+    options.toolbarLayout =
+        ScreenshotToolbarLayout{{{QStringLiteral("shape")}}, layout::defaultOrder()};
+    ScreenshotToolPalette palette(options);
+    palette.show();
+    palette.prepareForDisplay();
+    QCoreApplication::processEvents();
+    int starts = 0, stops = 0, pauses = 0, resumes = 0, copies = 0, closes = 0;
+    QObject::connect(&palette, &ScreenshotToolPalette::recordingStartRequested, [&] { ++starts; });
+    QObject::connect(&palette, &ScreenshotToolPalette::recordingStopRequested, [&] { ++stops; });
+    QObject::connect(&palette, &ScreenshotToolPalette::recordingPauseRequested, [&] { ++pauses; });
+    QObject::connect(&palette, &ScreenshotToolPalette::recordingResumeRequested,
+                     [&] { ++resumes; });
+    QObject::connect(&palette, &ScreenshotToolPalette::recordingCopyRequested, [&] { ++copies; });
+    QObject::connect(&palette, &ScreenshotToolPalette::recordingCloseRequested, [&] { ++closes; });
+    const auto source = [&](const char* name) {
+        auto* button = palette.findChild<adqt::widgets::AdButton*>(QString::fromLatin1(name));
+        require(button != nullptr, "recording sources must retain stable object names");
+        return button;
+    };
+    const auto visibleIds = [&] {
+        QStringList result;
+        const auto* row = palette.mainPanel()->layout();
+        for (int index = 0; index < row->count(); ++index) {
+            auto* widget = row->itemAt(index)->widget();
+            if (widget && widget->isVisible()) {
+                const QString id = widget->property("screenshotToolbarItemId").toString();
+                if (layout::recordingDescriptor(id))
+                    result.push_back(id);
+            }
+        }
+        return result;
+    };
+    auto* timer = palette.findChild<QLabel*>(QStringLiteral("screenRecordingDuration"));
+    require(timer != nullptr, "recording duration remains a readout");
+    auto* shape = mainDrawingToolbarButtons(palette).constFirst();
+    auto* closeSource = source("screenRecordingClose");
+    auto* stopSource = source("screenRecordingStop");
+    const auto closeStyle = closeSource->buttonStyle();
+    const auto closeAccent = closeSource->accentRole();
+    const auto stopStyle = stopSource->buttonStyle();
+    const auto stopAccent = stopSource->accentRole();
+    palette.setActionToolsLayout(customLayout({{copy}, {duration}, {start}, {pause}}));
+    palette.prepareForDisplay();
+    require(visibleIds() == QStringList{copy, duration, start, pause} && shape->isVisible(),
+            "recording actions reorder independently of annotation tools");
+    for (qreal scale : {0.75, 1.0, 1.5, 2.0}) {
+        palette.setPhysicalScale(scale);
+        palette.setRecordingDuration(65000);
+        palette.prepareForDisplay();
+        QCoreApplication::processEvents();
+        const int width = timer->width();
+        require(width > 0 && width >= timer->sizeHint().width(),
+                "a moved recording timer reserves enough width for its complete readout");
+        palette.setRecordingDuration(99000);
+        palette.prepareForDisplay();
+        QCoreApplication::processEvents();
+        require(timer->width() == width,
+                "a moved recording timer keeps stable metrics between ticks");
+        if (!palette.mainPanel()->rect().contains(timer->geometry())) {
+            std::cerr << "recording timer scale=" << scale << " timer=" << timer->x() << ','
+                      << timer->y() << ' ' << timer->width() << 'x' << timer->height()
+                      << " panel=" << palette.mainPanel()->width() << 'x'
+                      << palette.mainPanel()->height() << '\n';
+        }
+        require(palette.mainPanel()->rect().contains(timer->geometry()),
+                "a moved recording timer remains unclipped inside the toolbar");
+        palette.setRecordingDuration(360000000);
+        palette.prepareForDisplay();
+        QCoreApplication::processEvents();
+        require(timer->text() == QStringLiteral("100:00:00") && timer->width() > width &&
+                    timer->width() >= timer->sizeHint().width() &&
+                    palette.mainPanel()->rect().contains(timer->geometry()),
+                "a moved recording timer grows safely when the hour readout adds a digit");
+    }
+    palette.setPhysicalScale(1.0);
+    palette.setActionToolsLayout(customLayout({{start}, {pause}, {copy}}));
+    palette.prepareForDisplay();
+    QCoreApplication::processEvents();
+    require(timer->isHidden(), "the duration can be hidden while paired recording slots remain");
+    for (qreal scale : {0.75, 1.0, 1.5, 2.0}) {
+        palette.setPhysicalScale(scale);
+        const int controlSize = qRound(screenshot_action_toolbar::ControlSize * scale);
+        for (const Status status : {Status::idle(), Status::recording(), Status::paused()}) {
+            palette.setRecordingSession(status);
+            palette.prepareForDisplay();
+            QCoreApplication::processEvents();
+            for (const char* name :
+                 {"screenRecordingStart", "screenRecordingStop", "screenRecordingPause",
+                  "screenRecordingResume", "screenRecordingCopy"}) {
+                auto* button = source(name);
+                // Visible controls share cumulative width rounding. A phase
+                // source may retain that width while hidden until the next
+                // scale commit, but every control keeps the exact row height.
+                require(button->width() > 0 && qAbs(button->width() - controlSize) <= 1 &&
+                            button->height() == controlSize,
+                        "timer-hidden paired slots retain scaled widths and exact row height");
+                require(button->isHidden() ||
+                            palette.mainPanel()->rect().contains(button->geometry()),
+                        "each visible timer-hidden recording phase fits its logical position");
+            }
+            require(visibleIds() == QStringList{start, pause, copy} && timer->isHidden(),
+                    "timer-hidden phase changes retain the configured recording positions");
+        }
+    }
+    palette.setPhysicalScale(1.0);
+    palette.setActionToolsLayout(customLayout({}));
+    palette.setRecordingSession(Status::recording());
+    palette.prepareForDisplay();
+    require(visibleIds().isEmpty() && timer->isHidden() && shape->isVisible(),
+            "all recording actions and the duration can stay hidden across phase changes");
+    require(
+        palette.activateRecordingShortcut(QStringLiteral("export")) && stops == 1 &&
+            palette.activateRecordingShortcut(QStringLiteral("toggle_recording")) && pauses == 1 &&
+            palette.activateRecordingShortcut(QStringLiteral("copy_to_clipboard")) && copies == 1 &&
+            palette.activateRecordingShortcut(QStringLiteral("end_recording")) && closes == 1,
+        "hidden recording controls retain their logical shortcut commands");
+    palette.setRecordingSession(Status::paused());
+    require(palette.activateRecordingShortcut(QStringLiteral("toggle_recording")) && resumes == 1,
+            "hidden toggle shortcuts resolve Resume while paused");
+    palette.setRecordingSession(Status::idle());
+    require(palette.activateRecordingShortcut(QStringLiteral("toggle_recording")) && starts == 1 &&
+                !palette.canActivateRecordingShortcut(QStringLiteral("export")) &&
+                !palette.canActivateRecordingShortcut(QStringLiteral("copy_to_clipboard")),
+            "hidden shortcuts retain the idle lifecycle guards");
+
+    palette.setActionToolsLayout(customLayout({{close, start}, {copy, pause}, {duration}}));
+    auto* startGroup = palette.findChild<adqt::widgets::AdButton*>(
+        QStringLiteral("screenshotActionToolGroupButton0"));
+    auto* pauseGroup = palette.findChild<adqt::widgets::AdButton*>(
+        QStringLiteral("screenshotActionToolGroupButton1"));
+    require(startGroup && pauseGroup && startGroup->property("screenshotToolbarItemId") == start &&
+                pauseGroup->property("screenshotToolbarItemId") == pause &&
+                !pauseGroup->isEnabled(),
+            "recording stacks use the configured bottom action as their initial trigger");
+    startGroup->click();
+    require(starts == 2, "stacked Start dispatches its existing recording command once");
+    materializeLazyPopover(startGroup);
+    auto* startPopover = popoverForTrigger(startGroup);
+    auto* closeOption = popoverButtonWithTooltip(startPopover, "Close recording");
+    auto* startOption = popoverButtonWithTooltip(startPopover, "Start recording");
+    require(startOption && closeOption &&
+                startPopover->contentWidget()->layout()->indexOf(startOption) <
+                    startPopover->contentWidget()->layout()->indexOf(closeOption),
+            "recording stack options follow bottom-to-top horizontal order");
+    palette.setRecordingSession(Status::recording());
+    require(startGroup->property("screenshotToolbarItemId") == start &&
+                startGroup->accessibleName() == QStringLiteral("Stop recording") &&
+                startOption->accessibleName() == QStringLiteral("Stop recording"),
+            "Start/Stop changes phase without changing the selected logical slot");
+    require(source("screenRecordingStart")->isHidden() && source("screenRecordingStop")->isHidden(),
+            "phase changes never restore hidden sources behind a recording stack");
+    startPopover->hide();
+    startGroup->click();
+    pauseGroup->click();
+    require(stops == 2 && pauses == 2, "recording stack triggers dispatch Stop and Pause once");
+    palette.setRecordingSession(Status::paused());
+    require(pauseGroup->property("screenshotToolbarItemId") == pause &&
+                pauseGroup->accessibleName() == QStringLiteral("Resume recording"),
+            "Pause/Resume keeps the selected slot while updating its caption");
+    pauseGroup->click();
+    require(resumes == 2, "paused stacks dispatch Resume once");
+    auto& language = snow_shot::presentation::LanguageManager::instance();
+    require(language.setLanguage(QStringLiteral("zh_CN")), "translate recording stacks");
+    QCoreApplication::processEvents();
+    require(startGroup->accessibleName() == source("screenRecordingStop")->accessibleName() &&
+                pauseGroup->accessibleName() == source("screenRecordingResume")->accessibleName(),
+            "recording stack captions follow their phase-specific translated source");
+    require(language.setLanguage(QStringLiteral("en_US")), "restore recording stack language");
+    QCoreApplication::processEvents();
+    palette.setRecordingSession(Status::pausedCopying());
+    require(startGroup->isEnabled() && !pauseGroup->isEnabled() &&
+                !palette.canActivateRecordingShortcut(QStringLiteral("toggle_recording")) &&
+                !palette.canActivateRecordingShortcut(QStringLiteral("copy_to_clipboard")),
+            "busy stacks keep enabled Close reachable while recording commands remain guarded");
+    materializeLazyPopover(startGroup);
+    require(!popoverButtonWithTooltip(startPopover, "Stop recording")->isEnabled() &&
+                popoverButtonWithTooltip(startPopover, "Close recording")->isEnabled(),
+            "recording popover options preserve individual busy guards");
+    startPopover->hide();
+    palette.setRecordingSession(Status::pausedStopping());
+    require(startGroup->busy(), "a selected Start/Stop slot carries the Stop spinner");
+    palette.setRecordingSession(Status::paused());
+    materializeLazyPopover(pauseGroup);
+    auto* pausePopover = popoverForTrigger(pauseGroup);
+    popoverButtonWithTooltip(pausePopover, "Copy recording")->click();
+    require(copies == 2 && pauseGroup->property("screenshotToolbarItemId") == copy,
+            "choosing a recording stack alternative makes it the selected action");
+    palette.setRecordingSession(Status::pausedCopying());
+    require(pauseGroup->busy(), "a selected Copy stack action carries the Copy spinner");
+    palette.setRecordingSession(Status::idle());
+    require(pauseGroup->property("screenshotToolbarItemId") == copy && !pauseGroup->isEnabled(),
+            "state transitions preserve the selected logical alternative even when disabled");
+    palette.setActionToolsLayout({});
+    palette.prepareForDisplay();
+    require(visibleIds() == QStringList{start, pause, duration, QStringLiteral("microphone"),
+                                        QStringLiteral("system-audio"),
+                                        QStringLiteral("open-folder"), close,
+                                        QStringLiteral("trim"), QStringLiteral("save"), copy},
+            "restoring recording defaults restores every action in its original order");
+    palette.setRecordingSession(Status::recording());
+    for (const QString& selected : {close, start}) {
+        const QString alternative = selected == close ? start : close;
+        palette.setActionToolsLayout(customLayout({{alternative, selected}}));
+        auto* trigger = palette.findChild<adqt::widgets::AdButton*>(
+            QStringLiteral("screenshotActionToolGroupButton0"));
+        const auto proxyStyle = trigger->buttonStyle();
+        const auto proxyAccent = trigger->accentRole();
+        palette.clearActiveTool();
+        palette.setActiveTool(ScreenshotToolPalette::Tool::Shape);
+        require(
+            closeSource->buttonStyle() == closeStyle && closeSource->accentRole() == closeAccent &&
+                stopSource->buttonStyle() == stopStyle && stopSource->accentRole() == stopAccent &&
+                trigger->buttonStyle() == proxyStyle && trigger->accentRole() == proxyAccent,
+            "drawing selection preserves Close and Stop styles on sources and recording proxies");
+    }
+}
+
+void recordingAudioStacksUseVisibleAnchorsWithoutCompetingHoverPopovers() {
+    namespace layout = snow_shot::presentation::toolbar_layout;
+    using snow_shot::storage::ScreenshotToolbarLayout;
+    const auto kind = snow_shot::storage::ScreenshotToolbarLayoutKind::RecordingActionTools;
+    const QString microphone = QStringLiteral("microphone");
+    const QString speakers = QStringLiteral("system-audio");
+    auto hidden = layout::defaultOrder(kind);
+    hidden.removeAll(microphone);
+    hidden.removeAll(speakers);
+    ScreenshotToolPalette::Options options;
+    options.showRecordingControls = true;
+    options.enableStyleToolbar = false;
+    options.actionToolsLayout = ScreenshotToolbarLayout{{{speakers, microphone}}, hidden};
+    ScreenshotToolPalette palette(options);
+    palette.show();
+    palette.prepareForDisplay();
+    for (const QString& name :
+         {QStringLiteral("screenRecordingStart"), QStringLiteral("screenRecordingStop"),
+          QStringLiteral("screenRecordingPause"), QStringLiteral("screenRecordingResume"),
+          QStringLiteral("screenRecordingMicrophone"), QStringLiteral("screenRecordingSystemAudio"),
+          QStringLiteral("screenRecordingCopy")}) {
+        require(palette.findChild<adqt::widgets::AdButton*>(name)->isHidden(),
+                "initial recording stacks keep unconfigured and grouped sources hidden");
+    }
+    auto* trigger = palette.findChild<adqt::widgets::AdButton*>(
+        QStringLiteral("screenshotActionToolGroupButton0"));
+    auto* gain = palette.recordingAudioGainPopover(true);
+    auto* speakersGain = palette.recordingAudioGainPopover(false);
+    require(trigger && gain && speakersGain && gain->trigger() == trigger &&
+                gain->popover()->triggers() == adqt::widgets::AdPopover::Triggers{},
+            "a selected stacked audio action uses its visible trigger without another Hover popup");
+    palette.setRecordingMicrophoneEnabled(true);
+    palette.setRecordingState(ScreenshotToolPalette::RecordingState::Recording);
+    materializeLazyPopover(trigger);
+    auto* groupPopover = popoverForTrigger(trigger);
+    require(groupPopover->isVisible() && !gain->popover()->isVisible(),
+            "hovering the audio stack opens alternatives without opening the gain slider");
+    trigger->click();
+    require(gain->popover()->isVisible() && !groupPopover->isVisible() &&
+                gain->popover()->sourceWidget() == trigger,
+            "clicking selected stacked audio opens gain against the visible toolbar trigger");
+    gain->close();
+    materializeLazyPopover(trigger);
+    popoverButtonWithTooltip(groupPopover, "Record speakers")->click();
+    require(trigger->property("screenshotToolbarItemId") == speakers &&
+                speakersGain->trigger() == trigger && gain->trigger() != trigger &&
+                speakersGain->popover()->isVisible() && !gain->popover()->isVisible(),
+            "switching stacked audio rebinds its gain anchor and preserves exclusive popovers");
+    speakersGain->close();
+    palette.setRecordingOutputFormat(QStringLiteral("gif"));
+    require(!trigger->isEnabled() &&
+                trigger->toolTip() ==
+                    QStringLiteral("Animated recording formats do not contain audio"),
+            "animated formats disable grouped audio and explain why");
+    palette.setRecordingOutputFormat(QStringLiteral("mp4"));
+    palette.setRecordingSession(ScreenshotToolPalette::RecordingSessionStatus::stopping());
+    require(!trigger->isEnabled(), "busy recording guards grouped audio controls");
+    palette.setRecordingSession(ScreenshotToolPalette::RecordingSessionStatus::paused());
+    QWidget trim;
+    palette.setRecordingTrimPanel(&trim, false);
+    require(!trigger->isEnabled(), "trim mode guards grouped audio controls");
+    palette.setRecordingTrimPanel(nullptr, false);
+    palette.setActionToolsLayout({});
+    require(gain->trigger() == palette.findChild<adqt::widgets::AdButton*>(
+                                   QStringLiteral("screenRecordingMicrophone")) &&
+                gain->popover()->triggers() == adqt::widgets::AdPopover::Trigger::Hover,
+            "restoring direct audio controls restores their original hover editor");
 }
 
 void requireControlsEnabled(ScreenshotToolPalette& palette, const char* const* tooltips,
@@ -14956,6 +15267,8 @@ int main(int argc, char** argv) {
         recordingPostProcessingOptionsBindState();
         recordingEffectSettingsModal();
         recordingControlsRemainLaidOutAcrossStateChanges();
+        recordingActionLayoutSupportsStacksHidingAndStatefulSlots();
+        recordingAudioStacksUseVisibleAnchorsWithoutCompetingHoverPopovers();
         recordingExportSettingsAndDrawingAvailabilityFollowSessionState();
         snow_shot::storage::ApplicationStorage::instance().shutdown();
         return 0;

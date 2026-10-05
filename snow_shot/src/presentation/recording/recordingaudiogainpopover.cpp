@@ -68,6 +68,27 @@ RecordingAudioGainPopover::~RecordingAudioGainPopover() {
 adqt::widgets::AdButton* RecordingAudioGainPopover::trigger() const {
     return m_trigger;
 }
+void RecordingAudioGainPopover::setTrigger(adqt::widgets::AdButton* trigger, bool hover) {
+    const auto triggers =
+        hover ? adqt::widgets::AdPopover::Triggers(adqt::widgets::AdPopover::Trigger::Hover)
+              : adqt::widgets::AdPopover::Triggers{};
+    if (m_trigger == trigger && m_popover->triggers() == triggers) {
+        return;
+    }
+    close();
+    if (m_trigger != nullptr) {
+        m_trigger->removeEventFilter(this);
+    }
+    m_trigger = trigger;
+    m_popover->setSourceWidget(trigger);
+    // Stacked controls reserve hover for choosing another toolbar action.
+    m_popover->setTriggers(triggers);
+    if (trigger != nullptr) {
+        trigger->setProperty(adqt::widgets::detail::kPopupTriggerTooltipEnabledProperty, true);
+        trigger->setFocusPolicy(Qt::StrongFocus);
+        trigger->installEventFilter(this);
+    }
+}
 adqt::widgets::AdPopover* RecordingAudioGainPopover::popover() const {
     return m_popover;
 }

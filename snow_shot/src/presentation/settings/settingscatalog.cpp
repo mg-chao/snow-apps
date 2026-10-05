@@ -603,6 +603,19 @@ SettingsItemDefinition pinnedToolbarEditorItem() {
             SettingsCustomDefinition{SettingsCustomRenderer::PinnedToolbarEditor}};
 }
 
+SettingsItemDefinition recordingToolbarEditorItem() {
+    return {QStringLiteral("interface.screen-recording.recording-toolbar-editor"),
+            settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Screen recording toolbar settings")),
+            settingsText(QT_TRANSLATE_NOOP(
+                "SettingsCatalog",
+                "Drag recording tools to reorder, stack, or hide them on the recording toolbar.")),
+            {settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Custom recording toolbar")),
+             settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Tool positions")),
+             settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Hidden tools"))},
+            QStringLiteral("screen_recording/action_tools_layout"),
+            SettingsCustomDefinition{SettingsCustomRenderer::RecordingToolbarEditor}};
+}
+
 SettingsItemDefinition floatingToolbarOpacityItem() {
     return {QStringLiteral("interface.floating-toolbar.opacity"),
             settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Toolbar Opacity")),
@@ -3030,6 +3043,14 @@ QVector<SettingsPageDefinition> builtInPages() {
 #endif
                  },
              },
+             {
+                 QStringLiteral("screen-recording-action-toolbar"),
+                 settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Action Toolbar")),
+                 settingsText(QT_TRANSLATE_NOOP("SettingsCatalog",
+                                                "Customize the screen recording action toolbar")),
+                 SettingsSectionReset::ScreenRecordingActionToolbar,
+                 {recordingToolbarEditorItem()},
+             },
          },
          SettingsPageKind::GeneratedSettings,
          {{settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Video export")),
@@ -4983,6 +5004,11 @@ QStringList SettingsCatalog::validationErrors() const {
                     case SettingsCustomRenderer::ScreenshotToolbarEditor:
                         rendererSupported = true;
                         expectedKey = QStringLiteral("screenshot_toolbar/action_tools_layout");
+                        expectedKind = storage::ConfigurationValueKind::Structured;
+                        break;
+                    case SettingsCustomRenderer::RecordingToolbarEditor:
+                        rendererSupported = true;
+                        expectedKey = QStringLiteral("screen_recording/action_tools_layout");
                         expectedKind = storage::ConfigurationValueKind::Structured;
                         break;
                     case SettingsCustomRenderer::TrayMenuOptions:

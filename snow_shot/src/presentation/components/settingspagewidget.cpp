@@ -102,6 +102,7 @@ permissionForRenderer(settings::SettingsCustomRenderer renderer) {
     case Renderer::StorageStatus:
     case Renderer::DrawingToolbarEditor:
     case Renderer::ScreenshotToolbarEditor:
+    case Renderer::RecordingToolbarEditor:
     case Renderer::PinnedToolbarEditor:
     case Renderer::FloatingToolbarEditor:
     case Renderer::TrayMenuOptions:
@@ -707,6 +708,8 @@ class SettingsPageWidget::Impl {
                                 settings::SettingsCustomRenderer::DrawingToolbarEditor ||
                             payload.renderer ==
                                 settings::SettingsCustomRenderer::ScreenshotToolbarEditor ||
+                            payload.renderer ==
+                                settings::SettingsCustomRenderer::RecordingToolbarEditor ||
                             payload.renderer ==
                                 settings::SettingsCustomRenderer::PinnedToolbarEditor) {
                             runtime.anchor = new QWidget(list);

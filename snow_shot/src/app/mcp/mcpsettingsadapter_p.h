@@ -154,19 +154,33 @@ inline bool settingsValue(const settings::SettingsFieldDescriptor& field, const 
         }
         if (custom.renderer != Renderer::DrawingToolbarEditor &&
             custom.renderer != Renderer::ScreenshotToolbarEditor &&
+            custom.renderer != Renderer::RecordingToolbarEditor &&
             custom.renderer != Renderer::PinnedToolbarEditor)
             return false;
-        const auto object = json.toObject();
-        storage::ScreenshotToolbarLayout layout;
-        if (!json.isObject() || !object.value(QStringLiteral("positions")).isArray() ||
-            !stringArray(object.value(QStringLiteral("hidden")), &layout.hidden))
-            return false;
-        for (const auto& position : object.value(QStringLiteral("positions")).toArray()) {
-            QStringList tools;
-            if (!stringArray(position, &tools))
+        const auto decodeLayout = [](const QJsonValue& input,
+                                     storage::ScreenshotToolbarLayout* layout) {
+            const auto object = input.toObject();
+            if (!input.isObject() || !object.value(QStringLiteral("positions")).isArray() ||
+                !stringArray(object.value(QStringLiteral("hidden")), &layout->hidden))
                 return false;
-            layout.positions.append(tools);
-        }
+            for (const auto& position : object.value(QStringLiteral("positions")).toArray()) {
+                QStringList tools;
+                if (!stringArray(position, &tools))
+                    return false;
+                layout->positions.append(tools);
+            }
+            return true;
+        };
+        storage::ScreenshotToolbarLayout layout;
+        if (!decodeLayout(json, &layout))
+            return false;
+        // Keep strict JSON shape checks above, then submit the same canonical layout
+        // the storage backend will accept so runtime writes can settle successfully.
+        layout = {};
+        if (!decodeLayout(
+                storage::ConfigurationSchema::normalize(field.configurationKey, json).value,
+                &layout))
+            return false;
         *value = QVariant::fromValue(layout);
         return true;
     }

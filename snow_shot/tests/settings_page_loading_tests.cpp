@@ -773,6 +773,45 @@ void screenshotActionToolbarSettings(const settings::SettingsRegistry& registry,
     drainEvents();
 }
 
+void recordingActionToolbarSettings(const settings::SettingsRegistry& registry,
+                                    settings::SettingsRuntimeSession& session) {
+    SettingsPageWidget page(registry, QStringLiteral("screen-recording"), session);
+    page.resize(880, 360);
+    page.show();
+    drainEvents();
+    require(page.findChild<QWidget*>(QStringLiteral("settings-recording-toolbar-editor")) ==
+                nullptr,
+            "recording toolbar drag surfaces must stay lazy below the viewport");
+    const QString sectionId = QStringLiteral("screen-recording-action-toolbar");
+    const QString editorId = QStringLiteral("interface.screen-recording.recording-toolbar-editor");
+    page.reveal({page.pageId(), sectionId, editorId});
+    drainEvents();
+    auto* editor = page.findChild<QWidget*>(
+        settings::generatedObjectName(QStringLiteral("settings-item"), editorId));
+    require(editor != nullptr && editor->isVisible() &&
+                editor->findChild<QWidget*>(QStringLiteral("settings-recording-toolbar-surface")) !=
+                    nullptr,
+            "recording Action Toolbar navigation materializes and reveals the editor");
+    auto* header = page.findChild<SectionHeaderWidget*>(settings::generatedObjectName(
+        QStringLiteral("settings-section"), QStringLiteral("%1-%2").arg(page.pageId(), sectionId)));
+    require(header != nullptr, "recording action toolbar has a separate category header");
+    auto& language = snow_shot::presentation::LanguageManager::instance();
+    for (const QString& locale :
+         {QStringLiteral("en_US"), QStringLiteral("zh_CN"), QStringLiteral("zh_TW")}) {
+        require(language.setLanguage(locale), "switch recording toolbar settings language");
+        drainEvents();
+        const QString title = locale == u"en_US"   ? QStringLiteral("Action Toolbar")
+                              : locale == u"zh_CN" ? QString::fromUtf8("操作工具栏")
+                                                   : QString::fromUtf8("操作工具列");
+        bool hasTitle = false;
+        for (auto* label : header->findChildren<QLabel*>())
+            hasTitle = hasTitle || label->text() == title;
+        require(hasTitle, "recording Action Toolbar retranslates in every supported language");
+    }
+    require(language.setLanguage(QStringLiteral("en_US")), "restore English recording settings");
+    drainEvents();
+}
+
 void pinnedSettingsGroups(const settings::SettingsRegistry& registry,
                           settings::SettingsRuntimeSession& session) {
     SettingsPageWidget page(registry, QStringLiteral("pinned-windows"), session);
@@ -974,6 +1013,7 @@ int main(int argc, char** argv) {
     settings::SettingsRuntimeSession session(registry, backend);
     if (application.arguments().contains(QStringLiteral("--action-toolbar-settings-only"))) {
         screenshotActionToolbarSettings(registry, session);
+        recordingActionToolbarSettings(registry, session);
         pinnedSettingsGroups(registry, session);
         storage.shutdown();
         return 0;

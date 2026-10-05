@@ -663,6 +663,8 @@ class ScreenshotToolPalette final : public QWidget,
     [[nodiscard]] adqt::widgets::AdButton* screenshotShortcutButton(const QString& actionId) const;
     void refreshDrawingToolGroup(int groupIndex);
     void addRecordingControls(QBoxLayout* layout);
+    [[nodiscard]] adqt::widgets::AdButton* recordingActionSourceButton(const QString& itemId) const;
+    void refreshRecordingAudioGainTriggers();
     void createRecordingExportSettingsToolbar();
     // Builds the recording effect settings dialog on first use; it is destroyed
     // again when the dialog closes. Returns false when the export row is absent.

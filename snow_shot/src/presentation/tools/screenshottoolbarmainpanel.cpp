@@ -355,6 +355,11 @@ int ScreenshotToolbarMainPanel::buttonSize() const {
 
 QSize ScreenshotToolbarMainPanel::sizeHint() const {
     const QSize intrinsicHint = QFrame::sizeHint();
+    // Readouts and other custom widgets own their sizes. Their dimensions can
+    // change independently of the panel's reference metrics.
+    if (hasCallerSizedWidgets()) {
+        return intrinsicHint;
+    }
     if (qFuzzyCompare(m_physicalScale + 1.0, 2.0)) {
         m_referenceSizeHint = intrinsicHint;
         return intrinsicHint;
@@ -537,7 +542,10 @@ void ScreenshotToolbarMainPanel::applyMetrics() {
         QLayoutItem* layoutItem = m_layout->itemAt(index);
         QWidget* widget = layoutItem != nullptr ? layoutItem->widget() : nullptr;
         int referenceWidth = 0;
-        if (qobject_cast<adqt::widgets::AdButton*>(widget) != nullptr) {
+        if (widget != nullptr && widget->isHidden()) {
+            // Stateful slots keep their alternate source in the row. Only
+            // the visible phase contributes to its reference-size budget.
+        } else if (qobject_cast<adqt::widgets::AdButton*>(widget) != nullptr) {
             referenceWidth = kButtonSize;
         } else if (widget != nullptr &&
                    (widget == m_dragHandle || widget == m_trailingDragHandle)) {
@@ -557,9 +565,10 @@ void ScreenshotToolbarMainPanel::applyMetrics() {
     referenceWidths.append(kPanelHorizontalMargin);
 
     const int referenceWidth = std::accumulate(referenceWidths.cbegin(), referenceWidths.cend(), 0);
-    const int targetWidth = m_referenceSizeHint.isValid() && !m_referenceSizeHint.isEmpty()
-                                ? qMax(1, qRound(m_referenceSizeHint.width() * m_physicalScale))
-                                : qMax(1, qRound(referenceWidth * m_physicalScale));
+    const int targetWidth =
+        !hasCallerSizedWidgets() && m_referenceSizeHint.isValid() && !m_referenceSizeHint.isEmpty()
+            ? qMax(1, qRound(m_referenceSizeHint.width() * m_physicalScale))
+            : qMax(1, qRound(referenceWidth * m_physicalScale));
     const qreal cumulativeScale =
         referenceWidth > 0 ? static_cast<qreal>(targetWidth) / referenceWidth : m_physicalScale;
     const QVector<int> scaledEdges =
@@ -581,7 +590,10 @@ void ScreenshotToolbarMainPanel::applyMetrics() {
                               ? qMax(1, roundedWidth)
                               : roundedWidth;
         if (widget != nullptr) {
-            if (widget->sizePolicy().horizontalPolicy() == QSizePolicy::Fixed) {
+            // A zero reference width means that this widget's caller owns its
+            // metrics. Never overwrite a custom readout with a zero width.
+            if (referenceWidths.at(index + 1) > 0 &&
+                widget->sizePolicy().horizontalPolicy() == QSizePolicy::Fixed) {
                 widget->setFixedWidth(width);
             }
         } else if (QSpacerItem* spacer = layoutItem->spacerItem()) {
@@ -592,6 +604,21 @@ void ScreenshotToolbarMainPanel::applyMetrics() {
 
     m_layout->invalidate();
     updatePanelStyle();
+}
+
+bool ScreenshotToolbarMainPanel::hasCallerSizedWidgets() const {
+    if (m_layout == nullptr) {
+        return false;
+    }
+    for (int index = 0; index < m_layout->count(); ++index) {
+        auto* widget = m_layout->itemAt(index)->widget();
+        if (widget != nullptr && qobject_cast<adqt::widgets::AdButton*>(widget) == nullptr &&
+            widget != m_dragHandle && widget != m_trailingDragHandle &&
+            !m_separatorFrames.contains(qobject_cast<QFrame*>(widget))) {
+            return true;
+        }
+    }
+    return false;
 }
 
 void ScreenshotToolbarMainPanel::updatePanelStyle() {

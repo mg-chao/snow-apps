@@ -107,6 +107,7 @@ class ScreenshotToolbarMainPanel final : public ScreenshotToolbarPanel,
     };
 
     void applyMetrics();
+    [[nodiscard]] bool hasCallerSizedWidgets() const;
     void updatePanelStyle();
     void updateSeparatorStyle(QFrame* separator);
     void updateDragHandle(QWidget* handle);

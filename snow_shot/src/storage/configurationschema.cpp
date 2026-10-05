@@ -160,6 +160,22 @@ QJsonObject defaultToolbarLayout(const QVector<QStringList>& positions, bool act
                                            : QJsonArray()}};
 }
 
+const QStringList kRecordingActionToolbarItemIds = {
+    QStringLiteral("start-stop"),  QStringLiteral("pause-resume"), QStringLiteral("duration"),
+    QStringLiteral("microphone"),  QStringLiteral("system-audio"), QStringLiteral("separator"),
+    QStringLiteral("open-folder"), QStringLiteral("close"),        QStringLiteral("trim"),
+    QStringLiteral("save"),        QStringLiteral("copy"),
+};
+
+QVector<QStringList> defaultRecordingActionToolbarPositions() {
+    QVector<QStringList> positions;
+    positions.reserve(kRecordingActionToolbarItemIds.size());
+    for (const QString& id : kRecordingActionToolbarItemIds) {
+        positions.push_back({id});
+    }
+    return positions;
+}
+
 QString defaultOutputDirectory(QStandardPaths::StandardLocation primary) {
     QString root = QStandardPaths::writableLocation(primary);
     if (root.isEmpty()) {
@@ -1165,6 +1181,9 @@ const QVector<ConfigurationSchemaEntry> kRawEntries = {
     {QStringLiteral("screenshot_toolbar/action_tools_layout"),
      defaultToolbarLayout(defaultActionToolbarPositions(), true),
      ConfigurationValueKind::Structured},
+    {QStringLiteral("screen_recording/action_tools_layout"),
+     defaultToolbarLayout(defaultRecordingActionToolbarPositions()),
+     ConfigurationValueKind::Structured},
     {QStringLiteral("screenshot_ui/toolbar_size"),
      QStringLiteral("normal"),
      ConfigurationValueKind::String,
@@ -1876,12 +1895,11 @@ ConfigurationNormalization normalizeTranslationLanguage(const ConfigurationSchem
 }
 #endif
 
-ConfigurationNormalization normalizeToolbarLayout(const QJsonValue& value,
-                                                  const QStringList& itemIds,
-                                                  const QVector<QStringList>& defaultPositions,
-                                                  bool migrateScreenshotLayout = false,
-                                                  const QStringList& defaultHidden = {},
-                                                  bool legacyDefaults = true) {
+ConfigurationNormalization
+normalizeToolbarLayout(const QJsonValue& value, const QStringList& itemIds,
+                       const QVector<QStringList>& defaultPositions,
+                       bool migrateScreenshotLayout = false, const QStringList& defaultHidden = {},
+                       bool legacyDefaults = true, const QStringList& standaloneItemIds = {}) {
     if (!value.isObject()) {
         return {};
     }
@@ -1891,13 +1909,13 @@ ConfigurationNormalization normalizeToolbarLayout(const QJsonValue& value,
     QSet<QString> positioned;
     QStringList hidden;
     QSet<QString> hiddenSet;
-    const auto appendPosition = [&positions, &positioned, &hiddenSet,
-                                 &known](const QStringList& ids) {
+    const auto appendPosition = [&positions, &positioned, &hiddenSet, &known,
+                                 &standaloneItemIds](const QStringList& ids) {
         QStringList position;
         for (const QString& id : ids) {
             if (known.contains(id) && !positioned.contains(id) && !hiddenSet.contains(id)) {
                 if (id == QStringLiteral("separator") || id == QStringLiteral("select-separator") ||
-                    id == QStringLiteral("confirm-separator")) {
+                    id == QStringLiteral("confirm-separator") || standaloneItemIds.contains(id)) {
                     if (!position.isEmpty()) {
                         positions.push_back(position);
                         position.clear();
@@ -2336,6 +2354,11 @@ ConfigurationNormalization ConfigurationSchema::normalize(const QString& key,
     if (key == QStringLiteral("screenshot_toolbar/action_tools_layout")) {
         return normalizeToolbarLayout(value, kActionToolbarItemIds, defaultActionToolbarPositions(),
                                       true);
+    }
+    if (key == QStringLiteral("screen_recording/action_tools_layout")) {
+        return normalizeToolbarLayout(value, kRecordingActionToolbarItemIds,
+                                      defaultRecordingActionToolbarPositions(), false, {}, false,
+                                      {QStringLiteral("duration")});
     }
     if (isGlobalMouseKey(key)) {
         return normalizeGlobalMouseCombination(value);

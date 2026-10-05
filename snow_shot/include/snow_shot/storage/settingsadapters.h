@@ -78,6 +78,7 @@ enum class ScreenshotToolbarLayoutKind {
     DrawingTools,
     ActionTools,
     FloatingTools,
+    RecordingActionTools,
 };
 
 [[nodiscard]] QColor colorFromRgbaString(const QString& value);

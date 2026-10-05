@@ -433,9 +433,9 @@ void builtInCatalogIsCompleteAndValid() {
         }
     }
 #ifdef Q_OS_MACOS
-    require(sectionCount == 49, "macOS includes permissions and merged storage and desktop groups");
+    require(sectionCount == 50, "macOS includes permissions and merged storage and desktop groups");
 #else
-    require(sectionCount == 49,
+    require(sectionCount == 50,
             "catalog includes capture and recording groups with merged storage and desktop groups");
 #endif
     // Keep the shared total in one place: adding a shared setting must update both platforms.
@@ -474,9 +474,9 @@ void builtInCatalogIsCompleteAndValid() {
                 itemIds.contains(QStringLiteral("screenshot-shortcut.upload_to_cloud")) &&
                 itemIds.contains(QStringLiteral("pin-to-screen-shortcut.upload_to_cloud")),
             "cloud upload must expose its configuration and shortcuts in both local scopes");
-    require(itemIds.size() == 242,
+    require(itemIds.size() == 243,
             qPrintable(QStringLiteral(
-                           "catalog must contain 242 shared settings on every platform; found %1")
+                           "catalog must contain 243 shared settings on every platform; found %1")
                            .arg(itemIds.size())));
     require(itemIds.contains(QStringLiteral("pin-to-screen.confirm-before-closing-window")) &&
                 itemIds.contains(QStringLiteral("pin-to-screen.confirm-before-destroying-window")),
@@ -1589,6 +1589,38 @@ void builtInCatalogIsCompleteAndValid() {
                 screenshotToolbarField->reset == actionToolbarSection->reset,
             "screenshot action toolbar reset belongs only to its own category");
 
+    const auto* recordingToolbarSection = catalog.section(
+        QStringLiteral("screen-recording"), QStringLiteral("screen-recording-action-toolbar"));
+    const auto* recordingToolbarEditor = catalog.item(
+        {QStringLiteral("screen-recording"), QStringLiteral("screen-recording-action-toolbar"),
+         QStringLiteral("interface.screen-recording.recording-toolbar-editor")});
+    const auto* recordingPage = catalog.page(QStringLiteral("screen-recording"));
+    require(
+        recordingToolbarSection != nullptr && recordingToolbarEditor != nullptr &&
+            recordingPage != nullptr &&
+            recordingPage->sections.constLast().id ==
+                QStringLiteral("screen-recording-action-toolbar") &&
+            recordingPage->sections.at(recordingPage->sections.size() - 2).id ==
+                QStringLiteral("screen-recording-capture") &&
+            recordingToolbarSection->title.translated() == QStringLiteral("Action Toolbar") &&
+            recordingToolbarSection->items.size() == 1 &&
+            recordingToolbarEditor->configurationKey ==
+                QStringLiteral("screen_recording/action_tools_layout") &&
+            std::get<settings::SettingsCustomDefinition>(recordingToolbarEditor->payload)
+                    .renderer == settings::SettingsCustomRenderer::RecordingToolbarEditor &&
+            recordingToolbarSection->reset ==
+                settings::SettingsSectionReset::ScreenRecordingActionToolbar &&
+            settings::builtInSettingsRegistry()
+                    .fieldsForReset(settings::SettingsSectionReset::ScreenRecordingActionToolbar)
+                    .size() == 1,
+        "recording action toolbar must have a dedicated category, renderer and reset scope");
+    const auto* recordingToolbarField =
+        settings::builtInSettingsRegistry().field(recordingToolbarEditor->id);
+    require(recordingToolbarField != nullptr &&
+                recordingToolbarField->sectionId == recordingToolbarSection->id &&
+                recordingToolbarField->reset == recordingToolbarSection->reset,
+            "recording action toolbar reset belongs only to its own category");
+
     const auto* selectionBorderColor =
         catalog.item({QStringLiteral("screenshots"), QStringLiteral("interface-screenshot"),
                       QStringLiteral("interface.screenshot.selection-border-color")});
@@ -2523,6 +2555,15 @@ void searchIndexIsGeneratedAndRanked() {
                 screenshotToolbar.constFirst().location.itemId ==
                     QStringLiteral("interface.screenshot.screenshot-toolbar-editor"),
             "screenshot toolbar customization terminology must be indexed");
+    const auto recordingToolbar = index.search(QStringLiteral("custom recording toolbar"));
+    require(!recordingToolbar.isEmpty() &&
+                recordingToolbar.constFirst().location.pageId ==
+                    QStringLiteral("screen-recording") &&
+                recordingToolbar.constFirst().location.sectionId ==
+                    QStringLiteral("screen-recording-action-toolbar") &&
+                recordingToolbar.constFirst().location.itemId ==
+                    QStringLiteral("interface.screen-recording.recording-toolbar-editor"),
+            "recording toolbar customization must find its dedicated category");
 
     index.setRuntimeValues({7});
     const auto delayedScreenshot = index.search(QStringLiteral("delay 7s"));

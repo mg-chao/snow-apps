@@ -92,6 +92,13 @@ enum class Icon {
     Latex,
     Markdown,
     Html,
+    RecordingStart,
+    RecordingPause,
+    RecordingDuration,
+    RecordingMicrophone,
+    RecordingSystemAudio,
+    RecordingFolder,
+    RecordingTrim,
 };
 
 struct Descriptor {
@@ -259,8 +266,59 @@ struct EditorDescriptor {
     return value;
 }
 
+[[nodiscard]] inline const QVector<EditorDescriptor>& recordingDescriptors() {
+    static const QVector<EditorDescriptor> value{
+        {"start-stop", "RecordingToolbarEditorSettingsWidget",
+         QT_TRANSLATE_NOOP("RecordingToolbarEditorSettingsWidget", "Start / stop recording"),
+         Icon::RecordingStart},
+        {"pause-resume", "RecordingToolbarEditorSettingsWidget",
+         QT_TRANSLATE_NOOP("RecordingToolbarEditorSettingsWidget", "Pause / resume recording"),
+         Icon::RecordingPause},
+        {"duration", "RecordingToolbarEditorSettingsWidget",
+         QT_TRANSLATE_NOOP("RecordingToolbarEditorSettingsWidget", "Recording duration"),
+         Icon::RecordingDuration},
+        {"microphone", "RecordingToolbarEditorSettingsWidget",
+         QT_TRANSLATE_NOOP("RecordingToolbarEditorSettingsWidget", "Microphone"),
+         Icon::RecordingMicrophone},
+        {"system-audio", "RecordingToolbarEditorSettingsWidget",
+         QT_TRANSLATE_NOOP("RecordingToolbarEditorSettingsWidget", "System audio"),
+         Icon::RecordingSystemAudio},
+        {"separator", "RecordingToolbarEditorSettingsWidget",
+         QT_TRANSLATE_NOOP("RecordingToolbarEditorSettingsWidget", "Separator Component"),
+         Icon::Separator},
+        {"open-folder", "RecordingToolbarEditorSettingsWidget",
+         QT_TRANSLATE_NOOP("RecordingToolbarEditorSettingsWidget", "Open recording folder"),
+         Icon::RecordingFolder},
+        {"close", "RecordingToolbarEditorSettingsWidget",
+         QT_TRANSLATE_NOOP("RecordingToolbarEditorSettingsWidget", "Close recording"),
+         Icon::Cancel},
+        {"trim", "RecordingToolbarEditorSettingsWidget",
+         QT_TRANSLATE_NOOP("RecordingToolbarEditorSettingsWidget", "Trim recording"),
+         Icon::RecordingTrim},
+        {"save", "RecordingToolbarEditorSettingsWidget",
+         QT_TRANSLATE_NOOP("RecordingToolbarEditorSettingsWidget", "Save recording"),
+         Icon::SaveAsFile},
+        {"copy", "RecordingToolbarEditorSettingsWidget",
+         QT_TRANSLATE_NOOP("RecordingToolbarEditorSettingsWidget", "Copy recording content"),
+         Icon::Copy},
+    };
+    return value;
+}
+
+[[nodiscard]] inline const EditorDescriptor* recordingDescriptor(const QString& id) {
+    for (const EditorDescriptor& candidate : recordingDescriptors()) {
+        if (id == QLatin1String(candidate.id)) {
+            return &candidate;
+        }
+    }
+    return nullptr;
+}
+
 [[nodiscard]] inline QVector<EditorDescriptor>
 editorDescriptors(storage::ScreenshotToolbarLayoutKind kind) {
+    if (kind == storage::ScreenshotToolbarLayoutKind::RecordingActionTools) {
+        return recordingDescriptors();
+    }
     if (kind == storage::ScreenshotToolbarLayoutKind::FloatingTools) {
         auto result = actionDescriptors();
         const auto ids = storage::floatingToolbarItemIds();
@@ -379,6 +437,14 @@ editorDescriptors(storage::ScreenshotToolbarLayoutKind kind) {
 
 [[nodiscard]] inline QVector<QStringList>
 defaultPositions(storage::ScreenshotToolbarLayoutKind kind) {
+    if (kind == storage::ScreenshotToolbarLayoutKind::RecordingActionTools) {
+        QVector<QStringList> positions;
+        positions.reserve(recordingDescriptors().size());
+        for (const EditorDescriptor& descriptor : recordingDescriptors()) {
+            positions.push_back({QString::fromLatin1(descriptor.id)});
+        }
+        return positions;
+    }
     if (kind == storage::ScreenshotToolbarLayoutKind::FloatingTools)
         return storage::defaultFloatingToolbarLayout().positions;
     if (kind == storage::ScreenshotToolbarLayoutKind::PinnedActionTools) {
@@ -415,10 +481,17 @@ defaultPositions(storage::ScreenshotToolbarLayoutKind kind) {
            itemId == QStringLiteral("confirm-separator");
 }
 
+[[nodiscard]] inline bool requiresOwnPosition(const QString& itemId,
+                                              storage::ScreenshotToolbarLayoutKind kind) {
+    return isSeparator(itemId) ||
+           (kind == storage::ScreenshotToolbarLayoutKind::RecordingActionTools &&
+            itemId == QStringLiteral("duration"));
+}
+
 [[nodiscard]] inline storage::ScreenshotToolbarLayout
 normalizedLayout(const storage::ScreenshotToolbarLayout& input, const QStringList& defaults,
                  const QVector<QStringList>& defaultLayout, bool migrateScreenshotLayout = false,
-                 bool legacyDefaults = true) {
+                 bool legacyDefaults = true, const QStringList& standaloneItemIds = {}) {
     const QSet<QString> known(defaults.cbegin(), defaults.cend());
     QSet<QString> positioned;
     storage::ScreenshotToolbarLayout result;
@@ -426,7 +499,7 @@ normalizedLayout(const storage::ScreenshotToolbarLayout& input, const QStringLis
         QStringList position;
         for (const QString& itemId : inputPosition) {
             if (known.contains(itemId) && !positioned.contains(itemId)) {
-                if (isSeparator(itemId)) {
+                if (isSeparator(itemId) || standaloneItemIds.contains(itemId)) {
                     if (!position.isEmpty()) {
                         result.positions.push_back(position);
                         position.clear();
@@ -626,6 +699,10 @@ normalizedLayout(const storage::ScreenshotToolbarLayout& input) {
 [[nodiscard]] inline storage::ScreenshotToolbarLayout
 normalizedLayout(const storage::ScreenshotToolbarLayout& input,
                  storage::ScreenshotToolbarLayoutKind kind) {
+    if (kind == storage::ScreenshotToolbarLayoutKind::RecordingActionTools) {
+        return normalizedLayout(input, defaultOrder(kind), defaultPositions(kind), false, false,
+                                {QStringLiteral("duration")});
+    }
     if (kind == storage::ScreenshotToolbarLayoutKind::FloatingTools) {
         auto candidate = input;
         for (const auto& id : storage::defaultFloatingToolbarLayout().hidden) {
@@ -698,8 +775,9 @@ stackItemInPosition(const storage::ScreenshotToolbarLayout& input,
                     int targetPositionIndex, int targetItemIndex) {
     storage::ScreenshotToolbarLayout result = normalizedLayout(input, kind);
     const QStringList targetPosition = result.positions.value(targetPositionIndex);
-    if (isSeparator(itemId) ||
-        std::any_of(targetPosition.cbegin(), targetPosition.cend(), isSeparator)) {
+    if (requiresOwnPosition(itemId, kind) ||
+        std::any_of(targetPosition.cbegin(), targetPosition.cend(),
+                    [&kind](const QString& id) { return requiresOwnPosition(id, kind); })) {
         return moveItemToPosition(result, kind, itemId,
                                   targetPositionIndex + (targetItemIndex > 0 ? 1 : 0));
     }
@@ -834,6 +912,20 @@ moveItemToHidden(const storage::ScreenshotToolbarLayout& input,
         return adqt::icons::antd::outlined::CloudUpload();
     case Icon::SaveAsFile:
         return custom::Save();
+    case Icon::RecordingStart:
+        return custom::RecordingStart();
+    case Icon::RecordingPause:
+        return adqt::icons::antd::outlined::Pause();
+    case Icon::RecordingDuration:
+        return adqt::icons::antd::outlined::ClockCircle();
+    case Icon::RecordingMicrophone:
+        return custom::RecordingMicrophone();
+    case Icon::RecordingSystemAudio:
+        return adqt::icons::antd::outlined::Sound();
+    case Icon::RecordingFolder:
+        return custom::RecordingFolder();
+    case Icon::RecordingTrim:
+        return custom::RecordingTrim();
     }
     return {};
 }

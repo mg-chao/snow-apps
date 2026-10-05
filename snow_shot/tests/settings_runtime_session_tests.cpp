@@ -290,6 +290,8 @@ class FakeSettingsBackend final : public settings::SettingsBackend {
     toolbarLayout(storage::ScreenshotToolbarLayoutKind kind) const override {
         if (kind == storage::ScreenshotToolbarLayoutKind::PinnedActionTools)
             return m_pinnedToolbar;
+        if (kind == storage::ScreenshotToolbarLayoutKind::RecordingActionTools)
+            return m_recordingToolbar;
         return kind == storage::ScreenshotToolbarLayoutKind::DrawingTools ? m_drawingToolbar
                                                                           : m_actionToolbar;
     }
@@ -521,6 +523,8 @@ class FakeSettingsBackend final : public settings::SettingsBackend {
             m_pinnedToolbar = value.value<storage::ScreenshotToolbarLayout>();
         } else if (fieldId == QStringLiteral("action-toolbar")) {
             m_actionToolbar = value.value<storage::ScreenshotToolbarLayout>();
+        } else if (fieldId == QStringLiteral("recording-toolbar")) {
+            m_recordingToolbar = value.value<storage::ScreenshotToolbarLayout>();
         } else if (fieldId.startsWith(QStringLiteral("global-mouse."))) {
             for (const auto action : {
                      settings::SettingsGlobalMouseAction::ScreenshotCopy,
@@ -543,6 +547,8 @@ class FakeSettingsBackend final : public settings::SettingsBackend {
     static QString toolbarFieldId(storage::ScreenshotToolbarLayoutKind kind) {
         if (kind == storage::ScreenshotToolbarLayoutKind::PinnedActionTools)
             return QStringLiteral("pinned-toolbar");
+        if (kind == storage::ScreenshotToolbarLayoutKind::RecordingActionTools)
+            return QStringLiteral("recording-toolbar");
         return kind == storage::ScreenshotToolbarLayoutKind::DrawingTools
                    ? QStringLiteral("toolbar")
                    : QStringLiteral("action-toolbar");
@@ -552,6 +558,8 @@ class FakeSettingsBackend final : public settings::SettingsBackend {
     toolbarLayoutStorage(storage::ScreenshotToolbarLayoutKind kind) {
         if (kind == storage::ScreenshotToolbarLayoutKind::PinnedActionTools)
             return m_pinnedToolbar;
+        if (kind == storage::ScreenshotToolbarLayoutKind::RecordingActionTools)
+            return m_recordingToolbar;
         return kind == storage::ScreenshotToolbarLayoutKind::DrawingTools ? m_drawingToolbar
                                                                           : m_actionToolbar;
     }
@@ -569,6 +577,8 @@ class FakeSettingsBackend final : public settings::SettingsBackend {
     storage::ScreenshotToolbarLayout m_drawingToolbar{{{QStringLiteral("select")}},
                                                       {QStringLiteral("eraser")}};
     storage::ScreenshotToolbarLayout m_pinnedToolbar;
+    storage::ScreenshotToolbarLayout m_recordingToolbar{
+        {{QStringLiteral("start-stop")}, {QStringLiteral("copy")}}, {QStringLiteral("duration")}};
     storage::ScreenshotToolbarLayout m_actionToolbar{
         {{QStringLiteral("table-recognition")}, {QStringLiteral("save-as-file")}},
         {QStringLiteral("barcode-recognition")}};
@@ -660,6 +670,13 @@ testRegistry(settings::SettingsSectionReset reset = settings::SettingsSectionRes
           {},
           QStringLiteral("screenshot_toolbar/action_tools_layout"),
           actionToolbar},
+         {QStringLiteral("recording-toolbar"),
+          text("Recording toolbar"),
+          text("Recording toolbar"),
+          {},
+          QStringLiteral("screen_recording/action_tools_layout"),
+          settings::SettingsCustomDefinition{
+              settings::SettingsCustomRenderer::RecordingToolbarEditor}},
          {QStringLiteral("storage-status"),
           text("Storage status"),
           text("Storage status"),
@@ -1193,6 +1210,50 @@ void toolbarLayoutsMaintainIndependentWriteState() {
                 session.toolbarLayout(storage::ScreenshotToolbarLayoutKind::DrawingTools) ==
                     drawingLayout,
             "retrying an action toolbar write must not rewrite the drawing layout");
+
+    const storage::ScreenshotToolbarLayout recordingLayout{
+        {{QStringLiteral("microphone"), QStringLiteral("start-stop")}, {QStringLiteral("copy")}},
+        {QStringLiteral("duration")}};
+    const auto previousRecording =
+        backend.toolbarLayout(storage::ScreenshotToolbarLayoutKind::RecordingActionTools);
+    backend.setMode(QStringLiteral("recording-toolbar"), WriteMode::Pending);
+    require(session.applyToolbarLayout(storage::ScreenshotToolbarLayoutKind::RecordingActionTools,
+                                       recordingLayout) &&
+                session.state(QStringLiteral("recording-toolbar")).busy &&
+                session.toolbarLayout(storage::ScreenshotToolbarLayoutKind::RecordingActionTools) ==
+                    recordingLayout &&
+                backend.toolbarLayout(storage::ScreenshotToolbarLayoutKind::RecordingActionTools) ==
+                    previousRecording &&
+                session.toolbarLayout(storage::ScreenshotToolbarLayoutKind::ActionTools) ==
+                    rejectedActionLayout,
+            "recording toolbar drafts must use their own descriptor and pending state");
+    backend.complete(QStringLiteral("recording-toolbar"));
+    flushEvents();
+    require(session.state(QStringLiteral("recording-toolbar")).phase ==
+                    settings::SettingsWritePhase::Clean &&
+                session.state(QStringLiteral("recording-toolbar"))
+                        .acceptedValue.value<storage::ScreenshotToolbarLayout>() == recordingLayout,
+            "recording toolbar completion must reconcile the structured accepted value");
+
+    const storage::ScreenshotToolbarLayout rejectedRecording{
+        {{QStringLiteral("copy"), QStringLiteral("pause-resume")}}, {QStringLiteral("microphone")}};
+    backend.setMode(QStringLiteral("recording-toolbar"), WriteMode::Reject);
+    require(!session.applyToolbarLayout(storage::ScreenshotToolbarLayoutKind::RecordingActionTools,
+                                        rejectedRecording) &&
+                session.state(QStringLiteral("recording-toolbar")).phase ==
+                    settings::SettingsWritePhase::Rejected &&
+                session.state(QStringLiteral("action-toolbar")).phase ==
+                    settings::SettingsWritePhase::Clean,
+            "recording layout rejection must not affect the screenshot action toolbar");
+    backend.setMode(QStringLiteral("recording-toolbar"), WriteMode::Immediate);
+    require(session.retry(QStringLiteral("recording-toolbar")) &&
+                session.toolbarLayout(storage::ScreenshotToolbarLayoutKind::RecordingActionTools) ==
+                    rejectedRecording &&
+                session.toolbarLayout(storage::ScreenshotToolbarLayoutKind::DrawingTools) ==
+                    drawingLayout &&
+                session.toolbarLayout(storage::ScreenshotToolbarLayoutKind::ActionTools) ==
+                    rejectedActionLayout,
+            "recording layout retry must preserve the drawing and screenshot action layouts");
 }
 
 void acceptedResetClearsDraftAndQuarantinesLateCompletion() {

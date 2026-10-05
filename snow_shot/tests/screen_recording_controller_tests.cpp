@@ -29,6 +29,7 @@
 #include "snow_shot/presentation/screenrecordingareawindow.h"
 #include "snow_shot/presentation/screenshotgeometry.h"
 #include "snow_shot/presentation/screenshottoolpalettehost.h"
+#include "snow_shot/presentation/screenshottoolbarlayoutmodel.h"
 #include "snow_draw_engine_qt/snow_canvas_widget.h"
 #include "snow_shot/storage/applicationstorage.h"
 #include "snow_shot/storage/settingsadapters.h"
@@ -68,6 +69,7 @@
 #include "widgets/slider.h"
 #include "widgets/switch.h"
 #include "snow_shot/presentation/settings/settingsregistry.h"
+#include "snow_shot/presentation/settings/settingsformfield.h"
 #include <future>
 #ifdef Q_OS_MACOS
 #include "macos_capture_exclusion_probe.h"
@@ -2257,9 +2259,14 @@ void recordingSettingsDialog() {
     for (const auto& descriptor : registry.fields()) {
         if (descriptor.pageId != QStringLiteral("screen-recording"))
             continue;
+        if (!settings::SettingsFormField::supports(descriptor)) {
+            require(form->field(descriptor.id) == nullptr,
+                    "toolbar customization must stay on the full settings page");
+            continue;
+        }
         ++expectedCount;
         require(form->field(descriptor.id) != nullptr,
-                "every feature and system recording preference must appear in the form");
+                "every ordinary feature and system recording preference must appear in the form");
         require(form->field(descriptor.id)->label() == descriptor.definition->title.translated(),
                 "recording preferences must share their labels with the main settings page");
         require(form->field(descriptor.id)->extraText().isEmpty(),
@@ -2401,6 +2408,59 @@ void recordingSettingsDialog() {
             "the next recording must use preferences saved in the popup");
     toolbarPalette->recordingCloseRequested();
     QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+}
+
+void recordingActionToolbarPreferenceUpdatesOpenWindow() {
+    namespace layout = snow_shot::presentation::toolbar_layout;
+    namespace storage = snow_shot::storage;
+    const auto kind = storage::ScreenshotToolbarLayoutKind::RecordingActionTools;
+    const storage::ScreenshotToolbarSettings toolbarSettings;
+    const auto original = toolbarSettings.layout(kind);
+    const auto drawing = toolbarSettings.layout(storage::ScreenshotToolbarLayoutKind::DrawingTools);
+    require(toolbarSettings.setLayout(kind, {}), "prepare the default recording action layout");
+    ScreenRecordingToolbarWindow toolbar;
+    toolbar.placeForRecordingRegion(QRect(80, 80, 320, 240));
+    toolbar.showWithoutActivating();
+    auto* controls = toolbar.palette();
+    QCoreApplication::processEvents();
+    auto* duration = controls->findChild<QLabel*>(QStringLiteral("screenRecordingDuration"));
+    require(duration && duration->isVisible(),
+            "a new recording window reads default toolbar settings");
+    const QString start = QStringLiteral("start-stop");
+    const QString copy = QStringLiteral("copy");
+    const QString pause = QStringLiteral("pause-resume");
+    auto hidden = layout::defaultOrder(kind);
+    for (const auto& id : {start, copy, pause})
+        hidden.removeAll(id);
+    require(toolbarSettings.setLayout(kind, {{{copy, start}, {pause}}, hidden}),
+            "commit a recording layout while its toolbar is open");
+    QCoreApplication::processEvents();
+    auto* group = controls->findChild<adqt::widgets::AdButton*>(
+        QStringLiteral("screenshotActionToolGroupButton0"));
+    require(group && group->isVisible() && group->property("screenshotToolbarItemId") == start &&
+                duration->isHidden() &&
+                toolbarSettings.layout(storage::ScreenshotToolbarLayoutKind::DrawingTools) ==
+                    drawing,
+            "an open recording window applies grouped and hidden action preferences immediately");
+    controls->setRecordingSession(ScreenshotToolPalette::RecordingSessionStatus::recording());
+    require(group->accessibleName() == QStringLiteral("Stop recording") && duration->isHidden(),
+            "live preferences survive recording state transitions");
+    require(toolbarSettings.setLayout(kind, {{}, layout::defaultOrder(kind)}),
+            "hide every recording action while its toolbar is open");
+    QCoreApplication::processEvents();
+    require(!controls->findChild<adqt::widgets::AdButton*>(
+                QStringLiteral("screenshotActionToolGroupButton0")) &&
+                controls->findChild<adqt::widgets::AdButton*>(QStringLiteral("screenRecordingStop"))
+                    ->isHidden() &&
+                controls->canActivateRecordingShortcut(QStringLiteral("export")),
+            "live hiding removes recording actions while preserving applicable shortcuts");
+    require(toolbarSettings.setLayout(kind, {}), "reset the live recording action layout");
+    QCoreApplication::processEvents();
+    require(duration->isVisible() &&
+                controls->findChild<adqt::widgets::AdButton*>(QStringLiteral("screenRecordingStop"))
+                    ->isVisible(),
+            "resetting preferences restores the active phase's default controls immediately");
+    require(toolbarSettings.setLayout(kind, original), "restore the recording action preferences");
 }
 
 void recordingModalStacking() {
@@ -4030,6 +4090,7 @@ int main(int argc, char** argv) {
     }
     if (app.arguments().contains(QStringLiteral("--settings-dialog-only"))) {
         recordingSettingsDialog();
+        recordingActionToolbarPreferenceUpdatesOpenWindow();
         ApplicationStorage::instance().shutdown();
         return 0;
     }

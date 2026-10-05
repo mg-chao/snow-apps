@@ -512,14 +512,21 @@ QString actionToolItemId(ScreenshotToolPalette::Tool tool) {
     }
 }
 
-int actionToolIndex(const QString& itemId) {
-    const auto& descriptors = toolbar_layout::actionDescriptors();
+int actionToolIndex(const QString& itemId, bool recording = false) {
+    const auto& descriptors =
+        recording ? toolbar_layout::recordingDescriptors() : toolbar_layout::actionDescriptors();
     for (int index = 0; index < descriptors.size(); ++index) {
         if (itemId == QLatin1String(descriptors.at(index).id)) {
             return index;
         }
     }
     return -1;
+}
+
+const toolbar_layout::EditorDescriptor* paletteActionDescriptor(const QString& itemId,
+                                                                bool recording) {
+    return recording ? toolbar_layout::recordingDescriptor(itemId)
+                     : toolbar_layout::actionDescriptor(itemId);
 }
 
 ScreenshotToolPalette::Tool drawingToolFromItem(toolbar_layout::Item item) {
@@ -789,7 +796,17 @@ snow_shot::storage::ScreenshotToolbarLayout
 initialActionToolsLayout(const ScreenshotToolPalette::Options& options) {
     return toolbar_layout::normalizedLayout(
         options.actionToolsLayout.value_or(snow_shot::storage::ScreenshotToolbarLayout{}),
-        options.actionToolsLayoutKind);
+        options.showRecordingControls
+            ? snow_shot::storage::ScreenshotToolbarLayoutKind::RecordingActionTools
+            : options.actionToolsLayoutKind);
+}
+
+ScreenshotToolPalette::Options effectivePaletteOptions(ScreenshotToolPalette::Options options) {
+    if (options.showRecordingControls) {
+        options.actionToolsLayoutKind =
+            snow_shot::storage::ScreenshotToolbarLayoutKind::RecordingActionTools;
+    }
+    return options;
 }
 
 int drawTemplateIndex(const QString& key) {
@@ -905,7 +922,8 @@ class DrawTemplateOptionActionDelegate final : public QAbstractItemDelegate {
 } // namespace
 
 ScreenshotToolPalette::ScreenshotToolPalette(const Options& options, QWidget* parent)
-    : QWidget(parent), m_styleDefaults(options.styleDefaults), m_options(options),
+    : QWidget(parent), m_styleDefaults(options.styleDefaults),
+      m_options(effectivePaletteOptions(options)),
       m_moveOptionsToolbarVisible(options.enableMoveOptionsToolbar),
       m_toolbarLayout(initialToolbarLayout(options)),
       m_actionToolsLayout(initialActionToolsLayout(options)),
@@ -4933,6 +4951,9 @@ void ScreenshotToolPalette::ensureDrawingToolGroupPopover(adqt::widgets::AdButto
 
 adqt::widgets::AdButton*
 ScreenshotToolPalette::actionToolSourceButton(const QString& itemId) const {
+    if (m_options.showRecordingControls) {
+        return recordingActionSourceButton(itemId);
+    }
     if (itemId == QStringLiteral("latex-recognition"))
         return m_latexButton;
     if (itemId == QStringLiteral("convert-to-markdown")) {
@@ -5029,6 +5050,19 @@ bool ScreenshotToolPalette::activateActionTool(const QString& itemId, bool toggl
         return false;
     }
     selectActionToolGroupEntry(itemId);
+    if (m_options.showRecordingControls) {
+        for (const ActionToolGroup& group : std::as_const(m_actionToolGroups)) {
+            if (group.itemIds.contains(itemId) && group.popover != nullptr) {
+                group.popover->hide();
+            }
+        }
+        refreshRecordingAudioGainTriggers();
+        if (auto* source = recordingActionSourceButton(itemId)) {
+            source->click();
+            return true;
+        }
+        return false;
+    }
     if (itemId == QStringLiteral("barcode-recognition")) {
         setTableQrEntryTool(Tool::Qr);
         return activateTableQrTool(Tool::Qr, toggleVisibleButton);
@@ -5082,6 +5116,15 @@ void ScreenshotToolPalette::selectActionToolGroupEntry(const QString& itemId) {
 }
 
 void ScreenshotToolPalette::clearActionToolGroups() {
+    if (m_options.showRecordingControls) {
+        closeRecordingAudioGainPopovers();
+        if (m_recordMicrophoneGainPopover != nullptr) {
+            m_recordMicrophoneGainPopover->setTrigger(m_recordMicrophoneButton);
+        }
+        if (m_recordSystemAudioGainPopover != nullptr) {
+            m_recordSystemAudioGainPopover->setTrigger(m_recordSystemAudioButton);
+        }
+    }
     for (const ActionToolGroup& group : std::as_const(m_actionToolGroups)) {
         if (group.ownsTrigger) {
             if (m_activeToolButton == group.trigger) {
@@ -5119,8 +5162,23 @@ void ScreenshotToolPalette::releaseActionToolGroupPopover(adqt::widgets::AdButto
 }
 
 void ScreenshotToolPalette::applyActionToolShortcutTooltip(QWidget* widget, const QString& itemId) {
-    const auto* descriptor = toolbar_layout::actionDescriptor(itemId);
+    const auto* descriptor = paletteActionDescriptor(itemId, m_options.showRecordingControls);
     if (widget == nullptr || descriptor == nullptr) {
+        return;
+    }
+    if (m_options.showRecordingControls) {
+        if (auto* source = recordingActionSourceButton(itemId);
+            source != nullptr && source != widget) {
+            for (const char* property :
+                 {"snowShotTranslationTooltipSource", "snowShotTranslationTooltipArguments",
+                  "snowShotTranslationAccessibleNameSource",
+                  "snowShotTranslationAccessibleNameArguments"}) {
+                widget->setProperty(property, source->property(property));
+            }
+            widget->setToolTip(source->toolTip());
+            widget->setAccessibleName(source->accessibleName());
+            widget->setAccessibleDescription(source->accessibleDescription());
+        }
         return;
     }
     widget->setProperty("snowShotScreenshotShortcutTooltipSource", QVariant{});
@@ -5144,12 +5202,48 @@ void ScreenshotToolPalette::refreshActionToolGroup(int groupIndex) {
         return;
     }
     ActionToolGroup& group = m_actionToolGroups[groupIndex];
+    if (m_options.showRecordingControls && !group.ownsTrigger) {
+        group.trigger = recordingActionSourceButton(group.entryItemId);
+    }
     if (group.trigger == nullptr) {
         return;
     }
 
-    const auto* entryDescriptor = toolbar_layout::actionDescriptor(group.entryItemId);
+    const auto* entryDescriptor =
+        paletteActionDescriptor(group.entryItemId, m_options.showRecordingControls);
     if (entryDescriptor == nullptr) {
+        return;
+    }
+    if (m_options.showRecordingControls) {
+        const auto updateButton = [this](adqt::widgets::AdButton* button, const QString& itemId) {
+            auto* source = recordingActionSourceButton(itemId);
+            if (button == nullptr || source == nullptr || button == source) {
+                return;
+            }
+            button->setIconRef(source->iconRef());
+            button->setButtonStyle(source->buttonStyle());
+            button->setAccentRole(source->accentRole());
+            button->setBusyIndicatorPresentation(
+                adqt::widgets::AdButton::BusyIndicatorPresentation::IsolatedSurface);
+            button->setBusy(source->busy());
+            applyActionToolShortcutTooltip(button, itemId);
+        };
+        updateButton(group.trigger, group.entryItemId);
+        if (group.ownsTrigger) {
+            group.trigger->setEnabled(std::any_of(
+                group.itemIds.cbegin(), group.itemIds.cend(),
+                [this](const QString& itemId) { return actionToolState(itemId).enabled; }));
+        }
+        group.trigger->setProperty("screenshotToolbarItemId", group.entryItemId);
+        group.trigger->setProperty("screenshotToolbarPositionItems", group.itemIds);
+        for (auto* optionButton : std::as_const(group.optionButtons)) {
+            const QString itemId = optionButton->property("screenshotToolbarItemId").toString();
+            updateButton(optionButton, itemId);
+            optionButton->setEnabled(actionToolState(itemId).enabled);
+        }
+        updateScreenshotToolPaletteOptionPopoverEditor(group.optionButtons, group.optionValues,
+                                                       actionToolIndex(group.entryItemId, true));
+        refreshRecordingAudioGainTriggers();
         return;
     }
     applyActionToolShortcutTooltip(group.trigger, group.entryItemId);
@@ -5219,17 +5313,20 @@ void ScreenshotToolPalette::ensureActionToolGroupPopover(adqt::widgets::AdButton
         config.optionSpacing = TOOLBAR_ITEM_SPACING;
         for (const QString& itemId : std::as_const(group.popoverItemIds)) {
             const toolbar_layout::EditorDescriptor* descriptor =
-                toolbar_layout::actionDescriptor(itemId);
+                paletteActionDescriptor(itemId, m_options.showRecordingControls);
             if (descriptor == nullptr) {
                 continue;
             }
-            config.options.push_back({actionToolIndex(itemId), QString::fromUtf8(descriptor->label),
+            config.options.push_back({actionToolIndex(itemId, m_options.showRecordingControls),
+                                      QString::fromUtf8(descriptor->label),
                                       toolbar_layout::icon(descriptor->icon)});
         }
         const auto editor = materializeScreenshotToolPaletteOptionPopoverEditor(
             group.popover, this, config,
             [this](int value) {
-                const auto& descriptors = toolbar_layout::actionDescriptors();
+                const auto& descriptors = m_options.showRecordingControls
+                                              ? toolbar_layout::recordingDescriptors()
+                                              : toolbar_layout::actionDescriptors();
                 if (value >= 0 && value < descriptors.size()) {
                     activateActionTool(QString::fromLatin1(descriptors.at(value).id), false);
                 }
@@ -5267,7 +5364,8 @@ void ScreenshotToolPalette::ensureActionToolGroupPopover(adqt::widgets::AdButton
 
 adqt::widgets::AdButton* ScreenshotToolPalette::createActionToolGroup(const QStringList& itemIds) {
     const auto stack = toolbar_layout::stackPresentation(itemIds, [this](const QString& id) {
-        return toolbar_layout::actionDescriptor(id) != nullptr && actionToolAvailable(id);
+        return paletteActionDescriptor(id, m_options.showRecordingControls) != nullptr &&
+               actionToolAvailable(id);
     });
     const QStringList& availableItemIds = stack.itemIds;
     if (availableItemIds.isEmpty())
@@ -5306,7 +5404,7 @@ adqt::widgets::AdButton* ScreenshotToolPalette::createActionToolGroup(const QStr
         group.trigger = actionToolSourceButton(group.entryItemId);
     } else {
         const toolbar_layout::EditorDescriptor* descriptor =
-            toolbar_layout::actionDescriptor(group.entryItemId);
+            paletteActionDescriptor(group.entryItemId, m_options.showRecordingControls);
         if (descriptor == nullptr) {
             return nullptr;
         }
@@ -5477,7 +5575,13 @@ void ScreenshotToolPalette::applyMainToolbarLayout(bool notify) {
     }
 
     if (m_options.showRecordingControls) {
-        if (hasContent) {
+        const bool hasRecordingActions = std::any_of(
+            m_actionToolsLayout.positions.cbegin(), m_actionToolsLayout.positions.cend(),
+            [](const QStringList& position) {
+                return !position.isEmpty() && !std::any_of(position.cbegin(), position.cend(),
+                                                           toolbar_layout::isSeparator);
+            });
+        if (hasContent && hasRecordingActions) {
             addSeparator();
         }
         addRecordingControls(layout);
@@ -8992,165 +9096,206 @@ void ScreenshotToolPalette::addRecordingControls(QBoxLayout* layout) {
     if (layout == nullptr) {
         return;
     }
+    if (m_recordStartButton == nullptr) {
+        m_recordStartButton = addActionButton("Start recording",
+                                              primaryIcon(custom_outlined_icons::RecordingStart()));
+        m_recordStopButton =
+            addActionButton("Stop recording", custom_outlined_icons::RecordingStop(), true);
+        m_recordPauseButton = addActionButton("Pause recording", outlined_icons::Pause());
+        m_recordResumeButton = addActionButton(
+            "Resume recording", primaryIcon(custom_outlined_icons::RecordingResume()));
+        // Long-running start, stop, and copy operations report through
+        // setRecordingSession(); use the isolated spinner surface like the
+        // other toolbar busy indicators.
+        for (auto* button : {m_recordStartButton, m_recordStopButton}) {
+            button->setBusyIndicatorPresentation(
+                adqt::widgets::AdButton::BusyIndicatorPresentation::IsolatedSurface);
+        }
 
-    const auto addItemSpacing = [this]() { addMainToolbarSpacing(TOOLBAR_ITEM_SPACING); };
+        m_recordDurationLabel = new QLabel(QStringLiteral("00:00:00"), m_mainPanel);
+        m_recordDurationLabel->setObjectName(QStringLiteral("screenRecordingDuration"));
+        m_recordDurationLabel->setAlignment(Qt::AlignCenter);
+        m_recordDurationLabel->setAccessibleName(tr("Recording duration"));
+        m_recordDurationLabel->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
 
-    if (m_recordStartButton != nullptr) {
-        layout->addWidget(m_recordStartButton);
-        layout->addWidget(m_recordStopButton);
-        addItemSpacing();
-        layout->addWidget(m_recordPauseButton);
-        layout->addWidget(m_recordResumeButton);
-        addItemSpacing();
-        layout->addWidget(m_recordDurationLabel);
-        addItemSpacing();
-        layout->addWidget(m_recordMicrophoneButton);
-        addItemSpacing();
-        layout->addWidget(m_recordSystemAudioButton);
-        addMainToolbarSeparator();
-        layout->addWidget(m_recordOpenFolderButton);
-        addItemSpacing();
-        layout->addWidget(m_recordCloseButton);
-        addItemSpacing();
-        layout->addWidget(m_recordTrimButton);
-        addItemSpacing();
-        layout->addWidget(m_recordSaveButton);
-        addItemSpacing();
-        layout->addWidget(m_recordCopyButton);
-        m_recordDurationLabel->show();
-        m_recordMicrophoneButton->show();
-        m_recordSystemAudioButton->show();
-        m_recordOpenFolderButton->show();
-        m_recordCloseButton->show();
-        m_recordTrimButton->show();
-        m_recordSaveButton->show();
-        m_recordCopyButton->show();
-        updateRecordingControls();
-        updateRecordingControlMetrics();
-        return;
-    }
+        m_recordMicrophoneButton =
+            addActionButton("Record microphone", custom_outlined_icons::RecordingMicrophone());
+        m_recordSystemAudioButton = addActionButton("Record speakers", outlined_icons::Sound());
 
-    m_recordStartButton =
-        addActionButton("Start recording", primaryIcon(custom_outlined_icons::RecordingStart()));
-    m_recordStopButton =
-        addActionButton("Stop recording", custom_outlined_icons::RecordingStop(), true);
-    m_recordPauseButton = addActionButton("Pause recording", outlined_icons::Pause());
-    m_recordResumeButton =
-        addActionButton("Resume recording", primaryIcon(custom_outlined_icons::RecordingResume()));
-    // Long-running start, stop, and copy operations report through
-    // setRecordingSession(); use the isolated spinner surface like the
-    // other toolbar busy indicators.
-    for (auto* button : {m_recordStartButton, m_recordStopButton}) {
-        button->setBusyIndicatorPresentation(
+        m_recordOpenFolderButton =
+            addActionButton("Open recording folder", custom_outlined_icons::RecordingFolder());
+        m_recordCloseButton = addActionButton("Close recording", outlined_icons::Close(), true);
+        m_recordTrimButton = addActionButton("Trim Video", custom_outlined_icons::RecordingTrim());
+        m_recordSaveButton = addActionButton("Save to File", custom_outlined_icons::Save());
+        m_recordTrimButton->setObjectName(QStringLiteral("screenRecordingTrim"));
+        m_recordSaveButton->setObjectName(QStringLiteral("screenRecordingSave"));
+        connect(m_recordTrimButton, &adqt::widgets::AdButton::clicked, this,
+                &ScreenshotToolPalette::recordingTrimRequested);
+        connect(m_recordSaveButton, &adqt::widgets::AdButton::clicked, this,
+                &ScreenshotToolPalette::recordingSaveRequested);
+        m_recordCopyButton = addActionButton("Copy recording", outlined_icons::Copy());
+        m_recordCopyButton->setBusyIndicatorPresentation(
             adqt::widgets::AdButton::BusyIndicatorPresentation::IsolatedSurface);
+
+        connect(m_recordStartButton, &adqt::widgets::AdButton::clicked, this,
+                &ScreenshotToolPalette::recordingStartRequested);
+        connect(m_recordStopButton, &adqt::widgets::AdButton::clicked, this,
+                &ScreenshotToolPalette::recordingStopRequested);
+        connect(m_recordPauseButton, &adqt::widgets::AdButton::clicked, this,
+                &ScreenshotToolPalette::recordingPauseRequested);
+        connect(m_recordResumeButton, &adqt::widgets::AdButton::clicked, this,
+                &ScreenshotToolPalette::recordingResumeRequested);
+        m_recordMicrophoneGainPopover = new RecordingAudioGainPopover(
+            m_recordMicrophoneButton, RecordingAudioGainPopover::Source::Microphone, this);
+        m_recordSystemAudioGainPopover = new RecordingAudioGainPopover(
+            m_recordSystemAudioButton, RecordingAudioGainPopover::Source::SystemAudio, this);
+        m_recordMicrophoneGainPopover->setGainDb(m_recordingMicrophoneGainDb);
+        m_recordSystemAudioGainPopover->setGainDb(m_recordingSystemAudioGainDb);
+        connect(m_recordMicrophoneGainPopover, &RecordingAudioGainPopover::gainChanged, this,
+                [this](int gainDb) {
+                    m_recordingMicrophoneGainDb = gainDb;
+                    emit recordingMicrophoneGainChanged(gainDb);
+                });
+        connect(m_recordSystemAudioGainPopover, &RecordingAudioGainPopover::gainChanged, this,
+                [this](int gainDb) {
+                    m_recordingSystemAudioGainDb = gainDb;
+                    emit recordingSystemAudioGainChanged(gainDb);
+                });
+        connect(m_recordMicrophoneGainPopover, &RecordingAudioGainPopover::visibleChanged, this,
+                [this](bool visible) {
+                    if (visible)
+                        m_recordSystemAudioGainPopover->close();
+                });
+        connect(m_recordSystemAudioGainPopover, &RecordingAudioGainPopover::visibleChanged, this,
+                [this](bool visible) {
+                    if (visible)
+                        m_recordMicrophoneGainPopover->close();
+                });
+        connect(m_recordMicrophoneButton, &adqt::widgets::AdButton::clicked, this, [this]() {
+            if (m_recordingSession.state() != RecordingState::Idle) {
+                m_recordMicrophoneGainPopover->openAndFocus();
+                return;
+            }
+            setRecordingMicrophoneEnabled(!m_recordingMicrophoneEnabled);
+            emit recordingMicrophoneToggled(m_recordingMicrophoneEnabled);
+        });
+        connect(m_recordSystemAudioButton, &adqt::widgets::AdButton::clicked, this, [this]() {
+            if (m_recordingSession.state() != RecordingState::Idle) {
+                m_recordSystemAudioGainPopover->openAndFocus();
+                return;
+            }
+            setRecordingSystemAudioEnabled(!m_recordingSystemAudioEnabled);
+            emit recordingSystemAudioToggled(m_recordingSystemAudioEnabled);
+        });
+        connect(m_recordOpenFolderButton, &adqt::widgets::AdButton::clicked, this,
+                &ScreenshotToolPalette::recordingOpenFolderRequested);
+        connect(m_recordCloseButton, &adqt::widgets::AdButton::clicked, this,
+                &ScreenshotToolPalette::recordingCloseRequested);
+        connect(m_recordCopyButton, &adqt::widgets::AdButton::clicked, this,
+                &ScreenshotToolPalette::recordingCopyRequested);
+        for (const auto& item : toolbar_layout::recordingDescriptors()) {
+            const QString itemId = QString::fromLatin1(item.id);
+            if (auto* source = recordingActionSourceButton(itemId)) {
+                source->setProperty("screenshotToolbarItemId", itemId);
+                source->hide();
+            }
+        }
+        m_recordStopButton->hide();
+        m_recordResumeButton->hide();
+        m_recordDurationLabel->hide();
+        m_recordStartButton->setObjectName(QStringLiteral("screenRecordingStart"));
+        m_recordStopButton->setObjectName(QStringLiteral("screenRecordingStop"));
+        m_recordPauseButton->setObjectName(QStringLiteral("screenRecordingPause"));
+        m_recordResumeButton->setObjectName(QStringLiteral("screenRecordingResume"));
+        m_recordMicrophoneButton->setObjectName(QStringLiteral("screenRecordingMicrophone"));
+        m_recordSystemAudioButton->setObjectName(QStringLiteral("screenRecordingSystemAudio"));
+        m_recordOpenFolderButton->setObjectName(QStringLiteral("screenRecordingOpenFolder"));
+        m_recordCloseButton->setObjectName(QStringLiteral("screenRecordingClose"));
+        m_recordCopyButton->setObjectName(QStringLiteral("screenRecordingCopy"));
+        m_recordDurationLabel->setProperty("screenshotToolbarItemId", QStringLiteral("duration"));
+        updateRecordingControls();
+        refreshRecordingShortcutTooltips();
     }
-    layout->addWidget(m_recordStartButton);
-    layout->addWidget(m_recordStopButton);
-    addItemSpacing();
-    layout->addWidget(m_recordPauseButton);
-    layout->addWidget(m_recordResumeButton);
 
-    addItemSpacing();
-    m_recordDurationLabel = new QLabel(QStringLiteral("00:00:00"), m_mainPanel);
-    m_recordDurationLabel->setObjectName(QStringLiteral("screenRecordingDuration"));
-    m_recordDurationLabel->setAlignment(Qt::AlignCenter);
-    m_recordDurationLabel->setAccessibleName(tr("Recording duration"));
-    m_recordDurationLabel->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
-    layout->addWidget(m_recordDurationLabel);
-    addItemSpacing();
-
-    m_recordMicrophoneButton =
-        addActionButton("Record microphone", custom_outlined_icons::RecordingMicrophone());
-    m_recordSystemAudioButton = addActionButton("Record speakers", outlined_icons::Sound());
-    layout->addWidget(m_recordMicrophoneButton);
-    addItemSpacing();
-    layout->addWidget(m_recordSystemAudioButton);
-
-    addMainToolbarSeparator();
-    m_recordOpenFolderButton =
-        addActionButton("Open recording folder", custom_outlined_icons::RecordingFolder());
-    m_recordCloseButton = addActionButton("Close recording", outlined_icons::Close(), true);
-    m_recordTrimButton = addActionButton("Trim Video", custom_outlined_icons::RecordingTrim());
-    m_recordSaveButton = addActionButton("Save to File", custom_outlined_icons::Save());
-    m_recordTrimButton->setObjectName(QStringLiteral("screenRecordingTrim"));
-    m_recordSaveButton->setObjectName(QStringLiteral("screenRecordingSave"));
-    connect(m_recordTrimButton, &adqt::widgets::AdButton::clicked, this,
-            &ScreenshotToolPalette::recordingTrimRequested);
-    connect(m_recordSaveButton, &adqt::widgets::AdButton::clicked, this,
-            &ScreenshotToolPalette::recordingSaveRequested);
-    m_recordCopyButton = addActionButton("Copy recording", outlined_icons::Copy());
-    m_recordCopyButton->setBusyIndicatorPresentation(
-        adqt::widgets::AdButton::BusyIndicatorPresentation::IsolatedSurface);
-    layout->addWidget(m_recordOpenFolderButton);
-    addItemSpacing();
-    layout->addWidget(m_recordCloseButton);
-    addItemSpacing();
-    layout->addWidget(m_recordTrimButton);
-    addItemSpacing();
-    layout->addWidget(m_recordSaveButton);
-    addItemSpacing();
-    layout->addWidget(m_recordCopyButton);
-
-    connect(m_recordStartButton, &adqt::widgets::AdButton::clicked, this,
-            &ScreenshotToolPalette::recordingStartRequested);
-    connect(m_recordStopButton, &adqt::widgets::AdButton::clicked, this,
-            &ScreenshotToolPalette::recordingStopRequested);
-    connect(m_recordPauseButton, &adqt::widgets::AdButton::clicked, this,
-            &ScreenshotToolPalette::recordingPauseRequested);
-    connect(m_recordResumeButton, &adqt::widgets::AdButton::clicked, this,
-            &ScreenshotToolPalette::recordingResumeRequested);
-    m_recordMicrophoneGainPopover = new RecordingAudioGainPopover(
-        m_recordMicrophoneButton, RecordingAudioGainPopover::Source::Microphone, this);
-    m_recordSystemAudioGainPopover = new RecordingAudioGainPopover(
-        m_recordSystemAudioButton, RecordingAudioGainPopover::Source::SystemAudio, this);
-    m_recordMicrophoneGainPopover->setGainDb(m_recordingMicrophoneGainDb);
-    m_recordSystemAudioGainPopover->setGainDb(m_recordingSystemAudioGainDb);
-    connect(m_recordMicrophoneGainPopover, &RecordingAudioGainPopover::gainChanged, this,
-            [this](int gainDb) {
-                m_recordingMicrophoneGainDb = gainDb;
-                emit recordingMicrophoneGainChanged(gainDb);
-            });
-    connect(m_recordSystemAudioGainPopover, &RecordingAudioGainPopover::gainChanged, this,
-            [this](int gainDb) {
-                m_recordingSystemAudioGainDb = gainDb;
-                emit recordingSystemAudioGainChanged(gainDb);
-            });
-    connect(m_recordMicrophoneGainPopover, &RecordingAudioGainPopover::visibleChanged, this,
-            [this](bool visible) {
-                if (visible)
-                    m_recordSystemAudioGainPopover->close();
-            });
-    connect(m_recordSystemAudioGainPopover, &RecordingAudioGainPopover::visibleChanged, this,
-            [this](bool visible) {
-                if (visible)
-                    m_recordMicrophoneGainPopover->close();
-            });
-    connect(m_recordMicrophoneButton, &adqt::widgets::AdButton::clicked, this, [this]() {
-        if (m_recordingSession.state() != RecordingState::Idle) {
-            m_recordMicrophoneGainPopover->openAndFocus();
-            return;
+    bool hasContent = false;
+    bool separatorPending = false;
+    for (const QStringList& position : std::as_const(m_actionToolsLayout.positions)) {
+        if (std::any_of(position.cbegin(), position.cend(), toolbar_layout::isSeparator)) {
+            separatorPending = hasContent;
+            continue;
         }
-        setRecordingMicrophoneEnabled(!m_recordingMicrophoneEnabled);
-        emit recordingMicrophoneToggled(m_recordingMicrophoneEnabled);
-    });
-    connect(m_recordSystemAudioButton, &adqt::widgets::AdButton::clicked, this, [this]() {
-        if (m_recordingSession.state() != RecordingState::Idle) {
-            m_recordSystemAudioGainPopover->openAndFocus();
-            return;
+        QWidget* widget = nullptr;
+        if (position == QStringList{QStringLiteral("duration")}) {
+            widget = m_recordDurationLabel;
+        } else {
+            widget = createActionToolGroup(position);
         }
-        setRecordingSystemAudioEnabled(!m_recordingSystemAudioEnabled);
-        emit recordingSystemAudioToggled(m_recordingSystemAudioEnabled);
-    });
-    connect(m_recordOpenFolderButton, &adqt::widgets::AdButton::clicked, this,
-            &ScreenshotToolPalette::recordingOpenFolderRequested);
-    connect(m_recordCloseButton, &adqt::widgets::AdButton::clicked, this,
-            &ScreenshotToolPalette::recordingCloseRequested);
-    connect(m_recordCopyButton, &adqt::widgets::AdButton::clicked, this,
-            &ScreenshotToolPalette::recordingCopyRequested);
-
+        if (widget == nullptr) {
+            continue;
+        }
+        if (separatorPending) {
+            addMainToolbarSeparator();
+        } else if (hasContent) {
+            addMainToolbarSpacing(TOOLBAR_ITEM_SPACING);
+        }
+        separatorPending = false;
+        layout->addWidget(widget);
+        widget->show();
+        if (position == QStringList{QStringLiteral("start-stop")}) {
+            layout->addWidget(widget == m_recordStartButton ? m_recordStopButton
+                                                            : m_recordStartButton);
+        } else if (position == QStringList{QStringLiteral("pause-resume")}) {
+            layout->addWidget(widget == m_recordPauseButton ? m_recordResumeButton
+                                                            : m_recordPauseButton);
+        }
+        hasContent = true;
+    }
     updateRecordingControls();
-    refreshRecordingShortcutTooltips();
     updateRecordingControlMetrics();
+}
+
+adqt::widgets::AdButton*
+ScreenshotToolPalette::recordingActionSourceButton(const QString& itemId) const {
+    if (itemId == QStringLiteral("start-stop")) {
+        return m_recordingSession.state() == RecordingState::Idle ? m_recordStartButton
+                                                                  : m_recordStopButton;
+    }
+    if (itemId == QStringLiteral("pause-resume")) {
+        return m_recordingSession.state() == RecordingState::Paused ? m_recordResumeButton
+                                                                    : m_recordPauseButton;
+    }
+    if (itemId == QStringLiteral("microphone"))
+        return m_recordMicrophoneButton;
+    if (itemId == QStringLiteral("system-audio"))
+        return m_recordSystemAudioButton;
+    if (itemId == QStringLiteral("open-folder"))
+        return m_recordOpenFolderButton;
+    if (itemId == QStringLiteral("close"))
+        return m_recordCloseButton;
+    if (itemId == QStringLiteral("trim"))
+        return m_recordTrimButton;
+    if (itemId == QStringLiteral("save"))
+        return m_recordSaveButton;
+    if (itemId == QStringLiteral("copy"))
+        return m_recordCopyButton;
+    return nullptr;
+}
+
+void ScreenshotToolPalette::refreshRecordingAudioGainTriggers() {
+    const auto refresh = [this](RecordingAudioGainPopover* popover, const QString& itemId) {
+        if (popover == nullptr) {
+            return;
+        }
+        for (const ActionToolGroup& group : std::as_const(m_actionToolGroups)) {
+            if (group.entryItemId == itemId) {
+                popover->setTrigger(group.trigger, !group.ownsTrigger);
+                return;
+            }
+        }
+        popover->setTrigger(recordingActionSourceButton(itemId));
+    };
+    refresh(m_recordMicrophoneGainPopover, QStringLiteral("microphone"));
+    refresh(m_recordSystemAudioGainPopover, QStringLiteral("system-audio"));
 }
 
 void ScreenshotToolPalette::updateToolbarRowGeometry(bool styleToolbarVisible) {
@@ -9257,7 +9402,7 @@ void ScreenshotToolPalette::setActiveToolButton(adqt::widgets::AdButton* activeB
         }
     }
     for (const ActionToolGroup& group : std::as_const(m_actionToolGroups)) {
-        if (group.trigger != nullptr) {
+        if (!m_options.showRecordingControls && group.trigger != nullptr) {
             setScreenshotToolPaletteButtonActive(group.trigger, group.trigger == activeButton);
         }
     }
@@ -9440,7 +9585,7 @@ ScreenshotToolPalette::recordingShortcutButton(const QString& actionId) const {
 
 bool ScreenshotToolPalette::canActivateRecordingShortcut(const QString& actionId) const {
     const auto* button = recordingShortcutButton(actionId);
-    return button != nullptr && button->isVisible() && button->isEnabled();
+    return button != nullptr && button->isEnabled();
 }
 
 bool ScreenshotToolPalette::activateRecordingShortcut(const QString& actionId) {
@@ -9464,6 +9609,9 @@ void ScreenshotToolPalette::refreshRecordingShortcutTooltips() {
                                         QStringLiteral("copy_to_clipboard"));
     applyScreenRecordingShortcutTooltip(m_recordCloseButton, QStringLiteral("Close recording"),
                                         QStringLiteral("end_recording"));
+    if (m_options.showRecordingControls) {
+        refreshActionToolGroups();
+    }
 }
 
 void ScreenshotToolPalette::updateRecordingControls() {
@@ -9474,14 +9622,22 @@ void ScreenshotToolPalette::updateRecordingControls() {
     const bool busy = recordingBusy();
     const bool animatedFormat = m_recordingOutputFormat != QStringLiteral("mp4");
     updateRecordingExportSettingsControls();
+    const auto directlyVisible = [this](const adqt::widgets::AdButton* button, bool phaseVisible) {
+        return button != nullptr && phaseVisible && m_mainPanel != nullptr &&
+               m_mainPanel->contentLayout()->indexOf(button) >= 0;
+    };
+    const bool startVisible = directlyVisible(m_recordStartButton, idle);
+    const bool stopVisible = directlyVisible(m_recordStopButton, active);
+    const bool pauseVisible = directlyVisible(m_recordPauseButton, !paused);
+    const bool resumeVisible = directlyVisible(m_recordResumeButton, paused);
     const bool visibilityChanged =
-        (m_recordStartButton != nullptr && m_recordStartButton->isVisible() != idle) ||
-        (m_recordStopButton != nullptr && m_recordStopButton->isVisible() != active) ||
-        (m_recordPauseButton != nullptr && m_recordPauseButton->isVisible() != !paused) ||
-        (m_recordResumeButton != nullptr && m_recordResumeButton->isVisible() != paused);
+        (m_recordStartButton != nullptr && m_recordStartButton->isHidden() == startVisible) ||
+        (m_recordStopButton != nullptr && m_recordStopButton->isHidden() == stopVisible) ||
+        (m_recordPauseButton != nullptr && m_recordPauseButton->isHidden() == pauseVisible) ||
+        (m_recordResumeButton != nullptr && m_recordResumeButton->isHidden() == resumeVisible);
 
     if (m_recordStartButton != nullptr) {
-        m_recordStartButton->setVisible(idle);
+        m_recordStartButton->setVisible(startVisible);
         m_recordStartButton->setEnabled(idle && !busy && !m_recordTrimBusy);
         // Both the delayed-start countdown and the backend start itself keep
         // Start disabled; both report progress through its loading spinner.
@@ -9490,7 +9646,7 @@ void ScreenshotToolPalette::updateRecordingControls() {
                                      operation == RecordingBusyOperation::CountingDown);
     }
     if (m_recordStopButton != nullptr) {
-        m_recordStopButton->setVisible(active);
+        m_recordStopButton->setVisible(stopVisible);
         m_recordStopButton->setEnabled(active && !busy);
         m_recordStopButton->setBusy(m_recordingSession.busyOperation() ==
                                     RecordingBusyOperation::Stopping);
@@ -9508,11 +9664,11 @@ void ScreenshotToolPalette::updateRecordingControls() {
                                             ? snow_shot::presentation::icons::withPrimaryColor(
                                                   outlined_icons::Pause(), scheme.map.colorWarning)
                                             : outlined_icons::Pause());
-        m_recordPauseButton->setVisible(!paused);
+        m_recordPauseButton->setVisible(pauseVisible);
         m_recordPauseButton->setEnabled(pauseEnabled);
     }
     if (m_recordResumeButton != nullptr) {
-        m_recordResumeButton->setVisible(paused);
+        m_recordResumeButton->setVisible(resumeVisible);
         m_recordResumeButton->setEnabled(paused && !busy);
     }
     if (m_recordMicrophoneButton != nullptr) {
@@ -9592,12 +9748,19 @@ void ScreenshotToolPalette::updateRecordingControls() {
     if (m_recordTrimPanel) {
         m_recordTrimPanel->setEnabled(!m_recordTrimBusy);
         for (auto* button : m_mainPanel->findChildren<adqt::widgets::AdButton*>()) {
+            const bool groupTrigger =
+                std::any_of(m_actionToolGroups.cbegin(), m_actionToolGroups.cend(),
+                            [button](const ActionToolGroup& group) {
+                                return group.ownsTrigger && group.trigger == button;
+                            });
             if (button != m_recordTrimButton && button != m_recordSaveButton &&
                 button != m_recordStartButton && button != m_recordCopyButton &&
-                button != m_recordCloseButton && button != m_recordOpenFolderButton)
+                button != m_recordCloseButton && button != m_recordOpenFolderButton &&
+                !groupTrigger)
                 button->setEnabled(false);
         }
     }
+    refreshActionToolGroups();
     if (visibilityChanged) {
         updateToolbarGeometry();
         emit visibleContentChanged();
@@ -9621,9 +9784,9 @@ void ScreenshotToolPalette::updateRecordingControlMetrics() {
     const qsizetype digitCount = m_recordDurationLabel->text().size() - 2;
     const int textWidth = qCeil(digitWidth * static_cast<qreal>(digitCount) +
                                 2 * metrics.horizontalAdvance(QLatin1Char(':')));
-    m_recordDurationLabel->setFixedSize(
-        textWidth + 2 * scaledMetric(RECORDING_DURATION_HORIZONTAL_PADDING),
-        m_mainPanel != nullptr ? m_mainPanel->buttonSize() : scaledMetric(32));
+    m_recordDurationLabel->setFixedSize(textWidth +
+                                            2 * scaledMetric(RECORDING_DURATION_HORIZONTAL_PADDING),
+                                        scaledMetric(screenshot_action_toolbar::ControlSize));
     const auto scheme = snow_shot::presentation::styles::generateThemeColorScheme();
     m_recordDurationLabel->setStyleSheet(
         QStringLiteral("color: %1;").arg(scheme.map.colorTextSecondary.name(QColor::HexArgb)));

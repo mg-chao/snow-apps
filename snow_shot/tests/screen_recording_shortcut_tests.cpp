@@ -26,6 +26,7 @@
 #endif
 
 #include <cstdlib>
+#include <array>
 #include <iostream>
 
 #if defined(Q_OS_WIN) || defined(_WIN32)
@@ -605,6 +606,99 @@ void hiddenRecordingToolsRetainShortcuts() {
         press(input, Qt::Key_F7);
         require(shapes == before + 1, "text editing blocks hidden recording tools");
     }
+
+    namespace layout = snow_shot::presentation::toolbar_layout;
+    using Status = ScreenshotToolPalette::RecordingSessionStatus;
+    const auto recordingKind = storage::ScreenshotToolbarLayoutKind::RecordingActionTools;
+    const auto originalRecordingLayout = settings.layout(recordingKind);
+    const storage::ScreenRecordingShortcutSettings recording;
+    const auto originalRecordingShortcuts = recording.allShortcuts();
+    require(
+        recording.setShortcuts(QStringLiteral("toggle_recording"), {QStringLiteral("F8")}) &&
+            recording.setShortcuts(QStringLiteral("export"), {QStringLiteral("F9")}) &&
+            recording.setShortcuts(QStringLiteral("copy_to_clipboard"), {QStringLiteral("F10")}) &&
+            recording.setShortcuts(QStringLiteral("end_recording"), {QStringLiteral("F11")}),
+        "configure recording action keys independently of hidden drawing tools");
+    std::array<int, 6> controls{};
+    QObject::connect(palette, &ScreenshotToolPalette::recordingStartRequested, &area,
+                     [&] { ++controls[0]; });
+    QObject::connect(palette, &ScreenshotToolPalette::recordingStopRequested, &area,
+                     [&] { ++controls[1]; });
+    QObject::connect(palette, &ScreenshotToolPalette::recordingPauseRequested, &area,
+                     [&] { ++controls[2]; });
+    QObject::connect(palette, &ScreenshotToolPalette::recordingResumeRequested, &area,
+                     [&] { ++controls[3]; });
+    QObject::connect(palette, &ScreenshotToolPalette::recordingCopyRequested, &area,
+                     [&] { ++controls[4]; });
+    QObject::connect(palette, &ScreenshotToolPalette::recordingCloseRequested, &area,
+                     [&] { ++controls[5]; });
+    const auto pressControls = [](QWidget& receiver, bool repeat = false) {
+        for (const auto key : {Qt::Key_F8, Qt::Key_F9, Qt::Key_F10, Qt::Key_F11})
+            press(receiver, key, Qt::NoModifier, repeat);
+    };
+    const auto expectControls = [&](Status status, const std::array<int, 6>& expected) {
+        palette->setRecordingSession(status);
+        for (auto* receiver : {static_cast<QWidget*>(&toolbar), static_cast<QWidget*>(&area),
+                               static_cast<QWidget*>(area.canvas())}) {
+            const auto previous = controls;
+            pressControls(*receiver);
+            for (std::size_t index = 0; index < controls.size(); ++index)
+                require(
+                    controls[index] == previous[index] + expected[index],
+                    "configured recording keys dispatch eligible hidden or stacked commands once");
+        }
+    };
+    focus(toolbar);
+    for (const QVector<QStringList>& positions :
+         {QVector<QStringList>{},
+          QVector<QStringList>{{QStringLiteral("close"), QStringLiteral("start-stop")},
+                               {QStringLiteral("copy"), QStringLiteral("pause-resume")}}}) {
+        auto hidden = layout::defaultOrder(recordingKind);
+        for (const auto& position : positions)
+            for (const auto& id : position)
+                hidden.removeAll(id);
+        const storage::ScreenshotToolbarLayout actionLayout{positions, hidden};
+        require(settings.setLayout(recordingKind, actionLayout),
+                "apply hidden or stacked recording actions to the existing toolbar");
+        palette->prepareForDisplay();
+        QCoreApplication::processEvents();
+        for (const QString& name :
+             {QStringLiteral("screenRecordingStart"), QStringLiteral("screenRecordingStop"),
+              QStringLiteral("screenRecordingPause"), QStringLiteral("screenRecordingResume"),
+              QStringLiteral("screenRecordingClose"), QStringLiteral("screenRecordingCopy")}) {
+            auto* source = palette->findChild<adqt::widgets::AdButton*>(name);
+            require(source != nullptr && source->isHidden(),
+                    "recording shortcuts are exercised against hidden command sources");
+        }
+        expectControls(Status::idle(), {1, 0, 0, 0, 0, 1});
+        expectControls(Status::recording(), {0, 1, 1, 0, 1, 1});
+        expectControls(Status::paused(), {0, 1, 0, 1, 1, 1});
+        area.setDrawingBlocked(true);
+        for (const auto status :
+             {Status::countingDown(), Status::starting(), Status::stopping(),
+              Status::pausedStopping(), Status::copying(), Status::pausedCopying()})
+            expectControls(status, {0, 0, 0, 0, 0, 1});
+        area.setDrawingBlocked(false);
+        palette->setRecordingSession(Status::paused());
+        const auto previous = controls;
+        pressControls(toolbar, true);
+        require(controls == previous,
+                "key repeat never activates hidden or stacked recording commands");
+        {
+            QLineEdit input(&toolbar);
+            input.show();
+            focus(input);
+            pressControls(input);
+            require(controls == previous,
+                    "text editing retains configured hidden or stacked recording action keys");
+        }
+        focus(toolbar);
+        require(settings.layout(recordingKind) == actionLayout,
+                "recording key dispatch preserves the saved hidden or stacked action layout");
+    }
+    require(settings.setLayout(recordingKind, originalRecordingLayout) &&
+                recording.setAllShortcutsAtomic(originalRecordingShortcuts),
+            "restore recording action layout and configured keys");
     toolbar.hide();
     press(area, Qt::Key_F7);
     require(shapes == before + 1,

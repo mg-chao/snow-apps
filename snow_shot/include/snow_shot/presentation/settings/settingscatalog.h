@@ -371,6 +371,7 @@ enum class SettingsCustomRenderer {
     StorageStatus,
     DrawingToolbarEditor,
     ScreenshotToolbarEditor,
+    RecordingToolbarEditor,
     PinnedToolbarEditor,
     FloatingToolbarEditor,
     TrayMenuOptions,
@@ -485,6 +486,7 @@ enum class SettingsSectionReset {
     Language,
     PinToScreenToolbar,
     ScreenshotActionToolbar,
+    ScreenRecordingActionToolbar,
 };
 
 enum class SettingsSectionItemLayout {

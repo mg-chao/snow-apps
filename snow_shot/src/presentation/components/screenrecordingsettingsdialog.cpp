@@ -28,8 +28,9 @@ settings::SettingsRegistry recordingRegistry() {
             continue;
         }
         auto recordingPage = page;
-        // The feature page owns all recording controls, independent of how its
-        // sections are grouped or reset. The compact dialog has no navigation.
+        // The feature page owns all ordinary recording preferences, independent
+        // of how its sections are grouped or reset. Toolbar editors stay on the
+        // main settings page; the compact dialog has no navigation.
         recordingPage.relatedLinks.clear();
         pages.append(std::move(recordingPage));
     }
@@ -54,6 +55,8 @@ class ScreenRecordingSettingsBody final : public QWidget {
         fields::configureTwoColumnGrid(grid);
 
         for (const auto& descriptor : m_registry.fields()) {
+            if (!settings::SettingsFormField::supports(descriptor))
+                continue;
             fields::Options options;
             options.parent = m_form;
             options.form = m_form;

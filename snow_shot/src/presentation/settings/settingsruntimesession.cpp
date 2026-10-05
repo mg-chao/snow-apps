@@ -27,6 +27,8 @@ SettingsCustomRenderer toolbarRenderer(storage::ScreenshotToolbarLayoutKind kind
         return SettingsCustomRenderer::FloatingToolbarEditor;
     case storage::ScreenshotToolbarLayoutKind::PinnedActionTools:
         return SettingsCustomRenderer::PinnedToolbarEditor;
+    case storage::ScreenshotToolbarLayoutKind::RecordingActionTools:
+        return SettingsCustomRenderer::RecordingToolbarEditor;
     }
     Q_UNREACHABLE();
 }
@@ -991,6 +993,9 @@ QVariant SettingsRuntimeSession::readValue(const SettingsFieldDescriptor& descri
                 case SettingsCustomRenderer::PinnedToolbarEditor:
                     return QVariant::fromValue(m_backend.toolbarLayout(
                         storage::ScreenshotToolbarLayoutKind::PinnedActionTools));
+                case SettingsCustomRenderer::RecordingToolbarEditor:
+                    return QVariant::fromValue(m_backend.toolbarLayout(
+                        storage::ScreenshotToolbarLayoutKind::RecordingActionTools));
                 case SettingsCustomRenderer::ScreenshotToolbarEditor:
                     return QVariant::fromValue(
                         m_backend.toolbarLayout(storage::ScreenshotToolbarLayoutKind::ActionTools));
@@ -1075,6 +1080,11 @@ bool SettingsRuntimeSession::writeValue(const SettingsFieldDescriptor& descripto
                     return value.canConvert<storage::ScreenshotToolbarLayout>() &&
                            m_backend.applyToolbarLayout(
                                storage::ScreenshotToolbarLayoutKind::PinnedActionTools,
+                               value.value<storage::ScreenshotToolbarLayout>());
+                case SettingsCustomRenderer::RecordingToolbarEditor:
+                    return value.canConvert<storage::ScreenshotToolbarLayout>() &&
+                           m_backend.applyToolbarLayout(
+                               storage::ScreenshotToolbarLayoutKind::RecordingActionTools,
                                value.value<storage::ScreenshotToolbarLayout>());
                 case SettingsCustomRenderer::DrawingToolbarEditor:
                 case SettingsCustomRenderer::ScreenshotToolbarEditor:
@@ -1194,6 +1204,7 @@ bool SettingsRuntimeSession::valuesEqual(const SettingsFieldDescriptor& descript
         if (custom.renderer == SettingsCustomRenderer::DrawingToolbarEditor ||
             custom.renderer == SettingsCustomRenderer::ScreenshotToolbarEditor ||
             custom.renderer == SettingsCustomRenderer::PinnedToolbarEditor ||
+            custom.renderer == SettingsCustomRenderer::RecordingToolbarEditor ||
             custom.renderer == SettingsCustomRenderer::FloatingToolbarEditor) {
             return first.value<storage::ScreenshotToolbarLayout>() ==
                    second.value<storage::ScreenshotToolbarLayout>();

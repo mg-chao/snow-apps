@@ -14,6 +14,7 @@
 #include <QJsonDocument>
 #include <QTemporaryDir>
 #include <QThread>
+#include <algorithm>
 #include <cstdlib>
 #include <iostream>
 
@@ -137,6 +138,108 @@ void runMcpApplicationTests() {
                     .errorCode == QStringLiteral("idempotency_conflict"),
             "reused token with different arguments rejected");
     require(jobs.list(71).isEmpty(), "synchronous settings patches release reserved job capacity");
+
+    const auto* recordingToolbarField =
+        registry.field(QStringLiteral("interface.screen-recording.recording-toolbar-editor"));
+    require(recordingToolbarField != nullptr, "recording toolbar layout is discoverable over MCP");
+    const auto recordingKind = storage::ScreenshotToolbarLayoutKind::RecordingActionTools;
+    const auto defaultRecordingLayout = session.toolbarLayout(recordingKind);
+    const auto screenshotLayout =
+        session.toolbarLayout(storage::ScreenshotToolbarLayoutKind::ActionTools);
+    require(session.applySelectValue(settings::SettingsSelectBinding::ScreenRecordingFrameRate, 60),
+            "prepare an unrelated recording setting before toolbar reset");
+    auto recordingLayout = defaultRecordingLayout;
+    recordingLayout.positions.removeIf(
+        [](const QStringList& position) { return position.contains(QStringLiteral("duration")); });
+    recordingLayout.hidden.append(QStringLiteral("duration"));
+    std::reverse(recordingLayout.positions.begin(), recordingLayout.positions.end());
+    const QJsonValue recordingJson = settingsJson(QVariant::fromValue(recordingLayout));
+    QVariant decodedRecording;
+    require(settingsValue(*recordingToolbarField, recordingJson, &decodedRecording) &&
+                decodedRecording.value<storage::ScreenshotToolbarLayout>() == recordingLayout,
+            "recording toolbar layouts have a lossless typed MCP representation");
+    const auto toolbarWrite =
+        call(QStringLiteral("settings_update"),
+             {{QStringLiteral("values"), QJsonObject{{recordingToolbarField->id, recordingJson}}}},
+             configuration.revision());
+    require(toolbarWrite.ok && session.toolbarLayout(recordingKind) == recordingLayout &&
+                session.toolbarLayout(storage::ScreenshotToolbarLayoutKind::ActionTools) ==
+                    screenshotLayout,
+            "MCP recording toolbar edits preserve screenshot action layouts");
+
+    const QJsonObject repairableRecordingJson{
+        {QStringLiteral("positions"),
+         QJsonArray{QJsonValue(QJsonArray{
+             QStringLiteral("copy"), QStringLiteral("duration"), QStringLiteral("pause-resume"),
+             QStringLiteral("separator"), QStringLiteral("start-stop"), QStringLiteral("copy"),
+             QStringLiteral("unknown-action")})}},
+        {QStringLiteral("hidden"),
+         QJsonArray{QStringLiteral("microphone"), QStringLiteral("microphone"),
+                    QStringLiteral("duration"), QStringLiteral("unknown-hidden-action")}},
+    };
+    const auto canonicalRecording = storage::ConfigurationSchema::normalize(
+        recordingToolbarField->configurationKey, repairableRecordingJson);
+    const bool recordingDecoded =
+        settingsValue(*recordingToolbarField, repairableRecordingJson, &decodedRecording);
+    require(canonicalRecording.valid && canonicalRecording.changed && recordingDecoded &&
+                settingsJson(decodedRecording) == canonicalRecording.value,
+            "MCP toolbar decoding canonicalizes singleton stacks, duplicates and omitted actions");
+    const auto canonicalWrite =
+        call(QStringLiteral("settings_update"),
+             {{QStringLiteral("values"),
+               QJsonObject{{recordingToolbarField->id, repairableRecordingJson}}}},
+             configuration.revision());
+    require(canonicalWrite.ok, "MCP accepts repairable recording toolbar layouts");
+    if (const auto jobId = canonicalWrite.result.value(QStringLiteral("job_id")).toString();
+        !jobId.isEmpty()) {
+        translation_tests::waitUntil(
+            [&] {
+                return jobs.get(71, jobId)->value(QStringLiteral("status")) !=
+                       QStringLiteral("running");
+            },
+            "canonical recording toolbar write completes its job");
+        require(jobs.get(71, jobId)->value(QStringLiteral("status")) == QStringLiteral("completed"),
+                "canonical recording toolbar job must complete without reporting a conflict");
+    }
+    QCoreApplication::processEvents();
+    const auto recordingState = session.state(recordingToolbarField->id);
+    require(settingsJson(QVariant::fromValue(session.toolbarLayout(recordingKind))) ==
+                    canonicalRecording.value &&
+                configuration.value(recordingToolbarField->configurationKey) ==
+                    canonicalRecording.value &&
+                recordingState.phase == settings::SettingsWritePhase::Clean &&
+                !recordingState.busy && !recordingState.dirty && !recordingState.conflicted &&
+                recordingState.error.isEmpty() && !jobs.hasRunningJobs() &&
+                session.toolbarLayout(storage::ScreenshotToolbarLayoutKind::ActionTools) ==
+                    screenshotLayout,
+            "canonical MCP toolbar writes settle cleanly and preserve unrelated action layouts");
+
+    for (const QJsonObject& invalidRecordingJson : {
+             QJsonObject{{QStringLiteral("positions"), QJsonArray{QStringLiteral("start-stop")}},
+                         {QStringLiteral("hidden"), QJsonArray{}}},
+             QJsonObject{{QStringLiteral("positions"), QJsonArray{QJsonValue(QJsonArray{true})}},
+                         {QStringLiteral("hidden"), QJsonArray{}}},
+             QJsonObject{{QStringLiteral("positions"), QJsonArray{}},
+                         {QStringLiteral("hidden"), QJsonArray{1}}},
+             QJsonObject{{QStringLiteral("positions"), QJsonArray{}}},
+         }) {
+        require(!settingsValue(*recordingToolbarField, invalidRecordingJson, &decodedRecording),
+                "canonical decoding must retain strict rejection of malformed toolbar JSON types");
+    }
+    const auto toolbarReset =
+        call(QStringLiteral("settings_reset"),
+             {{QStringLiteral("page_id"), recordingToolbarField->pageId},
+              {QStringLiteral("section_id"), recordingToolbarField->sectionId}},
+             configuration.revision());
+    require(toolbarReset.ok && session.toolbarLayout(recordingKind) == defaultRecordingLayout &&
+                session.toolbarLayout(storage::ScreenshotToolbarLayoutKind::ActionTools) ==
+                    screenshotLayout &&
+                session.integerValue(auxiliary->binding) == delay,
+            "MCP recording toolbar category reset restores only its own layout");
+    require(
+        session.selectValue(settings::SettingsSelectBinding::ScreenRecordingFrameRate).toInt() ==
+            60,
+        "recording toolbar reset preserves video preferences on the same settings page");
     const auto historyField =
         std::find_if(registry.fields().cbegin(), registry.fields().cend(), [](const auto& item) {
             return item.configurationKey == u"capture_history/enabled";

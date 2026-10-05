@@ -31,6 +31,7 @@
 #include <QHideEvent>
 #include <QLabel>
 #include <QLayout>
+#include <QBoxLayout>
 #include <QLineEdit>
 #include <QMargins>
 #include <QPainter>
@@ -212,6 +213,81 @@ void smallToolbarIconStaysVerticallyCentered() {
     require(bottom >= top, "the centering probe must render the toolbar icon");
     require(qAbs(top - (image.height() - bottom - 1)) <= 1,
             "Small toolbar icons must be centered at the rendering device pixel ratio");
+}
+
+void customToolbarWidgetsKeepCallerMetricsDuringScaling() {
+    ScreenshotToolbarMainPanel panel(ScreenshotToolbarMainPanel::Options{});
+    auto* button = panel.createActionButton("Copy", adqt::icons::antd::outlined::Copy());
+    auto* readout = new QLabel(QStringLiteral("00:00:00"), &panel);
+    readout->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
+    readout->setFixedSize(96, screenshot_action_toolbar::ControlSize);
+    panel.contentLayout()->addWidget(button);
+    panel.addSpacing(4);
+    panel.contentLayout()->addWidget(readout);
+    panel.show();
+    panel.adjustSize();
+    flushEvents();
+    for (qreal scale : {1.0, 0.75, 1.25, 1.5, 2.0, 0.75}) {
+        const QSize callerSize(qRound(96 * scale),
+                               qRound(screenshot_action_toolbar::ControlSize * scale));
+        // A parent participant commits before its row, as the recording palette does.
+        readout->setFixedSize(callerSize);
+        panel.setPhysicalScale(scale);
+        panel.adjustSize();
+        flushEvents();
+        require(readout->size() == callerSize && readout->width() > 0 &&
+                    button->width() == qRound(screenshot_action_toolbar::ControlSize * scale),
+                "row scaling preserves caller metrics while scaling its own buttons");
+        require(panel.rect().contains(readout->geometry()) &&
+                    panel.rect().contains(button->geometry()),
+                "custom widgets and row-owned controls remain unclipped after scaling");
+        const int panelWidth = panel.width();
+        readout->setFixedWidth(readout->width() + 30);
+        panel.adjustSize();
+        flushEvents();
+        require(panel.width() >= panelWidth + 30 && panel.rect().contains(readout->geometry()),
+                "caller content can grow without a stale reference-size cache clipping the row");
+    }
+}
+
+void hiddenToolbarPeersKeepVisibleReferenceMetrics() {
+    ScreenshotToolbarMainPanel panel(ScreenshotToolbarMainPanel::Options{});
+    auto* first =
+        panel.createActionButton("Start recording", adqt::icons::antd::outlined::PlayCircle());
+    auto* alternate =
+        panel.createActionButton("Stop recording", adqt::icons::antd::outlined::Stop());
+    auto* copy = panel.createActionButton("Copy", adqt::icons::antd::outlined::Copy());
+    panel.contentLayout()->addWidget(first);
+    panel.contentLayout()->addWidget(alternate);
+    panel.addSpacing(4);
+    panel.contentLayout()->addWidget(copy);
+    alternate->hide();
+    panel.show();
+    panel.adjustSize();
+    flushEvents();
+    const QSize referenceSize = panel.sizeHint();
+    for (qreal scale : {0.75, 1.0, 1.5, 2.0}) {
+        panel.setPhysicalScale(scale);
+        panel.adjustSize();
+        flushEvents();
+        const int controlSize = qRound(screenshot_action_toolbar::ControlSize * scale);
+        require(first->width() == controlSize && alternate->width() == controlSize &&
+                    copy->width() == controlSize,
+                "hidden phase peers retain source metrics without compressing visible controls");
+        require(panel.sizeHint() == QSize(qRound(referenceSize.width() * scale),
+                                          qRound(referenceSize.height() * scale)) &&
+                    panel.rect().contains(first->geometry()) &&
+                    panel.rect().contains(copy->geometry()),
+                "hidden phase peers preserve the visible row's reference-size contract");
+        first->hide();
+        alternate->show();
+        panel.adjustSize();
+        flushEvents();
+        require(alternate->width() == controlSize && panel.rect().contains(alternate->geometry()),
+                "the hidden peer fits its logical position when the active phase changes");
+        alternate->hide();
+        first->show();
+    }
 }
 
 void toolbarControlsStayVerticallyCentered() {
@@ -710,7 +786,10 @@ void mainToolbarSpacingUsesReferenceItemMetrics() {
     require(spacerCount > 0 && buttonCount > 0,
             "scaled main toolbar should contain buttons and explicit item spacers");
 
-    constexpr qreal fractionalScale = 0.8;
+    // Keep every separator interval nonzero while inspecting exact cumulative
+    // edges. Compact scales intentionally clamp zero-width separators to one
+    // pixel, as toolbarSeparatorsKeepMinimumWidthAtCompactScale verifies.
+    constexpr qreal fractionalScale = 1.25;
     toolbar.setPhysicalScale(fractionalScale);
     flushEvents();
     layout->activate();
@@ -1666,6 +1745,8 @@ int main(int argc, char** argv) {
         return 0;
     }
     smallToolbarIconStaysVerticallyCentered();
+    customToolbarWidgetsKeepCallerMetricsDuringScaling();
+    hiddenToolbarPeersKeepVisibleReferenceMetrics();
     drawingSelectsInheritScaleWhenMaterialized();
     toolbarSelectHeightSurvivesStyleRefresh();
     secondaryToolbarControlsFollowScale();

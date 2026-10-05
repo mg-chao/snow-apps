@@ -1364,6 +1364,115 @@ void screenshotTranslationSettingsRoundTripSupportedValues() {
             "translation language codes should normalize to their canonical persisted form");
 }
 
+void recordingActionToolbarLayoutRepairsAndPersistsIndependently() {
+    const QString key = QStringLiteral("screen_recording/action_tools_layout");
+    const QStringList ids{
+        QStringLiteral("start-stop"),  QStringLiteral("pause-resume"), QStringLiteral("duration"),
+        QStringLiteral("microphone"),  QStringLiteral("system-audio"), QStringLiteral("separator"),
+        QStringLiteral("open-folder"), QStringLiteral("close"),        QStringLiteral("trim"),
+        QStringLiteral("save"),        QStringLiteral("copy"),
+    };
+    QJsonArray defaultPositions;
+    storage::ScreenshotToolbarLayout defaultLayout;
+    for (const QString& id : ids) {
+        defaultPositions.append(QJsonArray{id});
+        defaultLayout.positions.append({id});
+    }
+    const QJsonObject defaults{{QStringLiteral("positions"), defaultPositions},
+                               {QStringLiteral("hidden"), QJsonArray{}}};
+    require(storage::ConfigurationSchema::defaultValue(key) == defaults &&
+                !storage::ConfigurationSchema::normalize(key, defaults).changed &&
+                !storage::ConfigurationSchema::normalize(key, QJsonArray{}).valid &&
+                !storage::ConfigurationSchema::normalize(key, QJsonObject{}).valid,
+            "recording toolbar defaults must retain every current action in its original order");
+
+    const QJsonObject malformed{
+        {QStringLiteral("positions"),
+         QJsonArray{QJsonArray{QStringLiteral("copy"), QStringLiteral("duration"),
+                               QStringLiteral("pause-resume"), QStringLiteral("separator"),
+                               QStringLiteral("start-stop"), QStringLiteral("copy"),
+                               QStringLiteral("unknown")},
+                    QStringLiteral("invalid-position"), QJsonArray{}}},
+        {QStringLiteral("hidden"),
+         QJsonArray{QStringLiteral("copy"), QStringLiteral("microphone"),
+                    QStringLiteral("open-folder"), QStringLiteral("microphone"),
+                    QStringLiteral("unknown")}},
+    };
+    const QJsonObject repaired{
+        {QStringLiteral("positions"),
+         QJsonArray{QJsonArray{QStringLiteral("copy")}, QJsonArray{QStringLiteral("duration")},
+                    QJsonArray{QStringLiteral("pause-resume")},
+                    QJsonArray{QStringLiteral("separator")},
+                    QJsonArray{QStringLiteral("start-stop")},
+                    QJsonArray{QStringLiteral("system-audio")}, QJsonArray{QStringLiteral("close")},
+                    QJsonArray{QStringLiteral("trim")}, QJsonArray{QStringLiteral("save")}}},
+        {QStringLiteral("hidden"),
+         QJsonArray{QStringLiteral("microphone"), QStringLiteral("open-folder")}},
+    };
+    const auto normalized = storage::ConfigurationSchema::normalize(key, malformed);
+    require(normalized.valid && normalized.changed && normalized.value == repaired &&
+                !storage::ConfigurationSchema::normalize(key, normalized.value).changed,
+            "recording normalization must keep duration and separator standalone, remove unknown "
+            "and duplicate tools, and preserve hidden membership without screenshot migrations");
+
+    QTemporaryDir temporary;
+    require(temporary.isValid(), "failed to create recording toolbar persistence directory");
+    const QString executable = QDir(temporary.path()).filePath(QStringLiteral("bin"));
+    require(QDir().mkpath(executable), "failed to create recording toolbar executable directory");
+    auto& applicationStorage = initialize(executable, temporary.path());
+    const storage::ScreenshotToolbarSettings toolbar;
+    const auto kind = storage::ScreenshotToolbarLayoutKind::RecordingActionTools;
+    const auto drawing = toolbar.layout(storage::ScreenshotToolbarLayoutKind::DrawingTools);
+    const auto screenshot = toolbar.layout(storage::ScreenshotToolbarLayoutKind::ActionTools);
+    const auto pinned = toolbar.layout(storage::ScreenshotToolbarLayoutKind::PinnedActionTools);
+    require(toolbar.layout(kind) == defaultLayout,
+            "recording adapter must expose the schema's complete default arrangement");
+
+    const storage::ScreenshotToolbarLayout custom{
+        {{QStringLiteral("start-stop"), QStringLiteral("save")},
+         {QStringLiteral("duration")},
+         {QStringLiteral("pause-resume"), QStringLiteral("system-audio")},
+         {QStringLiteral("separator")},
+         {QStringLiteral("trim"), QStringLiteral("copy")}},
+        {QStringLiteral("microphone"), QStringLiteral("open-folder"), QStringLiteral("close")},
+    };
+    int notifications = 0;
+    const auto connection = QObject::connect(
+        &applicationStorage.configuration(), &storage::ConfigurationStore::valueChanged,
+        [&key, &notifications](const QString& changedKey, const QJsonValue&) {
+            if (changedKey == key) {
+                ++notifications;
+            }
+        });
+    require(toolbar.setLayout(kind, custom) && toolbar.layout(kind) == custom &&
+                notifications == 1 &&
+                toolbar.layout(storage::ScreenshotToolbarLayoutKind::DrawingTools) == drawing &&
+                toolbar.layout(storage::ScreenshotToolbarLayoutKind::ActionTools) == screenshot &&
+                toolbar.layout(storage::ScreenshotToolbarLayoutKind::PinnedActionTools) == pinned,
+            "recording toolbar writes must notify live consumers and preserve other layouts");
+    QObject::disconnect(connection);
+    require(applicationStorage.flushNow().success,
+            "flush custom recording toolbar before restarting storage");
+    static_cast<void>(initialize(executable, temporary.path()));
+    require(toolbar.layout(kind) == custom &&
+                toolbar.layout(storage::ScreenshotToolbarLayoutKind::DrawingTools) == drawing &&
+                toolbar.layout(storage::ScreenshotToolbarLayoutKind::ActionTools) == screenshot &&
+                toolbar.layout(storage::ScreenshotToolbarLayoutKind::PinnedActionTools) == pinned,
+            "recording stacks and hidden tools must survive a storage restart independently");
+
+    const storage::ScreenshotToolbarLayout allHidden{{}, ids};
+    require(toolbar.setLayout(kind, allHidden) && toolbar.layout(kind) == allHidden &&
+                applicationStorage.flushNow().success,
+            "an all-hidden recording toolbar must not restore any visible tools");
+    static_cast<void>(initialize(executable, temporary.path()));
+    require(toolbar.layout(kind) == allHidden && toolbar.setLayout(kind, {}) &&
+                toolbar.layout(kind) == defaultLayout &&
+                toolbar.layout(storage::ScreenshotToolbarLayoutKind::DrawingTools) == drawing &&
+                toolbar.layout(storage::ScreenshotToolbarLayoutKind::ActionTools) == screenshot &&
+                toolbar.layout(storage::ScreenshotToolbarLayoutKind::PinnedActionTools) == pinned,
+            "all-hidden recording layouts must survive restart and restore defaults independently");
+}
+
 void verifyPinToScreenShortcutSettings() {
     const storage::PinToScreenShortcutSettings shortcutSettings;
     const shortcuts::ShortcutBindingMap defaults = shortcutSettings.allShortcuts();
@@ -2894,6 +3003,7 @@ int main(int argc, char** argv) {
     if (application.arguments().contains(QStringLiteral("--toolbar-layout-only"))) {
         screenshotUiSchemaRepairsStructuredValues();
         screenshotUiAdaptersRoundTripTypedValues();
+        recordingActionToolbarLayoutRepairsAndPersistsIndependently();
         storage::ApplicationStorage::instance().shutdown();
         return 0;
     }
@@ -2933,6 +3043,7 @@ int main(int argc, char** argv) {
     globalMouseCombinationSchemaIsStrictAndPersistent();
     screenshotUiSchemaRepairsStructuredValues();
     screenshotUiAdaptersRoundTripTypedValues();
+    recordingActionToolbarLayoutRepairsAndPersistsIndependently();
     screenshotTranslationSettingsRoundTripSupportedValues();
     settingsAdaptersRoundTripAndRejectInvalidValues();
     recordingPostProcessingPreferencesPersistAndValidate();

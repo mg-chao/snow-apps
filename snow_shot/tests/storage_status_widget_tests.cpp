@@ -114,6 +114,8 @@ class ToolbarEditorTranslator final : public QTranslator {
                       int) const override {
         const QString translationContext = QString::fromLatin1(context);
         const QString source = QString::fromUtf8(sourceText);
+        if (translationContext == QStringLiteral("RecordingToolbarEditorSettingsWidget"))
+            return QStringLiteral("Translated: ") + source;
         if (translationContext == QStringLiteral("DrawingToolbarEditorSettingsWidget")) {
             if (source == QStringLiteral("Select elements")) {
                 return QStringLiteral("Translated select elements");
@@ -807,6 +809,150 @@ void screenshotToolbarResultToolsCanMoveAndHideByDrop() {
     require(settingsStore.setLayout(kind, original), "restore the screenshot action layout");
 }
 
+void recordingToolbarToolsCanMoveStackHideAndReset() {
+    namespace layout = snow_shot::presentation::toolbar_layout;
+    const auto kind = storage::ScreenshotToolbarLayoutKind::RecordingActionTools;
+    const storage::ScreenshotToolbarSettings settingsStore;
+    const auto original = settingsStore.layout(kind);
+    presentation::GlobalShortcutManager shortcuts;
+    settings::BuiltInSettingsBackend backend(shortcuts);
+    const auto& registry = settings::builtInSettingsRegistry();
+    settings::SettingsRuntimeSession session(registry, backend);
+    const auto renderer = settings::SettingsCustomRenderer::RecordingToolbarEditor;
+    const auto* field = registry.fieldForCustom(renderer);
+    require(field != nullptr, "recording toolbar editor field must exist");
+    std::unique_ptr<SettingsCustomWidget> editor(
+        createSettingsCustomWidget(renderer, registry, *field->definition, session));
+    require(editor != nullptr, "recording toolbar renderer must create an editor");
+    editor->show();
+    flushEvents();
+    auto* surface =
+        editor->findChild<QWidget*>(QStringLiteral("settings-recording-toolbar-surface"));
+    auto* hidden =
+        editor->findChild<QWidget*>(QStringLiteral("settings-recording-toolbar-hidden-zone"));
+    auto* guidance =
+        editor->findChild<QLabel*>(QStringLiteral("settings-recording-toolbar-instruction"));
+    require(
+        surface != nullptr && hidden != nullptr && guidance != nullptr &&
+            surface->accessibleName() == QStringLiteral("Recording toolbar preview") &&
+            guidance->text().contains(QStringLiteral("Recording duration and Separator Component")),
+        "recording editor must explain its two standalone controls");
+    const auto buttonFor = [&editor](const QString& id) {
+        auto* button = editor->findChild<QAbstractButton*>(
+            QStringLiteral("settings-recording-toolbar-item-%1").arg(id));
+        require(button != nullptr, "recording editor exposes every configurable action");
+        return button;
+    };
+    require(editor->findChild<QAbstractButton*>(
+                QStringLiteral("settings-recording-toolbar-item-shape")) == nullptr,
+            "recording toolbar customization must not include annotation controls");
+    const auto drop = [](QWidget* target, const QString& itemId, const QPoint& point) {
+        QMimeData mime;
+        mime.setData("application/x-snow-shot-toolbar-item", itemId.toUtf8());
+        QDragEnterEvent enter(QPointF(point), Qt::MoveAction, &mime, Qt::LeftButton,
+                              Qt::NoModifier);
+        QCoreApplication::sendEvent(target, &enter);
+        QDropEvent event(QPointF(point), Qt::MoveAction, &mime, Qt::LeftButton, Qt::NoModifier);
+        QCoreApplication::sendEvent(target, &event);
+        return event.isAccepted();
+    };
+    const auto positionFor = [&backend, kind](const QString& id) {
+        for (const auto& position : backend.toolbarLayout(kind).positions) {
+            if (position.contains(id))
+                return position;
+        }
+        return QStringList{};
+    };
+    require(session.applyToolbarLayout(kind, layout::normalizedLayout({}, kind)),
+            "restore recording defaults before editor checks");
+    flushEvents();
+    for (const QString& id : layout::defaultOrder(kind)) {
+        auto* button = buttonFor(id);
+        require(button->property("screenshotToolbarMainButton").toBool(),
+                "each recording action starts in its own main position");
+        require(drop(surface, id, QPoint(1, surface->height() - 1)),
+                "recording action can move to the first position");
+        flushEvents();
+        require(backend.toolbarLayout(kind).positions.constFirst() == QStringList{id},
+                "recording reorder persists the requested position");
+        require(drop(hidden, id, QPoint(1, 1)), "every recording action can be hidden");
+        flushEvents();
+        require(backend.toolbarLayout(kind).hidden.contains(id) &&
+                    !button->property("screenshotToolbarMainButton").toBool(),
+                "hiding recording actions persists and removes their preview position");
+        const QString targetId =
+            id == QStringLiteral("save") ? QStringLiteral("trim") : QStringLiteral("save");
+        auto* target = buttonFor(targetId);
+        const QPoint aboveTarget = target->mapTo(surface, QPoint(target->width() / 2, 1));
+        require(drop(surface, id, aboveTarget), "recording hidden action can be restored by drop");
+        flushEvents();
+        const auto position = positionFor(id);
+        require(!backend.toolbarLayout(kind).hidden.contains(id) &&
+                    (layout::requiresOwnPosition(id, kind) ? position == QStringList{id}
+                                                           : position.contains(targetId)),
+                "recording actions stack while duration and separator stay standalone");
+    }
+    for (const QString& targetId : {QStringLiteral("duration"), QStringLiteral("separator")}) {
+        auto* target = buttonFor(targetId);
+        require(drop(surface, QStringLiteral("microphone"),
+                     target->mapTo(surface, QPoint(target->width() / 2, 1))),
+                "drop beside a standalone recording control must be accepted");
+        flushEvents();
+        require(positionFor(targetId) == QStringList{targetId} &&
+                    !positionFor(QStringLiteral("microphone")).contains(targetId),
+                "duration and separator cannot receive another action in their position");
+    }
+    require(session.applyToolbarLayout(kind,
+                                       {{{QStringLiteral("start-stop"), QStringLiteral("duration"),
+                                          QStringLiteral("pause-resume")},
+                                         {QStringLiteral("microphone"), QStringLiteral("separator"),
+                                          QStringLiteral("system-audio")}},
+                                        {}}),
+            "stored layouts containing standalone controls are accepted after normalization");
+    flushEvents();
+    require(
+        positionFor(QStringLiteral("duration")) == QStringList{QStringLiteral("duration")} &&
+            positionFor(QStringLiteral("separator")) == QStringList{QStringLiteral("separator")} &&
+            !positionFor(QStringLiteral("start-stop")).contains(QStringLiteral("pause-resume")) &&
+            !positionFor(QStringLiteral("microphone")).contains(QStringLiteral("system-audio")),
+        "normalization splits stacks around duration and separator before rendering");
+    ToolbarEditorTranslator translator;
+    require(QCoreApplication::installTranslator(&translator),
+            "install recording editor translations");
+    QEvent languageChange(QEvent::LanguageChange);
+    QCoreApplication::sendEvent(editor.get(), &languageChange);
+    require(buttonFor(QStringLiteral("start-stop"))->accessibleName() ==
+                    QStringLiteral("Translated: Start / stop recording") &&
+                buttonFor(QStringLiteral("copy"))->toolTip() ==
+                    QStringLiteral("Translated: Copy recording content") &&
+                surface->accessibleName() ==
+                    QStringLiteral("Translated: Recording toolbar preview") &&
+                guidance->text().startsWith(QStringLiteral("Translated: ")),
+            "recording editor action labels, preview and guidance retranslate on LanguageChange");
+    QCoreApplication::removeTranslator(&translator);
+    const auto screenshot =
+        backend.toolbarLayout(storage::ScreenshotToolbarLayoutKind::ActionTools);
+    const auto pinned =
+        backend.toolbarLayout(storage::ScreenshotToolbarLayoutKind::PinnedActionTools);
+    const auto drawing = backend.toolbarLayout(storage::ScreenshotToolbarLayoutKind::DrawingTools);
+    require(session.reset(settings::SettingsSectionReset::ScreenRecordingActionToolbar),
+            "recording action toolbar category reset succeeds");
+    flushEvents();
+    require(
+        backend.toolbarLayout(kind) == layout::normalizedLayout({}, kind) &&
+            session.toolbarLayout(kind) == backend.toolbarLayout(kind) &&
+            buttonFor(QStringLiteral("start-stop"))
+                ->property("screenshotToolbarMainButton")
+                .toBool() &&
+            backend.toolbarLayout(storage::ScreenshotToolbarLayoutKind::ActionTools) ==
+                screenshot &&
+            backend.toolbarLayout(storage::ScreenshotToolbarLayoutKind::PinnedActionTools) ==
+                pinned &&
+            backend.toolbarLayout(storage::ScreenshotToolbarLayoutKind::DrawingTools) == drawing,
+        "recording category reset restores its preview and preserves unrelated toolbar layouts");
+    require(settingsStore.setLayout(kind, original), "restore recording toolbar layout");
+}
+
 void pinnedToolbarExportToolsCanMoveAndHideByDrop() {
     const auto kind = storage::ScreenshotToolbarLayoutKind::PinnedActionTools;
     const storage::ScreenshotToolbarSettings settingsStore;
@@ -1390,6 +1536,7 @@ int main(int argc, char** argv) {
         toolbarEditorsUseSeparateDefinitionsAndRetranslate();
         drawingToolbarSeparatorCanMoveAndHideByDrop();
         screenshotToolbarResultToolsCanMoveAndHideByDrop();
+        recordingToolbarToolsCanMoveStackHideAndReset();
         pinnedToolbarExportToolsCanMoveAndHideByDrop();
         pinnedToolbarSectionResetRefreshesEditor();
         storage::ApplicationStorage::instance().shutdown();
@@ -1407,6 +1554,7 @@ int main(int argc, char** argv) {
     toolbarEditorsUseSeparateDefinitionsAndRetranslate();
     drawingToolbarSeparatorCanMoveAndHideByDrop();
     screenshotToolbarResultToolsCanMoveAndHideByDrop();
+    recordingToolbarToolsCanMoveStackHideAndReset();
     pinnedToolbarExportToolsCanMoveAndHideByDrop();
     pinnedToolbarSectionResetRefreshesEditor();
     diagnosticsStateAndCopyFeedback();

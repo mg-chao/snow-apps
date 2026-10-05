@@ -30,6 +30,7 @@ class RecordingAudioGainPopover final : public QObject {
     ~RecordingAudioGainPopover() override;
 
     adqt::widgets::AdButton* trigger() const;
+    void setTrigger(adqt::widgets::AdButton* trigger, bool hover = true);
     adqt::widgets::AdPopover* popover() const;
     int gainDb() const;
     void setGainDb(int gainDb);

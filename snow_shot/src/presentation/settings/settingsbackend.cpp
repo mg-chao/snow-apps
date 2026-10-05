@@ -2076,6 +2076,7 @@ bool BuiltInSettingsBackend::resetSection(SettingsSectionReset reset) {
     case SettingsSectionReset::ScreenRecordingEncoding:
     case SettingsSectionReset::PinToScreenToolbar:
     case SettingsSectionReset::ScreenshotActionToolbar:
+    case SettingsSectionReset::ScreenRecordingActionToolbar:
         return storage::ApplicationStorage::instance().configuration().setValues(
             sectionDefaults(reset));
     case SettingsSectionReset::ScreenshotEditorShortcuts:

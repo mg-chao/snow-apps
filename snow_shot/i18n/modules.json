@@ -30,6 +30,7 @@
     "MainWindowSkin",
     "PermissionGuide",
     "PinnedToolbarEditorSettingsWidget",
+    "RecordingToolbarEditorSettingsWidget",
     "ScreenshotMcpSettings",
     "ScreenshotToolbarEditorSettingsWidget",
     "SettingsBackend",

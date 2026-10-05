@@ -819,6 +819,77 @@
         </message>
     </context>
     <context>
+        <name>RecordingToolbarEditorSettingsWidget</name>
+        <message>
+            <source>Close recording</source>
+            <translation>Close recording</translation>
+        </message>
+        <message>
+            <source>Copy recording content</source>
+            <translation>Copy recording content</translation>
+        </message>
+        <message>
+            <source>Drag tools here to hide them from the recording toolbar.</source>
+            <translation>Drag tools here to hide them from the recording toolbar.</translation>
+        </message>
+        <message>
+            <source>Drop beside a tool to create a position. Drop above a tool to stack it. The bottom tool stays on the main toolbar row. Recording duration and Separator Component occupy their own positions.</source>
+            <translation>Drop beside a tool to create a position. Drop above a tool to stack it. The bottom tool stays on the main toolbar row. Recording duration and Separator Component occupy their own positions.</translation>
+        </message>
+        <message>
+            <source>Hidden recording toolbar tools</source>
+            <translation>Hidden recording toolbar tools</translation>
+        </message>
+        <message>
+            <source>Hidden tools</source>
+            <translation>Hidden tools</translation>
+        </message>
+        <message>
+            <source>Microphone</source>
+            <translation>Microphone</translation>
+        </message>
+        <message>
+            <source>No hidden tools</source>
+            <translation>No hidden tools</translation>
+        </message>
+        <message>
+            <source>Open recording folder</source>
+            <translation>Open recording folder</translation>
+        </message>
+        <message>
+            <source>Pause / resume recording</source>
+            <translation>Pause / resume recording</translation>
+        </message>
+        <message>
+            <source>Recording duration</source>
+            <translation>Recording duration</translation>
+        </message>
+        <message>
+            <source>Recording toolbar preview</source>
+            <translation>Recording toolbar preview</translation>
+        </message>
+        <message>
+            <source>Save recording</source>
+            <translation>Save recording</translation>
+        </message>
+        <message>
+            <source>Separator Component</source>
+            <translation>Separator Component</translation>
+        </message>
+        <message>
+            <source>Start / stop recording</source>
+            <translation>Start / stop recording</translation>
+        </message>
+        <message>
+            <source>System audio</source>
+            <translation>System audio</translation>
+        </message>
+        <message>
+            <source>Trim recording</source>
+            <translation>Trim recording</translation>
+        </message>
+    </context>
+    <context>
         <name>ScreenshotMcpSettings</name>
         <message>
             <source>Add this configuration to your MCP client, then restart the client to connect. Keep %1 running while using MCP.</source>
@@ -1830,6 +1901,10 @@
             <translation>Custom pinned toolbar</translation>
         </message>
         <message>
+            <source>Custom recording toolbar</source>
+            <translation>Custom recording toolbar</translation>
+        </message>
+        <message>
             <source>Custom screenshot toolbar</source>
             <translation>Custom screenshot toolbar</translation>
         </message>
@@ -1848,6 +1923,10 @@
         <message>
             <source>Customize the pinned window toolbar</source>
             <translation>Customize the pinned window toolbar</translation>
+        </message>
+        <message>
+            <source>Customize the screen recording action toolbar</source>
+            <translation>Customize the screen recording action toolbar</translation>
         </message>
         <message>
             <source>Customize the screenshot action toolbar</source>
@@ -1992,6 +2071,10 @@
         <message>
             <source>Drag pinned tools to reorder them or stack them in the same toolbar position.</source>
             <translation>Drag pinned tools to reorder them or stack them in the same toolbar position.</translation>
+        </message>
+        <message>
+            <source>Drag recording tools to reorder, stack, or hide them on the recording toolbar.</source>
+            <translation>Drag recording tools to reorder, stack, or hide them on the recording toolbar.</translation>
         </message>
         <message>
             <source>Drag screenshot tools to reorder them or stack them in the same toolbar position.</source>
@@ -3248,6 +3331,10 @@
         <message>
             <source>Screen recording shortcuts and actions</source>
             <translation>Screen recording shortcuts and actions</translation>
+        </message>
+        <message>
+            <source>Screen recording toolbar settings</source>
+            <translation>Screen recording toolbar settings</translation>
         </message>
         <message>
             <source>Screenshot</source>

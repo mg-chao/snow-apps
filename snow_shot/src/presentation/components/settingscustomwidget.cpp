@@ -128,6 +128,20 @@ constexpr int kHiddenZoneHeight = 56;
     QT_TRANSLATE_NOOP("PinnedToolbarEditorSettingsWidget", "Hidden pinned toolbar tools"),
 };
 
+[[maybe_unused]] constexpr const char* kRecordingEditorTranslations[] = {
+    QT_TRANSLATE_NOOP(
+        "RecordingToolbarEditorSettingsWidget",
+        "Drop beside a tool to create a position. Drop above a tool to stack it. The bottom "
+        "tool stays on the main toolbar row. Recording duration and Separator Component "
+        "occupy their own positions."),
+    QT_TRANSLATE_NOOP("RecordingToolbarEditorSettingsWidget", "Recording toolbar preview"),
+    QT_TRANSLATE_NOOP("RecordingToolbarEditorSettingsWidget", "Hidden tools"),
+    QT_TRANSLATE_NOOP("RecordingToolbarEditorSettingsWidget",
+                      "Drag tools here to hide them from the recording toolbar."),
+    QT_TRANSLATE_NOOP("RecordingToolbarEditorSettingsWidget", "No hidden tools"),
+    QT_TRANSLATE_NOOP("RecordingToolbarEditorSettingsWidget", "Hidden recording toolbar tools"),
+};
+
 QString translatedToolbarText(const char* context, const char* sourceText) {
     return QApplication::translate(context, sourceText);
 }
@@ -248,9 +262,10 @@ class ToolbarDropSurface final : public QFrame {
 
     explicit ToolbarDropSurface(DropHandler handler,
                                 std::function<bool(const QString&)> itemValidator,
+                                storage::ScreenshotToolbarLayoutKind layoutKind,
                                 const QString& objectNamePrefix, QWidget* parent)
         : QFrame(parent), m_dropHandler(std::move(handler)),
-          m_itemValidator(std::move(itemValidator)) {
+          m_itemValidator(std::move(itemValidator)), m_layoutKind(layoutKind) {
         setObjectName(QStringLiteral("%1-surface").arg(objectNamePrefix));
         setAcceptDrops(true);
         setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
@@ -424,8 +439,8 @@ class ToolbarDropSurface final : public QFrame {
             }
             const QRect geometry = toolbarPosition->geometry();
             if (position.x() >= geometry.left() && position.x() <= geometry.right()) {
-                if (toolbar_layout::isSeparator(itemId) ||
-                    toolbarPosition->property("screenshotToolbarContainsSeparator").toBool()) {
+                if (toolbar_layout::requiresOwnPosition(itemId, m_layoutKind) ||
+                    toolbarPosition->property("screenshotToolbarRequiresOwnPosition").toBool()) {
                     return {DropKind::NewPosition,
                             index + (position.x() > geometry.center().x() ? 1 : 0), 0};
                 }
@@ -500,6 +515,7 @@ class ToolbarDropSurface final : public QFrame {
 
     DropHandler m_dropHandler;
     std::function<bool(const QString&)> m_itemValidator;
+    storage::ScreenshotToolbarLayoutKind m_layoutKind;
     QHBoxLayout* m_layout = nullptr;
     QVector<ToolbarPositionWidget*> m_positions;
     QFrame* m_positionIndicator = nullptr;
@@ -941,6 +957,10 @@ struct ToolbarEditorSettingsWidget::Private {
             objectNamePrefix = QStringLiteral("settings-pinned-toolbar");
             translationContext = "PinnedToolbarEditorSettingsWidget";
         }
+        if (layoutKind == storage::ScreenshotToolbarLayoutKind::RecordingActionTools) {
+            objectNamePrefix = QStringLiteral("settings-recording-toolbar");
+            translationContext = "RecordingToolbarEditorSettingsWidget";
+        }
     }
 
     void initialize() {
@@ -960,8 +980,8 @@ struct ToolbarEditorSettingsWidget::Private {
             [this](const QString& itemId, const ToolbarDropSurface::DropLocation& location) {
                 applyDrop(itemId, location);
             },
-            [this](const QString& itemId) { return buttons.contains(itemId); }, objectNamePrefix,
-            previewStage);
+            [this](const QString& itemId) { return buttons.contains(itemId); }, layoutKind,
+            objectNamePrefix, previewStage);
         previewLayout->addWidget(toolbarSurface, 0, Qt::AlignHCenter | Qt::AlignBottom);
         rootLayout->addWidget(previewStage);
 
@@ -1037,8 +1057,10 @@ struct ToolbarEditorSettingsWidget::Private {
             auto* position =
                 new ToolbarPositionWidget(positionIndex, objectNamePrefix, toolbarSurface);
             position->setProperty(
-                "screenshotToolbarContainsSeparator",
-                std::any_of(itemIds.cbegin(), itemIds.cend(), toolbar_layout::isSeparator));
+                "screenshotToolbarRequiresOwnPosition",
+                std::any_of(itemIds.cbegin(), itemIds.cend(), [this](const QString& itemId) {
+                    return toolbar_layout::requiresOwnPosition(itemId, layoutKind);
+                }));
             for (const QString& itemId : itemIds) {
                 ToolbarDragButton* button = buttons.value(itemId);
                 if (button == nullptr) {
@@ -1153,7 +1175,11 @@ struct ToolbarEditorSettingsWidget::Private {
     void retranslateUi() {
         instructionLabel->setText(translatedToolbarText(
             translationContext,
-            layoutKind == storage::ScreenshotToolbarLayoutKind::DrawingTools ||
+            layoutKind == storage::ScreenshotToolbarLayoutKind::RecordingActionTools
+                ? "Drop beside a tool to create a position. Drop above a tool to stack it. The "
+                  "bottom tool stays on the main toolbar row. Recording duration and Separator "
+                  "Component occupy their own positions."
+            : layoutKind == storage::ScreenshotToolbarLayoutKind::DrawingTools ||
                     layoutKind == storage::ScreenshotToolbarLayoutKind::PinnedActionTools
                 ? "Drop beside a tool to create a position. Drop above a tool to stack it. The "
                   "bottom tool stays on the main toolbar row. Separator Component occupies its "
@@ -1168,6 +1194,8 @@ struct ToolbarEditorSettingsWidget::Private {
                 ? "Pin to Screen toolbar preview"
             : layoutKind == storage::ScreenshotToolbarLayoutKind::FloatingTools
                 ? "Floating toolbar preview"
+            : layoutKind == storage::ScreenshotToolbarLayoutKind::RecordingActionTools
+                ? "Recording toolbar preview"
                 : "Screenshot toolbar preview"));
         hiddenTitleLabel->setText(translatedToolbarText(translationContext, "Hidden tools"));
         hiddenDescriptionLabel->setText(translatedToolbarText(
@@ -1176,6 +1204,8 @@ struct ToolbarEditorSettingsWidget::Private {
                 ? "Drag tools here to hide them from the pinned toolbar."
             : layoutKind == storage::ScreenshotToolbarLayoutKind::FloatingTools
                 ? "Drag tools here to hide them from the floating toolbar."
+            : layoutKind == storage::ScreenshotToolbarLayoutKind::RecordingActionTools
+                ? "Drag tools here to hide them from the recording toolbar."
                 : "Drag tools here to hide them from the screenshot toolbar."));
         hiddenZone->setEmptyText(translatedToolbarText(translationContext, "No hidden tools"));
         hiddenZone->setAccessibleName(translatedToolbarText(
@@ -1186,6 +1216,8 @@ struct ToolbarEditorSettingsWidget::Private {
                 ? "Hidden pinned toolbar tools"
             : layoutKind == storage::ScreenshotToolbarLayoutKind::FloatingTools
                 ? "Hidden floating toolbar tools"
+            : layoutKind == storage::ScreenshotToolbarLayoutKind::RecordingActionTools
+                ? "Hidden recording toolbar tools"
                 : "Hidden screenshot toolbar tools"));
         for (const toolbar_layout::EditorDescriptor& descriptor : descriptors) {
             ToolbarDragButton* button = buttons.value(QString::fromLatin1(descriptor.id));
@@ -1455,6 +1487,10 @@ SettingsCustomWidget* createSettingsCustomWidget(
     case SettingsCustomRenderer::ScreenshotToolbarEditor:
         return new ToolbarEditorSettingsWidget(
             renderer, storage::ScreenshotToolbarLayoutKind::ActionTools, runtimeSession, parent);
+    case SettingsCustomRenderer::RecordingToolbarEditor:
+        return new ToolbarEditorSettingsWidget(
+            renderer, storage::ScreenshotToolbarLayoutKind::RecordingActionTools, runtimeSession,
+            parent);
     case SettingsCustomRenderer::TrayMenuOptions:
         return new TrayMenuOptionsSettingsWidget(registry, definition, runtimeSession, parent);
     }

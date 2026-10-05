@@ -819,6 +819,77 @@
         </message>
     </context>
     <context>
+        <name>RecordingToolbarEditorSettingsWidget</name>
+        <message>
+            <source>Close recording</source>
+            <translation>关闭录制</translation>
+        </message>
+        <message>
+            <source>Copy recording content</source>
+            <translation>复制录制内容</translation>
+        </message>
+        <message>
+            <source>Drag tools here to hide them from the recording toolbar.</source>
+            <translation>将工具拖到此处，以在录制工具栏中隐藏它们。</translation>
+        </message>
+        <message>
+            <source>Drop beside a tool to create a position. Drop above a tool to stack it. The bottom tool stays on the main toolbar row. Recording duration and Separator Component occupy their own positions.</source>
+            <translation>拖到工具旁边以创建新位置。拖到工具上方以堆叠工具。底部工具保留在工具栏主行中。录制时长和分隔组件各自占据独立位置。</translation>
+        </message>
+        <message>
+            <source>Hidden recording toolbar tools</source>
+            <translation>隐藏的录制工具栏工具</translation>
+        </message>
+        <message>
+            <source>Hidden tools</source>
+            <translation>隐藏的工具</translation>
+        </message>
+        <message>
+            <source>Microphone</source>
+            <translation>麦克风</translation>
+        </message>
+        <message>
+            <source>No hidden tools</source>
+            <translation>没有隐藏的工具</translation>
+        </message>
+        <message>
+            <source>Open recording folder</source>
+            <translation>打开录制文件夹</translation>
+        </message>
+        <message>
+            <source>Pause / resume recording</source>
+            <translation>暂停 / 继续录制</translation>
+        </message>
+        <message>
+            <source>Recording duration</source>
+            <translation>录制时长</translation>
+        </message>
+        <message>
+            <source>Recording toolbar preview</source>
+            <translation>录制工具栏预览</translation>
+        </message>
+        <message>
+            <source>Save recording</source>
+            <translation>保存录制内容</translation>
+        </message>
+        <message>
+            <source>Separator Component</source>
+            <translation>分隔组件</translation>
+        </message>
+        <message>
+            <source>Start / stop recording</source>
+            <translation>开始 / 停止录制</translation>
+        </message>
+        <message>
+            <source>System audio</source>
+            <translation>系统音频</translation>
+        </message>
+        <message>
+            <source>Trim recording</source>
+            <translation>裁剪录制内容</translation>
+        </message>
+    </context>
+    <context>
         <name>ScreenshotMcpSettings</name>
         <message>
             <source>Add this configuration to your MCP client, then restart the client to connect. Keep %1 running while using MCP.</source>
@@ -1830,6 +1901,10 @@
             <translation>自定义固定到屏幕工具栏</translation>
         </message>
         <message>
+            <source>Custom recording toolbar</source>
+            <translation>自定义录制工具栏</translation>
+        </message>
+        <message>
             <source>Custom screenshot toolbar</source>
             <translation>自定义截图工具栏</translation>
         </message>
@@ -1848,6 +1923,10 @@
         <message>
             <source>Customize the pinned window toolbar</source>
             <translation>自定义贴图窗口工具栏</translation>
+        </message>
+        <message>
+            <source>Customize the screen recording action toolbar</source>
+            <translation>自定义屏幕录制操作工具栏</translation>
         </message>
         <message>
             <source>Customize the screenshot action toolbar</source>
@@ -1992,6 +2071,10 @@
         <message>
             <source>Drag pinned tools to reorder them or stack them in the same toolbar position.</source>
             <translation>拖动固定到屏幕工具栏中的工具以调整顺序，或将其堆叠在同一工具栏位置。</translation>
+        </message>
+        <message>
+            <source>Drag recording tools to reorder, stack, or hide them on the recording toolbar.</source>
+            <translation>拖动录制工具，以在录制工具栏中调整顺序、堆叠或隐藏它们。</translation>
         </message>
         <message>
             <source>Drag screenshot tools to reorder them or stack them in the same toolbar position.</source>
@@ -3248,6 +3331,10 @@
         <message>
             <source>Screen recording shortcuts and actions</source>
             <translation>屏幕录制快捷键和操作</translation>
+        </message>
+        <message>
+            <source>Screen recording toolbar settings</source>
+            <translation>屏幕录制工具栏设置</translation>
         </message>
         <message>
             <source>Screenshot</source>
