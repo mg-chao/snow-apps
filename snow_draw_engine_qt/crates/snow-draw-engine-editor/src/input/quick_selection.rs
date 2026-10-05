@@ -47,7 +47,37 @@ impl Editor {
         let point = view_to_canvas(event.position, &self.camera(), self.surface_size());
         let Some(id) = self.hit_quick_selection_at(document, point, PointerButton::Secondary)
         else {
-            return Ok(InteractionOutput::default());
+            if self.state.active_tool != ActiveTool::SerialNumber
+                || !self
+                    .state
+                    .default_serial_number
+                    .serial_number_type
+                    .supports_number()
+                || !matches!(
+                    self.resolve_canvas_hit(
+                        document,
+                        Self::tool_policy_for(ActiveTool::Select),
+                        point,
+                        false,
+                    ),
+                    CanvasHit::Empty
+                )
+            {
+                return Ok(InteractionOutput::default());
+            }
+            // Reset creation defaults after deselecting so existing annotations are untouched.
+            // An explicit number edit also overrides the document's maximum for this format.
+            self.clear_selection();
+            self.clear_transient_visuals();
+            let mut style = self.serial_number_style(document);
+            style.number = 1;
+            self.set_serial_number_style_patch(document, style, SERIAL_NUMBER_STYLE_MIXED_NUMBER)?;
+            self.bump_overlay_state_revision();
+            return Ok(InteractionOutput {
+                consumed: true,
+                capture: PointerCaptureCommand::NoChange,
+                cursor: CursorCommand::Set(self.tool_policy().default_cursor),
+            });
         };
         self.clear_stroke_cursor_state();
         if event.modifiers.shift
@@ -80,7 +110,8 @@ mod tests {
     use super::*;
     use snow_draw_engine_core::{ColorRgba8, CornerRadii, EngineConfig};
     use snow_draw_engine_document::{
-        ElementMeta, FillStyle, RectangleElementKind, StrokeStyle, TextLayoutSize,
+        ElementMeta, FillStyle, RectangleElementKind, SerialNumberNumericType, StrokeStyle,
+        TextLayoutSize,
     };
     use snow_draw_engine_interaction::{PointerButtons, PointerDevice};
 
@@ -189,6 +220,94 @@ mod tests {
             editor.hit_quick_selection_at(&document, Point::new(0.0, 0.0), PointerButton::Primary),
             Some(id)
         );
+    }
+
+    #[test]
+    fn right_blank_serial_resets_only_current_numeric_type() {
+        let types = [
+            SerialNumberNumericType::Arabic,
+            SerialNumberNumericType::Roman,
+            SerialNumberNumericType::Chinese,
+            SerialNumberNumericType::LowercaseLetters,
+            SerialNumberNumericType::UppercaseLetters,
+        ];
+        for current in types {
+            for event_type in [PointerEventType::Down, PointerEventType::DoubleClick] {
+                let (mut editor, document, selected) = fixture();
+                editor.set_active_tool(ActiveTool::SerialNumber).unwrap();
+                for (index, numeric_type) in types.into_iter().enumerate() {
+                    let mut style = editor.serial_number_style(&document);
+                    style.numeric_type = numeric_type;
+                    style.number = 10 + index as i64;
+                    editor
+                        .set_serial_number_style_patch(
+                            &document,
+                            style,
+                            SERIAL_NUMBER_STYLE_MIXED_NUMERIC_TYPE
+                                | SERIAL_NUMBER_STYLE_MIXED_NUMBER,
+                        )
+                        .unwrap();
+                }
+                let mut style = editor.serial_number_style(&document);
+                style.numeric_type = current;
+                editor
+                    .set_serial_number_style_patch(
+                        &document,
+                        style,
+                        SERIAL_NUMBER_STYLE_MIXED_NUMERIC_TYPE,
+                    )
+                    .unwrap();
+                let mut expected = editor.serial_number_style(&document);
+                expected.number = 1;
+                editor.set_selection_state_with_document(
+                    Some(&document),
+                    vec![selected],
+                    Some(selected),
+                );
+                let down = right(&mut editor, &document, event_type, 180.0, 180.0);
+                assert!(down.interaction.consumed);
+                assert_eq!(down.interaction.capture, PointerCaptureCommand::NoChange);
+                assert!(down.command.is_none());
+                assert!(editor.selected_ids().is_empty());
+                assert_eq!(editor.serial_number_style(&document), expected);
+                assert!(editor.state.serial_number_sequence_overridden[current as usize]);
+                let up = right(&mut editor, &document, PointerEventType::Up, 180.0, 180.0);
+                assert!(up.command.is_none());
+                for (index, numeric_type) in types.into_iter().enumerate() {
+                    assert_eq!(
+                        editor.state.serial_number_values()[numeric_type as usize],
+                        if numeric_type == current {
+                            1
+                        } else {
+                            10 + index as i64
+                        }
+                    );
+                }
+                assert_eq!(document.paint_order().len(), 1);
+            }
+        }
+    }
+
+    #[test]
+    fn right_serial_reset_requires_blank_canvas_and_active_serial_tool() {
+        let (mut editor, document, _) = fixture();
+        editor.set_active_tool(ActiveTool::SerialNumber).unwrap();
+        let mut style = editor.serial_number_style(&document);
+        style.number = 23;
+        editor
+            .set_serial_number_style_patch(
+                &document,
+                style.clone(),
+                SERIAL_NUMBER_STYLE_MIXED_NUMBER,
+            )
+            .unwrap();
+        let hit = right(&mut editor, &document, PointerEventType::Down, 100.0, 100.0);
+        assert!(!hit.interaction.consumed && hit.command.is_none());
+        assert_eq!(editor.serial_number_style(&document), style);
+        editor.set_active_tool(ActiveTool::Shape).unwrap();
+        let miss = right(&mut editor, &document, PointerEventType::Down, 180.0, 180.0);
+        assert!(!miss.interaction.consumed && miss.command.is_none());
+        assert_eq!(editor.serial_number_style(&document), style);
     }
 
     #[test]

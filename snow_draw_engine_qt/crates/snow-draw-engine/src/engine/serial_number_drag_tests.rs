@@ -42,6 +42,136 @@ fn set_numeric_type(
 }
 
 #[test]
+fn serial_number_selected_appearance_edits_preserve_creation_sequence() {
+    use snow_draw_engine_editor::{
+        SERIAL_NUMBER_STYLE_MIXED_FONT_SIZE, SERIAL_NUMBER_STYLE_MIXED_NUMBER,
+    };
+    for numeric_type in [
+        SerialNumberNumericType::Arabic,
+        SerialNumberNumericType::Roman,
+        SerialNumberNumericType::LowercaseLetters,
+        SerialNumberNumericType::UppercaseLetters,
+        SerialNumberNumericType::Chinese,
+    ] {
+        for explicit_start in [false, true] {
+            for use_patch in [false, true] {
+                let (mut engine, viewport) = setup(1.0);
+                set_numeric_type(&mut engine, viewport, numeric_type);
+                let start = if explicit_start { 50 } else { 1 };
+                if explicit_start {
+                    let mut style = engine.editor.serial_number_style(&engine.model);
+                    style.number = start;
+                    engine
+                        .set_viewport_serial_number_style_patch(
+                            viewport,
+                            style,
+                            SERIAL_NUMBER_STYLE_MIXED_NUMBER,
+                        )
+                        .unwrap();
+                }
+                let first = click_serial_number(&mut engine, viewport, 100.0);
+                let second = click_serial_number(&mut engine, viewport, 300.0);
+                engine
+                    .select_element_with_viewport_changes(viewport, first)
+                    .unwrap();
+                let mut style = engine.editor.serial_number_style(&engine.model);
+                style.font_size = 32.0;
+                if use_patch {
+                    engine
+                        .set_viewport_serial_number_style_patch(
+                            viewport,
+                            style,
+                            SERIAL_NUMBER_STYLE_MIXED_FONT_SIZE,
+                        )
+                        .unwrap();
+                } else {
+                    engine
+                        .set_viewport_serial_number_style(viewport, style)
+                        .unwrap();
+                }
+                assert_eq!(engine.model.serial_number(first).unwrap().number, start);
+                assert_eq!(engine.model.serial_number(first).unwrap().font_size, 32.0);
+                assert_eq!(engine.model.serial_number(second).unwrap().font_size, 24.0);
+                engine
+                    .reset_editing_state_with_viewport_changes(viewport)
+                    .unwrap();
+                engine
+                    .set_viewport_active_tool(viewport, ActiveTool::SerialNumber)
+                    .unwrap();
+                assert_eq!(
+                    engine.editor.serial_number_style(&engine.model).number,
+                    start + 2
+                );
+                let next = click_serial_number(&mut engine, viewport, 500.0);
+                assert_eq!(engine.model.serial_number(next).unwrap().number, start + 2);
+            }
+        }
+    }
+}
+
+#[test]
+fn serial_number_full_format_and_appearance_edits_restore_destination_sequence() {
+    use snow_draw_engine_editor::{
+        SERIAL_NUMBER_STYLE_MIXED_NUMBER, SERIAL_NUMBER_STYLE_MIXED_NUMERIC_TYPE,
+        SERIAL_NUMBER_STYLE_MIXED_TYPE,
+    };
+    let numeric_types = [
+        SerialNumberNumericType::Arabic,
+        SerialNumberNumericType::Roman,
+        SerialNumberNumericType::LowercaseLetters,
+        SerialNumberNumericType::UppercaseLetters,
+        SerialNumberNumericType::Chinese,
+    ];
+    for serial_number_type in [SerialNumberType::OutlinedCircle, SerialNumberType::Circle] {
+        let (mut engine, viewport) = setup(1.0);
+        for numeric_type in numeric_types {
+            let mut style = engine.editor.serial_number_style(&engine.model);
+            style.numeric_type = numeric_type;
+            style.number = 10 + numeric_type as i64;
+            engine
+                .set_viewport_serial_number_style_patch(
+                    viewport,
+                    style,
+                    SERIAL_NUMBER_STYLE_MIXED_NUMBER | SERIAL_NUMBER_STYLE_MIXED_NUMERIC_TYPE,
+                )
+                .unwrap();
+        }
+        let mut style = engine.editor.serial_number_style(&engine.model);
+        style.serial_number_type = serial_number_type;
+        engine
+            .set_viewport_serial_number_style_patch(viewport, style, SERIAL_NUMBER_STYLE_MIXED_TYPE)
+            .unwrap();
+        for numeric_type in numeric_types {
+            let mut style = engine.editor.serial_number_style(&engine.model);
+            style.numeric_type = numeric_type;
+            style.font_size += 1.0;
+            engine
+                .set_viewport_serial_number_style(viewport, style)
+                .unwrap();
+            assert_eq!(
+                engine.editor.serial_number_style(&engine.model).number,
+                10 + numeric_type as i64
+            );
+        }
+        let mut style = engine.editor.serial_number_style(&engine.model);
+        style.serial_number_type = SerialNumberType::OutlinedCircle;
+        engine
+            .set_viewport_serial_number_style_patch(viewport, style, SERIAL_NUMBER_STYLE_MIXED_TYPE)
+            .unwrap();
+        let id = click_serial_number(&mut engine, viewport, 100.0);
+        assert_eq!(engine.model.serial_number(id).unwrap().number, 14);
+        for numeric_type in numeric_types {
+            set_numeric_type(&mut engine, viewport, numeric_type);
+            assert_eq!(
+                engine.editor.serial_number_style(&engine.model).number,
+                10 + numeric_type as i64
+                    + i64::from(numeric_type == SerialNumberNumericType::Chinese)
+            );
+        }
+    }
+}
+
+#[test]
 fn serial_number_creation_keeps_the_same_size_across_values_and_formats() {
     for numeric_type in [
         SerialNumberNumericType::Arabic,

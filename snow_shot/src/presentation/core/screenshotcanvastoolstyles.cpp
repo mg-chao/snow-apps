@@ -41,6 +41,12 @@ constexpr quint32 kPenHighlightProperties =
 constexpr quint32 kAllFilterProperties =
     SnowCanvasFilterStylePropertyType | SnowCanvasFilterStylePropertyStrength |
     SnowCanvasFilterStylePropertyOpacity | SnowCanvasFilterStylePropertyStrokeWidth;
+constexpr quint32 kSerialNumberAppearanceProperties =
+    SnowCanvasSerialNumberStyleMixedColor | SnowCanvasSerialNumberStyleMixedFill |
+    SnowCanvasSerialNumberStyleMixedFillStyle | SnowCanvasSerialNumberStyleMixedFontSize |
+    SnowCanvasSerialNumberStyleMixedFontFamily | SnowCanvasSerialNumberStyleMixedStrokeWidth |
+    SnowCanvasSerialNumberStyleMixedStrokeStyle | SnowCanvasSerialNumberStyleMixedOpacity |
+    SnowCanvasSerialNumberStyleMixedType | SnowCanvasSerialNumberStyleMixedNumericType;
 
 const QString kShapeKey = QStringLiteral("drawing/shape_style");
 const QString kArrowKey = QStringLiteral("drawing/arrow_style");
@@ -515,7 +521,9 @@ void applyScreenshotCanvasToolStyles(SnowCanvasWidget& canvas,
     spotlightStyle.shape = defaults.spotlightShape;
     applyShape(spotlightStyle, SnowCanvasShapeStylePropertyShape, SnowCanvasShapeKind::Spotlight);
     static_cast<void>(canvas.setCanvasTextStyle(defaults.text));
-    static_cast<void>(canvas.setCanvasSerialNumberStyle(defaults.serialNumber));
+    // Saved appearance must preserve every numeric type's session sequence.
+    static_cast<void>(canvas.applyStyleEdit(
+        SnowCanvasSerialNumberEdit{defaults.serialNumber, kSerialNumberAppearanceProperties}));
     static_cast<void>(canvas.setCanvasFilterCreationStyle(
         defaults.rectangleFilter, kAllFilterProperties, SnowCanvasTool::RectangleFilter));
     static_cast<void>(canvas.setCanvasFilterCreationStyle(defaults.penFilter, kAllFilterProperties,

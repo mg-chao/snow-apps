@@ -1647,12 +1647,7 @@ impl Editor {
         }
     }
 
-    fn update_default_serial_number_style(
-        &mut self,
-        style: &SerialNumberStyle,
-        properties: u32,
-        explicit_number: bool,
-    ) {
+    fn update_default_serial_number_style(&mut self, style: &SerialNumberStyle, properties: u32) {
         let mut next_default = serial_number_with_style_properties(
             &self.state.default_serial_number,
             style,
@@ -1662,12 +1657,13 @@ impl Editor {
             next_default.numeric_type != self.state.default_serial_number.numeric_type;
         self.state.serial_number_values_by_numeric_type = self.state.serial_number_values();
         if numeric_type_changed && properties & SERIAL_NUMBER_STYLE_MIXED_NUMBER == 0 {
-            let number =
+            // Creation counters belong to numeric types even for numberless badges.
+            next_default.number =
                 self.state.serial_number_values_by_numeric_type[next_default.numeric_type as usize];
-            next_default =
-                serial_number_with_label_style(&next_default, number, next_default.font_size);
         }
-        if explicit_number && next_default.serial_number_type.supports_number() {
+        if properties & SERIAL_NUMBER_STYLE_MIXED_NUMBER != 0
+            && next_default.serial_number_type.supports_number()
+        {
             self.state.serial_number_sequence_overridden[next_default.numeric_type as usize] = true;
         }
         if self.state.default_serial_number == next_default {
@@ -2130,15 +2126,20 @@ impl Editor {
         if properties == 0 || properties & !SERIAL_NUMBER_STYLE_ALL_PROPERTIES != 0 {
             return Err(ErrorCode::InvalidArgument);
         }
-        let selected_serial_ids = self
+        // Full element styles carry a number during appearance edits. Only an
+        // explicit number edit may replace a creation counter or restart it.
+        let creation_properties = if explicit_number {
+            properties
+        } else {
+            properties & !SERIAL_NUMBER_STYLE_MIXED_NUMBER
+        };
+        let has_selected_serial_number = self
             .state
             .selection
             .ids
             .iter()
-            .copied()
-            .filter(|id| document.serial_number(*id).is_ok())
-            .collect::<Vec<_>>();
-        if !selected_serial_ids.is_empty() {
+            .any(|id| document.serial_number(*id).is_ok());
+        if has_selected_serial_number {
             let history_undo_snapshot = self.capture_document_sync_snapshot(document);
             let mut transaction = Transaction::new("update serial number style");
             let mut next_selection_elements = Vec::new();
@@ -2150,9 +2151,7 @@ impl Editor {
                     let updated_serial =
                         serial_number_with_style_properties(current_serial, &style, properties);
                     validate_serial_number(&updated_serial)?;
-                    if properties & SERIAL_NUMBER_STYLE_MIXED_NUMBER != 0
-                        && updated_serial.serial_number_type.supports_number()
-                    {
+                    if explicit_number && updated_serial.serial_number_type.supports_number() {
                         number_updates.push((updated_serial.numeric_type, updated_serial.number));
                     }
                     next_selection_elements.push(SelectionRectState {
@@ -2180,14 +2179,11 @@ impl Editor {
 
             self.update_default_serial_number_style(
                 &style,
-                properties & !SERIAL_NUMBER_STYLE_MIXED_NUMBER,
-                false,
+                creation_properties & !SERIAL_NUMBER_STYLE_MIXED_NUMBER,
             );
             for (numeric_type, number) in number_updates {
                 self.state.set_serial_number_value(numeric_type, number);
-                if explicit_number {
-                    self.state.serial_number_sequence_overridden[numeric_type as usize] = true;
-                }
+                self.state.serial_number_sequence_overridden[numeric_type as usize] = true;
             }
             if transaction.is_empty() {
                 return Ok(None);
@@ -2206,7 +2202,7 @@ impl Editor {
             )));
         }
 
-        self.update_default_serial_number_style(&style, properties, explicit_number);
+        self.update_default_serial_number_style(&style, creation_properties);
         Ok(None)
     }
 }

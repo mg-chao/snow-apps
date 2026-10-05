@@ -8,6 +8,7 @@
 #include "widgets/input_line_edit.h"
 
 #include <QApplication>
+#include <QContextMenuEvent>
 #include <QCursor>
 #include <QJsonArray>
 #include <QJsonDocument>
@@ -177,6 +178,82 @@ void creationDefaultsPreserveDocumentAndEditingCleanup() {
     require(!observedTools.contains(SnowCanvasTool::RectangleFilter) &&
                 !observedTools.contains(SnowCanvasTool::PenFilter),
             "restoring a non-filter tool must not transiently activate either filter");
+}
+void serialNumberAppearanceDefaultsPreserveSessionSequences() {
+    const SnowCanvasSerialNumberNumericType types[] = {
+        SnowCanvasSerialNumberNumericType::Arabic,
+        SnowCanvasSerialNumberNumericType::Roman,
+        SnowCanvasSerialNumberNumericType::LowercaseLetters,
+        SnowCanvasSerialNumberNumericType::UppercaseLetters,
+        SnowCanvasSerialNumberNumericType::Chinese,
+    };
+    for (const bool explicitStart : {false, true}) {
+        SnowCanvasRuntime runtime;
+        SnowCanvasWidget canvas(runtime);
+        canvas.resize(800, 600);
+        canvas.show();
+        auto defaults = screenshotCanvasToolStyleDefaults();
+        defaults.serialNumber.type = SnowCanvasSerialNumberType::OutlinedCircle;
+        defaults.serialNumber.numericType = SnowCanvasSerialNumberNumericType::Arabic;
+        defaults.serialNumber.number = 1;
+        defaults.serialNumber.fontSize = 24;
+        applyScreenshotCanvasToolStyles(canvas, defaults);
+        require(canvas.setCanvasTool(SnowCanvasTool::SerialNumber), "activate serial creation");
+        const auto create = [&](QPointF point) {
+            mouse(canvas, QEvent::MouseButtonPress, point);
+            mouse(canvas, QEvent::MouseButtonRelease, point);
+            return documentSlots(runtime)
+                .last()
+                .toObject()
+                .value(QStringLiteral("data"))
+                .toObject()
+                .value(QStringLiteral("SerialNumber"))
+                .toObject()
+                .value(QStringLiteral("number"))
+                .toVariant()
+                .toLongLong();
+        };
+        for (int index = 0; index < 5; ++index) {
+            auto style = canvas.canvasStyleToolbarState().serialNumberStyle;
+            style.numericType = types[index];
+            style.number = 10 + index;
+            require(canvas.applyStyleEdit(SnowCanvasSerialNumberEdit{
+                        style, SnowCanvasSerialNumberStyleMixedNumericType |
+                                   (explicitStart ? SnowCanvasSerialNumberStyleMixedNumber : 0)}),
+                    "prepare independent automatic or explicit sequences");
+            const qint64 start = explicitStart ? 10 + index : 1;
+            require(create({80.0 + index * 140.0, 100}) == start &&
+                        create({80.0 + index * 140.0, 250}) == start + 1,
+                    "each numeric type creates two sequential badges");
+        }
+        for (int index = 0; index < 5; ++index) {
+            const auto annotationsBeforeRefresh = documentSlots(runtime);
+            const auto history = runtime.serializeDocumentHistory();
+            const auto revision = runtime.documentRevision();
+            defaults.serialNumber.numericType = types[index];
+            defaults.serialNumber.color = QColor(19, 47, 89);
+            defaults.serialNumber.fontSize = 32;
+            applyScreenshotCanvasToolStyles(canvas, defaults);
+            auto expected = defaults.serialNumber;
+            expected.number = explicitStart ? 12 + index : 3;
+            require(canvas.canvasTool() == SnowCanvasTool::SerialNumber &&
+                        canvas.canvasStyleToolbarState().serialNumberStyle == expected,
+                    "reopening creation appearance restores the format's session counter");
+            require(documentSlots(runtime) == annotationsBeforeRefresh &&
+                        runtime.serializeDocumentHistory() == history &&
+                        runtime.documentRevision() == revision,
+                    "appearance refresh preserves all existing annotations and history");
+            require(create({80.0 + index * 140.0, 400}) == expected.number,
+                    "creation continues after appearance refresh without duplicate numbers");
+            require(runtime.undo(), "undo creation after reopening appearance");
+            require(canvas.canvasStyleToolbarState().serialNumberStyle.number ==
+                        expected.number + (explicitStart ? 1 : 0),
+                    "appearance refresh preserves automatic and explicit history behavior");
+            require(runtime.redo() && canvas.canvasStyleToolbarState().serialNumberStyle.number ==
+                                          expected.number + 1,
+                    "redo restores the next number without changing sequence ownership");
+        }
+    }
 }
 void fontWheelRemembersDefaultsAndDraftChoice() {
     Editor editor;
@@ -394,6 +471,7 @@ void runScreenshotStyleBindingTests() {
 }
 
 void runScreenshotSerialNumberRestartTests() {
+    serialNumberAppearanceDefaultsPreserveSessionSequences();
     const auto original = screenshotCanvasToolStyleDefaults();
     const auto restore =
         qScopeGuard([&] { static_cast<void>(persistScreenshotCanvasToolStyles(original)); });
@@ -463,6 +541,113 @@ void runScreenshotSerialNumberRestartTests() {
                     .value(QStringLiteral("number"))
                     .toInt() == 50,
             "restarting numbering preserves the existing high element");
+
+    const SnowCanvasSerialNumberNumericType types[] = {
+        SnowCanvasSerialNumberNumericType::Arabic,
+        SnowCanvasSerialNumberNumericType::Roman,
+        SnowCanvasSerialNumberNumericType::Chinese,
+        SnowCanvasSerialNumberNumericType::LowercaseLetters,
+        SnowCanvasSerialNumberNumericType::UppercaseLetters,
+    };
+    qint64 nextNumbers[] = {11, 12, 13, 14, 15};
+    const auto numericEditorText = [&] {
+        for (auto* candidate : palette.findChildren<adqt::widgets::AdLineEdit*>()) {
+            if (candidate->toolTip() == QStringLiteral("Sequence number (scroll to adjust)")) {
+                return candidate->text();
+            }
+        }
+        require(false, "the active serial number editor exists after a canvas state change");
+        return QString();
+    };
+    const auto activateNumericType = [&](int index, bool setNumber) {
+        auto nextStyle = canvas.canvasStyleToolbarState().serialNumberStyle;
+        nextStyle.numericType = types[index];
+        nextStyle.number = nextNumbers[index];
+        require(canvas.commitStyleEdit(SnowCanvasSerialNumberEdit{
+                    nextStyle, SnowCanvasSerialNumberStyleMixedNumericType |
+                                   (setNumber ? SnowCanvasSerialNumberStyleMixedNumber : 0)}),
+                "activate the numeric type's independent creation sequence");
+    };
+    const auto rightClick = [&](QPointF point) {
+        QMouseEvent press(QEvent::MouseButtonPress, point, canvas.mapToGlobal(point.toPoint()),
+                          Qt::RightButton, Qt::RightButton, Qt::NoModifier);
+        QMouseEvent release(QEvent::MouseButtonRelease, point, canvas.mapToGlobal(point.toPoint()),
+                            Qt::RightButton, Qt::NoButton, Qt::NoModifier);
+        QApplication::sendEvent(&canvas, &press);
+        QApplication::sendEvent(&canvas, &release);
+    };
+    for (int index = 0; index < 5; ++index) {
+        activateNumericType(index, true);
+    }
+    for (int index = 0; index < 5; ++index) {
+        activateNumericType(index, false);
+        auto expectedStyle = canvas.canvasStyleToolbarState().serialNumberStyle;
+        expectedStyle.number = 1;
+        const auto elementsBeforeReset = documentSlots(runtime);
+        const auto history = runtime.serializeDocumentHistory();
+        const auto revision = runtime.documentRevision();
+        if (index == 0) {
+            rightClick({40, 150});
+            require(canvas.canvasStyleToolbarState().source ==
+                            SnowCanvasStyleToolbarSource::SelectedSerialNumber &&
+                        numericEditorText() == QStringLiteral("50"),
+                    "right clicking an existing serial number selects it without resetting it");
+        }
+        const QPointF blank(390, 290);
+        rightClick(blank);
+        require(canvas.canvasStyleToolbarState().source ==
+                        SnowCanvasStyleToolbarSource::DefaultSerialNumber &&
+                    canvas.canvasStyleToolbarState().serialNumberStyle == expectedStyle &&
+                    palette.creationStyleDefaults().serialNumber == expectedStyle &&
+                    numericEditorText() == QStringLiteral("1"),
+                "blank canvas right click resets the active numeric editor and creation value");
+        require(documentSlots(runtime) == elementsBeforeReset &&
+                    runtime.serializeDocumentHistory() == history &&
+                    runtime.documentRevision() == revision,
+                "right click reset leaves existing annotations and undo history unchanged");
+        QContextMenuEvent menu(QContextMenuEvent::Mouse, blank.toPoint(),
+                               canvas.mapToGlobal(blank.toPoint()));
+        menu.setAccepted(false);
+        QApplication::sendEvent(&canvas, &menu);
+        require(menu.isAccepted(), "serial number reset consumes the mouse context menu");
+        rightClick(blank);
+        require(numericEditorText() == QStringLiteral("1"),
+                "repeated blank right click stays at one");
+        require(create({40.0 + index * 75.0, 260}) == 1 &&
+                    numericEditorText() == QStringLiteral("2"),
+                "the next annotation starts at one and advances the numeric editor");
+        nextNumbers[index] = 2;
+        for (int other = 0; other < 5; ++other) {
+            activateNumericType(other, false);
+            require(numericEditorText() == QString::number(nextNumbers[other]),
+                    "right click reset preserves the other numeric types' next values");
+        }
+    }
+    activateNumericType(0, true);
+    style = canvas.canvasStyleToolbarState().serialNumberStyle;
+    style.number = 9;
+    require(canvas.commitStyleEdit(
+                SnowCanvasSerialNumberEdit{style, SnowCanvasSerialNumberStyleMixedNumber}),
+            "prepare a serial number before disabling interaction");
+    canvas.setInteractionEnabled(false);
+    rightClick({390, 290});
+    require(numericEditorText() == QStringLiteral("9"),
+            "disabled canvas interaction does not reset the numeric editor");
+    canvas.setInteractionEnabled(true);
+    require(canvas.setCanvasTool(SnowCanvasTool::Select), "leave the serial number tool");
+    rightClick({390, 290});
+    require(canvas.setCanvasTool(SnowCanvasTool::SerialNumber), "return to the serial number tool");
+    require(numericEditorText() == QStringLiteral("9"),
+            "blank right click with another active tool preserves the serial number");
+    rightClick({40, 260});
+    require(canvas.createSerialNumberText() && canvas.hasActiveTextEditing(),
+            "edit a serial number's attached text before resetting its sequence");
+    QKeyEvent label(QEvent::KeyPress, Qt::Key_A, Qt::NoModifier, QStringLiteral("Kept label"));
+    QApplication::sendEvent(&canvas, &label);
+    rightClick({390, 290});
+    require(!canvas.hasActiveTextEditing() && numericEditorText() == QStringLiteral("1") &&
+                runtime.serializeDocumentSession().contains("Kept label"),
+            "blank right click commits an active serial number label and resets the same press");
 }
 
 void runScreenshotStylePersistenceFailureTest() {

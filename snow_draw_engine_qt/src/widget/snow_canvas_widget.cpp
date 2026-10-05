@@ -2481,6 +2481,11 @@ bool SnowCanvasWidget::Impl::handleMousePress(QMouseEvent* event) {
         return true;
     }
     if (plan.shouldAcceptIfTextBeginFails) {
+        if (canvasTool() == SnowCanvasTool::SerialNumber && event->button() == Qt::RightButton) {
+            // Committing a label must still let the same blank press reset its sequence.
+            static_cast<void>(dispatchInput(
+                event, snow_canvas_input::makePointerInput(*event, SNOW_POINTER_EVENT_DOWN)));
+        }
         event->accept();
         return true;
     }
