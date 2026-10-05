@@ -42,6 +42,7 @@ class ScreenshotScrollingCaptureController final : public QObject {
     [[nodiscard]] bool
     start(const QRect& canvasSelection,
           ScreenshotScrollingRecognitionMode mode = ScreenshotScrollingRecognitionMode::Vertical);
+    [[nodiscard]] bool restart();
     [[nodiscard]] bool setRecognitionMode(ScreenshotScrollingRecognitionMode mode);
     [[nodiscard]] ScreenshotScrollingRecognitionMode recognitionMode() const;
     void stop(bool restoreScreenshotPresentation);

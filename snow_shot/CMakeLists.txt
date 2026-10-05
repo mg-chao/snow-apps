@@ -5639,6 +5639,54 @@ if(SNOW_SHOT_BUILD_TESTS)
     list(FILTER _color_picker_lifecycle_sources EXCLUDE
         REGEX "/(directcapturehistory|screenshothistoryservice)[.]")
     list(REMOVE_DUPLICATES _color_picker_lifecycle_sources)
+    # Exercise scrolling session replacement with synthetic frames and native policy adapters.
+    add_library(snow-shot-scrolling-settings-test-runtime OBJECT
+        include/snow_shot/presentation/screenshotscrollingcapturecontroller.h
+        src/presentation/capture/screenshotscrollingcapturecontroller.cpp
+        src/presentation/capture/screenshotscrollingpipeline.cpp)
+    target_include_directories(snow-shot-scrolling-settings-test-runtime PRIVATE include src
+        "${SNOW_SHOT_CAPTURE_CRATES_DIR}/crates/snow-stitch-images-c/include")
+    target_link_libraries(snow-shot-scrolling-settings-test-runtime PRIVATE
+        Qt6::Widgets snow_draw_engine_qt_canvas snow_canvas_image snow_stitch_images_c
+        snow_shot_diagnostics ant_design_qt adqt_icon_core ant_design_icons_qt)
+    target_compile_definitions(snow-shot-scrolling-settings-test-runtime PRIVATE
+        setWindowExcludedFromCapture=snowTestSetWindowExcludedFromCapture
+        captureWindowId=snowTestCaptureWindowId
+        screenshotScrollPermission=snowTestScrollPermission
+        sendScreenshotScroll=snowTestSendScreenshotScroll
+        sendScrollingWheelStep=snowTestSendScrollingWheelStep
+        flushWindowComposition=snowTestFlushWindowComposition)
+    add_executable(snow-shot-scrolling-capture-settings-tests
+        tests/scrolling_capture_settings_tests.cpp
+        ${_color_picker_lifecycle_sources}
+        src/presentation/overlay/screenshotoverlaycoordinator.cpp
+        src/presentation/overlay/screenshotoverlayuihost.cpp
+        src/presentation/services/screenshotcolorpickerwindow.cpp
+        include/snow_shot/presentation/screenshotselectiontoolbarwidget.h
+        src/presentation/selection/screenshotselectiontoolbarwidget.cpp
+        src/presentation/selection/screenshotselectiontoolbarwidgets.h
+        src/presentation/selection/screenshotselectiontoolbarwidgets.cpp)
+    target_include_directories(snow-shot-scrolling-capture-settings-tests PRIVATE include src)
+    target_link_libraries(snow-shot-scrolling-capture-settings-tests PRIVATE
+        snow-shot-scrolling-settings-test-runtime snow_shot_diagnostics snow_shot_storage
+        snow_shot_window_shortcuts snow_draw_engine_qt_canvas snow_canvas_image snow_stitch_images_c
+        ant_design_qt adqt_icon_core ant_design_icons_qt Qt6::Widgets)
+    snow_shot_link_macos_window_platform(snow-shot-scrolling-capture-settings-tests)
+    if(WIN32)
+        target_link_libraries(snow-shot-scrolling-capture-settings-tests PRIVATE comctl32)
+    elseif(APPLE)
+        target_sources(snow-shot-scrolling-capture-settings-tests PRIVATE
+            src/platform/macos/windowcaptureexclusion.mm)
+        target_link_libraries(snow-shot-scrolling-capture-settings-tests PRIVATE
+            "-framework AppKit" "-framework CoreGraphics")
+    endif()
+    snow_shot_import_offscreen_platform(snow-shot-scrolling-capture-settings-tests)
+    add_test(NAME snow-shot-scrolling-capture-settings-tests
+        COMMAND snow-shot-scrolling-capture-settings-tests -platform offscreen)
+    set_tests_properties(snow-shot-scrolling-capture-settings-tests PROPERTIES
+        LABELS "unit" SNOW_TEST_CROSS_PLATFORM TRUE TIMEOUT 60
+        ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}"
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
     add_executable(snow-shot-color-picker-lifecycle-tests
         tests/screenshot_color_picker_lifecycle_tests.cpp
         src/presentation/services/screenshotcanvascolorsamplerwindow.cpp
@@ -8718,6 +8766,7 @@ if(SNOW_SHOT_BUILD_TESTS)
         snow-shot-toolbar-popup-recovery-tests
         snow-shot-toolbar-color-input-tests
         snow-shot-toolbar-shared-controls-tests
+        snow-shot-scrolling-toolbar-tests
         snow-shot-screen-recording-toolbar-tests
         PROPERTIES SNOW_TEST_CROSS_PLATFORM TRUE)
     if(APPLE)

@@ -8477,6 +8477,7 @@ void ScreenshotToolPalette::setScrollingSettingsOwnerWindow(QWidget* owner) {
 }
 
 void ScreenshotToolPalette::closeScrollingSettings() {
+    m_scrollingSettingsRecapturePending = false;
     if (m_scrollingSettingsModal != nullptr) {
         m_scrollingSettingsModal->reject();
     }
@@ -8538,20 +8539,25 @@ void ScreenshotToolPalette::openScrollingSettings() {
         error->setText(tr("Unable to save scrolling screenshot settings"));
     };
     body->retranslate();
-    connect(
-        modal, &adqt::widgets::AdModal::closeRequested, modal,
-        [modal, field = captureInterfaceField.field,
-         error](adqt::widgets::AdModal::CloseReason reason) {
-            if (reason != adqt::widgets::AdModal::CloseReason::OkAction) {
-                modal->reject();
-            } else if (snow_shot::storage::ScreenshotSettings().setCaptureUiInScrollingScreenshot(
-                           field->value().toBool())) {
-                field->notifyCommitted();
-                modal->accept();
-            } else {
-                error->show();
-            }
-        });
+    connect(modal, &adqt::widgets::AdModal::closeRequested, modal,
+            [this, modal, field = captureInterfaceField.field,
+             error](adqt::widgets::AdModal::CloseReason reason) {
+                if (reason != adqt::widgets::AdModal::CloseReason::OkAction) {
+                    modal->reject();
+                    return;
+                }
+                const snow_shot::storage::ScreenshotSettings settings;
+                const bool captureInterfaceEnabled = field->value().toBool();
+                const bool changed =
+                    settings.captureUiInScrollingScreenshot() != captureInterfaceEnabled;
+                if (settings.setCaptureUiInScrollingScreenshot(captureInterfaceEnabled)) {
+                    m_scrollingSettingsRecapturePending |= changed;
+                    field->notifyCommitted();
+                    modal->accept();
+                } else {
+                    error->show();
+                }
+            });
     connect(modal, &adqt::widgets::AdModal::finished, this, [this, modal, body] {
         body->retranslate = {};
         m_scrollingSettingsModal = nullptr;
@@ -8567,6 +8573,20 @@ void ScreenshotToolPalette::openScrollingSettings() {
     }
     layout->activate();
     modal->open();
+    ++m_scrollingSettingsSurfaceCount;
+    // AdModal hides on accept, then deletes its separate window surface during deferred teardown.
+    // Queue capture after that surface is destroyed so its native window is gone as well.
+    connect(
+        modal->contentWidget()->window(), &QObject::destroyed, this,
+        [this] {
+            --m_scrollingSettingsSurfaceCount;
+            if (m_scrollingSettingsSurfaceCount == 0 &&
+                std::exchange(m_scrollingSettingsRecapturePending, false) &&
+                m_scrollingScreenshotMode && m_activeTool == Tool::ScrollingScreenshot) {
+                emit scrollingCaptureSettingsChanged();
+            }
+        },
+        Qt::QueuedConnection);
 }
 
 bool ScreenshotToolPalette::ensureStyleFamily(Tool tool) {

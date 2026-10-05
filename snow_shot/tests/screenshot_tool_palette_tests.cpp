@@ -5258,6 +5258,17 @@ void scrollingSettingsUseCenteredFormAndPersistOnAccept() {
     QCoreApplication::processEvents();
     auto* button =
         palette.findChild<AdButton*>(QStringLiteral("screenshotScrollingSettingsButton"));
+    int captureSettingsChanges = 0;
+    QVector<QPointer<QWidget>> settingsSurfaces;
+    QObject::connect(&palette, &ScreenshotToolPalette::scrollingCaptureSettingsChanged, [&] {
+        ++captureSettingsChanges;
+        auto* modal =
+            palette.findChild<AdModal*>(QStringLiteral("screenshotScrollingSettingsModal"));
+        require(modal == nullptr &&
+                    std::all_of(settingsSurfaces.cbegin(), settingsSurfaces.cend(),
+                                [](const auto& surface) { return surface.isNull(); }),
+                "recapture must wait for the dialog and its window surface to be destroyed");
+    });
     auto* controls = button ? button->parentWidget() : nullptr;
     auto* separator =
         palette.findChild<QFrame*>(QStringLiteral("screenshotScrollingSettingsSeparator"));
@@ -5274,6 +5285,8 @@ void scrollingSettingsUseCenteredFormAndPersistOnAccept() {
     };
     const auto flushDeletes = [] {
         QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+        // AdModal releases its separate top-level surface with another deferred deletion.
+        QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
         QCoreApplication::processEvents();
     };
     require(findModal() == nullptr, "scrolling settings must be built only when clicked");
@@ -5282,6 +5295,7 @@ void scrollingSettingsUseCenteredFormAndPersistOnAccept() {
         QCoreApplication::processEvents();
         auto* modal = findModal();
         require(modal && modal->isOpen(), "clicking scrolling settings must open its modal");
+        settingsSurfaces.push_back(modal->contentWidget()->window());
         return modal;
     };
     auto* modal = open();
@@ -5318,16 +5332,52 @@ void scrollingSettingsUseCenteredFormAndPersistOnAccept() {
             "switch edits must update the form draft without persisting");
     modal->rejectButton()->click();
     flushDeletes();
-    require(findModal() == nullptr && !settings.captureUiInScrollingScreenshot(),
+    require(findModal() == nullptr && !settings.captureUiInScrollingScreenshot() &&
+                captureSettingsChanges == 0,
             "Cancel must discard the draft and release the popup");
     modal = open();
     captureInterface = modal->contentWidget()->findChild<AdSwitch*>();
     require(!captureInterface->isChecked(), "reopening must restore the persisted value");
     captureInterface->setChecked(true);
     modal->acceptButton()->click();
+    require(captureSettingsChanges == 0,
+            "accepting settings must not recapture from inside the close handler");
+    // Reopen while the first modal's surface is still awaiting deletion.
+    button->click();
+    const auto modals =
+        palette.findChildren<AdModal*>(QStringLiteral("screenshotScrollingSettingsModal"));
+    const auto reopened = std::find_if(modals.cbegin(), modals.cend(),
+                                       [](const auto* candidate) { return candidate->isOpen(); });
+    require(reopened != modals.cend(), "settings must remain available during deferred teardown");
+    auto* reopenedModal = *reopened;
+    settingsSurfaces.push_back(reopenedModal->contentWidget()->window());
     flushDeletes();
-    require(findModal() == nullptr && settings.captureUiInScrollingScreenshot(),
-            "OK must persist the existing scrolling UI capture setting");
+    require(captureSettingsChanges == 0 && reopenedModal->isOpen(),
+            "a pending recapture must wait for any newly opened settings surface");
+    reopenedModal->rejectButton()->click();
+    flushDeletes();
+    require(findModal() == nullptr && settings.captureUiInScrollingScreenshot() &&
+                captureSettingsChanges == 1,
+            "OK must persist changed capture settings and request recapture exactly once");
+    modal = open();
+    modal->acceptButton()->click();
+    flushDeletes();
+    require(captureSettingsChanges == 1,
+            "accepting unchanged settings must preserve the current scrolling result");
+    modal = open();
+    captureInterface = modal->contentWidget()->findChild<AdSwitch*>();
+    captureInterface->setChecked(false);
+    modal->acceptButton()->click();
+    flushDeletes();
+    require(!settings.captureUiInScrollingScreenshot() && captureSettingsChanges == 2,
+            "disabling interface capture must also request recapture");
+    modal = open();
+    captureInterface = modal->contentWidget()->findChild<AdSwitch*>();
+    captureInterface->setChecked(true);
+    modal->acceptButton()->click();
+    flushDeletes();
+    require(settings.captureUiInScrollingScreenshot() && captureSettingsChanges == 3,
+            "subsequent changed settings must each request one recapture");
     modal = open();
     captureInterface = modal->contentWidget()->findChild<AdSwitch*>();
     require(captureInterface->isChecked(), "reopening must reflect the accepted value");
@@ -5365,10 +5415,14 @@ void scrollingSettingsUseCenteredFormAndPersistOnAccept() {
             "leaving scrolling tools must close settings and discard unapplied edits");
     palette.setActiveTool(ScreenshotToolPalette::Tool::ScrollingScreenshot);
     button = palette.findChild<AdButton*>(QStringLiteral("screenshotScrollingSettingsButton"));
-    static_cast<void>(open());
+    modal = open();
+    modal->contentWidget()->findChild<AdSwitch*>()->setChecked(false);
+    modal->acceptButton()->click();
     palette.clearActiveTool();
     flushDeletes();
-    require(findModal() == nullptr, "evicting toolbar controls must close scrolling settings");
+    require(findModal() == nullptr && !settings.captureUiInScrollingScreenshot() &&
+                captureSettingsChanges == 3,
+            "leaving scrolling tools must cancel a recapture pending native window teardown");
 }
 
 void scrollingScreenshotExposesAxisRecognitionModes() {

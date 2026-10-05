@@ -433,6 +433,7 @@ struct ScreenshotController::Impl final : public ScreenshotToolbarCommandSink,
     void applyTextPunctuation(const QString& value) override;
     void applyTextTargetLanguage(const QString& language) override;
     void startScrollingScreenshot() override;
+    void restartScrollingScreenshot() override;
     void setScrollingScreenshotRecognitionMode(ScreenshotScrollingRecognitionMode mode) override;
     void setScrollingScreenshotAutoScroll(bool enabled) override;
     void setScrollingScreenshotAutoScrollIntervalMs(int milliseconds) override;
@@ -3016,6 +3017,12 @@ void ScreenshotController::Impl::startScrollingScreenshot() {
     m_toolbarPresenter->hideSelectionToolbar();
     if (ScreenshotToolbarWindow* toolbar = m_overlayCoordinator->toolbar()) {
         toolbar->setScrollingScreenshotMode(true);
+    }
+}
+
+void ScreenshotController::Impl::restartScrollingScreenshot() {
+    if (m_scrollingCaptureController != nullptr) {
+        static_cast<void>(m_scrollingCaptureController->restart());
     }
 }
 

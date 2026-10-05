@@ -773,6 +773,27 @@ bool ScreenshotScrollingCaptureController::start(const QRect& canvasSelection,
     return m_impl->start(canvasSelection, mode);
 }
 
+bool ScreenshotScrollingCaptureController::restart() {
+    if (!m_impl->active) {
+        return false;
+    }
+    const QRect selection = m_impl->canvasSelection;
+    const ScreenshotScrollingRecognitionMode mode = m_impl->mode;
+    const bool autoScroll = m_impl->autoScrollEnabled;
+    const bool exportPaused = m_impl->exportPaused;
+    // Recreate the session so both window exclusions and stitched pixels use the new settings.
+    if (!m_impl->start(selection, mode)) {
+        m_impl->stop(true);
+        if (m_impl->context.captureFailed) {
+            m_impl->context.captureFailed();
+        }
+        return false;
+    }
+    setExportPaused(exportPaused);
+    setAutoScroll(autoScroll);
+    return true;
+}
+
 bool ScreenshotScrollingCaptureController::setRecognitionMode(
     ScreenshotScrollingRecognitionMode mode) {
     if (m_impl->mode == mode) {
