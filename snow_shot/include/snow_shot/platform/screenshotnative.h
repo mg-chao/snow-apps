@@ -18,6 +18,9 @@ void configureScreenshotRecognitionWindow(QWidget* widget);
 // Cocoa masks clip drawing, but do not route input to windows underneath.
 void setScreenshotInputTransparent(QWidget* widget, bool transparent);
 void configureScreenshotToolbarWindow(QWidget* widget);
+// Desktop tools receive content drags; an explicitly visible capture tool must
+// temporarily stay above its capture overlay instead.
+void configureFloatingToolbarWindow(QWidget* widget, bool captureActive = false);
 quint32 screenshotDisplayAtCursor();
 quint32 screenshotFocusedWindow();
 QRectF screenshotFocusedWindowBounds();

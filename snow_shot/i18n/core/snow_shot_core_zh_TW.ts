@@ -414,6 +414,10 @@ so every moment on screen can be expressed clearly and shared easily.</source>
             <translation>螢幕擷取</translation>
         </message>
         <message>
+            <source>Show toolbar</source>
+            <translation>顯示工具列</translation>
+        </message>
+        <message>
             <source>Toolbar mode</source>
             <translation>工具列模式</translation>
         </message>

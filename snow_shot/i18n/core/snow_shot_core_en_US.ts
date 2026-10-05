@@ -414,6 +414,10 @@ so every moment on screen can be expressed clearly and shared easily.</translati
             <translation>Screenshot</translation>
         </message>
         <message>
+            <source>Show toolbar</source>
+            <translation>Show toolbar</translation>
+        </message>
+        <message>
             <source>Toolbar mode</source>
             <translation>Toolbar mode</translation>
         </message>

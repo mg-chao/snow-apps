@@ -254,13 +254,7 @@ class FloatingToolbarController::Impl {
         retreat.setInterval(200);
         fullscreen.setInterval(2000);
         fullscreen.setTimerType(Qt::PreciseTimer);
-        QObject::connect(&reveal, &QTimer::timeout, &q, [this] {
-            if (!dragging && !pressed && visibleAllowed()) {
-                expanded = true;
-                ensureToolbar();
-                place();
-            }
-        });
+        QObject::connect(&reveal, &QTimer::timeout, &q, [this] { showToolbar(); });
         QObject::connect(&retreat, &QTimer::timeout, &q, [this] {
             if (menuDepth || dragging || dropReady() || containsCursor())
                 return;
@@ -416,8 +410,6 @@ class FloatingToolbarController::Impl {
         auto* button = new SnowflakeButton(parent);
         button->setFixedSize(iconExtent());
         button->installEventFilter(&q);
-        QObject::connect(button, &QAbstractButton::clicked, &q,
-                         [this] { invoke(QStringLiteral("screenshot")); });
         return button;
     }
     void ensureIcon() {
@@ -425,6 +417,12 @@ class FloatingToolbarController::Impl {
             return;
         iconWindow = surface(QStringLiteral("floatingToolbarIconWindow"));
         icon = snowflake(iconWindow.get());
+#ifdef Q_OS_MACOS
+        QObject::connect(icon, &QAbstractButton::clicked, &q, [this] { showToolbar(); });
+#else
+        QObject::connect(icon, &QAbstractButton::clicked, &q,
+                         [this] { invoke(QStringLiteral("screenshot")); });
+#endif
         icon->move(8, 8);
         auto* shadow = new QGraphicsDropShadowEffect(icon);
         shadow->setBlurRadius(14);
@@ -443,8 +441,19 @@ class FloatingToolbarController::Impl {
             panel->setGraphicsEffect(new ToolbarShadow(*shadow, panel));
         root->addWidget(panel);
         toolbarIcon = snowflake(panel);
+        QObject::connect(toolbarIcon, &QAbstractButton::clicked, &q,
+                         [this] { invoke(QStringLiteral("screenshot")); });
         scaleScope = new adqt::widgets::AdControlScaleScope(panel, panel);
         rebuild();
+    }
+    void showToolbar() {
+        if (toolbarMode || dragging || pressed || !visibleAllowed())
+            return;
+        reveal.stop();
+        retreat.stop();
+        expanded = true;
+        ensureToolbar();
+        place();
     }
     QString label(const QString& id) const {
         for (const auto& item : toolbar_layout::editorDescriptors(kKind))
@@ -663,10 +672,15 @@ class FloatingToolbarController::Impl {
         if (contentDirty)
             rebuild();
         applyScale();
+#ifdef Q_OS_MACOS
+        icon->setAccessibleName(text(QT_TRANSLATE_NOOP("FloatingToolbar", "Show toolbar")));
+#else
         icon->setAccessibleName(text(QT_TRANSLATE_NOOP("FloatingToolbar", "Screenshot")));
+#endif
         icon->setToolTip(icon->accessibleName());
         if (toolbarIcon) {
-            toolbarIcon->setAccessibleName(icon->accessibleName());
+            toolbarIcon->setAccessibleName(
+                text(QT_TRANSLATE_NOOP("FloatingToolbar", "Screenshot")));
             toolbarIcon->setToolTip(toolbarIcon->accessibleName());
         }
         if (settings.hideInFullscreen()) {
@@ -831,9 +845,9 @@ class FloatingToolbarController::Impl {
             toolbarWindow->setVisible(toolbarMode || (expanded && !dragging));
 #ifdef Q_OS_MACOS
         if (iconWindow && iconWindow->isVisible())
-            platform::configureScreenshotToolbarWindow(iconWindow.get());
+            platform::configureFloatingToolbarWindow(iconWindow.get(), !activities.isEmpty());
         if (toolbarWindow && toolbarWindow->isVisible())
-            platform::configureScreenshotToolbarWindow(toolbarWindow.get());
+            platform::configureFloatingToolbarWindow(toolbarWindow.get(), !activities.isEmpty());
 #endif
     }
     void cancelDrag() {

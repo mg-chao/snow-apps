@@ -158,3 +158,31 @@ ctest --test-dir build/snow-shot-macos-arm64-debug --output-on-failure \
 Keep the logical-size, interrupted-drag, recording-area, and native stacking
 checks alongside these cases. Offscreen DPR injection cannot reproduce AppKit's
 server-side screen adjustment.
+
+## Desktop toolbar content drops
+
+The docked snowflake, expanded desktop toolbar, and toolbar mode use
+`configureFloatingToolbarWindow`. Their native windows and transient popups share
+a desktop band above ordinary windows and the Dock, below AppKit's dragging
+window. Screenshot drawing tools retain their capture band. Reusing the capture
+band for desktop tools prevents AppKit from delivering content drag events. If
+capture hiding is disabled, the desktop toolbar temporarily joins the capture
+band while captures are active, then returns to its desktop band after the last
+capture completes.
+
+```sh
+scripts/build.sh snow-shot-macos-arm64-debug --target snow-shot-floating-toolbar-tests \
+  --target snow-shot-macos-floating-toolbar-drop-tests
+ctest --preset test-snow-shot-macos-arm64-debug --output-on-failure \
+  -R '^snow-shot-(floating-toolbar-content-drop|macos-floating-toolbar-drop-policy)-tests$'
+ctest --test-dir build/snow-shot-macos-arm64-debug --output-on-failure \
+  -R '^snow-shot-macos-floating-toolbar-content-drop-native-tests$'
+```
+
+The offscreen checks cover popup ownership, modal floors, and the maximum desktop
+level. The native fixture begins AppKit dragging sessions with text, HTML, file
+URLs, and TIFF images, verifies copy delivery exactly once in all three modes,
+and preserves the system clipboard. It also checks passive window behavior and
+the level after Qt rewrites window flags and the toolbar is hidden and shown.
+The native test requires event-posting access and otherwise skips with code 77.
+Restoring the old capture band fails its actual-window-level assertion.

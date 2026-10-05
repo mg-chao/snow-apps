@@ -9421,6 +9421,12 @@ if(SNOW_SHOT_BUILD_TESTS OR SNOW_APPS_BUILD_BENCHMARKS)
         add_dependencies(snow-shot-floating-toolbar-tests snow_shot_release_translations)
         list(APPEND _snow_floating_targets snow-shot-floating-toolbar-tests)
         add_test(NAME snow-shot-floating-toolbar-tests COMMAND snow-shot-floating-toolbar-tests)
+        add_test(NAME snow-shot-floating-toolbar-icon-activation-tests
+            COMMAND snow-shot-floating-toolbar-tests --icon-activation-only -platform offscreen)
+        set_tests_properties(snow-shot-floating-toolbar-icon-activation-tests PROPERTIES
+            LABELS "unit" TIMEOUT 60 SNOW_TEST_CROSS_PLATFORM TRUE
+            ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}"
+            ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
         add_test(NAME snow-shot-floating-toolbar-content-drop-tests
             COMMAND snow-shot-floating-toolbar-tests --content-drops-only -platform offscreen)
         set_tests_properties(snow-shot-floating-toolbar-content-drop-tests PROPERTIES
@@ -9442,6 +9448,27 @@ if(SNOW_SHOT_BUILD_TESTS OR SNOW_APPS_BUILD_BENCHMARKS)
     if(SNOW_APPS_BUILD_BENCHMARKS)
         add_executable(snow-shot-floating-toolbar-performance-benchmark ${_snow_floating_test_sources})
         list(APPEND _snow_floating_targets snow-shot-floating-toolbar-performance-benchmark)
+    endif()
+    if(APPLE AND SNOW_SHOT_BUILD_TESTS)
+        set(_snow_floating_macos_sources ${_snow_floating_test_sources})
+        list(REMOVE_ITEM _snow_floating_macos_sources tests/floating_toolbar_tests.cpp)
+        add_executable(snow-shot-macos-floating-toolbar-drop-tests
+            tests/macos_floating_toolbar_drop_tests.mm
+            ../cmake/test-support/macos_native_input.mm
+            ${_snow_floating_macos_sources})
+        list(APPEND _snow_floating_targets snow-shot-macos-floating-toolbar-drop-tests)
+        target_include_directories(snow-shot-macos-floating-toolbar-drop-tests PRIVATE src)
+        target_link_libraries(snow-shot-macos-floating-toolbar-drop-tests PRIVATE
+            "-framework AppKit" "-framework ApplicationServices")
+        add_test(NAME snow-shot-macos-floating-toolbar-drop-policy-tests
+            COMMAND snow-shot-macos-floating-toolbar-drop-tests -platform offscreen)
+        set_tests_properties(snow-shot-macos-floating-toolbar-drop-policy-tests PROPERTIES
+            LABELS "unit;macos" SNOW_TEST_CROSS_PLATFORM TRUE TIMEOUT 30)
+        add_test(NAME snow-shot-macos-floating-toolbar-content-drop-native-tests
+            COMMAND snow-shot-macos-floating-toolbar-drop-tests --native -platform cocoa)
+        set_tests_properties(snow-shot-macos-floating-toolbar-content-drop-native-tests PROPERTIES
+            LABELS "interactive;macos" SNOW_TEST_CROSS_PLATFORM TRUE
+            RUN_SERIAL TRUE SKIP_RETURN_CODE 77 TIMEOUT 30)
     endif()
     foreach(_snow_floating_target IN LISTS _snow_floating_targets)
         target_include_directories(${_snow_floating_target} PRIVATE include src/image)

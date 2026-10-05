@@ -702,6 +702,14 @@ void configureScreenshotToolbarWindow(QWidget* widget) {
     registerScreenshotLayer(widget, kToolbarLayer);
 }
 
+void configureFloatingToolbarWindow(QWidget* widget, bool captureActive) {
+    macos::configureWindowCursorUpdates(widget);
+    configureControlledWindowDragging(widget);
+    registerScreenshotLayer(widget, kToolbarLayer,
+                            captureActive ? CaptureFamily::Screenshot
+                                          : CaptureFamily::DesktopToolbar);
+}
+
 quint32 screenshotDisplayAtCursor() {
     CGEventRef event = CGEventCreate(nullptr);
     if (!event)

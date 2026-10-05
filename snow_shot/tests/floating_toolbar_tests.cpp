@@ -670,6 +670,8 @@ class FloatingTranslator final : public QTranslator {
     QString translate(const char* context, const char* source, const char*, int) const override {
         if (qstrcmp(context, "FloatingToolbar") == 0 && qstrcmp(source, "Screenshot") == 0)
             return QStringLiteral("Translated screenshot");
+        if (qstrcmp(context, "FloatingToolbar") == 0 && qstrcmp(source, "Show toolbar") == 0)
+            return QStringLiteral("Translated show toolbar");
         return {};
     }
     bool isEmpty() const override {
@@ -946,26 +948,77 @@ void verifyIconActivation() {
     for (const bool toolbarMode : {false, true, false}) {
         stored.setToolbarMode(toolbarMode);
         pump();
+#ifdef Q_OS_MACOS
+        const bool opensToolbar = !toolbarMode;
+#else
+        const bool opensToolbar = false;
+#endif
         auto* surface = window(toolbarMode ? "floatingToolbarWindow" : "floatingToolbarIconWindow");
         require(surface && surface->isVisible(), "activation fixture shows the selected mode");
         auto* icon =
             surface->findChild<QAbstractButton*>(QStringLiteral("floatingToolbarSnowflake"));
         require(icon, "activation fixture has a snowflake button");
         actions.clear();
-        click(icon);
-        require(actions == QStringList{QStringLiteral("screenshot")},
-                "snowflake mouse click starts exactly one screenshot in either mode");
+        const QPoint position = icon->mapToGlobal(icon->rect().center());
+        mouse(icon, QEvent::MouseButtonPress, position, Qt::LeftButton, Qt::LeftButton);
+        timer(controller, "floatingToolbarRevealTimer");
+        if (opensToolbar)
+            require(!window("floatingToolbarWindow") ||
+                        !window("floatingToolbarWindow")->isVisible(),
+                    "pressing the collapsed icon keeps the toolbar hidden until release");
+        require(actions.isEmpty(), "pressing the snowflake does not dispatch an action");
+        mouse(icon, QEvent::MouseButtonRelease, position, Qt::LeftButton, Qt::NoButton);
+        pump();
+        const auto verifyActivation = [&] {
+            if (opensToolbar) {
+                auto* toolbar = window("floatingToolbarWindow");
+                require(actions.isEmpty() && toolbar && toolbar->isVisible(),
+                        "macOS collapsed icon activation reveals the toolbar without capturing");
+                require(!stored.toolbarMode() && surface->isVisible(),
+                        "revealing the toolbar preserves icon mode");
+                for (const auto* name :
+                     {"floatingToolbarRevealTimer", "floatingToolbarRetreatTimer"})
+                    require(!controller.findChild<QTimer*>(QString::fromLatin1(name))->isActive(),
+                            "explicit reveal does not leave a pending reveal or retreat");
+            } else {
+                require(actions == QStringList{QStringLiteral("screenshot")},
+                        "screenshot handle activation starts exactly one screenshot");
+            }
+        };
+        verifyActivation();
         require(!window("floatingToolbarContextMenu"), "snowflake click does not create a menu");
+        if (opensToolbar) {
+            auto* toolbar = window("floatingToolbarWindow");
+            click(icon);
+            verifyActivation();
+            require(window("floatingToolbarWindow") == toolbar,
+                    "repeated icon clicks reuse the expanded toolbar");
+            adqt::widgets::AdButton* screenshot = nullptr;
+            for (auto* button : toolbar->findChildren<adqt::widgets::AdButton*>())
+                if (button->property("floatingToolbarAction").toString() ==
+                    QStringLiteral("screenshot"))
+                    screenshot = button;
+            require(screenshot && screenshot->isVisible(), "expanded toolbar offers screenshot");
+            click(screenshot);
+            require(actions == QStringList{QStringLiteral("screenshot")} && !toolbar->isVisible(),
+                    "the expanded screenshot tool captures once and collapses the toolbar");
+        }
         actions.clear();
         icon->click();
         pump();
-        require(actions == QStringList{QStringLiteral("screenshot")},
-                "snowflake button activation starts exactly one screenshot in either mode");
+        verifyActivation();
+        if (opensToolbar) {
+            reveal(controller);
+            click(icon);
+            verifyActivation();
+        }
         require(!window("floatingToolbarContextMenu"), "button activation does not create a menu");
         FloatingTranslator translator;
         QApplication::installTranslator(&translator);
         pump();
-        require(icon->accessibleName() == QStringLiteral("Translated screenshot") &&
+        require(icon->accessibleName() == (opensToolbar
+                                               ? QStringLiteral("Translated show toolbar")
+                                               : QStringLiteral("Translated screenshot")) &&
                     icon->toolTip() == icon->accessibleName(),
                 "snowflake action name and tooltip retranslate in either mode");
         QApplication::removeTranslator(&translator);
@@ -979,6 +1032,10 @@ void verifyIconActivation() {
         pump();
         require(actions.isEmpty() && !window("floatingToolbarContextMenu"),
                 "dragging the snowflake neither captures nor opens a menu in either mode");
+        if (opensToolbar)
+            require(
+                !window("floatingToolbarWindow")->isVisible(),
+                "dragging the collapsed icon hides the toolbar without reopening it on release");
     }
     stored.setToolbarMode(true);
     pump();
@@ -1019,8 +1076,14 @@ void verifyWindows(const QString& visualDirectory) {
     QObject::connect(&controller, &FloatingToolbarController::actionRequested, &controller,
                      [&](const QString& action) { actions << action; });
     click(icon);
+#ifdef Q_OS_MACOS
+    require(actions.isEmpty() && window("floatingToolbarWindow") &&
+                window("floatingToolbarWindow")->isVisible(),
+            "macOS icon click opens the toolbar without starting a screenshot");
+#else
     require(actions == QStringList{QStringLiteral("screenshot")},
             "icon click starts standard screenshot");
+#endif
     reveal(controller);
     auto* toolbar = window("floatingToolbarWindow");
     require(toolbar && toolbar->isVisible(), "hover materializes the toolbar");
@@ -1139,7 +1202,11 @@ void verifyWindows(const QString& visualDirectory) {
     FloatingTranslator translator;
     QApplication::installTranslator(&translator);
     pump();
+#ifdef Q_OS_MACOS
+    require(icon->accessibleName() == QStringLiteral("Translated show toolbar"),
+#else
     require(icon->accessibleName() == QStringLiteral("Translated screenshot"),
+#endif
             "visible icon retranslates immediately");
     QApplication::removeTranslator(&translator);
     pump();
