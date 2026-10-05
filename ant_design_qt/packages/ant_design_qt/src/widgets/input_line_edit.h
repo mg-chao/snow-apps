@@ -187,16 +187,16 @@ class AdLineEdit : public QLineEdit {
   bool clearButtonWantsVisible() const;
   bool clearButtonReservesWidth() const;
   void updateAccessoryVisibility();
-  void updateAccessoryGeometry();
-  void updateTextMargins();
+  void updateAccessoryGeometry(const detail::InputVisualStyle& style);
   void updateCountLabel();
-  void updateClearButton();
-  void updatePrefixVisual();
-  void updateSuffixVisual();
+  void updateClearButton(const detail::InputVisualStyle& style);
+  void updatePrefixVisual(const detail::InputVisualStyle& style);
+  void updateSuffixVisual(const detail::InputVisualStyle& style);
   void updateFeedbackSpinnerState();
-  void applyEditorPalette();
+  void applyEditorPalette(const detail::InputVisualStyle& style);
   void refreshVisualState(bool geometryChanged);
-  void updateInteractionFocusOverlay();
+  void refreshTextState();
+  void updateInteractionFocusOverlay(const detail::InputVisualStyle& style);
   void syncAccessibleState();
   Status effectiveStatus() const;
   adqt::widgets::detail::InputVisualStyle resolvedStyle() const;
@@ -242,6 +242,8 @@ class AdLineEdit : public QLineEdit {
   bool focused_ = false;
   bool feedbackSpinnerSubscribed_ = false;
   bool internalTextUpdate_ = false;
+  Status lastVisualStatus_ = Status::None;
+  bool lastClearReservesWidth_ = false;
 };
 
 }  // namespace adqt::widgets

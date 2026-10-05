@@ -6,7 +6,6 @@
 #include "theme/theme_manager.h"
 #include "widgets/alert.h"
 #include "widgets/button.h"
-#include "widgets/form.h"
 #include "widgets/input_line_edit.h"
 #include "widgets/input_password_edit.h"
 #include "widgets/modal.h"
@@ -309,9 +308,6 @@ void CloudUploadSettingsWidget::openEditor(const QString& id) {
     auto* body = new QWidget;
     auto* layout = new QVBoxLayout(body);
     layout->setContentsMargins(0, 0, 0, 0);
-    auto* form = new AdForm(body);
-    fields::configureForm(form);
-    form->setRequiredMark(AdForm::RequiredMark::Visible);
     auto* grid = new QGridLayout;
     fields::configureTwoColumnGrid(grid);
     const QStringList names{QStringLiteral("configurationName"),
@@ -327,8 +323,7 @@ void CloudUploadSettingsWidget::openEditor(const QString& id) {
                                value.bucket,       value.accessKeyId, value.secretAccessKey,
                                value.sessionToken, value.keyPrefix,   value.publicBaseUrl};
     fields::Options options;
-    options.parent = form;
-    options.form = form;
+    options.parent = body;
     options.commitPolicy = fields::CommitPolicy::Explicit;
     for (size_t i = 0; i < m_fields.size(); ++i) {
         options.required = i < 6;
@@ -342,18 +337,13 @@ void CloudUploadSettingsWidget::openEditor(const QString& id) {
     m_addressing = fields::comboBox({QStringLiteral("addressingStyle")}, {}, options).field;
     m_protocol = fields::comboBox({QStringLiteral("uploadProtocol")}, {}, options).field;
     m_protocol->setFieldEnabled(false);
-    // Register every item before moving them: AdForm rebuilds its layout when adding an item.
     for (size_t i = 0; i < m_fields.size(); ++i) {
-        form->layout()->removeWidget(m_fields[i]->viewWidget());
         grid->addWidget(m_fields[i]->viewWidget(), static_cast<int>(i / 2), static_cast<int>(i % 2),
                         Qt::AlignTop);
     }
-    form->layout()->removeWidget(m_addressing->viewWidget());
-    form->layout()->removeWidget(m_protocol->viewWidget());
     grid->addWidget(m_addressing->viewWidget(), 4, 1, Qt::AlignTop);
     grid->addWidget(m_protocol->viewWidget(), 5, 0, Qt::AlignTop);
-    static_cast<QVBoxLayout*>(form->layout())->addLayout(grid);
-    layout->addWidget(form);
+    layout->addLayout(grid);
     m_modalError = new AdAlert(body);
     m_modalError->setSeverity(AdAlert::Severity::Error);
     m_modalError->hide();
@@ -362,8 +352,6 @@ void CloudUploadSettingsWidget::openEditor(const QString& id) {
     translateEditor();
     m_addressing->syncValue(value.addressingStyle);
     m_protocol->syncValue(value.protocol);
-    form->setInitialValues(form->values());
-    form->resetFields();
     connect(modal, &AdModal::closeRequested, this, [this, modal](AdModal::CloseReason reason) {
         if (reason == AdModal::CloseReason::OkAction)
             submitEditor();

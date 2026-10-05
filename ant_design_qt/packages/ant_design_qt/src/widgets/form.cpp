@@ -16,6 +16,7 @@
 #include <QGridLayout>
 #include <QHBoxLayout>
 #include <QLabel>
+#include <QMetaMethod>
 #include <QMetaProperty>
 #include <QPainter>
 #include <QPushButton>
@@ -1042,18 +1043,21 @@ void AdForm::itemValueChanged(AdFormItem* item) {
   if (!item) {
     return;
   }
+  const QVariant currentValue = item->value();
   QVariant initialValue;
   const bool hasInitialValue = initialValueForItem(item, &initialValue);
-  item->setMetaState(true, !hasInitialValue || item->value() != initialValue);
-  emit fieldValueChanged(item->fieldName(), item->value());
-  emit fieldChanged(item->fieldKey(), item->value());
-  QVariant changedRoot = QVariantMap();
+  item->setMetaState(true, !hasInitialValue || currentValue != initialValue);
+  emit fieldValueChanged(item->fieldName(), currentValue);
+  emit fieldChanged(item->fieldKey(), currentValue);
   const QStringList path = item->namePath();
-  if (!path.isEmpty()) {
-    changedRoot = detail::setValueAtFieldPath(changedRoot, path, 0, item->value());
+  emit fieldPathValueChanged(path, currentValue);
+  if (isSignalConnected(QMetaMethod::fromSignal(&AdForm::valuesChanged))) {
+    QVariant changedRoot = QVariantMap();
+    if (!path.isEmpty()) {
+      changedRoot = detail::setValueAtFieldPath(changedRoot, path, 0, currentValue);
+    }
+    emit valuesChanged(changedRoot.toMap(), values());
   }
-  emit fieldPathValueChanged(path, item->value());
-  emit valuesChanged(changedRoot.toMap(), values());
   revalidateDependents(item);
 }
 

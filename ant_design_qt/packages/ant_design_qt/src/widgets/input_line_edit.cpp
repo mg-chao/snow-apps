@@ -393,9 +393,7 @@ AdLineEdit::AdLineEdit(QWidget* parent) : QLineEdit(parent) {
       }
     }
 
-    updateCountLabel();
-    updateClearButton();
-    refreshVisualState(false);
+    refreshTextState();
   });
 
   connect(clearButton_, &QToolButton::clicked, this, [this]() {
@@ -818,8 +816,9 @@ void AdLineEdit::paintEvent(QPaintEvent* event) {
 
 void AdLineEdit::resizeEvent(QResizeEvent* event) {
   QLineEdit::resizeEvent(event);
-  updateAccessoryGeometry();
-  updateInteractionFocusOverlay();
+  const InputVisualStyle style = resolvedStyle();
+  updateAccessoryGeometry(style);
+  updateInteractionFocusOverlay(style);
 }
 
 void AdLineEdit::changeEvent(QEvent* event) {
@@ -838,7 +837,7 @@ void AdLineEdit::changeEvent(QEvent* event) {
 
 void AdLineEdit::moveEvent(QMoveEvent* event) {
   QLineEdit::moveEvent(event);
-  updateInteractionFocusOverlay();
+  updateInteractionFocusOverlay(resolvedStyle());
 }
 
 void AdLineEdit::showEvent(QShowEvent* event) {
@@ -852,7 +851,7 @@ void AdLineEdit::showEvent(QShowEvent* event) {
 void AdLineEdit::hideEvent(QHideEvent* event) {
   QLineEdit::hideEvent(event);
   updateFeedbackSpinnerState();
-  updateInteractionFocusOverlay();
+  updateInteractionFocusOverlay(resolvedStyle());
 }
 
 void AdLineEdit::enterEvent(QEnterEvent* event) {
@@ -925,8 +924,7 @@ void AdLineEdit::updateAccessoryVisibility() {
   countLabel_->setVisible(countVisible_);
 }
 
-void AdLineEdit::updateAccessoryGeometry() {
-  const InputVisualStyle style = resolvedStyle();
+void AdLineEdit::updateAccessoryGeometry(const InputVisualStyle& style) {
   const QMargins contentInsets = detail::input_internal::textControlContentMargins(style);
   const int groupGap = affixPadding(style);
   const int itemGap = affixItemGap(style);
@@ -1049,8 +1047,6 @@ void AdLineEdit::updateAccessoryGeometry() {
                  std::max(0, contentInsets.bottom()));
 }
 
-void AdLineEdit::updateTextMargins() { updateAccessoryGeometry(); }
-
 void AdLineEdit::updateCountLabel() {
   if (!countLabel_) {
     return;
@@ -1062,12 +1058,11 @@ void AdLineEdit::updateCountLabel() {
   countLabel_->setVisible(countVisible_);
 }
 
-void AdLineEdit::updateClearButton() {
+void AdLineEdit::updateClearButton(const InputVisualStyle& style) {
   if (!clearButton_) {
     return;
   }
 
-  const InputVisualStyle style = resolvedStyle();
   const int iconSide = std::max(10, style.metrics.clearIconSize);
   auto* clearIconButton = static_cast<InputIconButton*>(clearButton_);
   clearIconButton->setSlotSize(QSize(iconSide, iconSide));
@@ -1079,12 +1074,11 @@ void AdLineEdit::updateClearButton() {
   clearButton_->setEnabled(isEnabled() && !isReadOnly());
 }
 
-void AdLineEdit::updatePrefixVisual() {
+void AdLineEdit::updatePrefixVisual(const InputVisualStyle& style) {
   if (!prefixLabel_ || !prefixIconLabel_) {
     return;
   }
 
-  const InputVisualStyle style = resolvedStyle();
   prefixLabel_->setText(prefixText_);
   prefixLabel_->setFont(style.metrics.font);
   setLabelTextColor(prefixLabel_, isEnabled() ? style.prefixColor : style.disabledTextColor);
@@ -1094,12 +1088,11 @@ void AdLineEdit::updatePrefixVisual() {
                devicePixelRatioF());
 }
 
-void AdLineEdit::updateSuffixVisual() {
+void AdLineEdit::updateSuffixVisual(const InputVisualStyle& style) {
   if (!suffixLabel_ || !suffixIconLabel_ || !suffixActionButton_ || !feedbackIconLabel_) {
     return;
   }
 
-  const InputVisualStyle style = resolvedStyle();
   const bool suppressTrailing = clearOverlaysTrailingAction_ && clearButtonWantsVisible();
   const auto transparent = [](QColor color) {
     if (!color.isValid()) {
@@ -1158,7 +1151,7 @@ void AdLineEdit::updateFeedbackSpinnerState() {
     detail::setFrameSubscription(this, QString::fromLatin1(kFeedbackSpinnerFrameKey), true,
                                  [this](qint64, qint64) {
                                    if (isVisible() && isLoadingIcon(feedbackIconRef_)) {
-                                     updateSuffixVisual();
+                                     updateSuffixVisual(resolvedStyle());
                                    }
                                  });
     feedbackSpinnerSubscribed_ = true;
@@ -1168,8 +1161,7 @@ void AdLineEdit::updateFeedbackSpinnerState() {
   }
 }
 
-void AdLineEdit::applyEditorPalette() {
-  const InputVisualStyle style = resolvedStyle();
+void AdLineEdit::applyEditorPalette(const InputVisualStyle& style) {
   const QColor transparent(0, 0, 0, 0);
   const QColor textColor = isEnabled() ? style.selectorTextColor : style.disabledTextColor;
   const QColor placeholderColor = isEnabled() ? style.placeholderColor : style.disabledTextColor;
@@ -1183,44 +1175,82 @@ void AdLineEdit::applyEditorPalette() {
   palette.setColor(QPalette::Disabled, QPalette::Text, textColor);
   palette.setColor(QPalette::PlaceholderText, placeholderColor);
   palette.setColor(QPalette::Disabled, QPalette::PlaceholderText, placeholderColor);
-  setPalette(palette);
+  if (this->palette() != palette) {
+    setPalette(palette);
+  }
 }
 
 void AdLineEdit::refreshVisualState(bool geometryChanged) {
   const InputVisualStyle style = resolvedStyle();
+  lastVisualStatus_ = effectiveStatus();
+  lastClearReservesWidth_ = clearButtonReservesWidth();
   if (font() != style.metrics.font) {
     QSignalBlocker blocker(this);
     QLineEdit::setFont(style.metrics.font);
   }
 
   updateCountLabel();
-  updatePrefixVisual();
-  updateSuffixVisual();
-  updateClearButton();
-  applyEditorPalette();
+  updatePrefixVisual(style);
+  updateSuffixVisual(style);
+  updateClearButton(style);
+  applyEditorPalette(style);
   if (countLabel_) {
     countLabel_->setFont(style.metrics.font);
     setLabelTextColor(countLabel_, isEnabled() ? style.countColor : style.disabledTextColor);
   }
   updateAccessoryVisibility();
-  updateAccessoryGeometry();
+  updateAccessoryGeometry(style);
   updateCursorForRole();
   syncAccessibleState();
-  updateInteractionFocusOverlay();
+  updateInteractionFocusOverlay(style);
   update();
   if (geometryChanged) {
     updateGeometry();
   }
 }
 
-void AdLineEdit::updateInteractionFocusOverlay() {
+void AdLineEdit::refreshTextState() {
+  // Ordinary edits change the count and clear affordance, not the theme or static icons.
+  if (effectiveStatus() != lastVisualStatus_) {
+    refreshVisualState(false);
+    return;
+  }
+
+  if (countVisible_) {
+    updateCountLabel();
+  }
+
+  const bool clearVisible = clearButtonWantsVisible();
+  const bool clearWasVisible = !clearButton_->isHidden();
+  const bool clearVisibilityChanged = clearVisible != clearWasVisible;
+  const bool clearReservesWidth = clearButtonReservesWidth();
+  const bool clearWidthChanged = clearReservesWidth != lastClearReservesWidth_;
+  if (!clearVisibilityChanged && !clearWidthChanged && !countVisible_) {
+    return;
+  }
+
+  if (clearVisibilityChanged) {
+    clearButton_->setVisible(clearVisible);
+    updateCursorForRole();
+  }
+  const InputVisualStyle style = resolvedStyle();
+  if (clearVisibilityChanged && clearOverlaysTrailingAction_) {
+    updateSuffixVisual(style);
+  }
+  updateAccessoryGeometry(style);
+  if (clearWidthChanged || countVisible_) {
+    updateGeometry();
+  }
+  lastClearReservesWidth_ = clearReservesWidth;
+}
+
+void AdLineEdit::updateInteractionFocusOverlay(const InputVisualStyle& style) {
   if (!focused_) {
     stopInteractionFocusForOwner(this);
     return;
   }
 
-  detail::input_internal::updateInputFocusOverlay(this, rect(), resolvedStyle(), joinedLeft_,
-                                                  joinedRight_);
+  detail::input_internal::updateInputFocusOverlay(this, rect(), style, joinedLeft_, joinedRight_);
 }
 
 AdLineEdit::Status AdLineEdit::effectiveStatus() const {

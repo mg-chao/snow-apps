@@ -12,6 +12,7 @@
 #include <QLabel>
 #include <QLineEdit>
 #include <QPointer>
+#include <QToolButton>
 #include <QTranslator>
 #include <QVBoxLayout>
 
@@ -86,6 +87,82 @@ void optionalMetadataAndChoiceLabels() {
                 !choices.at(1).disabled && select.field->value() == QStringLiteral("translated"),
             "partial choices preserve translated and runtime labels with enabled defaults");
     QCoreApplication::removeTranslator(&translator);
+}
+
+void typingPreservesInputAccessories() {
+    QWidget owner;
+    auto* input = new adqt::widgets::AdLineEdit(&owner);
+    auto* layout = new QVBoxLayout(&owner);
+    layout->addWidget(input);
+    input->setAllowClear(true);
+    input->setCountVisible(true);
+    input->setMaximumCharacterCount(3);
+    owner.show();
+    flushEvents();
+
+    auto* clear = input->findChild<QToolButton*>(QStringLiteral("ad-input-clear"));
+    QLabel* count = nullptr;
+    for (auto* label : input->findChildren<QLabel*>()) {
+        if (label->text() == QStringLiteral("0 / 3")) {
+            count = label;
+            break;
+        }
+    }
+    require(clear && count && !clear->isVisible(), "empty input hides its clear action");
+    const int emptyMargin = input->textMargins().right();
+    input->setText(QStringLiteral("abc"));
+    flushEvents();
+    require(clear->isVisible() && count->text() == QStringLiteral("3 / 3") &&
+                input->textMargins().right() > emptyMargin,
+            "typing updates the count and reserves room for the clear action");
+    const QColor normalCountColor = count->palette().color(QPalette::WindowText);
+    input->setText(QStringLiteral("abcd"));
+    flushEvents();
+    require(count->text() == QStringLiteral("4 / 3") &&
+                count->palette().color(QPalette::WindowText) != normalCountColor,
+            "exceeding the count limit applies the warning style");
+    input->setText(QStringLiteral("ab"));
+    flushEvents();
+    require(count->text() == QStringLiteral("2 / 3") &&
+                count->palette().color(QPalette::WindowText) == normalCountColor,
+            "editing back below the count limit restores the normal style");
+    clear->click();
+    flushEvents();
+    require(input->text().isEmpty() && !clear->isVisible() &&
+                input->textMargins().right() == emptyMargin,
+            "clearing text restores the original accessory layout");
+}
+
+void formValueSignalsRemainAvailable() {
+    QWidget owner;
+    adqt::widgets::AdForm form(&owner);
+    fields::Options options;
+    options.form = &form;
+    options.commitPolicy = fields::CommitPolicy::Explicit;
+    const auto field = fields::text({QStringLiteral("tracked")}, options);
+    const auto other = fields::text({QStringLiteral("unrelated")}, options);
+    int unrelatedReads = 0;
+    other.item()->setValueReader([&unrelatedReads](QWidget* control) {
+        ++unrelatedReads;
+        return static_cast<QLineEdit*>(control)->text();
+    });
+    field.editor->setText(QStringLiteral("first"));
+    require(unrelatedReads == 0,
+            "editing a field does not poll unrelated values without an observer");
+    QVariantMap changed;
+    QVariantMap all;
+    int snapshots = 0;
+    QObject::connect(&form, &adqt::widgets::AdForm::valuesChanged, &owner,
+                     [&](const QVariantMap& nextChanged, const QVariantMap& nextAll) {
+                         changed = nextChanged;
+                         all = nextAll;
+                         ++snapshots;
+                     });
+    field.editor->setText(QStringLiteral("draft"));
+    require(snapshots == 1 && unrelatedReads > 0 &&
+                changed.value(QStringLiteral("tracked")) == QStringLiteral("draft") &&
+                all.value(QStringLiteral("tracked")) == QStringLiteral("draft"),
+            "connected aggregate observers receive the edited form values");
 }
 
 void constructionKeepsItemsInTheirOwner() {
@@ -860,6 +937,8 @@ int main(int argc, char** argv) {
     QApplication application(argc, argv);
     styles::ThemeManager::instance().initialize(application);
     optionalMetadataAndChoiceLabels();
+    typingPreservesInputAccessories();
+    formValueSignalsRemainAvailable();
     constructionKeepsItemsInTheirOwner();
     presentationsAndFeedback();
     settingsRowsKeepNaturalHeight();
