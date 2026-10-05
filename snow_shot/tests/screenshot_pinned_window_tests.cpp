@@ -380,6 +380,30 @@ class ScreenshotPinnedWindowTestAccess {
     static void endControlled(ScreenshotPinnedWindow& window, bool cancel) {
         window.endControlledInteraction(cancel);
     }
+    static void setLock(ScreenshotPinnedWindow& window, bool enabled) {
+        window.setLockedMode(enabled);
+    }
+    static bool lockInteractionActive(const ScreenshotPinnedWindow& window) {
+        return window.m_windowDragActive || window.m_systemSizingActive ||
+               window.m_nativeGeometryController->hasInteractiveTransaction();
+    }
+    static QTimer* lockReadoutTimer(ScreenshotPinnedWindow& window) {
+        return window.m_scaleLabelTimer;
+    }
+    static void enableLockAttentionFixture(ScreenshotPinnedWindow& window) {
+        window.m_sourcePinAvailable = true;
+    }
+    static void registerLockGroup(ScreenshotPinnedWindow& window,
+                                  snow_shot::presentation::PinnedWindowGroupManager& manager) {
+        window.m_groupId = manager.activeGroupId();
+        window.m_groupManager = &manager;
+        manager.registerWindow(&window, window.m_groupId);
+    }
+    static void refreshLockBorder(ScreenshotPinnedWindow& window, bool active, bool dragging) {
+        window.m_windowActive = active;
+        window.m_fileDragActive = dragging;
+        window.applyRuntimeBorderColor();
+    }
     static double scale(const ScreenshotPinnedWindow& window) {
         return window.m_scalePercent;
     }
@@ -410,8 +434,9 @@ class ScreenshotPinnedWindowTestAccess {
         window.configureRecognitionTarget();
         window.refreshContextMenu();
     }
-    static bool replace(ScreenshotPinnedWindow& window, ScreenshotClipboardContent content) {
-        return window.replaceContent(std::move(content));
+    static bool replace(ScreenshotPinnedWindow& window, ScreenshotClipboardContent content,
+                        bool* rejectedByLock = nullptr) {
+        return window.replaceContent(std::move(content), rejectedByLock);
     }
     static bool checkerboardEnabled(const ScreenshotPinnedWindow& window) {
         return window.m_screenshotRenderer->pinnedCheckerboardEnabled();
@@ -1350,6 +1375,14 @@ QAction* pinnedMenuActionNamed(ScreenshotPinnedWindow& window, const QString& na
         }
     }
     return nullptr;
+}
+
+QAction* pinnedMenuPercentAction(adqt::widgets::AdContextMenu& menu, int percent) {
+    for (QAction* action : menu.actions()) {
+        if (action->isCheckable() && action->data().toInt() == percent)
+            return action;
+    }
+    throw std::runtime_error("pinned percentage action missing");
 }
 
 QVector<ScreenshotPinnedWindow*> topLevelPinnedWindows() {
@@ -5763,7 +5796,8 @@ void pinnedMiddleClickActions() {
     require(settings.setMiddleMouseButtonAction(QStringLiteral("reset_zoom")), "configure reset");
     scale->actions().at(1)->trigger();
     press(canvas);
-    require(scale->actions().at(3)->isChecked(), "middle-click must select 100 percent zoom");
+    require(pinnedMenuPercentAction(*scale, 100)->isChecked(),
+            "middle-click must select 100 percent zoom");
     if (!offscreen) {
         require(window->currentNativeGeometry() == original, "reset must restore baseline size");
     }
@@ -5790,7 +5824,7 @@ void pinnedMiddleClickActions() {
             "None must preserve thumbnail state and geometry");
     require(settings.setMiddleMouseButtonAction(QStringLiteral("reset_zoom")), "configure reset");
     press(canvas);
-    require(!thumbnail->isChecked() && scale->actions().at(3)->isChecked(),
+    require(!thumbnail->isChecked() && pinnedMenuPercentAction(*scale, 100)->isChecked(),
             "reset zoom must leave thumbnail mode and select 100 percent");
     if (!offscreen) {
         require(window->currentNativeGeometry() == original,
@@ -8952,6 +8986,519 @@ void pinnedClickThroughOpacityOffscreen() {
     }
 }
 
+void pinnedLockOffscreen() {
+    using Access = ScreenshotPinnedWindowTestAccess;
+    QScreen* screen = QGuiApplication::primaryScreen();
+    require(screen != nullptr, "lock fixture needs a screen");
+    auto config = clickThroughTestConfig(*screen);
+    config.initialWindowSize = QSize(400, 240);
+    config.nativeGeometry =
+        physicalPinGeometry(*screen, QPoint(100, 120), config.initialWindowSize);
+    config.canvasSourceRect = QRectF(QPointF(), config.initialWindowSize);
+    QImage source(config.initialWindowSize, QImage::Format_ARGB32_Premultiplied);
+    source.fill(Qt::blue);
+    config.imageSource = ScreenshotImageSource::fromImage(source, config.canvasSourceRect);
+    ScreenshotPinnedWindow window;
+    Access::prepareReplacement(window, config);
+    window.show();
+    window.activateWindow();
+    auto* canvas = window.findChild<SnowCanvasWidget*>();
+    require(canvas != nullptr, "lock fixture needs a canvas");
+    canvas->setFocus();
+    waitForUi(20);
+    const auto action = [&](const char* name) {
+        auto* result = window.findChild<QAction*>(QString::fromLatin1(name));
+        require(result != nullptr, "lock fixture action must exist");
+        return result;
+    };
+    auto* lock = action("screenshotPinnedLockAction");
+    auto* menu = window.findChild<adqt::widgets::AdContextMenu*>(
+        QStringLiteral("screenshotPinnedContextMenu"));
+    auto* border = window.findChild<QFrame*>(QStringLiteral("screenshotPinnedBorder"));
+    auto* label = window.findChild<QLabel*>(QStringLiteral("screenshotPinnedScaleLabel"));
+    require(menu && border && label && lock->isCheckable() && !lock->isChecked() &&
+                lock->text().endsWith(QStringLiteral("\tL")) &&
+                menu->actions().indexOf(lock) ==
+                    menu->actions().indexOf(action("screenshotPinnedClickThroughAction")) + 1,
+            "lock must start unchecked immediately after click-through with the L shortcut");
+    require(
+        !Access::applyAnnotationTransaction(
+             window, R"({"version":1,"operations":[{"type":"rectangle","bounds":[8,8,24,24]}]})")
+             .isEmpty(),
+        "lock integrity fixture must contain annotations and undo history");
+    sendShortcut(*canvas, Qt::Key_L);
+    require(lock->isChecked() && window.persistenceSnapshot().lockedMode &&
+                window.automationState().value(QStringLiteral("locked")).toBool(),
+            "L must toggle and expose persisted lock state");
+    require(border->property("borderColor").value<QColor>() == QColor(250, 173, 20, 255),
+            "the default locked border must use the warning color");
+    const QRect geometry = window.currentNativeGeometry();
+    const auto before = window.persistenceSnapshot();
+    const QByteArray history = Access::drawingHistory(window);
+    const auto assertLocked = [&] {
+        require(window.currentNativeGeometry() == geometry &&
+                    !Access::lockInteractionActive(window) && label->isVisible() &&
+                    label->text() == QStringLiteral("Locked"),
+                "blocked actions must keep geometry stable and show Locked without an interaction");
+    };
+    const auto clearReadout = [&] {
+        label->hide();
+        Access::lockReadoutTimer(window)->stop();
+    };
+    require(!Access::beginControlled(window, window.mapToGlobal(window.rect().center())),
+            "lock must reject controlled move entry");
+    assertLocked();
+    clearReadout();
+    require(!Access::beginControlled(window, window.mapToGlobal(QPoint(0, 0)),
+                                     int(screenshot_pinned_resize_geometry::DragHandle::TopLeft)),
+            "lock must reject controlled resize entry");
+    assertLocked();
+    for (const QPoint point : {QPoint(1, 1), window.rect().center()}) {
+        clearReadout();
+        QMouseEvent press(QEvent::MouseButtonPress, QPointF(point),
+                          QPointF(canvas->mapToGlobal(point)), Qt::LeftButton, Qt::LeftButton,
+                          Qt::NoModifier);
+        QApplication::sendEvent(canvas, &press);
+        assertLocked();
+        QMouseEvent release(QEvent::MouseButtonRelease, QPointF(point),
+                            QPointF(canvas->mapToGlobal(point)), Qt::LeftButton, Qt::NoButton,
+                            Qt::NoModifier);
+        QApplication::sendEvent(canvas, &release);
+    }
+    const QPoint cursor = QCursor::pos();
+    clearReadout();
+    sendShortcut(*canvas, Qt::Key_Right);
+    assertLocked();
+    require(QCursor::pos() == cursor, "blocked keyboard movement must not move the cursor instead");
+    for (const char* name :
+         {"screenshotPinnedIncreaseScaleAction", "screenshotPinnedDecreaseScaleAction",
+          "screenshotPinnedRotateClockwiseAction",
+          "screenshotPinnedRotateCounterClockwiseAction"}) {
+        clearReadout();
+        action(name)->trigger();
+        assertLocked();
+    }
+    for (const auto key : {Qt::Key_Period, Qt::Key_Comma, Qt::Key_1, Qt::Key_2}) {
+        clearReadout();
+        sendShortcut(*canvas, key);
+        assertLocked();
+    }
+    QWheelEvent wheel(QPointF(window.rect().center()),
+                      QPointF(window.mapToGlobal(window.rect().center())), QPoint(), QPoint(0, 120),
+                      Qt::NoButton, Qt::NoModifier, Qt::NoScrollPhase, false);
+    clearReadout();
+    QApplication::sendEvent(canvas, &wheel);
+    assertLocked();
+    QNativeGestureEvent pinch(Qt::ZoomNativeGesture, QPointingDevice::primaryPointingDevice(), 2,
+                              QPointF(40, 40), QPointF(40, 40),
+                              QPointF(window.mapToGlobal(QPoint(40, 40))), .5, QPointF());
+    clearReadout();
+    require(Access::gesture(window, &pinch), "lock must consume pinch zoom");
+    assertLocked();
+    require(window.persistenceSnapshot().imageTransform == before.imageTransform &&
+                window.persistenceSnapshot().quarterTurns == before.quarterTurns &&
+                Access::drawingHistory(window) == history,
+            "rejected image transforms must preserve content and drawing history");
+    ScreenshotClipboardContent replacement;
+    replacement.image = QImage(200, 300, QImage::Format_ARGB32_Premultiplied);
+    replacement.image.fill(Qt::red);
+    bool rejected = false;
+    clearReadout();
+    require(!Access::replace(window, replacement, &rejected) && rejected &&
+                Access::originalImage(window) == source &&
+                Access::drawingHistory(window) == history,
+            "size-changing replacement must reject before changing the document");
+    assertLocked();
+    QString error;
+    require(!window.automationUpdate({{QStringLiteral("locked"), false}}, &error) &&
+                error == QStringLiteral("invalid_parameters") &&
+                window.persistenceSnapshot().lockedMode,
+            "automation lock state must be read-only");
+    require(!window.automationUpdate(
+                {{QStringLiteral("opacity_percent"), 60}, {QStringLiteral("scale_percent"), 150}},
+                &error) &&
+                error == QStringLiteral("locked") &&
+                Access::opacity(window) == before.opacityPercent,
+            "automation must reject locked geometry before applying other properties");
+    require(!window.automationUpdate({{QStringLiteral("geometry"), QJsonArray{0, 0, 20, 20}}},
+                                     &error) &&
+                error == QStringLiteral("locked"),
+            "automation geometry must respect lock");
+    require(!window.automationUpdate(
+                {{QStringLiteral("geometry"),
+                  QJsonArray{geometry.x(), geometry.y(), geometry.width(), geometry.height()}},
+                 {QStringLiteral("opacity_percent"), 60}},
+                &error) &&
+                error == QStringLiteral("locked") &&
+                Access::opacity(window) == before.opacityPercent,
+            "locked automation geometry requests must reject before applying any properties");
+    require(!window.automationUpdate({{QStringLiteral("rotation"), QStringLiteral("clockwise")},
+                                      {QStringLiteral("opacity_percent"), 60}},
+                                     &error) &&
+                error == QStringLiteral("locked") &&
+                Access::opacity(window) == before.opacityPercent,
+            "automation rotation must reject atomically while locked");
+    action("screenshotPinnedFlipHorizontalAction")->trigger();
+    require(window.currentNativeGeometry() == geometry &&
+                !window.persistenceSnapshot().imageTransform.isIdentity(),
+            "geometry-preserving flips must remain available");
+    replacement.image = QImage(source.size(), source.format());
+    replacement.image.fill(Qt::red);
+    require(Access::replace(window, replacement, &rejected) && !rejected &&
+                Access::originalImage(window).size() == source.size() &&
+                Access::originalImage(window).pixelColor(0, 0) == Qt::red &&
+                window.currentNativeGeometry() == geometry,
+            "same-size content replacement must remain available while locked");
+    Access::setGeneralOpacity(window, 80);
+    require(Access::opacity(window) == 80, "opacity must remain editable while locked");
+    ScreenshotPinnedWindow::setRuntimeLockedBorderColor(QColor(180, 90, 20, 200));
+    for (const bool active : {false, true}) {
+        Access::refreshLockBorder(window, active, active);
+        require(border->property("borderColor").value<QColor>() == QColor(180, 90, 20, 200),
+                "custom locked border must override focus and file-drag colors immediately");
+    }
+    action("screenshotPinnedShowBorderAction")->trigger();
+    require(border->isHidden() && window.persistenceSnapshot().lockedMode,
+            "lock must respect Show Border");
+    action("screenshotPinnedShowBorderAction")->trigger();
+    Access::beginControlled(window, QPointF(40, 40));
+    auto* timer = Access::lockReadoutTimer(window);
+    require(label->x() == 8 && label->y() + label->height() == window.height() - 8 &&
+                label->accessibleName() == QStringLiteral("Locked") && timer->isActive() &&
+                timer->interval() == 1000 && label->testAttribute(Qt::WA_TransparentForMouseEvents),
+            "Locked must reuse the passive readout, inset, and one-second timer");
+    class LockTranslator final : public QTranslator {
+      public:
+        QString translate(const char* context, const char* sourceText, const char*,
+                          int) const override {
+            if (QByteArray(context) == "ScreenshotPinnedWindow" &&
+                QByteArray(sourceText) == "Locked")
+                return QStringLiteral("Translated lock");
+            return {};
+        }
+    } translator;
+    QApplication::installTranslator(&translator);
+    QEvent languageChange(QEvent::LanguageChange);
+    QApplication::sendEvent(&window, &languageChange);
+    require(label->text() == QStringLiteral("Translated lock"),
+            "visible Locked text must retranslate");
+    QApplication::removeTranslator(&translator);
+    QApplication::sendEvent(&window, &languageChange);
+    require(QMetaObject::invokeMethod(timer, "timeout", Qt::DirectConnection) && label->isHidden(),
+            "Locked must disappear on the shared readout timeout");
+    timer->stop();
+    require(!Access::beginControlled(window, QPointF(40, 40)) && label->isVisible() &&
+                timer->isActive(),
+            "a repeated attempt must show the readout again and restart its timer");
+    Access::setLock(window, false);
+    Access::refreshLockBorder(window, false, false);
+    require(border->property("borderColor").value<QColor>() == QColor(219, 219, 219),
+            "unlock must restore the ordinary border");
+    const snow_shot::storage::PinToScreenShortcutSettings shortcuts;
+    const auto originalShortcut = shortcuts.shortcuts(QStringLiteral("toggle_lock"));
+    require(shortcuts.setShortcuts(QStringLiteral("toggle_lock"), {QStringLiteral("Ctrl+Alt+L")}),
+            "lock shortcut must support live remapping");
+    canvas->setFocus();
+    sendShortcut(*canvas, Qt::Key_L);
+    require(!window.persistenceSnapshot().lockedMode, "old shortcut must stop toggling lock");
+    sendShortcut(*canvas, Qt::Key_L, Qt::ControlModifier | Qt::AltModifier);
+    require(window.persistenceSnapshot().lockedMode, "new shortcut must toggle immediately");
+    QLineEdit input(&window);
+    input.show();
+    input.setFocus();
+    sendShortcut(input, Qt::Key_L, Qt::ControlModifier | Qt::AltModifier);
+    require(window.persistenceSnapshot().lockedMode,
+            "lock shortcuts must not intercept text input");
+    input.hide();
+    require(shortcuts.setShortcuts(QStringLiteral("toggle_lock"), originalShortcut),
+            "restore lock shortcut");
+    canvas->setFocus();
+    Access::setLock(window, false);
+    action("screenshotPinnedRotateClockwiseAction")->trigger();
+    const auto rotated = window.persistenceSnapshot();
+    Access::setLock(window, true);
+    action("screenshotPinnedResetTransformAction")->trigger();
+    require(window.currentNativeGeometry() == rotated.nativeGeometry &&
+                window.persistenceSnapshot().quarterTurns == rotated.quarterTurns &&
+                window.persistenceSnapshot().imageTransform == rotated.imageTransform,
+            "locked reset must preserve a rotated window and its transform");
+    Access::setLock(window, false);
+    action("screenshotPinnedResetTransformAction")->trigger();
+    Access::setLock(window, true);
+    Access::editForHideTest(window);
+    auto* editController = window.findChild<ScreenshotPinnedEditController*>();
+    auto* palette = editController && editController->toolbarWindow()
+                        ? editController->toolbarWindow()->palette()
+                        : nullptr;
+    require(palette && palette->activateToolShortcut(ScreenshotToolPalette::Tool::Shape) &&
+                canvas->interactionEnabled() && canvas->canvasTool() == SnowCanvasTool::Shape,
+            "lock must allow annotation mode and drawing tools");
+    const QByteArray beforeDrawing = Access::drawingHistory(window);
+    for (const auto type :
+         {QEvent::MouseButtonPress, QEvent::MouseMove, QEvent::MouseButtonRelease}) {
+        const QPoint point = type == QEvent::MouseButtonPress ? QPoint(60, 60) : QPoint(130, 130);
+        QMouseEvent pointer(type, QPointF(point), QPointF(canvas->mapToGlobal(point)),
+                            type == QEvent::MouseMove ? Qt::NoButton : Qt::LeftButton,
+                            type == QEvent::MouseButtonRelease ? Qt::NoButton : Qt::LeftButton,
+                            Qt::NoModifier);
+        QApplication::sendEvent(canvas, &pointer);
+    }
+    require(Access::drawingHistory(window) != beforeDrawing &&
+                window.currentNativeGeometry() == geometry &&
+                window.persistenceSnapshot().lockedMode,
+            "drawing must edit the document without unlocking or moving it");
+    action("screenshotPinnedDrawingAction")->trigger();
+    const snow_shot::storage::PinToScreenSettings settings;
+    const QString doubleAction = settings.doubleClickAction();
+    const QString middleAction = settings.middleMouseButtonAction();
+    require(settings.setDoubleClickAction(QStringLiteral("thumbnail_mode")) &&
+                settings.setMiddleMouseButtonAction(QStringLiteral("hide_to_top")),
+            "configure mode click actions");
+    Access::doubleForHideTest(window);
+    require(window.persistenceSnapshot().thumbnailMode && !window.persistenceSnapshot().lockedMode,
+            "double-click thumbnail must unlock");
+    Access::setLock(window, true);
+    require(!window.persistenceSnapshot().thumbnailMode &&
+                window.currentNativeGeometry() == geometry &&
+                window.persistenceSnapshot().lockedMode,
+            "locking a thumbnail must restore normal geometry first");
+    Access::middleForHideTest(window);
+    require(window.persistenceSnapshot().hideToTopMode && !window.persistenceSnapshot().lockedMode,
+            "middle-click Hide to Top must unlock");
+    Access::setLock(window, true);
+    require(!window.persistenceSnapshot().hideToTopMode && window.persistenceSnapshot().lockedMode,
+            "locking Hide to Top must return to normal mode");
+    require(settings.setDoubleClickAction(doubleAction) &&
+                settings.setMiddleMouseButtonAction(middleAction),
+            "restore mode click actions");
+    action("screenshotPinnedThumbnailAction")->trigger();
+    require(window.persistenceSnapshot().thumbnailMode && !lock->isChecked(),
+            "the thumbnail menu must unlock before entering its mode");
+    lock->trigger();
+    require(!window.persistenceSnapshot().thumbnailMode && lock->isChecked() &&
+                window.currentNativeGeometry() == geometry,
+            "the lock menu must settle an active thumbnail animation");
+    action("screenshotPinnedHideToTopAction")->trigger();
+    require(window.persistenceSnapshot().hideToTopMode && !lock->isChecked(),
+            "the Hide to Top menu must unlock before entering its mode");
+    lock->trigger();
+    require(!window.persistenceSnapshot().hideToTopMode && lock->isChecked() &&
+                window.currentNativeGeometry() == geometry,
+            "the lock menu must settle an active Hide to Top animation");
+    require(Access::setClickThrough(window, true), "lock must allow click-through");
+    auto* moveControl = Access::clickThroughMoveButton(window);
+    clearReadout();
+    QMouseEvent movePress(QEvent::MouseButtonPress, QPointF(5, 5),
+                          QPointF(moveControl->mapToGlobal(QPoint(5, 5))), Qt::LeftButton,
+                          Qt::LeftButton, Qt::NoModifier);
+    QApplication::sendEvent(moveControl, &movePress);
+    require(window.currentNativeGeometry() == geometry &&
+                label->text() == QStringLiteral("Locked") && !Access::lockInteractionActive(window),
+            "click-through move control must respect lock");
+    auto* opacityEditor = Access::clickThroughOpacityEditor(window);
+    auto* slider = opacityEditor->findChild<adqt::widgets::AdSlider*>();
+    require(slider != nullptr, "locked click-through must expose its opacity slider");
+    slider->setValue(37);
+    require(window.persistenceSnapshot().clickThroughOpacityPercent == 37 &&
+                window.persistenceSnapshot().lockedMode &&
+                window.currentNativeGeometry() == geometry,
+            "locked click-through opacity must remain editable");
+    Access::clickThroughExitButton(window)->click();
+    require(!Access::clickThroughActive(window) && window.persistenceSnapshot().lockedMode,
+            "locked click-through must retain its exit control");
+    Access::enableLockAttentionFixture(window);
+    window.shakeForAttention();
+    require(
+        window.currentNativeGeometry() == geometry &&
+            !window.findChild<QVariantAnimation*>(QStringLiteral("screenshotPinnedShakeAnimation")),
+        "locked windows must not shake their geometry");
+    config.restorePersistentState = true;
+    config.persistedLockedMode = true;
+    for (int scenario = 0; scenario < 3; ++scenario) {
+        ScreenshotPinnedWindow restored;
+        config.persistedThumbnailMode = scenario == 1;
+        config.persistedHideToTopMode = scenario == 2;
+        config.persistedPreThumbnailNativeGeometry = geometry;
+        Access::restoreOffscreen(restored, config);
+        require(restored.persistenceSnapshot().lockedMode == (scenario == 0),
+                "restoration must preserve lock unless special modes conflict");
+        config.restorePersistentState = false;
+        Access::restoreOffscreen(restored, config);
+        require(!restored.persistenceSnapshot().lockedMode,
+                "reused windows must reset lock for a new pin");
+        config.restorePersistentState = true;
+    }
+    ScreenshotPinnedWindow::setRuntimeLockedBorderColor(QColor());
+    window.close();
+
+    ScreenshotPinnedWindow square;
+    Access::prepareReplacement(square, clickThroughTestConfig(*screen));
+    square.show();
+    Access::setLock(square, true);
+    const QRect squareGeometry = square.currentNativeGeometry();
+    require(square.automationUpdate({{QStringLiteral("rotation"), QStringLiteral("clockwise")}},
+                                    &error) &&
+                square.persistenceSnapshot().quarterTurns == 1 &&
+                square.currentNativeGeometry() == squareGeometry,
+            "locked square image rotations must remain available when geometry is unchanged");
+    square.close();
+
+    ScreenshotPinnedWindow interacting;
+    Access::prepareReplacement(interacting, clickThroughTestConfig(*screen));
+    Access::installFailingPlatform(interacting);
+    interacting.show();
+    const QPointF pointer = interacting.mapToGlobal(interacting.rect().center());
+    require(Access::beginControlled(interacting, pointer),
+            "the transition fixture must begin an unlocked drag");
+    Access::updateControlled(interacting, pointer + QPointF(20, 30));
+    require(Access::interactionActive(interacting), "the unlocked drag must remain active");
+    const QRect draggedGeometry = interacting.currentNativeGeometry();
+    Access::setLock(interacting, true);
+    Access::updateControlled(interacting, pointer + QPointF(40, 50));
+    require(!Access::interactionActive(interacting) &&
+                !Access::lockInteractionActive(interacting) &&
+                interacting.currentNativeGeometry() == draggedGeometry &&
+                interacting.persistenceSnapshot().lockedMode,
+            "enabling lock must settle an active drag and ignore its remaining motion");
+    interacting.close();
+
+    ScreenshotPinnedWindow recovery;
+    auto* observed = Access::installObservedPlatform(recovery);
+    Access::prepareReplacement(recovery, clickThroughTestConfig(*screen));
+    Access::setLock(recovery, true);
+    const QRect dpiGeometry = recovery.currentNativeGeometry().translated(10, 20);
+    require(Access::dpiTarget(recovery, dpiGeometry),
+            "lock must allow a system DPI recovery target");
+    observed->observed = dpiGeometry;
+    Access::observe(recovery);
+    Access::settle(recovery);
+    require(recovery.currentNativeGeometry() == dpiGeometry &&
+                recovery.persistenceSnapshot().lockedMode,
+            "display recovery must retain lock while adopting necessary geometry");
+    recovery.close();
+
+    snow_shot::presentation::PinnedWindowGroupManager groups;
+    const QString originalGroup = groups.activeGroupId();
+    const auto otherGroup = groups.createGroup(QStringLiteral("Lock restoration"));
+    require(otherGroup.has_value(), "lock fixture must create another group");
+    snow_shot::storage::PinnedWindowRecord saved;
+    auto groupedConfig = clickThroughTestConfig(*screen);
+    groupedConfig.persistenceWriter = [&](const auto& record) { saved = record; };
+    ScreenshotPinnedWindow grouped;
+    Access::prepareReplacement(grouped, groupedConfig);
+    Access::registerLockGroup(grouped, groups);
+    grouped.show();
+    Access::setLock(grouped, true);
+    require(groups.setActiveGroup(*otherGroup) && !grouped.isVisible() && saved.lockedMode &&
+                saved.groupId == originalGroup,
+            "switching groups must save the closing window's lock state");
+    groups.unregisterWindow(&grouped);
+    require(groups.setActiveGroup(originalGroup), "restore the original lock fixture group");
+    groupedConfig.restorePersistentState = true;
+    groupedConfig.persistedLockedMode = saved.lockedMode;
+    ScreenshotPinnedWindow reopened;
+    Access::prepareReplacement(reopened, groupedConfig);
+    Access::registerLockGroup(reopened, groups);
+    require(reopened.persistenceSnapshot().lockedMode,
+            "a window restored after a group switch must remain locked");
+    reopened.close();
+}
+
+#ifdef Q_OS_WIN
+void pinnedLockNative() {
+    using Access = ScreenshotPinnedWindowTestAccess;
+    auto* screen = QGuiApplication::primaryScreen();
+    require(screen != nullptr, "native lock needs a screen");
+    ScreenshotPinnedWindow window;
+    window.setAttribute(Qt::WA_DeleteOnClose, false);
+    require(window.present(clickThroughTestConfig(*screen)), "native lock fixture must present");
+    for (int i = 0; i < 100 && !window.automationState().value(QStringLiteral("ready")).toBool();
+         ++i)
+        waitForUi(10);
+    Access::setLock(window, true);
+    const QRect geometry = window.currentNativeGeometry();
+    const HWND hwnd = reinterpret_cast<HWND>(window.winId());
+    for (const auto command : {SC_MOVE, SC_SIZE}) {
+        require(SendMessageW(hwnd, WM_SYSCOMMAND, command, 0) == 0 &&
+                    !Access::lockInteractionActive(window),
+                "locked native system commands must not start an interaction");
+    }
+    for (const int hit : {HTCAPTION, HTLEFT, HTBOTTOMRIGHT}) {
+        SendMessageW(hwnd, WM_NCLBUTTONDOWN, hit, MAKELPARAM(geometry.x(), geometry.y()));
+        require(!Access::lockInteractionActive(window) &&
+                    window.currentNativeGeometry() == geometry,
+                "locked native move and resize presses must not change geometry");
+    }
+    require(SendMessageW(hwnd, WM_NCHITTEST, 0, MAKELPARAM(geometry.x() + 1, geometry.y() + 1)) ==
+                HTCLIENT,
+            "locked edges must use client input routing");
+    for (const UINT message : {WM_MOVING, WM_SIZING}) {
+        RECT proposed{geometry.x() + 20, geometry.y() + 20, geometry.right() + 51,
+                      geometry.bottom() + 51};
+        SendMessageW(hwnd, message, WMSZ_BOTTOMRIGHT, reinterpret_cast<LPARAM>(&proposed));
+        require(QRect(proposed.left, proposed.top, proposed.right - proposed.left,
+                      proposed.bottom - proposed.top) == geometry &&
+                    !Access::lockInteractionActive(window),
+                "native geometry proposals must be constrained while locked");
+    }
+    Access::setLock(window, false);
+    require(SendMessageW(hwnd, WM_NCHITTEST, 0, MAKELPARAM(geometry.x() + 1, geometry.y() + 1)) ==
+                HTTOPLEFT,
+            "unlock must restore native resize hit testing");
+    window.close();
+}
+#endif
+
+void pinnedLockPreservesRecognitionInput() {
+    using Access = ScreenshotPinnedWindowTestAccess;
+    auto config = cachedOcrPinConfig(nullptr);
+    ScreenshotPinnedWindow window;
+    Access::prepareReplacement(window, config);
+    auto* session = Access::recognitionOffscreen(window, config);
+    auto* content = window.findChild<ScreenshotRecognitionWindow*>();
+    require(content && session && session->active(), "lock fixture needs cached recognition");
+    content->installEventFilter(&window);
+    require(content->present({config.screen, &window, window.rect(), config.canvasSourceRect,
+                              ScreenshotRecognitionWindow::PresentationMode::EmbeddedChild}),
+            "locked recognition must present");
+    window.show();
+    content->show();
+    Access::setLock(window, true);
+    const QRect geometry = window.currentNativeGeometry();
+    auto* layer = content->findChild<QGraphicsView*>(QStringLiteral("snowShotOcrTextLayer"));
+    require(layer && !layer->scene()->items().isEmpty(), "locked recognition must render text");
+    const QPoint point = layer->viewport()->mapTo(
+        content,
+        layer->mapFromScene(layer->scene()->items().front()->sceneBoundingRect().center()));
+    require(!content->isOcrBackgroundAt(point), "lock fixture must target recognized text");
+    auto* receiver = content->childAt(point);
+    require(receiver != nullptr, "recognition text must have an input receiver");
+    const QPoint local = receiver->mapFrom(content, point);
+    for (const auto type : {QEvent::MouseButtonPress, QEvent::MouseButtonRelease,
+                            QEvent::MouseButtonDblClick, QEvent::MouseButtonRelease}) {
+        QMouseEvent mouse(
+            type, QPointF(local), QPointF(receiver->mapToGlobal(local)), Qt::LeftButton,
+            type == QEvent::MouseButtonRelease ? Qt::NoButton : Qt::LeftButton, Qt::NoModifier);
+        QApplication::sendEvent(receiver, &mouse);
+    }
+    auto* readout = window.findChild<QLabel*>(QStringLiteral("screenshotPinnedScaleLabel"));
+    require(!Access::displayedRecognition(window).selectedText().isEmpty() && readout &&
+                readout->isHidden() && session->active() &&
+                window.persistenceSnapshot().lockedMode &&
+                window.currentNativeGeometry() == geometry,
+            "lock must preserve OCR text selection without treating it as window movement");
+    session->beginTextEditing();
+    auto* editor = content->findChild<QTextEdit*>(QStringLiteral("screenshotOcrEditor"));
+    require(editor && session->editing(), "locked recognition must open its text editor");
+    window.activateWindow();
+    editor->setFocus();
+    waitForUi(10);
+    sendShortcut(*editor, Qt::Key_L);
+    require(session->editing() && window.persistenceSnapshot().lockedMode,
+            "lock shortcuts must remain excluded during recognition text editing");
+    window.close();
+}
+
 void pinnedClickThroughOffscreen() {
     pinnedClickThroughGeometry();
     QScreen* screen = QGuiApplication::primaryScreen();
@@ -10221,7 +10768,7 @@ void thumbnailReentryPreservesExpandedGeometry(bool scaleDuringExpansion = false
         auto* scale = window->findChild<adqt::widgets::AdContextMenu*>(
             QStringLiteral("screenshotPinnedScaleMenu"));
         require(scale != nullptr, "thumbnail scale menu missing");
-        scale->actions().at(3)->trigger();
+        pinnedMenuPercentAction(*scale, 100)->trigger();
         require(animation->state() == QAbstractAnimation::Stopped,
                 "scaling during thumbnail expansion must cancel the pending animation");
         const QRect applied = window->currentNativeGeometry();
@@ -14454,7 +15001,7 @@ void pinnedControlledResizeCursorReturnsToDrawingTool() {
     config.enableEditing = true;
     require(window.present(config), "cursor pin presentation failed");
     waitForUi(30);
-    auto* editButton = buttonNamed(window, QStringLiteral("Enable drawing mode"));
+    auto* editButton = buttonNamed(window, QStringLiteral("Enable annotation mode"));
     require(editButton != nullptr, "drawing mode button missing");
     editButton->click();
     auto* controller = window.findChild<ScreenshotPinnedEditController*>();
@@ -15737,6 +16284,17 @@ int main(int argc, char* argv[]) {
             pinnedRightQuickSelection();
             return 0;
         }
+        if (app.arguments().contains(QStringLiteral("--lock-only"))) {
+            pinnedLockOffscreen();
+            pinnedLockPreservesRecognitionInput();
+            return 0;
+        }
+#ifdef Q_OS_WIN
+        if (app.arguments().contains(QStringLiteral("--lock-native-only"))) {
+            pinnedLockNative();
+            return 0;
+        }
+#endif
         if (app.arguments().contains(QStringLiteral("--pointer-routing-only"))) {
             pinnedInteractionsReleasePointerRouting();
             return 0;

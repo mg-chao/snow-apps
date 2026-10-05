@@ -1347,6 +1347,8 @@ QColor BuiltInSettingsBackend::colorValue(SettingsColorBinding binding) const {
         return storage::PinToScreenSettings().borderColor();
     case SettingsColorBinding::PinBorderActiveColor:
         return storage::PinToScreenSettings().borderActiveColor();
+    case SettingsColorBinding::PinLockedBorderColor:
+        return storage::PinToScreenSettings().lockedBorderColor();
     }
     return {};
 }
@@ -1372,6 +1374,8 @@ bool BuiltInSettingsBackend::applyColorValue(SettingsColorBinding binding, const
         return storage::PinToScreenSettings().setBorderColor(value);
     case SettingsColorBinding::PinBorderActiveColor:
         return storage::PinToScreenSettings().setBorderActiveColor(value);
+    case SettingsColorBinding::PinLockedBorderColor:
+        return storage::PinToScreenSettings().setLockedBorderColor(value);
     }
     return false;
 }
@@ -2353,6 +2357,9 @@ bool BuiltInSettingsBackend::resetSection(SettingsSectionReset reset) {
             {QStringLiteral("pin_to_screen/border_active_color"),
              storage::ConfigurationSchema::defaultValue(
                  QStringLiteral("pin_to_screen/border_active_color"))},
+            {QStringLiteral("pin_to_screen/locked_border_color"),
+             storage::ConfigurationSchema::defaultValue(
+                 QStringLiteral("pin_to_screen/locked_border_color"))},
         });
     case SettingsSectionReset::PinToScreenBehavior:
         return storage::ApplicationStorage::instance().configuration().setValues({

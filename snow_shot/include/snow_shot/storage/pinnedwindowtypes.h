@@ -99,6 +99,7 @@ struct PinnedWindowRecord final {
     int hideToTopAccentIndex = -1;
     bool thumbnailMode = false;
     bool clickThroughMode = false;
+    bool lockedMode = false;
     bool alwaysOnTop = true;
     bool showBorder = true;
     std::optional<PinnedBorderAppearance> borderAppearance;

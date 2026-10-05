@@ -2275,6 +2275,14 @@
             <translation>地區設定</translation>
         </message>
         <message>
+            <source>Lock mode</source>
+            <translation>鎖定模式</translation>
+        </message>
+        <message>
+            <source>Locked Border Color</source>
+            <translation>鎖定邊框顏色</translation>
+        </message>
+        <message>
             <source>Loop Animated Images</source>
             <translation>循環播放動圖</translation>
         </message>
@@ -2661,6 +2669,10 @@
         <message>
             <source>Pinned window border</source>
             <translation>固定到螢幕視窗邊框</translation>
+        </message>
+        <message>
+            <source>Pinned window locked border</source>
+            <translation>貼圖視窗鎖定邊框</translation>
         </message>
         <message>
             <source>Pinned-window shortcuts</source>
@@ -3181,6 +3193,10 @@
         <message>
             <source>Set quality for image files saved outside the Snow Shot dialog</source>
             <translation>設定在 Snow Shot 對話框以外儲存的影像檔案品質</translation>
+        </message>
+        <message>
+            <source>Set the border color of locked pinned screenshots</source>
+            <translation>設定已鎖定貼圖的邊框顏色</translation>
         </message>
         <message>
             <source>Set the border color of pinned screenshots</source>

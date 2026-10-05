@@ -783,6 +783,7 @@ void clickThroughStateRoundTripsAndRecoversLegacyOrConflictingMetadata() {
     auto record = recordWithId(id, patternedImage(QSize(200, 100), 7));
     record.clickThroughMode = true;
     record.clickThroughOpacityPercent = 37;
+    record.lockedMode = true;
     record.preThumbnailNativeGeometry = record.nativeGeometry;
     record.hideToTopHandleNativeGeometry = QRect(record.nativeGeometry.topLeft(), QSize(30, 6));
     record.hideToTopAccentIndex = 0;
@@ -793,24 +794,27 @@ void clickThroughStateRoundTripsAndRecoversLegacyOrConflictingMetadata() {
         require(repository.upsert(record).success && repository.flush().success,
                 "click-through state must be committed to disk");
         const auto demoted = repository.loadRecord(id);
-        require(demoted.has_value() && demoted->clickThroughMode &&
+        require(demoted.has_value() && demoted->clickThroughMode && demoted->lockedMode &&
                     demoted->clickThroughOpacityPercent == 37,
                 "click-through state must survive payload demotion");
 
         record.clickThroughMode = false;
+        record.lockedMode = false;
         require(repository.updateState(record).success && repository.flush().success,
                 "exiting click-through must update persisted metadata");
-        require(!repository.loadRecord(id)->clickThroughMode,
+        require(!repository.loadRecord(id)->clickThroughMode &&
+                    !repository.loadRecord(id)->lockedMode,
                 "the repository must expose the persisted click-through exit");
 
         record.clickThroughMode = true;
+        record.lockedMode = true;
         require(repository.updateState(record).success && repository.flush().success,
                 "re-entering click-through must update persisted metadata");
     }
     {
         storage::PinnedWindowRepository repository(directory.path());
         const auto loaded = repository.loadRecord(id);
-        require(loaded.has_value() && loaded->clickThroughMode &&
+        require(loaded.has_value() && loaded->clickThroughMode && loaded->lockedMode &&
                     loaded->clickThroughOpacityPercent == 37,
                 "click-through state must survive repository recreation");
     }
@@ -822,6 +826,7 @@ void clickThroughStateRoundTripsAndRecoversLegacyOrConflictingMetadata() {
         auto item = records.at(0).toObject();
         if (scenario == 0) {
             item.remove(QStringLiteral("click_through_mode"));
+            item.remove(QStringLiteral("locked_mode"));
         } else if (scenario == 1) {
             item.insert(QStringLiteral("thumbnail_mode"), true);
         } else {
@@ -838,7 +843,7 @@ void clickThroughStateRoundTripsAndRecoversLegacyOrConflictingMetadata() {
 
         storage::PinnedWindowRepository repository(directory.path());
         const auto loaded = repository.loadRecord(id);
-        require(loaded.has_value() && !loaded->clickThroughMode,
+        require(loaded.has_value() && !loaded->clickThroughMode && !loaded->lockedMode,
                 "legacy and conflicting records must restore as interactive windows");
         if (scenario == 1) {
             require(loaded->thumbnailMode,

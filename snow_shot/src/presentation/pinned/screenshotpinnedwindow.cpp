@@ -407,6 +407,7 @@ constexpr int kMinimumOpacityPercent = 25;
 constexpr int kMaximumOpacityPercent = 100;
 constexpr int kWheelOpacityStep = 5;
 const QColor kDefaultPinnedBorderColor(219, 219, 219, 255);
+const QColor kDefaultPinnedLockedBorderColor(250, 173, 20, 255);
 const QColor kDefaultPinnedBorderActiveColor(105, 177, 255, 255);
 constexpr auto kPinnedBorderColorProperty = "borderColor";
 
@@ -539,6 +540,11 @@ QColor& configuredPinnedBorderColor() {
 
 QColor& configuredPinnedBorderActiveColor() {
     static QColor color = kDefaultPinnedBorderActiveColor;
+    return color;
+}
+
+QColor& configuredPinnedLockedBorderColor() {
+    static QColor color = kDefaultPinnedLockedBorderColor;
     return color;
 }
 
@@ -1161,6 +1167,20 @@ void ScreenshotPinnedWindow::registerWindowShortcuts() {
     m_pinnedShortcutBindings.insert(QStringLiteral("toggle_click_through"),
                                     m_shortcutManager->addBinding(this, std::move(clickThrough)));
 
+    ShortcutManager::Binding lock;
+    lock.id = QStringLiteral("pinned.toggle_lock");
+    lock.priority = ShortcutManager::StandardPriority::WindowCommand;
+    lock.canActivate = [this, localCommandsAllowed](const auto& context) {
+        return localCommandsAllowed(context) &&
+               (m_recognitionSession == nullptr || !m_recognitionSession->editing());
+    };
+    lock.activate = [this](const auto&) {
+        setLockedMode(!m_lockedMode);
+        return true;
+    };
+    m_pinnedShortcutBindings.insert(QStringLiteral("toggle_lock"),
+                                    m_shortcutManager->addBinding(this, std::move(lock)));
+
     ShortcutManager::Binding alwaysOnTop;
     alwaysOnTop.id = QStringLiteral("pinned.always_on_top");
     alwaysOnTop.priority = ShortcutManager::StandardPriority::ContextualFallback;
@@ -1258,7 +1278,7 @@ void ScreenshotPinnedWindow::registerWindowShortcuts() {
         binding.priority = ShortcutManager::StandardPriority::ScreenshotShortcut;
         binding.autoRepeat = true;
         binding.canActivate = [this, localCommandsAllowed](const auto& context) {
-            if (!m_windowDragActive && !m_ocrMode && windowDragEnabled()) {
+            if (!m_windowDragActive && !m_ocrMode && windowDragEligible()) {
                 return localCommandsAllowed(context);
             }
             const bool canvasColorSampling =
@@ -1272,7 +1292,11 @@ void ScreenshotPinnedWindow::registerWindowShortcuts() {
         };
         binding.activate = [this, direction = movement.direction,
                             delta = movement.delta](const auto&) {
-            if (!m_windowDragActive && !m_ocrMode && windowDragEnabled()) {
+            if (!m_windowDragActive && !m_ocrMode && windowDragEligible()) {
+                if (m_lockedMode) {
+                    showLockedReadout();
+                    return true;
+                }
                 if (!applyWindowGeometry(authoritativeNativeGeometry().translated(delta),
                                          GeometryMutation::Move)) {
                     return false;
@@ -1337,6 +1361,7 @@ void ScreenshotPinnedWindow::reloadPinnedWindowShortcuts() {
         {"thumbnail_mode", "screenshotPinnedThumbnailAction"},
         {"hide_to_top", "screenshotPinnedHideToTopAction"},
         {"toggle_click_through", "screenshotPinnedClickThroughAction"},
+        {"toggle_lock", "screenshotPinnedLockAction"},
         {"always_on_top", "screenshotPinnedAlwaysOnTopAction"},
         {"show_border", "screenshotPinnedShowBorderAction"},
         {"close_window", "screenshotPinnedCloseAction"},
@@ -1568,6 +1593,7 @@ snow_shot::storage::PinnedWindowRecord ScreenshotPinnedWindow::persistenceRecord
     record.quarterTurns = m_quarterTurns;
     record.thumbnailMode = m_thumbnailMode;
     record.clickThroughMode = m_clickThroughActive;
+    record.lockedMode = m_lockedMode;
     record.alwaysOnTop = m_alwaysOnTop;
     record.showBorder = m_showBorder;
     record.preThumbnailNativeGeometry = m_preThumbnailNativeGeometry;
@@ -1612,6 +1638,18 @@ void ScreenshotPinnedWindow::resumeStorageWrites(const QString& oldRoot, const Q
 }
 
 void ScreenshotPinnedWindow::restorePersistentState(const Config& config) {
+    m_lockedMode = config.restorePersistentState && config.persistedLockedMode &&
+                   !config.persistedThumbnailMode && !config.persistedHideToTopMode;
+    m_readoutKind = ReadoutKind::Scale;
+    if (m_scaleLabelTimer)
+        m_scaleLabelTimer->stop();
+    if (m_scaleLabel)
+        m_scaleLabel->hide();
+    applyRuntimeBorderColor();
+    if (m_lockAction) {
+        const QSignalBlocker blocker(m_lockAction);
+        m_lockAction->setChecked(m_lockedMode);
+    }
     const int clickThroughPercent = config.persistedClickThroughOpacityPercent;
     m_clickThroughOpacityPercent =
         config.restorePersistentState && clickThroughPercent >= 0 && clickThroughPercent <= 100
@@ -1786,9 +1824,11 @@ void ScreenshotPinnedWindow::retranslateUi() {
         m_destroyConfirmation->setRejectText(tr("Cancel"));
     }
     if (m_scaleLabel != nullptr && m_scaleLabel->isVisible()) {
-        m_scaleLabel->setText(m_scaleReadoutShowsOpacity
-                                  ? tr("Opacity: %1%").arg(m_opacityPercent)
-                                  : tr("Scale: %1%").arg(qRound(m_scalePercent)));
+        const QString text = m_readoutKind == ReadoutKind::Locked ? tr("Locked")
+                             : m_readoutKind == ReadoutKind::Opacity
+                                 ? tr("Opacity: %1%").arg(m_opacityPercent)
+                                 : tr("Scale: %1%").arg(qRound(m_scalePercent));
+        m_scaleLabel->setText(text);
         m_scaleLabel->layoutIn(rect());
     }
     const auto updateWidget = [](QWidget* widget) {
@@ -2281,6 +2321,8 @@ bool ScreenshotPinnedWindow::eventFilter(QObject* watched, QEvent* event) {
     if (event->type() == QEvent::Enter || event->type() == QEvent::MouseMove ||
         event->type() == QEvent::DragEnter || event->type() == QEvent::DragMove)
         setControlsPointerInside(true);
+    if (handleLockedPointer(watched, event))
+        return true;
     if ((m_platform->usesControlledInteraction() && handlePinnedGesture(watched, event)) ||
         handleControlledPointer(watched, event))
         return true;
@@ -2623,6 +2665,8 @@ void ScreenshotPinnedWindow::mousePressEvent(QMouseEvent* event) {
         return;
     }
 
+    if (handleLockedPointer(this, event))
+        return;
     if (event != nullptr && event->button() == Qt::MiddleButton &&
         handleMiddleClick(event->position().toPoint())) {
         event->accept();
@@ -2964,6 +3008,12 @@ void ScreenshotPinnedWindow::createContextMenu() {
     connect(m_clickThroughAction, &QAction::triggered, this,
             &ScreenshotPinnedWindow::toggleClickThrough);
 
+    m_lockAction = m_contextMenu->addItem(tr("Lock mode"), outlined_icons::Lock());
+    setActionTranslationSource(m_lockAction, "Lock mode");
+    m_lockAction->setObjectName(QStringLiteral("screenshotPinnedLockAction"));
+    m_lockAction->setCheckable(true);
+    connect(m_lockAction, &QAction::toggled, this, &ScreenshotPinnedWindow::setLockedMode);
+
     auto* windowManagementMenu =
         m_contextMenu->addSubMenu(tr("Window Management"), outlined_icons::Apartment());
     setActionTranslationSource(windowManagementMenu->menuAction(), "Window Management");
@@ -3056,8 +3106,10 @@ void ScreenshotPinnedWindow::createContextMenu() {
 void ScreenshotPinnedWindow::applyRuntimeBorderColor() {
     if (m_borderFrame == nullptr)
         return;
-    const QColor color = (m_windowActive || m_fileDragActive) ? configuredPinnedBorderActiveColor()
-                                                              : configuredPinnedBorderColor();
+    const QColor color = m_lockedMode ? configuredPinnedLockedBorderColor()
+                         : (m_windowActive || m_fileDragActive)
+                             ? configuredPinnedBorderActiveColor()
+                             : configuredPinnedBorderColor();
     m_borderFrame->setProperty(kPinnedBorderColorProperty, color);
     m_borderFrame->update();
 }
@@ -3114,6 +3166,10 @@ void ScreenshotPinnedWindow::refreshContextMenu() {
         const QSignalBlocker blocker(m_clickThroughAction);
         m_clickThroughAction->setChecked(m_clickThroughActive);
     }
+    if (m_lockAction != nullptr) {
+        const QSignalBlocker blocker(m_lockAction);
+        m_lockAction->setChecked(m_lockedMode);
+    }
     if (m_alwaysOnTopAction != nullptr) {
         const QSignalBlocker blocker(m_alwaysOnTopAction);
         m_alwaysOnTopAction->setChecked(m_alwaysOnTop);
@@ -3123,6 +3179,7 @@ void ScreenshotPinnedWindow::refreshContextMenu() {
         m_showBorderAction->setChecked(m_showBorder);
     }
     if (m_thumbnailAction != nullptr) {
+        const QSignalBlocker blocker(m_thumbnailAction);
         m_thumbnailAction->setChecked(m_thumbnailMode);
     }
     if (m_opacityActions != nullptr) {
@@ -3258,6 +3315,14 @@ void ScreenshotPinnedWindow::setRuntimeBorderActiveColor(const QColor& color) {
         if (window != nullptr) {
             window->applyRuntimeBorderColor();
         }
+    }
+}
+
+void ScreenshotPinnedWindow::setRuntimeLockedBorderColor(const QColor& color) {
+    configuredPinnedLockedBorderColor() = color.isValid() ? color : kDefaultPinnedLockedBorderColor;
+    for (const QPointer<ScreenshotPinnedWindow>& window : livePinnedWindows()) {
+        if (window)
+            window->applyRuntimeBorderColor();
     }
 }
 
@@ -5473,8 +5538,11 @@ void ScreenshotPinnedWindow::requestContentReplacement(
                 return;
             }
             m_contentReplacementJob = {};
+            bool rejectedByLock = false;
             if (!result.succeeded() || !content->has_value() ||
-                !replaceContent(std::move(**content))) {
+                !replaceContent(std::move(**content), &rejectedByLock)) {
+                if (rejectedByLock)
+                    return;
                 showPinnedRecognitionMessage(this, tr("The new content could not be loaded"), true);
             }
         });
@@ -5483,7 +5551,10 @@ void ScreenshotPinnedWindow::requestContentReplacement(
     }
 }
 
-bool ScreenshotPinnedWindow::replaceContent(ScreenshotClipboardContent content) {
+bool ScreenshotPinnedWindow::replaceContent(ScreenshotClipboardContent content,
+                                            bool* rejectedByLock) {
+    if (rejectedByLock)
+        *rejectedByLock = false;
     if (!content.isValid() || m_originalImage.isNull() || m_closing ||
         !m_firstContentFramePublished) {
         return false;
@@ -5535,6 +5606,11 @@ bool ScreenshotPinnedWindow::replaceContent(ScreenshotClipboardContent content) 
         expandedGeometry.setSize(
             QSize(std::max(1, qRound(orientedSize.width() * m_scalePercent / 100.0)),
                   std::max(1, qRound(orientedSize.height() * m_scalePercent / 100.0))));
+        if (rejectLockedGeometryChange(expandedGeometry)) {
+            if (rejectedByLock)
+                *rejectedByLock = true;
+            return false;
+        }
         if (!m_thumbnailMode && expandedGeometry != authoritativeNativeGeometry() &&
             !applyWindowGeometry(expandedGeometry, GeometryMutation::ContentReplacement)) {
             return false;
@@ -5848,22 +5924,13 @@ void ScreenshotPinnedWindow::resetImageTransform() {
 }
 
 void ScreenshotPinnedWindow::applyImageTransform(const QTransform& transform, int quarterTurns) {
-    const QRect currentGeometry = authoritativeNativeGeometry();
     const bool dimensionsChange = (m_quarterTurns % 2) != (quarterTurns % 2);
     // Native size constraints need the proposed orientation during SetWindowPos.
     // Keep the rendered image unchanged until that geometry transaction succeeds.
     QScopedValueRollback<int> orientation(m_quarterTurns, quarterTurns);
     QScopedValueRollback<bool> preserveScale(m_preserveScaleForSettledGeometry);
     if (dimensionsChange) {
-        const QSize baseline = orientedInitialWindowSize();
-        const QSize nativeSize(std::max(1, qRound(baseline.width() * m_scalePercent / 100.0)),
-                               std::max(1, qRound(baseline.height() * m_scalePercent / 100.0)));
-        QRect nativeTarget(QPoint(), nativeSize);
-        if (hideToTopActive()) {
-            nativeTarget.moveTopLeft(currentGeometry.topLeft());
-        } else {
-            nativeTarget.moveCenter(currentGeometry.center());
-        }
+        const QRect nativeTarget = imageTransformGeometry(quarterTurns);
         m_preserveScaleForSettledGeometry = true;
         if (!applyWindowGeometry(nativeTarget, GeometryMutation::ImageTransform)) {
             return;
@@ -5879,6 +5946,20 @@ void ScreenshotPinnedWindow::applyImageTransform(const QTransform& transform, in
         m_editController->updatePlacement();
     }
     schedulePersistence();
+}
+
+QRect ScreenshotPinnedWindow::imageTransformGeometry(int quarterTurns) const {
+    const QSize baseline =
+        (quarterTurns % 2) != 0 ? m_initialWindowSize.transposed() : m_initialWindowSize;
+    const QSize nativeSize(std::max(1, qRound(baseline.width() * m_scalePercent / 100.0)),
+                           std::max(1, qRound(baseline.height() * m_scalePercent / 100.0)));
+    const QRect currentGeometry = authoritativeNativeGeometry();
+    QRect target(QPoint(), nativeSize);
+    if (hideToTopActive())
+        target.moveTopLeft(currentGeometry.topLeft());
+    else
+        target.moveCenter(currentGeometry.center());
+    return target;
 }
 
 void ScreenshotPinnedWindow::rebuildTransformedImage() {
@@ -5916,6 +5997,10 @@ void ScreenshotPinnedWindow::rebuildTransformedImage() {
 }
 
 void ScreenshotPinnedWindow::applyScale(int percent) {
+    if (m_lockedMode) {
+        showLockedReadout();
+        return;
+    }
     if ((m_ocrMode && (m_recognitionSession == nullptr ||
                        !m_recognitionSession->originalImageTranslationActive())) ||
         percent < kMinimumScalePercent || percent > kMaximumScalePercent) {
@@ -5945,6 +6030,10 @@ void ScreenshotPinnedWindow::applyScale(int percent) {
 }
 
 void ScreenshotPinnedWindow::applyWheelScale(double percent, const QPointF& nativeCursor) {
+    if (m_lockedMode) {
+        showLockedReadout();
+        return;
+    }
     if ((m_ocrMode && (m_recognitionSession == nullptr ||
                        !m_recognitionSession->originalImageTranslationActive())) ||
         percent < kMinimumScalePercent || percent > kMaximumScalePercent) {
@@ -6104,7 +6193,7 @@ void ScreenshotPinnedWindow::showScaleReadout() {
     if (m_scaleLabel == nullptr || m_scaleLabelTimer == nullptr) {
         return;
     }
-    m_scaleReadoutShowsOpacity = false;
+    m_readoutKind = ReadoutKind::Scale;
     m_scaleLabel->setText(tr("Scale: %1%").arg(qRound(m_scalePercent)));
     m_scaleLabel->layoutIn(rect());
     updateControlsGeometry();
@@ -6117,13 +6206,70 @@ void ScreenshotPinnedWindow::showOpacityReadout() {
     if (m_scaleLabel == nullptr || m_scaleLabelTimer == nullptr) {
         return;
     }
-    m_scaleReadoutShowsOpacity = true;
+    m_readoutKind = ReadoutKind::Opacity;
     m_scaleLabel->setText(tr("Opacity: %1%").arg(m_opacityPercent));
     m_scaleLabel->layoutIn(rect());
     updateControlsGeometry();
     m_scaleLabel->show();
     updateChildStackingOrder();
     m_scaleLabelTimer->start();
+}
+
+void ScreenshotPinnedWindow::showLockedReadout() {
+    if (!m_scaleLabel || !m_scaleLabelTimer || m_closing)
+        return;
+    m_readoutKind = ReadoutKind::Locked;
+    m_scaleLabel->setText(tr("Locked"));
+    m_scaleLabel->layoutIn(rect());
+    updateControlsGeometry();
+    m_scaleLabel->show();
+    updateChildStackingOrder();
+    m_scaleLabelTimer->start();
+}
+
+void ScreenshotPinnedWindow::setLockedMode(bool enabled) {
+    if (m_closing || !m_presented || m_lockedMode == enabled) {
+        if (m_lockAction) {
+            const QSignalBlocker blocker(m_lockAction);
+            m_lockAction->setChecked(m_lockedMode);
+        }
+        return;
+    }
+    if (enabled) {
+        stopAttentionShake();
+        if (m_interactionPlacement)
+            endControlledInteraction(false);
+        static_cast<void>(finishNativeGeometryInteraction());
+        finishWindowMove();
+        m_systemSizingActive = false;
+        m_clickThroughDragOrigin.reset();
+        resetPinnedGestures();
+        if (m_editController)
+            m_editController->endTemporaryResizeWindowTool();
+        endAuxiliaryWindowInteraction();
+        m_hideToTop->exit(true);
+        restoreFromThumbnailImmediately();
+        if (m_closing)
+            return;
+    }
+    m_lockedMode = enabled;
+    if (!enabled && m_readoutKind == ReadoutKind::Locked) {
+        m_scaleLabelTimer->stop();
+        m_scaleLabel->hide();
+    }
+    clearWindowDragCursor();
+    if (m_clickThroughMoveButton)
+        m_clickThroughMoveButton->setCursor(enabled ? Qt::ArrowCursor : Qt::SizeAllCursor);
+    applyRuntimeBorderColor();
+    refreshContextMenu();
+    schedulePersistence();
+}
+
+bool ScreenshotPinnedWindow::rejectLockedGeometryChange(const QRect& target) {
+    if (!m_lockedMode || target == authoritativeNativeGeometry())
+        return false;
+    showLockedReadout();
+    return true;
 }
 
 void ScreenshotPinnedWindow::scheduleNativeScaleAdoption() {
@@ -6243,6 +6389,7 @@ void ScreenshotPinnedWindow::toggleHideToTop() {
     if (m_clickThroughActive && !setClickThroughMode(false)) {
         return;
     }
+    setLockedMode(false);
     restoreFromThumbnailImmediately();
     deactivateRecognition();
     setEditMode(false);
@@ -6291,7 +6438,7 @@ bool ScreenshotPinnedWindow::ensureClickThroughExitButton() {
     moveButton->setAttribute(Qt::WA_ShowWithoutActivating, true);
     moveButton->setAttribute(Qt::WA_AlwaysShowToolTips, true);
     moveButton->setFocusPolicy(Qt::NoFocus);
-    moveButton->setCursor(Qt::SizeAllCursor);
+    moveButton->setCursor(m_lockedMode ? Qt::ArrowCursor : Qt::SizeAllCursor);
     moveButton->installEventFilter(this);
     pinned_platform::configurePinnedAuxiliary(moveButton.get());
     moveButton->winId();
@@ -6606,6 +6753,7 @@ void ScreenshotPinnedWindow::setThumbnailMode(bool enabled, bool animate) {
         if (m_clickThroughActive && !setClickThroughMode(false)) {
             return;
         }
+        setLockedMode(false);
         exitHideToTop();
     }
     if (m_closing || m_thumbnailMode == enabled) {
@@ -6715,6 +6863,11 @@ void ScreenshotPinnedWindow::animateGeometryTo(const QRect& nativeTarget) {
 
 bool ScreenshotPinnedWindow::applyWindowGeometry(const QRect& nativeGeometry,
                                                  GeometryMutation mutation) {
+    if ((mutation == GeometryMutation::Move || mutation == GeometryMutation::Scale ||
+         mutation == GeometryMutation::ImageTransform ||
+         mutation == GeometryMutation::ContentReplacement) &&
+        rejectLockedGeometryChange(nativeGeometry))
+        return false;
     if (mutation != GeometryMutation::Attention)
         stopAttentionShake();
     if (!nativeGeometry.isValid() || nativeGeometry.isEmpty() ||
@@ -7041,6 +7194,8 @@ void ScreenshotPinnedWindow::shakeForAttention() {
         (m_nativeGeometryController && m_nativeGeometryController->hasInteractiveTransaction()))
         return;
     showFromManagement();
+    if (m_lockedMode)
+        return;
     exitHideToTop();
     restoreFromThumbnailImmediately();
     m_attentionOrigin = authoritativeNativeGeometry();
@@ -7192,6 +7347,10 @@ bool ScreenshotPinnedWindow::moveCursorOnePixel(
 }
 
 bool ScreenshotPinnedWindow::startWindowMove() {
+    if (m_lockedMode) {
+        showLockedReadout();
+        return false;
+    }
     stopAttentionShake();
     if (m_platform->usesControlledInteraction()) {
         return beginControlledInteraction(
@@ -7256,6 +7415,10 @@ void ScreenshotPinnedWindow::finishWindowMove() {
 }
 
 bool ScreenshotPinnedWindow::windowDragEnabled() const {
+    return !m_lockedMode && windowDragEligible();
+}
+
+bool ScreenshotPinnedWindow::windowDragEligible() const {
     if (m_closing || m_geometryAnimating || windowHandle() == nullptr) {
         return false;
     }
@@ -7269,7 +7432,11 @@ bool ScreenshotPinnedWindow::windowDragEnabled() const {
 }
 
 bool ScreenshotPinnedWindow::windowDragEnabledAt(const QPoint& position) const {
-    if (!windowDragEnabled() || !rect().contains(position) || isControlsPanelPosition(position)) {
+    return !m_lockedMode && windowDragEligibleAt(position);
+}
+
+bool ScreenshotPinnedWindow::windowDragEligibleAt(const QPoint& position) const {
+    if (!windowDragEligible() || !rect().contains(position) || isControlsPanelPosition(position)) {
         return false;
     }
     return !(m_ocrMode || m_hiddenTextSelection) ||
@@ -7278,7 +7445,7 @@ bool ScreenshotPinnedWindow::windowDragEnabledAt(const QPoint& position) const {
 }
 
 bool ScreenshotPinnedWindow::handleDoubleClick(const QPoint& position) {
-    if (!windowDragEnabledAt(position)) {
+    if (!windowDragEligibleAt(position)) {
         return false;
     }
     static_cast<void>(finishNativeGeometryInteraction());
@@ -7296,7 +7463,7 @@ bool ScreenshotPinnedWindow::handleDoubleClick(const QPoint& position) {
 }
 
 bool ScreenshotPinnedWindow::handleMiddleClick(const QPoint& position) {
-    if (!windowDragEnabledAt(position)) {
+    if (!windowDragEligibleAt(position)) {
         return false;
     }
     const QString action = snow_shot::storage::PinToScreenSettings().middleMouseButtonAction();
@@ -7371,7 +7538,7 @@ bool ScreenshotPinnedWindow::nativeTrackSizeConstraintsEnabled() const {
 }
 
 bool ScreenshotPinnedWindow::interactiveResizingEnabled() const {
-    return !m_closing && !m_thumbnailMode && !m_geometryAnimating;
+    return !m_lockedMode && !m_closing && !m_thumbnailMode && !m_geometryAnimating;
 }
 
 QPointF ScreenshotPinnedWindow::windowPositionForEvent(QObject* watched,
@@ -7450,6 +7617,7 @@ QJsonObject ScreenshotPinnedWindow::automationState() const {
         {QStringLiteral("opacity_percent"), m_opacityPercent},
         {QStringLiteral("click_through_opacity_percent"), m_clickThroughOpacityPercent},
         {QStringLiteral("click_through"), m_clickThroughActive},
+        {QStringLiteral("locked"), m_lockedMode},
         {QStringLiteral("always_on_top"), m_alwaysOnTop},
         {QStringLiteral("show_border"), m_showBorder},
         {QStringLiteral("thumbnail"), m_thumbnailMode},
@@ -7512,6 +7680,22 @@ bool ScreenshotPinnedWindow::automationUpdate(const QJsonObject& properties, QSt
                 return fail("invalid_parameters");
         } else
             return fail("invalid_parameters");
+    }
+    if (m_lockedMode) {
+        if (properties.contains(QStringLiteral("geometry")) ||
+            properties.contains(QStringLiteral("scale_percent"))) {
+            showLockedReadout();
+            return fail("locked");
+        }
+        const QString rotation = properties.value(QStringLiteral("rotation")).toString();
+        const int quarterTurns =
+            rotation == QStringLiteral("reset")              ? 0
+            : rotation == QStringLiteral("clockwise")        ? (m_quarterTurns + 1) % 4
+            : rotation == QStringLiteral("counterclockwise") ? (m_quarterTurns + 3) % 4
+                                                             : m_quarterTurns;
+        if ((quarterTurns % 2) != (m_quarterTurns % 2) &&
+            rejectLockedGeometryChange(imageTransformGeometry(quarterTurns)))
+            return fail("locked");
     }
     if (properties.contains(QStringLiteral("geometry"))) {
         const auto b = properties.value(QStringLiteral("geometry")).toArray();

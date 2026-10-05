@@ -32,6 +32,9 @@ int main(int argc, char** argv) {
             "initialize pinned shortcut settings storage");
     const storage::PinToScreenShortcutSettings pinned;
     const auto defaults = pinned.allShortcuts();
+    require(pinned.shortcuts(QStringLiteral("toggle_lock")) ==
+                snow_shot::shortcuts::ShortcutBindingList{QStringLiteral("L")},
+            "lock must default to L");
     const auto screenshotBefore = storage::ScreenshotShortcutSettings().allShortcuts();
     const auto drawingBefore = storage::DrawingShortcutSettings().allShortcuts();
     {
@@ -39,7 +42,8 @@ int main(int argc, char** argv) {
         settings::BuiltInSettingsBackend backend(globalShortcuts);
         settings::SettingsRuntimeSession session(settings::builtInSettingsRegistry(), backend);
         constexpr auto scope = settings::SettingsLocalShortcutScope::PinToScreen;
-        for (const QString& id : {QStringLiteral("always_on_top"), QStringLiteral("show_border")}) {
+        for (const QString& id : {QStringLiteral("always_on_top"), QStringLiteral("show_border"),
+                                  QStringLiteral("toggle_lock")}) {
             require(session.localShortcuts(scope, id) == defaults.value(id),
                     "settings must expose default window management shortcuts");
             require(
@@ -63,6 +67,16 @@ int main(int argc, char** argv) {
                     storage::DrawingShortcutSettings().allShortcuts() == drawingBefore,
                 "pinned shortcut reset must restore the complete map and preserve other scopes");
         }
+        constexpr auto lockedColor = settings::SettingsColorBinding::PinLockedBorderColor;
+        require(session.colorValue(lockedColor) == QColor(250, 173, 20) &&
+                    session.applyColorValue(lockedColor, QColor(170, 90, 20, 128)) &&
+                    storage::PinToScreenSettings().lockedBorderColor() ==
+                        QColor(170, 90, 20, 128) &&
+                    session.reset(settings::SettingsSectionReset::PinToScreen) &&
+                    session.colorValue(lockedColor) == QColor(250, 173, 20) &&
+                    !session.applyColorValue(lockedColor, QColor()),
+                "locked color must support custom alpha, reset, and invalid-color rejection");
+        require(session.applyColorValue(lockedColor, QColor(160, 100, 30)), "save locked color");
         require(session.applyLocalShortcuts(scope, QStringLiteral("always_on_top"),
                                             {QStringLiteral("Ctrl+Alt+T")}) &&
                     session.applyLocalShortcuts(scope, QStringLiteral("show_border"), {}),
@@ -73,7 +87,8 @@ int main(int argc, char** argv) {
     require(applicationStorage.initialize({executable, temporary.path(), 60000}).success &&
                 pinned.shortcuts(QStringLiteral("always_on_top")) ==
                     snow_shot::shortcuts::ShortcutBindingList{QStringLiteral("Ctrl+Alt+T")} &&
-                pinned.shortcuts(QStringLiteral("show_border")).isEmpty(),
+                pinned.shortcuts(QStringLiteral("show_border")).isEmpty() &&
+                storage::PinToScreenSettings().lockedBorderColor() == QColor(160, 100, 30),
             "custom and disabled window management shortcuts must survive restart");
     applicationStorage.shutdown();
     return 0;

@@ -88,6 +88,7 @@ namespace snow_shot::app {
 namespace {
 const QString kPinBorderColorKey = QStringLiteral("pin_to_screen/border_color");
 const QString kPinBorderActiveColorKey = QStringLiteral("pin_to_screen/border_active_color");
+const QString kPinLockedBorderColorKey = QStringLiteral("pin_to_screen/locked_border_color");
 const QString kTrayEnabledKey = QStringLiteral("tray/enabled");
 const QString kTrayIconKey = QStringLiteral("tray/icon");
 const QString kTrayCustomIconKey = QStringLiteral("tray/custom_icon");
@@ -463,6 +464,8 @@ class ApplicationController::Impl {
         applyRuntimeConfiguration(configuration.value(kPinBorderColorKey), kPinBorderColorKey);
         applyRuntimeConfiguration(configuration.value(kPinBorderActiveColorKey),
                                   kPinBorderActiveColorKey);
+        applyRuntimeConfiguration(configuration.value(kPinLockedBorderColorKey),
+                                  kPinLockedBorderColorKey);
         applyRuntimeConfiguration(configuration.value(kTrayEnabledKey), kTrayEnabledKey);
         applyRuntimeConfiguration(configuration.value(kTrayIconKey), kTrayIconKey);
         applyRuntimeConfiguration(configuration.value(kTrayCustomIconKey), kTrayCustomIconKey);
@@ -1417,6 +1420,9 @@ class ApplicationController::Impl {
                 color = QColor(219, 219, 219, 255);
             }
             ScreenshotPinnedWindow::setRuntimeBorderColor(color);
+        } else if (key == kPinLockedBorderColorKey) {
+            ScreenshotPinnedWindow::setRuntimeLockedBorderColor(
+                storage::colorFromRgbaString(value.toString()));
         } else if (key == kPinBorderActiveColorKey) {
             QColor color = storage::colorFromRgbaString(value.toString());
             if (!color.isValid()) {

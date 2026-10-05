@@ -1128,6 +1128,7 @@ bool ScreenshotSelectionExportUiServices::presentRestoredRecord(
     config.persistedHideToTopAccentIndex = record.hideToTopAccentIndex;
     config.persistedThumbnailMode = record.thumbnailMode;
     config.persistedClickThroughMode = record.clickThroughMode;
+    config.persistedLockedMode = record.lockedMode;
     config.persistedAlwaysOnTop = record.alwaysOnTop;
     config.persistedShowBorder = record.showBorder;
     config.persistedPreThumbnailNativeGeometry = restored.preThumbnailNativeGeometry;

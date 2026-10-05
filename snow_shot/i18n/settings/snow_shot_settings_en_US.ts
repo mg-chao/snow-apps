@@ -2275,6 +2275,14 @@
             <translation>Locale</translation>
         </message>
         <message>
+            <source>Lock mode</source>
+            <translation>Lock mode</translation>
+        </message>
+        <message>
+            <source>Locked Border Color</source>
+            <translation>Locked Border Color</translation>
+        </message>
+        <message>
             <source>Loop Animated Images</source>
             <translation>Loop Animated Images</translation>
         </message>
@@ -2661,6 +2669,10 @@
         <message>
             <source>Pinned window border</source>
             <translation>Pinned window border</translation>
+        </message>
+        <message>
+            <source>Pinned window locked border</source>
+            <translation>Pinned window locked border</translation>
         </message>
         <message>
             <source>Pinned-window shortcuts</source>
@@ -3181,6 +3193,10 @@
         <message>
             <source>Set quality for image files saved outside the Snow Shot dialog</source>
             <translation>Set quality for image files saved outside the Snow Shot dialog</translation>
+        </message>
+        <message>
+            <source>Set the border color of locked pinned screenshots</source>
+            <translation>Set the border color of locked pinned screenshots</translation>
         </message>
         <message>
             <source>Set the border color of pinned screenshots</source>

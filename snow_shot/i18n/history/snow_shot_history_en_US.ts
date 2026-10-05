@@ -555,6 +555,14 @@
             <translation>Load new content</translation>
         </message>
         <message>
+            <source>Lock mode</source>
+            <translation>Lock mode</translation>
+        </message>
+        <message>
+            <source>Locked</source>
+            <translation>Locked</translation>
+        </message>
+        <message>
             <source>Move window</source>
             <translation>Move window</translation>
         </message>

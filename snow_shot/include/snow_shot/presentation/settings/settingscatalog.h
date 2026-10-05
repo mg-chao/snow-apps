@@ -221,6 +221,7 @@ enum class SettingsColorBinding {
     ColorPickerCenterGuideLineColor,
     PinBorderColor,
     PinBorderActiveColor,
+    PinLockedBorderColor,
 };
 
 struct SettingsColorDefinition {

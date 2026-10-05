@@ -467,9 +467,9 @@ void builtInCatalogIsCompleteAndValid() {
         require(itemIds.remove(id), "catalog must contain each platform-specific setting");
     for (const auto& id : excludedPlatformItems)
         require(!itemIds.contains(id), "catalog must omit settings exclusive to another platform");
-    require(itemIds.size() == 233,
+    require(itemIds.size() == 235,
             qPrintable(QStringLiteral(
-                           "catalog must contain 233 shared settings on every platform; found %1")
+                           "catalog must contain 235 shared settings on every platform; found %1")
                            .arg(itemIds.size())));
     require(foundUpdates, "catalog must contain the update mode item");
     const auto* pinnedEditor =
@@ -1385,7 +1385,7 @@ void builtInCatalogIsCompleteAndValid() {
                     .scope == settings::SettingsLocalShortcutScope::Screenshot &&
             drawingShortcuts != nullptr && drawingShortcuts->items.size() == 14 &&
             drawingShortcuts->itemLayout == settings::SettingsSectionItemLayout::TwoColumnGrid &&
-            pinToScreenShortcuts != nullptr && pinToScreenShortcuts->items.size() == 26 &&
+            pinToScreenShortcuts != nullptr && pinToScreenShortcuts->items.size() == 27 &&
             pinToScreenShortcuts->itemLayout ==
                 settings::SettingsSectionItemLayout::TwoColumnGrid &&
             pinToScreenShortcuts->title.translated() == QStringLiteral("Pin to screen") &&
@@ -1418,21 +1418,25 @@ void builtInCatalogIsCompleteAndValid() {
             pinToScreenShortcuts->items.at(8).configurationKey ==
                 QStringLiteral("pin_to_screen_shortcuts/toggle_click_through") &&
             pinToScreenShortcuts->items.at(9).id ==
-                QStringLiteral("pin-to-screen-shortcut.always_on_top") &&
-            pinToScreenShortcuts->items.at(9).title.translated() ==
-                QStringLiteral("Always on Top") &&
+                QStringLiteral("pin-to-screen-shortcut.toggle_lock") &&
             pinToScreenShortcuts->items.at(9).configurationKey ==
-                QStringLiteral("pin_to_screen_shortcuts/always_on_top") &&
+                QStringLiteral("pin_to_screen_shortcuts/toggle_lock") &&
             pinToScreenShortcuts->items.at(10).id ==
-                QStringLiteral("pin-to-screen-shortcut.show_border") &&
+                QStringLiteral("pin-to-screen-shortcut.always_on_top") &&
             pinToScreenShortcuts->items.at(10).title.translated() ==
-                QStringLiteral("Show border") &&
+                QStringLiteral("Always on Top") &&
             pinToScreenShortcuts->items.at(10).configurationKey ==
+                QStringLiteral("pin_to_screen_shortcuts/always_on_top") &&
+            pinToScreenShortcuts->items.at(11).id ==
+                QStringLiteral("pin-to-screen-shortcut.show_border") &&
+            pinToScreenShortcuts->items.at(11).title.translated() ==
+                QStringLiteral("Show border") &&
+            pinToScreenShortcuts->items.at(11).configurationKey ==
                 QStringLiteral("pin_to_screen_shortcuts/show_border") &&
-            pinToScreenShortcuts->items.at(12).id ==
+            pinToScreenShortcuts->items.at(13).id ==
                 QStringLiteral("pin-to-screen-shortcut.destroy_window") &&
-            pinToScreenShortcuts->items.at(12).title.translated() == QStringLiteral("Destroy") &&
-            pinToScreenShortcuts->items.at(12).configurationKey ==
+            pinToScreenShortcuts->items.at(13).title.translated() == QStringLiteral("Destroy") &&
+            pinToScreenShortcuts->items.at(13).configurationKey ==
                 QStringLiteral("pin_to_screen_shortcuts/destroy_window") &&
             std::get<settings::SettingsLocalShortcutDefinition>(
                 pinToScreenShortcuts->items.at(8).payload)
@@ -1598,7 +1602,7 @@ void builtInCatalogIsCompleteAndValid() {
         catalog.item({QStringLiteral("pinned-windows"), QStringLiteral("pin-to-screen"),
                       QStringLiteral("interface.pin-to-screen.border-active-color")});
     require(
-        pinSection.items.size() == 2 && pinBorderActiveColor != nullptr &&
+        pinSection.items.size() == 3 && pinBorderActiveColor != nullptr &&
             pinBorderActiveColor->configurationKey ==
                 QStringLiteral("pin_to_screen/border_active_color") &&
             std::get<settings::SettingsColorDefinition>(pinBorderActiveColor->payload).binding ==
@@ -1606,6 +1610,17 @@ void builtInCatalogIsCompleteAndValid() {
             storage::ConfigurationSchema::defaultValue(pinBorderActiveColor->configurationKey) ==
                 QStringLiteral("#69B1FFFF"),
         "pin to screen must expose a border active color defaulting to #69b1ff");
+
+    const auto* lockedColor =
+        catalog.item({QStringLiteral("pinned-windows"), QStringLiteral("pin-to-screen"),
+                      QStringLiteral("interface.pin-to-screen.locked-border-color")});
+    require(
+        lockedColor && lockedColor->title.translated() == QStringLiteral("Locked Border Color") &&
+            std::get<settings::SettingsColorDefinition>(lockedColor->payload).binding ==
+                settings::SettingsColorBinding::PinLockedBorderColor &&
+            storage::ConfigurationSchema::defaultValue(lockedColor->configurationKey) ==
+                QStringLiteral("#FAAD14FF"),
+        "locked border color must be searchable, resettable, and default to Ant Design warning");
 
     const auto* retention =
         storage::ConfigurationSchema::entry(QStringLiteral("capture_history/retention_days"));

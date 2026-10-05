@@ -549,6 +549,14 @@
             <translation>加载新内容</translation>
         </message>
         <message>
+            <source>Lock mode</source>
+            <translation>锁定模式</translation>
+        </message>
+        <message>
+            <source>Locked</source>
+            <translation>已锁定</translation>
+        </message>
+        <message>
             <source>Move window</source>
             <translation>移动窗口</translation>
         </message>

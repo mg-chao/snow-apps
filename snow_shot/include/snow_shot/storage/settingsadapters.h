@@ -539,6 +539,8 @@ class PinToScreenSettings final {
     [[nodiscard]] QColor borderColor() const;
     bool setBorderColor(const QColor& color) const;
     [[nodiscard]] QColor borderActiveColor() const;
+    [[nodiscard]] QColor lockedBorderColor() const;
+    bool setLockedBorderColor(const QColor& color) const;
     bool setBorderActiveColor(const QColor& color) const;
     [[nodiscard]] QString mouseWheelZoomMode() const;
     bool setMouseWheelZoomMode(const QString& mode) const;

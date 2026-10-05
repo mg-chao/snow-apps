@@ -176,6 +176,37 @@ bool PinnedWindowWindowsEvents::handle(ScreenshotPinnedWindow& window, const QBy
             }
         }
 
+        if (window.m_lockedMode) {
+            if (nativeMessage->message == WM_NCHITTEST) {
+                window.clearWindowDragCursor();
+                if (result)
+                    *result = HTCLIENT;
+                return true;
+            }
+            const WPARAM command = nativeMessage->wParam & 0xfff0;
+            const bool systemGeometryCommand = nativeMessage->message == WM_SYSCOMMAND &&
+                                               (command == SC_MOVE || command == SC_SIZE);
+            const bool geometryPress =
+                nativeMessage->message == WM_NCLBUTTONDOWN &&
+                (nativeMessage->wParam == HTCAPTION ||
+                 resizeEdgesForNativeHitTest(nativeMessage->wParam) != Qt::Edges());
+            if (systemGeometryCommand || geometryPress ||
+                nativeMessage->message == WM_ENTERSIZEMOVE) {
+                window.showLockedReadout();
+                if (result)
+                    *result = 0;
+                return true;
+            }
+            if (nativeMessage->message == WM_MOVING || nativeMessage->message == WM_SIZING) {
+                writeNativeRect(window.authoritativeNativeGeometry(),
+                                pointerFromLParam<RECT>(nativeMessage->lParam));
+                window.showLockedReadout();
+                if (result)
+                    *result = TRUE;
+                return true;
+            }
+        }
+
         // The draggable image and resize frame are non-client regions, so Qt's
         // widget Enter/Leave events alone do not cover them. Arm non-client
         // leave tracking after Qt dispatch, which may replace the registration.

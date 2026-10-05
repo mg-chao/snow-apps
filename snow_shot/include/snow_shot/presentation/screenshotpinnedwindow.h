@@ -168,6 +168,7 @@ class ScreenshotPinnedWindow final : public QWidget {
         int persistedHideToTopAccentIndex = -1;
         bool persistedThumbnailMode = false;
         bool persistedClickThroughMode = false;
+        bool persistedLockedMode = false;
         bool persistedAlwaysOnTop = true;
         bool persistedShowBorder = true;
         QRect persistedPreThumbnailNativeGeometry;
@@ -236,6 +237,7 @@ class ScreenshotPinnedWindow final : public QWidget {
   public:
     static void setRuntimeBorderColor(const QColor& color);
     static void setRuntimeBorderActiveColor(const QColor& color);
+    static void setRuntimeLockedBorderColor(const QColor& color);
     static void setRuntimeTrayEnabled(bool enabled);
 
   signals:
@@ -353,7 +355,7 @@ class ScreenshotPinnedWindow final : public QWidget {
     void loadClipboardContent();
     void requestContentReplacement(QStringList paths,
                                    std::optional<ScreenshotClipboardContentSnapshot> snapshot = {});
-    bool replaceContent(ScreenshotClipboardContent content);
+    bool replaceContent(ScreenshotClipboardContent content, bool* rejectedByLock = nullptr);
     void cancelContentReplacement();
     void saveAsFile();
     [[nodiscard]] std::shared_ptr<ScreenshotExportArtifact> fileSaveArtifact();
@@ -364,6 +366,7 @@ class ScreenshotPinnedWindow final : public QWidget {
     void applyImageOperation(const QTransform& operation, int quarterTurnDelta = 0);
     void resetImageTransform();
     void applyImageTransform(const QTransform& transform, int quarterTurns);
+    [[nodiscard]] QRect imageTransformGeometry(int quarterTurns) const;
     void rebuildTransformedImage();
     void applyScale(int percent);
     void applyWheelScale(double percent, const QPointF& nativeCursor);
@@ -375,6 +378,9 @@ class ScreenshotPinnedWindow final : public QWidget {
     void setEffectiveScale(double percent, bool showReadout);
     void showScaleReadout();
     void showOpacityReadout();
+    void showLockedReadout();
+    void setLockedMode(bool enabled);
+    [[nodiscard]] bool rejectLockedGeometryChange(const QRect& target);
     void scheduleNativeScaleAdoption();
     void adoptSettledNativeScale();
     void setOpacityPercent(int percent);
@@ -424,6 +430,8 @@ class ScreenshotPinnedWindow final : public QWidget {
     bool startWindowMove();
     void finishWindowMove();
     bool windowDragEnabled() const;
+    bool windowDragEligible() const;
+    bool windowDragEligibleAt(const QPoint& position) const;
     bool windowDragEnabledAt(const QPoint& position) const;
     bool handleDoubleClick(const QPoint& position);
     bool handleMiddleClick(const QPoint& position);
@@ -439,6 +447,7 @@ class ScreenshotPinnedWindow final : public QWidget {
 
     void reconcilePlatformEnvironment(bool layoutChanged = false);
     bool handleControlledPointer(QObject* watched, QEvent* event);
+    bool handleLockedPointer(QObject* watched, QEvent* event);
     bool handleExportDrag(QObject* watched, QEvent* event);
     bool exportDragEnabledAt(const QPoint& position) const;
     void beginExportDrag();
@@ -508,7 +517,8 @@ class ScreenshotPinnedWindow final : public QWidget {
     QFrame* m_controlsPanel = nullptr;
     CanvasStatusReadout* m_scaleLabel = nullptr;
     QTimer* m_scaleLabelTimer = nullptr;
-    bool m_scaleReadoutShowsOpacity = false;
+    enum class ReadoutKind { Scale, Opacity, Locked };
+    ReadoutKind m_readoutKind = ReadoutKind::Scale;
     QTimer* m_nativeScaleSettleTimer = nullptr;
     ScreenshotPinnedEditController* m_editController = nullptr;
     adqt::widgets::AdButton* m_editButton = nullptr;
@@ -528,6 +538,7 @@ class ScreenshotPinnedWindow final : public QWidget {
     QAction* m_thumbnailAction = nullptr;
     QAction* m_hideToTopAction = nullptr;
     QAction* m_clickThroughAction = nullptr;
+    QAction* m_lockAction = nullptr;
     QAction* m_alwaysOnTopAction = nullptr;
     QAction* m_showBorderAction = nullptr;
     QAction* m_showMainInterfaceAction = nullptr;
@@ -619,6 +630,7 @@ class ScreenshotPinnedWindow final : public QWidget {
     bool m_editingEnabled = true;
     bool m_thumbnailMode = false;
     bool m_clickThroughActive = false;
+    bool m_lockedMode = false;
     bool m_alwaysOnTop = true;
     bool m_showBorder = true;
     bool m_geometryAnimating = false;

@@ -547,6 +547,7 @@ QJsonObject recordToJson(const PinnedWindowRecord& record, const QJsonObject& pa
         {QStringLiteral("hide_to_top_accent_index"), record.hideToTopAccentIndex},
         {QStringLiteral("thumbnail_mode"), record.thumbnailMode},
         {QStringLiteral("click_through_mode"), record.clickThroughMode},
+        {QStringLiteral("locked_mode"), record.lockedMode},
         {QStringLiteral("always_on_top"), record.alwaysOnTop},
         {QStringLiteral("show_border"), record.showBorder},
         {QStringLiteral("border_appearance"), borderAppearanceToJson(record.borderAppearance)},
@@ -908,6 +909,7 @@ bool parseRecord(const QJsonObject& object, const QString& root, PinnedWindowRec
     }
     record.thumbnailMode = object.value(QStringLiteral("thumbnail_mode")).toBool();
     record.clickThroughMode = object.value(QStringLiteral("click_through_mode")).toBool(false);
+    record.lockedMode = object.value(QStringLiteral("locked_mode")).toBool(false);
     // Pins saved before the preference existed must keep floating above
     // everything, which was their only behavior.
     record.alwaysOnTop = object.value(QStringLiteral("always_on_top")).toBool(true);
@@ -941,6 +943,7 @@ bool parseRecord(const QJsonObject& object, const QString& root, PinnedWindowRec
     }
     if (record.thumbnailMode || record.hideToTopMode) {
         record.clickThroughMode = false;
+        record.lockedMode = false;
     }
     record.recognitionVisible = object.value(QStringLiteral("recognition_visible")).toBool(false);
     record.translationVisible = object.value(QStringLiteral("translation_visible")).toBool(false);

@@ -110,7 +110,7 @@ void settingsColorsCommitOnPopupClose(QApplication& application) {
         QObject::disconnect(themeConnection);
         ++tested;
     }
-    require(tested == 9, "cover all nine settings color pickers");
+    require(tested == 10, "cover all ten settings color pickers");
 }
 } // namespace
 

@@ -656,6 +656,16 @@ SettingsItemDefinition pinBorderActiveColorItem() {
         {settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Pinned window active border"))});
 }
 
+SettingsItemDefinition pinLockedBorderColorItem() {
+    return screenshotColorItem(
+        QStringLiteral("interface.pin-to-screen.locked-border-color"),
+        QT_TRANSLATE_NOOP("SettingsCatalog", "Locked Border Color"),
+        QT_TRANSLATE_NOOP("SettingsCatalog", "Set the border color of locked pinned screenshots"),
+        QStringLiteral("pin_to_screen/locked_border_color"),
+        SettingsColorBinding::PinLockedBorderColor,
+        {settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Pinned window locked border"))});
+}
+
 SettingsItemDefinition trayEnabledItem() {
     return {QStringLiteral("interface.tray.enabled"),
             settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Enable tray")),
@@ -2155,6 +2165,9 @@ QVector<SettingsItemDefinition> pinToScreenShortcutItems() {
                           QStringLiteral("toggle_click_through"),
                           QT_TRANSLATE_NOOP("SettingsCatalog", "Click-through"),
                           []() { return custom_outlined_icons::Mouse(); }),
+        localShortcutItem(SettingsLocalShortcutScope::PinToScreen, QStringLiteral("toggle_lock"),
+                          QT_TRANSLATE_NOOP("SettingsCatalog", "Lock mode"),
+                          []() { return outlined_icons::Lock(); }),
         localShortcutItem(SettingsLocalShortcutScope::PinToScreen, QStringLiteral("always_on_top"),
                           QT_TRANSLATE_NOOP("SettingsCatalog", "Always on Top"),
                           []() { return outlined_icons::ToTop(); }),
@@ -2913,7 +2926,7 @@ QVector<SettingsPageDefinition> builtInPages() {
                  settingsText(QT_TRANSLATE_NOOP("SettingsCatalog",
                                                 "Pinned screenshot window appearance settings")),
                  SettingsSectionReset::PinToScreen,
-                 {pinBorderColorItem(), pinBorderActiveColorItem()},
+                 {pinBorderColorItem(), pinBorderActiveColorItem(), pinLockedBorderColorItem()},
              },
              {
                  QStringLiteral("pin-to-screen-toolbar"),
@@ -4736,6 +4749,9 @@ QStringList SettingsCatalog::validationErrors() const {
                         break;
                     case SettingsColorBinding::PinBorderActiveColor:
                         expectedKey = QStringLiteral("pin_to_screen/border_active_color");
+                        break;
+                    case SettingsColorBinding::PinLockedBorderColor:
+                        expectedKey = QStringLiteral("pin_to_screen/locked_border_color");
                         break;
                     }
                     if (itemDefinition.configurationKey != expectedKey || schemaEntry == nullptr ||

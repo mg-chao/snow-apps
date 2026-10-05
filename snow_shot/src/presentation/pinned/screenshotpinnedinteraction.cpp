@@ -226,6 +226,10 @@ void ScreenshotPinnedWindow::reconcilePlatformEnvironment(bool layoutChanged) {
 
 bool ScreenshotPinnedWindow::beginControlledInteraction(const QPointF& desktopPosition,
                                                         std::optional<int> handle) {
+    if (m_lockedMode) {
+        showLockedReadout();
+        return false;
+    }
     stopAttentionShake();
     if (m_interactionPlacement || m_closing || m_geometryAnimating || !screen())
         return false;
@@ -398,6 +402,27 @@ void ScreenshotPinnedWindow::endControlledInteraction(bool cancel) {
         schedulePersistence();
     }
     endAuxiliaryWindowInteraction();
+}
+
+bool ScreenshotPinnedWindow::handleLockedPointer(QObject* watched, QEvent* event) {
+    if (!m_lockedMode || m_closing || !event || event->type() != QEvent::MouseButtonPress)
+        return false;
+    const bool moveControl = watched == m_clickThroughMoveButton.get();
+    if (watched != this && watched != m_canvas && watched != m_recognitionContent && !moveControl)
+        return false;
+    auto* mouse = static_cast<QMouseEvent*>(event);
+    if (mouse->button() != Qt::LeftButton)
+        return false;
+    if (!moveControl) {
+        const QPointF local = windowPositionForEvent(watched, mouse->position());
+        const bool resize =
+            !m_geometryAnimating && !m_thumbnailMode && resizeHandle(local, size()).has_value();
+        if (!resize && !windowDragEligibleAt(local.toPoint()))
+            return false;
+    }
+    showLockedReadout();
+    mouse->accept();
+    return true;
 }
 
 bool ScreenshotPinnedWindow::handleControlledPointer(QObject* watched, QEvent* event) {

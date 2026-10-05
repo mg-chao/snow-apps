@@ -1270,7 +1270,7 @@ void verifyPinToScreenShortcutSettings() {
     const storage::PinToScreenShortcutSettings shortcutSettings;
     const shortcuts::ShortcutBindingMap defaults = shortcutSettings.allShortcuts();
     require(
-        defaults.size() == 26 &&
+        defaults.size() == 27 &&
             portable(defaults.value(QStringLiteral("copy_to_clipboard"))) ==
                 QStringList{QStringLiteral("Ctrl+C")} &&
             portable(defaults.value(QStringLiteral("copy_original_content"))) ==
@@ -1289,6 +1289,8 @@ void verifyPinToScreenShortcutSettings() {
                 QStringList{QStringLiteral("H")} &&
             portable(defaults.value(QStringLiteral("toggle_click_through"))) ==
                 QStringList{QStringLiteral("Ctrl+M")} &&
+            portable(defaults.value(QStringLiteral("toggle_lock"))) ==
+                QStringList{QStringLiteral("L")} &&
             portable(defaults.value(QStringLiteral("always_on_top"))) ==
                 QStringList{QStringLiteral("T")} &&
             portable(defaults.value(QStringLiteral("show_border"))) ==
@@ -1306,7 +1308,7 @@ void verifyPinToScreenShortcutSettings() {
                                            {QStringLiteral("M")}) &&
             shortcutSettings.shortcuts(QStringLiteral("unsupported")).isEmpty() &&
             !shortcutSettings.setShortcuts(QStringLiteral("unsupported"), {QStringLiteral("Q")}),
-        "pinned-window shortcut adapter must expose twenty-six stable actions and defaults");
+        "pinned-window shortcut adapter must expose twenty-seven stable actions and defaults");
     require(portable(defaults.value(QStringLiteral("increase_opacity"))) ==
                 QStringList{QStringLiteral("]")},
             "increase_opacity must have its default binding");

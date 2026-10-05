@@ -965,6 +965,12 @@ const QVector<ConfigurationSchemaEntry> kRawEntries = {
      std::nullopt,
      {},
      2},
+    {QStringLiteral("pin_to_screen_shortcuts/toggle_lock"),
+     QJsonArray{QStringLiteral("L")},
+     ConfigurationValueKind::StringList,
+     std::nullopt,
+     {},
+     2},
     {QStringLiteral("pin_to_screen_shortcuts/always_on_top"),
      QJsonArray{QStringLiteral("T")},
      ConfigurationValueKind::StringList,
@@ -1174,6 +1180,8 @@ const QVector<ConfigurationSchemaEntry> kRawEntries = {
     {QStringLiteral("pin_to_screen/border_color"), QStringLiteral("#DBDBDBFF"),
      ConfigurationValueKind::String},
     {QStringLiteral("pin_to_screen/border_active_color"), QStringLiteral("#69B1FFFF"),
+     ConfigurationValueKind::String},
+    {QStringLiteral("pin_to_screen/locked_border_color"), QStringLiteral("#FAAD14FF"),
      ConfigurationValueKind::String},
     {QStringLiteral("pin_to_screen/mouse_wheel_zoom_mode"),
      QStringLiteral("mouse_position"),
@@ -1761,6 +1769,7 @@ bool isRgbaColorKey(const QString& key) {
            key == QStringLiteral("screenshot_ui/color_picker_center_guide_line_color") ||
            key == QStringLiteral("pin_to_screen/border_color") ||
            key == QStringLiteral("pin_to_screen/border_active_color") ||
+           key == QStringLiteral("pin_to_screen/locked_border_color") ||
            key == QStringLiteral("screen_recording/mouse_trail_color") ||
            key == QStringLiteral("screen_recording/mouse_click_color") ||
            key == QStringLiteral("screen_recording/mouse_highlight_color") ||

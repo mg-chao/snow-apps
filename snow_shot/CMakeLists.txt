@@ -1788,6 +1788,9 @@ if(SNOW_SHOT_BUILD_TESTS)
         LABELS "unit" TIMEOUT 60
         ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
     # Flaky by design: the async policy mutation settles on timers, and
+    add_test(NAME snow-shot-pin-to-screen-storage-tests
+        COMMAND snow-shot-application-storage-tests --pin-shortcuts-only)
+    set_tests_properties(snow-shot-pin-to-screen-storage-tests PROPERTIES LABELS "unit")
     # CPU contention from parallel tests can stretch the settling window.
     # The test must not run in parallel with other tests (RUN_SERIAL), and
     # intermittent failures are tolerated via the retry launcher.
@@ -4095,6 +4098,15 @@ if(SNOW_SHOT_BUILD_TESTS)
         COMMAND snow-shot-pinned-window-tests --hide-to-top-native-only -platform windows)
     set_tests_properties(snow-shot-pinned-hide-to-top-native-tests PROPERTIES LABELS "unit;windows"
         RUN_SERIAL TRUE TIMEOUT 60)
+    add_test(NAME snow-shot-pinned-lock-tests
+        COMMAND snow-shot-pinned-window-tests --lock-only -platform offscreen)
+    set_tests_properties(snow-shot-pinned-lock-tests PROPERTIES LABELS "unit" RUN_SERIAL TRUE TIMEOUT 60)
+    if(WIN32)
+        add_test(NAME snow-shot-pinned-lock-native-tests
+            COMMAND snow-shot-pinned-window-tests --lock-native-only -platform windows)
+        set_tests_properties(snow-shot-pinned-lock-native-tests PROPERTIES
+            LABELS "unit;windows" RUN_SERIAL TRUE TIMEOUT 60)
+    endif()
     add_test(NAME snow-shot-pinned-click-through-tests
         COMMAND snow-shot-pinned-window-tests --click-through-only -platform offscreen)
     set_tests_properties(snow-shot-pinned-click-through-tests PROPERTIES LABELS "unit"
