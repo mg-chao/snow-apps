@@ -69,6 +69,7 @@
     "ScreenshotExportArtifact",
     "ScreenshotImageFileService",
     "ScreenshotPdfExport",
+    "ScreenshotPrintService",
     "ScreenshotRecognitionFileExport",
     "ScreenshotSaveAsFileDialog",
     "ScreenshotSavePreviewCanvas"

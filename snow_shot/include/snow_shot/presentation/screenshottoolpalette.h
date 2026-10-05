@@ -506,6 +506,7 @@ class ScreenshotToolPalette final : public QWidget,
     void textPunctuationRequested(const QString& value);
     void textTargetLanguageRequested(const QString& language);
     void scrollingScreenshotRequested();
+    void printRequested();
     void saveRequested();
     void quickSaveRequested();
     void scrollingRecognitionModeChanged(ScreenshotScrollingRecognitionMode mode);
@@ -916,6 +917,7 @@ class ScreenshotToolPalette final : public QWidget,
     adqt::widgets::AdSelect* m_textTargetLanguageSelect = nullptr;
     QSpacerItem* m_textTargetLanguageSpacer = nullptr;
     adqt::widgets::AdButton* m_scrollingScreenshotButton = nullptr;
+    adqt::widgets::AdButton* m_printButton = nullptr;
     adqt::widgets::AdButton* m_saveButton = nullptr;
     adqt::widgets::AdButton* m_quickSaveButton = nullptr;
     void finishScrollingSelectionMove();

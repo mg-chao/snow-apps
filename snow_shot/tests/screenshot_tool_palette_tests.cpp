@@ -4525,20 +4525,21 @@ void quickSaveStacksAndLayoutMigration() {
     using snow_shot::storage::ScreenshotToolbarLayout;
     using snow_shot::storage::ScreenshotToolbarLayoutKind;
     const auto kind = ScreenshotToolbarLayoutKind::ActionTools;
+    const QString print = QStringLiteral("print");
     const QString quick = QStringLiteral("quick-save");
     const QString save = QStringLiteral("save-as-file");
     auto legacy = normalizedLayout(ScreenshotToolbarLayout{}, kind);
     for (auto& position : legacy.positions)
         position.removeAll(quick);
     const auto upgraded = normalizedLayout(legacy, kind);
-    require(upgraded.positions.constLast() == QStringList{quick, save} &&
+    require(upgraded.positions.constLast() == QStringList{print, quick, save} &&
                 normalizedLayout(upgraded, kind) == upgraded,
             "legacy default saves must upgrade to an idempotent quick-save stack");
     auto custom = legacy;
     custom.positions.last().prepend(QStringLiteral("record-screen"));
     custom.positions.removeAt(1);
     require(normalizedLayout(custom, kind).positions.constLast() ==
-                QStringList{QStringLiteral("record-screen"), quick, save},
+                QStringList{QStringLiteral("record-screen"), print, quick, save},
             "custom save placements must gain Quick save immediately above Save");
     legacy.positions.removeLast();
     legacy.hidden = {save};
@@ -4566,7 +4567,7 @@ void quickSaveStacksAndLayoutMigration() {
         adqt::widgets::AdButton* trigger = nullptr;
         for (auto* button : mainToolbarButtons(palette)) {
             if (button->property("screenshotToolbarPositionItems").toStringList() ==
-                QStringList{quick, save})
+                QStringList{print, quick, save})
                 trigger = button;
         }
         require(trigger && trigger->accessibleName() == QStringLiteral("Save as file"),

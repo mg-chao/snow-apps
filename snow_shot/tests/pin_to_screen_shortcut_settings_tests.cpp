@@ -37,13 +37,18 @@ int main(int argc, char** argv) {
             "lock must default to L");
     const auto screenshotBefore = storage::ScreenshotShortcutSettings().allShortcuts();
     const auto drawingBefore = storage::DrawingShortcutSettings().allShortcuts();
+    require(defaults.value(QStringLiteral("print")) ==
+                    snow_shot::shortcuts::ShortcutBindingList{QStringLiteral("Ctrl+P")} &&
+                screenshotBefore.value(QStringLiteral("print")) ==
+                    defaults.value(QStringLiteral("print")),
+            "screenshot and pin print shortcuts must default to Ctrl+P");
     {
         snow_shot::presentation::GlobalShortcutManager globalShortcuts;
         settings::BuiltInSettingsBackend backend(globalShortcuts);
         settings::SettingsRuntimeSession session(settings::builtInSettingsRegistry(), backend);
         constexpr auto scope = settings::SettingsLocalShortcutScope::PinToScreen;
         for (const QString& id : {QStringLiteral("always_on_top"), QStringLiteral("show_border"),
-                                  QStringLiteral("toggle_lock")}) {
+                                  QStringLiteral("toggle_lock"), QStringLiteral("print")}) {
             require(session.localShortcuts(scope, id) == defaults.value(id),
                     "settings must expose default window management shortcuts");
             require(

@@ -741,6 +741,10 @@
             <translation>Pin to screen</translation>
         </message>
         <message>
+            <source>Print</source>
+            <translation>Print</translation>
+        </message>
+        <message>
             <source>Quick save</source>
             <translation>Quick save</translation>
         </message>
@@ -2713,6 +2717,10 @@
         <message>
             <source>Primary Target Language</source>
             <translation>Primary Target Language</translation>
+        </message>
+        <message>
+            <source>Print</source>
+            <translation>Print</translation>
         </message>
         <message>
             <source>Process priority</source>

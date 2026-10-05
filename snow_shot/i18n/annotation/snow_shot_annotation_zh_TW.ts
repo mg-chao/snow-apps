@@ -740,6 +740,10 @@
             <translation>後製效果</translation>
         </message>
         <message>
+            <source>Print</source>
+            <translation>列印</translation>
+        </message>
+        <message>
             <source>Progress Bar Color</source>
             <translation>進度條顏色</translation>
         </message>

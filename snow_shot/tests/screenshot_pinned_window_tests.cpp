@@ -19,6 +19,14 @@
 #include "snow_shot/presentation/screenshottoolbarlayoutmodel.h"
 #include "close_release_native_test_support.h"
 #include "snow_shot/presentation/screenshotpinnedwindow.h"
+#include "snow_shot/presentation/screenshotprintservice.h"
+#include <QTextEdit>
+#include <QTextBlock>
+#include <QScrollBar>
+#include <QDialog>
+#include <QGraphicsTextItem>
+#include <QGraphicsScene>
+#include "snow_shot/presentation/screenshottableeditor.h"
 #include "snow_shot/presentation/screenshotclipboardcontent.h"
 #include "snow_shot/presentation/screenshotcontentdrop.h"
 #include "snow_shot/presentation/canvasstatusreadout.h"
@@ -768,6 +776,22 @@ class ScreenshotPinnedWindowTestAccess {
     static const ScreenshotOcrPresentation&
     displayedRecognition(const ScreenshotPinnedWindow& window) {
         return *window.m_displayOcrPresentation;
+    }
+    static void print(ScreenshotPinnedWindow& window, ScreenshotPrintService* service) {
+        window.m_printService = service;
+        window.printContent();
+    }
+    static void setPrinter(ScreenshotPinnedWindow& window, ScreenshotPrintService* service) {
+        window.m_printService = service;
+    }
+    static bool printPending(const ScreenshotPinnedWindow& window) {
+        return window.m_printPending;
+    }
+    static void replaceDuringPrint(ScreenshotPinnedWindow& window) {
+        ++window.m_contentReplacementGeneration;
+    }
+    static std::shared_ptr<ScreenshotExportArtifact> printArtifact(ScreenshotPinnedWindow& window) {
+        return window.viewportArtifact();
     }
     static void quickSave(ScreenshotPinnedWindow& window) {
         window.quickSave();
@@ -16039,6 +16063,251 @@ void selectionClipboardPublicationLifetime() {
     }
 }
 
+namespace {
+void pinnedPrintingWithoutToolbarAndDelayedCompletion(bool locked) {
+    using Access = ScreenshotPinnedWindowTestAccess;
+    using Service = ScreenshotPrintService;
+    int starts = 0;
+    QImage printed;
+    Service::Completion nativeCompletion;
+    Service printer([&](QWidget*, QImage snapshot, Service::Completion completion) {
+        ++starts;
+        printed = std::move(snapshot);
+        nativeCompletion = std::move(completion);
+    });
+    ScreenshotPinnedWindow window;
+    auto config = cachedOcrPinConfig(nullptr);
+    Access::restoreOffscreen(window, config);
+    Access::setPrinter(window, &printer);
+    window.show();
+    window.activateWindow();
+    auto* canvas = window.findChild<SnowCanvasWidget*>();
+    require(canvas, "pin printing requires a canvas");
+    canvas->setFocus();
+    waitForUi(20);
+    const auto hasToolbar = [&] {
+        auto* edit = window.findChild<ScreenshotPinnedEditController*>();
+        return edit && edit->toolbarWindow();
+    };
+    require(!hasToolbar(), "fixture must start without a toolbar");
+    if (locked)
+        sendShortcut(*canvas, Qt::Key_L);
+    require(window.persistenceSnapshot().lockedMode == locked,
+            "printing fixture must apply the requested lock state through its shortcut");
+    const QRect geometry = window.currentNativeGeometry();
+    QApplication::clipboard()->setText(QStringLiteral("print must not publish"));
+    sendShortcut(*canvas, Qt::Key_P, Qt::ControlModifier);
+    sendShortcut(*canvas, Qt::Key_P, Qt::ControlModifier);
+    QElapsedTimer timer;
+    timer.start();
+    while (starts == 0 && timer.elapsed() < 10000)
+        waitForUi(5);
+    require(starts == 1 && Access::printPending(window) && !hasToolbar(),
+            "Ctrl+P must print directly once without creating the toolbar");
+    sendShortcut(*canvas, Qt::Key_L);
+    require(window.persistenceSnapshot().lockedMode == locked &&
+                window.currentNativeGeometry() == geometry,
+            "pending printing must suppress the lock shortcut and preserve geometry");
+    require(printed.pixelColor(printed.rect().center()) == QColor(42, 84, 126),
+            "hidden-toolbar printing must capture the current image");
+    require(QApplication::clipboard()->text() == QStringLiteral("print must not publish"),
+            "printing must not publish clipboard content");
+    for (auto status :
+         {Service::Status::Cancelled, Service::Status::Failed, Service::Status::Submitted}) {
+        if (!Access::printPending(window)) {
+            Access::print(window, &printer);
+            timer.restart();
+            const int previous = starts;
+            while (starts == previous && timer.elapsed() < 10000)
+                waitForUi(5);
+        }
+        nativeCompletion({status, QStringLiteral("fake failure")});
+        waitForUi(20);
+        require(window.isVisible() && !Access::printPending(window) && !printer.busy() &&
+                    !hasToolbar() && window.persistenceSnapshot().lockedMode == locked &&
+                    window.currentNativeGeometry() == geometry,
+                "all native outcomes must preserve pins, lock state, geometry and pending state");
+    }
+    const snow_shot::storage::PinToScreenShortcutSettings settings;
+    const auto original = settings.shortcuts(QStringLiteral("print"));
+    const auto restore =
+        qScopeGuard([&] { settings.setShortcuts(QStringLiteral("print"), original); });
+    require(settings.setShortcuts(QStringLiteral("print"), {QStringLiteral("Ctrl+Alt+9")}),
+            "print shortcut must rebind");
+    canvas->setFocus();
+    const int previous = starts;
+    sendShortcut(*canvas, Qt::Key_P, Qt::ControlModifier);
+    waitForUi(10);
+    require(starts == previous, "old print shortcut must stop activating after rebinding");
+    QLineEdit editor(&window);
+    editor.show();
+    editor.setFocus();
+    waitForUi(10);
+    sendShortcut(editor, Qt::Key_9, Qt::ControlModifier | Qt::AltModifier);
+    waitForUi(10);
+    require(starts == previous && !Access::printPending(window),
+            "print must respect editable text focus suppression");
+    editor.hide();
+    canvas->setFocus();
+    QDialog modal(&window);
+    modal.setWindowModality(Qt::ApplicationModal);
+    modal.show();
+    waitForUi(10);
+    sendShortcut(*canvas, Qt::Key_9, Qt::ControlModifier | Qt::AltModifier);
+    require(!Access::printPending(window), "modal interactions must suppress print shortcuts");
+    modal.hide();
+    window.activateWindow();
+    canvas->setFocus();
+    waitForUi(10);
+    sendShortcut(*canvas, Qt::Key_9, Qt::ControlModifier | Qt::AltModifier);
+    timer.restart();
+    while (starts == previous && timer.elapsed() < 10000)
+        waitForUi(5);
+    require(starts == previous + 1, "rebound print shortcut must activate immediately");
+    nativeCompletion({Service::Status::Cancelled, {}});
+    waitForUi(10);
+    Access::print(window, &printer);
+    Access::replaceDuringPrint(window);
+    waitForUi(100);
+    require(starts == previous + 1 && !Access::printPending(window),
+            "content replacement must cancel preparation before opening native UI");
+    if (locked) {
+        sendShortcut(*canvas, Qt::Key_L);
+        require(!window.persistenceSnapshot().lockedMode,
+                "printing completion must restore the shortcut for unlocking the pin");
+    }
+}
+
+void pinnedPrintMatchesTransformedViewport() {
+    using Access = ScreenshotPinnedWindowTestAccess;
+    for (bool thumbnail : {false, true}) {
+        ScreenshotPinnedWindow window;
+        auto config = cachedOcrPinConfig(nullptr);
+        config.imageSource.materializedImage.fill(QColor(100, 50, 20, 128));
+        require(window.present(config), "annotated print fixture must present");
+        waitForUi(30);
+        Access::editSelectionOffscreen(window, true);
+        auto* editController = window.findChild<ScreenshotPinnedEditController*>();
+        require(editController && editController->toolbarWindow(),
+                "annotated print fixture needs its drawing toolbar");
+        editController->toolbarWindow()->palette()->freeDrawRequested();
+        auto* drawingCanvas = window.findChild<SnowCanvasWidget*>();
+        require(drawingCanvas, "annotated print fixture needs a canvas");
+        canvas_quick_selection_test::drawStroke(*drawingCanvas);
+        require(drawingCanvas->canvasHistoryState().canUndo,
+                "print fixture must contain an annotation");
+        Access::editSelectionOffscreen(window, false);
+        Access::setGeneralOpacity(window, 60);
+        window.findChild<QAction*>(QStringLiteral("screenshotPinnedRotateClockwiseAction"))
+            ->trigger();
+        Access::setFractionalScale(window, 125);
+        Access::thumbnailForHideTest(window, thumbnail);
+        waitForUi(20);
+        auto artifact = Access::printArtifact(window);
+        QImage expected;
+        require(artifact &&
+                    artifact->requestImage(&window, [&](auto result) { expected = result.image; }),
+                "expected viewport export must start");
+        QElapsedTimer timer;
+        timer.start();
+        while (expected.isNull() && timer.elapsed() < 10000)
+            waitForUi(5);
+        require(!expected.isNull(), "expected viewport export must finish");
+        QImage printed;
+        ScreenshotPrintService printer([&](QWidget*, QImage image, auto completion) {
+            printed = image;
+            completion({ScreenshotPrintService::Status::Cancelled, {}});
+        });
+        Access::print(window, &printer);
+        timer.restart();
+        while (printed.isNull() && timer.elapsed() < 10000)
+            waitForUi(5);
+        require(printed == ScreenshotPrintService::opaqueImage(expected),
+                "printing must preserve viewport rotation, zoom, thumbnail, alpha and opacity");
+        waitForUi(10);
+    }
+}
+
+void recognitionPrintPreservesScrollAndExcludesSelection() {
+    QTextDocument document;
+    ScreenshotRecognitionWindow window({});
+    ScreenshotRecognitionWindow::Config config;
+    config.screen = QGuiApplication::primaryScreen();
+    config.geometry = QRect(20, 20, 300, 120);
+    config.canvasSelection = config.geometry;
+    require(window.present(config), "recognition print fixture must present");
+    QString html;
+    for (int i = 0; i < 100; ++i)
+        html += QStringLiteral("<p style='color:%1'>Line %2 %3</p>")
+                    .arg(i < 50 ? QStringLiteral("red") : QStringLiteral("blue"))
+                    .arg(i)
+                    .arg(QString(i % 20 + 1, QLatin1Char('X')));
+    document.setHtml(html);
+    window.showTextEditor(&document);
+    waitForUi(20);
+    QTextEdit* editor = nullptr;
+    for (auto* candidate : window.findChildren<QTextEdit*>())
+        if (candidate->isVisible())
+            editor = candidate;
+    require(editor, "recognition editor must be visible");
+    editor->verticalScrollBar()->setValue(0);
+    const QImage top = window.printViewportSnapshot();
+    editor->verticalScrollBar()->setValue(editor->verticalScrollBar()->maximum());
+    const int scroll = editor->verticalScrollBar()->value();
+    const QImage bottom = window.printViewportSnapshot();
+    const QImage translucent = window.printViewportSnapshot({}, {}, {}, {}, 0.5);
+    require(translucent.pixelColor(translucent.rect().topLeft()).alpha() == 128,
+            "recognition printing must apply window opacity to the complete viewport");
+    require(!top.isNull() && top != bottom &&
+                bottom.size() == editor->viewport()->size() * editor->devicePixelRatioF(),
+            "recognition printing must capture only the current content viewport");
+    QTextCursor cursor(document.firstBlock());
+    cursor.select(QTextCursor::Document);
+    editor->setTextCursor(cursor);
+    editor->verticalScrollBar()->setValue(scroll);
+    require(window.printViewportSnapshot() == bottom &&
+                editor->verticalScrollBar()->value() == scroll,
+            "printing must exclude caret and selection while preserving scroll position");
+    auto formatted = std::make_shared<QTextDocument>();
+    formatted->setHtml(QStringLiteral("<h1>Formatted content</h1>"));
+    window.showFormattedText(formatted);
+    waitForUi(10);
+    auto* layer = window.findChild<QGraphicsView*>(QStringLiteral("screenshotClipboardText"));
+    require(layer && layer->isVisible(), "formatted print fixture must be visible");
+    const QImage formattedSnapshot = window.printViewportSnapshot();
+    require(!formattedSnapshot.isNull(), "formatted viewport must print without a table editor");
+    for (auto* item : layer->scene()->items()) {
+        if (auto* textItem = dynamic_cast<QGraphicsTextItem*>(item)) {
+            QTextCursor selection(formatted.get());
+            selection.select(QTextCursor::Document);
+            textItem->setTextCursor(selection);
+        }
+    }
+    require(window.printViewportSnapshot() == formattedSnapshot,
+            "formatted printing must exclude graphics text selection");
+#if SNOW_SHOT_ENABLE_TABLE_RECOGNITION
+    QStringList rows;
+    for (int row = 0; row < 30; ++row)
+        rows.append(QStringLiteral("%1\tValue %1").arg(row));
+    window.setTableSession(std::make_shared<ScreenshotTableEditingSession>(
+        ScreenshotTableDocument::fromPlainText(rows.join(QLatin1Char('\n')))));
+    waitForUi(10);
+    auto* table = window.findChild<ScreenshotTableEditor*>();
+    require(table && table->isVisible(), "table print fixture must be visible");
+    const auto firstRows = window.printViewportSnapshot();
+    table->verticalScrollBar()->setValue(table->verticalScrollBar()->maximum());
+    const int tableScroll = table->verticalScrollBar()->value();
+    const auto lastRows = window.printViewportSnapshot();
+    require(!lastRows.isNull() && firstRows != lastRows,
+            "table printing must reflect the scrolled viewport");
+    table->selectAll();
+    require(window.printViewportSnapshot() == lastRows &&
+                table->verticalScrollBar()->value() == tableScroll,
+            "table printing must exclude cell selection and preserve scroll position");
+#endif
+}
+} // namespace
+
 int main(int argc, char* argv[]) {
 
     PinnedWindowTestApplication app(argc, argv);
@@ -16055,6 +16324,17 @@ int main(int argc, char* argv[]) {
         // without this, lazily initialized storage lands in the developer's
         // real AppData (see IsolatedPinnedStorage).
         IsolatedPinnedStorage processStorage;
+        if (app.arguments().contains(QStringLiteral("--print-only"))) {
+            const int font = QFontDatabase::addApplicationFont(
+                QStringLiteral(":/recording-test-fonts/SnowRecordingTestSans-Regular.ttf"));
+            require(font >= 0, "print fixtures must load their bundled font");
+            QApplication::setFont(QFont(QFontDatabase::applicationFontFamilies(font).first(), 12));
+            pinnedPrintingWithoutToolbarAndDelayedCompletion(false);
+            pinnedPrintingWithoutToolbarAndDelayedCompletion(true);
+            pinnedPrintMatchesTransformedViewport();
+            recognitionPrintPreservesScrollAndExcludesSelection();
+            return 0;
+        }
         if (app.arguments().contains(QStringLiteral("--original-image-preview-only"))) {
             const double expectedDpr = qEnvironmentVariable("SNOW_PREVIEW_TEST_DPR").toDouble();
             if (expectedDpr > 0) {

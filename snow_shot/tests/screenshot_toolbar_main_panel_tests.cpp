@@ -1,5 +1,6 @@
 #include "snow_shot/presentation/screenshottoolbarmainpanel.h"
 #include "snow_shot/presentation/screenshottoolpalette.h"
+#include "snow_shot/presentation/screenshottoolbarlayoutmodel.h"
 #include "snow_shot/presentation/styles/thememanager.h"
 #include "snow_shot/presentation/mainwindowskincontroller.h"
 #include "snow_shot/presentation/mainwindowskinwidget.h"
@@ -1587,8 +1588,71 @@ void toolbarSkinProfilesAndLifecycle() {
 
 } // namespace
 
+namespace {
+void printToolbarRoutingAndLayoutMigration() {
+    namespace layout = snow_shot::presentation::toolbar_layout;
+    using Kind = snow_shot::storage::ScreenshotToolbarLayoutKind;
+    const QString print = QStringLiteral("print");
+    const QString quick = QStringLiteral("quick-save");
+    const QString save = QStringLiteral("save-as-file");
+    for (const auto kind : {Kind::ActionTools, Kind::PinnedActionTools}) {
+        auto defaults = layout::defaultPositions(kind);
+        require(defaults.contains(QStringList{print, quick, save}),
+                "Print must join the default Save as File stack");
+        snow_shot::storage::ScreenshotToolbarLayout old;
+        old.positions = {{save, QStringLiteral("text-recognition")}};
+        const auto upgraded = layout::normalizedLayout(old, kind);
+        require(upgraded.positions[0] ==
+                    QStringList{print, quick, save, QStringLiteral("text-recognition")},
+                "migration must preserve previous item order and placement");
+        require(layout::normalizedLayout(upgraded, kind) == upgraded,
+                "migration must be idempotent");
+        old.positions = {{print}, {save}};
+        require(layout::normalizedLayout(old, kind).positions[0] == QStringList{print},
+                "explicitly positioned Print must remain in its position");
+        old.positions = {{save}};
+        old.hidden = {print};
+        const auto hiddenPrint = layout::normalizedLayout(old, kind);
+        require(hiddenPrint.hidden.contains(print) && !hiddenPrint.positions[0].contains(print),
+                "explicitly hidden Print must remain hidden");
+        old.positions.clear();
+        old.hidden = {save};
+        require(layout::normalizedLayout(old, kind).hidden.contains(print),
+                "migrated Print must inherit Save as File's hidden state");
+        const auto stack = layout::stackPresentation(QStringList{print, quick, save},
+                                                     [](const QString&) { return true; });
+        require(stack.entryItemId() == save, "Save as File must remain the initial trigger");
+    }
+    for (int variant = 0; variant < 3; ++variant) {
+        auto options = screenshotOptions();
+        options.showSaveButton = true;
+        options.saveButtonWithResultActions = variant != 2;
+        options.actionToolsLayoutKind = variant == 2 ? Kind::PinnedActionTools : Kind::ActionTools;
+        if (variant != 0)
+            options.actionToolsLayout = layout::normalizedLayout({}, options.actionToolsLayoutKind);
+        ScreenshotToolPalette palette(options);
+        prepare(palette);
+        int prints = 0;
+        int saves = 0;
+        QObject::connect(&palette, &ScreenshotToolPalette::printRequested, [&] { ++prints; });
+        QObject::connect(&palette, &ScreenshotToolPalette::saveRequested, [&] { ++saves; });
+        require(palette.activateScreenshotShortcut(print) && prints == 1 && saves == 0,
+                "fixed and configurable print actions must emit only printRequested");
+        auto* button =
+            palette.findChild<adqt::widgets::AdButton*>(QStringLiteral("screenshotPrintButton"));
+        require(button != nullptr, "each result toolbar must provide a Print source button");
+        button->click();
+        require(prints == 2 && saves == 0, "Print source button must route once");
+    }
+}
+} // namespace
+
 int main(int argc, char** argv) {
     QApplication application(argc, argv);
+    if (application.arguments().contains(QStringLiteral("--print-only"))) {
+        printToolbarRoutingAndLayoutMigration();
+        return 0;
+    }
     if (application.arguments().contains(QStringLiteral("--skin-only"))) {
         toolbarSkinProfilesAndLifecycle();
         return 0;

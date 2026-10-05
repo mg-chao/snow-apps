@@ -740,6 +740,10 @@
             <translation>Post-processing effects</translation>
         </message>
         <message>
+            <source>Print</source>
+            <translation>Print</translation>
+        </message>
+        <message>
             <source>Progress Bar Color</source>
             <translation>Progress Bar Color</translation>
         </message>

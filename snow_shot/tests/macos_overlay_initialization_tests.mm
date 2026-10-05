@@ -796,6 +796,12 @@ int main(int argc, char** argv) {
         }
         return 0;
     }
+    if (app.arguments().contains(QStringLiteral("--native-file-panels-only"))) {
+        @autoreleasepool {
+            nativeFilePanelsCoverScreenshotModals(cocoa);
+        }
+        return 0;
+    }
     if (app.arguments().contains(QStringLiteral("--recognition-stacking-only"))) {
         @autoreleasepool {
             adqtPopupPreservesScreenshotLayers(cocoa);

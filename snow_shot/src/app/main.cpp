@@ -21,6 +21,7 @@
 #include "snow_shot/update/startupupdate.h"
 #include "snow_shot/diagnostics/diagnostics.h"
 #include "diagnosticsbridge.h"
+#include "startupregistrationreport.h"
 #include "snow_shot/storage/settingsadapters.h"
 #include "snow_shot/presentation/capture/screenshotcapturepolicy.h"
 #include "../presentation/capture/screenshotcaptureperfinstrumentation.h"
@@ -614,7 +615,8 @@ int main(int argc, char* argv[]) {
     });
     applicationController.start();
     if (!startupResult.success) {
-        qWarning().noquote() << startupResult.error;
+        snow_shot::app::reportStartupRegistrationFailure(startupResult.error);
+#ifdef Q_OS_MACOS
         QTimer::singleShot(0, &app, [&applicationController, error = startupResult.error] {
             // Startup can otherwise have only a tiny floating toolbar visible.
             // Give the error a readable application surface before opening it.
@@ -623,6 +625,7 @@ int main(int argc, char* argv[]) {
             request.content = error;
             adqt::widgets::AdMessageService::error(std::move(request));
         });
+#endif
     }
     if (administratorRestart)
         applicationController.showMainWindow();

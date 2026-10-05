@@ -540,11 +540,16 @@ sign_application''', success=False)
         wrapper = self.root / PREFLIGHT.name
         shutil.copyfile(PREFLIGHT, wrapper)
         (self.root / SCRIPT.name).write_text("#!/bin/bash\nprintf '%s\\n' \"$@\"\n")
-        result = subprocess.run(['/bin/bash', str(wrapper), str(self.dmg), str(self.destination)],
-                                capture_output=True, text=True)
-        self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual(result.stdout.splitlines(), ['--dmg', str(self.dmg), '--prepare-app', str(self.destination)])
-        self.assertFalse(self.destination.exists())
+        for arguments, edition in (([], 'full'), (['full'], 'full'), (['mini'], 'mini')):
+            with self.subTest(edition=edition, arguments=arguments):
+                result = subprocess.run(
+                    ['/bin/bash', str(wrapper), str(self.dmg), str(self.destination), *arguments],
+                    capture_output=True, text=True)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(result.stdout.splitlines(), [
+                    '--edition', edition, '--dmg', str(self.dmg),
+                    '--prepare-app', str(self.destination)])
+                self.assertFalse(self.destination.exists())
 
     def prepare_code(self):
         return '''trap cleanup EXIT

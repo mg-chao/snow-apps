@@ -206,6 +206,10 @@ class NoOpToolbarCommands final : public ScreenshotToolbarCommandSink {
         static_cast<void>(snow_shot::storage::ScreenshotUiSettings().setSelectionDisplayUnit(
             screenshotSelectionDisplayUnitId(unit)));
     }
+    int printCount = 0;
+    void printSelection() override {
+        ++printCount;
+    }
     int quickSaveCount = 0;
     void quickSaveSelection() override {
         ++quickSaveCount;
@@ -3054,16 +3058,20 @@ int main(int argc, char* argv[]) {
         if (app.arguments().contains(QStringLiteral("--capture-screen-switch-only"))) {
             return reusedToolbarFitsOnFirstShowAcrossScreens() ? 0 : 77;
         }
-        if (app.arguments().contains(QStringLiteral("--quick-save-only"))) {
+        if (app.arguments().contains(QStringLiteral("--quick-save-only")) ||
+            app.arguments().contains(QStringLiteral("--print-only"))) {
             NoOpToolbarCommands commands;
             ScreenshotToolbarWindow window(commands);
             require(window.palette(), "screenshot toolbar palette unavailable");
+            window.palette()->printRequested();
+            require(commands.printCount == 1,
+                    "Print must forward exactly one command to the screenshot sink");
             window.palette()->quickSaveRequested();
             require(commands.quickSaveCount == 1,
                     "screenshot Quick save must forward exactly one command");
             window.palette()->saveRequested();
-            require(commands.quickSaveCount == 1,
-                    "manual Save must not dispatch the Quick save command");
+            require(commands.quickSaveCount == 1 && commands.printCount == 1,
+                    "manual Save must not dispatch Print or Quick save");
             return 0;
         }
         if (app.arguments().contains(QStringLiteral("--keyboard-focus-only"))) {

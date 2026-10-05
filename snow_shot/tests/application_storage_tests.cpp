@@ -508,7 +508,7 @@ void settingsSchemaDefaultsAndValidationAreComplete() {
         {QStringLiteral("recapture"), QJsonArray{QStringLiteral("Alt+R")}},
         {QStringLiteral("toggle_cursor_visibility"), QJsonArray{QStringLiteral("`")}},
         {QStringLiteral("copy_color"), QJsonArray{QStringLiteral("C")}},
-        {QStringLiteral("toggle_coordinate_mode"), QJsonArray{QStringLiteral("Ctrl+P")}},
+        {QStringLiteral("toggle_coordinate_mode"), QJsonArray{QStringLiteral("Shift+P")}},
         {QStringLiteral("toggle_guides"), QJsonArray{QStringLiteral("Alt")}},
         {QStringLiteral("table_recognition"), QJsonArray{QStringLiteral("Ctrl+X")}},
         {QStringLiteral("qr_code_recognition"), QJsonArray{QStringLiteral("Ctrl+Q")}},
@@ -516,6 +516,7 @@ void settingsSchemaDefaultsAndValidationAreComplete() {
         {QStringLiteral("text_recognition"), QJsonArray{QStringLiteral("Ctrl+D")}},
         {QStringLiteral("text_translation"), QJsonArray{QStringLiteral("Ctrl+T")}},
         {QStringLiteral("scrolling_screenshot"), QJsonArray{QStringLiteral("L")}},
+        {QStringLiteral("print"), QJsonArray{QStringLiteral("Ctrl+P")}},
         {QStringLiteral("save_as_file"), QJsonArray{QStringLiteral("Ctrl+S")}},
         {QStringLiteral("pin_to_screen"), QJsonArray{QStringLiteral("Ctrl+F")}},
         {QStringLiteral("cancel_screenshot"), QJsonArray{QStringLiteral("Esc")}},
@@ -548,6 +549,7 @@ void settingsSchemaDefaultsAndValidationAreComplete() {
     const QMap<QString, QJsonArray> pinToScreenShortcutDefaults{
         {QStringLiteral("copy_to_clipboard"), QJsonArray{QStringLiteral("Ctrl+C")}},
         {QStringLiteral("copy_original_content"), QJsonArray{QStringLiteral("Ctrl+Shift+C")}},
+        {QStringLiteral("print"), QJsonArray{QStringLiteral("Ctrl+P")}},
         {QStringLiteral("save_as_file"), QJsonArray{QStringLiteral("Ctrl+S")}},
         {QStringLiteral("show_text_recognition_results"), QJsonArray{QStringLiteral("Ctrl+D")}},
         {QStringLiteral("drawing_mode"), QJsonArray{QStringLiteral("Space")}},
@@ -1270,11 +1272,13 @@ void verifyPinToScreenShortcutSettings() {
     const storage::PinToScreenShortcutSettings shortcutSettings;
     const shortcuts::ShortcutBindingMap defaults = shortcutSettings.allShortcuts();
     require(
-        defaults.size() == 27 &&
+        defaults.size() == 28 &&
             portable(defaults.value(QStringLiteral("copy_to_clipboard"))) ==
                 QStringList{QStringLiteral("Ctrl+C")} &&
             portable(defaults.value(QStringLiteral("copy_original_content"))) ==
                 QStringList{QStringLiteral("Ctrl+Shift+C")} &&
+            portable(defaults.value(QStringLiteral("print"))) ==
+                QStringList{QStringLiteral("Ctrl+P")} &&
             portable(defaults.value(QStringLiteral("save_as_file"))) ==
                 QStringList{QStringLiteral("Ctrl+S")} &&
             portable(defaults.value(QStringLiteral("show_text_recognition_results"))) ==
@@ -1801,7 +1805,7 @@ void settingsAdaptersRoundTripAndRejectInvalidValues() {
     const storage::ScreenshotShortcutSettings screenshotShortcuts;
     const shortcuts::ShortcutBindingMap screenshotDefaults = screenshotShortcuts.allShortcuts();
     require(
-        screenshotDefaults.size() == 30 &&
+        screenshotDefaults.size() == 31 &&
             portable(screenshotShortcuts.moveTool()) ==
                 QStringList{QStringLiteral("M"), QStringLiteral("Ctrl+E")} &&
             portable(screenshotShortcuts.moveCursorUp()) ==
@@ -1829,6 +1833,8 @@ void settingsAdaptersRoundTripAndRejectInvalidValues() {
                 QStringList{QStringLiteral("`")} &&
             portable(screenshotShortcuts.copyColor()) == QStringList{QStringLiteral("C")} &&
             portable(screenshotShortcuts.toggleCoordinateMode()) ==
+                QStringList{QStringLiteral("Shift+P")} &&
+            portable(screenshotDefaults.value(QStringLiteral("print"))) ==
                 QStringList{QStringLiteral("Ctrl+P")} &&
             portable(screenshotShortcuts.toggleGuides()) == QStringList{QStringLiteral("Alt")} &&
             portable(screenshotDefaults.value(QStringLiteral("pin_to_screen"))) ==

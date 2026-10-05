@@ -741,6 +741,10 @@
             <translation>固定到螢幕</translation>
         </message>
         <message>
+            <source>Print</source>
+            <translation>列印</translation>
+        </message>
+        <message>
             <source>Quick save</source>
             <translation>快速儲存</translation>
         </message>
@@ -2713,6 +2717,10 @@
         <message>
             <source>Primary Target Language</source>
             <translation>主要目標語言</translation>
+        </message>
+        <message>
+            <source>Print</source>
+            <translation>列印</translation>
         </message>
         <message>
             <source>Process priority</source>

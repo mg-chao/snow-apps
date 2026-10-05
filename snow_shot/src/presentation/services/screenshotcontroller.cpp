@@ -8,6 +8,9 @@
 #include "snow_shot/presentation/screenshotautofiltercontroller.h"
 #include "snow_shot/presentation/screenshotsourceimagecomposer.h"
 #include "snow_shot/presentation/screenshotcontroller.h"
+#include "snow_shot/presentation/screenshotprintservice.h"
+#include "screenshotprintinteractionguard.h"
+#include "screenshotprintcompletion.h"
 #include "snow_shot/presentation/screenshotcontentdrop.h"
 #include "snow_shot/presentation/screenshotoverlaycanvaspresenter.h"
 #include "snow_shot/presentation/screenshottoolbarpresentationstatefactory.h"
@@ -449,6 +452,7 @@ struct ScreenshotController::Impl final : public ScreenshotToolbarCommandSink,
     ScreenshotFilePinBatch::DuplicateFilter filePinDuplicateFilter(const QString& action);
     void restorePinnedWindows();
     void restoreActivePinnedGroupWindows();
+    void printSelection() override;
     void saveSelectionToFile() override;
     void saveSelectionWithSnowDialog();
     void saveRecognitionTextWithSystemDialog(const ScreenshotRecognitionFileSnapshot& snapshot);
@@ -609,6 +613,9 @@ struct ScreenshotController::Impl final : public ScreenshotToolbarCommandSink,
     quint64 m_imageExportGeneration = 0;
     QSet<quint64> m_activeImageExports;
     std::function<void()> m_cancelSaveDialog;
+    QPointer<ScreenshotPrintService> m_printService;
+    std::shared_ptr<ScreenshotExportArtifact> m_printArtifact;
+    bool m_printPending = false;
     QHash<quint64, quint64> m_imageExportCaptureEpochs;
     quint64 m_captureEpoch = 0;
     ScreenshotExportJobHandle m_exportJob;
@@ -4065,6 +4072,94 @@ void ScreenshotController::Impl::quickSaveSelection() {
         return;
     }
     detachCaptureForExport();
+}
+
+void ScreenshotController::Impl::printSelection() {
+    auto& service = m_printService ? *m_printService : ScreenshotPrintService::shared();
+    if (m_printPending || !m_activeImageExports.isEmpty() ||
+        owner.property("saveDialogOpen").toBool() || service.busy() ||
+        QApplication::activeModalWidget() || !m_selection.hasPixelSelection() ||
+        !ensureExportFeature() || !resetCanvasEditingState())
+        return;
+    rememberKeyboardOwner(QApplication::focusWidget());
+    const QPointer<ScreenshotOverlayWindow> keyboardOwner(keyboardOwnerOverlay());
+    const QRectF dialogSelection =
+        m_scrollingCaptureController && m_scrollingCaptureController->active()
+            ? QRectF(m_scrollingCaptureController->canvasSelection())
+            : m_selection.normalizedSelection();
+    const QPointer<ScreenshotOverlayWindow> dialogOwner(screenshotSelectionDialogOwner(
+        m_displaySession, m_geometry, dialogSelection, keyboardOwner));
+    if (!dialogOwner)
+        return;
+    QList<QWidget*> printWindows;
+    for (qsizetype i = 0; i < m_displaySession.size(); ++i)
+        printWindows.append(m_displaySession.overlayAt(i));
+    printWindows.append(m_overlayCoordinator->toolbar());
+    const auto interactionGuard = std::make_shared<ScreenshotPrintInteractionGuard>(printWindows);
+    const quint64 epoch = m_captureEpoch;
+    const auto suspension = m_windowShortcutManager ? m_windowShortcutManager->suspendInput() : 0;
+    m_printPending = true;
+    owner.setProperty("saveDialogOpen", true);
+    const QPointer<ScreenshotController> receiver(&owner);
+    const QPointer<ScreenshotPrintService> printer(&service);
+    const auto completed = std::make_shared<bool>(false);
+    const auto finished = screenshotPrintCompletion(
+        completed,
+        [receiver, epoch, suspension, interactionGuard] {
+            interactionGuard->release();
+            if (!receiver || !receiver->m_impl)
+                return false;
+            auto& impl = *receiver->m_impl;
+            impl.m_printPending = false;
+            impl.m_printArtifact.reset();
+            receiver->setProperty("saveDialogOpen", false);
+            if (impl.m_windowShortcutManager && suspension)
+                impl.m_windowShortcutManager->resumeInput(suspension);
+            if (impl.m_captureEpoch != epoch)
+                return false;
+            if (impl.m_scrollingCaptureController)
+                impl.m_scrollingCaptureController->setExportPaused(false);
+            return true;
+        },
+        [receiver] { receiver->m_impl->cancelCapture(); },
+        [receiver, keyboardOwner](ScreenshotPrintService::Result result) {
+            auto& impl = *receiver->m_impl;
+            impl.restoreKeyboardOwnerQueued(keyboardOwner);
+            if (result.status == ScreenshotPrintService::Status::Failed)
+                impl.m_messages->error(
+                    QStringLiteral("screenshot-print"),
+                    QCoreApplication::translate("ScreenshotPrintService",
+                                                "The image could not be printed: %1")
+                        .arg(result.error));
+        });
+    const auto ready = [receiver, dialogOwner, epoch, printer, completed,
+                        finished](ScreenshotExportImageResult result) {
+        if (*completed || !receiver || !receiver->m_impl)
+            return;
+        auto& impl = *receiver->m_impl;
+        if (impl.m_captureEpoch != epoch || !dialogOwner) {
+            finished({ScreenshotPrintService::Status::Cancelled, {}});
+            return;
+        }
+        if (impl.m_scrollingCaptureController && impl.m_scrollingCaptureController->active())
+            impl.m_scrollingCaptureController->setExportPaused(true);
+        if (!result.succeeded() || !printer ||
+            !printer->printImage(receiver, dialogOwner, std::move(result.image), finished))
+            finished({ScreenshotPrintService::Status::Failed,
+                      result.error.isEmpty() ? QCoreApplication::translate(
+                                                   "ScreenshotPrintService",
+                                                   "The image could not be prepared for printing")
+                                             : result.error});
+    };
+    m_printArtifact = owner.mcpExportArtifact(1.0);
+    if (!m_printArtifact || !m_printArtifact->requestImage(&owner, ready))
+        finished({ScreenshotPrintService::Status::Failed,
+                  QCoreApplication::translate("ScreenshotPrintService",
+                                              "The image could not be prepared for printing")});
+}
+
+void ScreenshotController::setPrintService(ScreenshotPrintService* service) {
+    m_impl->m_printService = service;
 }
 
 void ScreenshotController::Impl::saveSelectionToFile() {

@@ -106,6 +106,29 @@
         </message>
     </context>
     <context>
+        <name>ScreenshotPrintService</name>
+        <message>
+            <source>The image could not be prepared for printing</source>
+            <translation>The image could not be prepared for printing</translation>
+        </message>
+        <message>
+            <source>The image could not be printed: %1</source>
+            <translation>The image could not be printed: %1</translation>
+        </message>
+        <message>
+            <source>The native print interface is unavailable</source>
+            <translation>The native print interface is unavailable</translation>
+        </message>
+        <message>
+            <source>The native print operation failed</source>
+            <translation>The native print operation failed</translation>
+        </message>
+        <message>
+            <source>Windows printing failed (%1)</source>
+            <translation>Windows printing failed (%1)</translation>
+        </message>
+    </context>
+    <context>
         <name>ScreenshotRecognitionFileExport</name>
         <message>
             <source>An existing output file could not be replaced</source>
