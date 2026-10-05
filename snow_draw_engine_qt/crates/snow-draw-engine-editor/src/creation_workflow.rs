@@ -13,7 +13,17 @@ struct BoundArrowPreview {
 }
 
 impl Editor {
-    fn pen_highlight_preview(&self, start: Point<f64>, end: Point<f64>) -> Option<ArrowData> {
+    fn pen_highlight_preview(
+        &self,
+        start: Point<f64>,
+        end: Point<f64>,
+        modifiers: Modifiers,
+    ) -> Option<ArrowData> {
+        let end = if modifiers.shift {
+            lock_linear_point_to_discrete_angle(start, end)
+        } else {
+            end
+        };
         let style = self.state.default_pen_highlight_style;
         ArrowData::from_global_points(
             &[start, end],
@@ -41,7 +51,8 @@ impl Editor {
         match event.event_type {
             PointerEventType::Move | PointerEventType::Enter => {
                 let end = view_to_canvas(event.position, &self.camera(), self.surface_size());
-                let preview = self.pen_highlight_preview(state.start_canvas_position, end);
+                let preview =
+                    self.pen_highlight_preview(state.start_canvas_position, end, event.modifiers);
                 self.set_creation_preview(preview.map(ElementCreationPreview::Arrow), Vec::new());
                 Ok(InteractionOutput {
                     consumed: true,
@@ -51,7 +62,8 @@ impl Editor {
             }
             PointerEventType::Up => {
                 let end = view_to_canvas(event.position, &self.camera(), self.surface_size());
-                let preview = self.pen_highlight_preview(state.start_canvas_position, end);
+                let preview =
+                    self.pen_highlight_preview(state.start_canvas_position, end, event.modifiers);
                 self.cancel_interaction();
                 if let Some(pen) = preview.filter(|pen| !arrow_is_degenerate(pen)) {
                     let mut transaction = Transaction::new("create pen highlight");
@@ -1722,6 +1734,99 @@ mod line_creation_tests {
         assert_eq!(pen.arrow_type, ArrowType::Straight);
         assert_eq!(pen.start_arrowhead, None);
         assert_eq!(pen.end_arrowhead, None);
+    }
+
+    #[test]
+    fn pen_highlight_shift_snaps_preview_and_release_to_fifteen_degree_angles() {
+        for zoom in [0.5, 1.0, 2.0] {
+            for degrees in [
+                -173.0_f64, -98.0, -52.0, -8.0, 8.0, 22.0, 38.0, 83.0, 142.0, 173.0,
+            ] {
+                let mut document = DocumentModel::new();
+                let id = document.peek_next_element_id();
+                let mut editor = Editor::new(EngineConfig::default()).unwrap();
+                editor.set_surface_size(800, 600).unwrap();
+                editor
+                    .set_camera(Camera {
+                        center: Point::new(-30.0, 40.0),
+                        zoom,
+                    })
+                    .unwrap();
+                editor.set_active_tool(ActiveTool::PenHighlight).unwrap();
+                let start = Point::new(10.0, 20.0);
+                let angle = degrees.to_radians();
+                let end = Point::new(start.x + 100.0 * angle.cos(), start.y + 100.0 * angle.sin());
+                let locked_angle = (degrees / 15.0).round() * 15.0;
+                let locked_angle = locked_angle.to_radians();
+                let projected_length = 100.0 * (angle - locked_angle).cos();
+                let expected = Point::new(
+                    start.x + projected_length * locked_angle.cos(),
+                    start.y + projected_length * locked_angle.sin(),
+                );
+                let event = |event_type, shift| PointerEvent {
+                    pointer_id: 7,
+                    event_type,
+                    device: PointerDevice::Mouse,
+                    position: snow_draw_engine_core::canvas_to_view(
+                        end,
+                        &editor.camera(),
+                        editor.surface_size(),
+                    ),
+                    button: Some(PointerButton::Primary),
+                    buttons: PointerButtons::default(),
+                    modifiers: Modifiers {
+                        shift,
+                        ..Modifiers::default()
+                    },
+                };
+                let move_event = event(PointerEventType::Move, true);
+                let free_event = event(PointerEventType::Move, false);
+                let up_event = event(PointerEventType::Up, true);
+                editor.state.interaction =
+                    InteractionState::CreatingPenHighlight(CreateRectangleState {
+                        pointer_id: 7,
+                        start_canvas_position: start,
+                    });
+                editor
+                    .process_pen_highlight_creation_pointer_event(&document, move_event)
+                    .unwrap();
+                let Some(ElementCreationPreview::Arrow(preview)) =
+                    editor.state.creation_preview.as_ref()
+                else {
+                    panic!("Shift pen drag should expose a preview");
+                };
+                let points = preview.global_points();
+                assert!(point_distance(points[0], start) < 1e-9);
+                assert!(
+                    point_distance(points[1], expected) < 1e-9,
+                    "zoom={zoom}, angle={degrees}"
+                );
+
+                // Releasing Shift restores the pointer angle; pressing it only
+                // at pointer-up must still constrain the committed stroke.
+                editor
+                    .process_pen_highlight_creation_pointer_event(&document, free_event)
+                    .unwrap();
+                let Some(ElementCreationPreview::Arrow(preview)) =
+                    editor.state.creation_preview.as_ref()
+                else {
+                    panic!("unconstrained pen drag should retain a preview");
+                };
+                assert!(point_distance(preview.global_points()[1], end) < 1e-9);
+                editor
+                    .process_pen_highlight_creation_pointer_event(&document, up_event)
+                    .unwrap();
+                let Some(EditorCommand::ApplyTransaction(command)) = editor.pending_command.take()
+                else {
+                    panic!("Shift pen release should queue a transaction");
+                };
+                document.apply_transaction(command.transaction).unwrap();
+                let pen = document.arrow(id).unwrap();
+                assert!(pen.is_pen_highlight());
+                assert!(point_distance(pen.global_points()[1], expected) < 1e-9);
+                assert!(editor.state.creation_preview.is_none());
+            }
+        }
     }
 
     #[test]

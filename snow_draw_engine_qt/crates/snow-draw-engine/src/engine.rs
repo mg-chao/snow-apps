@@ -30,6 +30,8 @@ mod free_draw_continuation_tests;
 mod input;
 mod mutations;
 #[cfg(test)]
+mod pen_highlight_angle_tests;
+#[cfg(test)]
 mod spotlight_shape_tests;
 mod text_commands;
 mod viewports;
