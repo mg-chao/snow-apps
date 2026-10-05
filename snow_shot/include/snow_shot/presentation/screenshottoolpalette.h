@@ -339,6 +339,7 @@ class ScreenshotToolPalette final : public QWidget,
     void setSelectionToolbarHidden(bool hidden);
     [[nodiscard]] bool selectionToolbarHidden() const;
     void setRecaptureBusy(bool busy);
+    void setCloudUploadBusy(bool busy);
     void setQrCodeState(bool available, bool visible, const QString& error = {});
     [[nodiscard]] bool recaptureBusy() const;
     void clearActiveTool();
@@ -508,6 +509,7 @@ class ScreenshotToolPalette final : public QWidget,
     void scrollingScreenshotRequested();
     void printRequested();
     void saveRequested();
+    void cloudUploadRequested();
     void quickSaveRequested();
     void scrollingRecognitionModeChanged(ScreenshotScrollingRecognitionMode mode);
     void scrollingSelectionMoveStarted(ScreenshotScrollingRecognitionMode axis,
@@ -919,6 +921,8 @@ class ScreenshotToolPalette final : public QWidget,
     adqt::widgets::AdButton* m_scrollingScreenshotButton = nullptr;
     adqt::widgets::AdButton* m_printButton = nullptr;
     adqt::widgets::AdButton* m_saveButton = nullptr;
+    adqt::widgets::AdButton* m_cloudUploadButton = nullptr;
+    bool m_cloudUploadBusy = false;
     adqt::widgets::AdButton* m_quickSaveButton = nullptr;
     void finishScrollingSelectionMove();
     adqt::widgets::AdButton* m_scrollingMoveHorizontalButton = nullptr;

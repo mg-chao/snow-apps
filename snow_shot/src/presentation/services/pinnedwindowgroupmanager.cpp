@@ -18,6 +18,7 @@
 #include <QSet>
 #include <QTimer>
 #include <QUuid>
+#include <QVariant>
 #include <QtGlobal>
 
 #include <algorithm>
@@ -40,6 +41,7 @@ constexpr auto kDefaultGroupId = "default";
 constexpr auto kDefaultGroupName = "Default";
 constexpr int kMaximumGroupNameLength = 16;
 constexpr auto kGroupManagerMutationProperty = "snowPinnedWindowGroupManagerMutation";
+constexpr auto kGroupCreateAssignmentFailureProperty = "snowPinnedGroupCreateAssignmentFailed";
 
 storage::PinnedWindowGroup defaultGroup() {
     return {QString::fromLatin1(kDefaultGroupId), QString::fromLatin1(kDefaultGroupName), true};
@@ -291,6 +293,19 @@ bool PinnedWindowGroupManager::setActiveGroup(const QString& groupId) {
 std::optional<QString>
 PinnedWindowGroupManager::createGroup(const QString& name,
                                       ::ScreenshotPinnedWindow* currentWindow) {
+    QVector<QPointer<::ScreenshotPinnedWindow>> windows;
+    if (currentWindow != nullptr)
+        windows.append(currentWindow);
+    return createGroup(name, windows);
+}
+
+std::optional<QString> PinnedWindowGroupManager::createGroup(
+    const QString& name, const QVector<QPointer<::ScreenshotPinnedWindow>>& currentWindows) {
+    if (!currentWindows.isEmpty() &&
+        std::none_of(currentWindows.cbegin(), currentWindows.cend(),
+                     [](const auto& window) { return !window.isNull(); })) {
+        return std::nullopt;
+    }
     const QString normalized = name.trimmed();
     if (normalized.isEmpty() || normalized.size() > kMaximumGroupNameLength ||
         std::any_of(m_groups.cbegin(), m_groups.cend(),
@@ -310,8 +325,8 @@ PinnedWindowGroupManager::createGroup(const QString& name,
         return std::nullopt;
     }
     scheduleGroupsChanged();
-    if (currentWindow != nullptr) {
-        if (!moveWindow(currentWindow, group.id)) {
+    if (!currentWindows.isEmpty()) {
+        if (!moveWindows(currentWindows, group.id)) {
             m_groups.removeLast();
             if (!persist()) {
                 // The group was already persisted successfully. Keep the in-memory
@@ -481,39 +496,68 @@ void PinnedWindowGroupManager::restoreActiveGroupWindows() {
 
 bool PinnedWindowGroupManager::moveWindow(::ScreenshotPinnedWindow* window,
                                           const QString& groupId) {
-    if (window == nullptr || !contains(groupId)) {
+    if (window == nullptr)
         return false;
-    }
-    const QString previousGroupId = window->groupId();
-    window->setProperty(kGroupManagerMutationProperty, true);
-    const bool groupChanged = QMetaObject::invokeMethod(window, "setGroupId", Qt::DirectConnection,
-                                                        Q_ARG(QString, groupId));
-    window->setProperty(kGroupManagerMutationProperty, false);
-    if (!groupChanged) {
+    return moveWindows({QPointer<::ScreenshotPinnedWindow>(window)}, groupId);
+}
+
+bool PinnedWindowGroupManager::moveWindows(
+    const QVector<QPointer<::ScreenshotPinnedWindow>>& windows, const QString& groupId) {
+    if (!contains(groupId))
         return false;
-    }
-    if (m_repository != nullptr && !window->persistenceId().isEmpty()) {
-        const QString persistenceId = window->persistenceId();
-        const QVector<storage::PinnedWindowSummary> summaries = m_repository->summaries();
-        const bool hasPersistedRecord = std::any_of(
-            summaries.cbegin(), summaries.cend(),
-            [&persistenceId](const auto& summary) { return summary.id == persistenceId; });
-        if (hasPersistedRecord && !m_repository->setRecordGroup(persistenceId, groupId).success) {
-            window->setProperty(kGroupManagerMutationProperty, true);
-            static_cast<void>(QMetaObject::invokeMethod(window, "setGroupId", Qt::DirectConnection,
-                                                        Q_ARG(QString, previousGroupId)));
-            window->setProperty(kGroupManagerMutationProperty, false);
+
+    QVector<QPointer<::ScreenshotPinnedWindow>> targets;
+    targets.reserve(windows.size());
+    QSet<::ScreenshotPinnedWindow*> seen;
+    QVector<QString> persistenceIds;
+    persistenceIds.reserve(windows.size());
+    for (const auto& window : windows) {
+        if (window == nullptr || seen.contains(window.data()))
+            continue;
+        // Validate the complete batch before changing durable or live membership.
+        // Dynamic invocation keeps the group service independent of pin rendering.
+        QObject* object = window.data();
+        if (object->metaObject()->indexOfMethod("setGroupId(QString)") < 0)
             return false;
-        }
+        seen.insert(window.data());
+        targets.append(window);
+        if (!window->persistenceId().isEmpty())
+            persistenceIds.append(window->persistenceId());
     }
-    registerWindow(window, groupId);
+    if (targets.isEmpty())
+        return false;
+    if (m_repository != nullptr && !m_repository->setRecordsGroup(persistenceIds, groupId).success)
+        return false;
+
+    for (const auto& window : targets) {
+        if (!window)
+            continue;
+        const QVariant previousMutation = window->property(kGroupManagerMutationProperty);
+        window->setProperty(kGroupManagerMutationProperty, true);
+        static_cast<void>(QMetaObject::invokeMethod(window, "setGroupId", Qt::DirectConnection,
+                                                    Q_ARG(QString, groupId)));
+        if (window == nullptr)
+            continue;
+        window->setProperty(kGroupManagerMutationProperty, previousMutation);
+        registerWindow(window, groupId);
+        const QString key = windowKey(window);
+        if (m_pendingGroups.contains(key))
+            m_pendingGroups[key] = groupId;
+        if (groupId != m_activeGroupId)
+            m_inactiveClosing.insert(key);
+        else
+            m_inactiveClosing.remove(key);
+    }
+    // Apply every membership change before closing any owner or emitting a queued
+    // update, so menu/modal teardown never interrupts assignment of its siblings.
     scheduleGroupsChanged();
-    if (groupId != m_activeGroupId) {
-        m_inactiveClosing.insert(windowKey(window));
-        QMetaObject::invokeMethod(window, "closeForInactiveGroup", Qt::DirectConnection);
-    } else {
-        m_inactiveClosing.remove(windowKey(window));
-        QMetaObject::invokeMethod(window, "cancelDeferredInactiveGroupClose", Qt::DirectConnection);
+    for (const auto& window : targets) {
+        if (window == nullptr)
+            continue;
+        QMetaObject::invokeMethod(window,
+                                  groupId != m_activeGroupId ? "closeForInactiveGroup"
+                                                             : "cancelDeferredInactiveGroupClose",
+                                  Qt::DirectConnection);
     }
     return true;
 }
@@ -595,6 +639,15 @@ QString PinnedWindowGroupManager::windowKey(::ScreenshotPinnedWindow* window) co
 
 void PinnedWindowGroupManager::openCreateGroupModal(QWidget* owner,
                                                     ::ScreenshotPinnedWindow* currentWindow) {
+    QVector<QPointer<::ScreenshotPinnedWindow>> windows;
+    if (currentWindow != nullptr)
+        windows.append(currentWindow);
+    openCreateGroupModal(owner, windows);
+}
+
+void PinnedWindowGroupManager::openCreateGroupModal(
+    QWidget* owner, const QVector<QPointer<::ScreenshotPinnedWindow>>& currentWindows) {
+    const QPointer<PinnedWindowGroupManager> managerGuard(this);
     auto* form = new adqt::widgets::AdForm();
     form->setObjectName(QStringLiteral("pinnedWindowGroupCreateForm"));
     form->setFixedWidth(352);
@@ -615,16 +668,25 @@ void PinnedWindowGroupManager::openCreateGroupModal(QWidget* owner,
     item->setItemLayout(adqt::widgets::AdFormItem::ItemLayout::Vertical);
     item->setRequired(true);
     item->setRequiredMessage(tr("Please enter a group name"));
-    item->setFormValidator([this](const QVariant& value, adqt::widgets::AdFormItem*) {
+    item->setFormValidator([managerGuard](const QVariant& value, adqt::widgets::AdFormItem* field) {
+        field->setProperty(kGroupCreateAssignmentFailureProperty, false);
         adqt::widgets::AdFormItem::ValidationResult result;
+        if (!managerGuard) {
+            result.status = adqt::widgets::AdFormItem::ValidateStatus::Error;
+            result.errors.push_back(
+                tr("Unable to create the group or move the selected windows. Try again."));
+            return result;
+        }
         const QString name = value.toString().trimmed();
         if (name.isEmpty()) {
             result.status = adqt::widgets::AdFormItem::ValidateStatus::Error;
             result.errors.push_back(tr("Please enter a group name"));
         } else if (name.size() > kMaximumGroupNameLength ||
-                   std::any_of(m_groups.cbegin(), m_groups.cend(), [&name](const auto& group) {
-                       return group.name.trimmed().compare(name, Qt::CaseInsensitive) == 0;
-                   })) {
+                   std::any_of(managerGuard->m_groups.cbegin(), managerGuard->m_groups.cend(),
+                               [&name](const auto& group) {
+                                   return group.name.trimmed().compare(name, Qt::CaseInsensitive) ==
+                                          0;
+                               })) {
             result.status = adqt::widgets::AdFormItem::ValidateStatus::Error;
             result.errors.push_back(tr("This group name is already in use"));
         }
@@ -656,22 +718,64 @@ void PinnedWindowGroupManager::openCreateGroupModal(QWidget* owner,
     modal->setInitialFocusWidget(input);
     const QPointer<adqt::widgets::AdForm> formGuard(form);
     const QPointer<adqt::widgets::AdLineEdit> inputGuard(input);
-    const QPointer<::ScreenshotPinnedWindow> currentWindowGuard(currentWindow);
-    connect(modal, &adqt::widgets::AdModal::closeRequested, modal,
-            [this, modal, formGuard, inputGuard,
-             currentWindowGuard](adqt::widgets::AdModal::CloseReason reason) {
-                if (reason != adqt::widgets::AdModal::CloseReason::OkAction) {
-                    modal->reject();
+    const QPointer<adqt::widgets::AdFormItem> itemGuard(item);
+    connect(&LanguageManager::instance(), &LanguageManager::languageChanged, modal,
+            [managerGuard, modal, itemGuard](const QString&, const QLocale&) {
+                if (!managerGuard || !itemGuard)
                     return;
-                }
-                if (formGuard == nullptr || inputGuard == nullptr || !formGuard->submit()) {
-                    return;
-                }
-                if (!createGroup(inputGuard->text(), currentWindowGuard.data())) {
-                    return;
-                }
-                modal->accept();
+                modal->setWindowTitle(tr("New Group"));
+                modal->setAcceptText(tr("Add"));
+                modal->setRejectText(tr("Cancel"));
+                itemGuard->setLabel(tr("Group name"));
+                itemGuard->setRequiredMessage(tr("Please enter a group name"));
+                if (itemGuard->property(kGroupCreateAssignmentFailureProperty).toBool())
+                    itemGuard->setErrorMessages({tr(
+                        "Unable to create the group or move the selected windows. Try again.")});
             });
+    QVector<QString> persistenceIds;
+    persistenceIds.reserve(currentWindows.size());
+    for (const auto& window : currentWindows)
+        persistenceIds.append(window ? window->persistenceId() : QString());
+    connect(
+        modal, &adqt::widgets::AdModal::closeRequested, modal,
+        [managerGuard, modal, formGuard, inputGuard, itemGuard, currentWindows,
+         persistenceIds](adqt::widgets::AdModal::CloseReason reason) {
+            if (reason != adqt::widgets::AdModal::CloseReason::OkAction) {
+                modal->reject();
+                return;
+            }
+            if (formGuard == nullptr || inputGuard == nullptr || !managerGuard) {
+                modal->reject();
+                return;
+            }
+            if (itemGuard)
+                itemGuard->setProperty(kGroupCreateAssignmentFailureProperty, false);
+            if (!formGuard->submit())
+                return;
+            if (!managerGuard) {
+                modal->reject();
+                return;
+            }
+            bool identitiesCurrent = true;
+            for (int index = 0; index < currentWindows.size(); ++index) {
+                if (!currentWindows.at(index) ||
+                    currentWindows.at(index)->persistenceId() != persistenceIds.at(index)) {
+                    identitiesCurrent = false;
+                    break;
+                }
+            }
+            if (!identitiesCurrent ||
+                !managerGuard->createGroup(inputGuard->text(), currentWindows)) {
+                if (itemGuard) {
+                    itemGuard->setProperty(kGroupCreateAssignmentFailureProperty, true);
+                    itemGuard->setValidateStatus(adqt::widgets::AdFormItem::ValidateStatus::Error);
+                    itemGuard->setErrorMessages({tr(
+                        "Unable to create the group or move the selected windows. Try again.")});
+                }
+                return;
+            }
+            modal->accept();
+        });
     connect(modal, &adqt::widgets::AdModal::finished, modal, &QObject::deleteLater);
     modal->open();
     input->focusEditor(adqt::widgets::AdLineEdit::FocusSelection::SelectAll);

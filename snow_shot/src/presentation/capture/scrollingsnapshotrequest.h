@@ -13,6 +13,7 @@ namespace snow_shot::capture_detail {
 class ScrollingSnapshotRequest {
   public:
     using Completion = std::function<void(ScreenshotScrollingSnapshot)>;
+    using Cancellation = std::function<void()>;
 
     ScrollingSnapshotRequest() = default;
     ScrollingSnapshotRequest(const ScrollingSnapshotRequest&) = delete;
@@ -23,24 +24,31 @@ class ScrollingSnapshotRequest {
     }
 
     bool pending() const {
-        return m_pending && *m_pending;
+        return m_pending && m_pending->pending;
     }
 
-    Completion begin(Completion completion) {
+    Completion begin(Completion completion, Cancellation cancelled = {}) {
         if (pending() || !completion)
             return {};
-        m_pending = std::make_shared<bool>(true);
-        return [accepted = m_pending,
-                completion = std::move(completion)](ScreenshotScrollingSnapshot snapshot) mutable {
-            if (std::exchange(*accepted, false))
-                completion(std::move(snapshot));
+        m_pending =
+            std::make_shared<State>(State{true, std::move(completion), std::move(cancelled)});
+        return [accepted = m_pending](ScreenshotScrollingSnapshot snapshot) {
+            if (!std::exchange(accepted->pending, false))
+                return;
+            auto completion = std::move(accepted->completion);
+            accepted->cancelled = {};
+            completion(std::move(snapshot));
         };
     }
 
     void cancel() {
-        if (m_pending)
-            *m_pending = false;
-        m_pending.reset();
+        auto accepted = std::exchange(m_pending, {});
+        if (!accepted || !std::exchange(accepted->pending, false))
+            return;
+        auto cancelled = std::move(accepted->cancelled);
+        accepted->completion = {};
+        if (cancelled)
+            cancelled();
     }
 
     void detach() {
@@ -48,6 +56,11 @@ class ScrollingSnapshotRequest {
     }
 
   private:
-    std::shared_ptr<bool> m_pending;
+    struct State {
+        bool pending;
+        Completion completion;
+        Cancellation cancelled;
+    };
+    std::shared_ptr<State> m_pending;
 };
 } // namespace snow_shot::capture_detail

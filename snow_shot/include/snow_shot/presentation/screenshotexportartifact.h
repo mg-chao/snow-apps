@@ -142,11 +142,13 @@ class ScreenshotExportArtifact final : public QObject {
     [[nodiscard]] std::optional<ScreenshotClipboardAppearance> clipboardAppearance() const;
     // Used by file-URL clipboard publications after the export has completed.
     void setClipboardFileMetadata(QMimeData& mime, const QString& path) const;
+    // Retain temporary output ownership until asynchronous writers finish after cancellation.
     [[nodiscard]] bool requestSaveToPath(QObject* receiver, QString path,
                                          ScreenshotImageFileFormat format,
                                          ScreenshotImageEncodingOptions encoding,
                                          ScreenshotExportCoordinator::Completion callback,
-                                         ScreenshotPdfOptions pdf = {});
+                                         ScreenshotPdfOptions pdf = {},
+                                         std::shared_ptr<void> keepAlive = {});
     [[nodiscard]] bool requestAutomaticSave(QObject* receiver, QStringList directories,
                                             ScreenshotImageFileFormat format,
                                             QString filenameFormat,

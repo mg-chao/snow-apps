@@ -141,6 +141,69 @@ void nativeItemsAndIcons() {
     tray.setContextMenu(nullptr);
 }
 
+void nativeGroupCounts() {
+    AdContextMenu menu;
+    auto* group = menu.addSubMenu(QStringLiteral("Groups"));
+    auto* first = group->addItem(QStringLiteral("Default"));
+    group->setActionBadge(first, QStringLiteral("0/0"));
+    first->setCheckable(true);
+    first->setChecked(true);
+    auto* second = group->addItem(QStringLiteral("Group 1"));
+    group->setActionBadge(second, QStringLiteral("12/34"));
+    second->setEnabled(false);
+    auto* copy = group->addItem(QStringLiteral("Copy"), {}, QKeySequence::Copy);
+    QSystemTrayIcon tray;
+    tray.setContextMenu(&menu);
+    NSMenu* native = group->toNSMenu();
+    [native update];
+    NSMenuItem* item = [native itemAtIndex:0];
+    require(item.keyEquivalent.length == 0, "group counts must not become keyboard shortcuts");
+    require([item.badge.stringValue isEqualToString:@"0/0"],
+            "native group rows display the non-ignored and total counts as a badge");
+    require([item.title isEqualToString:@"Default"] && item.state == NSControlStateValueOn,
+            "native badges preserve the label and current group checkmark");
+    require([[native itemAtIndex:1].badge.stringValue isEqualToString:@"12/34"] &&
+                ![native itemAtIndex:1].enabled && [native itemAtIndex:1].keyEquivalent.length == 0,
+            "disabled group rows preserve multi-digit counts without shortcuts");
+    require([native itemAtIndex:2].keyEquivalent.length > 0 && ![native itemAtIndex:2].badge,
+            "ordinary actions preserve real native keyboard shortcuts");
+
+    group->setActionBadge(first, QStringLiteral("1/2"));
+    first->setText(QStringLiteral("Renamed"));
+    require([item.title isEqualToString:@"Renamed"] &&
+                [item.badge.stringValue isEqualToString:@"1/2"] && item.keyEquivalent.length == 0,
+            "count and label updates keep the native badge synchronized");
+    group->setActionBadge(copy, QStringLiteral("3/4"));
+    require([native itemAtIndex:2].keyEquivalent.length > 0 &&
+                [[native itemAtIndex:2].badge.stringValue isEqualToString:@"3/4"],
+            "a badge can coexist with a real keyboard shortcut");
+    group->setActionBadge(first, {});
+    require(!item.badge, "clearing a badge removes it from the native item");
+    group->removeAction(first);
+    group->setActionBadge(second, QStringLiteral("5/6"));
+    require([[native itemAtIndex:0].badge.stringValue isEqualToString:@"5/6"],
+            "badge updates follow their action after item indices shift");
+    AdContextMenu shared;
+    shared.addAction(second);
+    group->setActionBadge(second, QStringLiteral("7/8"));
+    require([[shared.toNSMenu() itemAtIndex:0].badge.stringValue isEqualToString:@"7/8"] &&
+                [[native itemAtIndex:0].badge.stringValue isEqualToString:@"7/8"],
+            "every native menu sharing an action receives its updated badge");
+    group->setNativeMenuEnabled(false);
+    group->setNativeMenuEnabled(true);
+    require([[native itemAtIndex:0].badge.stringValue isEqualToString:@"7/8"],
+            "switching menu surfaces preserves badges");
+    shared.removeAction(second);
+    group->clear();
+    auto* rebuilt = group->addItem(QStringLiteral("Rebuilt"));
+    group->setActionBadge(rebuilt, QStringLiteral("9/10"));
+    require(native.numberOfItems == 1 &&
+                [[native itemAtIndex:0].badge.stringValue isEqualToString:@"9/10"] &&
+                [native itemAtIndex:0].keyEquivalent.length == 0,
+            "rebuilt submenus retain the badge contract");
+    tray.setContextMenu(nullptr);
+}
+
 void queuedCancellationAndLifetime() {
     AdContextMenu menu;
     menu.addItem(QStringLiteral("Cancelled"));
@@ -258,6 +321,11 @@ int main(int argc, char** argv) {
         try {
             require(QGuiApplication::platformName() == QStringLiteral("cocoa"), "requires Cocoa");
             nativeItemsAndIcons();
+            nativeGroupCounts();
+            if (app.arguments().contains(QStringLiteral("--items-only"))) {
+                std::cout << "Native context menu item tests passed\n";
+                return 0;
+            }
             queuedCancellationAndLifetime();
             QWidget owner;
             owner.resize(360, 240);

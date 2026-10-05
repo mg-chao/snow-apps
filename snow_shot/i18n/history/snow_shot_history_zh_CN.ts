@@ -493,6 +493,10 @@
             <translation>删除指定分组</translation>
         </message>
         <message>
+            <source>Deselect window</source>
+            <translation>取消选择窗口</translation>
+        </message>
+        <message>
             <source>Destroy</source>
             <translation>销毁</translation>
         </message>
@@ -581,6 +585,10 @@
             <translation>不透明度：%1%</translation>
         </message>
         <message>
+            <source>Preparing cloud upload...</source>
+            <translation>正在准备云上传…</translation>
+        </message>
+        <message>
             <source>Process image</source>
             <translation>处理图像</translation>
         </message>
@@ -655,6 +663,14 @@
         <message>
             <source>Thumbnail mode</source>
             <translation>缩略图模式</translation>
+        </message>
+        <message>
+            <source>Uploaded to cloud. Link copied to clipboard.</source>
+            <translation>已上传到云端，链接已复制到剪贴板。</translation>
+        </message>
+        <message>
+            <source>Uploading to cloud... %1%</source>
+            <translation>正在上传到云端… %1%</translation>
         </message>
         <message>
             <source>Window Management</source>
@@ -753,6 +769,109 @@
         <message>
             <source>This group name is already in use</source>
             <translation>该分组名称已被使用</translation>
+        </message>
+        <message>
+            <source>Unable to create the group or move the selected windows. Try again.</source>
+            <translation>无法创建分组或移动所选窗口。请重试。</translation>
+        </message>
+    </context>
+    <context>
+        <name>snow_shot::presentation::PinnedWindowSelectionController</name>
+        <message numerus="yes">
+            <source>%n selected window(s)</source>
+            <translation>
+            <numerusform>已选择 %n 个窗口</numerusform>
+        </translation>
+        </message>
+        <message>
+            <source>Align Position</source>
+            <translation>对齐位置</translation>
+        </message>
+        <message>
+            <source>Align bottom</source>
+            <translation>底对齐</translation>
+        </message>
+        <message>
+            <source>Align left</source>
+            <translation>左对齐</translation>
+        </message>
+        <message>
+            <source>Align right</source>
+            <translation>右对齐</translation>
+        </message>
+        <message>
+            <source>Align top</source>
+            <translation>顶对齐</translation>
+        </message>
+        <message>
+            <source>Cancel</source>
+            <translation>取消</translation>
+        </message>
+        <message>
+            <source>Center horizontally</source>
+            <translation>水平居中</translation>
+        </message>
+        <message>
+            <source>Center vertically</source>
+            <translation>垂直居中</translation>
+        </message>
+        <message>
+            <source>Close</source>
+            <translation>关闭</translation>
+        </message>
+        <message>
+            <source>Close Other Windows</source>
+            <translation>关闭其他窗口</translation>
+        </message>
+        <message>
+            <source>Delete Empty Groups</source>
+            <translation>删除空分组</translation>
+        </message>
+        <message>
+            <source>Delete Specified Group</source>
+            <translation>删除指定分组</translation>
+        </message>
+        <message>
+            <source>Destroy</source>
+            <translation>销毁</translation>
+        </message>
+        <message numerus="yes">
+            <source>Destroy %n selected window(s)? This action cannot be undone.</source>
+            <translation>
+            <numerusform>销毁所选的 %n 个窗口？此操作无法撤销。</numerusform>
+        </translation>
+        </message>
+        <message>
+            <source>Destroy selected windows</source>
+            <translation>销毁所选窗口</translation>
+        </message>
+        <message>
+            <source>Distribute horizontally</source>
+            <translation>水平分布</translation>
+        </message>
+        <message>
+            <source>Distribute vertically</source>
+            <translation>垂直分布</translation>
+        </message>
+        <message>
+            <source>Group</source>
+            <translation>分组</translation>
+        </message>
+        <message>
+            <source>Lock</source>
+            <translation>锁定</translation>
+        </message>
+        <message>
+            <source>New Group</source>
+            <translation>新建分组</translation>
+        </message>
+        <message>
+            <source>The selected windows could not be destroyed.</source>
+            <translation>无法销毁所选窗口。</translation>
+        </message>
+        <message>
+            <source>The selected windows could not be moved to the group.</source>
+            <translation>无法将所选窗口移至该分组。</translation>
         </message>
     </context>
     <context>

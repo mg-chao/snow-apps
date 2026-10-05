@@ -1,6 +1,7 @@
 #ifndef SNOW_SHOT_PRESENTATION_SETTINGS_SETTINGSRUNTIMESESSION_H
 #define SNOW_SHOT_PRESENTATION_SETTINGS_SETTINGSRUNTIMESESSION_H
 
+#include "snow_shot/clouduploadconfiguration.h"
 #include "snow_shot/presentation/settings/settingsregistry.h"
 #include "snow_shot/presentation/settings/settingsbackend.h"
 
@@ -152,6 +153,8 @@ class SettingsRuntimeSession final : public QObject {
     [[nodiscard]] TextTranslationConfigurations textTranslationConfigurations() const;
     bool applyTextTranslationConfigurations(const TextTranslationConfigurations& values);
 #endif
+    [[nodiscard]] CloudUploadSettings cloudUploadSettings() const;
+    bool applyCloudUploadSettings(const CloudUploadSettings& values);
     bool
     importConfigurationSnapshot(const QMap<QString, QJsonValue>& values, int schemaVersion,
                                 std::shared_future<storage::StorageResult>* completion = nullptr) {

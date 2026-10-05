@@ -344,10 +344,42 @@ void persistedMetadataDoesNotRefreshGroupMenus() {
     QCoreApplication::processEvents();
     require(updates == 2, "restoring a pin refreshes group counts");
 }
+
+void batchGroupCreationRejectsStaleTargets() {
+    QTemporaryDir directory;
+    require(directory.isValid(), "temporary batch-group manager storage is unavailable");
+    storage::PinnedWindowRepository repository(directory.path(), true, 30000);
+    presentation::PinnedWindowGroupManager manager(&repository);
+    const QVector<QPointer<::ScreenshotPinnedWindow>> empty;
+    const QVector<QPointer<::ScreenshotPinnedWindow>> stale{QPointer<::ScreenshotPinnedWindow>()};
+    int notifications = 0;
+    QObject::connect(&manager, &presentation::PinnedWindowGroupManager::groupsChanged, &manager,
+                     [&notifications]() { ++notifications; });
+    require(!manager.moveWindows(empty, QStringLiteral("default")) &&
+                !manager.moveWindows(stale, QStringLiteral("default")) &&
+                !manager.createGroup(QStringLiteral("Stale"), stale).has_value() &&
+                manager.groups().size() == 1 && repository.groups().size() == 1,
+            "a batch whose windows disappeared must not create an orphan group");
+    QCoreApplication::processEvents();
+    require(notifications == 0, "rejected batch targets must not refresh group menus");
+
+    const auto group = manager.createGroup(QStringLiteral("Batch"), empty);
+    require(group && manager.contains(*group) &&
+                manager.activeGroupId() == QStringLiteral("default"),
+            "an explicitly empty target batch retains normal group creation behavior");
+    QCoreApplication::processEvents();
+    require(notifications == 1 && repository.groups().size() == 2,
+            "batch group creation emits one coalesced update and persists its definition");
+}
 } // namespace
 
 int main(int argc, char* argv[]) {
     QCoreApplication application(argc, argv);
+    if (application.arguments().contains(QStringLiteral("--batch-group-only"))) {
+        batchGroupCreationRejectsStaleTargets();
+        return 0;
+    }
+    batchGroupCreationRejectsStaleTargets();
     ignoredRecordsCountTowardTotalAndDeleteWithEmptyGroups();
     persistedMetadataDoesNotRefreshGroupMenus();
     defaultGroupAndFreshSchema();

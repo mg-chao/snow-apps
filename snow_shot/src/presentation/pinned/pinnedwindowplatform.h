@@ -78,6 +78,12 @@ class PinnedWindowPlatform : public QObject {
     [[nodiscard]] bool
     applyStablePlacement(PinnedPlacement placement, QScreen* screen,
                          GeometryUpdate update = GeometryUpdate::PreserveContents);
+    // Shared geometry preserves each requested desktop origin, including when
+    // a larger frame would normally be adjusted by the window manager.
+    [[nodiscard]] bool applyExactPlacement(
+        PinnedPlacement placement, QScreen* screen,
+        GeometryUpdate update = GeometryUpdate::PreserveContents,
+        const std::function<bool(const PinnedPlacement&, QScreen*)>& beforeApply = {});
     [[nodiscard]] virtual bool
     applyGeometry(const QRect& pixels, QScreen* screen,
                   GeometryUpdate update = GeometryUpdate::PreserveContents);
@@ -92,6 +98,7 @@ class PinnedWindowPlatform : public QObject {
     QPointer<QWindow> m_surface;
     Role m_role;
     bool m_transparent = false;
+    bool m_preservePlacementOrigin = false;
 };
 [[nodiscard]] std::unique_ptr<PinnedWindowPlatform>
 createPinnedWindowPlatform(QWidget* window,

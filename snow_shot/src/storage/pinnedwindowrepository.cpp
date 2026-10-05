@@ -1688,6 +1688,37 @@ StorageResult PinnedWindowRepository::setRecordGroup(const QString& recordId,
     return StorageResult::ok();
 }
 
+StorageResult PinnedWindowRepository::setRecordsGroup(const QVector<QString>& recordIds,
+                                                      const QString& groupId) {
+    std::lock_guard access(m_accessMutex);
+    if (m_suspended)
+        return StorageResult::failure(QCoreApplication::translate(
+            "StorageDirectoryChange", "Storage migration is in progress"));
+    if (m_impl == nullptr || !m_impl->writeAvailable) {
+        return StorageResult::failure(QStringLiteral("Pinned-window storage is not writable"));
+    }
+    if (std::any_of(recordIds.cbegin(), recordIds.cend(),
+                    [](const QString& id) { return !safeId(id); })) {
+        return StorageResult::failure(QStringLiteral("Pinned-window id is invalid"));
+    }
+    std::lock_guard locker(m_impl->mutex);
+    if (!std::any_of(m_impl->groups.cbegin(), m_impl->groups.cend(),
+                     [&groupId](const auto& group) { return group.id == groupId; })) {
+        return StorageResult::failure(QStringLiteral("Pinned-window group assignment is invalid"));
+    }
+    bool changed = false;
+    for (const QString& id : recordIds) {
+        auto record = m_impl->records.find(id);
+        if (record != m_impl->records.end() && record->record.groupId != groupId) {
+            record->record.groupId = groupId;
+            changed = true;
+        }
+    }
+    if (changed)
+        m_impl->markDirtyLocked(true);
+    return StorageResult::ok();
+}
+
 StorageResult PinnedWindowRepository::removeEmptyGroup(const QString& groupId) {
     std::lock_guard access(m_accessMutex);
     if (m_suspended)

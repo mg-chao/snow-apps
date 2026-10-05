@@ -581,10 +581,9 @@ class SystemTrayController::Impl {
             hasDeletableEmptyGroups =
                 hasDeletableEmptyGroups ||
                 (group.id != QStringLiteral("default") && counts.nonIgnored == 0);
-            QAction* action =
-                groupMenu->addItem(QStringLiteral("%1\t%2/%3")
-                                       .arg(group.name, QString::number(counts.nonIgnored),
-                                            QString::number(counts.total)));
+            QAction* action = groupMenu->addItem(group.name);
+            groupMenu->setActionBadge(
+                action, QStringLiteral("%1/%2").arg(counts.nonIgnored).arg(counts.total));
             action->setObjectName(QStringLiteral("systemTrayGroupAction-%1").arg(group.id));
             action->setData(group.id);
             action->setCheckable(true);
@@ -626,10 +625,9 @@ class SystemTrayController::Impl {
         }
         for (const auto& group : currentGroups) {
             const auto counts = group.counts;
-            QAction* action = deleteSpecifiedGroupMenu->addItem(
-                QStringLiteral("%1\t%2/%3")
-                    .arg(group.name, QString::number(counts.nonIgnored),
-                         QString::number(counts.total)));
+            QAction* action = deleteSpecifiedGroupMenu->addItem(group.name);
+            deleteSpecifiedGroupMenu->setActionBadge(
+                action, QStringLiteral("%1/%2").arg(counts.nonIgnored).arg(counts.total));
             action->setObjectName(
                 QStringLiteral("systemTrayDeleteSpecifiedGroupAction-%1").arg(group.id));
             action->setData(group.id);

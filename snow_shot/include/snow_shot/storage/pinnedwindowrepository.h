@@ -81,6 +81,10 @@ class PinnedWindowRepository final {
     [[nodiscard]] StorageResult setGroups(QVector<PinnedWindowGroup> groups,
                                           const QString& activeGroupId);
     [[nodiscard]] StorageResult setRecordGroup(const QString& recordId, const QString& groupId);
+    // Batch assignment changes existing records atomically. Missing records may
+    // still have a pending source save, which takes its group from the live window.
+    [[nodiscard]] StorageResult setRecordsGroup(const QVector<QString>& recordIds,
+                                                const QString& groupId);
     [[nodiscard]] StorageResult removeEmptyGroup(const QString& groupId);
     // The built-in Default group is cleared but never removed.
     [[nodiscard]] StorageResult removeGroupAndRecords(const QString& groupId);

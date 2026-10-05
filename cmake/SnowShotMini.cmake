@@ -10,7 +10,7 @@ foreach(_feature IN ITEMS QR_RECOGNITION TABLE_RECOGNITION IMAGE_CONVERSION
 endforeach()
 
 set(_snow_mini_libraries
-    snow_shot_storage snow_shot_main_window_skin snow_shot_settings_catalog snow_shot_settings_search
+    snow_shot_cloud_upload snow_shot_storage snow_shot_main_window_skin snow_shot_settings_catalog snow_shot_settings_search
     snow_shot_settings snow_shot_global_mouse snow_shot_login_item
     snow_shot_administrator snow_shot_permissions snow_shot_updates
     snow_shot_diagnostics snow_shot_crash_bridge)
@@ -335,6 +335,18 @@ if(SNOW_SHOT_BUILD_TESTS)
         ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}"
         ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
 
+    get_target_property(_cloud_test_sources snow-shot-cloud-upload-tests SOURCES)
+    list(FILTER _cloud_test_sources EXCLUDE REGEX "/qrc_[^/]+\\.cpp$")
+    add_executable(snow-shot-mini-cloud-upload-tests ${_cloud_test_sources})
+    _snow_mini_copy_build_properties(snow-shot-cloud-upload-tests snow-shot-mini-cloud-upload-tests)
+    target_link_libraries(snow-shot-mini-cloud-upload-tests PRIVATE snow_shot_edition_mini)
+    snow_shot_add_translations(snow-shot-mini-cloud-upload-tests MINI)
+    snow_shot_import_offscreen_platform(snow-shot-mini-cloud-upload-tests)
+    add_test(NAME snow-shot-mini-cloud-upload-tests COMMAND snow-shot-mini-cloud-upload-tests -platform offscreen)
+    set_tests_properties(snow-shot-mini-cloud-upload-tests PROPERTIES LABELS "unit" TIMEOUT 90
+        ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}"
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
+
     # The Mini regression also restores legacy pins and exercises palette
     # controls, so use the complete pinned-window fixture rather than only the
     # recognition-session sources.
@@ -382,7 +394,7 @@ if(SNOW_SHOT_BUILD_TESTS)
         add_dependencies(snow-shot-${_edition}-branding-tests ${_branding_translation_target})
     endforeach()
     foreach(_test IN ITEMS snow-shot-mini-edition-tests snow-shot-mini-recognition-tests
-            snow-shot-mini-settings-reset-tests snow-shot-mini-local-shortcut-reset-tests
+            snow-shot-mini-cloud-upload-tests snow-shot-mini-settings-reset-tests snow-shot-mini-local-shortcut-reset-tests
             snow-shot-mini-mcp-edition-tests
             snow-shot-mini-branding-tests)
         snow_shot_assert_mini_build_contract(${_test})

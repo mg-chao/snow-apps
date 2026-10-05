@@ -1,3 +1,4 @@
+#include "snow_shot/presentation/screenshotmessageservice.h"
 #include "snow_draw_engine_qt/snow_canvas_image.h"
 #include "snow_shot/presentation/screenshotcontentdrop.h"
 #include "snow_shot/shortcuts/shortcutbinding.h"
@@ -19,6 +20,7 @@
 #include "snow_shot/storage/pinnedwindowrepository.h"
 #include "snow_shot/presentation/shortcutdisplaytext.h"
 #include "snow_shot/presentation/pinnedwindowgroupmanager.h"
+#include "snow_shot/presentation/pinnedwindowselectioncontroller.h"
 #include "snow_shot/storage/applicationstorage.h"
 #include "snow_shot/storage/pinnedwindowrepository.h"
 
@@ -995,6 +997,8 @@ ScreenshotPinnedWindow::ScreenshotPinnedWindow(QWidget* parent)
                       updateControlsGeometry();
                   },
                   [this] {
+                      if (m_selectionController)
+                          m_selectionController->windowStateChanged(this);
                       refreshContextMenu();
                       schedulePersistence();
                   },
@@ -1094,6 +1098,21 @@ void ScreenshotPinnedWindow::registerWindowShortcuts() {
     };
     m_pinnedShortcutBindings.insert(QStringLiteral("print"),
                                     m_shortcutManager->addBinding(this, std::move(print)));
+
+    ShortcutManager::Binding upload;
+    upload.id = QStringLiteral("pinned.upload_to_cloud");
+    upload.priority = ShortcutManager::StandardPriority::WindowCommand;
+    upload.canActivate = [this, localCommandsAllowed](const auto& context) {
+        return localCommandsAllowed(context) && !m_closing && !m_cloudUploadPreparing &&
+               !m_cloudUploadJob && !m_printPending && !property("saveDialogOpen").toBool() &&
+               ScreenshotCloudUploadService::configuration().has_value();
+    };
+    upload.activate = [this](const auto&) {
+        uploadToCloud();
+        return true;
+    };
+    m_pinnedShortcutBindings.insert(QStringLiteral("upload_to_cloud"),
+                                    m_shortcutManager->addBinding(this, std::move(upload)));
 
     ShortcutManager::Binding save;
     save.id = QStringLiteral("pinned.save_as_file");
@@ -1371,6 +1390,7 @@ void ScreenshotPinnedWindow::reloadPinnedWindowShortcuts() {
         {"copy_to_clipboard", "screenshotPinnedCopyAction"},
         {"copy_original_content", "screenshotPinnedCopyOriginalAction"},
         {"save_as_file", "screenshotPinnedSaveAsFileAction"},
+        {"upload_to_cloud", nullptr},
         {"print", nullptr},
         {"show_text_recognition_results", "screenshotPinnedOcrAction"},
         {"drawing_mode", "screenshotPinnedDrawingAction"},
@@ -1434,6 +1454,8 @@ bool ScreenshotPinnedWindow::prewarm(QScreen* screen) {
 }
 
 ScreenshotPinnedWindow::~ScreenshotPinnedWindow() {
+    if (m_selectionController)
+        m_selectionController->unregisterWindow(this);
     m_pointerPresence->setActive(false);
     m_platform->environmentChanged = {};
     endControlledInteraction(true);
@@ -1502,6 +1524,8 @@ void ScreenshotPinnedWindow::setGroupId(const QString& id) {
 }
 
 void ScreenshotPinnedWindow::closeForInactiveGroup() {
+    if (m_selectionController)
+        m_selectionController->deselectWindow(this);
     if (m_closing) {
         return;
     }
@@ -1523,6 +1547,11 @@ void ScreenshotPinnedWindow::cancelDeferredInactiveGroupClose() {
 }
 
 void ScreenshotPinnedWindow::schedulePersistence() {
+    if (m_selectionGeometryActive) {
+        if (!m_platformApplying)
+            m_selectionPersistenceDirty = true;
+        return;
+    }
     if (m_storageWritesSuspended)
         return;
     m_automationRevision = snow_shot::presentation::nextAutomationRevision();
@@ -1534,6 +1563,10 @@ void ScreenshotPinnedWindow::schedulePersistence() {
 }
 
 void ScreenshotPinnedWindow::persistNow() {
+    if (m_selectionGeometryActive) {
+        m_selectionPersistenceDirty = true;
+        return;
+    }
     if (m_storageWritesSuspended)
         return;
     if (!m_persistenceEnabled || m_persistenceWriter == nullptr || m_persistenceId.isEmpty() ||
@@ -1541,7 +1574,11 @@ void ScreenshotPinnedWindow::persistNow() {
         (m_originalImage.isNull() && m_originalClipboardContent.isEmpty())) {
         return;
     }
-    m_persistenceWriter(persistenceRecord());
+    const auto snapshot = persistenceRecord();
+    // This snapshot fulfills the deferred request. A reentrant writer may request
+    // another save, so clear the flag before handing the snapshot to it.
+    m_selectionPersistenceDirty = false;
+    m_persistenceWriter(snapshot);
 }
 
 void ScreenshotPinnedWindow::removePersistence() {
@@ -1751,6 +1788,8 @@ bool ScreenshotPinnedWindow::event(QEvent* event) {
             return true;
     }
     if (event != nullptr && event->type() == QEvent::Hide) {
+        if (m_selectionController)
+            m_selectionController->deselectWindow(this);
         setFileDragActive(false);
         m_nonClientPointerInside = false;
         m_pointerPresence->setActive(false);
@@ -1870,6 +1909,7 @@ void ScreenshotPinnedWindow::retranslateUi() {
 
     updateWidget(m_editButton);
     updateWidget(m_closeButton);
+    updateWidget(m_selectionIndicator);
     updateWidget(m_clickThroughMoveButton.get());
     updateWidget(m_clickThroughExitButton.get());
     retranslateScreenshotToolPalette(m_clickThroughOpacityEditor.get());
@@ -1939,6 +1979,7 @@ bool ScreenshotPinnedWindow::present(const Config& requestedConfig,
     }
     invalidatePendingCopy();
     m_persistenceEnabled = true;
+    m_selectionPersistenceDirty = false;
     m_persistenceRemovalRequested = false;
     m_closeIntent = snow_shot::storage::PinnedWindowCloseIntent::Preserve;
     m_closeSnapshot.reset();
@@ -1978,6 +2019,7 @@ bool ScreenshotPinnedWindow::present(const Config& requestedConfig,
     m_presentationCompletion = std::move(completion);
     m_imageLoader = config.imageLoader;
     m_printService = config.printService;
+    cancelCloudUpload();
     ++m_presentationGeneration;
     m_deferredPresentationSetupScheduled = false;
     m_recognitionTargetReady = false;
@@ -2057,6 +2099,9 @@ bool ScreenshotPinnedWindow::present(const Config& requestedConfig,
     m_sourcePinAvailable = true;
     m_createdUtc = config.sourceCreatedUtc.isValid() ? config.sourceCreatedUtc
                                                      : QDateTime::currentDateTimeUtc();
+    if (m_selectionController)
+        m_selectionController->unregisterWindow(this);
+    m_selectionController = config.selectionController;
     m_groupManager = config.groupManager;
     m_groupId = config.groupId.trimmed();
     if (m_groupId.isEmpty()) {
@@ -2246,6 +2291,8 @@ bool ScreenshotPinnedWindow::present(const Config& requestedConfig,
     }
     static_cast<void>(m_nativeGeometryController->commitTarget());
     m_presented = true;
+    if (m_selectionController)
+        m_selectionController->registerWindow(this);
     if (restoreClickThrough && !setClickThroughMode(true)) {
         qWarning("Pinned window click-through restoration failed");
     }
@@ -2529,6 +2576,8 @@ void ScreenshotPinnedWindow::closeEvent(QCloseEvent* event) {
         requestUserClose();
         return;
     }
+    if (m_selectionController)
+        m_selectionController->unregisterWindow(this);
     stopAttentionShake();
     m_sourcePinAvailable = false;
     if (event->spontaneous() && !m_inactiveGroupClosing &&
@@ -2748,6 +2797,22 @@ void ScreenshotPinnedWindow::paintEvent(QPaintEvent* event) {
     painter.fillRect(event != nullptr ? event->rect() : rect(), opaquePinnedBackground(this));
 }
 
+void ScreenshotPinnedWindow::setWindowSelected(bool selected) {
+    m_windowSelected = selected;
+    updateSelectionIndicator();
+    updateChildStackingOrder();
+}
+
+void ScreenshotPinnedWindow::updateSelectionIndicator() {
+    if (!m_selectionIndicator)
+        return;
+    const int insetX = std::min(4, std::max(0, width() - 1));
+    const int insetY = std::min(4, std::max(0, height() - 1));
+    m_selectionIndicator->setGeometry(insetX, insetY, std::min(24, width() - insetX),
+                                      std::min(24, height() - insetY));
+    m_selectionIndicator->setVisible(m_windowSelected && !m_closing);
+}
+
 void ScreenshotPinnedWindow::createUi() {
     setMinimumSize(1, 1);
     m_scaleLabelTimer = new QTimer(this);
@@ -2841,6 +2906,23 @@ void ScreenshotPinnedWindow::createUi() {
     connect(m_editButton, &adqt::widgets::AdButton::clicked, this, [this]() { setEditMode(true); });
     connect(m_closeButton, &adqt::widgets::AdButton::clicked, this,
             [this]() { requestUserClose(); });
+    m_selectionIndicator = new adqt::widgets::AdButton(this);
+    m_selectionIndicator->setObjectName(QStringLiteral("screenshotPinnedSelectionIndicator"));
+    m_selectionIndicator->setButtonStyle(adqt::widgets::AdButton::ButtonStyle::Solid);
+    m_selectionIndicator->setAccentRole(adqt::widgets::AdButton::AccentRole::Primary);
+    m_selectionIndicator->setShape(adqt::widgets::AdButton::Shape::Circle);
+    m_selectionIndicator->setIconRef(
+        outlined_icons::Check().withColors(adqt::icons::IconColors::primary(QColor(Qt::white))));
+    m_selectionIndicator->setIconSize(QSize(14, 14));
+    m_selectionIndicator->setFocusPolicy(Qt::StrongFocus);
+    setWidgetTranslationSource(m_selectionIndicator, "Deselect window");
+    m_selectionIndicator->setToolTip(tr("Deselect window"));
+    m_selectionIndicator->setAccessibleName(tr("Deselect window"));
+    m_selectionIndicator->hide();
+    connect(m_selectionIndicator, &adqt::widgets::AdButton::clicked, this, [this] {
+        if (m_selectionController)
+            m_selectionController->deselectWindow(this);
+    });
     createContextMenu();
 }
 
@@ -3276,10 +3358,9 @@ void ScreenshotPinnedWindow::rebuildGroupMenu() {
         const auto counts = manager->windowCounts(group.id);
         hasDeletableEmptyGroups =
             hasDeletableEmptyGroups || (!group.builtIn && counts.nonIgnored == 0);
-        QAction* action = m_groupMenu->addItem(QStringLiteral("%1\t%2/%3")
-                                                   .arg(manager->displayName(group.id),
-                                                        QString::number(counts.nonIgnored),
-                                                        QString::number(counts.total)));
+        QAction* action = m_groupMenu->addItem(manager->displayName(group.id));
+        m_groupMenu->setActionBadge(
+            action, QStringLiteral("%1/%2").arg(counts.nonIgnored).arg(counts.total));
         action->setObjectName(QStringLiteral("screenshotPinnedGroupAction-%1").arg(group.id));
         action->setData(group.id);
         action->setCheckable(true);
@@ -3315,10 +3396,9 @@ void ScreenshotPinnedWindow::rebuildGroupMenu() {
     }
     for (const auto& group : groups) {
         const auto counts = manager->windowCounts(group.id);
-        QAction* action = m_deleteSpecifiedGroupMenu->addItem(
-            QStringLiteral("%1\t%2/%3")
-                .arg(manager->displayName(group.id), QString::number(counts.nonIgnored),
-                     QString::number(counts.total)));
+        QAction* action = m_deleteSpecifiedGroupMenu->addItem(manager->displayName(group.id));
+        m_deleteSpecifiedGroupMenu->setActionBadge(
+            action, QStringLiteral("%1/%2").arg(counts.nonIgnored).arg(counts.total));
         action->setObjectName(
             QStringLiteral("screenshotPinnedDeleteSpecifiedGroupAction-%1").arg(group.id));
         action->setData(group.id);
@@ -3367,6 +3447,8 @@ void ScreenshotPinnedWindow::setRuntimeTrayEnabled(bool enabled) {
 }
 
 void ScreenshotPinnedWindow::showContextMenu(const QPoint& globalPosition) {
+    if (m_selectionController && m_selectionController->showContextMenu(this, globalPosition))
+        return;
     exitHideToTop();
     if (m_contextMenu == nullptr || m_closing) {
         return;
@@ -3379,8 +3461,8 @@ void ScreenshotPinnedWindow::updateChildStackingOrder() {
     // Recognition surfaces receive input even when they paint only transparent
     // text selection. Keep the complete layer order independent of which layer
     // was created, updated or shown last; hover must not repair input routing.
-    QWidget* const layers[] = {m_scaleLabel, m_controlsPanel, m_borderFrame, m_recognitionContent,
-                               m_canvas};
+    QWidget* const layers[] = {m_selectionIndicator, m_scaleLabel,         m_controlsPanel,
+                               m_borderFrame,        m_recognitionContent, m_canvas};
     QWidget* above = nullptr;
     for (QWidget* layer : layers) {
         if (layer == nullptr)
@@ -3546,6 +3628,7 @@ void ScreenshotPinnedWindow::updateControlsVisibility() {
 }
 
 void ScreenshotPinnedWindow::updateControlsGeometry() {
+    updateSelectionIndicator();
     if (m_closing) {
         return;
     }
@@ -3886,7 +3969,7 @@ void ScreenshotPinnedWindow::finishDeferredPresentationSetup(quint64 generation)
         m_editButton->show();
     }
     updateControlsGeometry();
-    refreshContextMenu();
+    refreshContextMenuIfVisible();
     SNOW_SHOT_PIN_PERF_MILESTONE("window.recognition_target_ready");
     SNOW_SHOT_PIN_PERF_MILESTONE("window.context_menu_ready");
     SNOW_SHOT_PIN_PERF_MILESTONE("window.controls_ready");
@@ -4046,6 +4129,9 @@ void ScreenshotPinnedWindow::configureEditToolbar(
             &ScreenshotPinnedWindow::quickSave);
     connect(toolbar, &ScreenshotToolPalette::printRequested, this,
             &ScreenshotPinnedWindow::printContent);
+    toolbar->setCloudUploadBusy(m_cloudUploadPreparing || m_cloudUploadJob);
+    connect(toolbar, &ScreenshotToolPalette::cloudUploadRequested, this,
+            &ScreenshotPinnedWindow::uploadToCloud);
     connect(toolbar, &ScreenshotToolPalette::saveRequested, this,
             &ScreenshotPinnedWindow::saveAsFile);
     connect(toolbar, &ScreenshotToolPalette::copyRequested, this,
@@ -5433,6 +5519,7 @@ void ScreenshotPinnedWindow::quickSave() {
 }
 
 void ScreenshotPinnedWindow::cancelContentReplacement() {
+    cancelCloudUpload();
     ++m_contentReplacementGeneration;
     m_contentReplacementJob.cancel();
     m_contentReplacementJob = {};
@@ -5664,6 +5751,7 @@ bool ScreenshotPinnedWindow::replaceContent(ScreenshotClipboardContent content,
         m_quickSaveArtifact.reset();
     }
     m_quickSavePending = false;
+    cancelCloudUpload();
     ++m_presentationGeneration;
     m_deferredPresentationSetupScheduled = false;
     stopRecognition();
@@ -5830,6 +5918,74 @@ void ScreenshotPinnedWindow::printContent() {
             ready({{},
                    QCoreApplication::translate("ScreenshotPrintService",
                                                "The image could not be prepared for printing")});
+    });
+}
+
+void ScreenshotPinnedWindow::cancelCloudUpload() {
+    m_cloudUploadPreparing = false;
+    if (m_cloudUploadJob)
+        m_cloudUploadJob->cancel();
+    m_cloudUploadJob.clear();
+    ScreenshotMessageService::destroyFor(this, QStringLiteral("cloud-upload"));
+    if (m_editController && m_editController->toolbarWindow())
+        m_editController->toolbarWindow()->palette()->setCloudUploadBusy(false);
+}
+void ScreenshotPinnedWindow::uploadToCloud() {
+    if (m_closing || m_cloudUploadPreparing || m_cloudUploadJob || m_printPending ||
+        property("saveDialogOpen").toBool())
+        return;
+    const auto config = ScreenshotCloudUploadService::configuration();
+    if (!config)
+        return;
+    m_cloudUploadPreparing = true;
+    if (m_editController && m_editController->toolbarWindow())
+        m_editController->toolbarWindow()->palette()->setCloudUploadBusy(true);
+    const auto replacement = m_contentReplacementGeneration;
+    const auto generation = m_presentationGeneration;
+    const auto options = ScreenshotCloudUploadService::currentOptions();
+    requestMaterializedImage([this, replacement, generation, config = *config,
+                              options](bool succeeded) {
+        if (m_closing || m_contentReplacementGeneration != replacement ||
+            m_presentationGeneration != generation)
+            return;
+        m_cloudUploadPreparing = false;
+        if (!succeeded || (m_canvas && !m_canvas->resetEditingStatePreservingTool())) {
+            cancelCloudUpload();
+            showPinnedRecognitionMessage(this, tr("The pinned image could not be prepared"), true);
+            return;
+        }
+        m_cloudUploadJob =
+            ScreenshotCloudUploadService::upload(fileSaveArtifact(), config, options, this);
+        ScreenshotMessageService::loadingFor(this, QStringLiteral("cloud-upload"),
+                                             tr("Preparing cloud upload..."));
+        connect(m_cloudUploadJob, &ScreenshotCloudUploadJob::progress, this, [this](int percent) {
+            if (!m_closing)
+                ScreenshotMessageService::loadingFor(this, QStringLiteral("cloud-upload"),
+                                                     tr("Uploading to cloud... %1%").arg(percent));
+        });
+        connect(m_cloudUploadJob, &ScreenshotCloudUploadJob::finished, this,
+                [this, replacement, generation](const ScreenshotCloudUploadResult& result) {
+                    m_cloudUploadJob.clear();
+                    if (m_closing || replacement != m_contentReplacementGeneration ||
+                        generation != m_presentationGeneration)
+                        return;
+                    ScreenshotMessageService::destroyFor(this, QStringLiteral("cloud-upload"));
+                    if (m_editController && m_editController->toolbarWindow())
+                        m_editController->toolbarWindow()->palette()->setCloudUploadBusy(false);
+                    if (result.status == ScreenshotCloudUploadResult::Status::Succeeded) {
+                        const QPointer<ScreenshotPinnedWindow> lifetime(this);
+                        QApplication::clipboard()->setText(result.url.toString(QUrl::FullyEncoded));
+                        if (!lifetime || m_closing ||
+                            replacement != m_contentReplacementGeneration ||
+                            generation != m_presentationGeneration)
+                            return;
+                        adqt::widgets::AdMessage::Request message;
+                        message.key = QStringLiteral("cloud-upload");
+                        message.content = tr("Uploaded to cloud. Link copied to clipboard.");
+                        adqt::widgets::AdMessageService::success(std::move(message), this);
+                    } else if (result.status == ScreenshotCloudUploadResult::Status::Failed)
+                        showPinnedRecognitionMessage(this, result.error, true);
+                });
     });
 }
 
@@ -6170,6 +6326,10 @@ void ScreenshotPinnedWindow::applyScale(int percent) {
 }
 
 void ScreenshotPinnedWindow::applyWheelScale(double percent, const QPointF& nativeCursor) {
+    if (m_selectionController && m_selectionController->usesSharedGeometry(this)) {
+        static_cast<void>(m_selectionController->scaleBy(this, percent));
+        return;
+    }
     if (m_lockedMode) {
         showLockedReadout();
         return;
@@ -6368,6 +6528,8 @@ void ScreenshotPinnedWindow::showLockedReadout() {
 }
 
 void ScreenshotPinnedWindow::setLockedMode(bool enabled) {
+    if (m_selectionController && m_selectionGeometryActive && enabled != m_lockedMode)
+        m_selectionController->cancelGeometry();
     if (m_closing || !m_presented || m_lockedMode == enabled) {
         if (m_lockAction) {
             const QSignalBlocker blocker(m_lockAction);
@@ -6519,6 +6681,8 @@ void ScreenshotPinnedWindow::exitHideToTop() {
 }
 
 void ScreenshotPinnedWindow::toggleHideToTop() {
+    if (m_selectionController)
+        m_selectionController->deselectWindow(this);
     if (m_closing || !m_presented) {
         return;
     }
@@ -6701,6 +6865,8 @@ bool ScreenshotPinnedWindow::updateClickThroughExitButtonGeometry() {
 }
 
 bool ScreenshotPinnedWindow::setClickThroughMode(bool enabled) {
+    if (enabled && m_selectionController)
+        m_selectionController->deselectWindow(this);
     if (enabled) {
         setFileDragActive(false);
     }
@@ -6889,6 +7055,8 @@ void ScreenshotPinnedWindow::updateThumbnailPresentation() {
 }
 
 void ScreenshotPinnedWindow::setThumbnailMode(bool enabled, bool animate) {
+    if (enabled && m_selectionController)
+        m_selectionController->deselectWindow(this);
     if (enabled) {
         if (m_clickThroughActive && !setClickThroughMode(false)) {
             return;
@@ -7324,6 +7492,8 @@ void ScreenshotPinnedWindow::closeAfterConfirmation() {
     if (m_closing) {
         return;
     }
+    if (m_selectionController)
+        m_selectionController->unregisterWindow(this);
     m_inactiveGroupClosing = false;
     stopAttentionShake();
     if (m_groupManager)
@@ -7421,6 +7591,8 @@ void ScreenshotPinnedWindow::showFromManagement() {
 }
 
 void ScreenshotPinnedWindow::requestDestroy() {
+    if (m_selectionController)
+        m_selectionController->unregisterWindow(this);
     stopAttentionShake();
     if (m_groupManager)
         m_groupManager->markWindowClosing(this);

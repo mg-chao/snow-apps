@@ -40,6 +40,7 @@ class ContextMenuTests final : public QObject {
 
  private slots:
   void actionMetadataAndNativeStateCoexist();
+  void badgesPreserveWidgetTrailingText();
   void iconsCanBeReplacedAndCleared();
   void iconUpdatesInvalidateOnlyTheChangedAction();
   void popupDismissalPreservesActions();
@@ -88,6 +89,61 @@ void ContextMenuTests::actionMetadataAndNativeStateCoexist() {
   QCOMPARE(submenu->colorScheme(), AdContextMenu::ColorScheme::Dark);
   QVERIFY(submenu->componentTokens().itemHeight.has_value());
   QCOMPARE(submenu->componentTokens().itemHeight.value(), 40);
+}
+
+void ContextMenuTests::badgesPreserveWidgetTrailingText() {
+  AdContextMenu menu;
+  AdContextMenu reference;
+  for (auto* candidate : {&menu, &reference}) {
+    candidate->setNativeMenuEnabled(false);
+    AdContextMenu::ComponentTokens tokens;
+    tokens.minimumWidth = 1;
+    candidate->setComponentTokens(tokens);
+  }
+  auto* action = menu.addItem(QStringLiteral("Group"));
+  auto* expected = reference.addItem(QStringLiteral("Group"));
+  for (auto* item : {action, expected}) {
+    item->setCheckable(true);
+    item->setChecked(true);
+  }
+  const auto render = [](AdContextMenu& candidate) {
+    candidate.resize(candidate.sizeHint());
+    QImage image(candidate.size(), QImage::Format_ARGB32_Premultiplied);
+    image.fill(Qt::transparent);
+    candidate.render(&image);
+    return image;
+  };
+  const QSize withoutBadge = menu.sizeHint();
+  for (const QString& badge : {QStringLiteral("0/0"), QStringLiteral("123/456"), QString{}}) {
+    menu.setActionBadge(action, badge);
+    expected->setText(badge.isEmpty() ? QStringLiteral("Group")
+                                      : QStringLiteral("Group\t") + badge);
+    QCOMPARE(action->text(), QStringLiteral("Group"));
+    QVERIFY(action->shortcut().isEmpty());
+    QCOMPARE(menu.actionBadge(action), badge);
+    QCOMPARE(menu.sizeHint(), reference.sizeHint());
+    QCOMPARE(render(menu), render(reference));
+    action->setEnabled(false);
+    expected->setEnabled(false);
+    QCOMPARE(render(menu), render(reference));
+    action->setEnabled(true);
+    expected->setEnabled(true);
+    if (!badge.isEmpty()) {
+      QVERIFY(menu.sizeHint().width() > withoutBadge.width());
+    }
+  }
+  QCOMPARE(menu.sizeHint(), withoutBadge);
+  action->setShortcut(QKeySequence(Qt::Key_F2));
+  action->setShortcutVisibleInContextMenu(true);
+  menu.setActionBadge(action, QStringLiteral("1/2"));
+  expected->setText(QStringLiteral("Group\t1/2  ") +
+                    action->shortcut().toString(QKeySequence::NativeText));
+  QCOMPARE(action->shortcut(), QKeySequence(Qt::Key_F2));
+  QCOMPARE(menu.sizeHint(), reference.sizeHint());
+  QCOMPARE(render(menu), render(reference));
+  menu.setActionBadge(action, {});
+  QCOMPARE(action->shortcut(), QKeySequence(Qt::Key_F2));
+  QVERIFY(menu.actionBadge(action).isEmpty());
 }
 
 void ContextMenuTests::iconsCanBeReplacedAndCleared() {

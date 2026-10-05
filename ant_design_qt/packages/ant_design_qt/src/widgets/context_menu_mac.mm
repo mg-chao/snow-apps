@@ -184,6 +184,26 @@ void initializeNativeContextMenu(QMenu* menu) {
     }
 }
 
+void syncNativeContextMenuBadge(AdContextMenu* menu, QAction* action) {
+    @autoreleasepool {
+        NSMenu* native = menu->toNSMenu();
+        const qsizetype index = menu->actions().indexOf(action);
+        if (!native || index < 0 || index >= native.numberOfItems) {
+            return;
+        }
+        if (@available(macOS 14.0, *)) {
+            NSMenuItem* item = [native itemAtIndex:index];
+            const QString text = menu->actionBadge(action);
+            if (text.isEmpty()) {
+                item.badge = nil;
+            } else if (![item.badge.stringValue isEqualToString:text.toNSString()]) {
+                item.badge =
+                    [[[NSMenuItemBadge alloc] initWithString:text.toNSString()] autorelease];
+            }
+        }
+    }
+}
+
 QSize nativeContextMenuSize(QMenu* menu) {
     @autoreleasepool {
         NSMenu* native = menu->toNSMenu();

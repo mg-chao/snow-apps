@@ -74,6 +74,10 @@
             <translation>No recognized result is available to copy</translation>
         </message>
         <message>
+            <source>Preparing cloud upload...</source>
+            <translation>Preparing cloud upload...</translation>
+        </message>
+        <message>
             <source>Save recognition text</source>
             <translation>Save recognition text</translation>
         </message>
@@ -168,6 +172,14 @@
         <message>
             <source>This screenshot cannot be pinned</source>
             <translation>This screenshot cannot be pinned</translation>
+        </message>
+        <message>
+            <source>Uploaded to cloud. Link copied to clipboard.</source>
+            <translation>Uploaded to cloud. Link copied to clipboard.</translation>
+        </message>
+        <message>
+            <source>Uploading to cloud... %1%</source>
+            <translation>Uploading to cloud... %1%</translation>
         </message>
         <message>
             <source>Your current screenshot will be discarded.</source>

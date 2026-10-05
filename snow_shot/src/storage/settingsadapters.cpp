@@ -95,6 +95,7 @@ const QStringList& screenshotShortcutActionIds() {
             QStringLiteral("quick_save"),
             QStringLiteral("print"),
             QStringLiteral("save_as_file"),
+            QStringLiteral("upload_to_cloud"),
             QStringLiteral("pin_to_screen"),
             QStringLiteral("cancel_screenshot"),
             QStringLiteral("copy_to_clipboard"),
@@ -116,6 +117,7 @@ const QStringList& pinToScreenShortcutActionIds() {
         QStringLiteral("copy_original_content"),
         QStringLiteral("print"),
         QStringLiteral("save_as_file"),
+        QStringLiteral("upload_to_cloud"),
         QStringLiteral("show_text_recognition_results"),
         QStringLiteral("drawing_mode"),
         QStringLiteral("resize_window"),
@@ -292,6 +294,14 @@ bool setColorValue(const QString& key, const QColor& color) {
     return color.isValid() && cache().setValue(key, colorToRgbaString(color));
 }
 } // namespace
+
+CloudUploadSettings CloudUploadConfigurationSettings::settings() const {
+    return cloudUploadSettingsFromJson(cache().value(QStringLiteral("cloud_upload/configuration")));
+}
+bool CloudUploadConfigurationSettings::setSettings(const CloudUploadSettings& values) const {
+    return cache().setValue(QStringLiteral("cloud_upload/configuration"),
+                            cloudUploadSettingsToJson(values));
+}
 
 bool TextRecognitionSettings::saveRecognitionResultAsImage() const {
     return cache()

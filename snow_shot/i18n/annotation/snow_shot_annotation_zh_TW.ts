@@ -1196,6 +1196,10 @@
             <translation>復原</translation>
         </message>
         <message>
+            <source>Upload to Cloud</source>
+            <translation>上傳至雲端</translation>
+        </message>
+        <message>
             <source>Uppercase letters</source>
             <translation>大寫字母</translation>
         </message>

@@ -1,5 +1,6 @@
 #include "../../presentation/pinned/pinnedwindowplatform.h"
 #include "snow_shot/presentation/screenshotpinnedwindow.h"
+#include "snow_shot/presentation/pinnedwindowselectioncontroller.h"
 #include "pinnedwindownative.h"
 #include "../../presentation/pinned/screenshotpinnednativegeometrycontroller.h"
 #include "../../presentation/pinned/screenshotpinnedgeometrymapping.h"
@@ -176,6 +177,16 @@ bool PinnedWindowWindowsEvents::handle(ScreenshotPinnedWindow& window, const QBy
             }
         }
 
+        if ((nativeMessage->message == WM_NCLBUTTONDOWN ||
+             nativeMessage->message == WM_NCLBUTTONDBLCLK) &&
+            window.m_selectionController && window.m_selectionController->selectedCount() > 0 &&
+            !window.m_selectionController->isSelectable(&window) &&
+            (GetKeyState(VK_CONTROL) & 0x8000) == 0) {
+            // Excluded modes keep their native caption/resize behavior. Their
+            // plain press still clears the selection before USER32 starts it.
+            window.m_selectionController->clearSelection();
+        }
+
         if (window.m_lockedMode) {
             if (nativeMessage->message == WM_NCHITTEST) {
                 window.clearWindowDragCursor();
@@ -259,10 +270,21 @@ bool PinnedWindowWindowsEvents::handle(ScreenshotPinnedWindow& window, const QBy
                                      reinterpret_cast<HWND>(nativeMessage->lParam) != pinnedHwnd));
         const bool resizeCancelled =
             window.m_systemSizingActive && nativeMessage->message == WM_CANCELMODE;
-        if (window.m_interactionPlacement &&
-            (nativeMessage->message == WM_CANCELMODE ||
-             (nativeMessage->message == WM_CAPTURECHANGED &&
-              reinterpret_cast<HWND>(nativeMessage->lParam) != pinnedHwnd))) {
+        const bool captureLost = nativeMessage->message == WM_CANCELMODE ||
+                                 (nativeMessage->message == WM_CAPTURECHANGED &&
+                                  reinterpret_cast<HWND>(nativeMessage->lParam) != pinnedHwnd);
+        // Qt releases its automatic capture before dispatching the button-up
+        // event. Keep a pending click alive for that release; explicit shared
+        // geometry owns capture until its transaction has ended instead.
+        const bool automaticButtonRelease = nativeMessage->message == WM_CAPTURECHANGED &&
+                                            nativeMessage->lParam == 0 &&
+                                            (GetKeyState(VK_LBUTTON) & 0x8000) == 0;
+        if (captureLost && (!automaticButtonRelease || window.m_selectionGeometryActive) &&
+            window.m_selectionController &&
+            window.m_selectionController->cancelPointerInteraction(&window)) {
+            return false;
+        }
+        if (window.m_interactionPlacement && captureLost) {
             window.endControlledInteraction(true);
         } else if (moveCancelled || resizeCancelled) {
             static_cast<void>(window.finishNativeGeometryInteraction());
@@ -331,7 +353,8 @@ bool PinnedWindowWindowsEvents::handle(ScreenshotPinnedWindow& window, const QBy
                 QTimer::singleShot(0, &window, [&window] { window.stopAttentionShake(); });
             } else if (suggestedRect != nullptr && !window.m_presented) {
                 writeNativeRect(window.m_nativeGeometryController->targetGeometry(), suggestedRect);
-            } else if (suggestedRect != nullptr && window.m_interactionResizeHandle) {
+            } else if (suggestedRect != nullptr &&
+                       (window.m_interactionResizeHandle || window.m_selectionGeometryActive)) {
                 writeNativeRect(window.m_nativeGeometryController->targetGeometry(), suggestedRect);
             } else if (suggestedRect != nullptr &&
                        window.m_nativeGeometryController->adoptDpiTarget(
@@ -398,6 +421,17 @@ bool PinnedWindowWindowsEvents::handle(ScreenshotPinnedWindow& window, const QBy
                                         GET_Y_LPARAM(nativeMessage->lParam));
             const ScreenshotPinnedGeometryMapping mapping(nativeGeometry, window.size(),
                                                           window.devicePixelRatioF());
+            const QPoint selectionPosition = mapping.localPosition(screenPosition).toPoint();
+            if (window.m_selectionController &&
+                window.m_selectionController->routesPointerToClient(window, selectionPosition)) {
+                // A click may clear/toggle selection. Keep the initial press in
+                // Qt until its drag threshold has chosen a geometry/export gesture.
+                if (!window.m_selectionGeometryActive)
+                    window.updateWindowDragCursor(selectionPosition);
+                if (result)
+                    *result = HTCLIENT;
+                return true;
+            }
             if (window.interactiveResizingEnabled() && nativeGeometry.isValid() &&
                 !nativeGeometry.isEmpty()) {
                 const QSize nativeHit = mapping.nativeHitSize(kResizeHitWidth);
@@ -528,7 +562,7 @@ bool PinnedWindowWindowsEvents::handle(ScreenshotPinnedWindow& window, const QBy
             return true;
         }
 
-        if (!window.m_interactionPlacement &&
+        if (!window.m_interactionPlacement && !window.m_selectionGeometryActive &&
             (nativeMessage->message == WM_NCLBUTTONUP || nativeMessage->message == WM_LBUTTONUP)) {
             static_cast<void>(window.finishNativeGeometryInteraction());
             if (nativeMessage->wParam == HTCAPTION || window.m_windowDragActive) {
@@ -624,7 +658,7 @@ bool PinnedWindowWindowsEvents::handle(ScreenshotPinnedWindow& window, const QBy
             }
         }
 
-        if (nativeMessage->message == WM_EXITSIZEMOVE) {
+        if (nativeMessage->message == WM_EXITSIZEMOVE && !window.m_selectionGeometryActive) {
             static_cast<void>(window.finishNativeGeometryInteraction());
             window.m_systemSizingActive = false;
             if (window.m_windowDragActive) {

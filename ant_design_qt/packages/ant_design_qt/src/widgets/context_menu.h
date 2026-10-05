@@ -13,6 +13,7 @@
 
 class QHideEvent;
 class QPaintEvent;
+class QActionEvent;
 
 namespace adqt::widgets {
 
@@ -107,6 +108,11 @@ class AdContextMenu final : public QMenu {
   void setActionDanger(QAction* action, bool danger = true);
   bool actionDanger(const QAction* action) const;
 
+  // Display-only metadata, independent of the action label and keyboard shortcut.
+  // The widget menu uses its trailing column; macOS uses an NSMenuItem badge.
+  void setActionBadge(QAction* action, const QString& text);
+  QString actionBadge(const QAction* action) const;
+
   // Native menus track outside QWidget visibility on macOS.
   bool isPopupVisible() const;
   void dismissPopup();
@@ -121,6 +127,7 @@ class AdContextMenu final : public QMenu {
   void triggerWidgetChanged(QWidget* widget);
 
  protected:
+  void actionEvent(QActionEvent* event) override;
   bool eventFilter(QObject* watched, QEvent* event) override;
   void changeEvent(QEvent* event) override;
   void paintEvent(QPaintEvent* event) override;

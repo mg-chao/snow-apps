@@ -62,6 +62,13 @@ void requireActionText(const QAction* action, const QString& expected, const cha
     require(action != nullptr && action->text() == expected, message);
 }
 
+void requireGroupAction(const adqt::widgets::AdContextMenu* menu, const QAction* action,
+                        const QString& label, const QString& counts, const char* message) {
+    require(action != nullptr && action->text() == label && menu->actionBadge(action) == counts &&
+                action->shortcut().isEmpty(),
+            message);
+}
+
 QString balloonTitle(const QSystemTrayIcon* trayIcon) {
     return trayIcon->property("lastBalloonTitle").toString();
 }
@@ -327,12 +334,14 @@ void verifyLazyGroupMenuRefresh() {
                                   QStringLiteral("default"));
     QApplication::processEvents();
     require(!originalDefault.isNull() && defaultAction() == originalDefault &&
-                originalDefault->text() == QStringLiteral("Default\t0/0"),
+                originalDefault->text() == QStringLiteral("Default") &&
+                groupMenu->actionBadge(originalDefault) == QStringLiteral("0/0"),
             "hidden group count changes must preserve the existing menu action tree");
     QMetaObject::invokeMethod(menu, "aboutToShow", Qt::DirectConnection);
     require(originalDefault.isNull(), "opening the parent tray menu materializes dirty groups");
-    requireActionText(defaultAction(), QStringLiteral("Default\t20/20"),
-                      "the parent tray opening supplies current counts before submenu tracking");
+    requireGroupAction(groupMenu, defaultAction(), QStringLiteral("Default"),
+                       QStringLiteral("20/20"),
+                       "the parent tray opening supplies current counts before submenu tracking");
     QPointer<QAction> currentDefault = defaultAction();
     QMetaObject::invokeMethod(groupMenu, "aboutToShow", Qt::DirectConnection);
     require(defaultAction() == currentDefault && !currentDefault.isNull(),
@@ -344,12 +353,12 @@ void verifyLazyGroupMenuRefresh() {
     groupMenu->popup(QPoint(12, 12));
     QApplication::processEvents();
     require(groupMenu->isPopupVisible(), "the visible group regression opens its widget menu");
-    requireActionText(defaultAction(), QStringLiteral("Default\t0/0"),
-                      "opening the submenu reconciles all hidden completions");
+    requireGroupAction(groupMenu, defaultAction(), QStringLiteral("Default"), QStringLiteral("0/0"),
+                       "opening the submenu reconciles all hidden completions");
     groups.registerPendingPin(QStringLiteral("visible-tray-pin"), QStringLiteral("default"));
     QApplication::processEvents();
-    requireActionText(defaultAction(), QStringLiteral("Default\t1/1"),
-                      "visible group menus reflect count changes immediately");
+    requireGroupAction(groupMenu, defaultAction(), QStringLiteral("Default"), QStringLiteral("1/1"),
+                       "visible group menus reflect count changes immediately");
     groupMenu->hide();
     groups.completePendingPin(QStringLiteral("visible-tray-pin"));
     QApplication::processEvents();
@@ -939,9 +948,10 @@ int main(int argc, char* argv[]) {
     };
     require(!windowGroupMenuAction->icon().isNull(),
             "the window group submenu header should carry an icon");
-    requireActionText(groupActionNamed(QStringLiteral("systemTrayGroupAction-default")),
-                      QStringLiteral("Default\t0/0"),
-                      "the tray group row should show non-ignored and total counts");
+    requireGroupAction(windowGroupMenu,
+                       groupActionNamed(QStringLiteral("systemTrayGroupAction-default")),
+                       QStringLiteral("Default"), QStringLiteral("0/0"),
+                       "the tray group row should show non-ignored and total counts");
     QAction* trayNewGroup = groupActionNamed(QStringLiteral("systemTrayNewGroupAction"));
     require(trayNewGroup != nullptr && !trayNewGroup->icon().isNull() && trayNewGroup->isEnabled(),
             "tray New Group should expose an icon and stay actionable");
@@ -1027,9 +1037,10 @@ int main(int argc, char* argv[]) {
     require(initialGroupActions.indexOf(trayDeleteEmpty) + 1 ==
                 initialGroupActions.indexOf(trayDeleteSpecifiedMenu->menuAction()),
             "tray Delete Specified Group should sit directly below Delete Empty Groups");
-    requireActionText(
+    requireGroupAction(
+        trayDeleteSpecifiedMenu,
         deleteSpecifiedActionNamed(QStringLiteral("systemTrayDeleteSpecifiedGroupAction-default")),
-        QStringLiteral("Default\t0/0"),
+        QStringLiteral("Default"), QStringLiteral("0/0"),
         "tray Delete Specified Group should initially list only the empty Default group");
 
     const auto traySpecifiedId = groupManager.createGroup(QStringLiteral("Tray specified"));
@@ -1040,7 +1051,8 @@ int main(int argc, char* argv[]) {
         QStringLiteral("systemTrayDeleteSpecifiedGroupAction-%1").arg(*traySpecifiedId));
     require(trayDeleteSpecified != nullptr &&
                 trayDeleteSpecified->data().toString() == *traySpecifiedId &&
-                trayDeleteSpecified->text() == QStringLiteral("Tray specified\t0/0"),
+                trayDeleteSpecified->text() == QStringLiteral("Tray specified") &&
+                trayDeleteSpecifiedMenu->actionBadge(trayDeleteSpecified) == QStringLiteral("0/0"),
             "tray specified deletion should list every custom group with its count and id");
     trayDeleteSpecified->trigger();
     QCoreApplication::processEvents(QEventLoop::AllEvents, 20);
@@ -1389,9 +1401,10 @@ int main(int argc, char* argv[]) {
     requireActionText(windowGroupMenuAction,
                       QStringLiteral("\u7a97\u53e3\u5206\u7ec4\uff1a\u9ed8\u8ba4"),
                       "the window group submenu title should translate to Simplified Chinese");
-    requireActionText(groupActionNamed(QStringLiteral("systemTrayGroupAction-default")),
-                      QStringLiteral("\u9ed8\u8ba4\t0/0"),
-                      "the default group entry should translate to Simplified Chinese");
+    requireGroupAction(windowGroupMenu,
+                       groupActionNamed(QStringLiteral("systemTrayGroupAction-default")),
+                       QStringLiteral("\u9ed8\u8ba4"), QStringLiteral("0/0"),
+                       "the default group entry should translate to Simplified Chinese");
     requireActionText(groupActionNamed(QStringLiteral("systemTrayNewGroupAction")),
                       QStringLiteral("\u65b0\u5efa\u5206\u7ec4"),
                       "tray New Group should translate to Simplified Chinese");
@@ -1458,9 +1471,10 @@ int main(int argc, char* argv[]) {
     requireActionText(windowGroupMenuAction,
                       QStringLiteral("\u8996\u7a97\u7fa4\u7d44\uff1a\u9810\u8a2d"),
                       "the window group submenu title should translate to Traditional Chinese");
-    requireActionText(groupActionNamed(QStringLiteral("systemTrayGroupAction-default")),
-                      QStringLiteral("\u9810\u8a2d\t0/0"),
-                      "the default group entry should translate to Traditional Chinese");
+    requireGroupAction(windowGroupMenu,
+                       groupActionNamed(QStringLiteral("systemTrayGroupAction-default")),
+                       QStringLiteral("\u9810\u8a2d"), QStringLiteral("0/0"),
+                       "the default group entry should translate to Traditional Chinese");
     requireActionText(groupActionNamed(QStringLiteral("systemTrayNewGroupAction")),
                       QStringLiteral("\u65b0\u589e\u7fa4\u7d44"),
                       "tray New Group should translate to Traditional Chinese");

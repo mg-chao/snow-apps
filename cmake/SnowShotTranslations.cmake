@@ -106,6 +106,7 @@ function(snow_shot_add_translations target)
             snow_shot_permissions
             snow_shot_global_mouse
             snow_shot_translation
+            snow_shot_cloud_upload
             snow_shot_print
             snow_shot_diagnostics
             snow_shot_updates

@@ -128,20 +128,31 @@ class CocoaPinnedWindowPlatform final : public PinnedWindowPlatform {
             constexpr NSWindowStyleMask nativeChrome =
                 NSWindowStyleMaskTitled | NSWindowStyleMaskClosable |
                 NSWindowStyleMaskMiniaturizable | NSWindowStyleMaskResizable;
-            window.styleMask &= ~nativeChrome;
-            window.movable = NO;
-            window.movableByWindowBackground = NO;
-            window.hasShadow = NO;
+            const NSWindowStyleMask currentStyle = window.styleMask;
+            const NSWindowStyleMask desiredStyle = currentStyle & ~nativeChrome;
+            if (currentStyle != desiredStyle)
+                window.styleMask = desiredStyle;
+            if (window.movable)
+                window.movable = NO;
+            if (window.movableByWindowBackground)
+                window.movableByWindowBackground = NO;
+            if (window.hasShadow)
+                window.hasShadow = NO;
         }
-        if (!m_staysOnTop)
+        if (!m_staysOnTop && window.level != NSNormalWindowLevel)
             window.level = NSNormalWindowLevel;
-        window.collectionBehavior =
-            (window.collectionBehavior & ~(NSWindowCollectionBehaviorMoveToActiveSpace |
-                                           NSWindowCollectionBehaviorFullScreenPrimary)) |
+        const NSWindowCollectionBehavior currentBehavior = window.collectionBehavior;
+        const NSWindowCollectionBehavior desiredBehavior =
+            (currentBehavior & ~(NSWindowCollectionBehaviorMoveToActiveSpace |
+                                 NSWindowCollectionBehaviorFullScreenPrimary)) |
             NSWindowCollectionBehaviorCanJoinAllSpaces |
             NSWindowCollectionBehaviorFullScreenAuxiliary;
-        window.hidesOnDeactivate = NO;
-        window.ignoresMouseEvents = m_transparent;
+        if (currentBehavior != desiredBehavior)
+            window.collectionBehavior = desiredBehavior;
+        if (window.hidesOnDeactivate)
+            window.hidesOnDeactivate = NO;
+        if (window.ignoresMouseEvents != m_transparent)
+            window.ignoresMouseEvents = m_transparent;
         return true;
     }
     void detach() override {
@@ -199,8 +210,10 @@ class CocoaPinnedWindowPlatform final : public PinnedWindowPlatform {
         // valid drag.
         const QRectF requested = pinnedDesktopRect(placement, *screen);
         const QRect logicalFrame(requested.topLeft().toPoint(), placement.windowSize);
-        const NSRect frame = [m_native constrainFrameRect:cocoaRect(logicalFrame)
-                                                 toScreen:nativeScreen];
+        const NSRect frame = m_preservePlacementOrigin
+                                 ? cocoaRect(logicalFrame)
+                                 : [m_native constrainFrameRect:cocoaRect(logicalFrame)
+                                                       toScreen:nativeScreen];
         const QRect target(desktopRect(frame).topLeft().toPoint(), placement.windowSize);
         m_window->setGeometry(target);
         // QWidget defers native geometry changes while hidden. Pin creation and
@@ -234,7 +247,8 @@ class CocoaPinnedWindowPlatform final : public PinnedWindowPlatform {
     bool setInputTransparent(bool transparent) override {
         if (!attach())
             return false;
-        m_native.ignoresMouseEvents = transparent;
+        if (m_native.ignoresMouseEvents != transparent)
+            m_native.ignoresMouseEvents = transparent;
         if (m_native.ignoresMouseEvents != transparent)
             return false;
         m_transparent = transparent;
