@@ -948,8 +948,22 @@ fn sanitize_positive(value: f64, fallback: f64) -> f64 {
 pub fn rectangle_hit_test(rect: &RectangleData, point: Point<f64>, hit_tolerance: f64) -> bool {
     if rect.is_spotlight() {
         let local = canvas_to_rect_local(rect.center, rect.rotation, point);
-        return local.x.abs() <= rect.width / 2.0 + hit_tolerance.max(0.0)
-            && local.y.abs() <= rect.height / 2.0 + hit_tolerance.max(0.0);
+        let half_width = rect.width / 2.0 + hit_tolerance.max(0.0);
+        let half_height = rect.height / 2.0 + hit_tolerance.max(0.0);
+        if half_width <= 0.0 || half_height <= 0.0 {
+            return false;
+        }
+        return match rect.highlight_shape {
+            crate::HighlightShape::Rectangle => {
+                local.x.abs() <= half_width && local.y.abs() <= half_height
+            }
+            crate::HighlightShape::Ellipse => {
+                (local.x / half_width).powi(2) + (local.y / half_height).powi(2) <= 1.0
+            }
+            crate::HighlightShape::Diamond => {
+                local.x.abs() / half_width + local.y.abs() / half_height <= 1.0
+            }
+        };
     }
     if rect.is_highlight() {
         return highlight_hit_test(rect, point, hit_tolerance);
@@ -2170,5 +2184,42 @@ mod tests {
         assert!(filter_hit_test(&filter, filter.center, 0.0));
         assert!(!filter_hit_test(&filter, Point::new(60.0, 20.0), 0.0));
         assert!(filter_hit_test(&filter, Point::new(60.0, 20.0), 30.0));
+    }
+
+    #[test]
+    fn spotlight_shapes_hit_the_transparent_interior_and_exclude_corners() {
+        for shape in [
+            crate::HighlightShape::Rectangle,
+            crate::HighlightShape::Ellipse,
+            crate::HighlightShape::Diamond,
+        ] {
+            let rect = RectangleData {
+                rectangle_kind: crate::RectangleElementKind::Rectangle,
+                highlight_shape: shape,
+                center: Point::new(30.0, 40.0),
+                width: 80.0,
+                height: 40.0,
+                rotation: std::f64::consts::FRAC_PI_2,
+                fill: ColorRgba8::default(),
+                fill_style: FillStyle::Solid,
+                stroke: ColorRgba8::default(),
+                stroke_width: 0.0,
+                stroke_style: StrokeStyle::Solid,
+                corner_radii: CornerRadii::default(),
+                opacity: 1.0,
+            }
+            .into_spotlight();
+            assert_eq!(rect.highlight_shape, shape);
+            assert!(validate_rectangle(&rect).is_ok());
+            assert!(rectangle_hit_test(&rect, rect.center, 0.0));
+            let corner = Point::new(15.0, 75.0);
+            assert_eq!(
+                rectangle_hit_test(&rect, corner, 0.0),
+                shape == crate::HighlightShape::Rectangle
+            );
+            let edge = Point::new(30.0, 81.0);
+            assert!(!rectangle_hit_test(&rect, edge, 0.0));
+            assert!(rectangle_hit_test(&rect, edge, 2.0));
+        }
     }
 }

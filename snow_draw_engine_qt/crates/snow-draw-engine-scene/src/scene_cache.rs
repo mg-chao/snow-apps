@@ -163,16 +163,8 @@ impl DocumentSceneCache {
             && rect.is_spotlight()
         {
             self.entries.remove(&id);
-            self.spotlight_entries.insert(
-                id,
-                DisplaySpotlightCutout {
-                    center_x: rect.center.x,
-                    center_y: rect.center.y,
-                    width: rect.width,
-                    height: rect.height,
-                    rotation: rect.rotation,
-                },
-            );
+            self.spotlight_entries
+                .insert(id, crate::spotlight_cutout(*rect));
             return;
         }
         self.spotlight_entries.remove(&id);

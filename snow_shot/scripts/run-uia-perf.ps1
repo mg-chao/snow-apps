@@ -1,3 +1,4 @@
+#requires -Version 7.2
 [CmdletBinding()]
 param(
     [Parameter(Mandatory)][string]$BeforeExecutable,
@@ -6,19 +7,24 @@ param(
     [Parameter(Mandatory)][int[]]$Points,
     [string]$OutputDirectory = "",
     [int]$Rounds = 10,
-    [int]$Samples = 15
+    [int]$Samples = 15,
+    [ValidateSet("x64", "arm64")][string]$Architecture = "x64"
 )
 
 $ErrorActionPreference = "Stop"
+. (Join-Path $PSScriptRoot "performance-environment.ps1")
+$performanceTarget = Get-SnowPerformanceTarget -Architecture $Architecture -RequireNative
 if ($Points.Count -eq 0 -or $Points.Count % 2 -ne 0) {
     throw "Points must contain physical x/y pairs."
 }
 if ([string]::IsNullOrWhiteSpace($OutputDirectory)) {
-    $OutputDirectory = Join-Path $PSScriptRoot "../../build/windows-msvc-performance/uia"
+    $OutputDirectory = Join-Path $PSScriptRoot "../../build/$($performanceTarget.Preset)/uia"
 }
 $null = New-Item -ItemType Directory -Force -Path $OutputDirectory
 $BeforeExecutable = (Resolve-Path -LiteralPath $BeforeExecutable).Path
 $AfterExecutable = (Resolve-Path -LiteralPath $AfterExecutable).Path
+Assert-SnowPerformanceExecutable -Path $BeforeExecutable -Architecture $Architecture
+Assert-SnowPerformanceExecutable -Path $AfterExecutable -Architecture $Architecture
 
 Add-Type -TypeDefinition @'
 using System;

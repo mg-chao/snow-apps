@@ -1,4 +1,5 @@
 #include "snow_canvas_display_item.h"
+#include "snow_canvas_export.h"
 #include "snow_canvas_ffi_handles.h"
 #include "snow_canvas_render_diagnostics.h"
 #include "snow_canvas_spotlight_renderer.h"
@@ -79,13 +80,14 @@ SnowSpotlightCutout cutout(double centerX, double centerY, double width, double 
 
 QImage render(const SnowSpotlightCutout* items, std::uint32_t itemCount,
               const QRectF& renderArea = QRectF(0.0, 0.0, 100.0, 100.0),
-              const QRegion& exposed = QRegion(QRect(0, 0, 100, 100)), bool active = true) {
+              const QRegion& exposed = QRegion(QRect(0, 0, 100, 100)), bool active = true,
+              const SceneDisplayInfo& projection = sceneInfo()) {
     QImage image(100, 100, QImage::Format_ARGB32_Premultiplied);
     image.fill(Qt::white);
     QPainter painter(&image);
     painter.setClipRegion(exposed);
     snow_canvas_spotlight_renderer::render(
-        painter, sceneInfo(), SpotlightDisplayInfo{SnowColorRgba8{0, 0, 0, 255}, 0.64, active},
+        painter, projection, SpotlightDisplayInfo{SnowColorRgba8{0, 0, 0, 255}, 0.64, active},
         items, itemCount, renderArea, exposed);
     painter.end();
     return image;
@@ -103,6 +105,141 @@ void defaultMaskHasExactOpacityAndTransparentHole() {
             "default spotlight mask must composite 64% black");
     require(image.pixelColor(50, 50) == QColor(Qt::white),
             "spotlight rectangle must reveal the unmasked canvas");
+}
+
+void spotlightTypesRenderDistinctHolesAndMixedOverlaps() {
+    for (const auto shape : {SNOW_DISPLAY_RECT_SHAPE_RECTANGLE, SNOW_DISPLAY_RECT_SHAPE_ELLIPSE,
+                             SNOW_DISPLAY_RECT_SHAPE_DIAMOND}) {
+        SnowSpotlightCutout item = cutout(50.0, 50.0, 40.0, 40.0);
+        item.shape = static_cast<std::uint8_t>(shape);
+        const QImage image = render(&item, 1);
+        require(image.pixelColor(50, 50) == QColor(Qt::white),
+                "every spotlight type must reveal its interior");
+        require((image.pixelColor(63, 63) == QColor(Qt::white)) ==
+                    (shape != SNOW_DISPLAY_RECT_SHAPE_DIAMOND),
+                "diamond corners must differ from rectangle and ellipse geometry");
+        require((image.pixelColor(67, 67) == QColor(Qt::white)) ==
+                    (shape == SNOW_DISPLAY_RECT_SHAPE_RECTANGLE),
+                "ellipse and diamond must leave bounding-box corners masked");
+        item.rotation = std::acos(-1.0) / 2.0;
+        item.width = 60.0;
+        item.height = 20.0;
+        const QImage rotated = render(&item, 1);
+        require(rotated.pixelColor(50, 70) == QColor(Qt::white) &&
+                    isDefaultMaskPixel(rotated.pixel(70, 50)),
+                "spotlight shape geometry must rotate with the element");
+        SceneDisplayInfo zoomed = sceneInfo();
+        zoomed.camera_zoom = 2.0;
+        const QImage projected =
+            render(&item, 1, QRectF(0, 0, 100, 100), QRegion(QRect(0, 0, 100, 100)), true, zoomed);
+        require(projected.pixelColor(50, 90) == QColor(Qt::white),
+                "spotlight paths must follow camera zoom");
+        const QImage partial =
+            render(&item, 1, QRectF(0, 0, 100, 100), QRegion(QRect(0, 0, 20, 20)));
+        require(isDefaultMaskPixel(partial.pixel(5, 5)) &&
+                    partial.pixelColor(90, 90) == QColor(Qt::white),
+                "partial exposure must constrain work for every spotlight shape");
+    }
+    SnowSpotlightCutout items[] = {cutout(40, 50, 40, 40), cutout(60, 50, 40, 40)};
+    items[0].shape = SNOW_DISPLAY_RECT_SHAPE_ELLIPSE;
+    items[1].shape = SNOW_DISPLAY_RECT_SHAPE_DIAMOND;
+    const QImage image = render(items, 2);
+    require(image.pixelColor(50, 50) == QColor(Qt::white) &&
+                image.pixelColor(60, 50) == QColor(Qt::white) &&
+                isDefaultMaskPixel(image.pixel(75, 65)),
+            "mixed spotlight holes must form a union without refilling overlaps");
+}
+
+void spotlightTypeSurvivesDisplayPatchesAndExport() {
+    for (const auto shape : {SNOW_RECTANGLE_SHAPE_RECTANGLE, SNOW_RECTANGLE_SHAPE_ELLIPSE,
+                             SNOW_RECTANGLE_SHAPE_DIAMOND}) {
+        SnowStyleDefaults defaults{};
+        require(snow_runtime_style_defaults_default(&defaults) == SNOW_OK,
+                "spotlight export fixture must load valid runtime defaults");
+        defaults.spotlight_shape = shape;
+        SnowRuntimeConfig runtimeConfig{&defaults};
+        ScopedRuntimeHandle runtime;
+        require(snow_runtime_create_with_config(&runtimeConfig, runtime.outParam()) == SNOW_OK,
+                "spotlight export fixture must create a configured runtime");
+        SnowCanvasViewport viewport;
+        require(viewport.create(runtime.get(), snow_canvas_viewport::defaultEngineConfig()) &&
+                    snow_viewport_set_surface_size(runtime.get(), viewport.get(), 100, 100) ==
+                        SNOW_OK,
+                "spotlight export fixture must create a viewport");
+        ScopedChangedViewportList changed;
+        require(snow_viewport_set_active_tool_ex(runtime.get(), viewport.get(),
+                                                 SNOW_ACTIVE_TOOL_SPOTLIGHT,
+                                                 changed.outParam()) == SNOW_OK,
+                "spotlight export fixture must activate its tool");
+        for (const auto type :
+             {SNOW_POINTER_EVENT_DOWN, SNOW_POINTER_EVENT_MOVE, SNOW_POINTER_EVENT_UP}) {
+            SnowInputEvent event{};
+            event.kind = SNOW_INPUT_EVENT_POINTER;
+            event.pointer.pointer_id = 1;
+            event.pointer.event_type = type;
+            event.pointer.device = SNOW_POINTER_DEVICE_MOUSE;
+            event.pointer.position_x = type == SNOW_POINTER_EVENT_DOWN ? 30 : 70;
+            event.pointer.position_y = type == SNOW_POINTER_EVENT_DOWN ? 30 : 70;
+            event.pointer.button = type == SNOW_POINTER_EVENT_MOVE ? SNOW_POINTER_BUTTON_NONE
+                                                                   : SNOW_POINTER_BUTTON_PRIMARY;
+            event.pointer.buttons = type == SNOW_POINTER_EVENT_UP ? 0 : 1;
+            SnowInteractionOutput output{};
+            require(snow_viewport_process_input_ex(runtime.get(), viewport.get(), &event, &output,
+                                                   changed.outParam()) == SNOW_OK,
+                    "spotlight export fixture must create a cutout");
+        }
+        SnowCanvasDisplayCache cache;
+        require(cache.sync(runtime.get(), viewport.get()) && cache.spotlightCutoutCount() == 1 &&
+                    cache.spotlightCutouts()[0].shape == static_cast<std::uint8_t>(shape),
+                "dedicated spotlight display patches must retain the selected type");
+        const QImage expected = render(cache.spotlightCutouts(), 1, QRectF(0, 0, 100, 100),
+                                       QRegion(QRect(0, 0, 100, 100)), true, cache.sceneInfo());
+        QImage background(100, 100, QImage::Format_ARGB32_Premultiplied);
+        background.fill(Qt::white);
+        const QRectF canvasRect(-50, -50, 100, 100);
+        const QImage exported =
+            snow_canvas_export::renderToImage(runtime.get(), canvasRect, QSize(100, 100),
+                                              {CanvasExportSource{background, canvasRect}});
+        require(exported == expected,
+                "spotlight exports must match the live cutout renderer for every type");
+        for (const auto type : {SNOW_POINTER_EVENT_DOWN, SNOW_POINTER_EVENT_UP}) {
+            SnowInputEvent event{};
+            event.kind = SNOW_INPUT_EVENT_POINTER;
+            event.pointer.pointer_id = 1;
+            event.pointer.event_type = type;
+            event.pointer.device = SNOW_POINTER_DEVICE_MOUSE;
+            event.pointer.position_x = 50;
+            event.pointer.position_y = 50;
+            event.pointer.button = SNOW_POINTER_BUTTON_PRIMARY;
+            event.pointer.buttons = type == SNOW_POINTER_EVENT_DOWN ? 1 : 0;
+            SnowInteractionOutput output{};
+            require(snow_viewport_process_input_ex(runtime.get(), viewport.get(), &event, &output,
+                                                   changed.outParam()) == SNOW_OK,
+                    "spotlight interior must support quick selection");
+            require(cache.sync(runtime.get(), viewport.get()),
+                    "spotlight selection must keep the display patch cursor current");
+        }
+        SnowStyleToolbarState toolbarState{};
+        require(snow_viewport_get_style_toolbar_state(runtime.get(), viewport.get(),
+                                                      &toolbarState) == SNOW_OK &&
+                    toolbarState.source == SNOW_STYLE_TOOLBAR_SOURCE_SELECTED_SPOTLIGHT,
+                "a spotlight shape edit must target the selected cutout");
+        const auto sceneRevision = cache.patchCursor().scene_revision;
+        SnowShapeStyle style{};
+        style.shape = shape == SNOW_RECTANGLE_SHAPE_DIAMOND ? SNOW_RECTANGLE_SHAPE_ELLIPSE
+                                                            : SNOW_RECTANGLE_SHAPE_DIAMOND;
+        require(snow_viewport_set_shape_style_patch_ex(
+                    runtime.get(), viewport.get(), &style, SNOW_SHAPE_STYLE_PROPERTY_SHAPE,
+                    SNOW_SHAPE_KIND_SPOTLIGHT, changed.outParam()) == SNOW_OK &&
+                    cache.sync(runtime.get(), viewport.get()),
+                "spotlight type changes must propagate through display cache patches");
+        require(cache.spotlightCutouts()[0].shape == static_cast<std::uint8_t>(style.shape),
+                "spotlight type edits must change the selected cutout type");
+        require(cache.patchCursor().scene_revision == sceneRevision &&
+                    cache.sceneDirtyRectCount() == 0,
+                "spotlight type edits must update decoration geometry without dirtying the "
+                "retained scene");
+    }
 }
 
 void overlappingAndRotatedCutoutsUseAPathUnion() {
@@ -394,6 +531,8 @@ int main(int argc, char** argv) {
     QApplication application(argc, argv);
     snow_canvas_render_diagnostics::setEnabled(true);
     defaultMaskHasExactOpacityAndTransparentHole();
+    spotlightTypesRenderDistinctHolesAndMixedOverlaps();
+    spotlightTypeSurvivesDisplayPatchesAndExport();
     overlappingAndRotatedCutoutsUseAPathUnion();
     renderAreaAndExposureLimitMaskWork();
     inactiveMaskLeavesCanvasUnchanged();

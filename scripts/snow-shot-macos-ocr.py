@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Stage and verify macOS ARM64 OCR runtimes and optional bundled models."""
+"""Stage and verify macOS OCR runtimes and optional bundled models."""
 import argparse
 import hashlib
 import json
@@ -15,6 +15,11 @@ ROOT = Path(__file__).resolve().parents[1]
 MANIFEST = ROOT / 'snow_shot/packaging/snow-shot-ocr-asset-manifest.json'
 RUNTIME_FILES = ('snow-ocr-process', 'libonnxruntime.dylib')
 ARM64_HEADER = bytes.fromhex('cffaedfe0c000001')
+X64_HEADER = bytes.fromhex('cffaedfe07000001')
+ARCHITECTURES = {
+    'arm64': dict(header=ARM64_HEADER, slice='arm64', worker='aarch64', label='ARM64'),
+    'x64': dict(header=X64_HEADER, slice='x86_64', worker='x86_64', label='x64'),
+}
 
 
 def run(*args):
@@ -258,22 +263,23 @@ def stage_models(manifest, cache, destination, all_models=False):
                     dict(schema=1, component=model['id']))
 
 
-def runtime_manifest(source, runtime, static_runtime=False):
+def runtime_manifest(source, runtime, static_runtime=False, arch='arm64'):
+    architecture = ARCHITECTURES[arch]
     version = source['runtime']['version']
     runtime_files = RUNTIME_FILES[:1] if static_runtime else RUNTIME_FILES
     for name in runtime_files:
         path = runtime / name
         with path.open('rb') as binary:
             header = binary.read(32)
-        if len(header) != 32 or header[:8] != ARM64_HEADER:
-            raise ValueError(f'Expected a thin ARM64 Mach-O binary: {path}')
+        if len(header) != 32 or header[:8] != architecture['header']:
+            raise ValueError(f'Expected a thin {architecture["label"]} Mach-O binary: {path}')
     if not os.access(runtime / RUNTIME_FILES[0], os.X_OK):
         raise ValueError('The OCR worker is not executable')
-    expected = f'snow-ocr-process {version} macos-aarch64 protocol 5'
+    expected = f'snow-ocr-process {version} macos-{architecture["worker"]} protocol 5'
     if run(str(runtime / RUNTIME_FILES[0]), '--version') != expected:
         raise ValueError('The OCR worker version/protocol does not match the application')
     return dict(schema=3, default_model='small', runtime=dict(
-        version=version, platform='macos-arm64', delivery='bundled', protocol=5,
+        version=version, platform=f'macos-{arch}', delivery='bundled', protocol=5,
         executable=RUNTIME_FILES[0], static=static_runtime,
         files=[descriptor(runtime / n) for n in runtime_files]),
         models=source['models'])
@@ -313,18 +319,18 @@ def verify_no_bundled_models(runtime):
         raise ValueError(f'Runtime-only OCR package must not contain bundled models: {directory}')
 
 
-def finalize(source, runtime, static_runtime=False, runtime_only=False):
+def finalize(source, runtime, static_runtime=False, runtime_only=False, arch='arm64'):
     if runtime_only:
         verify_no_bundled_models(runtime)
-    manifest = runtime_manifest(source, runtime, static_runtime)
+    manifest = runtime_manifest(source, runtime, static_runtime, arch)
     atomic_json(runtime / 'assets/ocr/asset-manifest.json', manifest)
 
 
-def verify_assets(source, runtime, static_runtime=False, runtime_only=False):
+def verify_assets(source, runtime, static_runtime=False, runtime_only=False, arch='arm64'):
     if runtime_only:
         verify_no_bundled_models(runtime)
     actual = json.loads((runtime / 'assets/ocr/asset-manifest.json').read_text())
-    if actual != runtime_manifest(source, runtime, static_runtime):
+    if actual != runtime_manifest(source, runtime, static_runtime, arch):
         raise ValueError('Bundled OCR manifest does not match finalized runtime bytes')
     if runtime_only:
         return actual
@@ -338,9 +344,11 @@ def verify_assets(source, runtime, static_runtime=False, runtime_only=False):
     return actual
 
 
-def verify_bundle(app):
+def verify_bundle(app, arch='arm64'):
     """Reject unresolved Mach-O loads and build-machine paths, including LC_RPATH."""
     executable_root = app / 'Contents/MacOS'
+    architecture = ARCHITECTURES[arch]
+    target_slice = architecture['slice']
     checked = []
     for path in sorted(app.rglob('*')):
         if not path.is_file() or path.is_symlink():
@@ -350,9 +358,9 @@ def verify_bundle(app):
         if magic not in (bytes.fromhex('cffaedfe'), bytes.fromhex('cafebabe'),
                          bytes.fromhex('cafebabf')):
             continue
-        if 'arm64' not in run('/usr/bin/lipo', '-archs', str(path)).split():
-            raise ValueError(f'Non-ARM64 bundle dependency: {path}')
-        loads = run('/usr/bin/otool', '-arch', 'arm64', '-l', str(path)).splitlines()
+        if target_slice not in run('/usr/bin/lipo', '-archs', str(path)).split():
+            raise ValueError(f'Non-{architecture["label"]} bundle dependency: {path}')
+        loads = run('/usr/bin/otool', '-arch', target_slice, '-l', str(path)).splitlines()
         rpaths = []
         for i, line in enumerate(loads):
             if line.strip() == 'cmd LC_RPATH':
@@ -369,8 +377,8 @@ def verify_bundle(app):
                 raise ValueError(f'Non-relocatable rpath in {path}: {value}')
             if value.startswith('@') and not expand(value).resolve().is_relative_to(app.resolve()):
                 raise ValueError(f'Bundle rpath escapes the app in {path}: {value}')
-        dependencies = run('/usr/bin/otool', '-arch', 'arm64', '-L', str(path)).splitlines()[1:]
-        ids = run('/usr/bin/otool', '-arch', 'arm64', '-D', str(path)).splitlines()[1:]
+        dependencies = run('/usr/bin/otool', '-arch', target_slice, '-L', str(path)).splitlines()[1:]
+        ids = run('/usr/bin/otool', '-arch', target_slice, '-D', str(path)).splitlines()[1:]
         for line in dependencies:
             dependency = line.strip().split(' (compatibility')[0]
             if dependency in ids or dependency.startswith(('/usr/lib/', '/System/Library/')):
@@ -393,6 +401,7 @@ def verify_bundle(app):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('command', choices=('stage', 'finalize', 'verify', 'fetch-models', 'prepare-bundle'))
+    parser.add_argument('--arch', choices=ARCHITECTURES, default='arm64')
     parser.add_argument('--manifest', type=Path, default=MANIFEST)
     parser.add_argument('--runtime-dir', type=Path)
     parser.add_argument('--cache', type=Path, default=ROOT / 'artifacts')
@@ -440,20 +449,21 @@ def main():
             remove_bundled_models(runtime)
         else:
             stage_models(source, args.cache, runtime / 'assets/ocr/models')
-        finalize(source, runtime, args.static_runtime, args.runtime_only)
+        finalize(source, runtime, args.static_runtime, args.runtime_only, args.arch)
     elif args.command == 'finalize':
         if args.deployed:
             remove_development_libraries(runtime)
-        finalize(source, runtime, args.static_runtime, args.runtime_only)
+        finalize(source, runtime, args.static_runtime, args.runtime_only, args.arch)
     else:
-        manifest = verify_assets(source, runtime, args.static_runtime, args.runtime_only)
-        binaries = verify_bundle(args.app.resolve()) if args.app else []
+        manifest = verify_assets(source, runtime, args.static_runtime, args.runtime_only, args.arch)
+        binaries = verify_bundle(args.app.resolve(), args.arch) if args.app else []
         if args.report:
-            atomic_json(args.report, dict(platform='macos-arm64', runtime=manifest['runtime'],
+            atomic_json(args.report, dict(platform=f'macos-{args.arch}', runtime=manifest['runtime'],
                         bundled_model=None if args.runtime_only else manifest['default_model'],
                         verified_binaries=binaries,
                         signature='ad-hoc' if args.app else None))
-        print('Verified macOS ARM64 OCR assets' + (' and app bundle' if args.app else ''))
+        print(f'Verified macOS {ARCHITECTURES[args.arch]["label"]} OCR assets'
+              + (' and app bundle' if args.app else ''))
 
 
 if __name__ == '__main__':

@@ -12,6 +12,7 @@ use crate::{
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct EditorStyleDefaults {
+    pub spotlight_shape: snow_draw_engine_document::HighlightShape,
     pub rectangle: RectangleShapeStyle,
     pub arrow: ArrowStyle,
     pub line: ShapeStyle,
@@ -40,6 +41,7 @@ pub fn editor_style_defaults() -> EditorStyleDefaults {
     };
 
     EditorStyleDefaults {
+        spotlight_shape: snow_draw_engine_document::HighlightShape::Rectangle,
         rectangle: RectangleShapeStyle {
             shape: snow_draw_engine_document::HighlightShape::Rectangle,
             fill: ColorRgba8::default(),

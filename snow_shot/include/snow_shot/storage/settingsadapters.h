@@ -12,6 +12,7 @@
 #include <QColor>
 #include <QByteArray>
 #include <QJsonObject>
+#include <QJsonValue>
 #include <QMap>
 #include <QString>
 #include <QStringList>
@@ -268,6 +269,10 @@ class DrawingSettings final {
     bool setRememberLastUsedTool(bool enabled) const;
 };
 
+// Applies partial updates across local shortcut scopes in one commit. Each affected
+// scope is validated against its complete resulting assignment before any values change.
+[[nodiscard]] bool setLocalShortcutValuesAtomic(const QMap<QString, QJsonValue>& values);
+
 class ScreenshotShortcutSettings final {
   public:
     [[nodiscard]] static bool isReservedShortcut(const shortcuts::ShortcutBinding& shortcut);
@@ -379,6 +384,8 @@ class ScreenshotUiSettings final {
     bool setSelectionTransitionAnimationEnabled(bool enabled) const;
     [[nodiscard]] QString selectionDisplayUnit() const;
     bool setSelectionDisplayUnit(const QString& unit) const;
+    [[nodiscard]] bool selectionToolbarHidden() const;
+    bool setSelectionToolbarHidden(bool hidden) const;
     [[nodiscard]] QString colorPickerDisplayMode() const;
     bool setColorPickerDisplayMode(const QString& mode) const;
     [[nodiscard]] QString colorPickerCoordinateMode() const;
@@ -403,6 +410,8 @@ class ScreenshotUiSettings final {
     bool setMonitorCenterGuideLineColor(const QColor& color) const;
     [[nodiscard]] QColor colorPickerCenterGuideLineColor() const;
     bool setColorPickerCenterGuideLineColor(const QColor& color) const;
+    [[nodiscard]] bool showEditSelectionToolbar() const;
+    bool setShowEditSelectionToolbar(bool show) const;
 };
 
 class RecordingSettings final {

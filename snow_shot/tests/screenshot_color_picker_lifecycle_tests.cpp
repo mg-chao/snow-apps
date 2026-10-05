@@ -1,5 +1,6 @@
 #include "snow_shot/presentation/screenshottoolbarcommands.h"
 #include "snow_shot/presentation/screenshottoolbarwindow.h"
+#include "snow_shot/presentation/screenshotselectiontoolbarwidget.h"
 #include "snow_shot/presentation/screenshotcanvastoolstyles.h"
 #include "snow_shot/presentation/screenshotcanvascolorsamplerwindow.h"
 #include "snow_shot/platform/screenshotnative.h"
@@ -17,6 +18,7 @@
 #include "snow_shot/presentation/screenshotdisplaysession.h"
 #include "snow_shot/presentation/windowshortcutmanager.h"
 #include "snow_shot/storage/applicationstorage.h"
+#include "snow_shot/storage/settingsadapters.h"
 #include "snow_draw_engine_qt/snow_canvas_widget.h"
 #include "snow_draw_engine_qt/snow_canvas_runtime.h"
 #include "widgets/popover.h"
@@ -146,6 +148,10 @@ class StyleToolbarCommands final : public ScreenshotToolbarCommandSink,
     void hideColorPickersForScreenshotUi() override {
         hidePickers();
     }
+    void setSelectionToolbarHidden(bool hidden) override {
+        ++selectionToolbarVisibilityCommands;
+        selectionToolbarVisibility(hidden);
+    }
 
     void toggleSelectionAspectRatioLockFromToolbar() override {}
     void setSelectionAspectRatioPresetFromToolbar(ScreenshotSelectionAspectRatioPreset) override {}
@@ -157,8 +163,107 @@ class StyleToolbarCommands final : public ScreenshotToolbarCommandSink,
     int moveToolCount = 0;
     int selectToolCount = 0;
     int shapeToolCount = 0;
+    int selectionToolbarVisibilityCommands = 0;
     std::function<void()> hidePickers = [] {};
+    std::function<void(bool)> selectionToolbarVisibility = [](bool) {};
 };
+
+void selectionToolbarVisibilitySurvivesCapturesAndRestarts() {
+    namespace storage = snow_shot::storage;
+    QTemporaryDir temporary;
+    require(temporary.isValid(), "selection toolbar tests require isolated settings");
+    auto& applicationStorage = storage::ApplicationStorage::instance();
+    const storage::StorageInitializationOptions options{temporary.path(), temporary.path(), 60000};
+    const storage::ScreenshotUiSettings settings;
+    for (int launch = 0; launch < 3; ++launch) {
+        require(applicationStorage.initialize(options).success,
+                "initialize saved selection toolbar settings");
+        const bool initiallyHidden = launch == 1;
+        require(settings.selectionToolbarHidden() == initiallyHidden,
+                "selection toolbar visibility must default to shown and survive restarts");
+        {
+            NoopOverlayEventSink sink;
+            ScreenshotOverlayWindow first(sink, new SnowCanvasWidget);
+            ScreenshotOverlayWindow second(sink, new SnowCanvasWidget);
+            first.setGeometry(0, 0, 1000, 700);
+            second.setGeometry(1000, 0, 1000, 700);
+            first.show();
+            second.show();
+            StyleToolbarCommands commands;
+            ScreenshotOverlayUiHost host;
+            host.setToolbarCommandSinks(commands, commands);
+            auto* window = host.ensureToolbar();
+            const auto hideButton = [&]() {
+                auto* button = window->palette()->findChild<adqt::widgets::AdButton*>(
+                    QStringLiteral("screenshotHideSelectionToolbarButton"));
+                require(button != nullptr, "move sub-toolbar must expose the visibility option");
+                return button;
+            };
+            const auto showSelectionToolbar = [&](ScreenshotOverlayWindow& overlay) {
+                host.attachSelectionToolbarToOverlay(&overlay);
+                host.selectionToolbar()->setSelectionState(QRect(100, 100, 300, 200), false, 0, 0);
+                host.showSelectionToolbar();
+            };
+            const auto requireHidden = [&](bool hidden) {
+                require(settings.selectionToolbarHidden() == hidden &&
+                            window->palette()->selectionToolbarHidden() == hidden &&
+                            (hideButton()->buttonStyle() ==
+                             adqt::widgets::AdButton::ButtonStyle::Solid) == hidden &&
+                            host.selectionToolbar()->isVisible() != hidden,
+                        "the saved option, move button and selection toolbar must agree");
+            };
+            commands.selectionToolbarVisibility = [&](bool hidden) {
+                require(settings.selectionToolbarHidden() == hidden,
+                        "the visibility preference must be saved before applying the command");
+                host.setSelectionToolbarHidden(hidden);
+                if (!hidden)
+                    host.showSelectionToolbar();
+            };
+            showSelectionToolbar(first);
+            requireHidden(initiallyHidden);
+            if (launch == 0) {
+                hideButton()->click();
+                require(commands.selectionToolbarVisibilityCommands == 1,
+                        "a visibility click must dispatch exactly one command");
+                requireHidden(true);
+                applicationStorage.configuration().suspendWrites(true);
+                hideButton()->click();
+                requireHidden(true);
+                require(commands.selectionToolbarVisibilityCommands == 2,
+                        "a rejected preference change must apply the saved visibility");
+                applicationStorage.configuration().suspendWrites(false);
+                host.resetToolbarForNewCapture();
+                showSelectionToolbar(first);
+                requireHidden(true);
+                showSelectionToolbar(second);
+                requireHidden(true);
+                host.destroyUiResources();
+                host.setToolbarCommandSinks(commands, commands);
+                window = host.ensureToolbar();
+                showSelectionToolbar(first);
+                requireHidden(true);
+                require(settings.setSelectionToolbarHidden(false), "change visibility externally");
+                showSelectionToolbar(first);
+                requireHidden(false);
+                require(settings.setSelectionToolbarHidden(true), "hide the toolbar externally");
+                requireHidden(true);
+                require(commands.selectionToolbarVisibilityCommands == 2,
+                        "preference synchronization and capture resets must not dispatch commands");
+            } else if (launch == 1) {
+                hideButton()->click();
+                requireHidden(false);
+                require(commands.selectionToolbarVisibilityCommands == 1,
+                        "the restored visibility option must remain reversible");
+                host.resetToolbarForNewCapture();
+                showSelectionToolbar(second);
+                requireHidden(false);
+            }
+            require(applicationStorage.configuration().flushNow().success,
+                    "selection toolbar visibility must be written to disk");
+        }
+        applicationStorage.shutdown();
+    }
+}
 
 void toolbarPopoversSuppressPickerAcrossWindowBoundaries() {
     QTemporaryDir temporary;
@@ -1020,6 +1125,10 @@ void auxiliaryWindowsPreserveOwnerStacking() {
 
 int main(int argc, char** argv) {
     QApplication application(argc, argv);
+    if (application.arguments().contains(QStringLiteral("--selection-toolbar-visibility-only"))) {
+        selectionToolbarVisibilitySurvivesCapturesAndRestarts();
+        return 0;
+    }
     if (application.arguments().contains(QStringLiteral("--toolbar-picker-hover-only"))) {
         toolbarPopoversSuppressPickerAcrossWindowBoundaries();
         return 0;

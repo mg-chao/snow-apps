@@ -289,8 +289,8 @@ bool filterTypeSupportsIntensity(SnowCanvasFilterType type) {
            type != SnowCanvasFilterType::SmartErase;
 }
 
-bool toolUsesActionToolbar(ScreenshotToolPalette::Tool tool, bool showMoveOptionsToolbar) {
-    return (tool == ScreenshotToolPalette::Tool::Move && showMoveOptionsToolbar) ||
+bool toolUsesActionToolbar(ScreenshotToolPalette::Tool tool, bool moveOptionsToolbarVisible) {
+    return (tool == ScreenshotToolPalette::Tool::Move && moveOptionsToolbarVisible) ||
            tool == ScreenshotToolPalette::Tool::Select ||
            tool == ScreenshotToolPalette::Tool::Ocr ||
            tool == ScreenshotToolPalette::Tool::TextTranslation ||
@@ -585,6 +585,9 @@ QString drawingToolItemId(ScreenshotToolPalette::Tool tool) {
 }
 
 QString drawingShortcutToolIdForItemId(const QString& itemId) {
+    if (itemId == QStringLiteral("line") || itemId == QStringLiteral("spotlight")) {
+        return itemId;
+    }
     if (itemId == QStringLiteral("select")) {
         return QStringLiteral("select");
     }
@@ -619,6 +622,12 @@ QString drawingShortcutToolIdForItemId(const QString& itemId) {
 }
 
 QString drawingShortcutToolIdForTooltipSource(const QString& source) {
+    if (source == QStringLiteral("Line")) {
+        return QStringLiteral("line");
+    }
+    if (source == QStringLiteral("Spotlight")) {
+        return QStringLiteral("spotlight");
+    }
     if (source == QStringLiteral("Select elements")) {
         return QStringLiteral("select");
     }
@@ -888,6 +897,7 @@ class DrawTemplateOptionActionDelegate final : public QAbstractItemDelegate {
 
 ScreenshotToolPalette::ScreenshotToolPalette(const Options& options, QWidget* parent)
     : QWidget(parent), m_styleDefaults(options.styleDefaults), m_options(options),
+      m_moveOptionsToolbarVisible(options.enableMoveOptionsToolbar),
       m_toolbarLayout(initialToolbarLayout(options)),
       m_actionToolsLayout(initialActionToolsLayout(options)),
       m_actionToolsLayoutExplicit(options.actionToolsLayout.has_value()) {
@@ -1432,6 +1442,17 @@ bool ScreenshotToolPalette::actionToolbarVisible() const {
     return m_actionToolbarTargetVisible;
 }
 
+void ScreenshotToolPalette::setMoveOptionsToolbarVisible(bool visible) {
+    visible = visible && m_options.enableMoveOptionsToolbar;
+    if (m_moveOptionsToolbarVisible == visible) {
+        return;
+    }
+    m_moveOptionsToolbarVisible = visible;
+    if (m_activeTool == Tool::Move) {
+        setActiveTool(Tool::Move);
+    }
+}
+
 bool ScreenshotToolPalette::recordingExportSettingsVisible() const {
     return m_recordExportSettingsVisible;
 }
@@ -1450,7 +1471,7 @@ bool ScreenshotToolPalette::setSecondaryToolbarVisibility(bool actionToolbarVisi
     const bool conversionVisible = m_activeTool == Tool::Markdown || m_activeTool == Tool::Html;
     const bool originalVisible = ocrVisible || tableVisible || qrVisible || conversionVisible;
     const bool scrollingVisible = m_activeTool == Tool::ScrollingScreenshot;
-    const bool moveVisible = m_activeTool == Tool::Move && m_options.showMoveOptionsToolbar;
+    const bool moveVisible = m_activeTool == Tool::Move && m_moveOptionsToolbarVisible;
     const bool recognitionActionVisible = ocrVisible || tableVisible || qrVisible ||
                                           scrollingVisible || conversionVisible || moveVisible;
     const bool recognitionControlsMatch =
@@ -1809,7 +1830,7 @@ void ScreenshotToolPalette::setActiveTool(Tool tool) {
         }
     }
     if (const std::optional<ActionFamily> family = actionFamilyForTool(tool);
-        family.has_value() && toolUsesActionToolbar(tool, m_options.showMoveOptionsToolbar)) {
+        family.has_value() && toolUsesActionToolbar(tool, m_moveOptionsToolbarVisible)) {
         static_cast<void>(ensureActionFamily(*family));
     }
     if (toolUsesStyleToolbar(tool)) {
@@ -4614,14 +4635,10 @@ void ScreenshotToolPalette::recordUserDrawingToolIntent(Tool tool) {
 }
 
 bool ScreenshotToolPalette::drawingToolCanBeActivated(Tool tool) const {
-    if (drawingToolItemId(tool).isEmpty()) {
-        return false;
-    }
-    adqt::widgets::AdButton* button = drawingToolEntryButton(tool);
-    return button != nullptr && button->isEnabled();
+    return !drawingToolItemId(tool).isEmpty() && canActivateToolShortcut(tool);
 }
 
-adqt::widgets::AdButton* ScreenshotToolPalette::toolShortcutButton(Tool tool) const {
+adqt::widgets::AdButton* ScreenshotToolPalette::toolEntryButton(Tool tool) const {
     adqt::widgets::AdButton* requestedButton = nullptr;
     switch (tool) {
     case Tool::Move:
@@ -4658,16 +4675,21 @@ adqt::widgets::AdButton* ScreenshotToolPalette::toolShortcutButton(Tool tool) co
 }
 
 bool ScreenshotToolPalette::canActivateToolShortcut(Tool tool) const {
+    if (m_recordTrimPanel)
+        return false;
     tool = rememberedDrawingMode(tool);
-    const auto* button = toolShortcutButton(tool);
+    const QString actionId = actionToolItemId(tool);
+    if (!actionId.isEmpty())
+        return actionToolAvailable(actionId) && actionToolState(actionId).enabled;
+    // A stack trigger represents several commands and can be enabled for a sibling.
+    // The underlying control owns this command's state even when its button is hidden.
+    const auto* button = tool == Tool::Move     ? m_moveButton
+                         : tool == Tool::Select ? m_selectButton
+                                                : drawingToolButton(drawingToolItemId(tool));
     return button != nullptr && button->isEnabled();
 }
 
 bool ScreenshotToolPalette::activateToolFromToolbar(Tool tool, bool toggleVisibleButton) {
-    if (m_recordTrimPanel)
-        return false;
-    if (!snow_shot::presentation::editionActionToolAvailable(actionToolItemId(tool)))
-        return false;
     tool = rememberedDrawingMode(tool);
     if (!canActivateToolShortcut(tool)) {
         return false;
@@ -4676,7 +4698,7 @@ bool ScreenshotToolPalette::activateToolFromToolbar(Tool tool, bool toggleVisibl
     // Toolbar clicks and shortcuts toggle the active drawing/action tool back
     // to selection mode. Programmatic setActiveTool() calls remain
     // explicit so state synchronization does not unexpectedly toggle.
-    adqt::widgets::AdButton* requestedButton = toolShortcutButton(tool);
+    adqt::widgets::AdButton* requestedButton = toolEntryButton(tool);
     const bool alreadyActive =
         !toggleVisibleButton         ? m_activeTool.has_value() && *m_activeTool == tool
         : requestedButton != nullptr ? m_activeToolButton == requestedButton
@@ -4958,8 +4980,14 @@ ScreenshotToolPalette::actionToolState(const QString& itemId) const {
     return {};
 }
 
+bool ScreenshotToolPalette::canActivateActionTool(const QString& itemId) const {
+    if (const auto tool = actionTool(itemId))
+        return canActivateToolShortcut(*tool);
+    return actionToolAvailable(itemId) && actionToolState(itemId).enabled;
+}
+
 bool ScreenshotToolPalette::activateActionTool(const QString& itemId, bool toggleVisibleButton) {
-    if (!actionToolAvailable(itemId) || !actionToolState(itemId).enabled) {
+    if (!canActivateActionTool(itemId)) {
         return false;
     }
     selectActionToolGroupEntry(itemId);
@@ -5866,22 +5894,6 @@ bool ScreenshotToolPalette::addMainSecondaryButtons(const Options& options, QBox
     return hasButton;
 }
 
-ScreenshotToolPalette::Tool ScreenshotToolPalette::drawingShortcutEntryTool(const QString& itemId,
-                                                                            Tool fallback) const {
-    if (m_activeTool.has_value() && drawingToolItemId(*m_activeTool) == itemId) {
-        return *m_activeTool;
-    }
-    for (const DrawingToolGroup& group : m_drawingToolGroups) {
-        if (group.itemIds.contains(itemId)) {
-            if (const auto* descriptor = toolbar_layout::descriptor(group.entryItemId)) {
-                return drawingToolFromItem(descriptor->item);
-            }
-            return fallback;
-        }
-    }
-    return fallback;
-}
-
 std::optional<ScreenshotToolPalette::Tool>
 ScreenshotToolPalette::drawingShortcutTool(const QString& toolId) const {
     Tool tool = Tool::Move;
@@ -5891,16 +5903,20 @@ ScreenshotToolPalette::drawingShortcutTool(const QString& toolId) const {
         tool = Tool::Shape;
     } else if (toolId == QStringLiteral("arrow")) {
         tool = Tool::Arrow;
+    } else if (toolId == QStringLiteral("line")) {
+        tool = Tool::Line;
+    } else if (toolId == QStringLiteral("spotlight")) {
+        tool = Tool::Spotlight;
     } else if (toolId == QStringLiteral("brush")) {
         tool = Tool::FreeDraw;
     } else if (toolId == QStringLiteral("highlight")) {
-        tool = drawingShortcutEntryTool(QStringLiteral("highlighter"), Tool::PenHighlight);
+        tool = Tool::PenHighlight;
     } else if (toolId == QStringLiteral("text")) {
         tool = Tool::Text;
     } else if (toolId == QStringLiteral("serial_number")) {
         tool = Tool::SerialNumber;
     } else if (toolId == QStringLiteral("filter")) {
-        tool = drawingShortcutEntryTool(QStringLiteral("filter"), Tool::PenFilter);
+        tool = Tool::PenFilter;
     } else if (toolId == QStringLiteral("eraser")) {
         tool = Tool::Eraser;
     } else if (toolId == QStringLiteral("watermark")) {
@@ -5922,8 +5938,6 @@ bool ScreenshotToolPalette::activateDrawingShortcut(const QString& toolId) {
 }
 
 bool ScreenshotToolPalette::activateToolShortcut(Tool tool) {
-    if (!snow_shot::presentation::editionActionToolAvailable(actionToolItemId(tool)))
-        return false;
     const QString actionId = actionToolItemId(tool);
     // Named shortcuts select the same item as the corresponding toolbar menu option.
     return actionId.isEmpty() ? activateToolFromToolbar(tool, false)
@@ -5969,20 +5983,17 @@ QString screenshotShortcutActionItem(const QString& actionId) {
 }
 } // namespace
 
-adqt::widgets::AdButton* ScreenshotToolPalette::screenshotShortcutButton(const QString& actionId) {
-    if (actionId == QStringLiteral("recapture")) {
-        if (m_activeTool != Tool::Move) {
-            return nullptr;
-        }
-        static_cast<void>(ensureActionFamily(ActionFamily::Move));
-        return m_recaptureButton;
-    }
+adqt::widgets::AdButton*
+ScreenshotToolPalette::screenshotShortcutButton(const QString& actionId) const {
     return actionId == QStringLiteral("cancel_screenshot")   ? m_cancelButton
            : actionId == QStringLiteral("copy_to_clipboard") ? m_copyButton
                                                              : nullptr;
 }
 
 bool ScreenshotToolPalette::canActivateScreenshotShortcut(const QString& actionId) {
+    if (actionId == QStringLiteral("recapture")) {
+        return m_options.enableMoveOptionsToolbar && m_activeTool == Tool::Move && !m_recaptureBusy;
+    }
     if (actionId == QStringLiteral("undo") || actionId == QStringLiteral("redo")) {
         return canActivateHistoryItem(actionId);
     }
@@ -5991,13 +6002,19 @@ bool ScreenshotToolPalette::canActivateScreenshotShortcut(const QString& actionI
     }
     const QString item = screenshotShortcutActionItem(actionId);
     if (!item.isEmpty()) {
-        return actionToolAvailable(item) && actionToolState(item).enabled;
+        return canActivateActionTool(item);
     }
     const auto* button = screenshotShortcutButton(actionId);
     return button != nullptr && button->isEnabled();
 }
 
 bool ScreenshotToolPalette::activateScreenshotShortcut(const QString& actionId) {
+    if (!canActivateScreenshotShortcut(actionId))
+        return false;
+    if (actionId == QStringLiteral("recapture")) {
+        emit recaptureRequested();
+        return true;
+    }
     if (actionId == QStringLiteral("undo") || actionId == QStringLiteral("redo")) {
         return activateDrawingItem(actionId);
     }
@@ -6009,9 +6026,6 @@ bool ScreenshotToolPalette::activateScreenshotShortcut(const QString& actionId) 
         return activateActionTool(item, false);
     }
     auto* button = screenshotShortcutButton(actionId);
-    if (button == nullptr || !button->isEnabled()) {
-        return false;
-    }
     button->click();
     return true;
 }
@@ -7438,6 +7452,9 @@ void ScreenshotToolPalette::registerStyleFamily(QWidget* controls,
 }
 
 bool ScreenshotToolPalette::ensureActionFamily(ActionFamily family) {
+    if (family == ActionFamily::Move && !m_options.enableMoveOptionsToolbar) {
+        return false;
+    }
 #if !SNOW_SHOT_ENABLE_TABLE_RECOGNITION
     if (family == ActionFamily::TableRecognition)
         return false;
@@ -8186,12 +8203,12 @@ void ScreenshotToolPalette::createTableRecognitionActionFamily() {
 #endif
 
 void ScreenshotToolPalette::createMoveActionFamily() {
-    if (!m_options.showMoveOptionsToolbar || m_selectActionLayout == nullptr ||
-        m_moveActionControls != nullptr) {
+    if (m_selectActionLayout == nullptr || m_moveActionControls != nullptr) {
         return;
     }
     m_moveActionControls = new QWidget(m_selectActionPanel);
     m_moveActionControls->setObjectName(QStringLiteral("screenshotMoveActionControls"));
+    m_moveActionControls->hide();
     auto* layout = new QHBoxLayout(m_moveActionControls);
     layout->setContentsMargins(0, 0, 0, 0);
     layout->setSpacing(0);
@@ -9275,7 +9292,7 @@ bool ScreenshotToolPalette::applyActiveToolSecondaryToolbarVisibility() {
         return setSecondaryToolbarVisibility(false, false);
     }
     return setSecondaryToolbarVisibility(
-        toolUsesActionToolbar(*m_activeTool, m_options.showMoveOptionsToolbar),
+        toolUsesActionToolbar(*m_activeTool, m_moveOptionsToolbarVisible),
         toolUsesStyleToolbar(*m_activeTool));
 }
 

@@ -1,6 +1,9 @@
 [CmdletBinding()]
 param(
     [string]$Qt6Dir = "",
+    [ValidateSet("x64", "arm64")][string]$Architecture = "x64",
+    [string]$Preset = "",
+    [string]$HostQtPrefix = "",
     [ValidateSet("Dynamic", "Static")]
     [string[]]$VcpkgVariants = @("Dynamic", "Static"),
     [switch]$Reset,
@@ -11,6 +14,13 @@ param(
 
 $ErrorActionPreference = "Stop"
 . (Join-Path $PSScriptRoot "snow-build-environment.ps1")
+$targetArguments = @{ Architecture = $Architecture }
+if ($Preset) {
+    $targetArguments.Preset = $Preset
+    if (-not $PSBoundParameters.ContainsKey('Architecture')) { $targetArguments.Remove('Architecture') }
+}
+$windowsTarget = Get-SnowWindowsTarget @targetArguments
+$Architecture = $windowsTarget.Architecture
 
 function Invoke-Checked {
     param(
@@ -50,12 +60,15 @@ $vcpkgInstalledRoot = Join-Path $vcpkgRoot "installed"
 # newer snapshots require an unsupported manifest-tool schema or bundled CMake 4.4+.
 $vcpkgBaseline = "4497409a47f19db373a410a0efb84eca4747adbf"
 $rustToolchain = "1.97.1"
-$rustTarget = "x86_64-pc-windows-msvc"
+$rustTarget = $windowsTarget.RustTarget
+
+Add-SnowMsvcToolsToPath -Architecture $Architecture | Out-Null
 
 if (-not $SkipQtValidation) {
     # Environment variables often outlive a Qt upgrade, so each candidate is
     # version-checked before it is exported to the bootstrap subprocesses.
-    $Qt6Dir = Set-SnowQtEnvironment -Qt6Dir $Qt6Dir
+    $Qt6Dir = Set-SnowQtEnvironment -Qt6Dir $Qt6Dir -Preset $Preset `
+        -Architecture $Architecture -HostQtPrefix $HostQtPrefix
 }
 
 $git = Require-Command "git"
@@ -66,7 +79,7 @@ $rustup = Require-Command "rustup"
 # vcpkg's app-local packaging invokes dumpbin to discover DLL dependencies of
 # host tools. Without the MSVC bin directory, it can install unusable tools and
 # still record their packages as successfully installed.
-Add-SnowMsvcToolsToPath | Out-Null
+Add-SnowMsvcToolsToPath -Architecture $Architecture | Out-Null
 Require-Command "dumpbin" | Out-Null
 
 $cmakeVersionLine = (& $cmake.Source --version | Select-Object -First 1)
@@ -155,7 +168,7 @@ if ($vcpkgNeedsBootstrap) {
 function Repair-VcpkgHostTools {
     param([Parameter(Mandatory = $true)][string]$InstallRoot)
 
-    $hostRoot = Join-Path $InstallRoot "x64-windows"
+    $hostRoot = Join-Path $InstallRoot $windowsTarget.HostTriplet
     $hostBin = Join-Path $hostRoot "bin"
     $hostTools = Join-Path $hostRoot "tools"
     if (-not (Test-Path -LiteralPath $hostTools -PathType Container) -or
@@ -174,7 +187,9 @@ function Repair-VcpkgHostTools {
 
 foreach ($variant in $VcpkgVariants) {
     $installVariant = $variant.ToLowerInvariant()
-    Repair-VcpkgHostTools -InstallRoot (Join-Path $vcpkgInstalledRoot $installVariant)
+    $variantRoot = if ($Architecture -eq "arm64") { Join-Path $vcpkgInstalledRoot "arm64/$installVariant" }
+        else { Join-Path $vcpkgInstalledRoot $installVariant }
+    Repair-VcpkgHostTools -InstallRoot $variantRoot
 }
 
 if (-not $SkipDependencyInstall) {
@@ -182,9 +197,10 @@ if (-not $SkipDependencyInstall) {
         throw "Repository-local vcpkg is not installed. Rerun without -SkipVcpkgInstall."
     }
     foreach ($variant in $VcpkgVariants) {
-        $triplet = if ($variant -eq "Static") { "x64-windows-static" } else { "x64-windows" }
+        $triplet = if ($variant -eq "Static") { "$Architecture-windows-static" } else { "$Architecture-windows" }
         $installVariant = $variant.ToLowerInvariant()
-        $tripletInstallRoot = Join-Path $vcpkgInstalledRoot $installVariant
+        $tripletInstallRoot = if ($Architecture -eq "arm64") { Join-Path $vcpkgInstalledRoot "arm64/$installVariant" }
+            else { Join-Path $vcpkgInstalledRoot $installVariant }
         $overlayPortArguments = @(Get-ChildItem -LiteralPath (Join-Path $repoRoot "cmake/vcpkg-overlay-ports") -Directory |
             Where-Object { Test-Path -LiteralPath (Join-Path $_.FullName "portfile.cmake") -PathType Leaf } |
             Sort-Object Name |
@@ -194,13 +210,15 @@ if (-not $SkipDependencyInstall) {
             "--x-manifest-root=$repoRoot",
             "--x-install-root=$tripletInstallRoot",
             "--triplet=$triplet",
+            "--host-triplet=$($windowsTarget.HostTriplet)",
               "--x-feature=snow-shot"
           ) + $overlayPortArguments + @(
               "--overlay-triplets=$(Join-Path $repoRoot 'cmake/vcpkg-overlay-triplets')",
               "--clean-after-build"
           )
         if ($variant -eq "Dynamic") {
-            $vcpkgArguments += @("--x-feature=full-codecs", "--x-feature=image-viewer")
+            $vcpkgArguments += "--x-feature=full-codecs"
+            if ($Architecture -eq "x64") { $vcpkgArguments += "--x-feature=image-viewer" }
         }
         Invoke-Checked -Command $vcpkgExe -Arguments $vcpkgArguments -WorkingDirectory $repoRoot
     }
@@ -232,7 +250,9 @@ Write-Host "CMake: $cmakeVersionLine"
 Write-Host "vcpkg: $vcpkgRoot"
 foreach ($variant in $VcpkgVariants) {
     $installVariant = $variant.ToLowerInvariant()
-    Write-Host "vcpkg $installVariant installed: $(Join-Path $vcpkgInstalledRoot $installVariant)"
+    $variantRoot = if ($Architecture -eq "arm64") { Join-Path $vcpkgInstalledRoot "arm64/$installVariant" }
+        else { Join-Path $vcpkgInstalledRoot $installVariant }
+    Write-Host "vcpkg $installVariant installed: $variantRoot"
 }
 if (-not $SkipQtValidation) {
     Write-Host "Qt6_DIR: $Qt6Dir"

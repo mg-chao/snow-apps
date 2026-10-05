@@ -420,6 +420,11 @@ class ScreenshotToolPaletteStyleControls final {
     [[nodiscard]] SnowCanvasShapeKind activeShapeKind() const;
     void notifyTextStyleChanged(quint32 properties) const;
     void updateWatermarkControls();
+    ScreenshotToolPaletteShapeFamilyResult
+    buildShapeSelector(QWidget* controls, const ScreenshotToolPaletteStyleFamilyHost& host,
+                       const ScreenshotToolPaletteButtonMetrics& metrics, bool spotlight);
+    void updateSpotlightShapeControls();
+    void setSpotlightShape(SnowCanvasRectangleShape shape);
     void refreshWatermarkOpacityMetrics(const ScreenshotToolPaletteButtonMetrics& metrics);
     void refreshSpotlightOpacityMetrics(const ScreenshotToolPaletteButtonMetrics& metrics);
     void notifyWatermarkConfigChanged(quint32 properties) const;
@@ -480,6 +485,8 @@ class ScreenshotToolPaletteStyleControls final {
     std::unique_ptr<ScreenshotToolPaletteColorEditor> m_highlightColorEditor;
     std::unique_ptr<ScreenshotToolPaletteColorEditor> m_spotlightColorEditor;
     adqt::widgets::AdRadioButtonGroup* m_shapeButtonGroup = nullptr;
+    QWidget* m_spotlightShapeControlsContainer = nullptr;
+    adqt::widgets::AdRadioButtonGroup* m_spotlightShapeButtonGroup = nullptr;
     adqt::widgets::AdRadioButtonGroup* m_lineTypeButtonGroup = nullptr;
     std::unique_ptr<ScreenshotToolPaletteWidthColorEditor> m_highlightStrokeEditor;
     std::unique_ptr<ScreenshotToolPaletteColorEditor> m_penHighlightColorEditor;

@@ -25,6 +25,8 @@ pub const UPDATE_WORK: &str = crate::edition::UPDATE_WORK;
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
 pub struct InstallationRecord {
     pub schema: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub platform: Option<String>,
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub product: String,
     pub variant: String,
@@ -222,6 +224,11 @@ pub fn validate_root(root: &Path) -> Result<()> {
 }
 
 pub fn installation_record(root: &Path) -> Result<InstallationRecord> {
+    installation_record_for_platform(root, crate::edition::PLATFORM)
+}
+
+pub fn installation_record_for_platform(root: &Path, platform: &str) -> Result<InstallationRecord> {
+    crate::edition::validate_platform(platform)?;
     let bytes = read_limited(&root.join(INSTALLATION_RECORD), 8 * 1024 * 1024)?;
     let value: Value = serde_json::from_slice(&bytes).map_err(|_| {
         UpdateError::new(
@@ -251,6 +258,11 @@ pub fn installation_record(root: &Path) -> Result<InstallationRecord> {
         .to_owned();
     require(
         schema == 1
+            && object
+                .get("platform")
+                .map_or(platform == "windows-x64", |value| {
+                    value.as_str() == Some(platform)
+                })
             && crate::edition::product_matches(object.get("product"))
             && crate::edition::installation_variant(&variant),
         "invalid_installation_metadata",
@@ -260,6 +272,10 @@ pub fn installation_record(root: &Path) -> Result<InstallationRecord> {
     let files = parse_file_inventory(object.get("files"))?;
     Ok(InstallationRecord {
         schema,
+        platform: object
+            .get("platform")
+            .and_then(Value::as_str)
+            .map(str::to_owned),
         product: object
             .get("product")
             .and_then(Value::as_str)
@@ -712,6 +728,11 @@ pub fn apply_transaction(
     release: &UpdateRelease,
     hooks: TransactionHooks<'_>,
 ) -> Result<()> {
+    require(
+        release.platform == crate::edition::PLATFORM,
+        "unsupported_update_release",
+        "Unsupported update release",
+    )?;
     report_progress(hooks.progress, ProgressPhase::Preparing, 0, 0);
     validate_root(root)?;
     fs::create_dir_all(root.join(UPDATE_WORK)).map_err(|error| {
@@ -1044,6 +1065,19 @@ pub fn uninstall(root: &Path, remove_startup: bool) -> Result<()> {
 }
 
 pub fn audit_release(directory: &Path, release: &UpdateRelease) -> Result<()> {
+    audit_release_with_options(directory, release, false)
+}
+
+pub fn audit_release_with_options(
+    directory: &Path,
+    release: &UpdateRelease,
+    static_only: bool,
+) -> Result<()> {
+    require(
+        static_only || release.platform == crate::edition::PLATFORM,
+        "unsupported_update_release",
+        "Unsupported update release",
+    )?;
     for package in &release.packages {
         let archive = directory.join(&package.path);
         verify_file(&archive, package.size, &package.sha256)?;
@@ -1058,13 +1092,16 @@ pub fn audit_release(directory: &Path, release: &UpdateRelease) -> Result<()> {
             )
         })?;
         extract(&archive, temporary.path(), package)?;
-        let record = installation_record(temporary.path())?;
+        let record = installation_record_for_platform(temporary.path(), &release.platform)?;
         verify_record_inventory(&record, package)?;
         require(
             record.version == release.version && record.variant == package.variant,
             "release_record_mismatch",
             "Release archive installation metadata mismatch",
         )?;
+        if static_only {
+            continue;
+        }
         let manifest = temporary.path().join("release-audit.json");
         write_atomic(&manifest, &release.envelope)?;
         let helper = temporary.path().join(if cfg!(windows) {
@@ -1109,6 +1146,28 @@ mod tests {
         format!("{:x}", Sha256::digest(bytes))
     }
 
+    #[test]
+    fn installation_platform_accepts_legacy_x64_and_rejects_cross_architecture() {
+        let root = tempfile::tempdir().unwrap();
+        let mut record = serde_json::json!({"schema":1,"product":crate::edition::PRODUCT,
+            "version":"1.0.0","variant":"online","files":[{"path":crate::edition::APP_PATH,"size":1,"sha256":"0".repeat(64)}]});
+        let path = root.path().join(INSTALLATION_RECORD);
+        fs::write(&path, serde_json::to_vec(&record).unwrap()).unwrap();
+        assert!(installation_record_for_platform(root.path(), "windows-x64").is_ok());
+        assert!(installation_record_for_platform(root.path(), "windows-arm64").is_err());
+        for platform in ["windows-x64", "windows-arm64"] {
+            record["platform"] = serde_json::json!(platform);
+            fs::write(&path, serde_json::to_vec(&record).unwrap()).unwrap();
+            assert!(installation_record_for_platform(root.path(), platform).is_ok());
+            let other = if platform == "windows-x64" {
+                "windows-arm64"
+            } else {
+                "windows-x64"
+            };
+            assert!(installation_record_for_platform(root.path(), other).is_err());
+        }
+    }
+
     fn write_zip(path: &Path, entries: &[(&str, &[u8], Option<u32>)]) {
         let file = File::create(path).unwrap();
         let mut writer = zip::ZipWriter::new(file);
@@ -1136,11 +1195,66 @@ mod tests {
         UpdatePackage {
             variant: "online".to_owned(),
             kind: "update".to_owned(),
-            path: "setup/snow-shot_windows-x64-online-update.zip".to_owned(),
+            path: format!("{}online-update.zip", crate::edition::PACKAGE_PREFIX),
             size: 1,
             sha256: "0".repeat(64),
             files,
         }
+    }
+
+    #[test]
+    fn static_cross_architecture_audit_keeps_inventory_and_hash_checks() {
+        let directory = tempfile::tempdir().unwrap();
+        let platform = if crate::edition::PLATFORM == "windows-x64" {
+            "windows-arm64"
+        } else {
+            "windows-x64"
+        };
+        let app = b"inert executable fixture";
+        let record = InstallationRecord {
+            platform: Some(platform.to_owned()),
+            product: crate::edition::PRODUCT.to_owned(),
+            schema: 1,
+            variant: "online".to_owned(),
+            version: "2.0.0".to_owned(),
+            files: vec![descriptor(crate::edition::APP_PATH, app)],
+        };
+        let record_bytes = serde_json::to_vec(&record).unwrap();
+        let mut update_package = package(vec![
+            descriptor(crate::edition::APP_PATH, app),
+            descriptor(INSTALLATION_RECORD, &record_bytes),
+        ]);
+        update_package.path = format!(
+            "{}online-update.zip",
+            crate::edition::package_prefix(platform)
+        );
+        let archive = directory.path().join(&update_package.path);
+        fs::create_dir_all(archive.parent().unwrap()).unwrap();
+        write_zip(
+            &archive,
+            &[
+                (crate::edition::APP_PATH, app, None),
+                (INSTALLATION_RECORD, &record_bytes, None),
+            ],
+        );
+        update_package.size = fs::metadata(&archive).unwrap().len();
+        update_package.sha256 = sha256_file(&archive).unwrap();
+        let mut release = UpdateRelease {
+            platform: platform.to_owned(),
+            version: "2.0.0".to_owned(),
+            packages: vec![update_package],
+            envelope: Vec::new(),
+        };
+        assert!(audit_release_with_options(directory.path(), &release, true).is_ok());
+        assert_eq!(
+            audit_release(directory.path(), &release).unwrap_err().code,
+            "unsupported_update_release"
+        );
+        release.packages[0].sha256 = "0".repeat(64);
+        assert!(audit_release_with_options(directory.path(), &release, true).is_err());
+        release.packages[0].sha256 = sha256_file(&archive).unwrap();
+        release.packages[0].files[0].sha256 = "0".repeat(64);
+        assert!(audit_release_with_options(directory.path(), &release, true).is_err());
     }
 
     #[test]
@@ -1416,6 +1530,7 @@ mod tests {
         let old_app = b"old application";
         fs::write(root.join(crate::edition::APP_PATH), old_app).unwrap();
         let old_record = InstallationRecord {
+            platform: Some(crate::edition::PLATFORM.to_owned()),
             product: crate::edition::PRODUCT.to_owned(),
             schema: 1,
             variant: "online".to_owned(),
@@ -1430,6 +1545,7 @@ mod tests {
 
         let new_app = b"new application";
         let new_record = InstallationRecord {
+            platform: Some(crate::edition::PLATFORM.to_owned()),
             product: crate::edition::PRODUCT.to_owned(),
             schema: 1,
             variant: "online".to_owned(),
@@ -1452,6 +1568,7 @@ mod tests {
         update_package.size = fs::metadata(&archive).unwrap().len();
         update_package.sha256 = sha256_file(&archive).unwrap();
         let release = UpdateRelease {
+            platform: crate::edition::PLATFORM.to_owned(),
             version: "2.0.0".to_owned(),
             packages: vec![update_package],
             envelope: Vec::new(),
@@ -1494,6 +1611,7 @@ mod tests {
             fs::write(root.join(crate::edition::APP_PATH), old_app).unwrap();
             fs::write(root.join(crate::edition::UPDATER_PATH), old_helper).unwrap();
             let old_record = InstallationRecord {
+                platform: Some(crate::edition::PLATFORM.to_owned()),
                 product: crate::edition::PRODUCT.to_owned(),
                 schema: 1,
                 variant: "online".to_owned(),
@@ -1512,6 +1630,7 @@ mod tests {
             let new_app = b"new application";
             let new_helper = b"new helper";
             let new_record = InstallationRecord {
+                platform: Some(crate::edition::PLATFORM.to_owned()),
                 product: crate::edition::PRODUCT.to_owned(),
                 schema: 1,
                 variant: "online".to_owned(),
@@ -1539,6 +1658,7 @@ mod tests {
             update_package.size = fs::metadata(&archive).unwrap().len();
             update_package.sha256 = sha256_file(&archive).unwrap();
             let release = UpdateRelease {
+                platform: crate::edition::PLATFORM.to_owned(),
                 version: "2.0.0".to_owned(),
                 packages: vec![update_package],
                 envelope: Vec::new(),
@@ -1653,6 +1773,7 @@ mod tests {
         let helper = b"helper";
         fs::write(root.join(crate::edition::APP_PATH), application).unwrap();
         let record = InstallationRecord {
+            platform: Some(crate::edition::PLATFORM.to_owned()),
             product: crate::edition::PRODUCT.to_owned(),
             schema: 1,
             variant: "online".to_owned(),
@@ -1683,6 +1804,7 @@ mod tests {
         fs::write(root.join(crate::edition::APP_PATH), application).unwrap();
         fs::write(root.join("bin/user-data.dat"), b"user data").unwrap();
         let record = InstallationRecord {
+            platform: Some(crate::edition::PLATFORM.to_owned()),
             product: crate::edition::PRODUCT.to_owned(),
             schema: 1,
             variant: "online".to_owned(),
@@ -1713,6 +1835,7 @@ mod tests {
         // entry must not block removal of the remaining owned files.
         fs::write(root.join(crate::edition::MARKER_PATH), b"missing-data").unwrap();
         let record = InstallationRecord {
+            platform: Some(crate::edition::PLATFORM.to_owned()),
             product: crate::edition::PRODUCT.to_owned(),
             schema: 1,
             variant: "online".to_owned(),
@@ -1771,6 +1894,7 @@ mod tests {
         fs::write(root.join(crate::edition::APP_PATH), application).unwrap();
         fs::write(root.join(crate::edition::MARKER_PATH), [0xff]).unwrap();
         let record = InstallationRecord {
+            platform: Some(crate::edition::PLATFORM.to_owned()),
             product: crate::edition::PRODUCT.to_owned(),
             schema: 1,
             variant: "online".to_owned(),
@@ -1806,6 +1930,7 @@ mod tests {
         )
         .unwrap();
         let record = InstallationRecord {
+            platform: Some(crate::edition::PLATFORM.to_owned()),
             product: crate::edition::PRODUCT.to_owned(),
             schema: 1,
             variant: "online".to_owned(),
@@ -1840,6 +1965,7 @@ mod tests {
         let application = b"application";
         fs::write(root.join(crate::edition::APP_PATH), application).unwrap();
         let record = InstallationRecord {
+            platform: Some(crate::edition::PLATFORM.to_owned()),
             product: crate::edition::PRODUCT.to_owned(),
             schema: 1,
             variant: "online".to_owned(),
@@ -1868,6 +1994,7 @@ mod tests {
         let application = b"application";
         fs::write(root.join(crate::edition::APP_PATH), application).unwrap();
         let record = InstallationRecord {
+            platform: Some(crate::edition::PLATFORM.to_owned()),
             product: crate::edition::PRODUCT.to_owned(),
             schema: 1,
             variant: "online".to_owned(),

@@ -43,7 +43,9 @@ class ScreenshotOverlayWindow final : public QWidget {
                                      SnowCanvasWidget* canvas, QWidget* parent = nullptr);
     ~ScreenshotOverlayWindow() override;
 
-    SnowCanvasWidget* canvas() const;
+    SnowCanvasWidget* canvas() const {
+        return m_canvas;
+    }
     // Display coordinates describe the canvas, independently of native frame padding.
     void setCaptureGeometry(const QRect& displayGeometry);
     [[nodiscard]] QRect captureGeometry() const;

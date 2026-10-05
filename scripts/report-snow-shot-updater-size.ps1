@@ -1,16 +1,21 @@
 [CmdletBinding()]
 param(
-    [string]$Executable = 'build/snow-shot-msvc-release/snow_shot/Release/snow-shot-updater.exe',
+    [string]$Executable,
+    [ValidateSet('x64', 'arm64')][string]$Architecture = 'x64',
     [string]$Manifest = 'snow_shot/rust/snow-shot-updater/Cargo.toml',
     [string]$Pdb,
-    [string]$CargoProfileDirectory =
-        'build/snow-shot-msvc-release/cargo/x86_64-pc-windows-msvc/release-size',
+    [string]$CargoProfileDirectory,
     [string]$Output,
     [long]$BaselineBytes = 9460736
 )
 
 $ErrorActionPreference = 'Stop'
 $repoRoot = Split-Path -Parent $PSScriptRoot
+. (Join-Path $PSScriptRoot 'snow-build-environment.ps1')
+. (Join-Path $PSScriptRoot 'snow-shot-ocr-release-runtime.ps1')
+$target = Get-SnowWindowsTarget -Architecture $Architecture
+if (-not $Executable) { $Executable = "build/$($target.ReleasePreset)/snow_shot/Release/snow-shot-updater.exe" }
+if (-not $CargoProfileDirectory) { $CargoProfileDirectory = "build/$($target.ReleasePreset)/cargo/$($target.RustTarget)/release-size" }
 
 function Resolve-RepositoryPath([string]$Path) {
     if ([System.IO.Path]::IsPathRooted($Path)) { return [System.IO.Path]::GetFullPath($Path) }
@@ -32,6 +37,7 @@ if ([string]::IsNullOrWhiteSpace($Output)) {
 $outputPath = Resolve-RepositoryPath $Output
 
 $bytes = [System.IO.File]::ReadAllBytes($executablePath)
+Assert-SnowPeArchitecture -Path $executablePath -Architecture $Architecture
 if ($bytes.Length -lt 64 -or [System.Text.Encoding]::ASCII.GetString($bytes, 0, 2) -cne 'MZ') {
     throw "Updater is not a valid PE image: $executablePath"
 }
@@ -80,7 +86,7 @@ if ($dumpbin) {
 }
 
 $cargoTree = @(& cargo tree --locked --offline --manifest-path $manifestPath `
-    --edges normal,build --prefix depth --format '{p} {f}' 2>&1)
+    --target $target.RustTarget --edges normal,build --prefix depth --format '{p} {f}' 2>&1)
 if ($LASTEXITCODE -ne 0) { throw 'cargo tree failed while creating the updater size report.' }
 
 $pdbPath = if (-not [string]::IsNullOrWhiteSpace($Pdb)) {
@@ -110,6 +116,7 @@ $changePercent = if ($BaselineBytes -eq 0) { $null } else {
 
 $report = [pscustomobject][ordered]@{
     schema = 1
+    platform = $target.Platform
     generatedAtUtc = [DateTime]::UtcNow.ToString('o')
     executable = $executablePath
     totalBytes = $totalBytes

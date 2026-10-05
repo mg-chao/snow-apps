@@ -11,6 +11,8 @@
 #include "snow_shot/presentation/screenshotoverlaywindow.h"
 #include "snow_shot/presentation/screenshottoolbarcommands.h"
 #include "snow_shot/presentation/screenshottoolbarwindow.h"
+#include "snow_shot/storage/applicationstorage.h"
+#include "snow_shot/storage/settingsadapters.h"
 #include "widgets/detail/pointer_region.h"
 
 #include <algorithm>
@@ -319,6 +321,14 @@ void showPreparedChildWidget(QWidget* widget) {
 } // namespace
 
 ScreenshotOverlayUiHost::ScreenshotOverlayUiHost() {
+    m_selectionToolbarHidden = snow_shot::storage::ScreenshotUiSettings().selectionToolbarHidden();
+    auto& configuration = snow_shot::storage::ApplicationStorage::instance().configuration();
+    connect(&configuration, &snow_shot::storage::ConfigurationStore::valueChanged, this,
+            [this](const QString& key, const QJsonValue& value) {
+                if (key == QStringLiteral("screenshot_ui/selection_toolbar_hidden")) {
+                    setSelectionToolbarHidden(value.toBool());
+                }
+            });
     if (QCoreApplication::instance() != nullptr) {
         QCoreApplication::instance()->installEventFilter(this);
     }
@@ -484,8 +494,7 @@ void ScreenshotOverlayUiHost::attachSelectionToolbarToOverlay(ScreenshotOverlayW
     toolbarWidget->setAttribute(Qt::WA_TranslucentBackground, true);
     toolbarWidget->setAttribute(Qt::WA_NoSystemBackground, true);
     toolbarWidget->setFocusPolicy(Qt::NoFocus);
-    if (wasVisible && !m_selectionToolbarHiddenForSession && overlay != nullptr &&
-        overlay->isVisible()) {
+    if (wasVisible && !m_selectionToolbarHidden && overlay != nullptr && overlay->isVisible()) {
         showPreparedChildWidget(toolbarWidget);
         toolbarWidget->raise();
     }
@@ -671,7 +680,7 @@ bool ScreenshotOverlayUiHost::stepToolbarWatermarkFontSize(int direction) {
 }
 
 void ScreenshotOverlayUiHost::resetToolbarForNewCapture() {
-    m_selectionToolbarHiddenForSession = false;
+    setSelectionToolbarHidden(snow_shot::storage::ScreenshotUiSettings().selectionToolbarHidden());
     if (m_toolbar != nullptr) {
         const bool wasVisible = m_toolbar->isVisible();
         m_toolbar->resetForNewCapture();
@@ -730,15 +739,15 @@ void ScreenshotOverlayUiHost::hideSelectionToolbar() {
     }
 }
 
-void ScreenshotOverlayUiHost::setSelectionToolbarHiddenForSession(bool hidden) {
-    m_selectionToolbarHiddenForSession = hidden;
+void ScreenshotOverlayUiHost::setSelectionToolbarHidden(bool hidden) {
+    m_selectionToolbarHidden = hidden;
     if (hidden) {
         hideSelectionToolbar();
     }
 }
 
 void ScreenshotOverlayUiHost::showSelectionToolbar() {
-    if (m_selectionToolbarHiddenForSession) {
+    if (m_selectionToolbarHidden) {
         return;
     }
     ScreenshotSelectionToolbarWidget* toolbarWidget = trackedWidget(m_selectionToolbar);

@@ -1,5 +1,6 @@
 [CmdletBinding()]
-param([string]$ReleaseHelperPath = '', [ValidateSet('Full', 'Mini')][string]$Edition = 'Full')
+param([string]$ReleaseHelperPath = '', [ValidateSet('Full', 'Mini')][string]$Edition = 'Full',
+    [ValidateSet('x64', 'arm64')][string]$Architecture = 'x64')
 $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'snow-shot-editions.ps1')
 $product = Get-SnowShotEdition $Edition
@@ -9,7 +10,7 @@ $stage = Join-Path $root 'stage'
 $bin = Join-Path $stage 'bin'
 $null = New-Item -ItemType Directory -Path $bin
 . (Join-Path $PSScriptRoot 'snow-build-environment.ps1')
-$null = Set-SnowBuildEnvironment -Preset 'snow-shot-msvc-release'
+$null = Set-SnowBuildEnvironment -Preset (Get-SnowWindowsTarget -Architecture $Architecture).ReleasePreset
 & cl /nologo /std:c++20 /O2 /MT /Zi "/Fd:$root/compile.pdb" "/Fo:$root/fixture.obj" "/Fe:$bin/snow_shot.exe" `
     (Join-Path $repo 'snow_shot/tests/update_helper_fixture.cpp') /link /DEBUG "/PDB:$root/fixture.pdb" advapi32.lib
 if ($LASTEXITCODE -ne 0) { throw 'Symbol fixture compilation failed.' }
@@ -51,8 +52,8 @@ if ($Edition -eq 'Mini') {
 foreach ($external in @($false, $true)) {
     $options = @{}
     if ($external) { $options.OcrAssetManifest = Join-Path $repo 'snow_shot/packaging/snow-shot-ocr-asset-manifest.json' }
-    & (Join-Path $PSScriptRoot 'collect-snow-shot-symbols.ps1') -BuildDirectory $root -InstallDirectory $stage -Edition $Edition @options
-    $archive = [IO.Compression.ZipFile]::OpenRead((Join-Path $root "$($product.Product)-symbols-windows-x64.zip"))
+    & (Join-Path $PSScriptRoot 'collect-snow-shot-symbols.ps1') -BuildDirectory $root -InstallDirectory $stage -Architecture $Architecture -Edition $Edition @options
+    $archive = [IO.Compression.ZipFile]::OpenRead((Join-Path $root "$($product.Product)-symbols-windows-$Architecture.zip"))
     try {
         $reader = [IO.StreamReader]::new($archive.GetEntry('manifest.json').Open())
         try { $manifest = $reader.ReadToEnd() | ConvertFrom-Json } finally { $reader.Dispose() }
@@ -72,7 +73,7 @@ foreach ($external in @($false, $true)) {
 # A missing or mismatched app/helper PDB must still stop a release.
 Move-Item -LiteralPath (Join-Path $root 'fixture.pdb') -Destination (Join-Path $root 'saved-fixture.pdb')
 $rejected = $false
-try { & (Join-Path $PSScriptRoot 'collect-snow-shot-symbols.ps1') -BuildDirectory $root -InstallDirectory $stage -Edition $Edition @options }
+try { & (Join-Path $PSScriptRoot 'collect-snow-shot-symbols.ps1') -BuildDirectory $root -InstallDirectory $stage -Architecture $Architecture -Edition $Edition @options }
 catch { $rejected = $true }
 if (-not $rejected) { throw 'Missing release PDB was accepted.' }
 Write-Output 'PASS: missing app/helper PDB is rejected'
@@ -95,6 +96,6 @@ if ($ReleaseHelperPath) {
     $null = New-Item -ItemType Directory -Path $realBin
     Copy-Item -LiteralPath $resolvedHelper -Destination (Join-Path $realBin "$($product.Product)-updater.exe")
     & (Join-Path $PSScriptRoot 'collect-snow-shot-symbols.ps1') -BuildDirectory $root `
-        -InstallDirectory $realStage -Edition $Edition -UpdaterProfileDirectory $helperPdbs[0].DirectoryName
+        -InstallDirectory $realStage -Architecture $Architecture -Edition $Edition -UpdaterProfileDirectory $helperPdbs[0].DirectoryName
     Write-Output 'PASS: actual Release updater has a matching PDB'
 }

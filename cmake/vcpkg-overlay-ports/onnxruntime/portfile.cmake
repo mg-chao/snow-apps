@@ -262,8 +262,11 @@ endif()
 
 if("directml" IN_LIST FEATURES)
     set(DIRECTML_PACKAGE_DIR "${CURRENT_BUILDTREES_DIR}/packages/Microsoft.AI.DirectML.1.15.4")
-    set(DIRECTML_RUNTIME "${DIRECTML_PACKAGE_DIR}/bin/x64-win/DirectML.dll")
-    set(DIRECTML_IMPORT_LIBRARY "${DIRECTML_PACKAGE_DIR}/bin/x64-win/DirectML.lib")
+    if(NOT VCPKG_TARGET_ARCHITECTURE MATCHES "^(x86|x64|arm|arm64)$")
+        message(FATAL_ERROR "Unsupported DirectML target: ${VCPKG_TARGET_ARCHITECTURE}")
+    endif()
+    set(DIRECTML_RUNTIME "${DIRECTML_PACKAGE_DIR}/bin/${VCPKG_TARGET_ARCHITECTURE}-win/DirectML.dll")
+    set(DIRECTML_IMPORT_LIBRARY "${DIRECTML_PACKAGE_DIR}/bin/${VCPKG_TARGET_ARCHITECTURE}-win/DirectML.lib")
     foreach(DIRECTML_FILE IN ITEMS "${DIRECTML_RUNTIME}" "${DIRECTML_IMPORT_LIBRARY}")
         if(NOT EXISTS "${DIRECTML_FILE}")
             message(FATAL_ERROR "DirectML package file was not restored: ${DIRECTML_FILE}")
@@ -271,17 +274,16 @@ if("directml" IN_LIST FEATURES)
     endforeach()
 
     file(INSTALL "${DIRECTML_IMPORT_LIBRARY}" DESTINATION "${CURRENT_PACKAGES_DIR}/lib")
-    file(TO_CMAKE_PATH "${DIRECTML_IMPORT_LIBRARY}" DIRECTML_IMPORT_LIBRARY_CMAKE)
+    include("${CMAKE_CURRENT_LIST_DIR}/relocate-directml-reference.cmake")
     file(GLOB ONNXRUNTIME_TARGETS_FILES
         "${CURRENT_PACKAGES_DIR}/share/onnxruntime/onnxruntimeTargets*.cmake")
     set(DIRECTML_TARGET_REFERENCE_FOUND FALSE)
     foreach(ONNXRUNTIME_TARGETS_FILE IN LISTS ONNXRUNTIME_TARGETS_FILES)
         file(READ "${ONNXRUNTIME_TARGETS_FILE}" ONNXRUNTIME_TARGETS_CONTENT)
-        string(REPLACE
-            "${DIRECTML_IMPORT_LIBRARY_CMAKE}"
-            "\${_IMPORT_PREFIX}/lib/DirectML.lib"
+        snow_onnxruntime_relocate_directml_reference(
             RELOCATABLE_ONNXRUNTIME_TARGETS_CONTENT
             "${ONNXRUNTIME_TARGETS_CONTENT}"
+            "${DIRECTML_IMPORT_LIBRARY}"
         )
         if(NOT RELOCATABLE_ONNXRUNTIME_TARGETS_CONTENT STREQUAL ONNXRUNTIME_TARGETS_CONTENT)
             set(DIRECTML_TARGET_REFERENCE_FOUND TRUE)

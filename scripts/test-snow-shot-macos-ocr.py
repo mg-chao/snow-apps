@@ -66,6 +66,68 @@ class MacOSOcrAssets(unittest.TestCase):
         ocr.finalize(self.source, self.runtime)
         ocr.verify_assets(self.source, self.runtime)
 
+    def test_x64_stage_finalization_and_report_use_the_target_architecture(self):
+        for name in ocr.RUNTIME_FILES:
+            (self.runtime / name).write_bytes(ocr.X64_HEADER + bytes(24) + name.encode())
+        self.run.return_value = 'snow-ocr-process 1.0.9 macos-x86_64 protocol 5'
+        with patch.object(ocr, 'stage_models'):
+            self.command('stage', '--arch', 'x64', '--static-runtime',
+                         '--worker', self.runtime / 'snow-ocr-process')
+        result = ocr.verify_assets(self.source, self.runtime, static_runtime=True, arch='x64')
+        self.assertEqual(result['runtime']['platform'], 'macos-x64')
+        self.assertEqual(result['runtime']['protocol'], 5)
+        self.assertEqual(result['models'], self.source['models'])
+        self.assertEqual([item['name'] for item in result['runtime']['files']], ['snow-ocr-process'])
+        report = self.root / 'x64-report.json'
+        self.command('verify', '--arch', 'x64', '--static-runtime', '--report', report)
+        self.assertEqual(json.loads(report.read_text())['platform'], 'macos-x64')
+        self.assertEqual(json.loads(report.read_text())['bundled_model'], 'small')
+        with self.assertRaisesRegex(ValueError, 'thin ARM64'):
+            ocr.verify_assets(self.source, self.runtime, static_runtime=True)
+
+    def test_x64_rejects_wrong_architecture_and_worker_identity(self):
+        with self.assertRaisesRegex(ValueError, 'thin x64'):
+            ocr.runtime_manifest(self.source, self.runtime, arch='x64')
+        for name in ocr.RUNTIME_FILES:
+            (self.runtime / name).write_bytes(ocr.X64_HEADER + bytes(24))
+        with self.assertRaisesRegex(ValueError, 'version/protocol'):
+            ocr.runtime_manifest(self.source, self.runtime, arch='x64')
+        self.run.return_value = 'snow-ocr-process 1.0.9 macos-x86_64 protocol 5'
+        ocr.finalize(self.source, self.runtime, arch='x64')
+        manifest = self.runtime / 'assets/ocr/asset-manifest.json'
+        value = json.loads(manifest.read_text())
+        value['runtime']['platform'] = 'macos-arm64'
+        ocr.atomic_json(manifest, value)
+        with self.assertRaisesRegex(ValueError, 'finalized runtime bytes'):
+            ocr.verify_assets(self.source, self.runtime, arch='x64')
+        (self.runtime / 'libonnxruntime.dylib').write_bytes(ocr.ARM64_HEADER + bytes(24))
+        with self.assertRaisesRegex(ValueError, 'thin x64'):
+            ocr.runtime_manifest(self.source, self.runtime, arch='x64')
+
+    def test_x64_bundle_audit_inspects_the_x86_64_slice(self):
+        app = self.root / 'Snow Shot.app'
+        binary = app / 'Contents/MacOS/snow_shot'
+        binary.parent.mkdir(parents=True)
+        binary.write_bytes(ocr.X64_HEADER + bytes(24))
+
+        def inspect(*args):
+            if 'lipo' in args[0]:
+                return 'x86_64'
+            if 'otool' in args[0]:
+                self.assertEqual(args[1:3], ('-arch', 'x86_64'))
+                if '-l' in args:
+                    return 'cmd LC_BUILD_VERSION\nminos 15.0'
+                if '-L' in args:
+                    return f'{binary}:\n\t/usr/lib/libSystem.B.dylib (compatibility version 1.0.0)'
+                return str(binary)
+            return ''
+
+        self.run.side_effect = inspect
+        self.assertEqual(ocr.verify_bundle(app, arch='x64'), ['Contents/MacOS/snow_shot'])
+        self.run.side_effect = lambda *args: 'arm64'
+        with self.assertRaisesRegex(ValueError, 'Non-x64'):
+            ocr.verify_bundle(app, arch='x64')
+
     def command(self, command, *arguments):
         manifest = self.root / 'source-manifest.json'
         ocr.atomic_json(manifest, self.source)

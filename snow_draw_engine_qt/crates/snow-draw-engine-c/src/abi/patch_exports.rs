@@ -484,6 +484,7 @@ mod spotlight_patch_export_tests {
             start: 3,
             delete_count: 2,
             insert_items: vec![DisplaySpotlightCutout {
+                shape: snow_draw_engine::DisplayRectangleShape::Ellipse,
                 center_x: 11.0,
                 center_y: 12.0,
                 width: 30.0,
@@ -515,6 +516,7 @@ mod spotlight_patch_export_tests {
             assert_eq!((*ops).delete_count, 2);
             assert_eq!((*cutouts).center_x, 11.0);
             assert_eq!((*cutouts).rotation, 0.25);
+            assert_eq!((*cutouts).shape, SnowDisplayRectShape::Ellipse as u8);
             snow_patch_destroy(handle);
         }
     }

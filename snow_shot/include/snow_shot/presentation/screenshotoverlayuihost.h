@@ -68,7 +68,7 @@ class ScreenshotOverlayUiHost final : public QObject {
     void releaseToolbarNativeSurface();
     void showToolbar();
     void hideSelectionToolbar();
-    void setSelectionToolbarHiddenForSession(bool hidden);
+    void setSelectionToolbarHidden(bool hidden);
     void showSelectionToolbar();
     void raiseSelectionToolbar();
     void detachOverlayTransientUi(ScreenshotOverlayWindow* overlay);
@@ -94,7 +94,7 @@ class ScreenshotOverlayUiHost final : public QObject {
     QPointer<ScreenshotColorPickerWindow> m_colorPicker;
     QPointer<QWidget> m_shortcutHints;
     QColor m_colorPickerCenterGuideLineColor = QColor(0, 0, 0, 0);
-    bool m_selectionToolbarHiddenForSession = false;
+    bool m_selectionToolbarHidden = false;
 };
 
 #endif // SNOW_SHOT_PRESENTATION_SCREENSHOTOVERLAYUIHOST_H

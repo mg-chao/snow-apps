@@ -56,8 +56,8 @@ void allLocalShortcutSectionsReset(settings::SettingsRuntimeSession& session) {
                              settings::SettingsSectionReset::DrawingShortcuts,
                              settings::SettingsSectionReset::PinToScreenShortcuts,
                              settings::SettingsSectionReset::ScreenRecordingShortcuts}) {
-        // Disabled siblings make preservation observable across both scopes and
-        // the two sections sharing the screenshot shortcut map.
+        // Disabled siblings make preservation observable across scopes and the
+        // screenshot bindings shared by Screenshot, Annotation, and Image Recognition.
         for (const auto& field : registry.fields()) {
             if (field.kind != settings::SettingsFieldKind::LocalShortcut) {
                 continue;
@@ -118,16 +118,49 @@ void conflictingResetRemainsAtomic(settings::SettingsRuntimeSession& session) {
     require(
         session.applyLocalShortcuts(scope, QStringLiteral("print"), {}) &&
             session.applyLocalShortcuts(scope, QStringLiteral("undo"), {QStringLiteral("Ctrl+P")}),
-        "assign print's default key to a shortcut in the other screenshot section");
+        "assign print's default key to an Annotation shortcut in the screenshot scope");
     const auto before = configuration.snapshot();
     require(!session.reset(settings::SettingsSectionReset::ScreenshotEditorShortcuts) &&
                 configuration.snapshot() == before,
             "a conflicting section reset must reject the entire write and preserve siblings");
-    require(session.reset(settings::SettingsSectionReset::ScreenshotOtherShortcuts) &&
+    require(session.reset(settings::SettingsSectionReset::DrawingShortcuts) &&
                 session.reset(settings::SettingsSectionReset::ScreenshotEditorShortcuts) &&
                 session.localShortcuts(scope, QStringLiteral("print")) ==
                     shortcuts::ShortcutBindingList{QStringLiteral("Ctrl+P")},
             "print reset must succeed after resetting the conflicting sibling section");
+}
+
+void annotationResetPreservesPrintShortcut(settings::SettingsRuntimeSession& session) {
+    constexpr auto screenshot = settings::SettingsLocalShortcutScope::Screenshot;
+    constexpr auto drawing = settings::SettingsLocalShortcutScope::Drawing;
+    auto& configuration = storage::ApplicationStorage::instance().configuration();
+    const auto redoDefault = session.localShortcuts(screenshot, QStringLiteral("redo"));
+    require(session.applyLocalShortcuts(screenshot, QStringLiteral("redo"), {}) &&
+                session.applyLocalShortcuts(screenshot, QStringLiteral("print"), redoDefault) &&
+                session.applyLocalShortcuts(drawing, QStringLiteral("line"),
+                                            {QStringLiteral("Ctrl+Alt+F10")}),
+            "assign Redo's default to Print while customizing an Annotation tool");
+    const auto before = configuration.snapshot();
+    const auto revision = configuration.revision();
+    int notifications = 0;
+    const auto connection =
+        QObject::connect(&configuration, &storage::ConfigurationStore::valueChanged, &session,
+                         [&](const QString&, const QJsonValue&) { ++notifications; });
+    require(!session.reset(settings::SettingsSectionReset::DrawingShortcuts) &&
+                configuration.snapshot() == before && configuration.revision() == revision &&
+                notifications == 0,
+            "a Print collision must reject the Annotation reset across both shortcut scopes");
+    QObject::disconnect(connection);
+    require(session.reset(settings::SettingsSectionReset::ScreenshotEditorShortcuts) &&
+                session.localShortcuts(screenshot, QStringLiteral("redo")).isEmpty() &&
+                session.localShortcuts(drawing, QStringLiteral("line")) ==
+                    shortcuts::ShortcutBindingList{QStringLiteral("Ctrl+Alt+F10")},
+            "resetting Print must preserve both scopes of the Annotation section");
+    require(session.reset(settings::SettingsSectionReset::DrawingShortcuts) &&
+                session.localShortcuts(screenshot, QStringLiteral("redo")) == redoDefault &&
+                session.localShortcuts(screenshot, QStringLiteral("print")) ==
+                    shortcuts::ShortcutBindingList{QStringLiteral("Ctrl+P")},
+            "Annotation reset must restore Redo and preserve Print once its default is freed");
 }
 } // namespace
 
@@ -147,6 +180,7 @@ int main(int argc, char** argv) {
         printShortcutsReset(session);
         allLocalShortcutSectionsReset(session);
         conflictingResetRemainsAtomic(session);
+        annotationResetPreservesPrintShortcut(session);
     }
     const auto expected = applicationStorage.configuration().snapshot();
     require(applicationStorage.flushNow().success, "persist reset local shortcut settings");

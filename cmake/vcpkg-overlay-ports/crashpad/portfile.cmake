@@ -49,6 +49,25 @@ vcpkg_replace_string("${SOURCE_PATH}/third_party/mini_chromium/mini_chromium/bui
 vcpkg_replace_string("${SOURCE_PATH}/third_party/mini_chromium/mini_chromium/build/win_helper.py"
     "[vswhere_path, '-latest', '-property', 'installationPath']"
     "[vswhere_path, '-latest', '-products', '*', '-property', 'installationPath']")
+vcpkg_replace_string("${SOURCE_PATH}/third_party/mini_chromium/mini_chromium/build/win_helper.py"
+    "    if arch == 'arm64':\n      script_arch_name = 'x86_arm64'"
+    [==[    if script_path.endswith('vcvarsall.bat'):
+      host_arch = (os.environ.get('SNOW_MSVC_HOST_ARCHITECTURE') or
+                   os.environ.get('PROCESSOR_ARCHITEW6432') or
+                   os.environ.get('PROCESSOR_ARCHITECTURE', 'AMD64')).lower()
+      if host_arch in ('arm64', 'aarch64'):
+        script_arch_name = {'x86': 'arm64_x86', 'amd64': 'arm64_x64',
+                            'arm64': 'arm64'}[arch]
+      else:
+        script_arch_name = {'x86': 'amd64_x86', 'amd64': 'amd64',
+                            'arm64': 'amd64_arm64'}[arch]
+]==])
+vcpkg_replace_string("${SOURCE_PATH}/third_party/mini_chromium/mini_chromium/build/win_helper.py"
+    "    args.extend((script_arch_name, '&&', 'set'))"
+    [==[    args.append(script_arch_name)
+    if script_path.endswith('vcvarsall.bat'):
+      args.append('-vcvars_ver=14.51')
+    args.extend(('&&', 'set'))]==])
 ]=])
 string(REPLACE "vcpkg_gn_configure(" "${_snow_build_tools}\nvcpkg_gn_configure("
     _snow_port "${_snow_port}")

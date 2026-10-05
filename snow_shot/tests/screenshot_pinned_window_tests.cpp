@@ -2271,7 +2271,17 @@ void pinnedToolbarLayoutReloadsAndResetsIndependently() {
     controller.setEditMode(false);
 }
 
-void pinnedEditingRecognitionShortcutsUsePaletteCommands() {
+void pinnedEditingRecognitionShortcutsUsePaletteCommands(bool hiddenTools = false) {
+    const snow_shot::storage::ScreenshotToolbarSettings toolbarSettings;
+    const auto kind = snow_shot::storage::ScreenshotToolbarLayoutKind::PinnedActionTools;
+    const auto originalLayout = toolbarSettings.layout(kind);
+    const auto restoreLayout =
+        qScopeGuard([&] { static_cast<void>(toolbarSettings.setLayout(kind, originalLayout)); });
+    if (hiddenTools)
+        require(toolbarSettings.setLayout(
+                    kind, {{}, snow_shot::presentation::toolbar_layout::defaultOrder(kind)}),
+                "hide pinned action tools before entering edit mode");
+    const auto savedLayout = toolbarSettings.layout(kind);
     ScreenshotPinnedWindow window;
     SnowCanvasWidget canvas;
     snow_shot::presentation::WindowShortcutManager manager;
@@ -2335,6 +2345,16 @@ void pinnedEditingRecognitionShortcutsUsePaletteCommands() {
         sendShortcut(canvas, Qt::Key_F12, Qt::ControlModifier | Qt::AltModifier);
         require(requests == before + 1 && palette->activeToolForTests() == tool,
                 "pinned recognition shortcut must activate and synchronize the toolbar item");
+        if (hiddenTools) {
+            require(toolbarSettings.layout(kind) == savedLayout,
+                    "pinned recognition hotkeys preserve the saved hidden layout");
+            for (auto* button : palette->mainPanel()->findChildren<adqt::widgets::AdButton*>()) {
+                if (savedLayout.hidden.contains(
+                        button->property("screenshotToolbarItemId").toString()))
+                    require(button->isHidden(),
+                            "pinned recognition hotkeys keep action buttons hidden");
+            }
+        }
         sendShortcut(canvas, Qt::Key_F12, Qt::ControlModifier | Qt::AltModifier);
         require(requests == before + 1 &&
                     palette->activeToolForTests() == ScreenshotToolPalette::Tool::Select,
@@ -10705,7 +10725,17 @@ void pinnedHistoryShortcutsFollowSettings() {
     require(processUntilDeleted(guardedWindow, 2000), "history shortcut test pin should close");
 }
 
-void pinnedDrawingShortcutsToggleActiveTool() {
+void pinnedDrawingShortcutsToggleActiveTool(bool hiddenTools = false) {
+    const snow_shot::storage::ScreenshotToolbarSettings toolbarSettings;
+    const auto kind = snow_shot::storage::ScreenshotToolbarLayoutKind::DrawingTools;
+    const auto originalLayout = toolbarSettings.layout(kind);
+    const auto restoreLayout =
+        qScopeGuard([&] { static_cast<void>(toolbarSettings.setLayout(kind, originalLayout)); });
+    if (hiddenTools)
+        require(toolbarSettings.setLayout(
+                    kind, {{}, snow_shot::presentation::toolbar_layout::defaultOrder(kind)}),
+                "hide annotation tools before opening pinned editing");
+    const auto savedLayout = toolbarSettings.layout(kind);
     QScreen* screen = QGuiApplication::primaryScreen();
     require(screen != nullptr, "a primary screen is required");
     auto* window = new ScreenshotPinnedWindow();
@@ -10773,6 +10803,33 @@ void pinnedDrawingShortcutsToggleActiveTool() {
         require(canvas->canvasTool() == tool,
                 "the third shortcut press should reactivate the pinned canvas tool");
     }
+    if (hiddenTools) {
+        require(toolbarSettings.layout(kind) == savedLayout && palette->stylePanel()->isVisible(),
+                "hidden pinned tools retain settings without changing the saved layout");
+        for (auto* button : palette->mainPanel()->findChildren<adqt::widgets::AdButton*>()) {
+            if (savedLayout.hidden.contains(button->property("screenshotToolbarItemId").toString()))
+                require(button->isHidden(),
+                        "pinned hotkeys must not reveal hidden drawing buttons");
+        }
+        const auto shapeVisible = [&] {
+            for (auto* button : palette->mainPanel()->findChildren<adqt::widgets::AdButton*>()) {
+                if (button->property("screenshotToolbarPositionItems")
+                        .toStringList()
+                        .contains(QStringLiteral("shape")) &&
+                    !button->isHidden())
+                    return true;
+            }
+            return false;
+        };
+        require(toolbarSettings.setLayout(kind, originalLayout) && shapeVisible(),
+                "open pinned editing restores drawing tools after a saved layout change");
+        require(toolbarSettings.setLayout(kind, savedLayout) && !shapeVisible(),
+                "open pinned editing hides drawing tools after a saved layout change");
+        pressKey(Qt::Key_1);
+        pressKey(Qt::Key_1);
+        require(canvas->canvasTool() == SnowCanvasTool::Shape && !shapeVisible(),
+                "pinned drawing hotkeys survive live hide and restore transitions");
+    }
     require(canvas->setCanvasTool(SnowCanvasTool::Shape), "reset fixture should activate Shape");
     QMouseEvent down(QEvent::MouseButtonPress, QPointF(30, 30), QPointF(30, 30), Qt::LeftButton,
                      Qt::LeftButton, Qt::NoModifier);
@@ -10785,7 +10842,9 @@ void pinnedDrawingShortcutsToggleActiveTool() {
     QCoreApplication::sendEvent(canvas, &up);
     require(canvas->canvasHistoryState().canUndo, "pinned reset fixture should contain an edit");
     require(canvas->resetEditingState(), "pinned reset fixture should clear selection");
-    palette->setActiveTool(ScreenshotToolPalette::Tool::Select);
+    // Reset belongs to the lazily created eraser settings, including for a hidden eraser.
+    require(palette->activateDrawingShortcut(QStringLiteral("eraser")),
+            "pinned reset fixture should open eraser settings");
     auto* reset =
         palette->findChild<adqt::widgets::AdButton*>(QStringLiteral("screenshotResetCanvasButton"));
     require(reset != nullptr && reset->isEnabled(),
@@ -16151,6 +16210,11 @@ int main(int argc, char* argv[]) {
         }
         if (app.arguments().contains(QStringLiteral("--drawing-shortcut-toggle-only"))) {
             pinnedDrawingShortcutsToggleActiveTool();
+            return 0;
+        }
+        if (app.arguments().contains(QStringLiteral("--hidden-tools-only"))) {
+            pinnedDrawingShortcutsToggleActiveTool(true);
+            pinnedEditingRecognitionShortcutsUsePaletteCommands(true);
             return 0;
         }
         if (app.arguments().contains(QStringLiteral("--toolbar-lifecycle-only"))) {

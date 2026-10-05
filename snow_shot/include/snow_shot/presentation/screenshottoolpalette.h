@@ -223,7 +223,7 @@ class ScreenshotToolPalette final : public QWidget,
         bool showDragHandle = false;
         bool showHistoryActions = false;
         bool showMoveTool = false;
-        bool showMoveOptionsToolbar = false;
+        bool enableMoveOptionsToolbar = false;
         MoveToolPresentation moveToolPresentation = MoveToolPresentation::EditSelection;
         bool showSelectTool = true;
         bool showShapeTool = true;
@@ -316,6 +316,7 @@ class ScreenshotToolPalette final : public QWidget,
     void setStyleToolbarVisible(bool visible);
     bool styleToolbarVisible() const;
     bool actionToolbarVisible() const;
+    void setMoveOptionsToolbarVisible(bool visible);
     bool recordingExportSettingsVisible() const;
     void setActiveTool(Tool tool);
     void refreshConfirmShortcutHint();
@@ -645,19 +646,18 @@ class ScreenshotToolPalette final : public QWidget,
     void recordUserDrawingToolIntent(Tool tool);
     [[nodiscard]] bool drawingToolCanBeActivated(Tool tool) const;
     [[nodiscard]] bool canActivateToolShortcut(Tool tool) const;
-    [[nodiscard]] adqt::widgets::AdButton* toolShortcutButton(Tool tool) const;
+    [[nodiscard]] adqt::widgets::AdButton* toolEntryButton(Tool tool) const;
     [[nodiscard]] std::optional<Tool> drawingShortcutTool(const QString& toolId) const;
     void clearDrawingToolGroups();
     void releaseDrawingToolGroupPopover(adqt::widgets::AdButton* trigger);
     bool activateToolFromToolbar(Tool tool, bool toggleVisibleButton = true);
     void activateDrawingTool(Tool tool);
-    [[nodiscard]] Tool drawingShortcutEntryTool(const QString& itemId, Tool fallback) const;
     void selectDrawingToolGroupEntry(Tool tool);
     void selectDrawingItemGroupEntry(const QString& itemId);
     bool activateDrawingItem(const QString& itemId, bool toggleVisibleButton = true);
     [[nodiscard]] bool historyActionEnabled(const QString& itemId) const;
     [[nodiscard]] bool canActivateHistoryItem(const QString& itemId) const;
-    [[nodiscard]] adqt::widgets::AdButton* screenshotShortcutButton(const QString& actionId);
+    [[nodiscard]] adqt::widgets::AdButton* screenshotShortcutButton(const QString& actionId) const;
     void refreshDrawingToolGroup(int groupIndex);
     void addRecordingControls(QBoxLayout* layout);
     void createRecordingExportSettingsToolbar();
@@ -825,6 +825,7 @@ class ScreenshotToolPalette final : public QWidget,
         bool busy = false;
     };
     [[nodiscard]] ActionToolState actionToolState(const QString& itemId) const;
+    [[nodiscard]] bool canActivateActionTool(const QString& itemId) const;
     bool activateActionTool(const QString& itemId, bool toggleVisibleButton = true);
     void selectActionToolGroupEntry(const QString& itemId);
     adqt::widgets::AdButton* createActionToolGroup(const QStringList& itemIds);
@@ -1109,6 +1110,7 @@ class ScreenshotToolPalette final : public QWidget,
     SnowCanvasHistoryState m_canvasHistoryState;
     const SnowCanvasStyleDefaults m_styleDefaults;
     const Options m_options;
+    bool m_moveOptionsToolbarVisible = false;
     std::optional<snow_shot::storage::ScreenshotToolbarLayout> m_toolbarLayout;
     snow_shot::storage::ScreenshotToolbarLayout m_actionToolsLayout;
     bool m_actionToolsLayoutExplicit = false;

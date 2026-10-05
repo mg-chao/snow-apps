@@ -89,18 +89,14 @@ shortcuts::ShortcutBindingList shortcutListDefault(const QString& key) {
         nullptr, key == QStringLiteral("screenshot_shortcuts/toggle_guides"));
 }
 
-template <typename ShortcutSettings>
-bool resetLocalShortcutSection(SettingsSectionReset reset, const ShortcutSettings& settings) {
-    auto all = settings.allShortcuts();
+QMap<QString, QJsonValue> sectionDefaults(SettingsSectionReset reset) {
+    QMap<QString, QJsonValue> defaults;
     const auto& registry = builtInSettingsRegistry();
-    // Use the same section membership as the controls and runtime refresh,
-    // while preserving sibling sections in the same shortcut map.
-    for (const int index : registry.fieldsForReset(reset)) {
-        const auto& field = registry.fields().at(index);
-        const auto& local = std::get<SettingsLocalShortcutDefinition>(field.definition->payload);
-        all.insert(local.shortcutId, shortcutListDefault(field.configurationKey));
+    for (int fieldIndex : registry.fieldsForReset(reset)) {
+        const auto& field = registry.fields().at(fieldIndex);
+        defaults.insert(field.configurationKey, field.defaultValue);
     }
-    return settings.setAllShortcutsAtomic(all);
+    return defaults;
 }
 
 bool resetAvailableConfigurationValues(QMap<QString, QJsonValue> values) {
@@ -808,6 +804,8 @@ bool BuiltInSettingsBackend::switchValue(SettingsSwitchBinding binding) const {
         return storage::ScreenshotUiSettings().screenshotAreaTypeHintEnabled();
     case SettingsSwitchBinding::ShowGuidesByDefault:
         return storage::ScreenshotUiSettings().showGuidesByDefault();
+    case SettingsSwitchBinding::ShowEditSelectionToolbar:
+        return storage::ScreenshotUiSettings().showEditSelectionToolbar();
     case SettingsSwitchBinding::FloatingToolbarEnabled:
         return storage::FloatingToolbarSettings().enabled();
     case SettingsSwitchBinding::TrayEnabled:
@@ -1027,6 +1025,9 @@ bool BuiltInSettingsBackend::applySwitchValue(SettingsSwitchBinding binding, boo
     if (binding == SettingsSwitchBinding::ShowGuidesByDefault) {
         return storage::ScreenshotUiSettings().setShowGuidesByDefault(value);
     }
+    if (binding == SettingsSwitchBinding::ShowEditSelectionToolbar) {
+        return storage::ScreenshotUiSettings().setShowEditSelectionToolbar(value);
+    }
     if (binding == SettingsSwitchBinding::FloatingToolbarEnabled)
         return storage::FloatingToolbarSettings().setEnabled(value);
     if (binding == SettingsSwitchBinding::TrayEnabled) {
@@ -1151,6 +1152,7 @@ bool BuiltInSettingsBackend::applySwitchValue(SettingsSwitchBinding binding, boo
     case SettingsSwitchBinding::SelectionTransitionAnimation:
     case SettingsSwitchBinding::ScreenshotAreaTypeHint:
     case SettingsSwitchBinding::ShowGuidesByDefault:
+    case SettingsSwitchBinding::ShowEditSelectionToolbar:
     case SettingsSwitchBinding::FloatingToolbarEnabled:
     case SettingsSwitchBinding::TrayEnabled:
     case SettingsSwitchBinding::ScreenshotAutoSaveAfterCopy:
@@ -2052,15 +2054,15 @@ bool BuiltInSettingsBackend::resetSection(SettingsSectionReset reset) {
     case SettingsSectionReset::ScreenRecordingVideo:
     case SettingsSectionReset::ScreenRecordingAnimation:
     case SettingsSectionReset::ScreenRecordingEncoding:
-    case SettingsSectionReset::PinToScreenToolbar: {
-        QMap<QString, QJsonValue> defaults;
-        const auto& registry = builtInSettingsRegistry();
-        for (int fieldIndex : registry.fieldsForReset(reset)) {
-            const auto& field = registry.fields().at(fieldIndex);
-            defaults.insert(field.configurationKey, field.defaultValue);
-        }
-        return storage::ApplicationStorage::instance().configuration().setValues(defaults);
-    }
+    case SettingsSectionReset::PinToScreenToolbar:
+        return storage::ApplicationStorage::instance().configuration().setValues(
+            sectionDefaults(reset));
+    case SettingsSectionReset::ScreenshotEditorShortcuts:
+    case SettingsSectionReset::ScreenshotOtherShortcuts:
+    case SettingsSectionReset::DrawingShortcuts:
+    case SettingsSectionReset::ScreenRecordingShortcuts:
+    case SettingsSectionReset::PinToScreenShortcuts:
+        return storage::setLocalShortcutValuesAtomic(sectionDefaults(reset));
     case SettingsSectionReset::Skin: {
         QMap<QString, QJsonValue> defaults;
         for (const auto* key :
@@ -2296,6 +2298,9 @@ bool BuiltInSettingsBackend::resetSection(SettingsSectionReset reset) {
             {QStringLiteral("screenshot_ui/color_picker_center_guide_line_color"),
              storage::ConfigurationSchema::defaultValue(
                  QStringLiteral("screenshot_ui/color_picker_center_guide_line_color"))},
+            {QStringLiteral("screenshot_ui/show_edit_selection_toolbar"),
+             storage::ConfigurationSchema::defaultValue(
+                 QStringLiteral("screenshot_ui/show_edit_selection_toolbar"))},
             {QStringLiteral("screenshot_toolbar/action_tools_layout"),
              storage::ConfigurationSchema::defaultValue(
                  QStringLiteral("screenshot_toolbar/action_tools_layout"))},
@@ -2340,15 +2345,6 @@ bool BuiltInSettingsBackend::resetSection(SettingsSectionReset reset) {
              storage::ConfigurationSchema::defaultValue(
                  QStringLiteral("drawing/remember_last_used_tool"))},
         });
-    case SettingsSectionReset::ScreenshotEditorShortcuts:
-    case SettingsSectionReset::ScreenshotOtherShortcuts:
-        return resetLocalShortcutSection(reset, storage::ScreenshotShortcutSettings());
-    case SettingsSectionReset::DrawingShortcuts:
-        return resetLocalShortcutSection(reset, storage::DrawingShortcutSettings());
-    case SettingsSectionReset::ScreenRecordingShortcuts:
-        return resetLocalShortcutSection(reset, storage::ScreenRecordingShortcutSettings());
-    case SettingsSectionReset::PinToScreenShortcuts:
-        return resetLocalShortcutSection(reset, storage::PinToScreenShortcutSettings());
     case SettingsSectionReset::PinToScreen:
         return storage::ApplicationStorage::instance().configuration().setValues({
             {QStringLiteral("pin_to_screen/border_color"),

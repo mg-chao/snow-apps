@@ -46,6 +46,7 @@ export PATH="$snow_repo_root/.tools/macos-dev/bin:$snow_repo_root/.tools/macos-m
 for tool in cmake ninja curl tar python3 shasum xcrun; do
     command -v "$tool" >/dev/null || snow_die "Missing $tool. Install the prerequisites listed in docs-macos-build.md."
 done
+snow_require_target_tools "$arch"
 snow_load_qt_policy
 qt_version="$snow_qt_version"
 qt_deployment_target="$snow_qt_deployment_target"
@@ -56,6 +57,11 @@ export MACOSX_DEPLOYMENT_TARGET="$qt_deployment_target"
 # this Ninja build. Keep Qt's SDK checks, but skip only its Xcode-version check
 # when xcodebuild reports that the selected developer directory is CLT-only.
 qt_apple_options=()
+if [[ "$snow_requires_rosetta" == 1 ]]; then
+    # Qt supports running target x64 tools through Rosetta. Avoid requiring a
+    # separate host kit, and discard any earlier implicit-cross-build cache.
+    qt_apple_options+=(--fresh -DQT_NO_HANDLE_APPLE_SINGLE_ARCH_CROSS_COMPILING=ON)
+fi
 if ! xcodebuild -version >/dev/null 2>&1; then
     if ! xcrun --show-sdk-path >/dev/null 2>&1; then
         snow_die 'The selected Apple developer tools do not provide a macOS SDK.'

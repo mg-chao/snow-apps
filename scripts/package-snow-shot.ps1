@@ -1,7 +1,9 @@
 [CmdletBinding()]
 param(
-    [string]$BuildDirectory = "build\snow-shot-msvc-release",
-    [string]$InstallDirectory = "artifacts\snow-shot",
+    [string]$BuildDirectory,
+    [string]$InstallDirectory,
+    [ValidateSet('x64', 'arm64')][string]$Architecture = 'x64',
+    [string]$OcrRuntimeArchive,
     [ValidateRange(1, 256)][int]$Parallelism = 4,
     [switch]$SkipBuild,
     [switch]$PrepareOcrRuntimeOnly
@@ -9,19 +11,53 @@ param(
 
 $ErrorActionPreference = "Stop"
 if ($PrepareOcrRuntimeOnly) {
-    & (Join-Path $PSScriptRoot 'prepare-snow-shot-ocr-runtime.ps1') -BuildDirectory $BuildDirectory -Parallelism $Parallelism -SkipBuild:$SkipBuild
+    & (Join-Path $PSScriptRoot 'prepare-snow-shot-ocr-runtime.ps1') -Architecture $Architecture -BuildDirectory $BuildDirectory -Parallelism $Parallelism -SkipBuild:$SkipBuild
     return
 }
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 . (Join-Path $PSScriptRoot "snow-build-environment.ps1")
-$buildEnvironment = Set-SnowBuildEnvironment -Preset "snow-shot-msvc-release"
-$script:DumpbinPath = Join-Path $env:VCToolsInstallDir "bin\Hostx64\x64\dumpbin.exe"
+$windowsTarget = Get-SnowWindowsTarget -Architecture $Architecture
+$releasePreset = $windowsTarget.ReleasePreset
+if (-not $BuildDirectory) { $BuildDirectory = "build\$releasePreset" }
+if (-not $InstallDirectory) {
+    $InstallDirectory = if ($Architecture -eq 'x64') { 'artifacts\snow-shot' } else { 'artifacts\windows-arm64\snow-shot' }
+}
+$buildEnvironment = Set-SnowBuildEnvironment -Preset $releasePreset
+$script:DumpbinPath = (Get-Command dumpbin.exe -ErrorAction Stop).Source
 if (-not (Test-Path -LiteralPath $script:DumpbinPath -PathType Leaf)) {
-    throw "The x64 PE inspection tool was not found: $script:DumpbinPath"
+    throw "The host PE inspection tool was not found: $script:DumpbinPath"
 }
 Write-Host "Visual Studio C++ tools: $env:VCToolsInstallDir"
 Write-Host "MSVC toolset: $($buildEnvironment.MsvcToolset)"
 Write-Host "PE dependency inspector: $script:DumpbinPath"
+. (Join-Path $PSScriptRoot 'snow-shot-ocr-release-runtime.ps1')
+. (Join-Path $PSScriptRoot 'snow-shot-ocr-native-validation.ps1')
+$nativeTarget = $windowsTarget.HostArchitecture -ceq $Architecture
+$nativeProbesPassed = $false
+
+function New-SnowNativeValidation {
+    param([Parameter(Mandatory)][string]$Path)
+    return [ordered]@{ Platform = $windowsTarget.Platform; HostPlatform = "windows-$($windowsTarget.HostArchitecture)"
+        Passed = ($nativeTarget -and $nativeProbesPassed)
+        Artifacts = @([ordered]@{ Name = [IO.Path]::GetFileName($Path); Bytes = (Get-Item -LiteralPath $Path).Length
+            Sha256 = (Get-FileHash -LiteralPath $Path -Algorithm SHA256).Hash.ToLowerInvariant() }) }
+}
+
+function Assert-SnowNativeStartup {
+    param([Parameter(Mandatory)][string]$Stage, [Parameter(Mandatory)][string]$Executable,
+        [Parameter(Mandatory)][string]$Updater, [Parameter(Mandatory)][string]$Version)
+    if (-not $nativeTarget) { return }
+    foreach ($probe in @(
+        @{ File = (Join-Path $Stage "bin/$Executable.exe"); Arguments = @('--update-probe', $Version) },
+        @{ File = (Join-Path $Stage "bin/$Updater.exe"); Arguments = @('--transaction-state', '--target', "`"$Stage`"") }
+    )) {
+        $process = Start-Process -FilePath $probe.File -ArgumentList $probe.Arguments -PassThru -WindowStyle Hidden
+        try {
+            if (-not $process.WaitForExit(30000)) { $process.Kill(); throw "Native release probe timed out: $($probe.File)" }
+            if ($process.ExitCode -ne 0) { throw "Native release probe failed: $($probe.File) ($($process.ExitCode))" }
+        } finally { $process.Dispose() }
+    }
+}
 
 $nsisCommand = Get-Command makensis -ErrorAction SilentlyContinue
 if (-not $nsisCommand) {
@@ -95,7 +131,8 @@ function Get-ValidatedStaticQtStamp {
     param(
         [Parameter(Mandatory = $true)][string]$Prefix,
         [Parameter(Mandatory = $true)][string]$ExpectedVersion,
-        [Parameter(Mandatory = $true)][string]$ExpectedConfiguration
+        [Parameter(Mandatory = $true)][string]$ExpectedConfiguration,
+        [ValidateSet('x64', 'arm64')][string]$Architecture = 'x64'
     )
 
     $stampPath = Join-Path $Prefix "share\snow-apps\static-qt-build.json"
@@ -110,7 +147,6 @@ function Get-ValidatedStaticQtStamp {
     }
 
     $expectedValues = [ordered]@{
-        SchemaVersion = $script:SnowStaticQtSchemaVersion
         QtVersion = $ExpectedVersion
         Configuration = $ExpectedConfiguration
         FeatureFingerprint = $script:SnowStaticQtFeatureFingerprint
@@ -130,13 +166,18 @@ function Get-ValidatedStaticQtStamp {
     }
 
     if (-not (Test-SnowStaticQtStamp -Stamp $stamp -Version $ExpectedVersion `
-            -Configuration $ExpectedConfiguration)) {
+            -Configuration $ExpectedConfiguration -Architecture $Architecture)) {
         throw "The static Qt build stamp must describe the current feature policy with timezone_locale disabled."
+    }
+    if ($stamp.SchemaVersion -ne 5 -and $stamp.HostArchitecture -ceq $Architecture -and
+        -not (Test-SnowQtHostToolHashes -Stamp $stamp -Prefix $Prefix)) {
+        throw 'The installed native Qt host tools differ from their recorded hashes.'
     }
     $qtDir = Join-Path $Prefix "lib/cmake/Qt6"
     if ((Get-SnowQtKitVersion -Qt6Dir $qtDir) -cne $ExpectedVersion -or
         -not (Test-SnowQtSystemCodecKit -Qt6Dir $qtDir) -or
-        -not (Test-SnowQtTranslationKit -Qt6Dir $qtDir)) {
+        -not (Test-SnowQtTranslationKit -Qt6Dir $qtDir) -or
+        -not (Test-SnowQtArchitecture -Qt6Dir $qtDir -Architecture $Architecture -Configuration $ExpectedConfiguration)) {
         throw "The installed Qt targets do not match the audited system-codec/LTCG/timezone feature policy."
     }
     foreach ($patch in $script:SnowStaticQtSourcePatches) {
@@ -152,6 +193,7 @@ function Get-ValidatedStaticQtStamp {
 }
 
 function Get-SnowShotExpectedFfmpegComponents {
+    param([ValidateSet('x64', 'arm64')][string]$Architecture = 'x64')
     $expectedFfmpegComponents = [ordered]@{
         BSF = @("AAC_ADTSTOASC", "H264_MP4TOANNEXB", "PGS_FRAME_MERGE", "VP9_SUPERFRAME")
         DECODER = @("AAC", "APNG", "GIF", "H264", "HEVC", "MP3", "PCM_F32LE", "PCM_S16LE", "PNG", "VP8", "WEBP", "WEBP_ANIM")
@@ -165,13 +207,18 @@ function Get-SnowShotExpectedFfmpegComponents {
         INDEV = @()
         OUTDEV = @()
     }
+    if ($Architecture -eq 'arm64') {
+        $expectedFfmpegComponents.ENCODER = @($expectedFfmpegComponents.ENCODER |
+            Where-Object { $_ -notin @('H264_AMF', 'H264_NVENC', 'H264_QSV') })
+    }
     return $expectedFfmpegComponents
 }
 
 function Assert-SnowShotStaticDependencies {
     param(
         [Parameter(Mandatory = $true)][string]$InstalledRoot,
-        [Parameter(Mandatory = $true)][string]$Prefix
+        [Parameter(Mandatory = $true)][string]$Prefix,
+        [ValidateSet('x64', 'arm64')][string]$Architecture = 'x64'
     )
 
     if (-not (Test-Path -LiteralPath $Prefix -PathType Container)) {
@@ -191,7 +238,7 @@ function Assert-SnowShotStaticDependencies {
             }
         }
     })
-    foreach ($entry in (Get-SnowShotExpectedFfmpegComponents).GetEnumerator()) {
+    foreach ($entry in (Get-SnowShotExpectedFfmpegComponents -Architecture $Architecture).GetEnumerator()) {
         $actual = @($enabledFfmpegComponents |
             Where-Object { $_.Kind -ceq $entry.Key } |
             ForEach-Object { $_.Name })
@@ -251,23 +298,43 @@ function Assert-SnowShotStaticDependencies {
 
 $buildDirectory = Resolve-RepoPath $BuildDirectory
 $installDirectory = Resolve-RepoPath $InstallDirectory
-$artifactRoot = Resolve-RepoPath "artifacts"
+$artifactRoot = Resolve-RepoPath $(if ($Architecture -eq 'x64') { 'artifacts' } else { 'artifacts\windows-arm64' })
 $artifactPrefix = $artifactRoot + [System.IO.Path]::DirectorySeparatorChar
 if (-not $installDirectory.StartsWith($artifactPrefix, [System.StringComparison]::OrdinalIgnoreCase)) {
     throw "InstallDirectory must be a child of $artifactRoot"
 }
 
-$staticVcpkgInstalledRoot = Join-Path $buildEnvironment.VcpkgRoot "installed\static"
-$staticVcpkgPrefix = Join-Path $staticVcpkgInstalledRoot "x64-windows-static"
-Assert-SnowShotStaticDependencies -InstalledRoot $staticVcpkgInstalledRoot -Prefix $staticVcpkgPrefix
+$staticVcpkgInstalledRoot = $windowsTarget.InstalledRoot
+$staticVcpkgPrefix = Join-Path $staticVcpkgInstalledRoot $windowsTarget.Triplet
+Assert-SnowShotStaticDependencies -InstalledRoot $staticVcpkgInstalledRoot -Prefix $staticVcpkgPrefix -Architecture $Architecture
 $qtPrefix = [System.IO.Path]::GetFullPath((Join-Path $buildEnvironment.Qt6Dir "..\..\.."))
 $qtStamp = Get-ValidatedStaticQtStamp -Prefix $qtPrefix `
-    -ExpectedVersion $script:SnowQtVersion -ExpectedConfiguration "Release"
+    -ExpectedVersion $script:SnowQtVersion -ExpectedConfiguration "Release" -Architecture $Architecture
 
 $cachePath = Join-Path $buildDirectory "CMakeCache.txt"
+$ocrAssetManifestPath = Join-Path $repoRoot $(if ($Architecture -eq 'x64') {
+    'snow_shot/packaging/snow-shot-ocr-asset-manifest.json'
+} else { 'snow_shot/packaging/snow-shot-ocr-asset-manifest-arm64.json' })
+if ($OcrRuntimeArchive) {
+    $OcrRuntimeArchive = Resolve-RepoPath $OcrRuntimeArchive
+    $generatedManifest = Join-Path $buildDirectory "snow-shot-ocr-asset-manifest-$($windowsTarget.Platform).json"
+    $null = New-Item -ItemType Directory -Path $buildDirectory -Force
+    $ocrAssetManifestPath = Resolve-SnowOcrAssetManifest -ArchivePath $OcrRuntimeArchive `
+        -Architecture $Architecture -PinnedManifestPath $ocrAssetManifestPath -OutputPath $generatedManifest
+    $descriptor = Get-Content -LiteralPath $ocrAssetManifestPath -Raw | ConvertFrom-Json
+    $null = New-Item -ItemType Directory -Path $artifactRoot -Force
+    $runtimeCache = Join-Path $artifactRoot $descriptor.runtime.archive.name
+    if ([IO.Path]::GetFullPath($OcrRuntimeArchive) -cne [IO.Path]::GetFullPath($runtimeCache)) {
+        Copy-Item -LiteralPath $OcrRuntimeArchive -Destination $runtimeCache -Force
+    }
+}
+if (-not (Test-Path -LiteralPath $ocrAssetManifestPath -PathType Leaf)) {
+    throw "A trusted $($windowsTarget.Platform) OCR manifest is required. Prepare the native runtime, then pass -OcrRuntimeArchive or commit its generated manifest."
+}
 if (-not $SkipBuild) {
-    $configureArguments = @(Get-SnowConfigureArguments -Preset "snow-shot-msvc-release" `
+    $configureArguments = @(Get-SnowConfigureArguments -Preset $releasePreset `
         -BuildDirectory $buildDirectory)
+    $configureArguments += "-DSNOW_SHOT_OCR_ASSET_MANIFEST=$($ocrAssetManifestPath.Replace('\', '/'))"
     & cmake @configureArguments
     if ($LASTEXITCODE -ne 0) {
         throw "Snow Shot release configuration failed."
@@ -292,6 +359,14 @@ $requiredCacheEntries = @(
     "QT_FEATURE_timezone_locale:INTERNAL=OFF"
 )
 $cache = Get-Content -LiteralPath $cachePath
+if (-not ($cache -cmatch "^SNOW_WINDOWS_ARCHITECTURE:(?:STRING|INTERNAL)=$Architecture$") -or
+    -not ($cache -cmatch "^VCPKG_TARGET_TRIPLET:(?:STRING|INTERNAL)=$([regex]::Escape($windowsTarget.Triplet))$")) {
+    throw 'The configured release architecture/triplet differs from the packaging target.'
+}
+if ($cache -notcontains "SNOW_SHOT_OCR_ASSET_MANIFEST:FILEPATH=$($ocrAssetManifestPath.Replace('\', '/'))" -and
+    $cache -notcontains "SNOW_SHOT_OCR_ASSET_MANIFEST:FILEPATH=$ocrAssetManifestPath") {
+    throw 'The configured trusted OCR manifest differs from the packaging input; configure the selected target again.'
+}
 foreach ($entry in $requiredCacheEntries) {
     if ($cache -notcontains $entry) {
         throw "Release cache is not production-safe; missing '$entry'."
@@ -308,9 +383,9 @@ if (-not $SkipBuild) {
 $updaterSizeReporter = Join-Path $PSScriptRoot 'report-snow-shot-updater-size.ps1'
 $updaterBuildExecutable = Join-Path $buildDirectory 'snow_shot\Release\snow-shot-updater.exe'
 $updaterCargoProfileDirectory =
-    Join-Path $buildDirectory 'cargo\x86_64-pc-windows-msvc\release-size'
+    Join-Path $buildDirectory "cargo\$($windowsTarget.RustTarget)\release-size"
 $updaterSizeEvidence = Join-Path $buildDirectory 'release-evidence\snow-shot-updater-size.json'
-& $updaterSizeReporter -Executable $updaterBuildExecutable `
+& $updaterSizeReporter -Architecture $Architecture -Executable $updaterBuildExecutable `
     -CargoProfileDirectory $updaterCargoProfileDirectory -Output $updaterSizeEvidence
 if ($LASTEXITCODE -ne 0) {
     throw 'Snow Shot updater size reporting failed.'
@@ -551,6 +626,7 @@ $allowedLocalImports = @{
     "directml.dll" = @()
 }
 foreach ($binary in $stagedBinaries) {
+    Assert-SnowPeArchitecture -Path $binary.FullName -Architecture $Architecture
     $dependencyOutput = @(& $script:DumpbinPath /nologo /dependents $binary.FullName 2>&1)
     if ($LASTEXITCODE -ne 0) {
         throw "PE dependency inspection failed for $($binary.FullName)"
@@ -597,7 +673,8 @@ if ($unexpectedImports.Count -gt 0) {
 }
 Write-Output "PE dependency audit: $($stagedBinaries.Count) binaries checked"
 $symbolOptions = @{
-    OcrAssetManifest = Join-Path $repoRoot 'snow_shot/packaging/snow-shot-ocr-asset-manifest.json'
+    Architecture = $Architecture
+    OcrAssetManifest = $ocrAssetManifestPath
     UpdaterProfileDirectory = $updaterCargoProfileDirectory
 }
 & (Join-Path $PSScriptRoot "collect-snow-shot-symbols.ps1") -BuildDirectory $buildDirectory -InstallDirectory $installDirectory @symbolOptions
@@ -615,7 +692,7 @@ $linkedFfmpegRegistrations = @(Select-String -LiteralPath $linkMapPath `
 # Native hardware encoding retains the configured parser registrations, so the
 # optimized application must match the same restricted component set as FFmpeg.
 $expectedFfmpegRegistrations = @(
-    foreach ($entry in (Get-SnowShotExpectedFfmpegComponents).GetEnumerator()) {
+    foreach ($entry in (Get-SnowShotExpectedFfmpegComponents -Architecture $Architecture).GetEnumerator()) {
         foreach ($name in $entry.Value) {
             "ff_$($name.ToLowerInvariant())_$($entry.Key.ToLowerInvariant())"
         }
@@ -683,8 +760,9 @@ if ($versionInfo.FileVersion -ne "$packageVersionNumeric.0" -or
     throw "Snow Shot binary version '$($versionInfo.FileVersion)'/'$($versionInfo.ProductVersion)' does not match package version '$packageVersion'."
 }
 
-$ocrRuntimeVersion = "1.0.9"
-$ocrPlatform = "windows-x64"
+$pinnedRuntime = (Get-Content -LiteralPath $ocrAssetManifestPath -Raw | ConvertFrom-Json).runtime
+$ocrRuntimeVersion = $pinnedRuntime.version
+$ocrPlatform = $windowsTarget.Platform
 $ocrDefaultModelType = "small"
 $ocrDefaultModelId = "ppocrv6-small-463ea9f"
 $ocrModelRootUrl = "https://www.modelscope.cn/models/mgchao/SnowShotOCR/resolve/master"
@@ -922,18 +1000,22 @@ function Assert-ZipMatchesFileManifest {
 $runtimeWork = Join-Path $artifactRoot "snow-ocr-runtime-$ocrRuntimeVersion"
 Reset-ReleaseDirectory -Path $runtimeWork
 $runtimeArchivePath = Join-Path $buildDirectory $ocrRuntimeArchiveName
-$pinnedRuntime = (Get-Content -Raw (Join-Path $repoRoot 'snow_shot/packaging/snow-shot-ocr-asset-manifest.json') | ConvertFrom-Json).runtime
 if ($pinnedRuntime.version -cne $ocrRuntimeVersion -or $pinnedRuntime.platform -cne $ocrPlatform -or
     $pinnedRuntime.archive.url -cne $ocrRuntimeUrl -or $pinnedRuntime.archive.name -cne $ocrRuntimeArchiveName) {
     throw 'The release OCR runtime identity differs from the checked-in manifest.'
 }
-Invoke-WebRequest -Uri $pinnedRuntime.archive.url -OutFile $runtimeArchivePath -TimeoutSec 180 -MaximumRedirection 5
+if ($OcrRuntimeArchive) {
+    if ([IO.Path]::GetFullPath($OcrRuntimeArchive) -cne [IO.Path]::GetFullPath($runtimeArchivePath)) {
+        Copy-Item -LiteralPath $OcrRuntimeArchive -Destination $runtimeArchivePath -Force
+    }
+} else {
+    Invoke-WebRequest -Uri $pinnedRuntime.archive.url -OutFile $runtimeArchivePath -TimeoutSec 180 -MaximumRedirection 5
+}
 . (Join-Path $PSScriptRoot 'snow-shot-ocr-release-runtime.ps1')
 Expand-PinnedSnowOcrRuntime -ArchivePath $runtimeArchivePath -Runtime $pinnedRuntime -Destination $runtimeWork
 # Audit the actual published binaries as well as the separately built development runtime.
 foreach ($binary in @(Get-ChildItem -LiteralPath $runtimeWork -File | Where-Object { $_.Extension -in @('.exe', '.dll') })) {
-    $headers = @(& $script:DumpbinPath /nologo /headers $binary.FullName 2>&1)
-    if ($LASTEXITCODE -ne 0 -or -not ($headers -match '8664 machine')) { throw 'Published OCR runtime must be x64.' }
+    Assert-SnowPeArchitecture -Path $binary.FullName -Architecture $Architecture
     $imports = @(& $script:DumpbinPath /nologo /dependents $binary.FullName 2>&1)
     if ($LASTEXITCODE -ne 0) { throw 'Published OCR dependency inspection failed.' }
     foreach ($line in $imports) {
@@ -948,20 +1030,27 @@ foreach ($binary in @(Get-ChildItem -LiteralPath $runtimeWork -File | Where-Obje
     }
 }
 
-$ocrVersionOutput = & (Join-Path $runtimeWork $ocrRuntimeFileName) --version 2>$null
-if ($LASTEXITCODE -ne 0 -or $ocrVersionOutput -cne
-    "snow-ocr-process $ocrRuntimeVersion windows-x86_64 protocol 5") {
-    throw "The staged OCR runtime reported an unexpected version: $ocrVersionOutput"
+$ocrRuntimeNativeProbePassed = $false
+if ($nativeTarget) {
+    $ocrVersionOutput = & (Join-Path $runtimeWork $ocrRuntimeFileName) --version 2>$null
+    $ocrWorkerArchitecture = if ($Architecture -eq 'arm64') { 'aarch64' } else { 'x86_64' }
+    if ($LASTEXITCODE -ne 0 -or $ocrVersionOutput -cne
+        "snow-ocr-process $ocrRuntimeVersion windows-$ocrWorkerArchitecture protocol 5") {
+        throw "The staged OCR runtime reported an unexpected version: $ocrVersionOutput"
+    }
+    $ocrRuntimeNativeProbePassed = $true
+} else {
+    Write-Output "Cross package: native $ocrPlatform executable validation is required before publication."
 }
 $ocrRuntimeVersionInfo = (Get-Item -LiteralPath (Join-Path $runtimeWork $ocrRuntimeFileName)).VersionInfo
 $expectedOcrMetadata = @{
     CompanyName = "Snow Apps"
     FileDescription = "Snow Shot OCR runtime"
-    FileVersion = "1.0.9.0"
+    FileVersion = "$ocrRuntimeVersion.0"
     InternalName = "snow-ocr-process"
     OriginalFilename = $ocrRuntimeFileName
     ProductName = "Snow Shot OCR Runtime"
-    ProductVersion = "1.0.9"
+    ProductVersion = $ocrRuntimeVersion
 }
 foreach ($property in $expectedOcrMetadata.Keys) {
     if ($ocrRuntimeVersionInfo.$property -ne $expectedOcrMetadata[$property]) {
@@ -990,15 +1079,10 @@ $runtimeArtifactCachePath = Join-Path $artifactRoot $ocrRuntimeArchiveName
 Copy-Item -LiteralPath $runtimeArchivePath -Destination $runtimeArtifactCachePath -Force
 
 $runtimeReleaseManifest = Join-Path $buildDirectory "snow-ocr-runtime-$ocrRuntimeVersion-$ocrPlatform.manifest.json"
-[ordered]@{
-    SchemaVersion = 1
-    RuntimeVersion = $ocrRuntimeVersion
-    Platform = $ocrPlatform
-    Protocol = 5
-    UploadUrl = $ocrRuntimeUrl
-    Archive = $runtimeArchive
-    Files = $runtimeFiles
-} | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath $runtimeReleaseManifest -Encoding utf8
+New-SnowOcrRuntimeReleaseReport -RuntimeVersion $ocrRuntimeVersion -Architecture $Architecture `
+    -ArchivePath $runtimeArchivePath -UploadUrl $ocrRuntimeUrl -Files $runtimeFiles `
+    -NativeProbePassed $ocrRuntimeNativeProbePassed |
+    ConvertTo-Json -Depth 6 | Set-Content -LiteralPath $runtimeReleaseManifest -Encoding utf8
 
 $modelDescriptors = @()
 foreach ($model in $ocrModels) {
@@ -1030,13 +1114,11 @@ foreach ($model in $ocrModels) {
             url = $url
         }
     }
-    & (Join-Path $runtimeWork $ocrRuntimeFileName) --validate-model-set `
-        (Join-Path $modelCache $model.Detector) `
-        (Join-Path $modelCache $model.Recognizer) `
-        (Join-Path $modelCache $model.Dictionary)
-    if ($LASTEXITCODE -ne 0) {
-        throw "The OCR runtime could not initialize the '$($model.Type)' model set."
-    }
+    $null = Invoke-SnowOcrModelSetValidation -Architecture $Architecture `
+        -Executable (Join-Path $runtimeWork $ocrRuntimeFileName) `
+        -Detector (Join-Path $modelCache $model.Detector) `
+        -Recognizer (Join-Path $modelCache $model.Recognizer) `
+        -Dictionary (Join-Path $modelCache $model.Dictionary)
     $modelDescriptors += [ordered]@{
         type = $model.Type
         id = $model.Id
@@ -1065,7 +1147,7 @@ $assetManifest | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $assetManife
 # manifest (see cmake/StageSnowShotOcrAssets.cmake). It must describe exactly
 # the payload this script produces and publishes, so reject drift here instead
 # of letting development trees stage assets the release no longer matches.
-$checkedInManifestPath = Join-Path $repoRoot "snow_shot\packaging\snow-shot-ocr-asset-manifest.json"
+$checkedInManifestPath = $ocrAssetManifestPath
 if (-not (Test-Path -LiteralPath $checkedInManifestPath -PathType Leaf)) {
     throw "The checked-in OCR asset manifest is missing: $checkedInManifestPath"
 }
@@ -1146,9 +1228,11 @@ if ($manifestDrift) {
           "in the same change."
 }
 
-# The archive came from the pinned publication URL and Expand-PinnedSnowOcrRuntime
-# already verified its size, hash, and complete file inventory.
-$runtimeArchive.sha256 | Set-Content -LiteralPath $runtimePublishedMarker -Encoding ascii
+# Only a verified download proves publication. A supplied native archive may be
+# staged for offline validation before its separate immutable OCR publication.
+if (-not $OcrRuntimeArchive) {
+    $runtimeArchive.sha256 | Set-Content -LiteralPath $runtimePublishedMarker -Encoding ascii
+}
 
 $variantStages = [ordered]@{
     online = Join-Path $artifactRoot "snow-shot-$packageVersion-online-stage"
@@ -1186,7 +1270,7 @@ foreach ($variant in $variantStages.Keys) {
     $owned = @(Get-ReleaseTreeFileManifest -Root $stage | ForEach-Object {
         [ordered]@{ path = $_.Path.Replace('\', '/'); size = $_.Bytes; sha256 = $_.Sha256 }
     })
-    [ordered]@{ schema = 1; version = $packageVersion; variant = $variant; files = $owned } |
+    [ordered]@{ schema = 1; platform = $ocrPlatform; version = $packageVersion; variant = $variant; files = $owned } |
         ConvertTo-Json -Depth 8 | Set-Content -LiteralPath (Join-Path $stage 'snow-shot-installation.json') -Encoding utf8NoBOM
 }
 
@@ -1242,8 +1326,10 @@ if (-not (Test-Path -LiteralPath $portableDataMarker -PathType Leaf) -or
 }
 
 $producedPackages = @()
+Assert-SnowNativeStartup -Stage $variantStages.online -Executable snow_shot -Updater snow-shot-updater -Version $packageVersion
+$nativeProbesPassed = $nativeTarget
 foreach ($variant in @('online', 'offline')) {
-    $updateName = "snow-shot-$packageVersion-windows-x64-$variant-update"
+    $updateName = "snow-shot-$packageVersion-$ocrPlatform-$variant-update"
     $updatePath = Join-Path $buildDirectory "$updateName.zip"
     New-DeterministicZip -SourceDirectory $variantStages[$variant] -Destination $updatePath
     $files = Get-ReleaseTreeFileManifest -Root $variantStages[$variant]
@@ -1251,15 +1337,17 @@ foreach ($variant in @('online', 'offline')) {
     $hash = (Get-FileHash -LiteralPath $updatePath -Algorithm SHA256).Hash.ToLowerInvariant()
     "$hash  $updateName.zip" | Set-Content -LiteralPath "$updatePath.sha256" -Encoding ascii
     [ordered]@{ SchemaVersion = 3; PackageVersion = $packageVersion; Variant = $variant;
+        Architecture = $Architecture; Platform = $ocrPlatform; Preset = $releasePreset;
+        NativeValidationRequired = (-not $nativeTarget); NativeValidation = (New-SnowNativeValidation $updatePath);
         InstallFiles = $files; Archive = [ordered]@{ Path = "$updateName.zip";
             Bytes = (Get-Item -LiteralPath $updatePath).Length; Sha256 = $hash } } |
         ConvertTo-Json -Depth 8 | Set-Content -LiteralPath (Join-Path $buildDirectory "$updateName.manifest.json") -Encoding utf8NoBOM
 }
 # NSIS still uses MAX_PATH for payload input, including long third-party license names.
-$nsisWorkDirectory = Join-Path $repoRoot "build\nsis"
+$nsisWorkDirectory = Join-Path $repoRoot "build\nsis-$Architecture"
 New-Item -ItemType Directory -Path $nsisWorkDirectory -Force | Out-Null
 foreach ($variant in @("online", "offline")) {
-    $packageBaseName = "snow-shot-$packageVersion-windows-x64-$variant"
+    $packageBaseName = "snow-shot-$packageVersion-$ocrPlatform-$variant"
     $variantConfig = Join-Path $buildDirectory "CPackConfig-$variant.cmake"
     $baseConfigPath = $cpackConfig.Replace('\', '/')
     $stagePath = $variantStages[$variant].Replace('\', '/')
@@ -1270,7 +1358,7 @@ set(CPACK_INSTALL_CMAKE_PROJECTS "")
 set(CPACK_INSTALLED_DIRECTORIES "$stagePath;/")
 set(CPACK_PACKAGE_DIRECTORY "$packageDirectory")
 set(CPACK_PACKAGE_FILE_NAME "$packageBaseName")
-string(REPLACE "snow-shot-$packageVersion-windows-x64.exe" "$packageBaseName.exe" CPACK_NSIS_DEFINES "`${CPACK_NSIS_DEFINES}")
+string(REPLACE "snow-shot-$packageVersion-$ocrPlatform.exe" "$packageBaseName.exe" CPACK_NSIS_DEFINES "`${CPACK_NSIS_DEFINES}")
 "@ | Set-Content -LiteralPath $variantConfig -Encoding utf8
     $packagePath = Join-Path $buildDirectory "$packageBaseName.exe"
     if (Test-Path -LiteralPath $packagePath) { Remove-Item -LiteralPath $packagePath -Force }
@@ -1315,8 +1403,11 @@ string(REPLACE "snow-shot-$packageVersion-windows-x64.exe" "$packageBaseName.exe
         SchemaVersion = 2
         PackageVersion = $packageVersion
         Variant = $variant
-        Preset = "snow-shot-msvc-release"
-        Architecture = "x64"
+        Preset = $releasePreset
+        Architecture = $Architecture
+        Platform = $ocrPlatform
+        NativeValidationRequired = (-not $nativeTarget)
+        NativeValidation = (New-SnowNativeValidation $packagePath)
         StaticCrt = $true
         StaticQt = $true
         StaticImageCodecBackend = $true
@@ -1338,7 +1429,7 @@ string(REPLACE "snow-shot-$packageVersion-windows-x64.exe" "$packageBaseName.exe
     Write-Output "Snow Shot $variant release manifest: $manifestPath"
 }
 
-$portableBaseName = "snow-shot-$packageVersion-windows-x64-portable"
+$portableBaseName = "snow-shot-$packageVersion-$ocrPlatform-portable"
 $portableArchivePath = Join-Path $buildDirectory "$portableBaseName.zip"
 New-DeterministicZip -SourceDirectory $variantStages.portable -Destination $portableArchivePath
 $portableArchiveHash =
@@ -1354,8 +1445,11 @@ $portableManifestPath = Join-Path $buildDirectory "$portableBaseName.manifest.js
     SchemaVersion = 2
     PackageVersion = $packageVersion
     Variant = "portable"
-    Preset = "snow-shot-msvc-release"
-    Architecture = "x64"
+    Preset = $releasePreset
+    Architecture = $Architecture
+    Platform = $ocrPlatform
+    NativeValidationRequired = (-not $nativeTarget)
+    NativeValidation = (New-SnowNativeValidation $portableArchivePath)
     StaticCrt = $true
     StaticQt = $true
     StaticImageCodecBackend = $true

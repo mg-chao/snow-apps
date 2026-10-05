@@ -8,7 +8,8 @@ param(
     [int]$RegionWidth = 800,
     [int]$RegionHeight = 600,
     [int]$LiveWarmups = 30,
-    [int]$LiveSamples = 240
+    [int]$LiveSamples = 240,
+    [ValidateSet("x64", "arm64")][string]$Architecture = "x64"
 )
 
 $ErrorActionPreference = "Stop"
@@ -26,17 +27,20 @@ function Invoke-Checked {
 
 $workspace = (Resolve-Path (Join-Path $PSScriptRoot "..\..")).Path
 . (Join-Path $PSScriptRoot "performance-environment.ps1")
+$performanceTarget = Get-SnowPerformanceTarget -Architecture $Architecture -RequireNative
+$performanceBuildDirectory = Join-Path $workspace "build/$($performanceTarget.Preset)"
+Initialize-SnowPerformanceEnvironment -QtBin $QtBin -Architecture $Architecture
 $crates = Join-Path $workspace "snow-crates"
 $shot = Join-Path $workspace "snow_shot"
 if ([string]::IsNullOrWhiteSpace($OutputDirectory)) {
-    $OutputDirectory = Join-Path $crates "target\scrolling-perf\replay"
+    $OutputDirectory = Join-Path $crates "target/scrolling-perf/$(if ($Architecture -eq 'arm64') { 'windows-arm64/' })replay"
 }
 New-Item -ItemType Directory -Force -Path $OutputDirectory | Out-Null
 
 Push-Location $crates
 try {
     Invoke-Checked "cargo" @(
-        "run", "--release", "-p", "snow-stitch-images",
+        "run", "--release", "--target", $performanceTarget.RustTarget, "-p", "snow-stitch-images",
         "--features", "bench-internals", "--example", "scrolling_perf", "--",
         "--output", (Join-Path $OutputDirectory "stitch.json"),
         "--frames", "180", "--warmups", "2", "--rounds", "7"
@@ -51,7 +55,7 @@ try {
             throw "RegionX and RegionY must be supplied together"
         }
         $liveArguments = @(
-            "run", "--release", "-p", "snow-capture-c",
+            "run", "--release", "--target", $performanceTarget.RustTarget, "-p", "snow-capture-c",
             "--example", "scroll_region_benchmark", "--",
             "--output", (Join-Path $OutputDirectory "live-region.json"),
             "--width", $RegionWidth.ToString(),
@@ -74,22 +78,25 @@ finally {
 
 Push-Location $workspace
 try {
-    & (Join-Path $shot "scripts/configure-msvc-perf.ps1") -Fresh -QtBin $QtBin
+    & (Join-Path $shot "scripts/configure-msvc-perf.ps1") -Fresh -QtBin $QtBin -Architecture $Architecture
     if ($LASTEXITCODE -ne 0) {
         throw "The performance configuration failed"
     }
 
     Invoke-Checked "cmake" @(
-        "--build", "build/windows-msvc-performance", "--config", "Release", "--target",
+        "--build", $performanceBuildDirectory, "--config", "Release", "--target",
         "snow-shot-scrolling-result-async-benchmark",
         "snow-shot-scrolling-preview-benchmark",
         "snow-shot-latest-bridge-mailbox-tests",
         "--parallel"
     )
 
-    $release = Join-Path $workspace "build\windows-msvc-performance\snow_shot\test-bin\Release"
+    $release = Join-Path $performanceBuildDirectory "snow_shot/test-bin/Release"
 
-    $qtRuntime = Set-SnowPerformanceQtRuntime -Platform "offscreen"
+    foreach ($name in @("snow-shot-scrolling-result-async-benchmark.exe", "snow-shot-scrolling-preview-benchmark.exe", "snow-shot-latest-bridge-mailbox-tests.exe")) {
+        Assert-SnowPerformanceExecutable -Path (Join-Path $release $name) -Architecture $Architecture
+    }
+    $qtRuntime = Set-SnowPerformanceQtRuntime -Platform "offscreen" -Architecture $Architecture
     $savedOutput = $env:SNOW_SCROLLING_PERF_OUTPUT
     try {
         $env:SNOW_SCROLLING_PERF_OUTPUT =

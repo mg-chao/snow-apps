@@ -43,6 +43,11 @@ fn main() {
     }
     #[cfg(windows)]
     {
+        let platform = match env::var("CARGO_CFG_TARGET_ARCH").as_deref() {
+            Ok("aarch64") => "windows-arm64",
+            Ok("x86_64") => "windows-x64",
+            arch => panic!("unsupported Windows OCR target architecture: {arch:?}"),
+        };
         let version = env::var("CARGO_PKG_VERSION").expect("Cargo package version is required");
         let mut version_parts = version.split('.');
         let major = version_parts.next().expect("major version is required");
@@ -83,7 +88,7 @@ BEGIN
             VALUE "FileVersion", "{version}.0\0"
             VALUE "InternalName", "snow-ocr-process\0"
             VALUE "LegalCopyright", "Copyright (C) 2025-2026 mg-chao\0"
-            VALUE "OriginalFilename", "snow-ocr-process-{version}-windows-x64.exe\0"
+            VALUE "OriginalFilename", "snow-ocr-process-{version}-{platform}.exe\0"
             VALUE "ProductName", "Snow Shot OCR Runtime\0"
             VALUE "ProductVersion", "{version}\0"
         END

@@ -37,6 +37,7 @@ pub struct UpdatePackage {
 
 #[derive(Clone, Debug)]
 pub struct UpdateRelease {
+    pub platform: String,
     pub version: String,
     pub packages: Vec<UpdatePackage>,
     pub envelope: Vec<u8>,
@@ -222,6 +223,15 @@ pub fn compiled_trusted_keys() -> &'static [u8] {
 }
 
 pub fn verify_release(envelope: &[u8], trusted_keys: Option<&[u8]>) -> Result<UpdateRelease> {
+    verify_release_for_platform(envelope, trusted_keys, crate::edition::PLATFORM)
+}
+
+pub fn verify_release_for_platform(
+    envelope: &[u8],
+    trusted_keys: Option<&[u8]>,
+    platform: &str,
+) -> Result<UpdateRelease> {
+    crate::edition::validate_platform(platform)?;
     require(
         envelope.len() <= MAX_METADATA_BYTES,
         "metadata_too_large",
@@ -308,7 +318,7 @@ pub fn verify_release(envelope: &[u8], trusted_keys: Option<&[u8]>) -> Result<Up
     let published_at = string(object, "publishedAt");
     require(
         object.get("schema").and_then(Value::as_u64) == Some(1)
-            && string(object, "platform") == "windows-x64"
+            && string(object, "platform") == platform
             && OffsetDateTime::parse(published_at, &Rfc3339).is_ok(),
         "unsupported_update_release",
         "Unsupported update release",
@@ -350,11 +360,14 @@ pub fn verify_release(envelope: &[u8], trusted_keys: Option<&[u8]>) -> Result<Up
             "Unknown update package variant",
         )?;
         let expected = if portable {
-            format!("{}{variant}.zip", crate::edition::PACKAGE_PREFIX)
+            format!("{}{variant}.zip", crate::edition::package_prefix(platform))
         } else if kind == "installer" {
-            format!("{}{variant}.exe", crate::edition::PACKAGE_PREFIX)
+            format!("{}{variant}.exe", crate::edition::package_prefix(platform))
         } else {
-            format!("{}{variant}-update.zip", crate::edition::PACKAGE_PREFIX)
+            format!(
+                "{}{variant}-update.zip",
+                crate::edition::package_prefix(platform)
+            )
         };
         let identity = format!("{variant}/{kind}");
         require(
@@ -390,6 +403,7 @@ pub fn verify_release(envelope: &[u8], trusted_keys: Option<&[u8]>) -> Result<Up
         });
     }
     Ok(UpdateRelease {
+        platform: platform.to_owned(),
         version,
         packages: parsed,
         envelope: envelope.to_vec(),
@@ -397,9 +411,14 @@ pub fn verify_release(envelope: &[u8], trusted_keys: Option<&[u8]>) -> Result<Up
 }
 
 pub fn verify_release_file(path: &Path) -> Result<UpdateRelease> {
-    verify_release(
+    verify_release_file_for_platform(path, crate::edition::PLATFORM)
+}
+
+pub fn verify_release_file_for_platform(path: &Path, platform: &str) -> Result<UpdateRelease> {
+    verify_release_for_platform(
         &fsutil::read_limited(path, MAX_METADATA_BYTES as u64)?,
         None,
+        platform,
     )
 }
 
@@ -455,7 +474,47 @@ pub(crate) mod tests {
                 );
             }
         }
+        payload["platform"] = json!(crate::edition::PLATFORM);
+        for package in payload["packages"].as_array_mut().unwrap() {
+            package["path"] = json!(
+                package["path"]
+                    .as_str()
+                    .unwrap()
+                    .replace("windows-x64", crate::edition::PLATFORM)
+            );
+        }
         payload
+    }
+
+    #[test]
+    fn offline_verification_is_explicit_and_operational_verification_is_architecture_bound() {
+        let private = RsaPrivateKey::new(&mut OsRng, 3072).unwrap();
+        let trusted = trusted_key(&private, None);
+        for platform in ["windows-x64", "windows-arm64"] {
+            let mut payload = valid_payload();
+            payload["platform"] = json!(platform);
+            for package in payload["packages"].as_array_mut().unwrap() {
+                package["path"] = json!(
+                    package["path"]
+                        .as_str()
+                        .unwrap()
+                        .replace(crate::edition::PLATFORM, platform)
+                );
+            }
+            let signed = sign_payload(&payload, &private, 32);
+            assert!(verify_release_for_platform(&signed, Some(&trusted), platform).is_ok());
+            assert_eq!(
+                verify_release(&signed, Some(&trusted)).is_ok(),
+                platform == crate::edition::PLATFORM
+            );
+            let other = if platform == "windows-x64" {
+                "windows-arm64"
+            } else {
+                "windows-x64"
+            };
+            assert!(verify_release_for_platform(&signed, Some(&trusted), other).is_err());
+        }
+        assert!(verify_release_for_platform(b"{}", Some(&trusted), "macos-arm64").is_err());
     }
 
     pub(crate) fn trusted_key(private: &RsaPrivateKey, exponent: Option<Vec<u8>>) -> Vec<u8> {

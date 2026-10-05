@@ -40,6 +40,16 @@ snow_default_arch() {
         *) snow_die 'Unsupported host architecture.' ;;
     esac
 }
+snow_require_target_tools() {
+    local target_arch="$1"
+    snow_requires_rosetta=0
+    if [[ "$target_arch" == x64 ]] &&
+        [[ "$(snow_default_arch)" == arm64 || "$(sysctl -n hw.optional.arm64 2>/dev/null || true)" == 1 ]]; then
+        arch -x86_64 /usr/bin/true >/dev/null 2>&1 || snow_die \
+            'macOS x64 builds on Apple Silicon require Rosetta to run Qt tools and validate the OCR worker. Install it with: softwareupdate --install-rosetta --agree-to-license'
+        snow_requires_rosetta=1
+    fi
+}
 snow_select_preset() {
     snow_preset="${1:-snow-shot-macos-$(snow_default_arch)-debug}"
     [[ "$snow_preset" =~ ^snow-shot-macos-(arm64|x64)-(debug|performance|release|fast)$ ]] || snow_die "Unsupported macOS preset: $snow_preset"
@@ -67,6 +77,7 @@ snow_setup_tools() {
     for tool in cmake ninja cargo rustup pkg-config python3; do
         command -v "$tool" >/dev/null || snow_die "Missing $tool. Install the prerequisites listed in docs-macos-build.md."
     done
+    snow_require_target_tools "$snow_arch"
     snow_load_qt_policy
     export MACOSX_DEPLOYMENT_TARGET=15.0
     export CARGO_NET_GIT_FETCH_WITH_CLI=true

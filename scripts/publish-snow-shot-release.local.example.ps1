@@ -8,6 +8,8 @@ $releaseSettings = @{
     MacHost = 'YOUR_MAC_SSH_HOST'
     MacUser = 'YOUR_MAC_SSH_USER'
     MacProjectDirectory = '/Users/YOUR_USER/workspaces/snow-apps'
+    # Full for both architectures; Mini is packaged for ARM64 only.
+    MacArchitectures = @('arm64', 'x64')
     WebsiteDirectory = 'D:/snow-apps-site'
     # Optional; otherwise use your local OpenSSH config/agent and known_hosts.
     # MacIdentityFile = 'C:/private/mac-ssh-key'

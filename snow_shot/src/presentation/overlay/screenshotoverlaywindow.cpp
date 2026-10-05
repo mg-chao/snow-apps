@@ -105,10 +105,6 @@ ScreenshotOverlayWindow::~ScreenshotOverlayWindow() {
     }
 }
 
-SnowCanvasWidget* ScreenshotOverlayWindow::canvas() const {
-    return m_canvas;
-}
-
 void ScreenshotOverlayWindow::setCaptureGeometry(const QRect& displayGeometry) {
 #ifdef Q_OS_MACOS
     // Cocoa's upward Y axis excludes NSMaxY(frame) from WindowServer hit testing.

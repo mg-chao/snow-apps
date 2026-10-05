@@ -30,6 +30,8 @@ pub struct EditorSession {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct PersistedEditorSession {
     config: EngineConfig,
+    #[serde(default)]
+    spotlight_shape: snow_draw_engine_document::HighlightShape,
     rectangle: RectangleShapeStyle,
     arrow: ArrowStyle,
     line: super::ShapeStyle,
@@ -133,6 +135,7 @@ impl EditorSession {
         let state = &self.editor.state;
         PersistedEditorSession {
             config: self.editor.config,
+            spotlight_shape: state.default_spotlight_shape,
             rectangle: state.default_rectangle_shape_style,
             arrow: state.default_arrow_style,
             line: state.default_line_style,
@@ -159,6 +162,7 @@ impl EditorSession {
         let mut session = Self::new(persisted.config)?;
         let state = &mut session.editor.state;
         state.default_rectangle_shape_style = persisted.rectangle;
+        state.default_spotlight_shape = persisted.spotlight_shape;
         state.default_arrow_style = persisted.arrow;
         state.default_line_style = ShapeStyle {
             arrow_type: crate::style::normalized_line_arrow_type(persisted.line.arrow_type),

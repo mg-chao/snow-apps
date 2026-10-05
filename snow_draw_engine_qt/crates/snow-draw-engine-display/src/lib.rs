@@ -80,6 +80,7 @@ pub struct DisplaySpotlightCutout {
     pub width: f64,
     pub height: f64,
     pub rotation: f64,
+    pub shape: DisplayRectangleShape,
 }
 
 impl Default for DisplaySpotlightConfig {

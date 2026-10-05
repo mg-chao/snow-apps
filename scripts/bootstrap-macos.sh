@@ -27,6 +27,7 @@ if [[ "$skip_qt" == 1 ]]; then
     for tool in cmake ninja cargo rustup pkg-config; do
         command -v "$tool" >/dev/null || snow_die "Missing $tool. Install the prerequisites listed in docs-macos-build.md."
     done
+    snow_require_target_tools "$snow_arch"
 else
     snow_setup_tools
 fi

@@ -637,11 +637,8 @@
           "name": "ffmpeg",
           "default-features": false,
           "features": [
-            "amf",
             "avcodec",
             "avformat",
-            "nvcodec",
-            "qsv",
             "swresample",
             "swscale",
             "webp",
@@ -649,6 +646,12 @@
             "x265",
             "zlib"
           ]
+        },
+        {
+          "name": "ffmpeg",
+          "default-features": false,
+          "features": ["amf", "nvcodec", "qsv"],
+          "platform": "x64"
         },
         {
           "name": "x265",

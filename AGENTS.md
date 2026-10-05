@@ -7,7 +7,7 @@
 - `cmake/` – shared modules, `vcpkg-overlay-ports/`, `vcpkg-overlay-triplets/`, `test-support/`. `scripts/` – PowerShell entry points. `build/<preset>/` and `.tools/vcpkg/` are generated; never commit them.
 
 ## Build, Test, and Development Commands
-- Toolchain: VS 2026 x64 developer shell, CMake 4.2+, MSVC 14.51, Rust 1.97.1, repository-managed vcpkg/Qt.
+- Toolchain: VS 2026 x64 or ARM64 developer tools, CMake 4.2+, MSVC 14.51, Rust 1.97.1, repository-managed vcpkg/Qt. Windows ARM64 requires the ARM64 compiler/SDK and host-matching Qt tools/libclang; see `docs-windows-arm64-build.md`.
 - `scripts/bootstrap.ps1` – installs vcpkg deps and validates Qt/MSVC once per machine.
 - `scripts/build.ps1 -Preset windows-msvc-debug [-Target snow_shot] [-Clean]` – configure + build (`snow-all` by default). Presets: `windows-msvc-debug`, `windows-msvc-performance`, `snow-shot-msvc-release`, `snow-shot-msvc-fast`.
 - `ctest --preset test-windows-msvc-debug -R <regex>` – run only matching tests after a change. Do not run unfiltered `ctest --preset …` (full suite) unless the user explicitly asks.
@@ -15,6 +15,7 @@
 - `scripts/run-snow-shot.ps1` / `scripts/run-snow-image-viewer.ps1` – launch from the build tree.
 - `scripts/check-cpp-format.ps1 [-Fix]`, `scripts/check-rust.ps1 [-Fix]` – format and lint (also CMake targets `snow-format`, `snow-lint`).
 - `scripts/package-snow-shot.ps1` – NSIS installer (`snow-shot-msvc-release`).
+- Windows ARM64: use `snow-shot-msvc-arm64-{debug|performance|release|fast}` and `-Architecture arm64` for bootstrap/Qt/package scripts. ARM64 benchmarks require `snow-shot-msvc-arm64-performance`. Cross builds require native ARM64 validation before production publication.
 - macOS: see `docs-macos-build.md`. Use `scripts/bootstrap-macos.sh`, `scripts/build.sh`, `scripts/run-snow-shot.sh`, and `scripts/package-snow-shot.sh`; presets are `snow-shot-macos-{arm64|x64}-{debug|performance|release|fast}`. macOS requires 15+, Xcode tools and shared Qt 6.12.0. Use only the `performance` preset for benchmarks.
 - macOS script regression checks: `python3 scripts/test-macos-build-support.py`. Native deployment fixture: `SNOW_TEST_MACOS_BUNDLE=1 python3 scripts/test-macos-build-support.py MacOSBundle` after provisioning Qt/FFmpeg and putting the build tools on PATH.
 

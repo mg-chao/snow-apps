@@ -128,6 +128,8 @@ if(VCPKG_TARGET_IS_WINDOWS AND NOT VCPKG_TARGET_IS_MINGW)
     endif()
 endif()
 
+include("${CMAKE_CURRENT_LIST_DIR}/macos-static-lto.cmake")
+
 vcpkg_make_configure(
     SOURCE_PATH "${SOURCE_PATH}"
     DISABLE_CPPFLAGS # Build is not using CPP/CPPFLAGS

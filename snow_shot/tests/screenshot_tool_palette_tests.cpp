@@ -1616,7 +1616,7 @@ void dynamicToolbarLabelsUseEveryTranslationCatalog() {
 
     ScreenshotToolPalette::Options cursorOptions;
     cursorOptions.showMoveTool = true;
-    cursorOptions.showMoveOptionsToolbar = true;
+    cursorOptions.enableMoveOptionsToolbar = true;
     ScreenshotToolPalette cursorPalette(cursorOptions);
     cursorPalette.setActiveTool(ScreenshotToolPalette::Tool::Move);
     auto* cursorButton = cursorPalette.findChild<adqt::widgets::AdButton*>(
@@ -2099,6 +2099,13 @@ void styleToolReuseMapPreservesEveryCompatibleRole() {
                     "the destination should retain the source editor root for every shared role");
         }
         const auto stats = palette.lastStyleReconcileStatsForTests();
+        if (stats.retained != retainedRoles.size() || stats.destroyed != destroyed ||
+            stats.created != created) {
+            std::cerr << "style reuse " << static_cast<int>(source) << " -> "
+                      << static_cast<int>(destination) << ": retained " << stats.retained
+                      << ", destroyed " << stats.destroyed << ", created " << stats.created
+                      << std::endl;
+        }
         require(stats.retained == retainedRoles.size() && stats.destroyed == destroyed &&
                     stats.created == created,
                 "the style reuse map should report exact retained/created/destroyed counts");
@@ -2108,9 +2115,10 @@ void styleToolReuseMapPreservesEveryCompatibleRole() {
            1);
     verify(Tool::RectangleFilter, Tool::PenFilter,
            {"filter-mode", "filter-type", "filter-intensity"}, 0, 1);
-    verify(Tool::Text, Tool::SerialNumber, {"foreground-color", "text-font", "text-fill"}, 3, 2);
+    verify(Tool::Text, Tool::SerialNumber, {"foreground-color", "text-font", "text-fill"}, 3, 3);
     verify(Tool::PenHighlight, Tool::PenFilter, {"brush-width"}, 2, 3);
-    verify(Tool::Spotlight, Tool::Watermark, {"opacity"}, 1, 6);
+    verify(Tool::Spotlight, Tool::Watermark, {"opacity"}, 2, 6);
+    verify(Tool::Shape, Tool::Spotlight, {"shape-kind"}, 4, 2);
     verify(Tool::Shape, Tool::Text, {"corner-radius"}, 4, 5);
     verify(Tool::Text, Tool::Watermark, {"foreground-color"}, 5, 6);
 }
@@ -2744,6 +2752,16 @@ void groupedToolbarHoverSwitchesWithVisibleTooltips() {
 }
 
 void groupedDrawingOptionsShowShortcutTooltips() {
+    const snow_shot::storage::DrawingShortcutSettings settings;
+    const auto originalLine = settings.shortcuts(QStringLiteral("line"));
+    const auto originalSpotlight = settings.shortcuts(QStringLiteral("spotlight"));
+    const auto cleanup = qScopeGuard([&] {
+        static_cast<void>(settings.setShortcuts(QStringLiteral("line"), originalLine));
+        static_cast<void>(settings.setShortcuts(QStringLiteral("spotlight"), originalSpotlight));
+    });
+    require(settings.setShortcuts(QStringLiteral("line"), {QStringLiteral("Ctrl+Alt+L")}) &&
+                settings.setShortcuts(QStringLiteral("spotlight"), {QStringLiteral("Ctrl+Alt+S")}),
+            "new annotation shortcuts must be configurable for grouped tooltip coverage");
     adqt::widgets::AdTooltip::installApplicationTooltips();
     ScreenshotToolPalette::Options options;
     options.showLineTool = true;
@@ -2758,9 +2776,13 @@ void groupedDrawingOptionsShowShortcutTooltips() {
 
     const QMap<QString, QString> expectedTooltips{
         {QStringLiteral("arrow"), QStringLiteral("Arrow (2)")},
-        {QStringLiteral("line"), QStringLiteral("Line")},
+        {QStringLiteral("line"), QStringLiteral("Line (%1)")
+                                     .arg(snow_shot::shortcuts::formatShortcutListDisplayText(
+                                         settings.shortcuts(QStringLiteral("line"))))},
         {QStringLiteral("highlighter"), QStringLiteral("Highlight (4 / H)")},
-        {QStringLiteral("spotlight"), QStringLiteral("Spotlight")},
+        {QStringLiteral("spotlight"), QStringLiteral("Spotlight (%1)")
+                                          .arg(snow_shot::shortcuts::formatShortcutListDisplayText(
+                                              settings.shortcuts(QStringLiteral("spotlight"))))},
     };
     for (const char* triggerName : {"screenshotArrowLineButton", "screenshotHighlightButton"}) {
         auto* trigger =
@@ -6086,6 +6108,8 @@ void repeatingDrawingShortcutsReturnsToSelect() {
                 toolbarSettings.setLastHighlightTool(QStringLiteral("pen-highlight")),
             "drawing shortcut tests must start from the default remembered modes");
     ScreenshotToolPalette::Options options;
+    options.showLineTool = true;
+    options.showSpotlightTool = true;
     options.showFreeDrawTool = true;
     options.showHighlightTool = true;
     options.showTextTool = true;
@@ -6100,6 +6124,7 @@ void repeatingDrawingShortcutsReturnsToSelect() {
                      [&selectRequests]() { ++selectRequests; });
 
     const std::pair<const char*, Tool> shortcuts[] = {
+        {"line", Tool::Line},           {"spotlight", Tool::Spotlight},
         {"shape", Tool::Shape},         {"arrow", Tool::Arrow},
         {"brush", Tool::FreeDraw},      {"highlight", Tool::PenHighlight},
         {"text", Tool::Text},           {"serial_number", Tool::SerialNumber},
@@ -6110,7 +6135,8 @@ void repeatingDrawingShortcutsReturnsToSelect() {
         palette.setActiveTool(Tool::Select);
         require(palette.activateDrawingShortcut(QString::fromLatin1(id)) &&
                     palette.activeToolForTests() == tool,
-                "a drawing shortcut should activate its tool");
+                qPrintable(QStringLiteral("the %1 drawing shortcut must activate its tool")
+                               .arg(QString::fromLatin1(id))));
         const int previousSelectRequests = selectRequests;
         require(palette.activateDrawingShortcut(QString::fromLatin1(id)) &&
                     palette.activeToolForTests() == Tool::Select &&
@@ -6164,18 +6190,30 @@ void repeatingActionShortcutsReturnsToSelect() {
 
 void groupedToolShortcutsToggleOnlyTheRequestedTool() {
     using Tool = ScreenshotToolPalette::Tool;
+    const snow_shot::storage::ScreenshotToolbarSettings settings;
+    const QString originalHighlight = settings.lastHighlightTool();
+    const QString originalFilter = settings.lastFilterTool();
+    const auto cleanup = qScopeGuard([&] {
+        static_cast<void>(settings.setLastHighlightTool(originalHighlight));
+        static_cast<void>(settings.setLastFilterTool(originalFilter));
+    });
+    require(settings.setLastHighlightTool(QStringLiteral("pen-highlight")) &&
+                settings.setLastFilterTool(QStringLiteral("pen-filter")),
+            "grouped shortcut tests must start from known remembered drawing modes");
     ScreenshotToolPalette::Options options;
     options.showLineTool = true;
     options.showHighlightTool = true;
+    options.showSpotlightTool = true;
     options.showRectangleHighlightTool = true;
     options.showPenHighlightTool = true;
     options.showFilterTool = true;
+    options.showWatermarkTool = true;
     options.enableStyleToolbar = false;
     options.toolbarLayout = snow_shot::storage::ScreenshotToolbarLayout{
         {{QStringLiteral("select")},
          {QStringLiteral("shape"), QStringLiteral("arrow"), QStringLiteral("line")},
-         {QStringLiteral("highlighter")},
-         {QStringLiteral("filter")}},
+         {QStringLiteral("highlighter"), QStringLiteral("spotlight")},
+         {QStringLiteral("filter"), QStringLiteral("watermark")}},
         {}};
     ScreenshotToolPalette palette(options);
     palette.setActiveTool(Tool::Line);
@@ -6185,6 +6223,15 @@ void groupedToolShortcutsToggleOnlyTheRequestedTool() {
     require(palette.activateDrawingShortcut(QStringLiteral("arrow")) &&
                 palette.activeToolForTests() == Tool::Select,
             "repeating a grouped tool shortcut should return to Select");
+
+    for (const auto& [id, sibling, tool] :
+         {std::tuple{"highlight", Tool::Spotlight, Tool::PenHighlight},
+          std::tuple{"filter", Tool::Watermark, Tool::PenFilter}}) {
+        palette.setActiveTool(sibling);
+        require(palette.activateDrawingShortcut(QString::fromLatin1(id)) &&
+                    palette.activeToolForTests() == tool,
+                "named annotation shortcuts must activate their family instead of a stack sibling");
+    }
 
     for (const auto& [id, tool] : {std::pair{"highlight", Tool::RectangleHighlight},
                                    std::pair{"filter", Tool::RectangleFilter}}) {
@@ -6210,6 +6257,198 @@ void groupedToolShortcutsToggleOnlyTheRequestedTool() {
                 (recordingPalette.activeToolForTests() == Tool::RectangleHighlight ||
                  recordingPalette.activeToolForTests() == Tool::PenHighlight),
             "recording highlight shortcuts should activate the canvas tool");
+}
+
+void hiddenToolShortcutsUseCommandAvailability() {
+    using Tool = ScreenshotToolPalette::Tool;
+    namespace layout = snow_shot::presentation::toolbar_layout;
+    using snow_shot::storage::ScreenshotToolbarLayoutKind;
+    ScreenshotToolPalette::Options options;
+    options.showHistoryActions = true;
+    options.toolbarLayout = snow_shot::storage::ScreenshotToolbarLayout{
+        {{QStringLiteral("shape"), QStringLiteral("undo")}}, {}};
+    ScreenshotToolPalette palette(options);
+    palette.show();
+    QCoreApplication::processEvents();
+    palette.setHistoryState({true, true});
+    auto* shape = qobject_cast<adqt::widgets::AdButton*>(controlWithTooltip(palette, "Shape"));
+    require(shape != nullptr, "grouped shape retains its underlying command control");
+    int shapes = 0;
+    QObject::connect(&palette, &ScreenshotToolPalette::shapeRequested, [&] { ++shapes; });
+    shape->setEnabled(false);
+    require(!palette.canActivateDrawingShortcut(QStringLiteral("shape")) &&
+                !palette.activateDrawingShortcut(QStringLiteral("shape")) && shapes == 0,
+            "an enabled stack must not make a disabled drawing command available");
+    const snow_shot::storage::ScreenshotToolbarLayout hidden{
+        {}, layout::defaultOrder(ScreenshotToolbarLayoutKind::DrawingTools)};
+    palette.setToolbarLayout(hidden);
+    require(!palette.canActivateDrawingShortcut(QStringLiteral("shape")) &&
+                !palette.activateDrawingShortcut(QStringLiteral("shape")) && shapes == 0,
+            "hiding a disabled drawing command must preserve its availability");
+    shape->setEnabled(true);
+    require(palette.canActivateDrawingShortcut(QStringLiteral("shape")) &&
+                palette.activateDrawingShortcut(QStringLiteral("shape")) && shapes == 1 &&
+                palette.activeTool() == Tool::Shape && shape->isHidden(),
+            "a hidden enabled drawing command activates once without revealing its button");
+    require(palette.stylePanel()->isVisible(), "a hidden drawing tool retains its style settings");
+    require(palette.activateDrawingShortcut(QStringLiteral("shape")) && shapes == 1 &&
+                palette.activeTool() == Tool::Select && shape->isHidden(),
+            "repeating a hidden drawing shortcut returns to Select without revealing it");
+}
+
+void hiddenToolbarShortcutsPreserveToolsAndLayouts() {
+    using Tool = ScreenshotToolPalette::Tool;
+    using snow_shot::storage::ScreenshotToolbarLayout;
+    using snow_shot::storage::ScreenshotToolbarLayoutKind;
+    namespace layout = snow_shot::presentation::toolbar_layout;
+    const snow_shot::storage::ScreenshotToolbarSettings settings;
+    const auto drawingKind = ScreenshotToolbarLayoutKind::DrawingTools;
+    const auto savedDrawing = settings.layout(drawingKind);
+    const auto savedActions = settings.layout(ScreenshotToolbarLayoutKind::ActionTools);
+    const auto savedPinned = settings.layout(ScreenshotToolbarLayoutKind::PinnedActionTools);
+    const auto savedHighlight = settings.lastHighlightTool();
+    const auto savedFilter = settings.lastFilterTool();
+    const auto savedEraser = settings.lastEraserTool();
+    const auto savedTool = settings.lastDrawingTool();
+    const auto restore = qScopeGuard([&] {
+        static_cast<void>(settings.setLayout(drawingKind, savedDrawing));
+        static_cast<void>(
+            settings.setLayout(ScreenshotToolbarLayoutKind::ActionTools, savedActions));
+        static_cast<void>(
+            settings.setLayout(ScreenshotToolbarLayoutKind::PinnedActionTools, savedPinned));
+        static_cast<void>(settings.setLastHighlightTool(savedHighlight));
+        static_cast<void>(settings.setLastFilterTool(savedFilter));
+        static_cast<void>(settings.setLastEraserTool(savedEraser));
+        static_cast<void>(settings.setLastDrawingTool(savedTool));
+    });
+    require(settings.setLastHighlightTool(QStringLiteral("rectangle-highlight")) &&
+                settings.setLastFilterTool(QStringLiteral("auto-filter")) &&
+                settings.setLastEraserTool(QStringLiteral("brush-eraser")),
+            "seed remembered hidden drawing modes");
+    const ScreenshotToolbarLayout hiddenDrawing{{}, layout::defaultOrder(drawingKind)};
+    for (const auto actionKind : {ScreenshotToolbarLayoutKind::ActionTools,
+                                  ScreenshotToolbarLayoutKind::PinnedActionTools}) {
+        const ScreenshotToolbarLayout hiddenActions{{}, layout::defaultOrder(actionKind)};
+        require(settings.setLayout(drawingKind, hiddenDrawing) &&
+                    settings.setLayout(actionKind, hiddenActions),
+                "persist hidden toolbar layouts");
+        const auto expectedDrawing = settings.layout(drawingKind);
+        const auto expectedActions = settings.layout(actionKind);
+        for (const bool initiallyHidden : {false, true}) {
+            ScreenshotToolPalette::Options options;
+            options.showMoveTool = options.showLineTool = options.showFreeDrawTool = true;
+            options.showHighlightTool = options.showSpotlightTool = options.showEraserTool = true;
+            options.showFilterTool = options.showWatermarkTool = options.showTextTool = true;
+            options.showSerialNumberTool = options.showOcrTool = options.showTextTranslationTool =
+                true;
+            options.showTableTool = options.showQrTool = options.showScrollingScreenshotTool = true;
+            options.showScreenRecordButton = options.showSaveButton = options.showHistoryActions =
+                true;
+            options.actions = ScreenshotToolPalette::PinAction | ScreenshotToolPalette::CopyAction |
+                              ScreenshotToolPalette::CancelAction;
+            options.actionToolsLayoutKind = actionKind;
+            options.toolbarLayout = initiallyHidden ? hiddenDrawing : layout::normalizedLayout({});
+            options.actionToolsLayout =
+                initiallyHidden ? hiddenActions : layout::normalizedLayout({}, actionKind);
+            ScreenshotToolPalette palette(options);
+            palette.show();
+            QCoreApplication::processEvents();
+            if (!initiallyHidden) {
+                palette.setToolbarLayout(hiddenDrawing);
+                palette.setActionToolsLayout(hiddenActions);
+            }
+            const auto verifyHidden = [&] {
+                require(mainDrawingToolbarButtons(palette).isEmpty() &&
+                            mainActionToolbarButtons(palette).isEmpty(),
+                        "hidden tools must have no main toolbar slot after hotkey activation");
+                require(settings.layout(drawingKind) == expectedDrawing &&
+                            settings.layout(actionKind) == expectedActions,
+                        "hotkeys must not rewrite saved hidden layouts");
+            };
+            struct DrawingCommand {
+                const char* id;
+                Tool tool;
+                void (ScreenshotToolPalette::*signal)();
+            };
+            const DrawingCommand drawingCommands[] = {
+                {"shape", Tool::Shape, &ScreenshotToolPalette::shapeRequested},
+                {"arrow", Tool::Arrow, &ScreenshotToolPalette::arrowRequested},
+                {"brush", Tool::FreeDraw, &ScreenshotToolPalette::freeDrawRequested},
+                {"highlight", Tool::RectangleHighlight, &ScreenshotToolPalette::highlightRequested},
+                {"text", Tool::Text, &ScreenshotToolPalette::textRequested},
+                {"serial_number", Tool::SerialNumber,
+                 &ScreenshotToolPalette::serialNumberRequested},
+                {"filter", Tool::AutoFilter, &ScreenshotToolPalette::autoFilterRequested},
+                {"eraser", Tool::BrushEraser, &ScreenshotToolPalette::brushEraserRequested},
+                {"watermark", Tool::Watermark, &ScreenshotToolPalette::watermarkRequested},
+            };
+            for (const auto& command : drawingCommands) {
+                palette.setActiveTool(Tool::Select);
+                int requests = 0;
+                const auto connection =
+                    QObject::connect(&palette, command.signal, &palette, [&] { ++requests; });
+                const auto id = QString::fromLatin1(command.id);
+                require(
+                    palette.canActivateDrawingShortcut(id) && requests == 0 &&
+                        palette.activateDrawingShortcut(id) && requests == 1 &&
+                        palette.activeTool() == command.tool && palette.stylePanel()->isVisible(),
+                    "each hidden drawing hotkey activates its remembered tool once with settings");
+                verifyHidden();
+                require(palette.activateDrawingShortcut(id) && requests == 1 &&
+                            palette.activeTool() == Tool::Select,
+                        "each hidden drawing hotkey retains toggle-to-Select behavior");
+                QObject::disconnect(connection);
+            }
+            struct ActionCommand {
+                const char* id;
+                void (ScreenshotToolPalette::*signal)();
+            };
+            const ActionCommand actionCommands[] = {
+                {"move_tool", &ScreenshotToolPalette::moveRequested},
+                {"text_recognition", &ScreenshotToolPalette::ocrRequested},
+                {"text_translation", &ScreenshotToolPalette::textTranslationRequested},
+                {"table_recognition", &ScreenshotToolPalette::tableRequested},
+                {"qr_code_recognition", &ScreenshotToolPalette::qrRequested},
+                {"scrolling_screenshot", &ScreenshotToolPalette::scrollingScreenshotRequested},
+                {"video_recording", &ScreenshotToolPalette::screenRecordRequested},
+                {"pin_to_screen", &ScreenshotToolPalette::pinRequested},
+                {"quick_save", &ScreenshotToolPalette::quickSaveRequested},
+                {"save_as_file", &ScreenshotToolPalette::saveRequested},
+                {"copy_to_clipboard", &ScreenshotToolPalette::copyRequested},
+                {"cancel_screenshot", &ScreenshotToolPalette::cancelRequested},
+                {"undo", &ScreenshotToolPalette::undoRequested},
+                {"redo", &ScreenshotToolPalette::redoRequested},
+            };
+            for (const auto& command : actionCommands) {
+                palette.setActiveTool(Tool::Select);
+                palette.setHistoryState({true, true});
+                int requests = 0;
+                const auto connection =
+                    QObject::connect(&palette, command.signal, &palette, [&] { ++requests; });
+                const auto id = QString::fromLatin1(command.id);
+                require(palette.canActivateScreenshotShortcut(id) && requests == 0 &&
+                            palette.activateScreenshotShortcut(id) && requests == 1,
+                        "each existing screenshot hotkey activates once with configurable tools "
+                        "hidden");
+                verifyHidden();
+                QObject::disconnect(connection);
+            }
+            palette.setOcrEnabled(false);
+            palette.setTableEnabled(false);
+            palette.setQrEnabled(false);
+            for (const auto* id : {"text_recognition", "text_translation", "table_recognition",
+                                   "qr_code_recognition"}) {
+                require(!palette.canActivateScreenshotShortcut(QString::fromLatin1(id)) &&
+                            !palette.activateScreenshotShortcut(QString::fromLatin1(id)),
+                        "hidden recognition hotkeys retain each command's disabled state");
+            }
+            palette.setToolbarLayout(layout::normalizedLayout({}));
+            palette.setActionToolsLayout(layout::normalizedLayout({}, actionKind));
+            require(!mainDrawingToolbarButtons(palette).isEmpty() &&
+                        !mainActionToolbarButtons(palette).isEmpty(),
+                    "hidden tools can be restored after using their hotkeys");
+        }
+    }
 }
 
 void screenshotShortcutsShareButtonCommandsAndAvailability() {
@@ -7622,9 +7861,10 @@ void spotlightControlsMatchMaskConfigurationBehavior() {
     QWidget* maskColorRoot = styleEditorRoot(spotlightControls, "mask-color");
     require(spotlightControls != nullptr && spotlightControls->layout() != nullptr &&
                 spotlightControls->layout()->itemAt(0) != nullptr &&
-                spotlightControls->layout()->itemAt(0)->widget() == maskColorRoot &&
+                spotlightControls->layout()->itemAt(0)->widget() ==
+                    styleEditorRoot(spotlightControls, "shape-kind") &&
                 maskColorRoot->isAncestorOf(colorPicker),
-            "Spotlight style controls should not start with an extra separator");
+            "Spotlight style controls should start with the shape selector");
     require(colorPicker->value().isSolid() &&
                 colorPicker->value().solidColor == QColor(Qt::black) &&
                 opacitySlider->value() == 64 &&
@@ -8896,6 +9136,143 @@ void shapeSelectorIsTheLeftmostStyleGroup() {
     require(emittedProperties == SnowCanvasShapeStylePropertyShape &&
                 emittedStyle.shape == SnowCanvasRectangleShape::Diamond,
             "diamond control should emit only the shape property");
+}
+
+void spotlightShapeSelectorMatchesShapeAndRebindsEdits() {
+    using Tool = ScreenshotToolPalette::Tool;
+    ScreenshotToolPalette::Options options;
+    options.showSpotlightTool = true;
+    options.styleDefaults = snow_shot::presentation::screenshotCanvasStyleDefaults();
+    ScreenshotToolPalette palette(options);
+    palette.setActiveTool(Tool::Shape);
+    auto* rectangle =
+        qobject_cast<adqt::widgets::AdRadio*>(controlWithTooltip(palette, "Rectangle"));
+    require(rectangle != nullptr, "Shape must materialize its reference selector");
+    const QSize referenceSize = rectangle->size();
+    const QSize referenceIcon = rectangle->iconSize();
+    QPointer<QWidget> sharedRoot = styleEditorRoot(
+        palette.findChild<QWidget*>(QStringLiteral("screenshotRectangleStyleControls")),
+        "shape-kind");
+    int edits = 0;
+    SnowCanvasShapeKind lastKind = SnowCanvasShapeKind::Rectangle;
+    SnowCanvasRectangleShape lastShape = SnowCanvasRectangleShape::Rectangle;
+    QObject::connect(
+        &palette, &ScreenshotToolPalette::shapeStyleChanged,
+        [&](const SnowCanvasShapeStyle& style, quint32 properties, SnowCanvasShapeKind kind) {
+            require(properties == SnowCanvasShapeStylePropertyShape,
+                    "shape selectors must emit only the shape property");
+            ++edits;
+            lastKind = kind;
+            lastShape = style.shape;
+        });
+    qobject_cast<QAbstractButton*>(controlWithTooltip(palette, "Diamond"))->click();
+    require(edits == 1 && lastKind == SnowCanvasShapeKind::Rectangle,
+            "the reference selector must edit Shape");
+    for (int iteration = 0; iteration < 8; ++iteration) {
+        if (iteration % 2 != 0) {
+            require(palette.ensureStyleFamily(Tool::Spotlight),
+                    "Spotlight selectors must also support prewarmed destination rows");
+        }
+        palette.setActiveTool(Tool::Spotlight);
+        auto* row = palette.findChild<QWidget*>(QStringLiteral("screenshotSpotlightStyleControls"));
+        QWidget* group = styleEditorRoot(row, "shape-kind");
+        QWidget* color = styleEditorRoot(row, "mask-color");
+        auto* opacity = palette.findChild<adqt::widgets::AdSlider*>(
+            QStringLiteral("screenshotSpotlightOpacitySlider"));
+        const auto separators = row->findChildren<QFrame*>(QString(), Qt::FindDirectChildrenOnly);
+        require(group == sharedRoot &&
+                    group->objectName() == QStringLiteral("screenshotSpotlightShapeButtonGroup") &&
+                    separators.size() == 2 && opacity != nullptr,
+                "Spotlight must reuse the shape selector and expose two separators");
+        QLayout* layout = row->layout();
+        require(layout->itemAt(0)->widget() == group &&
+                    layout->indexOf(group) < layout->indexOf(separators[0]) &&
+                    layout->indexOf(separators[0]) < layout->indexOf(color) &&
+                    layout->indexOf(color) < layout->indexOf(separators[1]) &&
+                    layout->indexOf(separators[1]) < layout->indexOf(opacity->parentWidget()),
+                "Spotlight must order shape, mask color, and opacity with matching separators");
+        require(palette.creationStyleDefaults().rectangle.shape ==
+                    SnowCanvasRectangleShape::Diamond,
+                "switching to Spotlight must preserve the Shape default");
+        SnowCanvasStyleToolbarState state;
+        state.source = SnowCanvasStyleToolbarSource::SelectedSpotlight;
+        state.shapeStyle.shape = SnowCanvasRectangleShape::Ellipse;
+        state.shapeStyleMixed = SnowCanvasShapeStyleMixedShape;
+        const int before = edits;
+        palette.setStyleToolbarState(state);
+        auto* ellipse =
+            qobject_cast<adqt::widgets::AdRadio*>(controlWithTooltip(palette, "Ellipse"));
+        require(ellipse != nullptr && edits == before && !ellipse->isChecked(),
+                "mixed Spotlight state must synchronize silently and permit choosing any shape");
+        ellipse->click();
+        require(edits == before + 1 && lastKind == SnowCanvasShapeKind::Spotlight &&
+                    lastShape == SnowCanvasRectangleShape::Ellipse &&
+                    palette.creationStyleDefaults().spotlightShape ==
+                        SnowCanvasRectangleShape::Ellipse,
+                "the reused selector must emit one Spotlight edit and remember its independent "
+                "default");
+        for (const char* name : {"Rectangle", "Ellipse", "Diamond"}) {
+            auto* option = qobject_cast<adqt::widgets::AdRadio*>(controlWithTooltip(palette, name));
+            require(option != nullptr && option->text().isEmpty() && !option->icon().isNull() &&
+                        option->size() == referenceSize && option->iconSize() == referenceIcon,
+                    "Spotlight must use the same icon-only options and metrics as Shape");
+        }
+        palette.setActiveTool(Tool::Shape);
+        auto* diamond =
+            qobject_cast<adqt::widgets::AdRadio*>(controlWithTooltip(palette, "Diamond"));
+        require(diamond != nullptr && diamond->isChecked() && edits == before + 1,
+                "returning to Shape must restore its own value without emitting an edit");
+    }
+    palette.setActiveTool(Tool::Spotlight);
+    auto restoredDefaults = palette.creationStyleDefaults();
+    restoredDefaults.spotlightShape = SnowCanvasRectangleShape::Diamond;
+    const int beforeRestore = edits;
+    palette.setCreationStyleDefaults(restoredDefaults);
+    require(qobject_cast<QAbstractButton*>(controlWithTooltip(palette, "Diamond"))->isChecked() &&
+                edits == beforeRestore,
+            "restored Spotlight defaults must update the selector without emitting edits");
+    require(palette.setPhysicalScale(1.5), "Spotlight physical scale should change");
+    rectangle = qobject_cast<adqt::widgets::AdRadio*>(controlWithTooltip(palette, "Rectangle"));
+    require(rectangle != nullptr &&
+                rectangle->size() == QSize(qRound(referenceSize.width() * 1.5),
+                                           qRound(referenceSize.height() * 1.5)) &&
+                rectangle->iconSize() == QSize(qRound(referenceIcon.width() * 1.5),
+                                               qRound(referenceIcon.height() * 1.5)),
+            "Spotlight shape options must follow the toolbar physical scale");
+}
+
+void spotlightShapePreferencesRoundTripAndAcceptLegacySettings() {
+    using namespace snow_shot::presentation;
+    auto& configuration = snow_shot::storage::ApplicationStorage::instance().configuration();
+    const auto original = screenshotCanvasToolStyleDefaults();
+    const auto restore =
+        qScopeGuard([&] { static_cast<void>(persistScreenshotCanvasToolStyles(original)); });
+    auto styles = screenshotCanvasStyleDefaults();
+    styles.rectangle.shape = SnowCanvasRectangleShape::Ellipse;
+    styles.spotlightShape = SnowCanvasRectangleShape::Diamond;
+    require(persistScreenshotCanvasToolStyles(styles), "Spotlight shape defaults must persist");
+    require(screenshotCanvasToolStyleDefaults().spotlightShape ==
+                    SnowCanvasRectangleShape::Diamond &&
+                screenshotCanvasToolStyleDefaults().rectangle.shape ==
+                    SnowCanvasRectangleShape::Ellipse,
+            "Spotlight and Shape must round-trip independent defaults");
+    const QString key = QStringLiteral("drawing/spotlight_style");
+    QJsonObject value = configuration.snapshot().value(key).toObject();
+    require(value.value(QStringLiteral("shape")).toInt(-1) == 2,
+            "the Spotlight shape must use the existing three-value enum");
+    value.remove(QStringLiteral("shape"));
+    require(configuration.setValue(key, value) &&
+                screenshotCanvasToolStyleDefaults().spotlightShape ==
+                    SnowCanvasRectangleShape::Rectangle,
+            "legacy Spotlight preferences must use Rectangle");
+    for (const QJsonValue& invalid :
+         {QJsonValue(-1), QJsonValue(3), QJsonValue(1.5), QJsonValue(QStringLiteral("1"))}) {
+        value.insert(QStringLiteral("shape"), invalid);
+        require(configuration.setValue(key, value) &&
+                    screenshotCanvasToolStyleDefaults().spotlightShape ==
+                        SnowCanvasRectangleShape::Rectangle,
+                "invalid Spotlight shapes must use Rectangle");
+    }
 }
 
 void shapeSelectorIsExclusiveToTheShapeTool() {
@@ -12679,12 +13056,78 @@ void drawingColorsPreserveAlphaAcrossEditsAndToolSwitches() {
     }
 }
 
+void arrowShaftEditorPersistsAcrossReopening() {
+    using namespace snow_shot::presentation;
+    const auto original = screenshotCanvasToolStyleDefaults();
+    const auto restore =
+        qScopeGuard([&] { static_cast<void>(persistScreenshotCanvasToolStyles(original)); });
+    auto defaults = screenshotCanvasStyleDefaults();
+    defaults.arrow.arrowRatio = 2.3;
+    require(persistScreenshotCanvasToolStyles(defaults), "prepare saved arrow defaults");
+    ScreenshotToolPalette::Options options;
+    options.styleDefaults = screenshotCanvasToolStyleDefaults();
+    ScreenshotToolPalette palette(options);
+    SnowCanvasWidget canvas;
+    ScreenshotStyleBinding binding(palette, canvas, &palette);
+    applyScreenshotCanvasToolStyles(canvas, options.styleDefaults);
+    QObject::connect(&canvas, &SnowCanvasWidget::styleToolbarStateChanged, &palette,
+                     [&] { palette.setStyleToolbarState(canvas.canvasStyleToolbarState()); });
+    require(canvas.setCanvasTool(SnowCanvasTool::Arrow), "activate arrow for shaft edit");
+    palette.setActiveTool(ScreenshotToolPalette::Tool::Arrow);
+    auto* shaftTrigger = controlWithAccessibleName(palette, "Arrow shaft type");
+    clickPopoverStyleControl(showPopoverForTrigger(shaftTrigger), "Tapered shaft");
+    require(binding.lastSaveSucceeded() == true &&
+                screenshotCanvasToolStyleDefaults().arrow.arrowShaftType ==
+                    SnowCanvasArrowShaftType::Tapered,
+            "shaft control must save its choice through the canvas style binding");
+    clickStyleControl(palette, "Arrow stroke width 4");
+    require(screenshotCanvasToolStyleDefaults().arrow.arrowShaftType ==
+                SnowCanvasArrowShaftType::Tapered,
+            "another property edit must preserve the saved shaft preference");
+
+    auto& storage = snow_shot::storage::ApplicationStorage::instance();
+    require(storage.configuration().flushNow().success, "flush arrow preferences to disk");
+    snow_shot::storage::ConfigurationStore reopened(
+        QDir(storage.configurationDirectory()).filePath(QStringLiteral("config.json")), true,
+        false);
+    require(reopened.value(QStringLiteral("drawing/arrow_style")) ==
+                storage.configuration().value(QStringLiteral("drawing/arrow_style")),
+            "the saved arrow style must survive loading a new configuration store");
+
+    options.styleDefaults = screenshotCanvasToolStyleDefaults();
+    ScreenshotToolPalette freshPalette(options);
+    SnowCanvasWidget freshCanvas;
+    ScreenshotStyleBinding freshBinding(freshPalette, freshCanvas, &freshPalette);
+    applyScreenshotCanvasToolStyles(freshCanvas, options.styleDefaults);
+    require(freshCanvas.setCanvasTool(SnowCanvasTool::Arrow), "activate reopened arrow editor");
+    freshPalette.setActiveTool(ScreenshotToolPalette::Tool::Arrow);
+    freshPalette.setStyleToolbarState(freshCanvas.canvasStyleToolbarState());
+    const auto restoredStyle = freshCanvas.canvasStyleToolbarState().shapeStyle;
+    require(restoredStyle.arrowShaftType == SnowCanvasArrowShaftType::Tapered &&
+                restoredStyle.arrowRatio == defaults.arrow.arrowRatio &&
+                freshPalette.creationStyleDefaults().arrow == options.styleDefaults.arrow,
+            "reopening must restore saved shaft and ratio to both palette and canvas");
+    auto* freshShaftPopover =
+        showPopoverForTrigger(controlWithAccessibleName(freshPalette, "Arrow shaft type"));
+    auto* taperedOption = popoverButtonWithTooltip(freshShaftPopover, "Tapered shaft");
+    require(taperedOption != nullptr &&
+                taperedOption->buttonStyle() == adqt::widgets::AdButton::ButtonStyle::Tonal,
+            "the reopened shaft control must show the saved tapered option as active");
+    clickPopoverStyleControl(freshShaftPopover, "Plain shaft");
+    require(freshBinding.lastSaveSucceeded() == true &&
+                screenshotCanvasToolStyleDefaults().arrow.arrowShaftType ==
+                    SnowCanvasArrowShaftType::Plain &&
+                screenshotCanvasToolStyleDefaults().arrow.arrowRatio == defaults.arrow.arrowRatio,
+            "switching back to plain must persist without changing the ratio");
+}
+
 void canvasToolStylesPersistIndependentlyWithoutGlobalStyles() {
     SnowCanvasStyleDefaults styles = snow_shot::presentation::screenshotCanvasStyleDefaults();
     styles.rectangle.stroke = QColor(1, 2, 3, 4);
     styles.rectangle.strokeWidth = 3.0;
     styles.arrow.stroke = QColor(5, 6, 7, 8);
     styles.arrow.strokeWidth = 4.0;
+    styles.arrow.arrowShaftType = SnowCanvasArrowShaftType::Tapered;
     styles.arrow.arrowRatio = 2.3;
     styles.arrow.startArrowhead = SnowCanvasArrowhead::IndentedTriangle;
     styles.arrow.endArrowhead = SnowCanvasArrowhead::IndentedTriangle;
@@ -12779,6 +13222,24 @@ void canvasToolStylesPersistIndependentlyWithoutGlobalStyles() {
 
     const QString arrowKey = QStringLiteral("drawing/arrow_style");
     const QJsonObject savedArrowStyle = configuration.value(arrowKey).toObject();
+    require(savedArrowStyle.value(QStringLiteral("arrow_shaft_type")).toInt(-1) ==
+                static_cast<int>(SnowCanvasArrowShaftType::Tapered),
+            "arrow shaft type must be serialized with its appearance");
+    for (const QJsonValue& shaftType : {QJsonValue(), QJsonValue(1.5), QJsonValue(-1),
+                                        QJsonValue(2), QJsonValue(QStringLiteral("tapered"))}) {
+        auto legacyArrow = savedArrowStyle;
+        if (shaftType.isNull())
+            legacyArrow.remove(QStringLiteral("arrow_shaft_type"));
+        else
+            legacyArrow.insert(QStringLiteral("arrow_shaft_type"), shaftType);
+        require(snow_shot::storage::ApplicationStorage::instance().configuration().setValue(
+                    arrowKey, legacyArrow),
+                "save legacy or invalid shaft fixture");
+        auto legacyExpected = expected;
+        legacyExpected.arrow.arrowShaftType = SnowCanvasArrowShaftType::Plain;
+        require(snow_shot::presentation::screenshotCanvasToolStyleDefaults() == legacyExpected,
+                "missing or invalid shaft types must default to plain and preserve other styles");
+    }
     for (const QJsonValue& ratio :
          {QJsonValue(), QJsonValue(-1.0), QJsonValue(4.0), QJsonValue(QStringLiteral("bad"))}) {
         auto legacyArrow = savedArrowStyle;
@@ -13252,7 +13713,7 @@ void regionControlsFollowTheActiveCaptureType() {
         floating.setType(type);
         ScreenshotToolPalette::Options options;
         options.showMoveTool = true;
-        options.showMoveOptionsToolbar = true;
+        options.enableMoveOptionsToolbar = true;
         ScreenshotToolPalette palette(options);
         int commands = 0;
         QObject::connect(&palette, &ScreenshotToolPalette::screenshotRegionTypeRequested,
@@ -13299,7 +13760,7 @@ void regionControlsFollowTheActiveCaptureType() {
 void moveToolExposesCaptureCursorAndRecaptureOptions() {
     ScreenshotToolPalette::Options options;
     options.showMoveTool = true;
-    options.showMoveOptionsToolbar = true;
+    options.enableMoveOptionsToolbar = true;
     ScreenshotToolPalette palette(options);
     palette.setCursorVisible(false);
     palette.setActiveTool(ScreenshotToolPalette::Tool::Move);
@@ -13515,7 +13976,7 @@ void moveToolExposesCaptureCursorAndRecaptureOptions() {
             "busy recapture must disable both pointer and shortcut activation");
     palette.setRecaptureBusy(false);
     require(palette.activateScreenshotShortcut(QStringLiteral("recapture")) && recaptures == 2,
-            "the shortcut must invoke the same Recapture button signal path");
+            "the shortcut must emit the same Recapture command as the button");
 
     // Move mode leaves the canvas engine on a non-drawing tool, so the engine
     // reports DefaultRectangle, and selector refresh can report selection-based
@@ -13724,7 +14185,7 @@ void regionSwitcherRetranslatesAndRenders() {
     floating.show();
     ScreenshotToolPalette::Options options;
     options.showMoveTool = true;
-    options.showMoveOptionsToolbar = true;
+    options.enableMoveOptionsToolbar = true;
     ScreenshotToolPalette palette(options);
     palette.setActiveTool(ScreenshotToolPalette::Tool::Move);
     palette.show();
@@ -13835,6 +14296,7 @@ int main(int argc, char** argv) {
     }
     if (application.arguments().contains(QStringLiteral("--style-commit-only"))) {
         runScreenshotStyleBindingTests();
+        arrowShaftEditorPersistsAcrossReopening();
         selectedStyleEditsAreReflectedInTheCreationStyleContext();
         arrowStyleControlsExposeAndEmitAllStyleProperties();
         selectedArrowMixedPropertiesResolveIndependently();
@@ -13898,6 +14360,12 @@ int main(int argc, char** argv) {
     }
     if (application.arguments().contains(QStringLiteral("--quick-save-only"))) {
         quickSaveStacksAndLayoutMigration();
+        snow_shot::storage::ApplicationStorage::instance().shutdown();
+        return 0;
+    }
+    if (application.arguments().contains(QStringLiteral("--hidden-tools-only"))) {
+        hiddenToolShortcutsUseCommandAvailability();
+        hiddenToolbarShortcutsPreserveToolsAndLayouts();
         snow_shot::storage::ApplicationStorage::instance().shutdown();
         return 0;
     }
@@ -13995,6 +14463,7 @@ int main(int argc, char** argv) {
     if (application.arguments().contains(QStringLiteral("--canvas-style-persistence-only"))) {
         screenshotProductStyleProfileIsComplete();
         canvasToolStylesPersistIndependentlyWithoutGlobalStyles();
+        arrowShaftEditorPersistsAcrossReopening();
         snow_shot::storage::ApplicationStorage::instance().shutdown();
         return 0;
     }
@@ -14073,6 +14542,14 @@ int main(int argc, char** argv) {
     }
     if (application.arguments().contains(QStringLiteral("--spotlight-wheel-only"))) {
         spotlightControlsMatchMaskConfigurationBehavior();
+        snow_shot::storage::ApplicationStorage::instance().shutdown();
+        return 0;
+    }
+    if (application.arguments().contains(QStringLiteral("--spotlight-shape-only"))) {
+        spotlightShapeSelectorMatchesShapeAndRebindsEdits();
+        spotlightShapePreferencesRoundTripAndAcceptLegacySettings();
+        shapeSelectorIsTheLeftmostStyleGroup();
+        shapeSelectorIsExclusiveToTheShapeTool();
         snow_shot::storage::ApplicationStorage::instance().shutdown();
         return 0;
     }
@@ -14227,6 +14704,8 @@ int main(int argc, char** argv) {
     selectPopupPreservesModelFontRole();
     rectangleStyleUsesScreenshotCreationDefaults();
     shapeSelectorIsTheLeftmostStyleGroup();
+    spotlightShapeSelectorMatchesShapeAndRebindsEdits();
+    spotlightShapePreferencesRoundTripAndAcceptLegacySettings();
     shapeSelectorIsExclusiveToTheShapeTool();
     arrowStyleUsesScreenshotCreationColorOverride();
     arrowRatioEditorAdjustsAndResets();
@@ -14263,5 +14742,6 @@ int main(int argc, char** argv) {
     tableQrEntrySelectionPersistsAcrossPaletteInstances();
     drawingColorsPreserveAlphaAcrossEditsAndToolSwitches();
     canvasToolStylesPersistIndependentlyWithoutGlobalStyles();
+    arrowShaftEditorPersistsAcrossReopening();
     return 0;
 }

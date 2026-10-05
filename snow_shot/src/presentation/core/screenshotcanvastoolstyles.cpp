@@ -22,7 +22,8 @@ constexpr quint32 kRectangleShapeProperties =
 constexpr quint32 kArrowShapeProperties =
     SnowCanvasShapeStylePropertyStrokeColor | SnowCanvasShapeStylePropertyStrokeWidth |
     SnowCanvasShapeStylePropertyStartArrowhead | SnowCanvasShapeStylePropertyEndArrowhead |
-    SnowCanvasShapeStylePropertyStrokeStyle | SnowCanvasShapeStylePropertyArrowType;
+    SnowCanvasShapeStylePropertyStrokeStyle | SnowCanvasShapeStylePropertyArrowType |
+    SnowCanvasShapeStylePropertyArrowShaftType | SnowCanvasShapeStylePropertyArrowRatio;
 constexpr quint32 kLineShapeProperties =
     SnowCanvasShapeStylePropertyFillColor | SnowCanvasShapeStylePropertyFillStyle |
     SnowCanvasShapeStylePropertyStrokeColor | SnowCanvasShapeStylePropertyStrokeWidth |
@@ -159,6 +160,7 @@ QJsonObject shapeValue(const SnowCanvasShapeStyle& style) {
     putEnum(&value, QStringLiteral("end_arrowhead"), style.endArrowhead);
     putEnum(&value, QStringLiteral("stroke_style"), style.strokeStyle);
     putEnum(&value, QStringLiteral("arrow_type"), style.arrowType);
+    putEnum(&value, QStringLiteral("arrow_shaft_type"), style.arrowShaftType);
     putDouble(&value, QStringLiteral("arrow_ratio"),
               std::isfinite(style.arrowRatio) ? std::clamp(style.arrowRatio, 1.0, 3.0) : 1.0);
     putDouble(&value, QStringLiteral("opacity"), style.opacity);
@@ -198,6 +200,8 @@ void readShapeValue(const QJsonObject& object, SnowCanvasShapeStyle* style) {
              static_cast<int>(SnowCanvasStrokeStyle::Dotted), &style->strokeStyle);
     readEnum(object, QStringLiteral("arrow_type"), static_cast<int>(SnowCanvasArrowType::Elbow),
              &style->arrowType);
+    readEnum(object, QStringLiteral("arrow_shaft_type"),
+             static_cast<int>(SnowCanvasArrowShaftType::Tapered), &style->arrowShaftType);
     readDouble(object, QStringLiteral("opacity"), &style->opacity);
     readEnum(object, QStringLiteral("highlight_shape"),
              static_cast<int>(SnowCanvasHighlightShape::Ellipse), &style->highlightShape);
@@ -344,10 +348,12 @@ void readWatermarkValue(const QJsonObject& object, SnowCanvasWatermarkConfig* co
     readDouble(object, QStringLiteral("opacity"), &config->opacity);
 }
 
-QJsonObject spotlightValue(const SnowCanvasSpotlightConfig& config) {
+QJsonObject spotlightValue(const SnowCanvasSpotlightConfig& config,
+                           SnowCanvasRectangleShape shape) {
     QJsonObject value;
     value.insert(QStringLiteral("color"), colorValue(config.color));
     putDouble(&value, QStringLiteral("opacity"), config.opacity);
+    putEnum(&value, QStringLiteral("shape"), shape);
     return value;
 }
 
@@ -383,6 +389,8 @@ SnowCanvasStyleDefaults screenshotCanvasToolStyleDefaults() {
     readSerialNumberValue(configuration.value(kSerialNumberKey).toObject(), &defaults.serialNumber);
     readWatermarkValue(configuration.value(kWatermarkKey).toObject(), &defaults.watermark);
     readSpotlightValue(configuration.value(kSpotlightKey).toObject(), &defaults.spotlight);
+    readEnum(configuration.value(kSpotlightKey).toObject(), QStringLiteral("shape"),
+             static_cast<int>(SnowCanvasRectangleShape::Diamond), &defaults.spotlightShape);
     double sharedStrength = screenshotCanvasStyleDefaults().rectangleFilter.strength;
     const auto readStrength = [&](const QString& key) {
         double value = 0.0;
@@ -468,7 +476,7 @@ bool persistScreenshotCanvasToolStyles(const SnowCanvasStyleDefaults& defaults) 
         {kTextKey, textValue(defaults.text)},
         {kSerialNumberKey, serialNumberValue(defaults.serialNumber)},
         {kWatermarkKey, watermarkValue(defaults.watermark)},
-        {kSpotlightKey, spotlightValue(defaults.spotlight)},
+        {kSpotlightKey, spotlightValue(defaults.spotlight, defaults.spotlightShape)},
     };
     storage::ConfigurationStore& configuration = storage.configuration();
     if (QThread::currentThread() != configuration.thread()) {
@@ -503,6 +511,9 @@ void applyScreenshotCanvasToolStyles(SnowCanvasWidget& canvas,
     applyShape(defaults.rectangleHighlight, kRectangleHighlightProperties,
                SnowCanvasShapeKind::RectangleHighlight);
     applyShape(defaults.penHighlight, kPenHighlightProperties, SnowCanvasShapeKind::PenHighlight);
+    SnowCanvasShapeStyle spotlightStyle;
+    spotlightStyle.shape = defaults.spotlightShape;
+    applyShape(spotlightStyle, SnowCanvasShapeStylePropertyShape, SnowCanvasShapeKind::Spotlight);
     static_cast<void>(canvas.setCanvasTextStyle(defaults.text));
     static_cast<void>(canvas.setCanvasSerialNumberStyle(defaults.serialNumber));
     static_cast<void>(canvas.setCanvasFilterCreationStyle(

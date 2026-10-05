@@ -52,7 +52,7 @@ function Assert-SnowShotScoopArchive([string]$Path, [string]$Edition = 'Full') {
     } finally { $zip.Dispose() }
 }
 
-function New-SnowShotScoopManifestObject([string]$Version, [string]$Url, [string]$Hash, [string]$Edition = 'Full') {
+function New-SnowShotScoopManifestObject([string]$Version, [string]$Url, [string]$Hash, [string]$Edition = 'Full', [string]$ArmUrl = '', [string]$ArmHash = '') {
     $product = Get-SnowShotEdition $Edition
     # Keep the install contract and upstream maintenance metadata in one place.
     # checkver scripts also run under Windows PowerShell 5.1 in Scoop's tooling.
@@ -94,6 +94,18 @@ function New-SnowShotScoopManifestObject([string]$Version, [string]$Url, [string
         $manifest.checkver.regex = $manifest.checkver.regex.Replace('/snow-shot-', '/snow-shot-mini-')
         $manifest.autoupdate.architecture.'64bit'.url = $manifest.autoupdate.architecture.'64bit'.url.Replace('/snow-shot-', '/snow-shot-mini-')
     }
+    if ($ArmUrl) {
+        $manifest.architecture.arm64 = [ordered]@{ url = $ArmUrl; hash = $ArmHash }
+        $manifest.autoupdate.architecture.arm64 = [ordered]@{
+            url = 'https://github.com/mg-chao/snow-apps/releases/download/$matchTag/' + $product.Product + '-$version-windows-arm64-portable.zip'
+            hash = [ordered]@{ url = '$url.sha256' }
+        }
+        # Keep a two-architecture bucket entry on releases containing both payloads.
+        $manifest.checkver.script = @($manifest.checkver.script | ForEach-Object {
+            $_.Replace('    if ($asset)', '    $armName = "' + $product.Product + '-$version-windows-arm64-portable.zip"' + "`n" +
+                '    $arm = $release.assets | Where-Object { $_.name -ceq $armName -and $_.browser_download_url -ceq "https://github.com/mg-chao/snow-apps/releases/download/$($release.tag_name)/$armName" }' + "`n" + '    if ($asset -and $arm)')
+        })
+    }
     return $manifest
 }
 
@@ -104,7 +116,9 @@ function New-SnowShotScoopManifest([string]$Tag, [string]$OutputPath, [string]$E
     $release = Invoke-SnowShotScoopRelease $Tag
     if ($release.draft -or $release.tag_name -cne $Tag) { throw 'Expected the requested published release.' }
     if ($release.prerelease) { throw 'Scoop Extras requires a stable published release.' }
-    $name = "$($product.Product)-$version-windows-x64-portable.zip"
+    $verified = @{}
+    foreach ($architecture in @(Get-SnowShotReleaseArchitectures $release $version)) {
+    $name = "$($product.Product)-$version-windows-$architecture-portable.zip"
     $asset = Get-SnowShotScoopAsset $release $name $Tag
     $sidecar = Get-SnowShotScoopAsset $release "$name.sha256" $Tag -Optional
     $temp = Join-Path ([IO.Path]::GetTempPath()) "snow-shot-scoop-$([guid]::NewGuid().ToString('N')).zip"
@@ -133,15 +147,19 @@ function New-SnowShotScoopManifest([string]$Tag, [string]$OutputPath, [string]$E
             if ($hash -cne $expected) { throw 'Portable ZIP SHA-256 mismatch.' }
         }
         Assert-SnowShotScoopArchive $temp $Edition
-        $manifest = New-SnowShotScoopManifestObject $version $asset.browser_download_url $hash $Edition
-        $output = [IO.Path]::GetFullPath($OutputPath)
-        $null = [IO.Directory]::CreateDirectory([IO.Path]::GetDirectoryName($output))
-        [IO.File]::WriteAllText($output, (($manifest | ConvertTo-Json -Depth 8).Replace("`r`n", "`n") + "`n"),
-            [Text.UTF8Encoding]::new($false))
-        return $output
+        $verified[$architecture] = @{ Url = $asset.browser_download_url; Hash = $hash }
     } finally {
         foreach ($file in @($temp, "$temp.sha256")) {
             if (Test-Path -LiteralPath $file) { Remove-Item -LiteralPath $file -Force }
         }
     }
+    }
+    $armUrl = ''; $armHash = ''
+    if ($verified.ContainsKey('arm64')) { $armUrl = $verified.arm64.Url; $armHash = $verified.arm64.Hash }
+    $manifest = New-SnowShotScoopManifestObject $version $verified.x64.Url $verified.x64.Hash $Edition $armUrl $armHash
+        $output = [IO.Path]::GetFullPath($OutputPath)
+        $null = [IO.Directory]::CreateDirectory([IO.Path]::GetDirectoryName($output))
+        [IO.File]::WriteAllText($output, (($manifest | ConvertTo-Json -Depth 8).Replace("`r`n", "`n") + "`n"),
+            [Text.UTF8Encoding]::new($false))
+        return $output
 }

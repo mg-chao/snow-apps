@@ -293,6 +293,7 @@ SnowCanvasStyleDefaults customStyleDefaults() {
     defaults.watermark.opacity = 0.24;
     defaults.spotlight.color = ink;
     defaults.spotlight.opacity = 0.62;
+    defaults.spotlightShape = SnowCanvasRectangleShape::Diamond;
     return defaults;
 }
 
@@ -334,6 +335,9 @@ void configuredRuntimeProfileFollowsRestoreAndResetLifecycle() {
     require(toolbarState(runtime, viewport, SNOW_ACTIVE_TOOL_SHAPE).shape_style.stroke_width ==
                 defaults.rectangle.strokeWidth,
             "rectangle should expose its configured creation style");
+    require(toolbarState(runtime, viewport, SNOW_ACTIVE_TOOL_SPOTLIGHT).shape_style.shape ==
+                SNOW_RECTANGLE_SHAPE_DIAMOND,
+            "spotlight should expose its independent configured shape");
     require(toolbarState(runtime, viewport, SNOW_ACTIVE_TOOL_ARROW).shape_style.stroke_width ==
                 defaults.arrow.strokeWidth,
             "arrow should expose its configured creation style");
@@ -478,6 +482,14 @@ void configuredRuntimeProfileFollowsRestoreAndResetLifecycle() {
     require(!rejectedSerialType.isValid(),
             "an invalid sequence-number type should be rejected before C ABI conversion");
 
+    invalid = defaults;
+    // NOLINTNEXTLINE(clang-analyzer-optin.core.EnumCastOutOfRange)
+    invalid.spotlightShape = static_cast<SnowCanvasRectangleShape>(99);
+    invalidConfig.styleDefaults = invalid;
+    SnowCanvasRuntime rejectedSpotlightShape(invalidConfig);
+    require(!rejectedSpotlightShape.isValid(),
+            "an invalid spotlight shape should be rejected before C ABI conversion");
+
     SnowCanvasStyleDefaults smartEraseDefaults = defaults;
     smartEraseDefaults.rectangleFilter.type = SnowCanvasFilterType::SmartErase;
     smartEraseDefaults.penFilter.type = SnowCanvasFilterType::SmartErase;
@@ -549,6 +561,8 @@ void defaultRuntimeUsesGenericEngineDefaults() {
     SnowStyleDefaults expected{};
     require(snow_runtime_style_defaults_default(&expected) == SNOW_OK,
             "generic C defaults should be available");
+    require(expected.spotlight_shape == SNOW_RECTANGLE_SHAPE_RECTANGLE,
+            "generic spotlight defaults should remain rectangular");
     SnowCanvasRuntime runtime;
     require(runtime.isValid(), "default runtime creation should be valid");
     SnowViewport viewport = createViewport(runtime);

@@ -1,6 +1,7 @@
 [CmdletBinding()]
 param(
-    [string]$BuildDirectory = 'build/snow-shot-msvc-release',
+    [string]$BuildDirectory,
+    [ValidateSet('x64', 'arm64')][string]$Architecture = 'x64',
     [ValidateRange(1, 256)][int]$Parallelism = 4,
     [switch]$SkipBuild
 )
@@ -8,15 +9,19 @@ param(
 $ErrorActionPreference = 'Stop'
 $repoRoot = Split-Path -Parent $PSScriptRoot
 . (Join-Path $PSScriptRoot 'snow-build-environment.ps1')
-Set-SnowBuildEnvironment -Preset snow-shot-msvc-release | Out-Null
+. (Join-Path $PSScriptRoot 'snow-shot-ocr-release-runtime.ps1')
+. (Join-Path $PSScriptRoot 'snow-shot-ocr-native-validation.ps1')
+$target = Get-SnowWindowsTarget -Architecture $Architecture
+if (-not $BuildDirectory) { $BuildDirectory = "build/$($target.ReleasePreset)" }
+Set-SnowBuildEnvironment -Preset $target.ReleasePreset | Out-Null
 $buildRoot = if ([IO.Path]::IsPathRooted($BuildDirectory)) {
     [IO.Path]::GetFullPath($BuildDirectory)
 } else {
     [IO.Path]::GetFullPath((Join-Path $repoRoot $BuildDirectory))
 }
-$artifactRoot = Join-Path $repoRoot 'artifacts'
+$artifactRoot = Join-Path $repoRoot $(if ($Architecture -eq 'x64') { 'artifacts' } else { 'artifacts/windows-arm64' })
 if (-not $SkipBuild) {
-    $configureArguments = @(Get-SnowConfigureArguments -Preset snow-shot-msvc-release `
+    $configureArguments = @(Get-SnowConfigureArguments -Preset $target.ReleasePreset `
         -BuildDirectory $buildRoot)
     & cmake @configureArguments
     if ($LASTEXITCODE -ne 0) { throw 'OCR Release configuration failed.' }
@@ -26,24 +31,35 @@ if (-not $SkipBuild) {
 
 # Runtime-only preparation intentionally has no dependency on the application,
 # updater, installer, translations, or application symbol bundles.
-$executable = Join-Path $buildRoot 'cargo/x86_64-pc-windows-msvc/release/snow-ocr-process.exe'
-$version = (& $executable --version 2>$null)
-if ($LASTEXITCODE -ne 0 -or $version -cnotmatch '^snow-ocr-process (\d+\.\d+\.\d+) windows-x86_64 protocol 5$') {
-    throw "Unexpected OCR runtime identity: $version"
-}
+$executable = Join-Path $buildRoot "cargo/$($target.RustTarget)/release/snow-ocr-process.exe"
+$cargoManifest = Get-Content -LiteralPath (Join-Path $repoRoot 'snow-crates/crates/snow-ocr-process/Cargo.toml') -Raw
+if ($cargoManifest -cnotmatch '(?m)^version\s*=\s*"(\d+\.\d+\.\d+)"\s*$') { throw 'OCR package version was not found.' }
 $runtimeVersion = $Matches[1]
-$platform = 'windows-x64'
+$nativeTarget = $target.HostArchitecture -ceq $Architecture
+$nativeProbePassed = $false
+if ($nativeTarget) {
+    $version = (& $executable --version 2>$null)
+    $workerArchitecture = if ($Architecture -eq 'arm64') { 'aarch64' } else { 'x86_64' }
+    if ($LASTEXITCODE -ne 0 -or $version -cne "snow-ocr-process $runtimeVersion windows-$workerArchitecture protocol 5") {
+        throw "Unexpected OCR runtime identity: $version"
+    }
+    $nativeProbePassed = $true
+}
+$platform = $target.Platform
 $runtimeName = "snow-ocr-process-$runtimeVersion-$platform.exe"
 $archiveName = "snow-ocr-runtime-$runtimeVersion-$platform.zip"
 $uploadUrl = "https://www.modelscope.cn/models/mgchao/SnowShotOCR/resolve/master/runtime/$runtimeVersion/$platform/$archiveName"
 $cache = Get-Content -LiteralPath (Join-Path $buildRoot 'CMakeCache.txt')
+if (-not ($cache -cmatch "^SNOW_WINDOWS_ARCHITECTURE:(?:STRING|INTERNAL)=$Architecture$") -or
+    -not ($cache -cmatch "^VCPKG_TARGET_TRIPLET:(?:STRING|INTERNAL)=$([regex]::Escape($target.Triplet))$")) {
+    throw 'Configured OCR target architecture/triplet differs.'
+}
 $installed = @($cache | Where-Object { $_ -cmatch '^VCPKG_INSTALLED_DIR:PATH=' })
 if ($installed.Count -ne 1) { throw 'The configured vcpkg dependency directory is missing.' }
-$directMl = Join-Path ($installed[0] -replace '^VCPKG_INSTALLED_DIR:PATH=', '') 'x64-windows-static/bin/DirectML.dll'
-$dumpbin = Join-Path $env:VCToolsInstallDir 'bin/Hostx64/x64/dumpbin.exe'
+$directMl = Join-Path ($installed[0] -replace '^VCPKG_INSTALLED_DIR:PATH=', '') "$($target.Triplet)/bin/DirectML.dll"
+$dumpbin = (Get-Command dumpbin.exe -ErrorAction Stop).Source
 foreach ($binary in @($executable, $directMl)) {
-    $headers = @(& $dumpbin /nologo /headers $binary 2>&1)
-    if ($LASTEXITCODE -ne 0 -or -not ($headers -match '8664 machine')) { throw "OCR runtime is not x64: $binary" }
+    Assert-SnowPeArchitecture -Path $binary -Architecture $Architecture
     $imports = @(& $dumpbin /nologo /dependents $binary 2>&1)
     if ($LASTEXITCODE -ne 0) { throw "Cannot inspect OCR runtime dependencies: $binary" }
     foreach ($line in $imports) {
@@ -112,9 +128,13 @@ Copy-Item -LiteralPath $stagedArchive -Destination $archivePath -Force
 Copy-Item -LiteralPath $stagedArchive -Destination (Join-Path $artifactRoot $archiveName) -Force
 "$($archive.sha256)  $archiveName" | Set-Content -LiteralPath "$archivePath.sha256" -Encoding ascii
 $manifestPath = Join-Path $buildRoot "snow-ocr-runtime-$runtimeVersion-$platform.manifest.json"
-[ordered]@{ SchemaVersion = 1; RuntimeVersion = $runtimeVersion; Platform = $platform; Protocol = 5;
-    UploadUrl = $uploadUrl; Archive = $archive; Files = $files } |
+New-SnowOcrRuntimeReleaseReport -RuntimeVersion $runtimeVersion -Architecture $Architecture `
+    -ArchivePath $archivePath -UploadUrl $uploadUrl -Files $files -NativeProbePassed $nativeProbePassed |
     ConvertTo-Json -Depth 6 | Set-Content -LiteralPath $manifestPath -Encoding utf8
 Write-Output "OCR runtime upload artifact: $archivePath"
 Write-Output "OCR runtime checksum: $archivePath.sha256"
 Write-Output "OCR runtime manifest: $manifestPath"
+$assetManifest = Join-Path $buildRoot "snow-shot-ocr-asset-manifest-$platform.json"
+$null = New-SnowOcrAssetManifest -ArchivePath $archivePath -Architecture $Architecture -OutputPath $assetManifest
+Write-Output "Trusted OCR asset manifest: $assetManifest"
+if (-not $nativeTarget) { Write-Output "Native $platform runtime validation is required before publication." }

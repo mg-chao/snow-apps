@@ -39,13 +39,23 @@ QTransform canvasToViewTransform(const SceneDisplayInfo& sceneInfo) {
 
 QPainterPath transformedCutoutPath(const SnowSpotlightCutout& cutout,
                                    const QTransform& canvasToView) {
-    QPainterPath rectangle;
-    rectangle.addRect(
-        QRectF(-cutout.width / 2.0, -cutout.height / 2.0, cutout.width, cutout.height));
+    QPainterPath path;
+    const QRectF bounds(-cutout.width / 2.0, -cutout.height / 2.0, cutout.width, cutout.height);
+    if (cutout.shape == SNOW_DISPLAY_RECT_SHAPE_ELLIPSE) {
+        path.addEllipse(bounds);
+    } else if (cutout.shape == SNOW_DISPLAY_RECT_SHAPE_DIAMOND) {
+        path.moveTo(0.0, bounds.top());
+        path.lineTo(bounds.right(), 0.0);
+        path.lineTo(0.0, bounds.bottom());
+        path.lineTo(bounds.left(), 0.0);
+        path.closeSubpath();
+    } else {
+        path.addRect(bounds);
+    }
     QTransform element;
     element.translate(cutout.center_x, cutout.center_y);
     element.rotateRadians(cutout.rotation);
-    return canvasToView.map(element.map(rectangle));
+    return canvasToView.map(element.map(path));
 }
 
 bool validCutout(const SnowSpotlightCutout& cutout) {

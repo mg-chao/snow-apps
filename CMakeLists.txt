@@ -12,6 +12,9 @@ endif()
 
 project(snow_apps VERSION 0.2.0 LANGUAGES CXX)
 
+include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/SnowWindowsArchitecture.cmake")
+snow_configure_windows_architecture()
+
 set(SNOW_SHOT_VERSION "1.2.2")
 if(NOT SNOW_SHOT_VERSION MATCHES "^([0-9]+\\.[0-9]+\\.[0-9]+)(-[0-9A-Za-z.-]+)?$")
     message(FATAL_ERROR "SNOW_SHOT_VERSION must be a semantic version such as 0.8.0-dev")
@@ -60,6 +63,8 @@ if(SNOW_APPS_BUILD_SNOW_SHOT_MINI AND APPLE AND NOT CMAKE_OSX_ARCHITECTURES STRE
     message(FATAL_ERROR "Snow Shot Mini supports Apple Silicon (arm64) only on macOS")
 endif()
 option(SNOW_APPS_BUILD_TESTS "Build tests for all enabled projects." ON)
+option(SNOW_SHOT_BUILD_RUNTIME_TESTS
+    "Build focused OCR and crash diagnostics tests without unrelated test targets." OFF)
 option(SNOW_APPS_BUILD_BENCHMARKS "Build opt-in benchmark targets." OFF)
 option(SNOW_SHOT_SCROLLING_PERF_DETAIL "Compile detailed scrolling C++ and Rust timings." OFF)
 option(SNOW_APPS_STRICT_COMPILE "Enable strict warnings for all projects." ON)
@@ -159,7 +164,7 @@ unset(_snow_image_codec_value)
 unset(_snow_workspace_all_image_codecs)
 unset(_snow_workspace_image_codecs)
 
-if(SNOW_APPS_BUILD_TESTS)
+if(SNOW_APPS_BUILD_TESTS OR SNOW_SHOT_BUILD_RUNTIME_TESTS)
     enable_testing()
 endif()
 
@@ -324,7 +329,7 @@ function(_snow_apply_test_labels directory)
     endforeach()
 endfunction()
 
-if(SNOW_APPS_BUILD_TESTS)
+if(SNOW_APPS_BUILD_TESTS OR SNOW_SHOT_BUILD_RUNTIME_TESTS)
     _snow_apply_test_labels("${CMAKE_CURRENT_BINARY_DIR}")
 endif()
 
@@ -428,7 +433,7 @@ if(SNOW_APPS_PACKAGE_SNOW_SHOT AND NOT APPLE)
     set(CPACK_PACKAGE_VERSION "${SNOW_SHOT_VERSION}")
     set(CPACK_PACKAGE_INSTALL_DIRECTORY "SnowShot")
     set(CPACK_PACKAGE_INSTALL_REGISTRY_KEY "SnowShot")
-    set(CPACK_PACKAGE_FILE_NAME "snow-shot-${SNOW_SHOT_VERSION}-windows-x64")
+    set(CPACK_PACKAGE_FILE_NAME "snow-shot-${SNOW_SHOT_VERSION}-${SNOW_WINDOWS_PLATFORM}")
     set(CPACK_PACKAGE_DIRECTORY "${CMAKE_BINARY_DIR}")
     set(CPACK_PACKAGE_CHECKSUM "SHA256")
     set(CPACK_PACKAGE_DESCRIPTION_FILE

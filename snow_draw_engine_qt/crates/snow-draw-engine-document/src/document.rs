@@ -753,7 +753,6 @@ impl RectangleData {
 
     pub fn into_spotlight(mut self) -> Self {
         self.rectangle_kind = RectangleElementKind::Spotlight;
-        self.highlight_shape = HighlightShape::Rectangle;
         self.fill = ColorRgba8::default();
         self.stroke = ColorRgba8::default();
         self.stroke_width = 0.0;

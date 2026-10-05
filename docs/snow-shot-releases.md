@@ -168,6 +168,8 @@ targets for a direct build with `cmake --build --preset build-<preset> --target
 snow_shot`. Windows and ARM64 release packaging requires both editions.
 `scripts/package-snow-shot.ps1` produces both Windows editions, and
 `scripts/package-snow-shot.sh snow-shot-macos-arm64-release` produces both DMGs.
+`scripts/package-snow-shot.sh snow-shot-macos-x64-release` produces the Intel
+Full edition as `snow-shot-<version>-macos-x86_64.dmg` and its SHA-256 sidecar.
 
 | Mini Windows asset | Purpose |
 | --- | --- |
@@ -197,8 +199,9 @@ manager submissions use separate Mini identities (`mg-chao.snow-shot-mini`,
 
 GitHub and Gitee publish versioned Windows installer and update assets, their checksum
 sidecars and audit manifests, plus `latest-version.json`. When macOS packaging is
-configured, the release also includes the versioned arm64 DMG, its `.sha256` sidecar,
-and `install-snow-shot-macos.sh`. Signed metadata is uploaded last. The Windows
+configured, the default release also includes Full DMGs for ARM64 and Intel,
+the ARM64 Mini DMG, their `.sha256` sidecars, and `install-snow-shot-macos.sh`.
+Signed metadata is uploaded last. The Windows
 updater uses the signed JSON envelope and never fetches the website's legacy update
 feed. The website homepage and unrelated application API remain configured separately.
 
@@ -538,13 +541,27 @@ pinned public OCR runtime before packaging and audits each signed Windows packag
 
 ### Coordinated Windows and macOS packaging
 
-Set `MacHost`, `MacUser`, and `MacProjectDirectory` to package arm64 on a
-provisioned Mac alongside Windows. `MacPort` defaults to 22;
+Set `MacHost`, `MacUser`, and `MacProjectDirectory` to package macOS alongside
+Windows. `MacArchitectures` defaults to `@('arm64', 'x64')`: Full for both
+architectures and Mini for ARM64. The macOS architectures build sequentially
+inside the remote job while Windows packaging runs concurrently. Use
+`-MacArchitectures arm64` for the historical ARM64 pair, or
+`-MacArchitectures x64` for Intel Full only. An Apple Silicon host can build both;
+an Intel host requires the x64 selection. Apple Silicon needs Rosetta for Intel
+build-time executable checks. `MacPort` defaults to 22;
 `MacIdentityFile` and `MacKnownHostsFile` are optional. The Mac checkout must
 have the same source version. The packaging worker verifies the DMG and its code
-signature, then transfers the DMG and checksum. The publisher adds
+signature, then transfers each DMG and checksum. Public Intel assets use
+`macos-x86_64`, while preset and parameter names use `x64`. ARM64 logs and
+receipts retain `macos-build.log` and `macos-build.json`; Intel uses
+`macos-x64-build.log` and `macos-x64-build.json`. The publisher adds
 `install-snow-shot-macos.sh` as a GitHub release asset. `-SkipBuild` reuses
-audited package bytes and the Mac source receipt; it does not bypass audits.
+audited package bytes and each architecture's Mac source receipt; it does not
+bypass audits. Receipts pin the source, selected architecture, package bytes,
+and diagnostic symbols. Both architectures must record the same source identity
+before the publisher stages them. Historical receipts without an architecture identify
+ARM64 only. The standalone remote wrapper retains `-Architecture arm64` as its
+default; `-Architecture x64` requests Full only.
 
 ```powershell
 & scripts/publish-snow-shot-release.local.ps1 -WhatIf
@@ -669,9 +686,10 @@ in-app.
 ## Homebrew tap publication
 
 The separate `snow-shot-homebrew.yml` workflow updates
-`mg-chao/homebrew-tap` (`main`, `Casks/snow-shot.rb`) from published **stable**
-GitHub releases. It does not change the Windows packaging workflow or Gitee
-mirror. The tag must be `v<major>.<minor>.<patch>_snow-shot`, matching
+`mg-chao/homebrew-tap` (`main`, `Casks/snow-shot.rb` and edition/channel casks)
+from published stable and beta GitHub releases. It does not change the Windows
+packaging workflow or Gitee mirror. The tag must be `v<version>[_snow-shot]`,
+where the version is stable or ends in `-beta` / `-beta.<number>`, matching
 `SNOW_SHOT_VERSION` in its source checkout. That source must contain the installer
 with `--prepare-app` support. Old releases lacking it cannot be backfilled using
 an installer from `main`.
@@ -684,21 +702,28 @@ One-time setup:
 2. Configure `HOMEBREW_TAP_TOKEN` as a secret in `mg-chao/snow-apps`. Use a
    fine-grained token restricted to the tap repository with Contents read/write.
    Its branch policy must allow the automation to push to `main`.
-3. Include the matching `snow-shot-<version>-macos-arm64.dmg` and `.dmg.sha256`
-   assets before publishing the stable GitHub release. macOS packaging/upload
+3. Include each supported architecture's matching DMG and `.dmg.sha256`
+   assets before publishing the GitHub release: Full uses `macos-arm64` and
+   `macos-x86_64`; Mini supports `macos-arm64` only. macOS packaging/upload
    remains a separate release operation; the existing Windows CI does not build
    these assets. Do not mark a beta version stable to enable Homebrew.
 
 The workflow validates release metadata, source version, checksums, and the current
-tap version, then produces `snow-shot-<version>-macos-arm64-homebrew.tar.gz`.
-This archive contains the DMG, a normalized checksum sidecar, and both installer scripts
-from that tag. Archive entry metadata and gzip timestamps are fixed for repeatable
-builds. The generated cask pins the archive's SHA-256 and uses the versioned
-GitHub release URL. Intel assets are not required or advertised by this cask.
+tap version, then produces one archive per available macOS product/architecture:
+`snow-shot-<version>-macos-{arm64|x86_64}-homebrew.tar.gz` and, when present,
+`snow-shot-mini-<version>-macos-arm64-homebrew.tar.gz`. Each archive contains
+its DMG, a normalized checksum sidecar, and both installer scripts from that tag.
+Archive entry metadata and gzip timestamps are fixed for repeatable builds.
+The Full cask selects the host architecture's versioned archive and SHA-256;
+Mini remains restricted to Apple Silicon. ARM64-only historical releases retain
+their existing archives and cask text. Intel-only Full releases are also
+supported. A Windows Mini asset alone does not advertise a macOS Mini cask.
 
 The archive is uploaded before committing the cask. An existing identical archive
 is reused; differing bytes are an error and are never overwritten. An identical
 cask needs no commit. Same-version cask changes and version downgrades are rejected.
+Adding Intel support to a previously published ARM64-only cask therefore requires
+a newer release version; existing archives and casks are never replaced.
 All workflow versions share one concurrency group, and pushes are never forced.
 If a push fails, rerun after resolving the tap's branch policy or concurrent edits.
 An archive may remain published after a failed tap push; retry safely reuses it.
@@ -718,7 +743,7 @@ The release token uploads assets only in `snow-apps`; the separate tap token is
 used only for checking out and pushing the tap.
 
 For an offline review or initial tap scaffold, save GitHub's release JSON, download
-the matching DMG/checksum pair, and check out its tag into a separate source path:
+all advertised DMG/checksum pairs, and check out its tag into a separate source path:
 
 ```sh
 python3 scripts/snow-shot-homebrew.py package \
@@ -728,7 +753,7 @@ python3 scripts/snow-shot-homebrew.py package \
 ```
 
 A nonexistent `--current-cask` means first publication. The output includes the
-archive and `Casks/snow-shot.rb`; it performs no network or Git writes. Run
+archives and `Casks/snow-shot.rb`; it performs no network or Git writes. Run
 `python3 scripts/test-snow-shot-homebrew.py` for the release helper's focused tests.
 With Homebrew installed and the generated cask in the tap, run
 `brew style --cask --except Cask/InstallSteps mg-chao/tap/snow-shot` and

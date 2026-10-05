@@ -2091,6 +2091,10 @@
             <translation>Ignore global hotkeys while the focused window occupies an entire monitor</translation>
         </message>
         <message>
+            <source>Image Recognition</source>
+            <translation>Image Recognition</translation>
+        </message>
+        <message>
             <source>Image export</source>
             <translation>Image export</translation>
         </message>
@@ -2743,10 +2747,6 @@
             <translation>Recapture</translation>
         </message>
         <message>
-            <source>Recognition &amp; actions</source>
-            <translation>Recognition &amp; actions</translation>
-        </message>
-        <message>
             <source>Recognition output</source>
             <translation>Recognition output</translation>
         </message>
@@ -3279,12 +3279,12 @@
             <translation>Shortcut keys for annotation tools</translation>
         </message>
         <message>
-            <source>Shortcut keys for pinned-to-screen windows</source>
-            <translation>Shortcut keys for pinned-to-screen windows</translation>
+            <source>Shortcut keys for image recognition tools</source>
+            <translation>Shortcut keys for image recognition tools</translation>
         </message>
         <message>
-            <source>Shortcut keys for recognition and screenshot actions</source>
-            <translation>Shortcut keys for recognition and screenshot actions</translation>
+            <source>Shortcut keys for pinned-to-screen windows</source>
+            <translation>Shortcut keys for pinned-to-screen windows</translation>
         </message>
         <message>
             <source>Shortcut keys for recording controls</source>
@@ -3297,6 +3297,10 @@
         <message>
             <source>Show Cursor</source>
             <translation>Show Cursor</translation>
+        </message>
+        <message>
+            <source>Show Edit Selection Toolbar</source>
+            <translation>Show Edit Selection Toolbar</translation>
         </message>
         <message>
             <source>Show Guides by Default</source>
@@ -3349,6 +3353,10 @@
         <message>
             <source>Show the floating toolbar on the desktop</source>
             <translation>Show the floating toolbar on the desktop</translation>
+        </message>
+        <message>
+            <source>Show the sub-toolbar for the Edit Selection tool</source>
+            <translation>Show the sub-toolbar for the Edit Selection tool</translation>
         </message>
         <message>
             <source>Show toolbar</source>
@@ -3985,6 +3993,10 @@ Change the shortcut and try again</translation>
             <translation>Not configured</translation>
         </message>
         <message>
+            <source>Not set</source>
+            <translation>Not set</translation>
+        </message>
+        <message>
             <source>OK</source>
             <translation>OK</translation>
         </message>
@@ -4007,10 +4019,6 @@ Unavailable: %2</source>
             <translation>Some shortcuts are unavailable
 Available: %1
 Unavailable: %2</translation>
-        </message>
-        <message>
-            <source>Unset</source>
-            <translation>Unset</translation>
         </message>
         <message>
             <source>already used by another application or action</source>

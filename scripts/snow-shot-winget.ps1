@@ -30,12 +30,14 @@ function New-SnowShotWingetManifest([string]$Tag, [string]$OutputDirectory, [str
     # Explicit indentation keeps Markdown, YAML-looking text and leading spaces literal.
     $releaseNotes = ($notes.Split("`n") | ForEach-Object { "  $_" }) -join "`n"
     $variant = if ($Edition -eq 'Mini') { 'online' } else { 'offline' }
-    $name = "$($product.Product)-$version-windows-x64-$variant.exe"
+    $null = New-Item -ItemType Directory -Force -Path $OutputDirectory
+    $installerEntries = @()
+    foreach ($architecture in @(Get-SnowShotReleaseArchitectures $release $version)) {
+    $name = "$($product.Product)-$version-windows-$architecture-$variant.exe"
     $assets = @($release.assets | Where-Object { $_.name -ceq $name })
     if ($assets.Count -ne 1) { throw "Expected exactly one release asset named $name." }
     $url = "https://github.com/$repository/releases/download/$Tag/$name"
     if ($assets[0].browser_download_url -cne $url) { throw 'Unexpected installer asset URL.' }
-    $null = New-Item -ItemType Directory -Force -Path $OutputDirectory
     $download = Join-Path $OutputDirectory "$([guid]::NewGuid().ToString('N')).exe"
     try {
         Invoke-WebRequest -Uri $url -OutFile $download -TimeoutSec 600
@@ -46,6 +48,9 @@ function New-SnowShotWingetManifest([string]$Tag, [string]$OutputDirectory, [str
     } finally {
         if (Test-Path -LiteralPath $download) { Remove-Item -LiteralPath $download }
     }
+    $installerEntries += "  - Architecture: $architecture`n    InstallerUrl: $url`n    InstallerSha256: $hash"
+    }
+    $installers = $installerEntries -join "`n"
     $directory = Join-Path $OutputDirectory "manifests/m/mg-chao/$($product.Product)/$version"
     $null = New-Item -ItemType Directory -Force -Path $directory
     $common = "PackageIdentifier: $($product.Winget)`nPackageVersion: '$version'"
@@ -84,9 +89,7 @@ ExpectedReturnCodes:
   - InstallerReturnCode: 10
     ReturnResponse: packageInUse
 Installers:
-  - Architecture: x64
-    InstallerUrl: $url
-    InstallerSha256: $hash
+$installers
 ManifestType: installer
 ManifestVersion: 1.12.0
 "@

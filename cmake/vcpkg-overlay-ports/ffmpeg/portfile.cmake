@@ -648,10 +648,20 @@ if("snow-shot-minimal" IN_LIST FEATURES)
     if(NOT VCPKG_TARGET_IS_WINDOWS OR VCPKG_TARGET_IS_UWP)
         message(FATAL_ERROR "ffmpeg[snow-shot-minimal] currently supports desktop Windows only")
     endif()
+    set(SNOW_SHOT_ENCODERS "libx264,libx265,h264_mf,mpeg4,gif,apng,libwebp_anim,aac,mp3_mf")
+    foreach(SNOW_HARDWARE_FEATURE IN ITEMS nvcodec amf qsv)
+        if(SNOW_HARDWARE_FEATURE IN_LIST FEATURES)
+            if(SNOW_HARDWARE_FEATURE STREQUAL "nvcodec")
+                string(APPEND SNOW_SHOT_ENCODERS ",h264_nvenc")
+            else()
+                string(APPEND SNOW_SHOT_ENCODERS ",h264_${SNOW_HARDWARE_FEATURE}")
+            endif()
+        endif()
+    endforeach()
     string(APPEND OPTIONS
         " --disable-network"
         " --enable-decoder=h264,hevc,gif,png,apng,webp,webp_anim,aac,mp3,pcm_s16le,pcm_f32le"
-        " --enable-encoder=libx264,libx265,h264_mf,h264_nvenc,h264_amf,h264_qsv,mpeg4,gif,apng,libwebp_anim,aac,mp3_mf"
+        " --enable-encoder=${SNOW_SHOT_ENCODERS}"
         " --enable-muxer=matroska,mp4,avi,gif,apng,webp"
         " --enable-demuxer=matroska,mov,gif,apng,webp,webp_anim"
         " --enable-parser=h264,hevc,aac,mpegaudio,gif"

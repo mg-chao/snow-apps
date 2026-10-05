@@ -12,6 +12,7 @@ on:
       - scripts/*scoop*.ps1
       - scripts/snow-shot-editions.ps1
       - scripts/test-snow-shot-mini-release.ps1
+      - scripts/test-snow-shot-arm64-distribution.ps1
       - .github/workflows/snow-shot-scoop.yml
   push:
     branches: [main]
@@ -19,6 +20,7 @@ on:
       - scripts/*scoop*.ps1
       - scripts/snow-shot-editions.ps1
       - scripts/test-snow-shot-mini-release.ps1
+      - scripts/test-snow-shot-arm64-distribution.ps1
       - .github/workflows/snow-shot-scoop.yml
 
 permissions:
@@ -26,7 +28,15 @@ permissions:
 
 jobs:
   verify:
-    runs-on: windows-2025
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - architecture: x64
+            runner: windows-2025-vs2026
+          - architecture: arm64
+            runner: windows-11-vs2026-arm
+    runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v5
         with:
@@ -43,11 +53,12 @@ jobs:
         run: |
           ./scripts/test-snow-shot-scoop.ps1 -SchemaPath build/scoop-runtime/schema.json
           ./scripts/test-snow-shot-mini-release.ps1
+          ./scripts/test-snow-shot-arm64-distribution.ps1 -SchemaPath build/scoop-runtime/schema.json
       - name: Verify isolated Scoop lifecycle
         shell: pwsh
         run: |
-          ./scripts/test-snow-shot-scoop-install.ps1 -ScoopRoot build/scoop-runtime
-          ./scripts/test-snow-shot-scoop-install.ps1 -ScoopRoot build/scoop-runtime -Edition Mini
+          ./scripts/test-snow-shot-scoop-install.ps1 -ScoopRoot build/scoop-runtime -Architecture ${{ matrix.architecture }}
+          ./scripts/test-snow-shot-scoop-install.ps1 -ScoopRoot build/scoop-runtime -Architecture ${{ matrix.architecture }} -Edition Mini
       - name: Generate verified manifest for upstream submission
         if: github.event_name == 'workflow_dispatch'
         shell: pwsh
@@ -68,6 +79,6 @@ jobs:
         if: always() && github.event_name == 'workflow_dispatch'
         uses: actions/upload-artifact@v4
         with:
-          name: snow-shot-scoop-manifest
+          name: snow-shot-scoop-manifest-${{ matrix.architecture }}
           path: build/scoop/*.json
           if-no-files-found: warn

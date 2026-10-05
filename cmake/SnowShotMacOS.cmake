@@ -151,10 +151,15 @@ foreach(_snow_diagnostics_target snow_shot_diagnostics snow_shot_crash_bridge sn
 endforeach()
 
 set(SNOW_MACOS_OCR_ASSETS_ENABLED OFF)
+if(CMAKE_OSX_ARCHITECTURES STREQUAL "x86_64")
+    set(SNOW_MACOS_OCR_ARCH x64)
+else()
+    set(SNOW_MACOS_OCR_ARCH arm64)
+endif()
 find_package(Python3 REQUIRED COMPONENTS Interpreter)
 set(SNOW_MACOS_OCR_TOOL "${CMAKE_CURRENT_LIST_DIR}/../scripts/snow-shot-macos-ocr.py")
 set(SNOW_MACOS_OCR_MANIFEST "${CMAKE_CURRENT_LIST_DIR}/../snow_shot/packaging/snow-shot-ocr-asset-manifest.json")
-if(CMAKE_OSX_ARCHITECTURES STREQUAL "arm64" AND TARGET snow_ocr_process)
+if(CMAKE_OSX_ARCHITECTURES MATCHES "^(arm64|x86_64)$" AND TARGET snow_ocr_process)
     set(SNOW_MACOS_OCR_ASSETS_ENABLED ON)
     set(_snow_macos_ocr_runtime_arguments)
     if(SNOW_SHOT_OCR_STATIC_ONNXRUNTIME)
@@ -169,6 +174,7 @@ if(CMAKE_OSX_ARCHITECTURES STREQUAL "arm64" AND TARGET snow_ocr_process)
             # relinking its Qt host. A host POST_BUILD hook would miss that update.
             add_custom_target(${_host}-ocr-assets
                 COMMAND "${Python3_EXECUTABLE}" "${SNOW_MACOS_OCR_TOOL}" stage
+                    --arch "${SNOW_MACOS_OCR_ARCH}"
                     --manifest "${SNOW_MACOS_OCR_MANIFEST}"
                     --runtime-dir "$<TARGET_FILE_DIR:${_host}>"
                     --worker "$<TARGET_FILE:snow_ocr_process>"

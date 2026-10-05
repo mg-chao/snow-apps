@@ -141,6 +141,7 @@ fn descriptor(path: &str, bytes: &[u8]) -> UpdateFile {
 fn prepare(root: &Path, archive: &Path) -> UpdateRelease {
     fs::create_dir_all(root.join("bin")).unwrap();
     let record = |version: &str, bytes: &[u8]| InstallationRecord {
+        platform: Some(snow_shot_updater::edition::PLATFORM.to_owned()),
         product: snow_shot_updater::edition::PRODUCT.to_owned(),
         schema: 1,
         variant: "online".into(),
@@ -166,12 +167,16 @@ fn prepare(root: &Path, archive: &Path) -> UpdateRelease {
     }
     zip.finish().unwrap();
     UpdateRelease {
+        platform: snow_shot_updater::edition::PLATFORM.to_owned(),
         version: "2.0.0".into(),
         envelope: vec![],
         packages: vec![UpdatePackage {
             variant: "online".into(),
             kind: "update".into(),
-            path: "setup/snow-shot_windows-x64-online-update.zip".into(),
+            path: format!(
+                "{}online-update.zip",
+                snow_shot_updater::edition::PACKAGE_PREFIX
+            ),
             size: fs::metadata(archive).unwrap().len(),
             sha256: fsutil::sha256_file(archive).unwrap(),
             files: entries

@@ -4,7 +4,11 @@ param(
         "windows-msvc-debug",
         "windows-msvc-performance",
         "snow-shot-msvc-release",
-        "snow-shot-msvc-fast"
+        "snow-shot-msvc-fast",
+        "snow-shot-msvc-arm64-debug",
+        "snow-shot-msvc-arm64-performance",
+        "snow-shot-msvc-arm64-release",
+        "snow-shot-msvc-arm64-fast"
     )]
     [string]$Preset = "windows-msvc-debug",
     [ValidateSet("Full", "Mini")][string]$Edition = "Full",
@@ -17,12 +21,14 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
 $repoRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot ".."))
+. (Join-Path $PSScriptRoot 'snow-build-environment.ps1')
+$windowsTarget = Get-SnowWindowsTarget -Preset $Preset
+if ($windowsTarget.Architecture -ceq 'arm64' -and $windowsTarget.HostArchitecture -cne 'arm64') {
+    throw 'Running Snow Shot ARM64 requires a Windows ARM64 host.'
+}
 $target = if ($Edition -eq "Mini") { "snow_shot_mini" } else { "snow_shot" }
 $buildDirectory = Join-Path $repoRoot "build\$Preset"
-$configuration = switch ($Preset) {
-    "windows-msvc-debug" { "Debug" }
-    default { "Release" }
-}
+$configuration = $windowsTarget.Configuration
 $executablePath = Join-Path $buildDirectory "$target\$configuration\$target.exe"
 
 function Test-PathIsUnderDirectory {
@@ -104,6 +110,9 @@ if (-not (Test-Path -LiteralPath $executablePath -PathType Leaf)) {
 }
 
 $workingDirectory = Split-Path -Parent $executablePath
+if ((Get-SnowPeMachine -Path $executablePath) -ne $windowsTarget.PeMachine) {
+    throw "The Snow Shot executable does not match preset $Preset. Rebuild its selected architecture."
+}
 if ($Detached) {
     Start-Process -FilePath $executablePath -WorkingDirectory $workingDirectory -WindowStyle Hidden | Out-Null
     return

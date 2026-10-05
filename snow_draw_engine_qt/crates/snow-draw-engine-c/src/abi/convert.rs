@@ -949,7 +949,8 @@ unsafe fn runtime_style_default_enums_are_valid(defaults: *const SnowStyleDefaul
     }
 
     unsafe {
-        raw_c_enum_is_valid(std::ptr::addr_of!((*defaults).rectangle_filter.filter_type))
+        raw_c_enum_is_valid(std::ptr::addr_of!((*defaults).spotlight_shape))
+            && raw_c_enum_is_valid(std::ptr::addr_of!((*defaults).rectangle_filter.filter_type))
             && raw_c_enum_is_valid(std::ptr::addr_of!((*defaults).pen_filter.filter_type))
             && raw_c_enum_is_valid(std::ptr::addr_of!((*defaults).text.fill_style))
             && raw_c_enum_is_valid(std::ptr::addr_of!((*defaults).text.horizontal_align))
@@ -1005,6 +1006,11 @@ pub(crate) fn runtime_config_from_c(
     Ok(RuntimeConfig {
         style_defaults: StyleDefaults {
             editor: snow_draw_engine::EditorStyleDefaults {
+                spotlight_shape: match defaults.spotlight_shape {
+                    SnowRectangleShape::Rectangle => snow_draw_engine::HighlightShape::Rectangle,
+                    SnowRectangleShape::Ellipse => snow_draw_engine::HighlightShape::Ellipse,
+                    SnowRectangleShape::Diamond => snow_draw_engine::HighlightShape::Diamond,
+                },
                 rectangle: rectangle.rectangle_shape_style(),
                 arrow: arrow.arrow_style(),
                 line: defaults.line.into(),
@@ -1124,6 +1130,11 @@ impl From<StyleDefaults> for SnowStyleDefaults {
             watermark: value.watermark.into(),
             spotlight: value.spotlight.into(),
             brush_eraser: value.editor.brush_eraser.into(),
+            spotlight_shape: match value.editor.spotlight_shape {
+                snow_draw_engine::HighlightShape::Rectangle => SnowRectangleShape::Rectangle,
+                snow_draw_engine::HighlightShape::Ellipse => SnowRectangleShape::Ellipse,
+                snow_draw_engine::HighlightShape::Diamond => SnowRectangleShape::Diamond,
+            },
         }
     }
 }
@@ -1683,9 +1694,11 @@ mod tests {
         expected.watermark.font_family = "C Watermark Font".to_owned();
         expected.watermark.opacity = 0.24;
         expected.spotlight.opacity = 0.62;
+        expected.editor.spotlight_shape = snow_draw_engine::HighlightShape::Diamond;
 
         let c_defaults: SnowStyleDefaults = expected.clone().into();
         assert_eq!(c_defaults.rectangle.fill.a, 0);
+        assert_eq!(c_defaults.spotlight_shape, SnowRectangleShape::Diamond);
         assert_eq!(
             c_defaults.rectangle_filter.filter_type,
             SnowFilterType::Emboss

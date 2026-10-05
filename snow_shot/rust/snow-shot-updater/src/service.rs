@@ -2159,7 +2159,7 @@ pub async fn run_with_dependencies(
                 "protocol": PROTOCOL_VERSION,
                 "type": "hello",
                 "updaterVersion": env!("CARGO_PKG_VERSION"),
-                "platform": "windows-x64",
+                "platform": crate::edition::PLATFORM,
                 "capabilities": ["check", "download", "apply", "recovery"],
             }),
         )
@@ -2591,6 +2591,7 @@ mod tests {
             let mut service = ready_service(&temporary, FakeNetwork::new([]));
             let update = service.available.take().unwrap();
             let release = UpdateRelease {
+                platform: crate::edition::PLATFORM.to_owned(),
                 version: update.version.clone(),
                 packages: vec![UpdatePackage {
                     variant: if scenario == "wrong_variant" {
@@ -2761,6 +2762,7 @@ mod tests {
         assert_eq!(network.requests().len(), 2);
 
         let release = UpdateRelease {
+            platform: crate::edition::PLATFORM.to_owned(),
             version: "3.0.0".to_owned(),
             packages: vec![UpdatePackage {
                 variant: "portable".to_owned(),
@@ -2859,6 +2861,7 @@ mod tests {
             ..Status::default()
         };
         let release = UpdateRelease {
+            platform: crate::edition::PLATFORM.to_owned(),
             version: package.version.clone(),
             packages: vec![UpdatePackage {
                 variant: "portable".to_owned(),
@@ -3172,8 +3175,9 @@ mod tests {
                 ]
                 .map(|suffix| {
                     format!(
-                        "{product}-{version}-windows-x64-{suffix}",
-                        product = crate::edition::PRODUCT
+                        "{product}-{version}-{platform}-{suffix}",
+                        product = crate::edition::PRODUCT,
+                        platform = crate::edition::PLATFORM
                     )
                 }),
             );
@@ -3425,17 +3429,31 @@ mod tests {
         .unwrap();
         let names = [
             crate::edition::FEED_NAME,
-            &format!("{}-2.0.0-windows-x64-online.exe", crate::edition::PRODUCT),
             &format!(
-                "{}-2.0.0-windows-x64-online-update.zip",
-                crate::edition::PRODUCT
+                "{}-2.0.0-{}-online.exe",
+                crate::edition::PRODUCT,
+                crate::edition::PLATFORM
             ),
-            &format!("{}-2.0.0-windows-x64-offline.exe", crate::edition::PRODUCT),
             &format!(
-                "{}-2.0.0-windows-x64-offline-update.zip",
-                crate::edition::PRODUCT
+                "{}-2.0.0-{}-online-update.zip",
+                crate::edition::PRODUCT,
+                crate::edition::PLATFORM
             ),
-            &format!("{}-2.0.0-windows-x64-portable.zip", crate::edition::PRODUCT),
+            &format!(
+                "{}-2.0.0-{}-offline.exe",
+                crate::edition::PRODUCT,
+                crate::edition::PLATFORM
+            ),
+            &format!(
+                "{}-2.0.0-{}-offline-update.zip",
+                crate::edition::PRODUCT,
+                crate::edition::PLATFORM
+            ),
+            &format!(
+                "{}-2.0.0-{}-portable.zip",
+                crate::edition::PRODUCT,
+                crate::edition::PLATFORM
+            ),
         ];
         let assets = serde_json::to_vec(&names.iter().map(|name| json!({"name":name,
             "browser_download_url":format!("https://gitee.com/mg-chao/snow-apps/releases/download/v2.0.0_snow-shot/{name}")})).collect::<Vec<_>>()).unwrap();
@@ -3598,7 +3616,11 @@ mod tests {
     #[tokio::test]
     async fn failed_selected_package_uses_exact_version_on_other_channel() {
         let temporary = TempDir::new().unwrap();
-        let asset = &format!("{}-2.0.0-windows-x64-portable.zip", crate::edition::PRODUCT);
+        let asset = &format!(
+            "{}-2.0.0-{}-portable.zip",
+            crate::edition::PRODUCT,
+            crate::edition::PLATFORM
+        );
         let gitee_url = format!(
             "https://gitee.com/mg-chao/snow-apps/releases/download/v2.0.0_snow-shot/{asset}"
         );
@@ -3714,7 +3736,11 @@ mod tests {
     #[tokio::test]
     async fn github_package_hash_failure_never_reports_downloaded() {
         let temporary = TempDir::new().unwrap();
-        let asset = &format!("{}-2.0.0-windows-x64-portable.zip", crate::edition::PRODUCT);
+        let asset = &format!(
+            "{}-2.0.0-{}-portable.zip",
+            crate::edition::PRODUCT,
+            crate::edition::PLATFORM
+        );
         let metadata = serde_json::to_vec(&github_fixture("2.0.0", &[asset])).unwrap();
         let network = FakeNetwork::new([
             reply(StatusCode::OK, &metadata),

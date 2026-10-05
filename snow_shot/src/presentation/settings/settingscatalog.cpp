@@ -554,6 +554,16 @@ SettingsItemDefinition showGuidesByDefaultItem() {
             SettingsSwitchDefinition{SettingsSwitchBinding::ShowGuidesByDefault}};
 }
 
+SettingsItemDefinition showEditSelectionToolbarItem() {
+    return {QStringLiteral("interface.screenshot.show-edit-selection-toolbar"),
+            settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Show Edit Selection Toolbar")),
+            settingsText(QT_TRANSLATE_NOOP("SettingsCatalog",
+                                           "Show the sub-toolbar for the Edit Selection tool")),
+            {},
+            QStringLiteral("screenshot_ui/show_edit_selection_toolbar"),
+            SettingsSwitchDefinition{SettingsSwitchBinding::ShowEditSelectionToolbar}};
+}
+
 SettingsItemDefinition drawingToolbarEditorItem() {
     return {
         QStringLiteral("interface.toolbar.drawing-toolbar-editor"),
@@ -2045,12 +2055,6 @@ QVector<SettingsItemDefinition> screenshotOtherShortcutItems() {
                           QT_TRANSLATE_NOOP("SettingsCatalog", "Text translation"),
                           []() { return custom_outlined_icons::OcrTranslate(); }),
 #endif
-        localShortcutItem(SettingsLocalShortcutScope::Screenshot, QStringLiteral("undo"),
-                          QT_TRANSLATE_NOOP("SettingsCatalog", "Undo"),
-                          []() { return outlined_icons::Undo(); }),
-        localShortcutItem(SettingsLocalShortcutScope::Screenshot, QStringLiteral("redo"),
-                          QT_TRANSLATE_NOOP("SettingsCatalog", "Redo"),
-                          []() { return outlined_icons::Redo(); }),
     };
 }
 
@@ -2065,12 +2069,18 @@ QVector<SettingsItemDefinition> drawingShortcutItems() {
         localShortcutItem(SettingsLocalShortcutScope::Drawing, QStringLiteral("arrow"),
                           QT_TRANSLATE_NOOP("SettingsCatalog", "Arrow"),
                           []() { return custom_outlined_icons::ToolArrow(); }),
+        localShortcutItem(SettingsLocalShortcutScope::Drawing, QStringLiteral("line"),
+                          QT_TRANSLATE_NOOP("SettingsCatalog", "Line"),
+                          []() { return custom_outlined_icons::ToolLine(); }),
         localShortcutItem(SettingsLocalShortcutScope::Drawing, QStringLiteral("brush"),
                           QT_TRANSLATE_NOOP("SettingsCatalog", "Pen"),
                           []() { return custom_outlined_icons::ToolFreeDraw(); }),
         localShortcutItem(SettingsLocalShortcutScope::Drawing, QStringLiteral("highlight"),
                           QT_TRANSLATE_NOOP("SettingsCatalog", "Highlight"),
                           []() { return custom_outlined_icons::ToolHighlight(); }),
+        localShortcutItem(SettingsLocalShortcutScope::Drawing, QStringLiteral("spotlight"),
+                          QT_TRANSLATE_NOOP("SettingsCatalog", "Spotlight"),
+                          []() { return custom_outlined_icons::ToolSpotlight(); }),
         localShortcutItem(SettingsLocalShortcutScope::Drawing, QStringLiteral("text"),
                           QT_TRANSLATE_NOOP("SettingsCatalog", "Text"),
                           []() { return custom_outlined_icons::ToolText(); }),
@@ -2086,6 +2096,12 @@ QVector<SettingsItemDefinition> drawingShortcutItems() {
         localShortcutItem(SettingsLocalShortcutScope::Drawing, QStringLiteral("watermark"),
                           QT_TRANSLATE_NOOP("SettingsCatalog", "Watermark"),
                           []() { return custom_outlined_icons::ToolWatermark(); }),
+        localShortcutItem(SettingsLocalShortcutScope::Screenshot, QStringLiteral("undo"),
+                          QT_TRANSLATE_NOOP("SettingsCatalog", "Undo"),
+                          []() { return outlined_icons::Undo(); }),
+        localShortcutItem(SettingsLocalShortcutScope::Screenshot, QStringLiteral("redo"),
+                          QT_TRANSLATE_NOOP("SettingsCatalog", "Redo"),
+                          []() { return outlined_icons::Redo(); }),
     };
 }
 
@@ -2832,6 +2848,7 @@ QVector<SettingsPageDefinition> builtInPages() {
                              "Draw four guide segments around the sampled center pixel"),
                          QStringLiteral("screenshot_ui/color_picker_center_guide_line_color"),
                          SettingsColorBinding::ColorPickerCenterGuideLineColor),
+                     showEditSelectionToolbarItem(),
                      screenshotToolbarEditorItem(),
                  },
              },
@@ -3127,9 +3144,9 @@ QVector<SettingsPageDefinition> builtInPages() {
              },
              {
                  QStringLiteral("other-shortcuts"),
-                 settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Recognition & actions")),
-                 settingsText(QT_TRANSLATE_NOOP(
-                     "SettingsCatalog", "Shortcut keys for recognition and screenshot actions")),
+                 settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Image Recognition")),
+                 settingsText(QT_TRANSLATE_NOOP("SettingsCatalog",
+                                                "Shortcut keys for image recognition tools")),
                  SettingsSectionReset::ScreenshotOtherShortcuts,
                  screenshotOtherShortcutItems(),
                  SettingsSectionItemLayout::TwoColumnGrid,
@@ -4397,6 +4414,9 @@ QStringList SettingsCatalog::validationErrors() const {
                         break;
                     case SettingsSwitchBinding::ShowGuidesByDefault:
                         expectedKey = QStringLiteral("screenshot_ui/show_guides_by_default");
+                        break;
+                    case SettingsSwitchBinding::ShowEditSelectionToolbar:
+                        expectedKey = QStringLiteral("screenshot_ui/show_edit_selection_toolbar");
                         break;
                     case SettingsSwitchBinding::FloatingToolbarEnabled:
                         expectedKey = QStringLiteral("floating_toolbar/enabled");

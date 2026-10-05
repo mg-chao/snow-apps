@@ -614,6 +614,7 @@ typedef struct SnowStyleDefaults {
     SnowWatermarkConfig watermark;
     SnowSpotlightConfig spotlight;
     SnowBrushEraserStyle brush_eraser;
+    SnowRectangleShape spotlight_shape;
 } SnowStyleDefaults;
 
 struct SnowRuntimeConfig {
@@ -1009,6 +1010,8 @@ typedef struct SnowSpotlightCutout {
     double width;
     double height;
     double rotation;
+    uint8_t shape;
+    uint8_t reserved[7];
 } SnowSpotlightCutout;
 
 #define SNOW_ARROW_POINT_CAPACITY 64

@@ -74,6 +74,31 @@ QJsonArray documentSlots(const SnowCanvasRuntime& runtime) {
         .value(QStringLiteral("slots"))
         .toArray();
 }
+void arrowCreationDefaultsRestoreShaftAndRatio() {
+    SnowCanvasWidget canvas;
+    auto defaults = screenshotCanvasToolStyleDefaults();
+    defaults.arrow.arrowRatio = 2.7;
+    defaults.arrow.startArrowhead = SnowCanvasArrowhead::Circle;
+    defaults.arrow.endArrowhead = SnowCanvasArrowhead::IndentedTriangle;
+    for (const auto arrowType :
+         {SnowCanvasArrowType::Straight, SnowCanvasArrowType::Curve, SnowCanvasArrowType::Elbow}) {
+        defaults.arrow.arrowType = arrowType;
+        for (const auto shaftType :
+             {SnowCanvasArrowShaftType::Tapered, SnowCanvasArrowShaftType::Plain}) {
+            defaults.arrow.arrowShaftType = shaftType;
+            applyScreenshotCanvasToolStyles(canvas, defaults);
+            require(canvas.setCanvasTool(SnowCanvasTool::Arrow), "inspect restored arrow defaults");
+            const auto style = canvas.canvasStyleToolbarState().shapeStyle;
+            require(style.arrowShaftType == shaftType &&
+                        style.arrowRatio == defaults.arrow.arrowRatio &&
+                        style.arrowType == arrowType &&
+                        style.startArrowhead == defaults.arrow.startArrowhead &&
+                        style.endArrowhead == defaults.arrow.endArrowhead,
+                    "arrow creation defaults must restore shaft and ratio independently of type "
+                    "and arrowhead compatibility");
+        }
+    }
+}
 void creationDefaultsDoNotActivateFilterTools() {
     SnowCanvasRuntime runtime;
     SnowCanvasWidget canvas(runtime);
@@ -263,6 +288,11 @@ void allStyleFamiliesPersistOnlyTheirPatch() {
     spotlight.opacity = 0.37;
     verify(SnowCanvasTool::Spotlight,
            SnowCanvasSpotlightEdit{spotlight, SnowCanvasSpotlightOpacity});
+    auto spotlightStyle = expected.rectangle;
+    spotlightStyle.shape = SnowCanvasRectangleShape::Diamond;
+    verify(SnowCanvasTool::Spotlight,
+           SnowCanvasShapeEdit{spotlightStyle, SnowCanvasShapeStylePropertyShape,
+                               SnowCanvasShapeKind::Spotlight});
 }
 void sharedScreenshotRuntimeKeepsDraftEditsTransient() {
     SnowCanvasRuntime runtime;
@@ -352,6 +382,7 @@ void runScreenshotStyleBindingTests() {
     const auto restore = qScopeGuard([&] {
         static_cast<void>(snow_shot::presentation::persistScreenshotCanvasToolStyles(original));
     });
+    arrowCreationDefaultsRestoreShaftAndRatio();
     creationDefaultsDoNotActivateFilterTools();
     creationDefaultsPreserveDocumentAndEditingCleanup();
     fontWheelRemembersDefaultsAndDraftChoice();

@@ -665,6 +665,227 @@ endif()
             self.assertEqual(result.returncode, 0, result.stderr)
 
 
+class MacOSRuntimeTestContracts(unittest.TestCase):
+    def test_focused_runtime_targets_share_general_contracts_without_qttest(self):
+        managed_cmake = ROOT / '.tools/macos-dev/bin/cmake'
+        cmake = str(managed_cmake) if managed_cmake.is_file() else shutil.which('cmake')
+        self.assertIsNotNone(cmake, 'CMake is required for the runtime test contract')
+        helper = ROOT / 'cmake/SnowShotRuntimeTests.cmake'
+        expected_targets = {'snow-shot-ocr-assets-tests',
+                            'snow-shot-ocr-recognition-service-tests',
+                            'snow-shot-diagnostics-crash-tests'}
+        expected_tests = {'snow-shot-ocr-assets-tests', 'snow-shot-ocr-managed-runtime-tests',
+                          'snow-shot-ocr-managed-directml-runtime-tests',
+                          'snow-shot-ocr-cpu-recognition-service-tests',
+                          'snow-shot-ocr-directml-recognition-service-tests',
+                          'snow-shot-ocr-storage-relocation-tests',
+                          'snow-shot-ocr-process-lifecycle-tests',
+                          'snow-shot-diagnostics-crash-tests'}
+        for platform, general, focused in (('macos', False, False), ('macos', False, True),
+                                           ('macos', True, False), ('macos', True, True),
+                                           ('windows', False, True), ('windows', True, False)):
+            with self.subTest(platform=platform, general=general, focused=focused), \
+                    tempfile.TemporaryDirectory(prefix='snow runtime contract ') as directory:
+                root = Path(directory)
+                records = root / 'commands.txt'
+                script = root / 'test.cmake'
+                # Run the actual shared declarations while recording target/test APIs.
+                # No compiler, Qt package, worker, or dependency build is required.
+                commands = ('enable_testing', 'target_include_directories',
+                            'target_compile_definitions', 'target_link_libraries',
+                            'set_tests_properties', 'set_property', 'add_dependencies',
+                            'snow_add_qt_test_cli_guard', 'snow_add_rust_static_library')
+                mocks = ''.join(f'''function({command})
+    if("${{ARGN}}" MATCHES "Qt6::Test")
+        message(FATAL_ERROR "Focused runtime validation must not require QtTest")
+    endif()
+    file(APPEND [[{records.as_posix()}]] "{command}:${{ARGN}}\\n")
+endfunction()
+''' for command in commands)
+                script.write_text(f'''
+set(APPLE {'ON' if platform == 'macos' else 'OFF'})
+set(WIN32 {'ON' if platform == 'windows' else 'OFF'})
+set(SNOW_WINDOWS_ARCHITECTURE x64)
+set(SNOW_SHOT_BUILD_TESTS {'ON' if general else 'OFF'})
+set(SNOW_SHOT_BUILD_RUNTIME_TESTS {'ON' if focused else 'OFF'})
+set(SNOW_SHOT_OCR_STATIC_ONNXRUNTIME ON)
+set(CMAKE_CURRENT_BINARY_DIR [[{root.as_posix()}]])
+set(CMAKE_CURRENT_SOURCE_DIR [[{(ROOT / 'snow_shot').as_posix()}]])
+{mocks}
+function(add_executable name)
+    if(NOT CMAKE_RUNTIME_OUTPUT_DIRECTORY STREQUAL "${{CMAKE_CURRENT_BINARY_DIR}}/test-bin")
+        message(FATAL_ERROR "Runtime checks must retain their test-bin output directory")
+    endif()
+    file(APPEND [[{records.as_posix()}]] "target:${{name}}\\n")
+endfunction()
+function(add_test)
+    cmake_parse_arguments(test "" "NAME" "COMMAND" ${{ARGN}})
+    file(APPEND [[{records.as_posix()}]] "test:${{test_NAME}}\\n")
+endfunction()
+include([[{helper.as_posix()}]])
+if(SNOW_SHOT_BUILD_TESTS)
+    snow_shot_add_diagnostics_crash_tests()
+    snow_shot_add_ocr_runtime_tests()
+endif()
+''')
+                result = subprocess.run([cmake, '-P', str(script)], text=True,
+                                        capture_output=True)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                lines = records.read_text().splitlines() if records.exists() else []
+                targets = [line.removeprefix('target:') for line in lines
+                           if line.startswith('target:')]
+                tests = [line.removeprefix('test:') for line in lines
+                         if line.startswith('test:')]
+                if not general and not focused:
+                    self.assertEqual(targets, [])
+                    self.assertEqual(tests, [])
+                    continue
+                windows_targets = {'snow-shot-ocr-assets-arm64-contract-tests'} \
+                    if platform == 'windows' else set()
+                windows_tests = windows_targets | {'snow-shot-ocr-crash-tests'} \
+                    if platform == 'windows' else set()
+                self.assertEqual(set(targets), expected_targets | windows_targets)
+                self.assertEqual(len(targets), len(set(targets)))
+                self.assertEqual(set(tests), expected_tests | windows_tests)
+                self.assertEqual(len(tests), len(set(tests)))
+                static_contract = ('target_compile_definitions:'
+                                   'snow-shot-ocr-recognition-service-tests;PRIVATE;'
+                                   'SNOW_SHOT_OCR_STATIC_ONNXRUNTIME=1')
+                self.assertEqual(static_contract in lines, platform == 'macos')
+                if platform == 'windows':
+                    self.assertIn('set_tests_properties:snow-shot-ocr-crash-tests;PROPERTIES;'
+                                  'TIMEOUT;60;LABELS;unit;windows', lines)
+                else:
+                    self.assertIn('set_tests_properties:snow-shot-ocr-managed-runtime-tests;'
+                                  'PROPERTIES;LABELS;unit', lines)
+                    self.assertIn('set_property:TARGET;snow-shot-diagnostics-crash-tests;'
+                                  'PROPERTY;SNOW_RUST_BUNDLE_OVERRIDE;snow_diagnostics_test', lines)
+
+
+class MacOSFFmpegBuild(unittest.TestCase):
+    def run_build(self, architectures, fail_archive_probe=False, fail_build=False,
+                  include_program=True):
+        bash = bash_executable()
+        if not bash:
+            self.skipTest('Bash is required for the FFmpeg build fixture')
+        with tempfile.TemporaryDirectory(prefix='snow_ffmpeg_build_') as temp:
+            root = Path(temp)
+            build, source, package, tools = (root / name for name in
+                                            ('build', 'source', 'package', 'tools'))
+            for directory in (build, source, tools):
+                directory.mkdir()
+            log = root / 'calls.jsonl'
+            state = root / 'configure.json'
+            command = '''#!/usr/bin/env python3
+import json, os, pathlib, sys
+name = pathlib.Path(sys.argv[0]).name
+with open(os.environ['SNOW_TEST_LOG'], 'a') as output:
+    output.write(json.dumps([name] + sys.argv[1:]) + '\\n')
+state = pathlib.Path(os.environ['SNOW_TEST_STATE'])
+if name == 'snow-configure':
+    values = dict(argument[2:].split('=', 1) for argument in sys.argv[1:] if '=' in argument)
+    state.write_text(json.dumps(values))
+elif name == 'make':
+    if sys.argv[1] in ('clean', 'distclean'):
+        sys.exit(0)
+    if os.environ.get('SNOW_TEST_FAIL_BUILD'):
+        sys.exit(23)
+    if sys.argv[1] == 'install':
+        values = json.loads(state.read_text())
+        prefix = pathlib.Path(values['prefix'])
+        (prefix / 'lib/pkgconfig').mkdir(parents=True, exist_ok=True)
+        (prefix / 'lib/libavutil.a').write_bytes(b'!<arch>\\n' + values['arch'].encode())
+        if os.environ.get('SNOW_TEST_PROGRAM'):
+            (prefix / 'bin').mkdir(exist_ok=True)
+            (prefix / 'bin/ffprobe').write_bytes(bytes.fromhex('cffaedfe') + values['arch'].encode())
+        (prefix / 'lib/pkgconfig/libavutil.pc').write_text('FFmpeg metadata')
+elif name == 'lipo':
+    if '-info' in sys.argv:
+        binary = pathlib.Path(sys.argv[1])
+        if binary.suffix == '.a' and os.environ.get('SNOW_TEST_FAIL_ARCHIVE_PROBE'):
+            sys.exit(139)
+        if binary.read_bytes().startswith((b'!<arch>\\n', bytes.fromhex('cffaedfe'))):
+            sys.exit(0)
+        sys.exit(1)
+    destination = pathlib.Path(sys.argv[sys.argv.index('-output') + 1])
+    inputs = [pathlib.Path(sys.argv[index + 2]) for index, argument in enumerate(sys.argv)
+              if argument == '-arch']
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    destination.write_bytes(b''.join(path.read_bytes() for path in inputs))
+'''
+            for name in ('make', 'lipo', 'snow-configure'):
+                path = tools / name
+                path.write_text(command)
+                path.chmod(0o755)
+            (source / 'configure').write_text('exec snow-configure "$@"\n')
+            script = (ROOT / 'cmake/vcpkg-overlay-ports/ffmpeg/build.sh.in').read_text()
+            values = {'BUILD_DIR': build, 'SOURCE_PATH': source, 'INST_PREFIX': package,
+                      'VCPKG_CONCURRENCY': 2, 'OSX_ARCHS': ' '.join(architectures),
+                      'OSX_ARCH_COUNT': len(architectures), 'VCPKG_CMAKE_SYSTEM_NAME': 'Darwin',
+                      'CONFIGURE_OPTIONS': '', 'BUILD_ARCH': 'x86_64'}
+            for name, value in values.items():
+                script = script.replace('@' + name + '@', str(value))
+            path = build / 'build.sh'
+            path.write_text(script)
+            env = dict(os.environ, PATH=str(tools) + os.pathsep + os.environ['PATH'],
+                       SNOW_TEST_LOG=str(log), SNOW_TEST_STATE=str(state))
+            if fail_archive_probe:
+                env['SNOW_TEST_FAIL_ARCHIVE_PROBE'] = '1'
+            if fail_build:
+                env['SNOW_TEST_FAIL_BUILD'] = '1'
+            if include_program:
+                env['SNOW_TEST_PROGRAM'] = '1'
+            result = subprocess.run([bash, str(path)], env=env, text=True, capture_output=True)
+            calls = [json.loads(line) for line in log.read_text().splitlines()]
+            outputs = {str(path.relative_to(package)): path.read_bytes()
+                       for path in package.rglob('*') if path.is_file()}
+            return result, calls, outputs, (build / 'stage').exists()
+
+    def test_single_architecture_preserves_installed_outputs_without_lipo(self):
+        for architecture in ('x86_64', 'arm64'):
+            with self.subTest(architecture=architecture):
+                result, calls, outputs, staged = self.run_build([architecture],
+                                                              fail_archive_probe=True)
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                self.assertFalse(any(call[0] == 'lipo' for call in calls))
+                self.assertFalse(staged)
+                self.assertEqual(outputs['lib/libavutil.a'], b'!<arch>\n' + architecture.encode())
+                self.assertEqual(outputs['bin/ffprobe'],
+                                 bytes.fromhex('cffaedfe') + architecture.encode())
+                self.assertEqual(outputs['lib/pkgconfig/libavutil.pc'], b'FFmpeg metadata')
+                configure = next(call for call in calls if call[0] == 'snow-configure')
+                self.assertIn('--arch=' + architecture, configure)
+                self.assertEqual(configure.count('--extra-cflags=' + architecture), 1)
+                self.assertEqual(configure.count('--extra-ldflags=' + architecture), 1)
+
+    def test_static_library_only_build_does_not_require_a_merge_staging_directory(self):
+        result, calls, outputs, staged = self.run_build(['x86_64'], fail_archive_probe=True,
+                                                      include_program=False)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertFalse(staged)
+        self.assertFalse(any(call[0] == 'lipo' for call in calls))
+        self.assertEqual(outputs['lib/libavutil.a'], b'!<arch>\nx86_64')
+        self.assertNotIn('bin/ffprobe', outputs)
+
+    def test_multiple_architectures_still_collect_and_merge_binaries(self):
+        result, calls, outputs, staged = self.run_build(['x86_64', 'arm64'])
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertTrue(staged)
+        self.assertEqual(outputs['lib/libavutil.a'], b'!<arch>\nx86_64!<arch>\narm64')
+        merges = [call for call in calls if call[:2] == ['lipo', '-create']]
+        self.assertEqual(len(merges), 2)
+        self.assertTrue(all(call.count('-arch') == 2 for call in merges))
+        self.assertEqual(outputs['lib/pkgconfig/libavutil.pc'], b'FFmpeg metadata')
+
+    def test_single_architecture_build_failure_stops_before_installation(self):
+        result, calls, outputs, staged = self.run_build(['x86_64'], fail_build=True)
+        self.assertEqual(result.returncode, 23)
+        self.assertFalse(any(call[:2] == ['make', 'install'] for call in calls))
+        self.assertFalse(any(call[0] == 'lipo' for call in calls))
+        self.assertFalse(outputs)
+        self.assertFalse(staged)
+
+
 class MacOSBuildScripts(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory(prefix="snow build tests ")
@@ -680,7 +901,10 @@ import json, os, pathlib, sys
 name = pathlib.Path(sys.argv[0]).name
 with open(os.environ['SNOW_TEST_LOG'], 'a') as log:
     log.write(json.dumps([name] + sys.argv[1:]) + '\\n')
-if name == 'uname': print('Darwin' if sys.argv[1] == '-s' else 'arm64')
+if name == 'uname': print('Darwin' if sys.argv[1] == '-s' else os.environ.get('SNOW_TEST_HOST_ARCH', 'arm64'))
+if name == 'sysctl': print(os.environ.get('SNOW_TEST_PHYSICAL_ARM64', '1' if os.environ.get('SNOW_TEST_HOST_ARCH', 'arm64') == 'arm64' else '0'))
+if name == 'arch' and os.environ.get('FAIL_ROSETTA'): sys.exit(9)
+if name == 'configure': sys.exit(17)
 if name == 'xcode-select': print('/mock Xcode')
 if name == 'git' and 'rev-parse' in sys.argv: print('4497409a47f19db373a410a0efb84eca4747adbf')
 if name == 'cmake' and '--version' in sys.argv: print('cmake version 4.4.3')
@@ -746,7 +970,7 @@ if name == 'openssl':
 """
         tools = ("cmake", "cpack", "ninja", "cargo", "rustup", "pkg-config", "uname",
                  "open", "ps", "xcode-select", "xcrun", "git", "lsregister", "security",
-                 "openssl")
+                 "openssl", "arch", "sysctl")
         for name in tools:
             path = self.bin / name
             path.write_text(mock)
@@ -793,6 +1017,7 @@ if name == 'openssl':
                                 "--clean", "--", "-DEXAMPLE=a path with spaces")
         configure, build = [c for c in calls if c[0] == "cmake" and '--version' not in c]
         self.assertIn("-DEXAMPLE=a path with spaces", configure)
+        self.assertNotIn('-DQT_NO_HANDLE_APPLE_SINGLE_ARCH_CROSS_COMPILING=ON', configure)
         self.assertEqual(build, ["cmake", "--build", "--preset", "build-snow-shot-macos-x64-debug",
                                  "--target", "some-test", "--parallel"])
 
@@ -836,6 +1061,93 @@ if name == 'openssl':
         calls = self.run_script("bootstrap-macos.sh", "snow-shot-macos-x64-release")
         rustup = next(c for c in calls if c[:3] == ['rustup', 'toolchain', 'install'])
         self.assertIn('x86_64-apple-darwin', rustup)
+
+    def test_x64_build_requires_rosetta_before_configuring(self):
+        self.env['FAIL_ROSETTA'] = '1'
+        calls = self.run_script('build.sh', 'snow-shot-macos-x64-debug', success=False)
+        self.assertIn(['arch', '-x86_64', '/usr/bin/true'], calls)
+        self.assertFalse(any(call[0] in ('cmake', 'rustup') for call in calls))
+        self.assertIn('softwareupdate --install-rosetta --agree-to-license',
+                      self.last_result.stderr)
+
+    def test_skip_qt_bootstrap_still_requires_rosetta_before_installing(self):
+        self.env['FAIL_ROSETTA'] = '1'
+        calls = self.run_script('bootstrap-macos.sh', 'snow-shot-macos-x64-release',
+                                '--skip-qt-validation', success=False)
+        self.assertIn(['arch', '-x86_64', '/usr/bin/true'], calls)
+        self.assertFalse(any(call[0] in ('cmake', 'rustup', 'vcpkg') for call in calls))
+
+    def test_native_builds_do_not_require_rosetta(self):
+        self.env['FAIL_ROSETTA'] = '1'
+        for host, target in (('arm64', 'arm64'), ('x86_64', 'x64')):
+            with self.subTest(host=host, target=target):
+                self.env['SNOW_TEST_HOST_ARCH'] = host
+                calls = self.run_script('build.sh', f'snow-shot-macos-{target}-debug')
+                self.assertFalse(any(call[0] == 'arch' for call in calls))
+                self.assertTrue(any('--build' in call for call in calls))
+                self.log.unlink()
+
+    def static_qt_configure_arguments(self, target, host):
+        self.env['SNOW_TEST_HOST_ARCH'] = host
+        dependencies = self.root / 'static Qt dependencies'
+        for relative in ('include/zlib.h', 'include/png.h', 'share/zlib/vcpkg_abi_info.txt',
+                         'share/libpng/vcpkg_abi_info.txt'):
+            path = dependencies / relative
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text('dependency fixture\n')
+        source = self.root / 'Qt source'
+        metadata = source / 'qtbase/.cmake.conf'
+        metadata.parent.mkdir(parents=True, exist_ok=True)
+        metadata.write_text(f'set(QT_REPO_MODULE_VERSION "{QT_VERSION}")\n'
+                            f'set(QT_SUPPORTED_MIN_MACOS_VERSION "{QT_MACOS_DEPLOYMENT_TARGET}")\n')
+        configure = source / 'configure'
+        shutil.copyfile(self.bin / 'cmake', configure)
+        configure.chmod(0o755)
+        build = self.root / 'Qt build'
+        build.mkdir(exist_ok=True)
+        (build / 'CMakeCache.txt').write_text('CMAKE_SYSTEM_NAME:STRING=Darwin\n'
+                                           'QT_FEATURE_cross_compile:INTERNAL=ON\n')
+        if self.log.exists():
+            self.log.unlink()
+        calls = self.run_script('build-static-qt.sh', '--arch', target,
+                                '--install-prefix', str(self.root / 'static Qt install'),
+                                '--dependency-prefix', str(dependencies),
+                                '--source-dir', str(source), '--build-dir', str(build),
+                                success=False)
+        self.assertEqual(self.last_result.returncode, 17, self.last_result.stderr)
+        return calls
+
+    def test_static_x64_qt_uses_rosetta_tools_with_a_fresh_cache(self):
+        calls = self.static_qt_configure_arguments('x64', 'arm64')
+        configure = next(call for call in calls if call[0] == 'configure')
+        self.assertIn(['arch', '-x86_64', '/usr/bin/true'], calls)
+        self.assertIn('-DCMAKE_OSX_ARCHITECTURES=x86_64', configure)
+        self.assertIn('--fresh', configure[configure.index('--') + 1:])
+        self.assertIn('-DQT_NO_HANDLE_APPLE_SINGLE_ARCH_CROSS_COMPILING=ON', configure)
+
+    def test_rosetta_shell_still_handles_native_cmake_building_x64_qt(self):
+        self.env['SNOW_TEST_PHYSICAL_ARM64'] = '1'
+        calls = self.static_qt_configure_arguments('x64', 'x86_64')
+        configure = next(call for call in calls if call[0] == 'configure')
+        self.assertIn(['arch', '-x86_64', '/usr/bin/true'], calls)
+        self.assertIn('-DQT_NO_HANDLE_APPLE_SINGLE_ARCH_CROSS_COMPILING=ON', configure)
+
+    def test_static_native_qt_keeps_normal_tool_detection(self):
+        for target, host in (('arm64', 'arm64'), ('x64', 'x86_64')):
+            with self.subTest(target=target, host=host):
+                calls = self.static_qt_configure_arguments(target, host)
+                configure = next(call for call in calls if call[0] == 'configure')
+                self.assertFalse(any(call[0] == 'arch' for call in calls))
+                self.assertNotIn('-DQT_NO_HANDLE_APPLE_SINGLE_ARCH_CROSS_COMPILING=ON',
+                                 configure)
+
+    def test_static_x64_qt_rejects_missing_rosetta_before_configure(self):
+        self.env['FAIL_ROSETTA'] = '1'
+        calls = self.run_script('build-static-qt.sh', '--arch', 'x64',
+                                '--install-prefix', str(self.root / 'static Qt install'),
+                                success=False)
+        self.assertIn(['arch', '-x86_64', '/usr/bin/true'], calls)
+        self.assertFalse(any(call[0] in ('configure', 'cmake') for call in calls))
 
     def test_release_build_prefers_static_qt_over_shared_qt_dir(self):
         static_qt = self.env['Qt6_DIR']
@@ -1226,6 +1538,17 @@ class MacOSSigningDeployment(unittest.TestCase):
             self.assertIn('--static-runtime', call)
         self.assertEqual(calls[-1][0:4], ['codesign', '--verify', '--deep', '--strict'])
 
+    def test_x64_deployment_passes_architecture_to_finalization_and_verification(self):
+        calls, result = self.deploy('-', static=True, config='Release', arch='x64')
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        for command in ('finalize', 'verify'):
+            call = next(call for call in calls if command in call)
+            self.assertEqual(call[call.index('--arch') + 1], 'x64')
+        finalize = next(index for index, call in enumerate(calls) if 'finalize' in call)
+        sign = next(index for index, call in enumerate(calls)
+                    if call[0] == 'codesign' and call[-1].endswith('snow_shot.app'))
+        self.assertLess(finalize, sign)
+
     def test_release_deployment_strips_both_editions_before_signing_and_ocr_hashing(self):
         for mini in (False, True):
             with self.subTest(mini=mini):
@@ -1275,7 +1598,7 @@ class MacOSSigningDeployment(unittest.TestCase):
                              for call in calls), 2)
 
     def deploy(self, identity, fail=False, static=False, config='Debug', release_static=None,
-               mini=False, strip_fail=False, repeat=1):
+               mini=False, strip_fail=False, repeat=1, arch='arm64'):
         with tempfile.TemporaryDirectory(prefix='snow signing tests ') as temp:
             root = Path(temp)
             log = root / 'calls.jsonl'
@@ -1312,6 +1635,7 @@ if name == 'strip' and os.environ.get('SNOW_TEST_FAIL_STRIP'): sys.exit(37)
             values = {'SNOW_MACOS_CODESIGN_IDENTITY': identity,
                       'SNOW_MACDEPLOYQT': str(root / 'macdeployqt'),
                       'SNOW_MACOS_OCR_ASSETS_ENABLED': 'ON',
+                      'SNOW_MACOS_OCR_ARCH': arch,
                       'SNOW_MACOS_OCR_RUNTIME_ONLY': 'ON' if mini else 'OFF',
                       'SNOW_SHOT_ENABLE_MCP': 'ON',
                       'SNOW_SHOT_RELEASE_STATIC': 'ON' if (static if release_static is None

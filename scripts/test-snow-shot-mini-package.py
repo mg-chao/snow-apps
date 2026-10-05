@@ -81,6 +81,26 @@ endif()
                     script = scripts[0].read_text(encoding='utf-8')
                     self.assertRegex(script, r'(?m)^\s*SetCompressor /SOLID lzma\s*$')
                     self.assertRegex(script, r'(?m)^\s*SetCompressorDictSize 32\s*$')
+                result = subprocess.run(
+                    ['cmake', '-S', str(fixture), '-B', str(build),
+                     '-DSNOW_WINDOWS_ARCHITECTURE=arm64', '-DSNOW_WINDOWS_PLATFORM=windows-arm64'],
+                    capture_output=True, text=True, encoding='utf-8', errors='replace')
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                arm_config = (build / 'CPackSnowShotMiniConfig.cmake').read_text(encoding='utf-8')
+                self.assertIn('snow-shot-mini-1.1.9-windows-arm64', arm_config)
+                result = subprocess.run(
+                    ['cpack', '--config', str(build / 'CPackSnowShotMiniConfig.cmake'), '-G', 'NSIS',
+                     '-D', f'CPACK_NSIS_EXECUTABLE={nsis.as_posix()}'], cwd=build,
+                    capture_output=True, text=True, encoding='utf-8', errors='replace')
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                scripts = list(build.glob('_CPack_Packages/*/NSIS/project.nsi'))
+                self.assertEqual(len(scripts), 1)
+                script = scripts[0].read_text(encoding='utf-8')
+                self.assertIn('!define SNOW_SHOT_INSTALLER_ARCHITECTURE "arm64"', script)
+                init = re.search(r'Function \.onInit\n(.*?)FunctionEnd', script, re.DOTALL).group(1)
+                self.assertLess(init.index('!insertmacro SnowShotCheckArchitecture'),
+                                init.index('Call SnowShotEnsureMainAppClosed'))
+                self.assertLess(init.index('SetRegView 64'), init.index('ReadRegStr'))
 
 
 if __name__ == '__main__':

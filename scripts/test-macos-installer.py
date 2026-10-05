@@ -372,6 +372,26 @@ class InstallerTests(unittest.TestCase):
         self.shell('trap cleanup EXIT; local_dmg="$FIXTURE/package.dmg"; obtain_package', success=False, BINARY_ARCH='x86_64')
         self.assertFalse(self.calls('security'))
 
+    def test_intel_local_package_is_validated_and_installed(self):
+        self.previous()
+        self.shell('trap cleanup EXIT; detect_architecture; local_dmg="$FIXTURE/package.dmg"; '
+                   'obtain_package; requirement="$REQUIREMENT"; launch=0; install_application',
+                   MACHINE='x86_64', ARM_CAPABLE='0', BINARY_ARCH='x86_64')
+        self.assertTrue((self.destination / 'Contents/MacOS/snow_shot').is_file())
+        self.assertFalse((self.destination / 'old-marker').exists())
+        self.assertFalse(self.calls('curl'))
+        self.assertFalse(self.calls('open'))
+        self.assertFalse((self.root / 'mounted').exists())
+
+    def test_intel_rejects_arm64_package_before_signing_or_replacement(self):
+        self.previous()
+        self.shell('trap cleanup EXIT; detect_architecture; local_dmg="$FIXTURE/package.dmg"; '
+                   'obtain_package', success=False, MACHINE='x86_64', ARM_CAPABLE='0',
+                   BINARY_ARCH='arm64')
+        self.assertTrue((self.destination / 'old-marker').exists())
+        self.assertFalse(self.calls('security'))
+        self.assertFalse(any('--force' in call for call in self.calls('codesign')))
+
     def test_newer_os_requirement_rejected(self):
         self.info['LSMinimumSystemVersion'] = '99.0'
         self.write_info()

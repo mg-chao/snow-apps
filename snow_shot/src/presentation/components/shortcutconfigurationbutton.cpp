@@ -80,7 +80,7 @@ ShortcutConfigurationButton::ShortcutConfigurationButton(
     : adqt::widgets::AdButton(parent), m_iconTextSpacing(metric.marginXS),
       m_textMaxWidth(std::max(0, textMaxWidth)) {
     setButtonStyle(adqt::widgets::AdButton::ButtonStyle::Dashed);
-    setAccentRole(adqt::widgets::AdButton::AccentRole::Danger);
+    setAccentRole(adqt::widgets::AdButton::AccentRole::Neutral);
     setShape(adqt::widgets::AdButton::Shape::Rounded);
     setFocusPolicy(Qt::NoFocus);
     setCursor(Qt::PointingHandCursor);

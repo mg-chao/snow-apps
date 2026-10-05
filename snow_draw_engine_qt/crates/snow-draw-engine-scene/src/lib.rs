@@ -767,6 +767,17 @@ fn spotlight_cutout(rect: RectangleData) -> DisplaySpotlightCutout {
         width: rect.width,
         height: rect.height,
         rotation: rect.rotation,
+        shape: match rect.highlight_shape {
+            snow_draw_engine_document::HighlightShape::Rectangle => {
+                snow_draw_engine_display::DisplayRectangleShape::Rectangle
+            }
+            snow_draw_engine_document::HighlightShape::Ellipse => {
+                snow_draw_engine_display::DisplayRectangleShape::Ellipse
+            }
+            snow_draw_engine_document::HighlightShape::Diamond => {
+                snow_draw_engine_display::DisplayRectangleShape::Diamond
+            }
+        },
     }
 }
 

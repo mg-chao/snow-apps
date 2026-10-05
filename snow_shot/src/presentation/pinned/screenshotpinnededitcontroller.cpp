@@ -60,6 +60,8 @@ ScreenshotToolPalette::Options pinnedEditToolbarOptions() {
     options.showTableTool = true;
     options.showQrTool = true;
     options.showImageConversionTools = true;
+    options.toolbarLayout = snow_shot::storage::ScreenshotToolbarSettings().layout(
+        snow_shot::storage::ScreenshotToolbarLayoutKind::DrawingTools);
     options.actionToolsLayoutKind =
         snow_shot::storage::ScreenshotToolbarLayoutKind::PinnedActionTools;
     options.actionToolsLayout =
@@ -152,6 +154,13 @@ ScreenshotPinnedEditController::ScreenshotPinnedEditController(
                                 snow_shot::storage::ScreenshotToolbarSettings().layout(
                                     snow_shot::storage::ScreenshotToolbarLayoutKind::
                                         PinnedActionTools));
+                            updatePlacement();
+                        }
+                    } else if (key == QStringLiteral("screenshot_toolbar/layout")) {
+                        if (m_toolbarWindow != nullptr && m_toolbarWindow->palette() != nullptr) {
+                            m_toolbarWindow->palette()->setToolbarLayout(
+                                snow_shot::storage::ScreenshotToolbarSettings().layout(
+                                    snow_shot::storage::ScreenshotToolbarLayoutKind::DrawingTools));
                             updatePlacement();
                         }
                     } else if (key.startsWith(QStringLiteral("drawing_shortcuts/"))) {

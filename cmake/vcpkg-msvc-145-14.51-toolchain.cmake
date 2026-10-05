@@ -19,6 +19,24 @@ endif()
 # defaults explicitly so the selected triplet still controls /MT versus /MD,
 # optimization flags, and variables forwarded to non-CMake build systems.
 include("${_snow_vcpkg_windows_toolchain}")
+include("${CMAKE_CURRENT_LIST_DIR}/SnowWindowsArchitecture.cmake")
+snow_windows_normalize_architecture(_snow_msvc_target_arch "${VCPKG_TARGET_ARCHITECTURE}")
+if(SNOW_WINDOWS_HOST_ARCHITECTURE)
+    set(_snow_msvc_host_arch "${SNOW_WINDOWS_HOST_ARCHITECTURE}")
+elseif(NOT "$ENV{SNOW_MSVC_HOST_ARCHITECTURE}" STREQUAL "")
+    set(_snow_msvc_host_arch "$ENV{SNOW_MSVC_HOST_ARCHITECTURE}")
+elseif(NOT "$ENV{PROCESSOR_ARCHITEW6432}" STREQUAL "")
+    set(_snow_msvc_host_arch "$ENV{PROCESSOR_ARCHITEW6432}")
+elseif(NOT "$ENV{PROCESSOR_ARCHITECTURE}" STREQUAL "")
+    set(_snow_msvc_host_arch "$ENV{PROCESSOR_ARCHITECTURE}")
+else()
+    set(_snow_msvc_host_arch "${CMAKE_HOST_SYSTEM_PROCESSOR}")
+endif()
+snow_windows_normalize_architecture(_snow_msvc_host_arch "${_snow_msvc_host_arch}")
+set(_snow_msvc_component Microsoft.VisualStudio.Component.VC.Tools.x86.x64)
+if(_snow_msvc_target_arch STREQUAL "arm64")
+    set(_snow_msvc_component Microsoft.VisualStudio.Component.VC.Tools.ARM64)
+endif()
 
 set(_snow_msvc_145_root "$ENV{VCToolsInstallDir}")
 if(_snow_msvc_145_root STREQUAL "")
@@ -30,7 +48,7 @@ if(_snow_msvc_145_root STREQUAL "")
     if(_snow_vswhere)
         execute_process(
             COMMAND "${_snow_vswhere}" -latest -products *
-                -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64
+                -requires "${_snow_msvc_component}"
                 -property installationPath
             OUTPUT_VARIABLE _snow_vs_install
             OUTPUT_STRIP_TRAILING_WHITESPACE
@@ -47,11 +65,21 @@ if(_snow_msvc_145_root STREQUAL "")
 endif()
 if(_snow_msvc_145_root STREQUAL "")
     message(FATAL_ERROR
-        "MSVC 14.51 was not found. Set VCToolsInstallDir or install the Visual Studio MSVC x64 component.")
+        "MSVC 14.51 was not found. Set VCToolsInstallDir or install ${_snow_msvc_component}.")
 endif()
 string(REGEX REPLACE "[/\\]+$" "" _snow_msvc_145_root "${_snow_msvc_145_root}")
 file(TO_CMAKE_PATH "${_snow_msvc_145_root}" _snow_msvc_145_root)
-set(_snow_msvc_145_bin "${_snow_msvc_145_root}/bin/HostX64/x64")
+set(_snow_msvc_145_bin
+    "${_snow_msvc_145_root}/bin/Host${_snow_msvc_host_arch}/${_snow_msvc_target_arch}")
+foreach(_snow_msvc_tool IN ITEMS cl.exe link.exe lib.exe)
+    if(NOT EXISTS "${_snow_msvc_145_bin}/${_snow_msvc_tool}")
+        message(FATAL_ERROR "The selected MSVC host/target tools are missing: ${_snow_msvc_145_bin}/${_snow_msvc_tool}")
+    endif()
+endforeach()
+if(_snow_msvc_target_arch STREQUAL "arm64" AND
+   NOT EXISTS "${_snow_msvc_145_bin}/armasm64.exe")
+    message(FATAL_ERROR "Windows ARM64 requires ${_snow_msvc_145_bin}/armasm64.exe")
+endif()
 set(CMAKE_C_COMPILER "${_snow_msvc_145_bin}/cl.exe" CACHE FILEPATH "" FORCE)
 set(CMAKE_CXX_COMPILER "${_snow_msvc_145_bin}/cl.exe" CACHE FILEPATH "" FORCE)
 set(CMAKE_LINKER "${_snow_msvc_145_bin}/link.exe" CACHE FILEPATH "" FORCE)
@@ -76,10 +104,21 @@ endif()
 if(_snow_windows_sdk_root STREQUAL "" OR NOT IS_DIRECTORY "${_snow_windows_sdk_include}")
     message(FATAL_ERROR "Windows 10 SDK was not found. Set WindowsSdkDir/WindowsSDKVersion or install a Windows SDK.")
 endif()
-set(CMAKE_MT "${_snow_windows_sdk_root}/bin/${_snow_windows_sdk_version}/x64/mt.exe"
+set(_snow_sdk_tool_arch "${_snow_msvc_host_arch}")
+if(_snow_sdk_tool_arch STREQUAL "arm64" AND
+   NOT EXISTS "${_snow_windows_sdk_root}/bin/${_snow_windows_sdk_version}/arm64/rc.exe")
+    # Windows ARM64 can run the SDK's x64 host utilities under emulation.
+    set(_snow_sdk_tool_arch x64)
+endif()
+set(CMAKE_MT "${_snow_windows_sdk_root}/bin/${_snow_windows_sdk_version}/${_snow_sdk_tool_arch}/mt.exe"
     CACHE FILEPATH "" FORCE)
-set(CMAKE_RC_COMPILER "${_snow_windows_sdk_root}/bin/${_snow_windows_sdk_version}/x64/rc.exe"
+set(CMAKE_RC_COMPILER "${_snow_windows_sdk_root}/bin/${_snow_windows_sdk_version}/${_snow_sdk_tool_arch}/rc.exe"
     CACHE FILEPATH "" FORCE)
+foreach(_snow_sdk_tool IN ITEMS CMAKE_MT CMAKE_RC_COMPILER)
+    if(NOT EXISTS "${${_snow_sdk_tool}}")
+        message(FATAL_ERROR "The selected Windows SDK host tool is missing: ${${_snow_sdk_tool}}")
+    endif()
+endforeach()
 set(_snow_include_directories
     "${_snow_msvc_145_root}/include"
     "${_snow_windows_sdk_include}/ucrt"
@@ -88,9 +127,14 @@ set(_snow_include_directories
     "${_snow_windows_sdk_include}/winrt"
     "${_snow_windows_sdk_include}/cppwinrt")
 set(_snow_library_directories
-    "${_snow_msvc_145_root}/lib/x64"
-    "${_snow_windows_sdk_root}/Lib/${_snow_windows_sdk_version}/um/x64"
-    "${_snow_windows_sdk_root}/Lib/${_snow_windows_sdk_version}/ucrt/x64")
+    "${_snow_msvc_145_root}/lib/${_snow_msvc_target_arch}"
+    "${_snow_windows_sdk_root}/Lib/${_snow_windows_sdk_version}/um/${_snow_msvc_target_arch}"
+    "${_snow_windows_sdk_root}/Lib/${_snow_windows_sdk_version}/ucrt/${_snow_msvc_target_arch}")
+foreach(_snow_library_directory IN LISTS _snow_library_directories)
+    if(NOT IS_DIRECTORY "${_snow_library_directory}")
+        message(FATAL_ERROR "The selected Windows target library directory is missing: ${_snow_library_directory}")
+    endif()
+endforeach()
 set(_snow_include_flags "")
 set(_snow_rc_include_flags "")
 set(_snow_linker_paths "")
@@ -126,7 +170,7 @@ endif()
 
 foreach(_snow_linker_kind IN ITEMS EXE SHARED MODULE)
     string(FIND "${CMAKE_${_snow_linker_kind}_LINKER_FLAGS}"
-        "${_snow_msvc_145_root}/lib/x64" _snow_has_msvc_libpath)
+        "${_snow_msvc_145_root}/lib/${_snow_msvc_target_arch}" _snow_has_msvc_libpath)
     if(_snow_has_msvc_libpath EQUAL -1)
         set(CMAKE_${_snow_linker_kind}_LINKER_FLAGS
             "${CMAKE_${_snow_linker_kind}_LINKER_FLAGS} ${_snow_linker_paths}"
@@ -159,3 +203,10 @@ unset(_snow_windows_sdk_includes)
 unset(_snow_windows_sdk_version)
 unset(_snow_windows_sdk_include)
 unset(_snow_sdk_count)
+unset(_snow_msvc_host_arch)
+unset(_snow_msvc_target_arch)
+unset(_snow_msvc_component)
+unset(_snow_msvc_tool)
+unset(_snow_library_directory)
+unset(_snow_sdk_tool_arch)
+unset(_snow_sdk_tool)

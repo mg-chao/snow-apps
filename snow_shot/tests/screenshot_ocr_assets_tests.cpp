@@ -31,8 +31,28 @@
 #include <mz_zip_rw.h>
 
 namespace {
+#if defined(Q_OS_WIN) && defined(Q_PROCESSOR_ARM_64)
+const QString kWindowsPlatform = QStringLiteral("windows-arm64");
+#else
+const QString kWindowsPlatform = QStringLiteral("windows-x64");
+#endif
+const QString kWindowsWorkerName =
+    QStringLiteral("snow-ocr-process-1.0.9-%1.exe").arg(kWindowsPlatform);
+const QString kWindowsArchiveName =
+    QStringLiteral("snow-ocr-runtime-1.0.9-%1.zip").arg(kWindowsPlatform);
 #ifdef Q_OS_MACOS
 const QString kWorkerName = QStringLiteral("snow-ocr-process");
+#if defined(Q_PROCESSOR_ARM_64)
+const QString kMacPlatform = QStringLiteral("macos-arm64");
+const QString kOtherMacPlatform = QStringLiteral("macos-x64");
+const QByteArray kMacHeader = QByteArray::fromHex("cffaedfe0c000001") + QByteArray(24, '\0');
+const QByteArray kOtherMacHeader = QByteArray::fromHex("cffaedfe07000001") + QByteArray(24, '\0');
+#else
+const QString kMacPlatform = QStringLiteral("macos-x64");
+const QString kOtherMacPlatform = QStringLiteral("macos-arm64");
+const QByteArray kMacHeader = QByteArray::fromHex("cffaedfe07000001") + QByteArray(24, '\0');
+const QByteArray kOtherMacHeader = QByteArray::fromHex("cffaedfe0c000001") + QByteArray(24, '\0');
+#endif
 #endif
 void require(bool condition, const char* message) {
     if (!condition) {
@@ -97,13 +117,11 @@ void writeAssetManifest(const QString& root, bool completePayload) {
     const QByteArray recognizer("recognizer");
     const QByteArray dictionary("dictionary");
     const QString runtimeDirectory =
-        QDir(root).filePath(QStringLiteral("runtimes/1.0.9/windows-x64"));
+        QDir(root).filePath(QStringLiteral("runtimes/1.0.9/%1").arg(kWindowsPlatform));
     const QString modelDirectory =
         QDir(root).filePath(QStringLiteral("models/ppocrv6-small-463ea9f"));
     if (completePayload) {
-        writeFixture(QDir(runtimeDirectory)
-                         .filePath(QStringLiteral("snow-ocr-process-1.0.9-windows-x64.exe")),
-                     process);
+        writeFixture(QDir(runtimeDirectory).filePath(kWindowsWorkerName), process);
         writeFixture(QDir(runtimeDirectory).filePath(QStringLiteral("DirectML.dll")), directMl);
         writeFixture(QDir(runtimeDirectory).filePath(QStringLiteral("runtime-manifest.json")),
                      runtimeManifest);
@@ -118,8 +136,7 @@ void writeAssetManifest(const QString& root, bool completePayload) {
                      R"({"schema":1,"component":"ppocrv6-small-463ea9f"})");
     }
     const QJsonArray runtimeFiles{
-        assetFile(QStringLiteral("snow-ocr-process-1.0.9-windows-x64.exe"), process),
-        assetFile(QStringLiteral("DirectML.dll"), directMl),
+        assetFile(kWindowsWorkerName, process), assetFile(QStringLiteral("DirectML.dll"), directMl),
         assetFile(QStringLiteral("runtime-manifest.json"), runtimeManifest)};
     const auto model = [](const QString& type, const QString& id, const QString& detectorName,
                           const QByteArray& detectorContents, const QString& recognizerName,
@@ -148,9 +165,9 @@ void writeAssetManifest(const QString& root, bool completePayload) {
         {QStringLiteral("default_model"), QStringLiteral("small")},
         {QStringLiteral("runtime"),
          QJsonObject{{QStringLiteral("version"), QStringLiteral("1.0.9")},
-                     {QStringLiteral("platform"), QStringLiteral("windows-x64")},
+                     {QStringLiteral("platform"), kWindowsPlatform},
                      {QStringLiteral("archive"),
-                      assetFile(QStringLiteral("snow-ocr-runtime-1.0.9-windows-x64.zip"), archive,
+                      assetFile(kWindowsArchiveName, archive,
                                 QStringLiteral("https://example.invalid/runtime"))},
                      {QStringLiteral("files"), runtimeFiles}}},
         {QStringLiteral("models"),
@@ -185,9 +202,8 @@ void writeAssetManifest(const QString& root, bool completePayload) {
                    QStringLiteral("ppocr_keys_v1.txt"), dictionary),
          }}};
 #ifdef Q_OS_MACOS
-    const QByteArray armHeader = QByteArray::fromHex("cffaedfe0c000001") + QByteArray(24, '\0');
-    const QByteArray macProcess = armHeader + process;
-    const QByteArray macLibrary = armHeader + directMl;
+    const QByteArray macProcess = kMacHeader + process;
+    const QByteArray macLibrary = kMacHeader + directMl;
     writeFixture(QDir(root).filePath(kWorkerName), macProcess);
     require(QFile::setPermissions(QDir(root).filePath(kWorkerName), QFileDevice::ReadOwner |
                                                                         QFileDevice::WriteOwner |
@@ -198,7 +214,7 @@ void writeAssetManifest(const QString& root, bool completePayload) {
     manifest.insert(
         QStringLiteral("runtime"),
         QJsonObject{{QStringLiteral("version"), QStringLiteral("1.0.9")},
-                    {QStringLiteral("platform"), QStringLiteral("macos-arm64")},
+                    {QStringLiteral("platform"), kMacPlatform},
                     {QStringLiteral("delivery"), QStringLiteral("bundled")},
                     {QStringLiteral("protocol"), 5},
                     {QStringLiteral("executable"), kWorkerName},
@@ -249,7 +265,7 @@ bool writeDownloadedModelFixture(const QString& destination, QString* error) {
 // path encoding choices made by the production archive reader.
 [[maybe_unused]] QByteArray buildRuntimeArchiveBytes() {
     const QList<QPair<QString, QByteArray>> entries{
-        {QStringLiteral("snow-ocr-process-1.0.9-windows-x64.exe"), QByteArray("process")},
+        {kWindowsWorkerName, QByteArray("process")},
         {QStringLiteral("DirectML.dll"), QByteArray("directml")},
         {QStringLiteral("runtime-manifest.json"), QByteArray("runtime")},
     };
@@ -302,6 +318,10 @@ void validOfflineAssetsAreSelectedWithoutNetwork() {
     ScreenshotOcrAssets assets(options);
     QObject::connect(&assets, &ScreenshotOcrAssets::ready, &assets,
                      [&](const ScreenshotOcrResolvedAssets& result) {
+#ifdef Q_OS_WIN
+                         require(QFileInfo(result.processPath).fileName() == kWindowsWorkerName,
+                                 "resolved OCR worker must match the compiled Windows platform");
+#endif
                          ready = result.offline && result.valid();
                      });
     QObject::connect(&assets, &ScreenshotOcrAssets::failed, &assets,
@@ -536,6 +556,16 @@ void invalidSchemaTwoManifestsAreRejectedBeforeDownloading() {
     };
 
     rejectMutation([](QJsonObject* manifest) { manifest->insert(QStringLiteral("schema"), 1); });
+#ifdef Q_OS_WIN
+    rejectMutation([](QJsonObject* manifest) {
+        QJsonObject runtime = manifest->value(QStringLiteral("runtime")).toObject();
+        runtime.insert(QStringLiteral("platform"),
+                       kWindowsPlatform == QStringLiteral("windows-arm64")
+                           ? QStringLiteral("windows-x64")
+                           : QStringLiteral("windows-arm64"));
+        manifest->insert(QStringLiteral("runtime"), runtime);
+    });
+#endif
     rejectMutation([](QJsonObject* manifest) {
         manifest->insert(QStringLiteral("default_model"), QStringLiteral("medium"));
     });
@@ -963,6 +993,11 @@ void macosBundledRuntimeTests() {
         runtime.insert(QStringLiteral("protocol"), 3);
         manifest.insert(QStringLiteral("runtime"), runtime);
     });
+    rejects([&](QJsonObject& manifest) {
+        auto runtime = manifest.value(QStringLiteral("runtime")).toObject();
+        runtime.insert(QStringLiteral("platform"), kOtherMacPlatform);
+        manifest.insert(QStringLiteral("runtime"), runtime);
+    });
     rejects([&](QJsonObject&) { QFile::remove(QDir(root.path()).filePath(kWorkerName)); });
     rejects([&](QJsonObject&) {
         QFile::setPermissions(QDir(root.path()).filePath(kWorkerName), QFileDevice::ReadOwner);
@@ -970,15 +1005,20 @@ void macosBundledRuntimeTests() {
     rejects([&](QJsonObject&) {
         writeFixture(QDir(root.path()).filePath(QStringLiteral("libonnxruntime.dylib")), "corrupt");
     });
-    rejects([&](QJsonObject& manifest) {
-        const QByteArray intel = QByteArray::fromHex("cffaedfe07000001") + QByteArray(32, '\0');
-        writeFixture(QDir(root.path()).filePath(QStringLiteral("libonnxruntime.dylib")), intel);
-        auto runtime = manifest.value(QStringLiteral("runtime")).toObject();
-        auto files = runtime.value(QStringLiteral("files")).toArray();
-        files.replace(1, assetFile(QStringLiteral("libonnxruntime.dylib"), intel));
-        runtime.insert(QStringLiteral("files"), files);
-        manifest.insert(QStringLiteral("runtime"), runtime);
-    });
+    for (const auto& name : {kWorkerName, QStringLiteral("libonnxruntime.dylib")}) {
+        rejects([&](QJsonObject& manifest) {
+            const QByteArray otherBinary = kOtherMacHeader + QByteArray("other-architecture");
+            writeFixture(QDir(root.path()).filePath(name), otherBinary);
+            auto runtime = manifest.value(QStringLiteral("runtime")).toObject();
+            auto files = runtime.value(QStringLiteral("files")).toArray();
+            for (int index = 0; index < files.size(); ++index) {
+                if (files.at(index).toObject().value(QStringLiteral("name")).toString() == name)
+                    files.replace(index, assetFile(name, otherBinary));
+            }
+            runtime.insert(QStringLiteral("files"), files);
+            manifest.insert(QStringLiteral("runtime"), runtime);
+        });
+    }
 
     // A read-only bundle must recognize offline without writing state alongside code.
     writeAssetManifest(root.path(), true);

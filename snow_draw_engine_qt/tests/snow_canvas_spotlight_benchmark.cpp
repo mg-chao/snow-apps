@@ -205,7 +205,7 @@ std::vector<Scenario> scenarios() {
 
 std::vector<SnowSpotlightCutout> makeCutouts(const Scenario& scenario) {
     std::vector<SnowSpotlightCutout> out;
-    out.reserve(scenario.cutoutCount);
+    out.reserve(static_cast<std::size_t>(scenario.cutoutCount));
     const int columns = static_cast<int>(std::ceil(std::sqrt(scenario.cutoutCount)));
     for (int index = 0; index < scenario.cutoutCount; ++index) {
         const int column = index % columns;
@@ -232,6 +232,8 @@ std::vector<SnowSpotlightCutout> makeCutouts(const Scenario& scenario) {
             width,
             height,
             (index % 7 - 3) * 0.11,
+            static_cast<std::uint8_t>(SNOW_DISPLAY_RECT_SHAPE_RECTANGLE),
+            {},
         });
     }
     return out;
@@ -242,7 +244,8 @@ Statistics statistics(const std::vector<double>& samples) {
     std::sort(sorted.begin(), sorted.end());
     const auto percentile = [&](double fraction) {
         const std::size_t index = std::min(
-            sorted.size() - 1, static_cast<std::size_t>(std::ceil(sorted.size() * fraction) - 1.0));
+            sorted.size() - 1, static_cast<std::size_t>(
+                                   std::ceil(static_cast<double>(sorted.size()) * fraction) - 1.0));
         return sorted[index];
     };
     return Statistics{
@@ -354,7 +357,7 @@ std::optional<Result> run(const Scenario& scenario, const Options& options, std:
         }
         const qint64 nanoseconds = timer.nsecsElapsed();
         if (measured) {
-            *elapsed = nanoseconds / 1'000'000.0;
+            *elapsed = static_cast<double>(nanoseconds) / 1'000'000.0;
             *diagnostics = snow_canvas_spotlight_renderer::diagnosticsForCurrentThread();
         }
     };
@@ -365,7 +368,7 @@ std::optional<Result> run(const Scenario& scenario, const Options& options, std:
         sample(index, false, &ignored, &ignoredDiagnostics);
     }
     std::vector<double> samples;
-    samples.reserve(options.iterations);
+    samples.reserve(static_cast<std::size_t>(options.iterations));
     Result result;
     result.scenario = scenario;
     for (int index = 0; index < options.iterations; ++index) {
@@ -391,7 +394,8 @@ void print(const std::vector<Result>& results, int samples) {
         std::cout << std::left << std::setw(55) << result.scenario.name << std::right << std::fixed
                   << std::setprecision(3) << std::setw(10) << result.timing.p50 << std::setw(10)
                   << result.timing.p95 << std::setw(10) << result.timing.p99 << std::setw(12)
-                  << result.diagnostics.processedCutoutCount / samples << '\n';
+                  << result.diagnostics.processedCutoutCount / static_cast<std::size_t>(samples)
+                  << '\n';
     }
 }
 

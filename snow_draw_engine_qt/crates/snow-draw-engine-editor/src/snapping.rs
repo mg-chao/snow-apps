@@ -277,7 +277,10 @@ impl Editor {
             });
         }
         if spotlight {
-            preview = preview.map(RectangleData::into_spotlight);
+            preview = preview.map(|mut rect| {
+                rect.highlight_shape = self.state.default_spotlight_shape;
+                rect.into_spotlight()
+            });
         }
 
         let Some(plan) = self.object_snap_plan(

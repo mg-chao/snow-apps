@@ -6,6 +6,31 @@ use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
 use std::time::{Duration, Instant};
 use tempfile::TempDir;
 
+#[test]
+fn operational_commands_reject_offline_architecture_overrides() {
+    let temporary = TempDir::new().unwrap();
+    let executable = env!("CARGO_BIN_EXE_snow-shot-updater");
+    let target = temporary.path().to_str().unwrap();
+    let baseline = Command::new(executable)
+        .args(["--transaction-state", "--target", target])
+        .output()
+        .unwrap();
+    assert!(baseline.status.success());
+    for extra in [
+        vec!["--platform", "windows-x64"],
+        vec!["--platform", "windows-arm64"],
+        vec!["--static-only"],
+    ] {
+        let result = Command::new(executable)
+            .args(["--transaction-state", "--target", target])
+            .args(extra)
+            .output()
+            .unwrap();
+        assert!(!result.status.success());
+        assert!(String::from_utf8_lossy(&result.stderr).contains("invalid_updater_argument"));
+    }
+}
+
 struct ServiceProcess {
     child: Child,
     stdin: Option<ChildStdin>,
@@ -31,6 +56,7 @@ impl ServiceProcess {
             root.join(snow_shot_updater::edition::INSTALLATION_RECORD),
             serde_json::to_vec(&json!({
                 "schema": 1,
+                "platform": snow_shot_updater::edition::PLATFORM,
                 "product": snow_shot_updater::edition::PRODUCT,
                 "variant": "portable",
                 "version": "1.0.0",
@@ -146,7 +172,7 @@ fn service_handshake_rejects_duplicate_ids_and_shuts_down_orderly() {
     let hello = service.read();
     assert_eq!(hello["protocol"], 2);
     assert_eq!(hello["type"], "hello");
-    assert_eq!(hello["platform"], "windows-x64");
+    assert_eq!(hello["platform"], snow_shot_updater::edition::PLATFORM);
     assert!(
         hello["capabilities"]
             .as_array()

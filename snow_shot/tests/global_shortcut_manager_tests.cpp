@@ -1,6 +1,7 @@
 #include "snow_shot/platform/focusedfullscreenwindow.h"
 #include "snow_shot/presentation/globalshortcutmanager.h"
 #include "snow_shot/storage/applicationstorage.h"
+#include "snow_shot/storage/settingsadapters.h"
 
 #include <QCoreApplication>
 #include <QHash>
@@ -227,6 +228,80 @@ void pinnedManagementShortcutCanBeAssignedAndRestored() {
                 restored.state(action).shortcuts == shortcuts::ShortcutBindingList{binding},
             "pinned management hotkey must survive manager recreation");
     require(restored.setShortcuts(action, {}), "clear pinned management hotkey fixture");
+}
+
+void hiddenFloatingToolsPreserveGlobalHotkeys() {
+    namespace storage = snow_shot::storage;
+    const storage::ScreenshotToolbarSettings settings;
+    constexpr auto kind = storage::ScreenshotToolbarLayoutKind::FloatingTools;
+    const auto original = settings.layout(kind);
+    auto hidden = original;
+    for (const auto& position : original.positions)
+        hidden.hidden.append(position);
+    hidden.positions.clear();
+    constexpr std::array actions{
+        GlobalShortcutAction::Screenshot,
+        GlobalShortcutAction::ScreenshotDelay,
+        GlobalShortcutAction::ScreenshotFixed,
+        GlobalShortcutAction::ScreenshotOcr,
+#if SNOW_SHOT_ENABLE_TEXT_TRANSLATION
+        GlobalShortcutAction::ScreenshotTranslation,
+#endif
+        GlobalShortcutAction::ScreenRecord,
+    };
+    for (const bool initiallyHidden : {false, true}) {
+        require(settings.setLayout(kind, initiallyHidden ? hidden : original),
+                "configure initial floating layout");
+        auto backend = std::make_unique<FakeBackend>();
+        auto* input = backend.get();
+        GlobalShortcutManager manager(std::move(backend), nullptr, [] { return false; });
+        manager.initialize();
+        clearAll(manager);
+        QHash<int, GlobalShortcutAction> expected;
+        for (const auto action : actions) {
+            const shortcuts::ShortcutBinding binding{
+                QStringLiteral("Ctrl+Alt+F%1").arg(expected.size() + 1)};
+            require(manager.setShortcuts(action, {binding}), "configure floating action hotkey");
+            for (auto it = input->registrations.cbegin(); it != input->registrations.cend(); ++it) {
+                if (it.value() == binding)
+                    expected.insert(it.key(), action);
+            }
+        }
+        require(expected.size() == static_cast<qsizetype>(actions.size()),
+                "register every floating action with a hotkey");
+        const auto registered = input->registrations;
+        const int registerCalls = input->registerCalls;
+        const int unregisterCalls = input->unregisterCalls;
+        int activations = 0;
+        GlobalShortcutAction requested = GlobalShortcutAction::Screenshot;
+        QObject::connect(&manager, &GlobalShortcutManager::activated, &manager,
+                         [&](GlobalShortcutAction action) {
+                             require(action == requested,
+                                     "hidden floating hotkey dispatches the same action");
+                             ++activations;
+                         });
+        require(settings.setLayout(kind, hidden), "hide all floating toolbar tools");
+        const auto saved = settings.layout(kind);
+        require(input->registrations == registered && input->registerCalls == registerCalls &&
+                    input->unregisterCalls == unregisterCalls,
+                "floating visibility changes do not change global registrations");
+        const auto activateAll = [&](const storage::ScreenshotToolbarLayout& savedLayout) {
+            for (auto it = expected.cbegin(); it != expected.cend(); ++it) {
+                requested = it.value();
+                const int before = activations;
+                input->handler(it.key());
+                require(activations == before + 1 && settings.layout(kind) == savedLayout,
+                        "each floating action activates once without rewriting its layout");
+            }
+        };
+        activateAll(saved);
+        require(settings.setLayout(kind, original), "restore floating toolbar tools");
+        activateAll(original);
+        require(input->registrations == registered && input->registerCalls == registerCalls &&
+                    input->unregisterCalls == unregisterCalls,
+                "restoring floating tools preserves their hotkeys");
+        clearAll(manager);
+    }
 }
 
 void globalCanvasShortcutCanBeAssignedAndRestored() {
@@ -1002,6 +1077,11 @@ int main(int argc, char** argv) {
                 .success,
             "initialize shortcut test storage");
     validationCoversSupportedAndRejectedKeys();
+    if (application.arguments().contains(QStringLiteral("--hidden-tools-only"))) {
+        hiddenFloatingToolsPreserveGlobalHotkeys();
+        storage.shutdown();
+        return 0;
+    }
     switchGroupShortcutPersistsAndReportsBinding();
 #ifdef Q_OS_WIN
     nativeGroupKeyStateUsesEveryShortcutKey();
