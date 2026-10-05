@@ -17,8 +17,10 @@ begin
     #!/bin/bash
     set -eu
     test "$HOME" = #{Shellwords.escape(Dir.home)}
-    test "$1" = --dmg
-    test "$3" = --prepare-app
+    test "$1" = --edition
+    test "$2" = full
+    test "$3" = --dmg
+    test "$5" = --prepare-app
     printf '%s\\n' passed > "$(dirname "$0")/home-probe-result"
   BASH
   preflight = cask.artifacts.find { |artifact| artifact.is_a?(Cask::Artifact::PreflightBlock) }
