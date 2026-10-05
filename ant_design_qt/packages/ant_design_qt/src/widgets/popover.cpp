@@ -1220,10 +1220,6 @@ void AdPopover::setPopupOffset(int value) {
 void AdPopover::refreshPopupLayout() { refreshVisiblePopup(); }
 
 bool AdPopover::eventFilter(QObject* watched, QEvent* event) {
-  if (event && watched == popupSurface_ && event->type() == QEvent::WinIdChange &&
-      surfaceShowGuard_ && controller_) {
-    controller_->nativeSurfaceChanged();
-  }
   if (event && (watched == sourceWidget_ || watched == anchorWidget_)) {
     if (event->type() == QEvent::EnabledChange) {
       syncControllerConfiguration();

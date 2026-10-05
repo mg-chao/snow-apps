@@ -54,6 +54,7 @@ class OverlayPopupSurface final : public QWidget, public TopLevelToolResourceRel
     if (!nativeSurfaceRetained_) destroy();
   }
   void setNativeSurfaceRetained(bool retained) { nativeSurfaceRetained_ = retained; }
+  bool nativeSurfaceRetained() const { return nativeSurfaceRetained_; }
 
   QWidget* bodyWidget() const { return bodyWidget_; }
 

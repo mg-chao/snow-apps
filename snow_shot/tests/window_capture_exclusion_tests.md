@@ -3,9 +3,18 @@
 Snow Shot keeps capture controls visible while omitting them from captured display
 or region pixels. The scrolling overlay and toolbar follow the scrolling UI
 capture setting; the recording toolbar follows the recording toolbar setting.
-Toolbar exclusion failures are best effort. Audio gain popovers use a show guard
-when the toolbar is excluded: the native surface stays hidden until its required
-window ID is acknowledged, and remains hidden if the filter update fails.
+Toolbar exclusion failures are best effort. All toolbar overlay popovers use a
+scoped show guard when the toolbar is excluded, including drawing groups, style
+editors, color pickers, and audio gain controls created during recording. On
+Windows, display affinity is applied before showing each surface. On macOS, the
+native surface stays hidden until its required window ID is acknowledged, and
+remains hidden if the filter update fails. Scoped guards retain native identities
+and cover nested popovers even while Qt replaces their native ownership handles.
+Acknowledgment belongs to each native window ID: an approved parent remains
+visible while a child waits or its filter update fails. Filter submissions still
+contain all live excluded windows, so partial updates preserve existing exclusions.
+Removals reconcile against the last submitted filter as well as acknowledged IDs;
+obsolete completions cannot authorize a replacement or reopen a cancelled popup.
 
 Windows uses `WDA_EXCLUDEFROMCAPTURE`. macOS 15+ saves the actual NSWindow sharing
 policy and temporarily sets it to `NSWindowSharingNone`; **ScreenCaptureKit content
@@ -62,9 +71,12 @@ and QWidget destruction. Its pixel mode checks a colored overlay above a known
 background through generic region snapshot and continuous stream C APIs, and
 verifies capture visibility returns after restoration. The recording controller
 test verifies the toolbar preference reaches the C configuration and native
-sharing is restored after failure, stop and controller destruction. The scrolling
-pipeline test exercises actual asynchronous source creation, mode replacement,
-export pause/resume, failed replacement and destruction with every combination
+sharing is restored after failure, stop and controller destruction. It also
+exercises the platform-independent popup acknowledgment state and real nested
+popup lifecycles with delayed/failed updates, superseded generations, rejected
+requests, native replacement, removal and cancellation. The scrolling pipeline
+test exercises actual asynchronous source creation, mode replacement, export
+pause/resume, failed replacement and destruction with every combination
 of successful and failed window exclusions. It checks each C stream configuration
 and verifies streams are joined before restoration. Run the native tests on
 both Apple Silicon and Intel and on macOS 15 before platform-wide qualification;

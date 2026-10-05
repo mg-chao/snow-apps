@@ -189,8 +189,8 @@ Keep this folder to recover the recording.</source>
             <translation>無法建立錄製目錄</translation>
         </message>
         <message>
-            <source>Unable to exclude audio controls from recording</source>
-            <translation>無法從螢幕錄製中排除音訊控制項</translation>
+            <source>Unable to exclude toolbar controls from recording</source>
+            <translation>無法從錄製中排除工具列控制項</translation>
         </message>
         <message>
             <source>Unknown recording error</source>

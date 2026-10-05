@@ -189,8 +189,8 @@ Keep this folder to recover the recording.</translation>
             <translation>Unable to create the recording directory</translation>
         </message>
         <message>
-            <source>Unable to exclude audio controls from recording</source>
-            <translation>Unable to exclude audio controls from recording</translation>
+            <source>Unable to exclude toolbar controls from recording</source>
+            <translation>Unable to exclude toolbar controls from recording</translation>
         </message>
         <message>
             <source>Unknown recording error</source>

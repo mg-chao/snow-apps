@@ -38,6 +38,7 @@
 #include "widgets/button.h"
 #include "../src/presentation/recording/recordingaudiogainpopover.h"
 #include "widgets/popover.h"
+#include "widgets/popup_surface_guard.h"
 #include "widgets/dpi_stable_window_controller.h"
 
 #include <QApplication>
@@ -90,6 +91,8 @@ const char* nativeCaptureError() {
 #include <cstdlib>
 #include <iostream>
 #include <stdexcept>
+
+void recordingPopupExclusionTests();
 
 struct SnowRecordingClipImpl {
     quint64 revision = 0;
@@ -1283,17 +1286,6 @@ std::vector<uint32_t> prepareExpectedRecordingExclusions(ScreenshotToolPalette* 
         return expected;
     if (auto id = snow_shot::platform::captureWindowId(toolbarPalette->window()))
         expected.push_back(*id);
-    const snow_shot::storage::RecordingSettings settings;
-    if (settings.outputFormat() != QStringLiteral("mp4"))
-        return expected;
-    for (bool microphone : {false, true}) {
-        if (!(microphone ? settings.microphoneEnabled() : settings.systemAudioEnabled()))
-            continue;
-        auto* popup = toolbarPalette->recordingAudioGainPopover(microphone);
-        popup->setRetainNativeSurfaceOnHide(true);
-        if (auto id = snow_shot::platform::captureWindowId(popup->prepareSurface()))
-            expected.push_back(*id);
-    }
     return expected;
 }
 
@@ -1377,8 +1369,52 @@ void recordingCaptureExclusionWiring() {
             } else {
                 waitForRecording(controller);
             }
+            auto* surfaceGuard = toolbar->findChild<adqt::widgets::AdPopupSurfaceGuard*>();
+            require((surfaceGuard != nullptr) == (!captureToolbar && !fail),
+                    "recording owns one toolbar-wide popup guard only while exclusion is active");
+            if (!fail) {
+                int requestedSurfaces = 0;
+                QMetaObject::Connection requestedConnection;
+                if (surfaceGuard) {
+                    requestedConnection = QObject::connect(
+                        surfaceGuard, &adqt::widgets::AdPopupSurfaceGuard::surfaceRequested,
+                        &controller, [&](QWidget*) { ++requestedSurfaces; });
+                }
+                // A drawing popover is first materialized after recording has started.
+                auto* drawingTrigger = palette()->findChild<adqt::widgets::AdButton*>(
+                    QStringLiteral("screenshotArrowLineButton"));
+                auto* drawingPopover = drawingTrigger
+                                           ? drawingTrigger->findChild<adqt::widgets::AdPopover*>()
+                                           : nullptr;
+                require(drawingPopover != nullptr, "recording toolbar has drawing popover");
+                drawingPopover->show();
+                require(drawingPopover->surfaceWidget() &&
+                            requestedSurfaces == (captureToolbar ? 0 : 1),
+                        "late drawing popover inherits the recording toolbar capture policy");
+                if (QGuiApplication::platformName() == QStringLiteral("offscreen")) {
+                    require(drawingPopover->surfaceWidget()->isVisible() == captureToolbar,
+                            "unavailable native exclusion keeps drawing popup hidden; capture-on "
+                            "shows it");
+                }
+#ifdef Q_OS_WIN
+                if (QGuiApplication::platformName() == QStringLiteral("windows")) {
+                    DWORD affinity = WDA_NONE;
+                    const auto expectedAffinity =
+                        static_cast<DWORD>(captureToolbar ? WDA_NONE : WDA_EXCLUDEFROMCAPTURE);
+                    require(GetWindowDisplayAffinity(
+                                reinterpret_cast<HWND>(drawingPopover->surfaceWidget()->winId()),
+                                &affinity) != 0 &&
+                                affinity == expectedAffinity,
+                            "drawing popup native capture affinity follows the toolbar setting");
+                    require(drawingPopover->surfaceWidget()->isVisible(),
+                            "excluded drawing popup remains usable on the native desktop");
+                }
+#endif
+                drawingPopover->hide();
+                QObject::disconnect(requestedConnection);
+            }
             require(lastExcludedWindows == expected,
-                    "recording creation owns the toolbar and prepared audio surface exclusions");
+                    "recording creation excludes the toolbar; popup identities are handled lazily");
             require(toolbar->isVisible(), "toolbar remains visible on success and failure");
 #ifdef Q_OS_MACOS
             require(sharingMatches(!captureToolbar && !fail),
@@ -1387,6 +1423,8 @@ void recordingCaptureExclusionWiring() {
             if (!fail) {
                 palette()->recordingStopRequested();
                 waitForIdle(controller);
+                require(!toolbar->findChild<adqt::widgets::AdPopupSurfaceGuard*>(),
+                        "stopping restores the capture policy for all toolbar popovers");
             }
 #ifdef Q_OS_MACOS
             require(sharingMatches(false), "recording stop restores the original sharing policy");
@@ -4258,6 +4296,7 @@ int main(int argc, char** argv) {
         return 0;
     }
     if (app.arguments().contains(QStringLiteral("--capture-exclusion-only"))) {
+        recordingPopupExclusionTests();
         recordingCaptureExclusionWiring();
         ApplicationStorage::instance().shutdown();
         return 0;

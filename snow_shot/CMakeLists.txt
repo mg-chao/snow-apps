@@ -6212,6 +6212,7 @@ if(SNOW_SHOT_BUILD_TESTS)
         ${_recording_test_sources}
         tests/screen_recording_controller_tests.cpp
         tests/recording_color_sampler_tests.cpp
+        tests/recording_popup_exclusion_tests.cpp
         include/snow_shot/presentation/screenrecordingcontroller.h
         include/snow_shot/presentation/screenrecordingfolder.h
         include/snow_shot/presentation/screenrecordingareawindow.h

@@ -2,9 +2,10 @@
 #include "snow_shot/platform/applicationqos.h"
 #include "recordingeffectpreview.h"
 #include "recordingaudiogainpopover.h"
+#include "recordingpopupexclusions.h"
 #include "widgets/popover.h"
+#include "widgets/popup_surface_guard.h"
 #include "snow_shot/storage/applicationstorage.h"
-#include <array>
 #include "recordingcolorsampler.h"
 #include "recordingrenderjob.h"
 #include "widgets/message.h"
@@ -360,7 +361,7 @@ struct ScreenRecordingController::Impl {
         }
         exclusionPollTimer.setInterval(33);
         QObject::connect(&exclusionPollTimer, &QTimer::timeout, &owner,
-                         [this] { pollAudioExclusions(); });
+                         [this] { pollToolbarExclusions(); });
         durationTimer.setInterval(kDurationTickMilliseconds);
         durationTimer.setTimerType(Qt::PreciseTimer);
         QObject::connect(&durationTimer, &QTimer::timeout, &owner, [this]() {
@@ -646,30 +647,16 @@ struct ScreenRecordingController::Impl {
                          [this](int gainDb) { changeAudioGain(false, gainDb); });
         for (bool microphone : {false, true}) {
             auto* popover = palette->recordingAudioGainPopover(microphone);
-            QObject::connect(
-                popover, &RecordingAudioGainPopover::visibleChanged, uiSession->connections.get(),
-                [this, microphone, popover](bool visible) {
-                    if (visible) {
-                        const bool retryExclusion =
-                            audioPopoversExcluded &&
-                            audioFailedPopupIds != std::array<uint32_t, 2>{};
-                        audioMeterSource = microphone ? 1 : 0;
-                        audioFailedPopupIds = {};
-                        displayedAudioPeak = 0;
-                        audioClipDeadline = 0;
-                        lastAudioMeterTick = audioMeterClock.elapsed();
-                        if (retryExclusion) {
-                            // The show guard runs before visibleChanged. Retry after
-                            // clearing its failed native IDs, outside that stack.
-                            QTimer::singleShot(
-                                0, popover, [popup = QPointer<RecordingAudioGainPopover>(popover)] {
-                                    if (popup && popup->popover()->isVisible())
-                                        popup->popover()->refreshPopupLayout();
-                                });
-                        }
-                    }
-                    syncAudioMeter();
-                });
+            QObject::connect(popover, &RecordingAudioGainPopover::visibleChanged,
+                             uiSession->connections.get(), [this, microphone](bool visible) {
+                                 if (visible) {
+                                     audioMeterSource = microphone ? 1 : 0;
+                                     displayedAudioPeak = 0;
+                                     audioClipDeadline = 0;
+                                     lastAudioMeterTick = audioMeterClock.elapsed();
+                                 }
+                                 syncAudioMeter();
+                             });
             QObject::connect(popover, &RecordingAudioGainPopover::surfaceVisibilityChanged,
                              uiSession->connections.get(), [this](bool) { syncAudioMeter(); });
         }
@@ -1242,6 +1229,8 @@ struct ScreenRecordingController::Impl {
             showRecordingControls();
         }
         durationTimer.start();
+        if (toolbarSurfaceGuard)
+            toolbarSurfaceGuard->refresh();
         report(QStringLiteral("recording.started"));
     }
 
@@ -1516,51 +1505,34 @@ struct ScreenRecordingController::Impl {
         retiring->area->hide();
         // Capture may still be joining on its worker. Hide every retained surface
         // before clearing the exclusion policies and native show guards.
-        restoreToolbarCaptureVisibility(retiring->toolbar->palette());
+        restoreToolbarCaptureVisibility();
         // Close can originate in a toolbar button's event handler.
         retiring->deleteLater();
     }
 
     bool excludeToolbarFromCapture() {
         restoreToolbarCaptureVisibility();
-        audioPopoversExcluded = true;
+        toolbarPopupsExcluded = true;
         const bool excluded = captureExclusion.exclude(toolbarWindow);
-        if (toolbarWindow && outputFormat == QStringLiteral("mp4")) {
-            for (bool microphone : {false, true}) {
-                if (!(microphone ? microphoneEnabled : systemAudioEnabled))
-                    continue;
-                auto* control = toolbarWindow->palette()->recordingAudioGainPopover(microphone);
-                control->setRetainNativeSurfaceOnHide(true);
-                control->setSurfaceShowGuard(
-                    [this](QWidget* surface) { return guardAudioSurface(surface); });
-                QWidget* surface = control->prepareSurface();
-                // Initial macOS filters may not discover a prepared hidden window.
-                // Only a required-window update acknowledgment permits showing it.
-                static_cast<void>(captureExclusion.exclude(surface));
-            }
+        if (toolbarWindow) {
+            toolbarSurfaceGuard = std::make_unique<adqt::widgets::AdPopupSurfaceGuard>(
+                toolbarWindow, [this](QWidget* surface) { return guardToolbarSurface(surface); });
+            QObject::connect(toolbarSurfaceGuard.get(),
+                             &adqt::widgets::AdPopupSurfaceGuard::surfaceRequested, &owner,
+                             [this](QWidget*) { toolbarExclusions.retry(); });
         }
+        if (toolbarSurfaceGuard)
+            toolbarSurfaceGuard->refresh();
         return excluded;
     }
 
-    void restoreToolbarCaptureVisibility(ScreenshotToolPalette* palette = nullptr) {
+    void restoreToolbarCaptureVisibility() {
         exclusionPollTimer.stop();
-        audioPopoversExcluded = false;
-        audioExclusionErrorReported = false;
-        audioExclusionGeneration = 0;
-        audioAppliedPopupIds = {};
-        audioPendingPopupIds = {};
-        audioFailedPopupIds = {};
+        toolbarPopupsExcluded = false;
+        toolbarExclusionErrorReported = false;
+        toolbarExclusions = {};
         captureExclusion.restore();
-        if (!palette && toolbarWindow)
-            palette = toolbarWindow->palette();
-        if (palette) {
-            for (bool microphone : {false, true}) {
-                if (auto* control = palette->recordingAudioGainPopover(microphone)) {
-                    control->setSurfaceShowGuard({});
-                    control->setRetainNativeSurfaceOnHide(false);
-                }
-            }
-        }
+        toolbarSurfaceGuard.reset();
     }
 
     QJsonObject currentAutomationOptions() const {
@@ -1752,92 +1724,74 @@ struct ScreenRecordingController::Impl {
         control->setLevel(displayedAudioPeak, ready && now < audioClipDeadline, status);
     }
 
-    bool guardAudioSurface(QWidget* surface) {
-        if (!audioPopoversExcluded)
+    bool guardToolbarSurface(QWidget* surface) {
+        if (!toolbarPopupsExcluded)
             return true;
         if (!surface || !snow_shot::platform::setWindowExcludedFromCapture(surface, true)) {
-            reportAudioExclusionError();
+            reportToolbarExclusionError();
             return false;
         }
         static_cast<void>(captureExclusion.exclude(surface));
 #ifdef Q_OS_MACOS
         if (!recordingSession || sessionStatus.busy())
             return false;
-        std::array<uint32_t, 2> ids{};
-        for (bool microphone : {false, true}) {
-            if (!(microphone ? microphoneEnabled : systemAudioEnabled))
-                continue;
-            auto* control = toolbarWindow->palette()->recordingAudioGainPopover(microphone);
-            const auto id = snow_shot::platform::captureWindowId(control->prepareSurface());
-            if (!id) {
-                reportAudioExclusionError();
-                return false;
-            }
-            ids[microphone ? 1 : 0] = *id;
-        }
-        if (ids == audioAppliedPopupIds)
-            return true;
-        if (ids == audioFailedPopupIds || (audioExclusionGeneration && ids == audioPendingPopupIds))
+        const auto ids = captureExclusion.windowIds(snow_shot::platform::captureWindowId);
+        const auto windowId = snow_shot::platform::captureWindowId(surface);
+        if (!windowId) {
+            reportToolbarExclusionError();
             return false;
-        const auto windows = captureExclusion.windowIds(snow_shot::platform::captureWindowId);
-        QVector<uint32_t> required;
-        for (auto id : ids)
-            if (id)
-                required.push_back(id);
-        SnowCaptureExclusions exclusions{windows.constData(), static_cast<size_t>(windows.size()),
-                                         nullptr, 0};
-        if (snow_recording_session_request_exclusions(
-                recordingSession.get(), &exclusions, required.constData(),
-                static_cast<uint32_t>(required.size()), &audioExclusionGeneration)) {
-            audioPendingPopupIds = ids;
-            exclusionPollTimer.start();
-        } else {
-            audioFailedPopupIds = ids;
-            reportAudioExclusionError();
         }
-        return false;
+        const bool canShow = toolbarExclusions.canShow(*windowId, ids, [this](const auto& windows) {
+            SnowCaptureExclusions exclusions{windows.constData(),
+                                             static_cast<size_t>(windows.size()), nullptr, 0};
+            uint64_t generation = 0;
+            if (!snow_recording_session_request_exclusions(
+                    recordingSession.get(), &exclusions, windows.constData(),
+                    static_cast<uint32_t>(windows.size()), &generation)) {
+                reportToolbarExclusionError();
+                return uint64_t{0};
+            }
+            return generation;
+        });
+        if (toolbarExclusions.pending() && !exclusionPollTimer.isActive())
+            exclusionPollTimer.start();
+        return canShow;
 #else
         return true;
 #endif
     }
 
-    void reportAudioExclusionError() {
-        if (audioExclusionErrorReported || !toolbarWindow)
+    void reportToolbarExclusionError() {
+        if (toolbarExclusionErrorReported || !toolbarWindow)
             return;
-        audioExclusionErrorReported = true;
+        toolbarExclusionErrorReported = true;
         adqt::widgets::AdMessage::Request request;
-        request.key = QStringLiteral("recording-audio-exclusion-error");
+        request.key = QStringLiteral("recording-toolbar-exclusion-error");
         request.content = QCoreApplication::translate(
-            "ScreenRecordingController", "Unable to exclude audio controls from recording");
+            "ScreenRecordingController", "Unable to exclude toolbar controls from recording");
         adqt::widgets::AdMessageService::warning(std::move(request), toolbarWindow);
     }
 
-    void pollAudioExclusions() {
+    void pollToolbarExclusions() {
 #ifdef Q_OS_MACOS
-        if (!recordingSession || sessionStatus.busy() || !audioExclusionGeneration) {
+        if (!recordingSession || sessionStatus.busy() || !toolbarExclusions.pending()) {
             exclusionPollTimer.stop();
             return;
         }
         SnowRecordingExclusionStatus status{};
         if (!snow_recording_session_exclusion_status(recordingSession.get(), &status))
             return;
-        if (status.requested_generation != audioExclusionGeneration || status.status == 1)
+        const auto completion = toolbarExclusions.complete(
+            status.requested_generation, status.applied_generation, status.status);
+        if (completion == snow_shot::presentation::RecordingPopupExclusions::Completion::Pending)
             return;
         exclusionPollTimer.stop();
-        if (status.status == 0 && status.applied_generation == audioExclusionGeneration) {
-            audioAppliedPopupIds = audioPendingPopupIds;
-            audioExclusionGeneration = 0;
-            if (toolbarWindow)
-                for (bool microphone : {false, true}) {
-                    auto* control = toolbarWindow->palette()->recordingAudioGainPopover(microphone);
-                    if (control->popover()->isVisible())
-                        control->popover()->refreshPopupLayout();
-                }
-        } else {
-            audioFailedPopupIds = audioPendingPopupIds;
-            audioExclusionGeneration = 0;
-            reportAudioExclusionError();
-        }
+        if (completion == snow_shot::presentation::RecordingPopupExclusions::Completion::Failed)
+            reportToolbarExclusionError();
+        // Refresh on failure too: a native identity may have changed while the
+        // failed request was in flight. Unchanged failed snapshots stay blocked.
+        if (toolbarSurfaceGuard)
+            toolbarSurfaceGuard->refresh();
 #endif
     }
 
@@ -2054,12 +2008,10 @@ struct ScreenRecordingController::Impl {
     int audioPreviewSource = -1;
     std::shared_future<void> audioPreviewRetirement;
     QTimer exclusionPollTimer;
-    bool audioPopoversExcluded = false;
-    bool audioExclusionErrorReported = false;
-    uint64_t audioExclusionGeneration = 0;
-    std::array<uint32_t, 2> audioAppliedPopupIds{};
-    std::array<uint32_t, 2> audioPendingPopupIds{};
-    std::array<uint32_t, 2> audioFailedPopupIds{};
+    bool toolbarPopupsExcluded = false;
+    bool toolbarExclusionErrorReported = false;
+    snow_shot::presentation::RecordingPopupExclusions toolbarExclusions;
+    std::unique_ptr<adqt::widgets::AdPopupSurfaceGuard> toolbarSurfaceGuard;
     QString outputFormat = QStringLiteral("mp4");
     int startDelaySeconds = 0;
     int mouseTrailDurationMs = 500;

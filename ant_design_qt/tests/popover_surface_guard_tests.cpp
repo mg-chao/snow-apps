@@ -1,4 +1,6 @@
 #include "widgets/popover.h"
+#include "widgets/popup_surface_guard.h"
+#include "widgets/color_picker.h"
 #include "widgets/detail/top_level_popup_window.h"
 
 #include <QApplication>
@@ -10,6 +12,7 @@
 
 #include <cstdlib>
 #include <iostream>
+#include <memory>
 
 namespace {
 using adqt::widgets::AdPopover;
@@ -115,6 +118,88 @@ void showGuardGatesInitialAndVisibleNativeTransitions() {
   popup.show();
   require(surface->isVisible(), "default guard preserves existing popup behavior");
 }
+
+void scopedGuardCoversLazyNestedAndReplacementSurfaces() {
+  QWidget host;
+  QPushButton trigger(&host);
+  host.resize(400, 260);
+  trigger.setGeometry(80, 60, 80, 30);
+  host.show();
+  flush();
+  bool allow = false;
+  int checks = 0;
+  int requests = 0;
+  auto guard = std::make_unique<adqt::widgets::AdPopupSurfaceGuard>(&host, [&](QWidget* surface) {
+    require(surface && surface->internalWinId(), "scoped guard receives native surface");
+    ++checks;
+    return allow;
+  });
+  QObject::connect(guard.get(), &adqt::widgets::AdPopupSurfaceGuard::surfaceRequested,
+                   [&](QWidget*) { ++requests; });
+  AdPopover popup;
+  popup.setSourceWidget(&trigger);
+  popup.setPopupLayerMode(AdPopover::PopupLayerMode::QtTool);
+  popup.setTriggers({});
+  auto* nestedTrigger = new QPushButton(QStringLiteral("Nested"));
+  popup.setContentWidget(nestedTrigger);
+  popup.show();
+  auto* surface = popup.surfaceWidget();
+  require(surface && popup.isVisible() && !surface->isVisible() && checks > 0 && requests == 1,
+          "popups created after scope guard installation await acknowledgment");
+  allow = true;
+  guard->refresh();
+  require(surface->isVisible(), "scope refresh releases acknowledged request");
+  const WId identity = surface->internalWinId();
+  popup.hide();
+  flush();
+  require(surface->internalWinId() == identity, "scope guard retains acknowledged native identity");
+  popup.show();
+  AdPopover nested;
+  nested.setSourceWidget(nestedTrigger);
+  nested.setPopupLayerMode(AdPopover::PopupLayerMode::QtTool);
+  nested.setTriggers({});
+  nested.setText(QStringLiteral("Nested popup"));
+  allow = false;
+  surface->windowHandle()->setTransientParent(nullptr);
+  nested.show();
+  require(nested.surfaceWidget() && !nested.surfaceWidget()->isVisible() && requests == 3,
+          "detached nested popup inherits its logical owner's guard during native replacement");
+  allow = true;
+  guard->refresh();
+  require(nested.surfaceWidget()->isVisible(), "scope refresh includes nested requested popups");
+  allow = false;
+  QEvent nativeChange(QEvent::WinIdChange);
+  QApplication::sendEvent(nested.surfaceWidget(), &nativeChange);
+  require(nested.isVisible() && !nested.surfaceWidget()->isVisible(),
+          "native identity replacement reapplies the inherited guard");
+  nested.hide();
+  allow = true;
+  guard->refresh();
+  require(!nested.isVisible() && !nested.surfaceWidget()->isVisible(),
+          "late acknowledgment never reopens a cancelled nested request");
+  popup.hide();
+
+  adqt::widgets::AdColorPicker picker(&host);
+  picker.setGeometry(180, 60, 80, 30);
+  picker.setPopupLayerMode(AdPopover::PopupLayerMode::QtTool);
+  picker.show();
+  allow = false;
+  picker.setPopupVisible(true);
+  auto* colorPopover = picker.findChild<AdPopover*>();
+  require(
+      colorPopover && colorPopover->surfaceWidget() && !colorPopover->surfaceWidget()->isVisible(),
+      "color picker popovers use the same scoped native show policy");
+  allow = true;
+  guard->refresh();
+  require(colorPopover->surfaceWidget()->isVisible(), "scope refresh releases color picker popup");
+  picker.setPopupVisible(false);
+
+  guard.reset();
+  flush();
+  require(!surface->internalWinId(), "removing scope guard releases hidden native resources");
+  popup.show();
+  require(surface->isVisible(), "removing scope guard restores ordinary popup visibility");
+}
 }  // namespace
 
 int main(int argc, char** argv) {
@@ -122,5 +207,6 @@ int main(int argc, char** argv) {
   QApplication app(argc, argv);
   hiddenPreparationAndNativeRetention();
   showGuardGatesInitialAndVisibleNativeTransitions();
+  scopedGuardCoversLazyNestedAndReplacementSurfaces();
   return 0;
 }

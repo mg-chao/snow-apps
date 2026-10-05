@@ -171,6 +171,7 @@ class OverlayPopupController final : public QObject, private PopupInteractionOwn
   void finishPopupVisibilityUpdate();
   void syncPreparedPopupVisibility();
   void applySurfaceVisibility(QWidget* popup, bool shouldShow, bool raiseWhenShowing);
+  bool hasSurfaceShowGuard() const;
   bool syncPopupGeometry();
   bool popupUsesInWindowLayer() const;
   bool popupUsesTopLevelToolLayer() const;
