@@ -306,6 +306,15 @@ Result<ResourcePlan> plan_resources(const ResourcePlanRequest& request) {
                          ? (std::uint64_t{2} << 20U) + (std::uint64_t{256} << 10U)
                          : std::uint64_t{32} << 20U);
     }
+    if (request.output.format == Format::avif || request.output.format == Format::heif) {
+        std::uint64_t pixel_scaled = 0;
+        if (!multiply(output_bytes.value(), 10U, &pixel_scaled) ||
+            !add(pixel_scaled, std::uint64_t{64} << 20U, &pixel_scaled))
+            return overflow();
+        // Native row input still builds full RGB and codec YCbCr images. Match
+        // estimate_encode_resources(), including high-depth AVIF conversion.
+        encode.private_memory_bytes = std::max(encode.private_memory_bytes, pixel_scaled);
+    }
     if (request.output.format == Format::jxl) {
         std::uint64_t pixel_scaled = 0;
         if (!multiply(output_bytes.value(), 16U, &pixel_scaled) ||

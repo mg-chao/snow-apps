@@ -5,6 +5,7 @@
 #include "snow/image/resource_plan.h"
 #include "snow/image/raster.h"
 #include "snow/image/raster_conversion.h"
+#include "heif_fixtures.h"
 
 #include <algorithm>
 #include <array>
@@ -814,15 +815,10 @@ void test_heif_family(Service& service) {
                 avif_sink.pixels.size() == 16,
             "AVIF stills copy directly from the codec plane into sink storage");
 
-    snow::image::EncodeOptions native_encode = options;
-    native_encode.lossless = false;
-    native_encode.quality = 92;
-    auto native_bytes = std::make_shared<std::vector<std::byte>>();
-    require(
-        service
-            .encode(still, snow::image::memory_output(native_bytes, "native.avif"), native_encode)
-            .has_value(),
-        "lossy AVIF native-plane fixture encodes");
+    auto native_bytes =
+        std::make_shared<std::vector<std::byte>>(snow::image::test::kNativeSdrAvif.size());
+    std::memcpy(native_bytes->data(), snow::image::test::kNativeSdrAvif.data(),
+                native_bytes->size());
     snow::image::DecodeOptions native_options;
     native_options.raster_layout = snow::image::RasterLayoutPolicy::native;
     const auto native_descriptor =

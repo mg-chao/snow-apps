@@ -50,6 +50,23 @@ else()
 endif()
 add_test(NAME snow_image_raster_export_tests COMMAND snow_image_raster_export_tests)
 
+if(SNOW_IMAGE_CODEC_HEIF)
+    add_executable(snow_image_avif_encoding_tests avif_encoding_tests.cpp)
+    target_link_libraries(snow_image_avif_encoding_tests PRIVATE snow_image::snow_image heif)
+    if(NOT SNOW_IMAGE_LINK_PNG_DEPENDENCIES)
+        target_link_libraries(snow_image_avif_encoding_tests PRIVATE PNG::PNG)
+    endif()
+    target_compile_features(snow_image_avif_encoding_tests PRIVATE cxx_std_20)
+    if(MSVC)
+        target_compile_options(snow_image_avif_encoding_tests PRIVATE
+            /utf-8 /permissive- /Zc:__cplusplus /W4
+        )
+    else()
+        target_compile_options(snow_image_avif_encoding_tests PRIVATE -Wall -Wextra -Wpedantic)
+    endif()
+    add_test(NAME snow_image_avif_encoding_tests COMMAND snow_image_avif_encoding_tests)
+endif()
+
 if(MSVC)
     # Regression coverage for the test CLI dialog guard (cmake/test-support):
     # reports raised through the shared dynamic debug CRT instance that
