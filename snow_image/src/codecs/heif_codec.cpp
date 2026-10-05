@@ -324,6 +324,17 @@ ColorEncoding read_color(const heif_image* image) {
     return color;
 }
 
+ColorEncoding read_sequence_color(const heif_image* image, const ColorEncoding& poster_color) {
+    ColorEncoding color = read_color(image);
+    // Some libheif RGB conversion paths discard NCLX. The sequence poster carries
+    // the original profile; use it only when the decoded sample has no color information.
+    if (color.icc_profile.empty() && color.primaries == ColorPrimaries::unknown &&
+        color.transfer == TransferFunction::unknown) {
+        return poster_color;
+    }
+    return color;
+}
+
 Result<Metadata> read_metadata(const heif_image_handle* handle, const DecodeOptions& options) {
     Metadata metadata;
     if (!options.preserve_metadata)
@@ -443,6 +454,8 @@ Result<ImageDescription> describe_handle(const heif_context* context,
         return dimensions.error();
     const int bits = heif_image_handle_get_luma_bits_per_pixel(handle);
     description.bits_per_channel = bits;
+    // Sample precision selects storage; read_color() determines SDR/HDR from the
+    // color profile and HDR metadata.
     description.format = bits > 8 ? kRgba16 : kRgba8;
     description.has_alpha = heif_image_handle_has_alpha_channel(handle) != 0;
     description.alpha = description.has_alpha ? (heif_image_handle_is_premultiplied_alpha(handle)
@@ -477,8 +490,6 @@ Result<ImageDescription> describe_handle(const heif_context* context,
         NclxPtr nclx(raw_nclx);
         description.color_range = nclx->full_range_flag ? ColorRange::full : ColorRange::limited;
     }
-    if (bits > 8)
-        description.color.dynamic_range = DynamicRange::high;
     return description;
 }
 
@@ -576,6 +587,34 @@ int cancel_heif_decode(void* user_data) {
     return context && context->stop.stop_requested() ? 1 : 0;
 }
 
+Result<int> packed_heif_depth(const heif_image* image, const PixelFormat& format) {
+    if (format != kRgba16)
+        return 16;
+    const int depth = heif_image_get_bits_per_pixel_range(image, heif_channel_interleaved);
+    if (depth <= 8 || depth > 16) {
+        return Status::error(ErrorCode::decode_failed,
+                             "libheif returned an invalid RGBA16 significant depth.", "libheif");
+    }
+    return depth;
+}
+
+void copy_heif_packed_row(const std::uint8_t* source, std::byte* destination, std::size_t row_bytes,
+                          int depth) {
+    if (depth == 16) {
+        std::memcpy(destination, source, row_bytes);
+        return;
+    }
+    // libheif keeps 10/12-bit samples right-aligned in 16-bit storage. Our RGBA16
+    // contract uses the full unsigned range, including alpha.
+    const std::uint32_t maximum = (1U << depth) - 1U;
+    for (std::size_t offset = 0; offset < row_bytes; offset += 2U) {
+        const std::uint32_t sample = source[offset] | (source[offset + 1U] << 8U);
+        const std::uint32_t normalized = (sample * 65535U + maximum / 2U) / maximum;
+        destination[offset] = static_cast<std::byte>(normalized & 0xffU);
+        destination[offset + 1U] = static_cast<std::byte>(normalized >> 8U);
+    }
+}
+
 Result<Image> copy_heif_image(const heif_image* decoded, const PixelFormat& format,
                               std::uint32_t width, std::uint32_t height, std::uint64_t& owned_bytes,
                               const DecodeLimits& limits, std::stop_token stop) {
@@ -597,6 +636,9 @@ Result<Image> copy_heif_image(const heif_image* decoded, const PixelFormat& form
         return Status::error(ErrorCode::decode_failed,
                              "libheif returned an invalid interleaved image plane.", "libheif");
     }
+    Result<int> depth = packed_heif_depth(decoded, format);
+    if (!depth)
+        return depth.error();
     Result<MutableImage> allocated = MutableImage::allocate(width, height, format);
     if (!allocated)
         return allocated.error();
@@ -604,8 +646,10 @@ Result<Image> copy_heif_image(const heif_image* decoded, const PixelFormat& form
     for (std::uint32_t row = 0; row < height; ++row) {
         if (stop.stop_requested())
             return cancelled_status();
-        std::memcpy(output.pixels().data() + static_cast<std::size_t>(row) * output.row_stride(),
-                    source + static_cast<std::size_t>(row) * source_stride, row_bytes);
+        copy_heif_packed_row(source + static_cast<std::size_t>(row) * source_stride,
+                             output.pixels().data() +
+                                 static_cast<std::size_t>(row) * output.row_stride(),
+                             row_bytes, depth.value());
     }
     owned_bytes += bytes;
     return std::move(output).freeze();
@@ -718,13 +762,30 @@ Result<void> publish_packed_heif_image(const heif_image* decoded, const PixelFor
         return Status::error(ErrorCode::decode_failed,
                              "libheif returned an invalid interleaved image plane.", "libheif");
     }
+    Result<int> depth = packed_heif_depth(decoded, format);
+    if (!depth)
+        return depth.error();
     std::span<std::byte> storage = sink.frame_storage(sink_frame_index, row_bytes, byte_size);
     if (storage.size() == byte_size) {
         for (std::uint32_t row = 0; row < height; ++row) {
             if (stop.stop_requested())
                 return cancelled_status();
-            std::memcpy(storage.data() + static_cast<std::size_t>(row) * row_bytes,
-                        source + static_cast<std::size_t>(row) * source_stride, row_bytes);
+            copy_heif_packed_row(source + static_cast<std::size_t>(row) * source_stride,
+                                 storage.data() + static_cast<std::size_t>(row) * row_bytes,
+                                 row_bytes, depth.value());
+        }
+        return {};
+    }
+    if (depth.value() != 16) {
+        std::vector<std::byte> row_buffer(row_bytes);
+        for (std::uint32_t row = 0; row < height; ++row) {
+            if (stop.stop_requested())
+                return cancelled_status();
+            copy_heif_packed_row(source + static_cast<std::size_t>(row) * source_stride,
+                                 row_buffer.data(), row_bytes, depth.value());
+            Result<void> written = sink.write_rows(row, 1, row_bytes, row_buffer);
+            if (!written)
+                return written.error();
         }
         return {};
     }
@@ -1051,7 +1112,7 @@ Result<SequenceInspection> inspect_sequence_frames(ParsedHeif& parsed, Format fo
                             output_format,
                             heif_track_has_alpha_channel(track.value().get()) != 0,
                             std::nullopt};
-            frame.color = read_color(decoded.get());
+            frame.color = read_sequence_color(decoded.get(), info.color);
             if (info.frames.empty()) {
                 if (info.color.icc_profile.empty() &&
                     info.color.primaries == ColorPrimaries::unknown)
@@ -1109,6 +1170,16 @@ Result<Document> decode_sequence(ParsedHeif& parsed, Format format, const Decode
                                                         : heif_chroma_interleaved_RGBA;
     Document document;
     document.format = format;
+    heif_image_handle* primary_raw = nullptr;
+    if (heif_context_get_primary_image_handle(parsed.context.get(), &primary_raw).code ==
+            heif_error_Ok &&
+        primary_raw) {
+        HandlePtr primary(primary_raw);
+        Result<ColorEncoding> color = read_color(primary.get(), options.limits);
+        if (!color)
+            return color.error();
+        document.color = std::move(color).value();
+    }
     const std::optional<SequenceTiming>& sequence_timing = timing.value();
     if (sequence_timing)
         document.loop_count = sequence_timing->loop_count;
@@ -1170,7 +1241,7 @@ Result<Document> decode_sequence(ParsedHeif& parsed, Format format, const Decode
                 frame.duration = std::chrono::nanoseconds(static_cast<std::int64_t>(
                     (static_cast<std::uint64_t>(ticks) * 1'000'000'000ULL) / timescale));
             }
-            frame.color = read_color(decoded.get());
+            frame.color = read_sequence_color(decoded.get(), document.color);
             document.canvas_width = std::max(document.canvas_width, width);
             document.canvas_height = std::max(document.canvas_height, height);
             if (document.frames.empty())
@@ -1367,16 +1438,124 @@ Result<void> configure_heif_image(heif_image* image, const ColorEncoding& color,
     return {};
 }
 
-Result<MutableImagePtr> make_heif_image(const ImageView& view, const ColorEncoding& color,
-                                        bool include_alpha, bool lossless_rgb = false) {
-    Result<void> valid = view.validate();
-    if (!valid)
-        return valid.error();
-    if (view.width > static_cast<std::uint32_t>(std::numeric_limits<int>::max()) ||
-        view.height > static_cast<std::uint32_t>(std::numeric_limits<int>::max())) {
+int heif_encoding_depth(const PixelFormat& format, const EncodeOptions& options) {
+    if (options.format == Format::avif && !options.lossless) {
+        // AV1 supports 8, 10 and 12 significant bits. Extra conversion precision
+        // benefits 8-bit screenshots; retain more precision for higher-depth input.
+        return format.bits_per_channel > 8 ? 12 : 10;
+    }
+    return format.bits_per_channel;
+}
+
+Result<MutableImagePtr> allocate_heif_rgb_image(std::uint32_t width, std::uint32_t height,
+                                                int depth, bool include_alpha) {
+    if (width > static_cast<std::uint32_t>(std::numeric_limits<int>::max()) ||
+        height > static_cast<std::uint32_t>(std::numeric_limits<int>::max())) {
         return Status::error(ErrorCode::limit_exceeded,
                              "HEIF input dimensions exceed libheif limits.", "libheif");
     }
+    const heif_chroma chroma = depth > 8       ? include_alpha ? heif_chroma_interleaved_RRGGBBAA_LE
+                                                               : heif_chroma_interleaved_RRGGBB_LE
+                               : include_alpha ? heif_chroma_interleaved_RGBA
+                                               : heif_chroma_interleaved_RGB;
+    heif_image* raw = nullptr;
+    heif_error error = heif_image_create(static_cast<int>(width), static_cast<int>(height),
+                                         heif_colorspace_RGB, chroma, &raw);
+    if (error.code != heif_error_Ok) {
+        return heif_status(error, ErrorCode::encode_failed, "HEIF image allocation");
+    }
+    MutableImagePtr image(raw);
+    error = heif_image_add_plane(image.get(), heif_channel_interleaved, static_cast<int>(width),
+                                 static_cast<int>(height), depth);
+    if (error.code != heif_error_Ok) {
+        return heif_status(error, ErrorCode::encode_failed, "HEIF image-plane allocation");
+    }
+    return image;
+}
+
+Result<void> copy_heif_rgb_row(const std::byte* source, std::uint32_t width,
+                               const PixelFormat& format, std::uint8_t* destination, int depth,
+                               bool include_alpha) {
+    static constexpr auto ten_bit_samples = [] {
+        std::array<std::uint16_t, 256> samples{};
+        for (std::size_t index = 0; index < samples.size(); ++index)
+            samples[index] = static_cast<std::uint16_t>((index * 1023U + 127U) / 255U);
+        return samples;
+    }();
+    const std::size_t input_channels = format.channel_count();
+    const std::size_t output_channels = include_alpha ? 4U : 3U;
+    const std::size_t input_sample_bytes = format.bits_per_channel > 8 ? 2U : 1U;
+    const std::size_t output_sample_bytes = depth > 8 ? 2U : 1U;
+    if (depth == format.bits_per_channel && format.little_endian &&
+        ((format.channels == ChannelLayout::rgba && include_alpha) ||
+         (format.channels == ChannelLayout::rgb && !include_alpha))) {
+        std::memcpy(destination, source,
+                    static_cast<std::size_t>(width) * output_channels * output_sample_bytes);
+        return {};
+    }
+    const std::uint32_t input_max = (1U << format.bits_per_channel) - 1U;
+    const std::uint32_t output_max = (1U << depth) - 1U;
+    for (std::uint32_t x = 0; x < width; ++x) {
+        const std::byte* pixel =
+            source + static_cast<std::size_t>(x) * input_channels * input_sample_bytes;
+        const auto read_sample = [&](std::size_t channel) -> std::uint32_t {
+            const std::size_t offset = channel * input_sample_bytes;
+            if (input_sample_bytes == 1U)
+                return static_cast<std::uint8_t>(pixel[offset]);
+            const std::uint32_t first = static_cast<std::uint8_t>(pixel[offset]);
+            const std::uint32_t second = static_cast<std::uint8_t>(pixel[offset + 1U]);
+            return format.little_endian ? first | (second << 8U) : (first << 8U) | second;
+        };
+        std::array<std::uint32_t, 4> samples{0, 0, 0, input_max};
+        switch (format.channels) {
+        case ChannelLayout::gray:
+        case ChannelLayout::gray_alpha:
+            samples[0] = samples[1] = samples[2] = read_sample(0);
+            if (include_alpha && format.channels == ChannelLayout::gray_alpha)
+                samples[3] = read_sample(1);
+            break;
+        case ChannelLayout::rgb:
+        case ChannelLayout::bgr:
+        case ChannelLayout::rgba:
+        case ChannelLayout::bgra: {
+            const bool bgr =
+                format.channels == ChannelLayout::bgr || format.channels == ChannelLayout::bgra;
+            samples[0] = read_sample(bgr ? 2U : 0U);
+            samples[1] = read_sample(1);
+            samples[2] = read_sample(bgr ? 0U : 2U);
+            if (include_alpha && input_channels == 4U)
+                samples[3] = read_sample(3);
+            break;
+        }
+        case ChannelLayout::cmyk:
+        case ChannelLayout::indexed:
+            return Status::error(ErrorCode::unsupported_feature,
+                                 "HEIF encoding does not accept CMYK or indexed pixels.",
+                                 "libheif");
+        }
+        for (std::size_t channel = 0; channel < output_channels; ++channel) {
+            // Scale the full unsigned range with rounding, rather than shifting
+            // 8-bit values and leaving the top of the 10-bit range unused.
+            const std::uint32_t sample =
+                depth == format.bits_per_channel ? samples[channel]
+                : depth == 10 && format.bits_per_channel == 8
+                    ? ten_bit_samples[samples[channel]]
+                    : (samples[channel] * output_max + input_max / 2U) / input_max;
+            const std::size_t offset =
+                (static_cast<std::size_t>(x) * output_channels + channel) * output_sample_bytes;
+            destination[offset] = static_cast<std::uint8_t>(sample & 0xffU);
+            if (output_sample_bytes == 2U)
+                destination[offset + 1U] = static_cast<std::uint8_t>(sample >> 8U);
+        }
+    }
+    return {};
+}
+
+Result<MutableImagePtr> make_heif_image(const ImageView& view, const ColorEncoding& color,
+                                        bool include_alpha, const EncodeOptions& options) {
+    Result<void> valid = view.validate();
+    if (!valid)
+        return valid.error();
     const bool sixteen_bit = view.format.sample_type == SampleType::unsigned_integer &&
                              view.format.bits_per_channel == 16;
     if (sixteen_bit && view.format.channels != ChannelLayout::rgba) {
@@ -1389,30 +1568,18 @@ Result<MutableImagePtr> make_heif_image(const ImageView& view, const ColorEncodi
                              "HEIF encoding supports packed 8-bit pixels or RGBA16 pixels.",
                              "libheif");
     }
-    const heif_chroma chroma = sixteen_bit     ? include_alpha ? heif_chroma_interleaved_RRGGBBAA_LE
-                                                               : heif_chroma_interleaved_RRGGBB_LE
-                               : include_alpha ? heif_chroma_interleaved_RGBA
-                                               : heif_chroma_interleaved_RGB;
-    heif_image* raw = nullptr;
-    heif_error error =
-        heif_image_create(static_cast<int>(view.width), static_cast<int>(view.height),
-                          heif_colorspace_RGB, chroma, &raw);
-    if (error.code != heif_error_Ok) {
-        return heif_status(error, ErrorCode::encode_failed, "HEIF image allocation");
-    }
-    MutableImagePtr image(raw);
-    error =
-        heif_image_add_plane(image.get(), heif_channel_interleaved, static_cast<int>(view.width),
-                             static_cast<int>(view.height), sixteen_bit ? 16 : 8);
-    if (error.code != heif_error_Ok) {
-        return heif_status(error, ErrorCode::encode_failed, "HEIF image-plane allocation");
-    }
+    const int depth = heif_encoding_depth(view.format, options);
+    Result<MutableImagePtr> allocated =
+        allocate_heif_rgb_image(view.width, view.height, depth, include_alpha);
+    if (!allocated)
+        return allocated.error();
+    MutableImagePtr image = std::move(allocated).value();
     std::size_t destination_stride = 0;
     std::uint8_t* destination =
         heif_image_get_plane2(image.get(), heif_channel_interleaved, &destination_stride);
     const std::size_t output_channels = include_alpha ? 4U : 3U;
     const std::size_t row_bytes =
-        static_cast<std::size_t>(view.width) * output_channels * (sixteen_bit ? 2U : 1U);
+        static_cast<std::size_t>(view.width) * output_channels * (depth > 8 ? 2U : 1U);
     if (!destination || destination_stride < row_bytes) {
         return Status::error(ErrorCode::encode_failed,
                              "libheif returned an invalid encoding image plane.", "libheif");
@@ -1421,78 +1588,14 @@ Result<MutableImagePtr> make_heif_image(const ImageView& view, const ColorEncodi
         const std::byte* source =
             view.pixels.data() + static_cast<std::size_t>(y) * view.row_stride;
         std::uint8_t* row = destination + static_cast<std::size_t>(y) * destination_stride;
-        if (sixteen_bit) {
-            if (include_alpha && view.format.little_endian) {
-                std::memcpy(row, source, row_bytes);
-            } else {
-                for (std::uint32_t x = 0; x < view.width; ++x) {
-                    for (std::size_t channel = 0; channel < output_channels; ++channel) {
-                        const std::size_t input = (static_cast<std::size_t>(x) * 4U + channel) * 2U;
-                        const std::size_t output =
-                            (static_cast<std::size_t>(x) * output_channels + channel) * 2U;
-                        row[output] = static_cast<std::uint8_t>(
-                            source[input + (view.format.little_endian ? 0U : 1U)]);
-                        row[output + 1U] = static_cast<std::uint8_t>(
-                            source[input + (view.format.little_endian ? 1U : 0U)]);
-                    }
-                }
-            }
-            continue;
-        }
-        for (std::uint32_t x = 0; x < view.width; ++x) {
-            const std::size_t output = static_cast<std::size_t>(x) * output_channels;
-            switch (view.format.channels) {
-            case ChannelLayout::gray: {
-                const std::uint8_t value = static_cast<std::uint8_t>(source[x]);
-                row[output] = value;
-                row[output + 1] = value;
-                row[output + 2] = value;
-                if (include_alpha)
-                    row[output + 3] = 255;
-                break;
-            }
-            case ChannelLayout::gray_alpha: {
-                const std::size_t input = static_cast<std::size_t>(x) * 2U;
-                const std::uint8_t value = static_cast<std::uint8_t>(source[input]);
-                row[output] = value;
-                row[output + 1] = value;
-                row[output + 2] = value;
-                if (include_alpha)
-                    row[output + 3] = static_cast<std::uint8_t>(source[input + 1]);
-                break;
-            }
-            case ChannelLayout::rgb:
-            case ChannelLayout::bgr: {
-                const std::size_t input = static_cast<std::size_t>(x) * 3U;
-                const bool bgr = view.format.channels == ChannelLayout::bgr;
-                row[output] = static_cast<std::uint8_t>(source[input + (bgr ? 2U : 0U)]);
-                row[output + 1] = static_cast<std::uint8_t>(source[input + 1]);
-                row[output + 2] = static_cast<std::uint8_t>(source[input + (bgr ? 0U : 2U)]);
-                if (include_alpha)
-                    row[output + 3] = 255;
-                break;
-            }
-            case ChannelLayout::rgba:
-            case ChannelLayout::bgra: {
-                const std::size_t input = static_cast<std::size_t>(x) * 4U;
-                const bool bgra = view.format.channels == ChannelLayout::bgra;
-                row[output] = static_cast<std::uint8_t>(source[input + (bgra ? 2U : 0U)]);
-                row[output + 1] = static_cast<std::uint8_t>(source[input + 1]);
-                row[output + 2] = static_cast<std::uint8_t>(source[input + (bgra ? 0U : 2U)]);
-                if (include_alpha)
-                    row[output + 3] = static_cast<std::uint8_t>(source[input + 3]);
-                break;
-            }
-            case ChannelLayout::cmyk:
-            case ChannelLayout::indexed:
-                return Status::error(ErrorCode::unsupported_feature,
-                                     "HEIF encoding does not accept CMYK or indexed pixels.",
-                                     "libheif");
-            }
-        }
+        Result<void> copied =
+            copy_heif_rgb_row(source, view.width, view.format, row, depth, include_alpha);
+        if (!copied)
+            return copied.error();
     }
     Result<void> configured =
-        configure_heif_image(image.get(), color, include_alpha, view.format.alpha, lossless_rgb);
+        configure_heif_image(image.get(), color, include_alpha, view.format.alpha,
+                             options.format == Format::avif && options.lossless);
     if (!configured)
         return configured.error();
     return image;
@@ -1501,7 +1604,7 @@ Result<MutableImagePtr> make_heif_image(const ImageView& view, const ColorEncodi
 Result<MutableImagePtr> make_heif_raster_image(const RasterSource& source,
                                                const RasterFrameDescriptor& frame,
                                                const ColorEncoding& color, bool include_alpha,
-                                               bool lossless_rgb, std::stop_token stop) {
+                                               const EncodeOptions& options, std::stop_token stop) {
     const PlaneDescriptor& plane = frame.layout.planes.front();
     if (plane.format != kRgba8 ||
         frame.width > static_cast<std::uint32_t>(std::numeric_limits<int>::max()) ||
@@ -1509,26 +1612,18 @@ Result<MutableImagePtr> make_heif_raster_image(const RasterSource& source,
         return Status::error(ErrorCode::unsupported_feature,
                              "Native HEIF raster encoding requires RGBA8 pixels.", "libheif");
     }
-    const heif_chroma chroma =
-        include_alpha ? heif_chroma_interleaved_RGBA : heif_chroma_interleaved_RGB;
-    heif_image* raw = nullptr;
-    heif_error error =
-        heif_image_create(static_cast<int>(frame.width), static_cast<int>(frame.height),
-                          heif_colorspace_RGB, chroma, &raw);
-    if (error.code != heif_error_Ok)
-        return heif_status(error, ErrorCode::encode_failed, "HEIF image allocation");
-    MutableImagePtr image(raw);
-    error = heif_image_add_plane(image.get(), heif_channel_interleaved,
-                                 static_cast<int>(frame.width), static_cast<int>(frame.height), 8);
-    if (error.code != heif_error_Ok) {
-        return heif_status(error, ErrorCode::encode_failed, "HEIF image-plane allocation");
-    }
+    const int depth = heif_encoding_depth(plane.format, options);
+    Result<MutableImagePtr> allocated =
+        allocate_heif_rgb_image(frame.width, frame.height, depth, include_alpha);
+    if (!allocated)
+        return allocated.error();
+    MutableImagePtr image = std::move(allocated).value();
     std::size_t destination_stride = 0;
     std::uint8_t* destination =
         heif_image_get_plane2(image.get(), heif_channel_interleaved, &destination_stride);
     const std::size_t source_row_bytes = static_cast<std::size_t>(frame.width) * 4U;
     const std::size_t destination_row_bytes =
-        static_cast<std::size_t>(frame.width) * (include_alpha ? 4U : 3U);
+        static_cast<std::size_t>(frame.width) * (include_alpha ? 4U : 3U) * (depth > 8 ? 2U : 1U);
     if (destination == nullptr || destination_stride < destination_row_bytes) {
         return Status::error(ErrorCode::encode_failed,
                              "libheif returned an invalid encoding image plane.", "libheif");
@@ -1542,21 +1637,18 @@ Result<MutableImagePtr> make_heif_raster_image(const RasterSource& source,
             if (!read)
                 return read.error();
             std::uint8_t* output = destination + static_cast<std::size_t>(y) * destination_stride;
-            if (include_alpha) {
-                std::memcpy(output, source_row.data(), source_row_bytes);
-                continue;
-            }
-            for (std::uint32_t x = 0; x < frame.width; ++x) {
-                std::memcpy(output + static_cast<std::size_t>(x) * 3U,
-                            source_row.data() + static_cast<std::size_t>(x) * 4U, 3U);
-            }
+            Result<void> copied = copy_heif_rgb_row(source_row.data(), frame.width, plane.format,
+                                                    output, depth, include_alpha);
+            if (!copied)
+                return copied.error();
         }
     } catch (const std::bad_alloc&) {
         return Status::error(ErrorCode::out_of_memory,
                              "Could not allocate a HEIF raster input row.", "libheif");
     }
     Result<void> configured =
-        configure_heif_image(image.get(), color, include_alpha, plane.format.alpha, lossless_rgb);
+        configure_heif_image(image.get(), color, include_alpha, plane.format.alpha,
+                             options.format == Format::avif && options.lossless);
     if (!configured)
         return configured.error();
     return image;
@@ -1629,13 +1721,12 @@ Result<EncoderPtr> make_encoder(heif_context* context, Format format,
     if (error.code != heif_error_Ok) {
         return heif_status(error, ErrorCode::encode_failed, "HEIF encoder configuration");
     }
-    // Lossless AV1 quantization also needs an identity color transform and no chroma
-    // subsampling to preserve RGB values, as in libheif's lossless encoder example.
-    if (format == Format::avif && options.lossless) {
+    // Full chroma resolution preserves screenshot text and thin colored lines.
+    // Lossless AV1 additionally needs the identity color transform below.
+    if (format == Format::avif) {
         error = heif_encoder_set_parameter_string(encoder.get(), "chroma", "444");
         if (error.code != heif_error_Ok)
-            return heif_status(error, ErrorCode::encode_failed,
-                               "AVIF lossless chroma configuration");
+            return heif_status(error, ErrorCode::encode_failed, "AVIF chroma configuration");
     }
     const heif_encoder_parameter* const* parameters = heif_encoder_list_parameters(encoder.get());
     if (parameters) {
@@ -1709,7 +1800,7 @@ Result<void> encode_still(heif_context* context, heif_encoder* encoder, const Do
     const bool include_alpha = alpha.value() == AlphaContent::non_opaque;
     const bool lossless_rgb = options.format == Format::avif && options.lossless;
     Result<MutableImagePtr> image = make_heif_image(
-        frame.image.view(), effective_color(document, frame), include_alpha, lossless_rgb);
+        frame.image.view(), effective_color(document, frame), include_alpha, options);
     if (!image)
         return image.error();
     EncodeOptionsPtr encoding(heif_encoding_options_alloc());
@@ -1806,9 +1897,8 @@ Result<void> encode_sequence(heif_context* context, heif_encoder* encoder, const
     for (const Frame& frame : document.frames) {
         if (stop.stop_requested())
             return cancelled_status();
-        Result<MutableImagePtr> image =
-            make_heif_image(frame.image.view(), effective_color(document, frame), encode_alpha,
-                            options.format == Format::avif && options.lossless);
+        Result<MutableImagePtr> image = make_heif_image(
+            frame.image.view(), effective_color(document, frame), encode_alpha, options);
         if (!image)
             return image.error();
         const std::int64_t duration_ns = std::max<std::int64_t>(0, frame.duration.count());
@@ -2223,7 +2313,7 @@ Result<EncodedArtifactReceipt> HeifCodec::encode_raster_to_sink(const RasterSour
     const ColorEncoding& color = effective_color(descriptor, frame);
     const Metadata& metadata = effective_metadata(descriptor, frame);
     Result<MutableImagePtr> image =
-        make_heif_raster_image(source, frame, color, include_alpha, lossless_rgb, stop);
+        make_heif_raster_image(source, frame, color, include_alpha, options, stop);
     if (!image)
         return image.error();
 

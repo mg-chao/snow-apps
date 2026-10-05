@@ -577,6 +577,10 @@
             <translation>不透明度：%1%</translation>
         </message>
         <message>
+            <source>Preparing cloud upload...</source>
+            <translation>正在准备云上传…</translation>
+        </message>
+        <message>
             <source>Process image</source>
             <translation>处理图像</translation>
         </message>
@@ -651,6 +655,14 @@
         <message>
             <source>Thumbnail mode</source>
             <translation>缩略图模式</translation>
+        </message>
+        <message>
+            <source>Uploaded to cloud. Link copied to clipboard.</source>
+            <translation>已上传到云端，链接已复制到剪贴板。</translation>
+        </message>
+        <message>
+            <source>Uploading to cloud... %1%</source>
+            <translation>正在上传到云端… %1%</translation>
         </message>
         <message>
             <source>Window Management</source>

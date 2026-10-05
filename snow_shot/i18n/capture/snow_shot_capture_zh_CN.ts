@@ -74,6 +74,10 @@
             <translation>没有可复制的识别结果</translation>
         </message>
         <message>
+            <source>Preparing cloud upload...</source>
+            <translation>正在准备云上传…</translation>
+        </message>
+        <message>
             <source>Save recognition text</source>
             <translation>保存识别文本</translation>
         </message>
@@ -168,6 +172,14 @@
         <message>
             <source>This screenshot cannot be pinned</source>
             <translation>此截图无法固定到屏幕</translation>
+        </message>
+        <message>
+            <source>Uploaded to cloud. Link copied to clipboard.</source>
+            <translation>已上传到云端，链接已复制到剪贴板。</translation>
+        </message>
+        <message>
+            <source>Uploading to cloud... %1%</source>
+            <translation>正在上传到云端… %1%</translation>
         </message>
         <message>
             <source>Your current screenshot will be discarded.</source>

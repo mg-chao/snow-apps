@@ -964,7 +964,8 @@ void screenshotUiSchemaRepairsStructuredValues() {
                      QJsonArray{QStringLiteral("text-recognition")},
                      QJsonArray{QStringLiteral("text-translation")},
                      QJsonArray{QStringLiteral("scrolling-screenshot")},
-                     QJsonArray{QStringLiteral("quick-save"), QStringLiteral("save-as-file")},
+                     QJsonArray{QStringLiteral("upload-to-cloud"), QStringLiteral("print"),
+                                QStringLiteral("quick-save"), QStringLiteral("save-as-file")},
                  }},
                 {QStringLiteral("hidden"), QJsonArray{}},
             },
@@ -1071,14 +1072,16 @@ void screenshotUiSchemaRepairsStructuredValues() {
         normalizedActions.valid && normalizedActions.changed && actionLayout.size() == 2 &&
             actionLayout.value(QStringLiteral("positions")).toArray() ==
                 QJsonArray{
-                    QJsonArray{
-                        QStringLiteral("quick-save"), QStringLiteral("save-as-file"),
-                        QStringLiteral("table-recognition"), QStringLiteral("convert-to-markdown"),
-                        QStringLiteral("latex-recognition"), QStringLiteral("convert-to-html")},
+                    QJsonArray{QStringLiteral("upload-to-cloud"), QStringLiteral("quick-save"),
+                               QStringLiteral("save-as-file"), QStringLiteral("table-recognition"),
+                               QStringLiteral("convert-to-markdown"),
+                               QStringLiteral("latex-recognition"),
+                               QStringLiteral("convert-to-html")},
                     QJsonArray{QStringLiteral("record-screen")},
                     QJsonArray{QStringLiteral("pin-to-screen")},
                     QJsonArray{QStringLiteral("text-translation")},
                     QJsonArray{QStringLiteral("scrolling-screenshot")},
+                    QJsonArray{QStringLiteral("print")},
                 } &&
             actionLayout.value(QStringLiteral("hidden")).toArray() ==
                 QJsonArray{QStringLiteral("barcode-recognition"),
@@ -1094,6 +1097,7 @@ void screenshotUiSchemaRepairsStructuredValues() {
                     QStringLiteral("latex-recognition"), QStringLiteral("record-screen"),
                     QStringLiteral("pin-to-screen"), QStringLiteral("text-recognition"),
                     QStringLiteral("text-translation"), QStringLiteral("scrolling-screenshot"),
+                    QStringLiteral("upload-to-cloud"), QStringLiteral("print"),
                     QStringLiteral("quick-save"), QStringLiteral("save-as-file")}},
     };
     const auto normalizedAllHidden = storage::ConfigurationSchema::normalize(
@@ -1167,13 +1171,14 @@ void screenshotUiAdaptersRoundTripTypedValues() {
             "typed toolbar layout did not preserve normalized visible and hidden entries");
 
     const storage::ScreenshotToolbarLayout actionLayout{
-        {{QStringLiteral("quick-save"), QStringLiteral("save-as-file"),
-          QStringLiteral("record-screen")},
+        {{QStringLiteral("upload-to-cloud"), QStringLiteral("quick-save"),
+          QStringLiteral("save-as-file"), QStringLiteral("record-screen")},
          {QStringLiteral("table-recognition")}},
         {QStringLiteral("barcode-recognition"), QStringLiteral("pin-to-screen"),
          QStringLiteral("convert-to-markdown"), QStringLiteral("convert-to-html"),
          QStringLiteral("latex-recognition"), QStringLiteral("text-recognition"),
-         QStringLiteral("text-translation"), QStringLiteral("scrolling-screenshot")},
+         QStringLiteral("text-translation"), QStringLiteral("scrolling-screenshot"),
+         QStringLiteral("print")},
     };
     require(toolbar.setLayout(storage::ScreenshotToolbarLayoutKind::ActionTools, actionLayout) &&
                 toolbar.layout(storage::ScreenshotToolbarLayoutKind::ActionTools) == actionLayout &&
@@ -1195,7 +1200,8 @@ void screenshotUiAdaptersRoundTripTypedValues() {
         {}};
     auto upgradedPinned = pinnedLayout;
     upgradedPinned.positions.append({QStringLiteral("separator")});
-    upgradedPinned.positions.append({QStringLiteral("quick-save"), QStringLiteral("save-as-file")});
+    upgradedPinned.positions.append({QStringLiteral("upload-to-cloud"), QStringLiteral("print"),
+                                     QStringLiteral("quick-save"), QStringLiteral("save-as-file")});
     upgradedPinned.positions.append({QStringLiteral("copy")});
     require(toolbar.setLayout(pinnedKind, pinnedLayout) &&
                 toolbar.layout(pinnedKind) == upgradedPinned,
@@ -1281,6 +1287,8 @@ void verifyPinToScreenShortcutSettings() {
                 QStringList{QStringLiteral("Ctrl+P")} &&
             portable(defaults.value(QStringLiteral("save_as_file"))) ==
                 QStringList{QStringLiteral("Ctrl+S")} &&
+            portable(defaults.value(QStringLiteral("upload_to_cloud"))) ==
+                QStringList{QStringLiteral("Ctrl+U")} &&
             portable(defaults.value(QStringLiteral("show_text_recognition_results"))) ==
                 QStringList{QStringLiteral("Ctrl+D")} &&
             portable(defaults.value(QStringLiteral("drawing_mode"))) ==
@@ -1312,7 +1320,7 @@ void verifyPinToScreenShortcutSettings() {
                                            {QStringLiteral("M")}) &&
             shortcutSettings.shortcuts(QStringLiteral("unsupported")).isEmpty() &&
             !shortcutSettings.setShortcuts(QStringLiteral("unsupported"), {QStringLiteral("Q")}),
-        "pinned-window shortcut adapter must expose twenty-seven stable actions and defaults");
+        "pinned-window shortcut adapter must expose twenty-eight stable actions and defaults");
     require(portable(defaults.value(QStringLiteral("increase_opacity"))) ==
                 QStringList{QStringLiteral("]")},
             "increase_opacity must have its default binding");
@@ -1805,7 +1813,7 @@ void settingsAdaptersRoundTripAndRejectInvalidValues() {
     const storage::ScreenshotShortcutSettings screenshotShortcuts;
     const shortcuts::ShortcutBindingMap screenshotDefaults = screenshotShortcuts.allShortcuts();
     require(
-        screenshotDefaults.size() == 31 &&
+        screenshotDefaults.size() == 32 &&
             portable(screenshotShortcuts.moveTool()) ==
                 QStringList{QStringLiteral("M"), QStringLiteral("Ctrl+E")} &&
             portable(screenshotShortcuts.moveCursorUp()) ==
@@ -1843,6 +1851,8 @@ void settingsAdaptersRoundTripAndRejectInvalidValues() {
                 QStringList{QStringLiteral("Ctrl+Shift+S")} &&
             portable(screenshotDefaults.value(QStringLiteral("save_as_file"))) ==
                 QStringList{QStringLiteral("Ctrl+S")} &&
+            portable(screenshotDefaults.value(QStringLiteral("upload_to_cloud"))) ==
+                QStringList{QStringLiteral("Ctrl+U")} &&
             portable(screenshotDefaults.value(QStringLiteral("cancel_screenshot"))) ==
                 QStringList{QStringLiteral("Esc")} &&
             portable(screenshotDefaults.value(QStringLiteral("copy_to_clipboard"))) ==

@@ -442,6 +442,8 @@ QString actionToolShortcutId(const QString& itemId) {
     if (itemId == QStringLiteral("scrolling-screenshot")) {
         return QStringLiteral("scrolling_screenshot");
     }
+    if (itemId == QStringLiteral("upload-to-cloud"))
+        return QStringLiteral("upload_to_cloud");
     if (itemId == QStringLiteral("print")) {
         return QStringLiteral("print");
     }
@@ -1018,11 +1020,13 @@ ScreenshotToolPalette::ScreenshotToolPalette(const Options& options, QWidget* pa
     if (storage.isInitialized()) {
         connect(&storage.configuration(), &snow_shot::storage::ConfigurationStore::valueChanged,
                 this, [this](const QString& key, const QJsonValue& value) {
-                    if (key.startsWith(QStringLiteral("screenshot_shortcuts/")) ||
-                        key.startsWith(QStringLiteral("drawing_shortcuts/")) ||
-                        key.startsWith(QStringLiteral("pin_to_screen_shortcuts/")) ||
-                        key.startsWith(QStringLiteral("screen_recording_shortcuts/")) ||
-                        key == QStringLiteral("global_shortcuts/global_canvas")) {
+                    if (key == QStringLiteral("cloud_upload/configuration")) {
+                        setCloudUploadBusy(m_cloudUploadBusy);
+                    } else if (key.startsWith(QStringLiteral("screenshot_shortcuts/")) ||
+                               key.startsWith(QStringLiteral("drawing_shortcuts/")) ||
+                               key.startsWith(QStringLiteral("pin_to_screen_shortcuts/")) ||
+                               key.startsWith(QStringLiteral("screen_recording_shortcuts/")) ||
+                               key == QStringLiteral("global_shortcuts/global_canvas")) {
                         refreshShortcutTooltips();
                     } else if (key == QStringLiteral("screenshot_toolbar/last_filter_tool")) {
                         m_lastFilterTool = filterToolFromSetting(value.toString());
@@ -1033,6 +1037,7 @@ ScreenshotToolPalette::ScreenshotToolPalette(const Options& options, QWidget* pa
                     }
                 });
     }
+    setCloudUploadBusy(m_cloudUploadBusy);
     m_scaleScope = new adqt::widgets::AdControlScaleScope(this, this);
     connect(this, &ScreenshotToolPalette::materializedScope, this, [this](QWidget* scope) {
         if (!m_scaleScope->applyCurrentScaleToSubtree(scope)) {
@@ -4930,6 +4935,8 @@ ScreenshotToolPalette::actionToolSourceButton(const QString& itemId) const {
     if (itemId == QStringLiteral("scrolling-screenshot")) {
         return m_scrollingScreenshotButton;
     }
+    if (itemId == QStringLiteral("upload-to-cloud"))
+        return m_cloudUploadButton;
     if (itemId == QStringLiteral("print")) {
         return m_printButton;
     }
@@ -5017,6 +5024,8 @@ bool ScreenshotToolPalette::activateActionTool(const QString& itemId, bool toggl
         emit quickSaveRequested();
     } else if (itemId == QStringLiteral("print")) {
         emit printRequested();
+    } else if (itemId == QStringLiteral("upload-to-cloud")) {
+        emit cloudUploadRequested();
     } else if (itemId == QStringLiteral("save-as-file")) {
         emit saveRequested();
     } else if (itemId == QStringLiteral("copy")) {
@@ -5488,8 +5497,8 @@ void ScreenshotToolPalette::applyMainToolbarLayout(bool notify) {
     QVector<QWidget*> resultActions{
         m_cancelButton,
         m_options.saveButtonWithResultActions && !configurableResultActions
-            ? createActionToolGroup({QStringLiteral("print"), QStringLiteral("quick-save"),
-                                     QStringLiteral("save-as-file")})
+            ? createActionToolGroup({QStringLiteral("upload-to-cloud"), QStringLiteral("print"),
+                                     QStringLiteral("quick-save"), QStringLiteral("save-as-file")})
             : nullptr,
         configurableResultActions ? nullptr : m_copyButton,
         m_confirmButton,
@@ -5882,6 +5891,16 @@ bool ScreenshotToolPalette::addMainSecondaryButtons(const Options& options, QBox
         m_quickSaveButton->hide();
         connect(m_quickSaveButton, &adqt::widgets::AdButton::clicked, this,
                 [this]() { activateActionTool(QStringLiteral("quick-save")); });
+        m_cloudUploadButton =
+            addActionButton(QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Upload to Cloud"),
+                            outlined_icons::CloudUpload());
+        m_cloudUploadButton->setObjectName(QStringLiteral("screenshotCloudUploadButton"));
+        m_cloudUploadButton->hide();
+        applyScreenshotShortcutTooltip(m_cloudUploadButton, QStringLiteral("Upload to Cloud"),
+                                       QStringLiteral("upload_to_cloud"));
+        connect(m_cloudUploadButton, &adqt::widgets::AdButton::clicked, this,
+                [this] { activateActionTool(QStringLiteral("upload-to-cloud")); });
+        setCloudUploadBusy(m_cloudUploadBusy);
         m_saveButton = addActionButton("Save as file", custom_outlined_icons::Save());
         applyScreenshotShortcutTooltip(m_saveButton, QStringLiteral("Save as file"),
                                        QStringLiteral("save_as_file"));
@@ -5977,6 +5996,7 @@ QString screenshotShortcutActionItem(const QString& actionId) {
         {QStringLiteral("quick_save"), QStringLiteral("quick-save")},
         {QStringLiteral("print"), QStringLiteral("print")},
         {QStringLiteral("save_as_file"), QStringLiteral("save-as-file")},
+        {QStringLiteral("upload_to_cloud"), QStringLiteral("upload-to-cloud")},
         {QStringLiteral("pin_to_screen"), QStringLiteral("pin-to-screen")},
     };
     return actionItems.value(actionId);
@@ -6090,6 +6110,16 @@ void ScreenshotToolPalette::addMainActionButtons(const Options& options, QBoxLay
         m_quickSaveButton->hide();
         connect(m_quickSaveButton, &adqt::widgets::AdButton::clicked, this,
                 [this]() { activateActionTool(QStringLiteral("quick-save")); });
+        m_cloudUploadButton =
+            addActionButton(QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Upload to Cloud"),
+                            outlined_icons::CloudUpload());
+        m_cloudUploadButton->setObjectName(QStringLiteral("screenshotCloudUploadButton"));
+        m_cloudUploadButton->hide();
+        applyScreenshotShortcutTooltip(m_cloudUploadButton, QStringLiteral("Upload to Cloud"),
+                                       QStringLiteral("upload_to_cloud"));
+        connect(m_cloudUploadButton, &adqt::widgets::AdButton::clicked, this,
+                [this] { activateActionTool(QStringLiteral("upload-to-cloud")); });
+        setCloudUploadBusy(m_cloudUploadBusy);
         m_saveButton = addActionButton("Save as file", custom_outlined_icons::Save());
         applyScreenshotShortcutTooltip(m_saveButton, QStringLiteral("Save as file"),
                                        QStringLiteral("save_as_file"));
@@ -9694,4 +9724,18 @@ void ScreenshotToolPalette::closeRecordingAudioGainPopovers() {
         m_recordMicrophoneGainPopover->close();
     if (m_recordSystemAudioGainPopover)
         m_recordSystemAudioGainPopover->close();
+}
+
+void ScreenshotToolPalette::setCloudUploadBusy(bool busy) {
+    m_cloudUploadBusy = busy;
+    const auto settings = snow_shot::storage::CloudUploadConfigurationSettings().settings();
+    const auto* config = settings.selected();
+    if (m_cloudUploadButton) {
+        m_cloudUploadButton->setEnabled(!busy && config &&
+                                        snow_shot::cloudUploadConfigurationUsable(*config));
+        m_cloudUploadButton->setBusy(busy);
+    }
+    for (int i = 0; i < m_actionToolGroups.size(); ++i)
+        if (m_actionToolGroups[i].itemIds.contains(QStringLiteral("upload-to-cloud")))
+            refreshActionToolGroup(i);
 }

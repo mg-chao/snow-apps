@@ -1,4 +1,5 @@
 #include "snow_shot/storage/configurationstore.h"
+#include "snow_shot/clouduploadconfiguration.h"
 #include "snow_shot/app/edition.h"
 #if SNOW_SHOT_ENABLE_API_CONFIGURATION
 #include "snow_shot/customaimodelconfiguration.h"
@@ -125,6 +126,16 @@ MaterializedConfiguration materializeConfiguration(const QMap<QString, QJsonValu
                 insertPath(&result.document, entry.key, raw);
                 result.dirty = true;
             }
+        }
+        if (entry.key == QStringLiteral("cloud_upload/configuration")) {
+            bool valid = false;
+            const auto canonical =
+                cloudUploadSettingsToJson(cloudUploadSettingsFromJson(raw, &valid));
+            result.values.insert(entry.key, canonical);
+            result.customConfigurationsRepaired = result.customConfigurationsRepaired || !valid;
+            if (replaceAll)
+                insertPath(&result.document, entry.key, canonical);
+            continue;
         }
         bool migratedDestroyShortcut = false;
         if (entry.key == QStringLiteral("pin_to_screen_shortcuts/destroy_window") &&

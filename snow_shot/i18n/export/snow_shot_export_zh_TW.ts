@@ -33,6 +33,33 @@
         </message>
     </context>
     <context>
+        <name>ScreenshotCloudUploadJob</name>
+        <message>
+            <source>Cloud upload failed (HTTP %1%2).</source>
+            <translation>雲端上傳失敗（HTTP %1%2）。</translation>
+        </message>
+        <message>
+            <source>Cloud upload failed because of a network error or timeout.</source>
+            <translation>雲端上傳因網路錯誤或逾時而失敗。</translation>
+        </message>
+        <message>
+            <source>The cloud upload configuration or image is unavailable.</source>
+            <translation>雲端上傳設定或影像無法使用。</translation>
+        </message>
+        <message>
+            <source>The image could not be opened for upload.</source>
+            <translation>無法開啟影像以進行上傳。</translation>
+        </message>
+        <message>
+            <source>The image could not be prepared for upload.</source>
+            <translation>無法準備要上傳的影像。</translation>
+        </message>
+        <message>
+            <source>The screenshot export queue is full.</source>
+            <translation>螢幕擷取匯出佇列已滿。</translation>
+        </message>
+    </context>
+    <context>
         <name>ScreenshotExportArtifact</name>
         <message>
             <source>Image source unavailable</source>

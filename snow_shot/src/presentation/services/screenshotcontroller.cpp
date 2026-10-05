@@ -54,6 +54,7 @@
 #include "snow_shot/presentation/screenshotdisplaysession.h"
 #include "snow_shot/presentation/screenshotexportservice.h"
 #include "snow_shot/presentation/screenshotexportartifact.h"
+#include "snow_shot/presentation/screenshotclouduploadservice.h"
 #include "snow_shot/presentation/screenshotexportcoordinator.h"
 #include "snow_shot/presentation/screenshotimagefileservice.h"
 #include "snow_shot/presentation/screenshotrecognitionfileexport.h"
@@ -458,6 +459,11 @@ struct ScreenshotController::Impl final : public ScreenshotToolbarCommandSink,
     void saveRecognitionTextWithSystemDialog(const ScreenshotRecognitionFileSnapshot& snapshot);
     [[nodiscard]] std::shared_ptr<ScreenshotExportArtifact> recognitionFileSaveArtifact() const;
     void quickSaveSelection() override;
+    void uploadSelectionToCloud() override;
+    void cancelCloudUpload();
+    QPointer<ScreenshotCloudUploadJob> m_cloudUploadJob;
+    bool m_cloudUploadPreparing = false;
+    quint64 m_cloudUploadGeneration = 0;
     void saveImageToFile(QImage image, const QString& outputPath, ScreenshotImageFileFormat format,
                          ScreenshotPdfOptions pdf, ScreenshotImageEncodingOptions encoding,
                          quint64 generation,
@@ -1059,6 +1065,8 @@ ScreenshotToolbarWindow* ScreenshotController::Impl::toolbarForShortcut() {
 bool ScreenshotController::Impl::activateScreenshotShortcut(const QString& actionId) {
     ScreenshotToolbarWindow* toolbar = toolbarForShortcut();
     ScreenshotToolPalette* palette = toolbar != nullptr ? toolbar->palette() : nullptr;
+    if (palette)
+        palette->setCloudUploadBusy(m_cloudUploadPreparing || m_cloudUploadJob);
     return palette != nullptr && palette->activateScreenshotShortcut(actionId);
 }
 
@@ -1592,6 +1600,7 @@ void ScreenshotController::Impl::createCaptureWorkflow() {
                 },
             },
             [this]() {
+                cancelCloudUpload();
                 m_pendingHistoryEditRecordId.clear();
                 m_pendingMcpDocument.reset();
                 if (auto done = std::exchange(m_pendingMcpDocumentCompletion, {}))
@@ -2106,6 +2115,7 @@ void ScreenshotController::Impl::requestRecapture() {
         return;
     }
 
+    cancelCloudUpload();
     m_recaptureBusy = true;
 #if SNOW_SHOT_ENABLE_QR_RECOGNITION
     if (m_qrController)
@@ -3981,6 +3991,111 @@ ScreenshotController::Impl::recognitionFileSaveArtifact() const {
                     : nullptr;
 }
 
+void ScreenshotController::Impl::cancelCloudUpload() {
+    ++m_cloudUploadGeneration;
+    m_cloudUploadPreparing = false;
+    if (m_cloudUploadJob)
+        m_cloudUploadJob->cancel();
+    m_cloudUploadJob.clear();
+    if (m_overlayCoordinator && m_overlayCoordinator->toolbar())
+        m_overlayCoordinator->toolbar()->palette()->setCloudUploadBusy(false);
+    if (m_messages)
+        m_messages->destroy(QStringLiteral("cloud-upload"));
+}
+
+void ScreenshotController::Impl::uploadSelectionToCloud() {
+    if (m_cloudUploadPreparing || m_cloudUploadJob || m_printPending ||
+        owner.property("saveDialogOpen").toBool())
+        return;
+    const auto config = ScreenshotCloudUploadService::configuration();
+    const bool scrolling = m_scrollingCaptureController && m_scrollingCaptureController->active();
+    if (!config || (!scrolling && !m_selection.hasPixelSelection()) || !ensureExportFeature() ||
+        !resetCanvasEditingState())
+        return;
+    const auto epoch = m_captureEpoch;
+    const auto generation = m_cloudUploadGeneration;
+    const auto options = ScreenshotCloudUploadService::currentOptions();
+    m_cloudUploadPreparing = true;
+    if (auto* toolbar = m_overlayCoordinator->toolbar())
+        toolbar->palette()->setCloudUploadBusy(true);
+    const QPointer<ScreenshotController> receiver(&owner);
+    const auto start = [receiver, epoch, generation, config = *config,
+                        options](std::shared_ptr<ScreenshotExportArtifact> artifact) {
+        if (!receiver || receiver->m_impl->m_captureEpoch != epoch ||
+            receiver->m_impl->m_cloudUploadGeneration != generation)
+            return;
+        auto& impl = *receiver->m_impl;
+        impl.m_cloudUploadPreparing = false;
+        impl.m_cloudUploadJob =
+            ScreenshotCloudUploadService::upload(std::move(artifact), config, options, receiver);
+        auto* job = impl.m_cloudUploadJob.data();
+        impl.m_messages->loading(
+            QStringLiteral("cloud-upload"),
+            QCoreApplication::translate("ScreenshotController", "Preparing cloud upload..."));
+        QObject::connect(job, &ScreenshotCloudUploadJob::progress, receiver,
+                         [receiver, epoch, generation](int percent) {
+                             if (receiver->m_impl->m_captureEpoch == epoch &&
+                                 receiver->m_impl->m_cloudUploadGeneration == generation)
+                                 receiver->m_impl->m_messages->loading(
+                                     QStringLiteral("cloud-upload"),
+                                     QCoreApplication::translate("ScreenshotController",
+                                                                 "Uploading to cloud... %1%")
+                                         .arg(percent));
+                         });
+        QObject::connect(
+            job, &ScreenshotCloudUploadJob::finished, receiver,
+            [receiver, epoch, generation](const ScreenshotCloudUploadResult& result) {
+                auto& impl = *receiver->m_impl;
+                if (impl.m_captureEpoch != epoch || impl.m_cloudUploadGeneration != generation)
+                    return;
+                impl.m_cloudUploadJob.clear();
+                impl.m_messages->destroy(QStringLiteral("cloud-upload"));
+                if (auto* toolbar = impl.m_overlayCoordinator->toolbar())
+                    toolbar->palette()->setCloudUploadBusy(false);
+                if (result.status == ScreenshotCloudUploadResult::Status::Succeeded) {
+                    QApplication::clipboard()->setText(result.url.toString(QUrl::FullyEncoded));
+                    if (!receiver || receiver->m_impl->m_captureEpoch != epoch ||
+                        receiver->m_impl->m_cloudUploadGeneration != generation)
+                        return;
+                    impl.m_messages->success(QStringLiteral("cloud-upload"),
+                                             QCoreApplication::translate(
+                                                 "ScreenshotController",
+                                                 "Uploaded to cloud. Link copied to clipboard."));
+                } else if (result.status == ScreenshotCloudUploadResult::Status::Failed) {
+                    impl.m_messages->error(QStringLiteral("cloud-upload"), result.error);
+                }
+            });
+    };
+    bool scheduled = true;
+    if (auto artifact = recognitionFileSaveArtifact())
+        start(std::move(artifact));
+    else if (scrolling)
+        scheduled = m_scrollingCaptureController->requestTrimmedSnapshot(
+            [start](ScreenshotScrollingSnapshot snapshot) {
+                start(std::make_shared<ScreenshotExportArtifact>(
+                    ScreenshotExportSource::fromScrollingSnapshot(std::move(snapshot))));
+            },
+            [receiver, epoch, generation] {
+                if (receiver && receiver->m_impl && receiver->m_impl->m_captureEpoch == epoch &&
+                    receiver->m_impl->m_cloudUploadGeneration == generation)
+                    receiver->m_impl->cancelCloudUpload();
+            });
+    else
+        scheduled = m_exportService->requestSelectionResult(
+            m_selection.pixelSelection(), m_selection.resultStyle(), &owner, [start](QImage image) {
+                start(std::make_shared<ScreenshotExportArtifact>(
+                    ScreenshotExportSource::fromImage(std::move(image))));
+            });
+    if (!scheduled) {
+        m_cloudUploadPreparing = false;
+        if (auto* toolbar = m_overlayCoordinator->toolbar())
+            toolbar->palette()->setCloudUploadBusy(false);
+        m_messages->error(QStringLiteral("cloud-upload"),
+                          QCoreApplication::translate("ScreenshotController",
+                                                      "The screenshot export queue is full"));
+    }
+}
+
 void ScreenshotController::Impl::quickSaveSelection() {
 #if SNOW_SHOT_ENABLE_IMAGE_CONVERSION || SNOW_SHOT_ENABLE_LATEX_RECOGNITION ||                     \
     SNOW_SHOT_ENABLE_QR_RECOGNITION
@@ -5681,6 +5796,7 @@ void ScreenshotController::Impl::shutdown() {
             artifact->cancel();
     }
     m_saveArtifacts.clear();
+    cancelCloudUpload();
     if (m_selectionExportUiServices != nullptr) {
         m_selectionExportUiServices->cancelClipboardPublication();
     }

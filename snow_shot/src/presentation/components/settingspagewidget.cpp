@@ -95,6 +95,7 @@ permissionForRenderer(settings::SettingsCustomRenderer renderer) {
         return Permission::InputMonitoring;
     case Renderer::PermissionMicrophone:
         return Permission::Microphone;
+    case Renderer::CloudUploadConfigurations:
     case Renderer::TextTranslationConfigurations:
     case Renderer::CustomAiModels:
     case Renderer::McpStatus:

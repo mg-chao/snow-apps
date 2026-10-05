@@ -974,6 +974,8 @@ QVariant SettingsRuntimeSession::readValue(const SettingsFieldDescriptor& descri
                 return QVariantList{state.enabled, state.busy};
             } else if constexpr (std::is_same_v<Payload, SettingsCustomDefinition>) {
                 switch (payload.renderer) {
+                case SettingsCustomRenderer::CloudUploadConfigurations:
+                    return QVariant::fromValue(m_backend.cloudUploadSettings());
                 case SettingsCustomRenderer::McpStatus:
                 case SettingsCustomRenderer::PermissionScreenRecording:
                 case SettingsCustomRenderer::PermissionAccessibility:
@@ -1102,6 +1104,9 @@ bool SettingsRuntimeSession::writeValue(const SettingsFieldDescriptor& descripto
 #else
                     return false;
 #endif
+                case SettingsCustomRenderer::CloudUploadConfigurations:
+                    return value.canConvert<CloudUploadSettings>() &&
+                           m_backend.applyCloudUploadSettings(value.value<CloudUploadSettings>());
                 case SettingsCustomRenderer::StorageStatus:
                     return false;
                 }
@@ -1624,6 +1629,14 @@ bool SettingsRuntimeSession::applyTextTranslationConfigurations(
 }
 
 #endif
+CloudUploadSettings SettingsRuntimeSession::cloudUploadSettings() const {
+    return state(QStringLiteral("screenshot-output.cloud-upload"))
+        .acceptedValue.value<CloudUploadSettings>();
+}
+bool SettingsRuntimeSession::applyCloudUploadSettings(const CloudUploadSettings& values) {
+    return submitDraft(QStringLiteral("screenshot-output.cloud-upload"),
+                       QVariant::fromValue(values));
+}
 storage::StorageStatus SettingsRuntimeSession::storageStatus() const {
     return m_backend.storageStatus();
 }

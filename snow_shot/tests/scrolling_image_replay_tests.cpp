@@ -493,8 +493,10 @@ void snapshotRequestLifetime() {
     ScrollingSnapshotRequest request;
     QObject receiver;
     int completed = 0;
+    int cancelled = 0;
     const auto queue = [&]() {
-        auto completion = request.begin([&](ScreenshotScrollingSnapshot) { ++completed; });
+        auto completion =
+            request.begin([&](ScreenshotScrollingSnapshot) { ++completed; }, [&] { ++cancelled; });
         require(static_cast<bool>(completion), "snapshot must be accepted");
         QMetaObject::invokeMethod(
             &receiver, [completion] { completion({}); }, Qt::QueuedConnection);
@@ -507,15 +509,19 @@ void snapshotRequestLifetime() {
     request.detach();
     request.cancel(); // capture teardown must not revoke a detached export
     QCoreApplication::sendPostedEvents(&receiver, QEvent::MetaCall);
-    require(completed == 1, "detached cached delivery must survive capture teardown");
+    require(completed == 1 && cancelled == 0,
+            "detached cached delivery must survive capture teardown without cancellation");
     detached({});
     require(completed == 1, "a snapshot completion must run exactly once");
 
     queue();
     request.cancel();
+    request.cancel();
+    require(cancelled == 1 && !request.pending(),
+            "discarding a pending snapshot must release its consumer exactly once");
     queue(); // a new capture may start before the old completion arrives
     QCoreApplication::sendPostedEvents(&receiver, QEvent::MetaCall);
-    require(completed == 2 && !request.pending(),
+    require(completed == 2 && cancelled == 1 && !request.pending(),
             "cancel must discard only its own request and permit the next capture");
 
     auto oldExport = request.begin([&](ScreenshotScrollingSnapshot) { ++completed; });
@@ -527,6 +533,56 @@ void snapshotRequestLifetime() {
     request.cancel();
     nextCapture({});
     require(completed == 3, "the next capture still owns cancellation of its request");
+}
+
+void snapshotCancellationLifetime() {
+    ScrollingSnapshotRequest request;
+    int completed = 0;
+    int cancelled = 0;
+    // A cancelled queued delivery must release the source and captured upload options
+    // immediately, even when its completion remains queued in the capture pipeline.
+    auto source = std::make_shared<int>(0);
+    const std::weak_ptr<int> retained = source;
+    auto abandoned = request.begin([source](ScreenshotScrollingSnapshot) {}, [&] { ++cancelled; });
+    source.reset();
+    require(!retained.expired(), "pending snapshot must retain its consumer");
+    request.cancel();
+    require(retained.expired() && cancelled == 1,
+            "cancellation must release the snapshot consumer before stale delivery");
+    abandoned({});
+    require(cancelled == 1, "stale snapshot delivery must not notify again");
+
+    ScrollingSnapshotRequest::Completion next;
+    auto previous = request.begin(
+        [&](ScreenshotScrollingSnapshot) { ++completed; },
+        [&] {
+            ++cancelled;
+            require(!request.pending(), "cancel must release ownership before notifying");
+            next = request.begin([&](ScreenshotScrollingSnapshot) { ++completed; });
+        });
+    request.cancel();
+    require(next && request.pending(), "a cancelled consumer may request another snapshot");
+    previous({});
+    require(completed == 0 && request.pending(), "stale delivery must preserve a newer request");
+    next({});
+    request.cancel();
+    require(completed == 1 && cancelled == 2,
+            "successful delivery must suppress subsequent cancellation notification");
+
+    ScrollingSnapshotRequest::Completion detached;
+    {
+        ScrollingSnapshotRequest capture;
+        detached =
+            capture.begin([&](ScreenshotScrollingSnapshot) { ++completed; }, [&] { ++cancelled; });
+        capture.detach();
+        auto pending =
+            capture.begin([&](ScreenshotScrollingSnapshot) { ++completed; }, [&] { ++cancelled; });
+        require(static_cast<bool>(pending), "detached export must release capture ownership");
+    }
+    require(cancelled == 3, "capture destruction must notify the remaining pending consumer");
+    detached({});
+    require(completed == 2 && cancelled == 3,
+            "capture destruction must preserve a detached export's completion");
 }
 
 void acceptedSnapshotsSurviveTeardown() {
@@ -896,6 +952,7 @@ int main(int argc, char** argv) {
         }
         if (application.arguments().contains(QStringLiteral("--snapshot-teardown-only"))) {
             snapshotRequestLifetime();
+            snapshotCancellationLifetime();
             acceptedSnapshotsSurviveTeardown();
             return 0;
         }
@@ -915,6 +972,7 @@ int main(int argc, char** argv) {
         viewportPreviewTest(ScreenshotScrollingRecognitionMode::Vertical);
         viewportPreviewTest(ScreenshotScrollingRecognitionMode::Horizontal);
         snapshotRequestLifetime();
+        snapshotCancellationLifetime();
         acceptedSnapshotsSurviveTeardown();
         captureReleasesNativeFrameAfterAdmission();
         overloadTest();

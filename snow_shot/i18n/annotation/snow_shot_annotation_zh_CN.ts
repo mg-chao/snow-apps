@@ -1196,6 +1196,10 @@
             <translation>撤销</translation>
         </message>
         <message>
+            <source>Upload to Cloud</source>
+            <translation>上传到云端</translation>
+        </message>
+        <message>
             <source>Uppercase letters</source>
             <translation>大写字母</translation>
         </message>

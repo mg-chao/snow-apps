@@ -44,6 +44,15 @@ inline QJsonArray publicModels(const CustomAiModels& models) {
 #endif
 
 inline QJsonValue settingsJson(const QVariant& value) {
+    if (value.metaType() == QMetaType::fromType<CloudUploadSettings>()) {
+        auto settings = value.value<CloudUploadSettings>();
+        for (auto& profile : settings.configurations) {
+            profile.accessKeyId.clear();
+            profile.secretAccessKey.clear();
+            profile.sessionToken.clear();
+        }
+        return cloudUploadSettingsToJson(settings);
+    }
     if (value.metaType() == QMetaType::fromType<QColor>())
         return storage::colorToRgbaString(value.value<QColor>());
 #if SNOW_SHOT_ENABLE_API_CONFIGURATION

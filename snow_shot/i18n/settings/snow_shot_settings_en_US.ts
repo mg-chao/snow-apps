@@ -132,6 +132,161 @@
         </message>
     </context>
     <context>
+        <name>CloudUploadSettingsWidget</name>
+        <message>
+            <source>%1 (Copy %2)</source>
+            <translation>%1 (Copy %2)</translation>
+        </message>
+        <message>
+            <source>%1 (Copy)</source>
+            <translation>%1 (Copy)</translation>
+        </message>
+        <message>
+            <source>%1 configuration %2</source>
+            <translation>%1 configuration %2</translation>
+        </message>
+        <message>
+            <source>A configuration with this name already exists.</source>
+            <translation>A configuration with this name already exists.</translation>
+        </message>
+        <message>
+            <source>Access Key ID</source>
+            <translation>Access Key ID</translation>
+        </message>
+        <message>
+            <source>Add cloud upload configuration</source>
+            <translation>Add cloud upload configuration</translation>
+        </message>
+        <message>
+            <source>Add configuration</source>
+            <translation>Add configuration</translation>
+        </message>
+        <message>
+            <source>Addressing Style</source>
+            <translation>Addressing Style</translation>
+        </message>
+        <message>
+            <source>Bucket</source>
+            <translation>Bucket</translation>
+        </message>
+        <message>
+            <source>Cancel</source>
+            <translation>Cancel</translation>
+        </message>
+        <message>
+            <source>Check the region, bucket, addressing style, and credentials. Fields must not contain line breaks.</source>
+            <translation>Check the region, bucket, addressing style, and credentials. Fields must not contain line breaks.</translation>
+        </message>
+        <message>
+            <source>Choose the configuration used for cloud uploads</source>
+            <translation>Choose the configuration used for cloud uploads</translation>
+        </message>
+        <message>
+            <source>Configuration Name</source>
+            <translation>Configuration Name</translation>
+        </message>
+        <message>
+            <source>Copy</source>
+            <translation>Copy</translation>
+        </message>
+        <message>
+            <source>Default destination</source>
+            <translation>Default destination</translation>
+        </message>
+        <message>
+            <source>Delete</source>
+            <translation>Delete</translation>
+        </message>
+        <message>
+            <source>Delete configuration</source>
+            <translation>Delete configuration</translation>
+        </message>
+        <message>
+            <source>Delete this cloud upload configuration?</source>
+            <translation>Delete this cloud upload configuration?</translation>
+        </message>
+        <message>
+            <source>Edit</source>
+            <translation>Edit</translation>
+        </message>
+        <message>
+            <source>Edit cloud upload configuration</source>
+            <translation>Edit cloud upload configuration</translation>
+        </message>
+        <message>
+            <source>Enter a full HTTP or HTTPS URL without credentials, a query, or a fragment.</source>
+            <translation>Enter a full HTTP or HTTPS URL without credentials, a query, or a fragment.</translation>
+        </message>
+        <message>
+            <source>No cloud upload configurations added</source>
+            <translation>No cloud upload configurations added</translation>
+        </message>
+        <message>
+            <source>None</source>
+            <translation>None</translation>
+        </message>
+        <message>
+            <source>Object Key Prefix</source>
+            <translation>Object Key Prefix</translation>
+        </message>
+        <message>
+            <source>Optional bucket-root URL. Link access follows your bucket or CDN policy.</source>
+            <translation>Optional bucket-root URL. Link access follows your bucket or CDN policy.</translation>
+        </message>
+        <message>
+            <source>Path style</source>
+            <translation>Path style</translation>
+        </message>
+        <message>
+            <source>Protocol</source>
+            <translation>Protocol</translation>
+        </message>
+        <message>
+            <source>Public / CDN Base URL</source>
+            <translation>Public / CDN Base URL</translation>
+        </message>
+        <message>
+            <source>S3</source>
+            <translation>S3</translation>
+        </message>
+        <message>
+            <source>Save</source>
+            <translation>Save</translation>
+        </message>
+        <message>
+            <source>Secret Access Key</source>
+            <translation>Secret Access Key</translation>
+        </message>
+        <message>
+            <source>Service Endpoint</source>
+            <translation>Service Endpoint</translation>
+        </message>
+        <message>
+            <source>Session Token</source>
+            <translation>Session Token</translation>
+        </message>
+        <message>
+            <source>Signing Region</source>
+            <translation>Signing Region</translation>
+        </message>
+        <message>
+            <source>This field is required.</source>
+            <translation>This field is required.</translation>
+        </message>
+        <message>
+            <source>Unable to save configurations. Check that configuration storage is writable and try again.</source>
+            <translation>Unable to save configurations. Check that configuration storage is writable and try again.</translation>
+        </message>
+        <message>
+            <source>Upload Configurations</source>
+            <translation>Upload Configurations</translation>
+        </message>
+        <message>
+            <source>Virtual hosted</source>
+            <translation>Virtual hosted</translation>
+        </message>
+    </context>
+    <context>
         <name>CustomAiModelsSettingsWidget</name>
         <message>
             <source>%1 (Copy %2)</source>
@@ -775,6 +930,10 @@
         <message>
             <source>Text translation</source>
             <translation>Text translation</translation>
+        </message>
+        <message>
+            <source>Upload to Cloud</source>
+            <translation>Upload to Cloud</translation>
         </message>
     </context>
     <context>
@@ -1483,6 +1642,10 @@
             <translation>Closed window count</translation>
         </message>
         <message>
+            <source>Cloud Upload</source>
+            <translation>Cloud Upload</translation>
+        </message>
+        <message>
             <source>Color mode</source>
             <translation>Color mode</translation>
         </message>
@@ -1505,6 +1668,10 @@
         <message>
             <source>Configuration imported.</source>
             <translation>Configuration imported.</translation>
+        </message>
+        <message>
+            <source>Configure S3-compatible upload destinations</source>
+            <translation>Configure S3-compatible upload destinations</translation>
         </message>
         <message>
             <source>Configure annotation tools and the screenshot annotation toolbar</source>
@@ -3801,6 +3968,10 @@
         <message>
             <source>Updates</source>
             <translation>Updates</translation>
+        </message>
+        <message>
+            <source>Upload to Cloud</source>
+            <translation>Upload to Cloud</translation>
         </message>
         <message>
             <source>Use DirectML for GPU-accelerated text recognition when available</source>

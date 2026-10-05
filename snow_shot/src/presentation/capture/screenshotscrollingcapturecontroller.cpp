@@ -483,8 +483,9 @@ struct ScreenshotScrollingCaptureController::Impl {
                    : QSize(latestOutputSize.width(), bottom - top);
     }
 
-    bool
-    requestTrimmedSnapshot(ScreenshotScrollingCaptureController::SnapshotResultCallback callback) {
+    bool requestTrimmedSnapshot(
+        ScreenshotScrollingCaptureController::SnapshotResultCallback callback,
+        ScreenshotScrollingCaptureController::SnapshotCancellationCallback cancelled) {
         if (!active || pipeline == nullptr || thumbnailHost == nullptr ||
             latestOutputSize.isEmpty() || !callback || snapshotRequest.pending()) {
             return false;
@@ -508,7 +509,8 @@ struct ScreenshotScrollingCaptureController::Impl {
                     impl.cachedSnapshotGeneration = requestGeneration;
                 }
                 callback(std::move(result));
-            });
+            },
+            std::move(cancelled));
         if (cachedSnapshot.isValid() && cachedSnapshotGeneration == generation &&
             cachedSnapshotTop == trim.top && cachedSnapshotBottom == trim.bottom) {
             SNOW_SHOT_PIN_PERF_COUNTER("scrolling.snapshot_cache_hit", 1);
@@ -803,8 +805,9 @@ QSize ScreenshotScrollingCaptureController::trimmedSize() const {
     return m_impl->trimmedSize();
 }
 
-bool ScreenshotScrollingCaptureController::requestTrimmedSnapshot(SnapshotResultCallback callback) {
-    return m_impl->requestTrimmedSnapshot(std::move(callback));
+bool ScreenshotScrollingCaptureController::requestTrimmedSnapshot(
+    SnapshotResultCallback callback, SnapshotCancellationCallback cancelled) {
+    return m_impl->requestTrimmedSnapshot(std::move(callback), std::move(cancelled));
 }
 
 void ScreenshotScrollingCaptureController::setExportPaused(bool paused) {

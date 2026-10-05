@@ -20,6 +20,7 @@ class ScreenshotMessageService final {
                              ScreenshotSelectionModel& selection,
                              std::function<QWidget*()> toolbarFallback = {});
 
+    void success(const QString& key, const QString& message) const;
     void warning(const QString& key, const QString& message, const QRectF& canvasRect = {},
                  QWidget* preferredOwner = nullptr) const;
     void error(const QString& key, const QString& message, const QRectF& canvasRect = {},

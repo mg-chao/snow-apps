@@ -1897,9 +1897,7 @@ bool BuiltInSettingsBackend::triggerAction(SettingsActionBinding binding, const 
         // revert to schema defaults. The overlay is materialized with the same
         // salvage rules as loading the persisted configuration, including schema
         // upgrades.
-#if SNOW_SHOT_ENABLE_API_CONFIGURATION
         read.preserveOmittedCredentials(applicationStorage.configuration().snapshot());
-#endif
         if (!importConfigurationSnapshot(read.values, read.schemaVersion)) {
             finish(false, QCoreApplication::translate("SettingsBackend",
                                                       "The configuration could not be imported."));
@@ -1934,6 +1932,12 @@ bool BuiltInSettingsBackend::applyTextTranslationConfigurations(
 }
 #endif
 
+CloudUploadSettings BuiltInSettingsBackend::cloudUploadSettings() const {
+    return storage::CloudUploadConfigurationSettings().settings();
+}
+bool BuiltInSettingsBackend::applyCloudUploadSettings(const CloudUploadSettings& values) {
+    return storage::CloudUploadConfigurationSettings().setSettings(values);
+}
 bool BuiltInSettingsBackend::importConfigurationSnapshot(
     const QMap<QString, QJsonValue>& values, int schemaVersion,
     std::shared_future<storage::StorageResult>* completion) {
@@ -2235,6 +2239,9 @@ bool BuiltInSettingsBackend::resetSection(SettingsSectionReset reset) {
                });
     case SettingsSectionReset::ScreenshotOutput:
         return storage::ApplicationStorage::instance().configuration().setValues({
+            {QStringLiteral("cloud_upload/configuration"),
+             storage::ConfigurationSchema::defaultValue(
+                 QStringLiteral("cloud_upload/configuration"))},
             {QStringLiteral("screenshot/auto_save_after_copy"),
              storage::ConfigurationSchema::defaultValue(
                  QStringLiteral("screenshot/auto_save_after_copy"))},

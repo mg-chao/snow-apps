@@ -1,6 +1,7 @@
 #ifndef SNOW_SHOT_PRESENTATION_SETTINGS_SETTINGSBACKEND_H
 #define SNOW_SHOT_PRESENTATION_SETTINGS_SETTINGSBACKEND_H
 
+#include "snow_shot/clouduploadconfiguration.h"
 #include "snow_shot/presentation/globalshortcuttypes.h"
 #include "snow_shot/presentation/apppermissionservice.h"
 #include "snow_shot/presentation/settings/settingscatalog.h"
@@ -129,6 +130,12 @@ class SettingsBackend : public QObject {
     applyToolbarLayout(storage::ScreenshotToolbarLayoutKind kind,
                        const storage::ScreenshotToolbarLayout& layout) = 0;
 
+    [[nodiscard]] virtual CloudUploadSettings cloudUploadSettings() const {
+        return {};
+    }
+    virtual bool applyCloudUploadSettings(const CloudUploadSettings&) {
+        return false;
+    }
 #if SNOW_SHOT_ENABLE_API_CONFIGURATION
     [[nodiscard]] virtual CustomAiModels customAiModels() const {
         return {};
@@ -318,6 +325,8 @@ class BuiltInSettingsBackend final : public SettingsBackend {
     [[nodiscard]] SettingsActionState actionState(SettingsActionBinding binding) const override;
     [[nodiscard]] bool triggerAction(SettingsActionBinding binding, const QString& filePath = {},
                                      bool includeToolbarStyles = false) override;
+    [[nodiscard]] CloudUploadSettings cloudUploadSettings() const override;
+    bool applyCloudUploadSettings(const CloudUploadSettings& values) override;
 #if SNOW_SHOT_ENABLE_API_CONFIGURATION
     [[nodiscard]] CustomAiModels customAiModels() const override;
     bool applyCustomAiModels(const CustomAiModels& models) override;

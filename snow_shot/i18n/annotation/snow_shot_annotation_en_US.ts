@@ -1196,6 +1196,10 @@
             <translation>Undo</translation>
         </message>
         <message>
+            <source>Upload to Cloud</source>
+            <translation>Upload to Cloud</translation>
+        </message>
+        <message>
             <source>Uppercase letters</source>
             <translation>Uppercase letters</translation>
         </message>
