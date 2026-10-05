@@ -2,6 +2,7 @@
 #define SNOW_SHOT_PRESENTATION_SCREENSHOTSELECTIONEXPORTUISERVICES_H
 
 #include "snow_shot/storage/pinnedwindowtypes.h"
+#include "snow_shot/storage/storageresult.h"
 
 #include "snow_shot/presentation/screenshotclipboardcontent.h"
 #include "snow_shot/presentation/screenshotclipboardservice.h"
@@ -29,7 +30,8 @@ struct ScreenshotHistoryEntry;
 
 namespace snow_shot::presentation {
 class PinnedWindowGroupManager;
-}
+class PinnedWindowSelectionController;
+} // namespace snow_shot::presentation
 
 class ScreenshotSelectionExportUiServices final : public ScreenshotSelectionExportDestinationPort {
   public:
@@ -104,6 +106,7 @@ class ScreenshotSelectionExportUiServices final : public ScreenshotSelectionExpo
         m_restoreFailure = std::move(handler);
     }
     void destroyRecords(const QVector<QString>& ids);
+    [[nodiscard]] snow_shot::storage::StorageResult tryDestroyRecords(const QVector<QString>& ids);
 
   private:
     void trackSourceWindow(ScreenshotPinnedWindow* window,
@@ -139,6 +142,7 @@ class ScreenshotSelectionExportUiServices final : public ScreenshotSelectionExpo
     std::function<void()> m_showMainWindowRequested;
     std::function<ScreenshotPinnedRecognitionProviders()> m_recognitionProvider;
     snow_shot::presentation::PinnedWindowGroupManager* m_groupManager = nullptr;
+    std::unique_ptr<snow_shot::presentation::PinnedWindowSelectionController> m_selectionController;
     std::unique_ptr<ScreenshotPinnedWindowPool> m_windowPool;
     std::unique_ptr<ScreenshotPendingPinCoordinator> m_pendingPinCoordinator;
     ScreenshotClipboardCommitScope m_clipboardScope;

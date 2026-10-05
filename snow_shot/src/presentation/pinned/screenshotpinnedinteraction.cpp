@@ -2,6 +2,7 @@
 #include "snow_shot/presentation/pinnedgeometry.h"
 #include "snow_shot/presentation/screenshotwheelinput.h"
 #include "snow_shot/presentation/screenshotpinnedwindow.h"
+#include "snow_shot/presentation/pinnedwindowselectioncontroller.h"
 #include "pinnedwindowplatform.h"
 #include "screenshotpinnednativegeometrycontroller.h"
 #include "screenshotpinnedresizegeometry.h"
@@ -97,6 +98,9 @@ void ScreenshotPinnedWindow::cancelExportDrag() {
 bool ScreenshotPinnedWindow::handleExportDrag(QObject* watched, QEvent* event) {
     if (!event)
         return false;
+    if (!m_exportDragOrigin && m_selectionController &&
+        m_selectionController->usesSharedGeometry(this))
+        return false;
     // Native dragging owns Escape/release and can deactivate its source window.
     if (m_dragExport && m_dragExport->dragging())
         return false;
@@ -158,6 +162,12 @@ bool ScreenshotPinnedWindow::handleExportDrag(QObject* watched, QEvent* event) {
 }
 
 void ScreenshotPinnedWindow::reconcilePlatformEnvironment(bool layoutChanged) {
+    if (m_selectionGeometryActive) {
+        if (layoutChanged && m_selectionController)
+            m_selectionController->cancelGeometry();
+        else
+            return;
+    }
     if (!m_platformApplying)
         stopAttentionShake();
     if (!m_platform || !m_platform->usesControlledInteraction() || !m_presented || m_closing ||
@@ -169,6 +179,12 @@ void ScreenshotPinnedWindow::reconcilePlatformEnvironment(bool layoutChanged) {
     m_platformReconciliationPending = true;
     QTimer::singleShot(0, this, [this] {
         m_platformReconciliationPending = false;
+        if (m_selectionGeometryActive) {
+            if (m_platformRecoveryPending && m_selectionController)
+                m_selectionController->cancelGeometry();
+            else
+                return;
+        }
         if (m_closing || !m_nativeGeometryController || !m_platformPlacement || m_platformApplying)
             return;
         if (m_interactionPlacement) {

@@ -266,6 +266,12 @@ if(ADQT_BUILD_TESTS)
         add_executable(adqt-context-menu-native-tests tests/context_menu_native_tests.mm)
         target_link_libraries(adqt-context-menu-native-tests PRIVATE
             adqt::widgets Qt6::Test "-framework AppKit")
+        add_test(NAME adqt-context-menu-native-item-tests
+            COMMAND adqt-context-menu-native-tests --items-only)
+        set_tests_properties(adqt-context-menu-native-item-tests PROPERTIES
+            LABELS "unit"
+            ENVIRONMENT "QT_QPA_PLATFORM=cocoa"
+            TIMEOUT 30)
         add_test(NAME adqt-context-menu-native-tests COMMAND adqt-context-menu-native-tests)
         set_tests_properties(adqt-context-menu-native-tests PROPERTIES
             LABELS "interactive"

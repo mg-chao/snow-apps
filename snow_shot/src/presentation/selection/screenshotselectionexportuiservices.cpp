@@ -1,3 +1,4 @@
+#include "snow_shot/presentation/pinnedwindowselectioncontroller.h"
 #include "snow_shot/platform/applicationqos.h"
 #include "../pinned/pinnedwindowplatform.h"
 #include "snow_shot/presentation/screenshotselectionexportuiservices.h"
@@ -523,10 +524,14 @@ ScreenshotSelectionExportUiServices::ScreenshotSelectionExportUiServices(
       m_tableRecognition(tableRecognition),
       m_showMainWindowRequested(std::move(showMainWindowRequested)),
       m_recognitionProvider(std::move(recognitionProvider)), m_groupManager(groupManager),
+      m_selectionController(
+          std::make_unique<snow_shot::presentation::PinnedWindowSelectionController>(
+              nullptr, [this](const QVector<QString>& ids) { return tryDestroyRecords(ids); })),
       m_windowPool(std::make_unique<ScreenshotPinnedWindowPool>()),
       m_pendingPinCoordinator(std::make_unique<ScreenshotPendingPinCoordinator>()) {}
 
 ScreenshotSelectionExportUiServices::~ScreenshotSelectionExportUiServices() {
+    m_selectionController.reset();
     m_restoreAlive->store(false);
     auto& storage = snow_shot::storage::ApplicationStorage::instance();
     if (storage.isInitialized())
@@ -634,6 +639,7 @@ bool ScreenshotSelectionExportUiServices::presentPinnedArtifact(
     config.formattedPlainText.clear();
     applyPinRuntimeSettings(&config);
     config.groupManager = m_groupManager;
+    config.selectionController = m_selectionController.get();
     config.groupId =
         m_groupManager != nullptr ? m_groupManager->activeGroupId() : QStringLiteral("default");
     applyPersistence(&config, {}, true);
@@ -726,6 +732,7 @@ bool ScreenshotSelectionExportUiServices::presentPinnedImageArtifact(
     config.recognitionProvider = m_recognitionProvider;
     applyPinRuntimeSettings(&config);
     config.groupManager = m_groupManager;
+    config.selectionController = m_selectionController.get();
     config.groupId =
         m_groupManager != nullptr ? m_groupManager->activeGroupId() : QStringLiteral("default");
     applyPersistence(&config, {}, true);
@@ -929,6 +936,7 @@ bool ScreenshotSelectionExportUiServices::presentPinnedImageOnCanvas(
     }
     applyPinRuntimeSettings(&config);
     config.groupManager = m_groupManager;
+    config.selectionController = m_selectionController.get();
     config.groupId =
         m_groupManager != nullptr ? m_groupManager->activeGroupId() : QStringLiteral("default");
     applyPersistence(&config, {}, true);
@@ -1142,6 +1150,7 @@ bool ScreenshotSelectionExportUiServices::presentRestoredRecord(
     config.persistedRecognitionVisible = record.recognitionVisible;
     config.persistedTranslationVisible = record.translationVisible;
     config.groupManager = m_groupManager;
+    config.selectionController = m_selectionController.get();
     config.groupId = record.groupId;
     config.recognition = m_recognition;
     config.qrRecognition = m_qrRecognition;
@@ -1314,15 +1323,23 @@ void ScreenshotSelectionExportUiServices::restoreLastClosedWindow() {
 }
 
 void ScreenshotSelectionExportUiServices::destroyRecords(const QVector<QString>& ids) {
+    static_cast<void>(tryDestroyRecords(ids));
+}
+
+snow_shot::storage::StorageResult
+ScreenshotSelectionExportUiServices::tryDestroyRecords(const QVector<QString>& ids) {
     auto& storage = snow_shot::storage::ApplicationStorage::instance();
     if (!storage.isInitialized())
-        return;
-    if (!storage.pinnedWindows().removeMany(ids).success)
-        return;
+        return snow_shot::storage::StorageResult::failure(
+            QStringLiteral("Pinned-window storage is unavailable"));
+    const auto result = storage.pinnedWindows().removeMany(ids);
+    if (!result.success)
+        return result;
     for (const auto& id : ids) {
         m_pendingPinCoordinator->cancel(id);
         m_restoringIds.remove(id);
         if (m_groupManager)
             m_groupManager->destroyWindow(id);
     }
+    return snow_shot::storage::StorageResult::ok();
 }

@@ -17,6 +17,7 @@ class AdContextMenu;
 namespace detail {
 bool usesNativeContextMenu();
 void initializeNativeContextMenu(QMenu* menu);
+void syncNativeContextMenuBadge(AdContextMenu* menu, QAction* action);
 QIcon nativeContextMenuIcon(QMenu* menu, const adqt::icons::IconRef& icon);
 QSize nativeContextMenuSize(QMenu* menu);
 QAction* execNativeContextMenu(AdContextMenu* menu, const QPoint& globalPosition,

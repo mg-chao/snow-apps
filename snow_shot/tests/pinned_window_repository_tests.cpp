@@ -1536,6 +1536,83 @@ void bulkRemovalIsAtomicAndNotifiesOnce() {
     repository.setChangedCallback({});
 }
 
+void batchGroupAssignmentPreflightsAndNotifiesOnce() {
+    QTemporaryDir directory;
+    require(directory.isValid(), "temporary batch-group storage is unavailable");
+    storage::PinnedWindowRepository repository(directory.path(), true, 30000);
+    const QString groupId = QUuid::createUuid().toString(QUuid::WithoutBraces);
+    require(repository
+                .setGroups({{QStringLiteral("default"), QStringLiteral("Default"), true},
+                            {groupId, QStringLiteral("Batch"), false}},
+                           QStringLiteral("default"))
+                .success,
+            "create batch-group destination");
+    QVector<QString> ids;
+    for (int index = 0; index < 3; ++index) {
+        const QString id = QUuid::createUuid().toString(QUuid::WithoutBraces);
+        ids.append(id);
+        require(repository.upsert(recordWithId(id, patternedImage({4, 4}, index))).success,
+                "create batch-group source records");
+    }
+    const QString pendingId = QUuid::createUuid().toString(QUuid::WithoutBraces);
+    repository.reserveCreation(pendingId);
+    require(repository.flush().success, "commit batch-group source records");
+    const auto sourceRevision = repository.previewSourceRevision(ids.front());
+    const auto membershipRevision = repository.membershipRevision();
+    std::atomic_int notifications{0};
+    repository.setChangedCallback([&notifications]() { ++notifications; });
+
+    require(
+        !repository.setRecordsGroup({ids.front(), QStringLiteral("../invalid")}, groupId).success &&
+            !repository
+                 .setRecordsGroup({ids.front(), ids.at(1)},
+                                  QUuid::createUuid().toString(QUuid::WithoutBraces))
+                 .success &&
+            repository.loadRecord(ids.front())->groupId == QStringLiteral("default") &&
+            repository.loadRecord(ids.at(1))->groupId == QStringLiteral("default") &&
+            repository.membershipRevision() == membershipRevision && notifications == 0,
+        "invalid IDs or destination must reject a complete batch without partial changes");
+    repository.suspendWrites(true);
+    const bool suspendedAssignment = repository.setRecordsGroup(ids, groupId).success;
+    repository.suspendWrites(false);
+    require(!suspendedAssignment &&
+                repository.loadRecord(ids.front())->groupId == QStringLiteral("default") &&
+                repository.membershipRevision() == membershipRevision && notifications == 0,
+            "storage migration rejects batch assignment without changing membership");
+
+    require(repository.setRecordsGroup({ids.front(), ids.at(1), ids.front(), pendingId}, groupId)
+                    .success &&
+                repository.loadRecord(ids.front())->groupId == groupId &&
+                repository.loadRecord(ids.at(1))->groupId == groupId &&
+                repository.loadRecord(ids.back())->groupId == QStringLiteral("default") &&
+                !repository.loadRecord(pendingId).has_value() &&
+                repository.membershipRevision() == membershipRevision + 1 && notifications == 1 &&
+                repository.previewSourceRevision(ids.front()) == sourceRevision,
+            "batch assignment changes only selected records with one metadata notification");
+    require(repository.setRecordsGroup({ids.front(), ids.at(1)}, groupId).success &&
+                repository.setRecordsGroup({}, groupId).success && notifications == 1 &&
+                repository.membershipRevision() == membershipRevision + 1,
+            "unchanged and empty assignments must not invalidate membership or previews");
+    repository.setChangedCallback({});
+
+    auto pending = recordWithId(pendingId, patternedImage({4, 4}, 9));
+    pending.groupId = groupId;
+    const auto prepared =
+        storage::PreparedPngImage::fromBytes(pending.image.size(), pngBytes(pending.image, 6));
+    require(prepared && repository.createReserved(pending, *prepared).success &&
+                repository.flush().success,
+            "batch assignment preserves reservation for a later source save in the new group");
+    storage::PinnedWindowRepository reopened(directory.path(), false, 30000);
+    require(reopened.loadRecord(ids.front())->groupId == groupId &&
+                reopened.loadRecord(ids.at(1))->groupId == groupId &&
+                reopened.loadRecord(ids.back())->groupId == QStringLiteral("default") &&
+                reopened.loadRecord(pendingId)->groupId == groupId &&
+                !reopened.setRecordsGroup({ids.front(), ids.at(1)}, QStringLiteral("default"))
+                     .success &&
+                reopened.loadRecord(ids.front())->groupId == groupId,
+            "batch group assignment survives reload and read-only rejection");
+}
+
 void canceledCreationReleasesLifecycleState() {
     QTemporaryDir directory;
     require(directory.isValid(), "temporary storage directory is unavailable");
@@ -1914,6 +1991,10 @@ void storageExchangeDrainsReadersAndRejectsStaleAdmissions() {
 
 int main(int argc, char* argv[]) {
     QCoreApplication application(argc, argv);
+    if (application.arguments().contains(QStringLiteral("--batch-group-only"))) {
+        batchGroupAssignmentPreflightsAndNotifiesOnce();
+        return 0;
+    }
     payloadReadsKeepTheirRevisionWithoutBlockingMetadata();
     recordDeletionDoesNotInvalidateAdmittedPayloadRead();
     retentionWorkDoesNotBlockLifecycleUpdates();
@@ -1923,6 +2004,7 @@ int main(int argc, char* argv[]) {
     managementHasNoTotalRecordCap();
     previewsReadOnlySourcePayloadAndKeepStableRevision();
     bulkRemovalIsAtomicAndNotifiesOnce();
+    batchGroupAssignmentPreflightsAndNotifiesOnce();
     canceledCreationReleasesLifecycleState();
     managementDiskQuotaAndRestorationProtection();
     membershipAndPreviewRevisionsTrackOnlyTheirSources();

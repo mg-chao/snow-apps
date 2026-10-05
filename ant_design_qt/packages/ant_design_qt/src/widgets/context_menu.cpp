@@ -31,6 +31,7 @@ namespace {
 
 constexpr char kActionDangerProperty[] = "adqt.contextMenu.danger";
 constexpr char kActionIconProperty[] = "adqt.contextMenu.iconRef";
+constexpr char kActionBadgeProperty[] = "adqt.contextMenu.badge";
 
 QColor colorOr(const QColor& value, const QColor& fallback) {
   return value.isValid() ? value : fallback;
@@ -189,15 +190,21 @@ bool menuUsesIconColumn(const QMenu* menu) {
   return false;
 }
 
-QString actionShortcutText(const QAction* action, const QString& optionText) {
+QString actionShortcutText(const QAction* action, const QString& optionText,
+                           bool includeBadge = true) {
+  const QString badge =
+      action && includeBadge ? action->property(kActionBadgeProperty).toString() : QString{};
+  QString shortcut;
   const qsizetype tab = optionText.indexOf(QLatin1Char('\t'));
   if (tab >= 0) {
-    return optionText.mid(tab + 1);
+    shortcut = optionText.mid(tab + 1);
+  } else if (action && action->isShortcutVisibleInContextMenu() && !action->shortcut().isEmpty()) {
+    shortcut = action->shortcut().toString(QKeySequence::NativeText);
   }
-  if (action && action->isShortcutVisibleInContextMenu() && !action->shortcut().isEmpty()) {
-    return action->shortcut().toString(QKeySequence::NativeText);
+  if (badge.isEmpty()) {
+    return shortcut;
   }
-  return {};
+  return shortcut.isEmpty() ? badge : badge + QStringLiteral("  ") + shortcut;
 }
 
 QString actionLabelText(const QString& optionText) {
@@ -205,7 +212,7 @@ QString actionLabelText(const QString& optionText) {
   return tab >= 0 ? optionText.left(tab) : optionText;
 }
 
-int maximumShortcutWidth(const QMenu* menu, const QFontMetrics& metrics) {
+int maximumShortcutWidth(const QMenu* menu, const QFontMetrics& metrics, bool includeBadge = true) {
   int result = 0;
   if (!menu) {
     return result;
@@ -214,13 +221,7 @@ int maximumShortcutWidth(const QMenu* menu, const QFontMetrics& metrics) {
     if (!action || !action->isVisible() || action->isSeparator()) {
       continue;
     }
-    QString shortcut;
-    const qsizetype tab = action->text().indexOf(QLatin1Char('\t'));
-    if (tab >= 0) {
-      shortcut = action->text().mid(tab + 1);
-    } else if (action->isShortcutVisibleInContextMenu() && !action->shortcut().isEmpty()) {
-      shortcut = action->shortcut().toString(QKeySequence::NativeText);
-    }
+    const QString shortcut = actionShortcutText(action, action->text(), includeBadge);
     result = std::max(result, metrics.horizontalAdvance(shortcut));
   }
   return result;
@@ -357,7 +358,11 @@ class AdContextMenuStyle final : public QProxyStyle {
       width += visual.trailingColumnGap + visual.arrowColumnWidth;
     }
     width = std::max(visual.minimumWidth - visual.menuPadding * 2, width);
-    width = constrainedMenuItemWidth(menu, visual, width, shortcutWidth);
+    // QMenu adds its own shortcut column after asking the style for item sizes.
+    // Badge metadata is invisible to that calculation, so reserve the remainder here.
+    const int qtShortcutWidth = maximumShortcutWidth(menu, QFontMetrics(menu->font()), false);
+    width += std::max(0, shortcutWidth - qtShortcutWidth);
+    width = constrainedMenuItemWidth(menu, visual, width, qtShortcutWidth);
     return QSize(width, visual.itemHeight);
   }
 
@@ -666,6 +671,11 @@ AdContextMenu::AdContextMenu(QWidget* parent) : QMenu(parent), d_(std::make_uniq
   connect(this, &QMenu::aboutToShow, this, [this]() {
     if (d_->useNativeMenu && detail::usesNativeContextMenu()) {
       d_->nativeTracking = true;
+      for (QAction* action : actions()) {
+        if (action->property(kActionBadgeProperty).isValid()) {
+          detail::syncNativeContextMenuBadge(this, action);
+        }
+      }
     }
   });
   connect(this, &QMenu::aboutToHide, this, [this]() { d_->nativeTracking = false; });
@@ -707,6 +717,12 @@ void AdContextMenu::setNativeMenuEnabled(bool enabled) {
   const QList<QAction*> menuActions = actions();
   for (QAction* action : menuActions) {
     applyStoredActionIcon(action);
+#ifdef Q_OS_MACOS
+    if (enabled && detail::usesNativeContextMenu() &&
+        action->property(kActionBadgeProperty).isValid()) {
+      detail::syncNativeContextMenuBadge(this, action);
+    }
+#endif
     auto* submenu = qobject_cast<AdContextMenu*>(action != nullptr ? action->menu() : nullptr);
     if (submenu != nullptr) {
       submenu->setNativeMenuEnabled(enabled);
@@ -852,6 +868,37 @@ void AdContextMenu::setActionDanger(QAction* action, bool danger) {
 
 bool AdContextMenu::actionDanger(const QAction* action) const {
   return action && action->property(kActionDangerProperty).toBool();
+}
+
+void AdContextMenu::setActionBadge(QAction* action, const QString& text) {
+  if (!action || actionBadge(action) == text) {
+    return;
+  }
+  action->setProperty(kActionBadgeProperty, text);
+  // Dynamic properties do not invalidate QMenu item geometry. Notify every menu
+  // sharing this action so its trailing column and native badge stay in sync.
+  const auto owners = action->associatedObjects();
+  for (QObject* owner : owners) {
+    if (auto* menu = qobject_cast<AdContextMenu*>(owner)) {
+      QActionEvent event(QEvent::ActionChanged, action);
+      QCoreApplication::sendEvent(menu, &event);
+    }
+  }
+}
+
+QString AdContextMenu::actionBadge(const QAction* action) const {
+  return action ? action->property(kActionBadgeProperty).toString() : QString{};
+}
+
+void AdContextMenu::actionEvent(QActionEvent* event) {
+  QMenu::actionEvent(event);
+#ifdef Q_OS_MACOS
+  if (d_->useNativeMenu && detail::usesNativeContextMenu() &&
+      event->type() != QEvent::ActionRemoved &&
+      event->action()->property(kActionBadgeProperty).isValid()) {
+    detail::syncNativeContextMenuBadge(this, event->action());
+  }
+#endif
 }
 
 bool AdContextMenu::isPopupVisible() const {

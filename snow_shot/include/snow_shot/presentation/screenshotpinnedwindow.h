@@ -45,6 +45,7 @@ class AdSlider;
 namespace snow_shot::presentation {
 class WindowShortcutManager;
 class PinnedWindowGroupManager;
+class PinnedWindowSelectionController;
 class PinnedWindowPlatform;
 } // namespace snow_shot::presentation
 namespace snow_shot::platform {
@@ -187,6 +188,7 @@ class ScreenshotPinnedWindow final : public QWidget {
         snow_shot::storage::PinnedWindowCreationSource creationSource =
             snow_shot::storage::PinnedWindowCreationSource::Other;
         snow_shot::presentation::PinnedWindowGroupManager* groupManager = nullptr;
+        QPointer<snow_shot::presentation::PinnedWindowSelectionController> selectionController;
         QString groupId = QStringLiteral("default");
         // Editable document imports seed the model without restoring window preferences.
         QByteArray initialCanvasSession;
@@ -251,6 +253,7 @@ class ScreenshotPinnedWindow final : public QWidget {
     friend class ScreenshotPinnedEditController;
     friend class ScreenshotPinnedWindowTestAccess;
     friend class PinnedWindowWindowsEvents;
+    friend class snow_shot::presentation::PinnedWindowSelectionController;
 
     enum class GeometryMutation {
         Move,
@@ -270,6 +273,8 @@ class ScreenshotPinnedWindow final : public QWidget {
     void closeEvent(QCloseEvent* event) override;
     void contextMenuEvent(QContextMenuEvent* event) override;
     void paintEvent(QPaintEvent* event) override;
+    void setWindowSelected(bool selected);
+    void updateSelectionIndicator();
     void resizeEvent(QResizeEvent* event) override;
     void moveEvent(QMoveEvent* event) override;
     void showEvent(QShowEvent* event) override;
@@ -610,6 +615,11 @@ class ScreenshotPinnedWindow final : public QWidget {
     snow_shot::storage::PinnedWindowCloseIntent m_closeIntent =
         snow_shot::storage::PinnedWindowCloseIntent::Preserve;
     QPointer<snow_shot::presentation::PinnedWindowGroupManager> m_groupManager;
+    QPointer<snow_shot::presentation::PinnedWindowSelectionController> m_selectionController;
+    adqt::widgets::AdButton* m_selectionIndicator = nullptr;
+    bool m_windowSelected = false;
+    bool m_selectionGeometryActive = false;
+    bool m_selectionPersistenceDirty = false;
     std::unique_ptr<ScreenshotRecognitionSessionController> m_recognitionSession;
     double m_viewportZoom = 1.0;
     QPointF m_viewportCenter;

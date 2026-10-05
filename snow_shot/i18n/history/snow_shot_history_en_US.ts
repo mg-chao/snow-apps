@@ -491,6 +491,10 @@
             <translation>Delete Specified Group</translation>
         </message>
         <message>
+            <source>Deselect window</source>
+            <translation>Deselect window</translation>
+        </message>
+        <message>
             <source>Destroy</source>
             <translation>Destroy</translation>
         </message>
@@ -751,6 +755,111 @@
         <message>
             <source>This group name is already in use</source>
             <translation>This group name is already in use</translation>
+        </message>
+        <message>
+            <source>Unable to create the group or move the selected windows. Try again.</source>
+            <translation>Unable to create the group or move the selected windows. Try again.</translation>
+        </message>
+    </context>
+    <context>
+        <name>snow_shot::presentation::PinnedWindowSelectionController</name>
+        <message numerus="yes">
+            <source>%n selected window(s)</source>
+            <translation>
+            <numerusform>%n selected window</numerusform>
+            <numerusform>%n selected windows</numerusform>
+        </translation>
+        </message>
+        <message>
+            <source>Align Position</source>
+            <translation>Align Position</translation>
+        </message>
+        <message>
+            <source>Align bottom</source>
+            <translation>Align bottom</translation>
+        </message>
+        <message>
+            <source>Align left</source>
+            <translation>Align left</translation>
+        </message>
+        <message>
+            <source>Align right</source>
+            <translation>Align right</translation>
+        </message>
+        <message>
+            <source>Align top</source>
+            <translation>Align top</translation>
+        </message>
+        <message>
+            <source>Cancel</source>
+            <translation>Cancel</translation>
+        </message>
+        <message>
+            <source>Center horizontally</source>
+            <translation>Center horizontally</translation>
+        </message>
+        <message>
+            <source>Center vertically</source>
+            <translation>Center vertically</translation>
+        </message>
+        <message>
+            <source>Close</source>
+            <translation>Close</translation>
+        </message>
+        <message>
+            <source>Close Other Windows</source>
+            <translation>Close Other Windows</translation>
+        </message>
+        <message>
+            <source>Delete Empty Groups</source>
+            <translation>Delete Empty Groups</translation>
+        </message>
+        <message>
+            <source>Delete Specified Group</source>
+            <translation>Delete Specified Group</translation>
+        </message>
+        <message>
+            <source>Destroy</source>
+            <translation>Destroy</translation>
+        </message>
+        <message numerus="yes">
+            <source>Destroy %n selected window(s)? This action cannot be undone.</source>
+            <translation>
+            <numerusform>Destroy %n selected window? This action cannot be undone.</numerusform>
+            <numerusform>Destroy %n selected windows? This action cannot be undone.</numerusform>
+        </translation>
+        </message>
+        <message>
+            <source>Destroy selected windows</source>
+            <translation>Destroy selected windows</translation>
+        </message>
+        <message>
+            <source>Distribute horizontally</source>
+            <translation>Distribute horizontally</translation>
+        </message>
+        <message>
+            <source>Distribute vertically</source>
+            <translation>Distribute vertically</translation>
+        </message>
+        <message>
+            <source>Group</source>
+            <translation>Group</translation>
+        </message>
+        <message>
+            <source>Lock</source>
+            <translation>Lock</translation>
+        </message>
+        <message>
+            <source>New Group</source>
+            <translation>New Group</translation>
+        </message>
+        <message>
+            <source>The selected windows could not be destroyed.</source>
+            <translation>The selected windows could not be destroyed.</translation>
+        </message>
+        <message>
+            <source>The selected windows could not be moved to the group.</source>
+            <translation>The selected windows could not be moved to the group.</translation>
         </message>
     </context>
     <context>

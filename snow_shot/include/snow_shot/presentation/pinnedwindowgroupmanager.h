@@ -57,9 +57,14 @@ class PinnedWindowGroupManager final : public QObject {
     bool setActiveGroup(const QString& groupId);
     [[nodiscard]] std::optional<QString>
     createGroup(const QString& name, ::ScreenshotPinnedWindow* currentWindow = nullptr);
+    [[nodiscard]] std::optional<QString>
+    createGroup(const QString& name,
+                const QVector<QPointer<::ScreenshotPinnedWindow>>& currentWindows);
     bool deleteEmptyGroups();
     bool deleteSpecifiedGroup(const QString& groupId);
     bool moveWindow(::ScreenshotPinnedWindow* window, const QString& groupId);
+    bool moveWindows(const QVector<QPointer<::ScreenshotPinnedWindow>>& windows,
+                     const QString& groupId);
     void restoreActiveGroupWindows();
     bool showWindow(const QString& id);
     void destroyWindow(const QString& id);
@@ -70,6 +75,8 @@ class PinnedWindowGroupManager final : public QObject {
     void registerPendingPin(const QString& persistenceId, const QString& groupId);
     void completePendingPin(const QString& persistenceId);
     void openCreateGroupModal(QWidget* owner, ::ScreenshotPinnedWindow* currentWindow = nullptr);
+    void openCreateGroupModal(QWidget* owner,
+                              const QVector<QPointer<::ScreenshotPinnedWindow>>& currentWindows);
     void openDeleteEmptyGroupsConfirmation(QWidget* owner);
     void openDeleteSpecifiedGroupConfirmation(const QString& groupId, QWidget* owner);
 

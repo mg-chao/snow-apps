@@ -9,6 +9,7 @@
 #include <QPlatformSurfaceEvent>
 #include <QTimer>
 #include <QWindow>
+#include <QScopedValueRollback>
 #include <algorithm>
 
 namespace snow_shot::presentation {
@@ -159,6 +160,39 @@ bool PinnedWindowPlatform::applyStablePlacement(PinnedPlacement requested, QScre
         requested.displayName = screen->name();
         requested.displaySerial = screen->serialNumber();
         requested.position = desktopAnchor - screen->geometry().topLeft();
+    }
+    return false;
+}
+bool PinnedWindowPlatform::applyExactPlacement(
+    PinnedPlacement requested, QScreen* screen, GeometryUpdate update,
+    const std::function<bool(const PinnedPlacement&, QScreen*)>& beforeApply) {
+    if (!screen || !requested.isValid())
+        return false;
+    const QPointF origin = pinnedDesktopRect(requested, *screen).topLeft();
+    const QScopedValueRollback<bool> preserveOrigin(m_preservePlacementOrigin, true);
+    const QSize windowSize = requested.windowSize;
+    const int attempts = requested.units == storage::PinnedGeometryUnits::LogicalPixels ? 1 : 3;
+    QPointer<QScreen> display = screen;
+    for (int attempt = 0; attempt < attempts; ++attempt) {
+        if (!display || (beforeApply && !beforeApply(requested, display)) || !display ||
+            !applyPlacement(requested, display, update) || !display)
+            return false;
+        const auto actual = placement();
+        if (!actual || !display)
+            return false;
+        display = pinnedDisplay(*actual, display);
+        if (!display)
+            return false;
+        if (actual->windowSize == windowSize) {
+            const QPointF difference = pinnedDesktopRect(*actual, *display).topLeft() - origin;
+            const qreal tolerance =
+                .51 / storage::pinnedGeometryScale(display->devicePixelRatio(), actual->units);
+            if (qAbs(difference.x()) <= tolerance && qAbs(difference.y()) <= tolerance)
+                return true;
+        }
+        requested.displayName = display->name();
+        requested.displaySerial = display->serialNumber();
+        requested.position = origin - display->geometry().topLeft();
     }
     return false;
 }

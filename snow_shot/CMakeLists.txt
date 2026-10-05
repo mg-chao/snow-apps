@@ -1381,6 +1381,10 @@ set(PROJECT_CXX_SOURCES
     src/presentation/pinned/screenshotpinnedclickthroughgeometry.cpp
     src/presentation/pinned/screenshotpinnedclickthroughgeometry.h
     src/presentation/pinned/screenshotpinnedinteraction.cpp
+    include/snow_shot/presentation/pinnedwindowselectioncontroller.h
+    src/presentation/pinned/pinnedwindowselectioncontroller.cpp
+    src/presentation/pinned/pinnedwindowselectioninteraction.cpp
+    src/presentation/pinned/pinnedwindowselectiongeometry.cpp
     src/presentation/pinned/screenshotpinneddragexport.cpp
     ${SNOW_PINNED_PLATFORM_SOURCES}
     src/presentation/pinned/screenshotpinnededitcontroller.cpp
@@ -4043,6 +4047,10 @@ if(SNOW_SHOT_BUILD_TESTS)
         src/presentation/pinned/screenshotpinnedwindow.cpp
         src/presentation/services/pinnedwindowgroupmanager.cpp
         src/presentation/pinned/screenshotpinnedinteraction.cpp
+        include/snow_shot/presentation/pinnedwindowselectioncontroller.h
+        src/presentation/pinned/pinnedwindowselectioncontroller.cpp
+        src/presentation/pinned/pinnedwindowselectioninteraction.cpp
+        src/presentation/pinned/pinnedwindowselectiongeometry.cpp
         src/presentation/pinned/screenshotpinneddragexport.cpp
         ${SNOW_PINNED_PLATFORM_SOURCES}
         src/presentation/services/languagemanager.cpp
@@ -4088,6 +4096,7 @@ if(SNOW_SHOT_BUILD_TESTS)
             comctl32
             dwmapi
             user32
+            psapi
         )
     endif()
     add_test(
@@ -7591,6 +7600,10 @@ if(WIN32 AND SNOW_SHOT_BUILD_BENCHMARKS)
         src/presentation/pinned/screenshotpinnedwindow.cpp
         src/presentation/services/pinnedwindowgroupmanager.cpp
         src/presentation/pinned/screenshotpinnedinteraction.cpp
+        include/snow_shot/presentation/pinnedwindowselectioncontroller.h
+        src/presentation/pinned/pinnedwindowselectioncontroller.cpp
+        src/presentation/pinned/pinnedwindowselectioninteraction.cpp
+        src/presentation/pinned/pinnedwindowselectiongeometry.cpp
         src/presentation/pinned/screenshotpinneddragexport.cpp
         ${SNOW_PINNED_PLATFORM_SOURCES}
         src/presentation/services/languagemanager.cpp
@@ -9653,4 +9666,64 @@ if(SNOW_SHOT_BUILD_TESTS)
     set_tests_properties(snow-shot-print-export-snapshot-tests PROPERTIES
         LABELS unit SNOW_TEST_CROSS_PLATFORM TRUE RUN_SERIAL TRUE TIMEOUT 60
         ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}")
+endif()
+
+if(SNOW_SHOT_BUILD_TESTS)
+    add_executable(snow-shot-pinned-selection-geometry-tests
+        tests/pinned_window_selection_geometry_tests.cpp
+        src/presentation/pinned/pinnedwindowselectiongeometry.cpp)
+    target_include_directories(snow-shot-pinned-selection-geometry-tests PRIVATE
+        src/presentation/pinned "${CMAKE_SOURCE_DIR}/snow_draw_engine_qt/include")
+    target_link_libraries(snow-shot-pinned-selection-geometry-tests PRIVATE Qt6::Gui)
+    add_test(NAME snow-shot-pinned-selection-geometry-tests
+        COMMAND snow-shot-pinned-selection-geometry-tests)
+    set_tests_properties(snow-shot-pinned-selection-geometry-tests PROPERTIES LABELS "unit")
+    if(TARGET snow-shot-pinned-window-tests)
+        add_test(NAME snow-shot-pinned-multi-selection-tests
+            COMMAND snow-shot-pinned-window-tests --multi-selection-only -platform offscreen)
+        set_tests_properties(snow-shot-pinned-multi-selection-tests PROPERTIES
+            LABELS "unit" RUN_SERIAL TRUE TIMEOUT 90)
+        if(APPLE)
+            add_test(NAME snow-shot-macos-pinned-multi-selection-geometry-tests
+                COMMAND snow-shot-pinned-window-tests --multi-selection-geometry-only -platform cocoa)
+            set_tests_properties(snow-shot-macos-pinned-multi-selection-geometry-tests PROPERTIES
+                LABELS "interactive;macos" RUN_SERIAL TRUE TIMEOUT 60)
+            add_test(NAME snow-shot-macos-pinned-multi-selection-tests
+                COMMAND snow-shot-pinned-window-tests --multi-selection-native-only -platform cocoa)
+            set_tests_properties(snow-shot-macos-pinned-multi-selection-tests PROPERTIES
+                LABELS "interactive;e2e;macos" RUN_SERIAL TRUE SKIP_RETURN_CODE 77 TIMEOUT 60)
+        elseif(WIN32)
+            add_test(NAME snow-shot-pinned-multi-selection-native-tests
+                COMMAND snow-shot-pinned-window-tests --multi-selection-native-only -platform windows)
+            set_tests_properties(snow-shot-pinned-multi-selection-native-tests PROPERTIES
+                LABELS "interactive;e2e;windows" RUN_SERIAL TRUE SKIP_RETURN_CODE 77 TIMEOUT 60)
+        endif()
+    endif()
+    if(TARGET snow-shot-pinned-window-group-tests)
+        add_test(NAME snow-shot-pinned-batch-group-tests
+            COMMAND snow-shot-pinned-window-group-tests --batch-group-only -platform offscreen)
+        set_tests_properties(snow-shot-pinned-batch-group-tests PROPERTIES LABELS "unit")
+    endif()
+    if(TARGET snow-shot-pinned-window-repository-tests)
+        add_test(NAME snow-shot-pinned-batch-group-repository-tests
+            COMMAND snow-shot-pinned-window-repository-tests --batch-group-only)
+        set_tests_properties(snow-shot-pinned-batch-group-repository-tests PROPERTIES LABELS "unit")
+    endif()
+endif()
+if(SNOW_SHOT_BUILD_BENCHMARKS)
+    add_executable(snow-shot-pinned-selection-performance-benchmark
+        tests/pinned_window_selection_performance_benchmark.cpp
+        src/presentation/pinned/pinnedwindowselectiongeometry.cpp)
+    target_include_directories(snow-shot-pinned-selection-performance-benchmark PRIVATE
+        src/presentation/pinned "${CMAKE_SOURCE_DIR}/snow_draw_engine_qt/include")
+    target_link_libraries(snow-shot-pinned-selection-performance-benchmark PRIVATE Qt6::Gui)
+    add_test(NAME snow-shot-pinned-selection-performance-benchmark
+        COMMAND snow-shot-pinned-selection-performance-benchmark)
+    set_tests_properties(snow-shot-pinned-selection-performance-benchmark PROPERTIES LABELS "benchmark")
+    if(TARGET snow-shot-pinned-window-tests)
+        add_test(NAME snow-shot-pinned-multi-selection-performance-benchmark
+            COMMAND snow-shot-pinned-window-tests --multi-selection-performance-only -platform offscreen)
+        set_tests_properties(snow-shot-pinned-multi-selection-performance-benchmark PROPERTIES
+            LABELS "benchmark" RUN_SERIAL TRUE TIMEOUT 120)
+    endif()
 endif()
