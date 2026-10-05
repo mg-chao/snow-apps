@@ -94,6 +94,8 @@ int main(int argc, char** argv) {
                                             ? QStringLiteral("Submitted")
                                         : result.status == ScreenshotPrintService::Status::Cancelled
                                             ? QStringLiteral("Cancelled")
+                                        : result.status == ScreenshotPrintService::Status::HandedOff
+                                            ? QStringLiteral("Photo dialog closed")
                                             : QStringLiteral("Failed");
                 status->setText(outcome + QLatin1Char(' ') + result.error);
 #ifdef Q_OS_WIN

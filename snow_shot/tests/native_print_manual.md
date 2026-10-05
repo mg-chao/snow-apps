@@ -7,9 +7,24 @@ can create a real printer job; use a PDF printer for these checks.
 
 ## Windows
 
-Snow Shot temporarily defaults to PrintDlgExW/GDI for compatibility testing on all
-Windows versions. The smoke fixture still defaults to the automatic backend;
-use `--legacy` to match the application's current print dialog.
+Snow Shot uses the modern print UI on Windows 11 and falls back to the Windows
+Photo Printing Wizard (the native Print Pictures dialog) on older Windows versions
+or when the modern interface is unavailable. The legacy backend directly activates
+Microsoft's `CLSID_PrintPhotosDropTarget` and passes a lossless temporary PNG as a
+Shell data object. It does not depend on the user's default image application. The temporary
+PNG stays alive until Windows releases its data object, including any references
+retained beyond the dialog's closure. Application shutdown also removes retained
+snapshots. Its native host remains above a topmost
+capture without changing the capture's flags. The wizard exposes no HWND owner
+interface; closing the originating window requests cancellation through WM_CLOSE.
+
+The Photo Printing Wizard does not expose a print submission/cancellation callback.
+When the native dialog closes, the service reports `HandedOff` and restores the
+capture or pin. It never closes a capture based only on a successful Shell handoff.
+Activation and handoff failures still report an error, and closing the owner closes
+the wizard without deleting its snapshot prematurely.
+The smoke fixture defaults to the same automatic backend selection as the
+application; use `--legacy` to exercise the fallback dialog directly.
 
 - Run `ctest --preset test-windows-msvc-debug -R
   '^snow-shot-windows-print-document-tests$' --output-on-failure` for the headless
@@ -28,20 +43,37 @@ use `--legacy` to match the application's current print dialog.
   window behind the capture. After cancellation, bring that application forward;
   both the screenshot overlay and its toolbar must remain above it. Repeat on each
   capture monitor and with a pinned image's drawing toolbar visible.
-- Run with `--legacy` to exercise PrintDlgExW/GDI. Repeat paper, orientation, PDF,
-  cancellation, and reopen checks. On an older compatible Windows installation,
-  confirm the default backend selects this path. A common-dialog initialization
-  failure must attempt PrintDlgW; cancellation must not reopen either interface.
-- Run with `--classic` to force the PrintDlgW compatibility interface. Repeat PDF,
-  orientation, cancellation, and reopen checks. This switch belongs to the fixture;
-  the application currently defaults to PrintDlgExW/GDI on Windows.
+- Run `ctest --preset test-windows-msvc-debug -R
+  '^snow-shot-windows-print-dialog-tests$' --output-on-failure` for the offscreen
+  wizard regression. It verifies the documented wizard CLSID and copy-only handoff,
+  immutable full-size PNG pixels and sRGB metadata, activation and handoff failures,
+  cancellation, deferred/worker-thread release, native window hide events with
+  retained Shell references, owner destruction, prevention of duplicate dialogs,
+  exactly-once completion and temporary-file cleanup.
+- On a Windows desktop with an installed printer, run
+  `snow-shot-windows-print-dialog-tests.exe --native-cancel-only` to check that
+  the real Print Pictures dialog opens above its topmost originating window.
+  The probe closes the wizard without pressing Print, then repeats by destroying
+  the owner. Neither request creates a printer job.
+- Run with `--legacy` to exercise Print Pictures. Confirm the image preview,
+  printer, paper size, quality, photo layouts, copies and Fit picture to frame
+  controls match Windows' native dialog. Repeat paper, layout, PDF, cancellation,
+  and reopen checks. Both printing and cancellation must report Photo dialog closed
+  in the fixture. Uncheck Fit picture to frame to preserve the full border; selecting
+  photo layouts may crop the image according to the user's choice. On an older
+  compatible Windows installation, confirm the default backend selects this path.
+  An initialization failure must report an error without reopening another interface.
+- `--classic` remains an alias of `--legacy` in the Windows fixture and uses the
+  same Photo Printing Wizard fallback interface as the application.
 - Run with `--modern-unavailable`. Confirm exactly one legacy dialog opens and
-  submitting/cancelling reports the corresponding result. Confirm initialization
+  closing it reports Photo dialog closed. Confirm initialization
   failures in modern printing also take this path, while failures after a task
   starts show an error without reopening another dialog.
 - With a real screenshot, draw annotations, apply result styling, and print.
-  Only successful submission should close the capture; cancel/failure must restore
-  focus and editing. Print a trimmed scrolling capture and verify the trimmed result.
+  The modern backend closes the capture only after confirmed submission. The Photo
+  Printing Wizard restores focus and editing after it closes, including after a
+  print, because it does not report submission. Print a trimmed scrolling capture
+  and verify the trimmed result.
 - Pin an image. Keep the drawing toolbar hidden and press Ctrl+P. Confirm it
   stays hidden and the pin stays open. Repeat with rotation, zoom, opacity, and
   thumbnail mode; no controls or resize handles may appear in the output.

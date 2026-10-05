@@ -5,7 +5,7 @@
 
 [[nodiscard]] ScreenshotPrintService::Backend screenshotNativePrintBackend(bool legacy);
 #ifdef Q_OS_WIN
-// Interactive fixture for the legacy PrintDlgW compatibility dialog.
+// Compatibility alias for the Windows legacy Photo Printing Wizard backend.
 [[nodiscard]] ScreenshotPrintService::Backend screenshotClassicWindowsPrintBackend();
 #endif
 

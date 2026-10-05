@@ -1248,7 +1248,7 @@ target_link_libraries(snow_shot_print PUBLIC Qt6::Widgets)
 if(WIN32)
     target_sources(snow_shot_print PRIVATE src/platform/windows/nativeprint.cpp
         src/platform/windows/nativeprintdocument.cpp)
-    target_link_libraries(snow_shot_print PRIVATE comdlg32 gdi32 ole32 runtimeobject windowsapp
+    target_link_libraries(snow_shot_print PRIVATE shell32 uuid ole32 runtimeobject windowsapp
         d2d1 d3d11 dxgi windowscodecs)
 elseif(APPLE)
     target_sources(snow_shot_print PRIVATE src/platform/macos/nativeprint.mm)
@@ -9621,6 +9621,14 @@ if(SNOW_SHOT_BUILD_TESTS)
             LABELS "interactive;macos" RUN_SERIAL TRUE TIMEOUT 60)
     endif()
     if(WIN32)
+        add_executable(snow-shot-windows-print-dialog-tests tests/windows_print_dialog_tests.cpp)
+        target_link_libraries(snow-shot-windows-print-dialog-tests PRIVATE snow_shot_print)
+        snow_shot_import_offscreen_platform(snow-shot-windows-print-dialog-tests)
+        add_test(NAME snow-shot-windows-print-dialog-tests
+            COMMAND snow-shot-windows-print-dialog-tests -platform offscreen)
+        set_tests_properties(snow-shot-windows-print-dialog-tests PROPERTIES
+            LABELS "unit;windows" TIMEOUT 60
+            ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}")
         add_executable(snow-shot-windows-print-document-tests
             tests/windows_print_document_tests.cpp)
         target_link_libraries(snow-shot-windows-print-document-tests PRIVATE snow_shot_print)

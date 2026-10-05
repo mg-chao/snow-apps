@@ -76,8 +76,9 @@ void immutableWhiteSnapshotAndDuplicateCompletion() {
     require(completions == 1 && !service.busy(), "late native completions must be ignored");
 }
 void fallbackOnlyWhenUnavailable() {
-    for (auto status : {Service::Status::Cancelled, Service::Status::Failed,
-                        Service::Status::Submitted, Service::Status::Unavailable}) {
+    for (auto status :
+         {Service::Status::Cancelled, Service::Status::Failed, Service::Status::Submitted,
+          Service::Status::HandedOff, Service::Status::Unavailable}) {
         int legacyStarts = 0;
         Service::Result final;
         Service::Completion modernCompletion;
@@ -150,8 +151,8 @@ void destroyedTargetsAndDelayedCallbacks() {
 }
 void screenshotSubmissionAndStaleCapturePolicy() {
     for (bool current : {true, false}) {
-        for (auto status :
-             {Service::Status::Submitted, Service::Status::Cancelled, Service::Status::Failed}) {
+        for (auto status : {Service::Status::Submitted, Service::Status::Cancelled,
+                            Service::Status::Failed, Service::Status::HandedOff}) {
             int released = 0;
             int closed = 0;
             int restored = 0;
@@ -209,8 +210,8 @@ void onePagePlacementAndInteraction() {
 }
 
 void printingPreservesOwnerAndWindowFlags() {
-    for (auto status :
-         {Service::Status::Submitted, Service::Status::Cancelled, Service::Status::Failed}) {
+    for (auto status : {Service::Status::Submitted, Service::Status::Cancelled,
+                        Service::Status::Failed, Service::Status::HandedOff}) {
         QWidget owner;
         owner.setWindowFlag(Qt::WindowStaysOnTopHint);
         QWidget toolbar(&owner, Qt::Tool | Qt::WindowStaysOnTopHint);
@@ -252,19 +253,14 @@ void printingPreservesOwnerAndWindowFlags() {
     }
 }
 
-void sharedServiceUsesCompatibilityDialogOnWindows() {
+void sharedServiceUsesNativeBackendWithLegacyFallback() {
     auto& service = Service::shared();
-#ifdef Q_OS_WIN
-    constexpr bool expectLegacy = true;
-#else
-    constexpr bool expectLegacy = false;
-#endif
-    require(sharedBackendSelections == std::vector<bool>{expectLegacy, true} ||
-                sharedBackendSelections == std::vector<bool>{true, expectLegacy},
-            "shared service must select legacy on Windows and preserve other platform defaults");
+    require(sharedBackendSelections == std::vector<bool>{false, true} ||
+                sharedBackendSelections == std::vector<bool>{true, false},
+            "shared service must select the native backend and configure a legacy fallback");
     QWidget owner;
-    for (auto status :
-         {Service::Status::Cancelled, Service::Status::Failed, Service::Status::Submitted}) {
+    for (auto status : {Service::Status::Cancelled, Service::Status::Failed,
+                        Service::Status::Submitted, Service::Status::HandedOff}) {
         sharedBackendStatus = status;
         const auto starts = sharedBackendStarts.size();
         int completions = 0;
@@ -276,11 +272,24 @@ void sharedServiceUsesCompatibilityDialogOnWindows() {
                                    }),
                 "shared service must accept and reopen printing");
         flush();
-        require(sharedBackendStarts.size() == starts + 1 &&
-                    sharedBackendStarts.back() == expectLegacy && completions == 1 &&
-                    !service.busy(),
-                "shared service must use the selected dialog once and release each request");
+        require(sharedBackendStarts.size() == starts + 1 && !sharedBackendStarts.back() &&
+                    completions == 1 && !service.busy(),
+                "shared service must use the native backend once and release each request");
     }
+    sharedBackendStatus = Service::Status::Unavailable;
+    const auto starts = sharedBackendStarts.size();
+    int completions = 0;
+    require(service.printImage(&owner, &owner, image(),
+                               [&](auto result) {
+                                   require(result.status == Service::Status::HandedOff,
+                                           "shared service must preserve the fallback outcome");
+                                   ++completions;
+                               }),
+            "shared service must accept printing when the native backend is unavailable");
+    flush();
+    require(sharedBackendStarts.size() == starts + 2 && !sharedBackendStarts[starts] &&
+                sharedBackendStarts[starts + 1] && completions == 1 && !service.busy(),
+            "shared service must try the native backend before starting the legacy fallback once");
     require(&Service::shared() == &service && sharedBackendSelections.size() == 2,
             "shared service must retain its backend selection across requests");
 }
@@ -290,7 +299,10 @@ ScreenshotPrintService::Backend screenshotNativePrintBackend(bool legacy) {
     sharedBackendSelections.push_back(legacy);
     return [legacy](QWidget*, QImage, Service::Completion completion) {
         sharedBackendStarts.push_back(legacy);
-        completion({sharedBackendStatus, {}});
+        completion({legacy && sharedBackendStatus == Service::Status::Unavailable
+                        ? Service::Status::HandedOff
+                        : sharedBackendStatus,
+                    {}});
     };
 }
 
@@ -302,6 +314,6 @@ int main(int argc, char** argv) {
     screenshotSubmissionAndStaleCapturePolicy();
     onePagePlacementAndInteraction();
     printingPreservesOwnerAndWindowFlags();
-    sharedServiceUsesCompatibilityDialogOnWindows();
+    sharedServiceUsesNativeBackendWithLegacyFallback();
     return 0;
 }

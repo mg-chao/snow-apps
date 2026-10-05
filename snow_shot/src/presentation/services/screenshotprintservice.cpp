@@ -35,13 +35,7 @@ ScreenshotPrintService::ScreenshotPrintService(Backend primary, Backend legacy, 
 ScreenshotPrintService& ScreenshotPrintService::shared() {
     static QPointer<ScreenshotPrintService> service;
     if (!service) {
-#ifdef Q_OS_WIN
-        // Temporarily use the legacy dialog for Windows compatibility testing.
-        constexpr bool preferLegacy = true;
-#else
-        constexpr bool preferLegacy = false;
-#endif
-        service = new ScreenshotPrintService(screenshotNativePrintBackend(preferLegacy),
+        service = new ScreenshotPrintService(screenshotNativePrintBackend(false),
                                              screenshotNativePrintBackend(true), qApp);
     }
     return *service;

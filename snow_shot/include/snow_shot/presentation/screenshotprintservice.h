@@ -12,7 +12,9 @@ class QWidget;
 
 class ScreenshotPrintService final : public QObject {
   public:
-    enum class Status { Submitted, Cancelled, Failed, Unavailable };
+    // HandedOff means a system-owned dialog closed without reporting a spooler outcome.
+    // Keep the capture available because it may have been cancelled.
+    enum class Status { Submitted, Cancelled, Failed, Unavailable, HandedOff };
     struct Result {
         Status status = Status::Failed;
         QString error;
