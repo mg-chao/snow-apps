@@ -36,6 +36,26 @@ inline void drawStroke(SnowCanvasWidget& canvas) {
             "right-click query finds stroke");
 }
 
+inline void beginLinearCreation(SnowCanvasWidget& canvas, SnowCanvasTool tool,
+                                SnowCanvasArrowType type = SnowCanvasArrowType::Straight) {
+    require(canvas.setCanvasTool(tool), "activate linear creation fixture");
+    SnowCanvasShapeStyle style;
+    style.arrowType = type;
+    require(canvas.setCanvasShapeStylePatch(style, SnowCanvasShapeStylePropertyArrowType,
+                                            tool == SnowCanvasTool::Arrow
+                                                ? SnowCanvasShapeKind::Arrow
+                                                : SnowCanvasShapeKind::Line),
+            "set linear creation type");
+    for (const QPointF point : {QPointF(60, 80), QPointF(140, 80), QPointF(180, 120)}) {
+        require(mouse(canvas, QEvent::MouseButtonPress, point, Qt::LeftButton, Qt::LeftButton) &&
+                    mouse(canvas, QEvent::MouseButtonRelease, point, Qt::LeftButton, Qt::NoButton),
+                "left clicks add points to linear creation");
+    }
+    require(!canvas.canvasHistoryState().canUndo &&
+                !canvas.hasQuickSelectionTargetAt({25, 180}, Qt::RightButton),
+            "linear creation is uncommitted and cannot start quick selection");
+}
+
 inline void selectAndDragStroke(SnowCanvasWidget& canvas) {
     require(mouse(canvas, QEvent::MouseButtonPress, {120, 100}, Qt::RightButton, Qt::RightButton,
                   Qt::AltModifier),

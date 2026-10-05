@@ -9,6 +9,7 @@
 #include "snow_shot/presentation/screenshotrecognitionsessioncontroller.h"
 #include "snow_shot/presentation/screenshotrecognitionwindow.h"
 #include "snow_shot/shortcuts/shortcutbinding.h"
+#include "snow_draw_engine_qt/snow_canvas_widget.h"
 #include "widgets/button.h"
 
 #include <QApplication>
@@ -748,6 +749,11 @@ bool PinnedWindowSelectionController::eventFilter(QObject* watched, QEvent* even
     if (handlePointer(window, watched, event))
         return true;
     if (event->type() == QEvent::ContextMenu && !geometryActive()) {
+        if (watched == window->m_canvas && window->m_canvas->interactionEnabled()) {
+            // Let the canvas consume menus belonging to its right-button gestures first.
+            // Unhandled events propagate to the pin, which applies window-selection routing.
+            return false;
+        }
         auto* context = static_cast<QContextMenuEvent*>(event);
         if (showContextMenu(window, context->globalPos())) {
             event->accept();

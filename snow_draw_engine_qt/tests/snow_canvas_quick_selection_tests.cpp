@@ -33,6 +33,15 @@ void strokeSelection() {
                                    canvas.mapToGlobal(QPoint(120, 135)));
     QApplication::sendEvent(&canvas, &keyboardMenu);
     require(!keyboardMenu.isAccepted(), "keyboard context menu remains unhandled by canvas");
+    require(
+        mouse(canvas, QEvent::MouseButtonDblClick, {120, 135}, Qt::RightButton, Qt::RightButton),
+        "right double-click selects the stroke");
+    mouse(canvas, QEvent::MouseButtonRelease, {120, 135}, Qt::RightButton, Qt::NoButton);
+    QContextMenuEvent doubleClickMenu(QContextMenuEvent::Mouse, {120, 135},
+                                      canvas.mapToGlobal(QPoint(120, 135)));
+    doubleClickMenu.setAccepted(false);
+    QApplication::sendEvent(&canvas, &doubleClickMenu);
+    require(doubleClickMenu.isAccepted(), "right double-click consumes its mouse context menu");
     mouse(canvas, QEvent::MouseButtonPress, {25, 40}, Qt::RightButton, Qt::RightButton);
     mouse(canvas, QEvent::MouseButtonRelease, {25, 40}, Qt::RightButton, Qt::NoButton);
     QContextMenuEvent missMenu(QContextMenuEvent::Mouse, {25, 40},
@@ -93,11 +102,83 @@ void textCommitAndMove() {
             "right movement preserves committed text and selection without opening editor");
 }
 
+void linearCreationConsumesContextMenu() {
+    for (const auto tool : {SnowCanvasTool::Arrow, SnowCanvasTool::Line}) {
+        for (const auto type : {SnowCanvasArrowType::Straight, SnowCanvasArrowType::Curve}) {
+            for (const bool contextBeforeRelease : {false, true}) {
+                SnowCanvasRuntime runtime;
+                SnowCanvasWidget canvas(runtime);
+                canvas.resize(400, 300);
+                canvas.show();
+                QApplication::processEvents();
+                canvas_quick_selection_test::beginLinearCreation(canvas, tool, type);
+                require(mouse(canvas, QEvent::MouseButtonPress, {25, 180}, Qt::RightButton,
+                              Qt::RightButton),
+                        "right click finishes linear creation");
+                const auto contextMenu = [&]() {
+                    QContextMenuEvent keyboard(QContextMenuEvent::Keyboard, {25, 180},
+                                               canvas.mapToGlobal(QPoint(25, 180)));
+                    QApplication::sendEvent(&canvas, &keyboard);
+                    require(!keyboard.isAccepted(), "keyboard menu remains available to host");
+                    QContextMenuEvent menu(QContextMenuEvent::Mouse, {25, 180},
+                                           canvas.mapToGlobal(QPoint(25, 180)));
+                    menu.setAccepted(false);
+                    QApplication::sendEvent(&canvas, &menu);
+                    require(menu.isAccepted(), "finishing creation consumes its mouse menu");
+                };
+                if (contextBeforeRelease)
+                    contextMenu();
+                mouse(canvas, QEvent::MouseButtonRelease, {25, 180}, Qt::RightButton, Qt::NoButton);
+                if (!contextBeforeRelease)
+                    contextMenu();
+                require(canvas.canvasHistoryState().canUndo && canvas.undo() &&
+                            !canvas.canvasHistoryState().canUndo &&
+                            canvas.canvasHistoryState().canRedo,
+                        "finishing linear creation commits one undoable operation");
+                mouse(canvas, QEvent::MouseButtonPress, {25, 180}, Qt::RightButton,
+                      Qt::RightButton);
+                mouse(canvas, QEvent::MouseButtonRelease, {25, 180}, Qt::RightButton, Qt::NoButton);
+                QContextMenuEvent miss(QContextMenuEvent::Mouse, {25, 180},
+                                       canvas.mapToGlobal(QPoint(25, 180)));
+                QApplication::sendEvent(&canvas, &miss);
+                require(!miss.isAccepted(), "the next idle right click remains available to host");
+            }
+        }
+    }
+}
+
+void textCommitConsumesContextMenu() {
+    SnowCanvasRuntime runtime;
+    SnowCanvasWidget canvas(runtime);
+    canvas.resize(400, 300);
+    canvas.show();
+    QApplication::processEvents();
+    require(canvas.setCanvasTool(SnowCanvasTool::Text), "activate text draft fixture");
+    mouse(canvas, QEvent::MouseButtonPress, {200, 150}, Qt::LeftButton, Qt::LeftButton);
+    mouse(canvas, QEvent::MouseButtonRelease, {200, 150}, Qt::LeftButton, Qt::NoButton);
+    QKeyEvent type(QEvent::KeyPress, Qt::Key_A, Qt::NoModifier, QStringLiteral("completed draft"));
+    QApplication::sendEvent(&canvas, &type);
+    require(canvas.hasActiveTextEditing() &&
+                !canvas.hasQuickSelectionTargetAt({25, 40}, Qt::RightButton),
+            "right click outside the editor is not a selection hit");
+    require(mouse(canvas, QEvent::MouseButtonPress, {25, 40}, Qt::RightButton, Qt::RightButton) &&
+                !canvas.hasActiveTextEditing() &&
+                runtime.serializeDocumentSession().contains("completed draft"),
+            "canvas right click commits the text draft");
+    mouse(canvas, QEvent::MouseButtonRelease, {25, 40}, Qt::RightButton, Qt::NoButton);
+    QContextMenuEvent menu(QContextMenuEvent::Mouse, {25, 40}, canvas.mapToGlobal(QPoint(25, 40)));
+    menu.setAccepted(false);
+    QApplication::sendEvent(&canvas, &menu);
+    require(menu.isAccepted(), "text commit consumes its mouse context menu");
+}
+
 } // namespace
 
 int main(int argc, char** argv) {
     QApplication app(argc, argv);
     strokeSelection();
     textCommitAndMove();
+    linearCreationConsumesContextMenu();
+    textCommitConsumesContextMenu();
     return 0;
 }

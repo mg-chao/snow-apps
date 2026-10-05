@@ -16599,6 +16599,145 @@ class PinnedSelectionFixture final {
     }
 };
 
+void pinnedRightQuickSelectionPreservesWindowSelection() {
+    using canvas_quick_selection_test::mouse;
+    for (const bool selectDrawingWindow : {false, true}) {
+        for (const bool contextBeforeRelease : {false, true}) {
+            PinnedSelectionFixture fixture;
+            auto& pin = fixture.add({40, 40}, {360, 220});
+            auto& peer = fixture.add({420, 40});
+            ScreenshotPinnedWindowTestAccess::editSelectionOffscreen(pin, true);
+            auto* controller = pin.findChild<ScreenshotPinnedEditController*>();
+            auto* canvas = pin.findChild<SnowCanvasWidget*>();
+            require(controller && controller->toolbarWindow() && canvas,
+                    "registered pin owns its drawing canvas and toolbar");
+            controller->toolbarWindow()->palette()->freeDrawRequested();
+            canvas_quick_selection_test::drawStroke(*canvas);
+
+            fixture.selection.toggleSelection(&peer);
+            if (selectDrawingWindow)
+                fixture.selection.toggleSelection(&pin);
+            const int selectedCount = selectDrawingWindow ? 2 : 1;
+            require(fixture.selection.selectedCount() == selectedCount,
+                    "seed window selection independently of canvas selection");
+            auto* menu = pin.findChild<adqt::widgets::AdContextMenu*>(
+                QStringLiteral("screenshotPinnedContextMenu"));
+            require(menu != nullptr, "registered pin owns its context menu");
+            int menus = 0;
+            QObject::connect(menu, &adqt::widgets::AdContextMenu::aboutToShow, &pin,
+                             [&]() { ++menus; });
+            const auto contextMenu = [&](QPoint point) {
+                QContextMenuEvent event(QContextMenuEvent::Mouse, point,
+                                        canvas->mapToGlobal(point));
+                event.setAccepted(false);
+                QApplication::sendEvent(canvas, &event);
+                require(event.isAccepted(), "canvas or pin must own the context menu event");
+            };
+
+            require(mouse(*canvas, QEvent::MouseButtonPress, {120, 100}, Qt::RightButton,
+                          Qt::RightButton),
+                    "right press on a registered pin selects the annotation");
+            mouse(*canvas, QEvent::MouseMove, {120, 135}, Qt::NoButton, Qt::RightButton);
+            if (contextBeforeRelease)
+                contextMenu({120, 135});
+            mouse(*canvas, QEvent::MouseButtonRelease, {120, 135}, Qt::RightButton, Qt::NoButton);
+            if (!contextBeforeRelease)
+                contextMenu({120, 135});
+            require(menus == 0 &&
+                        !pin.findChild<adqt::widgets::AdContextMenu*>(
+                            QStringLiteral("screenshotPinnedMultiSelectionMenu")) &&
+                        fixture.selection.selectedCount() == selectedCount &&
+                        fixture.selection.isSelected(&peer) &&
+                        fixture.selection.isSelected(&pin) == selectDrawingWindow,
+                    "canvas right drag must neither open a pin menu nor change window selection");
+            require(canvas->hasQuickSelectionTargetAt({120, 135}, Qt::RightButton) &&
+                        !canvas->hasQuickSelectionTargetAt({120, 100}, Qt::RightButton) &&
+                        canvas->undo() &&
+                        canvas->hasQuickSelectionTargetAt({120, 100}, Qt::RightButton),
+                    "registered pin right drag moves the annotation as one undoable operation");
+
+            mouse(*canvas, QEvent::MouseButtonPress, {25, 40}, Qt::RightButton, Qt::RightButton);
+            mouse(*canvas, QEvent::MouseButtonRelease, {25, 40}, Qt::RightButton, Qt::NoButton);
+            contextMenu({25, 40});
+            auto* batchMenu = pin.findChild<adqt::widgets::AdContextMenu*>(
+                QStringLiteral("screenshotPinnedMultiSelectionMenu"));
+            if (selectDrawingWindow) {
+                require(menus == 0 && batchMenu && batchMenu->isVisible() &&
+                            fixture.selection.selectedCount() == 2,
+                        "a canvas miss on selected pins must open the batch menu");
+                batchMenu->hide();
+            } else {
+                require(
+                    menus == 1 && menu->isVisible() && !batchMenu &&
+                        fixture.selection.selectedCount() == 0,
+                    "a canvas miss on an unselected pin must clear selection and open its menu");
+                menu->hide();
+            }
+        }
+    }
+}
+
+void pinnedLinearCreationConsumesRightClick() {
+    using canvas_quick_selection_test::mouse;
+    for (const auto tool : {SnowCanvasTool::Arrow, SnowCanvasTool::Line}) {
+        for (const bool contextBeforeRelease : {false, true}) {
+            PinnedSelectionFixture fixture;
+            auto& pin = fixture.add({40, 40}, {360, 220});
+            auto& peer = fixture.add({420, 40});
+            ScreenshotPinnedWindowTestAccess::editSelectionOffscreen(pin, true);
+            auto* controller = pin.findChild<ScreenshotPinnedEditController*>();
+            auto* canvas = pin.findChild<SnowCanvasWidget*>();
+            require(controller && controller->toolbarWindow() && canvas,
+                    "linear creation pin owns its drawing canvas and toolbar");
+            auto* palette = controller->toolbarWindow()->palette();
+            if (tool == SnowCanvasTool::Arrow)
+                palette->arrowRequested();
+            else
+                palette->lineRequested();
+            canvas_quick_selection_test::beginLinearCreation(*canvas, tool);
+            fixture.selection.toggleSelection(&pin);
+            fixture.selection.toggleSelection(&peer);
+            auto* menu = pin.findChild<adqt::widgets::AdContextMenu*>(
+                QStringLiteral("screenshotPinnedContextMenu"));
+            require(menu != nullptr, "linear creation pin owns its context menu");
+            int menus = 0;
+            QObject::connect(menu, &adqt::widgets::AdContextMenu::aboutToShow, &pin,
+                             [&]() { ++menus; });
+            const auto contextMenu = [&]() {
+                QContextMenuEvent event(QContextMenuEvent::Mouse, {25, 180},
+                                        canvas->mapToGlobal(QPoint(25, 180)));
+                event.setAccepted(false);
+                QApplication::sendEvent(canvas, &event);
+                require(event.isAccepted(), "canvas or pin owns the context menu event");
+            };
+            require(mouse(*canvas, QEvent::MouseButtonPress, {25, 180}, Qt::RightButton,
+                          Qt::RightButton),
+                    "right click finishes pinned linear creation");
+            if (contextBeforeRelease)
+                contextMenu();
+            mouse(*canvas, QEvent::MouseButtonRelease, {25, 180}, Qt::RightButton, Qt::NoButton);
+            if (!contextBeforeRelease)
+                contextMenu();
+            require(menus == 0 &&
+                        !pin.findChild<adqt::widgets::AdContextMenu*>(
+                            QStringLiteral("screenshotPinnedMultiSelectionMenu")) &&
+                        fixture.selection.selectedCount() == 2 &&
+                        canvas->canvasHistoryState().canUndo && canvas->undo() &&
+                        !canvas->canvasHistoryState().canUndo,
+                    "finishing creation commits one annotation without opening a pin menu");
+            mouse(*canvas, QEvent::MouseButtonPress, {25, 180}, Qt::RightButton, Qt::RightButton);
+            mouse(*canvas, QEvent::MouseButtonRelease, {25, 180}, Qt::RightButton, Qt::NoButton);
+            contextMenu();
+            auto* batchMenu = pin.findChild<adqt::widgets::AdContextMenu*>(
+                QStringLiteral("screenshotPinnedMultiSelectionMenu"));
+            require(menus == 0 && batchMenu && batchMenu->isVisible() &&
+                        fixture.selection.selectedCount() == 2,
+                    "the next idle right click must open the selected pins' menu");
+            batchMenu->hide();
+        }
+    }
+}
+
 QAction& pinnedSelectionAction(QMenu& menu, const QString& name) {
     for (auto* action : menu.actions())
         if (action->objectName() == name)
@@ -18589,6 +18728,8 @@ int main(int argc, char* argv[]) {
 #endif
         if (app.arguments().contains(QStringLiteral("--right-quick-selection-only"))) {
             pinnedRightQuickSelection();
+            pinnedRightQuickSelectionPreservesWindowSelection();
+            pinnedLinearCreationConsumesRightClick();
             return 0;
         }
         if (app.arguments().contains(QStringLiteral("--lock-only"))) {
