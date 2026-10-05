@@ -5,13 +5,6 @@ namespace {
 bool recognitionTool(ScreenshotActiveTool tool) {
     return isScreenshotRecognitionTool(tool);
 }
-
-bool drawingToolSupportsCursorMovement(ScreenshotActiveTool tool) {
-    return tool != ScreenshotActiveTool::Move && tool != ScreenshotActiveTool::Eraser &&
-           tool != ScreenshotActiveTool::RectangleEraser &&
-           tool != ScreenshotActiveTool::BrushEraser && tool != ScreenshotActiveTool::Spotlight &&
-           tool != ScreenshotActiveTool::Watermark && !recognitionTool(tool);
-}
 } // namespace
 
 bool ScreenshotInteractionState::beginEffectDrag(EffectGesture gesture) {
@@ -230,10 +223,9 @@ bool ScreenshotInteractionState::preselectionActive(
 }
 
 bool ScreenshotInteractionState::cursorMovementEnabled() const {
-    if (!selecting() && !movingSelection() && !editing()) {
-        return false;
-    }
-    return moveToolActive() || (editing() && drawingToolSupportsCursorMovement(m_activeTool));
+    // Cursor navigation belongs to the screenshot interaction, independently of the active tool
+    // and its hint rows. Input ownership and physical cursor availability are guarded by callers.
+    return selecting() || movingSelection() || editing();
 }
 
 bool ScreenshotInteractionState::selectionToolbarMode() const {

@@ -3741,21 +3741,126 @@ void cursorMovementEligibilityFollowsInteractionState() {
     require(interaction.cursorMovementEnabled(),
             "a drawing tool must enable cursor movement while editing");
 
-    const ScreenshotActiveTool unsupportedTools[] = {
-        ScreenshotActiveTool::Eraser,      ScreenshotActiveTool::RectangleEraser,
-        ScreenshotActiveTool::BrushEraser, ScreenshotActiveTool::Spotlight,
-        ScreenshotActiveTool::Watermark,   ScreenshotActiveTool::Ocr,
-        ScreenshotActiveTool::Table,       ScreenshotActiveTool::Qr,
-    };
-    for (ScreenshotActiveTool tool : unsupportedTools) {
-        interaction.setCanvasTool(tool);
-        require(!interaction.cursorMovementEnabled(),
-                "a cursor-ineligible tool enabled movement shortcuts");
-    }
+    interaction.enterOverlayVisible(false);
+    require(interaction.cursorMovementEnabled(), "manual selection must enable cursor movement");
+    interaction.confirmSelection();
+    require(interaction.cursorMovementEnabled(),
+            "a confirmed selection must enable cursor movement");
+    interaction.setOcrTool();
+    require(interaction.enterSelectionDrag(ScreenshotSelectionDragMode::Marquee) &&
+                interaction.cursorMovementEnabled(),
+            "recognition selection drags must retain cursor movement");
 
     interaction.enterScrollingCapture();
     require(!interaction.cursorMovementEnabled(),
             "scrolling capture must not enable cursor movement");
+}
+
+void cursorMovementShortcutsAreIndependentOfActiveTool() {
+    ScreenshotCaptureState captureState;
+    ScreenshotDisplaySession displays;
+    ScreenshotGeometryMapper geometry;
+    ScreenshotSelectionModel selection;
+    ScreenshotIntelligentSelectionModel intelligent;
+    ScreenshotInteractionState interaction;
+    QWidget shortcutWindow;
+    snow_shot::presentation::WindowShortcutManager shortcutManager;
+    shortcutManager.addScopeWindow(&shortcutWindow);
+
+    bool inputAllowed = true;
+    bool physicalCursorAvailable = true;
+    QVector<PhysicalCursorDirection> cursorMoves;
+    ScreenshotOverlayInputActions actions;
+    actions.localShortcutInputAllowed = [&] { return inputAllowed; };
+    actions.physicalCursorMovementAvailable = [&] { return physicalCursorAvailable; };
+    actions.moveCursorOnePixel = [&](PhysicalCursorDirection direction) {
+        cursorMoves.push_back(direction);
+        return true;
+    };
+    ScreenshotOverlayInputHandler handler(
+        {captureState, interaction, selection, intelligent, geometry, displays, actions});
+    ScreenshotOverlayShortcutController shortcuts(shortcutManager, handler, interaction,
+                                                  intelligent, actions);
+
+    const ScreenshotActiveTool tools[] = {
+        ScreenshotActiveTool::Move,
+        ScreenshotActiveTool::Select,
+        ScreenshotActiveTool::Shape,
+        ScreenshotActiveTool::Arrow,
+        ScreenshotActiveTool::Line,
+        ScreenshotActiveTool::FreeDraw,
+        ScreenshotActiveTool::RectangleHighlight,
+        ScreenshotActiveTool::PenHighlight,
+        ScreenshotActiveTool::Eraser,
+        ScreenshotActiveTool::RectangleFilter,
+        ScreenshotActiveTool::Watermark,
+        ScreenshotActiveTool::Text,
+        ScreenshotActiveTool::SerialNumber,
+        ScreenshotActiveTool::Ocr,
+        ScreenshotActiveTool::Table,
+        ScreenshotActiveTool::Qr,
+        ScreenshotActiveTool::PenFilter,
+        ScreenshotActiveTool::Spotlight,
+        ScreenshotActiveTool::Markdown,
+        ScreenshotActiveTool::Html,
+        ScreenshotActiveTool::AutoFilter,
+        ScreenshotActiveTool::Latex,
+        ScreenshotActiveTool::RectangleEraser,
+        ScreenshotActiveTool::BrushEraser,
+    };
+    const std::pair<Qt::Key, PhysicalCursorDirection> movements[] = {
+        {Qt::Key_W, PhysicalCursorDirection::Up},
+        {Qt::Key_S, PhysicalCursorDirection::Down},
+        {Qt::Key_A, PhysicalCursorDirection::Left},
+        {Qt::Key_D, PhysicalCursorDirection::Right},
+        {Qt::Key_Up, PhysicalCursorDirection::Up},
+        {Qt::Key_Down, PhysicalCursorDirection::Down},
+        {Qt::Key_Left, PhysicalCursorDirection::Left},
+        {Qt::Key_Right, PhysicalCursorDirection::Right},
+    };
+    for (const auto tool : tools) {
+        interaction.setCanvasTool(tool);
+        for (const auto& [key, direction] : movements) {
+            cursorMoves.clear();
+            require(dispatchShortcut(shortcutWindow, key) &&
+                        dispatchShortcut(shortcutWindow, key, Qt::NoModifier, true) &&
+                        cursorMoves == QVector<PhysicalCursorDirection>{direction, direction},
+                    "every tool must route cursor shortcuts and auto-repeat in every direction");
+            static_cast<void>(dispatchShortcutRelease(shortcutWindow, key));
+            require(interaction.activeTool() == tool && interaction.editing(),
+                    "cursor movement must preserve the current tool and interaction mode");
+
+            inputAllowed = false;
+            cursorMoves.clear();
+            require(!dispatchShortcut(shortcutWindow, key) && cursorMoves.isEmpty(),
+                    "text input must block cursor movement for every tool");
+            inputAllowed = true;
+
+            physicalCursorAvailable = false;
+            require(!dispatchShortcut(shortcutWindow, key) && cursorMoves.isEmpty(),
+                    "an unavailable physical cursor must not consume movement shortcuts");
+            physicalCursorAvailable = true;
+        }
+
+        cursorMoves.clear();
+        const auto suspension = shortcutManager.suspendInput();
+        require(!dispatchShortcut(shortcutWindow, Qt::Key_W) && cursorMoves.isEmpty(),
+                "modal input suspension must block cursor movement for every tool");
+        shortcutManager.resumeInput(suspension);
+    }
+
+    for (const bool scrolling : {false, true}) {
+        if (scrolling)
+            interaction.enterScrollingCapture();
+        else
+            interaction.reset();
+        cursorMoves.clear();
+        for (const auto& [key, direction] : movements) {
+            static_cast<void>(direction);
+            require(!dispatchShortcut(shortcutWindow, key) && cursorMoves.isEmpty(),
+                    "inactive and scrolling captures must not route cursor movement");
+        }
+    }
 }
 
 void selectionStagesActivateEveryToolbarShortcut() {
@@ -5393,6 +5498,13 @@ int main(int argc, char** argv) {
     };
     require(storage::ApplicationStorage::instance().initialize(storageOptions).success,
             "failed to initialize isolated shortcut settings");
+    if (QCoreApplication::arguments().contains(QStringLiteral("--cursor-shortcuts-only"))) {
+        cursorMovementShortcutsAreIndependentOfActiveTool();
+        cursorMovementEligibilityFollowsInteractionState();
+        intelligentSelectionSupportsCursorMovementShortcuts();
+        storage::ApplicationStorage::instance().shutdown();
+        return 0;
+    }
     if (QCoreApplication::arguments().contains(QStringLiteral("--eraser-wheel-only"))) {
         eraserWheelUsesBrushCreationWidthOnly();
         storage::ApplicationStorage::instance().shutdown();
@@ -5482,6 +5594,7 @@ int main(int argc, char** argv) {
         guideToggleShortcutFollowsSessionInputAndRemapping();
         intelligentSelectionSupportsCursorMovementShortcuts();
         cursorMovementEligibilityFollowsInteractionState();
+        cursorMovementShortcutsAreIndependentOfActiveTool();
         screenshotTextEditingTakesPriorityOverCancelShortcut();
         configuredScreenshotShortcutsControlMoveAndCursorNavigation();
         selectionStagesActivateEveryToolbarShortcut();
@@ -5539,6 +5652,7 @@ int main(int argc, char** argv) {
     guideToggleShortcutFollowsSessionInputAndRemapping();
     intelligentSelectionSupportsCursorMovementShortcuts();
     cursorMovementEligibilityFollowsInteractionState();
+    cursorMovementShortcutsAreIndependentOfActiveTool();
     screenshotTextEditingTakesPriorityOverCancelShortcut();
     configuredScreenshotShortcutsControlMoveAndCursorNavigation();
     shortcutExitConfirmationGatesCancellation();

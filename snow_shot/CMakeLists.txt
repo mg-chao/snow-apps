@@ -3600,6 +3600,12 @@ if(SNOW_SHOT_BUILD_TESTS)
         COMMAND snow-shot-screenshot-history-tests
                 --intelligent-selection-cursor-shortcut-only
     )
+    add_test(NAME snow-shot-screenshot-cursor-shortcut-tests
+        COMMAND snow-shot-screenshot-history-tests --cursor-shortcuts-only -platform offscreen)
+    set_tests_properties(snow-shot-screenshot-cursor-shortcut-tests PROPERTIES
+        LABELS "unit"
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+    )
     add_test(
         NAME snow-shot-canvas-color-sampling-tests
         COMMAND snow-shot-screenshot-history-tests --canvas-color-sampling-only
