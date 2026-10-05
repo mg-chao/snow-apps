@@ -608,7 +608,8 @@ void copy_heif_packed_row(const std::uint8_t* source, std::byte* destination, st
     // contract uses the full unsigned range, including alpha.
     const std::uint32_t maximum = (1U << depth) - 1U;
     for (std::size_t offset = 0; offset < row_bytes; offset += 2U) {
-        const std::uint32_t sample = source[offset] | (source[offset + 1U] << 8U);
+        const std::uint32_t sample = static_cast<std::uint32_t>(source[offset]) |
+                                     (static_cast<std::uint32_t>(source[offset + 1U]) << 8U);
         const std::uint32_t normalized = (sample * 65535U + maximum / 2U) / maximum;
         destination[offset] = static_cast<std::byte>(normalized & 0xffU);
         destination[offset + 1U] = static_cast<std::byte>(normalized >> 8U);
