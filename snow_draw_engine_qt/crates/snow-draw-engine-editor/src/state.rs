@@ -2,7 +2,7 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use snow_draw_engine_core::{ErrorCode, Point, SnapGuide, arrow::ArrowEndpointEdge};
 use snow_draw_engine_document::{
     ArrowData, ArrowSuggestedBinding, ElementId, ElementKind, FilterData, PenFilterData,
-    RectangleData, SerialNumberData, TextData,
+    RectangleData, SerialNumberData, SerialNumberNumericType, TextData,
 };
 use snow_draw_engine_interaction::{CursorStyle, PointerButton};
 use snow_draw_engine_model::DocumentModel;
@@ -464,6 +464,11 @@ pub(crate) struct EditorState {
     pub(crate) default_brush_eraser: crate::BrushEraserStyle,
     pub(crate) default_text: TextData,
     pub(crate) default_serial_number: SerialNumberData,
+    // Inactive numeric types retain their own creation values. The active type's
+    // authoritative value lives in default_serial_number, including explicit edits.
+    pub(crate) serial_number_values_by_numeric_type: [i64; 5],
+    // Explicit starts keep incrementing independently of existing canvas numbers.
+    pub(crate) serial_number_sequence_overridden: [bool; 5],
     pub(crate) eraser: EraserState,
     pub(crate) stroke_cursor_active: bool,
 }
@@ -475,6 +480,24 @@ impl Default for EditorState {
 }
 
 impl EditorState {
+    pub(crate) fn serial_number_values(&self) -> [i64; 5] {
+        let mut values = self.serial_number_values_by_numeric_type;
+        values[self.default_serial_number.numeric_type as usize] =
+            self.default_serial_number.number;
+        values
+    }
+
+    pub(crate) fn set_serial_number_value(
+        &mut self,
+        numeric_type: SerialNumberNumericType,
+        number: i64,
+    ) {
+        self.serial_number_values_by_numeric_type[numeric_type as usize] = number;
+        if self.default_serial_number.numeric_type == numeric_type {
+            self.default_serial_number.number = number;
+        }
+    }
+
     pub(crate) fn with_style_defaults(default_styles: &EditorStyleDefaults) -> Self {
         let default_filter = FilterData {
             filter_type: default_styles.rectangle_filter.filter_type,
@@ -565,6 +588,8 @@ impl EditorState {
             default_brush_eraser: default_styles.brush_eraser,
             default_text,
             default_serial_number,
+            serial_number_values_by_numeric_type: [1; 5],
+            serial_number_sequence_overridden: [false; 5],
             eraser: EraserState::default(),
             stroke_cursor_active: false,
         }

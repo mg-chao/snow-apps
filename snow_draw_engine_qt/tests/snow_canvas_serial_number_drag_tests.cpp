@@ -94,12 +94,26 @@ void numericTypeReachesExportAndSurvivesHistory() {
     require(!letters.isNull(), "formatted sequence exports successfully");
     style.numericType = SnowCanvasSerialNumberNumericType::Roman;
     require(editor.setSerialNumberStyleFromToolbar(style), "change numeric format");
+    auto expectedSerial = serial;
+    expectedSerial.insert(QStringLiteral("numeric_type"), QStringLiteral("Roman"));
+    require(payload(runtime, QStringLiteral("SerialNumber")) == expectedSerial,
+            "changing numeric format preserves badge geometry and font size");
     const QImage roman = runtime.renderToImage(region, QSize(300, 300), {});
     require(!roman.isNull() && roman != letters, "export reflects the formatted label");
     require(runtime.undo() && runtime.renderToImage(region, QSize(300, 300), {}) == letters,
             "undo restores original format and geometry in export");
     require(runtime.redo() && runtime.renderToImage(region, QSize(300, 300), {}) == roman,
             "redo restores the new formatted export");
+    require(payload(runtime, QStringLiteral("SerialNumber")) == expectedSerial,
+            "redo preserves the fixed badge size");
+    require(editor.adjustSelectedSerialNumbers(1), "increase the selected number");
+    expectedSerial.insert(QStringLiteral("number"), 28);
+    require(payload(runtime, QStringLiteral("SerialNumber")) == expectedSerial,
+            "increasing the number preserves badge geometry and font size");
+    require(editor.adjustSelectedSerialNumbers(-1), "decrease the selected number");
+    expectedSerial.insert(QStringLiteral("number"), 27);
+    require(payload(runtime, QStringLiteral("SerialNumber")) == expectedSerial,
+            "decreasing the number preserves badge geometry and font size");
 }
 
 void clickAndDragLifecycle() {

@@ -206,7 +206,7 @@ mod tests {
     }
 
     #[test]
-    fn serial_number_numeric_type_defaults_and_geometry_follow_the_label() {
+    fn serial_number_numeric_type_defaults_and_geometry_ignore_label_width() {
         use crate::{SerialNumberData, resolve_serial_number_data_diameter};
         let mut serial = SerialNumberData {
             number: 888,
@@ -215,13 +215,10 @@ mod tests {
         let arabic = resolve_serial_number_data_diameter(&serial, 0.0);
         serial.numeric_type = Roman;
         let roman = resolve_serial_number_data_diameter(&serial, 0.0);
-        assert!(
-            roman > arabic,
-            "DCCCLXXXVIII must not use three-digit sizing"
-        );
+        assert_eq!(roman, arabic, "Roman labels keep the same badge size");
         serial.numeric_type = Chinese;
         let chinese = resolve_serial_number_data_diameter(&serial, 0.0);
-        assert!(chinese > arabic);
+        assert_eq!(chinese, arabic, "Chinese labels keep the same badge size");
         let encoded = serde_json::to_value(&serial).unwrap();
         assert_eq!(
             serde_json::from_value::<SerialNumberData>(encoded.clone()).unwrap(),

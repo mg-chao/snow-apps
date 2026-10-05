@@ -13,7 +13,6 @@ pub const MIN_SERIAL_NUMBER_FONT_SIZE: f64 = MIN_TEXT_FONT_SIZE;
 const MIN_SERIAL_NUMBER_BOUND_TEXT_GAP: f64 = 18.0;
 const SERIAL_NUMBER_BOUND_TEXT_GAP_PER_FONT_SIZE: f64 = MIN_SERIAL_NUMBER_BOUND_TEXT_GAP / 21.0;
 const SERIAL_NUMBER_CANONICAL_FONT_SIZE: f64 = 16.0;
-const SERIAL_NUMBER_LABEL_WIDTH_PER_EM: f64 = 0.6;
 const SERIAL_NUMBER_DIAMETER_PADDING_PER_LINE_HEIGHT: f64 = 0.20;
 const SERIAL_NUMBER_STROKE_REFERENCE_FONT_SIZE: f64 = 20.0;
 const SERIAL_NUMBER_SQUARE_CORNER_RADIUS_PER_FONT_SIZE: f64 = 0.20;
@@ -740,12 +739,7 @@ pub fn resolve_serial_number_stroke_width(serial: &SerialNumberData) -> f64 {
 
 pub fn resolve_serial_number_data_diameter(serial: &SerialNumberData, min_diameter: f64) -> f64 {
     if serial.serial_number_type.supports_number() {
-        resolve_serial_number_formatted_diameter(
-            serial.number,
-            serial.numeric_type,
-            serial.font_size,
-            min_diameter,
-        )
+        resolve_serial_number_badge_diameter(serial.font_size, min_diameter)
     } else {
         sanitize_non_negative(serial.font_size) * 0.5
     }
@@ -755,8 +749,8 @@ pub fn resolve_serial_number_square_corner_radius(serial: &SerialNumberData) -> 
     sanitize_non_negative(serial.font_size) * SERIAL_NUMBER_SQUARE_CORNER_RADIUS_PER_FONT_SIZE
 }
 
-pub fn resolve_serial_number_style_diameter(number: i64, font_size: f64) -> f64 {
-    resolve_serial_number_diameter(number, font_size, SerialNumberData::default().diameter)
+pub fn resolve_serial_number_style_diameter(_number: i64, font_size: f64) -> f64 {
+    resolve_serial_number_badge_diameter(font_size, SerialNumberData::default().diameter)
 }
 
 pub fn serial_number_with_label_style(
@@ -769,49 +763,36 @@ pub fn serial_number_with_label_style(
         updated.number = number.max(0);
     }
     updated.font_size = font_size;
-    updated.diameter =
-        resolve_serial_number_data_diameter(&updated, SerialNumberData::default().diameter);
+    // Content changes keep the stored geometry, including manually resized
+    // and legacy badges. Only an explicit font-size change resets the size.
+    if serial.font_size != font_size {
+        updated.diameter =
+            resolve_serial_number_data_diameter(&updated, SerialNumberData::default().diameter);
+    }
     updated
 }
 
-pub fn resolve_serial_number_diameter(number: i64, font_size: f64, min_diameter: f64) -> f64 {
-    resolve_serial_number_formatted_diameter(
-        number,
-        crate::SerialNumberNumericType::Arabic,
-        font_size,
-        min_diameter,
-    )
+pub fn resolve_serial_number_diameter(_number: i64, font_size: f64, min_diameter: f64) -> f64 {
+    resolve_serial_number_badge_diameter(font_size, min_diameter)
 }
 
 pub fn resolve_serial_number_formatted_diameter(
-    number: i64,
-    numeric_type: crate::SerialNumberNumericType,
+    _number: i64,
+    _numeric_type: crate::SerialNumberNumericType,
     font_size: f64,
     min_diameter: f64,
 ) -> f64 {
-    let label = crate::format_serial_number(number, numeric_type);
-    let (width, height) = serial_number_label_size(&label, SERIAL_NUMBER_CANONICAL_FONT_SIZE);
-    let line_height = text_line_height(SERIAL_NUMBER_CANONICAL_FONT_SIZE);
-    let base = width.max(height.max(line_height));
-    let padding = line_height * SERIAL_NUMBER_DIAMETER_PADDING_PER_LINE_HEIGHT;
-    let scale = sanitize_non_negative(font_size).max(1.0) / SERIAL_NUMBER_CANONICAL_FONT_SIZE;
-    sanitize_positive((base + padding * 2.0) * scale, min_diameter.max(0.0))
-        .max(min_diameter.max(0.0))
+    resolve_serial_number_badge_diameter(font_size, min_diameter)
 }
 
-fn serial_number_label_size(label: &str, font_size: f64) -> (f64, f64) {
-    let width_em: f64 = label
-        .chars()
-        .map(|ch| {
-            if ch.is_ascii() {
-                SERIAL_NUMBER_LABEL_WIDTH_PER_EM
-            } else {
-                1.0
-            }
-        })
-        .sum();
-    let line_height = text_line_height(font_size);
-    (width_em * font_size.max(1.0), line_height)
+/// Numbered badges follow the single-digit line-height baseline. The host
+/// renderer fits measured glyphs into this size without changing geometry.
+pub fn resolve_serial_number_badge_diameter(font_size: f64, min_diameter: f64) -> f64 {
+    let line_height = text_line_height(SERIAL_NUMBER_CANONICAL_FONT_SIZE);
+    let padding = line_height * SERIAL_NUMBER_DIAMETER_PADDING_PER_LINE_HEIGHT;
+    let scale = sanitize_non_negative(font_size).max(1.0) / SERIAL_NUMBER_CANONICAL_FONT_SIZE;
+    sanitize_positive((line_height + padding * 2.0) * scale, min_diameter.max(0.0))
+        .max(min_diameter.max(0.0))
 }
 
 pub fn text_hit_test(text: &TextData, point: Point<f64>, hit_tolerance: f64) -> bool {
@@ -1408,13 +1389,65 @@ mod tests {
     fn serial_number_diameter_scales_from_canonical_line_height() {
         let font_size = 24.0;
         let line_height = text_line_height(SERIAL_NUMBER_CANONICAL_FONT_SIZE);
-        let (width, height) = serial_number_label_size("1", SERIAL_NUMBER_CANONICAL_FONT_SIZE);
-        let base = width.max(height.max(line_height));
         let padding = line_height * SERIAL_NUMBER_DIAMETER_PADDING_PER_LINE_HEIGHT;
-        let expected = (base + padding * 2.0) * (font_size / SERIAL_NUMBER_CANONICAL_FONT_SIZE);
+        let expected =
+            (line_height + padding * 2.0) * (font_size / SERIAL_NUMBER_CANONICAL_FONT_SIZE);
 
         assert!((resolve_serial_number_style_diameter(1, font_size) - expected).abs() < 1e-9);
         assert!((expected - font_size * 1.68).abs() < 1e-9);
+    }
+
+    #[test]
+    fn serial_number_diameter_is_independent_of_number_and_numeric_type() {
+        use crate::SerialNumberNumericType;
+        for font_size in [6.0_f64, 24.0, 48.0] {
+            for min_diameter in [0.0_f64, 24.0, 100.0] {
+                let expected = (font_size * 1.68).max(min_diameter);
+                for number in [0, 1, 9, 10, 888, 3999, i64::MAX] {
+                    assert!(
+                        (resolve_serial_number_diameter(number, font_size, min_diameter)
+                            - expected)
+                            .abs()
+                            < 1e-9
+                    );
+                    for numeric_type in [
+                        SerialNumberNumericType::Arabic,
+                        SerialNumberNumericType::Roman,
+                        SerialNumberNumericType::Chinese,
+                        SerialNumberNumericType::LowercaseLetters,
+                        SerialNumberNumericType::UppercaseLetters,
+                    ] {
+                        assert!(
+                            (resolve_serial_number_formatted_diameter(
+                                number,
+                                numeric_type,
+                                font_size,
+                                min_diameter,
+                            ) - expected)
+                                .abs()
+                                < 1e-9
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn serial_number_label_changes_preserve_manually_resized_geometry() {
+        let serial = SerialNumberData {
+            center: Point::new(123.0, 456.0),
+            diameter: 97.0,
+            rotation: 0.3,
+            number: 9,
+            ..SerialNumberData::default()
+        };
+        let mut expected = serial.clone();
+        expected.number = 10;
+        assert_eq!(
+            serial_number_with_label_style(&serial, 10, serial.font_size),
+            expected
+        );
     }
 
     #[test]
@@ -1434,6 +1467,7 @@ mod tests {
             let circle = SerialNumberData {
                 serial_number_type: crate::SerialNumberType::Circle,
                 font_size,
+                diameter: font_size * 0.5,
                 number: 987654321,
                 font_family: Some("Unused font".to_owned()),
                 stroke_width: 2.0,

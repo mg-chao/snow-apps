@@ -250,8 +250,11 @@ impl Editor {
             .default_serial_number
             .serial_number_type
             .supports_number()
+            && !self.state.serial_number_sequence_overridden
+                [self.state.default_serial_number.numeric_type as usize]
         {
-            next_serial_number(document).max(self.state.default_serial_number.number)
+            next_serial_number(document, self.state.default_serial_number.numeric_type)
+                .max(self.state.default_serial_number.number)
         } else {
             self.state.default_serial_number.number
         };

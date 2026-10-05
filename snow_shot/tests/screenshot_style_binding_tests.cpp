@@ -5,6 +5,7 @@
 #include "snow_draw_engine_qt/snow_canvas_runtime.h"
 #include <QKeyEvent>
 #include "widgets/button.h"
+#include "widgets/input_line_edit.h"
 
 #include <QApplication>
 #include <QCursor>
@@ -390,6 +391,78 @@ void runScreenshotStyleBindingTests() {
     allStyleFamiliesPersistOnlyTheirPatch();
     toolbarAndCanvasShareFontCommit();
     sharedScreenshotRuntimeKeepsDraftEditsTransient();
+}
+
+void runScreenshotSerialNumberRestartTests() {
+    const auto original = screenshotCanvasToolStyleDefaults();
+    const auto restore =
+        qScopeGuard([&] { static_cast<void>(persistScreenshotCanvasToolStyles(original)); });
+    SnowCanvasRuntime runtime;
+    SnowCanvasWidget canvas(runtime);
+    ScreenshotToolPalette palette(options());
+    ScreenshotStyleBinding binding(palette, canvas, &palette);
+    QObject::connect(&canvas, &SnowCanvasWidget::styleToolbarStateChanged, &palette,
+                     [&] { palette.setStyleToolbarState(canvas.canvasStyleToolbarState()); });
+    canvas.resize(400, 300);
+    canvas.show();
+    require(canvas.setCanvasTool(SnowCanvasTool::SerialNumber), "activate serial number tool");
+    auto style = canvas.canvasStyleToolbarState().serialNumberStyle;
+    style.type = SnowCanvasSerialNumberType::OutlinedCircle;
+    style.numericType = SnowCanvasSerialNumberNumericType::Arabic;
+    style.fontSize = 24;
+    style.number = 50;
+    require(canvas.setCanvasSerialNumberStyle(style), "start with a high canvas number");
+    const auto create = [&](QPointF point) {
+        mouse(canvas, QEvent::MouseButtonPress, point);
+        mouse(canvas, QEvent::MouseButtonRelease, point);
+        return documentSlots(runtime)
+            .last()
+            .toObject()
+            .value(QStringLiteral("data"))
+            .toObject()
+            .value(QStringLiteral("SerialNumber"))
+            .toObject()
+            .value(QStringLiteral("number"))
+            .toVariant()
+            .toLongLong();
+    };
+    require(create({40, 150}) == 50, "create the existing high sequence number");
+    palette.setActiveTool(ScreenshotToolPalette::Tool::SerialNumber);
+    palette.setStyleToolbarState(canvas.canvasStyleToolbarState());
+    palette.show();
+    QApplication::processEvents();
+    adqt::widgets::AdLineEdit* input = nullptr;
+    for (auto* candidate : palette.findChildren<adqt::widgets::AdLineEdit*>()) {
+        if (candidate->toolTip() == QStringLiteral("Sequence number (scroll to adjust)")) {
+            input = candidate;
+            break;
+        }
+    }
+    require(input != nullptr && input->text() == QStringLiteral("51"),
+            "style editor displays the next number after the high element");
+    for (const int start : {2, 0}) {
+        input->setText(QString::number(start));
+        QKeyEvent enter(QEvent::KeyPress, Qt::Key_Return, Qt::NoModifier);
+        QApplication::sendEvent(input, &enter);
+        require(canvas.canvasStyleToolbarState().serialNumberStyle.number == start,
+                "style editor commits a value below the maximum canvas number");
+        for (int offset = 0; offset < 3; ++offset) {
+            require(create({120.0 + offset * 100.0, 80.0 + start * 50.0}) == start + offset,
+                    "canvas creates the entered smaller number and increments from it");
+            require(input->text() == QString::number(start + offset + 1),
+                    "style editor follows the restarted sequence");
+        }
+    }
+    require(documentSlots(runtime)
+                    .first()
+                    .toObject()
+                    .value(QStringLiteral("data"))
+                    .toObject()
+                    .value(QStringLiteral("SerialNumber"))
+                    .toObject()
+                    .value(QStringLiteral("number"))
+                    .toInt() == 50,
+            "restarting numbering preserves the existing high element");
 }
 
 void runScreenshotStylePersistenceFailureTest() {

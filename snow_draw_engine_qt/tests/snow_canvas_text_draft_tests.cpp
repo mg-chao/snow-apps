@@ -834,15 +834,18 @@ void serialNumberFormattedLabelsRenderAndFitBadges() {
     require(QFontDatabase::addApplicationFont(QStringLiteral("C:/Windows/Fonts/msyh.ttc")) >= 0,
             "Chinese number rendering requires a CJK fallback font");
 #endif
-    const QList<QByteArray> labels = {
-        "27",        "XXVII",         "aa", "AA", QByteArray::fromHex("e4ba8ce58d81e4b883"),
-        "MMMCMXCIX", "CRPXNLSKVLJFHG"};
+    const QList<QByteArray> labels = {"1",         "27",
+                                      "XXVII",     "aa",
+                                      "AA",        QByteArray::fromHex("e4ba8ce58d81e4b883"),
+                                      "MMMCMXCIX", "CRPXNLSKVLJFHG"};
     SceneDisplayInfo info{};
     info.surface_width = 240;
     info.surface_height = 240;
     info.camera_zoom = 1.0;
     for (const auto shape :
-         {SNOW_SERIAL_NUMBER_TYPE_OUTLINED_CIRCLE, SNOW_SERIAL_NUMBER_TYPE_OUTLINED_SQUARE}) {
+         {SNOW_SERIAL_NUMBER_TYPE_OUTLINED_CIRCLE, SNOW_SERIAL_NUMBER_TYPE_OUTLINED_SQUARE,
+          SNOW_SERIAL_NUMBER_TYPE_SOLID_CIRCLE, SNOW_SERIAL_NUMBER_TYPE_SOLID_SQUARE}) {
+        QSize shortLabelInkSize;
         for (double diameter : {40.0, 100.0}) {
             QList<QImage> rendered;
             for (const QByteArray& label : labels) {
@@ -853,7 +856,8 @@ void serialNumberFormattedLabelsRenderAndFitBadges() {
                 item.width = item.height = diameter;
                 item.font_size = 32.0;
                 item.opacity = 1.0;
-                item.stroke = SnowColorRgba8{0, 0, 0, 0};
+                item.stroke = SnowColorRgba8{255, 255, 255, 255};
+                item.stroke_width = 3.0;
                 item.fill = SnowColorRgba8{255, 255, 255, 255};
                 item.fill_style = SNOW_FILL_STYLE_SOLID;
                 item.text_color = SnowColorRgba8{0, 0, 0, 255};
@@ -867,8 +871,17 @@ void serialNumberFormattedLabelsRenderAndFitBadges() {
                 painter.end();
                 const QRect ink = darkPixelBounds(image);
                 require(!ink.isEmpty(), "each numeric label paints visible glyphs");
-                require(ink.width() <= diameter + 2 && ink.height() <= diameter + 2,
-                        "long and Chinese labels fit the badge after resizing");
+                const double contentDiameter = diameter - 2.0 * item.stroke_width;
+                require(ink.width() <= contentDiameter + 2 && ink.height() <= contentDiameter + 2,
+                        "long and Chinese labels fit the stroke-adjusted badge content area");
+                if (label == "1") {
+                    if (shortLabelInkSize.isEmpty()) {
+                        shortLabelInkSize = ink.size();
+                    } else {
+                        require(ink.size() == shortLabelInkSize,
+                                "short labels keep their font size when more space is available");
+                    }
+                }
                 require(std::abs(ink.center().x() - 119) <= 2 &&
                             std::abs(ink.center().y() - 119) <= 2,
                         "formatted glyphs remain optically centered");

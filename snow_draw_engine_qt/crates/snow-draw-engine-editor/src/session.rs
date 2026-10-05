@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 use snow_draw_engine_core::{EngineConfig, ErrorCode, GridConfig, Point, SnapConfig};
-use snow_draw_engine_document::{ElementId, TextLayoutSize};
+use snow_draw_engine_document::{ElementId, SerialNumberNumericType, TextLayoutSize};
 use snow_draw_engine_interaction::InputEvent;
 use snow_draw_engine_model::DocumentModel;
 
@@ -46,6 +46,10 @@ pub struct PersistedEditorSession {
     brush_eraser: crate::BrushEraserStyle,
     text: snow_draw_engine_document::TextData,
     serial_number: snow_draw_engine_document::SerialNumberData,
+    #[serde(default)]
+    serial_number_values: Option<[i64; 5]>,
+    #[serde(default)]
+    serial_number_sequence_overridden: [bool; 5],
 }
 
 impl EditorSession {
@@ -148,6 +152,8 @@ impl EditorSession {
             brush_eraser: state.default_brush_eraser,
             text: state.default_text.clone(),
             serial_number: state.default_serial_number.clone(),
+            serial_number_values: Some(state.serial_number_values()),
+            serial_number_sequence_overridden: state.serial_number_sequence_overridden,
         }
     }
 
@@ -157,6 +163,12 @@ impl EditorSession {
         snow_draw_engine_document::validate_pen_filter(&persisted.pen_filter)?;
         snow_draw_engine_document::validate_text(&persisted.text)?;
         snow_draw_engine_document::validate_serial_number(&persisted.serial_number)?;
+        if persisted
+            .serial_number_values
+            .is_some_and(|values| values.iter().any(|number| *number < 0))
+        {
+            return Err(ErrorCode::InvalidArgument);
+        }
         validate_persisted_editor_styles(&persisted)?;
 
         let mut session = Self::new(persisted.config)?;
@@ -190,6 +202,9 @@ impl EditorSession {
         }
         state.default_text = persisted.text;
         state.default_serial_number = persisted.serial_number;
+        state.serial_number_values_by_numeric_type =
+            persisted.serial_number_values.unwrap_or([1; 5]);
+        state.serial_number_sequence_overridden = persisted.serial_number_sequence_overridden;
         session.reset_editing_state();
         Ok(session)
     }
@@ -303,14 +318,38 @@ impl EditorSession {
         self.editor.capture_document_sync_snapshot(document)
     }
 
-    pub fn serial_number_follows_document(&self, document: &DocumentModel) -> bool {
-        self.editor.state.default_serial_number.number
-            == crate::document_ops::next_serial_number(document)
+    pub fn serial_number_types_following_document(
+        &self,
+        document: &DocumentModel,
+    ) -> Vec<SerialNumberNumericType> {
+        let values = self.editor.state.serial_number_values();
+        [
+            SerialNumberNumericType::Arabic,
+            SerialNumberNumericType::Roman,
+            SerialNumberNumericType::LowercaseLetters,
+            SerialNumberNumericType::UppercaseLetters,
+            SerialNumberNumericType::Chinese,
+        ]
+        .into_iter()
+        .filter(|numeric_type| {
+            !self.editor.state.serial_number_sequence_overridden[*numeric_type as usize]
+                && values[*numeric_type as usize]
+                    == crate::document_ops::next_serial_number(document, *numeric_type)
+        })
+        .collect()
     }
 
-    pub fn sync_serial_number_after_document_change(&mut self, document: &DocumentModel) {
-        self.editor.state.default_serial_number.number =
-            crate::document_ops::next_serial_number(document);
+    pub fn sync_serial_number_types_after_document_change(
+        &mut self,
+        document: &DocumentModel,
+        numeric_types: &[SerialNumberNumericType],
+    ) {
+        for numeric_type in numeric_types {
+            self.editor.state.set_serial_number_value(
+                *numeric_type,
+                crate::document_ops::next_serial_number(document, *numeric_type),
+            );
+        }
     }
 
     /// Restore the selection stored with a duplication history entry.

@@ -10427,6 +10427,64 @@ void retainedEditorsApplyDestinationMixedStateDuringReconciliation() {
                            "the retained stroke-style editor should apply destination mixed state");
 }
 
+void serialNumberCreationValuesAreIndependentPerNumericType() {
+    using Numeric = SnowCanvasSerialNumberNumericType;
+    ScreenshotToolPalette::Options options;
+    options.showSerialNumberTool = true;
+    options.styleDefaults = snow_shot::presentation::screenshotCanvasStyleDefaults();
+    ScreenshotToolPalette palette(options);
+    SnowCanvasRuntime runtime;
+    SnowCanvasWidget canvas(runtime);
+    canvas.resize(800, 600);
+    canvas.setInteractionEnabled(true);
+    snow_shot::presentation::applyScreenshotCanvasToolStyles(canvas, options.styleDefaults);
+    snow_shot::presentation::ScreenshotStyleBinding binding(
+        palette, canvas, &palette, {}, [](const SnowCanvasStyleEdit&) { return true; });
+    QObject::connect(&canvas, &SnowCanvasWidget::styleToolbarStateChanged, &palette,
+                     [&] { palette.setStyleToolbarState(canvas.canvasStyleToolbarState()); });
+    require(canvas.setCanvasTool(SnowCanvasTool::SerialNumber), "activate sequence creation");
+    palette.setActiveTool(ScreenshotToolPalette::Tool::SerialNumber);
+    palette.setStyleToolbarState(canvas.canvasStyleToolbarState());
+    canvas.show();
+    palette.show();
+    QCoreApplication::processEvents();
+    auto* root =
+        palette.findChild<QWidget*>(QStringLiteral("screenshotSerialNumberNumericTypeButtonGroup"));
+    auto* group = root ? root->findChild<adqt::widgets::AdRadioButtonGroup*>() : nullptr;
+    auto* input = qobject_cast<adqt::widgets::AdLineEdit*>(
+        controlWithTooltip(palette, "Sequence number (scroll to adjust)"));
+    require(group != nullptr && input != nullptr, "sequence creation editors exist");
+    const qint64 numbers[] = {12, 20, 27, 35, 44};
+    for (int index = 0; index < 5; ++index) {
+        group->button(index)->click();
+        require(input->text() == QStringLiteral("1"),
+                "a newly selected numeric type starts with its own creation value");
+        input->selectAll();
+        PhysicalKeyEvent edit(QEvent::KeyPress, Qt::Key_unknown, Qt::NoModifier,
+                              QString::number(numbers[index]));
+        QApplication::sendEvent(input, &edit);
+        require(QMetaObject::invokeMethod(input, "editingFinished", Qt::DirectConnection),
+                "commit the numeric type's explicit starting value");
+        const QPointF point(100.0 + index * 130.0, 150.0);
+        QMouseEvent press(QEvent::MouseButtonPress, point, canvas.mapToGlobal(point.toPoint()),
+                          Qt::LeftButton, Qt::LeftButton, Qt::NoModifier);
+        QMouseEvent release(QEvent::MouseButtonRelease, point, canvas.mapToGlobal(point.toPoint()),
+                            Qt::LeftButton, Qt::NoButton, Qt::NoModifier);
+        QApplication::sendEvent(&canvas, &press);
+        QApplication::sendEvent(&canvas, &release);
+        require(input->text() == QString::number(numbers[index] + 1) &&
+                    canvas.canvasStyleToolbarState().serialNumberStyle.numericType ==
+                        Numeric(index),
+                "creation advances the editor value for the active numeric type");
+    }
+    for (int index = 0; index < 5; ++index) {
+        group->button(index)->click();
+        require(input->text() == QString::number(numbers[index] + 1) &&
+                    palette.creationStyleDefaults().serialNumber.number == numbers[index] + 1,
+                "returning to a numeric type restores its own next number in the editor");
+    }
+}
+
 void serialNumberNumericTypeEditorPreservesValuesAndRetranslates() {
     using Numeric = SnowCanvasSerialNumberNumericType;
     ScreenshotToolPalette::Options options;
@@ -14348,6 +14406,7 @@ void regionSwitcherRetranslatesAndRenders() {
 } // namespace
 
 void runScreenshotStyleBindingTests();
+void runScreenshotSerialNumberRestartTests();
 void runScreenshotStylePersistenceFailureTest();
 
 int main(int argc, char** argv) {
@@ -14394,6 +14453,8 @@ int main(int argc, char** argv) {
         return 0;
     }
     if (application.arguments().contains(QStringLiteral("--serial-number-only"))) {
+        runScreenshotSerialNumberRestartTests();
+        serialNumberCreationValuesAreIndependentPerNumericType();
         serialNumberNumericTypeEditorPreservesValuesAndRetranslates();
         serialNumberStyleControlsExposeAndEmitRequestedProperties();
         serialNumberInputCommitsEditsAndSupportsWheel();
@@ -14800,6 +14861,7 @@ int main(int argc, char** argv) {
     lineStyleControlsExposeStraightAndCurveTypes();
     selectedArrowMixedPropertiesResolveIndependently();
     textStyleControlsExposeAndEmitAllRequestedProperties();
+    serialNumberCreationValuesAreIndependentPerNumericType();
     serialNumberNumericTypeEditorPreservesValuesAndRetranslates();
     serialNumberStyleControlsExposeAndEmitRequestedProperties();
     serialNumberInputCommitsEditsAndSupportsWheel();

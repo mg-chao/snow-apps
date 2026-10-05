@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use snow_draw_engine_core::{DrawRect, ErrorCode, Point};
 use snow_draw_engine_document::{
-    ElementData, ElementId, ElementMeta, TextLayoutSize, Transaction,
+    ElementData, ElementId, ElementMeta, SerialNumberNumericType, TextLayoutSize, Transaction,
     serial_number_with_label_style, serial_number_with_selection_rect, text_hit_test,
     text_with_auto_resize_layout, text_with_content_and_layout, validate_arrow, validate_filter,
     validate_free_draw, validate_pen_filter, validate_rectangle, validate_serial_number,
@@ -118,12 +118,17 @@ pub(crate) fn append_selection_element_update(
     Ok(())
 }
 
-pub(crate) fn next_serial_number(document: &DocumentModel) -> i64 {
+pub(crate) fn next_serial_number(
+    document: &DocumentModel,
+    numeric_type: SerialNumberNumericType,
+) -> i64 {
     document
         .paint_order()
         .iter()
         .filter_map(|id| document.serial_number(*id).ok())
-        .filter(|serial| serial.serial_number_type.supports_number())
+        .filter(|serial| {
+            serial.serial_number_type.supports_number() && serial.numeric_type == numeric_type
+        })
         .map(|serial| serial.number.max(0))
         .max()
         .unwrap_or(0)
@@ -1222,7 +1227,10 @@ mod tests {
             .unwrap();
         apply_editor_command(&mut document, editor.pending_command.take().unwrap());
         assert_eq!(editor.state.default_serial_number.number, 6);
-        assert_eq!(next_serial_number(&document), 6);
+        assert_eq!(
+            next_serial_number(&document, SerialNumberNumericType::Arabic),
+            6
+        );
         editor.set_selection_state(vec![circle_id], Some(circle_id));
         assert!(
             editor
