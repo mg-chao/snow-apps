@@ -53,7 +53,7 @@ const QStringList kDrawingToolIds = {
     QStringLiteral("eraser"),    QStringLiteral("watermark"),
 };
 const QStringList kDrawingToolbarItemIds =
-    kDrawingToolIds +
+    QStringList{QStringLiteral("select"), QStringLiteral("select-separator")} + kDrawingToolIds +
     QStringList{QStringLiteral("separator"), QStringLiteral("undo"), QStringLiteral("redo")};
 const QStringList kLastDrawingToolIds = QStringList{QStringLiteral("")} + kDrawingToolIds;
 const QStringList kSkinPositions = {
@@ -77,6 +77,9 @@ const QStringList kActionToolbarItemIds = editionActionIds({
     QStringLiteral("print"),
     QStringLiteral("save-as-file"),
     QStringLiteral("upload-to-cloud"),
+    QStringLiteral("separator"),
+    QStringLiteral("cancel"),
+    QStringLiteral("copy"),
 });
 
 QJsonArray jsonArray(const QStringList& values) {
@@ -97,6 +100,7 @@ QJsonArray jsonArray(const QVector<QStringList>& values) {
 
 QVector<QStringList> defaultDrawingToolbarPositions() {
     return {
+        {QStringLiteral("select")},    {QStringLiteral("select-separator")},
         {QStringLiteral("shape")},     {QStringLiteral("line"), QStringLiteral("arrow")},
         {QStringLiteral("free-draw")}, {QStringLiteral("spotlight"), QStringLiteral("highlighter")},
         {QStringLiteral("text")},      {QStringLiteral("serial-number")},
@@ -118,6 +122,9 @@ QVector<QStringList> defaultActionToolbarPositions() {
         {QStringLiteral("scrolling-screenshot")},
         {QStringLiteral("upload-to-cloud"), QStringLiteral("print"), QStringLiteral("quick-save"),
          QStringLiteral("save-as-file")},
+        {QStringLiteral("separator")},
+        {QStringLiteral("cancel")},
+        {QStringLiteral("copy")},
     });
 }
 
@@ -127,7 +134,8 @@ const QStringList kPinnedActionToolbarItemIds = editionActionIds(
      QStringLiteral("convert-to-html"), QStringLiteral("text-recognition"),
      QStringLiteral("text-translation"), QStringLiteral("separator"), QStringLiteral("print"),
      QStringLiteral("quick-save"), QStringLiteral("save-as-file"),
-     QStringLiteral("upload-to-cloud"), QStringLiteral("copy")});
+     QStringLiteral("upload-to-cloud"), QStringLiteral("copy"), QStringLiteral("confirm"),
+     QStringLiteral("confirm-separator")});
 
 QVector<QStringList> defaultPinnedActionToolbarPositions() {
     return editionActionPositions({
@@ -140,6 +148,8 @@ QVector<QStringList> defaultPinnedActionToolbarPositions() {
         {QStringLiteral("upload-to-cloud"), QStringLiteral("print"), QStringLiteral("quick-save"),
          QStringLiteral("save-as-file")},
         {QStringLiteral("copy")},
+        {QStringLiteral("confirm-separator")},
+        {QStringLiteral("confirm")},
     });
 }
 
@@ -1886,7 +1896,8 @@ ConfigurationNormalization normalizeToolbarLayout(const QJsonValue& value,
         QStringList position;
         for (const QString& id : ids) {
             if (known.contains(id) && !positioned.contains(id) && !hiddenSet.contains(id)) {
-                if (id == QStringLiteral("separator")) {
+                if (id == QStringLiteral("separator") || id == QStringLiteral("select-separator") ||
+                    id == QStringLiteral("confirm-separator")) {
                     if (!position.isEmpty()) {
                         positions.push_back(position);
                         position.clear();
@@ -1983,18 +1994,31 @@ ConfigurationNormalization normalizeToolbarLayout(const QJsonValue& value,
     if (migrateScreenshotLayout && !positions.isEmpty() &&
         known.contains(QStringLiteral("convert-to-markdown"))) {
         // Upgrade earlier defaults without changing custom placements.
-        auto previousDefault = defaultPositions;
+        auto previousScreenshotDefault = defaultPositions;
+        if (known.contains(QStringLiteral("cancel"))) {
+            previousScreenshotDefault.removeIf([](const QStringList& position) {
+                return position == QStringList{QStringLiteral("separator")} ||
+                       position == QStringList{QStringLiteral("cancel")} ||
+                       position == QStringList{QStringLiteral("copy")};
+            });
+        }
+        auto previousDefault = previousScreenshotDefault;
         previousDefault[0] = {QStringLiteral("barcode-recognition"),
                               QStringLiteral("table-recognition")};
         previousDefault.insert(1, QStringList{QStringLiteral("convert-to-markdown")});
         previousDefault.insert(2, QStringList{QStringLiteral("convert-to-html")});
-        auto previousGroupedDefault = defaultPositions;
+        auto previousGroupedDefault = previousScreenshotDefault;
         previousGroupedDefault[0] = {
             QStringLiteral("table-recognition"), QStringLiteral("barcode-recognition"),
             QStringLiteral("convert-to-markdown"), QStringLiteral("convert-to-html")};
         if (hidden.isEmpty() &&
             (positions == previousDefault || positions == previousGroupedDefault)) {
             positions = defaultPositions;
+            for (const QStringList& position : defaultPositions) {
+                for (const QString& id : position) {
+                    positioned.insert(id);
+                }
+            }
         }
         qsizetype recognitionPosition = -1;
         for (const QString& anchor :
@@ -2048,6 +2072,13 @@ ConfigurationNormalization normalizeToolbarLayout(const QJsonValue& value,
             hiddenSet.contains(QStringLiteral("convert-to-markdown"))) {
             hidden.push_back(QStringLiteral("latex-recognition"));
             hiddenSet.insert(QStringLiteral("latex-recognition"));
+        }
+    }
+    // Preserve the former fixed prefix when upgrading saved annotation layouts.
+    for (const QString& id : {QStringLiteral("select-separator"), QStringLiteral("select")}) {
+        if (known.contains(id) && !positioned.contains(id) && !hiddenSet.contains(id)) {
+            positions.prepend({id});
+            positioned.insert(id);
         }
     }
     for (const QStringList& defaultPosition : defaultPositions) {

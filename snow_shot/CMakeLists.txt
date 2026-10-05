@@ -1975,6 +1975,12 @@ if(SNOW_SHOT_BUILD_TESTS)
     endif()
 
     snow_shot_import_offscreen_platform(snow-shot-storage-status-widget-tests)
+    add_test(NAME snow-shot-annotation-toolbar-editor-tests
+        COMMAND snow-shot-storage-status-widget-tests --toolbar-editor-only -platform offscreen)
+    set_tests_properties(snow-shot-annotation-toolbar-editor-tests PROPERTIES
+        LABELS "unit" TIMEOUT 60
+        ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}"
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
     add_test(NAME snow-shot-storage-directory-widget-tests
         COMMAND snow-shot-storage-status-widget-tests --storage-directory-only -platform offscreen)
     set_tests_properties(snow-shot-storage-directory-widget-tests PROPERTIES
@@ -2474,7 +2480,9 @@ if(SNOW_SHOT_BUILD_TESTS)
         ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
     add_test(NAME snow-shot-settings-navigation-tests
         COMMAND snow-shot-settings-page-loading-tests --navigation-only)
-    set_tests_properties(snow-shot-settings-navigation-tests PROPERTIES
+    add_test(NAME snow-shot-action-toolbar-settings-tests
+        COMMAND snow-shot-settings-page-loading-tests --action-toolbar-settings-only)
+    set_tests_properties(snow-shot-settings-navigation-tests snow-shot-action-toolbar-settings-tests PROPERTIES
         LABELS "unit" TIMEOUT 60
         ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}"
         ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
@@ -5075,6 +5083,13 @@ if(SNOW_SHOT_BUILD_TESTS)
         NAME snow-shot-screenshot-action-toolbar-layout-tests
         COMMAND snow-shot-screenshot-tool-palette-tests --action-toolbar-layout-only
     )
+    add_test(NAME snow-shot-screenshot-result-toolbar-layout-tests
+        COMMAND snow-shot-screenshot-tool-palette-tests --screenshot-result-layout-only
+                -platform offscreen)
+    set_tests_properties(snow-shot-screenshot-result-toolbar-layout-tests PROPERTIES
+        LABELS "unit" TIMEOUT 60
+        ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}"
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
     add_test(
         NAME snow-shot-toolbar-color-input-tests
         COMMAND snow-shot-screenshot-tool-palette-tests --color-input-only -platform offscreen
@@ -5085,6 +5100,12 @@ if(SNOW_SHOT_BUILD_TESTS)
     )
     add_test(NAME snow-shot-hidden-toolbar-shortcut-tests
         COMMAND snow-shot-screenshot-tool-palette-tests --hidden-tools-only -platform offscreen)
+    add_test(NAME snow-shot-annotation-toolbar-layout-tests
+        COMMAND snow-shot-screenshot-tool-palette-tests --toolbar-layout-only -platform offscreen)
+    set_tests_properties(snow-shot-annotation-toolbar-layout-tests PROPERTIES
+        LABELS "unit" TIMEOUT 60
+        ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}"
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
     set_tests_properties(snow-shot-hidden-toolbar-shortcut-tests PROPERTIES LABELS "unit" TIMEOUT 60)
     add_test(NAME snow-shot-screenshot-action-shortcut-display-tests
         COMMAND snow-shot-screenshot-tool-palette-tests --screenshot-actions-tooltips-only

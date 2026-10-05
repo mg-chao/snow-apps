@@ -2075,6 +2075,7 @@ bool BuiltInSettingsBackend::resetSection(SettingsSectionReset reset) {
     case SettingsSectionReset::ScreenRecordingAnimation:
     case SettingsSectionReset::ScreenRecordingEncoding:
     case SettingsSectionReset::PinToScreenToolbar:
+    case SettingsSectionReset::ScreenshotActionToolbar:
         return storage::ApplicationStorage::instance().configuration().setValues(
             sectionDefaults(reset));
     case SettingsSectionReset::ScreenshotEditorShortcuts:
@@ -2286,11 +2287,6 @@ bool BuiltInSettingsBackend::resetSection(SettingsSectionReset reset) {
         });
     case SettingsSectionReset::ScreenshotInterfaceSettings:
         return storage::ApplicationStorage::instance().configuration().setValues({
-#if SNOW_SHOT_EDITION_MINI
-            {QStringLiteral("screenshot_toolbar/action_tools_layout"),
-             storage::ConfigurationSchema::defaultValue(
-                 QStringLiteral("screenshot_toolbar/action_tools_layout"))},
-#endif
             {QStringLiteral("screenshot_ui/selection_transition_animation"),
              storage::ConfigurationSchema::defaultValue(
                  QStringLiteral("screenshot_ui/selection_transition_animation"))},
@@ -2324,9 +2320,6 @@ bool BuiltInSettingsBackend::resetSection(SettingsSectionReset reset) {
             {QStringLiteral("screenshot_ui/show_edit_selection_toolbar"),
              storage::ConfigurationSchema::defaultValue(
                  QStringLiteral("screenshot_ui/show_edit_selection_toolbar"))},
-            {QStringLiteral("screenshot_toolbar/action_tools_layout"),
-             storage::ConfigurationSchema::defaultValue(
-                 QStringLiteral("screenshot_toolbar/action_tools_layout"))},
         });
     case SettingsSectionReset::TextRecognitionBehavior:
         return storage::ApplicationStorage::instance().configuration().setValues({

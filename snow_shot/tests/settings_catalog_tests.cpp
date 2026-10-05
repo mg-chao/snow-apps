@@ -433,9 +433,9 @@ void builtInCatalogIsCompleteAndValid() {
         }
     }
 #ifdef Q_OS_MACOS
-    require(sectionCount == 48, "macOS includes permissions and merged storage and desktop groups");
+    require(sectionCount == 49, "macOS includes permissions and merged storage and desktop groups");
 #else
-    require(sectionCount == 48,
+    require(sectionCount == 49,
             "catalog includes capture and recording groups with merged storage and desktop groups");
 #endif
     // Keep the shared total in one place: adding a shared setting must update both platforms.
@@ -774,8 +774,11 @@ void builtInCatalogIsCompleteAndValid() {
                     settings::SettingsSwitchBinding::SmartSelection,
             "Function settings must expose the persisted Smart selection switch");
     const QStringList expectedSections{
-        QStringLiteral("screenshot-settings"),   QStringLiteral("interface-screenshot"),
-        QStringLiteral("drawing-settings"),      QStringLiteral("drawing"),
+        QStringLiteral("screenshot-settings"),
+        QStringLiteral("interface-screenshot"),
+        QStringLiteral("screenshot-action-toolbar"),
+        QStringLiteral("drawing-settings"),
+        QStringLiteral("drawing"),
         QStringLiteral("screenshot-capture"),
 #ifndef Q_OS_MACOS
         QStringLiteral("capture-compatibility"),
@@ -1518,8 +1521,10 @@ void builtInCatalogIsCompleteAndValid() {
         catalog.item({QStringLiteral("screenshots"), QStringLiteral("drawing"),
                       QStringLiteral("interface.toolbar.drawing-toolbar-editor")});
     const auto* screenshotToolbarEditor =
-        catalog.item({QStringLiteral("screenshots"), QStringLiteral("interface-screenshot"),
+        catalog.item({QStringLiteral("screenshots"), QStringLiteral("screenshot-action-toolbar"),
                       QStringLiteral("interface.screenshot.screenshot-toolbar-editor")});
+    const auto* actionToolbarSection =
+        catalog.section(QStringLiteral("screenshots"), QStringLiteral("screenshot-action-toolbar"));
     const auto& screenshotSection =
         *catalog.section(QStringLiteral("screenshots"), QStringLiteral("interface-screenshot"));
     const auto& toolbarSection = interfacePage->sections.at(1);
@@ -1527,8 +1532,17 @@ void builtInCatalogIsCompleteAndValid() {
                                          QStringLiteral("interface.tray.icon")});
     require(
         toolbarSize != nullptr && toolbarEditor != nullptr && screenshotToolbarEditor != nullptr &&
-            trayIcon != nullptr &&
-            screenshotSection.items.constLast().id == screenshotToolbarEditor->id &&
+            trayIcon != nullptr && actionToolbarSection != nullptr &&
+            actionToolbarSection->items.size() == 1 &&
+            actionToolbarSection->items.constFirst().id == screenshotToolbarEditor->id &&
+            actionToolbarSection->title.translated() == QStringLiteral("Action Toolbar") &&
+            actionToolbarSection->reset ==
+                settings::SettingsSectionReset::ScreenshotActionToolbar &&
+            settings::builtInSettingsRegistry()
+                    .fieldsForReset(settings::SettingsSectionReset::ScreenshotActionToolbar)
+                    .size() == 1 &&
+            catalog.item({QStringLiteral("screenshots"), QStringLiteral("interface-screenshot"),
+                          screenshotToolbarEditor->id}) == nullptr &&
             catalog.item({QStringLiteral("screenshots"), QStringLiteral("drawing"),
                           QStringLiteral("drawing.quick-selection-disabled-tools")}) == nullptr &&
             catalog.item({QStringLiteral("pinned-windows"), QStringLiteral("pin-to-screen"),
@@ -1568,6 +1582,12 @@ void builtInCatalogIsCompleteAndValid() {
             trayIcon->configurationKey == QStringLiteral("tray/icon") &&
             std::get<settings::SettingsRadioDefinition>(trayIcon->payload).options.size() == 6,
         "new Interface settings controls must retain their schema contracts");
+    const auto* screenshotToolbarField =
+        settings::builtInSettingsRegistry().field(screenshotToolbarEditor->id);
+    require(screenshotToolbarField != nullptr &&
+                screenshotToolbarField->sectionId == actionToolbarSection->id &&
+                screenshotToolbarField->reset == actionToolbarSection->reset,
+            "screenshot action toolbar reset belongs only to its own category");
 
     const auto* selectionBorderColor =
         catalog.item({QStringLiteral("screenshots"), QStringLiteral("interface-screenshot"),
@@ -1600,13 +1620,12 @@ void builtInCatalogIsCompleteAndValid() {
                 pinPage->sections.at(1).id == pinSection.id &&
                 pinSection.title.translated() == QStringLiteral("Window interface") &&
                 pinPage->sections.at(2).id == QStringLiteral("pin-to-screen-toolbar") &&
-                pinPage->sections.at(2).title.translated() ==
-                    QStringLiteral("Annotation toolbar") &&
+                pinPage->sections.at(2).title.translated() == QStringLiteral("Action Toolbar") &&
                 pinPage->sections.at(2).items.size() == 1 &&
                 pinPage->sections.at(2).items.constFirst().id == pinnedEditor->id &&
                 pinSection.reset == settings::SettingsSectionReset::PinToScreen &&
                 pinPage->sections.at(2).reset == settings::SettingsSectionReset::PinToScreenToolbar,
-            "pinned settings separate interaction, window interface and annotation toolbar");
+            "pinned settings separate interaction, window interface and action toolbar");
     const auto& pinRegistry = settings::builtInSettingsRegistry();
     for (const auto& section : pinPage->sections) {
         const auto& fields = pinRegistry.fieldsForReset(section.reset);
@@ -2499,6 +2518,8 @@ void searchIndexIsGeneratedAndRanked() {
             "pinned toolbar customization must be indexed");
     const auto screenshotToolbar = index.search(QStringLiteral("custom screenshot toolbar"));
     require(!screenshotToolbar.isEmpty() &&
+                screenshotToolbar.constFirst().location.sectionId ==
+                    QStringLiteral("screenshot-action-toolbar") &&
                 screenshotToolbar.constFirst().location.itemId ==
                     QStringLiteral("interface.screenshot.screenshot-toolbar-editor"),
             "screenshot toolbar customization terminology must be indexed");

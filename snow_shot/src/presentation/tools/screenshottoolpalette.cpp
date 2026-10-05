@@ -456,6 +456,9 @@ QString actionToolShortcutId(const QString& itemId) {
     if (itemId == QStringLiteral("copy")) {
         return QStringLiteral("copy_to_clipboard");
     }
+    if (itemId == QStringLiteral("cancel")) {
+        return QStringLiteral("cancel_screenshot");
+    }
     return {};
 }
 
@@ -521,6 +524,8 @@ int actionToolIndex(const QString& itemId) {
 
 ScreenshotToolPalette::Tool drawingToolFromItem(toolbar_layout::Item item) {
     switch (item) {
+    case toolbar_layout::Item::Select:
+        return ScreenshotToolPalette::Tool::Select;
     case toolbar_layout::Item::Shape:
         return ScreenshotToolPalette::Tool::Shape;
     case toolbar_layout::Item::Arrow:
@@ -555,6 +560,8 @@ ScreenshotToolPalette::Tool toolbarFacingDrawingTool(ScreenshotToolPalette::Tool
 
 QString drawingToolItemId(ScreenshotToolPalette::Tool tool) {
     switch (toolbarFacingDrawingTool(tool)) {
+    case ScreenshotToolPalette::Tool::Select:
+        return QStringLiteral("select");
     case ScreenshotToolPalette::Tool::Shape:
         return QStringLiteral("shape");
     case ScreenshotToolPalette::Tool::Arrow:
@@ -1669,6 +1676,7 @@ void ScreenshotToolPalette::refreshThemeDependentIcons() {
         m_confirmButton->setIconRef(snow_shot::presentation::icons::withPrimaryColor(
             outlined_icons::Check(), scheme.map.colorPrimary));
     }
+    refreshActionToolGroups();
     if (m_recordStartButton != nullptr) {
         m_recordStartButton->setIconRef(snow_shot::presentation::icons::withPrimaryColor(
             custom_outlined_icons::RecordingStart(), scheme.map.colorPrimary));
@@ -1862,7 +1870,7 @@ void ScreenshotToolPalette::setActiveTool(Tool tool) {
         activeButton = m_moveButton;
         break;
     case Tool::Select:
-        activeButton = m_selectButton;
+        activeButton = drawingToolEntryButton(tool);
         break;
     case Tool::Shape:
         activeButton = drawingToolEntryButton(tool);
@@ -4279,6 +4287,17 @@ void ScreenshotToolPalette::refreshConfirmShortcutHint() {
     }
     applyPinToScreenShortcutTooltip(m_confirmButton, QStringLiteral("Confirm edit"),
                                     QStringLiteral("drawing_mode"));
+    for (const ActionToolGroup& group : std::as_const(m_actionToolGroups)) {
+        if (group.entryItemId == QStringLiteral("confirm")) {
+            applyActionToolShortcutTooltip(group.trigger, group.entryItemId);
+        }
+        for (auto* button : group.optionButtons) {
+            if (button != nullptr && button->property("screenshotToolbarItemId").toString() ==
+                                         QStringLiteral("confirm")) {
+                applyActionToolShortcutTooltip(button, QStringLiteral("confirm"));
+            }
+        }
+    }
 }
 
 void ScreenshotToolPalette::paintEvent(QPaintEvent* event) {
@@ -4380,6 +4399,8 @@ adqt::widgets::AdButton* ScreenshotToolPalette::drawingToolButton(const QString&
         return nullptr;
     }
     switch (descriptor->item) {
+    case toolbar_layout::Item::Select:
+        return m_selectButton;
     case toolbar_layout::Item::Shape:
         return m_shapeButton;
     case toolbar_layout::Item::Arrow:
@@ -4621,6 +4642,9 @@ void ScreenshotToolPalette::rememberDrawingMode(Tool tool) {
 }
 
 void ScreenshotToolPalette::rememberLastUsedDrawingTool(Tool tool) {
+    if (tool == Tool::Select) {
+        return;
+    }
     const QString itemId = drawingToolItemId(tool);
     if (itemId.isEmpty()) {
         return;
@@ -4640,7 +4664,8 @@ void ScreenshotToolPalette::recordUserDrawingToolIntent(Tool tool) {
 }
 
 bool ScreenshotToolPalette::drawingToolCanBeActivated(Tool tool) const {
-    return !drawingToolItemId(tool).isEmpty() && canActivateToolShortcut(tool);
+    return tool != Tool::Select && !drawingToolItemId(tool).isEmpty() &&
+           canActivateToolShortcut(tool);
 }
 
 adqt::widgets::AdButton* ScreenshotToolPalette::toolEntryButton(Tool tool) const {
@@ -4650,7 +4675,7 @@ adqt::widgets::AdButton* ScreenshotToolPalette::toolEntryButton(Tool tool) const
         requestedButton = m_moveButton;
         break;
     case Tool::Select:
-        requestedButton = m_selectButton;
+        requestedButton = drawingToolEntryButton(tool);
         break;
     case Tool::Ocr:
         requestedButton = actionToolEntryButton(QStringLiteral("text-recognition"));
@@ -4949,6 +4974,12 @@ ScreenshotToolPalette::actionToolSourceButton(const QString& itemId) const {
     if (itemId == QStringLiteral("copy")) {
         return m_copyButton;
     }
+    if (itemId == QStringLiteral("confirm")) {
+        return m_confirmButton;
+    }
+    if (itemId == QStringLiteral("cancel")) {
+        return m_cancelButton;
+    }
     return nullptr;
 }
 
@@ -5030,6 +5061,10 @@ bool ScreenshotToolPalette::activateActionTool(const QString& itemId, bool toggl
         emit saveRequested();
     } else if (itemId == QStringLiteral("copy")) {
         emit copyRequested();
+    } else if (itemId == QStringLiteral("confirm")) {
+        emit confirmRequested();
+    } else if (itemId == QStringLiteral("cancel")) {
+        emit cancelRequested();
     }
     return true;
 }
@@ -5083,6 +5118,27 @@ void ScreenshotToolPalette::releaseActionToolGroupPopover(adqt::widgets::AdButto
     }
 }
 
+void ScreenshotToolPalette::applyActionToolShortcutTooltip(QWidget* widget, const QString& itemId) {
+    const auto* descriptor = toolbar_layout::actionDescriptor(itemId);
+    if (widget == nullptr || descriptor == nullptr) {
+        return;
+    }
+    widget->setProperty("snowShotScreenshotShortcutTooltipSource", QVariant{});
+    widget->setProperty("snowShotScreenshotShortcutTooltipActionId", QVariant{});
+    widget->setProperty("snowShotPinToScreenShortcutTooltipSource", QVariant{});
+    widget->setProperty("snowShotPinToScreenShortcutTooltipActionId", QVariant{});
+    configureScreenshotToolPaletteTooltip(widget, descriptor->label);
+    if (itemId == QStringLiteral("confirm")) {
+        if (m_options.showDrawingModeShortcutOnConfirm) {
+            applyPinToScreenShortcutTooltip(widget, QString::fromUtf8(descriptor->label),
+                                            QStringLiteral("drawing_mode"));
+        }
+    } else {
+        applyScreenshotShortcutTooltip(widget, QString::fromUtf8(descriptor->label),
+                                       actionToolShortcutId(itemId));
+    }
+}
+
 void ScreenshotToolPalette::refreshActionToolGroup(int groupIndex) {
     if (groupIndex < 0 || groupIndex >= m_actionToolGroups.size()) {
         return;
@@ -5096,11 +5152,15 @@ void ScreenshotToolPalette::refreshActionToolGroup(int groupIndex) {
     if (entryDescriptor == nullptr) {
         return;
     }
-    configureScreenshotToolPaletteTooltip(group.trigger, entryDescriptor->label);
-    applyScreenshotShortcutTooltip(group.trigger, QString::fromUtf8(entryDescriptor->label),
-                                   actionToolShortcutId(group.entryItemId));
-    setScreenshotToolPaletteToolButtonIcon(group.trigger,
-                                           toolbar_layout::icon(entryDescriptor->icon));
+    applyActionToolShortcutTooltip(group.trigger, group.entryItemId);
+    auto entryIcon = toolbar_layout::icon(entryDescriptor->icon);
+    if (group.entryItemId == QStringLiteral("confirm") ||
+        (group.entryItemId == QStringLiteral("copy") && !m_options.copyButtonWithNeutralIcon)) {
+        entryIcon = snow_shot::presentation::icons::withPrimaryColor(
+            entryIcon,
+            snow_shot::presentation::styles::generateThemeColorScheme().map.colorPrimary);
+    }
+    setScreenshotToolPaletteToolButtonIcon(group.trigger, entryIcon);
     if (auto* source = actionToolSourceButton(group.entryItemId)) {
         group.trigger->setButtonStyle(source->buttonStyle());
         group.trigger->setAccentRole(source->accentRole());
@@ -5121,12 +5181,7 @@ void ScreenshotToolPalette::refreshActionToolGroup(int groupIndex) {
         const auto state = actionToolState(itemId);
         optionButton->setEnabled(state.enabled);
         optionButton->setBusy(state.busy);
-        const toolbar_layout::EditorDescriptor* descriptor =
-            toolbar_layout::actionDescriptor(itemId);
-        if (descriptor != nullptr) {
-            applyScreenshotShortcutTooltip(optionButton, QString::fromUtf8(descriptor->label),
-                                           actionToolShortcutId(itemId));
-        }
+        applyActionToolShortcutTooltip(optionButton, itemId);
     }
 
     int activeIndex = -1;
@@ -5331,21 +5386,24 @@ void ScreenshotToolPalette::applyMainToolbarLayout(bool notify) {
 
     addFixedWidget(m_recordExportSettingsButton);
     addFixedWidget(m_moveButton);
-    addFixedWidget(m_selectButton);
+    if (!m_toolbarLayout.has_value()) {
+        addFixedWidget(m_selectButton);
+    }
     if (m_recordExportSettingsButton != nullptr) {
         addSeparator();
     }
 
-    for (adqt::widgets::AdButton* source : {m_undoButton, m_redoButton}) {
+    for (adqt::widgets::AdButton* source : {m_selectButton, m_undoButton, m_redoButton}) {
         if (source != nullptr) {
-            source->hide();
+            if (source != m_selectButton || m_toolbarLayout.has_value()) {
+                source->hide();
+            }
             source->setProperty("screenshotToolbarPositionItems", QStringList{});
         }
     }
 
-    bool hasDrawingPositions = false;
     for (const QStringList& position : normalized.positions) {
-        if (position.contains(QStringLiteral("separator"))) {
+        if (std::any_of(position.cbegin(), position.cend(), toolbar_layout::isSeparator)) {
             addSeparator();
             continue;
         }
@@ -5356,10 +5414,6 @@ void ScreenshotToolPalette::applyMainToolbarLayout(bool notify) {
         const QStringList& availableItemIds = stack.itemIds;
         if (availableItemIds.isEmpty()) {
             continue;
-        }
-        if (!hasDrawingPositions &&
-            (m_options.separatorAfterSelect || m_options.separatorBeforeShape) && hasContent) {
-            addSeparator();
         }
         if (hasContent && !separated) {
             addMainToolbarSpacing(TOOLBAR_ITEM_SPACING);
@@ -5420,7 +5474,6 @@ void ScreenshotToolPalette::applyMainToolbarLayout(bool notify) {
         refreshDrawingToolGroup(static_cast<int>(m_drawingToolGroups.size()) - 1);
         hasContent = true;
         separated = false;
-        hasDrawingPositions = true;
     }
 
     if (m_options.showRecordingControls) {
@@ -5437,6 +5490,13 @@ void ScreenshotToolPalette::applyMainToolbarLayout(bool notify) {
 
     const bool configurableResultActions =
         m_options.actionToolsLayoutKind ==
+            snow_shot::storage::ScreenshotToolbarLayoutKind::PinnedActionTools ||
+        m_options.actionToolsLayoutKind ==
+            snow_shot::storage::ScreenshotToolbarLayoutKind::ActionTools;
+    const bool configurableCancel = m_options.actionToolsLayoutKind ==
+                                    snow_shot::storage::ScreenshotToolbarLayoutKind::ActionTools;
+    const bool configurableConfirm =
+        m_options.actionToolsLayoutKind ==
         snow_shot::storage::ScreenshotToolbarLayoutKind::PinnedActionTools;
     const QVector<adqt::widgets::AdButton*> actionSources{
         m_tableButton,
@@ -5452,6 +5512,8 @@ void ScreenshotToolPalette::applyMainToolbarLayout(bool notify) {
         m_saveButton,
         m_quickSaveButton,
         configurableResultActions ? m_copyButton : nullptr,
+        configurableCancel ? m_cancelButton : nullptr,
+        configurableConfirm ? m_confirmButton : nullptr,
     };
     for (adqt::widgets::AdButton* source : actionSources) {
         if (source != nullptr) {
@@ -5461,9 +5523,10 @@ void ScreenshotToolPalette::applyMainToolbarLayout(bool notify) {
     }
 
     bool hasActionPositions = false;
+    bool actionSeparatorPending = false;
     for (const QStringList& position : std::as_const(m_actionToolsLayout.positions)) {
-        if (position.contains(QStringLiteral("separator"))) {
-            addSeparator();
+        if (std::any_of(position.cbegin(), position.cend(), toolbar_layout::isSeparator)) {
+            actionSeparatorPending = true;
             continue;
         }
         const auto stack = toolbar_layout::stackPresentation(
@@ -5477,6 +5540,10 @@ void ScreenshotToolPalette::applyMainToolbarLayout(bool notify) {
         const QStringList& availableItemIds = stack.itemIds;
         if (availableItemIds.isEmpty()) {
             continue;
+        }
+        if (actionSeparatorPending) {
+            addSeparator();
+            actionSeparatorPending = false;
         }
         if (!hasActionPositions && hasContent) {
             addSeparator();
@@ -5495,13 +5562,13 @@ void ScreenshotToolPalette::applyMainToolbarLayout(bool notify) {
     }
 
     QVector<QWidget*> resultActions{
-        m_cancelButton,
+        configurableCancel ? nullptr : m_cancelButton,
         m_options.saveButtonWithResultActions && !configurableResultActions
             ? createActionToolGroup({QStringLiteral("upload-to-cloud"), QStringLiteral("print"),
                                      QStringLiteral("quick-save"), QStringLiteral("save-as-file")})
             : nullptr,
         configurableResultActions ? nullptr : m_copyButton,
-        m_confirmButton,
+        configurableConfirm ? nullptr : m_confirmButton,
         m_globalCanvasClickThroughButton,
         m_globalCanvasExitButton,
     };
@@ -5998,6 +6065,8 @@ QString screenshotShortcutActionItem(const QString& actionId) {
         {QStringLiteral("save_as_file"), QStringLiteral("save-as-file")},
         {QStringLiteral("upload_to_cloud"), QStringLiteral("upload-to-cloud")},
         {QStringLiteral("pin_to_screen"), QStringLiteral("pin-to-screen")},
+        {QStringLiteral("cancel_screenshot"), QStringLiteral("cancel")},
+        {QStringLiteral("copy_to_clipboard"), QStringLiteral("copy")},
     };
     return actionItems.value(actionId);
 }
@@ -6092,7 +6161,7 @@ void ScreenshotToolPalette::addMainActionButtons(const Options& options, QBoxLay
                                        QStringLiteral("cancel_screenshot"));
         addButton(m_cancelButton);
         connect(m_cancelButton, &adqt::widgets::AdButton::clicked, this,
-                &ScreenshotToolPalette::cancelRequested);
+                [this]() { activateActionTool(QStringLiteral("cancel")); });
     }
 
     if (options.showSaveButton && options.saveButtonWithResultActions) {
@@ -6138,7 +6207,7 @@ void ScreenshotToolPalette::addMainActionButtons(const Options& options, QBoxLay
                                        QStringLiteral("copy_to_clipboard"));
         addButton(m_copyButton);
         connect(m_copyButton, &adqt::widgets::AdButton::clicked, this,
-                &ScreenshotToolPalette::copyRequested);
+                [this]() { activateActionTool(QStringLiteral("copy")); });
     }
 
     if (options.separatorBeforeConfirm && (options.actions & ConfirmAction) != 0 && hasButton) {

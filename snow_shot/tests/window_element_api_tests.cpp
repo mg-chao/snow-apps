@@ -252,6 +252,8 @@ void ownUiCapturePreferencesPersistAndReset() {
 void toolbarLayoutSectionResetsRemainIndependent() {
     snow_shot::presentation::GlobalShortcutManager shortcuts;
     settings::BuiltInSettingsBackend backend(shortcuts);
+    const storage::ScreenshotUiSettings ui;
+    const bool defaultShowGuides = ui.showGuidesByDefault();
     const auto defaultDrawingLayout =
         backend.toolbarLayout(storage::ScreenshotToolbarLayoutKind::DrawingTools);
     const auto defaultActionLayout =
@@ -265,7 +267,11 @@ void toolbarLayoutSectionResetsRemainIndependent() {
          {QStringLiteral("text-recognition")},
          {QStringLiteral("text-translation")},
          {QStringLiteral("scrolling-screenshot")},
-         {QStringLiteral("quick-save"), QStringLiteral("save-as-file")}},
+         {QStringLiteral("upload-to-cloud"), QStringLiteral("print"), QStringLiteral("quick-save"),
+          QStringLiteral("save-as-file")},
+         {QStringLiteral("separator")},
+         {QStringLiteral("cancel")},
+         {QStringLiteral("copy")}},
         {}};
     require(defaultActionLayout == expectedDefaultActionLayout,
             "the default action layout must include conversions and quick-save");
@@ -281,32 +287,44 @@ void toolbarLayoutSectionResetsRemainIndependent() {
     // the persisted layout compares equal to what was applied.
     const storage::ScreenshotToolbarLayout actionLayout{
         {{QStringLiteral("quick-save"), QStringLiteral("save-as-file")}},
-        {QStringLiteral("convert-to-html"), QStringLiteral("convert-to-markdown"),
+        {QStringLiteral("upload-to-cloud"), QStringLiteral("print"),
+         QStringLiteral("convert-to-html"), QStringLiteral("convert-to-markdown"),
          QStringLiteral("latex-recognition"), QStringLiteral("barcode-recognition"),
          QStringLiteral("table-recognition"), QStringLiteral("record-screen"),
          QStringLiteral("pin-to-screen"), QStringLiteral("text-recognition"),
-         QStringLiteral("text-translation"), QStringLiteral("scrolling-screenshot")},
+         QStringLiteral("text-translation"), QStringLiteral("scrolling-screenshot"),
+         QStringLiteral("separator"), QStringLiteral("cancel"), QStringLiteral("copy")},
     };
     require(backend.applyToolbarLayout(storage::ScreenshotToolbarLayoutKind::DrawingTools,
                                        drawingLayout) &&
                 backend.applyToolbarLayout(storage::ScreenshotToolbarLayoutKind::ActionTools,
-                                           actionLayout),
+                                           actionLayout) &&
+                ui.setShowGuidesByDefault(!defaultShowGuides),
             "toolbar reset fixture must persist independent layouts");
     const auto savedDrawingLayout =
         backend.toolbarLayout(storage::ScreenshotToolbarLayoutKind::DrawingTools);
     const auto savedActionLayout =
         backend.toolbarLayout(storage::ScreenshotToolbarLayoutKind::ActionTools);
 
-    require(backend.resetSection(settings::SettingsSectionReset::ScreenshotInterfaceSettings) &&
+    require(backend.resetSection(settings::SettingsSectionReset::ScreenshotActionToolbar) &&
                 backend.toolbarLayout(storage::ScreenshotToolbarLayoutKind::DrawingTools) ==
                     savedDrawingLayout &&
                 backend.toolbarLayout(storage::ScreenshotToolbarLayoutKind::ActionTools) ==
-                    defaultActionLayout,
-            "Screenshot Interface reset must restore only the screenshot action layout");
+                    defaultActionLayout &&
+                ui.showGuidesByDefault() == !defaultShowGuides,
+            "Action Toolbar reset must preserve annotation tools and capture interface settings");
 
     require(backend.applyToolbarLayout(storage::ScreenshotToolbarLayoutKind::ActionTools,
                                        actionLayout) &&
-                backend.resetSection(settings::SettingsSectionReset::DrawingToolbar) &&
+                backend.resetSection(settings::SettingsSectionReset::ScreenshotInterfaceSettings) &&
+                backend.toolbarLayout(storage::ScreenshotToolbarLayoutKind::DrawingTools) ==
+                    savedDrawingLayout &&
+                backend.toolbarLayout(storage::ScreenshotToolbarLayoutKind::ActionTools) ==
+                    savedActionLayout &&
+                ui.showGuidesByDefault() == defaultShowGuides,
+            "Capture interface reset must preserve both custom toolbar layouts");
+
+    require(backend.resetSection(settings::SettingsSectionReset::DrawingToolbar) &&
                 backend.toolbarLayout(storage::ScreenshotToolbarLayoutKind::ActionTools) ==
                     savedActionLayout &&
                 backend.toolbarLayout(storage::ScreenshotToolbarLayoutKind::DrawingTools) ==

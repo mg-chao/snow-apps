@@ -119,7 +119,7 @@ constexpr int kHiddenZoneHeight = 56;
     QT_TRANSLATE_NOOP(
         "PinnedToolbarEditorSettingsWidget",
         "Drop beside a tool to create a position. Drop above a tool to stack it. The bottom "
-        "tool stays on the main toolbar row."),
+        "tool stays on the main toolbar row. Separator Component occupies its own position."),
     QT_TRANSLATE_NOOP("PinnedToolbarEditorSettingsWidget", "Pin to Screen toolbar preview"),
     QT_TRANSLATE_NOOP("PinnedToolbarEditorSettingsWidget", "Hidden tools"),
     QT_TRANSLATE_NOOP("PinnedToolbarEditorSettingsWidget",
@@ -155,7 +155,7 @@ class ToolbarDragButton final : public adqt::widgets::AdButton {
         setCursor(Qt::OpenHandCursor);
         setFixedSize(kToolbarButtonSize, kToolbarButtonSize);
         setIconSize(QSize(kToolbarIconSize, kToolbarIconSize));
-        if (itemId == QStringLiteral("separator")) {
+        if (toolbar_layout::isSeparator(itemId)) {
             setText(QStringLiteral("│"));
         }
     }
@@ -424,7 +424,7 @@ class ToolbarDropSurface final : public QFrame {
             }
             const QRect geometry = toolbarPosition->geometry();
             if (position.x() >= geometry.left() && position.x() <= geometry.right()) {
-                if (itemId == QStringLiteral("separator") ||
+                if (toolbar_layout::isSeparator(itemId) ||
                     toolbarPosition->property("screenshotToolbarContainsSeparator").toBool()) {
                     return {DropKind::NewPosition,
                             index + (position.x() > geometry.center().x() ? 1 : 0), 0};
@@ -994,7 +994,7 @@ struct ToolbarEditorSettingsWidget::Private {
         for (const toolbar_layout::EditorDescriptor& descriptor : descriptors) {
             const QString itemId = QString::fromLatin1(descriptor.id);
             auto* button = new ToolbarDragButton(itemId, objectNamePrefix, &owner);
-            if (itemId != QStringLiteral("separator")) {
+            if (!toolbar_layout::isSeparator(itemId)) {
                 button->setIconRef(toolbar_layout::icon(descriptor.icon));
             }
             buttons.insert(itemId, button);
@@ -1036,8 +1036,9 @@ struct ToolbarEditorSettingsWidget::Private {
             const QStringList& itemIds = layout.positions.at(positionIndex);
             auto* position =
                 new ToolbarPositionWidget(positionIndex, objectNamePrefix, toolbarSurface);
-            position->setProperty("screenshotToolbarContainsSeparator",
-                                  itemIds.contains(QStringLiteral("separator")));
+            position->setProperty(
+                "screenshotToolbarContainsSeparator",
+                std::any_of(itemIds.cbegin(), itemIds.cend(), toolbar_layout::isSeparator));
             for (const QString& itemId : itemIds) {
                 ToolbarDragButton* button = buttons.value(itemId);
                 if (button == nullptr) {
@@ -1152,7 +1153,8 @@ struct ToolbarEditorSettingsWidget::Private {
     void retranslateUi() {
         instructionLabel->setText(translatedToolbarText(
             translationContext,
-            layoutKind == storage::ScreenshotToolbarLayoutKind::DrawingTools
+            layoutKind == storage::ScreenshotToolbarLayoutKind::DrawingTools ||
+                    layoutKind == storage::ScreenshotToolbarLayoutKind::PinnedActionTools
                 ? "Drop beside a tool to create a position. Drop above a tool to stack it. The "
                   "bottom tool stays on the main toolbar row. Separator Component occupies its "
                   "own position."

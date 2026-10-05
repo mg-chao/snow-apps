@@ -966,6 +966,9 @@ void screenshotUiSchemaRepairsStructuredValues() {
                      QJsonArray{QStringLiteral("scrolling-screenshot")},
                      QJsonArray{QStringLiteral("upload-to-cloud"), QStringLiteral("print"),
                                 QStringLiteral("quick-save"), QStringLiteral("save-as-file")},
+                     QJsonArray{QStringLiteral("separator")},
+                     QJsonArray{QStringLiteral("cancel")},
+                     QJsonArray{QStringLiteral("copy")},
                  }},
                 {QStringLiteral("hidden"), QJsonArray{}},
             },
@@ -1006,6 +1009,8 @@ void screenshotUiSchemaRepairsStructuredValues() {
     require(normalized.valid && normalized.changed && layout.size() == 2 &&
                 positions ==
                     QJsonArray{
+                        QJsonArray{QStringLiteral("select")},
+                        QJsonArray{QStringLiteral("select-separator")},
                         QJsonArray{QStringLiteral("watermark"), QStringLiteral("shape")},
                         QJsonArray{QStringLiteral("line")},
                         QJsonArray{QStringLiteral("spotlight"), QStringLiteral("highlighter")},
@@ -1026,7 +1031,8 @@ void screenshotUiSchemaRepairsStructuredValues() {
          QJsonArray{QJsonArray{QStringLiteral("shape"), QStringLiteral("separator"),
                                QStringLiteral("undo"), QStringLiteral("redo")},
                     QJsonArray{}}},
-        {QStringLiteral("hidden"), QJsonArray{}}};
+        {QStringLiteral("hidden"),
+         QJsonArray{QStringLiteral("select"), QStringLiteral("select-separator")}}};
     const auto separated = storage::ConfigurationSchema::normalize(
         QStringLiteral("screenshot_toolbar/layout"), invalidSeparatorLayout);
     const QJsonArray separatedPositions =
@@ -1037,6 +1043,27 @@ void screenshotUiSchemaRepairsStructuredValues() {
                 separatedPositions.at(2).toArray() ==
                     QJsonArray{QStringLiteral("undo"), QStringLiteral("redo")},
             "separator must normalize into its own drawing toolbar position");
+    QJsonObject selectSeparatorLayout = invalidSeparatorLayout;
+    selectSeparatorLayout.insert(
+        QStringLiteral("positions"),
+        QJsonArray{QJsonArray{QStringLiteral("shape"), QStringLiteral("select-separator"),
+                              QStringLiteral("select"), QStringLiteral("separator"),
+                              QStringLiteral("undo")},
+                   QJsonArray{}});
+    selectSeparatorLayout.insert(QStringLiteral("hidden"), QJsonArray{});
+    const auto selectSeparated = storage::ConfigurationSchema::normalize(
+        QStringLiteral("screenshot_toolbar/layout"), selectSeparatorLayout);
+    const auto selectPositions =
+        selectSeparated.value.toObject().value(QStringLiteral("positions")).toArray();
+    require(selectSeparated.valid && selectPositions.at(0) == QJsonArray{QStringLiteral("shape")} &&
+                selectPositions.at(1) == QJsonArray{QStringLiteral("select-separator")} &&
+                selectPositions.at(2) == QJsonArray{QStringLiteral("select")} &&
+                selectPositions.at(3) == QJsonArray{QStringLiteral("separator")} &&
+                selectPositions.at(4) == QJsonArray{QStringLiteral("undo")} &&
+                !storage::ConfigurationSchema::normalize(
+                     QStringLiteral("screenshot_toolbar/layout"), selectSeparated.value)
+                     .changed,
+            "both separators must split stacks without moving Select and normalize idempotently");
     const QJsonObject hiddenSeparatorLayout{
         {QStringLiteral("positions"),
          QJsonArray{QJsonArray{QStringLiteral("shape")}, QJsonArray{}}},
@@ -1082,6 +1109,9 @@ void screenshotUiSchemaRepairsStructuredValues() {
                     QJsonArray{QStringLiteral("text-translation")},
                     QJsonArray{QStringLiteral("scrolling-screenshot")},
                     QJsonArray{QStringLiteral("print")},
+                    QJsonArray{QStringLiteral("separator")},
+                    QJsonArray{QStringLiteral("cancel")},
+                    QJsonArray{QStringLiteral("copy")},
                 } &&
             actionLayout.value(QStringLiteral("hidden")).toArray() ==
                 QJsonArray{QStringLiteral("barcode-recognition"),
@@ -1098,13 +1128,57 @@ void screenshotUiSchemaRepairsStructuredValues() {
                     QStringLiteral("pin-to-screen"), QStringLiteral("text-recognition"),
                     QStringLiteral("text-translation"), QStringLiteral("scrolling-screenshot"),
                     QStringLiteral("upload-to-cloud"), QStringLiteral("print"),
-                    QStringLiteral("quick-save"), QStringLiteral("save-as-file")}},
+                    QStringLiteral("quick-save"), QStringLiteral("save-as-file"),
+                    QStringLiteral("separator"), QStringLiteral("cancel"), QStringLiteral("copy")}},
     };
     const auto normalizedAllHidden = storage::ConfigurationSchema::normalize(
         QStringLiteral("screenshot_toolbar/action_tools_layout"), allHiddenActionLayout);
     require(normalizedAllHidden.valid && !normalizedAllHidden.changed &&
                 normalizedAllHidden.value.toObject() == allHiddenActionLayout,
             "an all-hidden action toolbar layout must remain valid without restoring tools");
+
+    const QString actionKey = QStringLiteral("screenshot_toolbar/action_tools_layout");
+    const auto defaultActions = storage::ConfigurationSchema::defaultValue(actionKey).toObject();
+    auto legacyPositions = defaultActions.value(QStringLiteral("positions")).toArray();
+    for (int index = 0; index < 3; ++index) {
+        legacyPositions.removeLast();
+    }
+    QJsonObject legacyActions{{QStringLiteral("positions"), legacyPositions},
+                              {QStringLiteral("hidden"), QJsonArray{}}};
+    require(storage::ConfigurationSchema::normalize(actionKey, legacyActions).value ==
+                defaultActions,
+            "legacy screenshot layouts must append the formerly fixed result controls");
+    legacyPositions[0] =
+        QJsonArray{QStringLiteral("table-recognition"), QStringLiteral("barcode-recognition"),
+                   QStringLiteral("convert-to-markdown"), QStringLiteral("convert-to-html")};
+    legacyActions.insert(QStringLiteral("positions"), legacyPositions);
+    const auto upgraded = storage::ConfigurationSchema::normalize(actionKey, legacyActions);
+    require(upgraded.value == defaultActions &&
+                !storage::ConfigurationSchema::normalize(actionKey, upgraded.value).changed,
+            "historical recognition defaults must migrate without duplicating result controls");
+
+    QJsonArray hiddenResultPeers;
+    for (const QJsonValue& id : allHiddenActionLayout.value(QStringLiteral("hidden")).toArray()) {
+        if (id != QJsonValue(QStringLiteral("separator")) &&
+            id != QJsonValue(QStringLiteral("cancel")) &&
+            id != QJsonValue(QStringLiteral("copy"))) {
+            hiddenResultPeers.append(id);
+        }
+    }
+    const QJsonObject stackedResults{
+        {QStringLiteral("positions"),
+         QJsonArray{QJsonValue(QJsonArray{QStringLiteral("copy"), QStringLiteral("separator"),
+                                          QStringLiteral("cancel")})}},
+        {QStringLiteral("hidden"), hiddenResultPeers}};
+    const auto separatedResults =
+        storage::ConfigurationSchema::normalize(actionKey, stackedResults);
+    require(separatedResults.valid &&
+                separatedResults.value.toObject().value(QStringLiteral("positions")).toArray() ==
+                    QJsonArray{QJsonArray{QStringLiteral("copy")},
+                               QJsonArray{QStringLiteral("separator")},
+                               QJsonArray{QStringLiteral("cancel")}} &&
+                !storage::ConfigurationSchema::normalize(actionKey, separatedResults.value).changed,
+            "result controls must persist custom order with separators in their own positions");
 }
 
 void screenshotUiAdaptersRoundTripTypedValues() {
@@ -1150,6 +1224,8 @@ void screenshotUiAdaptersRoundTripTypedValues() {
                      QStringLiteral("pen-highlight"), QStringLiteral("arrow")};
     const storage::ScreenshotToolbarSettings toolbar;
     const QVector<QStringList> expectedPositions{
+        {QStringLiteral("select")},
+        {QStringLiteral("select-separator")},
         {QStringLiteral("watermark"), QStringLiteral("shape")},
         {QStringLiteral("line")},
         {QStringLiteral("spotlight"), QStringLiteral("highlighter")},
@@ -1178,7 +1254,8 @@ void screenshotUiAdaptersRoundTripTypedValues() {
          QStringLiteral("convert-to-markdown"), QStringLiteral("convert-to-html"),
          QStringLiteral("latex-recognition"), QStringLiteral("text-recognition"),
          QStringLiteral("text-translation"), QStringLiteral("scrolling-screenshot"),
-         QStringLiteral("print")},
+         QStringLiteral("print"), QStringLiteral("separator"), QStringLiteral("cancel"),
+         QStringLiteral("copy")},
     };
     require(toolbar.setLayout(storage::ScreenshotToolbarLayoutKind::ActionTools, actionLayout) &&
                 toolbar.layout(storage::ScreenshotToolbarLayoutKind::ActionTools) == actionLayout &&
@@ -1187,9 +1264,10 @@ void screenshotUiAdaptersRoundTripTypedValues() {
             "drawing and action toolbar layouts must round-trip independently");
     const auto pinnedKind = storage::ScreenshotToolbarLayoutKind::PinnedActionTools;
     const auto pinnedDefault = toolbar.layout(pinnedKind);
-    require(pinnedDefault.positions.size() == 6 && pinnedDefault.hidden.isEmpty() &&
-                pinnedDefault.positions.first().last() == QStringLiteral("table-recognition"),
-            "pinned defaults must expose six positions with Table as the recognition entry");
+    require(pinnedDefault.positions.size() == 8 && pinnedDefault.hidden.isEmpty() &&
+                pinnedDefault.positions.first().last() == QStringLiteral("table-recognition") &&
+                pinnedDefault.positions.last() == QStringList{QStringLiteral("confirm")},
+            "pinned defaults must expose configurable section dividers and Confirm Edit");
     // This valid layout resembles a historical screenshot default; pinned layouts must not migrate.
     const storage::ScreenshotToolbarLayout pinnedLayout{
         {{QStringLiteral("barcode-recognition"), QStringLiteral("table-recognition")},
@@ -1203,9 +1281,21 @@ void screenshotUiAdaptersRoundTripTypedValues() {
     upgradedPinned.positions.append({QStringLiteral("upload-to-cloud"), QStringLiteral("print"),
                                      QStringLiteral("quick-save"), QStringLiteral("save-as-file")});
     upgradedPinned.positions.append({QStringLiteral("copy")});
+    upgradedPinned.positions.append({QStringLiteral("confirm-separator")});
+    upgradedPinned.positions.append({QStringLiteral("confirm")});
     require(toolbar.setLayout(pinnedKind, pinnedLayout) &&
                 toolbar.layout(pinnedKind) == upgradedPinned,
             "pinned layouts must not inherit screenshot conversion migrations");
+    auto formerBoundaryLayout = upgradedPinned;
+    formerBoundaryLayout.positions.prepend({QStringLiteral("drawing-separator")});
+    require(toolbar.setLayout(pinnedKind, formerBoundaryLayout) &&
+                toolbar.layout(pinnedKind) == upgradedPinned,
+            "saved operation layouts must discard the former leading section boundary");
+    formerBoundaryLayout = upgradedPinned;
+    formerBoundaryLayout.hidden.append(QStringLiteral("drawing-separator"));
+    require(toolbar.setLayout(pinnedKind, formerBoundaryLayout) &&
+                toolbar.layout(pinnedKind) == upgradedPinned,
+            "the removed section boundary must not remain among hidden operation tools");
     auto malformedPinned = pinnedLayout;
     malformedPinned.positions.prepend({QStringLiteral("record-screen"), QStringLiteral("unknown")});
     malformedPinned.positions.last().append(QStringLiteral("table-recognition"));

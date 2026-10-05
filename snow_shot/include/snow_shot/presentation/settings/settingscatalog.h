@@ -484,6 +484,7 @@ enum class SettingsSectionReset {
     ScreenRecordingEncoding,
     Language,
     PinToScreenToolbar,
+    ScreenshotActionToolbar,
 };
 
 enum class SettingsSectionItemLayout {

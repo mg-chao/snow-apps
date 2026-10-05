@@ -832,6 +832,7 @@ class ScreenshotToolPalette final : public QWidget,
     void selectActionToolGroupEntry(const QString& itemId);
     adqt::widgets::AdButton* createActionToolGroup(const QStringList& itemIds);
     void refreshActionToolGroup(int groupIndex);
+    void applyActionToolShortcutTooltip(QWidget* widget, const QString& itemId);
     void refreshActionToolGroups();
 
     ScreenshotToolbarMainPanel* m_mainPanel = nullptr;

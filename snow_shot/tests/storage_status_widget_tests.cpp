@@ -47,6 +47,7 @@
 #include <cstdlib>
 #include <iostream>
 #include <memory>
+#include <utility>
 
 namespace presentation = snow_shot::presentation;
 namespace settings = snow_shot::presentation::settings;
@@ -105,11 +106,21 @@ settings::TranslatableText text(const char* source) {
 
 class ToolbarEditorTranslator final : public QTranslator {
   public:
+    bool isEmpty() const override {
+        return false;
+    }
+
     QString translate(const char* context, const char* sourceText, const char*,
                       int) const override {
         const QString translationContext = QString::fromLatin1(context);
         const QString source = QString::fromUtf8(sourceText);
         if (translationContext == QStringLiteral("DrawingToolbarEditorSettingsWidget")) {
+            if (source == QStringLiteral("Select elements")) {
+                return QStringLiteral("Translated select elements");
+            }
+            if (source == QStringLiteral("Separator Component")) {
+                return QStringLiteral("Translated separator");
+            }
             if (source == QStringLiteral("Shape")) {
                 return QStringLiteral("Translated drawing shape");
             }
@@ -118,12 +129,23 @@ class ToolbarEditorTranslator final : public QTranslator {
             }
         }
         if (translationContext == QStringLiteral("ScreenshotToolbarEditorSettingsWidget")) {
+            if (source == QStringLiteral("Cancel screenshot")) {
+                return QStringLiteral("Translated cancel screenshot");
+            }
             if (source == QStringLiteral("Barcode recognition")) {
                 return QStringLiteral("Translated barcode recognition");
             }
             if (source == QStringLiteral("Screenshot toolbar preview")) {
                 return QStringLiteral("Translated screenshot preview");
             }
+        }
+        if (translationContext == QStringLiteral("PinnedToolbarEditorSettingsWidget") &&
+            source == QStringLiteral("Confirm edit")) {
+            return QStringLiteral("Translated confirm edit");
+        }
+        if (translationContext == QStringLiteral("PinnedToolbarEditorSettingsWidget") &&
+            source == QStringLiteral("Copy to clipboard")) {
+            return QStringLiteral("Translated copy to clipboard");
         }
         return {};
     }
@@ -596,6 +618,10 @@ void drawingToolbarSeparatorCanMoveAndHideByDrop() {
     flushEvents();
     auto* separator = editor->findChild<QAbstractButton*>(
         QStringLiteral("settings-drawing-toolbar-item-separator"));
+    auto* selectSeparator = editor->findChild<QAbstractButton*>(
+        QStringLiteral("settings-drawing-toolbar-item-select-separator"));
+    auto* select =
+        editor->findChild<QAbstractButton*>(QStringLiteral("settings-drawing-toolbar-item-select"));
     auto* undo =
         editor->findChild<QAbstractButton*>(QStringLiteral("settings-drawing-toolbar-item-undo"));
     auto* redo =
@@ -604,10 +630,13 @@ void drawingToolbarSeparatorCanMoveAndHideByDrop() {
         editor->findChild<QWidget*>(QStringLiteral("settings-drawing-toolbar-surface"));
     QWidget* hidden =
         editor->findChild<QWidget*>(QStringLiteral("settings-drawing-toolbar-hidden-zone"));
-    require(separator != nullptr && undo != nullptr && redo != nullptr && surface != nullptr &&
-                hidden != nullptr &&
-                separator->accessibleName() == QStringLiteral("Separator Component"),
-            "drawing editor must expose the separator and both history actions");
+    require(separator != nullptr && selectSeparator != nullptr && select != nullptr &&
+                undo != nullptr && redo != nullptr && surface != nullptr && hidden != nullptr &&
+                separator->accessibleName() == QStringLiteral("Separator Component") &&
+                selectSeparator->accessibleName() == QStringLiteral("Separator Component") &&
+                selectSeparator->text() == separator->text() &&
+                select->accessibleName() == QStringLiteral("Select elements"),
+            "drawing editor must expose Select, both separators and both history actions");
 
     const auto drop = [](QWidget* target, const QString& itemId, const QPoint& point) {
         QMimeData mime;
@@ -619,6 +648,32 @@ void drawingToolbarSeparatorCanMoveAndHideByDrop() {
         QCoreApplication::sendEvent(target, &event);
         return event.isAccepted();
     };
+    for (const auto& id : {QStringLiteral("select"), QStringLiteral("select-separator")}) {
+        require(drop(surface, id, QPoint(surface->width() - 1, surface->height() - 1)),
+                "Select and its separator must accept a move to the toolbar end");
+        flushEvents();
+        require(backend.toolbarLayout(kind).positions.constLast() == QStringList{id},
+                "Select and its separator must move into their own toolbar positions");
+        require(drop(hidden, id, QPoint(1, 1)), "Select and its separator must accept hiding");
+        flushEvents();
+        require(backend.toolbarLayout(kind).hidden.contains(id),
+                "Select and its separator must persist in Hidden tools");
+        require(drop(surface, id, QPoint(1, surface->height() - 1)),
+                "Select and its separator must accept restoration from Hidden tools");
+        flushEvents();
+        require(backend.toolbarLayout(kind).positions.constFirst() == QStringList{id},
+                "restoring Select and its separator must preserve the drop position");
+    }
+    ToolbarEditorTranslator translator;
+    QCoreApplication::installTranslator(&translator);
+    QEvent languageChange(QEvent::LanguageChange);
+    QCoreApplication::sendEvent(editor.get(), &languageChange);
+    require(select->accessibleName() == QStringLiteral("Translated select elements") &&
+                selectSeparator->accessibleName() == QStringLiteral("Translated separator") &&
+                separator->accessibleName() == QStringLiteral("Translated separator"),
+            "Select and both separator labels must refresh on LanguageChange");
+    QCoreApplication::removeTranslator(&translator);
+    QCoreApplication::sendEvent(editor.get(), &languageChange);
     require(drop(surface, QStringLiteral("separator"), QPoint(1, surface->height() - 1)),
             "separator drop into the toolbar must be accepted");
     flushEvents();
@@ -673,6 +728,85 @@ void drawingToolbarSeparatorCanMoveAndHideByDrop() {
             "drawing toolbar editor test must restore the original layout");
 }
 
+void screenshotToolbarResultToolsCanMoveAndHideByDrop() {
+    const auto kind = storage::ScreenshotToolbarLayoutKind::ActionTools;
+    const storage::ScreenshotToolbarSettings settingsStore;
+    const auto original = settingsStore.layout(kind);
+    presentation::GlobalShortcutManager shortcuts;
+    settings::BuiltInSettingsBackend backend(shortcuts);
+    const auto& registry = settings::builtInSettingsRegistry();
+    settings::SettingsRuntimeSession session(registry, backend);
+    const auto renderer = settings::SettingsCustomRenderer::ScreenshotToolbarEditor;
+    const auto* field = registry.fieldForCustom(renderer);
+    require(field != nullptr, "screenshot editor field must exist");
+    std::unique_ptr<SettingsCustomWidget> editor(
+        createSettingsCustomWidget(renderer, registry, *field->definition, session));
+    editor->show();
+    flushEvents();
+    QWidget* surface =
+        editor->findChild<QWidget*>(QStringLiteral("settings-screenshot-toolbar-surface"));
+    QWidget* hidden =
+        editor->findChild<QWidget*>(QStringLiteral("settings-screenshot-toolbar-hidden-zone"));
+    auto* save = editor->findChild<QAbstractButton*>(
+        QStringLiteral("settings-screenshot-toolbar-item-save-as-file"));
+    require(surface != nullptr && hidden != nullptr && save != nullptr,
+            "screenshot editor must expose the preview, hidden zone, and stacking target");
+    const auto drop = [](QWidget* target, const QString& itemId, const QPoint& point) {
+        QMimeData mime;
+        mime.setData("application/x-snow-shot-toolbar-item", itemId.toUtf8());
+        QDragEnterEvent enter(QPointF(point), Qt::MoveAction, &mime, Qt::LeftButton,
+                              Qt::NoModifier);
+        QCoreApplication::sendEvent(target, &enter);
+        QDropEvent event(QPointF(point), Qt::MoveAction, &mime, Qt::LeftButton, Qt::NoModifier);
+        QCoreApplication::sendEvent(target, &event);
+        return event.isAccepted();
+    };
+    for (const QString& id :
+         {QStringLiteral("separator"), QStringLiteral("cancel"), QStringLiteral("copy")}) {
+        auto* button = editor->findChild<QAbstractButton*>(
+            QStringLiteral("settings-screenshot-toolbar-item-%1").arg(id));
+        require(button != nullptr && button->property("screenshotToolbarMainButton").toBool(),
+                "each screenshot result tool must appear in its default main position");
+        require(drop(surface, id, QPoint(1, surface->height() - 1)),
+                "result tool drop into the first position must be accepted");
+        flushEvents();
+        require(backend.toolbarLayout(kind).positions.constFirst() == QStringList{id},
+                "result tools must be movable to standalone toolbar positions");
+        require(drop(hidden, id, QPoint(1, 1)), "result tool drop into Hidden must be accepted");
+        flushEvents();
+        require(backend.toolbarLayout(kind).hidden.contains(id) &&
+                    !button->property("screenshotToolbarMainButton").toBool(),
+                "each result tool must be hideable");
+        const QPoint aboveSave = save->mapTo(surface, QPoint(save->width() / 2, 1));
+        require(drop(surface, id, aboveSave), "result tool stack drop must be accepted");
+        flushEvents();
+        const auto restored = backend.toolbarLayout(kind);
+        require(!restored.hidden.contains(id), "stack drops must restore hidden result tools");
+        require(std::any_of(restored.positions.cbegin(), restored.positions.cend(),
+                            [&id](const QStringList& position) {
+                                return id == QStringLiteral("separator")
+                                           ? position == QStringList{id}
+                                           : position.contains(id) &&
+                                                 position.contains(QStringLiteral("save-as-file"));
+                            }),
+                "result actions must stack while separators keep their own positions");
+    }
+    ToolbarEditorTranslator translator;
+    require(QCoreApplication::installTranslator(&translator), "install result tool translations");
+    QEvent languageChange(QEvent::LanguageChange);
+    QCoreApplication::sendEvent(editor.get(), &languageChange);
+    for (const auto& item : {std::pair{"separator", "Translated separator"},
+                             std::pair{"cancel", "Translated cancel screenshot"},
+                             std::pair{"copy", "Translated copy to clipboard"}}) {
+        auto* button = editor->findChild<QAbstractButton*>(
+            QStringLiteral("settings-screenshot-toolbar-item-%1").arg(QLatin1String(item.first)));
+        require(button->accessibleName() == QLatin1String(item.second),
+                "result tool labels must refresh on LanguageChange");
+    }
+    QCoreApplication::removeTranslator(&translator);
+    require(settingsStore.setLayout(kind, original), "restore the screenshot action layout");
+}
+
 void pinnedToolbarExportToolsCanMoveAndHideByDrop() {
     const auto kind = storage::ScreenshotToolbarLayoutKind::PinnedActionTools;
     const storage::ScreenshotToolbarSettings settingsStore;
@@ -688,17 +822,23 @@ void pinnedToolbarExportToolsCanMoveAndHideByDrop() {
         createSettingsCustomWidget(renderer, registry, *field->definition, session));
     editor->show();
     flushEvents();
+    require(editor->findChild<QAbstractButton*>(
+                QStringLiteral("settings-pinned-toolbar-item-drawing-separator")) == nullptr,
+            "the operation toolbar editor must not offer the annotation section boundary");
     auto* separator = editor->findChild<QAbstractButton*>(
         QStringLiteral("settings-pinned-toolbar-item-separator"));
     auto* copy =
         editor->findChild<QAbstractButton*>(QStringLiteral("settings-pinned-toolbar-item-copy"));
     auto* quickSave = editor->findChild<QAbstractButton*>(
         QStringLiteral("settings-pinned-toolbar-item-quick-save"));
+    auto* confirm =
+        editor->findChild<QAbstractButton*>(QStringLiteral("settings-pinned-toolbar-item-confirm"));
     QWidget* surface =
         editor->findChild<QWidget*>(QStringLiteral("settings-pinned-toolbar-surface"));
     QWidget* hidden =
         editor->findChild<QWidget*>(QStringLiteral("settings-pinned-toolbar-hidden-zone"));
-    require(separator != nullptr && copy != nullptr && quickSave != nullptr && surface != nullptr &&
+    require(separator != nullptr && copy != nullptr && quickSave != nullptr && confirm != nullptr &&
+                confirm->accessibleName() == QStringLiteral("Confirm edit") && surface != nullptr &&
                 hidden != nullptr &&
                 separator->accessibleName() == QStringLiteral("Separator Component"),
             "pinned editor must expose the separator and both export actions");
@@ -763,6 +903,45 @@ void pinnedToolbarExportToolsCanMoveAndHideByDrop() {
     require(backend.toolbarLayout(kind).hidden.contains(QStringLiteral("quick-save")) &&
                 !quickSave->property("screenshotToolbarMainButton").toBool(),
             "dragging Quick Save into Hidden tools must hide it");
+    require(stackWithSave(QStringLiteral("confirm")),
+            "Confirm Edit must be draggable into an ordinary export tool stack");
+    require(drop(hidden, QStringLiteral("confirm"), QPoint(1, 1)),
+            "Confirm Edit drop into Hidden tools must be accepted");
+    flushEvents();
+    require(backend.toolbarLayout(kind).hidden.contains(QStringLiteral("confirm")) &&
+                !confirm->property("screenshotToolbarMainButton").toBool(),
+            "dragging Confirm Edit into Hidden tools must hide it");
+    require(drop(surface, QStringLiteral("confirm"), QPoint(1, surface->height() - 1)),
+            "Confirm Edit must be restorable from Hidden tools");
+    flushEvents();
+    require(backend.toolbarLayout(kind).positions.first() == QStringList{QStringLiteral("confirm")},
+            "restored Confirm Edit must support an independent position");
+    for (const QString& id : {QStringLiteral("separator"), QStringLiteral("confirm-separator")}) {
+        auto* divider = editor->findChild<QAbstractButton*>(
+            QStringLiteral("settings-pinned-toolbar-item-%1").arg(id));
+        require(divider && divider->accessibleName() == QStringLiteral("Separator Component"),
+                "pinned editor must expose the export and Confirm section dividers");
+        require(drop(hidden, id, QPoint(1, 1)), "section divider must be hideable");
+        flushEvents();
+        require(backend.toolbarLayout(kind).hidden.contains(id),
+                "hidden section dividers must remain hidden in storage");
+        require(drop(surface, id, confirm->mapTo(surface, QPoint(confirm->width() / 2, 1))),
+                "section divider must be restorable beside Confirm Edit");
+        flushEvents();
+        const auto updated = backend.toolbarLayout(kind);
+        require(
+            std::any_of(updated.positions.cbegin(), updated.positions.cend(),
+                        [&id](const QStringList& position) { return position == QStringList{id}; }),
+            "section dividers must always occupy independent positions");
+    }
+    ToolbarEditorTranslator translator;
+    require(QCoreApplication::installTranslator(&translator), "editor translator must install");
+    QEvent languageChange(QEvent::LanguageChange);
+    QCoreApplication::sendEvent(editor.get(), &languageChange);
+    require(confirm->accessibleName() == QStringLiteral("Translated confirm edit") &&
+                separator->accessibleName() == QStringLiteral("Translated separator"),
+            "pinned Confirm Edit and separator labels must refresh after a language change");
+    QCoreApplication::removeTranslator(&translator);
     require(settingsStore.setLayout(kind, original),
             "pinned toolbar editor test must restore the original layout");
 }
@@ -1207,6 +1386,15 @@ int main(int argc, char** argv) {
     require(storageDirectory.isValid(), "temporary storage directory should be available");
     static_cast<void>(storage::ApplicationStorage::instance().initialize(
         {storageDirectory.path(), storageDirectory.path(), 8000}));
+    if (application.arguments().contains(QStringLiteral("--toolbar-editor-only"))) {
+        toolbarEditorsUseSeparateDefinitionsAndRetranslate();
+        drawingToolbarSeparatorCanMoveAndHideByDrop();
+        screenshotToolbarResultToolsCanMoveAndHideByDrop();
+        pinnedToolbarExportToolsCanMoveAndHideByDrop();
+        pinnedToolbarSectionResetRefreshesEditor();
+        storage::ApplicationStorage::instance().shutdown();
+        return 0;
+    }
     directoryDialogMatchesApiEditor();
     directoryDialogLifecycle();
     if (application.arguments().contains(QStringLiteral("--storage-directory-only"))) {
@@ -1218,6 +1406,7 @@ int main(int argc, char** argv) {
     widgetShowsScanningStateAndForwardsRefresh();
     toolbarEditorsUseSeparateDefinitionsAndRetranslate();
     drawingToolbarSeparatorCanMoveAndHideByDrop();
+    screenshotToolbarResultToolsCanMoveAndHideByDrop();
     pinnedToolbarExportToolsCanMoveAndHideByDrop();
     pinnedToolbarSectionResetRefreshesEditor();
     diagnosticsStateAndCopyFeedback();

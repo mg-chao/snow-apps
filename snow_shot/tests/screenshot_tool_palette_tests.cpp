@@ -2286,8 +2286,12 @@ QList<adqt::widgets::AdButton*> mainToolbarButtons(ScreenshotToolPalette& palett
 
 QList<adqt::widgets::AdButton*> mainDrawingToolbarButtons(ScreenshotToolPalette& palette) {
     QList<adqt::widgets::AdButton*> buttons;
+    const auto drawingIds = snow_shot::presentation::toolbar_layout::defaultOrder();
     for (adqt::widgets::AdButton* button : mainToolbarButtons(palette)) {
-        if (!button->property("screenshotToolbarPositionItems").toStringList().isEmpty()) {
+        const auto items = button->property("screenshotToolbarPositionItems").toStringList();
+        if (items != QStringList{QStringLiteral("select")} &&
+            std::any_of(items.cbegin(), items.cend(),
+                        [&drawingIds](const QString& id) { return drawingIds.contains(id); })) {
             buttons.append(button);
         }
     }
@@ -2306,6 +2310,9 @@ QList<adqt::widgets::AdButton*> mainActionToolbarButtons(ScreenshotToolPalette& 
         QStringLiteral("quick-save"),
         QStringLiteral("save-as-file"),
         QStringLiteral("copy"),
+        QStringLiteral("confirm"),
+        QStringLiteral("cancel"),
+        QStringLiteral("confirm"),
         QStringLiteral("print"),
         QStringLiteral("upload-to-cloud"),
     };
@@ -2874,14 +2881,25 @@ void groupedActionOptionsShowShortcutTooltips() {
             require(popover->contentWidget() != nullptr, "action group should materialize options");
             const auto buttons = popover->contentWidget()->findChildren<adqt::widgets::AdButton*>();
             require(buttons.size() >= 2, "action group should contain multiple commands");
+            QStringList enabledTooltips;
             for (auto* button : buttons) {
                 const QString expected = button->toolTip();
                 require(!expected.isEmpty(), "action option should describe its command");
+                if (button->isEnabled()) {
+                    enabledTooltips.append(expected);
+                }
+            }
+            for (const QString& expected : enabledTooltips) {
+                materializeLazyPopover(trigger);
+                auto* button = popoverButtonWithTooltip(popover, expected.toUtf8().constData());
+                require(button != nullptr, "reopened action group must retain each command");
                 button->click();
                 popover->show();
                 QCoreApplication::processEvents();
                 require(popover->isVisible() && trigger->toolTip() == expected,
                         "action trigger should retain the selected command's tooltip");
+                button = popoverButtonWithTooltip(popover, expected.toUtf8().constData());
+                require(button != nullptr, "reopened popup must expose the selected command");
                 for (auto* target : {trigger, button}) {
                     const QPoint center = target->rect().center();
                     QHelpEvent help(QEvent::ToolTip, center, target->mapToGlobal(center));
@@ -3115,9 +3133,9 @@ void configurableToolbarLayoutSupportsArbitraryPopoverGroups() {
     require(drawingButtons.size() == 5,
             "each configured drawing and history position should occupy one live toolbar slot");
     auto* firstTrigger = palette.findChild<adqt::widgets::AdButton*>(
-        QStringLiteral("screenshotDrawingToolGroupButton0"));
-    auto* secondTrigger = palette.findChild<adqt::widgets::AdButton*>(
         QStringLiteral("screenshotDrawingToolGroupButton1"));
+    auto* secondTrigger = palette.findChild<adqt::widgets::AdButton*>(
+        QStringLiteral("screenshotDrawingToolGroupButton2"));
     require(firstTrigger == drawingButtons.at(0) && secondTrigger == drawingButtons.at(1) &&
                 drawingButtons.at(2)->property("screenshotToolbarItemId").toString() ==
                     QStringLiteral("highlighter") &&
@@ -3485,7 +3503,7 @@ void mainToolbarGroupPopoversRecreateTheirOptions() {
     recordingOptions.enableStyleToolbar = false;
     recordingOptions.toolbarLayout = snow_shot::storage::ScreenshotToolbarLayout{
         {{QStringLiteral("highlighter"), QStringLiteral("arrow")}}, {}};
-    verifyDrawingGroup(recordingOptions, QStringLiteral("screenshotDrawingToolGroupButton0"), true);
+    verifyDrawingGroup(recordingOptions, QStringLiteral("screenshotDrawingToolGroupButton1"), true);
 
     ScreenshotToolPalette::Options actionOptions;
     actionOptions.showShapeTool = false;
@@ -4180,6 +4198,117 @@ void sharedToolbarLayoutModelOperationsAreDeterministic() {
             "separator must be movable into Hidden tools");
 }
 
+void selectToolAndBothSeparatorsFollowCustomLayout() {
+    namespace layout = snow_shot::presentation::toolbar_layout;
+    using snow_shot::storage::ScreenshotToolbarLayout;
+    const auto kind = snow_shot::storage::ScreenshotToolbarLayoutKind::DrawingTools;
+    const QString select = QStringLiteral("select");
+    const QString selectSeparator = QStringLiteral("select-separator");
+    const QString separator = QStringLiteral("separator");
+    const QString shape = QStringLiteral("shape");
+    const QString arrow = QStringLiteral("arrow");
+    ScreenshotToolbarLayout custom{{{shape}, {selectSeparator}, {select}, {separator}, {arrow}},
+                                   layout::defaultOrder(kind)};
+    for (const auto& id : {shape, selectSeparator, select, separator, arrow}) {
+        custom.hidden.removeAll(id);
+    }
+    ScreenshotToolPalette::Options options;
+    options.toolbarLayout = custom;
+    options.separatorAfterSelect = true;
+    options.enableStyleToolbar = false;
+    ScreenshotToolPalette palette(options);
+    palette.show();
+    QCoreApplication::processEvents();
+    const auto positions = [&]() {
+        QVector<QStringList> result;
+        for (auto* button : mainToolbarButtons(palette)) {
+            const auto ids = button->property("screenshotToolbarPositionItems").toStringList();
+            if (!ids.isEmpty()) {
+                result.append(ids);
+            }
+        }
+        return result;
+    };
+    const auto dividerCount = [&]() {
+        int count = 0;
+        const auto* row = palette.mainPanel()->layout();
+        for (int index = 0; index < row->count(); ++index) {
+            count += qobject_cast<QFrame*>(row->itemAt(index)->widget()) != nullptr ? 1 : 0;
+        }
+        return count;
+    };
+    require(positions() == QVector<QStringList>{{shape}, {select}, {arrow}} && dividerCount() == 2,
+            "Select and both separators must render in their configured positions");
+    int selectRequests = 0;
+    QObject::connect(&palette, &ScreenshotToolPalette::selectRequested, [&] { ++selectRequests; });
+    auto* selectButton = mainToolbarButtons(palette).at(1);
+    palette.setActiveTool(ScreenshotToolPalette::Tool::Shape);
+    const auto toolbarSettings = snow_shot::storage::ScreenshotToolbarSettings();
+    const auto lastDrawingTool = toolbarSettings.lastDrawingTool();
+    selectButton->click();
+    require(selectRequests == 1 && palette.activeTool() == ScreenshotToolPalette::Tool::Select &&
+                selectButton->buttonStyle() == adqt::widgets::AdButton::ButtonStyle::Solid &&
+                toolbarSettings.lastDrawingTool() == lastDrawingTool,
+            "relocated Select must activate selection without replacing the remembered annotation");
+
+    custom = layout::moveItemToHidden(custom, kind, select, 0);
+    custom = layout::moveItemToHidden(custom, kind, selectSeparator, 0);
+    custom = layout::moveItemToHidden(custom, kind, separator, 0);
+    palette.setToolbarLayout(custom);
+    require(positions() == QVector<QStringList>{{shape}, {arrow}} && dividerCount() == 0 &&
+                selectButton->isHidden(),
+            "hidden Select and separators must not be restored by the fixed toolbar prefix");
+    palette.setActiveTool(ScreenshotToolPalette::Tool::Shape);
+    require(palette.activateDrawingShortcut(select) && selectRequests == 2 &&
+                palette.activeTool() == ScreenshotToolPalette::Tool::Select &&
+                selectButton->isHidden(),
+            "hidden Select must retain its shortcut without revealing its button");
+
+    custom = layout::stackItemInPosition(custom, kind, select, 0, 1);
+    palette.setToolbarLayout(custom);
+    auto* trigger = mainToolbarButtons(palette).constFirst();
+    materializeLazyPopover(trigger);
+    auto* popover = popoverForTrigger(trigger);
+    auto* selectOption = popoverButtonWithTooltip(popover, "Select elements");
+    require(selectOption != nullptr &&
+                trigger->accessibleName() == QStringLiteral("Select elements") &&
+                trigger->property("screenshotToolbarPositionItems").toStringList() ==
+                    QStringList{shape, select},
+            "Select must support annotation stacks and share their selected trigger");
+    auto* shapeOption = popoverButtonWithTooltip(popover, "Shape");
+    require(shapeOption != nullptr, "the Select stack must retain its annotation option");
+    shapeOption->click();
+    require(trigger->accessibleName() == QStringLiteral("Shape"),
+            "selecting the annotation must replace a Select stack trigger");
+    materializeLazyPopover(trigger);
+    selectOption = popoverButtonWithTooltip(popover, "Select elements");
+    require(selectOption != nullptr, "reopening the stack must recreate Select");
+    selectOption->click();
+    require(selectRequests == 3 && trigger->accessibleName() == QStringLiteral("Select elements") &&
+                trigger->buttonStyle() == adqt::widgets::AdButton::ButtonStyle::Solid,
+            "choosing stacked Select must dispatch once and highlight the shared trigger");
+
+    const auto saved = toolbarSettings.layout(kind);
+    require(toolbarSettings.setLayout(kind, custom) && toolbarSettings.layout(kind) == custom &&
+                layout::normalizedLayout(custom, kind) == custom,
+            "storage and presentation must preserve hidden separators and stacked Select");
+    require(toolbarSettings.setLayout(kind, saved), "restore the annotation toolbar layout");
+    for (const auto& id : {selectSeparator, separator}) {
+        const auto restored = layout::stackItemInPosition(custom, kind, id, 0, 1);
+        require(
+            std::any_of(restored.positions.cbegin(), restored.positions.cend(),
+                        [&id](const QStringList& position) { return position == QStringList{id}; }),
+            "both separators must stay standalone when dropped onto a stack");
+    }
+    auto legacy = layout::normalizedLayout({});
+    legacy.positions.removeFirst();
+    legacy.positions.removeFirst();
+    const auto upgraded = layout::normalizedLayout(legacy);
+    require(upgraded == layout::normalizedLayout({}) &&
+                layout::normalizedLayout(upgraded) == upgraded,
+            "legacy layouts must gain the former fixed Select prefix exactly once");
+}
+
 void drawingHistoryActionsFollowStacksAndHiddenShortcuts() {
     namespace layout = snow_shot::presentation::toolbar_layout;
     ScreenshotToolPalette::Options options;
@@ -4340,6 +4469,120 @@ void recordingDrawingLayoutRendersConfiguredSeparator() {
             "hiding the shared separator must remove it from the recording drawing tools");
 }
 
+void screenshotResultActionsFollowCustomLayout() {
+    namespace layout = snow_shot::presentation::toolbar_layout;
+    using snow_shot::storage::ScreenshotToolbarLayout;
+    const auto kind = snow_shot::storage::ScreenshotToolbarLayoutKind::ActionTools;
+    const QString separator = QStringLiteral("separator");
+    const QString cancel = QStringLiteral("cancel");
+    const QString copy = QStringLiteral("copy");
+    const QString record = QStringLiteral("record-screen");
+    ScreenshotToolbarLayout custom{{{copy}, {separator}, {record}, {cancel}},
+                                   layout::defaultOrder(kind)};
+    for (const auto& id : {separator, cancel, copy, record}) {
+        custom.hidden.removeAll(id);
+    }
+    ScreenshotToolPalette::Options options;
+    options.showSelectTool = options.showShapeTool = options.showArrowTool = false;
+    options.showScreenRecordButton = true;
+    options.enableStyleToolbar = false;
+    options.actions = ScreenshotToolPalette::CancelAction | ScreenshotToolPalette::CopyAction;
+    options.actionToolsLayout = custom;
+    ScreenshotToolPalette palette(options);
+    palette.show();
+    QCoreApplication::processEvents();
+    const auto positions = [&]() {
+        QVector<QStringList> result;
+        for (auto* button : mainActionToolbarButtons(palette)) {
+            result.append(button->property("screenshotToolbarPositionItems").toStringList());
+        }
+        return result;
+    };
+    const auto dividerCount = [&]() {
+        int count = 0;
+        const auto* row = palette.mainPanel()->layout();
+        for (int index = 0; index < row->count(); ++index) {
+            count += qobject_cast<QFrame*>(row->itemAt(index)->widget()) != nullptr ? 1 : 0;
+        }
+        return count;
+    };
+    auto buttons = mainActionToolbarButtons(palette);
+    require(positions() == QVector<QStringList>{{copy}, {record}, {cancel}} &&
+                dividerCount() == 1 &&
+                hasSeparatorBetween(palette.mainPanel()->layout(), buttons.at(0), buttons.at(1)),
+            "Copy, Cancel, and the separator must follow their configured positions exactly");
+    require(buttons.at(0)->toolTip() == shortcutTooltip(QStringLiteral("Copy to clipboard"),
+                                                        {QStringLiteral("Ctrl+C")}) &&
+                buttons.at(2)->toolTip() ==
+                    shortcutTooltip(QStringLiteral("Cancel screenshot"), {QStringLiteral("Esc")}),
+            "relocated result buttons must retain shortcut tooltips");
+    int copies = 0;
+    int cancels = 0;
+    QObject::connect(&palette, &ScreenshotToolPalette::copyRequested, [&] { ++copies; });
+    QObject::connect(&palette, &ScreenshotToolPalette::cancelRequested, [&] { ++cancels; });
+    buttons.at(0)->click();
+    buttons.at(2)->click();
+    require(copies == 1 && cancels == 1, "relocated result buttons must dispatch once");
+
+    for (const auto& id : {separator, cancel, copy}) {
+        custom = layout::moveItemToHidden(custom, kind, id, 0);
+    }
+    palette.setActionToolsLayout(custom);
+    require(positions() == QVector<QStringList>{{record}} && dividerCount() == 0 &&
+                buttons.at(0)->isHidden() && buttons.at(2)->isHidden(),
+            "hiding result tools must remove their buttons and configurable divider");
+    require(palette.activateScreenshotShortcut(QStringLiteral("copy_to_clipboard")) &&
+                palette.activateScreenshotShortcut(QStringLiteral("cancel_screenshot")) &&
+                copies == 2 && cancels == 2 && positions() == QVector<QStringList>{{record}},
+            "hidden result shortcuts must dispatch without restoring toolbar positions");
+
+    custom = layout::stackItemInPosition(custom, kind, copy, 0, 1);
+    custom = layout::stackItemInPosition(custom, kind, cancel, 0, 2);
+    palette.setActionToolsLayout(custom);
+    auto* trigger = mainActionToolbarButtons(palette).constFirst();
+    require(positions() == QVector<QStringList>{{record, copy, cancel}} &&
+                trigger->accessibleName() == QStringLiteral("Cancel screenshot"),
+            "result actions must share arbitrary action stacks without duplicate fixed buttons");
+    materializeLazyPopover(trigger);
+    auto* popover = popoverForTrigger(trigger);
+    auto* copyOption = popoverButtonWithTooltip(popover, "Copy to clipboard");
+    auto* cancelOption = popoverButtonWithTooltip(popover, "Cancel screenshot");
+    require(copyOption != nullptr && cancelOption != nullptr,
+            "the action stack must expose both result commands");
+    copyOption->click();
+    require(copies == 3 && trigger->accessibleName() == QStringLiteral("Copy to clipboard"),
+            "selecting Copy must execute it and update the stack trigger");
+    trigger->click();
+    require(copies == 4, "the selected result stack entry must execute once");
+    require(palette.activateScreenshotShortcut(QStringLiteral("cancel_screenshot")) &&
+                cancels == 3 && trigger->accessibleName() == QStringLiteral("Cancel screenshot"),
+            "result shortcuts must select their command in a visible stack");
+    materializeLazyPopover(trigger);
+    cancelOption = popoverButtonWithTooltip(popover, "Cancel screenshot");
+    require(cancelOption != nullptr, "reopening the stack must restore Cancel");
+    cancelOption->click();
+    require(cancels == 4, "stacked Cancel must dispatch once");
+
+    const auto withSeparator = layout::stackItemInPosition(custom, kind, separator, 0, 1);
+    require(withSeparator.positions == QVector<QStringList>{{record, copy, cancel}, {separator}} &&
+                layout::normalizedLayout(withSeparator, kind) == withSeparator,
+            "dropping a separator onto an action stack must create a standalone position");
+    palette.setActionToolsLayout(withSeparator);
+    require(dividerCount() == 0, "a trailing separator must not leave a dangling divider");
+    options.actions = ScreenshotToolPalette::NoActions;
+    options.actionToolsLayout =
+        ScreenshotToolbarLayout{{{record}, {separator}, {cancel}, {copy}}, custom.hidden};
+    ScreenshotToolPalette unavailable(options);
+    require(mainActionToolbarButtons(unavailable).size() == 1 &&
+                unavailable.mainPanel()->layout()->count() == 1,
+            "unavailable result commands must not create buttons or dangling separators");
+
+    auto legacy = layout::normalizedLayout({}, kind);
+    legacy.positions.resize(legacy.positions.size() - 3);
+    require(layout::normalizedLayout(legacy, kind) == layout::normalizedLayout({}, kind),
+            "legacy action layouts must regain the former fixed result suffix exactly once");
+}
+
 void pinnedActionLayoutUsesGenericStacks() {
     namespace layout = snow_shot::presentation::toolbar_layout;
     using snow_shot::storage::ScreenshotToolbarLayout;
@@ -4370,8 +4613,12 @@ void pinnedActionLayoutUsesGenericStacks() {
     expected.positions.append({QStringLiteral("upload-to-cloud"), QStringLiteral("print"),
                                QStringLiteral("quick-save"), QStringLiteral("save-as-file")});
     expected.positions.append({QStringLiteral("copy")});
+    expected.positions.append({QStringLiteral("confirm-separator")});
+    expected.positions.append({QStringLiteral("confirm")});
     const auto buttonPositions = [](ScreenshotToolbarLayout value) {
-        value.positions.removeAll(QStringList{QStringLiteral("separator")});
+        value.positions.removeIf([](const QStringList& position) {
+            return std::any_of(position.cbegin(), position.cend(), layout::isSeparator);
+        });
         return value.positions;
     };
     options.actionToolsLayout = previous;
@@ -4460,8 +4707,8 @@ void pinnedActionLayoutUsesGenericStacks() {
             button->accessibleName() == QStringLiteral("Confirm edit"))
             button->click();
     }
-    require(saves == 0 && copies == 0 && confirms == 1,
-            "hiding all pinned tools must leave only the fixed Confirm control");
+    require(saves == 0 && copies == 0 && confirms == 0,
+            "hiding all pinned tools must also hide Confirm Edit");
     palette.setActionToolsLayout({});
     require(positions() == buttonPositions(layout::normalizedLayout({}, kind)),
             "pinned defaults must be restorable at runtime");
@@ -4527,6 +4774,143 @@ void pinnedActionLayoutUsesGenericStacks() {
     require(settingsStore.setLayout(kind, original), "restore the saved pinned toolbar layout");
     require(palette.activateScreenshotShortcut(QStringLiteral("copy_to_clipboard")) && copies == 4,
             "Copy shortcut must remain available after rearranging exports");
+}
+
+void pinnedConfirmAndSectionSeparatorsFollowCustomLayout() {
+    namespace layout = snow_shot::presentation::toolbar_layout;
+    using snow_shot::storage::ScreenshotToolbarLayout;
+    const auto kind = snow_shot::storage::ScreenshotToolbarLayoutKind::PinnedActionTools;
+    const QString confirm = QStringLiteral("confirm");
+    const QString copy = QStringLiteral("copy");
+    const snow_shot::storage::PinToScreenShortcutSettings shortcuts;
+    const auto originalShortcuts = shortcuts.shortcuts(QStringLiteral("drawing_mode"));
+    const auto restoreShortcuts = qScopeGuard([&] {
+        static_cast<void>(
+            shortcuts.setShortcuts(QStringLiteral("drawing_mode"), originalShortcuts));
+    });
+    require(shortcuts.setShortcuts(QStringLiteral("drawing_mode"), {QStringLiteral("Space")}),
+            "Confirm fixture must use the default drawing shortcut");
+    ScreenshotToolPalette::Options options;
+    options.showShapeTool = true;
+    options.showOcrTool = options.showTextTranslationTool = options.showSaveButton = true;
+    options.showDrawingModeShortcutOnConfirm = true;
+    options.separatorBeforeConfirm = true;
+    options.enableStyleToolbar = false;
+    options.actions = ScreenshotToolPalette::CopyAction | ScreenshotToolPalette::ConfirmAction;
+    options.actionToolsLayoutKind = kind;
+    auto drawingHidden = layout::defaultOrder();
+    drawingHidden.removeAll(QStringLiteral("shape"));
+    options.toolbarLayout = ScreenshotToolbarLayout{{{QStringLiteral("shape")}}, drawingHidden};
+    ScreenshotToolPalette palette(options);
+    palette.show();
+    QCoreApplication::processEvents();
+    const auto dividerCount = [&] {
+        int count = 0;
+        const auto* row = palette.mainPanel()->layout();
+        for (int index = 0; index < row->count(); ++index) {
+            if (qobject_cast<QFrame*>(row->itemAt(index)->widget()) != nullptr) {
+                ++count;
+            }
+        }
+        return count;
+    };
+    require(dividerCount() == 3,
+            "pinned defaults must retain the drawing, export, and Confirm dividers");
+    palette.setToolbarLayout({{}, layout::defaultOrder()});
+    require(dividerCount() == 2 && palette.mainPanel()->layout()->itemAt(0)->widget() ==
+                                       mainActionToolbarButtons(palette).first(),
+            "an operation-only toolbar must start with a tool and have no leading divider");
+    palette.setToolbarLayout(*options.toolbarLayout);
+    auto hidden = layout::defaultOrder(kind);
+    hidden.removeAll(confirm);
+    hidden.removeAll(copy);
+    ScreenshotToolbarLayout custom{{{confirm}, {copy}}, hidden};
+    palette.setActionToolsLayout(custom);
+    require(dividerCount() == 1 && mainActionToolbarButtons(palette).first()->property(
+                                       "screenshotToolbarItemId") == confirm,
+            "Confirm must move ahead of Copy while only the annotation boundary remains");
+    int confirms = 0;
+    int copies = 0;
+    QObject::connect(&palette, &ScreenshotToolPalette::confirmRequested, [&] { ++confirms; });
+    QObject::connect(&palette, &ScreenshotToolPalette::copyRequested, [&] { ++copies; });
+    mainActionToolbarButtons(palette).first()->click();
+    require(confirms == 1, "a moved Confirm button must dispatch once");
+
+    custom.positions = {{copy, confirm}};
+    palette.setActionToolsLayout(custom);
+    auto* trigger = mainActionToolbarButtons(palette).first();
+    require(trigger->toolTip() == QStringLiteral("Confirm edit (Space)") &&
+                adqt::icons::describeIcon(trigger->iconRef()).key.name == QStringLiteral("check"),
+            "a Confirm stack entry must keep its icon and drawing shortcut hint");
+    trigger->click();
+    require(confirms == 2, "a stacked Confirm trigger must dispatch once");
+    auto& theme = snow_shot::presentation::styles::ThemeManager::instance();
+    const auto originalMode = theme.themeMode();
+    theme.setThemeMode(snow_shot::presentation::styles::ThemeMode::Dark);
+    require(trigger->iconRef().colors().primarySlot() ==
+                snow_shot::presentation::styles::generateThemeColorScheme().map.colorPrimary,
+            "a stacked Confirm icon must follow theme changes");
+    theme.setThemeMode(originalMode);
+    materializeLazyPopover(trigger);
+    auto* popover = popoverForTrigger(trigger);
+    auto* confirmOption = popoverButtonWithTooltip(popover, "Confirm edit");
+    auto* copyOption = popoverButtonWithTooltip(popover, "Copy to clipboard");
+    require(confirmOption && copyOption &&
+                confirmOption->toolTip() == QStringLiteral("Confirm edit (Space)"),
+            "the stack must expose Confirm with its drawing shortcut hint");
+    copyOption->click();
+    require(
+        copies == 1 && trigger->property("screenshotToolbarItemId") == copy &&
+            trigger->property("snowShotPinToScreenShortcutTooltipActionId").toString().isEmpty(),
+        "switching from Confirm to Copy must clear the drawing shortcut binding");
+    // Selecting an option closes and releases the popup contents; inspect the next open.
+    materializeLazyPopover(trigger);
+    confirmOption = popoverButtonWithTooltip(popover, "Confirm edit");
+    require(confirmOption != nullptr, "reopening the stack must recreate the Confirm option");
+    require(shortcuts.setShortcuts(QStringLiteral("drawing_mode"), {QStringLiteral("Ctrl+Alt+E")}),
+            "Confirm shortcut must be configurable");
+    palette.refreshConfirmShortcutHint();
+    const QString hint =
+        shortcutTooltip(QStringLiteral("Confirm edit"), {QStringLiteral("Ctrl+Alt+E")});
+    require(confirmOption->toolTip() == hint,
+            qPrintable(QStringLiteral("stacked Confirm hint: expected '%1', got '%2'")
+                           .arg(hint, confirmOption->toolTip())));
+    require(trigger->accessibleName() == QStringLiteral("Copy to clipboard"),
+            "shortcut updates must preserve the Copy stack entry");
+    confirmOption->click();
+    require(confirms == 3 && trigger->toolTip() == hint,
+            "choosing Confirm from a stack must dispatch once and restore its shortcut hint");
+    const auto hiddenConfirm = layout::moveItemToHidden(custom, kind, confirm, 0);
+    palette.setActionToolsLayout(hiddenConfirm);
+    require(mainActionToolbarButtons(palette).size() == 1 && dividerCount() == 1 &&
+                mainActionToolbarButtons(palette).first()->property("screenshotToolbarItemId") ==
+                    copy,
+            "hiding Confirm must leave only the configured Copy action");
+    palette.setActionToolsLayout({});
+    require(dividerCount() == 3 && mainActionToolbarButtons(palette).last()->property(
+                                       "screenshotToolbarItemId") == confirm,
+            "restoring pinned defaults must restore Confirm and every section divider");
+    const snow_shot::storage::ScreenshotToolbarSettings settings;
+    const auto original = settings.layout(kind);
+    const auto restoreLayout =
+        qScopeGuard([&] { static_cast<void>(settings.setLayout(kind, original)); });
+    require(settings.setLayout(kind, hiddenConfirm) && settings.layout(kind) == hiddenConfirm,
+            "storage must preserve hidden Confirm and separator entries");
+    auto formerBoundaryLayout = custom;
+    formerBoundaryLayout.positions.prepend({QStringLiteral("drawing-separator")});
+    require(layout::normalizedLayout(formerBoundaryLayout, kind) == custom &&
+                settings.setLayout(kind, formerBoundaryLayout) && settings.layout(kind) == custom,
+            "presentation and storage must remove the former leading operation divider");
+    for (const QString& separator :
+         {QStringLiteral("separator"), QStringLiteral("confirm-separator")}) {
+        auto malformed = custom;
+        malformed.hidden.removeAll(separator);
+        malformed.positions = {{copy, separator, confirm}};
+        const auto split = layout::normalizedLayout(malformed, kind);
+        require(split.positions == QVector<QStringList>{{copy}, {separator}, {confirm}} &&
+                    settings.setLayout(kind, malformed) && settings.layout(kind) == split,
+                "both section dividers must split malformed stacks consistently in storage and UI");
+    }
 }
 
 void cloudUploadToolbarContracts() {
@@ -4731,7 +5115,7 @@ void configurableScreenshotActionLayoutSupportsStacksHidingAndRuntimeReplacement
         QStringLiteral("screenshotQrRecognitionButton"));
     auto* textTrigger = palette.findChild<adqt::widgets::AdButton*>(
         QStringLiteral("screenshotActionToolGroupButton2"));
-    require(actionButtons.size() == 4 && mixedTrigger == actionButtons.at(0) &&
+    require(actionButtons.size() == 6 && mixedTrigger == actionButtons.at(0) &&
                 barcodeButton == actionButtons.at(1) && textTrigger == actionButtons.at(2) &&
                 mixedTrigger->accessibleName() == QStringLiteral("Table recognition") &&
                 mixedTrigger->toolTip() == shortcutTooltip(QStringLiteral("Table recognition"),
@@ -4841,7 +5225,7 @@ void configurableScreenshotActionLayoutSupportsStacksHidingAndRuntimeReplacement
         QStringLiteral("screenshotQrRecognitionButton"));
     auto* directTable = palette.findChild<adqt::widgets::AdButton*>(
         QStringLiteral("screenshotTableRecognitionButton"));
-    require(mainActionToolbarButtons(palette).size() == 8 && directBarcode != nullptr &&
+    require(mainActionToolbarButtons(palette).size() == 10 && directBarcode != nullptr &&
                 directTable != nullptr && popoverForTrigger(directBarcode) == nullptr &&
                 popoverForTrigger(directTable) == nullptr &&
                 directBarcode->toolTip().startsWith(QStringLiteral("Barcode recognition")) &&
@@ -4900,10 +5284,10 @@ void configurableScreenshotActionLayoutSupportsStacksHidingAndRuntimeReplacement
     auto* redo =
         hiddenPalette.findChild<adqt::widgets::AdButton*>(QStringLiteral("screenshotRedoButton"));
     QWidget* cancel = controlWithTooltip(hiddenPalette, "Cancel screenshot");
-    require(mainActionToolbarButtons(hiddenPalette).isEmpty() && redo != nullptr &&
+    require(mainActionToolbarButtons(hiddenPalette).size() == 2 && redo != nullptr &&
                 cancel != nullptr &&
                 hasSeparatorBetween(hiddenPalette.mainPanel()->layout(), redo, cancel),
-            "all-hidden action layouts must retain drawing, history, and separated fixed results");
+            "legacy hidden action layouts must retain drawing, history, and separated results");
 
     const auto originalPersistedLayout = snow_shot::storage::ScreenshotToolbarSettings().layout(
         snow_shot::storage::ScreenshotToolbarLayoutKind::ActionTools);
@@ -4912,7 +5296,7 @@ void configurableScreenshotActionLayoutSupportsStacksHidingAndRuntimeReplacement
                 snow_shot::storage::ScreenshotToolbarLayout{{}, allActionIds}),
             "the scenario boundary fixture must persist an all-hidden screenshot layout");
     ScreenshotToolPalette unaffectedPalette(options);
-    require(mainActionToolbarButtons(unaffectedPalette).size() == 4,
+    require(mainActionToolbarButtons(unaffectedPalette).size() == 6,
             "a generic palette owner must use only its supplied layout, not screenshot storage");
     require(
         snow_shot::storage::ScreenshotToolbarSettings().setLayout(
@@ -4967,6 +5351,8 @@ void confirmActionRemainsSeparatedAndCallableForPinnedEditing() {
     options.separatorAfterSelect = true;
     options.separatorBeforeConfirm = true;
     options.enableStyleToolbar = false;
+    options.actionToolsLayoutKind =
+        snow_shot::storage::ScreenshotToolbarLayoutKind::PinnedActionTools;
     options.actions = ScreenshotToolPalette::CopyAction | ScreenshotToolPalette::ConfirmAction;
 
     ScreenshotToolPalette palette(options);
@@ -14659,6 +15045,7 @@ int main(int argc, char** argv) {
         drawingModeSelectionsSurviveToolbarReentry();
         drawingGroupClicksActivateOnceAfterPointerReentry();
         configurableToolbarLayoutSupportsArbitraryPopoverGroups();
+        selectToolAndBothSeparatorsFollowCustomLayout();
         drawingHistoryActionsFollowStacksAndHiddenShortcuts();
         recordingDrawingLayoutRendersConfiguredSeparator();
         arrowAndLineUseConfiguredPopoverGroup();
@@ -14680,8 +15067,18 @@ int main(int argc, char** argv) {
         snow_shot::storage::ApplicationStorage::instance().shutdown();
         return 0;
     }
+    if (application.arguments().contains(QStringLiteral("--screenshot-result-layout-only"))) {
+        screenshotResultActionsFollowCustomLayout();
+        screenshotToolbarUsesCanonicalOrderAndSectionSeparators();
+        sharedToolbarLayoutModelOperationsAreDeterministic();
+        configurableScreenshotActionLayoutSupportsStacksHidingAndRuntimeReplacement();
+        snow_shot::storage::ApplicationStorage::instance().shutdown();
+        return 0;
+    }
     if (application.arguments().contains(QStringLiteral("--action-toolbar-layout-only"))) {
+        screenshotResultActionsFollowCustomLayout();
         pinnedActionLayoutUsesGenericStacks();
+        pinnedConfirmAndSectionSeparatorsFollowCustomLayout();
         screenshotToolbarUsesCanonicalOrderAndSectionSeparators();
         toolbarStacksFollowConfiguredBottomToTopOrder();
         actionStacksKeepEnabledAlternativesReachable();
@@ -14731,6 +15128,7 @@ int main(int argc, char** argv) {
     scrollingSelectionButtonsDragAndLockAxis();
     scrollingSettingsUseCenteredFormAndPersistOnAccept();
     scrollingScreenshotExposesAxisRecognitionModes();
+    screenshotResultActionsFollowCustomLayout();
     screenshotToolbarUsesCanonicalOrderAndSectionSeparators();
     moveToolPresentationUsesTheOwningShortcutScope();
     groupedToolbarHoverSwitchesWithVisibleTooltips();
@@ -14738,6 +15136,7 @@ int main(int argc, char** argv) {
     groupedActionOptionsShowShortcutTooltips();
     screenshotActionTooltipsFollowStorageChangesWithoutRetranslation();
     configurableToolbarLayoutSupportsArbitraryPopoverGroups();
+    selectToolAndBothSeparatorsFollowCustomLayout();
     drawingHistoryActionsFollowStacksAndHiddenShortcuts();
     recordingDrawingLayoutRendersConfiguredSeparator();
     ocrControlReflectsLoadingState();

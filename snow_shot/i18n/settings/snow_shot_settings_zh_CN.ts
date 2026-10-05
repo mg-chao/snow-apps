@@ -496,6 +496,10 @@
             <translation>重做</translation>
         </message>
         <message>
+            <source>Select elements</source>
+            <translation>选择元素</translation>
+        </message>
+        <message>
             <source>Separator Component</source>
             <translation>分隔组件</translation>
         </message>
@@ -782,6 +786,10 @@
     <context>
         <name>PinnedToolbarEditorSettingsWidget</name>
         <message>
+            <source>Confirm edit</source>
+            <translation>确认编辑</translation>
+        </message>
+        <message>
             <source>Copy to clipboard</source>
             <translation>复制到剪贴板</translation>
         </message>
@@ -790,8 +798,8 @@
             <translation>将工具拖到此处，即可在固定到屏幕工具栏中隐藏。</translation>
         </message>
         <message>
-            <source>Drop beside a tool to create a position. Drop above a tool to stack it. The bottom tool stays on the main toolbar row.</source>
-            <translation>拖放到工具旁边以创建新位置，拖放到工具上方以堆叠。底部工具将显示在主工具栏行中。</translation>
+            <source>Drop beside a tool to create a position. Drop above a tool to stack it. The bottom tool stays on the main toolbar row. Separator Component occupies its own position.</source>
+            <translation>将工具拖到旁边以创建位置，拖到上方以堆叠。最下方的工具显示在主工具栏中。分隔组件单独占据一个位置。</translation>
         </message>
         <message>
             <source>Hidden pinned toolbar tools</source>
@@ -858,6 +866,10 @@
         <message>
             <source>Barcode recognition</source>
             <translation>条码识别</translation>
+        </message>
+        <message>
+            <source>Cancel screenshot</source>
+            <translation>取消截图</translation>
         </message>
         <message>
             <source>Convert to HTML</source>
@@ -1056,6 +1068,10 @@
         <message>
             <source>Accuracy First</source>
             <translation>准确优先</translation>
+        </message>
+        <message>
+            <source>Action Toolbar</source>
+            <translation>操作工具栏</translation>
         </message>
         <message>
             <source>Active window</source>
@@ -1832,6 +1848,10 @@
         <message>
             <source>Customize the pinned window toolbar</source>
             <translation>自定义贴图窗口工具栏</translation>
+        </message>
+        <message>
+            <source>Customize the screenshot action toolbar</source>
+            <translation>自定义截图操作工具栏</translation>
         </message>
         <message>
             <source>DXGI</source>

@@ -496,6 +496,10 @@
             <translation>Redo</translation>
         </message>
         <message>
+            <source>Select elements</source>
+            <translation>Select elements</translation>
+        </message>
+        <message>
             <source>Separator Component</source>
             <translation>Separator Component</translation>
         </message>
@@ -782,6 +786,10 @@
     <context>
         <name>PinnedToolbarEditorSettingsWidget</name>
         <message>
+            <source>Confirm edit</source>
+            <translation>Confirm edit</translation>
+        </message>
+        <message>
             <source>Copy to clipboard</source>
             <translation>Copy to clipboard</translation>
         </message>
@@ -790,8 +798,8 @@
             <translation>Drag tools here to hide them from the pinned toolbar.</translation>
         </message>
         <message>
-            <source>Drop beside a tool to create a position. Drop above a tool to stack it. The bottom tool stays on the main toolbar row.</source>
-            <translation>Drop beside a tool to create a position. Drop above a tool to stack it. The bottom tool stays on the main toolbar row.</translation>
+            <source>Drop beside a tool to create a position. Drop above a tool to stack it. The bottom tool stays on the main toolbar row. Separator Component occupies its own position.</source>
+            <translation>Drop beside a tool to create a position. Drop above a tool to stack it. The bottom tool stays on the main toolbar row. Separator Component occupies its own position.</translation>
         </message>
         <message>
             <source>Hidden pinned toolbar tools</source>
@@ -858,6 +866,10 @@
         <message>
             <source>Barcode recognition</source>
             <translation>Barcode recognition</translation>
+        </message>
+        <message>
+            <source>Cancel screenshot</source>
+            <translation>Cancel screenshot</translation>
         </message>
         <message>
             <source>Convert to HTML</source>
@@ -1056,6 +1068,10 @@
         <message>
             <source>Accuracy First</source>
             <translation>Accuracy First</translation>
+        </message>
+        <message>
+            <source>Action Toolbar</source>
+            <translation>Action Toolbar</translation>
         </message>
         <message>
             <source>Active window</source>
@@ -1832,6 +1848,10 @@
         <message>
             <source>Customize the pinned window toolbar</source>
             <translation>Customize the pinned window toolbar</translation>
+        </message>
+        <message>
+            <source>Customize the screenshot action toolbar</source>
+            <translation>Customize the screenshot action toolbar</translation>
         </message>
         <message>
             <source>DXGI</source>

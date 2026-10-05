@@ -70,7 +70,8 @@ template <typename T>
 concept HasCredentialPreservation = requires(T& result, const QMap<QString, QJsonValue>& snapshot) {
     result.preserveOmittedCredentials(snapshot);
 };
-static_assert(!HasCredentialPreservation<storage::ConfigurationArchiveReadResult>);
+// Mini retains cloud upload, including credential preservation during archive imports.
+static_assert(HasCredentialPreservation<storage::ConfigurationArchiveReadResult>);
 static_assert(!HasApiModelConfiguration<settings::SettingsBackend>);
 static_assert(!HasApiModelConfiguration<settings::SettingsRuntimeSession>);
 static_assert(!HasTranslationConfiguration<settings::SettingsBackend>);
@@ -239,8 +240,14 @@ void recognitionOptInResets(settings::BuiltInSettingsBackend& backend) {
             backend.applyToolbarLayout(kind, enabled) &&
                 !backend.toolbarLayout(kind).hidden.contains(QStringLiteral("text-recognition")),
             "Mini toolbar OCR can be explicitly enabled");
+        if (kind == storage::ScreenshotToolbarLayoutKind::ActionTools) {
+            require(
+                backend.resetSection(settings::SettingsSectionReset::ScreenshotInterfaceSettings) &&
+                    backend.toolbarLayout(kind) == enabled,
+                "Mini capture interface reset must preserve the custom action toolbar");
+        }
         const auto reset = kind == storage::ScreenshotToolbarLayoutKind::ActionTools
-                               ? settings::SettingsSectionReset::ScreenshotInterfaceSettings
+                               ? settings::SettingsSectionReset::ScreenshotActionToolbar
                                : settings::SettingsSectionReset::PinToScreenToolbar;
         require(backend.resetSection(reset) &&
                     backend.toolbarLayout(kind).hidden.contains(QStringLiteral("text-recognition")),

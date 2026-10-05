@@ -740,6 +740,39 @@ void relatedSettingsLayoutAndKeyboard(const settings::SettingsRegistry& registry
     drainEvents();
 }
 
+void screenshotActionToolbarSettings(const settings::SettingsRegistry& registry,
+                                     settings::SettingsRuntimeSession& session) {
+    SettingsPageWidget page(registry, QStringLiteral("screenshots"), session);
+    page.resize(880, 760);
+    page.show();
+    const QString sectionId = QStringLiteral("screenshot-action-toolbar");
+    const QString editorId = QStringLiteral("interface.screenshot.screenshot-toolbar-editor");
+    page.reveal({page.pageId(), sectionId, editorId});
+    drainEvents();
+    auto* editor = page.findChild<QWidget*>(
+        settings::generatedObjectName(QStringLiteral("settings-item"), editorId));
+    require(editor != nullptr && editor->isVisible(),
+            "screenshot toolbar navigation reveals its editor in Action Toolbar");
+    auto* header = page.findChild<SectionHeaderWidget*>(settings::generatedObjectName(
+        QStringLiteral("settings-section"), QStringLiteral("%1-%2").arg(page.pageId(), sectionId)));
+    require(header != nullptr, "screenshot action toolbar has a separate category header");
+    auto& language = snow_shot::presentation::LanguageManager::instance();
+    for (const QString& locale :
+         {QStringLiteral("en_US"), QStringLiteral("zh_CN"), QStringLiteral("zh_TW")}) {
+        require(language.setLanguage(locale), "switch screenshot toolbar settings language");
+        drainEvents();
+        const QString title = locale == u"en_US"   ? QStringLiteral("Action Toolbar")
+                              : locale == u"zh_CN" ? QString::fromUtf8("操作工具栏")
+                                                   : QString::fromUtf8("操作工具列");
+        bool hasTitle = false;
+        for (auto* label : header->findChildren<QLabel*>())
+            hasTitle = hasTitle || label->text() == title;
+        require(hasTitle, "screenshot Action Toolbar retranslates in every supported language");
+    }
+    require(language.setLanguage(QStringLiteral("en_US")), "restore English screenshot settings");
+    drainEvents();
+}
+
 void pinnedSettingsGroups(const settings::SettingsRegistry& registry,
                           settings::SettingsRuntimeSession& session) {
     SettingsPageWidget page(registry, QStringLiteral("pinned-windows"), session);
@@ -762,12 +795,12 @@ void pinnedSettingsGroups(const settings::SettingsRegistry& registry,
         const QStringList titles =
             locale == u"en_US"
                 ? QStringList{QStringLiteral("Interaction"), QStringLiteral("Window interface"),
-                              QStringLiteral("Annotation toolbar")}
+                              QStringLiteral("Action Toolbar")}
             : locale == u"zh_CN"
                 ? QStringList{QString::fromUtf8("操作方式"), QString::fromUtf8("窗口界面"),
-                              QString::fromUtf8("标注工具栏")}
+                              QString::fromUtf8("操作工具栏")}
                 : QStringList{QString::fromUtf8("操作方式"), QString::fromUtf8("視窗介面"),
-                              QString::fromUtf8("標註工具列")};
+                              QString::fromUtf8("操作工具列")};
         const auto& sections = registry.catalog().page(page.pageId())->sections;
         for (qsizetype index = 0; index < sections.size(); ++index) {
             auto* header = page.findChild<SectionHeaderWidget*>(settings::generatedObjectName(
@@ -820,7 +853,7 @@ void pinnedSettingsGroups(const settings::SettingsRegistry& registry,
                 configuration.value(border) == color &&
                 configuration.value(activeBorder) == color &&
                 configuration.value(action).toString() == u"close",
-            "annotation toolbar reset restores its layout and preserves borders and interaction");
+            "action toolbar reset restores its layout and preserves borders and interaction");
     require(configuration.setValues(previous), "restore pinned preferences after reset checks");
     session.refreshAll();
 }
@@ -939,6 +972,12 @@ int main(int argc, char** argv) {
     settings::BuiltInSettingsBackend backend(shortcuts);
     const auto registry = settings::buildBuiltInSettingsRegistry();
     settings::SettingsRuntimeSession session(registry, backend);
+    if (application.arguments().contains(QStringLiteral("--action-toolbar-settings-only"))) {
+        screenshotActionToolbarSettings(registry, session);
+        pinnedSettingsGroups(registry, session);
+        storage.shutdown();
+        return 0;
+    }
     if (application.arguments().contains(QStringLiteral("--navigation-only"))) {
         relatedSettingsLayoutAndKeyboard(registry, session);
         reorganizedSettingsPreserveIndependentState(registry, session);

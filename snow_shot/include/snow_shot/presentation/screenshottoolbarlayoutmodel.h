@@ -43,6 +43,7 @@ template <typename IsAvailable>
 }
 
 enum class Item {
+    Select,
     Shape,
     Arrow,
     Line,
@@ -59,6 +60,7 @@ enum class Item {
 enum class Icon {
     Screenshot,
     ScreenshotDelay,
+    Select,
     Shape,
     Arrow,
     Line,
@@ -84,7 +86,9 @@ enum class Icon {
     SaveAsFile,
     UploadToCloud,
     QuickSave,
+    Cancel,
     Copy,
+    Confirm,
     Latex,
     Markdown,
     Html,
@@ -106,6 +110,8 @@ struct EditorDescriptor {
 
 [[nodiscard]] inline const QVector<Descriptor>& descriptors() {
     static const QVector<Descriptor> value{
+        {Item::Select, "select",
+         QT_TRANSLATE_NOOP("DrawingToolbarEditorSettingsWidget", "Select elements"), Icon::Select},
         {Item::Shape, "shape", QT_TRANSLATE_NOOP("DrawingToolbarEditorSettingsWidget", "Shape"),
          Icon::Shape},
         {Item::Arrow, "arrow", QT_TRANSLATE_NOOP("DrawingToolbarEditorSettingsWidget", "Arrow"),
@@ -158,6 +164,7 @@ struct EditorDescriptor {
         result.push_back(QString::fromLatin1(candidate.id));
     }
     result.append({QStringLiteral("separator"), QStringLiteral("undo"), QStringLiteral("redo")});
+    result.insert(1, QStringLiteral("select-separator"));
     return result;
 }
 
@@ -209,6 +216,11 @@ struct EditorDescriptor {
             {"copy", "PinnedToolbarEditorSettingsWidget",
              QT_TRANSLATE_NOOP("PinnedToolbarEditorSettingsWidget", "Copy to clipboard"),
              Icon::Copy},
+            {"confirm", "PinnedToolbarEditorSettingsWidget",
+             QT_TRANSLATE_NOOP("PinnedToolbarEditorSettingsWidget", "Confirm edit"), Icon::Confirm},
+            {"cancel", "ScreenshotToolbarEditorSettingsWidget",
+             QT_TRANSLATE_NOOP("ScreenshotToolbarEditorSettingsWidget", "Cancel screenshot"),
+             Icon::Cancel},
         };
         result.removeIf([](const EditorDescriptor& descriptor) {
             return !editionActionToolAvailable(QString::fromLatin1(descriptor.id));
@@ -221,10 +233,16 @@ struct EditorDescriptor {
 [[nodiscard]] inline const QVector<EditorDescriptor>& drawingEditorDescriptors() {
     static const QVector<EditorDescriptor> value = [] {
         QVector<EditorDescriptor> result;
-        result.reserve(descriptors().size() + 3);
+        result.reserve(descriptors().size() + 4);
         for (const Descriptor& descriptor : descriptors()) {
             result.push_back({descriptor.id, "DrawingToolbarEditorSettingsWidget", descriptor.label,
                               descriptor.icon});
+            if (descriptor.item == Item::Select) {
+                result.push_back(
+                    {"select-separator", "DrawingToolbarEditorSettingsWidget",
+                     QT_TRANSLATE_NOOP("DrawingToolbarEditorSettingsWidget", "Separator Component"),
+                     Icon::Separator});
+            }
         }
         result.push_back(
             {"separator", "DrawingToolbarEditorSettingsWidget",
@@ -280,10 +298,15 @@ editorDescriptors(storage::ScreenshotToolbarLayoutKind kind) {
                 id == QStringLiteral("text-recognition") ||
                 id == QStringLiteral("text-translation") || id == QStringLiteral("save-as-file") ||
                 id == QStringLiteral("quick-save") || id == QStringLiteral("upload-to-cloud") ||
-                id == QStringLiteral("print") || id == QStringLiteral("copy")) {
+                id == QStringLiteral("print") || id == QStringLiteral("copy") ||
+                id == QStringLiteral("confirm")) {
                 result.push_back(descriptor);
             }
         }
+        result.push_back(
+            {"confirm-separator", "DrawingToolbarEditorSettingsWidget",
+             QT_TRANSLATE_NOOP("DrawingToolbarEditorSettingsWidget", "Separator Component"),
+             Icon::Separator});
         result.push_back(
             {"separator", "DrawingToolbarEditorSettingsWidget",
              QT_TRANSLATE_NOOP("DrawingToolbarEditorSettingsWidget", "Separator Component"),
@@ -293,8 +316,12 @@ editorDescriptors(storage::ScreenshotToolbarLayoutKind kind) {
     if (kind == storage::ScreenshotToolbarLayoutKind::ActionTools) {
         auto result = actionDescriptors();
         result.removeIf([](const EditorDescriptor& descriptor) {
-            return QLatin1String(descriptor.id) == QLatin1String("copy");
+            return QLatin1String(descriptor.id) == QLatin1String("confirm");
         });
+        result.push_back(
+            {"separator", "DrawingToolbarEditorSettingsWidget",
+             QT_TRANSLATE_NOOP("DrawingToolbarEditorSettingsWidget", "Separator Component"),
+             Icon::Separator});
         return result;
     }
     return drawingEditorDescriptors();
@@ -311,6 +338,7 @@ editorDescriptors(storage::ScreenshotToolbarLayoutKind kind) {
 
 [[nodiscard]] inline QVector<QStringList> defaultPositions() {
     return {
+        {QStringLiteral("select")},    {QStringLiteral("select-separator")},
         {QStringLiteral("shape")},     {QStringLiteral("line"), QStringLiteral("arrow")},
         {QStringLiteral("free-draw")}, {QStringLiteral("spotlight"), QStringLiteral("highlighter")},
         {QStringLiteral("text")},      {QStringLiteral("serial-number")},
@@ -343,6 +371,9 @@ editorDescriptors(storage::ScreenshotToolbarLayoutKind kind) {
         {QStringLiteral("scrolling-screenshot")},
         {QStringLiteral("upload-to-cloud"), QStringLiteral("print"), QStringLiteral("quick-save"),
          QStringLiteral("save-as-file")},
+        {QStringLiteral("separator")},
+        {QStringLiteral("cancel")},
+        {QStringLiteral("copy")},
     });
 }
 
@@ -361,6 +392,8 @@ defaultPositions(storage::ScreenshotToolbarLayoutKind kind) {
             {QStringLiteral("upload-to-cloud"), QStringLiteral("print"),
              QStringLiteral("quick-save"), QStringLiteral("save-as-file")},
             {QStringLiteral("copy")},
+            {QStringLiteral("confirm-separator")},
+            {QStringLiteral("confirm")},
         });
     }
     return kind == storage::ScreenshotToolbarLayoutKind::ActionTools ? actionDefaultPositions()
@@ -377,6 +410,11 @@ defaultPositions(storage::ScreenshotToolbarLayoutKind kind) {
     return result;
 }
 
+[[nodiscard]] inline bool isSeparator(const QString& itemId) {
+    return itemId == QStringLiteral("separator") || itemId == QStringLiteral("select-separator") ||
+           itemId == QStringLiteral("confirm-separator");
+}
+
 [[nodiscard]] inline storage::ScreenshotToolbarLayout
 normalizedLayout(const storage::ScreenshotToolbarLayout& input, const QStringList& defaults,
                  const QVector<QStringList>& defaultLayout, bool migrateScreenshotLayout = false,
@@ -388,7 +426,7 @@ normalizedLayout(const storage::ScreenshotToolbarLayout& input, const QStringLis
         QStringList position;
         for (const QString& itemId : inputPosition) {
             if (known.contains(itemId) && !positioned.contains(itemId)) {
-                if (itemId == QStringLiteral("separator")) {
+                if (isSeparator(itemId)) {
                     if (!position.isEmpty()) {
                         result.positions.push_back(position);
                         position.clear();
@@ -476,18 +514,31 @@ normalizedLayout(const storage::ScreenshotToolbarLayout& input, const QStringLis
     if (migrateScreenshotLayout && !result.positions.isEmpty() &&
         known.contains(QStringLiteral("convert-to-markdown"))) {
         // Upgrade earlier defaults without changing custom placements.
-        auto previousDefault = defaultLayout;
+        auto previousScreenshotDefault = defaultLayout;
+        if (known.contains(QStringLiteral("cancel"))) {
+            previousScreenshotDefault.removeIf([](const QStringList& position) {
+                return position == QStringList{QStringLiteral("separator")} ||
+                       position == QStringList{QStringLiteral("cancel")} ||
+                       position == QStringList{QStringLiteral("copy")};
+            });
+        }
+        auto previousDefault = previousScreenshotDefault;
         previousDefault[0] = {QStringLiteral("barcode-recognition"),
                               QStringLiteral("table-recognition")};
         previousDefault.insert(1, QStringList{QStringLiteral("convert-to-markdown")});
         previousDefault.insert(2, QStringList{QStringLiteral("convert-to-html")});
-        auto previousGroupedDefault = defaultLayout;
+        auto previousGroupedDefault = previousScreenshotDefault;
         previousGroupedDefault[0] = {
             QStringLiteral("table-recognition"), QStringLiteral("barcode-recognition"),
             QStringLiteral("convert-to-markdown"), QStringLiteral("convert-to-html")};
         if (result.hidden.isEmpty() &&
             (result.positions == previousDefault || result.positions == previousGroupedDefault)) {
             result.positions = defaultLayout;
+            for (const QStringList& position : defaultLayout) {
+                for (const QString& itemId : position) {
+                    positioned.insert(itemId);
+                }
+            }
         }
         qsizetype recognitionPosition = -1;
         for (const QString& anchor :
@@ -542,6 +593,13 @@ normalizedLayout(const storage::ScreenshotToolbarLayout& input, const QStringLis
             hidden.contains(QStringLiteral("convert-to-markdown"))) {
             result.hidden.push_back(QStringLiteral("latex-recognition"));
             hidden.insert(QStringLiteral("latex-recognition"));
+        }
+    }
+    // These controls used to be fixed ahead of the configurable drawing positions.
+    for (const QString& itemId : {QStringLiteral("select-separator"), QStringLiteral("select")}) {
+        if (known.contains(itemId) && !positioned.contains(itemId) && !hidden.contains(itemId)) {
+            result.positions.prepend({itemId});
+            positioned.insert(itemId);
         }
     }
     for (const QStringList& defaultPosition : defaultLayout) {
@@ -639,9 +697,9 @@ stackItemInPosition(const storage::ScreenshotToolbarLayout& input,
                     storage::ScreenshotToolbarLayoutKind kind, const QString& itemId,
                     int targetPositionIndex, int targetItemIndex) {
     storage::ScreenshotToolbarLayout result = normalizedLayout(input, kind);
-    if (kind == storage::ScreenshotToolbarLayoutKind::DrawingTools &&
-        (itemId == QStringLiteral("separator") ||
-         result.positions.value(targetPositionIndex).contains(QStringLiteral("separator")))) {
+    const QStringList targetPosition = result.positions.value(targetPositionIndex);
+    if (isSeparator(itemId) ||
+        std::any_of(targetPosition.cbegin(), targetPosition.cend(), isSeparator)) {
         return moveItemToPosition(result, kind, itemId,
                                   targetPositionIndex + (targetItemIndex > 0 ? 1 : 0));
     }
@@ -712,6 +770,8 @@ moveItemToHidden(const storage::ScreenshotToolbarLayout& input,
         return snow_shot::presentation::icons::custom::twotone::ScreenshotFeature();
     case Icon::ScreenshotDelay:
         return custom::ScreenshotDelay();
+    case Icon::Select:
+        return custom::ToolSelect();
     case Icon::Shape:
         return custom::ToolRectangle();
     case Icon::Arrow:
@@ -764,6 +824,10 @@ moveItemToHidden(const storage::ScreenshotToolbarLayout& input,
         return custom::QuickSave();
     case Icon::Copy:
         return adqt::icons::antd::outlined::Copy();
+    case Icon::Confirm:
+        return adqt::icons::antd::outlined::Check();
+    case Icon::Cancel:
+        return adqt::icons::antd::outlined::Close();
     case Icon::Print:
         return adqt::icons::antd::outlined::Printer();
     case Icon::UploadToCloud:

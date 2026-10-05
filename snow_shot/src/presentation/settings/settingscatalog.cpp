@@ -2895,8 +2895,15 @@ QVector<SettingsPageDefinition> builtInPages() {
                          QStringLiteral("screenshot_ui/color_picker_center_guide_line_color"),
                          SettingsColorBinding::ColorPickerCenterGuideLineColor),
                      showEditSelectionToolbarItem(),
-                     screenshotToolbarEditorItem(),
                  },
+             },
+             {
+                 QStringLiteral("screenshot-action-toolbar"),
+                 settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Action Toolbar")),
+                 settingsText(QT_TRANSLATE_NOOP("SettingsCatalog",
+                                                "Customize the screenshot action toolbar")),
+                 SettingsSectionReset::ScreenshotActionToolbar,
+                 {screenshotToolbarEditorItem()},
              },
              {
                  QStringLiteral("drawing-settings"),
@@ -2970,7 +2977,7 @@ QVector<SettingsPageDefinition> builtInPages() {
              },
              {
                  QStringLiteral("pin-to-screen-toolbar"),
-                 settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Annotation toolbar")),
+                 settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Action Toolbar")),
                  settingsText(
                      QT_TRANSLATE_NOOP("SettingsCatalog", "Customize the pinned window toolbar")),
                  SettingsSectionReset::PinToScreenToolbar,
