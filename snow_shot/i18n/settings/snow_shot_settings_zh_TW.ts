@@ -1051,6 +1051,14 @@
             <translation>箭頭</translation>
         </message>
         <message>
+            <source>Ask for confirmation before closing a pinned window.</source>
+            <translation>關閉固定到螢幕視窗前要求確認。</translation>
+        </message>
+        <message>
+            <source>Ask for confirmation before permanently destroying a pinned window.</source>
+            <translation>永久銷毀固定到螢幕視窗前要求確認。</translation>
+        </message>
+        <message>
             <source>Ask for confirmation when using the Cancel screenshot shortcut.</source>
             <translation>使用「取消截圖」快速鍵時要求確認。</translation>
         </message>
@@ -1525,6 +1533,14 @@
         <message>
             <source>Configure the screenshot, pinned, and recording toolbars</source>
             <translation>設定截圖、固定到螢幕與螢幕錄製工具列</translation>
+        </message>
+        <message>
+            <source>Confirm before closing window</source>
+            <translation>關閉視窗前確認</translation>
+        </message>
+        <message>
+            <source>Confirm before destroying window</source>
+            <translation>銷毀視窗前確認</translation>
         </message>
         <message>
             <source>Confirm before exiting screenshot via shortcut</source>

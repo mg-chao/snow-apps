@@ -842,6 +842,10 @@ bool BuiltInSettingsBackend::switchValue(SettingsSwitchBinding binding) const {
         return storage::PinToScreenSettings().autoResizeWindow();
     case SettingsSwitchBinding::PinShowWindowButtons:
         return storage::PinToScreenSettings().showWindowButtons();
+    case SettingsSwitchBinding::PinConfirmBeforeClosingWindow:
+        return storage::PinToScreenSettings().confirmBeforeClosingWindow();
+    case SettingsSwitchBinding::PinConfirmBeforeDestroyingWindow:
+        return storage::PinToScreenSettings().confirmBeforeDestroyingWindow();
     case SettingsSwitchBinding::StandaloneTranslationWindow:
 #if SNOW_SHOT_ENABLE_EXTENDED_FEATURES
         return storage::ExtendedFeaturesSettings().standaloneTranslationWindow();
@@ -1057,6 +1061,12 @@ bool BuiltInSettingsBackend::applySwitchValue(SettingsSwitchBinding binding, boo
     if (binding == SettingsSwitchBinding::PinShowWindowButtons) {
         return storage::PinToScreenSettings().setShowWindowButtons(value);
     }
+    if (binding == SettingsSwitchBinding::PinConfirmBeforeClosingWindow) {
+        return storage::PinToScreenSettings().setConfirmBeforeClosingWindow(value);
+    }
+    if (binding == SettingsSwitchBinding::PinConfirmBeforeDestroyingWindow) {
+        return storage::PinToScreenSettings().setConfirmBeforeDestroyingWindow(value);
+    }
     if (binding == SettingsSwitchBinding::StandaloneTranslationWindow) {
 #if SNOW_SHOT_ENABLE_EXTENDED_FEATURES
         return switchEnabled(binding) &&
@@ -1169,6 +1179,8 @@ bool BuiltInSettingsBackend::applySwitchValue(SettingsSwitchBinding binding, boo
     case SettingsSwitchBinding::PinAutomaticTextRecognition:
     case SettingsSwitchBinding::PinAutoResizeWindow:
     case SettingsSwitchBinding::PinShowWindowButtons:
+    case SettingsSwitchBinding::PinConfirmBeforeClosingWindow:
+    case SettingsSwitchBinding::PinConfirmBeforeDestroyingWindow:
     case SettingsSwitchBinding::TranslationPageEnabled:
     case SettingsSwitchBinding::JumpToTranslationPage:
     case SettingsSwitchBinding::StandaloneTranslationWindow:
@@ -2363,6 +2375,12 @@ bool BuiltInSettingsBackend::resetSection(SettingsSectionReset reset) {
         });
     case SettingsSectionReset::PinToScreenBehavior:
         return storage::ApplicationStorage::instance().configuration().setValues({
+            {QStringLiteral("pin_to_screen/confirm_before_closing_window"),
+             storage::ConfigurationSchema::defaultValue(
+                 QStringLiteral("pin_to_screen/confirm_before_closing_window"))},
+            {QStringLiteral("pin_to_screen/confirm_before_destroying_window"),
+             storage::ConfigurationSchema::defaultValue(
+                 QStringLiteral("pin_to_screen/confirm_before_destroying_window"))},
             {QStringLiteral("pin_to_screen/show_window_buttons"),
              storage::ConfigurationSchema::defaultValue(
                  QStringLiteral("pin_to_screen/show_window_buttons"))},

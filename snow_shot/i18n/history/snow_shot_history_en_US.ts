@@ -463,6 +463,14 @@
             <translation>Close other windows</translation>
         </message>
         <message>
+            <source>Close pinned window</source>
+            <translation>Close pinned window</translation>
+        </message>
+        <message>
+            <source>Close this pinned window?</source>
+            <translation>Close this pinned window?</translation>
+        </message>
+        <message>
             <source>Copy original content</source>
             <translation>Copy original content</translation>
         </message>

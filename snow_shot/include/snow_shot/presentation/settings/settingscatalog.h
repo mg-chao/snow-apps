@@ -151,6 +151,8 @@ enum class SettingsSwitchBinding {
     PinAutomaticTextRecognition,
     PinAutoResizeWindow,
     PinShowWindowButtons,
+    PinConfirmBeforeClosingWindow,
+    PinConfirmBeforeDestroyingWindow,
     OriginalImageTranslation,
     TranslationPageEnabled,
     JumpToTranslationPage,

@@ -532,6 +532,10 @@ class PinToScreenSettings final {
   public:
     [[nodiscard]] bool showWindowButtons() const;
     bool setShowWindowButtons(bool enabled) const;
+    [[nodiscard]] bool confirmBeforeClosingWindow() const;
+    bool setConfirmBeforeClosingWindow(bool enabled) const;
+    [[nodiscard]] bool confirmBeforeDestroyingWindow() const;
+    bool setConfirmBeforeDestroyingWindow(bool enabled) const;
     [[nodiscard]] QString doubleClickAction() const;
     bool setDoubleClickAction(const QString& action) const;
     [[nodiscard]] QString middleMouseButtonAction() const;

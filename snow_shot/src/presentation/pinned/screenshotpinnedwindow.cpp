@@ -1237,7 +1237,7 @@ void ScreenshotPinnedWindow::registerWindowShortcuts() {
     destroyWindow.priority = ShortcutManager::StandardPriority::WindowCommand + 1;
     destroyWindow.canActivate = localCommandsAllowed;
     destroyWindow.activate = [this](const auto&) {
-        requestDestroy();
+        confirmDestroy();
         return true;
     };
     m_pinnedShortcutBindings.insert(QStringLiteral("destroy_window"),
@@ -1833,6 +1833,12 @@ void ScreenshotPinnedWindow::changeEvent(QEvent* event) {
 }
 
 void ScreenshotPinnedWindow::retranslateUi() {
+    if (m_closeConfirmation != nullptr) {
+        m_closeConfirmation->setWindowTitle(tr("Close pinned window"));
+        m_closeConfirmation->setText(tr("Close this pinned window?"));
+        m_closeConfirmation->setAcceptText(tr("Close"));
+        m_closeConfirmation->setRejectText(tr("Cancel"));
+    }
     if (m_destroyConfirmation != nullptr) {
         m_destroyConfirmation->setWindowTitle(tr("Destroy pinned window"));
         m_destroyConfirmation->setText(
@@ -2517,6 +2523,12 @@ void ScreenshotPinnedWindow::contextMenuEvent(QContextMenuEvent* event) {
 }
 
 void ScreenshotPinnedWindow::closeEvent(QCloseEvent* event) {
+    if (event->spontaneous() && !m_closing && !m_inactiveGroupClosing &&
+        snow_shot::storage::PinToScreenSettings().confirmBeforeClosingWindow()) {
+        event->ignore();
+        requestUserClose();
+        return;
+    }
     stopAttentionShake();
     m_sourcePinAvailable = false;
     if (event->spontaneous() && !m_inactiveGroupClosing &&
@@ -7275,6 +7287,43 @@ void ScreenshotPinnedWindow::requestUserClose() {
     if (m_closing) {
         return;
     }
+    if (!snow_shot::storage::PinToScreenSettings().confirmBeforeClosingWindow()) {
+        closeAfterConfirmation();
+        return;
+    }
+    if (m_closeConfirmation != nullptr) {
+        m_closeConfirmation->setOpen(true);
+        return;
+    }
+
+    auto* modal = new adqt::widgets::AdModal(this);
+    m_closeConfirmation = modal;
+    modal->setObjectName(QStringLiteral("screenshotPinnedCloseConfirmation"));
+    modal->setOwnerWindow(this);
+    modal->setMode(adqt::widgets::AdModal::Mode::Window);
+    modal->setWindowModality(Qt::WindowModal);
+    modal->setPreset(adqt::widgets::AdModal::Preset::Confirm);
+    modal->setWindowTitle(tr("Close pinned window"));
+    modal->setText(tr("Close this pinned window?"));
+    modal->setAcceptText(tr("Close"));
+    modal->setRejectText(tr("Cancel"));
+    modal->setStandardButtons(adqt::widgets::AdModal::StandardButton::Ok |
+                              adqt::widgets::AdModal::StandardButton::Cancel);
+    connect(modal, &adqt::widgets::AdModal::accepted, this,
+            &ScreenshotPinnedWindow::closeAfterConfirmation);
+    connect(modal, &adqt::widgets::AdModal::finished, this, [this, modal](auto) {
+        if (m_closeConfirmation == modal) {
+            m_closeConfirmation = nullptr;
+        }
+        modal->deleteLater();
+    });
+    modal->open();
+}
+
+void ScreenshotPinnedWindow::closeAfterConfirmation() {
+    if (m_closing) {
+        return;
+    }
     m_inactiveGroupClosing = false;
     stopAttentionShake();
     if (m_groupManager)
@@ -7388,6 +7437,10 @@ void ScreenshotPinnedWindow::requestDestroy() {
 
 void ScreenshotPinnedWindow::confirmDestroy() {
     if (m_closing) {
+        return;
+    }
+    if (!snow_shot::storage::PinToScreenSettings().confirmBeforeDestroyingWindow()) {
+        requestDestroy();
         return;
     }
     if (m_destroyConfirmation != nullptr) {

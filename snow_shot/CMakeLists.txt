@@ -4110,6 +4110,11 @@ if(SNOW_SHOT_BUILD_TESTS)
         COMMAND snow-shot-pinned-window-tests --management-only -platform offscreen)
     add_test(NAME snow-shot-pinned-close-persistence-tests
         COMMAND snow-shot-pinned-window-tests --deferred-user-close-only -platform offscreen)
+    add_test(NAME snow-shot-pinned-window-confirmation-tests
+        COMMAND snow-shot-pinned-window-tests --window-confirmation-only -platform offscreen)
+    set_tests_properties(snow-shot-pinned-window-confirmation-tests PROPERTIES
+        LABELS "unit" RUN_SERIAL TRUE TIMEOUT 30
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
     set_tests_properties(snow-shot-pinned-close-persistence-tests PROPERTIES
         LABELS "unit" RUN_SERIAL TRUE TIMEOUT 30
         ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")

@@ -2047,6 +2047,23 @@ bool PinToScreenSettings::setShowWindowButtons(bool enabled) const {
     return cache().setValue(QStringLiteral("pin_to_screen/show_window_buttons"), enabled);
 }
 
+bool PinToScreenSettings::confirmBeforeClosingWindow() const {
+    return cache().value(QStringLiteral("pin_to_screen/confirm_before_closing_window")).toBool();
+}
+
+bool PinToScreenSettings::setConfirmBeforeClosingWindow(bool enabled) const {
+    return cache().setValue(QStringLiteral("pin_to_screen/confirm_before_closing_window"), enabled);
+}
+
+bool PinToScreenSettings::confirmBeforeDestroyingWindow() const {
+    return cache().value(QStringLiteral("pin_to_screen/confirm_before_destroying_window")).toBool();
+}
+
+bool PinToScreenSettings::setConfirmBeforeDestroyingWindow(bool enabled) const {
+    return cache().setValue(QStringLiteral("pin_to_screen/confirm_before_destroying_window"),
+                            enabled);
+}
+
 QString PinToScreenSettings::doubleClickAction() const {
     return cache().value(QStringLiteral("pin_to_screen/double_click_action")).toString();
 }

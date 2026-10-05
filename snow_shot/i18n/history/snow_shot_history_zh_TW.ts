@@ -457,6 +457,14 @@
             <translation>關閉其他視窗</translation>
         </message>
         <message>
+            <source>Close pinned window</source>
+            <translation>關閉固定到螢幕視窗</translation>
+        </message>
+        <message>
+            <source>Close this pinned window?</source>
+            <translation>確定要關閉此固定到螢幕視窗嗎？</translation>
+        </message>
+        <message>
             <source>Copy original content</source>
             <translation>複製原始內容</translation>
         </message>

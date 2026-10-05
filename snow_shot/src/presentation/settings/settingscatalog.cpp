@@ -1557,6 +1557,25 @@ SettingsItemDefinition pinShowWindowButtonsItem() {
         SettingsSwitchBinding::PinShowWindowButtons);
 }
 
+SettingsItemDefinition pinConfirmBeforeClosingWindowItem() {
+    return switchItem(QStringLiteral("pin-to-screen.confirm-before-closing-window"),
+                      QT_TRANSLATE_NOOP("SettingsCatalog", "Confirm before closing window"),
+                      QT_TRANSLATE_NOOP("SettingsCatalog",
+                                        "Ask for confirmation before closing a pinned window."),
+                      QStringLiteral("pin_to_screen/confirm_before_closing_window"),
+                      SettingsSwitchBinding::PinConfirmBeforeClosingWindow);
+}
+
+SettingsItemDefinition pinConfirmBeforeDestroyingWindowItem() {
+    return switchItem(
+        QStringLiteral("pin-to-screen.confirm-before-destroying-window"),
+        QT_TRANSLATE_NOOP("SettingsCatalog", "Confirm before destroying window"),
+        QT_TRANSLATE_NOOP("SettingsCatalog",
+                          "Ask for confirmation before permanently destroying a pinned window."),
+        QStringLiteral("pin_to_screen/confirm_before_destroying_window"),
+        SettingsSwitchBinding::PinConfirmBeforeDestroyingWindow);
+}
+
 SettingsItemDefinition pinAutomaticOcrItem() {
     return switchItem(
         QStringLiteral("pin-to-screen.automatic-text-recognition"),
@@ -2924,7 +2943,8 @@ QVector<SettingsPageDefinition> builtInPages() {
                  SettingsSectionReset::PinToScreenBehavior,
                  {pinZoomModeItem(), pinDoubleClickActionItem(), pinMiddleClickActionItem(),
                   pinAutomaticOcrItem(), pinTextSelectionItem(), pinAutoResizeItem(),
-                  pinDuplicateContentItem(), pinShowWindowButtonsItem()},
+                  pinDuplicateContentItem(), pinShowWindowButtonsItem(),
+                  pinConfirmBeforeClosingWindowItem(), pinConfirmBeforeDestroyingWindowItem()},
              },
              {
                  QStringLiteral("pin-to-screen"),
@@ -4482,6 +4502,13 @@ QStringList SettingsCatalog::validationErrors() const {
                         break;
                     case SettingsSwitchBinding::PinShowWindowButtons:
                         expectedKey = QStringLiteral("pin_to_screen/show_window_buttons");
+                        break;
+                    case SettingsSwitchBinding::PinConfirmBeforeClosingWindow:
+                        expectedKey = QStringLiteral("pin_to_screen/confirm_before_closing_window");
+                        break;
+                    case SettingsSwitchBinding::PinConfirmBeforeDestroyingWindow:
+                        expectedKey =
+                            QStringLiteral("pin_to_screen/confirm_before_destroying_window");
                         break;
                     case SettingsSwitchBinding::StandaloneTranslationWindow:
                         expectedKey =

@@ -470,9 +470,9 @@ void builtInCatalogIsCompleteAndValid() {
     require(itemIds.contains(QStringLiteral("screenshot-shortcut.print")) &&
                 itemIds.contains(QStringLiteral("pin-to-screen-shortcut.print")),
             "printing must expose a shared shortcut setting in both local scopes");
-    require(itemIds.size() == 237,
+    require(itemIds.size() == 239,
             qPrintable(QStringLiteral(
-                           "catalog must contain 237 shared settings on every platform; found %1")
+                           "catalog must contain 239 shared settings on every platform; found %1")
                            .arg(itemIds.size())));
     require(foundUpdates, "catalog must contain the update mode item");
     const auto* pinnedEditor =
@@ -1580,7 +1580,7 @@ void builtInCatalogIsCompleteAndValid() {
     require(pinPage != nullptr && pinPage->sections.size() == 3 &&
                 pinPage->sections.at(0).id == QStringLiteral("pin-to-screen-settings") &&
                 pinPage->sections.at(0).title.translated() == QStringLiteral("Interaction") &&
-                pinPage->sections.at(0).items.size() == 8 &&
+                pinPage->sections.at(0).items.size() == 10 &&
                 pinPage->sections.at(1).id == pinSection.id &&
                 pinSection.title.translated() == QStringLiteral("Window interface") &&
                 pinPage->sections.at(2).id == QStringLiteral("pin-to-screen-toolbar") &&

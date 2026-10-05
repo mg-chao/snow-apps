@@ -5,6 +5,7 @@
 #include "snow_shot/presentation/settings/settingsruntimesession.h"
 #include "snow_shot/storage/applicationstorage.h"
 #include "snow_shot/storage/configurationstore.h"
+#include "snow_shot/storage/configurationschema.h"
 #include "snow_shot/storage/settingsadapters.h"
 #include <QApplication>
 #include <QHash>
@@ -77,6 +78,65 @@ void windowButtonSettings() {
                 backend.resetSection(settings::SettingsSectionReset::PinToScreenBehavior) &&
                 stored.showWindowButtons() && backend.switchValue(binding),
             "resetting pin behavior must restore visible window buttons");
+}
+
+void windowConfirmationSettings() {
+    const storage::PinToScreenSettings stored;
+    constexpr auto closeBinding = settings::SettingsSwitchBinding::PinConfirmBeforeClosingWindow;
+    constexpr auto destroyBinding =
+        settings::SettingsSwitchBinding::PinConfirmBeforeDestroyingWindow;
+    GlobalShortcutManager manager(std::make_unique<Backend>(), nullptr, [] { return false; });
+    settings::BuiltInSettingsBackend backend(manager);
+    settings::SettingsRuntimeSession session(settings::builtInSettingsRegistry(), backend);
+    const auto* closeField = settings::builtInSettingsRegistry().fieldForSwitch(closeBinding);
+    const auto* destroyField = settings::builtInSettingsRegistry().fieldForSwitch(destroyBinding);
+    require(closeField && destroyField, "both window confirmation switches must be registered");
+    for (const auto* field : {closeField, destroyField}) {
+        require(field->pageId == QStringLiteral("pinned-windows") &&
+                    field->sectionId == QStringLiteral("pin-to-screen-settings") &&
+                    field->reset == settings::SettingsSectionReset::PinToScreenBehavior &&
+                    session.state(field->id).visible && session.state(field->id).enabled,
+                "window confirmation switches belong to available pin behavior settings");
+        require(!storage::ConfigurationSchema::normalize(field->configurationKey,
+                                                         QStringLiteral("enabled"))
+                     .valid,
+                "window confirmation preferences must reject nonboolean values");
+    }
+    require(closeField->id == QStringLiteral("pin-to-screen.confirm-before-closing-window") &&
+                closeField->configurationKey ==
+                    QStringLiteral("pin_to_screen/confirm_before_closing_window") &&
+                closeField->definition->title.translated() ==
+                    QStringLiteral("Confirm before closing window") &&
+                destroyField->id ==
+                    QStringLiteral("pin-to-screen.confirm-before-destroying-window") &&
+                destroyField->configurationKey ==
+                    QStringLiteral("pin_to_screen/confirm_before_destroying_window") &&
+                destroyField->definition->title.translated() ==
+                    QStringLiteral("Confirm before destroying window"),
+            "both confirmation settings must have the expected labels and configuration keys");
+    require(!stored.confirmBeforeClosingWindow() && stored.confirmBeforeDestroyingWindow() &&
+                !session.switchValue(closeBinding) && session.switchValue(destroyBinding),
+            "close confirmation defaults off and destroy confirmation defaults on");
+    require(session.applySwitchValue(closeBinding, true) &&
+                session.applySwitchValue(destroyBinding, false) &&
+                stored.confirmBeforeClosingWindow() && !stored.confirmBeforeDestroyingWindow(),
+            "confirmation switches must apply independently through the settings session");
+    auto& applicationStorage = storage::ApplicationStorage::instance();
+    require(applicationStorage.configuration().flushNow().success,
+            "window confirmation preferences must be flushable");
+    storage::ConfigurationStore reloaded(applicationStorage.configurationDirectory() +
+                                             QStringLiteral("/config.json"),
+                                         true, true, 60000);
+    require(reloaded.value(closeField->configurationKey).toBool() &&
+                !reloaded.value(destroyField->configurationKey).toBool(true),
+            "both window confirmation preferences must survive configuration reload");
+    require(session.reset(settings::SettingsSectionReset::PinToScreen) &&
+                stored.confirmBeforeClosingWindow() && !stored.confirmBeforeDestroyingWindow(),
+            "appearance reset must preserve confirmation preferences");
+    require(session.reset(settings::SettingsSectionReset::PinToScreenBehavior) &&
+                !stored.confirmBeforeClosingWindow() && stored.confirmBeforeDestroyingWindow() &&
+                !session.switchValue(closeBinding) && session.switchValue(destroyBinding),
+            "pin behavior reset must restore both confirmation defaults");
 }
 
 void textSelectionSettings() {
@@ -273,6 +333,7 @@ int main(int argc, char** argv) {
         storage.initialize({directory.filePath(QStringLiteral("bin")), directory.path()}).success,
         "temporary storage must initialize");
     windowButtonSettings();
+    windowConfirmationSettings();
     textSelectionSettings();
     duplicateContentSettings();
     clipboardSourceIdentity();
