@@ -135,6 +135,10 @@
     <context>
         <name>ScreenshotPrintService</name>
         <message>
+            <source>Printing...</source>
+            <translation>Printing...</translation>
+        </message>
+        <message>
             <source>The image could not be prepared for printing</source>
             <translation>The image could not be prepared for printing</translation>
         </message>

@@ -1,4 +1,5 @@
 #include "../../presentation/services/nativeprintbackend.h"
+#include "nativeprintpanel.h"
 
 #include <QApplication>
 #include <QCoreApplication>
@@ -9,6 +10,69 @@
 
 #include <cstring>
 #include <utility>
+
+namespace {
+bool confirmedPrintJob(NSPrintInfo* info, NSInteger result) {
+    return result == NSModalResponseOK && ([info.jobDisposition isEqualToString:NSPrintSpoolJob] ||
+                                           [info.jobDisposition isEqualToString:NSPrintSaveJob]);
+}
+} // namespace
+
+@implementation SnowShotPrintPanelCompletion
+- (void)printPanelDidEnd:(NSPrintPanel*)panel
+              returnCode:(NSInteger)returnCode
+             contextInfo:(void*)context {
+    // Balance the retained delegate after AppKit dismisses the native sheet.
+    SnowShotPrintPanelCompletion* retained = CFBridgingRelease(context);
+    if (confirmedPrintJob(retained.printInfo, returnCode) && confirmed)
+        confirmed();
+    if (retained.forwardingDelegate && retained.forwardingSelector) {
+        NSMethodSignature* signature =
+            [retained.forwardingDelegate methodSignatureForSelector:retained.forwardingSelector];
+        NSInvocation* invocation = [NSInvocation invocationWithMethodSignature:signature];
+        invocation.target = retained.forwardingDelegate;
+        invocation.selector = retained.forwardingSelector;
+        __unsafe_unretained NSPrintPanel* forwardedPanel = panel;
+        void* forwardedContext = retained.forwardingContext;
+        [invocation setArgument:&forwardedPanel atIndex:2];
+        [invocation setArgument:&returnCode atIndex:3];
+        [invocation setArgument:&forwardedContext atIndex:4];
+        [invocation invoke];
+    }
+}
+@end
+
+@implementation SnowShotPrintPanel
+- (void)beginSheetWithPrintInfo:(NSPrintInfo*)printInfo
+                 modalForWindow:(NSWindow*)window
+                       delegate:(id)delegate
+                 didEndSelector:(SEL)selector
+                    contextInfo:(void*)context {
+    SnowShotPrintPanelCompletion* wrapper = [SnowShotPrintPanelCompletion new];
+    wrapper->confirmed = confirmed;
+    wrapper.forwardingDelegate = delegate;
+    wrapper.printInfo = printInfo;
+    wrapper.forwardingSelector = selector;
+    wrapper.forwardingContext = context;
+    void* retained = (__bridge_retained void*)wrapper;
+    @try {
+        [super beginSheetWithPrintInfo:printInfo
+                        modalForWindow:window
+                              delegate:wrapper
+                        didEndSelector:@selector(printPanelDidEnd:returnCode:contextInfo:)
+                           contextInfo:retained];
+    } @catch (NSException* exception) {
+        (void)CFBridgingRelease(retained);
+        @throw exception;
+    }
+}
+- (NSInteger)runModalWithPrintInfo:(NSPrintInfo*)printInfo {
+    const NSInteger result = [super runModalWithPrintInfo:printInfo];
+    if (confirmedPrintJob(printInfo, result) && confirmed)
+        confirmed();
+    return result;
+}
+@end
 
 @interface SnowShotPrintImageView : NSView
 @property(nonatomic, strong) NSImage* image;
@@ -81,7 +145,8 @@
 ScreenshotPrintService::Backend screenshotNativePrintBackend(bool legacy) {
     if (legacy)
         return {};
-    return [](QWidget* owner, QImage image, ScreenshotPrintService::Completion completion) {
+    return [](QWidget* owner, QImage image, ScreenshotPrintService::Confirmation confirmed,
+              ScreenshotPrintService::Completion completion) {
         @autoreleasepool {
             SnowShotPrintCompletion* delegate = nil;
             void* retainedDelegate = nullptr;
@@ -130,7 +195,11 @@ ScreenshotPrintService::Backend screenshotNativePrintBackend(bool legacy) {
                 operation.jobTitle = @"SnowShot";
                 operation.showsPrintPanel = YES;
                 operation.showsProgressPanel = YES;
-                operation.canSpawnSeparateThread = NO;
+                SnowShotPrintPanel* panel = [SnowShotPrintPanel new];
+                panel->confirmed = std::move(confirmed);
+                operation.printPanel = panel;
+                // Let Qt render and animate the loading feedback after confirmation.
+                operation.canSpawnSeparateThread = YES;
                 delegate = [SnowShotPrintCompletion new];
                 delegate->completion = std::move(completion);
                 __weak NSPrintOperation* weakOperation = operation;
@@ -144,11 +213,11 @@ ScreenshotPrintService::Backend screenshotNativePrintBackend(bool legacy) {
                             [window endSheet:window.attachedSheet returnCode:NSModalResponseCancel];
                     });
                 retainedDelegate = (__bridge_retained void*)delegate;
-                [operation
-                    runOperationModalForWindow:ownerWindow
-                                      delegate:delegate
-                                didRunSelector:@selector(printOperationDidRun:success:contextInfo:)
-                                   contextInfo:retainedDelegate];
+                [operation runOperationModalForWindow:ownerWindow
+                                             delegate:delegate
+                                       didRunSelector:@selector(printOperationDidRun:
+                                                                             success:contextInfo:)
+                                          contextInfo:retainedDelegate];
             } @catch (NSException* exception) {
                 (void)exception;
                 if (delegate) {

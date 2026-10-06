@@ -76,6 +76,7 @@
 #include "widgets/color_picker.h"
 #include "widgets/context_menu.h"
 #include "widgets/modal.h"
+#include "widgets/message.h"
 #include "widgets/form.h"
 #include "widgets/detail/window_modality.h"
 #include "widgets/input_line_edit.h"
@@ -16346,9 +16347,12 @@ void pinnedPrintingWithoutToolbarAndDelayedCompletion(bool locked) {
     int starts = 0;
     QImage printed;
     Service::Completion nativeCompletion;
-    Service printer([&](QWidget*, QImage snapshot, Service::Completion completion) {
+    Service::Confirmation nativeConfirmation;
+    Service printer([&](QWidget*, QImage snapshot, Service::Confirmation confirmed,
+                        Service::Completion completion) {
         ++starts;
         printed = std::move(snapshot);
+        nativeConfirmation = std::move(confirmed);
         nativeCompletion = std::move(completion);
     });
     ScreenshotPinnedWindow window;
@@ -16366,6 +16370,13 @@ void pinnedPrintingWithoutToolbarAndDelayedCompletion(bool locked) {
         return edit && edit->toolbarWindow();
     };
     require(!hasToolbar(), "fixture must start without a toolbar");
+    QPointer<adqt::widgets::AdMessageHandle> printMessage;
+    QObject::connect(adqt::widgets::AdMessageService::instance(&window),
+                     &adqt::widgets::AdMessage::messageOpened, &window,
+                     [&printMessage](adqt::widgets::AdMessageHandle* handle) {
+                         if (handle->key() == QStringLiteral("screenshot-print"))
+                             printMessage = handle;
+                     });
     if (locked)
         sendShortcut(*canvas, Qt::Key_L);
     require(window.persistenceSnapshot().lockedMode == locked,
@@ -16380,6 +16391,7 @@ void pinnedPrintingWithoutToolbarAndDelayedCompletion(bool locked) {
         waitForUi(5);
     require(starts == 1 && Access::printPending(window) && !hasToolbar(),
             "Ctrl+P must print directly once without creating the toolbar");
+    require(!printMessage, "opening the native print dialog must not show loading feedback");
     sendShortcut(*canvas, Qt::Key_L);
     require(window.persistenceSnapshot().lockedMode == locked &&
                 window.currentNativeGeometry() == geometry,
@@ -16388,8 +16400,8 @@ void pinnedPrintingWithoutToolbarAndDelayedCompletion(bool locked) {
             "hidden-toolbar printing must capture the current image");
     require(QApplication::clipboard()->text() == QStringLiteral("print must not publish"),
             "printing must not publish clipboard content");
-    for (auto status :
-         {Service::Status::Cancelled, Service::Status::Failed, Service::Status::Submitted}) {
+    for (auto status : {Service::Status::Cancelled, Service::Status::Failed,
+                        Service::Status::Submitted, Service::Status::HandedOff}) {
         if (!Access::printPending(window)) {
             Access::print(window, &printer);
             timer.restart();
@@ -16397,8 +16409,21 @@ void pinnedPrintingWithoutToolbarAndDelayedCompletion(bool locked) {
             while (starts == previous && timer.elapsed() < 10000)
                 waitForUi(5);
         }
+        require(!printMessage || !printMessage->isOpen(),
+                "reopening the native print dialog must wait for confirmation");
+        if (status != Service::Status::Cancelled && status != Service::Status::HandedOff) {
+            nativeConfirmation();
+            waitForUi(5);
+            require(printMessage && printMessage->isOpen() &&
+                        printMessage->type() == adqt::widgets::AdMessage::Type::Loading &&
+                        printMessage->content() == QStringLiteral("Printing..."),
+                    "native confirmation must show an Ant Design Qt loading message without a "
+                    "toolbar");
+        }
         nativeCompletion({status, QStringLiteral("fake failure")});
         waitForUi(20);
+        require(!printMessage || !printMessage->isOpen(),
+                "every native outcome must dismiss the Print loading message");
         require(window.isVisible() && !Access::printPending(window) && !printer.busy() &&
                     !hasToolbar() && window.persistenceSnapshot().lockedMode == locked &&
                     window.currentNativeGeometry() == geometry,
@@ -16447,6 +16472,8 @@ void pinnedPrintingWithoutToolbarAndDelayedCompletion(bool locked) {
     waitForUi(100);
     require(starts == previous + 1 && !Access::printPending(window),
             "content replacement must cancel preparation before opening native UI");
+    require(!printMessage || !printMessage->isOpen(),
+            "stale snapshot preparation must dismiss the Print loading message");
     if (locked) {
         sendShortcut(*canvas, Qt::Key_L);
         require(!window.persistenceSnapshot().lockedMode,
@@ -16490,10 +16517,11 @@ void pinnedPrintMatchesTransformedViewport() {
             waitForUi(5);
         require(!expected.isNull(), "expected viewport export must finish");
         QImage printed;
-        ScreenshotPrintService printer([&](QWidget*, QImage image, auto completion) {
-            printed = image;
-            completion({ScreenshotPrintService::Status::Cancelled, {}});
-        });
+        ScreenshotPrintService printer(
+            [&](QWidget*, QImage image, ScreenshotPrintService::Confirmation, auto completion) {
+                printed = image;
+                completion({ScreenshotPrintService::Status::Cancelled, {}});
+            });
         Access::print(window, &printer);
         timer.restart();
         while (printed.isNull() && timer.elapsed() < 10000)
@@ -16501,6 +16529,57 @@ void pinnedPrintMatchesTransformedViewport() {
         require(printed == ScreenshotPrintService::opaqueImage(expected),
                 "printing must preserve viewport rotation, zoom, thumbnail, alpha and opacity");
         waitForUi(10);
+    }
+}
+
+void pinnedPrintLoadingWithToolbar() {
+    using Access = ScreenshotPinnedWindowTestAccess;
+    using Service = ScreenshotPrintService;
+    Service::Completion nativeCompletion;
+    Service::Confirmation nativeConfirmation;
+    int starts = 0;
+    Service printer(
+        [&](QWidget*, QImage, Service::Confirmation confirmed, Service::Completion completion) {
+            ++starts;
+            nativeConfirmation = std::move(confirmed);
+            nativeCompletion = std::move(completion);
+        });
+    ScreenshotPinnedWindow window;
+    require(window.present(cachedOcrPinConfig(nullptr)), "Print loading fixture must present");
+    Access::setPrinter(window, &printer);
+    waitForUi(30);
+    Access::editSelectionOffscreen(window, true);
+    auto* editController = window.findChild<ScreenshotPinnedEditController*>();
+    require(editController && editController->toolbarWindow(),
+            "Print loading fixture must keep its drawing toolbar open");
+    auto* palette = editController->toolbarWindow()->palette();
+    auto* printButton =
+        palette->findChild<adqt::widgets::AdButton*>(QStringLiteral("screenshotPrintButton"));
+    require(printButton, "Print loading fixture must provide a Print button");
+    for (auto status : {Service::Status::Cancelled, Service::Status::Failed,
+                        Service::Status::Submitted, Service::Status::HandedOff}) {
+        const int previous = starts;
+        require(palette->activateScreenshotShortcut(QStringLiteral("print")),
+                "toolbar Print must start a request");
+        require(!printButton->busy(), "preparing Print must wait for native confirmation");
+        QElapsedTimer timer;
+        timer.start();
+        while (starts == previous && timer.elapsed() < 10000)
+            waitForUi(5);
+        require(starts == previous + 1 && !printButton->busy(),
+                "opening the native Print dialog must not start the toolbar spinner");
+        if (status != Service::Status::Cancelled && status != Service::Status::HandedOff) {
+            nativeConfirmation();
+            waitForUi(5);
+            require(printButton->busy() && !printButton->isEnabled(),
+                    "native confirmation must start the toolbar loading state");
+            require(!palette->activateScreenshotShortcut(QStringLiteral("print")),
+                    "pinned toolbar must reject duplicate confirmed Print requests");
+        }
+        nativeCompletion({status, QStringLiteral("fake failure")});
+        waitForUi(20);
+        require(!printButton->busy() && printButton->isEnabled() && !Access::printPending(window),
+                "every native outcome must reset the pinned toolbar loading state");
     }
 }
 
@@ -18613,6 +18692,7 @@ int main(int argc, char* argv[]) {
             QApplication::setFont(QFont(QFontDatabase::applicationFontFamilies(font).first(), 12));
             pinnedPrintingWithoutToolbarAndDelayedCompletion(false);
             pinnedPrintingWithoutToolbarAndDelayedCompletion(true);
+            pinnedPrintLoadingWithToolbar();
             pinnedPrintMatchesTransformedViewport();
             recognitionPrintPreservesScrollAndExcludesSelection();
             return 0;

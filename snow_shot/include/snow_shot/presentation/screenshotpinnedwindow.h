@@ -508,6 +508,7 @@ class ScreenshotPinnedWindow final : public QWidget {
     std::shared_ptr<ScreenshotExportArtifact> m_printArtifact;
     QPointer<ScreenshotPrintService> m_printService;
     bool m_printPending = false;
+    bool m_printConfirmed = false;
     ScreenshotExportJobHandle m_materializationJob;
     ScreenshotExportJobHandle m_contentReplacementJob;
     quint64 m_contentReplacementGeneration = 0;

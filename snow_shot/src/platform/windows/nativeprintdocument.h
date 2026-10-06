@@ -10,6 +10,8 @@
 #include <winrt/Windows.Foundation.h>
 #include <winrt/Windows.Graphics.Printing.h>
 
+#include <atomic>
+#include <functional>
 #include <mutex>
 
 // The native document is independent of the print UI so its preview protocol can
@@ -19,8 +21,10 @@ class ScreenshotWindowsPrintDocument
                                winrt::Windows::Graphics::Printing::IPrintDocumentSource,
                                IPrintDocumentPageSource, IPrintPreviewPageCollection> {
   public:
-    explicit ScreenshotWindowsPrintDocument(QImage image);
+    explicit ScreenshotWindowsPrintDocument(QImage image, float displayDpi = 96.0f,
+                                            std::function<void()> confirmed = {});
 
+    HRESULT failure() const noexcept;
     void releasePreview();
     HRESULT __stdcall GetPreviewPageCollection(
         IPrintDocumentPackageTarget* target,
@@ -33,8 +37,13 @@ class ScreenshotWindowsPrintDocument
   private:
     static winrt::Windows::Graphics::Printing::PrintPageDescription
     pageDescription(::IInspectable* options);
+    HRESULT rememberFailure(HRESULT result) noexcept;
 
     QImage m_image;
+    float m_displayDpi;
+    std::function<void()> m_confirmed;
+    std::once_flag m_confirmation;
+    std::atomic<HRESULT> m_failure{S_OK};
     std::mutex m_mutex;
     winrt::Windows::Graphics::Printing::PrintPageDescription m_description{};
     quint64 m_previewGeneration = 0;

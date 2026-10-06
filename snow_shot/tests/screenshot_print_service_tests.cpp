@@ -43,11 +43,12 @@ void immutableWhiteSnapshotAndDuplicateCompletion() {
     Service::Completion nativeCompletion;
     QImage received;
     int starts = 0;
-    Service service([&](QWidget*, QImage snapshot, Service::Completion completion) {
-        ++starts;
-        received = std::move(snapshot);
-        nativeCompletion = std::move(completion);
-    });
+    Service service(
+        [&](QWidget*, QImage snapshot, Service::Confirmation, Service::Completion completion) {
+            ++starts;
+            received = std::move(snapshot);
+            nativeCompletion = std::move(completion);
+        });
     QWidget owner;
     QImage source = image();
     int completions = 0;
@@ -83,11 +84,11 @@ void fallbackOnlyWhenUnavailable() {
         Service::Result final;
         Service::Completion modernCompletion;
         Service service(
-            [&](QWidget*, QImage, Service::Completion completion) {
+            [&](QWidget*, QImage, Service::Confirmation, Service::Completion completion) {
                 modernCompletion = completion;
                 completion({status, {}});
             },
-            [&](QWidget*, QImage, Service::Completion completion) {
+            [&](QWidget*, QImage, Service::Confirmation, Service::Completion completion) {
                 ++legacyStarts;
                 completion({Service::Status::Submitted, {}});
             });
@@ -116,10 +117,95 @@ void fallbackOnlyWhenUnavailable() {
     flush();
     require(failed && !unavailable.busy(), "unavailable backends must report a translated failure");
 }
+
+void nativeConfirmationIsCurrentAndExactlyOnce() {
+    for (auto status : {Service::Status::Cancelled, Service::Status::Submitted,
+                        Service::Status::Failed, Service::Status::Unavailable}) {
+        Service::Confirmation nativeConfirmation;
+        Service::Completion nativeCompletion;
+        int fallbackStarts = 0;
+        Service service(
+            [&](QWidget*, QImage, Service::Confirmation confirmed, Service::Completion completion) {
+                nativeConfirmation = std::move(confirmed);
+                nativeCompletion = std::move(completion);
+            },
+            [&](QWidget*, QImage, Service::Confirmation, Service::Completion) {
+                ++fallbackStarts;
+            });
+        QWidget owner;
+        int confirmations = 0;
+        int completions = 0;
+        require(service.printImage(
+                    &owner, &owner, image(),
+                    [&](auto result) {
+                        require(result.status == (status == Service::Status::Unavailable
+                                                      ? Service::Status::Failed
+                                                      : status),
+                                "confirmed printing must preserve its terminal outcome");
+                        ++completions;
+                    },
+                    [&] {
+                        require(QThread::currentThread() == qApp->thread(),
+                                "native confirmation must return to the GUI thread");
+                        ++confirmations;
+                    }),
+                "confirmation fixture must accept printing");
+        flush();
+        require(confirmations == 0 && completions == 0 && service.busy(),
+                "opening a native print dialog must not report confirmation or completion");
+        std::thread worker([&] {
+            nativeConfirmation();
+            nativeConfirmation();
+        });
+        worker.join();
+        flush();
+        require(confirmations == 1 && completions == 0 && service.busy(),
+                "native confirmation must run once while the print job remains pending");
+        nativeCompletion({status, {}});
+        flush();
+        nativeConfirmation();
+        flush();
+        require(confirmations == 1 && completions == 1 && fallbackStarts == 0 && !service.busy(),
+                "confirmed jobs must ignore late confirmation and never open a fallback dialog");
+    }
+
+    Service::Confirmation primaryConfirmation;
+    Service::Confirmation legacyConfirmation;
+    Service::Completion primaryCompletion;
+    Service::Completion legacyCompletion;
+    Service service(
+        [&](QWidget*, QImage, Service::Confirmation confirmed, Service::Completion completion) {
+            primaryConfirmation = std::move(confirmed);
+            primaryCompletion = std::move(completion);
+        },
+        [&](QWidget*, QImage, Service::Confirmation confirmed, Service::Completion completion) {
+            legacyConfirmation = std::move(confirmed);
+            legacyCompletion = std::move(completion);
+        });
+    QObject receiver;
+    auto* owner = new QWidget;
+    int confirmations = 0;
+    require(service.printImage(
+                &receiver, owner, image(), [](auto) {}, [&] { ++confirmations; }),
+            "fallback confirmation fixture must accept printing");
+    flush();
+    primaryCompletion({Service::Status::Unavailable, {}});
+    flush();
+    primaryConfirmation();
+    flush();
+    require(confirmations == 0 && legacyConfirmation,
+            "stale primary confirmation must not start loading for the fallback dialog");
+    delete owner;
+    legacyConfirmation();
+    legacyCompletion({Service::Status::Cancelled, {}});
+    flush();
+    require(confirmations == 0 && !service.busy(),
+            "destroyed owners and unconfirmed cancellation must suppress loading feedback");
+}
 void destroyedTargetsAndDelayedCallbacks() {
     int starts = 0;
     Service::Completion nativeCompletion;
-    Service service([&](QWidget*, QImage, Service::Completion completion) {
+    Service service([&](QWidget*, QImage, Service::Confirmation, Service::Completion completion) {
         ++starts;
         nativeCompletion = std::move(completion);
     });
@@ -169,7 +255,9 @@ void screenshotSubmissionAndStaleCapturePolicy() {
                     ++restored;
                 });
             Service::Completion native;
-            Service service([&](QWidget*, QImage, auto completion) { native = completion; });
+            Service service([&](QWidget*, QImage, Service::Confirmation, auto completion) {
+                native = completion;
+            });
             QWidget owner;
             require(service.printImage(&owner, &owner, image(), captureCompletion),
                     "capture print must start");
@@ -229,7 +317,8 @@ void printingPreservesOwnerAndWindowFlags() {
                     "printing must preserve window flags and existing native handles");
         };
         Service::Completion nativeCompletion;
-        Service service([&](QWidget* nativeOwner, QImage, Service::Completion completion) {
+        Service service([&](QWidget* nativeOwner, QImage, Service::Confirmation,
+                            Service::Completion completion) {
             require(nativeOwner == &owner, "native printing must receive the originating window");
             unchanged();
             nativeCompletion = std::move(completion);
@@ -297,7 +386,7 @@ void sharedServiceUsesNativeBackendWithLegacyFallback() {
 
 ScreenshotPrintService::Backend screenshotNativePrintBackend(bool legacy) {
     sharedBackendSelections.push_back(legacy);
-    return [legacy](QWidget*, QImage, Service::Completion completion) {
+    return [legacy](QWidget*, QImage, Service::Confirmation, Service::Completion completion) {
         sharedBackendStarts.push_back(legacy);
         completion({legacy && sharedBackendStatus == Service::Status::Unavailable
                         ? Service::Status::HandedOff
@@ -310,6 +399,7 @@ int main(int argc, char** argv) {
     QApplication app(argc, argv);
     immutableWhiteSnapshotAndDuplicateCompletion();
     fallbackOnlyWhenUnavailable();
+    nativeConfirmationIsCurrentAndExactlyOnce();
     destroyedTargetsAndDelayedCallbacks();
     screenshotSubmissionAndStaleCapturePolicy();
     onePagePlacementAndInteraction();

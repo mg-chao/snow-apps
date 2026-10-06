@@ -18,6 +18,8 @@ struct ScreenshotPrintService::Request {
     QPointer<QWidget> owner;
     QImage image;
     Completion completion;
+    Confirmation confirmation;
+    bool confirmed = false;
     bool legacy = false;
     bool completed = false;
     QMetaObject::Connection ownerDestroyed;
@@ -74,7 +76,7 @@ QRectF ScreenshotPrintService::fittedRect(QSize imageSize, const QRectF& printab
 }
 
 bool ScreenshotPrintService::printImage(QObject* receiver, QWidget* owner, QImage snapshot,
-                                        Completion completion) {
+                                        Completion completion, Confirmation confirmed) {
     Q_ASSERT(QThread::currentThread() == thread());
     if (busy() || !receiver || !owner || snapshot.isNull() || !completion)
         return false;
@@ -83,6 +85,7 @@ bool ScreenshotPrintService::printImage(QObject* receiver, QWidget* owner, QImag
     m_request->owner = owner;
     m_request->image = opaqueImage(snapshot);
     m_request->completion = std::move(completion);
+    m_request->confirmation = std::move(confirmed);
     const auto request = m_request;
     const auto abandon = [this, request] {
         if (m_request != request || request->completed)
@@ -112,6 +115,22 @@ void ScreenshotPrintService::startBackend(const std::shared_ptr<Request>& reques
     }
     request->legacy = legacy;
     const QPointer<ScreenshotPrintService> guard(this);
+    const auto confirmed = [guard, request, legacy] {
+        if (!guard)
+            return;
+        QMetaObject::invokeMethod(
+            guard,
+            [guard, request, legacy] {
+                if (!guard || guard->m_request != request || request->completed ||
+                    request->legacy != legacy || request->confirmed || !request->receiver ||
+                    !request->owner)
+                    return;
+                request->confirmed = true;
+                if (request->confirmation)
+                    request->confirmation();
+            },
+            Qt::QueuedConnection);
+    };
     const auto finished = [guard, request, legacy](Result result) {
         if (!guard)
             return;
@@ -121,8 +140,8 @@ void ScreenshotPrintService::startBackend(const std::shared_ptr<Request>& reques
                 if (!guard || guard->m_request != request || request->completed ||
                     request->legacy != legacy)
                     return;
-                if (result.status == Status::Unavailable && !legacy && guard->m_legacy &&
-                    request->receiver && request->owner) {
+                if (result.status == Status::Unavailable && !legacy && !request->confirmed &&
+                    guard->m_legacy && request->receiver && request->owner) {
                     guard->startBackend(request, true);
                     return;
                 }
@@ -147,7 +166,7 @@ void ScreenshotPrintService::startBackend(const std::shared_ptr<Request>& reques
                   QCoreApplication::translate("ScreenshotPrintService",
                                               "The image could not be prepared for printing")});
     } else if (backend) {
-        backend(request->owner, request->image, finished);
+        backend(request->owner, request->image, confirmed, finished);
     } else {
         finished({Status::Unavailable, {}});
     }

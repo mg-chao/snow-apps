@@ -4131,6 +4131,7 @@ void ScreenshotPinnedWindow::configureEditToolbar(
     connect(toolbar, &ScreenshotToolPalette::printRequested, this,
             &ScreenshotPinnedWindow::printContent);
     toolbar->setCloudUploadBusy(m_cloudUploadPreparing || m_cloudUploadJob);
+    toolbar->setPrintBusy(m_printConfirmed);
     connect(toolbar, &ScreenshotToolPalette::cloudUploadRequested, this,
             &ScreenshotPinnedWindow::uploadToCloud);
     connect(toolbar, &ScreenshotToolPalette::saveRequested, this,
@@ -5840,6 +5841,10 @@ void ScreenshotPinnedWindow::printContent() {
         if (!receiver)
             return;
         receiver->m_printPending = false;
+        receiver->m_printConfirmed = false;
+        ScreenshotMessageService::destroyFor(receiver, QStringLiteral("screenshot-print"));
+        if (receiver->m_editController && receiver->m_editController->toolbarWindow())
+            receiver->m_editController->toolbarWindow()->palette()->setPrintBusy(false);
         receiver->setProperty("saveDialogOpen", false);
         receiver->m_printArtifact.reset();
         receiver->m_shortcutManager->resumeInput(suspension);
@@ -5861,7 +5866,19 @@ void ScreenshotPinnedWindow::printContent() {
                     .arg(result.error),
                 true);
     };
-    const auto ready = [receiver, generation, replacement, printer, completed,
+    const auto confirmed = [receiver, generation, replacement, completed] {
+        if (*completed || !receiver || receiver->m_closing ||
+            receiver->m_presentationGeneration != generation ||
+            receiver->m_contentReplacementGeneration != replacement)
+            return;
+        receiver->m_printConfirmed = true;
+        if (receiver->m_editController && receiver->m_editController->toolbarWindow())
+            receiver->m_editController->toolbarWindow()->palette()->setPrintBusy(true);
+        ScreenshotMessageService::loadingFor(
+            receiver, QStringLiteral("screenshot-print"),
+            QCoreApplication::translate("ScreenshotPrintService", "Printing..."));
+    };
+    const auto ready = [receiver, generation, replacement, printer, completed, confirmed,
                         finished](ScreenshotExportImageResult result) {
         if (*completed || !receiver)
             return;
@@ -5871,7 +5888,7 @@ void ScreenshotPinnedWindow::printContent() {
             return;
         }
         if (!result.succeeded() || !printer ||
-            !printer->printImage(receiver, receiver, std::move(result.image), finished))
+            !printer->printImage(receiver, receiver, std::move(result.image), finished, confirmed))
             finished({ScreenshotPrintService::Status::Failed,
                       result.error.isEmpty() ? QCoreApplication::translate(
                                                    "ScreenshotPrintService",

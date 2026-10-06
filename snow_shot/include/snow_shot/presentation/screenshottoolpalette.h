@@ -340,6 +340,7 @@ class ScreenshotToolPalette final : public QWidget,
     [[nodiscard]] bool selectionToolbarHidden() const;
     void setRecaptureBusy(bool busy);
     void setCloudUploadBusy(bool busy);
+    void setPrintBusy(bool busy);
     void setQrCodeState(bool available, bool visible, const QString& error = {});
     [[nodiscard]] bool recaptureBusy() const;
     void clearActiveTool();
@@ -924,6 +925,7 @@ class ScreenshotToolPalette final : public QWidget,
     QSpacerItem* m_textTargetLanguageSpacer = nullptr;
     adqt::widgets::AdButton* m_scrollingScreenshotButton = nullptr;
     adqt::widgets::AdButton* m_printButton = nullptr;
+    bool m_printBusy = false;
     adqt::widgets::AdButton* m_saveButton = nullptr;
     adqt::widgets::AdButton* m_cloudUploadButton = nullptr;
     bool m_cloudUploadBusy = false;

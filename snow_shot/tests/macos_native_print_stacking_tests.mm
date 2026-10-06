@@ -1,6 +1,7 @@
 #include "snow_shot/platform/screenshotnative.h"
 #include "snow_shot/presentation/screenshotprintservice.h"
 #include "platform/macos/capturewindowlayers_p.h"
+#include "platform/macos/nativeprintpanel.h"
 
 #import <AppKit/AppKit.h>
 
@@ -11,6 +12,28 @@
 #include <cstdlib>
 #include <iostream>
 
+@interface SnowShotPrintPanelForwardingProbe : NSObject {
+  @public
+    NSInteger result;
+    void* context;
+    int calls;
+}
+- (void)printPanelDidEnd:(NSPrintPanel*)panel
+              returnCode:(NSInteger)returnCode
+             contextInfo:(void*)contextInfo;
+@end
+
+@implementation SnowShotPrintPanelForwardingProbe
+- (void)printPanelDidEnd:(NSPrintPanel*)panel
+              returnCode:(NSInteger)returnCode
+             contextInfo:(void*)contextInfo {
+    (void)panel;
+    result = returnCode;
+    context = contextInfo;
+    ++calls;
+}
+@end
+
 namespace {
 using namespace snow_shot::platform::detail;
 
@@ -18,6 +41,34 @@ void require(bool condition, const char* message) {
     if (!condition) {
         std::cerr << message << '\n';
         std::exit(EXIT_FAILURE);
+    }
+}
+
+void nativePrintConfirmationForwardsPanelOutcome() {
+    for (const NSInteger result : {NSModalResponseCancel, NSModalResponseOK}) {
+        for (NSString* disposition :
+             {NSPrintSpoolJob, NSPrintSaveJob, NSPrintPreviewJob, NSPrintCancelJob}) {
+            SnowShotPrintPanelForwardingProbe* probe = [SnowShotPrintPanelForwardingProbe new];
+            SnowShotPrintPanelCompletion* wrapper = [SnowShotPrintPanelCompletion new];
+            wrapper.printInfo = [[[NSPrintInfo alloc] init] autorelease];
+            wrapper.printInfo.jobDisposition = disposition;
+            int confirmations = 0;
+            int context = 0;
+            wrapper->confirmed = [&] { ++confirmations; };
+            wrapper.forwardingDelegate = probe;
+            wrapper.forwardingSelector = @selector(printPanelDidEnd:returnCode:contextInfo:);
+            wrapper.forwardingContext = &context;
+            [wrapper printPanelDidEnd:nil
+                           returnCode:result
+                          contextInfo:reinterpret_cast<void*>([wrapper retain])];
+            const bool printJob = disposition == NSPrintSpoolJob || disposition == NSPrintSaveJob;
+            require(confirmations == (result == NSModalResponseOK && printJob ? 1 : 0),
+                    "native print cancellation and preview must not report confirmation");
+            require(probe->calls == 1 && probe->result == result && probe->context == &context,
+                    "native print confirmation must preserve AppKit's original panel callback");
+            [wrapper release];
+            [probe release];
+        }
     }
 }
 
@@ -197,6 +248,9 @@ void nativePrintPanelCoversToolbar() {
 
 int main(int argc, char** argv) {
     QApplication app(argc, argv);
+    @autoreleasepool {
+        nativePrintConfirmationForwardsPanelOutcome();
+    }
     nativeSheetsInheritCaptureFloors();
     if (QGuiApplication::platformName() == QStringLiteral("cocoa")) {
         @autoreleasepool {

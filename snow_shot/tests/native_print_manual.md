@@ -19,6 +19,8 @@ capture without changing the capture's flags. The wizard exposes no HWND owner
 interface; closing the originating window requests cancellation through WM_CLOSE.
 
 The Photo Printing Wizard does not expose a print submission/cancellation callback.
+It also exposes no confirmation event, so opening or closing this dialog must not
+start the Print tool's loading spinner or the `Printing...` message.
 When the native dialog closes, the service reports `HandedOff` and restores the
 capture or pin. It never closes a capture based only on a successful Shell handoff.
 Activation and handoff failures still report an error, and closing the owner closes
@@ -31,6 +33,14 @@ application; use `--legacy` to exercise the fallback dialog directly.
   native document regression. It verifies pagination does not invalidate itself,
   application-defined and repeated page requests deliver rendered DXGI pixels,
   and orientation changes update the preview layout without opening a dialog.
+  It also covers stale preview rejection during a layout change, fractional
+  dimensions at 100%, 150% and 200% display scaling, preservation of native
+  failure codes, and final document creation through a real in-memory XPS writer.
+- On a Windows desktop, run
+  `snow-shot-windows-print-document-tests.exe --native-preview-only` to exercise
+  the real Windows preview target at the originating window's display DPI. The
+  probe closes the UI after the first page and aborts final-document requests;
+  it does not print the image. It must report a successful MakePage result.
 - Run `snow-shot-native-print-smoke.exe`. Windows 11 must show the modern print UI.
   The print panel must be visible above the topmost fixture without lowering it.
   Verify the preview fits one page. Change paper and orientation and check centering.
@@ -70,6 +80,9 @@ application; use `--legacy` to exercise the fallback dialog directly.
   failures in modern printing also take this path, while failures after a task
   starts show an error without reopening another dialog.
 - With a real screenshot, draw annotations, apply result styling, and print.
+  Opening the modern native dialog and changing its preview must leave the Print
+  tool idle. Clicking Print must start its spinner and Ant Design Qt `Printing...`
+  message until submission finishes. Cancel must leave no loading feedback behind.
   The modern backend closes the capture only after confirmed submission. The Photo
   Printing Wizard restores focus and editing after it closes, including after a
   print, because it does not report submission. Print a trimmed scrolling capture

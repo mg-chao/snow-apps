@@ -1671,18 +1671,19 @@ namespace {
 void printToolbarRoutingAndLayoutMigration() {
     namespace layout = snow_shot::presentation::toolbar_layout;
     using Kind = snow_shot::storage::ScreenshotToolbarLayoutKind;
+    const QString cloud = QStringLiteral("upload-to-cloud");
     const QString print = QStringLiteral("print");
     const QString quick = QStringLiteral("quick-save");
     const QString save = QStringLiteral("save-as-file");
     for (const auto kind : {Kind::ActionTools, Kind::PinnedActionTools}) {
         auto defaults = layout::defaultPositions(kind);
-        require(defaults.contains(QStringList{print, quick, save}),
+        require(defaults.contains(QStringList{cloud, print, quick, save}),
                 "Print must join the default Save as File stack");
         snow_shot::storage::ScreenshotToolbarLayout old;
         old.positions = {{save, QStringLiteral("text-recognition")}};
         const auto upgraded = layout::normalizedLayout(old, kind);
         require(upgraded.positions[0] ==
-                    QStringList{print, quick, save, QStringLiteral("text-recognition")},
+                    QStringList{cloud, print, quick, save, QStringLiteral("text-recognition")},
                 "migration must preserve previous item order and placement");
         require(layout::normalizedLayout(upgraded, kind) == upgraded,
                 "migration must be idempotent");
@@ -1722,6 +1723,24 @@ void printToolbarRoutingAndLayoutMigration() {
         require(button != nullptr, "each result toolbar must provide a Print source button");
         button->click();
         require(prints == 2 && saves == 0, "Print source button must route once");
+        palette.setPrintBusy(true);
+        require(button->busy() && !button->isEnabled() &&
+                    !palette.activateScreenshotShortcut(print),
+                "pending Print must show loading and reject duplicate shortcut activation");
+        button->click();
+        require(prints == 2, "loading Print must reject duplicate clicks");
+        bool foundEntry = false;
+        for (auto* entry : palette.findChildren<adqt::widgets::AdButton*>()) {
+            if (entry->property("screenshotToolbarItemId") == print) {
+                require(entry->busy(), "grouped Print entry must show the loading state");
+                foundEntry = true;
+            }
+        }
+        require(foundEntry, "activating Print must select its visible toolbar entry");
+        palette.setPrintBusy(false);
+        require(!button->busy() && button->isEnabled() &&
+                    palette.activateScreenshotShortcut(print) && prints == 3,
+                "finished printing must restore the Print action");
     }
 }
 } // namespace

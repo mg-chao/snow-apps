@@ -6047,6 +6047,7 @@ bool ScreenshotToolPalette::addMainSecondaryButtons(const Options& options, QBox
                                        QStringLiteral("print"));
         m_printButton->setObjectName(QStringLiteral("screenshotPrintButton"));
         m_printButton->hide();
+        setPrintBusy(m_printBusy);
         connect(m_printButton, &adqt::widgets::AdButton::clicked, this,
                 [this]() { activateActionTool(QStringLiteral("print")); });
         m_quickSaveButton = addActionButton("Quick save", custom_outlined_icons::QuickSave());
@@ -6268,6 +6269,7 @@ void ScreenshotToolPalette::addMainActionButtons(const Options& options, QBoxLay
                                        QStringLiteral("print"));
         m_printButton->setObjectName(QStringLiteral("screenshotPrintButton"));
         m_printButton->hide();
+        setPrintBusy(m_printBusy);
         connect(m_printButton, &adqt::widgets::AdButton::clicked, this,
                 [this]() { activateActionTool(QStringLiteral("print")); });
         m_quickSaveButton = addActionButton("Quick save", custom_outlined_icons::QuickSave());
@@ -9964,6 +9966,17 @@ void ScreenshotToolPalette::closeRecordingAudioGainPopovers() {
         m_recordMicrophoneGainPopover->close();
     if (m_recordSystemAudioGainPopover)
         m_recordSystemAudioGainPopover->close();
+}
+
+void ScreenshotToolPalette::setPrintBusy(bool busy) {
+    m_printBusy = busy;
+    if (m_printButton) {
+        m_printButton->setEnabled(!busy);
+        m_printButton->setBusy(busy);
+    }
+    for (int i = 0; i < m_actionToolGroups.size(); ++i)
+        if (m_actionToolGroups[i].itemIds.contains(QStringLiteral("print")))
+            refreshActionToolGroup(i);
 }
 
 void ScreenshotToolPalette::setCloudUploadBusy(bool busy) {

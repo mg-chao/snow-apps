@@ -40,7 +40,8 @@ bool isWindows11() {
 
 class ModernJob final : public std::enable_shared_from_this<ModernJob> {
   public:
-    void start(QWidget* owner, QImage image, Service::Completion completion) {
+    void start(QWidget* owner, QImage image, Service::Confirmation confirmed,
+               Service::Completion completion) {
         m_completion = std::move(completion);
         const QPointer<QWidget> ownerAlive(owner);
         const auto self = shared_from_this();
@@ -53,7 +54,6 @@ class ModernJob final : public std::enable_shared_from_this<ModernJob> {
             const HRESULT initialized = RoInitialize(RO_INIT_SINGLETHREADED);
             winrt::check_hresult(initialized);
             m_initialized = true;
-            m_document = winrt::make_self<ScreenshotWindowsPrintDocument>(std::move(image));
             const auto interop =
                 winrt::get_activation_factory<PrintManager, IPrintManagerInterop>();
             if (!ownerAlive) {
@@ -61,6 +61,9 @@ class ModernJob final : public std::enable_shared_from_this<ModernJob> {
                 return;
             }
             const HWND handle = reinterpret_cast<HWND>(ownerAlive->winId());
+            const UINT dpi = GetDpiForWindow(handle);
+            m_document = winrt::make_self<ScreenshotWindowsPrintDocument>(
+                std::move(image), dpi == 0 ? 96.0f : static_cast<float>(dpi), std::move(confirmed));
             winrt::check_hresult(interop->GetForWindow(handle, winrt::guid_of<PrintManager>(),
                                                        winrt::put_abi(m_manager)));
             m_requested = m_manager.PrintTaskRequested(
@@ -84,9 +87,17 @@ class ModernJob final : public std::enable_shared_from_this<ModernJob> {
                                 case PrintTaskCompletion::Submitted:
                                     self->finish({Service::Status::Submitted, {}});
                                     break;
-                                case PrintTaskCompletion::Failed:
-                                    self->finish({Service::Status::Failed, printError(E_FAIL)});
+                                case PrintTaskCompletion::Failed: {
+                                    HRESULT failure = S_OK;
+                                    {
+                                        std::lock_guard lock(self->m_mutex);
+                                        if (self->m_document)
+                                            failure = self->m_document->failure();
+                                    }
+                                    self->finish({Service::Status::Failed,
+                                                  printError(FAILED(failure) ? failure : E_FAIL)});
                                     break;
+                                }
                                 default:
                                     self->finish({Service::Status::Cancelled, {}});
                                     break;
@@ -422,12 +433,14 @@ PhotoPrintDataObject::~PhotoPrintDataObject() {
 ScreenshotPrintService::Backend screenshotNativePrintBackend(bool legacy) {
     if (legacy)
         return screenshotLegacyWindowsPrintBackend();
-    return [](QWidget* owner, QImage image, Service::Completion completion) {
+    return [](QWidget* owner, QImage image, Service::Confirmation confirmed,
+              Service::Completion completion) {
         if (!isWindows11()) {
             completion({Service::Status::Unavailable, {}});
             return;
         }
-        std::make_shared<ModernJob>()->start(owner, std::move(image), std::move(completion));
+        std::make_shared<ModernJob>()->start(owner, std::move(image), std::move(confirmed),
+                                             std::move(completion));
     };
 }
 
@@ -437,7 +450,8 @@ ScreenshotPrintService::Backend screenshotClassicWindowsPrintBackend() {
 
 ScreenshotPrintService::Backend
 screenshotLegacyWindowsPrintBackend(ScreenshotWindowsPrintDialogApi api) {
-    return [api](QWidget* owner, QImage image, Service::Completion completion) {
-        std::make_shared<PhotoPrintJob>()->start(owner, image, std::move(completion), api);
-    };
+    return
+        [api](QWidget* owner, QImage image, Service::Confirmation, Service::Completion completion) {
+            std::make_shared<PhotoPrintJob>()->start(owner, image, std::move(completion), api);
+        };
 }

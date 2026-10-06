@@ -135,6 +135,10 @@
     <context>
         <name>ScreenshotPrintService</name>
         <message>
+            <source>Printing...</source>
+            <translation>正在列印...</translation>
+        </message>
+        <message>
             <source>The image could not be prepared for printing</source>
             <translation>無法準備要列印的影像</translation>
         </message>

@@ -53,7 +53,7 @@ int main(int argc, char** argv) {
         primary = screenshotClassicWindowsPrintBackend();
 #endif
     if (app.arguments().contains(QStringLiteral("--modern-unavailable")))
-        primary = [](QWidget*, QImage, auto done) {
+        primary = [](QWidget*, QImage, ScreenshotPrintService::Confirmation, auto done) {
             done({ScreenshotPrintService::Status::Unavailable, {}});
         };
     ScreenshotPrintService printer(std::move(primary), screenshotNativePrintBackend(true));

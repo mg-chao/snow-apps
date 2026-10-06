@@ -169,14 +169,17 @@ void photoWizardOutcomesAndSnapshotLifetime() {
         QObject receiver;
         Service service(backend);
         int completions = 0;
+        int confirmations = 0;
         Service::Result final;
-        require(service.printImage(&receiver, expectedOwner, image,
-                                   [&](Service::Result result) {
-                                       require(QThread::currentThread() == qApp->thread(),
-                                               "wizard completion must return to the GUI thread");
-                                       final = std::move(result);
-                                       ++completions;
-                                   }),
+        require(service.printImage(
+                    &receiver, expectedOwner, image,
+                    [&](Service::Result result) {
+                        require(QThread::currentThread() == qApp->thread(),
+                                "wizard completion must return to the GUI thread");
+                        final = std::move(result);
+                        ++completions;
+                    },
+                    [&] { ++confirmations; }),
                 "each legacy image request must start");
         image.fill(Qt::black);
         flush();
@@ -217,6 +220,8 @@ void photoWizardOutcomesAndSnapshotLifetime() {
                       << " error=" << final.error.toStdString() << '\n';
         require(completions == 1 && !service.busy() && activations == 1,
                 "every wizard outcome must finish once and release the request");
+        require(confirmations == 0,
+                "legacy wizard handoff and closure must not be treated as Print confirmation");
         require(final.status == (cancelled   ? Service::Status::Cancelled
                                  : handedOff ? Service::Status::HandedOff
                                              : Service::Status::Failed) &&
@@ -255,7 +260,7 @@ QString retainSnapshotUntilShutdown() {
     QWidget owner;
     int completions = 0;
     screenshotLegacyWindowsPrintBackend({&activateWizard})(
-        &owner, expectedImage, [&](Service::Result result) {
+        &owner, expectedImage, {}, [&](Service::Result result) {
             require(result.status == Service::Status::HandedOff,
                     "closing the shutdown fixture must release its print request");
             ++completions;
@@ -312,7 +317,7 @@ void nativePhotoWizardCancellation() {
         QEventLoop loop;
         int completions = 0;
         screenshotLegacyWindowsPrintBackend()(
-            nativeOwnerWidget, image, [&](Service::Result result) {
+            nativeOwnerWidget, image, {}, [&](Service::Result result) {
                 if (result.status !=
                     (destroyOwner ? Service::Status::Cancelled : Service::Status::HandedOff))
                     std::cerr << "native status=" << static_cast<int>(result.status)

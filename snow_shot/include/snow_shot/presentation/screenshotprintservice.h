@@ -20,15 +20,19 @@ class ScreenshotPrintService final : public QObject {
         QString error;
     };
     using Completion = std::function<void(Result)>;
-    using Backend = std::function<void(QWidget*, QImage, Completion)>;
+    using Confirmation = std::function<void()>;
+    // Backends report confirmation only after the user accepts the native print dialog.
+    // Interfaces without a confirmation event leave this callback unused.
+    using Backend = std::function<void(QWidget*, QImage, Confirmation, Completion)>;
 
     explicit ScreenshotPrintService(Backend primary, Backend legacy = {},
                                     QObject* parent = nullptr);
     [[nodiscard]] static ScreenshotPrintService& shared();
     // Accepted requests finish asynchronously on the GUI thread. Unavailable is internal:
     // callers receive Failed if neither native interface can start.
+    // Observable native confirmation is delivered once on the GUI thread before completion.
     [[nodiscard]] bool printImage(QObject* receiver, QWidget* owner, QImage snapshot,
-                                  Completion completion);
+                                  Completion completion, Confirmation confirmed = {});
     [[nodiscard]] bool busy() const;
     [[nodiscard]] static QImage opaqueImage(const QImage& image);
     [[nodiscard]] static QRectF fittedRect(QSize imageSize, const QRectF& printableRect);

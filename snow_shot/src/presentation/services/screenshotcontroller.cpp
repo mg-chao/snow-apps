@@ -625,6 +625,7 @@ struct ScreenshotController::Impl final : public ScreenshotToolbarCommandSink,
     QPointer<ScreenshotPrintService> m_printService;
     std::shared_ptr<ScreenshotExportArtifact> m_printArtifact;
     bool m_printPending = false;
+    bool m_printConfirmed = false;
     QHash<quint64, quint64> m_imageExportCaptureEpochs;
     quint64 m_captureEpoch = 0;
     ScreenshotExportJobHandle m_exportJob;
@@ -1068,8 +1069,10 @@ ScreenshotToolbarWindow* ScreenshotController::Impl::toolbarForShortcut() {
 bool ScreenshotController::Impl::activateScreenshotShortcut(const QString& actionId) {
     ScreenshotToolbarWindow* toolbar = toolbarForShortcut();
     ScreenshotToolPalette* palette = toolbar != nullptr ? toolbar->palette() : nullptr;
-    if (palette)
+    if (palette) {
         palette->setCloudUploadBusy(m_cloudUploadPreparing || m_cloudUploadJob);
+        palette->setPrintBusy(m_printConfirmed);
+    }
     return palette != nullptr && palette->activateScreenshotShortcut(actionId);
 }
 
@@ -4237,7 +4240,11 @@ void ScreenshotController::Impl::printSelection() {
                 return false;
             auto& impl = *receiver->m_impl;
             impl.m_printPending = false;
+            impl.m_printConfirmed = false;
             impl.m_printArtifact.reset();
+            impl.m_messages->destroy(QStringLiteral("screenshot-print"));
+            if (auto* toolbar = impl.m_overlayCoordinator->toolbar())
+                toolbar->palette()->setPrintBusy(false);
             receiver->setProperty("saveDialogOpen", false);
             if (impl.m_windowShortcutManager && suspension)
                 impl.m_windowShortcutManager->resumeInput(suspension);
@@ -4258,7 +4265,20 @@ void ScreenshotController::Impl::printSelection() {
                                                 "The image could not be printed: %1")
                         .arg(result.error));
         });
-    const auto ready = [receiver, dialogOwner, epoch, printer, completed,
+    const auto confirmed = [receiver, dialogOwner, dialogSelection, epoch, completed] {
+        if (*completed || !receiver || !receiver->m_impl || !dialogOwner ||
+            receiver->m_impl->m_captureEpoch != epoch)
+            return;
+        auto& impl = *receiver->m_impl;
+        impl.m_printConfirmed = true;
+        if (auto* toolbar = impl.m_overlayCoordinator->toolbar())
+            toolbar->palette()->setPrintBusy(true);
+        impl.m_messages->loading(
+            QStringLiteral("screenshot-print"),
+            QCoreApplication::translate("ScreenshotPrintService", "Printing..."), dialogSelection,
+            dialogOwner);
+    };
+    const auto ready = [receiver, dialogOwner, epoch, printer, completed, confirmed,
                         finished](ScreenshotExportImageResult result) {
         if (*completed || !receiver || !receiver->m_impl)
             return;
@@ -4270,7 +4290,8 @@ void ScreenshotController::Impl::printSelection() {
         if (impl.m_scrollingCaptureController && impl.m_scrollingCaptureController->active())
             impl.m_scrollingCaptureController->setExportPaused(true);
         if (!result.succeeded() || !printer ||
-            !printer->printImage(receiver, dialogOwner, std::move(result.image), finished))
+            !printer->printImage(receiver, dialogOwner, std::move(result.image), finished,
+                                 confirmed))
             finished({ScreenshotPrintService::Status::Failed,
                       result.error.isEmpty() ? QCoreApplication::translate(
                                                    "ScreenshotPrintService",

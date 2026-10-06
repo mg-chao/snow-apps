@@ -5,7 +5,9 @@
 #include <d3d11.h>
 #include <wincodec.h>
 
+#include <algorithm>
 #include <cmath>
+#include <limits>
 #include <utility>
 
 namespace {
@@ -74,8 +76,21 @@ struct DrawingContext {
 
 } // namespace
 
-ScreenshotWindowsPrintDocument::ScreenshotWindowsPrintDocument(QImage image)
-    : m_image(std::move(image)) {}
+ScreenshotWindowsPrintDocument::ScreenshotWindowsPrintDocument(QImage image, float displayDpi,
+                                                               std::function<void()> confirmed)
+    : m_image(std::move(image)), m_displayDpi(displayDpi), m_confirmed(std::move(confirmed)) {}
+
+HRESULT ScreenshotWindowsPrintDocument::failure() const noexcept {
+    return m_failure.load();
+}
+
+HRESULT ScreenshotWindowsPrintDocument::rememberFailure(HRESULT result) noexcept {
+    if (FAILED(result)) {
+        HRESULT expected = S_OK;
+        m_failure.compare_exchange_strong(expected, result);
+    }
+    return result;
+}
 
 void ScreenshotWindowsPrintDocument::releasePreview() {
     ComPtr<IPrintPreviewDxgiPackageTarget> preview;
@@ -91,7 +106,7 @@ HRESULT __stdcall ScreenshotWindowsPrintDocument::GetPreviewPageCollection(
     IPrintDocumentPackageTarget* target, IPrintPreviewPageCollection** collection) noexcept {
     try {
         if (!target || !collection)
-            return E_POINTER;
+            return rememberFailure(E_POINTER);
         ComPtr<IPrintPreviewDxgiPackageTarget> preview;
         winrt::check_hresult(
             target->GetPackageTarget(ID_PREVIEWPACKAGETARGET_DXGI, IID_PPV_ARGS(&preview)));
@@ -99,10 +114,10 @@ HRESULT __stdcall ScreenshotWindowsPrintDocument::GetPreviewPageCollection(
             std::lock_guard lock(m_mutex);
             m_preview.Swap(preview);
         }
-        return QueryInterface(__uuidof(IPrintPreviewPageCollection),
-                              reinterpret_cast<void**>(collection));
+        return rememberFailure(QueryInterface(__uuidof(IPrintPreviewPageCollection),
+                                              reinterpret_cast<void**>(collection)));
     } catch (...) {
-        return winrt::to_hresult();
+        return rememberFailure(winrt::to_hresult());
     }
 }
 
@@ -118,12 +133,12 @@ HRESULT __stdcall ScreenshotWindowsPrintDocument::Paginate(UINT32,
             preview = m_preview;
         }
         if (!preview)
-            return E_UNEXPECTED;
+            return rememberFailure(E_UNEXPECTED);
         // InvalidatePreview requests another Paginate. Windows already requested
         // this layout; publish its page count without restarting pagination.
-        return preview->SetJobPageCount(FinalPageCount, 1);
+        return rememberFailure(preview->SetJobPageCount(FinalPageCount, 1));
     } catch (...) {
-        return winrt::to_hresult();
+        return rememberFailure(winrt::to_hresult());
     }
 }
 
@@ -142,14 +157,30 @@ HRESULT __stdcall ScreenshotWindowsPrintDocument::MakePage(UINT32 pageNumber, FL
             preview = m_preview;
             generation = m_previewGeneration;
         }
-        if (jobPage != 1 || width <= 0 || height <= 0 || !preview ||
-            description.PageSize.Width <= 0 || description.PageSize.Height <= 0)
-            return E_INVALIDARG;
+        if (jobPage != 1 || !std::isfinite(width) || !std::isfinite(height) || width <= 0 ||
+            height <= 0 || !preview || !std::isfinite(m_displayDpi) || m_displayDpi <= 0 ||
+            !std::isfinite(description.PageSize.Width) ||
+            !std::isfinite(description.PageSize.Height) || description.PageSize.Width <= 0 ||
+            description.PageSize.Height <= 0)
+            return rememberFailure(E_INVALIDARG);
+        // MakePage supplies display DIPs. Use one DPI for the entire paper and
+        // round its pixel dimensions, as the Windows preview renderer does.
+        const double pixelsWide = std::round(static_cast<double>(width) * m_displayDpi / 96.0);
+        const double pixelsHigh = std::round(static_cast<double>(height) * m_displayDpi / 96.0);
+        const float dpi = static_cast<float>(std::min(pixelsWide / description.PageSize.Width,
+                                                      pixelsHigh / description.PageSize.Height) *
+                                             96.0);
+        const double surfaceWidth = std::round(description.PageSize.Width * dpi / 96.0);
+        const double surfaceHeight = std::round(description.PageSize.Height * dpi / 96.0);
+        if (!std::isfinite(dpi) || dpi <= 0 || surfaceWidth < 1 || surfaceHeight < 1 ||
+            surfaceWidth > std::numeric_limits<UINT>::max() ||
+            surfaceHeight > std::numeric_limits<UINT>::max())
+            return rememberFailure(E_INVALIDARG);
         DrawingContext drawing;
         auto commands = drawing.page(m_image, description);
         D3D11_TEXTURE2D_DESC textureDescription{};
-        textureDescription.Width = static_cast<UINT>(std::ceil(width));
-        textureDescription.Height = static_cast<UINT>(std::ceil(height));
+        textureDescription.Width = static_cast<UINT>(surfaceWidth);
+        textureDescription.Height = static_cast<UINT>(surfaceHeight);
         textureDescription.MipLevels = 1;
         textureDescription.ArraySize = 1;
         textureDescription.Format = DXGI_FORMAT_B8G8R8A8_UNORM;
@@ -160,17 +191,14 @@ HRESULT __stdcall ScreenshotWindowsPrintDocument::MakePage(UINT32 pageNumber, FL
             drawing.graphics->CreateTexture2D(&textureDescription, nullptr, &texture));
         ComPtr<IDXGISurface> surface;
         winrt::check_hresult(texture.As(&surface));
-        const float dpiX = width * 96.0f / description.PageSize.Width;
-        const float dpiY = height * 96.0f / description.PageSize.Height;
         const auto properties = D2D1::BitmapProperties1(
             D2D1_BITMAP_OPTIONS_TARGET | D2D1_BITMAP_OPTIONS_CANNOT_DRAW,
-            D2D1::PixelFormat(DXGI_FORMAT_B8G8R8A8_UNORM, D2D1_ALPHA_MODE_PREMULTIPLIED), dpiX,
-            dpiY);
+            D2D1::PixelFormat(DXGI_FORMAT_B8G8R8A8_UNORM, D2D1_ALPHA_MODE_PREMULTIPLIED), dpi, dpi);
         ComPtr<ID2D1Bitmap1> target;
         winrt::check_hresult(
             drawing.context->CreateBitmapFromDxgiSurface(surface.Get(), &properties, &target));
         drawing.context->SetTarget(target.Get());
-        drawing.context->SetDpi(dpiX, dpiY);
+        drawing.context->SetDpi(dpi, dpi);
         drawing.context->BeginDraw();
         drawing.context->Clear(D2D1::ColorF(D2D1::ColorF::White));
         drawing.context->DrawImage(commands.Get());
@@ -181,15 +209,24 @@ HRESULT __stdcall ScreenshotWindowsPrintDocument::MakePage(UINT32 pageNumber, FL
             if (generation != m_previewGeneration)
                 return S_OK;
         }
-        return preview->DrawPage(jobPage, surface.Get(), dpiX, dpiY);
+        const HRESULT result = preview->DrawPage(jobPage, surface.Get(), dpi, dpi);
+        // Windows can reject a surface after advancing its preview layout, even
+        // after our generation check. Like Win2D, let its next request refresh
+        // that preview instead of turning this normal race into a failed job.
+        return result == E_INVALIDARG ? S_OK : rememberFailure(result);
     } catch (...) {
-        return winrt::to_hresult();
+        return rememberFailure(winrt::to_hresult());
     }
 }
 
 HRESULT __stdcall ScreenshotWindowsPrintDocument::MakeDocument(
     ::IInspectable* options, IPrintDocumentPackageTarget* target) noexcept {
     try {
+        // Windows requests the final document only after the user clicks Print.
+        std::call_once(m_confirmation, [this] {
+            if (m_confirmed)
+                m_confirmed();
+        });
         const auto description = pageDescription(options);
         DrawingContext drawing;
         auto commands = drawing.page(m_image, description);
@@ -200,9 +237,9 @@ HRESULT __stdcall ScreenshotWindowsPrintDocument::MakeDocument(
                                                                 &properties, &control));
         winrt::check_hresult(control->AddPage(
             commands.Get(), {description.PageSize.Width, description.PageSize.Height}, nullptr));
-        return control->Close();
+        return rememberFailure(control->Close());
     } catch (...) {
-        return winrt::to_hresult();
+        return rememberFailure(winrt::to_hresult());
     }
 }
 
