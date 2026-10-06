@@ -48,6 +48,9 @@ class ScreenshotOriginalImagePreviewWindow final : public QWidget {
 
   protected:
     void hideEvent(QHideEvent* event) override;
+    void mousePressEvent(QMouseEvent* event) override;
+    void mouseMoveEvent(QMouseEvent* event) override;
+    void mouseReleaseEvent(QMouseEvent* event) override;
     void paintEvent(QPaintEvent* event) override;
     void resizeEvent(QResizeEvent* event) override;
     bool event(QEvent* event) override;
@@ -61,11 +64,15 @@ class ScreenshotOriginalImagePreviewWindow final : public QWidget {
     [[nodiscard]] bool refreshRaster();
     [[nodiscard]] bool applyGeometry(const QRect& target, QScreen* screen);
     void reconcileNativeGeometry();
+    [[nodiscard]] bool beginDrag(const QPointF& cursor);
+    void moveDrag(const QPointF& cursor);
+    void endDrag();
 
     QImage m_sourceImage;
     QRectF m_imageRectInViewport;
     QRect m_resultRect;
     QRect m_targetGeometry;
+    QPointF m_dragOffset;
     QPointer<QWidget> m_transientOwner;
     QPointer<QWidget> m_aboveSibling;
     QImage m_viewportImage;
@@ -84,6 +91,8 @@ class ScreenshotOriginalImagePreviewWindow final : public QWidget {
     bool m_adjustingPaintSurface = false;
     bool m_forwardingWindowEvent = false;
     bool m_siblingStackedAbove = false;
+    bool m_dragging = false;
+    bool m_userPositioned = false;
 };
 
 #endif // SNOW_SHOT_PRESENTATION_SCREENSHOTORIGINALIMAGEPREVIEWWINDOW_H

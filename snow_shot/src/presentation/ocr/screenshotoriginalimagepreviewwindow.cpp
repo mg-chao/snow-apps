@@ -6,12 +6,14 @@
 
 #ifdef Q_OS_MACOS
 #include "../pinned/pinnedwindowplatform.h"
+#include "../../platform/macos/windowcursorcoordinator.h"
 #include "snow_shot/platform/screenshotnative.h"
 #endif
 
 #include <QApplication>
 #include <QEvent>
 #include <QHideEvent>
+#include <QMouseEvent>
 #include <QPaintEvent>
 #include <QPainter>
 #include <QResizeEvent>
@@ -24,6 +26,7 @@
 #include <algorithm>
 #include <cmath>
 #include <limits>
+#include <optional>
 #include <utility>
 
 #if defined(Q_OS_WIN) || defined(_WIN32)
@@ -33,6 +36,18 @@
 
 namespace {
 constexpr int kPreviewGap = 4;
+
+std::optional<QPointF> dragCursorPosition(const QMouseEvent& event) {
+#if defined(Q_OS_WIN) || defined(_WIN32)
+    if (ScreenshotOriginalImagePreviewWindow::usesPhysicalGeometry()) {
+        POINT cursor{};
+        if (GetCursorPos(&cursor))
+            return QPointF(cursor.x, cursor.y);
+        return std::nullopt;
+    }
+#endif
+    return event.globalPosition();
+}
 
 bool finiteRect(const QRectF& rect) {
     return rect.isValid() && !rect.isEmpty() && std::isfinite(rect.x()) &&
@@ -207,14 +222,14 @@ struct ScreenshotOriginalImagePreviewWindow::NativeSurface final {
 
 ScreenshotOriginalImagePreviewWindow::ScreenshotOriginalImagePreviewWindow(QWidget* parent)
     : QWidget(parent, Qt::Tool | Qt::FramelessWindowHint | Qt::WindowStaysOnTopHint |
-                          Qt::WindowDoesNotAcceptFocus | Qt::WindowTransparentForInput) {
+                          Qt::WindowDoesNotAcceptFocus) {
     setObjectName(QStringLiteral("screenshotOriginalImagePreviewWindow"));
     setWindowFlag(Qt::NoDropShadowWindowHint);
     setAttribute(Qt::WA_ShowWithoutActivating);
-    setAttribute(Qt::WA_TransparentForMouseEvents);
     setAttribute(Qt::WA_TranslucentBackground);
     setAutoFillBackground(false);
     setFocusPolicy(Qt::NoFocus);
+    setCursor(Qt::OpenHandCursor);
     const auto watch = [this](QScreen* screen) {
         connect(screen, &QScreen::geometryChanged, this, [this] { scheduleRefresh(); });
         connect(screen, &QScreen::availableGeometryChanged, this, [this] { scheduleRefresh(); });
@@ -303,11 +318,17 @@ bool ScreenshotOriginalImagePreviewWindow::present(
         clear();
         return false;
     }
-    const PlacementContext context = placementContext(state.resultRect);
+    // Once dragged, the preview owns its desktop position. OCR and display refreshes
+    // still update its viewport size and mapping without restoring automatic placement.
+    const QRect positioned(m_targetGeometry.topLeft(), state.resultRect.size());
+    const PlacementContext context =
+        placementContext(m_userPositioned ? positioned : state.resultRect);
     if (!context.screen || !context.workArea.isValid()) {
         clear();
         return false;
     }
+    if (m_dragging && m_resultRect.size() != state.resultRect.size())
+        endDrag();
     m_sourceImage = state.image;
     m_imageRectInViewport = state.imageRectInViewport;
     m_resultRect = state.resultRect;
@@ -321,7 +342,9 @@ bool ScreenshotOriginalImagePreviewWindow::present(
     const int gap = usesPhysicalGeometry()
                         ? qRound(kPreviewGap * context.screen->devicePixelRatio())
                         : kPreviewGap;
-    if (!applyGeometry(placement(m_resultRect, context.workArea, gap), context.screen)) {
+    const QRect target =
+        m_userPositioned ? positioned : placement(m_resultRect, context.workArea, gap);
+    if (!applyGeometry(target, context.screen)) {
         hide();
         return false;
     }
@@ -341,6 +364,7 @@ bool ScreenshotOriginalImagePreviewWindow::present(
 }
 
 void ScreenshotOriginalImagePreviewWindow::clear() {
+    endDrag();
     hide();
     m_sourceImage = {};
     m_viewportImage = {};
@@ -348,6 +372,7 @@ void ScreenshotOriginalImagePreviewWindow::clear() {
     m_imageRectInViewport = {};
     m_resultRect = {};
     m_targetGeometry = {};
+    m_userPositioned = false;
     m_transientOwner.clear();
     m_aboveSibling.clear();
     m_siblingStackedAbove = false;
@@ -369,9 +394,11 @@ void ScreenshotOriginalImagePreviewWindow::refreshStacking() {
         windowHandle()->setTransientParent(owner);
 #ifdef Q_OS_MACOS
     if (QGuiApplication::platformName() == QStringLiteral("cocoa")) {
+        snow_shot::platform::macos::configureWindowCursorUpdates(this);
+        snow_shot::platform::configureControlledWindowDragging(this, true);
         if (m_pinned) {
             if (auto* platform = snow_shot::presentation::configurePinnedAuxiliary(this)) {
-                static_cast<void>(platform->setInputTransparent(true));
+                static_cast<void>(platform->setInputTransparent(false));
                 static_cast<void>(platform->setStaysOnTop(m_staysOnTop));
             }
             if (isVisible() && m_aboveSibling && m_aboveSibling != this &&
@@ -543,9 +570,90 @@ bool ScreenshotOriginalImagePreviewWindow::refreshRaster() {
 }
 
 void ScreenshotOriginalImagePreviewWindow::hideEvent(QHideEvent* event) {
+    endDrag();
     QWidget::hideEvent(event);
     if (!m_presenting)
         emit hidden();
+}
+
+bool ScreenshotOriginalImagePreviewWindow::beginDrag(const QPointF& cursor) {
+    if (!isVisible() || !m_targetGeometry.isValid())
+        return false;
+    if (usesPhysicalGeometry() && (!m_dpiController || !m_dpiController->beginPhysicalDrag(cursor)))
+        return false;
+    m_dragOffset = cursor - QPointF(m_targetGeometry.topLeft());
+    m_dragging = true;
+    // Keep receiving movement if the release was lost and no button is held anymore.
+    setMouseTracking(true);
+    setCursor(Qt::ClosedHandCursor);
+    return true;
+}
+
+void ScreenshotOriginalImagePreviewWindow::moveDrag(const QPointF& cursor) {
+    if (!m_dragging || (cursor - m_dragOffset).toPoint() == m_targetGeometry.topLeft())
+        return;
+    if (usesPhysicalGeometry()) {
+        if (!m_dpiController->moveForPhysicalCursor(cursor)) {
+            endDrag();
+            return;
+        }
+        m_targetGeometry.moveTopLeft(nativeClientRect(this).topLeft());
+    } else {
+        const QRect target((cursor - m_dragOffset).toPoint(), m_targetGeometry.size());
+        const PlacementContext context = placementContext(target);
+        if (!context.screen || !applyGeometry(target, context.screen)) {
+            endDrag();
+            return;
+        }
+    }
+    m_userPositioned = true;
+    m_siblingStackedAbove = false;
+    refreshStacking();
+    static_cast<void>(refreshRaster());
+    reconcileNativeGeometry();
+}
+
+void ScreenshotOriginalImagePreviewWindow::endDrag() {
+    if (m_dpiController)
+        m_dpiController->endPhysicalDrag();
+    m_dragging = false;
+    m_dragOffset = {};
+    setMouseTracking(false);
+    setCursor(Qt::OpenHandCursor);
+}
+
+void ScreenshotOriginalImagePreviewWindow::mousePressEvent(QMouseEvent* event) {
+    if (event->button() == Qt::LeftButton) {
+        if (const auto cursor = dragCursorPosition(*event); cursor && beginDrag(*cursor)) {
+            event->accept();
+            return;
+        }
+    }
+    QWidget::mousePressEvent(event);
+}
+
+void ScreenshotOriginalImagePreviewWindow::mouseMoveEvent(QMouseEvent* event) {
+    if (m_dragging) {
+        const auto cursor = dragCursorPosition(*event);
+        if (event->buttons().testFlag(Qt::LeftButton) && cursor)
+            moveDrag(*cursor);
+        else
+            endDrag();
+        event->accept();
+        return;
+    }
+    QWidget::mouseMoveEvent(event);
+}
+
+void ScreenshotOriginalImagePreviewWindow::mouseReleaseEvent(QMouseEvent* event) {
+    if (event->button() == Qt::LeftButton && m_dragging) {
+        if (const auto cursor = dragCursorPosition(*event))
+            moveDrag(*cursor);
+        endDrag();
+        event->accept();
+        return;
+    }
+    QWidget::mouseReleaseEvent(event);
 }
 
 void ScreenshotOriginalImagePreviewWindow::paintEvent(QPaintEvent* event) {
@@ -577,6 +685,8 @@ void ScreenshotOriginalImagePreviewWindow::resizeEvent(QResizeEvent* event) {
 }
 
 bool ScreenshotOriginalImagePreviewWindow::event(QEvent* event) {
+    if (event && event->type() == QEvent::UngrabMouse)
+        endDrag();
     const bool handled = QWidget::event(event);
     if (event && event->type() == QEvent::UpdateRequest)
         reconcileNativeGeometry();
@@ -653,12 +763,19 @@ bool ScreenshotOriginalImagePreviewWindow::nativeEvent(const QByteArray& eventTy
             if (native->message == WM_WINDOWPOSCHANGING && native->lParam) {
                 auto* position = reinterpret_cast<WINDOWPOS*>(native->lParam);
                 if (!(position->flags & SWP_NOMOVE)) {
-                    position->x = m_targetGeometry.x();
-                    position->y = m_targetGeometry.y();
+                    if (m_dpiController && m_dpiController->physicalDragActive() &&
+                        !m_applyingGeometry) {
+                        // The controller owns physical cursor mapping and destination-grid
+                        // snapping. Adopt its position before a repaint can reconcile it.
+                        m_targetGeometry.moveTopLeft(QPoint(position->x, position->y));
+                    } else {
+                        position->x = m_targetGeometry.x();
+                        position->y = m_targetGeometry.y();
+                    }
                 }
             }
             if (native->message == WM_WINDOWPOSCHANGED) {
-                // Keep the passive preview fixed while native ownership or DPI updates settle.
+                // Retain the chosen position and exact viewport extent as native updates settle.
                 reconcileNativeGeometry();
             }
         }

@@ -2,9 +2,11 @@
 
 #include <QApplication>
 #include <QEventLoop>
+#include <QMouseEvent>
 #include <QPainter>
 #include <QPointer>
 #include <QScreen>
+#include <QtMath>
 #include <QWindow>
 
 #include <cmath>
@@ -39,6 +41,15 @@ class ScreenshotOriginalImagePreviewWindowTestAccess final {
     static QWidget* aboveSibling(const ScreenshotOriginalImagePreviewWindow& window) {
         return window.m_aboveSibling;
     }
+    static bool beginDrag(ScreenshotOriginalImagePreviewWindow& window, const QPointF& cursor) {
+        return window.beginDrag(cursor);
+    }
+    static void moveDrag(ScreenshotOriginalImagePreviewWindow& window, const QPointF& cursor) {
+        window.moveDrag(cursor);
+    }
+    static void endDrag(ScreenshotOriginalImagePreviewWindow& window) {
+        window.endDrag();
+    }
 };
 
 namespace {
@@ -69,6 +80,27 @@ ScreenshotOriginalImagePreviewState stateFor(QWidget* owner = nullptr) {
     state.resultRect = QRect(140, 140, 16, 12);
     state.transientOwner = owner;
     return state;
+}
+
+class ResizeCounter final : public QObject {
+  public:
+    int count = 0;
+
+  protected:
+    bool eventFilter(QObject* watched, QEvent* event) override {
+        if (event->type() == QEvent::Resize)
+            ++count;
+        return QObject::eventFilter(watched, event);
+    }
+};
+
+bool sendMouseEvent(QWidget& widget, QEvent::Type type, const QPointF& globalPosition,
+                    Qt::MouseButton button, Qt::MouseButtons buttons) {
+    const QPointF localPosition = globalPosition - QPointF(widget.mapToGlobal(QPoint()));
+    QMouseEvent event(type, localPosition, globalPosition, button, buttons, Qt::NoModifier);
+    event.ignore();
+    QApplication::sendEvent(&widget, &event);
+    return event.isAccepted();
 }
 
 void placementHonorsTheResultMonitorAndPriority() {
@@ -216,6 +248,190 @@ void movementReusesTheRasterAndContentChangesInvalidateIt() {
             "source revision changes must invalidate the raster");
 }
 
+void mouseDraggingPreservesTheViewportAndOwner() {
+    if (ScreenshotOriginalImagePreviewWindow::usesPhysicalGeometry())
+        return;
+    QWidget owner;
+    owner.setGeometry(100, 100, 200, 120);
+    owner.show();
+    owner.activateWindow();
+    owner.setFocus();
+    settle();
+    ScreenshotOriginalImagePreviewWindow preview(&owner);
+    auto state = stateFor(&owner);
+    state.resultRect.setSize(QSize(97, 65));
+    require(preview.present(state), "preparing the mouse drag fixture failed");
+    settle();
+    const QRect initial = preview.geometry();
+    const QRect ownerGeometry = owner.geometry();
+    QWidget* const focused = QApplication::focusWidget();
+    const quint64 generation = ScreenshotOriginalImagePreviewWindowTestAccess::generation(preview);
+    const uchar* const pixels =
+        ScreenshotOriginalImagePreviewWindowTestAccess::raster(preview).constBits();
+    ResizeCounter resizeCounter;
+    preview.installEventFilter(&resizeCounter);
+    const QPointF cursor(initial.topLeft() + QPoint(7, 9));
+    require(preview.cursor().shape() == Qt::OpenHandCursor,
+            "a draggable preview must show the open hand cursor before dragging");
+    sendMouseEvent(preview, QEvent::MouseButtonPress, cursor, Qt::RightButton, Qt::RightButton);
+    sendMouseEvent(preview, QEvent::MouseMove, cursor + QPointF(30, 20), Qt::NoButton,
+                   Qt::RightButton);
+    sendMouseEvent(preview, QEvent::MouseButtonRelease, cursor + QPointF(30, 20), Qt::RightButton,
+                   Qt::NoButton);
+    require(preview.geometry() == initial && preview.cursor().shape() == Qt::OpenHandCursor,
+            "right-button mouse input must not begin or move a preview drag");
+    require(
+        sendMouseEvent(preview, QEvent::MouseButtonPress, cursor, Qt::LeftButton, Qt::LeftButton) &&
+            preview.cursor().shape() == Qt::ClosedHandCursor,
+        "left-button input must start dragging and show the closed hand cursor");
+    for (int step = 1; step <= 20; ++step) {
+        const QPoint delta(3 * step, 2 * step);
+        require(sendMouseEvent(preview, QEvent::MouseMove, cursor + delta, Qt::NoButton,
+                               Qt::LeftButton),
+                "left-button drag movement must be accepted");
+        require(preview.geometry() == initial.translated(delta),
+                "drag movement must preserve the pressed point's global cursor offset");
+    }
+    require(sendMouseEvent(preview, QEvent::MouseButtonRelease, cursor + QPointF(60, 40),
+                           Qt::LeftButton, Qt::NoButton) &&
+                preview.cursor().shape() == Qt::OpenHandCursor,
+            "releasing the left button must end the drag and restore its open hand cursor");
+    settle();
+    const QRect dragged = initial.translated(60, 40);
+    sendMouseEvent(preview, QEvent::MouseMove, cursor + QPointF(80, 50), Qt::NoButton,
+                   Qt::NoButton);
+    require(preview.geometry() == dragged && resizeCounter.count == 0 &&
+                ScreenshotOriginalImagePreviewWindowTestAccess::generation(preview) == generation &&
+                ScreenshotOriginalImagePreviewWindowTestAccess::raster(preview).constBits() ==
+                    pixels,
+            "dragging must only move the preview and reuse its unchanged viewport raster");
+    require(owner.geometry() == ownerGeometry && QApplication::focusWidget() == focused &&
+                preview.windowHandle()->transientParent() == owner.windowHandle(),
+            "dragging must preserve the recognition owner's geometry, focus, and ownership");
+}
+
+void clickingDoesNotDetachAutomaticPlacement() {
+    if (ScreenshotOriginalImagePreviewWindow::usesPhysicalGeometry())
+        return;
+    ScreenshotOriginalImagePreviewWindow preview;
+    auto state = stateFor();
+    require(preview.present(state), "preparing click-only placement failed");
+    settle();
+    const QRect initial = preview.geometry();
+    const QPointF cursor(initial.topLeft() + QPoint(5, 4));
+    const quint64 generation = ScreenshotOriginalImagePreviewWindowTestAccess::generation(preview);
+    require(
+        sendMouseEvent(preview, QEvent::MouseButtonPress, cursor, Qt::LeftButton, Qt::LeftButton),
+        "pressing a preview without moving failed");
+    sendMouseEvent(preview, QEvent::MouseMove, cursor, Qt::NoButton, Qt::LeftButton);
+    sendMouseEvent(preview, QEvent::MouseButtonRelease, cursor, Qt::LeftButton, Qt::NoButton);
+    state.resultRect.translate(30, 20);
+    ScreenshotOriginalImagePreviewWindow automaticPreview;
+    require(automaticPreview.present(state), "preparing the click-only automatic fixture failed");
+    require(preview.present(state) && preview.geometry() == automaticPreview.geometry() &&
+                preview.geometry() != initial &&
+                ScreenshotOriginalImagePreviewWindowTestAccess::generation(preview) == generation,
+            "clicking without moving must preserve automatic placement relative to the result");
+}
+
+void draggedPlacementSurvivesContentAndBackingRefreshes() {
+    if (ScreenshotOriginalImagePreviewWindow::usesPhysicalGeometry())
+        return;
+    ScreenshotOriginalImagePreviewWindow preview;
+    auto state = stateFor();
+    require(preview.present(state), "preparing the retained placement fixture failed");
+    settle();
+    const QPointF cursor(preview.geometry().topLeft() + QPoint(5, 4));
+    require(ScreenshotOriginalImagePreviewWindowTestAccess::beginDrag(preview, cursor),
+            "starting the retained placement drag failed");
+    ScreenshotOriginalImagePreviewWindowTestAccess::moveDrag(preview, cursor + QPointF(93, 67));
+    ScreenshotOriginalImagePreviewWindowTestAccess::endDrag(preview);
+    const QPoint draggedPosition = preview.geometry().topLeft();
+    const quint64 generation = ScreenshotOriginalImagePreviewWindowTestAccess::generation(preview);
+    const uchar* const pixels =
+        ScreenshotOriginalImagePreviewWindowTestAccess::raster(preview).constBits();
+    state.resultRect.translate(200, 100);
+    require(preview.present(state) && preview.geometry().topLeft() == draggedPosition &&
+                ScreenshotOriginalImagePreviewWindowTestAccess::generation(preview) == generation &&
+                ScreenshotOriginalImagePreviewWindowTestAccess::raster(preview).constBits() ==
+                    pixels,
+            "moving the recognition result must retain the user's preview position and pixels");
+    QEvent screenChange(QEvent::ScreenChangeInternal);
+    QApplication::sendEvent(&preview, &screenChange);
+    QEvent backingChange(QEvent::DevicePixelRatioChange);
+    QApplication::sendEvent(&preview, &backingChange);
+    settle();
+    require(preview.geometry().topLeft() == draggedPosition &&
+                ScreenshotOriginalImagePreviewWindowTestAccess::generation(preview) == generation,
+            "queued screen and backing refreshes must retain the dragged position and pixels");
+    state.imageRectInViewport.translate(1, 0);
+    require(preview.present(state) && preview.geometry().topLeft() == draggedPosition &&
+                ScreenshotOriginalImagePreviewWindowTestAccess::generation(preview) ==
+                    generation + 1,
+            "changing the source mapping must refresh pixels without resetting user placement");
+    state.resultRect.setSize(QSize(23, 19));
+    require(preview.present(state) && preview.geometry() == QRect(draggedPosition, QSize(23, 19)) &&
+                ScreenshotOriginalImagePreviewWindowTestAccess::generation(preview) ==
+                    generation + 2,
+            "resizing the recognition result must retain the dragged preview's top-left position");
+    state.image.setPixelColor(1, 1, Qt::red);
+    require(preview.present(state) && preview.geometry().topLeft() == draggedPosition &&
+                ScreenshotOriginalImagePreviewWindowTestAccess::generation(preview) ==
+                    generation + 3,
+            "replacing source pixels must refresh the retained preview at its chosen position");
+    ScreenshotOriginalImagePreviewWindow automaticPreview;
+    require(automaticPreview.present(state), "preparing the automatic reset placement failed");
+    settle();
+    const QRect automaticGeometry = automaticPreview.geometry();
+    preview.clear();
+    require(preview.present(state) && preview.geometry() == automaticGeometry,
+            "clearing the preview must reset user placement to automatic result placement");
+}
+
+void hidingAndLosingMouseGrabCancelDragging() {
+    if (ScreenshotOriginalImagePreviewWindow::usesPhysicalGeometry())
+        return;
+    ScreenshotOriginalImagePreviewWindow preview;
+    const auto state = stateFor();
+    require(preview.present(state), "preparing drag cancellation failed");
+    settle();
+    const QPointF cursor(preview.geometry().topLeft() + QPoint(5, 4));
+    require(
+        sendMouseEvent(preview, QEvent::MouseButtonPress, cursor, Qt::LeftButton, Qt::LeftButton),
+        "starting the hide cancellation drag failed");
+    sendMouseEvent(preview, QEvent::MouseMove, cursor + QPointF(30, 20), Qt::NoButton,
+                   Qt::LeftButton);
+    const QRect dragged = preview.geometry();
+    preview.hide();
+    require(preview.cursor().shape() == Qt::OpenHandCursor,
+            "hiding the preview must cancel its active drag");
+    ScreenshotOriginalImagePreviewWindowTestAccess::moveDrag(preview, cursor + QPointF(60, 40));
+    require(preview.present(state) && preview.geometry() == dragged,
+            "restoring a hidden preview must retain placement without resuming a stale drag");
+    const QPointF nextCursor(dragged.topLeft() + QPoint(5, 4));
+    require(sendMouseEvent(preview, QEvent::MouseButtonPress, nextCursor, Qt::LeftButton,
+                           Qt::LeftButton),
+            "starting the lost-grab cancellation drag failed");
+    QEvent lostGrab(QEvent::UngrabMouse);
+    QApplication::sendEvent(&preview, &lostGrab);
+    sendMouseEvent(preview, QEvent::MouseMove, nextCursor + QPointF(20, 10), Qt::NoButton,
+                   Qt::LeftButton);
+    require(preview.geometry() == dragged && preview.cursor().shape() == Qt::OpenHandCursor,
+            "losing the mouse grab must cancel dragging before later move events arrive");
+    require(sendMouseEvent(preview, QEvent::MouseButtonPress, nextCursor, Qt::LeftButton,
+                           Qt::LeftButton),
+            "starting the missing-button cancellation drag failed");
+    sendMouseEvent(preview, QEvent::MouseMove, nextCursor + QPointF(20, 10), Qt::NoButton,
+                   Qt::NoButton);
+    require(preview.geometry() == dragged && preview.cursor().shape() == Qt::OpenHandCursor,
+            "a move without the left button must cancel dragging without moving the preview");
+    require(ScreenshotOriginalImagePreviewWindowTestAccess::beginDrag(preview, nextCursor),
+            "starting the clear cancellation drag failed");
+    preview.clear();
+    require(!preview.isVisible() && preview.cursor().shape() == Qt::OpenHandCursor,
+            "clearing the preview must cancel its active drag");
+}
+
 void passiveWindowKeepsOwnershipAndClearsInvalidState() {
     auto owner = std::make_unique<QWidget>();
     owner->setGeometry(100, 100, 200, 100);
@@ -231,8 +447,9 @@ void passiveWindowKeepsOwnershipAndClearsInvalidState() {
     require(preview->isWindow() && preview->focusPolicy() == Qt::NoFocus &&
                 preview->windowFlags().testFlag(Qt::WindowDoesNotAcceptFocus) &&
                 preview->testAttribute(Qt::WA_ShowWithoutActivating) &&
-                preview->testAttribute(Qt::WA_TransparentForMouseEvents),
-            "the preview must be a passive separate window");
+                !preview->testAttribute(Qt::WA_TransparentForMouseEvents) &&
+                !preview->windowFlags().testFlag(Qt::WindowTransparentForInput),
+            "the preview must accept dragging without accepting focus or activation");
     require(QApplication::focusWidget() != preview &&
                 preview->windowHandle()->transientParent() == owner->windowHandle(),
             "presenting the preview must retain its owner without taking focus");
@@ -546,6 +763,98 @@ void nativeWindowMatchesOddResultExtentsAfterRepaints() {
         }
     }
 }
+
+void nativeDraggingPreservesOddPhysicalExtentsAcrossMonitors() {
+    require(ScreenshotOriginalImagePreviewWindow::usesPhysicalGeometry(),
+            "native drag tests require Windows physical geometry");
+    QScreen* primary = QGuiApplication::primaryScreen();
+    require(primary != nullptr, "native drag tests require a monitor");
+    QWidget owner(nullptr, Qt::Tool | Qt::FramelessWindowHint | Qt::WindowDoesNotAcceptFocus);
+    owner.setAttribute(Qt::WA_ShowWithoutActivating);
+    owner.setScreen(primary);
+    owner.setGeometry(
+        QRect(primary->availableGeometry().topLeft() + QPoint(101, 113), QSize(180, 100)));
+    owner.show();
+    settle();
+    const QRect ownerGeometry = ScreenshotOriginalImagePreviewWindow::nativeClientRect(&owner);
+    ScreenshotOriginalImagePreviewWindow preview(&owner);
+    for (const QSize size : {QSize(421, 239), QSize(503, 277), QSize(97, 25)}) {
+        preview.clear();
+        auto state = stateFor(&owner);
+        state.image = sourceImage(size);
+        state.resultRect = QRect(ownerGeometry.topLeft(), size);
+        state.imageRectInViewport = QRectF(QPointF(), QSizeF(size));
+        require(preview.present(state), "preparing native cross-monitor dragging failed");
+        settle();
+        const quint64 generation =
+            ScreenshotOriginalImagePreviewWindowTestAccess::generation(preview);
+        const uchar* const pixels =
+            ScreenshotOriginalImagePreviewWindowTestAccess::raster(preview).constBits();
+        const QPoint offset(11, 13);
+        const QPointF cursor(
+            ScreenshotOriginalImagePreviewWindow::nativeClientRect(&preview).topLeft() + offset);
+        require(ScreenshotOriginalImagePreviewWindowTestAccess::beginDrag(preview, cursor),
+                "starting a physical preview drag failed");
+        const HWND foreground = GetForegroundWindow();
+        for (QScreen* destination : QGuiApplication::screens()) {
+            const auto native = destination->nativeInterface<QNativeInterface::QWindowsScreen>();
+            MONITORINFO info{};
+            info.cbSize = sizeof(info);
+            require(native && GetMonitorInfoW(native->handle(), &info) != FALSE,
+                    "native drag destination geometry unavailable");
+            const QPoint requested(info.rcWork.left + 113, info.rcWork.top + 127);
+            ScreenshotOriginalImagePreviewWindowTestAccess::moveDrag(preview, requested + offset);
+            preview.repaint();
+            settle();
+            const QRect dragged = ScreenshotOriginalImagePreviewWindow::nativeClientRect(&preview);
+            const int gridTolerance = qCeil(destination->devicePixelRatio());
+            require(qAbs(dragged.x() - requested.x()) <= gridTolerance &&
+                        qAbs(dragged.y() - requested.y()) <= gridTolerance &&
+                        MonitorFromWindow(reinterpret_cast<HWND>(preview.internalWinId()),
+                                          MONITOR_DEFAULTTONEAREST) == native->handle(),
+                    "physical dragging must move the preview itself onto its destination grid");
+            for (int pass = 0; pass < 4; ++pass) {
+                require(preview.present(state), "refreshing the native dragged preview failed");
+                QEvent backingChange(QEvent::DevicePixelRatioChange);
+                QApplication::sendEvent(&preview, &backingChange);
+                preview.repaint();
+                settle();
+                require(
+                    ScreenshotOriginalImagePreviewWindow::nativeClientRect(&preview) == dragged &&
+                        dragged.size() == size &&
+                        ScreenshotOriginalImagePreviewWindowTestAccess::raster(preview).size() ==
+                            size &&
+                        ScreenshotOriginalImagePreviewWindowTestAccess::generation(preview) ==
+                            generation &&
+                        ScreenshotOriginalImagePreviewWindowTestAccess::raster(preview)
+                                .constBits() == pixels,
+                    "cross-monitor dragging and refresh must retain exact odd physical extents "
+                    "and the cached image raster");
+                require(ScreenshotOriginalImagePreviewWindow::nativeClientRect(&owner) ==
+                                ownerGeometry &&
+                            GetForegroundWindow() == foreground,
+                        "dragging a native preview must preserve its fixed recognition owner "
+                        "and foreground window");
+            }
+        }
+        ScreenshotOriginalImagePreviewWindowTestAccess::endDrag(preview);
+        require(preview.cursor().shape() == Qt::OpenHandCursor,
+                "ending a native drag must restore the open hand cursor");
+        const QRect released = ScreenshotOriginalImagePreviewWindow::nativeClientRect(&preview);
+        QEvent backingChange(QEvent::DevicePixelRatioChange);
+        QApplication::sendEvent(&preview, &backingChange);
+        preview.repaint();
+        settle();
+        require(ScreenshotOriginalImagePreviewWindow::nativeClientRect(&preview) == released &&
+                    released.size() == size &&
+                    ScreenshotOriginalImagePreviewWindowTestAccess::generation(preview) ==
+                        generation &&
+                    ScreenshotOriginalImagePreviewWindowTestAccess::raster(preview).constBits() ==
+                        pixels,
+                "backing refresh after release must retain the chosen physical rectangle, odd "
+                "extent, and cached image raster");
+    }
+}
 #endif
 
 #ifdef Q_OS_MACOS
@@ -627,6 +936,66 @@ void macPreviewPreservesLogicalGeometryAndAlienChildren() {
                 }
             }
         }
+    }
+}
+
+void macDraggingPreservesLogicalExtentsAcrossMonitors() {
+    require(QGuiApplication::platformName() == QStringLiteral("cocoa") &&
+                !ScreenshotOriginalImagePreviewWindow::usesPhysicalGeometry(),
+            "Cocoa drag tests require logical geometry");
+    QWidget owner(nullptr, Qt::Tool | Qt::FramelessWindowHint | Qt::WindowDoesNotAcceptFocus);
+    owner.setAttribute(Qt::WA_ShowWithoutActivating);
+    owner.setGeometry(100, 100, 180, 100);
+    owner.show();
+    settleMacNative();
+    const QRect ownerGeometry = owner.geometry();
+    ScreenshotOriginalImagePreviewWindow preview(&owner);
+    for (const QSize size : {QSize(421, 239), QSize(503, 277), QSize(97, 25)}) {
+        preview.clear();
+        auto state = stateFor(&owner);
+        state.resultRect = QRect(ownerGeometry.topLeft(), size);
+        state.imageRectInViewport = QRectF(QPointF(), QSizeF(size));
+        require(preview.present(state), "preparing Cocoa cross-monitor dragging failed");
+        settleMacNative();
+        const QPoint offset(11, 13);
+        const QPointF cursor(preview.geometry().topLeft() + offset);
+        require(ScreenshotOriginalImagePreviewWindowTestAccess::beginDrag(preview, cursor),
+                "starting a logical preview drag failed");
+        for (QScreen* destination : QGuiApplication::screens()) {
+            const QPoint requested = destination->availableGeometry().topLeft() + QPoint(113, 127);
+            ScreenshotOriginalImagePreviewWindowTestAccess::moveDrag(preview, requested + offset);
+            settleMacNative();
+            const QRect dragged(requested, size);
+            const BOOL active = [NSApp isActive];
+            NSWindow* keyWindow = NSApp.keyWindow;
+            const quint64 generation =
+                ScreenshotOriginalImagePreviewWindowTestAccess::generation(preview);
+            const uchar* const pixels =
+                ScreenshotOriginalImagePreviewWindowTestAccess::raster(preview).constBits();
+            for (int pass = 0; pass < 3; ++pass) {
+                require(preview.present(state), "refreshing the logical dragged preview failed");
+                preview.repaint();
+                settleMacNative();
+                NSWindow* native = macNativeWindow(preview);
+                require(preview.geometry() == dragged &&
+                            ScreenshotOriginalImagePreviewWindow::nativeClientRect(&preview) ==
+                                dragged &&
+                            qRound(native.frame.size.width) == size.width() &&
+                            qRound(native.frame.size.height) == size.height() &&
+                            !native.ignoresMouseEvents,
+                        "Cocoa dragging must retain the same logical extent on every monitor "
+                        "and accept mouse input");
+                require(owner.geometry() == ownerGeometry && [NSApp isActive] == active &&
+                            NSApp.keyWindow == keyWindow &&
+                            ScreenshotOriginalImagePreviewWindowTestAccess::generation(preview) ==
+                                generation &&
+                            ScreenshotOriginalImagePreviewWindowTestAccess::raster(preview)
+                                    .constBits() == pixels,
+                        "Cocoa drag refresh must reuse stable backing pixels while preserving "
+                        "owner geometry and activation");
+            }
+        }
+        ScreenshotOriginalImagePreviewWindowTestAccess::endDrag(preview);
     }
 }
 
@@ -738,7 +1107,7 @@ void macSiblingStackingPreservesActivationAndVisibility() {
                 "Cocoa relative stacking must preserve both levels and put the sibling above");
         require([NSApp isActive] == active && NSApp.keyWindow == keyWindow &&
                     owner.geometry() == resultRect && preview.geometry() == previewRect &&
-                    sibling.geometry() == siblingRect && previewNative.ignoresMouseEvents,
+                    sibling.geometry() == siblingRect && !previewNative.ignoresMouseEvents,
                 "Cocoa preview stacking must preserve activation, key window, geometry and input");
         const quint64 generation =
             ScreenshotOriginalImagePreviewWindowTestAccess::generation(preview);
@@ -779,10 +1148,12 @@ int main(int argc, char** argv) {
             nativePreviewPreservesAlienRecognitionAndCanvasChildren();
             nativeWindowMatchesOddResultExtentsAfterRepaints();
             nativeOverlappingSiblingRemainsAboveWithoutActivation();
+            nativeDraggingPreservesOddPhysicalExtentsAcrossMonitors();
 #elif defined(Q_OS_MACOS)
             macPreviewPreservesLogicalGeometryAndAlienChildren();
             macOversizedPreviewRetainsTheUnconstrainedLeftFallback();
             macSiblingStackingPreservesActivationAndVisibility();
+            macDraggingPreservesLogicalExtentsAcrossMonitors();
 #endif
         } else {
             placementHonorsTheResultMonitorAndPriority();
@@ -790,6 +1161,10 @@ int main(int argc, char** argv) {
             largeSourceCoordinatesRetainVisiblePixels();
             sourceDprMetadataDoesNotAlterViewportMapping();
             movementReusesTheRasterAndContentChangesInvalidateIt();
+            mouseDraggingPreservesTheViewportAndOwner();
+            clickingDoesNotDetachAutomaticPlacement();
+            draggedPlacementSurvivesContentAndBackingRefreshes();
+            hidingAndLosingMouseGrabCancelDragging();
             passiveWindowKeepsOwnershipAndClearsInvalidState();
 #ifdef Q_OS_MACOS
             macStackingRejectsOffscreenSurfaces();
