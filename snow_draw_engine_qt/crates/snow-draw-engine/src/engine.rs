@@ -133,10 +133,11 @@ impl Engine {
 
     pub fn clear_document_preserving_viewports(&mut self) -> Result<MutationResult, ErrorCode> {
         // Clearing a document must discard document/transient state without
-        // discarding the user's current creation styles. Most styles live in
-        // the editor session; watermark appearance and spotlight style are
-        // document-wide configuration, so carry those fields explicitly while
-        // dropping the watermark content that belongs to the old document.
+        // discarding the user's current creation appearance. Serial numbering
+        // belongs to the old document and restarts from the runtime profile.
+        // Most styles live in the editor session; watermark appearance and
+        // spotlight style are document-wide configuration, so carry those fields
+        // explicitly while dropping watermark content from the old document.
         let mut watermark = self.model.watermark_config().clone();
         watermark.text = String::new();
         watermark.template_value = String::new();
@@ -149,7 +150,8 @@ impl Engine {
         replacement.model.apply_transaction(retained_styles)?;
         self.model = replacement.model;
         self.history = HistoryStore::default();
-        self.editor.reset_document_retained_state();
+        self.editor
+            .reset_document_retained_state(&self.config.style_defaults.editor.serial_number);
         self.session_config_seeded = false;
         self.scene_cache = DocumentSceneCache::default();
         self.scene_cache.sync(&self.model, None);
@@ -805,6 +807,10 @@ mod tests {
         full.clear_document_preserving_viewports().unwrap();
         let mut expected_full_editor = source.style_defaults().editor.clone();
         expected_full_editor.rectangle = edited_rectangle;
+        // Clearing the restored document retains appearance but starts a new
+        // numbering session using the receiving runtime's profile.
+        expected_full_editor.serial_number.number =
+            target_config.style_defaults.editor.serial_number.number;
         assert_editor_defaults(
             &mut full,
             full_viewport,
@@ -844,6 +850,8 @@ mod tests {
         cloned.clear_document_preserving_viewports().unwrap();
         let mut expected_clone_editor = source.style_defaults().editor.clone();
         expected_clone_editor.rectangle = edited_rectangle;
+        expected_clone_editor.serial_number.number =
+            target_config.style_defaults.editor.serial_number.number;
         assert_editor_defaults(
             &mut cloned,
             source_viewport,

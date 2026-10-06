@@ -410,6 +410,112 @@ fn serial_number_explicit_values_are_remembered_per_numeric_type_and_session() {
 }
 
 #[test]
+fn serial_number_document_clear_restarts_all_sequences_and_preserves_appearance() {
+    use snow_draw_engine_editor::{
+        SERIAL_NUMBER_STYLE_MIXED_FONT_SIZE, SERIAL_NUMBER_STYLE_MIXED_NUMBER,
+    };
+
+    for explicit_start in [false, true] {
+        let (mut engine, viewport) = setup(1.0);
+        let second_viewport = engine.create_viewport(Default::default()).unwrap();
+        let numeric_types = [
+            SerialNumberNumericType::Arabic,
+            SerialNumberNumericType::Roman,
+            SerialNumberNumericType::LowercaseLetters,
+            SerialNumberNumericType::UppercaseLetters,
+            SerialNumberNumericType::Chinese,
+        ];
+        for (index, numeric_type) in numeric_types.into_iter().enumerate() {
+            set_numeric_type(&mut engine, viewport, numeric_type);
+            let mut style = engine.editor.serial_number_style(&engine.model);
+            style.font_size = 32.0;
+            style.number = 10 + index as i64;
+            let start = if explicit_start { style.number } else { 1 };
+            engine
+                .set_viewport_serial_number_style_patch(
+                    viewport,
+                    style,
+                    SERIAL_NUMBER_STYLE_MIXED_FONT_SIZE
+                        | if explicit_start {
+                            SERIAL_NUMBER_STYLE_MIXED_NUMBER
+                        } else {
+                            0
+                        },
+                )
+                .unwrap();
+            let id = click_serial_number(&mut engine, viewport, 100.0 + index as f64 * 120.0);
+            assert_eq!(engine.model.serial_number(id).unwrap().number, start);
+        }
+        let mut appearance = engine.editor.serial_number_style(&engine.model);
+        appearance.number = 1;
+        for _ in 0..2 {
+            engine.clear_document_preserving_viewports().unwrap();
+            assert!(engine.model.paint_order().is_empty());
+            assert!(!engine.history.can_undo());
+            assert!(!engine.history.can_redo());
+            assert_eq!(engine.editor.serial_number_style(&engine.model), appearance);
+            engine
+                .set_viewport_active_tool(viewport, ActiveTool::SerialNumber)
+                .unwrap();
+            for (index, numeric_type) in numeric_types.into_iter().enumerate() {
+                set_numeric_type(&mut engine, viewport, numeric_type);
+                for view in [viewport, second_viewport] {
+                    assert_eq!(
+                        engine.viewport_active_tool(view).unwrap(),
+                        ActiveTool::SerialNumber
+                    );
+                    assert_eq!(
+                        engine
+                            .viewport_style_toolbar_state(view)
+                            .unwrap()
+                            .serial_number_style
+                            .number,
+                        1
+                    );
+                }
+                let id = click_serial_number(&mut engine, viewport, 100.0 + index as f64 * 120.0);
+                assert_eq!(engine.model.serial_number(id).unwrap().number, 1);
+                engine.undo().unwrap();
+                assert_eq!(engine.editor.serial_number_style(&engine.model).number, 1);
+                engine.redo().unwrap();
+                assert_eq!(engine.editor.serial_number_style(&engine.model).number, 2);
+            }
+        }
+    }
+}
+
+#[test]
+fn serial_number_document_clear_uses_configured_start_for_its_numeric_type() {
+    let mut config = EngineConfig::default();
+    config.style_defaults.editor.serial_number.numeric_type = SerialNumberNumericType::Roman;
+    config.style_defaults.editor.serial_number.number = 7;
+    let mut engine = Engine::new(config);
+    let viewport = engine.create_viewport(Default::default()).unwrap();
+    engine
+        .set_viewport_active_tool(viewport, ActiveTool::SerialNumber)
+        .unwrap();
+    for numeric_type in [
+        SerialNumberNumericType::Roman,
+        SerialNumberNumericType::Arabic,
+    ] {
+        set_numeric_type(&mut engine, viewport, numeric_type);
+        let mut style = engine.editor.serial_number_style(&engine.model);
+        style.number = 99;
+        engine
+            .set_viewport_serial_number_style_patch(
+                viewport,
+                style,
+                snow_draw_engine_editor::SERIAL_NUMBER_STYLE_MIXED_NUMBER,
+            )
+            .unwrap();
+    }
+    engine.clear_document_preserving_viewports().unwrap();
+    assert_eq!(engine.editor.serial_number_style(&engine.model).number, 1);
+    set_numeric_type(&mut engine, viewport, SerialNumberNumericType::Roman);
+    assert_eq!(engine.editor.serial_number_style(&engine.model).number, 7);
+}
+
+#[test]
 fn serial_number_inactive_counters_follow_deletion_reset_and_history() {
     let (mut engine, viewport) = setup(1.0);
     for (numeric_type, x, y) in [

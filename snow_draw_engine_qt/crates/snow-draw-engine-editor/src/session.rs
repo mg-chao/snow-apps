@@ -255,13 +255,21 @@ impl EditorSession {
         self.editor.reset_editing_state();
     }
 
-    /// Discards measurements and transient storage belonging to the old document.
-    pub fn reset_document_retained_state(&mut self) {
+    /// Discards measurements, numbering sequences, and transient storage from the old document.
+    pub fn reset_document_retained_state(&mut self, initial_serial_number: &SerialNumberStyle) {
         self.editor.reset_editing_state();
         self.editor.invalidate_arrow_text_measurements();
         self.editor.state.arrow_text_measurements = Vec::new();
         self.editor.state.selection = Default::default();
         self.editor.state.ui = Default::default();
+        // Counters and explicit starts belong to a document, unlike creation appearance.
+        let state = &mut self.editor.state;
+        state.serial_number_values_by_numeric_type = [1; 5];
+        state.serial_number_values_by_numeric_type[initial_serial_number.numeric_type as usize] =
+            initial_serial_number.number;
+        state.serial_number_sequence_overridden = [false; 5];
+        state.default_serial_number.number = state.serial_number_values_by_numeric_type
+            [state.default_serial_number.numeric_type as usize];
     }
 
     pub fn style_toolbar_source(&self, document: &DocumentModel) -> StyleToolbarSource {
@@ -823,7 +831,7 @@ mod document_reset_tests {
         let config = session.config();
         let generation = session.editor.state.arrow_text_measurement_generation;
 
-        session.reset_document_retained_state();
+        session.reset_document_retained_state(&EditorStyleDefaults::default().serial_number);
         assert_eq!(session.editor.state.arrow_text_measurements.capacity(), 0);
         assert_eq!(session.editor.state.ui.snap_guides.capacity(), 0);
         assert_eq!(session.editor.state.selection.ids.capacity(), 0);

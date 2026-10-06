@@ -255,6 +255,85 @@ void serialNumberAppearanceDefaultsPreserveSessionSequences() {
         }
     }
 }
+void newScreenshotDocumentRestartsSerialNumberSequences() {
+    const SnowCanvasSerialNumberNumericType types[] = {
+        SnowCanvasSerialNumberNumericType::Arabic,
+        SnowCanvasSerialNumberNumericType::Roman,
+        SnowCanvasSerialNumberNumericType::LowercaseLetters,
+        SnowCanvasSerialNumberNumericType::UppercaseLetters,
+        SnowCanvasSerialNumberNumericType::Chinese,
+    };
+    for (const bool explicitStart : {false, true}) {
+        SnowCanvasRuntime runtime;
+        SnowCanvasWidget canvas(runtime);
+        ScreenshotToolPalette palette(options());
+        QObject::connect(&canvas, &SnowCanvasWidget::styleToolbarStateChanged, &palette,
+                         [&] { palette.setStyleToolbarState(canvas.canvasStyleToolbarState()); });
+        canvas.resize(800, 600);
+        canvas.show();
+        auto defaults = screenshotCanvasToolStyleDefaults();
+        defaults.serialNumber.type = SnowCanvasSerialNumberType::OutlinedCircle;
+        defaults.serialNumber.fontSize = 32;
+        applyScreenshotCanvasToolStyles(canvas, defaults);
+        require(canvas.setCanvasTool(SnowCanvasTool::SerialNumber),
+                "activate screenshot numbering");
+        palette.setActiveTool(ScreenshotToolPalette::Tool::SerialNumber);
+        const auto viewport = canvas.viewportId();
+        for (int capture = 0; capture < 3; ++capture) {
+            if (capture > 0) {
+                // Capture teardown reuses the runtime and its attached canvas.
+                require(runtime.clearDocumentPreservingViewports(), "clear completed capture");
+                applyScreenshotCanvasToolStyles(canvas, defaults);
+                require(canvas.viewportId() == viewport && documentSlots(runtime).isEmpty() &&
+                            !runtime.canUndo() && !runtime.canRedo(),
+                        "new capture reuses its viewport with an empty document and history");
+            }
+            require(canvas.setCanvasTool(SnowCanvasTool::SerialNumber),
+                    "reactivate numbering in the new capture");
+            for (int index = 0; index < 5; ++index) {
+                auto style = canvas.canvasStyleToolbarState().serialNumberStyle;
+                style.numericType = types[index];
+                style.number = 10 + index;
+                require(canvas.applyStyleEdit(SnowCanvasSerialNumberEdit{
+                            style, SnowCanvasSerialNumberStyleMixedNumericType |
+                                       (capture == 0 && explicitStart
+                                            ? SnowCanvasSerialNumberStyleMixedNumber
+                                            : 0)}),
+                        "switch screenshot numbering format");
+                auto expected = defaults.serialNumber;
+                expected.numericType = types[index];
+                expected.number = capture == 0 && explicitStart ? style.number : 1;
+                require(
+                    canvas.canvasStyleToolbarState().serialNumberStyle == expected &&
+                        palette.creationStyleDefaults().serialNumber == expected,
+                    "new capture resets every format and its toolbar while retaining appearance");
+                const QPointF point(80.0 + index * 140.0, 100);
+                mouse(canvas, QEvent::MouseButtonPress, point);
+                mouse(canvas, QEvent::MouseButtonRelease, point);
+                const qint64 created = documentSlots(runtime)
+                                           .last()
+                                           .toObject()
+                                           .value(QStringLiteral("data"))
+                                           .toObject()
+                                           .value(QStringLiteral("SerialNumber"))
+                                           .toObject()
+                                           .value(QStringLiteral("number"))
+                                           .toVariant()
+                                           .toLongLong();
+                require(created == expected.number,
+                        "new capture creates a badge at its reset value");
+                if (capture > 0) {
+                    require(runtime.undo() &&
+                                canvas.canvasStyleToolbarState().serialNumberStyle.number == 1,
+                            "new capture discards the old manual start override");
+                    require(runtime.redo() &&
+                                canvas.canvasStyleToolbarState().serialNumberStyle.number == 2,
+                            "new capture resumes automatic numbering after redo");
+                }
+            }
+        }
+    }
+}
 void fontWheelRemembersDefaultsAndDraftChoice() {
     Editor editor;
     editor.text();
@@ -472,6 +551,7 @@ void runScreenshotStyleBindingTests() {
 
 void runScreenshotSerialNumberRestartTests() {
     serialNumberAppearanceDefaultsPreserveSessionSequences();
+    newScreenshotDocumentRestartsSerialNumberSequences();
     const auto original = screenshotCanvasToolStyleDefaults();
     const auto restore =
         qScopeGuard([&] { static_cast<void>(persistScreenshotCanvasToolStyles(original)); });
