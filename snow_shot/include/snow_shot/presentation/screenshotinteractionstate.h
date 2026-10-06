@@ -34,12 +34,14 @@ enum class ScreenshotActiveTool {
     Latex,
     RectangleEraser,
     BrushEraser,
+    TextTranslation,
 };
 
 [[nodiscard]] inline bool isScreenshotRecognitionTool(ScreenshotActiveTool tool) {
-    return tool == ScreenshotActiveTool::Ocr || tool == ScreenshotActiveTool::Table ||
-           tool == ScreenshotActiveTool::Latex || tool == ScreenshotActiveTool::Qr ||
-           tool == ScreenshotActiveTool::Markdown || tool == ScreenshotActiveTool::Html;
+    return tool == ScreenshotActiveTool::Ocr || tool == ScreenshotActiveTool::TextTranslation ||
+           tool == ScreenshotActiveTool::Table || tool == ScreenshotActiveTool::Latex ||
+           tool == ScreenshotActiveTool::Qr || tool == ScreenshotActiveTool::Markdown ||
+           tool == ScreenshotActiveTool::Html;
 }
 
 enum class ScreenshotCaptureMode {

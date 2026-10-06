@@ -361,6 +361,7 @@ screenshotShortcutHintRows(const ScreenshotShortcutHintContext& context) {
         context.activeTool != ScreenshotActiveTool::RectangleEraser &&
         context.activeTool != ScreenshotActiveTool::BrushEraser &&
         context.activeTool != ScreenshotActiveTool::Ocr &&
+        context.activeTool != ScreenshotActiveTool::TextTranslation &&
         context.activeTool != ScreenshotActiveTool::Table &&
         context.activeTool != ScreenshotActiveTool::Qr &&
         context.activeTool != ScreenshotActiveTool::Markdown &&
@@ -461,6 +462,7 @@ screenshotShortcutHintRows(const ScreenshotShortcutHintContext& context) {
         break;
     case ScreenshotActiveTool::Eraser:
     case ScreenshotActiveTool::Ocr:
+    case ScreenshotActiveTool::TextTranslation:
     case ScreenshotActiveTool::Table:
     case ScreenshotActiveTool::Qr:
     case ScreenshotActiveTool::Latex:

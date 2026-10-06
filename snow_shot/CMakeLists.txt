@@ -6832,6 +6832,31 @@ if(SNOW_SHOT_BUILD_TESTS)
         ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
 
     snow_shot_import_offscreen_platform(snow-shot-recognition-session-controller-tests)
+    get_target_property(_translation_tool_sources snow-shot-color-picker-lifecycle-tests SOURCES)
+    get_target_property(_translation_session_sources snow-shot-recognition-session-controller-tests SOURCES)
+    list(APPEND _translation_tool_sources ${_translation_session_sources})
+    list(FILTER _translation_tool_sources EXCLUDE REGEX "^tests/")
+    list(REMOVE_DUPLICATES _translation_tool_sources)
+    add_executable(snow-shot-translation-tool-tests ${_translation_tool_sources}
+        tests/screenshot_translation_tool_tests.cpp
+        include/snow_shot/presentation/screenshotocrcontroller.h
+        src/presentation/ocr/screenshotocrcontroller.cpp)
+    target_include_directories(snow-shot-translation-tool-tests PRIVATE include src/image)
+    target_link_libraries(snow-shot-translation-tool-tests PRIVATE snow_shot_translation
+        snow_shot_diagnostics snow_shot_storage snow_shot_image_codec snow_shot_window_shortcuts
+        snow_draw_engine_qt_canvas ant_design_qt adqt_icon_core ant_design_icons_qt
+        Qt6::Widgets Qt6::Network Qt6::GuiPrivate)
+    snow_shot_link_macos_window_platform(snow-shot-translation-tool-tests)
+    if(WIN32)
+        target_link_libraries(snow-shot-translation-tool-tests PRIVATE user32 comctl32)
+    endif()
+    snow_shot_import_offscreen_platform(snow-shot-translation-tool-tests)
+    add_test(NAME snow-shot-translation-tool-tests
+        COMMAND snow-shot-translation-tool-tests -platform offscreen)
+    set_tests_properties(snow-shot-translation-tool-tests PROPERTIES LABELS "unit" TIMEOUT 60
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
+    unset(_translation_tool_sources)
+    unset(_translation_session_sources)
     get_target_property(_snow_mcp_document_sources snow-shot-recognition-session-controller-tests SOURCES)
     list(REMOVE_ITEM _snow_mcp_document_sources
         tests/screenshot_recognition_session_controller_tests.cpp
@@ -8679,7 +8704,8 @@ install(DIRECTORY
 
 foreach(_conversion_view_target IN ITEMS snow_shot snow-shot-recognition-window-tests
         snow-shot-mcp-document-tests
-        snow-shot-recognition-session-controller-tests snow-shot-pinned-window-tests
+        snow-shot-recognition-session-controller-tests snow-shot-translation-tool-tests
+        snow-shot-pinned-window-tests
         snow-shot-file-pin-batch-performance-benchmark)
     if(TARGET ${_conversion_view_target})
         target_sources(${_conversion_view_target} PRIVATE
@@ -8690,7 +8716,8 @@ foreach(_conversion_view_target IN ITEMS snow_shot snow-shot-recognition-window-
 endforeach()
 foreach(_conversion_controller_target IN ITEMS snow_shot
         snow-shot-mcp-document-tests
-        snow-shot-recognition-session-controller-tests snow-shot-pinned-window-tests
+        snow-shot-recognition-session-controller-tests snow-shot-translation-tool-tests
+        snow-shot-pinned-window-tests
         snow-shot-file-pin-batch-performance-benchmark)
     if(TARGET ${_conversion_controller_target})
         target_sources(${_conversion_controller_target} PRIVATE

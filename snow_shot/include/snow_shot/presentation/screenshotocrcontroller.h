@@ -74,6 +74,7 @@ class ScreenshotOcrController final : public QObject {
     ~ScreenshotOcrController() override;
 
     void activate();
+    void activateTextTranslation();
     void activateTable();
     void activateQr();
     void activateLatex();
@@ -140,7 +141,7 @@ class ScreenshotOcrController final : public QObject {
         bool selectionHandlesVisible = true;
         bool selectionBorderVisible = true;
     };
-    void activateMode(Mode mode);
+    void activateMode(Mode mode, bool textTranslation = false);
     void handleQrLinkActivated(const QUrl& url);
     void updateOverlays() const;
     void

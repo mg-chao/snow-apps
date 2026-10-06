@@ -75,6 +75,8 @@ ScreenshotToolPalette::Tool paletteTool(ScreenshotActiveTool tool) {
         return ScreenshotToolPalette::Tool::SerialNumber;
     case ScreenshotActiveTool::Ocr:
         return ScreenshotToolPalette::Tool::Ocr;
+    case ScreenshotActiveTool::TextTranslation:
+        return ScreenshotToolPalette::Tool::TextTranslation;
     case ScreenshotActiveTool::Table:
         return ScreenshotToolPalette::Tool::Table;
     case ScreenshotActiveTool::Qr:
@@ -139,7 +141,10 @@ ScreenshotOcrController::ScreenshotOcrController(ScreenshotOcrControllerContext 
                 if (ScreenshotToolbarWindow* toolbar = m_context.overlayCoordinator.toolbar()) {
                     const auto tool =
                         mode == static_cast<int>(ScreenshotRecognitionSessionController::Mode::Text)
-                            ? ScreenshotActiveTool::Ocr
+                            ? (m_context.interaction.activeTool() ==
+                                       ScreenshotActiveTool::TextTranslation
+                                   ? ScreenshotActiveTool::TextTranslation
+                                   : ScreenshotActiveTool::Ocr)
                         : mode == static_cast<int>(
                                       ScreenshotRecognitionSessionController::Mode::Table)
                             ? ScreenshotActiveTool::Table
@@ -163,6 +168,10 @@ ScreenshotOcrController::ScreenshotOcrController(ScreenshotOcrControllerContext 
             },
             [this](bool available, bool translating, bool streaming, bool canUndo, bool canRedo,
                    bool canReset, bool originalImage) {
+                if (translating && m_active && m_mode == Mode::Text &&
+                    m_context.interaction.activeTool() != ScreenshotActiveTool::TextTranslation) {
+                    m_context.interaction.setCanvasTool(ScreenshotActiveTool::TextTranslation);
+                }
                 if (ScreenshotToolbarWindow* toolbar = m_context.overlayCoordinator.toolbar()) {
                     toolbar->setTextTranslationState(available, translating, streaming, canUndo,
                                                      canRedo, canReset, originalImage);
@@ -313,6 +322,12 @@ void ScreenshotOcrController::activate() {
     activateMode(Mode::Text);
 }
 
+void ScreenshotOcrController::activateTextTranslation() {
+#if SNOW_SHOT_ENABLE_TEXT_TRANSLATION
+    activateMode(Mode::Text, true);
+#endif
+}
+
 void ScreenshotOcrController::activateTable() {
     activateMode(Mode::Table);
 }
@@ -361,7 +376,7 @@ QString ScreenshotOcrController::currentCacheKey() const {
             QCryptographicHash::hash(geometry, QCryptographicHash::Sha256).toHex()));
 }
 
-void ScreenshotOcrController::activateMode(Mode mode) {
+void ScreenshotOcrController::activateMode(Mode mode, bool textTranslation) {
     const int sessionMode = mode == Mode::Text       ? 0
                             : mode == Mode::Table    ? 1
                             : mode == Mode::Qr       ? 2
@@ -423,26 +438,16 @@ void ScreenshotOcrController::activateMode(Mode mode) {
         m_recognitionWindow->clearTableSession();
         m_recognitionWindow->clearQrContents();
     }
-    if (mode == Mode::Text) {
-        m_context.interaction.setOcrTool();
-    } else if (mode == Mode::Table) {
-        m_context.interaction.setTableTool();
-    } else if (mode == Mode::Latex) {
-        m_context.interaction.setCanvasTool(ScreenshotActiveTool::Latex);
-    } else if (mode == Mode::Markdown || mode == Mode::Html) {
-        m_context.interaction.setCanvasTool(mode == Mode::Markdown ? ScreenshotActiveTool::Markdown
-                                                                   : ScreenshotActiveTool::Html);
-    } else {
-        m_context.interaction.setQrTool();
-    }
+    const ScreenshotActiveTool activeTool =
+        mode == Mode::Text
+            ? (textTranslation ? ScreenshotActiveTool::TextTranslation : ScreenshotActiveTool::Ocr)
+        : mode == Mode::Table    ? ScreenshotActiveTool::Table
+        : mode == Mode::Markdown ? ScreenshotActiveTool::Markdown
+        : mode == Mode::Latex    ? ScreenshotActiveTool::Latex
+        : mode == Mode::Html     ? ScreenshotActiveTool::Html
+                                 : ScreenshotActiveTool::Qr;
+    m_context.interaction.setCanvasTool(activeTool);
     if (ScreenshotToolbarWindow* toolbar = m_context.overlayCoordinator.toolbar()) {
-        const ScreenshotActiveTool activeTool = mode == Mode::Text    ? ScreenshotActiveTool::Ocr
-                                                : mode == Mode::Table ? ScreenshotActiveTool::Table
-                                                : mode == Mode::Markdown
-                                                    ? ScreenshotActiveTool::Markdown
-                                                : mode == Mode::Latex ? ScreenshotActiveTool::Latex
-                                                : mode == Mode::Html  ? ScreenshotActiveTool::Html
-                                                                      : ScreenshotActiveTool::Qr;
         toolbar->setActiveTool(paletteTool(activeTool));
     }
 

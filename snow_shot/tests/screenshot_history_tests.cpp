@@ -1895,7 +1895,8 @@ void quickSelectionModificationControlsBorderResize() {
     require(settings.setQuickSelectionModification(false), "disable quick selection modification");
     for (const auto tool :
          {ScreenshotActiveTool::Shape, ScreenshotActiveTool::FreeDraw, ScreenshotActiveTool::Select,
-          ScreenshotActiveTool::Text, ScreenshotActiveTool::Ocr, ScreenshotActiveTool::Table,
+          ScreenshotActiveTool::Text, ScreenshotActiveTool::Ocr,
+          ScreenshotActiveTool::TextTranslation, ScreenshotActiveTool::Table,
           ScreenshotActiveTool::Qr, ScreenshotActiveTool::Latex, ScreenshotActiveTool::Markdown,
           ScreenshotActiveTool::Html}) {
         ScreenshotCaptureState captureState;
@@ -2016,6 +2017,7 @@ void nonMoveToolPermanentlySwitchesForSelectionResize() {
 void recognitionAndScrollingToolsResizeSelectionBorder() {
     const ScreenshotActiveTool recognitionTools[] = {
         ScreenshotActiveTool::Ocr,
+        ScreenshotActiveTool::TextTranslation,
         ScreenshotActiveTool::Table,
         ScreenshotActiveTool::Qr,
     };

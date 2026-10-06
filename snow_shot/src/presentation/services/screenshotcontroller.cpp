@@ -235,6 +235,8 @@ ScreenshotToolPalette::Tool paletteToolForActiveTool(ScreenshotActiveTool tool) 
         return ScreenshotToolPalette::Tool::SerialNumber;
     case ScreenshotActiveTool::Ocr:
         return ScreenshotToolPalette::Tool::Ocr;
+    case ScreenshotActiveTool::TextTranslation:
+        return ScreenshotToolPalette::Tool::TextTranslation;
     case ScreenshotActiveTool::Table:
         return ScreenshotToolPalette::Tool::Table;
     case ScreenshotActiveTool::Qr:
@@ -2528,6 +2530,7 @@ bool ScreenshotController::Impl::activateToolForSelectionResize(ScreenshotActive
         setSpotlightTool();
         break;
     case ScreenshotActiveTool::Ocr:
+    case ScreenshotActiveTool::TextTranslation:
     case ScreenshotActiveTool::Table:
     case ScreenshotActiveTool::Qr:
     case ScreenshotActiveTool::Latex:
@@ -2548,6 +2551,12 @@ void ScreenshotController::Impl::activateRecognitionToolAfterSelectionResize(
     ScreenshotActiveTool tool) {
     if (!m_interaction.moveToolActive() || m_interaction.dragging() ||
         !m_selection.hasPixelSelection()) {
+        return;
+    }
+
+    if (tool == ScreenshotActiveTool::TextTranslation) {
+        // A new activation re-arms translation when recognition of the resized selection finishes.
+        setTextTranslationTool();
         return;
     }
 
@@ -2741,14 +2750,9 @@ void ScreenshotController::Impl::setTextTranslationTool() {
     if (!ensureRecognitionFeature()) {
         return;
     }
-    m_ocrController->activate();
+    m_ocrController->activateTextTranslation();
     m_presentationServices->updateOverlayState();
     restoreToolUiAfterScrollingCapture(scrollingCaptureStopped);
-    if (m_overlayCoordinator != nullptr) {
-        if (ScreenshotToolbarWindow* toolbar = m_overlayCoordinator->toolbar()) {
-            toolbar->setActiveTool(ScreenshotToolPalette::Tool::TextTranslation);
-        }
-    }
 #endif
 }
 
@@ -6279,6 +6283,7 @@ const std::pair<const char*, ScreenshotActiveTool> mcpTools[] = {
     {"spotlight", ScreenshotActiveTool::Spotlight},
     {"auto_filter", ScreenshotActiveTool::AutoFilter},
     {"ocr", ScreenshotActiveTool::Ocr},
+    {"text_translation", ScreenshotActiveTool::TextTranslation},
     {"table", ScreenshotActiveTool::Table},
     {"qr", ScreenshotActiveTool::Qr},
     {"latex", ScreenshotActiveTool::Latex},
