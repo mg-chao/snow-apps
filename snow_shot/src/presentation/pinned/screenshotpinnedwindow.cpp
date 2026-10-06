@@ -4266,7 +4266,8 @@ void ScreenshotPinnedWindow::updateOriginalImagePreviewVisibility() {
         const auto* toolbar =
             m_editController != nullptr ? m_editController->toolbarWindow() : nullptr;
         m_recognitionContent->setOriginalImagePreviewSuppressed(
-            m_auxiliaryWindowInteractionActive || toolbar == nullptr || !toolbar->isVisible());
+            m_auxiliaryWindowInteractionActive || m_printPending || toolbar == nullptr ||
+            !toolbar->isVisible());
     }
 }
 
@@ -5831,7 +5832,9 @@ void ScreenshotPinnedWindow::printContent() {
     const QPointer<QWidget> previousFocus(QApplication::focusWidget());
     const auto interactionGuard = std::make_shared<ScreenshotPrintInteractionGuard>(
         QList<QWidget*>{this, m_editController ? m_editController->toolbarWindow() : nullptr});
-    beginAuxiliaryWindowInteraction();
+    // Printing blocks input without the move/resize lifecycle that hides and re-anchors the
+    // toolbar.
+    updateOriginalImagePreviewVisibility();
     const auto finished = [receiver, previousFocus, suspension, generation, replacement, completed,
                            interactionGuard](ScreenshotPrintService::Result result) {
         if (std::exchange(*completed, true))
@@ -5843,7 +5846,7 @@ void ScreenshotPinnedWindow::printContent() {
         receiver->setProperty("saveDialogOpen", false);
         receiver->m_printArtifact.reset();
         receiver->m_shortcutManager->resumeInput(suspension);
-        receiver->endAuxiliaryWindowInteraction();
+        receiver->updateOriginalImagePreviewVisibility();
         if (receiver->m_closing || !receiver->isVisible() ||
             receiver->m_presentationGeneration != generation ||
             receiver->m_contentReplacementGeneration != replacement)

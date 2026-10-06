@@ -16340,6 +16340,133 @@ void selectionClipboardPublicationLifetime() {
 }
 
 namespace {
+void pinnedPrintingPreservesVisibleToolbar(bool recognition) {
+    using Access = ScreenshotPinnedWindowTestAccess;
+    using Service = ScreenshotPrintService;
+    const snow_shot::storage::TextRecognitionSettings settings;
+    const bool previousPreview = settings.showOriginalImagePreview();
+    const auto restoreSetting = qScopeGuard(
+        [&] { static_cast<void>(settings.setShowOriginalImagePreview(previousPreview)); });
+    require(settings.setShowOriginalImagePreview(true), "enable print comparison preview");
+
+    int starts = 0;
+    Service::Completion nativeCompletion;
+    Service printer([&](QWidget*, QImage, Service::Completion completion) {
+        ++starts;
+        nativeCompletion = std::move(completion);
+    });
+    ScreenshotPinnedWindow window;
+    const auto config = cachedOcrPinConfig(nullptr);
+    if (recognition) {
+        auto* session = Access::hiddenSelectionOffscreen(window, config);
+        Access::originalPreviewFrameReady(window);
+        require(session != nullptr, "print comparison needs a recognition session");
+        session->activate(ScreenshotRecognitionSessionController::Mode::Text);
+    } else {
+        Access::restoreOffscreen(window, config);
+        window.show();
+    }
+    Access::setPrinter(window, &printer);
+    Access::editSelectionOffscreen(window, true);
+    auto* edit = window.findChild<ScreenshotPinnedEditController*>();
+    auto* toolbar = edit ? edit->toolbarWindow() : nullptr;
+    auto* canvas = window.findChild<SnowCanvasWidget*>();
+    require(toolbar && toolbar->isVisible() && canvas, "printing needs a visible toolbar");
+    if (!recognition)
+        toolbar->palette()->freeDrawRequested();
+    toolbar->moveContentTo(toolbar->contentPosition() + QPoint(24, 16));
+    toolbar->dragFinished();
+    window.activateWindow();
+    canvas->setFocus();
+    waitForUi(30);
+    const QPoint toolbarPosition = toolbar->contentPosition();
+    const auto activeTool = toolbar->palette()->activeTool();
+    const auto canvasTool = canvas->canvasTool();
+    const QRect geometry = window.currentNativeGeometry();
+    auto* content = window.findChild<ScreenshotRecognitionWindow*>(
+        QStringLiteral("screenshotPinnedRecognitionContent"));
+    const auto previewVisible = [&] {
+        if (!content)
+            return false;
+        const auto previews = content->findChildren<ScreenshotOriginalImagePreviewWindow*>();
+        return std::any_of(previews.cbegin(), previews.cend(),
+                           [](auto* preview) { return preview->isVisible(); });
+    };
+    require(!recognition || previewVisible(), "recognition printing starts with its comparison");
+
+    // The floating toolbar does not take keyboard focus. Observe pointer delivery
+    // before widget handling so the probe cannot start a window move or canvas edit.
+    class PointerPressProbe final : public QObject {
+      public:
+        int presses = 0;
+
+      protected:
+        bool eventFilter(QObject*, QEvent* event) override {
+            if (event->type() != QEvent::MouseButtonPress)
+                return false;
+            ++presses;
+            return true;
+        }
+    };
+    PointerPressProbe toolbarInput;
+    PointerPressProbe pinnedInput;
+    toolbar->installEventFilter(&toolbarInput);
+    canvas->installEventFilter(&pinnedInput);
+    const auto pressOnSurfaces = [&] {
+        for (QWidget* surface : {static_cast<QWidget*>(toolbar), static_cast<QWidget*>(canvas)}) {
+            const QPoint position = surface->rect().center();
+            QMouseEvent press(QEvent::MouseButtonPress, QPointF(position),
+                              QPointF(surface->mapToGlobal(position)), Qt::LeftButton,
+                              Qt::LeftButton, Qt::NoModifier);
+            QCoreApplication::sendEvent(surface, &press);
+        }
+    };
+
+    for (auto status : {Service::Status::Cancelled, Service::Status::Failed,
+                        Service::Status::Submitted, Service::Status::HandedOff}) {
+        window.activateWindow();
+        canvas->setFocus();
+        waitForUi(10);
+        const int previousStarts = starts;
+        if (status == Service::Status::Cancelled || status == Service::Status::Submitted)
+            toolbar->palette()->printRequested();
+        else
+            sendShortcut(*canvas, Qt::Key_P, Qt::ControlModifier);
+        require(Access::printPending(window) && toolbar->isVisible() &&
+                    toolbar->contentPosition() == toolbarPosition,
+                "print preparation must retain the visible manually placed toolbar");
+        require(!previewVisible(), "pending printing must suppress the comparison preview");
+        translation_tests::waitUntil([&] { return starts == previousStarts + 1; },
+                                     "visible-toolbar printing must reach the native backend");
+        require(toolbar->isVisible() && toolbar->contentPosition() == toolbarPosition &&
+                    toolbar->palette()->activeTool() == activeTool &&
+                    canvas->canvasTool() == canvasTool &&
+                    window.currentNativeGeometry() == geometry,
+                "native printing must preserve toolbar visibility, placement and editing state");
+        pressOnSurfaces();
+        require(toolbarInput.presses == 0 && pinnedInput.presses == 0,
+                "printing must block input on both retained surfaces");
+        toolbar->palette()->printRequested();
+        require(starts == previousStarts + 1, "pending print must reject repeated requests");
+        nativeCompletion({status, QStringLiteral("fake failure")});
+        translation_tests::waitUntil([&] { return !Access::printPending(window); },
+                                     "printing must release the pending interaction");
+        waitForUi(20);
+        require(window.isVisible() && !printer.busy() && edit->editMode() && toolbar->isVisible() &&
+                    toolbar->contentPosition() == toolbarPosition &&
+                    toolbar->palette()->activeTool() == activeTool &&
+                    canvas->canvasTool() == canvasTool &&
+                    window.currentNativeGeometry() == geometry,
+                "every native outcome must preserve the toolbar and editing state");
+        require(!recognition || previewVisible(), "completion must restore the comparison preview");
+        pressOnSurfaces();
+        require(toolbarInput.presses == 1 && pinnedInput.presses == 1,
+                "print completion must restore input on both surfaces");
+        toolbarInput.presses = 0;
+        pinnedInput.presses = 0;
+    }
+}
+
 void pinnedPrintingWithoutToolbarAndDelayedCompletion(bool locked) {
     using Access = ScreenshotPinnedWindowTestAccess;
     using Service = ScreenshotPrintService;
@@ -18611,6 +18738,8 @@ int main(int argc, char* argv[]) {
                 QStringLiteral(":/recording-test-fonts/SnowRecordingTestSans-Regular.ttf"));
             require(font >= 0, "print fixtures must load their bundled font");
             QApplication::setFont(QFont(QFontDatabase::applicationFontFamilies(font).first(), 12));
+            pinnedPrintingPreservesVisibleToolbar(false);
+            pinnedPrintingPreservesVisibleToolbar(true);
             pinnedPrintingWithoutToolbarAndDelayedCompletion(false);
             pinnedPrintingWithoutToolbarAndDelayedCompletion(true);
             pinnedPrintMatchesTransformedViewport();

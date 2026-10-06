@@ -77,6 +77,10 @@ application; use `--legacy` to exercise the fallback dialog directly.
 - Pin an image. Keep the drawing toolbar hidden and press Ctrl+P. Confirm it
   stays hidden and the pin stays open. Repeat with rotation, zoom, opacity, and
   thumbnail mode; no controls or resize handles may appear in the output.
+- Show the pinned toolbar, move it manually, and invoke Print or Ctrl+P. Confirm
+  it stays visible in the same position during preparation, while the native
+  dialog is open, and after closing it. Input must be blocked until completion.
+  Repeat with OCR: the comparison preview must hide during printing and return afterward.
 - Print scrolled OCR, translation, table, QR, and formatted text results. Confirm
   only the visible content viewport prints, without selections or caret. Rebind
   Print and confirm live updates. Editing text and other modal interactions must
