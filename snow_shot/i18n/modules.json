@@ -2,6 +2,7 @@
   "core": [
     "AboutPageWidget",
     "ApplicationRestart",
+    "ConfirmationSkipButton",
     "DiagnosticsService",
     "EditionMetadata",
     "FloatingToolbar",

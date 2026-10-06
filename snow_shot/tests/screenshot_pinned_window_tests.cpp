@@ -61,6 +61,7 @@
 #include "snow_shot/shortcuts/shortcutdisplayservice.h"
 #include "snow_shot/presentation/components/icons/snowshoticons.h"
 #include "snow_shot/storage/applicationstorage.h"
+#include "snow_shot/storage/configurationstore.h"
 #include "snow_shot/storage/pinnedwindowrepository.h"
 #include "snow_shot/storage/pinnedwindowtypes.h"
 #include "snow_shot/storage/settingsadapters.h"
@@ -5448,6 +5449,82 @@ void pinnedWindowConfirmationPreferences() {
     button->click();
     require(!window.isVisible(), "existing pins must read updated close preferences immediately");
     QCoreApplication::processEvents();
+}
+
+void pinnedWindowDontAskAgainPreferences() {
+    const snow_shot::storage::PinToScreenSettings settings;
+    const bool oldClose = settings.confirmBeforeClosingWindow();
+    const bool oldDestroy = settings.confirmBeforeDestroyingWindow();
+    const auto restore = qScopeGuard([&] {
+        require(settings.setConfirmBeforeClosingWindow(oldClose) &&
+                    settings.setConfirmBeforeDestroyingWindow(oldDestroy),
+                "restore Don't ask again confirmation preferences");
+    });
+    for (const bool destroy : {false, true}) {
+        require(settings.setConfirmBeforeClosingWindow(true) &&
+                    settings.setConfirmBeforeDestroyingWindow(true),
+                "enable independent confirmation prompts");
+        int closes = 0;
+        int removals = 0;
+        int closeSignals = 0;
+        for (const bool subsequent : {false, true}) {
+            ScreenshotPinnedWindow window;
+            window.setAttribute(Qt::WA_DeleteOnClose, false);
+            auto config = cachedOcrPinConfig(nullptr);
+            config.persistenceId = QStringLiteral("skip-confirmation-fixture");
+            config.persistenceCloser = [&](const auto&) { ++closes; };
+            config.persistenceRemover = [&](const auto&) { ++removals; };
+            QObject::connect(
+                &window, &ScreenshotPinnedWindow::closingForPersistence,
+                [&](const auto&, auto intent) {
+                    ++closeSignals;
+                    require(intent == (destroy
+                                           ? snow_shot::storage::PinnedWindowCloseIntent::Destroy
+                                           : snow_shot::storage::PinnedWindowCloseIntent::Close),
+                            "Don't ask again retains the requested close intent");
+                });
+            require(window.present(config), "present Don't ask again fixture");
+            const QString actionName = destroy ? QStringLiteral("screenshotPinnedDestroyAction")
+                                               : QStringLiteral("screenshotPinnedCloseAction");
+            const QString modalName = destroy
+                                          ? QStringLiteral("screenshotPinnedDestroyConfirmation")
+                                          : QStringLiteral("screenshotPinnedCloseConfirmation");
+            window.findChild<QAction*>(actionName)->trigger();
+            QCoreApplication::processEvents();
+            auto* modal = window.findChild<adqt::widgets::AdModal*>(modalName);
+            if (!subsequent) {
+                require(modal && modal->isOpen(), "Don't ask again starts with confirmation");
+                auto* skip =
+                    modal->acceptButton()->parentWidget()->findChild<adqt::widgets::AdButton*>(
+                        QStringLiteral("confirmationDontAskAgainButton"));
+                require(skip && skip->isVisible() &&
+                            skip->text() == QStringLiteral("Don't ask again"),
+                        "pinned confirmation exposes Don't ask again");
+                skip->click();
+            } else {
+                require(!modal, "subsequent pinned operations skip their confirmation");
+            }
+            QCoreApplication::processEvents();
+            require(!window.isVisible() && closeSignals == (subsequent ? 2 : 1) &&
+                        (destroy ? removals > 0 && closes == 0
+                                 : removals == 0 && closes == closeSignals) &&
+                        settings.confirmBeforeClosingWindow() == destroy &&
+                        settings.confirmBeforeDestroyingWindow() == !destroy,
+                    "Don't ask again performs the action once and changes only its preference");
+            auto& appStorage = snow_shot::storage::ApplicationStorage::instance();
+            require(appStorage.configuration().flushNow().success,
+                    "flush disabled pinned confirmation");
+            snow_shot::storage::ConfigurationStore reloaded(
+                QDir(appStorage.configurationDirectory()).filePath(QStringLiteral("config.json")),
+                true, false);
+            require(
+                reloaded.value(QStringLiteral("pin_to_screen/confirm_before_closing_window"))
+                            .toBool() == destroy &&
+                    reloaded.value(QStringLiteral("pin_to_screen/confirm_before_destroying_window"))
+                            .toBool() == !destroy,
+                "Don't ask again persists only the corresponding pinned preference");
+        }
+    }
 }
 
 void pinnedDestroyShortcutUsesDestructiveMenuColor() {
@@ -17492,6 +17569,43 @@ void pinnedMultiSelectionDestroyWithoutConfirmation() {
     QCoreApplication::processEvents();
 }
 
+void pinnedMultiSelectionDontAskAgain() {
+    const snow_shot::storage::PinToScreenSettings settings;
+    const bool oldClose = settings.confirmBeforeClosingWindow();
+    const bool oldDestroy = settings.confirmBeforeDestroyingWindow();
+    const auto restore = qScopeGuard([&] {
+        require(settings.setConfirmBeforeClosingWindow(oldClose) &&
+                    settings.setConfirmBeforeDestroyingWindow(oldDestroy),
+                "restore batch Don't ask again preferences");
+    });
+    require(settings.setConfirmBeforeClosingWindow(true) &&
+                settings.setConfirmBeforeDestroyingWindow(true),
+            "enable confirmations before batch Don't ask again");
+    PinnedSelectionFixture fixture;
+    auto& first = fixture.add({40, 60});
+    auto& second = fixture.add({230, 160});
+    auto& other = fixture.add({420, 260});
+    fixture.selection.toggleSelection(&first);
+    fixture.selection.toggleSelection(&second);
+    auto& menu = fixture.menu(first);
+    pinnedSelectionAction(menu, QStringLiteral("screenshotPinnedSelectionDestroy")).trigger();
+    auto* modal = first.findChild<adqt::widgets::AdModal*>(
+        QStringLiteral("screenshotPinnedSelectionDestroyConfirmation"));
+    require(modal && modal->isOpen(), "batch Don't ask again opens one confirmation");
+    QCoreApplication::processEvents();
+    auto* skip = modal->acceptButton()->parentWidget()->findChild<adqt::widgets::AdButton*>(
+        QStringLiteral("confirmationDontAskAgainButton"));
+    require(skip && skip->isVisible(), "batch confirmation exposes Don't ask again");
+    skip->click();
+    require(!settings.confirmBeforeDestroyingWindow() && settings.confirmBeforeClosingWindow() &&
+                fixture.destroyAttempts == 1 && fixture.lastDestroyedIds.size() == 2 &&
+                !fixture.repository.loadRecord(first.persistenceId()) &&
+                !fixture.repository.loadRecord(second.persistenceId()) &&
+                fixture.repository.loadRecord(other.persistenceId()) && other.sourcePinAvailable(),
+            "batch Don't ask again disables only Destroy and removes the frozen selection once");
+    QCoreApplication::processEvents();
+}
+
 void pinnedMultiSelectionGroupFailureAndRetry() {
     PinnedSelectionFixture fixture;
     auto& first = fixture.add({40, 60});
@@ -18423,8 +18537,10 @@ int main(int argc, char* argv[]) {
         IsolatedPinnedStorage processStorage;
         if (app.arguments().contains(QStringLiteral("--window-confirmation-only"))) {
             pinnedWindowConfirmationPreferences();
+            pinnedWindowDontAskAgainPreferences();
             pinnedMultiSelectionCloseConfirmation();
             pinnedMultiSelectionDestroyWithoutConfirmation();
+            pinnedMultiSelectionDontAskAgain();
             return 0;
         }
         if (app.arguments().contains(QStringLiteral("--multi-selection-capture-loss-only"))) {

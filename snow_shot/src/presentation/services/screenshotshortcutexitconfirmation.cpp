@@ -1,6 +1,8 @@
 #include "snow_shot/presentation/screenshotshortcutexitconfirmation.h"
 
 #include "snow_shot/presentation/windowshortcutmanager.h"
+#include "snow_shot/presentation/components/confirmationskipbutton.h"
+#include "snow_shot/storage/settingsadapters.h"
 
 #include "widgets/button.h"
 #include "widgets/modal.h"
@@ -68,6 +70,9 @@ struct ScreenshotShortcutExitConfirmation::Impl {
             return false;
         }
         modal->setObjectName(QStringLiteral("screenshotShortcutExitConfirmation"));
+        new ConfirmationSkipButton(*modal, [] {
+            return storage::ScreenshotSettings().setConfirmBeforeExitingViaShortcut(false);
+        });
         QObject::connect(modal, &AdModal::finished, &q, [receiver](AdModal::DialogCode code) {
             if (receiver != nullptr) {
                 receiver->m_impl->complete(code == AdModal::DialogCode::Accepted);

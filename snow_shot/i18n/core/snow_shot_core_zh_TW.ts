@@ -286,6 +286,13 @@ so every moment on screen can be expressed clearly and shared easily.</source>
         </message>
     </context>
     <context>
+        <name>ConfirmationSkipButton</name>
+        <message>
+            <source>Don't ask again</source>
+            <translation>不再詢問</translation>
+        </message>
+    </context>
+    <context>
         <name>DiagnosticsService</name>
         <message>
             <source>A log file could not be read.</source>

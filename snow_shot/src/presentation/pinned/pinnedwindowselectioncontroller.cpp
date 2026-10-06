@@ -1,4 +1,5 @@
 #include "snow_shot/presentation/pinnedwindowselectioncontroller.h"
+#include "snow_shot/presentation/components/confirmationskipbutton.h"
 #include "snow_shot/presentation/screenshotpinnedwindow.h"
 #include "snow_shot/presentation/pinnedwindowgroupmanager.h"
 #include "snow_shot/presentation/components/icons/snowshoticons.h"
@@ -401,6 +402,9 @@ void PinnedWindowSelectionController::confirmDestroy(
         modal->deleteLater();
     });
     modal->open();
+    new ConfirmationSkipButton(*modal, [] {
+        return storage::PinToScreenSettings().setConfirmBeforeDestroyingWindow(false);
+    });
 }
 
 void PinnedWindowSelectionController::retranslateUi() {

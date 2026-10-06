@@ -889,6 +889,7 @@ set(SNOW_SHOT_SETTINGS_SOURCES
     include/snow_shot/presentation/components/infotooltipicon.h
     include/snow_shot/presentation/components/pagecontainerwidget.h
     include/snow_shot/presentation/components/sectionheaderwidget.h
+    include/snow_shot/presentation/components/confirmationskipbutton.h
     include/snow_shot/presentation/components/screenshothistorypagewidget.h
     include/snow_shot/presentation/components/emptystateicon.h
     include/snow_shot/presentation/components/texttranslationsettingswidget.h
@@ -3603,6 +3604,11 @@ if(SNOW_SHOT_BUILD_TESTS)
         NAME snow-shot-screenshot-shortcut-priority-tests
         COMMAND snow-shot-screenshot-history-tests --shortcut-input-only
     )
+    add_test(NAME snow-shot-screenshot-exit-confirmation-tests
+        COMMAND snow-shot-screenshot-history-tests --shortcut-exit-confirmation-only -platform offscreen)
+    set_tests_properties(snow-shot-screenshot-exit-confirmation-tests PROPERTIES
+        LABELS "unit" TIMEOUT 60
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
     add_test(
         NAME snow-shot-intelligent-selection-cursor-shortcut-tests
         COMMAND snow-shot-screenshot-history-tests

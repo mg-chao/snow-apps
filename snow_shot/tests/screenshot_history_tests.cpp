@@ -19,6 +19,7 @@
 #include "snow_shot/presentation/screenshotshortcutexitconfirmation.h"
 #include "snow_shot/presentation/windowshortcutmanager.h"
 #include "snow_shot/storage/applicationstorage.h"
+#include "snow_shot/storage/configurationstore.h"
 #include "snow_shot/storage/settingsadapters.h"
 
 #include "snow_draw_engine_qt/snow_canvas_runtime.h"
@@ -40,6 +41,8 @@
 #include <QKeyEvent>
 #include <QPainterPath>
 #include <QShortcut>
+#include <QScopeGuard>
+#include <QTranslator>
 #include <QTemporaryDir>
 #include <QThread>
 #include <QVector>
@@ -3388,6 +3391,13 @@ void standardCloseExitsScreenshotSession() {
 #endif
 
 void shortcutExitConfirmationGatesCancellation() {
+    const storage::ScreenshotSettings settings;
+    const bool originalConfirmation = settings.confirmBeforeExitingViaShortcut();
+    const auto restore = qScopeGuard([&] {
+        require(settings.setConfirmBeforeExitingViaShortcut(originalConfirmation),
+                "restore screenshot exit confirmation preference");
+    });
+    require(settings.setConfirmBeforeExitingViaShortcut(true), "enable exit confirmation");
     QWidget owner;
     owner.show();
     snow_shot::presentation::WindowShortcutManager shortcutManager;
@@ -3454,7 +3464,8 @@ void shortcutExitConfirmationGatesCancellation() {
     QCoreApplication::processEvents();
     QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
     require(exits == 0 && restores == 1 && restoredOwner == &owner &&
-                dispatchShortcut(owner, Qt::Key_F11) && unrelatedActivations == 1,
+                dispatchShortcut(owner, Qt::Key_F11) && unrelatedActivations == 1 &&
+                settings.confirmBeforeExitingViaShortcut(),
             "rejecting confirmation must preserve capture, restore its owner, and resume input");
 
     require(confirmation.request(true, &owner), "Escape confirmation request was declined");
@@ -3488,8 +3499,55 @@ void shortcutExitConfirmationGatesCancellation() {
     QCoreApplication::processEvents();
     QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
     require(exits == 1 && restores == 2 && dispatchShortcut(owner, Qt::Key_F11) &&
-                unrelatedActivations == 2,
+                unrelatedActivations == 2 && settings.confirmBeforeExitingViaShortcut(),
             "accepting confirmation must exit exactly once and resume shortcut input");
+
+    require(confirmation.request(true, &owner), "open exit confirmation for Don't ask again");
+    QCoreApplication::processEvents();
+    modal = owner.findChild<adqt::widgets::AdModal*>(
+        QStringLiteral("screenshotShortcutExitConfirmation"));
+    auto* skip = modal->acceptButton()->parentWidget()->findChild<adqt::widgets::AdButton*>(
+        QStringLiteral("confirmationDontAskAgainButton"));
+    require(skip != nullptr, "exit confirmation exposes Don't ask again");
+    require(skip->isVisible(), "Don't ask again is visible in the confirmation footer");
+    require(skip->text() == QStringLiteral("Don't ask again"), "Don't ask again uses English copy");
+    require(!skip->isDefault(), "Don't ask again must require an explicit choice");
+    class SkipTranslator final : public QTranslator {
+      public:
+        QString translate(const char* context, const char* source, const char*,
+                          int) const override {
+            if (QByteArray(context) == "ConfirmationSkipButton" &&
+                QByteArray(source) == "Don't ask again")
+                return QStringLiteral("Translated skip confirmation");
+            return {};
+        }
+    } translator;
+    QApplication::installTranslator(&translator);
+    QEvent languageChange(QEvent::LanguageChange);
+    QApplication::sendEvent(skip, &languageChange);
+    require(skip->text() == QStringLiteral("Translated skip confirmation"),
+            "Don't ask again retranslates while the confirmation is open");
+    QApplication::removeTranslator(&translator);
+    QApplication::sendEvent(skip, &languageChange);
+    skip->click();
+    QCoreApplication::processEvents();
+    QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+    require(exits == 2 && restores == 2 && !settings.confirmBeforeExitingViaShortcut() &&
+                dispatchShortcut(owner, Qt::Key_F11) && unrelatedActivations == 3,
+            "Don't ask again disables exit confirmation, exits once, and resumes input");
+    auto& appStorage = storage::ApplicationStorage::instance();
+    require(appStorage.configuration().flushNow().success, "flush disabled exit confirmation");
+    storage::ConfigurationStore reloaded(
+        QDir(appStorage.configurationDirectory()).filePath(QStringLiteral("config.json")), true,
+        false);
+    require(
+        !reloaded.value(QStringLiteral("screenshot/confirm_before_exiting_via_shortcut")).toBool(),
+        "Don't ask again persists the disabled screenshot confirmation");
+    require(confirmation.request(settings.confirmBeforeExitingViaShortcut(), &owner) &&
+                exits == 3 &&
+                !owner.findChild<adqt::widgets::AdModal*>(
+                    QStringLiteral("screenshotShortcutExitConfirmation")),
+            "subsequent screenshot exits skip the confirmation");
 }
 
 void rightClickSeparatesDismissalFromSelectionChanges() {
@@ -5575,6 +5633,12 @@ int main(int argc, char** argv) {
     if (QCoreApplication::arguments().contains(
             QStringLiteral("--intelligent-selection-cursor-shortcut-only"))) {
         intelligentSelectionSupportsCursorMovementShortcuts();
+        storage::ApplicationStorage::instance().shutdown();
+        return 0;
+    }
+    if (QCoreApplication::arguments().contains(
+            QStringLiteral("--shortcut-exit-confirmation-only"))) {
+        shortcutExitConfirmationGatesCancellation();
         storage::ApplicationStorage::instance().shutdown();
         return 0;
     }

@@ -1,4 +1,5 @@
 #include "snow_shot/presentation/screenshotmessageservice.h"
+#include "snow_shot/presentation/components/confirmationskipbutton.h"
 #include "snow_draw_engine_qt/snow_canvas_image.h"
 #include "snow_shot/presentation/screenshotcontentdrop.h"
 #include "snow_shot/shortcuts/shortcutbinding.h"
@@ -7486,6 +7487,9 @@ void ScreenshotPinnedWindow::requestUserClose() {
         modal->deleteLater();
     });
     modal->open();
+    new snow_shot::presentation::ConfirmationSkipButton(*modal, [] {
+        return snow_shot::storage::PinToScreenSettings().setConfirmBeforeClosingWindow(false);
+    });
 }
 
 void ScreenshotPinnedWindow::closeAfterConfirmation() {
@@ -7643,6 +7647,9 @@ void ScreenshotPinnedWindow::confirmDestroy() {
         modal->deleteLater();
     });
     modal->open();
+    new snow_shot::presentation::ConfirmationSkipButton(*modal, [] {
+        return snow_shot::storage::PinToScreenSettings().setConfirmBeforeDestroyingWindow(false);
+    });
 }
 
 std::optional<QPoint> ScreenshotPinnedWindow::physicalCursorPosition() const {
