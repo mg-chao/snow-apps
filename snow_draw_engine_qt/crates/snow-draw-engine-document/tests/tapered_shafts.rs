@@ -263,7 +263,7 @@ fn arrow_ratio_tapered_geometry_bounds_and_hit_testing() {
             let mut a = arrow(Some(head));
             a.start_arrowhead = Some(head);
             a.arrow_type = arrow_type;
-            for ratio in [1.0, 2.0, 3.0] {
+            for ratio in [0.01, 0.1, 0.25, 0.5, 1.0, 2.0, 3.0] {
                 a.arrow_ratio = ratio;
                 let geometry = tapered_arrow_geometry(&a).unwrap();
                 assert_eq!(a.stroke_width, 2.0);

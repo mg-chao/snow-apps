@@ -356,7 +356,7 @@ void drawArrowhead(QPainter& painter, const QVector<QPointF>& points, SnowArrowT
         return;
     }
 
-    const double ratio = std::isfinite(arrowRatio) ? std::clamp(arrowRatio, 1.0, 3.0) : 1.0;
+    const double ratio = snowCanvasNormalizeArrowRatio(arrowRatio);
     const double size = arrowheadSize(head) * zoom * ratio;
     const double lengthMultiplier =
         (head == SNOW_ARROWHEAD_DIAMOND || head == SNOW_ARROWHEAD_DIAMOND_OUTLINE) ? 0.25 : 0.5;
@@ -377,7 +377,9 @@ void drawArrowhead(QPainter& painter, const QVector<QPointF>& points, SnowArrowT
     case SNOW_ARROWHEAD_DOT:
     case SNOW_ARROWHEAD_CIRCLE:
     case SNOW_ARROWHEAD_CIRCLE_OUTLINE: {
-        const double diameter = QLineF(base, endpoint).length() + strokeWidth - 2.0;
+        const double strokeAdjustment = strokeWidth - 2.0;
+        const double diameter = qMin((arrowheadSize(head) * zoom + strokeAdjustment) * ratio,
+                                     segmentLength * lengthMultiplier + strokeAdjustment);
         const QRectF rect(endpoint.x() - diameter / 2.0, endpoint.y() - diameter / 2.0, diameter,
                           diameter);
         painter.setBrush((head == SNOW_ARROWHEAD_CIRCLE_OUTLINE) ? QBrush(background)

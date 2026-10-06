@@ -234,7 +234,7 @@ fn arrow_ratio_scales_both_endpoints_without_changing_stroke_width() {
                     let base =
                         arrowhead_render_primitives(&arrow(style, width, arrow_type), position);
                     assert!(!base.is_empty());
-                    for scale in [1.0, 2.0, 3.0] {
+                    for scale in [0.01, 0.1, 0.25, 0.5, 1.0, 2.0, 3.0] {
                         let mut scaled = arrow(style, width, arrow_type);
                         scaled.arrow_ratio = scale;
                         assert_eq!(scaled.stroke_width, width);
@@ -264,8 +264,11 @@ fn arrow_ratio_scales_both_endpoints_without_changing_stroke_width() {
                                 ) => {
                                     assert_eq!(a.center, b.center);
                                     assert!((b.diameter - a.diameter * scale).abs() < 1e-8);
-                                    // A centered outline leaves an inner diameter of diameter - width.
-                                    assert!(b.diameter > width);
+                                    assert!(b.diameter > 0.0);
+                                    if scale >= 1.0 {
+                                        // Full-size outlines retain an inner diameter.
+                                        assert!(b.diameter > width);
+                                    }
                                 }
                                 _ => panic!("endpoint primitive kind changed for {style:?}"),
                             }
@@ -293,7 +296,15 @@ fn arrow_ratio_document_defaults_and_normalization() {
             .arrow_ratio,
         1.0
     );
-    for (raw, expected) in [(0.0, 1.0), (4.0, 3.0), (2.3, 2.3)] {
+    for (raw, expected) in [
+        (-1.0, 1.0),
+        (0.0, 1.0),
+        (0.01, 0.01),
+        (0.25, 0.25),
+        (0.5, 0.5),
+        (4.0, 3.0),
+        (2.3, 2.3),
+    ] {
         value["arrow_ratio"] = serde_json::json!(raw);
         assert_eq!(
             serde_json::from_value::<ArrowData>(value.clone())

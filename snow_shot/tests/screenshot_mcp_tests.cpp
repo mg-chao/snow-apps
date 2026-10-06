@@ -861,6 +861,10 @@ void completeToolStyleContract() {
                 (styles.properties & SnowCanvasShapeStylePropertyArrowRatio) &&
                 (styles.properties & SnowCanvasShapeStylePropertyArrowShaftType),
             "arrow shaft and ratio must reach the command sink with exact property flags");
+    require(apply(QStringLiteral("arrow"), {{QStringLiteral("arrow_ratio"), 0.5}}) &&
+                styles.state.shapeStyle.arrowRatio == 0.5 &&
+                styles.properties == SnowCanvasShapeStylePropertyArrowRatio,
+            "the minimum arrow ratio must reach the command sink unchanged");
     require(apply(QStringLiteral("text"),
                   {{QStringLiteral("horizontal_align"), QStringLiteral("right")},
                    {QStringLiteral("vertical_align"), QStringLiteral("bottom")},
@@ -890,6 +894,7 @@ void completeToolStyleContract() {
                {{QStringLiteral("corner_radius"), 2},
                 {QStringLiteral("corner_radii"), QJsonArray{1, 2, 3, 4}}}) &&
             !apply(QStringLiteral("arrow"), {{QStringLiteral("arrow_ratio"), 4}}) &&
+            !apply(QStringLiteral("arrow"), {{QStringLiteral("arrow_ratio"), 0.4}}) &&
             !apply(QStringLiteral("serial_number"), {{QStringLiteral("number"), 1.5}}) &&
             !apply(QStringLiteral("serial_number"),
                    {{QStringLiteral("numeric_type"), QStringLiteral("invalid")}}) &&

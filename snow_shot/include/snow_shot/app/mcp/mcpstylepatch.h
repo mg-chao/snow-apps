@@ -168,7 +168,7 @@ inline bool mcpStylePatch(Commands& commands, Canvas& canvas, const QJsonObject&
                 return false;
             if (it.key() == QStringLiteral("number") && std::floor(value) != value)
                 return false;
-            if (it.key() == QStringLiteral("arrow_ratio") && (value < 1 || value > 3))
+            if (it.key() == QStringLiteral("arrow_ratio") && (value < 0.5 || value > 3))
                 return false;
         } else {
             const auto key = it.key() == QStringLiteral("end_arrowhead")

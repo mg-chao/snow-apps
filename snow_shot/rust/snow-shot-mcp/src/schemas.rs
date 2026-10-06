@@ -704,7 +704,7 @@ macro_rules! bounded_style_number {
         }
     };
 }
-bounded_style_number!(ArrowRatio, f64, "number", 1.0, 3.0);
+bounded_style_number!(ArrowRatio, f64, "number", 0.5, 3.0);
 bounded_style_number!(CornerRadius, f64, "number", 0.0, 8192.0);
 bounded_style_number!(SerialNumber, u64, "integer", 0_u64, 9007199254740991_u64);
 bounded_style_number!(BrushEraserWidth, f64, "number", 1.0, 72.0);
@@ -1124,6 +1124,12 @@ mod tests {
     }
     #[test]
     fn workflow_schemas_are_typed() {
+        for ratio in [0.5, 0.6, 1.0] {
+            assert!(schema("snow_shot_screenshot_set_tool_style", Some(json!({"session_id":"s","expected_revision":1,"target":"arrow","style":{"arrow_ratio":ratio}}))).is_ok());
+        }
+        for ratio in [0.0, 0.4] {
+            assert!(schema("snow_shot_screenshot_set_tool_style", Some(json!({"session_id":"s","expected_revision":1,"target":"arrow","style":{"arrow_ratio":ratio}}))).is_err());
+        }
         assert!(schema("snow_shot_screenshot_set_tool_style", Some(json!({"session_id":"s","expected_revision":1,"target":"arrow","style":{"arrow_shaft_type":"tapered","arrow_ratio":3}}))).is_ok());
         assert!(schema("snow_shot_screenshot_set_tool_style", Some(json!({"session_id":"s","expected_revision":1,"target":"arrow","style":{"arrow_ratio":3.1}}))).is_err());
         assert!(schema("snow_shot_screenshot_set_tool_style", Some(json!({"session_id":"s","expected_revision":1,"target":"text","style":{"horizontal_align":"center","vertical_align":"bottom","corner_radii":[0,1,2,3]}}))).is_ok());

@@ -220,69 +220,126 @@ void arrowLabelRemeasuresAfterHostFontChange() {
 
 void arrowRatioEditsRenderAndRoundTrip() {
     for (const auto shaft : {SnowCanvasArrowShaftType::Plain, SnowCanvasArrowShaftType::Tapered}) {
-        SnowCanvasRuntime runtime;
-        SnowCanvasWidget canvas(runtime);
-        canvas.resize(600, 360);
-        canvas.show();
-        QApplication::processEvents();
-        require(canvas.setCanvasTool(SnowCanvasTool::Arrow), "activate ratio test arrow");
-        SnowCanvasShapeStyle style;
-        style.stroke = Qt::red;
-        style.strokeWidth = 2.0;
-        style.startArrowhead = SnowCanvasArrowhead::Triangle;
-        style.endArrowhead = SnowCanvasArrowhead::Triangle;
-        style.arrowShaftType = shaft;
-        require(canvas.setCanvasShapeStylePatch(style,
-                                                SnowCanvasShapeStylePropertyStrokeColor |
-                                                    SnowCanvasShapeStylePropertyStrokeWidth |
-                                                    SnowCanvasShapeStylePropertyStartArrowhead |
-                                                    SnowCanvasShapeStylePropertyEndArrowhead |
-                                                    SnowCanvasShapeStylePropertyArrowShaftType,
-                                                SnowCanvasShapeKind::Arrow),
-                "configure ratio test arrow");
-        createArrow(canvas, runtime);
-        const auto render = [&]() {
-            return runtime.renderToImage(QRectF(-300, -180, 600, 360), QSize(600, 360), {});
-        };
-        const QImage original = render();
-        mouse(canvas, QEvent::MouseButtonPress, {30.0, 120.0}, Qt::LeftButton, Qt::LeftButton);
-        mouse(canvas, QEvent::MouseMove, {550.0, 240.0}, Qt::NoButton, Qt::LeftButton);
-        mouse(canvas, QEvent::MouseButtonRelease, {550.0, 240.0}, Qt::LeftButton, Qt::NoButton);
-        require(canvas.canvasStyleToolbarState().source ==
-                    SnowCanvasStyleToolbarSource::SelectedArrow,
-                "ratio test selects the arrow");
-        style.arrowRatio = 3.0;
-        require(canvas.setCanvasShapeStylePatch(style, SnowCanvasShapeStylePropertyArrowRatio,
-                                                SnowCanvasShapeKind::Arrow),
-                "edit selected ratio");
-        const auto arrow = payload(runtime, QStringLiteral("Arrow"));
-        require(arrow.value(QStringLiteral("arrow_ratio")).toDouble() == 3.0 &&
-                    arrow.value(QStringLiteral("stroke_width")).toDouble() == 2.0 &&
-                    canvas.canvasStyleToolbarState().shapeStyle.arrowRatio == 3.0,
-                "ratio crosses Qt and FFI without changing stroke width");
-        const QImage enlarged = render();
-        require(!original.isNull() && !enlarged.isNull() && original != enlarged,
-                "ratio changes exported endpoint geometry");
-        SnowCanvasRuntime restored;
-        require(restored.restoreDocumentSession(runtime.serializeDocumentSession()) &&
-                    payload(restored, QStringLiteral("Arrow")) == arrow,
-                "ratio round-trips through the document session");
-        require(canvas.undo() &&
-                    payload(runtime, QStringLiteral("Arrow"))
-                            .value(QStringLiteral("arrow_ratio"))
-                            .toDouble() == 1.0 &&
-                    render() == original,
-                "undo restores ratio and original pixels");
-        require(canvas.redo() && render() == enlarged, "redo restores enlarged endpoint pixels");
+        for (const double ratio : {0.25, 0.5, 3.0}) {
+            SnowCanvasRuntime runtime;
+            SnowCanvasWidget canvas(runtime);
+            canvas.resize(600, 360);
+            canvas.show();
+            QApplication::processEvents();
+            require(canvas.setCanvasTool(SnowCanvasTool::Arrow), "activate ratio test arrow");
+            SnowCanvasShapeStyle style;
+            style.stroke = Qt::red;
+            style.strokeWidth = 2.0;
+            style.startArrowhead = SnowCanvasArrowhead::Triangle;
+            style.endArrowhead = SnowCanvasArrowhead::Triangle;
+            style.arrowShaftType = shaft;
+            require(canvas.setCanvasShapeStylePatch(style,
+                                                    SnowCanvasShapeStylePropertyStrokeColor |
+                                                        SnowCanvasShapeStylePropertyStrokeWidth |
+                                                        SnowCanvasShapeStylePropertyStartArrowhead |
+                                                        SnowCanvasShapeStylePropertyEndArrowhead |
+                                                        SnowCanvasShapeStylePropertyArrowShaftType,
+                                                    SnowCanvasShapeKind::Arrow),
+                    "configure ratio test arrow");
+            createArrow(canvas, runtime);
+            const auto render = [&]() {
+                return runtime.renderToImage(QRectF(-300, -180, 600, 360), QSize(600, 360), {});
+            };
+            const QImage original = render();
+            mouse(canvas, QEvent::MouseButtonPress, {30.0, 120.0}, Qt::LeftButton, Qt::LeftButton);
+            mouse(canvas, QEvent::MouseMove, {550.0, 240.0}, Qt::NoButton, Qt::LeftButton);
+            mouse(canvas, QEvent::MouseButtonRelease, {550.0, 240.0}, Qt::LeftButton, Qt::NoButton);
+            require(canvas.canvasStyleToolbarState().source ==
+                        SnowCanvasStyleToolbarSource::SelectedArrow,
+                    "ratio test selects the arrow");
+            style.arrowRatio = ratio;
+            require(canvas.setCanvasShapeStylePatch(style, SnowCanvasShapeStylePropertyArrowRatio,
+                                                    SnowCanvasShapeKind::Arrow),
+                    "edit selected ratio");
+            const auto arrow = payload(runtime, QStringLiteral("Arrow"));
+            require(arrow.value(QStringLiteral("arrow_ratio")).toDouble() == ratio &&
+                        arrow.value(QStringLiteral("stroke_width")).toDouble() == 2.0 &&
+                        canvas.canvasStyleToolbarState().shapeStyle.arrowRatio == ratio,
+                    "ratio crosses Qt and FFI without changing stroke width");
+            const QImage resized = render();
+            require(!original.isNull() && !resized.isNull() && original != resized,
+                    "ratio changes exported endpoint geometry");
+            SnowCanvasRuntime restored;
+            require(restored.restoreDocumentSession(runtime.serializeDocumentSession()) &&
+                        payload(restored, QStringLiteral("Arrow")) == arrow,
+                    "ratio round-trips through the document session");
+            require(canvas.undo() &&
+                        payload(runtime, QStringLiteral("Arrow"))
+                                .value(QStringLiteral("arrow_ratio"))
+                                .toDouble() == 1.0 &&
+                        render() == original,
+                    "undo restores ratio and original pixels");
+            require(canvas.redo() && render() == resized, "redo restores resized endpoint pixels");
+        }
     }
     SnowCanvasShapeStyle style;
-    for (double invalid : {0.0, 4.0, std::numeric_limits<double>::infinity(),
+    for (double invalid : {-1.0, 0.0, 4.0, std::numeric_limits<double>::infinity(),
                            std::numeric_limits<double>::quiet_NaN()}) {
         style.arrowRatio = invalid;
         const auto normalized =
             snow_canvas_types::toCanvasShapeStyle(snow_canvas_types::toEngineShapeStyle(style));
         require(normalized.arrowRatio == (invalid == 4.0 ? 3.0 : 1.0),
                 "Qt/FFI normalizes invalid ratios");
+    }
+}
+
+void arrowRatioFallbackRendering() {
+    for (const SnowArrowhead head : {SNOW_ARROWHEAD_TRIANGLE, SNOW_ARROWHEAD_CIRCLE}) {
+        for (const double width : {1.0, 2.0, 8.0}) {
+            const auto render = [&](double ratio) {
+                QImage image(600, 360, QImage::Format_ARGB32_Premultiplied);
+                image.fill(Qt::transparent);
+                SceneDisplayInfo info{};
+                info.surface_width = image.width();
+                info.surface_height = image.height();
+                info.camera_zoom = 1.0;
+                SnowArrowPoint points[] = {{-200.0, 0.0}, {200.0, 0.0}};
+                SnowSceneDisplayItem raw{};
+                raw.kind = SNOW_SCENE_DISPLAY_ITEM_ARROW;
+                raw.stroke = {255, 0, 0, 255};
+                raw.stroke_width = width;
+                raw.opacity = 1.0;
+                raw.arrow_points = points;
+                raw.arrow_point_count = 2;
+                raw.arrow_type = SNOW_ARROW_TYPE_STRAIGHT;
+                raw.arrow_start_head = head;
+                raw.arrow_end_head = head;
+                raw.arrow_ratio = ratio;
+                SnowCanvasSceneItem item(raw);
+                QPainter painter(&image);
+                snow_canvas_renderer::SceneRenderRequest request;
+                request.painter = &painter;
+                request.displayInfo = &info;
+                request.sceneItems = &item;
+                request.sceneItemCount = 1;
+                request.exposedRegion = QRegion(image.rect());
+                request.clearBackgroundEnabled = false;
+                snow_canvas_renderer::renderSceneItems(request);
+                return image;
+            };
+            const auto visiblePixels = [](const QImage& image) {
+                int count = 0;
+                for (int y = 0; y < image.height(); ++y)
+                    for (int x = 0; x < image.width(); ++x)
+                        count += image.pixelColor(x, y).alpha() > 0 ? 1 : 0;
+                return count;
+            };
+            const QImage original = render(1.0);
+            const QImage half = render(0.5);
+            const QImage quarter = render(0.25);
+            const QImage tiny = render(0.01);
+            require(visiblePixels(original) > visiblePixels(half) &&
+                        visiblePixels(half) > visiblePixels(quarter) &&
+                        visiblePixels(quarter) >= visiblePixels(tiny) && visiblePixels(tiny) > 0,
+                    "fallback endpoint rendering supports decreasing positive ratios");
+            require(tiny.pixelColor(300, 180).alpha() > 0,
+                    "tiny fallback arrowheads preserve the shaft");
+        }
     }
 }
 
@@ -1189,6 +1246,7 @@ int main(int argc, char** argv) {
         return 0;
     arrowLabelRemeasuresAfterHostFontChange();
     arrowRatioEditsRenderAndRoundTrip();
+    arrowRatioFallbackRendering();
     taperedShaftsRenderAndRoundTrip();
     if (app.arguments().contains(QStringLiteral("--shafts-only")))
         return 0;

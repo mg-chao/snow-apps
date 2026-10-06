@@ -10554,7 +10554,11 @@ void arrowRatioEditorAdjustsAndResets() {
     require(changes == atMaximum, "clamped ratio is a no-op");
     for (int i = 0; i < 30; ++i)
         wheel(-120);
-    require(editor->value() == 1.0, "ratio clamps at 1.0");
+    require(editor->value() == 0.5 && editor->valueText() == QStringLiteral("0.5"),
+            "ratio clamps at 0.5");
+    const int atMinimum = changes;
+    wheel(-120);
+    require(changes == atMinimum, "minimum ratio is a no-op");
     wheel(120);
     editor->click();
     require(editor->valueText() == QStringLiteral("1.0"), "click resets ratio");
@@ -14019,7 +14023,7 @@ void canvasToolStylesPersistIndependentlyWithoutGlobalStyles() {
     styles.arrow.stroke = QColor(5, 6, 7, 8);
     styles.arrow.strokeWidth = 4.0;
     styles.arrow.arrowShaftType = SnowCanvasArrowShaftType::Tapered;
-    styles.arrow.arrowRatio = 2.3;
+    styles.arrow.arrowRatio = 0.25;
     styles.arrow.startArrowhead = SnowCanvasArrowhead::IndentedTriangle;
     styles.arrow.endArrowhead = SnowCanvasArrowhead::IndentedTriangle;
     styles.line.strokeWidth = 5.0;
@@ -14132,7 +14136,8 @@ void canvasToolStylesPersistIndependentlyWithoutGlobalStyles() {
                 "missing or invalid shaft types must default to plain and preserve other styles");
     }
     for (const QJsonValue& ratio :
-         {QJsonValue(), QJsonValue(-1.0), QJsonValue(4.0), QJsonValue(QStringLiteral("bad"))}) {
+         {QJsonValue(), QJsonValue(-1.0), QJsonValue(0.0), QJsonValue(0.25), QJsonValue(0.5),
+          QJsonValue(4.0), QJsonValue(QStringLiteral("bad"))}) {
         auto legacyArrow = savedArrowStyle;
         if (ratio.isNull())
             legacyArrow.remove(QStringLiteral("arrow_ratio"));
@@ -14142,7 +14147,9 @@ void canvasToolStylesPersistIndependentlyWithoutGlobalStyles() {
                     arrowKey, legacyArrow),
                 "save legacy or invalid ratio fixture");
         require(snow_shot::presentation::screenshotCanvasToolStyleDefaults().arrow.arrowRatio ==
-                    (ratio.toDouble() == 4.0 ? 3.0 : 1.0),
+                    (ratio.toDouble() == 4.0  ? 3.0
+                     : ratio.toDouble() > 0.0 ? ratio.toDouble()
+                                              : 1.0),
                 "missing or invalid saved ratios normalize safely");
     }
     require(snow_shot::storage::ApplicationStorage::instance().configuration().setValue(

@@ -324,9 +324,10 @@ pub const fn default_arrow_ratio() -> f64 {
     1.0
 }
 
+/// Preserve positive render scales, including values below the toolbar's 0.5 minimum.
 pub fn normalize_arrow_ratio(value: f64) -> f64 {
-    if value.is_finite() {
-        value.clamp(1.0, 3.0)
+    if value.is_finite() && value > 0.0 {
+        value.min(3.0)
     } else {
         1.0
     }
@@ -341,7 +342,18 @@ pub fn deserialize_arrow_ratio<'de, D: serde::Deserializer<'de>>(
 
 #[cfg(test)]
 mod tests {
-    use super::Arrowhead;
+    use super::{Arrowhead, normalize_arrow_ratio};
+
+    #[test]
+    fn arrow_ratio_preserves_positive_subunit_scales() {
+        for ratio in [f64::MIN_POSITIVE, 0.01, 0.25, 0.5, 1.0, 2.3, 3.0] {
+            assert_eq!(normalize_arrow_ratio(ratio), ratio);
+        }
+        assert_eq!(normalize_arrow_ratio(4.0), 3.0);
+        for invalid in [0.0, -1.0, f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+            assert_eq!(normalize_arrow_ratio(invalid), 1.0);
+        }
+    }
 
     #[test]
     fn indented_triangle_serialization_preserves_existing_triangle_names() {

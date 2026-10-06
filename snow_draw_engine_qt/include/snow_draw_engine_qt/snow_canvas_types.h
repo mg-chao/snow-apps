@@ -6,12 +6,19 @@
 #include <QtGlobal>
 
 #include <cstring>
+#include <algorithm>
+#include <cmath>
 #include <optional>
 #include <QSet>
 #include <QVector>
 
 inline bool snowCanvasExactDoubleEqual(double lhs, double rhs) noexcept {
     return std::memcmp(&lhs, &rhs, sizeof(double)) == 0;
+}
+
+// Match the engine contract; controls limit adjustments to 0.5 or greater.
+inline double snowCanvasNormalizeArrowRatio(double value) noexcept {
+    return std::isfinite(value) && value > 0.0 ? std::min(value, 3.0) : 1.0;
 }
 
 enum class SnowCanvasTool {

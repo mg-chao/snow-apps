@@ -168,7 +168,7 @@ QJsonObject shapeValue(const SnowCanvasShapeStyle& style) {
     putEnum(&value, QStringLiteral("arrow_type"), style.arrowType);
     putEnum(&value, QStringLiteral("arrow_shaft_type"), style.arrowShaftType);
     putDouble(&value, QStringLiteral("arrow_ratio"),
-              std::isfinite(style.arrowRatio) ? std::clamp(style.arrowRatio, 1.0, 3.0) : 1.0);
+              snowCanvasNormalizeArrowRatio(style.arrowRatio));
     putDouble(&value, QStringLiteral("opacity"), style.opacity);
     putEnum(&value, QStringLiteral("highlight_shape"), style.highlightShape);
     putEnum(&value, QStringLiteral("shape"), style.shape);
@@ -194,8 +194,7 @@ void readShapeValue(const QJsonObject& object, SnowCanvasShapeStyle* style) {
     readCornerRadii(object, &style->cornerRadii);
     style->arrowRatio = 1.0;
     readDouble(object, QStringLiteral("arrow_ratio"), &style->arrowRatio);
-    style->arrowRatio =
-        std::isfinite(style->arrowRatio) ? std::clamp(style->arrowRatio, 1.0, 3.0) : 1.0;
+    style->arrowRatio = snowCanvasNormalizeArrowRatio(style->arrowRatio);
     readEnum(object, QStringLiteral("fill_style"), static_cast<int>(SnowCanvasFillStyle::Solid),
              &style->fillStyle);
     readEnum(object, QStringLiteral("start_arrowhead"),

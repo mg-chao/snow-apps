@@ -3933,7 +3933,7 @@ bool ScreenshotToolPaletteStyleControls::handleArrowRatioWheel(const QPoint& glo
         return false;
     }
     const int tenths = qRound(m_state.m_arrowStyle.arrowRatio * 10.0);
-    setArrowRatio(std::clamp(tenths + (direction > 0 ? 1 : -1), 10, 30) / 10.0);
+    setArrowRatio(std::clamp(tenths + (direction > 0 ? 1 : -1), 5, 30) / 10.0);
     return true;
 }
 
@@ -4545,7 +4545,7 @@ void ScreenshotToolPaletteStyleControls::setArrowStrokeStyle(SnowCanvasStrokeSty
 }
 
 void ScreenshotToolPaletteStyleControls::setArrowRatio(double ratio) {
-    ratio = std::isfinite(ratio) ? std::clamp(ratio, 1.0, 3.0) : 1.0;
+    ratio = std::clamp(snowCanvasNormalizeArrowRatio(ratio), 0.5, 3.0);
     commitArrowProperty(SnowCanvasShapeStylePropertyArrowRatio,
                         [ratio](SnowCanvasArrowStyle& style) {
                             if (style.arrowRatio == ratio)

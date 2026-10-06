@@ -599,8 +599,7 @@ QRectF sceneItemBounds(const SceneDisplayInfo& displayInfo, const SnowSceneDispl
         } else if (!path.isEmpty()) {
             const double maxHeadSize =
                 qMax(arrowheadSize(item.arrow_start_head), arrowheadSize(item.arrow_end_head)) *
-                (std::isfinite(item.arrow_ratio) ? std::clamp(item.arrow_ratio, 1.0, 3.0) : 1.0) *
-                projection.cameraZoom;
+                snowCanvasNormalizeArrowRatio(item.arrow_ratio) * projection.cameraZoom;
             bounds = bounds.adjusted(-maxHeadSize, -maxHeadSize, maxHeadSize, maxHeadSize);
         }
         return bounds;
@@ -680,8 +679,7 @@ QRectF overlayItemBounds(const OverlayDisplayInfo& displayInfo,
         } else if (!path.isEmpty()) {
             const double maxHeadSize =
                 qMax(arrowheadSize(item.arrow_start_head), arrowheadSize(item.arrow_end_head)) *
-                (std::isfinite(item.arrow_ratio) ? std::clamp(item.arrow_ratio, 1.0, 3.0) : 1.0) *
-                projection.cameraZoom;
+                snowCanvasNormalizeArrowRatio(item.arrow_ratio) * projection.cameraZoom;
             bounds = bounds.adjusted(-maxHeadSize, -maxHeadSize, maxHeadSize, maxHeadSize);
         }
         return bounds;
