@@ -5246,6 +5246,16 @@ void ScreenshotToolPalette::refreshActionToolGroup(int groupIndex) {
         refreshRecordingAudioGainTriggers();
         return;
     }
+    const auto updateAppearance = [this](adqt::widgets::AdButton* button, const QString& itemId) {
+        if (const auto tool = actionTool(itemId)) {
+            setScreenshotToolPaletteButtonActive(button, m_activeTool == tool);
+        } else if (auto* source = actionToolSourceButton(itemId)) {
+            // Commands retain their semantic appearance rather than a tool's selection state.
+            setScreenshotToolPaletteToolButtonIcon(button, source->iconRef());
+            button->setButtonStyle(source->buttonStyle());
+            button->setAccentRole(source->accentRole());
+        }
+    };
     applyActionToolShortcutTooltip(group.trigger, group.entryItemId);
     auto entryIcon = toolbar_layout::icon(entryDescriptor->icon);
     if (group.entryItemId == QStringLiteral("confirm") ||
@@ -5255,10 +5265,7 @@ void ScreenshotToolPalette::refreshActionToolGroup(int groupIndex) {
             snow_shot::presentation::styles::generateThemeColorScheme().map.colorPrimary);
     }
     setScreenshotToolPaletteToolButtonIcon(group.trigger, entryIcon);
-    if (auto* source = actionToolSourceButton(group.entryItemId)) {
-        group.trigger->setButtonStyle(source->buttonStyle());
-        group.trigger->setAccentRole(source->accentRole());
-    }
+    updateAppearance(group.trigger, group.entryItemId);
     // A disabled entry must not prevent hovering the stack to choose an enabled alternative.
     group.trigger->setEnabled(
         std::any_of(group.itemIds.cbegin(), group.itemIds.cend(),
@@ -5276,21 +5283,8 @@ void ScreenshotToolPalette::refreshActionToolGroup(int groupIndex) {
         optionButton->setEnabled(state.enabled);
         optionButton->setBusy(state.busy);
         applyActionToolShortcutTooltip(optionButton, itemId);
+        updateAppearance(optionButton, itemId);
     }
-
-    int activeIndex = -1;
-    if (m_activeTool.has_value()) {
-        for (const QString& itemId : group.itemIds) {
-            if (actionTool(itemId) == m_activeTool) {
-                activeIndex = actionToolIndex(itemId);
-                break;
-            }
-        }
-    }
-    updateScreenshotToolPaletteOptionPopoverEditor(group.optionButtons, group.optionValues,
-                                                   activeIndex);
-    setScreenshotToolPaletteButtonActive(
-        group.trigger, m_activeTool.has_value() && actionTool(group.entryItemId) == m_activeTool);
 }
 
 void ScreenshotToolPalette::refreshActionToolGroups() {
@@ -9401,12 +9395,6 @@ void ScreenshotToolPalette::setActiveToolButton(adqt::widgets::AdButton* activeB
             setScreenshotToolPaletteButtonActive(group.trigger, group.trigger == activeButton);
         }
     }
-    for (const ActionToolGroup& group : std::as_const(m_actionToolGroups)) {
-        if (!m_options.showRecordingControls && group.trigger != nullptr) {
-            setScreenshotToolPaletteButtonActive(group.trigger, group.trigger == activeButton);
-        }
-    }
-
     const auto& definitions = toolbar_layout::drawingEditorDescriptors();
     const QString activeId = m_activeTool.has_value()
                                  ? drawingToolItemId(toolbarFacingDrawingTool(*m_activeTool))

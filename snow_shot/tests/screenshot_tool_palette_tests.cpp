@@ -4780,6 +4780,95 @@ void recordingDrawingLayoutRendersConfiguredSeparator() {
             "hiding the shared separator must remove it from the recording drawing tools");
 }
 
+void screenshotResultActionColorsSurviveLayoutRefreshes() {
+    namespace layout = snow_shot::presentation::toolbar_layout;
+    using snow_shot::presentation::styles::ThemeMode;
+    using snow_shot::storage::ScreenshotToolbarLayout;
+    const auto kind = snow_shot::storage::ScreenshotToolbarLayoutKind::ActionTools;
+    const QString cancel = QStringLiteral("cancel");
+    const QString copy = QStringLiteral("copy");
+    auto& theme = snow_shot::presentation::styles::ThemeManager::instance();
+    const auto originalMode = theme.themeMode();
+    const auto restoreTheme = qScopeGuard([&] { theme.setThemeMode(originalMode); });
+    QStringList hidden = layout::defaultOrder(kind);
+    hidden.removeAll(cancel);
+    hidden.removeAll(copy);
+    const ScreenshotToolbarLayout standalone{{{cancel}, {copy}}, hidden};
+    const ScreenshotToolbarLayout stacked{{{copy, cancel}}, hidden};
+
+    const auto requireIconColor = [](adqt::widgets::AdButton* button, const QColor& expected,
+                                     const char* message) {
+        require(button != nullptr, "result action color test requires its button");
+        QEvent leave(QEvent::Leave);
+        QCoreApplication::sendEvent(button, &leave);
+        const QImage image = renderButton(*button);
+        const QRect iconBounds = image.rect().adjusted(8, 8, -8, -8);
+        for (int y = iconBounds.top(); y <= iconBounds.bottom(); ++y) {
+            for (int x = iconBounds.left(); x <= iconBounds.right(); ++x) {
+                if (image.pixelColor(x, y) == expected) {
+                    return;
+                }
+            }
+        }
+        require(false, message);
+    };
+
+    ScreenshotToolPalette::Options options;
+    options.enableStyleToolbar = false;
+    options.actions = ScreenshotToolPalette::CancelAction | ScreenshotToolPalette::CopyAction;
+    ScreenshotToolPalette fixed(options);
+    options.actionToolsLayout = layout::normalizedLayout({}, kind);
+    ScreenshotToolPalette configurable(options);
+    fixed.show();
+    configurable.show();
+    for (const auto mode : {ThemeMode::Light, ThemeMode::Dark, ThemeMode::Light}) {
+        theme.setThemeMode(mode);
+        adqt::theme::ThemeManager::instance().applyTo(*qApp);
+        QCoreApplication::processEvents();
+        const auto scheme = theme.themeColorScheme();
+        requireIconColor(
+            qobject_cast<adqt::widgets::AdButton*>(controlWithTooltip(fixed, "Cancel screenshot")),
+            scheme.map.colorError, "fixed Cancel must retain its danger icon color");
+        auto buttons = mainActionToolbarButtons(configurable);
+        auto* cancelButton = buttons.at(buttons.size() - 2);
+        require(cancelButton->property("screenshotToolbarItemId") == cancel,
+                "the default result layout must expose Cancel before Copy");
+        requireIconColor(cancelButton, scheme.map.colorError,
+                         "default configurable Cancel must retain its danger icon color");
+
+        configurable.setActionToolsLayout(standalone);
+        configurable.setActiveTool(ScreenshotToolPalette::Tool::Shape);
+        configurable.setActiveTool(ScreenshotToolPalette::Tool::Select);
+        requireIconColor(mainActionToolbarButtons(configurable).first(), scheme.map.colorError,
+                         "tool changes must preserve standalone Cancel's danger icon color");
+        configurable.setActionToolsLayout(stacked);
+        auto* trigger = mainActionToolbarButtons(configurable).first();
+        requireIconColor(trigger, scheme.map.colorError,
+                         "a Cancel stack entry must retain its danger icon color");
+        materializeLazyPopover(trigger);
+        auto* popover = popoverForTrigger(trigger);
+        requireIconColor(popoverButtonWithTooltip(popover, "Cancel screenshot"),
+                         scheme.map.colorError,
+                         "the Cancel stack option must retain its danger icon color");
+        auto* copyOption = popoverButtonWithTooltip(popover, "Copy to clipboard");
+        requireIconColor(copyOption, scheme.map.colorPrimary,
+                         "the Copy stack option must retain its primary icon color");
+        copyOption->click();
+        requireIconColor(trigger, scheme.map.colorPrimary,
+                         "switching the stack to Copy must restore its primary icon color");
+        require(configurable.activateScreenshotShortcut(QStringLiteral("cancel_screenshot")),
+                "the Cancel shortcut must select the stacked command");
+        requireIconColor(trigger, scheme.map.colorError,
+                         "switching the stack back to Cancel must restore its danger icon color");
+        materializeLazyPopover(trigger);
+        requireIconColor(popoverButtonWithTooltip(popover, "Cancel screenshot"),
+                         scheme.map.colorError,
+                         "recreated Cancel stack options must retain their danger icon color");
+        popover->hide();
+        configurable.setActionToolsLayout(layout::normalizedLayout({}, kind));
+    }
+}
+
 void screenshotResultActionsFollowCustomLayout() {
     namespace layout = snow_shot::presentation::toolbar_layout;
     using snow_shot::storage::ScreenshotToolbarLayout;
@@ -15496,6 +15585,7 @@ int main(int argc, char** argv) {
         return 0;
     }
     if (application.arguments().contains(QStringLiteral("--screenshot-result-layout-only"))) {
+        screenshotResultActionColorsSurviveLayoutRefreshes();
         screenshotResultActionsFollowCustomLayout();
         screenshotToolbarUsesCanonicalOrderAndSectionSeparators();
         sharedToolbarLayoutModelOperationsAreDeterministic();
@@ -15504,6 +15594,7 @@ int main(int argc, char** argv) {
         return 0;
     }
     if (application.arguments().contains(QStringLiteral("--action-toolbar-layout-only"))) {
+        screenshotResultActionColorsSurviveLayoutRefreshes();
         screenshotResultActionsFollowCustomLayout();
         pinnedActionLayoutUsesGenericStacks();
         pinnedConfirmAndSectionSeparatorsFollowCustomLayout();
@@ -15556,6 +15647,7 @@ int main(int argc, char** argv) {
     scrollingSelectionButtonsDragAndLockAxis();
     scrollingSettingsUseCenteredFormAndPersistOnAccept();
     scrollingScreenshotExposesAxisRecognitionModes();
+    screenshotResultActionColorsSurviveLayoutRefreshes();
     screenshotResultActionsFollowCustomLayout();
     screenshotToolbarUsesCanonicalOrderAndSectionSeparators();
     moveToolPresentationUsesTheOwningShortcutScope();
