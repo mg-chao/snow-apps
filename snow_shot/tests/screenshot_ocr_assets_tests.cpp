@@ -37,9 +37,9 @@ const QString kWindowsPlatform = QStringLiteral("windows-arm64");
 const QString kWindowsPlatform = QStringLiteral("windows-x64");
 #endif
 const QString kWindowsWorkerName =
-    QStringLiteral("snow-ocr-process-1.0.9-%1.exe").arg(kWindowsPlatform);
+    QStringLiteral("snow-ocr-process-1.0.10-%1.exe").arg(kWindowsPlatform);
 const QString kWindowsArchiveName =
-    QStringLiteral("snow-ocr-runtime-1.0.9-%1.zip").arg(kWindowsPlatform);
+    QStringLiteral("snow-ocr-runtime-1.0.10-%1.zip").arg(kWindowsPlatform);
 #ifdef Q_OS_MACOS
 const QString kWorkerName = QStringLiteral("snow-ocr-process");
 #if defined(Q_PROCESSOR_ARM_64)
@@ -117,7 +117,7 @@ void writeAssetManifest(const QString& root, bool completePayload) {
     const QByteArray recognizer("recognizer");
     const QByteArray dictionary("dictionary");
     const QString runtimeDirectory =
-        QDir(root).filePath(QStringLiteral("runtimes/1.0.9/%1").arg(kWindowsPlatform));
+        QDir(root).filePath(QStringLiteral("runtimes/1.0.10/%1").arg(kWindowsPlatform));
     const QString modelDirectory =
         QDir(root).filePath(QStringLiteral("models/ppocrv6-small-463ea9f"));
     if (completePayload) {
@@ -131,7 +131,7 @@ void writeAssetManifest(const QString& root, bool completePayload) {
                      recognizer);
         writeFixture(QDir(modelDirectory).filePath(QStringLiteral("ppocrv6_dict.txt")), dictionary);
         writeFixture(QDir(runtimeDirectory).filePath(QStringLiteral(".complete.json")),
-                     R"({"schema":1,"component":"1.0.9"})");
+                     R"({"schema":1,"component":"1.0.10"})");
         writeFixture(QDir(modelDirectory).filePath(QStringLiteral(".complete.json")),
                      R"({"schema":1,"component":"ppocrv6-small-463ea9f"})");
     }
@@ -164,7 +164,7 @@ void writeAssetManifest(const QString& root, bool completePayload) {
         {QStringLiteral("schema"), 2},
         {QStringLiteral("default_model"), QStringLiteral("small")},
         {QStringLiteral("runtime"),
-         QJsonObject{{QStringLiteral("version"), QStringLiteral("1.0.9")},
+         QJsonObject{{QStringLiteral("version"), QStringLiteral("1.0.10")},
                      {QStringLiteral("platform"), kWindowsPlatform},
                      {QStringLiteral("archive"),
                       assetFile(kWindowsArchiveName, archive,
@@ -213,7 +213,7 @@ void writeAssetManifest(const QString& root, bool completePayload) {
     manifest.insert(QStringLiteral("schema"), 3);
     manifest.insert(
         QStringLiteral("runtime"),
-        QJsonObject{{QStringLiteral("version"), QStringLiteral("1.0.9")},
+        QJsonObject{{QStringLiteral("version"), QStringLiteral("1.0.10")},
                     {QStringLiteral("platform"), kMacPlatform},
                     {QStringLiteral("delivery"), QStringLiteral("bundled")},
                     {QStringLiteral("protocol"), 5},
@@ -556,6 +556,11 @@ void invalidSchemaTwoManifestsAreRejectedBeforeDownloading() {
     };
 
     rejectMutation([](QJsonObject* manifest) { manifest->insert(QStringLiteral("schema"), 1); });
+    rejectMutation([](QJsonObject* manifest) {
+        QJsonObject runtime = manifest->value(QStringLiteral("runtime")).toObject();
+        runtime.insert(QStringLiteral("version"), QStringLiteral("1.0.9"));
+        manifest->insert(QStringLiteral("runtime"), runtime);
+    });
 #ifdef Q_OS_WIN
     rejectMutation([](QJsonObject* manifest) {
         QJsonObject runtime = manifest->value(QStringLiteral("runtime")).toObject();
