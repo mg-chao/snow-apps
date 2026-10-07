@@ -5,11 +5,13 @@
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <QLineEdit>
 #include <QMouseEvent>
 
 #include <cmath>
 #include <cstdlib>
 #include <iostream>
+#include <limits>
 #include <memory>
 
 namespace {
@@ -188,6 +190,106 @@ void visibleGuideTargetsSnapWithoutElementSnapping() {
             "cleared guides must no longer affect creation");
 }
 
+void guideTargetMetadataPreservesFocusAndDocumentState() {
+    SnowCanvasRuntime runtime;
+    QWidget window;
+    SnowCanvasWidget canvas(runtime, &window);
+    QLineEdit editor(&window);
+    window.resize(800, 650);
+    canvas.setGeometry(0, 0, 800, 600);
+    editor.setGeometry(0, 600, 800, 40);
+    window.show();
+    window.activateWindow();
+    QApplication::processEvents();
+    require(canvas.setViewportCamera(0.0, 0.0, 1.0), "set metadata test camera");
+    require(canvas.setCanvasTool(SnowCanvasTool::Shape), "set metadata test tool");
+    mouse(canvas, QEvent::MouseButtonPress, {450.0, 330.0});
+    mouse(canvas, QEvent::MouseMove, {480.0, 360.0});
+    mouse(canvas, QEvent::MouseButtonRelease, {480.0, 360.0});
+    const auto document = runtime.serializeDocumentSession();
+    const auto history = runtime.serializeDocumentHistory();
+    const auto revision = runtime.documentRevision();
+    editor.setFocus(Qt::OtherFocusReason);
+    require(QApplication::focusWidget() == &editor, "metadata test editor must own focus");
+
+    for (const auto& targets :
+         {SnowCanvasSnapGuideTargets{{100.0}, {80.0}}, SnowCanvasSnapGuideTargets{{100.0}, {80.0}},
+          SnowCanvasSnapGuideTargets{{200.0}, {180.0}}, SnowCanvasSnapGuideTargets{}}) {
+        require(canvas.setCanvasSnapGuideTargets(targets), "guide metadata update must succeed");
+        require(QApplication::focusWidget() == &editor,
+                "guide metadata must preserve focus for changed, unchanged, and cleared targets");
+    }
+    require(runtime.documentRevision() == revision &&
+                runtime.serializeDocumentSession() == document &&
+                runtime.serializeDocumentHistory() == history,
+            "guide metadata must preserve document and undo history");
+}
+
+void guideTargetValidationAndViewportLifecycle() {
+    SnowCanvasRuntime runtime;
+    SnowCanvasWidget canvas(runtime);
+    canvas.resize(800, 600);
+    canvas.show();
+    QApplication::processEvents();
+    require(canvas.setViewportCamera(0.0, 0.0, 1.0), "set validated guide camera");
+    require(canvas.setCanvasTool(SnowCanvasTool::Shape), "set validated guide tool");
+    const SnowCanvasSnapGuideTargets firstTargets{{100.0}, {80.0}};
+    const SnowCanvasSnapGuideTargets changedTargets{{200.0}, {180.0}};
+    require(canvas.setCanvasSnapGuideTargets(firstTargets), "initialize validated guides");
+    require(canvas.setCanvasSnapGuideTargets(changedTargets), "change validated guides");
+    for (const auto& invalid :
+         {SnowCanvasSnapGuideTargets{{1.0, 2.0, 3.0}, {}},
+          SnowCanvasSnapGuideTargets{{}, {1.0, 2.0, 3.0}},
+          SnowCanvasSnapGuideTargets{{std::numeric_limits<qreal>::quiet_NaN()}, {}},
+          SnowCanvasSnapGuideTargets{{}, {std::numeric_limits<qreal>::infinity()}}}) {
+        require(!canvas.setCanvasSnapGuideTargets(invalid), "invalid guides must be rejected");
+    }
+    const auto session = runtime.serializeDocumentSession();
+    mouse(canvas, QEvent::MouseButtonPress, {550.0, 430.0});
+    mouse(canvas, QEvent::MouseMove, {597.0, 477.0});
+    mouse(canvas, QEvent::MouseButtonRelease, {597.0, 477.0});
+    const auto changed = rectangleRecords(runtime);
+    require(changed.size() == 1 && changed[0].right == 200.0 && changed[0].bottom == 180.0,
+            "changed guides must snap and rejected updates must preserve valid targets");
+
+    for (const bool restore : {false, true}) {
+        require(restore ? runtime.restoreDocumentSession(session) : runtime.reset(),
+                "replace guide viewport runtime");
+        require(canvas.setViewportCamera(0.0, 0.0, 1.0), "restore guide camera");
+        require(canvas.setCanvasTool(SnowCanvasTool::Shape), "restore guide tool");
+        require(canvas.setCanvasSnapGuideTargets(changedTargets),
+                "same targets must apply to a replacement viewport");
+        mouse(canvas, QEvent::MouseButtonPress, {550.0, 430.0});
+        mouse(canvas, QEvent::MouseMove, {597.0, 477.0});
+        mouse(canvas, QEvent::MouseButtonRelease, {597.0, 477.0});
+        const auto restored = rectangleRecords(runtime);
+        require(!restored.isEmpty() && restored.last().right == 200.0 &&
+                    restored.last().bottom == 180.0,
+                "runtime replacement must not leave the same targets falsely cached");
+    }
+    require(runtime.clearDocumentPreservingViewports(), "clear guide document");
+    require(canvas.setCanvasTool(SnowCanvasTool::Shape), "activate shape after document clearing");
+    require(canvas.setCanvasSnapGuideTargets(changedTargets), "refresh guides after clear");
+    mouse(canvas, QEvent::MouseButtonPress, {550.0, 430.0});
+    mouse(canvas, QEvent::MouseMove, {597.0, 477.0});
+    mouse(canvas, QEvent::MouseButtonRelease, {597.0, 477.0});
+    const auto cleared = rectangleRecords(runtime);
+    require(cleared.size() == 1 && cleared[0].right == 200.0 && cleared[0].bottom == 180.0,
+            "document clearing must preserve working guide targets");
+    require(canvas.setCanvasSnapGuideTargets({}), "clear validated guides");
+    // Start inside the unfilled rectangle so quick selection cannot capture its stroke.
+    mouse(canvas, QEvent::MouseButtonPress, {570.0, 450.0});
+    mouse(canvas, QEvent::MouseMove, {597.0, 477.0});
+    mouse(canvas, QEvent::MouseButtonRelease, {597.0, 477.0});
+    const auto noGuides = rectangleRecords(runtime);
+    require(noGuides.size() == 2 && noGuides.last().right == 197.0 &&
+                noGuides.last().bottom == 177.0,
+            "cleared guides must not keep cached snapping behavior");
+    runtime.destroyAsync();
+    require(!canvas.setCanvasSnapGuideTargets({}),
+            "a detached viewport must reject even an unchanged guide update");
+}
+
 void ctrlTogglesElementSnappingIndependentlyOfVisibleGuides() {
     for (const bool withGuides : {false, true}) {
         for (const bool persistentSnapping : {false, true}) {
@@ -244,6 +346,8 @@ int main(int argc, char** argv) {
     alignSelectionRequiresMultipleElements();
     distributeSelection();
     visibleGuideTargetsSnapWithoutElementSnapping();
+    guideTargetMetadataPreservesFocusAndDocumentState();
+    guideTargetValidationAndViewportLifecycle();
     ctrlTogglesElementSnappingIndependentlyOfVisibleGuides();
     std::cout << "Canvas align tests passed\n";
 }

@@ -9,6 +9,7 @@
 #include "snow_canvas_text_edit_geometry.h"
 #include "snow_canvas_text_layout.h"
 #include "snow_canvas_text_render.h"
+#include "snow_canvas_fill_render.h"
 #include "snow_canvas_text_measurement.h"
 #include "snow_canvas_type_conversions.h"
 #include "snow_canvas_changed_viewports.h"
@@ -45,6 +46,7 @@
 #include <QPainter>
 #include <QTextBlock>
 #include <QTextCursor>
+#include <QTextCharFormat>
 #include <QTextLayout>
 #include <QThread>
 #include <QWidget>
@@ -54,6 +56,7 @@
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
+#include <future>
 #include <iostream>
 #include <memory>
 #include <optional>
@@ -4241,6 +4244,307 @@ void eraserMoveBurstsUseTheLatestSamplePerFrame() {
                          Qt::NoButton);
 }
 
+// Keep this reference independent of the retained renderer.
+void drawUncachedTextPhase(QPainter& painter, const SnowSceneDisplayItem& item,
+                           const QFont& baseFont, const QRectF& localRect, double zoom, int phase) {
+    const QString text = snow_canvas_text::textFromSceneItem(item);
+    auto layout =
+        snow_canvas_text_layout::createDocumentLayout(item, baseFont, zoom, text, phase == 0);
+    auto& document = layout.textDocument();
+    std::optional<QTextCursor> cursor;
+    if (phase != 0) {
+        cursor.emplace(&document);
+        cursor->select(QTextCursor::Document);
+        QTextCharFormat format;
+        if (phase == 1) {
+            format.setForeground(QBrush(QColor(item.text_color.r, item.text_color.g,
+                                               item.text_color.b, item.text_color.a)));
+        } else {
+            QPen outline(QColor(item.stroke.r, item.stroke.g, item.stroke.b, item.stroke.a),
+                         item.stroke_width * zoom / layout.resolution.scale, Qt::SolidLine,
+                         Qt::RoundCap, Qt::RoundJoin);
+            outline.setMiterLimit(2.0);
+            format.setTextOutline(outline);
+            format.setForeground(QBrush(Qt::transparent));
+        }
+        cursor->mergeCharFormat(format);
+    }
+    painter.save();
+    painter.translate(localRect.left(), localRect.top() + layout.topOffset);
+    painter.scale(layout.resolution.scale, layout.resolution.scale);
+    if (phase == 0) {
+        const auto outset = snow_scene_text_fill_outset(&item);
+        const double scale = layout.safeZoom / layout.resolution.scale;
+        const double radius =
+            qMax(qMax(item.corner_radii.top_left, item.corner_radii.top_right),
+                 qMax(item.corner_radii.bottom_left, item.corner_radii.bottom_right)) *
+            scale;
+        painter.setPen(Qt::NoPen);
+        for (auto block = document.begin(); block.isValid(); block = block.next()) {
+            const auto* lines = block.layout();
+            if (lines == nullptr) {
+                continue;
+            }
+            const auto blockRect = document.documentLayout()->blockBoundingRect(block);
+            for (int index = 0; index < lines->lineCount(); ++index) {
+                const auto line = lines->lineAt(index);
+                if (!line.isValid()) {
+                    continue;
+                }
+                auto rect = line.naturalTextRect().translated(blockRect.topLeft());
+                rect.setWidth(qMax(1.0, rect.width()));
+                rect.setHeight(qMax(1.0, rect.height()));
+                rect.adjust(-outset.x * scale, -outset.y * scale, outset.x * scale,
+                            outset.y * scale);
+                QPainterPath path;
+                const double clamped = qMin(radius, qMin(rect.width(), rect.height()) / 2.0);
+                if (clamped > 0.0) {
+                    path.addRoundedRect(rect, clamped, clamped);
+                } else {
+                    path.addRect(rect);
+                }
+                snow_canvas_fill_render::drawTextBackgroundFill(
+                    painter, path, item.fill, item.fill_style, item.font_size, scale);
+            }
+        }
+    } else {
+        QAbstractTextDocumentLayout::PaintContext context;
+        context.clip = snow_canvas_text_layout::documentContentsRect(layout);
+        painter.save();
+        painter.setClipRect(context.clip, Qt::IntersectClip);
+        document.documentLayout()->draw(&painter, context);
+        painter.restore();
+    }
+    painter.restore();
+}
+
+QImage renderTextCacheSample(const SnowSceneDisplayItem& item, const QFont& font, double zoom,
+                             bool cached, bool strips, qreal dpr = 1.0,
+                             const QPointF& position = QPointF(350.0, 220.0)) {
+    QImage image(QSize(qRound(960 * dpr), qRound(720 * dpr)), QImage::Format_ARGB32_Premultiplied);
+    image.setDevicePixelRatio(dpr);
+    image.fill(QColor(63, 73, 83));
+    QPainter painter(&image);
+    painter.setRenderHint(QPainter::Antialiasing);
+    painter.setFont(font);
+    if (strips) {
+        painter.setClipRegion(QRegion(QRect(0, 210, 960, 7)) | QRect(345, 0, 5, 720));
+    }
+    painter.translate(position);
+    painter.rotate(item.rotation * 180.0 / 3.14159265358979323846);
+    painter.setOpacity(item.opacity);
+    const QRectF local(-item.width * zoom / 2.0, -item.height * zoom / 2.0, item.width * zoom,
+                       item.height * zoom);
+    for (const int phase : {0, 2, 1}) {
+        if (!cached) {
+            drawUncachedTextPhase(painter, item, font, local, zoom, phase);
+        } else if (phase == 0) {
+            snow_canvas_text_render::drawBackground(painter, item, font, local, zoom);
+        } else if (phase == 1) {
+            snow_canvas_text_render::drawContents(painter, item, font, local, zoom);
+        } else {
+            snow_canvas_text_render::drawStroke(painter, item, font, local, zoom);
+        }
+    }
+    painter.end();
+    return image;
+}
+
+SnowCanvasSceneItem textCacheSampleItem() {
+    SnowCanvasSceneItem item;
+    item.kind = SNOW_SCENE_DISPLAY_ITEM_TEXT;
+    item.width = 260.0;
+    item.height = 180.0;
+    item.font_size = 24.0;
+    item.opacity = 0.75;
+    item.fill = SnowColorRgba8{150, 210, 255, 180};
+    item.stroke = SnowColorRgba8{200, 40, 30, 200};
+    item.text_color = SnowColorRgba8{30, 100, 190, 220};
+    item.stroke_width = 2.25;
+    item.corner_radii = SnowCornerRadii{5.0, 5.0, 5.0, 5.0};
+    item.text_horizontal_align = SNOW_TEXT_HORIZONTAL_ALIGN_CENTER;
+    item.text_vertical_align = SNOW_TEXT_VERTICAL_ALIGN_CENTER;
+    snow_canvas_text::copyTextToSceneItem(
+        item, QStringLiteral("Alpha beta wraps across several lines.\nSecond paragraph."));
+    return item;
+}
+
+void preparedTextLayoutsMatchUncachedPixelsAndTrackPaintInputs() {
+    using namespace snow_canvas_text_render;
+    clearRenderCacheForCurrentThread();
+    const auto base = textCacheSampleItem();
+    const QFont baseFont = QApplication::font();
+    const auto verify = [&](const SnowCanvasSceneItem& item, const QFont& font, double zoom,
+                            qreal dpr = 1.0) {
+        for (const bool strips : {false, true}) {
+            const auto beforeReference = renderCacheDiagnosticsForCurrentThread();
+            // Qt's first glyph rasterization can differ by a color level from subsequent draws.
+            // Warm it through the original implementation, independently of our retained cache.
+            static_cast<void>(renderTextCacheSample(item, font, zoom, false, strips, dpr));
+            const auto secondReference =
+                renderTextCacheSample(item, font, zoom, false, strips, dpr);
+            const auto reference = renderTextCacheSample(item, font, zoom, false, strips, dpr);
+            const auto afterReference = renderCacheDiagnosticsForCurrentThread();
+            require(
+                secondReference == reference,
+                "independent original text rendering must become pixel stable before comparison");
+            require(beforeReference.hits == afterReference.hits &&
+                        beforeReference.builds == afterReference.builds &&
+                        beforeReference.entries == afterReference.entries,
+                    "independent original renders must not access the prepared text cache");
+            const auto cold = renderTextCacheSample(item, font, zoom, true, strips, dpr);
+            const auto beforeWarm = renderCacheDiagnosticsForCurrentThread();
+            const auto warm = renderTextCacheSample(item, font, zoom, true, strips, dpr);
+            const auto afterWarm = renderCacheDiagnosticsForCurrentThread();
+            if (cold != reference || warm != reference) {
+                std::cerr << "text cache mismatch: width=" << item.width
+                          << ", height=" << item.height << ", fontSize=" << item.font_size
+                          << ", strokeWidth=" << item.stroke_width << ", zoom=" << zoom
+                          << ", dpr=" << dpr << ", strips=" << strips
+                          << ", rotation=" << item.rotation
+                          << ", text=" << snow_canvas_text::textFromSceneItem(item).toStdString()
+                          << ", cold=" << (cold == reference) << ", warm=" << (warm == reference)
+                          << ", coldWarm=" << (cold == warm) << '\n';
+            }
+            require(cold == reference && warm == reference,
+                    "cold and retained text layouts must match original uncached pixels exactly");
+            require(afterWarm.builds == beforeWarm.builds && afterWarm.hits == beforeWarm.hits + 3,
+                    "guide-only repaints must reuse every prepared text phase");
+        }
+    };
+    verify(base, baseFont, 1.0);
+    auto changed = base;
+    snow_canvas_text::copyTextToSceneItem(changed, QStringLiteral("Changed text\nA new paragraph"));
+    verify(changed, baseFont, 1.0);
+    changed = base;
+    changed.width = 170.0;
+    changed.height = 240.0;
+    verify(changed, baseFont, 1.0);
+    for (const auto alignment :
+         {SNOW_TEXT_HORIZONTAL_ALIGN_LEFT, SNOW_TEXT_HORIZONTAL_ALIGN_RIGHT}) {
+        changed = base;
+        changed.text_horizontal_align = alignment;
+        changed.text_vertical_align = SNOW_TEXT_VERTICAL_ALIGN_BOTTOM;
+        verify(changed, baseFont, 1.0);
+    }
+    changed = base;
+    changed.font_size = 31.5;
+    verify(changed, baseFont, 1.0);
+    QFont bold = baseFont;
+    bold.setBold(true);
+    bold.setItalic(true);
+    verify(base, bold, 1.0);
+    changed = base;
+    changed.setFontFamilyUtf8(QByteArray("monospace"));
+    verify(changed, baseFont, 1.0);
+    changed = base;
+    changed.stroke = SnowColorRgba8{10, 230, 50, 220};
+    changed.stroke_width = 5.0;
+    changed.text_color = SnowColorRgba8{240, 180, 30, 160};
+    verify(changed, baseFont, 1.0);
+    changed.stroke_width = 48.0;
+    verify(changed, bold, 1.0);
+    changed = base;
+    changed.fill_style = SNOW_FILL_STYLE_CROSS_LINE;
+    changed.fill = SnowColorRgba8{50, 200, 80, 160};
+    changed.corner_radii = SnowCornerRadii{12.0, 12.0, 12.0, 12.0};
+    verify(changed, baseFont, 1.0);
+    changed = base;
+    changed.rotation = 0.31;
+    changed.opacity = 0.45;
+    verify(changed, baseFont, 0.75);
+    verify(changed, baseFont, 2.0, 2.0);
+    const auto beforeTranslate = renderCacheDiagnosticsForCurrentThread();
+    const auto moved = renderTextCacheSample(changed, baseFont, 2.0, true, true, 2.0, {430, 260});
+    require(moved == renderTextCacheSample(changed, baseFont, 2.0, false, true, 2.0, {430, 260}),
+            "translated text must preserve original clipped rendering");
+    const auto afterTranslate = renderCacheDiagnosticsForCurrentThread();
+    require(afterTranslate.builds == beforeTranslate.builds &&
+                afterTranslate.hits == beforeTranslate.hits + 3,
+            "translation must reuse layouts without creating new cache entries");
+}
+
+void preparedTextLayoutsAreBoundedAndReleasedWithRenderingState() {
+    using namespace snow_canvas_text_render;
+    clearRenderCacheForCurrentThread();
+    QImage image(1, 1, QImage::Format_ARGB32_Premultiplied);
+    image.fill(Qt::transparent);
+    QPainter painter(&image);
+    auto item = textCacheSampleItem();
+    const QFont font = QApplication::font();
+    const QRectF local(0, 0, item.width, item.height);
+    for (std::size_t index = 0; index < kRenderCacheEntryLimit + 20; ++index) {
+        snow_canvas_text::copyTextToSceneItem(item, QStringLiteral("entry %1").arg(index));
+        drawContents(painter, item, font, local, 1.0);
+    }
+    auto diagnostics = renderCacheDiagnosticsForCurrentThread();
+    require(diagnostics.entries == kRenderCacheEntryLimit && diagnostics.evictions > 0 &&
+                diagnostics.retainedCharacters <= kRenderCacheCharacterLimit,
+            "prepared text cache must enforce its entry bound");
+    item.width = 10000000.0;
+    for (int index = 0; index < 40; ++index) {
+        snow_canvas_text::copyTextToSceneItem(item, QString(8192, QLatin1Char('x')) +
+                                                        QString::number(index));
+        drawContents(painter, item, font, local, 1.0);
+    }
+    diagnostics = renderCacheDiagnosticsForCurrentThread();
+    require(diagnostics.entries < kRenderCacheEntryLimit &&
+                diagnostics.retainedCharacters <= kRenderCacheCharacterLimit,
+            "prepared text cache must enforce its independent character bound");
+    const auto beforeOversized = diagnostics;
+    snow_canvas_text::copyTextToSceneItem(
+        item, QString(static_cast<qsizetype>(kRenderCacheCharacterLimit + 1), QLatin1Char('x')));
+    drawContents(painter, item, font, local, 1.0);
+    diagnostics = renderCacheDiagnosticsForCurrentThread();
+    require(diagnostics.entries == beforeOversized.entries &&
+                diagnostics.retainedCharacters == beforeOversized.retainedCharacters &&
+                diagnostics.builds == beforeOversized.builds + 1,
+            "oversized text must render without entering the retained cache");
+    painter.end();
+    SnowCanvasRuntime runtime;
+    runtime.clearRenderState();
+    diagnostics = renderCacheDiagnosticsForCurrentThread();
+    require(diagnostics.entries == 0 && diagnostics.retainedCharacters == 0,
+            "clearing runtime rendering state must release prepared text layouts");
+}
+
+void preparedTextLayoutsStayOnTheirThreadAndFollowFontDatabaseChanges() {
+    using namespace snow_canvas_text_render;
+    clearRenderCacheForCurrentThread();
+    const auto item = textCacheSampleItem();
+    const QFont font = QApplication::font();
+    const auto expected = renderTextCacheSample(item, font, 1.0, true, false);
+    require(renderCacheDiagnosticsForCurrentThread().entries == 3,
+            "GUI text cache must contain its three prepared phases");
+    std::promise<void> workerReady;
+    auto ready = workerReady.get_future();
+    std::promise<void> fontsChanged;
+    auto changed = fontsChanged.get_future();
+    std::atomic<bool> workerPassed = false;
+    std::thread worker([&] {
+        clearRenderCacheForCurrentThread();
+        const auto cold = renderTextCacheSample(item, font, 1.0, true, false);
+        const auto first = renderCacheDiagnosticsForCurrentThread();
+        workerReady.set_value();
+        changed.wait();
+        const auto rebuilt = renderTextCacheSample(item, font, 1.0, true, false);
+        const auto after = renderCacheDiagnosticsForCurrentThread();
+        workerPassed = cold == expected && rebuilt == expected && first.builds == 3 &&
+                       first.hits == 0 && after.builds == 3 && after.hits == 0;
+        clearRenderCacheForCurrentThread();
+    });
+    ready.wait();
+    require(renderCacheDiagnosticsForCurrentThread().entries == 3,
+            "worker rendering must not reuse or mutate GUI-owned QTextDocuments");
+    require(QMetaObject::invokeMethod(qGuiApp, "fontDatabaseChanged", Qt::DirectConnection),
+            "font database invalidation signal must be invokable");
+    require(renderCacheDiagnosticsForCurrentThread().entries == 0,
+            "font database changes must invalidate GUI layouts");
+    fontsChanged.set_value();
+    worker.join();
+    require(workerPassed, "font database changes must invalidate worker layouts on their thread");
+}
+
 } // namespace
 
 int main(int argc, char** argv) {
@@ -4259,6 +4563,21 @@ int main(int argc, char** argv) {
         textEditorConnectorBuildsSerialBoundConnector();
         return 0;
     }
+    if (app.arguments().contains(QStringLiteral("--text-render-cache-only"))) {
+        preparedTextLayoutsMatchUncachedPixelsAndTrackPaintInputs();
+        preparedTextLayoutsAreBoundedAndReleasedWithRenderingState();
+        preparedTextLayoutsStayOnTheirThreadAndFollowFontDatabaseChanges();
+        textBackgroundUsesRectangleHatchTexture();
+        textHoverUnderlineRendererDrawsOnlyTheUnderline();
+        textDecorationsFollowAlignedLines();
+        multilineTextHoverRendererDrawsEveryLineUnderline();
+        paintBoundsFollowAlignedWrappedInk();
+        resizedAlignedTextKeepsCaretClickAndSelectionGeometryConsistent();
+        return 0;
+    }
+    preparedTextLayoutsMatchUncachedPixelsAndTrackPaintInputs();
+    preparedTextLayoutsAreBoundedAndReleasedWithRenderingState();
+    preparedTextLayoutsStayOnTheirThreadAndFollowFontDatabaseChanges();
     serialNumberFormattedLabelsRenderAndFitBadges();
     replacementNormalizesLineBreaksAndSupportsUndoRedo();
     cursorPositionReportsOnlyRealStateChanges();

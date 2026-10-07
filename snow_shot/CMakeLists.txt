@@ -3849,6 +3849,9 @@ if(SNOW_SHOT_BUILD_TESTS)
     )
     add_test(NAME snow-shot-screenshot-guide-preferences-tests
         COMMAND snow-shot-screenshot-canvas-renderer-tests --screenshot-ui-preferences)
+    add_test(NAME snow-shot-screenshot-guide-rendering-tests
+        COMMAND snow-shot-screenshot-canvas-renderer-tests --guide-rendering-only -platform offscreen)
+    set_tests_properties(snow-shot-screenshot-guide-rendering-tests PROPERTIES LABELS "unit" TIMEOUT 60)
     add_test(NAME snow-shot-direct-capture-history-rendering-tests
         COMMAND snow-shot-screenshot-canvas-renderer-tests --direct-capture-history-rendering)
     add_test(NAME snow-shot-pinned-filter-reference-tests
@@ -3916,6 +3919,7 @@ if(SNOW_SHOT_BUILD_TESTS)
     set_tests_properties(
         snow-shot-screenshot-canvas-renderer-tests
         snow-shot-screenshot-guide-preferences-tests
+        snow-shot-screenshot-guide-rendering-tests
         snow-shot-overlay-pool-prewarm-tests
         PROPERTIES
         ENVIRONMENT

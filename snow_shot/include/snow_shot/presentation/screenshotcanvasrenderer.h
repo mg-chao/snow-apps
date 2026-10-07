@@ -205,9 +205,24 @@ class ScreenshotCanvasRenderer final : public SnowCanvasCustomRenderer {
     void renderAfterCanvas(QPainter& painter, const SnowCanvasRenderContext& context) override;
 
   private:
+    struct SelectionViewGeometry {
+        bool valid = false;
+        QTransform canvasToViewTransform;
+        QRect viewportRect;
+        int cornerRadius = 0;
+        int borderCornerRadius = 0;
+        QPainterPath effectivePath;
+        QPainterPath outlinePath;
+        QPainterPath draftPath;
+        QPainterPath maskPath;
+        bool maskCacheEligible = false;
+        bool sharedDraftOutline = false;
+    };
     struct PathRasterCache {
         struct Entry {
             QPainterPath path;
+            QPainterPath viewPath;
+            QPointF origin;
             QColor color;
             qreal scale = 0;
             QImage image;
@@ -222,6 +237,8 @@ class ScreenshotCanvasRenderer final : public SnowCanvasCustomRenderer {
     void invalidateCachedContent(bool originalChanged = true);
     void paintBackground(QPainter& painter, const SnowCanvasRenderContext& context,
                          bool originalOnly);
+    const SelectionViewGeometry& selectionViewGeometry(const SnowCanvasRenderContext& context,
+                                                       int cornerRadius, int borderCornerRadius);
     [[nodiscard]] ScreenshotOcrTextLayer* ensureOcrTextLayer();
     // Widget-space repaint region for an image canvas rect; empty when the
     // rect maps outside the viewport, the full viewport when the display cache is
@@ -252,6 +269,7 @@ class ScreenshotCanvasRenderer final : public SnowCanvasCustomRenderer {
     QColor m_regionHoverCacheShadowColor;
     bool m_pinnedCheckerboardEnabled = false;
     ScreenshotSelectionVisualState m_selectionState;
+    SelectionViewGeometry m_selectionViewGeometry;
     RenderMode m_renderMode = RenderMode::Standard;
     bool m_maskVisible = false;
     QColor m_selectionBorderColor = QColor(0x40, 0x96, 0xff);

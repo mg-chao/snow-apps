@@ -15,6 +15,7 @@
 #include <QElapsedTimer>
 #include <QFile>
 #include <QGuiApplication>
+#include <QInputMethodEvent>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
@@ -86,10 +87,18 @@ class PaintProbe final : public QObject {
 };
 
 struct BenchmarkFixture {
-    explicit BenchmarkFixture(const QSize& size)
+    explicit BenchmarkFixture(const QSize& size, bool translucent = false)
         : canvas(std::make_unique<SnowCanvasWidget>(runtime, &window)),
           renderer(std::make_unique<ScreenshotCanvasRenderer>(*canvas)) {
         window.setWindowTitle(QStringLiteral("Snow Shot selection benchmark"));
+        // Match the screenshot overlay's native backing-store configuration before
+        // WA_NativeWindow creates a platform window. An opaque child would bypass
+        // the parent alpha surface and invalidate the presentation comparison.
+        if (translucent) {
+            window.setWindowFlag(Qt::FramelessWindowHint);
+            window.setAttribute(Qt::WA_TranslucentBackground);
+            canvas->setAttribute(Qt::WA_OpaquePaintEvent, false);
+        }
         window.setAttribute(Qt::WA_NativeWindow, true);
         window.resize(size);
         auto* layout = new QVBoxLayout(&window);
@@ -128,6 +137,7 @@ struct FrameSample {
     double milliseconds = 0.0;
     double requestedPaintRegionRatio = 0.0;
     double paintedPaintRegionRatio = 0.0;
+    double paintedBoundingRectRatio = 0.0;
     double selectionDamageRegionRatio = 0.0;
     std::size_t shadowCacheHits = 0;
     std::size_t shadowCacheBuilds = 0;
@@ -207,6 +217,7 @@ FrameSample measureFrame(BenchmarkFixture& fixture, const std::function<void()>&
         static_cast<double>(elapsedNanoseconds) / 1'000'000.0,
         paintRegionRatio(requested, fixture.canvas->size()),
         paintRegionRatio(painted, fixture.canvas->size()),
+        paintRegionRatio(QRegion(painted.boundingRect()), fixture.canvas->size()),
         static_cast<double>(selectionDiagnostics.requestedDamagePixels) /
             static_cast<double>(fixture.canvas->width()) /
             static_cast<double>(fixture.canvas->height()),
@@ -264,10 +275,12 @@ QJsonObject summarize(const ScenarioResult& result, const DwmSnapshot& beforeDwm
     std::vector<double> milliseconds, mutationMs, eventProcessingMs;
     std::vector<double> requestedRegionRatios;
     std::vector<double> paintedRegionRatios;
+    std::vector<double> paintedBoundingRectRatios;
     std::vector<double> selectionDamageRatios;
     milliseconds.reserve(result.samples.size());
     requestedRegionRatios.reserve(result.samples.size());
     paintedRegionRatios.reserve(result.samples.size());
+    paintedBoundingRectRatios.reserve(result.samples.size());
     selectionDamageRatios.reserve(result.samples.size());
     std::size_t shadowHits = 0;
     std::size_t shadowBuilds = 0;
@@ -289,6 +302,7 @@ QJsonObject summarize(const ScenarioResult& result, const DwmSnapshot& beforeDwm
             std::max(peakFilterDispatchCount, sample.filter.effectDispatchCount);
         requestedRegionRatios.push_back(sample.requestedPaintRegionRatio);
         paintedRegionRatios.push_back(sample.paintedPaintRegionRatio);
+        paintedBoundingRectRatios.push_back(sample.paintedBoundingRectRatio);
         selectionDamageRatios.push_back(sample.selectionDamageRegionRatio);
         shadowHits += sample.shadowCacheHits;
         shadowBuilds += sample.shadowCacheBuilds;
@@ -309,6 +323,10 @@ QJsonObject summarize(const ScenarioResult& result, const DwmSnapshot& beforeDwm
     object.insert(QStringLiteral("p99Ms"), percentile(milliseconds, 0.99));
     object.insert(QStringLiteral("meanRequestedPaintRegionRatio"), mean(requestedRegionRatios));
     object.insert(QStringLiteral("meanPaintedPaintRegionRatio"), mean(paintedRegionRatios));
+    // Windows' translucent backing store presents the dirty region's bounding
+    // rectangle. This metric estimates that amplification; it does not measure
+    // compositor latency or prove the pixels were displayed.
+    object.insert(QStringLiteral("meanPaintedBoundingRectRatio"), mean(paintedBoundingRectRatios));
     object.insert(QStringLiteral("meanSelectionDamageRegionRatio"), mean(selectionDamageRatios));
     object.insert(QStringLiteral("meanPaintRegionRatio"), mean(paintedRegionRatios));
     object.insert(QStringLiteral("shadowCacheHits"), static_cast<qint64>(shadowHits));
@@ -434,10 +452,42 @@ void createRectangleFilter(BenchmarkFixture& fixture, SnowCanvasFilterType type,
     QApplication::processEvents();
 }
 
+void createGuideTextAnnotations(BenchmarkFixture& fixture, int count) {
+    if (count == 0) {
+        return;
+    }
+    auto& canvas = *fixture.canvas;
+    if (!fixture.runtime.setQuickSelectionDisabledTools({SnowCanvasTool::Text})) {
+        throw std::runtime_error("unable to configure benchmark text annotations");
+    }
+    const int columns = std::min(count, 10);
+    const int rows = (count + columns - 1) / columns;
+    for (int index = 0; index < count; ++index) {
+        if (!canvas.setCanvasTool(SnowCanvasTool::Text)) {
+            throw std::runtime_error("unable to select benchmark text tool");
+        }
+        const QPointF position(canvas.width() * (0.2 + 0.6 * (index % columns) / columns),
+                               canvas.height() * (0.2 + 0.6 * (index / columns) / rows));
+        QMouseEvent press(QEvent::MouseButtonPress, position, position, Qt::LeftButton,
+                          Qt::LeftButton, Qt::NoModifier);
+        QCoreApplication::sendEvent(&canvas, &press);
+        QMouseEvent release(QEvent::MouseButtonRelease, position, position, Qt::LeftButton,
+                            Qt::NoButton, Qt::NoModifier);
+        QCoreApplication::sendEvent(&canvas, &release);
+        QInputMethodEvent text;
+        text.setCommitString(QStringLiteral("Guide benchmark annotation %1").arg(index));
+        QCoreApplication::sendEvent(&canvas, &text);
+        if (!canvas.resetEditingState() || !canvas.canvasHistoryState().canUndo) {
+            throw std::runtime_error("unable to commit benchmark text annotation");
+        }
+    }
+    QApplication::processEvents();
+}
+
 QJsonObject writeReports(const QList<QJsonObject>& objects, const QString& jsonlPath,
                          const QString& summaryPath, const QString& htmlPath,
                          const QSize& surfaceSize, const QSize& actualCanvasSize,
-                         qreal devicePixelRatio) {
+                         qreal devicePixelRatio, bool translucent) {
     QFile jsonl(jsonlPath);
     if (!jsonl.open(QIODevice::WriteOnly | QIODevice::Text)) {
         throw std::runtime_error("unable to open JSONL output");
@@ -453,7 +503,7 @@ QJsonObject writeReports(const QList<QJsonObject>& objects, const QString& jsonl
         scenarios.append(object);
     }
     QJsonObject summary;
-    summary.insert(QStringLiteral("schemaVersion"), 3);
+    summary.insert(QStringLiteral("schemaVersion"), 4);
     summary.insert(QStringLiteral("requestedSurfaceWidth"), surfaceSize.width());
     summary.insert(QStringLiteral("requestedSurfaceHeight"), surfaceSize.height());
     summary.insert(QStringLiteral("surfaceWidth"), actualCanvasSize.width());
@@ -465,9 +515,14 @@ QJsonObject writeReports(const QList<QJsonObject>& objects, const QString& jsonl
                    static_cast<int>(std::ceil(actualCanvasSize.height() * devicePixelRatio)));
     summary.insert(QStringLiteral("qtPlatform"), QGuiApplication::platformName());
     summary.insert(QStringLiteral("qtScaleFactor"), qEnvironmentVariable("QT_SCALE_FACTOR"));
+    summary.insert(QStringLiteral("translucentWindow"), translucent);
     summary.insert(QStringLiteral("timingScope"),
-                   QStringLiteral("selection mutation plus QApplication::processEvents; "
-                                  "excludes native presentation latency"));
+                   QStringLiteral("API mutation plus QApplication::processEvents, including "
+                                  "synchronous backing-store flush; excludes compositor latency "
+                                  "and the screenshot presenter/input path"));
+    summary.insert(QStringLiteral("paintedBoundingRectScope"),
+                   QStringLiteral("bounding rectangle of observed canvas paint events; proxy "
+                                  "for Windows translucent backing-store presentation area"));
     summary.insert(QStringLiteral("screenshotTexture"),
                    QStringLiteral("deterministic-rgb-pattern"));
     summary.insert(QStringLiteral("targetMs"), kFrameBudgetMilliseconds);
@@ -517,6 +572,11 @@ int main(int argc, char** argv) {
                       QStringLiteral("pixels"), QStringLiteral("3840")});
     parser.addOption({QStringLiteral("surface-height"), QStringLiteral("Logical surface height"),
                       QStringLiteral("pixels"), QStringLiteral("2160")});
+    parser.addOption({QStringLiteral("translucent"),
+                      QStringLiteral("Use the screenshot overlay's translucent native surface")});
+    parser.addOption({QStringLiteral("guide-text-annotations"),
+                      QStringLiteral("Text annotation count in guide and snap-target scenarios"),
+                      QStringLiteral("count"), QStringLiteral("0")});
     parser.addOption({QStringLiteral("list"), QStringLiteral("List benchmark scenarios and exit")});
     parser.addOption({QStringLiteral("scenario"), QStringLiteral("Run one scenario (repeatable)"),
                       QStringLiteral("name")});
@@ -545,7 +605,13 @@ int main(int argc, char** argv) {
         QStringLiteral("shadow-width-sweep"),
         QStringLiteral("rounded-shadow-toggle"),
         QStringLiteral("cursor-and-monitor-guide-lines"),
+        QStringLiteral("cursor-guide-horizontal-move"),
+        QStringLiteral("cursor-guide-vertical-move"),
+        QStringLiteral("cursor-guide-diagonal-move"),
+        QStringLiteral("cursor-guide-complex-selection"),
         QStringLiteral("monitor-center-guide-line-only"),
+        QStringLiteral("snap-guide-targets-unchanged"),
+        QStringLiteral("snap-guide-targets-changed"),
         QStringLiteral("selection-center-guide-horizontal-move"),
         QStringLiteral("selection-center-guide-vertical-move"),
         QStringLiteral("selection-center-guide-fixed-center-resize"),
@@ -567,6 +633,13 @@ int main(int argc, char** argv) {
         QTextStream(stderr) << "iterations must be positive and warmup non-negative\n";
         return 2;
     }
+    bool guideTextAnnotationsOk = false;
+    const int guideTextAnnotations =
+        parser.value(QStringLiteral("guide-text-annotations")).toInt(&guideTextAnnotationsOk);
+    if (!guideTextAnnotationsOk || guideTextAnnotations < 0 || guideTextAnnotations > 1000) {
+        QTextStream(stderr) << "guide text annotation count must be between 0 and 1000\n";
+        return 2;
+    }
 
     bool widthOk = false;
     bool heightOk = false;
@@ -583,7 +656,8 @@ int main(int argc, char** argv) {
         }
     }
     const QSize surfaceSize(surfaceWidth, surfaceHeight);
-    BenchmarkFixture fixture(surfaceSize);
+    const bool translucent = parser.isSet(QStringLiteral("translucent"));
+    BenchmarkFixture fixture(surfaceSize, translucent);
     auto& canvas = *fixture.canvas;
     auto& renderer = *fixture.renderer;
     const QRectF baseSelection = baseSelectionForSize(surfaceSize);
@@ -787,7 +861,7 @@ int main(int argc, char** argv) {
         }
         // Fresh runtime, renderer, and canvas keep annotations and decoration state
         // independent of the legacy spotlight/watermark scenarios and each other.
-        BenchmarkFixture filterFixture(surfaceSize);
+        BenchmarkFixture filterFixture(surfaceSize, translucent);
         applyResizeSelection(filterFixture, baseSelection);
         const qreal dpr = filterFixture.canvas->devicePixelRatioF();
         const qreal tileSize = snow_canvas_filter_tile_cache::kTilePhysicalSize / dpr;
@@ -878,33 +952,114 @@ int main(int argc, char** argv) {
     const QPointF guideLineCenter(surfaceSize.width() / 2.0, surfaceSize.height() / 2.0);
     const QColor cursorGuideLineColor(220, 30, 40);
     const QColor monitorGuideLineColor(30, 80, 220);
-    renderer.setSelectionToolbarHovered(false);
-    renderer.setGuideLines(guideLineCenter, cursorGuideLineColor, monitorGuideLineColor);
-    QApplication::processEvents();
-    run(QStringLiteral("cursor-and-monitor-guide-lines"), [&](int index) {
-        renderer.setGuideLines(guideLineCenter + QPointF(index & 1, (index >> 1) & 1),
-                               cursorGuideLineColor, monitorGuideLineColor);
-    });
-    renderer.setGuideLines(guideLineCenter, Qt::transparent, monitorGuideLineColor);
-    QApplication::processEvents();
-    run(QStringLiteral("monitor-center-guide-line-only"), [&](int index) {
-        renderer.setGuideLines(guideLineCenter + QPointF(index & 1, (index >> 1) & 1),
-                               Qt::transparent, monitorGuideLineColor);
-    });
-    renderer.clearGuideLines();
-    QApplication::processEvents();
-
-    renderer.setSelectionCenterGuideLineColor(QColor(0x40, 0x96, 0xff));
-    run(QStringLiteral("selection-center-guide-horizontal-move"),
-        [&](int index) { renderer.setSelection(baseSelection.translated(index & 1, 0), false); });
-    run(QStringLiteral("selection-center-guide-vertical-move"),
-        [&](int index) { renderer.setSelection(baseSelection.translated(0, index & 1), false); });
-    run(QStringLiteral("selection-center-guide-fixed-center-resize"), [&](int index) {
+    const auto runGuide = [&](const QString& name,
+                              const std::function<void(BenchmarkFixture&)>& prepare,
+                              const std::function<void(BenchmarkFixture&, int)>& mutation) {
+        if (parser.isSet(QStringLiteral("scenario")) &&
+            !parser.values(QStringLiteral("scenario")).contains(name)) {
+            return;
+        }
+        // Dedicated fixtures prevent guide settings and annotation/layout caches
+        // leaking between scenarios, even when only one scenario is requested.
+        BenchmarkFixture guideFixture(surfaceSize, translucent);
+        createGuideTextAnnotations(guideFixture, guideTextAnnotations);
+        prepare(guideFixture);
+        mutation(guideFixture, 3);
+        QApplication::processEvents();
+        const DwmSnapshot before = dwmSnapshot(guideFixture.window);
+        const ScenarioResult result =
+            runScenario(guideFixture, name, warmup, iterations,
+                        [&](int index) { mutation(guideFixture, index + 4); });
+        auto report = summarize(result, before, dwmSnapshot(guideFixture.window));
+        report.insert(QStringLiteral("canvasWidth"), guideFixture.canvas->width());
+        report.insert(QStringLiteral("canvasHeight"), guideFixture.canvas->height());
+        report.insert(QStringLiteral("devicePixelRatio"), guideFixture.canvas->devicePixelRatioF());
+        report.insert(QStringLiteral("guideTextAnnotations"), guideTextAnnotations);
+        report.insert(QStringLiteral("translucentWindow"), translucent);
+        reports.append(report);
+    };
+    const auto noPreparation = [](BenchmarkFixture&) {};
+    runGuide(QStringLiteral("cursor-and-monitor-guide-lines"), noPreparation,
+             [&](BenchmarkFixture& guideFixture, int index) {
+                 guideFixture.renderer->setGuideLines(guideLineCenter +
+                                                          QPointF(index & 1, (index >> 1) & 1),
+                                                      cursorGuideLineColor, monitorGuideLineColor);
+             });
+    // Moving away from the fixed monitor center exposes the full dirty strips.
+    // The legacy one-pixel scenario above overlaps the two crosshairs and hides
+    // whether the native presentation area expands for diagonal motion.
+    const auto largeMotion = [&](const QString& name, bool moveX, bool moveY) {
+        runGuide(name, noPreparation, [&](BenchmarkFixture& guideFixture, int index) {
+            const qreal amount = (index & 1) ? 0.75 : 0.25;
+            const QPointF position(surfaceSize.width() * (moveX ? amount : 0.35),
+                                   surfaceSize.height() * (moveY ? amount : 0.35));
+            guideFixture.renderer->setGuideLines(position, cursorGuideLineColor,
+                                                 monitorGuideLineColor);
+        });
+    };
+    largeMotion(QStringLiteral("cursor-guide-horizontal-move"), true, false);
+    largeMotion(QStringLiteral("cursor-guide-vertical-move"), false, true);
+    largeMotion(QStringLiteral("cursor-guide-diagonal-move"), true, true);
+    runGuide(
+        QStringLiteral("cursor-guide-complex-selection"),
+        [&](BenchmarkFixture& guideFixture) {
+            const auto region = mixed.united(freehandRegion);
+            guideFixture.renderer->setSelectionRegion(region, region, {}, false, Qt::red);
+        },
+        [&](BenchmarkFixture& guideFixture, int index) {
+            const qreal amount = (index & 1) ? 0.75 : 0.25;
+            guideFixture.renderer->setGuideLines(
+                QPointF(surfaceSize.width() * amount, surfaceSize.height() * amount),
+                cursorGuideLineColor, monitorGuideLineColor);
+        });
+    runGuide(QStringLiteral("monitor-center-guide-line-only"), noPreparation,
+             [&](BenchmarkFixture& guideFixture, int index) {
+                 guideFixture.renderer->setGuideLines(guideLineCenter +
+                                                          QPointF(index & 1, (index >> 1) & 1),
+                                                      Qt::transparent, monitorGuideLineColor);
+             });
+    const auto prepareSnap = [](BenchmarkFixture& guideFixture) {
+        SnowCanvasSnapConfig config;
+        config.enabled = true;
+        if (!guideFixture.canvas->setCanvasSnapConfig(config)) {
+            throw std::runtime_error("unable to configure benchmark snap guides");
+        }
+    };
+    const auto snapTargets = [&](int index) {
         const qreal offset = index & 1;
-        renderer.setSelection(baseSelection.adjusted(-offset, -offset, offset, offset), false);
-    });
-    renderer.clearGuideLines();
-    QApplication::processEvents();
+        return SnowCanvasSnapGuideTargets{{baseSelection.center().x() + offset, 240.0},
+                                          {baseSelection.center().y() + offset, 180.0}};
+    };
+    runGuide(QStringLiteral("snap-guide-targets-unchanged"), prepareSnap,
+             [&](BenchmarkFixture& guideFixture, int) {
+                 if (!guideFixture.canvas->setCanvasSnapGuideTargets(snapTargets(0))) {
+                     throw std::runtime_error("unable to apply unchanged benchmark snap targets");
+                 }
+             });
+    runGuide(QStringLiteral("snap-guide-targets-changed"), prepareSnap,
+             [&](BenchmarkFixture& guideFixture, int index) {
+                 if (!guideFixture.canvas->setCanvasSnapGuideTargets(snapTargets(index))) {
+                     throw std::runtime_error("unable to apply changed benchmark snap targets");
+                 }
+             });
+
+    const auto prepareSelectionCenterGuide = [](BenchmarkFixture& guideFixture) {
+        guideFixture.renderer->setSelectionCenterGuideLineColor(QColor(0x40, 0x96, 0xff));
+    };
+    runGuide(QStringLiteral("selection-center-guide-horizontal-move"), prepareSelectionCenterGuide,
+             [&](BenchmarkFixture& guideFixture, int index) {
+                 guideFixture.renderer->setSelection(baseSelection.translated(index & 1, 0), false);
+             });
+    runGuide(QStringLiteral("selection-center-guide-vertical-move"), prepareSelectionCenterGuide,
+             [&](BenchmarkFixture& guideFixture, int index) {
+                 guideFixture.renderer->setSelection(baseSelection.translated(0, index & 1), false);
+             });
+    runGuide(QStringLiteral("selection-center-guide-fixed-center-resize"),
+             prepareSelectionCenterGuide, [&](BenchmarkFixture& guideFixture, int index) {
+                 const qreal offset = index & 1;
+                 guideFixture.renderer->setSelection(
+                     baseSelection.adjusted(-offset, -offset, offset, offset), false);
+             });
 
     createSpotlightCutout(canvas);
     run(QStringLiteral("active-spotlight"), [&](int index) {
@@ -952,10 +1107,10 @@ int main(int argc, char** argv) {
         hasSecondScreen);
 
     try {
-        const QJsonObject summary = writeReports(reports, parser.value(QStringLiteral("jsonl")),
-                                                 parser.value(QStringLiteral("summary")),
-                                                 parser.value(QStringLiteral("html")), surfaceSize,
-                                                 canvas.size(), canvas.devicePixelRatioF());
+        const QJsonObject summary = writeReports(
+            reports, parser.value(QStringLiteral("jsonl")), parser.value(QStringLiteral("summary")),
+            parser.value(QStringLiteral("html")), surfaceSize, canvas.size(),
+            canvas.devicePixelRatioF(), translucent);
         QTextStream(stdout) << QJsonDocument(summary).toJson(QJsonDocument::Indented);
         return 0;
     } catch (const std::exception& error) {

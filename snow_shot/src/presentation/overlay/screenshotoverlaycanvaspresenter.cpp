@@ -405,13 +405,15 @@ void ScreenshotOverlayCanvasPresenter::updateGuideLines(
     if (nextOwner != nullptr) {
         nextOwner->setScreenshotGuideLines(localPosition, cursorColor, monitorCenterColor);
     }
+    const bool selectionGuideVisible =
+        visible && selectionCenterColor.isValid() && selectionCenterColor.alpha() > 0;
+    const bool monitorGuideVisible =
+        visible && monitorCenterColor.isValid() && monitorCenterColor.alpha() > 0;
     displaySession.forEachActiveOverlay([&](qsizetype, const CapturedDisplayModel&,
                                             ScreenshotOverlayWindow* overlay) {
         if (overlay == nullptr) {
             return;
         }
-        const bool selectionGuideVisible =
-            visible && selectionCenterColor.isValid() && selectionCenterColor.alpha() > 0;
         overlay->setSelectionCenterGuideLineColor(selectionGuideVisible ? selectionCenterColor
                                                                         : QColor(Qt::transparent));
         SnowCanvasWidget* canvas = overlay->canvas();
@@ -419,10 +421,14 @@ void ScreenshotOverlayCanvasPresenter::updateGuideLines(
             return;
         }
         SnowCanvasSnapGuideTargets targets;
-        const QTransform canvasToView = canvas->canvasToViewTransform();
-        if (visible && canvasToView.isInvertible()) {
+        const bool ownsMonitorGuide = monitorGuideVisible && overlay == nextOwner;
+        if (selectionGuideVisible || ownsMonitorGuide) {
+            const QTransform canvasToView = canvas->canvasToViewTransform();
+            if (!canvasToView.isInvertible()) {
+                canvas->setCanvasSnapGuideTargets({});
+                return;
+            }
             const QRectF viewport(canvas->rect());
-            const QTransform viewToCanvas = canvasToView.inverted();
             if (selectionGuideVisible) {
                 const QRectF selection = overlay->screenshotSelection();
                 if (selection.isValid() && !selection.isEmpty()) {
@@ -435,9 +441,8 @@ void ScreenshotOverlayCanvasPresenter::updateGuideLines(
                     }
                 }
             }
-            if (overlay == nextOwner && monitorCenterColor.isValid() &&
-                monitorCenterColor.alpha() > 0) {
-                const QPointF center = viewToCanvas.map(viewport.center());
+            if (ownsMonitorGuide) {
+                const QPointF center = canvasToView.inverted().map(viewport.center());
                 targets.verticalXs.append(center.x());
                 targets.horizontalYs.append(center.y());
             }

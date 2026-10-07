@@ -4,6 +4,7 @@
 #include "snow_shot/presentation/screenshotintelligentselectionmodel.h"
 #include "snow_shot/presentation/windowshortcutmanager.h"
 #include "close_release_native_test_support.h"
+#include "screenshot_guide_targets_test_support.h"
 #include "snow_shot/presentation/screenshotcanvasrenderer.h"
 #include "snow_shot/presentation/directcapturehistory.h"
 #include "snow_shot/presentation/screenshothistoryservice.h"
@@ -1544,6 +1545,354 @@ void cursorAndMonitorGuideLinesUseDashedAndSolidPixels() {
         for (int x = 0; x < disabledGuide.width(); ++x) {
             require(disabledGuide.pixelColor(x, y).alpha() == 0,
                     "transparent guide colors must disable guide rendering");
+        }
+    }
+}
+
+void exposedGuideLinesMatchFullLengthRasterization() {
+    const QSize logicalSize(128, 104);
+    const std::array<qreal, 5> devicePixelRatios{1.0, 1.25, 1.5, 1.75, 2.0};
+    const std::array<QRectF, 2> boundsVariants{
+        QRectF(QPointF(0.0, 0.0), QSizeF(logicalSize)),
+        QRectF(3.25, 2.75, 116.5, 96.25),
+    };
+    const std::array<QPointF, 7> cursorPositions{
+        QPointF(0.1, 0.9),   QPointF(12.9, 13.1), QPointF(26.2, 25.9),   QPointF(51.8, 47.3),
+        QPointF(64.1, 52.7), QPointF(99.7, 89.2), QPointF(127.9, 103.1),
+    };
+    const std::array<int, 6> alphas{0, 1, 64, 127, 254, 255};
+    const std::array<QRegion, 6> exposureVariants{
+        QRegion(),
+        QRegion(QRect(QPoint(), logicalSize)),
+        QRegion(QRect(0, 46, 128, 4)) | QRegion(QRect(50, 0, 4, 104)),
+        QRegion(QRect(12, 9, 3, 8)) | QRegion(QRect(25, 24, 4, 4)) | QRegion(QRect(62, 50, 4, 4)) |
+            QRegion(QRect(98, 86, 4, 7)),
+        QRegion(QRect(0, 0, 5, 5)) | QRegion(QRect(118, 95, 10, 9)),
+        QRegion(QRect(47, 39, 25, 25)).subtracted(QRegion(QRect(53, 44, 13, 15))),
+    };
+
+    const auto drawReference = [](QPainter& painter, const QRectF& bounds, const QPointF& center,
+                                  const QColor& color, bool dashed) {
+        if (color.alpha() == 0) {
+            return;
+        }
+        QPen pen(color, 1.0);
+        pen.setCosmetic(true);
+        if (dashed) {
+            pen.setDashPattern(QVector<qreal>{10.0, 3.0});
+        }
+        painter.setPen(pen);
+        const qreal left = std::floor(bounds.left()) + 0.5;
+        const qreal top = std::floor(bounds.top()) + 0.5;
+        const qreal right = std::ceil(bounds.right()) - 0.5;
+        const qreal bottom = std::ceil(bounds.bottom()) - 0.5;
+        const qreal x = std::floor(center.x()) + 0.5;
+        const qreal y = std::floor(center.y()) + 0.5;
+        painter.drawLine(QPointF(x, top), QPointF(x, bottom));
+        painter.drawLine(QPointF(left, y), QPointF(right, y));
+    };
+
+    for (qreal devicePixelRatio : devicePixelRatios) {
+        for (const QRectF& bounds : boundsVariants) {
+            for (const QPointF& cursor : cursorPositions) {
+                for (int alpha : alphas) {
+                    for (const QRegion& exposure : exposureVariants) {
+                        const auto render = [&](bool optimized) {
+                            QImage image(QSize(qCeil(logicalSize.width() * devicePixelRatio),
+                                               qCeil(logicalSize.height() * devicePixelRatio)),
+                                         QImage::Format_ARGB32_Premultiplied);
+                            image.setDevicePixelRatio(devicePixelRatio);
+                            image.fill(QColor(47, 81, 113, 173));
+                            QPainter painter(&image);
+                            painter.setClipRegion(exposure);
+                            painter.setRenderHint(QPainter::Antialiasing, false);
+                            painter.setBrush(Qt::NoBrush);
+                            const QColor cursorColor(211, 47, 83, alpha);
+                            const QColor monitorColor(31, 137, 227, alpha);
+                            const QColor selectionColor(163, 197, 53, alpha);
+                            // Coincident and crossing translucent axes must retain draw order
+                            // and blend once for each of the original independent lines.
+                            const QPointF selectionCenter(cursor.x(), bounds.center().y());
+                            if (optimized) {
+                                paintScreenshotGuideLines(painter, bounds, cursor, cursorColor,
+                                                          monitorColor, &exposure);
+                                paintScreenshotGuideLineCrosshair(painter, bounds, selectionCenter,
+                                                                  selectionColor, false, &exposure);
+                            } else {
+                                drawReference(painter, bounds, cursor, cursorColor, true);
+                                drawReference(painter, bounds, bounds.center(), monitorColor,
+                                              false);
+                                drawReference(painter, bounds, selectionCenter, selectionColor,
+                                              false);
+                            }
+                            return image;
+                        };
+                        require(render(true) == render(false),
+                                "exposed guide spans must preserve full-length dash pixels, caps, "
+                                "fractional DPR alignment, and translucent intersections");
+                    }
+                }
+            }
+        }
+    }
+}
+
+void warmSelectionGeometryTracksEveryVisualDependency() {
+    for (qreal devicePixelRatio : {1.25, 1.5, 1.75, 2.0}) {
+        SnowCanvasWidget canvas;
+        canvas.resize(132, 104);
+        canvas.setClearBackgroundEnabled(false);
+        require(canvas.setViewportCamera(0.0, 0.0, 1.0),
+                "selection geometry transition test needs a stable camera");
+        ScreenshotCanvasRenderer renderer(canvas);
+        canvas.setCustomRenderer(&renderer);
+        QImage background(160, 144, QImage::Format_RGBA8888);
+        background.fill(QColor(187, 91, 53));
+        renderer.setImage(background, QRectF(-80.0, -72.0, 160.0, 144.0));
+        renderer.setMaskVisible(true);
+        renderer.setMaskColor(QColor(17, 31, 53, 137));
+        renderer.setGuideLines(QPointF(51.0, 47.0), QColor(211, 47, 83, 127),
+                               QColor(31, 137, 227, 64));
+        renderer.setSelectionCenterGuideLineColor(QColor(163, 197, 53, 127));
+
+        ScreenshotSelectionVisualState state;
+        state.bounds = QRectF(-35.25, -26.75, 70.5, 53.5);
+        state.present = true;
+        state.handlesVisible = false;
+        renderer.applySelectionState(state);
+        const auto verifyFreshEquivalent = [&]() {
+            const QImage warm = renderCanvas(canvas, devicePixelRatio);
+            renderer.clearRenderState();
+            require(renderCanvas(canvas, devicePixelRatio) == warm,
+                    "selection transitions must render identically with warm and rebuilt "
+                    "geometry at fractional DPRs");
+            // The fresh render warms all paths again before the next transition.
+            return warm;
+        };
+        const QImage initialRectangle = verifyFreshEquivalent();
+        state.bounds.translate(7.25, -3.5);
+        renderer.applySelectionState(state);
+        require(verifyFreshEquivalent() != initialRectangle,
+                "moving a cached rectangle must change its rendered selection");
+        state.cornerRadius = 18;
+        renderer.applySelectionState(state);
+        const QImage roundedRectangle = verifyFreshEquivalent();
+
+        QPainterPath contour;
+        contour.moveTo(-34.0, -21.0);
+        contour.cubicTo(-9.0, -43.0, 32.0, -29.0, 39.0, -3.0);
+        contour.lineTo(23.0, 27.0);
+        contour.cubicTo(-7.0, 39.0, -39.0, 14.0, -34.0, -21.0);
+        contour.closeSubpath();
+        state.region = ScreenshotRegionGeometry::fromPath(contour, ScreenshotRegionType::Curve);
+        state.bounds = state.region->boundingRect();
+        state.confirmedRegion = ScreenshotRegionGeometry(QRect(-25, -16, 43, 32));
+        state.marquee = QRectF(6.0, -8.0, 31.0, 27.0);
+        state.subtracting = true;
+        state.dangerColor = QColor(223, 47, 61);
+        renderer.applySelectionState(state);
+        require(verifyFreshEquivalent() != roundedRectangle,
+                "a cached rounded rectangle must give way to its shaped selection");
+
+        state.confirmedRegion = ScreenshotRegionGeometry::fromPath(contour.translated(-6.0, 4.0),
+                                                                   ScreenshotRegionType::Curve);
+        renderer.applySelectionState(state);
+        verifyFreshEquivalent();
+        state.draftPath.moveTo(-22.0, -14.0);
+        state.draftPath.cubicTo(-5.0, 29.0, 24.0, -19.0, 31.0, 18.0);
+        state.draftVertices = {QPointF(-22.0, -14.0), QPointF(31.0, 18.0)};
+        renderer.applySelectionState(state);
+        verifyFreshEquivalent();
+        state.draftPath = state.draftPath.translated(8.25, -6.5);
+        state.draftVertices = {QPointF(-13.75, -20.5), QPointF(39.25, 11.5)};
+        renderer.applySelectionState(state);
+        verifyFreshEquivalent();
+        state.present = false;
+        renderer.applySelectionState(state);
+        verifyFreshEquivalent();
+        state.present = true;
+        renderer.applySelectionState(state);
+        verifyFreshEquivalent();
+        require(canvas.setViewportCamera(6.25, -4.5, 1.375),
+                "selection geometry must also track camera movement and scale");
+        verifyFreshEquivalent();
+        canvas.resize(147, 119);
+        verifyFreshEquivalent();
+        renderer.setRenderMode(ScreenshotCanvasRenderer::RenderMode::ScrollingCapture);
+        verifyFreshEquivalent();
+        renderer.setRenderMode(ScreenshotCanvasRenderer::RenderMode::Standard);
+        verifyFreshEquivalent();
+
+        state.region.reset();
+        state.confirmedRegion = {};
+        state.marquee = {};
+        state.draftPath = {};
+        state.draftVertices.clear();
+        state.bounds = QRectF(-35.25, -26.75, 70.5, 53.5);
+        renderer.applySelectionState(state);
+        const QImage beforeOcr = verifyFreshEquivalent();
+        auto presentation = std::make_shared<ScreenshotOcrPresentation>();
+        presentation->selection = state.bounds.toAlignedRect();
+        renderer.setOcrPresentation(presentation);
+        require(verifyFreshEquivalent() != beforeOcr,
+                "OCR presence must rebuild the selection outline with square corners");
+        renderer.clearOcrPresentation();
+        require(verifyFreshEquivalent() == beforeOcr,
+                "clearing OCR must restore the cached rounded outline correctly");
+        canvas.setCustomRenderer(nullptr);
+    }
+}
+
+void incrementalGuideMovementMatchesFreshCompositedFrames() {
+    const QRect viewport(0, 0, 128, 104);
+    const QColor cursorColor(211, 47, 83, 127);
+    const QColor monitorColor(31, 137, 227, 64);
+    const std::array<QPoint, 9> cursorPositions{
+        QPoint(29, 31), QPoint(37, 31), QPoint(37, 48),   QPoint(64, 52), QPoint(56, 48),
+        QPoint(66, 54), QPoint(65, 54), QPoint(126, 102), QPoint(1, 1),
+    };
+    QPainterPath shapedContour;
+    for (int index = 0; index < 72; ++index) {
+        const qreal angle = 2.0 * std::acos(-1.0) * index / 72.0;
+        const QPointF point(56.5 + 38.0 * std::cos(angle), 48.0 + 34.0 * std::sin(angle));
+        if (index == 0) {
+            shapedContour.moveTo(point);
+        } else {
+            shapedContour.lineTo(point);
+        }
+    }
+    shapedContour.closeSubpath();
+
+    for (qreal devicePixelRatio : {1.0, 1.25, 1.5, 1.75, 2.0}) {
+        for (bool shaped : {false, true}) {
+            SnowCanvasWidget canvas;
+            ScreenshotCanvasRenderer renderer(canvas);
+            const QSize physicalSize(qCeil(viewport.width() * devicePixelRatio),
+                                     qCeil(viewport.height() * devicePixelRatio));
+            renderer.setImage(horizontalRasterPattern(physicalSize), QRectF(viewport));
+            renderer.setImageViewportPhysicalSize(physicalSize);
+            renderer.setMaskVisible(true);
+            renderer.setMaskColor(QColor(17, 31, 53, 137));
+            renderer.setSelectionBorderColor(QColor(15, 203, 179, 191));
+            renderer.setSelectionCenterGuideLineColor(QColor(163, 197, 53, 127));
+            ScreenshotSelectionVisualState selection;
+            selection.bounds = QRectF(18.25, 13.75, 76.5, 68.5);
+            selection.present = true;
+            selection.handlesVisible = false;
+            selection.cornerRadius = shaped ? 0 : 16;
+            if (shaped) {
+                selection.region = ScreenshotRegionGeometry::fromPath(
+                    shapedContour, ScreenshotRegionType::Polyline);
+                selection.confirmedRegion = *selection.region;
+            }
+            renderer.applySelectionState(selection);
+
+            QPointF paintOffset;
+            const auto paintExposure = [&](QImage& frame, const QRegion& exposure,
+                                           bool fullContext = false) {
+                QPainter painter(&frame);
+                painter.translate(paintOffset);
+                painter.setClipRegion(exposure);
+                const SnowCanvasRenderContext context{viewport, exposure, QTransform(),
+                                                      devicePixelRatio};
+                // Restore the screenshot beneath the old guides, then composite the
+                // same mask, border, and guide layers used by a canvas paint event.
+                renderer.renderBeforeCanvas(painter, context);
+                if (fullContext) {
+                    const SnowCanvasRenderContext fullSpanContext{viewport, QRegion(viewport),
+                                                                  QTransform(), devicePixelRatio};
+                    renderer.renderAfterCanvas(painter, fullSpanContext);
+                } else {
+                    renderer.renderAfterCanvas(painter, context);
+                }
+            };
+            const auto freshFrame = [&]() {
+                const QSize redirectedSize(qCeil((viewport.width() + 16) * devicePixelRatio),
+                                           qCeil((viewport.height() + 16) * devicePixelRatio));
+                QImage frame(redirectedSize, QImage::Format_ARGB32_Premultiplied);
+                frame.setDevicePixelRatio(devicePixelRatio);
+                frame.fill(Qt::transparent);
+                paintExposure(frame, QRegion(viewport));
+                return frame;
+            };
+
+            // Reuse the same renderer while redirection changes physical-pixel phase.
+            // Both cached view geometry and cached contour rasters must track that device.
+            for (const QPointF& offset : {QPointF(), QPointF(3.25, 4.125), QPointF(7.5, 5.75)}) {
+                paintOffset = offset;
+                QPoint previousCursor = cursorPositions.front();
+                renderer.setGuideLines(QPointF(previousCursor), cursorColor, monitorColor);
+                QImage incrementalFrame = freshFrame();
+                renderer.clearRenderState();
+                QImage referenceFrame = freshFrame();
+                require(incrementalFrame == referenceFrame,
+                        "warm geometry and independently rebuilt geometry must match initially");
+                for (std::size_t index = 1; index < cursorPositions.size(); ++index) {
+                    const QPoint nextCursor = cursorPositions[index];
+                    const QRegion dirty = planScreenshotGuideLineDamage(
+                        viewport, previousCursor, cursorColor, monitorColor, nextCursor,
+                        cursorColor, monitorColor);
+                    require(!dirty.isEmpty() && dirty != QRegion(viewport),
+                            "incremental guide movement must exercise a partial exposure");
+                    renderer.setGuideLines(QPointF(nextCursor), cursorColor, monitorColor);
+                    paintExposure(incrementalFrame, dirty);
+                    renderer.clearRenderState();
+                    // The existing cached-mask image blit can round a channel differently
+                    // under full and complex clips in Qt. Preserve the same partial clip
+                    // for the baseline, but rebuild geometry and paint original full spans.
+                    paintExposure(referenceFrame, dirty, true);
+                    const QImage& expectedFrame = referenceFrame;
+                    if (incrementalFrame != expectedFrame) {
+                        std::cerr << "incremental guide mismatch: dpr=" << devicePixelRatio
+                                  << ", shaped=" << shaped << ", offset=" << offset.x() << ','
+                                  << offset.y() << ", index=" << index
+                                  << ", previous=" << previousCursor.x() << ','
+                                  << previousCursor.y() << ", next=" << nextCursor.x() << ','
+                                  << nextCursor.y() << '\n';
+                        bool foundPixel = false;
+                        std::size_t changedPixels = 0;
+                        for (int y = 0; y < expectedFrame.height(); ++y) {
+                            for (int x = 0; x < expectedFrame.width(); ++x) {
+                                if (incrementalFrame.pixel(x, y) != expectedFrame.pixel(x, y)) {
+                                    ++changedPixels;
+                                    if (!foundPixel) {
+                                        std::cerr << "first mismatch: pixel=" << x << ',' << y
+                                                  << ", actual=" << std::hex
+                                                  << incrementalFrame.pixel(x, y)
+                                                  << ", expected=" << expectedFrame.pixel(x, y)
+                                                  << std::dec << '\n';
+                                        foundPixel = true;
+                                    }
+                                }
+                            }
+                        }
+                        std::cerr << "changed pixels=" << changedPixels << ", damage=";
+                        for (const QRect& rectangle : dirty) {
+                            std::cerr << '[' << rectangle.x() << ',' << rectangle.y() << ','
+                                      << rectangle.width() << ',' << rectangle.height() << ']';
+                        }
+                        std::cerr << '\n';
+                        const QString outputDirectory =
+                            qEnvironmentVariable("SNOW_GUIDE_TEST_OUTPUT_DIR");
+                        if (!outputDirectory.isEmpty()) {
+                            incrementalFrame.save(outputDirectory +
+                                                  QStringLiteral("/guide-incremental.png"));
+                            expectedFrame.save(outputDirectory +
+                                               QStringLiteral("/guide-reference.png"));
+                        }
+                    }
+                    require(incrementalFrame == expectedFrame,
+                            "incremental guide movement must restore old guides and exactly "
+                            "preserve translucent crossings, selection-center guides, masks, "
+                            "borders, and redirected device alignment");
+                    if (!shaped) {
+                        require(incrementalFrame == freshFrame(),
+                                "incremental guides over a direct rounded mask must match a "
+                                "fresh full frame exactly");
+                    }
+                    previousCursor = nextCursor;
+                }
+            }
         }
     }
 }
@@ -5470,6 +5819,24 @@ void overlayRightClickClosesOnRelease(bool native = false) {
     require(!overlay.isVisible(), "right release must close screenshot overlay");
 }
 
+void runGuideRenderingTests() {
+    configurableSelectionMaskUsesRequestedPixels();
+    cursorAndMonitorGuideLinesUseDashedAndSolidPixels();
+    exposedGuideLinesMatchFullLengthRasterization();
+    warmSelectionGeometryTracksEveryVisualDependency();
+    incrementalGuideMovementMatchesFreshCompositedFrames();
+    selectionCenterGuideTracksSelectionAndRemainsOverlayOnly();
+    selectionCenterGuideDamageTracksOnlyVisualChanges();
+    cursorGuideFollowsCanvasPointerDuringDrawingInput();
+    cursorGuideLineMovementInvalidatesOnlyChangedAxes();
+    hiddenAndSamePixelCursorMovementDoesNotRepaintGuideLines();
+    cursorGuideLineDamageCoversChangedPixelsAtFractionalDprs();
+    colorPickerCenterGuidesLeaveTheSampleUntouched();
+    onlyTheInputOverlayOwnsGuideLines();
+    screenshot_guide_targets_tests::run<NoopOverlayEventSink>();
+    guideLinesInitializeFromGlobalCursorPosition();
+}
+
 } // namespace
 
 void compoundSelectionRendersUnifiedMaskAndOutline() {
@@ -5960,6 +6327,11 @@ void runScreenshotCursorBenchmark();
 
 int main(int argc, char** argv) {
     QApplication application(argc, argv);
+    if (application.arguments().contains(QStringLiteral("--guide-rendering-only"))) {
+        guideVisibilityResetsAtEachCaptureSession();
+        runGuideRenderingTests();
+        return 0;
+    }
     if (application.arguments().contains(QStringLiteral("--shortcut-hints-only"))) {
         shortcutHintStagesUseTheExactRequiredLines();
         return 0;
@@ -6136,17 +6508,7 @@ int main(int argc, char** argv) {
         screenshotUiPreferencesNormalizeAndApplyPickerVisibilityPolicies();
         guideVisibilityResetsAtEachCaptureSession();
         shortcutHintStagesUseTheExactRequiredLines();
-        configurableSelectionMaskUsesRequestedPixels();
-        cursorAndMonitorGuideLinesUseDashedAndSolidPixels();
-        selectionCenterGuideTracksSelectionAndRemainsOverlayOnly();
-        selectionCenterGuideDamageTracksOnlyVisualChanges();
-        cursorGuideFollowsCanvasPointerDuringDrawingInput();
-        cursorGuideLineMovementInvalidatesOnlyChangedAxes();
-        hiddenAndSamePixelCursorMovementDoesNotRepaintGuideLines();
-        cursorGuideLineDamageCoversChangedPixelsAtFractionalDprs();
-        colorPickerCenterGuidesLeaveTheSampleUntouched();
-        onlyTheInputOverlayOwnsGuideLines();
-        guideLinesInitializeFromGlobalCursorPosition();
+        runGuideRenderingTests();
         return 0;
     }
 #if defined(Q_OS_WIN)
@@ -6255,16 +6617,6 @@ int main(int argc, char** argv) {
     screenshotUiPreferencesNormalizeAndApplyPickerVisibilityPolicies();
     guideVisibilityResetsAtEachCaptureSession();
     shortcutHintStagesUseTheExactRequiredLines();
-    configurableSelectionMaskUsesRequestedPixels();
-    cursorAndMonitorGuideLinesUseDashedAndSolidPixels();
-    selectionCenterGuideTracksSelectionAndRemainsOverlayOnly();
-    selectionCenterGuideDamageTracksOnlyVisualChanges();
-    cursorGuideFollowsCanvasPointerDuringDrawingInput();
-    cursorGuideLineMovementInvalidatesOnlyChangedAxes();
-    hiddenAndSamePixelCursorMovementDoesNotRepaintGuideLines();
-    cursorGuideLineDamageCoversChangedPixelsAtFractionalDprs();
-    colorPickerCenterGuidesLeaveTheSampleUntouched();
-    onlyTheInputOverlayOwnsGuideLines();
-    guideLinesInitializeFromGlobalCursorPosition();
+    runGuideRenderingTests();
     return 0;
 }

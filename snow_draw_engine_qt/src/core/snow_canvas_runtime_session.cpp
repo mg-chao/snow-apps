@@ -6,6 +6,7 @@
 #include "snow_canvas_fill_render.h"
 #include "snow_canvas_type_conversions.h"
 #include "snow_canvas_watermark_renderer.h"
+#include "snow_canvas_text_render.h"
 
 #include <condition_variable>
 #include <deque>
@@ -22,6 +23,7 @@ void clearDrawingCachesForCurrentThread() {
     // Export sessions have no canvas clients, and their threads outlive the document.
     snow_canvas_fill_render::resetHatchTextureCacheForCurrentThread();
     snow_canvas_renderer::resetWatermarkRenderCacheForCurrentThread();
+    snow_canvas_text_render::clearRenderCacheForCurrentThread();
 }
 
 bool toEngineRuntimeConfig(const SnowCanvasRuntimeConfig& config, SnowStyleDefaults& styleDefaults,
