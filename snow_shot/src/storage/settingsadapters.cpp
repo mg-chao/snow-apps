@@ -612,6 +612,23 @@ bool ShortcutSettings::setScreenshotCopy(const shortcuts::ShortcutBindingList& b
     return setShortcutValue(QStringLiteral("global_shortcuts/screenshot_copy"), bindings);
 }
 
+shortcuts::ShortcutBindingList ShortcutSettings::screenshotSave() const {
+    return shortcutValue(QStringLiteral("global_shortcuts/screenshot_save"));
+}
+
+bool ShortcutSettings::setScreenshotSave(const shortcuts::ShortcutBindingList& bindings) const {
+    return setShortcutValue(QStringLiteral("global_shortcuts/screenshot_save"), bindings);
+}
+
+shortcuts::ShortcutBindingList ShortcutSettings::screenshotQuickSave() const {
+    return shortcutValue(QStringLiteral("global_shortcuts/screenshot_quick_save"));
+}
+
+bool ShortcutSettings::setScreenshotQuickSave(
+    const shortcuts::ShortcutBindingList& bindings) const {
+    return setShortcutValue(QStringLiteral("global_shortcuts/screenshot_quick_save"), bindings);
+}
+
 shortcuts::ShortcutBindingList ShortcutSettings::screenshotFullScreen() const {
     return shortcutValue(QStringLiteral("global_shortcuts/screenshot_full_screen"));
 }

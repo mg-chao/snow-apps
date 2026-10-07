@@ -271,9 +271,10 @@ void freshSettingsActions() {
 }
 void routingPolicy() {
     using A = GlobalShortcutAction;
-    for (auto action : {A::Screenshot, A::ScreenshotDelay, A::ScreenshotFixed, A::ScreenshotOcr,
-                        A::ScreenshotTranslation, A::ScreenshotCopy, A::ScreenshotFullScreen,
-                        A::ScreenshotFocusedWindow})
+    for (auto action :
+         {A::Screenshot, A::ScreenshotDelay, A::ScreenshotFixed, A::ScreenshotOcr,
+          A::ScreenshotTranslation, A::ScreenshotCopy, A::ScreenshotSave, A::ScreenshotQuickSave,
+          A::ScreenshotFullScreen, A::ScreenshotFocusedWindow})
         require(requiredPermissions(action, true) == AppPermissions{P::ScreenRecording},
                 "capture must not require optional smart-selection access");
     for (auto action : {A::ScreenRecord, A::ScreenRecordCopy}) {

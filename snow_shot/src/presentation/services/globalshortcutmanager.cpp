@@ -22,7 +22,7 @@ namespace {
 constexpr int MAX_SHORTCUTS_PER_ACTION = 2;
 constexpr int FIRST_REGISTRATION_ID = 0x2200;
 constexpr int LAST_REGISTRATION_ID = 0xBFFF;
-constexpr std::size_t ACTION_COUNT = 22;
+constexpr std::size_t ACTION_COUNT = 24;
 
 constexpr std::array<GlobalShortcutAction, ACTION_COUNT> ALL_ACTIONS = {
     GlobalShortcutAction::Screenshot,
@@ -31,6 +31,8 @@ constexpr std::array<GlobalShortcutAction, ACTION_COUNT> ALL_ACTIONS = {
     GlobalShortcutAction::ScreenshotOcr,
     GlobalShortcutAction::ScreenshotTranslation,
     GlobalShortcutAction::ScreenshotCopy,
+    GlobalShortcutAction::ScreenshotSave,
+    GlobalShortcutAction::ScreenshotQuickSave,
     GlobalShortcutAction::ScreenshotFullScreen,
     GlobalShortcutAction::ScreenshotFocusedWindow,
     GlobalShortcutAction::ScreenRecord,
@@ -142,6 +144,10 @@ shortcuts::ShortcutBindingList persistedShortcuts(const storage::ShortcutSetting
 #endif
     case GlobalShortcutAction::ScreenshotCopy:
         return settings.screenshotCopy();
+    case GlobalShortcutAction::ScreenshotSave:
+        return settings.screenshotSave();
+    case GlobalShortcutAction::ScreenshotQuickSave:
+        return settings.screenshotQuickSave();
     case GlobalShortcutAction::ScreenshotFullScreen:
         return settings.screenshotFullScreen();
     case GlobalShortcutAction::ScreenshotFocusedWindow:
@@ -201,6 +207,10 @@ bool persistShortcuts(const storage::ShortcutSettings& settings, GlobalShortcutA
 #endif
     case GlobalShortcutAction::ScreenshotCopy:
         return settings.setScreenshotCopy(bindings);
+    case GlobalShortcutAction::ScreenshotSave:
+        return settings.setScreenshotSave(bindings);
+    case GlobalShortcutAction::ScreenshotQuickSave:
+        return settings.setScreenshotQuickSave(bindings);
     case GlobalShortcutAction::ScreenshotFullScreen:
         return settings.setScreenshotFullScreen(bindings);
     case GlobalShortcutAction::ScreenshotFocusedWindow:

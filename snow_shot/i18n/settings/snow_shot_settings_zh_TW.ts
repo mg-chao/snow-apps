@@ -3313,6 +3313,14 @@
             <translation>將喇叭和麥克風音訊儲存為獨立的 MP4 音軌，以便分別編輯。大多數播放器一次只播放一個音軌。</translation>
         </message>
         <message>
+            <source>Save the confirmed screenshot selection to a file</source>
+            <translation>將確認的截圖選區儲存為檔案</translation>
+        </message>
+        <message>
+            <source>Save the confirmed screenshot selection to the configured folder</source>
+            <translation>將確認的截圖選區儲存到設定的資料夾</translation>
+        </message>
+        <message>
             <source>Saved screenshots</source>
             <translation>已儲存的截圖</translation>
         </message>

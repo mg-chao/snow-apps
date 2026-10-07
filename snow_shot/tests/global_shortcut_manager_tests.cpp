@@ -34,6 +34,8 @@ constexpr std::array ALL_ACTIONS{
     GlobalShortcutAction::ScreenshotOcr,
     GlobalShortcutAction::ScreenshotTranslation,
     GlobalShortcutAction::ScreenshotCopy,
+    GlobalShortcutAction::ScreenshotSave,
+    GlobalShortcutAction::ScreenshotQuickSave,
     GlobalShortcutAction::ScreenshotFullScreen,
     GlobalShortcutAction::ScreenshotFocusedWindow,
     GlobalShortcutAction::ScreenRecord,
@@ -105,6 +107,56 @@ class FakeBackend final : public GlobalShortcutBackend {
 void clearAll(GlobalShortcutManager& manager) {
     for (const GlobalShortcutAction action : ALL_ACTIONS) {
         require(manager.setShortcuts(action, {}), "clear global shortcut fixture");
+    }
+}
+
+void screenshotSaveShortcutsRegisterActivateAndPersist() {
+    const std::array actions{GlobalShortcutAction::ScreenshotSave,
+                             GlobalShortcutAction::ScreenshotQuickSave};
+    const std::array bindings{
+        shortcuts::ShortcutBindingList{QStringLiteral("Ctrl+Alt+F10"), QStringLiteral("Shift+F10")},
+        shortcuts::ShortcutBindingList{QStringLiteral("Ctrl+Alt+F11"),
+                                       QStringLiteral("Shift+F11")}};
+    {
+        auto backend = std::make_unique<FakeBackend>();
+        auto* input = backend.get();
+        GlobalShortcutManager manager(std::move(backend), nullptr, [] { return false; });
+        manager.initialize();
+        clearAll(manager);
+        QVector<GlobalShortcutAction> activated;
+        QObject::connect(&manager, &GlobalShortcutManager::activated, &manager,
+                         [&](GlobalShortcutAction action) { activated.append(action); });
+        for (std::size_t i = 0; i < actions.size(); ++i) {
+            const auto action = actions[i];
+            require(manager.state(action).status == GlobalShortcutStatus::Unset,
+                    "screenshot save hotkeys start unset");
+            require(manager.setShortcuts(action, bindings[i]) &&
+                        manager.state(action).status == GlobalShortcutStatus::Registered &&
+                        manager.state(action).bindings.size() == 2,
+                    "both screenshot save hotkey bindings register");
+            for (auto it = input->registrations.cbegin(); it != input->registrations.cend(); ++it) {
+                if (bindings[i].contains(it.value()))
+                    input->handler(it.key());
+            }
+            require(activated.count(action) == 2,
+                    "each save binding activates its own screenshot action");
+        }
+        require(!manager.validateShortcut(actions[1], bindings[0].first()).supported,
+                "save actions participate in global hotkey conflict detection");
+    }
+    GlobalShortcutManager restored(std::make_unique<FakeBackend>(), nullptr, [] { return false; });
+    restored.initialize();
+    const snow_shot::storage::ShortcutSettings settings;
+    require(settings.screenshotSave() == bindings[0] &&
+                settings.screenshotQuickSave() == bindings[1],
+            "save actions persist under distinct settings keys");
+    for (std::size_t i = 0; i < actions.size(); ++i) {
+        require(restored.state(actions[i]).shortcuts == bindings[i] &&
+                    restored.state(actions[i]).status == GlobalShortcutStatus::Registered,
+                "save hotkeys register again after manager reload");
+        require(restored.setShortcuts(actions[i], {}) &&
+                    restored.state(actions[i]).status == GlobalShortcutStatus::Unset,
+                "save hotkeys can be cleared");
     }
 }
 
@@ -1082,6 +1134,7 @@ int main(int argc, char** argv) {
         storage.shutdown();
         return 0;
     }
+    screenshotSaveShortcutsRegisterActivateAndPersist();
     switchGroupShortcutPersistsAndReportsBinding();
 #ifdef Q_OS_WIN
     nativeGroupKeyStateUsesEveryShortcutKey();

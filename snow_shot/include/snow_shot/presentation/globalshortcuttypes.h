@@ -32,6 +32,8 @@ enum class GlobalShortcutAction {
     OpenPinToScreenManagement,
     GlobalCanvas,
     SwitchWindowGroup,
+    ScreenshotSave,
+    ScreenshotQuickSave,
 };
 
 [[nodiscard]] constexpr bool controlsGlobalHotkeyGates(GlobalShortcutAction action) {

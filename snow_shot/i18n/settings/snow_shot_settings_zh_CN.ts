@@ -3313,6 +3313,14 @@
             <translation>将扬声器和麦克风音频保存为独立的 MP4 音轨，以便分别编辑。大多数播放器一次只播放一个音轨。</translation>
         </message>
         <message>
+            <source>Save the confirmed screenshot selection to a file</source>
+            <translation>将确认的截图选区保存为文件</translation>
+        </message>
+        <message>
+            <source>Save the confirmed screenshot selection to the configured folder</source>
+            <translation>将确认的截图选区保存到配置的文件夹</translation>
+        </message>
+        <message>
             <source>Saved screenshots</source>
             <translation>已保存截图</translation>
         </message>

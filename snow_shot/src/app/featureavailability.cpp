@@ -11,6 +11,8 @@ std::optional<FeatureFamily> featureFamilyFor(presentation::GlobalShortcutAction
     case Action::ScreenshotOcr:
     case Action::ScreenshotTranslation:
     case Action::ScreenshotCopy:
+    case Action::ScreenshotSave:
+    case Action::ScreenshotQuickSave:
     case Action::ScreenshotFullScreen:
     case Action::ScreenshotFocusedWindow:
         return FeatureFamily::Screenshot;

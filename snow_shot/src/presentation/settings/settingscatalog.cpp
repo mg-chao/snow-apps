@@ -152,6 +152,27 @@ SettingsItemDefinition screenshotCopyItem() {
         []() { return custom_outlined_icons::ScreenshotCopy(); });
 }
 
+SettingsItemDefinition screenshotSaveItem() {
+    return quickActionItem(
+        QStringLiteral("quick.screenshot-save"),
+        QT_TRANSLATE_NOOP("SettingsCatalog", "Save as file"),
+        QT_TRANSLATE_NOOP("SettingsCatalog", "Save the confirmed screenshot selection to a file"),
+        {}, GlobalShortcutAction::ScreenshotSave,
+        QStringLiteral("global_shortcuts/screenshot_save"),
+        []() { return custom_outlined_icons::Save(); });
+}
+
+SettingsItemDefinition screenshotQuickSaveItem() {
+    return quickActionItem(
+        QStringLiteral("quick.screenshot-quick-save"),
+        QT_TRANSLATE_NOOP("SettingsCatalog", "Quick save"),
+        QT_TRANSLATE_NOOP("SettingsCatalog",
+                          "Save the confirmed screenshot selection to the configured folder"),
+        {}, GlobalShortcutAction::ScreenshotQuickSave,
+        QStringLiteral("global_shortcuts/screenshot_quick_save"),
+        []() { return custom_outlined_icons::QuickSave(); });
+}
+
 SettingsItemDefinition screenshotFullScreenItem() {
     return quickActionItem(
         QStringLiteral("quick.screenshot-full-screen"),
@@ -2638,6 +2659,8 @@ QVector<SettingsPageDefinition> builtInPages() {
                         screenshotTranslationItem(),
 #endif
                         screenshotCopyItem(),
+                        screenshotSaveItem(),
+                        screenshotQuickSaveItem(),
                         screenshotFullScreenItem(),
                         screenshotFocusedWindowItem(),
                     },
@@ -3719,6 +3742,10 @@ QString shortcutConfigurationKey(GlobalShortcutAction action) {
         return QStringLiteral("global_shortcuts/screenshot_translation");
     case GlobalShortcutAction::ScreenshotCopy:
         return QStringLiteral("global_shortcuts/screenshot_copy");
+    case GlobalShortcutAction::ScreenshotSave:
+        return QStringLiteral("global_shortcuts/screenshot_save");
+    case GlobalShortcutAction::ScreenshotQuickSave:
+        return QStringLiteral("global_shortcuts/screenshot_quick_save");
     case GlobalShortcutAction::ScreenshotFullScreen:
         return QStringLiteral("global_shortcuts/screenshot_full_screen");
     case GlobalShortcutAction::ScreenshotFocusedWindow:
@@ -4064,6 +4091,14 @@ TrayCommandManifest buildBuiltInTrayCommandManifest() {
                 QT_TRANSLATE_NOOP("SettingsCatalog", "Copy to clipboard"),
                 GlobalShortcutAction::ScreenshotCopy,
                 []() { return custom_outlined_icons::ScreenshotCopy(); }),
+          quick(QStringLiteral("quick.screenshot-save"),
+                QT_TRANSLATE_NOOP("SettingsCatalog", "Save as file"),
+                GlobalShortcutAction::ScreenshotSave,
+                []() { return custom_outlined_icons::Save(); }),
+          quick(QStringLiteral("quick.screenshot-quick-save"),
+                QT_TRANSLATE_NOOP("SettingsCatalog", "Quick save"),
+                GlobalShortcutAction::ScreenshotQuickSave,
+                []() { return custom_outlined_icons::QuickSave(); }),
           quick(QStringLiteral("quick.screenshot-full-screen"),
                 QT_TRANSLATE_NOOP("SettingsCatalog", "Current monitor"),
                 GlobalShortcutAction::ScreenshotFullScreen,

@@ -1649,6 +1649,18 @@ class ApplicationController::Impl {
                 controller->captureAndCopySelection();
             }
             break;
+        case presentation::GlobalShortcutAction::ScreenshotSave:
+            if (ScreenshotController* controller = ensureScreenshotController()) {
+                static_cast<void>(
+                    controller->captureForAction(ScreenshotController::CaptureAction::Save));
+            }
+            break;
+        case presentation::GlobalShortcutAction::ScreenshotQuickSave:
+            if (ScreenshotController* controller = ensureScreenshotController()) {
+                static_cast<void>(
+                    controller->captureForAction(ScreenshotController::CaptureAction::QuickSave));
+            }
+            break;
         case presentation::GlobalShortcutAction::ScreenshotFullScreen:
             ensureDirectCaptureController().captureCurrentMonitor();
             break;

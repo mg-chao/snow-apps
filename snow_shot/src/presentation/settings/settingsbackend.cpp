@@ -2136,6 +2136,10 @@ bool BuiltInSettingsBackend::resetSection(SettingsSectionReset reset) {
                       QStringLiteral("global_shortcuts/screenshot_translation"));
         resetShortcut(GlobalShortcutAction::ScreenshotCopy,
                       QStringLiteral("global_shortcuts/screenshot_copy"));
+        resetShortcut(GlobalShortcutAction::ScreenshotSave,
+                      QStringLiteral("global_shortcuts/screenshot_save"));
+        resetShortcut(GlobalShortcutAction::ScreenshotQuickSave,
+                      QStringLiteral("global_shortcuts/screenshot_quick_save"));
         resetShortcut(GlobalShortcutAction::ScreenshotFullScreen,
                       QStringLiteral("global_shortcuts/screenshot_full_screen"));
         resetShortcut(GlobalShortcutAction::ScreenshotFocusedWindow,

@@ -3313,6 +3313,14 @@
             <translation>Save speaker and microphone audio as separate MP4 tracks for independent editing. Most players play one track at a time.</translation>
         </message>
         <message>
+            <source>Save the confirmed screenshot selection to a file</source>
+            <translation>Save the confirmed screenshot selection to a file</translation>
+        </message>
+        <message>
+            <source>Save the confirmed screenshot selection to the configured folder</source>
+            <translation>Save the confirmed screenshot selection to the configured folder</translation>
+        </message>
+        <message>
             <source>Saved screenshots</source>
             <translation>Saved screenshots</translation>
         </message>

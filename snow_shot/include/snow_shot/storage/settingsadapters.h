@@ -159,6 +159,10 @@ class ShortcutSettings final {
 
     [[nodiscard]] shortcuts::ShortcutBindingList screenshotCopy() const;
     bool setScreenshotCopy(const shortcuts::ShortcutBindingList& bindings) const;
+    [[nodiscard]] shortcuts::ShortcutBindingList screenshotSave() const;
+    bool setScreenshotSave(const shortcuts::ShortcutBindingList& bindings) const;
+    [[nodiscard]] shortcuts::ShortcutBindingList screenshotQuickSave() const;
+    bool setScreenshotQuickSave(const shortcuts::ShortcutBindingList& bindings) const;
     [[nodiscard]] shortcuts::ShortcutBindingList screenshotFullScreen() const;
     bool setScreenshotFullScreen(const shortcuts::ShortcutBindingList& bindings) const;
     [[nodiscard]] shortcuts::ShortcutBindingList screenshotFocusedWindow() const;

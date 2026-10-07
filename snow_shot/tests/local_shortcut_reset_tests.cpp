@@ -6,6 +6,7 @@
 #include "snow_shot/storage/configurationschema.h"
 
 #include <QApplication>
+#include <QJsonArray>
 #include <QTemporaryDir>
 
 #include <cstdlib>
@@ -21,6 +22,26 @@ void require(bool condition, const char* message) {
         std::cerr << message << '\n';
         std::exit(EXIT_FAILURE);
     }
+}
+
+void screenshotSaveHotkeysReset(settings::SettingsRuntimeSession& session) {
+    using Action = snow_shot::presentation::GlobalShortcutAction;
+    require(
+        session.applyShortcuts(Action::ScreenshotSave, {QStringLiteral("Ctrl+Alt+F10")}) &&
+            session.applyShortcuts(Action::ScreenshotQuickSave, {QStringLiteral("Ctrl+Alt+F11")}),
+        "customize both screenshot save hotkeys");
+    require(session.reset(settings::SettingsSectionReset::ScreenshotShortcuts) &&
+                session.shortcutState(Action::ScreenshotSave).shortcuts.isEmpty() &&
+                session.shortcutState(Action::ScreenshotQuickSave).shortcuts.isEmpty(),
+            "Screenshot reset clears both save hotkeys to their unset defaults");
+    const auto& configuration = storage::ApplicationStorage::instance().configuration();
+    require(configuration.value(QStringLiteral("global_shortcuts/screenshot_save"))
+                    .toArray()
+                    .isEmpty() &&
+                configuration.value(QStringLiteral("global_shortcuts/screenshot_quick_save"))
+                    .toArray()
+                    .isEmpty(),
+            "Screenshot reset persists both cleared save hotkeys");
 }
 
 void printShortcutsReset(settings::SettingsRuntimeSession& session) {
@@ -177,6 +198,7 @@ int main(int argc, char** argv) {
         snow_shot::presentation::GlobalShortcutManager manager;
         settings::BuiltInSettingsBackend backend(manager);
         settings::SettingsRuntimeSession session(settings::builtInSettingsRegistry(), backend);
+        screenshotSaveHotkeysReset(session);
         printShortcutsReset(session);
         allLocalShortcutSectionsReset(session);
         conflictingResetRemainsAtomic(session);
