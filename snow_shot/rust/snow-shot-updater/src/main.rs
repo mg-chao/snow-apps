@@ -88,6 +88,20 @@ fn run() -> Result<i32> {
             transaction::uninstall(&root, !args.iter().any(|argument| argument == "--upgrade"))?;
             Ok(0)
         }
+        "--prepare-installer-upgrade" => {
+            transaction::prepare_installer_upgrade(
+                &path_option(&args, "--target")?,
+                &path_option(&args, "--backup")?,
+            )?;
+            Ok(0)
+        }
+        "--restore-installer-upgrade" => {
+            transaction::restore_installer_upgrade(
+                &path_option(&args, "--target")?,
+                &path_option(&args, "--backup")?,
+            )?;
+            Ok(0)
+        }
         "--migrate-startup" => {
             let root = path_option(&args, "--target")?;
             let previous = path_option(&args, "--previous")?;

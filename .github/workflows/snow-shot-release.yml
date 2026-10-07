@@ -161,10 +161,16 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw "Gitee transport tests failed." }
           cargo test --manifest-path snow_shot/rust/snow-shot-updater/Cargo.toml --test service_protocol
           if ($LASTEXITCODE -ne 0) { throw 'Updater architecture and service protocol tests failed.' }
+          cargo test --manifest-path snow_shot/rust/snow-shot-updater/Cargo.toml --test uninstall
+          if ($LASTEXITCODE -ne 0) { throw 'Updater uninstall and installer bootstrap tests failed.' }
+          cargo test --manifest-path snow_shot/rust/snow-shot-updater/Cargo.toml --features mini --test uninstall
+          if ($LASTEXITCODE -ne 0) { throw 'Mini updater uninstall and installer bootstrap tests failed.' }
           & scripts/test-snow-shot-ocr-release-runtime.ps1
           & scripts/test-snow-shot-release-symbols.ps1 -Architecture $env:SNOW_ARCHITECTURE -ReleaseHelperPath build/${{ matrix.preset }}/snow_shot/Release/snow-shot-updater.exe
           & scripts/test-snow-shot-release-symbols.ps1 -Architecture $env:SNOW_ARCHITECTURE -Edition Mini -ReleaseHelperPath build/${{ matrix.preset }}/snow_shot_mini/Release/snow-shot-mini-updater.exe
           & scripts/test-snow-shot-installer.ps1 -Architecture $env:SNOW_ARCHITECTURE
+          & scripts/test-snow-shot-installer-upgrade.ps1 -Architecture $env:SNOW_ARCHITECTURE -HelperPath build/${{ matrix.preset }}/snow_shot/Release/snow-shot-updater.exe
+          & scripts/test-snow-shot-installer-upgrade.ps1 -Architecture $env:SNOW_ARCHITECTURE -Edition Mini -HelperPath build/${{ matrix.preset }}/snow_shot_mini/Release/snow-shot-mini-updater.exe
           & scripts/test-snow-shot-installer-i18n.ps1
           & scripts/test-snow-shot-installer-i18n.ps1 -Edition Mini
           & scripts/test-snow-shot-mini-release.ps1

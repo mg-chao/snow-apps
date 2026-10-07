@@ -1651,6 +1651,13 @@ if(SNOW_SHOT_BUILD_TESTS)
                 -File "${CMAKE_CURRENT_SOURCE_DIR}/../scripts/test-snow-shot-installer.ps1")
         set_tests_properties(snow-shot-installer-running-app-tests PROPERTIES
             LABELS "unit;windows" TIMEOUT 180)
+        add_test(NAME snow-shot-installer-upgrade-tests
+            COMMAND "${SNOW_SHOT_INSTALLER_TEST_POWERSHELL}" -NoProfile -ExecutionPolicy Bypass
+                -File "${CMAKE_CURRENT_SOURCE_DIR}/../scripts/test-snow-shot-installer-upgrade.ps1"
+                -HelperPath "$<TARGET_FILE:snow-shot-updater-binary>"
+                -Architecture "${SNOW_WINDOWS_ARCHITECTURE}")
+        set_tests_properties(snow-shot-installer-upgrade-tests PROPERTIES
+            LABELS "unit;windows" TIMEOUT 180)
         add_test(NAME snow-shot-installer-i18n-tests
             COMMAND "${SNOW_SHOT_INSTALLER_TEST_POWERSHELL}" -NoProfile -ExecutionPolicy Bypass
                 -File "${CMAKE_CURRENT_SOURCE_DIR}/../scripts/test-snow-shot-installer-i18n.ps1")

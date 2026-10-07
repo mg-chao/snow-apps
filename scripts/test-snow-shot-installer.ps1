@@ -379,6 +379,11 @@ if (-not $ReproduceOnly) {
         $init.IndexOf('Call SnowShotEnsureMainAppClosed') -gt $init.IndexOf('ExecWait')) {
         throw "The running-app check must precede the old uninstaller in .onInit."
     }
+    if ($init.IndexOf('Call SnowShotPrepareUpgradeHelper') -lt 0 -or
+        $init.IndexOf('Call SnowShotPrepareUpgradeHelper') -gt $init.IndexOf('ExecWait') -or
+        -not $init.Contains('Call SnowShotRestoreUpgradeHelper')) {
+        throw 'Legacy upgrades must prepare the bundled helper before uninstall and restore it on failure.'
+    }
     $core = [regex]::Match($generated, '(?s)Section "-Core installation".*?SectionEnd').Value
     if ($core.IndexOf('Call SnowShotEnsureMainAppClosed') -lt 0 -or
         $core.IndexOf('Call SnowShotEnsureMainAppClosed') -gt $core.IndexOf('File /r')) {

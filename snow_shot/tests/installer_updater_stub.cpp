@@ -85,6 +85,18 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int) {
 #endif
         } else {
             result = writeMarker(target, L"snow-shot-updater-ran.txt", "ran") ? stubExitCode : 1;
+#ifdef SNOW_SHOT_UPDATER_STUB_REMOVE_INSTALLED
+#ifdef SNOW_SHOT_UPDATER_STUB_MINI
+            constexpr auto updater = L"snow-shot-mini-updater";
+#else
+            constexpr auto updater = L"snow-shot-updater";
+#endif
+            wchar_t installed[MAX_PATH]{};
+            if (swprintf_s(installed, L"%s\\bin\\%s.exe", target, updater) <= 0 ||
+                !DeleteFileW(installed)) {
+                result = 17;
+            }
+#endif
         }
     }
     LocalFree(arguments);

@@ -1031,11 +1031,21 @@ fn uninstall_owned_files(root: &Path) -> Result<()> {
         restore(root).ok();
     }
     let record = installation_record(root).unwrap_or_default();
+    let executing_image = std::env::current_exe().ok();
     for file in &record.files {
         if !uninstall_target_removable(root, &file.path) {
             continue;
         }
         let path = root.join(&file.path);
+        // NSIS falls back to this installed image if it cannot isolate a copy.
+        // Windows cannot delete a running executable. CPack owns the helper and
+        // deletes it after ExecWait returns, so leave that removal to the caller.
+        if executing_image
+            .as_ref()
+            .is_some_and(|image| platform::path_eq(&path, image))
+        {
+            continue;
+        }
         if path.is_file() {
             fs::remove_file(&path).map_err(|error| {
                 io_error(
@@ -1062,6 +1072,95 @@ pub fn uninstall(root: &Path, remove_startup: bool) -> Result<()> {
         platform::remove_installation_startup(root).ok();
     }
     uninstall_owned_files(root)
+}
+
+fn installer_helper_source(root: &Path, backup: &Path) -> Result<PathBuf> {
+    installation_root_identity(root)?;
+    no_links(&root.join(crate::edition::UPDATER_PATH))?;
+    no_links(backup)?;
+    require(
+        backup.is_absolute() && !path_starts_with_case_insensitive(backup, root),
+        "invalid_updater_argument",
+        "Invalid updater command argument",
+    )?;
+    std::env::current_exe().map_err(|error| {
+        io_error(
+            "update_payload_read_failed",
+            "Could not read update payload",
+            error,
+        )
+    })
+}
+
+fn replace_installer_helper(root: &Path, source: &Path) -> Result<()> {
+    let target = root.join(crate::edition::UPDATER_PATH);
+    let parent = target.parent().expect("the updater is inside bin");
+    let temporary = tempfile::NamedTempFile::new_in(parent).map_err(|error| {
+        io_error(
+            "update_state_save_failed",
+            "Could not save update state",
+            error,
+        )
+    })?;
+    copy_and_persist(source, temporary.path())?;
+    // Publish on the same volume, without retiring a running image. An in-use
+    // helper must block preparation rather than being replaced underneath itself.
+    platform::replace_file(temporary.path(), &target)
+}
+
+pub fn prepare_installer_upgrade(root: &Path, backup: &Path) -> Result<()> {
+    let source = installer_helper_source(root, backup)?;
+    let _lock = acquire_uninstall_lock(root)?;
+    let target = root.join(crate::edition::UPDATER_PATH);
+    if !target.exists() {
+        return Ok(());
+    }
+    require(
+        uninstall_target_removable(root, crate::edition::UPDATER_PATH),
+        "selected_data_collision",
+        "An update file would overwrite the selected data directory",
+    )?;
+    // Old NSIS uninstallers always use this installed entry point. Substitute
+    // the bundled helper before calling them, including versions with broken
+    // cleanup logic, and keep the original for a failed uninstall.
+    copy_and_persist(&target, backup)?;
+    replace_installer_helper(root, &source)
+}
+
+pub fn restore_installer_upgrade(root: &Path, backup: &Path) -> Result<()> {
+    if !backup.is_file() || !root.join("bin").is_dir() {
+        return Ok(());
+    }
+    let source = installer_helper_source(root, backup)?;
+    let _lock = acquire_uninstall_lock(root)?;
+    let target = root.join(crate::edition::UPDATER_PATH);
+    if target.exists() {
+        // Restore only our replacement. Another operation may have changed the
+        // helper after preparation; its payload must not be rolled back here.
+        let size = fs::metadata(&source)
+            .map_err(|error| {
+                io_error(
+                    "update_payload_read_failed",
+                    "Could not read update payload",
+                    error,
+                )
+            })?
+            .len();
+        let hash = sha256_file(&source)?;
+        let target_size = fs::metadata(&target)
+            .map_err(|error| {
+                io_error(
+                    "update_payload_read_failed",
+                    "Could not read update payload",
+                    error,
+                )
+            })?
+            .len();
+        if target_size != size || sha256_file(&target)? != hash {
+            return Ok(());
+        }
+    }
+    replace_installer_helper(root, backup)
 }
 
 pub fn audit_release(directory: &Path, release: &UpdateRelease) -> Result<()> {
@@ -1281,6 +1380,7 @@ mod tests {
         fs::write(root.join(blocker), unchanged).unwrap();
         let record = InstallationRecord {
             schema: 1,
+            platform: Some(crate::edition::PLATFORM.to_owned()),
             product: crate::edition::PRODUCT.to_owned(),
             variant: "portable".to_owned(),
             version: "1.0.0".to_owned(),

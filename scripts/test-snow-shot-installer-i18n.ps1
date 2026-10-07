@@ -41,12 +41,18 @@ function Read-Catalog {
 function Run-Installer {
     param([string]$Path, [string[]]$Arguments)
     $process = Start-Process -FilePath $Path -ArgumentList $Arguments -WindowStyle Hidden -PassThru
-    if (-not $process.WaitForExit(20000)) {
-        $process.Kill()
-        $process.WaitForExit()
-        throw "Silent language test timed out: $Path"
+    try {
+        if (-not $process.WaitForExit(20000)) {
+            $process.Kill()
+            $process.WaitForExit()
+            throw "Silent language test timed out: $Path"
+        }
+        if ($process.ExitCode -ne 0) { throw "Language test failed with exit code $($process.ExitCode)." }
     }
-    if ($process.ExitCode -ne 0) { throw "Language test failed with exit code $($process.ExitCode)." }
+    finally {
+        # Release the image handle before the next locale rewrites uninstall.exe.
+        $process.Dispose()
+    }
 }
 
 $locales = [ordered]@{ en_US = 1033; zh_CN = 2052; zh_TW = 1028 }

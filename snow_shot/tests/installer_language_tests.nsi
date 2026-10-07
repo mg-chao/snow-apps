@@ -30,7 +30,11 @@ Section
   !insertmacro SnowShotDeleteUninstallShortcuts "${DESTINATION}"
   !insertmacro ReportLanguage "install.txt"
   !insertmacro MUI_LANGDLL_SAVELANGUAGE
+  ClearErrors
   WriteUninstaller "${DESTINATION}\uninstall.exe"
+  IfErrors 0 +3
+    SetErrorLevel 20
+    Quit
 SectionEnd
 
 Function un.onInit

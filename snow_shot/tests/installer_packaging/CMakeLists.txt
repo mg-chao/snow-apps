@@ -12,4 +12,6 @@ set(CPACK_VERBATIM_VARIABLES ON)
 include("${CMAKE_CURRENT_LIST_DIR}/../../../cmake/SnowShotInstaller.cmake")
 install(FILES "${CMAKE_CURRENT_LIST_DIR}/../installer_process_fixture.cpp"
     DESTINATION bin RENAME snow_shot.exe)
+install(FILES "${CMAKE_CURRENT_LIST_DIR}/../installer_updater_stub.cpp"
+    DESTINATION bin RENAME snow-shot-updater.exe)
 include(CPack)

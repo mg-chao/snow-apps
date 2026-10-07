@@ -30,6 +30,8 @@ install(FILES "{ROOT.as_posix()}/snow_shot/packaging/README.txt"
     DESTINATION . COMPONENT SnowShot)
 install(FILES "{ROOT.as_posix()}/snow_shot/packaging/README-mini.txt"
     DESTINATION . COMPONENT SnowShotMini)
+install(FILES "{ROOT.as_posix()}/snow_shot/tests/installer_updater_stub.cpp"
+    DESTINATION bin RENAME snow-shot-mini-updater.exe COMPONENT SnowShotMini)
 set(CPACK_PACKAGE_NAME snow-shot)
 set(CPACK_PACKAGE_VERSION "${{SNOW_SHOT_VERSION}}")
 set(CPACK_GENERATOR {generator})
