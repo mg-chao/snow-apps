@@ -47,6 +47,7 @@ ScreenshotToolPalette::Options pinnedEditToolbarOptions() {
     options.showShapeTool = true;
     options.showArrowTool = true;
     options.showLineTool = true;
+    options.showDistanceTool = true;
     options.showFreeDrawTool = true;
     options.showHighlightTool = true;
     options.showSpotlightTool = true;
@@ -367,6 +368,8 @@ void ScreenshotPinnedEditController::ensureToolbar() {
                 [this]() { activateCanvasTool(SnowCanvasTool::Select); });
         connect(toolbar, &ScreenshotToolPalette::shapeRequested, this,
                 [this]() { activateCanvasTool(SnowCanvasTool::Shape); });
+        connect(toolbar, &ScreenshotToolPalette::distanceToolRequested, this,
+                [this]() { activateCanvasTool(SnowCanvasTool::Distance); });
         connect(toolbar, &ScreenshotToolPalette::arrowRequested, this,
                 [this]() { activateCanvasTool(SnowCanvasTool::Arrow); });
         connect(toolbar, &ScreenshotToolPalette::lineRequested, this,
@@ -835,6 +838,9 @@ void ScreenshotPinnedEditController::syncPaletteFromCanvasTool() {
         break;
     case SnowCanvasTool::Arrow:
         host->setActiveTool(ScreenshotToolPalette::Tool::Arrow);
+        break;
+    case SnowCanvasTool::Distance:
+        host->setActiveTool(ScreenshotToolPalette::Tool::Distance);
         break;
     case SnowCanvasTool::Line:
         host->setActiveTool(ScreenshotToolPalette::Tool::Line);

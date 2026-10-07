@@ -464,6 +464,21 @@ SnowCanvasSpotlightConfig SnowCanvasRuntimeEditor::canvasSpotlightConfig() const
                                                              m_impl->viewport.get(), &state));
     return snow_canvas_types::toCanvasSpotlightConfig(state);
 }
+bool SnowCanvasRuntimeEditor::setDistanceStyleFromToolbar(const SnowCanvasDistanceStyle& style,
+                                                          quint32 properties) {
+    if (!snow_canvas_types::validDistanceStyle(style))
+        return false;
+    const auto value = snow_canvas_types::toEngineDistanceStyle(style);
+    return m_impl->mutate([&](auto r, auto v, auto changed) {
+        return snow_viewport_set_distance_style_patch_ex(r, v, &value, properties, changed);
+    });
+}
+bool SnowCanvasRuntimeEditor::setDistanceCreationPixelScale(const QSizeF& scale) {
+    return m_impl->mutate([&](auto r, auto v, auto changed) {
+        return snow_viewport_set_distance_pixel_scale_ex(r, v, scale.width(), scale.height(),
+                                                         changed);
+    });
+}
 bool SnowCanvasRuntimeEditor::setShapeStyleFromToolbar(const SnowCanvasShapeStyle& style,
                                                        quint32 properties,
                                                        SnowCanvasShapeKind kind) {

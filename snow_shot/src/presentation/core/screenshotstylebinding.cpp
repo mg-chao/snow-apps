@@ -55,6 +55,7 @@ bool stepScreenshotStyle(ScreenshotToolPalette& palette, SnowCanvasWidget& canva
         return false;
     switch (canvas.canvasTool()) {
     case SnowCanvasTool::Shape:
+    case SnowCanvasTool::Distance:
     case SnowCanvasTool::Arrow:
     case SnowCanvasTool::Line:
     case SnowCanvasTool::FreeDraw:

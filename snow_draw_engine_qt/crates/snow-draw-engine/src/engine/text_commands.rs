@@ -150,10 +150,7 @@ impl Engine {
             return Ok(None);
         };
         let meta = self.model.element(id)?.meta;
-        if arrow.linear_kind != snow_draw_engine_document::LinearElementKind::Arrow
-            || meta.locked
-            || !meta.visible
-        {
+        if !arrow.is_regular_arrow() || meta.locked || !meta.visible {
             return Ok(None);
         }
         if let Some(text_id) = arrow.text_element_id {

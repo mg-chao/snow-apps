@@ -556,6 +556,10 @@ fn arrow_text_measurements_are_keyed_and_join_the_next_geometry_transaction() {
         .arrow_text_layout_requests(viewport)
         .unwrap()
         .remove(0);
+    assert_eq!(
+        request.arrow_width,
+        engine.model.arrow(owner).unwrap().width
+    );
     engine
         .apply_arrow_text_measurements(
             viewport,

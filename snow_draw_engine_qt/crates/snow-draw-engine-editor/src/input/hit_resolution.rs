@@ -154,7 +154,14 @@ impl Editor {
                 }
             };
             let owner = document.arrow_id_for_text(*id);
-            let (hit_id, kind) = owner.map_or((*id, kind), |id| (id, ElementKind::Arrow));
+            let (hit_id, kind) = owner.map_or((*id, kind), |id| {
+                (
+                    id,
+                    document
+                        .arrow(id)
+                        .map_or(ElementKind::Arrow, |arrow| arrow.element_kind()),
+                )
+            });
             if Self::selection_scope_matches_document(
                 document,
                 policy.selection_scope,

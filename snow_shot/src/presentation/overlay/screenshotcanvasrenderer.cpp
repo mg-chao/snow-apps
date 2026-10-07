@@ -1062,6 +1062,12 @@ void ScreenshotCanvasRenderer::setImageSource(ScreenshotImageSource source, cons
             baseSources.push_back({layer.image, layer.imageCanvasRect, coverage});
         }
     }
+    if (m_imageSource.isMaterialized()) {
+        const QRectF& rect = m_imageSource.materializedCanvasRect;
+        static_cast<void>(m_canvas.setDistanceCreationPixelScale(
+            QSizeF(m_imageSource.materializedImage.width() / rect.width(),
+                   m_imageSource.materializedImage.height() / rect.height())));
+    }
     if (damage.isEmpty())
         m_canvas.setBaseImageSources(baseSources);
     else

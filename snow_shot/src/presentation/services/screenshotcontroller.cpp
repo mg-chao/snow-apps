@@ -15,6 +15,7 @@
 #include "snow_shot/presentation/screenshotoverlaycanvaspresenter.h"
 #include "snow_shot/presentation/screenshottoolbarpresentationstatefactory.h"
 #include "snow_shot/app/mcp/screenshotmcpselection.h"
+#include "snow_shot/app/mcp/mcpstylepatch.h"
 #include "snow_shot/platform/screenshotnative.h"
 #include <QJsonDocument>
 #include <QThread>
@@ -209,6 +210,8 @@ ScreenshotToolPalette::Tool paletteToolForActiveTool(ScreenshotActiveTool tool) 
         return ScreenshotToolPalette::Tool::Shape;
     case ScreenshotActiveTool::Arrow:
         return ScreenshotToolPalette::Tool::Arrow;
+    case ScreenshotActiveTool::Distance:
+        return ScreenshotToolPalette::Tool::Distance;
     case ScreenshotActiveTool::Line:
         return ScreenshotToolPalette::Tool::Line;
     case ScreenshotActiveTool::FreeDraw:
@@ -390,6 +393,7 @@ struct ScreenshotController::Impl final : public ScreenshotToolbarCommandSink,
     void setShapeTool() override;
     void setArrowTool() override;
     void setLineTool() override;
+    void setDistanceTool() override;
     void setFreeDrawTool() override;
     void setHighlightTool() override;
     void setPenHighlightTool() override;
@@ -2493,6 +2497,9 @@ bool ScreenshotController::Impl::activateToolForSelectionResize(ScreenshotActive
     case ScreenshotActiveTool::Line:
         setLineTool();
         break;
+    case ScreenshotActiveTool::Distance:
+        setDistanceTool();
+        break;
     case ScreenshotActiveTool::FreeDraw:
         setFreeDrawTool();
         break;
@@ -2597,6 +2604,13 @@ void ScreenshotController::Impl::setShapeTool() {
     deactivateRecognition();
     const bool scrollingCaptureStopped = stopScrollingCapture(true);
     m_toolCommandWorkflow->setShapeTool();
+    restoreToolUiAfterScrollingCapture(scrollingCaptureStopped);
+}
+
+void ScreenshotController::Impl::setDistanceTool() {
+    deactivateRecognition();
+    const bool scrollingCaptureStopped = stopScrollingCapture(true);
+    m_toolCommandWorkflow->setDistanceTool();
     restoreToolUiAfterScrollingCapture(scrollingCaptureStopped);
 }
 
@@ -6271,6 +6285,7 @@ const std::pair<const char*, ScreenshotActiveTool> mcpTools[] = {
     {"select", ScreenshotActiveTool::Select},
     {"rectangle", ScreenshotActiveTool::Shape},
     {"arrow", ScreenshotActiveTool::Arrow},
+    {"distance", ScreenshotActiveTool::Distance},
     {"line", ScreenshotActiveTool::Line},
     {"freehand", ScreenshotActiveTool::FreeDraw},
     {"rectangle_highlight", ScreenshotActiveTool::RectangleHighlight},
@@ -6562,7 +6577,13 @@ bool ScreenshotController::mcpApplyAnnotations(const QByteArray& payload, QJsonO
             }
         }
     }
-    const auto response = m_impl->m_canvasRuntime.applyAnnotationTransaction(payload);
+    const auto spec = screenshotSelectionRenderSpec(m_impl->m_displaySession,
+                                                    m_impl->m_selection.pixelSelection());
+    const qreal scale = spec.isValid() ? spec.scale : 1.0;
+    const auto annotated =
+        snow_shot::app::mcp::mcpDistanceAnnotationsWithPixelScale(object, QSizeF(scale, scale));
+    const auto response = m_impl->m_canvasRuntime.applyAnnotationTransaction(
+        QJsonDocument(annotated).toJson(QJsonDocument::Compact));
     if (response.isEmpty()) {
         if (error)
             *error = QStringLiteral("operations");

@@ -13,6 +13,7 @@ use crate::Editor;
 #[derive(Clone, Debug, PartialEq)]
 pub struct ArrowTextLayoutRequest {
     pub arrow_id: ElementId,
+    pub arrow_width: f64,
     pub text_id: ElementId,
     pub text: TextData,
     pub max_width: f64,
@@ -47,6 +48,8 @@ fn request(
     text: &TextData,
     generation: u64,
 ) -> ArrowTextLayoutRequest {
+    let derived = snow_draw_engine_document::distance_label(arrow, Some(text.layout));
+    let text = derived.as_ref().unwrap_or(text);
     let max_width = arrow_text_max_width(arrow, text.font_size);
     let mut key = std::collections::hash_map::DefaultHasher::new();
     generation.hash(&mut key);
@@ -63,6 +66,7 @@ fn request(
     text.rotation = 0.0;
     ArrowTextLayoutRequest {
         arrow_id,
+        arrow_width: arrow.width,
         text_id,
         text,
         max_width,
@@ -157,7 +161,7 @@ impl Editor {
         document: &DocumentModel,
     ) -> Vec<ArrowTextLayoutRequest> {
         let arrows = self.preview_selection_arrows(document);
-        document
+        let mut requests: Vec<_> = document
             .arrow_text_bindings()
             .into_iter()
             .filter_map(|(arrow_id, text_id)| {
@@ -181,7 +185,58 @@ impl Editor {
                     .any(|m| m.matches(&request)))
                 .then_some(request)
             })
-            .collect()
+            .collect();
+        if let Some(request) = self.distance_creation_layout_request(document)
+            && !self
+                .state
+                .arrow_text_measurements
+                .iter()
+                .any(|m| m.matches(&request))
+        {
+            requests.push(request);
+        }
+        requests
+    }
+
+    pub(crate) fn distance_creation_layout_request(
+        &self,
+        document: &DocumentModel,
+    ) -> Option<ArrowTextLayoutRequest> {
+        let crate::ElementCreationPreview::Arrow(arrow) = self.state.creation_preview.as_ref()?
+        else {
+            return None;
+        };
+        let text = snow_draw_engine_document::distance_label(arrow, None)?;
+        Some(request(
+            document.peek_next_element_id(),
+            self.distance_creation_text_id(),
+            arrow,
+            &text,
+            self.state.arrow_text_measurement_generation,
+        ))
+    }
+
+    pub(crate) fn measured_distance_label(
+        &self,
+        arrow_id: ElementId,
+        arrow: &ArrowData,
+        text: &TextData,
+    ) -> TextData {
+        self.measured_arrow_text(request(
+            arrow_id,
+            self.distance_creation_text_id(),
+            arrow,
+            text,
+            self.state.arrow_text_measurement_generation,
+        ))
+    }
+
+    pub(crate) fn distance_creation_text(
+        &self,
+        document: &DocumentModel,
+    ) -> Option<(ElementId, TextData)> {
+        let request = self.distance_creation_layout_request(document)?;
+        Some((request.text_id, self.measured_arrow_text(request)))
     }
 
     pub fn apply_arrow_text_measurement(

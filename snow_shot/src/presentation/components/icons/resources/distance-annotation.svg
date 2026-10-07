@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" fill="currentColor" data-adqt-slot="primary">
+  <path d="m807.68 132.32-675.36 675.36a8.96 8.96 0 0 0 0 12.32l44.8 44.8a8.96 8.96 0 0 0 12.32 0l675.36-675.36a8.96 8.96 0 0 0 0-12.32l-44.8-44.8a8.96 8.96 0 0 0-12.32 0Z"/>
+  <rect x="-104.32" y="-40.32" width="208.64" height="80.64" rx="8.96" transform="translate(163.84 836.16) rotate(45)"/>
+  <rect x="-104.32" y="-40.32" width="208.64" height="80.64" rx="8.96" transform="translate(836.16 163.84) rotate(45)"/>
+</svg>

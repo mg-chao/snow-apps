@@ -32,6 +32,7 @@ pub enum ActiveTool {
     AutoFilter,
     RectangleEraser,
     BrushEraser,
+    Distance,
 }
 
 impl ActiveTool {
@@ -67,7 +68,8 @@ impl ActiveTool {
             | Self::Eraser
             | Self::Text
             | Self::SerialNumber
-            | Self::Spotlight => false,
+            | Self::Spotlight
+            | Self::Distance => false,
         }
     }
 }
@@ -151,6 +153,8 @@ pub enum StyleToolbarSource {
     SelectedSpotlight,
     DefaultRectangleEraser,
     DefaultBrushEraser,
+    DefaultDistance,
+    SelectedDistance,
 }
 
 impl StyleToolbarSource {
@@ -345,6 +349,8 @@ pub struct StyleToolbarState {
     pub filter_style: FilterStyle,
     pub filter_style_mixed: u32,
     pub brush_eraser_style: BrushEraserStyle,
+    pub distance_style: crate::DistanceStyle,
+    pub distance_style_mixed: u32,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
@@ -418,6 +424,7 @@ pub struct EditorPresentationState {
     /// Additive, uncommitted copies. Uses the same transaction builder as duplication.
     pub duplicate_preview: Option<snow_draw_engine_document::Transaction>,
     pub creation_preview: Option<ElementCreationPreview>,
+    pub distance_creation_text: Option<(ElementId, TextData)>,
     pub free_draw_endpoint: Option<Point<f64>>,
     pub free_draw_replacement: Option<(ElementId, Arc<FreeDrawPreview>)>,
     pub active_text_draft: Option<ActiveTextDraftPresentation>,
@@ -464,6 +471,7 @@ pub struct EditorViewportState {
     pub surface: SurfaceSize,
     pub camera: Camera,
     pub snap_guide_targets: SnapGuideTargets,
+    pub distance_pixel_scale: Point<f64>,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
@@ -477,6 +485,7 @@ impl Default for EditorViewportState {
         Self {
             surface: SurfaceSize::default(),
             snap_guide_targets: SnapGuideTargets::default(),
+            distance_pixel_scale: Point::new(1.0, 1.0),
             camera: Camera {
                 center: Point::default(),
                 zoom: 1.0,

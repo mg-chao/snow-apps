@@ -431,6 +431,14 @@
     },
     {
       "variant": "outlined",
+      "symbol": "DistanceAnnotation",
+      "name": "distance-annotation",
+      "source": "../src/presentation/components/icons/resources/distance-annotation.svg",
+      "colorModel": "monochrome",
+      "fit": "contain"
+    },
+    {
+      "variant": "outlined",
       "symbol": "DistributeHorizontal",
       "name": "distribute-horizontal",
       "source": "../src/presentation/components/icons/resources/distribute-horizontal.svg",

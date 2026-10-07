@@ -59,6 +59,13 @@ enum Annotation {
         #[serde(default)]
         style: Style,
     },
+    Distance {
+        points: [[f64; 2]; 2],
+        #[serde(default)]
+        style: DistanceAnnotationStyle,
+        #[serde(default = "default_distance_pixel_scale")]
+        pixel_scale: [f64; 2],
+    },
     Line {
         points: Vec<[f64; 2]>,
         #[serde(default)]
@@ -114,6 +121,57 @@ enum Annotation {
     Delete {
         ids: Vec<ElementId>,
     },
+}
+
+fn default_distance_pixel_scale() -> [f64; 2] {
+    [1.0, 1.0]
+}
+#[derive(Deserialize)]
+#[serde(default, deny_unknown_fields)]
+struct DistanceAnnotationStyle {
+    stroke: [u8; 4],
+    stroke_width: f64,
+    factor: f64,
+    unit: snow_draw_engine_document::DistanceUnit,
+    decimal_places: u8,
+    endpoint_scale: f64,
+    endpoint_style: String,
+}
+impl Default for DistanceAnnotationStyle {
+    fn default() -> Self {
+        Self {
+            stroke: [245, 34, 45, 255],
+            stroke_width: 2.0,
+            factor: 1.0,
+            unit: Default::default(),
+            decimal_places: 0,
+            endpoint_scale: 1.0,
+            endpoint_style: "bar".into(),
+        }
+    }
+}
+impl DistanceAnnotationStyle {
+    fn into_style(self) -> Result<snow_draw_engine_editor::DistanceStyle, ErrorCode> {
+        let endpoint_style = if self.endpoint_style == "none" {
+            None
+        } else {
+            Some(
+                serde_json::from_value(serde_json::Value::String(self.endpoint_style))
+                    .map_err(|_| ErrorCode::InvalidArgument)?,
+            )
+        };
+        let style = snow_draw_engine_editor::DistanceStyle {
+            stroke: rgba(self.stroke),
+            stroke_width: self.stroke_width,
+            factor: self.factor,
+            unit: self.unit,
+            decimal_places: self.decimal_places,
+            endpoint_ratio: self.endpoint_scale,
+            endpoint_style,
+        };
+        snow_draw_engine_editor::validate_distance_style(style)?;
+        Ok(style)
+    }
 }
 
 #[derive(Deserialize)]
@@ -441,6 +499,43 @@ impl Engine {
                     .ok_or(ErrorCode::InvalidArgument)?;
                     tx.insert_free_draw(id, meta, data);
                 }
+                Annotation::Distance {
+                    points: p,
+                    style: s,
+                    pixel_scale,
+                } => {
+                    let style = s.into_style()?;
+                    let mut data = ArrowData::from_global_points(
+                        &points(p.to_vec())?,
+                        style.stroke,
+                        style.stroke_width,
+                        crate::StrokeStyle::Solid,
+                        crate::ArrowType::Straight,
+                        None,
+                        None,
+                    )
+                    .ok_or(ErrorCode::InvalidArgument)?;
+                    data.distance = Some(snow_draw_engine_document::DistanceAnnotation {
+                        pixel_scale_x: pixel_scale[0],
+                        pixel_scale_y: pixel_scale[1],
+                        ..Default::default()
+                    });
+                    style.apply_to_arrow(&mut data);
+                    snow_draw_engine_document::validate_arrow(&data)?;
+                    if snow_draw_engine_document::arrow_length(&data) <= 1e-6 {
+                        return Err(ErrorCode::InvalidArgument);
+                    }
+                    next.index = next
+                        .index
+                        .checked_add(1)
+                        .ok_or(ErrorCode::InvalidArgument)?;
+                    let label_id = next;
+                    data.text_element_id = Some(label_id);
+                    let label = snow_draw_engine_document::distance_label(&data, None)
+                        .ok_or(ErrorCode::InvalidArgument)?;
+                    tx.insert_arrow(id, meta, data);
+                    tx.insert_text(label_id, meta, label);
+                }
                 Annotation::Arrow {
                     points: p,
                     style: s,
@@ -468,7 +563,7 @@ impl Engine {
                     data = match linear_kind {
                         LinearElementKind::Line => data.into_line(rgba(s.fill), FillStyle::Solid),
                         LinearElementKind::PenHighlight => data.into_pen_highlight(),
-                        LinearElementKind::Arrow => data,
+                        LinearElementKind::Arrow | LinearElementKind::Distance => data,
                     };
                     tx.insert_arrow(id, meta, data);
                 }

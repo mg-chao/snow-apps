@@ -35,6 +35,7 @@ enum class ScreenshotActiveTool {
     RectangleEraser,
     BrushEraser,
     TextTranslation,
+    Distance,
 };
 
 [[nodiscard]] inline bool isScreenshotRecognitionTool(ScreenshotActiveTool tool) {

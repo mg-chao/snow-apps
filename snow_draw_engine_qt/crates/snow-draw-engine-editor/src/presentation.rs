@@ -155,6 +155,7 @@ impl Editor {
         };
         let copying = duplicate_preview.is_some();
         EditorPresentationState {
+            distance_creation_text: self.distance_creation_text(document),
             free_draw_endpoint: self.free_draw_endpoint_feedback(document),
             free_draw_replacement: self.free_draw_replacement_preview(document),
             duplicate_preview,
@@ -681,7 +682,8 @@ impl Editor {
         if arrow.is_pen_highlight() {
             return Vec::new();
         }
-        let show_segment_handles = arrow.is_line() || arrow.is_elbow() || arrow.points.len() <= 2;
+        let show_segment_handles = !arrow.is_distance()
+            && (arrow.is_line() || arrow.is_elbow() || arrow.points.len() <= 2);
         if show_segment_handles {
             arrow_segment_midpoints(arrow)
                 .into_iter()
@@ -764,7 +766,11 @@ impl Editor {
 
         // Every visible control handle takes precedence over the bound label.
         if self.arrow_label_hit(document, arrow_id, canvas_point) {
-            return Some(ArrowHitTarget::Label);
+            return Some(if arrow.is_distance() {
+                ArrowHitTarget::Move
+            } else {
+                ArrowHitTarget::Label
+            });
         }
 
         arrow_hit_test(

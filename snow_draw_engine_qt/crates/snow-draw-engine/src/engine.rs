@@ -18,6 +18,8 @@ use snow_draw_engine_scene::{DocumentSceneCache, ViewportComposer};
 mod annotations;
 #[cfg(test)]
 mod auto_filter_tests;
+#[cfg(test)]
+mod distance_tests;
 mod document_commands;
 #[cfg(test)]
 mod duplicate_drag_tests;
@@ -279,6 +281,8 @@ impl Engine {
             filter_style: self.editor.filter_style(&self.model),
             filter_style_mixed: self.editor.filter_style_mixed(&self.model),
             brush_eraser_style: self.editor.brush_eraser_style(),
+            distance_style: self.editor.distance_style(&self.model),
+            distance_style_mixed: self.editor.distance_style_mixed(&self.model),
         })
     }
 
@@ -298,6 +302,36 @@ impl Engine {
     ) -> Result<RectangleShapeStyle, ErrorCode> {
         self.ensure_viewport(id)?;
         Ok(self.editor.rectangle_shape_style(&self.model))
+    }
+
+    pub fn set_viewport_distance_style_patch(
+        &mut self,
+        id: ViewportId,
+        style: snow_draw_engine_editor::DistanceStyle,
+        properties: u32,
+    ) -> Result<MutationResult, ErrorCode> {
+        self.ensure_viewport(id)?;
+        let before = self.editor.snapshot();
+        let command = self
+            .editor
+            .set_distance_style_patch(&self.model, style, properties)?;
+        if let Some(command) = command {
+            self.apply_editor_command(id, command)
+        } else {
+            self.refresh_after_session_mutation(before)
+        }
+    }
+
+    pub fn set_viewport_distance_pixel_scale(
+        &mut self,
+        id: ViewportId,
+        scale: Point<f64>,
+    ) -> Result<MutationResult, ErrorCode> {
+        if !scale.x.is_finite() || scale.x <= 0.0 || !scale.y.is_finite() || scale.y <= 0.0 {
+            return Err(ErrorCode::InvalidArgument);
+        }
+        self.viewport_slot_mut(id)?.view.distance_pixel_scale = scale;
+        Ok(MutationResult::default())
     }
 
     pub fn set_viewport_shape_style_patch(

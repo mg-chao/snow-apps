@@ -142,6 +142,7 @@ const QHash<QString, SnowCanvasTool> kCanvasTools{
     {QStringLiteral("select"), SnowCanvasTool::Select},
     {QStringLiteral("rectangle"), SnowCanvasTool::Shape},
     {QStringLiteral("arrow"), SnowCanvasTool::Arrow},
+    {QStringLiteral("distance"), SnowCanvasTool::Distance},
     {QStringLiteral("line"), SnowCanvasTool::Line},
     {QStringLiteral("freehand"), SnowCanvasTool::FreeDraw},
     {QStringLiteral("rectangle_highlight"), SnowCanvasTool::RectangleHighlight},
@@ -845,7 +846,10 @@ class DocumentWorker final : public QObject {
                 {QStringLiteral("label"),
                  params.value(QStringLiteral("label")).toString(QStringLiteral("MCP annotation"))},
                 {QStringLiteral("operations"), params.value(QStringLiteral("operations"))}};
-            const QByteArray bytes = QJsonDocument(batch).toJson(QJsonDocument::Compact);
+            const auto annotated = mcpDistanceAnnotationsWithPixelScale(
+                batch,
+                mcpDistancePixelScale(document.sources, document.selection.pixelSelection()));
+            const QByteArray bytes = QJsonDocument(annotated).toJson(QJsonDocument::Compact);
             if (bytes.size() > 1024 * 1024)
                 return {failure(request, QStringLiteral("invalid_parameters"),
                                 QStringLiteral("operations")),

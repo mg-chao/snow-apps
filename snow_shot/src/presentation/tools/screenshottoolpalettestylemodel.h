@@ -117,6 +117,11 @@ struct ScreenshotToolPaletteStyleState {
     SnowCanvasShapeStyle m_penHighlightStyle;
     SnowCanvasArrowStyle m_creationArrowStyle;
     SnowCanvasArrowStyle m_arrowStyle;
+    SnowCanvasDistanceStyle creationDistanceStyle;
+    SnowCanvasDistanceStyle distanceStyle;
+    quint32 distanceStyleMixed = 0;
+    bool showingSelectedDistance = false;
+    bool distanceControlsActive = false;
     ScreenshotToolPaletteTextStyleModel m_creationTextStyle;
     ScreenshotToolPaletteTextStyleModel m_textStyle;
     SnowCanvasSerialNumberStyle m_creationSerialNumberStyle;

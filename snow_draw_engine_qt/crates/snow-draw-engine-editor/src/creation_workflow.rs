@@ -118,11 +118,17 @@ impl Editor {
         start_canvas_position: Point<f64>,
         start_view_position: Point<f64>,
     ) {
+        self.state.distance_creation_generation = self
+            .state
+            .distance_creation_generation
+            .wrapping_add(1)
+            .max(1);
         self.state.interaction = InteractionState::CreatingArrow(CreateArrowState {
             pointer_id,
             committed_points: vec![start_canvas_position],
             press_view_position: start_view_position,
             phase: ArrowCreationPhase::InitialPress,
+            distance_pixel_scale: self.view.distance_pixel_scale,
             ..Default::default()
         });
         self.clear_transient_visuals();
@@ -185,19 +191,42 @@ impl Editor {
     pub(crate) fn queue_arrow_creation(
         &mut self,
         document: &DocumentModel,
-        arrow: ArrowData,
+        mut arrow: ArrowData,
     ) -> Result<(), ErrorCode> {
         validate_arrow(&arrow)?;
-        let mut transaction = Transaction::new(if arrow.is_line() {
+        let label = if arrow.is_distance() {
+            let text = snow_draw_engine_document::distance_label(&arrow, None)
+                .ok_or(ErrorCode::InvalidArgument)?;
+            Some(self.measured_distance_label(document.peek_next_element_id(), &arrow, &text))
+        } else {
+            None
+        };
+        let mut transaction = Transaction::new(if arrow.is_distance() {
+            "create distance"
+        } else if arrow.is_line() {
             "create line"
         } else {
             "create arrow"
         });
+        let text_id = if label.is_some() {
+            let mut text_id = document.peek_next_element_id();
+            text_id.index = text_id
+                .index
+                .checked_add(1)
+                .ok_or(ErrorCode::InvalidState)?;
+            arrow.text_element_id = Some(text_id);
+            Some(text_id)
+        } else {
+            None
+        };
         transaction.insert_arrow(
             document.peek_next_element_id(),
             ElementMeta::default(),
             arrow,
         );
+        if let Some((text_id, label)) = text_id.zip(label) {
+            transaction.insert_text(text_id, ElementMeta::default(), label);
+        }
         self.queue_command(EditorCommand::ApplyTransaction(
             ApplyTransactionCommand::new(transaction),
         ));
@@ -613,6 +642,9 @@ impl Editor {
         document: &DocumentModel,
         event: PointerEvent,
     ) -> Result<InteractionOutput, ErrorCode> {
+        if self.state.active_tool == ActiveTool::Distance {
+            return self.process_distance_creation_pointer_event(document, event);
+        }
         match event.event_type {
             PointerEventType::Down => self.handle_arrow_pointer_down(document, event),
             PointerEventType::DoubleClick => self.handle_arrow_double_click(document, event),

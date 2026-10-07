@@ -39,6 +39,10 @@ SnowCornerRadii toEngineCornerRadii(const SnowCanvasCornerRadii& cornerRadii);
 SnowCanvasShapeStyle toCanvasShapeStyle(const SnowShapeStyle& style);
 SnowShapeStyle toEngineShapeStyle(const SnowCanvasShapeStyle& style);
 
+bool validDistanceStyle(const SnowCanvasDistanceStyle& style);
+SnowCanvasDistanceStyle toCanvasDistanceStyle(const SnowDistanceStyle& style);
+SnowDistanceStyle toEngineDistanceStyle(const SnowCanvasDistanceStyle& style);
+
 SnowCanvasTextStyle toCanvasTextStyle(const SnowTextStyle& style);
 SnowTextStyle toEngineTextStyle(const SnowCanvasTextStyle& style);
 

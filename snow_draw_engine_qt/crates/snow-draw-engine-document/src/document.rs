@@ -1015,6 +1015,7 @@ pub enum ElementKind {
     SerialNumber,
     Spotlight,
     AutoFilter,
+    Distance,
 }
 
 impl ElementKind {
@@ -1030,7 +1031,8 @@ impl ElementKind {
             | Self::PenHighlight
             | Self::Text
             | Self::SerialNumber
-            | Self::Spotlight => false,
+            | Self::Spotlight
+            | Self::Distance => false,
         }
     }
 }
@@ -1186,8 +1188,10 @@ impl Document {
     fn validate_arrow_text_bindings(&self) -> Result<(), ErrorCode> {
         let mut owned = HashSet::new();
         for (arrow_id, text_id) in self.arrow_text_bindings() {
-            if self.arrow(arrow_id)?.linear_kind != crate::LinearElementKind::Arrow
-                || self.text(text_id).is_err()
+            if !matches!(
+                self.arrow(arrow_id)?.linear_kind,
+                crate::LinearElementKind::Arrow | crate::LinearElementKind::Distance
+            ) || self.text(text_id).is_err()
                 || !owned.insert(text_id)
                 || self.is_text_bound_to_serial_number(text_id)
             {
@@ -1207,6 +1211,9 @@ impl Document {
         for (arrow_id, text_id) in &bindings {
             let arrow = self.arrow(*arrow_id)?;
             let mut text = self.text(*text_id)?.clone();
+            if let Some(derived) = crate::distance_label(arrow, Some(text.layout)) {
+                text = derived;
+            }
             text.center = crate::arrow_text_anchor(arrow);
             text.rotation = 0.0;
             text.auto_resize = true;

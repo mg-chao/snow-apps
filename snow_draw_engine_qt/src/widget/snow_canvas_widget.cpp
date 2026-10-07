@@ -75,6 +75,7 @@ std::optional<SnowCursorStyle> baselineCursorForCanvasTool(SnowCanvasTool tool) 
     switch (tool) {
     case SnowCanvasTool::Shape:
     case SnowCanvasTool::Arrow:
+    case SnowCanvasTool::Distance:
     case SnowCanvasTool::Line:
     case SnowCanvasTool::RectangleHighlight:
     case SnowCanvasTool::RectangleFilter:
@@ -353,6 +354,8 @@ struct SnowCanvasWidget::Impl : public snow_canvas_runtime::Client {
         cursorController.refreshDevicePixelRatio();
     }
     SnowCanvasStyleToolbarState canvasStyleToolbarState() const;
+    bool setCanvasDistanceStyle(const SnowCanvasDistanceStyle& style, quint32 properties);
+    bool setDistanceCreationPixelScale(const QSizeF& scale);
     SnowCanvasSerialNumberToolbarState serialNumberToolbarState() const;
     SnowCanvasWatermarkConfig canvasWatermarkConfig() const;
     bool setCanvasWatermarkConfig(const SnowCanvasWatermarkConfig& config);
@@ -605,9 +608,10 @@ bool SnowCanvasWidget::Impl::prepareActiveTextResizeMeasurementForPointerUp(
     }
     const auto tool = canvasTool();
     const bool geometryTool = tool == SnowCanvasTool::Select || tool == SnowCanvasTool::Arrow ||
-                              tool == SnowCanvasTool::Shape;
+                              tool == SnowCanvasTool::Distance || tool == SnowCanvasTool::Shape;
     if (!state.active &&
-        (!geometryTool || snow_runtime_arrow_text_count(runtimeBinding.engine()) == 0)) {
+        (!geometryTool || (tool != SnowCanvasTool::Distance &&
+                           snow_runtime_arrow_text_count(runtimeBinding.engine()) == 0))) {
         return true;
     }
 
@@ -920,6 +924,33 @@ SnowCanvasSerialNumberToolbarState SnowCanvasWidget::Impl::serialNumberToolbarSt
 
 SnowCanvasSerialNumberToolbarState SnowCanvasWidget::serialNumberToolbarState() const {
     return m_impl->serialNumberToolbarState();
+}
+
+SnowCanvasDistanceStyle SnowCanvasWidget::canvasDistanceStyle() const {
+    return canvasStyleToolbarState().distanceStyle;
+}
+
+bool SnowCanvasWidget::setCanvasDistanceStyle(const SnowCanvasDistanceStyle& style,
+                                              quint32 properties) {
+    return m_impl->setCanvasDistanceStyle(style, properties);
+}
+
+bool SnowCanvasWidget::Impl::setCanvasDistanceStyle(const SnowCanvasDistanceStyle& style,
+                                                    quint32 properties) {
+    if (!snow_canvas_types::validDistanceStyle(style))
+        return false;
+    return applyMutationResult(snow_canvas_commands::setDistanceStylePatch(
+        runtimeBinding.engine(), runtimeBinding.viewportHandle(),
+        snow_canvas_types::toEngineDistanceStyle(style), properties));
+}
+
+bool SnowCanvasWidget::setDistanceCreationPixelScale(const QSizeF& scale) {
+    return m_impl->setDistanceCreationPixelScale(scale);
+}
+
+bool SnowCanvasWidget::Impl::setDistanceCreationPixelScale(const QSizeF& scale) {
+    return applyMutationResult(snow_canvas_commands::setDistancePixelScale(
+        runtimeBinding.engine(), runtimeBinding.viewportHandle(), scale.width(), scale.height()));
 }
 
 bool SnowCanvasWidget::Impl::setCanvasShapeStylePatch(const SnowCanvasShapeStyle& style,
@@ -2881,6 +2912,8 @@ bool SnowCanvasWidget::Impl::applyStyleEdit(const SnowCanvasStyleEdit& edit) {
             using T = std::decay_t<decltype(patch)>;
             if constexpr (std::is_same_v<T, SnowCanvasShapeEdit>) {
                 return setCanvasShapeStylePatch(patch.style, patch.properties, patch.kind);
+            } else if constexpr (std::is_same_v<T, SnowCanvasDistanceEdit>) {
+                return widget.setCanvasDistanceStyle(patch.style, patch.properties);
             } else if constexpr (std::is_same_v<T, SnowCanvasTextEdit>) {
                 return setCanvasTextStyle(patch.style, patch.properties);
             } else if constexpr (std::is_same_v<T, SnowCanvasSerialNumberEdit>) {

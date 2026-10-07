@@ -55,6 +55,7 @@ enum class Item {
     Filter,
     Eraser,
     Watermark,
+    Distance,
 };
 
 enum class Icon {
@@ -99,6 +100,7 @@ enum class Icon {
     RecordingSystemAudio,
     RecordingFolder,
     RecordingTrim,
+    Distance,
 };
 
 struct Descriptor {
@@ -123,6 +125,9 @@ struct EditorDescriptor {
          Icon::Shape},
         {Item::Arrow, "arrow", QT_TRANSLATE_NOOP("DrawingToolbarEditorSettingsWidget", "Arrow"),
          Icon::Arrow},
+        {Item::Distance, "distance",
+         QT_TRANSLATE_NOOP("DrawingToolbarEditorSettingsWidget", "Distance annotation"),
+         Icon::Distance},
         {Item::Line, "line", QT_TRANSLATE_NOOP("DrawingToolbarEditorSettingsWidget", "Line"),
          Icon::Line},
         {Item::FreeDraw, "free-draw",
@@ -396,13 +401,20 @@ editorDescriptors(storage::ScreenshotToolbarLayoutKind kind) {
 
 [[nodiscard]] inline QVector<QStringList> defaultPositions() {
     return {
-        {QStringLiteral("select")},    {QStringLiteral("select-separator")},
-        {QStringLiteral("shape")},     {QStringLiteral("line"), QStringLiteral("arrow")},
-        {QStringLiteral("free-draw")}, {QStringLiteral("spotlight"), QStringLiteral("highlighter")},
-        {QStringLiteral("text")},      {QStringLiteral("serial-number")},
-        {QStringLiteral("filter")},    {QStringLiteral("eraser")},
-        {QStringLiteral("watermark")}, {QStringLiteral("separator")},
-        {QStringLiteral("undo")},      {QStringLiteral("redo")},
+        {QStringLiteral("select")},
+        {QStringLiteral("select-separator")},
+        {QStringLiteral("shape")},
+        {QStringLiteral("distance"), QStringLiteral("line"), QStringLiteral("arrow")},
+        {QStringLiteral("free-draw")},
+        {QStringLiteral("spotlight"), QStringLiteral("highlighter")},
+        {QStringLiteral("text")},
+        {QStringLiteral("serial-number")},
+        {QStringLiteral("filter")},
+        {QStringLiteral("eraser")},
+        {QStringLiteral("watermark")},
+        {QStringLiteral("separator")},
+        {QStringLiteral("undo")},
+        {QStringLiteral("redo")},
     };
 }
 
@@ -854,6 +866,8 @@ moveItemToHidden(const storage::ScreenshotToolbarLayout& input,
         return custom::ToolRectangle();
     case Icon::Arrow:
         return custom::ToolArrow();
+    case Icon::Distance:
+        return custom::DistanceAnnotation();
     case Icon::Line:
         return custom::ToolLine();
     case Icon::FreeDraw:

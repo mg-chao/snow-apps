@@ -317,12 +317,16 @@ void updateOverlayStateForDisplaySession(const ScreenshotDisplaySession& display
     const bool hasSelection = selection.isValid() && !selection.isEmpty();
     const ScreenshotHalfOpenRect selectionRect =
         hasSelection ? ScreenshotHalfOpenRect::fromRectF(selection) : ScreenshotHalfOpenRect();
+    const auto renderSpec =
+        screenshotSelectionRenderSpec(displaySession, selectionRect.toAlignedQRect());
+    const qreal pixelScale = renderSpec.isValid() ? renderSpec.scale : 1.0;
     displaySession.forEachActiveOverlay([&](qsizetype, const CapturedDisplayModel& display,
                                             ScreenshotOverlayWindow* overlay) {
         SnowCanvasWidget* canvas = overlay->canvas();
         if (canvas == nullptr) {
             return;
         }
+        static_cast<void>(canvas->setDistanceCreationPixelScale(QSizeF(pixelScale, pixelScale)));
         const ScreenshotHalfOpenRect displayRect =
             ScreenshotHalfOpenRect::fromRectF(ScreenshotGeometryMapper::displayCanvasRect(display));
         const bool selectionIntersectsDisplay =

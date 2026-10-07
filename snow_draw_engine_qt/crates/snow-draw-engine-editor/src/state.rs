@@ -22,6 +22,7 @@ pub(crate) enum ToolSelectionScope {
     All,
     RectangleOnly,
     ArrowOnly,
+    DistanceOnly,
     LineOnly,
     FreeDrawOnly,
     RectangleHighlightOnly,
@@ -112,6 +113,7 @@ pub(crate) struct CreateArrowState {
     pub(crate) committed_points: Vec<Point<f64>>,
     pub(crate) press_view_position: Point<f64>,
     pub(crate) phase: ArrowCreationPhase,
+    pub(crate) distance_pixel_scale: Point<f64>,
     pub(crate) suggested_binding: Option<ArrowSuggestedBinding>,
 }
 
@@ -454,6 +456,8 @@ pub(crate) struct EditorState {
     pub(crate) default_rectangle_shape_style: RectangleShapeStyle,
     pub(crate) default_spotlight_shape: snow_draw_engine_document::HighlightShape,
     pub(crate) default_arrow_style: ArrowStyle,
+    pub(crate) default_distance_style: crate::DistanceStyle,
+    pub(crate) distance_creation_generation: u32,
     pub(crate) default_line_style: ShapeStyle,
     pub(crate) default_free_draw_style: ShapeStyle,
     pub(crate) default_rectangle_highlight_style: ShapeStyle,
@@ -567,6 +571,8 @@ impl EditorState {
             arrow_text_measurement_generation: 0,
             default_rectangle_shape_style: default_styles.rectangle,
             default_spotlight_shape: default_styles.spotlight_shape,
+            default_distance_style: default_styles.distance,
+            distance_creation_generation: 0,
             default_arrow_style: ArrowStyle {
                 arrow_ratio: snow_draw_engine_core::arrow::normalize_arrow_ratio(
                     default_styles.arrow.arrow_ratio,

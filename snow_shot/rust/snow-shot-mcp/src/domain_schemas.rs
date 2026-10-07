@@ -209,6 +209,7 @@ input!(DocumentId {
 });
 input!(DocumentPoint { point: [f64; 2] });
 choices!(DocumentCanvasTool {
+    Distance,
     Select,
     Rectangle,
     Arrow,
