@@ -48,14 +48,17 @@ DocumentDescriptor descriptorFor(std::uint32_t width, std::uint32_t height,
 class RowSource final : public RasterSource {
   public:
     RowSource(std::uint32_t width, std::uint32_t height, PixelFormat format = kRgba8)
-        : descriptor_(descriptorFor(width, height, format)), pixels_(width * height * 4U) {
+        : descriptor_(descriptorFor(width, height, format)),
+          pixels_(static_cast<std::size_t>(width) * height * format.channel_count()) {
         for (std::uint32_t y = 0; y < height; ++y) {
             for (std::uint32_t x = 0; x < width; ++x) {
-                const std::size_t offset = (static_cast<std::size_t>(y) * width + x) * 4U;
+                const std::size_t offset =
+                    (static_cast<std::size_t>(y) * width + x) * format.channel_count();
                 pixels_[offset] = static_cast<std::byte>((x * 31U + y * 7U) & 0xffU);
                 pixels_[offset + 1U] = static_cast<std::byte>((x * 3U + y * 29U) & 0xffU);
                 pixels_[offset + 2U] = static_cast<std::byte>((x * 17U + y * 11U) & 0xffU);
-                pixels_[offset + 3U] = static_cast<std::byte>((x + y) % 5U == 0U ? 73U : 255U);
+                if (format.channel_count() == 4)
+                    pixels_[offset + 3U] = static_cast<std::byte>((x + y) % 5U == 0U ? 73U : 255U);
             }
         }
     }
@@ -69,7 +72,9 @@ class RowSource final : public RasterSource {
     Result<void> read_rows(std::uint32_t frame, std::uint32_t plane, std::uint32_t first,
                            std::uint32_t count, std::size_t stride,
                            std::span<std::byte> destination, std::stop_token stop) const override {
-        const std::size_t row_bytes = static_cast<std::size_t>(descriptor_.canvas_width) * 4U;
+        const std::size_t row_bytes =
+            static_cast<std::size_t>(descriptor_.canvas_width) *
+            descriptor_.frames.front().layout.planes.front().format.channel_count();
         if (stop.stop_requested())
             return Status::error(ErrorCode::cancelled, "row read cancelled");
         if (frame != 0 || plane != 0 || count == 0 || first > descriptor_.canvas_height ||
@@ -90,9 +95,10 @@ class RowSource final : public RasterSource {
     }
 
     Document document(Format format = Format::png) const {
-        MutableImage image = take(
-            MutableImage::allocate(descriptor_.canvas_width, descriptor_.canvas_height, kRgba8),
-            "allocate image fixture");
+        MutableImage image =
+            take(MutableImage::allocate(descriptor_.canvas_width, descriptor_.canvas_height,
+                                        descriptor_.frames.front().layout.planes.front().format),
+                 "allocate image fixture");
         std::memcpy(image.pixels().data(), pixels_.data(), pixels_.size());
         Document document;
         document.format = format;
@@ -107,6 +113,12 @@ class RowSource final : public RasterSource {
 
     void setFormat(Format format) {
         descriptor_.format = format;
+    }
+    void makeOpaque() {
+        if (descriptor_.frames.front().layout.planes.front().format.channel_count() != 4)
+            return;
+        for (std::size_t offset = 3; offset < pixels_.size(); offset += 4)
+            pixels_[offset] = std::byte{255};
     }
     void setPixelFormat(PixelFormat format) {
         RasterFrameDescriptor& frame = descriptor_.frames.front();
@@ -221,6 +233,101 @@ void resizeParityAndValidation() {
             "raster resize accepted multiple frames");
 }
 
+void resizePackedTransferParity() {
+    for (const PixelFormat packed : {kRgba8, kBgra8}) {
+        RowSource source(256, 17, packed);
+        for (const ResamplingMethod method :
+             {ResamplingMethod::linear, ResamplingMethod::lanczos3}) {
+            for (const auto size : {std::array<std::uint32_t, 2>{128, 9}, {173, 23}, {1, 1}}) {
+                for (const bool linear : {false, true}) {
+                    ResizeOptions options{size[0], size[1], method};
+                    options.linear_rgb = linear;
+                    options.maximum_threads = 1;
+                    TransformOptions transform_options;
+                    transform_options.resize = options;
+                    source.setPixelFormat(packed);
+                    const auto specialized = take(transform(source.document(), transform_options),
+                                                  "resize packed transfer fixture");
+                    // Byte order is immaterial for 8-bit samples. A different
+                    // descriptor selects the generic scalar transfer-function path.
+                    PixelFormat scalar = packed;
+                    scalar.little_endian = !packed.little_endian;
+                    source.setPixelFormat(scalar);
+                    const auto reference = take(transform(source.document(), transform_options),
+                                                "resize scalar transfer reference");
+                    const auto left = specialized.frames.front().image.view();
+                    const auto right = reference.frames.front().image.view();
+                    require(left.pixels.size() == right.pixels.size() &&
+                                std::equal(left.pixels.begin(), left.pixels.end(),
+                                           right.pixels.begin()),
+                            "packed resize changed scalar transfer-function rounding");
+                }
+            }
+        }
+    }
+}
+
+void packedCodecStreamingAndOpacity() {
+    Service service;
+    for (const Format format :
+         {Format::png, Format::jpeg, Format::bmp, Format::webp, Format::jxl, Format::avif}) {
+        if (!service.encoder_info(format))
+            continue;
+        for (const bool opaque : {false, true}) {
+            if (!opaque && format == Format::jpeg)
+                continue;
+            RowSource source(257, 129);
+            if (opaque)
+                source.makeOpaque();
+            source.setFormat(format);
+            EncodeOptions options;
+            options.format = format;
+            options.lossless = true;
+            options.quality = 100;
+            options.verified_alpha_content =
+                opaque ? AlphaContent::opaque : AlphaContent::non_opaque;
+            if (format != Format::png)
+                require(take(service.raster_encode_route(source.descriptor(), options),
+                             "query packed streaming route") == RasterEncodeRoute::native,
+                        "packed encoding did not select its native route");
+            auto rows = std::make_shared<std::vector<std::byte>>();
+            require(service.encode(source, memory_output(rows), options).has_value(),
+                    "packed streaming encoder failed");
+            require(source.maximumRows() <= 64 && source.strictlyIncreasing(),
+                    "packed encoder materialized or reread its source raster");
+            auto image = std::make_shared<std::vector<std::byte>>();
+            require(
+                service.encode(source.document(format), memory_output(image), options).has_value(),
+                "packed document reference encoding failed");
+            DecodeOptions decode;
+            decode.output_format = kRgba8;
+            const auto result =
+                take(service.decode(memory_input(rows), decode), "decode packed rows");
+            const auto expected =
+                take(service.decode(memory_input(image), decode), "decode packed reference");
+            const auto left = result.frames.front().image.view();
+            const auto right = expected.frames.front().image.view();
+            require(left.pixels.size() == right.pixels.size() &&
+                        std::equal(left.pixels.begin(), left.pixels.end(), right.pixels.begin()),
+                    "packed streaming encoder changed document pixels");
+            if (opaque &&
+                (format == Format::png || format == Format::jxl || format == Format::avif)) {
+                const auto info = take(service.inspect(memory_input(rows)), "inspect opaque rows");
+                require(!info.frames.front().has_alpha, "opaque row encoding retained alpha");
+            }
+            source.resetMetrics();
+            std::stop_source stopped;
+            stopped.request_stop();
+            auto cancelled = std::make_shared<std::vector<std::byte>>();
+            const auto status =
+                service.encode(source, memory_output(cancelled), options, stopped.get_token());
+            require(!status && status.error().code == ErrorCode::cancelled &&
+                        source.readCount() == 0,
+                    "packed row encoding ignored pre-cancellation");
+        }
+    }
+}
+
 void nativeCodecRoutesAndParity() {
     Service service;
     for (Format format : {Format::jxl, Format::avif}) {
@@ -276,11 +383,98 @@ void nativeCodecRoutesAndParity() {
                 "unsupported packed descriptor did not encode through the materialized fallback");
     }
 }
+
+void packedBgrAndRgbCodecParity() {
+    Service service;
+    PixelFormat bgr = kRgb8;
+    bgr.channels = ChannelLayout::bgr;
+    for (const Format format : {Format::png, Format::jpeg, Format::bmp, Format::webp}) {
+        if (!service.encoder_info(format))
+            continue;
+        for (const PixelFormat pixels : {kBgra8, kRgb8, bgr}) {
+            if (format != Format::bmp && pixels != kBgra8)
+                continue;
+            RowSource source(37, 65, pixels);
+            source.makeOpaque();
+            source.setFormat(format);
+            EncodeOptions options;
+            options.format = format;
+            options.lossless = format != Format::webp;
+            options.verified_alpha_content = AlphaContent::opaque;
+            auto encoded_rows = std::make_shared<std::vector<std::byte>>();
+            auto encoded_image = std::make_shared<std::vector<std::byte>>();
+            require(
+                service.encode(source, memory_output(encoded_rows), options).has_value() &&
+                    service.encode(source.document(format), memory_output(encoded_image), options)
+                        .has_value(),
+                "packed BGR or RGB codec parity encoding failed");
+            DecodeOptions decode;
+            decode.output_format = kRgba8;
+            const auto result =
+                take(service.decode(memory_input(encoded_rows), decode), "decode BGR rows");
+            const auto reference =
+                take(service.decode(memory_input(encoded_image), decode), "decode BGR reference");
+            const auto left = result.frames.front().image.view();
+            const auto right = reference.frames.front().image.view();
+            require(left.pixels.size() == right.pixels.size() &&
+                        std::equal(left.pixels.begin(), left.pixels.end(), right.pixels.begin()),
+                    "packed BGR or RGB row encoding changed document pixels");
+        }
+    }
+}
+
+void mappedOnlyCodecParity() {
+    class MappedSource final : public RasterSource {
+      public:
+        explicit MappedSource(const RowSource& rows)
+            : descriptor_(rows.descriptor()),
+              document_(std::make_shared<Document>(rows.document())) {}
+        const DocumentDescriptor& descriptor() const noexcept override {
+            return descriptor_;
+        }
+        RasterAccess access() const noexcept override {
+            return RasterAccess::mapped_planes;
+        }
+        Result<void> read_rows(std::uint32_t, std::uint32_t, std::uint32_t, std::uint32_t,
+                               std::size_t, std::span<std::byte>, std::stop_token) const override {
+            return Status::error(ErrorCode::internal_error, "mapped source must not copy rows");
+        }
+        Result<MappedPlane> map_plane(std::uint32_t, std::uint32_t) const override {
+            const auto& image = document_->frames.front().image;
+            return MappedPlane{document_, image.pixels(), image.row_stride()};
+        }
+
+      private:
+        DocumentDescriptor descriptor_;
+        std::shared_ptr<const Document> document_;
+    };
+    Service service;
+    for (const Format format : {Format::bmp, Format::webp}) {
+        if (!service.encoder_info(format))
+            continue;
+        RowSource rows(37, 65);
+        rows.setFormat(format);
+        MappedSource mapped(rows);
+        EncodeOptions options;
+        options.format = format;
+        options.lossless = true;
+        auto mapped_bytes = std::make_shared<std::vector<std::byte>>();
+        auto row_bytes = std::make_shared<std::vector<std::byte>>();
+        require(service.encode(mapped, memory_output(mapped_bytes), options).has_value() &&
+                    service.encode(rows, memory_output(row_bytes), options).has_value(),
+                "mapped-only native packed encoding failed");
+        require(*mapped_bytes == *row_bytes, "mapped-only packed encoding changed encoded bytes");
+    }
+}
 } // namespace
 
 int main() {
     try {
         resizeParityAndValidation();
+        resizePackedTransferParity();
+        packedCodecStreamingAndOpacity();
+        packedBgrAndRgbCodecParity();
+        mappedOnlyCodecParity();
         nativeCodecRoutesAndParity();
     } catch (const std::exception& error) {
         std::cerr << error.what() << '\n';

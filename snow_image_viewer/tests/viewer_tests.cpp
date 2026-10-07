@@ -20,6 +20,7 @@
 #include <QFileInfo>
 #include <QEventLoop>
 #include <QProcess>
+#include <QSignalBlocker>
 #include <QSignalSpy>
 #include <QTemporaryDir>
 #include <QTemporaryFile>
@@ -894,6 +895,449 @@ void testPreparedPreviewSource(const QString& directory) {
     loop.exec();
     require(preparedPreview && !decodedCodec,
             "editing palette reduction publishes prepared pixels without a worker crash");
+}
+
+void testPreparedRasterReuse(const QString& directory, bool retain, bool cancelPreview = false) {
+    snow::image_viewer::EditPipelineOptions options;
+    // Zero selects the controller's automatic budget. A one-byte budget retains
+    // no raster or encoded artifact and exercises the uncached path.
+    options.cacheBudgetBytes = retain ? 8U * 1024U * 1024U : 1;
+    if (cancelPreview)
+        options.workerTestMode = QStringLiteral("block-preview-cooperative");
+    snow::image_viewer::EditPipelineController controller(options, nullptr);
+    snow::image_viewer::EditExportSettings settings;
+    settings.sourceSize = QSize(128, 64);
+    settings.width = 64;
+    settings.height = 32;
+    settings.format = settings.encode.format = snow::image::Format::png;
+    settings.encode.compression_level = 1;
+    settings.reducePalette = true;
+    settings.paletteColors = 2;
+    settings.ditheringPercent = 0;
+    QEventLoop loop;
+    int encodes = 0, preparationHits = 0, completed = 0;
+    bool replacedPreview = false;
+    QString failure;
+    std::vector<std::byte> firstPixels;
+    QObject::connect(&controller, &snow::image_viewer::EditPipelineController::sourceReady, &loop,
+                     [&] { controller.requestEdit(settings); });
+    QObject::connect(&controller, &snow::image_viewer::EditPipelineController::exactRasterRequested,
+                     &loop, [&](quint64 requestId, const auto& requested) {
+                         QImage image(requested.width, requested.height, QImage::Format_RGBA8888);
+                         for (int y = 0; y < image.height(); ++y)
+                             for (int x = 0; x < image.width(); ++x)
+                                 image.setPixelColor(
+                                     x, y, QColor(x * 4, y * 8, (x + y) * 2, x % 7 ? 255 : 120));
+                         controller.submitGpuResizeResult(requestId, gpuReadback(std::move(image)));
+                     });
+    QObject::connect(&controller,
+                     &snow::image_viewer::EditPipelineController::performanceStageCompleted, &loop,
+                     [&](quint64, const QString& stage, qint64) {
+                         if (stage == QStringLiteral("exact.encode"))
+                             ++encodes;
+                         if (stage == QStringLiteral("exact.preparation_cache_hit"))
+                             ++preparationHits;
+                     });
+    QObject::connect(
+        &controller, &snow::image_viewer::EditPipelineController::artifactReady, &loop,
+        [&](const snow::image_viewer::EncodedEditResult& result) {
+            if (!cancelPreview || replacedPreview)
+                return;
+            replacedPreview = true;
+            const auto decoded = snow::image::Service().decode(result.artifact->input());
+            require(decoded && !decoded.value().frames.empty(),
+                    "published artifact remains decodable before preview cancellation");
+            const auto pixels = decoded.value().frames.front().image.pixels();
+            firstPixels.assign(pixels.begin(), pixels.end());
+            settings.encode.compression_level = 9;
+            controller.requestEdit(settings);
+        });
+    QObject::connect(&controller, &snow::image_viewer::EditPipelineController::exactReady, &loop,
+                     [&](const snow::image_viewer::ExactEditResult& result) {
+                         const auto decoded =
+                             snow::image::Service().decode(result.artifact->input());
+                         require(decoded && !decoded.value().frames.empty(),
+                                 "prepared-cache exports remain decodable");
+                         const auto pixels = decoded.value().frames.front().image.pixels();
+                         ++completed;
+                         const int exportIndex = completed + (cancelPreview ? 1 : 0);
+                         if (exportIndex == 1) {
+                             firstPixels.assign(pixels.begin(), pixels.end());
+                             settings.encode.compression_level = 9;
+                             controller.requestEdit(settings);
+                         } else if (exportIndex == 2) {
+                             require(std::equal(pixels.begin(), pixels.end(), firstPixels.begin(),
+                                                firstPixels.end()),
+                                     "encoder-only changes preserve every quantized pixel");
+                             require(preparationHits == (retain ? 1 : 0),
+                                     "prepared pixels are reused only within the cache budget");
+                             settings.paletteColors = 4;
+                             controller.requestEdit(settings);
+                         } else {
+                             require(preparationHits == (retain ? 1 : 0),
+                                     "palette changes invalidate prepared pixels");
+                             loop.quit();
+                         }
+                     });
+    QObject::connect(&controller, &snow::image_viewer::EditPipelineController::failed, &loop,
+                     [&](const QString& message) {
+                         failure = message;
+                         loop.quit();
+                     });
+    QTimer::singleShot(10'000, &loop, &QEventLoop::quit);
+    controller.setGpuSource(directory + QStringLiteral("/prepared-cache-source.png"));
+    loop.exec();
+    require(failure.isEmpty() && completed == (cancelPreview ? 2 : 3) && encodes == 3 &&
+                (!cancelPreview || controller.cancellationCount() == 1),
+            "preparation caching keeps encoding and palette invalidation independent");
+    controller.clearAllCachesForBenchmark();
+    require(controller.mappedBytes() == 0,
+            "clearing export caches releases prepared and transformed raster mappings");
+}
+
+void testEquivalentInFlightEdit(const QString& directory, bool duringReadback = false,
+                                bool duringBasePreparation = false) {
+    snow::image_viewer::EditPipelineController controller;
+    snow::image_viewer::EditExportSettings settings;
+    settings.sourceSize = QSize(64, 32);
+    settings.width = 32;
+    settings.height = 16;
+    settings.format = settings.encode.format = snow::image::Format::png;
+    QEventLoop loop;
+    quint64 request = 0;
+    int dispatched = 0, encodes = 0, readbacks = 0;
+    bool complete = false;
+    QString failure;
+    QObject::connect(&controller, &snow::image_viewer::EditPipelineController::sourceReady, &loop,
+                     [&] { request = controller.requestEdit(settings); });
+    QObject::connect(&controller, &snow::image_viewer::EditPipelineController::exactRasterRequested,
+                     &loop, [&](quint64 requestId, const auto& requested) {
+                         ++readbacks;
+                         if (duringReadback) {
+                             settings.maintainAspectRatio = false;
+                             require(controller.requestEdit(settings) == request,
+                                     "equivalent edits retain an outstanding GPU readback");
+                             controller.flushPendingExact();
+                         }
+                         QImage image(requested.width, requested.height, QImage::Format_RGBA8888);
+                         image.fill(Qt::cyan);
+                         controller.submitGpuResizeResult(requestId, gpuReadback(std::move(image)));
+                         if (duringBasePreparation) {
+                             settings.maintainAspectRatio = false;
+                             require(controller.requestEdit(settings) == request,
+                                     "equivalent edits retain the active base preparation");
+                             controller.flushPendingExact();
+                         }
+                     });
+    QObject::connect(&controller,
+                     &snow::image_viewer::EditPipelineController::performanceStageCompleted, &loop,
+                     [&](quint64, const QString& stage, qint64) {
+                         if (stage == QStringLiteral("worker.job_dispatched")) {
+                             ++dispatched;
+                             if (!duringReadback && !duringBasePreparation) {
+                                 settings.maintainAspectRatio = false;
+                                 require(controller.requestEdit(settings) == request,
+                                         "an equivalent in-flight edit keeps the export identity");
+                             }
+                         }
+                         if (stage == QStringLiteral("exact.encode"))
+                             ++encodes;
+                     });
+    QObject::connect(&controller, &snow::image_viewer::EditPipelineController::exactReady, &loop,
+                     [&](const snow::image_viewer::ExactEditResult& result) {
+                         complete = result.requestId == request && result.settings == settings &&
+                                    controller.hasEncodedArtifact(settings);
+                         loop.quit();
+                     });
+    QObject::connect(&controller, &snow::image_viewer::EditPipelineController::failed, &loop,
+                     [&](const QString& message) {
+                         failure = message;
+                         loop.quit();
+                     });
+    QTimer::singleShot(10'000, &loop, &QEventLoop::quit);
+    controller.setGpuSource(directory + QStringLiteral("/equivalent-export-source.png"));
+    loop.exec();
+    require(failure.isEmpty() && complete && dispatched == 1 && encodes == 1 && readbacks == 1 &&
+                controller.cancellationCount() == 0,
+            "presentation-only edits preserve the in-flight encoder and latest settings");
+}
+
+void testCancelledBasePreparationIsNotReused(const QString& directory, bool replaceSource) {
+    snow::image_viewer::EditPipelineController controller;
+    snow::image_viewer::EditExportSettings settings;
+    settings.sourceSize = QSize(64, 32);
+    settings.width = 32;
+    settings.height = 16;
+    settings.format = settings.encode.format = snow::image::Format::png;
+    QEventLoop loop;
+    quint64 replacement = 0;
+    int readbacks = 0, dispatched = 0;
+    bool started = false, complete = false;
+    QString failure;
+    const QString sourcePath = directory + QStringLiteral("/cancelled-preparation-source.png");
+    QObject::connect(&controller, &snow::image_viewer::EditPipelineController::sourceReady, &loop,
+                     [&] {
+                         if (!started) {
+                             started = true;
+                             controller.requestEdit(settings);
+                         }
+                     });
+    QObject::connect(
+        &controller, &snow::image_viewer::EditPipelineController::exactRasterRequested, &loop,
+        [&](quint64 requestId, const auto& requested) {
+            ++readbacks;
+            QImage image(requested.width, requested.height, QImage::Format_RGBA8888);
+            image.fill(Qt::cyan);
+            controller.submitGpuResizeResult(requestId, gpuReadback(std::move(image)));
+            if (readbacks != 1)
+                return;
+            // The queued base-preparation completion cannot run during this signal handler.
+            if (replaceSource)
+                controller.setGpuSource(sourcePath);
+            else
+                controller.cancel();
+            const quint64 cancelledIdentity = controller.latestRequestId();
+            replacement = controller.requestEdit(settings);
+            require(replacement > cancelledIdentity,
+                    "a cancelled preparation cannot supply the replacement request identity");
+        });
+    QObject::connect(&controller,
+                     &snow::image_viewer::EditPipelineController::performanceStageCompleted, &loop,
+                     [&](quint64, const QString& stage, qint64) {
+                         if (stage == QStringLiteral("worker.job_dispatched"))
+                             ++dispatched;
+                     });
+    QObject::connect(&controller, &snow::image_viewer::EditPipelineController::exactReady, &loop,
+                     [&](const snow::image_viewer::ExactEditResult& result) {
+                         complete = result.requestId == replacement &&
+                                    controller.hasEncodedArtifact(settings);
+                         loop.quit();
+                     });
+    QObject::connect(&controller, &snow::image_viewer::EditPipelineController::failed, &loop,
+                     [&](const QString& message) {
+                         failure = message;
+                         loop.quit();
+                     });
+    QTimer::singleShot(5000, &loop, &QEventLoop::quit);
+    controller.setGpuSource(sourcePath);
+    loop.exec();
+    require(failure.isEmpty() && complete && readbacks == 2 && dispatched == 1 &&
+                controller.cancellationCount() == 1,
+            "cancelled or replaced base preparations allow identical exports to complete");
+}
+
+void testPreparedRasterSourceGeneration(const QString& directory) {
+    snow::image_viewer::EditPipelineOptions options;
+    options.cacheBudgetBytes = 8U * 1024U * 1024U;
+    options.workerTestMode = QStringLiteral("block-preview-cooperative");
+    snow::image_viewer::EditPipelineController controller(options, nullptr);
+    snow::image_viewer::EditExportSettings settings;
+    settings.sourceSize = QSize(128, 64);
+    settings.width = 64;
+    settings.height = 32;
+    settings.format = settings.encode.format = snow::image::Format::png;
+    settings.encode.compression_level = 1;
+    settings.reducePalette = true;
+    settings.paletteColors = 2;
+    settings.ditheringPercent = 0;
+    QEventLoop loop;
+    bool sourceReplaced = false, complete = false;
+    int preparationHits = 0;
+    QString failure;
+    QObject::connect(&controller, &snow::image_viewer::EditPipelineController::sourceReady, &loop,
+                     [&] { controller.requestEdit(settings); });
+    QObject::connect(&controller, &snow::image_viewer::EditPipelineController::exactRasterRequested,
+                     &loop, [&](quint64 requestId, const auto& requested) {
+                         QImage image(requested.width, requested.height, QImage::Format_RGBA8888);
+                         image.fill(sourceReplaced ? Qt::blue : Qt::red);
+                         controller.submitGpuResizeResult(requestId, gpuReadback(std::move(image)));
+                     });
+    QObject::connect(
+        &controller, &snow::image_viewer::EditPipelineController::performanceStageCompleted, &loop,
+        [&](quint64 requestId, const QString& stage, qint64) {
+            if (stage == QStringLiteral("exact.preparation_cache_hit"))
+                ++preparationHits;
+            if (stage != QStringLiteral("worker.job_dispatched") || sourceReplaced)
+                return;
+            auto* worker = controller.findChild<QProcess*>();
+            require(worker != nullptr, "find the exporting process for source replacement");
+            QSignalBlocker holdOutput(worker);
+            worker->setReadChannel(QProcess::StandardOutput);
+            QElapsedTimer deadline;
+            deadline.start();
+            bool published = false;
+            while (!published) {
+                QByteArray output = worker->peek(worker->bytesAvailable());
+                snow::image_viewer::worker_protocol::Frame frame;
+                QString error;
+                while (snow::image_viewer::worker_protocol::takeFrame(&output, &frame, &error)) {
+                    if (frame.type ==
+                        snow::image_viewer::worker_protocol::MessageType::artifact_ready) {
+                        published = frame.payload.value(QStringLiteral("requestId")).toString() ==
+                                    QString::number(requestId);
+                        require(!frame.payload.value(QStringLiteral("preparedPath"))
+                                     .toString()
+                                     .isEmpty(),
+                                "the first source has published prepared pixels");
+                        break;
+                    }
+                }
+                require(error.isEmpty(), "read the queued artifact publication frame");
+                if (!published) {
+                    const qint64 remaining = 5000 - deadline.elapsed();
+                    require(remaining > 0 && worker->waitForReadyRead(static_cast<int>(remaining)),
+                            "wait for artifact publication while controller delivery is held");
+                }
+            }
+            // Advance the source before the controller receives the verified old publication.
+            sourceReplaced = true;
+            settings.encode.compression_level = 9;
+            controller.setGpuSource(directory + QStringLiteral("/prepared-generation-blue.png"));
+            holdOutput.unblock();
+            require(
+                QMetaObject::invokeMethod(worker, "readyReadStandardOutput", Qt::DirectConnection),
+                "deliver the queued old-source publication after source replacement");
+        });
+    QObject::connect(&controller, &snow::image_viewer::EditPipelineController::exactReady, &loop,
+                     [&](const snow::image_viewer::ExactEditResult& result) {
+                         const auto decoded =
+                             snow::image::Service().decode(result.artifact->input());
+                         require(decoded && !decoded.value().frames.empty(),
+                                 "decode the replacement source export");
+                         const auto pixels = decoded.value().frames.front().image.pixels();
+                         complete = pixels.size() >= 4 && pixels[0] == std::byte{0} &&
+                                    pixels[1] == std::byte{0} && pixels[2] == std::byte{255};
+                         loop.quit();
+                     });
+    QObject::connect(&controller, &snow::image_viewer::EditPipelineController::failed, &loop,
+                     [&](const QString& message) {
+                         failure = message;
+                         loop.quit();
+                     });
+    QTimer::singleShot(10'000, &loop, &QEventLoop::quit);
+    controller.setGpuSource(directory + QStringLiteral("/prepared-generation-red.png"));
+    loop.exec();
+    require(failure.isEmpty() && complete && preparationHits == 0,
+            "queued prepared rasters retain their source generation across replacement");
+}
+
+void testEquivalentEditRetainsPublishedArtifact(const QString& directory, bool failPreview) {
+    snow::image_viewer::EditPipelineOptions options;
+    if (failPreview)
+        options.workerTestMode = QStringLiteral("preview-failure");
+    snow::image_viewer::EditPipelineController controller(options, nullptr);
+    snow::image_viewer::EditExportSettings settings;
+    settings.sourceSize = QSize(64, 32);
+    settings.width = 32;
+    settings.height = 16;
+    settings.format = settings.encode.format = snow::image::Format::png;
+    QEventLoop loop;
+    int encodes = 0;
+    bool artifactUsable = false, complete = false;
+    QString failure;
+    QObject::connect(&controller, &snow::image_viewer::EditPipelineController::sourceReady, &loop,
+                     [&] { controller.requestEdit(settings); });
+    QObject::connect(&controller, &snow::image_viewer::EditPipelineController::exactRasterRequested,
+                     &loop, [&](quint64 requestId, const auto& requested) {
+                         QImage image(requested.width, requested.height, QImage::Format_RGBA8888);
+                         image.fill(Qt::cyan);
+                         controller.submitGpuResizeResult(requestId, gpuReadback(std::move(image)));
+                     });
+    QObject::connect(&controller,
+                     &snow::image_viewer::EditPipelineController::performanceStageCompleted, &loop,
+                     [&](quint64, const QString& stage, qint64) {
+                         if (stage == QStringLiteral("exact.encode"))
+                             ++encodes;
+                     });
+    QObject::connect(&controller, &snow::image_viewer::EditPipelineController::artifactReady, &loop,
+                     [&](const snow::image_viewer::EncodedEditResult& result) {
+                         settings.maintainAspectRatio = false;
+                         require(controller.requestEdit(settings) == result.requestId,
+                                 "equivalent edits preserve the published export identity");
+                         artifactUsable = controller.hasEncodedArtifact(settings) &&
+                                          controller.encodedArtifact() == result.artifact;
+                         require(artifactUsable,
+                                 "presentation changes retain the already-published artifact");
+                         controller.flushPendingExact();
+                     });
+    QObject::connect(&controller, &snow::image_viewer::EditPipelineController::exactReady, &loop,
+                     [&](const snow::image_viewer::ExactEditResult& result) {
+                         complete = !failPreview && result.settings == settings &&
+                                    controller.hasExactPreview(settings);
+                         loop.quit();
+                     });
+    QObject::connect(&controller, &snow::image_viewer::EditPipelineController::previewUnavailable,
+                     &loop, [&](quint64, const QString&) {
+                         complete = failPreview && controller.hasEncodedArtifact(settings);
+                         loop.quit();
+                     });
+    QObject::connect(&controller, &snow::image_viewer::EditPipelineController::failed, &loop,
+                     [&](const QString& message) {
+                         failure = message;
+                         loop.quit();
+                     });
+    QTimer::singleShot(5000, &loop, &QEventLoop::quit);
+    controller.setGpuSource(directory + QStringLiteral("/equivalent-published-source.png"));
+    loop.exec();
+    require(failure.isEmpty() && artifactUsable && complete && encodes == 1 &&
+                controller.cancellationCount() == 0,
+            "published artifacts remain usable through equivalent edits and preview completion");
+}
+
+void testEquivalentQueuedCacheHit(const QString& directory) {
+    snow::image_viewer::EditPipelineController controller;
+    snow::image_viewer::EditExportSettings settings;
+    settings.sourceSize = QSize(64, 32);
+    settings.width = 32;
+    settings.height = 16;
+    settings.format = settings.encode.format = snow::image::Format::png;
+    QEventLoop loop;
+    quint64 cacheRequest = 0;
+    int encodes = 0, completed = 0, readbacks = 0;
+    QString failure;
+    QObject::connect(&controller, &snow::image_viewer::EditPipelineController::sourceReady, &loop,
+                     [&] { controller.requestEdit(settings); });
+    QObject::connect(&controller, &snow::image_viewer::EditPipelineController::exactRasterRequested,
+                     &loop, [&](quint64 requestId, const auto& requested) {
+                         ++readbacks;
+                         QImage image(requested.width, requested.height, QImage::Format_RGBA8888);
+                         image.fill(Qt::cyan);
+                         controller.submitGpuResizeResult(requestId, gpuReadback(std::move(image)));
+                     });
+    QObject::connect(&controller,
+                     &snow::image_viewer::EditPipelineController::performanceStageCompleted, &loop,
+                     [&](quint64, const QString& stage, qint64) {
+                         if (stage == QStringLiteral("exact.encode"))
+                             ++encodes;
+                     });
+    QObject::connect(&controller, &snow::image_viewer::EditPipelineController::exactReady, &loop,
+                     [&](const snow::image_viewer::ExactEditResult& result) {
+                         ++completed;
+                         if (completed == 1) {
+                             settings.maintainAspectRatio = false;
+                             cacheRequest = controller.requestEdit(settings);
+                             settings.maintainAspectRatio = true;
+                             require(controller.requestEdit(settings) == cacheRequest,
+                                     "equivalent edits retain queued cache publication identity");
+                             controller.flushPendingExact();
+                         } else {
+                             require(result.requestId == cacheRequest &&
+                                         result.settings == settings,
+                                     "cache publication carries the latest presentation settings");
+                             loop.quit();
+                         }
+                     });
+    QObject::connect(&controller, &snow::image_viewer::EditPipelineController::failed, &loop,
+                     [&](const QString& message) {
+                         failure = message;
+                         loop.quit();
+                     });
+    QTimer::singleShot(5000, &loop, &QEventLoop::quit);
+    controller.setGpuSource(directory + QStringLiteral("/equivalent-cached-source.png"));
+    loop.exec();
+    require(failure.isEmpty() && completed == 2 && encodes == 1 && readbacks == 1 &&
+                controller.cancellationCount() == 0,
+            "equivalent queued cache hits avoid duplicate readbacks and encodes");
 }
 
 void testPngPreparationPreserves16Bit() {
@@ -2469,6 +2913,42 @@ void testExportKeyNormalization() {
             "unsupported JPEG metadata preservation normalizes to one cache key");
 
     settings.format = snow::image::Format::webp;
+    settings.encode = {};
+    settings.encode.format = settings.format;
+    settings.reducePalette = true;
+    settings.paletteColors = 16;
+    settings.ditheringPercent = 30;
+    const auto prepared = snow::image_viewer::preparationKey(settings, 7);
+    settings.encode.quality = 70;
+    settings.encode.effort = 6;
+    settings.encode.lossless = true;
+    settings.encode.lossless_effort = 9;
+    require(prepared == snow::image_viewer::preparationKey(settings, 7),
+            "codec quality, lossless mode and effort reuse the same prepared pixels");
+    settings.paletteColors = 32;
+    require(prepared != snow::image_viewer::preparationKey(settings, 7),
+            "palette size invalidates prepared pixels");
+    settings.paletteColors = 16;
+    settings.ditheringPercent = 0;
+    require(prepared != snow::image_viewer::preparationKey(settings, 7),
+            "dithering invalidates prepared pixels");
+    settings.ditheringPercent = 30;
+    settings.encode.preserve_metadata = false;
+    require(prepared != snow::image_viewer::preparationKey(settings, 7),
+            "metadata policy invalidates the prepared document");
+    settings.encode.preserve_metadata = true;
+    require(prepared != snow::image_viewer::preparationKey(settings, 8),
+            "new source generation invalidates prepared pixels");
+    settings.width = 32;
+    require(prepared != snow::image_viewer::preparationKey(settings, 7),
+            "resize invalidates prepared pixels");
+    settings.width = 64;
+    settings.format = snow::image::Format::jpeg;
+    settings.encode.format = settings.format;
+    require(prepared != snow::image_viewer::preparationKey(settings, 7),
+            "format color and alpha preparation policies isolate prepared documents");
+
+    settings.format = snow::image::Format::webp;
     settings.encode.format = settings.format;
     settings.width = 16'383;
     settings.height = 1;
@@ -2734,6 +3214,24 @@ int main(int argc, char** argv) {
         testWorkerStartupFailureCompletes(directory.path(), "incompatible");
         return 0;
     }
+    if (application.arguments().contains(QStringLiteral("--export-reuse-only"))) {
+        QTemporaryDir directory;
+        require(directory.isValid(), "create export reuse test directory");
+        testPreparedRasterReuse(directory.path(), true);
+        testPreparedRasterReuse(directory.path(), false);
+        testPreparedRasterReuse(directory.path(), true, true);
+        testEquivalentInFlightEdit(directory.path());
+        testEquivalentInFlightEdit(directory.path(), true);
+        testEquivalentInFlightEdit(directory.path(), false, true);
+        testCancelledBasePreparationIsNotReused(directory.path(), false);
+        testCancelledBasePreparationIsNotReused(directory.path(), true);
+        testPreparedRasterSourceGeneration(directory.path());
+        testEquivalentEditRetainsPublishedArtifact(directory.path(), false);
+        testEquivalentEditRetainsPublishedArtifact(directory.path(), true);
+        testEquivalentQueuedCacheHit(directory.path());
+        testExportKeyNormalization();
+        return 0;
+    }
     if (argc > 1) {
         const QString path = QString::fromLocal8Bit(argv[1]);
         const snow::image_viewer::DecodeResult decoded =
@@ -2759,6 +3257,18 @@ int main(int argc, char** argv) {
     testGpuEditEncoding(directory.path());
     testTiledGpuEditEncoding(directory.path());
     testPreparedPreviewSource(directory.path());
+    testPreparedRasterReuse(directory.path(), true);
+    testPreparedRasterReuse(directory.path(), false);
+    testPreparedRasterReuse(directory.path(), true, true);
+    testEquivalentInFlightEdit(directory.path());
+    testEquivalentInFlightEdit(directory.path(), true);
+    testEquivalentInFlightEdit(directory.path(), false, true);
+    testCancelledBasePreparationIsNotReused(directory.path(), false);
+    testCancelledBasePreparationIsNotReused(directory.path(), true);
+    testPreparedRasterSourceGeneration(directory.path());
+    testEquivalentEditRetainsPublishedArtifact(directory.path(), false);
+    testEquivalentEditRetainsPublishedArtifact(directory.path(), true);
+    testEquivalentQueuedCacheHit(directory.path());
     testPngPreparationPreserves16Bit();
     testVerifiedAlphaPreparation();
     testInvalidGpuReadback(directory.path());

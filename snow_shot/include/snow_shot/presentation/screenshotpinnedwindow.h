@@ -86,6 +86,8 @@ class ScreenshotRecognitionSessionController;
 class ScreenshotPinnedEditController;
 class ScreenshotFloatingToolPaletteWindow;
 class ScreenshotExportArtifact;
+class ScreenshotExportSource;
+struct ScreenshotPinnedViewportExportSource;
 class ScreenshotPrintService;
 class ScreenshotPinnedDragExport;
 class ScreenshotPinnedHideToTopController;
@@ -374,6 +376,8 @@ class ScreenshotPinnedWindow final : public QWidget {
     [[nodiscard]] std::shared_ptr<ScreenshotExportArtifact> fileSaveArtifact();
     [[nodiscard]] std::shared_ptr<ScreenshotExportArtifact>
     viewportArtifact(bool applyWindowOpacity = true);
+    [[nodiscard]] ScreenshotExportSource
+    cachedPinnedExportSource(ScreenshotPinnedViewportExportSource request);
     void quickSave();
     void invalidatePendingCopy();
     void copyRenderedImage(std::shared_ptr<ScreenshotExportArtifact> artifact);
@@ -508,6 +512,8 @@ class ScreenshotPinnedWindow final : public QWidget {
     QMap<QString, quint64> m_pinnedShortcutBindings;
     QHash<QString, QString> m_pinnedShortcutDisplays;
     std::shared_ptr<ScreenshotExportArtifact> m_exportArtifact;
+    struct PinnedRenderCache;
+    std::unique_ptr<PinnedRenderCache> m_pinnedRenderCache;
     std::shared_ptr<ScreenshotExportArtifact> m_printArtifact;
     QPointer<ScreenshotPrintService> m_printService;
     bool m_printPending = false;

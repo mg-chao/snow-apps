@@ -212,6 +212,72 @@ Result<ImageView> first_frame_view(const Document& document) {
     return view;
 }
 
+template <typename ReadRow>
+Result<void> write_bmp_rows(const ImageView& view, const Output& output, ReadRow read_row,
+                            std::stop_token stop) {
+    const std::uint64_t row_bytes64 = static_cast<std::uint64_t>(view.width) * 4U;
+    const std::uint64_t image_bytes64 = row_bytes64 * view.height;
+    constexpr std::uint32_t kHeaderBytes = 14U + 124U;
+    if (image_bytes64 > std::numeric_limits<std::uint32_t>::max() - kHeaderBytes) {
+        return Status::error(ErrorCode::limit_exceeded, "BMP output exceeds the format size limit.",
+                             "snow BMP");
+    }
+    std::vector<std::byte> header;
+    header.reserve(kHeaderBytes);
+    header.push_back(std::byte{'B'});
+    header.push_back(std::byte{'M'});
+    append_u32(header, kHeaderBytes + static_cast<std::uint32_t>(image_bytes64));
+    append_u16(header, 0);
+    append_u16(header, 0);
+    append_u32(header, kHeaderBytes);
+    append_u32(header, 124);
+    append_i32(header, static_cast<std::int32_t>(view.width));
+    append_i32(header, -static_cast<std::int32_t>(view.height));
+    append_u16(header, 1);
+    append_u16(header, 32);
+    append_u32(header, kBiBitfields);
+    append_u32(header, static_cast<std::uint32_t>(image_bytes64));
+    append_i32(header, 2835);
+    append_i32(header, 2835);
+    append_u32(header, 0);
+    append_u32(header, 0);
+    append_u32(header, 0x00FF0000U);
+    append_u32(header, 0x0000FF00U);
+    append_u32(header, 0x000000FFU);
+    append_u32(header, 0xFF000000U);
+    append_u32(header, 0x73524742U);
+    header.resize(kHeaderBytes, std::byte{0});
+    Result<void> status = output.sink->write(header);
+    if (!status)
+        return status.error();
+
+    snow::memory::PixelArray<std::byte> row(static_cast<std::size_t>(row_bytes64));
+    const std::size_t channel_count = view.format.channel_count();
+    for (std::uint32_t y = 0; y < view.height; ++y) {
+        if (stop.stop_requested())
+            return cancelled_status();
+        Result<std::span<const std::byte>> read = read_row(y);
+        if (!read)
+            return read.error();
+        const auto source = read.value();
+        for (std::uint32_t x = 0; x < view.width; ++x) {
+            const std::size_t source_offset = static_cast<std::size_t>(x) * channel_count;
+            const std::size_t destination_offset = static_cast<std::size_t>(x) * 4U;
+            const bool source_bgr = view.format.channels == ChannelLayout::bgr ||
+                                    view.format.channels == ChannelLayout::bgra;
+            row[destination_offset] = source[source_offset + (source_bgr ? 0U : 2U)];
+            row[destination_offset + 1U] = source[source_offset + 1U];
+            row[destination_offset + 2U] = source[source_offset + (source_bgr ? 2U : 0U)];
+            row[destination_offset + 3U] =
+                channel_count == 4U ? source[source_offset + 3U] : std::byte{0xFF};
+        }
+        status = output.sink->write(row);
+        if (!status)
+            return status.error();
+    }
+    return {};
+}
+
 } // namespace
 
 CodecCapability BmpCodec::capabilities() const noexcept {
@@ -345,69 +411,67 @@ Result<EncodedArtifactReceipt> BmpCodec::encode_to_sink(const Document& document
                                                         const Output& output, const EncodeOptions&,
                                                         std::stop_token stop) const {
     Result<ImageView> selected = first_frame_view(document);
-    if (!selected) {
+    if (!selected)
         return selected.error();
-    }
     const ImageView view = selected.value();
-    const std::uint64_t row_bytes64 = static_cast<std::uint64_t>(view.width) * 4U;
-    const std::uint64_t image_bytes64 = row_bytes64 * view.height;
-    constexpr std::uint32_t kHeaderBytes = 14U + 124U;
-    if (image_bytes64 > std::numeric_limits<std::uint32_t>::max() - kHeaderBytes) {
-        return Status::error(ErrorCode::limit_exceeded, "BMP output exceeds the format size limit.",
-                             "snow BMP");
-    }
-    std::vector<std::byte> header;
-    header.reserve(kHeaderBytes);
-    header.push_back(std::byte{'B'});
-    header.push_back(std::byte{'M'});
-    append_u32(header, kHeaderBytes + static_cast<std::uint32_t>(image_bytes64));
-    append_u16(header, 0);
-    append_u16(header, 0);
-    append_u32(header, kHeaderBytes);
-    append_u32(header, 124);
-    append_i32(header, static_cast<std::int32_t>(view.width));
-    append_i32(header, -static_cast<std::int32_t>(view.height));
-    append_u16(header, 1);
-    append_u16(header, 32);
-    append_u32(header, kBiBitfields);
-    append_u32(header, static_cast<std::uint32_t>(image_bytes64));
-    append_i32(header, 2835);
-    append_i32(header, 2835);
-    append_u32(header, 0);
-    append_u32(header, 0);
-    append_u32(header, 0x00FF0000U);
-    append_u32(header, 0x0000FF00U);
-    append_u32(header, 0x000000FFU);
-    append_u32(header, 0xFF000000U);
-    append_u32(header, 0x73524742U);
-    header.resize(kHeaderBytes, std::byte{0});
-    Result<void> status = output.sink->write(header);
-    if (!status)
-        return status.error();
-
-    snow::memory::PixelArray<std::byte> row(static_cast<std::size_t>(row_bytes64));
-    const std::size_t channel_count = view.format.channel_count();
-    for (std::uint32_t y = 0; y < view.height; ++y) {
-        if (stop.stop_requested())
-            return cancelled_status();
-        const auto source =
-            view.pixels.subspan(static_cast<std::size_t>(y) * view.row_stride, view.row_stride);
-        for (std::uint32_t x = 0; x < view.width; ++x) {
-            const std::size_t source_offset = static_cast<std::size_t>(x) * channel_count;
-            const std::size_t destination_offset = static_cast<std::size_t>(x) * 4U;
-            const bool source_bgr = view.format.channels == ChannelLayout::bgr ||
-                                    view.format.channels == ChannelLayout::bgra;
-            row[destination_offset] = source[source_offset + (source_bgr ? 0U : 2U)];
-            row[destination_offset + 1U] = source[source_offset + 1U];
-            row[destination_offset + 2U] = source[source_offset + (source_bgr ? 2U : 0U)];
-            row[destination_offset + 3U] =
-                channel_count == 4U ? source[source_offset + 3U] : std::byte{0xFF};
-        }
-        status = output.sink->write(row);
-        if (!status)
-            return status.error();
-    }
+    const std::size_t row_bytes =
+        static_cast<std::size_t>(view.width) * view.format.channel_count();
+    Result<void> written = write_bmp_rows(
+        view, output,
+        [&](std::uint32_t y) -> Result<std::span<const std::byte>> {
+            return view.pixels.subspan(static_cast<std::size_t>(y) * view.row_stride, row_bytes);
+        },
+        stop);
+    if (!written)
+        return written.error();
     return receipt_for_document(document, format());
+}
+
+RasterEncodeRoute BmpCodec::raster_encode_route(const DocumentDescriptor& descriptor,
+                                                const EncodeOptions&) const noexcept {
+    if (descriptor.frames.size() != 1U)
+        return RasterEncodeRoute::materialized;
+    const auto& frame = descriptor.frames.front();
+    if (frame.layout.planes.size() != 1U ||
+        frame.layout.planes.front().semantic != PlaneSemantic::packed)
+        return RasterEncodeRoute::materialized;
+    const auto& format = frame.layout.planes.front().format;
+    return format.sample_type == SampleType::unsigned_integer && format.bits_per_channel == 8 &&
+                   (format.channels == ChannelLayout::rgb ||
+                    format.channels == ChannelLayout::rgba ||
+                    format.channels == ChannelLayout::bgr || format.channels == ChannelLayout::bgra)
+               ? RasterEncodeRoute::native
+               : RasterEncodeRoute::materialized;
+}
+
+Result<EncodedArtifactReceipt> BmpCodec::encode_raster_to_sink(const RasterSource& source,
+                                                               const Output& output,
+                                                               const EncodeOptions& options,
+                                                               std::stop_token stop) const {
+    const auto& descriptor = source.descriptor();
+    if (raster_encode_route(descriptor, options) != RasterEncodeRoute::native)
+        return Codec::encode_raster_to_sink(source, output, options, stop);
+    // The compatibility adapter borrows mapped packed storage without copying.
+    if (has_access(source.access(), RasterAccess::mapped_planes))
+        return Codec::encode_raster_to_sink(source, output, options, stop);
+    const auto& frame = descriptor.frames.front();
+    const auto& plane = frame.layout.planes.front();
+    const std::size_t row_bytes =
+        static_cast<std::size_t>(frame.width) * plane.format.channel_count();
+    snow::memory::PixelArray<std::byte> row(row_bytes);
+    const ImageView layout{frame.width, frame.height, plane.format, 0, {}};
+    Result<void> written = write_bmp_rows(
+        layout, output,
+        [&](std::uint32_t y) -> Result<std::span<const std::byte>> {
+            Result<void> read = source.read_rows(0, 0, y, 1, row_bytes, row, stop);
+            if (!read)
+                return read.error();
+            return std::span<const std::byte>(row);
+        },
+        stop);
+    if (!written)
+        return written.error();
+    return receipt_for_descriptor(descriptor, format());
 }
 
 } // namespace snow::image::internal

@@ -6,10 +6,12 @@
 #include <QFile>
 #include <QRegularExpression>
 #include <QTimeZone>
+#include <algorithm>
 #include <cmath>
 #include <cstring>
 #include <iostream>
 #include <stdexcept>
+#include <vector>
 
 namespace {
 void require(bool value, const char* message) {
@@ -87,9 +89,18 @@ void losslessTilesAndMetadata(const QString& directory) {
     const QImage source = fixture({2051, 2063});
     auto rows = snow_shot::image_codec::srgbRowSource(source);
     rows.backingImage = {};
+    std::vector<int> reads(static_cast<std::size_t>(source.height()));
+    rows.readRows = [readRows = rows.readRows, &reads](int first, int count, qsizetype stride,
+                                                       uchar* target, qsizetype capacity) {
+        for (int row = first; row < first + count; ++row)
+            ++reads[static_cast<std::size_t>(row)];
+        return readRows(first, count, stride, target, capacity);
+    };
     QString error;
     auto payload = screenshot_pdf::prepare(rows, 100, &error);
     require(payload && payload->tiles.size() == 4, "large images must use bounded tiles");
+    require(std::all_of(reads.cbegin(), reads.cend(), [](int count) { return count == 1; }),
+            "horizontal PDF tiles must read every source row only once");
     int count = 0;
     require(screenshot_pdf::decodeTiles(
                 *payload,
@@ -125,6 +136,53 @@ void losslessTilesAndMetadata(const QString& directory) {
         *payload, QDir(directory).filePath(QString::fromUtf8("capture-\xe9\x9b\xaa.pdf")), {});
     require(unicode.succeeded() && read(unicode.path).contains("96ea>"),
             "Unicode filename must become PDF title");
+}
+void wideRowBands() {
+    // A 2048-high band exceeds the memory budget and must use the bounded disk fallback.
+    const QImage source = fixture({4099, 2049});
+    for (int quality : {99, 100}) {
+        auto rows = snow_shot::image_codec::srgbRowSource(source);
+        rows.backingImage = {};
+        std::vector<int> reads(static_cast<std::size_t>(source.height()));
+        rows.readRows = [readRows = rows.readRows, &reads](int first, int count, qsizetype stride,
+                                                           uchar* target, qsizetype capacity) {
+            for (int row = first; row < first + count; ++row)
+                ++reads[static_cast<std::size_t>(row)];
+            return readRows(first, count, stride, target, capacity);
+        };
+        QString error;
+        const auto spooled = screenshot_pdf::prepare(rows, quality, &error);
+        const auto backed =
+            screenshot_pdf::prepare(snow_shot::image_codec::srgbRowSource(source), quality, &error);
+        require(
+            spooled && backed && spooled->tiles.size() == 6 &&
+                std::all_of(reads.cbegin(), reads.cend(), [](int count) { return count == 1; }) &&
+                read(spooled->path()) == read(backed->path()),
+            "wide row-backed PDF bands must read each row once and match image-backed tiles");
+        require(rows.backingImage.isNull(), "PDF preparation must not materialize its source");
+    }
+}
+void verifiedOpaqueTiles() {
+    QImage source = fixture({2051, 19});
+    for (int y = 0; y < source.height(); ++y)
+        for (int x = 0; x < source.width(); ++x)
+            source.scanLine(y)[x * 4 + 3] = 255;
+    for (int quality : {99, 100}) {
+        QString error;
+        auto rows = snow_shot::image_codec::srgbRowSource(source);
+        int sourceReads = 0;
+        rows.readRows = [readRows = rows.readRows, &sourceReads](int first, int count,
+                                                                 qsizetype stride, uchar* target,
+                                                                 qsizetype capacity) {
+            ++sourceReads;
+            return readRows(first, count, stride, target, capacity);
+        };
+        const auto normal = screenshot_pdf::prepare(rows, quality, &error);
+        const auto verified = screenshot_pdf::prepare(rows, quality, &error, true);
+        require(normal && verified && sourceReads == 0 &&
+                    read(normal->path()) == read(verified->path()),
+                "verified opaque PDF tiles must exactly match normal alpha handling");
+    }
 }
 void lossyAndAutomatic(const QString& directory) {
     QImage source = fixture({257, 257});
@@ -200,7 +258,27 @@ void cancellationAndFailures(const QString& directory) {
     rows.cancellationRequested = [] { return true; };
     require(!screenshot_pdf::prepare(rows, 100, &error) && !error.isEmpty(),
             "preparation must support cancellation");
+    require(!screenshot_pdf::prepare(rows, 100, nullptr) &&
+                !screenshot_pdf::prepare({}, 100, nullptr),
+            "PDF preparation must tolerate an omitted error receiver");
+    bool stopped = false;
+    int readsBeforeCancellation = 0;
+    ScreenshotImageRowSource wide;
+    wide.size = QSize(4099, 2049);
+    wide.cancellationRequested = [&] { return stopped; };
+    wide.readRows = [&](int, int count, qsizetype stride, uchar* target, qsizetype capacity) {
+        require(capacity >= count * stride, "PDF staging must reserve its whole strip");
+        std::memset(target, 255, static_cast<std::size_t>(count * stride));
+        ++readsBeforeCancellation;
+        stopped = true;
+        return true;
+    };
+    error.clear();
+    require(!screenshot_pdf::prepare(wide, 100, &error) && !error.isEmpty() &&
+                readsBeforeCancellation == 1,
+            "cancelling wide PDF staging must stop before the next source read");
     rows.cancellationRequested = {};
+    rows.backingImage = {};
     rows.readRows = [](int, int, qsizetype, uchar*, qsizetype) { return false; };
     require(!ScreenshotImageFileService::write(rows, path, ScreenshotImageFileFormat::Pdf)
                     .succeeded() &&
@@ -242,6 +320,8 @@ int main(int argc, char** argv) {
         require(QDir().mkpath(directory), "PDF fixture directory must exist");
         layoutRules();
         losslessTilesAndMetadata(directory);
+        wideRowBands();
+        verifiedOpaqueTiles();
         lossyAndAutomatic(directory);
         cancellationAndFailures(directory);
         tallPage(directory);

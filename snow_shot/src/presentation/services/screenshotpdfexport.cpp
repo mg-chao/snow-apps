@@ -4,6 +4,7 @@
 #include <QBuffer>
 #include <QCoreApplication>
 #include <QFile>
+#include <QTemporaryFile>
 #include <QtEndian>
 #include <cmath>
 #include <cstring>
@@ -11,13 +12,16 @@
 namespace screenshot_pdf {
 namespace {
 bool fail(QString* error) {
-    *error = QCoreApplication::translate("ScreenshotPdfExport", "The PDF could not be exported");
+    if (error)
+        *error =
+            QCoreApplication::translate("ScreenshotPdfExport", "The PDF could not be exported");
     return false;
 }
 bool isCancelled(const Cancelled& cancelled, QString* error) {
     if (!cancelled || !cancelled())
         return false;
-    *error = QCoreApplication::translate("ScreenshotPdfExport", "The PDF export was cancelled");
+    if (error)
+        *error = QCoreApplication::translate("ScreenshotPdfExport", "The PDF export was cancelled");
     return true;
 }
 QByteArray number(double value) {
@@ -37,6 +41,103 @@ QByteArray inflate(QByteArray data, qsizetype expectedSize) {
     qToBigEndian(quint32(expectedSize), header.data());
     return qUncompress(header + data);
 }
+// A horizontal tile band reads each source row once. Small bands stay in bounded memory;
+// exceptionally wide row-backed sources use temporary storage instead of a full raster.
+class RasterBand {
+  public:
+    bool load(const ScreenshotImageRowSource& source, int first, int count,
+              const QString& directory, QString* error) {
+        m_first = first;
+        m_stride = qsizetype(source.size.width()) * 4;
+        if (!source.backingImage.isNull() && source.backingImage.size() == source.size &&
+            source.backingImage.format() == QImage::Format_RGBA8888) {
+            m_backing = source.backingImage;
+            m_stride = m_backing.bytesPerLine();
+            return true;
+        }
+        if (source.size.width() <= 2048) {
+            m_source = source;
+            return true;
+        }
+        const qsizetype bytes = m_stride * count;
+        constexpr qsizetype maximumMemoryBytes = 32 * 1024 * 1024;
+        if (bytes <= maximumMemoryBytes)
+            m_pixels.resize(bytes);
+        else {
+            m_file.setFileTemplate(directory + QStringLiteral("/band-XXXXXX.rgba"));
+            if (!m_file.open()) {
+                if (error)
+                    *error = m_file.errorString();
+                return false;
+            }
+        }
+        const int stripRows = int(qMax(qsizetype{1}, qsizetype{1024 * 1024} / m_stride));
+        QByteArray scratch;
+        if (m_file.isOpen())
+            scratch.resize(m_stride * qMin(stripRows, count));
+        for (int row = 0; row < count; row += stripRows) {
+            if (isCancelled(source.cancellationRequested, error))
+                return false;
+            const int rows = qMin(stripRows, count - row);
+            uchar* destination = reinterpret_cast<uchar*>(
+                m_file.isOpen() ? scratch.data() : m_pixels.data() + row * m_stride);
+            if (!source.readRows(first + row, rows, m_stride, destination, m_stride * rows))
+                return fail(error);
+            if (m_file.isOpen() &&
+                m_file.write(scratch.constData(), m_stride * rows) != m_stride * rows)
+                return fail(error);
+        }
+        return !m_file.isOpen() || m_file.flush() || fail(error);
+    }
+    QImage tile(const QRect& rect, QString* error, const Cancelled& cancelled) {
+        QImage image = snowCanvasAllocateImage(rect.size(), QImage::Format_RGBA8888);
+        if (image.isNull()) {
+            fail(error);
+            return {};
+        }
+        const qint64 rowBytes = qint64(rect.width()) * 4;
+        if (m_source.isValid()) {
+            const int stripRows = int(qMax(qint64{1}, qint64{1024 * 1024} / rowBytes));
+            for (int row = 0; row < rect.height(); row += stripRows) {
+                if (isCancelled(cancelled, error))
+                    return {};
+                const int count = qMin(stripRows, rect.height() - row);
+                if (!m_source.readRows(m_first + row, count, image.bytesPerLine(),
+                                       image.scanLine(row), image.sizeInBytes() - row * rowBytes)) {
+                    fail(error);
+                    return {};
+                }
+            }
+            return image;
+        }
+        const uchar* pixels = !m_backing.isNull()
+                                  ? m_backing.constScanLine(m_first)
+                                  : reinterpret_cast<const uchar*>(m_pixels.constData());
+        for (int row = 0; row < rect.height(); ++row) {
+            if (isCancelled(cancelled, error))
+                return {};
+            if (!m_file.isOpen()) {
+                std::memcpy(image.scanLine(row),
+                            pixels + qsizetype(row) * m_stride + qsizetype(rect.x()) * 4,
+                            static_cast<std::size_t>(rowBytes));
+            } else if (!m_file.seek(qint64(row) * m_stride + qint64(rect.x()) * 4) ||
+                       m_file.read(reinterpret_cast<char*>(image.scanLine(row)), rowBytes) !=
+                           rowBytes) {
+                fail(error);
+                return {};
+            }
+        }
+        return image;
+    }
+
+  private:
+    QImage m_backing;
+    ScreenshotImageRowSource m_source;
+    QByteArray m_pixels;
+    QTemporaryFile m_file;
+    qsizetype m_stride = 0;
+    int m_first = 0;
+};
 class Writer {
   public:
     explicit Writer(QIODevice* device) : m_device(device) {}
@@ -113,7 +214,7 @@ QString Payload::path() const {
 }
 
 std::shared_ptr<Payload> prepare(const ScreenshotImageRowSource& source, int quality,
-                                 QString* error) {
+                                 QString* error, bool verifiedOpaque) {
     if (!source.isValid() || source.size.width() > 1000000 || source.size.height() > 1000000 ||
         qint64(source.size.width()) * source.size.height() > qint64{2} * 1024 * 1024 * 1024) {
         fail(error);
@@ -124,57 +225,49 @@ std::shared_ptr<Payload> prepare(const ScreenshotImageRowSource& source, int qua
     result->quality = qBound(1, quality, 100);
     QFile file(result->path());
     if (!result->directory.isValid() || !file.open(QIODevice::WriteOnly)) {
-        *error = file.errorString();
+        if (error)
+            *error = file.errorString();
         return {};
     }
-    const qsizetype stride = qsizetype(source.size.width()) * 4;
-    const int stripRows = int(qMax(qsizetype{1}, qsizetype{1024 * 1024} / stride));
-    QByteArray strip(stride * stripRows, Qt::Uninitialized);
     for (int y = 0; y < source.size.height(); y += 2048) {
+        RasterBand band;
+        if (!band.load(source, y, qMin(2048, source.size.height() - y), result->directory.path(),
+                       error))
+            return {};
         for (int x = 0; x < source.size.width(); x += 2048) {
             if (isCancelled(source.cancellationRequested, error))
                 return {};
             const QRect rect(x, y, qMin(2048, source.size.width() - x),
                              qMin(2048, source.size.height() - y));
-            QImage image = snowCanvasAllocateImage(rect.size(), QImage::Format_RGBA8888);
+            QImage image = band.tile(rect, error, source.cancellationRequested);
             if (image.isNull()) {
-                fail(error);
-                return {};
-            }
-            for (int row = 0; row < rect.height(); row += stripRows) {
-                const int count = qMin(stripRows, rect.height() - row);
-                if (isCancelled(source.cancellationRequested, error))
-                    return {};
-                if (!source.readRows(y + row, count, stride, reinterpret_cast<uchar*>(strip.data()),
-                                     strip.size())) {
+                if (!error || error->isEmpty())
                     fail(error);
-                    return {};
-                }
-                for (int line = 0; line < count; ++line)
-                    std::memcpy(image.scanLine(row + line),
-                                strip.constData() + line * stride + x * 4,
-                                size_t(rect.width()) * 4);
+                return {};
             }
             QByteArray color;
             QByteArray alpha;
             if (result->quality == 100) {
                 color.resize(qsizetype(rect.width()) * rect.height() * 3);
-                alpha.resize(qsizetype(rect.width()) * rect.height());
+                if (!verifiedOpaque)
+                    alpha.resize(qsizetype(rect.width()) * rect.height());
                 bool opaque = true;
                 for (int row = 0; row < rect.height(); ++row) {
                     const uchar* pixels = image.constScanLine(row);
                     for (int column = 0; column < rect.width(); ++column) {
                         const qsizetype index = qsizetype(row) * rect.width() + column;
                         std::memcpy(color.data() + index * 3, pixels + column * 4, 3);
-                        alpha[index] = char(pixels[column * 4 + 3]);
-                        opaque = opaque && pixels[column * 4 + 3] == 255;
+                        if (!verifiedOpaque) {
+                            alpha[index] = char(pixels[column * 4 + 3]);
+                            opaque = opaque && pixels[column * 4 + 3] == 255;
+                        }
                     }
                 }
                 color = qCompress(color).mid(4);
                 alpha = opaque ? QByteArray{} : qCompress(alpha).mid(4);
             } else {
                 // Flatten explicitly, including hidden RGB, before the one JPEG encode.
-                for (int row = 0; row < rect.height(); ++row) {
+                for (int row = 0; !verifiedOpaque && row < rect.height(); ++row) {
                     uchar* pixels = image.scanLine(row);
                     for (int column = 0; column < rect.width(); ++column) {
                         uchar* pixel = pixels + column * 4;
@@ -205,7 +298,8 @@ std::shared_ptr<Payload> prepare(const ScreenshotImageRowSource& source, int qua
         }
     }
     if (!file.flush()) {
-        *error = file.errorString();
+        if (error)
+            *error = file.errorString();
         return {};
     }
     if (isCancelled(source.cancellationRequested, error))
@@ -219,7 +313,8 @@ bool write(const Payload& payload, QIODevice* output, const ScreenshotPdfOptions
         return fail(error);
     QFile input(payload.path());
     if (!input.open(QIODevice::ReadOnly)) {
-        *error = input.errorString();
+        if (error)
+            *error = input.errorString();
         return false;
     }
     const Layout geometry = layout(payload.size, options.pageSize);

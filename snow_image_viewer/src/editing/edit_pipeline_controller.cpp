@@ -22,6 +22,7 @@
 #include <QJsonArray>
 #include <QProcess>
 #include <QProcessEnvironment>
+#include <QScopeGuard>
 #include <QTemporaryDir>
 #include <QUuid>
 #include <QtConcurrent>
@@ -385,10 +386,14 @@ struct EditPipelineController::PreviewResult final {
 struct EditPipelineController::ActiveWorkerJob final {
     PendingExact request;
     std::shared_ptr<RasterAsset> baseAsset;
+    std::shared_ptr<RasterAsset> preparedAsset;
+    bool preparedPreviewEquivalentToBase = false;
+    bool previewUsesPreparedRaster = false;
     RasterProvenance provenance = RasterProvenance::cpu_reference;
     QString nonce;
     QString artifactPath;
     QString previewPath;
+    QString preparedPath;
     QString warning;
     QString previewKind;
     QString testMode;
@@ -537,11 +542,35 @@ EditRequestId EditPipelineController::requestEdit(const EditExportSettings& sett
     auto normalizedOptions = snow::image::normalize_encode_options(*encoder, settings.encode);
     if (!normalizedOptions)
         return 0;
+    const ExportKey key = exportKey(normalizedSettings, sourceGeneration_);
+    if (latestRequestId_ && key == exportKey(latestSettings_, sourceGeneration_) &&
+        (exactTimer_.isActive() || hasInFlightExactRequest(key))) {
+        // An equivalent edit is still the same export request. Keep its worker and
+        // GPU readback identity while updating presentation-only settings.
+        latestSettings_ = normalizedSettings;
+        if (pendingExact_ && pendingExact_->key == key)
+            pendingExact_->settings = normalizedSettings;
+        if (pendingPreview_ && pendingPreview_->request.key == key)
+            pendingPreview_->request.settings = normalizedSettings;
+        if (activeWorkerJob_ && activeWorkerJob_->request.key == key)
+            activeWorkerJob_->request.settings = normalizedSettings;
+        if (exactResult_ && exactResult_->requestId == latestRequestId_ &&
+            exportKey(exactResult_->settings, sourceGeneration_) == key)
+            exactResult_->settings = normalizedSettings;
+        emit visualRequested(latestRequestId_, normalizedSettings);
+        emit performanceStageCompleted(latestRequestId_, QStringLiteral("exact.in_flight_reuse"),
+                                       handlingTimer.nsecsElapsed());
+        return latestRequestId_;
+    }
     const EditRequestId requestId = ++latestRequestId_;
     latestSettings_ = normalizedSettings;
     exactResult_.reset();
     previewPending_ = false;
     pendingExact_.reset();
+    if (pendingCacheHit_)
+        pendingCacheHit_->cancellation->request_stop();
+    pendingCacheHit_.reset();
+    gpuReadbackRequestId_ = 0;
     if (pendingPreview_)
         pendingPreview_->request.cancellation->request_stop();
     pendingPreview_.reset();
@@ -568,8 +597,7 @@ EditRequestId EditPipelineController::requestEdit(const EditExportSettings& sett
                       : kind == EditChangeKind::continuous     ? continuousDelay
                                                                : options_.discreteDebounceMs;
     setState(EditPipelineState::VisualPending);
-    const ExportKey key = exportKey(normalizedSettings, sourceGeneration_);
-    const bool cached = publishCacheHit(requestId, normalizedSettings, key);
+    const bool cached = publishCacheHit(requestId, key);
     emit visualRequested(requestId, normalizedSettings);
     emit performanceStageCompleted(requestId, QStringLiteral("controller.request_handling"),
                                    handlingTimer.nsecsElapsed());
@@ -579,10 +607,27 @@ EditRequestId EditPipelineController::requestEdit(const EditExportSettings& sett
 }
 
 void EditPipelineController::flushPendingExact() {
-    if (!latestRequestId_ || hasEncodedArtifact(latestSettings_))
+    if (!latestRequestId_ || hasEncodedArtifact(latestSettings_) ||
+        hasInFlightExactRequest(exportKey(latestSettings_, sourceGeneration_)))
         return;
     exactTimer_.stop();
     scheduleExact();
+}
+
+bool EditPipelineController::hasInFlightExactRequest(const ExportKey& key) const {
+    if (!latestRequestId_)
+        return false;
+    const auto current = [&](const PendingExact& request) {
+        return request.requestId == latestRequestId_ && request.key == key &&
+               request.cancellation && !request.cancellation->stop_requested();
+    };
+    return gpuReadbackRequestId_ == latestRequestId_ ||
+           (pendingExact_ && current(*pendingExact_)) ||
+           (activeBasePreparation_ && current(*activeBasePreparation_)) ||
+           (pendingCacheHit_ && current(*pendingCacheHit_)) ||
+           (pendingPreview_ && current(pendingPreview_->request)) ||
+           (activeWorkerJob_ && !activeWorkerJob_->cancelling &&
+            current(activeWorkerJob_->request));
 }
 
 void EditPipelineController::submitVisualFrame(EditRequestId requestId) {
@@ -670,6 +715,7 @@ void EditPipelineController::startPendingExact() {
             cacheRaster(request.key.base, sourceRaster_, RasterProvenance::source_exact);
             startCpuExact(std::move(request), sourceRaster_, RasterProvenance::source_exact);
         } else if (gpuSource_) {
+            gpuReadbackRequestId_ = request.requestId;
             emit exactRasterRequested(request.requestId, request.settings);
         } else {
             startCpuExact(std::move(request));
@@ -691,6 +737,7 @@ void EditPipelineController::submitGpuResizeResult(EditRequestId requestId,
                                                    GpuRasterResult readback) {
     if (!gpuSource_ || requestId != latestRequestId_)
         return;
+    gpuReadbackRequestId_ = 0;
     if (!readback.isValid() ||
         readback.pixelSize != QSize(latestSettings_.width, latestSettings_.height)) {
         failGpuRequest(requestId, QStringLiteral("The GPU resize readback buffer is invalid."));
@@ -717,6 +764,7 @@ void EditPipelineController::submitGpuResizeResult(EditRequestId requestId,
 void EditPipelineController::failGpuRequest(EditRequestId requestId, const QString& message) {
     if (requestId != latestRequestId_)
         return;
+    gpuReadbackRequestId_ = 0;
     Q_UNUSED(message);
     if (!gpuSource_)
         return;
@@ -742,6 +790,10 @@ void EditPipelineController::cancel() {
     }
     sourceCancellation_.reset();
     pendingExact_.reset();
+    if (pendingCacheHit_)
+        pendingCacheHit_->cancellation->request_stop();
+    pendingCacheHit_.reset();
+    gpuReadbackRequestId_ = 0;
     if (pendingPreview_)
         pendingPreview_->request.cancellation->request_stop();
     pendingPreview_.reset();
@@ -1012,6 +1064,7 @@ void EditPipelineController::startCpuExact(PendingExact request,
     ++activeWorkerCount_;
     reservedWorkerBytes_ += request.estimatedWorkingBytes;
     workerCancellations_.push_back(request.cancellation);
+    activeBasePreparation_ = request;
     const auto artifactDirectory = artifactDirectory_;
     auto* watcher = new QFutureWatcher<PreviewResult>(this);
     connect(watcher, &QFutureWatcher<PreviewResult>::finished, this,
@@ -1100,6 +1153,7 @@ void EditPipelineController::startGpuEncode(PendingExact request, GpuRasterResul
     ++activeWorkerCount_;
     reservedWorkerBytes_ += request.estimatedWorkingBytes;
     workerCancellations_.push_back(request.cancellation);
+    activeBasePreparation_ = request;
     const auto artifactDirectory = artifactDirectory_;
     const RasterHandoffMode handoffMode = options_.rasterHandoffMode;
     const QString sharedSessionKey = sharedMemorySessionKey_;
@@ -1280,12 +1334,14 @@ void EditPipelineController::startGpuEncode(PendingExact request, GpuRasterResul
 }
 
 void EditPipelineController::finishBasePreparation(PendingExact request, PreviewResult result) {
+    if (activeBasePreparation_ && activeBasePreparation_->cancellation == request.cancellation)
+        activeBasePreparation_.reset();
     activeWorkerCount_ = std::max(0, activeWorkerCount_ - 1);
     reservedWorkerBytes_ -= std::min(reservedWorkerBytes_, request.estimatedWorkingBytes);
     std::erase(workerCancellations_, request.cancellation);
     lastReadbackBytes_ = 0;
     const bool current = request.requestId == latestRequestId_ &&
-                         request.settings == latestSettings_ &&
+                         request.key == exportKey(latestSettings_, sourceGeneration_) &&
                          !request.cancellation->stop_requested();
     if (!result.error.isEmpty()) {
         if (current) {
@@ -1311,6 +1367,7 @@ void EditPipelineController::finishBasePreparation(PendingExact request, Preview
         startPendingExact();
         return;
     }
+    request.settings = latestSettings_;
     dispatchWorker(std::move(request), std::move(result.raster), result.provenance);
 }
 
@@ -1369,6 +1426,15 @@ void EditPipelineController::dispatchWorker(PendingExact request,
     activeWorkerJob_->baseAsset = package->isSharedMemory()
                                       ? RasterAsset::sharedMemory(std::move(package))
                                       : RasterAsset::fileBacked(std::move(package));
+    if (preparedRasterCache_ && preparedRasterCache_->provenance == provenance &&
+        preparedRasterCache_->key ==
+            preparationKey(activeWorkerJob_->request.settings,
+                           activeWorkerJob_->request.key.base.sourceGeneration)) {
+        preparedRasterCache_->accessSerial = ++accessSerial_;
+        activeWorkerJob_->preparedAsset = RasterAsset::fileBacked(preparedRasterCache_->package);
+        activeWorkerJob_->preparedPreviewEquivalentToBase =
+            preparedRasterCache_->previewEquivalentToBase;
+    }
     activeWorkerJob_->provenance = provenance;
     activeWorkerJob_->testMode = std::move(options_.workerTestMode);
     options_.workerTestMode.clear();
@@ -1383,6 +1449,8 @@ void EditPipelineController::dispatchWorker(PendingExact request,
         baseName, extensionFor(activeWorkerJob_->request.settings.format)));
     activeWorkerJob_->previewPath =
         artifactDirectory_->filePath(QStringLiteral("%1.preview.raster").arg(baseName));
+    activeWorkerJob_->preparedPath =
+        artifactDirectory_->filePath(QStringLiteral("%1.prepared.raster").arg(baseName));
     activeWorkerJob_->timer.start();
     // Readiness is part of the job deadline: a process can start successfully
     // without ever completing the protocol handshake.
@@ -1527,6 +1595,16 @@ void EditPipelineController::sendActiveWorkerJob() {
             return;
         }
         job.insert(QStringLiteral("baseRaster"), activeWorkerJob_->baseAsset->workerTransport());
+        if (activeWorkerJob_->preparedAsset) {
+            job.insert(QStringLiteral("preparedRaster"),
+                       activeWorkerJob_->preparedAsset->workerTransport());
+            job.insert(QStringLiteral("preparedPreviewEquivalentToBase"),
+                       activeWorkerJob_->preparedPreviewEquivalentToBase);
+        } else if (workerSettings.reducePalette && options_.cacheBudgetBytes > 0) {
+            job.insert(QStringLiteral("preparedPath"), activeWorkerJob_->preparedPath);
+            job.insert(QStringLiteral("preparedCacheLimit"),
+                       QString::number(options_.cacheBudgetBytes));
+        }
         if (const auto alpha = activeWorkerJob_->baseAsset->verifiedAlphaContent()) {
             job.insert(QStringLiteral("verifiedAlphaContent"), static_cast<int>(*alpha));
         }
@@ -1673,6 +1751,8 @@ void EditPipelineController::handleWorkerOutput() {
             }
             activeWorkerJob_->warning = object.value(QStringLiteral("warning")).toString();
             activeWorkerJob_->previewKind = object.value(QStringLiteral("previewKind")).toString();
+            activeWorkerJob_->previewUsesPreparedRaster =
+                object.value(QStringLiteral("previewUsesPreparedRaster")).toBool();
             const int alphaContent = object.value(QStringLiteral("alphaContent")).toInt(-1);
             if (alphaContent < static_cast<int>(snow::image::AlphaContent::opaque) ||
                 alphaContent > static_cast<int>(snow::image::AlphaContent::non_opaque)) {
@@ -1683,6 +1763,30 @@ void EditPipelineController::handleWorkerOutput() {
                 continue;
             }
             activeWorkerJob_->alphaContent = static_cast<snow::image::AlphaContent>(alphaContent);
+            const QString preparedPath = object.value(QStringLiteral("preparedPath")).toString();
+            if (!preparedPath.isEmpty() && preparedPath == activeWorkerJob_->preparedPath) {
+                QString preparedError;
+                const auto preparedLease =
+                    TemporaryFileLease::adopt(preparedPath, artifactDirectory_, &preparedError);
+                const auto package =
+                    preparedLease
+                        ? MappedRasterPackage::open(preparedPath, &preparedError, preparedLease)
+                        : nullptr;
+                const auto* document = package ? package->document() : nullptr;
+                if (document && !document->frames.empty() &&
+                    document->frames.front().image.width() ==
+                        static_cast<std::uint32_t>(activeWorkerJob_->request.settings.width) &&
+                    document->frames.front().image.height() ==
+                        static_cast<std::uint32_t>(activeWorkerJob_->request.settings.height) &&
+                    package->verifiedAlphaContent() == activeWorkerJob_->alphaContent) {
+                    activeWorkerJob_->preparedAsset = RasterAsset::fileBacked(package);
+                    activeWorkerJob_->preparedPreviewEquivalentToBase =
+                        object.value(QStringLiteral("preparedPreviewEquivalentToBase")).toBool();
+                    cachePreparedRaster(activeWorkerJob_->request, package,
+                                        activeWorkerJob_->preparedPreviewEquivalentToBase,
+                                        activeWorkerJob_->provenance);
+                }
+            }
             const PendingExact request = activeWorkerJob_->request;
             const QString jobNonce = activeWorkerJob_->nonce;
             const qint64 requestToArtifact = activeWorkerJob_->timer.nsecsElapsed();
@@ -1705,7 +1809,8 @@ void EditPipelineController::handleWorkerOutput() {
             cached.provenance = activeWorkerJob_->provenance;
             cached.alphaContent = activeWorkerJob_->alphaContent;
             cacheResult(request.key, cached);
-            if (request.requestId == latestRequestId_ && request.settings == latestSettings_) {
+            if (request.requestId == latestRequestId_ &&
+                request.key == exportKey(latestSettings_, sourceGeneration_)) {
                 exactResult_ = cached;
                 previewPending_ = true;
                 setState(EditPipelineState::ArtifactReady);
@@ -1730,6 +1835,9 @@ void EditPipelineController::handleWorkerOutput() {
             addTiming("encodeNs", "exact.encode");
             addTiming("directNativeEncodeNs", "exact.direct_native_encode");
             addTiming("validateReceiptNs", "exact.validate_receipt");
+            if (object.value(QStringLiteral("preparationCacheHit")).toBool())
+                emit performanceStageCompleted(request.requestId,
+                                               QStringLiteral("exact.preparation_cache_hit"), 0);
             if (activeWorkerJob_ && activeWorkerJob_->nonce == jobNonce)
                 workerTimeout_.start(options_.workerTimeoutMs);
             continue;
@@ -1813,15 +1921,21 @@ void EditPipelineController::handleWorkerOutput() {
             }
         } else if (job->previewKind == QStringLiteral("prepared") ||
                    job->previewKind == QStringLiteral("codec")) {
-            const QString previewPath = object.value(QStringLiteral("previewPath")).toString();
-            if (previewPath != job->previewPath) {
-                result.error = QStringLiteral("The worker returned a mismatched preview package.");
+            if (job->previewKind == QStringLiteral("prepared") && job->previewUsesPreparedRaster &&
+                job->preparedAsset) {
+                previewPackage = job->preparedAsset->packageShared();
             } else {
-                const auto previewLease =
-                    TemporaryFileLease::adopt(previewPath, artifactDirectory_, &result.error);
-                if (previewLease)
-                    previewPackage =
-                        MappedRasterPackage::open(previewPath, &result.error, previewLease);
+                const QString previewPath = object.value(QStringLiteral("previewPath")).toString();
+                if (previewPath != job->previewPath) {
+                    result.error =
+                        QStringLiteral("The worker returned a mismatched preview package.");
+                } else {
+                    const auto previewLease =
+                        TemporaryFileLease::adopt(previewPath, artifactDirectory_, &result.error);
+                    if (previewLease)
+                        previewPackage =
+                            MappedRasterPackage::open(previewPath, &result.error, previewLease);
+                }
             }
             result.previewSource = job->previewKind == QStringLiteral("prepared")
                                        ? ExactPreviewSource::prepared_raster
@@ -1875,6 +1989,8 @@ void EditPipelineController::handleWorkerOutput() {
             {QStringLiteral("artifact_to_preview_ready"),
              job->artifactTimer.isValid() ? job->artifactTimer.nsecsElapsed() : 0});
         QFile::remove(job->previewPath + QStringLiteral(".partial"));
+        if (!job->preparedAsset)
+            QFile::remove(job->preparedPath);
         finishWorker(job->request, std::move(result));
     }
 }
@@ -1924,6 +2040,9 @@ void EditPipelineController::cleanupWorkerJob(const ActiveWorkerJob& job) {
     if (!job.artifact)
         QFile::remove(job.artifactPath);
     QFile::remove(job.previewPath);
+    QFile::remove(job.preparedPath + QStringLiteral(".partial"));
+    if (!job.preparedAsset)
+        QFile::remove(job.preparedPath);
 }
 
 void EditPipelineController::cancelActiveWorker(bool restart) {
@@ -2027,7 +2146,7 @@ void EditPipelineController::finishWorker(const PendingExact& request, PreviewRe
     if (request.settings.format == snow::image::Format::jxl)
         retireIdleWorker();
     const bool current = request.requestId == latestRequestId_ &&
-                         request.settings == latestSettings_ &&
+                         request.key == exportKey(latestSettings_, sourceGeneration_) &&
                          !request.cancellation->stop_requested();
     if (current) {
         if (!result.error.isEmpty()) {
@@ -2045,7 +2164,7 @@ void EditPipelineController::finishWorker(const PendingExact& request, PreviewRe
             }
             ExactEditResult exact;
             exact.requestId = request.requestId;
-            exact.settings = request.settings;
+            exact.settings = latestSettings_;
             exact.warning = result.warning;
             exact.displayPreview = std::move(result.displayPreview);
             exact.previewSource = result.previewSource;
@@ -2078,40 +2197,64 @@ void EditPipelineController::finishWorker(const PendingExact& request, PreviewRe
 
 // QTimer owns the queued callback and its captured shared cancellation state.
 // NOLINTBEGIN(clang-analyzer-cplusplus.NewDeleteLeaks)
-bool EditPipelineController::publishCacheHit(EditRequestId requestId,
-                                             const EditExportSettings& settings,
-                                             const ExportKey& key) {
+bool EditPipelineController::publishCacheHit(EditRequestId requestId, const ExportKey& key) {
     const auto found = std::find_if(cache_.begin(), cache_.end(),
                                     [&](const CacheEntry& entry) { return entry.key == key; });
     if (found == cache_.end())
         return false;
     found->artifactAccessSerial = ++accessSerial_;
+    const PendingExact request{requestId, latestSettings_, std::make_shared<std::stop_source>(),
+                               key, 0};
+    pendingCacheHit_ = request;
     setState(EditPipelineState::EncodingPending);
-    QTimer::singleShot(0, this, [this, requestId, settings]() {
-        if (requestId != latestRequestId_ || settings != latestSettings_ || cache_.empty())
+    QTimer::singleShot(0, this, [this, request]() {
+        const auto finishPublication = qScopeGuard([this, cancellation = request.cancellation] {
+            if (pendingCacheHit_ && pendingCacheHit_->cancellation == cancellation)
+                pendingCacheHit_.reset();
+        });
+        const EditRequestId requestId = request.requestId;
+        const auto current = [&] {
+            return requestId == latestRequestId_ && !request.cancellation->stop_requested() &&
+                   request.key == exportKey(latestSettings_, sourceGeneration_);
+        };
+        if (!current())
             return;
-        const ExportKey key = exportKey(settings, sourceGeneration_);
+        const ExportKey key = request.key;
         const auto found = std::find_if(cache_.rbegin(), cache_.rend(),
                                         [&](const CacheEntry& entry) { return entry.key == key; });
-        if (found == cache_.rend())
+        if (found == cache_.rend()) {
+            scheduleExact();
             return;
+        }
         found->artifactAccessSerial = ++accessSerial_;
         if (found->result.exactPreviewAvailable)
             found->previewAccessSerial = found->artifactAccessSerial;
         ExactEditResult exact = found->result;
         exact.requestId = requestId;
-        exact.settings = settings;
+        exact.settings = latestSettings_;
         exactResult_ = exact;
         emit performanceStageCompleted(requestId, QStringLiteral("exact.cache_hit"), 0);
+        if (!current())
+            return;
         previewPending_ = !exact.exactPreviewAvailable;
         setState(exact.exactPreviewAvailable ? EditPipelineState::ExactReady
                                              : EditPipelineState::ArtifactReady);
-        EncodedEditResult encoded{requestId,      settings,         exact.warning,
+        if (!current())
+            return;
+        exact.settings = latestSettings_;
+        exactResult_ = exact;
+        EncodedEditResult encoded{requestId,      exact.settings,   exact.warning,
                                   exact.artifact, exact.provenance, exact.alphaContent};
         emit artifactReady(encoded);
+        if (!current())
+            return;
+        exact.settings = latestSettings_;
+        exactResult_ = exact;
         if (exact.exactPreviewAvailable) {
+            pendingCacheHit_.reset();
             emit exactReady(exact);
         } else {
+            const EditExportSettings settings = latestSettings_;
             PendingExact previewRequest{requestId, settings, std::make_shared<std::stop_source>(),
                                         key, 0};
             const auto sourceDescriptor = planningSourceDescriptor(settings, {}, {});
@@ -2173,6 +2316,11 @@ bool EditPipelineController::publishCacheHit(EditRequestId requestId,
                 emit performanceStageCompleted(requestId,
                                                QStringLiteral("exact.raster_preview_recovery"),
                                                recoveryTimer.nsecsElapsed());
+                if (!current())
+                    return;
+                exact.settings = latestSettings_;
+                exactResult_ = exact;
+                pendingCacheHit_.reset();
                 emit exactReady(exact);
             } else {
                 dispatchPreviewWorker(std::move(previewRequest), exact.artifact, exact.provenance,
@@ -2255,19 +2403,49 @@ void EditPipelineController::cacheRaster(const BaseRasterKey& key,
     trimCache();
 }
 
+void EditPipelineController::cachePreparedRaster(const PendingExact& request,
+                                                 std::shared_ptr<MappedRasterPackage> package,
+                                                 bool previewEquivalentToBase,
+                                                 RasterProvenance provenance) {
+    if (!package || !request.settings.reducePalette ||
+        request.key.base.sourceGeneration != sourceGeneration_)
+        return;
+    const auto weight = static_cast<std::size_t>(
+        std::min<std::uint64_t>(package->mappedBytes(), std::numeric_limits<std::size_t>::max()));
+    if (weight > options_.cacheBudgetBytes)
+        return;
+    if (preparedRasterCache_)
+        diskCacheBytes_ -= std::min(diskCacheBytes_, preparedRasterCache_->weight);
+    const ExportKey key = preparationKey(request.settings, request.key.base.sourceGeneration);
+    preparedRasterCache_ = PreparedRasterCacheEntry{
+        key, std::move(package), previewEquivalentToBase, provenance, weight, ++accessSerial_};
+    if (weight <= std::numeric_limits<std::size_t>::max() - diskCacheBytes_)
+        diskCacheBytes_ += weight;
+    else
+        diskCacheBytes_ = std::numeric_limits<std::size_t>::max();
+    trimCache();
+}
+
 void EditPipelineController::trimCache() {
     while (
         (cacheBytes_ > options_.cacheBudgetBytes || diskCacheBytes_ > options_.cacheBudgetBytes) &&
         evictOldestCachePortion()) {
     }
-    if (cache_.empty() && rasterCache_.empty()) {
+    if (cache_.empty() && rasterCache_.empty() && !preparedRasterCache_) {
         cacheBytes_ = 0;
         diskCacheBytes_ = 0;
     }
 }
 
 bool EditPipelineController::evictOldestCachePortion() {
-    enum class Kind : std::uint8_t { none, resident_preview, native_preview, artifact, raster };
+    enum class Kind : std::uint8_t {
+        none,
+        resident_preview,
+        native_preview,
+        artifact,
+        raster,
+        prepared_raster
+    };
     Kind kind = Kind::none;
     std::uint64_t oldest = std::numeric_limits<std::uint64_t>::max();
     auto exact = cache_.end();
@@ -2297,6 +2475,8 @@ bool EditPipelineController::evictOldestCachePortion() {
             raster = entry;
         }
     }
+    if (preparedRasterCache_ && preparedRasterCache_->accessSerial < oldest)
+        kind = Kind::prepared_raster;
     if (kind == Kind::resident_preview) {
         cacheBytes_ -= std::min(cacheBytes_, exact->previewWeight);
         exact->previewWeight = 0;
@@ -2325,12 +2505,18 @@ bool EditPipelineController::evictOldestCachePortion() {
         rasterCache_.erase(raster);
         return true;
     }
+    if (kind == Kind::prepared_raster) {
+        diskCacheBytes_ -= std::min(diskCacheBytes_, preparedRasterCache_->weight);
+        preparedRasterCache_.reset();
+        return true;
+    }
     return false;
 }
 
 void EditPipelineController::clearCache() {
     cache_.clear();
     rasterCache_.clear();
+    preparedRasterCache_.reset();
     cacheBytes_ = 0;
     diskCacheBytes_ = 0;
 }
@@ -2358,10 +2544,15 @@ std::uint64_t EditPipelineController::mappedBytes() const {
             return std::numeric_limits<std::uint64_t>::max();
         }
     }
+    if (preparedRasterCache_ && !add(preparedRasterCache_->package))
+        return std::numeric_limits<std::uint64_t>::max();
     if (activeWorkerJob_ && activeWorkerJob_->baseAsset) {
         if (!add(activeWorkerJob_->baseAsset->packageShared()))
             return std::numeric_limits<std::uint64_t>::max();
     }
+    if (activeWorkerJob_ && activeWorkerJob_->preparedAsset &&
+        !add(activeWorkerJob_->preparedAsset->packageShared()))
+        return std::numeric_limits<std::uint64_t>::max();
     return bytes;
 }
 

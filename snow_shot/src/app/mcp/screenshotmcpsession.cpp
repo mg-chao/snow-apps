@@ -694,6 +694,34 @@ void ScreenshotMcpSession::output(const ScreenshotMcpRequest& r, bool finish) {
         failPending(QStringLiteral("output_failed"));
         return;
     }
+    const QString outputAction =
+        finish || r.method == QStringLiteral("snow_shot_screenshot_direct_capture")
+            ? r.params.value(QStringLiteral("output")).toString(QStringLiteral("render"))
+            : r.method.mid(QStringLiteral("snow_shot_screenshot_").size());
+    if (outputAction == QStringLiteral("save")) {
+        QElapsedTimer renderTimer;
+        renderTimer.start();
+        if (!m_artifact->requestRowSource(this, [this, generation, r, finish, scale, renderTimer](
+                                                    ScreenshotImageRowSource rows, QString error) {
+                if (!current(generation))
+                    return;
+                m_pending->timings.insert(QStringLiteral("render"), renderTimer.elapsed());
+                if (!error.isEmpty() || !rows.isValid()) {
+                    failPending(QStringLiteral("output_failed"));
+                    return;
+                }
+                publishOutput(r, finish, generation,
+                              {{QStringLiteral("width"), rows.size.width()},
+                               {QStringLiteral("height"), rows.size.height()},
+                               {QStringLiteral("scale"), scale},
+                               {QStringLiteral("selection"),
+                                m_artifactState.value(QStringLiteral("selection"))},
+                               {QStringLiteral("canvas_bounds"),
+                                m_artifactState.value(QStringLiteral("canvas_bounds"))}});
+            }))
+            failPending(QStringLiteral("output_failed"));
+        return;
+    }
     if (!m_pngMetadata.isEmpty()) {
         m_pending->timings.insert(QStringLiteral("cache_hit"), true);
         publishOutput(r, finish, generation, m_pngMetadata);
@@ -908,6 +936,18 @@ void ScreenshotMcpSession::publishOutput(const ScreenshotMcpRequest& r, bool fin
                     }
                     auto saved = std::make_shared<QJsonObject>(metadata);
                     const QString savedPath = result.savedPath;
+                    if (!result.encodedSha256.isEmpty() && result.encodedByteCount >= 0) {
+                        saved->insert(QStringLiteral("sha256"),
+                                      QString::fromLatin1(result.encodedSha256));
+                        saved->insert(QStringLiteral("byte_count"), result.encodedByteCount);
+                        saved->insert(QStringLiteral("path"), savedPath);
+                        saved->insert(QStringLiteral("format"), format);
+                        ScreenshotMcpResponse response;
+                        response.ok = true;
+                        response.result = *saved;
+                        finishResponse(std::move(response));
+                        return;
+                    }
                     m_metadataJob = ScreenshotExportCoordinator::shared().submit(
                         this, ScreenshotExportCoordinator::Priority::Foreground,
                         [saved, savedPath,

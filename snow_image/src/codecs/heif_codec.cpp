@@ -1630,18 +1630,38 @@ Result<MutableImagePtr> make_heif_raster_image(const RasterSource& source,
                              "libheif returned an invalid encoding image plane.", "libheif");
     }
     try {
-        std::vector<std::byte> source_row(source_row_bytes);
-        for (std::uint32_t y = 0; y < frame.height; ++y) {
-            if (stop.stop_requested())
-                return cancelled_status();
-            Result<void> read = source.read_rows(0, 0, y, 1, source_row_bytes, source_row, stop);
-            if (!read)
-                return read.error();
-            std::uint8_t* output = destination + static_cast<std::size_t>(y) * destination_stride;
-            Result<void> copied = copy_heif_rgb_row(source_row.data(), frame.width, plane.format,
-                                                    output, depth, include_alpha);
-            if (!copied)
-                return copied.error();
+        if (depth == 8 && include_alpha) {
+            // The source and codec plane are both straight RGBA8. Let the
+            // provider populate codec-owned storage without an intermediate row.
+            constexpr std::uint32_t kRowsPerRead = 64;
+            for (std::uint32_t first = 0; first < frame.height; first += kRowsPerRead) {
+                const std::uint32_t count = std::min(kRowsPerRead, frame.height - first);
+                std::byte* output = reinterpret_cast<std::byte*>(destination) +
+                                    static_cast<std::size_t>(first) * destination_stride;
+                Result<void> read = source.read_rows(
+                    0, 0, first, count, destination_stride,
+                    {output, static_cast<std::size_t>(count - 1U) * destination_stride +
+                                 destination_row_bytes},
+                    stop);
+                if (!read)
+                    return read.error();
+            }
+        } else {
+            std::vector<std::byte> source_row(source_row_bytes);
+            for (std::uint32_t y = 0; y < frame.height; ++y) {
+                if (stop.stop_requested())
+                    return cancelled_status();
+                Result<void> read =
+                    source.read_rows(0, 0, y, 1, source_row_bytes, source_row, stop);
+                if (!read)
+                    return read.error();
+                std::uint8_t* output =
+                    destination + static_cast<std::size_t>(y) * destination_stride;
+                Result<void> copied = copy_heif_rgb_row(source_row.data(), frame.width,
+                                                        plane.format, output, depth, include_alpha);
+                if (!copied)
+                    return copied.error();
+            }
         }
     } catch (const std::bad_alloc&) {
         return Status::error(ErrorCode::out_of_memory,

@@ -7,6 +7,13 @@ pub unsafe extern "C" fn snow_runtime_document_revision(runtime: SnowRuntime) ->
     })
 }
 
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn snow_runtime_has_document_content(runtime: SnowRuntime) -> u8 {
+    ffi_value(1, || {
+        with_runtime_ref(runtime, |r| Ok(u8::from(r.has_document_content()))).unwrap_or(1)
+    })
+}
+
 /// Applies once. The caller owns the returned boxed byte slice and must free it with
 /// snow_annotation_result_destroy. No size-query call can accidentally apply twice.
 #[unsafe(no_mangle)]
@@ -62,6 +69,8 @@ mod tests {
         unsafe {
             let mut runtime = std::ptr::null_mut();
             assert_eq!(snow_runtime_create(&mut runtime), SnowError::Ok);
+            assert_eq!(snow_runtime_has_document_content(runtime), 0);
+            assert_eq!(snow_runtime_has_document_content(std::ptr::null_mut()), 1);
             let bytes =
                 br#"{"version":1,"operations":[{"type":"rectangle","bounds":[1,2,30,40]}]}"#;
             let mut json = std::ptr::null_mut();
@@ -79,6 +88,7 @@ mod tests {
                 SnowError::Ok
             );
             assert!(size > 0);
+            assert_eq!(snow_runtime_has_document_content(runtime), 1);
             snow_annotation_result_destroy(json, size);
             snow_changed_viewports_destroy(changed);
             assert_eq!(

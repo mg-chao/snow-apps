@@ -1286,7 +1286,7 @@ set(PROJECT_HEADERS
 
 add_library(snow_shot_print STATIC src/presentation/services/screenshotprintservice.cpp)
 target_include_directories(snow_shot_print PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include")
-target_link_libraries(snow_shot_print PUBLIC Qt6::Widgets)
+target_link_libraries(snow_shot_print PUBLIC Qt6::Widgets PRIVATE Qt6::Concurrent)
 if(WIN32)
     target_sources(snow_shot_print PRIVATE src/platform/windows/nativeprint.cpp
         src/platform/windows/nativeprintdocument.cpp)

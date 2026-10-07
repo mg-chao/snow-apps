@@ -17,7 +17,7 @@ class ScreenshotScrollingSnapshot final {
     [[nodiscard]] bool isValid() const;
     [[nodiscard]] ScreenshotImageRowSource
     rowSource(std::function<bool()> cancellationRequested = {}) const;
-    [[nodiscard]] QImage materialize() const;
+    [[nodiscard]] QImage materialize(std::function<bool()> cancellationRequested = {}) const;
 
   private:
     std::shared_ptr<void> m_snapshot;

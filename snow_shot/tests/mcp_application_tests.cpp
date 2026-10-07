@@ -3,6 +3,8 @@
 #include "snow_shot/presentation/globalshortcutmanager.h"
 #include "snow_shot/presentation/settings/settingsruntimesession.h"
 #include "snow_shot/storage/applicationstorage.h"
+#include "snow_shot/storage/capturehistoryrepository.h"
+#include "snowimageqtcodec.h"
 #include "snow_shot/storage/configurationarchive.h"
 #include "../src/app/mcp/mcpsettingsadapter_p.h"
 #include "translation_test_support.h"
@@ -11,9 +13,12 @@
 #include <QCoreApplication>
 #include <QElapsedTimer>
 #include <QFileInfo>
+#include <QFile>
 #include <QJsonDocument>
 #include <QTemporaryDir>
 #include <QThread>
+#include <QUuid>
+#include <QtEndian>
 #include <algorithm>
 #include <cstdlib>
 #include <iostream>
@@ -57,6 +62,12 @@ void runMcpApplicationTests() {
     ports.jobs = &jobs;
     ports.translation = &translation;
     ports.updates = &updates;
+    QByteArray historyPng;
+    ports.artifactWriter = [&](quint64, QByteArray bytes, QString mime) {
+        require(mime == QStringLiteral("image/png"), "history returns a PNG artifact");
+        historyPng = std::move(bytes);
+        return QJsonObject{{QStringLiteral("artifact_id"), QStringLiteral("history-image")}};
+    };
     int selectionCaptures = 0;
     ports.selectedText = [&](auto completion) {
         ++selectionCaptures;
@@ -366,6 +377,87 @@ void runMcpApplicationTests() {
         call(QStringLiteral("history_list"), {{QStringLiteral("cursor"), QStringLiteral("bogus")}})
                 .errorCode == QStringLiteral("invalid_cursor"),
         "history cursor validated");
+    auto historyPolicy = storage.captureHistory().policy();
+    historyPolicy.enabled = true;
+    require(storage.captureHistory().updatePolicy(historyPolicy).get().success,
+            "enable history image fixture publication");
+    QImage historyImage(23, 17, QImage::Format_RGBA8888);
+    historyImage.fill(QColor(21, 73, 129, 170));
+    const QByteArray originalPng = image_codec::encodePng(historyImage, 0);
+    storage::CaptureHistoryDraft historyDraft;
+    historyDraft.contentKind = storage::CaptureHistoryContentKind::Image;
+    historyDraft.id = QUuid::createUuid().toString(QUuid::WithoutBraces);
+    historyDraft.createdUtc = QDateTime::currentDateTimeUtc();
+    historyDraft.canvasBounds = historyImage.rect();
+    historyDraft.selection.rectangle = historyImage.rect();
+    historyDraft.selection.shadowColor = Qt::black;
+    historyDraft.canvasHistory =
+        QByteArrayLiteral("{\"schemaVersion\":1,\"document\":{},\"history\":{}}");
+    historyDraft.displays.push_back(
+        {QStringLiteral("history-display"), QStringLiteral("History fixture"), historyImage});
+    historyDraft.preparedResultImage =
+        storage::PreparedPngImage::fromBytes(historyImage.size(), originalPng);
+    const auto publishedHistory = storage.captureHistory().publish(std::move(historyDraft)).get();
+    require(publishedHistory.storage.success, "publish history image fixture");
+    const QJsonObject historyRequest{{QStringLiteral("history_id"), publishedHistory.record.id},
+                                     {QStringLiteral("include_image"), true}};
+    require(call(QStringLiteral("history_get"), historyRequest).ok && historyPng == originalPng,
+            "history delivers original stored PNG bytes without recompression");
+    const auto historyAssets = storage.captureHistory().displayAssets(publishedHistory.record);
+    require(historyAssets && historyAssets->result, "history result file is discoverable");
+    QFile damagedFile(historyAssets->result->localFileUrl.toLocalFile());
+    auto damagedPng = originalPng;
+    bool damaged = false;
+    for (qsizetype offset = 8; offset + 12 <= damagedPng.size();) {
+        const auto length = qFromBigEndian<quint32>(damagedPng.constData() + offset);
+        if (length > static_cast<quint32>(damagedPng.size() - offset - 12))
+            break;
+        if (damagedPng.mid(offset + 4, 4) == "IDAT" && length > 0) {
+            damagedPng[offset + 8] = char(damagedPng[offset + 8] ^ 0xff);
+            damaged = true;
+            break;
+        }
+        offset += qsizetype(length) + 12;
+    }
+    require(damaged && damagedFile.open(QIODevice::WriteOnly | QIODevice::Truncate) &&
+                damagedFile.write(damagedPng) == damagedPng.size(),
+            "damage IDAT without changing the valid PNG header or recorded byte count");
+    damagedFile.close();
+    require(call(QStringLiteral("history_get"), historyRequest).errorCode ==
+                QStringLiteral("image_unavailable"),
+            "history byte reuse still rejects corrupt PNG pixel data");
+    {
+        QImage largeImage(4000, 4000, QImage::Format_RGBA8888);
+        largeImage.fill(QColor(21, 73, 129, 170));
+        const QByteArray largePng = image_codec::encodePng(largeImage, 0);
+        require(largePng.size() > 60 * 1024 * 1024,
+                "low-compression history fixture exceeds the MCP response limit");
+        storage::CaptureHistoryDraft largeDraft;
+        largeDraft.contentKind = storage::CaptureHistoryContentKind::Image;
+        largeDraft.id = QUuid::createUuid().toString(QUuid::WithoutBraces);
+        largeDraft.createdUtc = QDateTime::currentDateTimeUtc();
+        largeDraft.canvasBounds = largeImage.rect();
+        largeDraft.selection.rectangle = largeImage.rect();
+        largeDraft.selection.shadowColor = Qt::black;
+        largeDraft.canvasHistory =
+            QByteArrayLiteral("{\"schemaVersion\":1,\"document\":{},\"history\":{}}");
+        largeDraft.displays.push_back({QStringLiteral("large-history-display"),
+                                       QStringLiteral("History fixture"), largeImage});
+        largeDraft.preparedResultImage =
+            storage::PreparedPngImage::fromBytes(largeImage.size(), largePng);
+        const auto largeHistory = storage.captureHistory().publish(std::move(largeDraft)).get();
+        require(largeHistory.storage.success, "publish large low-compression history fixture");
+        require(call(QStringLiteral("history_get"),
+                     {{QStringLiteral("history_id"), largeHistory.record.id},
+                      {QStringLiteral("include_image"), true}})
+                        .ok &&
+                    historyPng.size() <= 60 * 1024 * 1024 && historyPng != largePng,
+                "oversized stored PNG retains the previous default recompression fallback");
+        const auto image = image_codec::decode(historyPng, snow::image::Format::png, "history.png");
+        require(image.size() == largeImage.size() &&
+                    image.pixelColor(0, 0) == largeImage.pixelColor(0, 0),
+                "history size-limit fallback preserves dimensions and pixel content");
+    }
     require(call(QStringLiteral("translation_catalog")).ok, "translation catalog available");
     translation_tests::waitUntil([&] { return !translation.loadingModels(); },
                                  "deterministic provider catalog completes");

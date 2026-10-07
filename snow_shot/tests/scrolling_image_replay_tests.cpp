@@ -591,7 +591,7 @@ void acceptedSnapshotsSurviveTeardown() {
     for (const auto mode : {ScreenshotScrollingRecognitionMode::Vertical,
                             ScreenshotScrollingRecognitionMode::Horizontal}) {
         auto state = std::make_shared<ManualState>();
-        const QImage frame = fixture().copy(0, 0, 400, 400);
+        const QImage frame = fixture();
         state->push(frame);
         QEventLoop loop;
         bool ready = false;
@@ -612,18 +612,38 @@ void acceptedSnapshotsSurviveTeardown() {
         int completed = 0;
         constexpr int requests = 256;
         for (int index = 0; index < requests; ++index) {
-            require(pipeline->requestSnapshot(
-                        30, 370, &loop,
-                        [&](ScreenshotScrollingSnapshot snapshot) {
-                            const auto expected =
-                                mode == ScreenshotScrollingRecognitionMode::Horizontal
-                                    ? frame.copy(30, 0, 340, 400)
-                                    : frame.copy(0, 30, 400, 340);
-                            require(snapshotMatchesSrgbPixels(snapshot.materialize(), expected),
-                                    "detached snapshot must retain its pixels");
-                            ++completed;
-                        }),
-                    "snapshot request must be accepted before teardown");
+            const bool checkCancellation = index == 0;
+            const int trimEnd = checkCancellation ? 610 : 370;
+            require(
+                pipeline->requestSnapshot(
+                    30, trimEnd, &loop,
+                    [&, checkCancellation, trimEnd](ScreenshotScrollingSnapshot snapshot) {
+                        const auto expected = mode == ScreenshotScrollingRecognitionMode::Horizontal
+                                                  ? frame.copy(30, 0, trimEnd - 30, frame.height())
+                                                  : frame.copy(0, 30, frame.width(), trimEnd - 30);
+                        require(snapshotMatchesSrgbPixels(snapshot.materialize(), expected),
+                                "detached snapshot must retain its pixels");
+                        if (checkCancellation) {
+                            require(snapshotMatchesSrgbPixels(
+                                        snapshot.materialize([] { return false; }), expected),
+                                    "cancellable materialization must preserve native pixels");
+                            int preCancelledChecks = 0;
+                            require(snapshot.materialize([&] {
+                                                ++preCancelledChecks;
+                                                return true;
+                                            })
+                                            .isNull() &&
+                                        preCancelledChecks == 1,
+                                    "pre-cancelled materialization must stop before copying");
+                            int chunkChecks = 0;
+                            require(
+                                snapshot.materialize([&] { return ++chunkChecks == 3; }).isNull() &&
+                                    chunkChecks == 3,
+                                "materialization must cancel between bounded row chunks");
+                        }
+                        ++completed;
+                    }),
+                "snapshot request must be accepted before teardown");
         }
         // Match export detachment: reset and destroy the workers before the UI
         // dispatches any result. Accepted snapshots belong to their receivers.

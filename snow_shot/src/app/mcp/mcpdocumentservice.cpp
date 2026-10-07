@@ -1067,11 +1067,25 @@ struct McpDocumentService::Impl {
         qsizetype bytes = 0;
         std::shared_ptr<ScreenshotExportArtifact> artifact;
         QJsonObject metadata;
+        qsizetype encodedBytes = 0;
     };
     QHash<QString, ArtifactCache> artifactCache;
     qsizetype artifactCacheBytes = 0;
     qsizetype artifactCacheLimit() const {
         return std::clamp<qsizetype>(ports.artifactCacheBytes, 0, kMaximumCacheBytes);
+    }
+    void retainEncodedBytes(const QString& documentId,
+                            const std::shared_ptr<ScreenshotExportArtifact>& artifact,
+                            qsizetype bytes) {
+        auto cached = artifactCache.find(documentId);
+        if (cached == artifactCache.end() || cached->artifact != artifact)
+            return;
+        const auto extra = bytes - cached->encodedBytes;
+        cached->encodedBytes = bytes;
+        cached->bytes += extra;
+        artifactCacheBytes += extra;
+        if (artifactCacheBytes > artifactCacheLimit())
+            artifactCacheBytes -= artifactCache.take(documentId).bytes;
     }
     void retainEncodedMetadata(const QString& documentId,
                                const std::shared_ptr<ScreenshotExportArtifact>& artifact,
@@ -1079,15 +1093,9 @@ struct McpDocumentService::Impl {
         auto cached = artifactCache.find(documentId);
         if (cached == artifactCache.end() || cached->artifact != artifact)
             return;
-        const bool firstEncoding = cached->metadata.isEmpty();
         cached->metadata = metadata;
-        if (firstEncoding) {
-            const auto size = metadata.value(QStringLiteral("byte_count")).toInteger();
-            cached->bytes += size;
-            artifactCacheBytes += size;
-        }
-        if (artifactCacheBytes > artifactCacheLimit())
-            artifactCacheBytes -= artifactCache.take(documentId).bytes;
+        retainEncodedBytes(documentId, artifact,
+                           metadata.value(QStringLiteral("byte_count")).toInteger());
     }
     struct Blob {
         quint64 owner = 0;
@@ -1886,8 +1894,9 @@ struct McpDocumentService::Impl {
             request.method == QStringLiteral("snow_shot_document_save") &&
             request.params.value(QStringLiteral("format")).toString(QStringLiteral("png")) ==
                 QStringLiteral("png");
-        const bool reusable =
-            request.method == QStringLiteral("snow_shot_document_render") || pngSave;
+        const bool reusable = request.method == QStringLiteral("snow_shot_document_render") ||
+                              request.method == QStringLiteral("snow_shot_document_copy") ||
+                              pngSave;
         const auto compression = ScreenshotImageFileService::compressionLevelForKey(
             pngSave ? request.params.value(QStringLiteral("compression_level"))
                           .toString(QStringLiteral("medium"))
@@ -1966,7 +1975,7 @@ struct McpDocumentService::Impl {
         }
         if (request.method == QStringLiteral("snow_shot_document_copy")) {
             if (!artifact->requestClipboard(
-                    &q, [this, request, canceled, response = result.response,
+                    &q, [this, request, documentId, artifact, canceled, response = result.response,
                          finish](ScreenshotExportClipboardResult prepared) mutable {
                         if (canceled->load())
                             return;
@@ -1974,6 +1983,8 @@ struct McpDocumentService::Impl {
                             finish(failure(request, QStringLiteral("output_failed")));
                             return;
                         }
+                        retainEncodedBytes(documentId, artifact,
+                                           prepared.payload.pngBytes().size());
                         publishClipboard(
                             request,
                             [&](Clipboard::Completion completion) {
@@ -2012,6 +2023,19 @@ struct McpDocumentService::Impl {
                         }
                         response.result.insert(QStringLiteral("path"), saved.savedPath);
                         response.result.insert(QStringLiteral("format"), format);
+                        if (!saved.encodedSha256.isEmpty() && saved.encodedByteCount >= 0) {
+                            const QJsonObject metadata{
+                                {QStringLiteral("format"), format},
+                                {QStringLiteral("byte_count"), saved.encodedByteCount},
+                                {QStringLiteral("sha256"),
+                                 QString::fromLatin1(saved.encodedSha256)}};
+                            for (auto it = metadata.begin(); it != metadata.end(); ++it)
+                                response.result.insert(it.key(), it.value());
+                            if (format == QStringLiteral("png"))
+                                retainEncodedMetadata(documentId, artifact, metadata);
+                            finish(std::move(response));
+                            return;
+                        }
                         const auto encoded = artifactCache.constFind(documentId);
                         if (format == QStringLiteral("png") && encoded != artifactCache.cend() &&
                             encoded->artifact == artifact && !encoded->metadata.isEmpty()) {

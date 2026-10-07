@@ -1294,6 +1294,8 @@ SnowError snow_runtime_apply_annotation_json(SnowRuntime runtime, const uint8_t*
                                              SnowChangedViewportList* out_changed);
 void snow_annotation_result_destroy(uint8_t* bytes, size_t size);
 uint64_t snow_runtime_document_revision(SnowRuntime runtime);
+// Returns nonzero for invalid handles, elements (including hidden ones), or watermark content.
+uint8_t snow_runtime_has_document_content(SnowRuntime runtime);
 
 SnowError
 snow_runtime_clear_document_preserving_viewports(SnowRuntime runtime,

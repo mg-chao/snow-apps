@@ -258,8 +258,14 @@ HWND clipboardOwnerWindow() {
     return owner;
 }
 
+void clearGlobalPadding(HGLOBAL handle, void* memory, SIZE_T payloadBytes) {
+    const SIZE_T allocatedBytes = GlobalSize(handle);
+    if (allocatedBytes > payloadBytes)
+        std::memset(static_cast<uchar*>(memory) + payloadBytes, 0, allocatedBytes - payloadBytes);
+}
+
 HGLOBAL copyToGlobal(const QByteArray& bytes) {
-    HGLOBAL handle = GlobalAlloc(GMEM_MOVEABLE | GMEM_ZEROINIT, static_cast<SIZE_T>(bytes.size()));
+    HGLOBAL handle = GlobalAlloc(GMEM_MOVEABLE, static_cast<SIZE_T>(bytes.size()));
     if (handle == nullptr)
         return nullptr;
     void* memory = GlobalLock(handle);
@@ -268,6 +274,8 @@ HGLOBAL copyToGlobal(const QByteArray& bytes) {
         return nullptr;
     }
     std::memcpy(memory, bytes.constData(), static_cast<std::size_t>(bytes.size()));
+    // Clipboard consumers can inspect the complete GlobalSize, including allocator rounding.
+    clearGlobalPadding(handle, memory, static_cast<SIZE_T>(bytes.size()));
     GlobalUnlock(handle);
     return handle;
 }
@@ -284,7 +292,7 @@ HGLOBAL prepareDib(const ScreenshotImageRowSource& source) {
     constexpr int batchRows = 64;
     const qsizetype rgbaStride = static_cast<qsizetype>(source.size.width()) * 4;
     QByteArray rows(rgbaStride * std::min(batchRows, source.size.height()), Qt::Uninitialized);
-    HGLOBAL handle = GlobalAlloc(GMEM_MOVEABLE | GMEM_ZEROINIT, static_cast<SIZE_T>(totalBytes));
+    HGLOBAL handle = GlobalAlloc(GMEM_MOVEABLE, static_cast<SIZE_T>(totalBytes));
     if (handle == nullptr)
         return nullptr;
     auto* header = static_cast<BITMAPINFOHEADER*>(GlobalLock(handle));
@@ -297,6 +305,8 @@ HGLOBAL prepareDib(const ScreenshotImageRowSource& source) {
         GlobalFree(static_cast<HGLOBAL>(memory));
     };
     std::unique_ptr<void, decltype(release)> allocation(handle, release);
+    *header = {};
+    clearGlobalPadding(handle, header, static_cast<SIZE_T>(totalBytes));
     header->biSize = sizeof(*header);
     header->biWidth = source.size.width();
     header->biHeight = source.size.height();
@@ -322,11 +332,20 @@ HGLOBAL prepareDib(const ScreenshotImageRowSource& source) {
             for (int x = 0; x < source.size.width(); ++x) {
                 const auto* rgba = input + static_cast<qsizetype>(x) * 4;
                 const unsigned alpha = rgba[3];
+                if (alpha == 255) {
+                    output[static_cast<qsizetype>(x) * 3] = rgba[2];
+                    output[static_cast<qsizetype>(x) * 3 + 1] = rgba[1];
+                    output[static_cast<qsizetype>(x) * 3 + 2] = rgba[0];
+                    continue;
+                }
                 for (int channel = 0; channel < 3; ++channel) {
                     output[static_cast<qsizetype>(x) * 3 + channel] = static_cast<uchar>(
                         (rgba[2 - channel] * alpha + 255U * (255U - alpha) + 127U) / 255U);
                 }
             }
+            // Every pixel is written above; only DWORD alignment padding needs clearing.
+            std::memset(output + static_cast<qsizetype>(source.size.width()) * 3, 0,
+                        static_cast<std::size_t>(stride - source.size.width() * 3ULL));
         }
         first += count;
     }

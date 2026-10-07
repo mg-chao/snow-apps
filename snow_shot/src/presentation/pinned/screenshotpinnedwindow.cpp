@@ -890,6 +890,15 @@ class NativePinnedClipboard final : public ScreenshotPinnedClipboard {
 };
 } // namespace
 
+struct ScreenshotPinnedWindow::PinnedRenderCache final {
+    struct Entry {
+        QByteArray key;
+        std::shared_ptr<ScreenshotExportArtifact> pixels;
+        qint64 byteCount = 0;
+    };
+    std::vector<Entry> entries;
+};
+
 ScreenshotPinnedWindow::ScreenshotPinnedWindow(QWidget* parent)
     : QWidget(parent), m_platform(pinned_platform::createPinnedWindowPlatform(this)),
       m_clipboard(std::make_unique<NativePinnedClipboard>()),
@@ -5142,6 +5151,74 @@ bool ScreenshotPinnedWindow::copyHiddenTextSelection() {
     return true;
 }
 
+ScreenshotExportSource
+ScreenshotPinnedWindow::cachedPinnedExportSource(ScreenshotPinnedViewportExportSource request) {
+    QByteArray key;
+    QDataStream stream(&key, QIODevice::WriteOnly);
+    stream.setVersion(QDataStream::Qt_6_11);
+    stream << m_presentationGeneration << m_runtime.documentRevision()
+           << request.backgroundImage.cacheKey() << request.backgroundCanvasRect
+           << request.contentPixelSize << encodeScreenshotResultStyle(request.resultStyle)
+           << request.outputOpacity << request.bakedSelectionPath << request.smartErase.cacheKey();
+    if (!m_pinnedRenderCache)
+        m_pinnedRenderCache = std::make_unique<PinnedRenderCache>();
+    std::shared_ptr<ScreenshotExportArtifact> pixels;
+    auto& entries = m_pinnedRenderCache->entries;
+    const auto found = std::find_if(entries.begin(), entries.end(),
+                                    [&](const auto& entry) { return entry.key == key; });
+    if (found != entries.end()) {
+        pixels = found->pixels;
+        auto entry = std::move(*found);
+        entries.erase(found);
+        entries.push_back(std::move(entry));
+    } else {
+        request.documentSession =
+            m_runtime.hasDocumentContent() ? m_runtime.serializeDocumentSession() : QByteArray{};
+        auto renderRequest = request;
+        renderRequest.clipboardPlacement.reset();
+        renderRequest.clipboardAppearance.reset();
+        pixels = std::make_shared<ScreenshotExportArtifact>(
+            ScreenshotExportSource::fromPinnedViewport(std::move(renderRequest)));
+        // Retain at most two surfaces within the existing 64 MiB image budget.
+        // Outstanding commands own their snapshot independently of cache eviction.
+        const QSize outputSize = ScreenshotResultCompositor::layoutForContent(
+                                     request.contentPixelSize, request.resultStyle)
+                                     .outputRect.size();
+        const qint64 byteCount = qint64(outputSize.width()) * outputSize.height() * 4;
+        constexpr qint64 budget = 64 * 1024 * 1024;
+        if (byteCount <= budget) {
+            qint64 retained = 0;
+            for (const auto& entry : entries)
+                retained += entry.byteCount;
+            while (!entries.empty() && (entries.size() >= 2 || retained > budget - byteCount)) {
+                retained -= entries.front().byteCount;
+                entries.erase(entries.begin());
+            }
+            entries.push_back({key, pixels, byteCount});
+        }
+    }
+    // Each command owns its cancellation and current clipboard placement. Pixel
+    // preparation is shared independently, so cancelling a copy cannot poison it.
+    return ScreenshotExportSource::fromImageLoader(
+        [pixels = std::move(pixels), key, owner = QPointer<ScreenshotPinnedWindow>(this)](
+            QObject* receiver, std::function<void(QImage)> callback) {
+            return pixels->requestImage(receiver, [callback = std::move(callback), key, owner](
+                                                      ScreenshotExportImageResult result) mutable {
+                if (!result.succeeded() && owner) {
+                    static_cast<void>(QMetaObject::invokeMethod(owner, [key, owner] {
+                        if (owner && owner->m_pinnedRenderCache) {
+                            auto& cache = owner->m_pinnedRenderCache->entries;
+                            std::erase_if(cache,
+                                          [&](const auto& entry) { return entry.key == key; });
+                        }
+                    }));
+                }
+                callback(std::move(result.image));
+            });
+        },
+        std::move(request.clipboardPlacement), std::move(request.clipboardAppearance));
+}
+
 std::shared_ptr<ScreenshotExportArtifact>
 ScreenshotPinnedWindow::viewportArtifact(bool applyWindowOpacity) {
     if (m_transformedImage.isNull()) {
@@ -5174,14 +5251,17 @@ ScreenshotPinnedWindow::viewportArtifact(bool applyWindowOpacity) {
     if (m_canvas != nullptr && !m_canvas->resetEditingStatePreservingTool()) {
         return {};
     }
-    QByteArray documentSession = m_runtime.serializeDocumentSession();
     const PinnedExportAppearance appearance = pinnedExportAppearance(
         m_resultStyle, applyWindowOpacity ? m_opacityPercent : 100, surfaceScale);
     ScreenshotPinnedViewportExportSource request{
-        std::move(documentSession), m_transformedImage,
-        m_backgroundCanvasRect,     contentPixelSize,
-        appearance.resultStyle,     m_runtime.smartEraseSnapshot(),
-        appearance.outputOpacity,   {},
+        {},
+        m_transformedImage,
+        m_backgroundCanvasRect,
+        contentPixelSize,
+        appearance.resultStyle,
+        m_runtime.smartEraseSnapshot(),
+        appearance.outputOpacity,
+        {},
     };
     request.bakedSelectionPath = bakedSelectionPath(contentPixelSize);
     const QRect geometry =
@@ -5234,8 +5314,7 @@ ScreenshotPinnedWindow::viewportArtifact(bool applyWindowOpacity) {
     }
     request.clipboardAppearance = std::move(clipboardAppearance);
 
-    return std::make_shared<ScreenshotExportArtifact>(
-        ScreenshotExportSource::fromPinnedViewport(std::move(request)));
+    return std::make_shared<ScreenshotExportArtifact>(cachedPinnedExportSource(std::move(request)));
 }
 
 void ScreenshotPinnedWindow::beginExportDrag() {
@@ -5512,7 +5591,7 @@ std::shared_ptr<ScreenshotExportArtifact> ScreenshotPinnedWindow::fileSaveArtifa
                 ScreenshotExportSource::fromRecognitionImage(std::move(*snapshot)));
         }
     }
-    ScreenshotPinnedViewportExportSource request{m_runtime.serializeDocumentSession(),
+    ScreenshotPinnedViewportExportSource request{{},
                                                  m_transformedImage,
                                                  m_backgroundCanvasRect,
                                                  m_transformedImage.size(),
@@ -5521,8 +5600,7 @@ std::shared_ptr<ScreenshotExportArtifact> ScreenshotPinnedWindow::fileSaveArtifa
                                                  appearance.outputOpacity,
                                                  {}};
     request.bakedSelectionPath = bakedSelectionPath(m_transformedImage.size());
-    return std::make_shared<ScreenshotExportArtifact>(
-        ScreenshotExportSource::fromPinnedViewport(std::move(request)));
+    return std::make_shared<ScreenshotExportArtifact>(cachedPinnedExportSource(std::move(request)));
 }
 
 void ScreenshotPinnedWindow::quickSave() {

@@ -225,12 +225,21 @@ class EditPipelineController final : public QObject {
         std::uint64_t accessSerial = 0;
     };
     struct ActiveWorkerJob;
+    struct PreparedRasterCacheEntry final {
+        ExportKey key;
+        std::shared_ptr<MappedRasterPackage> package;
+        bool previewEquivalentToBase = false;
+        RasterProvenance provenance = RasterProvenance::cpu_reference;
+        std::size_t weight = 0;
+        std::uint64_t accessSerial = 0;
+    };
 
     void setState(EditPipelineState state);
     void startSourceDecode(EditRequestId generation,
                            const std::shared_ptr<std::stop_source>& cancellation);
     void scheduleExact();
     void startPendingExact();
+    bool hasInFlightExactRequest(const ExportKey& key) const;
     void startCpuExact(PendingExact request, std::shared_ptr<MappedRasterPackage> cachedRaster = {},
                        RasterProvenance provenance = RasterProvenance::cpu_reference);
     void startGpuEncode(PendingExact request, GpuRasterResult readback);
@@ -248,13 +257,15 @@ class EditPipelineController final : public QObject {
     void retireIdleWorker();
     void cleanupWorkerJob(const ActiveWorkerJob& job);
     void finishWorker(const PendingExact& request, PreviewResult result);
-    bool publishCacheHit(EditRequestId requestId, const EditExportSettings& settings,
-                         const ExportKey& key);
+    bool publishCacheHit(EditRequestId requestId, const ExportKey& key);
     void cacheResult(const ExportKey& key, const ExactEditResult& result);
     std::shared_ptr<MappedRasterPackage> findRaster(const BaseRasterKey& key,
                                                     RasterProvenance* provenance);
     void cacheRaster(const BaseRasterKey& key, std::shared_ptr<MappedRasterPackage> package,
                      RasterProvenance provenance);
+    void cachePreparedRaster(const PendingExact& request,
+                             std::shared_ptr<MappedRasterPackage> package,
+                             bool previewEquivalentToBase, RasterProvenance provenance);
     void trimCache();
     bool evictOldestCachePortion();
     void clearCache();
@@ -270,6 +281,9 @@ class EditPipelineController final : public QObject {
     std::shared_ptr<std::stop_source> sourceCancellation_;
     std::vector<std::shared_ptr<std::stop_source>> workerCancellations_;
     std::optional<PendingExact> pendingExact_;
+    std::optional<PendingExact> activeBasePreparation_;
+    std::optional<PendingExact> pendingCacheHit_;
+    EditRequestId gpuReadbackRequestId_ = 0;
     std::optional<PendingPreview> pendingPreview_;
     std::optional<ExactEditResult> exactResult_;
     EditExportSettings latestSettings_;
@@ -282,6 +296,7 @@ class EditPipelineController final : public QObject {
     int cancellationCount_ = 0;
     std::vector<CacheEntry> cache_;
     std::vector<RasterCacheEntry> rasterCache_;
+    std::optional<PreparedRasterCacheEntry> preparedRasterCache_;
     // File-backed artifacts and raster stores are budgeted independently from
     // resident preview pixels and worker-private allocations.
     std::size_t diskCacheBytes_ = 0;

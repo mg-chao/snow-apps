@@ -1046,9 +1046,30 @@ ScreenshotScrollingSnapshot::rowSource(std::function<bool()> cancellationRequest
     return source;
 }
 
-QImage ScreenshotScrollingSnapshot::materialize() const {
+QImage ScreenshotScrollingSnapshot::materialize(std::function<bool()> cancellationRequested) const {
     if (!isValid()) {
         return {};
+    }
+    if (cancellationRequested) {
+        if (cancellationRequested())
+            return {};
+        QImage result = snowCanvasAllocateImage(m_size, QImage::Format_RGBA8888);
+        if (result.isNull())
+            return {};
+        const auto source = rowSource(cancellationRequested);
+        const int batch =
+            static_cast<int>(qMax(qsizetype{1}, qsizetype{1024 * 1024} / result.bytesPerLine()));
+        for (int row = 0; row < m_size.height(); row += batch) {
+            const int count = qMin(batch, m_size.height() - row);
+            if (cancellationRequested() ||
+                !source.readRows(row, count, result.bytesPerLine(), result.scanLine(row),
+                                 result.bytesPerLine() * count))
+                return {};
+        }
+        if (cancellationRequested())
+            return {};
+        result.setColorSpace(QColorSpace::SRgb);
+        return result;
     }
     SnowStitchOwnedImage* image =
         snow_stitch_snapshot_materialize(static_cast<const SnowStitchSnapshot*>(m_snapshot.get()));

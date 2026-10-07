@@ -165,6 +165,19 @@ inline ExportKey exportKey(const EditExportSettings& settings, quint64 sourceGen
             normalizedSampling};
 }
 
+inline ExportKey preparationKey(const EditExportSettings& settings, quint64 sourceGeneration) {
+    ExportKey key = exportKey(settings, sourceGeneration);
+    key.quality = 0;
+    key.effort = 0;
+    key.losslessEffort = 0;
+    key.compressionLevel = 0;
+    key.lossless = false;
+    key.progressive = false;
+    key.interlaced = false;
+    key.chromaSubsampling.reset();
+    return key;
+}
+
 } // namespace snow::image_viewer
 
 Q_DECLARE_METATYPE(snow::image_viewer::EditExportSettings)

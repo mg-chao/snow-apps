@@ -5,6 +5,7 @@
 
 #include <QApplication>
 #include <QColorSpace>
+#include <QElapsedTimer>
 #include <QKeyEvent>
 #include <QLineEdit>
 #include <QThread>
@@ -31,6 +32,15 @@ void require(bool condition, const char* message) {
 void flush() {
     for (int i = 0; i < 5; ++i)
         QCoreApplication::processEvents();
+}
+void processUntil(const std::function<bool()>& condition) {
+    QElapsedTimer timer;
+    timer.start();
+    while (!condition() && timer.elapsed() < 10000) {
+        QCoreApplication::processEvents(QEventLoop::AllEvents, 10);
+        QThread::msleep(1);
+    }
+    require(condition(), "timed out waiting for asynchronous print preparation");
 }
 QImage image() {
     QImage result(2, 1, QImage::Format_ARGB32);
@@ -63,7 +73,7 @@ void immutableWhiteSnapshotAndDuplicateCompletion() {
     source.fill(Qt::black);
     require(!service.printImage(&owner, &owner, source, [](auto) {}),
             "duplicate preparation or native interaction must be rejected");
-    flush();
+    processUntil([&] { return starts == 1; });
     require(starts == 1 && received.size() == QSize(2, 1) && received.devicePixelRatio() == 1 &&
                 received.pixelColor(0, 0) == QColor(Qt::white) &&
                 received.pixelColor(1, 0) == QColor(255, 127, 127),
@@ -94,7 +104,7 @@ void fallbackOnlyWhenUnavailable() {
         QWidget owner;
         require(service.printImage(&owner, &owner, image(), [&](auto result) { final = result; }),
                 "print must start");
-        flush();
+        processUntil([&] { return !service.busy(); });
         require(legacyStarts == (status == Service::Status::Unavailable ? 1 : 0),
                 "cancellation and submission failures must never open another dialog");
         require(final.status ==
@@ -113,7 +123,7 @@ void fallbackOnlyWhenUnavailable() {
                                                 !result.error.isEmpty();
                                    }),
             "unavailable backend request must be accepted");
-    flush();
+    processUntil([&] { return failed; });
     require(failed && !unavailable.busy(), "unavailable backends must report a translated failure");
 }
 void destroyedTargetsAndDelayedCallbacks() {
@@ -141,7 +151,7 @@ void destroyedTargetsAndDelayedCallbacks() {
     auto* temporaryReceiver = new QObject;
     require(service.printImage(temporaryReceiver, owner, image(), [&](auto) { ++completions; }),
             "second print must start");
-    flush();
+    processUntil([&] { return starts == 1; });
     delete temporaryReceiver;
     nativeCompletion({Service::Status::Submitted, {}});
     flush();
@@ -173,7 +183,7 @@ void screenshotSubmissionAndStaleCapturePolicy() {
             QWidget owner;
             require(service.printImage(&owner, &owner, image(), captureCompletion),
                     "capture print must start");
-            flush();
+            processUntil([&] { return bool(native); });
             native({status, {}});
             flush();
             captureCompletion({Service::Status::Submitted, {}});
@@ -243,11 +253,11 @@ void printingPreservesOwnerAndWindowFlags() {
                                        completed = true;
                                    }),
                 "topmost owner print must start");
-        flush();
+        processUntil([&] { return bool(nativeCompletion); });
         require(nativeCompletion && service.busy(), "native print must remain pending");
         unchanged();
         nativeCompletion({status, {}});
-        flush();
+        processUntil([&] { return completed; });
         require(completed && !service.busy(), "native completion must release pending state");
         unchanged();
     }
@@ -271,7 +281,7 @@ void sharedServiceUsesNativeBackendWithLegacyFallback() {
                                        ++completions;
                                    }),
                 "shared service must accept and reopen printing");
-        flush();
+        processUntil([&] { return completions == 1; });
         require(sharedBackendStarts.size() == starts + 1 && !sharedBackendStarts.back() &&
                     completions == 1 && !service.busy(),
                 "shared service must use the native backend once and release each request");
@@ -286,7 +296,7 @@ void sharedServiceUsesNativeBackendWithLegacyFallback() {
                                    ++completions;
                                }),
             "shared service must accept printing when the native backend is unavailable");
-    flush();
+    processUntil([&] { return completions == 1; });
     require(sharedBackendStarts.size() == starts + 2 && !sharedBackendStarts[starts] &&
                 sharedBackendStarts[starts + 1] && completions == 1 && !service.busy(),
             "shared service must try the native backend before starting the legacy fallback once");

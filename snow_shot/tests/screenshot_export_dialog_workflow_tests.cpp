@@ -483,6 +483,16 @@ void pdfDialogAndSettings(QWidget& owner, const QTemporaryDir& temp) {
     require(canvas->outputImage().pixelColor(0, 0).alpha() == 255 &&
                 canvas->pdfLayout().pagePoints == paper.pagePoints,
             "PDF lossy preview must be opaque and retain the opening page setting");
+    const int decodesBeforeTitleChange = content->property("previewDecodeCount").toInt();
+    const qint64 previewIdentity = canvas->outputImage().cacheKey();
+    const auto generationBeforeTitleChange = content->property("previewGeneration").toULongLong();
+    child<AdLineEdit>(content, "saveFilenameInput")->setText(QStringLiteral("pdf-title-only"));
+    processUntil([&] {
+        return content->property("previewGeneration").toULongLong() > generationBeforeTitleChange;
+    });
+    require(content->property("previewDecodeCount").toInt() == decodesBeforeTitleChange &&
+                canvas->outputImage().cacheKey() == previewIdentity,
+            "PDF title edits must retain the decoded preview pixels without another decode");
     child<AdInputNumber>(content, "saveWidthInput")->setValue(320);
     child<AdSelect>(content, "saveFormatSelect")->setCurrentValue(QStringLiteral("png"));
     child<AdSelect>(content, "saveFormatSelect")->setCurrentValue(QStringLiteral("pdf"));
@@ -1987,7 +1997,8 @@ void overwriteRequiresConfirmation(QWidget& owner, const QTemporaryDir& temp) {
 
 void rowBackedDialogAndStalePreview(QWidget& owner, const QTemporaryDir& temp) {
     auto materializations = std::make_shared<std::atomic_int>(0);
-    const auto rows = snow_shot::image_codec::srgbRowSource(fixture(QSize(64, 3000)));
+    auto rows = snow_shot::image_codec::srgbRowSource(fixture(QSize(64, 3000)));
+    rows.backingImage = {};
     auto artifact = std::make_shared<ScreenshotExportArtifact>(ScreenshotExportSource::fromProducer(
         [materializations](const ScreenshotExportCancellation&) {
             ++*materializations;
@@ -2258,10 +2269,16 @@ void optimizedPipelineBehavior(QWidget& owner) {
             "lossy same-size exports did not reuse prepared pixels and decode codec artifacts");
 }
 
-void unbackedExactPreviewDecodesArtifact(QWidget& owner) {
+void unbackedExactPreviewRetainsPixels(QWidget& owner) {
     const QImage image = fixture();
     ScreenshotImageRowSource rows = snow_shot::image_codec::srgbRowSource(image);
     rows.backingImage = {};
+    auto sourceReads = std::make_shared<std::atomic_int>(0);
+    rows.readRows = [readRows = rows.readRows, sourceReads](int first, int count, qsizetype stride,
+                                                            uchar* target, qsizetype capacity) {
+        ++*sourceReads;
+        return readRows(first, count, stride, target, capacity);
+    };
     auto artifact = std::make_shared<ScreenshotExportArtifact>(ScreenshotExportSource::fromProducer(
         {}, [rows](std::function<bool()> cancellation) mutable {
             rows.cancellationRequested = std::move(cancellation);
@@ -2272,11 +2289,25 @@ void unbackedExactPreviewDecodesArtifact(QWidget& owner) {
     auto* modal = child<AdModal>(&owner, "screenshotSaveAsFileModal");
     QPointer<QWidget> content = modal->contentWidget();
     processUntil([&] { return content->property("previewGeneration").toULongLong() > 0; });
-    require(content->property("previewDecodeCount").toInt() == 1 &&
+    require(content->property("previewDecodeCount").toInt() == 0 &&
                 samePixels(
                     child<ScreenshotSavePreviewCanvas>(content, "savePreviewCanvas")->outputImage(),
                     image),
-            "source-sized exact output without backing pixels did not decode its artifact");
+            "small source-sized exact outputs must reuse the complete source preview pixels");
+    const int readsBeforeFormatChange = sourceReads->load();
+    const auto generationBeforeFormatChange = content->property("previewGeneration").toULongLong();
+    child<AdSelect>(content, "saveFormatSelect")->setCurrentValue(QStringLiteral("webp"));
+    child<AdSlider>(content, "saveQualitySlider")->setValue(100);
+    processUntil([&] {
+        return content->property("previewGeneration").toULongLong() > generationBeforeFormatChange;
+    });
+    require(
+        sourceReads->load() == readsBeforeFormatChange &&
+            content->property("previewDecodeCount").toInt() == 0 &&
+            samePixels(
+                child<ScreenshotSavePreviewCanvas>(content, "savePreviewCanvas")->outputImage(),
+                image),
+        "format changes must encode retained exact preview pixels without rereading the source");
     modal->reject();
     flush();
 }
@@ -2793,7 +2824,7 @@ int main(int argc, char* argv[]) {
             oversizedManualPngStreamsWithoutPopulatingCache(owner, temp);
             obsoleteSharedPngDoesNotBlockCurrentPreview(owner);
             optimizedPipelineBehavior(owner);
-            unbackedExactPreviewDecodesArtifact(owner);
+            unbackedExactPreviewRetainsPixels(owner);
             sourceSizedPngSharesMatchingEncoding(owner, temp);
             ScreenshotExportCoordinator::shared().shutdown();
             storage::ApplicationStorage::instance().shutdown();
@@ -2867,7 +2898,7 @@ int main(int argc, char* argv[]) {
         oversizedManualPngStreamsWithoutPopulatingCache(owner, temp);
         obsoleteSharedPngDoesNotBlockCurrentPreview(owner);
         optimizedPipelineBehavior(owner);
-        unbackedExactPreviewDecodesArtifact(owner);
+        unbackedExactPreviewRetainsPixels(owner);
         sourceSizedPngSharesMatchingEncoding(owner, temp);
         saveReusesCalculatedResult(owner, temp);
         committedControlsAndSave(owner, temp);

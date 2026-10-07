@@ -569,7 +569,29 @@ QJsonObject executeEncodeJob(const QJsonObject& job, const EditExportSettings& s
                                                         : snow::image::AlphaContent::opaque);
     }
     std::optional<PreparationResult> prepared;
-    if (!directNative) {
+    std::shared_ptr<MappedRasterPackage> preparedPackage;
+    const auto cachedPreparation = job.value(QStringLiteral("preparedRaster")).toObject();
+    if (!directNative && !cachedPreparation.isEmpty()) {
+        preparedPackage = MappedRasterPackage::open(
+            cachedPreparation.value(QStringLiteral("path")).toString(), &error);
+        const auto* document = preparedPackage ? preparedPackage->document() : nullptr;
+        const auto alpha = preparedPackage ? preparedPackage->verifiedAlphaContent() : std::nullopt;
+        if (!document || !alpha || document->frames.empty() ||
+            document->frames.size() != base->source().descriptor().frames.size() ||
+            document->frames.front().image.width() != static_cast<std::uint32_t>(settings.width) ||
+            document->frames.front().image.height() !=
+                static_cast<std::uint32_t>(settings.height)) {
+            result.insert(QStringLiteral("error"),
+                          error.isEmpty()
+                              ? QStringLiteral("The prepared preview document is unavailable.")
+                              : error);
+            return result;
+        }
+        prepared = PreparationResult{
+            *document, job.value(QStringLiteral("preparedPreviewEquivalentToBase")).toBool(),
+            *alpha, std::chrono::nanoseconds{0}};
+        result.insert(QStringLiteral("preparationCacheHit"), true);
+    } else if (!directNative) {
         std::optional<snow::image::Document> materialized;
         const snow::image::Document* packed = base->document();
         if (!packed) {
@@ -588,6 +610,45 @@ QJsonObject executeEncodeJob(const QJsonObject& job, const EditExportSettings& s
             return result;
         }
         prepared = std::move(preparedResult).value();
+        const QString preparedPath = job.value(QStringLiteral("preparedPath")).toString();
+        bool limitValid = false;
+        const auto limit =
+            job.value(QStringLiteral("preparedCacheLimit")).toString().toULongLong(&limitValid);
+        std::uint64_t pixels = 0;
+        bool withinLimit = limitValid;
+        for (const auto& frame : prepared->document.frames) {
+            if (frame.image.pixels().size() > limit - pixels) {
+                withinLimit = false;
+                break;
+            }
+            pixels += frame.image.pixels().size();
+        }
+        if (!preparedPath.isEmpty() && withinLimit) {
+            const QString partial = preparedPath + QStringLiteral(".partial");
+            preparedPackage = MappedRasterPackage::create(partial, prepared->document, &error, {},
+                                                          prepared->alphaContent);
+            if (preparedPackage && preparedPackage->mappedBytes() <= limit) {
+                preparedPackage.reset();
+                if (QFile::rename(partial, preparedPath)) {
+                    preparedPackage = MappedRasterPackage::open(preparedPath, &error);
+                    if (preparedPackage && preparedPackage->document()) {
+                        prepared->document = *preparedPackage->document();
+                        result.insert(QStringLiteral("preparedPath"), preparedPath);
+                        result.insert(QStringLiteral("preparedPreviewEquivalentToBase"),
+                                      prepared->previewEquivalentToBase);
+                    } else {
+                        preparedPackage.reset();
+                    }
+                }
+            } else {
+                preparedPackage.reset();
+            }
+            QFile::remove(partial);
+            if (!preparedPackage)
+                QFile::remove(preparedPath);
+            // A cache publication failure does not invalidate the prepared export.
+            error.clear();
+        }
     }
     result.insert(QStringLiteral("alphaContent"),
                   static_cast<int>(directNative ? directAlpha : prepared->alphaContent));
@@ -682,6 +743,18 @@ QJsonObject executeEncodeJob(const QJsonObject& job, const EditExportSettings& s
         {QStringLiteral("prepareNs"), result.value(QStringLiteral("prepareNs"))},
         {QStringLiteral("encodeNs"), result.value(QStringLiteral("encodeNs"))},
         {QStringLiteral("validateReceiptNs"), result.value(QStringLiteral("validateReceiptNs"))}};
+    if (result.contains(QStringLiteral("preparedPath"))) {
+        publication.insert(QStringLiteral("preparedPath"),
+                           result.value(QStringLiteral("preparedPath")));
+        publication.insert(QStringLiteral("preparedPreviewEquivalentToBase"),
+                           result.value(QStringLiteral("preparedPreviewEquivalentToBase")));
+    }
+    if (result.value(QStringLiteral("preparationCacheHit")).toBool())
+        publication.insert(QStringLiteral("preparationCacheHit"), true);
+    const bool previewUsesPreparedRaster =
+        previewKind == QStringLiteral("prepared") && preparedPackage;
+    if (previewUsesPreparedRaster)
+        publication.insert(QStringLiteral("previewUsesPreparedRaster"), true);
     if (directNative) {
         publication.insert(QStringLiteral("directNativeEncodeNs"),
                            result.value(QStringLiteral("directNativeEncodeNs")));
@@ -700,7 +773,7 @@ QJsonObject executeEncodeJob(const QJsonObject& job, const EditExportSettings& s
         result.insert(QStringLiteral("error"), QStringLiteral("Simulated exact preview failure."));
         return result;
     }
-    if (previewKind == QStringLiteral("prepared")) {
+    if (previewKind == QStringLiteral("prepared") && !previewUsesPreparedRaster) {
         if (!prepared || preparedDocument == nullptr) {
             result.insert(QStringLiteral("error"),
                           QStringLiteral("The prepared preview document is unavailable."));
@@ -717,6 +790,7 @@ QJsonObject executeEncodeJob(const QJsonObject& job, const EditExportSettings& s
         base.reset();
         if (prepared)
             prepared->document = {};
+        preparedPackage.reset();
         snow::image::Result<void> streamed;
         if (settings.format == snow::image::Format::jpeg) {
             snow::image::DecodeOptions decodeOptions;
@@ -744,7 +818,7 @@ QJsonObject executeEncodeJob(const QJsonObject& job, const EditExportSettings& s
         result.insert(QStringLiteral("artifactDecodeNs"), QString::number(stage.nsecsElapsed()));
         stage.restart();
     }
-    if (previewKind != QStringLiteral("base")) {
+    if (previewKind != QStringLiteral("base") && !previewUsesPreparedRaster) {
         if (!QFile::rename(partialPreview, previewPath)) {
             QFile::remove(partialPreview);
             result.insert(QStringLiteral("error"),
