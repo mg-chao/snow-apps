@@ -36,6 +36,11 @@ worker enables static ONNX Runtime, DirectML, and crash diagnostics. Its notice
 collection follows that dependency closure; RapidOCR's CLI, encoded-image
 decoding, HTTP/TLS model downloads, and YAML features are disabled.
 
+RapidOCR's optional HTTP features use Reqwest with Rustls (Apache-2.0 OR ISC OR
+MIT). They require Rustls 0.23.45 or a compatible newer release to address
+GHSA-2mjx-qc3c-rqvc. Builds enabling those features include Rustls and its
+resolved dependency licenses in the generated notice bundle.
+
 The GPL-3.0-only `snow-shot-updater` sidecar is implemented in Rust and is
 distributed as part of Snow Shot. Its resolved normal and build dependency
 graph—including Tokio, Reqwest with native platform TLS, Serde, RSA/SHA-256,

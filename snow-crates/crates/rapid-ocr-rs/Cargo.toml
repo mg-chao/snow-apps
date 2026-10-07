@@ -23,6 +23,8 @@ opencv = { version = "0.100.1", optional = true, default-features = false, featu
 ort = { version = "=2.0.0-rc.13", default-features = false, features = ["ndarray", "std"] }
 ort-sys = { version = "=2.0.0-rc.13", default-features = false, optional = true }
 reqwest = { version = "0.12", optional = true, default-features = false, features = ["blocking", "rustls-tls"] }
+# Enforce GHSA-2mjx-qc3c-rqvc's patched minimum when resolving Reqwest's TLS backend.
+rustls = { version = "0.23.45", optional = true, default-features = false }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 serde_yaml = { version = "0.9", optional = true }
@@ -45,8 +47,8 @@ copy-dylibs = ["ort/copy-dylibs"]
 # convenience features. Keep them in the default CLI build, while applications
 # with their own asset manager can omit their decoders and HTTP/TLS stack.
 image-io = ["image/png", "image/jpeg", "dep:kamadak-exif"]
-remote-input = ["image-io", "dep:reqwest"]
-model-download = ["dep:reqwest", "dep:sha2", "dep:serde_yaml", "dep:windows-sys"]
+remote-input = ["image-io", "dep:reqwest", "dep:rustls"]
+model-download = ["dep:reqwest", "dep:rustls", "dep:sha2", "dep:serde_yaml", "dep:windows-sys"]
 config-yaml = ["dep:serde_yaml"]
 cli = ["dep:clap", "config-yaml", "remote-input", "model-download"]
 full-image-io = [
