@@ -1992,6 +1992,9 @@ void ScreenshotController::Impl::createOverlayInputPipeline() {
             }
         },
     };
+    actions.currentLogicalCursorPosition = [this] {
+        return m_displaySession.logicalCursorPosition();
+    };
     actions.toggleGuidesForCurrentSession = [this] { return toggleGuidesForCurrentSession(); };
     actions.cursorVisibilityAvailable = [this] { return screenshotCursorAvailable(); };
     actions.toggleCursorVisibility = [this] {

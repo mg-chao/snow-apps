@@ -1049,6 +1049,35 @@ void ScreenshotOverlayInputHandler::setIntelligentSelectionIndex(int index) {
     m_context.selection.setSelectionRect(m_context.intelligentSelection.currentSelection());
 }
 
+bool ScreenshotOverlayInputHandler::canSelectCurrentScreen() const {
+    return !m_externalDragActive && !m_context.interaction.dragging() && !regionOperationActive() &&
+           m_context.actions.localShortcutInputAllowed() &&
+           m_context.interaction.moveToolActive() &&
+           (m_context.interaction.selecting() || m_context.interaction.movingSelection());
+}
+
+bool ScreenshotOverlayInputHandler::selectCurrentScreen() {
+    if (!canSelectCurrentScreen() || !acceptInput())
+        return false;
+    const auto* display = m_context.geometry.displayForLogicalPoint(
+        m_context.displaySession, m_context.actions.currentLogicalCursorPosition());
+    if (display == nullptr)
+        return false;
+    const QRectF screen = ScreenshotGeometryMapper::displayCanvasRect(*display);
+    if (screen.isEmpty())
+        return false;
+
+    resetTransientShortcuts();
+    m_context.actions.prepareExplicitSelectionCommand();
+    m_context.selection.setSelectionRect(screen);
+    // A full-screen replacement must retain the display's exact extent, even
+    // when the preceding selection used a remembered aspect ratio preset.
+    m_context.selection.clearAspectRatioPresetForReplacement();
+    m_context.intelligentSelection.clearTransientState();
+    confirmSelection();
+    return true;
+}
+
 bool ScreenshotOverlayInputHandler::canPrepareSelectionForToolbarShortcut() const {
     return m_context.interaction.selecting() && !m_externalDragActive &&
            !m_context.selection.constructionActive() && !regionOperationActive() &&

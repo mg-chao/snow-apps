@@ -9,6 +9,7 @@
 
 #include "snow_shot/image/screenshotregiongeometry.h"
 #include "snow_draw_engine_qt/snow_canvas_path_geometry.h"
+#include <QCursor>
 #include <QPoint>
 #include <QPointF>
 #include <QPointer>
@@ -133,6 +134,7 @@ struct ScreenshotOverlayInputActions {
         [](const ScreenshotOverlayWindow*) { return nullptr; };
     std::function<void(ScreenshotSelectionAspectRatioPreset, bool)>
         persistSelectionAspectRatioPreference = [](ScreenshotSelectionAspectRatioPreset, bool) {};
+    std::function<QPoint()> currentLogicalCursorPosition = [] { return QCursor::pos(); };
 };
 
 struct ScreenshotOverlayInputHandlerContext {
@@ -240,6 +242,8 @@ class ScreenshotOverlayInputHandler final {
     // This is also used by non-interactive quick actions that select a whole
     // monitor or a focused window after the capture frame arrives.
     void confirmSelection();
+    [[nodiscard]] bool canSelectCurrentScreen() const;
+    [[nodiscard]] bool selectCurrentScreen();
     [[nodiscard]] bool canPrepareSelectionForToolbarShortcut() const;
     // Commit the region, activate the command, then present its resulting tool.
     [[nodiscard]] bool activateToolbarShortcutForSelection(const std::function<bool()>& activate);

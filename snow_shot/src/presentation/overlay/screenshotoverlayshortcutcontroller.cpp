@@ -139,6 +139,15 @@ struct ScreenshotOverlayShortcutController::Impl {
     }
 
     void registerFixedBindings() {
+        QList<QKeyCombination> selectAllKeys;
+        for (const auto& sequence : QKeySequence::keyBindings(QKeySequence::SelectAll))
+            selectAllKeys.append(sequence[0]);
+        static_cast<void>(shortcutManager.addBinding(
+            &q, fixedBinding(
+                    QStringLiteral("screenshot.select_current_screen"), std::move(selectAllKeys),
+                    ShortcutManager::StandardPriority::WindowCommand,
+                    [this] { return inputHandler.canSelectCurrentScreen(); },
+                    [this] { return inputHandler.selectCurrentScreen(); })));
 #ifdef Q_OS_MACOS
         QList<QKeyCombination> closeKeys;
         for (const auto& sequence : QKeySequence::keyBindings(QKeySequence::Close))
