@@ -996,6 +996,47 @@ if(SNOW_SHOT_BUILD_TESTS)
     add_test(NAME snow-shot-login-item-tests COMMAND snow-shot-login-item-tests)
     set_tests_properties(snow-shot-login-item-tests PROPERTIES LABELS unit)
 endif()
+add_library(snow_shot_system_notification_controller STATIC
+    include/snow_shot/presentation/systemnotificationcontroller.h
+    src/presentation/services/systemnotificationcontroller.cpp
+    src/presentation/services/systemnotificationfeedback.cpp)
+target_include_directories(snow_shot_system_notification_controller PUBLIC
+    "${CMAKE_CURRENT_SOURCE_DIR}/include")
+target_link_libraries(snow_shot_system_notification_controller PUBLIC Qt6::Core
+    PRIVATE ant_design_qt Qt6::Widgets)
+if(SNOW_SHOT_BUILD_TESTS)
+    add_executable(snow-shot-system-notification-controller-tests
+        tests/system_notification_controller_tests.cpp)
+    target_link_libraries(snow-shot-system-notification-controller-tests PRIVATE
+        snow_shot_system_notification_controller ant_design_qt Qt6::Widgets)
+    snow_shot_import_offscreen_platform(snow-shot-system-notification-controller-tests)
+    snow_shot_offscreen_qpa_environment(_SNOW_NOTIFICATION_QPA_ENVIRONMENT)
+    add_test(NAME snow-shot-system-notification-controller-tests
+        COMMAND snow-shot-system-notification-controller-tests -platform offscreen)
+    set_tests_properties(snow-shot-system-notification-controller-tests PROPERTIES
+        LABELS "unit" TIMEOUT 30 ENVIRONMENT "${_SNOW_NOTIFICATION_QPA_ENVIRONMENT}"
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
+endif()
+if(APPLE)
+    add_library(snow_shot_system_notifications STATIC
+        src/platform/macos/systemnotificationservice.h
+        src/platform/macos/systemnotificationservice.mm)
+    target_include_directories(snow_shot_system_notifications PUBLIC
+        "${CMAKE_CURRENT_SOURCE_DIR}/src/platform/macos"
+        "${CMAKE_CURRENT_SOURCE_DIR}/include")
+    target_link_libraries(snow_shot_system_notifications PUBLIC Qt6::Core
+        PRIVATE "-framework Foundation" "-framework UserNotifications")
+    if(SNOW_SHOT_BUILD_TESTS)
+        add_executable(snow-shot-macos-system-notification-tests
+            tests/macos_system_notification_tests.mm)
+        target_link_libraries(snow-shot-macos-system-notification-tests PRIVATE
+            snow_shot_system_notifications "-framework UserNotifications")
+        add_test(NAME snow-shot-macos-system-notification-tests
+            COMMAND snow-shot-macos-system-notification-tests)
+        set_tests_properties(snow-shot-macos-system-notification-tests PROPERTIES
+            LABELS "unit;macos" TIMEOUT 30)
+    endif()
+endif()
 add_library(snow_shot_administrator STATIC
     src/platform/windows/autostartregistration.cpp
     src/platform/windows/administratorlaunch.cpp)
@@ -1559,8 +1600,10 @@ if(MSVC)
     target_link_options(snow_shot PRIVATE $<$<CONFIG:Release>:/DEBUG:FULL>)
 endif()
 
+target_link_libraries(snow_shot PRIVATE snow_shot_system_notification_controller)
 if(APPLE)
     target_link_libraries(snow_shot PRIVATE ${SNOW_SELECTED_FILES_LIBRARIES})
+    target_link_libraries(snow_shot PRIVATE snow_shot_system_notifications)
     target_sources(snow_shot PRIVATE src/platform/macos/camerashuttersound.mm)
     target_link_libraries(snow_shot PRIVATE "-framework AVFoundation" "-framework Foundation" objc)
     qt_add_resources(snow_shot "snow_shot_shutter_audio"
@@ -2805,6 +2848,7 @@ if(SNOW_SHOT_BUILD_TESTS)
         "${SNOW_SHOT_DRAW_ENGINE_QT_DIR}/include"
     )
     target_link_libraries(snow-shot-system-tray-controller-tests PRIVATE
+        snow_shot_system_notification_controller
         snow_shot_image_codec
         ant_design_qt
         snow_shot_settings_catalog
@@ -2867,6 +2911,8 @@ if(SNOW_SHOT_BUILD_TESTS)
     endif()
 
     if(APPLE)
+        target_link_libraries(snow-shot-system-tray-controller-tests PRIVATE
+            snow_shot_system_notifications)
         target_sources(snow-shot-system-tray-controller-tests PRIVATE
             src/platform/macos/systemtraymenu.mm
             tests/system_tray_menu_native_tests.mm)
@@ -9641,13 +9687,14 @@ if(SNOW_SHOT_BUILD_BENCHMARKS)
     target_compile_definitions(snow-shot-skin-surface-performance-benchmark PRIVATE
         SNOW_SKIN_SURFACE_BUILD_CONFIG="$<CONFIG>")
     target_link_libraries(snow-shot-skin-surface-performance-benchmark PRIVATE
+        snow_shot_system_notification_controller
         snow_shot_storage snow_shot_image_codec snow_shot_settings_catalog
         snow_draw_engine_qt_canvas ant_design_qt Qt6::Widgets)
     if(APPLE)
         target_sources(snow-shot-skin-surface-performance-benchmark PRIVATE
             src/platform/macos/systemtraymenu.mm)
         target_link_libraries(snow-shot-skin-surface-performance-benchmark PRIVATE
-            "-framework AppKit")
+            snow_shot_system_notifications "-framework AppKit")
     endif()
     qt_import_plugins(snow-shot-skin-surface-performance-benchmark EXCLUDE Qt6::QICOPlugin)
     qt_add_resources(snow-shot-skin-surface-performance-benchmark "snow_shot_skin_surface_tray_assets"

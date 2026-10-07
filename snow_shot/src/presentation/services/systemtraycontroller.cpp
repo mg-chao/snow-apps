@@ -1,5 +1,6 @@
 #include "snow_shot/app/edition.h"
 #include "snow_shot/presentation/systemtraycontroller.h"
+#include "snow_shot/presentation/systemnotificationcontroller.h"
 #include "systemtraymenuposition.h"
 #include "snowimageqtcodec.h"
 #include "snow_shot/storage/settingsadapters.h"
@@ -15,6 +16,7 @@
 
 #ifdef Q_OS_MACOS
 #include "snow_shot/platform/macos/systemtraymenu.h"
+#include "systemnotificationservice.h"
 #endif
 
 #include "antd_icons.h"
@@ -107,8 +109,8 @@ QString normalizedClickAction(const QString& action, const char* defaultAction) 
                : QString::fromLatin1(defaultAction);
 }
 
-// Balloons share one QSystemTrayIcon, so messageClicked only reports that some
-// balloon was clicked; routing follows the kind shown last.
+// QSystemTrayIcon only reports that some balloon was clicked. macOS uses a native
+// notification payload instead, because multiple delivered notifications coexist.
 enum class BalloonKind { None, Capture, Warning, Update, RecordingExport };
 
 class TrayImageCache final {
@@ -396,6 +398,48 @@ class SystemTrayController::Impl {
         trayIcon->setObjectName(QStringLiteral("snowShotSystemTrayIcon"));
         trayIcon->setToolTip(app::edition::isMini ? app::edition::productName()
                                                   : QStringLiteral("SnowShot"));
+#ifdef Q_OS_MACOS
+        notifications = std::make_unique<platform::macos::SystemNotificationService>(&q);
+        using NotificationService = platform::macos::SystemNotificationService;
+        QObject::connect(notifications.get(), &NotificationService::activated, &q,
+                         [this](NotificationService::Action action, const QString& path) {
+                             if (action == NotificationService::Action::OpenAbout)
+                                 activateMessage(BalloonKind::Update, {});
+                             else if (action == NotificationService::Action::OpenRecording)
+                                 activateMessage(BalloonKind::RecordingExport, path);
+                         });
+        platform::SystemNotificationDelivery delivery =
+            [native = notifications.get()](const platform::SystemNotificationRequest& request,
+                                           platform::SystemNotificationCompletion completed) {
+                native->show(request, std::move(completed));
+            };
+#else
+        const QPointer<QSystemTrayIcon> trayGuard(trayIcon);
+        platform::SystemNotificationDelivery delivery =
+            [trayGuard](const platform::SystemNotificationRequest& request,
+                        platform::SystemNotificationCompletion completed) {
+                if (!trayGuard || !trayGuard->isVisible() ||
+                    !QSystemTrayIcon::isSystemTrayAvailable() ||
+                    !QSystemTrayIcon::supportsMessages()) {
+                    completed({platform::SystemNotificationResult::Status::Unavailable,
+                               QStringLiteral("System tray notifications are unavailable.")});
+                    return;
+                }
+                const auto icon =
+                    request.severity == platform::SystemNotificationSeverity::Error
+                        ? QSystemTrayIcon::Critical
+                    : request.severity == platform::SystemNotificationSeverity::Warning
+                        ? QSystemTrayIcon::Warning
+                        : QSystemTrayIcon::Information;
+                trayGuard->showMessage(request.title, request.body, icon);
+                completed({});
+            };
+#endif
+        notificationDelivery =
+            std::make_unique<SystemNotificationController>(std::move(delivery), &q);
+        QObject::connect(notificationDelivery.get(),
+                         &SystemNotificationController::deliveryFinished, &q,
+                         &SystemTrayController::notificationDeliveryFinished);
         updateIcon();
 
         setMenuOptions({});
@@ -426,16 +470,10 @@ class SystemTrayController::Impl {
 #endif
                              }
                          });
-        QObject::connect(trayIcon, &QSystemTrayIcon::messageClicked, &q, [this]() {
-            if (!enabled)
-                return;
-            if (lastBalloonKind == BalloonKind::Update) {
-                emit q.openAboutRequested();
-            } else if (lastBalloonKind == BalloonKind::RecordingExport) {
-                const QString path = lastBalloonFilePath;
-                emit q.openRecordingFileRequested(path);
-            }
-        });
+#ifndef Q_OS_MACOS
+        QObject::connect(trayIcon, &QSystemTrayIcon::messageClicked, &q,
+                         [this]() { activateMessage(lastBalloonKind, lastBalloonFilePath); });
+#endif
         QObject::connect(&LanguageManager::instance(), &LanguageManager::languageChanged, &q,
                          [this](const QString&, const QLocale&) { retranslateUi(); });
         QObject::connect(&shortcuts::ShortcutDisplayService::instance(),
@@ -484,18 +522,44 @@ class SystemTrayController::Impl {
         }
     }
 
+    void activateMessage(BalloonKind kind, const QString& filePath) {
+#ifndef Q_OS_MACOS
+        if (!enabled)
+            return;
+#endif
+        if (kind == BalloonKind::Update) {
+            emit q.openAboutRequested();
+        } else if (kind == BalloonKind::RecordingExport) {
+            const QString path = filePath;
+            emit q.openRecordingFileRequested(path);
+        }
+    }
+
     void showBalloon(const QString& title, const QString& message,
                      QSystemTrayIcon::MessageIcon icon, BalloonKind kind,
                      const QString& filePath = {}) {
-        if (!enabled) {
-            return;
+        // Tray visibility governs only the icon/menu. macOS delivery and the actions
+        // of already delivered notifications have their own lifetime and payloads.
+#ifndef Q_OS_MACOS
+        if (enabled) {
+#endif
+            lastBalloonKind = kind;
+            lastBalloonFilePath = filePath;
+            trayIcon->setProperty("lastBalloonTitle", title);
+            trayIcon->setProperty("lastBalloonMessage", message);
+            trayIcon->setProperty("lastBalloonIcon", static_cast<int>(icon));
+#ifndef Q_OS_MACOS
         }
-        lastBalloonKind = kind;
-        lastBalloonFilePath = filePath;
-        trayIcon->setProperty("lastBalloonTitle", title);
-        trayIcon->setProperty("lastBalloonMessage", message);
-        trayIcon->setProperty("lastBalloonIcon", static_cast<int>(icon));
-        trayIcon->showMessage(title, message, icon);
+#endif
+        using Action = platform::SystemNotificationAction;
+        const Action action = kind == BalloonKind::Update            ? Action::OpenAbout
+                              : kind == BalloonKind::RecordingExport ? Action::OpenRecording
+                                                                     : Action::None;
+        const auto severity =
+            icon == QSystemTrayIcon::Critical  ? platform::SystemNotificationSeverity::Error
+            : icon == QSystemTrayIcon::Warning ? platform::SystemNotificationSeverity::Warning
+                                               : platform::SystemNotificationSeverity::Information;
+        notificationDelivery->show({title, message, severity, action, filePath});
     }
 
     void buildMenu() {
@@ -774,6 +838,10 @@ class SystemTrayController::Impl {
     QPointer<adqt::widgets::AdContextMenu> menu;
     QList<QPointer<adqt::widgets::AdContextMenu>> menus;
     QSystemTrayIcon* trayIcon = nullptr;
+#ifdef Q_OS_MACOS
+    std::unique_ptr<platform::macos::SystemNotificationService> notifications;
+#endif
+    std::unique_ptr<SystemNotificationController> notificationDelivery;
     settings::TrayCommandManifest manifest;
     QVector<settings::SettingsTrayMenuGroupDefinition> groups;
     std::unique_ptr<PinnedWindowGroupManager> ownedGroupManager;
@@ -872,10 +940,6 @@ void SystemTrayController::showRecordingExportMessage(const QString& path) {
     const QString absolutePath = QFileInfo(path).absoluteFilePath();
     m_impl->showBalloon(tr("Video export completed"), QDir::toNativeSeparators(absolutePath),
                         QSystemTrayIcon::Information, BalloonKind::RecordingExport, absolutePath);
-}
-
-bool SystemTrayController::canShowMessages() const {
-    return m_impl->enabled && QSystemTrayIcon::isSystemTrayAvailable();
 }
 
 void SystemTrayController::setEnabled(bool enabled) {

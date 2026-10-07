@@ -41,6 +41,7 @@
 #include "snow_shot/presentation/screenshotpinnedwindow.h"
 #include "snow_shot/presentation/screenrecordingfolder.h"
 #include "snow_shot/presentation/systemtraycontroller.h"
+#include "snow_shot/presentation/systemnotificationfeedback.h"
 #include "snow_shot/presentation/floatingtoolbarcontroller.h"
 #include "snow_shot/app/mcp/screenshotmcpserver.h"
 #include "snow_shot/app/mcp/screenshotmcpsession.h"
@@ -130,6 +131,17 @@ class ApplicationController::Impl {
           groupManager(initializedPinnedWindowRepository()),
           systemTray(presentation::settings::builtInTrayCommandManifest(), &groupManager),
           featureRouter([this](FeatureFamily feature) { showUnavailableFeature(feature); }) {
+        QObject::connect(&systemTray,
+                         &presentation::SystemTrayController::notificationDeliveryFinished, &q,
+                         [this](const platform::SystemNotificationRequest& request,
+                                const platform::SystemNotificationResult& result) {
+                             presentation::presentSystemNotificationResult(
+                                 request, result, [this]() -> QWidget* {
+                                     MainWindow& window = ensureMainWindow();
+                                     window.showAndActivate();
+                                     return &window;
+                                 });
+                         });
         QObject::connect(&floatingToolbar,
                          &presentation::FloatingToolbarController::actionRequested, &q,
                          [this](const QString& action) { dispatchFloatingAction(action); });
@@ -1372,8 +1384,7 @@ class ApplicationController::Impl {
             QObject::connect(
                 screenshotController.get(), &ScreenshotController::selectedFilePinFailed, &q,
                 [this](const QString& message) {
-                    if (systemTray.canShowMessages() &&
-                        (!mainWindow || !mainWindow->isVisible() || mainWindow->isMinimized())) {
+                    if (!mainWindow || !mainWindow->isVisible() || mainWindow->isMinimized()) {
                         systemTray.showWarningMessage(
                             ApplicationController::tr("Could not pin selected files"), message);
                         return;
@@ -1829,14 +1840,8 @@ class ApplicationController::Impl {
             showUnavailableFeatureInWindow(*mainWindow, feature);
             return;
         }
-        if (systemTray.canShowMessages()) {
-            systemTray.showWarningMessage(ApplicationController::tr("Feature unavailable"),
-                                          unavailableFeatureMessage(feature));
-            return;
-        }
-        MainWindow& window = ensureMainWindow();
-        window.showAndActivate();
-        showUnavailableFeatureInWindow(window, feature);
+        systemTray.showWarningMessage(ApplicationController::tr("Feature unavailable"),
+                                      unavailableFeatureMessage(feature));
     }
 
     void showGeneralSettings() {

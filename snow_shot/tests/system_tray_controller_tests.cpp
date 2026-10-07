@@ -48,6 +48,7 @@
 #include <functional>
 
 #ifdef Q_OS_MACOS
+#include "systemnotificationservice.h"
 int runNativeSystemTrayMenuTests(snow_shot::presentation::SystemTrayController& controller);
 #endif
 
@@ -57,6 +58,24 @@ void require(bool condition, const char* message) {
         std::cerr << message << '\n';
         std::exit(1);
     }
+}
+
+void clickNotification(snow_shot::presentation::SystemTrayController& controller,
+                       QSystemTrayIcon* trayIcon,
+                       snow_shot::platform::SystemNotificationAction action,
+                       const QString& path = {}) {
+#ifdef Q_OS_MACOS
+    Q_UNUSED(trayIcon);
+    auto* notifications =
+        controller.findChild<snow_shot::platform::macos::SystemNotificationService*>();
+    require(notifications != nullptr, "macOS must own its native notification service");
+    notifications->activated(action, path);
+#else
+    Q_UNUSED(controller);
+    Q_UNUSED(action);
+    Q_UNUSED(path);
+    trayIcon->messageClicked();
+#endif
 }
 
 void requireActionText(const QAction* action, const QString& expected, const char* message) {
@@ -428,6 +447,26 @@ int main(int argc, char* argv[]) {
     require(trayIcon != nullptr, "the controller should own a system tray icon");
     if (application.arguments().contains(QStringLiteral("--recording-export-only"))) {
         using snow_shot::presentation::SystemTrayController;
+        using Action = snow_shot::platform::SystemNotificationAction;
+#ifdef Q_OS_MACOS
+        using snow_shot::platform::macos::SystemNotificationService;
+        auto* notifications = controller.findChild<SystemNotificationService*>();
+        require(notifications != nullptr,
+                "macOS export notifications must use the authorized UserNotifications backend");
+        int notificationAttempts = 0;
+        QVector<snow_shot::platform::SystemNotificationRequest> attemptedRequests;
+        QObject::connect(
+            &controller, &SystemTrayController::notificationDeliveryFinished, &controller,
+            [&](const snow_shot::platform::SystemNotificationRequest& request,
+                const snow_shot::platform::SystemNotificationResult& result) {
+                require(
+                    result.status ==
+                        snow_shot::platform::SystemNotificationResult::Status::Unavailable,
+                    "an unbundled fixture must report unavailable delivery without native calls");
+                ++notificationAttempts;
+                attemptedRequests.append(request);
+            });
+#endif
         QStringList openedPaths;
         int aboutRequests = 0;
         QObject::connect(&controller, &SystemTrayController::openRecordingFileRequested,
@@ -439,30 +478,71 @@ int main(int argc, char* argv[]) {
         const QString second =
             storageDirectory.filePath(QStringLiteral("Video exports/second clip.mp4"));
         controller.showRecordingExportMessage(first);
+        QCoreApplication::processEvents();
+#ifdef Q_OS_MACOS
+        require(notificationAttempts == 1,
+                "recording completion must reach the native notification delivery service");
+#endif
         requireBalloon(trayIcon, QStringLiteral("Video export completed"),
                        QDir::toNativeSeparators(first), QSystemTrayIcon::Information,
                        "recording notification displays the exported file path");
-        trayIcon->messageClicked();
+        clickNotification(controller, trayIcon, Action::OpenRecording, first);
         require(openedPaths == QStringList{first} && aboutRequests == 0,
                 "clicking recording notification requests its file without opening About");
         controller.showRecordingExportMessage(second);
-        trayIcon->messageClicked();
+        clickNotification(controller, trayIcon, Action::OpenRecording, second);
         require(openedPaths == QStringList{first, second},
-                "new recording notifications replace their file action");
+                "recording notification clicks must use their own exported file");
+#ifdef Q_OS_MACOS
+        notifications->activated(SystemNotificationService::Action::OpenRecording, first);
+        require(openedPaths == QStringList{first, second, first},
+                "clicking an older macOS notification must open that notification's export");
+        openedPaths.removeLast();
+#endif
         controller.showWarningMessage(QStringLiteral("Warning"),
                                       QStringLiteral("Capture unavailable"));
-        trayIcon->messageClicked();
+        clickNotification(controller, trayIcon, Action::None);
         require(openedPaths.size() == 2,
                 "warning notifications clear the previous recording action");
         controller.showUpdateMessage(QStringLiteral("Update ready"));
-        trayIcon->messageClicked();
+        clickNotification(controller, trayIcon, Action::OpenAbout);
         require(openedPaths.size() == 2 && aboutRequests == 1,
                 "update clicks keep their existing About action");
+#ifdef Q_OS_MACOS
+        QCoreApplication::processEvents();
+        require(notificationAttempts == 4,
+                "recording, warning and update messages must share the native delivery service");
+        require(attemptedRequests.at(0).filePath == first &&
+                    attemptedRequests.at(1).filePath == second &&
+                    attemptedRequests.at(2).severity ==
+                        snow_shot::platform::SystemNotificationSeverity::Warning &&
+                    attemptedRequests.at(3).action == Action::OpenAbout,
+                "unavailable results must preserve each notification's content and action");
+#endif
         controller.showRecordingExportMessage(second);
         controller.setEnabled(false);
         controller.showRecordingExportMessage(first);
         trayIcon->messageClicked();
-        require(openedPaths.size() == 2, "disabled tray notifications cannot open exported files");
+#ifdef Q_OS_MACOS
+        notifications->activated(SystemNotificationService::Action::OpenRecording, first);
+        notifications->activated(SystemNotificationService::Action::OpenRecording, second);
+        QCoreApplication::processEvents();
+        require(notificationAttempts == 6,
+                "macOS notifications must remain independent of tray visibility");
+        require(openedPaths == QStringList{first, second, first, second},
+                "hidden tray icons must not disable new or previously delivered native actions");
+        controller.showCaptureMessage(QStringLiteral("Capture failed"), false);
+        QCoreApplication::processEvents();
+        require(notificationAttempts == 7 &&
+                    attemptedRequests.last().severity ==
+                        snow_shot::platform::SystemNotificationSeverity::Error,
+                "capture failure feedback must also reach delivery with the tray hidden");
+        controller.showRecordingExportMessage({});
+        QCoreApplication::processEvents();
+        require(notificationAttempts == 7, "empty export paths must not create notifications");
+#else
+        require(openedPaths.size() == 2, "disabled legacy tray notifications cannot open files");
+#endif
         snow_shot::storage::ApplicationStorage::instance().shutdown();
         return 0;
     }
@@ -508,10 +588,16 @@ int main(int argc, char* argv[]) {
                    QStringLiteral("Screenshot is unavailable"), QSystemTrayIcon::Warning,
                    "a general tray warning must preserve its title and warning severity");
     controller.setEnabled(false);
-    controller.showUpdateMessage(QStringLiteral("Ignored while disabled"));
+    controller.showUpdateMessage(QStringLiteral("Update with tray hidden"));
+#ifdef Q_OS_MACOS
+    requireBalloon(trayIcon, QStringLiteral("Update"), QStringLiteral("Update with tray hidden"),
+                   QSystemTrayIcon::Information,
+                   "native notification delivery must remain enabled with the tray hidden");
+#else
     requireBalloon(trayIcon, QStringLiteral("Feature unavailable"),
                    QStringLiteral("Screenshot is unavailable"), QSystemTrayIcon::Warning,
                    "a disabled tray must not replace the last balloon with an update notice");
+#endif
     controller.setEnabled(true);
 
     const QStringList bundledSelections{
@@ -1285,7 +1371,8 @@ int main(int argc, char* argv[]) {
     const int showMainWindowRequestsBeforeMessageClicks = showMainWindowRequests;
     const int functionSettingsRequestsBeforeMessageClicks = functionSettingsRequests;
     controller.showUpdateMessage(QStringLiteral("Snow Shot 2.0.0 is available."));
-    trayIcon->messageClicked();
+    clickNotification(controller, trayIcon,
+                      snow_shot::platform::SystemNotificationAction::OpenAbout);
     require(aboutRequests == 1 && screenshotRequests == screenshotRequestsBeforeMessageClicks &&
                 showMainWindowRequests == showMainWindowRequestsBeforeMessageClicks &&
                 functionSettingsRequests == functionSettingsRequestsBeforeMessageClicks,
@@ -1293,15 +1380,20 @@ int main(int argc, char* argv[]) {
     controller.showCaptureMessage(QStringLiteral("Capture failed"), false);
     controller.showWarningMessage(QStringLiteral("Feature unavailable"),
                                   QStringLiteral("Screenshot is unavailable"));
-    trayIcon->messageClicked();
+    clickNotification(controller, trayIcon, snow_shot::platform::SystemNotificationAction::None);
     require(aboutRequests == 1,
             "capture and warning balloon clicks must not request the About page");
     controller.setEnabled(false);
-    controller.showUpdateMessage(QStringLiteral("Ignored while disabled"));
-    trayIcon->messageClicked();
+    controller.showUpdateMessage(QStringLiteral("Update with tray hidden"));
+    clickNotification(controller, trayIcon,
+                      snow_shot::platform::SystemNotificationAction::OpenAbout);
     controller.setEnabled(true);
+#ifdef Q_OS_MACOS
+    require(aboutRequests == 2, "native notification actions must remain valid with a hidden tray");
+#else
     require(aboutRequests == 1,
             "a balloon suppressed while the tray is disabled must stay unclickable");
+#endif
 
     screenshotMenuAction->trigger();
     showMainWindowMenuAction->trigger();

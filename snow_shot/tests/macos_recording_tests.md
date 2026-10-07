@@ -98,6 +98,89 @@ rows and clipping at the canvas edge. For visual acceptance, record with highlig
 and separate cursor enabled, switch between arrow and text cursors, and verify the
 hotspot stays at the highlight center in both direct output and editable export.
 
+## Export completion notifications
+
+macOS notifications use `UserNotifications.framework` rather than Qt's deprecated
+`NSUserNotification` tray backend. Enable **Notify after export completes** in the
+recording settings. The first notification requests macOS alert and sound permission
+before delivery; later notifications respect changes in System Settings. Delivery requires
+an app bundle with a bundle identifier. Running an unbundled executable reports
+unavailable delivery instead of invoking the native API.
+
+The content requests the default notification sound; the delegate permits foreground
+banners, sound and Notification Center entries. macOS still controls presentation:
+Snow Shot must have **Desktop** notifications and a temporary or persistent alert
+style enabled. **Play sound for notification** controls whether sounds are audible.
+Focus and **When mirroring or sharing the display → Notifications Off** can silence
+an accepted notification while keeping its Notification Center entry. During active
+screen sharing, choose **Allow Notifications** to permit pop-ups; this system-wide
+preference affects all apps and can expose notification contents on the shared screen.
+An actual silent export was traced in the `usernoted` log to `resolutionReason:
+display shared` with `interruptionSuppression: silence`. Delivery acceptance alone
+does not establish that macOS displayed a banner. Do not bypass system policy with
+critical alerts, retries or fixed delays.
+After explicitly allowing notifications during sharing, a normal six-second UI
+recording/export was verified in the native log with `interruptionSuppression: none`,
+foreground presentation options `sound`, `list`, `banner`, an alert displayed by
+Notification Center, and `Playing notification sound` for the Snow Shot bundle.
+
+Each export notification retains its own file path, so clicking an older notification
+reveals that export in Finder even after another export or an update notification arrives.
+Native delivery and notification actions are independent of tray visibility: disabling
+the tray hides only its icon and menu on macOS.
+
+Every request reports its own accepted, unavailable, denied or failed result. Rejected
+requests activate the main window and show the original message with its original
+severity. This shared fallback also covers capture failures, update notices, background
+file-pinning errors and unavailable features. Native errors remain in diagnostic logs;
+they do not replace the user-facing message. Accepted requests do not activate a fallback
+window, including when macOS suppresses their presentation. Denied exports are not
+replayed after permission is enabled.
+
+Run only the focused regression checks:
+
+```sh
+cmake --build build/snow-shot-macos-arm64-debug --parallel 8 --target \
+  snow-shot-macos-system-notification-tests snow-shot-system-tray-controller-tests \
+  snow-shot-system-notification-controller-tests snow-shot-screen-recording-controller-tests
+ctest --test-dir build/snow-shot-macos-arm64-debug --output-on-failure \
+  -R '^snow-shot-(macos-system-notification|system-notification-controller|recording-export-tray|recording-export-notification)-tests$'
+```
+
+The native API fixtures run without requesting real permission or posting alerts.
+They cover alert/sound authorization ordering, concurrent exports, default sound,
+foreground banner/list/sound presentation with ordinary interruption priority,
+per-notification actions, per-request denial, permission changes, scheduling errors,
+out-of-order completion and shutdown callbacks. The portable notification controller
+tests exercise visible fallback content/severity, accepted delivery without window
+activation, worker-thread completion and controller shutdown. The tray fixture verifies
+native delivery and old/new actions with a hidden tray. The recording controller tests
+cover successful direct, post-processed and trimmed exports,
+auto-exit, failures and the disabled notification setting.
+
+For native acceptance, use the signed installed app with notifications enabled:
+
+1. Export a short video and allow Snow Shot notifications when macOS prompts.
+   Verify the banner and sound while Snow Shot is active and again while another
+   app is active, with sound and Desktop alerts enabled and Focus disabled. Check
+   the screen-sharing notification preference if macOS suppresses the banner.
+2. Export two different files, then click the older entry in Notification Center.
+   Confirm Finder selects the older file. Repeat with a trimmed export and with recording
+   auto-exit enabled.
+3. Deny notifications in System Settings and export again. Verify the file still
+   completes, the main window shows the export-completion message and the denial appears
+   in the diagnostic log. With the main window hidden, also try an unavailable feature
+   or pin an invalid selected file and verify its original warning is visible.
+   Re-enable notifications
+   and verify a new export produces a notification without replaying denied exports.
+4. While another app shares the display, verify **Notifications Off** suppresses
+   the pop-up, then explicitly allow notifications during sharing and verify the
+   next export can present a banner. Also disable Snow Shot notification sounds
+   and verify a new export remains visually present without sound.
+5. Disable the tray icon and export again. Verify native delivery still works, including
+   clicking an older notification to reveal its own file. Restore the original tray and
+   notification preferences after checking.
+
 ## Native export probe
 
 Deploy with the normal bundle installer, then use the diagnostic entry point:
