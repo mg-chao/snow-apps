@@ -10743,8 +10743,10 @@ void distanceSettingsExposeIndependentPropertiesAndHoverWheel() {
                 "trackpad wheel should preserve hundredths and apply exactly one factor step");
     }
     auto* millimeters = units->button(static_cast<int>(SnowCanvasDistanceUnit::Mm));
-    require(millimeters != nullptr && millimeters->text() == QStringLiteral("mm"),
-            "distance units should expose a millimeter button");
+    require(millimeters != nullptr && millimeters->text().isEmpty() &&
+                millimeters->accessibleName() == QStringLiteral("mm") &&
+                !millimeters->icon().isNull(),
+            "distance units should expose a labeled millimeter icon button");
     millimeters->click();
     require(emitted.unit == SnowCanvasDistanceUnit::Mm &&
                 properties == SnowCanvasDistanceStylePropertyUnit,

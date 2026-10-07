@@ -1971,22 +1971,20 @@ QWidget* ScreenshotToolPaletteStyleControls::buildDistanceFamily(
         config.objectName = QStringLiteral("screenshotDistanceUnitButtonGroup");
         config.useButtonMetrics = true;
         config.options = {
-            {static_cast<int>(SnowCanvasDistanceUnit::Mm), "mm", {}},
-            {static_cast<int>(SnowCanvasDistanceUnit::Cm), "cm", {}},
-            {static_cast<int>(SnowCanvasDistanceUnit::M), "m", {}},
-            {static_cast<int>(SnowCanvasDistanceUnit::Km), "km", {}},
-            {static_cast<int>(SnowCanvasDistanceUnit::Px), "px", {}},
+            {static_cast<int>(SnowCanvasDistanceUnit::Mm), "mm",
+             custom_outlined_icons::DistanceUnitMm()},
+            {static_cast<int>(SnowCanvasDistanceUnit::Cm), "cm",
+             custom_outlined_icons::DistanceUnitCm()},
+            {static_cast<int>(SnowCanvasDistanceUnit::M), "m",
+             custom_outlined_icons::DistanceUnitM()},
+            {static_cast<int>(SnowCanvasDistanceUnit::Km), "km",
+             custom_outlined_icons::DistanceUnitKm()},
+            {static_cast<int>(SnowCanvasDistanceUnit::Px), "px",
+             custom_outlined_icons::DistanceUnitPx()},
         };
         auto editor = createScreenshotToolPaletteRadioEditor(controls, config, metrics);
         units = editor.container;
         m_distanceUnitGroup = editor.group;
-        const char* labels[] = {"mm", "cm", "m", "km", "px"};
-        for (int i = 0; i < editor.buttons.size(); ++i) {
-            editor.buttons.at(i)->setText(
-                ScreenshotToolPaletteTranslationText(labels[i]).translated());
-            editor.buttons.at(i)->setProperty("snowShotStyleRadioBaseSize",
-                                              QSize(36, metrics.buttonSize));
-        }
         layout->addWidget(units);
     } else {
         m_distanceUnitGroup = units->findChild<adqt::widgets::AdRadioButtonGroup*>();
