@@ -492,7 +492,7 @@ bool validDistanceStyle(const SnowCanvasDistanceStyle& style) {
     return style.stroke.isValid() && std::isfinite(style.strokeWidth) && style.strokeWidth >= 1.0 &&
            style.strokeWidth <= 72.0 && std::isfinite(style.factor) && style.factor >= 0.01 &&
            style.factor <= 1000.0 &&
-           enumInRange(style.unit, SnowCanvasDistanceUnit::Px, SnowCanvasDistanceUnit::Km) &&
+           enumInRange(style.unit, SnowCanvasDistanceUnit::Px, SnowCanvasDistanceUnit::Mm) &&
            style.decimalPlaces >= 0 && style.decimalPlaces <= 3 &&
            std::isfinite(style.endpointScale) && style.endpointScale >= 0.5 &&
            style.endpointScale <= 3.0 &&

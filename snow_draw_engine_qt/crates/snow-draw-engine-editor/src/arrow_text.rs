@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
 
 use snow_draw_engine_core::{ErrorCode, Point};
@@ -91,12 +92,28 @@ impl Editor {
         let Some(text_id) = document.bound_text_id_for_arrow(arrow_id) else {
             return false;
         };
-        self.arrow_text_previews(document)
+        let preview = self
+            .preview_selection_arrows(document)
             .into_iter()
-            .find(|(id, _)| *id == text_id)
-            .is_some_and(|(_, text)| {
-                !text.text.trim().is_empty() && text_hit_test(&text, canvas_point, 0.0)
-            })
+            .find(|arrow| arrow.id == arrow_id);
+        let Some(arrow) = preview
+            .as_ref()
+            .map(|state| &state.arrow)
+            .or_else(|| document.arrow(arrow_id).ok())
+        else {
+            return false;
+        };
+        let Ok(text) = document.text(text_id) else {
+            return false;
+        };
+        let text = self.measured_arrow_text(request(
+            arrow_id,
+            text_id,
+            arrow,
+            text,
+            self.state.arrow_text_measurement_generation,
+        ));
+        !text.text.trim().is_empty() && text_hit_test(&text, canvas_point, 0.0)
     }
 
     pub(crate) fn arrow_text_selection_bounds(
@@ -160,15 +177,18 @@ impl Editor {
         &self,
         document: &DocumentModel,
     ) -> Vec<ArrowTextLayoutRequest> {
-        let arrows = self.preview_selection_arrows(document);
-        let mut requests: Vec<_> = document
-            .arrow_text_bindings()
+        let arrows: HashMap<_, _> = self
+            .preview_selection_arrows(document)
             .into_iter()
+            .map(|arrow| (arrow.id, arrow.arrow))
+            .collect();
+        let mut requests: Vec<_> = document
+            .arrow_label_bindings()
+            .iter()
+            .copied()
             .filter_map(|(arrow_id, text_id)| {
                 let arrow = arrows
-                    .iter()
-                    .find(|a| a.id == arrow_id)
-                    .map(|a| &a.arrow)
+                    .get(&arrow_id)
                     .or_else(|| document.arrow(arrow_id).ok())?;
                 let text = document.text(text_id).ok()?;
                 let request = request(
@@ -181,8 +201,8 @@ impl Editor {
                 (!self
                     .state
                     .arrow_text_measurements
-                    .iter()
-                    .any(|m| m.matches(&request)))
+                    .get(&text_id)
+                    .is_some_and(|m| m.matches(&request)))
                 .then_some(request)
             })
             .collect();
@@ -190,8 +210,8 @@ impl Editor {
             && !self
                 .state
                 .arrow_text_measurements
-                .iter()
-                .any(|m| m.matches(&request))
+                .get(&request.text_id)
+                .is_some_and(|m| m.matches(&request))
         {
             requests.push(request);
         }
@@ -247,38 +267,65 @@ impl Editor {
         size: TextLayoutSize,
         natural_width: f64,
     ) -> Result<bool, ErrorCode> {
-        let size = validate_text_layout_size(size)?;
-        // Zero preserves the exact-constraint contract for hosts that do not
-        // supply natural metrics. Never infer an unwrapped layout from its size.
-        if !natural_width.is_finite() || natural_width < 0.0 {
-            return Err(ErrorCode::InvalidArgument);
+        self.apply_arrow_text_measurements(document, &[(text_id, key, size, natural_width)])
+    }
+
+    pub fn apply_arrow_text_measurements(
+        &mut self,
+        document: &DocumentModel,
+        layouts: &[(ElementId, u64, TextLayoutSize, f64)],
+    ) -> Result<bool, ErrorCode> {
+        if layouts.is_empty() {
+            return Ok(false);
         }
-        let Some(request) = self
+        // Resolve previews and pending requests once for the complete host batch.
+        let mut requests: HashMap<_, _> = self
             .arrow_text_layout_requests(document)
             .into_iter()
-            .find(|r| r.text_id == text_id && r.key == key)
-        else {
-            return Ok(false);
-        };
-        if size.width() > request.max_width + 0.01 {
-            return Err(ErrorCode::InvalidArgument);
-        }
-        if natural_width > 0.0 && (size.width() - natural_width.min(request.max_width)).abs() > 0.01
-        {
-            return Err(ErrorCode::InvalidArgument);
-        }
-        self.state
-            .arrow_text_measurements
-            .retain(|m| m.text_id != text_id && document.text(m.text_id).is_ok());
-        self.state
-            .arrow_text_measurements
-            .push(ArrowTextMeasurement {
+            .map(|request| (request.text_id, request))
+            .collect();
+        let mut measured = Vec::with_capacity(layouts.len());
+        for &(text_id, key, size, natural_width) in layouts {
+            let size = validate_text_layout_size(size)?;
+            // Zero preserves the exact-constraint contract for older hosts.
+            if !natural_width.is_finite() || natural_width < 0.0 {
+                return Err(ErrorCode::InvalidArgument);
+            }
+            let Some(request) = requests.get(&text_id).filter(|r| r.key == key) else {
+                continue;
+            };
+            if size.width() > request.max_width + 0.01
+                || (natural_width > 0.0
+                    && (size.width() - natural_width.min(request.max_width)).abs() > 0.01)
+            {
+                return Err(ErrorCode::InvalidArgument);
+            }
+            measured.push(ArrowTextMeasurement {
                 text_id,
                 key,
                 size,
                 text_key: request.text_key,
                 natural_width,
             });
+            // Duplicate/stale metrics in the same batch cannot overwrite a result.
+            requests.remove(&text_id);
+        }
+        if measured.is_empty() {
+            return Ok(false);
+        }
+        // Validate the entire batch before changing state. This makes errors
+        // atomic without cloning the editor and every retained measurement.
+        let preview_id = matches!(self.state.creation_preview.as_ref(),
+            Some(crate::ElementCreationPreview::Arrow(arrow)) if arrow.is_distance())
+        .then(|| self.distance_creation_text_id());
+        self.state
+            .arrow_text_measurements
+            .retain(|id, _| document.text(*id).is_ok() || Some(*id) == preview_id);
+        for measurement in measured {
+            self.state
+                .arrow_text_measurements
+                .insert(measurement.text_id, measurement);
+        }
         self.bump_scene_state_revision();
         self.bump_overlay_state_revision();
         Ok(true)
@@ -288,8 +335,8 @@ impl Editor {
         let measurement = self
             .state
             .arrow_text_measurements
-            .iter()
-            .find(|m| m.matches(&request));
+            .get(&request.text_id)
+            .filter(|m| m.matches(&request));
         let mut text = request.text;
         if let Some(measurement) = measurement {
             text = text_with_measured_layout(&text, measurement.size)
@@ -302,15 +349,18 @@ impl Editor {
         &self,
         document: &DocumentModel,
     ) -> Vec<(ElementId, TextData)> {
-        let arrows = self.preview_selection_arrows(document);
-        document
-            .arrow_text_bindings()
+        let arrows: HashMap<_, _> = self
+            .preview_selection_arrows(document)
             .into_iter()
+            .map(|arrow| (arrow.id, arrow.arrow))
+            .collect();
+        document
+            .arrow_label_bindings()
+            .iter()
+            .copied()
             .filter_map(|(arrow_id, text_id)| {
                 let arrow = arrows
-                    .iter()
-                    .find(|a| a.id == arrow_id)
-                    .map(|a| &a.arrow)
+                    .get(&arrow_id)
                     .or_else(|| document.arrow(arrow_id).ok())?;
                 let text = document.text(text_id).ok()?;
                 Some((
@@ -334,8 +384,9 @@ impl Editor {
         transaction: &mut Transaction,
     ) {
         let mut arrows: std::collections::HashMap<_, _> = document
-            .arrow_text_bindings()
-            .into_iter()
+            .arrow_label_bindings()
+            .iter()
+            .copied()
             .filter_map(|(id, _)| document.arrow(id).ok().map(|a| (id, a.clone())))
             .collect();
         let mut texts = std::collections::HashMap::new();

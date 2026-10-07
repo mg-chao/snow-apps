@@ -13,6 +13,7 @@ pub enum DistanceUnit {
     Cm,
     M,
     Km,
+    Mm,
 }
 
 impl DistanceUnit {
@@ -22,6 +23,7 @@ impl DistanceUnit {
             Self::Cm => "cm",
             Self::M => "m",
             Self::Km => "km",
+            Self::Mm => "mm",
         }
     }
 }
@@ -91,7 +93,8 @@ pub fn distance_label_text(arrow: &ArrowData) -> Option<String> {
 /// The label is derived from its owner; independent text preferences never
 /// change the meaning or appearance of a distance annotation.
 pub fn distance_label(arrow: &ArrowData, layout: Option<TextLayoutSize>) -> Option<TextData> {
-    let font_size = arrow.stroke_width * 10.0;
+    // Keep the 2px stroke's 20px label while damping size changes in both directions.
+    let font_size = 20.0 * (arrow.stroke_width / 2.0).sqrt();
     Some(TextData {
         center: crate::arrow_text_anchor(arrow),
         layout: layout.unwrap_or_else(|| TextLayoutSize::new(1.0, font_size * 1.2)),
@@ -110,4 +113,54 @@ pub fn distance_label(arrow: &ArrowData, layout: Option<TextLayoutSize>) -> Opti
         auto_resize: true,
         opacity: arrow.opacity,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use snow_draw_engine_core::{ColorRgba8, Point, arrow::ArrowType, arrow::StrokeStyle};
+
+    #[test]
+    fn distance_label_font_grows_sublinearly_across_supported_stroke_widths() {
+        let mut arrow = ArrowData::from_global_points(
+            &[Point::new(0.0, 0.0), Point::new(100.0, 0.0)],
+            ColorRgba8::default(),
+            2.0,
+            StrokeStyle::Solid,
+            ArrowType::Straight,
+            None,
+            None,
+        )
+        .unwrap();
+        arrow.linear_kind = crate::LinearElementKind::Distance;
+        arrow.distance = Some(DistanceAnnotation::default());
+        assert_eq!(distance_label(&arrow, None).unwrap().font_size, 20.0);
+
+        arrow.stroke_width = 1.0;
+        let thin_label = distance_label(&arrow, None).unwrap();
+        assert!(thin_label.font_size > 10.0 && thin_label.font_size < 20.0);
+        let mut previous_size = thin_label.font_size;
+        let mut previous_growth = f64::INFINITY;
+        let mut previous_ratio = previous_size;
+        let measured = TextLayoutSize::new(120.0, 24.0);
+        for width in 2..=72 {
+            arrow.stroke_width = f64::from(width);
+            let label = distance_label(&arrow, None).unwrap();
+            let growth = label.font_size - previous_size;
+            let ratio = label.font_size / arrow.stroke_width;
+            assert!(growth > 0.0 && growth < previous_growth);
+            assert!(ratio < previous_ratio);
+            assert_eq!(label.layout.height(), label.font_size * 1.2);
+            assert_eq!(
+                distance_label(&arrow, Some(measured)).unwrap().layout,
+                measured
+            );
+            if width == 10 {
+                assert!(label.font_size > 20.0 && label.font_size < 50.0);
+            }
+            previous_size = label.font_size;
+            previous_growth = growth;
+            previous_ratio = ratio;
+        }
+    }
 }

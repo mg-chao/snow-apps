@@ -6,7 +6,12 @@
 
 #include <QAbstractTextDocumentLayout>
 #include <QBrush>
+#include <QCache>
 #include <QColor>
+#include <QDataStream>
+#include <QGuiApplication>
+#include <QIODevice>
+#include <QObject>
 #include <QPainter>
 #include <QPainterPath>
 #include <QPen>
@@ -17,6 +22,9 @@
 #include <QTextLayout>
 #include <QTextLine>
 
+#include <atomic>
+#include <mutex>
+
 namespace snow_canvas_text_render {
 namespace {
 
@@ -26,7 +34,79 @@ QColor toQColor(const SnowColorRgba8& color) {
     return QColor(color.r, color.g, color.b, color.a);
 }
 
+struct ContentsLayoutCache {
+    static constexpr int maximumBytes = 4 * 1024 * 1024;
+    QCache<QByteArray, std::shared_ptr<text_layout::DocumentLayout>> layouts{maximumBytes};
+    std::uint64_t builds = 0;
+    std::uint64_t fontDatabaseGeneration = 0;
+
+    std::shared_ptr<text_layout::DocumentLayout>
+    get(const SnowSceneDisplayItem& item, const QFont& baseFont, double zoom, const QString& text) {
+        const double safeZoom = qMax(0.0001, zoom);
+        const auto resolution = text_layout::resolveFont(baseFont, item, safeZoom);
+        QByteArray key;
+        QDataStream stream(&key, QIODevice::WriteOnly);
+        // Position, rotation, opacity, and painter clips are applied outside the
+        // document. Only typography and layout inputs belong in this key.
+        stream << text << resolution.font << resolution.scale << safeZoom
+               << qMax(1.0, item.width * safeZoom) << qMax(1.0, item.height * safeZoom)
+               << static_cast<quint32>(item.text_horizontal_align)
+               << static_cast<quint32>(item.text_vertical_align);
+        if (const auto* cached = layouts.object(key)) {
+            return *cached;
+        }
+        auto layout = std::make_shared<text_layout::DocumentLayout>(
+            text_layout::createDocumentLayout(item, baseFont, safeZoom, text, false));
+        // The paint context supplies foreground without reformatting/reflowing
+        // the document. Cached layouts remain immutable when colors change.
+        ++builds;
+        // Account conservatively for document, blocks, glyph runs, and key data.
+        // Oversized texts are rendered normally without retaining the document.
+        const qsizetype cost =
+            4096 + key.size() + text.size() * 64 + layout->textDocument().blockCount() * 256;
+        if (cost <= maximumBytes) {
+            layouts.insert(key, new std::shared_ptr<text_layout::DocumentLayout>(layout),
+                           static_cast<int>(cost));
+        }
+        return layout;
+    }
+};
+
+std::uint64_t fontDatabaseGeneration() {
+    static std::atomic<std::uint64_t> generation{0};
+    static std::once_flag connection;
+    if (qGuiApp != nullptr) {
+        std::call_once(connection, []() {
+            QObject::connect(
+                qGuiApp, &QGuiApplication::fontDatabaseChanged, qGuiApp,
+                []() { generation.fetch_add(1, std::memory_order_relaxed); }, Qt::DirectConnection);
+        });
+    }
+    return generation.load(std::memory_order_relaxed);
+}
+
+ContentsLayoutCache& contentsLayoutCache() {
+    // QTextDocument belongs to the rendering thread, including export workers.
+    thread_local ContentsLayoutCache cache;
+    const auto generation = fontDatabaseGeneration();
+    if (cache.fontDatabaseGeneration != generation) {
+        // Export workers need invalidation even without a Qt event loop.
+        cache.layouts.clear();
+        cache.fontDatabaseGeneration = generation;
+    }
+    return cache;
+}
+
 } // namespace
+
+void resetLayoutCacheForCurrentThread() {
+    contentsLayoutCache().layouts.clear();
+}
+
+LayoutCacheStats layoutCacheStatsForCurrentThread() {
+    const auto& cache = contentsLayoutCache();
+    return {cache.layouts.size(), cache.layouts.totalCost(), cache.builds};
+}
 
 void drawContents(QPainter& painter, const SnowSceneDisplayItem& item, const QFont& baseFont,
                   const QRectF& localRect, double zoom) {
@@ -35,20 +115,13 @@ void drawContents(QPainter& painter, const SnowSceneDisplayItem& item, const QFo
         return;
     }
 
-    text_layout::DocumentLayout layout =
-        text_layout::createDocumentLayout(item, baseFont, zoom, text, false);
-
-    QTextDocument& document = layout.textDocument();
-    QTextCursor cursor(&document);
-    cursor.select(QTextCursor::Document);
-    QTextCharFormat format;
-    format.setForeground(QBrush(toQColor(item.text_color)));
-    cursor.mergeCharFormat(format);
+    const auto retained = contentsLayoutCache().get(item, baseFont, zoom, text);
+    const auto& layout = *retained;
 
     painter.save();
     painter.translate(localRect.left(), localRect.top() + layout.topOffset);
     painter.scale(layout.resolution.scale, layout.resolution.scale);
-    text_layout::drawDocument(painter, layout);
+    text_layout::drawDocument(painter, layout, toQColor(item.text_color));
     painter.restore();
 }
 

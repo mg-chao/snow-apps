@@ -739,6 +739,7 @@ enum DistanceUnit {
     Cm,
     M,
     Km,
+    Mm,
 }
 
 #[derive(Default, Deserialize, JsonSchema)]
@@ -1165,7 +1166,7 @@ mod tests {
     }
     #[test]
     fn distance_annotation_schemas_validate_settings_and_two_endpoints() {
-        for unit in ["px", "cm", "m", "km"] {
+        for unit in ["px", "cm", "m", "km", "mm"] {
             let style = json!({"stroke":[245,34,45,255],"stroke_width":2,"factor":0.01,
                 "unit":unit,"decimal_places":3,"endpoint_scale":0.5,"endpoint_style":"bar"});
             assert!(
@@ -1203,7 +1204,7 @@ mod tests {
             json!({"factor":1000.1}),
             json!({"decimal_places":4}),
             json!({"decimal_places":1.5}),
-            json!({"unit":"mm"}),
+            json!({"unit":"unsupported"}),
             json!({"endpoint_scale":0.4}),
             json!({"endpoint_style":"unsupported"}),
         ] {

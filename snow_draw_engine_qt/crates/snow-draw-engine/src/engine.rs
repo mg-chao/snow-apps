@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap};
 
 use crate::history::HistoryStore;
 use snow_draw_engine_core::{
@@ -57,7 +57,7 @@ pub struct ViewportConfig {
     pub engine: ViewEngineConfig,
 }
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ViewportId(pub u64);
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -87,6 +87,8 @@ pub struct Engine {
     pub(crate) scene_cache: DocumentSceneCache,
     viewports: HashMap<ViewportId, ViewportSlot>,
     next_viewport_id: u64,
+    presentation_update_depth: u32,
+    pending_viewports: BTreeSet<ViewportId>,
 }
 
 impl Default for Engine {
@@ -124,6 +126,8 @@ impl Engine {
             scene_cache: DocumentSceneCache::default(),
             viewports: HashMap::new(),
             next_viewport_id: 0,
+            presentation_update_depth: 0,
+            pending_viewports: BTreeSet::new(),
         };
         engine.scene_cache.sync(&engine.model, None);
         Ok(engine)
@@ -185,6 +189,8 @@ impl Engine {
                 })
                 .collect(),
             next_viewport_id: self.next_viewport_id,
+            presentation_update_depth: 0,
+            pending_viewports: BTreeSet::new(),
         };
         engine.scene_cache.sync(&engine.model, None);
         let _ = engine.refresh_all_viewports();

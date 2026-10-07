@@ -197,7 +197,7 @@ void readDistanceValue(const QJsonObject& object, SnowCanvasDistanceStyle* style
     readDouble(object, QStringLiteral("stroke_width"), &style->strokeWidth);
     readDouble(object, QStringLiteral("factor"), &style->factor);
     readDouble(object, QStringLiteral("endpoint_scale"), &style->endpointScale);
-    readEnum(object, QStringLiteral("unit"), static_cast<int>(SnowCanvasDistanceUnit::Km),
+    readEnum(object, QStringLiteral("unit"), static_cast<int>(SnowCanvasDistanceUnit::Mm),
              &style->unit);
     readEnum(object, QStringLiteral("endpoint_style"),
              static_cast<int>(SnowCanvasArrowhead::IndentedTriangle), &style->endpointStyle);

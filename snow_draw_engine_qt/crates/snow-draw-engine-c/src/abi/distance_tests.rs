@@ -5,8 +5,50 @@ use snow_draw_engine::{
 };
 
 #[test]
+fn presentation_scope_ffi_validation_keeps_scopes_balanced() {
+    let mut state = SnowRuntimeImpl {
+        runtime: Runtime::default(),
+    };
+    let mut changed = std::ptr::null_mut();
+    unsafe {
+        assert_eq!(
+            snow_runtime_begin_presentation_update(std::ptr::null_mut()),
+            SnowError::InvalidArgument
+        );
+        assert_eq!(
+            snow_runtime_end_presentation_update_ex(&mut state, &mut changed),
+            SnowError::InvalidState
+        );
+        assert!(changed.is_null());
+        assert_eq!(
+            snow_runtime_begin_presentation_update(&mut state),
+            SnowError::Ok
+        );
+        assert_eq!(
+            snow_runtime_end_presentation_update_ex(&mut state, std::ptr::null_mut()),
+            SnowError::InvalidArgument
+        );
+        assert_eq!(
+            snow_runtime_end_presentation_update_ex(&mut state, &mut changed),
+            SnowError::Ok
+        );
+        snow_changed_viewports_destroy(changed);
+        assert_eq!(
+            snow_runtime_end_presentation_update_ex(&mut state, &mut changed),
+            SnowError::InvalidState
+        );
+        assert!(changed.is_null());
+    }
+}
+
+#[test]
 fn distance_abi_values_layout_and_round_trip() {
     assert_eq!(SnowDistanceStyle::default().unit, SnowDistanceUnit::Cm);
+    assert_eq!(SnowDistanceUnit::Px as u32, 0);
+    assert_eq!(SnowDistanceUnit::Cm as u32, 1);
+    assert_eq!(SnowDistanceUnit::M as u32, 2);
+    assert_eq!(SnowDistanceUnit::Km as u32, 3);
+    assert_eq!(SnowDistanceUnit::Mm as u32, 4);
     assert_eq!(SnowActiveTool::Distance as u32, 17);
     assert_eq!(SnowStyleToolbarSource::DefaultDistance as u32, 26);
     assert_eq!(SnowStyleToolbarSource::SelectedDistance as u32, 27);
@@ -25,6 +67,13 @@ fn distance_abi_values_layout_and_round_trip() {
     };
     let rust: snow_draw_engine::DistanceStyle = style.into();
     assert_eq!(SnowDistanceStyle::from(rust), style);
+    let millimeters = SnowDistanceStyle {
+        unit: SnowDistanceUnit::Mm,
+        ..style
+    };
+    let rust: snow_draw_engine::DistanceStyle = millimeters.into();
+    assert_eq!(rust.unit, snow_draw_engine::DistanceUnit::Mm);
+    assert_eq!(SnowDistanceStyle::from(rust), millimeters);
     assert_eq!(
         snow_active_tool_to_rust(SnowActiveTool::Distance),
         ActiveTool::Distance

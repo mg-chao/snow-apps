@@ -593,7 +593,8 @@ typedef enum SnowDistanceUnit {
     SNOW_DISTANCE_UNIT_PX = 0,
     SNOW_DISTANCE_UNIT_CM = 1,
     SNOW_DISTANCE_UNIT_M = 2,
-    SNOW_DISTANCE_UNIT_KM = 3
+    SNOW_DISTANCE_UNIT_KM = 3,
+    SNOW_DISTANCE_UNIT_MM = 4
 } SnowDistanceUnit;
 
 typedef struct SnowDistanceStyle {
@@ -1265,6 +1266,14 @@ SnowError snow_runtime_clone_document_session_with_config(SnowRuntime source,
                                                           SnowRuntime* out_runtime);
 
 void snow_runtime_destroy(SnowRuntime runtime);
+
+/* Nestable presentation scope: mutations and host text metrics remain queryable,
+ * but patches and changed-viewport lists are published only at the outermost end.
+ * Balance every successful begin, even after a failed mutation. This does not
+ * group document history or roll back mutations. Destroy the returned list. */
+SnowError snow_runtime_begin_presentation_update(SnowRuntime runtime);
+SnowError snow_runtime_end_presentation_update_ex(SnowRuntime runtime,
+                                                  SnowChangedViewportList* out_changed_viewports);
 
 SnowError
 snow_runtime_set_quick_selection_disabled_tools_ex(SnowRuntime runtime, uint64_t tools,

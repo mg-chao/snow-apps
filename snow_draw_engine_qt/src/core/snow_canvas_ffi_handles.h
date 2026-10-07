@@ -95,6 +95,38 @@ class ScopedChangedViewportList final {
     SnowChangedViewportList m_handle = nullptr;
 };
 
+// Balances a presentation scope even when a caller exits after a failed command.
+class ScopedPresentationUpdate final {
+  public:
+    explicit ScopedPresentationUpdate(SnowRuntime runtime)
+        : m_runtime(snow_runtime_begin_presentation_update(runtime) == SNOW_OK ? runtime
+                                                                               : nullptr) {}
+    ~ScopedPresentationUpdate() {
+        ScopedChangedViewportList ignored;
+        finish(ignored);
+    }
+
+    ScopedPresentationUpdate(const ScopedPresentationUpdate&) = delete;
+    ScopedPresentationUpdate& operator=(const ScopedPresentationUpdate&) = delete;
+
+    bool isActive() const {
+        return m_runtime != nullptr;
+    }
+
+    bool finish(ScopedChangedViewportList& changedViewports) {
+        if (m_runtime == nullptr) {
+            return false;
+        }
+        SnowRuntime runtime = m_runtime;
+        m_runtime = nullptr;
+        return snow_runtime_end_presentation_update_ex(runtime, changedViewports.outParam()) ==
+               SNOW_OK;
+    }
+
+  private:
+    SnowRuntime m_runtime = nullptr;
+};
+
 class ScopedPatchHandle final {
   public:
     ScopedPatchHandle() = default;

@@ -3,6 +3,10 @@
 #include "snow_canvas_state.h"
 #include "snow_canvas_type_conversions.h"
 
+#include "snow_canvas_ffi_handles.h"
+#include "snow_canvas_runtime_access.h"
+#include "snow_canvas_viewport.h"
+
 #include <QApplication>
 #include <QJsonArray>
 #include <QJsonDocument>
@@ -68,6 +72,41 @@ void drag(SnowCanvasWidget& canvas, QPointF start = {100, 180}, QPointF end = {3
     mouse(canvas, QEvent::MouseButtonRelease, end, Qt::LeftButton, Qt::NoButton);
 }
 
+void distanceMovesPublishOneIncrementalPatchForEveryViewport() {
+    SnowCanvasRuntime runtime;
+    SnowCanvasWidget canvas(runtime);
+    prepare(canvas);
+    SnowCanvasViewport observer;
+    const auto engine = snow_canvas_runtime::Access::handle(runtime);
+    require(observer.create(engine, snow_canvas_viewport::defaultEngineConfig()),
+            "create observer viewport");
+    require(snow_viewport_set_surface_size(engine, observer.get(), 600, 360) == SNOW_OK,
+            "size observer viewport");
+    mouse(canvas, QEvent::MouseButtonPress, {100, 180}, Qt::LeftButton, Qt::LeftButton);
+    SnowPatchCursor cursor{};
+    for (int x : {200, 250, 300, 350}) {
+        ScopedPatchHandle patch;
+        require(snow_viewport_acquire_patch(engine, observer.get(), nullptr, patch.outParam()) ==
+                    SNOW_OK,
+                "read current observer patch");
+        SnowPatchInfo info{};
+        require(snow_patch_get_info(patch.get(), &info) == SNOW_OK, "read observer cursor");
+        cursor = {info.scene_revision, info.decoration_revision, info.overlay_revision};
+        mouse(canvas, QEvent::MouseMove, {static_cast<double>(x), 180}, Qt::NoButton,
+              Qt::LeftButton);
+        require(snow_viewport_acquire_patch(engine, observer.get(), &cursor, patch.outParam()) ==
+                    SNOW_OK,
+                "read distance move patch");
+        require(snow_patch_get_info(patch.get(), &info) == SNOW_OK, "read distance patch info");
+        require(info.scene_reset == 0 && info.scene_revision == cursor.scene_revision + 1,
+                "a distance move and host measurement publish one incremental scene revision");
+    }
+    mouse(canvas, QEvent::MouseButtonRelease, {400, 180}, Qt::LeftButton, Qt::NoButton);
+    require(only(runtime, QStringLiteral("Text")).value(QStringLiteral("text")).toString() ==
+                QStringLiteral("300 cm"),
+            "release measures the final distance before history commit");
+}
+
 void gesturesAndDerivedLabels() {
     SnowCanvasRuntime runtime;
     SnowCanvasWidget canvas(runtime);
@@ -77,7 +116,7 @@ void gesturesAndDerivedLabels() {
                 style.unit == SnowCanvasDistanceUnit::Cm && style.decimalPlaces == 0 &&
                 style.endpointStyle == SnowCanvasArrowhead::Bar,
             "distance defaults");
-    style.unit = SnowCanvasDistanceUnit::Cm;
+    style.unit = SnowCanvasDistanceUnit::Mm;
     style.decimalPlaces = 2;
     require(canvas.setCanvasDistanceStyle(style), "set distance creation style");
     require(canvas.setDistanceCreationPixelScale({2, 3}), "set source pixel metric");
@@ -86,11 +125,11 @@ void gesturesAndDerivedLabels() {
     const auto text = only(runtime, QStringLiteral("Text"));
     require(arrow.value(QStringLiteral("linear_kind")).toString() == QStringLiteral("Distance"),
             "distance uses arrow storage with distinct subtype");
-    require(text.value(QStringLiteral("text")).toString() == QStringLiteral("400.00 cm"),
+    require(text.value(QStringLiteral("text")).toString() == QStringLiteral("400.00 mm"),
             "label uses source pixels and fixed precision");
     require(text.value(QStringLiteral("font_size")).toDouble() == 20 &&
                 text.value(QStringLiteral("rotation")).toDouble() == 0,
-            "label has proportional font and horizontal rotation");
+            "label keeps default font size and horizontal rotation");
     require(arrow.value(QStringLiteral("points")).toArray().size() == 2 &&
                 arrow.value(QStringLiteral("start_arrowhead")) ==
                     arrow.value(QStringLiteral("end_arrowhead")),
@@ -107,9 +146,11 @@ void gesturesAndDerivedLabels() {
                 SnowCanvasDistanceEdit{style, SnowCanvasDistanceStylePropertyStrokeColor |
                                                   SnowCanvasDistanceStylePropertyStrokeWidth}),
             "patch distance stroke");
-    require(only(runtime, QStringLiteral("Text")).value(QStringLiteral("font_size")).toDouble() ==
-                40,
-            "stroke changes resize generated label");
+    require(
+        std::abs(
+            only(runtime, QStringLiteral("Text")).value(QStringLiteral("font_size")).toDouble() -
+            28.284271247461902) < 1e-9,
+        "stroke changes resize generated label");
     require(only(runtime, QStringLiteral("Text")).value(QStringLiteral("text")) ==
                 text.value(QStringLiteral("text")),
             "stroke patch preserves measurement settings");
@@ -220,6 +261,13 @@ void conversionsAndStateChanges() {
     style.endpointScale = 2.5;
     const auto abi = snow_canvas_types::toEngineDistanceStyle(style);
     require(snow_canvas_types::toCanvasDistanceStyle(abi) == style, "distance ABI round trip");
+    auto millimeters = style;
+    millimeters.unit = SnowCanvasDistanceUnit::Mm;
+    const auto millimeterAbi = snow_canvas_types::toEngineDistanceStyle(millimeters);
+    require(snow_canvas_types::validDistanceStyle(millimeters) &&
+                millimeterAbi.unit == SNOW_DISTANCE_UNIT_MM &&
+                snow_canvas_types::toCanvasDistanceStyle(millimeterAbi) == millimeters,
+            "millimeter styles validate and round trip through the ABI");
     SnowStyleToolbarState original{};
     SnowStyleToolbarState changed = original;
     changed.distance_style = abi;
@@ -282,6 +330,7 @@ int main(int argc, char** argv) {
     }
 #endif
     QApplication application(argc, argv);
+    distanceMovesPublishOneIncrementalPatchForEveryViewport();
     gesturesAndDerivedLabels();
     releaseMeasuresTheFinalDistancePreview();
     cancellationAndValidation();

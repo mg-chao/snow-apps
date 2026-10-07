@@ -80,7 +80,8 @@ inline bool mcpStylePatch(Commands& commands, Canvas& canvas, const QJsonObject&
         return false;
     const QHash<QString, QStringList> enums{
         {QStringLiteral("unit"),
-         {QStringLiteral("px"), QStringLiteral("cm"), QStringLiteral("m"), QStringLiteral("km")}},
+         {QStringLiteral("px"), QStringLiteral("cm"), QStringLiteral("m"), QStringLiteral("km"),
+          QStringLiteral("mm")}},
         {QStringLiteral("shape"),
          {QStringLiteral("rectangle"), QStringLiteral("ellipse"), QStringLiteral("diamond")}},
         {QStringLiteral("fill_style"),

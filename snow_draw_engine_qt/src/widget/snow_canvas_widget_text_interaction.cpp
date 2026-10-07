@@ -5,6 +5,7 @@
 #include "snow_canvas_render_geometry.h"
 #include "snow_canvas_text.h"
 #include "snow_canvas_text_layout.h"
+#include "snow_canvas_text_render.h"
 #include "snow_canvas_text_edit_target.h"
 #include "snow_canvas_text_editor_connector.h"
 #include "snow_canvas_text_measurement.h"
@@ -92,6 +93,7 @@ const SnowCanvasTextEditorSession& SnowCanvasWidgetTextInteraction::session() co
 
 void SnowCanvasWidgetTextInteraction::invalidateArrowTextMetrics() {
     m_arrowNaturalLayouts.clear();
+    snow_canvas_text_render::resetLayoutCacheForCurrentThread();
     m_arrowMetricsInvalid = true;
 }
 
@@ -129,6 +131,7 @@ SnowCanvasWidgetTextInteraction::measureArrowText(SnowRuntime runtime, SnowViewp
         return result;
     }
     std::vector<SnowArrowTextLayoutMetrics> layouts;
+    layouts.reserve(requests.size());
     for (const auto& request : requests) {
         SnowCanvasSceneItem item = snow_canvas_text::defaultPreviewItem(request.info);
         snow_canvas_text::applyTextStyleToSceneItem(item, request.style);
@@ -153,7 +156,9 @@ SnowCanvasWidgetTextInteraction::measureArrowText(SnowRuntime runtime, SnowViewp
             m_arrowNaturalLayouts.measure(text, m_widget.font(), item);
         const double width = qMin(natural.layout.width(), request.max_width);
         const snow_canvas_text_layout::TextMeasuredLayout wrapped =
-            snow_canvas_text_layout::measureWrappedTextLayout(text, m_widget.font(), item, width);
+            width == natural.layout.width() ? natural
+                                            : snow_canvas_text_layout::measureWrappedTextLayout(
+                                                  text, m_widget.font(), item, width);
         layouts.push_back(SnowArrowTextLayoutMetrics{
             request.info.id,
             request.key,

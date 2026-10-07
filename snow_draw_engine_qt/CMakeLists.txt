@@ -152,6 +152,10 @@ if(SNOW_DRAW_ENGINE_QT_BUILD_BENCHMARKS)
     target_link_libraries(snow-canvas-arrow-text-benchmark PRIVATE snow_draw_engine_qt_canvas)
     snow_shot_import_offscreen_platform(snow-canvas-arrow-text-benchmark)
 
+    add_executable(snow-canvas-distance-benchmark tests/snow_canvas_distance_benchmark.cpp)
+    target_link_libraries(snow-canvas-distance-benchmark PRIVATE snow_draw_engine_qt_canvas)
+    snow_shot_import_offscreen_platform(snow-canvas-distance-benchmark)
+
     snow_add_rust_executable(snow-scene-order-benchmark
         PACKAGE snow-draw-engine-scene
         MANIFEST_DIR "${CMAKE_CURRENT_SOURCE_DIR}"

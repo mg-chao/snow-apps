@@ -323,7 +323,7 @@ inline bool operator!=(const SnowCanvasCornerRadii& lhs, const SnowCanvasCornerR
     return !(lhs == rhs);
 }
 
-enum class SnowCanvasDistanceUnit { Px, Cm, M, Km };
+enum class SnowCanvasDistanceUnit { Px, Cm, M, Km, Mm };
 
 enum SnowCanvasDistanceStyleProperty : quint32 {
     SnowCanvasDistanceStylePropertyStrokeColor = 1u << 0,

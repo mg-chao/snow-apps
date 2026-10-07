@@ -34,7 +34,7 @@ void persistedDefaultsMergeDistanceProperties() {
             "empty configuration uses centimeter distance defaults");
     auto changed = initial.distance;
     changed.factor = 2.25;
-    changed.unit = SnowCanvasDistanceUnit::Px;
+    changed.unit = SnowCanvasDistanceUnit::Mm;
     changed.decimalPlaces = 3;
     changed.endpointStyle = SnowCanvasArrowhead::Diamond;
     require(persistScreenshotCanvasStyleEdit(
@@ -157,15 +157,20 @@ void distanceMcpStyleValidationMatchesControls() {
                 accepted.decimalPlaces == 3 && accepted.endpointScale == 3 &&
                 accepted.endpointStyle == SnowCanvasArrowhead::CrowfootOneOrMany,
             "MCP style patches reach distance creation defaults");
-    for (const auto& invalid : {QJsonObject{{QStringLiteral("factor"), 0}},
-                                QJsonObject{{QStringLiteral("factor"), 1000.1}},
-                                QJsonObject{{QStringLiteral("decimal_places"), 1.5}},
-                                QJsonObject{{QStringLiteral("decimal_places"), 4}},
-                                QJsonObject{{QStringLiteral("endpoint_scale"), 0.4}},
-                                QJsonObject{{QStringLiteral("unit"), QStringLiteral("mm")}},
-                                QJsonObject{{QStringLiteral("stroke_width"), 0}},
-                                QJsonObject{{QStringLiteral("fill"), QJsonArray{0, 0, 0, 255}}}}) {
-        require(!apply(invalid) && editor.canvasStyleToolbarState().distanceStyle == accepted,
+    require(apply({{QStringLiteral("unit"), QStringLiteral("mm")}}) &&
+                editor.canvasStyleToolbarState().distanceStyle.unit == SnowCanvasDistanceUnit::Mm,
+            "MCP accepts millimeter distance labels");
+    const auto millimeters = editor.canvasStyleToolbarState().distanceStyle;
+    for (const auto& invalid :
+         {QJsonObject{{QStringLiteral("factor"), 0}},
+          QJsonObject{{QStringLiteral("factor"), 1000.1}},
+          QJsonObject{{QStringLiteral("decimal_places"), 1.5}},
+          QJsonObject{{QStringLiteral("decimal_places"), 4}},
+          QJsonObject{{QStringLiteral("endpoint_scale"), 0.4}},
+          QJsonObject{{QStringLiteral("unit"), QStringLiteral("unsupported")}},
+          QJsonObject{{QStringLiteral("stroke_width"), 0}},
+          QJsonObject{{QStringLiteral("fill"), QJsonArray{0, 0, 0, 255}}}}) {
+        require(!apply(invalid) && editor.canvasStyleToolbarState().distanceStyle == millimeters,
                 "invalid distance settings reject atomically without changing defaults");
     }
 }

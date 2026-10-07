@@ -39,6 +39,93 @@ fn setup() -> (Engine, ViewportId) {
     (engine, viewport)
 }
 
+#[test]
+fn distance_input_and_host_metrics_publish_one_incremental_patch() {
+    let (mut engine, viewport) = setup();
+    let second = engine.create_viewport(ViewportConfig::default()).unwrap();
+    engine.set_viewport_surface_size(second, 800, 600).unwrap();
+    pointer(
+        &mut engine,
+        viewport,
+        PointerEventType::Down,
+        Point::new(0.0, 0.0),
+    );
+    for x in [100.0, 125.0, 150.0] {
+        let cursors: Vec<_> = [viewport, second]
+            .into_iter()
+            .map(|id| {
+                (
+                    id,
+                    engine.viewport_slot(id).unwrap().composer.current_cursor(),
+                )
+            })
+            .collect();
+        engine.begin_presentation_update().unwrap();
+        pointer(
+            &mut engine,
+            viewport,
+            PointerEventType::Move,
+            Point::new(x, 0.0),
+        );
+        let request = engine
+            .arrow_text_layout_requests(viewport)
+            .unwrap()
+            .remove(0);
+        let result = engine
+            .apply_arrow_text_measurements(
+                viewport,
+                &[(
+                    request.text_id,
+                    request.key,
+                    TextLayoutSize::new(64.0, 24.0),
+                    64.0,
+                )],
+            )
+            .unwrap();
+        assert!(result.changed_viewports.is_empty());
+        for &(id, cursor) in &cursors {
+            assert_eq!(
+                engine.viewport_slot(id).unwrap().composer.current_cursor(),
+                cursor
+            );
+        }
+        assert_eq!(
+            engine.end_presentation_update().unwrap().changed_viewports,
+            vec![viewport, second]
+        );
+        for (id, cursor) in cursors {
+            let patch = engine.acquire_patch(id, Some(cursor)).unwrap();
+            assert!(
+                !patch.scene.reset,
+                "host measurement must not skip a published revision"
+            );
+            assert_eq!(patch.scene.base_revision, cursor.scene_revision.0);
+            assert_eq!(patch.scene.revision, cursor.scene_revision.0 + 1);
+            assert!(
+                patch
+                    .scene
+                    .ops
+                    .iter()
+                    .flat_map(|op| &op.insert_items)
+                    .any(|item| matches!(item, SceneDisplayItem::Text(text) if text.width == 64.0))
+            );
+        }
+    }
+    engine.begin_presentation_update().unwrap();
+    pointer(
+        &mut engine,
+        viewport,
+        PointerEventType::Up,
+        Point::new(150.0, 0.0),
+    );
+    engine.end_presentation_update().unwrap();
+    let owner = engine.model.paint_order()[0];
+    assert_eq!(label(&engine, owner).layout.width(), 64.0);
+    engine.undo_with_viewport_changes().unwrap();
+    engine.redo_with_viewport_changes().unwrap();
+    assert_eq!(label(&engine, owner).layout.width(), 64.0);
+}
+
 fn pointer(
     engine: &mut Engine,
     viewport: ViewportId,
@@ -156,6 +243,187 @@ fn distance_drag_and_two_click_creation_are_one_owned_undo_step() {
 }
 
 #[test]
+fn distance_font_scaling_is_consistent_in_preview_edits_imports_and_restored_sessions() {
+    for (stroke_width, expected_font_size) in [
+        (1.0, 14.142_135_623_730_951),
+        (2.0, 20.0),
+        (10.0, 44.721_359_549_995_796),
+    ] {
+        let (mut engine, viewport) = setup();
+        let style = DistanceStyle {
+            stroke_width,
+            ..Default::default()
+        };
+        engine
+            .set_viewport_distance_style_patch(
+                viewport,
+                style,
+                DISTANCE_STYLE_PROPERTY_STROKE_WIDTH,
+            )
+            .unwrap();
+        pointer(
+            &mut engine,
+            viewport,
+            PointerEventType::Down,
+            Point::new(0.0, 0.0),
+        );
+        pointer(
+            &mut engine,
+            viewport,
+            PointerEventType::Move,
+            Point::new(100.0, 0.0),
+        );
+        let request = engine
+            .arrow_text_layout_requests(viewport)
+            .unwrap()
+            .remove(0);
+        assert!((request.text.font_size - expected_font_size).abs() < 1e-9);
+        assert!(scene(&engine, viewport).iter().any(|item| {
+            matches!(item, SceneDisplayItem::Text(text)
+                if (text.font_size - expected_font_size).abs() < 1e-9)
+        }));
+        pointer(
+            &mut engine,
+            viewport,
+            PointerEventType::Up,
+            Point::new(100.0, 0.0),
+        );
+        let id = engine.model.paint_order()[0];
+        assert!((label(&engine, id).font_size - expected_font_size).abs() < 1e-9);
+        engine
+            .select_element_with_viewport_changes(viewport, id)
+            .unwrap();
+        let request = engine
+            .arrow_text_layout_requests(viewport)
+            .unwrap()
+            .remove(0);
+        engine
+            .apply_arrow_text_measurements(
+                viewport,
+                &[(
+                    request.text_id,
+                    request.key,
+                    TextLayoutSize::new(84.0, 24.0),
+                    84.0,
+                )],
+            )
+            .unwrap();
+        assert!(
+            engine
+                .arrow_text_layout_requests(viewport)
+                .unwrap()
+                .is_empty()
+        );
+
+        let (edited_width, edited_font_size) = if stroke_width == 10.0 {
+            (1.0, 14.142_135_623_730_951)
+        } else {
+            (10.0, 44.721_359_549_995_796)
+        };
+        engine
+            .set_viewport_distance_style_patch(
+                viewport,
+                DistanceStyle {
+                    stroke_width: edited_width,
+                    ..style
+                },
+                DISTANCE_STYLE_PROPERTY_STROKE_WIDTH,
+            )
+            .unwrap();
+        assert!((label(&engine, id).font_size - edited_font_size).abs() < 1e-9);
+        let updated = engine
+            .arrow_text_layout_requests(viewport)
+            .unwrap()
+            .remove(0);
+        assert_ne!(
+            updated.key, request.key,
+            "stroke edits invalidate measured text layout"
+        );
+        assert!((updated.text.font_size - edited_font_size).abs() < 1e-9);
+        engine.undo_with_viewport_changes().unwrap();
+        assert!((label(&engine, id).font_size - expected_font_size).abs() < 1e-9);
+        engine.redo_with_viewport_changes().unwrap();
+        assert!((label(&engine, id).font_size - edited_font_size).abs() < 1e-9);
+        let restored = Engine::from_serialized_document_session_with_config(
+            &engine.serialize_document_session().unwrap(),
+            EngineConfig::default(),
+        )
+        .unwrap();
+        assert_eq!(label(&restored, id), label(&engine, id));
+
+        let ids = apply(
+            &mut engine,
+            json!([{"type":"distance","points":[[0,50],[100,50]],
+                "style":{"stroke_width":stroke_width}}]),
+        )
+        .unwrap();
+        assert!((label(&engine, ids[0]).font_size - expected_font_size).abs() < 1e-9);
+    }
+}
+
+#[test]
+fn distance_sessions_with_legacy_linear_fonts_restore_and_keep_history() {
+    let (mut engine, viewport) = setup();
+    let id = apply(
+        &mut engine,
+        json!([{"type":"distance","points":[[0,0],[100,0]],"style":{"stroke_width":4}}]),
+    )
+    .unwrap()[0];
+    engine
+        .select_element_with_viewport_changes(viewport, id)
+        .unwrap();
+    engine
+        .set_viewport_distance_style_patch(
+            viewport,
+            DistanceStyle {
+                stroke_width: 10.0,
+                ..Default::default()
+            },
+            DISTANCE_STYLE_PROPERTY_STROKE_WIDTH,
+        )
+        .unwrap();
+    for redo_pending in [false, true] {
+        if redo_pending {
+            engine.undo_with_viewport_changes().unwrap();
+        }
+        for history_only in [false, true] {
+            let bytes = if history_only {
+                engine.serialize_document_history().unwrap()
+            } else {
+                engine.serialize_document_session().unwrap()
+            };
+            // Recreate the fonts stored by the previous linear sizing rule in both
+            // the document and history operations, retaining the measured layouts.
+            let legacy = String::from_utf8(bytes)
+                .unwrap()
+                .replace("\"font_size\":28.284271247461902", "\"font_size\":40.0")
+                .replace("\"font_size\":44.721359549995796", "\"font_size\":100.0");
+            let mut restored = if history_only {
+                Engine::from_serialized_document_history_with_config(
+                    legacy.as_bytes(),
+                    EngineConfig::default(),
+                )
+            } else {
+                Engine::from_serialized_document_session_with_config(
+                    legacy.as_bytes(),
+                    EngineConfig::default(),
+                )
+            }
+            .unwrap();
+            assert_eq!(label(&restored, id), label(&engine, id));
+            if redo_pending {
+                restored.redo_with_viewport_changes().unwrap();
+                assert!((label(&restored, id).font_size - 44.721_359_549_995_796).abs() < 1e-9);
+            }
+            restored.undo_with_viewport_changes().unwrap();
+            assert!((label(&restored, id).font_size - 28.284_271_247_461_902).abs() < 1e-9);
+            restored.redo_with_viewport_changes().unwrap();
+            assert!((label(&restored, id).font_size - 44.721_359_549_995_796).abs() < 1e-9);
+        }
+    }
+}
+
+#[test]
 fn distance_annotation_json_defaults_to_cm_and_preserves_explicit_units() {
     let (mut engine, _) = setup();
     let ids = apply(
@@ -163,20 +431,24 @@ fn distance_annotation_json_defaults_to_cm_and_preserves_explicit_units() {
         json!([
             {"type":"distance","points":[[0,0],[10,0]]},
             {"type":"distance","points":[[0,50],[10,50]],"style":{}},
-            {"type":"distance","points":[[0,100],[10,100]],"style":{"unit":"px"}}
+            {"type":"distance","points":[[0,100],[10,100]],"style":{"unit":"px"}},
+            {"type":"distance","points":[[0,150],[10,150]],"style":{"unit":"mm"}}
         ]),
     )
     .unwrap();
-    for (id, unit) in ids
-        .iter()
-        .zip([DistanceUnit::Cm, DistanceUnit::Cm, DistanceUnit::Px])
-    {
+    for (id, unit) in ids.iter().zip([
+        DistanceUnit::Cm,
+        DistanceUnit::Cm,
+        DistanceUnit::Px,
+        DistanceUnit::Mm,
+    ]) {
         assert_eq!(
             engine.model.arrow(*id).unwrap().distance.unwrap().unit,
             unit
         );
         assert_eq!(label(&engine, *id).text, format!("10 {}", unit.suffix()));
     }
+    assert_eq!(label(&engine, ids[3]).text, "10 mm");
     let restored = Engine::from_serialized_document_session_with_config(
         &engine.serialize_document_session().unwrap(),
         EngineConfig::default(),
@@ -451,9 +723,13 @@ fn distance_masked_multi_selection_edits_preserve_other_fields_and_regular_arrow
     engine
         .set_viewport_distance_style_patch(viewport, patch, DISTANCE_STYLE_PROPERTY_STROKE)
         .unwrap();
-    for (id, expected) in [
-        (ids[0], (2.0, DistanceUnit::Cm, 2.0, 2.0, 3.0)),
-        (ids[1], (5.0, DistanceUnit::M, 4.0, 4.0, 5.0)),
+    for (id, expected, expected_font_size) in [
+        (ids[0], (2.0, DistanceUnit::Cm, 2.0, 2.0, 3.0), 20.0),
+        (
+            ids[1],
+            (5.0, DistanceUnit::M, 4.0, 4.0, 5.0),
+            28.284_271_247_461_902,
+        ),
     ] {
         let arrow = engine.model.arrow(id).unwrap();
         let distance = arrow.distance.unwrap();
@@ -469,7 +745,7 @@ fn distance_masked_multi_selection_edits_preserve_other_fields_and_regular_arrow
         );
         assert_eq!(arrow.stroke, color);
         assert_eq!(label(&engine, id).color, color);
-        assert_eq!(label(&engine, id).font_size, 10.0 * expected.2);
+        assert!((label(&engine, id).font_size - expected_font_size).abs() < 1e-9);
     }
     assert_eq!(engine.model.arrow(ids[2]).unwrap(), &regular);
     let patch = DistanceStyle {
@@ -488,12 +764,12 @@ fn distance_masked_multi_selection_edits_preserve_other_fields_and_regular_arrow
         .unwrap();
     assert_eq!(label(&engine, ids[0]).text, "2000.00 km");
     assert_eq!(label(&engine, ids[1]).text, "4000.00 km");
-    assert_eq!(label(&engine, ids[0]).font_size, 80.0);
+    assert_eq!(label(&engine, ids[0]).font_size, 40.0);
     assert_eq!(label(&engine, ids[1]).color, color);
     assert_eq!(engine.model.arrow(ids[2]).unwrap(), &regular);
     engine.undo_with_viewport_changes().unwrap();
     assert_eq!(label(&engine, ids[0]).text, "400 cm");
-    assert_eq!(label(&engine, ids[1]).font_size, 40.0);
+    assert!((label(&engine, ids[1]).font_size - 28.284_271_247_461_902).abs() < 1e-9);
 }
 
 #[test]
@@ -803,6 +1079,7 @@ fn distance_units_are_suffixes_and_decimals_have_fixed_precision() {
         .select_element_with_viewport_changes(viewport, id)
         .unwrap();
     for unit in [
+        DistanceUnit::Mm,
         DistanceUnit::Cm,
         DistanceUnit::M,
         DistanceUnit::Km,

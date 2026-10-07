@@ -534,6 +534,11 @@ fn compose_arrow_text(
     arrows: &HashMap<ElementId, ArrowData>,
     viewport: (f64, f64, f64, f64),
 ) {
+    let previews: HashMap<_, _> = presentation
+        .arrow_text_previews
+        .iter()
+        .map(|(id, text)| (*id, text))
+        .collect();
     let mut bindings = model.arrow_label_bindings().to_vec();
     let new_draft = presentation.active_text_draft.as_ref().and_then(|draft| {
         if let snow_draw_engine_editor::ActiveTextDraftTarget::NewArrow(id) = draft.target {
@@ -577,13 +582,7 @@ fn compose_arrow_text(
             .filter(|draft| draft.display_id() == text_id);
         let Some(mut text) = draft
             .map(|d| d.text.clone())
-            .or_else(|| {
-                presentation
-                    .arrow_text_previews
-                    .iter()
-                    .find(|(id, _)| *id == text_id)
-                    .map(|(_, text)| text.clone())
-            })
+            .or_else(|| previews.get(&text_id).map(|text| (*text).clone()))
             .or_else(|| model.text(text_id).ok().cloned())
         else {
             continue;

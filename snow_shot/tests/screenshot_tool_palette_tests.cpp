@@ -10663,7 +10663,7 @@ void distanceSettingsExposeIndependentPropertiesAndHoverWheel() {
     require(factor->minimum() == 0.01 && factor->maximum() == 1000.0 && factor->decimals() == 2 &&
                 factor->singleStep() == 0.1 && factor->value() == 1.0 &&
                 units->checkedId() == static_cast<int>(SnowCanvasDistanceUnit::Cm) &&
-                units->buttons().size() == 4 && decimals->model()->rowCount() == 4 &&
+                units->buttons().size() == 5 && decimals->model()->rowCount() == 4 &&
                 decimals->currentValue().toInt() == 0,
             "distance controls should expose the specified ranges and choices");
     require(factor->variant() == adqt::widgets::AdInputNumber::Variant::Borderless &&
@@ -10742,6 +10742,13 @@ void distanceSettingsExposeIndependentPropertiesAndHoverWheel() {
                     properties == SnowCanvasDistanceStylePropertyFactor,
                 "trackpad wheel should preserve hundredths and apply exactly one factor step");
     }
+    auto* millimeters = units->button(static_cast<int>(SnowCanvasDistanceUnit::Mm));
+    require(millimeters != nullptr && millimeters->text() == QStringLiteral("mm"),
+            "distance units should expose a millimeter button");
+    millimeters->click();
+    require(emitted.unit == SnowCanvasDistanceUnit::Mm &&
+                properties == SnowCanvasDistanceStylePropertyUnit,
+            "millimeter selection should commit a unit edit");
     units->button(static_cast<int>(SnowCanvasDistanceUnit::Px))->click();
     for (QAbstractButton* button : units->buttons()) {
         button->click();
@@ -10832,7 +10839,7 @@ void distanceSettingsExposeIndependentPropertiesAndHoverWheel() {
 
     const auto creationBeforeLanguageChange = palette.creationStyleDefaults().distance;
     selected.distanceStyle.factor = 9.75;
-    selected.distanceStyle.unit = SnowCanvasDistanceUnit::Km;
+    selected.distanceStyle.unit = SnowCanvasDistanceUnit::Mm;
     selected.distanceStyle.decimalPlaces = 3;
     selected.distanceStyleMixed = 0;
     palette.setStyleToolbarState(selected);
@@ -10860,7 +10867,7 @@ void distanceSettingsExposeIndependentPropertiesAndHoverWheel() {
                         precisionLabel,
                 "language changes should translate distance control labels");
         require(factor->value() == 9.75 &&
-                    units->checkedId() == static_cast<int>(SnowCanvasDistanceUnit::Km) &&
+                    units->checkedId() == static_cast<int>(SnowCanvasDistanceUnit::Mm) &&
                     decimals->currentValue().toInt() == 3 && edits == beforeLanguageChange &&
                     palette.creationStyleDefaults().distance == creationBeforeLanguageChange,
                 "language changes should preserve selected distance values and creation styles");

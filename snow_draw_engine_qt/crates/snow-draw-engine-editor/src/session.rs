@@ -89,6 +89,14 @@ impl EditorSession {
     pub fn invalidate_arrow_text_measurements(&mut self) {
         self.editor.invalidate_arrow_text_measurements();
     }
+    pub fn apply_arrow_text_measurements(
+        &mut self,
+        document: &DocumentModel,
+        layouts: &[(ElementId, u64, TextLayoutSize, f64)],
+    ) -> Result<bool, ErrorCode> {
+        self.editor.apply_arrow_text_measurements(document, layouts)
+    }
+
     pub fn apply_arrow_text_measurement(
         &mut self,
         document: &DocumentModel,
@@ -263,7 +271,7 @@ impl EditorSession {
     pub fn reset_document_retained_state(&mut self, initial_serial_number: &SerialNumberStyle) {
         self.editor.reset_editing_state();
         self.editor.invalidate_arrow_text_measurements();
-        self.editor.state.arrow_text_measurements = Vec::new();
+        self.editor.state.arrow_text_measurements = std::collections::HashMap::new();
         self.editor.state.selection = Default::default();
         self.editor.state.ui = Default::default();
         // Counters and explicit starts belong to a document, unlike creation appearance.
@@ -835,7 +843,11 @@ mod document_reset_tests {
             .default_rectangle_shape_style
             .stroke_width = 17.0;
         session.editor.state.arrow_text_measurements.reserve(64);
-        session.editor.state.arrow_text_measurements.push(
+        session.editor.state.arrow_text_measurements.insert(
+            ElementId {
+                index: 5,
+                generation: 3,
+            },
             crate::arrow_text::ArrowTextMeasurement {
                 text_id: ElementId {
                     index: 5,

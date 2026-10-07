@@ -149,6 +149,7 @@ snow_c_enum! {
         Cm = 1,
         M = 2,
         Km = 3,
+        Mm = 4,
     }
 }
 

@@ -51,6 +51,7 @@ impl DocumentModel {
     pub fn from_document(mut document: Document) -> Result<Self, ErrorCode> {
         document.normalize_filter_invariants();
         document.validate_session()?;
+        document.normalize_distance_label_invariants()?;
         let queries = QueryStore::new(&document);
         Ok(Self {
             document,

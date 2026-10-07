@@ -349,10 +349,13 @@ QRectF documentContentsRect(const DocumentLayout& layout) {
                   layout.textDocument().size().height());
 }
 
-void drawDocument(QPainter& painter, const DocumentLayout& layout) {
+void drawDocument(QPainter& painter, const DocumentLayout& layout, const QColor& textColor) {
     // QTextDocument::drawContents(rect) replaces the painter clip. Preserve both
     // the exposed repaint region and any editor selection clip in document space.
     QAbstractTextDocumentLayout::PaintContext context;
+    if (textColor.isValid()) {
+        context.palette.setColor(QPalette::Text, textColor);
+    }
     context.clip = documentContentsRect(layout);
     painter.save();
     painter.setClipRect(context.clip, Qt::IntersectClip);

@@ -5,6 +5,8 @@
 #include "snow_canvas_text_editor_session.h"
 #include "snow_canvas_text.h"
 #include "snow_canvas_text_measurement.h"
+#include "snow_canvas_text_render.h"
+#include "snow_canvas_text_layout.h"
 #include "snow_canvas_viewport.h"
 #include "snow_canvas_ffi_handles.h"
 #include "snow_canvas_type_conversions.h"
@@ -19,11 +21,15 @@
 #include <QMouseEvent>
 #include <QPainter>
 #include <QWheelEvent>
+#include <QTextCursor>
+#include <QTextCharFormat>
 
 #include <cmath>
 #include <cstdlib>
 #include <iostream>
 #include <limits>
+#include <future>
+#include <thread>
 
 namespace {
 void require(bool condition, const char* message) {
@@ -31,6 +37,128 @@ void require(bool condition, const char* message) {
         std::cerr << message << '\n';
         std::exit(1);
     }
+}
+
+QImage paintTextContents(const SnowCanvasSceneItem& item, bool cached, double zoom,
+                         double devicePixelRatio = 1.0, const QFont& baseFont = QFont()) {
+    QImage image(QSize(540, 480) * devicePixelRatio, QImage::Format_ARGB32_Premultiplied);
+    image.setDevicePixelRatio(devicePixelRatio);
+    image.fill(Qt::transparent);
+    QPainter painter(&image);
+    painter.setRenderHint(QPainter::Antialiasing);
+    painter.setClipRegion(QRegion(30, 40, 200, 350) + QRegion(250, 80, 220, 300));
+    painter.translate(270.0, 220.0);
+    painter.rotate(item.rotation * 180.0 / 3.14159265358979323846);
+    painter.setOpacity(item.opacity);
+    const QRectF rect(-item.width * zoom / 2.0, -item.height * zoom / 2.0, item.width * zoom,
+                      item.height * zoom);
+    if (cached) {
+        snow_canvas_text_render::drawContents(painter, item, baseFont, rect, zoom);
+    } else {
+        auto layout = snow_canvas_text_layout::createDocumentLayout(
+            item, baseFont, zoom, snow_canvas_text::textFromSceneItem(item), false);
+        QTextCursor cursor(&layout.textDocument());
+        cursor.select(QTextCursor::Document);
+        QTextCharFormat format;
+        format.setForeground(
+            QColor(item.text_color.r, item.text_color.g, item.text_color.b, item.text_color.a));
+        cursor.mergeCharFormat(format);
+        painter.translate(rect.left(), rect.top() + layout.topOffset);
+        painter.scale(layout.resolution.scale, layout.resolution.scale);
+        snow_canvas_text_layout::drawDocument(painter, layout);
+    }
+    return image;
+}
+
+void retainedTextLayoutsPreservePixelsAndRespectInvalidationAndBudget() {
+    using namespace snow_canvas_text_render;
+    resetLayoutCacheForCurrentThread();
+    SnowTextElementInfo info{};
+    info.font_size = 23.5;
+    auto item = snow_canvas_text::defaultPreviewItem(info);
+    item.width = 180;
+    item.height = 100;
+    item.opacity = 0.75;
+    item.rotation = 0.23;
+    item.text_color = {190, 40, 90, 200};
+    snow_canvas_text::copyTextToSceneItem(item, QStringLiteral("125.00 cm"));
+    const auto before = layoutCacheStatsForCurrentThread().builds;
+    const auto first = paintTextContents(item, true, 1.25);
+    bool painted = false;
+    for (int y = 0; y < first.height(); ++y) {
+        const auto* pixels = reinterpret_cast<const QRgb*>(first.constScanLine(y));
+        for (int x = 0; x < first.width(); ++x)
+            painted = painted || qAlpha(pixels[x]) != 0;
+    }
+    require(painted, "pixel comparison must contain painted glyphs");
+    require(first == paintTextContents(item, false, 1.25),
+            "retained text must preserve fresh document pixels and exposed clips");
+    require(first == paintTextContents(item, true, 1.25), "cached paint is stable");
+    item.center_x += 20;
+    item.rotation += 0.1;
+    item.opacity = 0.5;
+    paintTextContents(item, true, 1.25);
+    require(layoutCacheStatsForCurrentThread().builds == before + 1,
+            "geometry and opacity must reuse the shaped document");
+    item.text_color = {20, 80, 200, 170};
+    require(paintTextContents(item, true, 1.25) == paintTextContents(item, false, 1.25) &&
+                layoutCacheStatsForCurrentThread().builds == before + 1,
+            "foreground changes reuse layout while preserving exact pixels");
+    for (const QString& text : {QStringLiteral("Long wrapped label with several words\nand lines"),
+                                QString::fromUtf8("ä¸­æ–‡ Ø§Ù„Ø¹Ø±Ø¨ÙŠØ©")}) {
+        snow_canvas_text::copyTextToSceneItem(item, text);
+        for (double zoom : {0.75, 1.0, 1.25, 2.0}) {
+            for (auto align : {SNOW_TEXT_HORIZONTAL_ALIGN_LEFT, SNOW_TEXT_HORIZONTAL_ALIGN_CENTER,
+                               SNOW_TEXT_HORIZONTAL_ALIGN_RIGHT}) {
+                item.text_horizontal_align = align;
+                item.text_vertical_align = SNOW_TEXT_VERTICAL_ALIGN_BOTTOM;
+                require(paintTextContents(item, true, zoom, 2.0) ==
+                            paintTextContents(item, false, zoom, 2.0),
+                        "wrapping, alignment, fractional zoom, and DPI preserve pixels");
+            }
+        }
+    }
+    item.width = 130;
+    item.height = 160;
+    item.font_size = 40;
+    item.text_color = {20, 80, 200, 170};
+    require(paintTextContents(item, true, 1.0) == paintTextContents(item, false, 1.0),
+            "size and font changes invalidate cached layout");
+    QFont boldFont;
+    boldFont.setBold(true);
+    require(paintTextContents(item, true, 1.0, 1.0, boldFont) ==
+                paintTextContents(item, false, 1.0, 1.0, boldFont),
+            "base font changes invalidate cached layout");
+    std::promise<void> workerReady, resumeWorker;
+    auto resumed = resumeWorker.get_future();
+    bool workerInvalidated = false;
+    std::thread worker([&]() {
+        paintTextContents(item, true, 1.0);
+        workerReady.set_value();
+        resumed.wait();
+        workerInvalidated = layoutCacheStatsForCurrentThread().entries == 0;
+    });
+    workerReady.get_future().wait();
+    require(QMetaObject::invokeMethod(qApp, "fontDatabaseChanged", Qt::DirectConnection),
+            "invalidate worker font database generation");
+    resumeWorker.set_value();
+    worker.join();
+    require(workerInvalidated, "export workers invalidate layouts without an event loop");
+    for (int index = 0; index < 1100; ++index) {
+        snow_canvas_text::copyTextToSceneItem(item, QString::number(index) + QStringLiteral(" cm"));
+        paintTextContents(item, true, 1.0);
+    }
+    require(layoutCacheStatsForCurrentThread().estimatedBytes <= 4 * 1024 * 1024 &&
+                layoutCacheStatsForCurrentThread().entries < 1100,
+            "text layout cache evicts old labels within its memory budget");
+    require(QMetaObject::invokeMethod(qApp, "fontDatabaseChanged", Qt::DirectConnection),
+            "invoke font database invalidation");
+    require(layoutCacheStatsForCurrentThread().entries == 0,
+            "font database changes release cached documents");
+    paintTextContents(item, true, 1.0);
+    resetLayoutCacheForCurrentThread();
+    require(layoutCacheStatsForCurrentThread().estimatedBytes == 0,
+            "runtime cleanup releases retained text documents");
 }
 
 void naturalLayoutCacheTracksTypographyAndHasABoundedBudget() {
@@ -605,8 +733,8 @@ void taperedShaftsRenderAndRoundTrip() {
 void escapeKeyCommitsEditedText() {
     for (const bool attached : {false, true}) {
         for (const bool existing : {false, true}) {
-            for (const QString& content :
-                 {QString::fromUtf8("Saved\n连接 → response"), QString(), QStringLiteral(" \n ")}) {
+            for (const QString& content : {QString::fromUtf8("Saved\nè¿žæŽ¥ â†’ response"),
+                                           QString(), QStringLiteral(" \n ")}) {
                 SnowCanvasRuntime runtime;
                 SnowCanvasWidget canvas(runtime);
                 canvas.resize(600, 360);
@@ -796,11 +924,11 @@ void commandResolverPreservesTextAndEngineCommands() {
     send(Qt::Key_Q, 0, Qt::ControlModifier); // physical Select All
     send(Qt::Key_Q, 0, Qt::NoModifier, QStringLiteral("replacement"));
     QInputMethodEvent ime;
-    ime.setCommitString(QString::fromUtf8("连接"));
+    ime.setCommitString(QString::fromUtf8("è¿žæŽ¥"));
     QApplication::sendEvent(&canvas, &ime);
     send(Qt::Key_unknown, 36, Qt::ControlModifier);
     require(payload(runtime, QStringLiteral("Text")).value(QStringLiteral("text")).toString() ==
-                QString::fromUtf8("replacement连接"),
+                QString::fromUtf8("replacementè¿žæŽ¥"),
             "resolved commands must preserve layout text and IME commits");
     send(Qt::Key_Z, 0, Qt::ControlModifier, QStringLiteral("z"));
     require(records(runtime, QStringLiteral("Text")).size() == 1,
@@ -831,17 +959,17 @@ void widgetLifecycle() {
     openLabel(canvas);
     key(canvas, Qt::Key_A, Qt::NoModifier, QStringLiteral("Request"));
     key(canvas, Qt::Key_Return);
-    QInputMethodEvent preedit(QString::fromUtf8("连接"), {});
+    QInputMethodEvent preedit(QString::fromUtf8("è¿žæŽ¥"), {});
     QApplication::sendEvent(&canvas, &preedit);
     require(records(runtime, QStringLiteral("Text")).isEmpty(),
             "IME draft remains outside document");
     QInputMethodEvent committed;
-    committed.setCommitString(QString::fromUtf8("连接 → response"));
+    committed.setCommitString(QString::fromUtf8("è¿žæŽ¥ â†’ response"));
     QApplication::sendEvent(&canvas, &committed);
     key(canvas, Qt::Key_Return, Qt::ControlModifier);
     const auto text = payload(runtime, QStringLiteral("Text"));
     require(text.value(QStringLiteral("text")).toString() ==
-                QString::fromUtf8("Request\n连接 → response"),
+                QString::fromUtf8("Request\nè¿žæŽ¥ â†’ response"),
             "multiline IME text commits without content changes");
     require(text.value(QStringLiteral("rotation")).toDouble() == 0.0, "label stays horizontal");
     require(payload(runtime, QStringLiteral("Arrow"))
@@ -954,7 +1082,7 @@ void wrappingAndFinalPointerPosition() {
     mouse(canvas, QEvent::MouseButtonPress, {280.0, 180.0}, Qt::LeftButton, Qt::LeftButton);
     require(canvas.hasActiveTextEditing(), "Text tool creates an attached label");
     const QString original = QStringLiteral("A long label with several words and emoji ") +
-                             QString::fromUtf8("🙂 中文 ").repeated(32);
+                             QString::fromUtf8("ðŸ™‚ ä¸­æ–‡ ").repeated(32);
     key(canvas, Qt::Key_A, Qt::NoModifier, original);
     key(canvas, Qt::Key_Return, Qt::ControlModifier);
     auto text = payload(runtime, QStringLiteral("Text"));
@@ -1171,7 +1299,7 @@ void sharedViewsAndLongOffscreenText() {
     require(second.grab().toImage() == before, "cancellation removes shared draft and gap");
     require(runtime.serializeDocumentHistory() == history, "shared draft adds no undo records");
     openLabel(canvas);
-    const QString original = QString::fromUtf8("长文本🙂 with words\n").repeated(100);
+    const QString original = QString::fromUtf8("é•¿æ–‡æœ¬ðŸ™‚ with words\n").repeated(100);
     key(canvas, Qt::Key_A, Qt::NoModifier, original);
     key(canvas, Qt::Key_Return, Qt::ControlModifier);
     require(canvas.setViewportCamera(10000.0, 10000.0, 0.7), "pan label outside scene cache");
@@ -1239,6 +1367,7 @@ int main(int argc, char** argv) {
     }
 #endif
     QApplication app(argc, argv);
+    retainedTextLayoutsPreservePixelsAndRespectInvalidationAndBudget();
     naturalLayoutCacheTracksTypographyAndHasABoundedBudget();
     documentCleanupReleasesTextDraftHistoryStorage();
     documentClearRebuildsArrowLabelLayouts();

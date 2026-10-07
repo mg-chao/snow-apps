@@ -168,6 +168,7 @@ constexpr char kSignatureGap[] = "numeric:gap";
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Endpoint scale (scroll to adjust)"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Endpoint style"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "cm"),
+    QT_TRANSLATE_NOOP("ScreenshotToolPalette", "mm"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "m"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "km"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "px"),
@@ -1970,6 +1971,7 @@ QWidget* ScreenshotToolPaletteStyleControls::buildDistanceFamily(
         config.objectName = QStringLiteral("screenshotDistanceUnitButtonGroup");
         config.useButtonMetrics = true;
         config.options = {
+            {static_cast<int>(SnowCanvasDistanceUnit::Mm), "mm", {}},
             {static_cast<int>(SnowCanvasDistanceUnit::Cm), "cm", {}},
             {static_cast<int>(SnowCanvasDistanceUnit::M), "m", {}},
             {static_cast<int>(SnowCanvasDistanceUnit::Km), "km", {}},
@@ -1978,7 +1980,7 @@ QWidget* ScreenshotToolPaletteStyleControls::buildDistanceFamily(
         auto editor = createScreenshotToolPaletteRadioEditor(controls, config, metrics);
         units = editor.container;
         m_distanceUnitGroup = editor.group;
-        const char* labels[] = {"cm", "m", "km", "px"};
+        const char* labels[] = {"mm", "cm", "m", "km", "px"};
         for (int i = 0; i < editor.buttons.size(); ++i) {
             editor.buttons.at(i)->setText(
                 ScreenshotToolPaletteTranslationText(labels[i]).translated());
@@ -1996,7 +1998,7 @@ QWidget* ScreenshotToolPaletteStyleControls::buildDistanceFamily(
     QObject::connect(m_distanceUnitGroup, &adqt::widgets::AdRadioButtonGroup::checkedIdChanged,
                      controls, [this](int id) {
                          if (id < static_cast<int>(SnowCanvasDistanceUnit::Px) ||
-                             id > static_cast<int>(SnowCanvasDistanceUnit::Km))
+                             id > static_cast<int>(SnowCanvasDistanceUnit::Mm))
                              return;
                          commitDistanceProperty(SnowCanvasDistanceStylePropertyUnit,
                                                 [id](SnowCanvasDistanceStyle& style) {

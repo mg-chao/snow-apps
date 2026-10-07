@@ -1312,6 +1312,10 @@
             <translation>m</translation>
         </message>
         <message>
+            <source>mm</source>
+            <translation>mm</translation>
+        </message>
+        <message>
             <source>ms</source>
             <translation>ms</translation>
         </message>
