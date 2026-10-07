@@ -51,6 +51,7 @@ constexpr quint32 kSerialNumberAppearanceProperties =
 const QString kShapeKey = QStringLiteral("drawing/shape_style");
 const QString kArrowKey = QStringLiteral("drawing/arrow_style");
 const QString kLineKey = QStringLiteral("drawing/line_style");
+const QString kDistanceKey = QStringLiteral("drawing/distance_style");
 const QString kFreeDrawKey = QStringLiteral("drawing/free_draw_style");
 const QString kRectangleHighlightKey = QStringLiteral("drawing/rectangle_highlight_style");
 const QString kPenHighlightKey = QStringLiteral("drawing/pen_highlight_style");
@@ -173,6 +174,40 @@ QJsonObject shapeValue(const SnowCanvasShapeStyle& style) {
     putEnum(&value, QStringLiteral("highlight_shape"), style.highlightShape);
     putEnum(&value, QStringLiteral("shape"), style.shape);
     return value;
+}
+
+QJsonObject distanceValue(const SnowCanvasDistanceStyle& style) {
+    QJsonObject value;
+    value.insert(QStringLiteral("stroke"), colorValue(style.stroke));
+    putDouble(&value, QStringLiteral("stroke_width"), style.strokeWidth);
+    putDouble(&value, QStringLiteral("factor"), style.factor);
+    putEnum(&value, QStringLiteral("unit"), style.unit);
+    value.insert(QStringLiteral("decimal_places"), style.decimalPlaces);
+    putDouble(&value, QStringLiteral("endpoint_scale"), style.endpointScale);
+    putEnum(&value, QStringLiteral("endpoint_style"), style.endpointStyle);
+    return value;
+}
+
+void readDistanceValue(const QJsonObject& object, SnowCanvasDistanceStyle* style) {
+    if (style == nullptr)
+        return;
+    QColor color;
+    if (colorValue(object.value(QStringLiteral("stroke")), &color))
+        style->stroke = color;
+    readDouble(object, QStringLiteral("stroke_width"), &style->strokeWidth);
+    readDouble(object, QStringLiteral("factor"), &style->factor);
+    readDouble(object, QStringLiteral("endpoint_scale"), &style->endpointScale);
+    readEnum(object, QStringLiteral("unit"), static_cast<int>(SnowCanvasDistanceUnit::Mm),
+             &style->unit);
+    readEnum(object, QStringLiteral("endpoint_style"),
+             static_cast<int>(SnowCanvasArrowhead::IndentedTriangle), &style->endpointStyle);
+    double decimalPlaces = style->decimalPlaces;
+    if (readDouble(object, QStringLiteral("decimal_places"), &decimalPlaces) &&
+        std::floor(decimalPlaces) == decimalPlaces && decimalPlaces >= 0 && decimalPlaces <= 3)
+        style->decimalPlaces = static_cast<int>(decimalPlaces);
+    style->strokeWidth = bounded(style->strokeWidth, 1.0, 72.0);
+    style->factor = bounded(style->factor, 0.01, 1000.0);
+    style->endpointScale = bounded(style->endpointScale, 0.5, 3.0);
 }
 
 QJsonObject lineValue(const SnowCanvasShapeStyle& style) {
@@ -381,6 +416,7 @@ SnowCanvasStyleDefaults screenshotCanvasToolStyleDefaults() {
     const auto& configuration = storage.configuration();
     readShapeValue(configuration.value(kShapeKey).toObject(), &defaults.rectangle);
     readShapeValue(configuration.value(kArrowKey).toObject(), &defaults.arrow);
+    readDistanceValue(configuration.value(kDistanceKey).toObject(), &defaults.distance);
     readLineValue(configuration.value(kLineKey).toObject(), &defaults.line);
     readShapeValue(configuration.value(kFreeDrawKey).toObject(), &defaults.freeDraw);
     readShapeValue(configuration.value(kRectangleHighlightKey).toObject(),
@@ -470,6 +506,7 @@ bool persistScreenshotCanvasToolStyles(const SnowCanvasStyleDefaults& defaults) 
     const QMap<QString, QJsonValue> values{
         {kShapeKey, shapeValue(defaults.rectangle)},
         {kArrowKey, shapeValue(defaults.arrow)},
+        {kDistanceKey, distanceValue(defaults.distance)},
         {kLineKey, lineValue(defaults.line)},
         {kFreeDrawKey, shapeValue(defaults.freeDraw)},
         {kRectangleHighlightKey, shapeValue(defaults.rectangleHighlight)},
@@ -511,6 +548,7 @@ void applyScreenshotCanvasToolStyles(SnowCanvasWidget& canvas,
     };
     applyShape(defaults.rectangle, kRectangleShapeProperties, SnowCanvasShapeKind::Rectangle);
     applyShape(defaults.arrow, kArrowShapeProperties, SnowCanvasShapeKind::Arrow);
+    static_cast<void>(canvas.setCanvasDistanceStyle(defaults.distance));
     applyShape(defaults.line, kLineShapeProperties, SnowCanvasShapeKind::Line);
     applyShape(defaults.freeDraw, kFreeDrawShapeProperties, SnowCanvasShapeKind::FreeDraw);
     applyShape(defaults.rectangleHighlight, kRectangleHighlightProperties,

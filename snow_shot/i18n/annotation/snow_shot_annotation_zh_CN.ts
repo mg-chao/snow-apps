@@ -8,6 +8,18 @@
             <translation>%1（不可用）</translation>
         </message>
         <message>
+            <source>1 decimal place</source>
+            <translation>1 位小数</translation>
+        </message>
+        <message>
+            <source>2 decimal places</source>
+            <translation>2 位小数</translation>
+        </message>
+        <message>
+            <source>3 decimal places</source>
+            <translation>3 位小数</translation>
+        </message>
+        <message>
             <source>Add</source>
             <translation>添加</translation>
         </message>
@@ -236,6 +248,10 @@
             <translation>当前画笔橡皮擦笔画宽度</translation>
         </message>
         <message>
+            <source>Current distance stroke width</source>
+            <translation>当前距离描边宽度</translation>
+        </message>
+        <message>
             <source>Current pen filter stroke width</source>
             <translation>当前画笔滤镜描边宽度</translation>
         </message>
@@ -284,6 +300,10 @@
             <translation>虚线描边</translation>
         </message>
         <message>
+            <source>Decimal places</source>
+            <translation>小数位数</translation>
+        </message>
+        <message>
             <source>Default</source>
             <translation>默认</translation>
         </message>
@@ -318,6 +338,30 @@
         <message>
             <source>Diamond</source>
             <translation>菱形</translation>
+        </message>
+        <message>
+            <source>Distance annotation</source>
+            <translation>距离标注</translation>
+        </message>
+        <message>
+            <source>Distance scaling factor</source>
+            <translation>距离缩放系数</translation>
+        </message>
+        <message>
+            <source>Distance stroke color</source>
+            <translation>距离描边颜色</translation>
+        </message>
+        <message>
+            <source>Distance stroke color %1</source>
+            <translation>距离描边颜色 %1</translation>
+        </message>
+        <message>
+            <source>Distance stroke width %1</source>
+            <translation>距离描边宽度 %1</translation>
+        </message>
+        <message>
+            <source>Distance unit</source>
+            <translation>距离单位</translation>
         </message>
         <message>
             <source>Distribute horizontally</source>
@@ -428,6 +472,14 @@
             <translation>末端箭头 空心三角形</translation>
         </message>
         <message>
+            <source>Endpoint scale (scroll to adjust)</source>
+            <translation>端点比例（滚动调整）</translation>
+        </message>
+        <message>
+            <source>Endpoint style</source>
+            <translation>端点样式</translation>
+        </message>
+        <message>
             <source>Eraser</source>
             <translation>橡皮擦</translation>
         </message>
@@ -530,6 +582,10 @@
         <message>
             <source>Image</source>
             <translation>图像</translation>
+        </message>
+        <message>
+            <source>Integers</source>
+            <translation>整数</translation>
         </message>
         <message>
             <source>Inversion</source>
@@ -1242,6 +1298,22 @@
         <message>
             <source>Yellow</source>
             <translation>黄色</translation>
+        </message>
+        <message>
+            <source>cm</source>
+            <translation>cm</translation>
+        </message>
+        <message>
+            <source>km</source>
+            <translation>km</translation>
+        </message>
+        <message>
+            <source>m</source>
+            <translation>m</translation>
+        </message>
+        <message>
+            <source>mm</source>
+            <translation>mm</translation>
         </message>
         <message>
             <source>ms</source>

@@ -105,6 +105,10 @@ MutationResult applyActiveTextResizeMeasurement(SnowRuntime runtime, SnowViewpor
 MutationResult setActiveTextDraftPresentation(SnowRuntime runtime, SnowViewport viewport,
                                               const ActiveTextDraftPresentationRequest& request);
 MutationResult clearActiveTextDraftPresentation(SnowRuntime runtime, SnowViewport viewport);
+MutationResult setDistanceStylePatch(SnowRuntime runtime, SnowViewport viewport,
+                                     const SnowDistanceStyle& style, std::uint32_t properties);
+MutationResult setDistancePixelScale(SnowRuntime runtime, SnowViewport viewport, double scaleX,
+                                     double scaleY);
 MutationResult setShapeStylePatch(SnowRuntime runtime, SnowViewport viewport,
                                   const SnowShapeStyle& style, std::uint32_t properties,
                                   SnowShapeKind kind);

@@ -75,7 +75,15 @@ bool styleToolbarStatesEqual(const SnowStyleToolbarState& lhs, const SnowStyleTo
            lhs.serial_number_style_mixed == rhs.serial_number_style_mixed &&
            lhs.shape_style_mixed == rhs.shape_style_mixed &&
            lhs.filter_style_mixed == rhs.filter_style_mixed &&
-           lhs.brush_eraser_style.stroke_width == rhs.brush_eraser_style.stroke_width;
+           lhs.brush_eraser_style.stroke_width == rhs.brush_eraser_style.stroke_width &&
+           colorsEqual(lhs.distance_style.stroke, rhs.distance_style.stroke) &&
+           lhs.distance_style.stroke_width == rhs.distance_style.stroke_width &&
+           lhs.distance_style.factor == rhs.distance_style.factor &&
+           lhs.distance_style.unit == rhs.distance_style.unit &&
+           lhs.distance_style.decimal_places == rhs.distance_style.decimal_places &&
+           lhs.distance_style.endpoint_scale == rhs.distance_style.endpoint_scale &&
+           lhs.distance_style.endpoint_style == rhs.distance_style.endpoint_style &&
+           lhs.distance_style_mixed == rhs.distance_style_mixed;
 }
 
 bool watermarkConfigsEqual(const SnowWatermarkConfig& lhs, const SnowWatermarkConfig& rhs) {

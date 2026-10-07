@@ -67,6 +67,28 @@ pub fn compute_arrow_endpoint_drag(
     context: EngineContext,
     options: ArrowEndpointDragOptions,
 ) -> ArrowEditResult {
+    if arrow.is_distance() {
+        let mut points = arrow.global_points();
+        let index = arrow_endpoint_index(points.len(), edge);
+        points[index] = canvas_point;
+        let mut updated = ArrowData::from_global_points(
+            &points,
+            arrow.stroke,
+            arrow.stroke_width,
+            arrow.stroke_style,
+            arrow.arrow_type,
+            arrow.start_arrowhead,
+            arrow.end_arrowhead,
+        )
+        .unwrap_or_else(|| arrow.clone());
+        updated.rotation = arrow.rotation;
+        updated.inherit_linear_metadata_from(arrow);
+        return ArrowEditResult {
+            arrow: updated,
+            reorder_targets: Vec::new(),
+            suggested_binding: None,
+        };
+    }
     let local_point = PointUpdate {
         index: arrow_endpoint_index(arrow.points.len(), edge),
         point: [canvas_point.x - arrow.x, canvas_point.y - arrow.y],

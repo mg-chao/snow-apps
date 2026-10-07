@@ -4,9 +4,9 @@
 #include "snow_canvas_changed_viewports.h"
 #include "snow_canvas_ffi_handles.h"
 #include "snow_canvas_fill_render.h"
+#include "snow_canvas_text_render.h"
 #include "snow_canvas_type_conversions.h"
 #include "snow_canvas_watermark_renderer.h"
-#include "snow_canvas_text_render.h"
 
 #include <condition_variable>
 #include <deque>

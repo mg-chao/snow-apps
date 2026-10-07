@@ -285,6 +285,7 @@ void recordingControlsRemainLaidOutAcrossStateChanges() {
     options.showSelectTool = false;
     options.showShapeTool = false;
     options.showArrowTool = false;
+    options.showDistanceTool = false;
     options.showRecordingControls = true;
     options.enableStyleToolbar = false;
     ScreenshotToolPalette palette(options);
@@ -3101,8 +3102,15 @@ void groupedDrawingOptionsShowShortcutTooltips() {
     palette.show();
     QCoreApplication::processEvents();
 
+    const QString distanceShortcut = snow_shot::shortcuts::formatShortcutListDisplayText(
+        settings.shortcuts(QStringLiteral("distance")));
+    const QString distanceTooltip =
+        distanceShortcut.isEmpty()
+            ? QStringLiteral("Distance annotation")
+            : QStringLiteral("Distance annotation (%1)").arg(distanceShortcut);
     const QMap<QString, QString> expectedTooltips{
         {QStringLiteral("arrow"), QStringLiteral("Arrow (2)")},
+        {QStringLiteral("distance"), distanceTooltip},
         {QStringLiteral("line"), QStringLiteral("Line (%1)")
                                      .arg(snow_shot::shortcuts::formatShortcutListDisplayText(
                                          settings.shortcuts(QStringLiteral("line"))))},
@@ -3123,7 +3131,10 @@ void groupedDrawingOptionsShowShortcutTooltips() {
         require(popover->isVisible(), "drawing group hover menu should be visible");
 
         const auto buttons = popover->contentWidget()->findChildren<adqt::widgets::AdButton*>();
-        require(buttons.size() == 2, "default drawing group should expose both tools");
+        const qsizetype expectedCount =
+            QString::fromLatin1(triggerName) == QStringLiteral("screenshotArrowLineButton") ? 3 : 2;
+        require(buttons.size() == expectedCount,
+                "default drawing group should expose all configured tools");
         for (auto* button : buttons) {
             const QString expected =
                 expectedTooltips.value(button->property("screenshotToolbarItemId").toString());
@@ -3360,6 +3371,7 @@ void moveToolPresentationUsesTheOwningShortcutScope() {
     screenshotOptions.showSelectTool = true;
     screenshotOptions.showShapeTool = false;
     screenshotOptions.showArrowTool = false;
+    screenshotOptions.showDistanceTool = false;
     screenshotOptions.enableStyleToolbar = false;
     ScreenshotToolPalette screenshotPalette(screenshotOptions);
     const QList<adqt::widgets::AdButton*> screenshotButtons = mainToolbarButtons(screenshotPalette);
@@ -3378,6 +3390,7 @@ void moveToolPresentationUsesTheOwningShortcutScope() {
     pinnedOptions.showSelectTool = true;
     pinnedOptions.showShapeTool = false;
     pinnedOptions.showArrowTool = false;
+    pinnedOptions.showDistanceTool = false;
     pinnedOptions.enableStyleToolbar = false;
     ScreenshotToolPalette pinnedPalette(pinnedOptions);
     const QList<adqt::widgets::AdButton*> pinnedButtons = mainToolbarButtons(pinnedPalette);
@@ -3668,6 +3681,7 @@ void configurableToolbarLayoutSupportsArbitraryPopoverGroups() {
     options.showSelectTool = true;
     options.showShapeTool = true;
     options.showArrowTool = true;
+    options.showDistanceTool = false;
     options.showLineTool = true;
     options.showFreeDrawTool = true;
     options.showHighlightTool = true;
@@ -3820,6 +3834,7 @@ void arrowAndLineUseConfiguredPopoverGroup() {
     ScreenshotToolPalette::Options options;
     options.showShapeTool = false;
     options.showArrowTool = true;
+    options.showDistanceTool = false;
     options.showLineTool = true;
     options.enableStyleToolbar = false;
     options.toolbarLayout = snow_shot::storage::ScreenshotToolbarLayout{
@@ -4064,6 +4079,7 @@ void mainToolbarGroupPopoversRecreateTheirOptions() {
     ScreenshotToolPalette::Options actionOptions;
     actionOptions.showShapeTool = false;
     actionOptions.showArrowTool = false;
+    actionOptions.showDistanceTool = false;
     actionOptions.showTableTool = true;
     actionOptions.showQrTool = true;
     actionOptions.enableStyleToolbar = false;
@@ -4320,6 +4336,7 @@ void tableQrPopoverSharesOneEntryAndRemembersTheSelectedMode() {
     options.showSelectTool = false;
     options.showShapeTool = false;
     options.showArrowTool = false;
+    options.showDistanceTool = false;
     options.showTableTool = true;
     options.showQrTool = true;
     options.enableStyleToolbar = false;
@@ -4425,14 +4442,16 @@ void drawingGroupClicksActivateOnceAfterPointerReentry() {
     const QList<QStringList> groups{
         {QStringLiteral("line"), QStringLiteral("arrow")},
         {QStringLiteral("spotlight"), QStringLiteral("highlighter")},
-        {QStringLiteral("free-draw"), QStringLiteral("line"), QStringLiteral("shape")}};
-    const QList<ScreenshotToolPalette::Tool> tools{ScreenshotToolPalette::Tool::Arrow,
-                                                   ScreenshotToolPalette::Tool::PenHighlight,
-                                                   ScreenshotToolPalette::Tool::Shape};
+        {QStringLiteral("free-draw"), QStringLiteral("line"), QStringLiteral("shape")},
+        {QStringLiteral("shape"), QStringLiteral("distance")}};
+    const QList<ScreenshotToolPalette::Tool> tools{
+        ScreenshotToolPalette::Tool::Arrow, ScreenshotToolPalette::Tool::PenHighlight,
+        ScreenshotToolPalette::Tool::Shape, ScreenshotToolPalette::Tool::Distance};
     for (int index = 0; index < groups.size(); ++index) {
         ScreenshotToolPalette::Options options;
         options.showShapeTool = groups.at(index).contains(QStringLiteral("shape"));
         options.showArrowTool = groups.at(index).contains(QStringLiteral("arrow"));
+        options.showDistanceTool = groups.at(index).contains(QStringLiteral("distance"));
         options.showLineTool = groups.at(index).contains(QStringLiteral("line"));
         options.showFreeDrawTool = groups.at(index).contains(QStringLiteral("free-draw"));
         options.showHighlightTool = groups.at(index).contains(QStringLiteral("highlighter"));
@@ -5146,7 +5165,8 @@ void screenshotResultActionsFollowCustomLayout() {
         custom.hidden.removeAll(id);
     }
     ScreenshotToolPalette::Options options;
-    options.showSelectTool = options.showShapeTool = options.showArrowTool = false;
+    options.showSelectTool = options.showShapeTool = options.showArrowTool =
+        options.showDistanceTool = false;
     options.showScreenRecordButton = true;
     options.enableStyleToolbar = false;
     options.actions = ScreenshotToolPalette::CancelAction | ScreenshotToolPalette::CopyAction;
@@ -5972,6 +5992,7 @@ void arrowAndLineRemainDirectWhenConfiguredIndividually() {
     arrowOptions.showSelectTool = false;
     arrowOptions.showShapeTool = false;
     arrowOptions.showArrowTool = true;
+    arrowOptions.showDistanceTool = false;
     arrowOptions.enableStyleToolbar = false;
     ScreenshotToolPalette arrowPalette(arrowOptions);
     const QList<adqt::widgets::AdButton*> arrowButtons = mainToolbarButtons(arrowPalette);
@@ -5984,6 +6005,7 @@ void arrowAndLineRemainDirectWhenConfiguredIndividually() {
     lineOptions.showSelectTool = false;
     lineOptions.showShapeTool = false;
     lineOptions.showArrowTool = false;
+    lineOptions.showDistanceTool = false;
     lineOptions.showLineTool = true;
     lineOptions.enableStyleToolbar = false;
     ScreenshotToolPalette linePalette(lineOptions);
@@ -7945,6 +7967,7 @@ void lineToolIsDiscoverableSelectableAndUsesLinearStyleControls() {
     ScreenshotToolPalette::Options options;
     options.showShapeTool = false;
     options.showArrowTool = false;
+    options.showDistanceTool = false;
     options.showLineTool = true;
     ScreenshotToolPalette palette(options);
 
@@ -8000,6 +8023,7 @@ void freeDrawToolIsDistinctAndUsesIndependentPathStyleControls() {
     ScreenshotToolPalette::Options options;
     options.showShapeTool = false;
     options.showArrowTool = false;
+    options.showDistanceTool = false;
     options.showLineTool = true;
     options.showFreeDrawTool = true;
     ScreenshotToolPalette palette(options);
@@ -8044,6 +8068,7 @@ void highlightVariantsUseConfiguredPopoverGroup() {
     options.showSelectTool = false;
     options.showShapeTool = false;
     options.showArrowTool = false;
+    options.showDistanceTool = false;
     options.showFreeDrawTool = true;
     options.showHighlightTool = true;
     options.showPenHighlightTool = true;
@@ -8631,6 +8656,7 @@ void filterToolExposesTypeAndIntensityControls() {
     ScreenshotToolPalette::Options options;
     options.showShapeTool = false;
     options.showArrowTool = false;
+    options.showDistanceTool = false;
     options.showFilterTool = true;
     ScreenshotToolPalette palette(options);
 
@@ -8978,6 +9004,7 @@ void drawingToolbarGroupsUseToolbarPopoverMetrics() {
     const QList<adqt::widgets::AdButton*> arrowLineButtons{
         popoverButtonWithTooltip(arrowLinePopover, "Arrow"),
         popoverButtonWithTooltip(arrowLinePopover, "Line"),
+        popoverButtonWithTooltip(arrowLinePopover, "Distance annotation"),
     };
     require(std::all_of(arrowLineButtons.cbegin(), arrowLineButtons.cend(),
                         [](const auto* button) {
@@ -10834,6 +10861,338 @@ void lineStyleControlsExposeStraightAndCurveTypes() {
     palette.setActiveTool(ScreenshotToolPalette::Tool::FreeDraw);
     require(palette.findChild<QWidget*>(QStringLiteral("screenshotLineTypeButtonGroup")) == nullptr,
             "Free Draw should not expose the Line type editor");
+}
+
+void distanceSettingsExposeIndependentPropertiesAndHoverWheel() {
+    ScreenshotToolPalette palette(ScreenshotToolPalette::Options{});
+    int activations = 0;
+    QObject::connect(&palette, &ScreenshotToolPalette::distanceToolRequested,
+                     [&activations]() { ++activations; });
+    require(palette.activateDrawingShortcut(QStringLiteral("distance")) && activations == 1 &&
+                palette.activeTool() == ScreenshotToolPalette::Tool::Distance,
+            "distance shortcut activation should select the tool and publish its command");
+    palette.show();
+    QCoreApplication::processEvents();
+    const auto factorInput = [&palette]() {
+        return palette.findChild<adqt::widgets::AdInputNumber*>(
+            QStringLiteral("screenshotDistanceFactorInput"));
+    };
+    auto* factor = factorInput();
+    auto* unitsContainer =
+        palette.findChild<QWidget*>(QStringLiteral("screenshotDistanceUnitButtonGroup"));
+    auto* units = unitsContainer == nullptr
+                      ? nullptr
+                      : unitsContainer->findChild<adqt::widgets::AdRadioButtonGroup*>();
+    auto* decimals = palette.findChild<adqt::widgets::AdSelect*>(
+        QStringLiteral("screenshotDistanceDecimalsSelect"));
+    auto* scale = dynamic_cast<IconNumericValuePreviewButton*>(
+        palette.findChild<QWidget*>(QStringLiteral("screenshotDistanceEndpointScaleButton")));
+    require(
+        factor != nullptr && units != nullptr && decimals != nullptr && scale != nullptr,
+        "distance settings should include numeric factor, units, precision, and endpoint scale");
+    const auto factorIcon = adqt::icons::describeIcon(factor->prefixIconRef());
+    require(factorIcon.key.pack == QStringLiteral("snow-shot") &&
+                factorIcon.key.name == QStringLiteral("distance-value-scale") &&
+                factorIcon.colorModel == adqt::icons::IconColorModel::Monochrome,
+            "distance factor should show the theme-aware value scale icon as its prefix");
+    if (const QString path = qEnvironmentVariable("SNOW_DISTANCE_FACTOR_INPUT_PREVIEW");
+        !path.isEmpty()) {
+        require(factor->grab().save(path), "save distance factor InputNumber preview");
+    }
+    const auto initial = palette.creationStyleDefaults().distance;
+    require(initial.stroke == QColor(QStringLiteral("#f5222d")) && initial.strokeWidth == 2.0 &&
+                initial.factor == 1.0 && initial.unit == SnowCanvasDistanceUnit::Cm &&
+                initial.decimalPlaces == 0 && initial.endpointScale == 1.0 &&
+                initial.endpointStyle == SnowCanvasArrowhead::Bar,
+            "distance creation settings should use the product defaults");
+    require(factor->minimum() == 0.01 && factor->maximum() == 1000.0 && factor->decimals() == 2 &&
+                factor->singleStep() == 0.1 && factor->value() == 1.0 &&
+                units->checkedId() == static_cast<int>(SnowCanvasDistanceUnit::Cm) &&
+                units->buttons().size() == 5 && decimals->model()->rowCount() == 4 &&
+                decimals->currentValue().toInt() == 0,
+            "distance controls should expose the specified ranges and choices");
+    require(factor->variant() == adqt::widgets::AdInputNumber::Variant::Borderless &&
+                factor->valueMode() == adqt::widgets::AdInputNumber::ValueMode::ExactDecimal &&
+                factor->exactValue() == QStringLiteral("1") &&
+                factor->displayText() == QStringLiteral("1"),
+            "distance factor should use a borderless string input without padded decimals");
+    SnowCanvasDistanceStyle emitted = initial;
+    quint32 properties = 0;
+    int edits = 0;
+    palette.setStyleEditHandler([&](const SnowCanvasStyleEdit& edit) {
+        const auto* distance = std::get_if<SnowCanvasDistanceEdit>(&edit);
+        require(distance != nullptr, "distance settings should emit a distance edit");
+        emitted = distance->style;
+        properties = distance->properties;
+        ++edits;
+        palette.rememberStyleEdit(edit);
+        return true;
+    });
+    const auto wheel = [&palette](QWidget* editor, int delta) {
+        const QPoint point = editor->rect().center();
+        QWheelEvent event(QPointF(point), editor->mapToGlobal(point), QPoint(), QPoint(0, delta),
+                          Qt::NoButton, Qt::NoModifier, Qt::NoScrollPhase, false);
+        require(palette.handleToolbarWheel(&event) && event.isAccepted(),
+                "distance input wheel should be consumed");
+    };
+    factor->clearFocus();
+    wheel(factor, 120);
+    require(emitted.factor == 1.1 && factor->value() == 1.1 &&
+                factor->displayText() == QStringLiteral("1.1") && emitted.strokeWidth == 2.0 &&
+                properties == SnowCanvasDistanceStylePropertyFactor,
+            "hover wheel should increment the unfocused factor by 0.1 without changing width");
+    wheel(factor, -120);
+    require(emitted.factor == 1.0 && factor->displayText() == QStringLiteral("1"),
+            "downward wheel should restore a whole factor without padded decimals");
+    auto* factorLineEdit = factor->findChild<QLineEdit*>();
+    require(factorLineEdit != nullptr, "distance input should expose its numeric editor");
+    const QPoint inputPoint = factorLineEdit->rect().center();
+    QWheelEvent inputWheel(QPointF(inputPoint), factorLineEdit->mapToGlobal(inputPoint), QPoint(),
+                           QPoint(0, 120), Qt::NoButton, Qt::NoModifier, Qt::NoScrollPhase, false);
+    QCoreApplication::sendEvent(factorLineEdit, &inputWheel);
+    require(emitted.factor == 1.1 && emitted.strokeWidth == 2.0,
+            "wheel delivered to the numeric editor should apply once without changing width");
+
+    factor->setValue(0.01);
+    wheel(factor, -120);
+    require(factor->value() == 0.01 && emitted.factor == 0.01,
+            "distance factor should clamp at its lower bound");
+    factor->setValue(1000.0);
+    const int atMaximum = edits;
+    wheel(factor, 120);
+    require(factor->value() == 1000.0 && factor->displayText() == QStringLiteral("1000") &&
+                edits == atMaximum,
+            "distance factor should clamp at its upper bound without redundant edits");
+    factorLineEdit->selectAll();
+    PhysicalKeyEvent factorKey(QEvent::KeyPress, Qt::Key_unknown, Qt::NoModifier,
+                               QStringLiteral("2.50"));
+    QApplication::sendEvent(factorLineEdit, &factorKey);
+    PhysicalKeyEvent factorEnter(QEvent::KeyPress, Qt::Key_Return, Qt::NoModifier);
+    QApplication::sendEvent(factorLineEdit, &factorEnter);
+    require(emitted.factor == 2.5 && factor->exactValue() == QStringLiteral("2.5") &&
+                factor->displayText() == QStringLiteral("2.5") &&
+                properties == SnowCanvasDistanceStylePropertyFactor,
+            "typed distance factors should commit strings and remove trailing zeros");
+    factor->setValue(2.25);
+    require(emitted.factor == 2.25 && factor->displayText() == QStringLiteral("2.25"),
+            "distance factor should accept hundredths through numeric input");
+    for (const int delta : {1, -1}) {
+        const QPoint point = factorLineEdit->rect().center();
+        QWheelEvent pixelWheel(QPointF(point), factorLineEdit->mapToGlobal(point), QPoint(0, delta),
+                               QPoint(), Qt::NoButton, Qt::NoModifier, Qt::ScrollUpdate, false);
+        const int beforePixelWheel = edits;
+        QCoreApplication::sendEvent(factorLineEdit, &pixelWheel);
+        require(pixelWheel.isAccepted() && edits == beforePixelWheel + 1 &&
+                    emitted.factor == (delta > 0 ? 2.35 : 2.25) && emitted.strokeWidth == 2.0 &&
+                    properties == SnowCanvasDistanceStylePropertyFactor,
+                "trackpad wheel should preserve hundredths and apply exactly one factor step");
+    }
+    auto* millimeters = units->button(static_cast<int>(SnowCanvasDistanceUnit::Mm));
+    require(millimeters != nullptr && millimeters->text().isEmpty() &&
+                millimeters->accessibleName() == QStringLiteral("mm") &&
+                !millimeters->icon().isNull(),
+            "distance units should expose a labeled millimeter icon button");
+    millimeters->click();
+    require(emitted.unit == SnowCanvasDistanceUnit::Mm &&
+                properties == SnowCanvasDistanceStylePropertyUnit,
+            "millimeter selection should commit a unit edit");
+    units->button(static_cast<int>(SnowCanvasDistanceUnit::Px))->click();
+    for (QAbstractButton* button : units->buttons()) {
+        button->click();
+        require(properties == SnowCanvasDistanceStylePropertyUnit &&
+                    emitted.unit == static_cast<SnowCanvasDistanceUnit>(units->id(button)),
+                "unit buttons should commit only the selected unit");
+    }
+    for (int places = 1; places <= 3; ++places) {
+        decimals->setCurrentValue(places);
+        require(emitted.decimalPlaces == places &&
+                    properties == SnowCanvasDistanceStylePropertyDecimalPlaces,
+                "precision select should commit every supported decimal option");
+    }
+    decimals->setCurrentValue(0);
+    require(emitted.decimalPlaces == 0, "precision select should restore integers");
+    wheel(scale, 120);
+    require(emitted.endpointScale == 1.1 && emitted.factor == 2.25 &&
+                properties == SnowCanvasDistanceStylePropertyEndpointScale,
+            "endpoint scale wheel should change only the marker ratio");
+    scale->click();
+    require(emitted.endpointScale == 1.0, "endpoint scale click should reset the ratio");
+    for (int i = 0; i < 30; ++i)
+        wheel(scale, 120);
+    require(emitted.endpointScale == 3.0, "endpoint scale should clamp at the arrow ratio maximum");
+    for (int i = 0; i < 30; ++i)
+        wheel(scale, -120);
+    require(emitted.endpointScale == 0.5, "endpoint scale should clamp at the arrow ratio minimum");
+    scale->click();
+
+    clickStyleControl(palette, "Distance stroke width 4");
+    require(emitted.strokeWidth == 4.0 && properties == SnowCanvasDistanceStylePropertyStrokeWidth,
+            "distance width presets should use a distance property edit");
+    clickStyleControl(palette, "Distance stroke color #1677ff");
+    require(emitted.stroke == QColor(QStringLiteral("#1677ff")) &&
+                properties == SnowCanvasDistanceStylePropertyStrokeColor,
+            "distance color presets should update the stroke color");
+    QWidget* endpoint = controlWithAccessibleName(palette, "Endpoint style");
+    require(endpoint != nullptr, "distance should expose a shared endpoint style picker");
+    const char* labels[] = {"none",
+                            "standard",
+                            "bar",
+                            "dot",
+                            "circle",
+                            "circle outline",
+                            "triangle",
+                            "triangle outline",
+                            "diamond",
+                            "diamond outline",
+                            "crowfoot one",
+                            "crowfoot many",
+                            "crowfoot one or many",
+                            "indented triangle"};
+    for (int style = 0; style < 14; ++style) {
+        const QString tooltip =
+            QStringLiteral("End arrowhead %1").arg(QString::fromLatin1(labels[style]));
+        const QByteArray encoded = tooltip.toUtf8();
+        clickPopoverStyleControl(showPopoverForTrigger(endpoint), encoded.constData());
+        require(emitted.endpointStyle == static_cast<SnowCanvasArrowhead>(style),
+                "distance endpoint style should support every arrowhead style");
+    }
+    const auto remembered = palette.creationStyleDefaults().distance;
+    palette.setActiveTool(ScreenshotToolPalette::Tool::Arrow);
+    palette.setActiveTool(ScreenshotToolPalette::Tool::Distance);
+    QCoreApplication::processEvents();
+    require(factorInput() != nullptr && factorInput()->value() == remembered.factor &&
+                adqt::icons::describeIcon(factorInput()->prefixIconRef()).key == factorIcon.key &&
+                factorInput()->variant() == adqt::widgets::AdInputNumber::Variant::Borderless &&
+                factorInput()->valueMode() ==
+                    adqt::widgets::AdInputNumber::ValueMode::ExactDecimal &&
+                factorInput()->displayText() == QStringLiteral("2.25") &&
+                palette.creationStyleDefaults().distance == remembered,
+            "distance settings should survive editor reuse and tool switching");
+    factor = factorInput();
+    SnowCanvasStyleToolbarState selected;
+    selected.source = SnowCanvasStyleToolbarSource::SelectedDistance;
+    selected.distanceStyle = remembered;
+    selected.distanceStyle.factor = 5.0;
+    selected.distanceStyleMixed =
+        SnowCanvasDistanceStyleMixedFactor | SnowCanvasDistanceStyleMixedStrokeColor;
+    palette.setStyleToolbarState(selected);
+    require(!factor->hasValue() && palette.creationStyleDefaults().distance == remembered,
+            "mixed selected distance settings should preserve creation defaults");
+    wheel(factor, 120);
+    require(factor->value() == 5.1 && emitted.factor == 5.1 &&
+                properties == SnowCanvasDistanceStylePropertyFactor &&
+                emitted.stroke == remembered.stroke,
+            "wheel should resolve only the mixed distance factor");
+
+    const auto creationBeforeLanguageChange = palette.creationStyleDefaults().distance;
+    selected.distanceStyle.factor = 9.75;
+    selected.distanceStyle.unit = SnowCanvasDistanceUnit::Mm;
+    selected.distanceStyle.decimalPlaces = 3;
+    selected.distanceStyleMixed = 0;
+    palette.setStyleToolbarState(selected);
+    auto& language = snow_shot::presentation::LanguageManager::instance();
+    const QString previousLanguage = language.languagePreference();
+    const auto restoreLanguage = qScopeGuard([&language, previousLanguage]() {
+        static_cast<void>(language.setLanguage(previousLanguage));
+    });
+    unitsContainer =
+        palette.findChild<QWidget*>(QStringLiteral("screenshotDistanceUnitButtonGroup"));
+    units = unitsContainer->findChild<adqt::widgets::AdRadioButtonGroup*>();
+    decimals = palette.findChild<adqt::widgets::AdSelect*>(
+        QStringLiteral("screenshotDistanceDecimalsSelect"));
+    const int beforeLanguageChange = edits;
+    for (const QString& locale :
+         {QStringLiteral("en_US"), QStringLiteral("zh_CN"), QStringLiteral("zh_TW")}) {
+        require(language.setLanguage(locale), "distance controls should load every catalog");
+        QCoreApplication::processEvents();
+        const QString factorLabel =
+            QCoreApplication::translate("ScreenshotToolPalette", "Distance scaling factor");
+        const QString precisionLabel =
+            QCoreApplication::translate("ScreenshotToolPalette", "3 decimal places");
+        require(factor->accessibleName() == factorLabel &&
+                    decimals->model()->index(3, 0).data(decimals->labelRole()).toString() ==
+                        precisionLabel,
+                "language changes should translate distance control labels");
+        require(factor->value() == 9.75 &&
+                    units->checkedId() == static_cast<int>(SnowCanvasDistanceUnit::Mm) &&
+                    decimals->currentValue().toInt() == 3 && edits == beforeLanguageChange &&
+                    palette.creationStyleDefaults().distance == creationBeforeLanguageChange,
+                "language changes should preserve selected distance values and creation styles");
+    }
+    require(language.setLanguage(QStringLiteral("en_US")),
+            "selection action coverage should restore English labels");
+
+    palette.setActiveTool(ScreenshotToolPalette::Tool::Select);
+    selected.selectedElementCount = 2;
+    selected.shapeStyle.opacity = 0.35;
+    selected.shapeStyleMixed = SnowCanvasShapeStyleMixedOpacity;
+    palette.setStyleToolbarState(selected);
+    for (const char* action :
+         {"Send to back", "Copy selected elements", "Delete selected elements", "Align left"}) {
+        QWidget* control = controlWithTooltip(palette, action);
+        require(control != nullptr && control->isEnabled(),
+                "distance selections should enable selection and alignment actions");
+    }
+    auto* opacity = palette.findChild<adqt::widgets::AdSlider*>(
+        QStringLiteral("screenshotSelectionOpacitySlider"));
+    require(opacity != nullptr && opacity->isEnabled() && opacity->value() == 35 &&
+                opacity->property("mixed").toBool(),
+            "distance selection opacity should use the shared selected element state");
+    SnowCanvasStyleToolbarState defaults;
+    defaults.source = SnowCanvasStyleToolbarSource::DefaultDistance;
+    defaults.distanceStyle = creationBeforeLanguageChange;
+    palette.setStyleToolbarState(defaults);
+    require(!controlWithTooltip(palette, "Delete selected elements")->isEnabled() &&
+                !opacity->isEnabled(),
+            "default distance state should clear selection action availability");
+    palette.setActiveTool(ScreenshotToolPalette::Tool::Distance);
+    require(factorInput()->value() == creationBeforeLanguageChange.factor &&
+                palette.creationStyleDefaults().distance == creationBeforeLanguageChange,
+            "returning to Distance should restore its independent creation settings");
+    palette.hide();
+
+    ScreenshotToolPalette::Options hiddenOptions;
+    hiddenOptions.showSelectTool = false;
+    hiddenOptions.showArrowTool = false;
+    hiddenOptions.toolbarLayout = snow_shot::storage::ScreenshotToolbarLayout{
+        {{QStringLiteral("shape")}}, {QStringLiteral("distance")}};
+    ScreenshotToolPalette hiddenPalette(hiddenOptions);
+    hiddenPalette.show();
+    QCoreApplication::processEvents();
+    const auto distanceSlotIsVisible = [&hiddenPalette]() {
+        const auto buttons = mainDrawingToolbarButtons(hiddenPalette);
+        return std::any_of(buttons.cbegin(), buttons.cend(), [](const auto* button) {
+            return button->property("screenshotToolbarPositionItems")
+                .toStringList()
+                .contains(QStringLiteral("distance"));
+        });
+    };
+    int hiddenActivations = 0;
+    QObject::connect(&hiddenPalette, &ScreenshotToolPalette::distanceToolRequested,
+                     [&hiddenActivations]() { ++hiddenActivations; });
+    require(!distanceSlotIsVisible() &&
+                hiddenPalette.canActivateDrawingShortcut(QStringLiteral("distance")) &&
+                hiddenPalette.activateDrawingShortcut(QStringLiteral("distance")) &&
+                hiddenActivations == 1 && !distanceSlotIsVisible(),
+            "hidden Distance should retain command availability without restoring its slot");
+    hiddenPalette.setToolbarLayout({{{QStringLiteral("distance"), QStringLiteral("shape")}}, {}});
+    hiddenPalette.setActiveTool(ScreenshotToolPalette::Tool::Shape);
+    QCoreApplication::processEvents();
+    const auto buttons = mainDrawingToolbarButtons(hiddenPalette);
+    require(buttons.size() == 1 && distanceSlotIsVisible(),
+            "custom Distance groups should occupy one configured toolbar position");
+    auto* customTrigger = buttons.constFirst();
+    materializeLazyPopover(customTrigger);
+    auto* distanceOption =
+        popoverButtonWithTooltip(popoverForTrigger(customTrigger), "Distance annotation");
+    require(distanceOption != nullptr, "custom groups should expose the Distance option");
+    distanceOption->click();
+    require(hiddenActivations == 2 &&
+                hiddenPalette.activeTool() == ScreenshotToolPalette::Tool::Distance &&
+                customTrigger->property("screenshotToolbarItemId").toString() ==
+                    QStringLiteral("distance"),
+            "a custom Distance option should publish the same tool command as its shortcut");
+    hiddenPalette.hide();
 }
 
 void arrowRatioEditorAdjustsAndResets() {
@@ -13553,6 +13912,7 @@ void editorlessToolsRejectStaleStyleToolbarState() {
     static const StyledTool styledTools[] = {
         {ScreenshotToolPalette::Tool::Shape, SnowCanvasStyleToolbarSource::DefaultRectangle},
         {ScreenshotToolPalette::Tool::Arrow, SnowCanvasStyleToolbarSource::DefaultArrow},
+        {ScreenshotToolPalette::Tool::Distance, SnowCanvasStyleToolbarSource::DefaultDistance},
         {ScreenshotToolPalette::Tool::Line, SnowCanvasStyleToolbarSource::DefaultLine},
         {ScreenshotToolPalette::Tool::FreeDraw, SnowCanvasStyleToolbarSource::DefaultFreeDraw},
         {ScreenshotToolPalette::Tool::RectangleHighlight,
@@ -13570,7 +13930,6 @@ void editorlessToolsRejectStaleStyleToolbarState() {
     };
     static const ScreenshotToolPalette::Tool editorlessTools[] = {
         ScreenshotToolPalette::Tool::Move,
-        ScreenshotToolPalette::Tool::Eraser,
         ScreenshotToolPalette::Tool::Ocr,
         ScreenshotToolPalette::Tool::ScrollingScreenshot,
     };
@@ -15693,6 +16052,13 @@ int main(int argc, char** argv) {
         snow_shot::storage::ApplicationStorage::instance().shutdown();
         return 0;
     }
+    if (application.arguments().contains(QStringLiteral("--distance-only"))) {
+        arrowAndLineRemainDirectWhenConfiguredIndividually();
+        editorlessToolsRejectStaleStyleToolbarState();
+        distanceSettingsExposeIndependentPropertiesAndHoverWheel();
+        snow_shot::storage::ApplicationStorage::instance().shutdown();
+        return 0;
+    }
     if (application.arguments().contains(QStringLiteral("--arrow-icons-only"))) {
         arrowRatioEditorAdjustsAndResets();
         arrowStyleControlsExposeAndEmitAllStyleProperties();
@@ -15994,6 +16360,7 @@ int main(int argc, char** argv) {
     spotlightShapePreferencesRoundTripAndAcceptLegacySettings();
     shapeSelectorIsExclusiveToTheShapeTool();
     arrowStyleUsesScreenshotCreationColorOverride();
+    distanceSettingsExposeIndependentPropertiesAndHoverWheel();
     arrowRatioEditorAdjustsAndResets();
     arrowStyleControlsExposeAndEmitAllStyleProperties();
     lineStyleControlsExposeStraightAndCurveTypes();

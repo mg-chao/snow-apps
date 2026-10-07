@@ -29,6 +29,7 @@ class QWidget;
 
 namespace adqt::widgets {
 class AdLineEdit;
+class AdInputNumber;
 class AdSelect;
 class AdSlider;
 class AdRadioButtonGroup;
@@ -74,6 +75,8 @@ struct ScreenshotToolPaletteStyleControlCallbacks {
     std::function<void(const SnowCanvasShapeStyle& style, quint32 properties,
                        SnowCanvasShapeKind kind)>
         shapeStyleChanged;
+    std::function<void(const SnowCanvasDistanceStyle& style, quint32 properties)>
+        distanceStyleChanged;
     std::function<void(const SnowCanvasTextStyle& style, quint32 properties)> textStyleChanged;
     std::function<void()> textStylePopupInteractionBegan;
     std::function<void()> textStylePopupInteractionEnded;
@@ -209,6 +212,9 @@ class ScreenshotToolPaletteStyleControls final {
     [[nodiscard]] QWidget* buildArrowFamily(QWidget* panel,
                                             const ScreenshotToolPaletteStyleFamilyHost& host,
                                             const ScreenshotToolPaletteButtonMetrics& metrics);
+    [[nodiscard]] QWidget* buildDistanceFamily(QWidget* panel,
+                                               const ScreenshotToolPaletteStyleFamilyHost& host,
+                                               const ScreenshotToolPaletteButtonMetrics& metrics);
     [[nodiscard]] ScreenshotToolPaletteHighlightFamilyResult
     buildHighlightFamily(int tool, QWidget* panel, const ScreenshotToolPaletteStyleFamilyHost& host,
                          const ScreenshotToolPaletteButtonMetrics& metrics);
@@ -247,6 +253,8 @@ class ScreenshotToolPaletteStyleControls final {
     void setHighlightControlsActive(bool active);
     void setPenHighlightControlsActive(bool active);
     void setArrowControlsActive(bool active);
+    void setDistanceControlsActive(bool active);
+    [[nodiscard]] bool handleDistanceWheel(const QPoint& globalPosition, int direction);
     void setTextControlsActive(bool active);
     void clearTextStylePopupInteractions();
     [[nodiscard]] bool stepTextFontSize(int direction);
@@ -337,6 +345,8 @@ class ScreenshotToolPaletteStyleControls final {
     void registerHighlightEntries();
     void registerPenHighlightEntries();
     void registerArrowEntries();
+    void registerDistanceEntries();
+    void updateDistanceStyleControls();
     void registerTextEntries();
     void registerSerialNumberEntries();
     void registerWatermarkEntries();
@@ -345,6 +355,10 @@ class ScreenshotToolPaletteStyleControls final {
     // style, clear the mixed flag, refresh the family and notify.
     template <typename Apply> void commitShapeProperty(quint32 property, Apply apply);
     template <typename Apply> void commitArrowProperty(quint32 property, Apply apply);
+    template <typename Apply> void commitDistanceProperty(quint32 property, Apply apply);
+    void setDistanceFactor(double factor);
+    void setDistanceStrokeWidth(double width);
+    void setDistanceEndpointScale(double scale);
     template <typename Apply> void commitPenHighlightProperty(quint32 property, Apply apply);
     template <typename Apply> void commitTextProperty(quint32 mixedFlag, Apply apply);
     template <typename Apply> void commitSerialNumberProperty(quint32 mixedFlag, Apply apply);
@@ -493,6 +507,13 @@ class ScreenshotToolPaletteStyleControls final {
     std::unique_ptr<ScreenshotToolPaletteNumericPresetEditor> m_penHighlightStrokeWidthEditor;
     std::unique_ptr<ScreenshotToolPaletteNumericPresetEditor> m_penFilterStrokeWidthEditor;
     std::unique_ptr<ScreenshotToolPaletteNumericPresetEditor> m_brushEraserStrokeWidthEditor;
+    std::unique_ptr<ScreenshotToolPaletteColorEditor> m_distanceColorEditor;
+    std::unique_ptr<ScreenshotToolPaletteNumericPresetEditor> m_distanceWidthEditor;
+    std::unique_ptr<ScreenshotToolPaletteIconOptionEditor> m_distanceEndpointEditor;
+    QPointer<adqt::widgets::AdInputNumber> m_distanceFactorInput;
+    QPointer<adqt::widgets::AdRadioButtonGroup> m_distanceUnitGroup;
+    ScreenshotToolPaletteSelectEditor m_distanceDecimalsEditor;
+    QPointer<IconNumericValuePreviewButton> m_distanceScaleEditor;
     std::unique_ptr<ScreenshotToolPaletteNumericPresetEditor> m_arrowStrokeWidthEditor;
     std::unique_ptr<ScreenshotToolPaletteStrokeEditor> m_arrowStrokeEditor;
     adqt::widgets::AdRadioButtonGroup* m_arrowTypeButtonGroup = nullptr;
@@ -539,6 +560,7 @@ class ScreenshotToolPaletteStyleControls final {
     QVector<StyleEditorEntry> m_highlightEntries;
     QVector<StyleEditorEntry> m_penHighlightEntries;
     QVector<StyleEditorEntry> m_arrowEntries;
+    QVector<StyleEditorEntry> m_distanceEntries;
     QVector<StyleEditorEntry> m_textEntries;
     QVector<StyleEditorEntry> m_serialNumberEntries;
     QVector<StyleEditorEntry> m_watermarkEntries;

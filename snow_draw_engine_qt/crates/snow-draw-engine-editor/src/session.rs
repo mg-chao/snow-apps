@@ -34,6 +34,8 @@ pub struct PersistedEditorSession {
     spotlight_shape: snow_draw_engine_document::HighlightShape,
     rectangle: RectangleShapeStyle,
     arrow: ArrowStyle,
+    #[serde(default)]
+    distance: crate::DistanceStyle,
     line: super::ShapeStyle,
     free_draw: super::ShapeStyle,
     rectangle_highlight: super::ShapeStyle,
@@ -87,6 +89,14 @@ impl EditorSession {
     pub fn invalidate_arrow_text_measurements(&mut self) {
         self.editor.invalidate_arrow_text_measurements();
     }
+    pub fn apply_arrow_text_measurements(
+        &mut self,
+        document: &DocumentModel,
+        layouts: &[(ElementId, u64, TextLayoutSize, f64)],
+    ) -> Result<bool, ErrorCode> {
+        self.editor.apply_arrow_text_measurements(document, layouts)
+    }
+
     pub fn apply_arrow_text_measurement(
         &mut self,
         document: &DocumentModel,
@@ -142,6 +152,7 @@ impl EditorSession {
             spotlight_shape: state.default_spotlight_shape,
             rectangle: state.default_rectangle_shape_style,
             arrow: state.default_arrow_style,
+            distance: state.default_distance_style,
             line: state.default_line_style,
             free_draw: state.default_free_draw_style,
             rectangle_highlight: state.default_rectangle_highlight_style,
@@ -176,6 +187,7 @@ impl EditorSession {
         state.default_rectangle_shape_style = persisted.rectangle;
         state.default_spotlight_shape = persisted.spotlight_shape;
         state.default_arrow_style = persisted.arrow;
+        state.default_distance_style = persisted.distance;
         state.default_line_style = ShapeStyle {
             arrow_type: crate::style::normalized_line_arrow_type(persisted.line.arrow_type),
             arrow_shaft_type: Default::default(),
@@ -259,7 +271,7 @@ impl EditorSession {
     pub fn reset_document_retained_state(&mut self, initial_serial_number: &SerialNumberStyle) {
         self.editor.reset_editing_state();
         self.editor.invalidate_arrow_text_measurements();
-        self.editor.state.arrow_text_measurements = Vec::new();
+        self.editor.state.arrow_text_measurements = std::collections::HashMap::new();
         self.editor.state.selection = Default::default();
         self.editor.state.ui = Default::default();
         // Counters and explicit starts belong to a document, unlike creation appearance.
@@ -290,6 +302,22 @@ impl EditorSession {
 
     pub fn rectangle_shape_style(&self, document: &DocumentModel) -> RectangleShapeStyle {
         self.editor.rectangle_shape_style(document)
+    }
+
+    pub fn distance_style(&self, document: &DocumentModel) -> crate::DistanceStyle {
+        self.editor.distance_style(document)
+    }
+    pub fn distance_style_mixed(&self, document: &DocumentModel) -> u32 {
+        self.editor.distance_style_mixed(document)
+    }
+    pub fn set_distance_style_patch(
+        &mut self,
+        document: &DocumentModel,
+        style: crate::DistanceStyle,
+        properties: u32,
+    ) -> Result<Option<EditorCommand>, ErrorCode> {
+        self.editor
+            .set_distance_style_patch(document, style, properties)
     }
 
     pub fn arrow_style(&self, document: &DocumentModel) -> ArrowStyle {
@@ -723,6 +751,7 @@ const fn default_rectangle_filter_stroke_width() -> f64 {
 pub fn validate_editor_style_defaults(defaults: &EditorStyleDefaults) -> Result<(), ErrorCode> {
     super::style::validate_rectangle_shape_style(defaults.rectangle)?;
     super::style::validate_arrow_style(defaults.arrow)?;
+    crate::validate_distance_style(defaults.distance)?;
     for style in [
         defaults.line,
         defaults.free_draw,
@@ -760,6 +789,7 @@ pub fn validate_editor_style_defaults(defaults: &EditorStyleDefaults) -> Result<
 }
 
 fn validate_persisted_editor_styles(persisted: &PersistedEditorSession) -> Result<(), ErrorCode> {
+    crate::validate_distance_style(persisted.distance)?;
     fn finite_non_negative(value: f64) -> bool {
         value.is_finite() && value >= 0.0
     }
@@ -813,7 +843,11 @@ mod document_reset_tests {
             .default_rectangle_shape_style
             .stroke_width = 17.0;
         session.editor.state.arrow_text_measurements.reserve(64);
-        session.editor.state.arrow_text_measurements.push(
+        session.editor.state.arrow_text_measurements.insert(
+            ElementId {
+                index: 5,
+                generation: 3,
+            },
             crate::arrow_text::ArrowTextMeasurement {
                 text_id: ElementId {
                     index: 5,

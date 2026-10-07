@@ -373,8 +373,8 @@ void diskBackedEngineCompletesThroughTheQtWorker(bool directMlEnabled,
                        : options.processPath;
 #else
         managedRuntime ? QDir(QCoreApplication::applicationDirPath())
-                             .filePath(QStringLiteral("assets/ocr/runtimes/1.0.9/windows-x64/"
-                                                      "snow-ocr-process-1.0.9-windows-x64.exe"))
+                             .filePath(QStringLiteral("assets/ocr/runtimes/1.0.10/windows-x64/"
+                                                      "snow-ocr-process-1.0.10-windows-x64.exe"))
                        : options.processPath;
 #endif
     if (managedRuntime) {
@@ -1083,7 +1083,7 @@ void actualOcrCrashAfterInference() {
     const auto bytes = dump.readAll();
     dump.close();
     require(bytes.contains(diagnostics.status().sessionId.toUtf8()) &&
-                bytes.contains("ocr.operation_started") && bytes.contains("1.0.9"),
+                bytes.contains("ocr.operation_started") && bytes.contains("1.0.10"),
             "actual OCR dump retains parent session, operation and runtime version");
     require(diagnostics.flush(), "actual OCR final diagnostics flush");
     diagnostics.shutdown();

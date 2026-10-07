@@ -5038,6 +5038,21 @@ if(SNOW_SHOT_BUILD_TESTS)
             "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
     )
 
+    add_executable(snow-shot-distance-annotation-integration-tests
+        tests/distance_annotation_integration_tests.cpp
+        src/presentation/core/screenshotcanvastoolstyles.cpp)
+    target_include_directories(snow-shot-distance-annotation-integration-tests PRIVATE include)
+    target_link_libraries(snow-shot-distance-annotation-integration-tests PRIVATE
+        snow_shot_storage snow_shot_window_shortcuts snow_draw_engine_qt_canvas
+        ant_design_qt adqt_icon_core ant_design_icons_qt Qt6::Widgets)
+    snow_shot_import_offscreen_platform(snow-shot-distance-annotation-integration-tests)
+    add_test(NAME snow-shot-distance-annotation-integration-tests
+        COMMAND snow-shot-distance-annotation-integration-tests -platform offscreen)
+    set_tests_properties(snow-shot-distance-annotation-integration-tests PROPERTIES
+        LABELS "unit" TIMEOUT 60 SNOW_TEST_CROSS_PLATFORM TRUE
+        ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}"
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
+
     add_executable(snow-shot-screenshot-tool-palette-tests
         tests/screenshot_tool_palette_tests.cpp
         tests/screenshot_style_binding_tests.cpp
@@ -5094,6 +5109,10 @@ if(SNOW_SHOT_BUILD_TESTS)
         NAME snow-shot-screenshot-tool-palette-tests
         COMMAND snow-shot-screenshot-tool-palette-tests
     )
+    add_test(NAME snow-shot-screenshot-tool-palette-distance-tests
+        COMMAND snow-shot-screenshot-tool-palette-tests --distance-only -platform offscreen)
+    set_tests_properties(snow-shot-screenshot-tool-palette-distance-tests
+        PROPERTIES LABELS "unit" TIMEOUT 60)
     add_test(NAME snow-shot-scrolling-toolbar-tests
         COMMAND snow-shot-screenshot-tool-palette-tests --scrolling-only -platform offscreen)
     add_test(NAME snow-shot-text-style-toolbar-tests

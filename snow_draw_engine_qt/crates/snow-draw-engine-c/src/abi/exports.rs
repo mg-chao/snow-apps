@@ -344,6 +344,45 @@ pub unsafe extern "C" fn snow_runtime_destroy(runtime: SnowRuntime) {
 }
 
 /// # Safety
+/// `runtime` must be a live runtime handle. Balance every successful begin
+/// with an end, including when a mutation or measurement fails.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn snow_runtime_begin_presentation_update(runtime: SnowRuntime) -> SnowError {
+    ffi_error(|| {
+        ffi_status(with_runtime_impl_mut(runtime, |state| {
+            state
+                .runtime
+                .begin_presentation_update()
+                .map_err(SnowError::from)
+        }))
+    })
+}
+
+/// # Safety
+/// `runtime` must be a live runtime handle and `out_changed_viewports` writable.
+/// Release the returned list with `snow_changed_viewports_destroy`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn snow_runtime_end_presentation_update_ex(
+    runtime: SnowRuntime,
+    out_changed_viewports: *mut SnowChangedViewportList,
+) -> SnowError {
+    ffi_error(|| {
+        if out_changed_viewports.is_null() {
+            return SnowError::InvalidArgument;
+        }
+        write_out(out_changed_viewports, std::ptr::null_mut());
+        ffi_status(with_runtime_impl_mut(runtime, |state| {
+            let result = state
+                .runtime
+                .end_presentation_update()
+                .map_err(SnowError::from)?;
+            write_changed_viewports(out_changed_viewports, result.changed_viewports);
+            Ok(())
+        }))
+    })
+}
+
+/// # Safety
 /// If `runtime` is non-null, it must be a live handle returned by `snow_runtime_create`.
 /// `out_changed_viewports` must be valid for writes.
 #[unsafe(no_mangle)]

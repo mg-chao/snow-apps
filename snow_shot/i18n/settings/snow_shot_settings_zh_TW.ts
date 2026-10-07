@@ -452,6 +452,10 @@
             <translation>箭頭</translation>
         </message>
         <message>
+            <source>Distance annotation</source>
+            <translation>距離標註</translation>
+        </message>
+        <message>
             <source>Drag tools here to hide them from the screenshot toolbar.</source>
             <translation>將工具拖到此處，即可在截圖工具列中隱藏它們。</translation>
         </message>
@@ -2059,6 +2063,10 @@
         <message>
             <source>Display translated text in the original image</source>
             <translation>在原始影像中顯示翻譯後的文字</translation>
+        </message>
+        <message>
+            <source>Distance annotation</source>
+            <translation>距離標註</translation>
         </message>
         <message>
             <source>Double-click Action</source>

@@ -75,6 +75,107 @@ fn label(engine: &mut Engine, viewport: ViewportId, owner: ElementId, text: &str
 }
 
 #[test]
+fn arrow_text_metric_batches_roll_back_invalid_results_and_ignore_stale_duplicates() {
+    let (mut engine, viewport, owner) = setup();
+    label(&mut engine, viewport, owner, "batch label");
+    engine
+        .select_element_with_viewport_changes(viewport, owner)
+        .unwrap();
+    engine
+        .duplicate_selected_with_viewport_changes(viewport, Point::new(0.0, 80.0))
+        .unwrap();
+    let requests = engine.arrow_text_layout_requests(viewport).unwrap();
+    assert_eq!(requests.len(), 2);
+    let before = engine.editor.snapshot();
+    let cursor = engine
+        .viewport_slot(viewport)
+        .unwrap()
+        .composer
+        .current_cursor();
+    let metric = |index: usize, width| {
+        let request = &requests[index];
+        (
+            request.text_id,
+            request.key,
+            TextLayoutSize::new(width, 24.0),
+            0.0,
+        )
+    };
+    assert_eq!(
+        engine
+            .apply_arrow_text_measurements(viewport, &[metric(0, 80.0), metric(1, f64::INFINITY),]),
+        Err(ErrorCode::InvalidArgument)
+    );
+    assert_eq!(engine.editor.snapshot(), before);
+    assert_eq!(
+        engine.arrow_text_layout_requests(viewport).unwrap(),
+        requests
+    );
+    assert_eq!(
+        engine
+            .viewport_slot(viewport)
+            .unwrap()
+            .composer
+            .current_cursor(),
+        cursor
+    );
+    let mut stale = metric(0, 40.0);
+    stale.1 = stale.1.wrapping_add(1);
+    engine
+        .apply_arrow_text_measurements(
+            viewport,
+            &[stale, metric(0, 80.0), metric(0, 40.0), metric(1, 100.0)],
+        )
+        .unwrap();
+    assert!(
+        engine
+            .arrow_text_layout_requests(viewport)
+            .unwrap()
+            .is_empty()
+    );
+    let view = engine.viewport_slot(viewport).unwrap().view;
+    let previews = engine
+        .editor
+        .presentation_state_for_refresh(&engine.model, &view)
+        .arrow_text_previews;
+    for (index, expected) in [(0, 80.0), (1, 100.0)] {
+        assert_eq!(
+            previews
+                .iter()
+                .find(|(id, _)| *id == requests[index].text_id)
+                .unwrap()
+                .1
+                .width(),
+            expected
+        );
+    }
+    let before = engine.editor.snapshot();
+    let cursor = engine
+        .viewport_slot(viewport)
+        .unwrap()
+        .composer
+        .current_cursor();
+    for layouts in [vec![], vec![metric(0, 40.0)]] {
+        assert!(
+            engine
+                .apply_arrow_text_measurements(viewport, &layouts)
+                .unwrap()
+                .changed_viewports
+                .is_empty()
+        );
+        assert_eq!(engine.editor.snapshot(), before);
+        assert_eq!(
+            engine
+                .viewport_slot(viewport)
+                .unwrap()
+                .composer
+                .current_cursor(),
+            cursor
+        );
+    }
+}
+
+#[test]
 fn draw_template_remaps_attached_arrow_text_and_detaches_external_endpoints() {
     let (mut engine, viewport, arrow_id) = setup();
     let label_id = label(&mut engine, viewport, arrow_id, "linked text");
@@ -556,6 +657,10 @@ fn arrow_text_measurements_are_keyed_and_join_the_next_geometry_transaction() {
         .arrow_text_layout_requests(viewport)
         .unwrap()
         .remove(0);
+    assert_eq!(
+        request.arrow_width,
+        engine.model.arrow(owner).unwrap().width
+    );
     engine
         .apply_arrow_text_measurements(
             viewport,

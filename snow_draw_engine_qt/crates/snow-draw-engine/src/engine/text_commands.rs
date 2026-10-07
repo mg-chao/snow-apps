@@ -80,7 +80,7 @@ fn text_style_from_text(text: &TextData) -> TextStyle {
 
 impl Engine {
     pub fn arrow_text_count(&self) -> usize {
-        self.model.arrow_text_bindings().len()
+        self.model.arrow_label_bindings().len()
     }
 
     pub fn arrow_text_layout_requests(
@@ -97,21 +97,14 @@ impl Engine {
         layouts: &[(ElementId, u64, TextLayoutSize, f64)],
     ) -> Result<MutationResult, ErrorCode> {
         self.ensure_viewport(viewport)?;
-        let before = self.editor.snapshot();
-        let editor_before = self.editor.clone();
-        for (id, key, size, natural_width) in layouts {
-            if let Err(error) = self.editor.apply_arrow_text_measurement(
-                &self.model,
-                *id,
-                *key,
-                *size,
-                *natural_width,
-            ) {
-                self.editor = editor_before;
-                return Err(error);
-            }
+        if self
+            .editor
+            .apply_arrow_text_measurements(&self.model, layouts)?
+        {
+            self.refresh_all_viewports()
+        } else {
+            Ok(MutationResult::default())
         }
-        self.refresh_after_session_mutation(before)
     }
 
     /// Invalidate host metrics before obtaining and applying replacement layouts.
@@ -150,10 +143,7 @@ impl Engine {
             return Ok(None);
         };
         let meta = self.model.element(id)?.meta;
-        if arrow.linear_kind != snow_draw_engine_document::LinearElementKind::Arrow
-            || meta.locked
-            || !meta.visible
-        {
+        if !arrow.is_regular_arrow() || meta.locked || !meta.visible {
             return Ok(None);
         }
         if let Some(text_id) = arrow.text_element_id {

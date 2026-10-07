@@ -152,6 +152,10 @@ if(SNOW_DRAW_ENGINE_QT_BUILD_BENCHMARKS)
     target_link_libraries(snow-canvas-arrow-text-benchmark PRIVATE snow_draw_engine_qt_canvas)
     snow_shot_import_offscreen_platform(snow-canvas-arrow-text-benchmark)
 
+    add_executable(snow-canvas-distance-benchmark tests/snow_canvas_distance_benchmark.cpp)
+    target_link_libraries(snow-canvas-distance-benchmark PRIVATE snow_draw_engine_qt_canvas)
+    snow_shot_import_offscreen_platform(snow-canvas-distance-benchmark)
+
     snow_add_rust_executable(snow-scene-order-benchmark
         PACKAGE snow-draw-engine-scene
         MANIFEST_DIR "${CMAKE_CURRENT_SOURCE_DIR}"
@@ -306,6 +310,19 @@ if(SNOW_DRAW_ENGINE_QT_BUILD_TESTS)
     qt_import_plugins(snow-canvas-arrow-text-tests INCLUDE Qt6::QOffscreenIntegrationPlugin)
     add_test(NAME snow-canvas-arrow-text-tests COMMAND snow-canvas-arrow-text-tests)
     set_tests_properties(snow-canvas-arrow-text-tests PROPERTIES
+        ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+        LABELS "unit"
+    )
+
+    add_executable(snow-canvas-distance-tests tests/snow_canvas_distance_tests.cpp)
+    target_include_directories(snow-canvas-distance-tests PRIVATE
+        ${SNOW_CANVAS_QT_PRIVATE_SOURCE_DIRS}
+        "${CMAKE_CURRENT_SOURCE_DIR}/crates/snow-draw-engine-c/include"
+    )
+    target_link_libraries(snow-canvas-distance-tests PRIVATE snow_draw_engine_qt_canvas)
+    qt_import_plugins(snow-canvas-distance-tests INCLUDE Qt6::QOffscreenIntegrationPlugin)
+    add_test(NAME snow-canvas-distance-tests COMMAND snow-canvas-distance-tests)
+    set_tests_properties(snow-canvas-distance-tests PROPERTIES
         ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
         LABELS "unit"
     )

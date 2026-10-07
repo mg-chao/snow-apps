@@ -68,6 +68,11 @@ class SnowCanvasWidget : public QWidget {
     SnowCanvasSpotlightConfig canvasSpotlightConfig() const;
     bool setCanvasSpotlightConfig(const SnowCanvasSpotlightConfig& config);
     void previewCanvasSpotlightConfig(const SnowCanvasSpotlightConfig& config);
+    SnowCanvasDistanceStyle canvasDistanceStyle() const;
+    bool setCanvasDistanceStyle(const SnowCanvasDistanceStyle& style,
+                                quint32 properties = SnowCanvasDistanceStyleAllProperties);
+    // Source-image pixels per canvas unit, captured when a distance draft begins.
+    bool setDistanceCreationPixelScale(const QSizeF& scale);
     bool setCanvasShapeStylePatch(const SnowCanvasShapeStyle& style, quint32 properties,
                                   SnowCanvasShapeKind kind);
     bool setCanvasFilterStyle(const SnowCanvasFilterStyle& style, quint32 properties);

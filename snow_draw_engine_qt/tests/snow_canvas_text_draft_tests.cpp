@@ -4479,7 +4479,8 @@ void preparedTextLayoutsAreBoundedAndReleasedWithRenderingState() {
     }
     auto diagnostics = renderCacheDiagnosticsForCurrentThread();
     require(diagnostics.entries == kRenderCacheEntryLimit && diagnostics.evictions > 0 &&
-                diagnostics.retainedCharacters <= kRenderCacheCharacterLimit,
+                diagnostics.retainedCharacters <= kRenderCacheCharacterLimit &&
+                diagnostics.estimatedBytes <= kRenderCacheByteLimit,
             "prepared text cache must enforce its entry bound");
     item.width = 10000000.0;
     for (int index = 0; index < 40; ++index) {
@@ -4489,8 +4490,19 @@ void preparedTextLayoutsAreBoundedAndReleasedWithRenderingState() {
     }
     diagnostics = renderCacheDiagnosticsForCurrentThread();
     require(diagnostics.entries < kRenderCacheEntryLimit &&
-                diagnostics.retainedCharacters <= kRenderCacheCharacterLimit,
-            "prepared text cache must enforce its independent character bound");
+                diagnostics.retainedCharacters <= kRenderCacheCharacterLimit &&
+                diagnostics.estimatedBytes <= kRenderCacheByteLimit,
+            "prepared text cache must enforce its character and estimated memory bounds");
+    const auto beforeByteOversized = diagnostics;
+    snow_canvas_text::copyTextToSceneItem(
+        item, QString(static_cast<qsizetype>(kRenderCacheByteLimit / 64u + 1), QLatin1Char('x')));
+    drawContents(painter, item, font, local, 1.0);
+    diagnostics = renderCacheDiagnosticsForCurrentThread();
+    require(diagnostics.entries == beforeByteOversized.entries &&
+                diagnostics.retainedCharacters == beforeByteOversized.retainedCharacters &&
+                diagnostics.estimatedBytes == beforeByteOversized.estimatedBytes &&
+                diagnostics.builds == beforeByteOversized.builds + 1,
+            "text exceeding the memory budget must render without entering the retained cache");
     const auto beforeOversized = diagnostics;
     snow_canvas_text::copyTextToSceneItem(
         item, QString(static_cast<qsizetype>(kRenderCacheCharacterLimit + 1), QLatin1Char('x')));
@@ -4504,7 +4516,8 @@ void preparedTextLayoutsAreBoundedAndReleasedWithRenderingState() {
     SnowCanvasRuntime runtime;
     runtime.clearRenderState();
     diagnostics = renderCacheDiagnosticsForCurrentThread();
-    require(diagnostics.entries == 0 && diagnostics.retainedCharacters == 0,
+    require(diagnostics.entries == 0 && diagnostics.retainedCharacters == 0 &&
+                diagnostics.estimatedBytes == 0,
             "clearing runtime rendering state must release prepared text layouts");
 }
 

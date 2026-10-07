@@ -8,6 +8,18 @@
             <translation>%1 (unavailable)</translation>
         </message>
         <message>
+            <source>1 decimal place</source>
+            <translation>1 decimal place</translation>
+        </message>
+        <message>
+            <source>2 decimal places</source>
+            <translation>2 decimal places</translation>
+        </message>
+        <message>
+            <source>3 decimal places</source>
+            <translation>3 decimal places</translation>
+        </message>
+        <message>
             <source>Add</source>
             <translation>Add</translation>
         </message>
@@ -236,6 +248,10 @@
             <translation>Current brush eraser stroke width</translation>
         </message>
         <message>
+            <source>Current distance stroke width</source>
+            <translation>Current distance stroke width</translation>
+        </message>
+        <message>
             <source>Current pen filter stroke width</source>
             <translation>Current pen filter stroke width</translation>
         </message>
@@ -284,6 +300,10 @@
             <translation>Dashed stroke</translation>
         </message>
         <message>
+            <source>Decimal places</source>
+            <translation>Decimal places</translation>
+        </message>
+        <message>
             <source>Default</source>
             <translation>Default</translation>
         </message>
@@ -318,6 +338,30 @@
         <message>
             <source>Diamond</source>
             <translation>Diamond</translation>
+        </message>
+        <message>
+            <source>Distance annotation</source>
+            <translation>Distance annotation</translation>
+        </message>
+        <message>
+            <source>Distance scaling factor</source>
+            <translation>Distance scaling factor</translation>
+        </message>
+        <message>
+            <source>Distance stroke color</source>
+            <translation>Distance stroke color</translation>
+        </message>
+        <message>
+            <source>Distance stroke color %1</source>
+            <translation>Distance stroke color %1</translation>
+        </message>
+        <message>
+            <source>Distance stroke width %1</source>
+            <translation>Distance stroke width %1</translation>
+        </message>
+        <message>
+            <source>Distance unit</source>
+            <translation>Distance unit</translation>
         </message>
         <message>
             <source>Distribute horizontally</source>
@@ -428,6 +472,14 @@
             <translation>End arrowhead triangle outline</translation>
         </message>
         <message>
+            <source>Endpoint scale (scroll to adjust)</source>
+            <translation>Endpoint scale (scroll to adjust)</translation>
+        </message>
+        <message>
+            <source>Endpoint style</source>
+            <translation>Endpoint style</translation>
+        </message>
+        <message>
             <source>Eraser</source>
             <translation>Eraser</translation>
         </message>
@@ -530,6 +582,10 @@
         <message>
             <source>Image</source>
             <translation>Image</translation>
+        </message>
+        <message>
+            <source>Integers</source>
+            <translation>Integers</translation>
         </message>
         <message>
             <source>Inversion</source>
@@ -1242,6 +1298,22 @@
         <message>
             <source>Yellow</source>
             <translation>Yellow</translation>
+        </message>
+        <message>
+            <source>cm</source>
+            <translation>cm</translation>
+        </message>
+        <message>
+            <source>km</source>
+            <translation>km</translation>
+        </message>
+        <message>
+            <source>m</source>
+            <translation>m</translation>
+        </message>
+        <message>
+            <source>mm</source>
+            <translation>mm</translation>
         </message>
         <message>
             <source>ms</source>

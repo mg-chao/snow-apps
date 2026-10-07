@@ -37,6 +37,10 @@ void ScreenshotToolPaletteStyleState::reset(const SnowCanvasStyleDefaults& defau
         defaults.arrow.arrowShaftType, defaults.arrow.arrowRatio,
     };
     m_arrowStyle = m_creationArrowStyle;
+    creationDistanceStyle = defaults.distance;
+    distanceStyle = defaults.distance;
+    distanceStyleMixed = 0;
+    showingSelectedDistance = false;
     m_creationTextStyle.setTextStyle(defaults.text);
     m_textStyle.setTextStyle(defaults.text);
     m_creationSerialNumberStyle = defaults.serialNumber;

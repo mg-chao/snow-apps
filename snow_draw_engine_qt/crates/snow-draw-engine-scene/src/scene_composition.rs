@@ -191,6 +191,15 @@ pub(crate) fn compose_scene_items(
             _ => {}
         }
     }
+    if let Some((text_id, text)) = &presentation.distance_creation_text {
+        if let Some(SceneDisplayItem::Arrow(arrow)) = items.iter_mut().find(|item| matches!(item, SceneDisplayItem::Arrow(arrow) if arrow.id == display_item_id(model.peek_next_element_id()))) {
+            arrow.bound_text_id = Some(display_item_id(*text_id));
+            arrow.label_bounds = Some(text_bounds(text));
+        }
+        if bounds_visible(text_bounds(text), viewport) {
+            items.push(scene_item_from_text(*text_id, text.clone()));
+        }
+    }
     if let Some(active_draft) = presentation.active_text_draft.as_ref()
         && active_draft.existing_id().is_none()
         && bounds_visible(text_bounds(&active_draft.text), viewport)
@@ -321,6 +330,13 @@ pub(crate) fn compose_scene_render_plan(
         if let Some(item) = item {
             nodes.push(OrderNode::new(id, &item));
         }
+    }
+    if let Some((text_id, _)) = &presentation.distance_creation_text {
+        nodes.push(OrderNode {
+            id: *text_id,
+            effect: None,
+            smart_erase: false,
+        });
     }
     if let Some(draft) = &presentation.active_text_draft
         && draft.existing_id().is_none()
@@ -518,6 +534,11 @@ fn compose_arrow_text(
     arrows: &HashMap<ElementId, ArrowData>,
     viewport: (f64, f64, f64, f64),
 ) {
+    let previews: HashMap<_, _> = presentation
+        .arrow_text_previews
+        .iter()
+        .map(|(id, text)| (*id, text))
+        .collect();
     let mut bindings = model.arrow_label_bindings().to_vec();
     let new_draft = presentation.active_text_draft.as_ref().and_then(|draft| {
         if let snow_draw_engine_editor::ActiveTextDraftTarget::NewArrow(id) = draft.target {
@@ -561,13 +582,7 @@ fn compose_arrow_text(
             .filter(|draft| draft.display_id() == text_id);
         let Some(mut text) = draft
             .map(|d| d.text.clone())
-            .or_else(|| {
-                presentation
-                    .arrow_text_previews
-                    .iter()
-                    .find(|(id, _)| *id == text_id)
-                    .map(|(_, text)| text.clone())
-            })
+            .or_else(|| previews.get(&text_id).map(|text| (*text).clone()))
             .or_else(|| model.text(text_id).ok().cloned())
         else {
             continue;

@@ -6,14 +6,15 @@ use snow_draw_engine::{
     ActiveTool, ArrowPathCommand, ArrowType, Arrowhead, ArrowheadDisplayDashMode,
     ArrowheadDisplayFillMode, ArrowheadDisplayPrimitive, ArrowheadDisplayPrimitiveKind,
     CanvasFilterType, ColorRgba8, CornerRadii, CursorCommand, CursorStyle, DisplayFillStyle,
-    DisplayTextHorizontalAlign, DisplayTextVerticalAlign, ElementId, EngineConfig, FillStyle,
-    FilterStyle, GridConfig, HistoryState, InputEvent, InteractionOutput, KeyCode, KeyEvent,
-    KeyEventType, Modifiers, Point, PointerButton, PointerButtons, PointerCaptureCommand,
-    PointerDevice, PointerEvent, PointerEventType, RectangleShapeStyle, RuntimeConfig,
-    SerialNumberStyle, SerialNumberType, ShapeKind, ShapeStyle, SnapConfig, SpotlightConfig,
-    StrokeStyle, StyleDefaults, StyleToolbarSource, TextElementInfo, TextHorizontalAlign,
-    TextLayoutOverride, TextLayoutSize, TextStyle, TextVerticalAlign, Vector2, WatermarkConfig,
-    WatermarkTemplateApplicationTime, WheelDeltaKind, WheelEvent, ZoomFocus, normalize_font_family,
+    DisplayTextHorizontalAlign, DisplayTextVerticalAlign, DistanceStyle, DistanceUnit, ElementId,
+    EngineConfig, FillStyle, FilterStyle, GridConfig, HistoryState, InputEvent, InteractionOutput,
+    KeyCode, KeyEvent, KeyEventType, Modifiers, Point, PointerButton, PointerButtons,
+    PointerCaptureCommand, PointerDevice, PointerEvent, PointerEventType, RectangleShapeStyle,
+    RuntimeConfig, SerialNumberStyle, SerialNumberType, ShapeKind, ShapeStyle, SnapConfig,
+    SpotlightConfig, StrokeStyle, StyleDefaults, StyleToolbarSource, TextElementInfo,
+    TextHorizontalAlign, TextLayoutOverride, TextLayoutSize, TextStyle, TextVerticalAlign, Vector2,
+    WatermarkConfig, WatermarkTemplateApplicationTime, WheelDeltaKind, WheelEvent, ZoomFocus,
+    normalize_font_family,
 };
 
 use crate::abi::text::{
@@ -611,6 +612,52 @@ impl From<CornerRadii> for SnowCornerRadii {
     }
 }
 
+impl From<SnowDistanceStyle> for DistanceStyle {
+    fn from(value: SnowDistanceStyle) -> Self {
+        Self {
+            stroke: value.stroke.into(),
+            stroke_width: value.stroke_width,
+            factor: value.factor,
+            unit: match value.unit {
+                SnowDistanceUnit::Px => DistanceUnit::Px,
+                SnowDistanceUnit::Cm => DistanceUnit::Cm,
+                SnowDistanceUnit::M => DistanceUnit::M,
+                SnowDistanceUnit::Km => DistanceUnit::Km,
+                SnowDistanceUnit::Mm => DistanceUnit::Mm,
+            },
+            decimal_places: value.decimal_places.min(255) as u8,
+            endpoint_ratio: value.endpoint_scale,
+            endpoint_style: snow_arrowhead_to_rust(value.endpoint_style),
+        }
+    }
+}
+
+impl From<DistanceStyle> for SnowDistanceStyle {
+    fn from(value: DistanceStyle) -> Self {
+        Self {
+            stroke: value.stroke.into(),
+            stroke_width: value.stroke_width,
+            factor: value.factor,
+            unit: match value.unit {
+                DistanceUnit::Px => SnowDistanceUnit::Px,
+                DistanceUnit::Cm => SnowDistanceUnit::Cm,
+                DistanceUnit::M => SnowDistanceUnit::M,
+                DistanceUnit::Km => SnowDistanceUnit::Km,
+                DistanceUnit::Mm => SnowDistanceUnit::Mm,
+            },
+            decimal_places: value.decimal_places as u32,
+            endpoint_scale: value.endpoint_ratio,
+            endpoint_style: snow_arrowhead_from_rust(value.endpoint_style),
+        }
+    }
+}
+
+impl Default for SnowDistanceStyle {
+    fn default() -> Self {
+        DistanceStyle::default().into()
+    }
+}
+
 impl From<SnowShapeStyle> for ShapeStyle {
     fn from(value: SnowShapeStyle) -> Self {
         Self {
@@ -919,7 +966,9 @@ fn strict_string_from_c_char_field<const N: usize>(
     string_from_c_char_field(bytes, len).ok_or(SnowError::InvalidArgument)
 }
 
-unsafe fn raw_c_enum_is_valid<E: crate::abi::raw_enum::SnowRawEnum>(value: *const E) -> bool {
+pub(crate) unsafe fn raw_c_enum_is_valid<E: crate::abi::raw_enum::SnowRawEnum>(
+    value: *const E,
+) -> bool {
     let raw = unsafe { std::ptr::read_unaligned(value.cast::<i32>()) };
     E::from_raw(raw).is_some()
 }
@@ -949,7 +998,10 @@ unsafe fn runtime_style_default_enums_are_valid(defaults: *const SnowStyleDefaul
     }
 
     unsafe {
-        raw_c_enum_is_valid(std::ptr::addr_of!((*defaults).spotlight_shape))
+        raw_c_enum_is_valid(std::ptr::addr_of!((*defaults).distance.unit))
+            && raw_c_enum_is_valid(std::ptr::addr_of!((*defaults).distance.endpoint_style))
+            && (*defaults).distance.decimal_places <= 3
+            && raw_c_enum_is_valid(std::ptr::addr_of!((*defaults).spotlight_shape))
             && raw_c_enum_is_valid(std::ptr::addr_of!((*defaults).rectangle_filter.filter_type))
             && raw_c_enum_is_valid(std::ptr::addr_of!((*defaults).pen_filter.filter_type))
             && raw_c_enum_is_valid(std::ptr::addr_of!((*defaults).text.fill_style))
@@ -1020,6 +1072,7 @@ pub(crate) fn runtime_config_from_c(
                 rectangle_filter: defaults.rectangle_filter.into(),
                 pen_filter: defaults.pen_filter.into(),
                 brush_eraser: defaults.brush_eraser.into(),
+                distance: defaults.distance.into(),
                 text: TextStyle {
                     color: defaults.text.color.into(),
                     font_size: defaults.text.font_size,
@@ -1130,6 +1183,7 @@ impl From<StyleDefaults> for SnowStyleDefaults {
             watermark: value.watermark.into(),
             spotlight: value.spotlight.into(),
             brush_eraser: value.editor.brush_eraser.into(),
+            distance: value.editor.distance.into(),
             spotlight_shape: match value.editor.spotlight_shape {
                 snow_draw_engine::HighlightShape::Rectangle => SnowRectangleShape::Rectangle,
                 snow_draw_engine::HighlightShape::Ellipse => SnowRectangleShape::Ellipse,
@@ -1153,6 +1207,8 @@ impl Default for SnowStyleToolbarState {
             filter_style: SnowFilterStyle::default(),
             filter_style_mixed: 0,
             brush_eraser_style: SnowBrushEraserStyle::default(),
+            distance_style: SnowDistanceStyle::default(),
+            distance_style_mixed: 0,
         }
     }
 }
@@ -1200,6 +1256,7 @@ pub(crate) fn snow_active_tool_to_rust(value: SnowActiveTool) -> ActiveTool {
         SnowActiveTool::AutoFilter => ActiveTool::AutoFilter,
         SnowActiveTool::RectangleEraser => ActiveTool::RectangleEraser,
         SnowActiveTool::BrushEraser => ActiveTool::BrushEraser,
+        SnowActiveTool::Distance => ActiveTool::Distance,
         SnowActiveTool::Watermark => ActiveTool::Watermark,
         SnowActiveTool::Text => ActiveTool::Text,
         SnowActiveTool::SerialNumber => ActiveTool::SerialNumber,
@@ -1222,6 +1279,7 @@ pub(crate) fn snow_active_tool_from_rust(value: ActiveTool) -> SnowActiveTool {
         ActiveTool::AutoFilter => SnowActiveTool::AutoFilter,
         ActiveTool::RectangleEraser => SnowActiveTool::RectangleEraser,
         ActiveTool::BrushEraser => SnowActiveTool::BrushEraser,
+        ActiveTool::Distance => SnowActiveTool::Distance,
         ActiveTool::Watermark => SnowActiveTool::Watermark,
         ActiveTool::Text => SnowActiveTool::Text,
         ActiveTool::SerialNumber => SnowActiveTool::SerialNumber,
@@ -1229,7 +1287,7 @@ pub(crate) fn snow_active_tool_from_rust(value: ActiveTool) -> SnowActiveTool {
 }
 
 pub(crate) fn snow_active_tool_mask_to_rust(value: u64) -> u64 {
-    const TOOLS: [SnowActiveTool; 17] = [
+    const TOOLS: [SnowActiveTool; 18] = [
         SnowActiveTool::Select,
         SnowActiveTool::Shape,
         SnowActiveTool::Arrow,
@@ -1247,6 +1305,7 @@ pub(crate) fn snow_active_tool_mask_to_rust(value: u64) -> u64 {
         SnowActiveTool::AutoFilter,
         SnowActiveTool::RectangleEraser,
         SnowActiveTool::BrushEraser,
+        SnowActiveTool::Distance,
     ];
 
     TOOLS.into_iter().fold(0, |mask, tool| {
@@ -1283,6 +1342,8 @@ pub(crate) fn snow_style_toolbar_source_from_rust(
             SnowStyleToolbarSource::DefaultRectangleEraser
         }
         StyleToolbarSource::DefaultBrushEraser => SnowStyleToolbarSource::DefaultBrushEraser,
+        StyleToolbarSource::DefaultDistance => SnowStyleToolbarSource::DefaultDistance,
+        StyleToolbarSource::SelectedDistance => SnowStyleToolbarSource::SelectedDistance,
         StyleToolbarSource::DefaultRectangleFilter => {
             SnowStyleToolbarSource::DefaultRectangleFilter
         }

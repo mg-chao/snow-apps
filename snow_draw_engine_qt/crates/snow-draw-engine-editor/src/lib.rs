@@ -7,6 +7,8 @@ pub use arrow_text::ArrowTextLayoutRequest;
 mod creation_workflow;
 pub use creation_workflow::SerialNumberLabelLayoutRequest;
 mod defaults;
+mod distance;
+pub use distance::*;
 mod document_ops;
 mod draw_template;
 mod edit_workflow;

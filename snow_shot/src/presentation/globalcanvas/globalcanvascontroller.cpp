@@ -42,6 +42,7 @@ ScreenshotToolPalette::Options canvasOptions() {
     options.showShapeTool = true;
     options.showArrowTool = true;
     options.showLineTool = true;
+    options.showDistanceTool = true;
     options.showFreeDrawTool = true;
     options.showHighlightTool = true;
     options.showSpotlightTool = true;
@@ -525,6 +526,9 @@ class GlobalCanvasController::Session final : public QWidget, public SnowCanvasC
         case SnowCanvasTool::Arrow:
             palette->setActiveTool(ScreenshotToolPalette::Tool::Arrow);
             break;
+        case SnowCanvasTool::Distance:
+            palette->setActiveTool(ScreenshotToolPalette::Tool::Distance);
+            break;
         case SnowCanvasTool::Line:
             palette->setActiveTool(ScreenshotToolPalette::Tool::Line);
             break;
@@ -581,6 +585,11 @@ class GlobalCanvasController::Session final : public QWidget, public SnowCanvasC
         connect(palette, &ScreenshotToolPalette::shapeRequested, this, [this]() {
             drawing->setCanvasTool(SnowCanvasTool::Shape);
             palette->setActiveTool(ScreenshotToolPalette::Tool::Shape);
+            activateDrawing();
+        });
+        connect(palette, &ScreenshotToolPalette::distanceToolRequested, this, [this]() {
+            drawing->setCanvasTool(SnowCanvasTool::Distance);
+            palette->setActiveTool(ScreenshotToolPalette::Tool::Distance);
             activateDrawing();
         });
         connect(palette, &ScreenshotToolPalette::arrowRequested, this, [this]() {

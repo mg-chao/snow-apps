@@ -74,6 +74,7 @@ struct RetainedLayout {
     LayoutKey key;
     std::shared_ptr<const text_layout::DocumentLayout> layout;
     std::size_t characters = 0;
+    std::size_t estimatedBytes = 0;
 };
 
 struct RenderCache {
@@ -129,9 +130,7 @@ preparedLayout(QPainter& painter, const SnowSceneDisplayItem& item, const QFont&
     key.horizontalAlignment = item.text_horizontal_align;
     key.verticalAlignment = item.text_vertical_align;
     key.phase = phase;
-    if (phase == RenderPhase::Contents) {
-        key.color = toQColor(item.text_color).rgba();
-    } else if (phase == RenderPhase::Stroke) {
+    if (phase == RenderPhase::Stroke) {
         key.color = toQColor(item.stroke).rgba();
         key.strokeWidth = item.stroke_width * zoom / resolution.scale;
     }
@@ -155,34 +154,37 @@ preparedLayout(QPainter& painter, const SnowSceneDisplayItem& item, const QFont&
     ++cache.diagnostics.builds;
     QTextDocument& document = layout->textDocument();
     document.setUndoRedoEnabled(false);
-    if (phase == RenderPhase::Contents || phase == RenderPhase::Stroke) {
+    if (phase == RenderPhase::Stroke) {
         QTextCursor cursor(&document);
         cursor.select(QTextCursor::Document);
         QTextCharFormat format;
-        if (phase == RenderPhase::Contents) {
-            format.setForeground(QBrush(QColor::fromRgba(key.color)));
-        } else {
-            QPen outlinePen(QColor::fromRgba(key.color), key.strokeWidth, Qt::SolidLine,
-                            Qt::RoundCap, Qt::RoundJoin);
-            outlinePen.setMiterLimit(2.0);
-            format.setTextOutline(outlinePen);
-            format.setForeground(QBrush(Qt::transparent));
-        }
+        QPen outlinePen(QColor::fromRgba(key.color), key.strokeWidth, Qt::SolidLine, Qt::RoundCap,
+                        Qt::RoundJoin);
+        outlinePen.setMiterLimit(2.0);
+        format.setTextOutline(outlinePen);
+        format.setForeground(QBrush(Qt::transparent));
         cursor.mergeCharFormat(format);
     }
     const auto characters = static_cast<std::size_t>(document.characterCount());
-    if (characters > kRenderCacheCharacterLimit) {
+    // Conservatively account for the document, blocks, glyph runs, key, and cache nodes.
+    const auto estimatedBytes = 4096u + sizeof(RetainedLayout) + sizeof(LayoutKey) +
+                                static_cast<std::size_t>(text.size()) * (64u + sizeof(QChar)) +
+                                static_cast<std::size_t>(key.font.key().size()) * sizeof(QChar) +
+                                static_cast<std::size_t>(document.blockCount()) * 256u;
+    if (characters > kRenderCacheCharacterLimit || estimatedBytes > kRenderCacheByteLimit) {
         return layout;
     }
     while (cache.layouts.size() >= kRenderCacheEntryLimit ||
-           cache.diagnostics.retainedCharacters + characters > kRenderCacheCharacterLimit) {
+           cache.diagnostics.retainedCharacters + characters > kRenderCacheCharacterLimit ||
+           cache.diagnostics.estimatedBytes + estimatedBytes > kRenderCacheByteLimit) {
         const auto& oldest = cache.layouts.back();
         cache.diagnostics.retainedCharacters -= oldest.characters;
+        cache.diagnostics.estimatedBytes -= oldest.estimatedBytes;
         cache.entries.erase(oldest.key);
         cache.layouts.pop_back();
         ++cache.diagnostics.evictions;
     }
-    cache.layouts.push_front({std::move(key), layout, characters});
+    cache.layouts.push_front({std::move(key), layout, characters, estimatedBytes});
     try {
         cache.entries.emplace(cache.layouts.front().key, cache.layouts.begin());
     } catch (...) {
@@ -190,6 +192,7 @@ preparedLayout(QPainter& painter, const SnowSceneDisplayItem& item, const QFont&
         throw;
     }
     cache.diagnostics.retainedCharacters += characters;
+    cache.diagnostics.estimatedBytes += estimatedBytes;
     cache.diagnostics.entries = cache.layouts.size();
     return layout;
 }
@@ -210,6 +213,16 @@ void clearRenderCacheForCurrentThread() {
     cache.fontDatabaseRevision = g_fontDatabaseRevision.load(std::memory_order_relaxed);
 }
 
+void resetLayoutCacheForCurrentThread() {
+    clearRenderCacheForCurrentThread();
+}
+
+LayoutCacheStats layoutCacheStatsForCurrentThread() {
+    const auto diagnostics = renderCacheDiagnosticsForCurrentThread();
+    return {static_cast<qsizetype>(diagnostics.entries),
+            static_cast<qsizetype>(diagnostics.estimatedBytes), diagnostics.builds};
+}
+
 void drawContents(QPainter& painter, const SnowSceneDisplayItem& item, const QFont& baseFont,
                   const QRectF& localRect, double zoom) {
     const QString text = snow_canvas_text::textFromSceneItem(item);
@@ -222,7 +235,8 @@ void drawContents(QPainter& painter, const SnowSceneDisplayItem& item, const QFo
     painter.save();
     painter.translate(localRect.left(), localRect.top() + layout->topOffset);
     painter.scale(layout->resolution.scale, layout->resolution.scale);
-    text_layout::drawDocument(painter, *layout);
+    // Foreground is paint state, so color changes can reuse the immutable layout.
+    text_layout::drawDocument(painter, *layout, toQColor(item.text_color));
     painter.restore();
 }
 

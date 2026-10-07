@@ -27,6 +27,7 @@ pub enum SnowActiveTool {
     AutoFilter = 14,
     RectangleEraser = 15,
     BrushEraser = 16,
+    Distance = 17,
 }
 
 impl SnowActiveTool {
@@ -63,6 +64,8 @@ pub enum SnowStyleToolbarSource {
     SelectedSpotlight = 23,
     DefaultRectangleEraser = 24,
     DefaultBrushEraser = 25,
+    DefaultDistance = 26,
+    SelectedDistance = 27,
 }
 
 impl SnowStyleToolbarSource {
@@ -137,6 +140,50 @@ pub struct SnowCornerRadii {
     pub bottom_right: f64,
     pub bottom_left: f64,
 }
+
+snow_c_enum! {
+    #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+    pub enum SnowDistanceUnit {
+        #[default]
+        Px = 0,
+        Cm = 1,
+        M = 2,
+        Km = 3,
+        Mm = 4,
+    }
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct SnowDistanceStyle {
+    pub stroke: SnowColorRgba8,
+    pub stroke_width: f64,
+    pub factor: f64,
+    pub unit: SnowDistanceUnit,
+    pub decimal_places: u32,
+    pub endpoint_scale: f64,
+    pub endpoint_style: SnowArrowhead,
+}
+
+pub const SNOW_DISTANCE_STYLE_PROPERTY_STROKE: u32 = 1 << 0;
+pub const SNOW_DISTANCE_STYLE_PROPERTY_STROKE_WIDTH: u32 = 1 << 1;
+pub const SNOW_DISTANCE_STYLE_PROPERTY_FACTOR: u32 = 1 << 2;
+pub const SNOW_DISTANCE_STYLE_PROPERTY_UNIT: u32 = 1 << 3;
+pub const SNOW_DISTANCE_STYLE_PROPERTY_DECIMAL_PLACES: u32 = 1 << 4;
+pub const SNOW_DISTANCE_STYLE_PROPERTY_ENDPOINT_SCALE: u32 = 1 << 5;
+pub const SNOW_DISTANCE_STYLE_PROPERTY_ENDPOINT_STYLE: u32 = 1 << 6;
+pub const SNOW_DISTANCE_STYLE_PROPERTY_ALL: u32 = (1 << 7) - 1;
+
+pub const SNOW_DISTANCE_STYLE_MIXED_STROKE: u32 = SNOW_DISTANCE_STYLE_PROPERTY_STROKE;
+pub const SNOW_DISTANCE_STYLE_MIXED_STROKE_WIDTH: u32 = SNOW_DISTANCE_STYLE_PROPERTY_STROKE_WIDTH;
+pub const SNOW_DISTANCE_STYLE_MIXED_FACTOR: u32 = SNOW_DISTANCE_STYLE_PROPERTY_FACTOR;
+pub const SNOW_DISTANCE_STYLE_MIXED_UNIT: u32 = SNOW_DISTANCE_STYLE_PROPERTY_UNIT;
+pub const SNOW_DISTANCE_STYLE_MIXED_DECIMAL_PLACES: u32 =
+    SNOW_DISTANCE_STYLE_PROPERTY_DECIMAL_PLACES;
+pub const SNOW_DISTANCE_STYLE_MIXED_ENDPOINT_SCALE: u32 =
+    SNOW_DISTANCE_STYLE_PROPERTY_ENDPOINT_SCALE;
+pub const SNOW_DISTANCE_STYLE_MIXED_ENDPOINT_STYLE: u32 =
+    SNOW_DISTANCE_STYLE_PROPERTY_ENDPOINT_STYLE;
 
 #[repr(C)]
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -364,6 +411,8 @@ pub struct SnowStyleToolbarState {
     pub filter_style: SnowFilterStyle,
     pub filter_style_mixed: u32,
     pub brush_eraser_style: SnowBrushEraserStyle,
+    pub distance_style: SnowDistanceStyle,
+    pub distance_style_mixed: u32,
 }
 
 #[repr(C)]
@@ -383,6 +432,7 @@ pub struct SnowStyleDefaults {
     pub spotlight: SnowSpotlightConfig,
     pub brush_eraser: SnowBrushEraserStyle,
     pub spotlight_shape: SnowRectangleShape,
+    pub distance: SnowDistanceStyle,
 }
 
 #[repr(C)]

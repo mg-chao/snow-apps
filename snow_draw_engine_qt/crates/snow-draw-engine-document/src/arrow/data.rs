@@ -18,6 +18,7 @@ pub enum LinearElementKind {
     Arrow,
     Line,
     PenHighlight,
+    Distance,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -54,6 +55,8 @@ impl From<ArrowEndpointBinding> for FixedPointBinding {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct ArrowData {
     pub linear_kind: LinearElementKind,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub distance: Option<crate::DistanceAnnotation>,
     /// Optional text owned by this arrow. Labels are ordinary text records so the
     /// host renderer remains the authority for fonts and exact text layout.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -117,6 +120,7 @@ impl ArrowData {
         );
         Some(Self {
             linear_kind: LinearElementKind::Arrow,
+            distance: None,
             text_element_id: None,
             text_path_fraction: None,
             x: normalized.x,
@@ -146,6 +150,7 @@ impl ArrowData {
 
     pub fn into_line(mut self, fill: ColorRgba8, fill_style: FillStyle) -> Self {
         self.linear_kind = LinearElementKind::Line;
+        self.distance = None;
         self.start_arrowhead = None;
         self.end_arrowhead = None;
         self.arrow_type = normalized_line_arrow_type(self.arrow_type);
@@ -156,6 +161,7 @@ impl ArrowData {
 
     pub fn into_pen_highlight(mut self) -> Self {
         self.linear_kind = LinearElementKind::PenHighlight;
+        self.distance = None;
         self.start_arrowhead = None;
         self.end_arrowhead = None;
         self.arrow_type = ArrowType::Straight;
@@ -172,6 +178,7 @@ impl ArrowData {
 
     pub fn inherit_linear_metadata_from(&mut self, source: &Self) {
         self.linear_kind = source.linear_kind;
+        self.distance = source.distance;
         self.text_element_id = source.text_element_id;
         self.text_path_fraction = source.text_path_fraction;
         self.arrow_shaft_type = source.arrow_shaft_type;
@@ -195,7 +202,16 @@ impl ArrowData {
             LinearElementKind::Arrow => ElementKind::Arrow,
             LinearElementKind::Line => ElementKind::Line,
             LinearElementKind::PenHighlight => ElementKind::PenHighlight,
+            LinearElementKind::Distance => ElementKind::Distance,
         }
+    }
+
+    pub fn is_distance(&self) -> bool {
+        self.linear_kind == LinearElementKind::Distance
+    }
+
+    pub fn is_regular_arrow(&self) -> bool {
+        self.linear_kind == LinearElementKind::Arrow
     }
 
     pub fn is_line(&self) -> bool {
@@ -295,6 +311,7 @@ impl ArrowData {
         let points = patch.points.clone().unwrap_or_else(|| self.points.clone());
         Self {
             linear_kind: self.linear_kind,
+            distance: self.distance,
             text_element_id: self.text_element_id,
             text_path_fraction: self.text_path_fraction,
             x: patch.x.unwrap_or(self.x),
@@ -414,7 +431,8 @@ pub fn arrow_length(arrow: &ArrowData) -> f64 {
 /// Unmoved labels use Excalidraw's middle vertex or middle segment. Dragged
 /// labels follow their stored fraction of the rendered path.
 pub fn arrow_text_anchor(arrow: &ArrowData) -> Point<f64> {
-    if let Some(fraction) = arrow.text_path_fraction
+    if !arrow.is_distance()
+        && let Some(fraction) = arrow.text_path_fraction
         && let Some(point) = arrow_text_path_point(arrow, fraction)
     {
         return point;
@@ -548,7 +566,11 @@ fn label_curve_length(points: &[Point<f64>; 4], end: f64) -> f64 {
 }
 
 pub fn arrow_text_max_width(arrow: &ArrowData, font_size: f64) -> f64 {
-    (arrow.width * 0.7).max(font_size * 11.0)
+    if arrow.is_distance() {
+        f64::MAX
+    } else {
+        (arrow.width * 0.7).max(font_size * 11.0)
+    }
 }
 
 pub fn arrow_segment_midpoints(arrow: &ArrowData) -> Vec<(usize, Point<f64>)> {
@@ -586,6 +608,24 @@ pub fn arrow_segment_midpoints(arrow: &ArrowData) -> Vec<(usize, Point<f64>)> {
 }
 
 pub fn validate_arrow(arrow: &ArrowData) -> Result<(), ErrorCode> {
+    if arrow.is_distance() {
+        crate::validate_distance_annotation(arrow.distance.ok_or(ErrorCode::InvalidArgument)?)?;
+        if arrow.points.len() != 2
+            || arrow.arrow_type != ArrowType::Straight
+            || arrow.start_arrowhead != arrow.end_arrowhead
+            || !arrow.arrow_ratio.is_finite()
+            || !(0.5..=3.0).contains(&arrow.arrow_ratio)
+            || arrow.start_binding.is_some()
+            || arrow.end_binding.is_some()
+            || !arrow.stroke_width.is_finite()
+            || !(1.0..=72.0).contains(&arrow.stroke_width)
+            || crate::distance_value(arrow).is_none()
+        {
+            return Err(ErrorCode::InvalidArgument);
+        }
+    } else if arrow.distance.is_some() {
+        return Err(ErrorCode::InvalidArgument);
+    }
     let scalar_fields = [
         arrow.x,
         arrow.y,

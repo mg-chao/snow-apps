@@ -6,6 +6,7 @@
 #include <QJsonArray>
 #include <QRectF>
 #include <QSize>
+#include <QSizeF>
 
 #include <memory>
 #include <functional>
@@ -83,6 +84,8 @@ class SnowCanvasRuntimeEditor final {
     SnowCanvasStyleToolbarState canvasStyleToolbarState() const;
     SnowCanvasWatermarkConfig canvasWatermarkConfig() const;
     SnowCanvasSpotlightConfig canvasSpotlightConfig() const;
+    bool setDistanceStyleFromToolbar(const SnowCanvasDistanceStyle&, quint32);
+    bool setDistanceCreationPixelScale(const QSizeF&);
     bool setShapeStyleFromToolbar(const SnowCanvasShapeStyle&, quint32, SnowCanvasShapeKind);
     bool setTextStyleFromToolbar(const SnowCanvasTextStyle&,
                                  quint32 properties = SnowCanvasTextStyleAllProperties);

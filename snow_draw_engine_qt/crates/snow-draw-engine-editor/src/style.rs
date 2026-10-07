@@ -324,10 +324,8 @@ impl ShapeStyleSample {
             start_arrowhead: (!arrow.is_line()).then_some(arrow.start_arrowhead),
             end_arrowhead: (!arrow.is_line()).then_some(arrow.end_arrowhead),
             arrow_type: (!arrow.is_pen_highlight()).then_some(arrow.arrow_type),
-            arrow_shaft_type: (!arrow.is_line() && !arrow.is_pen_highlight())
-                .then_some(arrow.arrow_shaft_type),
-            arrow_ratio: (!arrow.is_line() && !arrow.is_pen_highlight())
-                .then_some(arrow.arrow_ratio),
+            arrow_shaft_type: (arrow.is_regular_arrow()).then_some(arrow.arrow_shaft_type),
+            arrow_ratio: (arrow.is_regular_arrow()).then_some(arrow.arrow_ratio),
             opacity: arrow.opacity,
             highlight_shape: None,
             shape: None,
@@ -844,6 +842,14 @@ impl Editor {
             StyleToolbarSource::SelectedLine
         } else if self.selected_free_draw_style(document).is_some() {
             StyleToolbarSource::SelectedFreeDraw
+        } else if self
+            .state
+            .selection
+            .ids
+            .iter()
+            .any(|id| document.arrow(*id).is_ok_and(ArrowData::is_distance))
+        {
+            StyleToolbarSource::SelectedDistance
         } else if self.selected_arrow_style(document).is_some() {
             StyleToolbarSource::SelectedArrow
         } else if self.state.active_tool == ActiveTool::Line {
@@ -863,6 +869,8 @@ impl Editor {
             ActiveTool::RectangleFilter | ActiveTool::AutoFilter
         ) {
             StyleToolbarSource::DefaultRectangleFilter
+        } else if self.state.active_tool == ActiveTool::Distance {
+            StyleToolbarSource::DefaultDistance
         } else if self.state.active_tool == ActiveTool::Arrow {
             StyleToolbarSource::DefaultArrow
         } else if self.state.active_tool == ActiveTool::Text {
@@ -1175,6 +1183,25 @@ impl Editor {
     }
 
     pub fn shape_style(&self, document: &DocumentModel) -> ShapeStyle {
+        if self.style_toolbar_source(document) == StyleToolbarSource::SelectedDistance {
+            let arrow =
+                self.state
+                    .selection
+                    .primary
+                    .and_then(|id| document.arrow(id).ok())
+                    .filter(|arrow| arrow.is_distance())
+                    .or_else(|| {
+                        self.state.selection.ids.iter().find_map(|id| {
+                            document.arrow(*id).ok().filter(|arrow| arrow.is_distance())
+                        })
+                    })
+                    .expect("the distance style source has a selected distance");
+            return ShapeStyle::from_rectangle_shape_style(
+                self.state.default_rectangle_shape_style,
+            )
+            .with_arrow_style(ArrowStyle::from_arrow(arrow))
+            .with_opacity(arrow.opacity);
+        }
         self.selected_spotlight_style(document)
             .or_else(|| self.selected_rectangle_style(document))
             .or_else(|| self.selected_rectangle_highlight_style(document))
@@ -1236,6 +1263,23 @@ impl Editor {
 
     pub fn shape_style_mixed(&self, document: &DocumentModel) -> u32 {
         let source = self.style_toolbar_source(document);
+        if source == StyleToolbarSource::SelectedDistance {
+            let mut opacity = self.state.selection.ids.iter().filter_map(|id| {
+                document
+                    .arrow(*id)
+                    .ok()
+                    .filter(|arrow| arrow.is_distance())
+                    .map(|arrow| arrow.opacity)
+            });
+            let Some(first) = opacity.next() else {
+                return 0;
+            };
+            return if opacity.any(|value| value != first) {
+                SHAPE_STYLE_MIXED_OPACITY
+            } else {
+                0
+            };
+        }
         let mut selected = self
             .state
             .selection
@@ -1265,7 +1309,7 @@ impl Editor {
                 StyleToolbarSource::SelectedArrow => document
                     .arrow(*id)
                     .ok()
-                    .filter(|arrow| !arrow.is_line() && !arrow.is_pen_highlight())
+                    .filter(|arrow| arrow.is_regular_arrow())
                     .map(ShapeStyleSample::from_arrow),
                 StyleToolbarSource::SelectedLine => document
                     .arrow(*id)
@@ -1404,13 +1448,13 @@ impl Editor {
             .selection
             .primary
             .and_then(|id| document.arrow(id).ok())
-            .filter(|arrow| !arrow.is_line() && !arrow.is_pen_highlight())
+            .filter(|arrow| arrow.is_regular_arrow())
             .or_else(|| {
                 self.state.selection.ids.iter().find_map(|id| {
                     document
                         .arrow(*id)
                         .ok()
-                        .filter(|arrow| !arrow.is_line() && !arrow.is_pen_highlight())
+                        .filter(|arrow| arrow.is_regular_arrow())
                 })
             })
             .map(ArrowStyle::from_arrow)
@@ -1452,13 +1496,14 @@ impl Editor {
             .selection
             .primary
             .and_then(|id| document.arrow(id).ok())
-            .filter(|arrow| !arrow.is_line())
+            .filter(|arrow| arrow.is_regular_arrow())
             .or_else(|| {
-                self.state
-                    .selection
-                    .ids
-                    .iter()
-                    .find_map(|id| document.arrow(*id).ok().filter(|arrow| !arrow.is_line()))
+                self.state.selection.ids.iter().find_map(|id| {
+                    document
+                        .arrow(*id)
+                        .ok()
+                        .filter(|arrow| arrow.is_regular_arrow())
+                })
             })
             .map(|arrow| arrow.opacity)
     }
@@ -1817,8 +1862,7 @@ impl Editor {
                     continue;
                 };
                 let updated_arrow = if patch.kind == ShapeKind::Arrow
-                    && !current_arrow.is_line()
-                    && !current_arrow.is_pen_highlight()
+                    && current_arrow.is_regular_arrow()
                 {
                     arrow_with_style(
                         id,

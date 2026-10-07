@@ -259,7 +259,7 @@ impl Editor {
         let Some(arrow) = self.arrow_snapshot(document, id) else {
             return InteractionOutput::default();
         };
-        let target = if self.arrow_label_hit(document, id, canvas_point) {
+        let target = if !arrow.is_distance() && self.arrow_label_hit(document, id, canvas_point) {
             ArrowHitTarget::Label
         } else {
             ArrowHitTarget::Move

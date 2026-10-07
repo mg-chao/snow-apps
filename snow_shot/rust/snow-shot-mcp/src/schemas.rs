@@ -89,6 +89,7 @@ struct Selection {
 #[derive(Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 enum CanvasTool {
+    Distance,
     Move,
     Select,
     Rectangle,
@@ -287,6 +288,11 @@ enum Annotation {
         bounds: [f64; 4],
         #[serde(default)]
         style: Style,
+    },
+    Distance {
+        points: [[f64; 2]; 2],
+        #[serde(default)]
+        style: DistanceAnnotationStyle,
     },
     Arrow {
         points: Vec<[f64; 2]>,
@@ -644,6 +650,7 @@ struct AutoFilter {
 #[derive(Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 enum StyleTarget {
+    Distance,
     Rectangle,
     Arrow,
     Line,
@@ -704,6 +711,9 @@ macro_rules! bounded_style_number {
         }
     };
 }
+bounded_style_number!(DistanceFactor, f64, "number", 0.01, 1000.0);
+bounded_style_number!(DistanceDecimals, u8, "integer", 0, 3);
+bounded_style_number!(DistanceStrokeWidth, f64, "number", 1.0, 72.0);
 bounded_style_number!(ArrowRatio, f64, "number", 0.5, 3.0);
 bounded_style_number!(CornerRadius, f64, "number", 0.0, 8192.0);
 bounded_style_number!(SerialNumber, u64, "integer", 0_u64, 9007199254740991_u64);
@@ -722,6 +732,28 @@ enum FillStyle {
     CrossLine,
     Solid,
 }
+#[derive(Deserialize, JsonSchema)]
+#[serde(rename_all = "lowercase")]
+enum DistanceUnit {
+    Px,
+    Cm,
+    M,
+    Km,
+    Mm,
+}
+
+#[derive(Default, Deserialize, JsonSchema)]
+#[serde(default, deny_unknown_fields)]
+struct DistanceAnnotationStyle {
+    stroke: Option<[u8; 4]>,
+    stroke_width: Option<DistanceStrokeWidth>,
+    factor: Option<DistanceFactor>,
+    unit: Option<DistanceUnit>,
+    decimal_places: Option<DistanceDecimals>,
+    endpoint_scale: Option<ArrowRatio>,
+    endpoint_style: Option<Arrowhead>,
+}
+
 #[derive(Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 enum Arrowhead {
@@ -793,6 +825,16 @@ struct BrushEraserStylePatch {
 #[derive(Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 struct StylePatch {
+    #[serde(default)]
+    factor: Option<DistanceFactor>,
+    #[serde(default)]
+    unit: Option<DistanceUnit>,
+    #[serde(default)]
+    decimal_places: Option<DistanceDecimals>,
+    #[serde(default)]
+    endpoint_scale: Option<ArrowRatio>,
+    #[serde(default)]
+    endpoint_style: Option<Arrowhead>,
     #[serde(default)]
     arrow_shaft_type: Option<ArrowShaftType>,
     #[serde(default)]
@@ -1122,6 +1164,105 @@ mod tests {
                 .collect()
         );
     }
+    #[test]
+    fn distance_annotation_schemas_validate_settings_and_two_endpoints() {
+        for unit in ["px", "cm", "m", "km", "mm"] {
+            let style = json!({"stroke":[245,34,45,255],"stroke_width":2,"factor":0.01,
+                "unit":unit,"decimal_places":3,"endpoint_scale":0.5,"endpoint_style":"bar"});
+            assert!(
+                schema(
+                    "snow_shot_screenshot_set_tool_style",
+                    Some(json!({
+                        "session_id":"s","expected_revision":1,"target":"distance","style":style
+                    }))
+                )
+                .is_ok()
+            );
+            assert!(
+                schema(
+                    "snow_shot_document_set_tool_style",
+                    Some(json!({
+                        "document_id":"d","expected_revision":1,"target":"distance","style":style
+                    }))
+                )
+                .is_ok()
+            );
+            assert!(
+                schema(
+                    "snow_shot_screenshot_apply_annotations",
+                    Some(json!({
+                        "session_id":"s","expected_revision":1,"operations":[{
+                            "type":"distance","points":[[0,0],[3,4]],"style":style
+                        }]
+                    }))
+                )
+                .is_ok()
+            );
+        }
+        for style in [
+            json!({"factor":0}),
+            json!({"factor":1000.1}),
+            json!({"decimal_places":4}),
+            json!({"decimal_places":1.5}),
+            json!({"unit":"unsupported"}),
+            json!({"endpoint_scale":0.4}),
+            json!({"endpoint_style":"unsupported"}),
+        ] {
+            assert!(
+                schema(
+                    "snow_shot_screenshot_set_tool_style",
+                    Some(json!({
+                        "session_id":"s","expected_revision":1,"target":"distance","style":style
+                    }))
+                )
+                .is_err()
+            );
+        }
+        for points in [json!([[0, 0]]), json!([[0, 0], [3, 4], [5, 6]])] {
+            assert!(
+                schema(
+                    "snow_shot_screenshot_apply_annotations",
+                    Some(json!({
+                        "session_id":"s","expected_revision":1,"operations":[{
+                            "type":"distance","points":points
+                        }]
+                    }))
+                )
+                .is_err()
+            );
+        }
+        // Image calibration belongs to the host, never caller-controlled annotation style.
+        assert!(
+            schema(
+                "snow_shot_screenshot_apply_annotations",
+                Some(json!({
+                    "session_id":"s","expected_revision":1,"operations":[{
+                        "type":"distance","points":[[0,0],[3,4]],"pixel_scale":[2,2]
+                    }]
+                }))
+            )
+            .is_err()
+        );
+        assert!(
+            schema(
+                "snow_shot_screenshot_set_tool",
+                Some(json!({
+                    "session_id":"s","expected_revision":1,"tool":"distance"
+                }))
+            )
+            .is_ok()
+        );
+        assert!(
+            schema(
+                "snow_shot_document_set_tool",
+                Some(json!({
+                    "document_id":"d","expected_revision":1,"tool":"distance"
+                }))
+            )
+            .is_ok()
+        );
+    }
+
     #[test]
     fn workflow_schemas_are_typed() {
         for ratio in [0.5, 0.6, 1.0] {

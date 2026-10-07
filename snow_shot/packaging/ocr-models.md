@@ -51,6 +51,12 @@ it is an explicit accuracy/speed tradeoff. Changing it replaces the session.
 Protocol 5 adds this byte after the detector policy and before model paths, so
 the app and runtime must be upgraded together.
 
+Runtime **1.0.10** keeps protocol **5** and refreshes both Windows architectures
+from the current release toolchain. The ARM64 archive includes the ONNX Runtime
+MLAS compiler workaround and passes the packaged stack-cookie return-path guard;
+the published 1.0.9 ARM64 archive predates that fix. Keep all earlier published
+archives unchanged and update both trusted descriptors to the new exact bytes.
+
 Recognition and callback delivery are FIFO across interactive and prefetch work.
 The single inference executor can overlap the next image transfer. Model/backend
 changes replace sessions in the existing child; waiting images use the newest
@@ -70,10 +76,14 @@ residency; automatic prefetch runs on demand while suspended. Background resourc
 acquisition retries after 5, 15, and then 60 seconds without showing settings
 errors. Warm-up failures are logged and retried on the next recognition.
 
-The locally verified artifact is
-`artifacts/snow-ocr-runtime-1.0.9-windows-x64.zip` (15,985,586 bytes), with SHA-256
-`ec044b6e9ce98ea871a1cdc00144314979373ff80e35853a0acfa9b544f1c2ea`.
-Preparation does not upload this archive. Publish the exact pinned bytes before
+The locally prepared artifacts are:
+
+| Architecture | Archive | Bytes | SHA-256 |
+| --- | --- | ---: | --- |
+| x64 | `artifacts/snow-ocr-runtime-1.0.10-windows-x64.zip` | 15,988,806 | `429ab6e8180c2781bc863218c470c931b6016d25cac3fe3b76536a4d3d77d020` |
+| ARM64 | `artifacts/windows-arm64/snow-ocr-runtime-1.0.10-windows-arm64.zip` | 15,543,068 | `05dde0d3a72d6877e592cc2dcac0bbb5174fa41591bf8639eade2ca9084e7241` |
+
+Preparation does not upload these archives. Publish the exact pinned bytes before
 distributing this app revision; earlier published artifacts must remain unchanged.
 Existing verified model files remain reusable; the application and runtime must
 use matching protocol versions.
@@ -88,7 +98,8 @@ The release maintainer must publish the exact hash-pinned runtime archive before
 shipping the updated app or expecting clean development machines to download it:
 
 ```text
-https://www.modelscope.cn/models/mgchao/SnowShotOCR/resolve/master/runtime/1.0.9/windows-x64/snow-ocr-runtime-1.0.9-windows-x64.zip
+https://www.modelscope.cn/models/mgchao/SnowShotOCR/resolve/master/runtime/1.0.10/windows-x64/snow-ocr-runtime-1.0.10-windows-x64.zip
+https://www.modelscope.cn/models/mgchao/SnowShotOCR/resolve/master/runtime/1.0.10/windows-arm64/snow-ocr-runtime-1.0.10-windows-arm64.zip
 ```
 
 `scripts/package-snow-shot.ps1 -PrepareOcrRuntimeOnly` prepares the runtime ZIP,
@@ -114,13 +125,13 @@ cache reuse, failed acquisition/retry, and model changes during acquisition.
 
 For actual V4/V5 inference, place verified files under
 `<model-root>/<model-id>/<filename>`, as described by the trusted manifest. Then
-run the built test executable with the packaged 1.0.9 worker:
+run the built test executable with the packaged 1.0.10 worker:
 
 ```powershell
 $env:SNOW_TEST_OCR_TEXT_FIXTURE = (Resolve-Path snow_shot/tests/baselines/ocr-model-versions.png).Path
 $test = 'build/windows-msvc-debug/snow_shot/test-bin/Debug/snow-shot-ocr-recognition-service-tests.exe'
 $modelRoot = (Resolve-Path build/ocr-versioned-models).Path
-$worker = (Resolve-Path artifacts/snow-ocr-runtime-1.0.9/snow-ocr-process-1.0.9-windows-x64.exe).Path
+$worker = (Resolve-Path artifacts/snow-ocr-runtime-1.0.10/snow-ocr-process-1.0.10-windows-x64.exe).Path
 & $test "--model-root=$modelRoot" "--worker=$worker"
 & $test "--model-root=$modelRoot" "--worker=$worker" --directml
 ```

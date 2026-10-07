@@ -41,6 +41,7 @@ enum class SnowCanvasTool {
     AutoFilter,
     RectangleEraser,
     BrushEraser,
+    Distance,
 };
 
 enum class SnowCanvasCursorLayer {
@@ -77,6 +78,8 @@ enum class SnowCanvasStyleToolbarSource {
     SelectedSpotlight,
     DefaultRectangleEraser,
     DefaultBrushEraser,
+    DefaultDistance,
+    SelectedDistance,
 };
 
 enum SnowCanvasTextStyleMixedFlag : quint32 {
@@ -320,6 +323,49 @@ inline bool operator!=(const SnowCanvasCornerRadii& lhs, const SnowCanvasCornerR
     return !(lhs == rhs);
 }
 
+enum class SnowCanvasDistanceUnit { Px, Cm, M, Km, Mm };
+
+enum SnowCanvasDistanceStyleProperty : quint32 {
+    SnowCanvasDistanceStylePropertyStrokeColor = 1u << 0,
+    SnowCanvasDistanceStylePropertyStrokeWidth = 1u << 1,
+    SnowCanvasDistanceStylePropertyFactor = 1u << 2,
+    SnowCanvasDistanceStylePropertyUnit = 1u << 3,
+    SnowCanvasDistanceStylePropertyDecimalPlaces = 1u << 4,
+    SnowCanvasDistanceStylePropertyEndpointScale = 1u << 5,
+    SnowCanvasDistanceStylePropertyEndpointStyle = 1u << 6,
+};
+inline constexpr quint32 SnowCanvasDistanceStyleAllProperties = (1u << 7) - 1u;
+enum SnowCanvasDistanceStyleMixedFlag : quint32 {
+    SnowCanvasDistanceStyleMixedStrokeColor = 1u << 0,
+    SnowCanvasDistanceStyleMixedStrokeWidth = 1u << 1,
+    SnowCanvasDistanceStyleMixedFactor = 1u << 2,
+    SnowCanvasDistanceStyleMixedUnit = 1u << 3,
+    SnowCanvasDistanceStyleMixedDecimalPlaces = 1u << 4,
+    SnowCanvasDistanceStyleMixedEndpointScale = 1u << 5,
+    SnowCanvasDistanceStyleMixedEndpointStyle = 1u << 6,
+};
+
+struct SnowCanvasDistanceStyle {
+    QColor stroke = QColor(0xf5, 0x22, 0x2d);
+    double strokeWidth = 2.0;
+    double factor = 1.0;
+    SnowCanvasDistanceUnit unit = SnowCanvasDistanceUnit::Cm;
+    int decimalPlaces = 0;
+    double endpointScale = 1.0;
+    SnowCanvasArrowhead endpointStyle = SnowCanvasArrowhead::Bar;
+};
+inline bool operator==(const SnowCanvasDistanceStyle& lhs, const SnowCanvasDistanceStyle& rhs) {
+    return lhs.stroke == rhs.stroke &&
+           snowCanvasExactDoubleEqual(lhs.strokeWidth, rhs.strokeWidth) &&
+           snowCanvasExactDoubleEqual(lhs.factor, rhs.factor) && lhs.unit == rhs.unit &&
+           lhs.decimalPlaces == rhs.decimalPlaces &&
+           snowCanvasExactDoubleEqual(lhs.endpointScale, rhs.endpointScale) &&
+           lhs.endpointStyle == rhs.endpointStyle;
+}
+inline bool operator!=(const SnowCanvasDistanceStyle& lhs, const SnowCanvasDistanceStyle& rhs) {
+    return !(lhs == rhs);
+}
+
 struct SnowCanvasShapeStyle {
     QColor fill;
     SnowCanvasFillStyle fillStyle = SnowCanvasFillStyle::Solid;
@@ -530,6 +576,7 @@ struct SnowCanvasStyleDefaults {
     SnowCanvasSpotlightConfig spotlight;
     SnowCanvasBrushEraserStyle brushEraser;
     SnowCanvasRectangleShape spotlightShape = SnowCanvasRectangleShape::Rectangle;
+    SnowCanvasDistanceStyle distance;
 };
 
 inline bool operator==(const SnowCanvasStyleDefaults& lhs, const SnowCanvasStyleDefaults& rhs) {
@@ -539,7 +586,7 @@ inline bool operator==(const SnowCanvasStyleDefaults& lhs, const SnowCanvasStyle
            lhs.penFilter == rhs.penFilter && lhs.text == rhs.text &&
            lhs.serialNumber == rhs.serialNumber && lhs.watermark == rhs.watermark &&
            lhs.spotlight == rhs.spotlight && lhs.brushEraser == rhs.brushEraser &&
-           lhs.spotlightShape == rhs.spotlightShape;
+           lhs.spotlightShape == rhs.spotlightShape && lhs.distance == rhs.distance;
 }
 
 inline bool operator!=(const SnowCanvasStyleDefaults& lhs, const SnowCanvasStyleDefaults& rhs) {
@@ -564,6 +611,8 @@ struct SnowCanvasStyleToolbarState {
     quint32 filterStyleMixed = 0;
     bool canEditArrowText = false;
     SnowCanvasBrushEraserStyle brushEraserStyle;
+    SnowCanvasDistanceStyle distanceStyle;
+    quint32 distanceStyleMixed = 0;
 };
 
 inline bool operator==(const SnowCanvasStyleToolbarState& lhs,
@@ -576,7 +625,8 @@ inline bool operator==(const SnowCanvasStyleToolbarState& lhs,
            lhs.serialNumberStyleMixed == rhs.serialNumberStyleMixed &&
            lhs.shapeStyleMixed == rhs.shapeStyleMixed && lhs.filterStyle == rhs.filterStyle &&
            lhs.filterStyleMixed == rhs.filterStyleMixed &&
-           lhs.brushEraserStyle == rhs.brushEraserStyle;
+           lhs.brushEraserStyle == rhs.brushEraserStyle && lhs.distanceStyle == rhs.distanceStyle &&
+           lhs.distanceStyleMixed == rhs.distanceStyleMixed;
 }
 
 inline bool operator!=(const SnowCanvasStyleToolbarState& lhs,

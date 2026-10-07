@@ -452,6 +452,10 @@
             <translation>Arrow</translation>
         </message>
         <message>
+            <source>Distance annotation</source>
+            <translation>Distance annotation</translation>
+        </message>
+        <message>
             <source>Drag tools here to hide them from the screenshot toolbar.</source>
             <translation>Drag tools here to hide them from the screenshot toolbar.</translation>
         </message>
@@ -2059,6 +2063,10 @@
         <message>
             <source>Display translated text in the original image</source>
             <translation>Display translated text in the original image</translation>
+        </message>
+        <message>
+            <source>Distance annotation</source>
+            <translation>Distance annotation</translation>
         </message>
         <message>
             <source>Double-click Action</source>

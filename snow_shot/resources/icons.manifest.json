@@ -431,6 +431,62 @@
     },
     {
       "variant": "outlined",
+      "symbol": "DistanceAnnotation",
+      "name": "distance-annotation",
+      "source": "../src/presentation/components/icons/resources/distance-annotation.svg",
+      "colorModel": "monochrome",
+      "fit": "contain"
+    },
+    {
+      "variant": "outlined",
+      "symbol": "DistanceUnitCm",
+      "name": "distance-unit-cm",
+      "source": "../src/presentation/components/icons/resources/distance-unit-cm.svg",
+      "colorModel": "monochrome",
+      "fit": "contain"
+    },
+    {
+      "variant": "outlined",
+      "symbol": "DistanceUnitKm",
+      "name": "distance-unit-km",
+      "source": "../src/presentation/components/icons/resources/distance-unit-km.svg",
+      "colorModel": "monochrome",
+      "fit": "contain"
+    },
+    {
+      "variant": "outlined",
+      "symbol": "DistanceUnitM",
+      "name": "distance-unit-m",
+      "source": "../src/presentation/components/icons/resources/distance-unit-m.svg",
+      "colorModel": "monochrome",
+      "fit": "contain"
+    },
+    {
+      "variant": "outlined",
+      "symbol": "DistanceUnitMm",
+      "name": "distance-unit-mm",
+      "source": "../src/presentation/components/icons/resources/distance-unit-mm.svg",
+      "colorModel": "monochrome",
+      "fit": "contain"
+    },
+    {
+      "variant": "outlined",
+      "symbol": "DistanceUnitPx",
+      "name": "distance-unit-px",
+      "source": "../src/presentation/components/icons/resources/distance-unit-px.svg",
+      "colorModel": "monochrome",
+      "fit": "contain"
+    },
+    {
+      "variant": "outlined",
+      "symbol": "DistanceValueScale",
+      "name": "distance-value-scale",
+      "source": "../src/presentation/components/icons/resources/distance-value-scale.svg",
+      "colorModel": "monochrome",
+      "fit": "contain"
+    },
+    {
+      "variant": "outlined",
       "symbol": "DistributeHorizontal",
       "name": "distribute-horizontal",
       "source": "../src/presentation/components/icons/resources/distribute-horizontal.svg",

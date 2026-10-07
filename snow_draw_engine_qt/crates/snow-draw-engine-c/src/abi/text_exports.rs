@@ -49,10 +49,26 @@ pub unsafe extern "C" fn snow_viewport_get_arrow_text_layout_requests(
                         return Err(SnowError::InvalidArgument);
                     }
                     for (index, request) in requests.into_iter().enumerate() {
-                        let mut info = engine
-                            .text_element_info(request.text_id)
-                            .map_err(SnowError::from)?;
-                        info.center = request.text.center;
+                        let info = snow_draw_engine::TextElementInfo {
+                            id: request.text_id,
+                            arrow_id: Some(request.arrow_id),
+                            arrow_width: request.arrow_width,
+                            center: request.text.center,
+                            width: request.text.width(),
+                            height: request.text.height(),
+                            content_width: request.text.layout.ink().map_or(0.0, |ink| ink.width()),
+                            content_height: request
+                                .text
+                                .layout
+                                .ink()
+                                .map_or(0.0, |ink| ink.height()),
+                            rotation: request.text.rotation,
+                            text: request.text.text.clone(),
+                            font_size: request.text.font_size,
+                            font_family: request.text.font_family.clone(),
+                            auto_resize: request.text.auto_resize,
+                            measure_natural_width: true,
+                        };
                         let style = snow_draw_engine::TextStyle {
                             color: request.text.color,
                             font_size: request.text.font_size,

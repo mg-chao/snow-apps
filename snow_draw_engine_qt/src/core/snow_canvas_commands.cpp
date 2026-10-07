@@ -316,6 +316,28 @@ MutationResult setShapeStylePatch(SnowRuntime runtime, SnowViewport viewport,
     return result;
 }
 
+MutationResult setDistanceStylePatch(SnowRuntime runtime, SnowViewport viewport,
+                                     const SnowDistanceStyle& style, std::uint32_t properties) {
+    MutationResult result;
+    if (!hasViewport(runtime, viewport))
+        return result;
+    result.success =
+        snow_viewport_set_distance_style_patch_ex(runtime, viewport, &style, properties,
+                                                  result.changedViewports.outParam()) == SNOW_OK;
+    return result;
+}
+
+MutationResult setDistancePixelScale(SnowRuntime runtime, SnowViewport viewport, double scaleX,
+                                     double scaleY) {
+    MutationResult result;
+    if (!hasViewport(runtime, viewport))
+        return result;
+    result.success =
+        snow_viewport_set_distance_pixel_scale_ex(runtime, viewport, scaleX, scaleY,
+                                                  result.changedViewports.outParam()) == SNOW_OK;
+    return result;
+}
+
 MutationResult setWatermarkConfig(SnowRuntime runtime, SnowViewport viewport,
                                   const SnowWatermarkConfig& config) {
     MutationResult result;

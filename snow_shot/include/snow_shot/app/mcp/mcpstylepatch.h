@@ -5,16 +5,57 @@
 #include <QHash>
 #include <QColor>
 #include <QStringList>
+#include <algorithm>
 #include <cmath>
 #include <type_traits>
 #include "snow_draw_engine_qt/snow_canvas_widget.h"
+#include "snow_draw_engine_qt/snow_canvas_export_types.h"
 
 namespace snow_shot::app::mcp {
+// Capture image geometry once per annotation. Rendering scale and monitor DPI are independent.
+inline QSizeF mcpDistancePixelScale(const QList<CanvasExportSource>& sources,
+                                    const QRectF& selection) {
+    QSizeF result(1.0, 1.0);
+    bool found = false;
+    for (const auto& source : sources) {
+        if (source.image.isNull() || source.canvasRect.isEmpty() ||
+            !source.canvasRect.intersects(selection))
+            continue;
+        const QSizeF scale(source.image.width() / source.canvasRect.width(),
+                           source.image.height() / source.canvasRect.height());
+        if (!std::isfinite(scale.width()) || !std::isfinite(scale.height()) || scale.width() <= 0 ||
+            scale.height() <= 0)
+            continue;
+        if (!found) {
+            result = scale;
+            found = true;
+        } else {
+            result.setWidth(std::max(result.width(), scale.width()));
+            result.setHeight(std::max(result.height(), scale.height()));
+        }
+    }
+    return result;
+}
+
+inline QJsonObject mcpDistanceAnnotationsWithPixelScale(QJsonObject payload, const QSizeF& scale) {
+    QJsonArray operations = payload.value(QStringLiteral("operations")).toArray();
+    for (qsizetype index = 0; index < operations.size(); ++index) {
+        QJsonObject operation = operations.at(index).toObject();
+        if (operation.value(QStringLiteral("type")) != QStringLiteral("distance"))
+            continue;
+        operation.insert(QStringLiteral("pixel_scale"), QJsonArray{scale.width(), scale.height()});
+        operations[index] = operation;
+    }
+    payload.insert(QStringLiteral("operations"), operations);
+    return payload;
+}
+
 inline const QHash<QString, SnowCanvasTool>& mcpCanvasTools() {
     static const QHash<QString, SnowCanvasTool> tools{
         {QStringLiteral("select"), SnowCanvasTool::Select},
         {QStringLiteral("rectangle"), SnowCanvasTool::Shape},
         {QStringLiteral("arrow"), SnowCanvasTool::Arrow},
+        {QStringLiteral("distance"), SnowCanvasTool::Distance},
         {QStringLiteral("line"), SnowCanvasTool::Line},
         {QStringLiteral("freehand"), SnowCanvasTool::FreeDraw},
         {QStringLiteral("rectangle_highlight"), SnowCanvasTool::RectangleHighlight},
@@ -38,6 +79,9 @@ inline bool mcpStylePatch(Commands& commands, Canvas& canvas, const QJsonObject&
     if (patch.isEmpty())
         return false;
     const QHash<QString, QStringList> enums{
+        {QStringLiteral("unit"),
+         {QStringLiteral("px"), QStringLiteral("cm"), QStringLiteral("m"), QStringLiteral("km"),
+          QStringLiteral("mm")}},
         {QStringLiteral("shape"),
          {QStringLiteral("rectangle"), QStringLiteral("ellipse"), QStringLiteral("diamond")}},
         {QStringLiteral("fill_style"),
@@ -72,10 +116,18 @@ inline bool mcpStylePatch(Commands& commands, Canvas& canvas, const QJsonObject&
     const QStringList colors{QStringLiteral("stroke"), QStringLiteral("fill"),
                              QStringLiteral("color")};
     const QStringList textFields{QStringLiteral("text"), QStringLiteral("font_family")};
-    const QStringList numbers{
-        QStringLiteral("stroke_width"),  QStringLiteral("font_size"),   QStringLiteral("opacity"),
-        QStringLiteral("corner_radius"), QStringLiteral("strength"),    QStringLiteral("angle"),
-        QStringLiteral("gap"),           QStringLiteral("arrow_ratio"), QStringLiteral("number")};
+    const QStringList numbers{QStringLiteral("stroke_width"),
+                              QStringLiteral("font_size"),
+                              QStringLiteral("opacity"),
+                              QStringLiteral("corner_radius"),
+                              QStringLiteral("strength"),
+                              QStringLiteral("angle"),
+                              QStringLiteral("gap"),
+                              QStringLiteral("arrow_ratio"),
+                              QStringLiteral("number"),
+                              QStringLiteral("factor"),
+                              QStringLiteral("decimal_places"),
+                              QStringLiteral("endpoint_scale")};
     QStringList allowed;
     if (target == QStringLiteral("text"))
         allowed = {QStringLiteral("color"),
@@ -114,6 +166,11 @@ inline bool mcpStylePatch(Commands& commands, Canvas& canvas, const QJsonObject&
                    QStringLiteral("stroke_width"),  QStringLiteral("fill_style"),
                    QStringLiteral("stroke_style"),  QStringLiteral("shape"),
                    QStringLiteral("corner_radius"), QStringLiteral("corner_radii")};
+    else if (target == QStringLiteral("distance"))
+        allowed = {QStringLiteral("stroke"),         QStringLiteral("stroke_width"),
+                   QStringLiteral("factor"),         QStringLiteral("unit"),
+                   QStringLiteral("decimal_places"), QStringLiteral("endpoint_scale"),
+                   QStringLiteral("endpoint_style")};
     else if (target == QStringLiteral("arrow"))
         allowed = {QStringLiteral("stroke"),           QStringLiteral("stroke_width"),
                    QStringLiteral("stroke_style"),     QStringLiteral("start_arrowhead"),
@@ -168,10 +225,21 @@ inline bool mcpStylePatch(Commands& commands, Canvas& canvas, const QJsonObject&
                 return false;
             if (it.key() == QStringLiteral("number") && std::floor(value) != value)
                 return false;
-            if (it.key() == QStringLiteral("arrow_ratio") && (value < 0.5 || value > 3))
+            if ((it.key() == QStringLiteral("arrow_ratio") ||
+                 it.key() == QStringLiteral("endpoint_scale")) &&
+                (value < 0.5 || value > 3))
+                return false;
+            if (it.key() == QStringLiteral("factor") && (value < 0.01 || value > 1000))
+                return false;
+            if (it.key() == QStringLiteral("decimal_places") &&
+                (value > 3 || std::floor(value) != value))
+                return false;
+            if (target == QStringLiteral("distance") &&
+                it.key() == QStringLiteral("stroke_width") && (value < 1 || value > 72))
                 return false;
         } else {
-            const auto key = it.key() == QStringLiteral("end_arrowhead")
+            const auto key = (it.key() == QStringLiteral("end_arrowhead") ||
+                              it.key() == QStringLiteral("endpoint_style"))
                                  ? QStringLiteral("start_arrowhead")
                                  : it.key();
             if (!enums.value(key).contains(it->toString()))
@@ -190,7 +258,8 @@ inline bool mcpStylePatch(Commands& commands, Canvas& canvas, const QJsonObject&
     };
     const auto enumeration = [&](const char* name, int fallback) {
         const auto value = patch.value(QLatin1String(name));
-        const auto key = QString::fromLatin1(name) == QStringLiteral("end_arrowhead")
+        const auto key = (QString::fromLatin1(name) == QStringLiteral("end_arrowhead") ||
+                          QString::fromLatin1(name) == QStringLiteral("endpoint_style"))
                              ? QStringLiteral("start_arrowhead")
                              : QString::fromLatin1(name);
         return value.isUndefined() ? fallback : enums.value(key).indexOf(value.toString());
@@ -216,7 +285,33 @@ inline bool mcpStylePatch(Commands& commands, Canvas& canvas, const QJsonObject&
         }
         return fallback;
     };
-    if (target == QStringLiteral("brush_eraser")) {
+    if (target == QStringLiteral("distance")) {
+        auto style = state.distanceStyle;
+        style.stroke = color("stroke", style.stroke);
+        style.strokeWidth = number("stroke_width", style.strokeWidth);
+        style.factor = number("factor", style.factor);
+        style.unit =
+            static_cast<SnowCanvasDistanceUnit>(enumeration("unit", static_cast<int>(style.unit)));
+        style.decimalPlaces = static_cast<int>(number("decimal_places", style.decimalPlaces));
+        style.endpointScale = number("endpoint_scale", style.endpointScale);
+        style.endpointStyle = static_cast<SnowCanvasArrowhead>(
+            enumeration("endpoint_style", static_cast<int>(style.endpointStyle)));
+        const QHash<QString, quint32> properties{
+            {QStringLiteral("stroke"), SnowCanvasDistanceStylePropertyStrokeColor},
+            {QStringLiteral("stroke_width"), SnowCanvasDistanceStylePropertyStrokeWidth},
+            {QStringLiteral("factor"), SnowCanvasDistanceStylePropertyFactor},
+            {QStringLiteral("unit"), SnowCanvasDistanceStylePropertyUnit},
+            {QStringLiteral("decimal_places"), SnowCanvasDistanceStylePropertyDecimalPlaces},
+            {QStringLiteral("endpoint_scale"), SnowCanvasDistanceStylePropertyEndpointScale},
+            {QStringLiteral("endpoint_style"), SnowCanvasDistanceStylePropertyEndpointStyle}};
+        quint32 flags = 0;
+        for (auto it = patch.begin(); it != patch.end(); ++it)
+            flags |= properties.value(it.key());
+        if constexpr (requires { canvas.commitStyleEdit(SnowCanvasDistanceEdit{style, flags}); })
+            return canvas.commitStyleEdit(SnowCanvasDistanceEdit{style, flags});
+        else
+            return canvas.setDistanceStyleFromToolbar(style, flags);
+    } else if (target == QStringLiteral("brush_eraser")) {
         SnowCanvasBrushEraserStyle style{
             number("stroke_width", state.brushEraserStyle.strokeWidth)};
         if (style.strokeWidth < 1.0 || style.strokeWidth > 72.0)

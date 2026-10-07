@@ -12,7 +12,8 @@ impl Editor {
         canvas_point: Point<f64>,
         include_selection_handles: bool,
     ) -> CanvasHit {
-        let labels = self.arrow_text_previews(document);
+        let labels: std::collections::HashMap<_, _> =
+            self.arrow_text_previews(document).into_iter().collect();
         let single_rect = self
             .selected_single_rectangle_snapshot(document)
             .map(|(_, rect)| rect);
@@ -135,10 +136,7 @@ impl Editor {
                     }
                     ElementData::Text(text)
                         if text_hit_test(
-                            labels
-                                .iter()
-                                .find(|(text_id, _)| text_id == id)
-                                .map_or(text, |(_, text)| text),
+                            labels.get(id).unwrap_or(text),
                             canvas_point,
                             hit_tolerance,
                         ) =>
@@ -154,7 +152,14 @@ impl Editor {
                 }
             };
             let owner = document.arrow_id_for_text(*id);
-            let (hit_id, kind) = owner.map_or((*id, kind), |id| (id, ElementKind::Arrow));
+            let (hit_id, kind) = owner.map_or((*id, kind), |id| {
+                (
+                    id,
+                    document
+                        .arrow(id)
+                        .map_or(ElementKind::Arrow, |arrow| arrow.element_kind()),
+                )
+            });
             if Self::selection_scope_matches_document(
                 document,
                 policy.selection_scope,

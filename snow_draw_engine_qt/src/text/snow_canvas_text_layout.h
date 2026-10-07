@@ -1,6 +1,7 @@
 #pragma once
 
 #include <QFont>
+#include <QColor>
 #include <QPointF>
 #include <QRectF>
 #include <QSizeF>
@@ -85,7 +86,8 @@ DocumentLayout createDocumentLayout(const SnowSceneDisplayItem& item, const QFon
 QTransform documentToViewTransform(const SnowSceneDisplayItem& item, const QPointF& centerView,
                                    const DocumentLayout& layout);
 QRectF documentContentsRect(const DocumentLayout& layout);
-void drawDocument(QPainter& painter, const DocumentLayout& layout);
+void drawDocument(QPainter& painter, const DocumentLayout& layout,
+                  const QColor& textColor = QColor());
 QRectF documentRectToLocalItemRect(const QRectF& documentRect, const DocumentLayout& layout);
 QVector<QRectF> rangeRectsInDocument(const QTextDocument& document, int rangeStart, int rangeEnd);
 QRectF cursorRectInDocument(const QTextDocument& document, int cursorPosition);

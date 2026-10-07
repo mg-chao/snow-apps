@@ -16,7 +16,10 @@ impl Editor {
             return PrimaryPointerIntent::ToggleSelection { id };
         }
 
-        if matches!(self.state.active_tool, ActiveTool::Arrow | ActiveTool::Line) {
+        if matches!(
+            self.state.active_tool,
+            ActiveTool::Arrow | ActiveTool::Line | ActiveTool::Distance
+        ) {
             return match self.resolve_canvas_hit(document, policy, canvas_point, true) {
                 CanvasHit::SelectionHandle(target) => {
                     PrimaryPointerIntent::BeginSelectionInteraction { target }
@@ -25,6 +28,9 @@ impl Editor {
                     PrimaryPointerIntent::BeginSelectedArrowInteraction { target }
                 }
                 CanvasHit::EligibleElement(id, ElementKind::Arrow) => {
+                    PrimaryPointerIntent::BeginArrowElementInteraction { id }
+                }
+                CanvasHit::EligibleElement(id, ElementKind::Distance) => {
                     PrimaryPointerIntent::BeginArrowElementInteraction { id }
                 }
                 CanvasHit::EligibleElement(id, ElementKind::Line) => {
@@ -64,7 +70,10 @@ impl Editor {
                     return PrimaryPointerIntent::TextEditCandidate { id };
                 }
 
-                if matches!(kind, ElementKind::Arrow | ElementKind::Line) {
+                if matches!(
+                    kind,
+                    ElementKind::Arrow | ElementKind::Line | ElementKind::Distance
+                ) {
                     return PrimaryPointerIntent::BeginArrowElementInteraction { id };
                 }
 

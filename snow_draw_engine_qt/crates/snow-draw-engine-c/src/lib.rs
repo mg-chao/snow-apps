@@ -4,6 +4,8 @@ mod abi {
     pub(crate) mod annotation_exports;
     pub(crate) mod auto_filter_exports;
     pub(crate) mod convert;
+    #[cfg(test)]
+    mod distance_tests;
     pub(crate) mod document_exports;
     pub(crate) mod exports;
     pub(crate) mod handles;

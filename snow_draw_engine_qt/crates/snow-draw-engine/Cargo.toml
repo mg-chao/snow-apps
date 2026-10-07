@@ -16,7 +16,8 @@ snow-draw-engine-interaction = { path = "../snow-draw-engine-interaction" }
 snow-draw-engine-model = { path = "../snow-draw-engine-model" }
 snow-draw-engine-scene = { path = "../snow-draw-engine-scene" }
 serde = { version = "1.0", features = ["derive"] }
-serde_json = "1.0"
+# History replay recomputes derived labels and compares their saved geometry exactly.
+serde_json = { version = "1.0", features = ["float_roundtrip"] }
 
 [lib]
 path = "src/lib.rs"

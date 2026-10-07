@@ -198,7 +198,10 @@ fn spotlight_shape_sessions_preserve_elements_defaults_and_legacy_compatibility(
             HighlightShape::Rectangle
         );
         let mut legacy: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
-        assert_eq!(legacy["schemaVersion"], 7);
+        assert_eq!(
+            legacy["schemaVersion"],
+            crate::session::DOCUMENT_SESSION_SCHEMA_VERSION
+        );
         legacy["schemaVersion"] = serde_json::json!(6);
         legacy["editor"]
             .as_object_mut()

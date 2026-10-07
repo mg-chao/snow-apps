@@ -8357,9 +8357,12 @@ QJsonObject ScreenshotPinnedWindow::automationEdit(const QString& action,
         if (!m_recognitionSession || !m_recognitionSession->editWorkflow(payload))
             return fail("action_unavailable");
     } else if (action == QStringLiteral("annotations")) {
+        const auto annotated = snow_shot::app::mcp::mcpDistanceAnnotationsWithPixelScale(
+            payload, snow_shot::app::mcp::mcpDistancePixelScale(
+                         {{m_transformedImage, m_backgroundCanvasRect}}, m_backgroundCanvasRect));
         const auto result =
             QJsonDocument::fromJson(m_runtime.applyAnnotationTransaction(
-                                        QJsonDocument(payload).toJson(QJsonDocument::Compact)))
+                                        QJsonDocument(annotated).toJson(QJsonDocument::Compact)))
                 .object();
         if (result.isEmpty())
             return fail("invalid_parameters");

@@ -96,6 +96,7 @@ class ScreenshotToolPalette final : public QWidget,
         Latex,
         RectangleEraser,
         BrushEraser,
+        Distance,
     };
 
     enum class MoveToolPresentation {
@@ -228,6 +229,7 @@ class ScreenshotToolPalette final : public QWidget,
         bool showSelectTool = true;
         bool showShapeTool = true;
         bool showArrowTool = true;
+        bool showDistanceTool = true;
         bool showLineTool = false;
         bool showFreeDrawTool = false;
         bool showHighlightTool = false;
@@ -470,6 +472,7 @@ class ScreenshotToolPalette final : public QWidget,
     void recordingExportSettingsVisibleChanged(bool visible);
     void shapeRequested();
     void arrowRequested();
+    void distanceToolRequested();
     void lineRequested();
     void freeDrawRequested();
     void highlightRequested();
@@ -853,6 +856,7 @@ class ScreenshotToolPalette final : public QWidget,
     QWidget* m_lineStyleControlsWidget = nullptr;
     QWidget* m_freeDrawStyleControlsWidget = nullptr;
     QWidget* m_arrowStyleControlsWidget = nullptr;
+    QWidget* m_distanceStyleControlsWidget = nullptr;
     QWidget* m_highlightStyleControlsWidget = nullptr;
     QWidget* m_penHighlightStyleControlsWidget = nullptr;
     QWidget* m_spotlightStyleControlsWidget = nullptr;
@@ -881,6 +885,7 @@ class ScreenshotToolPalette final : public QWidget,
     adqt::widgets::AdButton* m_selectButton = nullptr;
     adqt::widgets::AdButton* m_shapeButton = nullptr;
     adqt::widgets::AdButton* m_arrowButton = nullptr;
+    adqt::widgets::AdButton* m_distanceButton = nullptr;
     adqt::widgets::AdButton* m_lineButton = nullptr;
     adqt::widgets::AdButton* m_freeDrawButton = nullptr;
     adqt::widgets::AdButton* m_highlighterButton = nullptr;

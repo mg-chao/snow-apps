@@ -91,7 +91,8 @@ typedef enum SnowActiveTool {
     SNOW_ACTIVE_TOOL_SPOTLIGHT = 13,
     SNOW_ACTIVE_TOOL_AUTO_FILTER = 14,
     SNOW_ACTIVE_TOOL_RECTANGLE_ERASER = 15,
-    SNOW_ACTIVE_TOOL_BRUSH_ERASER = 16
+    SNOW_ACTIVE_TOOL_BRUSH_ERASER = 16,
+    SNOW_ACTIVE_TOOL_DISTANCE = 17
 } SnowActiveTool;
 #define SNOW_ACTIVE_TOOL_FILTER SNOW_ACTIVE_TOOL_RECTANGLE_FILTER
 #define SNOW_ACTIVE_TOOL_HIGHLIGHT SNOW_ACTIVE_TOOL_RECTANGLE_HIGHLIGHT
@@ -122,7 +123,9 @@ typedef enum SnowStyleToolbarSource {
     SNOW_STYLE_TOOLBAR_SOURCE_DEFAULT_SPOTLIGHT = 22,
     SNOW_STYLE_TOOLBAR_SOURCE_SELECTED_SPOTLIGHT = 23,
     SNOW_STYLE_TOOLBAR_SOURCE_DEFAULT_RECTANGLE_ERASER = 24,
-    SNOW_STYLE_TOOLBAR_SOURCE_DEFAULT_BRUSH_ERASER = 25
+    SNOW_STYLE_TOOLBAR_SOURCE_DEFAULT_BRUSH_ERASER = 25,
+    SNOW_STYLE_TOOLBAR_SOURCE_DEFAULT_DISTANCE = 26,
+    SNOW_STYLE_TOOLBAR_SOURCE_SELECTED_DISTANCE = 27
 } SnowStyleToolbarSource;
 #define SNOW_STYLE_TOOLBAR_SOURCE_DEFAULT_FILTER SNOW_STYLE_TOOLBAR_SOURCE_DEFAULT_RECTANGLE_FILTER
 #define SNOW_STYLE_TOOLBAR_SOURCE_SELECTED_FILTER                                                  \
@@ -586,6 +589,40 @@ typedef struct SnowSerialNumberStyle {
     SnowSerialNumberNumericType numeric_type;
 } SnowSerialNumberStyle;
 
+typedef enum SnowDistanceUnit {
+    SNOW_DISTANCE_UNIT_PX = 0,
+    SNOW_DISTANCE_UNIT_CM = 1,
+    SNOW_DISTANCE_UNIT_M = 2,
+    SNOW_DISTANCE_UNIT_KM = 3,
+    SNOW_DISTANCE_UNIT_MM = 4
+} SnowDistanceUnit;
+
+typedef struct SnowDistanceStyle {
+    SnowColorRgba8 stroke;
+    double stroke_width;
+    double factor;
+    SnowDistanceUnit unit;
+    uint32_t decimal_places;
+    double endpoint_scale;
+    SnowArrowhead endpoint_style;
+} SnowDistanceStyle;
+
+#define SNOW_DISTANCE_STYLE_PROPERTY_STROKE (1u << 0)
+#define SNOW_DISTANCE_STYLE_PROPERTY_STROKE_WIDTH (1u << 1)
+#define SNOW_DISTANCE_STYLE_PROPERTY_FACTOR (1u << 2)
+#define SNOW_DISTANCE_STYLE_PROPERTY_UNIT (1u << 3)
+#define SNOW_DISTANCE_STYLE_PROPERTY_DECIMAL_PLACES (1u << 4)
+#define SNOW_DISTANCE_STYLE_PROPERTY_ENDPOINT_SCALE (1u << 5)
+#define SNOW_DISTANCE_STYLE_PROPERTY_ENDPOINT_STYLE (1u << 6)
+#define SNOW_DISTANCE_STYLE_PROPERTY_ALL ((1u << 7) - 1u)
+#define SNOW_DISTANCE_STYLE_MIXED_STROKE SNOW_DISTANCE_STYLE_PROPERTY_STROKE
+#define SNOW_DISTANCE_STYLE_MIXED_STROKE_WIDTH SNOW_DISTANCE_STYLE_PROPERTY_STROKE_WIDTH
+#define SNOW_DISTANCE_STYLE_MIXED_FACTOR SNOW_DISTANCE_STYLE_PROPERTY_FACTOR
+#define SNOW_DISTANCE_STYLE_MIXED_UNIT SNOW_DISTANCE_STYLE_PROPERTY_UNIT
+#define SNOW_DISTANCE_STYLE_MIXED_DECIMAL_PLACES SNOW_DISTANCE_STYLE_PROPERTY_DECIMAL_PLACES
+#define SNOW_DISTANCE_STYLE_MIXED_ENDPOINT_SCALE SNOW_DISTANCE_STYLE_PROPERTY_ENDPOINT_SCALE
+#define SNOW_DISTANCE_STYLE_MIXED_ENDPOINT_STYLE SNOW_DISTANCE_STYLE_PROPERTY_ENDPOINT_STYLE
+
 typedef struct SnowStyleToolbarState {
     SnowStyleToolbarSource source;
     uint32_t selected_element_count;
@@ -598,6 +635,8 @@ typedef struct SnowStyleToolbarState {
     SnowFilterStyle filter_style;
     uint32_t filter_style_mixed;
     SnowBrushEraserStyle brush_eraser_style;
+    SnowDistanceStyle distance_style;
+    uint32_t distance_style_mixed;
 } SnowStyleToolbarState;
 
 typedef struct SnowStyleDefaults {
@@ -615,6 +654,7 @@ typedef struct SnowStyleDefaults {
     SnowSpotlightConfig spotlight;
     SnowBrushEraserStyle brush_eraser;
     SnowRectangleShape spotlight_shape;
+    SnowDistanceStyle distance;
 } SnowStyleDefaults;
 
 struct SnowRuntimeConfig {
@@ -1227,6 +1267,14 @@ SnowError snow_runtime_clone_document_session_with_config(SnowRuntime source,
 
 void snow_runtime_destroy(SnowRuntime runtime);
 
+/* Nestable presentation scope: mutations and host text metrics remain queryable,
+ * but patches and changed-viewport lists are published only at the outermost end.
+ * Balance every successful begin, even after a failed mutation. This does not
+ * group document history or roll back mutations. Destroy the returned list. */
+SnowError snow_runtime_begin_presentation_update(SnowRuntime runtime);
+SnowError snow_runtime_end_presentation_update_ex(SnowRuntime runtime,
+                                                  SnowChangedViewportList* out_changed_viewports);
+
 SnowError
 snow_runtime_set_quick_selection_disabled_tools_ex(SnowRuntime runtime, uint64_t tools,
                                                    SnowChangedViewportList* out_changed_viewports);
@@ -1314,6 +1362,14 @@ SnowError snow_viewport_get_style_toolbar_state(SnowRuntime runtime, SnowViewpor
 
 SnowError snow_viewport_get_serial_number_toolbar_state(SnowRuntime runtime, SnowViewport viewport,
                                                         SnowSerialNumberToolbarState* out_state);
+
+SnowError snow_viewport_set_distance_style_patch_ex(SnowRuntime runtime, SnowViewport viewport,
+                                                    const SnowDistanceStyle* style,
+                                                    uint32_t properties,
+                                                    SnowChangedViewportList* out_changed_viewports);
+SnowError snow_viewport_set_distance_pixel_scale_ex(SnowRuntime runtime, SnowViewport viewport,
+                                                    double scale_x, double scale_y,
+                                                    SnowChangedViewportList* out_changed_viewports);
 
 SnowError snow_viewport_set_shape_style_patch_ex(SnowRuntime runtime, SnowViewport viewport,
                                                  const SnowShapeStyle* style, uint32_t properties,

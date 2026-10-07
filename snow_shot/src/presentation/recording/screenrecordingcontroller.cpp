@@ -791,6 +791,9 @@ struct ScreenRecordingController::Impl {
         QObject::connect(&palette, &ScreenshotToolPalette::shapeRequested,
                          uiSession->connections.get(),
                          [activate]() { activate(SnowCanvasTool::Shape); });
+        QObject::connect(&palette, &ScreenshotToolPalette::distanceToolRequested,
+                         uiSession->connections.get(),
+                         [activate]() { activate(SnowCanvasTool::Distance); });
         QObject::connect(&palette, &ScreenshotToolPalette::arrowRequested,
                          uiSession->connections.get(),
                          [activate]() { activate(SnowCanvasTool::Arrow); });
