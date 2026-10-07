@@ -5475,9 +5475,6 @@ void ScreenshotToolPalette::applyMainToolbarLayout(bool notify) {
     if (!m_toolbarLayout.has_value()) {
         addFixedWidget(m_selectButton);
     }
-    if (m_recordExportSettingsButton != nullptr) {
-        addSeparator();
-    }
 
     for (adqt::widgets::AdButton* source : {m_selectButton, m_undoButton, m_redoButton}) {
         if (source != nullptr) {

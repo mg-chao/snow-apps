@@ -4748,16 +4748,31 @@ void recordingDrawingLayoutRendersConfiguredSeparator() {
     options.enableStyleToolbar = false;
     QStringList hidden =
         layout::defaultOrder(snow_shot::storage::ScreenshotToolbarLayoutKind::DrawingTools);
-    for (const QString& id :
-         {QStringLiteral("shape"), QStringLiteral("arrow"), QStringLiteral("separator")}) {
+    for (const QString& id : {QStringLiteral("select"), QStringLiteral("shape"),
+                              QStringLiteral("arrow"), QStringLiteral("separator")}) {
         hidden.removeAll(id);
     }
-    options.toolbarLayout = snow_shot::storage::ScreenshotToolbarLayout{
-        {{QStringLiteral("shape")}, {QStringLiteral("separator")}, {QStringLiteral("arrow")}},
-        hidden};
+    options.toolbarLayout =
+        snow_shot::storage::ScreenshotToolbarLayout{{{QStringLiteral("select")},
+                                                     {QStringLiteral("shape")},
+                                                     {QStringLiteral("separator")},
+                                                     {QStringLiteral("arrow")}},
+                                                    hidden};
     ScreenshotToolPalette palette(options);
     palette.show();
     QCoreApplication::processEvents();
+
+    const auto verifyLeadingControls = [&palette]() {
+        QWidget* exportSettings = palette.findChild<adqt::widgets::AdButton*>(
+            QStringLiteral("screenRecordingExportSettings"));
+        QWidget* select = controlWithAccessibleName(palette, "Select elements");
+        QLayout* row = palette.mainPanel()->layout();
+        require(exportSettings != nullptr && select != nullptr &&
+                    row->indexOf(exportSettings) < row->indexOf(select) &&
+                    !hasSeparatorBetween(row, exportSettings, select),
+                "recording toolbar must not add a separator before the select tool");
+    };
+    verifyLeadingControls();
 
     const auto hasDividerBetweenDrawingButtons = [&palette]() {
         const auto buttons = mainDrawingToolbarButtons(palette);
@@ -4775,8 +4790,11 @@ void recordingDrawingLayoutRendersConfiguredSeparator() {
     require(hasDividerBetweenDrawingButtons(),
             "recording toolbar must render the configured separator without history buttons");
     hidden.push_back(QStringLiteral("separator"));
-    palette.setToolbarLayout({{{QStringLiteral("shape")}, {QStringLiteral("arrow")}}, hidden});
+    palette.setToolbarLayout(
+        {{{QStringLiteral("select")}, {QStringLiteral("shape")}, {QStringLiteral("arrow")}},
+         hidden});
     QCoreApplication::processEvents();
+    verifyLeadingControls();
     require(!hasDividerBetweenDrawingButtons(),
             "hiding the shared separator must remove it from the recording drawing tools");
 }
