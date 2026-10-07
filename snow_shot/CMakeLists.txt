@@ -2830,6 +2830,11 @@ if(SNOW_SHOT_BUILD_TESTS)
     )
     add_test(NAME snow-shot-tray-skin-tests
         COMMAND snow-shot-system-tray-controller-tests --skin-only -platform offscreen)
+    add_test(NAME snow-shot-recording-export-tray-tests
+        COMMAND snow-shot-system-tray-controller-tests --recording-export-only -platform offscreen)
+    set_tests_properties(snow-shot-recording-export-tray-tests PROPERTIES LABELS "unit" TIMEOUT 30
+        ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}"
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
     add_test(NAME snow-shot-tray-group-refresh-tests
         COMMAND snow-shot-system-tray-controller-tests --group-refresh-only -platform offscreen)
     add_test(NAME snow-shot-tray-menu-position-tests
@@ -6512,6 +6517,12 @@ if(SNOW_SHOT_BUILD_TESTS)
     add_test(NAME snow-shot-recording-auto-exit-tests
         COMMAND snow-shot-screen-recording-controller-tests --auto-exit-only -platform offscreen)
     set_tests_properties(snow-shot-recording-auto-exit-tests PROPERTIES
+        ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}"
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+        LABELS "unit" RUN_SERIAL TRUE TIMEOUT 60)
+    add_test(NAME snow-shot-recording-export-notification-tests
+        COMMAND snow-shot-screen-recording-controller-tests --export-notifications-only -platform offscreen)
+    set_tests_properties(snow-shot-recording-export-notification-tests PROPERTIES
         ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}"
         ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
         LABELS "unit" RUN_SERIAL TRUE TIMEOUT 60)

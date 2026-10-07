@@ -2777,6 +2777,10 @@
             <translation>Normal</translation>
         </message>
         <message>
+            <source>Notify after export completes</source>
+            <translation>Notify after export completes</translation>
+        </message>
+        <message>
             <source>OCR</source>
             <translation>OCR</translation>
         </message>
@@ -3635,6 +3639,10 @@
         <message>
             <source>Show a button in the text recognition toolbar that sends recognized text to the Translation page.</source>
             <translation>Show a button in the text recognition toolbar that sends recognized text to the Translation page.</translation>
+        </message>
+        <message>
+            <source>Show a system notification when export finishes. Click it to locate the exported file.</source>
+            <translation>Show a system notification when export finishes. Click it to locate the exported file.</translation>
         </message>
         <message>
             <source>Show border</source>

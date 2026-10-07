@@ -184,6 +184,11 @@ class ApplicationController::Impl {
                          [this]() { ensureMainWindow().showScreenshotSettings(); });
         QObject::connect(&systemTray, &presentation::SystemTrayController::openAboutRequested, &q,
                          [this]() { ensureMainWindow().showAbout(); });
+        QObject::connect(
+            &systemTray, &presentation::SystemTrayController::openRecordingFileRequested, &q,
+            [](const QString& path) {
+                static_cast<void>(presentation::recording::revealScreenRecordingFile(path));
+            });
         QObject::connect(&systemTray, &presentation::SystemTrayController::exitRequested, &q,
                          [this]() {
                              if (storage::ApplicationStorage::instance().directoryChanging())
@@ -1336,6 +1341,10 @@ class ApplicationController::Impl {
             screenshotController = std::make_unique<ScreenshotController>(
                 &q, &groupManager, ocrRecognition.get(), apiClient());
             screenshotController->setCaptureSuspended(updates && updates->handoffPending());
+            QObject::connect(screenshotController.get(),
+                             &ScreenshotController::recordingExportNotificationRequested,
+                             &systemTray,
+                             &presentation::SystemTrayController::showRecordingExportMessage);
             QObject::connect(screenshotController.get(),
                              &ScreenshotController::captureActivityChanged, &floatingToolbar,
                              &presentation::FloatingToolbarController::setCaptureActive);

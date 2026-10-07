@@ -341,9 +341,10 @@ void RecordingTrimSession::finishExport(bool ok, const QString& error) {
                 .arg(error));
     if (m_detached)
         releaseMedia();
-    if (ok && !m_detached && exported) {
+    if (ok && exported) {
+        const QString completedPath = m_copy ? m_cachePath : m_destination;
         const auto onExported = exported;
-        onExported();
+        onExported(completedPath);
     }
 }
 void RecordingTrimSession::showProgress() {
@@ -384,7 +385,7 @@ void RecordingTrimSession::detach() {
     m_toolbar = nullptr;
     m_panel = nullptr;
     reportError = {};
-    exported = {};
+    // Export completion still reports its durable file after the windows close.
     if (!m_export && !m_publishFuture.valid() && !m_openFuture.valid())
         releaseMedia();
 }

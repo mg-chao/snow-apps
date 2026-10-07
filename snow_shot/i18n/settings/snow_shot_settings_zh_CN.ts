@@ -2777,6 +2777,10 @@
             <translation>正常</translation>
         </message>
         <message>
+            <source>Notify after export completes</source>
+            <translation>导出完成后通知</translation>
+        </message>
+        <message>
             <source>OCR</source>
             <translation>OCR</translation>
         </message>
@@ -3635,6 +3639,10 @@
         <message>
             <source>Show a button in the text recognition toolbar that sends recognized text to the Translation page.</source>
             <translation>在文本识别工具栏中显示一个按钮，将识别出的文本发送到翻译页面。</translation>
+        </message>
+        <message>
+            <source>Show a system notification when export finishes. Click it to locate the exported file.</source>
+            <translation>导出完成后显示系统通知。点击通知可定位导出的文件。</translation>
         </message>
         <message>
             <source>Show border</source>

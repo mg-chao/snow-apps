@@ -40,6 +40,7 @@ class SystemTrayController final : public QObject {
     void showCaptureMessage(const QString& message, bool warning);
     void showWarningMessage(const QString& title, const QString& message);
     void showUpdateMessage(const QString& message);
+    void showRecordingExportMessage(const QString& path);
     [[nodiscard]] bool canShowMessages() const;
     void setEnabled(bool enabled);
     [[nodiscard]] bool isEnabled() const;
@@ -65,6 +66,7 @@ class SystemTrayController final : public QObject {
     void restartRequested();
     void openFunctionSettingsRequested();
     void openAboutRequested();
+    void openRecordingFileRequested(const QString& path);
     void quickActionRequested(snow_shot::presentation::GlobalShortcutAction action);
     void exitRequested();
 

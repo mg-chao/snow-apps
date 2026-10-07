@@ -36,6 +36,7 @@
 #include <QPainter>
 #include <QSet>
 #include <QSystemTrayIcon>
+#include <QDir>
 #include <QVariant>
 
 #include <algorithm>
@@ -108,7 +109,7 @@ QString normalizedClickAction(const QString& action, const char* defaultAction) 
 
 // Balloons share one QSystemTrayIcon, so messageClicked only reports that some
 // balloon was clicked; routing follows the kind shown last.
-enum class BalloonKind { None, Capture, Warning, Update };
+enum class BalloonKind { None, Capture, Warning, Update, RecordingExport };
 
 class TrayImageCache final {
   public:
@@ -426,8 +427,13 @@ class SystemTrayController::Impl {
                              }
                          });
         QObject::connect(trayIcon, &QSystemTrayIcon::messageClicked, &q, [this]() {
+            if (!enabled)
+                return;
             if (lastBalloonKind == BalloonKind::Update) {
                 emit q.openAboutRequested();
+            } else if (lastBalloonKind == BalloonKind::RecordingExport) {
+                const QString path = lastBalloonFilePath;
+                emit q.openRecordingFileRequested(path);
             }
         });
         QObject::connect(&LanguageManager::instance(), &LanguageManager::languageChanged, &q,
@@ -479,11 +485,13 @@ class SystemTrayController::Impl {
     }
 
     void showBalloon(const QString& title, const QString& message,
-                     QSystemTrayIcon::MessageIcon icon, BalloonKind kind) {
+                     QSystemTrayIcon::MessageIcon icon, BalloonKind kind,
+                     const QString& filePath = {}) {
         if (!enabled) {
             return;
         }
         lastBalloonKind = kind;
+        lastBalloonFilePath = filePath;
         trayIcon->setProperty("lastBalloonTitle", title);
         trayIcon->setProperty("lastBalloonMessage", message);
         trayIcon->setProperty("lastBalloonIcon", static_cast<int>(icon));
@@ -785,6 +793,7 @@ class SystemTrayController::Impl {
     QString middleClickAction = QString::fromLatin1(DEFAULT_MIDDLE_CLICK_ACTION);
     int screenshotDelaySeconds = 3;
     BalloonKind lastBalloonKind = BalloonKind::None;
+    QString lastBalloonFilePath;
     bool enabled = true;
     bool globalShortcutsDisabled = false;
 };
@@ -855,6 +864,14 @@ void SystemTrayController::showWarningMessage(const QString& title, const QStrin
 
 void SystemTrayController::showUpdateMessage(const QString& message) {
     m_impl->showBalloon(tr("Update"), message, QSystemTrayIcon::Information, BalloonKind::Update);
+}
+
+void SystemTrayController::showRecordingExportMessage(const QString& path) {
+    if (path.isEmpty())
+        return;
+    const QString absolutePath = QFileInfo(path).absoluteFilePath();
+    m_impl->showBalloon(tr("Video export completed"), QDir::toNativeSeparators(absolutePath),
+                        QSystemTrayIcon::Information, BalloonKind::RecordingExport, absolutePath);
 }
 
 bool SystemTrayController::canShowMessages() const {

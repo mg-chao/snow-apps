@@ -1883,6 +1883,16 @@ SettingsItemDefinition screenRecordingAutoExitAfterRecordingEndsItem() {
         SettingsSwitchBinding::ScreenRecordingAutoExitAfterRecordingEnds);
 }
 
+SettingsItemDefinition screenRecordingNotifyAfterExportCompletesItem() {
+    return switchItem(QStringLiteral("screen-recording.notify-after-export-completes"),
+                      QT_TRANSLATE_NOOP("SettingsCatalog", "Notify after export completes"),
+                      QT_TRANSLATE_NOOP("SettingsCatalog",
+                                        "Show a system notification when export finishes. "
+                                        "Click it to locate the exported file."),
+                      QStringLiteral("screen_recording/notify_after_export_completes"),
+                      SettingsSwitchBinding::ScreenRecordingNotifyAfterExportCompletes);
+}
+
 SettingsItemDefinition fullscreenHotkeySuppressionItem() {
     return switchItem(
         QStringLiteral("global-hotkeys.disable-on-focused-fullscreen-window"),
@@ -3079,7 +3089,8 @@ QVector<SettingsPageDefinition> builtInPages() {
                  settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Interaction")),
                  settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Screen recording behavior")),
                  SettingsSectionReset::ScreenRecordingInteraction,
-                 {screenRecordingAutoExitAfterRecordingEndsItem()},
+                 {screenRecordingAutoExitAfterRecordingEndsItem(),
+                  screenRecordingNotifyAfterExportCompletesItem()},
              },
          },
          SettingsPageKind::GeneratedSettings,
@@ -4609,6 +4620,10 @@ QStringList SettingsCatalog::validationErrors() const {
                     case SettingsSwitchBinding::ScreenRecordingAutoExitAfterRecordingEnds:
                         expectedKey =
                             QStringLiteral("screen_recording/auto_exit_after_recording_ends");
+                        break;
+                    case SettingsSwitchBinding::ScreenRecordingNotifyAfterExportCompletes:
+                        expectedKey =
+                            QStringLiteral("screen_recording/notify_after_export_completes");
                         break;
                     case SettingsSwitchBinding::DisableHotkeysOnFocusedFullscreen:
                         expectedKey =

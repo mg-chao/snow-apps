@@ -397,9 +397,11 @@ void recordingCanCloseDuringAndAfterFinalization() {
     }
 }
 
-void recordingAutoExitAfterSuccessfulFinalization() {
+void recordingAutoExitAfterSuccessfulFinalization(bool notifications = false) {
     const snow_shot::storage::RecordingSettings settings;
     require(!settings.autoExitAfterRecordingEnds(), "recording auto-exit starts disabled");
+    require(settings.setNotifyAfterExportCompletes(notifications),
+            "set export notification preference");
     const auto wait = [](auto predicate) {
         QElapsedTimer deadline;
         deadline.start();
@@ -416,6 +418,10 @@ void recordingAutoExitAfterSuccessfulFinalization() {
                 for (const bool succeeds : {false, true}) {
                     ScreenRecordingController controller(testEffectsSource);
                     int finalized = 0;
+                    QStringList notificationPaths;
+                    QObject::connect(
+                        &controller, &ScreenRecordingController::exportNotificationRequested,
+                        &controller, [&](const QString& path) { notificationPaths.append(path); });
                     QObject::connect(&controller, &ScreenRecordingController::finalized,
                                      &controller, [&] {
                                          ++finalized;
@@ -445,6 +451,7 @@ void recordingAutoExitAfterSuccessfulFinalization() {
                                     std::future_status::ready &&
                                 controller.isOpen(),
                             "auto-exit must wait for pending recording finalization");
+                    require(notificationPaths.isEmpty(), "pending exports must not notify");
                     joinHeldExport(release, previousExports);
                     if (deferred && succeeds) {
                         wait([&] {
@@ -453,6 +460,8 @@ void recordingAutoExitAfterSuccessfulFinalization() {
                                        .toInteger() == 2300;
                         });
                         require(controller.isOpen(), "auto-exit must wait for deferred rendering");
+                        require(notificationPaths.isEmpty(),
+                                "pending deferred rendering must not notify");
                         renderState = SNOW_RECORDING_RENDER_STATE_SUCCEEDED;
                     }
                     waitForIdle(controller);
@@ -460,6 +469,13 @@ void recordingAutoExitAfterSuccessfulFinalization() {
                     require(controller.isOpen() == !(enabled && succeeds) &&
                                 finalized == (succeeds ? 1 : 0),
                             "only successful recordings auto-exit when enabled");
+                    require(notificationPaths.size() == (notifications && succeeds ? 1 : 0),
+                            "only successful exports notify once when enabled");
+                    if (!notificationPaths.isEmpty())
+                        require(notificationPaths.first() == controller.automationState()
+                                                                 .value(QStringLiteral("path"))
+                                                                 .toString(),
+                                "notification identifies the successfully published export");
                     const auto* mime = QApplication::clipboard()->mimeData();
                     if (copy && succeeds) {
                         require(mime && mime->urls() == QList<QUrl>{QUrl::fromLocalFile(
@@ -484,6 +500,10 @@ void recordingAutoExitAfterSuccessfulFinalization() {
         for (const bool deferred : {false, true}) {
             for (const bool succeeds : {false, true}) {
                 ScreenRecordingController controller(testEffectsSource);
+                QStringList notificationPaths;
+                QObject::connect(
+                    &controller, &ScreenRecordingController::exportNotificationRequested,
+                    &controller, [&](const QString& path) { notificationPaths.append(path); });
                 QString error;
                 require(controller.startAutomation({40, 40, 320, 240},
                                                    {{QStringLiteral("post_processing"), deferred},
@@ -505,6 +525,7 @@ void recordingAutoExitAfterSuccessfulFinalization() {
                 require(controller.controlAutomation(QStringLiteral("copy"), {}, &error),
                         "export the trimmed recording");
                 require(controller.isOpen(), "auto-exit must wait for trimmed export");
+                require(notificationPaths.isEmpty(), "pending trimmed exports must not notify");
                 clipExportState = succeeds ? SNOW_RECORDING_RENDER_STATE_SUCCEEDED
                                            : SNOW_RECORDING_RENDER_STATE_CANCELED;
                 wait([&] {
@@ -515,6 +536,12 @@ void recordingAutoExitAfterSuccessfulFinalization() {
                 const auto* mime = QApplication::clipboard()->mimeData();
                 require((mime && mime->hasUrls()) == succeeds,
                         "trimmed Copy result survives auto-exit");
+                require(notificationPaths.size() == (notifications && succeeds ? 1 : 0),
+                        "successful trimmed exports notify once, canceled exports stay silent");
+                if (!notificationPaths.isEmpty())
+                    require(
+                        mime->urls() == QList<QUrl>{QUrl::fromLocalFile(notificationPaths.first())},
+                        "trimmed notification identifies the exported clip rather than its source");
                 require(controller.controlAutomation(QStringLiteral("close"), {}, &error),
                         "retire the trim fixture");
                 QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
@@ -523,6 +550,8 @@ void recordingAutoExitAfterSuccessfulFinalization() {
     }
     clipExportState = SNOW_RECORDING_RENDER_STATE_SUCCEEDED;
     require(settings.setAutoExitAfterRecordingEnds(false), "restore default auto-exit preference");
+    require(settings.setNotifyAfterExportCompletes(false),
+            "restore default export notification preference");
 }
 
 #ifdef Q_OS_MACOS
@@ -2501,8 +2530,13 @@ void recordingSettingsDialog() {
                 "recording preferences must keep descriptions out of the compact form rows");
     }
     const int apiModeCount = form->field(QStringLiteral("screen-recording.api-mode")) ? 1 : 0;
-    require(form->items().size() == expectedCount && expectedCount == 10 + apiModeCount,
+    // Video/audio (4), animation (3), encoding (2), capture (1), interaction (2).
+    require(form->items().size() == expectedCount && expectedCount == 12 + apiModeCount,
             "recording popup must contain exactly the requested settings categories");
+    auto* notifyExport = form->findChild<AdSwitch*>(
+        QStringLiteral("screen-recording.notify-after-export-completes"));
+    require(notifyExport && !notifyExport->isChecked(),
+            "recording settings include export notifications disabled by default");
     class SettingsTranslator final : public QTranslator {
       public:
         bool isEmpty() const override {
@@ -2520,6 +2554,8 @@ void recordingSettingsDialog() {
             "install recording settings translations");
     QCoreApplication::processEvents();
     require(modal->windowTitle() == QStringLiteral("Translated: Recording settings") &&
+                form->field(QStringLiteral("screen-recording.notify-after-export-completes"))
+                        ->label() == QStringLiteral("Translated: Notify after export completes") &&
                 form->field(QStringLiteral("screen-recording.frame-rate"))->label() ==
                     QStringLiteral("Translated: Frame rate") &&
                 form->findChild<AdSelect*>(QStringLiteral("screen-recording.encoder"))
@@ -2529,6 +2565,10 @@ void recordingSettingsDialog() {
             "open recording preferences must retranslate their title, labels and options");
     QCoreApplication::removeTranslator(&translator);
     QCoreApplication::processEvents();
+    notifyExport->setChecked(true);
+    require(snow_shot::storage::RecordingSettings().notifyAfterExportCompletes(),
+            "recording settings notification switch persists immediately");
+    notifyExport->setChecked(false);
     if (const QString preview = qEnvironmentVariable("SNOW_TEST_RECORDING_SETTINGS_PREVIEW");
         !preview.isEmpty()) {
         require(modal->contentWidget()->window()->grab().save(preview),
@@ -3666,6 +3706,12 @@ void recordingEraserTools() {
 }
 
 void recordingTrimmingTests(const QString& directory) {
+    const snow_shot::storage::RecordingSettings settings;
+    require(settings.setNotifyAfterExportCompletes(true), "enable trimmed export notifications");
+    const auto restoreNotifications = qScopeGuard([&] {
+        require(settings.setNotifyAfterExportCompletes(false),
+                "restore export notification preference");
+    });
     {
         ScreenRecordingToolbarWindow toolbar;
         auto* panel = new RecordingTrimToolbar;
@@ -3882,6 +3928,10 @@ void recordingTrimmingTests(const QString& directory) {
     for (bool deferred : {false, true}) {
         for (bool paused : {false, true}) {
             ScreenRecordingController controller(testEffectsSource);
+            QStringList notificationPaths;
+            QObject::connect(&controller, &ScreenRecordingController::exportNotificationRequested,
+                             &controller,
+                             [&](const QString& path) { notificationPaths.append(path); });
             QVector<bool> captureActivity;
             QObject::connect(&controller, &ScreenRecordingController::captureActivityChanged,
                              &controller, [&](bool active) { captureActivity.push_back(active); });
@@ -3982,6 +4032,9 @@ void recordingTrimmingTests(const QString& directory) {
             wait([&] { return copy->isEnabled() && clipExports == oldExports + 1; });
             require(controller.isOpen() && QApplication::clipboard()->mimeData()->hasUrls(),
                     "Copy keeps the trim editor open");
+            require(QApplication::clipboard()->mimeData()->urls() ==
+                        QList<QUrl>{QUrl::fromLocalFile(notificationPaths.constLast())},
+                    "trimmed Copy notification shows the exported clip path");
             copy->click();
             require(clipExports == oldExports + 1,
                     "unchanged trim exports reuse the durable cache");
@@ -4014,16 +4067,22 @@ void recordingTrimmingTests(const QString& directory) {
                             saved.readAll() == QByteArray("trim fixture") &&
                             clipExports == oldExports + 1 && controller.isOpen(),
                         "Save atomically publishes the cached trim and keeps the editor open");
+                require(
+                    notificationPaths.constLast() == destination + QStringLiteral(".mp4"),
+                    "trimmed Save notification shows the chosen destination with its extension");
                 require(originalFile.open(QIODevice::ReadOnly) &&
                             originalFile.readAll() == QByteArray("original fixture"),
                         "Save never replaces the original source");
             }
             start->setValue(7);
+            const auto notificationsBeforeFailure = notificationPaths.size();
             clipExportState = SNOW_RECORDING_RENDER_STATE_FAILED;
             copy->click();
             wait([&] { return copy->isEnabled() && clipExports == oldExports + 2; });
             require(start->value() == 7 && finish->value() == 20 && controller.isOpen(),
                     "export failure preserves the source session and selected range");
+            require(notificationPaths.size() == notificationsBeforeFailure,
+                    "failed trimmed exports do not notify");
             clipExportState = SNOW_RECORDING_RENDER_STATE_SUCCEEDED;
             copy->click();
             wait([&] { return copy->isEnabled() && clipExports == oldExports + 3; });
@@ -4135,6 +4194,37 @@ void recordingTrimmingTests(const QString& directory) {
                                                 : QVector<bool>({true, false})),
                     "closing after trim releases only an active capture suppression");
         }
+    }
+    for (bool deferred : {false, true}) {
+        ScreenRecordingController controller(testEffectsSource);
+        QStringList notificationPaths;
+        QObject::connect(&controller, &ScreenRecordingController::exportNotificationRequested,
+                         &controller, [&](const QString& path) { notificationPaths.append(path); });
+        QString error;
+        require(controller.startAutomation(QRect(80, 80, 320, 240),
+                                           {{QStringLiteral("post_processing"), deferred}}, &error),
+                "start detached trim export fixture");
+        waitForRecording(controller);
+        recordingToolbarButton("Trim Video")->click();
+        wait([&] {
+            return controller.automationState().value(QStringLiteral("state")) ==
+                       QStringLiteral("trimming") &&
+                   !controller.automationState().value(QStringLiteral("busy")).toBool();
+        });
+        palette()->findChild<QSlider*>(QStringLiteral("screenRecordingTrimStart"))->setValue(5);
+        clipExportState = SNOW_RECORDING_RENDER_STATE_RUNNING;
+        recordingToolbarButton("Copy recording")->click();
+        require(notificationPaths.isEmpty(),
+                "pending detached export has no completion notification");
+        recordingToolbarButton("Close recording")->click();
+        require(!controller.isOpen(), "recording windows close while trimmed export continues");
+        clipExportState = SNOW_RECORDING_RENDER_STATE_SUCCEEDED;
+        wait([&] { return notificationPaths.size() == 1; });
+        require(!controller.isOpen() &&
+                    QApplication::clipboard()->mimeData()->urls() ==
+                        QList<QUrl>{QUrl::fromLocalFile(notificationPaths.first())},
+                "detached trim export notifies with its completed path without reopening windows");
+        QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
     }
     for (bool deferred : {false, true}) {
         ScreenRecordingController controller(testEffectsSource);
@@ -4275,6 +4365,12 @@ int main(int argc, char** argv) {
     }
     if (app.arguments().contains(QStringLiteral("--auto-exit-only"))) {
         recordingAutoExitAfterSuccessfulFinalization();
+        ApplicationStorage::instance().shutdown();
+        return 0;
+    }
+    if (app.arguments().contains(QStringLiteral("--export-notifications-only"))) {
+        recordingAutoExitAfterSuccessfulFinalization();
+        recordingAutoExitAfterSuccessfulFinalization(true);
         ApplicationStorage::instance().shutdown();
         return 0;
     }

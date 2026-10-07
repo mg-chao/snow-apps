@@ -1340,6 +1340,9 @@ bool ScreenshotController::Impl::ensureRecordingFeature() {
     const QScopedValueRollback<bool> constructingGuard(m_constructingRecordingFeature, true);
     m_screenRecordingController = std::make_unique<ScreenRecordingController>(&owner);
     QObject::connect(m_screenRecordingController.get(),
+                     &ScreenRecordingController::exportNotificationRequested, &owner,
+                     &ScreenshotController::recordingExportNotificationRequested);
+    QObject::connect(m_screenRecordingController.get(),
                      &ScreenRecordingController::captureActivityChanged, &owner,
                      [this](bool active) {
                          emit owner.captureActivityChanged(QStringLiteral("recording"), active);

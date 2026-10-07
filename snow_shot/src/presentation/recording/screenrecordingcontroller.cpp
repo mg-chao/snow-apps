@@ -1295,7 +1295,11 @@ struct ScreenRecordingController::Impl {
         uiSession->preview->stopAndClear();
         trimSession = new RecordingTrimSession(areaWindow, toolbarWindow, &owner);
         trimSession->reportError = [this](const QString& error) { showError(error); };
-        trimSession->exported = [this] { autoExitAfterRecordingEnds(); };
+        trimSession->exported = [this, session = trimSession](const QString& path) {
+            if (trimSession == session)
+                autoExitAfterRecordingEnds();
+            notifyExportCompleted(path);
+        };
     }
 
     void stop(bool copyToClipboard) {
@@ -1450,9 +1454,17 @@ struct ScreenRecordingController::Impl {
         autoExitAfterRecordingEnds();
         // Finalized observers can destroy the controller or start a new session.
         // Keep the original Copy intent and its path independent of that callback.
-        emit owner.finalized();
+        const QPointer<ScreenRecordingController> guard(&owner);
+        notifyExportCompleted(completedPath);
+        if (guard)
+            emit guard->finalized();
         if (shouldCopy)
             copyFileToClipboard(completedPath);
+    }
+
+    void notifyExportCompleted(const QString& path) {
+        if (snow_shot::storage::RecordingSettings().notifyAfterExportCompletes())
+            emit owner.exportNotificationRequested(path);
     }
 
     void autoExitAfterRecordingEnds() {

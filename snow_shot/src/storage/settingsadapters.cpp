@@ -1808,6 +1808,15 @@ bool RecordingSettings::setAutoExitAfterRecordingEnds(bool enabled) const {
                             enabled);
 }
 
+bool RecordingSettings::notifyAfterExportCompletes() const {
+    return cache().value(QStringLiteral("screen_recording/notify_after_export_completes")).toBool();
+}
+
+bool RecordingSettings::setNotifyAfterExportCompletes(bool enabled) const {
+    return cache().setValue(QStringLiteral("screen_recording/notify_after_export_completes"),
+                            enabled);
+}
+
 QString RecordingSettings::videoSaveDirectory() const {
     return cache().value(QStringLiteral("screen_recording/video_save_directory")).toString();
 }

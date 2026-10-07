@@ -426,6 +426,46 @@ int main(int argc, char* argv[]) {
     auto* trayIcon =
         controller.findChild<QSystemTrayIcon*>(QStringLiteral("snowShotSystemTrayIcon"));
     require(trayIcon != nullptr, "the controller should own a system tray icon");
+    if (application.arguments().contains(QStringLiteral("--recording-export-only"))) {
+        using snow_shot::presentation::SystemTrayController;
+        QStringList openedPaths;
+        int aboutRequests = 0;
+        QObject::connect(&controller, &SystemTrayController::openRecordingFileRequested,
+                         &controller, [&](const QString& path) { openedPaths.append(path); });
+        QObject::connect(&controller, &SystemTrayController::openAboutRequested, &controller,
+                         [&] { ++aboutRequests; });
+        const QString first =
+            storageDirectory.filePath(QStringLiteral("Video exports/first clip.mp4"));
+        const QString second =
+            storageDirectory.filePath(QStringLiteral("Video exports/second clip.mp4"));
+        controller.showRecordingExportMessage(first);
+        requireBalloon(trayIcon, QStringLiteral("Video export completed"),
+                       QDir::toNativeSeparators(first), QSystemTrayIcon::Information,
+                       "recording notification displays the exported file path");
+        trayIcon->messageClicked();
+        require(openedPaths == QStringList{first} && aboutRequests == 0,
+                "clicking recording notification requests its file without opening About");
+        controller.showRecordingExportMessage(second);
+        trayIcon->messageClicked();
+        require(openedPaths == QStringList{first, second},
+                "new recording notifications replace their file action");
+        controller.showWarningMessage(QStringLiteral("Warning"),
+                                      QStringLiteral("Capture unavailable"));
+        trayIcon->messageClicked();
+        require(openedPaths.size() == 2,
+                "warning notifications clear the previous recording action");
+        controller.showUpdateMessage(QStringLiteral("Update ready"));
+        trayIcon->messageClicked();
+        require(openedPaths.size() == 2 && aboutRequests == 1,
+                "update clicks keep their existing About action");
+        controller.showRecordingExportMessage(second);
+        controller.setEnabled(false);
+        controller.showRecordingExportMessage(first);
+        trayIcon->messageClicked();
+        require(openedPaths.size() == 2, "disabled tray notifications cannot open exported files");
+        snow_shot::storage::ApplicationStorage::instance().shutdown();
+        return 0;
+    }
     require(!trayIcon->icon().isNull(), "the bundled tray icon should load");
 #ifdef Q_OS_MACOS
     require(!trayIcon->icon().isMask(),

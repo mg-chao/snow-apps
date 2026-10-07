@@ -36,6 +36,16 @@ int main(int argc, char** argv) {
     constexpr auto binding =
         settings::SettingsSwitchBinding::ScreenRecordingAutoExitAfterRecordingEnds;
     const QString key = QStringLiteral("screen_recording/auto_exit_after_recording_ends");
+    constexpr auto notifyBinding =
+        settings::SettingsSwitchBinding::ScreenRecordingNotifyAfterExportCompletes;
+    const QString notifyKey = QStringLiteral("screen_recording/notify_after_export_completes");
+    require(backend.switchEnabled(notifyBinding) && !backend.switchValue(notifyBinding) &&
+                !storage::RecordingSettings().notifyAfterExportCompletes() &&
+                !storage::ConfigurationSchema::defaultValue(notifyKey).toBool(),
+            "export completion notifications must default to false");
+    require(backend.applySwitchValue(notifyBinding, true) && backend.switchValue(notifyBinding) &&
+                storage::RecordingSettings().notifyAfterExportCompletes(),
+            "the notification setting must apply through the shared settings backend");
     require(backend.switchEnabled(binding) && !backend.switchValue(binding) &&
                 !storage::RecordingSettings().autoExitAfterRecordingEnds() &&
                 !storage::ConfigurationSchema::defaultValue(key).toBool(),
@@ -48,13 +58,17 @@ int main(int argc, char** argv) {
     storage::ConfigurationStore reloaded(temporary.filePath(QStringLiteral("data/config.json")),
                                          true, true, 60000);
     require(reloaded.value(key).toBool(), "recording auto-exit must survive configuration reload");
+    require(reloaded.value(notifyKey).toBool(),
+            "export notifications must survive configuration reload");
     require(backend.resetSection(settings::SettingsSectionReset::ScreenRecordingActionToolbar) &&
-                backend.switchValue(binding),
+                backend.switchValue(binding) && backend.switchValue(notifyBinding),
             "Action Toolbar reset must preserve the Interaction preference");
     require(storage::RecordingSettings().setCaptureToolbarInRecording(false) &&
                 backend.resetSection(settings::SettingsSectionReset::ScreenRecordingInteraction) &&
                 !backend.switchValue(binding) &&
                 !storage::RecordingSettings().autoExitAfterRecordingEnds() &&
+                !backend.switchValue(notifyBinding) &&
+                !storage::RecordingSettings().notifyAfterExportCompletes() &&
                 !storage::RecordingSettings().captureToolbarInRecording(),
             "Interaction reset must restore auto-exit to false and preserve capture settings");
     applicationStorage.shutdown();

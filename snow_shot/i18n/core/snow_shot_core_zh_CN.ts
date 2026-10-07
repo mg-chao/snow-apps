@@ -833,5 +833,9 @@ so every moment on screen can be expressed clearly and shared easily.</source>
             <source>Update</source>
             <translation>更新</translation>
         </message>
+        <message>
+            <source>Video export completed</source>
+            <translation>视频导出完成</translation>
+        </message>
     </context>
 </TS>
