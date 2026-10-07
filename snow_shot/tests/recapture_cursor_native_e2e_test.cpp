@@ -10,6 +10,7 @@
 #include <QEventLoop>
 #include <QPainter>
 #include <QProcess>
+#include <QPushButton>
 #include <QScreen>
 #include <QTemporaryDir>
 #include <QTimer>
@@ -42,9 +43,16 @@ class Surface final : public QWidget {
   public:
     explicit Surface(QWidget* parent = nullptr) : QWidget(parent) {}
     bool editor = false;
+    bool chrome = false;
     std::function<void()> entered;
 
   protected:
+    bool nativeEvent(const QByteArray& type, void* message, qintptr* result) override {
+        if (chrome && snow_shot::platform::windows::handleNativeWindowEvent(
+                          findChild<QWidget*>(QStringLiteral("title")), message, result))
+            return true;
+        return QWidget::nativeEvent(type, message, result);
+    }
     void paintEvent(QPaintEvent*) override {
         QPainter painter(this);
         painter.fillRect(rect(), Qt::white);
@@ -340,6 +348,7 @@ void runRecapture(QApplication& app) {
     CursorRefresh refresh(&app);
     if (app.arguments().contains(QStringLiteral("--hide-overlay"))) {
         overlay.hide();
+        editor.waitLine("ENTER");
         QCoreApplication::processEvents();
         require(flushWindowComposition(), "hidden overlay composition did not complete");
     } else {
@@ -414,6 +423,125 @@ void runRecapture(QApplication& app) {
     overlay.hide();
     coordinator.shutdown();
 }
+
+void waitForEntry(Surface& surface, const std::function<void()>& route) {
+    QEventLoop loop;
+    bool entered = false;
+    surface.entered = [&] {
+        entered = true;
+        loop.quit();
+    };
+    QTimer::singleShot(5000, &loop, &QEventLoop::quit);
+    route();
+    if (!entered)
+        loop.exec();
+    surface.entered = {};
+    require(entered, "fixture did not receive native mouse entry");
+}
+
+void runSameThreadRecapture(QApplication& app) {
+    using namespace snow_shot::platform::windows;
+    RestorePointer restorePointer;
+    StationaryPointer stationary(app.primaryScreen()->availableGeometry().topLeft() + QPoint(5, 5));
+    const bool sameCursor = app.arguments().contains(QStringLiteral("--same-cursor"));
+    const bool nonClient = app.arguments().contains(QStringLiteral("--nonclient"));
+    const bool hideOverlay = app.arguments().contains(QStringLiteral("--hide-overlay"));
+    Surface target;
+    target.chrome = true;
+    QWidget title(&target);
+    title.setObjectName(QStringLiteral("title"));
+    title.setGeometry(0, 0, 300, 40);
+    target.setGeometry(app.primaryScreen()->availableGeometry().adjusted(100, 100, -100, -100));
+    target.setCursor(Qt::ArrowCursor);
+    QWidget content(&target);
+    content.setGeometry(80, 80, 220, 100);
+    content.setCursor(sameCursor ? Qt::ArrowCursor : Qt::IBeamCursor);
+    target.show();
+    setupDwmShadow(&target);
+    Surface overlay;
+    overlay.setWindowFlags(Qt::Tool | Qt::FramelessWindowHint | Qt::WindowStaysOnTopHint);
+    overlay.setAttribute(Qt::WA_TranslucentBackground);
+    overlay.setGeometry(target.geometry());
+    QPushButton button(QStringLiteral("Recapture"), &overlay);
+    button.setGeometry(100, nonClient ? 5 : 100, 160, nonClient ? 30 : 50);
+    overlay.show();
+    overlay.repaint();
+    SetForegroundWindow(reinterpret_cast<HWND>(overlay.winId()));
+    const QPoint logical = button.mapTo(&overlay, button.rect().center());
+    POINT position{qRound(logical.x() * overlay.devicePixelRatioF()),
+                   qRound(logical.y() * overlay.devicePixelRatioF())};
+    ClientToScreen(reinterpret_cast<HWND>(overlay.winId()), &position);
+    waitForEntry(overlay, [&] { stationary.confine(QPoint(position.x, position.y)); });
+    const HCURSOR expected = LoadCursorW(nullptr, sameCursor || nonClient ? IDC_ARROW : IDC_IBEAM);
+    for (int iteration = 0; iteration < 3; ++iteration) {
+        // Move between clicks to avoid turning successive recaptures into a native
+        // double-click. Keep the pointer stationary throughout each handover.
+        stationary.confine(QPoint(position.x + iteration * 12, position.y));
+        QEventLoop loop;
+        bool completed = false;
+        bool succeeded = false;
+        bool correctCursor = false;
+        std::unique_ptr<CursorRefresh> refresh;
+        const auto connection = QObject::connect(&button, &QPushButton::clicked, &loop, [&] {
+            button.setEnabled(false);
+            refresh = std::make_unique<CursorRefresh>(&app);
+            if (hideOverlay) {
+                overlay.hide();
+                require(flushWindowComposition(), "hidden overlay composition failed");
+            } else {
+                require(setWindowExcludedFromCapture(&overlay, true), "capture exclusion failed");
+                require(setWindowInputTransparent(&overlay, true).has_value(),
+                        "transparency failed");
+            }
+            refresh->refresh([&](bool ready) {
+                succeeded = ready;
+                CURSORINFO current{sizeof(CURSORINFO)};
+                correctCursor = GetCursorInfo(&current) && current.hCursor == expected;
+                completed = true;
+                loop.quit();
+            });
+        });
+        INPUT clicks[2]{};
+        clicks[0].type = INPUT_MOUSE;
+        clicks[0].mi.dwFlags = MOUSEEVENTF_LEFTDOWN;
+        clicks[1].type = INPUT_MOUSE;
+        clicks[1].mi.dwFlags = MOUSEEVENTF_LEFTUP;
+        require(SendInput(2, clicks, sizeof(INPUT)) == 2, "could not click recapture");
+        QTimer::singleShot(5000, &loop, &QEventLoop::quit);
+        loop.exec();
+        QObject::disconnect(connection);
+        require(completed && succeeded, "same-thread mouse recapture cursor preparation failed");
+        require(correctCursor, "capture readiness must include the underlying widget's cursor");
+        refresh.reset();
+
+        // The window already owns the pointer and Qt has cached its cursor. Another
+        // stationary refresh must preserve it and complete without requiring a change.
+        CursorRefresh unchanged(&app);
+        completed = false;
+        unchanged.refresh([&](bool ready) {
+            CURSORINFO current{sizeof(CURSORINFO)};
+            succeeded = ready && GetCursorInfo(&current) && current.hCursor == expected;
+            completed = true;
+            loop.quit();
+        });
+        if (!completed)
+            loop.exec();
+        require(succeeded, "unchanged same-thread cursors must remain ready for capture");
+
+        button.setEnabled(true);
+        waitForEntry(overlay, [&] {
+            if (hideOverlay) {
+                overlay.show();
+            } else {
+                require(setWindowInputTransparent(&overlay, false).has_value(),
+                        "overlay input restoration failed");
+                require(setWindowExcludedFromCapture(&overlay, false),
+                        "capture exclusion restoration failed");
+            }
+            require(refreshCursorUnderPointer(), "restored overlay mouse routing failed");
+        });
+    }
+}
 } // namespace
 
 int main(int argc, char** argv) {
@@ -425,6 +553,10 @@ int main(int argc, char** argv) {
         }
         if (app.arguments().contains(QStringLiteral("--native-editor"))) {
             return runNativeEditor(app);
+        }
+        if (app.arguments().contains(QStringLiteral("--same-thread"))) {
+            runSameThreadRecapture(app);
+            return 0;
         }
         runRecapture(app);
         return 0;

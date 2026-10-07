@@ -2,6 +2,7 @@
 #include "snow_shot/platform/windows/windowchrome.h"
 
 #include <QApplication>
+#include <QEvent>
 
 #include <cstdlib>
 #include <iostream>
@@ -53,14 +54,197 @@ void desktopCursorUpdatesDoNotRequireTheWindowOwnerThread() {
                 "direct application cursor updates must also be accepted");
         require(!isUnderlyingCursorUpdate(event, OBJID_CURSOR, caller, caller, target),
                 "our outgoing cursor change must not complete another application's refresh");
-        require(isUnderlyingCursorUpdate(event, OBJID_CURSOR, caller, caller, caller),
-                "a same-thread underlying window can legitimately choose its own cursor");
+        require(!isUnderlyingCursorUpdate(event, OBJID_CURSOR, caller, caller, caller) &&
+                    !isUnderlyingCursorUpdate(event, OBJID_CURSOR, compositor, caller, caller),
+                "local cursor notifications cannot acknowledge native mouse dispatch");
         require(!isUnderlyingCursorUpdate(event, OBJID_CLIENT, compositor, caller, target) &&
                     !isUnderlyingCursorUpdate(event, OBJID_CURSOR, compositor, caller, 0),
                 "non-cursor events and missing targets must not complete cursor preparation");
     }
     require(!isUnderlyingCursorUpdate(EVENT_OBJECT_FOCUS, OBJID_CURSOR, target, caller, target),
             "unrelated cursor-object events must not complete preparation");
+}
+
+using snow_shot::platform::windows::detail::CursorRefreshOperation;
+using snow_shot::platform::windows::detail::CursorRefreshTarget;
+
+struct RefreshFixture {
+    QObject context;
+    CursorRefreshTarget target{42, 11, QPoint(100, 100)};
+    int refreshes = 0;
+    int flushes = 0;
+    int disarms = 0;
+    int completions = 0;
+    bool localRefresh = false;
+    bool refreshSucceeds = true;
+    bool flushSucceeds = true;
+    bool moveDuringFlush = false;
+    bool ready = false;
+    CursorRefreshOperation operation{&context,
+                                     {11, [&] { return target; },
+                                      [&](bool local) {
+                                          ++refreshes;
+                                          localRefresh = local;
+                                          return refreshSucceeds;
+                                      },
+                                      [&] {
+                                          ++flushes;
+                                          if (std::exchange(moveDuringFlush, false))
+                                              ++target.position.rx();
+                                          return flushSucceeds;
+                                      },
+                                      [&] { ++disarms; }}};
+
+    void start() {
+        operation.start([&](bool succeeded) {
+            ready = succeeded;
+            ++completions;
+        });
+    }
+    static void dispatchQueuedCompletion() {
+        QCoreApplication::sendPostedEvents(nullptr, QEvent::MetaCall);
+        QCoreApplication::sendPostedEvents(nullptr, QEvent::MetaCall);
+    }
+};
+
+void localMouseDispatchCompletesWithoutCursorChanges() {
+    // A main/settings window can keep its cached cursor (including an intentionally
+    // hidden cursor). No WinEvent is required to acknowledge its stationary input.
+    for (int iteration = 0; iteration < 3; ++iteration) {
+        RefreshFixture fixture;
+        fixture.operation.mouseDispatched(fixture.target.window, fixture.target.position);
+        fixture.start();
+        require(fixture.localRefresh && fixture.refreshes == 1,
+                "local refresh must preserve the existing cursor instead of forcing a change");
+        for (const auto event : {EVENT_OBJECT_HIDE, EVENT_OBJECT_SHOW, EVENT_OBJECT_NAMECHANGE}) {
+            fixture.operation.cursorChanged(event, OBJID_CURSOR, 11);
+            fixture.operation.cursorChanged(event, OBJID_CURSOR, 33);
+        }
+        fixture.operation.mouseDispatched(99, fixture.target.position);
+        fixture.operation.mouseDispatched(fixture.target.window,
+                                          fixture.target.position - QPoint(1, 0));
+        fixture.dispatchQueuedCompletion();
+        require(fixture.completions == 0,
+                "outgoing cursor changes, old input and other windows must not start capture");
+        fixture.operation.mouseDispatched(fixture.target.window, fixture.target.position);
+        require(fixture.completions == 0 && fixture.flushes == 0,
+                "capture must wait until native dispatch and Qt child cursor selection finish");
+        QCoreApplication::sendPostedEvents(nullptr, QEvent::MetaCall);
+        require(fixture.completions == 0,
+                "the first posted batch can precede Qt's queued child-widget enter event");
+        fixture.dispatchQueuedCompletion();
+        require(fixture.ready && fixture.completions == 1 && fixture.flushes == 1 &&
+                    fixture.disarms == 1,
+                "unchanged local cursors must complete exactly once after dispatch");
+        fixture.operation.mouseDispatched(fixture.target.window, fixture.target.position);
+        fixture.dispatchQueuedCompletion();
+        require(fixture.completions == 1, "later input must not recapture twice");
+    }
+}
+
+void foreignCursorUpdatesStillWaitForTheDesktop() {
+    RefreshFixture fixture;
+    fixture.target.thread = 22;
+    fixture.start();
+    require(!fixture.localRefresh, "foreign targets must request desktop cursor handover");
+    fixture.operation.mouseDispatched(fixture.target.window, fixture.target.position);
+    fixture.operation.cursorChanged(EVENT_OBJECT_HIDE, OBJID_CURSOR, 11);
+    fixture.dispatchQueuedCompletion();
+    require(fixture.completions == 0,
+            "our own outgoing cursor hide cannot acknowledge a foreign target");
+    fixture.operation.cursorChanged(EVENT_OBJECT_NAMECHANGE, OBJID_CURSOR, 33);
+    fixture.dispatchQueuedCompletion();
+    require(fixture.ready && fixture.completions == 1,
+            "a desktop cursor event from DWM must still acknowledge a foreign target");
+}
+
+void foreignCursorHandoverDuringWindowHidingIsRetained() {
+    for (const bool moved : {false, true}) {
+        RefreshFixture fixture;
+        fixture.target.thread = 22;
+        fixture.operation.cursorChanged(EVENT_OBJECT_NAMECHANGE, OBJID_CURSOR, 33);
+        if (moved)
+            ++fixture.target.position.rx();
+        fixture.start();
+        fixture.dispatchQueuedCompletion();
+        require(fixture.completions == (moved ? 0 : 1),
+                "a foreign cursor selected during hiding is ready only at the observed target");
+        if (moved) {
+            fixture.operation.cursorChanged(EVENT_OBJECT_NAMECHANGE, OBJID_CURSOR, 22);
+            fixture.dispatchQueuedCompletion();
+            require(fixture.ready, "a new desktop update must complete the moved target");
+        }
+    }
+}
+
+void pointerMovementRequiresDispatchAtTheNewTarget() {
+    for (const bool changeWindow : {false, true}) {
+        RefreshFixture fixture;
+        fixture.start();
+        fixture.operation.mouseDispatched(fixture.target.window, fixture.target.position);
+        if (changeWindow)
+            ++fixture.target.window;
+        else
+            ++fixture.target.position.rx();
+        fixture.dispatchQueuedCompletion();
+        require(fixture.completions == 0,
+                "a queued completion must not snapshot a cursor at an unacknowledged position");
+        fixture.operation.mouseDispatched(fixture.target.window, fixture.target.position);
+        fixture.dispatchQueuedCompletion();
+        require(fixture.ready && fixture.completions == 1,
+                "input at the new target must complete the pending capture");
+    }
+    RefreshFixture fixture;
+    fixture.start();
+    fixture.moveDuringFlush = true;
+    fixture.operation.mouseDispatched(fixture.target.window, fixture.target.position);
+    fixture.dispatchQueuedCompletion();
+    require(fixture.completions == 0,
+            "movement during composition must also wait for input at the new position");
+    fixture.operation.mouseDispatched(fixture.target.window, fixture.target.position);
+    fixture.dispatchQueuedCompletion();
+    require(fixture.ready, "input after movement during composition must complete normally");
+}
+
+void pendingPreparationCanBeCancelledAndReportsNativeFailures() {
+    for (const bool failRefresh : {false, true}) {
+        RefreshFixture fixture;
+        fixture.refreshSucceeds = !failRefresh;
+        fixture.flushSucceeds = false;
+        fixture.start();
+        fixture.operation.mouseDispatched(fixture.target.window, fixture.target.position);
+        fixture.dispatchQueuedCompletion();
+        require(!fixture.ready && fixture.completions == 1 && fixture.disarms == 1,
+                "native request and composition failures must be reported once");
+    }
+    auto context = std::make_unique<QObject>();
+    int completions = 0;
+    int disarms = 0;
+    auto operation = std::make_unique<CursorRefreshOperation>(
+        context.get(), CursorRefreshOperation::Backend{
+                           11, [] { return CursorRefreshTarget{42, 11, QPoint()}; },
+                           [](bool) { return true; }, [] { return true; }, [&] { ++disarms; }});
+    operation->start([&](bool) { ++completions; });
+    operation->mouseDispatched(42, QPoint());
+    context.reset();
+    RefreshFixture::dispatchQueuedCompletion();
+    require(completions == 0 && disarms == 1,
+            "destroying the owner must disarm pending input and cancel queued completion");
+
+    QObject liveContext;
+    operation = std::make_unique<CursorRefreshOperation>(
+        &liveContext,
+        CursorRefreshOperation::Backend{11, [] { return CursorRefreshTarget{42, 11, QPoint()}; },
+                                        [](bool) { return true; }, [] { return true; }, [] {}});
+    operation->start([&](bool ready) {
+        require(ready, "the live callback must receive successful preparation");
+        ++completions;
+        operation.reset();
+    });
+    operation->mouseDispatched(42, QPoint());
+    RefreshFixture::dispatchQueuedCompletion();
+    require(completions == 1 && !operation,
+            "a capture callback may safely destroy its cursor preparation operation");
 }
 
 } // namespace
@@ -70,5 +254,10 @@ int main(int argc, char** argv) {
     cancelledCursorPreparationDoesNotCallItsOwner();
     unavailableCursorPreparationReportsFailureOnce();
     desktopCursorUpdatesDoNotRequireTheWindowOwnerThread();
+    localMouseDispatchCompletesWithoutCursorChanges();
+    foreignCursorUpdatesStillWaitForTheDesktop();
+    foreignCursorHandoverDuringWindowHidingIsRetained();
+    pointerMovementRequiresDispatchAtTheNewTarget();
+    pendingPreparationCanBeCancelledAndReportsNativeFailures();
     return 0;
 }

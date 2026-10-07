@@ -20,8 +20,8 @@ void bringWindowToForeground(QWidget* window);
 // Request native mouse routing at the unchanged position; cursor selection is asynchronous.
 [[nodiscard]] bool refreshCursorUnderPointer();
 // Arm before input surfaces become transparent/hidden, then request a native mouse update.
-// Complete on the desktop cursor update (1 s deadline), without sampling. Windows may
-// publish the event from DWM rather than from the underlying application's thread.
+// Local targets complete after native mouse dispatch; foreign targets complete on a
+// desktop cursor update (1 s deadline). Windows may publish that event from DWM.
 // Destruction cancels the operation. The callback is suppressed if its context is destroyed.
 class CursorRefresh final {
   public:

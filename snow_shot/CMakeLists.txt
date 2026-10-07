@@ -3291,11 +3291,23 @@ if(SNOW_SHOT_BUILD_TESTS)
                  COMMAND snow-shot-recapture-cursor-native-e2e-test --run-native --native-target)
         add_test(NAME snow-shot-recapture-cursor-hidden-native-e2e-test
                  COMMAND snow-shot-recapture-cursor-native-e2e-test --run-native --hide-overlay)
+        add_test(NAME snow-shot-recapture-cursor-own-window-native-e2e-test
+                 COMMAND snow-shot-recapture-cursor-native-e2e-test --run-native --same-thread)
+        add_test(NAME snow-shot-recapture-cursor-unchanged-native-e2e-test
+                 COMMAND snow-shot-recapture-cursor-native-e2e-test --run-native --same-thread --same-cursor)
+        add_test(NAME snow-shot-recapture-cursor-own-hidden-native-e2e-test
+                 COMMAND snow-shot-recapture-cursor-native-e2e-test --run-native --same-thread --hide-overlay)
+        add_test(NAME snow-shot-recapture-cursor-own-titlebar-native-e2e-test
+                 COMMAND snow-shot-recapture-cursor-native-e2e-test --run-native --same-thread --nonclient)
         set_tests_properties(snow-shot-recapture-cursor-native-e2e-test
             snow-shot-recapture-cursor-movement-native-e2e-test
             snow-shot-recapture-cursor-snapshot-native-e2e-test
             snow-shot-recapture-class-cursor-native-e2e-test
-            snow-shot-recapture-cursor-hidden-native-e2e-test PROPERTIES
+            snow-shot-recapture-cursor-hidden-native-e2e-test
+            snow-shot-recapture-cursor-own-window-native-e2e-test
+            snow-shot-recapture-cursor-unchanged-native-e2e-test
+            snow-shot-recapture-cursor-own-hidden-native-e2e-test
+            snow-shot-recapture-cursor-own-titlebar-native-e2e-test PROPERTIES
             LABELS "interactive;e2e;windows"
             RUN_SERIAL TRUE
             TIMEOUT 60

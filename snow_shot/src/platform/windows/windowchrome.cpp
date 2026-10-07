@@ -12,8 +12,8 @@
 #include <QPoint>
 #include <QRect>
 #include <QWidget>
-#include <QTimer>
 #include <QHash>
+#include <QAbstractNativeEventFilter>
 
 #if defined(_MSC_VER)
 #pragma warning(push)
@@ -308,18 +308,25 @@ bool detail::isUnderlyingCursorUpdate(quint32 event, qint32 object, quint32 sour
     }
     // Cursor WinEvents describe the shared desktop cursor. Windows can publish the
     // transition from DWM/system threads, so sourceThread is not a window-owner identity.
-    // Reject only our own outgoing changes while another app owns the pointer.
-    return sourceThread != callerThread || targetThread == callerThread;
+    // Local windows acknowledge actual mouse dispatch instead. Our outgoing hide
+    // event must never stand in for the target's cursor selection.
+    return sourceThread != callerThread && targetThread != callerThread;
 }
 
-class CursorRefresh::Impl final : public QObject {
+class CursorRefresh::Impl final : public QAbstractNativeEventFilter {
   public:
-    explicit Impl(QObject* context) {
-        connect(context, &QObject::destroyed, this, [this] {
-            completed_ = {};
-            cancelled_ = true;
-            disarm();
-        });
+    explicit Impl(QObject* context)
+        : operation_(context, {GetCurrentThreadId(), targetUnderPointer,
+                               [this](bool localTarget) {
+                                   if (hook_ == nullptr)
+                                       return false;
+                                   // Do not invalidate Qt's cached local cursor. A stationary
+                                   // update need not choose the same cursor a second time.
+                                   if (!localTarget)
+                                       SetCursor(nullptr);
+                                   return refreshCursorUnderPointer();
+                               },
+                               [] { return SUCCEEDED(DwmFlush()); }, [this] { disarm(); }}) {
         if (QGuiApplication::platformName() != QStringLiteral("windows")) {
             return;
         }
@@ -327,7 +334,7 @@ class CursorRefresh::Impl final : public QObject {
                                 0, 0, WINEVENT_OUTOFCONTEXT);
         if (hook_ != nullptr) {
             hooks().insert(hook_, this);
-            SetCursor(nullptr);
+            QCoreApplication::instance()->installNativeEventFilter(this);
         }
     }
     ~Impl() override {
@@ -335,29 +342,28 @@ class CursorRefresh::Impl final : public QObject {
     }
 
     void start(std::function<void(bool)> completed) {
-        if (cancelled_) {
-            return;
-        }
-        completed_ = std::move(completed);
-        POINT position{};
-        if (hook_ == nullptr || !GetCursorPos(&position) || !refreshCursorUnderPointer()) {
-            finish(false);
-            return;
-        }
-        // Route a real stationary mouse update. Do not send synthetic window messages:
-        // their intermediate default cursor is not the target's queued widget selection.
-        QTimer::singleShot(1000, this, [this] {
-            if (completed_) {
-                qWarning("Timed out waiting for a desktop cursor update before recapture");
-                finish(false);
-            }
-        });
-        if (notifiedTarget_ != nullptr && notifiedTarget_ == WindowFromPoint(position)) {
-            queueCompletion();
-        }
+        operation_.start(std::move(completed));
     }
 
   private:
+    static detail::CursorRefreshTarget targetUnderPointer() {
+        POINT position{};
+        if (!GetCursorPos(&position))
+            return {};
+        const HWND target = WindowFromPoint(position);
+        return {reinterpret_cast<quintptr>(target), GetWindowThreadProcessId(target, nullptr),
+                QPoint(position.x, position.y)};
+    }
+    bool nativeEventFilter(const QByteArray&, void* message, qintptr*) override {
+        const auto* msg = static_cast<const MSG*>(message);
+        if (msg->message == WM_MOUSEMOVE || msg->message == WM_NCMOUSEMOVE) {
+            POINT position{GET_X_LPARAM(msg->lParam), GET_Y_LPARAM(msg->lParam)};
+            if (msg->message == WM_NCMOUSEMOVE || ClientToScreen(msg->hwnd, &position))
+                operation_.mouseDispatched(reinterpret_cast<quintptr>(msg->hwnd),
+                                           QPoint(position.x, position.y));
+        }
+        return false;
+    }
     static QHash<HWINEVENTHOOK, Impl*>& hooks() {
         static thread_local QHash<HWINEVENTHOOK, Impl*> value;
         return value;
@@ -372,54 +378,19 @@ class CursorRefresh::Impl final : public QObject {
         if (operation == nullptr) {
             return;
         }
-        POINT position{};
-        if (!GetCursorPos(&position)) {
-            return;
-        }
-        const HWND target = WindowFromPoint(position);
-        const DWORD targetThread = GetWindowThreadProcessId(target, nullptr);
-        if (!detail::isUnderlyingCursorUpdate(event, object, thread, GetCurrentThreadId(),
-                                              targetThread)) {
-            return;
-        }
-        operation->notifiedTarget_ = target;
-        operation->queueCompletion();
-    }
-    void queueCompletion() {
-        if (!completed_ || completionQueued_) {
-            return;
-        }
-        completionQueued_ = true;
-        // Leave WinEvent dispatch, then synchronize the pending desktop update once.
-        // The target's SetCursor notification can precede its visible desktop cursor.
-        // This is a single commit barrier, not cursor stability sampling. The coordinator
-        // immediately snapshots the cursor and owns it through image capture.
-        QTimer::singleShot(0, this, [this] {
-            if (completed_) {
-                finish(SUCCEEDED(DwmFlush()));
-            }
-        });
+        operation->operation_.cursorChanged(event, object, thread);
     }
     void disarm() {
+        if (QCoreApplication::instance())
+            QCoreApplication::instance()->removeNativeEventFilter(this);
         if (hook_ != nullptr) {
             hooks().remove(hook_);
             UnhookWinEvent(hook_);
             hook_ = nullptr;
         }
     }
-    void finish(bool succeeded) {
-        if (!completed_) {
-            return;
-        }
-        disarm();
-        auto completed = std::move(completed_);
-        completed(succeeded);
-    }
-    std::function<void(bool)> completed_;
+    detail::CursorRefreshOperation operation_;
     HWINEVENTHOOK hook_ = nullptr;
-    HWND notifiedTarget_ = nullptr;
-    bool cancelled_ = false;
-    bool completionQueued_ = false;
 };
 
 CursorRefresh::CursorRefresh(QObject* context) : impl_(std::make_unique<Impl>(context)) {}
