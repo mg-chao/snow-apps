@@ -121,6 +121,7 @@ impl Default for RecordingAudioConfig {
 #[derive(Clone, Debug)]
 pub struct RecordingConfig {
     pub target: RecordingTarget,
+    /// Preferred recording backend on Windows; other backends remain available as fallbacks.
     pub capture_backend: CaptureBackendKind,
     pub output_dir: PathBuf,
     pub keep_temp_files: bool,

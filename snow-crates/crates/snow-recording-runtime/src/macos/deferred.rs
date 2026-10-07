@@ -18,7 +18,7 @@ pub(crate) fn run_capture(
     path: &Path,
     commands: Receiver<Command>,
     state: Arc<AtomicU8>,
-    ready: Sender<std::result::Result<(), String>>,
+    ready: Sender<()>,
     stop_boundary: Arc<Mutex<Option<Instant>>>,
     control_clock: Arc<Mutex<Option<RecordingClock>>>,
     capture_controls: DeferredCaptureControls,
@@ -73,7 +73,7 @@ pub(crate) fn run_capture(
     let mut schedule = crate::output_schedule::OutputSchedule::new(config.output_fps);
     *control_clock.lock().unwrap_or_else(|e| e.into_inner()) = Some(clock.clone());
     state.store(1, Ordering::Release);
-    let _ = ready.send(Ok(()));
+    let _ = ready.send(());
     while stop.is_none() {
         let first = if paused {
             commands.recv_timeout(Duration::from_millis(10)).ok()

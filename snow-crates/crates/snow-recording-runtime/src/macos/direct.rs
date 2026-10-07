@@ -208,71 +208,82 @@ impl DirectSession {
         let exclusion_control = self.exclusion_control.clone();
         let stop_boundary = Arc::clone(&self.stop_boundary);
         let control_clock = Arc::clone(&self.control_clock);
-        self.worker = Some(
-            std::thread::Builder::new()
-                .name("snow-macos-recording".into())
-                .spawn(move || {
-                    snow_core::qos::apply_current_thread();
-                    let result = (|| {
-                        let mut recording = NativeRecordingSession::start_with_controls(
-                            native_config(config, cancellation)?,
-                            audio_control.clone(),
-                        )?;
-                        recording.capture.set_exclusion_control(exclusion_control);
-                        recording.set_stop_boundary(Arc::clone(&stop_boundary));
-                        *control_clock.lock().unwrap_or_else(|e| e.into_inner()) =
-                            Some(recording.source_clock());
-                        state.store(1, Ordering::Release);
-                        let _ = ready_tx.send(());
-                        loop {
-                            if let Some(at) =
-                                *stop_boundary.lock().unwrap_or_else(|e| e.into_inner())
-                            {
+        let worker = std::thread::Builder::new()
+            .name("snow-macos-recording".into())
+            .spawn(move || {
+                snow_core::qos::apply_current_thread();
+                let result = (|| {
+                    let mut recording = NativeRecordingSession::start_with_controls(
+                        native_config(config, cancellation)?,
+                        audio_control.clone(),
+                    )?;
+                    recording.capture.set_exclusion_control(exclusion_control);
+                    recording.set_stop_boundary(Arc::clone(&stop_boundary));
+                    *control_clock.lock().unwrap_or_else(|e| e.into_inner()) =
+                        Some(recording.source_clock());
+                    state.store(1, Ordering::Release);
+                    let _ = ready_tx.send(());
+                    loop {
+                        if let Some(at) = *stop_boundary.lock().unwrap_or_else(|e| e.into_inner()) {
+                            recording.freeze_source(at);
+                            return recording.finish();
+                        }
+                        let command = if recording.paused {
+                            match rx.recv_timeout(Duration::from_millis(20)) {
+                                Ok(command) => Some(command),
+                                Err(crossbeam_channel::RecvTimeoutError::Timeout) => None,
+                                Err(_) => return Err(ScreenRecorderError::ExportCanceled),
+                            }
+                        } else {
+                            match rx.try_recv() {
+                                Ok(command) => Some(command),
+                                Err(crossbeam_channel::TryRecvError::Empty) => None,
+                                Err(_) => return Err(ScreenRecorderError::ExportCanceled),
+                            }
+                        };
+                        match command {
+                            Some(Command::Pause(at)) => {
+                                recording.pause_capture_at(at);
+                            }
+                            Some(Command::Resume(_)) => {
+                                recording.resume_capture();
+                            }
+                            Some(Command::Finish(at)) => {
                                 recording.freeze_source(at);
                                 return recording.finish();
                             }
-                            let command = if recording.paused {
-                                match rx.recv_timeout(Duration::from_millis(20)) {
-                                    Ok(command) => Some(command),
-                                    Err(crossbeam_channel::RecvTimeoutError::Timeout) => None,
-                                    Err(_) => return Err(ScreenRecorderError::ExportCanceled),
-                                }
-                            } else {
-                                match rx.try_recv() {
-                                    Ok(command) => Some(command),
-                                    Err(crossbeam_channel::TryRecvError::Empty) => None,
-                                    Err(_) => return Err(ScreenRecorderError::ExportCanceled),
-                                }
-                            };
-                            match command {
-                                Some(Command::Pause(at)) => {
-                                    recording.pause_capture_at(at);
-                                }
-                                Some(Command::Resume(_)) => {
-                                    recording.resume_capture();
-                                }
-                                Some(Command::Finish(at)) => {
-                                    recording.freeze_source(at);
-                                    return recording.finish();
-                                }
-                                None => {}
-                            }
-                            if let Err(error) = recording.step(Duration::from_millis(20)) {
-                                return Err(recording.preserve_failure(error));
-                            }
+                            None => {}
                         }
-                    })();
-                    state.store(3, Ordering::Release);
-                    audio_control.mark_stopped();
-                    result
-                })
-                .map_err(ScreenRecorderError::Io)?,
-        );
-        self.commands = Some(tx);
-        if ready_rx.recv().is_err() {
-            return self.join().map(|_| ());
+                        if let Err(error) = recording.step(Duration::from_millis(20)) {
+                            return Err(recording.preserve_failure(error));
+                        }
+                    }
+                })();
+                state.store(3, Ordering::Release);
+                audio_control.mark_stopped();
+                result
+            })
+            .map_err(ScreenRecorderError::Io)?;
+        match crate::worker_startup::started_worker(
+            worker,
+            ready_rx.recv().is_ok(),
+            "macOS recording",
+        ) {
+            Ok(worker) => {
+                self.worker = Some(worker);
+                self.commands = Some(tx);
+                Ok(())
+            }
+            Err(error) => {
+                self.state.store(3, Ordering::Release);
+                self.audio_control.mark_stopped();
+                self.control_clock
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .take();
+                Err(error)
+            }
         }
-        Ok(())
     }
     fn send(&self, command: Command) -> Result<()> {
         self.commands

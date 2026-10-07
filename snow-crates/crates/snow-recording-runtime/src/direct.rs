@@ -13,8 +13,8 @@ use snow_audio_recorder::{
     AudioSourceStatus, AudioStreamConfig, AudioStreamHandle,
 };
 use snow_capture::{
-    CaptureEvent, CaptureOptions, CaptureStream, CaptureStreamConfig, CaptureSystem,
-    CaptureWorkload, CapturedFrame,
+    CaptureEvent, CaptureOptions, CaptureStream, CaptureStreamConfig, CaptureWorkload,
+    CapturedFrame,
 };
 use snow_core::recording_clock::RecordingClock;
 use snow_cursor::{AttachedCursorSample, CursorCompositionMode, CursorShape, CursorShapeState};
@@ -137,6 +137,7 @@ pub struct DirectRecordingConfig {
     /// Whether animated image outputs repeat indefinitely.
     pub loop_animated_images: bool,
     pub region: RecordingRegion,
+    /// Preferred recording backend on Windows; other backends remain available as fallbacks.
     pub capture_backend: CaptureBackendKind,
     pub output_path: PathBuf,
     pub format: ExportFormat,
@@ -954,7 +955,6 @@ impl DirectRecordingSession {
                             }
                             Err(error) => {
                                 let message = format!("keyboard recording: {error}");
-                                let _ = ready_tx.send(Err(message.clone()));
                                 return Err(ScreenRecorderError::Encode(message));
                             }
                         }
@@ -988,6 +988,11 @@ impl DirectRecordingSession {
                                 .recoverable(),
                             None,
                         ),
+                        Err(ScreenRecorderError::Capture(error))
+                            if !error.allows_backend_fallback() =>
+                        {
+                            return Err(error.into());
+                        }
                         result => {
                             let reason = result.err().map(|error| error.to_string());
                             if gpu::eligible(&config) {
@@ -1035,11 +1040,7 @@ impl DirectRecordingSession {
                                 bench_encoding,
                             )?
                         }
-                        Err(error) => {
-                            let message = error.to_string();
-                            let _ = ready_tx.send(Err(message));
-                            return Err(error);
-                        }
+                        Err(error) => return Err(error),
                     };
                     if automatic_restoration
                         && config.restoration_policy_domain(encoder.opened_video_encoder())
@@ -1079,13 +1080,12 @@ impl DirectRecordingSession {
                                     .build()
                                     .map_err(|error| {
                                         let message = format!("resize pool: {error}");
-                                        let _ = ready_tx.send(Err(message.clone()));
                                         ScreenRecorderError::Encode(message)
                                     })?,
                             );
                         }
                     }
-                    let _ = ready_tx.send(Ok(()));
+                    let _ = ready_tx.send(());
                     run_direct_worker(DirectWorkerInputs {
                         stop_boundary,
                         cancel_requested,
@@ -1116,19 +1116,23 @@ impl DirectRecordingSession {
                 result
             })
             .map_err(|error| ScreenRecorderError::Io(std::io::Error::other(error)))?;
-        match ready_rx.recv() {
-            Ok(Ok(())) => {}
-            Ok(Err(error)) => {
-                let _ = worker.join();
-                return Err(ScreenRecorderError::Encode(error));
+        let worker = match crate::worker_startup::started_worker(
+            worker,
+            ready_rx.recv().is_ok(),
+            "direct recording",
+        ) {
+            Ok(worker) => worker,
+            Err(error) => {
+                self.state
+                    .store(state_to_u8(RecordingState::Stopped), Ordering::Release);
+                self.audio_control.mark_stopped();
+                self.control_clock
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .take();
+                return Err(error);
             }
-            Err(_) => {
-                let _ = worker.join();
-                return Err(ScreenRecorderError::Encode(
-                    "direct recording worker stopped during initialization".to_string(),
-                ));
-            }
-        }
+        };
         #[cfg(feature = "bench-synthetic-input")]
         let synthetic = self.bench_synthetic_input.then(|| BenchSyntheticInput {
             clicks: bench_click_tx.expect("synthetic clicks sender"),
@@ -1752,7 +1756,7 @@ fn run_direct_worker(inputs: DirectWorkerInputs) -> Result<DirectRecordingReport
                 }
                 DirectCaptureEvent::Error(error) => {
                     #[cfg(windows)]
-                    if gpu_compositor.is_some() {
+                    if gpu_compositor.is_some() && error.allows_backend_fallback() {
                         gpu_failure = Some(error.to_string());
                         break;
                     }

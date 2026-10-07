@@ -11,10 +11,9 @@ use snow_audio_recorder::{
     AudioRecordingArtifact, AudioRecordingConfig, AudioRecordingSession, AudioTrackConfig,
     AudioTrackDevice,
 };
-use snow_capture::backend::{AutoBackendPolicy, CaptureBackendKind};
 use snow_capture::{
-    CaptureEvent, CaptureOptions, CaptureStream, CaptureStreamConfig, CaptureSystem,
-    CaptureWorkload, CapturedFrame,
+    CaptureEvent, CaptureOptions, CaptureStream, CaptureStreamConfig, CaptureWorkload,
+    CapturedFrame,
 };
 use snow_core::error::{Classify, ErrorClass};
 use snow_core::recording_clock::RecordingClock;
@@ -28,6 +27,7 @@ use snow_recording_model::{
 use uuid::Uuid;
 
 use crate::adapter::video::resolve_capture_target;
+use crate::capture_policy::{RecordingCapturePath, recording_capture_system};
 use crate::config::{IntermediateRecordingProfile, RecordingConfig, VideoEncodeConfig};
 use crate::error::{Result, ScreenRecorderError};
 use crate::ffmpeg_util::{
@@ -38,31 +38,6 @@ use crate::temp::TempLayout;
 use crate::video_quality::{quality_to_h264_crf, smart_quality_bitrate_bps};
 
 const VIDEO_INDEX_MAGIC: &[u8] = b"SVIDX\0\0";
-
-pub(crate) enum RecordingCapturePath {
-    Direct,
-    Buffered,
-}
-
-pub(crate) fn recording_auto_backend_policy(path: RecordingCapturePath) -> AutoBackendPolicy {
-    // The live pipeline's measured policy is DXGI-first. Preserve the buffered
-    // recorder's existing WGC-first policy: live benchmarks do not establish a
-    // benefit for its separate capture/encoding pipeline. Explicit backends bypass
-    // this Auto ordering in CaptureSystem.
-    let accelerated = match path {
-        RecordingCapturePath::Direct => [
-            CaptureBackendKind::DxgiDuplication,
-            CaptureBackendKind::WindowsGraphicsCapture,
-        ],
-        RecordingCapturePath::Buffered => [
-            CaptureBackendKind::WindowsGraphicsCapture,
-            CaptureBackendKind::DxgiDuplication,
-        ],
-    };
-    AutoBackendPolicy {
-        priority: vec![accelerated[0], accelerated[1], CaptureBackendKind::Gdi],
-    }
-}
 
 #[derive(Clone, Copy, Debug)]
 enum ControlCommand {
@@ -207,12 +182,8 @@ impl RecordingSession {
         }
 
         let capture_target = resolve_capture_target(&self.config.target)?;
-        let capture_system = CaptureSystem::builder()
-            .with_backend_kind(self.config.capture_backend)
-            .with_auto_backend_policy(recording_auto_backend_policy(
-                RecordingCapturePath::Buffered,
-            ))
-            .build()?;
+        let capture_system =
+            recording_capture_system(RecordingCapturePath::Buffered, self.config.capture_backend)?;
         let capture_session = capture_system.open_session(
             capture_target,
             CaptureOptions {
@@ -1352,30 +1323,6 @@ fn handle_source_error<E: Classify>(
 mod tests {
     use super::*;
     use std::fs;
-
-    #[test]
-    fn recording_auto_preserves_each_pipeline_and_retains_accelerated_fallbacks() {
-        assert_eq!(
-            RecordingConfig::default().capture_backend,
-            CaptureBackendKind::Auto
-        );
-        assert_eq!(
-            recording_auto_backend_policy(RecordingCapturePath::Buffered).normalized_priority(),
-            vec![
-                CaptureBackendKind::WindowsGraphicsCapture,
-                CaptureBackendKind::DxgiDuplication,
-                CaptureBackendKind::Gdi,
-            ]
-        );
-        assert_eq!(
-            recording_auto_backend_policy(RecordingCapturePath::Direct).normalized_priority(),
-            vec![
-                CaptureBackendKind::DxgiDuplication,
-                CaptureBackendKind::WindowsGraphicsCapture,
-                CaptureBackendKind::Gdi
-            ]
-        );
-    }
 
     #[test]
     fn video_index_writer_streams_expected_records() {

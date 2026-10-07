@@ -124,12 +124,10 @@ impl DirectCapture {
         }
     }
     pub fn cpu(config: &DirectRecordingConfig, include_cursor: bool) -> Result<Self> {
-        let system = CaptureSystem::builder()
-            .with_backend_kind(config.capture_backend)
-            .with_auto_backend_policy(crate::recording::recording_auto_backend_policy(
-                crate::recording::RecordingCapturePath::Direct,
-            ))
-            .build()?;
+        let system = crate::capture_policy::recording_capture_system(
+            crate::capture_policy::RecordingCapturePath::Direct,
+            config.capture_backend,
+        )?;
         let session = system.open_session(
             resolve_capture_target(&RecordingTarget::Region(config.region))?,
             capture_options(config),

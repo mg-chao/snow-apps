@@ -211,37 +211,33 @@ impl DeferredRecordingSession {
                     options,
                     receiver,
                     Arc::clone(&state),
-                    ready.clone(),
+                    ready,
                     stop_boundary,
                     control_clock,
                     capture_controls,
                 );
-                if let Err(error) = &result {
-                    let _ = ready.try_send(Err(error.to_string()));
-                }
                 state.store(3, Ordering::Release);
                 audio_control.mark_stopped();
                 result
             })?;
-        self.commands = Some(commands);
-        self.worker = Some(worker);
-        match ready_rx.recv() {
-            Ok(Ok(())) => Ok(()),
-            Ok(Err(message)) => {
-                let _ = self.worker.take().expect("startup worker").join();
-                self.commands = None;
-                Err(ScreenRecorderError::Encode(message))
+        match crate::worker_startup::started_worker(
+            worker,
+            ready_rx.recv().is_ok(),
+            "deferred recording",
+        ) {
+            Ok(worker) => {
+                self.commands = Some(commands);
+                self.worker = Some(worker);
+                Ok(())
             }
-            Err(_) => {
-                let result = self
-                    .worker
-                    .take()
-                    .expect("startup worker")
-                    .join()
-                    .map_err(|_| {
-                        ScreenRecorderError::Encode("deferred recording worker panicked".into())
-                    })?;
-                result.map(|_| ())
+            Err(error) => {
+                self.state.store(3, Ordering::Release);
+                self.capture_controls.audio.mark_stopped();
+                self.control_clock
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .take();
+                Err(error)
             }
         }
     }
@@ -405,7 +401,7 @@ fn run_recording(
     options: DeferredRecordingOptions,
     commands: Receiver<Command>,
     state: Arc<AtomicU8>,
-    ready: Sender<std::result::Result<(), String>>,
+    ready: Sender<()>,
     stop_boundary: Arc<Mutex<Option<Instant>>>,
     control_clock: Arc<Mutex<Option<RecordingClock>>>,
     capture_controls: DeferredCaptureControls,
@@ -613,7 +609,7 @@ fn run_capture(
     path: &Path,
     commands: Receiver<Command>,
     state: Arc<AtomicU8>,
-    ready: Sender<std::result::Result<(), String>>,
+    ready: Sender<()>,
     stop_boundary: Arc<Mutex<Option<Instant>>>,
     control_clock: Arc<Mutex<Option<RecordingClock>>>,
     capture_controls: DeferredCaptureControls,
@@ -671,7 +667,7 @@ fn run_capture(
         .transpose()?;
     *control_clock.lock().unwrap_or_else(|e| e.into_inner()) = Some(clock.clone());
     state.store(1, Ordering::Release);
-    let _ = ready.send(Ok(()));
+    let _ = ready.send(());
     while stop.is_none() {
         while let Ok(command) = commands.try_recv() {
             match command {

@@ -72,7 +72,7 @@ namespace {
 constexpr int kDurationTickMilliseconds = 100;
 constexpr int kCountdownTickMilliseconds = 16;
 
-uint32_t recordingCaptureBackend(const snow_shot::storage::RecordingSettings& settings) {
+uint32_t recordingCaptureBackendPreference(const snow_shot::storage::RecordingSettings& settings) {
 #ifdef Q_OS_MACOS
     Q_UNUSED(settings)
     return SNOW_CAPTURE_BACKEND_AUTO;
@@ -1031,6 +1031,11 @@ struct ScreenRecordingController::Impl {
             const snow_shot::storage::RecordingSettings settings;
             sessionOutputSettings =
                 directRecordingSettings(outputFormat, captureRegion.size(), automationOptions);
+#ifdef Q_OS_MACOS
+            sessionCaptureBackendPreference = QStringLiteral("auto");
+#else
+            sessionCaptureBackendPreference = settings.apiMode();
+#endif
             sessionDeferred = postProcessingEnabled;
             const uint32_t overlay = postProcessingEffect == QStringLiteral("playback_time")
                                          ? SNOW_RECORDING_PLAYBACK_OVERLAY_PLAYBACK_TIME
@@ -1058,7 +1063,7 @@ struct ScreenRecordingController::Impl {
                 captureRegion.y(),
                 static_cast<uint32_t>(captureRegion.width()),
                 static_cast<uint32_t>(captureRegion.height()),
-                recordingCaptureBackend(settings),
+                recordingCaptureBackendPreference(settings),
                 // Bound on the worker thread together with the keyboard labels.
                 nullptr,
                 static_cast<uint32_t>(sessionOutputSettings.format),
@@ -2029,19 +2034,22 @@ struct ScreenRecordingController::Impl {
     QColor sessionMouseTrailColor{0, 0, 0, 0};
     QColor sessionMouseClickColor{0, 0, 0, 0};
     bool sessionShowCursor = true;
+    QString sessionCaptureBackendPreference = QStringLiteral("auto");
     void report(const QString& event, QtMsgType level = QtInfoMsg) const {
-        snow_shot::diagnostics::logEvent(QStringLiteral("snow_shot.recording"), event,
-                                         {{QStringLiteral("operation"), operation},
-                                          {QStringLiteral("duration_ms"),
-                                           operationTimer.isValid() ? operationTimer.elapsed() : 0},
-                                          {QStringLiteral("backend"),
+        snow_shot::diagnostics::logEvent(
+            QStringLiteral("snow_shot.recording"), event,
+            {{QStringLiteral("operation"), operation},
+             {QStringLiteral("backend_preference"), sessionCaptureBackendPreference},
+             {QStringLiteral("duration_ms"),
+              operationTimer.isValid() ? operationTimer.elapsed() : 0},
+             {QStringLiteral("backend"),
 #ifdef Q_OS_MACOS
-                                           QStringLiteral("screencapturekit")
+              QStringLiteral("screencapturekit")
 #else
-                                           QStringLiteral("auto")
+              QStringLiteral("auto")
 #endif
-                                          }},
-                                         level);
+             }},
+            level);
     }
     QString operation;
     QElapsedTimer operationTimer;

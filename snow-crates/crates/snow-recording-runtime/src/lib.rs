@@ -6,12 +6,14 @@ pub mod error;
 pub mod recording;
 
 pub(crate) mod adapter;
+mod capture_policy;
 pub(crate) mod ffmpeg_util;
 pub(crate) mod keyboard_hook;
 pub(crate) mod keyboard_overlay;
 pub(crate) mod keyboard_rasterizer;
 pub(crate) mod mouse_hook;
 mod output_schedule;
+mod worker_startup;
 pub use keyboard_overlay::{KeyboardOverlayConfig, KeyboardOverlayFont};
 pub(crate) mod processor;
 pub(crate) mod temp;

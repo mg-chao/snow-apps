@@ -15,6 +15,7 @@ pub(super) fn eligible(config: &DirectRecordingConfig) -> bool {
     config.format == ExportFormat::Mp4
         && config.codec == VideoCodec::H264
         && config.prefer_hardware_encoder
+        && !crate::capture_policy::recording_gpu_backends(config.capture_backend).is_empty()
 }
 
 /// Probe the actual capture adapter, compositor and vendor encoder together.
@@ -38,18 +39,9 @@ pub(super) fn prepare(
         SharedDevice,
     )>,
 > {
-    use snow_capture::gpu::{GpuCaptureEvent, GpuCaptureStream};
-    diagnostics.stage = Some("capture_startup".into());
-    let stream = GpuCaptureStream::spawn(
-        snow_capture::CaptureRegion {
-            x: config.region.x,
-            y: config.region.y,
-            width: config.region.width,
-            height: config.region.height,
-        },
-        config.capture_backend,
-        capture::stream_config(config, include_cursor),
-    )?;
+    let Some((stream, observation)) = prepare_capture(config, include_cursor, diagnostics)? else {
+        return Ok(None);
+    };
     let device = stream.device().clone();
     diagnostics.adapter = Some(device.identity().description.clone());
     diagnostics.stage = Some("compositor_startup".into());
@@ -59,18 +51,6 @@ pub(super) fn prepare(
         config.output_dimensions(),
         config.output_fps,
     )?;
-    diagnostics.stage = Some("capture_probe".into());
-    let deadline = Instant::now() + Duration::from_secs(5);
-    let observation = loop {
-        match stream.recv_timeout(deadline.saturating_duration_since(Instant::now())) {
-            Ok(GpuCaptureEvent::Frame(frame)) => break frame,
-            Ok(GpuCaptureEvent::Error(error)) => return Err(error.into()),
-            Ok(GpuCaptureEvent::StreamEnded) | Err(_) => {
-                return Err(gpu_error("capture startup probe produced no image"));
-            }
-            _ => {}
-        }
-    };
     struct ProbeFile(PathBuf);
     impl Drop for ProbeFile {
         fn drop(&mut self) {
@@ -146,6 +126,41 @@ pub(super) fn prepare(
     state.input_effects.trail.clear();
     compositor.overlay_upload_bytes = 0;
     Ok(Some((stream, compositor, device)))
+}
+
+fn prepare_capture(
+    config: &DirectRecordingConfig,
+    include_cursor: bool,
+    diagnostics: &mut Negotiation,
+) -> snow_capture::error::CaptureResult<
+    Option<(snow_capture::gpu::GpuCaptureStream, GpuCapturedFrame)>,
+> {
+    use snow_capture::error::CaptureError;
+    use snow_capture::gpu::{GpuCaptureEvent, GpuCaptureStream};
+    crate::capture_policy::try_recording_gpu_capture(config.capture_backend, |backend| {
+        diagnostics.stage = Some("capture_startup".into());
+        let stream = GpuCaptureStream::spawn(
+            snow_capture::CaptureRegion {
+                x: config.region.x,
+                y: config.region.y,
+                width: config.region.width,
+                height: config.region.height,
+            },
+            backend,
+            capture::stream_config(config, include_cursor),
+        )?;
+        diagnostics.stage = Some("capture_probe".into());
+        let deadline = Instant::now() + Duration::from_secs(5);
+        loop {
+            match stream.recv_timeout(deadline.saturating_duration_since(Instant::now())) {
+                Ok(GpuCaptureEvent::Frame(frame)) => return Ok((stream, frame)),
+                Ok(GpuCaptureEvent::Error(error)) => return Err(error),
+                Ok(GpuCaptureEvent::StreamEnded) => return Err(CaptureError::WorkerDead),
+                Err(_) => return Err(CaptureError::Timeout),
+                _ => {}
+            }
+        }
+    })
 }
 
 fn gpu_error(error: impl std::fmt::Display) -> ScreenRecorderError {
@@ -1352,7 +1367,8 @@ mod tests {
             let directory = tempfile::tempdir()?;
             let path = directory.path().join("hardware.mp4");
             let config = config(path.clone(), backend);
-            // Fail with the precise stage instead of accepting startup fallback.
+            // Probe GPU startup before accepting a CPU fallback. The report
+            // below must still prove that both native backends were exercised.
             let mut state = VisualCompositor::new(config.output_dimensions());
             drop(prepare(
                 &config,
@@ -1369,6 +1385,7 @@ mod tests {
             std::thread::sleep(Duration::from_millis(600));
             let report = session.stop()?;
             assert_eq!(report.selected_pipeline, "d3d11", "{report:?}");
+            assert_eq!(report.capture_backend, backend.as_str(), "{report:?}");
             assert!(report.used_hardware_video_encoder, "{report:?}");
             let mut media = ffmpeg_next::format::input(&path).map_err(gpu_error)?;
             let stream = media

@@ -1294,7 +1294,7 @@ std::vector<uint32_t> prepareExpectedRecordingExclusions(ScreenshotToolPalette* 
 void recordingApiModeWiring() {
     using snow_shot::storage::RecordingSettings;
     const RecordingSettings settings;
-    require(settings.apiMode() == QStringLiteral("dxgi"), "recording must default to DXGI");
+    require(settings.apiMode() == QStringLiteral("dxgi"), "recording must prefer DXGI by default");
     require(settings.setStartDelaySeconds(0), "disable countdown");
     for (bool deferred : {false, true}) {
         require(settings.setPostProcessingEnabled(deferred), "set recording pipeline");
@@ -1315,7 +1315,7 @@ void recordingApiModeWiring() {
                                                                       : SNOW_CAPTURE_BACKEND_DXGI;
 #endif
             require(lastDirectConfig.capture_backend == expected,
-                    "each recording pipeline must receive the selected API");
+                    "each recording pipeline must receive the selected API preference");
             require(deferredCreates == beforeDeferred + (deferred ? 1 : 0),
                     "test must exercise both direct and deferred recording");
             const int beforeRenderPolls = renderPolls;
@@ -1333,6 +1333,67 @@ void recordingApiModeWiring() {
             }
             waitForIdle(controller);
             palette()->recordingCloseRequested();
+        }
+    }
+    require(settings.setApiMode(QStringLiteral("dxgi")) && settings.setPostProcessingEnabled(false),
+            "restore recording defaults");
+}
+
+void recordingStartupFailureAllowsRetry() {
+    using snow_shot::storage::RecordingSettings;
+    const RecordingSettings settings;
+    require(settings.setStartDelaySeconds(0), "disable countdown");
+    for (bool deferred : {false, true}) {
+        require(settings.setPostProcessingEnabled(deferred), "select recording pipeline");
+        for (int failure : {1, 2}) {
+            require(settings.setApiMode(QStringLiteral("wgc")), "set initial recording preference");
+            ErrorObserver observer;
+            qApp->installEventFilter(&observer);
+            ScreenRecordingController controller(testEffectsSource);
+            controller.open(QRect(40, 40, 320, 240));
+            auto* startButton = palette()->findChild<adqt::widgets::AdButton*>(
+                QStringLiteral("screenRecordingStart"));
+            require(startButton && startButton->isEnabled(), "Start is initially enabled");
+            failStart = failure == 1;
+            failStartOperation = failure == 2;
+            startButton->click();
+            QElapsedTimer deadline;
+            deadline.start();
+            while (!observer.shown && deadline.elapsed() < 3000) {
+                QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+                QThread::msleep(5);
+            }
+            require(observer.shown == 1, "failed startup reports exactly one error");
+            require(!controller.isRecording() && !palette()->recordingBusy() &&
+                        startButton->isEnabled(),
+                    "failed startup restores an enabled Start");
+            failStart = false;
+            failStartOperation = false;
+            require(settings.setApiMode(QStringLiteral("gdi")), "change preference before retry");
+            startButton->click();
+            waitForRecording(controller);
+#ifdef Q_OS_MACOS
+            const uint32_t expected = SNOW_CAPTURE_BACKEND_AUTO;
+#else
+            const uint32_t expected = SNOW_CAPTURE_BACKEND_GDI;
+#endif
+            require(lastDirectConfig.capture_backend == expected,
+                    "retry must use the current backend preference");
+            const int previousRenderPolls = renderPolls;
+            palette()->recordingStopRequested();
+            if (deferred) {
+                deadline.restart();
+                while (renderPolls == previousRenderPolls && deadline.elapsed() < 3000) {
+                    QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+                    QThread::msleep(5);
+                }
+                require(renderPolls > previousRenderPolls, "deferred export begins rendering");
+                renderState = SNOW_RECORDING_RENDER_STATE_SUCCEEDED;
+            }
+            waitForIdle(controller);
+            palette()->recordingCloseRequested();
+            qApp->removeEventFilter(&observer);
+            QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
         }
     }
     require(settings.setApiMode(QStringLiteral("dxgi")) && settings.setPostProcessingEnabled(false),
@@ -4364,6 +4425,11 @@ int main(int argc, char** argv) {
     }
     if (app.arguments().contains(QStringLiteral("--api-mode-only"))) {
         recordingApiModeWiring();
+        ApplicationStorage::instance().shutdown();
+        return 0;
+    }
+    if (app.arguments().contains(QStringLiteral("--startup-retry-only"))) {
+        recordingStartupFailureAllowsRetry();
         ApplicationStorage::instance().shutdown();
         return 0;
     }

@@ -55,6 +55,7 @@ typedef struct SnowRecordingConfig {
     uint32_t fps;
     uint8_t enable_microphone;
     uint8_t enable_system_audio;
+    /* Windows recording preference: attempt this backend first, retaining automatic fallback. */
     uint8_t capture_backend;
     uint8_t reserved0;
     const char* working_directory_utf8;
@@ -166,6 +167,7 @@ typedef struct SnowCaptureDirectRecordingConfig {
     int32_t y;
     uint32_t width;
     uint32_t height;
+    /* Windows recording preference: attempt this backend first, retaining automatic fallback. */
     uint32_t capture_backend;
     const char* output_file_utf8;
     uint32_t output_format;

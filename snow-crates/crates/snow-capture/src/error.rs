@@ -74,6 +74,20 @@ impl CaptureError {
         matches!(self.class(), CaptureErrorClass::Transient)
     }
 
+    /// Whether another capture backend can recover the same valid request.
+    /// Permission, cancellation and invalid input remain terminal errors.
+    pub fn allows_backend_fallback(&self) -> bool {
+        matches!(
+            self,
+            Self::BackendUnavailable(_)
+                | Self::UnsupportedFormat(_)
+                | Self::AccessLost
+                | Self::Timeout
+                | Self::WorkerDead
+                | Self::Platform(_)
+        )
+    }
+
     pub fn requires_worker_reset(&self) -> bool {
         matches!(
             self,
@@ -144,6 +158,32 @@ mod tests {
         assert!(!CaptureError::Canceled.is_retryable());
         assert!(!CaptureError::PermissionDenied.is_retryable());
         assert!(CaptureError::Timeout.is_retryable());
+    }
+
+    #[test]
+    fn backend_fallback_recovers_backend_failures_without_hiding_terminal_errors() {
+        for error in [
+            CaptureError::BackendUnavailable("missing implementation".into()),
+            CaptureError::UnsupportedFormat("format".into()),
+            CaptureError::AccessLost,
+            CaptureError::Timeout,
+            CaptureError::WorkerDead,
+            CaptureError::platform(anyhow::anyhow!("driver failure")),
+        ] {
+            assert!(error.allows_backend_fallback(), "{error}");
+        }
+        for error in [
+            CaptureError::InvalidTarget("target".into()),
+            CaptureError::PermissionDenied,
+            CaptureError::MonitorLost,
+            CaptureError::NoPrimaryMonitor,
+            CaptureError::BufferOverflow,
+            CaptureError::InvalidConfig("config".into()),
+            CaptureError::Canceled,
+            CaptureError::ResolutionChanged(100, 100),
+        ] {
+            assert!(!error.allows_backend_fallback(), "{error}");
+        }
     }
 
     #[cfg(windows)]
