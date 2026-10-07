@@ -1684,6 +1684,59 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "requires an interactive Windows desktop and WGC"]
+    fn wgc_repeated_drain_pause_resume_and_shutdown_returns() {
+        let (finished, completion) = crossbeam_channel::bounded(1);
+        let worker = thread::spawn(move || {
+            let result = (|| -> CaptureResult<()> {
+                validate_support()?;
+                let monitor = super::super::monitor::enumerate_resolved()?
+                    .into_iter()
+                    .next()
+                    .ok_or(CaptureError::MonitorLost)?;
+                for shared in [false, true] {
+                    let device = shared
+                        .then(|| snow_d3d11::SharedDevice::create(&monitor.adapter))
+                        .transpose()
+                        .map_err(CaptureError::platform)?;
+                    for _ in 0..4 {
+                        let mut capture = WgcWorker::new_with_device(
+                            WorkerTarget::Monitor {
+                                adapter_luid: monitor.key.adapter_luid,
+                                monitor: monitor.handle.0 as usize,
+                                hdr_metadata: monitor.hdr_metadata,
+                            },
+                            device.as_ref(),
+                        )?;
+                        capture
+                            .frame_notifications
+                            .recv_timeout(Duration::from_secs(5))
+                            .map_err(|_| CaptureError::Timeout)?;
+                        for _ in 0..4 {
+                            capture.pump_frames()?;
+                            capture.transport.pause()?;
+                            capture.transport.resume_and_drain(&capture.frame_pool)?;
+                            capture.configure_update_mode(WgcUpdateMode::OrderedIncremental)?;
+                            capture.pump_frames()?;
+                            capture.configure_update_mode(WgcUpdateMode::default())?;
+                        }
+                        // Reap native capture with callbacks and retained frames
+                        // after both preserve-and-drain and discard-and-resume.
+                        drop(capture);
+                    }
+                }
+                Ok(())
+            })();
+            let _ = finished.send(result);
+        });
+        completion
+            .recv_timeout(Duration::from_secs(30))
+            .expect("repeated WGC frame transport transitions and shutdown must return")
+            .expect("WGC frame transport transitions should succeed");
+        worker.join().unwrap();
+    }
+
+    #[test]
     fn default_update_policy_is_complete_surface() {
         assert!(!matches!(
             WgcUpdateMode::default(),
