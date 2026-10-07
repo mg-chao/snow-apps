@@ -24,8 +24,8 @@ QNetworkAccessManager* sharedNetworkAccessManager() {
         return nullptr;
 
     const auto managerName = QStringLiteral("snow-shot-cloud-upload-network-manager");
-    auto* manager = application->findChild<QNetworkAccessManager*>(managerName,
-                                                                   Qt::FindDirectChildrenOnly);
+    auto* manager =
+        application->findChild<QNetworkAccessManager*>(managerName, Qt::FindDirectChildrenOnly);
     if (manager == nullptr) {
         manager = new QNetworkAccessManager(application);
         manager->setObjectName(managerName);
@@ -154,6 +154,10 @@ void ScreenshotCloudUploadJob::prepare() {
             emit progress(0);
             if (!guard || guard->m_impl->terminal)
                 return;
+            if (!result.encodedSha256.isEmpty()) {
+                upload(result.encodedSha256);
+                return;
+            }
             auto* watcher = new QFutureWatcher<QByteArray>(this);
             const auto payload = m_impl->payload;
             connect(watcher, &QFutureWatcher<QByteArray>::finished, this, [this, watcher] {

@@ -28,6 +28,8 @@ struct ScreenshotExportTaskResult final {
     QImage image;
     QString savedPath;
     std::shared_ptr<ScreenshotClipboardPayload> clipboardPayload;
+    QByteArray encodedSha256;
+    qint64 encodedByteCount = -1;
 
     [[nodiscard]] bool succeeded() const {
         return failureStage == ScreenshotExportFailureStage::None && error.isEmpty();

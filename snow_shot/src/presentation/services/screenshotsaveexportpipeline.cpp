@@ -166,7 +166,11 @@ Source prepare(const ScreenshotImageRowSource& rows,
         classifyAlpha(preview.constBits(), preview.width(), preview.height(),
                       preview.bytesPerLine(), &alpha);
         preview.setColorSpace(QColorSpace::SRgb);
-        return {rows, preview, alpha};
+        // The bounded preview already contains every source pixel. Retain it as exact storage
+        // instead of reading the source again and decoding the lossless export for display.
+        auto retainedRows = snow_shot::image_codec::srgbRowSource(preview);
+        retainedRows.cancellationRequested = rows.cancellationRequested;
+        return {std::move(retainedRows), preview, alpha};
     }
     QImage preview = snowCanvasAllocateImage(size, QImage::Format_RGBA8888_Premultiplied);
     if (preview.isNull())
@@ -174,6 +178,12 @@ Source prepare(const ScreenshotImageRowSource& rows,
     // Retain the immutable row source. Downsample in bounded strips without materializing
     // a scrolling capture or keeping a second full-resolution pixel buffer.
     std::vector<quint64> sums(size_t(size.width()) * 4);
+    const int maximumStripRows =
+        qMin(64, int((qint64(rows.size.height()) + size.height() - 1) / size.height()));
+    QImage stripStorage = snowCanvasAllocateImage(QSize(rows.size.width(), maximumStripRows),
+                                                  QImage::Format_RGBA8888);
+    if (stripStorage.isNull())
+        return {};
     for (int y = 0; y < size.height(); ++y) {
         std::fill(sums.begin(), sums.end(), 0);
         const int first = int(qint64(y) * rows.size.height() / size.height());
@@ -182,14 +192,15 @@ Source prepare(const ScreenshotImageRowSource& rows,
             if (cancellation.isCancellationRequested())
                 return {};
             const int count = qMin(64, end - row);
-            QImage strip =
-                snowCanvasAllocateImage(QSize(rows.size.width(), count), QImage::Format_RGBA8888);
-            if (strip.isNull() || !rows.readRows(row, count, strip.bytesPerLine(), strip.bits(),
-                                                 strip.sizeInBytes())) {
+            if (!rows.readRows(row, count, stripStorage.bytesPerLine(), stripStorage.bits(),
+                               stripStorage.sizeInBytes())) {
                 *error = QCoreApplication::translate("ScreenshotSaveAsFileDialog",
                                                      "The screenshot pixels could not be read");
                 return {};
             }
+            // A view avoids allocating the same full-width scratch strip for every batch.
+            QImage strip(stripStorage.constBits(), stripStorage.width(), count,
+                         stripStorage.bytesPerLine(), QImage::Format_RGBA8888);
             classifyAlpha(strip.constBits(), strip.width(), strip.height(), strip.bytesPerLine(),
                           &alpha);
             strip = snowCanvasConvertImage(strip, QImage::Format_RGBA8888_Premultiplied);
@@ -311,7 +322,9 @@ std::shared_ptr<Encoded> render(std::shared_ptr<PreparedPixels> pixels,
             cachedPdf->quality == result->options.quality)
             result->pdf = std::move(cachedPdf);
         else
-            result->pdf = screenshot_pdf::prepare(rows, result->options.quality, error);
+            result->pdf = screenshot_pdf::prepare(rows, result->options.quality, error,
+                                                  result->pixels->alphaContent ==
+                                                      snow::image::AlphaContent::opaque);
         if (!result->pdf ||
             !screenshot_pdf::write(
                 *result->pdf, &output,

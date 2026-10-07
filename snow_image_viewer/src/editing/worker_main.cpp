@@ -109,6 +109,8 @@ QJsonObject runJob(const QJsonObject& job, std::stop_token stop, bool* artifactP
     const QString basePath = baseRaster.value(QStringLiteral("path")).toString();
     const QString artifactPath = job.value(QStringLiteral("artifactPath")).toString();
     const QString previewPath = job.value(QStringLiteral("previewPath")).toString();
+    const QString preparedPath = job.value(QStringLiteral("preparedPath")).toString();
+    const QJsonObject preparedRaster = job.value(QStringLiteral("preparedRaster")).toObject();
     QJsonObject result{{QStringLiteral("protocolVersion"), static_cast<int>(protocol::kVersion)},
                        {QStringLiteral("success"), false}};
     QString error;
@@ -119,6 +121,12 @@ QJsonObject runJob(const QJsonObject& job, std::stop_token stop, bool* artifactP
         (fileTransport && !isJobPath(sessionDirectory, basePath, nonce, true, false)) ||
         !isJobPath(sessionDirectory, artifactPath, nonce, false) ||
         !isJobPath(sessionDirectory, previewPath, nonce, false) ||
+        (!preparedPath.isEmpty() && !isJobPath(sessionDirectory, preparedPath, nonce, false)) ||
+        (!preparedRaster.isEmpty() &&
+         (preparedRaster.value(QStringLiteral("kind")).toString() !=
+              QStringLiteral("verified_file") ||
+          !isJobPath(sessionDirectory, preparedRaster.value(QStringLiteral("path")).toString(),
+                     nonce, true, false))) ||
         !protocol::settingsFromJson(job.value(QStringLiteral("settings")), &settings, &error)) {
         if (error.isEmpty())
             error = QStringLiteral("The worker job paths are invalid.");
@@ -205,15 +213,22 @@ void handleJob(const QJsonObject& job, std::stop_token stop) {
     const QString previewPath = job.value(QStringLiteral("previewPath")).toString();
     QFile::remove(artifactPath + QStringLiteral(".partial"));
     QFile::remove(previewPath + QStringLiteral(".partial"));
+    const QString preparedPath = job.value(QStringLiteral("preparedPath")).toString();
+    if (!preparedPath.isEmpty())
+        QFile::remove(preparedPath + QStringLiteral(".partial"));
     if (stop.stop_requested()) {
         if (!artifactPublished)
             QFile::remove(artifactPath);
+        if (!artifactPublished && !preparedPath.isEmpty())
+            QFile::remove(preparedPath);
         QFile::remove(previewPath);
         return;
     }
     if (!result.value(QStringLiteral("success")).toBool()) {
         if (!artifactPublished)
             QFile::remove(artifactPath);
+        if (!artifactPublished && !preparedPath.isEmpty())
+            QFile::remove(preparedPath);
         QFile::remove(previewPath);
     }
 

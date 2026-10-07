@@ -41,8 +41,9 @@ struct Payload {
     [[nodiscard]] QString path() const;
 };
 using Cancelled = std::function<bool()>;
+// verifiedOpaque may be set only after every source pixel's alpha was established as 255.
 [[nodiscard]] std::shared_ptr<Payload> prepare(const ScreenshotImageRowSource& source, int quality,
-                                               QString* error);
+                                               QString* error, bool verifiedOpaque = false);
 [[nodiscard]] bool write(const Payload& payload, QIODevice* output,
                          const ScreenshotPdfOptions& options, QString* error,
                          const Cancelled& cancelled = {});

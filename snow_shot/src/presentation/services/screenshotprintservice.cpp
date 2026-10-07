@@ -4,12 +4,15 @@
 #include <QApplication>
 #include <QCoreApplication>
 #include <QColorSpace>
+#include <QFutureWatcher>
 #include <QPainter>
 #include <QPointer>
 #include <QThread>
 #include <QWidget>
+#include <QtConcurrentRun>
 
 #include <algorithm>
+#include <atomic>
 #include <cmath>
 #include <utility>
 
@@ -17,6 +20,7 @@ struct ScreenshotPrintService::Request {
     QPointer<QObject> receiver;
     QPointer<QWidget> owner;
     QImage image;
+    std::shared_ptr<std::atomic_bool> cancelled = std::make_shared<std::atomic_bool>(false);
     Completion completion;
     bool legacy = false;
     bool completed = false;
@@ -24,6 +28,7 @@ struct ScreenshotPrintService::Request {
     QMetaObject::Connection receiverDestroyed;
 
     ~Request() {
+        cancelled->store(true, std::memory_order_release);
         QObject::disconnect(ownerDestroyed);
         QObject::disconnect(receiverDestroyed);
     }
@@ -81,13 +86,13 @@ bool ScreenshotPrintService::printImage(QObject* receiver, QWidget* owner, QImag
     m_request = std::make_shared<Request>();
     m_request->receiver = receiver;
     m_request->owner = owner;
-    m_request->image = opaqueImage(snapshot);
     m_request->completion = std::move(completion);
     const auto request = m_request;
     const auto abandon = [this, request] {
         if (m_request != request || request->completed)
             return;
         request->completed = true;
+        request->cancelled->store(true, std::memory_order_release);
         m_request.reset();
         QObject::disconnect(request->ownerDestroyed);
         QObject::disconnect(request->receiverDestroyed);
@@ -97,8 +102,22 @@ bool ScreenshotPrintService::printImage(QObject* receiver, QWidget* owner, QImag
     request->ownerDestroyed = connect(owner, &QObject::destroyed, this, abandon);
     if (receiver != owner)
         request->receiverDestroyed = connect(receiver, &QObject::destroyed, this, abandon);
-    QMetaObject::invokeMethod(
-        this, [this, request] { startBackend(request, false); }, Qt::QueuedConnection);
+    auto* watcher = new QFutureWatcher<QImage>(this);
+    connect(watcher, &QFutureWatcher<QImage>::finished, this, [this, request, watcher] {
+        const QImage prepared = watcher->result();
+        watcher->deleteLater();
+        if (m_request != request || request->completed)
+            return;
+        request->image = prepared;
+        startBackend(request, false);
+    });
+    watcher->setFuture(
+        QtConcurrent::run([snapshot = std::move(snapshot), cancelled = request->cancelled] {
+            if (cancelled->load(std::memory_order_acquire))
+                return QImage{};
+            QImage prepared = opaqueImage(snapshot);
+            return cancelled->load(std::memory_order_acquire) ? QImage{} : prepared;
+        }));
     return true;
 }
 

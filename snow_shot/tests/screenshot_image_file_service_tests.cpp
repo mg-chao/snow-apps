@@ -14,6 +14,7 @@
 #include <QTranslator>
 #include <QUrl>
 #include <QColorSpace>
+#include <QCryptographicHash>
 
 #include <cstdlib>
 #include <cstring>
@@ -462,6 +463,46 @@ void codecCapabilitiesAndEncodingOptionsMatchTheOutputContract() {
             "the JPEG codec must normalize the preserved quality-zero request when encoding");
 }
 
+void atomicWritersReturnEncodedIntegrity() {
+    QTemporaryDir directory;
+    for (auto format : {ScreenshotImageFileFormat::Png, ScreenshotImageFileFormat::Jpeg,
+                        ScreenshotImageFileFormat::Bmp, ScreenshotImageFileFormat::Webp,
+                        ScreenshotImageFileFormat::Jxl, ScreenshotImageFileFormat::Avif,
+                        ScreenshotImageFileFormat::Pdf}) {
+        const auto result = ScreenshotImageFileService::write(
+            image(), directory.filePath(QStringLiteral("digest")), format);
+        QFile file(result.path);
+        require(result.succeeded() && file.open(QIODevice::ReadOnly), "digest output failed");
+        const QByteArray bytes = file.readAll();
+        require(result.encodedByteCount == bytes.size() &&
+                    result.encodedSha256 ==
+                        QCryptographicHash::hash(bytes, QCryptographicHash::Sha256).toHex(),
+                "atomic writer returned integrity for bytes other than the committed output");
+        const auto copy = ScreenshotImageFileService::writeEncodedFile(
+            result.path, directory.filePath(QStringLiteral("copied")), format);
+        require(copy.succeeded() && copy.encodedByteCount == result.encodedByteCount &&
+                    copy.encodedSha256 == result.encodedSha256,
+                "encoded copy returned different integrity metadata");
+        const auto byteCopy = ScreenshotImageFileService::writeEncodedBytes(
+            bytes, directory.filePath(QStringLiteral("byte_copy")), format);
+        require(byteCopy.succeeded() && byteCopy.encodedByteCount == result.encodedByteCount &&
+                    byteCopy.encodedSha256 == result.encodedSha256,
+                "encoded byte copy returned different integrity metadata");
+        const auto cancelledBytes = ScreenshotImageFileService::writeEncodedBytes(
+            bytes, directory.filePath(QStringLiteral("cancelled/output")), format,
+            [] { return true; });
+        require(!cancelledBytes.succeeded() && cancelledBytes.encodedByteCount == -1 &&
+                    cancelledBytes.encodedSha256.isEmpty() &&
+                    !QDir(directory.filePath(QStringLiteral("cancelled"))).exists(),
+                "pre-cancelled encoded byte copy created output or published success metadata");
+        const auto cancelled = ScreenshotImageFileService::writeEncodedFile(
+            result.path, copy.path, format, [] { return true; });
+        require(!cancelled.succeeded() && cancelled.encodedByteCount == -1 &&
+                    cancelled.encodedSha256.isEmpty(),
+                "failed writes published success metadata");
+    }
+}
+
 void encodedFilesPublishAtomically() {
     QTemporaryDir directory;
     require(directory.isValid(), "encoded save directory unavailable");
@@ -512,6 +553,7 @@ int main(int argc, char** argv) {
         retriesNextDirectoryAndPublishesFileOnlyClipboardData();
         codecCapabilitiesAndEncodingOptionsMatchTheOutputContract();
         encodedFilesPublishAtomically();
+        atomicWritersReturnEncodedIntegrity();
     } catch (const std::exception& error) {
         std::cerr << error.what() << '\n';
         return EXIT_FAILURE;

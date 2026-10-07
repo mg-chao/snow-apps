@@ -249,6 +249,8 @@ bool ScreenshotExportService::requestSelectionResultAtScale(const QRect& selecti
             [worker, guardedReceiver, guardedCompletionContext, documentSession, smartErase,
              selection, style, sources, spec, requestTimer, workerQueueTimer,
              callback = std::move(callback)]() mutable {
+                if (guardedReceiver.isNull() || guardedCompletionContext.isNull())
+                    return;
                 snow_shot::presentation::clipboard_perf::duration(
                     "export.worker_queue_delay", workerQueueTimer.elapsedNanoseconds());
                 QImage image = worker->renderSelection(documentSession, smartErase, selection,

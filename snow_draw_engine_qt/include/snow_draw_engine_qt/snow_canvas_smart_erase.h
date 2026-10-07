@@ -1,6 +1,7 @@
 #pragma once
 
 #include <QImage>
+#include <QByteArray>
 #include <QList>
 #include <QRectF>
 #include <memory>
@@ -17,4 +18,6 @@ class SnowCanvasSmartEraseSnapshot {
   public:
     struct Data;
     std::shared_ptr<const Data> data;
+    // Stable while geometry and immutable reconstruction results remain unchanged.
+    QByteArray cacheKey() const;
 };

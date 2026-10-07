@@ -5,9 +5,11 @@
 #include <QApplication>
 #include <QCoreApplication>
 #include <QDir>
+#include <QFutureWatcher>
 #include <QPointer>
 #include <QTemporaryDir>
 #include <QWidget>
+#include <QtConcurrentRun>
 
 #include <windows.h>
 #include <winternl.h>
@@ -17,6 +19,7 @@
 #include <winrt/Windows.Graphics.Printing.h>
 
 #include <mutex>
+#include <atomic>
 #include <optional>
 #include <unordered_map>
 #include <utility>
@@ -247,19 +250,45 @@ class PhotoPrintJob final : public std::enable_shared_from_this<PhotoPrintJob> {
         m_owner = owner;
         m_completion = std::move(completion);
         const auto self = shared_from_this();
+        m_ownerDestroyed = QObject::connect(owner, &QObject::destroyed, qApp, [self] {
+            self->m_cancelled->store(true, std::memory_order_release);
+            if (self->m_window)
+                PostMessageW(self->m_window, WM_CLOSE, 0, 0);
+        });
+        m_directory = std::make_shared<QTemporaryDir>(QDir::tempPath() +
+                                                      QStringLiteral("/snow-shot-print-XXXXXX"));
+        const QString path =
+            QDir::toNativeSeparators(m_directory->filePath(QStringLiteral("Screenshot.png")));
+        auto* watcher = new QFutureWatcher<bool>(qApp);
+        QObject::connect(
+            watcher, &QFutureWatcher<bool>::finished, qApp, [self, watcher, path, api] {
+                const bool saved = watcher->result();
+                watcher->deleteLater();
+                if (!self->m_owner) {
+                    self->completeLater({Service::Status::Cancelled, {}});
+                } else if (!saved) {
+                    self->completeLater({Service::Status::Failed,
+                                         printError(HRESULT_FROM_WIN32(ERROR_WRITE_FAULT))});
+                } else {
+                    self->startWizard(path, api);
+                }
+            });
+        watcher->setFuture(
+            QtConcurrent::run([image, directory = m_directory, cancelled = m_cancelled, path] {
+                if (cancelled->load(std::memory_order_acquire) || !directory->isValid())
+                    return false;
+                const bool saved = image.save(path, "PNG");
+                return saved && !cancelled->load(std::memory_order_acquire);
+            }));
+    }
+
+  private:
+    void startWizard(const QString& path, ScreenshotWindowsPrintDialogApi api) {
+        const auto self = shared_from_this();
         try {
             winrt::check_hresult(CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED));
             m_initialized = true;
-            m_ownerHandle = reinterpret_cast<HWND>(owner->winId());
-            m_directory = std::make_shared<QTemporaryDir>(
-                QDir::tempPath() + QStringLiteral("/snow-shot-print-XXXXXX"));
-            const QString path =
-                QDir::toNativeSeparators(m_directory->filePath(QStringLiteral("Screenshot.png")));
-            if (!m_directory->isValid() || !image.save(path, "PNG")) {
-                completeLater(
-                    {Service::Status::Failed, printError(HRESULT_FROM_WIN32(ERROR_WRITE_FAULT))});
-                return;
-            }
+            m_ownerHandle = reinterpret_cast<HWND>(m_owner->winId());
             winrt::com_ptr<IShellItem> item;
             winrt::check_hresult(SHCreateItemFromParsingName(
                 reinterpret_cast<LPCWSTR>(path.utf16()), nullptr, IID_PPV_ARGS(item.put())));
@@ -290,10 +319,6 @@ class PhotoPrintJob final : public std::enable_shared_from_this<PhotoPrintJob> {
                 winrt::throw_hresult(HRESULT_FROM_WIN32(GetLastError()));
             }
             s_jobs.emplace(m_hook, self);
-            m_ownerDestroyed = QObject::connect(owner, &QObject::destroyed, qApp, [self] {
-                if (self->m_window)
-                    PostMessageW(self->m_window, WM_CLOSE, 0, 0);
-            });
             POINTL point{};
             DWORD effect = DROPEFFECT_COPY;
             winrt::check_hresult(target->DragEnter(data.get(), MK_LBUTTON, point, &effect));
@@ -315,6 +340,7 @@ class PhotoPrintJob final : public std::enable_shared_from_this<PhotoPrintJob> {
         }
     }
 
+  public:
     void dataReleased() {
         if (!qApp)
             return;
@@ -410,6 +436,7 @@ class PhotoPrintJob final : public std::enable_shared_from_this<PhotoPrintJob> {
     std::optional<Service::Result> m_result;
     QMetaObject::Connection m_ownerDestroyed;
     std::shared_ptr<QTemporaryDir> m_directory;
+    std::shared_ptr<std::atomic_bool> m_cancelled = std::make_shared<std::atomic_bool>(false);
     Service::Completion m_completion;
 };
 

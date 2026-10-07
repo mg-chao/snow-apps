@@ -53,6 +53,18 @@ constexpr float normalized_byte(std::uint8_t value) noexcept {
     return static_cast<float>(value) / 255.0F;
 }
 
+float linear_byte(std::byte value) {
+    // Packed 8-bit samples have only 256 possible transfer-function inputs.
+    // Use the same float operations as the scalar path, once per input value.
+    static const auto values = [] {
+        std::array<float, 256> result{};
+        for (std::size_t index = 0; index < result.size(); ++index)
+            result[index] = srgb_to_linear(normalized_byte(static_cast<std::uint8_t>(index)));
+        return result;
+    }();
+    return values[std::to_integer<std::uint8_t>(value)];
+}
+
 Result<void> validate_processable_format(const PixelFormat& format) {
     if ((format.sample_type != SampleType::unsigned_integer ||
          (format.bits_per_channel != 8 && format.bits_per_channel != 16)) &&
@@ -155,15 +167,10 @@ Pixel read_rgba8_pixel(const ImageView& view, std::uint32_t x, std::uint32_t y, 
         return static_cast<float>(std::to_integer<std::uint8_t>(source[channel])) / 255.0F;
     };
     Pixel pixel;
-    pixel.red = sample(bgra ? 2U : 0U);
-    pixel.green = sample(1U);
-    pixel.blue = sample(bgra ? 0U : 2U);
+    pixel.red = linear_rgb ? linear_byte(source[bgra ? 2U : 0U]) : sample(bgra ? 2U : 0U);
+    pixel.green = linear_rgb ? linear_byte(source[1U]) : sample(1U);
+    pixel.blue = linear_rgb ? linear_byte(source[bgra ? 0U : 2U]) : sample(bgra ? 0U : 2U);
     pixel.alpha = sample(3U);
-    if (linear_rgb) {
-        pixel.red = srgb_to_linear(clamp_unit(pixel.red));
-        pixel.green = srgb_to_linear(clamp_unit(pixel.green));
-        pixel.blue = srgb_to_linear(clamp_unit(pixel.blue));
-    }
     return pixel;
 }
 
@@ -758,6 +765,7 @@ Result<void> resize_packed_into(const ImageView* image_source, const RasterSourc
         try {
             snow::memory::PixelArray<Pixel> ring(ring_rows * options.width);
             std::vector<int> ring_sources(ring_rows, -1);
+            std::vector<const Pixel*> vertical_rows(ring_rows);
             snow::memory::PixelArray<std::byte> source_row;
             std::unordered_map<int, std::size_t> source_slots;
             const bool indexed_slots = ring_rows > 32U;
@@ -818,6 +826,20 @@ Result<void> resize_packed_into(const ImageView* image_source, const RasterSourc
                         return;
                     }
                 }
+                // Row slots are invariant across every column of this output row.
+                // Resolve them once, keeping the coefficient accumulation order.
+                for (std::size_t coefficient = vertical_first; coefficient < vertical_last;
+                     ++coefficient) {
+                    const int source_y = vertical.value().indices[coefficient];
+                    const std::size_t slot =
+                        indexed_slots
+                            ? source_slots.at(source_y)
+                            : static_cast<std::size_t>(
+                                  std::find(ring_sources.begin(), ring_sources.end(), source_y) -
+                                  ring_sources.begin());
+                    vertical_rows[coefficient - vertical_first] =
+                        ring.data() + slot * options.width;
+                }
                 std::byte* output_row =
                     output_pixels.data() + static_cast<std::size_t>(y) * output_stride;
                 for (std::uint32_t x = 0; x < options.width; ++x) {
@@ -826,14 +848,7 @@ Result<void> resize_packed_into(const ImageView* image_source, const RasterSourc
                     Pixel value{};
                     for (std::size_t coefficient = vertical_first; coefficient < vertical_last;
                          ++coefficient) {
-                        const int source_y = vertical.value().indices[coefficient];
-                        const std::size_t slot =
-                            indexed_slots
-                                ? source_slots.at(source_y)
-                                : static_cast<std::size_t>(std::find(ring_sources.begin(),
-                                                                     ring_sources.end(), source_y) -
-                                                           ring_sources.begin());
-                        value = add_weighted(value, ring[slot * options.width + x],
+                        value = add_weighted(value, vertical_rows[coefficient - vertical_first][x],
                                              vertical.value().values[coefficient],
                                              options.premultiply_alpha);
                     }

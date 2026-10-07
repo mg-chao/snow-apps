@@ -69,6 +69,15 @@ bool formatSupportsLossless(Format format) {
            format == Format::Avif;
 }
 
+bool samePreviewPixels(ScreenshotSaveExportOptions left, ScreenshotSaveExportOptions right) {
+    if (left.format == Format::Pdf && right.format == Format::Pdf) {
+        // The paper is drawn by the preview canvas; title and page layout never alter the tiles.
+        left.pdfPageSize = right.pdfPageSize;
+        left.pdfTitle = right.pdfTitle;
+    }
+    return left == right;
+}
+
 QString translated(const char* text) {
     return QCoreApplication::translate("ScreenshotSaveAsFileDialog", text);
 }
@@ -1006,8 +1015,13 @@ class SaveContent final : public QWidget {
         if (m_closed || m_saving || !m_encoded || !m_requestedOptions ||
             m_encoded->options != *m_requestedOptions)
             return;
-        if (m_renderedPreviewOptions == m_requestedOptions) {
+        if (m_renderedPreviewOptions &&
+            samePreviewPixels(*m_renderedPreviewOptions, *m_requestedOptions)) {
+            const bool metadataChanged = *m_renderedPreviewOptions != *m_requestedOptions;
+            m_renderedPreviewOptions = m_requestedOptions;
             m_preview->setBusy(false);
+            if (metadataChanged)
+                setProperty("previewGeneration", QVariant::fromValue(m_generation));
             return;
         }
         if (m_encoded->codecResult.roundTrip == snow::image::PixelRoundTrip::exact &&

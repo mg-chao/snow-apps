@@ -71,6 +71,48 @@ Result<std::uint64_t> maximum_pixel_bytes(const DocumentDescriptor& descriptor) 
     return maximum;
 }
 
+Result<std::uint64_t> webp_picture_storage(const ResourcePlanRequest& request,
+                                           std::uint64_t raster_bytes) {
+    const auto& frames = request.output.frames;
+    const bool animation = frames.size() > 1;
+    const bool native_planar = request.raster_route == RasterEncodeRoute::native && !animation &&
+                               !request.encode_options.lossless &&
+                               frames.front().layout.color_model == ColorModel::ycbcr;
+    std::uint64_t storage = raster_bytes;
+    if (!native_planar) {
+        std::uint64_t pixels = 0;
+        if (!multiply(request.output.canvas_width, request.output.canvas_height, &pixels) ||
+            !multiply(pixels, animation ? 8U : 6U, &storage))
+            return overflow();
+        if (!animation && !request.encode_options.lossless) {
+            // Packed input still owns ARGB when libwebp allocates YUV420. The
+            // route avoids materializing the source, not these codec buffers.
+            const std::uint64_t chroma_width =
+                (static_cast<std::uint64_t>(request.output.canvas_width) + 1U) / 2U;
+            const std::uint64_t chroma_height =
+                (static_cast<std::uint64_t>(request.output.canvas_height) + 1U) / 2U;
+            std::uint64_t chroma_bytes = 0;
+            std::uint64_t picture_bytes = 0;
+            if (!multiply(chroma_width, chroma_height, &chroma_bytes) ||
+                !multiply(chroma_bytes, 2U, &chroma_bytes) ||
+                !multiply(pixels, 5U, &picture_bytes) ||
+                !add(picture_bytes, chroma_bytes, &picture_bytes))
+                return overflow();
+            const bool alpha =
+                frames.front().layout.alpha != AlphaMode::none &&
+                request.encode_options.verified_alpha_content != AlphaContent::opaque;
+            if (alpha && !add(picture_bytes, pixels, &picture_bytes))
+                return overflow();
+            // Keep the existing packed working-set allowance, including the
+            // lossless path, and raise it when the live picture buffers need more.
+            storage = std::max(storage, picture_bytes);
+        }
+    }
+    if (!add(storage, std::uint64_t{8} << 20U, &storage))
+        return overflow();
+    return storage;
+}
+
 void include_peak(ResourceFootprint* peak, const ResourceFootprint& value) {
     peak->private_memory_bytes = std::max(peak->private_memory_bytes, value.private_memory_bytes);
     peak->mapped_bytes = std::max(peak->mapped_bytes, value.mapped_bytes);
@@ -277,18 +319,10 @@ Result<ResourcePlan> plan_resources(const ResourcePlanRequest& request) {
         if (!add(metadata_bytes, request.output.metadata.exif.size(), &metadata_bytes) ||
             !add(metadata_bytes, request.output.metadata.xmp.size(), &metadata_bytes))
             return overflow();
-        std::uint64_t picture_state = 0;
-        if (request.raster_route == RasterEncodeRoute::native) {
-            if (!add(output_bytes.value(), std::uint64_t{8} << 20U, &picture_state))
-                return overflow();
-        } else {
-            if (!multiply(static_cast<std::uint64_t>(request.output.canvas_width),
-                          request.output.canvas_height, &picture_state) ||
-                !multiply(picture_state, animation ? 8U : 6U, &picture_state) ||
-                !add(picture_state, std::uint64_t{8} << 20U, &picture_state))
-                return overflow();
-        }
-        encode.private_memory_bytes = picture_state;
+        const auto picture_state = webp_picture_storage(request, output_bytes.value());
+        if (!picture_state)
+            return picture_state.error();
+        encode.private_memory_bytes = picture_state.value();
         if (animation || (request.encode_options.preserve_metadata && metadata_bytes != 0)) {
             std::uint64_t assembly = 0;
             if (!multiply(artifact_bytes, 2U, &assembly) ||

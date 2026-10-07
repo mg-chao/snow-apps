@@ -20,6 +20,7 @@
 #include <QThread>
 #include <QScopeGuard>
 #include <QColorSpace>
+#include <QCryptographicHash>
 
 #include <atomic>
 #include <cstdlib>
@@ -711,6 +712,196 @@ void nonPngSaveReadsPixelsWithoutEncodingPng() {
     }
 }
 
+void fileEncodingsCoalesceAndNormalizeOptions() {
+    const QImage image = testImage();
+    QTemporaryDir directory;
+    QObject receiver;
+    for (auto format : {ScreenshotImageFileFormat::Png, ScreenshotImageFileFormat::Jpeg,
+                        ScreenshotImageFileFormat::Bmp, ScreenshotImageFileFormat::Webp,
+                        ScreenshotImageFileFormat::Jxl, ScreenshotImageFileFormat::Avif}) {
+        std::atomic_int encodings = 0;
+        ScreenshotExportArtifact::PngCachePolicy policy;
+        policy.maximumBytes = format == ScreenshotImageFileFormat::Png ? 1 : 64 * 1024 * 1024;
+        policy.fileEncodingStarted = [&](ScreenshotImageFileFormat encodedFormat) {
+            require(encodedFormat == format, "file encoding observer received the wrong format");
+            ++encodings;
+        };
+        ScreenshotExportArtifact artifact(ScreenshotExportSource::fromImage(image),
+                                          ScreenshotCompressionLevel::Low, policy);
+        int completed = 0;
+        QByteArray expected;
+        const auto saved = [&](ScreenshotExportTaskResult result) {
+            QFile file(result.savedPath);
+            require(result.succeeded() && file.open(QIODevice::ReadOnly),
+                    "shared file output failed");
+            const auto bytes = file.readAll();
+            require(result.encodedByteCount == bytes.size() &&
+                        result.encodedSha256 ==
+                            QCryptographicHash::hash(bytes, QCryptographicHash::Sha256).toHex(),
+                    "shared output lost its encoded digest");
+            if (expected.isEmpty())
+                expected = bytes;
+            else
+                require(expected == bytes, "matching outputs did not reuse identical bytes");
+            ++completed;
+        };
+        const ScreenshotImageEncodingOptions encoding{90, ScreenshotCompressionLevel::Low};
+        require(artifact.requestSaveToPath(&receiver, directory.filePath(QStringLiteral("manual")),
+                                           format, encoding, saved) &&
+                    artifact.requestAutomaticSave(&receiver, {directory.path()}, format,
+                                                  QStringLiteral("automatic"), encoding, saved),
+                "shared file requests rejected");
+        processUntil([&] { return completed == 2; });
+        require(encodings == 1, "concurrent file saves performed duplicate encodings");
+        auto compatible = encoding;
+        if (format == ScreenshotImageFileFormat::Bmp || format == ScreenshotImageFileFormat::Png)
+            compatible.quality = -10;
+        if (format == ScreenshotImageFileFormat::Bmp || format == ScreenshotImageFileFormat::Jpeg)
+            compatible.compressionLevel = ScreenshotCompressionLevel::High;
+        require(artifact.requestSaveToPath(&receiver,
+                                           directory.filePath(QStringLiteral("repeated")), format,
+                                           compatible, saved),
+                "cached file save rejected");
+        processUntil([&] { return completed == 3; });
+        require(encodings == 1, "ineffective encoding options invalidated cached output");
+        auto different = encoding;
+        if (ScreenshotImageFileService::supportsQuality(format))
+            different.quality = 75;
+        else if (ScreenshotImageFileService::supportsCompressionLevel(format))
+            different.compressionLevel = ScreenshotCompressionLevel::High;
+        else
+            continue;
+        require(artifact.requestSaveToPath(
+                    &receiver, directory.filePath(QStringLiteral("changed")), format, different,
+                    [&](ScreenshotExportTaskResult result) {
+                        require(result.succeeded(), "changed file encoding failed");
+                        ++completed;
+                    }),
+                "changed file request rejected");
+        processUntil([&] { return completed == 4; });
+        require(encodings == 2, "effective encoding options reused incompatible output");
+    }
+}
+
+void pdfPayloadReusePreservesDestinationMetadata() {
+    QTemporaryDir directory;
+    QObject receiver;
+    std::atomic_int encodings = 0;
+    ScreenshotExportArtifact::PngCachePolicy policy;
+    policy.fileEncodingStarted = [&](ScreenshotImageFileFormat) { ++encodings; };
+    ScreenshotExportArtifact artifact(ScreenshotExportSource::fromImage(testImage()),
+                                      ScreenshotCompressionLevel::Medium, policy);
+    int completed = 0;
+    QByteArray portrait;
+    QByteArray landscape;
+    auto save = [&](const QString& name, ScreenshotPdfPageSize page, QByteArray& bytes) {
+        require(artifact.requestSaveToPath(
+                    &receiver, directory.filePath(name), ScreenshotImageFileFormat::Pdf, {},
+                    [&bytes, &completed](ScreenshotExportTaskResult result) {
+                        QFile file(result.savedPath);
+                        require(result.succeeded() && file.open(QIODevice::ReadOnly),
+                                "PDF reuse failed");
+                        bytes = file.readAll();
+                        ++completed;
+                    },
+                    ScreenshotPdfOptions{page}),
+                "PDF reuse request rejected");
+    };
+    save(QStringLiteral("portrait"), ScreenshotPdfPageSize::PortraitA4, portrait);
+    save(QStringLiteral("landscape"), ScreenshotPdfPageSize::LandscapeA4, landscape);
+    processUntil([&] { return completed == 2; });
+    require(encodings == 1 && portrait != landscape &&
+                portrait.contains("0070006f007200740072006100690074") &&
+                landscape.contains("006c0061006e006400730063006100700065"),
+            "PDF layout or filename changes re-encoded tiles or lost document metadata");
+}
+
+void failedFileEncodingCanRetry() {
+    QTemporaryDir directory;
+    QObject receiver;
+    const QImage image = testImage();
+    std::atomic_bool fail = true;
+    std::atomic_int encodings = 0;
+    auto rows = rowSourceFor(image, {});
+    const auto read = rows.readRows;
+    rows.readRows = [&](int first, int count, qsizetype stride, uchar* pixels, qsizetype bytes) {
+        return !fail.load() && read(first, count, stride, pixels, bytes);
+    };
+    ScreenshotExportArtifact::PngCachePolicy policy;
+    policy.fileEncodingStarted = [&](ScreenshotImageFileFormat) { ++encodings; };
+    ScreenshotExportArtifact artifact(
+        ScreenshotExportSource::fromProducer({},
+                                             [rows](std::function<bool()> cancelled) mutable {
+                                                 rows.cancellationRequested = std::move(cancelled);
+                                                 return rows;
+                                             }),
+        ScreenshotCompressionLevel::Medium, policy);
+    int completed = 0;
+    require(artifact.requestSaveToPath(&receiver, directory.filePath(QStringLiteral("retry.bmp")),
+                                       ScreenshotImageFileFormat::Bmp, {},
+                                       [&](ScreenshotExportTaskResult result) {
+                                           require(!result.succeeded(),
+                                                   "failed rows published a file");
+                                           ++completed;
+                                       }),
+            "failing file request rejected");
+    processUntil([&] { return completed == 1; });
+    fail = false;
+    require(artifact.requestSaveToPath(&receiver, directory.filePath(QStringLiteral("retry.bmp")),
+                                       ScreenshotImageFileFormat::Bmp, {},
+                                       [&](ScreenshotExportTaskResult result) {
+                                           require(result.succeeded(),
+                                                   "failed file entry poisoned the retry");
+                                           ++completed;
+                                       }),
+            "file retry rejected");
+    processUntil([&] { return completed == 2; });
+    require(encodings == 2, "failed encoding was incorrectly retained");
+}
+
+void largeBmpUsesDirectStreamingAndDiskEntriesRespectBudget() {
+    QTemporaryDir directory;
+    QObject receiver;
+    const QImage image = testImage();
+    std::atomic_int encodings = 0;
+    ScreenshotExportArtifact::PngCachePolicy policy;
+    policy.maximumBytes = 1;
+    policy.fileEncodingStarted = [&](ScreenshotImageFileFormat) { ++encodings; };
+    ScreenshotExportArtifact bmp(ScreenshotExportSource::fromImage(image),
+                                 ScreenshotCompressionLevel::Medium, policy);
+    int completed = 0;
+    require(bmp.requestSaveToPath(&receiver, directory.filePath(QStringLiteral("stream.bmp")),
+                                  ScreenshotImageFileFormat::Bmp, {},
+                                  [&](ScreenshotExportTaskResult result) {
+                                      require(result.succeeded() &&
+                                                  hasSamePixels(QImage(result.savedPath), image),
+                                              "direct BMP streaming changed pixels");
+                                      ++completed;
+                                  }),
+            "direct BMP request rejected");
+    processUntil([&] { return completed == 1; });
+    require(encodings == 0, "large uncompressed BMP unnecessarily spooled an encoded artifact");
+    policy.maximumFileBytes = 0;
+    ScreenshotExportArtifact png(ScreenshotExportSource::fromImage(image),
+                                 ScreenshotCompressionLevel::Medium, policy);
+    const auto save = [&](ScreenshotExportTaskResult result) {
+        require(result.succeeded(), "unretained disk output failed");
+        ++completed;
+    };
+    require(png.requestSaveToPath(&receiver, directory.filePath(QStringLiteral("first.png")),
+                                  ScreenshotImageFileFormat::Png, {}, save) &&
+                png.requestSaveToPath(&receiver, directory.filePath(QStringLiteral("second.png")),
+                                      ScreenshotImageFileFormat::Png, {}, save),
+            "unretained disk requests rejected");
+    processUntil([&] { return completed == 3; });
+    require(encodings == 1, "unretained in-flight disk encoding did not coalesce");
+    require(png.requestSaveToPath(&receiver, directory.filePath(QStringLiteral("third.png")),
+                                  ScreenshotImageFileFormat::Png, {}, save),
+            "unretained disk retry rejected");
+    processUntil([&] { return completed == 4; });
+    require(encodings == 2, "zero disk budget retained an encoded artifact");
+}
+
 void imageRequestsShareOneAsyncLoad() {
     int loadCount = 0;
     std::function<void(QImage)> finishLoad;
@@ -956,6 +1147,76 @@ void pngCacheBudgetEvictsLeastRecentlyUsedResults() {
             "evicted PNG could not be encoded again");
 }
 
+void cachedPngSavesReuseBytesBeyondRawCacheBudget() {
+    QImage image(1024, 1024, QImage::Format_RGBA8888);
+    image.fill(Qt::white);
+    image.setColorSpace(QColorSpace::SRgb);
+    QTemporaryDir directory;
+    require(directory.isValid(), "cached PNG fixture directory unavailable");
+    QObject receiver;
+    for (const auto compression :
+         {ScreenshotCompressionLevel::Medium, ScreenshotCompressionLevel::High}) {
+        std::atomic_int rowReads = 0;
+        std::atomic_int pngEncodings = 0;
+        std::atomic_int fileEncodings = 0;
+        auto rows = rowSourceFor(image, {});
+        const auto read = rows.readRows;
+        rows.readRows = [&, read](int first, int count, qsizetype stride, uchar* pixels,
+                                  qsizetype capacity) {
+            ++rowReads;
+            return read(first, count, stride, pixels, capacity);
+        };
+        ScreenshotExportArtifact::PngCachePolicy policy;
+        policy.maximumBytes = 16 * 1024;
+        policy.encodingStarted = [&] { ++pngEncodings; };
+        policy.fileEncodingStarted = [&](ScreenshotImageFileFormat) { ++fileEncodings; };
+        ScreenshotExportArtifact artifact(
+            ScreenshotExportSource::fromProducer({},
+                                                 [rows](std::function<bool()> cancelled) {
+                                                     auto source = rows;
+                                                     source.cancellationRequested =
+                                                         std::move(cancelled);
+                                                     return source;
+                                                 }),
+            compression, policy);
+        QByteArray canonical;
+        require(artifact.requestCanonicalPng(&receiver,
+                                             [&](ScreenshotExportEncodingResult result) {
+                                                 require(result.succeeded(),
+                                                         "canonical PNG fixture encoding failed");
+                                                 canonical = result.image.bytes();
+                                             }),
+                "canonical PNG fixture request rejected");
+        processUntil([&] { return !canonical.isEmpty(); });
+        require(!artifact.shouldCachePng(image.size()) && artifact.cachedPng(compression).isValid(),
+                "fixture must retain its PNG beyond the raw pixel budget");
+        const int readsBeforeSave = rowReads.load();
+        int completed = 0;
+        const auto saved = [&](ScreenshotExportTaskResult result) {
+            QFile file(result.savedPath);
+            require(result.succeeded() && file.open(QIODevice::ReadOnly) &&
+                        file.readAll() == canonical,
+                    "cached PNG save changed its encoded bytes");
+            require(result.encodedByteCount == canonical.size() &&
+                        result.encodedSha256 ==
+                            QCryptographicHash::hash(canonical, QCryptographicHash::Sha256).toHex(),
+                    "cached PNG save lost its encoded digest");
+            ++completed;
+        };
+        const ScreenshotImageEncodingOptions encoding{100, compression};
+        require(artifact.requestSaveToPath(&receiver,
+                                           directory.filePath(QStringLiteral("cached-manual.png")),
+                                           ScreenshotImageFileFormat::Png, encoding, saved) &&
+                    artifact.requestAutomaticSave(
+                        &receiver, {directory.path()}, ScreenshotImageFileFormat::Png,
+                        QStringLiteral("cached-automatic"), encoding, saved),
+                "cached PNG save requests rejected");
+        processUntil([&] { return completed == 2; });
+        require(pngEncodings == 1 && fileEncodings == 0 && rowReads == readsBeforeSave,
+                "PNG saves must reuse retained bytes before applying the raw pixel budget");
+    }
+}
+
 void fileOutputsStreamBeyondCacheBudget() {
     const QImage image = testImage();
     QTemporaryDir directory;
@@ -1107,6 +1368,54 @@ void cancellationSuppressesPendingCallbacks() {
             "cancelled artifact delivered a pending callback");
 }
 
+void cancelledEncodersRetainEveryConsumerLease() {
+    QTemporaryDir directory;
+    QObject receiver;
+    for (const auto format : {ScreenshotImageFileFormat::Png, ScreenshotImageFileFormat::Bmp,
+                              ScreenshotImageFileFormat::Jpeg}) {
+        const auto entered = std::make_shared<std::atomic_bool>(false);
+        const auto release = std::make_shared<std::atomic_bool>(false);
+        const auto unblock = qScopeGuard([release] { release->store(true); });
+        auto rows = rowSourceFor(testImage(), {});
+        const auto read = rows.readRows;
+        rows.readRows = [entered, release, read](int first, int count, qsizetype stride,
+                                                 uchar* target, qsizetype capacity) {
+            entered->store(true);
+            while (!release->load())
+                QThread::msleep(1);
+            return read(first, count, stride, target, capacity);
+        };
+        auto artifact = std::make_unique<ScreenshotExportArtifact>(
+            ScreenshotExportSource::fromProducer({}, [rows](std::function<bool()> cancellation) {
+                auto source = rows;
+                source.cancellationRequested = std::move(cancellation);
+                return source;
+            }));
+        auto firstLease = std::make_shared<int>(1);
+        auto secondLease = std::make_shared<int>(2);
+        const std::weak_ptr<int> first = firstLease;
+        const std::weak_ptr<int> second = secondLease;
+        int callbacks = 0;
+        const auto complete = [&](ScreenshotExportTaskResult) { ++callbacks; };
+        require(artifact->requestSaveToPath(&receiver, directory.filePath(QStringLiteral("first")),
+                                            format, {}, complete, {}, firstLease),
+                "first leased encoding starts");
+        processUntil([&] { return entered->load(); });
+        require(artifact->requestSaveToPath(&receiver, directory.filePath(QStringLiteral("second")),
+                                            format, {}, complete, {}, secondLease),
+                "second leased consumer joins running encoding");
+        firstLease.reset();
+        secondLease.reset();
+        artifact->cancel();
+        artifact.reset();
+        require(!first.expired() && !second.expired(),
+                "cancelled encoder released a consumer lease before worker completion");
+        release->store(true);
+        processUntil([&] { return first.expired() && second.expired(); });
+        require(callbacks == 0, "cancelled encoder delivered a consumer callback");
+    }
+}
+
 void pinnedViewportSourceRendersExpectedPixels() {
     SnowCanvasRuntime runtime;
     const QByteArray session = runtime.serializeDocumentSession();
@@ -1137,6 +1446,35 @@ void pinnedViewportSourceRendersExpectedPixels() {
             "pinned viewport artifact did not return the rendered pixels");
 }
 
+void emptyPinnedSourceMatchesCanvasProjection() {
+    SnowCanvasRuntime runtime;
+    QImage background(37, 19, QImage::Format_RGBA8888);
+    for (int y = 0; y < background.height(); ++y)
+        for (int x = 0; x < background.width(); ++x)
+            background.setPixelColor(x, y,
+                                     QColor(x * 5, y * 11, (x + y) * 4, (x * 7 + y * 3) % 256));
+    background.setColorSpace(QColorSpace::SRgb);
+    QObject receiver;
+    for (const QSize size : {QSize(37, 19), QSize(13, 7), QSize(74, 38)}) {
+        const QRectF rect(-17.25, 4.5, 37.25, 19.75);
+        QImage expected = runtime.renderToImage(rect, size, {{background, rect}});
+        expected.setColorSpace(background.colorSpace());
+        ScreenshotPinnedViewportExportSource source{{}, background, rect, size, {}, {}, 1.0, {}};
+        ScreenshotExportArtifact artifact(
+            ScreenshotExportSource::fromPinnedViewport(std::move(source)));
+        QImage rendered;
+        require(artifact.requestImage(&receiver,
+                                      [&](ScreenshotExportImageResult result) {
+                                          require(result.succeeded(), "empty pinned export failed");
+                                          rendered = result.image;
+                                      }),
+                "empty pinned export rejected");
+        processUntil([&] { return !rendered.isNull(); });
+        require(hasSamePixels(rendered, expected) && rendered.colorSpace() == expected.colorSpace(),
+                "empty document fast path changed projection, alpha, or color metadata");
+    }
+}
+
 void pinnedViewportExportsReleaseImportedSnapshots() {
     QTemporaryDir directory;
     auto& storage = snow_shot::storage::ApplicationStorage::instance();
@@ -1148,7 +1486,7 @@ void pinnedViewportExportsReleaseImportedSnapshots() {
     for (const bool serializedDocument : {false, true}) {
         std::weak_ptr<const SnowCanvasSmartEraseSnapshot::Data> snapshot;
         QObject receiver;
-        bool completed = false;
+        int completed = 0;
         {
             SnowCanvasRuntime runtime;
             auto smartErase = runtime.smartEraseSnapshot();
@@ -1166,16 +1504,31 @@ void pinnedViewportExportsReleaseImportedSnapshots() {
                 1.0,
                 {},
             };
-            ScreenshotExportArtifact artifact(
-                ScreenshotExportSource::fromPinnedViewport(std::move(source)));
+            const auto exportSource = ScreenshotExportSource::fromPinnedViewport(std::move(source));
+            ScreenshotExportArtifact artifact(exportSource);
+            ScreenshotExportArtifact otherArtifact(exportSource);
+            QImage firstImage;
+            QImage secondImage;
             require(artifact.requestImage(&receiver,
                                           [&](ScreenshotExportImageResult result) {
                                               require(result.succeeded(),
                                                       "lifetime export succeeds");
-                                              completed = true;
+                                              firstImage = std::move(result.image);
+                                              ++completed;
                                           }),
                     "snapshot lifetime export is scheduled");
-            processUntil([&] { return completed; });
+            require(otherArtifact.requestImage(&receiver,
+                                               [&](ScreenshotExportImageResult result) {
+                                                   require(result.succeeded(),
+                                                           "copied pinned source succeeds");
+                                                   secondImage = std::move(result.image);
+                                                   ++completed;
+                                               }),
+                    "copied pinned source is scheduled");
+            processUntil([&] { return completed == 2; });
+            require(firstImage.constBits() == secondImage.constBits(),
+                    "copied pinned sources share immutable prepared pixels");
+            processUntil([&] { return snapshot.expired(); });
         }
         processUntil([&] { return snapshot.expired(); });
         require(ScreenshotExportCoordinator::shared().pendingJobCount() == 0,
@@ -1543,6 +1896,7 @@ int main(int argc, char** argv) {
         diagnostics.shutdown();
         if (application.arguments().contains(QStringLiteral("--print-snapshots-only"))) {
             pinnedViewportSourceRendersExpectedPixels();
+            emptyPinnedSourceMatchesCanvasProjection();
             pinnedViewportExportsReleaseImportedSnapshots();
             return EXIT_SUCCESS;
         }
@@ -1577,6 +1931,10 @@ int main(int argc, char** argv) {
                 clipboardAndSavesShareConfiguredEncoding(compression, clipboardFirst);
         }
         nonPngSaveReadsPixelsWithoutEncodingPng();
+        fileEncodingsCoalesceAndNormalizeOptions();
+        pdfPayloadReusePreservesDestinationMetadata();
+        failedFileEncodingCanRetry();
+        largeBmpUsesDirectStreamingAndDiskEntriesRespectBudget();
         imageRequestsShareOneAsyncLoad();
         canonicalEncodingCoalescesAndPreservesBufferIdentity();
         encodingFailureFansOutOnce();
@@ -1585,10 +1943,13 @@ int main(int argc, char** argv) {
         boundedExportRowsTests();
         pngCacheBudgetEvictsLeastRecentlyUsedResults();
         oversizedPngStillFansOutWithoutRetention();
+        cachedPngSavesReuseBytesBeyondRawCacheBudget();
         fileOutputsStreamBeyondCacheBudget();
         rowRequestFailureAndCancellationFanOut();
         cancellationSuppressesPendingCallbacks();
+        cancelledEncodersRetainEveryConsumerLease();
         pinnedViewportSourceRendersExpectedPixels();
+        emptyPinnedSourceMatchesCanvasProjection();
         pinnedViewportExportsReleaseImportedSnapshots();
     } catch (const std::exception& error) {
         std::cerr << error.what() << '\n';

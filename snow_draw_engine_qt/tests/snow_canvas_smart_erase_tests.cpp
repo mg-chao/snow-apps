@@ -195,6 +195,9 @@ void asynchronousLifecycle() {
     coordinator.syncItems({item});
     until([&] { return calls == 1; });
     const auto pending = coordinator.snapshot();
+    require(!pending.cacheKey().isEmpty() &&
+                pending.cacheKey() == coordinator.snapshot().cacheKey(),
+            "equivalent snapshots must retain their appearance key");
     require(render(item, pending).pixelColor(32, 32) == QColor(255, 219, 220),
             "running job must display placeholder");
     for (int i = 0; i < 20; ++i)
@@ -203,12 +206,17 @@ void asynchronousLifecycle() {
     released = true;
     until([&] { return repaints == 1; });
     const auto ready = coordinator.snapshot();
+    require(ready.cacheKey() != pending.cacheKey() &&
+                ready.cacheKey() == coordinator.snapshot().cacheKey(),
+            "reconstruction completion must change the appearance key");
     require(render(item, ready).pixelColor(32, 32) == Qt::blue, "completed result must render");
     require(render(item, pending).pixelColor(32, 32) == QColor(255, 219, 220),
             "captured pending export must remain immutable");
     item.opacity = 0.5;
     coordinator.syncItems({item});
     require(calls == 1, "opacity and selection-only sync must reuse computation");
+    require(ready.cacheKey() != coordinator.snapshot().cacheKey(),
+            "opacity changes must change the appearance key");
     const QColor blended = render(item, coordinator.snapshot()).pixelColor(32, 32);
     require(blended.blue() == 255 && std::abs(blended.red() - 128) <= 1,
             "opacity must blend reconstruction with base pixels");
@@ -253,6 +261,35 @@ void asynchronousLifecycle() {
     require(exported.size() == 1 &&
                 render(exported.front(), worker.snapshot()).pixelColor(32, 32) == Qt::blue,
             "worker restoration must preserve ready appearance without computation");
+}
+void reconstructionAppearanceKeys() {
+    using namespace snow_canvas_smart_erase;
+    auto item = rectangle();
+    Result result = fakeResult(item);
+    int repaints = 0;
+    Coordinator coordinator([&] { ++repaints; },
+                            [&](const auto&, const auto&, const auto&) { return result; });
+    QImage base(64, 64, QImage::Format_ARGB32);
+    base.fill(Qt::white);
+    coordinator.setSources(&coordinator, {{base, QRectF(0, 0, 64, 64), {}}});
+    repaints = 0;
+    coordinator.syncItems({item});
+    until([&] { return repaints == 1; });
+    // Retain only the value key, as a rendered pixel cache can release its donors.
+    const QByteArray originalKey = coordinator.snapshot().cacheKey();
+    coordinator.reset();
+    coordinator.syncItems({item});
+    until([&] { return repaints == 2; });
+    require(coordinator.snapshot().cacheKey() == originalKey,
+            "copied reconstruction results with shared images must retain their appearance key");
+    coordinator.reset();
+    result.filled = QImage(result.filled.size(), result.filled.format());
+    result.filled.fill(Qt::green);
+    coordinator.syncItems({item});
+    until([&] { return repaints == 3; });
+    require(coordinator.snapshot().cacheKey() != originalKey &&
+                render(item, coordinator.snapshot()).pixelColor(32, 32) == Qt::green,
+            "replacement reconstruction pixels must invalidate a key after donors are released");
 }
 void historicalCacheCleanup() {
     using namespace snow_canvas_smart_erase;
@@ -498,6 +535,7 @@ int main(int argc, char** argv) {
     reconstructionBuffersReturnMappedPages();
     placeholders();
     asynchronousLifecycle();
+    reconstructionAppearanceKeys();
     historicalCacheCleanup();
     reconstruction();
     widgetAndWorkerExport();

@@ -1069,6 +1069,13 @@ Result<EncodedArtifactReceipt> PngCodec::encode_raster_to_sink(const RasterSourc
             png_destroy_write_struct(&png, &info);
             return Codec::encode_raster_to_sink(source, output, options, stop);
         }
+        const bool strip_opaque_alpha = options.verified_alpha_content == AlphaContent::opaque &&
+                                        (plane.format.channels == ChannelLayout::gray_alpha ||
+                                         plane.format.channels == ChannelLayout::rgba ||
+                                         plane.format.channels == ChannelLayout::bgra);
+        if (strip_opaque_alpha)
+            color_type = plane.format.channels == ChannelLayout::gray_alpha ? PNG_COLOR_TYPE_GRAY
+                                                                            : PNG_COLOR_TYPE_RGB;
         png_set_IHDR(png, info, source_frame.width, source_frame.height,
                      plane.format.bits_per_channel, color_type,
                      options.interlaced ? PNG_INTERLACE_ADAM7 : PNG_INTERLACE_NONE,
@@ -1095,6 +1102,8 @@ Result<EncodedArtifactReceipt> PngCodec::encode_raster_to_sink(const RasterSourc
             std::endian::native == std::endian::little) {
             png_set_swap(png);
         }
+        if (strip_opaque_alpha)
+            png_set_filler(png, 0, PNG_FILLER_AFTER);
         const int passes = options.interlaced ? png_set_interlace_handling(png) : 1;
         for (int pass = 0; pass < passes; ++pass) {
             for (std::uint32_t y = 0; y < source_frame.height; ++y) {

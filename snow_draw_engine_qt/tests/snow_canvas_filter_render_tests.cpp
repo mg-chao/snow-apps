@@ -1846,6 +1846,7 @@ void exportWithoutRuntimeStillRendersSources() {
 void plainExportUsesDirectSourceFastPath() {
     SnowCanvasRuntime runtime;
     SnowCanvasWidget canvas(runtime);
+    require(!runtime.hasDocumentContent(), "creation defaults must not count as document content");
     QImage source(QSize(23, 17), QImage::Format_ARGB32_Premultiplied);
     for (int y = 0; y < source.height(); ++y) {
         auto* row = reinterpret_cast<QRgb*>(source.scanLine(y));
@@ -1869,18 +1870,60 @@ void plainExportUsesDirectSourceFastPath() {
     watermark.text = QStringLiteral("export-path-test");
     watermark.color = QColor(0, 0, 0, 255);
     watermark.opacity = 0.5;
+    watermark.fontSize = 8;
+    watermark.gap = 2;
+    watermark.angle = 0;
     require(canvas.setCanvasWatermarkConfig(watermark),
             "failed to configure watermark for export path test");
+    require(runtime.hasDocumentContent(), "watermark content must prevent the empty-document path");
     snow_canvas_export::resetDiagnosticsForCurrentThread();
     const QImage watermarked =
         runtime.renderToImage(QRectF(0.0, 0.0, 23.0, 17.0), source.size(),
                               {CanvasExportSource{source, QRectF(0.0, 0.0, 23.0, 17.0)}});
     const auto compositorDiagnostics = snow_canvas_export::diagnosticsForCurrentThread();
     require(!watermarked.isNull(), "effectful export produced a null image");
-    require(compositorDiagnostics.directSourceFastPathCount == 0 &&
-                compositorDiagnostics.fullCompositorPathCount == 1 &&
+    require(compositorDiagnostics.directSourceFastPathCount == 1 &&
+                compositorDiagnostics.fullCompositorPathCount == 0 &&
                 compositorDiagnostics.unsynchronizedFallbackCount == 0,
-            "visible watermark did not force the full export compositor");
+            "watermark-only export did not retain the direct-source path");
+    require(watermarked != output, "direct-source export omitted its watermark");
+    require(runtime.clearDocumentPreservingViewports() && !runtime.hasDocumentContent(),
+            "cleared watermark styles and retained history must not count as document content");
+}
+
+void annotatedExportUsesDirectSourceFastPath() {
+    SnowCanvasRuntime runtime;
+    SnowCanvasWidget canvas(runtime);
+    canvas.resize(200, 120);
+    canvas.show();
+    QApplication::processEvents();
+    require(canvas.setViewportCamera(100, 60, 1), "configure annotation export viewport");
+    require(runtime.setQuickSelectionDisabledTools({SnowCanvasTool::Shape}),
+            "disable annotation fixture quick selection");
+    require(canvas.setCanvasTool(SnowCanvasTool::Shape), "activate annotation fixture tool");
+    for (const auto& [type, position, button, buttons] :
+         {std::tuple{QEvent::MouseButtonPress, QPointF(60, 30), Qt::LeftButton,
+                     Qt::MouseButtons(Qt::LeftButton)},
+          std::tuple{QEvent::MouseMove, QPointF(140, 90), Qt::NoButton,
+                     Qt::MouseButtons(Qt::LeftButton)},
+          std::tuple{QEvent::MouseButtonRelease, QPointF(140, 90), Qt::LeftButton,
+                     Qt::MouseButtons(Qt::NoButton)}}) {
+        QMouseEvent event(type, position, position, position, button, buttons, Qt::NoModifier);
+        QApplication::sendEvent(&canvas, &event);
+    }
+    QImage source(200, 120, QImage::Format_ARGB32_Premultiplied);
+    require(runtime.hasDocumentContent(), "an annotation must count as document content");
+    source.fill(QColor(40, 120, 200, 128));
+    const QList<CanvasExportSource> sources{{source, QRectF(0, 0, 200, 120)}};
+    snow_canvas_export::resetDiagnosticsForCurrentThread();
+    const QImage wide = runtime.renderToImage(QRectF(0, 0, 200, 120), source.size(), sources);
+    const QImage crop = runtime.renderToImage(QRectF(40, 20, 120, 80), QSize(120, 80), sources);
+    const auto diagnostics = snow_canvas_export::diagnosticsForCurrentThread();
+    require(wide != source, "direct annotation export omitted the shape");
+    require(crop == wide.copy(40, 20, 120, 80),
+            "direct annotation crop changed source or shape pixels");
+    require(diagnostics.directSourceFastPathCount == 2 && diagnostics.fullCompositorPathCount == 0,
+            "ordinary annotation export allocated a compositor background");
 }
 
 void scalarAvx2AndThreadingProduceIdenticalPixels() {
@@ -3403,6 +3446,14 @@ void tiledRenderMatchesFullRender() {
 int main(int argc, char** argv) {
     QApplication application(argc, argv);
     snow_canvas_render_diagnostics::setEnabled(true);
+    if (application.arguments().contains(QStringLiteral("--export-only"))) {
+        exportWithoutRuntimeStillRendersSources();
+        plainExportUsesDirectSourceFastPath();
+        annotatedExportUsesDirectSourceFastPath();
+        runtimeExportPreservesOffscreenSourceBoundaries();
+        runtimeExportUsesExactFractionalProjection();
+        return 0;
+    }
     if (application.arguments().contains(QStringLiteral("--public-region-api-only"))) {
         publicRegionFilterApiRestrictsEffectsToTheRequestedRegion();
         publicSingleThreadedRegionFilterMatchesDefaultAndRetainsBoundedScratch();
@@ -3464,6 +3515,7 @@ int main(int argc, char** argv) {
     customBackdropIsRenderedOnceBelowFilters();
     exportWithoutRuntimeStillRendersSources();
     plainExportUsesDirectSourceFastPath();
+    annotatedExportUsesDirectSourceFastPath();
     scalarAvx2AndThreadingProduceIdenticalPixels();
     maskedKernelsMatchAcrossBackendsAndRespectBlurMemoryBound();
     croppedCoverageWorkspaceAndFailurePathsStayValid();

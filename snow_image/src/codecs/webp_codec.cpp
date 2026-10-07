@@ -459,6 +459,62 @@ bool native_webp_source(const RasterFrameDescriptor& frame) {
     return true;
 }
 
+bool packed_webp_source(const DocumentDescriptor& descriptor) {
+    if (descriptor.frames.size() != 1U)
+        return false;
+    const auto& frame = descriptor.frames.front();
+    if (frame.x != 0 || frame.y != 0 || frame.width != descriptor.canvas_width ||
+        frame.height != descriptor.canvas_height || frame.layout.planes.size() != 1U)
+        return false;
+    const auto& plane = frame.layout.planes.front();
+    return plane.semantic == PlaneSemantic::packed &&
+           (plane.format == kRgba8 || plane.format == kBgra8);
+}
+
+Result<Picture> import_raster_picture(const RasterSource& source, std::stop_token stop) {
+    const auto& frame = source.descriptor().frames.front();
+    Picture picture(new WebPPicture{});
+    if (!WebPPictureInit(picture.get()))
+        return webp_error(ErrorCode::codec_unavailable, "The libwebp picture ABI is incompatible.");
+    picture->use_argb = 1;
+    picture->width = static_cast<int>(frame.width);
+    picture->height = static_cast<int>(frame.height);
+    if (!WebPPictureAlloc(picture.get()))
+        return webp_error(ErrorCode::out_of_memory, "Could not allocate WebP input pixels.");
+    const bool bgra = frame.layout.planes.front().format == kBgra8;
+    const std::size_t stride = static_cast<std::size_t>(picture->argb_stride) * 4U;
+    const std::size_t row_bytes = static_cast<std::size_t>(frame.width) * 4U;
+    constexpr std::uint32_t kRowsPerRead = 64;
+    for (std::uint32_t first = 0; first < frame.height; first += kRowsPerRead) {
+        const std::uint32_t count = std::min(kRowsPerRead, frame.height - first);
+        auto* destination =
+            reinterpret_cast<std::byte*>(picture->argb) + static_cast<std::size_t>(first) * stride;
+        Result<void> read = source.read_rows(
+            0, 0, first, count, stride,
+            {destination, static_cast<std::size_t>(count - 1U) * stride + row_bytes}, stop);
+        if (!read)
+            return read.error();
+        // Use codec-owned padded storage for SIMD readers. Convert the provider's
+        // byte order in place rather than materializing another complete raster.
+        for (std::uint32_t row = 0; row < count; ++row) {
+            if (stop.stop_requested())
+                return cancelled_status();
+            auto* pixels =
+                picture->argb + static_cast<std::size_t>(first + row) * picture->argb_stride;
+            const auto* bytes = reinterpret_cast<const std::uint8_t*>(pixels);
+            for (std::uint32_t x = 0; x < frame.width; ++x) {
+                const std::size_t offset = static_cast<std::size_t>(x) * 4U;
+                const std::uint32_t red = bytes[offset + (bgra ? 2U : 0U)];
+                const std::uint32_t green = bytes[offset + 1U];
+                const std::uint32_t blue = bytes[offset + (bgra ? 0U : 2U)];
+                const std::uint32_t alpha = bytes[offset + 3U];
+                pixels[x] = (alpha << 24U) | (red << 16U) | (green << 8U) | blue;
+            }
+        }
+    }
+    return picture;
+}
+
 struct WebpMetadata final {
     Metadata metadata;
     ColorEncoding color;
@@ -1070,6 +1126,33 @@ Result<EncodedArtifactReceipt> WebpCodec::encode_raster_to_sink(const RasterSour
                                                                 const EncodeOptions& options,
                                                                 std::stop_token stop) const {
     const DocumentDescriptor& descriptor = source.descriptor();
+    if (packed_webp_source(descriptor) && sdr_srgb(descriptor.color) &&
+        sdr_srgb(descriptor.frames.front().color)) {
+        // Borrow mapped storage through the document adapter. A mapped-only
+        // provider need not implement row copies, and no packed raster is allocated.
+        if (has_access(source.access(), RasterAccess::mapped_planes))
+            return Codec::encode_raster_to_sink(source, output, options, stop);
+        const auto& frame = descriptor.frames.front();
+        if (frame.width > WEBP_MAX_DIMENSION || frame.height > WEBP_MAX_DIMENSION)
+            return webp_error(ErrorCode::limit_exceeded,
+                              "WebP image dimensions exceed codec limits.");
+        Result<void> metadata_status =
+            validate_webp_metadata(descriptor.metadata, descriptor.color, options);
+        if (!metadata_status)
+            return metadata_status.error();
+        Result<WebPConfig> configured = encoder_config(options);
+        if (!configured)
+            return configured.error();
+        Result<Picture> picture = import_raster_picture(source, stop);
+        if (!picture)
+            return picture.error();
+        Result<void> encoded =
+            encode_static_picture(*picture.value(), output, configured.value(), descriptor.metadata,
+                                  descriptor.color, options, stop);
+        if (!encoded)
+            return encoded.error();
+        return receipt_for_descriptor(descriptor, format());
+    }
     if (options.lossless || descriptor.frames.size() != 1 ||
         !native_webp_source(descriptor.frames.front()))
         return Codec::encode_raster_to_sink(source, output, options, stop);
@@ -1144,6 +1227,9 @@ Result<EncodedArtifactReceipt> WebpCodec::encode_raster_to_sink(const RasterSour
 
 RasterEncodeRoute WebpCodec::raster_encode_route(const DocumentDescriptor& descriptor,
                                                  const EncodeOptions& options) const noexcept {
+    if (packed_webp_source(descriptor) && sdr_srgb(descriptor.color) &&
+        sdr_srgb(descriptor.frames.front().color))
+        return RasterEncodeRoute::native;
     if (options.lossless || descriptor.frames.size() != 1 || !sdr_srgb(descriptor.color))
         return RasterEncodeRoute::materialized;
     const RasterFrameDescriptor& frame = descriptor.frames.front();

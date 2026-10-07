@@ -3,6 +3,7 @@
 #include <QApplication>
 #include <QColorSpace>
 #include <QDir>
+#include <QElapsedTimer>
 #include <QEventLoop>
 #include <QFileInfo>
 #include <QThread>
@@ -30,6 +31,15 @@ void require(bool condition, const char* message) {
 void flush() {
     for (int i = 0; i < 5; ++i)
         QCoreApplication::processEvents();
+}
+void processUntil(const std::function<bool()>& condition) {
+    QElapsedTimer timer;
+    timer.start();
+    while (!condition() && timer.elapsed() < 10000) {
+        QCoreApplication::processEvents(QEventLoop::AllEvents, 10);
+        QThread::msleep(1);
+    }
+    require(condition(), "timed out waiting for asynchronous native print preparation");
 }
 
 enum class Outcome {
@@ -116,6 +126,8 @@ class WizardTarget : public winrt::implements<WizardTarget, IDropTarget> {
 
 HRESULT WINAPI activateWizard(REFCLSID clsid, LPUNKNOWN outer, DWORD context, REFIID iid,
                               LPVOID* target) {
+    require(QThread::currentThread() == qApp->thread(),
+            "native wizard activation must remain on the initiating GUI apartment");
     ++activations;
     constexpr CLSID expected{
         0x60fd46de, 0xf830, 0x4894, {0xa6, 0x28, 0x6f, 0xa8, 0x1b, 0xc0, 0x19, 0x0d}};
@@ -145,6 +157,25 @@ void showAndHideMockWizard() {
     flush();
     DestroyWindow(window);
     UnregisterClassW(windowClass.lpszClassName, windowClass.hInstance);
+}
+
+void destroyedOwnerDuringPreparation() {
+    activations = 0;
+    auto* owner = new QWidget;
+    int completions = 0;
+    QImage image(8, 4, QImage::Format_RGB32);
+    image.fill(Qt::white);
+    screenshotLegacyWindowsPrintBackend({&activateWizard})(
+        owner, image, [&](Service::Result result) {
+            require(result.status == Service::Status::Cancelled,
+                    "destroying the owner before PNG preparation finishes must cancel printing");
+            ++completions;
+        });
+    require(activations == 0 && completions == 0,
+            "PNG preparation must defer all native COM and wizard interaction");
+    delete owner;
+    processUntil([&] { return completions == 1; });
+    require(activations == 0, "cancelled preparation must never activate the native wizard");
 }
 
 void photoWizardOutcomesAndSnapshotLifetime() {
@@ -179,7 +210,7 @@ void photoWizardOutcomesAndSnapshotLifetime() {
                                    }),
                 "each legacy image request must start");
         image.fill(Qt::black);
-        flush();
+        processUntil([&] { return activations == 1 && (retainedData || !service.busy()); });
         if (retainedData) {
             require(QFileInfo::exists(snapshotPath),
                     "the PNG must remain available after the asynchronous handoff");
@@ -254,13 +285,14 @@ QString retainSnapshotUntilShutdown() {
     expectedImage.setColorSpace(QColorSpace(QColorSpace::SRgb));
     QWidget owner;
     int completions = 0;
+    activations = 0;
     screenshotLegacyWindowsPrintBackend({&activateWizard})(
         &owner, expectedImage, [&](Service::Result result) {
             require(result.status == Service::Status::HandedOff,
                     "closing the shutdown fixture must release its print request");
             ++completions;
         });
-    flush();
+    processUntil([&] { return bool(retainedData); });
     showAndHideMockWizard();
     require(completions == 1 && retainedData && QFileInfo::exists(snapshotPath),
             "the shutdown fixture must retain native snapshot references after closure");
@@ -354,6 +386,7 @@ int main(int argc, char** argv) {
             return 0;
         }
         photoWizardOutcomesAndSnapshotLifetime();
+        destroyedOwnerDuringPreparation();
         shutdownSnapshot = retainSnapshotUntilShutdown();
     }
     require(!QFileInfo::exists(shutdownSnapshot) &&

@@ -253,6 +253,12 @@ impl Engine {
     pub fn document_revision(&self) -> u64 {
         self.model.document_revision().0
     }
+    pub fn has_document_content(&self) -> bool {
+        let watermark = self.model.watermark_config();
+        !self.model.paint_order().is_empty()
+            || !watermark.text.is_empty()
+            || !watermark.template_value.is_empty()
+    }
     /// Validates a complete batch before committing one normal history transaction.
     pub fn apply_annotation_json(
         &mut self,
@@ -568,6 +574,25 @@ mod tests {
         )?;
         Ok(serde_json::from_slice(&result).unwrap())
     }
+    #[test]
+    fn document_content_excludes_styles_and_history() {
+        let mut engine = Engine::new(EngineConfig::default());
+        assert!(!engine.has_document_content());
+        apply(
+            &mut engine,
+            json!([{"type":"rectangle","bounds":[10,20,40,60]}]),
+        )
+        .unwrap();
+        assert!(engine.has_document_content());
+        engine.undo().unwrap();
+        assert!(!engine.has_document_content());
+        assert!(engine.history_state().can_redo);
+        apply(&mut engine, json!([{"type":"watermark","text":"sample"}])).unwrap();
+        assert!(engine.has_document_content());
+        engine.clear_document_preserving_viewports().unwrap();
+        assert!(!engine.has_document_content());
+    }
+
     #[test]
     fn annotation_families_form_one_undoable_transaction() {
         let mut engine = Engine::new(EngineConfig::default());

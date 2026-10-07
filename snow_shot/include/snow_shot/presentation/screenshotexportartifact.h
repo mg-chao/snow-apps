@@ -98,10 +98,16 @@ class ScreenshotExportSource final {
 class ScreenshotExportArtifact final : public QObject {
   public:
     struct PngCachePolicy {
-        // Bounds retained cache entries, not in-flight encoders or consumer-owned bytes.
+        // Bounds retained PNG and other encoded bytes together, not in-flight
+        // encoders or consumer-owned bytes. Larger file encodings spill to disk.
         qsizetype maximumBytes = 64 * 1024 * 1024;
         // Optional internal instrumentation, invoked on the encoder worker only when encoding.
         std::function<void()> encodingStarted;
+        // Prepared file/PDF entries have an independent retained-output bound;
+        // memory-backed entries also count toward maximumBytes. In-flight
+        // consumers keep outputs alive even when too large to retain.
+        qint64 maximumFileBytes = 256 * 1024 * 1024;
+        std::function<void(ScreenshotImageFileFormat)> fileEncodingStarted;
     };
     using ImageCallback = std::function<void(ScreenshotExportImageResult)>;
     using EncodingCallback = std::function<void(ScreenshotExportEncodingResult)>;
@@ -165,11 +171,13 @@ class ScreenshotExportArtifact final : public QObject {
     [[nodiscard]] QString diagnosticId() const;
 
   private:
-    using FileSourceCallback = std::function<void(snow_shot::storage::PreparedPngImage,
-                                                  ScreenshotImageRowSource, QString)>;
+    struct FileSource;
+    using FileSourceCallback = std::function<void(std::shared_ptr<FileSource>, QString)>;
     [[nodiscard]] bool requestFileSource(ScreenshotImageFileFormat format,
-                                         ScreenshotCompressionLevel compression,
+                                         ScreenshotImageEncodingOptions encoding,
                                          FileSourceCallback callback);
+    void requestPreparedFile(ScreenshotImageRowSource rows, ScreenshotImageFileFormat format,
+                             ScreenshotImageEncodingOptions encoding, FileSourceCallback callback);
     [[nodiscard]] bool requestFileSave(QObject* receiver, QStringList directories,
                                        ScreenshotImageFileFormat format, QString filenameFormat,
                                        ScreenshotImageEncodingOptions encoding,

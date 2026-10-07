@@ -330,6 +330,9 @@ bool SnowCanvasRuntime::canRedo() const {
 quint64 SnowCanvasRuntime::documentRevision() const {
     return isOwnerThread() ? snow_runtime_document_revision(m_impl->handle()) : 0;
 }
+bool SnowCanvasRuntime::hasDocumentContent() const {
+    return !isOwnerThread() || snow_runtime_has_document_content(m_impl->handle()) != 0;
+}
 void SnowCanvasRuntime::setDocumentChangedHandler(std::function<void()> handler) {
     if (isOwnerThread()) {
         if (handler)

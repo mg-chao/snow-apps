@@ -46,6 +46,8 @@ struct ScreenshotImageEncodingOptions {
 struct ScreenshotImageFileSaveResult {
     QString path;
     QString error;
+    QByteArray encodedSha256;
+    qint64 encodedByteCount = -1;
 
     [[nodiscard]] bool succeeded() const {
         return !path.isEmpty() && error.isEmpty();
@@ -86,6 +88,22 @@ class ScreenshotImageFileService final {
     writeEncodedFile(const QString& encodedFile, const QString& path,
                      ScreenshotImageFileFormat format, std::function<bool()> cancelled = {});
     [[nodiscard]] static ScreenshotImageFileSaveResult
+    writeEncodedBytes(const QByteArray& bytes, const QString& path,
+                      ScreenshotImageFileFormat format, std::function<bool()> cancelled = {});
+    [[nodiscard]] static ScreenshotImageFileSaveResult
+    saveEncodedBytesAutomatically(const QByteArray& bytes, const QStringList& directories,
+                                  ScreenshotImageFileFormat format, const QString& filenameFormat,
+                                  const QDateTime& timestamp, std::function<bool()> cancelled = {});
+    [[nodiscard]] static ScreenshotImageFileSaveResult
+    saveEncodedAutomatically(const QString& encodedFile, const QStringList& candidateDirectories,
+                             ScreenshotImageFileFormat format, const QString& filenameFormat,
+                             const QDateTime& timestamp, std::function<bool()> cancelled = {});
+    [[nodiscard]] static ScreenshotImageFileSaveResult
+    savePdfAutomatically(const screenshot_pdf::Payload& payload,
+                         const QStringList& candidateDirectories, const QString& filenameFormat,
+                         const QDateTime& timestamp, ScreenshotPdfOptions options,
+                         std::function<bool()> cancelled = {});
+    [[nodiscard]] static ScreenshotImageFileSaveResult
     write(const snow_shot::storage::PreparedPngImage& png, const QString& path,
           std::function<bool()> cancelled = {});
 
@@ -118,7 +136,8 @@ class ScreenshotImageFileService final {
     [[nodiscard]] static ScreenshotImageFileSaveResult
     saveAutomatically(const snow_shot::storage::PreparedPngImage& png,
                       const QStringList& candidateDirectories, const QString& filenameFormat,
-                      const QDateTime& timestamp = QDateTime::currentDateTime());
+                      const QDateTime& timestamp = QDateTime::currentDateTime(),
+                      std::function<bool()> cancelled = {});
 };
 
 #endif // SNOW_SHOT_PRESENTATION_SCREENSHOTIMAGEFILESERVICE_H

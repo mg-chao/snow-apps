@@ -332,12 +332,6 @@ struct JpegEncoderContext final {
     std::longjmp(error->jump, 1);
 }
 
-void destination_failure(JpegDestinationManager* destination, Status status) {
-    destination->sink_error = std::move(status);
-    destination->has_sink_error = true;
-    std::longjmp(destination->error->jump, 1);
-}
-
 void jpeg_init_destination(j_compress_ptr compressor) {
     auto* destination = reinterpret_cast<JpegDestinationManager*>(compressor->dest);
     destination->base.next_output_byte = destination->buffer.data();
@@ -346,18 +340,20 @@ void jpeg_init_destination(j_compress_ptr compressor) {
 
 JpegBoolean jpeg_empty_output_buffer(j_compress_ptr compressor) {
     auto* destination = reinterpret_cast<JpegDestinationManager*>(compressor->dest);
-    Status failure;
     bool failed = false;
     {
         Result<void> written = destination->sink->write(
             std::as_bytes(std::span(destination->buffer.data(), destination->buffer.size())));
         if (!written) {
-            failure = std::move(written).error();
+            destination->sink_error = std::move(written).error();
+            destination->has_sink_error = true;
             failed = true;
         }
     }
+    // libjpeg's C error boundary must not bypass live C++ destructors.
+    // Keep the failure on the heap and destroy the Result before jumping.
     if (failed)
-        destination_failure(destination, std::move(failure));
+        std::longjmp(destination->error->jump, 1);
     destination->base.next_output_byte = destination->buffer.data();
     destination->base.free_in_buffer = destination->buffer.size();
     return TRUE;
@@ -368,18 +364,18 @@ void jpeg_term_destination(j_compress_ptr compressor) {
     const std::size_t remaining = destination->buffer.size() - destination->base.free_in_buffer;
     if (remaining == 0)
         return;
-    Status failure;
     bool failed = false;
     {
         Result<void> written = destination->sink->write(
             std::as_bytes(std::span(destination->buffer.data(), remaining)));
         if (!written) {
-            failure = std::move(written).error();
+            destination->sink_error = std::move(written).error();
+            destination->has_sink_error = true;
             failed = true;
         }
     }
     if (failed)
-        destination_failure(destination, std::move(failure));
+        std::longjmp(destination->error->jump, 1);
 }
 
 void initialize_destination(JpegEncoderContext* context, ByteSink* sink) {
@@ -429,10 +425,9 @@ Result<J_COLOR_SPACE> jpeg_input_color_space(const PixelFormat& format) {
                          "libjpeg-turbo");
 }
 
-Result<void> begin_compression(JpegEncoderContext* context, std::uint32_t width,
-                               std::uint32_t height, int components, J_COLOR_SPACE color_space,
-                               ChromaSubsampling sampling, const EncodeOptions& options,
-                               ByteSink* sink, bool raw_data) {
+void begin_compression(JpegEncoderContext* context, std::uint32_t width, std::uint32_t height,
+                       int components, J_COLOR_SPACE color_space, ChromaSubsampling sampling,
+                       const EncodeOptions& options, ByteSink* sink, bool raw_data) {
     context->compressor.err = jpeg_std_error(&context->error.base);
     context->error.base.error_exit = jpeg_error_exit;
     jpeg_CreateCompress(&context->compressor, JPEG_LIB_VERSION, sizeof(jpeg_compress_struct));
@@ -448,7 +443,6 @@ Result<void> begin_compression(JpegEncoderContext* context, std::uint32_t width,
         jpeg_simple_progression(&context->compressor);
     context->compressor.raw_data_in = raw_data ? TRUE : FALSE;
     jpeg_start_compress(&context->compressor, TRUE);
-    return {};
 }
 
 Status compression_error(const JpegEncoderContext& context) {
@@ -807,16 +801,13 @@ Result<EncodedArtifactReceipt> JpegCodec::encode_to_sink(const Document& documen
     }
     if (stop.stop_requested())
         return cancelled_status();
-    Result<void> begun =
-        begin_compression(context.get(), view.width, view.height,
-                          grayscale ? 1
-                                    : (view.format.channels == ChannelLayout::rgba ||
-                                               view.format.channels == ChannelLayout::bgra
-                                           ? 4
-                                           : 3),
-                          color_space.value(), sampling, options, output.sink.get(), false);
-    if (!begun)
-        return begun.error();
+    begin_compression(context.get(), view.width, view.height,
+                      grayscale ? 1
+                                : (view.format.channels == ChannelLayout::rgba ||
+                                           view.format.channels == ChannelLayout::bgra
+                                       ? 4
+                                       : 3),
+                      color_space.value(), sampling, options, output.sink.get(), false);
     while (context->compressor.next_scanline < context->compressor.image_height) {
         if (stop.stop_requested()) {
             jpeg_destroy_compress(&context->compressor);
@@ -886,23 +877,22 @@ Result<EncodedArtifactReceipt> JpegCodec::encode_raster_to_sink(const RasterSour
             return cancelled_status();
         const bool alpha = plane.format.channels == ChannelLayout::rgba ||
                            plane.format.channels == ChannelLayout::bgra;
-        Result<void> begun = begin_compression(context.get(), frame.width, frame.height,
-                                               grayscale ? 1 : (alpha ? 4 : 3), color_space.value(),
-                                               sampling, options, output.sink.get(), false);
-        if (!begun)
-            return begun.error();
+        begin_compression(context.get(), frame.width, frame.height, grayscale ? 1 : (alpha ? 4 : 3),
+                          color_space.value(), sampling, options, output.sink.get(), false);
         while (context->compressor.next_scanline < context->compressor.image_height) {
             if (stop.stop_requested()) {
                 jpeg_destroy_compress(&context->compressor);
                 return cancelled_status();
             }
             const std::uint32_t y = context->compressor.next_scanline;
-            Result<void> read = source.read_rows(0, 0, y, 1, row_bytes, row, stop);
-            if (!read) {
-                jpeg_destroy_compress(&context->compressor);
-                return read.error();
+            {
+                Result<void> read = source.read_rows(0, 0, y, 1, row_bytes, row, stop);
+                if (!read) {
+                    jpeg_destroy_compress(&context->compressor);
+                    return read.error();
+                }
             }
-            if (alpha) {
+            if (alpha && options.verified_alpha_content != AlphaContent::opaque) {
                 auto* pixels = reinterpret_cast<std::uint8_t*>(row.data());
                 for (std::uint32_t x = 0; x < frame.width; ++x) {
                     std::uint8_t* pixel = pixels + static_cast<std::size_t>(x) * 4U;
@@ -1009,11 +999,9 @@ Result<EncodedArtifactReceipt> JpegCodec::encode_raster_to_sink(const RasterSour
     }
     if (stop.stop_requested())
         return cancelled_status();
-    Result<void> begun = begin_compression(context.get(), frame.width, frame.height,
-                                           grayscale ? 1 : 3, grayscale ? JCS_GRAYSCALE : JCS_YCbCr,
-                                           resolved, options, output.sink.get(), true);
-    if (!begun)
-        return begun.error();
+    begin_compression(context.get(), frame.width, frame.height, grayscale ? 1 : 3,
+                      grayscale ? JCS_GRAYSCALE : JCS_YCbCr, resolved, options, output.sink.get(),
+                      true);
     while (context->compressor.next_scanline < context->compressor.image_height) {
         if (stop.stop_requested()) {
             jpeg_destroy_compress(&context->compressor);

@@ -551,6 +551,8 @@ void documentCacheWork(const QString& directory) {
     for (const bool evict : {false, true}) {
         std::atomic_int renders = 0, encodes = 0;
         McpDocumentService::Ports ports;
+        auto clipboard = std::make_shared<MemoryClipboard>();
+        ports.clipboard = clipboard;
         if (evict)
             ports.artifactCacheBytes = 80 * 60 * 4;
         ports.workObserved = [&](const QString&, const QString& operation) {
@@ -592,9 +594,17 @@ void documentCacheWork(const QString& directory) {
         require(opened.ok, "cache instrumentation document opened");
         const auto id = opened.result.value(QStringLiteral("document_id")).toString();
         const QJsonObject document{{QStringLiteral("document_id"), id}};
+        if (!evict) {
+            const auto copied = call(QStringLiteral("snow_shot_document_copy"), document);
+            require(copied.ok && renders == 1 && encodes == 1 && !clipboard->png.isEmpty(),
+                    "cold copy creates one reusable raster and PNG");
+        }
         const auto cold = call(QStringLiteral("snow_shot_document_render"), document);
         require(cold.ok && renders == 1 && encodes == 1,
-                "cold render reaches exactly one real raster and encoder boundary");
+                "first render reaches or reuses exactly one real raster and encoder boundary");
+        if (!evict)
+            require(clipboard->png == cold.attachment,
+                    "render after cold copy retains the identical PNG bytes");
         const auto warm = call(QStringLiteral("snow_shot_document_render"), document);
         if (evict) {
             require(
@@ -605,6 +615,12 @@ void documentCacheWork(const QString& directory) {
             require(warm.ok && warm.result.value(QStringLiteral("cache_hit")).toBool() &&
                         renders == 1 && encodes == 1 && warm.attachment == cold.attachment,
                     "valid render cache hit performs zero additional raster or encoder work");
+            for (int index = 0; index < 2; ++index) {
+                const auto copied = call(QStringLiteral("snow_shot_document_copy"), document);
+                require(copied.ok && renders == 1 && encodes == 1 &&
+                            clipboard->png == cold.attachment,
+                        "copy reuses the same immutable PNG as render without another encode");
+            }
             auto save = document;
             save.insert(QStringLiteral("path"),
                         QDir(directory).filePath(QStringLiteral("cache-save.png")));

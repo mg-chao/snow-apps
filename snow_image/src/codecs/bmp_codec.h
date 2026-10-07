@@ -25,6 +25,12 @@ class BmpCodec final : public Codec {
     [[nodiscard]] Result<EncodedArtifactReceipt>
     encode_to_sink(const Document& document, const Output& output, const EncodeOptions& options,
                    std::stop_token stop) const override;
+    [[nodiscard]] Result<EncodedArtifactReceipt>
+    encode_raster_to_sink(const RasterSource& source, const Output& output,
+                          const EncodeOptions& options, std::stop_token stop) const override;
+    [[nodiscard]] RasterEncodeRoute
+    raster_encode_route(const DocumentDescriptor& descriptor,
+                        const EncodeOptions& normalized_options) const noexcept override;
 };
 
 } // namespace snow::image::internal

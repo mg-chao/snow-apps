@@ -21,6 +21,8 @@ if(MSVC)
 endif()
 
 add_test(NAME snow_image_viewer_tests COMMAND snow_image_viewer_tests)
+add_test(NAME snow_image_viewer_export_reuse_tests COMMAND snow_image_viewer_tests --export-reuse-only)
+set_tests_properties(snow_image_viewer_export_reuse_tests PROPERTIES LABELS "unit" TIMEOUT 45)
 add_test(NAME snow_image_viewer_worker_lifecycle_tests
     COMMAND snow_image_viewer_tests --worker-lifecycle-only)
 set_tests_properties(snow_image_viewer_worker_lifecycle_tests PROPERTIES LABELS "unit" TIMEOUT 30)

@@ -12641,6 +12641,46 @@ QImage exportedClipboardImage() {
 #endif
 }
 
+std::optional<ScreenshotClipboardContentSnapshot> exportedClipboardSnapshot(bool fileCopy) {
+#ifdef Q_OS_WIN
+    if (!fileCopy) {
+        // The image service publishes to Win32 while the offscreen Qt clipboard is separate.
+        bool opened = false;
+        for (int attempt = 0; attempt < 20 && !opened; ++attempt) {
+            opened = OpenClipboard(nullptr) != FALSE;
+            if (!opened)
+                waitForUi(5);
+        }
+        if (!opened)
+            return {};
+        const auto close = qScopeGuard([] { CloseClipboard(); });
+        const auto bytes = [](LPCWSTR format) {
+            const auto handle =
+                static_cast<HGLOBAL>(GetClipboardData(RegisterClipboardFormatW(format)));
+            const auto* data = handle ? static_cast<const char*>(GlobalLock(handle)) : nullptr;
+            if (!data)
+                return QByteArray{};
+            QByteArray result(data, static_cast<qsizetype>(GlobalSize(handle)));
+            GlobalUnlock(handle);
+            return result;
+        };
+        ScreenshotClipboardContentSnapshot snapshot;
+        QByteArray png = bytes(L"PNG");
+        if (png.isEmpty())
+            return {};
+        snapshot.encodedImages.push_back({std::move(png), QStringLiteral("image/png")});
+        snapshot.placement =
+            decodeScreenshotClipboardPlacement(bytes(L"SnowShotScreenshotPlacement"));
+        snapshot.appearance =
+            decodeScreenshotClipboardAppearance(bytes(L"SnowShotScreenshotAppearance"));
+        return snapshot;
+    }
+#else
+    Q_UNUSED(fileCopy);
+#endif
+    return ScreenshotClipboardContentReader::snapshot(QApplication::clipboard(), 1);
+}
+
 void pinnedDragFileRetention() {
     using Retention = screenshot_pinned_drag_export::FileRetention;
     qint64 now = 1000;
@@ -13347,6 +13387,31 @@ void pinnedSharedImageExportOffscreen() {
     config.imageSource.materializedImage.setColorSpace(QColorSpace::SRgb);
     Access::restoreOffscreen(window, config);
     Access::setGeneralOpacity(window, 75);
+    // Completed commands share immutable pixels while cancellation remains local.
+    const auto prepare = [&](std::shared_ptr<ScreenshotExportArtifact> artifact) {
+        QImage pixels;
+        require(artifact->requestImage(&window,
+                                       [&](ScreenshotExportImageResult result) {
+                                           require(result.succeeded(),
+                                                   "cached pinned snapshot failed");
+                                           pixels = result.image;
+                                       }),
+                "cached pinned snapshot rejected");
+        wait([&] { return !pixels.isNull(); }, "cached pinned snapshot completes");
+        return pixels;
+    };
+    auto firstArtifact = Access::printArtifact(window);
+    const QImage first = prepare(firstArtifact);
+    firstArtifact->cancel();
+    auto secondArtifact = Access::printArtifact(window);
+    const QImage second = prepare(secondArtifact);
+    require(firstArtifact != secondArtifact && first.constBits() == second.constBits(),
+            "repeated pinned export rerendered pixels or shared a cancelled command");
+    Access::setGeneralOpacity(window, 50);
+    const QImage changed = prepare(Access::printArtifact(window));
+    require(changed.constBits() != first.constBits() && changed != first,
+            "pinned opacity change reused stale export pixels");
+    Access::setGeneralOpacity(window, 75);
     for (bool autoSave : {false, true}) {
         for (bool copyFile : {false, true}) {
             const QString name = QStringLiteral("export-%1-%2").arg(autoSave).arg(copyFile);
@@ -13358,6 +13423,8 @@ void pinnedSharedImageExportOffscreen() {
             Access::copyEditToolbarContent(window);
             const auto artifact = Access::exportArtifact(window);
             require(artifact != nullptr, "toolbar copy starts an image export");
+            require(artifact->clipboardPlacement() && artifact->clipboardAppearance(),
+                    "cached viewport command retains placement and appearance");
             QImage rendered;
             require(artifact->requestImage(&window,
                                            [&](ScreenshotExportImageResult result) {
@@ -13378,8 +13445,7 @@ void pinnedSharedImageExportOffscreen() {
                                 .size() == 1,
                         "combined options save exactly once");
             }
-            auto clipboard =
-                ScreenshotClipboardContentReader::snapshot(QApplication::clipboard(), 1);
+            auto clipboard = exportedClipboardSnapshot(copyFile);
             require(clipboard.has_value(), "viewport clipboard snapshot is missing");
             auto copied = ScreenshotClipboardContentReader::decode(std::move(*clipboard));
             require(copied && copied->appearance && copied->placement &&
@@ -13391,7 +13457,9 @@ void pinnedSharedImageExportOffscreen() {
                         "file copy publishes one local file URL");
                 const QString temporaryPath = urls.front().toLocalFile();
                 require(temporaryPath != path &&
-                            temporaryPath.startsWith(QDir::tempPath() + QDir::separator()) &&
+                            QDir::fromNativeSeparators(temporaryPath)
+                                .startsWith(QDir::fromNativeSeparators(QDir::tempPath()) +
+                                            QLatin1Char('/')) &&
                             QFileInfo(temporaryPath).fileName() == name + QStringLiteral(".png") &&
                             normalized(QImage(temporaryPath)) == normalized(rendered),
                         "file copy retains the rendered viewport in a temporary directory");

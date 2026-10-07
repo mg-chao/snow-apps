@@ -20,14 +20,19 @@
 #include <Windows.h>
 
 struct ScreenshotClipboardPayloadTestAccess {
-    static QByteArray dib(const ScreenshotClipboardPayload& payload) {
-        auto handle = static_cast<HGLOBAL>(payload.m_dibHandle);
+    static QByteArray globalBytes(HGLOBAL handle) {
         const auto* memory = static_cast<const char*>(GlobalLock(handle));
         QByteArray bytes =
             memory == nullptr ? QByteArray{} : QByteArray(memory, GlobalSize(handle));
         if (memory != nullptr)
             GlobalUnlock(handle);
         return bytes;
+    }
+    static QByteArray dib(const ScreenshotClipboardPayload& payload) {
+        return globalBytes(static_cast<HGLOBAL>(payload.m_dibHandle));
+    }
+    static QByteArray png(const ScreenshotClipboardPayload& payload) {
+        return globalBytes(static_cast<HGLOBAL>(payload.m_pngHandle));
     }
 };
 
@@ -102,6 +107,8 @@ void verifyDib(const QImage& source, const QByteArray& bytes) {
                 header.biHeight == source.height() && header.biPlanes == 1 &&
                 header.biBitCount == 24 && header.biCompression == BI_RGB &&
                 header.biSizeImage == static_cast<DWORD>(stride * source.height()) &&
+                header.biXPelsPerMeter == 0 && header.biYPelsPerMeter == 0 &&
+                header.biClrUsed == 0 && header.biClrImportant == 0 &&
                 bytes.size() >= static_cast<qsizetype>(sizeof(header) + header.biSizeImage),
             "fallback must be a bottom-up 24-bit BI_RGB DIB");
     for (int y = 0; y < source.height(); ++y) {
@@ -119,6 +126,16 @@ void verifyDib(const QImage& source, const QByteArray& bytes) {
         for (int pad = source.width() * 3; pad < stride; ++pad)
             require(row[pad] == 0, "DIB row padding must be initialized");
     }
+    for (qsizetype offset = qsizetype(sizeof(header)) + header.biSizeImage; offset < bytes.size();
+         ++offset)
+        require(bytes[offset] == 0, "DIB allocator padding must be initialized");
+}
+
+void verifyPng(const ScreenshotClipboardPayload& payload) {
+    const QByteArray bytes = ScreenshotClipboardPayloadTestAccess::png(payload);
+    require(bytes.startsWith(payload.pngBytes()), "native PNG bytes must preserve the payload");
+    for (qsizetype offset = payload.pngBytes().size(); offset < bytes.size(); ++offset)
+        require(bytes[offset] == 0, "PNG allocator padding must be initialized");
 }
 
 QByteArray nativeBytes(UINT format) {
@@ -165,6 +182,8 @@ void payloadsPreservePixels() {
                     comparePixels(expected, QImage::fromData(reused.pngBytes(), "PNG"));
                     verifyDib(expected, ScreenshotClipboardPayloadTestAccess::dib(direct));
                     verifyDib(expected, ScreenshotClipboardPayloadTestAccess::dib(reused));
+                    verifyPng(direct);
+                    verifyPng(reused);
                     auto moved = std::move(reused);
                     require(moved.isValid() && !reused.isValid(), "payload move lost ownership");
                 }

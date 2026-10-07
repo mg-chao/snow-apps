@@ -25,6 +25,24 @@ struct SnowCanvasSmartEraseSnapshot::Data {
     std::vector<Entry> entries;
 };
 
+QByteArray SnowCanvasSmartEraseSnapshot::cacheKey() const {
+    if (!data || data->entries.empty())
+        return {};
+    QByteArray bytes;
+    QDataStream stream(&bytes, QIODevice::WriteOnly);
+    stream << static_cast<quint64>(data->entries.size());
+    for (const auto& entry : data->entries) {
+        stream << entry.item.element_id.index << entry.item.element_id.generation << entry.geometry
+               << entry.item.opacity << entry.item.filter.render_phase
+               << static_cast<bool>(entry.result);
+        if (entry.result) {
+            stream << entry.result->original.cacheKey() << entry.result->filled.cacheKey()
+                   << entry.result->canvasRect << entry.result->success;
+        }
+    }
+    return bytes;
+}
+
 namespace snow_canvas_smart_erase {
 namespace {
 quint64 elementKey(const SnowCanvasSceneItem& item) {

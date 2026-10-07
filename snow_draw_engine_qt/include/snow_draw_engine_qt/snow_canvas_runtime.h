@@ -50,6 +50,8 @@ class SnowCanvasRuntime {
     bool canUndo() const;
     bool canRedo() const;
     quint64 documentRevision() const;
+    // Includes hidden elements and watermark content, but excludes creation styles and history.
+    bool hasDocumentContent() const;
     void setDocumentChangedHandler(std::function<void()> handler);
     // Detaches clients immediately. Engine storage is released by the process cleanup worker,
     // without waiting in the runtime owner's destructor.

@@ -13,6 +13,7 @@
 #endif
 #include "snow_shot/update/updateservice.h"
 #include "snow_shot/platform/windows/monitorgeometry.h"
+#include "snowimageqtcodec.h"
 #include <QBuffer>
 #include <QCoreApplication>
 #include <QCryptographicHash>
@@ -979,13 +980,36 @@ void McpApplicationService::Impl::handle(const ScreenshotMcpRequest& request,
         background(
             request,
             [repository, record = *it, request, metadata] {
-                const auto image = repository->loadResultImage(record);
-                if (!image || image->isNull())
+                const auto png = repository->loadResultPng(record);
+                if (!png)
                     return failure(request, QStringLiteral("image_unavailable"));
-                auto response = reply(request, metadata);
-                QBuffer buffer(&response.attachment);
-                if (!buffer.open(QIODevice::WriteOnly) || !image->save(&buffer, "PNG"))
+                // Header validation alone cannot detect damaged IDAT data in a stored PNG.
+                // Validate pixels before returning the existing encoding, as the previous
+                // decode-and-encode path did, without performing a second PNG encode.
+                QByteArray recompressed;
+                bool encodeFailed = false;
+                const auto valid = [&] {
+                    const QImage image = image_codec::decode(png->bytes(), snow::image::Format::png,
+                                                             "capture_result.png");
+                    if (image.isNull() || image.size() != png->pixelSize())
+                        return false;
+                    if (png->bytes().size() > 60 * 1024 * 1024) {
+                        // A low-compression stored PNG may exceed the response limit even
+                        // though the previous default encoding fit. Keep that fallback.
+                        QBuffer buffer(&recompressed);
+                        encodeFailed =
+                            !buffer.open(QIODevice::WriteOnly) || !image.save(&buffer, "PNG");
+                    }
+                    return true;
+                }();
+                if (!valid) {
+                    repository->reportReadFailure(record, QStringLiteral("image_unavailable"));
+                    return failure(request, QStringLiteral("image_unavailable"));
+                }
+                if (encodeFailed)
                     return failure(request, QStringLiteral("output_failed"));
+                auto response = reply(request, metadata);
+                response.attachment = recompressed.isEmpty() ? png->bytes() : recompressed;
                 if (response.attachment.size() > 60 * 1024 * 1024)
                     return failure(request, QStringLiteral("output_too_large"));
                 response.attachmentMime = QStringLiteral("image/png");

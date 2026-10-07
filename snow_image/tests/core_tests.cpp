@@ -1066,6 +1066,95 @@ void test_jpeg_xl(Service& service) {
             "JPEG XL animation preserves the second frame pixels");
 }
 
+void test_jxl_mixed_8bit_animation(Service& service) {
+    if (!service.encoder_info(Format::jxl))
+        return;
+    snow::image::PixelFormat bgr = snow::image::kRgb8;
+    bgr.channels = snow::image::ChannelLayout::bgr;
+    const std::array formats{snow::image::kRgb8, snow::image::kRgba8, bgr};
+    for (const bool opaque : {true, false}) {
+        for (const bool mixed_endian : {false, true}) {
+            std::array<std::size_t, 3> order{0, 1, 2};
+            do {
+                Document document;
+                document.format = Format::jxl;
+                document.canvas_width = 5;
+                document.canvas_height = 3;
+                for (std::size_t index = 0; index < order.size(); ++index) {
+                    snow::image::PixelFormat format = formats[order[index]];
+                    // Byte order cannot affect 8-bit samples, including frames
+                    // that take different packed-layout normalization paths.
+                    format.little_endian = !mixed_endian || index % 2U == 0;
+                    auto pixels = take(snow::image::MutableImage::allocate(5, 3, format),
+                                       "allocate mixed-layout JPEG XL frame");
+                    const bool reversed = format.channels == snow::image::ChannelLayout::bgr;
+                    for (std::uint32_t y = 0; y < pixels.height(); ++y) {
+                        for (std::uint32_t x = 0; x < pixels.width(); ++x) {
+                            const std::array<std::byte, 3> rgb{
+                                static_cast<std::byte>(x * 29U + index * 31U),
+                                static_cast<std::byte>(y * 37U + index * 17U),
+                                static_cast<std::byte>(x * 11U + y * 23U + index * 7U)};
+                            std::byte* pixel = pixels.pixels().data() + y * pixels.row_stride() +
+                                               x * format.channel_count();
+                            pixel[0] = rgb[reversed ? 2U : 0U];
+                            pixel[1] = rgb[1];
+                            pixel[2] = rgb[reversed ? 0U : 2U];
+                            if (format.channel_count() == 4U)
+                                pixel[3] = opaque ? std::byte{255} : std::byte{128};
+                        }
+                    }
+                    Frame frame;
+                    frame.image = std::move(pixels).freeze();
+                    frame.duration = std::chrono::milliseconds(40U * (index + 1U));
+                    document.frames.push_back(std::move(frame));
+                }
+                snow::image::EncodeOptions options;
+                options.format = Format::jxl;
+                options.lossless = true;
+                auto bytes = std::make_shared<std::vector<std::byte>>();
+                take(service.encode(document, snow::image::memory_output(bytes), options),
+                     "encode mixed-layout JPEG XL animation");
+                const auto info = take(service.inspect(snow::image::memory_input(bytes)),
+                                       "inspect mixed-layout JPEG XL animation");
+                require(info.frames.size() == order.size() &&
+                            std::all_of(
+                                info.frames.begin(), info.frames.end(),
+                                [opaque](const auto& frame) { return frame.has_alpha == !opaque; }),
+                        "mixed-layout JPEG XL preserves frame count and alpha content");
+                snow::image::DecodeOptions decode;
+                decode.output_format = snow::image::kRgba8;
+                const Document decoded =
+                    take(service.decode(snow::image::memory_input(bytes), decode),
+                         "decode mixed-layout JPEG XL animation");
+                require(decoded.frames.size() == document.frames.size(),
+                        "mixed-layout JPEG XL round trip preserves all frame orders");
+                for (std::size_t index = 0; index < document.frames.size(); ++index) {
+                    const ImageView input = document.frames[index].image.view();
+                    const ImageView output = decoded.frames[index].image.view();
+                    const bool reversed = input.format.channels == snow::image::ChannelLayout::bgr;
+                    require(output.width == input.width && output.height == input.height &&
+                                output.format == snow::image::kRgba8 &&
+                                decoded.frames[index].duration == document.frames[index].duration,
+                            "mixed-layout JPEG XL preserves frame dimensions and durations");
+                    for (std::uint32_t y = 0; y < input.height; ++y) {
+                        for (std::uint32_t x = 0; x < input.width; ++x) {
+                            const std::byte* pixel = input.pixels.data() + y * input.row_stride +
+                                                     x * input.format.channel_count();
+                            const std::array<std::byte, 4> expected{
+                                pixel[reversed ? 2U : 0U], pixel[1], pixel[reversed ? 0U : 2U],
+                                input.format.channel_count() == 4U ? pixel[3] : std::byte{255}};
+                            const std::byte* actual =
+                                output.pixels.data() + y * output.row_stride + x * 4U;
+                            require(std::equal(expected.begin(), expected.end(), actual),
+                                    "mixed-layout JPEG XL preserves every frame's pixels");
+                        }
+                    }
+                }
+            } while (std::next_permutation(order.begin(), order.end()));
+        }
+    }
+}
+
 void test_openexr(Service& service) {
     if (!supports(service, Format::exr, snow::image::CodecCapability::encode))
         return;
@@ -2563,8 +2652,8 @@ void test_webp(Service& service) {
                                    "query packed WebP raster route");
     require(native_route == snow::image::RasterEncodeRoute::native &&
                 lossless_route == snow::image::RasterEncodeRoute::materialized &&
-                packed_route == snow::image::RasterEncodeRoute::materialized,
-            "WebP route query selects native YUVA only for compatible lossy input");
+                packed_route == snow::image::RasterEncodeRoute::native,
+            "WebP route query selects native packed input and compatible lossy YUVA input");
 
     RowRasterWriter row_writer(native_descriptor);
     require(service.decode_into(snow::image::memory_input(lossy_bytes), row_writer, native_options)
@@ -4067,6 +4156,21 @@ void test_jxl_opaque_progressive_preview(Service& service) {
 } // namespace
 
 int main(int argc, char* argv[]) {
+    if (argc == 2 && std::string_view(argv[1]) == "--export-codecs-only") {
+        Service service;
+        test_bmp_round_trip(service);
+        test_png_round_trip(service);
+        test_jpeg_round_trip(service);
+        test_jpeg_alpha_matte(service);
+        test_jpeg_xl(service);
+        test_jxl_mixed_8bit_animation(service);
+        test_jxl_opaque_progressive_preview(service);
+        test_webp(service);
+        test_opaque_codec_alpha_omission(service);
+        test_parallel_resize_determinism();
+        test_streaming_resize();
+        return 0;
+    }
     if (argc == 2 && std::string_view(argv[1]) == "--processing-only") {
         test_processing();
         test_flatten_first_frame();
@@ -4082,6 +4186,7 @@ int main(int argc, char* argv[]) {
         test_jpeg_round_trip(service);
         test_gif_animation(service);
         test_jpeg_xl(service);
+        test_jxl_mixed_8bit_animation(service);
         test_jxl_opaque_progressive_preview(service);
         test_openexr(service);
         test_webp(service);
@@ -4103,6 +4208,14 @@ int main(int argc, char* argv[]) {
         test_jpeg_round_trip(service);
         test_jpeg_alpha_matte(service);
         std::cout << "snow_image JPEG tests passed\n";
+        return 0;
+    }
+    if (argc == 2 && std::string_view(argv[1]) == "--jxl-only") {
+        Service service;
+        test_jpeg_xl(service);
+        test_jxl_mixed_8bit_animation(service);
+        test_jxl_opaque_progressive_preview(service);
+        std::cout << "snow_image JPEG XL tests passed\n";
         return 0;
     }
     if (argc == 2 && std::string_view(argv[1]) == "--heif-only") {
@@ -4133,6 +4246,7 @@ int main(int argc, char* argv[]) {
     test_svg_vector_round_trip(service);
     test_heif_family(service);
     test_jpeg_xl(service);
+    test_jxl_mixed_8bit_animation(service);
     test_openexr(service);
     test_processing();
     test_flatten_first_frame();

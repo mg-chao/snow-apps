@@ -2,12 +2,14 @@
 #include "snow_shot/app/mcp/screenshotmcpsession.h"
 #include "snow_shot/app/mcp/screenshotmcpselection.h"
 #include "snow_shot/app/mcp/mcpstylepatch.h"
+#include "snowimageqtcodec.h"
 #include <QApplication>
 #include <QClipboard>
 #include <QMimeData>
 #include "snow_draw_engine_qt/snow_canvas_runtime.h"
 #include "snow_draw_engine_qt/snow_canvas_widget.h"
 #include <QElapsedTimer>
+#include <QCryptographicHash>
 #include <QFile>
 #include <QFileInfo>
 #include <QJsonDocument>
@@ -16,6 +18,7 @@
 #include <QThread>
 #include <QtEndian>
 #include <cstdlib>
+#include <atomic>
 #include <iostream>
 #include <utility>
 using namespace snow_shot::app::mcp;
@@ -327,6 +330,7 @@ void selection() {
 void session() {
     QJsonObject editor{{QStringLiteral("capture_phase"), QStringLiteral("idle")}};
     int canceled = 0, artifacts = 0, mutations = 0;
+    std::atomic_int pngEncodes = 0;
     bool deferImage = false;
     std::function<void(QImage)> deliverImage;
     ScreenshotMcpSession::Ports ports;
@@ -357,7 +361,10 @@ void session() {
                     }));
         QImage image(32, 20, QImage::Format_ARGB32_Premultiplied);
         image.fill(Qt::red);
-        return std::make_shared<ScreenshotExportArtifact>(ScreenshotExportSource::fromImage(image));
+        ScreenshotExportArtifact::PngCachePolicy policy;
+        policy.encodingStarted = [&] { ++pngEncodes; };
+        return std::make_shared<ScreenshotExportArtifact>(
+            ScreenshotExportSource::fromImage(image), ScreenshotCompressionLevel::Medium, policy);
     };
     ports.copy = [](auto, auto done) {
         done(true);
@@ -422,8 +429,54 @@ void session() {
     require(mutations == 0, "stale mutation not applied");
     require(call(QStringLiteral("snow_shot_screenshot_set_selection")).ok,
             "current revision applies");
+    QTemporaryDir coldOutput;
+    for (const auto* format : {"jpeg", "pdf"}) {
+        const QString coldPath = coldOutput.filePath(QString::fromLatin1(format) + u'.' + format);
+        const auto saved = call(QStringLiteral("snow_shot_screenshot_save"),
+                                {{QStringLiteral("path"), coldPath},
+                                 {QStringLiteral("format"), QLatin1String(format)}});
+        const QString savedPath = saved.result.value(QStringLiteral("path")).toString();
+        QFile file(savedPath);
+        require(saved.ok &&
+                    savedPath == ScreenshotImageFileService::normalizedPath(
+                                     coldPath, ScreenshotImageFileService::formatForKey(
+                                                   QLatin1String(format))) &&
+                    file.open(QIODevice::ReadOnly),
+                "cold non-PNG save succeeds at its format-normalized path");
+        const auto bytes = file.readAll();
+        require(pngEncodes == 0 && saved.result.value(QStringLiteral("width")) == 32 &&
+                    saved.result.value(QStringLiteral("height")) == 20 &&
+                    saved.result.value(QStringLiteral("format")).toString() ==
+                        QLatin1String(format) &&
+                    saved.result.value(QStringLiteral("byte_count")).toInteger() == bytes.size() &&
+                    saved.result.value(QStringLiteral("sha256")).toString() ==
+                        QString::fromLatin1(
+                            QCryptographicHash::hash(bytes, QCryptographicHash::Sha256).toHex()),
+                "non-PNG saves report their actual bytes without a canonical PNG encode");
+    }
+    const QString customPngPath = coldOutput.filePath(QStringLiteral("custom-compression.png"));
+    for (int index = 0; index < 2; ++index) {
+        const auto saved = call(QStringLiteral("snow_shot_screenshot_save"),
+                                {{QStringLiteral("path"), customPngPath},
+                                 {QStringLiteral("format"), QStringLiteral("png")},
+                                 {QStringLiteral("compression_level"), QStringLiteral("high")}});
+        QFile file(customPngPath);
+        require(saved.ok && file.open(QIODevice::ReadOnly), "custom-compression PNG save succeeds");
+        const auto bytes = file.readAll();
+        require(pngEncodes == 1 && saved.result.value(QStringLiteral("width")) == 32 &&
+                    saved.result.value(QStringLiteral("height")) == 20 &&
+                    saved.result.value(QStringLiteral("format")) == QStringLiteral("png") &&
+                    saved.result.value(QStringLiteral("byte_count")).toInteger() == bytes.size() &&
+                    saved.result.value(QStringLiteral("sha256")).toString() ==
+                        QString::fromLatin1(
+                            QCryptographicHash::hash(bytes, QCryptographicHash::Sha256).toHex()) &&
+                    snow_shot::image_codec::decode(bytes, snow::image::Format::png, "saved.png")
+                            .size() == QSize(32, 20),
+                "PNG saves encode only their requested compression and reuse committed bytes");
+    }
     auto rendered = call(QStringLiteral("snow_shot_screenshot_render"));
-    require(rendered.ok && !rendered.attachment.isEmpty(), "render PNG attachment");
+    require(rendered.ok && !rendered.attachment.isEmpty() && pngEncodes == 2,
+            "render prepares canonical PNG metadata after saves with different compression");
     require(call(QStringLiteral("snow_shot_screenshot_render")).ok && artifacts == 1,
             "render cache reused across output revisions");
     require(call(QStringLiteral("snow_shot_screenshot_undo")).ok, "history mutation");
