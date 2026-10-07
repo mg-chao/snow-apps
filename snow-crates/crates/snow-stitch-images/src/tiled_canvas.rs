@@ -395,7 +395,37 @@ impl TiledCanvas {
             StitchAxis::Horizontal => (selected_extent, self.cross_extent),
         };
         let mut pixels = RasterBuffer::zeroed(width as usize * height as usize * channels);
-        let output = pixels.as_mut_slice();
+        self.copy_axis(start, end, pixels.as_mut_slice())?;
+        Frame::from_buffer(width, height, self.pixel_format, pixels)
+    }
+
+    pub(crate) fn copy_axis(
+        &self,
+        start: u32,
+        end: u32,
+        output: &mut [u8],
+    ) -> Result<(), StitchError> {
+        if start >= end || end > self.extent {
+            return Err(StitchError::InvalidFrame {
+                message: format!(
+                    "axis range {start}..{end} is outside canvas extent {}",
+                    self.extent
+                ),
+            });
+        }
+        let channels = self.channels();
+        let selected_extent = end - start;
+        let length = (selected_extent as usize)
+            .checked_mul(self.cross_extent as usize)
+            .and_then(|pixels| pixels.checked_mul(channels))
+            .ok_or(StitchError::Arithmetic {
+                operation: "calculating canvas copy length",
+            })?;
+        if output.len() != length {
+            return Err(StitchError::InvalidFrame {
+                message: format!("canvas copy requires {length} bytes, got {}", output.len()),
+            });
+        }
         let mut global = 0_u32;
         for tile in &self.tiles {
             let source_pixels = tile.pixels.as_slice();
@@ -434,7 +464,7 @@ impl TiledCanvas {
                 break;
             }
         }
-        Frame::from_buffer(width, height, self.pixel_format, pixels)
+        Ok(())
     }
 
     pub fn materialize(&self) -> Result<Frame, StitchError> {

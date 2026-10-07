@@ -56,6 +56,7 @@ void scrollingMetadataAndReportCadence() {
     counters.duplicates = 1;
     counters.invalid = 2;
     counters.timeouts = 9;
+    counters.mailboxReplaced = 3;
     auto fields = counters.fields(start + 35s);
     fields.insert(QStringLiteral("hole_rect"), QStringLiteral("0,0 1920x1080"));
     fields.insert(QStringLiteral("full_hole"), true);

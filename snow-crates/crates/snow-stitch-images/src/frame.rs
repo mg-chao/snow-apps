@@ -1,4 +1,4 @@
-use std::{fmt, path::Path};
+use std::{fmt, ops::Deref, path::Path, sync::Arc};
 
 use serde::{Deserialize, Serialize};
 use snow_memory::RasterBuffer;
@@ -51,8 +51,92 @@ pub struct Frame {
     width: u32,
     height: u32,
     pixel_format: PixelFormat,
-    pixels: RasterBuffer,
+    pixels: FramePixels,
 }
+
+#[derive(Clone)]
+enum FramePixels {
+    Owned(RasterBuffer),
+    Shared(SharedFramePixels),
+}
+
+#[derive(Clone)]
+struct SharedFramePixels {
+    bytes: *const u8,
+    length: usize,
+    _owner: Arc<dyn AsRef<[u8]> + Send + Sync>,
+}
+
+impl SharedFramePixels {
+    fn new(owner: Arc<dyn AsRef<[u8]> + Send + Sync>) -> Self {
+        let bytes = owner.as_ref().as_ref();
+        Self {
+            bytes: bytes.as_ptr(),
+            length: bytes.len(),
+            _owner: owner,
+        }
+    }
+}
+
+// The slice borrows immutable storage from a Send + Sync owner. Every clone
+// retains that owner, and the pointer is never exposed for mutation.
+unsafe impl Send for SharedFramePixels {}
+unsafe impl Sync for SharedFramePixels {}
+
+impl AsRef<[u8]> for SharedFramePixels {
+    fn as_ref(&self) -> &[u8] {
+        // Retaining the Arc keeps the original AsRef borrow valid. Cache the
+        // slice so per-pixel sampling never dispatches through the owner's vtable.
+        unsafe { std::slice::from_raw_parts(self.bytes, self.length) }
+    }
+}
+
+impl FramePixels {
+    fn into_buffer(self) -> RasterBuffer {
+        match self {
+            Self::Owned(pixels) => pixels,
+            Self::Shared(pixels) => RasterBuffer::from(pixels.as_ref()),
+        }
+    }
+
+    fn make_owned(&mut self) -> &mut RasterBuffer {
+        if let Self::Shared(pixels) = self {
+            *self = Self::Owned(RasterBuffer::from(pixels.as_ref()));
+        }
+        match self {
+            Self::Owned(pixels) => pixels,
+            Self::Shared(_) => unreachable!("shared pixels were detached"),
+        }
+    }
+}
+
+impl Deref for FramePixels {
+    type Target = [u8];
+
+    fn deref(&self) -> &[u8] {
+        match self {
+            Self::Owned(pixels) => pixels,
+            Self::Shared(pixels) => pixels.as_ref(),
+        }
+    }
+}
+
+impl fmt::Debug for FramePixels {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("FramePixels")
+            .field("len", &self.len())
+            .finish()
+    }
+}
+
+impl PartialEq for FramePixels {
+    fn eq(&self, other: &Self) -> bool {
+        **self == **other
+    }
+}
+
+impl Eq for FramePixels {}
 
 impl Frame {
     pub fn new(
@@ -77,7 +161,25 @@ impl Frame {
             width,
             height,
             pixel_format,
-            pixels,
+            pixels: FramePixels::Owned(pixels),
+        })
+    }
+
+    /// Retain immutable pixel storage without copying it. Mutation detaches into
+    /// an owned raster, so references and input leases cannot modify one another.
+    pub fn from_shared_buffer(
+        width: u32,
+        height: u32,
+        pixel_format: PixelFormat,
+        pixels: Arc<dyn AsRef<[u8]> + Send + Sync>,
+    ) -> Result<Self, StitchError> {
+        let pixels = SharedFramePixels::new(pixels);
+        Self::validate_buffer(width, height, pixel_format, pixels.length)?;
+        Ok(Self {
+            width,
+            height,
+            pixel_format,
+            pixels: FramePixels::Shared(pixels),
         })
     }
 
@@ -237,15 +339,15 @@ impl Frame {
     }
 
     pub fn into_pixels(self) -> Vec<u8> {
-        self.pixels.into_vec()
+        self.into_buffer().into_vec()
     }
 
     pub fn into_buffer(self) -> RasterBuffer {
-        self.pixels
+        self.pixels.into_buffer()
     }
 
     pub(crate) fn pixels_mut(&mut self) -> &mut RasterBuffer {
-        &mut self.pixels
+        self.pixels.make_owned()
     }
 
     #[cfg(test)]
@@ -316,7 +418,7 @@ impl Frame {
                     operation: "allocating cropped image",
                 })?;
         let mut output = RasterBuffer::zeroed(capacity);
-        let source = self.pixels.as_slice();
+        let source = self.pixels();
         for (row, target) in output
             .as_mut_slice()
             .chunks_exact_mut(output_row_len)
@@ -433,6 +535,64 @@ impl Frame {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn shared_input_resolves_its_owner_once_for_all_pixel_reads() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        struct Pixels {
+            bytes: Vec<u8>,
+            reads: Arc<AtomicUsize>,
+        }
+        impl AsRef<[u8]> for Pixels {
+            fn as_ref(&self) -> &[u8] {
+                self.reads.fetch_add(1, Ordering::Relaxed);
+                &self.bytes
+            }
+        }
+        let reads = Arc::new(AtomicUsize::new(0));
+        let owner = Arc::new(Pixels {
+            bytes: vec![0x5a; 16],
+            reads: reads.clone(),
+        });
+        let frame = Frame::from_shared_buffer(2, 2, PixelFormat::Rgba8, owner).unwrap();
+        let mut clone = frame.clone();
+        assert_eq!(frame, clone);
+        assert_eq!(frame.row(1).unwrap(), &[0x5a; 8]);
+        assert_eq!(frame.crop(0, 1, 2, 1).unwrap().pixels(), &[0x5a; 8]);
+        clone.pixels_mut()[0] = 0x7f;
+        assert_eq!(frame.into_pixels(), vec![0x5a; 16]);
+        assert_eq!(reads.load(Ordering::Relaxed), 1);
+    }
+
+    #[test]
+    fn shared_input_retains_ownership_and_detaches_only_for_mutation() {
+        let input = Arc::new(vec![0x5a; 512 * 512 * 4]);
+        let lease = Arc::downgrade(&input);
+        let pointer = input.as_ptr();
+        let mut frame = Frame::from_shared_buffer(512, 512, PixelFormat::Rgba8, input).unwrap();
+        let cloned = frame.clone();
+        assert_eq!(frame.pixels().as_ptr(), pointer);
+        assert_eq!(cloned.pixels().as_ptr(), pointer);
+        frame.pixels_mut()[0] = 0x7f;
+        assert_ne!(frame.pixels().as_ptr(), pointer);
+        assert_eq!(cloned.pixels()[0], 0x5a);
+        assert!(lease.upgrade().is_some());
+        drop(cloned);
+        assert!(lease.upgrade().is_none());
+        let owned = frame.into_buffer();
+        assert_eq!(owned[0], 0x7f);
+        assert!(owned.is_page_backed());
+    }
+
+    #[test]
+    fn shared_input_validates_geometry_and_materializes_owned_pixels() {
+        let pixels = Arc::new(vec![0x5a; 16]);
+        assert!(Frame::from_shared_buffer(3, 2, PixelFormat::Rgba8, pixels.clone()).is_err());
+        let frame = Frame::from_shared_buffer(2, 2, PixelFormat::Rgba8, pixels.clone()).unwrap();
+        assert_eq!(frame.row(1).unwrap(), &[0x5a; 8]);
+        assert_eq!(frame.crop(0, 1, 2, 1).unwrap().pixels(), &[0x5a; 8]);
+        assert_eq!(frame.into_pixels(), *pixels);
+    }
 
     fn sample_frame(pixel_format: PixelFormat) -> Frame {
         let pixels = match pixel_format {

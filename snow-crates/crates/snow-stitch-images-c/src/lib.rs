@@ -1,6 +1,6 @@
 use snow_memory::RasterBuffer;
 use std::cell::RefCell;
-use std::ffi::{CStr, CString, c_char};
+use std::ffi::{CStr, CString, c_char, c_void};
 use std::io::Write;
 use std::mem::size_of;
 use std::path::{Path, PathBuf};
@@ -211,6 +211,31 @@ impl Drop for RgbaFrameBuffer {
                 .push(data);
         }
         self.pool.active.fetch_sub(1, Ordering::AcqRel);
+    }
+}
+
+struct ExternalRgbaPixels {
+    bytes: *const u8,
+    length: usize,
+    context: *mut c_void,
+    release: unsafe extern "C" fn(*mut c_void),
+}
+
+// The external-frame ABI requires immutable pixels and a release callback that
+// may run on any thread. No mutable slice is ever exposed for this storage.
+unsafe impl Send for ExternalRgbaPixels {}
+unsafe impl Sync for ExternalRgbaPixels {}
+
+impl AsRef<[u8]> for ExternalRgbaPixels {
+    fn as_ref(&self) -> &[u8] {
+        // Construction validates the slice; the owner's callback keeps it live.
+        unsafe { slice::from_raw_parts(self.bytes, self.length) }
+    }
+}
+
+impl Drop for ExternalRgbaPixels {
+    fn drop(&mut self) {
+        unsafe { (self.release)(self.context) };
     }
 }
 
@@ -1357,6 +1382,66 @@ pub unsafe extern "C" fn snow_stitch_session_push_owned(
 
 #[unsafe(no_mangle)]
 /// # Safety
+/// `session` must be live and exclusively accessed, and `out_outcome` writable
+/// when non-null. `rgba_bytes` must describe `rgba_len` initialized, immutable
+/// bytes that remain valid until `release(context)` runs. The callback must be
+/// callable on any thread. A non-null callback transfers the context even when
+/// validation or stitching fails, and is called exactly once after the last lease.
+pub unsafe extern "C" fn snow_stitch_session_push_external_rgba(
+    session: *mut SnowStitchSessionImpl,
+    width: u32,
+    height: u32,
+    rgba_bytes: *const u8,
+    rgba_len: usize,
+    release: Option<unsafe extern "C" fn(*mut c_void)>,
+    context: *mut c_void,
+    out_outcome: *mut SnowStitchFrameOutcome,
+) -> u8 {
+    let Some(release) = release else {
+        set_last_error("external frame release callback is null");
+        return 0;
+    };
+    let preparation =
+        snow_stitch_images::perf::Scope::new(snow_stitch_images::perf::Stage::FrameFreeze);
+    let pixels = Arc::new(ExternalRgbaPixels {
+        bytes: rgba_bytes,
+        length: rgba_len,
+        context,
+        release,
+    });
+    let expected = (width as usize)
+        .checked_mul(height as usize)
+        .and_then(|pixels| pixels.checked_mul(4));
+    if rgba_bytes.is_null()
+        || rgba_len == 0
+        || rgba_len > isize::MAX as usize
+        || expected != Some(rgba_len)
+        || out_outcome.is_null()
+    {
+        set_last_error("external frame requires packed RGBA pixels and a writable outcome");
+        return 0;
+    }
+    let Some(session) = (unsafe { session.as_mut() }) else {
+        set_last_error("stitch session is null");
+        return 0;
+    };
+    let frame = Frame::from_shared_buffer(width, height, PixelFormat::Rgba8, pixels);
+    preparation.finish();
+    match session.session.push_owned_frame(frame) {
+        Ok(outcome) => {
+            unsafe { *out_outcome = ffi_outcome(outcome) };
+            clear_last_error();
+            1
+        }
+        Err(error) => {
+            set_last_error(error);
+            0
+        }
+    }
+}
+
+#[unsafe(no_mangle)]
+/// # Safety
 /// `session` must remain live and unmodified during the call. `destination`
 /// must be writable for exactly `destination_len` bytes.
 pub unsafe extern "C" fn snow_stitch_session_copy_rows(
@@ -1879,6 +1964,137 @@ pub extern "C" fn snow_stitch_last_error_message() -> *const c_char {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    struct ExternalTestPixels {
+        pixels: Vec<u8>,
+        released: Arc<AtomicUsize>,
+    }
+
+    unsafe extern "C" fn release_test_pixels(context: *mut c_void) {
+        let owner = unsafe { Box::from_raw(context.cast::<ExternalTestPixels>()) };
+        owner.released.fetch_add(1, Ordering::SeqCst);
+    }
+
+    fn external_test_pixels(released: &Arc<AtomicUsize>) -> (*const u8, *mut c_void) {
+        let owner = Box::new(ExternalTestPixels {
+            pixels: vec![0x5a; 5 * 5 * 4],
+            released: Arc::clone(released),
+        });
+        (owner.pixels.as_ptr(), Box::into_raw(owner).cast())
+    }
+
+    #[test]
+    fn external_frame_retains_pixels_until_reset_and_snapshot_outlives_input() {
+        let mut config = StitchConfig::default();
+        for axis in [StitchAxis::Vertical, StitchAxis::Horizontal] {
+            config.axis = axis;
+            let ffi_config = ffi_config(config.clone());
+            let session = unsafe { snow_stitch_session_create(&ffi_config) };
+            let released = Arc::new(AtomicUsize::new(0));
+            let (bytes, context) = external_test_pixels(&released);
+            let mut outcome: SnowStitchFrameOutcome = unsafe { std::mem::zeroed() };
+            assert_eq!(
+                unsafe {
+                    snow_stitch_session_push_external_rgba(
+                        session,
+                        5,
+                        5,
+                        bytes,
+                        100,
+                        Some(release_test_pixels),
+                        context,
+                        &mut outcome,
+                    )
+                },
+                1
+            );
+            assert_eq!(released.load(Ordering::SeqCst), 0);
+            // Initial reference and previous input share exactly the supplied allocation.
+            let snapshot = unsafe { snow_stitch_session_snapshot_axis(session, 0, 5) };
+            let (duplicate, duplicate_context) = external_test_pixels(&released);
+            assert_eq!(
+                unsafe {
+                    snow_stitch_session_push_external_rgba(
+                        session,
+                        5,
+                        5,
+                        duplicate,
+                        100,
+                        Some(release_test_pixels),
+                        duplicate_context,
+                        &mut outcome,
+                    )
+                },
+                1
+            );
+            assert_eq!(released.load(Ordering::SeqCst), 1);
+            assert_eq!(unsafe { snow_stitch_session_reset(session) }, 1);
+            assert_eq!(released.load(Ordering::SeqCst), 2);
+            unsafe { snow_stitch_session_destroy(session) };
+            let image = unsafe { snow_stitch_snapshot_materialize(snapshot) };
+            assert!(!image.is_null());
+            assert!(
+                unsafe { &*image }
+                    .image
+                    .frame
+                    .pixels()
+                    .iter()
+                    .all(|&pixel| pixel == 0x5a)
+            );
+            unsafe {
+                snow_stitch_owned_image_destroy(image);
+                snow_stitch_snapshot_destroy(snapshot);
+            }
+        }
+    }
+
+    #[test]
+    fn external_frame_failure_releases_context_exactly_once() {
+        let config = ffi_config(StitchConfig::default());
+        let session = unsafe { snow_stitch_session_create(&config) };
+        let released = Arc::new(AtomicUsize::new(0));
+        for case in 0..6 {
+            let (bytes, context) = external_test_pixels(&released);
+            let mut outcome: SnowStitchFrameOutcome = unsafe { std::mem::zeroed() };
+            let status = unsafe {
+                snow_stitch_session_push_external_rgba(
+                    if case == 0 { ptr::null_mut() } else { session },
+                    if case == 1 {
+                        4
+                    } else if case == 5 {
+                        u32::MAX
+                    } else {
+                        5
+                    },
+                    if case == 1 {
+                        4
+                    } else if case == 5 {
+                        u32::MAX
+                    } else {
+                        5
+                    },
+                    if case == 2 { ptr::null() } else { bytes },
+                    if case == 1 {
+                        64
+                    } else if case == 3 {
+                        99
+                    } else {
+                        100
+                    },
+                    Some(release_test_pixels),
+                    context,
+                    if case == 4 {
+                        ptr::null_mut()
+                    } else {
+                        &mut outcome
+                    },
+                )
+            };
+            assert_eq!(status, 0);
+            assert_eq!(released.load(Ordering::SeqCst), case + 1);
+        }
+        unsafe { snow_stitch_session_destroy(session) };
+    }
 
     #[test]
     fn config_is_sized_and_rejects_truncated_callers() {

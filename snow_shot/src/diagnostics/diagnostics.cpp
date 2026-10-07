@@ -290,7 +290,7 @@ struct DiagnosticsService::Impl {
                                            QStringLiteral("receive_timeouts"),
                                            QStringLiteral("duplicate_frames"),
                                            QStringLiteral("invalid_frames"),
-                                           QStringLiteral("mailbox_dropped"),
+                                           QStringLiteral("mailbox_replaced"),
                                            QStringLiteral("pool_unavailable"),
                                            QStringLiteral("dropped_events"),
                                            QStringLiteral("pixel_format"),

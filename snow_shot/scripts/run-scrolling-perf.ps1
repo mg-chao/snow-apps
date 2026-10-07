@@ -39,12 +39,14 @@ New-Item -ItemType Directory -Force -Path $OutputDirectory | Out-Null
 
 Push-Location $crates
 try {
-    Invoke-Checked "cargo" @(
-        "run", "--release", "--target", $performanceTarget.RustTarget, "-p", "snow-stitch-images",
-        "--features", "bench-internals", "--example", "scrolling_perf", "--",
-        "--output", (Join-Path $OutputDirectory "stitch.json"),
-        "--frames", "180", "--warmups", "2", "--rounds", "7"
-    )
+    foreach ($axis in @("vertical", "horizontal")) {
+        Invoke-Checked "cargo" @(
+            "run", "--release", "--locked", "--target", $performanceTarget.RustTarget,
+            "--no-default-features", "-p", "snow-stitch-images",
+            "--features", "perf-instrumentation", "--example", "memory_reference_benchmark", "--",
+            "stitch-reference-$axis-4k", "31"
+        ) | Set-Content -LiteralPath (Join-Path $OutputDirectory "reference-$axis.jsonl") -Encoding utf8
+    }
 
     if ($IncludeLiveCapture) {
         if ($RegionWidth -le 0 -or $RegionHeight -le 0 -or
@@ -78,7 +80,7 @@ finally {
 
 Push-Location $workspace
 try {
-    & (Join-Path $shot "scripts/configure-msvc-perf.ps1") -Fresh -QtBin $QtBin -Architecture $Architecture
+    & (Join-Path $shot "scripts/configure-msvc-perf.ps1") -Fresh -ScrollingPerfDetail -QtBin $QtBin -Architecture $Architecture
     if ($LASTEXITCODE -ne 0) {
         throw "The performance configuration failed"
     }
@@ -87,13 +89,14 @@ try {
         "--build", $performanceBuildDirectory, "--config", "Release", "--target",
         "snow-shot-scrolling-result-async-benchmark",
         "snow-shot-scrolling-preview-benchmark",
-        "snow-shot-latest-bridge-mailbox-tests",
+        "snow-shot-scrolling-frame-handoff-benchmark",
+        "snow-shot-latest-frame-mailbox-tests",
         "--parallel"
     )
 
     $release = Join-Path $performanceBuildDirectory "snow_shot/test-bin/Release"
 
-    foreach ($name in @("snow-shot-scrolling-result-async-benchmark.exe", "snow-shot-scrolling-preview-benchmark.exe", "snow-shot-latest-bridge-mailbox-tests.exe")) {
+    foreach ($name in @("snow-shot-scrolling-result-async-benchmark.exe", "snow-shot-scrolling-preview-benchmark.exe", "snow-shot-scrolling-frame-handoff-benchmark.exe", "snow-shot-latest-frame-mailbox-tests.exe")) {
         Assert-SnowPerformanceExecutable -Path (Join-Path $release $name) -Architecture $Architecture
     }
     $qtRuntime = Set-SnowPerformanceQtRuntime -Platform "offscreen" -Architecture $Architecture
@@ -108,8 +111,12 @@ try {
         Invoke-Checked (Join-Path $release "snow-shot-scrolling-preview-benchmark.exe") @()
 
         $env:SNOW_SCROLLING_PERF_OUTPUT =
-            Join-Path $OutputDirectory "backpressure.json"
-        Invoke-Checked (Join-Path $release "snow-shot-latest-bridge-mailbox-tests.exe") @()
+            Join-Path $OutputDirectory "frame-handoff.json"
+        Invoke-Checked (Join-Path $release "snow-shot-scrolling-frame-handoff-benchmark.exe") @()
+
+        $env:SNOW_SCROLLING_PERF_OUTPUT =
+            Join-Path $OutputDirectory "latest-frame-mailbox.json"
+        Invoke-Checked (Join-Path $release "snow-shot-latest-frame-mailbox-tests.exe") @()
     }
     finally {
         Restore-SnowPerformanceQtRuntime -Snapshot $qtRuntime

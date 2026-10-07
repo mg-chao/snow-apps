@@ -1,4 +1,5 @@
 use crate::{Frame, StitchAxis, StitchError};
+#[cfg(test)]
 use snow_memory::RasterBuffer;
 
 pub fn band_size(viewport_extent: u32, shift: u32) -> Result<u32, StitchError> {
@@ -384,6 +385,64 @@ pub(crate) fn synthesize_prepend_in_place(
     Ok(())
 }
 
+pub(crate) fn synthesize_append_axis_in_place(
+    reference: &mut Frame,
+    incoming: &Frame,
+    axis: StitchAxis,
+    shift: u32,
+) -> Result<(), StitchError> {
+    if axis == StitchAxis::Vertical {
+        return synthesize_append_in_place(reference, incoming, shift);
+    }
+    validate_horizontal_pair(reference, incoming)?;
+    let width = reference.width() as usize;
+    let channels = reference.pixel_format().channels() as usize;
+    let band = band_size(reference.width(), shift)? as usize;
+    let keep = width - band;
+    let row_bytes = width * channels;
+    let first = shift as usize * channels;
+    let retained = keep * channels;
+    for (target, source) in reference
+        .pixels_mut()
+        .chunks_exact_mut(row_bytes)
+        .zip(incoming.pixels().chunks_exact(row_bytes))
+    {
+        target.copy_within(first..first + retained, 0);
+        target[retained..].copy_from_slice(&source[retained..]);
+    }
+    Ok(())
+}
+
+pub(crate) fn synthesize_prepend_axis_in_place(
+    reference: &mut Frame,
+    incoming: &Frame,
+    axis: StitchAxis,
+    shift: u32,
+) -> Result<(), StitchError> {
+    if axis == StitchAxis::Vertical {
+        return synthesize_prepend_in_place(reference, incoming, shift);
+    }
+    validate_horizontal_pair(reference, incoming)?;
+    let width = reference.width() as usize;
+    let channels = reference.pixel_format().channels() as usize;
+    let band = band_size(reference.width(), shift)? as usize;
+    let keep = width - band;
+    let row_bytes = width * channels;
+    let first = (band - shift as usize) * channels;
+    let retained = keep * channels;
+    let destination = band * channels;
+    for (target, source) in reference
+        .pixels_mut()
+        .chunks_exact_mut(row_bytes)
+        .zip(incoming.pixels().chunks_exact(row_bytes))
+    {
+        target.copy_within(first..first + retained, destination);
+        target[..destination].copy_from_slice(&source[..destination]);
+    }
+    Ok(())
+}
+
+#[cfg(test)]
 pub(crate) fn synthesize_append_axis(
     reference: &Frame,
     incoming: &Frame,
@@ -415,6 +474,7 @@ pub(crate) fn synthesize_append_axis(
     )
 }
 
+#[cfg(test)]
 pub(crate) fn synthesize_prepend_axis(
     reference: &Frame,
     incoming: &Frame,
@@ -461,6 +521,7 @@ fn validate_horizontal_pair(reference: &Frame, incoming: &Frame) -> Result<(), S
     Ok(())
 }
 
+#[cfg(test)]
 fn from_column_ranges(
     height: u32,
     pixel_format: crate::PixelFormat,
@@ -587,6 +648,35 @@ mod tests {
     }
 
     proptest! {
+        #[test]
+        fn horizontal_in_place_references_match_allocating_composition(
+            width in 5_u32..300,
+            height in 1_u32..10,
+            ratio in 1_u32..=60,
+        ) {
+            let shift = width * ratio / 100;
+            prop_assume!(shift > 0);
+            for format in [PixelFormat::Gray8, PixelFormat::Rgb8, PixelFormat::Rgba8] {
+                let length = (width * height * format.channels()) as usize;
+                let reference = Frame::new(width, height, format,
+                    (0..length).map(|i| i as u8).collect()).unwrap();
+                let incoming = Frame::new(width, height, format,
+                    (0..length).map(|i| (i as u8).wrapping_add(71)).collect()).unwrap();
+                let expected = synthesize_append_axis(&reference, &incoming, StitchAxis::Horizontal, shift).unwrap();
+                let mut actual = reference.clone();
+                let pointer = actual.pixels().as_ptr();
+                synthesize_append_axis_in_place(&mut actual, &incoming, StitchAxis::Horizontal, shift).unwrap();
+                prop_assert_eq!(actual.pixels().as_ptr(), pointer);
+                prop_assert_eq!(actual, expected);
+                let expected = synthesize_prepend_axis(&reference, &incoming, StitchAxis::Horizontal, shift).unwrap();
+                let mut actual = reference;
+                let pointer = actual.pixels().as_ptr();
+                synthesize_prepend_axis_in_place(&mut actual, &incoming, StitchAxis::Horizontal, shift).unwrap();
+                prop_assert_eq!(actual.pixels().as_ptr(), pointer);
+                prop_assert_eq!(actual, expected);
+            }
+        }
+
         #[test]
         fn legal_compositions_preserve_dimensions(
             height in 5_u32..500,

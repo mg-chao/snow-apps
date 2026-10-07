@@ -1,14 +1,10 @@
 use std::path::{Path, PathBuf};
 
-use crate::compositor::{
-    synthesize_append_axis, synthesize_append_in_place, synthesize_prepend_axis,
-    synthesize_prepend_in_place,
-};
+use crate::compositor::{synthesize_append_axis_in_place, synthesize_prepend_axis_in_place};
 use crate::{
     Frame, MotionEstimate, MotionOutcome, ReferenceMode, StitchAxis, StitchBranch, StitchDecision,
     StitchError, StitchOptions, StitchProgressState, TiledCanvas, VerticalMotionEstimator,
-    ViewportState, band_height, estimator::validate_estimator_options, synthesize_append,
-    synthesize_prepend,
+    ViewportState, band_height, estimator::validate_estimator_options,
 };
 
 #[derive(Debug, Clone, PartialEq)]
@@ -286,9 +282,9 @@ impl StitchAccumulator {
         Ok(())
     }
 
-    fn comparison_reference(&self) -> Result<Frame, StitchError> {
+    fn prepare_comparison_reference(&mut self) -> Result<(), StitchError> {
         match self.reference_mode {
-            ReferenceMode::Synthetic => Ok(self.synthetic_reference.clone()),
+            ReferenceMode::Synthetic => Ok(()),
             ReferenceMode::CanvasWindow => {
                 let start =
                     u32::try_from(self.state.position).map_err(|_| StitchError::Arithmetic {
@@ -300,7 +296,8 @@ impl StitchAccumulator {
                         .ok_or(StitchError::Arithmetic {
                             operation: "calculating canvas-window end",
                         })?;
-                self.canvas.materialize_axis(start, end)
+                self.canvas
+                    .copy_axis(start, end, self.synthetic_reference.pixels_mut())
             }
         }
     }
@@ -344,14 +341,9 @@ impl StitchAccumulator {
                     operation: "incrementing processed-frame count",
                 })?;
         let reference_perf = crate::perf::Scope::new(crate::perf::Stage::ReferencePreparation);
-        let canvas_window_reference = (comparison_mode == ReferenceMode::CanvasWindow)
-            .then(|| self.comparison_reference())
-            .transpose()?;
-        let reference = canvas_window_reference
-            .as_ref()
-            .unwrap_or(&self.synthetic_reference);
+        self.prepare_comparison_reference()?;
         reference_perf.finish();
-        let estimate = estimator(reference, &self.previous_raw, &incoming)?;
+        let estimate = estimator(&self.synthetic_reference, &self.previous_raw, &incoming)?;
 
         let maximum_shift = self.viewport_extent as f32 * self.options.estimator.max_motion_ratio;
         let accepted_offset = match estimate.outcome {
@@ -417,25 +409,12 @@ impl StitchAccumulator {
                 )?;
                 canvas_perf.finish();
                 let _perf = crate::perf::Scope::new(crate::perf::Stage::ReferenceSynthesis);
-                if self.options.axis == StitchAxis::Vertical
-                    && comparison_mode == ReferenceMode::Synthetic
-                {
-                    synthesize_append_in_place(
-                        &mut self.synthetic_reference,
-                        &self.previous_raw,
-                        shift,
-                    )?;
-                } else if self.options.axis == StitchAxis::Vertical {
-                    self.synthetic_reference =
-                        synthesize_append(reference, &self.previous_raw, shift)?;
-                } else {
-                    self.synthetic_reference = synthesize_append_axis(
-                        reference,
-                        &self.previous_raw,
-                        self.options.axis,
-                        shift,
-                    )?;
-                }
+                synthesize_append_axis_in_place(
+                    &mut self.synthetic_reference,
+                    &self.previous_raw,
+                    self.options.axis,
+                    shift,
+                )?;
                 self.reference_mode = ReferenceMode::Synthetic;
             }
             StitchBranch::Prepend => {
@@ -448,25 +427,12 @@ impl StitchAccumulator {
                 self.canvas.prepend_axis(&self.previous_raw, 0, band)?;
                 canvas_perf.finish();
                 let _perf = crate::perf::Scope::new(crate::perf::Stage::ReferenceSynthesis);
-                if self.options.axis == StitchAxis::Vertical
-                    && comparison_mode == ReferenceMode::Synthetic
-                {
-                    synthesize_prepend_in_place(
-                        &mut self.synthetic_reference,
-                        &self.previous_raw,
-                        shift,
-                    )?;
-                } else if self.options.axis == StitchAxis::Vertical {
-                    self.synthetic_reference =
-                        synthesize_prepend(reference, &self.previous_raw, shift)?;
-                } else {
-                    self.synthetic_reference = synthesize_prepend_axis(
-                        reference,
-                        &self.previous_raw,
-                        self.options.axis,
-                        shift,
-                    )?;
-                }
+                synthesize_prepend_axis_in_place(
+                    &mut self.synthetic_reference,
+                    &self.previous_raw,
+                    self.options.axis,
+                    shift,
+                )?;
                 self.reference_mode = ReferenceMode::Synthetic;
             }
             StitchBranch::Contained => {
@@ -650,6 +616,40 @@ mod tests {
     fn horizontal_row(values: &[u8], height: u32) -> Frame {
         let pixels = (0..height).flat_map(|_| values.iter().copied()).collect();
         Frame::new(values.len() as u32, height, PixelFormat::Gray8, pixels).unwrap()
+    }
+
+    #[test]
+    fn canvas_window_reference_reuses_existing_storage_for_both_axes() {
+        for axis in [StitchAxis::Vertical, StitchAxis::Horizontal] {
+            let first = Frame::new(
+                12,
+                12,
+                PixelFormat::Rgba8,
+                (0..12 * 12 * 4).map(|i| i as u8).collect(),
+            )
+            .unwrap();
+            let mut accumulator = StitchAccumulator::new(
+                first.clone(),
+                StitchOptions {
+                    axis,
+                    ..StitchOptions::default()
+                },
+            )
+            .unwrap();
+            accumulator.canvas.append_axis(&first, 0, 12).unwrap();
+            accumulator.reference_mode = ReferenceMode::CanvasWindow;
+            let pointer = accumulator.synthetic_reference.pixels().as_ptr();
+            for position in [1, 7, 3, 12] {
+                accumulator.state.position = i64::from(position);
+                let expected = accumulator
+                    .canvas
+                    .materialize_axis(position, position + 12)
+                    .unwrap();
+                accumulator.prepare_comparison_reference().unwrap();
+                assert_eq!(accumulator.synthetic_reference.pixels().as_ptr(), pointer);
+                assert_eq!(accumulator.synthetic_reference, expected);
+            }
+        }
     }
 
     #[test]

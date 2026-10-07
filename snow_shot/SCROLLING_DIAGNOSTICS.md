@@ -32,7 +32,7 @@ a native API failure. Geometry is metadata only; no screenshot pixels or window 
 | --- | --- |
 | `scrolling.source_initializing` | Capture producer reached source preparation; viewport dimensions are recorded. |
 | `scrolling.native_create` | Native stream creation is about to run. Backend is the requested policy, currently Auto; mode is the WGC update mode. |
-| `scrolling.source_ready` | Source/pool initialization returned successfully; duration includes source initialization. |
+| `scrolling.source_ready` | Source initialization returned successfully; duration includes source initialization. |
 | `scrolling.backend_selected` | A native frame reports a backend for the first time or a backend change. Values: 0 unknown/Auto, 1 DXGI, 2 WGC, 3 GDI. This is the frame's backend, not a log of every failed fallback attempt. |
 | `scrolling.first_frame` | First frame reached the consumer, including dimensions, Qt image format, stride, and duplicate flag. It may still be rejected. |
 | `scrolling.frame_rejected` | First structurally invalid frame in the source segment, with actual/expected dimensions, Qt image format, and stride. |
@@ -43,8 +43,15 @@ a native API failure. Geometry is metadata only; no screenshot pixels or window 
 
 `scrolling.capture_progress` reports consumer counters after five seconds and at most once every
 30 seconds afterward. `scrolling.capture_summary` reports final counters when the consumer exits:
-received/accepted frames, receive timeouts, duplicate/invalid frames, mailbox drops, unavailable
-pool buffers, and native dropped-frame events. Dropped events count notifications, not frames.
+received/accepted frames, receive timeouts, duplicate/invalid frames, mailbox replacements,
+and native dropped-frame events. Dropped events count notifications, not frames.
+`pool_unavailable` is retained for diagnostic compatibility and remains zero: scrolling inputs
+now retain immutable native frames instead of copying them into a separate stitch-input pool.
+The stitching mailbox holds one pending frame. Each newer accepted frame immediately replaces
+that pending frame; `mailbox_replaced` counts these replacements. The in-flight frame completes
+before the newest pending frame is dispatched.
+Replaced pending frames release their native leases immediately. A dispatched frame can remain
+leased as the stitcher's previous input or initial reference; teardown releases those leases.
 An accepted frame was admitted to the stitching mailbox; it is not necessarily a rendered preview.
 A receive timeout means no queued event arrived, not that a backend returned a fallback error.
 
@@ -75,3 +82,20 @@ first dispatch result and changes in status/error; status values are:
 `scrolling.stopped` includes whether an initial preview arrived, the latest output dimensions,
 elapsed time from the current preview watch, and whether screenshot presentation will be restored.
 It does not distinguish every caller's cancellation/export reason.
+
+## Memory performance benchmark
+
+Configure `windows-msvc-performance` with `SNOW_SHOT_SCROLLING_PERF_DETAIL=ON`, then build
+`snow-shot-scrolling-frame-handoff-benchmark`. Run only that benchmark with:
+
+```powershell
+ctest --test-dir build/windows-msvc-performance -C Release -R '^snow-shot-scrolling-frame-handoff-benchmark$' --output-on-failure
+```
+
+The benchmark compares the legacy pool/copy path with immutable external frame leases at
+3840×2160, using three warmups and 31 measured duplicate submissions. It checks every output
+pixel and stitch decision. It requires at least 20% lower median duplicate-push latency and,
+with detailed timing, at least 90% lower median handoff latency. On Windows it also requires
+live private process memory to decrease by at least two viewport buffers (63.3 MiB). These
+results isolate frame handoff; they do not predict the speedup of motion estimation or live
+desktop capture. The compatibility pool API keeps its existing behavior.

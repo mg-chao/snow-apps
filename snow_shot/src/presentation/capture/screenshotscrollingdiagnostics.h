@@ -32,7 +32,7 @@ struct ScrollingCaptureDiagnostics {
     qint64 timeouts = 0;
     qint64 duplicates = 0;
     qint64 invalid = 0;
-    qint64 mailboxDropped = 0;
+    qint64 mailboxReplaced = 0;
     qint64 poolUnavailable = 0;
     qint64 droppedEvents = 0;
 
@@ -52,7 +52,7 @@ struct ScrollingCaptureDiagnostics {
                 {QStringLiteral("receive_timeouts"), timeouts},
                 {QStringLiteral("duplicate_frames"), duplicates},
                 {QStringLiteral("invalid_frames"), invalid},
-                {QStringLiteral("mailbox_dropped"), mailboxDropped},
+                {QStringLiteral("mailbox_replaced"), mailboxReplaced},
                 {QStringLiteral("pool_unavailable"), poolUnavailable},
                 {QStringLiteral("dropped_events"), droppedEvents}};
     }

@@ -20,6 +20,8 @@
 #include <QColorSpace>
 
 #include <iostream>
+#include <array>
+#include <atomic>
 #include <limits>
 #include <stdexcept>
 
@@ -633,26 +635,59 @@ void acceptedSnapshotsSurviveTeardown() {
     }
 }
 
-void captureReleasesNativeFrameAfterAdmission() {
+void nativeFrameLeasesRemainBoundedAndSurviveStitching() {
     auto state = std::make_shared<ManualState>();
-    std::atomic_bool released = false;
+    std::array<std::atomic_bool, 8> released{};
     QImage pixels = fixture().copy(0, 0, 400, 400);
     // Match the native source's external-buffer image ownership.
-    QImage frame(
-        pixels.constBits(), pixels.width(), pixels.height(), pixels.bytesPerLine(), pixels.format(),
-        [](void* value) { static_cast<std::atomic_bool*>(value)->store(true); }, &released);
-    state->push(std::move(frame));
-    ScreenshotScrollingPipeline pipeline([](ScrollingPipelineFrame) {}, [](quint64, QString) {});
-    pipeline.begin(1, pixels.size(), ScreenshotScrollingRecognitionMode::Vertical,
-                   [state]() { return std::make_unique<ManualSource>(state); });
+    for (auto& flag : released) {
+        QImage frame(
+            pixels.constBits(), pixels.width(), pixels.height(), pixels.bytesPerLine(),
+            pixels.format(),
+            [](void* value) { static_cast<std::atomic_bool*>(value)->store(true); }, &flag);
+        state->push(std::move(frame));
+    }
+    QEventLoop loop;
+    QTimer timeout;
+    timeout.setSingleShot(true);
+    QObject::connect(&timeout, &QTimer::timeout, &loop, &QEventLoop::quit);
+    ScreenshotScrollingSnapshot snapshot;
+    std::unique_ptr<ScreenshotScrollingPipeline> pipeline;
+    pipeline = std::make_unique<ScreenshotScrollingPipeline>(
+        [&](ScrollingPipelineFrame result) {
+            require(!result.fatalError && result.changed, "native input must stitch successfully");
+            require(!released.back().load(), "stitching must retain its immutable native input");
+            require(!result.trace ||
+                        !result.trace
+                             ->available[static_cast<std::size_t>(scrolling_perf::Stage::RgbaCopy)],
+                    "native input admission must not copy RGBA pixels");
+            require(pipeline->requestSnapshot(0, 400, &loop,
+                                              [&](ScreenshotScrollingSnapshot value) {
+                                                  snapshot = std::move(value);
+                                                  loop.quit();
+                                              }),
+                    "native snapshot request must be accepted");
+        },
+        [&](quint64, QString) { require(false, "native input source failed"); });
+    pipeline->begin(1, pixels.size(), ScreenshotScrollingRecognitionMode::Vertical,
+                    [state]() { return std::make_unique<ManualSource>(state); });
     {
         std::unique_lock lock(state->mutex);
         require(state->wake.wait_for(lock, std::chrono::seconds(5),
-                                     [&]() { return state->receiveCalls >= 2; }),
-                "capture must finish admitting the native frame");
+                                     [&]() { return state->receiveCalls >= 9; }),
+                "capture must finish admitting every native frame");
     }
-    require(released.load(),
-            "capture must release native buffers without waiting for another frame or reset");
+    for (std::size_t index = 0; index + 1 < released.size(); ++index)
+        require(released[index].load(),
+                "mailbox replacement must release superseded native inputs");
+    require(!released.back().load(), "the newest mailbox input must keep its pixels alive");
+    timeout.start(5000);
+    loop.exec();
+    require(snapshot.isValid(), "native input must produce a snapshot");
+    pipeline.reset();
+    require(released.back().load(), "teardown must release the final native input lease");
+    require(snapshotMatchesSrgbPixels(snapshot.materialize(), pixels),
+            "canvas snapshot must remain independent of released native inputs");
 }
 
 void overloadTest() {
@@ -671,27 +706,32 @@ void overloadTest() {
     }
     QEventLoop loop;
     int delivered = 0;
+    bool inputStopped = false;
     QString error;
     ScreenshotScrollingPipeline pipeline(
         [&](ScrollingPipelineFrame result) {
             ++delivered;
-            require(result.trace == records[static_cast<std::size_t>(delivered - 1)],
-                    "result correlation changed");
+            require(result.trace == records.back(), "overload must process the newest frame");
             require(!result.fatalError && result.sourceSize == QSize(400, 400),
                     "unchanged frames must retain stitched dimensions");
-            require(result.event == (delivered == 1 ? SNOW_STITCH_FRAME_EVENT_INITIAL
-                                                    : SNOW_STITCH_FRAME_EVENT_DUPLICATE),
-                    "duplicate outcome changed");
+            require(result.event == SNOW_STITCH_FRAME_EVENT_INITIAL,
+                    "the newest frame must initialize stitching");
             require(
                 result.trace->available[static_cast<std::size_t>(scrolling_perf::Stage::Stitch)],
                 "early-return stitching duration missing");
+            require(
+                !result.trace
+                        ->available[static_cast<std::size_t>(scrolling_perf::Stage::RgbaCopy)] &&
+                    !result.trace
+                         ->available[static_cast<std::size_t>(scrolling_perf::Stage::PoolAcquire)],
+                "mailbox inputs must reach stitching without an intermediate pool or pixel copy");
 #if defined(SNOW_SHOT_SCROLLING_PERF_DETAIL)
             require(result.trace->rustCalls[SNOW_STITCH_PERF_PUSH_TOTAL] == 1,
                     "Rust snapshot did not correlate with this push");
 #else
             require(result.trace->rustCalls[13] == 0, "disabled Rust profiling recorded a stage");
 #endif
-            if (delivered == 2)
+            if (inputStopped)
                 loop.quit();
         },
         [&](quint64, QString value) {
@@ -707,18 +747,21 @@ void overloadTest() {
                                      [&]() { return state->receiveCalls >= 9; }),
                 "overload source did not finish admission");
     }
-    bool inputStopped = false;
-    pipeline.finishInput([&]() { inputStopped = true; });
+    pipeline.finishInput([&]() {
+        inputStopped = true;
+        if (delivered == 1)
+            loop.quit();
+    });
     QTimer watchdog;
     watchdog.setSingleShot(true);
     QObject::connect(&watchdog, &QTimer::timeout, &loop, &QEventLoop::quit);
     watchdog.start(5000);
     loop.exec();
-    require(error.isEmpty() && delivered == 2 && inputStopped && pipeline.idle(),
+    require(error.isEmpty() && delivered == 1 && inputStopped && pipeline.idle(),
             "overloaded pipeline failed to drain");
-    for (std::size_t index = 2; index < records.size(); ++index)
-        require(std::string(records[index]->disposition) == "mailbox_dropped",
-                "bounded mailbox drop was not attributed");
+    for (std::size_t index = 0; index + 1 < records.size(); ++index)
+        require(std::string(records[index]->disposition) == "mailbox_replaced",
+                "superseded pending frame must be attributed as replaced");
 }
 
 void replaySourceTest() {
@@ -974,7 +1017,7 @@ int main(int argc, char** argv) {
         snapshotRequestLifetime();
         snapshotCancellationLifetime();
         acceptedSnapshotsSurviveTeardown();
-        captureReleasesNativeFrameAfterAdmission();
+        nativeFrameLeasesRemainBoundedAndSurviveStitching();
         overloadTest();
         replaySourceTest();
         sourceFailureTest();

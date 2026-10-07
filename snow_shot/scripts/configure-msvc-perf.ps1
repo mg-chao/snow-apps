@@ -1,6 +1,6 @@
 #requires -Version 7.2
 [CmdletBinding()]
-param([switch]$Fresh, [string]$QtBin = "",
+param([switch]$Fresh, [switch]$ScrollingPerfDetail, [string]$QtBin = "",
     [ValidateSet("x64", "arm64")][string]$Architecture = "x64")
 
 $ErrorActionPreference = "Stop"
@@ -16,6 +16,9 @@ try {
         -BuildDirectory $buildDirectory)
     if ($Fresh -and $arguments -notcontains "--fresh") {
         $arguments = @("--fresh") + $arguments
+    }
+    if ($ScrollingPerfDetail) {
+        $arguments += "-DSNOW_SHOT_SCROLLING_PERF_DETAIL=ON"
     }
     & cmake @arguments
     if ($LASTEXITCODE -ne 0) {

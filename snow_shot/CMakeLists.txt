@@ -1340,7 +1340,7 @@ set(PROJECT_CXX_SOURCES
     src/presentation/capture/adaptivescrollingcapturecadence.h
     src/presentation/capture/windowcaptureexclusion.h
     src/presentation/capture/windowinputtransparency.h
-    src/presentation/capture/latestbridgemailbox.h
+    src/presentation/capture/latestframemailbox.h
     src/presentation/capture/screenshotscrollingcapturecontroller.cpp
     src/presentation/capture/screenshotscrollingpipeline.cpp
     src/presentation/capture/screenshotscrollingnativesource.cpp
@@ -3676,17 +3676,17 @@ if(SNOW_SHOT_BUILD_TESTS)
     # This test is intentionally Qt-free; swap in the Qt-free dialog guard so
     # linking the guard does not add a Qt runtime dependency.
     set_property(DIRECTORY PROPERTY LINK_LIBRARIES snow_test_cli_guard_native)
-    add_executable(snow-shot-latest-bridge-mailbox-tests
-        tests/latest_bridge_mailbox_tests.cpp
-        src/presentation/capture/latestbridgemailbox.h
+    add_executable(snow-shot-latest-frame-mailbox-tests
+        tests/latest_frame_mailbox_tests.cpp
+        src/presentation/capture/latestframemailbox.h
     )
     set_property(DIRECTORY PROPERTY LINK_LIBRARIES snow_test_cli_guard_qt)
-    target_include_directories(snow-shot-latest-bridge-mailbox-tests PRIVATE
+    target_include_directories(snow-shot-latest-frame-mailbox-tests PRIVATE
         "${CMAKE_CURRENT_SOURCE_DIR}/src"
     )
     add_test(
-        NAME snow-shot-latest-bridge-mailbox-tests
-        COMMAND snow-shot-latest-bridge-mailbox-tests
+        NAME snow-shot-latest-frame-mailbox-tests
+        COMMAND snow-shot-latest-frame-mailbox-tests
     )
 
     add_executable(snow-shot-scrolling-capture-cadence-tests
@@ -7422,6 +7422,27 @@ if(SNOW_SHOT_BUILD_BENCHMARKS)
     add_executable(snow-shot-scrolling-hover-preview-benchmark
         tests/scrolling_hover_preview_benchmark.cpp)
     snow_shot_configure_scrolling_replay_target(snow-shot-scrolling-hover-preview-benchmark)
+    add_executable(snow-shot-scrolling-frame-handoff-benchmark
+        tests/scrolling_frame_handoff_benchmark.cpp)
+    target_include_directories(snow-shot-scrolling-frame-handoff-benchmark PRIVATE
+        "${SNOW_SHOT_CAPTURE_CRATES_DIR}/crates/snow-stitch-images-c/include")
+    target_link_libraries(snow-shot-scrolling-frame-handoff-benchmark PRIVATE snow_stitch_images_c)
+    target_compile_definitions(snow-shot-scrolling-frame-handoff-benchmark PRIVATE
+        SNOW_SCROLLING_BUILD_CONFIG="$<CONFIG>")
+    set_target_properties(snow-shot-scrolling-frame-handoff-benchmark PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/test-bin")
+    if(SNOW_SHOT_SCROLLING_PERF_DETAIL)
+        target_compile_definitions(snow-shot-scrolling-frame-handoff-benchmark PRIVATE
+            SNOW_SHOT_SCROLLING_PERF_DETAIL=1 SNOW_STITCH_PERF_INSTRUMENTATION=1)
+    endif()
+    if(WIN32)
+        target_link_libraries(snow-shot-scrolling-frame-handoff-benchmark PRIVATE psapi)
+        target_compile_definitions(snow-shot-scrolling-frame-handoff-benchmark PRIVATE NOMINMAX)
+    endif()
+    add_test(NAME snow-shot-scrolling-frame-handoff-benchmark
+        COMMAND snow-shot-scrolling-frame-handoff-benchmark)
+    set_tests_properties(snow-shot-scrolling-frame-handoff-benchmark PROPERTIES
+        LABELS "benchmark" RUN_SERIAL TRUE TIMEOUT 120)
 endif()
 
 if(SNOW_SHOT_BUILD_TESTS)
