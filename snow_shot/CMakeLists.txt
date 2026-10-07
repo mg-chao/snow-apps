@@ -1782,6 +1782,24 @@ if(SNOW_SHOT_BUILD_TESTS)
     add_test(NAME snow-shot-image-codec-backend-smoke-tests
              COMMAND snow-shot-image-codec-backend-smoke-tests)
 
+    add_test(NAME snow-shot-arm64-stack-cookie-image-tests
+        COMMAND "${Python3_EXECUTABLE}"
+            "${CMAKE_CURRENT_SOURCE_DIR}/../scripts/test-arm64-stack-cookie.py")
+    set_tests_properties(snow-shot-arm64-stack-cookie-image-tests PROPERTIES
+        LABELS unit TIMEOUT 30)
+
+    if(WIN32 AND CMAKE_CXX_COMPILER_ID STREQUAL "MSVC" AND
+       SNOW_WINDOWS_ARCHITECTURE STREQUAL "arm64")
+        add_executable(snow-shot-arm64-stack-cookie-tests tests/arm64_stack_cookie_tests.cpp)
+        target_link_libraries(snow-shot-arm64-stack-cookie-tests PRIVATE Qt6::Core)
+        snow_apply_strict_warnings(snow-shot-arm64-stack-cookie-tests)
+        snow_apply_release_options(snow-shot-arm64-stack-cookie-tests POLICY size)
+        add_test(NAME snow-shot-arm64-stack-cookie-tests COMMAND snow-shot-arm64-stack-cookie-tests)
+        set_tests_properties(snow-shot-arm64-stack-cookie-tests PROPERTIES
+            LABELS "unit;windows" TIMEOUT 30
+            ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
+    endif()
+
     if(WIN32)
         add_executable(snow-shot-storage-directory-change-tests tests/storage_directory_change_tests.cpp)
         target_link_libraries(snow-shot-storage-directory-change-tests PRIVATE snow_shot_storage Qt6::Core)

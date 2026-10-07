@@ -19,6 +19,25 @@ Rust host uses x64 libclang even when building ARM64 application binaries.
 ARM64 dependencies are isolated under `.tools/vcpkg/installed/arm64/{static,dynamic}`.
 Host tools use the physical host triplet independently of the application target.
 
+ARM64 MSVC builds use optimized native C/C++ objects without MSVC LTCG. The
+19.51.36252 backend generated stack-cookie return sequences that lost the return
+address, causing a CPU spin during sorting and preventing the running application
+from reopening. The application, static Qt, and static vcpkg triplet share this
+policy; `/GS`, `/sdl`, ordinary optimization, and Rust LLVM LTO remain enabled.
+The same compiler also miscompiled native ONNX Runtime MLAS 4-bit dequantization
+returns. The ONNX overlay disables inlining only for
+`sqnbitgemm_kernel_neon_fp32.cpp` on Windows ARM64 MSVC, retaining `/O2` and
+security checks. Matched native input tests reproduce the hang and verify this fix.
+Rebuild dependencies after the triplet change. Old ARM64 Qt kits stamped with
+`Ltcg: true` are rejected; use a distinct installation/build directory or `-Force`
+to rebuild the kit. Full and Mini packaging also audit every staged executable,
+including the OCR worker and crash handler, for the demonstrated malformed return
+sequence. Native regression coverage includes singleton activation-key sorting,
+INI settings, and time-zone enumeration.
+Previously published OCR runtime bytes are immutable. A production OCR update
+must use a new runtime version and trusted architecture descriptor before upload;
+local verification assets do not replace the public runtime's pins.
+
 ## Bootstrap Qt and dependencies
 
 From the repository root, install the static dependency graph first:

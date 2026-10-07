@@ -249,6 +249,15 @@ function Test-SnowQtTranslationKit {
     return $true
 }
 
+function Get-SnowStaticQtLtcgEnabled {
+    param(
+        [ValidateSet("Debug", "Release")][string]$Configuration = "Release",
+        [ValidateSet("x64", "arm64")][string]$Architecture = "x64"
+    )
+    # MSVC 14.51 ARM64 LTCG emits invalid stack-cookie return sequences.
+    return $Configuration -ceq "Release" -and $Architecture -ceq "x64"
+}
+
 function Test-SnowStaticQtStamp {
     param(
         [Parameter(Mandatory = $true)][object]$Stamp,
@@ -264,7 +273,7 @@ function Test-SnowStaticQtStamp {
         SourceArchiveSha256 = $script:SnowQtToolchain.sourceArchiveSha256
         Configuration = $Configuration
         FeatureFingerprint = $script:SnowStaticQtFeatureFingerprint
-        Ltcg = ($Configuration -eq "Release")
+        Ltcg = (Get-SnowStaticQtLtcgEnabled -Configuration $Configuration -Architecture $Architecture)
         SystemPng = ($Configuration -eq "Release")
         SystemZlib = ($Configuration -eq "Release")
         Timezone = $true
@@ -337,7 +346,8 @@ function Test-SnowQtHostToolHashes {
 function Test-SnowQtSystemCodecKit {
     param(
         [Parameter(Mandatory = $true)][string]$Qt6Dir,
-        [ValidateSet("Debug", "Release")][string]$Configuration = "Release"
+        [ValidateSet("Debug", "Release")][string]$Configuration = "Release",
+        [ValidateSet("x64", "arm64")][string]$Architecture = "x64"
     )
 
     $coreTargets = Join-Path $Qt6Dir "..\Qt6Core\Qt6CoreTargets.cmake"
@@ -351,9 +361,10 @@ function Test-SnowQtSystemCodecKit {
     foreach ($feature in @("static", "static_runtime")) {
         if (-not (Test-SnowQtTargetFeature $coreText "PUBLIC" $feature $true)) { return $false }
     }
+    $ltcgEnabled = Get-SnowStaticQtLtcgEnabled -Configuration $Configuration -Architecture $Architecture
     foreach ($feature in $script:SnowStaticQtFeaturePolicy.features.PSObject.Properties) {
-        if ($feature.Name -ceq "ltcg" -and $Configuration -eq "Debug") {
-            # Qt omits this configuration-dependent feature from Debug exports.
+        if ($feature.Name -ceq "ltcg" -and -not $ltcgEnabled) {
+            # Qt can omit this configuration-dependent feature from disabled exports.
             $enabledFeatures = [regex]::Match($coreText, 'QT_ENABLED_PRIVATE_FEATURES "([^"]*)"')
             if (-not $enabledFeatures.Success -or
                 ($enabledFeatures.Groups[1].Value -csplit ';') -ccontains "ltcg") { return $false }
@@ -361,7 +372,9 @@ function Test-SnowQtSystemCodecKit {
         }
         $text = if ($feature.Name -ceq "system_png") { $guiText } else { $coreText }
         $visibility = if ($feature.Name -ceq "timezone") { "PUBLIC" } else { "PRIVATE" }
-        $enabled = if ($feature.Name -cin @("ltcg", "system_png", "system_zlib")) {
+        $enabled = if ($feature.Name -ceq "ltcg") {
+            $ltcgEnabled
+        } elseif ($feature.Name -cin @("system_png", "system_zlib")) {
             $Configuration -eq "Release"
         } else { $feature.Value }
         if (-not (Test-SnowQtTargetFeature $text $visibility $feature.Name $enabled)) {
@@ -378,7 +391,7 @@ function Test-SnowValidatedStaticQtKit {
     )
 
     if ((Get-SnowQtKitVersion -Qt6Dir $Qt6Dir) -cne $script:SnowQtVersion -or
-        -not (Test-SnowQtSystemCodecKit -Qt6Dir $Qt6Dir) -or
+        -not (Test-SnowQtSystemCodecKit -Qt6Dir $Qt6Dir -Architecture $Architecture) -or
         -not (Test-SnowQtTranslationKit -Qt6Dir $Qt6Dir)) { return $false }
     $prefix = [System.IO.Path]::GetFullPath((Join-Path $Qt6Dir "..\..\.."))
     $stampPath = Join-Path $prefix "share\snow-apps\static-qt-build.json"

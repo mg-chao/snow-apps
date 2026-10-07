@@ -1,0 +1,20 @@
+diff --git a/cmake/onnxruntime_mlas.cmake b/cmake/onnxruntime_mlas.cmake
+--- a/cmake/onnxruntime_mlas.cmake
++++ b/cmake/onnxruntime_mlas.cmake
+@@ -1072,6 +1072,16 @@ if (WIN32)
+   endif()
+ endif()
+ 
++if(WIN32 AND CMAKE_CXX_COMPILER_ID STREQUAL "MSVC" AND
++   onnxruntime_target_platform STREQUAL "ARM64")
++  # MSVC 19.51 miscompiles inlined dequantization stack-cookie returns in this
++  # source even without /GL. Disable only its inlining; retain /O2, /GS, /sdl,
++  # and any configured control-flow protection.
++  set_property(SOURCE ${MLAS_SRC_DIR}/sqnbitgemm_kernel_neon_fp32.cpp
++               APPEND PROPERTY COMPILE_OPTIONS /Ob0)
++endif()
++
++
+ if (NOT onnxruntime_BUILD_SHARED_LIB)
+     install(TARGETS onnxruntime_mlas EXPORT ${PROJECT_NAME}Targets
+             ARCHIVE   DESTINATION ${CMAKE_INSTALL_LIBDIR}

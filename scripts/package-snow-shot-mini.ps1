@@ -86,6 +86,7 @@ function Invoke-SnowShotMiniPackaging {
             [IO.File]::WriteAllText((Join-Path $stage 'bin/__mini_data_directory'), 'portable', [Text.UTF8Encoding]::new($false))
         }
         Assert-SnowShotMiniPayload -Stage $stage -Architecture $Architecture -OcrAssetManifest $ocrAssetManifestPath
+        Assert-SnowArm64StackCookieSafety -Path $stage -BuildDirectory $buildDirectory -Architecture $Architecture
         $owned = @(Get-ReleaseTreeFileManifest $stage | ForEach-Object {
             [ordered]@{ path = $_.Path; size = $_.Bytes; sha256 = $_.Sha256 }
         })

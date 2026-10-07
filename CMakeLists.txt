@@ -117,7 +117,12 @@ if(SNOW_APPS_BUILD_ANT_DESIGN_QT OR SNOW_APPS_BUILD_DRAW_ENGINE OR
 endif()
 snow_workspace_configure_options()
 
-if(SNOW_APPS_ENABLE_RELEASE_OPTIMIZATION)
+snow_msvc_arm64_requires_native_codegen(_snow_arm64_native_codegen)
+if(_snow_arm64_native_codegen)
+    set(CMAKE_INTERPROCEDURAL_OPTIMIZATION_RELEASE OFF)
+    set(CMAKE_INTERPROCEDURAL_OPTIMIZATION_MINSIZEREL OFF)
+    add_compile_options($<$<OR:$<CONFIG:Release>,$<CONFIG:MinSizeRel>>:/GL->)
+elseif(SNOW_APPS_ENABLE_RELEASE_OPTIMIZATION)
     # CMake's IPO abstraction selects /GL + /LTCG on MSVC and -flto on GCC/Clang.
     # Applying it at directory scope also covers the C++ libraries that feed the
     # Snow Shot executable, instead of optimizing only the final executable.

@@ -238,11 +238,12 @@ function Assert-QtSourceArchive {
 function Test-InstalledQtSystemCodecs {
     param(
         [Parameter(Mandatory = $true)][string]$Prefix,
-        [ValidateSet("Debug", "Release")][string]$Configuration = "Release"
+        [ValidateSet("Debug", "Release")][string]$Configuration = "Release",
+        [ValidateSet("x64", "arm64")][string]$Architecture = "x64"
     )
 
     return Test-SnowQtSystemCodecKit -Qt6Dir (Join-Path $Prefix "lib\cmake\Qt6") `
-        -Configuration $Configuration
+        -Configuration $Configuration -Architecture $Architecture
 }
 
 function Test-InstalledQtLicenseBundle {
@@ -415,7 +416,7 @@ function Write-StaticQtBuildStamp {
         DependencyFingerprint = $Fingerprint
         FeatureFingerprint = $script:SnowStaticQtFeatureFingerprint
         SourcePatches = $script:SnowStaticQtSourcePatches
-        Ltcg = ($BuildConfiguration -eq "Release")
+        Ltcg = (Get-SnowStaticQtLtcgEnabled -Configuration $BuildConfiguration -Architecture $Architecture)
         SystemPng = ($BuildConfiguration -eq "Release")
         SystemZlib = ($BuildConfiguration -eq "Release")
         Timezone = $true
@@ -519,7 +520,7 @@ if (Test-Path -LiteralPath $qtConfig -PathType Leaf) {
         }
         $stampMatches = $binaryStampMatches
     }
-    $systemCodecsMatch = Test-InstalledQtSystemCodecs -Prefix $installPrefix -Configuration $Configuration
+    $systemCodecsMatch = Test-InstalledQtSystemCodecs -Prefix $installPrefix -Configuration $Configuration -Architecture $Architecture
     $systemCodecsMatch = $systemCodecsMatch -and
         (Get-SnowQtKitVersion -Qt6Dir (Join-Path $installPrefix "lib/cmake/Qt6")) -ceq $QtVersion -and
         (Test-SnowQtArchitecture -Qt6Dir (Join-Path $installPrefix "lib/cmake/Qt6") `
@@ -554,7 +555,8 @@ if ($Force -and (Test-Path -LiteralPath $buildDirectory -PathType Container)) {
 }
 
 $configurationArgument = if ($Configuration -eq "Debug") { "-debug" } else { "-release" }
-$ltcgArgument = if ($Configuration -eq "Debug") { "-no-ltcg" } else { "-ltcg" }
+$ltcgEnabled = Get-SnowStaticQtLtcgEnabled -Configuration $Configuration -Architecture $Architecture
+$ltcgArgument = if ($ltcgEnabled) { "-ltcg" } else { "-no-ltcg" }
 $zlibArgument = if ($Configuration -eq "Debug") { "-qt-zlib" } else { "-system-zlib" }
 $pngArgument = if ($Configuration -eq "Debug") { "-qt-libpng" } else { "-system-libpng" }
 $archivePath = Join-Path ([System.IO.Path]::GetDirectoryName($sourceDirectory)) "qt-everywhere-src-$QtVersion.tar.xz"
@@ -688,13 +690,14 @@ if (-not (Test-Path -LiteralPath $cachePath -PathType Leaf)) {
     throw "Qt configure did not produce $cachePath."
 }
 $cache = Get-Content -LiteralPath $cachePath -Raw
-$ltcgState = if ($Configuration -eq "Release") { "ON" } else { "OFF" }
+$ltcgState = if ($ltcgEnabled) { "ON" } else { "OFF" }
+$systemCodecState = if ($Configuration -eq "Release") { "ON" } else { "OFF" }
 Assert-CacheEntry -Cache $cache -Pattern "(?m)^FEATURE_ltcg:BOOL=$ltcgState\r?`$" -Description "$Configuration LTCG policy"
 Assert-CacheEntry -Cache $cache -Pattern "(?m)^QT_FEATURE_ltcg:INTERNAL=$ltcgState\r?`$" -Description "the internal $Configuration LTCG policy"
-Assert-CacheEntry -Cache $cache -Pattern "(?m)^FEATURE_system_png:BOOL=$ltcgState\r?`$" -Description "$Configuration libpng linkage"
-Assert-CacheEntry -Cache $cache -Pattern "(?m)^QT_FEATURE_system_png:INTERNAL=$ltcgState\r?`$" -Description "the internal $Configuration libpng linkage"
-Assert-CacheEntry -Cache $cache -Pattern "(?m)^FEATURE_system_zlib:BOOL=$ltcgState\r?`$" -Description "$Configuration zlib linkage"
-Assert-CacheEntry -Cache $cache -Pattern "(?m)^QT_FEATURE_system_zlib:INTERNAL=$ltcgState\r?`$" -Description "the internal $Configuration zlib linkage"
+Assert-CacheEntry -Cache $cache -Pattern "(?m)^FEATURE_system_png:BOOL=$systemCodecState\r?`$" -Description "$Configuration libpng linkage"
+Assert-CacheEntry -Cache $cache -Pattern "(?m)^QT_FEATURE_system_png:INTERNAL=$systemCodecState\r?`$" -Description "the internal $Configuration libpng linkage"
+Assert-CacheEntry -Cache $cache -Pattern "(?m)^FEATURE_system_zlib:BOOL=$systemCodecState\r?`$" -Description "$Configuration zlib linkage"
+Assert-CacheEntry -Cache $cache -Pattern "(?m)^QT_FEATURE_system_zlib:INTERNAL=$systemCodecState\r?`$" -Description "the internal $Configuration zlib linkage"
 Assert-CacheEntry -Cache $cache -Pattern '(?m)^FEATURE_timezone:BOOL=ON\r?$' -Description "time-zone handling"
 Assert-CacheEntry -Cache $cache -Pattern '(?m)^QT_FEATURE_timezone:INTERNAL=ON\r?$' -Description "the internal time-zone feature"
 Assert-CacheEntry -Cache $cache -Pattern '(?m)^FEATURE_timezone_locale:BOOL=OFF\r?$' -Description "disabled localized time-zone display names"
@@ -757,7 +760,7 @@ if (-not (Test-Path -LiteralPath $qtConfig -PathType Leaf)) {
 if (-not (Test-SnowQtTranslationKit -Qt6Dir (Join-Path $installPrefix "lib/cmake/Qt6"))) {
     throw "The installed Qt kit does not provide Simplified and Traditional Chinese stock-dialog translations."
 }
-if (-not (Test-InstalledQtSystemCodecs -Prefix $installPrefix -Configuration $Configuration)) {
+if (-not (Test-InstalledQtSystemCodecs -Prefix $installPrefix -Configuration $Configuration -Architecture $Architecture)) {
     throw "The installed Qt targets do not export the audited $Configuration codec/LTCG/timezone feature policy."
 }
 if (-not (Test-SnowQtArchitecture -Qt6Dir (Join-Path $installPrefix "lib/cmake/Qt6") `

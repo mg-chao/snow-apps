@@ -111,6 +111,44 @@ function Assert-NoPeExports {
     }
 }
 
+function Assert-SnowArm64StackCookieSafety {
+    param([Parameter(Mandatory)][string]$Path,
+        [Parameter(Mandatory)][string]$BuildDirectory,
+        [ValidateSet('x64', 'arm64')][string]$Architecture = 'x64')
+    if ($Architecture -eq 'x64') { return }
+
+    $images = @(if (Test-Path -LiteralPath $Path -PathType Container) {
+        Get-ChildItem -LiteralPath $Path -Recurse -File -Filter '*.exe' -Force |
+            Sort-Object FullName | Select-Object -ExpandProperty FullName
+    } else { $Path })
+    if ($images.Count -eq 0) {
+        throw "ARM64 stack-cookie audit found no staged executables: $Path"
+    }
+
+    $cachePath = Join-Path $BuildDirectory 'CMakeCache.txt'
+    if (-not (Test-Path -LiteralPath $cachePath -PathType Leaf)) {
+        throw "ARM64 stack-cookie audit requires the configured CMake cache: $cachePath"
+    }
+    $pythonPaths = @(Get-Content -LiteralPath $cachePath | ForEach-Object {
+        if ($_ -match '^(?:_Python3_EXECUTABLE:INTERNAL|Python3_EXECUTABLE:(?:FILEPATH|STRING))=(.+)$') {
+            $Matches[1]
+        }
+    } | Select-Object -Unique)
+    if ($pythonPaths.Count -ne 1 -or
+        -not [IO.Path]::IsPathRooted($pythonPaths[0]) -or
+        -not (Test-Path -LiteralPath $pythonPaths[0] -PathType Leaf)) {
+        throw "ARM64 stack-cookie audit requires one available Python3 interpreter from $cachePath"
+    }
+
+    $guard = Join-Path $PSScriptRoot 'validate-arm64-stack-cookie.py'
+    foreach ($image in $images) {
+        & $pythonPaths[0] $guard $image
+        if ($LASTEXITCODE -ne 0) {
+            throw "ARM64 stack-cookie audit rejected the staged executable: $image"
+        }
+    }
+}
+
 function Assert-ExactStringSet {
     param(
         [Parameter(Mandatory = $true)][string]$Description,
@@ -157,7 +195,7 @@ function Get-ValidatedStaticQtStamp {
             throw "Static Qt build stamp '$property' is '$($stamp.$property)'; expected '$($expectedValues[$property])'."
         }
     }
-    foreach ($property in @("Ltcg", "SystemPng", "SystemZlib", "Timezone")) {
+    foreach ($property in @("SystemPng", "SystemZlib", "Timezone")) {
         if ($stamp.PSObject.Properties.Name -notcontains $property -or
             $stamp.$property -isnot [bool] -or
             $stamp.$property -ne $true) {
@@ -175,7 +213,7 @@ function Get-ValidatedStaticQtStamp {
     }
     $qtDir = Join-Path $Prefix "lib/cmake/Qt6"
     if ((Get-SnowQtKitVersion -Qt6Dir $qtDir) -cne $ExpectedVersion -or
-        -not (Test-SnowQtSystemCodecKit -Qt6Dir $qtDir) -or
+        -not (Test-SnowQtSystemCodecKit -Qt6Dir $qtDir -Architecture $Architecture) -or
         -not (Test-SnowQtTranslationKit -Qt6Dir $qtDir) -or
         -not (Test-SnowQtArchitecture -Qt6Dir $qtDir -Architecture $Architecture -Configuration $ExpectedConfiguration)) {
         throw "The installed Qt targets do not match the audited system-codec/LTCG/timezone feature policy."
@@ -1267,6 +1305,7 @@ foreach ($variant in $variantStages.Keys) {
         "portable" | Set-Content -LiteralPath (Join-Path $stage "bin\__data_directory") `
             -Encoding ascii -NoNewline
     }
+    Assert-SnowArm64StackCookieSafety -Path $stage -BuildDirectory $buildDirectory -Architecture $Architecture
     $owned = @(Get-ReleaseTreeFileManifest -Root $stage | ForEach-Object {
         [ordered]@{ path = $_.Path.Replace('\', '/'); size = $_.Bytes; sha256 = $_.Sha256 }
     })

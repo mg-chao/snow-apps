@@ -12,6 +12,7 @@ vcpkg_from_github(
     PATCHES
         fix-static-delay-load.patch
         generate-reduced-ops-during-configure.patch
+        fix-arm64-msvc-mlas-stack-cookie.patch
 )
 
 find_program(PROTOC NAMES protoc PATHS "${CURRENT_HOST_INSTALLED_DIR}/tools/protobuf" REQUIRED NO_DEFAULT_PATH NO_CMAKE_PATH)
@@ -233,9 +234,20 @@ if("tensorrt" IN_LIST FEATURES)
     vcpkg_cmake_build(TARGET onnxruntime_providers_tensorrt LOGFILE_BASE build-tensorrt)
 endif()
 if(VCPKG_BUILD_TYPE STREQUAL "release" AND VCPKG_LIBRARY_LINKAGE STREQUAL "static")
-    # LTCG objects exhaust memory under vcpkg's default parallel build, which
-    # otherwise forces the helper to discard progress and retry serially.
-    vcpkg_cmake_install(DISABLE_PARALLEL)
+    if(VCPKG_TARGET_IS_WINDOWS AND NOT VCPKG_TARGET_IS_MINGW AND
+       VCPKG_TARGET_ARCHITECTURE STREQUAL "arm64")
+        # ARM64 emits native objects above, so the LTCG memory restriction does
+        # not apply. The pinned helper uses VCPKG_CONCURRENCY directly; bound
+        # this port to four jobs while preserving a caller's smaller limit.
+        if(NOT DEFINED VCPKG_CONCURRENCY OR VCPKG_CONCURRENCY GREATER 4)
+            set(VCPKG_CONCURRENCY 4)
+        endif()
+        vcpkg_cmake_install()
+    else()
+        # LTCG objects exhaust memory under vcpkg's default parallel build, which
+        # otherwise forces the helper to discard progress and retry serially.
+        vcpkg_cmake_install(DISABLE_PARALLEL)
+    endif()
 else()
     vcpkg_cmake_install()
 endif()
