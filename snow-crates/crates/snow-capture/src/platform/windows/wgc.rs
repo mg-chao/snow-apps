@@ -1424,8 +1424,19 @@ impl WgcWorker {
 
 impl Drop for WgcWorker {
     fn drop(&mut self) {
+        // Close/StopCapture can wait for outstanding capture frames. Seal the
+        // callback transport and return every checked-out buffer first; field
+        // destruction after Close would be too late if native shutdown waits.
+        self.transport.shutdown();
+        self.pending_complete_snapshot = None;
         let _ = self.frame_pool.RemoveFrameArrived(self.frame_arrived_token);
         let _ = self.item.RemoveClosed(self.closed_token);
+        {
+            // Submit pending copies while the device and COM apartment are
+            // alive. Never hold the shared context lock across WGC Close.
+            let _lock = self.shared_device.as_ref().map(|device| device.lock());
+            unsafe { self.context.Flush() };
+        }
         let _ = self.session.Close();
         let _ = self.frame_pool.Close();
     }
@@ -1624,6 +1635,53 @@ impl crate::backend::MonitorCapturer for WindowsWindowCapturer {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    #[ignore = "requires an interactive Windows desktop and WGC"]
+    fn wgc_shutdown_returns_with_unconsumed_frames() {
+        for shared in [false, true] {
+            let (finished, completion) = crossbeam_channel::bounded(1);
+            let worker = thread::spawn(move || {
+                let result = (|| -> CaptureResult<()> {
+                    validate_support()?;
+                    let monitor = super::super::monitor::enumerate_resolved()?
+                        .into_iter()
+                        .next()
+                        .ok_or(CaptureError::MonitorLost)?;
+                    let device = shared
+                        .then(|| snow_d3d11::SharedDevice::create(&monitor.adapter))
+                        .transpose()
+                        .map_err(CaptureError::platform)?;
+                    let mut capture = WgcWorker::new_with_device(
+                        WorkerTarget::Monitor {
+                            adapter_luid: monitor.key.adapter_luid,
+                            monitor: monitor.handle.0 as usize,
+                            hdr_metadata: monitor.hdr_metadata,
+                        },
+                        device.as_ref(),
+                    )?;
+                    capture
+                        .frame_notifications
+                        .recv_timeout(Duration::from_secs(5))
+                        .map_err(|_| CaptureError::Timeout)?;
+                    if !shared {
+                        capture.coalesce_complete_snapshot()?;
+                        assert!(capture.pending_complete_snapshot.is_some());
+                    }
+                    // CPU snapshots retain a cached frame; the shared-device
+                    // path retains the callback's queued frame instead.
+                    drop(capture);
+                    Ok(())
+                })();
+                let _ = finished.send(result);
+            });
+            completion
+                .recv_timeout(Duration::from_secs(15))
+                .expect("WGC shutdown must return with retained frames")
+                .expect("WGC capture and shutdown should succeed");
+            worker.join().unwrap();
+        }
+    }
 
     #[test]
     fn default_update_policy_is_complete_surface() {
