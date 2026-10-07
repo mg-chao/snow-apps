@@ -16,6 +16,7 @@
 #include "snow_shot/presentation/screenshotoverlaywindow.h"
 #include "snow_shot/presentation/screenshotoverlaycoordinator.h"
 #include "snow_shot/presentation/screenshotdisplaysession.h"
+#include "snow_shot/presentation/screenshotcanvasrenderer.h"
 #include "snow_shot/presentation/windowshortcutmanager.h"
 #include "snow_shot/storage/applicationstorage.h"
 #include "snow_shot/storage/settingsadapters.h"
@@ -34,6 +35,7 @@
 #include <QHoverEvent>
 #include <QListView>
 #include <QMouseEvent>
+#include <QPainter>
 #include <QPointer>
 #include <QScreen>
 #include <QTemporaryDir>
@@ -148,6 +150,11 @@ class StyleToolbarCommands final : public ScreenshotToolbarCommandSink,
     void hideColorPickersForScreenshotUi() override {
         hidePickers();
     }
+    void updateGuideLinesForScreenshotUi(const QPoint& globalPosition) override {
+        ++guideLineUpdateCommands;
+        guideLinePosition = globalPosition;
+        updateGuideLines(globalPosition);
+    }
     void setSelectionToolbarHidden(bool hidden) override {
         ++selectionToolbarVisibilityCommands;
         selectionToolbarVisibility(hidden);
@@ -164,8 +171,23 @@ class StyleToolbarCommands final : public ScreenshotToolbarCommandSink,
     int selectToolCount = 0;
     int shapeToolCount = 0;
     int selectionToolbarVisibilityCommands = 0;
+    int guideLineUpdateCommands = 0;
+    QPoint guideLinePosition;
     std::function<void()> hidePickers = [] {};
+    std::function<void(const QPoint&)> updateGuideLines = [](const QPoint&) {};
     std::function<void(bool)> selectionToolbarVisibility = [](bool) {};
+};
+
+class PointerMoveDeliveryObserver final : public QObject {
+  public:
+    int deliveredMoves = 0;
+
+  protected:
+    bool eventFilter(QObject*, QEvent* event) override {
+        if (event->type() == QEvent::MouseMove)
+            ++deliveredMoves;
+        return false;
+    }
 };
 
 void selectionToolbarVisibilitySurvivesCapturesAndRestarts() {
@@ -263,6 +285,176 @@ void selectionToolbarVisibilitySurvivesCapturesAndRestarts() {
         }
         applicationStorage.shutdown();
     }
+}
+
+void toolbarHoverKeepsScreenshotGuidesResponsive() {
+    QTemporaryDir temporary;
+    auto& storage = snow_shot::storage::ApplicationStorage::instance();
+    require(temporary.isValid() &&
+                storage.initialize({temporary.path(), temporary.path(), 60000}).success,
+            "toolbar guide tests require isolated settings");
+    {
+        NoopOverlayEventSink sink;
+        SnowCanvasRuntime canvas;
+        snow_shot::presentation::WindowShortcutManager shortcuts;
+        ScreenshotOverlayWindow first(sink, new SnowCanvasWidget);
+        ScreenshotOverlayWindow second(sink, new SnowCanvasWidget);
+        first.setCaptureGeometry(QRect(-1000, 80, 1000, 700));
+        second.setCaptureGeometry(QRect(0, 80, 1000, 700));
+        first.show();
+        second.show();
+        ScreenshotDisplaySession displays;
+        for (auto* overlay : {&first, &second}) {
+            CapturedDisplayModel display;
+            display.logicalRect = overlay->captureGeometry();
+            display.physicalRect = display.logicalRect;
+            display.active = true;
+            display.geometryResolved = true;
+            displays.appendDisplay(display, overlay);
+            overlay->canvas()->setInteractionEnabled(true);
+            require(overlay->canvas()->setCanvasTool(SnowCanvasTool::FreeDraw),
+                    "the guide test must preserve a drawing tool");
+        }
+        StyleToolbarCommands commands;
+        ScreenshotOverlayCoordinator coordinator(sink, canvas, shortcuts);
+        commands.updateGuideLines = [&](const QPoint& position) {
+            coordinator.updateGuideLinesAtGlobalPosition(displays, position, true, Qt::red,
+                                                         Qt::transparent);
+        };
+        coordinator.setToolbarCommandSinks(commands, commands);
+        coordinator.attachToolbarToOverlay(&second);
+        auto* toolbar = coordinator.toolbar();
+        toolbar->moveContentTo(QPoint(60, 300));
+        coordinator.showToolbar();
+        QCoreApplication::processEvents();
+        const auto sendMove = [](QWidget* receiver, const QPointF& local,
+                                 Qt::MouseButtons buttons = Qt::NoButton) {
+            const QPointF global = receiver->mapToGlobal(local);
+            QMouseEvent event(QEvent::MouseMove, local, receiver->window()->mapFromGlobal(global),
+                              global, Qt::NoButton, buttons, Qt::NoModifier);
+            QApplication::sendEvent(receiver, &event);
+        };
+        const auto requireGuideAt = [&](QWidget* receiver, const QPoint& local) {
+            const QPoint global = receiver->mapToGlobal(local);
+            require(commands.guideLinePosition == global,
+                    "toolbar movement must forward the event's global coordinates");
+            auto* owner = global.x() < 0 ? &first : &second;
+            auto* other = owner == &first ? &second : &first;
+            require(owner->screenshotRendererForTesting()->guideLinesVisible() &&
+                        !other->screenshotRendererForTesting()->guideLinesVisible(),
+                    "toolbar guides must follow the display under the pointer");
+            QImage image(owner->canvas()->size(), QImage::Format_ARGB32_Premultiplied);
+            image.fill(Qt::transparent);
+            QPainter painter(&image);
+            owner->screenshotRendererForTesting()->renderAfterCanvas(
+                painter, {image.rect(), QRegion(image.rect()), QTransform(), 1.0});
+            painter.end();
+            const QPoint position = owner->canvasLocalPosition(global);
+            require(image.rect().contains(position) &&
+                        image.pixelColor(position.x(), 2) == QColor(Qt::red),
+                    "the screenshot must paint its vertical guide at the current toolbar pointer");
+        };
+
+        // Plain QWidget children do not request mouse tracking. Qt still passes
+        // their moves to application filters before discarding widget delivery.
+        auto* trigger = toolbar->findChild<adqt::widgets::AdButton*>(
+            QStringLiteral("screenshotArrowLineButton"));
+        require(trigger && trigger->isVisible(), "the drawing group trigger must be visible");
+        QWidget child(trigger);
+        child.setGeometry(QRect(trigger->rect().center() - QPoint(8, 8), QSize(16, 16)));
+        child.show();
+        require(!child.hasMouseTracking(), "the regression must exercise a non-tracking child");
+        require(coordinator.screenshotUiContainsGlobalPoint(child.mapToGlobal(QPoint(3, 3))),
+                "the non-tracking child must occupy interactive drawing toolbar content");
+        coordinator.updateGuideLinesAtGlobalPosition(displays, QPoint(20, 100), true, Qt::red,
+                                                     Qt::transparent);
+        const int beforeMove = commands.guideLineUpdateCommands;
+        resetGuideLineRenderDiagnosticsForCurrentThread();
+        sendMove(&child, QPointF(3.1, 3.1));
+        require(commands.guideLineUpdateCommands > beforeMove,
+                "moving over a non-tracking toolbar child must update screenshot guides");
+        requireGuideAt(&child, QPoint(3, 3));
+        const auto movementDamage = guideLineRenderDiagnosticsForCurrentThread();
+        require(movementDamage.updateRequests == 1 && movementDamage.requestedDamagePixels > 0 &&
+                    movementDamage.requestedDamagePixels <
+                        static_cast<std::size_t>(second.canvas()->width() *
+                                                 second.canvas()->height() / 10),
+                "toolbar movement must repaint only the changed guide strips once");
+        resetGuideLineRenderDiagnosticsForCurrentThread();
+        sendMove(&child, QPointF(3.8, 3.8));
+        sendMove(&child, QPointF(3.8, 3.8));
+        requireGuideAt(&child, QPoint(3, 3));
+        require(guideLineRenderDiagnosticsForCurrentThread().updateRequests == 0 &&
+                    guideLineRenderDiagnosticsForCurrentThread().requestedDamagePixels == 0,
+                "duplicate and same-pixel toolbar movement must not request guide repaints");
+
+        toolbar->setActiveTool(ScreenshotToolPalette::Tool::Shape);
+        QCoreApplication::processEvents();
+        auto* style = toolbar->palette()->stylePanel();
+        require(style && style->isVisible(), "the drawing style panel must be visible");
+        const QPoint styleLocal = style->rect().center();
+        const QPoint styleGlobal = style->mapToGlobal(styleLocal);
+        QEnterEvent enter(styleLocal, style->window()->mapFromGlobal(styleGlobal), styleGlobal);
+        QApplication::sendEvent(style, &enter);
+        requireGuideAt(style, styleLocal);
+
+        auto* popover = trigger ? trigger->findChild<adqt::widgets::AdPopover*>() : nullptr;
+        require(popover, "the toolbar guide test requires a drawing group popup");
+        popover->preparePopup();
+        popover->show();
+        auto* content = popover->contentWidget();
+        require(content && content->isVisible(), "the group popup must be visible");
+        PointerMoveDeliveryObserver delivery;
+        content->installEventFilter(&delivery);
+        sendMove(content, content->rect().center(), Qt::LeftButton);
+        require(delivery.deliveredMoves > 0,
+                "guide forwarding must preserve delivery of pointer events to popup controls");
+        requireGuideAt(content, content->rect().center());
+        auto* surface = popover->surfaceWidget();
+        const int beforeShadow = commands.guideLineUpdateCommands;
+        sendMove(surface, QPointF(0, 0));
+        require(commands.guideLineUpdateCommands == beforeShadow,
+                "transparent popup shadows must remain outside screenshot UI guide forwarding");
+        popover->hide();
+        coordinator.attachSelectionToolbarToOverlay(&second);
+        coordinator.selectionToolbar()->setSelectionState(QRect(100, 100, 300, 200), false, 0, 0);
+        coordinator.showSelectionToolbar();
+        auto* selection = coordinator.selectionToolbar();
+        sendMove(selection, selection->rect().center());
+        requireGuideAt(selection, selection->rect().center());
+        coordinator.hideToolbar();
+        const int beforeHidden = commands.guideLineUpdateCommands;
+        sendMove(&child, QPointF(6, 6));
+        sendMove(content, content->rect().center());
+        require(commands.guideLineUpdateCommands == beforeHidden,
+                "hidden toolbar children and popups must stop forwarding pointer movement");
+
+        coordinator.resetToolbarForNewCapture();
+        coordinator.attachToolbarToOverlay(&first);
+        toolbar->moveContentTo(QPoint(-900, 300));
+        coordinator.showToolbar();
+        require(coordinator.screenshotUiContainsGlobalPoint(child.mapToGlobal(QPoint(7, 7))),
+                "the reused child must occupy interactive drawing toolbar content");
+        sendMove(&child, QPointF(7.8, 7.8));
+        requireGuideAt(&child, QPoint(7, 7));
+        const int beforeCanvas = commands.guideLineUpdateCommands;
+        sendMove(first.canvas(), QPointF(20, 20));
+        require(commands.guideLineUpdateCommands == beforeCanvas,
+                "canvas movement must retain its original input path");
+        for (auto* overlay : {&first, &second}) {
+            require(overlay->canvas()->canvasTool() == SnowCanvasTool::FreeDraw &&
+                        !overlay->canvas()->canvasHistoryState().canUndo,
+                    "toolbar guide movement must not change tools or create drawing gestures");
+        }
+        child.setParent(nullptr);
+        coordinator.destroyUiResources();
+        const int beforeDestroy = commands.guideLineUpdateCommands;
+        sendMove(&child, QPointF(8, 8));
+        require(commands.guideLineUpdateCommands == beforeDestroy,
+                "destroying capture UI must release its pointer forwarding scope");
+        commands.updateGuideLines = [](const QPoint&) {};
+    }
+    storage.shutdown();
 }
 
 void toolbarPopoversSuppressPickerAcrossWindowBoundaries() {
@@ -1125,6 +1317,10 @@ void auxiliaryWindowsPreserveOwnerStacking() {
 
 int main(int argc, char** argv) {
     QApplication application(argc, argv);
+    if (application.arguments().contains(QStringLiteral("--toolbar-guide-hover-only"))) {
+        toolbarHoverKeepsScreenshotGuidesResponsive();
+        return 0;
+    }
     if (application.arguments().contains(QStringLiteral("--selection-toolbar-visibility-only"))) {
         selectionToolbarVisibilitySurvivesCapturesAndRestarts();
         return 0;

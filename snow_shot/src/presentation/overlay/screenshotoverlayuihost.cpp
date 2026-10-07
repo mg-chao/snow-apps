@@ -20,6 +20,7 @@
 #include <utility>
 
 #include <QCoreApplication>
+#include <QEnterEvent>
 #include <QEvent>
 #include <QFontMetrics>
 #include <QGuiApplication>
@@ -344,12 +345,34 @@ ScreenshotOverlayUiHost::~ScreenshotOverlayUiHost() {
 bool ScreenshotOverlayUiHost::eventFilter(QObject* watched, QEvent* event) {
     // Popovers receive pointer events in separate windows, so the overlay's
     // mouse-move path and the toolbar's enter handler cannot observe this boundary.
-    if (m_colorPicker != nullptr && m_colorPicker->isVisible() && event != nullptr) {
+    const bool pickerVisible = m_colorPicker != nullptr && m_colorPicker->isVisible();
+    const bool guidePointerEvent =
+        event != nullptr && m_toolbarCommands != nullptr &&
+        (event->type() == QEvent::MouseMove || event->type() == QEvent::Enter);
+    const bool trackGuides =
+        guidePointerEvent && ((m_toolbar != nullptr && m_toolbar->isVisible()) ||
+                              (m_selectionToolbar != nullptr && m_selectionToolbar->isVisible()));
+    if (event != nullptr && (pickerVisible || trackGuides)) {
         if (const auto* receiver = qobject_cast<QWidget*>(watched)) {
-            const auto position =
-                adqt::widgets::detail::pointerEventGlobalPosition(receiver, event);
+            auto position = adqt::widgets::detail::pointerEventGlobalPosition(receiver, event);
+            if (trackGuides) {
+                const QPointF globalPosition =
+                    event->type() == QEvent::MouseMove
+                        ? static_cast<QMouseEvent*>(event)->globalPosition()
+                        : static_cast<QEnterEvent*>(event)->globalPosition();
+                // Match the canvas renderer's pixel alignment, including fractional DPRs
+                // and negative display origins, instead of rounding into an adjacent pixel.
+                position = QPoint(qFloor(globalPosition.x()), qFloor(globalPosition.y()));
+            }
             if (position && screenshotUiContainsGlobalPoint(*position)) {
-                hideColorPicker();
+                if (pickerVisible) {
+                    hideColorPicker();
+                }
+                // Application filters see moves even on controls without mouse tracking.
+                // Update only guide presentation; the original event still belongs to the UI.
+                if (trackGuides) {
+                    m_toolbarCommands->updateGuideLinesForScreenshotUi(*position);
+                }
             }
         }
     }

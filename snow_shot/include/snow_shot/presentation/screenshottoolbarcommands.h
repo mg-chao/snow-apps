@@ -133,6 +133,7 @@ class ScreenshotToolbarCommandSink {
         repositionToolbarForContentChange();
     }
     virtual void hideColorPickersForScreenshotUi() = 0;
+    virtual void updateGuideLinesForScreenshotUi(const QPoint&) {}
     virtual void beginCanvasColorSampling(adqt::widgets::AdColorPicker*) {}
 };
 

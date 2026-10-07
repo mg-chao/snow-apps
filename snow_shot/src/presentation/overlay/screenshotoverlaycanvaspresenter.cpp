@@ -455,16 +455,15 @@ void ScreenshotOverlayCanvasPresenter::updateGuideLinesAtGlobalPosition(
         return;
     }
 
-    const QVector<ActiveOverlayEntry> entries = activeOverlayEntries(displaySession);
-    const qsizetype ownerIndex = overlayEntryIndexAtPosition(entries, globalPosition);
-    if (ownerIndex < 0 || ownerIndex >= entries.size()) {
-        updateGuideLines(displaySession, nullptr, {}, true, cursorColor, monitorCenterColor,
-                         selectionCenterColor);
-        return;
-    }
-
-    ScreenshotOverlayWindow* owner = entries.at(ownerIndex).overlay;
-    const QPointF localPosition = owner->canvasLocalPosition(globalPosition);
+    ScreenshotOverlayWindow* owner = nullptr;
+    displaySession.forEachActiveOverlay(
+        [&](qsizetype, const CapturedDisplayModel& display, ScreenshotOverlayWindow* overlay) {
+            if (owner == nullptr && display.logicalRect.contains(globalPosition, false)) {
+                owner = overlay;
+            }
+        });
+    const QPointF localPosition =
+        owner != nullptr ? owner->canvasLocalPosition(globalPosition) : QPointF();
     updateGuideLines(displaySession, owner, localPosition, true, cursorColor, monitorCenterColor,
                      selectionCenterColor);
 }
