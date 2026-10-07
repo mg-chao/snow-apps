@@ -28,6 +28,7 @@ class ScreenshotSelectionModel;
 class QWidget;
 class SnowCanvasWidget;
 struct ScreenshotCaptureState;
+struct ScreenshotSelectionParams;
 enum class ScreenshotActiveTool;
 enum class ScreenshotIntelligentSelectionTarget;
 
@@ -242,6 +243,8 @@ class ScreenshotOverlayInputHandler final {
     // This is also used by non-interactive quick actions that select a whole
     // monitor or a focused window after the capture frame arrives.
     void confirmSelection();
+    // Restore persisted geometry through the same confirmation lifecycle as a mouse selection.
+    [[nodiscard]] bool restorePreviousSelection(const ScreenshotSelectionParams& params);
     [[nodiscard]] bool canSelectCurrentScreen() const;
     [[nodiscard]] bool selectCurrentScreen();
     [[nodiscard]] bool canPrepareSelectionForToolbarShortcut() const;

@@ -5597,36 +5597,17 @@ bool ScreenshotController::Impl::beginCapture(PendingSelectionAction action,
 
 bool ScreenshotController::Impl::selectPreviousSelection() {
     if (!m_selectionSettings || !m_selectionSettings->hasPreviousSelectionParams() ||
-        !m_interaction.moveToolActive()) {
+        !m_overlayInputHandler) {
         return false;
     }
-
-    const QRectF canvasBounds = m_geometry.canvasBounds();
-    if (canvasBounds.isNull() || canvasBounds.isEmpty()) {
+    if (!m_overlayInputHandler->restorePreviousSelection(
+            m_selectionSettings->previousSelectionParams())) {
         return false;
-    }
-    const QRect bounds = ScreenshotHalfOpenRect::fromRectF(canvasBounds).toAlignedQRect();
-    if (!m_selection.applyParams(m_selectionSettings->previousSelectionParams(), bounds)) {
-        if (!m_selection.hasPixelSelection()) {
-            m_interaction.returnToSelectionMode(false);
-            m_presentationServices->hideToolbar();
-            m_presentationServices->updateOverlayState();
-        }
-        return false;
-    }
-    m_intelligentSelection.clearTransientState();
-    m_interaction.confirmSelection();
-    m_captureState.sessionState = ScreenshotSessionState::Editing;
-    if (m_presentationServices != nullptr) {
-        m_presentationServices->updateOverlayState();
-        m_presentationServices->showToolbar();
-        m_presentationServices->showSelectionToolbar();
     }
     if (m_colorPickerController != nullptr && m_presentationServices != nullptr) {
         m_colorPickerController->updateAtCurrentCursor(
             m_presentationServices->colorPickerContext());
     }
-    scheduleAutomaticQrRecognition();
     return true;
 }
 

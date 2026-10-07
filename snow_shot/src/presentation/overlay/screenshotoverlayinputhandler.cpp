@@ -1114,6 +1114,32 @@ void ScreenshotOverlayInputHandler::confirmSelection() {
     confirmSelection({});
 }
 
+bool ScreenshotOverlayInputHandler::restorePreviousSelection(
+    const ScreenshotSelectionParams& params) {
+    if (!m_context.interaction.moveToolActive() || m_context.interaction.inactive() ||
+        m_context.interaction.dragging() || m_context.interaction.scrollingCapture() ||
+        m_externalDragActive) {
+        return false;
+    }
+    const QRectF canvasBounds = m_context.geometry.canvasBounds();
+    if (canvasBounds.isEmpty()) {
+        return false;
+    }
+    const QRect bounds = ScreenshotHalfOpenRect::fromRectF(canvasBounds).toAlignedQRect();
+    if (!m_context.selection.applyParams(params, bounds)) {
+        if (!m_context.selection.hasPixelSelection()) {
+            m_context.interaction.returnToSelectionMode(false);
+            m_context.actions.hideMainToolbar();
+            m_context.actions.updateOverlayState();
+        }
+        return false;
+    }
+    m_context.intelligentSelection.clearTransientState();
+    confirmSelection();
+    m_context.actions.showSelectionToolbar();
+    return true;
+}
+
 void ScreenshotOverlayInputHandler::confirmSelection(
     const std::function<void()>& beforePresentation) {
     if (m_context.interaction.dragging() || m_context.selection.constructionActive()) {
