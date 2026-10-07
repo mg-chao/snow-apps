@@ -6,8 +6,6 @@ class QWidget;
 
 namespace adqt::widgets::detail {
 
-void applyMacModalChrome(QWidget* widget);
-
 class MacModalSession {
  public:
   virtual ~MacModalSession() = default;

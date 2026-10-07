@@ -126,6 +126,17 @@ void nativeSwitcherChecks() {
         HWND popupWindow = reinterpret_cast<HWND>(picker.popup()->winId());
         check((GetWindowLongPtrW(popupWindow, GWL_EXSTYLE) & WS_EX_TOPMOST) != 0,
               "popup has native topmost style");
+        const LONG_PTR style = GetWindowLongPtrW(popupWindow, GWL_STYLE);
+        check((style & (WS_CAPTION | WS_SYSMENU | WS_THICKFRAME)) ==
+                      (WS_CAPTION | WS_SYSMENU | WS_THICKFRAME) &&
+                  (GetWindowLongPtrW(popupWindow, GWL_EXSTYLE) & WS_EX_LAYERED) == 0,
+              "popup uses the modal's opaque native Windows frame");
+        const QPoint popupCorner = picker.popup()->mapToGlobal(QPoint(1, 1));
+        const qreal popupScale = picker.popup()->devicePixelRatioF();
+        check(SendMessageW(popupWindow, WM_NCHITTEST, 0,
+                           MAKELPARAM(qRound(popupCorner.x() * popupScale),
+                                      qRound(popupCorner.y() * popupScale))) == HTCLIENT,
+              "native frame retains the fixed-size popup's client hit testing");
         bool above = false;
         for (HWND window = GetTopWindow(nullptr); window; window = GetWindow(window, GW_HWNDNEXT)) {
             if (window == popupWindow) {

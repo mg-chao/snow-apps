@@ -8,6 +8,13 @@
 
 namespace adqt::widgets::detail {
 
+void applyMacWindowSurfaceChrome(QWidget* surface) {
+    auto* view = reinterpret_cast<NSView*>(surface->winId());
+    // Keep the native title for window menus and accessibility while the window
+    // paints its own header across the expanded content area.
+    view.window.titleVisibility = NSWindowTitleHidden;
+}
+
 void releaseMacWindowSurfaceCursor(QWindow* surface) {
     if (!surface || !surface->handle() ||
         QGuiApplication::platformName() != QStringLiteral("cocoa")) {

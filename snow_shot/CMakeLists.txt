@@ -2948,8 +2948,13 @@ if(SNOW_SHOT_BUILD_TESTS)
         "${CMAKE_CURRENT_SOURCE_DIR}/include" "${SNOW_SHOT_DRAW_ENGINE_QT_DIR}/include")
     target_link_libraries(snow-shot-window-group-switcher-tests PRIVATE snow_shot_global_mouse ant_design_qt Qt6::Widgets)
     if(APPLE)
+        set_source_files_properties(tests/window_group_switcher_tests.cpp PROPERTIES LANGUAGE OBJCXX)
         target_link_libraries(snow-shot-window-group-switcher-tests PRIVATE
             "${SNOW_SHOT_CARBON_FRAMEWORK}" "${SNOW_SHOT_APPKIT_FRAMEWORK}" "${SNOW_SHOT_CORE_GRAPHICS_FRAMEWORK}")
+        add_test(NAME snow-shot-window-group-switcher-native-tests
+            COMMAND snow-shot-window-group-switcher-tests -platform cocoa)
+        set_tests_properties(snow-shot-window-group-switcher-native-tests PROPERTIES
+            LABELS "interactive;macos" RUN_SERIAL TRUE TIMEOUT 60)
     endif()
     if(WIN32)
         add_test(NAME snow-shot-window-group-switcher-native-tests

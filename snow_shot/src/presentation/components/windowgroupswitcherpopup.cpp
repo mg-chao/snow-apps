@@ -1,5 +1,6 @@
 #include "snow_shot/presentation/windowgroupswitcherpopup.h"
 #include "snow_shot/presentation/styles/thememanager.h"
+#include "widgets/detail/native_window_chrome.h"
 #include "widgets/scroll_area.h"
 #include <QAbstractListModel>
 #include <QApplication>
@@ -134,16 +135,15 @@ class GroupDelegate final : public QStyledItemDelegate {
 class WindowGroupSwitcherPopup::Impl {
   public:
     explicit Impl(WindowGroupSwitcherPopup& owner) : q(owner) {
-        q.contentBody()->setAttribute(Qt::WA_TransparentForMouseEvents, false);
-        auto* layout = new QVBoxLayout(q.contentBody());
+        auto* layout = new QVBoxLayout(&q);
         layout->setSizeConstraint(QLayout::SetNoConstraint);
         layout->setContentsMargins(16, 16, 16, 16);
         layout->setSpacing(10);
-        title = new QLabel(q.contentBody());
-        caption = new QLabel(q.contentBody());
+        title = new QLabel(&q);
+        caption = new QLabel(&q);
         caption->setAlignment(Qt::AlignRight);
         caption->setWordWrap(true);
-        list = new QListView(q.contentBody());
+        list = new QListView(&q);
         list->setObjectName(QStringLiteral("windowGroupSwitcherList"));
         model = new GroupListModel(list);
         delegate = new GroupDelegate(*model, list);
@@ -161,7 +161,7 @@ class WindowGroupSwitcherPopup::Impl {
         list->setVerticalScrollMode(QAbstractItemView::ScrollPerPixel);
         list->setVerticalScrollBar(new adqt::widgets::AdScrollBar(Qt::Vertical, list));
         list->setCursor(Qt::PointingHandCursor);
-        footer = new QLabel(q.contentBody());
+        footer = new QLabel(&q);
         footer->setWordWrap(true);
         for (QLabel* label : {title, caption, footer})
             label->setTextFormat(Qt::PlainText);
@@ -182,6 +182,7 @@ class WindowGroupSwitcherPopup::Impl {
     }
     void retranslate() {
         title->setText(pickerText(QT_TRANSLATE_NOOP("WindowGroupSwitcher", "Switch Window Group")));
+        q.setWindowTitle(title->text());
         q.setAccessibleName(title->text());
         list->setAccessibleName(title->text());
         caption->setText(
@@ -213,6 +214,7 @@ class WindowGroupSwitcherPopup::Impl {
         footer->setFont(smallFont);
         QPalette palette = q.palette();
         palette.setColor(QPalette::WindowText, scheme.map.colorText);
+        palette.setColor(QPalette::Window, scheme.map.colorBgElevated);
         palette.setColor(QPalette::Text, scheme.map.colorText);
         palette.setColor(QPalette::Base, Qt::transparent);
         q.setPalette(palette);
@@ -220,11 +222,6 @@ class WindowGroupSwitcherPopup::Impl {
         palette.setColor(QPalette::WindowText, scheme.map.colorTextSecondary);
         caption->setPalette(palette);
         footer->setPalette(palette);
-        q.setBackgroundColor(scheme.map.colorBgElevated);
-        q.setBorderColor(scheme.map.colorBorderSecondary);
-        q.setBorderWidth(scheme.metricAlias.lineWidth);
-        q.setCornerRadius(scheme.metricAlias.borderRadiusLG);
-        q.setShadowStyle(adqt::widgets::AdFloatingSurface::ShadowStyle::PopupSecondary);
         updateCountWidth();
         list->doItemsLayout();
         list->viewport()->update();
@@ -252,14 +249,15 @@ class WindowGroupSwitcherPopup::Impl {
 };
 WindowGroupSwitcherPopup::WindowGroupSwitcherPopup() {
     setObjectName(QStringLiteral("windowGroupSwitcherPopup"));
-    setWindowFlags(Qt::Tool | Qt::FramelessWindowHint | Qt::WindowStaysOnTopHint |
-                   Qt::WindowDoesNotAcceptFocus);
+    setWindowFlags(Qt::Tool | adqt::widgets::detail::nativeWindowChromeFlags() |
+                   Qt::WindowStaysOnTopHint | Qt::WindowDoesNotAcceptFocus);
     setAttribute(Qt::WA_ShowWithoutActivating);
     setAttribute(Qt::WA_QuitOnClose, false);
-    setAttribute(Qt::WA_TranslucentBackground);
+    setAutoFillBackground(true);
     setFocusPolicy(Qt::NoFocus);
 #ifdef Q_OS_MACOS
     setAttribute(Qt::WA_MacAlwaysShowToolWindow);
+    setAttribute(Qt::WA_ContentsMarginsRespectsSafeArea, false);
 #endif
     m_impl = std::make_unique<Impl>(*this);
 }
@@ -302,6 +300,8 @@ void WindowGroupSwitcherPopup::showOnScreen(QScreen* screen) {
         windowHandle()->setScreen(screen);
     updatePlacement();
     show();
+    // Cocoa can replace the native window during show.
+    adqt::widgets::detail::applyNativeWindowChrome(this);
     raise();
     m_impl->list->scrollToTop();
 }
@@ -309,48 +309,57 @@ void WindowGroupSwitcherPopup::updatePlacement() {
     if (!m_impl || !m_impl->screen)
         return;
     const QRect available = m_impl->screen->availableGeometry();
-    const auto margins = shadowMargins();
-    const int shadowWidth = margins.left() + margins.right();
-    const int shadowHeight = margins.top() + margins.bottom();
-    const int width = std::min(available.width(),
-                               std::max(400, m_impl->title->sizeHint().width() + 32) + shadowWidth);
-    const int bodyWidth = std::max(1, width - shadowWidth - 32);
+    const int width =
+        std::min(available.width(), std::max(400, m_impl->title->sizeHint().width() + 32));
+    const int bodyWidth = std::max(1, width - 32);
     const int rowHeight = std::max(m_impl->delegate->scheme.metricAlias.controlHeightLG,
                                    fontMetrics().height() + 20) +
                           4;
-    const int heightLimit =
-        std::min(static_cast<int>(available.height() * 0.6), 560 + shadowHeight);
+    const int heightLimit = std::min(static_cast<int>(available.height() * 0.6), 560);
     const int textHeight = m_impl->title->sizeHint().height() +
                            m_impl->caption->heightForWidth(bodyWidth) +
                            m_impl->footer->heightForWidth(bodyWidth);
     // Preserve a complete selectable row when enlarged fonts meet a small logical display.
-    const bool compact = textHeight + 32 + 30 + shadowHeight + rowHeight > heightLimit;
+    const bool compact = textHeight + 32 + 30 + rowHeight > heightLimit;
     const int verticalPadding = compact ? 8 : 16;
     const int spacing = compact ? 6 : 10;
-    auto* layout = qobject_cast<QVBoxLayout*>(contentBody()->layout());
+    auto* layout = qobject_cast<QVBoxLayout*>(this->layout());
     layout->setContentsMargins(16, verticalPadding, 16, verticalPadding);
     layout->setSpacing(spacing);
-    const int fixedHeight = verticalPadding * 2 + spacing * 3 + textHeight + shadowHeight;
+    const int fixedHeight = verticalPadding * 2 + spacing * 3 + textHeight;
     const int height = std::min(heightLimit, fixedHeight + rowHeight * m_impl->model->rowCount());
     setGeometry(QRect(available.topLeft() + QPoint((available.width() - width) / 2,
                                                    (available.height() - height) / 2),
                       QSize(width, std::max(1, height))));
 }
 void WindowGroupSwitcherPopup::changeEvent(QEvent* event) {
-    AdFloatingSurface::changeEvent(event);
+    QWidget::changeEvent(event);
     if (m_impl && event->type() == QEvent::LanguageChange) {
         m_impl->retranslate();
         emit languageChanged();
         updatePlacement();
     }
 }
+void WindowGroupSwitcherPopup::showEvent(QShowEvent* event) {
+    adqt::widgets::detail::applyNativeWindowChrome(this);
+    QWidget::showEvent(event);
+}
 bool WindowGroupSwitcherPopup::nativeEvent(const QByteArray& type, void* message, qintptr* result) {
 #ifdef Q_OS_WIN
+    if (static_cast<MSG*>(message)->message == WM_NCCALCSIZE) {
+        // Keep the native frame decoration while our content fills the client area.
+        *result = 0;
+        return true;
+    }
+    if (static_cast<MSG*>(message)->message == WM_NCHITTEST) {
+        *result = HTCLIENT;
+        return true;
+    }
     if (static_cast<MSG*>(message)->message == WM_MOUSEACTIVATE) {
         *result = MA_NOACTIVATE;
         return true;
     }
 #endif
-    return AdFloatingSurface::nativeEvent(type, message, result);
+    return QWidget::nativeEvent(type, message, result);
 }
 } // namespace snow_shot::presentation

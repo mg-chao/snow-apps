@@ -5,12 +5,12 @@
 #include "snow_shot/presentation/styles/thememanager.h"
 #include "snow_shot/storage/applicationstorage.h"
 #include "snow_shot/storage/pinnedwindowrepository.h"
-#include "widgets/detail/popup_shadow.h"
 #include <QApplication>
 #include <QDir>
 #include <QFile>
 #include <QFontDatabase>
 #include <QListView>
+#include <QLayout>
 #include <QMouseEvent>
 #include <QPainter>
 #include <QScreen>
@@ -19,6 +19,10 @@
 #include <algorithm>
 #include <cstdlib>
 #include <iostream>
+
+#ifdef Q_OS_MACOS
+#import <AppKit/AppKit.h>
+#endif
 
 using namespace snow_shot::presentation;
 namespace storage = snow_shot::storage;
@@ -181,8 +185,8 @@ void mouseModeAndActualClick() {
             "settings opens persistent picker");
     auto* list = f.picker.popup()->findChild<QListView*>();
     require(list, "picker list exists");
-    require(!f.picker.popup()->contentBody()->testAttribute(Qt::WA_TransparentForMouseEvents),
-            "floating surface body accepts native mouse clicks");
+    require(!f.picker.popup()->testAttribute(Qt::WA_TransparentForMouseEvents),
+            "popup client area accepts native mouse clicks");
     require(list->model()->rowCount() == 3, "every group shown, including empty groups");
     QCoreApplication::processEvents();
     const QPointF point = list->visualRect(list->model()->index(2, 0)).center();
@@ -330,47 +334,63 @@ void readOnlyFailureAndManyGroups() {
     f.picker.cancel();
 }
 
-void popupShadowMatchesMessage() {
+void popupUsesNativeModalChrome() {
     const styles::ThemeStyleConfig original;
+    WindowGroupSwitcherPopup popup;
     for (bool dark : {false, true}) {
         auto config = original;
         config.appearance = dark ? styles::ThemeAppearance::Dark : styles::ThemeAppearance::Light;
         styles::ThemeManager::instance().setThemeStyleConfig(config);
-        WindowGroupSwitcherPopup popup;
-        popup.resize(436, 260);
-        require(popup.shadowMargins() == adqt::widgets::detail::antPopupShadowSecondaryMargins(),
-                "group popup reserves the same shadow space as messages");
+        popup.showOnScreen(QApplication::primaryScreen());
+        QCoreApplication::processEvents();
+        require(!popup.testAttribute(Qt::WA_TranslucentBackground),
+                "native group popup uses an opaque client surface");
+        require(popup.windowFlags().testFlag(Qt::WindowStaysOnTopHint) &&
+                    popup.windowFlags().testFlag(Qt::WindowDoesNotAcceptFocus) &&
+                    popup.testAttribute(Qt::WA_ShowWithoutActivating),
+                "native chrome preserves the topmost nonactivating picker");
+        require(popup.layout()->geometry() == popup.rect(),
+                "popup content fills the client area without a custom shadow gutter");
+#ifdef Q_OS_MACOS
+        require(!popup.windowFlags().testFlag(Qt::FramelessWindowHint) &&
+                    popup.windowFlags().testFlag(Qt::WindowTitleHint) &&
+                    popup.windowFlags().testFlag(Qt::ExpandedClientAreaHint) &&
+                    popup.windowFlags().testFlag(Qt::NoTitleBarBackgroundHint) &&
+                    !popup.testAttribute(Qt::WA_ContentsMarginsRespectsSafeArea),
+                "group popup uses the modal's native expanded macOS frame");
+        if (QGuiApplication::platformName() == QStringLiteral("cocoa")) {
+            NSWindow* window = reinterpret_cast<NSView*>(popup.winId()).window;
+            require(window && (window.styleMask & NSWindowStyleMaskTitled) &&
+                        (window.styleMask & NSWindowStyleMaskFullSizeContentView) &&
+                        window.hasShadow && window.titlebarAppearsTransparent &&
+                        window.titleVisibility == NSWindowTitleHidden,
+                    "AppKit supplies the group popup's frame clipping and shadow");
+            require([window standardWindowButton:NSWindowCloseButton].hidden &&
+                        [window standardWindowButton:NSWindowMiniaturizeButton].hidden &&
+                        [window standardWindowButton:NSWindowZoomButton].hidden,
+                    "native modal chrome adds no title bar controls to the picker");
+        }
+#else
+        require(popup.windowFlags().testFlag(Qt::FramelessWindowHint),
+                "group popup retains its in-content header");
+#endif
+        const QColor background =
+            styles::ThemeManager::instance().themeColorScheme().map.colorBgElevated;
         for (qreal dpr : {1.0, 1.5, 2.0}) {
             QImage actual(QSize(qRound(popup.width() * dpr), qRound(popup.height() * dpr)),
                           QImage::Format_ARGB32_Premultiplied);
             actual.setDevicePixelRatio(dpr);
             actual.fill(Qt::transparent);
-            QPainter actualPainter(&actual);
-            popup.render(&actualPainter, QPoint(), QRegion(), QWidget::DrawWindowBackground);
-            actualPainter.end();
-            QImage expected(actual.size(), actual.format());
-            expected.setDevicePixelRatio(dpr);
-            expected.fill(Qt::transparent);
-            QPainter painter(&expected);
-            painter.setRenderHint(QPainter::Antialiasing);
-            QPainterPath path;
-            path.addRoundedRect(QRectF(popup.bodyRect()), popup.cornerRadius(),
-                                popup.cornerRadius());
-            adqt::widgets::detail::paintAntPopupBoxShadowSecondary(painter, path);
+            QPainter painter(&actual);
+            popup.render(&painter, QPoint(), QRegion(), QWidget::DrawWindowBackground);
             painter.end();
-            int shadowPixels = 0;
-            const QRectF body = QRectF(popup.bodyRect()).adjusted(-1, -1, 1, 1);
-            for (int y = 0; y < actual.height(); ++y) {
-                for (int x = 0; x < actual.width(); ++x) {
-                    if (body.contains(QPointF((x + 0.5) / dpr, (y + 0.5) / dpr)))
-                        continue;
-                    require(actual.pixel(x, y) == expected.pixel(x, y),
-                            "popup shadow pixels match the message renderer at every scale");
-                    shadowPixels += qAlpha(actual.pixel(x, y)) > 0 ? 1 : 0;
-                }
-            }
-            require(shadowPixels > 0, "popup has a visible shadow outside its body");
+            for (const QPoint& corner :
+                 {QPoint(0, 0), QPoint(actual.width() - 1, 0), QPoint(0, actual.height() - 1),
+                  QPoint(actual.width() - 1, actual.height() - 1)})
+                require(actual.pixelColor(corner) == background,
+                        "client corners are opaque with no painted rounding or shadow");
         }
+        popup.hide();
     }
     styles::ThemeManager::instance().setThemeStyleConfig(original);
 }
@@ -485,7 +505,7 @@ int main(int argc, char** argv) {
         if (render >= 0 && render + 1 < args.size())
         renderFixtures(args.at(render + 1));
     else {
-        popupShadowMatchesMessage();
+        popupUsesNativeModalChrome();
         previewAndCommit();
         multipleBindingsAndQuickTap();
         cancellationAndDraining();

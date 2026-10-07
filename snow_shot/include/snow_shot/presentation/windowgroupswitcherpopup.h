@@ -1,10 +1,10 @@
 #pragma once
 #include "snow_shot/presentation/pinnedwindowgroupmanager.h"
-#include "widgets/floating_surface.h"
+#include <QWidget>
 #include <memory>
 class QScreen;
 namespace snow_shot::presentation {
-class WindowGroupSwitcherPopup final : public adqt::widgets::AdFloatingSurface {
+class WindowGroupSwitcherPopup final : public QWidget {
     Q_OBJECT
   public:
     explicit WindowGroupSwitcherPopup();
@@ -20,6 +20,7 @@ class WindowGroupSwitcherPopup final : public adqt::widgets::AdFloatingSurface {
 
   protected:
     void changeEvent(QEvent* event) override;
+    void showEvent(QShowEvent* event) override;
     bool nativeEvent(const QByteArray& type, void* message, qintptr* result) override;
 
   private:
