@@ -5748,6 +5748,7 @@ void arrowAndLineRemainDirectWhenConfiguredIndividually() {
     arrowOptions.showSelectTool = false;
     arrowOptions.showShapeTool = false;
     arrowOptions.showArrowTool = true;
+    arrowOptions.showDistanceTool = false;
     arrowOptions.enableStyleToolbar = false;
     ScreenshotToolPalette arrowPalette(arrowOptions);
     const QList<adqt::widgets::AdButton*> arrowButtons = mainToolbarButtons(arrowPalette);
@@ -13667,6 +13668,7 @@ void editorlessToolsRejectStaleStyleToolbarState() {
     static const StyledTool styledTools[] = {
         {ScreenshotToolPalette::Tool::Shape, SnowCanvasStyleToolbarSource::DefaultRectangle},
         {ScreenshotToolPalette::Tool::Arrow, SnowCanvasStyleToolbarSource::DefaultArrow},
+        {ScreenshotToolPalette::Tool::Distance, SnowCanvasStyleToolbarSource::DefaultDistance},
         {ScreenshotToolPalette::Tool::Line, SnowCanvasStyleToolbarSource::DefaultLine},
         {ScreenshotToolPalette::Tool::FreeDraw, SnowCanvasStyleToolbarSource::DefaultFreeDraw},
         {ScreenshotToolPalette::Tool::RectangleHighlight,
@@ -13684,7 +13686,6 @@ void editorlessToolsRejectStaleStyleToolbarState() {
     };
     static const ScreenshotToolPalette::Tool editorlessTools[] = {
         ScreenshotToolPalette::Tool::Move,
-        ScreenshotToolPalette::Tool::Eraser,
         ScreenshotToolPalette::Tool::Ocr,
         ScreenshotToolPalette::Tool::ScrollingScreenshot,
     };
@@ -15808,6 +15809,8 @@ int main(int argc, char** argv) {
         return 0;
     }
     if (application.arguments().contains(QStringLiteral("--distance-only"))) {
+        arrowAndLineRemainDirectWhenConfiguredIndividually();
+        editorlessToolsRejectStaleStyleToolbarState();
         distanceSettingsExposeIndependentPropertiesAndHoverWheel();
         snow_shot::storage::ApplicationStorage::instance().shutdown();
         return 0;

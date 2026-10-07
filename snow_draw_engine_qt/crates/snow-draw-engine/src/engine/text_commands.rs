@@ -97,10 +97,14 @@ impl Engine {
         layouts: &[(ElementId, u64, TextLayoutSize, f64)],
     ) -> Result<MutationResult, ErrorCode> {
         self.ensure_viewport(viewport)?;
-        let before = self.editor.snapshot();
-        self.editor
-            .apply_arrow_text_measurements(&self.model, layouts)?;
-        self.refresh_after_session_mutation(before)
+        if self
+            .editor
+            .apply_arrow_text_measurements(&self.model, layouts)?
+        {
+            self.refresh_all_viewports()
+        } else {
+            Ok(MutationResult::default())
+        }
     }
 
     /// Invalidate host metrics before obtaining and applying replacement layouts.

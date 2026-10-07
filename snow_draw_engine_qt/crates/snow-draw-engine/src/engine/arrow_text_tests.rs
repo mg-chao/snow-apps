@@ -149,13 +149,30 @@ fn arrow_text_metric_batches_roll_back_invalid_results_and_ignore_stale_duplicat
             expected
         );
     }
-    assert!(
-        engine
-            .apply_arrow_text_measurements(viewport, &[metric(0, 40.0)])
-            .unwrap()
-            .changed_viewports
-            .is_empty()
-    );
+    let before = engine.editor.snapshot();
+    let cursor = engine
+        .viewport_slot(viewport)
+        .unwrap()
+        .composer
+        .current_cursor();
+    for layouts in [vec![], vec![metric(0, 40.0)]] {
+        assert!(
+            engine
+                .apply_arrow_text_measurements(viewport, &layouts)
+                .unwrap()
+                .changed_viewports
+                .is_empty()
+        );
+        assert_eq!(engine.editor.snapshot(), before);
+        assert_eq!(
+            engine
+                .viewport_slot(viewport)
+                .unwrap()
+                .composer
+                .current_cursor(),
+            cursor
+        );
+    }
 }
 
 #[test]

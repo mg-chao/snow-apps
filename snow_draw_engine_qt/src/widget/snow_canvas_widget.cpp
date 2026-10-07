@@ -966,11 +966,12 @@ bool SnowCanvasWidget::setDistanceCreationPixelScale(const QSizeF& scale) {
 }
 
 bool SnowCanvasWidget::Impl::setDistanceCreationPixelScale(const QSizeF& scale) {
-    return applyMutation([&]() {
-        return snow_canvas_commands::setDistancePixelScale(runtimeBinding.engine(),
-                                                           runtimeBinding.viewportHandle(),
-                                                           scale.width(), scale.height());
-    });
+    // Calibration is captured when creation starts; changing it needs no
+    // presentation update, label measurement, or focus transfer.
+    return snow_canvas_commands::setDistancePixelScale(runtimeBinding.engine(),
+                                                       runtimeBinding.viewportHandle(),
+                                                       scale.width(), scale.height())
+        .success;
 }
 
 bool SnowCanvasWidget::Impl::setCanvasShapeStylePatch(const SnowCanvasShapeStyle& style,

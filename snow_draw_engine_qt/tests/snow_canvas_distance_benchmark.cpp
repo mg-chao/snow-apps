@@ -133,6 +133,24 @@ void staticPaint(int count, int iterations, int repeat) {
     std::cout << "static-distance,2," << count << ',' << repeat << ",0,0," << percentile(paint, .5)
               << ',' << percentile(paint, .95) << ",0," << mean(paint) << '\n';
 }
+void calibration(int count, int iterations, int repeat) {
+    SnowCanvasRuntime runtime;
+    addDistances(runtime, count, true);
+    SnowCanvasWidget canvas(runtime);
+    canvas.resize(1280, 720);
+    require(canvas.setCanvasTool(SnowCanvasTool::Distance), "measure calibration labels");
+    std::vector<double> input;
+    for (int i = 0; i < iterations + 30; ++i) {
+        QElapsedTimer timer;
+        timer.start();
+        require(canvas.setDistanceCreationPixelScale(QSizeF(2 + i % 2, 2 + i % 2)),
+                "update image calibration");
+        if (i >= 30)
+            input.push_back(static_cast<double>(timer.nsecsElapsed()) / 1e6);
+    }
+    std::cout << "distance-calibration,2," << count << ',' << repeat << ',' << percentile(input, .5)
+              << ',' << percentile(input, .95) << ",0,0," << mean(input) << ",0\n";
+}
 } // namespace
 
 int main(int argc, char** argv) {
@@ -160,5 +178,7 @@ int main(int argc, char** argv) {
         }
         for (int count : {1, 10, 100, 300})
             staticPaint(count, iterations, repeat);
+        for (int count : {0, 100, 300})
+            calibration(count, iterations, repeat);
     }
 }

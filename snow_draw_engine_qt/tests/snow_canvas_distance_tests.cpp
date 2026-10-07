@@ -12,6 +12,7 @@
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QKeyEvent>
+#include <QLineEdit>
 #include <QMouseEvent>
 
 #include <cmath>
@@ -70,6 +71,57 @@ void drag(SnowCanvasWidget& canvas, QPointF start = {100, 180}, QPointF end = {3
     mouse(canvas, QEvent::MouseButtonPress, start, Qt::LeftButton, Qt::LeftButton);
     mouse(canvas, QEvent::MouseMove, end, Qt::NoButton, Qt::LeftButton);
     mouse(canvas, QEvent::MouseButtonRelease, end, Qt::LeftButton, Qt::NoButton);
+}
+
+void pixelCalibrationPreservesFocusAndPublishedPresentation() {
+    SnowCanvasRuntime runtime;
+    QWidget host;
+    SnowCanvasWidget canvas(runtime, &host);
+    QLineEdit input(&host);
+    host.resize(600, 420);
+    input.setGeometry(10, 370, 200, 30);
+    host.show();
+    host.activateWindow();
+    prepare(canvas);
+    drag(canvas);
+    input.setFocus(Qt::OtherFocusReason);
+    QApplication::processEvents();
+    require(QApplication::focusWidget() == &input, "focus the host's calibration input");
+
+    const QByteArray before = runtime.serializeDocumentSession();
+    SnowCanvasViewport observer;
+    const auto engine = snow_canvas_runtime::Access::handle(runtime);
+    require(observer.create(engine, snow_canvas_viewport::defaultEngineConfig()),
+            "create calibration observer");
+    ScopedPatchHandle patch;
+    require(snow_viewport_acquire_patch(engine, observer.get(), nullptr, patch.outParam()) ==
+                SNOW_OK,
+            "read presentation before calibration");
+    SnowPatchInfo beforeInfo{};
+    require(snow_patch_get_info(patch.get(), &beforeInfo) == SNOW_OK,
+            "read calibration observer cursor");
+
+    for (const QSizeF scale : {QSizeF(2, 3), QSizeF(2, 3), QSizeF(4, 5)}) {
+        require(canvas.setDistanceCreationPixelScale(scale), "configure future distances");
+        require(QApplication::focusWidget() == &input,
+                "pixel calibration must preserve focus in the host input");
+        require(runtime.serializeDocumentSession() == before,
+                "pixel calibration must preserve committed annotations and history");
+        require(snow_viewport_acquire_patch(engine, observer.get(), nullptr, patch.outParam()) ==
+                    SNOW_OK,
+                "read presentation after calibration");
+        SnowPatchInfo afterInfo{};
+        require(snow_patch_get_info(patch.get(), &afterInfo) == SNOW_OK &&
+                    afterInfo.scene_revision == beforeInfo.scene_revision &&
+                    afterInfo.decoration_revision == beforeInfo.decoration_revision &&
+                    afterInfo.overlay_revision == beforeInfo.overlay_revision,
+                "pixel calibration must not publish unrelated presentation changes");
+    }
+    require(canvas.deleteAllElements(), "clear the original distance");
+    drag(canvas);
+    require(only(runtime, QStringLiteral("Text")).value(QStringLiteral("text")).toString() ==
+                QStringLiteral("800 cm"),
+            "new annotations use the latest pixel calibration");
 }
 
 void distanceMovesPublishOneIncrementalPatchForEveryViewport() {
@@ -330,6 +382,7 @@ int main(int argc, char** argv) {
     }
 #endif
     QApplication application(argc, argv);
+    pixelCalibrationPreservesFocusAndPublishedPresentation();
     distanceMovesPublishOneIncrementalPatchForEveryViewport();
     gesturesAndDerivedLabels();
     releaseMeasuresTheFinalDistancePreview();
