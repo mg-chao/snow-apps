@@ -57,6 +57,7 @@
 #include <QWindow>
 #include <QScreen>
 #include <QPointer>
+#include <QScopeGuard>
 #include <QTimer>
 #include <QJsonArray>
 #include <QMessageBox>
@@ -3327,6 +3328,124 @@ void recordingColorSamplingIsConnected(bool nativeDesktop = false) {
     QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
 }
 
+void recordingActiveToolsReturnToSelect() {
+    using Tool = ScreenshotToolPalette::Tool;
+    using State = ScreenshotToolPalette::RecordingState;
+    using InputMode = ScreenRecordingAreaWindow::InputMode;
+    const snow_shot::storage::ScreenshotToolbarSettings settings;
+    const auto originalHighlight = settings.lastHighlightTool();
+    const auto originalFilter = settings.lastFilterTool();
+    const auto originalEraser = settings.lastEraserTool();
+    const auto cleanup = qScopeGuard([&] {
+        static_cast<void>(settings.setLastHighlightTool(originalHighlight));
+        static_cast<void>(settings.setLastFilterTool(originalFilter));
+        static_cast<void>(settings.setLastEraserTool(originalEraser));
+    });
+    require(settings.setLastHighlightTool(QStringLiteral("pen-highlight")) &&
+                settings.setLastFilterTool(QStringLiteral("pen-filter")) &&
+                settings.setLastEraserTool(QStringLiteral("eraser")),
+            "recording toggle fixture seeds remembered drawing modes");
+    struct ToolCase {
+        const char* shortcut;
+        const char* itemId;
+        Tool tool;
+        SnowCanvasTool canvasTool;
+    };
+    const ToolCase cases[] = {
+        {"shape", "shape", Tool::Shape, SnowCanvasTool::Shape},
+        {"arrow", "arrow", Tool::Arrow, SnowCanvasTool::Arrow},
+        {"line", "line", Tool::Line, SnowCanvasTool::Line},
+        {"brush", "free-draw", Tool::FreeDraw, SnowCanvasTool::FreeDraw},
+        {"highlight", "highlighter", Tool::PenHighlight, SnowCanvasTool::PenHighlight},
+        {"spotlight", "spotlight", Tool::Spotlight, SnowCanvasTool::Spotlight},
+        {"filter", "filter", Tool::PenFilter, SnowCanvasTool::PenFilter},
+        {"eraser", "eraser", Tool::Eraser, SnowCanvasTool::Eraser},
+        {"watermark", "watermark", Tool::Watermark, SnowCanvasTool::Watermark},
+        {"text", "text", Tool::Text, SnowCanvasTool::Text},
+        {"serial_number", "serial-number", Tool::SerialNumber, SnowCanvasTool::SerialNumber},
+    };
+    ScreenRecordingController controller(testEffectsSource);
+    controller.open(QRect(10, 10, 640, 480));
+    ScreenRecordingAreaWindow* area = nullptr;
+    for (auto* widget : QApplication::topLevelWidgets()) {
+        if (auto* candidate = qobject_cast<ScreenRecordingAreaWindow*>(widget);
+            candidate && candidate->isVisible())
+            area = candidate;
+    }
+    require(area != nullptr, "recording toggle fixture opens an annotation canvas");
+    auto* tools = palette();
+    auto* canvas = area->canvas();
+    auto* exportButton =
+        tools->findChild<adqt::widgets::AdButton*>(QStringLiteral("screenRecordingExportSettings"));
+    require(exportButton != nullptr, "recording toggle fixture exposes export settings");
+    adqt::widgets::AdButton* selectButton = nullptr;
+    for (auto* button : tools->findChildren<adqt::widgets::AdButton*>()) {
+        if (button->toolTip().startsWith(QStringLiteral("Select elements"))) {
+            selectButton = button;
+            break;
+        }
+    }
+    require(selectButton != nullptr, "recording toggle fixture exposes Select");
+    int selectRequests = 0;
+    QObject::connect(tools, &ScreenshotToolPalette::selectRequested, tools,
+                     [&] { ++selectRequests; });
+    const auto requireSelect = [&] {
+        require(
+            tools->activeTool() == Tool::Select && canvas->canvasTool() == SnowCanvasTool::Select &&
+                area->inputMode() == InputMode::Drawing && !tools->recordingExportSettingsVisible(),
+            "repeated recording tool activation selects canvas elements without export settings");
+    };
+    for (const auto state : {State::Idle, State::Recording, State::Paused}) {
+        if (state == State::Recording) {
+            controller.startRecording();
+            waitForRecording(controller);
+        } else if (state == State::Paused) {
+            tools->recordingPauseRequested();
+        }
+        for (const auto& test : cases) {
+            const auto shortcut = QString::fromLatin1(test.shortcut);
+            require(tools->activateDrawingShortcut(shortcut) && tools->activeTool() == test.tool &&
+                        canvas->canvasTool() == test.canvasTool,
+                    "recording tool activation reaches its canvas tool");
+            adqt::widgets::AdButton* trigger = nullptr;
+            for (auto* button : tools->findChildren<adqt::widgets::AdButton*>()) {
+                if (button->isVisibleTo(tools) &&
+                    button->property("screenshotToolbarItemId").toString() ==
+                        QString::fromLatin1(test.itemId)) {
+                    trigger = button;
+                    break;
+                }
+            }
+            require(trigger != nullptr, "active recording tool has a visible toolbar trigger");
+            const int previousSelectRequests = selectRequests;
+            trigger->click();
+            requireSelect();
+            require(selectRequests == previousSelectRequests + 1,
+                    "repeated toolbar click issues exactly one selection command");
+            trigger->click();
+            require(tools->activeTool() == test.tool && canvas->canvasTool() == test.canvasTool,
+                    "clicking the deactivated trigger restores its remembered tool");
+            require(tools->activateDrawingShortcut(shortcut), "repeat the active tool shortcut");
+            requireSelect();
+            require(tools->activateToolShortcut(Tool::Select), "repeat the Select shortcut");
+            requireSelect();
+            selectButton->click();
+            requireSelect();
+            require(tools->recordingSession().state() == state &&
+                        controller.isRecording() == (state != State::Idle),
+                    "tool toggles preserve the active recording state");
+            exportButton->click();
+            exportButton->click();
+            require(tools->recordingExportSettingsVisible() && !tools->activeTool().has_value() &&
+                        area->inputMode() == InputMode::RegionEditing,
+                    "explicit export settings activation remains idempotent and edits the region");
+        }
+    }
+    tools->recordingCloseRequested();
+    waitForIdle(controller);
+    QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+}
+
 void recordingEraserTools() {
     ScreenRecordingController controller(testEffectsSource);
     const auto areaWindow = [] {
@@ -4140,6 +4259,11 @@ int main(int argc, char** argv) {
     }
     if (app.arguments().contains(QStringLiteral("--color-sampling-native-only"))) {
         recordingColorSamplingIsConnected(true);
+        ApplicationStorage::instance().shutdown();
+        return 0;
+    }
+    if (app.arguments().contains(QStringLiteral("--tool-toggle-only"))) {
+        recordingActiveToolsReturnToSelect();
         ApplicationStorage::instance().shutdown();
         return 0;
     }

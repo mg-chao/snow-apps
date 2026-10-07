@@ -4751,12 +4751,6 @@ bool ScreenshotToolPalette::activateToolFromToolbar(Tool tool, bool toggleVisibl
         !toggleVisibleButton         ? m_activeTool.has_value() && *m_activeTool == tool
         : requestedButton != nullptr ? m_activeToolButton == requestedButton
                                      : m_activeTool.has_value() && *m_activeTool == tool;
-    const bool eraserVariant =
-        tool == Tool::Eraser || tool == Tool::RectangleEraser || tool == Tool::BrushEraser;
-    if (alreadyActive && m_options.recordingDrawingMode && !eraserVariant) {
-        setRecordingExportSettingsVisible(true);
-        return true;
-    }
     const Tool requestedTool = alreadyActive && tool != Tool::Select ? Tool::Select : tool;
     activateDrawingTool(requestedTool);
     return true;

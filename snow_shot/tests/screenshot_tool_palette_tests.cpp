@@ -1362,11 +1362,12 @@ void recordingExportSettingsAndDrawingAvailabilityFollowSessionState() {
             "selecting a recording filter should activate drawing and close Export Settings");
     shapeButton->click();
     shapeButton->click();
-    require(exportPanel->isVisible() && !palette.activeToolForTests().has_value() &&
+    require(!exportPanel->isVisible() &&
+                palette.activeToolForTests() == ScreenshotToolPalette::Tool::Select &&
                 !palette.styleToolbarVisible() &&
                 shapeButton->buttonStyle() == adqt::widgets::AdButton::ButtonStyle::Text &&
                 selectRequests == 2,
-            "clicking the active drawing button must switch to Export Settings");
+            "clicking the active drawing button must return to Select");
     exportButton->click();
 
     int formatChanges = 0;
@@ -1537,10 +1538,10 @@ void recordingExportSettingsAndDrawingAvailabilityFollowSessionState() {
         shapeButton->click();
         const int selectRequestsBeforeClick = selectRequests;
         shapeButton->click();
-        require(!palette.activeToolForTests().has_value() &&
-                    palette.recordingExportSettingsVisible() && !palette.styleToolbarVisible() &&
+        require(palette.activeToolForTests() == ScreenshotToolPalette::Tool::Select &&
+                    !palette.recordingExportSettingsVisible() && !palette.styleToolbarVisible() &&
                     selectRequests == selectRequestsBeforeClick + 1,
-                "clicking active drawing during recording must return to Export Settings");
+                "clicking active drawing during recording must return to Select");
         shapeButton->click();
         require(palette.activeToolForTests() == ScreenshotToolPalette::Tool::Shape,
                 "a deactivated drawing tool should activate on the next click");
@@ -7167,9 +7168,9 @@ void groupedToolShortcutsToggleOnlyTheRequestedTool() {
     ScreenshotToolPalette recordingPalette(options);
     require(recordingPalette.activateDrawingShortcut(QStringLiteral("shape")) &&
                 recordingPalette.activateDrawingShortcut(QStringLiteral("shape")) &&
-                !recordingPalette.activeToolForTests().has_value() &&
-                recordingPalette.recordingExportSettingsVisible(),
-            "repeated recording shortcuts must return to Export Settings");
+                recordingPalette.activeToolForTests() == Tool::Select &&
+                !recordingPalette.recordingExportSettingsVisible(),
+            "repeated recording shortcuts must return to Select");
     recordingPalette.setActiveTool(Tool::Shape);
     recordingPalette.setActiveTool(Tool::Shape);
     require(recordingPalette.activeToolForTests() == Tool::Shape &&

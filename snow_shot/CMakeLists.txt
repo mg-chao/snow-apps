@@ -6422,6 +6422,9 @@ if(SNOW_SHOT_BUILD_TESTS)
     add_test(NAME snow-shot-recording-color-sampler-tests
         COMMAND snow-shot-screen-recording-controller-tests --color-sampling-only -platform offscreen)
     set_tests_properties(snow-shot-recording-color-sampler-tests PROPERTIES LABELS "unit" TIMEOUT 60)
+    add_test(NAME snow-shot-recording-tool-toggle-tests
+        COMMAND snow-shot-screen-recording-controller-tests --tool-toggle-only -platform offscreen)
+    set_tests_properties(snow-shot-recording-tool-toggle-tests PROPERTIES LABELS "unit" TIMEOUT 60)
     add_test(NAME snow-shot-recording-eraser-tests
         COMMAND snow-shot-screen-recording-controller-tests --eraser-only -platform offscreen)
     set_tests_properties(snow-shot-recording-eraser-tests PROPERTIES LABELS "unit" TIMEOUT 60)
