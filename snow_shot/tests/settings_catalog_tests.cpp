@@ -474,9 +474,9 @@ void builtInCatalogIsCompleteAndValid() {
                 itemIds.contains(QStringLiteral("screenshot-shortcut.upload_to_cloud")) &&
                 itemIds.contains(QStringLiteral("pin-to-screen-shortcut.upload_to_cloud")),
             "cloud upload must expose its configuration and shortcuts in both local scopes");
-    require(itemIds.size() == 243,
+    require(itemIds.size() == 244,
             qPrintable(QStringLiteral(
-                           "catalog must contain 243 shared settings on every platform; found %1")
+                           "catalog must contain 244 shared settings on every platform; found %1")
                            .arg(itemIds.size())));
     require(itemIds.contains(QStringLiteral("pin-to-screen.confirm-before-closing-window")) &&
                 itemIds.contains(QStringLiteral("pin-to-screen.confirm-before-destroying-window")),
@@ -902,6 +902,25 @@ void builtInCatalogIsCompleteAndValid() {
             !storage::ConfigurationSchema::defaultValue(rememberLastUsedTool->configurationKey)
                  .toBool(),
         "Drawing settings must expose the default-off remembered drawing tool switch");
+
+    const auto* firstToolbarGroupButton =
+        catalog.item({QStringLiteral("screenshots"), QStringLiteral("drawing-settings"),
+                      QStringLiteral("drawing.always-show-first-toolbar-group-button")});
+    const auto& drawingSettingsSection =
+        *catalog.section(QStringLiteral("screenshots"), QStringLiteral("drawing-settings"));
+    require(
+        firstToolbarGroupButton != nullptr &&
+            firstToolbarGroupButton->configurationKey ==
+                QStringLiteral("drawing/always_show_first_toolbar_group_button") &&
+            std::get<settings::SettingsSwitchDefinition>(firstToolbarGroupButton->payload)
+                    .binding ==
+                settings::SettingsSwitchBinding::DrawingAlwaysShowFirstToolbarGroupButton &&
+            !storage::ConfigurationSchema::defaultValue(firstToolbarGroupButton->configurationKey)
+                 .toBool() &&
+            drawingSettingsSection.items.size() == 3 &&
+            drawingSettingsSection.items.at(1).id == rememberLastUsedTool->id &&
+            drawingSettingsSection.items.at(2).id == firstToolbarGroupButton->id,
+        "the default-off first toolbar group button switch must follow Remember last used tool");
 
     const auto& traySection =
         *catalog.section(QStringLiteral("desktop-tools"), QStringLiteral("tray"));

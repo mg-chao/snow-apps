@@ -165,6 +165,7 @@ enum class SettingsSwitchBinding {
     AutoStartAtBoot,
     LaunchAsAdministrator,
     DrawingRememberLastUsedTool,
+    DrawingAlwaysShowFirstToolbarGroupButton,
 };
 
 struct SettingsSwitchDefinition {

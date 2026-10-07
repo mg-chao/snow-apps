@@ -2481,6 +2481,10 @@
             <translation>Keep closed windows available for restoration; disabling does not delete existing records</translation>
         </message>
         <message>
+            <source>Keep group main buttons visible</source>
+            <translation>Keep group main buttons visible</translation>
+        </message>
+        <message>
             <source>Keep records permanently</source>
             <translation>Keep records permanently</translation>
         </message>
@@ -2491,6 +2495,10 @@
         <message>
             <source>Keep selection width and height consistent</source>
             <translation>Keep selection width and height consistent</translation>
+        </message>
+        <message>
+            <source>Keep the first button of each toolbar group visible instead of the last used button</source>
+            <translation>Keep the first button of each toolbar group visible instead of the last used button</translation>
         </message>
         <message>
             <source>Keep the recognition process running to avoid startup delays. Uses memory while idle.</source>

@@ -1075,6 +1075,15 @@ bool DrawingSettings::setRememberLastUsedTool(bool enabled) const {
     return cache().setValue(QStringLiteral("drawing/remember_last_used_tool"), enabled);
 }
 
+bool DrawingSettings::alwaysShowFirstToolbarGroupButton() const {
+    return cache().value(QStringLiteral("drawing/always_show_first_toolbar_group_button")).toBool();
+}
+
+bool DrawingSettings::setAlwaysShowFirstToolbarGroupButton(bool enabled) const {
+    return cache().setValue(QStringLiteral("drawing/always_show_first_toolbar_group_button"),
+                            enabled);
+}
+
 shortcuts::ShortcutBindingList ScreenshotShortcutSettings::moveTool() const {
     return shortcuts(QStringLiteral("move_tool"));
 }

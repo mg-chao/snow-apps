@@ -2481,6 +2481,10 @@
             <translation>保留已關閉視窗以便還原；停用不會刪除現有記錄</translation>
         </message>
         <message>
+            <source>Keep group main buttons visible</source>
+            <translation>保持顯示群組主按鈕</translation>
+        </message>
+        <message>
             <source>Keep records permanently</source>
             <translation>永久保留記錄</translation>
         </message>
@@ -2491,6 +2495,10 @@
         <message>
             <source>Keep selection width and height consistent</source>
             <translation>保持選取區寬高一致</translation>
+        </message>
+        <message>
+            <source>Keep the first button of each toolbar group visible instead of the last used button</source>
+            <translation>工具列的每個群組一律顯示第一個按鈕，而不是上次使用的按鈕</translation>
         </message>
         <message>
             <source>Keep the recognition process running to avoid startup delays. Uses memory while idle.</source>

@@ -76,6 +76,12 @@
 #include <utility>
 
 namespace {
+template <typename Group> QString toolbarGroupEntryItemId(const Group& group) {
+    return snow_shot::storage::DrawingSettings().alwaysShowFirstToolbarGroupButton()
+               ? group.popoverItemIds.value(0)
+               : group.entryItemId;
+}
+
 class ScrollingSettingsBody final : public QWidget {
   public:
     std::function<void()> retranslate;
@@ -1047,6 +1053,9 @@ ScreenshotToolPalette::ScreenshotToolPalette(const Options& options, QWidget* pa
                 this, [this](const QString& key, const QJsonValue& value) {
                     if (key == QStringLiteral("cloud_upload/configuration")) {
                         setCloudUploadBusy(m_cloudUploadBusy);
+                    } else if (key ==
+                               QStringLiteral("drawing/always_show_first_toolbar_group_button")) {
+                        refreshShortcutTooltips();
                     } else if (key.startsWith(QStringLiteral("screenshot_shortcuts/")) ||
                                key.startsWith(QStringLiteral("drawing_shortcuts/")) ||
                                key.startsWith(QStringLiteral("pin_to_screen_shortcuts/")) ||
@@ -2005,7 +2014,14 @@ void ScreenshotToolPalette::refreshTableQrTrigger() {
     if (m_tableButton == nullptr) {
         return;
     }
-    const bool table = m_tableQrEntryTool == Tool::Table;
+    QString entryItemId = actionToolItemId(m_tableQrEntryTool);
+    for (const ActionToolGroup& group : std::as_const(m_actionToolGroups)) {
+        if (group.trigger == m_tableButton) {
+            entryItemId = toolbarGroupEntryItemId(group);
+            break;
+        }
+    }
+    const bool table = entryItemId == QStringLiteral("table-recognition");
     configureScreenshotToolPaletteTooltip(m_tableButton,
                                           table ? "Table recognition" : "Barcode recognition");
     applyScreenshotShortcutTooltip(
@@ -4306,8 +4322,9 @@ void ScreenshotToolPalette::refreshConfirmShortcutHint() {
     applyPinToScreenShortcutTooltip(m_confirmButton, QStringLiteral("Confirm edit"),
                                     QStringLiteral("drawing_mode"));
     for (const ActionToolGroup& group : std::as_const(m_actionToolGroups)) {
-        if (group.entryItemId == QStringLiteral("confirm")) {
-            applyActionToolShortcutTooltip(group.trigger, group.entryItemId);
+        const QString entryItemId = toolbarGroupEntryItemId(group);
+        if (entryItemId == QStringLiteral("confirm")) {
+            applyActionToolShortcutTooltip(group.trigger, entryItemId);
         }
         for (auto* button : group.optionButtons) {
             if (button != nullptr && button->property("screenshotToolbarItemId").toString() ==
@@ -4747,9 +4764,13 @@ bool ScreenshotToolPalette::activateToolFromToolbar(Tool tool, bool toggleVisibl
     // to selection mode. Programmatic setActiveTool() calls remain
     // explicit so state synchronization does not unexpectedly toggle.
     adqt::widgets::AdButton* requestedButton = toolEntryButton(tool);
+    const bool fixedGroupButton =
+        requestedButton != nullptr &&
+        requestedButton->property("screenshotToolbarPositionItems").toStringList().size() > 1 &&
+        toolbar_settings::DrawingSettings().alwaysShowFirstToolbarGroupButton();
     const bool alreadyActive =
-        !toggleVisibleButton         ? m_activeTool.has_value() && *m_activeTool == tool
-        : requestedButton != nullptr ? m_activeToolButton == requestedButton
+        !toggleVisibleButton || fixedGroupButton ? m_activeTool.has_value() && *m_activeTool == tool
+        : requestedButton != nullptr             ? m_activeToolButton == requestedButton
                                      : m_activeTool.has_value() && *m_activeTool == tool;
     const Tool requestedTool = alreadyActive && tool != Tool::Select ? Tool::Select : tool;
     activateDrawingTool(requestedTool);
@@ -4820,7 +4841,7 @@ void ScreenshotToolPalette::refreshDrawingToolGroup(int groupIndex) {
         return;
     }
     DrawingToolGroup& group = m_drawingToolGroups[groupIndex];
-    const QString& itemId = group.entryItemId;
+    const QString itemId = toolbarGroupEntryItemId(group);
     const auto& definitions = toolbar_layout::drawingEditorDescriptors();
     const auto descriptor =
         std::find_if(definitions.cbegin(), definitions.cend(), [&itemId](const auto& candidate) {
@@ -5196,15 +5217,16 @@ void ScreenshotToolPalette::refreshActionToolGroup(int groupIndex) {
         return;
     }
     ActionToolGroup& group = m_actionToolGroups[groupIndex];
+    const QString entryItemId = toolbarGroupEntryItemId(group);
     if (m_options.showRecordingControls && !group.ownsTrigger) {
-        group.trigger = recordingActionSourceButton(group.entryItemId);
+        group.trigger = recordingActionSourceButton(entryItemId);
     }
     if (group.trigger == nullptr) {
         return;
     }
 
     const auto* entryDescriptor =
-        paletteActionDescriptor(group.entryItemId, m_options.showRecordingControls);
+        paletteActionDescriptor(entryItemId, m_options.showRecordingControls);
     if (entryDescriptor == nullptr) {
         return;
     }
@@ -5222,13 +5244,13 @@ void ScreenshotToolPalette::refreshActionToolGroup(int groupIndex) {
             button->setBusy(source->busy());
             applyActionToolShortcutTooltip(button, itemId);
         };
-        updateButton(group.trigger, group.entryItemId);
+        updateButton(group.trigger, entryItemId);
         if (group.ownsTrigger) {
             group.trigger->setEnabled(std::any_of(
                 group.itemIds.cbegin(), group.itemIds.cend(),
                 [this](const QString& itemId) { return actionToolState(itemId).enabled; }));
         }
-        group.trigger->setProperty("screenshotToolbarItemId", group.entryItemId);
+        group.trigger->setProperty("screenshotToolbarItemId", entryItemId);
         group.trigger->setProperty("screenshotToolbarPositionItems", group.itemIds);
         for (auto* optionButton : std::as_const(group.optionButtons)) {
             const QString itemId = optionButton->property("screenshotToolbarItemId").toString();
@@ -5250,22 +5272,22 @@ void ScreenshotToolPalette::refreshActionToolGroup(int groupIndex) {
             button->setAccentRole(source->accentRole());
         }
     };
-    applyActionToolShortcutTooltip(group.trigger, group.entryItemId);
+    applyActionToolShortcutTooltip(group.trigger, entryItemId);
     auto entryIcon = toolbar_layout::icon(entryDescriptor->icon);
-    if (group.entryItemId == QStringLiteral("confirm") ||
-        (group.entryItemId == QStringLiteral("copy") && !m_options.copyButtonWithNeutralIcon)) {
+    if (entryItemId == QStringLiteral("confirm") ||
+        (entryItemId == QStringLiteral("copy") && !m_options.copyButtonWithNeutralIcon)) {
         entryIcon = snow_shot::presentation::icons::withPrimaryColor(
             entryIcon,
             snow_shot::presentation::styles::generateThemeColorScheme().map.colorPrimary);
     }
     setScreenshotToolPaletteToolButtonIcon(group.trigger, entryIcon);
-    updateAppearance(group.trigger, group.entryItemId);
+    updateAppearance(group.trigger, entryItemId);
     // A disabled entry must not prevent hovering the stack to choose an enabled alternative.
     group.trigger->setEnabled(
         std::any_of(group.itemIds.cbegin(), group.itemIds.cend(),
                     [this](const QString& itemId) { return actionToolState(itemId).enabled; }));
-    group.trigger->setBusy(actionToolState(group.entryItemId).busy);
-    group.trigger->setProperty("screenshotToolbarItemId", group.entryItemId);
+    group.trigger->setBusy(actionToolState(entryItemId).busy);
+    group.trigger->setProperty("screenshotToolbarItemId", entryItemId);
     group.trigger->setProperty("screenshotToolbarPositionItems", group.itemIds);
 
     for (adqt::widgets::AdButton* optionButton : std::as_const(group.optionButtons)) {
@@ -5417,7 +5439,7 @@ adqt::widgets::AdButton* ScreenshotToolPalette::createActionToolGroup(const QStr
                 [this, trigger = group.trigger]() {
                     for (const ActionToolGroup& candidate : std::as_const(m_actionToolGroups)) {
                         if (candidate.trigger == trigger) {
-                            activateActionTool(candidate.entryItemId);
+                            activateActionTool(toolbarGroupEntryItemId(candidate));
                             return;
                         }
                     }
@@ -5542,7 +5564,7 @@ void ScreenshotToolPalette::applyMainToolbarLayout(bool notify) {
                         for (const DrawingToolGroup& candidate :
                              std::as_const(m_drawingToolGroups)) {
                             if (candidate.trigger == trigger) {
-                                activateDrawingItem(candidate.entryItemId);
+                                activateDrawingItem(toolbarGroupEntryItemId(candidate));
                                 return;
                             }
                         }
@@ -5922,8 +5944,9 @@ bool ScreenshotToolPalette::addMainSecondaryButtons(const Options& options, QBox
             m_tableButton, this, [this]() { ensureActionToolGroupPopover(m_tableButton); },
             [this]() { releaseActionToolGroupPopover(m_tableButton); });
         m_tableButton->installEventFilter(this);
-        connect(m_tableButton, &adqt::widgets::AdButton::clicked, this,
-                [this]() { activateActionTool(actionToolItemId(m_tableQrEntryTool)); });
+        connect(m_tableButton, &adqt::widgets::AdButton::clicked, this, [this]() {
+            activateActionTool(m_tableButton->property("screenshotToolbarItemId").toString());
+        });
         refreshTableQrTrigger();
         updateTableQrBusy();
     } else if ((options.showTableTool && snow_shot::app::edition::tableRecognition)) {

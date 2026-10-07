@@ -5150,6 +5150,12 @@ if(SNOW_SHOT_BUILD_TESTS)
         COMMAND snow-shot-screenshot-tool-palette-tests --hidden-tools-only -platform offscreen)
     add_test(NAME snow-shot-annotation-toolbar-layout-tests
         COMMAND snow-shot-screenshot-tool-palette-tests --toolbar-layout-only -platform offscreen)
+    add_test(NAME snow-shot-toolbar-group-button-settings-tests
+        COMMAND snow-shot-screenshot-tool-palette-tests --first-group-button-only -platform offscreen)
+    set_tests_properties(snow-shot-toolbar-group-button-settings-tests PROPERTIES
+        LABELS "unit" TIMEOUT 60
+        ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}"
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
     set_tests_properties(snow-shot-annotation-toolbar-layout-tests PROPERTIES
         LABELS "unit" TIMEOUT 60
         ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}"

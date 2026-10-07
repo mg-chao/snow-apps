@@ -3419,6 +3419,250 @@ void moveToolPresentationUsesTheOwningShortcutScope() {
     QCoreApplication::processEvents();
 }
 
+void toolbarGroupsKeepFirstButtonWhenEnabled() {
+    using snow_shot::storage::DrawingSettings;
+    using snow_shot::storage::ScreenshotToolbarLayout;
+    using snow_shot::storage::ScreenshotToolbarLayoutKind;
+    const DrawingSettings settings;
+    const bool original = settings.alwaysShowFirstToolbarGroupButton();
+    const auto restore = qScopeGuard(
+        [&] { static_cast<void>(settings.setAlwaysShowFirstToolbarGroupButton(original)); });
+    for (const auto kind :
+         {ScreenshotToolbarLayoutKind::ActionTools, ScreenshotToolbarLayoutKind::PinnedActionTools,
+          ScreenshotToolbarLayoutKind::RecordingActionTools}) {
+        require(settings.setAlwaysShowFirstToolbarGroupButton(false),
+                "disable fixed group buttons");
+        ScreenshotToolPalette::Options options;
+        options.showLineTool = true;
+        options.showRecordingControls = kind == ScreenshotToolbarLayoutKind::RecordingActionTools;
+        options.actionToolsLayoutKind = kind;
+        options.enableStyleToolbar = false;
+        options.toolbarLayout = ScreenshotToolbarLayout{
+            {{QStringLiteral("free-draw"), QStringLiteral("line"), QStringLiteral("shape")}},
+            {QStringLiteral("select"), QStringLiteral("arrow")}};
+        ScreenshotToolPalette palette(options);
+        palette.show();
+        QCoreApplication::processEvents();
+        auto* trigger = mainDrawingToolbarButtons(palette).value(0);
+        require(trigger != nullptr && trigger->accessibleName() == QStringLiteral("Shape"),
+                "the first available popup option must be the initial group button");
+        const auto shapeIcon = adqt::icons::describeIcon(trigger->iconRef()).key;
+        require(palette.activateToolShortcut(ScreenshotToolPalette::Tool::Line) &&
+                    trigger->accessibleName() == QStringLiteral("Line"),
+                "default-off groups must continue showing the last used tool");
+        require(settings.setAlwaysShowFirstToolbarGroupButton(true) &&
+                    trigger->accessibleName() == QStringLiteral("Shape") &&
+                    trigger->toolTip() == QStringLiteral("Shape (1)") &&
+                    adqt::icons::describeIcon(trigger->iconRef()).key == shapeIcon &&
+                    palette.activeTool() == ScreenshotToolPalette::Tool::Line,
+                "enabling the preference must immediately restore the first icon and tooltip");
+        trigger->click();
+        require(palette.activeTool() == ScreenshotToolPalette::Tool::Shape,
+                "clicking the fixed group button must activate its displayed tool");
+        trigger->click();
+        require(palette.activeTool() == ScreenshotToolPalette::Tool::Select,
+                "clicking the active first tool must still toggle back to selection");
+        materializeLazyPopover(trigger);
+        auto* line = popoverButtonWithTooltip(popoverForTrigger(trigger), "Line");
+        require(line != nullptr, "the fixed group must still expose its other tools");
+        line->click();
+        require(palette.activeTool() == ScreenshotToolPalette::Tool::Line &&
+                    trigger->property("screenshotToolbarItemId").toString() ==
+                        QStringLiteral("shape"),
+                "selecting a popup option must activate it without replacing the first button");
+        palette.refreshShortcutTooltips();
+        require(trigger->accessibleName() == QStringLiteral("Shape"),
+                "tooltip refreshes must preserve the first group button");
+        require(settings.setAlwaysShowFirstToolbarGroupButton(false) &&
+                    trigger->accessibleName() == QStringLiteral("Line"),
+                "disabling the preference must restore the remembered group entry");
+        require(settings.setAlwaysShowFirstToolbarGroupButton(true),
+                "re-enable fixed group buttons");
+        palette.setToolbarLayout(
+            ScreenshotToolbarLayout{{{QStringLiteral("shape"), QStringLiteral("line")}},
+                                    {QStringLiteral("select"), QStringLiteral("arrow")}});
+        require(mainDrawingToolbarButtons(palette).value(0)->accessibleName() ==
+                    QStringLiteral("Line"),
+                "fixed groups must follow the first popup option after a layout reorder");
+        ScreenshotToolPalette recreated(options);
+        require(mainDrawingToolbarButtons(recreated).value(0)->accessibleName() ==
+                    QStringLiteral("Shape"),
+                "new palettes must honor the enabled preference from construction");
+    }
+}
+
+void actionGroupsKeepFirstButtonWhenEnabled() {
+    using snow_shot::storage::DrawingSettings;
+    using snow_shot::storage::ScreenshotToolbarLayout;
+    using snow_shot::storage::ScreenshotToolbarLayoutKind;
+    const DrawingSettings settings;
+    const bool original = settings.alwaysShowFirstToolbarGroupButton();
+    const auto restore = qScopeGuard(
+        [&] { static_cast<void>(settings.setAlwaysShowFirstToolbarGroupButton(original)); });
+    for (const auto kind : {ScreenshotToolbarLayoutKind::ActionTools,
+                            ScreenshotToolbarLayoutKind::PinnedActionTools}) {
+        require(settings.setAlwaysShowFirstToolbarGroupButton(false),
+                "disable fixed action buttons");
+        ScreenshotToolPalette::Options options;
+        options.enableStyleToolbar = false;
+        options.showTableTool = true;
+        options.showQrTool = true;
+        options.showOcrTool = true;
+        options.showTextTranslationTool = true;
+        options.actionToolsLayoutKind = kind;
+        options.actionToolsLayout = ScreenshotToolbarLayout{
+            {{QStringLiteral("barcode-recognition"), QStringLiteral("table-recognition")},
+             {QStringLiteral("text-translation"), QStringLiteral("text-recognition")}},
+            {}};
+        ScreenshotToolPalette palette(options);
+        palette.show();
+        QCoreApplication::processEvents();
+        const auto triggerFor = [&](const QString& itemId) {
+            for (auto* button : palette.mainPanel()->findChildren<adqt::widgets::AdButton*>()) {
+                if (!button->isHidden() && button->property("screenshotToolbarPositionItems")
+                                               .toStringList()
+                                               .contains(itemId)) {
+                    return button;
+                }
+            }
+            return static_cast<adqt::widgets::AdButton*>(nullptr);
+        };
+        auto* recognition = triggerFor(QStringLiteral("table-recognition"));
+        auto* text = triggerFor(QStringLiteral("text-recognition"));
+        require(recognition != nullptr && text != nullptr, "action group triggers must exist");
+        require(palette.activateToolShortcut(ScreenshotToolPalette::Tool::Qr) &&
+                    recognition->accessibleName() == QStringLiteral("Barcode recognition"),
+                "default-off recognition groups must show the selected mode");
+        require(settings.setAlwaysShowFirstToolbarGroupButton(true) &&
+                    recognition->accessibleName() == QStringLiteral("Table recognition"),
+                "both native and pinned recognition groups must immediately show the first option");
+        recognition->click();
+        require(palette.activeTool() == ScreenshotToolPalette::Tool::Table,
+                "the fixed recognition trigger must activate Table after Barcode was selected");
+        materializeLazyPopover(recognition);
+        auto* barcode =
+            popoverButtonWithTooltip(popoverForTrigger(recognition), "Barcode recognition");
+        require(barcode != nullptr, "recognition groups must retain their barcode option");
+        barcode->click();
+        require(palette.activeTool() == ScreenshotToolPalette::Tool::Qr &&
+                    recognition->accessibleName() == QStringLiteral("Table recognition"),
+                "using Barcode must not replace the fixed Table button");
+        palette.setTableEnabled(false);
+        require(recognition->isEnabled(),
+                "a disabled first action must leave enabled popup alternatives reachable");
+        recognition->click();
+        require(palette.activeTool() == ScreenshotToolPalette::Tool::Qr,
+                "the fixed group button must not dispatch its disabled first action");
+        palette.setTableEnabled(true);
+        require(palette.activateToolShortcut(ScreenshotToolPalette::Tool::TextTranslation) &&
+                    text->property("screenshotToolbarItemId").toString() ==
+                        QStringLiteral("text-recognition"),
+                "arbitrary action groups must retain the first option after shortcut activation");
+        text->click();
+        require(palette.activeTool() == ScreenshotToolPalette::Tool::Ocr,
+                "fixed arbitrary action groups must dispatch their displayed tool");
+        require(palette.activateToolShortcut(ScreenshotToolPalette::Tool::TextTranslation),
+                "the translation option must remain usable");
+        palette.setQrBusy(true);
+        require(!recognition->busy() &&
+                    recognition->accessibleName() == QStringLiteral("Table recognition"),
+                "busy state must belong to the displayed first action");
+        require(settings.setAlwaysShowFirstToolbarGroupButton(false) && recognition->busy() &&
+                    recognition->accessibleName() == QStringLiteral("Barcode recognition") &&
+                    text->property("screenshotToolbarItemId").toString() ==
+                        QStringLiteral("text-translation"),
+                "disabling fixed action buttons must restore remembered tools and their state");
+    }
+}
+
+void commandGroupsKeepFirstButtonWhenEnabled() {
+    using snow_shot::storage::DrawingSettings;
+    using snow_shot::storage::ScreenshotToolbarLayout;
+    const DrawingSettings settings;
+    const bool original = settings.alwaysShowFirstToolbarGroupButton();
+    const auto restore = qScopeGuard(
+        [&] { static_cast<void>(settings.setAlwaysShowFirstToolbarGroupButton(original)); });
+    require(settings.setAlwaysShowFirstToolbarGroupButton(true), "enable fixed command buttons");
+    ScreenshotToolPalette::Options options;
+    options.enableStyleToolbar = false;
+    options.showSaveButton = true;
+    options.saveButtonWithResultActions = true;
+    options.actionToolsLayout = ScreenshotToolbarLayout{
+        {{QStringLiteral("quick-save"), QStringLiteral("save-as-file")}}, {}};
+    ScreenshotToolPalette palette(options);
+    palette.show();
+    QCoreApplication::processEvents();
+    auto* save = palette.findChild<adqt::widgets::AdButton*>(
+        QStringLiteral("screenshotActionToolGroupButton0"));
+    require(save != nullptr, "the save command group must exist");
+    int saves = 0;
+    int quickSaves = 0;
+    QObject::connect(&palette, &ScreenshotToolPalette::saveRequested, [&] { ++saves; });
+    QObject::connect(&palette, &ScreenshotToolPalette::quickSaveRequested, [&] { ++quickSaves; });
+    materializeLazyPopover(save);
+    auto* quickSave = popoverButtonWithTooltip(popoverForTrigger(save), "Quick save");
+    require(quickSave != nullptr, "the save popup must expose Quick save");
+    quickSave->click();
+    save->click();
+    require(quickSaves == 1 && saves == 1 &&
+                save->property("screenshotToolbarItemId").toString() ==
+                    QStringLiteral("save-as-file"),
+            "command groups must retain and dispatch the first button after using another command");
+
+    options.showRecordingControls = true;
+    options.showSaveButton = false;
+    options.actionToolsLayout = std::nullopt;
+    ScreenshotToolPalette recording(options);
+    QStringList hidden = snow_shot::presentation::toolbar_layout::defaultOrder(
+        snow_shot::storage::ScreenshotToolbarLayoutKind::RecordingActionTools);
+    hidden.removeAll(QStringLiteral("close"));
+    hidden.removeAll(QStringLiteral("start-stop"));
+    recording.setActionToolsLayout(
+        ScreenshotToolbarLayout{{{QStringLiteral("close"), QStringLiteral("start-stop")}}, hidden});
+    recording.show();
+    QCoreApplication::processEvents();
+    auto* start = recording.findChild<adqt::widgets::AdButton*>(
+        QStringLiteral("screenshotActionToolGroupButton0"));
+    require(start != nullptr, "the recording command group must exist");
+    int starts = 0;
+    int closes = 0;
+    QObject::connect(&recording, &ScreenshotToolPalette::recordingStartRequested,
+                     [&] { ++starts; });
+    QObject::connect(&recording, &ScreenshotToolPalette::recordingCloseRequested,
+                     [&] { ++closes; });
+    materializeLazyPopover(start);
+    auto* close = popoverButtonWithTooltip(popoverForTrigger(start), "Close recording");
+    require(close != nullptr, "the recording popup must expose Close");
+    close->click();
+    start->click();
+    require(closes == 1 && starts == 1 &&
+                start->property("screenshotToolbarItemId").toString() ==
+                    QStringLiteral("start-stop"),
+            "recording command groups must retain and dispatch their first button");
+    hidden = snow_shot::presentation::toolbar_layout::defaultOrder(
+        snow_shot::storage::ScreenshotToolbarLayoutKind::RecordingActionTools);
+    hidden.removeAll(QStringLiteral("microphone"));
+    hidden.removeAll(QStringLiteral("system-audio"));
+    recording.setActionToolsLayout(ScreenshotToolbarLayout{
+        {{QStringLiteral("microphone"), QStringLiteral("system-audio")}}, hidden});
+    recording.setRecordingMicrophoneEnabled(true);
+    recording.setRecordingState(ScreenshotToolPalette::RecordingState::Recording);
+    auto* audio = recording.findChild<adqt::widgets::AdButton*>(
+        QStringLiteral("screenshotActionToolGroupButton0"));
+    require(audio != nullptr, "the recording audio group must exist");
+    materializeLazyPopover(audio);
+    auto* microphone = popoverButtonWithTooltip(popoverForTrigger(audio), "Record microphone");
+    require(microphone != nullptr, "the audio popup must expose Microphone");
+    microphone->click();
+    auto* gain = recording.recordingAudioGainPopover(true);
+    require(audio->property("screenshotToolbarItemId").toString() ==
+                    QStringLiteral("system-audio") &&
+                gain != nullptr && gain->trigger() == audio && gain->popover()->isVisible(),
+            "alternate audio controls must keep a visible gain anchor while the first button stays "
+            "fixed");
+    gain->close();
+}
+
 void configurableToolbarLayoutSupportsArbitraryPopoverGroups() {
     ScreenshotToolPalette::Options options;
     options.showSelectTool = true;
@@ -15598,6 +15842,13 @@ int main(int argc, char** argv) {
         snow_shot::storage::ApplicationStorage::instance().shutdown();
         return 0;
     }
+    if (application.arguments().contains(QStringLiteral("--first-group-button-only"))) {
+        toolbarGroupsKeepFirstButtonWhenEnabled();
+        actionGroupsKeepFirstButtonWhenEnabled();
+        commandGroupsKeepFirstButtonWhenEnabled();
+        snow_shot::storage::ApplicationStorage::instance().shutdown();
+        return 0;
+    }
     if (application.arguments().contains(QStringLiteral("--history-only"))) {
         screenshotShortcutsShareButtonCommandsAndAvailability();
         drawingHistoryActionsFollowStacksAndHiddenShortcuts();
@@ -15681,6 +15932,9 @@ int main(int argc, char** argv) {
     groupedDrawingOptionsShowShortcutTooltips();
     groupedActionOptionsShowShortcutTooltips();
     screenshotActionTooltipsFollowStorageChangesWithoutRetranslation();
+    toolbarGroupsKeepFirstButtonWhenEnabled();
+    actionGroupsKeepFirstButtonWhenEnabled();
+    commandGroupsKeepFirstButtonWhenEnabled();
     configurableToolbarLayoutSupportsArbitraryPopoverGroups();
     selectToolAndBothSeparatorsFollowCustomLayout();
     drawingHistoryActionsFollowStacksAndHiddenShortcuts();

@@ -893,6 +893,8 @@ bool BuiltInSettingsBackend::switchValue(SettingsSwitchBinding binding) const {
         return storage::SystemSettings().launchAsAdministrator();
     case SettingsSwitchBinding::DrawingRememberLastUsedTool:
         return storage::DrawingSettings().rememberLastUsedTool();
+    case SettingsSwitchBinding::DrawingAlwaysShowFirstToolbarGroupButton:
+        return storage::DrawingSettings().alwaysShowFirstToolbarGroupButton();
     }
     return false;
 }
@@ -1046,6 +1048,9 @@ bool BuiltInSettingsBackend::applySwitchValue(SettingsSwitchBinding binding, boo
     if (binding == SettingsSwitchBinding::DrawingRememberLastUsedTool) {
         return storage::DrawingSettings().setRememberLastUsedTool(value);
     }
+    if (binding == SettingsSwitchBinding::DrawingAlwaysShowFirstToolbarGroupButton) {
+        return storage::DrawingSettings().setAlwaysShowFirstToolbarGroupButton(value);
+    }
     if (binding == SettingsSwitchBinding::SaveRecognitionResultAsImage) {
         return storage::TextRecognitionSettings().setSaveRecognitionResultAsImage(value);
     }
@@ -1193,6 +1198,7 @@ bool BuiltInSettingsBackend::applySwitchValue(SettingsSwitchBinding binding, boo
     case SettingsSwitchBinding::AutoStartAtBoot:
     case SettingsSwitchBinding::LaunchAsAdministrator:
     case SettingsSwitchBinding::DrawingRememberLastUsedTool:
+    case SettingsSwitchBinding::DrawingAlwaysShowFirstToolbarGroupButton:
         return false;
     }
     return storage::ApplicationStorage::instance().requestCaptureHistoryPolicy(policy);
@@ -2361,6 +2367,9 @@ bool BuiltInSettingsBackend::resetSection(SettingsSectionReset reset) {
             {QStringLiteral("drawing/remember_last_used_tool"),
              storage::ConfigurationSchema::defaultValue(
                  QStringLiteral("drawing/remember_last_used_tool"))},
+            {QStringLiteral("drawing/always_show_first_toolbar_group_button"),
+             storage::ConfigurationSchema::defaultValue(
+                 QStringLiteral("drawing/always_show_first_toolbar_group_button"))},
         });
     case SettingsSectionReset::PinToScreen:
         return storage::ApplicationStorage::instance().configuration().setValues({

@@ -1455,6 +1455,18 @@ SettingsItemDefinition drawingRememberLastUsedToolItem() {
                       {settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Last used tool"))});
 }
 
+SettingsItemDefinition drawingAlwaysShowFirstToolbarGroupButtonItem() {
+    return switchItem(
+        QStringLiteral("drawing.always-show-first-toolbar-group-button"),
+        QT_TRANSLATE_NOOP("SettingsCatalog", "Keep group main buttons visible"),
+        QT_TRANSLATE_NOOP("SettingsCatalog",
+                          "Keep the first button of each toolbar group visible instead of the last "
+                          "used button"),
+        QStringLiteral("drawing/always_show_first_toolbar_group_button"),
+        SettingsSwitchBinding::DrawingAlwaysShowFirstToolbarGroupButton,
+        {settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Last used tool"))});
+}
+
 SettingsItemDefinition pinZoomModeItem() {
     return fixedSelectItem(
         QStringLiteral("pin-to-screen.mouse-wheel-zoom-mode"),
@@ -2925,7 +2937,8 @@ QVector<SettingsPageDefinition> builtInPages() {
                      "SettingsCatalog",
                      "Configure annotation tools and the screenshot annotation toolbar")),
                  SettingsSectionReset::DrawingQuickSelection,
-                 {drawingQuickSelectionItem(), drawingRememberLastUsedToolItem()},
+                 {drawingQuickSelectionItem(), drawingRememberLastUsedToolItem(),
+                  drawingAlwaysShowFirstToolbarGroupButtonItem()},
              },
              {
                  QStringLiteral("drawing"),
@@ -4591,6 +4604,10 @@ QStringList SettingsCatalog::validationErrors() const {
                         break;
                     case SettingsSwitchBinding::DrawingRememberLastUsedTool:
                         expectedKey = QStringLiteral("drawing/remember_last_used_tool");
+                        break;
+                    case SettingsSwitchBinding::DrawingAlwaysShowFirstToolbarGroupButton:
+                        expectedKey =
+                            QStringLiteral("drawing/always_show_first_toolbar_group_button");
                         break;
                     }
                     if (itemDefinition.configurationKey != expectedKey || schemaEntry == nullptr ||

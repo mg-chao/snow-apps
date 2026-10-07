@@ -660,6 +660,8 @@ const QVector<ConfigurationSchemaEntry> kRawEntries = {
       QStringLiteral("rectangle-filter"), QStringLiteral("pen-filter"), QStringLiteral("text"),
       QStringLiteral("serial-number"), QStringLiteral("eraser"), QStringLiteral("watermark")}},
     {QStringLiteral("drawing/remember_last_used_tool"), false, ConfigurationValueKind::Boolean},
+    {QStringLiteral("drawing/always_show_first_toolbar_group_button"), false,
+     ConfigurationValueKind::Boolean},
     {QStringLiteral("drawing/shape_style"), QJsonObject(), ConfigurationValueKind::Structured},
     {QStringLiteral("drawing/arrow_style"), QJsonObject(), ConfigurationValueKind::Structured},
     {QStringLiteral("drawing/line_style"), QJsonObject(), ConfigurationValueKind::Structured},

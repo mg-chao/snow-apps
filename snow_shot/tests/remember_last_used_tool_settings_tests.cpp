@@ -68,6 +68,30 @@ void rememberLastUsedToolDefaultsPersistsAndResets(const QString& configurationP
                 !backend.switchValue(binding) && !storage::DrawingSettings().rememberLastUsedTool(),
             "resetting the Drawing function settings must restore the default disabled switch");
 }
+
+void firstToolbarGroupButtonDefaultsPersistsAndResets(const QString& configurationPath) {
+    snow_shot::presentation::GlobalShortcutManager shortcuts;
+    settings::BuiltInSettingsBackend backend(shortcuts);
+    constexpr auto binding =
+        settings::SettingsSwitchBinding::DrawingAlwaysShowFirstToolbarGroupButton;
+    const QString key = QStringLiteral("drawing/always_show_first_toolbar_group_button");
+    require(backend.switchEnabled(binding) && !backend.switchValue(binding) &&
+                !storage::DrawingSettings().alwaysShowFirstToolbarGroupButton() &&
+                !storage::ConfigurationSchema::defaultValue(key).toBool(),
+            "the first toolbar group button preference must default to disabled");
+    require(backend.applySwitchValue(binding, true) && backend.switchValue(binding) &&
+                storage::DrawingSettings().alwaysShowFirstToolbarGroupButton(),
+            "the backend must apply and read the first toolbar group button preference");
+    require(storage::ApplicationStorage::instance().configuration().flushNow().success,
+            "the first toolbar group button preference must be flushable");
+    storage::ConfigurationStore reloaded(configurationPath, true, true, 60000);
+    require(reloaded.value(key).toBool(),
+            "the first toolbar group button preference must survive a configuration reload");
+    require(backend.resetSection(settings::SettingsSectionReset::DrawingQuickSelection) &&
+                !backend.switchValue(binding) &&
+                !storage::DrawingSettings().alwaysShowFirstToolbarGroupButton(),
+            "resetting annotation settings must disable the first toolbar group button preference");
+}
 } // namespace
 
 int main(int argc, char** argv) {
@@ -79,6 +103,8 @@ int main(int argc, char** argv) {
         applicationStorage.initialize({temporary.filePath(QStringLiteral("bin")),
                                        temporary.filePath(QStringLiteral("data")), 60000}));
     rememberLastUsedToolDefaultsPersistsAndResets(
+        temporary.filePath(QStringLiteral("data/config.json")));
+    firstToolbarGroupButtonDefaultsPersistsAndResets(
         temporary.filePath(QStringLiteral("data/config.json")));
     applicationStorage.shutdown();
     return 0;

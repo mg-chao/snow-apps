@@ -274,6 +274,8 @@ class DrawingSettings final {
     bool setQuickSelectionDisabledTools(const QStringList& tools) const;
     [[nodiscard]] bool rememberLastUsedTool() const;
     bool setRememberLastUsedTool(bool enabled) const;
+    [[nodiscard]] bool alwaysShowFirstToolbarGroupButton() const;
+    bool setAlwaysShowFirstToolbarGroupButton(bool enabled) const;
 };
 
 // Applies partial updates across local shortcut scopes in one commit. Each affected
