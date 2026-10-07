@@ -349,7 +349,7 @@ struct SnowCanvasDistanceStyle {
     QColor stroke = QColor(0xf5, 0x22, 0x2d);
     double strokeWidth = 2.0;
     double factor = 1.0;
-    SnowCanvasDistanceUnit unit = SnowCanvasDistanceUnit::Px;
+    SnowCanvasDistanceUnit unit = SnowCanvasDistanceUnit::Cm;
     int decimalPlaces = 0;
     double endpointScale = 1.0;
     SnowCanvasArrowhead endpointStyle = SnowCanvasArrowhead::Bar;

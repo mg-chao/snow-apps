@@ -439,6 +439,14 @@
     },
     {
       "variant": "outlined",
+      "symbol": "DistanceValueScale",
+      "name": "distance-value-scale",
+      "source": "../src/presentation/components/icons/resources/distance-value-scale.svg",
+      "colorModel": "monochrome",
+      "fit": "contain"
+    },
+    {
+      "variant": "outlined",
       "symbol": "DistributeHorizontal",
       "name": "distribute-horizontal",
       "source": "../src/presentation/components/icons/resources/distribute-horizontal.svg",

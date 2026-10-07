@@ -73,7 +73,8 @@ void gesturesAndDerivedLabels() {
     SnowCanvasWidget canvas(runtime);
     prepare(canvas);
     auto style = canvas.canvasDistanceStyle();
-    require(style.strokeWidth == 2 && style.factor == 1 && style.decimalPlaces == 0 &&
+    require(style.strokeWidth == 2 && style.factor == 1 &&
+                style.unit == SnowCanvasDistanceUnit::Cm && style.decimalPlaces == 0 &&
                 style.endpointStyle == SnowCanvasArrowhead::Bar,
             "distance defaults");
     style.unit = SnowCanvasDistanceUnit::Cm;
@@ -87,7 +88,7 @@ void gesturesAndDerivedLabels() {
             "distance uses arrow storage with distinct subtype");
     require(text.value(QStringLiteral("text")).toString() == QStringLiteral("400.00 cm"),
             "label uses source pixels and fixed precision");
-    require(text.value(QStringLiteral("font_size")).toDouble() == 16 &&
+    require(text.value(QStringLiteral("font_size")).toDouble() == 20 &&
                 text.value(QStringLiteral("rotation")).toDouble() == 0,
             "label has proportional font and horizontal rotation");
     require(arrow.value(QStringLiteral("points")).toArray().size() == 2 &&
@@ -107,7 +108,7 @@ void gesturesAndDerivedLabels() {
                                                   SnowCanvasDistanceStylePropertyStrokeWidth}),
             "patch distance stroke");
     require(only(runtime, QStringLiteral("Text")).value(QStringLiteral("font_size")).toDouble() ==
-                32,
+                40,
             "stroke changes resize generated label");
     require(only(runtime, QStringLiteral("Text")).value(QStringLiteral("text")) ==
                 text.value(QStringLiteral("text")),
@@ -115,7 +116,7 @@ void gesturesAndDerivedLabels() {
     require(
         canvas.undo() &&
             only(runtime, QStringLiteral("Text")).value(QStringLiteral("font_size")).toDouble() ==
-                16,
+                20,
         "undo restores owner and label styling together");
     require(canvas.redo(), "redo distance style");
     require(!canvas.editSelectedArrowText(), "generated distance label cannot be edited");
@@ -146,7 +147,7 @@ void gesturesAndDerivedLabels() {
     click(second, {300, 180});
     require(records(clicks, QStringLiteral("Arrow")).size() == 1 &&
                 only(clicks, QStringLiteral("Text")).value(QStringLiteral("text")).toString() ==
-                    QStringLiteral("200 px"),
+                    QStringLiteral("200 cm"),
             "second click commits distance and owned label");
     require(second.undo() && !clicks.hasDocumentContent() && second.redo(),
             "creation is one history step");
@@ -162,7 +163,7 @@ void releaseMeasuresTheFinalDistancePreview() {
     mouse(canvas, QEvent::MouseButtonRelease, {300, 180}, Qt::LeftButton, Qt::NoButton);
     const auto text = only(runtime, QStringLiteral("Text"));
     const double width = text.value(QStringLiteral("width")).toDouble();
-    require(text.value(QStringLiteral("text")).toString() == QStringLiteral("200 px") && width > 1,
+    require(text.value(QStringLiteral("text")).toString() == QStringLiteral("200 cm") && width > 1,
             "release measures final generated content before its history transaction");
 
     SnowCanvasRuntime reference;

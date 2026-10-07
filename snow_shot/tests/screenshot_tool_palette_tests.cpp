@@ -10645,18 +10645,32 @@ void distanceSettingsExposeIndependentPropertiesAndHoverWheel() {
     require(
         factor != nullptr && units != nullptr && decimals != nullptr && scale != nullptr,
         "distance settings should include numeric factor, units, precision, and endpoint scale");
+    const auto factorIcon = adqt::icons::describeIcon(factor->prefixIconRef());
+    require(factorIcon.key.pack == QStringLiteral("snow-shot") &&
+                factorIcon.key.name == QStringLiteral("distance-value-scale") &&
+                factorIcon.colorModel == adqt::icons::IconColorModel::Monochrome,
+            "distance factor should show the theme-aware value scale icon as its prefix");
+    if (const QString path = qEnvironmentVariable("SNOW_DISTANCE_FACTOR_INPUT_PREVIEW");
+        !path.isEmpty()) {
+        require(factor->grab().save(path), "save distance factor InputNumber preview");
+    }
     const auto initial = palette.creationStyleDefaults().distance;
     require(initial.stroke == QColor(QStringLiteral("#f5222d")) && initial.strokeWidth == 2.0 &&
-                initial.factor == 1.0 && initial.unit == SnowCanvasDistanceUnit::Px &&
+                initial.factor == 1.0 && initial.unit == SnowCanvasDistanceUnit::Cm &&
                 initial.decimalPlaces == 0 && initial.endpointScale == 1.0 &&
                 initial.endpointStyle == SnowCanvasArrowhead::Bar,
             "distance creation settings should use the product defaults");
     require(factor->minimum() == 0.01 && factor->maximum() == 1000.0 && factor->decimals() == 2 &&
                 factor->singleStep() == 0.1 && factor->value() == 1.0 &&
-                units->checkedId() == static_cast<int>(SnowCanvasDistanceUnit::Px) &&
+                units->checkedId() == static_cast<int>(SnowCanvasDistanceUnit::Cm) &&
                 units->buttons().size() == 4 && decimals->model()->rowCount() == 4 &&
                 decimals->currentValue().toInt() == 0,
             "distance controls should expose the specified ranges and choices");
+    require(factor->variant() == adqt::widgets::AdInputNumber::Variant::Borderless &&
+                factor->valueMode() == adqt::widgets::AdInputNumber::ValueMode::ExactDecimal &&
+                factor->exactValue() == QStringLiteral("1") &&
+                factor->displayText() == QStringLiteral("1"),
+            "distance factor should use a borderless string input without padded decimals");
     SnowCanvasDistanceStyle emitted = initial;
     quint32 properties = 0;
     int edits = 0;
@@ -10678,11 +10692,13 @@ void distanceSettingsExposeIndependentPropertiesAndHoverWheel() {
     };
     factor->clearFocus();
     wheel(factor, 120);
-    require(emitted.factor == 1.1 && factor->value() == 1.1 && emitted.strokeWidth == 2.0 &&
+    require(emitted.factor == 1.1 && factor->value() == 1.1 &&
+                factor->displayText() == QStringLiteral("1.1") && emitted.strokeWidth == 2.0 &&
                 properties == SnowCanvasDistanceStylePropertyFactor,
             "hover wheel should increment the unfocused factor by 0.1 without changing width");
     wheel(factor, -120);
-    require(emitted.factor == 1.0, "downward wheel should decrement the factor by 0.1");
+    require(emitted.factor == 1.0 && factor->displayText() == QStringLiteral("1"),
+            "downward wheel should restore a whole factor without padded decimals");
     auto* factorLineEdit = factor->findChild<QLineEdit*>();
     require(factorLineEdit != nullptr, "distance input should expose its numeric editor");
     const QPoint inputPoint = factorLineEdit->rect().center();
@@ -10699,10 +10715,21 @@ void distanceSettingsExposeIndependentPropertiesAndHoverWheel() {
     factor->setValue(1000.0);
     const int atMaximum = edits;
     wheel(factor, 120);
-    require(factor->value() == 1000.0 && edits == atMaximum,
+    require(factor->value() == 1000.0 && factor->displayText() == QStringLiteral("1000") &&
+                edits == atMaximum,
             "distance factor should clamp at its upper bound without redundant edits");
+    factorLineEdit->selectAll();
+    PhysicalKeyEvent factorKey(QEvent::KeyPress, Qt::Key_unknown, Qt::NoModifier,
+                               QStringLiteral("2.50"));
+    QApplication::sendEvent(factorLineEdit, &factorKey);
+    PhysicalKeyEvent factorEnter(QEvent::KeyPress, Qt::Key_Return, Qt::NoModifier);
+    QApplication::sendEvent(factorLineEdit, &factorEnter);
+    require(emitted.factor == 2.5 && factor->exactValue() == QStringLiteral("2.5") &&
+                factor->displayText() == QStringLiteral("2.5") &&
+                properties == SnowCanvasDistanceStylePropertyFactor,
+            "typed distance factors should commit strings and remove trailing zeros");
     factor->setValue(2.25);
-    require(emitted.factor == 2.25,
+    require(emitted.factor == 2.25 && factor->displayText() == QStringLiteral("2.25"),
             "distance factor should accept hundredths through numeric input");
     for (const int delta : {1, -1}) {
         const QPoint point = factorLineEdit->rect().center();
@@ -10715,6 +10742,7 @@ void distanceSettingsExposeIndependentPropertiesAndHoverWheel() {
                     properties == SnowCanvasDistanceStylePropertyFactor,
                 "trackpad wheel should preserve hundredths and apply exactly one factor step");
     }
+    units->button(static_cast<int>(SnowCanvasDistanceUnit::Px))->click();
     for (QAbstractButton* button : units->buttons()) {
         button->click();
         require(properties == SnowCanvasDistanceStylePropertyUnit &&
@@ -10779,6 +10807,11 @@ void distanceSettingsExposeIndependentPropertiesAndHoverWheel() {
     palette.setActiveTool(ScreenshotToolPalette::Tool::Distance);
     QCoreApplication::processEvents();
     require(factorInput() != nullptr && factorInput()->value() == remembered.factor &&
+                adqt::icons::describeIcon(factorInput()->prefixIconRef()).key == factorIcon.key &&
+                factorInput()->variant() == adqt::widgets::AdInputNumber::Variant::Borderless &&
+                factorInput()->valueMode() ==
+                    adqt::widgets::AdInputNumber::ValueMode::ExactDecimal &&
+                factorInput()->displayText() == QStringLiteral("2.25") &&
                 palette.creationStyleDefaults().distance == remembered,
             "distance settings should survive editor reuse and tool switching");
     factor = factorInput();

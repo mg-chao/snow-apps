@@ -93,6 +93,7 @@ ArrowheadTriangleStart(const adqt::icons::IconColors& colors = {});
 [[nodiscard]] adqt::icons::IconRef DestroyPinnedWindow(const adqt::icons::IconColors& colors = {});
 [[nodiscard]] adqt::icons::IconRef Disabled(const adqt::icons::IconColors& colors = {});
 [[nodiscard]] adqt::icons::IconRef DistanceAnnotation(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] adqt::icons::IconRef DistanceValueScale(const adqt::icons::IconColors& colors = {});
 [[nodiscard]] adqt::icons::IconRef DistributeHorizontal(const adqt::icons::IconColors& colors = {});
 [[nodiscard]] adqt::icons::IconRef DistributeVertical(const adqt::icons::IconColors& colors = {});
 [[nodiscard]] adqt::icons::IconRef Duplicate(const adqt::icons::IconColors& colors = {});

@@ -51,7 +51,7 @@ impl Default for DistanceStyle {
             },
             stroke_width: 2.0,
             factor: 1.0,
-            unit: DistanceUnit::Px,
+            unit: DistanceUnit::default(),
             decimal_places: 0,
             endpoint_ratio: 1.0,
             endpoint_style: Some(Arrowhead::Bar),

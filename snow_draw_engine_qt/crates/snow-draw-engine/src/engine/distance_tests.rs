@@ -135,8 +135,9 @@ fn distance_drag_and_two_click_creation_are_one_owned_undo_step() {
         assert_eq!(arrow.points.len(), 2);
         assert_eq!(arrow.start_arrowhead, Some(Arrowhead::Bar));
         assert_eq!(arrow.end_arrowhead, Some(Arrowhead::Bar));
-        assert_eq!(label(&engine, id).text, "200 px");
-        assert_eq!(label(&engine, id).font_size, 16.0);
+        assert_eq!(arrow.distance.unwrap().unit, DistanceUnit::Cm);
+        assert_eq!(label(&engine, id).text, "200 cm");
+        assert_eq!(label(&engine, id).font_size, 20.0);
         assert_eq!(label(&engine, id).center, Point::new(0.0, 0.0));
         assert_eq!(
             label(&engine, id).horizontal_align,
@@ -151,6 +152,42 @@ fn distance_drag_and_two_click_creation_are_one_owned_undo_step() {
         engine.redo_with_viewport_changes().unwrap();
         assert_eq!(engine.model.paint_order(), &[id, text_id]);
         assert_eq!(engine.model.arrow(id).unwrap(), &arrow);
+    }
+}
+
+#[test]
+fn distance_annotation_json_defaults_to_cm_and_preserves_explicit_units() {
+    let (mut engine, _) = setup();
+    let ids = apply(
+        &mut engine,
+        json!([
+            {"type":"distance","points":[[0,0],[10,0]]},
+            {"type":"distance","points":[[0,50],[10,50]],"style":{}},
+            {"type":"distance","points":[[0,100],[10,100]],"style":{"unit":"px"}}
+        ]),
+    )
+    .unwrap();
+    for (id, unit) in ids
+        .iter()
+        .zip([DistanceUnit::Cm, DistanceUnit::Cm, DistanceUnit::Px])
+    {
+        assert_eq!(
+            engine.model.arrow(*id).unwrap().distance.unwrap().unit,
+            unit
+        );
+        assert_eq!(label(&engine, *id).text, format!("10 {}", unit.suffix()));
+    }
+    let restored = Engine::from_serialized_document_session_with_config(
+        &engine.serialize_document_session().unwrap(),
+        EngineConfig::default(),
+    )
+    .unwrap();
+    for id in ids {
+        assert_eq!(
+            restored.model.arrow(id).unwrap(),
+            engine.model.arrow(id).unwrap()
+        );
+        assert_eq!(label(&restored, id).text, label(&engine, id).text);
     }
 }
 
@@ -178,7 +215,7 @@ fn distance_live_preview_measures_an_unwrapped_short_label_without_document_elem
         assert_eq!(requests.len(), 1);
         let request = &requests[0];
         assert_eq!(request.text.text, "10000.000 cm");
-        assert_eq!(request.text.font_size, 16.0);
+        assert_eq!(request.text.font_size, 20.0);
         assert_eq!(request.arrow_width, 10.0);
         assert_eq!(request.text.center, Point::new(5.0, 0.0));
         assert!(request.max_width.is_finite() && request.max_width >= 10000.0);
@@ -432,7 +469,7 @@ fn distance_masked_multi_selection_edits_preserve_other_fields_and_regular_arrow
         );
         assert_eq!(arrow.stroke, color);
         assert_eq!(label(&engine, id).color, color);
-        assert_eq!(label(&engine, id).font_size, 8.0 * expected.2);
+        assert_eq!(label(&engine, id).font_size, 10.0 * expected.2);
     }
     assert_eq!(engine.model.arrow(ids[2]).unwrap(), &regular);
     let patch = DistanceStyle {
@@ -451,12 +488,12 @@ fn distance_masked_multi_selection_edits_preserve_other_fields_and_regular_arrow
         .unwrap();
     assert_eq!(label(&engine, ids[0]).text, "2000.00 km");
     assert_eq!(label(&engine, ids[1]).text, "4000.00 km");
-    assert_eq!(label(&engine, ids[0]).font_size, 64.0);
+    assert_eq!(label(&engine, ids[0]).font_size, 80.0);
     assert_eq!(label(&engine, ids[1]).color, color);
     assert_eq!(engine.model.arrow(ids[2]).unwrap(), &regular);
     engine.undo_with_viewport_changes().unwrap();
     assert_eq!(label(&engine, ids[0]).text, "400 cm");
-    assert_eq!(label(&engine, ids[1]).font_size, 32.0);
+    assert_eq!(label(&engine, ids[1]).font_size, 40.0);
 }
 
 #[test]
@@ -504,7 +541,7 @@ fn distance_endpoints_share_all_existing_arrowhead_styles() {
         assert_eq!(arrow.start_arrowhead, style);
         assert_eq!(arrow.end_arrowhead, style);
         assert_eq!(arrow.points.len(), 2);
-        assert_eq!(label(&engine, id).text, "200 px");
+        assert_eq!(label(&engine, id).text, "200 cm");
         assert!(scene(&engine,viewport).iter().any(|item| matches!(item,SceneDisplayItem::Arrow(arrow) if arrow.start_arrowhead==style && arrow.end_arrowhead==style)));
     }
 }
@@ -553,7 +590,7 @@ fn distance_label_moves_the_owner_and_endpoint_edit_updates_derived_label() {
     assert_eq!(arrow.start(), Point::new(-70.0, 40.0));
     assert_eq!(arrow.end(), Point::new(130.0, 40.0));
     assert_eq!(label(&engine, id).center, Point::new(30.0, 40.0));
-    assert_eq!(label(&engine, id).text, "200 px");
+    assert_eq!(label(&engine, id).text, "200 cm");
     pointer(
         &mut engine,
         viewport,
@@ -570,14 +607,14 @@ fn distance_label_moves_the_owner_and_endpoint_edit_updates_derived_label() {
         .arrow_text_layout_requests(viewport)
         .unwrap()
         .remove(0);
-    assert_eq!(request.text.text, "300 px");
+    assert_eq!(request.text.text, "300 cm");
     pointer(
         &mut engine,
         viewport,
         PointerEventType::Up,
         Point::new(230.0, 40.0),
     );
-    assert_eq!(label(&engine, id).text, "300 px");
+    assert_eq!(label(&engine, id).text, "300 cm");
     assert_eq!(
         label(&engine, id).center,
         arrow_text_anchor(engine.model.arrow(id).unwrap())
@@ -912,7 +949,7 @@ fn distance_final_pointer_position_invalidates_preview_metrics_before_commit() {
         .arrow_text_layout_requests(viewport)
         .unwrap()
         .remove(0);
-    assert_eq!(final_request.text.text, "100 px");
+    assert_eq!(final_request.text.text, "100 cm");
     assert_eq!(final_request.arrow_width, 100.0);
     assert_eq!(old.text_id, final_request.text_id);
     assert_ne!(old.key, final_request.key);
@@ -946,7 +983,7 @@ fn distance_final_pointer_position_invalidates_preview_metrics_before_commit() {
         Point::new(100.0, 0.0),
     );
     let id = engine.model.paint_order()[0];
-    assert_eq!(label(&engine, id).text, "100 px");
+    assert_eq!(label(&engine, id).text, "100 cm");
     assert_eq!(label(&engine, id).layout.width(), 64.0);
     engine.undo_with_viewport_changes().unwrap();
     engine.redo_with_viewport_changes().unwrap();

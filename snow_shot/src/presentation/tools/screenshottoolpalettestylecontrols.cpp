@@ -183,6 +183,15 @@ constexpr char kSignatureDistanceFactor[] = "input:distance-factor";
 constexpr char kSignatureDistanceUnit[] = "radio:distance-unit";
 constexpr char kSignatureDistanceDecimals[] = "select:distance-decimals";
 
+class DistanceFactorTextPolicy final : public adqt::widgets::AdInputNumberTextPolicy {
+  public:
+    explicit DistanceFactorTextPolicy(QObject* parent) : AdInputNumberTextPolicy(parent) {}
+
+    QString formatText(const QString& canonicalText, bool editing, const QString&) const override {
+        return editing ? QString() : canonicalText;
+    }
+};
+
 QVector<QByteArray> styleEditorRoles(ScreenshotToolPalette::Tool tool) {
     using Tool = ScreenshotToolPalette::Tool;
     switch (tool) {
@@ -1925,12 +1934,16 @@ QWidget* ScreenshotToolPaletteStyleControls::buildDistanceFamily(
         takeReusableWidget(kRoleDistanceFactor, kSignatureDistanceFactor, layout, controls));
     if (m_distanceFactorInput == nullptr) {
         m_distanceFactorInput = new adqt::widgets::AdInputNumber(controls);
+        m_distanceFactorInput->setTextPolicy(new DistanceFactorTextPolicy(m_distanceFactorInput));
         layout->addWidget(m_distanceFactorInput);
     }
     m_distanceFactorInput->setObjectName(QStringLiteral("screenshotDistanceFactorInput"));
-    m_distanceFactorInput->setRange(0.01, 1000.0);
+    m_distanceFactorInput->setPrefixIconRef(custom_outlined_icons::DistanceValueScale());
+    m_distanceFactorInput->setVariant(adqt::widgets::AdInputNumber::Variant::Borderless);
+    m_distanceFactorInput->setValueMode(adqt::widgets::AdInputNumber::ValueMode::ExactDecimal);
+    m_distanceFactorInput->setExactRange(QStringLiteral("0.01"), QStringLiteral("1000"));
     m_distanceFactorInput->setDecimals(2);
-    m_distanceFactorInput->setSingleStep(0.1);
+    m_distanceFactorInput->setExactSingleStep(QStringLiteral("0.1"));
     m_distanceFactorInput->setWheelStepEnabled(true);
     m_distanceFactorInput->setControlSize(adqt::widgets::AdInputNumber::ControlSize::Small);
     m_distanceFactorInput->setStepButtonLayout(
@@ -1940,10 +1953,15 @@ QWidget* ScreenshotToolPaletteStyleControls::buildDistanceFamily(
     m_distanceFactorInput->setAccessibleName(
         ScreenshotToolPaletteTranslationText("Distance scaling factor").translated());
     tagWidget(m_distanceFactorInput, kRoleDistanceFactor, kSignatureDistanceFactor);
-    QObject::disconnect(m_distanceFactorInput, &adqt::widgets::AdInputNumber::valueChanged, nullptr,
-                        nullptr);
-    QObject::connect(m_distanceFactorInput, &adqt::widgets::AdInputNumber::valueChanged, controls,
-                     [this](double value) { setDistanceFactor(value); });
+    QObject::disconnect(m_distanceFactorInput, &adqt::widgets::AdInputNumber::exactValueChanged,
+                        nullptr, nullptr);
+    QObject::connect(m_distanceFactorInput, &adqt::widgets::AdInputNumber::exactValueChanged,
+                     controls, [this](const QString& value) {
+                         bool ok = false;
+                         const double factor = value.toDouble(&ok);
+                         if (ok)
+                             setDistanceFactor(factor);
+                     });
 
     QWidget* units =
         takeReusableWidget(kRoleDistanceUnit, kSignatureDistanceUnit, layout, controls);
@@ -3562,7 +3580,7 @@ void ScreenshotToolPaletteStyleControls::registerDistanceEntries() {
                                                mixed(SnowCanvasDistanceStylePropertyStrokeWidth));
              if (m_distanceFactorInput != nullptr) {
                  const QSignalBlocker blocker(m_distanceFactorInput);
-                 m_distanceFactorInput->setValue(style.factor);
+                 m_distanceFactorInput->setExactValue(QString::number(style.factor, 'g', 15));
                  if (mixed(SnowCanvasDistanceStylePropertyFactor)) {
                      m_distanceFactorInput->clear();
                      m_distanceFactorInput->setPlaceholderText(QStringLiteral("-"));

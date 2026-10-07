@@ -6,6 +6,7 @@ use snow_draw_engine::{
 
 #[test]
 fn distance_abi_values_layout_and_round_trip() {
+    assert_eq!(SnowDistanceStyle::default().unit, SnowDistanceUnit::Cm);
     assert_eq!(SnowActiveTool::Distance as u32, 17);
     assert_eq!(SnowStyleToolbarSource::DefaultDistance as u32, 26);
     assert_eq!(SnowStyleToolbarSource::SelectedDistance as u32, 27);
@@ -177,9 +178,9 @@ fn distance_ffi_validates_and_supplies_complete_provisional_label() {
             .collect(),
     )
     .unwrap();
-    assert_eq!(text, "400 px");
-    assert_eq!(request.info.font_size, 16.0);
-    assert_eq!(request.style.font_size, 16.0);
+    assert_eq!(text, "400 cm");
+    assert_eq!(request.info.font_size, 20.0);
+    assert_eq!(request.style.font_size, 20.0);
     assert_eq!(request.info.center_x, -100.0);
     assert_eq!(request.info.rotation, 0.0);
     let old_key = request.key;
@@ -218,5 +219,5 @@ fn distance_ffi_validates_and_supplies_complete_provisional_label() {
             .collect(),
     )
     .unwrap();
-    assert_eq!(text, "600 px");
+    assert_eq!(text, "600 cm");
 }

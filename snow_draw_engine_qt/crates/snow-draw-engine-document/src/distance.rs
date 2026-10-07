@@ -8,8 +8,8 @@ use crate::{
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum DistanceUnit {
-    #[default]
     Px,
+    #[default]
     Cm,
     M,
     Km,
@@ -45,7 +45,7 @@ impl Default for DistanceAnnotation {
     fn default() -> Self {
         Self {
             factor: 1.0,
-            unit: DistanceUnit::Px,
+            unit: DistanceUnit::default(),
             decimal_places: 0,
             pixel_scale_x: 1.0,
             pixel_scale_y: 1.0,
@@ -91,7 +91,7 @@ pub fn distance_label_text(arrow: &ArrowData) -> Option<String> {
 /// The label is derived from its owner; independent text preferences never
 /// change the meaning or appearance of a distance annotation.
 pub fn distance_label(arrow: &ArrowData, layout: Option<TextLayoutSize>) -> Option<TextData> {
-    let font_size = arrow.stroke_width * 8.0;
+    let font_size = arrow.stroke_width * 10.0;
     Some(TextData {
         center: crate::arrow_text_anchor(arrow),
         layout: layout.unwrap_or_else(|| TextLayoutSize::new(1.0, font_size * 1.2)),

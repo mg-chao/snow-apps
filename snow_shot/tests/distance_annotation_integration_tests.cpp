@@ -26,13 +26,15 @@ void persistedDefaultsMergeDistanceProperties() {
     const auto initial = screenshotCanvasStyleDefaults();
     require(initial.distance.stroke == initial.arrow.stroke && initial.distance.strokeWidth == 2 &&
                 initial.distance.factor == 1 &&
-                initial.distance.unit == SnowCanvasDistanceUnit::Px &&
+                initial.distance.unit == SnowCanvasDistanceUnit::Cm &&
                 initial.distance.decimalPlaces == 0 && initial.distance.endpointScale == 1 &&
                 initial.distance.endpointStyle == SnowCanvasArrowhead::Bar,
-            "distance defaults match arrow appearance with pixel labels and bar endpoints");
+            "distance defaults match arrow appearance with centimeter labels and bar endpoints");
+    require(screenshotCanvasToolStyleDefaults().distance == initial.distance,
+            "empty configuration uses centimeter distance defaults");
     auto changed = initial.distance;
     changed.factor = 2.25;
-    changed.unit = SnowCanvasDistanceUnit::Cm;
+    changed.unit = SnowCanvasDistanceUnit::Px;
     changed.decimalPlaces = 3;
     changed.endpointStyle = SnowCanvasArrowhead::Diamond;
     require(persistScreenshotCanvasStyleEdit(
