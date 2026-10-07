@@ -1313,6 +1313,10 @@
             <translation>Auto</translation>
         </message>
         <message>
+            <source>Auto Exit After Recording Ends</source>
+            <translation>Auto Exit After Recording Ends</translation>
+        </message>
+        <message>
             <source>Auto execute after text recognition</source>
             <translation>Auto execute after text recognition</translation>
         </message>
@@ -1351,6 +1355,10 @@
         <message>
             <source>Automatically disable when a focused fullscreen window exists</source>
             <translation>Automatically disable when a focused fullscreen window exists</translation>
+        </message>
+        <message>
+            <source>Automatically exit screen recording after the recording is saved.</source>
+            <translation>Automatically exit screen recording after the recording is saved.</translation>
         </message>
         <message>
             <source>Autostart</source>
@@ -3319,6 +3327,10 @@
         <message>
             <source>Screen recording and animated image export settings</source>
             <translation>Screen recording and animated image export settings</translation>
+        </message>
+        <message>
+            <source>Screen recording behavior</source>
+            <translation>Screen recording behavior</translation>
         </message>
         <message>
             <source>Screen recording capture settings</source>

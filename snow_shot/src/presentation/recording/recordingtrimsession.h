@@ -28,6 +28,7 @@ class RecordingTrimSession final : public QObject {
     [[nodiscard]] bool ready() const;
     [[nodiscard]] QString phase() const;
     std::function<void(const QString&)> reportError;
+    std::function<void()> exported;
 
   private:
     enum class Phase { Preparing, Trimming, Exporting };

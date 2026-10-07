@@ -485,6 +485,8 @@ class RecordingSettings final {
     bool setEncodingPreset(const QString& preset) const;
     [[nodiscard]] bool captureToolbarInRecording() const;
     bool setCaptureToolbarInRecording(bool capture) const;
+    [[nodiscard]] bool autoExitAfterRecordingEnds() const;
+    bool setAutoExitAfterRecordingEnds(bool enabled) const;
     [[nodiscard]] int startDelaySeconds() const;
     bool setStartDelaySeconds(int seconds) const;
     [[nodiscard]] QString videoSaveDirectory() const;

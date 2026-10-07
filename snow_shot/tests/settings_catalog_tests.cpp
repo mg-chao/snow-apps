@@ -433,9 +433,9 @@ void builtInCatalogIsCompleteAndValid() {
         }
     }
 #ifdef Q_OS_MACOS
-    require(sectionCount == 50, "macOS includes permissions and merged storage and desktop groups");
+    require(sectionCount == 51, "macOS includes permissions and merged storage and desktop groups");
 #else
-    require(sectionCount == 50,
+    require(sectionCount == 51,
             "catalog includes capture and recording groups with merged storage and desktop groups");
 #endif
     // Keep the shared total in one place: adding a shared setting must update both platforms.
@@ -474,9 +474,9 @@ void builtInCatalogIsCompleteAndValid() {
                 itemIds.contains(QStringLiteral("screenshot-shortcut.upload_to_cloud")) &&
                 itemIds.contains(QStringLiteral("pin-to-screen-shortcut.upload_to_cloud")),
             "cloud upload must expose its configuration and shortcuts in both local scopes");
-    require(itemIds.size() == 244,
+    require(itemIds.size() == 245,
             qPrintable(QStringLiteral(
-                           "catalog must contain 244 shared settings on every platform; found %1")
+                           "catalog must contain 245 shared settings on every platform; found %1")
                            .arg(itemIds.size())));
     require(itemIds.contains(QStringLiteral("pin-to-screen.confirm-before-closing-window")) &&
                 itemIds.contains(QStringLiteral("pin-to-screen.confirm-before-destroying-window")),
@@ -1617,9 +1617,9 @@ void builtInCatalogIsCompleteAndValid() {
     require(
         recordingToolbarSection != nullptr && recordingToolbarEditor != nullptr &&
             recordingPage != nullptr &&
-            recordingPage->sections.constLast().id ==
-                QStringLiteral("screen-recording-action-toolbar") &&
             recordingPage->sections.at(recordingPage->sections.size() - 2).id ==
+                QStringLiteral("screen-recording-action-toolbar") &&
+            recordingPage->sections.at(recordingPage->sections.size() - 3).id ==
                 QStringLiteral("screen-recording-capture") &&
             recordingToolbarSection->title.translated() == QStringLiteral("Action Toolbar") &&
             recordingToolbarSection->items.size() == 1 &&
@@ -1639,6 +1639,28 @@ void builtInCatalogIsCompleteAndValid() {
                 recordingToolbarField->sectionId == recordingToolbarSection->id &&
                 recordingToolbarField->reset == recordingToolbarSection->reset,
             "recording action toolbar reset belongs only to its own category");
+
+    const auto* recordingInteraction = catalog.section(
+        QStringLiteral("screen-recording"), QStringLiteral("screen-recording-interaction"));
+    const auto* recordingAutoExit = catalog.item(
+        {QStringLiteral("screen-recording"), QStringLiteral("screen-recording-interaction"),
+         QStringLiteral("screen-recording.auto-exit-after-recording-ends")});
+    require(recordingInteraction != nullptr && recordingAutoExit != nullptr &&
+                recordingPage->sections.constLast().id == recordingInteraction->id &&
+                recordingInteraction->title.translated() == QStringLiteral("Interaction") &&
+                recordingInteraction->items.size() == 1 &&
+                recordingInteraction->reset ==
+                    settings::SettingsSectionReset::ScreenRecordingInteraction &&
+                recordingAutoExit->title.translated() ==
+                    QStringLiteral("Auto Exit After Recording Ends") &&
+                recordingAutoExit->configurationKey ==
+                    QStringLiteral("screen_recording/auto_exit_after_recording_ends") &&
+                std::get<settings::SettingsSwitchDefinition>(recordingAutoExit->payload).binding ==
+                    settings::SettingsSwitchBinding::ScreenRecordingAutoExitAfterRecordingEnds &&
+                settings::builtInSettingsRegistry()
+                        .fieldsForReset(settings::SettingsSectionReset::ScreenRecordingInteraction)
+                        .size() == 1,
+            "recording Interaction must follow Action Toolbar with its own auto-exit reset scope");
 
     const auto* selectionBorderColor =
         catalog.item({QStringLiteral("screenshots"), QStringLiteral("interface-screenshot"),

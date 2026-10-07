@@ -1873,6 +1873,16 @@ SettingsItemDefinition screenRecordingCaptureToolbarItem() {
         SettingsSwitchBinding::ScreenRecordingCaptureToolbar);
 }
 
+SettingsItemDefinition screenRecordingAutoExitAfterRecordingEndsItem() {
+    return switchItem(
+        QStringLiteral("screen-recording.auto-exit-after-recording-ends"),
+        QT_TRANSLATE_NOOP("SettingsCatalog", "Auto Exit After Recording Ends"),
+        QT_TRANSLATE_NOOP("SettingsCatalog",
+                          "Automatically exit screen recording after the recording is saved."),
+        QStringLiteral("screen_recording/auto_exit_after_recording_ends"),
+        SettingsSwitchBinding::ScreenRecordingAutoExitAfterRecordingEnds);
+}
+
 SettingsItemDefinition fullscreenHotkeySuppressionItem() {
     return switchItem(
         QStringLiteral("global-hotkeys.disable-on-focused-fullscreen-window"),
@@ -3063,6 +3073,13 @@ QVector<SettingsPageDefinition> builtInPages() {
                                                 "Customize the screen recording action toolbar")),
                  SettingsSectionReset::ScreenRecordingActionToolbar,
                  {recordingToolbarEditorItem()},
+             },
+             {
+                 QStringLiteral("screen-recording-interaction"),
+                 settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Interaction")),
+                 settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Screen recording behavior")),
+                 SettingsSectionReset::ScreenRecordingInteraction,
+                 {screenRecordingAutoExitAfterRecordingEndsItem()},
              },
          },
          SettingsPageKind::GeneratedSettings,
@@ -4588,6 +4605,10 @@ QStringList SettingsCatalog::validationErrors() const {
                     case SettingsSwitchBinding::ScreenRecordingCaptureToolbar:
                         expectedKey =
                             QStringLiteral("screen_recording/capture_toolbar_in_recording");
+                        break;
+                    case SettingsSwitchBinding::ScreenRecordingAutoExitAfterRecordingEnds:
+                        expectedKey =
+                            QStringLiteral("screen_recording/auto_exit_after_recording_ends");
                         break;
                     case SettingsSwitchBinding::DisableHotkeysOnFocusedFullscreen:
                         expectedKey =

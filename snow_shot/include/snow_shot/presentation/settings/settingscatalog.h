@@ -160,6 +160,7 @@ enum class SettingsSwitchBinding {
     SeparateRecordingAudioTracks,
     LoopAnimatedImages,
     ScreenRecordingCaptureToolbar,
+    ScreenRecordingAutoExitAfterRecordingEnds,
     DisableHotkeysOnFocusedFullscreen,
     McpEnabled,
     AutoStartAtBoot,
@@ -488,6 +489,7 @@ enum class SettingsSectionReset {
     PinToScreenToolbar,
     ScreenshotActionToolbar,
     ScreenRecordingActionToolbar,
+    ScreenRecordingInteraction,
 };
 
 enum class SettingsSectionItemLayout {

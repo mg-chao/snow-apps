@@ -644,6 +644,8 @@ const QVector<ConfigurationSchemaEntry> kRawEntries = {
      {QStringLiteral("dxgi"), QStringLiteral("wgc"), QStringLiteral("gdi")}},
     {QStringLiteral("screen_recording/capture_toolbar_in_recording"), true,
      ConfigurationValueKind::Boolean},
+    {QStringLiteral("screen_recording/auto_exit_after_recording_ends"), false,
+     ConfigurationValueKind::Boolean},
     {QStringLiteral("screen_recording/start_delay_seconds"), 0, ConfigurationValueKind::Integer,
      ConfigurationIntegerRange{0, 10, 1}},
     {QStringLiteral("screen_recording/video_save_directory"),

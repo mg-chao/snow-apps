@@ -1313,6 +1313,10 @@
             <translation>自動</translation>
         </message>
         <message>
+            <source>Auto Exit After Recording Ends</source>
+            <translation>錄製結束後自動退出</translation>
+        </message>
+        <message>
             <source>Auto execute after text recognition</source>
             <translation>文字辨識後自動執行</translation>
         </message>
@@ -1351,6 +1355,10 @@
         <message>
             <source>Automatically disable when a focused fullscreen window exists</source>
             <translation>存在焦點全螢幕視窗時自動停用</translation>
+        </message>
+        <message>
+            <source>Automatically exit screen recording after the recording is saved.</source>
+            <translation>儲存錄製內容後自動退出螢幕錄製。</translation>
         </message>
         <message>
             <source>Autostart</source>
@@ -3319,6 +3327,10 @@
         <message>
             <source>Screen recording and animated image export settings</source>
             <translation>螢幕錄製與動態圖片匯出設定</translation>
+        </message>
+        <message>
+            <source>Screen recording behavior</source>
+            <translation>螢幕錄製互動行為</translation>
         </message>
         <message>
             <source>Screen recording capture settings</source>

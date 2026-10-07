@@ -876,6 +876,8 @@ bool BuiltInSettingsBackend::switchValue(SettingsSwitchBinding binding) const {
         return storage::RecordingSettings().loopAnimatedImages();
     case SettingsSwitchBinding::ScreenRecordingCaptureToolbar:
         return storage::RecordingSettings().captureToolbarInRecording();
+    case SettingsSwitchBinding::ScreenRecordingAutoExitAfterRecordingEnds:
+        return storage::RecordingSettings().autoExitAfterRecordingEnds();
     case SettingsSwitchBinding::DisableHotkeysOnFocusedFullscreen:
         return storage::GlobalShortcutSettings().disableOnFocusedFullscreenWindow();
     case SettingsSwitchBinding::McpEnabled:
@@ -1111,6 +1113,9 @@ bool BuiltInSettingsBackend::applySwitchValue(SettingsSwitchBinding binding, boo
     if (binding == SettingsSwitchBinding::ScreenRecordingCaptureToolbar) {
         return storage::RecordingSettings().setCaptureToolbarInRecording(value);
     }
+    if (binding == SettingsSwitchBinding::ScreenRecordingAutoExitAfterRecordingEnds) {
+        return storage::RecordingSettings().setAutoExitAfterRecordingEnds(value);
+    }
     if (binding == SettingsSwitchBinding::DisableHotkeysOnFocusedFullscreen) {
         return storage::GlobalShortcutSettings().setDisableOnFocusedFullscreenWindow(value);
     }
@@ -1193,6 +1198,7 @@ bool BuiltInSettingsBackend::applySwitchValue(SettingsSwitchBinding binding, boo
     case SettingsSwitchBinding::SeparateRecordingAudioTracks:
     case SettingsSwitchBinding::LoopAnimatedImages:
     case SettingsSwitchBinding::ScreenRecordingCaptureToolbar:
+    case SettingsSwitchBinding::ScreenRecordingAutoExitAfterRecordingEnds:
     case SettingsSwitchBinding::DisableHotkeysOnFocusedFullscreen:
     case SettingsSwitchBinding::McpEnabled:
     case SettingsSwitchBinding::AutoStartAtBoot:
@@ -2569,6 +2575,11 @@ bool BuiltInSettingsBackend::resetSection(SettingsSectionReset reset) {
              storage::ConfigurationSchema::defaultValue(
                  QStringLiteral("screen_recording/capture_toolbar_in_recording"))},
         });
+    case SettingsSectionReset::ScreenRecordingInteraction:
+        return storage::RecordingSettings().setAutoExitAfterRecordingEnds(
+            storage::ConfigurationSchema::defaultValue(
+                QStringLiteral("screen_recording/auto_exit_after_recording_ends"))
+                .toBool());
     case SettingsSectionReset::ScreenRecordingOutput:
         return storage::ApplicationStorage::instance().configuration().setValues({
             {QStringLiteral("screen_recording/video_save_directory"),

@@ -397,6 +397,134 @@ void recordingCanCloseDuringAndAfterFinalization() {
     }
 }
 
+void recordingAutoExitAfterSuccessfulFinalization() {
+    const snow_shot::storage::RecordingSettings settings;
+    require(!settings.autoExitAfterRecordingEnds(), "recording auto-exit starts disabled");
+    const auto wait = [](auto predicate) {
+        QElapsedTimer deadline;
+        deadline.start();
+        while (!predicate() && deadline.elapsed() < 5000) {
+            QCoreApplication::processEvents();
+            QThread::msleep(1);
+        }
+        require(predicate(), "recording auto-exit operation must complete asynchronously");
+    };
+    for (const bool enabled : {false, true}) {
+        require(settings.setAutoExitAfterRecordingEnds(enabled), "set auto-exit preference");
+        for (const bool deferred : {false, true}) {
+            for (const bool copy : {false, true}) {
+                for (const bool succeeds : {false, true}) {
+                    ScreenRecordingController controller(testEffectsSource);
+                    int finalized = 0;
+                    QObject::connect(&controller, &ScreenRecordingController::finalized,
+                                     &controller, [&] {
+                                         ++finalized;
+                                         require(controller.isOpen() == !enabled,
+                                                 "auto-exit precedes completion observers");
+                                     });
+                    QString error;
+                    require(
+                        controller.startAutomation({40, 40, 320, 240},
+                                                   {{QStringLiteral("post_processing"), deferred},
+                                                    {QStringLiteral("start_delay_seconds"), 0}},
+                                                   &error),
+                        "prepare the auto-exit recording fixture");
+                    waitForRecording(controller);
+                    std::promise<void> release;
+                    std::promise<void> entered;
+                    auto enteredFuture = entered.get_future();
+                    exportGate = release.get_future().share();
+                    exportEntered = &entered;
+                    failExport = !succeeds;
+                    QApplication::clipboard()->clear();
+                    const int previousExports = exports.load();
+                    require(controller.controlAutomation(
+                                copy ? QStringLiteral("copy") : QStringLiteral("stop"), {}, &error),
+                            "finish the recording through Stop or Copy");
+                    require(enteredFuture.wait_for(std::chrono::seconds(2)) ==
+                                    std::future_status::ready &&
+                                controller.isOpen(),
+                            "auto-exit must wait for pending recording finalization");
+                    joinHeldExport(release, previousExports);
+                    if (deferred && succeeds) {
+                        wait([&] {
+                            return controller.automationState()
+                                       .value(QStringLiteral("render_duration_ms"))
+                                       .toInteger() == 2300;
+                        });
+                        require(controller.isOpen(), "auto-exit must wait for deferred rendering");
+                        renderState = SNOW_RECORDING_RENDER_STATE_SUCCEEDED;
+                    }
+                    waitForIdle(controller);
+                    failExport = false;
+                    require(controller.isOpen() == !(enabled && succeeds) &&
+                                finalized == (succeeds ? 1 : 0),
+                            "only successful recordings auto-exit when enabled");
+                    const auto* mime = QApplication::clipboard()->mimeData();
+                    if (copy && succeeds) {
+                        require(mime && mime->urls() == QList<QUrl>{QUrl::fromLocalFile(
+                                                            controller.automationState()
+                                                                .value(QStringLiteral("path"))
+                                                                .toString())},
+                                "auto-exit preserves the finalized Copy result");
+                    } else {
+                        require(!mime || !mime->hasUrls(),
+                                "Stop and failed Copy never publish clipboard files");
+                    }
+                    require(controller.controlAutomation(QStringLiteral("close"), {}, &error),
+                            "retire the recording fixture");
+                    QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+                    require(recordingWindowCount() == 0, "auto-exit leaves no recording windows");
+                }
+            }
+        }
+    }
+    for (const bool enabled : {false, true}) {
+        require(settings.setAutoExitAfterRecordingEnds(enabled), "set trim auto-exit preference");
+        for (const bool deferred : {false, true}) {
+            for (const bool succeeds : {false, true}) {
+                ScreenRecordingController controller(testEffectsSource);
+                QString error;
+                require(controller.startAutomation({40, 40, 320, 240},
+                                                   {{QStringLiteral("post_processing"), deferred},
+                                                    {QStringLiteral("start_delay_seconds"), 0}},
+                                                   &error),
+                        "prepare the trim auto-exit fixture");
+                waitForRecording(controller);
+                palette()->recordingTrimRequested();
+                wait([&] {
+                    return controller.automationState().value(QStringLiteral("state")) ==
+                           QStringLiteral("trimming");
+                });
+                require(controller.isOpen(), "auto-exit must allow trimming before export");
+                palette()
+                    ->findChild<QSlider*>(QStringLiteral("screenRecordingTrimStart"))
+                    ->setValue(5);
+                clipExportState = SNOW_RECORDING_RENDER_STATE_RUNNING;
+                QApplication::clipboard()->clear();
+                require(controller.controlAutomation(QStringLiteral("copy"), {}, &error),
+                        "export the trimmed recording");
+                require(controller.isOpen(), "auto-exit must wait for trimmed export");
+                clipExportState = succeeds ? SNOW_RECORDING_RENDER_STATE_SUCCEEDED
+                                           : SNOW_RECORDING_RENDER_STATE_CANCELED;
+                wait([&] {
+                    return !controller.automationState().value(QStringLiteral("busy")).toBool();
+                });
+                require(controller.isOpen() == !(enabled && succeeds),
+                        "trimmed recording auto-exits only after successful publication");
+                const auto* mime = QApplication::clipboard()->mimeData();
+                require((mime && mime->hasUrls()) == succeeds,
+                        "trimmed Copy result survives auto-exit");
+                require(controller.controlAutomation(QStringLiteral("close"), {}, &error),
+                        "retire the trim fixture");
+                QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+            }
+        }
+    }
+    clipExportState = SNOW_RECORDING_RENDER_STATE_SUCCEEDED;
+    require(settings.setAutoExitAfterRecordingEnds(false), "restore default auto-exit preference");
+}
+
 #ifdef Q_OS_MACOS
 void standardCloseFromRecordingArea() {
     ScreenRecordingController controller(testEffectsSource);
@@ -4142,6 +4270,11 @@ int main(int argc, char** argv) {
     }
     if (app.arguments().contains(QStringLiteral("--finalization-close-only"))) {
         recordingCanCloseDuringAndAfterFinalization();
+        ApplicationStorage::instance().shutdown();
+        return 0;
+    }
+    if (app.arguments().contains(QStringLiteral("--auto-exit-only"))) {
+        recordingAutoExitAfterSuccessfulFinalization();
         ApplicationStorage::instance().shutdown();
         return 0;
     }

@@ -1797,6 +1797,17 @@ bool RecordingSettings::setCaptureToolbarInRecording(bool capture) const {
                             capture);
 }
 
+bool RecordingSettings::autoExitAfterRecordingEnds() const {
+    return cache()
+        .value(QStringLiteral("screen_recording/auto_exit_after_recording_ends"))
+        .toBool();
+}
+
+bool RecordingSettings::setAutoExitAfterRecordingEnds(bool enabled) const {
+    return cache().setValue(QStringLiteral("screen_recording/auto_exit_after_recording_ends"),
+                            enabled);
+}
+
 QString RecordingSettings::videoSaveDirectory() const {
     return cache().value(QStringLiteral("screen_recording/video_save_directory")).toString();
 }

@@ -4476,6 +4476,19 @@ if(SNOW_SHOT_BUILD_TESTS)
         ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}"
         ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
 
+    add_executable(snow-shot-screen-recording-interaction-settings-tests
+        tests/screen_recording_interaction_settings_tests.cpp
+        src/presentation/services/screenshotclipboardservice.cpp)
+    target_link_libraries(snow-shot-screen-recording-interaction-settings-tests PRIVATE
+        snow_shot_settings snow_shot_image_codec)
+    snow_shot_import_offscreen_platform(snow-shot-screen-recording-interaction-settings-tests)
+    add_test(NAME snow-shot-screen-recording-interaction-settings-tests
+        COMMAND snow-shot-screen-recording-interaction-settings-tests)
+    set_tests_properties(snow-shot-screen-recording-interaction-settings-tests PROPERTIES
+        LABELS "unit" TIMEOUT 30
+        ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}"
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
+
     add_executable(snow-shot-edit-selection-toolbar-settings-tests
         tests/edit_selection_toolbar_settings_tests.cpp
         src/presentation/services/screenshotclipboardservice.cpp)
@@ -6493,6 +6506,12 @@ if(SNOW_SHOT_BUILD_TESTS)
     add_test(NAME snow-shot-recording-finalization-close-tests
         COMMAND snow-shot-screen-recording-controller-tests --finalization-close-only -platform offscreen)
     set_tests_properties(snow-shot-recording-finalization-close-tests PROPERTIES
+        ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}"
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+        LABELS "unit" RUN_SERIAL TRUE TIMEOUT 60)
+    add_test(NAME snow-shot-recording-auto-exit-tests
+        COMMAND snow-shot-screen-recording-controller-tests --auto-exit-only -platform offscreen)
+    set_tests_properties(snow-shot-recording-auto-exit-tests PROPERTIES
         ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}"
         ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
         LABELS "unit" RUN_SERIAL TRUE TIMEOUT 60)

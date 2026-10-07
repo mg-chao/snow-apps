@@ -341,6 +341,10 @@ void RecordingTrimSession::finishExport(bool ok, const QString& error) {
                 .arg(error));
     if (m_detached)
         releaseMedia();
+    if (ok && !m_detached && exported) {
+        const auto onExported = exported;
+        onExported();
+    }
 }
 void RecordingTrimSession::showProgress() {
     if (m_dialog || m_detached)
@@ -380,6 +384,7 @@ void RecordingTrimSession::detach() {
     m_toolbar = nullptr;
     m_panel = nullptr;
     reportError = {};
+    exported = {};
     if (!m_export && !m_publishFuture.valid() && !m_openFuture.valid())
         releaseMedia();
 }
