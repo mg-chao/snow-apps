@@ -13,6 +13,7 @@
 #include <QJsonObject>
 #include <QTimer>
 
+#include <algorithm>
 #include <utility>
 
 namespace snow_shot::presentation::settings {
@@ -57,6 +58,14 @@ shortcuts::ShortcutBindingList shortcutListValue(const QVariant& value) {
 
 QVariant globalMouseCombinationVariant(const SettingsGlobalMouseCombination& combination) {
     return QVariant::fromValue(combination);
+}
+
+bool sameStoredColor(const QColor& first, const QColor& second) {
+    if (!first.isValid() || !second.isValid())
+        return first.isValid() == second.isValid();
+    // Settings persist eight-bit RGBA. Picker edits can use HSV/HSL or higher
+    // precision, which QColor::operator== distinguishes from the saved RGB value.
+    return first.rgba() == second.rgba();
 }
 
 bool sameStorageStatus(const storage::StorageStatus& first, const storage::StorageStatus& second) {
@@ -1196,10 +1205,13 @@ bool SettingsRuntimeSession::valuesEqual(const SettingsFieldDescriptor& descript
         return first == second;
     }
     if (std::holds_alternative<SettingsColorDefinition>(descriptor.definition->payload)) {
-        return first.value<QColor>() == second.value<QColor>();
+        return sameStoredColor(first.value<QColor>(), second.value<QColor>());
     }
     if (std::holds_alternative<SettingsColorPaletteDefinition>(descriptor.definition->payload)) {
-        return first.value<QVector<QColor>>() == second.value<QVector<QColor>>();
+        const auto firstColors = first.value<QVector<QColor>>();
+        const auto secondColors = second.value<QVector<QColor>>();
+        return std::equal(firstColors.cbegin(), firstColors.cend(), secondColors.cbegin(),
+                          secondColors.cend(), sameStoredColor);
     }
     if (std::holds_alternative<SettingsGlobalMouseActionDefinition>(
             descriptor.definition->payload)) {

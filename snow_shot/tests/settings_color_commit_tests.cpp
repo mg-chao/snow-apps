@@ -9,6 +9,7 @@
 #include "snow_shot/storage/configurationschema.h"
 #include "theme/theme_manager.h"
 #include "widgets/color_picker.h"
+#include "widgets/slider.h"
 
 #include <QApplication>
 #include <QEvent>
@@ -42,6 +43,115 @@ class PresetTranslator final : public QTranslator {
         return {};
     }
 };
+
+void settingsColorsMatchPersistedRgba(QApplication& application) {
+    snow_shot::presentation::GlobalShortcutManager shortcuts;
+    settings::BuiltInSettingsBackend backend(shortcuts);
+    const auto registry = settings::buildBuiltInSettingsRegistry();
+    settings::SettingsRuntimeSession session(registry, backend);
+    auto& configuration = storage::ApplicationStorage::instance().configuration();
+    const QVector<QColor> samples{QColor(31, 97, 183, 127), QColor::fromHsv(217, 181, 193, 143),
+                                  QColor::fromHsl(127, 173, 119, 97),
+                                  QColor::fromRgbF(0.12345f, 0.45678f, 0.78901f, 0.54321f),
+                                  QColor::fromHsv(283, 157, 211, 0)};
+    for (const auto& descriptor : registry.fields()) {
+        if (descriptor.kind != settings::SettingsFieldKind::Color)
+            continue;
+        const auto& definition =
+            std::get<settings::SettingsColorDefinition>(descriptor.definition->payload);
+        int writes = 0;
+        const auto connection =
+            QObject::connect(&configuration, &storage::ConfigurationStore::valueChanged, &session,
+                             [&writes, key = descriptor.configurationKey](const QString& changed) {
+                                 if (changed == key)
+                                     ++writes;
+                             });
+        for (QColor sample : samples) {
+            if (!definition.alphaChannelEnabled)
+                sample.setAlpha(255);
+            const QColor persisted = QColor::fromRgba(sample.rgba());
+            require(session.applyColorValue(definition.binding, sample),
+                    "accept colors produced in different color spaces and precisions");
+            application.processEvents();
+            require(backend.colorValue(definition.binding) == persisted &&
+                        configuration.value(descriptor.configurationKey).toString() ==
+                            storage::colorToRgbaString(sample),
+                    "color storage preserves exactly the selected eight-bit RGBA value");
+            const auto state = session.state(descriptor.id);
+            require(state.phase == settings::SettingsWritePhase::Clean && !state.dirty &&
+                        !state.busy && !state.conflicted && state.error.isEmpty() &&
+                        state.acceptedValue.value<QColor>() == persisted &&
+                        state.draftValue.value<QColor>() == persisted &&
+                        !session.hasPendingWrites(),
+                    "a persisted color must settle without a false save error or conflict");
+            const int previousWrites = writes;
+            require(session.applyColorValue(definition.binding, sample.toRgb()) &&
+                        session.state(descriptor.id).revision == state.revision &&
+                        writes == previousWrites,
+                    "equivalent RGBA colors are no-ops regardless of color space or precision");
+        }
+        const QColor accepted = backend.colorValue(definition.binding);
+        require(!session.applyColorValue(definition.binding, QColor()) &&
+                    backend.colorValue(definition.binding) == accepted &&
+                    session.state(descriptor.id).phase == settings::SettingsWritePhase::Rejected,
+                "invalid colors must still be rejected without changing the saved color");
+        require(session.discard(descriptor.id), "discard the invalid color draft");
+        QObject::disconnect(connection);
+    }
+    for (const auto binding : {settings::SettingsColorPaletteBinding::StrokeColors,
+                               settings::SettingsColorPaletteBinding::FillColors}) {
+        const auto* descriptor = registry.fieldForColorPalette(binding);
+        auto colors = samples;
+        QVector<QColor> persisted;
+        for (const QColor& color : colors)
+            persisted.push_back(QColor::fromRgba(color.rgba()));
+        require(session.applyColorPaletteValue(binding, colors),
+                "accept a palette with mixed color spaces and precisions");
+        application.processEvents();
+        const auto state = session.state(descriptor->id);
+        require(backend.colorPaletteValue(binding) == persisted &&
+                    state.phase == settings::SettingsWritePhase::Clean && !state.dirty &&
+                    !state.busy && !state.conflicted && state.error.isEmpty() &&
+                    state.acceptedValue.value<QVector<QColor>>() == persisted &&
+                    state.draftValue.value<QVector<QColor>>() == persisted &&
+                    !session.hasPendingWrites(),
+                "all palette slots must settle against their persisted RGBA values");
+        require(session.applyColorPaletteValue(binding, colors) &&
+                    session.state(descriptor->id).revision == state.revision,
+                "an equivalent mixed-space palette must not create another write revision");
+        colors[0] = QColor(0, 0, 0, 0);
+        require(session.applyColorPaletteValue(binding, colors),
+                "save a transparent black palette slot");
+        colors[0] = QColor();
+        require(!session.applyColorPaletteValue(binding, colors) &&
+                    backend.colorPaletteValue(binding).at(0) == QColor(0, 0, 0, 0),
+                "invalid palette slots must not compare equal to transparent black");
+        require(session.discard(descriptor->id), "discard the invalid palette draft");
+        colors[0] = QColor(0, 0, 0, 0);
+        colors.removeLast();
+        require(!session.applyColorPaletteValue(binding, colors),
+                "palette length mismatches must not be treated as equivalent values");
+        require(session.discard(descriptor->id), "discard the short palette draft");
+    }
+}
+
+QColor editPickerHue(adqt::widgets::AdColorPicker* picker, QApplication& application) {
+    adqt::widgets::AdSlider* hueSlider = nullptr;
+    for (QWidget* widget : QApplication::allWidgets()) {
+        auto* slider = qobject_cast<adqt::widgets::AdSlider*>(widget);
+        if (slider && slider->isVisible() && slider->maximum() == 359) {
+            require(hueSlider == nullptr, "only the active color picker has a visible hue slider");
+            hueSlider = slider;
+        }
+    }
+    require(hueSlider != nullptr, "the color popup exposes its hue control");
+    hueSlider->setValue(217);
+    application.processEvents();
+    const QColor color = picker->value().solidColor;
+    require(color.spec() == QColor::Hsv && color.hsvHue() == 217,
+            "editing the actual picker control produces an HSV color");
+    return color;
+}
 
 void settingsColorPalettesCommitOnPopupClose(QApplication& application) {
     snow_shot::presentation::GlobalShortcutManager shortcuts;
@@ -233,15 +343,27 @@ void settingsColorsCommitOnPopupClose(QApplication& application) {
                         adqt::theme::ThemeManager::instance().config().primary == originalPrimary,
                     "intermediate popup edits must not rebuild the application theme");
         }
+        finalColor = editPickerHue(picker, application);
+        require(backend.colorValue(definition.binding) == original && writes == 0 &&
+                    themeChanges == 0,
+                "hue control edits remain local until the popup closes");
         picker->setPopupVisible(false);
         application.processEvents();
-        require(backend.colorValue(definition.binding) == finalColor && writes == 1,
+        const QColor persisted = QColor::fromRgba(finalColor.rgba());
+        require(backend.colorValue(definition.binding) == persisted && writes == 1,
                 "closing the popup persists only its final color, including alpha");
+        const auto state = session.state(field.id);
+        require(state.phase == settings::SettingsWritePhase::Clean && !state.dirty && !state.busy &&
+                    !state.conflicted && state.error.isEmpty() &&
+                    picker->property("settingsError").toString().isEmpty() &&
+                    !picker->property("settingsPending").toBool(),
+                "completed HSV picker edits must not display a false save error");
         const bool primary =
             definition.binding == settings::SettingsColorBinding::ThemePrimaryColor;
         require(themeChanges == (primary ? 1 : 0), "theme updates only once after completion");
         if (primary) {
-            require(adqt::theme::ThemeManager::instance().config().primary == finalColor,
+            require(adqt::theme::ThemeManager::instance().config().primary.rgba() ==
+                        finalColor.rgba(),
                     "completed primary color is applied to the application theme");
         }
         picker->setPopupVisible(true);
@@ -267,6 +389,7 @@ int main(int argc, char** argv) {
             "initialize settings storage");
     snow_shot::presentation::LanguageManager::instance().initialize();
     styles::ThemeManager::instance().initialize(application);
+    settingsColorsMatchPersistedRgba(application);
     if (!application.arguments().contains(QStringLiteral("--color-presets-only")))
         settingsColorsCommitOnPopupClose(application);
     settingsColorPalettesCommitOnPopupClose(application);
