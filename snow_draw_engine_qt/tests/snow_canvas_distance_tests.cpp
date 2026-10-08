@@ -342,6 +342,14 @@ void conversionsAndStateChanges() {
     changed.distance_style_mixed = SnowCanvasDistanceStyleMixedFactor;
     require(!snow_canvas_state::styleToolbarStatesEqual(original, changed),
             "mixed distance state updates notify the toolbar");
+    changed = original;
+    changed.distance_measured_length = 125.0;
+    require(!snow_canvas_state::styleToolbarStatesEqual(original, changed),
+            "geometry-only distance changes notify the toolbar");
+    const auto converted = snow_canvas_types::toCanvasStyleToolbarState(changed);
+    require(converted.distanceMeasuredLength == 125.0 &&
+                converted != snow_canvas_types::toCanvasStyleToolbarState(original),
+            "calibrated length passes through the ABI and participates in toolbar equality");
 }
 
 void labelsRenderAtTheCenterWithoutWrapping() {

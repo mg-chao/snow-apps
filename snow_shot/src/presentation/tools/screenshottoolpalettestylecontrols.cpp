@@ -158,7 +158,7 @@ constexpr char kSignatureGap[] = "numeric:gap";
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Distance stroke color %1"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Current distance stroke width"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Distance stroke width %1"),
-    QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Distance scaling factor"),
+    QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Actual distance value"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Distance unit"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Decimal places"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Integers"),
@@ -175,18 +175,18 @@ constexpr char kSignatureGap[] = "numeric:gap";
 };
 
 constexpr char kRoleDistanceColor[] = "distance-color";
-constexpr char kRoleDistanceFactor[] = "distance-factor";
+constexpr char kRoleDistanceValue[] = "distance-value";
 constexpr char kRoleDistanceUnit[] = "distance-unit";
 constexpr char kRoleDistanceDecimals[] = "distance-decimals";
 constexpr char kRoleDistanceScale[] = "distance-scale";
 constexpr char kRoleDistanceEndpoint[] = "distance-endpoint";
-constexpr char kSignatureDistanceFactor[] = "input:distance-factor";
+constexpr char kSignatureDistanceValue[] = "input:distance-value";
 constexpr char kSignatureDistanceUnit[] = "radio:distance-unit";
 constexpr char kSignatureDistanceDecimals[] = "select:distance-decimals";
 
-class DistanceFactorTextPolicy final : public adqt::widgets::AdInputNumberTextPolicy {
+class DistanceValueTextPolicy final : public adqt::widgets::AdInputNumberTextPolicy {
   public:
-    explicit DistanceFactorTextPolicy(QObject* parent) : AdInputNumberTextPolicy(parent) {}
+    explicit DistanceValueTextPolicy(QObject* parent) : AdInputNumberTextPolicy(parent) {}
 
     QString formatText(const QString& canonicalText, bool editing, const QString&) const override {
         return editing ? QString() : canonicalText;
@@ -204,7 +204,7 @@ QVector<QByteArray> styleEditorRoles(ScreenshotToolPalette::Tool tool) {
     case Tool::FreeDraw:
         return {kRoleOutlineStroke, kRoleOutlineWidth, kRoleShapeFill};
     case Tool::Distance:
-        return {kRoleDistanceColor,    kRoleOutlineWidth,  kRoleDistanceFactor,  kRoleDistanceUnit,
+        return {kRoleDistanceColor,    kRoleOutlineWidth,  kRoleDistanceValue,   kRoleDistanceUnit,
                 kRoleDistanceDecimals, kRoleDistanceScale, kRoleDistanceEndpoint};
     case Tool::Arrow:
         return {kRoleOutlineStroke, kRoleOutlineWidth, "arrow-type",   kRoleArrowRatio,
@@ -1249,7 +1249,7 @@ void ScreenshotToolPaletteStyleControls::stageDestinationStyleEditors(
         stageComponent(kRoleDistanceColor, kSignatureForegroundColor, m_distanceColorEditor);
         stageComponent(kRoleOutlineWidth, kSignatureStrokeWidth, m_distanceWidthEditor);
         stageComponent(kRoleDistanceEndpoint, kSignatureArrowhead, m_distanceEndpointEditor);
-        stageWidget(kRoleDistanceFactor);
+        stageWidget(kRoleDistanceValue);
         stageWidget(kRoleDistanceUnit);
         stageWidget(kRoleDistanceDecimals);
         stageWidget(kRoleDistanceScale);
@@ -1931,37 +1931,36 @@ QWidget* ScreenshotToolPaletteStyleControls::buildDistanceFamily(
 
     if (host.addGroupSeparator)
         host.addGroupSeparator(layout);
-    m_distanceFactorInput = qobject_cast<adqt::widgets::AdInputNumber*>(
-        takeReusableWidget(kRoleDistanceFactor, kSignatureDistanceFactor, layout, controls));
-    if (m_distanceFactorInput == nullptr) {
-        m_distanceFactorInput = new adqt::widgets::AdInputNumber(controls);
-        m_distanceFactorInput->setTextPolicy(new DistanceFactorTextPolicy(m_distanceFactorInput));
-        layout->addWidget(m_distanceFactorInput);
+    m_distanceValueInput = qobject_cast<adqt::widgets::AdInputNumber*>(
+        takeReusableWidget(kRoleDistanceValue, kSignatureDistanceValue, layout, controls));
+    if (m_distanceValueInput == nullptr) {
+        m_distanceValueInput = new adqt::widgets::AdInputNumber(controls);
+        m_distanceValueInput->setTextPolicy(new DistanceValueTextPolicy(m_distanceValueInput));
+        layout->addWidget(m_distanceValueInput);
     }
-    m_distanceFactorInput->setObjectName(QStringLiteral("screenshotDistanceFactorInput"));
-    m_distanceFactorInput->setPrefixIconRef(custom_outlined_icons::DistanceValueScale());
-    m_distanceFactorInput->setVariant(adqt::widgets::AdInputNumber::Variant::Borderless);
-    m_distanceFactorInput->setValueMode(adqt::widgets::AdInputNumber::ValueMode::ExactDecimal);
-    m_distanceFactorInput->setExactRange(QStringLiteral("0.01"), QStringLiteral("1000"));
-    m_distanceFactorInput->setDecimals(2);
-    m_distanceFactorInput->setExactSingleStep(QStringLiteral("0.1"));
-    m_distanceFactorInput->setWheelStepEnabled(true);
-    m_distanceFactorInput->setControlSize(adqt::widgets::AdInputNumber::ControlSize::Small);
-    m_distanceFactorInput->setStepButtonLayout(
+    m_distanceValueInput->setObjectName(QStringLiteral("screenshotDistanceValueInput"));
+    m_distanceValueInput->setPrefixIconRef(custom_outlined_icons::DistanceValueScale());
+    m_distanceValueInput->setVariant(adqt::widgets::AdInputNumber::Variant::Borderless);
+    m_distanceValueInput->setValueMode(adqt::widgets::AdInputNumber::ValueMode::ExactDecimal);
+    m_distanceValueInput->setDecimals(3);
+    m_distanceValueInput->setExactSingleStep(QStringLiteral("0.1"));
+    m_distanceValueInput->setWheelStepEnabled(true);
+    m_distanceValueInput->setControlSize(adqt::widgets::AdInputNumber::ControlSize::Small);
+    m_distanceValueInput->setStepButtonLayout(
         adqt::widgets::AdInputNumber::StepButtonLayout::Compact);
-    configureScreenshotToolPaletteTooltip(m_distanceFactorInput, "Distance scaling factor");
-    setScreenshotToolPaletteAccessibleNameSource(m_distanceFactorInput, "Distance scaling factor");
-    m_distanceFactorInput->setAccessibleName(
-        ScreenshotToolPaletteTranslationText("Distance scaling factor").translated());
-    tagWidget(m_distanceFactorInput, kRoleDistanceFactor, kSignatureDistanceFactor);
-    QObject::disconnect(m_distanceFactorInput, &adqt::widgets::AdInputNumber::exactValueChanged,
+    configureScreenshotToolPaletteTooltip(m_distanceValueInput, "Actual distance value");
+    setScreenshotToolPaletteAccessibleNameSource(m_distanceValueInput, "Actual distance value");
+    m_distanceValueInput->setAccessibleName(
+        ScreenshotToolPaletteTranslationText("Actual distance value").translated());
+    tagWidget(m_distanceValueInput, kRoleDistanceValue, kSignatureDistanceValue);
+    QObject::disconnect(m_distanceValueInput, &adqt::widgets::AdInputNumber::exactValueChanged,
                         nullptr, nullptr);
-    QObject::connect(m_distanceFactorInput, &adqt::widgets::AdInputNumber::exactValueChanged,
-                     controls, [this](const QString& value) {
+    QObject::connect(m_distanceValueInput, &adqt::widgets::AdInputNumber::exactValueChanged,
+                     controls, [this](const QString& text) {
                          bool ok = false;
-                         const double factor = value.toDouble(&ok);
+                         const double value = text.toDouble(&ok);
                          if (ok)
-                             setDistanceFactor(factor);
+                             setDistanceValue(value);
                      });
 
     QWidget* units =
@@ -3578,12 +3577,19 @@ void ScreenshotToolPaletteStyleControls::registerDistanceEntries() {
              if (m_distanceWidthEditor != nullptr)
                  m_distanceWidthEditor->update(style.strokeWidth,
                                                mixed(SnowCanvasDistanceStylePropertyStrokeWidth));
-             if (m_distanceFactorInput != nullptr) {
-                 const QSignalBlocker blocker(m_distanceFactorInput);
-                 m_distanceFactorInput->setExactValue(QString::number(style.factor, 'g', 15));
-                 if (mixed(SnowCanvasDistanceStylePropertyFactor)) {
-                     m_distanceFactorInput->clear();
-                     m_distanceFactorInput->setPlaceholderText(QStringLiteral("-"));
+             if (m_distanceValueInput != nullptr) {
+                 const QSignalBlocker blocker(m_distanceValueInput);
+                 const double length = m_state.distanceMeasuredLength;
+                 const bool available = std::isfinite(length) && length > 0.0;
+                 m_distanceValueInput->setEnabled(available);
+                 m_distanceValueInput->setPlaceholderText(QStringLiteral("-"));
+                 if (available) {
+                     m_distanceValueInput->setExactRange(QString::number(length * 0.01, 'g', 15),
+                                                         QString::number(length * 1000.0, 'g', 15));
+                     m_distanceValueInput->setExactValue(
+                         QString::number(length * style.factor, 'g', 15));
+                 } else {
+                     m_distanceValueInput->clear();
                  }
              }
              if (m_distanceUnitGroup != nullptr) {
@@ -3994,7 +4000,7 @@ void ScreenshotToolPaletteStyleControls::releaseControlBindings() {
     m_distanceColorEditor.reset();
     m_distanceWidthEditor.reset();
     m_distanceEndpointEditor.reset();
-    m_distanceFactorInput = nullptr;
+    m_distanceValueInput = nullptr;
     m_distanceUnitGroup = nullptr;
     m_distanceDecimalsEditor = {};
     m_distanceScaleEditor = nullptr;
@@ -4116,7 +4122,7 @@ void ScreenshotToolPaletteStyleControls::discardBindingsExcept(int destinationTo
         m_lineTypeButtonGroup = nullptr;
     }
     if (!keepDistance) {
-        m_distanceFactorInput = nullptr;
+        m_distanceValueInput = nullptr;
         m_distanceUnitGroup = nullptr;
         m_distanceDecimalsEditor = {};
         m_distanceScaleEditor = nullptr;
@@ -4200,11 +4206,15 @@ bool ScreenshotToolPaletteStyleControls::handleDistanceWheel(const QPoint& globa
                                                              int direction) {
     if (direction == 0)
         return false;
-    if (m_distanceFactorInput != nullptr && m_distanceFactorInput->isEnabled() &&
-        m_distanceFactorInput->isVisible() &&
-        m_distanceFactorInput->rect().contains(
-            m_distanceFactorInput->mapFromGlobal(globalPosition))) {
-        setDistanceFactor(m_state.distanceStyle.factor + (direction > 0 ? 0.1 : -0.1));
+    if (m_distanceValueInput != nullptr && m_distanceValueInput->isVisible() &&
+        m_distanceValueInput->rect().contains(
+            m_distanceValueInput->mapFromGlobal(globalPosition))) {
+        if (m_distanceValueInput->isEnabled()) {
+            if (direction > 0)
+                m_distanceValueInput->stepUp();
+            else
+                m_distanceValueInput->stepDown();
+        }
         return true;
     }
     if (m_distanceScaleEditor != nullptr && m_distanceScaleEditor->isEnabled() &&
@@ -4645,11 +4655,11 @@ void ScreenshotToolPaletteStyleControls::refreshToolbarMetrics(
     configureScreenshotToolPaletteStyleRadioButtonGroup(m_distanceUnitGroup, metrics, true);
     configureScreenshotToolPaletteIconNumericValueButton(m_distanceScaleEditor, metrics);
     configureScreenshotToolPaletteSelectEditor(m_distanceDecimalsEditor, metrics);
-    if (applies(m_distanceFactorInput)) {
-        m_distanceFactorInput->setFixedSize(
+    if (applies(m_distanceValueInput)) {
+        m_distanceValueInput->setFixedSize(
             qMax(1, qRound(100 * metrics.physicalScale)),
             qMax(1, qRound(metrics.buttonSize * metrics.physicalScale)));
-        stampScreenshotToolbarReferenceWidth(m_distanceFactorInput, 100);
+        stampScreenshotToolbarReferenceWidth(m_distanceValueInput, 100);
     }
 
     for (ScreenshotToolPaletteStyleEditorComponent* component : m_registeredComponents) {
@@ -4786,10 +4796,11 @@ void ScreenshotToolPaletteStyleControls::commitDistanceProperty(quint32 property
         m_callbacks.distanceStyleChanged(m_state.distanceStyle, property);
 }
 
-void ScreenshotToolPaletteStyleControls::setDistanceFactor(double factor) {
-    if (!std::isfinite(factor))
+void ScreenshotToolPaletteStyleControls::setDistanceValue(double value) {
+    const double length = m_state.distanceMeasuredLength;
+    if (!std::isfinite(value) || !std::isfinite(length) || length <= 0.0)
         return;
-    factor = std::clamp(std::round(factor * 100.0) / 100.0, 0.01, 1000.0);
+    const double factor = std::clamp(value / length, 0.01, 1000.0);
     commitDistanceProperty(SnowCanvasDistanceStylePropertyFactor,
                            [factor](SnowCanvasDistanceStyle& style) { style.factor = factor; });
 }
@@ -5702,12 +5713,14 @@ void ScreenshotToolPaletteStyleControls::setStyleToolbarState(
             displayed.stroke = m_state.distanceStyle.stroke;
         const quint32 mixed = selected ? state.distanceStyleMixed : 0;
         if (m_state.m_styleSource == state.source && m_state.distanceStyle == displayed &&
-            m_state.distanceStyleMixed == mixed)
+            m_state.distanceStyleMixed == mixed &&
+            m_state.distanceMeasuredLength == state.distanceMeasuredLength)
             return;
         m_state.m_styleSource = state.source;
         m_state.showingSelectedDistance = selected;
         m_state.distanceStyle = displayed;
         m_state.distanceStyleMixed = mixed;
+        m_state.distanceMeasuredLength = state.distanceMeasuredLength;
         if (!selected)
             m_state.creationDistanceStyle = displayed;
         updateDistanceStyleControls();

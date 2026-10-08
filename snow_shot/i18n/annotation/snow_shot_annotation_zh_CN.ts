@@ -20,6 +20,10 @@
             <translation>3 位小数</translation>
         </message>
         <message>
+            <source>Actual distance value</source>
+            <translation>实际距离值</translation>
+        </message>
+        <message>
             <source>Add</source>
             <translation>添加</translation>
         </message>
@@ -342,10 +346,6 @@
         <message>
             <source>Distance annotation</source>
             <translation>距离标注</translation>
-        </message>
-        <message>
-            <source>Distance scaling factor</source>
-            <translation>距离缩放系数</translation>
         </message>
         <message>
             <source>Distance stroke color</source>

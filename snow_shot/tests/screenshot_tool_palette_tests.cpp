@@ -50,6 +50,8 @@
 #include <QHelpEvent>
 #include <QImage>
 #include <QJsonObject>
+#include <QJsonDocument>
+#include <QJsonArray>
 #include <QLayout>
 #include <QLabel>
 #include <QLineEdit>
@@ -89,6 +91,7 @@
 #include <tuple>
 #include <algorithm>
 #include <cstddef>
+#include <cmath>
 #include <cstdlib>
 #include <iostream>
 #include <iterator>
@@ -10873,11 +10876,11 @@ void distanceSettingsExposeIndependentPropertiesAndHoverWheel() {
             "distance shortcut activation should select the tool and publish its command");
     palette.show();
     QCoreApplication::processEvents();
-    const auto factorInput = [&palette]() {
+    const auto valueInput = [&palette]() {
         return palette.findChild<adqt::widgets::AdInputNumber*>(
-            QStringLiteral("screenshotDistanceFactorInput"));
+            QStringLiteral("screenshotDistanceValueInput"));
     };
-    auto* factor = factorInput();
+    auto* value = valueInput();
     auto* unitsContainer =
         palette.findChild<QWidget*>(QStringLiteral("screenshotDistanceUnitButtonGroup"));
     auto* units = unitsContainer == nullptr
@@ -10887,17 +10890,16 @@ void distanceSettingsExposeIndependentPropertiesAndHoverWheel() {
         QStringLiteral("screenshotDistanceDecimalsSelect"));
     auto* scale = dynamic_cast<IconNumericValuePreviewButton*>(
         palette.findChild<QWidget*>(QStringLiteral("screenshotDistanceEndpointScaleButton")));
-    require(
-        factor != nullptr && units != nullptr && decimals != nullptr && scale != nullptr,
-        "distance settings should include numeric factor, units, precision, and endpoint scale");
-    const auto factorIcon = adqt::icons::describeIcon(factor->prefixIconRef());
-    require(factorIcon.key.pack == QStringLiteral("snow-shot") &&
-                factorIcon.key.name == QStringLiteral("distance-value-scale") &&
-                factorIcon.colorModel == adqt::icons::IconColorModel::Monochrome,
-            "distance factor should show the theme-aware value scale icon as its prefix");
-    if (const QString path = qEnvironmentVariable("SNOW_DISTANCE_FACTOR_INPUT_PREVIEW");
+    require(value != nullptr && units != nullptr && decimals != nullptr && scale != nullptr,
+            "distance settings should include actual value, units, precision, and endpoint scale");
+    const auto valueIcon = adqt::icons::describeIcon(value->prefixIconRef());
+    require(valueIcon.key.pack == QStringLiteral("snow-shot") &&
+                valueIcon.key.name == QStringLiteral("distance-value-scale") &&
+                valueIcon.colorModel == adqt::icons::IconColorModel::Monochrome,
+            "actual distance should show the theme-aware value scale icon as its prefix");
+    if (const QString path = qEnvironmentVariable("SNOW_DISTANCE_VALUE_INPUT_PREVIEW");
         !path.isEmpty()) {
-        require(factor->grab().save(path), "save distance factor InputNumber preview");
+        require(value->grab().save(path), "save actual distance InputNumber preview");
     }
     const auto initial = palette.creationStyleDefaults().distance;
     require(initial.stroke == QColor(QStringLiteral("#f5222d")) && initial.strokeWidth == 2.0 &&
@@ -10905,17 +10907,25 @@ void distanceSettingsExposeIndependentPropertiesAndHoverWheel() {
                 initial.decimalPlaces == 0 && initial.endpointScale == 1.0 &&
                 initial.endpointStyle == SnowCanvasArrowhead::Bar,
             "distance creation settings should use the product defaults");
-    require(factor->minimum() == 0.01 && factor->maximum() == 1000.0 && factor->decimals() == 2 &&
-                factor->singleStep() == 0.1 && factor->value() == 1.0 &&
+    require(!value->isEnabled() && !value->hasValue(),
+            "actual distance input needs a selected annotation's measured length");
+    SnowCanvasStyleToolbarState single;
+    single.source = SnowCanvasStyleToolbarSource::SelectedDistance;
+    single.selectedElementCount = 1;
+    single.distanceStyle = initial;
+    single.distanceMeasuredLength = 100.0;
+    palette.setStyleToolbarState(single);
+    require(value->minimum() == 1.0 && value->maximum() == 100000.0 && value->decimals() == 3 &&
+                value->singleStep() == 0.1 && value->value() == 100.0 && value->isEnabled() &&
                 units->checkedId() == static_cast<int>(SnowCanvasDistanceUnit::Cm) &&
                 units->buttons().size() == 5 && decimals->model()->rowCount() == 4 &&
                 decimals->currentValue().toInt() == 0,
-            "distance controls should expose the specified ranges and choices");
-    require(factor->variant() == adqt::widgets::AdInputNumber::Variant::Borderless &&
-                factor->valueMode() == adqt::widgets::AdInputNumber::ValueMode::ExactDecimal &&
-                factor->exactValue() == QStringLiteral("1") &&
-                factor->displayText() == QStringLiteral("1"),
-            "distance factor should use a borderless string input without padded decimals");
+            "actual distance range should derive from the measured length and factor limits");
+    require(value->variant() == adqt::widgets::AdInputNumber::Variant::Borderless &&
+                value->valueMode() == adqt::widgets::AdInputNumber::ValueMode::ExactDecimal &&
+                value->exactValue() == QStringLiteral("100") &&
+                value->displayText() == QStringLiteral("100"),
+            "actual distance should use a borderless string input without padded decimals");
     SnowCanvasDistanceStyle emitted = initial;
     quint32 properties = 0;
     int edits = 0;
@@ -10935,57 +10945,53 @@ void distanceSettingsExposeIndependentPropertiesAndHoverWheel() {
         require(palette.handleToolbarWheel(&event) && event.isAccepted(),
                 "distance input wheel should be consumed");
     };
-    factor->clearFocus();
-    wheel(factor, 120);
-    require(emitted.factor == 1.1 && factor->value() == 1.1 &&
-                factor->displayText() == QStringLiteral("1.1") && emitted.strokeWidth == 2.0 &&
-                properties == SnowCanvasDistanceStylePropertyFactor,
-            "hover wheel should increment the unfocused factor by 0.1 without changing width");
-    wheel(factor, -120);
-    require(emitted.factor == 1.0 && factor->displayText() == QStringLiteral("1"),
-            "downward wheel should restore a whole factor without padded decimals");
-    auto* factorLineEdit = factor->findChild<QLineEdit*>();
-    require(factorLineEdit != nullptr, "distance input should expose its numeric editor");
-    const QPoint inputPoint = factorLineEdit->rect().center();
-    QWheelEvent inputWheel(QPointF(inputPoint), factorLineEdit->mapToGlobal(inputPoint), QPoint(),
+    value->clearFocus();
+    wheel(value, 120);
+    require(qAbs(emitted.factor - 1.001) < 1e-12 && value->value() == 100.1 &&
+                emitted.strokeWidth == 2.0 && properties == SnowCanvasDistanceStylePropertyFactor,
+            "hover wheel should increment actual value by 0.1 and calculate the factor");
+    wheel(value, -120);
+    require(emitted.factor == 1.0 && value->displayText() == QStringLiteral("100"),
+            "downward wheel should restore the actual value without padded decimals");
+    auto* valueLineEdit = value->findChild<QLineEdit*>();
+    require(valueLineEdit != nullptr, "distance input should expose its numeric editor");
+    const QPoint inputPoint = valueLineEdit->rect().center();
+    QWheelEvent inputWheel(QPointF(inputPoint), valueLineEdit->mapToGlobal(inputPoint), QPoint(),
                            QPoint(0, 120), Qt::NoButton, Qt::NoModifier, Qt::NoScrollPhase, false);
-    QCoreApplication::sendEvent(factorLineEdit, &inputWheel);
-    require(emitted.factor == 1.1 && emitted.strokeWidth == 2.0,
+    QCoreApplication::sendEvent(valueLineEdit, &inputWheel);
+    require(qAbs(emitted.factor - 1.001) < 1e-12 && emitted.strokeWidth == 2.0,
             "wheel delivered to the numeric editor should apply once without changing width");
-
-    factor->setValue(0.01);
-    wheel(factor, -120);
-    require(factor->value() == 0.01 && emitted.factor == 0.01,
-            "distance factor should clamp at its lower bound");
-    factor->setValue(1000.0);
+    value->setValue(1.0);
+    wheel(value, -120);
+    require(value->value() == 1.0 && emitted.factor == 0.01,
+            "actual distance should clamp to the minimum supported factor");
+    value->setValue(100000.0);
     const int atMaximum = edits;
-    wheel(factor, 120);
-    require(factor->value() == 1000.0 && factor->displayText() == QStringLiteral("1000") &&
-                edits == atMaximum,
-            "distance factor should clamp at its upper bound without redundant edits");
-    factorLineEdit->selectAll();
-    PhysicalKeyEvent factorKey(QEvent::KeyPress, Qt::Key_unknown, Qt::NoModifier,
-                               QStringLiteral("2.50"));
-    QApplication::sendEvent(factorLineEdit, &factorKey);
-    PhysicalKeyEvent factorEnter(QEvent::KeyPress, Qt::Key_Return, Qt::NoModifier);
-    QApplication::sendEvent(factorLineEdit, &factorEnter);
-    require(emitted.factor == 2.5 && factor->exactValue() == QStringLiteral("2.5") &&
-                factor->displayText() == QStringLiteral("2.5") &&
+    wheel(value, 120);
+    require(value->value() == 100000.0 && edits == atMaximum,
+            "actual distance should clamp to the maximum without redundant edits");
+    valueLineEdit->selectAll();
+    PhysicalKeyEvent valueKey(QEvent::KeyPress, Qt::Key_unknown, Qt::NoModifier,
+                              QStringLiteral("42.1246"));
+    QApplication::sendEvent(valueLineEdit, &valueKey);
+    PhysicalKeyEvent valueEnter(QEvent::KeyPress, Qt::Key_Return, Qt::NoModifier);
+    QApplication::sendEvent(valueLineEdit, &valueEnter);
+    require(emitted.factor == 0.42125 && value->exactValue() == QStringLiteral("42.125") &&
+                value->displayText() == QStringLiteral("42.125") &&
                 properties == SnowCanvasDistanceStylePropertyFactor,
-            "typed distance factors should commit strings and remove trailing zeros");
-    factor->setValue(2.25);
-    require(emitted.factor == 2.25 && factor->displayText() == QStringLiteral("2.25"),
-            "distance factor should accept hundredths through numeric input");
+            "actual values should round to three decimals and calculate the factor without "
+            "rounding it");
     for (const int delta : {1, -1}) {
-        const QPoint point = factorLineEdit->rect().center();
-        QWheelEvent pixelWheel(QPointF(point), factorLineEdit->mapToGlobal(point), QPoint(0, delta),
+        const QPoint point = valueLineEdit->rect().center();
+        QWheelEvent pixelWheel(QPointF(point), valueLineEdit->mapToGlobal(point), QPoint(0, delta),
                                QPoint(), Qt::NoButton, Qt::NoModifier, Qt::ScrollUpdate, false);
         const int beforePixelWheel = edits;
-        QCoreApplication::sendEvent(factorLineEdit, &pixelWheel);
+        QCoreApplication::sendEvent(valueLineEdit, &pixelWheel);
         require(pixelWheel.isAccepted() && edits == beforePixelWheel + 1 &&
-                    emitted.factor == (delta > 0 ? 2.35 : 2.25) && emitted.strokeWidth == 2.0 &&
+                    qAbs(value->value() - (delta > 0 ? 42.225 : 42.125)) < 1e-12 &&
+                    emitted.strokeWidth == 2.0 &&
                     properties == SnowCanvasDistanceStylePropertyFactor,
-                "trackpad wheel should preserve hundredths and apply exactly one factor step");
+                "trackpad wheel should preserve fractions and apply one actual value step");
     }
     auto* millimeters = units->button(static_cast<int>(SnowCanvasDistanceUnit::Mm));
     require(millimeters != nullptr && millimeters->text().isEmpty() &&
@@ -11012,7 +11018,7 @@ void distanceSettingsExposeIndependentPropertiesAndHoverWheel() {
     decimals->setCurrentValue(0);
     require(emitted.decimalPlaces == 0, "precision select should restore integers");
     wheel(scale, 120);
-    require(emitted.endpointScale == 1.1 && emitted.factor == 2.25 &&
+    require(emitted.endpointScale == 1.1 && emitted.factor == 0.42125 &&
                 properties == SnowCanvasDistanceStylePropertyEndpointScale,
             "endpoint scale wheel should change only the marker ratio");
     scale->click();
@@ -11060,29 +11066,50 @@ void distanceSettingsExposeIndependentPropertiesAndHoverWheel() {
     palette.setActiveTool(ScreenshotToolPalette::Tool::Arrow);
     palette.setActiveTool(ScreenshotToolPalette::Tool::Distance);
     QCoreApplication::processEvents();
-    require(factorInput() != nullptr && factorInput()->value() == remembered.factor &&
-                adqt::icons::describeIcon(factorInput()->prefixIconRef()).key == factorIcon.key &&
-                factorInput()->variant() == adqt::widgets::AdInputNumber::Variant::Borderless &&
-                factorInput()->valueMode() ==
+    require(valueInput() != nullptr && valueInput()->value() == 100.0 * remembered.factor &&
+                adqt::icons::describeIcon(valueInput()->prefixIconRef()).key == valueIcon.key &&
+                valueInput()->variant() == adqt::widgets::AdInputNumber::Variant::Borderless &&
+                valueInput()->valueMode() ==
                     adqt::widgets::AdInputNumber::ValueMode::ExactDecimal &&
-                factorInput()->displayText() == QStringLiteral("2.25") &&
+                valueInput()->displayText() == QStringLiteral("42.125") &&
                 palette.creationStyleDefaults().distance == remembered,
             "distance settings should survive editor reuse and tool switching");
-    factor = factorInput();
+    value = valueInput();
     SnowCanvasStyleToolbarState selected;
     selected.source = SnowCanvasStyleToolbarSource::SelectedDistance;
     selected.distanceStyle = remembered;
     selected.distanceStyle.factor = 5.0;
+    selected.selectedElementCount = 2;
     selected.distanceStyleMixed =
         SnowCanvasDistanceStyleMixedFactor | SnowCanvasDistanceStyleMixedStrokeColor;
     palette.setStyleToolbarState(selected);
-    require(!factor->hasValue() && palette.creationStyleDefaults().distance == remembered,
-            "mixed selected distance settings should preserve creation defaults");
-    wheel(factor, 120);
-    require(factor->value() == 5.1 && emitted.factor == 5.1 &&
+    require(!value->isEnabled() && !value->hasValue() &&
+                palette.creationStyleDefaults().distance == remembered,
+            "multiple selections have no unambiguous actual value and preserve creation defaults");
+    const int beforeDisabledWheel = edits;
+    wheel(value, 120);
+    require(edits == beforeDisabledWheel,
+            "wheel over an unavailable actual value must not change the stroke width");
+    selected.selectedElementCount = 1;
+    selected.distanceMeasuredLength = 125.0;
+    selected.distanceStyleMixed = SnowCanvasDistanceStyleMixedStrokeColor;
+    palette.setStyleToolbarState(selected);
+    wheel(value, 120);
+    require(value->value() == 625.1 && qAbs(emitted.factor - 5.0008) < 1e-12 &&
                 properties == SnowCanvasDistanceStylePropertyFactor &&
                 emitted.stroke == remembered.stroke,
-            "wheel should resolve only the mixed distance factor");
+            "editing actual value should resolve only the corresponding factor");
+    selected.distanceStyle = emitted;
+    selected.distanceMeasuredLength = 250.0;
+    const int beforeGeometryChange = edits;
+    palette.setStyleToolbarState(selected);
+    require(value->value() == 1250.2 && edits == beforeGeometryChange,
+            "geometry-only changes should refresh actual value without publishing a style edit");
+    selected.distanceMeasuredLength = 0.0;
+    palette.setStyleToolbarState(selected);
+    require(!value->isEnabled() && !value->hasValue() && edits == beforeGeometryChange,
+            "zero-length annotations must not allow division by zero");
+    selected.distanceMeasuredLength = 125.0;
 
     const auto creationBeforeLanguageChange = palette.creationStyleDefaults().distance;
     selected.distanceStyle.factor = 9.75;
@@ -11106,14 +11133,14 @@ void distanceSettingsExposeIndependentPropertiesAndHoverWheel() {
         require(language.setLanguage(locale), "distance controls should load every catalog");
         QCoreApplication::processEvents();
         const QString factorLabel =
-            QCoreApplication::translate("ScreenshotToolPalette", "Distance scaling factor");
+            QCoreApplication::translate("ScreenshotToolPalette", "Actual distance value");
         const QString precisionLabel =
             QCoreApplication::translate("ScreenshotToolPalette", "3 decimal places");
-        require(factor->accessibleName() == factorLabel &&
+        require(value->accessibleName() == factorLabel &&
                     decimals->model()->index(3, 0).data(decimals->labelRole()).toString() ==
                         precisionLabel,
                 "language changes should translate distance control labels");
-        require(factor->value() == 9.75 &&
+        require(value->value() == 1218.75 &&
                     units->checkedId() == static_cast<int>(SnowCanvasDistanceUnit::Mm) &&
                     decimals->currentValue().toInt() == 3 && edits == beforeLanguageChange &&
                     palette.creationStyleDefaults().distance == creationBeforeLanguageChange,
@@ -11146,7 +11173,7 @@ void distanceSettingsExposeIndependentPropertiesAndHoverWheel() {
                 !opacity->isEnabled(),
             "default distance state should clear selection action availability");
     palette.setActiveTool(ScreenshotToolPalette::Tool::Distance);
-    require(factorInput()->value() == creationBeforeLanguageChange.factor &&
+    require(!valueInput()->hasValue() && !valueInput()->isEnabled() &&
                 palette.creationStyleDefaults().distance == creationBeforeLanguageChange,
             "returning to Distance should restore its independent creation settings");
     palette.hide();
@@ -11193,6 +11220,88 @@ void distanceSettingsExposeIndependentPropertiesAndHoverWheel() {
                     QStringLiteral("distance"),
             "a custom Distance option should publish the same tool command as its shortcut");
     hiddenPalette.hide();
+}
+
+void distanceActualValueUpdatesTheCanvasAndUndo() {
+    ScreenshotToolPalette::Options options;
+    options.styleDefaults = snow_shot::presentation::screenshotCanvasStyleDefaults();
+    options.styleDefaults.distance.decimalPlaces = 3;
+    options.styleDefaults.distance.unit = SnowCanvasDistanceUnit::Mm;
+    ScreenshotToolPalette palette(options);
+    SnowCanvasRuntime runtime;
+    SnowCanvasWidget canvas(runtime);
+    canvas.resize(600, 360);
+    canvas.setInteractionEnabled(true);
+    snow_shot::presentation::applyScreenshotCanvasToolStyles(canvas, options.styleDefaults);
+    snow_shot::presentation::ScreenshotStyleBinding binding(
+        palette, canvas, &palette, {}, [](const SnowCanvasStyleEdit&) { return true; });
+    QObject::connect(&canvas, &SnowCanvasWidget::styleToolbarStateChanged, &palette,
+                     [&] { palette.setStyleToolbarState(canvas.canvasStyleToolbarState()); });
+    auto snap = canvas.canvasSnapConfig();
+    snap.enabled = false;
+    require(canvas.setCanvasSnapConfig(snap), "disable snapping for actual value coverage");
+    require(canvas.setCanvasTool(SnowCanvasTool::Distance) &&
+                canvas.setDistanceCreationPixelScale({2.0, 3.0}),
+            "create a calibrated distance annotation");
+    canvas.show();
+    palette.setActiveTool(ScreenshotToolPalette::Tool::Distance);
+    palette.show();
+    QApplication::processEvents();
+    const auto mouse = [&canvas](QEvent::Type type, QPointF point, Qt::MouseButton button,
+                                 Qt::MouseButtons buttons) {
+        QMouseEvent event(type, point, point, point, button, buttons, Qt::NoModifier);
+        QApplication::sendEvent(&canvas, &event);
+        QApplication::processEvents();
+    };
+    mouse(QEvent::MouseButtonPress, {100, 180}, Qt::LeftButton, Qt::LeftButton);
+    mouse(QEvent::MouseMove, {130, 220}, Qt::NoButton, Qt::LeftButton);
+    mouse(QEvent::MouseButtonRelease, {130, 220}, Qt::LeftButton, Qt::NoButton);
+    require(canvas.setCanvasTool(SnowCanvasTool::Select), "select the calibrated distance");
+    mouse(QEvent::MouseButtonPress, {106, 188}, Qt::LeftButton, Qt::LeftButton);
+    mouse(QEvent::MouseButtonRelease, {106, 188}, Qt::LeftButton, Qt::NoButton);
+    palette.setStyleToolbarState(canvas.canvasStyleToolbarState());
+    auto* value = palette.findChild<adqt::widgets::AdInputNumber*>(
+        QStringLiteral("screenshotDistanceValueInput"));
+    const double length = std::hypot(60.0, 120.0);
+    const double displayedLength = std::round(length * 1000.0) / 1000.0;
+    require(value != nullptr && value->isEnabled() && value->value() == displayedLength &&
+                value->displayText() == QStringLiteral("134.164"),
+            "actual input should display the calibrated diagonal length to three decimals");
+    const auto record = [&runtime](const QString& kind) {
+        const auto documentSlots = QJsonDocument::fromJson(runtime.serializeDocumentSession())
+                                       .object()
+                                       .value(QStringLiteral("document"))
+                                       .toObject()
+                                       .value(QStringLiteral("slots"))
+                                       .toArray();
+        for (const auto& slot : documentSlots) {
+            const auto data = slot.toObject().value(QStringLiteral("data")).toObject();
+            if (data.contains(kind))
+                return data.value(kind).toObject();
+        }
+        return QJsonObject{};
+    };
+    const auto points = record(QStringLiteral("Arrow")).value(QStringLiteral("points"));
+    value->setExactValue(QStringLiteral("25.125"));
+    require(qAbs(canvas.canvasDistanceStyle().factor - 25.125 / length) < 1e-12 &&
+                value->displayText() == QStringLiteral("25.125") &&
+                record(QStringLiteral("Text")).value(QStringLiteral("text")).toString() ==
+                    QStringLiteral("25.125 mm") &&
+                record(QStringLiteral("Arrow")).value(QStringLiteral("points")) == points,
+            "editing actual value should update the factor and label while preserving geometry");
+    require(canvas.undo() && value->value() == displayedLength &&
+                canvas.canvasDistanceStyle().factor == 1.0,
+            "undo should restore the factor and actual value input");
+    require(canvas.redo() && value->displayText() == QStringLiteral("25.125"),
+            "redo should restore the user's actual value");
+    const double factor = canvas.canvasDistanceStyle().factor;
+    mouse(QEvent::MouseButtonPress, {130, 220}, Qt::LeftButton, Qt::LeftButton);
+    mouse(QEvent::MouseMove, {160, 260}, Qt::NoButton, Qt::LeftButton);
+    mouse(QEvent::MouseButtonRelease, {160, 260}, Qt::LeftButton, Qt::NoButton);
+    require(qAbs(value->value() - 50.25) < 1e-10 && canvas.canvasDistanceStyle().factor == factor,
+            "resizing an annotation should refresh its actual value while preserving its scale");
+    require(canvas.undo() && value->displayText() == QStringLiteral("25.125"),
+            "undoing geometry should refresh the actual value without changing style");
 }
 
 void arrowRatioEditorAdjustsAndResets() {
@@ -16056,6 +16165,7 @@ int main(int argc, char** argv) {
         arrowAndLineRemainDirectWhenConfiguredIndividually();
         editorlessToolsRejectStaleStyleToolbarState();
         distanceSettingsExposeIndependentPropertiesAndHoverWheel();
+        distanceActualValueUpdatesTheCanvasAndUndo();
         snow_shot::storage::ApplicationStorage::instance().shutdown();
         return 0;
     }
@@ -16361,6 +16471,7 @@ int main(int argc, char** argv) {
     shapeSelectorIsExclusiveToTheShapeTool();
     arrowStyleUsesScreenshotCreationColorOverride();
     distanceSettingsExposeIndependentPropertiesAndHoverWheel();
+    distanceActualValueUpdatesTheCanvasAndUndo();
     arrowRatioEditorAdjustsAndResets();
     arrowStyleControlsExposeAndEmitAllStyleProperties();
     lineStyleControlsExposeStraightAndCurveTypes();

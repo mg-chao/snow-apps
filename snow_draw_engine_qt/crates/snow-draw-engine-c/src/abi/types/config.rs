@@ -413,6 +413,7 @@ pub struct SnowStyleToolbarState {
     pub brush_eraser_style: SnowBrushEraserStyle,
     pub distance_style: SnowDistanceStyle,
     pub distance_style_mixed: u32,
+    pub distance_measured_length: f64,
 }
 
 #[repr(C)]

@@ -21,6 +21,7 @@
 #include "widgets/select.h"
 #include "icon_renderer.h"
 
+#include <QAbstractSpinBox>
 #include <QEvent>
 #include <QHideEvent>
 #include <QJsonValue>
@@ -131,7 +132,13 @@ ScreenshotFloatingToolPaletteWindow::ScreenshotFloatingToolPaletteWindow(
             });
 }
 
-ScreenshotFloatingToolPaletteWindow::~ScreenshotFloatingToolPaletteWindow() {}
+ScreenshotFloatingToolPaletteWindow::~ScreenshotFloatingToolPaletteWindow() {
+    // QWidget destroys its children after this class's members are gone.
+    // Stop their scope-removal callbacks before destroying the registry.
+    for (QWidget* editorScope : m_textEditorScopes.keys()) {
+        disconnect(editorScope, nullptr, this, nullptr);
+    }
+}
 
 void ScreenshotFloatingToolPaletteWindow::setPaletteScaleMultiplier(qreal multiplier) {
     if (!std::isfinite(multiplier) || multiplier <= 0.0) {
@@ -478,20 +485,28 @@ bool ScreenshotFloatingToolPaletteWindow::event(QEvent* event) {
 bool ScreenshotFloatingToolPaletteWindow::eventFilter(QObject* watched, QEvent* event) {
     auto* watchedWidget = qobject_cast<QWidget*>(watched);
     QLineEdit* textEditor = nullptr;
+    QWidget* editorScope = nullptr;
     for (QWidget* widget = watchedWidget; widget != nullptr && widget != this;
          widget = widget->parentWidget()) {
-        if (widget->property("snowShotFloatingTextFocusRegistered").toBool()) {
-            textEditor = qobject_cast<QLineEdit*>(widget);
+        const auto registered = m_textEditorScopes.constFind(widget);
+        if (registered != m_textEditorScopes.cend()) {
+            textEditor = registered.value();
+            editorScope = widget;
             break;
         }
     }
     if (textEditor != nullptr && event != nullptr) {
-        if (event->type() == QEvent::MouseButtonPress || event->type() == QEvent::FocusIn) {
+        if ((event->type() == QEvent::MouseButtonPress ||
+             event->type() == QEvent::MouseButtonDblClick || event->type() == QEvent::FocusIn) &&
+            textEditor->isEnabled() && !textEditor->isReadOnly()) {
             beginKeyboardFocusInteraction(textEditor);
-        } else if (watched == textEditor && event->type() == QEvent::FocusOut) {
+        } else if ((watched == textEditor || watched == editorScope) &&
+                   event->type() == QEvent::FocusOut) {
             const QPointer<QWidget> editor = textEditor;
-            QTimer::singleShot(0, this, [this, editor]() {
-                if (editor != nullptr && !editor->hasFocus()) {
+            const quint64 generation = m_keyboardFocusInteractionGeneration;
+            QTimer::singleShot(0, this, [this, editor, generation]() {
+                if (generation == m_keyboardFocusInteractionGeneration && editor != nullptr &&
+                    !editor->hasFocus()) {
                     endKeyboardFocusInteraction(editor);
                 }
             });
@@ -1139,24 +1154,39 @@ void ScreenshotFloatingToolPaletteWindow::registerMaterializedScope(QWidget* sco
         const bool selectEditor =
             std::any_of(selects.cbegin(), selects.cend(),
                         [editor](const auto* select) { return select->isAncestorOf(editor); });
-        if (selectEditor || editor->isReadOnly() || editor->focusPolicy() == Qt::NoFocus ||
-            editor->property("snowShotFloatingTextFocusRegistered").toBool()) {
+        auto* spinBox = qobject_cast<QAbstractSpinBox*>(editor->parentWidget());
+        QWidget* editorScope = spinBox != nullptr ? static_cast<QWidget*>(spinBox) : editor;
+        if (selectEditor || editorScope->focusPolicy() == Qt::NoFocus ||
+            m_textEditorScopes.value(editorScope) == editor) {
             continue;
         }
-        editor->setProperty("snowShotFloatingTextFocusRegistered", true);
-        editor->installEventFilter(this);
-        // Prefix icons can consume the press before it reaches the line edit.
-        for (QWidget* child : editor->findChildren<QWidget*>()) {
+        // Register by input ownership, not its temporary enabled/read-only state.
+        // Spin boxes own focus, editing completion and affixes outside the line edit.
+        m_textEditorScopes.insert(editorScope, editor);
+        editorScope->installEventFilter(this);
+        for (QWidget* child : editorScope->findChildren<QWidget*>()) {
             child->installEventFilter(this);
         }
+        connect(editorScope, &QObject::destroyed, this,
+                [this, editorScope]() { m_textEditorScopes.remove(editorScope); });
         const QPointer<QWidget> guardedEditor = editor;
-        connect(editor, &QLineEdit::editingFinished, this, [this, guardedEditor]() {
-            QTimer::singleShot(0, this, [this, guardedEditor]() {
-                if (guardedEditor != nullptr) {
+        const auto finishEditing = [this, guardedEditor]() {
+            if (!m_keyboardFocusInteractionActive || m_keyboardFocusEditor != guardedEditor) {
+                return;
+            }
+            const quint64 generation = m_keyboardFocusInteractionGeneration;
+            QTimer::singleShot(0, this, [this, guardedEditor, generation]() {
+                if (generation == m_keyboardFocusInteractionGeneration &&
+                    guardedEditor != nullptr) {
                     endKeyboardFocusInteraction(guardedEditor);
                 }
             });
-        });
+        };
+        if (spinBox != nullptr) {
+            connect(spinBox, &QAbstractSpinBox::editingFinished, this, finishEditing);
+        } else {
+            connect(editor, &QLineEdit::editingFinished, this, finishEditing);
+        }
         connect(editor, &QObject::destroyed, this, [this]() {
             QTimer::singleShot(0, this, [this]() {
                 if (m_keyboardFocusInteractionActive && m_keyboardFocusEditor == nullptr) {
@@ -1218,6 +1248,9 @@ void ScreenshotFloatingToolPaletteWindow::beginKeyboardFocusInteraction(QWidget*
         return;
     }
 
+    // A queued completion belongs to the interaction that produced it, even
+    // when another click reopens the same editor before that callback runs.
+    ++m_keyboardFocusInteractionGeneration;
     m_keyboardFocusEditor = editor;
     m_keyboardFocusInteractionActive = true;
     setKeyboardFocusPolicy(true);
@@ -1241,6 +1274,7 @@ void ScreenshotFloatingToolPaletteWindow::endKeyboardFocusInteraction(QWidget* e
     }
 
     m_keyboardFocusInteractionActive = false;
+    ++m_keyboardFocusInteractionGeneration;
     const bool acceptsFocus = !windowFlags().testFlag(Qt::WindowDoesNotAcceptFocus);
     setKeyboardFocusPolicy(acceptsFocus);
 

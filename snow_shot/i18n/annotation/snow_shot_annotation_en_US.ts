@@ -20,6 +20,10 @@
             <translation>3 decimal places</translation>
         </message>
         <message>
+            <source>Actual distance value</source>
+            <translation>Actual distance value</translation>
+        </message>
+        <message>
             <source>Add</source>
             <translation>Add</translation>
         </message>
@@ -342,10 +346,6 @@
         <message>
             <source>Distance annotation</source>
             <translation>Distance annotation</translation>
-        </message>
-        <message>
-            <source>Distance scaling factor</source>
-            <translation>Distance scaling factor</translation>
         </message>
         <message>
             <source>Distance stroke color</source>

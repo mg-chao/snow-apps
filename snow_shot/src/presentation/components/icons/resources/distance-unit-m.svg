@@ -1,3 +1,3 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" fill="none" stroke="currentColor" stroke-width="72" stroke-linecap="round" stroke-linejoin="round" data-adqt-slot="primary">
-  <path d="M288 736V324M288 416V400A112 112 0 0 1 512 400V736M512 416V400A112 112 0 0 1 736 400V736"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" fill="currentColor" data-adqt-slot="primary">
+  <path transform="translate(312 0)" d="M0 696V328A8 8 0 0 1 8 320H64V360C84 328 112 312 144 312C188 312 216 332 232 368C256 332 284 312 320 312C372 312 400 348 400 416V696A8 8 0 0 1 392 704H336A8 8 0 0 1 328 696V432C328 400 312 384 288 384C256 384 236 412 236 456V696A8 8 0 0 1 228 704H172A8 8 0 0 1 164 696V432C164 400 148 384 124 384C92 384 72 412 72 456V696A8 8 0 0 1 64 704H8A8 8 0 0 1 0 696Z"/>
 </svg>

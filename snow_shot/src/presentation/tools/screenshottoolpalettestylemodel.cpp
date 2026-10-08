@@ -40,6 +40,7 @@ void ScreenshotToolPaletteStyleState::reset(const SnowCanvasStyleDefaults& defau
     creationDistanceStyle = defaults.distance;
     distanceStyle = defaults.distance;
     distanceStyleMixed = 0;
+    distanceMeasuredLength = 0.0;
     showingSelectedDistance = false;
     m_creationTextStyle.setTextStyle(defaults.text);
     m_textStyle.setTextStyle(defaults.text);

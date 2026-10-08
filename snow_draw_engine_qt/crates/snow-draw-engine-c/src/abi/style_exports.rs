@@ -247,6 +247,7 @@ pub unsafe extern "C" fn snow_viewport_get_style_toolbar_state(
                         brush_eraser_style: state.brush_eraser_style.into(),
                         distance_style: state.distance_style.into(),
                         distance_style_mixed: state.distance_style_mixed,
+                        distance_measured_length: state.distance_measured_length,
                     },
                 );
                 Ok(())

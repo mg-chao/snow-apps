@@ -310,6 +310,9 @@ impl EditorSession {
     pub fn distance_style_mixed(&self, document: &DocumentModel) -> u32 {
         self.editor.distance_style_mixed(document)
     }
+    pub fn distance_measured_length(&self, document: &DocumentModel) -> f64 {
+        self.editor.distance_measured_length(document)
+    }
     pub fn set_distance_style_patch(
         &mut self,
         document: &DocumentModel,

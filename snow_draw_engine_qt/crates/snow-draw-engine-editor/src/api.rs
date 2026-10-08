@@ -351,6 +351,7 @@ pub struct StyleToolbarState {
     pub brush_eraser_style: BrushEraserStyle,
     pub distance_style: crate::DistanceStyle,
     pub distance_style_mixed: u32,
+    pub distance_measured_length: f64,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq)]

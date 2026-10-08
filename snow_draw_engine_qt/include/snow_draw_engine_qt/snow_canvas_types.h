@@ -613,6 +613,8 @@ struct SnowCanvasStyleToolbarState {
     SnowCanvasBrushEraserStyle brushEraserStyle;
     SnowCanvasDistanceStyle distanceStyle;
     quint32 distanceStyleMixed = 0;
+    // Calibrated length before applying the factor; zero without a single valid distance.
+    double distanceMeasuredLength = 0.0;
 };
 
 inline bool operator==(const SnowCanvasStyleToolbarState& lhs,
@@ -626,7 +628,8 @@ inline bool operator==(const SnowCanvasStyleToolbarState& lhs,
            lhs.shapeStyleMixed == rhs.shapeStyleMixed && lhs.filterStyle == rhs.filterStyle &&
            lhs.filterStyleMixed == rhs.filterStyleMixed &&
            lhs.brushEraserStyle == rhs.brushEraserStyle && lhs.distanceStyle == rhs.distanceStyle &&
-           lhs.distanceStyleMixed == rhs.distanceStyleMixed;
+           lhs.distanceStyleMixed == rhs.distanceStyleMixed &&
+           lhs.distanceMeasuredLength == rhs.distanceMeasuredLength;
 }
 
 inline bool operator!=(const SnowCanvasStyleToolbarState& lhs,

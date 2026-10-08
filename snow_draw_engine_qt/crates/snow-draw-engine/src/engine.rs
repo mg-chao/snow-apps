@@ -289,6 +289,7 @@ impl Engine {
             brush_eraser_style: self.editor.brush_eraser_style(),
             distance_style: self.editor.distance_style(&self.model),
             distance_style_mixed: self.editor.distance_style_mixed(&self.model),
+            distance_measured_length: self.editor.distance_measured_length(&self.model),
         })
     }
 

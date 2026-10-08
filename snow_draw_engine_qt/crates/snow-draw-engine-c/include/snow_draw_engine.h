@@ -637,6 +637,8 @@ typedef struct SnowStyleToolbarState {
     SnowBrushEraserStyle brush_eraser_style;
     SnowDistanceStyle distance_style;
     uint32_t distance_style_mixed;
+    /* Calibrated length before applying the factor; zero without a single valid distance. */
+    double distance_measured_length;
 } SnowStyleToolbarState;
 
 typedef struct SnowStyleDefaults {

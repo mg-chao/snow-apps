@@ -120,6 +120,7 @@ struct ScreenshotToolPaletteStyleState {
     SnowCanvasDistanceStyle creationDistanceStyle;
     SnowCanvasDistanceStyle distanceStyle;
     quint32 distanceStyleMixed = 0;
+    double distanceMeasuredLength = 0.0;
     bool showingSelectedDistance = false;
     bool distanceControlsActive = false;
     ScreenshotToolPaletteTextStyleModel m_creationTextStyle;

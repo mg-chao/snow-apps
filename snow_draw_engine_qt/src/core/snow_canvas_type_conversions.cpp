@@ -613,6 +613,7 @@ SnowCanvasStyleToolbarState toCanvasStyleToolbarState(const SnowStyleToolbarStat
         SnowCanvasBrushEraserStyle{state.brush_eraser_style.stroke_width},
         toCanvasDistanceStyle(state.distance_style),
         state.distance_style_mixed,
+        state.distance_measured_length,
     };
 }
 

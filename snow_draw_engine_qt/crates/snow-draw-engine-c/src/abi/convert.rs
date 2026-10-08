@@ -1211,6 +1211,7 @@ impl Default for SnowStyleToolbarState {
             brush_eraser_style: SnowBrushEraserStyle::default(),
             distance_style: SnowDistanceStyle::default(),
             distance_style_mixed: 0,
+            distance_measured_length: 0.0,
         }
     }
 }
