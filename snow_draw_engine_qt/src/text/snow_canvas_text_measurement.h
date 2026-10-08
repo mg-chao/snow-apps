@@ -57,10 +57,8 @@ measureSelectedAutoResizeLayoutOverrides(const SelectedTextLayoutMeasurementRequ
 SnowTextLayoutSize measureEmptyDraftLayout(const SnowTextStyle& style, const QFont& baseFont);
 SnowTextLayoutSize measureSerialLabelLayout(const SnowSerialLabelLayoutRequest& request,
                                             const QFont& baseFont);
-SnowTextLayoutSize
-measureSerialNumberBoundTextLayout(const SnowTextStyle& textStyle,
-                                   const SnowSerialNumberStyle& serialNumberStyle,
-                                   const QFont& baseFont);
+SnowTextLayoutSize measureSerialNumberBoundTextLayout(const SnowTextStyle& textStyle,
+                                                      const QFont& baseFont);
 SnowTextLayoutSize measureResizeLayout(const ResizeLayoutMeasurementRequest& request);
 double steppedFontSize(double current, bool increase);
 

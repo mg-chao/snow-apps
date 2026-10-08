@@ -122,6 +122,9 @@ void clickAndDragLifecycle() {
     canvas.resize(600, 360);
     canvas.show();
     QApplication::processEvents();
+    SnowCanvasTextStyle textStyle;
+    textStyle.fontSize = 12.0;
+    require(canvas.setCanvasTextStyle(textStyle), "apply default text font size");
     require(canvas.setCanvasTool(SnowCanvasTool::SerialNumber), "activate serial number tool");
     mouse(canvas, QEvent::MouseButtonPress, {100.0, 100.0}, Qt::LeftButton, Qt::LeftButton);
     require(records(runtime, QStringLiteral("SerialNumber")).size() == 1,
@@ -146,6 +149,8 @@ void clickAndDragLifecycle() {
     require(canvas.hasActiveTextEditing(), "release enters text editing");
     require(canvas.testAttribute(Qt::WA_InputMethodEnabled), "release enables text input");
     const auto text = payload(runtime, QStringLiteral("Text"));
+    require(text.value(QStringLiteral("font_size")).toDouble() == textStyle.fontSize,
+            "drag-created label preserves the default text font size when editing starts");
     const auto center = text.value(QStringLiteral("center")).toObject();
     const QPointF expected = canvas.canvasToViewTransform().inverted().map(QPointF(220.0, 260.0));
     require(center.value(QStringLiteral("x")).toDouble() == expected.x() &&
@@ -160,6 +165,10 @@ void clickAndDragLifecycle() {
     require(payload(runtime, QStringLiteral("Text")).value(QStringLiteral("text")).toString() ==
                 QStringLiteral("Drag label"),
             "typing after release updates the attached text");
+    require(
+        payload(runtime, QStringLiteral("Text")).value(QStringLiteral("font_size")).toDouble() ==
+            textStyle.fontSize,
+        "drag-created label preserves the default text font size after editing");
     require(records(runtime, QStringLiteral("Text")).size() == 1,
             "typing does not create another text element");
 }
@@ -235,6 +244,7 @@ void wheelResizesSelectedSerialBoundText() {
     canvas.resize(600, 360);
     canvas.show();
     QApplication::processEvents();
+    const double defaultTextFontSize = canvas.canvasStyleToolbarState().textStyle.fontSize;
     createBadgeWithEditedBoundText(canvas);
 
     const double badgeFontSize =
@@ -245,7 +255,8 @@ void wheelResizesSelectedSerialBoundText() {
     require(canvas.canvasStyleToolbarState().source == SnowCanvasStyleToolbarSource::SelectedText,
             "committed bound label is the style toolbar source");
     const double initialFontSize = boundTextFontSize(runtime);
-    require(initialFontSize == badgeFontSize, "bound label starts at the serial number font size");
+    require(initialFontSize == defaultTextFontSize,
+            "bound label starts at the default text font size");
 
     wheel(canvas, {380.0, 180.0}, 120);
     require(boundTextFontSize(runtime) == initialFontSize + 1.0,
@@ -379,6 +390,7 @@ void toolbarCreatedTextKeepsDefaultStyling() {
     QApplication::processEvents();
 
     SnowCanvasTextStyle style;
+    style.fontSize = 50.0;
     style.color = QColor(0xff, 0xff, 0xff, 0xff);
     style.fill = QColor(0x21, 0x6b, 0xa5, 0xff);
     require(canvas.setCanvasTextStyle(style), "apply default text style");
@@ -394,11 +406,17 @@ void toolbarCreatedTextKeepsDefaultStyling() {
     mouse(canvas, QEvent::MouseButtonRelease, {102.0, 100.0}, Qt::LeftButton, Qt::NoButton);
     require(canvas.createSerialNumberText(), "toolbar Create Text attaches a label");
     require(canvas.hasActiveTextEditing(), "Create Text starts editing the label");
+    require(
+        payload(runtime, QStringLiteral("Text")).value(QStringLiteral("font_size")).toDouble() ==
+            style.fontSize,
+        "toolbar-created label preserves the default text font size when editing starts");
     key(canvas, Qt::Key_T, Qt::NoModifier, QStringLiteral("Toolbar label"));
     key(canvas, Qt::Key_Return, Qt::ControlModifier);
     require(!canvas.hasActiveTextEditing(), "commit closes the editor");
 
     const auto toolbarText = payload(runtime, QStringLiteral("Text"));
+    require(toolbarText.value(QStringLiteral("font_size")).toDouble() == style.fontSize,
+            "toolbar-created label preserves the default text font size after editing");
     require(textRecordHasColor(toolbarText.value(QStringLiteral("fill")).toObject(), 0x21, 0x6b,
                                0xa5, 0xff),
             "toolbar-created label keeps the default fill color");

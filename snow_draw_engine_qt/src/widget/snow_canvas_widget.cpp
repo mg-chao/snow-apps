@@ -1901,8 +1901,7 @@ bool SnowCanvasWidget::Impl::createSerialNumberText() {
     const SnowStyleToolbarState& styleState = displayState.snapshot().styleToolbarState;
     snow_canvas_commands::CreateSerialNumberTextResult createResult =
         textInteraction.createSerialNumberText(
-            runtimeBinding.engine(), runtimeBinding.viewportHandle(), styleState.text_style,
-            styleState.serial_number_style);
+            runtimeBinding.engine(), runtimeBinding.viewportHandle(), styleState.text_style);
     if (!createResult.success) {
         return false;
     }

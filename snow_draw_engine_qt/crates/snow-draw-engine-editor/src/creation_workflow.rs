@@ -971,7 +971,7 @@ impl Editor {
             // The drag label starts from the same definition the floating
             // toolbar's Create Text button uses, so both paths style and size
             // the bound label identically before the host measurement lands.
-            let mut text = crate::text::new_serial_bound_label(&serial, &self.state.default_text)?;
+            let mut text = crate::text::new_serial_bound_label(&self.state.default_text)?;
             text.center = current_canvas;
             serial.text_element_id = Some(text_id);
             let mut transaction = Transaction::new("create serial number text");

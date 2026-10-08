@@ -501,12 +501,11 @@ SnowCanvasWidgetTextInteraction::BeginResult SnowCanvasWidgetTextInteraction::be
 }
 
 snow_canvas_commands::CreateSerialNumberTextResult
-SnowCanvasWidgetTextInteraction::createSerialNumberText(
-    SnowRuntime runtime, SnowViewport viewport, const SnowTextStyle& textStyle,
-    const SnowSerialNumberStyle& serialNumberStyle) {
+SnowCanvasWidgetTextInteraction::createSerialNumberText(SnowRuntime runtime, SnowViewport viewport,
+                                                        const SnowTextStyle& textStyle) {
     const SnowTextLayoutSize layout =
-        snow_canvas_text_measurement::measureSerialNumberBoundTextLayout(
-            textStyle, serialNumberStyle, m_widget.font());
+        snow_canvas_text_measurement::measureSerialNumberBoundTextLayout(textStyle,
+                                                                         m_widget.font());
     return snow_canvas_commands::createSerialNumberText(runtime, viewport, layout);
 }
 

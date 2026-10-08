@@ -448,21 +448,21 @@ void serialNumberBoundTextMeasurementUsesCreatedTextStyle() {
     SnowSerialNumberStyle serialNumberStyle{};
     serialNumberStyle.font_size = 42.0;
 
-    SnowTextStyle createdTextStyle = textStyle;
-    createdTextStyle.font_size = serialNumberStyle.font_size;
     const SnowTextLayoutSize expectedLayout =
-        snow_canvas_text_measurement::measureEmptyDraftLayout(createdTextStyle, baseFont);
+        snow_canvas_text_measurement::measureEmptyDraftLayout(textStyle, baseFont);
     const SnowTextLayoutSize actualLayout =
-        snow_canvas_text_measurement::measureSerialNumberBoundTextLayout(
-            textStyle, serialNumberStyle, baseFont);
+        snow_canvas_text_measurement::measureSerialNumberBoundTextLayout(textStyle, baseFont);
 
     requireNear(actualLayout.width, expectedLayout.width,
                 "serial bound text width should use the created text style");
     requireNear(actualLayout.height, expectedLayout.height,
                 "serial bound text height should use the created text style");
-    require(actualLayout.height >
-                snow_canvas_text_measurement::measureEmptyDraftLayout(textStyle, baseFont).height,
-            "serial bound text measurement should not use the default text font size");
+    SnowTextStyle serialSizedTextStyle = textStyle;
+    serialSizedTextStyle.font_size = serialNumberStyle.font_size;
+    require(actualLayout.height < snow_canvas_text_measurement::measureEmptyDraftLayout(
+                                      serialSizedTextStyle, baseFont)
+                                      .height,
+            "serial bound text measurement should preserve the default text font size");
 }
 
 void textElementInfoDecodingBuildsOwnedPreview() {

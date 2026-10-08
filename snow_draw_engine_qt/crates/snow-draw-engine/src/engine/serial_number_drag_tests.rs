@@ -978,7 +978,7 @@ fn serial_number_drag_applies_measured_label_layout_to_preview_and_release() {
     assert_eq!(request.text_id, text_id);
     assert_eq!(
         request.font_size,
-        engine.model.serial_number(serial_id).unwrap().font_size
+        engine.editor.text_style(&engine.model).font_size
     );
 
     let history = engine.history_state();
@@ -1390,8 +1390,8 @@ fn drag_label_placeholder_follows_line_height_contract_not_stale_default() {
     // The persisted default text style keeps the wrap rectangle it was
     // initialized with (1x36 at font 30) even after the user changes the
     // default font size. The drag-attached label must size itself from the
-    // published line-height contract at the serial number's font size, never
-    // from that stale rectangle scaled by a font ratio (36 * 24 / 50 = 17.28).
+    // published line-height contract at the default text's font size, never
+    // from that stale rectangle or the serial number's font size.
     let (mut engine, viewport) = setup(1.0);
     let mut style = engine.editor.text_style(&engine.model);
     style.font_size = 50.0;
@@ -1423,11 +1423,11 @@ fn drag_label_placeholder_follows_line_height_contract_not_stale_default() {
         .text_element_id
         .unwrap();
     let label = engine.model.text(text_id).unwrap();
-    assert_eq!(label.font_size, 24.0);
+    assert_eq!(label.font_size, 50.0);
     assert_eq!(label.width(), 1.0);
     assert_eq!(
         label.height(),
-        snow_draw_engine_document::text_line_height(24.0),
+        snow_draw_engine_document::text_line_height(50.0),
         "drag label placeholder must be one contract line height tall, not the stale default rectangle"
     );
 }
@@ -1539,6 +1539,7 @@ fn drag_and_toolbar_bound_labels_share_styling_and_layout() {
     );
     let drag_text = engine.model.text(drag_text_id).unwrap().clone();
 
+    assert_eq!(toolbar_text.font_size, 50.0);
     assert_eq!(drag_text.font_size, toolbar_text.font_size);
     assert_eq!(drag_text.color, toolbar_text.color);
     assert_eq!(drag_text.fill, toolbar_text.fill);

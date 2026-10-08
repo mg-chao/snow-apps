@@ -1,8 +1,8 @@
 use snow_draw_engine_core::ErrorCode;
 use snow_draw_engine_document::{
-    ElementId, ElementMeta, SerialNumberData, TextData, TextLayoutSize, Transaction,
-    serial_number_bound_text_rect, text_line_height, text_with_measured_layout,
-    validate_serial_number, validate_text, validate_text_layout_size,
+    ElementId, ElementMeta, TextData, TextLayoutSize, Transaction, serial_number_bound_text_rect,
+    text_line_height, text_with_measured_layout, validate_serial_number, validate_text,
+    validate_text_layout_size,
 };
 use snow_draw_engine_model::DocumentModel;
 
@@ -20,21 +20,16 @@ pub(crate) struct SerialNumberTextCreationPlan {
 }
 
 /// The one definition of a newly attached serial-number label: the default
-/// text style at the serial number's font size, carrying the published
-/// empty-label placeholder (one contract line-height tall and minimal width)
-/// until a host measurement lands. Every creation path — the floating
-/// toolbar's Create Text button and the serial-number drag — must start here,
-/// so their styling and pre-measurement geometry cannot drift apart. The
-/// placeholder never reuses the default text's stored wrap rectangle: that
-/// rectangle belongs to the last created text and its font size, not to this
-/// label.
-pub(crate) fn new_serial_bound_label(
-    serial: &SerialNumberData,
-    default_text: &TextData,
-) -> Result<TextData, ErrorCode> {
+/// text style, carrying the published empty-label placeholder (one contract
+/// line-height tall and minimal width) until a host measurement lands. Every
+/// creation path — the floating toolbar's Create Text button and the
+/// serial-number drag — must start here, so their styling and pre-measurement
+/// geometry cannot drift apart. The placeholder never reuses the default
+/// text's stored wrap rectangle: that rectangle belongs to the last created
+/// text, not to this empty label.
+pub(crate) fn new_serial_bound_label(default_text: &TextData) -> Result<TextData, ErrorCode> {
     let mut text = default_text.clone();
-    text.font_size = serial.font_size;
-    text.layout = TextLayoutSize::new(1.0, text_line_height(serial.font_size));
+    text.layout = TextLayoutSize::new(1.0, text_line_height(text.font_size));
     validate_text(&text)?;
     Ok(text)
 }
@@ -67,7 +62,7 @@ pub(crate) fn create_serial_number_text_creation_plan(
 
         let text_id = next_text_id;
         next_text_id.index = next_text_id.index.saturating_add(1);
-        let mut text = new_serial_bound_label(&serial, request.default_text)?;
+        let mut text = new_serial_bound_label(request.default_text)?;
         let layout = serial_number_bound_text_rect(&serial, &text, measured_layout)?;
         text.center = layout.center;
         text.rotation = layout.rotation;
@@ -95,7 +90,7 @@ pub(crate) fn create_serial_number_text_creation_plan(
 mod tests {
     use super::*;
     use snow_draw_engine_core::Point;
-    use snow_draw_engine_document::{ElementData, Operation};
+    use snow_draw_engine_document::{ElementData, Operation, SerialNumberData};
 
     fn insert_serial_number(document: &mut DocumentModel, serial: SerialNumberData) -> ElementId {
         let id = document.peek_next_element_id();
@@ -118,25 +113,18 @@ mod tests {
         // The persisted default text carries the wrap rectangle of the last
         // created text at its own font size. A freshly attached label must not
         // inherit that rectangle: its placeholder follows the published
-        // line-height contract at the serial number's font size, so drag- and
+        // line-height contract at the default text's font size, so drag- and
         // toolbar-created labels look identical before the host measurement.
         let default_text = TextData {
             font_size: 50.0,
             layout: TextLayoutSize::new(300.0, 120.0),
             ..TextData::default()
         };
-        let label = new_serial_bound_label(
-            &SerialNumberData {
-                font_size: 24.0,
-                ..SerialNumberData::default()
-            },
-            &default_text,
-        )
-        .unwrap();
+        let label = new_serial_bound_label(&default_text).unwrap();
 
-        assert_eq!(label.font_size, 24.0);
+        assert_eq!(label.font_size, default_text.font_size);
         assert_eq!(label.width(), 1.0);
-        assert_eq!(label.height(), text_line_height(24.0));
+        assert_eq!(label.height(), text_line_height(default_text.font_size));
         assert_eq!(label.color, default_text.color);
         assert_eq!(label.fill, default_text.fill);
         assert_eq!(label.stroke, default_text.stroke);
@@ -185,10 +173,11 @@ mod tests {
             panic!("expected text data");
         };
         assert_eq!(text.text, "default");
-        assert_eq!(text.font_size, 42.0);
+        assert_eq!(text.font_size, 21.0);
         assert_eq!(text.width(), 120.0);
         assert_eq!(text.height(), 32.0);
-        assert_eq!(text.center, Point::new(216.0, 50.0));
+        // The label gap follows the preserved 21px text font size.
+        assert_eq!(text.center, Point::new(198.0, 50.0));
         let Operation::UpdateElementData { id, data } = &operations[1] else {
             panic!("expected serial update");
         };
@@ -241,6 +230,7 @@ mod tests {
             SerialNumberData {
                 center: Point::new(0.0, 0.0),
                 diameter: 40.0,
+                font_size: 18.0,
                 ..SerialNumberData::default()
             },
         );
@@ -249,6 +239,7 @@ mod tests {
             SerialNumberData {
                 center: Point::new(200.0, 0.0),
                 diameter: 40.0,
+                font_size: 42.0,
                 ..SerialNumberData::default()
             },
         );
@@ -264,6 +255,7 @@ mod tests {
                 selected_ids: &[first_serial_id, second_serial_id],
                 default_text: &TextData {
                     text: "note".to_owned(),
+                    font_size: 21.0,
                     ..TextData::default()
                 },
                 measured_layout: TextLayoutSize::new(80.0, 24.0),
@@ -289,6 +281,7 @@ mod tests {
             panic!("expected first inserted text data");
         };
         assert_eq!(first_text.text, "note");
+        assert_eq!(first_text.font_size, 21.0);
 
         let Operation::UpdateElementData {
             id: first_updated_id,
@@ -316,6 +309,7 @@ mod tests {
             panic!("expected second inserted text data");
         };
         assert_eq!(second_text.text, "note");
+        assert_eq!(second_text.font_size, 21.0);
 
         let Operation::UpdateElementData {
             id: second_updated_id,

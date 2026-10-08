@@ -115,8 +115,7 @@ class SnowCanvasWidgetTextInteraction final {
     // styling the label was created with.
     snow_canvas_commands::CreateSerialNumberTextResult
     createSerialNumberText(SnowRuntime runtime, SnowViewport viewport,
-                           const SnowTextStyle& textStyle,
-                           const SnowSerialNumberStyle& serialNumberStyle);
+                           const SnowTextStyle& textStyle);
     BeginResult beginRequestedTextEdit(SnowRuntime runtime, SnowViewport viewport,
                                        const SnowCanvasDisplayCache& displayCache);
     // Starts a blank-canvas draft only after the engine authorized it by

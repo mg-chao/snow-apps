@@ -166,13 +166,9 @@ SnowTextLayoutSize measureSerialLabelLayout(const SnowSerialLabelLayoutRequest& 
     return measureEmptyDraftLayout(style, baseFont);
 }
 
-SnowTextLayoutSize
-measureSerialNumberBoundTextLayout(const SnowTextStyle& textStyle,
-                                   const SnowSerialNumberStyle& serialNumberStyle,
-                                   const QFont& baseFont) {
-    SnowTextStyle boundTextStyle = textStyle;
-    boundTextStyle.font_size = serialNumberStyle.font_size;
-    return measureEmptyDraftLayout(boundTextStyle, baseFont);
+SnowTextLayoutSize measureSerialNumberBoundTextLayout(const SnowTextStyle& textStyle,
+                                                      const QFont& baseFont) {
+    return measureEmptyDraftLayout(textStyle, baseFont);
 }
 
 SnowTextLayoutSize measureResizeLayout(const ResizeLayoutMeasurementRequest& request) {
