@@ -47,10 +47,11 @@ QVector<QStringList> editionActionPositions(QVector<QStringList> positions) {
     return positions;
 }
 const QStringList kDrawingToolIds = {
-    QStringLiteral("shape"),     QStringLiteral("arrow"),     QStringLiteral("line"),
-    QStringLiteral("distance"),  QStringLiteral("free-draw"), QStringLiteral("highlighter"),
-    QStringLiteral("spotlight"), QStringLiteral("text"),      QStringLiteral("serial-number"),
-    QStringLiteral("filter"),    QStringLiteral("eraser"),    QStringLiteral("watermark"),
+    QStringLiteral("shape"),         QStringLiteral("arrow"),     QStringLiteral("line"),
+    QStringLiteral("angle"),         QStringLiteral("distance"),  QStringLiteral("free-draw"),
+    QStringLiteral("highlighter"),   QStringLiteral("spotlight"), QStringLiteral("text"),
+    QStringLiteral("serial-number"), QStringLiteral("filter"),    QStringLiteral("eraser"),
+    QStringLiteral("watermark"),
 };
 const QStringList kDrawingToolbarItemIds =
     QStringList{QStringLiteral("select"), QStringLiteral("select-separator")} + kDrawingToolIds +
@@ -103,7 +104,8 @@ QVector<QStringList> defaultDrawingToolbarPositions() {
         {QStringLiteral("select")},
         {QStringLiteral("select-separator")},
         {QStringLiteral("shape")},
-        {QStringLiteral("distance"), QStringLiteral("line"), QStringLiteral("arrow")},
+        {QStringLiteral("angle"), QStringLiteral("distance"), QStringLiteral("line"),
+         QStringLiteral("arrow")},
         {QStringLiteral("free-draw")},
         {QStringLiteral("spotlight"), QStringLiteral("highlighter")},
         {QStringLiteral("text")},
@@ -678,7 +680,7 @@ const QVector<ConfigurationSchemaEntry> kRawEntries = {
      ConfigurationValueKind::StringList,
      std::nullopt,
      {QStringLiteral("shape"), QStringLiteral("arrow"), QStringLiteral("line"),
-      QStringLiteral("distance"), QStringLiteral("free-draw"),
+      QStringLiteral("angle"), QStringLiteral("distance"), QStringLiteral("free-draw"),
       QStringLiteral("rectangle-highlight"), QStringLiteral("pen-highlight"),
       QStringLiteral("spotlight"), QStringLiteral("rectangle-filter"), QStringLiteral("pen-filter"),
       QStringLiteral("text"), QStringLiteral("serial-number"), QStringLiteral("eraser"),
@@ -689,6 +691,7 @@ const QVector<ConfigurationSchemaEntry> kRawEntries = {
     {QStringLiteral("drawing/shape_style"), QJsonObject(), ConfigurationValueKind::Structured},
     {QStringLiteral("drawing/arrow_style"), QJsonObject(), ConfigurationValueKind::Structured},
     {QStringLiteral("drawing/distance_style"), QJsonObject(), ConfigurationValueKind::Structured},
+    {QStringLiteral("drawing/angle_style"), QJsonObject(), ConfigurationValueKind::Structured},
     {QStringLiteral("drawing/line_style"), QJsonObject(), ConfigurationValueKind::Structured},
     {QStringLiteral("drawing/free_draw_style"), QJsonObject(), ConfigurationValueKind::Structured},
     {QStringLiteral("drawing/rectangle_highlight_style"), QJsonObject(),
@@ -727,6 +730,12 @@ const QVector<ConfigurationSchemaEntry> kRawEntries = {
      {},
      2},
     {QStringLiteral("drawing_shortcuts/distance"),
+     QJsonArray{},
+     ConfigurationValueKind::StringList,
+     std::nullopt,
+     {},
+     2},
+    {QStringLiteral("drawing_shortcuts/angle"),
      QJsonArray{},
      ConfigurationValueKind::StringList,
      std::nullopt,
@@ -2006,24 +2015,28 @@ normalizeToolbarLayout(const QJsonValue& value, const QStringList& itemIds,
     }
 
     appendHidden(defaultHidden);
-    if (known.contains(QStringLiteral("distance")) &&
-        !positioned.contains(QStringLiteral("distance")) &&
-        !hiddenSet.contains(QStringLiteral("distance"))) {
-        const auto visibleDefaults = [&hidden](QVector<QStringList> defaults) {
-            for (auto& position : defaults) {
-                for (const QString& id : hidden)
-                    position.removeAll(id);
-            }
-            defaults.removeIf([](const QStringList& position) { return position.isEmpty(); });
-            return defaults;
-        };
-        auto previousDefaults = defaultPositions;
-        for (auto& position : previousDefaults)
-            position.removeAll(QStringLiteral("distance"));
-        if (positions == visibleDefaults(previousDefaults)) {
-            positions = visibleDefaults(defaultPositions);
-            positioned.insert(QStringLiteral("distance"));
+    // Upgrade only the previous default drawing layout; custom stacks remain intact.
+    auto previousDrawingDefaults = defaultPositions;
+    QStringList missingAnnotations;
+    for (const QString& id : {QStringLiteral("angle"), QStringLiteral("distance")}) {
+        if (known.contains(id) && !positioned.contains(id) && !hiddenSet.contains(id)) {
+            missingAnnotations.push_back(id);
+            for (auto& position : previousDrawingDefaults)
+                position.removeAll(id);
         }
+    }
+    const auto visibleDefaults = [&hidden](QVector<QStringList> defaults) {
+        for (auto& position : defaults) {
+            for (const QString& id : hidden)
+                position.removeAll(id);
+        }
+        defaults.removeIf([](const QStringList& position) { return position.isEmpty(); });
+        return defaults;
+    };
+    if (!missingAnnotations.isEmpty() && positions == visibleDefaults(previousDrawingDefaults)) {
+        positions = visibleDefaults(defaultPositions);
+        for (const QString& id : missingAnnotations)
+            positioned.insert(id);
     }
     if (legacyDefaults && app::edition::isMini &&
         known.contains(QStringLiteral("text-recognition")) &&

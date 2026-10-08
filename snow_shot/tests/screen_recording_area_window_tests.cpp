@@ -1,3 +1,4 @@
+#include "angle_wheel_host_test_support.h"
 #include "../../test-support/canvas_quick_selection_test_support.h"
 #include "physical_key_test_support.h"
 #include "snow_shot/presentation/screenrecordingareawindow.h"
@@ -1484,6 +1485,20 @@ void recordingRightQuickSelection() {
     require(deactivations == 1, "next Escape can leave drawing mode");
 }
 
+void recordingAngleWheel() {
+    ScreenRecordingAreaWindow area;
+    area.setRecordingRegion(testRecordingRegion());
+    area.show();
+    area.setInputMode(ScreenRecordingAreaWindow::InputMode::Drawing);
+    QApplication::processEvents();
+    int widthWheelRequests = 0;
+    QObject::connect(&area, &ScreenRecordingAreaWindow::drawingWheelRequested, &area,
+                     [&](int) { ++widthWheelRequests; });
+    angle_wheel_host_test_support::exercise(
+        *area.canvas(), [&] { return ScreenRecordingAreaWindowTestAccess::history(area); });
+    require(widthWheelRequests == 0, "recording angle wheel bypasses ordinary style adjustment");
+}
+
 } // namespace
 
 int main(int argc, char** argv) {
@@ -1498,6 +1513,11 @@ int main(int argc, char** argv) {
                 .initialize({executableDirectory, storageDirectory.path(), 60000})
                 .success,
             "failed to initialize isolated recording area test storage");
+    if (application.arguments().contains(QStringLiteral("--angle-wheel-only"))) {
+        recordingAngleWheel();
+        snow_shot::storage::ApplicationStorage::instance().shutdown();
+        return 0;
+    }
     if (application.arguments().contains(QStringLiteral("--right-quick-selection-only"))) {
         recordingRightQuickSelection();
         snow_shot::storage::ApplicationStorage::instance().shutdown();

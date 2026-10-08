@@ -134,4 +134,5 @@ set(SNOW_CANVAS_QT_SOURCES
     include/snow_draw_engine_qt/snow_canvas_types.h
     include/snow_draw_engine_qt/snow_canvas_style_edit.h
     include/snow_draw_engine_qt/snow_canvas_widget.h
+    include/snow_draw_engine_qt/snow_canvas_wheel_input.h
 )

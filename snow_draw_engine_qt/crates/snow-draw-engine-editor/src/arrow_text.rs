@@ -1,13 +1,13 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::hash::{Hash, Hasher};
 
-use snow_draw_engine_core::{ErrorCode, Point};
+use snow_draw_engine_core::{DrawRect, ErrorCode, Point, ViewportQuery, canvas_viewport};
 use snow_draw_engine_document::{
-    ArrowData, ElementData, ElementId, Operation, TextData, TextLayoutSize, Transaction,
-    arrow_text_anchor, arrow_text_max_width, text_hit_test, text_with_measured_layout,
-    validate_text_layout_size,
+    ArrowData, DocumentDelta, DocumentRevision, ElementData, ElementId, Operation, TextData,
+    TextLayoutSize, Transaction, arrow_text_anchor, arrow_text_max_width, text_hit_test,
+    text_with_measured_layout, validate_text_layout_size,
 };
-use snow_draw_engine_model::DocumentModel;
+use snow_draw_engine_model::{DocumentModel, SpatialIndex};
 
 use crate::Editor;
 
@@ -20,6 +20,8 @@ pub struct ArrowTextLayoutRequest {
     pub max_width: f64,
     pub key: u64,
     text_key: u64,
+    angle_geometry: Option<snow_draw_engine_document::AngleGeometry>,
+    angle_stroke_width: f64,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -29,6 +31,28 @@ pub(crate) struct ArrowTextMeasurement {
     pub size: TextLayoutSize,
     pub text_key: u64,
     pub natural_width: f64,
+}
+
+#[derive(Clone, Debug)]
+struct CachedArrowText {
+    request: ArrowTextLayoutRequest,
+    preview: TextData,
+    preview_bounds: DrawRect,
+    preview_needed: bool,
+}
+
+#[derive(Clone, Debug, Default)]
+pub(crate) struct ArrowTextCache {
+    revision: Option<DocumentRevision>,
+    generation: u64,
+    relation_revision: u64,
+    order: Vec<ElementId>,
+    entries: HashMap<ElementId, CachedArrowText>,
+    dirty: HashSet<ElementId>,
+    pending: HashSet<ElementId>,
+    preview_index: SpatialIndex,
+    preview_candidate_count: usize,
+    builds: u64,
 }
 
 impl ArrowTextMeasurement {
@@ -49,7 +73,7 @@ fn request(
     text: &TextData,
     generation: u64,
 ) -> ArrowTextLayoutRequest {
-    let derived = snow_draw_engine_document::distance_label(arrow, Some(text.layout));
+    let derived = snow_draw_engine_document::generated_annotation_label(arrow, Some(text.layout));
     let text = derived.as_ref().unwrap_or(text);
     let max_width = arrow_text_max_width(arrow, text.font_size);
     let mut key = std::collections::hash_map::DefaultHasher::new();
@@ -63,9 +87,13 @@ fn request(
     let text_key = key.finish();
     max_width.to_bits().hash(&mut key);
     let mut text = text.clone();
-    text.center = arrow_text_anchor(arrow);
+    if !arrow.is_angle() {
+        text.center = arrow_text_anchor(arrow);
+    }
     text.rotation = 0.0;
     ArrowTextLayoutRequest {
+        angle_geometry: snow_draw_engine_document::angle_geometry(arrow),
+        angle_stroke_width: arrow.stroke_width,
         arrow_id,
         arrow_width: arrow.width,
         text_id,
@@ -77,10 +105,136 @@ fn request(
 }
 
 impl Editor {
+    pub fn arrow_text_request_build_count(&self) -> u64 {
+        self.arrow_text_cache.borrow().builds
+    }
+
+    pub fn arrow_text_cached_owner_count(&self) -> usize {
+        self.arrow_text_cache.borrow().entries.len()
+    }
+
+    pub fn arrow_text_preview_candidate_count(&self) -> usize {
+        self.arrow_text_cache.borrow().preview_candidate_count
+    }
+
+    pub fn sync_arrow_text_cache_after_document_change(
+        &mut self,
+        document: &DocumentModel,
+        delta: &DocumentDelta,
+    ) {
+        for id in &delta.removed {
+            self.state.arrow_text_measurements.remove(id);
+        }
+        let mut cache = self.arrow_text_cache.borrow_mut();
+        if cache.revision.is_none() {
+            return;
+        }
+        for id in delta.touched.iter().chain(&delta.created) {
+            if document.bound_text_id_for_arrow(*id).is_some() {
+                cache.dirty.insert(*id);
+            }
+            if let Some(owner) = document.arrow_label_owner(*id) {
+                cache.dirty.insert(owner);
+            }
+        }
+        for id in &delta.removed {
+            cache.entries.remove(id);
+            cache.pending.remove(id);
+            cache.dirty.remove(id);
+            cache.preview_index.update_bounds(*id, None);
+        }
+        if cache.relation_revision != document.relation_index_build_count() {
+            cache.order = document
+                .arrow_label_bindings()
+                .iter()
+                .map(|(owner, _)| *owner)
+                .collect();
+            let invalid: Vec<_> = cache
+                .entries
+                .iter()
+                .filter_map(|(owner, entry)| {
+                    (document.bound_text_id_for_arrow(*owner) != Some(entry.request.text_id))
+                        .then_some(*owner)
+                })
+                .collect();
+            for owner in invalid {
+                cache.entries.remove(&owner);
+                cache.preview_index.update_bounds(owner, None);
+            }
+            let live: HashSet<_> = cache.order.iter().copied().collect();
+            cache.pending.retain(|owner| live.contains(owner));
+            cache.dirty.retain(|owner| live.contains(owner));
+            cache.relation_revision = document.relation_index_build_count();
+        }
+        cache.revision = Some(document.document_revision());
+    }
+
+    fn prepare_arrow_text_cache(&self, document: &DocumentModel) {
+        let mut cache = self.arrow_text_cache.borrow_mut();
+        if cache.revision != Some(document.document_revision())
+            || cache.generation != self.state.arrow_text_measurement_generation
+        {
+            let builds = cache.builds;
+            *cache = ArrowTextCache {
+                builds,
+                ..Default::default()
+            };
+            cache.revision = Some(document.document_revision());
+            cache.generation = self.state.arrow_text_measurement_generation;
+            cache.relation_revision = document.relation_index_build_count();
+            cache.order = document
+                .arrow_label_bindings()
+                .iter()
+                .map(|(owner, _)| *owner)
+                .collect();
+            cache.dirty = cache.order.iter().copied().collect();
+        }
+        let dirty = std::mem::take(&mut cache.dirty);
+        for owner in dirty {
+            let Some(text_id) = document.bound_text_id_for_arrow(owner) else {
+                cache.entries.remove(&owner);
+                cache.pending.remove(&owner);
+                cache.preview_index.update_bounds(owner, None);
+                continue;
+            };
+            let (Ok(arrow), Ok(text)) = (document.arrow(owner), document.text(text_id)) else {
+                continue;
+            };
+            let request = request(owner, text_id, arrow, text, cache.generation);
+            let pending = !self
+                .state
+                .arrow_text_measurements
+                .get(&text_id)
+                .is_some_and(|measurement| measurement.matches(&request));
+            let preview = self.measured_arrow_text(request.clone());
+            let preview_bounds = snow_draw_engine_document::text_bounds(&preview);
+            let preview_needed = &preview != text;
+            cache
+                .preview_index
+                .update_bounds(owner, preview_needed.then_some(preview_bounds));
+            cache.builds += 1;
+            if pending {
+                cache.pending.insert(owner);
+            } else {
+                cache.pending.remove(&owner);
+            }
+            cache.entries.insert(
+                owner,
+                CachedArrowText {
+                    request,
+                    preview,
+                    preview_bounds,
+                    preview_needed,
+                },
+            );
+        }
+    }
+
     pub fn invalidate_arrow_text_measurements(&mut self) {
         self.state.arrow_text_measurements.clear();
         self.state.arrow_text_measurement_generation =
             self.state.arrow_text_measurement_generation.wrapping_add(1);
+        *self.arrow_text_cache.borrow_mut() = ArrowTextCache::default();
     }
 
     pub(crate) fn arrow_label_hit(
@@ -144,7 +298,9 @@ impl Editor {
                         self.state.arrow_text_measurement_generation,
                     ))
                 });
-            text.center = arrow_text_anchor(&arrow.arrow);
+            if !arrow.arrow.is_angle() {
+                text.center = arrow_text_anchor(&arrow.arrow);
+            }
             text.rotation = 0.0;
             let rect = snow_draw_engine_document::text_bounds(&text);
             for (x, y) in [
@@ -182,30 +338,39 @@ impl Editor {
             .into_iter()
             .map(|arrow| (arrow.id, arrow.arrow))
             .collect();
-        let mut requests: Vec<_> = document
-            .arrow_label_bindings()
+        self.prepare_arrow_text_cache(document);
+        let cache = self.arrow_text_cache.borrow();
+        let mut requests: Vec<_> = cache
+            .pending
             .iter()
-            .copied()
-            .filter_map(|(arrow_id, text_id)| {
-                let arrow = arrows
-                    .get(&arrow_id)
-                    .or_else(|| document.arrow(arrow_id).ok())?;
-                let text = document.text(text_id).ok()?;
-                let request = request(
-                    arrow_id,
-                    text_id,
-                    arrow,
-                    text,
-                    self.state.arrow_text_measurement_generation,
-                );
-                (!self
-                    .state
-                    .arrow_text_measurements
-                    .get(&text_id)
-                    .is_some_and(|m| m.matches(&request)))
-                .then_some(request)
-            })
+            .filter(|owner| !arrows.contains_key(owner))
+            .filter_map(|owner| cache.entries.get(owner).map(|entry| entry.request.clone()))
             .collect();
+        for (owner, arrow) in arrows {
+            let Some(text_id) = arrow.text_element_id else {
+                continue;
+            };
+            let Ok(text) = document.text(text_id) else {
+                continue;
+            };
+            let request = request(
+                owner,
+                text_id,
+                &arrow,
+                text,
+                self.state.arrow_text_measurement_generation,
+            );
+            if !self
+                .state
+                .arrow_text_measurements
+                .get(&text_id)
+                .is_some_and(|measurement| measurement.matches(&request))
+            {
+                requests.push(request);
+            }
+        }
+        requests.sort_unstable_by_key(|request| document.paint_rank(request.arrow_id));
+        drop(cache);
         if let Some(request) = self.distance_creation_layout_request(document)
             && !self
                 .state
@@ -226,7 +391,7 @@ impl Editor {
         else {
             return None;
         };
-        let text = snow_draw_engine_document::distance_label(arrow, None)?;
+        let text = snow_draw_engine_document::generated_annotation_label(arrow, None)?;
         Some(request(
             document.peek_next_element_id(),
             self.distance_creation_text_id(),
@@ -316,12 +481,15 @@ impl Editor {
         // Validate the entire batch before changing state. This makes errors
         // atomic without cloning the editor and every retained measurement.
         let preview_id = matches!(self.state.creation_preview.as_ref(),
-            Some(crate::ElementCreationPreview::Arrow(arrow)) if arrow.is_distance())
+            Some(crate::ElementCreationPreview::Arrow(arrow)) if arrow.is_generated_annotation())
         .then(|| self.distance_creation_text_id());
         self.state
             .arrow_text_measurements
             .retain(|id, _| document.text(*id).is_ok() || Some(*id) == preview_id);
         for measurement in measured {
+            if let Some(owner) = document.arrow_label_owner(measurement.text_id) {
+                self.arrow_text_cache.borrow_mut().dirty.insert(owner);
+            }
             self.state
                 .arrow_text_measurements
                 .insert(measurement.text_id, measurement);
@@ -342,6 +510,16 @@ impl Editor {
             text = text_with_measured_layout(&text, measurement.size)
                 .expect("arrow measurements are validated when they are applied");
         }
+        if let Some(geometry) = request.angle_geometry {
+            let offset = geometry.radius
+                + text.layout.width().hypot(text.layout.height()) * 0.5
+                + 6.0
+                + request.angle_stroke_width / 2.0;
+            text.center = Point::new(
+                geometry.vertex.x + geometry.bisector.x * offset,
+                geometry.vertex.y + geometry.bisector.y * offset,
+            );
+        }
         text
     }
 
@@ -354,27 +532,78 @@ impl Editor {
             .into_iter()
             .map(|arrow| (arrow.id, arrow.arrow))
             .collect();
-        document
-            .arrow_label_bindings()
-            .iter()
-            .copied()
-            .filter_map(|(arrow_id, text_id)| {
-                let arrow = arrows
-                    .get(&arrow_id)
-                    .or_else(|| document.arrow(arrow_id).ok())?;
-                let text = document.text(text_id).ok()?;
-                Some((
+        self.prepare_arrow_text_cache(document);
+        let mut cache = self.arrow_text_cache.borrow_mut();
+        let surface = self.surface_size();
+        let viewport = canvas_viewport(self.camera(), surface);
+        // Keep overrides for visible committed owners/text as well as labels whose
+        // measured bounds enter the viewport. This also removes stale estimated
+        // labels that become invisible after host measurement.
+        let mut owners: Vec<_> = if surface.width > 0 && surface.height > 0 {
+            let visible = document
+                .visible_element_ids(ViewportQuery {
+                    surface,
+                    camera: self.camera(),
+                })
+                .into_iter()
+                .map(|id| document.arrow_label_owner(id).unwrap_or(id))
+                .collect::<HashSet<_>>();
+            let mut candidates = cache
+                .preview_index
+                .with_viewport_candidate_ids(viewport, |ids| {
+                    ids.iter()
+                        .copied()
+                        .filter(|owner| {
+                            cache.entries.get(owner).is_some_and(|entry| {
+                                entry.preview_bounds.max_x >= viewport.0
+                                    && entry.preview_bounds.min_x <= viewport.2
+                                    && entry.preview_bounds.max_y >= viewport.1
+                                    && entry.preview_bounds.min_y <= viewport.3
+                            })
+                        })
+                        .collect::<HashSet<_>>()
+                });
+            candidates.extend(visible.into_iter().filter(|owner| {
+                cache
+                    .entries
+                    .get(owner)
+                    .is_some_and(|entry| entry.preview_needed)
+            }));
+            candidates.extend(arrows.keys().copied());
+            candidates.into_iter().collect()
+        } else {
+            cache.order.clone()
+        };
+        owners.sort_unstable_by_key(|owner| document.paint_rank(*owner));
+        cache.preview_candidate_count = owners.len();
+        let mut previews = Vec::new();
+        for owner in &owners {
+            if let Some(arrow) = arrows.get(owner) {
+                let Some(text_id) = arrow.text_element_id else {
+                    continue;
+                };
+                let Ok(text) = document.text(text_id) else {
+                    continue;
+                };
+                previews.push((
                     text_id,
                     self.measured_arrow_text(request(
-                        arrow_id,
+                        *owner,
                         text_id,
                         arrow,
                         text,
-                        self.state.arrow_text_measurement_generation,
+                        cache.generation,
                     )),
-                ))
-            })
-            .collect()
+                ));
+            } else if let Some(entry) = cache
+                .entries
+                .get(owner)
+                .filter(|entry| entry.preview_needed)
+            {
+                previews.push((entry.request.text_id, entry.preview.clone()));
+            }
+        }
+        previews
     }
 
     /// Add host measurements to the originating command before it enters history.
@@ -383,12 +612,19 @@ impl Editor {
         document: &DocumentModel,
         transaction: &mut Transaction,
     ) {
-        let mut arrows: std::collections::HashMap<_, _> = document
-            .arrow_label_bindings()
-            .iter()
-            .copied()
-            .filter_map(|(id, _)| document.arrow(id).ok().map(|a| (id, a.clone())))
-            .collect();
+        self.append_arrow_text_layouts_preserving_labels(document, transaction, &HashSet::new());
+    }
+
+    /// Restored history labels retain their exact data even when host metrics are warmer.
+    pub fn append_arrow_text_layouts_preserving_labels(
+        &self,
+        document: &DocumentModel,
+        transaction: &mut Transaction,
+        preserved_labels: &HashSet<ElementId>,
+    ) {
+        // Measurements join the command that changes their owner or text. Unrelated
+        // measured labels remain previews instead of expanding this command's history.
+        let mut arrows = std::collections::HashMap::new();
         let mut texts = std::collections::HashMap::new();
         let mut removed = std::collections::HashSet::new();
         for operation in transaction.operations() {
@@ -400,11 +636,22 @@ impl Editor {
                     }
                     ElementData::Text(text) => {
                         texts.insert(*id, text.clone());
+                        if let Some(owner) = document.arrow_id_for_text(*id)
+                            && let Ok(arrow) = document.arrow(owner)
+                        {
+                            arrows.entry(owner).or_insert_with(|| arrow.clone());
+                        }
                     }
                     _ => {}
                 },
                 Operation::RemoveElement { id } => {
                     removed.insert(*id);
+                }
+                Operation::UpdateElementMeta { id, .. } => {
+                    let owner = document.arrow_id_for_text(*id).unwrap_or(*id);
+                    if let Ok(arrow) = document.arrow(owner) {
+                        arrows.entry(owner).or_insert_with(|| arrow.clone());
+                    }
                 }
                 _ => {}
             }
@@ -415,7 +662,10 @@ impl Editor {
             let Some(text_id) = arrow.text_element_id else {
                 continue;
             };
-            if removed.contains(&id) || removed.contains(&text_id) {
+            if removed.contains(&id)
+                || removed.contains(&text_id)
+                || preserved_labels.contains(&text_id)
+            {
                 continue;
             }
             let Some(text) = texts.get(&text_id).or_else(|| document.text(text_id).ok()) else {

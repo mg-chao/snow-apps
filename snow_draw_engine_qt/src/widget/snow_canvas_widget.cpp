@@ -31,6 +31,7 @@
 #include "snow_canvas_widget_text_interaction.h"
 #include "snow_draw_engine_qt/snow_canvas_custom_renderer.h"
 #include "snow_draw_engine_qt/snow_canvas_runtime.h"
+#include "snow_draw_engine_qt/snow_canvas_wheel_input.h"
 
 #include <QBitmap>
 #include <QByteArray>
@@ -78,6 +79,7 @@ std::optional<SnowCursorStyle> baselineCursorForCanvasTool(SnowCanvasTool tool) 
     case SnowCanvasTool::Shape:
     case SnowCanvasTool::Arrow:
     case SnowCanvasTool::Distance:
+    case SnowCanvasTool::Angle:
     case SnowCanvasTool::Line:
     case SnowCanvasTool::RectangleHighlight:
     case SnowCanvasTool::RectangleFilter:
@@ -363,6 +365,11 @@ struct SnowCanvasWidget::Impl : public snow_canvas_runtime::Client {
     }
     SnowCanvasStyleToolbarState canvasStyleToolbarState() const;
     bool setCanvasDistanceStyle(const SnowCanvasDistanceStyle& style, quint32 properties);
+    bool setCanvasAngleStyle(const SnowCanvasAngleStyle& style, quint32 properties);
+    bool adjustAngleValue(double deltaRadians);
+    snow_canvas_wheel::StepAccumulator angleWheelSteps;
+    std::uint64_t angleAdjustmentTarget = 0;
+    Qt::KeyboardModifiers angleWheelModifiers = Qt::NoModifier;
     bool setDistanceCreationPixelScale(const QSizeF& scale);
     SnowCanvasSerialNumberToolbarState serialNumberToolbarState() const;
     SnowCanvasWatermarkConfig canvasWatermarkConfig() const;
@@ -618,9 +625,10 @@ bool SnowCanvasWidget::Impl::prepareActiveTextResizeMeasurementForPointerUp(
     }
     const auto tool = canvasTool();
     const bool geometryTool = tool == SnowCanvasTool::Select || tool == SnowCanvasTool::Arrow ||
-                              tool == SnowCanvasTool::Distance || tool == SnowCanvasTool::Shape;
+                              tool == SnowCanvasTool::Distance || tool == SnowCanvasTool::Angle ||
+                              tool == SnowCanvasTool::Shape;
     if (!state.active &&
-        (!geometryTool || (tool != SnowCanvasTool::Distance &&
+        (!geometryTool || (tool != SnowCanvasTool::Distance && tool != SnowCanvasTool::Angle &&
                            snow_runtime_arrow_text_count(runtimeBinding.engine()) == 0))) {
         return true;
     }
@@ -641,6 +649,8 @@ bool SnowCanvasWidget::Impl::prepareActiveTextResizeMeasurementForPointerUp(
 }
 
 bool SnowCanvasWidget::Impl::dispatchInput(QEvent* event, const SnowInputEvent& input) {
+    if (isPointerInput(input, SNOW_POINTER_EVENT_DOWN))
+        angleWheelSteps.reset();
     if (!isPointerInput(input, SNOW_POINTER_EVENT_MOVE)) {
         flushLiveStrokeMoves();
         flushEraserMove();
@@ -845,6 +855,7 @@ SnowCanvasTool SnowCanvasWidget::canvasTool() const {
 bool SnowCanvasWidget::Impl::setCanvasTool(SnowCanvasTool tool) {
     const SnowCanvasTool previousTool = canvasTool();
     if (previousTool != tool) {
+        angleWheelSteps.reset();
         if (pendingLiveStrokePreservesEverySample) {
             flushLiveStrokeMoves();
         } else {
@@ -943,6 +954,43 @@ SnowCanvasSerialNumberToolbarState SnowCanvasWidget::Impl::serialNumberToolbarSt
 
 SnowCanvasSerialNumberToolbarState SnowCanvasWidget::serialNumberToolbarState() const {
     return m_impl->serialNumberToolbarState();
+}
+
+SnowCanvasAngleStyle SnowCanvasWidget::canvasAngleStyle() const {
+    return canvasStyleToolbarState().angleStyle;
+}
+
+bool SnowCanvasWidget::setCanvasAngleStyle(const SnowCanvasAngleStyle& style, quint32 properties) {
+    return m_impl->setCanvasAngleStyle(style, properties);
+}
+
+bool SnowCanvasWidget::setCanvasAngleStylePatch(const SnowCanvasAngleStyle& style,
+                                                quint32 properties) {
+    return setCanvasAngleStyle(style, properties);
+}
+
+bool SnowCanvasWidget::Impl::setCanvasAngleStyle(const SnowCanvasAngleStyle& style,
+                                                 quint32 properties) {
+    if (!snow_canvas_types::validAngleStyle(style))
+        return false;
+    return applyMutation([&]() {
+        return snow_canvas_commands::setAngleStylePatch(
+            runtimeBinding.engine(), runtimeBinding.viewportHandle(),
+            snow_canvas_types::toEngineAngleStyle(style), properties);
+    });
+}
+
+bool SnowCanvasWidget::adjustAngleValue(double deltaRadians) {
+    return m_impl->adjustAngleValue(deltaRadians);
+}
+
+bool SnowCanvasWidget::Impl::adjustAngleValue(double deltaRadians) {
+    if (!std::isfinite(deltaRadians) || !interactionEnabled() || textInteraction.isActive())
+        return false;
+    return applyMutation([&]() {
+        return snow_canvas_commands::adjustAngleValue(
+            runtimeBinding.engine(), runtimeBinding.viewportHandle(), deltaRadians);
+    });
 }
 
 SnowCanvasDistanceStyle SnowCanvasWidget::canvasDistanceStyle() const {
@@ -2319,6 +2367,12 @@ bool SnowCanvasWidget::Impl::applyMutationResult(
 }
 
 void SnowCanvasWidget::Impl::emitChangedStateSignals(const snow_canvas_state::Changes& changes) {
+    const auto target = snow_runtime_angle_adjustment_target_revision(runtimeBinding.engine());
+    if (target != angleAdjustmentTarget) {
+        angleAdjustmentTarget = target;
+        angleWheelSteps.reset();
+        emit widget.angleAdjustmentTargetChanged();
+    }
     if (changes.activeToolChanged) {
         emit widget.activeToolChanged();
     }
@@ -2947,6 +3001,26 @@ bool SnowCanvasWidget::Impl::handleWheel(QWheelEvent* event) {
         return false;
     }
 
+    const auto modifiers = event->modifiers();
+    const bool angleTarget =
+        canvasTool() == SnowCanvasTool::Angle ||
+        canvasStyleToolbarState().source == SnowCanvasStyleToolbarSource::SelectedAngle;
+    if (!textInteraction.isActive() && angleTarget &&
+        (modifiers == Qt::NoModifier || modifiers == Qt::ShiftModifier)) {
+        if (angleWheelModifiers != modifiers)
+            angleWheelSteps.reset();
+        angleWheelModifiers = modifiers;
+        const int steps = angleWheelSteps.consume(*event);
+        if (steps != 0) {
+            constexpr double radiansPerDegree = 0.017453292519943295;
+            static_cast<void>(adjustAngleValue(steps * radiansPerDegree *
+                                               (modifiers == Qt::ShiftModifier ? 0.1 : 1.0)));
+        }
+        event->accept();
+        return true;
+    }
+    angleWheelSteps.reset();
+
     const snow_canvas_text_editor_input::FontSizeWheelPlan plan =
         snow_canvas_text_editor_input::planFontSizeWheel(
             snow_canvas_text_editor_input::FontSizeWheelRequest{
@@ -3050,6 +3124,13 @@ bool SnowCanvasWidget::Impl::applyStyleEdit(const SnowCanvasStyleEdit& edit) {
                 return setCanvasShapeStylePatch(patch.style, patch.properties, patch.kind);
             } else if constexpr (std::is_same_v<T, SnowCanvasDistanceEdit>) {
                 return widget.setCanvasDistanceStyle(patch.style, patch.properties);
+            } else if constexpr (std::is_same_v<T, SnowCanvasAngleStyleEdit>) {
+                const bool editsSelection =
+                    canvasStyleToolbarState().source == SnowCanvasStyleToolbarSource::SelectedAngle;
+                // A delayed editor patch must still target the same kind of style.
+                if (patch.creationDefaults == editsSelection)
+                    return false;
+                return widget.setCanvasAngleStyle(patch.style, patch.properties);
             } else if constexpr (std::is_same_v<T, SnowCanvasTextEdit>) {
                 return setCanvasTextStyle(patch.style, patch.properties);
             } else if constexpr (std::is_same_v<T, SnowCanvasSerialNumberEdit>) {

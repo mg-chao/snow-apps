@@ -215,6 +215,8 @@ ScreenshotToolPalette::Tool paletteToolForActiveTool(ScreenshotActiveTool tool) 
         return ScreenshotToolPalette::Tool::Arrow;
     case ScreenshotActiveTool::Distance:
         return ScreenshotToolPalette::Tool::Distance;
+    case ScreenshotActiveTool::Angle:
+        return ScreenshotToolPalette::Tool::Angle;
     case ScreenshotActiveTool::Line:
         return ScreenshotToolPalette::Tool::Line;
     case ScreenshotActiveTool::FreeDraw:
@@ -397,6 +399,7 @@ struct ScreenshotController::Impl final : public ScreenshotToolbarCommandSink,
     void setArrowTool() override;
     void setLineTool() override;
     void setDistanceTool() override;
+    void setAngleTool() override;
     void setFreeDrawTool() override;
     void setHighlightTool() override;
     void setPenHighlightTool() override;
@@ -2509,6 +2512,9 @@ bool ScreenshotController::Impl::activateToolForSelectionResize(ScreenshotActive
     case ScreenshotActiveTool::Distance:
         setDistanceTool();
         break;
+    case ScreenshotActiveTool::Angle:
+        setAngleTool();
+        break;
     case ScreenshotActiveTool::FreeDraw:
         setFreeDrawTool();
         break;
@@ -2620,6 +2626,13 @@ void ScreenshotController::Impl::setDistanceTool() {
     deactivateRecognition();
     const bool scrollingCaptureStopped = stopScrollingCapture(true);
     m_toolCommandWorkflow->setDistanceTool();
+    restoreToolUiAfterScrollingCapture(scrollingCaptureStopped);
+}
+
+void ScreenshotController::Impl::setAngleTool() {
+    deactivateRecognition();
+    const bool scrollingCaptureStopped = stopScrollingCapture(true);
+    m_toolCommandWorkflow->setAngleTool();
     restoreToolUiAfterScrollingCapture(scrollingCaptureStopped);
 }
 
@@ -6328,6 +6341,7 @@ const std::pair<const char*, ScreenshotActiveTool> mcpTools[] = {
     {"rectangle", ScreenshotActiveTool::Shape},
     {"arrow", ScreenshotActiveTool::Arrow},
     {"distance", ScreenshotActiveTool::Distance},
+    {"angle", ScreenshotActiveTool::Angle},
     {"line", ScreenshotActiveTool::Line},
     {"freehand", ScreenshotActiveTool::FreeDraw},
     {"rectangle_highlight", ScreenshotActiveTool::RectangleHighlight},

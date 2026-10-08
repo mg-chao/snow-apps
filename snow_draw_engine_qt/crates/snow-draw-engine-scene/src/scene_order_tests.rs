@@ -87,6 +87,171 @@ fn fixture(separator_is_filter: bool) -> (DocumentModel, DocumentSceneCache) {
 }
 
 #[test]
+fn ordinary_angle_drafts_skip_document_order_and_spotlight_inputs() {
+    use snow_draw_engine_document::{AngleAnnotation, LinearElementKind, angle_label};
+    let mut model = DocumentModel::new();
+    let mut tx = Transaction::new("offscreen angle document");
+    for index in 0..4096 {
+        let mut arrow = ArrowData::from_global_points(
+            &[
+                Point::new(5100.0, 5000.0),
+                Point::new(5000.0, 5000.0),
+                Point::new(5000.0, 4900.0),
+            ],
+            ColorRgba8::default(),
+            2.0,
+            StrokeStyle::Solid,
+            snow_draw_engine_core::arrow::ArrowType::Straight,
+            None,
+            None,
+        )
+        .unwrap();
+        arrow.linear_kind = LinearElementKind::Angle;
+        arrow.angle = Some(AngleAnnotation::default());
+        arrow.text_element_id = Some(id(index * 2 + 1));
+        let text = angle_label(&arrow, None).unwrap();
+        tx.insert_arrow(id(index * 2), ElementMeta::default(), arrow);
+        tx.insert_text(id(index * 2 + 1), ElementMeta::default(), text);
+    }
+    model.apply_transaction(tx).unwrap();
+    let mut cache = DocumentSceneCache::new();
+    cache.sync(&model, None);
+    assert_eq!(cache.order_plan.nodes.len(), 8192);
+    let builds = cache.order_plan_build_count();
+    let mut composer = ViewportComposer::new();
+    for step in 0..16 {
+        let mut arrow = model.arrow(id(0)).unwrap().clone();
+        arrow.x -= 5000.0;
+        arrow.y -= 5000.0;
+        arrow.points[2][0] += f64::from(step);
+        arrow.text_element_id = Some(id(8193));
+        let text = angle_label(&arrow, None).unwrap();
+        let presentation = EditorPresentationState {
+            creation_preview: Some(ElementCreationPreview::Arrow(arrow)),
+            distance_creation_text: Some((id(8193), text)),
+            ..Default::default()
+        };
+        composer.refresh_with_presentation(
+            &cache,
+            &model,
+            frame(256),
+            &presentation,
+            SnapConfig::default(),
+        );
+        assert!(cached_smart_erase_items(&model, &cache, &presentation).is_empty());
+    }
+    assert_eq!(cache.order_plan_build_count(), builds);
+    assert_eq!(cache.preview_order_input_build_count(), 0);
+    assert_eq!(cache.spotlight_candidate_visit_count(), 0);
+    assert_eq!(cache.smart_erase_candidate_visit_count(), 0);
+    assert!(!composer.decoration_view.spotlight.active);
+}
+
+#[test]
+fn filter_creation_order_memo_ignores_geometry_and_refreshes_on_topology() {
+    let (mut model, mut cache) = fixture(false);
+    let mut presentation = EditorPresentationState {
+        creation_preview: Some(ElementCreationPreview::Filter(filter(
+            CanvasFilterType::Grayscale,
+            0.0,
+        ))),
+        ..Default::default()
+    };
+    for offset in 0..8 {
+        let Some(ElementCreationPreview::Filter(preview)) = &mut presentation.creation_preview
+        else {
+            unreachable!();
+        };
+        preview.center.x = f64::from(offset);
+        preview.width = 40.0 + f64::from(offset);
+        let items = compose_scene_items(&cache, &model, &presentation, frame(64));
+        let runs = compose_scene_render_plan(&cache, &model, &presentation, &items);
+        assert_eq!(runs.len(), 3);
+        assert_ne!(runs[0].source_pass, runs[1].source_pass);
+        assert_eq!(runs[1].source_pass, runs[2].source_pass);
+    }
+    assert_eq!(cache.preview_order_input_build_count(), 1);
+    let mut tx = Transaction::new("hide offscreen source boundary");
+    tx.update_element_meta(
+        id(1),
+        ElementMeta {
+            visible: false,
+            ..Default::default()
+        },
+    );
+    let result = model.apply_transaction(tx).unwrap();
+    cache.sync(&model, Some(&result.changes));
+    let items = compose_scene_items(&cache, &model, &presentation, frame(64));
+    let runs = compose_scene_render_plan(&cache, &model, &presentation, &items);
+    assert_eq!(runs.len(), 2);
+    assert_eq!(runs[0].count, 2);
+    assert_eq!(runs[0].source_pass, runs[1].source_pass);
+    assert_eq!(cache.preview_order_input_build_count(), 2);
+    let Some(ElementCreationPreview::Filter(preview)) = &mut presentation.creation_preview else {
+        unreachable!();
+    };
+    preview.filter_type = CanvasFilterType::Inversion;
+    let items = compose_scene_items(&cache, &model, &presentation, frame(64));
+    let runs = compose_scene_render_plan(&cache, &model, &presentation, &items);
+    assert_eq!(runs.len(), 1);
+    assert_eq!(runs[0].count, 3);
+    assert_eq!(cache.preview_order_input_build_count(), 3);
+}
+
+#[test]
+fn filter_creation_order_memo_is_invalidated_by_mixed_preview_fallback() {
+    let mut model = DocumentModel::new();
+    let mut arrow = ArrowData::from_global_points(
+        &[Point::new(100.0, 0.0), Point::new(110.0, 0.0)],
+        ColorRgba8::default(),
+        2.0,
+        StrokeStyle::Solid,
+        snow_draw_engine_core::arrow::ArrowType::Straight,
+        None,
+        None,
+    )
+    .unwrap();
+    let mut tx = Transaction::new("filter creation with arrow preview");
+    tx.insert_filter(
+        id(0),
+        ElementMeta::default(),
+        filter(CanvasFilterType::Inversion, 0.0),
+    );
+    tx.insert_arrow(id(1), ElementMeta::default(), arrow.clone());
+    tx.insert_filter(
+        id(2),
+        ElementMeta::default(),
+        filter(CanvasFilterType::Inversion, 0.0),
+    );
+    model.apply_transaction(tx).unwrap();
+    let mut cache = DocumentSceneCache::new();
+    cache.sync(&model, None);
+    let mut presentation = EditorPresentationState {
+        creation_preview: Some(ElementCreationPreview::Filter(filter(
+            CanvasFilterType::Inversion,
+            0.0,
+        ))),
+        ..Default::default()
+    };
+    let items = compose_scene_items(&cache, &model, &presentation, frame(64));
+    let baseline = compose_scene_render_plan(&cache, &model, &presentation, &items);
+    arrow.points = vec![[0.0, 0.0], [0.0, 0.0]];
+    presentation
+        .preview_arrows
+        .push(SelectionArrowState { id: id(1), arrow });
+    let items = compose_scene_items(&cache, &model, &presentation, frame(64));
+    let mixed = compose_scene_render_plan(&cache, &model, &presentation, &items);
+    assert_ne!(mixed, baseline);
+    presentation.preview_arrows.clear();
+    let items = compose_scene_items(&cache, &model, &presentation, frame(64));
+    assert_eq!(
+        compose_scene_render_plan(&cache, &model, &presentation, &items),
+        baseline
+    );
+    assert_eq!(cache.preview_order_input_build_count(), 3);
+}
+
+#[test]
 fn culling_preserves_source_boundaries_and_effect_order() {
     for separator_is_filter in [false, true] {
         let (model, cache) = fixture(separator_is_filter);
@@ -535,7 +700,7 @@ fn new_arrow_label_draft_is_a_boundary_even_when_owner_emits_no_geometry() {
     model.apply_transaction(tx).unwrap();
     let mut cache = DocumentSceneCache::new();
     cache.sync(&model, None);
-    let presentation = EditorPresentationState {
+    let mut presentation = EditorPresentationState {
         active_text_draft: Some(ActiveTextDraftPresentation {
             target: ActiveTextDraftTarget::NewArrow(id(1)),
             revision: 1,
@@ -558,4 +723,15 @@ fn new_arrow_label_draft_is_a_boundary_even_when_owner_emits_no_geometry() {
     ));
     let runs = compose_scene_render_plan(&cache, &model, &presentation, &items);
     assert_ne!(runs[0].source_pass, runs[1].source_pass);
+    assert_eq!(cache.preview_order_input_build_count(), 1);
+    for width in [30.0, 40.0, 50.0] {
+        presentation.active_text_draft.as_mut().unwrap().text.layout =
+            TextLayoutSize::new(width, 10.0);
+        let items = compose_scene_items(&cache, &model, &presentation, frame(64));
+        assert_eq!(
+            compose_scene_render_plan(&cache, &model, &presentation, &items),
+            runs
+        );
+    }
+    assert_eq!(cache.preview_order_input_build_count(), 1);
 }

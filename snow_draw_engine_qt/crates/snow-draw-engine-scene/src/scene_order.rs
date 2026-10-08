@@ -45,6 +45,20 @@ pub(crate) struct SceneOrderPlan {
     memberships: HashMap<DisplayItemId, (DisplayItemId, DisplayItemId)>,
 }
 
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) struct PreviewOrderKey {
+    pub base_generation: u64,
+    pub creation: Option<OrderNode>,
+    pub creation_label: Option<ElementId>,
+    pub draft: Option<(OrderNode, Option<u32>)>,
+}
+
+#[derive(Debug, Default)]
+pub(crate) struct PreviewOrderPlan {
+    pub key: Option<PreviewOrderKey>,
+    pub plan: SceneOrderPlan,
+}
+
 impl SceneOrderPlan {
     pub fn new(nodes: Vec<OrderNode>) -> Self {
         let mut memberships = HashMap::new();

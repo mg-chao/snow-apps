@@ -466,8 +466,20 @@
             <translation>%1 + %2</translation>
         </message>
         <message>
+            <source>Adjust angle</source>
+            <translation>调整角度</translation>
+        </message>
+        <message>
             <source>Auto-align</source>
             <translation>自动对齐</translation>
+        </message>
+        <message>
+            <source>Click endpoint, vertex, then endpoint</source>
+            <translation>依次点击端点、顶点和另一端点</translation>
+        </message>
+        <message>
+            <source>Create counterclockwise angle</source>
+            <translation>创建逆时针角度</translation>
         </message>
         <message>
             <source>Delete selected elements</source>
@@ -476,6 +488,10 @@
         <message>
             <source>Draw straight line</source>
             <translation>绘制直线</translation>
+        </message>
+        <message>
+            <source>Fine angle adjustment</source>
+            <translation>精细调整角度</translation>
         </message>
         <message>
             <source>Fixed-angle rotation</source>

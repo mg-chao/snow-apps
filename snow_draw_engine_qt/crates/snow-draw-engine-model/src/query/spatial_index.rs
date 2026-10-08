@@ -146,6 +146,14 @@ impl SpatialIndex {
             .and_then(|bounds| bounds.as_ref().copied())
     }
 
+    /// Updates one retained geometry without rebuilding unrelated index entries.
+    pub fn update_bounds(&mut self, id: ElementId, bounds: Option<DrawRect>) {
+        self.remove(id);
+        if let Some(bounds) = bounds {
+            self.insert(id, bounds);
+        }
+    }
+
     fn insert(&mut self, id: ElementId, bounds: DrawRect) {
         let keys = self.keys_for_bounds(bounds);
         self.ensure_capacity(id.index as usize);

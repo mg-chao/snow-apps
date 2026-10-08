@@ -473,6 +473,24 @@ bool SnowCanvasRuntimeEditor::setDistanceStyleFromToolbar(const SnowCanvasDistan
         return snow_viewport_set_distance_style_patch_ex(r, v, &value, properties, changed);
     });
 }
+bool SnowCanvasRuntimeEditor::setAngleStyleFromToolbar(const SnowCanvasAngleStyle& style,
+                                                       quint32 properties) {
+    if (!snow_canvas_types::validAngleStyle(style))
+        return false;
+    const auto value = snow_canvas_types::toEngineAngleStyle(style);
+    return m_impl->mutate([&](auto r, auto v, auto changed) {
+        return snow_viewport_set_angle_style_patch_ex(r, v, &value, properties, changed);
+    });
+}
+
+bool SnowCanvasRuntimeEditor::adjustAngleValue(double deltaRadians) {
+    if (!std::isfinite(deltaRadians))
+        return false;
+    return m_impl->mutate([&](auto r, auto v, auto changed) {
+        return snow_viewport_adjust_angle_value_ex(r, v, deltaRadians, changed);
+    });
+}
+
 bool SnowCanvasRuntimeEditor::setDistanceCreationPixelScale(const QSizeF& scale) {
     return m_impl->mutate([&](auto r, auto v, auto changed) {
         return snow_viewport_set_distance_pixel_scale_ex(r, v, scale.width(), scale.height(),

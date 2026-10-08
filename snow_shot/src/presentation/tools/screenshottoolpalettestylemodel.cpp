@@ -41,6 +41,11 @@ void ScreenshotToolPaletteStyleState::reset(const SnowCanvasStyleDefaults& defau
     distanceStyle = defaults.distance;
     distanceStyleMixed = 0;
     showingSelectedDistance = false;
+    creationAngleStyle = defaults.angle;
+    angleStyle = defaults.angle;
+    angleStyleMixed = 0;
+    showingSelectedAngle = false;
+    angleControlsActive = false;
     m_creationTextStyle.setTextStyle(defaults.text);
     m_textStyle.setTextStyle(defaults.text);
     m_creationSerialNumberStyle = defaults.serialNumber;

@@ -103,6 +103,30 @@
     },
     {
       "variant": "outlined",
+      "symbol": "AngleAnnotation",
+      "name": "angle-annotation",
+      "source": "../src/presentation/components/icons/resources/angle-annotation.svg",
+      "colorModel": "monochrome",
+      "fit": "contain"
+    },
+    {
+      "variant": "outlined",
+      "symbol": "AngleUnitDegrees",
+      "name": "angle-unit-degrees",
+      "source": "../src/presentation/components/icons/resources/angle-unit-degrees.svg",
+      "colorModel": "monochrome",
+      "fit": "contain"
+    },
+    {
+      "variant": "outlined",
+      "symbol": "AngleUnitRadians",
+      "name": "angle-unit-radians",
+      "source": "../src/presentation/components/icons/resources/angle-unit-radians.svg",
+      "colorModel": "monochrome",
+      "fit": "contain"
+    },
+    {
+      "variant": "outlined",
       "symbol": "ArrowRatio",
       "name": "arrow-ratio",
       "source": "../src/presentation/components/icons/resources/arrow-ratio.svg",

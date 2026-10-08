@@ -743,3 +743,129 @@ void runScreenshotStylePersistenceFailureTest() {
     require(binding.lastSaveSucceeded() == false,
             "binding exposes the persistence dependency's failed save");
 }
+
+void runAngleStyleBindingTests() {
+    SnowCanvasRuntime runtime;
+    SnowCanvasWidget canvas(runtime);
+    auto defaults = screenshotCanvasToolStyleDefaults();
+    defaults.angle.decimalPlaces = 1;
+    auto settings = options();
+    settings.showAngleTool = true;
+    settings.styleDefaults = defaults;
+    ScreenshotToolPalette palette(settings);
+    int saves = 0;
+    ScreenshotStyleBinding binding(palette, canvas, &palette, {},
+                                   [&saves](const SnowCanvasStyleEdit&) {
+                                       ++saves;
+                                       return true;
+                                   });
+    applyScreenshotCanvasToolStyles(canvas, defaults);
+    canvas.resize(400, 300);
+    canvas.setInteractionEnabled(true);
+    canvas.show();
+    QApplication::processEvents();
+    QObject::connect(&canvas, &SnowCanvasWidget::styleToolbarStateChanged, &palette,
+                     [&] { palette.setStyleToolbarState(canvas.canvasStyleToolbarState()); });
+    require(canvas.setCanvasTool(SnowCanvasTool::Angle), "activate angle style binding fixture");
+    palette.setActiveTool(ScreenshotToolPalette::Tool::Angle);
+    const auto click = [&](QPointF point) {
+        mouse(canvas, QEvent::MouseButtonPress, point);
+        mouse(canvas, QEvent::MouseButtonRelease, point);
+    };
+    const auto label = [&] {
+        for (const auto& slot : documentSlots(runtime)) {
+            const auto text = slot.toObject()
+                                  .value(QStringLiteral("data"))
+                                  .toObject()
+                                  .value(QStringLiteral("Text"))
+                                  .toObject();
+            if (!text.isEmpty())
+                return text.value(QStringLiteral("text")).toString();
+        }
+        return QString();
+    };
+    const auto sourceWidth = [&] {
+        for (const auto& slot : documentSlots(runtime)) {
+            const auto arrow = slot.toObject()
+                                   .value(QStringLiteral("data"))
+                                   .toObject()
+                                   .value(QStringLiteral("Arrow"))
+                                   .toObject();
+            if (!arrow.isEmpty())
+                return arrow.value(QStringLiteral("stroke_width")).toDouble();
+        }
+        return 0.0;
+    };
+    click({300, 150});
+    click({180, 150});
+    click({180, 40});
+    require(label() == QStringLiteral("90.0°"), "angle fixture has a generated measured label");
+    require(canvas.setCanvasTool(SnowCanvasTool::Select), "select angle through selection tool");
+    palette.setActiveTool(ScreenshotToolPalette::Tool::Select);
+    click({260, 150});
+    require(canvas.canvasStyleToolbarState().source == SnowCanvasStyleToolbarSource::SelectedAngle,
+            "selected angle exposes its dedicated style editor");
+    WheelStepAccumulator accumulator;
+    const auto hostWheel = [&](int delta, Qt::KeyboardModifiers modifiers = Qt::NoModifier,
+                               Qt::ScrollPhase phase = Qt::NoScrollPhase) {
+        QWheelEvent event({260, 150}, {260, 150}, {}, {0, delta}, Qt::NoButton, modifiers, phase,
+                          false);
+        event.setTimestamp(100);
+        return handleScreenshotStyleWheel(palette, canvas, event, accumulator);
+    };
+    require(hostWheel(240) && label() == QStringLiteral("92.0°") && sourceWidth() == 2,
+            "host wheel applies all coalesced angle steps ahead of selection opacity");
+    require(hostWheel(120, Qt::ShiftModifier) && label() == QStringLiteral("92.1°"),
+            "shift wheel uses a tenth-degree increment");
+    const auto beforeControl = runtime.serializeDocumentSession();
+    require(!hostWheel(120, Qt::ControlModifier) &&
+                runtime.serializeDocumentSession() == beforeControl,
+            "control wheel retains host navigation without editing the angle");
+    require(hostWheel(120, Qt::NoModifier, Qt::ScrollMomentum) &&
+                runtime.serializeDocumentSession() == beforeControl,
+            "momentum consumes without changing discrete angle values");
+    palette.angleValueAdjustmentRequested(-1, true);
+    require(label() == QStringLiteral("92.0°"), "palette angle wheel signal reaches the canvas");
+    auto selected = canvas.canvasAngleStyle();
+    selected.strokeWidth = 7;
+    selected.unit = SnowCanvasAngleUnit::Radians;
+    require(canvas.commitStyleEdit(SnowCanvasAngleStyleEdit{
+                selected, static_cast<quint32>(SnowCanvasAngleStyleProperty::All), false}) &&
+                sourceWidth() == 7 && saves == 0 &&
+                palette.creationStyleDefaults().angle == defaults.angle,
+            "selected angle styling changes only the document and never saves creation defaults");
+    require(canvas.resetEditingState() && canvas.setCanvasTool(SnowCanvasTool::Angle) &&
+                canvas.canvasAngleStyle() == defaults.angle,
+            "selected styling preserves future angle defaults");
+    selected = defaults.angle;
+    selected.strokeWidth = 4;
+    require(canvas.commitStyleEdit(SnowCanvasAngleStyleEdit{
+                selected, static_cast<quint32>(SnowCanvasAngleStyleProperty::StrokeWidth)}) &&
+                saves == 1 && palette.creationStyleDefaults().angle.strokeWidth == 4,
+            "creation style commits are remembered and saved once");
+
+    click({150, 270});
+    click({30, 270});
+    click({30, 180});
+    require(canvas.setCanvasTool(SnowCanvasTool::Select), "select among multiple angles");
+    palette.setActiveTool(ScreenshotToolPalette::Tool::Select);
+    click({260, 150});
+    const auto palettePixelWheel = [&] {
+        QWheelEvent event({100, 30}, {100, 30}, {0, 1}, {}, Qt::NoButton, Qt::NoModifier,
+                          Qt::ScrollUpdate, false);
+        QApplication::sendEvent(&palette, &event);
+    };
+    const auto firstSelection = runtime.serializeDocumentHistory();
+    palettePixelWheel();
+    const auto firstStep = runtime.serializeDocumentHistory();
+    require(firstStep != firstSelection,
+            "selected angle responds to the first precise wheel delta");
+    palettePixelWheel();
+    require(runtime.serializeDocumentHistory() == firstStep,
+            "subsequent precise deltas accumulate without extra angle steps");
+    click({90, 270});
+    const auto secondSelection = runtime.serializeDocumentHistory();
+    palettePixelWheel();
+    require(runtime.serializeDocumentHistory() != secondSelection,
+            "changing selected angle resets the palette's fractional wheel remainder");
+}

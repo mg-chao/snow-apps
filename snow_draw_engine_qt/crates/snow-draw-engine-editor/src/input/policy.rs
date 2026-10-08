@@ -54,6 +54,14 @@ impl Editor {
                 allow_shift_toggle: true,
                 default_cursor: CursorStyle::Crosshair,
             },
+            ActiveTool::Angle => ToolPolicy {
+                selection_scope: ToolSelectionScope::AngleOnly,
+                quick_selection_enabled: true,
+                clear_selection_on_activate: true,
+                empty_canvas_action: ToolEmptyCanvasAction::CreateArrow,
+                allow_shift_toggle: true,
+                default_cursor: CursorStyle::Crosshair,
+            },
             ActiveTool::Distance => ToolPolicy {
                 selection_scope: ToolSelectionScope::DistanceOnly,
                 quick_selection_enabled: true,
@@ -199,6 +207,7 @@ impl Editor {
             ToolSelectionScope::RectangleOnly => kind == ElementKind::Rectangle,
             ToolSelectionScope::ArrowOnly => kind == ElementKind::Arrow,
             ToolSelectionScope::DistanceOnly => kind == ElementKind::Distance,
+            ToolSelectionScope::AngleOnly => kind == ElementKind::Angle,
             ToolSelectionScope::LineOnly => kind == ElementKind::Line,
             ToolSelectionScope::FreeDrawOnly => kind == ElementKind::FreeDraw,
             ToolSelectionScope::RectangleHighlightOnly => kind == ElementKind::RectangleHighlight,

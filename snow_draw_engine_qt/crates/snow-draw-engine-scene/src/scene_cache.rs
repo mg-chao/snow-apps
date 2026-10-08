@@ -1,5 +1,5 @@
-use crate::scene_order::{OrderNode, SceneOrderPlan};
-use std::collections::HashMap;
+use crate::scene_order::{OrderNode, PreviewOrderPlan, SceneOrderPlan};
+use std::collections::{HashMap, HashSet};
 
 use snow_draw_engine_core::DrawRect;
 use snow_draw_engine_display::{DisplaySpotlightCutout, SceneDisplayItem};
@@ -24,18 +24,28 @@ struct CachedSceneEntry {
     bounds: DrawRect,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct CachedSpotlightEntry {
+    cutout: DisplaySpotlightCutout,
+    bounds: DrawRect,
+}
+
 #[derive(Debug, Default)]
 pub struct DocumentSceneCache {
     document_revision: DocumentRevision,
     pub(crate) order_plan: SceneOrderPlan,
     order_plan_builds: u64,
     relation_revision: u64,
-    pub(crate) preview_order_plan: std::sync::Mutex<SceneOrderPlan>,
+    pub(crate) preview_order_plan: std::sync::Mutex<PreviewOrderPlan>,
     pub(crate) duplicate_scene:
         std::sync::Mutex<Option<std::rc::Rc<crate::scene_composition::DuplicateScene>>>,
     pub(crate) preview_order_builds: std::sync::atomic::AtomicU64,
+    pub(crate) preview_order_input_builds: std::sync::atomic::AtomicU64,
+    pub(crate) spotlight_candidate_visits: std::sync::atomic::AtomicU64,
+    pub(crate) smart_erase_candidate_visits: std::sync::atomic::AtomicU64,
     entries: HashMap<ElementId, CachedSceneEntry>,
-    spotlight_entries: HashMap<ElementId, DisplaySpotlightCutout>,
+    spotlight_entries: HashMap<ElementId, CachedSpotlightEntry>,
+    smart_erase_owners: HashSet<ElementId>,
 }
 
 impl DocumentSceneCache {
@@ -68,6 +78,42 @@ impl DocumentSceneCache {
             + self
                 .preview_order_builds
                 .load(std::sync::atomic::Ordering::Relaxed)
+    }
+
+    /// Counts full preview-order inputs, including copies that reuse the plan.
+    pub fn preview_order_input_build_count(&self) -> u64 {
+        self.preview_order_input_builds
+            .load(std::sync::atomic::Ordering::Relaxed)
+    }
+
+    pub(crate) fn order_plan_generation(&self) -> u64 {
+        self.order_plan_builds
+    }
+
+    pub fn spotlight_candidate_visit_count(&self) -> u64 {
+        self.spotlight_candidate_visits
+            .load(std::sync::atomic::Ordering::Relaxed)
+    }
+
+    pub fn smart_erase_candidate_visit_count(&self) -> u64 {
+        self.smart_erase_candidate_visits
+            .load(std::sync::atomic::Ordering::Relaxed)
+    }
+
+    pub(crate) fn smart_erase_owner_ids(&self) -> impl ExactSizeIterator<Item = ElementId> + '_ {
+        self.smart_erase_owners.iter().copied()
+    }
+
+    pub(crate) fn has_visible_spotlight(&self) -> bool {
+        !self.spotlight_entries.is_empty()
+    }
+
+    pub(crate) fn spotlight_entries(
+        &self,
+    ) -> impl ExactSizeIterator<Item = (ElementId, DisplaySpotlightCutout, DrawRect)> + '_ {
+        self.spotlight_entries
+            .iter()
+            .map(|(&id, entry)| (id, entry.cutout, entry.bounds))
     }
 
     fn rebuild_order(&mut self, model: &DocumentModel) {
@@ -116,12 +162,13 @@ impl DocumentSceneCache {
     }
 
     pub fn spotlight_entry(&self, id: ElementId) -> Option<DisplaySpotlightCutout> {
-        self.spotlight_entries.get(&id).copied()
+        self.spotlight_entries.get(&id).map(|entry| entry.cutout)
     }
 
     fn rebuild(&mut self, model: &DocumentModel) {
         self.entries.clear();
         self.spotlight_entries.clear();
+        self.smart_erase_owners.clear();
         for state in model.element_states() {
             self.refresh_entry(model, state.id);
         }
@@ -137,6 +184,7 @@ impl DocumentSceneCache {
         for id in &delta.removed {
             self.entries.remove(id);
             self.spotlight_entries.remove(id);
+            self.smart_erase_owners.remove(id);
         }
         for id in delta.touched.iter().chain(&delta.created) {
             let old = self.entry(*id).map(|item| OrderNode::new(*id, item));
@@ -152,8 +200,16 @@ impl DocumentSceneCache {
         let Ok(state) = model.element_state(id) else {
             self.entries.remove(&id);
             self.spotlight_entries.remove(&id);
+            self.smart_erase_owners.remove(&id);
             return;
         };
+        // Smart Erase exports retain visible owners even when their drawable
+        // entry is culled for zero opacity or degenerate dimensions.
+        if state.visible && state.data.is_smart_erase() {
+            self.smart_erase_owners.insert(id);
+        } else {
+            self.smart_erase_owners.remove(&id);
+        }
         if !state.visible {
             self.entries.remove(&id);
             self.spotlight_entries.remove(&id);
@@ -163,8 +219,13 @@ impl DocumentSceneCache {
             && rect.is_spotlight()
         {
             self.entries.remove(&id);
-            self.spotlight_entries
-                .insert(id, crate::spotlight_cutout(*rect));
+            self.spotlight_entries.insert(
+                id,
+                CachedSpotlightEntry {
+                    cutout: crate::spotlight_cutout(*rect),
+                    bounds: rect_bounds(*rect),
+                },
+            );
             return;
         }
         self.spotlight_entries.remove(&id);

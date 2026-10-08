@@ -1,6 +1,8 @@
 #ifndef SNOW_SHOT_PRESENTATION_SCREENRECORDINGAREAWINDOW_H
 #define SNOW_SHOT_PRESENTATION_SCREENRECORDINGAREAWINDOW_H
 
+#include "snow_shot/presentation/screenshotwheelinput.h"
+
 #include "snow_shot/presentation/screenshottoolpalette.h"
 
 #include <QRect>
@@ -132,6 +134,7 @@ class ScreenRecordingAreaWindow final : public QWidget {
     Qt::Edges m_regionEffectiveEdges;
     std::unique_ptr<SnowCanvasRuntime> m_canvasRuntime;
     SnowCanvasWidget* m_canvas = nullptr;
+    snow_shot::presentation::WheelStepAccumulator m_angleWheelSteps;
     std::unique_ptr<RecordingRegionInputRouter> m_regionInputRouter;
     RecordingRegionDragHandle* m_regionDragHandle = nullptr;
     snow_shot::presentation::recording::RecordingCountdownOverlay* m_countdownOverlay = nullptr;

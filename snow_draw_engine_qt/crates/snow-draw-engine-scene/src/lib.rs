@@ -8,6 +8,8 @@ mod scene_order;
 #[cfg(test)]
 mod scene_order_tests;
 mod selection_visuals;
+#[cfg(test)]
+mod smart_erase_tests;
 
 use dirty_regions::finalize_dirty_regions;
 use item_bounds::*;
@@ -148,7 +150,8 @@ impl ViewportComposer {
         let next_render_plan =
             compose_scene_render_plan(cache, model, presentation, &next_scene_items);
         let next_overlay_items = compose_overlay_items(snap_config, presentation, frame_view);
-        let next_decoration_view = display_decoration(model, presentation);
+        let next_decoration_view =
+            display_decoration_with_spotlight(model, presentation, cache.has_visible_spotlight());
         let next_spotlight_cutouts =
             compose_spotlight_cutouts(cache, model, presentation, frame_view);
         let force_reset = !self.initialized;
@@ -720,9 +723,18 @@ fn build_pen_filter_geometry_ops(
     geometry_ops
 }
 
+#[cfg(test)]
 fn display_decoration(
     model: &DocumentModel,
     presentation: &EditorPresentationState,
+) -> DecorationView {
+    display_decoration_with_spotlight(model, presentation, model.has_visible_spotlight())
+}
+
+fn display_decoration_with_spotlight(
+    model: &DocumentModel,
+    presentation: &EditorPresentationState,
+    has_visible_spotlight: bool,
 ) -> DecorationView {
     let config = model.watermark_config();
     let mut out = snow_draw_engine_display::DisplayWatermarkConfig {
@@ -755,7 +767,7 @@ fn display_decoration(
         spotlight: snow_draw_engine_display::DisplaySpotlightConfig {
             color: spotlight_config.color,
             opacity: spotlight_config.opacity,
-            active: model.has_visible_spotlight() || preview_active,
+            active: has_visible_spotlight || preview_active,
         },
     }
 }
@@ -794,21 +806,18 @@ fn compose_spotlight_cutouts(
         .map(|preview| (preview.id, preview.rect))
         .collect::<std::collections::HashMap<_, _>>();
     let mut cutouts = Vec::new();
-
-    for state in model.element_states() {
-        let ElementData::Rectangle(committed) = state.data else {
-            continue;
-        };
-        if !state.visible || !committed.is_spotlight() {
-            continue;
-        }
-        if let Some(preview) = previews.get(&state.id) {
+    let mut committed: Vec<_> = cache.spotlight_entries().collect();
+    cache
+        .spotlight_candidate_visits
+        .fetch_add(committed.len() as u64, std::sync::atomic::Ordering::Relaxed);
+    // Preserve stable cutout patch ordering without visiting unrelated elements.
+    committed.sort_unstable_by_key(|(id, _, _)| model.paint_rank(*id));
+    for (id, cutout, bounds) in committed {
+        if let Some(preview) = previews.get(&id) {
             if bounds_visible(rect_bounds(*preview), viewport) {
                 cutouts.push(spotlight_cutout(*preview));
             }
-        } else if bounds_visible(rect_bounds(*committed), viewport)
-            && let Some(cutout) = cache.spotlight_entry(state.id)
-        {
+        } else if bounds_visible(bounds, viewport) {
             cutouts.push(cutout);
         }
     }
@@ -1442,21 +1451,43 @@ pub fn smart_erase_items(
     model: &DocumentModel,
     presentation: &EditorPresentationState,
 ) -> Vec<SceneDisplayItem> {
+    smart_erase_items_for_ids(model, presentation, model.paint_order().iter().copied())
+}
+
+/// Uncropped Smart Erase presentation from a synchronized sparse scene cache.
+pub fn cached_smart_erase_items(
+    model: &DocumentModel,
+    cache: &DocumentSceneCache,
+    presentation: &EditorPresentationState,
+) -> Vec<SceneDisplayItem> {
+    let mut owners: Vec<_> = cache.smart_erase_owner_ids().collect();
+    cache
+        .smart_erase_candidate_visits
+        .fetch_add(owners.len() as u64, std::sync::atomic::Ordering::Relaxed);
+    owners.sort_unstable_by_key(|id| model.paint_rank(*id));
+    smart_erase_items_for_ids(model, presentation, owners)
+}
+
+fn smart_erase_items_for_ids(
+    model: &DocumentModel,
+    presentation: &EditorPresentationState,
+    ids: impl IntoIterator<Item = ElementId>,
+) -> Vec<SceneDisplayItem> {
     use snow_draw_engine_document::{CanvasFilterType, ElementData};
     use snow_draw_engine_editor::ElementCreationPreview;
     let mut items = Vec::new();
-    for id in model.document().paint_order() {
-        let Ok(element) = model.element(*id) else {
+    for id in ids {
+        let Ok(element) = model.element(id) else {
             continue;
         };
         if !element.data.is_smart_erase() || !element.meta.visible {
             continue;
         }
         let mut item = if let Some(preview) =
-            presentation.preview_elements.iter().find(|p| p.id == *id)
+            presentation.preview_elements.iter().find(|p| p.id == id)
         {
             let Some((mut item, _)) =
-                item_conversions::scene_item_from_selection_preview(model, *id, preview.rect, None)
+                item_conversions::scene_item_from_selection_preview(model, id, preview.rect, None)
             else {
                 continue;
             };
@@ -1466,9 +1497,9 @@ pub fn smart_erase_items(
             item
         } else {
             match &element.data {
-                ElementData::Filter(f) => item_conversions::scene_item_from_filter(*id, *f),
+                ElementData::Filter(f) => item_conversions::scene_item_from_filter(id, *f),
                 ElementData::PenFilter(f) => {
-                    item_conversions::scene_item_from_pen_filter(*id, f.clone())
+                    item_conversions::scene_item_from_pen_filter(id, f.clone())
                 }
                 _ => continue,
             }
@@ -2274,6 +2305,106 @@ mod tests {
                 frame_view(),
             )
             .is_empty()
+        );
+    }
+
+    #[test]
+    fn sparse_spotlight_candidates_preserve_previews_visibility_order_and_removal() {
+        let id = |index| ElementId {
+            index,
+            generation: 1,
+        };
+        let mut model = DocumentModel::new();
+        let mut tx = Transaction::new("sparse spotlight candidates");
+        for (index, x, visible) in [(0, 10.0, true), (1, 5000.0, true), (2, 20.0, false)] {
+            tx.insert_rectangle(
+                id(index),
+                ElementMeta {
+                    visible,
+                    ..Default::default()
+                },
+                spotlight_rect(Point::new(x, 0.0), 20.0, 20.0),
+            );
+        }
+        model.apply_transaction(tx).unwrap();
+        let mut cache = DocumentSceneCache::new();
+        cache.sync(&model, None);
+        let presentation = EditorPresentationState {
+            preview_elements: vec![
+                SelectionRectState {
+                    id: id(1),
+                    rect: spotlight_rect(Point::new(30.0, 0.0), 20.0, 20.0),
+                },
+                SelectionRectState {
+                    id: id(2),
+                    rect: spotlight_rect(Point::new(40.0, 0.0), 20.0, 20.0),
+                },
+            ],
+            ..Default::default()
+        };
+        let centers = |cutouts: Vec<DisplaySpotlightCutout>| {
+            cutouts
+                .into_iter()
+                .map(|cutout| cutout.center_x)
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(
+            centers(compose_spotlight_cutouts(
+                &cache,
+                &model,
+                &presentation,
+                frame_view()
+            )),
+            vec![10.0, 30.0]
+        );
+        assert_eq!(cache.spotlight_candidate_visit_count(), 2);
+        let mut reorder = Transaction::new("reorder spotlight cutouts");
+        reorder.reorder_elements(vec![id(1)], 0);
+        let result = model.apply_transaction(reorder).unwrap();
+        cache.sync(&model, Some(&result.changes));
+        assert_eq!(
+            centers(compose_spotlight_cutouts(
+                &cache,
+                &model,
+                &presentation,
+                frame_view()
+            )),
+            vec![30.0, 10.0]
+        );
+        let mut remove = Transaction::new("remove visible spotlight cutouts");
+        remove.remove_element(id(1));
+        remove.update_element_meta(
+            id(0),
+            ElementMeta {
+                visible: false,
+                ..Default::default()
+            },
+        );
+        let result = model.apply_transaction(remove).unwrap();
+        cache.sync(&model, Some(&result.changes));
+        assert!(!cache.has_visible_spotlight());
+        assert!(compose_spotlight_cutouts(&cache, &model, &presentation, frame_view()).is_empty());
+        let creation = EditorPresentationState {
+            creation_preview: Some(ElementCreationPreview::Rectangle(spotlight_rect(
+                Point::new(50.0, 0.0),
+                20.0,
+                20.0,
+            ))),
+            ..Default::default()
+        };
+        assert!(
+            display_decoration_with_spotlight(&model, &creation, cache.has_visible_spotlight())
+                .spotlight
+                .active
+        );
+        assert_eq!(
+            centers(compose_spotlight_cutouts(
+                &cache,
+                &model,
+                &creation,
+                frame_view()
+            )),
+            vec![50.0]
         );
     }
 

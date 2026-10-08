@@ -67,7 +67,7 @@ pub fn compute_arrow_endpoint_drag(
     context: EngineContext,
     options: ArrowEndpointDragOptions,
 ) -> ArrowEditResult {
-    if arrow.is_distance() {
+    if arrow.is_generated_annotation() {
         let mut points = arrow.global_points();
         let index = arrow_endpoint_index(points.len(), edge);
         points[index] = canvas_point;
@@ -83,6 +83,14 @@ pub fn compute_arrow_endpoint_drag(
         .unwrap_or_else(|| arrow.clone());
         updated.rotation = arrow.rotation;
         updated.inherit_linear_metadata_from(arrow);
+        if updated.is_angle() && crate::angle_geometry(&updated).is_none() {
+            if let Some(annotation) = updated.angle.as_mut() {
+                annotation.full_turn = false;
+            }
+            if crate::angle_geometry(&updated).is_none() {
+                updated = arrow.clone();
+            }
+        }
         return ArrowEditResult {
             arrow: updated,
             reorder_targets: Vec::new(),
@@ -124,6 +132,9 @@ pub fn compute_arrow_focus_drag(
     context: EngineContext,
     options: ArrowFocusDragOptions,
 ) -> ArrowEditResult {
+    if arrow.is_angle() {
+        return unchanged_arrow_edit(arrow);
+    }
     let result = editing::compute_focus_drag(&ComputeFocusPointDragInput {
         arrow: arrow_engine_state(arrow_id, arrow),
         dragged_edge: edge,
@@ -146,6 +157,9 @@ pub fn recompute_arrow_after_bindable_change(
     changed_bindable_ids: &[ElementId],
     context: EngineContext,
 ) -> ArrowEditResult {
+    if arrow.is_angle() {
+        return unchanged_arrow_edit(arrow);
+    }
     let changed_bindable_ids =
         (!changed_bindable_ids.is_empty()).then(|| changed_bindable_ids.to_vec());
     let result = editing::recompute_after_bindable_change(&RecomputeAfterBindableChangeInput {
@@ -165,6 +179,9 @@ pub fn visible_arrow_focus_points(
     bindables: &[BindableElementState],
     zoom: f64,
 ) -> Vec<ArrowFocusPointState> {
+    if arrow.is_angle() {
+        return Vec::new();
+    }
     focus::list_visible_focus_points(&ListVisibleFocusPointsInput {
         arrow: arrow_engine_state(arrow_id, arrow),
         bindables: bindable_states_from_elements(bindables),
@@ -180,6 +197,14 @@ pub fn visible_arrow_focus_points(
         point: Point::new(focus.point[0], focus.point[1]),
     })
     .collect()
+}
+
+fn unchanged_arrow_edit(arrow: &ArrowData) -> ArrowEditResult {
+    ArrowEditResult {
+        arrow: arrow.clone(),
+        reorder_targets: Vec::new(),
+        suggested_binding: None,
+    }
 }
 
 pub fn drag_elbow_arrow_segment(

@@ -69,6 +69,13 @@ class SnowCanvasWidget : public QWidget {
     bool setCanvasSpotlightConfig(const SnowCanvasSpotlightConfig& config);
     void previewCanvasSpotlightConfig(const SnowCanvasSpotlightConfig& config);
     SnowCanvasDistanceStyle canvasDistanceStyle() const;
+    SnowCanvasAngleStyle canvasAngleStyle() const;
+    bool setCanvasAngleStyle(
+        const SnowCanvasAngleStyle& style,
+        quint32 properties = static_cast<quint32>(SnowCanvasAngleStyleProperty::All));
+    bool setCanvasAngleStylePatch(const SnowCanvasAngleStyle& style, quint32 properties);
+    // Adjusts the third-point preview, otherwise an angle-only selection, in radians.
+    bool adjustAngleValue(double deltaRadians);
     bool setCanvasDistanceStyle(const SnowCanvasDistanceStyle& style,
                                 quint32 properties = SnowCanvasDistanceStyleAllProperties);
     // Source-image pixels per canvas unit, captured when a distance draft begins.
@@ -189,6 +196,8 @@ class SnowCanvasWidget : public QWidget {
     void autoFilterRegionsChanged();
     void autoFilterInteractionStarting();
     void activeToolChanged();
+    // Changes when angle wheel adjustments target a different draft or selection.
+    void angleAdjustmentTargetChanged();
     void styleToolbarStateChanged();
     void styleEditCommitted(const SnowCanvasStyleEdit& edit);
     void historyStateChanged();

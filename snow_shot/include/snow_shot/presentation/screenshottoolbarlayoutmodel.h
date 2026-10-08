@@ -56,6 +56,7 @@ enum class Item {
     Eraser,
     Watermark,
     Distance,
+    Angle,
 };
 
 enum class Icon {
@@ -101,6 +102,7 @@ enum class Icon {
     RecordingFolder,
     RecordingTrim,
     Distance,
+    Angle,
 };
 
 struct Descriptor {
@@ -128,6 +130,8 @@ struct EditorDescriptor {
         {Item::Distance, "distance",
          QT_TRANSLATE_NOOP("DrawingToolbarEditorSettingsWidget", "Distance annotation"),
          Icon::Distance},
+        {Item::Angle, "angle",
+         QT_TRANSLATE_NOOP("DrawingToolbarEditorSettingsWidget", "Angle annotation"), Icon::Angle},
         {Item::Line, "line", QT_TRANSLATE_NOOP("DrawingToolbarEditorSettingsWidget", "Line"),
          Icon::Line},
         {Item::FreeDraw, "free-draw",
@@ -404,7 +408,8 @@ editorDescriptors(storage::ScreenshotToolbarLayoutKind kind) {
         {QStringLiteral("select")},
         {QStringLiteral("select-separator")},
         {QStringLiteral("shape")},
-        {QStringLiteral("distance"), QStringLiteral("line"), QStringLiteral("arrow")},
+        {QStringLiteral("angle"), QStringLiteral("distance"), QStringLiteral("line"),
+         QStringLiteral("arrow")},
         {QStringLiteral("free-draw")},
         {QStringLiteral("spotlight"), QStringLiteral("highlighter")},
         {QStringLiteral("text")},
@@ -680,6 +685,31 @@ normalizedLayout(const storage::ScreenshotToolbarLayout& input, const QStringLis
             hidden.insert(QStringLiteral("latex-recognition"));
         }
     }
+    auto previousDrawingDefaults = defaultLayout;
+    QStringList missingAnnotations;
+    for (const QString& id : {QStringLiteral("angle"), QStringLiteral("distance")}) {
+        if (known.contains(id) && !positioned.contains(id) && !hidden.contains(id)) {
+            missingAnnotations.push_back(id);
+            for (auto& position : previousDrawingDefaults)
+                position.removeAll(id);
+        }
+    }
+    for (auto& position : previousDrawingDefaults) {
+        for (const QString& id : result.hidden)
+            position.removeAll(id);
+    }
+    previousDrawingDefaults.removeIf(
+        [](const QStringList& position) { return position.isEmpty(); });
+    if (!missingAnnotations.isEmpty() && result.positions == previousDrawingDefaults) {
+        result.positions = defaultLayout;
+        for (auto& position : result.positions) {
+            for (const QString& id : result.hidden)
+                position.removeAll(id);
+        }
+        result.positions.removeIf([](const QStringList& position) { return position.isEmpty(); });
+        for (const QString& id : missingAnnotations)
+            positioned.insert(id);
+    }
     // These controls used to be fixed ahead of the configurable drawing positions.
     for (const QString& itemId : {QStringLiteral("select-separator"), QStringLiteral("select")}) {
         if (known.contains(itemId) && !positioned.contains(itemId) && !hidden.contains(itemId)) {
@@ -868,6 +898,8 @@ moveItemToHidden(const storage::ScreenshotToolbarLayout& input,
         return custom::ToolArrow();
     case Icon::Distance:
         return custom::DistanceAnnotation();
+    case Icon::Angle:
+        return custom::AngleAnnotation();
     case Icon::Line:
         return custom::ToolLine();
     case Icon::FreeDraw:

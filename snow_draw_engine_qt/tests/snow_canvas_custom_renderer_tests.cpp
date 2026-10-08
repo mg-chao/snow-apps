@@ -263,6 +263,46 @@ void ownedAxisAlignedFreeDrawChunksRenderWithoutRawGeometry() {
     item.queryPathChunks(QRectF(-50.0, -10.0, 100.0, 60.0), &visibleChunks);
     require(visibleChunks == std::vector<std::uint32_t>({0, 1}),
             "axis-aligned free-draw chunks must survive spatial culling");
+    item.queryPathChunks(QRectF(-30.0, -1.0, 10.0, 2.0), &visibleChunks);
+    require(visibleChunks == std::vector<std::uint32_t>({0}),
+            "short paths cull unrelated chunks with thin axis-aligned bounds");
+    item.queryPathChunks(QRectF(0.0, 0.0, 0.0, 0.0), &visibleChunks);
+    require(visibleChunks == std::vector<std::uint32_t>({0, 1}),
+            "short path culling retains shared boundary points");
+    item.queryPathChunks(QRectF(90.0, 90.0, 1.0, 1.0), &visibleChunks);
+    require(visibleChunks.empty(), "short path culling clears previous results on a miss");
+
+    item.arrow_text_bounds[0] = 12.0;
+    item.arrow_text_bounds[1] = 12.0;
+    item.arrow_text_bounds[2] = 24.0;
+    item.arrow_text_bounds[3] = 24.0;
+    require(!item.needsArrowTextClip(2.0) && !item.needsArrowTextClip(2.0),
+            "separated labels reuse a no-clip decision");
+    require(item.needsArrowTextClip(8.0),
+            "zoom-dependent antialias guard invalidates a no-clip decision");
+    item.arrow_text_bounds[0] = -24.0;
+    item.arrow_text_bounds[1] = -4.0;
+    item.arrow_text_bounds[2] = -12.0;
+    item.arrow_text_bounds[3] = 4.0;
+    require(item.needsArrowTextClip(2.0), "labels crossing rays keep clipping");
+    item.arrow_text_bounds[0] = 12.0;
+    item.arrow_text_bounds[1] = 12.0;
+    item.arrow_text_bounds[2] = 24.0;
+    item.arrow_text_bounds[3] = 24.0;
+    require(!item.needsArrowTextClip(2.0), "moving the label invalidates clip bounds");
+    item.stroke_width = 24.0;
+    require(item.needsArrowTextClip(2.0), "wider strokes invalidate clip decisions");
+    item.stroke_width = 6.0;
+    item.arrow_end_head = SNOW_ARROWHEAD_ARROW;
+    require(item.needsArrowTextClip(2.0), "fallback arrowheads retain conservative clipping");
+    item.arrow_end_head = SNOW_ARROWHEAD_NONE;
+    SnowCanvasSceneItem copied(item);
+    require(!copied.needsArrowTextClip(2.0), "copied geometry recomputes its clip decision");
+    commands[2].point.x = 18.0;
+    chunks[1].max_x = 18.0;
+    require(copied.applyPathGeometryPatch(0, 1, &range, 1, chunks, 2, commands, 3, false, true) &&
+                copied.needsArrowTextClip(2.0),
+            "full resets invalidate clipping even when geometry revisions are reused");
 
     SceneDisplayInfo sceneInfo{};
     sceneInfo.item_count = 1;
@@ -1337,6 +1377,10 @@ int main(int argc, char** argv) {
             "load Segoe UI for offscreen drawing cache checks");
     application.setFont(QFont(QStringLiteral("Segoe UI")));
 #endif
+    if (application.arguments().contains(QStringLiteral("--path-culling-only"))) {
+        ownedAxisAlignedFreeDrawChunksRenderWithoutRawGeometry();
+        return 0;
+    }
     if (application.arguments().contains(QStringLiteral("--stroke-cursor-only"))) {
         strokeCursorsUseNativeBitmapsAndRefreshWithStyle();
         return 0;

@@ -81,6 +81,12 @@ void toolMatrixMatchesRequestedVisibility() {
             "arrow tool hint matrix changed");
     require(hintLines(ScreenshotActiveTool::Line) == transformHints,
             "line tool hint matrix changed");
+    const auto angleHints = hintLines(ScreenshotActiveTool::Angle);
+    require(angleHints.contains(QStringLiteral("Adjust angle: mouse wheel")) &&
+                angleHints.contains(QStringLiteral("Fine angle adjustment: Shift + mouse wheel")) &&
+                angleHints.contains(shortcutLine(QStringLiteral("Delete selected elements"),
+                                                 {QStringLiteral("Delete")})),
+            "angle hints explain ordinary and fine wheel adjustment");
     require(hintLines(ScreenshotActiveTool::RectangleHighlight) == transformHints,
             "rectangle-highlighter hint matrix changed");
     require(hintLines(ScreenshotActiveTool::RectangleFilter) == transformHints,

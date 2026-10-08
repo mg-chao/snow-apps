@@ -62,7 +62,7 @@ const QStringList& drawingShortcutToolIds() {
         QStringLiteral("brush"),         QStringLiteral("highlight"), QStringLiteral("text"),
         QStringLiteral("serial_number"), QStringLiteral("filter"),    QStringLiteral("eraser"),
         QStringLiteral("watermark"),     QStringLiteral("line"),      QStringLiteral("spotlight"),
-        QStringLiteral("distance"),
+        QStringLiteral("distance"),      QStringLiteral("angle"),
     };
     return ids;
 }

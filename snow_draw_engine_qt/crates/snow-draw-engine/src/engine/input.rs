@@ -79,6 +79,11 @@ impl Engine {
         let before_scene_revision = self.editor.scene_input_revision();
         let before_overlay_revision = self.editor.overlay_input_revision();
         let before_view = self.viewport_slot(id)?.view;
+        if matches!(event, InputEvent::Pointer(pointer) if matches!(pointer.event_type, snow_draw_engine_interaction::PointerEventType::Down | snow_draw_engine_interaction::PointerEventType::DoubleClick))
+            || matches!(event, InputEvent::Key(_) | InputEvent::FocusLost)
+        {
+            self.history.break_angle_wheel_coalescing();
+        }
         let update = {
             let model = &self.model;
             let slot = self.viewports.get_mut(&id).ok_or(ErrorCode::NotFound)?;

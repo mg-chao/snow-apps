@@ -13,6 +13,7 @@
 #include <optional>
 
 #include "snow_shot/presentation/screenshotcanvascolorsampler.h"
+#include "snow_shot/presentation/screenshotwheelinput.h"
 #include "snow_draw_engine_qt/snow_canvas_types.h"
 
 class QScreen;
@@ -73,6 +74,7 @@ class ScreenshotPinnedEditController final : public QObject {
 
   private:
     QStringList m_automationFilterCategories;
+    snow_shot::presentation::WheelStepAccumulator m_angleWheelSteps;
     QString m_automationFilterError;
     bool eventFilter(QObject* watched, QEvent* event) override;
     void ensureToolbar();

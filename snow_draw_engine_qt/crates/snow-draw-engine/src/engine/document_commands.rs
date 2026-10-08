@@ -36,6 +36,7 @@ impl Engine {
         self.ensure_viewport(source_viewport_id)?;
         let before = self.editor.snapshot();
         self.editor.reset_editing_state();
+        self.history.break_angle_wheel_coalescing();
         self.refresh_after_session_mutation(before)
     }
 
@@ -47,11 +48,16 @@ impl Engine {
         self.ensure_viewport(source_viewport_id)?;
         let before = self.editor.snapshot();
         self.editor.select_element(&self.model, id)?;
+        self.history.break_angle_wheel_coalescing();
         self.refresh_after_session_mutation(before)
     }
 
     pub fn selected_ids(&self) -> Vec<ElementId> {
         self.editor.selected_ids()
+    }
+
+    pub fn angle_adjustment_target_revision(&self) -> u64 {
+        self.editor.angle_adjustment_target_revision(&self.model)
     }
 
     pub fn delete_selected_with_viewport_changes(

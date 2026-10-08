@@ -9,6 +9,7 @@
 #include "snow_shot/image/screenshotregiongeometry.h"
 #include "snow_shot/presentation/screenshotgeometry.h"
 #include "snow_shot/presentation/screenshotscrollingtypes.h"
+#include "snow_shot/presentation/screenshotwheelinput.h"
 #include "snow_shot/storage/settingsadapters.h"
 
 #include <QColor>
@@ -97,6 +98,7 @@ class ScreenshotToolPalette final : public QWidget,
         RectangleEraser,
         BrushEraser,
         Distance,
+        Angle,
     };
 
     enum class MoveToolPresentation {
@@ -230,6 +232,7 @@ class ScreenshotToolPalette final : public QWidget,
         bool showShapeTool = true;
         bool showArrowTool = true;
         bool showDistanceTool = true;
+        bool showAngleTool = true;
         bool showLineTool = false;
         bool showFreeDrawTool = false;
         bool showHighlightTool = false;
@@ -362,6 +365,7 @@ class ScreenshotToolPalette final : public QWidget,
     void setSelectionOpacity(qreal opacity, bool mixed = false);
     void installWheelFilters(QObject* receiver, QWidget* scope = nullptr);
     bool handleToolbarWheel(QWheelEvent* event);
+    void resetAngleWheelInput();
     [[nodiscard]] bool canActivateRecordingShortcut(const QString& actionId) const;
     bool activateRecordingShortcut(const QString& actionId);
     void setRecordingState(RecordingState state);
@@ -473,6 +477,8 @@ class ScreenshotToolPalette final : public QWidget,
     void shapeRequested();
     void arrowRequested();
     void distanceToolRequested();
+    void angleToolRequested();
+    void angleValueAdjustmentRequested(int steps, bool fine);
     void lineRequested();
     void freeDrawRequested();
     void highlightRequested();
@@ -857,6 +863,7 @@ class ScreenshotToolPalette final : public QWidget,
     QWidget* m_freeDrawStyleControlsWidget = nullptr;
     QWidget* m_arrowStyleControlsWidget = nullptr;
     QWidget* m_distanceStyleControlsWidget = nullptr;
+    QWidget* m_angleStyleControlsWidget = nullptr;
     QWidget* m_highlightStyleControlsWidget = nullptr;
     QWidget* m_penHighlightStyleControlsWidget = nullptr;
     QWidget* m_spotlightStyleControlsWidget = nullptr;
@@ -886,6 +893,7 @@ class ScreenshotToolPalette final : public QWidget,
     adqt::widgets::AdButton* m_shapeButton = nullptr;
     adqt::widgets::AdButton* m_arrowButton = nullptr;
     adqt::widgets::AdButton* m_distanceButton = nullptr;
+    adqt::widgets::AdButton* m_angleButton = nullptr;
     adqt::widgets::AdButton* m_lineButton = nullptr;
     adqt::widgets::AdButton* m_freeDrawButton = nullptr;
     adqt::widgets::AdButton* m_highlighterButton = nullptr;
@@ -1123,6 +1131,7 @@ class ScreenshotToolPalette final : public QWidget,
     QHash<int, MaterializationState> m_actionFamilyStates;
     QHash<int, MaterializationState> m_styleFamilyStates;
     SnowCanvasHistoryState m_canvasHistoryState;
+    snow_shot::presentation::WheelStepAccumulator m_angleWheelSteps;
     const SnowCanvasStyleDefaults m_styleDefaults;
     const Options m_options;
     bool m_moveOptionsToolbarVisible = false;

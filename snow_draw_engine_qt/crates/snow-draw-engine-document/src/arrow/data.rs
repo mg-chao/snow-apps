@@ -19,6 +19,7 @@ pub enum LinearElementKind {
     Line,
     PenHighlight,
     Distance,
+    Angle,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -57,6 +58,8 @@ pub struct ArrowData {
     pub linear_kind: LinearElementKind,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub distance: Option<crate::DistanceAnnotation>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub angle: Option<crate::AngleAnnotation>,
     /// Optional text owned by this arrow. Labels are ordinary text records so the
     /// host renderer remains the authority for fonts and exact text layout.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -121,6 +124,7 @@ impl ArrowData {
         Some(Self {
             linear_kind: LinearElementKind::Arrow,
             distance: None,
+            angle: None,
             text_element_id: None,
             text_path_fraction: None,
             x: normalized.x,
@@ -151,6 +155,7 @@ impl ArrowData {
     pub fn into_line(mut self, fill: ColorRgba8, fill_style: FillStyle) -> Self {
         self.linear_kind = LinearElementKind::Line;
         self.distance = None;
+        self.angle = None;
         self.start_arrowhead = None;
         self.end_arrowhead = None;
         self.arrow_type = normalized_line_arrow_type(self.arrow_type);
@@ -162,6 +167,7 @@ impl ArrowData {
     pub fn into_pen_highlight(mut self) -> Self {
         self.linear_kind = LinearElementKind::PenHighlight;
         self.distance = None;
+        self.angle = None;
         self.start_arrowhead = None;
         self.end_arrowhead = None;
         self.arrow_type = ArrowType::Straight;
@@ -179,6 +185,7 @@ impl ArrowData {
     pub fn inherit_linear_metadata_from(&mut self, source: &Self) {
         self.linear_kind = source.linear_kind;
         self.distance = source.distance;
+        self.angle = source.angle;
         self.text_element_id = source.text_element_id;
         self.text_path_fraction = source.text_path_fraction;
         self.arrow_shaft_type = source.arrow_shaft_type;
@@ -203,11 +210,20 @@ impl ArrowData {
             LinearElementKind::Line => ElementKind::Line,
             LinearElementKind::PenHighlight => ElementKind::PenHighlight,
             LinearElementKind::Distance => ElementKind::Distance,
+            LinearElementKind::Angle => ElementKind::Angle,
         }
     }
 
     pub fn is_distance(&self) -> bool {
         self.linear_kind == LinearElementKind::Distance
+    }
+
+    pub fn is_angle(&self) -> bool {
+        self.linear_kind == LinearElementKind::Angle
+    }
+
+    pub fn is_generated_annotation(&self) -> bool {
+        self.is_distance() || self.is_angle()
     }
 
     pub fn is_regular_arrow(&self) -> bool {
@@ -284,6 +300,9 @@ impl ArrowData {
     }
 
     pub fn path_commands(&self) -> Vec<ArrowPathCommand> {
+        if self.is_angle() {
+            return crate::angle::angle_path_commands(self);
+        }
         if self.is_elbow() {
             return rendering::generate_elbow_arrow_path_commands(
                 &self
@@ -312,6 +331,7 @@ impl ArrowData {
         Self {
             linear_kind: self.linear_kind,
             distance: self.distance,
+            angle: self.angle,
             text_element_id: self.text_element_id,
             text_path_fraction: self.text_path_fraction,
             x: patch.x.unwrap_or(self.x),
@@ -411,6 +431,9 @@ fn arrow_global_points(arrow: &ArrowData) -> Vec<Point<f64>> {
 }
 
 pub fn arrow_is_degenerate(arrow: &ArrowData) -> bool {
+    if arrow.is_angle() {
+        return crate::angle_geometry(arrow).is_none();
+    }
     if arrow.points.len() < 2 {
         return true;
     }
@@ -431,7 +454,12 @@ pub fn arrow_length(arrow: &ArrowData) -> f64 {
 /// Unmoved labels use Excalidraw's middle vertex or middle segment. Dragged
 /// labels follow their stored fraction of the rendered path.
 pub fn arrow_text_anchor(arrow: &ArrowData) -> Point<f64> {
-    if !arrow.is_distance()
+    if arrow.is_angle()
+        && let Some(label) = crate::angle_label(arrow, None)
+    {
+        return label.center;
+    }
+    if !arrow.is_generated_annotation()
         && let Some(fraction) = arrow.text_path_fraction
         && let Some(point) = arrow_text_path_point(arrow, fraction)
     {
@@ -566,7 +594,7 @@ fn label_curve_length(points: &[Point<f64>; 4], end: f64) -> f64 {
 }
 
 pub fn arrow_text_max_width(arrow: &ArrowData, font_size: f64) -> f64 {
-    if arrow.is_distance() {
+    if arrow.is_generated_annotation() {
         f64::MAX
     } else {
         (arrow.width * 0.7).max(font_size * 11.0)
@@ -574,6 +602,9 @@ pub fn arrow_text_max_width(arrow: &ArrowData, font_size: f64) -> f64 {
 }
 
 pub fn arrow_segment_midpoints(arrow: &ArrowData) -> Vec<(usize, Point<f64>)> {
+    if arrow.is_angle() {
+        return Vec::new();
+    }
     let global_points = arrow_global_points(arrow);
     if arrow.is_curve() && global_points.len() >= 3 {
         return curve_bezier_segments(
@@ -608,6 +639,31 @@ pub fn arrow_segment_midpoints(arrow: &ArrowData) -> Vec<(usize, Point<f64>)> {
 }
 
 pub fn validate_arrow(arrow: &ArrowData) -> Result<(), ErrorCode> {
+    if arrow.is_angle() {
+        crate::validate_angle_annotation(arrow.angle.ok_or(ErrorCode::InvalidArgument)?)?;
+        if arrow.points.len() != 3
+            || arrow.arrow_type != ArrowType::Straight
+            || arrow.start_arrowhead.is_some()
+            || arrow.end_arrowhead.is_some()
+            || arrow.start_binding.is_some()
+            || arrow.end_binding.is_some()
+            || arrow.stroke_style != StrokeStyle::Solid
+            || !arrow.stroke_width.is_finite()
+            || !(1.0..=72.0).contains(&arrow.stroke_width)
+            || arrow.fill.a != 0
+            || arrow.fill_style != FillStyle::Solid
+            || arrow.arrow_shaft_type != snow_draw_engine_core::arrow::ArrowShaftType::Plain
+            || arrow.fixed_segments.is_some()
+            || arrow.start_is_special.is_some()
+            || arrow.end_is_special.is_some()
+            || arrow.text_path_fraction.is_some()
+            || crate::angle_geometry(arrow).is_none()
+        {
+            return Err(ErrorCode::InvalidArgument);
+        }
+    } else if arrow.angle.is_some() {
+        return Err(ErrorCode::InvalidArgument);
+    }
     if arrow.is_distance() {
         crate::validate_distance_annotation(arrow.distance.ok_or(ErrorCode::InvalidArgument)?)?;
         if arrow.points.len() != 2
@@ -679,6 +735,11 @@ pub fn arrow_bounds(arrow: &ArrowData) -> DrawRect {
     }
     let half_stroke = arrow.stroke_width.max(0.0) / 2.0;
 
+    if let Some(arc_bounds) = crate::angle::angle_arc_bounds(arrow) {
+        global_points.push(Point::new(arc_bounds.min_x, arc_bounds.min_y));
+        global_points.push(Point::new(arc_bounds.max_x, arc_bounds.max_y));
+    }
+
     let mut bounds = global_points
         .iter()
         .fold(None, |bounds, point| {
@@ -715,6 +776,9 @@ pub fn arrow_hit_test(arrow: &ArrowData, point: Point<f64>, hit_tolerance: f64) 
     }
 
     let threshold = arrow.stroke_width / 2.0 + hit_tolerance.max(0.0);
+    if crate::angle::angle_arc_hit_test(arrow, point, threshold) {
+        return true;
+    }
     if let Some(shaft) = crate::tapered_arrow_geometry(arrow) {
         let hit = shaft.contours.iter().any(|contour| {
             let polygon: Vec<_> = contour.iter().map(|p| Point::new(p[0], p[1])).collect();

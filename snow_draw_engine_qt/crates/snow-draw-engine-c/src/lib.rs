@@ -1,6 +1,8 @@
 #![allow(clippy::missing_safety_doc)]
 
 mod abi {
+    #[cfg(test)]
+    mod angle_tests;
     pub(crate) mod annotation_exports;
     pub(crate) mod auto_filter_exports;
     pub(crate) mod convert;

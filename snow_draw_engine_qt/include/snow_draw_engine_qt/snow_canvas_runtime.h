@@ -85,6 +85,8 @@ class SnowCanvasRuntimeEditor final {
     SnowCanvasWatermarkConfig canvasWatermarkConfig() const;
     SnowCanvasSpotlightConfig canvasSpotlightConfig() const;
     bool setDistanceStyleFromToolbar(const SnowCanvasDistanceStyle&, quint32);
+    bool setAngleStyleFromToolbar(const SnowCanvasAngleStyle&, quint32);
+    bool adjustAngleValue(double deltaRadians);
     bool setDistanceCreationPixelScale(const QSizeF&);
     bool setShapeStyleFromToolbar(const SnowCanvasShapeStyle&, quint32, SnowCanvasShapeKind);
     bool setTextStyleFromToolbar(const SnowCanvasTextStyle&,

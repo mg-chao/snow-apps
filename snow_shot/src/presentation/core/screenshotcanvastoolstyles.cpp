@@ -52,6 +52,7 @@ const QString kShapeKey = QStringLiteral("drawing/shape_style");
 const QString kArrowKey = QStringLiteral("drawing/arrow_style");
 const QString kLineKey = QStringLiteral("drawing/line_style");
 const QString kDistanceKey = QStringLiteral("drawing/distance_style");
+const QString kAngleKey = QStringLiteral("drawing/angle_style");
 const QString kFreeDrawKey = QStringLiteral("drawing/free_draw_style");
 const QString kRectangleHighlightKey = QStringLiteral("drawing/rectangle_highlight_style");
 const QString kPenHighlightKey = QStringLiteral("drawing/pen_highlight_style");
@@ -208,6 +209,31 @@ void readDistanceValue(const QJsonObject& object, SnowCanvasDistanceStyle* style
     style->strokeWidth = bounded(style->strokeWidth, 1.0, 72.0);
     style->factor = bounded(style->factor, 0.01, 1000.0);
     style->endpointScale = bounded(style->endpointScale, 0.5, 3.0);
+}
+
+QJsonObject angleValue(const SnowCanvasAngleStyle& style) {
+    QJsonObject value;
+    value.insert(QStringLiteral("stroke"), colorValue(style.stroke));
+    putDouble(&value, QStringLiteral("stroke_width"), style.strokeWidth);
+    putEnum(&value, QStringLiteral("unit"), style.unit);
+    value.insert(QStringLiteral("decimal_places"), static_cast<int>(style.decimalPlaces));
+    return value;
+}
+
+void readAngleValue(const QJsonObject& object, SnowCanvasAngleStyle* style) {
+    if (style == nullptr)
+        return;
+    QColor color;
+    if (colorValue(object.value(QStringLiteral("stroke")), &color))
+        style->stroke = color;
+    readDouble(object, QStringLiteral("stroke_width"), &style->strokeWidth);
+    readEnum(object, QStringLiteral("unit"), static_cast<int>(SnowCanvasAngleUnit::Radians),
+             &style->unit);
+    double decimalPlaces = style->decimalPlaces;
+    if (readDouble(object, QStringLiteral("decimal_places"), &decimalPlaces) &&
+        std::floor(decimalPlaces) == decimalPlaces && decimalPlaces >= 0 && decimalPlaces <= 3)
+        style->decimalPlaces = static_cast<quint32>(decimalPlaces);
+    style->strokeWidth = bounded(style->strokeWidth, 1.0, 72.0);
 }
 
 QJsonObject lineValue(const SnowCanvasShapeStyle& style) {
@@ -417,6 +443,7 @@ SnowCanvasStyleDefaults screenshotCanvasToolStyleDefaults() {
     readShapeValue(configuration.value(kShapeKey).toObject(), &defaults.rectangle);
     readShapeValue(configuration.value(kArrowKey).toObject(), &defaults.arrow);
     readDistanceValue(configuration.value(kDistanceKey).toObject(), &defaults.distance);
+    readAngleValue(configuration.value(kAngleKey).toObject(), &defaults.angle);
     readLineValue(configuration.value(kLineKey).toObject(), &defaults.line);
     readShapeValue(configuration.value(kFreeDrawKey).toObject(), &defaults.freeDraw);
     readShapeValue(configuration.value(kRectangleHighlightKey).toObject(),
@@ -507,6 +534,7 @@ bool persistScreenshotCanvasToolStyles(const SnowCanvasStyleDefaults& defaults) 
         {kShapeKey, shapeValue(defaults.rectangle)},
         {kArrowKey, shapeValue(defaults.arrow)},
         {kDistanceKey, distanceValue(defaults.distance)},
+        {kAngleKey, angleValue(defaults.angle)},
         {kLineKey, lineValue(defaults.line)},
         {kFreeDrawKey, shapeValue(defaults.freeDraw)},
         {kRectangleHighlightKey, shapeValue(defaults.rectangleHighlight)},
@@ -528,6 +556,9 @@ bool persistScreenshotCanvasToolStyles(const SnowCanvasStyleDefaults& defaults) 
 }
 
 bool persistScreenshotCanvasStyleEdit(const SnowCanvasStyleEdit& edit) {
+    if (const auto* angle = std::get_if<SnowCanvasAngleStyleEdit>(&edit);
+        angle != nullptr && !angle->creationDefaults)
+        return true;
     // Always merge against storage, never an editor's potentially stale snapshot.
     auto defaults = screenshotCanvasToolStyleDefaults();
     snowCanvasMergeStyleEdit(defaults, edit);
@@ -549,6 +580,7 @@ void applyScreenshotCanvasToolStyles(SnowCanvasWidget& canvas,
     applyShape(defaults.rectangle, kRectangleShapeProperties, SnowCanvasShapeKind::Rectangle);
     applyShape(defaults.arrow, kArrowShapeProperties, SnowCanvasShapeKind::Arrow);
     static_cast<void>(canvas.setCanvasDistanceStyle(defaults.distance));
+    static_cast<void>(canvas.setCanvasAngleStyle(defaults.angle));
     applyShape(defaults.line, kLineShapeProperties, SnowCanvasShapeKind::Line);
     applyShape(defaults.freeDraw, kFreeDrawShapeProperties, SnowCanvasShapeKind::FreeDraw);
     applyShape(defaults.rectangleHighlight, kRectangleHighlightProperties,

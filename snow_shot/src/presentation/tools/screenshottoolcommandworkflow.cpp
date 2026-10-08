@@ -58,6 +58,10 @@ void ScreenshotToolCommandWorkflow::setDistanceTool() {
     setCanvasTool(ScreenshotActiveTool::Distance, SnowCanvasTool::Distance);
 }
 
+void ScreenshotToolCommandWorkflow::setAngleTool() {
+    setCanvasTool(ScreenshotActiveTool::Angle, SnowCanvasTool::Angle);
+}
+
 void ScreenshotToolCommandWorkflow::setFreeDrawTool() {
     setCanvasTool(ScreenshotActiveTool::FreeDraw, SnowCanvasTool::FreeDraw);
 }

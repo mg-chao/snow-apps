@@ -54,6 +54,10 @@ struct ScreenshotShortcutHintRow {
     QT_TRANSLATE_NOOP("ScreenshotShortcutHintsWidget", "Auto-align"),
     QT_TRANSLATE_NOOP("ScreenshotShortcutHintsWidget", "Delete selected elements"),
     QT_TRANSLATE_NOOP("ScreenshotShortcutHintsWidget", "Draw straight line"),
+    QT_TRANSLATE_NOOP("ScreenshotShortcutHintsWidget", "Create counterclockwise angle"),
+    QT_TRANSLATE_NOOP("ScreenshotShortcutHintsWidget", "Click endpoint, vertex, then endpoint"),
+    QT_TRANSLATE_NOOP("ScreenshotShortcutHintsWidget", "Adjust angle"),
+    QT_TRANSLATE_NOOP("ScreenshotShortcutHintsWidget", "Fine angle adjustment"),
     QT_TRANSLATE_NOOP("ScreenshotShortcutHintsWidget", "mouse wheel"),
     QT_TRANSLATE_NOOP("ScreenshotShortcutHintsWidget", "%1 + %2"),
 };
@@ -129,6 +133,14 @@ screenshotShortcutHintSelectionModeForContext(const ScreenshotShortcutHintContex
     };
     if (sourceText == QStringLiteral("Vertical scroll: mouse wheel")) {
         return row("Vertical scroll", screenshotShortcutHintText("mouse wheel"));
+    }
+    if (sourceText == QStringLiteral("Adjust angle: mouse wheel")) {
+        return row("Adjust angle", screenshotShortcutHintText("mouse wheel"));
+    }
+    if (sourceText == QStringLiteral("Fine angle adjustment: Shift + mouse wheel")) {
+        return row("Fine angle adjustment", screenshotShortcutHintText("%1 + %2").arg(
+                                                display.modifierText(Qt::ShiftModifier),
+                                                screenshotShortcutHintText("mouse wheel")));
     }
     if (sourceText == QStringLiteral("Horizontal scroll: Shift + mouse wheel")) {
         return row("Horizontal scroll", screenshotShortcutHintText("%1 + %2").arg(
@@ -400,6 +412,21 @@ screenshotShortcutHintRows(const ScreenshotShortcutHintContext& context) {
         append(rows, "Scale from center: Alt", !disabled(SnowCanvasTool::Distance));
         append(rows, "Auto-align: Ctrl");
         append(rows, "Delete selected elements: Delete", !disabled(SnowCanvasTool::Distance));
+        break;
+    case ScreenshotActiveTool::Angle:
+        rows.push_back({screenshotShortcutHintText("Create counterclockwise angle"),
+                        screenshotShortcutHintText("Click endpoint, vertex, then endpoint"),
+                        ScreenshotShortcutHintInput::Mouse,
+                        {}});
+        rows.push_back(screenshotFixedShortcutHintRow("Adjust angle: mouse wheel",
+                                                      ScreenshotShortcutHintInput::Mouse));
+        rows.push_back(screenshotFixedShortcutHintRow("Fine angle adjustment: Shift + mouse wheel",
+                                                      ScreenshotShortcutHintInput::Mouse));
+        append(rows, "Maintain aspect ratio: Shift", !disabled(SnowCanvasTool::Angle));
+        append(rows, "Fixed-angle rotation: Shift");
+        append(rows, "Scale from center: Alt", !disabled(SnowCanvasTool::Angle));
+        append(rows, "Auto-align: Ctrl");
+        append(rows, "Delete selected elements: Delete", !disabled(SnowCanvasTool::Angle));
         break;
     case ScreenshotActiveTool::Line:
         append(rows, "Maintain aspect ratio: Shift", !disabled(SnowCanvasTool::Line));

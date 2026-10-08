@@ -1,5 +1,7 @@
 #include "snow_canvas_commands.h"
 
+#include <cmath>
+
 namespace snow_canvas_commands {
 namespace {
 
@@ -324,6 +326,27 @@ MutationResult setDistanceStylePatch(SnowRuntime runtime, SnowViewport viewport,
     result.success =
         snow_viewport_set_distance_style_patch_ex(runtime, viewport, &style, properties,
                                                   result.changedViewports.outParam()) == SNOW_OK;
+    return result;
+}
+
+MutationResult setAngleStylePatch(SnowRuntime runtime, SnowViewport viewport,
+                                  const SnowAngleStyle& style, std::uint32_t properties) {
+    MutationResult result;
+    if (!hasViewport(runtime, viewport))
+        return result;
+    result.success =
+        snow_viewport_set_angle_style_patch_ex(runtime, viewport, &style, properties,
+                                               result.changedViewports.outParam()) == SNOW_OK;
+    return result;
+}
+
+MutationResult adjustAngleValue(SnowRuntime runtime, SnowViewport viewport, double deltaRadians) {
+    MutationResult result;
+    if (!hasViewport(runtime, viewport) || !std::isfinite(deltaRadians))
+        return result;
+    result.success =
+        snow_viewport_adjust_angle_value_ex(runtime, viewport, deltaRadians,
+                                            result.changedViewports.outParam()) == SNOW_OK;
     return result;
 }
 

@@ -1,3 +1,4 @@
+mod angle;
 #[path = "arrow/data.rs"]
 mod arrow;
 #[path = "arrow/binding_core.rs"]
@@ -30,6 +31,7 @@ mod auto_filter;
 mod bindings;
 mod distance;
 mod document;
+pub use angle::*;
 pub use auto_filter::*;
 pub use distance::*;
 mod document_geometry;

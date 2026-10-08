@@ -128,7 +128,7 @@ impl Editor {
             committed_points: vec![start_canvas_position],
             press_view_position: start_view_position,
             phase: ArrowCreationPhase::InitialPress,
-            distance_pixel_scale: self.view.distance_pixel_scale,
+            distance_pixel_scale: self.view.get().distance_pixel_scale,
             ..Default::default()
         });
         self.clear_transient_visuals();
@@ -194,14 +194,16 @@ impl Editor {
         mut arrow: ArrowData,
     ) -> Result<(), ErrorCode> {
         validate_arrow(&arrow)?;
-        let label = if arrow.is_distance() {
-            let text = snow_draw_engine_document::distance_label(&arrow, None)
+        let label = if arrow.is_generated_annotation() {
+            let text = snow_draw_engine_document::generated_annotation_label(&arrow, None)
                 .ok_or(ErrorCode::InvalidArgument)?;
             Some(self.measured_distance_label(document.peek_next_element_id(), &arrow, &text))
         } else {
             None
         };
-        let mut transaction = Transaction::new(if arrow.is_distance() {
+        let mut transaction = Transaction::new(if arrow.is_angle() {
+            "create angle"
+        } else if arrow.is_distance() {
             "create distance"
         } else if arrow.is_line() {
             "create line"
@@ -642,6 +644,9 @@ impl Editor {
         document: &DocumentModel,
         event: PointerEvent,
     ) -> Result<InteractionOutput, ErrorCode> {
+        if self.state.active_tool == ActiveTool::Angle {
+            return self.process_angle_creation_pointer_event(document, event);
+        }
         if self.state.active_tool == ActiveTool::Distance {
             return self.process_distance_creation_pointer_event(document, event);
         }

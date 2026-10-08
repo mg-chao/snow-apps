@@ -10,6 +10,31 @@ impl Editor {
             return Ok(InteractionOutput::default());
         }
 
+        if !event.modifiers.ctrl
+            && !event.modifiers.alt
+            && !event.modifiers.meta
+            && (self.state.active_tool == ActiveTool::Angle
+                || self.has_homogeneous_angle_selection(document))
+        {
+            let steps = match event.delta_kind {
+                WheelDeltaKind::Angle => event.delta.y / 120.0,
+                WheelDeltaKind::Pixel => event.delta.y / 100.0,
+            };
+            let step = if event.modifiers.shift {
+                0.1_f64
+            } else {
+                1.0_f64
+            };
+            if let Some(command) = self.adjust_angle_value(document, (steps * step).to_radians())? {
+                self.queue_command(command);
+            }
+            return Ok(InteractionOutput {
+                consumed: true,
+                capture: PointerCaptureCommand::NoChange,
+                cursor: CursorCommand::NoChange,
+            });
+        }
+
         let delta_y = match event.delta_kind {
             WheelDeltaKind::Pixel => event.delta.y,
             WheelDeltaKind::Angle => event.delta.y / 120.0 * 100.0,

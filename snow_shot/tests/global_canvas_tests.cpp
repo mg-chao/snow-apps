@@ -1,3 +1,4 @@
+#include "angle_wheel_host_test_support.h"
 #include "../../test-support/canvas_quick_selection_test_support.h"
 #include "snow_shot/presentation/globalcanvascontroller.h"
 #include "snow_shot/presentation/screenshotcanvastoolstyles.h"
@@ -1008,6 +1009,20 @@ void canvasRightQuickSelection(QApplication& app) {
     controller.shutdown();
 }
 
+void angleCanvasWheel(QApplication& app) {
+    presentation::GlobalCanvasController controller(
+        nullptr, {[&]() { return app.primaryScreen(); }, [](QWidget*, bool) { return true; }});
+    controller.activate();
+    app.processEvents();
+    require(controller.canvas() != nullptr && controller.toolbar() != nullptr,
+            "create global angle host fixture");
+    controller.toolbar()->palette()->angleToolRequested();
+    require(controller.canvas()->canvasTool() == SnowCanvasTool::Angle,
+            "global angle toolbar activation reaches the canvas");
+    angle_wheel_host_test_support::exercise(*controller.canvas());
+    controller.shutdown();
+}
+
 int main(int argc, char** argv) {
     QApplication app(argc, argv);
     app.setQuitOnLastWindowClosed(false);
@@ -1045,6 +1060,11 @@ int main(int argc, char** argv) {
         return 0;
     }
 #endif
+    if (app.arguments().contains(QStringLiteral("--angle-wheel-only"))) {
+        angleCanvasWheel(app);
+        storage.shutdown();
+        return 0;
+    }
     if (app.arguments().contains(QStringLiteral("--right-quick-selection-only"))) {
         canvasRightQuickSelection(app);
         storage.shutdown();

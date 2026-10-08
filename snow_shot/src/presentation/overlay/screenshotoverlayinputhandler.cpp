@@ -1,4 +1,7 @@
 #include "snow_shot/presentation/screenshotoverlayinputhandler.h"
+#include "snow_shot/presentation/screenshotstylebinding.h"
+
+#include <numbers>
 
 #include "snow_shot/presentation/screenshotcapturestate.h"
 #include "snow_shot/presentation/screenshotdisplaysession.h"
@@ -454,6 +457,7 @@ void ScreenshotOverlayInputHandler::beginSelectionDrag(ScreenshotOverlayWindow* 
         return;
     }
     m_selectionWheelSteps.reset();
+    m_angleWheelSteps.reset();
     m_snappedDuringSelectionDrag = false;
     if (m_keepSelectionAspectRatioShortcut) {
         m_aspectShortcutUsedForSelectionDrag = true;
@@ -796,6 +800,16 @@ void ScreenshotOverlayInputHandler::completeRightClickCancellation() {
 
 bool ScreenshotOverlayInputHandler::handleWheel(ScreenshotOverlayWindow* overlay,
                                                 const QWheelEvent& event) {
+    auto* canvas = overlay != nullptr ? overlay->canvas() : nullptr;
+    if (canvas != m_angleWheelCanvas) {
+        QObject::disconnect(m_angleTargetConnection);
+        m_angleWheelSteps.reset();
+        m_angleWheelCanvas = canvas;
+        if (canvas != nullptr)
+            m_angleTargetConnection =
+                QObject::connect(canvas, &SnowCanvasWidget::angleAdjustmentTargetChanged,
+                                 &m_regionPreviewTimer, [this]() { m_angleWheelSteps.reset(); });
+    }
     const bool smartSelection =
         m_context.selection.regionType() == ScreenshotRegionType::Rectangle &&
         m_context.interaction.intelligentSelecting();
@@ -813,6 +827,20 @@ bool ScreenshotOverlayInputHandler::handleWheel(ScreenshotOverlayWindow* overlay
     if (recognitionTool(m_context.interaction.activeTool())) {
         return true;
     }
+    if (overlay != nullptr && overlay->canvas() != nullptr &&
+        snow_shot::presentation::angleWheelTarget(*overlay->canvas())) {
+        if ((event.modifiers() & ~Qt::ShiftModifier) != Qt::NoModifier) {
+            m_angleWheelSteps.reset();
+            return false;
+        }
+        const int steps = m_angleWheelSteps.consume(event);
+        if (steps != 0)
+            static_cast<void>(overlay->canvas()->adjustAngleValue(
+                steps * (event.modifiers().testFlag(Qt::ShiftModifier) ? 0.1 : 1.0) *
+                std::numbers::pi / 180.0));
+        return true;
+    }
+    m_angleWheelSteps.reset();
     const int deltaY =
         !event.pixelDelta().isNull() ? event.pixelDelta().y() : event.angleDelta().y();
     if (deltaY != 0 && wheelAdjustsStrokeWidth(m_context.interaction.activeTool())) {
@@ -1020,6 +1048,7 @@ bool ScreenshotOverlayInputHandler::toggleIntelligentSelectionTargetShortcut() {
 
     m_context.actions.persistSelectionTarget(m_context.intelligentSelection.selectionTarget());
     m_selectionWheelSteps.reset();
+    m_angleWheelSteps.reset();
     m_context.intelligentSelection.clearPress();
     if (m_context.intelligentSelection.hasCurrentSelection()) {
         m_context.selection.setSelectionRect(m_context.intelligentSelection.currentSelection());
@@ -1179,6 +1208,7 @@ void ScreenshotOverlayInputHandler::confirmSelection(
     }
     m_context.interaction.confirmSelection();
     m_selectionWheelSteps.reset();
+    m_angleWheelSteps.reset();
     m_context.captureState.sessionState = ScreenshotSessionState::Editing;
     m_context.intelligentSelection.clearPress();
     if (beforePresentation) {
@@ -1369,6 +1399,7 @@ void ScreenshotOverlayInputHandler::restoreScrollingCaptureAfterFailedResize() {
 
 void ScreenshotOverlayInputHandler::resetTransientShortcuts() {
     m_selectionWheelSteps.reset();
+    m_angleWheelSteps.reset();
     static_cast<void>(cancelEffectDrag());
     leaveEffectEditors();
     cancelCanvasColorSampling();
