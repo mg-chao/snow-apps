@@ -25,8 +25,8 @@ class ScreenshotPrintService final : public QObject {
     explicit ScreenshotPrintService(Backend primary, Backend legacy = {},
                                     QObject* parent = nullptr);
     [[nodiscard]] static ScreenshotPrintService& shared();
-    // Accepted requests finish asynchronously on the GUI thread. Unavailable is internal:
-    // callers receive Failed if neither native interface can start.
+    // Accepted requests finish asynchronously on the GUI thread. Unavailable requests
+    // legacy recovery internally; callers receive Failed if recovery is unavailable.
     [[nodiscard]] bool printImage(QObject* receiver, QWidget* owner, QImage snapshot,
                                   Completion completion);
     [[nodiscard]] bool busy() const;

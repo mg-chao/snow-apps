@@ -1,6 +1,8 @@
 #ifndef SNOW_SHOT_WINDOWS_NATIVEPRINTDOCUMENT_H
 #define SNOW_SHOT_WINDOWS_NATIVEPRINTDOCUMENT_H
 
+#include "nativeprintlifecycle.h"
+
 #include <QImage>
 
 #include <windows.h>
@@ -10,6 +12,7 @@
 #include <winrt/Windows.Foundation.h>
 #include <winrt/Windows.Graphics.Printing.h>
 
+#include <memory>
 #include <mutex>
 
 // The native document is independent of the print UI so its preview protocol can
@@ -19,7 +22,9 @@ class ScreenshotWindowsPrintDocument
                                winrt::Windows::Graphics::Printing::IPrintDocumentSource,
                                IPrintDocumentPageSource, IPrintPreviewPageCollection> {
   public:
-    explicit ScreenshotWindowsPrintDocument(QImage image);
+    explicit ScreenshotWindowsPrintDocument(
+        QImage image, std::shared_ptr<ScreenshotWindowsPrintLifecycle> lifecycle =
+                          std::make_shared<ScreenshotWindowsPrintLifecycle>());
 
     void releasePreview();
     HRESULT __stdcall GetPreviewPageCollection(
@@ -35,6 +40,7 @@ class ScreenshotWindowsPrintDocument
     pageDescription(::IInspectable* options);
 
     QImage m_image;
+    std::shared_ptr<ScreenshotWindowsPrintLifecycle> m_lifecycle;
     std::mutex m_mutex;
     winrt::Windows::Graphics::Printing::PrintPageDescription m_description{};
     quint64 m_previewGeneration = 0;

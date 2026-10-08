@@ -128,6 +128,78 @@ void fallbackOnlyWhenUnavailable() {
     processUntil([&] { return failed; });
     require(failed && !unavailable.busy(), "unavailable backends must report a translated failure");
 }
+void recoveryRetainsSnapshotAndIgnoresLateModernCallbacks() {
+    for (auto legacyStatus : {Service::Status::HandedOff, Service::Status::Cancelled,
+                              Service::Status::Failed, Service::Status::Unavailable}) {
+        Service::Completion modern;
+        Service::Completion legacy;
+        QImage prepared;
+        int legacyStarts = 0;
+        int completions = 0;
+        Service::Result final;
+        QWidget owner;
+        Service service(
+            [&](QWidget*, QImage snapshot, auto completion) {
+                prepared = snapshot;
+                modern = std::move(completion);
+            },
+            [&](QWidget* nativeOwner, QImage snapshot, auto completion) {
+                require(nativeOwner == &owner && snapshot == prepared,
+                        "legacy recovery must retain the originating owner and prepared snapshot");
+                ++legacyStarts;
+                legacy = std::move(completion);
+            });
+        require(service.printImage(&owner, &owner, image(),
+                                   [&](auto result) {
+                                       final = std::move(result);
+                                       ++completions;
+                                   }),
+                "recoverable print request must start");
+        processUntil([&] { return bool(modern); });
+        modern({Service::Status::Unavailable, QStringLiteral("critical preview failure")});
+        processUntil([&] { return bool(legacy); });
+        modern({Service::Status::Unavailable, {}});
+        modern({Service::Status::Submitted, {}});
+        flush();
+        require(service.busy() && legacyStarts == 1 && completions == 0 &&
+                    !service.printImage(&owner, &owner, image(), [](auto) {}),
+                "recovery must stay pending and ignore late modern outcomes without a second UI");
+        legacy({legacyStatus, QStringLiteral("legacy outcome")});
+        processUntil([&] { return completions == 1; });
+        legacy({Service::Status::Submitted, {}});
+        flush();
+        require(!service.busy() && completions == 1 && legacyStarts == 1 &&
+                    final.status == (legacyStatus == Service::Status::Unavailable
+                                         ? Service::Status::Failed
+                                         : legacyStatus),
+                "legacy recovery must complete once and never retry another failed backend");
+    }
+}
+void destroyedOwnerDuringRecoveryCancelsOnce() {
+    Service::Completion modern;
+    Service::Completion legacy;
+    Service service([&](QWidget*, QImage, auto completion) { modern = std::move(completion); },
+                    [&](QWidget*, QImage, auto completion) { legacy = std::move(completion); });
+    QObject receiver;
+    auto* owner = new QWidget;
+    int completions = 0;
+    require(service.printImage(&receiver, owner, image(),
+                               [&](auto result) {
+                                   require(result.status == Service::Status::Cancelled,
+                                           "destroying the owner during recovery must cancel");
+                                   ++completions;
+                               }),
+            "recoverable print request must start");
+    processUntil([&] { return bool(modern); });
+    modern({Service::Status::Unavailable, {}});
+    processUntil([&] { return bool(legacy); });
+    delete owner;
+    modern({Service::Status::Unavailable, {}});
+    legacy({Service::Status::Submitted, {}});
+    flush();
+    require(completions == 1 && !service.busy(),
+            "destroyed recovery targets must release the request and ignore both backends");
+}
 void destroyedTargetsAndDelayedCallbacks() {
     int starts = 0;
     Service::Completion nativeCompletion;
@@ -446,6 +518,8 @@ int main(int argc, char** argv) {
     QApplication app(argc, argv);
     immutableWhiteSnapshotAndDuplicateCompletion();
     fallbackOnlyWhenUnavailable();
+    recoveryRetainsSnapshotAndIgnoresLateModernCallbacks();
+    destroyedOwnerDuringRecoveryCancelsOnce();
     destroyedTargetsAndDelayedCallbacks();
     screenshotSubmissionAndStaleCapturePolicy();
     onePagePlacementAndInteraction();

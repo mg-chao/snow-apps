@@ -60,8 +60,17 @@ class ModernJob final : public std::enable_shared_from_this<ModernJob> {
             const HRESULT initialized = RoInitialize(RO_INIT_SINGLETHREADED);
             winrt::check_hresult(initialized);
             m_initialized = true;
+            stage = "IsSupported";
+            if (!PrintManager::IsSupported()) {
+                logPrintEvent("print.native_ui_unavailable",
+                              {{QStringLiteral("backend"), QStringLiteral("windows_modern")},
+                               {QStringLiteral("reason"), QStringLiteral("not_supported")}});
+                finish({Service::Status::Unavailable, {}});
+                return;
+            }
             stage = "create_document";
-            m_document = winrt::make_self<ScreenshotWindowsPrintDocument>(std::move(image));
+            m_document =
+                winrt::make_self<ScreenshotWindowsPrintDocument>(std::move(image), m_lifecycle);
             stage = "activate_PrintManager";
             const auto interop =
                 winrt::get_activation_factory<PrintManager, IPrintManagerInterop>();
@@ -81,14 +90,20 @@ class ModernJob final : public std::enable_shared_from_this<ModernJob> {
                         winrt::com_ptr<ScreenshotWindowsPrintDocument> document;
                         {
                             std::lock_guard lock(self->m_mutex);
-                            if (self->m_finishing)
+                            if (self->m_lifecycle->finished())
                                 return;
-                            self->m_taskCreated = true;
                             document = self->m_document;
                         }
                         auto task = event.Request().CreatePrintTask(
-                            L"SnowShot", [document](const auto& args) {
-                                args.SetSource(document.template as<IPrintDocumentSource>());
+                            L"SnowShot", [self, document](const auto& args) {
+                                try {
+                                    args.SetSource(document.template as<IPrintDocumentSource>());
+                                } catch (...) {
+                                    const auto code = logWindowsPrintResult(
+                                        winrt::to_hresult(), "windows_modern", "SetSource");
+                                    self->finish({Service::Status::Failed, printError(code)});
+                                    throw;
+                                }
                             });
                         logPrintEvent(
                             "print.native_task_created",
@@ -118,7 +133,7 @@ class ModernJob final : public std::enable_shared_from_this<ModernJob> {
                         bool removeHandler;
                         {
                             std::lock_guard lock(self->m_mutex);
-                            removeHandler = self->m_finishing;
+                            removeHandler = self->m_lifecycle->finished();
                             if (!removeHandler) {
                                 self->m_task = task;
                                 self->m_completed = token;
@@ -168,14 +183,16 @@ class ModernJob final : public std::enable_shared_from_this<ModernJob> {
     void finish(Service::Result result) {
         {
             std::lock_guard lock(m_mutex);
-            if (m_finishing)
+            auto terminal = m_lifecycle->finish(std::move(result));
+            if (!terminal)
                 return;
-            // An interface failure after a task starts is terminal, never a reason
-            // to open a second dialog and risk submitting the same job twice.
-            if (result.status == Service::Status::Unavailable && m_taskCreated)
-                result.status = Service::Status::Failed;
-            m_finishing = true;
+            result = std::move(*terminal);
         }
+        if (result.status == Service::Status::Unavailable)
+            logPrintEvent("print.native_fallback_requested",
+                          {{QStringLiteral("backend"), QStringLiteral("windows_modern")},
+                           {QStringLiteral("reason"), QStringLiteral("failure_before_document")}},
+                          QtWarningMsg);
         const auto self = shared_from_this();
         QMetaObject::invokeMethod(
             qApp,
@@ -192,17 +209,23 @@ class ModernJob final : public std::enable_shared_from_this<ModernJob> {
                 if (document)
                     document->releasePreview();
                 QObject::disconnect(self->m_ownerDestroyed);
-                try {
-                    if (task)
-                        task.Completed(self->m_completed);
-                    if (self->m_manager)
-                        self->m_manager.PrintTaskRequested(self->m_requested);
-                    if (self->m_ui && result.status == Service::Status::Cancelled)
-                        self->m_ui.Cancel();
-                } catch (...) {
-                    logWindowsPrintResult(winrt::to_hresult(), "windows_modern", "cleanup");
-                    // Cleanup must still release the apartment and complete the request.
-                }
+                // Cancel before opening the legacy UI. Every cleanup step must still run
+                // if Windows rejects cancellation or removal of another event handler.
+                const auto cleanup = [](const char* stage, auto action) {
+                    try {
+                        action();
+                    } catch (...) {
+                        logWindowsPrintResult(winrt::to_hresult(), "windows_modern", stage);
+                    }
+                };
+                if (self->m_ui && (result.status == Service::Status::Cancelled ||
+                                   result.status == Service::Status::Unavailable))
+                    cleanup("cancel_ui", [&] { self->m_ui.Cancel(); });
+                if (task)
+                    cleanup("remove_Completed", [&] { task.Completed(self->m_completed); });
+                if (self->m_manager)
+                    cleanup("remove_PrintTaskRequested",
+                            [&] { self->m_manager.PrintTaskRequested(self->m_requested); });
                 self->m_manager = nullptr;
                 self->m_ui = nullptr;
                 if (self->m_initialized) {
@@ -214,9 +237,9 @@ class ModernJob final : public std::enable_shared_from_this<ModernJob> {
             Qt::QueuedConnection);
     }
     std::mutex m_mutex;
+    std::shared_ptr<ScreenshotWindowsPrintLifecycle> m_lifecycle =
+        std::make_shared<ScreenshotWindowsPrintLifecycle>();
     bool m_initialized = false;
-    bool m_finishing = false;
-    bool m_taskCreated = false;
     QMetaObject::Connection m_ownerDestroyed;
     Service::Completion m_completion;
     winrt::com_ptr<ScreenshotWindowsPrintDocument> m_document;

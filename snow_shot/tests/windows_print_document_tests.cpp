@@ -98,11 +98,14 @@ struct PackageTarget : winrt::implements<PackageTarget, IPrintDocumentPackageTar
     explicit PackageTarget(winrt::com_ptr<PreviewTarget> target) : preview(std::move(target)) {}
 
     HRESULT __stdcall GetPackageTargetTypes(UINT32*, GUID**) noexcept override {
+        ++documentRequests;
         return E_NOTIMPL;
     }
     HRESULT __stdcall GetPackageTarget(REFGUID type, REFIID iid, void** target) noexcept override {
-        if (type != ID_PREVIEWPACKAGETARGET_DXGI)
+        if (type != ID_PREVIEWPACKAGETARGET_DXGI) {
+            ++documentRequests;
             return E_NOINTERFACE;
+        }
         return preview->QueryInterface(iid, target);
     }
     HRESULT __stdcall Cancel() noexcept override {
@@ -110,9 +113,12 @@ struct PackageTarget : winrt::implements<PackageTarget, IPrintDocumentPackageTar
     }
 
     winrt::com_ptr<PreviewTarget> preview;
+    int documentRequests = 0;
 };
 
 struct PreviewSession {
+    std::shared_ptr<ScreenshotWindowsPrintLifecycle> lifecycle =
+        std::make_shared<ScreenshotWindowsPrintLifecycle>();
     winrt::com_ptr<ScreenshotWindowsPrintDocument> document;
     winrt::com_ptr<PrintOptions> options = winrt::make_self<PrintOptions>();
     winrt::com_ptr<PreviewTarget> target = winrt::make_self<PreviewTarget>();
@@ -121,7 +127,7 @@ struct PreviewSession {
     PreviewSession() {
         QImage image(400, 200, QImage::Format_RGB32);
         image.fill(Qt::red);
-        document = winrt::make_self<ScreenshotWindowsPrintDocument>(std::move(image));
+        document = winrt::make_self<ScreenshotWindowsPrintDocument>(std::move(image), lifecycle);
         auto package = winrt::make_self<PackageTarget>(target);
         auto source = document.as<IPrintDocumentPageSource>();
         require(source->GetPreviewPageCollection(package.get(), &pages) == S_OK,
@@ -218,6 +224,67 @@ void nativeFailureDiagnostics() {
                 codes.value(QStringLiteral("MakePage")) == QStringLiteral("0x80070057"),
             "native document diagnostics must export the exact failing stage and HRESULT");
 }
+
+void criticalPreviewFailuresAllowRecovery() {
+    using Service = ScreenshotPrintService;
+    for (bool failPagination : {true, false}) {
+        PreviewSession session;
+        if (failPagination) {
+            session.target->pageCountResult = E_FAIL;
+            require(session.paginate() == E_FAIL, "the Windows page count can fail during startup");
+        } else {
+            require(session.paginate() == S_OK, "preview must paginate before drawing");
+            session.target->drawResult = E_FAIL;
+            require(session.pages->MakePage(1, 204, 264) == E_FAIL,
+                    "Windows can reject the initial preview surface");
+        }
+        const auto result =
+            session.lifecycle->finish({Service::Status::Failed, QStringLiteral("80004005")});
+        require(result && result->status == Service::Status::Unavailable &&
+                    result->error == QStringLiteral("80004005"),
+                "critical preview failures must request legacy recovery with the original error");
+        auto package = winrt::make_self<PackageTarget>(session.target);
+        const auto options = session.options.as<winrt::Windows::Foundation::IInspectable>();
+        require(session.document->MakeDocument(
+                    reinterpret_cast<::IInspectable*>(winrt::get_abi(options)), package.get()) ==
+                    E_ABORT,
+                "a late native submission must be blocked before the legacy dialog can open");
+        session.document->releasePreview();
+        require(session.paginate() == E_ABORT && session.pages->MakePage(1, 204, 264) == E_ABORT,
+                "completed preview callbacks must not resume a failed modern job");
+        ComPtr<IPrintPreviewPageCollection> pages;
+        require(session.document->GetPreviewPageCollection(package.get(), &pages) == E_ABORT &&
+                    !pages,
+                "a stopped modern job must not reacquire a preview collection");
+        require(!session.lifecycle->finish({Service::Status::Submitted, {}}),
+                "late task completions must not replace the recovery outcome");
+    }
+}
+
+void submissionAndCancellationDoNotRecover() {
+    using Service = ScreenshotPrintService;
+    for (auto failure : {Service::Status::Failed, Service::Status::Unavailable}) {
+        PreviewSession session;
+        // Render the final page but reject its package target instead of spooling it.
+        // A failure in this phase cannot prove that Windows has not started submission.
+        auto package = winrt::make_self<PackageTarget>(session.target);
+        const auto options = session.options.as<winrt::Windows::Foundation::IInspectable>();
+        require(FAILED(session.document->MakeDocument(
+                    reinterpret_cast<::IInspectable*>(winrt::get_abi(options)), package.get())) &&
+                    package->documentRequests > 0,
+                "the final-document renderer must reach the failing target without a printer job");
+        const auto result = session.lifecycle->finish({failure, QStringLiteral("submission")});
+        require(result && result->status == Service::Status::Failed,
+                "failure after final-document generation starts must not risk a duplicate job");
+    }
+    for (auto status : {Service::Status::Cancelled, Service::Status::Submitted}) {
+        PreviewSession session;
+        const auto result = session.lifecycle->finish({status, {}});
+        require(result && result->status == status &&
+                    session.document->MakeDocument(nullptr, nullptr) == E_ABORT,
+                "cancellation and successful completion must stay terminal and block late prints");
+    }
+}
 } // namespace
 
 int main(int argc, char** argv) {
@@ -230,6 +297,8 @@ int main(int argc, char** argv) {
         applicationDefinedAndRepeatedPageRequests();
     }
     nativeFailureDiagnostics();
+    criticalPreviewFailuresAllowRecovery();
+    submissionAndCancellationDoNotRecover();
     winrt::uninit_apartment();
     return 0;
 }

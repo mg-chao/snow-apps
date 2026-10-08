@@ -20,9 +20,12 @@ the logs exclude screenshot pixels, recognition text, printer names, and snapsho
 
 Snow Shot uses the modern print UI on Windows 11 and falls back to the Windows
 Photo Printing Wizard (the native Print Pictures dialog) on older Windows versions
-or when the modern interface is unavailable. The legacy backend directly activates
-Microsoft's `CLSID_PrintPhotosDropTarget` and passes a lossless temporary PNG as a
-Shell data object. It does not depend on the user's default image application. The temporary
+or when the modern interface is unavailable or fails before final-document generation
+starts. Recovery stops the modern document before releasing its preview and print UI,
+so late callbacks cannot submit it after the legacy dialog opens. Cancellation and
+failures after final-document generation starts remain terminal. The legacy backend
+directly activates Microsoft's `CLSID_PrintPhotosDropTarget` and passes a lossless temporary
+PNG as a Shell data object. It does not depend on the user's default image application. The temporary
 PNG stays alive until Windows releases its data object, including any references
 retained beyond the dialog's closure. Application shutdown also removes retained
 snapshots. Its native host remains above a topmost
@@ -78,8 +81,11 @@ application; use `--legacy` to exercise the fallback dialog directly.
   same Photo Printing Wizard fallback interface as the application.
 - Run with `--modern-unavailable`. Confirm exactly one legacy dialog opens and
   closing it reports Photo dialog closed. Confirm initialization
-  failures in modern printing also take this path, while failures after a task
-  starts show an error without reopening another dialog.
+  failures and critical preview failures in modern printing also take this path, while
+  failures after final-document generation starts show an error without reopening another dialog.
+  Repeat the automatic path on Windows 11 24H2 build 26100.7171: if modern preview fails,
+  exactly one Print Pictures dialog must open with the original screenshot. Cancel it
+  and verify the capture remains editable; then reopen and print once to a PDF printer.
 - With a real screenshot, draw annotations, apply result styling, and print.
   The modern backend closes the capture only after confirmed submission. The Photo
   Printing Wizard restores focus and editing after it closes, including after a

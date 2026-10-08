@@ -84,8 +84,9 @@ struct DrawingContext {
 
 } // namespace
 
-ScreenshotWindowsPrintDocument::ScreenshotWindowsPrintDocument(QImage image)
-    : m_image(std::move(image)) {}
+ScreenshotWindowsPrintDocument::ScreenshotWindowsPrintDocument(
+    QImage image, std::shared_ptr<ScreenshotWindowsPrintLifecycle> lifecycle)
+    : m_image(std::move(image)), m_lifecycle(std::move(lifecycle)) {}
 
 void ScreenshotWindowsPrintDocument::releasePreview() {
     ComPtr<IPrintPreviewDxgiPackageTarget> preview;
@@ -102,11 +103,16 @@ HRESULT __stdcall ScreenshotWindowsPrintDocument::GetPreviewPageCollection(
     try {
         if (!target || !collection)
             return logWindowsPrintResult(E_POINTER, "windows_modern", "GetPreviewPageCollection");
+        *collection = nullptr;
+        if (m_lifecycle->finished())
+            return E_ABORT;
         ComPtr<IPrintPreviewDxgiPackageTarget> preview;
         winrt::check_hresult(
             target->GetPackageTarget(ID_PREVIEWPACKAGETARGET_DXGI, IID_PPV_ARGS(&preview)));
         {
             std::lock_guard lock(m_mutex);
+            if (m_lifecycle->finished())
+                return E_ABORT;
             m_preview.Swap(preview);
         }
         return logWindowsPrintResult(QueryInterface(__uuidof(IPrintPreviewPageCollection),
@@ -121,6 +127,8 @@ HRESULT __stdcall ScreenshotWindowsPrintDocument::GetPreviewPageCollection(
 HRESULT __stdcall ScreenshotWindowsPrintDocument::Paginate(UINT32,
                                                            ::IInspectable* options) noexcept {
     try {
+        if (m_lifecycle->finished())
+            return E_ABORT;
         const auto description = pageDescription(options);
         ComPtr<IPrintPreviewDxgiPackageTarget> preview;
         {
@@ -153,6 +161,8 @@ HRESULT __stdcall ScreenshotWindowsPrintDocument::MakePage(UINT32 pageNumber, FL
                                                            FLOAT height) noexcept {
     const char* stage = "MakePage";
     try {
+        if (m_lifecycle->finished())
+            return E_ABORT;
         // Windows can ask the application to choose the next preview page.
         // This document always contains exactly one page.
         const UINT32 jobPage = pageNumber == JOB_PAGE_APPLICATION_DEFINED ? 1 : pageNumber;
@@ -223,8 +233,15 @@ HRESULT __stdcall ScreenshotWindowsPrintDocument::MakePage(UINT32 pageNumber, FL
 
 HRESULT __stdcall ScreenshotWindowsPrintDocument::MakeDocument(
     ::IInspectable* options, IPrintDocumentPackageTarget* target) noexcept {
-    const char* stage = "GetPageDescription";
+    const char* stage = "MakeDocument";
     try {
+        if (!m_lifecycle->beginDocument())
+            return E_ABORT;
+        logPrintEvent("print.native_document_started",
+                      {{QStringLiteral("backend"), QStringLiteral("windows_modern")}});
+        if (!options || !target)
+            return logWindowsPrintResult(E_POINTER, "windows_modern", "MakeDocument");
+        stage = "GetPageDescription";
         const auto description = pageDescription(options);
         stage = "create_drawing_context";
         DrawingContext drawing;
