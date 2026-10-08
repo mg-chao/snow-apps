@@ -7,6 +7,7 @@
 #include <Qt>
 
 class ScreenshotOverlayWindow;
+class QWheelEvent;
 
 enum class ScreenshotOverlayRightClickResult { Ignored, Handled, CancelCapture };
 
@@ -46,9 +47,7 @@ class ScreenshotOverlayEventSink {
     virtual void handleUnhandledLeftDoubleClick() {}
     virtual void handleUnhandledMiddleClick() {}
     [[nodiscard]] virtual bool handleOverlayWheel(ScreenshotOverlayWindow* overlay,
-                                                  const QPointF& localPosition,
-                                                  const QPoint& angleDelta,
-                                                  const QPoint& pixelDelta) = 0;
+                                                  const QWheelEvent& event) = 0;
     [[nodiscard]] virtual bool shouldBlockUnhandledOverlayKeyInput() const = 0;
     virtual void raiseToolbarForCanvasInteraction() = 0;
 };

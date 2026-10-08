@@ -27,11 +27,6 @@
 namespace platform = snow_shot::presentation;
 namespace resize_geometry = screenshot_pinned_resize_geometry;
 namespace {
-constexpr int kPreciseWheelZoomStepDelta = 100;
-constexpr int kAngleWheelZoomStepDelta = 120;
-// Wheels without scroll phases need an idle boundary for a new immediate step.
-constexpr quint64 kWheelZoomBurstIntervalMs = 250;
-
 std::optional<int> resizeHandle(const QPointF& p, const QSize& size) {
     constexpr qreal margin = 6;
     if (!QRectF(QPointF(), QSizeF(size)).contains(p))
@@ -520,10 +515,7 @@ bool ScreenshotPinnedWindow::handleControlledPointer(QObject* watched, QEvent* e
 }
 
 void ScreenshotPinnedWindow::resetPinnedGestures() {
-    m_scrollWheelRemainder = 0;
-    m_scrollWheelDirection = 0;
-    m_scrollWheelStepDelta = 0;
-    m_scrollWheelTimestamp = 0;
+    m_scrollWheelSteps.reset();
     m_scrollOpacity = 0;
     m_pinchActive = false;
 }
@@ -577,8 +569,7 @@ bool ScreenshotPinnedWindow::handlePinnedGesture(QObject* watched, QEvent* event
     const bool precise = platform::usesPreciseWheelDelta(*wheel);
     const int delta = precise ? wheel->pixelDelta().y() : wheel->angleDelta().y();
     if (wheel->modifiers().testFlag(Qt::ControlModifier)) {
-        m_scrollWheelRemainder = 0;
-        m_scrollWheelDirection = 0;
+        m_scrollWheelSteps.reset();
         if (!precise) {
             m_scrollOpacity = 0;
             return false;
@@ -589,24 +580,7 @@ bool ScreenshotPinnedWindow::handlePinnedGesture(QObject* watched, QEvent* event
         setOpacityPercent(qRound(m_scrollOpacity));
     } else if (delta != 0) {
         m_scrollOpacity = 0;
-        const int stepDelta = precise ? kPreciseWheelZoomStepDelta : kAngleWheelZoomStepDelta;
-        const int direction = delta > 0 ? 1 : -1;
-        const quint64 timestamp = wheel->timestamp();
-        const bool newBurst = wheel->phase() == Qt::NoScrollPhase &&
-                              timestamp > m_scrollWheelTimestamp &&
-                              timestamp - m_scrollWheelTimestamp >= kWheelZoomBurstIntervalMs;
-        if (direction != m_scrollWheelDirection || stepDelta != m_scrollWheelStepDelta ||
-            newBurst) {
-            // Advance on the first point, then once per full step of continued movement.
-            // Keeping this credit in the accumulator makes event coalescing irrelevant.
-            m_scrollWheelRemainder = direction * (stepDelta - 1);
-        }
-        m_scrollWheelDirection = direction;
-        m_scrollWheelStepDelta = stepDelta;
-        m_scrollWheelTimestamp = timestamp;
-        const qint64 accumulated = qint64(m_scrollWheelRemainder) + delta;
-        const int steps = int(accumulated / stepDelta);
-        m_scrollWheelRemainder = int(accumulated % stepDelta);
+        const int steps = m_scrollWheelSteps.consume(*wheel);
         if (steps != 0) {
             applyWheelScaleSteps(steps, nativePositionForWindowPosition(
                                             windowPositionForEvent(watched, wheel->position())));

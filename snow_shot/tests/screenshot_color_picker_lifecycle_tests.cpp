@@ -96,8 +96,7 @@ class NoopOverlayEventSink final : public ScreenshotOverlayEventSink {
         return rightClickResult;
     }
 
-    bool handleOverlayWheel(ScreenshotOverlayWindow*, const QPointF&, const QPoint&,
-                            const QPoint&) override {
+    bool handleOverlayWheel(ScreenshotOverlayWindow*, const QWheelEvent&) override {
         return false;
     }
 

@@ -9,6 +9,7 @@
 #include "snow_shot/presentation/screenshotclipboardservice.h"
 #include "snow_shot/presentation/screenshotexportcoordinator.h"
 #include "snow_shot/presentation/screenshotimagesource.h"
+#include "snow_shot/presentation/screenshotwheelinput.h"
 #include "snow_shot/presentation/screenshotrecognitionresults.h"
 #include "snow_shot/presentation/screenshotrecognitionfileexport.h"
 #include "snow_shot/presentation/screenshotresultcompositor.h"
@@ -497,10 +498,7 @@ class ScreenshotPinnedWindow final : public QWidget {
     int m_interactionEffectiveResizeHandle = 0;
     std::optional<QPoint> m_interactionNativePointer;
     QPointer<QWidget> m_interactionGrabber;
-    int m_scrollWheelRemainder = 0;
-    int m_scrollWheelDirection = 0;
-    int m_scrollWheelStepDelta = 0;
-    quint64 m_scrollWheelTimestamp = 0;
+    snow_shot::presentation::WheelStepAccumulator m_scrollWheelSteps;
     double m_scrollOpacity = 0;
     bool m_pinchActive = false;
     bool m_controlledEscapeRelease = false;

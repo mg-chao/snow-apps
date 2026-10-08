@@ -1006,8 +1006,7 @@ bool ScreenshotOverlayWindow::handleCanvasWheel(QWheelEvent* event) {
     if (m_canvas != nullptr && m_canvas->hasActiveTextEditing()) {
         return false;
     }
-    if (!m_eventSink.handleOverlayWheel(this, event->position(), event->angleDelta(),
-                                        event->pixelDelta())) {
+    if (!m_eventSink.handleOverlayWheel(this, *event)) {
         return false;
     }
 

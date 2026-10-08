@@ -6,6 +6,7 @@
 #include "snow_shot/presentation/screenshotselectionaspectratio.h"
 #include "snow_shot/presentation/screenshotselectiongeometry.h"
 #include "snow_shot/presentation/screenshotselectioneffectgeometry.h"
+#include "snow_shot/presentation/screenshotwheelinput.h"
 
 #include "snow_shot/image/screenshotregiongeometry.h"
 #include "snow_draw_engine_qt/snow_canvas_path_geometry.h"
@@ -194,8 +195,7 @@ class ScreenshotOverlayInputHandler final {
     bool removeRegionVertex();
     bool customRegionInputActive() const;
     void handleUnhandledMiddleClick();
-    [[nodiscard]] bool handleWheel(ScreenshotOverlayWindow* overlay, const QPointF& localPosition,
-                                   const QPoint& angleDelta, const QPoint& pixelDelta);
+    [[nodiscard]] bool handleWheel(ScreenshotOverlayWindow* overlay, const QWheelEvent& event);
     [[nodiscard]] bool shouldBlockUnhandledKeyInput() const;
     [[nodiscard]] bool activateMoveEntireSelectionShortcut();
     [[nodiscard]] bool activateKeepSelectionAspectRatioShortcut(bool cycleColorFormatIfUnused);
@@ -283,6 +283,7 @@ class ScreenshotOverlayInputHandler final {
     bool m_freehandPressed = false;
     bool m_consumeRegionRelease = false;
     ScreenshotOverlayInputHandlerContext m_context;
+    snow_shot::presentation::WheelStepAccumulator m_selectionWheelSteps;
     bool m_externalDragActive = false;
     std::optional<ScreenshotActiveTool> m_toolBeforeSelectionResize;
     bool m_scrollingCaptureSelectionResize = false;

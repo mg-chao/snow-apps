@@ -97,13 +97,11 @@ void ScreenshotOverlayEventAdapter::handleUnhandledMiddleClick() {
 }
 
 bool ScreenshotOverlayEventAdapter::handleOverlayWheel(ScreenshotOverlayWindow* overlay,
-                                                       const QPointF& localPosition,
-                                                       const QPoint& angleDelta,
-                                                       const QPoint& pixelDelta) {
+                                                       const QWheelEvent& event) {
     if (m_inputHandler == nullptr) {
         return false;
     }
-    return m_inputHandler->handleWheel(overlay, localPosition, angleDelta, pixelDelta);
+    return m_inputHandler->handleWheel(overlay, event);
 }
 
 bool ScreenshotOverlayEventAdapter::shouldBlockUnhandledOverlayKeyInput() const {

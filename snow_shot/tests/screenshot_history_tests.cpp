@@ -1,5 +1,6 @@
 #include "physical_key_test_support.h"
 #include <QLineEdit>
+#include <QWheelEvent>
 #include "snow_shot/image/screenshotregionpoints.h"
 #include "snow_shot/presentation/screenshotselectorworkflow.h"
 #include "snow_shot/presentation/screenshotregionpreferences.h"
@@ -14,6 +15,7 @@
 #include "snow_shot/presentation/screenshotintelligentselectionmodel.h"
 #include "snow_shot/presentation/screenshotinteractionstate.h"
 #include "snow_shot/presentation/screenshotoverlayinputhandler.h"
+#include "snow_shot/presentation/screenshotoverlayinteractionadapter.h"
 #include "snow_shot/presentation/screenshotoverlayshortcutcontroller.h"
 #include "snow_shot/presentation/globalshortcuttypes.h"
 #include "snow_shot/presentation/screenshotselectionmodel.h"
@@ -86,6 +88,11 @@ void require(bool condition, const char* message) {
         std::cerr << message << '\n';
         std::exit(1);
     }
+}
+
+QWheelEvent wheelInput(QPoint angles, QPoint pixels = {}) {
+    return QWheelEvent({}, {}, pixels, angles, Qt::NoButton, Qt::NoModifier, Qt::NoScrollPhase,
+                       false);
 }
 
 bool dispatchShortcut(QWidget& receiver, Qt::Key key,
@@ -1767,7 +1774,7 @@ void manualSelectionUsesSharedMarqueeTransaction() {
     handler.handleMouseMove(nullptr, QPointF(30, 40));
     handler.handleMouseRelease(nullptr, QPointF(30, 40));
     require((handler.handleRightClick(nullptr, {}) == ScreenshotOverlayRightClickResult::Handled) &&
-                handler.handleWheel(nullptr, {}, {0, 120}, {}),
+                handler.handleWheel(nullptr, wheelInput({0, 120})),
             "external drags must consume ordinary right-click and wheel commands");
     handler.handleUnhandledMiddleClick();
     handler.handleUnhandledLeftDoubleClick();
@@ -2181,24 +2188,25 @@ void eraserWheelUsesBrushCreationWidthOnly() {
     ScreenshotOverlayInputHandler handler({captureState, interaction, selection, intelligent,
                                            geometry, displays, std::move(actions)});
     interaction.setCanvasTool(ScreenshotActiveTool::BrushEraser);
-    require(handler.handleWheel(nullptr, {}, {0, 120}, {}) && directions == QList<int>{1},
+    require(handler.handleWheel(nullptr, wheelInput({0, 120})) && directions == QList<int>{1},
             "screenshot brush eraser wheel reaches the shared creation width route");
-    require(handler.handleWheel(nullptr, {}, {0, 120}, {0, -1}) && directions == QList<int>{1, -1},
+    require(handler.handleWheel(nullptr, wheelInput({0, 120}, {0, -1})) &&
+                directions == QList<int>{1, -1},
             "precise brush eraser wheel direction takes priority over estimated notches");
-    require(!handler.handleWheel(nullptr, {}, {}, {}) && directions.size() == 2,
+    require(!handler.handleWheel(nullptr, wheelInput({})) && directions.size() == 2,
             "zero wheel delta leaves brush eraser width unchanged");
     handler.setExternalDragActive(true);
-    require(handler.handleWheel(nullptr, {}, {0, 120}, {}) && directions.size() == 2,
+    require(handler.handleWheel(nullptr, wheelInput({0, 120})) && directions.size() == 2,
             "external drag consumes the wheel without changing brush eraser creation width");
     handler.setExternalDragActive(false);
     for (const auto tool : {ScreenshotActiveTool::Eraser, ScreenshotActiveTool::RectangleEraser}) {
         interaction.setCanvasTool(tool);
-        require(!handler.handleWheel(nullptr, {}, {0, 120}, {}) && directions.size() == 2,
+        require(!handler.handleWheel(nullptr, wheelInput({0, 120})) && directions.size() == 2,
                 "element and rectangle erasers do not expose a brush width wheel editor");
     }
     interaction.setCanvasTool(ScreenshotActiveTool::BrushEraser);
     interaction.enterScrollingCapture();
-    require(!handler.handleWheel(nullptr, {}, {0, 120}, {}) && directions.size() == 2,
+    require(!handler.handleWheel(nullptr, wheelInput({0, 120})) && directions.size() == 2,
             "scrolling capture retains its wheel input instead of editing an eraser width");
 }
 
@@ -2826,6 +2834,123 @@ void previousSelectionShortcutUsesSharedConfirmation() {
     }
 }
 
+void smartSelectionWheelAccumulatesMovement() {
+    ScreenshotCaptureState capture;
+    ScreenshotDisplaySession displays;
+    ScreenshotGeometryMapper geometry;
+    ScreenshotSelectionModel selection;
+    ScreenshotIntelligentSelectionModel intelligent;
+    ScreenshotInteractionState interaction;
+    interaction.enterOverlayVisible(true);
+    intelligent.beginCaptureSession(true);
+    QVector<QRectF> layers;
+    for (int i = 0; i < 16; ++i)
+        layers.append(QRectF(50 - i, 50 - i, 20 + i * 2, 20 + i * 2));
+    require(intelligent.applyCanvasHitPath(layers, QRectF(0, 0, 200, 200), 1),
+            "smart wheel fixture must expose nested layers");
+    selection.setSelectionRect(intelligent.currentSelection());
+    int requests = 0;
+    ScreenshotOverlayInputActions actions;
+    actions.requestUiSelectorHitTest = [&](const QPoint&) { ++requests; };
+    ScreenshotOverlayInputHandler handler(
+        {capture, interaction, selection, intelligent, geometry, displays, actions});
+    ScreenshotOverlayEventAdapter adapter;
+    adapter.setEventTargets(handler, [] {});
+    const auto scroll = [&](QPoint pixels, QPoint angles, Qt::ScrollPhase phase,
+                            quint64 timestamp = 0,
+                            Qt::MouseEventSource source = Qt::MouseEventNotSynthesized) {
+        QWheelEvent event(QPointF(60, 60), QPointF(60, 60), pixels, angles, Qt::NoButton,
+                          Qt::NoModifier, phase, false, source);
+        event.setTimestamp(timestamp);
+        require(adapter.handleOverlayWheel(nullptr, event),
+                "smart selection must consume its wheel gesture");
+    };
+    const auto expectLayer = [&](int index, const char* message) {
+        require(intelligent.index() == index && selection.normalizedSelection() == layers[index],
+                message);
+    };
+    scroll({}, {}, Qt::ScrollBegin);
+    scroll(QPoint(20, 0), {}, Qt::ScrollUpdate);
+    expectLayer(0, "empty and horizontal scroll input must not switch layers");
+    scroll(QPoint(0, 1), {}, Qt::ScrollUpdate);
+    expectLayer(1, "the first precise scroll point must switch one layer immediately");
+    for (int i = 0; i < 99; ++i)
+        scroll(QPoint(0, 1), {}, Qt::ScrollUpdate);
+    expectLayer(1, "small trackpad updates must accumulate without switching every event");
+    scroll(QPoint(0, 1), {}, Qt::ScrollUpdate);
+    expectLayer(2, "continued scrolling must switch after another 100 points");
+    scroll(QPoint(0, 250), {}, Qt::ScrollUpdate);
+    expectLayer(4, "coalesced movement must switch all accumulated layers");
+    scroll(QPoint(0, 50), {}, Qt::ScrollUpdate);
+    expectLayer(5, "coalesced movement must retain its remainder");
+    const int activeRequests = requests;
+    scroll(QPoint(0, 500), {}, Qt::ScrollMomentum);
+    scroll(QPoint(0, 500), {}, Qt::ScrollEnd);
+    expectLayer(5, "momentum and scroll-end deltas must not switch layers");
+    require(requests == activeRequests, "momentum and scroll end must not request hit tests");
+    scroll(QPoint(0, 1), {}, Qt::ScrollBegin);
+    expectLayer(6, "a new gesture must respond immediately in the same direction");
+    scroll(QPoint(0, -1), {}, Qt::ScrollUpdate);
+    expectLayer(5, "direction reversal must switch one layer immediately");
+    scroll({}, {}, Qt::ScrollEnd);
+    scroll({}, QPoint(0, 1), Qt::NoScrollPhase, 1000);
+    expectLayer(6, "a small angle-only wheel input must switch immediately");
+    scroll({}, QPoint(0, 119), Qt::NoScrollPhase, 1010);
+    expectLayer(6, "angle-only updates must accumulate within a burst");
+    scroll({}, QPoint(0, 1), Qt::NoScrollPhase, 1020);
+    expectLayer(7, "continued angle scrolling must advance once per notch");
+    scroll({}, QPoint(0, 1), Qt::NoScrollPhase, 2000);
+    expectLayer(8, "a wheel burst after an idle gap must switch immediately");
+    scroll({}, QPoint(0, -240), Qt::NoScrollPhase, 2010);
+    expectLayer(6, "angle reversal must apply every reverse notch");
+    scroll(QPoint(0, -1), {}, Qt::NoScrollPhase, 2020);
+    expectLayer(5, "switching delta units must start a fresh sequence");
+    handler.resetTransientShortcuts();
+    scroll(QPoint(0, -1), {}, Qt::NoScrollPhase, 2030);
+    expectLayer(4, "capture input reset must clear pending scroll state");
+    scroll(QPoint(0, 10000), {}, Qt::ScrollBegin);
+    expectLayer(15, "large scroll movement must clamp to the outermost layer");
+    scroll(QPoint(0, -1), {}, Qt::ScrollUpdate);
+    expectLayer(14, "reversal at the layer limit must respond immediately");
+    scroll(QPoint(0, -10000), {}, Qt::ScrollUpdate);
+    expectLayer(0, "large reverse movement must clamp to the deepest layer");
+#ifdef Q_OS_MACOS
+    scroll({}, {}, Qt::ScrollEnd);
+    scroll(QPoint(0, 2), QPoint(0, 120), Qt::NoScrollPhase, 3000);
+    expectLayer(1, "a Cocoa mouse notch must switch one layer");
+    scroll(QPoint(0, 2), QPoint(0, 120), Qt::NoScrollPhase, 3010);
+    expectLayer(2, "each rapid Cocoa mouse notch must switch one layer");
+    scroll(QPoint(0, 80), QPoint(0, 120), Qt::NoScrollPhase, 3020);
+    expectLayer(3, "estimated pixel acceleration must not change mouse notch selection");
+    for (quint64 i = 0; i < 2; ++i) {
+        scroll(QPoint(0, 2), QPoint(0, 4), Qt::NoScrollPhase, 3030 + i * 10,
+               Qt::MouseEventSynthesizedBySystem);
+        expectLayer(4, "phase-less precise Cocoa input must retain pixel accumulation");
+    }
+#endif
+    handler.setExternalDragActive(true);
+    const int beforeExternalDrag = intelligent.index();
+    scroll(QPoint(0, 100), {}, Qt::ScrollUpdate);
+    expectLayer(beforeExternalDrag, "external drags must consume wheel input without selecting");
+    handler.setExternalDragActive(false);
+    scroll(QPoint(0, 1), {}, Qt::ScrollUpdate);
+    expectLayer(beforeExternalDrag + 1, "leaving an external drag must start fresh scroll input");
+    handler.confirmSelection();
+    interaction.returnToSelectionMode(true);
+    scroll(QPoint(0, 1), {}, Qt::ScrollUpdate);
+    expectLayer(beforeExternalDrag + 2, "confirmed selection must clear its wheel remainder");
+    require(handler.toggleIntelligentSelectionTargetShortcut(),
+            "wheel fixture must allow switching to window selection");
+    scroll(QPoint(0, -1000), {}, Qt::ScrollBegin);
+    expectLayer(15, "wheel movement in window mode must retain the window selection");
+    require(handler.toggleIntelligentSelectionTargetShortcut(),
+            "wheel fixture must allow returning to element selection");
+    const int elementIndex = intelligent.index();
+    scroll(QPoint(0, -1), {}, Qt::ScrollUpdate);
+    expectLayer(std::max(0, elementIndex - 1),
+                "switching selection target must clear pending scroll state");
+}
+
 void configuredSelectionShortcutsRouteTabHistoryAndColorActions(bool targetSwitchOnly = false) {
     const storage::ScreenshotShortcutSettings shortcutSettings;
     const snow_shot::shortcuts::ShortcutBindingMap originalShortcuts =
@@ -2982,7 +3107,7 @@ void configuredSelectionShortcutsRouteTabHistoryAndColorActions(bool targetSwitc
                 intelligent.applyCanvasHitPath({windowSelection}, QRectF(0, 0, 100, 100), 1.0) &&
                 intelligent.currentSelection() == windowSelection && selectorHitTestRequests == 3,
             "window sub-element mode did not retain the original window fallback");
-    require(handler.handleWheel(nullptr, QPointF(), QPoint(0, 120), QPoint()) &&
+    require(handler.handleWheel(nullptr, wheelInput({0, 120})) &&
                 intelligent.selectionTarget() ==
                     ScreenshotIntelligentSelectionTarget::WindowSubElement &&
                 selectorHitTestRequests == 4,
@@ -6217,6 +6342,11 @@ int main(int argc, char** argv) {
         storage::ApplicationStorage::instance().shutdown();
         return 0;
     }
+    if (QCoreApplication::arguments().contains(QStringLiteral("--smart-selection-wheel-only"))) {
+        smartSelectionWheelAccumulatesMovement();
+        storage::ApplicationStorage::instance().shutdown();
+        return 0;
+    }
     auto metadataLifecycle = [&]() {
         const QDir root(temporary.path());
         idlePublicationsReconcileRepositoryLimits(root.filePath(QStringLiteral("metadata-limits")));
@@ -6366,6 +6496,7 @@ int main(int argc, char** argv) {
     recognitionAndScrollingToolsResizeSelectionBorder();
     selectionResizeModeAdjustsGrabOffsetAtPress();
     eraserWheelUsesBrushCreationWidthOnly();
+    smartSelectionWheelAccumulatesMovement();
     completionGesturesUseSharedEligibilityAcrossTools();
     externalSelectionSupportsHeldShortcuts();
     colorCopyEndsCaptureOnlyAfterSuccessfulCopy();
