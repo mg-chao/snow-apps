@@ -238,13 +238,15 @@ class ObservedPinnedPlatform final : public snow_shot::presentation::PinnedWindo
     bool rejectNext = false;
     bool biasNext = false;
     int applications = 0;
+    GeometryUpdate lastUpdate = GeometryUpdate::PreserveContents;
     std::function<void()> notification;
     bool attach() override {
         return true;
     }
     void detach() override {}
-    bool applyGeometry(const QRect& rect, QScreen*, GeometryUpdate) override {
+    bool applyGeometry(const QRect& rect, QScreen*, GeometryUpdate update) override {
         ++applications;
+        lastUpdate = update;
         if (std::exchange(rejectNext, false))
             return false;
         observed = std::exchange(biasNext, false) ? rect.translated(1, 0) : rect;
@@ -11231,7 +11233,7 @@ void restoredThumbnailScaleMenuStaysConsistentThroughExit(SnowCanvasRuntime&) {
     ScreenshotPinnedWindow* restoredWindow = restoreSeededPinnedWindow(services, record);
 
     auto* thumbnailAction =
-        restoredWindow->findChild<QAction*>(QStringLiteral("screenshotPinnedThumbnailAction"));
+        pinnedMenuActionNamed(*restoredWindow, QStringLiteral("screenshotPinnedThumbnailAction"));
     require(thumbnailAction != nullptr, "pinned thumbnail action was not found");
     const QRect expectedThumbnailGeometry(physical.topLeft() + QPoint(40, 30), QSize(120, 120));
     require(restoredWindow->currentNativeGeometry() == expectedThumbnailGeometry,
@@ -15115,6 +15117,102 @@ void pinnedTransparentPhysicalEdges(bool liveSurface) {
 }
 #endif
 
+void pinnedPassiveCorrectionPreservesPublishedPixels() {
+    ScreenshotPinnedWindow window;
+    auto* platform = ScreenshotPinnedWindowTestAccess::installObservedPlatform(window);
+    ScreenshotPinnedWindow::Config config;
+    config.nativeGeometry = QRect(181, 181, 11, 13);
+    config.canvasSourceRect = QRectF(0, 0, 11, 13);
+    config.initialWindowSize = config.nativeGeometry.size();
+    QImage image(config.nativeGeometry.size(), QImage::Format_RGB32);
+    image.fill(Qt::white);
+    config.imageSource = ScreenshotImageSource::fromImage(image, config.canvasSourceRect);
+    ScreenshotPinnedWindowTestAccess::restoreOffscreen(window, config);
+
+    // A layered backing-store flush projects the integer-DIP rectangle back to
+    // physical pixels. Repair that drift without invalidating the painted image.
+    platform->observed = config.nativeGeometry.adjusted(1, 1, 1, 2);
+    const int applications = platform->applications;
+    QEvent update(QEvent::UpdateRequest);
+    QCoreApplication::sendEvent(&window, &update);
+    require(platform->observed == config.nativeGeometry &&
+                platform->applications == applications + 1 &&
+                platform->lastUpdate ==
+                    snow_shot::presentation::PinnedWindowPlatform::GeometryUpdate::PreserveContents,
+            "passive publication correction must restore geometry without discarding pixels");
+    QCoreApplication::sendEvent(&window, &update);
+    require(platform->applications == applications + 1,
+            "a settled publication must not request more native geometry changes");
+#ifdef Q_OS_WIN
+    WINDOWPOS position{};
+    position.hwnd = reinterpret_cast<HWND>(window.winId());
+    position.x = 182;
+    position.y = 182;
+    position.cx = 11;
+    position.cy = 14;
+    position.flags = SWP_NOZORDER | SWP_NOACTIVATE;
+    MSG message{};
+    message.hwnd = position.hwnd;
+    message.message = WM_WINDOWPOSCHANGING;
+    message.lParam = reinterpret_cast<LPARAM>(&position);
+    qintptr result = -1;
+    require(PinnedWindowWindowsEvents::handle(window, QByteArrayLiteral("windows_generic_MSG"),
+                                              &message, &result) &&
+                result == 0 &&
+                QRect(position.x, position.y, position.cx, position.cy) == config.nativeGeometry &&
+                position.flags == (SWP_NOZORDER | SWP_NOACTIVATE),
+            "owned native geometry must be handled without Qt re-rounding or invalidating it");
+#endif
+    platform->notification = {};
+    window.close();
+}
+
+void pinnedSmallExtentRemainsResponsive() {
+    QScreen* screen = QGuiApplication::primaryScreen();
+    require(screen != nullptr, "small pin fixture needs a screen");
+    for (const QSize extent : {QSize(12, 12), QSize(11, 13), QSize(13, 11), QSize(14, 14),
+                               QSize(1, 9), QSize(9, 1), QSize(1, 1)}) {
+        ScreenshotPinnedWindow window;
+        window.setAttribute(Qt::WA_DeleteOnClose, false);
+        QImage image(extent, QImage::Format_RGB32);
+        image.fill(Qt::white);
+        ScreenshotPinnedWindow::Config config;
+        config.screen = screen;
+        // Include positions off the logical-pixel grid: even a 12x12 surface
+        // that rounds exactly can drift when Qt publishes its native origin.
+        config.nativeGeometry = physicalPinGeometry(*screen, QPoint(120, 120), extent);
+        config.nativeGeometry.translate(1, 1);
+        config.canvasSourceRect = QRectF(QPointF(), QSizeF(extent));
+        config.imageSource = ScreenshotImageSource::fromImage(image, config.canvasSourceRect);
+        config.automaticTextRecognition = false;
+        require(window.present(config), "small pin must present");
+        const QRect expected = window.currentNativeGeometry();
+        auto* canvas = window.findChild<SnowCanvasWidget*>();
+        require(canvas != nullptr, "small pin must have a canvas");
+        PaintEventCounter paints(*canvas);
+        for (const bool reshow : {false, true}) {
+            if (reshow) {
+                window.hide();
+                window.show();
+            }
+            const int previousPaints = paints.count();
+            bool dispatched = false;
+            QTimer::singleShot(0, &window, [&dispatched] { dispatched = true; });
+            window.update();
+            waitForUi(50);
+            require(dispatched && paints.count() > previousPaints,
+                    "small pin must paint and continue dispatching events");
+            require(expected.size() == extent && window.currentNativeGeometry() == expected,
+                    "small pin must retain exact geometry across publication and re-exposure");
+            const int settledPaints = paints.count();
+            waitForUi(30);
+            require(paints.count() == settledPaints,
+                    "an idle small pin must settle without a self-sustaining paint loop");
+        }
+        window.close();
+    }
+}
+
 void pinnedOddPixelExtentRemainsSharp() {
     QScreen* screen = QGuiApplication::primaryScreen();
     for (const QSize extent : {QSize(321, 181), QSize(1000, 667), QSize(667, 1000), QSize(868, 936),
@@ -18852,6 +18950,10 @@ int main(int argc, char* argv[]) {
         // without this, lazily initialized storage lands in the developer's
         // real AppData (see IsolatedPinnedStorage).
         IsolatedPinnedStorage processStorage;
+        if (app.arguments().contains(QStringLiteral("--passive-publication-only"))) {
+            pinnedPassiveCorrectionPreservesPublishedPixels();
+            return 0;
+        }
         if (app.arguments().contains(QStringLiteral("--window-confirmation-only"))) {
             pinnedWindowConfirmationPreferences();
             pinnedWindowDontAskAgainPreferences();
@@ -18966,6 +19068,10 @@ int main(int argc, char* argv[]) {
             require(
                 qFuzzyCompare(QGuiApplication::primaryScreen()->devicePixelRatio(), expectedDpr),
                 "pixel fixture must run at the registered DPR, independently of monitor settings");
+        if (app.arguments().contains(QStringLiteral("--small-extent-only"))) {
+            pinnedSmallExtentRemainsResponsive();
+            return 0;
+        }
 #ifdef Q_OS_WIN
         if (app.arguments().contains(QStringLiteral("--ctrl-hover-only"))) {
             pinnedCtrlHoverKeepsWindowCursorOffscreen();

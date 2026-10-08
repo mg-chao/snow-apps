@@ -333,6 +333,15 @@ bool PinnedWindowWindowsEvents::handle(ScreenshotPinnedWindow& window, const QBy
                 if (!window.m_presented || (sizeRequested && window.m_systemSizingActive)) {
                     position->flags |= SWP_NOCOPYBITS;
                 }
+                if (window.m_nativeGeometryController->targetGeometry().isValid()) {
+                    // The controller owns physical geometry and the caller owns
+                    // pixel preservation. Qt's default handler re-rounds this
+                    // rectangle through DIPs and adds SWP_NOCOPYBITS on resize,
+                    // turning passive layered-surface corrections into a paint loop.
+                    if (result)
+                        *result = 0;
+                    return true;
+                }
             }
         }
 

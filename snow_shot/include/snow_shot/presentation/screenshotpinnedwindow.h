@@ -431,7 +431,7 @@ class ScreenshotPinnedWindow final : public QWidget {
     void animateGeometryTo(const QRect& nativeTarget);
     void stopAttentionShake();
     bool applyWindowGeometry(const QRect& nativeGeometry, GeometryMutation mutation);
-    bool applyAndVerifyNativeGeometry(const QRect& target, bool discardContents = false);
+    bool applyAndVerifyNativeGeometry(const QRect& target);
     void commitNativeGeometry(bool adoptScale = false);
     void handleNativeGeometryObservation();
     bool finishNativeGeometryInteraction();

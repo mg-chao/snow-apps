@@ -7379,14 +7379,11 @@ bool ScreenshotPinnedWindow::applyWindowGeometry(const QRect& nativeGeometry,
     return true;
 }
 
-bool ScreenshotPinnedWindow::applyAndVerifyNativeGeometry(const QRect& target,
-                                                          bool discardContents) {
+bool ScreenshotPinnedWindow::applyAndVerifyNativeGeometry(const QRect& target) {
     if (!target.isValid() || m_platformApplying)
         return false;
     const QScopedValueRollback<bool> guard(m_platformApplying, true);
-    using Update = pinned_platform::PinnedWindowPlatform::GeometryUpdate;
-    if (!m_platform->applyGeometry(
-            target, screen(), discardContents ? Update::DiscardContents : Update::PreserveContents))
+    if (!m_platform->applyGeometry(target, screen()))
         return false;
     const QRect actual = observedNativeGeometry();
     return actual.isValid() && (m_platform->usesControlledInteraction() || actual == target);
@@ -7485,7 +7482,10 @@ bool ScreenshotPinnedWindow::reconcilePassiveNativeGeometry() {
     }
 
     const QScopedValueRollback<bool> guard(m_passiveGeometryReconciliationActive, true);
-    const bool reconciled = applyAndVerifyNativeGeometry(target, true);
+    // Layered-window publication rounds Qt's integer-DIP geometry. Restoring the
+    // physical rectangle must preserve that freshly painted surface: discarding
+    // it queues another expose, whose publication repeats the same rounding.
+    const bool reconciled = applyAndVerifyNativeGeometry(target);
     if (reconciled) {
         return true;
     }

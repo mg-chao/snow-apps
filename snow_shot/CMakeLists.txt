@@ -9153,6 +9153,11 @@ if(SNOW_SHOT_BUILD_TESTS)
     set_tests_properties(snow-shot-pinned-physical-authority-tests PROPERTIES
         LABELS unit SNOW_TEST_CROSS_PLATFORM TRUE RUN_SERIAL TRUE TIMEOUT 60
         ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}")
+    add_test(NAME snow-shot-pinned-passive-publication-tests
+        COMMAND snow-shot-pinned-window-tests --passive-publication-only -platform offscreen)
+    set_tests_properties(snow-shot-pinned-passive-publication-tests PROPERTIES
+        LABELS unit SNOW_TEST_CROSS_PLATFORM TRUE RUN_SERIAL TRUE TIMEOUT 30
+        ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}")
     add_test(NAME snow-shot-clipboard-appearance-presentation-tests
         COMMAND snow-shot-pinned-window-tests --clipboard-appearance-only -platform offscreen)
     set_tests_properties(snow-shot-clipboard-appearance-presentation-tests PROPERTIES
@@ -9182,6 +9187,11 @@ if(WIN32 AND SNOW_SHOT_BUILD_TESTS)
     set(_pin_dprs 1.0 1.25 1.5 1.75 2.0)
     set(_pin_factors 0.5 0.625 0.75 0.875 1.0)
     foreach(_pin_scale _pin_factor IN ZIP_LISTS _pin_dprs _pin_factors)
+        add_test(NAME snow-shot-pinned-small-extent-${_pin_scale}-tests
+            COMMAND snow-shot-pinned-window-tests --small-extent-only -platform windows)
+        set_tests_properties(snow-shot-pinned-small-extent-${_pin_scale}-tests PROPERTIES
+            LABELS "unit;windows" RUN_SERIAL TRUE TIMEOUT 30
+            ENVIRONMENT "QT_QPA_PLATFORM=windows;QT_SCREEN_SCALE_FACTORS=2;QT_SCALE_FACTOR=${_pin_factor};SNOW_PIN_TEST_DPR=${_pin_scale}")
         add_test(NAME snow-shot-pinned-pixel-alignment-${_pin_scale}-tests
             COMMAND snow-shot-pinned-window-tests --pixel-alignment-only -platform windows)
         set_tests_properties(snow-shot-pinned-pixel-alignment-${_pin_scale}-tests PROPERTIES
