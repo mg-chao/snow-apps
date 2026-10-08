@@ -8,6 +8,7 @@
 #include "snow_shot/presentation/screenshotautofiltercontroller.h"
 #include "snow_shot/presentation/screenshotsourceimagecomposer.h"
 #include "snow_shot/presentation/screenshotcontroller.h"
+#include "snow_shot/presentation/globalshortcuttypes.h"
 #include "snow_shot/presentation/screenshotprintservice.h"
 #include "screenshotprintinteractionguard.h"
 #include "screenshotprintcompletion.h"
@@ -6018,6 +6019,24 @@ bool ScreenshotController::captureForAction(CaptureAction action) {
          !edition::imageConversion))
         return false;
     return m_impl->beginCapture(action);
+}
+
+bool ScreenshotController::handleActiveScreenshotShortcut(
+    snow_shot::presentation::GlobalShortcutAction action) {
+    const auto state = m_impl->m_captureState.sessionState;
+    if (state == ScreenshotSessionState::IdleCold || state == ScreenshotSessionState::IdlePrepared)
+        return false;
+    if (action == snow_shot::presentation::GlobalShortcutAction::ScreenRecordCopy &&
+        m_impl->m_screenRecordingController != nullptr &&
+        m_impl->m_screenRecordingController->isOpen())
+        return false;
+    const bool ready = (state == ScreenshotSessionState::OverlayVisible ||
+                        state == ScreenshotSessionState::Editing) &&
+                       !captureAcquisitionActive() &&
+                       !m_impl->m_captureState.presentationSuppressed &&
+                       m_impl->m_captureWorkflow && !m_impl->m_captureWorkflow->captureSuspended();
+    return m_impl->m_overlayShortcutController != nullptr &&
+           m_impl->m_overlayShortcutController->handleGlobalScreenshotShortcut(action, ready);
 }
 
 void ScreenshotController::pinDroppedContent(ScreenshotClipboardContentSnapshot snapshot,

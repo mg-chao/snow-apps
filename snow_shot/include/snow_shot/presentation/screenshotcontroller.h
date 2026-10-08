@@ -17,7 +17,8 @@ struct SelectedFileTarget;
 }
 namespace snow_shot::presentation {
 class PinnedWindowGroupManager;
-}
+enum class GlobalShortcutAction;
+} // namespace snow_shot::presentation
 class ScreenshotOcrRecognitionService;
 class ScreenshotQrRecognitionPort;
 class SnowShotApiClient;
@@ -50,6 +51,9 @@ class ScreenshotController : public QObject {
     };
     Q_ENUM(CaptureAction)
     [[nodiscard]] bool captureForAction(CaptureAction action);
+    // Consumes supported global tool shortcuts in an active capture, including rejected tools.
+    [[nodiscard]] bool
+    handleActiveScreenshotShortcut(snow_shot::presentation::GlobalShortcutAction action);
     void pinDroppedContent(ScreenshotClipboardContentSnapshot snapshot, QStringList paths);
     explicit ScreenshotController(
         QObject* parent = nullptr,

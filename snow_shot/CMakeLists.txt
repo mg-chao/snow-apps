@@ -3709,6 +3709,12 @@ if(SNOW_SHOT_BUILD_TESTS)
         NAME snow-shot-screenshot-shortcut-priority-tests
         COMMAND snow-shot-screenshot-history-tests --shortcut-input-only
     )
+    add_test(NAME snow-shot-global-screenshot-shortcut-tests
+        COMMAND snow-shot-screenshot-history-tests --global-screenshot-shortcuts-only -platform offscreen)
+    set_tests_properties(snow-shot-global-screenshot-shortcut-tests PROPERTIES
+        LABELS "unit" TIMEOUT 60
+        ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}"
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
     add_test(NAME snow-shot-screenshot-exit-confirmation-tests
         COMMAND snow-shot-screenshot-history-tests --shortcut-exit-confirmation-only -platform offscreen)
     set_tests_properties(snow-shot-screenshot-exit-confirmation-tests PROPERTIES

@@ -126,6 +126,8 @@ storage::PinnedWindowRepository* initializedPinnedWindowRepository() {
 
 class ApplicationController::Impl {
   public:
+    enum class QuickActionOrigin { Other, GlobalHotkey };
+
     Impl(ApplicationController& owner, QApplication& application)
         : q(owner), app(application), restartCoordinator(application),
           groupManager(initializedPinnedWindowRepository()),
@@ -241,7 +243,7 @@ class ApplicationController::Impl {
         QObject::connect(&globalShortcutManager, &presentation::GlobalShortcutManager::activated,
                          &q, [this](presentation::GlobalShortcutAction action) {
                              if (action != presentation::GlobalShortcutAction::SwitchWindowGroup)
-                                 dispatchQuickAction(action);
+                                 dispatchQuickAction(action, QuickActionOrigin::GlobalHotkey);
                          });
         QObject::connect(&globalShortcutManager,
                          &presentation::GlobalShortcutManager::bindingActivated, &q,
@@ -1609,7 +1611,8 @@ class ApplicationController::Impl {
             }));
     }
 
-    void dispatchQuickAction(presentation::GlobalShortcutAction action) {
+    void dispatchQuickAction(presentation::GlobalShortcutAction action,
+                             QuickActionOrigin origin = QuickActionOrigin::Other) {
         if (storage::ApplicationStorage::instance().directoryChanging() ||
             (updates && updates->handoffPending()))
             return;
@@ -1617,16 +1620,21 @@ class ApplicationController::Impl {
                 presentation::requiredPermissions(action, permissions.microphoneEnabled())))
             return;
         const std::optional<FeatureFamily> feature = featureFamilyFor(action);
-        if (feature && !featureRouter.dispatch(
-                           *feature, [this, action]() { dispatchAvailableQuickAction(action); })) {
+        if (feature && !featureRouter.dispatch(*feature, [this, action, origin]() {
+                dispatchAvailableQuickAction(action, origin);
+            })) {
             return;
         }
         if (!feature) {
-            dispatchAvailableQuickAction(action);
+            dispatchAvailableQuickAction(action, origin);
         }
     }
 
-    void dispatchAvailableQuickAction(presentation::GlobalShortcutAction action) {
+    void dispatchAvailableQuickAction(presentation::GlobalShortcutAction action,
+                                      QuickActionOrigin origin) {
+        if (origin == QuickActionOrigin::GlobalHotkey && screenshotController &&
+            screenshotController->handleActiveScreenshotShortcut(action))
+            return;
         switch (action) {
         case presentation::GlobalShortcutAction::Screenshot:
             if (ScreenshotController* controller = ensureScreenshotController()) {

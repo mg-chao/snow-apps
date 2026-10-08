@@ -15,6 +15,7 @@
 #include "snow_shot/presentation/screenshotinteractionstate.h"
 #include "snow_shot/presentation/screenshotoverlayinputhandler.h"
 #include "snow_shot/presentation/screenshotoverlayshortcutcontroller.h"
+#include "snow_shot/presentation/globalshortcuttypes.h"
 #include "snow_shot/presentation/screenshotselectionmodel.h"
 #include "snow_shot/presentation/screenshotshortcutexitconfirmation.h"
 #include "snow_shot/presentation/windowshortcutmanager.h"
@@ -4337,6 +4338,377 @@ void selectionStagesActivateEveryToolbarShortcut() {
             "restore toolbar shortcuts");
 }
 
+using GlobalAction = snow_shot::presentation::GlobalShortcutAction;
+constexpr std::pair<GlobalAction, const char*> kGlobalScreenshotTools[] = {
+    {GlobalAction::ScreenshotFixed, "pin_to_screen"},
+    {GlobalAction::ScreenshotOcr, "text_recognition"},
+    {GlobalAction::ScreenshotTranslation, "text_translation"},
+    {GlobalAction::ScreenshotCopy, "copy_to_clipboard"},
+    {GlobalAction::ScreenshotSave, "save_as_file"},
+    {GlobalAction::ScreenshotQuickSave, "quick_save"},
+    {GlobalAction::ScreenRecord, "video_recording"},
+    {GlobalAction::ScreenRecordCopy, "video_recording"},
+};
+
+void globalScreenshotShortcutsUseCurrentSelection() {
+    for (const auto& [globalAction, localAction] : kGlobalScreenshotTools) {
+        // Confirmed editing, smart hover/press, manual idle, marquee, move, and resize.
+        for (int stage = 0; stage < 7; ++stage) {
+            ScreenshotCaptureState capture;
+            capture.sessionId = 42;
+            capture.sessionState = stage == 0 ? ScreenshotSessionState::Editing
+                                              : ScreenshotSessionState::OverlayVisible;
+            ScreenshotDisplaySession displays;
+            ScreenshotGeometryMapper geometry;
+            ScreenshotSelectionModel selection;
+            selection.setSelectionRect(QRectF(10, 20, 80, 60));
+            const QRect bounds = selection.pixelSelection();
+            ScreenshotIntelligentSelectionModel intelligent;
+            ScreenshotInteractionState interaction;
+            interaction.enterOverlayVisible(stage == 1 || stage == 2);
+            if (stage == 0)
+                interaction.confirmSelection();
+            if (stage == 2)
+                intelligent.beginPress(QPointF(30, 40), selection.normalizedSelection());
+            if (stage >= 4)
+                require(interaction.enterSelectionDrag(
+                            stage == 4   ? ScreenshotSelectionDragMode::Marquee
+                            : stage == 5 ? ScreenshotSelectionDragMode::All
+                                         : ScreenshotSelectionDragMode::Right),
+                        "start global shortcut selection drag");
+            bool toolbarVisible = stage == 0;
+            bool pendingAction = stage != 0;
+            int preparations = 0;
+            int confirmations = 0;
+            int activations = 0;
+            ScreenshotOverlayInputActions actions;
+            actions.mainToolbarVisible = [&] { return toolbarVisible; };
+            actions.canActivateScreenshotShortcut = [&](const QString& id) {
+                return id == QLatin1String(localAction);
+            };
+            actions.prepareExplicitSelectionCommand = [&] {
+                ++preparations;
+                pendingAction = false;
+            };
+            actions.activateScreenshotShortcut = [&](const QString& id) {
+                require(id == QLatin1String(localAction) &&
+                            capture.sessionState == ScreenshotSessionState::Editing &&
+                            capture.sessionId == 42 && !interaction.selecting() &&
+                            !interaction.dragging() && selection.pixelSelection() == bounds &&
+                            !pendingAction && confirmations == 0,
+                        "global tool must use the committed current capture before presentation");
+                ++activations;
+                interaction.setCanvasTool(ScreenshotActiveTool::Shape);
+                return true;
+            };
+            actions.updateOverlayState = [&] {
+                require(activations == 1, "global tool must activate before overlay presentation");
+            };
+            actions.showToolbar = [&] {
+                require(activations == 1, "global tool must activate before toolbar presentation");
+                toolbarVisible = true;
+            };
+            actions.selectionConfirmed = [&] {
+                require(!pendingAction, "global tool must supersede the pending capture action");
+                ++confirmations;
+            };
+            ScreenshotOverlayInputHandler handler(
+                {capture, interaction, selection, intelligent, geometry, displays, actions});
+            snow_shot::presentation::WindowShortcutManager manager;
+            ScreenshotOverlayShortcutController shortcuts(manager, handler, interaction,
+                                                          intelligent, actions);
+            require(shortcuts.handleGlobalScreenshotShortcut(globalAction, true) &&
+                        activations == 1 && preparations == (stage == 0 ? 0 : 1) &&
+                        confirmations == (stage == 0 ? 0 : 1) && !intelligent.pressActive(),
+                    "global screenshot tool must confirm and activate exactly once");
+            if (stage == 2 || stage >= 4)
+                require(handler.shouldHandleMouseEvent(nullptr, QPointF(300, 300), true),
+                        "global shortcut must consume the pending selection release");
+            handler.handleMouseMove(nullptr, QPointF(300, 300));
+            handler.handleMouseRelease(nullptr, QPointF(300, 300));
+            QCoreApplication::processEvents();
+            require(capture.sessionId == 42 && selection.pixelSelection() == bounds &&
+                        activations == 1 && confirmations == (stage == 0 ? 0 : 1) &&
+                        interaction.activeTool() == ScreenshotActiveTool::Shape,
+                    "later release must not restart capture or repeat the global tool");
+        }
+    }
+}
+
+void rejectedGlobalScreenshotShortcutsPreserveSession() {
+    const storage::DrawingShortcutSettings drawingSettings;
+    const auto originalShapeShortcut = drawingSettings.shape();
+    const auto restore = qScopeGuard([&] {
+        require(drawingSettings.setShape(originalShapeShortcut), "restore shape shortcut");
+    });
+    require(drawingSettings.setShape({QStringLiteral("Alt+J")}), "configure shape shortcut");
+    enum class Rejection {
+        EmptySelection,
+        PolylineDraft,
+        FreehandDraft,
+        AddRegion,
+        SubtractRegion,
+        ExternalDrag,
+        TextInput,
+        UnavailableSelectionTool,
+        PreparingStartup,
+        Capturing,
+        Releasing,
+        Suspended,
+        ModalSelection,
+        ModalEditing,
+        CornerRadiusDrag,
+        ShadowDrag,
+        Inactive,
+        HiddenToolbar,
+        UnavailableEditingTool,
+    };
+    for (const auto& [globalAction, localAction] : kGlobalScreenshotTools) {
+        Q_UNUSED(localAction);
+        for (const auto reason :
+             {Rejection::EmptySelection, Rejection::PolylineDraft, Rejection::FreehandDraft,
+              Rejection::AddRegion, Rejection::SubtractRegion, Rejection::ExternalDrag,
+              Rejection::TextInput, Rejection::UnavailableSelectionTool,
+              Rejection::PreparingStartup, Rejection::Capturing, Rejection::Releasing,
+              Rejection::Suspended, Rejection::ModalSelection, Rejection::ModalEditing,
+              Rejection::CornerRadiusDrag, Rejection::ShadowDrag, Rejection::Inactive,
+              Rejection::HiddenToolbar, Rejection::UnavailableEditingTool}) {
+            ScreenshotCaptureState capture;
+            capture.sessionId = 42;
+            capture.sessionState = ScreenshotSessionState::OverlayVisible;
+            ScreenshotDisplaySession displays;
+            ScreenshotGeometryMapper geometry;
+            ScreenshotSelectionModel selection;
+            selection.setSelectionRect(QRectF(10, 20, 80, 60));
+            ScreenshotIntelligentSelectionModel intelligent;
+            ScreenshotInteractionState interaction;
+            interaction.enterOverlayVisible(true);
+            const bool available = reason != Rejection::UnavailableSelectionTool &&
+                                   reason != Rejection::UnavailableEditingTool;
+            const bool modal =
+                reason == Rejection::ModalSelection || reason == Rejection::ModalEditing;
+            const bool effectDrag =
+                reason == Rejection::CornerRadiusDrag || reason == Rejection::ShadowDrag;
+            int rollbacks = 0;
+            bool captureReady = true;
+            switch (reason) {
+            case Rejection::EmptySelection:
+                selection.setSelectionRect({});
+                break;
+            case Rejection::PolylineDraft:
+            case Rejection::FreehandDraft:
+                selection.setRegionType(reason == Rejection::PolylineDraft
+                                            ? ScreenshotRegionType::Polyline
+                                            : ScreenshotRegionType::Freehand);
+                selection.setDraftRegion(selection.selectionRegion());
+                break;
+            case Rejection::AddRegion:
+            case Rejection::SubtractRegion:
+                selection.beginRegionOperation(
+                    reason == Rejection::AddRegion
+                        ? ScreenshotSelectionModel::RegionOperation::Add
+                        : ScreenshotSelectionModel::RegionOperation::Subtract);
+                break;
+            case Rejection::PreparingStartup:
+                displays.startup = std::make_shared<ScreenshotStartupContext>();
+                displays.startup->phase = ScreenshotStartupContext::Phase::Preparing;
+                break;
+            case Rejection::Capturing:
+                capture.sessionState = ScreenshotSessionState::Capturing;
+                capture.captureInProgress = true;
+                captureReady = false;
+                break;
+            case Rejection::Releasing:
+                capture.sessionState = ScreenshotSessionState::Releasing;
+                captureReady = false;
+                break;
+            case Rejection::Suspended:
+                captureReady = false;
+                break;
+            case Rejection::Inactive:
+                interaction.reset();
+                break;
+            case Rejection::HiddenToolbar:
+            case Rejection::UnavailableEditingTool:
+            case Rejection::ModalEditing:
+            case Rejection::CornerRadiusDrag:
+            case Rejection::ShadowDrag:
+                interaction.confirmSelection();
+                capture.sessionState = ScreenshotSessionState::Editing;
+                break;
+            default:
+                break;
+            }
+            if (effectDrag) {
+                ScreenshotInteractionState::EffectGesture gesture;
+                gesture.handle = reason == Rejection::CornerRadiusDrag
+                                     ? ScreenshotSelectionEffectHandle::TopLeft
+                                     : ScreenshotSelectionEffectHandle::Shadow;
+                gesture.rollback = [&] { ++rollbacks; };
+                require(interaction.beginEffectDrag(std::move(gesture)),
+                        "start global shortcut effect drag");
+            }
+            int mutations = 0;
+            int activations = 0;
+            ScreenshotOverlayInputActions actions;
+            actions.mainToolbarVisible = [&] {
+                return reason == Rejection::UnavailableEditingTool ||
+                       reason == Rejection::ModalEditing || effectDrag;
+            };
+            actions.localShortcutInputAllowed = [&] { return reason != Rejection::TextInput; };
+            actions.canActivateScreenshotShortcut = [&](const QString&) { return available; };
+            actions.activateScreenshotShortcut = [&](const QString&) {
+                if (!available)
+                    return false;
+                ++mutations;
+                ++activations;
+                if (effectDrag)
+                    interaction.setCanvasTool(ScreenshotActiveTool::Shape);
+                return true;
+            };
+            actions.activateDrawingShortcut = [&](const QString&) {
+                ++mutations;
+                interaction.setCanvasTool(ScreenshotActiveTool::Shape);
+                return true;
+            };
+            actions.prepareExplicitSelectionCommand = [&] { ++mutations; };
+            actions.showToolbar = [&] { ++mutations; };
+            actions.selectionConfirmed = [&] { ++mutations; };
+            const auto region = selection.selectionRegion();
+            const auto state = capture.sessionState;
+            const auto mode = interaction.mode();
+            ScreenshotOverlayInputHandler handler(
+                {capture, interaction, selection, intelligent, geometry, displays, actions});
+            if (reason == Rejection::ExternalDrag)
+                handler.setExternalDragActive(true);
+            QWidget receiver;
+            snow_shot::presentation::WindowShortcutManager manager;
+            manager.addScopeWindow(&receiver);
+            ScreenshotOverlayShortcutController shortcuts(manager, handler, interaction,
+                                                          intelligent, actions);
+            const auto firstSuspension = modal ? manager.suspendInput() : 0;
+            const auto secondSuspension = modal ? manager.suspendInput() : 0;
+            if (effectDrag) {
+                require(!dispatchShortcut(receiver, Qt::Key_J, Qt::AltModifier) && mutations == 0 &&
+                            handler.effectDragActive() && rollbacks == 0,
+                        "drawing shortcuts must preserve an active effect drag");
+                static_cast<void>(dispatchShortcutRelease(receiver, Qt::Key_J, Qt::AltModifier));
+                for (const auto& undo : QKeySequence::keyBindings(QKeySequence::Undo)) {
+                    require(
+                        !dispatchShortcut(receiver, undo[0].key(), undo[0].keyboardModifiers()) &&
+                            mutations == 0 && handler.effectDragActive() && rollbacks == 0,
+                        "history shortcuts must preserve an active effect drag");
+                    static_cast<void>(dispatchShortcutRelease(receiver, undo[0].key(),
+                                                              undo[0].keyboardModifiers()));
+                }
+            }
+            require(shortcuts.handleGlobalScreenshotShortcut(globalAction, captureReady),
+                    "rejected global screenshot tool must be consumed without capture fallback");
+            QCoreApplication::processEvents();
+            require(mutations == 0 && activations == 0 && rollbacks == 0 &&
+                        handler.effectDragActive() == effectDrag && capture.sessionId == 42 &&
+                        capture.sessionState == state && interaction.mode() == mode &&
+                        selection.selectionRegion() == region,
+                    "rejected global screenshot tool must preserve the session and region");
+            if (modal) {
+                manager.resumeInput(firstSuspension);
+                require(shortcuts.handleGlobalScreenshotShortcut(globalAction, true) &&
+                            mutations == 0 && activations == 0 && capture.sessionState == state &&
+                            interaction.mode() == mode,
+                        "partial modal resume must keep global screenshot tools suspended");
+                manager.resumeInput(secondSuspension);
+                require(shortcuts.handleGlobalScreenshotShortcut(globalAction, true) &&
+                            activations == 1 && capture.sessionId == 42,
+                        "final modal resume must restore global screenshot tool activation");
+            } else if (effectDrag) {
+                require(handler.cancelEffectDrag() && rollbacks == 1 &&
+                            !handler.effectDragActive() &&
+                            shortcuts.handleGlobalScreenshotShortcut(globalAction, true) &&
+                            activations == 1 && rollbacks == 1,
+                        "finishing an effect gesture must restore global screenshot tools");
+            }
+        }
+    }
+}
+
+void unrelatedGlobalShortcutsLeaveScreenshotToolsUntouched() {
+    ScreenshotCaptureState capture;
+    capture.sessionId = 42;
+    capture.sessionState = ScreenshotSessionState::Editing;
+    ScreenshotDisplaySession displays;
+    ScreenshotGeometryMapper geometry;
+    ScreenshotSelectionModel selection;
+    selection.setSelectionRect(QRectF(10, 20, 80, 60));
+    ScreenshotIntelligentSelectionModel intelligent;
+    ScreenshotInteractionState interaction;
+    interaction.enterOverlayVisible(false);
+    interaction.confirmSelection();
+    int activations = 0;
+    ScreenshotOverlayInputActions actions;
+    actions.mainToolbarVisible = [] { return true; };
+    actions.activateScreenshotShortcut = [&](const QString&) {
+        ++activations;
+        return true;
+    };
+    ScreenshotOverlayInputHandler handler(
+        {capture, interaction, selection, intelligent, geometry, displays, actions});
+    snow_shot::presentation::WindowShortcutManager manager;
+    ScreenshotOverlayShortcutController shortcuts(manager, handler, interaction, intelligent,
+                                                  actions);
+    for (const auto action :
+         {GlobalAction::Screenshot, GlobalAction::ScreenshotDelay,
+          GlobalAction::ScreenshotFullScreen, GlobalAction::ScreenshotFocusedWindow,
+          GlobalAction::OpenScreenRecordingFolder, GlobalAction::OpenCaptureHistory,
+          GlobalAction::OpenSettings, GlobalAction::PinClipboardContent,
+          GlobalAction::TranslateSelectedText, GlobalAction::PinSelectedFiles,
+          GlobalAction::RestoreLastClosedWindows, GlobalAction::ToggleGlobalHotkeys,
+          GlobalAction::ToggleDisableOnFocusedFullscreenWindow,
+          GlobalAction::OpenPinToScreenManagement, GlobalAction::GlobalCanvas,
+          GlobalAction::SwitchWindowGroup})
+        require(!shortcuts.handleGlobalScreenshotShortcut(action, true) && activations == 0 &&
+                    capture.sessionId == 42 &&
+                    capture.sessionState == ScreenshotSessionState::Editing &&
+                    selection.pixelSelection() == QRect(10, 20, 80, 60),
+                "unrelated global actions must keep their existing application dispatch");
+}
+
+void globalCompletionShortcutsDoNotReopenCapture() {
+    for (const auto action : {GlobalAction::ScreenshotFixed, GlobalAction::ScreenshotCopy,
+                              GlobalAction::ScreenshotQuickSave, GlobalAction::ScreenRecord,
+                              GlobalAction::ScreenRecordCopy}) {
+        ScreenshotCaptureState capture;
+        capture.sessionState = ScreenshotSessionState::OverlayVisible;
+        ScreenshotDisplaySession displays;
+        ScreenshotGeometryMapper geometry;
+        ScreenshotSelectionModel selection;
+        selection.setSelectionRect(QRectF(10, 20, 80, 60));
+        ScreenshotIntelligentSelectionModel intelligent;
+        ScreenshotInteractionState interaction;
+        interaction.enterOverlayVisible(true);
+        int activations = 0;
+        int presentations = 0;
+        ScreenshotOverlayInputActions actions;
+        actions.canActivateScreenshotShortcut = [](const QString&) { return true; };
+        actions.activateScreenshotShortcut = [&](const QString&) {
+            ++activations;
+            interaction.reset();
+            capture.sessionState = ScreenshotSessionState::Releasing;
+            return true;
+        };
+        actions.showToolbar = [&] { ++presentations; };
+        actions.updateOverlayState = [&] { ++presentations; };
+        actions.selectionConfirmed = [&] { ++presentations; };
+        ScreenshotOverlayInputHandler handler(
+            {capture, interaction, selection, intelligent, geometry, displays, actions});
+        snow_shot::presentation::WindowShortcutManager manager;
+        ScreenshotOverlayShortcutController shortcuts(manager, handler, interaction, intelligent,
+                                                      actions);
+        require(shortcuts.handleGlobalScreenshotShortcut(action, true) && activations == 1 &&
+                    presentations == 0 && interaction.inactive(),
+                "completed global tool must not reopen its retired screenshot session");
+    }
+}
+
 void toolbarSelectionPreparationRejectsIncompleteRegions() {
     ScreenshotCaptureState capture;
     ScreenshotDisplaySession displays;
@@ -5824,6 +6196,15 @@ int main(int argc, char** argv) {
     };
     require(storage::ApplicationStorage::instance().initialize(storageOptions).success,
             "failed to initialize isolated shortcut settings");
+    if (QCoreApplication::arguments().contains(
+            QStringLiteral("--global-screenshot-shortcuts-only"))) {
+        globalScreenshotShortcutsUseCurrentSelection();
+        rejectedGlobalScreenshotShortcutsPreserveSession();
+        unrelatedGlobalShortcutsLeaveScreenshotToolsUntouched();
+        globalCompletionShortcutsDoNotReopenCapture();
+        storage::ApplicationStorage::instance().shutdown();
+        return 0;
+    }
     if (QCoreApplication::arguments().contains(QStringLiteral("--cursor-shortcuts-only"))) {
         cursorMovementShortcutsAreIndependentOfActiveTool();
         cursorMovementEligibilityFollowsInteractionState();

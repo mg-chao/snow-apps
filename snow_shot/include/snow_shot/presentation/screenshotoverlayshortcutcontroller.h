@@ -13,7 +13,8 @@ class ScreenshotOverlayInputHandler;
 
 namespace snow_shot::presentation {
 class WindowShortcutManager;
-}
+enum class GlobalShortcutAction;
+} // namespace snow_shot::presentation
 
 class ScreenshotOverlayShortcutController final : public QObject {
   public:
@@ -25,6 +26,11 @@ class ScreenshotOverlayShortcutController final : public QObject {
     ~ScreenshotOverlayShortcutController() override;
 
     void reloadConfiguredShortcuts();
+    // Returns true for mapped actions even when capture readiness or local eligibility rejects
+    // them.
+    [[nodiscard]] bool
+    handleGlobalScreenshotShortcut(snow_shot::presentation::GlobalShortcutAction action,
+                                   bool captureReady);
 
   private:
     struct Impl;

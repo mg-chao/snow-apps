@@ -477,6 +477,10 @@ void WindowShortcutManager::resumeInput(InputSuspensionHandle handle) {
     }
 }
 
+bool WindowShortcutManager::inputSuspended() const {
+    return m_impl->inputSuspended();
+}
+
 WindowShortcutManager::BindingHandle WindowShortcutManager::addBinding(QObject* owner,
                                                                        Binding binding) {
     if (owner == nullptr || !binding.activate ||
