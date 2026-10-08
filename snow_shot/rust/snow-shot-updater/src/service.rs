@@ -7,7 +7,7 @@ use crate::error::{Result, UpdateError, io_error, require};
 use crate::fsutil;
 use crate::gitee;
 use crate::github;
-use crate::progress::{Progress, ProgressAppearance, ProgressPhase, ProgressTexts, ProgressWindow};
+use crate::progress::{ProgressAppearance, ProgressTexts};
 use crate::protocol::{Command, FrameDecoder, MAX_FRAME_BYTES, PROTOCOL_VERSION, Status};
 use crate::transaction;
 use bytes::Bytes;
@@ -331,11 +331,9 @@ struct Service {
     persisted: PersistedState,
     available: Option<AvailableUpdate>,
     status: Status,
-    mode: Mode,
-    trigger: Trigger,
+    // The installation coordinator owns the window; downloads only report protocol status.
     progress_texts: ProgressTexts,
     progress_appearance: ProgressAppearance,
-    progress_window: Option<ProgressWindow>,
     system_proxy: bool,
     active: Option<ActiveOperation>,
     cancellation: Option<CancellationToken>,
@@ -507,11 +505,8 @@ impl Service {
                 state: "Idle".to_owned(),
                 ..Status::default()
             },
-            mode: Mode::Download,
-            trigger: Trigger::Startup,
             progress_texts: ProgressTexts::default(),
             progress_appearance: ProgressAppearance::default(),
-            progress_window: None,
             system_proxy: false,
             active: None,
             cancellation: None,
@@ -598,7 +593,6 @@ impl Service {
             self.status.received = 0;
             self.status.total = 0;
         }
-        self.refresh_progress();
     }
 
     fn cached_payload_matches(&self) -> bool {
@@ -610,45 +604,6 @@ impl Service {
             )
             .is_ok()
         })
-    }
-
-    fn download_progress_visible(&self) -> bool {
-        self.trigger == Trigger::User || self.mode == Mode::Download
-    }
-
-    fn download_progress(&self) -> Option<Progress> {
-        match self.status.state.as_str() {
-            "Downloading" => Some(Progress {
-                phase: ProgressPhase::Downloading,
-                completed: self.status.received,
-                total: self.status.total,
-            }),
-            "Verifying" => Some(Progress {
-                phase: ProgressPhase::Verifying,
-                completed: 0,
-                total: 0,
-            }),
-            _ => None,
-        }
-    }
-
-    fn refresh_progress(&mut self) {
-        if let Some(progress) = self.download_progress() {
-            if self.download_progress_visible() {
-                let window = self.progress_window.get_or_insert_with(|| {
-                    ProgressWindow::new_with_appearance(
-                        self.progress_texts.clone(),
-                        self.progress_appearance.clone(),
-                    )
-                });
-                window.set_visible(true);
-                window.update(progress);
-            } else if let Some(window) = &self.progress_window {
-                window.set_visible(false);
-            }
-        } else if let Some(window) = self.progress_window.take() {
-            window.finish();
-        }
     }
 }
 
@@ -1547,7 +1502,6 @@ fn start_download(
     service.active = Some(ActiveOperation::Download);
     service.set_state("Downloading", None);
     service.status.total = package.size;
-    service.refresh_progress();
     let cancellation = CancellationToken::new();
     service.cancellation = Some(cancellation.clone());
     tokio::spawn(download_package(
@@ -1724,8 +1678,6 @@ async fn handle_command(
             match parsed {
                 Ok((operation, trigger, mode, system_proxy)) => {
                     service.requested = Some(operation);
-                    service.mode = mode;
-                    service.trigger = trigger;
                     service.system_proxy = system_proxy;
                     if let Some(texts) = command.progress_texts {
                         service.progress_texts = texts;
@@ -1788,27 +1740,19 @@ async fn handle_command(
             }
         }
         "configure" => (|| {
-            let mode = command
+            command
                 .mode
                 .as_deref()
                 .and_then(Mode::parse)
                 .ok_or_else(|| {
                     UpdateError::new("protocol_enum_invalid", "Invalid updater command argument")
                 })?;
-            service.mode = mode;
             if let Some(texts) = command.progress_texts {
                 service.progress_texts = texts;
-                if let Some(window) = &service.progress_window {
-                    window.set_texts(service.progress_texts.clone());
-                }
             }
             if let Some(appearance) = command.progress_appearance {
                 service.progress_appearance = appearance;
-                if let Some(window) = &service.progress_window {
-                    window.set_appearance(service.progress_appearance.clone());
-                }
             }
-            service.refresh_progress();
             Ok(())
         })(),
         "cancel" => {
@@ -1965,7 +1909,6 @@ async fn handle_operation(
             if service.active == Some(ActiveOperation::Download) {
                 service.status.received = received;
                 service.status.total = total;
-                service.refresh_progress();
                 write_status(writer, &service.status).await?;
             }
         }
@@ -1980,7 +1923,6 @@ async fn handle_operation(
             service.set_state("Verifying", None);
             service.status.received = package.size;
             service.status.total = package.size;
-            service.refresh_progress();
             write_status(writer, &service.status).await?;
             let verification_path = partial.clone();
             let verification_package = package.clone();
@@ -2253,6 +2195,7 @@ pub async fn run_with_dependencies(
 mod tests {
     use super::*;
     use crate::contract::UpdatePackage;
+    use crate::progress::ProgressWindow;
     use futures_util::{future, stream};
     use sha2::{Digest, Sha256};
     use std::collections::{HashMap, VecDeque};
@@ -2481,11 +2424,8 @@ mod tests {
                 version: "2.0.0".to_owned(),
                 ..Status::default()
             },
-            mode: Mode::Download,
-            trigger: Trigger::Startup,
             progress_texts: ProgressTexts::default(),
             progress_appearance: ProgressAppearance::default(),
-            progress_window: None,
             system_proxy: false,
             active: None,
             cancellation: None,
@@ -2671,21 +2611,98 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn configure_changes_download_visibility_without_restarting_the_operation() {
+    async fn downloads_report_status_without_creating_progress_windows() {
+        for (mode, trigger) in [
+            ("download", "startup"),
+            ("download", "periodic"),
+            ("download", "policyChange"),
+            ("next_launch", "periodic"),
+            ("next_launch", "policyChange"),
+            ("manual", "user"),
+            ("next_launch", "user"),
+        ] {
+            let temporary = TempDir::new().unwrap();
+            let mut service = ready_service(&temporary, FakeNetwork::new([FakeReply::Pending]));
+            let created_windows = ProgressWindow::created_on_current_thread();
+            let command = serde_json::from_value(json!({
+                "protocol": PROTOCOL_VERSION, "id": 1, "command": "execute",
+                "operation": "download", "trigger": trigger, "mode": mode,
+                "systemProxy": false
+            }))
+            .unwrap();
+            let (sender, _receiver) = mpsc::channel(4);
+            let mut writer = BufWriter::new(tokio::io::stdout());
+            assert!(
+                !handle_command(&mut service, command, &mut writer, &sender)
+                    .await
+                    .unwrap()
+            );
+            assert_eq!(service.status.state, "Downloading");
+            assert_eq!(
+                ProgressWindow::created_on_current_thread(),
+                created_windows,
+                "download must stay silent: {mode}/{trigger}"
+            );
+            assert!(
+                handle_operation(
+                    &mut service,
+                    OperationMessage::Progress {
+                        received: 4,
+                        total: 11,
+                    },
+                    &mut writer,
+                    &sender,
+                )
+                .await
+                .unwrap()
+                .is_none()
+            );
+            assert_eq!((service.status.received, service.status.total), (4, 11));
+            let package = service.package().unwrap();
+            let partial = cache_path(&service.options, "payload.part");
+            std::fs::write(&partial, b"old release").unwrap();
+            assert_eq!(
+                handle_operation(
+                    &mut service,
+                    OperationMessage::Downloaded {
+                        partial,
+                        package,
+                        source: ReleaseSource::GitHub,
+                    },
+                    &mut writer,
+                    &sender,
+                )
+                .await
+                .unwrap(),
+                Some("success")
+            );
+            assert_eq!(service.status.state, "Ready");
+            assert_eq!(
+                ProgressWindow::created_on_current_thread(),
+                created_windows,
+                "download progress and verification must stay silent: {mode}/{trigger}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn configure_preserves_download_status_without_creating_progress_windows() {
         let temporary = TempDir::new().unwrap();
         let network = FakeNetwork::new([]);
         let mut service = ready_service(&temporary, network.clone());
         service.requested = Some(RequestedOperation::Download);
-        service.trigger = Trigger::PolicyChange;
         service.active = Some(ActiveOperation::Download);
-        // Test policy independently of native HWND creation.
-        service.status.state = "Available".to_owned();
+        service.status.state = "Downloading".to_owned();
+        service.status.received = 4;
+        service.status.total = 11;
+        let created_windows = ProgressWindow::created_on_current_thread();
         let (sender, _receiver) = mpsc::channel(4);
         let mut writer = BufWriter::new(tokio::io::stdout());
-        for (id, mode, visible) in [
-            (1, "next_launch", false),
-            (2, "download", true),
-            (3, "manual", false),
+        for (id, mode) in [
+            (1, "next_launch"),
+            (2, "download"),
+            (3, "manual"),
+            (4, "check"),
         ] {
             let command = serde_json::from_value(json!({
                 "protocol": PROTOCOL_VERSION,
@@ -2705,9 +2722,11 @@ mod tests {
                     .await
                     .unwrap()
             );
-            assert_eq!(service.download_progress_visible(), visible);
             assert_eq!(service.active, Some(ActiveOperation::Download));
             assert_eq!(service.requested, Some(RequestedOperation::Download));
+            assert_eq!(service.status.state, "Downloading");
+            assert_eq!((service.status.received, service.status.total), (4, 11));
+            assert_eq!(ProgressWindow::created_on_current_thread(), created_windows);
             assert_eq!(service.progress_texts.title, "Translated update title");
             assert_eq!(
                 service.progress_appearance.background,
@@ -2716,30 +2735,7 @@ mod tests {
             assert_eq!(service.progress_appearance.primary, 0x52c41a);
             assert!(!service.progress_appearance.motion);
         }
-        service.trigger = Trigger::User;
-        service.mode = Mode::NextLaunch;
-        assert!(service.download_progress_visible());
         assert!(network.requests().is_empty());
-    }
-
-    #[test]
-    fn verification_progress_is_indeterminate_without_changing_protocol_bytes() {
-        let temporary = TempDir::new().unwrap();
-        let mut service = ready_service(&temporary, FakeNetwork::new([]));
-        service.status.state = "Verifying".to_owned();
-        service.status.received = 11;
-        service.status.total = 11;
-        assert_eq!(
-            service.download_progress(),
-            Some(Progress::new(ProgressPhase::Verifying, 0, 0))
-        );
-        assert_eq!((service.status.received, service.status.total), (11, 11));
-        service.status.state = "Downloading".to_owned();
-        service.status.received = 4;
-        assert_eq!(
-            service.download_progress(),
-            Some(Progress::new(ProgressPhase::Downloading, 4, 11))
-        );
     }
 
     #[tokio::test]

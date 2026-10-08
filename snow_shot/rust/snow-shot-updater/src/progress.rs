@@ -278,6 +278,11 @@ fn window_bounds(work: Bounds, dpi: u32, content_height: i32) -> Bounds {
 #[cfg(windows)]
 mod native;
 
+#[cfg(test)]
+thread_local! {
+    static CREATED_WINDOWS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
 /// Updates are asynchronous and best effort. Closing the window only hides it.
 pub struct ProgressWindow {
     #[cfg(windows)]
@@ -290,6 +295,8 @@ impl ProgressWindow {
     }
 
     pub fn new_with_appearance(texts: ProgressTexts, appearance: ProgressAppearance) -> Self {
+        #[cfg(test)]
+        CREATED_WINDOWS.with(|count| count.set(count.get() + 1));
         let appearance = appearance.normalized();
         #[cfg(windows)]
         {
@@ -311,6 +318,11 @@ impl ProgressWindow {
         }
     }
 
+    #[cfg(test)]
+    pub(crate) fn created_on_current_thread() -> usize {
+        CREATED_WINDOWS.with(std::cell::Cell::get)
+    }
+
     pub fn update(&self, progress: Progress) {
         #[cfg(windows)]
         if let Some(sender) = &self.sender {
@@ -327,25 +339,6 @@ impl ProgressWindow {
         }
         #[cfg(not(windows))]
         let _ = visible;
-    }
-
-    pub fn set_texts(&self, texts: ProgressTexts) {
-        #[cfg(windows)]
-        if let Some(sender) = &self.sender {
-            sender.send(native::Command::Texts(Box::new(texts)));
-        }
-        #[cfg(not(windows))]
-        let _ = texts;
-    }
-
-    pub fn set_appearance(&self, appearance: ProgressAppearance) {
-        let appearance = appearance.normalized();
-        #[cfg(windows)]
-        if let Some(sender) = &self.sender {
-            sender.send(native::Command::Appearance(Box::new(appearance)));
-        }
-        #[cfg(not(windows))]
-        let _ = appearance;
     }
 
     pub fn finish(&self) {
