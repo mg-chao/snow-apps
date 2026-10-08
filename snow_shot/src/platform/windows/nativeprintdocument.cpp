@@ -1,4 +1,5 @@
 #include "nativeprintdocument.h"
+#include "nativeprintdiagnostics.h"
 #include "snow_shot/presentation/screenshotprintservice.h"
 
 #include <d2d1_1.h>
@@ -12,6 +13,8 @@ namespace {
 using Microsoft::WRL::ComPtr;
 using Service = ScreenshotPrintService;
 using namespace winrt::Windows::Graphics::Printing;
+using snow_shot::print_detail::logPrintEvent;
+using snow_shot::print_detail::logWindowsPrintResult;
 
 struct DrawingContext {
     ComPtr<ID3D11Device> graphics;
@@ -44,6 +47,13 @@ struct DrawingContext {
             image.width() > maximum || image.height() > maximum
                 ? image.scaled(maximum, maximum, Qt::KeepAspectRatio, Qt::SmoothTransformation)
                 : image;
+        if (raster.size() != image.size())
+            logPrintEvent("print.native_raster_scaled",
+                          {{QStringLiteral("backend"), QStringLiteral("windows_modern")},
+                           {QStringLiteral("width"), image.width()},
+                           {QStringLiteral("height"), image.height()},
+                           {QStringLiteral("expected_width"), raster.width()},
+                           {QStringLiteral("expected_height"), raster.height()}});
         const auto properties = D2D1::BitmapProperties1(
             D2D1_BITMAP_OPTIONS_NONE,
             D2D1::PixelFormat(DXGI_FORMAT_B8G8R8A8_UNORM, D2D1_ALPHA_MODE_PREMULTIPLIED));
@@ -91,7 +101,7 @@ HRESULT __stdcall ScreenshotWindowsPrintDocument::GetPreviewPageCollection(
     IPrintDocumentPackageTarget* target, IPrintPreviewPageCollection** collection) noexcept {
     try {
         if (!target || !collection)
-            return E_POINTER;
+            return logWindowsPrintResult(E_POINTER, "windows_modern", "GetPreviewPageCollection");
         ComPtr<IPrintPreviewDxgiPackageTarget> preview;
         winrt::check_hresult(
             target->GetPackageTarget(ID_PREVIEWPACKAGETARGET_DXGI, IID_PPV_ARGS(&preview)));
@@ -99,10 +109,12 @@ HRESULT __stdcall ScreenshotWindowsPrintDocument::GetPreviewPageCollection(
             std::lock_guard lock(m_mutex);
             m_preview.Swap(preview);
         }
-        return QueryInterface(__uuidof(IPrintPreviewPageCollection),
-                              reinterpret_cast<void**>(collection));
+        return logWindowsPrintResult(QueryInterface(__uuidof(IPrintPreviewPageCollection),
+                                                    reinterpret_cast<void**>(collection)),
+                                     "windows_modern", "GetPreviewPageCollection");
     } catch (...) {
-        return winrt::to_hresult();
+        return logWindowsPrintResult(winrt::to_hresult(), "windows_modern",
+                                     "GetPreviewPageCollection");
     }
 }
 
@@ -118,17 +130,28 @@ HRESULT __stdcall ScreenshotWindowsPrintDocument::Paginate(UINT32,
             preview = m_preview;
         }
         if (!preview)
-            return E_UNEXPECTED;
+            return logWindowsPrintResult(E_UNEXPECTED, "windows_modern", "Paginate");
+        const auto area = description.ImageableRect;
+        logPrintEvent("print.native_paginated",
+                      {{QStringLiteral("backend"), QStringLiteral("windows_modern")},
+                       {QStringLiteral("width"), description.PageSize.Width},
+                       {QStringLiteral("height"), description.PageSize.Height},
+                       {QStringLiteral("x"), area.X},
+                       {QStringLiteral("y"), area.Y},
+                       {QStringLiteral("expected_width"), area.Width},
+                       {QStringLiteral("expected_height"), area.Height}});
         // InvalidatePreview requests another Paginate. Windows already requested
         // this layout; publish its page count without restarting pagination.
-        return preview->SetJobPageCount(FinalPageCount, 1);
+        return logWindowsPrintResult(preview->SetJobPageCount(FinalPageCount, 1), "windows_modern",
+                                     "SetJobPageCount");
     } catch (...) {
-        return winrt::to_hresult();
+        return logWindowsPrintResult(winrt::to_hresult(), "windows_modern", "Paginate");
     }
 }
 
 HRESULT __stdcall ScreenshotWindowsPrintDocument::MakePage(UINT32 pageNumber, FLOAT width,
                                                            FLOAT height) noexcept {
+    const char* stage = "MakePage";
     try {
         // Windows can ask the application to choose the next preview page.
         // This document always contains exactly one page.
@@ -144,8 +167,13 @@ HRESULT __stdcall ScreenshotWindowsPrintDocument::MakePage(UINT32 pageNumber, FL
         }
         if (jobPage != 1 || width <= 0 || height <= 0 || !preview ||
             description.PageSize.Width <= 0 || description.PageSize.Height <= 0)
-            return E_INVALIDARG;
+            return logWindowsPrintResult(E_INVALIDARG, "windows_modern", "MakePage",
+                                         {{QStringLiteral("count"), static_cast<qint64>(jobPage)},
+                                          {QStringLiteral("width"), width},
+                                          {QStringLiteral("height"), height}});
+        stage = "create_drawing_context";
         DrawingContext drawing;
+        stage = "render_page";
         auto commands = drawing.page(m_image, description);
         D3D11_TEXTURE2D_DESC textureDescription{};
         textureDescription.Width = static_cast<UINT>(std::ceil(width));
@@ -156,6 +184,7 @@ HRESULT __stdcall ScreenshotWindowsPrintDocument::MakePage(UINT32 pageNumber, FL
         textureDescription.SampleDesc.Count = 1;
         textureDescription.BindFlags = D3D11_BIND_RENDER_TARGET | D3D11_BIND_SHADER_RESOURCE;
         ComPtr<ID3D11Texture2D> texture;
+        stage = "CreateTexture2D";
         winrt::check_hresult(
             drawing.graphics->CreateTexture2D(&textureDescription, nullptr, &texture));
         ComPtr<IDXGISurface> surface;
@@ -167,8 +196,10 @@ HRESULT __stdcall ScreenshotWindowsPrintDocument::MakePage(UINT32 pageNumber, FL
             D2D1::PixelFormat(DXGI_FORMAT_B8G8R8A8_UNORM, D2D1_ALPHA_MODE_PREMULTIPLIED), dpiX,
             dpiY);
         ComPtr<ID2D1Bitmap1> target;
+        stage = "CreateBitmapFromDxgiSurface";
         winrt::check_hresult(
             drawing.context->CreateBitmapFromDxgiSurface(surface.Get(), &properties, &target));
+        stage = "render_preview";
         drawing.context->SetTarget(target.Get());
         drawing.context->SetDpi(dpiX, dpiY);
         drawing.context->BeginDraw();
@@ -181,28 +212,42 @@ HRESULT __stdcall ScreenshotWindowsPrintDocument::MakePage(UINT32 pageNumber, FL
             if (generation != m_previewGeneration)
                 return S_OK;
         }
-        return preview->DrawPage(jobPage, surface.Get(), dpiX, dpiY);
+        return logWindowsPrintResult(preview->DrawPage(jobPage, surface.Get(), dpiX, dpiY),
+                                     "windows_modern", "DrawPage");
     } catch (...) {
-        return winrt::to_hresult();
+        return logWindowsPrintResult(
+            winrt::to_hresult(), "windows_modern", stage,
+            {{QStringLiteral("width"), width}, {QStringLiteral("height"), height}});
     }
 }
 
 HRESULT __stdcall ScreenshotWindowsPrintDocument::MakeDocument(
     ::IInspectable* options, IPrintDocumentPackageTarget* target) noexcept {
+    const char* stage = "GetPageDescription";
     try {
         const auto description = pageDescription(options);
+        stage = "create_drawing_context";
         DrawingContext drawing;
+        stage = "render_page";
         auto commands = drawing.page(m_image, description);
         ComPtr<ID2D1PrintControl> control;
         const D2D1_PRINT_CONTROL_PROPERTIES properties{D2D1_PRINT_FONT_SUBSET_MODE_DEFAULT, 300.0f,
                                                        D2D1_COLOR_SPACE_SRGB};
+        stage = "CreatePrintControl";
         winrt::check_hresult(drawing.device->CreatePrintControl(drawing.imaging.Get(), target,
                                                                 &properties, &control));
+        stage = "AddPage";
         winrt::check_hresult(control->AddPage(
             commands.Get(), {description.PageSize.Width, description.PageSize.Height}, nullptr));
-        return control->Close();
+        const auto code = control->Close();
+        if (SUCCEEDED(code))
+            logPrintEvent("print.native_document_created",
+                          {{QStringLiteral("backend"), QStringLiteral("windows_modern")},
+                           {QStringLiteral("width"), description.PageSize.Width},
+                           {QStringLiteral("height"), description.PageSize.Height}});
+        return logWindowsPrintResult(code, "windows_modern", "ClosePrintControl");
     } catch (...) {
-        return winrt::to_hresult();
+        return logWindowsPrintResult(winrt::to_hresult(), "windows_modern", stage);
     }
 }
 

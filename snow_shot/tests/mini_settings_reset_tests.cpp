@@ -203,10 +203,36 @@ void annotationResetRejectsHistoryCollisions(settings::BuiltInSettingsBackend& b
     require(configuration.applySnapshot(original), "restore Mini annotation reset fixture");
 }
 
+void screenshotSoundPersistsAndResets(settings::BuiltInSettingsBackend& backend,
+                                      const QString& configurationPath) {
+    constexpr auto binding = settings::SettingsSwitchBinding::ScreenshotSoundNotification;
+    constexpr auto shutterBinding =
+        settings::SettingsSwitchBinding::ScreenshotShutterSoundNotification;
+    require(backend.switchEnabled(binding) && !backend.switchValue(binding),
+            "Mini screenshot sound must be available and default to disabled");
+    require(backend.applySwitchValue(binding, true) &&
+                storage::ScreenshotSettings().screenshotSoundNotification() &&
+                backend.applySwitchValue(shutterBinding, false) && backend.switchValue(binding),
+            "Mini sound preferences must be independently configurable");
+    require(storage::ApplicationStorage::instance().configuration().flushNow().success,
+            "Mini sound preferences must be flushable");
+    storage::ConfigurationStore reloaded(configurationPath, true, true, 60000);
+    require(reloaded.value(QStringLiteral("screenshot/screenshot_sound_notification")).toBool() &&
+                !reloaded.value(QStringLiteral("screenshot/shutter_sound_notification")).toBool(),
+            "Mini sound preferences must survive a configuration reload");
+    require(backend.resetSection(settings::SettingsSectionReset::ScreenshotCapture) &&
+                backend.switchValue(binding) && !backend.switchValue(shutterBinding),
+            "Mini system screenshot reset must preserve both sound preferences");
+    require(backend.resetSection(settings::SettingsSectionReset::ScreenshotSettings) &&
+                !backend.switchValue(binding) && backend.switchValue(shutterBinding),
+            "Mini screenshot interaction reset must restore both sound defaults");
+}
+
 void screenshotBehaviorReset(settings::BuiltInSettingsBackend& backend) {
     auto& configuration = storage::ApplicationStorage::instance().configuration();
     for (const QString& key : {QStringLiteral("screenshot_selection/smart_selection"),
                                QStringLiteral("screenshot/shutter_sound_notification"),
+                               QStringLiteral("screenshot/screenshot_sound_notification"),
                                QStringLiteral("screenshot/confirm_before_exiting_via_shortcut")}) {
         require(
             configuration.setValue(key, !storage::ConfigurationSchema::defaultValue(key).toBool()),
@@ -219,6 +245,7 @@ void screenshotBehaviorReset(settings::BuiltInSettingsBackend& backend) {
             "Mini screenshot behavior reset must omit unavailable automatic QR recognition");
     for (const QString& key : {QStringLiteral("screenshot_selection/smart_selection"),
                                QStringLiteral("screenshot/shutter_sound_notification"),
+                               QStringLiteral("screenshot/screenshot_sound_notification"),
                                QStringLiteral("screenshot/confirm_before_exiting_via_shortcut"),
                                QStringLiteral("screenshot/double_click_action")})
         requireDefault(key);
@@ -281,6 +308,9 @@ int main(int argc, char** argv) {
         unsupportedSettingsRemainInert(backend);
         shortcutAndMouseResets(backend);
         annotationResetRejectsHistoryCollisions(backend);
+        screenshotSoundPersistsAndResets(
+            backend,
+            QDir(appStorage.status().effectiveDirectory).filePath(QStringLiteral("config.json")));
         screenshotBehaviorReset(backend);
         recognitionOptInResets(backend);
     }

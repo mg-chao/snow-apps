@@ -474,9 +474,9 @@ void builtInCatalogIsCompleteAndValid() {
                 itemIds.contains(QStringLiteral("screenshot-shortcut.upload_to_cloud")) &&
                 itemIds.contains(QStringLiteral("pin-to-screen-shortcut.upload_to_cloud")),
             "cloud upload must expose its configuration and shortcuts in both local scopes");
-    require(itemIds.size() == 249,
+    require(itemIds.size() == 250,
             qPrintable(QStringLiteral(
-                           "catalog must contain 249 shared settings on every platform; found %1")
+                           "catalog must contain 250 shared settings on every platform; found %1")
                            .arg(itemIds.size())));
     require(itemIds.contains(QStringLiteral("pin-to-screen.confirm-before-closing-window")) &&
                 itemIds.contains(QStringLiteral("pin-to-screen.confirm-before-destroying-window")),
@@ -715,6 +715,9 @@ void builtInCatalogIsCompleteAndValid() {
     const auto* shutterSound =
         catalog.item({QStringLiteral("screenshots"), QStringLiteral("screenshot-settings"),
                       QStringLiteral("screenshot.shutter-sound-notification")});
+    const auto* screenshotSound =
+        catalog.item({QStringLiteral("screenshots"), QStringLiteral("screenshot-settings"),
+                      QStringLiteral("screenshot.screenshot-sound-notification")});
     const auto* confirmShortcutExit =
         catalog.item({QStringLiteral("screenshots"), QStringLiteral("screenshot-settings"),
                       QStringLiteral("screenshot.confirm-before-exiting-via-shortcut")});
@@ -731,9 +734,13 @@ void builtInCatalogIsCompleteAndValid() {
     require(screenshotSettings != nullptr && shutterItem != screenshotSettings->items.cend() &&
                 std::next(shutterItem) != screenshotSettings->items.cend() &&
                 std::next(shutterItem)->id ==
-                    QStringLiteral("screenshot.confirm-before-exiting-via-shortcut"),
-            "shortcut exit confirmation must immediately follow the shutter notification");
-    const auto qrItem = std::next(shutterItem, 2);
+                    QStringLiteral("screenshot.screenshot-sound-notification"),
+            "screenshot sound notification must immediately follow the shutter notification");
+    const auto confirmItem = std::next(shutterItem, 2);
+    require(confirmItem != screenshotSettings->items.cend() &&
+                confirmItem->id == QStringLiteral("screenshot.confirm-before-exiting-via-shortcut"),
+            "shortcut exit confirmation must immediately follow the screenshot sound notification");
+    const auto qrItem = std::next(confirmItem);
     require(qrItem != screenshotSettings->items.cend() &&
                 qrItem->id == QStringLiteral("screenshot.auto-recognize-qr-code") &&
                 qrItem->title.translated() == QStringLiteral("Auto-recognize QR Code") &&
@@ -749,6 +756,18 @@ void builtInCatalogIsCompleteAndValid() {
                     settings::SettingsSwitchBinding::ScreenshotShutterSoundNotification &&
                 storage::ConfigurationSchema::defaultValue(shutterSound->configurationKey).toBool(),
             "Function Screenshot settings must expose the enabled shutter notification switch");
+    require(
+        screenshotSound != nullptr &&
+            screenshotSound->title.translated() ==
+                QStringLiteral("Screenshot Sound Notification") &&
+            screenshotSound->description.translated() ==
+                QStringLiteral("Play a shutter sound when screenshot capture starts.") &&
+            screenshotSound->configurationKey ==
+                QStringLiteral("screenshot/screenshot_sound_notification") &&
+            std::get<settings::SettingsSwitchDefinition>(screenshotSound->payload).binding ==
+                settings::SettingsSwitchBinding::ScreenshotSoundNotification &&
+            !storage::ConfigurationSchema::defaultValue(screenshotSound->configurationKey).toBool(),
+        "Function Screenshot settings must expose the disabled screenshot sound switch");
     require(
         confirmShortcutExit != nullptr &&
             confirmShortcutExit->title.translated() ==

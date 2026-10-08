@@ -271,6 +271,123 @@ ScreenshotCaptureWorkflow makeWorkflow(ScreenshotCaptureState& state,
     });
 }
 
+void captureStartSoundDefaultsToDisabled() {
+    ScreenshotCaptureState state;
+    ScreenshotDisplaySession displays;
+    ScreenshotGeometryMapper geometry;
+    ScreenshotInteractionState interaction;
+    ScreenshotSelectionModel selection;
+    ScreenshotIntelligentSelectionModel intelligent;
+    CaptureRuntime runtime;
+    ScreenshotCaptureWorkflowContext context{state,       runtime,   geometry,    displays,
+                                             interaction, selection, intelligent, {}};
+    int soundCalls = 0;
+    context.playShutterSound = [&]() { ++soundCalls; };
+    ScreenshotCaptureWorkflow workflow(std::move(context));
+    workflow.startCapture();
+    require(soundCalls == 0 && runtime.captureAllAsyncCalls == 1,
+            "capture start sound must default to disabled without preventing capture");
+}
+
+void captureStartSoundFollowsSessionLifetime() {
+    using Workflow = ScreenshotCaptureWorkflow;
+    for (const bool prewarm : {false, true}) {
+        for (const auto mode : {Workflow::StartMode::Normal, Workflow::StartMode::ExternalDrag}) {
+            for (const auto presentation :
+                 {Workflow::PresentationMode::Visible, Workflow::PresentationMode::Silent}) {
+                ScreenshotCaptureState state;
+                ScreenshotDisplaySession displays;
+                ScreenshotGeometryMapper geometry;
+                ScreenshotInteractionState interaction;
+                ScreenshotSelectionModel selection;
+                ScreenshotIntelligentSelectionModel intelligent;
+                CaptureRuntime runtime;
+                ScreenshotCaptureWorkflowContext context{
+                    state, runtime, geometry, displays, interaction, selection, intelligent, {}};
+                bool enabled = true;
+                int soundCalls = 0;
+                context.screenshotSoundNotification = [&]() { return enabled; };
+                context.playShutterSound = [&]() {
+                    require(state.captureInProgress &&
+                                state.sessionState == ScreenshotSessionState::Capturing,
+                            "sound must play after the new capture session is established");
+                    ++soundCalls;
+                    runtime.operations.push_back(QStringLiteral("shutter"));
+                };
+                Workflow workflow(std::move(context));
+                if (prewarm)
+                    workflow.prewarmResources();
+                require(soundCalls == 0, "prewarming must not play capture start sound");
+
+                const auto start = [&]() {
+                    workflow.startCapture(mode, Workflow::ToolbarPreparation::OnDemand,
+                                          Workflow::ToolbarVisibility::Suppressed, presentation);
+                };
+                enabled = false;
+                start();
+                require(soundCalls == 0 && runtime.captureAllAsyncCalls == 1,
+                        "disabled capture start sound must preserve acquisition in every mode");
+                workflow.cancelCapture();
+
+                enabled = true;
+                runtime.operations.clear();
+                start();
+                const auto soundIndex = runtime.operations.indexOf(QStringLiteral("shutter"));
+                const auto captureIndex =
+                    runtime.operations.indexOf(QStringLiteral("capture-dispatched"));
+                require(soundCalls == 1 && soundIndex >= 0 && captureIndex > soundIndex,
+                        "enabled sound must play once before dispatch in every capture mode");
+
+                CapturedDisplayModel snapshot;
+                snapshot.stableId = QStringLiteral("primary");
+                snapshot.physicalRect = QRect(0, 0, 64, 48);
+                snapshot.logicalRect = snapshot.physicalRect;
+                snapshot.image = QImage(snapshot.physicalRect.size(), QImage::Format_RGB32);
+                snapshot.image.fill(Qt::blue);
+                const auto result = successfulResult(state.sessionId, snapshot);
+                runtime.deliverResult(result);
+                workflow.handleInitialSmartSelectionResolved(state.sessionId);
+                runtime.deliverResult(result);
+                require(soundCalls == 1,
+                        "layout, presentation and duplicate completion must not replay sound");
+                workflow.cancelCapture();
+
+                enabled = false;
+                start();
+                require(soundCalls == 1,
+                        "disabling the preference must silence the next session immediately");
+                workflow.cancelCapture();
+
+                enabled = true;
+                workflow.setCaptureSuspended(true);
+                const int priorCaptures = runtime.captureAllAsyncCalls;
+                start();
+                require(soundCalls == 1 && runtime.captureAllAsyncCalls == priorCaptures,
+                        "suspended starts must neither capture nor play sound");
+                workflow.setCaptureSuspended(false);
+                start();
+                require(soundCalls == 2,
+                        "resuming capture must restore one sound per accepted session");
+                workflow.cancelCapture();
+
+                state.sessionState = ScreenshotSessionState::Editing;
+                interaction.setMoveTool(true, false);
+                require(workflow.startRecapture() && soundCalls == 2,
+                        "recapture within an editing session must not play start sound");
+                runtime.deliverResult(
+                    successfulRecaptureResult(runtime.lastCaptureRequest.requestId, snapshot));
+                require(soundCalls == 2, "recapture completion must not play start sound");
+                workflow.cancelCapture();
+
+                runtime.failCaptureSynchronously = true;
+                start();
+                require(soundCalls == 3 && !state.captureInProgress,
+                        "capture setup failure must retain the single start notification");
+            }
+        }
+    }
+}
+
 void toolbarPresentationTracksSelectionDragLifetime() {
     for (const auto mode : {ScreenshotSelectionDragMode::Marquee, ScreenshotSelectionDragMode::All,
                             ScreenshotSelectionDragMode::Top}) {
@@ -2037,6 +2154,8 @@ void suspendedCaptureDoesNotStartAndRestoresAfterFailedHandoff() {
 }
 
 int main() {
+    captureStartSoundDefaultsToDisabled();
+    captureStartSoundFollowsSessionLifetime();
     suspendedCaptureDoesNotStartAndRestoresAfterFailedHandoff();
     captureCompletionReleasesHistoryBeforeExportsFinish();
     silentCaptureSuppressesAllPresentationAndRestoresVisibleMode();

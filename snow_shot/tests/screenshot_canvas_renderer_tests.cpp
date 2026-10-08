@@ -114,6 +114,7 @@ class NoopOverlayEventSink : public ScreenshotOverlayEventSink {
         rightClick;
     bool consumeWheel = false;
     int wheelCalls = 0;
+    std::function<void(const QWheelEvent&)> wheelReceived;
     std::function<void()> cancel = [] {};
     void completeRightClickCancellation() override {
         cancel();
@@ -134,9 +135,10 @@ class NoopOverlayEventSink : public ScreenshotOverlayEventSink {
         return rightClick ? rightClick(overlay, point) : rightClickResult;
     }
 
-    bool handleOverlayWheel(ScreenshotOverlayWindow*, const QPointF&, const QPoint&,
-                            const QPoint&) override {
+    bool handleOverlayWheel(ScreenshotOverlayWindow*, const QWheelEvent& event) override {
         ++wheelCalls;
+        if (wheelReceived)
+            wheelReceived(event);
         return consumeWheel;
     }
 
@@ -5420,6 +5422,32 @@ void overlayTextWrapUsesScreenshotSelection() {
             "reusing an overlay starts without the previous text wrapping constraint");
 }
 
+void overlayPreservesWheelGestureMetadata() {
+    NoopOverlayEventSink eventSink;
+    eventSink.consumeWheel = true;
+    auto* canvas = new SnowCanvasWidget;
+    ScreenshotOverlayWindow overlay(eventSink, canvas);
+    overlay.resize(300, 200);
+    overlay.show();
+    QApplication::processEvents();
+    const QPointF position(150, 100);
+    QWheelEvent event(position, canvas->mapToGlobal(position.toPoint()), QPoint(0, 2), QPoint(0, 4),
+                      Qt::NoButton, Qt::NoModifier, Qt::ScrollMomentum, false,
+                      Qt::MouseEventSynthesizedBySystem);
+    event.setTimestamp(1234);
+    eventSink.wheelReceived = [&](const QWheelEvent& received) {
+        require(&received == &event && received.position() == position &&
+                    received.pixelDelta() == QPoint(0, 2) &&
+                    received.angleDelta() == QPoint(0, 4) &&
+                    received.phase() == Qt::ScrollMomentum && received.timestamp() == 1234 &&
+                    received.source() == Qt::MouseEventSynthesizedBySystem,
+                "overlay must forward the complete wheel event for gesture normalization");
+    };
+    QApplication::sendEvent(canvas, &event);
+    require(eventSink.wheelCalls == 1 && event.isAccepted(),
+            "overlay must consume the forwarded wheel gesture");
+}
+
 void overlayPassesTextDraftWheelToCanvas() {
     NoopOverlayEventSink eventSink;
     eventSink.consumeWheel = true;
@@ -6518,6 +6546,7 @@ int main(int argc, char** argv) {
         return 0;
     }
     if (application.arguments().contains(QStringLiteral("--text-wheel-only"))) {
+        overlayPreservesWheelGestureMetadata();
         overlayPassesTextDraftWheelToCanvas();
         return 0;
     }
@@ -6706,6 +6735,7 @@ int main(int argc, char** argv) {
     screenshotMessagesFollowSelectionAndRememberTheirOwner();
     screenshotMessagesFallBackWhenNoOverlayIsAvailable();
     canvasWheelZoomCanBeDisabled();
+    overlayPreservesWheelGestureMetadata();
     overlayPassesTextDraftWheelToCanvas();
     disabledCanvasBlocksWidgetLevelToolInput();
     overlayCanvasesAreDisabledUntilCanvasInteractionIsEnabled();

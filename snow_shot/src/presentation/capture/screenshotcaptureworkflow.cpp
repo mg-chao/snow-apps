@@ -118,6 +118,8 @@ void ScreenshotCaptureWorkflow::startCapture(StartMode mode, ToolbarPreparation 
     m_startup->phase = ScreenshotStartupContext::Phase::Preparing;
     if (!m_state.presentationSuppressed)
         m_context.runtime.createColorPicker(initialCursorGlobalPosition);
+    if (m_context.screenshotSoundNotification())
+        m_context.playShutterSound();
     beginCapturePreparation(sessionId);
 }
 

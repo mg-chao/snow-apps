@@ -1,9 +1,11 @@
 #include "snow_shot/presentation/pinnedgeometry.h"
 #include "presentation/pinned/pinnedplacementgeometry.h"
+#include "presentation/pinned/pinneddisplayselection.h"
 #include "presentation/pinned/screenshotpinnednativegeometrycontroller.h"
 #include <cstdlib>
 #include <iostream>
 #include <cmath>
+#include <array>
 
 using namespace snow_shot::presentation;
 using snow_shot::storage::PinnedWindowPlacement;
@@ -14,8 +16,73 @@ void require(bool condition, const char* message) {
         std::exit(1);
     }
 }
+
+void displaySelectionPreservesIdentity() {
+    const PinnedDisplayIdentity primary{QStringLiteral("primary"), QStringLiteral("shared")};
+    const PinnedDisplayIdentity secondary{QStringLiteral("secondary"), QStringLiteral("shared")};
+    const PinnedDisplayIdentity other{QStringLiteral("other"), QStringLiteral("unique")};
+    std::array displays{primary, secondary, other};
+    PinnedWindowPlacement placement{secondary.name, secondary.serial, QPointF(250, 200),
+                                    QSize(240, 120)};
+    // A serial number is not necessarily unique, even for connected displays.
+    // Enumeration order must never redirect a placement to another monitor.
+    for (int order = 0; order < 3; ++order) {
+        const auto index = pinnedDisplayIndex(placement, displays);
+        require(index && displays[*index].name == secondary.name,
+                "duplicate monitor serials must be disambiguated by the saved display name");
+        std::rotate(displays.begin(), displays.begin() + 1, displays.end());
+    }
+
+    placement.displayName = QStringLiteral("old-name");
+    placement.displaySerial = other.serial;
+    require(pinnedDisplayIndex(placement, displays) == 2,
+            "a unique serial must preserve monitor identity after a display is renamed");
+    placement.displayName = primary.name;
+    require(pinnedDisplayIndex(placement, displays) == 2,
+            "a unique serial must take precedence over a name reused by another monitor");
+
+    placement.displayName = secondary.name;
+    placement.displaySerial.clear();
+    require(pinnedDisplayIndex(placement, displays) == 1,
+            "displays without a saved serial must still resolve by a unique name");
+    placement.displaySerial = QStringLiteral("old-serial");
+    require(pinnedDisplayIndex(placement, displays) == 1,
+            "a unique name must remain usable when a serial is no longer reported");
+    displays[1].serial.clear();
+    require(pinnedDisplayIndex(placement, displays) == 1,
+            "a monitor that stops reporting its serial must still resolve by name");
+
+    displays[1] = secondary;
+    placement.displayName = QStringLiteral("disconnected");
+    placement.displaySerial = primary.serial;
+    require(!pinnedDisplayIndex(placement, displays),
+            "an ambiguous serial without a matching name must defer to the caller's fallback");
+    placement.displaySerial.clear();
+    require(!pinnedDisplayIndex(placement, displays),
+            "a disconnected display must defer to the caller's fallback");
+
+    displays[1] = primary;
+    placement.displayName = primary.name;
+    placement.displaySerial = primary.serial;
+    require(!pinnedDisplayIndex(placement, displays),
+            "even matching name and serial must not arbitrarily select identical identities");
+    displays[1].serial = QStringLiteral("different");
+    require(pinnedDisplayIndex(placement, displays) == 0,
+            "the serial must disambiguate displays with the same name");
+    placement.displaySerial.clear();
+    require(!pinnedDisplayIndex(placement, displays),
+            "an ambiguous name alone must defer to the caller's fallback");
+
+    const std::array<PinnedDisplayIdentity, 2> anonymous{};
+    placement.displayName.clear();
+    require(!pinnedDisplayIndex(placement, anonymous),
+            "empty display identifiers must not be treated as an identity match");
+    require(!pinnedDisplayIndex(placement, {}),
+            "an empty display list must have no identity match");
+}
 } // namespace
 int main() {
+    displaySelectionPreservesIdentity();
     QImage raster(QSize(600, 400), QImage::Format_RGB32);
     const bool logicalUnits = kPinnedGeometryUnits == PinnedGeometryUnits::LogicalPixels;
     for (const qreal imageScale : {1.0, 2.0, 3.0}) {

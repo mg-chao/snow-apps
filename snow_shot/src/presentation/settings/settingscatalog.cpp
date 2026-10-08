@@ -1404,6 +1404,15 @@ SettingsItemDefinition screenshotShutterSoundNotificationItem() {
         SettingsSwitchBinding::ScreenshotShutterSoundNotification);
 }
 
+SettingsItemDefinition screenshotSoundNotificationItem() {
+    return switchItem(QStringLiteral("screenshot.screenshot-sound-notification"),
+                      QT_TRANSLATE_NOOP("SettingsCatalog", "Screenshot Sound Notification"),
+                      QT_TRANSLATE_NOOP("SettingsCatalog",
+                                        "Play a shutter sound when screenshot capture starts."),
+                      QStringLiteral("screenshot/screenshot_sound_notification"),
+                      SettingsSwitchBinding::ScreenshotSoundNotification);
+}
+
 #if SNOW_SHOT_ENABLE_QR_RECOGNITION
 SettingsItemDefinition screenshotAutoRecognizeQrCodeItem() {
     return switchItem(
@@ -2900,6 +2909,7 @@ QVector<SettingsPageDefinition> builtInPages() {
                      screenshotMiddleClickActionItem(),
                      quickSelectionModificationItem(),
                      screenshotShutterSoundNotificationItem(),
+                     screenshotSoundNotificationItem(),
                      screenshotConfirmBeforeExitingViaShortcutItem(),
 #if SNOW_SHOT_ENABLE_QR_RECOGNITION
                      screenshotAutoRecognizeQrCodeItem(),
@@ -4595,6 +4605,9 @@ QStringList SettingsCatalog::validationErrors() const {
                         break;
                     case SettingsSwitchBinding::ScreenshotShutterSoundNotification:
                         expectedKey = QStringLiteral("screenshot/shutter_sound_notification");
+                        break;
+                    case SettingsSwitchBinding::ScreenshotSoundNotification:
+                        expectedKey = QStringLiteral("screenshot/screenshot_sound_notification");
                         break;
                     case SettingsSwitchBinding::ScreenshotConfirmBeforeExitingViaShortcut:
                         expectedKey =

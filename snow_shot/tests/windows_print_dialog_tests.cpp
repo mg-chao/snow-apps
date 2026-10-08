@@ -1,4 +1,5 @@
 #include "../src/platform/windows/nativeprintdialog.h"
+#include "print_diagnostics_test_support.h"
 
 #include <QApplication>
 #include <QColorSpace>
@@ -137,7 +138,9 @@ HRESULT WINAPI activateWizard(REFCLSID clsid, LPUNKNOWN outer, DWORD context, RE
     *target = nullptr;
     if (outcome == Outcome::ActivateFailure)
         return E_ACCESSDENIED;
-    if (outcome != Outcome::MissingTarget)
+    if (outcome == Outcome::MissingTarget)
+        SetLastError(ERROR_SUCCESS); // A COM result must not depend on a stale Win32 error.
+    else
         *target = winrt::make<WizardTarget>().detach();
     return S_OK;
 }
@@ -299,6 +302,32 @@ QString retainSnapshotUntilShutdown() {
     return snapshotPath;
 }
 
+void verifyNativeFailureLogs(const QList<QJsonObject>& records) {
+    QMap<QString, int> failures;
+    bool handedOff = false;
+    for (const auto& record : records) {
+        const auto fields = record.value(QStringLiteral("fields")).toObject();
+        if (fields.value(QStringLiteral("backend")) != QStringLiteral("windows_photo_wizard"))
+            continue;
+        require(!QJsonDocument(record).toJson().contains("Screenshot.png"),
+                "native diagnostics must exclude temporary snapshot paths");
+        const auto event = record.value(QStringLiteral("event"));
+        if (event == QStringLiteral("print.native_failed")) {
+            require(record.value(QStringLiteral("level")) == QStringLiteral("WARN"),
+                    "native failures must persist as warnings");
+            ++failures[fields.value(QStringLiteral("stage")).toString() + u':' +
+                       fields.value(QStringLiteral("code")).toString()];
+        }
+        handedOff |= event == QStringLiteral("print.native_handed_off");
+    }
+    require(failures.value(QStringLiteral("activate_photo_wizard:0x80070005")) == 1 &&
+                failures.value(QStringLiteral("activate_photo_wizard:0x80004003")) == 1 &&
+                failures.value(QStringLiteral("DragEnter:0x80004005")) == 1 &&
+                failures.value(QStringLiteral("image_rejected:0x80004005")) == 1 &&
+                failures.value(QStringLiteral("Drop:0x80004005")) == 2 && handedOff,
+            "exported native logs must distinguish activation, rejection and handoff failures");
+}
+
 HWND nativeOwner = nullptr;
 HWND nativeWizard = nullptr;
 bool nativeDialogSeen = false;
@@ -385,8 +414,10 @@ int main(int argc, char** argv) {
             nativePhotoWizardCancellation();
             return 0;
         }
+        print_tests::LogSession logs;
         photoWizardOutcomesAndSnapshotLifetime();
         destroyedOwnerDuringPreparation();
+        verifyNativeFailureLogs(logs.records());
         shutdownSnapshot = retainSnapshotUntilShutdown();
     }
     require(!QFileInfo::exists(shutdownSnapshot) &&

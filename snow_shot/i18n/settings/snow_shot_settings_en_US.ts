@@ -3001,6 +3001,10 @@
             <translation>Play a shutter sound when capturing the focused window or current display.</translation>
         </message>
         <message>
+            <source>Play a shutter sound when screenshot capture starts.</source>
+            <translation>Play a shutter sound when screenshot capture starts.</translation>
+        </message>
+        <message>
             <source>Play saved GIF, APNG, and WebP recordings repeatedly.</source>
             <translation>Play saved GIF, APNG, and WebP recordings repeatedly.</translation>
         </message>
@@ -3387,6 +3391,10 @@
         <message>
             <source>Screenshot Area Type Hint</source>
             <translation>Screenshot Area Type Hint</translation>
+        </message>
+        <message>
+            <source>Screenshot Sound Notification</source>
+            <translation>Screenshot Sound Notification</translation>
         </message>
         <message>
             <source>Screenshot capture API</source>

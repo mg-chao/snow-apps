@@ -1327,7 +1327,7 @@ set(PROJECT_HEADERS
 
 add_library(snow_shot_print STATIC src/presentation/services/screenshotprintservice.cpp)
 target_include_directories(snow_shot_print PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include")
-target_link_libraries(snow_shot_print PUBLIC Qt6::Widgets PRIVATE Qt6::Concurrent)
+target_link_libraries(snow_shot_print PUBLIC Qt6::Widgets PRIVATE Qt6::Concurrent snow_shot_diagnostics)
 if(WIN32)
     target_sources(snow_shot_print PRIVATE src/platform/windows/nativeprint.cpp
         src/platform/windows/nativeprintdocument.cpp)
@@ -3630,6 +3630,7 @@ if(SNOW_SHOT_BUILD_TESTS)
 
     add_executable(snow-shot-screenshot-history-tests
         tests/screenshot_history_tests.cpp
+        src/presentation/overlay/screenshotoverlayinteractionadapter.cpp
         src/presentation/selector/screenshotselectorworkflow.cpp
         src/presentation/capture/directcapturehistory.cpp
         include/snow_shot/presentation/screenshothistoryservice.h
@@ -3689,6 +3690,10 @@ if(SNOW_SHOT_BUILD_TESTS)
     add_test(NAME snow-shot-screenshot-eraser-wheel-tests
         COMMAND snow-shot-screenshot-history-tests --eraser-wheel-only -platform offscreen)
     set_tests_properties(snow-shot-screenshot-eraser-wheel-tests PROPERTIES LABELS "unit" TIMEOUT 60
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
+    add_test(NAME snow-shot-smart-selection-wheel-tests
+        COMMAND snow-shot-screenshot-history-tests --smart-selection-wheel-only -platform offscreen)
+    set_tests_properties(snow-shot-smart-selection-wheel-tests PROPERTIES LABELS "unit" TIMEOUT 60
         ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
     snow_shot_import_offscreen_platform(snow-shot-screenshot-history-tests)
     add_test(
@@ -9166,6 +9171,11 @@ if(SNOW_SHOT_BUILD_TESTS)
     set_tests_properties(snow-shot-pinned-physical-authority-tests PROPERTIES
         LABELS unit SNOW_TEST_CROSS_PLATFORM TRUE RUN_SERIAL TRUE TIMEOUT 60
         ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}")
+    add_test(NAME snow-shot-pinned-passive-publication-tests
+        COMMAND snow-shot-pinned-window-tests --passive-publication-only -platform offscreen)
+    set_tests_properties(snow-shot-pinned-passive-publication-tests PROPERTIES
+        LABELS unit SNOW_TEST_CROSS_PLATFORM TRUE RUN_SERIAL TRUE TIMEOUT 30
+        ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}")
     add_test(NAME snow-shot-clipboard-appearance-presentation-tests
         COMMAND snow-shot-pinned-window-tests --clipboard-appearance-only -platform offscreen)
     set_tests_properties(snow-shot-clipboard-appearance-presentation-tests PROPERTIES
@@ -9195,6 +9205,11 @@ if(WIN32 AND SNOW_SHOT_BUILD_TESTS)
     set(_pin_dprs 1.0 1.25 1.5 1.75 2.0)
     set(_pin_factors 0.5 0.625 0.75 0.875 1.0)
     foreach(_pin_scale _pin_factor IN ZIP_LISTS _pin_dprs _pin_factors)
+        add_test(NAME snow-shot-pinned-small-extent-${_pin_scale}-tests
+            COMMAND snow-shot-pinned-window-tests --small-extent-only -platform windows)
+        set_tests_properties(snow-shot-pinned-small-extent-${_pin_scale}-tests PROPERTIES
+            LABELS "unit;windows" RUN_SERIAL TRUE TIMEOUT 30
+            ENVIRONMENT "QT_QPA_PLATFORM=windows;QT_SCREEN_SCALE_FACTORS=2;QT_SCALE_FACTOR=${_pin_factor};SNOW_PIN_TEST_DPR=${_pin_scale}")
         add_test(NAME snow-shot-pinned-pixel-alignment-${_pin_scale}-tests
             COMMAND snow-shot-pinned-window-tests --pixel-alignment-only -platform windows)
         set_tests_properties(snow-shot-pinned-pixel-alignment-${_pin_scale}-tests PROPERTIES
@@ -10040,7 +10055,7 @@ if(SNOW_SHOT_BUILD_TESTS)
     target_sources(snow-shot-pinned-window-tests PRIVATE
         "${CMAKE_CURRENT_SOURCE_DIR}/../test-support/fonts/recording_test_fonts.qrc")
     add_executable(snow-shot-print-service-tests tests/screenshot_print_service_tests.cpp)
-    target_link_libraries(snow-shot-print-service-tests PRIVATE snow_shot_print)
+    target_link_libraries(snow-shot-print-service-tests PRIVATE snow_shot_print snow_shot_diagnostics)
     snow_shot_import_offscreen_platform(snow-shot-print-service-tests)
     add_test(NAME snow-shot-print-service-tests
         COMMAND snow-shot-print-service-tests -platform offscreen)
@@ -10066,7 +10081,7 @@ if(SNOW_SHOT_BUILD_TESTS)
     endif()
     if(WIN32)
         add_executable(snow-shot-windows-print-dialog-tests tests/windows_print_dialog_tests.cpp)
-        target_link_libraries(snow-shot-windows-print-dialog-tests PRIVATE snow_shot_print)
+        target_link_libraries(snow-shot-windows-print-dialog-tests PRIVATE snow_shot_print snow_shot_diagnostics)
         snow_shot_import_offscreen_platform(snow-shot-windows-print-dialog-tests)
         add_test(NAME snow-shot-windows-print-dialog-tests
             COMMAND snow-shot-windows-print-dialog-tests -platform offscreen)
@@ -10075,7 +10090,7 @@ if(SNOW_SHOT_BUILD_TESTS)
             ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}")
         add_executable(snow-shot-windows-print-document-tests
             tests/windows_print_document_tests.cpp)
-        target_link_libraries(snow-shot-windows-print-document-tests PRIVATE snow_shot_print)
+        target_link_libraries(snow-shot-windows-print-document-tests PRIVATE snow_shot_print snow_shot_diagnostics)
         add_test(NAME snow-shot-windows-print-document-tests
             COMMAND snow-shot-windows-print-document-tests)
         set_tests_properties(snow-shot-windows-print-document-tests PROPERTIES

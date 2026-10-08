@@ -112,3 +112,190 @@ impl Editor {
         ids
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use snow_draw_engine_core::canvas_to_view;
+    use snow_draw_engine_interaction::{PointerButtons, PointerDevice};
+
+    fn pointer(
+        editor: &mut Editor,
+        document: &mut DocumentModel,
+        event_type: PointerEventType,
+        canvas_point: Point<f64>,
+        shift: bool,
+    ) {
+        let update = editor
+            .process_input(
+                document,
+                InputEvent::Pointer(PointerEvent {
+                    pointer_id: 1,
+                    event_type,
+                    device: PointerDevice::Mouse,
+                    position: canvas_to_view(canvas_point, &editor.camera(), editor.surface_size()),
+                    button: match event_type {
+                        PointerEventType::Down | PointerEventType::Up => {
+                            Some(PointerButton::Primary)
+                        }
+                        _ => None,
+                    },
+                    buttons: if event_type == PointerEventType::Up {
+                        PointerButtons::default()
+                    } else {
+                        PointerButtons(PointerButtons::PRIMARY)
+                    },
+                    modifiers: Modifiers {
+                        shift,
+                        ..Modifiers::default()
+                    },
+                }),
+            )
+            .unwrap();
+        assert!(update.interaction.consumed);
+        if let Some(command) = update.command {
+            let EditorCommand::ApplyTransaction(command) = command else {
+                panic!("stroke creation should apply a transaction");
+            };
+            document.apply_transaction(command.transaction).unwrap();
+        }
+    }
+
+    fn create_stroke(
+        editor: &mut Editor,
+        document: &mut DocumentModel,
+        start: Point<f64>,
+        end: Point<f64>,
+    ) -> ElementId {
+        editor.set_active_tool(ActiveTool::FreeDraw).unwrap();
+        let id = document.peek_next_element_id();
+        pointer(editor, document, PointerEventType::Down, start, false);
+        if start != end {
+            pointer(editor, document, PointerEventType::Move, end, false);
+        }
+        pointer(editor, document, PointerEventType::Up, end, false);
+        assert!(document.free_draw(id).is_ok());
+        id
+    }
+
+    fn candidate_ids(editor: &Editor, document: &DocumentModel) -> Vec<ElementId> {
+        editor
+            .presentation_state(document)
+            .marquee_candidate_elements
+            .iter()
+            .map(|element| element.id)
+            .collect()
+    }
+
+    #[test]
+    fn marquee_selects_tapped_dot_in_preview_and_on_release() {
+        for zoom in [0.25, 1.0, 4.0] {
+            for (x_sign, y_sign) in [(1.0, 1.0), (-1.0, 1.0), (1.0, -1.0), (-1.0, -1.0)] {
+                for additive in [false, true] {
+                    let mut document = DocumentModel::new();
+                    let mut editor = Editor::new(EngineConfig::default()).unwrap();
+                    editor.set_surface_size(800, 600).unwrap();
+                    editor
+                        .set_snap_config(SnapConfig {
+                            enabled: false,
+                            ..SnapConfig::default()
+                        })
+                        .unwrap();
+                    editor
+                        .set_camera(Camera {
+                            zoom,
+                            ..Camera::default()
+                        })
+                        .unwrap();
+                    let dot = create_stroke(
+                        &mut editor,
+                        &mut document,
+                        Point::new(0.0, 0.0),
+                        Point::new(0.0, 0.0),
+                    );
+                    let outside = create_stroke(
+                        &mut editor,
+                        &mut document,
+                        Point::new(80.0, 50.0),
+                        Point::new(80.0, 50.0),
+                    );
+                    let proxy = document.element_rect_proxy(dot).unwrap();
+                    assert!(proxy.width > 0.0);
+                    assert_eq!(proxy.height, 0.0);
+                    editor.set_active_tool(ActiveTool::Select).unwrap();
+                    editor.set_selection_state_with_document(
+                        Some(&document),
+                        vec![outside],
+                        Some(outside),
+                    );
+                    let revision = document.document_revision();
+                    let start = Point::new(-30.0 * x_sign, -30.0 * y_sign);
+                    let end = Point::new(30.0 * x_sign, 30.0 * y_sign);
+                    pointer(
+                        &mut editor,
+                        &mut document,
+                        PointerEventType::Down,
+                        start,
+                        additive,
+                    );
+                    pointer(
+                        &mut editor,
+                        &mut document,
+                        PointerEventType::Move,
+                        end,
+                        additive,
+                    );
+                    assert_eq!(candidate_ids(&editor, &document), vec![dot]);
+                    pointer(
+                        &mut editor,
+                        &mut document,
+                        PointerEventType::Up,
+                        end,
+                        additive,
+                    );
+                    let expected = if additive {
+                        vec![outside, dot]
+                    } else {
+                        vec![dot]
+                    };
+                    assert_eq!(editor.selected_ids(), expected);
+                    assert!(candidate_ids(&editor, &document).is_empty());
+                    assert_eq!(document.document_revision(), revision);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn marquee_selects_horizontal_and_vertical_strokes() {
+        for end in [Point::new(40.0, 0.0), Point::new(0.0, 40.0)] {
+            let mut document = DocumentModel::new();
+            let mut editor = Editor::new(EngineConfig::default()).unwrap();
+            editor.set_surface_size(800, 600).unwrap();
+            let id = create_stroke(&mut editor, &mut document, Point::new(0.0, 0.0), end);
+            editor.set_active_tool(ActiveTool::Select).unwrap();
+
+            // Intersect only the middle of the stroke, leaving both endpoints outside.
+            let center = Point::new(end.x / 2.0, end.y / 2.0);
+            let start = Point::new(center.x - 12.0, center.y - 12.0);
+            let end = Point::new(center.x + 12.0, center.y + 12.0);
+            pointer(
+                &mut editor,
+                &mut document,
+                PointerEventType::Down,
+                start,
+                false,
+            );
+            pointer(
+                &mut editor,
+                &mut document,
+                PointerEventType::Move,
+                end,
+                false,
+            );
+            assert_eq!(candidate_ids(&editor, &document), vec![id]);
+            pointer(&mut editor, &mut document, PointerEventType::Up, end, false);
+            assert_eq!(editor.selected_ids(), vec![id]);
+        }
+    }
+}

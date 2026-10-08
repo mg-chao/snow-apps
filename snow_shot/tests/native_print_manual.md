@@ -5,6 +5,17 @@ The smoke fixture opens no print UI until its Print button is clicked. Its image
 contains transparency, a border, text, and an orientation marker. Dialog submission
 can create a real printer job; use a PDF printer for these checks.
 
+Print diagnostics appear in the application's existing daily log and exported logs
+under `snow_shot.print`. `print.accepted`, `print.prepared`, `print.backend_started`,
+`print.fallback`, and `print.completed` share a request UUID in `operation` and
+include elapsed milliseconds. Final statuses distinguish `submitted`, `cancelled`,
+`failed`, and `handed_off`; a Photo Printing Wizard handoff does not confirm printing.
+`print.snapshot_requested` identifies capture or pinned-image preparation, and
+`print.capture_failed` / `print.pinned_failed` also cover failures before the service
+accepts a snapshot. Native events identify the backend, API stage, and Windows HRESULT
+or AppKit exception name where available. Image/page dimensions are metadata only;
+the logs exclude screenshot pixels, recognition text, printer names, and snapshot paths.
+
 ## Windows
 
 Snow Shot uses the modern print UI on Windows 11 and falls back to the Windows

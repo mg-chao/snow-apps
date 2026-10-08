@@ -2,12 +2,14 @@
 #include "../src/presentation/services/nativeprintbackend.h"
 #include "../src/presentation/services/screenshotprintinteractionguard.h"
 #include "../src/presentation/services/screenshotprintcompletion.h"
+#include "print_diagnostics_test_support.h"
 
 #include <QApplication>
 #include <QColorSpace>
 #include <QElapsedTimer>
 #include <QKeyEvent>
 #include <QLineEdit>
+#include <QSet>
 #include <QThread>
 #include <QWidget>
 
@@ -303,6 +305,130 @@ void sharedServiceUsesNativeBackendWithLegacyFallback() {
     require(&Service::shared() == &service && sharedBackendSelections.size() == 2,
             "shared service must retain its backend selection across requests");
 }
+
+void persistedPrintDiagnostics() {
+    print_tests::LogSession logs;
+    QWidget owner;
+    Service::Completion native;
+    Service service(
+        [&](QWidget*, QImage, auto completion) { native = std::move(completion); },
+        [](QWidget*, QImage, auto completion) { completion({Service::Status::HandedOff, {}}); });
+    require(!service.printImage(nullptr, &owner, image(), [](auto) {}) &&
+                !service.printImage(&owner, nullptr, image(), [](auto) {}) &&
+                !service.printImage(&owner, &owner, {}, [](auto) {}) &&
+                !service.printImage(&owner, &owner, image(), {}),
+            "invalid print requests must still be rejected");
+    for (auto status :
+         {Service::Status::Submitted, Service::Status::Cancelled, Service::Status::Failed,
+          Service::Status::HandedOff, Service::Status::Unavailable}) {
+        native = {};
+        require(service.printImage(&owner, &owner, image(), [](auto) {}), "logged request starts");
+        require(!service.printImage(&owner, &owner, image(), [](auto) {}),
+                "busy request is rejected");
+        processUntil([&] { return bool(native); });
+        native({status, QStringLiteral("private screenshot text and C:/private/snapshot.png")});
+        processUntil([&] { return !service.busy(); });
+        native({Service::Status::Failed, QStringLiteral("late")});
+        flush();
+    }
+    Service unavailable({}, {});
+    require(unavailable.printImage(&owner, &owner, image(), [](auto) {}),
+            "unavailable request starts");
+    processUntil([&] { return !unavailable.busy(); });
+    QObject receiver;
+    auto* temporaryOwner = new QWidget;
+    require(service.printImage(&receiver, temporaryOwner, image(), [](auto) {}),
+            "abandoned request starts");
+    delete temporaryOwner;
+    flush();
+    auto* temporaryReceiver = new QObject;
+    native = {};
+    require(service.printImage(temporaryReceiver, &owner, image(), [](auto) {}),
+            "request with a temporary receiver starts");
+    processUntil([&] { return bool(native); });
+    delete temporaryReceiver;
+    native({Service::Status::Submitted, {}});
+    flush();
+
+    const auto records = logs.records();
+    QSet<QString> accepted;
+    QSet<QString> prepared;
+    QSet<QString> completed;
+    QSet<QString> statuses;
+    QSet<QString> rejections;
+    QString fallbackOperation;
+    bool legacyStarted = false;
+    bool ownerDestroyed = false;
+    bool receiverDestroyed = false;
+    for (const auto& record : records) {
+        const auto event = record.value(QStringLiteral("event")).toString();
+        const auto fields = record.value(QStringLiteral("fields")).toObject();
+        const auto operation = fields.value(QStringLiteral("operation")).toString();
+        const auto bytes = QJsonDocument(record).toJson();
+        require(!bytes.contains("private screenshot") && !bytes.contains("private/snapshot") &&
+                    !bytes.contains("late"),
+                "print logs must exclude content and ignored callbacks");
+        if (event == QStringLiteral("print.rejected")) {
+            rejections.insert(fields.value(QStringLiteral("reason")).toString());
+            continue;
+        }
+        require(!operation.isEmpty() &&
+                    fields.value(QStringLiteral("duration_ms")).toDouble(-1) >= 0,
+                "request events must retain correlation and duration through export");
+        if (event == QStringLiteral("print.accepted")) {
+            require(!accepted.contains(operation), "request IDs must be unique");
+            accepted.insert(operation);
+            require(fields.value(QStringLiteral("width")).toInt() == 2 &&
+                        fields.value(QStringLiteral("height")).toInt() == 1 &&
+                        fields.value(QStringLiteral("dpr")).toDouble() == 2,
+                    "source image dimensions and DPR must survive log export");
+        } else {
+            require(accepted.contains(operation), "request progress must follow acceptance");
+        }
+        if (event == QStringLiteral("print.prepared"))
+            prepared.insert(operation);
+        if (event == QStringLiteral("print.backend_started")) {
+            require(prepared.contains(operation), "native printing must follow image preparation");
+            if (fields.value(QStringLiteral("backend")) == QStringLiteral("legacy")) {
+                legacyStarted = true;
+                require(operation == fallbackOperation, "fallback must retain the request ID");
+            }
+        }
+        if (event == QStringLiteral("print.fallback")) {
+            fallbackOperation = operation;
+            require(record.value(QStringLiteral("level")) == QStringLiteral("WARN"),
+                    "fallback must preserve a warning even if the legacy backend succeeds");
+        }
+        if (event == QStringLiteral("print.completed")) {
+            require(!completed.contains(operation),
+                    "each accepted request must log completion once");
+            completed.insert(operation);
+            const auto status = fields.value(QStringLiteral("status")).toString();
+            statuses.insert(status);
+            require(record.value(QStringLiteral("level")) == (status == QStringLiteral("failed")
+                                                                  ? QStringLiteral("WARN")
+                                                                  : QStringLiteral("INFO")),
+                    "cancellation and handoff are normal outcomes while failures are warnings");
+            ownerDestroyed |=
+                fields.value(QStringLiteral("reason")) == QStringLiteral("owner_destroyed");
+            receiverDestroyed |=
+                fields.value(QStringLiteral("reason")) == QStringLiteral("receiver_destroyed");
+        }
+    }
+    require(accepted.size() == 8 && completed == accepted,
+            "all eight accepted print requests must log completion exactly once");
+    require(legacyStarted, "fallback logs must identify the legacy backend");
+    require(ownerDestroyed, "destroyed owners must log the correct cancellation reason");
+    require(receiverDestroyed, "destroyed receivers must log the correct cancellation reason");
+    require(statuses == QSet<QString>{QStringLiteral("submitted"), QStringLiteral("cancelled"),
+                                      QStringLiteral("failed"), QStringLiteral("handed_off")},
+            "logs must distinguish all terminal print outcomes");
+    require(rejections ==
+                QSet<QString>{QStringLiteral("missing_receiver"), QStringLiteral("missing_owner"),
+                              QStringLiteral("empty_image"), QStringLiteral("missing_completion"),
+                              QStringLiteral("busy")},
+            "rejection reasons must be persisted");
+}
 } // namespace
 
 ScreenshotPrintService::Backend screenshotNativePrintBackend(bool legacy) {
@@ -325,5 +451,6 @@ int main(int argc, char** argv) {
     onePagePlacementAndInteraction();
     printingPreservesOwnerAndWindowFlags();
     sharedServiceUsesNativeBackendWithLegacyFallback();
+    persistedPrintDiagnostics();
     return 0;
 }

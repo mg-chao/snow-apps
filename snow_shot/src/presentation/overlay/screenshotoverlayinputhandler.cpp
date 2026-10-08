@@ -453,6 +453,7 @@ void ScreenshotOverlayInputHandler::beginSelectionDrag(ScreenshotOverlayWindow* 
     if (!m_context.interaction.enterSelectionDrag(dragMode)) {
         return;
     }
+    m_selectionWheelSteps.reset();
     m_snappedDuringSelectionDrag = false;
     if (m_keepSelectionAspectRatioShortcut) {
         m_aspectShortcutUsedForSelectionDrag = true;
@@ -794,11 +795,16 @@ void ScreenshotOverlayInputHandler::completeRightClickCancellation() {
 }
 
 bool ScreenshotOverlayInputHandler::handleWheel(ScreenshotOverlayWindow* overlay,
-                                                const QPointF& localPosition,
-                                                const QPoint& angleDelta,
-                                                const QPoint& pixelDelta) {
-    if (!acceptInput())
+                                                const QWheelEvent& event) {
+    const bool smartSelection =
+        m_context.selection.regionType() == ScreenshotRegionType::Rectangle &&
+        m_context.interaction.intelligentSelecting();
+    if (!smartSelection || m_externalDragActive)
+        m_selectionWheelSteps.reset();
+    if (!acceptInput()) {
+        m_selectionWheelSteps.reset();
         return true;
+    }
     if (m_externalDragActive)
         return true;
     if (m_context.interaction.scrollingCapture()) {
@@ -807,7 +813,8 @@ bool ScreenshotOverlayInputHandler::handleWheel(ScreenshotOverlayWindow* overlay
     if (recognitionTool(m_context.interaction.activeTool())) {
         return true;
     }
-    const int deltaY = !pixelDelta.isNull() ? pixelDelta.y() : angleDelta.y();
+    const int deltaY =
+        !event.pixelDelta().isNull() ? event.pixelDelta().y() : event.angleDelta().y();
     if (deltaY != 0 && wheelAdjustsStrokeWidth(m_context.interaction.activeTool())) {
         return m_context.actions.stepStrokeWidth(deltaY > 0 ? 1 : -1);
     }
@@ -831,19 +838,17 @@ bool ScreenshotOverlayInputHandler::handleWheel(ScreenshotOverlayWindow* overlay
         return m_context.actions.stepWatermarkFontSize(deltaY > 0 ? 1 : -1);
     }
 
-    if (m_context.selection.regionType() != ScreenshotRegionType::Rectangle ||
-        !m_context.interaction.intelligentSelecting()) {
+    if (!smartSelection) {
         return false;
     }
 
-    const QPointF virtualPosition = virtualPositionForOverlay(overlay, localPosition);
-    requestIntelligentSelectionHitTest(virtualPosition);
+    const int steps = m_selectionWheelSteps.consume(event);
+    if (steps == 0)
+        return true;
 
-    if (deltaY > 0) {
-        setIntelligentSelectionIndex(m_context.intelligentSelection.index() + 1);
-    } else if (deltaY < 0) {
-        setIntelligentSelectionIndex(m_context.intelligentSelection.index() - 1);
-    }
+    const QPointF virtualPosition = virtualPositionForOverlay(overlay, event.position());
+    requestIntelligentSelectionHitTest(virtualPosition);
+    setIntelligentSelectionIndex(m_context.intelligentSelection.index() + steps);
 
     m_context.actions.updateOverlayState();
     return true;
@@ -1014,6 +1019,7 @@ bool ScreenshotOverlayInputHandler::toggleIntelligentSelectionTargetShortcut() {
     }
 
     m_context.actions.persistSelectionTarget(m_context.intelligentSelection.selectionTarget());
+    m_selectionWheelSteps.reset();
     m_context.intelligentSelection.clearPress();
     if (m_context.intelligentSelection.hasCurrentSelection()) {
         m_context.selection.setSelectionRect(m_context.intelligentSelection.currentSelection());
@@ -1172,6 +1178,7 @@ void ScreenshotOverlayInputHandler::confirmSelection(
         m_context.actions.pauseIntelligentSelection();
     }
     m_context.interaction.confirmSelection();
+    m_selectionWheelSteps.reset();
     m_context.captureState.sessionState = ScreenshotSessionState::Editing;
     m_context.intelligentSelection.clearPress();
     if (beforePresentation) {
@@ -1361,6 +1368,7 @@ void ScreenshotOverlayInputHandler::restoreScrollingCaptureAfterFailedResize() {
 }
 
 void ScreenshotOverlayInputHandler::resetTransientShortcuts() {
+    m_selectionWheelSteps.reset();
     static_cast<void>(cancelEffectDrag());
     leaveEffectEditors();
     cancelCanvasColorSampling();

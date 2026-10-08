@@ -130,8 +130,7 @@ class OverlayEvents final : public ScreenshotOverlayEventSink {
                                                               const QPointF&) override {
         return ScreenshotOverlayRightClickResult::Ignored;
     }
-    bool handleOverlayWheel(ScreenshotOverlayWindow*, const QPointF&, const QPoint&,
-                            const QPoint&) override {
+    bool handleOverlayWheel(ScreenshotOverlayWindow*, const QWheelEvent&) override {
         return false;
     }
     bool shouldBlockUnhandledOverlayKeyInput() const override {

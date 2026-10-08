@@ -1407,6 +1407,8 @@ const QVector<ConfigurationSchemaEntry> kRawEntries = {
      ConfigurationValueKind::Boolean},
     {QStringLiteral("screenshot/shutter_sound_notification"), true,
      ConfigurationValueKind::Boolean},
+    {QStringLiteral("screenshot/screenshot_sound_notification"), false,
+     ConfigurationValueKind::Boolean},
 #if SNOW_SHOT_ENABLE_QR_RECOGNITION
     {QStringLiteral("screenshot/auto_recognize_qr_code"), true, ConfigurationValueKind::Boolean},
 #endif
