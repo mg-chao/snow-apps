@@ -1,4 +1,5 @@
 #include "button.h"
+#include "detail/focus_reason.h"
 #include "detail/pointer_region.h"
 
 #include "detail/popup_geometry.h"
@@ -82,10 +83,6 @@ QPainterPath roundedRectPath(const QRectF& rect, qreal topLeft, qreal topRight, 
 bool isTwoChineseCharacters(const QString& text) {
   static const QRegularExpression re(QStringLiteral("^[\\x{4e00}-\\x{9fa5}]{2}$"));
   return re.match(text).hasMatch();
-}
-
-bool isKeyboardFocusReason(Qt::FocusReason reason) {
-  return reason != Qt::MouseFocusReason && reason != Qt::NoFocusReason;
 }
 
 bool isActivationKey(int key) {
@@ -1287,7 +1284,7 @@ bool AdButton::hitButton(const QPoint& pos) const {
 
 void AdButton::focusInEvent(QFocusEvent* event) {
   QPushButton::focusInEvent(event);
-  d_->focusVisible = event && isKeyboardFocusReason(event->reason());
+  d_->focusVisible = event && detail::isKeyboardFocusReason(event->reason());
   updateInteractionFocusOverlay();
   update();
 }

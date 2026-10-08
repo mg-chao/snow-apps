@@ -1,4 +1,5 @@
 #include "notification.h"
+#include "detail/focus_reason.h"
 #include "detail/feedback_owner.h"
 #include "detail/pointer_region.h"
 
@@ -359,8 +360,7 @@ class NotificationCloseButton final : public QAbstractButton {
 
   void focusInEvent(QFocusEvent* event) override {
     QAbstractButton::focusInEvent(event);
-    focusVisible_ =
-        event && event->reason() != Qt::MouseFocusReason && event->reason() != Qt::NoFocusReason;
+    focusVisible_ = event && detail::isKeyboardFocusReason(event->reason());
     update();
   }
 

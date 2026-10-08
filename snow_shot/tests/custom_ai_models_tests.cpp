@@ -608,8 +608,15 @@ void widgetContracts(QApplication& application) {
         flush();
         auto* deletion = widget->findChild<AdModal*>(QStringLiteral("customAiModelDeleteModal"));
         require(deletion != nullptr, "delete requests confirmation");
+        AdButton currentFocus(&page);
+        currentFocus.show();
+        page.activateWindow();
+        flush();
+        currentFocus.setFocus(Qt::MouseFocusReason);
+        require(currentFocus.hasFocus(), "establish focus before dismissing AI delete modal");
         deletion->reject();
         flush();
+        require(currentFocus.hasFocus(), "AI delete dismissal must not refocus Add");
         require(session.customAiModels().size() == 3, "cancel delete preserves list");
         widget->findChild<AdButton*>(QStringLiteral("delete:") + copied[2].id)->click();
         flush();
@@ -628,8 +635,11 @@ void widgetContracts(QApplication& application) {
         modal->contentWidget()
             ->findChild<AdLineEdit*>(QStringLiteral("modelName"))
             ->setText(QStringLiteral("Cancelled draft"));
+        currentFocus.setFocus(Qt::MouseFocusReason);
+        require(currentFocus.hasFocus(), "establish focus before dismissing AI editor");
         modal->reject();
         flush();
+        require(currentFocus.hasFocus(), "AI editor dismissal must not refocus Add");
         require(session.customAiModels().size() == 2 && cancelledCommits == 0,
                 "cancel create preserves the list and does not commit shared drafts");
 

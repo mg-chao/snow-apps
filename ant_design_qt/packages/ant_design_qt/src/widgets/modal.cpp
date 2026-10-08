@@ -2744,23 +2744,6 @@ void AdModal::updateAccessibility() {
   }
 }
 
-void AdModal::saveFocusBeforeOpen() {
-  QWidget* focusWidget = QApplication::focusWidget();
-  if (focusWidget && overlay_ && overlay_->isAncestorOf(focusWidget)) {
-    return;
-  }
-  focusBeforeOpen_ = focusWidget;
-}
-
-void AdModal::restoreFocusAfterClose() {
-  QWidget* target = focusBeforeOpen_.data();
-  focusBeforeOpen_.clear();
-  if (!target || !target->isVisible() || !target->isEnabled()) {
-    return;
-  }
-  target->setFocus(Qt::OtherFocusReason);
-}
-
 QWidget* AdModal::nextFocusableFrom(QWidget* start, bool next) const {
   if (!overlay_ || !start) {
     return nullptr;
@@ -3222,7 +3205,6 @@ void AdModal::setOpenInternal(bool value, bool emitSignal) {
   open_ = value;
   windowGeometryInitialized_ = false;
   if (open_) {
-    saveFocusBeforeOpen();
     ensureOverlay();
     refreshTexts();
     refreshVisibility();
@@ -3257,7 +3239,6 @@ void AdModal::setOpenInternal(bool value, bool emitSignal) {
             ->setWindowModeModality(Qt::NonModal, nullptr);
       }
     }
-    restoreFocusAfterClose();
   }
 
   if (emitSignal) {

@@ -453,8 +453,6 @@ class AdModal final : public QObject {
   [[nodiscard]] bool showsHeader() const;
   [[nodiscard]] bool showsFooter() const;
   void updateAccessibility();
-  void saveFocusBeforeOpen();
-  void restoreFocusAfterClose();
   bool focusNextPrevChildInModal(bool next);
   QWidget* firstFocusableWidget(bool reverse = false) const;
   QWidget* nextFocusableFrom(QWidget* start, bool next) const;
@@ -537,7 +535,6 @@ class AdModal final : public QObject {
   QPointer<QWidget> footerWidget_;
   QPointer<QShortcut> escShortcut_;
   QPointer<QWidget> initialFocusWidget_;
-  QPointer<QWidget> focusBeforeOpen_;
   QMetaObject::Connection contentWidgetDestroyedConnection_;
   QMetaObject::Connection footerWidgetDestroyedConnection_;
   QMetaObject::Connection ownerWindowDestroyedConnection_;

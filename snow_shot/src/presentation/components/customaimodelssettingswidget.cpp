@@ -275,7 +275,6 @@ void CustomAiModelsSettingsWidget::deleteModel(const QString& id) {
     connect(modal, &AdModal::finished, this, [this, modal](AdModal::DialogCode) {
         m_deleteModal = nullptr;
         modal->deleteLater();
-        m_add->setFocus();
     });
     modal->open();
 }
@@ -503,11 +502,6 @@ void CustomAiModelsSettingsWidget::openEditor(const QString& id) {
         m_modal = nullptr;
         m_modalError = nullptr;
         modal->deleteLater();
-        QTimer::singleShot(0, this, [this]() {
-            auto* button =
-                m_editing ? findChild<AdButton*>(QStringLiteral("edit:") + m_editId) : m_add;
-            (button != nullptr ? button : m_add)->setFocus();
-        });
     });
     modal->setInitialFocusWidget(m_inputs[0]);
     // Resolve nested form size hints before the centered modal gets its first paint.

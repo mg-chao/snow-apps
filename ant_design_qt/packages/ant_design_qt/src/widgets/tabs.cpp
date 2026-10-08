@@ -1,4 +1,5 @@
 #include "tabs.h"
+#include "detail/focus_reason.h"
 
 #include "detail/text_metrics.h"
 #include "popover.h"
@@ -75,10 +76,6 @@ AdTabs::ComponentTokens mergeTokens(AdTabs::ComponentTokens base,
 
 bool isHorizontal(AdTabs::Placement placement) {
   return placement == AdTabs::Placement::Top || placement == AdTabs::Placement::Bottom;
-}
-
-bool keyboardFocusReason(Qt::FocusReason reason) {
-  return reason != Qt::MouseFocusReason && reason != Qt::NoFocusReason;
 }
 
 // A mouse-transparent overlay stays above the moving tab content, like Ant's
@@ -711,7 +708,7 @@ class TabButton final : public QAbstractButton {
   }
 
   void focusInEvent(QFocusEvent* event) override {
-    focusVisible_ = keyboardFocusReason(event->reason());
+    focusVisible_ = detail::isKeyboardFocusReason(event->reason());
     update();
     QAbstractButton::focusInEvent(event);
   }
@@ -808,7 +805,7 @@ class OperationButton final : public QAbstractButton {
   }
 
   void focusInEvent(QFocusEvent* event) override {
-    focusVisible_ = keyboardFocusReason(event->reason());
+    focusVisible_ = detail::isKeyboardFocusReason(event->reason());
     QAbstractButton::focusInEvent(event);
     update();
   }

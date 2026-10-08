@@ -177,8 +177,13 @@ void contracts(QApplication& app) {
         require(presentation::LanguageManager::instance().setLanguage(QStringLiteral("zh_TW")),
                 "Traditional Chinese");
         settle();
+        AdButton currentFocus(&page);
+        currentFocus.show();
+        currentFocus.setFocus(Qt::MouseFocusReason);
+        require(currentFocus.hasFocus(), "establish focus before dismissing translation editor");
         modal->reject();
         settle();
+        require(currentFocus.hasFocus(), "translation editor dismissal must not refocus Add");
         require(session.textTranslationConfigurations().size() == 2 && cancelledEdits == 1 &&
                     cancelledCommits == 0,
                 "language refresh stays silent and Cancel does not commit or save shared drafts");
@@ -190,6 +195,14 @@ void contracts(QApplication& app) {
         auto* confirmation =
             widget->findChild<AdModal*>(QStringLiteral("textTranslationDeleteModal"));
         require(confirmation, "delete confirmation");
+        currentFocus.setFocus(Qt::MouseFocusReason);
+        confirmation->reject();
+        settle();
+        require(currentFocus.hasFocus(), "translation delete dismissal must not refocus Add");
+        widget->findChild<AdButton*>(QStringLiteral("delete:") + original.id)->click();
+        settle();
+        confirmation = widget->findChild<AdModal*>(QStringLiteral("textTranslationDeleteModal"));
+        require(confirmation, "reopen translation delete confirmation");
         confirmation->acceptButton()->click();
         settle();
         require(session.textTranslationConfigurations().size() == 1, "delete saved");

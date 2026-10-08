@@ -1,4 +1,5 @@
 #include "segmented.h"
+#include "detail/focus_reason.h"
 #include "detail/pointer_region.h"
 
 #include "detail/text_metrics.h"
@@ -142,11 +143,6 @@ AdSegmented::Option normalizedOption(AdSegmented::Option option) {
     option.value = option.label;
   }
   return option;
-}
-
-bool keyboardFocusReason(Qt::FocusReason reason) {
-  return reason == Qt::TabFocusReason || reason == Qt::BacktabFocusReason ||
-         reason == Qt::ShortcutFocusReason;
 }
 
 class SegmentButton final : public QRadioButton {
@@ -372,7 +368,7 @@ class SegmentButton final : public QRadioButton {
   }
 
   void focusInEvent(QFocusEvent* event) override {
-    focusVisible_ = keyboardFocusReason(event->reason());
+    focusVisible_ = detail::isKeyboardFocusReason(event->reason());
     update();
     QRadioButton::focusInEvent(event);
   }

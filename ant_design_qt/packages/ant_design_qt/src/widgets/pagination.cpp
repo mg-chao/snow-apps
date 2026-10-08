@@ -1,4 +1,5 @@
 #include "pagination.h"
+#include "detail/focus_reason.h"
 
 #include "antd_icons.h"
 #include "combo_box.h"
@@ -137,7 +138,7 @@ class PaginationButton final : public QAbstractButton {
       painter.drawPath(itemPath);
     }
 
-    if (hasFocus() && focusReason_ != Qt::MouseFocusReason) {
+    if (hasFocus() && detail::isKeyboardFocusReason(focusReason_)) {
       painter.setBrush(Qt::NoBrush);
       painter.setPen(QPen(style_.focusOutline, 2));
       painter.drawRoundedRect(
