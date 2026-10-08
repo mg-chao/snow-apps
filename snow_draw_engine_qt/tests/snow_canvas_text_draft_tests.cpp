@@ -11,6 +11,7 @@
 #include "snow_canvas_text_render.h"
 #include "snow_canvas_fill_render.h"
 #include "snow_canvas_text_measurement.h"
+#include "snow_canvas_element_id.h"
 #include "snow_canvas_type_conversions.h"
 #include "snow_canvas_changed_viewports.h"
 #include "snow_canvas_render_geometry.h"
@@ -31,6 +32,7 @@
 #include <QApplication>
 #include <QBuffer>
 #include <QByteArray>
+#include <QClipboard>
 #include <QElapsedTimer>
 #include <QEventLoop>
 #include <QFont>
@@ -52,12 +54,14 @@
 #include <QWidget>
 
 #include <atomic>
+#include <algorithm>
 #include <cmath>
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
 #include <future>
 #include <iostream>
+#include <limits>
 #include <memory>
 #include <optional>
 #include <thread>
@@ -568,7 +572,7 @@ void textMeasurementBuildsAutoResizeLayoutOverridesFromSnapshots() {
 
     SnowTextElementInfo infos[2] = {};
     infos[0].id = SnowElementId{10, 2};
-    infos[0].font_size = style.font_size;
+    infos[0].font_size = style.font_size / 2.0;
     infos[0].auto_resize = 1;
     const QByteArray measuredText = QByteArrayLiteral("auto");
     std::memcpy(infos[0].text_utf8, measuredText.constData(),
@@ -576,7 +580,7 @@ void textMeasurementBuildsAutoResizeLayoutOverridesFromSnapshots() {
     infos[0].text_utf8_len = static_cast<std::uint32_t>(measuredText.size());
 
     infos[1].id = SnowElementId{11, 2};
-    infos[1].font_size = style.font_size;
+    infos[1].font_size = style.font_size / 2.0;
     infos[1].auto_resize = 0;
     infos[1].width = 40.0;
     infos[1].height = 20.0;
@@ -4558,6 +4562,732 @@ void preparedTextLayoutsStayOnTheirThreadAndFollowFontDatabaseChanges() {
     require(workerPassed, "font database changes must invalidate worker layouts on their thread");
 }
 
+SnowTextStyle
+wrappingTextStyle(SnowTextHorizontalAlign alignment = SNOW_TEXT_HORIZONTAL_ALIGN_LEFT) {
+    SnowTextStyle style{};
+    style.font_size = 24.0;
+    style.color = SnowColorRgba8{20, 20, 20, 255};
+    style.opacity = 1.0;
+    style.horizontal_align = alignment;
+    style.vertical_align = SNOW_TEXT_VERTICAL_ALIGN_CENTER;
+    return style;
+}
+
+SceneDisplayInfo wrappingSceneInfo() {
+    SceneDisplayInfo info{};
+    info.camera_zoom = 1.0;
+    info.surface_width = 640;
+    info.surface_height = 480;
+    return info;
+}
+
+void sendWrappingKey(SnowCanvasTextEditorSession& session, int key,
+                     Qt::KeyboardModifiers modifiers = Qt::NoModifier,
+                     const QString& text = QString()) {
+    QKeyEvent event(QEvent::KeyPress, key, modifiers, text);
+    require(session.handleKeyPress(&event, QApplication::font(), wrappingSceneInfo()).handled,
+            "the wrapping editor should handle text commands");
+}
+
+void replaceWrappingText(SnowCanvasTextEditorSession& session, const QString& text) {
+    sendWrappingKey(session, Qt::Key_A, Qt::ControlModifier);
+    QInputMethodEvent event;
+    event.setCommitString(text);
+    require(session.handleInputMethodEvent(&event, QApplication::font()),
+            "the wrapping editor should accept committed replacement text");
+}
+
+void requireWrappedPreview(const SnowCanvasTextEditorSession& session, double width,
+                           const char* message) {
+    const auto* preview = session.previewItem();
+    require(preview != nullptr, "the wrapping editor should expose its preview");
+    requireNear(preview->width, width, message);
+    const auto measured = snow_canvas_text_layout::measureWrappedTextLayout(
+        session.presentationText(), QApplication::font(), *preview, width);
+    requireNear(preview->height, measured.layout.height(),
+                "wrapped preview height should follow the exact text layout");
+    requireNear(preview->content_width, measured.content.width(),
+                "wrapped preview should publish the measured ink width");
+    requireNear(preview->content_height, measured.content.height(),
+                "wrapped preview should publish the measured ink height");
+    require(session.activeDraftAutoResize(), "wrapping must retain automatic width");
+}
+
+void automaticTextWrappingCapsAllAlignmentsAndShrinks() {
+    const QFont font = QApplication::font();
+    const QRectF bounds(-50.0, 0.0, 200.0, 80.0);
+    const QString longText =
+        QStringLiteral("word wrapping keeps text inside the screenshot ").repeated(4);
+    for (const auto alignment : {SNOW_TEXT_HORIZONTAL_ALIGN_LEFT, SNOW_TEXT_HORIZONTAL_ALIGN_CENTER,
+                                 SNOW_TEXT_HORIZONTAL_ALIGN_RIGHT}) {
+        SnowCanvasTextEditorSession session;
+        require(!session.setTextEditingBounds(bounds, font),
+                "setting idle wrapping bounds should not report an active relayout");
+        const SnowTextStyle style = wrappingTextStyle(alignment);
+        const auto info = snow_canvas_text::newTextInfoAt(QPointF(25.0, 40.0), font, style);
+        require(session.begin(info, nullptr, font, &style), "begin the automatic-width draft");
+        const QPointF anchor =
+            snow_canvas_text_edit_geometry::topAnchorForItem(*session.previewItem());
+        replaceWrappingText(session, QStringLiteral("a"));
+        const auto natural = snow_canvas_text_layout::measureNaturalTextLayout(
+            session.presentationText(), font, *session.previewItem());
+        requireNear(session.previewItem()->width, natural.layout.width(),
+                    "text below its cap should retain natural width");
+        replaceWrappingText(session, longText);
+        const double cap = alignment == SNOW_TEXT_HORIZONTAL_ALIGN_LEFT     ? 125.0
+                           : alignment == SNOW_TEXT_HORIZONTAL_ALIGN_CENTER ? 150.0
+                                                                            : 75.0;
+        requireWrappedPreview(session, cap, "automatic text width should stop at its aligned edge");
+        const QPointF wrappedAnchor =
+            snow_canvas_text_edit_geometry::topAnchorForItem(*session.previewItem());
+        requireNear(wrappedAnchor.x(), anchor.x(),
+                    "wrapping should preserve the horizontal anchor");
+        requireNear(wrappedAnchor.y(), anchor.y(), "wrapping should preserve the top anchor");
+        require(session.previewItem()->height > bounds.height(),
+                "automatic wrapping should allow text to grow vertically");
+        replaceWrappingText(session, QStringLiteral("a"));
+        requireNear(session.previewItem()->width, natural.layout.width(),
+                    "deleting wrapped text should restore natural width");
+        sendWrappingKey(session, Qt::Key_Z, Qt::ControlModifier);
+        requireWrappedPreview(session, cap, "draft undo should restore the wrapped width");
+        sendWrappingKey(session, Qt::Key_Y, Qt::ControlModifier);
+        requireNear(session.previewItem()->width, natural.layout.width(),
+                    "draft redo should restore the shrunken natural width");
+        session.finish(font);
+        require(session.textEditingBounds() == std::optional<QRectF>(bounds),
+                "finishing an edit should retain the configured wrapping bounds");
+    }
+}
+
+void automaticTextWrappingHandlesTypingPasteAndInputMethods() {
+    const QFont font = QApplication::font();
+    const QRectF bounds(0.0, -100.0, 120.0, 200.0);
+    const QString text = QStringLiteral("typing and pasting wrap every complete segment");
+    const SnowTextStyle style = wrappingTextStyle();
+    SnowCanvasTextEditorSession session;
+    session.setTextEditingBounds(bounds, font);
+    require(session.begin(snow_canvas_text::newTextInfoAt(QPointF(0.0, 0.0), font, style), nullptr,
+                          font, &style),
+            "begin the wrapping input draft");
+    for (const QChar character : text) {
+        sendWrappingKey(session, Qt::Key_unknown, Qt::NoModifier, QString(character));
+    }
+    requireWrappedPreview(session, 120.0, "typing should constrain the automatic width");
+
+    const QString originalClipboard = QApplication::clipboard()->text();
+    QApplication::clipboard()->setText(text + QStringLiteral(" from the clipboard"));
+    sendWrappingKey(session, Qt::Key_A, Qt::ControlModifier);
+    sendWrappingKey(session, Qt::Key_V, Qt::ControlModifier);
+    require(session.presentationText().endsWith(QStringLiteral("from the clipboard")),
+            "the wrapping draft should receive pasted text");
+    requireWrappedPreview(session, 120.0, "pasted text should use the same width cap");
+    QApplication::clipboard()->setText(originalClipboard);
+
+    sendWrappingKey(session, Qt::Key_A, Qt::ControlModifier);
+    sendWrappingKey(session, Qt::Key_Backspace);
+    QInputMethodEvent preedit(text, {});
+    require(session.handleInputMethodEvent(&preedit, font),
+            "preedit should update the wrapping draft");
+    requireWrappedPreview(session, 120.0, "input-method preedit should wrap before commitment");
+    QInputMethodEvent commit;
+    commit.setCommitString(text);
+    require(session.handleInputMethodEvent(&commit, font), "commit the wrapped input-method text");
+    requireWrappedPreview(session, 120.0,
+                          "input-method commitment should preserve the wrapped layout");
+    const auto finished = session.finish(font);
+    require(finished.text == text && finished.autoResize,
+            "the committed draft should retain all text and automatic-width intent");
+
+    require(session.begin(snow_canvas_text::newTextInfoAt(QPointF(0.0, 0.0), font, style), nullptr,
+                          font, &style),
+            "begin a preedit-only draft");
+    QInputMethodEvent transientPreedit(text, {});
+    session.handleInputMethodEvent(&transientPreedit, font);
+    const auto transient = session.finish(font);
+    const auto emptyNatural = snow_canvas_text_layout::measureNaturalTextLayout(
+        QString(), font,
+        snow_canvas_text::defaultPreviewItem(
+            snow_canvas_text::newTextInfoAt(QPointF(), font, style)));
+    require(transient.text.isEmpty(), "finishing must not commit unaccepted preedit");
+    requireNear(transient.measuredLayout.width, emptyNatural.layout.width(),
+                "discarding preedit should shrink the finished draft to natural empty width");
+}
+
+void automaticTextWrappingReflowsStyleAndBoundsChanges() {
+    const QFont font = QApplication::font();
+    SnowCanvasTextEditorSession session;
+    const QRectF bounds(-100.0, -100.0, 300.0, 200.0);
+    session.setTextEditingBounds(bounds, font);
+    SnowTextStyle style = wrappingTextStyle();
+    require(session.begin(snow_canvas_text::newTextInfoAt(QPointF(20.0, 0.0), font, style), nullptr,
+                          font, &style),
+            "begin the wrapping style draft");
+    replaceWrappingText(
+        session, QStringLiteral("font and alignment changes should keep automatic text wrapped"));
+    requireWrappedPreview(session, 180.0, "initial automatic width should use the right boundary");
+    style.font_size = 40.0;
+    session.applyTextStyle(style, font, wrappingSceneInfo());
+    requireWrappedPreview(session, 180.0,
+                          "larger text should retain its available automatic width");
+    std::memcpy(style.font_family_utf8, "monospace", 9);
+    style.font_family_utf8_len = 9;
+    session.applyTextStyle(style, font, wrappingSceneInfo());
+    requireWrappedPreview(session, 180.0,
+                          "changing font family should retain the automatic width cap");
+    require(snow_canvas_text::fontFamilyFromSceneItem(*session.previewItem()) ==
+                QStringLiteral("monospace"),
+            "the wrapped draft should retain its requested font family");
+    style.horizontal_align = SNOW_TEXT_HORIZONTAL_ALIGN_RIGHT;
+    session.applyTextStyle(style, font, wrappingSceneInfo());
+    requireWrappedPreview(session, 300.0,
+                          "alignment changes should reflow against the newly pinned edge");
+    require(session.setTextEditingBounds(QRectF(50.0, -100.0, 150.0, 200.0), font),
+            "changed bounds should immediately reflow an active automatic-width draft");
+    requireWrappedPreview(session, 150.0, "changed bounds should use the new available width");
+    require(!session.setTextEditingBounds(QRectF(50.0, -100.0, 150.0, 200.0), font),
+            "setting the same bounds should be a no-op");
+    require(session.setTextEditingBounds(std::nullopt, font),
+            "clearing bounds should reflow the active draft");
+    const auto natural = snow_canvas_text_layout::measureNaturalTextLayout(
+        session.presentationText(), font, *session.previewItem());
+    requireNear(session.previewItem()->width, natural.layout.width(),
+                "clearing bounds should restore unrestricted automatic width");
+    session.cancel();
+    session.setTextEditingBounds(QRectF(200.0, 80.0, -150.0, -60.0), font);
+    require(session.textEditingBounds() == std::optional<QRectF>(QRectF(50.0, 20.0, 150.0, 60.0)),
+            "reversed wrapping bounds should be normalized");
+    session.cancel();
+    require(session.textEditingBounds() == std::optional<QRectF>(QRectF(50.0, 20.0, 150.0, 60.0)),
+            "canceling an edit should retain its configured wrapping bounds");
+    session.setTextEditingBounds(QRectF(0.0, 0.0, 0.0, 20.0), font);
+    require(!session.textEditingBounds().has_value(), "empty wrapping bounds should be discarded");
+    session.setTextEditingBounds(QRectF(0.0, 0.0, std::numeric_limits<double>::quiet_NaN(), 20.0),
+                                 font);
+    require(!session.textEditingBounds().has_value(),
+            "nonfinite wrapping bounds should be discarded");
+
+    style = wrappingTextStyle();
+    session.setTextEditingBounds(QRectF(0.0, -100.0, 100.0, 200.0), font);
+    require(session.begin(snow_canvas_text::newTextInfoAt(QPointF(100.0, 0.0), font, style),
+                          nullptr, font, &style),
+            "begin text with no remaining horizontal room");
+    const QString completeText = QStringLiteral("every character remains editable");
+    replaceWrappingText(session, completeText);
+    requireWrappedPreview(session, 1.0,
+                          "insufficient available width should clamp to one canvas unit");
+    const auto finished = session.finish(font);
+    require(finished.text == completeText,
+            "a minimal width cap must retain every entered character without truncation");
+}
+
+void automaticTextWrappingPreservesExistingAndExcludedDrafts() {
+    const QFont font = QApplication::font();
+    const SnowTextStyle style = wrappingTextStyle();
+    const QString text =
+        QStringLiteral("existing text remains untouched until an actual input change");
+    for (const bool automatic : {true, false}) {
+        SnowTextElementInfo info = snow_canvas_text::newTextInfoAt(QPointF(0.0, 0.0), font, style);
+        info.id = SnowElementId{1, 1};
+        info.width = 250.0;
+        info.height = 70.0;
+        info.auto_resize = static_cast<std::uint8_t>(automatic);
+        auto item = snow_canvas_text::defaultPreviewItem(info);
+        snow_canvas_text::applyTextStyleToSceneItem(item, style);
+        snow_canvas_text::copyTextToSceneItem(item, text);
+        SnowCanvasTextEditorSession session;
+        session.setTextEditingBounds(QRectF(-125.0, -100.0, 200.0, 200.0), font);
+        require(session.begin(info, &item, font, nullptr, &text),
+                "open existing text under wrapping bounds");
+        requireNear(session.previewItem()->width, info.width,
+                    "opening an existing edit should preserve saved width");
+        requireNear(session.previewItem()->height, info.height,
+                    "opening an existing edit should preserve saved height");
+        const auto unchanged = session.finish(font);
+        requireNear(unchanged.measuredLayout.width, info.width,
+                    "untouched existing commits should preserve width");
+        requireNear(unchanged.measuredLayout.height, info.height,
+                    "untouched existing commits should preserve height");
+        require(session.begin(info, &item, font, nullptr, &text),
+                "reopen the existing draft for input");
+        replaceWrappingText(session, text + QStringLiteral(" now edited"));
+        requireNear(session.previewItem()->width, automatic ? 200.0 : 250.0,
+                    "only automatic-width existing text should receive the new constraint");
+        require(session.activeDraftAutoResize() == automatic,
+                "wrapping should preserve the saved sizing mode");
+    }
+
+    SnowTextElementInfo rotated = snow_canvas_text::newTextInfoAt(QPointF(), font, style);
+    rotated.id = SnowElementId{2, 1};
+    rotated.rotation = 0.4;
+    auto rotatedItem = snow_canvas_text::defaultPreviewItem(rotated);
+    SnowCanvasTextEditorSession rotatedSession;
+    rotatedSession.setTextEditingBounds(QRectF(-20.0, -20.0, 40.0, 40.0), font);
+    require(rotatedSession.begin(rotated, &rotatedItem, font), "begin rotated automatic text");
+    replaceWrappingText(rotatedSession, text);
+    const auto rotatedNatural = snow_canvas_text_layout::measureNaturalTextLayout(
+        text, font, *rotatedSession.previewItem());
+    requireNear(rotatedSession.previewItem()->width, rotatedNatural.layout.width(),
+                "rotated text should retain its existing automatic layout behavior");
+
+    SnowTextElementInfo arrow = snow_canvas_text::newTextInfoAt(QPointF(), font, style);
+    arrow.arrow_id = SnowElementId{3, 1};
+    arrow.arrow_width = 1000.0;
+    SnowCanvasTextEditorSession arrowSession;
+    arrowSession.setTextEditingBounds(QRectF(-20.0, -20.0, 40.0, 40.0), font);
+    require(arrowSession.begin(arrow, nullptr, font, &style), "begin an attached arrow label");
+    replaceWrappingText(arrowSession, text.repeated(3));
+    requireNear(arrowSession.previewItem()->width, 700.0,
+                "attached arrow labels should retain their existing arrow-width constraint");
+}
+
+void automaticTextWrappingPublishesBoundsAndPreservesHistory() {
+    SnowCanvasRuntime runtime;
+    const SnowRuntime handle = snow_canvas_runtime::Access::handle(runtime);
+    SnowCanvasViewport inspection;
+    require(inspection.create(handle, snow_canvas_viewport::defaultEngineConfig()),
+            "create the wrapping inspection viewport");
+    require(snow_viewport_set_surface_size(handle, inspection.get(), 640, 480) == SNOW_OK,
+            "configure the wrapping inspection viewport");
+    SnowCanvasWidget canvas(runtime);
+    canvas.resize(640, 480);
+    canvas.show();
+    QApplication::processEvents();
+    require(canvas.setViewportCamera(0.0, 0.0, 1.0), "configure the wrapping canvas camera");
+    const QRectF bounds(-150.0, -150.0, 300.0, 300.0);
+    canvas.setTextEditingBounds(bounds);
+    require(canvas.textEditingBounds() == std::optional<QRectF>(bounds),
+            "the widget should expose its canvas-space bounds");
+    require(canvas.setCanvasTool(SnowCanvasTool::Text), "activate the wrapping text tool");
+    const QPointF position = canvas.canvasToViewTransform().map(QPointF(-100.0, 0.0));
+    sendCanvasMouseEvent(canvas, QEvent::MouseButtonPress, position, Qt::LeftButton,
+                         Qt::LeftButton);
+    sendCanvasMouseEvent(canvas, QEvent::MouseButtonRelease, position, Qt::LeftButton,
+                         Qt::NoButton);
+    QKeyEvent insert(QEvent::KeyPress, Qt::Key_unknown, Qt::NoModifier,
+                     QStringLiteral("wrapping words stay inside the selected screenshot"));
+    QApplication::sendEvent(&canvas, &insert);
+    const auto activeInfo = [&]() {
+        SnowTextElementInfo info{};
+        SnowTextStyle draftStyle{};
+        std::uint8_t active = 0;
+        require(snow_viewport_get_active_text_draft_presentation(handle, inspection.get(), &info,
+                                                                 &draftStyle, &active) == SNOW_OK &&
+                    active != 0,
+                "automatic text layout should be published to every viewport");
+        return info;
+    };
+    requireNear(activeInfo().width, 250.0, "the widget should publish its initial cap");
+    canvas.setTextEditingBounds(QRectF(-150.0, -150.0, 125.0, 300.0));
+    requireNear(activeInfo().width, 75.0,
+                "changing widget bounds should publish the new wrapped width");
+    require(!canvas.canvasHistoryState().canUndo, "bounds changes should not create draft history");
+    require(canvas.setViewportCamera(20.0, 10.0, 1.5),
+            "camera synchronization should preserve wrapped draft geometry");
+    const auto wrapped = activeInfo();
+    requireNear(wrapped.width, 75.0, "engine presentation synchronization should retain the cap");
+    require(wrapped.auto_resize != 0, "published wrapping should retain automatic-width intent");
+    require(canvas.resetEditingState(), "commit the wrapped text");
+    SnowElementId id{};
+    std::uint8_t hit = 0;
+    require(snow_viewport_hit_text(handle, inspection.get(), wrapped.center_x, wrapped.center_y,
+                                   &id, &hit) == SNOW_OK &&
+                hit != 0,
+            "resolve the committed wrapped text");
+    SnowTextElementInfo committed{};
+    require(snow_runtime_get_text_element(handle, id, &committed) == SNOW_OK,
+            "read the committed wrapped text");
+    requireNear(committed.width, wrapped.width, "commit should preserve the capped width");
+    requireNear(committed.height, wrapped.height, "commit should preserve the wrapped height");
+    require(canvas.undo(), "wrapped creation should be undoable");
+    require(snow_runtime_get_text_element(handle, id, &committed) != SNOW_OK,
+            "undo should remove the created wrapped text");
+    require(canvas.redo(), "wrapped creation should be redoable");
+    require(snow_runtime_get_text_element(handle, id, &committed) == SNOW_OK,
+            "redo should restore the wrapped text");
+    requireNear(committed.width, wrapped.width, "redo should restore the exact cap");
+    requireNear(committed.height, wrapped.height, "redo should restore the exact wrapped height");
+
+    require(canvas.setCanvasTool(SnowCanvasTool::Text),
+            "reopen the wrapped text with the text tool");
+    const QPointF textPosition =
+        canvas.canvasToViewTransform().map(QPointF(committed.center_x, committed.center_y));
+    sendCanvasMouseEvent(canvas, QEvent::MouseButtonPress, textPosition, Qt::LeftButton,
+                         Qt::LeftButton);
+    sendCanvasMouseEvent(canvas, QEvent::MouseButtonRelease, textPosition, Qt::LeftButton,
+                         Qt::NoButton);
+    require(canvas.hasActiveTextEditing(), "the committed wrapped text should reopen for editing");
+    requireNear(activeInfo().width, wrapped.width, "reopening should preserve saved wrapped width");
+    require(canvas.resetEditingState(), "finish an untouched reopened text edit");
+    require(canvas.undo(), "untouched reopening should leave creation as the last history entry");
+    require(snow_runtime_get_text_element(handle, id, &committed) != SNOW_OK,
+            "opening and committing without input should not add a layout history entry");
+
+    require(canvas.redo(), "restore wrapped text for corner resizing");
+    require(canvas.setCanvasTool(SnowCanvasTool::Text), "reopen wrapped text for corner resizing");
+    sendCanvasMouseEvent(canvas, QEvent::MouseButtonPress, textPosition, Qt::LeftButton,
+                         Qt::LeftButton);
+    sendCanvasMouseEvent(canvas, QEvent::MouseButtonRelease, textPosition, Qt::LeftButton,
+                         Qt::NoButton);
+    require(canvas.hasActiveTextEditing(), "reopen the restored wrapped text for corner resizing");
+    const QString resizedText =
+        QStringLiteral("Long wrapping drafts keep every character. ").repeated(40);
+    QKeyEvent selectAll(QEvent::KeyPress, Qt::Key_A, Qt::ControlModifier);
+    QApplication::sendEvent(&canvas, &selectAll);
+    QInputMethodEvent replace;
+    replace.setCommitString(resizedText);
+    QApplication::sendEvent(&canvas, &replace);
+    const auto beforeResize = activeInfo();
+    require(beforeResize.text_truncated != 0,
+            "the active resize fixture should exceed the compact ABI text buffer");
+    require(snow_viewport_set_camera(handle, inspection.get(), 20.0, 10.0, 1.5) == SNOW_OK,
+            "inspect resize controls with the same camera as the interacting canvas");
+    SnowCanvasDisplayCache inspectionCache;
+    require(inspectionCache.sync(handle, inspection.get()), "inspect wrapped text resize controls");
+    const auto controls = textSelectionControls(inspectionCache);
+    const auto resizeHandle = std::find_if(controls.begin(), controls.end(), [](const auto& item) {
+        return item.rect_kind == SNOW_OVERLAY_RECT_SELECTION_RESIZE_HANDLE;
+    });
+    require(resizeHandle != controls.end(), "wrapped text should expose a corner resize handle");
+    const QPointF handlePosition =
+        canvas.canvasToViewTransform().map(QPointF(resizeHandle->center_x, resizeHandle->center_y));
+    const QPointF centerPosition =
+        canvas.canvasToViewTransform().map(QPointF(beforeResize.center_x, beforeResize.center_y));
+    const QPointF resizedPosition = handlePosition + (centerPosition - handlePosition) * 0.2;
+    sendCanvasMouseEvent(canvas, QEvent::MouseButtonPress, handlePosition, Qt::LeftButton,
+                         Qt::LeftButton);
+    sendCanvasMouseEvent(canvas, QEvent::MouseMove, resizedPosition, Qt::NoButton, Qt::LeftButton);
+    sendCanvasMouseEvent(canvas, QEvent::MouseButtonRelease, resizedPosition, Qt::LeftButton,
+                         Qt::NoButton);
+    require(canvas.hasActiveTextEditing(), "corner resizing should keep the wrapped draft active");
+    const auto afterResize = activeInfo();
+    require(afterResize.auto_resize != 0 && afterResize.width < beforeResize.width &&
+                afterResize.height > afterResize.font_size * 2.0,
+            "corner resizing should scale wrapped automatic text without unwrapping it");
+    const auto resizedLayout = snow_canvas_text_layout::measureWrappedTextLayout(
+        resizedText, canvas.font(), snow_canvas_text::defaultPreviewItem(afterResize),
+        afterResize.width, 1.5);
+    requireNear(afterResize.height, resizedLayout.layout.height(),
+                "resizing should measure the complete unsaved draft instead of committed text");
+    require(canvas.resetEditingState(), "commit the resized automatic text");
+    require(canvas.undo(), "undo the wrapped text corner resize");
+    require(snow_runtime_get_text_element(handle, id, &committed) == SNOW_OK,
+            "read the restored text after resize undo");
+    requireNear(committed.width, wrapped.width, "resize undo should restore the wrap width");
+    requireNear(committed.height, wrapped.height, "resize undo should restore the wrap height");
+}
+
+void automaticTextWrappingSurvivesSelectedStyleChanges() {
+    for (const auto alignment :
+         {SnowCanvasTextHorizontalAlign::Left, SnowCanvasTextHorizontalAlign::Center,
+          SnowCanvasTextHorizontalAlign::Right}) {
+        SnowCanvasRuntime runtime;
+        const SnowRuntime handle = snow_canvas_runtime::Access::handle(runtime);
+        SnowCanvasViewport inspection;
+        require(inspection.create(handle, snow_canvas_viewport::defaultEngineConfig()),
+                "create the selected wrapping inspection viewport");
+        require(snow_viewport_set_surface_size(handle, inspection.get(), 640, 480) == SNOW_OK,
+                "configure the selected wrapping inspection viewport");
+        SnowCanvasWidget canvas(runtime);
+        canvas.resize(640, 480);
+        canvas.show();
+        QApplication::processEvents();
+        require(canvas.setViewportCamera(0.0, 0.0, 1.0), "configure the selected wrapping camera");
+        const QRectF bounds(-150.0, -150.0, 300.0, 300.0);
+        canvas.setTextEditingBounds(bounds);
+        SnowCanvasTextStyle style;
+        style.fontSize = 24.0;
+        style.horizontalAlign = alignment;
+        require(canvas.setCanvasTextStyle(style) && canvas.setCanvasTool(SnowCanvasTool::Text),
+                "configure the selected wrapping text style");
+        const double anchorX = alignment == SnowCanvasTextHorizontalAlign::Left    ? -100.0
+                               : alignment == SnowCanvasTextHorizontalAlign::Right ? 100.0
+                                                                                   : 0.0;
+        const double cap = alignment == SnowCanvasTextHorizontalAlign::Center ? 300.0 : 250.0;
+        const QPointF position = canvas.canvasToViewTransform().map(QPointF(anchorX, -70.0));
+        sendCanvasMouseEvent(canvas, QEvent::MouseButtonPress, position, Qt::LeftButton,
+                             Qt::LeftButton);
+        sendCanvasMouseEvent(canvas, QEvent::MouseButtonRelease, position, Qt::LeftButton,
+                             Qt::NoButton);
+        const QString text = QStringLiteral("wrapping words stay inside the selected screenshot");
+        QInputMethodEvent insert;
+        insert.setCommitString(text);
+        QApplication::sendEvent(&canvas, &insert);
+        SnowTextElementInfo draft{};
+        SnowTextStyle draftStyle{};
+        std::uint8_t active = 0;
+        require(snow_viewport_get_active_text_draft_presentation(handle, inspection.get(), &draft,
+                                                                 &draftStyle, &active) == SNOW_OK &&
+                    active != 0,
+                "inspect the wrapping text before commitment");
+        require(canvas.resetEditingState(), "commit the selected wrapping text");
+        SnowElementId id{};
+        std::uint8_t hit = 0;
+        require(snow_viewport_hit_text(handle, inspection.get(), draft.center_x, draft.center_y,
+                                       &id, &hit) == SNOW_OK &&
+                    hit != 0,
+                "resolve the selected wrapping text");
+        const auto readText = [&] {
+            SnowTextElementInfo info{};
+            require(snow_runtime_get_text_element(handle, id, &info) == SNOW_OK,
+                    "read the selected wrapping text");
+            return info;
+        };
+        const auto original = readText();
+        const QPointF textPosition =
+            canvas.canvasToViewTransform().map(QPointF(original.center_x, original.center_y));
+        sendCanvasMouseEvent(canvas, QEvent::MouseButtonPress, textPosition, Qt::LeftButton,
+                             Qt::LeftButton);
+        sendCanvasMouseEvent(canvas, QEvent::MouseButtonRelease, textPosition, Qt::LeftButton,
+                             Qt::NoButton);
+        require(!canvas.hasActiveTextEditing() && isElementSelected(handle, inspection.get(), id),
+                "select wrapped text without reopening its editor");
+        require(canvas.setViewportCamera(1200.0, 0.0, 1.0),
+                "move selected text outside the display cache");
+        const auto verifyLayout = [&](double maximumWidth, SnowCanvasTextHorizontalAlign align) {
+            const auto info = readText();
+            auto item = snow_canvas_text::defaultPreviewItem(info);
+            item.text_horizontal_align = static_cast<SnowTextHorizontalAlign>(align);
+            const auto natural =
+                snow_canvas_text_layout::measureNaturalTextLayout(text, canvas.font(), item);
+            const double expectedWidth = qMin(maximumWidth, natural.layout.width());
+            const auto measured = natural.layout.width() <= maximumWidth
+                                      ? natural
+                                      : snow_canvas_text_layout::measureWrappedTextLayout(
+                                            text, canvas.font(), item, maximumWidth);
+            requireNear(info.width, expectedWidth, "selected text should retain its width cap");
+            requireNear(info.height, measured.layout.height(),
+                        "selected text should publish its exact wrapped height");
+            requireNear(info.content_width, measured.content.width(),
+                        "selected text should publish its exact wrapped ink width");
+            requireNear(info.content_height, measured.content.height(),
+                        "selected text should publish its exact wrapped ink height");
+            require(info.auto_resize != 0 &&
+                        info.center_x - info.width / 2.0 >= bounds.left() - 0.0001 &&
+                        info.center_x + info.width / 2.0 <= bounds.right() + 0.0001,
+                    "selected text should retain automatic sizing inside its bounds");
+            requireNear(info.center_y - info.height / 2.0,
+                        original.center_y - original.height / 2.0,
+                        "font changes should keep the painted top edge pinned");
+            return info;
+        };
+        style.fontSize = 30.0;
+        require(canvas.setCanvasTextStyle(style, SnowCanvasTextStyleMixedFontSize),
+                "change the font size of offscreen wrapped text");
+        verifyLayout(cap, alignment);
+        require(canvas.undo(), "undo the selected wrapping font change");
+        requireNear(readText().width, original.width, "undo should restore the wrapped width");
+        requireNear(readText().height, original.height, "undo should restore the wrapped height");
+        require(canvas.redo(), "redo the selected wrapping font change");
+        verifyLayout(cap, alignment);
+        style.fontFamily = QStringLiteral("monospace");
+        require(canvas.setCanvasTextStyle(style, SnowCanvasTextStyleMixedFontFamily),
+                "change the font family of offscreen wrapped text");
+        verifyLayout(cap, alignment);
+        const auto nextAlignment = alignment == SnowCanvasTextHorizontalAlign::Left
+                                       ? SnowCanvasTextHorizontalAlign::Right
+                                       : SnowCanvasTextHorizontalAlign::Left;
+        style.horizontalAlign = nextAlignment;
+        require(canvas.setCanvasTextStyle(style, SnowCanvasTextStyleMixedHorizontalAlign),
+                "change the alignment of offscreen wrapped text");
+        verifyLayout(300.0, nextAlignment);
+        style.fontSize = 6.0;
+        require(canvas.setCanvasTextStyle(style, SnowCanvasTextStyleMixedFontSize),
+                "shrink the selected wrapping font below its cap");
+        require(verifyLayout(300.0, nextAlignment).width < 300.0,
+                "selected automatic text should shrink back to its natural width");
+
+        style.fontSize = 30.0;
+        require(canvas.setCanvasTextStyle(style, SnowCanvasTextStyleMixedFontSize),
+                "restore wrapped text before rotating it");
+        const auto beforeRotation = verifyLayout(300.0, nextAlignment);
+        require(canvas.setViewportCamera(0.0, 0.0, 1.0), "show wrapped text rotation controls");
+        SnowCanvasDisplayCache inspectionCache;
+        require(inspectionCache.sync(handle, inspection.get()), "inspect text rotation controls");
+        const auto controls = textSelectionControls(inspectionCache);
+        const auto rotationHandle =
+            std::find_if(controls.begin(), controls.end(), [](const auto& item) {
+                return item.rect_kind == SNOW_OVERLAY_RECT_SELECTION_ROTATION_HANDLE;
+            });
+        require(rotationHandle != controls.end(), "wrapped text should expose a rotation handle");
+        const QPointF rotationPosition = canvas.canvasToViewTransform().map(
+            QPointF(rotationHandle->center_x, rotationHandle->center_y));
+        const QPointF centerPosition = canvas.canvasToViewTransform().map(
+            QPointF(beforeRotation.center_x, beforeRotation.center_y));
+        const QPointF delta = rotationPosition - centerPosition;
+        constexpr double angle = 0.4;
+        const QPointF rotatedPosition =
+            centerPosition + QPointF(delta.x() * std::cos(angle) - delta.y() * std::sin(angle),
+                                     delta.x() * std::sin(angle) + delta.y() * std::cos(angle));
+        sendCanvasMouseEvent(canvas, QEvent::MouseButtonPress, rotationPosition, Qt::LeftButton,
+                             Qt::LeftButton);
+        sendCanvasMouseEvent(canvas, QEvent::MouseMove, rotatedPosition, Qt::NoButton,
+                             Qt::LeftButton);
+        sendCanvasMouseEvent(canvas, QEvent::MouseButtonRelease, rotatedPosition, Qt::LeftButton,
+                             Qt::NoButton);
+        const auto rotated = readText();
+        requireNear(rotated.rotation, angle, "rotate the automatic wrapped text");
+        require(canvas.setViewportCamera(1200.0, 0.0, 1.0),
+                "move rotated text outside the display cache");
+        const auto verifyRotatedGeometry = [&] {
+            const auto info = readText();
+            requireNear(info.width, rotated.width, "alignment should preserve rotated wrap width");
+            requireNear(info.height, rotated.height,
+                        "alignment should preserve rotated wrap height");
+            requireNear(info.content_width, rotated.content_width,
+                        "alignment should preserve rotated ink width");
+            requireNear(info.content_height, rotated.content_height,
+                        "alignment should preserve rotated ink height");
+            requireNear(info.center_x, rotated.center_x,
+                        "alignment should preserve rotated text horizontal position");
+            requireNear(info.center_y, rotated.center_y,
+                        "alignment should preserve rotated text vertical position");
+            requireNear(info.rotation, rotated.rotation, "alignment should preserve text rotation");
+            require(info.auto_resize != 0, "alignment should preserve automatic sizing intent");
+            return info;
+        };
+        style.horizontalAlign = alignment;
+        const quint32 alignmentProperties = alignment == SnowCanvasTextHorizontalAlign::Left
+                                                ? SnowCanvasTextStyleAllProperties
+                                                : SnowCanvasTextStyleMixedHorizontalAlign;
+        require(canvas.setCanvasTextStyle(style, alignmentProperties),
+                "change rotated text alignment without changing its typography");
+        require(verifyRotatedGeometry().horizontal_align ==
+                    static_cast<SnowTextHorizontalAlign>(alignment),
+                "the rotated text alignment should still change");
+        require(canvas.undo(), "undo the rotated text alignment change");
+        require(verifyRotatedGeometry().horizontal_align ==
+                    static_cast<SnowTextHorizontalAlign>(nextAlignment),
+                "undo should restore the previous rotated text alignment");
+        require(canvas.redo(), "redo the rotated text alignment change");
+        require(verifyRotatedGeometry().horizontal_align ==
+                    static_cast<SnowTextHorizontalAlign>(alignment),
+                "redo should restore the updated rotated text alignment");
+    }
+}
+
+void automaticTextWrappingMeasurementsPreserveExcludedPoliciesAndCompleteText() {
+    const QFont font = QApplication::font();
+    SnowTextStyle style = wrappingTextStyle();
+    style.font_size = 30.0;
+    SnowTextElementInfo infos[4]{};
+    infos[0] = snow_canvas_text::newTextInfoAt(QPointF(35.0, 0.0), font, style);
+    infos[0].font_size = 24.0;
+    infos[0].width = 50.0;
+    const QByteArray text = QByteArrayLiteral("a wrapping note with several complete words");
+    std::memcpy(infos[0].text_utf8, text.constData(), static_cast<std::size_t>(text.size()));
+    infos[0].text_utf8_len = static_cast<std::uint32_t>(text.size());
+    for (int index = 1; index < 4; ++index) {
+        infos[index] = infos[0];
+    }
+    for (std::uint32_t index = 0; index < 4; ++index) {
+        infos[index].id = SnowElementId{index + 10, 1};
+    }
+    infos[1].arrow_id = SnowElementId{1, 1};
+    infos[2].rotation = 0.4;
+    infos[3].auto_resize = 0;
+    const QRectF bounds(0.0, -100.0, 200.0, 200.0);
+    const auto layouts = snow_canvas_text_measurement::measureAutoResizeLayoutOverrides(
+        infos, 4, style, font, SNOW_TEXT_STYLE_MIXED_FONT_SIZE, bounds);
+    require(layouts.success && layouts.layouts.size() == 4, "measure the wrapping sizing policies");
+    requireNear(layouts.layouts[0].size.width, 190.0, "automatic selected text should use its cap");
+    const auto item = snow_canvas_text::defaultPreviewItem(infos[0]);
+    auto styledItem = item;
+    styledItem.font_size = style.font_size;
+    const auto natural = snow_canvas_text_layout::measureNaturalTextLayout(QString::fromUtf8(text),
+                                                                           font, styledItem);
+    requireNear(layouts.layouts[1].size.width, natural.layout.width(),
+                "selected arrow labels should retain their sizing policy");
+    requireNear(layouts.layouts[2].size.width, natural.layout.width(),
+                "selected rotated text should retain its sizing policy");
+    requireNear(layouts.layouts[3].size.width, 50.0,
+                "selected fixed-width text should keep its width");
+
+    style.font_size = infos[0].font_size;
+    style.horizontal_align = SNOW_TEXT_HORIZONTAL_ALIGN_RIGHT;
+    const auto alignmentLayouts = snow_canvas_text_measurement::measureAutoResizeLayoutOverrides(
+        infos, 4, style, font, SNOW_TEXT_STYLE_ALL_PROPERTIES, bounds);
+    require(alignmentLayouts.success && alignmentLayouts.layouts.size() == 1,
+            "unchanged font properties should only reflow bounded automatic text on alignment");
+    require(snow_canvas_element_id::sameElementId(alignmentLayouts.layouts[0].id, infos[0].id),
+            "only the eligible automatic text should receive an alignment layout override");
+    requireNear(alignmentLayouts.layouts[0].size.width, 60.0,
+                "alignment reflow should use the newly aligned edge");
+    const auto unboundedAlignment = snow_canvas_text_measurement::measureAutoResizeLayoutOverrides(
+        infos, 4, style, font, SNOW_TEXT_STYLE_MIXED_HORIZONTAL_ALIGN);
+    require(unboundedAlignment.success && unboundedAlignment.layouts.empty(),
+            "unbounded alignment changes should preserve existing layouts");
+    style.horizontal_align = infos[0].horizontal_align;
+    const auto unchanged = snow_canvas_text_measurement::measureAutoResizeLayoutOverrides(
+        infos, 4, style, font, SNOW_TEXT_STYLE_ALL_PROPERTIES, bounds);
+    require(unchanged.success && unchanged.layouts.empty(),
+            "unchanged typography and alignment should preserve all measured layouts");
+    infos[2].font_family_truncated = 1;
+    const auto incompleteFamily = snow_canvas_text_measurement::measureAutoResizeLayoutOverrides(
+        infos, 4, style, font, SNOW_TEXT_STYLE_MIXED_FONT_FAMILY, bounds);
+    require(incompleteFamily.success && incompleteFamily.layouts.size() == 1 &&
+                snow_canvas_element_id::sameElementId(incompleteFamily.layouts[0].id, infos[2].id),
+            "a truncated font family cannot establish that a requested family is unchanged");
+    infos[2].font_family_truncated = 0;
+    style.font_size = 30.0;
+
+    SnowCanvasRuntime runtime;
+    const SnowRuntime handle = snow_canvas_runtime::Access::handle(runtime);
+    SnowCanvasViewport viewport;
+    require(viewport.create(handle, snow_canvas_viewport::defaultEngineConfig()),
+            "create the complete wrapping text viewport");
+    const QString completeText =
+        QStringLiteral("Complete wrapping text remains measurable. ").repeated(40);
+    const QByteArray utf8 = completeText.toUtf8();
+    require(snow_viewport_create_text(handle, viewport.get(), 0.0, 0.0, utf8.constData(),
+                                      static_cast<std::uint32_t>(utf8.size()), 190.0,
+                                      30.0) == SNOW_OK,
+            "create wrapping text longer than the compact ABI buffer");
+    SnowElementId id{};
+    std::uint8_t hit = 0;
+    require(snow_viewport_hit_text(handle, viewport.get(), 0.0, 0.0, &id, &hit) == SNOW_OK &&
+                hit != 0,
+            "resolve the complete wrapping text");
+    require(snow_canvas_commands::selectElement(handle, viewport.get(), id).success,
+            "select the complete wrapping text");
+    SnowTextElementInfo info{};
+    require(snow_runtime_get_text_element(handle, id, &info) == SNOW_OK && info.text_truncated != 0,
+            "the compact text snapshot should report truncation");
+    style.font_size = info.font_size + 6.0;
+    const auto selected = snow_canvas_text_measurement::measureSelectedAutoResizeLayoutOverrides(
+        {handle, viewport.get(), style, font, SNOW_TEXT_STYLE_MIXED_FONT_SIZE,
+         QRectF(-100.0, -100.0, 200.0, 200.0)});
+    require(selected.success && selected.layouts.size() == 1,
+            "measure all committed text beyond the compact ABI buffer");
+    auto completeItem = snow_canvas_text::defaultPreviewItem(info);
+    completeItem.font_size = style.font_size;
+    const auto measured =
+        snow_canvas_text_layout::measureWrappedTextLayout(completeText, font, completeItem, 195.0);
+    requireNear(selected.layouts[0].size.width, 195.0,
+                "complete selected text should keep its cap");
+    requireNear(selected.layouts[0].size.height, measured.layout.height(),
+                "selected wrapping height should include text beyond the compact snapshot");
+    info.font_size = style.font_size;
+    info.measure_natural_width = 1;
+    const auto resized = snow_canvas_text_measurement::measureResizeLayout(
+        {info, font, 1.0, QRectF(-100.0, -100.0, 200.0, 200.0),
+         snow_canvas_text::completeTextFromElementInfo(info, handle)});
+    const auto resizedLayout = snow_canvas_text_layout::measureWrappedTextLayout(
+        completeText, font, completeItem, info.width);
+    requireNear(resized.width, info.width, "resizing complete text should retain its wrap width");
+    requireNear(resized.height, resizedLayout.layout.height(),
+                "resizing should measure all text beyond the compact snapshot");
+}
+
+void runAutomaticTextWrappingTests() {
+    automaticTextWrappingCapsAllAlignmentsAndShrinks();
+    automaticTextWrappingHandlesTypingPasteAndInputMethods();
+    automaticTextWrappingReflowsStyleAndBoundsChanges();
+    automaticTextWrappingPreservesExistingAndExcludedDrafts();
+    automaticTextWrappingPublishesBoundsAndPreservesHistory();
+    automaticTextWrappingSurvivesSelectedStyleChanges();
+    automaticTextWrappingMeasurementsPreserveExcludedPoliciesAndCompleteText();
+}
+
 } // namespace
 
 int main(int argc, char** argv) {
@@ -4566,6 +5296,11 @@ int main(int argc, char** argv) {
     require(QFontDatabase::addApplicationFont(QStringLiteral("C:/Windows/Fonts/segoeui.ttf")) >= 0,
             "the watermark renderer test requires a system TrueType font");
 #endif
+
+    if (app.arguments().contains(QStringLiteral("--text-wrap-only"))) {
+        runAutomaticTextWrappingTests();
+        return 0;
+    }
 
     if (app.arguments().contains(QStringLiteral("--serial-number-only"))) {
         serialNumberFormattedLabelsRenderAndFitBadges();
@@ -4589,6 +5324,7 @@ int main(int argc, char** argv) {
         return 0;
     }
     preparedTextLayoutsMatchUncachedPixelsAndTrackPaintInputs();
+    runAutomaticTextWrappingTests();
     preparedTextLayoutsAreBoundedAndReleasedWithRenderingState();
     preparedTextLayoutsStayOnTheirThreadAndFollowFontDatabaseChanges();
     serialNumberFormattedLabelsRenderAndFitBadges();

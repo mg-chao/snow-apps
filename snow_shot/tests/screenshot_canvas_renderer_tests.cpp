@@ -46,6 +46,10 @@
 #include <QGraphicsScene>
 #include <QGraphicsView>
 #include <QImage>
+#include <QInputMethodEvent>
+#include <QJsonArray>
+#include <QJsonDocument>
+#include <QJsonObject>
 #include <QLabel>
 #include <QLayout>
 #include <QMouseEvent>
@@ -5325,6 +5329,97 @@ void canvasDragKeepsMouseEventsAcrossSelectionBorder() {
             "selection-border hover and resize input must resume after the canvas drag");
 }
 
+void overlayTextWrapUsesScreenshotSelection() {
+    NoopOverlayEventSink sink;
+    SnowCanvasRuntime runtime;
+    auto* leftCanvas = new SnowCanvasWidget(runtime);
+    auto* rightCanvas = new SnowCanvasWidget(runtime);
+    ScreenshotOverlayWindow left(sink, leftCanvas);
+    ScreenshotOverlayWindow right(sink, rightCanvas);
+    left.resize(400, 300);
+    right.resize(400, 300);
+    left.show();
+    right.show();
+    QApplication::processEvents();
+    require(leftCanvas->setViewportCamera(-200.0, 50.0, 1.0) &&
+                rightCanvas->setViewportCamera(200.0, 50.0, 1.0),
+            "initialize adjacent screenshot canvas viewports");
+
+    CapturedDisplayModel leftDisplay;
+    leftDisplay.canvasRect = QRect(-400, -100, 400, 300);
+    leftDisplay.active = true;
+    CapturedDisplayModel rightDisplay;
+    rightDisplay.canvasRect = QRect(0, -100, 400, 300);
+    rightDisplay.active = true;
+    ScreenshotDisplaySession displays;
+    displays.appendDisplay(leftDisplay, &left);
+    displays.appendDisplay(rightDisplay, &right);
+    ScreenshotOverlayCanvasPresenter presenter({});
+    ScreenshotSelectionVisualState state;
+    state.bounds = QRectF(-80.0, -60.0, 220.0, 130.0);
+    state.present = true;
+    presenter.updateOverlayState(displays, state, false, false, false);
+    require(leftCanvas->textEditingBounds() == std::optional<QRectF>(state.bounds) &&
+                rightCanvas->textEditingBounds() == std::optional<QRectF>(state.bounds),
+            "text wraps to the complete screenshot selection across both displays");
+
+    leftCanvas->setInteractionEnabled(true);
+    require(leftCanvas->setCanvasTool(SnowCanvasTool::Text), "activate screenshot text input");
+    SnowCanvasTextStyle style;
+    style.fontSize = 18.0;
+    require(leftCanvas->setCanvasTextStyle(style), "set deterministic screenshot text size");
+    const QPointF anchor(-65.0, -40.0);
+    const QPointF position = leftCanvas->canvasToViewTransform().map(anchor);
+    canvas_quick_selection_test::mouse(*leftCanvas, QEvent::MouseButtonPress, position,
+                                       Qt::LeftButton, Qt::LeftButton);
+    canvas_quick_selection_test::mouse(*leftCanvas, QEvent::MouseButtonRelease, position,
+                                       Qt::LeftButton, Qt::NoButton);
+    require(leftCanvas->hasActiveTextEditing(), "start screenshot text within the selection");
+    const QString input =
+        QStringLiteral("Screenshot text wraps within the selected area. ").repeated(4);
+    QInputMethodEvent event;
+    event.setCommitString(input);
+    QApplication::sendEvent(leftCanvas, &event);
+    require(leftCanvas->resetEditingStatePreservingTool(), "commit wrapped screenshot text");
+    const QJsonArray documentSlots = QJsonDocument::fromJson(runtime.serializeDocumentSession())
+                                         .object()
+                                         .value(QStringLiteral("document"))
+                                         .toObject()
+                                         .value(QStringLiteral("slots"))
+                                         .toArray();
+    require(documentSlots.size() == 1, "screenshot input commits one annotation");
+    const QJsonObject text = documentSlots.first()
+                                 .toObject()
+                                 .value(QStringLiteral("data"))
+                                 .toObject()
+                                 .value(QStringLiteral("Text"))
+                                 .toObject();
+    const double width = text.value(QStringLiteral("width")).toDouble();
+    const double centerX =
+        text.value(QStringLiteral("center")).toObject().value(QStringLiteral("x")).toDouble();
+    require(text.value(QStringLiteral("text")).toString() == input &&
+                text.value(QStringLiteral("auto_resize")).toBool() &&
+                text.value(QStringLiteral("height")).toDouble() > style.fontSize * 2.0 &&
+                centerX - width / 2.0 >= state.bounds.left() - 0.0001 &&
+                centerX + width / 2.0 <= state.bounds.right() + 0.0001 && width > -anchor.x(),
+            "committed automatic-width text wraps inside the selection beyond the monitor edge");
+
+    state.bounds = QRectF(20.0, 0.0, 60.0, 40.0);
+    presenter.updateOverlayState(displays, state, false, false, false);
+    require(!leftCanvas->textEditingBounds().has_value() &&
+                rightCanvas->textEditingBounds() == std::optional<QRectF>(state.bounds),
+            "selection changes clear bounds on displays outside the selected area");
+    right.clearScreenshotSelection();
+    require(!rightCanvas->textEditingBounds().has_value(),
+            "clearing a screenshot selection removes its text wrapping constraint");
+    right.setScreenshotSelection(QRectF(80.0, 40.0, -60.0, -40.0), false, 0);
+    require(rightCanvas->textEditingBounds() == std::optional<QRectF>(state.bounds),
+            "reused screenshot selections normalize their text wrapping area");
+    right.resetScreenshotRendering();
+    require(!rightCanvas->textEditingBounds().has_value(),
+            "reusing an overlay starts without the previous text wrapping constraint");
+}
+
 void overlayPassesTextDraftWheelToCanvas() {
     NoopOverlayEventSink eventSink;
     eventSink.consumeWheel = true;
@@ -6426,6 +6521,11 @@ int main(int argc, char** argv) {
         overlayPassesTextDraftWheelToCanvas();
         return 0;
     }
+    if (application.arguments().contains(QStringLiteral("--text-wrap-only"))) {
+        overlayTextWrapUsesScreenshotSelection();
+        unchangedOverlaySelectionDoesNotScheduleRepaint();
+        return 0;
+    }
 #ifdef Q_OS_WIN
     if (close_release_native_test::receiverRequested()) {
         return close_release_native_test::runReceiver();
@@ -6561,6 +6661,7 @@ int main(int argc, char** argv) {
     chunkedImagePaintersRenderPastTheRasterCoordinateLimit();
     partialRoundedMaskMatchesFullViewportMaskAtFractionalDpr();
     overlayWatermarkRendersOnlyInsideScreenshotSelection();
+    overlayTextWrapUsesScreenshotSelection();
     reusedRendererReplacesScreenshotImage();
     bgraScreenshotImagesRenderWithCorrectColors();
     hoveredSelectionToolbarHidesBorderAndRendersShadowPreview();

@@ -40,18 +40,21 @@ struct SelectedTextLayoutMeasurementRequest {
     SnowTextStyle style{};
     QFont baseFont;
     std::uint32_t properties = SNOW_TEXT_STYLE_ALL_PROPERTIES;
+    std::optional<QRectF> textEditingBounds;
 };
 
 struct ResizeLayoutMeasurementRequest {
     SnowTextElementInfo info{};
     QFont baseFont;
     double zoom = 1.0;
+    std::optional<QRectF> textEditingBounds;
+    std::optional<QString> completeText;
 };
 
-TextLayoutOverrideMeasurement
-measureAutoResizeLayoutOverrides(const SnowTextElementInfo* infos, std::uint32_t infoCount,
-                                 const SnowTextStyle& style, const QFont& baseFont,
-                                 std::uint32_t properties = SNOW_TEXT_STYLE_ALL_PROPERTIES);
+TextLayoutOverrideMeasurement measureAutoResizeLayoutOverrides(
+    const SnowTextElementInfo* infos, std::uint32_t infoCount, const SnowTextStyle& style,
+    const QFont& baseFont, std::uint32_t properties = SNOW_TEXT_STYLE_ALL_PROPERTIES,
+    const std::optional<QRectF>& textEditingBounds = std::nullopt, SnowRuntime runtime = nullptr);
 TextLayoutOverrideMeasurement
 measureSelectedAutoResizeLayoutOverrides(const SelectedTextLayoutMeasurementRequest& request);
 SnowTextLayoutSize measureEmptyDraftLayout(const SnowTextStyle& style, const QFont& baseFont);

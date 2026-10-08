@@ -12,6 +12,7 @@
 #include <QVector>
 
 #include <memory>
+#include <optional>
 
 #include "snow_draw_engine.h"
 
@@ -73,6 +74,11 @@ QSizeF measureNaturalText(const QString& text, const QFont& baseFont,
                           const SnowSceneDisplayItem& item, double zoom = 1.0);
 TextMeasuredLayout measureNaturalTextLayout(const QString& text, const QFont& baseFont,
                                             const SnowSceneDisplayItem& item, double zoom = 1.0);
+// Resolves natural width and optional wrapping with one QTextDocument layout.
+TextMeasuredLayout measureAutomaticTextLayout(const QString& text, const QFont& baseFont,
+                                              const SnowSceneDisplayItem& item,
+                                              std::optional<double> maximumWidth = std::nullopt,
+                                              double zoom = 1.0);
 QSizeF measureWrappedText(const QString& text, const QFont& baseFont,
                           const SnowSceneDisplayItem& item, double width, double zoom = 1.0);
 TextMeasuredLayout measureWrappedTextLayout(const QString& text, const QFont& baseFont,

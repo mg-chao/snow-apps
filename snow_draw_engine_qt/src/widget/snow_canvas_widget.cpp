@@ -445,6 +445,8 @@ struct SnowCanvasWidget::Impl : public snow_canvas_runtime::Client {
     bool resetEditingState(bool restoreSelectTool) override;
     bool cancelActiveTextEditing();
     bool hasActiveTextEditing() const;
+    std::optional<QRectF> textEditingBounds() const;
+    void setTextEditingBounds(const std::optional<QRectF>& bounds);
     SnowCanvasWidgetTextInteraction::CommitResult commitText(bool refocusWidget = true,
                                                              bool restoreExistingSelection = true);
     void applyTextCommitResult(SnowCanvasWidgetTextInteraction::CommitResult& result,
@@ -2030,6 +2032,27 @@ bool SnowCanvasWidget::Impl::hasActiveTextEditing() const {
 
 bool SnowCanvasWidget::hasActiveTextEditing() const {
     return m_impl->hasActiveTextEditing();
+}
+
+std::optional<QRectF> SnowCanvasWidget::Impl::textEditingBounds() const {
+    return textInteraction.session().textEditingBounds();
+}
+
+std::optional<QRectF> SnowCanvasWidget::textEditingBounds() const {
+    return m_impl->textEditingBounds();
+}
+
+void SnowCanvasWidget::Impl::setTextEditingBounds(const std::optional<QRectF>& bounds) {
+    const auto result = textInteraction.setTextEditingBounds(
+        bounds, runtimeBinding.engine(), runtimeBinding.viewportHandle(),
+        displayState.displayCache(), widget.font());
+    if (result.success && snow_changed_viewports_count(result.changedViewports.get()) > 0) {
+        syncChangedViewports(result.changedViewports.get());
+    }
+}
+
+void SnowCanvasWidget::setTextEditingBounds(const std::optional<QRectF>& bounds) {
+    m_impl->setTextEditingBounds(bounds);
 }
 
 void SnowCanvasWidget::Impl::beginTextStylePopupInteraction() {

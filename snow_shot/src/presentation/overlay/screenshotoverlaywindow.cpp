@@ -97,6 +97,7 @@ ScreenshotOverlayWindow::ScreenshotOverlayWindow(ScreenshotOverlayEventSink& eve
 ScreenshotOverlayWindow::~ScreenshotOverlayWindow() {
     setScrollingCaptureMode(false);
     if (m_canvas != nullptr) {
+        m_canvas->setTextEditingBounds(std::nullopt);
         m_canvas->clearWatermarkRenderArea();
         m_canvas->clearSpotlightRenderArea();
     }
@@ -205,6 +206,8 @@ void ScreenshotOverlayWindow::setScreenshotSelectionState(
                                               !normalizedSelection.isEmpty()
                                           ? normalizedSelection
                                           : QRectF();
+        m_canvas->setTextEditingBounds(
+            configuredArea.isEmpty() ? std::nullopt : std::optional<QRectF>(configuredArea));
         m_canvas->setDecorationRenderAreas(SnowCanvasDecorationRenderAreas{
             std::optional<QRectF>(configuredArea),
             std::optional<QRectF>(configuredArea),
@@ -226,6 +229,7 @@ void ScreenshotOverlayWindow::setScreenshotSelectionRegion(
 
 void ScreenshotOverlayWindow::clearScreenshotSelection() {
     if (m_canvas != nullptr) {
+        m_canvas->setTextEditingBounds(std::nullopt);
         m_canvas->setDecorationRenderAreas(SnowCanvasDecorationRenderAreas{
             std::optional<QRectF>(QRectF()),
             std::optional<QRectF>(QRectF()),
@@ -293,6 +297,7 @@ void ScreenshotOverlayWindow::setHistoryLoadingVisible(bool visible) {
 void ScreenshotOverlayWindow::resetScreenshotRendering() {
     setScrollingCaptureMode(false);
     if (m_canvas != nullptr) {
+        m_canvas->setTextEditingBounds(std::nullopt);
         m_canvas->setDecorationRenderAreas(SnowCanvasDecorationRenderAreas{
             std::optional<QRectF>(QRectF()),
             std::optional<QRectF>(QRectF()),

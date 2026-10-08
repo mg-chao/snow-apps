@@ -3928,6 +3928,9 @@ if(SNOW_SHOT_BUILD_TESTS)
     add_test(NAME snow-shot-screenshot-guide-rendering-tests
         COMMAND snow-shot-screenshot-canvas-renderer-tests --guide-rendering-only -platform offscreen)
     set_tests_properties(snow-shot-screenshot-guide-rendering-tests PROPERTIES LABELS "unit" TIMEOUT 60)
+    add_test(NAME snow-shot-overlay-text-wrap-tests
+        COMMAND snow-shot-screenshot-canvas-renderer-tests --text-wrap-only -platform offscreen)
+    set_tests_properties(snow-shot-overlay-text-wrap-tests PROPERTIES LABELS "unit" TIMEOUT 60)
     add_test(NAME snow-shot-direct-capture-history-rendering-tests
         COMMAND snow-shot-screenshot-canvas-renderer-tests --direct-capture-history-rendering)
     add_test(NAME snow-shot-pinned-filter-reference-tests
@@ -3996,6 +3999,7 @@ if(SNOW_SHOT_BUILD_TESTS)
         snow-shot-screenshot-canvas-renderer-tests
         snow-shot-screenshot-guide-preferences-tests
         snow-shot-screenshot-guide-rendering-tests
+        snow-shot-overlay-text-wrap-tests
         snow-shot-overlay-pool-prewarm-tests
         PROPERTIES
         ENVIRONMENT
@@ -4399,6 +4403,15 @@ if(SNOW_SHOT_BUILD_TESTS)
     set_tests_properties(snow-shot-pinned-text-double-click-tests PROPERTIES
         LABELS "unit" RUN_SERIAL TRUE TIMEOUT 60
         ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
+    add_test(NAME snow-shot-pinned-text-wrap-tests
+        COMMAND snow-shot-pinned-window-tests --text-wrap-only -platform offscreen)
+    add_test(NAME snow-shot-pinned-text-wrap-fractional-tests
+        COMMAND snow-shot-pinned-window-tests --text-wrap-only -platform offscreen)
+    set_tests_properties(snow-shot-pinned-text-wrap-tests snow-shot-pinned-text-wrap-fractional-tests
+        PROPERTIES LABELS "unit" RUN_SERIAL TRUE TIMEOUT 60
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
+    set_tests_properties(snow-shot-pinned-text-wrap-fractional-tests PROPERTIES
+        ENVIRONMENT "QT_SCALE_FACTOR=1.5;SNOW_PIN_TEST_DPR=1.5")
     add_test(NAME snow-shot-pinned-save-dialog-tests
         COMMAND snow-shot-pinned-window-tests --save-dialog-only)
     set_tests_properties(snow-shot-pinned-save-dialog-tests PROPERTIES TIMEOUT 90)

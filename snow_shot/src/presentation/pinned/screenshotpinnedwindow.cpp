@@ -3631,8 +3631,12 @@ void ScreenshotPinnedWindow::updateBorderOutline() {
 }
 
 void ScreenshotPinnedWindow::updateCanvasViewport() {
-    if (m_canvas == nullptr || !m_resultSurfaceCanvasRect.isValid() ||
-        m_resultSurfaceCanvasRect.isEmpty() || m_canvas->width() <= 0 || m_canvas->height() <= 0) {
+    if (m_canvas == nullptr) {
+        return;
+    }
+    if (!m_resultSurfaceCanvasRect.isValid() || m_resultSurfaceCanvasRect.isEmpty() ||
+        m_canvas->width() <= 0 || m_canvas->height() <= 0) {
+        m_canvas->setTextEditingBounds(std::nullopt);
         return;
     }
 
@@ -3674,12 +3678,25 @@ void ScreenshotPinnedWindow::updateCanvasViewport() {
     m_screenshotRenderer->setImageViewportPhysicalSize({});
     const ScreenshotPinnedGeometryMapping mapping(QRect(QPoint(), windowViewport), m_canvas->size(),
                                                   devicePixelRatio);
+    if (!mapping.isValid()) {
+        m_canvas->setTextEditingBounds(std::nullopt);
+        return;
+    }
     m_viewportZoom = mapping.viewportZoom(m_resultSurfaceCanvasRect.size());
     m_viewportCenter = m_resultSurfaceCanvasRect.center();
     // The camera centers on the integer QWidget extent. Offset it to the
     // physical viewport so rounding cannot translate the screenshot content.
     m_viewportCenter += mapping.viewportCenterOffset(m_viewportZoom);
-    m_canvas->setViewportCamera(m_viewportCenter.x(), m_viewportCenter.y(), m_viewportZoom);
+    const bool cameraUpdated =
+        m_canvas->setViewportCamera(m_viewportCenter.x(), m_viewportCenter.y(), m_viewportZoom);
+    // The canvas can cover surplus backing-store pixels at fractional DPRs.
+    // Constrain text to the observed client extent, rather than that covering widget.
+    bool invertible = false;
+    const QTransform viewToCanvas = m_canvas->canvasToViewTransform().inverted(&invertible);
+    m_canvas->setTextEditingBounds(cameraUpdated && invertible
+                                       ? std::optional<QRectF>(viewToCanvas.mapRect(
+                                             QRectF(QPointF(), mapping.logicalViewportSize())))
+                                       : std::nullopt);
     updateBorderOutline();
     updateRecognitionContentGeometry();
 }

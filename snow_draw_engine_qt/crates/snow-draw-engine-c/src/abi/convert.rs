@@ -516,6 +516,8 @@ pub(crate) fn snow_text_element_info_from_rust(value: TextElementInfo) -> SnowTe
         rotation: value.rotation,
         font_size: value.font_size,
         auto_resize: u8::from(value.auto_resize),
+        horizontal_align: snow_document_text_horizontal_align_from_rust(value.horizontal_align),
+        vertical_align: snow_document_text_vertical_align_from_rust(value.vertical_align),
         measure_natural_width: u8::from(value.measure_natural_width),
         ..SnowTextElementInfo::default()
     };
@@ -1619,12 +1621,16 @@ mod tests {
             text,
             font_size: 21.0,
             font_family: Some(family),
+            horizontal_align: TextHorizontalAlign::Right,
+            vertical_align: TextVerticalAlign::Bottom,
             auto_resize: true,
             measure_natural_width: false,
         });
 
         assert_eq!(info.content_width, 84.0);
         assert_eq!(info.content_height, 27.0);
+        assert_eq!(info.horizontal_align, SnowTextHorizontalAlign::Right);
+        assert_eq!(info.vertical_align, SnowTextVerticalAlign::Bottom);
         assert_eq!(info.text_utf8_len, (SNOW_TEXT_UTF8_CAPACITY - 1) as u32);
         assert_eq!(info.text_truncated, 1);
         assert_eq!(

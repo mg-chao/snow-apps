@@ -2,6 +2,8 @@
 #include "snow_canvas_text_measurement.h"
 
 #include "snow_canvas_text.h"
+#include "snow_canvas_element_id.h"
+#include "snow_canvas_text_edit_geometry.h"
 #include "snow_canvas_text_layout.h"
 #include "snow_canvas_utf8.h"
 
@@ -64,7 +66,10 @@ measureSelectedAutoResizeLayoutOverrides(const SelectedTextLayoutMeasurementRequ
     TextLayoutOverrideMeasurement result;
     constexpr std::uint32_t fontProperties =
         SNOW_TEXT_STYLE_MIXED_FONT_SIZE | SNOW_TEXT_STYLE_MIXED_FONT_FAMILY;
-    if ((request.properties & fontProperties) == 0) {
+    const std::uint32_t layoutProperties =
+        fontProperties |
+        (request.textEditingBounds.has_value() ? SNOW_TEXT_STYLE_MIXED_HORIZONTAL_ALIGN : 0);
+    if ((request.properties & layoutProperties) == 0) {
         return result;
     }
     if (request.runtime == nullptr || request.viewport == nullptr) {
@@ -91,40 +96,73 @@ measureSelectedAutoResizeLayoutOverrides(const SelectedTextLayoutMeasurementRequ
     }
 
     return measureAutoResizeLayoutOverrides(infos.data(), qMin(count, writtenCount), request.style,
-                                            request.baseFont, request.properties);
+                                            request.baseFont, request.properties,
+                                            request.textEditingBounds, request.runtime);
 }
 
-TextLayoutOverrideMeasurement measureAutoResizeLayoutOverrides(const SnowTextElementInfo* infos,
-                                                               std::uint32_t infoCount,
-                                                               const SnowTextStyle& style,
-                                                               const QFont& baseFont,
-                                                               std::uint32_t properties) {
+TextLayoutOverrideMeasurement measureAutoResizeLayoutOverrides(
+    const SnowTextElementInfo* infos, std::uint32_t infoCount, const SnowTextStyle& style,
+    const QFont& baseFont, std::uint32_t properties, const std::optional<QRectF>& textEditingBounds,
+    SnowRuntime runtime) {
     TextLayoutOverrideMeasurement result;
     if (infos == nullptr && infoCount != 0) {
         result.success = false;
         return result;
     }
 
+    const double requestedFontSize = snow_canvas_text::resolvedTextFontSize(style.font_size);
+    const bool changesFontFamily = (properties & SNOW_TEXT_STYLE_MIXED_FONT_FAMILY) != 0;
+    const QString requestedFontFamily =
+        changesFontFamily
+            ? snow_canvas_utf8::stringFromField(style.font_family_utf8, style.font_family_utf8_len,
+                                                SNOW_FONT_FAMILY_UTF8_CAPACITY)
+                  .trimmed()
+            : QString();
     result.layouts.reserve(infoCount);
     for (std::uint32_t index = 0; index < infoCount; ++index) {
         const SnowTextElementInfo& info = infos[index];
 
         SnowCanvasSceneItem item = snow_canvas_text::defaultPreviewItem(info);
+        bool typographyChanged = false;
+        if ((properties & SNOW_TEXT_STYLE_MIXED_HORIZONTAL_ALIGN) != 0) {
+            item.text_horizontal_align = style.horizontal_align;
+        }
+        if ((properties & SNOW_TEXT_STYLE_MIXED_VERTICAL_ALIGN) != 0) {
+            item.text_vertical_align = style.vertical_align;
+        }
         if ((properties & SNOW_TEXT_STYLE_MIXED_FONT_SIZE) != 0) {
-            item.font_size = snow_canvas_text::resolvedTextFontSize(style.font_size);
+            typographyChanged = item.font_size != requestedFontSize;
+            item.font_size = requestedFontSize;
         }
-        if ((properties & SNOW_TEXT_STYLE_MIXED_FONT_FAMILY) != 0) {
-            item.setFontFamilyUtf8(snow_canvas_utf8::stringFromField(style.font_family_utf8,
-                                                                     style.font_family_utf8_len,
-                                                                     SNOW_FONT_FAMILY_UTF8_CAPACITY)
-                                       .trimmed()
-                                       .toUtf8());
+        if (changesFontFamily &&
+            (info.font_family_truncated != 0 ||
+             requestedFontFamily != snow_canvas_text::fontFamilyFromSceneItem(item))) {
+            typographyChanged = true;
+            item.setFontFamilyUtf8(requestedFontFamily.toUtf8());
         }
-        const QString text = snow_canvas_text::textFromSceneItem(item);
+        const auto maximumWidth =
+            !snow_canvas_element_id::hasElementId(info.arrow_id)
+                ? snow_canvas_text_edit_geometry::automaticTextWidthLimit(
+                      item, snow_canvas_text_edit_geometry::topAnchorForItem(item),
+                      textEditingBounds)
+                : std::nullopt;
+        // Alignment changes only affect layout when the automatic wrap policy
+        // supplies a width cap. Typography changes still measure every sizing mode.
+        const bool alignmentReflow = info.auto_resize != 0 && maximumWidth.has_value() &&
+                                     item.text_horizontal_align != info.horizontal_align;
+        if (!typographyChanged && !alignmentReflow) {
+            continue;
+        }
+        const auto text = snow_canvas_text::completeTextFromElementInfo(info, runtime);
+        if (!text.has_value()) {
+            result.success = false;
+            return result;
+        }
         const snow_canvas_text_layout::TextMeasuredLayout measured =
             info.auto_resize != 0
-                ? snow_canvas_text_layout::measureNaturalTextLayout(text, baseFont, item)
-                : snow_canvas_text_layout::measureWrappedTextLayout(text, baseFont, item,
+                ? snow_canvas_text_layout::measureAutomaticTextLayout(*text, baseFont, item,
+                                                                      maximumWidth)
+                : snow_canvas_text_layout::measureWrappedTextLayout(*text, baseFont, item,
                                                                     item.width);
         result.layouts.push_back(SnowTextLayoutOverride{
             info.id,
@@ -173,11 +211,24 @@ SnowTextLayoutSize measureSerialNumberBoundTextLayout(const SnowTextStyle& textS
 
 SnowTextLayoutSize measureResizeLayout(const ResizeLayoutMeasurementRequest& request) {
     SnowCanvasSceneItem item = snow_canvas_text::defaultPreviewItem(request.info);
-    const QString text = snow_canvas_text::textFromSceneItem(item);
+    const QString text = request.completeText.has_value()
+                             ? *request.completeText
+                             : snow_canvas_text::textFromElementInfo(request.info);
     const double zoom = qMax(0.0001, request.zoom);
     if (request.info.measure_natural_width != 0) {
+        auto maximumWidth = !snow_canvas_element_id::hasElementId(request.info.arrow_id)
+                                ? snow_canvas_text_edit_geometry::automaticTextWidthLimit(
+                                      item, snow_canvas_text_edit_geometry::topAnchorForItem(item),
+                                      request.textEditingBounds)
+                                : std::nullopt;
+        if (maximumWidth.has_value()) {
+            // A corner resize scales the existing wrap rectangle. Keep its
+            // line wrapping while fitting the proposed rectangle to the bounds.
+            maximumWidth = qMin(*maximumWidth, qMax(1.0, request.info.width));
+        }
         const snow_canvas_text_layout::TextMeasuredLayout measured =
-            snow_canvas_text_layout::measureNaturalTextLayout(text, request.baseFont, item, zoom);
+            snow_canvas_text_layout::measureAutomaticTextLayout(text, request.baseFont, item,
+                                                                maximumWidth, zoom);
         return SnowTextLayoutSize{
             qMax(1.0, measured.layout.width()),
             qMax(1.0, measured.layout.height()),

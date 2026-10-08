@@ -112,6 +112,10 @@
 #include <QGraphicsScene>
 #include <QGraphicsView>
 #include <QImage>
+#include <QInputMethodEvent>
+#include <QJsonArray>
+#include <QJsonDocument>
+#include <QJsonObject>
 #include <QKeyEvent>
 #include <QLabel>
 #include <QLineF>
@@ -829,6 +833,10 @@ class ScreenshotPinnedWindowTestAccess {
 
     static double viewportZoom(const ScreenshotPinnedWindow& window) {
         return window.m_viewportZoom;
+    }
+    static void setTextWrapSurface(ScreenshotPinnedWindow& window, const QRectF& surface) {
+        window.m_resultSurfaceCanvasRect = surface;
+        window.updateCanvasViewport();
     }
 
     static std::shared_ptr<ScreenshotExportArtifact>
@@ -2466,6 +2474,106 @@ void pinnedEraserToolsPreserveIndependentDefaults() {
         window->close();
         require(processUntilDeleted(guardedWindow, 2000), "close the pinned eraser fixture");
     }
+}
+
+void pinnedTextWrapUsesVisibleClient() {
+    using Access = ScreenshotPinnedWindowTestAccess;
+    ScreenshotPinnedWindow window;
+    Access::installObservedPlatform(window);
+    ScreenshotPinnedWindow::Config config;
+    config.nativeGeometry = QRect(-201, 117, 869, 500);
+    config.initialWindowSize = config.nativeGeometry.size();
+    config.canvasSourceRect = QRectF(-230.0, 180.0, 400.0, 240.0);
+    QImage image(400, 240, QImage::Format_ARGB32_Premultiplied);
+    image.fill(Qt::white);
+    config.imageSource = ScreenshotImageSource::fromImage(image, config.canvasSourceRect);
+    config.automaticTextRecognition = false;
+    Access::restoreOffscreen(window, config);
+    auto* canvas = window.findChild<SnowCanvasWidget*>();
+    require(canvas != nullptr, "the pinned text fixture owns its canvas");
+    const double expectedDpr = qEnvironmentVariable("SNOW_PIN_TEST_DPR").toDouble();
+    require(expectedDpr <= 0.0 || qFuzzyCompare(canvas->devicePixelRatioF(), expectedDpr),
+            "the pinned text fixture must use its registered fractional DPR");
+
+    const auto verifyClientBounds = [&] {
+        const auto bounds = canvas->textEditingBounds();
+        require(bounds.has_value(), "a valid pinned viewport supplies text wrapping bounds");
+        const qreal geometryScale =
+            snow_shot::presentation::pinnedGeometryScale(canvas->devicePixelRatioF());
+        const QRectF client(QPointF(),
+                            QSizeF(window.currentNativeGeometry().size()) / geometryScale);
+        const QRectF viewBounds = canvas->canvasToViewTransform().mapRect(*bounds);
+        require(qAbs(viewBounds.left() - client.left()) < 0.0001 &&
+                    qAbs(viewBounds.top() - client.top()) < 0.0001 &&
+                    qAbs(viewBounds.right() - client.right()) < 0.0001 &&
+                    qAbs(viewBounds.bottom() - client.bottom()) < 0.0001,
+                "pinned text bounds match the exact client extent at the current DPR and zoom");
+        return *bounds;
+    };
+    const QRectF bounds = verifyClientBounds();
+    require(bounds.width() > config.canvasSourceRect.width() + 10.0,
+            "the pinned text constraint includes visible letterboxing outside the source image");
+
+    Access::editSelectionOffscreen(window, true);
+    auto* controller = window.findChild<ScreenshotPinnedEditController*>();
+    auto* palette = controller != nullptr && controller->toolbarWindow() != nullptr
+                        ? controller->toolbarWindow()->palette()
+                        : nullptr;
+    require(palette != nullptr && palette->activateDrawingShortcut(QStringLiteral("text")) &&
+                canvas->interactionEnabled() && !controller->resizeWindowToolActive(),
+            "activate pinned text input through annotation mode and its toolbar");
+    SnowCanvasTextStyle style;
+    style.fontSize = 18.0;
+    require(canvas->setCanvasTextStyle(style), "set deterministic pinned text size");
+    const QPointF anchor(bounds.right() - 85.0, bounds.top() + 40.0);
+    const QPointF position = canvas->canvasToViewTransform().map(anchor);
+    canvas_quick_selection_test::mouse(*canvas, QEvent::MouseButtonPress, position, Qt::LeftButton,
+                                       Qt::LeftButton);
+    canvas_quick_selection_test::mouse(*canvas, QEvent::MouseButtonRelease, position,
+                                       Qt::LeftButton, Qt::NoButton);
+    require(canvas->hasActiveTextEditing(), "start pinned text inside the visible window");
+    const QString input =
+        QStringLiteral("Pinned text wraps within the visible client. ").repeated(3);
+    QInputMethodEvent event;
+    event.setCommitString(input);
+    QApplication::sendEvent(canvas, &event);
+    require(canvas->resetEditingStatePreservingTool(), "commit wrapped pinned text");
+    const QJsonArray documentSlots = QJsonDocument::fromJson(Access::dragDocument(window))
+                                         .object()
+                                         .value(QStringLiteral("document"))
+                                         .toObject()
+                                         .value(QStringLiteral("slots"))
+                                         .toArray();
+    require(documentSlots.size() == 1, "pinned text input commits one annotation");
+    const QJsonObject text = documentSlots.first()
+                                 .toObject()
+                                 .value(QStringLiteral("data"))
+                                 .toObject()
+                                 .value(QStringLiteral("Text"))
+                                 .toObject();
+    const double width = text.value(QStringLiteral("width")).toDouble();
+    const double centerX =
+        text.value(QStringLiteral("center")).toObject().value(QStringLiteral("x")).toDouble();
+    require(text.value(QStringLiteral("text")).toString() == input &&
+                text.value(QStringLiteral("auto_resize")).toBool() && width <= 85.0001 &&
+                text.value(QStringLiteral("height")).toDouble() > style.fontSize * 2.0 &&
+                centerX - width / 2.0 >= bounds.left() - 0.0001 &&
+                centerX + width / 2.0 <= bounds.right() + 0.0001,
+            "committed automatic-width text wraps inside the pinned client");
+
+    const double originalZoom = Access::viewportZoom(window);
+    Access::scaleBorderFixture(window, 75);
+    verifyClientBounds();
+    require(Access::viewportZoom(window) < originalZoom,
+            "pinned text constraints follow window scaling");
+    Access::transformForHideTest(window, false);
+    const QRectF rotatedBounds = verifyClientBounds();
+    require(rotatedBounds.width() < bounds.width(),
+            "pinned text constraints follow image rotation and changed window dimensions");
+    Access::setTextWrapSurface(window, QRectF());
+    require(!canvas->textEditingBounds().has_value(),
+            "invalid pinned viewport geometry clears its previous text wrapping constraint");
+    Access::setTextWrapSurface(window, config.canvasSourceRect);
 }
 
 void pinnedArrowLabelWheelReachesTextEditor() {
@@ -18852,6 +18960,10 @@ int main(int argc, char* argv[]) {
         // without this, lazily initialized storage lands in the developer's
         // real AppData (see IsolatedPinnedStorage).
         IsolatedPinnedStorage processStorage;
+        if (app.arguments().contains(QStringLiteral("--text-wrap-only"))) {
+            pinnedTextWrapUsesVisibleClient();
+            return 0;
+        }
         if (app.arguments().contains(QStringLiteral("--window-confirmation-only"))) {
             pinnedWindowConfirmationPreferences();
             pinnedWindowDontAskAgainPreferences();
@@ -19608,6 +19720,7 @@ int main(int argc, char* argv[]) {
         pinnedEditingRecognitionShortcutsUsePaletteCommands();
         pinnedArrowLabelWheelReachesTextEditor();
         pinnedEditingRemembersLastFilterToolAcrossSessions();
+        pinnedTextWrapUsesVisibleClient();
         pinnedEditStartsWithRememberedDrawingTool();
         cachedPinnedOcrAvailableWithoutRecognitionProvider();
         transformedPinnedOcrTracksCanvasViewport();

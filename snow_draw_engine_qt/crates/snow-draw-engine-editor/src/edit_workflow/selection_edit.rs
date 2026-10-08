@@ -813,6 +813,8 @@ impl Editor {
             text: text.text.clone(),
             font_size,
             font_family: text.font_family.clone(),
+            horizontal_align: text.horizontal_align,
+            vertical_align: text.vertical_align,
             auto_resize: text.auto_resize,
             measure_natural_width: text.auto_resize && !changes_width_only,
         })

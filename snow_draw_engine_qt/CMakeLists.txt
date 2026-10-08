@@ -280,8 +280,12 @@ if(SNOW_DRAW_ENGINE_QT_BUILD_TESTS)
     add_test(NAME snow-canvas-text-render-cache-tests
         COMMAND snow-canvas-text-draft-tests --text-render-cache-only -platform offscreen)
     set_tests_properties(snow-canvas-text-render-cache-tests PROPERTIES LABELS "unit" TIMEOUT 60)
+    add_test(NAME snow-canvas-text-wrap-tests
+        COMMAND snow-canvas-text-draft-tests --text-wrap-only -platform offscreen)
+    set_tests_properties(snow-canvas-text-wrap-tests PROPERTIES LABELS "unit" TIMEOUT 60)
 
-    set_tests_properties(snow-canvas-text-draft-tests snow-canvas-text-render-cache-tests PROPERTIES
+    set_tests_properties(snow-canvas-text-draft-tests snow-canvas-text-render-cache-tests
+        snow-canvas-text-wrap-tests PROPERTIES
         ENVIRONMENT
             "QT_QPA_PLATFORM=offscreen;QT_QPA_PLATFORM_PLUGIN_PATH=$<TARGET_FILE_DIR:Qt6::QOffscreenIntegrationPlugin>"
         ENVIRONMENT_MODIFICATION

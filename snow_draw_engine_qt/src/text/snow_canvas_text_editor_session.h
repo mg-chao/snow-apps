@@ -2,6 +2,7 @@
 
 #include <QPoint>
 #include <QPointF>
+#include <QRectF>
 #include <QRegion>
 #include <QString>
 #include <QTextCursor>
@@ -10,6 +11,8 @@
 #include "snow_canvas_display_cache.h"
 #include "snow_canvas_text_draft.h"
 #include "snow_draw_engine.h"
+
+#include <optional>
 
 class QFont;
 class QInputMethodEvent;
@@ -50,6 +53,9 @@ class SnowCanvasTextEditorSession final {
     FinishedEdit finish(const QFont& baseFont);
     void cancel();
     void releaseRetainedState();
+    std::optional<QRectF> textEditingBounds() const;
+    // Returns whether changed bounds reflowed an eligible active draft.
+    bool setTextEditingBounds(const std::optional<QRectF>& bounds, const QFont& baseFont);
 
     SnowElementId arrowId() const {
         return m_arrowId;
@@ -88,6 +94,7 @@ class SnowCanvasTextEditorSession final {
     void resetState();
     void updatePreviewLayout(const QFont& baseFont, bool forceLayout);
     void updatePreviewAnchor();
+    bool canConstrainAutomaticWidth() const;
     bool moveCursor(QTextCursor::MoveOperation operation, QTextCursor::MoveMode mode,
                     const QFont& baseFont, const SceneDisplayInfo& sceneInfo);
 
@@ -101,4 +108,5 @@ class SnowCanvasTextEditorSession final {
     bool m_previewAutoResize = false;
     bool m_styleChanged = false;
     SnowCanvasTextDraft m_draft;
+    std::optional<QRectF> m_textEditingBounds;
 };

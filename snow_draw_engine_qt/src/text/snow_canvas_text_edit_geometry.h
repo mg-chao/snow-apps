@@ -8,11 +8,17 @@
 
 #include "snow_draw_engine.h"
 
+#include <optional>
+
 namespace snow_canvas_text_edit_geometry {
 
 QPointF topAnchorForItem(const SnowSceneDisplayItem& item);
 QPointF topAnchorForCreationPoint(const SnowSceneDisplayItem& item, const QPointF& creationPoint);
 QPointF centerForTopAnchor(const SnowSceneDisplayItem& item, const QPointF& anchor);
+std::optional<QRectF> normalizedTextEditingBounds(const std::optional<QRectF>& bounds);
+std::optional<double> automaticTextWidthLimit(const SnowSceneDisplayItem& item,
+                                              const QPointF& anchor,
+                                              const std::optional<QRectF>& bounds);
 
 int cursorPositionForViewPoint(const SnowSceneDisplayItem& item, const QFont& baseFont,
                                const QPointF& centerView, double zoom, const QPointF& viewPosition,

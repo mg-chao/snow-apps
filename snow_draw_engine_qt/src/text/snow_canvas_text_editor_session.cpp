@@ -12,6 +12,8 @@
 #include <QPainter>
 
 #include <cstdint>
+#include <cmath>
+#include <limits>
 
 bool SnowCanvasTextEditorSession::FinishedEdit::shouldCommit(bool hasViewport) const {
     return hasViewport && (hasExistingElement || !text.trimmed().isEmpty());
@@ -108,6 +110,26 @@ SnowCanvasTextEditorSession::finish(const QFont& baseFont) {
 
 void SnowCanvasTextEditorSession::cancel() {
     resetState();
+}
+
+std::optional<QRectF> SnowCanvasTextEditorSession::textEditingBounds() const {
+    return m_textEditingBounds;
+}
+
+bool SnowCanvasTextEditorSession::setTextEditingBounds(const std::optional<QRectF>& bounds,
+                                                       const QFont& baseFont) {
+    const auto normalizedBounds =
+        snow_canvas_text_edit_geometry::normalizedTextEditingBounds(bounds);
+    if (m_textEditingBounds == normalizedBounds) {
+        return false;
+    }
+
+    m_textEditingBounds = normalizedBounds;
+    if (!canConstrainAutomaticWidth()) {
+        return false;
+    }
+    updatePreviewLayout(baseFont, true);
+    return true;
 }
 
 bool SnowCanvasTextEditorSession::isActive() const {
@@ -253,6 +275,7 @@ QRegion SnowCanvasTextEditorSession::applyTextStyle(const SnowTextStyle& style,
     QRegion updateRegion = editingRegion(baseFont, sceneInfo);
     const double previousFontSize = m_previewItem.font_size;
     const QString previousFontFamily = snow_canvas_text::fontFamilyFromSceneItem(m_previewItem);
+    const auto previousHorizontalAlign = m_previewItem.text_horizontal_align;
     snow_canvas_text::applyTextStyleToSceneItem(m_previewItem, style);
     m_styleChanged = true;
     m_canvasAnchor = snow_canvas_element_id::hasElementId(m_arrowId)
@@ -260,7 +283,9 @@ QRegion SnowCanvasTextEditorSession::applyTextStyle(const SnowTextStyle& style,
                          : snow_canvas_text_edit_geometry::topAnchorForItem(m_previewItem);
     const bool textLayoutChanged =
         previousFontSize != m_previewItem.font_size ||
-        previousFontFamily != snow_canvas_text::fontFamilyFromSceneItem(m_previewItem);
+        previousFontFamily != snow_canvas_text::fontFamilyFromSceneItem(m_previewItem) ||
+        (m_textEditingBounds.has_value() && canConstrainAutomaticWidth() &&
+         previousHorizontalAlign != m_previewItem.text_horizontal_align);
     updatePreviewLayout(baseFont, textLayoutChanged);
     updateRegion += editingRegion(baseFont, sceneInfo);
     return updateRegion;
@@ -426,9 +451,17 @@ void SnowCanvasTextEditorSession::updatePreviewLayout(const QFont& baseFont, boo
         m_previewItem.center_y = m_canvasAnchor.y();
         return;
     }
+    const auto maximumWidth = snow_canvas_text_edit_geometry::automaticTextWidthLimit(
+        m_previewItem, m_canvasAnchor, m_textEditingBounds);
     snow_canvas_text::updatePreviewFromEditorText(m_previewItem, text, m_previewAutoResize,
-                                                  baseFont);
+                                                  baseFont, maximumWidth);
     updatePreviewAnchor();
+}
+
+bool SnowCanvasTextEditorSession::canConstrainAutomaticWidth() const {
+    return m_hasPreview && m_previewAutoResize &&
+           !snow_canvas_element_id::hasElementId(m_arrowId) &&
+           std::abs(m_previewItem.rotation) <= std::numeric_limits<double>::epsilon();
 }
 
 void SnowCanvasTextEditorSession::updatePreviewAnchor() {

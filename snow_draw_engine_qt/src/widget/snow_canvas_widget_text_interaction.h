@@ -79,6 +79,10 @@ class SnowCanvasWidgetTextInteraction final {
 
     SnowCanvasTextEditorSession& session();
     const SnowCanvasTextEditorSession& session() const;
+    snow_canvas_commands::MutationResult
+    setTextEditingBounds(const std::optional<QRectF>& bounds, SnowRuntime runtime,
+                         SnowViewport viewport, const SnowCanvasDisplayCache& displayCache,
+                         const QFont& baseFont);
 
     snow_canvas_commands::MutationResult measureArrowText(SnowRuntime runtime,
                                                           SnowViewport viewport);

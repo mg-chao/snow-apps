@@ -50,6 +50,40 @@ QPointF centerForTopAnchor(const SnowSceneDisplayItem& item, const QPointF& anch
     return anchor - rotatedOffset(item, topAnchorOffset(item));
 }
 
+std::optional<QRectF> normalizedTextEditingBounds(const std::optional<QRectF>& bounds) {
+    if (!bounds.has_value()) {
+        return std::nullopt;
+    }
+    const QRectF normalized = bounds->normalized();
+    if (!normalized.isValid() || normalized.isEmpty() || !std::isfinite(normalized.left()) ||
+        !std::isfinite(normalized.top()) || !std::isfinite(normalized.right()) ||
+        !std::isfinite(normalized.bottom())) {
+        return std::nullopt;
+    }
+    return normalized;
+}
+
+std::optional<double> automaticTextWidthLimit(const SnowSceneDisplayItem& item,
+                                              const QPointF& anchor,
+                                              const std::optional<QRectF>& bounds) {
+    const auto normalized = normalizedTextEditingBounds(bounds);
+    if (!normalized.has_value() ||
+        std::abs(item.rotation) > std::numeric_limits<double>::epsilon()) {
+        return std::nullopt;
+    }
+    const double availableLeft = anchor.x() - normalized->left();
+    const double availableRight = normalized->right() - anchor.x();
+    switch (item.text_horizontal_align) {
+    case SNOW_TEXT_HORIZONTAL_ALIGN_CENTER:
+        return qMax(1.0, 2.0 * qMin(availableLeft, availableRight));
+    case SNOW_TEXT_HORIZONTAL_ALIGN_RIGHT:
+        return qMax(1.0, availableLeft);
+    case SNOW_TEXT_HORIZONTAL_ALIGN_LEFT:
+    default:
+        return qMax(1.0, availableRight);
+    }
+}
+
 int cursorPositionForViewPoint(const SnowSceneDisplayItem& item, const QFont& baseFont,
                                const QPointF& centerView, double zoom, const QPointF& viewPosition,
                                const QString& text) {

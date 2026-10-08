@@ -802,6 +802,9 @@ typedef struct SnowTextElementInfo {
     double content_height;
     double rotation;
     double font_size;
+    /* Alignment travels with geometry for offscreen layout measurements. */
+    SnowTextHorizontalAlign horizontal_align;
+    SnowTextVerticalAlign vertical_align;
     uint32_t text_utf8_len;
     uint8_t text_truncated;
     uint8_t auto_resize;

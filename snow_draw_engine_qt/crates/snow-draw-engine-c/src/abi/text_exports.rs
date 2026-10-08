@@ -66,6 +66,8 @@ pub unsafe extern "C" fn snow_viewport_get_arrow_text_layout_requests(
                             text: request.text.text.clone(),
                             font_size: request.text.font_size,
                             font_family: request.text.font_family.clone(),
+                            horizontal_align: request.text.horizontal_align,
+                            vertical_align: request.text.vertical_align,
                             auto_resize: request.text.auto_resize,
                             measure_natural_width: true,
                         };

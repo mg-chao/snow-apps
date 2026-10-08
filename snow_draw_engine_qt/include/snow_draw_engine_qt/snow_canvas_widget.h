@@ -134,6 +134,10 @@ class SnowCanvasWidget : public QWidget {
     // selection.
     void clearRenderState();
     [[nodiscard]] bool hasActiveTextEditing() const;
+    // Limits automatic-width, unrotated text input to this canvas-space area's
+    // horizontal edges. Clearing the bounds restores natural-width input.
+    std::optional<QRectF> textEditingBounds() const;
+    void setTextEditingBounds(const std::optional<QRectF>& bounds);
     // Keeps an active inline text draft alive while a text-style popup owns focus.
     void beginTextStylePopupInteraction();
     // Ends a text-style popup interaction and restores text input when appropriate.

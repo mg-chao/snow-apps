@@ -561,7 +561,14 @@ fn text_with_style(
 ) -> Result<TextData, ErrorCode> {
     let mut updated =
         text_with_style_attributes(text, &patched_text_style(text, style, properties));
-    if updated.font_size == text.font_size && updated.font_family == text.font_family {
+    // Hosts may reflow an automatic-width label against canvas bounds when its
+    // alignment changes, even though its typography is unchanged.
+    let alignment_layout_changed = updated.horizontal_align != text.horizontal_align
+        && layouts.iter().any(|layout| layout.id == id);
+    if updated.font_size == text.font_size
+        && updated.font_family == text.font_family
+        && !alignment_layout_changed
+    {
         return Ok(updated);
     }
     if updated.auto_resize {
@@ -3537,6 +3544,51 @@ mod tests {
             validate_serial_number_style(&style),
             Err(ErrorCode::InvalidArgument)
         );
+    }
+
+    #[test]
+    fn text_style_alignment_applies_host_reflow_without_changing_typography() {
+        let id = ElementId {
+            index: 1,
+            generation: 1,
+        };
+        let text = TextData {
+            center: Point::new(100.0, 30.0),
+            layout: TextLayoutSize::with_content(120.0, 60.0, 110.0, 60.0),
+            auto_resize: true,
+            ..TextData::default()
+        };
+        let mut style = TextStyle::from_text(&text);
+        style.horizontal_align = snow_draw_engine_document::TextHorizontalAlign::Right;
+        let layouts = [TextLayoutOverride {
+            id,
+            size: TextLayoutSize::with_content(200.0, 40.0, 190.0, 40.0),
+        }];
+        let updated = text_with_style(
+            id,
+            &text,
+            &style,
+            TEXT_STYLE_MIXED_HORIZONTAL_ALIGN,
+            &layouts,
+        )
+        .unwrap();
+        assert_eq!(updated.width(), 200.0);
+        assert_eq!(updated.height(), 40.0);
+        assert_eq!(updated.font_size, text.font_size);
+        assert_eq!(updated.font_family, text.font_family);
+        assert!(updated.auto_resize);
+        assert_eq!(
+            updated.center.x + updated.width() / 2.0,
+            text.center.x + text.width() / 2.0
+        );
+        assert_eq!(
+            updated.center.y - updated.height() / 2.0,
+            text.center.y - text.height() / 2.0
+        );
+        let unchanged =
+            text_with_style(id, &text, &style, TEXT_STYLE_MIXED_HORIZONTAL_ALIGN, &[]).unwrap();
+        assert_eq!(unchanged.layout, text.layout);
+        assert_eq!(unchanged.center, text.center);
     }
 
     #[test]

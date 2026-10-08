@@ -91,6 +91,27 @@ const SnowCanvasTextEditorSession& SnowCanvasWidgetTextInteraction::session() co
     return m_session;
 }
 
+snow_canvas_commands::MutationResult SnowCanvasWidgetTextInteraction::setTextEditingBounds(
+    const std::optional<QRectF>& bounds, SnowRuntime runtime, SnowViewport viewport,
+    const SnowCanvasDisplayCache& displayCache, const QFont& baseFont) {
+    snow_canvas_commands::MutationResult result;
+    result.success = true;
+    if (m_session.textEditingBounds() == bounds) {
+        return result;
+    }
+    QRegion updateRegion = editingRegion(displayCache, baseFont);
+    if (!m_session.setTextEditingBounds(bounds, baseFont)) {
+        return result;
+    }
+
+    updateRegion += editingRegion(displayCache, baseFont);
+    result = publishActiveDraftPresentation(runtime, viewport);
+    updateRegion += resetCaretBlink(displayCache, baseFont);
+    snow_canvas_widget_repaint::updateCoalesced(m_widget, updateRegion);
+    updateInputMethod();
+    return result;
+}
+
 void SnowCanvasWidgetTextInteraction::invalidateArrowTextMetrics() {
     m_arrowNaturalLayouts.clear();
     snow_canvas_text_render::resetLayoutCacheForCurrentThread();
@@ -294,6 +315,7 @@ SnowCanvasWidgetTextInteraction::StyleChangeResult SnowCanvasWidgetTextInteracti
                 style,
                 m_widget.font(),
                 properties,
+                m_session.textEditingBounds(),
             });
     if (!layoutOverrides.success) {
         return result;
@@ -580,11 +602,22 @@ SnowCanvasWidgetTextInteraction::applyActiveResizeMeasurementIfNeeded(
         return result;
     }
 
+    // An active draft can differ from the committed element, or have no ID yet.
+    // Its editor owns the complete text, including input-method preedit.
+    const auto completeText =
+        m_session.isActive()
+            ? std::optional<QString>(m_session.presentationText())
+            : snow_canvas_text::completeTextFromElementInfo(measurement.info, runtime);
+    if (!completeText.has_value()) {
+        return result;
+    }
     const SnowTextLayoutSize layout = snow_canvas_text_measurement::measureResizeLayout(
         snow_canvas_text_measurement::ResizeLayoutMeasurementRequest{
             measurement.info,
             m_widget.font(),
             displayCache.sceneInfo().camera_zoom,
+            m_session.textEditingBounds(),
+            completeText,
         });
     snow_canvas_commands::MutationResult mutation =
         snow_canvas_commands::applyActiveTextResizeMeasurement(runtime, viewport, layout);
