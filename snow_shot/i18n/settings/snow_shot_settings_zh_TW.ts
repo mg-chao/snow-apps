@@ -3001,6 +3001,10 @@
             <translation>擷取焦點視窗或目前顯示器時播放快門聲音。</translation>
         </message>
         <message>
+            <source>Play a shutter sound when screenshot capture starts.</source>
+            <translation>開始截圖時播放快門聲音。</translation>
+        </message>
+        <message>
             <source>Play saved GIF, APNG, and WebP recordings repeatedly.</source>
             <translation>循環播放儲存的 GIF、APNG 和 WebP 錄製檔案。</translation>
         </message>
@@ -3387,6 +3391,10 @@
         <message>
             <source>Screenshot Area Type Hint</source>
             <translation>截圖區域類型提示</translation>
+        </message>
+        <message>
+            <source>Screenshot Sound Notification</source>
+            <translation>截圖聲音通知</translation>
         </message>
         <message>
             <source>Screenshot capture API</source>

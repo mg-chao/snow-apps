@@ -42,6 +42,7 @@
 #include "snow_shot/presentation/screenshotcaptureruntimeadapter.h"
 #include "snow_shot/presentation/screenshotcapturestate.h"
 #include "snow_shot/presentation/screenshotcaptureworkflow.h"
+#include "../capture/camerashuttersound.h"
 #include "snow_shot/presentation/screenshotcanvascolorsampler.h"
 #include "snow_shot/presentation/screenshotcanvascolorsamplerwindow.h"
 #include "snow_shot/presentation/screenshotclipboardservice.h"
@@ -1670,6 +1671,8 @@ void ScreenshotController::Impl::createCaptureWorkflow() {
                     m_historyService->resetCaptureNavigation();
                 }
             },
+            []() { return snow_shot::storage::ScreenshotSettings().screenshotSoundNotification(); },
+            []() { playCameraShutterSound(); },
         });
 }
 

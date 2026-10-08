@@ -137,6 +137,38 @@ void shutterSoundSettingsPersistAndReset(const QString& configurationPath) {
     require(!invalid.valid, "shutter preference must reject nonboolean values");
 }
 
+void screenshotSoundSettingsPersistAndReset(const QString& configurationPath) {
+    snow_shot::presentation::GlobalShortcutManager shortcuts;
+    settings::BuiltInSettingsBackend backend(shortcuts);
+    constexpr auto binding = settings::SettingsSwitchBinding::ScreenshotSoundNotification;
+    constexpr auto shutterBinding =
+        settings::SettingsSwitchBinding::ScreenshotShutterSoundNotification;
+    require(!backend.switchValue(binding) &&
+                !storage::ScreenshotSettings().screenshotSoundNotification(),
+            "screenshot sound notification must default to disabled");
+    require(backend.applySwitchValue(binding, true) && backend.switchValue(binding) &&
+                storage::ScreenshotSettings().screenshotSoundNotification() &&
+                backend.switchValue(shutterBinding),
+            "enabling screenshot sound must preserve the existing shutter preference");
+    require(backend.applySwitchValue(shutterBinding, false) && backend.switchValue(binding),
+            "disabling direct capture sound must preserve screenshot sound");
+    require(storage::ApplicationStorage::instance().configuration().flushNow().success,
+            "screenshot sound preference must be flushable");
+    storage::ConfigurationStore reloaded(configurationPath, true, true, 60000);
+    require(reloaded.value(QStringLiteral("screenshot/screenshot_sound_notification")).toBool() &&
+                !reloaded.value(QStringLiteral("screenshot/shutter_sound_notification")).toBool(),
+            "independent sound preferences must survive a configuration reload");
+    require(backend.resetSection(settings::SettingsSectionReset::ScreenshotCapture) &&
+                backend.switchValue(binding) && !backend.switchValue(shutterBinding),
+            "system screenshot reset must preserve both sound preferences");
+    require(backend.resetSection(settings::SettingsSectionReset::ScreenshotSettings) &&
+                !backend.switchValue(binding) && backend.switchValue(shutterBinding),
+            "screenshot interaction reset must restore both sound defaults");
+    const auto invalid = storage::ConfigurationSchema::normalize(
+        QStringLiteral("screenshot/screenshot_sound_notification"), QStringLiteral("enabled"));
+    require(!invalid.valid, "screenshot sound preference must reject nonboolean values");
+}
+
 void shortcutExitConfirmationSettingsPersistAndReset(const QString& configurationPath) {
     snow_shot::presentation::GlobalShortcutManager shortcuts;
     settings::BuiltInSettingsBackend backend(shortcuts);
@@ -828,6 +860,8 @@ int main(int argc, char** argv) {
         recordingApiModePersistsAndResets(temporary.filePath(QStringLiteral("data/config.json")));
         settingsPersistAndResetToUia(temporary.filePath(QStringLiteral("data/config.json")));
         shutterSoundSettingsPersistAndReset(temporary.filePath(QStringLiteral("data/config.json")));
+        screenshotSoundSettingsPersistAndReset(
+            temporary.filePath(QStringLiteral("data/config.json")));
         shortcutExitConfirmationSettingsPersistAndReset(
             temporary.filePath(QStringLiteral("data/config.json")));
         autoRecognizeQrCodeSettingsPersistAndReset(

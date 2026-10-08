@@ -834,6 +834,14 @@ bool ScreenshotSettings::setShutterSoundNotification(bool enabled) const {
     return cache().setValue(QStringLiteral("screenshot/shutter_sound_notification"), enabled);
 }
 
+bool ScreenshotSettings::screenshotSoundNotification() const {
+    return cache().value(QStringLiteral("screenshot/screenshot_sound_notification")).toBool();
+}
+
+bool ScreenshotSettings::setScreenshotSoundNotification(bool enabled) const {
+    return cache().setValue(QStringLiteral("screenshot/screenshot_sound_notification"), enabled);
+}
+
 #if SNOW_SHOT_ENABLE_QR_RECOGNITION
 bool ScreenshotSettings::autoRecognizeQrCode() const {
     return cache().value(QStringLiteral("screenshot/auto_recognize_qr_code")).toBool();
