@@ -99,6 +99,17 @@ class SettingsBackend : public QObject {
     [[nodiscard]] virtual QColor colorValue(SettingsColorBinding binding) const = 0;
     [[nodiscard]] virtual bool applyColorValue(SettingsColorBinding binding,
                                                const QColor& value) = 0;
+    [[nodiscard]] virtual QVector<QColor>
+    colorPaletteValue(SettingsColorPaletteBinding binding) const {
+        Q_UNUSED(binding);
+        return {};
+    }
+    [[nodiscard]] virtual bool applyColorPaletteValue(SettingsColorPaletteBinding binding,
+                                                      const QVector<QColor>& value) {
+        Q_UNUSED(binding);
+        Q_UNUSED(value);
+        return false;
+    }
 
     [[nodiscard]] virtual QVariant radioValue(SettingsRadioBinding binding) const = 0;
     [[nodiscard]] virtual bool applyRadioValue(SettingsRadioBinding binding,
@@ -282,6 +293,10 @@ class BuiltInSettingsBackend final : public SettingsBackend {
     [[nodiscard]] bool applySliderValue(SettingsSliderBinding binding, int value) override;
     [[nodiscard]] QColor colorValue(SettingsColorBinding binding) const override;
     [[nodiscard]] bool applyColorValue(SettingsColorBinding binding, const QColor& value) override;
+    [[nodiscard]] QVector<QColor>
+    colorPaletteValue(SettingsColorPaletteBinding binding) const override;
+    [[nodiscard]] bool applyColorPaletteValue(SettingsColorPaletteBinding binding,
+                                              const QVector<QColor>& value) override;
     [[nodiscard]] QVariant radioValue(SettingsRadioBinding binding) const override;
     [[nodiscard]] bool applyRadioValue(SettingsRadioBinding binding,
                                        const QVariant& value) override;

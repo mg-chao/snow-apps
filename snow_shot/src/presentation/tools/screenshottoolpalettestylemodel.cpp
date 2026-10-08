@@ -128,8 +128,6 @@ SnowCanvasTextStyle defaultTextStyle() {
 ScreenshotToolPaletteRectangleStyleModel::ScreenshotToolPaletteRectangleStyleModel(
     double minimumStrokeWidth)
     : m_strokeWidthValues{style_presets::shapeStrokeWidths()},
-      m_strokeColorValues{style_presets::strokeColors()},
-      m_fillColorValues{style_presets::shapeFillColors()},
       m_minimumStrokeWidth(std::clamp(minimumStrokeWidth, 0.0, kMaxRectangleStrokeWidth)) {
     reset();
 }
@@ -216,12 +214,12 @@ const QVector<double>& ScreenshotToolPaletteRectangleStyleModel::strokeWidthValu
     return m_strokeWidthValues;
 }
 
-const QVector<QColor>& ScreenshotToolPaletteRectangleStyleModel::strokeColorValues() const {
-    return m_strokeColorValues;
+QVector<QColor> ScreenshotToolPaletteRectangleStyleModel::strokeColorValues() const {
+    return style_presets::strokeColors();
 }
 
-const QVector<QColor>& ScreenshotToolPaletteRectangleStyleModel::fillColorValues() const {
-    return m_fillColorValues;
+QVector<QColor> ScreenshotToolPaletteRectangleStyleModel::fillColorValues() const {
+    return style_presets::shapeFillColors();
 }
 
 bool ScreenshotToolPaletteRectangleStyleModel::stepStrokeWidth(int direction) {
@@ -347,9 +345,7 @@ double ScreenshotToolPaletteRectangleStyleModel::clampedCornerRadius(double corn
 
 ScreenshotToolPaletteTextStyleModel::ScreenshotToolPaletteTextStyleModel()
     : m_fontSizeValues{style_presets::fontSizes()},
-      m_strokeWidthValues{style_presets::strokePresetWidths()},
-      m_colorValues{style_presets::textColors()},
-      m_fillColorValues{style_presets::textFillColors()} {
+      m_strokeWidthValues{style_presets::strokePresetWidths()} {
     reset();
 }
 
@@ -389,12 +385,12 @@ const QVector<double>& ScreenshotToolPaletteTextStyleModel::strokeWidthValues() 
     return m_strokeWidthValues;
 }
 
-const QVector<QColor>& ScreenshotToolPaletteTextStyleModel::colorValues() const {
-    return m_colorValues;
+QVector<QColor> ScreenshotToolPaletteTextStyleModel::colorValues() const {
+    return style_presets::textColors();
 }
 
-const QVector<QColor>& ScreenshotToolPaletteTextStyleModel::fillColorValues() const {
-    return m_fillColorValues;
+QVector<QColor> ScreenshotToolPaletteTextStyleModel::fillColorValues() const {
+    return style_presets::textFillColors();
 }
 
 bool ScreenshotToolPaletteTextStyleModel::setColor(const QColor& color) {

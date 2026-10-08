@@ -1362,6 +1362,30 @@ bool BuiltInSettingsBackend::applySliderValue(SettingsSliderBinding binding, int
     return false;
 }
 
+QVector<QColor>
+BuiltInSettingsBackend::colorPaletteValue(SettingsColorPaletteBinding binding) const {
+    const storage::ScreenshotColorPresetSettings settings;
+    switch (binding) {
+    case SettingsColorPaletteBinding::StrokeColors:
+        return settings.strokeColors();
+    case SettingsColorPaletteBinding::FillColors:
+        return settings.fillColors();
+    }
+    return {};
+}
+
+bool BuiltInSettingsBackend::applyColorPaletteValue(SettingsColorPaletteBinding binding,
+                                                    const QVector<QColor>& value) {
+    const storage::ScreenshotColorPresetSettings settings;
+    switch (binding) {
+    case SettingsColorPaletteBinding::StrokeColors:
+        return settings.setStrokeColors(value);
+    case SettingsColorPaletteBinding::FillColors:
+        return settings.setFillColors(value);
+    }
+    return false;
+}
+
 QColor BuiltInSettingsBackend::colorValue(SettingsColorBinding binding) const {
     const storage::ScreenshotUiSettings screenshot;
     switch (binding) {
@@ -2386,6 +2410,12 @@ bool BuiltInSettingsBackend::resetSection(SettingsSectionReset reset) {
         });
     case SettingsSectionReset::DrawingQuickSelection:
         return storage::ApplicationStorage::instance().configuration().setValues({
+            {QStringLiteral("screenshot/stroke_color_presets"),
+             storage::ConfigurationSchema::defaultValue(
+                 QStringLiteral("screenshot/stroke_color_presets"))},
+            {QStringLiteral("screenshot/fill_color_presets"),
+             storage::ConfigurationSchema::defaultValue(
+                 QStringLiteral("screenshot/fill_color_presets"))},
             {QStringLiteral("drawing/quick_selection_disabled_tools"),
              storage::ConfigurationSchema::defaultValue(
                  QStringLiteral("drawing/quick_selection_disabled_tools"))},

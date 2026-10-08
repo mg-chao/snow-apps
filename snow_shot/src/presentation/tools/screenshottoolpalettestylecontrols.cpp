@@ -1470,6 +1470,8 @@ ScreenshotToolPaletteShapeFamilyResult ScreenshotToolPaletteStyleControls::build
     strokeConfig.popupObjectName = QStringLiteral("screenshotStrokeOptions");
     strokeConfig.styleRowObjectName = QStringLiteral("screenshotStrokeStyles");
     strokeConfig.colorValues = m_state.m_rectangleStyle.strokeColorValues();
+    strokeConfig.presetSource =
+        snow_shot::presentation::ScreenshotToolPaletteColorPresetSource::Stroke;
     strokeConfig.colorTooltip = [](const QColor& color) {
         return ScreenshotToolPaletteTranslationText("Stroke color %1").arg(color.name());
     };
@@ -1571,6 +1573,7 @@ ScreenshotToolPaletteShapeFamilyResult ScreenshotToolPaletteStyleControls::build
     fillConfig.popupObjectName = QStringLiteral("screenshotFillOptions");
     fillConfig.presetRowObjectName = QStringLiteral("screenshotFillColorPresets");
     fillConfig.colorValues = m_state.m_rectangleStyle.fillColorValues();
+    fillConfig.presetSource = snow_shot::presentation::ScreenshotToolPaletteColorPresetSource::Fill;
     fillConfig.colorTooltip = [](const QColor& color) {
         return color.alpha() == 0
                    ? ScreenshotToolPaletteTranslationText("Fill color transparent")
@@ -1647,6 +1650,8 @@ QWidget* ScreenshotToolPaletteStyleControls::buildArrowFamily(
     ScreenshotToolPaletteStrokeEditorConfig arrowStrokeConfig;
     arrowStrokeConfig.accessibleName = QStringLiteral("Arrow stroke color");
     arrowStrokeConfig.colorValues = style_presets::strokeColors();
+    arrowStrokeConfig.presetSource =
+        snow_shot::presentation::ScreenshotToolPaletteColorPresetSource::Stroke;
     arrowStrokeConfig.colorTooltip = [](const QColor& color) {
         return ScreenshotToolPaletteTranslationText("Arrow stroke color %1").arg(color.name());
     };
@@ -1870,6 +1875,8 @@ QWidget* ScreenshotToolPaletteStyleControls::buildDistanceFamily(
     colorConfig.accessibleName = QStringLiteral("Distance stroke color");
     colorConfig.pickerObjectName = QStringLiteral("screenshotDistanceColorPicker");
     colorConfig.presetValues = style_presets::strokeColors();
+    colorConfig.presetSource =
+        snow_shot::presentation::ScreenshotToolPaletteColorPresetSource::Stroke;
     colorConfig.presetTooltip = [](const QColor& color) {
         return ScreenshotToolPaletteTranslationText("Distance stroke color %1").arg(color.name());
     };
@@ -2134,6 +2141,8 @@ ScreenshotToolPaletteHighlightFamilyResult ScreenshotToolPaletteStyleControls::b
         ScreenshotToolPaletteColorEditorConfig highlightColorConfig;
         highlightColorConfig.accessibleName = QStringLiteral("Highlight color");
         highlightColorConfig.presetValues = m_state.m_textStyle.colorValues();
+        highlightColorConfig.presetSource =
+            snow_shot::presentation::ScreenshotToolPaletteColorPresetSource::Stroke;
         highlightColorConfig.presetTooltip = [](const QColor& color) {
             return ScreenshotToolPaletteTranslationText("Highlight color %1").arg(color.name());
         };
@@ -2167,6 +2176,8 @@ ScreenshotToolPaletteHighlightFamilyResult ScreenshotToolPaletteStyleControls::b
             QStringLiteral("screenshotHighlightStrokeColorPresets");
         highlightStrokeConfig.widthValues = m_state.m_highlightStyle.strokeWidthValues();
         highlightStrokeConfig.colorValues = m_state.m_highlightStyle.strokeColorValues();
+        highlightStrokeConfig.presetSource =
+            snow_shot::presentation::ScreenshotToolPaletteColorPresetSource::Stroke;
         highlightStrokeConfig.widthTooltip = [](double width) {
             return ScreenshotToolPaletteTranslationText("Highlight stroke width %1px")
                 .arg(width, 0, 'g', 3);
@@ -2223,6 +2234,8 @@ ScreenshotToolPaletteHighlightFamilyResult ScreenshotToolPaletteStyleControls::b
         ScreenshotToolPaletteColorEditorConfig penHighlightColorConfig;
         penHighlightColorConfig.accessibleName = QStringLiteral("Pen highlight color");
         penHighlightColorConfig.presetValues = m_state.m_textStyle.colorValues();
+        penHighlightColorConfig.presetSource =
+            snow_shot::presentation::ScreenshotToolPaletteColorPresetSource::Stroke;
         penHighlightColorConfig.presetTooltip = [](const QColor& color) {
             return ScreenshotToolPaletteTranslationText("Pen highlight color %1").arg(color.name());
         };
@@ -2313,6 +2326,8 @@ QWidget* ScreenshotToolPaletteStyleControls::buildSpotlightFamily(
     spotlightColorConfig.pickerObjectName = QStringLiteral("screenshotSpotlightColorPicker");
     spotlightColorConfig.triggerObjectName = QStringLiteral("screenshotSpotlightColorTrigger");
     spotlightColorConfig.presetValues = style_presets::textColors();
+    spotlightColorConfig.presetSource =
+        snow_shot::presentation::ScreenshotToolPaletteColorPresetSource::Stroke;
     spotlightColorConfig.presetTooltip = [](const QColor& color) {
         return ScreenshotToolPaletteTranslationText("Mask color %1").arg(color.name());
     };
@@ -2397,6 +2412,8 @@ QWidget* ScreenshotToolPaletteStyleControls::buildTextFamily(
     ScreenshotToolPaletteColorEditorConfig textColorConfig;
     textColorConfig.accessibleName = QStringLiteral("Text color");
     textColorConfig.presetValues = m_state.m_textStyle.colorValues();
+    textColorConfig.presetSource =
+        snow_shot::presentation::ScreenshotToolPaletteColorPresetSource::Stroke;
     textColorConfig.observePopup = true;
     textColorConfig.presetTooltip = [](const QColor& color) {
         return ScreenshotToolPaletteTranslationText("Text color %1").arg(color.name());
@@ -2491,6 +2508,8 @@ QWidget* ScreenshotToolPaletteStyleControls::buildTextFamily(
     textStrokeConfig.colorRowObjectName = QStringLiteral("screenshotTextStrokeColorPresets");
     textStrokeConfig.widthValues = m_state.m_textStyle.strokeWidthValues();
     textStrokeConfig.colorValues = m_state.m_textStyle.fillColorValues();
+    textStrokeConfig.presetSource =
+        snow_shot::presentation::ScreenshotToolPaletteColorPresetSource::Fill;
     textStrokeConfig.observePopup = true;
     textStrokeConfig.widthTooltip = [](double width) {
         return ScreenshotToolPaletteTranslationText("Text stroke width %1px").arg(width, 0, 'g', 3);
@@ -2522,6 +2541,8 @@ QWidget* ScreenshotToolPaletteStyleControls::buildTextFamily(
     textFillConfig.popupObjectName = QStringLiteral("screenshotTextFillOptions");
     textFillConfig.presetRowObjectName = QStringLiteral("screenshotTextFillColorPresets");
     textFillConfig.colorValues = m_state.m_textStyle.fillColorValues();
+    textFillConfig.presetSource =
+        snow_shot::presentation::ScreenshotToolPaletteColorPresetSource::Fill;
     textFillConfig.observePopup = true;
     textFillConfig.colorTooltip = [](const QColor& color) {
         return color.alpha() == 0
@@ -2590,6 +2611,8 @@ QWidget* ScreenshotToolPaletteStyleControls::buildSerialNumberFamily(
     ScreenshotToolPaletteColorEditorConfig serialNumberColorConfig;
     serialNumberColorConfig.accessibleName = QStringLiteral("Sequence number color");
     serialNumberColorConfig.presetValues = m_state.m_textStyle.colorValues();
+    serialNumberColorConfig.presetSource =
+        snow_shot::presentation::ScreenshotToolPaletteColorPresetSource::Stroke;
     serialNumberColorConfig.observePopup = true;
     serialNumberColorConfig.presetTooltip = [](const QColor& color) {
         return ScreenshotToolPaletteTranslationText("Sequence number color %1").arg(color.name());
@@ -2816,6 +2839,8 @@ QWidget* ScreenshotToolPaletteStyleControls::buildSerialNumberFamily(
     serialNumberFillConfig.presetRowObjectName =
         QStringLiteral("screenshotSerialNumberFillColorPresets");
     serialNumberFillConfig.colorValues = m_state.m_textStyle.fillColorValues();
+    serialNumberFillConfig.presetSource =
+        snow_shot::presentation::ScreenshotToolPaletteColorPresetSource::Fill;
     serialNumberFillConfig.observePopup = true;
     serialNumberFillConfig.colorTooltip = [](const QColor& color) {
         return color.alpha() == 0
@@ -2871,6 +2896,8 @@ QWidget* ScreenshotToolPaletteStyleControls::buildWatermarkFamily(
     watermarkColorConfig.pickerObjectName = QStringLiteral("screenshotWatermarkColorPicker");
     watermarkColorConfig.triggerObjectName = QStringLiteral("screenshotWatermarkColorTrigger");
     watermarkColorConfig.presetValues = m_state.m_textStyle.colorValues();
+    watermarkColorConfig.presetSource =
+        snow_shot::presentation::ScreenshotToolPaletteColorPresetSource::Stroke;
     watermarkColorConfig.observePopup = true;
     watermarkColorConfig.presetTooltip = [](const QColor& color) {
         return ScreenshotToolPaletteTranslationText("Watermark color %1").arg(color.name());

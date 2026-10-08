@@ -15,6 +15,8 @@
 #include "snow_shot/presentation/styles/themecolorscheme.h"
 #include "snow_shot/presentation/styles/thememanager.h"
 #include "snow_shot/storage/applicationstorage.h"
+#include "snow_shot/storage/configurationschema.h"
+#include "snow_shot/storage/configurationstore.h"
 #include "snow_shot/shortcuts/shortcutdisplayservice.h"
 #include "snow_draw_engine_qt/snow_canvas_widget.h"
 #include "snow_draw_engine_qt/snow_canvas_runtime.h"
@@ -49,6 +51,7 @@
 #include <QHash>
 #include <QHelpEvent>
 #include <QImage>
+#include <QJsonArray>
 #include <QJsonObject>
 #include <QLayout>
 #include <QLabel>
@@ -14956,6 +14959,186 @@ void canvasToolStylesPersistIndependentlyWithoutGlobalStyles() {
             "a new editor should start at one and retain the saved appearance");
 }
 
+void customColorPresetSettingsPersistAndValidate(
+    const snow_shot::storage::StorageInitializationOptions& options) {
+    namespace storage = snow_shot::storage;
+    const storage::ScreenshotColorPresetSettings settings;
+    auto& applicationStorage = storage::ApplicationStorage::instance();
+    auto& configuration = applicationStorage.configuration();
+    const QString strokeKey = QStringLiteral("screenshot/stroke_color_presets");
+    const QString fillKey = QStringLiteral("screenshot/fill_color_presets");
+    const auto defaultStroke = settings.strokeColors();
+    const auto defaultFill = settings.fillColors();
+    require(defaultStroke.size() == 5 && defaultFill.size() == 5 &&
+                defaultStroke.first() == QColor(QStringLiteral("#f5222d")) &&
+                defaultFill.first() == QColor(255, 255, 255, 0),
+            "color preset defaults must preserve the five existing drawing swatches");
+    auto stroke = defaultStroke;
+    auto fill = defaultFill;
+    stroke[1] = QColor(12, 34, 56, 78);
+    fill[0] = QColor(90, 80, 70, 0);
+    fill[2] = QColor(98, 76, 54, 123);
+    require(settings.setStrokeColors(stroke) && settings.setFillColors(fill) &&
+                settings.strokeColors() == stroke && settings.fillColors() == fill,
+            "custom stroke and fill presets must retain alpha and transparent RGB");
+    require(configuration.value(strokeKey).toArray().at(1) == QStringLiteral("#0C22384E") &&
+                configuration.value(fillKey).toArray().at(0) == QStringLiteral("#5A504600"),
+            "preset storage must serialize each color as an RGBA string");
+    const auto revision = configuration.revision();
+    auto invalidColors = stroke;
+    invalidColors[2] = QColor();
+    require(!settings.setStrokeColors(stroke.first(4)) &&
+                !settings.setFillColors(fill + QVector<QColor>{QColor(Qt::red)}) &&
+                !settings.setStrokeColors(invalidColors),
+            "typed writes must reject incorrect slot counts and invalid colors");
+    QJsonArray invalidEntries = configuration.value(strokeKey).toArray();
+    invalidEntries[2] = QStringLiteral("#notcolor");
+    QJsonArray invalidType = configuration.value(strokeKey).toArray();
+    invalidType[3] = 42;
+    require(!configuration.setValue(strokeKey, invalidEntries) &&
+                !configuration.setValue(strokeKey, invalidType) &&
+                !configuration.setValue(fillKey, QJsonArray{}) &&
+                !configuration.setValue(fillKey, QStringLiteral("#FF0000FF")) &&
+                configuration.revision() == revision && settings.strokeColors() == stroke &&
+                settings.fillColors() == fill,
+            "invalid preset configuration writes must preserve both palettes without revisions");
+    QJsonArray normalizedStroke = configuration.value(strokeKey).toArray();
+    normalizedStroke[1] = QStringLiteral("  #0c22384e  ");
+    require(configuration.setValue(strokeKey, normalizedStroke) &&
+                configuration.value(strokeKey).toArray().at(1) == QStringLiteral("#0C22384E"),
+            "valid RGBA arrays must normalize whitespace and case");
+    require(applicationStorage.flushNow().success, "custom color presets must flush to disk");
+    applicationStorage.shutdown();
+    require(applicationStorage.initialize(options).success && settings.strokeColors() == stroke &&
+                settings.fillColors() == fill,
+            "both palettes must survive an application storage restart");
+    require(applicationStorage.configuration().setValues(
+                {{strokeKey, storage::ConfigurationSchema::defaultValue(strokeKey)},
+                 {fillKey, storage::ConfigurationSchema::defaultValue(fillKey)}}) &&
+                settings.strokeColors() == defaultStroke && settings.fillColors() == defaultFill,
+            "reset must restore the original ordered palettes");
+}
+
+void customColorPresetsRefreshCurrentAndLazyDrawingEditors() {
+    namespace storage = snow_shot::storage;
+    using namespace snow_shot::presentation;
+    const storage::ScreenshotColorPresetSettings settings;
+    const auto defaultStroke = settings.strokeColors();
+    const auto defaultFill = settings.fillColors();
+    ScreenshotToolPalette palette(ScreenshotToolPalette::Options{});
+    palette.setActiveTool(ScreenshotToolPalette::Tool::Shape);
+    palette.show();
+    QCoreApplication::processEvents();
+    const auto swatches = [](QWidget* host, const QString& prefix) {
+        QVector<ColorSwatchButton*> buttons;
+        require(host != nullptr, "color presets must have a materialized host");
+        for (auto* button : host->findChildren<adqt::widgets::AdButton*>()) {
+            if (auto* swatch = dynamic_cast<ColorSwatchButton*>(button);
+                swatch != nullptr && swatch->toolTip().startsWith(prefix)) {
+                buttons.push_back(swatch);
+            }
+        }
+        return buttons;
+    };
+    const auto requireColors = [](const QVector<ColorSwatchButton*>& buttons,
+                                  const QVector<QColor>& colors) {
+        require(buttons.size() == colors.size(), "drawing editors must retain five preset slots");
+        for (int index = 0; index < colors.size(); ++index) {
+            require(buttons.at(index)->swatchColor() == colors.at(index),
+                    "each quick-set button must display the current configured RGBA color");
+        }
+    };
+    auto strokeButtons = swatches(palette.stylePanel(), QStringLiteral("Stroke color "));
+    auto* fillPicker = colorPickerWithAccessibleName(palette, "Fill color");
+    require(fillPicker != nullptr, "shape fill picker must be available");
+    fillPicker->setPopupVisible(true);
+    QCoreApplication::processEvents();
+    auto fillButtons = swatches(fillPicker->popupContent(), QStringLiteral("Fill color "));
+    requireColors(strokeButtons, defaultStroke);
+    requireColors(fillButtons, defaultFill);
+    int shapeCommands = 0;
+    SnowCanvasShapeStyle changedShape;
+    QObject::connect(&palette, &ScreenshotToolPalette::shapeStyleChanged, &palette,
+                     [&](const SnowCanvasShapeStyle& style, quint32, SnowCanvasShapeKind) {
+                         changedShape = style;
+                         ++shapeCommands;
+                     });
+    const auto originalStyle = palette.creationStyleDefaults().rectangle;
+    auto stroke = defaultStroke;
+    auto fill = defaultFill;
+    stroke[1] = QColor(12, 34, 56, 78);
+    fill[0] = QColor(90, 80, 70, 0);
+    fill[2] = QColor(98, 76, 54, 123);
+    require(settings.setStrokeColors(stroke) && settings.setFillColors(fill),
+            "settings must accept custom stroke and fill colors while the palette is open");
+    requireColors(strokeButtons, stroke);
+    requireColors(fillButtons, fill);
+    require(shapeCommands == 0 && palette.creationStyleDefaults().rectangle == originalStyle &&
+                strokeButtons.at(1)->toolTip() == QStringLiteral("Stroke color #0c2238"),
+            "live preset refresh must update tooltips without changing creation styles");
+    strokeButtons.at(1)->click();
+    require(shapeCommands == 1 && changedShape.stroke == stroke.at(1),
+            "an existing stroke button must commit its updated color exactly once");
+    fillButtons.at(2)->click();
+    require(shapeCommands == 2 && changedShape.fill == fill.at(2),
+            "an already materialized fill button must commit its updated alpha color once");
+    fillPicker->setPopupVisible(false);
+
+    palette.setActiveTool(ScreenshotToolPalette::Tool::Text);
+    auto textButtons = swatches(palette.stylePanel(), QStringLiteral("Text color "));
+    requireColors(textButtons, stroke);
+    auto* textFill = colorPickerWithAccessibleName(palette, "Text fill color");
+    auto* textStroke = colorPickerWithAccessibleName(palette, "Text stroke width");
+    require(textFill != nullptr && textStroke != nullptr,
+            "lazily materialized text controls must expose fill and stroke pickers");
+    textFill->setPopupVisible(true);
+    QCoreApplication::processEvents();
+    auto textFillButtons = swatches(textFill->popupContent(), QStringLiteral("Text fill color "));
+    requireColors(textFillButtons, fill);
+    textFill->setPopupVisible(false);
+    textStroke->setPopupVisible(true);
+    QCoreApplication::processEvents();
+    auto textStrokeButtons =
+        swatches(textStroke->popupContent(), QStringLiteral("Text stroke color "));
+    requireColors(textStrokeButtons, fill);
+    int textCommands = 0;
+    SnowCanvasTextStyle changedText;
+    QObject::connect(&palette, &ScreenshotToolPalette::textStyleChanged, &palette,
+                     [&](const SnowCanvasTextStyle& style, quint32) {
+                         changedText = style;
+                         ++textCommands;
+                     });
+    fill[2] = QColor(21, 43, 65, 87);
+    require(settings.setFillColors(fill), "custom fill colors must be editable repeatedly");
+    requireColors(textStrokeButtons, fill);
+    requireColors(textFillButtons, fill);
+    textStrokeButtons.at(2)->click();
+    require(textCommands == 1 && changedText.stroke == fill.at(2),
+            "materialized text stroke buttons must commit the refreshed shared fill palette");
+    textStroke->setPopupVisible(false);
+    const auto styleBeforeReset = palette.creationStyleDefaults().text;
+    require(storage::ApplicationStorage::instance().configuration().setValues(
+                {{QStringLiteral("screenshot/stroke_color_presets"),
+                  storage::ConfigurationSchema::defaultValue(
+                      QStringLiteral("screenshot/stroke_color_presets"))},
+                 {QStringLiteral("screenshot/fill_color_presets"),
+                  storage::ConfigurationSchema::defaultValue(
+                      QStringLiteral("screenshot/fill_color_presets"))}}),
+            "reset must accept the default color palettes");
+    requireColors(textButtons, defaultStroke);
+    requireColors(textStrokeButtons, defaultFill);
+    requireColors(textFillButtons, defaultFill);
+    require(textCommands == 1 && palette.creationStyleDefaults().text == styleBeforeReset,
+            "resetting presets must refresh open editors without editing drawing styles");
+    palette.setActiveTool(ScreenshotToolPalette::Tool::Shape);
+    requireColors(swatches(palette.stylePanel(), QStringLiteral("Stroke color ")), defaultStroke);
+    require(style_presets::strokeColors() == defaultStroke &&
+                style_presets::textColors() == defaultStroke &&
+                style_presets::shapeFillColors() == defaultFill &&
+                style_presets::textFillColors() == defaultFill,
+            "all shared drawing color providers must reflect the latest settings");
+}
+
 void colorPresetEditorsPreserveCommandsAcrossRebinding() {
     using namespace snow_shot::presentation;
     const QVector<QColor> colors{QColor(Qt::transparent), QColor(210, 40, 70, 128)};
@@ -15896,6 +16079,14 @@ int main(int argc, char** argv) {
     require(QFontDatabase::addApplicationFont(QStringLiteral("C:/Windows/Fonts/segoeui.ttf")) >= 0,
             "the font editor tests require a system TrueType font");
 #endif
+    if (application.arguments().contains(QStringLiteral("--custom-color-presets-only"))) {
+        customColorPresetSettingsPersistAndValidate(
+            {executableDirectory, storageDirectory.path(), 60000});
+        customColorPresetsRefreshCurrentAndLazyDrawingEditors();
+        colorPresetEditorsPreserveCommandsAcrossRebinding();
+        snow_shot::storage::ApplicationStorage::instance().shutdown();
+        return 0;
+    }
     if (application.arguments().contains(QStringLiteral("--eraser-only"))) {
         eraserResetRemainsAvailableWithoutSelection();
         eraserStyleToolbarHeightMatchesOtherTools();

@@ -239,11 +239,11 @@ class ColorSwatchButton : public adqt::widgets::AdButton {
     void setSwatchBorderVisible(bool visible);
     void setPhysicalScale(qreal scale);
     void commitControlScale(const adqt::widgets::AdControlScaleContext& context) override;
+    [[nodiscard]] QColor swatchColor() const;
 
   protected:
     void paintEvent(QPaintEvent* event) override;
 
-    [[nodiscard]] QColor swatchColor() const;
     [[nodiscard]] qreal swatchPhysicalScale() const;
 
   private:

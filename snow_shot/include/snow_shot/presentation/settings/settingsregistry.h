@@ -19,6 +19,7 @@ enum class SettingsFieldKind {
     MultiSelect,
     Slider,
     Color,
+    ColorPalette,
     Radio,
     FilePath,
     DirectoryPath,
@@ -133,6 +134,8 @@ class SettingsRegistry final {
     [[nodiscard]] const SettingsFieldDescriptor*
     fieldForSlider(SettingsSliderBinding binding) const;
     [[nodiscard]] const SettingsFieldDescriptor* fieldForColor(SettingsColorBinding binding) const;
+    [[nodiscard]] const SettingsFieldDescriptor*
+    fieldForColorPalette(SettingsColorPaletteBinding binding) const;
     [[nodiscard]] const SettingsFieldDescriptor* fieldForRadio(SettingsRadioBinding binding) const;
     [[nodiscard]] const SettingsFieldDescriptor*
     fieldForFilePath(SettingsFilePathBinding binding) const;
@@ -188,6 +191,7 @@ class SettingsRegistry final {
     QHash<int, int> m_fieldIndexByMultiSelect;
     QHash<int, int> m_fieldIndexBySlider;
     QHash<int, int> m_fieldIndexByColor;
+    QHash<int, int> m_fieldIndexByColorPalette;
     QHash<int, int> m_fieldIndexByRadio;
     QHash<int, int> m_fieldIndexByFilePath;
     QHash<int, int> m_fieldIndexByDirectoryPath;

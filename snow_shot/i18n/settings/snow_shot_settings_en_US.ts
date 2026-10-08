@@ -1937,6 +1937,14 @@
             <translation>Customize the pinned window toolbar</translation>
         </message>
         <message>
+            <source>Customize the quick-set buttons for annotation fill colors</source>
+            <translation>Customize the quick-set buttons for annotation fill colors</translation>
+        </message>
+        <message>
+            <source>Customize the quick-set buttons for annotation stroke colors</source>
+            <translation>Customize the quick-set buttons for annotation stroke colors</translation>
+        </message>
+        <message>
             <source>Customize the screen recording action toolbar</source>
             <translation>Customize the screen recording action toolbar</translation>
         </message>
@@ -2207,6 +2215,14 @@
         <message>
             <source>Fill Style</source>
             <translation>Fill Style</translation>
+        </message>
+        <message>
+            <source>Fill color preset %1</source>
+            <translation>Fill color preset %1</translation>
+        </message>
+        <message>
+            <source>Fill color presets</source>
+            <translation>Fill color presets</translation>
         </message>
         <message>
             <source>Filter</source>
@@ -3875,6 +3891,14 @@
         <message>
             <source>Storage status</source>
             <translation>Storage status</translation>
+        </message>
+        <message>
+            <source>Stroke color preset %1</source>
+            <translation>Stroke color preset %1</translation>
+        </message>
+        <message>
+            <source>Stroke color presets</source>
+            <translation>Stroke color presets</translation>
         </message>
         <message>
             <source>Switch Window Group</source>

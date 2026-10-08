@@ -23,6 +23,8 @@ SettingsFieldKind fieldKind(const SettingsItemPayload& payload) {
                 return SettingsFieldKind::Slider;
             } else if constexpr (std::is_same_v<Value, SettingsColorDefinition>) {
                 return SettingsFieldKind::Color;
+            } else if constexpr (std::is_same_v<Value, SettingsColorPaletteDefinition>) {
+                return SettingsFieldKind::ColorPalette;
             } else if constexpr (std::is_same_v<Value, SettingsRadioDefinition>) {
                 return SettingsFieldKind::Radio;
             } else if constexpr (std::is_same_v<Value, SettingsFilePathDefinition>) {
@@ -206,6 +208,7 @@ void SettingsRegistry::compile(const QVector<QString>& pageProviderIds,
     m_fieldIndexByMultiSelect.clear();
     m_fieldIndexBySlider.clear();
     m_fieldIndexByColor.clear();
+    m_fieldIndexByColorPalette.clear();
     m_fieldIndexByRadio.clear();
     m_fieldIndexByFilePath.clear();
     m_fieldIndexByDirectoryPath.clear();
@@ -323,6 +326,11 @@ void SettingsRegistry::compile(const QVector<QString>& pageProviderIds,
                             insertIntegerIndex(m_fieldIndexByColor,
                                                static_cast<int>(payload.binding), currentIndex,
                                                QStringLiteral("color binding"));
+                        } else if constexpr (std::is_same_v<Payload,
+                                                            SettingsColorPaletteDefinition>) {
+                            insertIntegerIndex(m_fieldIndexByColorPalette,
+                                               static_cast<int>(payload.binding), currentIndex,
+                                               QStringLiteral("color palette binding"));
                         } else if constexpr (std::is_same_v<Payload, SettingsRadioDefinition>) {
                             insertIntegerIndex(m_fieldIndexByRadio,
                                                static_cast<int>(payload.binding), currentIndex,
@@ -420,6 +428,8 @@ REGISTRY_INTEGER_LOOKUP(fieldForInteger, m_fieldIndexByInteger, SettingsIntegerB
 REGISTRY_INTEGER_LOOKUP(fieldForMultiSelect, m_fieldIndexByMultiSelect, SettingsMultiSelectBinding)
 REGISTRY_INTEGER_LOOKUP(fieldForSlider, m_fieldIndexBySlider, SettingsSliderBinding)
 REGISTRY_INTEGER_LOOKUP(fieldForColor, m_fieldIndexByColor, SettingsColorBinding)
+REGISTRY_INTEGER_LOOKUP(fieldForColorPalette, m_fieldIndexByColorPalette,
+                        SettingsColorPaletteBinding)
 REGISTRY_INTEGER_LOOKUP(fieldForRadio, m_fieldIndexByRadio, SettingsRadioBinding)
 REGISTRY_INTEGER_LOOKUP(fieldForFilePath, m_fieldIndexByFilePath, SettingsFilePathBinding)
 REGISTRY_INTEGER_LOOKUP(fieldForDirectoryPath, m_fieldIndexByDirectoryPath,

@@ -4798,7 +4798,7 @@ bool ScreenshotToolPalette::activateToolFromToolbar(Tool tool, bool toggleVisibl
         toolbar_settings::DrawingSettings().alwaysShowFirstToolbarGroupButton();
     const bool alreadyActive =
         !toggleVisibleButton || fixedGroupButton ? m_activeTool.has_value() && *m_activeTool == tool
-        : requestedButton != nullptr             ? m_activeToolButton == requestedButton
+        : requestedButton != nullptr ? m_activeToolButton == requestedButton
                                      : m_activeTool.has_value() && *m_activeTool == tool;
     const Tool requestedTool = alreadyActive && tool != Tool::Select ? Tool::Select : tool;
     activateDrawingTool(requestedTool);
@@ -6684,7 +6684,9 @@ void ScreenshotToolPalette::createRecordingExportSettingsToolbar() {
                                            const char* transparentTooltip) {
         auto presets =
             std::make_unique<snow_shot::presentation::ScreenshotToolPaletteColorPresets>();
-        QVector<QColor> colors = snow_shot::presentation::style_presets::strokeColors().first(4);
+        QVector<QColor> colors{QColor(QStringLiteral("#f5222d")), QColor(QStringLiteral("#52c41a")),
+                               QColor(QStringLiteral("#1677ff")),
+                               QColor(QStringLiteral("#fadb14"))};
         for (QColor& color : colors) {
             color.setAlpha(alpha);
         }

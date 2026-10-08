@@ -8,6 +8,7 @@
 #include "antd_icons.h"
 
 #include <QCoreApplication>
+#include <QJsonArray>
 #include <QSet>
 #include <QTranslator>
 
@@ -474,9 +475,9 @@ void builtInCatalogIsCompleteAndValid() {
                 itemIds.contains(QStringLiteral("screenshot-shortcut.upload_to_cloud")) &&
                 itemIds.contains(QStringLiteral("pin-to-screen-shortcut.upload_to_cloud")),
             "cloud upload must expose its configuration and shortcuts in both local scopes");
-    require(itemIds.size() == 250,
+    require(itemIds.size() == 252,
             qPrintable(QStringLiteral(
-                           "catalog must contain 250 shared settings on every platform; found %1")
+                           "catalog must contain 252 shared settings on every platform; found %1")
                            .arg(itemIds.size())));
     require(itemIds.contains(QStringLiteral("pin-to-screen.confirm-before-closing-window")) &&
                 itemIds.contains(QStringLiteral("pin-to-screen.confirm-before-destroying-window")),
@@ -936,10 +937,23 @@ void builtInCatalogIsCompleteAndValid() {
                 settings::SettingsSwitchBinding::DrawingAlwaysShowFirstToolbarGroupButton &&
             !storage::ConfigurationSchema::defaultValue(firstToolbarGroupButton->configurationKey)
                  .toBool() &&
-            drawingSettingsSection.items.size() == 3 &&
+            drawingSettingsSection.items.size() == 5 &&
             drawingSettingsSection.items.at(1).id == rememberLastUsedTool->id &&
             drawingSettingsSection.items.at(2).id == firstToolbarGroupButton->id,
         "the default-off first toolbar group button switch must follow Remember last used tool");
+    const auto& paletteRegistry = settings::builtInSettingsRegistry();
+    for (const auto binding : {settings::SettingsColorPaletteBinding::StrokeColors,
+                               settings::SettingsColorPaletteBinding::FillColors}) {
+        const auto* field = paletteRegistry.fieldForColorPalette(binding);
+        require(field != nullptr && field->pageId == QStringLiteral("screenshots") &&
+                    field->sectionId == QStringLiteral("drawing-settings") &&
+                    field->kind == settings::SettingsFieldKind::ColorPalette &&
+                    field->reset == settings::SettingsSectionReset::DrawingQuickSelection &&
+                    field->defaultValue.toArray().size() == 5 &&
+                    std::get<settings::SettingsColorPaletteDefinition>(field->definition->payload)
+                            .colorCount == 5,
+                "stroke and fill quick-set palettes expose five resettable color settings");
+    }
 
     const auto& traySection =
         *catalog.section(QStringLiteral("desktop-tools"), QStringLiteral("tray"));
@@ -2914,6 +2928,13 @@ void registryCompilesOwnedIndexesAndProviderPlans() {
                         std::get<settings::SettingsColorDefinition>(descriptor.definition->payload)
                             .binding) == &descriptor,
                     "color bindings must resolve through the registry index");
+            break;
+        case settings::SettingsFieldKind::ColorPalette:
+            require(
+                registry.fieldForColorPalette(std::get<settings::SettingsColorPaletteDefinition>(
+                                                  descriptor.definition->payload)
+                                                  .binding) == &descriptor,
+                "color palette bindings must resolve through the registry index");
             break;
         case settings::SettingsFieldKind::Radio:
             require(registry.fieldForRadio(

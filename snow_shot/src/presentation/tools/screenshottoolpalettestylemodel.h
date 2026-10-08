@@ -25,8 +25,8 @@ class ScreenshotToolPaletteRectangleStyleModel final {
     [[nodiscard]] int cornerRadius() const;
     [[nodiscard]] SnowCanvasRectangleShape shape() const;
     [[nodiscard]] const QVector<double>& strokeWidthValues() const;
-    [[nodiscard]] const QVector<QColor>& strokeColorValues() const;
-    [[nodiscard]] const QVector<QColor>& fillColorValues() const;
+    [[nodiscard]] QVector<QColor> strokeColorValues() const;
+    [[nodiscard]] QVector<QColor> fillColorValues() const;
 
     [[nodiscard]] bool stepStrokeWidth(int direction);
     [[nodiscard]] bool setStrokeWidth(double strokeWidth);
@@ -45,8 +45,6 @@ class ScreenshotToolPaletteRectangleStyleModel final {
     [[nodiscard]] static double clampedCornerRadius(double cornerRadius);
 
     QVector<double> m_strokeWidthValues;
-    QVector<QColor> m_strokeColorValues;
-    QVector<QColor> m_fillColorValues;
     double m_minimumStrokeWidth = 1.0;
     double m_strokeWidth = 2.0;
     QColor m_strokeColor;
@@ -70,8 +68,8 @@ class ScreenshotToolPaletteTextStyleModel final {
 
     [[nodiscard]] const QVector<double>& fontSizeValues() const;
     [[nodiscard]] const QVector<double>& strokeWidthValues() const;
-    [[nodiscard]] const QVector<QColor>& colorValues() const;
-    [[nodiscard]] const QVector<QColor>& fillColorValues() const;
+    [[nodiscard]] QVector<QColor> colorValues() const;
+    [[nodiscard]] QVector<QColor> fillColorValues() const;
 
     [[nodiscard]] bool setColor(const QColor& color);
     [[nodiscard]] bool setFontSize(double fontSize);
@@ -94,8 +92,6 @@ class ScreenshotToolPaletteTextStyleModel final {
 
     QVector<double> m_fontSizeValues;
     QVector<double> m_strokeWidthValues;
-    QVector<QColor> m_colorValues;
-    QVector<QColor> m_fillColorValues;
     SnowCanvasTextStyle m_style;
 };
 

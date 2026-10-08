@@ -192,6 +192,16 @@ QString defaultOutputDirectory(QStandardPaths::StandardLocation primary) {
 }
 
 const QVector<ConfigurationSchemaEntry> kRawEntries = {
+    {QStringLiteral("screenshot/stroke_color_presets"),
+     QJsonArray{QStringLiteral("#F5222DFF"), QStringLiteral("#52C41AFF"),
+                QStringLiteral("#1677FFFF"), QStringLiteral("#FADB14FF"),
+                QStringLiteral("#000000FF")},
+     ConfigurationValueKind::StringList},
+    {QStringLiteral("screenshot/fill_color_presets"),
+     QJsonArray{QStringLiteral("#FFFFFF00"), QStringLiteral("#FFCCC7FF"),
+                QStringLiteral("#D9F7BEFF"), QStringLiteral("#BAE0FFFF"),
+                QStringLiteral("#FFF1B8FF")},
+     ConfigurationValueKind::StringList},
     {QStringLiteral("cloud_upload/configuration"), cloudUploadSettingsToJson({}),
      ConfigurationValueKind::Structured},
     {QStringLiteral("screenshot_shortcuts/upload_to_cloud"),
@@ -1893,6 +1903,21 @@ ConfigurationNormalization normalizeRgbaColor(const QJsonValue& value) {
     return {normalized, true, normalized != original};
 }
 
+ConfigurationNormalization normalizeColorPresets(const QJsonValue& value) {
+    if (!value.isArray() || value.toArray().size() != 5) {
+        return {};
+    }
+    QJsonArray colors;
+    for (const QJsonValue& item : value.toArray()) {
+        const ConfigurationNormalization normalized = normalizeRgbaColor(item);
+        if (!normalized.valid) {
+            return {};
+        }
+        colors.push_back(normalized.value);
+    }
+    return {colors, true, colors != value.toArray()};
+}
+
 bool isFilenameFormatKey(const QString& key) {
     return key == QStringLiteral("screenshot/manual_save_filename_format") ||
            key == QStringLiteral("screenshot/auto_save_filename_format") ||
@@ -2421,6 +2446,10 @@ ConfigurationNormalization ConfigurationSchema::normalize(const QString& key,
     }
     if (isRgbaColorKey(key)) {
         return normalizeRgbaColor(value);
+    }
+    if (key == QStringLiteral("screenshot/stroke_color_presets") ||
+        key == QStringLiteral("screenshot/fill_color_presets")) {
+        return normalizeColorPresets(value);
     }
     if (isFilenameFormatKey(key)) {
         return normalizeFilenameFormat(value);

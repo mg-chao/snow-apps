@@ -2508,11 +2508,19 @@ if(SNOW_SHOT_BUILD_TESTS)
     )
     add_test(NAME snow-shot-settings-color-commit-tests
              COMMAND snow-shot-settings-color-commit-tests)
+    add_test(NAME snow-shot-custom-color-presets-settings-tests
+             COMMAND snow-shot-settings-color-commit-tests --color-presets-only)
     set_tests_properties(snow-shot-settings-color-commit-tests PROPERTIES
         TIMEOUT 30
         ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}"
         ENVIRONMENT_MODIFICATION
             "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+    )
+    set_tests_properties(snow-shot-custom-color-presets-settings-tests PROPERTIES
+        LABELS "unit"
+        TIMEOUT 30
+        ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}"
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
     )
     snow_shot_import_offscreen_platform(snow-shot-settings-color-commit-tests)
 
@@ -5179,6 +5187,11 @@ if(SNOW_SHOT_BUILD_TESTS)
         snow_draw_engine_qt_canvas
     )
     snow_shot_add_translations(snow-shot-screenshot-tool-palette-tests)
+    add_test(NAME snow-shot-custom-color-presets-toolbar-tests
+        COMMAND snow-shot-screenshot-tool-palette-tests --custom-color-presets-only -platform offscreen)
+    set_tests_properties(snow-shot-custom-color-presets-toolbar-tests PROPERTIES
+        LABELS "unit" TIMEOUT 60
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
     add_test(NAME snow-shot-ocr-text-options-toolbar-tests
         COMMAND snow-shot-screenshot-tool-palette-tests --ocr-translation-only -platform offscreen)
     set_tests_properties(snow-shot-ocr-text-options-toolbar-tests PROPERTIES LABELS "unit" TIMEOUT 60

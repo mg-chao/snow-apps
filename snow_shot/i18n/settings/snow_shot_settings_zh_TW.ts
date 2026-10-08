@@ -1937,6 +1937,14 @@
             <translation>自訂貼圖視窗工具列</translation>
         </message>
         <message>
+            <source>Customize the quick-set buttons for annotation fill colors</source>
+            <translation>自訂標註填滿顏色的快捷設定按鈕</translation>
+        </message>
+        <message>
+            <source>Customize the quick-set buttons for annotation stroke colors</source>
+            <translation>自訂標註描邊顏色的快捷設定按鈕</translation>
+        </message>
+        <message>
             <source>Customize the screen recording action toolbar</source>
             <translation>自訂螢幕錄製操作工具列</translation>
         </message>
@@ -2207,6 +2215,14 @@
         <message>
             <source>Fill Style</source>
             <translation>填充樣式</translation>
+        </message>
+        <message>
+            <source>Fill color preset %1</source>
+            <translation>填滿顏色預設 %1</translation>
+        </message>
+        <message>
+            <source>Fill color presets</source>
+            <translation>填滿顏色預設</translation>
         </message>
         <message>
             <source>Filter</source>
@@ -3875,6 +3891,14 @@
         <message>
             <source>Storage status</source>
             <translation>儲存狀態</translation>
+        </message>
+        <message>
+            <source>Stroke color preset %1</source>
+            <translation>描邊顏色預設 %1</translation>
+        </message>
+        <message>
+            <source>Stroke color presets</source>
+            <translation>描邊顏色預設</translation>
         </message>
         <message>
             <source>Switch Window Group</source>

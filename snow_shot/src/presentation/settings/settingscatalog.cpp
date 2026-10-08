@@ -544,6 +544,30 @@ SettingsItemDefinition screenshotColorItem(const QString& id, const char* title,
             SettingsColorDefinition{binding, true}};
 }
 
+SettingsItemDefinition strokeColorPresetsItem() {
+    return {QStringLiteral("drawing.stroke-color-presets"),
+            settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Stroke color presets")),
+            settingsText(QT_TRANSLATE_NOOP(
+                "SettingsCatalog", "Customize the quick-set buttons for annotation stroke colors")),
+            {},
+            QStringLiteral("screenshot/stroke_color_presets"),
+            SettingsColorPaletteDefinition{
+                SettingsColorPaletteBinding::StrokeColors, 5,
+                settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Stroke color preset %1"))}};
+}
+
+SettingsItemDefinition fillColorPresetsItem() {
+    return {QStringLiteral("drawing.fill-color-presets"),
+            settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Fill color presets")),
+            settingsText(QT_TRANSLATE_NOOP(
+                "SettingsCatalog", "Customize the quick-set buttons for annotation fill colors")),
+            {},
+            QStringLiteral("screenshot/fill_color_presets"),
+            SettingsColorPaletteDefinition{
+                SettingsColorPaletteBinding::FillColors, 5,
+                settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Fill color preset %1"))}};
+}
+
 SettingsItemDefinition shortcutHintOpacityItem() {
     return {QStringLiteral("interface.screenshot.shortcut-hint-opacity"),
             settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Shortcut hint opacity")),
@@ -2996,7 +3020,8 @@ QVector<SettingsPageDefinition> builtInPages() {
                      "Configure annotation tools and the screenshot annotation toolbar")),
                  SettingsSectionReset::DrawingQuickSelection,
                  {drawingQuickSelectionItem(), drawingRememberLastUsedToolItem(),
-                  drawingAlwaysShowFirstToolbarGroupButtonItem()},
+                  drawingAlwaysShowFirstToolbarGroupButtonItem(), strokeColorPresetsItem(),
+                  fillColorPresetsItem()},
              },
              {
                  QStringLiteral("drawing"),
@@ -4940,6 +4965,21 @@ QStringList SettingsCatalog::validationErrors() const {
                         color->alphaChannelEnabled !=
                             (color->binding != SettingsColorBinding::ThemePrimaryColor)) {
                         errors.push_back(QStringLiteral("color binding is incompatible: %1")
+                                             .arg(itemDefinition.id));
+                    }
+                }
+                if (const auto* palette =
+                        std::get_if<SettingsColorPaletteDefinition>(&itemDefinition.payload)) {
+                    const QString expectedKey =
+                        palette->binding == SettingsColorPaletteBinding::StrokeColors
+                            ? QStringLiteral("screenshot/stroke_color_presets")
+                            : QStringLiteral("screenshot/fill_color_presets");
+                    if (itemDefinition.configurationKey != expectedKey || schemaEntry == nullptr ||
+                        schemaEntry->valueKind != storage::ConfigurationValueKind::StringList ||
+                        palette->colorCount <= 0 || !palette->buttonLabel.isValid() ||
+                        (schemaEntry != nullptr &&
+                         schemaEntry->defaultValue.toArray().size() != palette->colorCount)) {
+                        errors.push_back(QStringLiteral("color palette binding is incompatible: %1")
                                              .arg(itemDefinition.id));
                     }
                 }
