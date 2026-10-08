@@ -1,4 +1,5 @@
 #include "../../presentation/services/nativeprintbackend.h"
+#include "../../presentation/services/screenshotprintdiagnostics.h"
 
 #include <QApplication>
 #include <QCoreApplication>
@@ -9,6 +10,9 @@
 
 #include <cstring>
 #include <utility>
+
+using snow_shot::print_detail::logPrintEvent;
+using snow_shot::print_detail::printStatusName;
 
 @interface SnowShotPrintImageView : NSView
 @property(nonatomic, strong) NSImage* image;
@@ -69,6 +73,10 @@
     const auto status = success     ? ScreenshotPrintService::Status::Submitted
                         : cancelled ? ScreenshotPrintService::Status::Cancelled
                                     : ScreenshotPrintService::Status::Failed;
+    logPrintEvent("print.native_task_completed",
+                  {{QStringLiteral("backend"), QStringLiteral("macos_appkit")},
+                   {QStringLiteral("status"), printStatusName(status)}},
+                  status == ScreenshotPrintService::Status::Failed ? QtWarningMsg : QtInfoMsg);
     completion({status, status == ScreenshotPrintService::Status::Failed
                             ? QCoreApplication::translate("ScreenshotPrintService",
                                                           "The native print operation failed")
@@ -85,13 +93,20 @@ ScreenshotPrintService::Backend screenshotNativePrintBackend(bool legacy) {
         @autoreleasepool {
             SnowShotPrintCompletion* delegate = nil;
             void* retainedDelegate = nullptr;
+            const char* stage = "owner_window";
             @try {
                 NSView* ownerView = (__bridge NSView*)reinterpret_cast<void*>(owner->winId());
                 NSWindow* ownerWindow = ownerView.window;
                 if (!ownerWindow) {
+                    logPrintEvent(
+                        "print.native_ui_unavailable",
+                        {{QStringLiteral("backend"), QStringLiteral("macos_appkit")},
+                         {QStringLiteral("reason"), QStringLiteral("missing_owner_window")}},
+                        QtWarningMsg);
                     completion({ScreenshotPrintService::Status::Unavailable, {}});
                     return;
                 }
+                stage = "prepare_bitmap";
                 const auto rgba = image.convertToFormat(QImage::Format_RGBA8888);
                 NSBitmapImageRep* bitmap =
                     [[NSBitmapImageRep alloc] initWithBitmapDataPlanes:nullptr
@@ -105,6 +120,10 @@ ScreenshotPrintService::Backend screenshotNativePrintBackend(bool legacy) {
                                                            bytesPerRow:rgba.bytesPerLine()
                                                           bitsPerPixel:32];
                 if (!bitmap) {
+                    logPrintEvent("print.native_failed",
+                                  {{QStringLiteral("backend"), QStringLiteral("macos_appkit")},
+                                   {QStringLiteral("stage"), QString::fromLatin1(stage)}},
+                                  QtWarningMsg);
                     completion({ScreenshotPrintService::Status::Failed,
                                 QCoreApplication::translate(
                                     "ScreenshotPrintService",
@@ -116,6 +135,7 @@ ScreenshotPrintService::Backend screenshotNativePrintBackend(bool legacy) {
                 NSImage* nativeImage =
                     [[NSImage alloc] initWithSize:NSMakeSize(image.width(), image.height())];
                 [nativeImage addRepresentation:bitmap];
+                stage = "create_print_operation";
                 NSPrintInfo* info = [NSPrintInfo.sharedPrintInfo copy];
                 info.horizontalPagination = NSPrintingPaginationModeFit;
                 info.verticalPagination = NSPrintingPaginationModeFit;
@@ -137,6 +157,10 @@ ScreenshotPrintService::Backend screenshotNativePrintBackend(bool legacy) {
                 __weak NSWindow* weakWindow = ownerWindow;
                 delegate->ownerDestroyed =
                     QObject::connect(owner, &QObject::destroyed, qApp, [weakOperation, weakWindow] {
+                        logPrintEvent(
+                            "print.native_cancel_requested",
+                            {{QStringLiteral("backend"), QStringLiteral("macos_appkit")},
+                             {QStringLiteral("reason"), QStringLiteral("owner_destroyed")}});
                         NSPrintOperation* active = weakOperation;
                         active.printInfo.jobDisposition = NSPrintCancelJob;
                         NSWindow* window = weakWindow;
@@ -144,13 +168,20 @@ ScreenshotPrintService::Backend screenshotNativePrintBackend(bool legacy) {
                             [window endSheet:window.attachedSheet returnCode:NSModalResponseCancel];
                     });
                 retainedDelegate = (__bridge_retained void*)delegate;
-                [operation
-                    runOperationModalForWindow:ownerWindow
-                                      delegate:delegate
-                                didRunSelector:@selector(printOperationDidRun:success:contextInfo:)
-                                   contextInfo:retainedDelegate];
+                stage = "run_print_operation";
+                logPrintEvent("print.native_ui_requested",
+                              {{QStringLiteral("backend"), QStringLiteral("macos_appkit")}});
+                [operation runOperationModalForWindow:ownerWindow
+                                             delegate:delegate
+                                       didRunSelector:@selector(printOperationDidRun:
+                                                                             success:contextInfo:)
+                                          contextInfo:retainedDelegate];
             } @catch (NSException* exception) {
-                (void)exception;
+                logPrintEvent("print.native_failed",
+                              {{QStringLiteral("backend"), QStringLiteral("macos_appkit")},
+                               {QStringLiteral("stage"), QString::fromLatin1(stage)},
+                               {QStringLiteral("code"), QString::fromNSString(exception.name)}},
+                              QtWarningMsg);
                 if (delegate) {
                     QObject::disconnect(delegate->ownerDestroyed);
                     completion = std::move(delegate->completion);

@@ -1,6 +1,7 @@
 #include "snow_shot/presentation/screenshotmessageservice.h"
 #include "snow_shot/presentation/components/confirmationskipbutton.h"
 #include "snow_draw_engine_qt/snow_canvas_image.h"
+#include "snow_shot/diagnostics/diagnostics.h"
 #include "snow_shot/presentation/screenshotcontentdrop.h"
 #include "snow_shot/shortcuts/shortcutbinding.h"
 #include "snow_shot/presentation/windowcloseshortcut.h"
@@ -5974,6 +5975,10 @@ void ScreenshotPinnedWindow::printContent() {
     const auto suspension = m_shortcutManager->suspendInput();
     const quint64 generation = m_presentationGeneration;
     const quint64 replacement = m_contentReplacementGeneration;
+    snow_shot::diagnostics::logEvent(QStringLiteral("snow_shot.print"),
+                                     QStringLiteral("print.snapshot_requested"),
+                                     {{QStringLiteral("request_kind"), QStringLiteral("pinned")},
+                                      {QStringLiteral("operation"), QString::number(replacement)}});
     const QPointer<ScreenshotPinnedWindow> receiver(this);
     const QPointer<ScreenshotPrintService> printer(&service);
     const auto completed = std::make_shared<bool>(false);
@@ -5987,6 +5992,10 @@ void ScreenshotPinnedWindow::printContent() {
                            interactionGuard](ScreenshotPrintService::Result result) {
         if (std::exchange(*completed, true))
             return;
+        if (result.status == ScreenshotPrintService::Status::Failed)
+            snow_shot::diagnostics::logEvent(
+                QStringLiteral("snow_shot.print"), QStringLiteral("print.pinned_failed"),
+                {{QStringLiteral("request_kind"), QStringLiteral("pinned")}}, QtWarningMsg);
         interactionGuard->release();
         if (!receiver)
             return;
@@ -6021,13 +6030,23 @@ void ScreenshotPinnedWindow::printContent() {
             finished({ScreenshotPrintService::Status::Cancelled, {}});
             return;
         }
-        if (!result.succeeded() || !printer ||
-            !printer->printImage(receiver, receiver, std::move(result.image), finished))
+        const bool snapshotSucceeded = result.succeeded();
+        if (!snapshotSucceeded || !printer ||
+            !printer->printImage(receiver, receiver, std::move(result.image), finished)) {
+            snow_shot::diagnostics::logEvent(
+                QStringLiteral("snow_shot.print"), QStringLiteral("print.snapshot_failed"),
+                {{QStringLiteral("request_kind"), QStringLiteral("pinned")},
+                 {QStringLiteral("operation"), QString::number(replacement)},
+                 {QStringLiteral("stage"), !snapshotSucceeded ? QStringLiteral("export_image")
+                                           : !printer         ? QStringLiteral("service_destroyed")
+                                                      : QStringLiteral("service_rejected")}},
+                QtWarningMsg);
             finished({ScreenshotPrintService::Status::Failed,
                       result.error.isEmpty() ? QCoreApplication::translate(
                                                    "ScreenshotPrintService",
                                                    "The image could not be prepared for printing")
                                              : result.error});
+        }
     };
     requestMaterializedImage([receiver, generation, replacement, ready](bool succeeded) {
         if (!receiver)

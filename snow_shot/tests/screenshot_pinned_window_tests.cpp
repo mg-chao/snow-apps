@@ -1,4 +1,5 @@
 #include "cloud_upload_test_support.h"
+#include "print_diagnostics_test_support.h"
 #include "../../test-support/canvas_quick_selection_test_support.h"
 #include "snow_shot/presentation/screenshotcanvastoolstyles.h"
 #include "eraser_toolbar_test_support.h"
@@ -19026,6 +19027,7 @@ int main(int argc, char* argv[]) {
             return 0;
         }
         if (app.arguments().contains(QStringLiteral("--print-only"))) {
+            print_tests::LogSession logs;
             const int font = QFontDatabase::addApplicationFont(
                 QStringLiteral(":/recording-test-fonts/SnowRecordingTestSans-Regular.ttf"));
             require(font >= 0, "print fixtures must load their bundled font");
@@ -19036,6 +19038,20 @@ int main(int argc, char* argv[]) {
             pinnedPrintingWithoutToolbarAndDelayedCompletion(true);
             pinnedPrintMatchesTransformedViewport();
             recognitionPrintPreservesScrollAndExcludesSelection();
+            bool requested = false;
+            bool failed = false;
+            for (const auto& record : logs.records()) {
+                const auto fields = record.value(QStringLiteral("fields")).toObject();
+                if (fields.value(QStringLiteral("request_kind")) != QStringLiteral("pinned"))
+                    continue;
+                requested |= record.value(QStringLiteral("event")) ==
+                             QStringLiteral("print.snapshot_requested");
+                failed |= record.value(QStringLiteral("event")) ==
+                              QStringLiteral("print.pinned_failed") &&
+                          record.value(QStringLiteral("level")) == QStringLiteral("WARN");
+            }
+            require(requested && failed,
+                    "pinned print diagnostics must persist snapshot preparation and failures");
             return 0;
         }
         if (app.arguments().contains(QStringLiteral("--original-image-preview-only"))) {

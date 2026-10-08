@@ -1327,7 +1327,7 @@ set(PROJECT_HEADERS
 
 add_library(snow_shot_print STATIC src/presentation/services/screenshotprintservice.cpp)
 target_include_directories(snow_shot_print PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include")
-target_link_libraries(snow_shot_print PUBLIC Qt6::Widgets PRIVATE Qt6::Concurrent)
+target_link_libraries(snow_shot_print PUBLIC Qt6::Widgets PRIVATE Qt6::Concurrent snow_shot_diagnostics)
 if(WIN32)
     target_sources(snow_shot_print PRIVATE src/platform/windows/nativeprint.cpp
         src/platform/windows/nativeprintdocument.cpp)
@@ -10037,7 +10037,7 @@ if(SNOW_SHOT_BUILD_TESTS)
     target_sources(snow-shot-pinned-window-tests PRIVATE
         "${CMAKE_CURRENT_SOURCE_DIR}/../test-support/fonts/recording_test_fonts.qrc")
     add_executable(snow-shot-print-service-tests tests/screenshot_print_service_tests.cpp)
-    target_link_libraries(snow-shot-print-service-tests PRIVATE snow_shot_print)
+    target_link_libraries(snow-shot-print-service-tests PRIVATE snow_shot_print snow_shot_diagnostics)
     snow_shot_import_offscreen_platform(snow-shot-print-service-tests)
     add_test(NAME snow-shot-print-service-tests
         COMMAND snow-shot-print-service-tests -platform offscreen)
@@ -10063,7 +10063,7 @@ if(SNOW_SHOT_BUILD_TESTS)
     endif()
     if(WIN32)
         add_executable(snow-shot-windows-print-dialog-tests tests/windows_print_dialog_tests.cpp)
-        target_link_libraries(snow-shot-windows-print-dialog-tests PRIVATE snow_shot_print)
+        target_link_libraries(snow-shot-windows-print-dialog-tests PRIVATE snow_shot_print snow_shot_diagnostics)
         snow_shot_import_offscreen_platform(snow-shot-windows-print-dialog-tests)
         add_test(NAME snow-shot-windows-print-dialog-tests
             COMMAND snow-shot-windows-print-dialog-tests -platform offscreen)
@@ -10072,7 +10072,7 @@ if(SNOW_SHOT_BUILD_TESTS)
             ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}")
         add_executable(snow-shot-windows-print-document-tests
             tests/windows_print_document_tests.cpp)
-        target_link_libraries(snow-shot-windows-print-document-tests PRIVATE snow_shot_print)
+        target_link_libraries(snow-shot-windows-print-document-tests PRIVATE snow_shot_print snow_shot_diagnostics)
         add_test(NAME snow-shot-windows-print-document-tests
             COMMAND snow-shot-windows-print-document-tests)
         set_tests_properties(snow-shot-windows-print-document-tests PROPERTIES
