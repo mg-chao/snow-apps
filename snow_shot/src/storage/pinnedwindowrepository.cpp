@@ -364,6 +364,12 @@ void preserveLifecycle(PinnedWindowRecord& target, const PinnedWindowRecord& sou
     target.activitySequence = source.activitySequence;
 }
 
+PinnedWindowSummary summarizeRecord(const PinnedWindowRecord& record) {
+    return {record.id,         record.groupId,       record.updatedUtc, record.creationSource,
+            record.createdUtc, record.lastClosedUtc, record.ignored,    record.activitySequence,
+            record.hidden};
+}
+
 struct Snapshot final {
     QVector<PinnedWindowGroup> groups;
     QString activeGroupId;
@@ -1109,6 +1115,22 @@ struct PinnedWindowRepository::Impl final {
     QHash<QString, PendingCreation> pendingCreations;
     quint64 nextActivitySequence = 0;
 
+    PinnedWindowSummary summarizePendingLocked(const QString& id,
+                                               const PendingCreation& pending) const {
+        const auto closed = pendingCloses.value(id);
+        const bool ignored = closed.first.isValid();
+        return {id,
+                pending.groupId,
+                pending.createdUtc,
+                PinnedWindowCreationSource::Other,
+                pending.createdUtc,
+                closed.first,
+                ignored,
+                ignored ? closed.second : pending.activitySequence,
+                !ignored && pending.desiredHidden,
+                true};
+    }
+
     void initializeLifecycleLocked(PinnedWindowRecord& record) {
         const auto creation = pendingCreations.take(record.id);
         if (creation.createdUtc.isValid()) {
@@ -1568,17 +1590,31 @@ PinnedSourceIdentity PinnedWindowRepository::sourceIdentity(const QString& id) c
 }
 
 QVector<PinnedWindowSummary> PinnedWindowRepository::summaries() const {
-    std::lock_guard access(m_accessMutex);
+    return summariesImpl(false);
+}
+
+QVector<PinnedWindowSummary> PinnedWindowRepository::summariesIncludingPending() const {
+    return summariesImpl(true);
+}
+
+QVector<PinnedWindowSummary> PinnedWindowRepository::summariesImpl(bool includePending) const {
     QVector<PinnedWindowSummary> result;
-    if (m_impl == nullptr) {
-        return result;
-    }
-    std::lock_guard locker(m_impl->mutex);
-    result.reserve(m_impl->records.size());
-    for (const auto& stored : m_impl->records) {
-        const auto& r = stored.record;
-        result.push_back({r.id, r.groupId, r.updatedUtc, r.creationSource, r.createdUtc,
-                          r.lastClosedUtc, r.ignored, r.activitySequence, r.hidden});
+    {
+        std::lock_guard access(m_accessMutex);
+        if (m_impl == nullptr)
+            return result;
+        std::lock_guard locker(m_impl->mutex);
+        result.reserve(m_impl->records.size() +
+                       (includePending ? m_impl->pendingCreations.size() : 0));
+        for (const auto& stored : m_impl->records)
+            result.append(summarizeRecord(stored.record));
+        if (includePending) {
+            for (auto it = m_impl->pendingCreations.cbegin(); it != m_impl->pendingCreations.cend();
+                 ++it) {
+                if (!m_impl->records.contains(it.key()))
+                    result.append(m_impl->summarizePendingLocked(it.key(), it.value()));
+            }
+        }
     }
     std::sort(result.begin(), result.end(), [](const auto& first, const auto& second) {
         if (first.updatedUtc == second.updatedUtc) {
@@ -1589,6 +1625,20 @@ QVector<PinnedWindowSummary> PinnedWindowRepository::summaries() const {
     return result;
 }
 
+std::optional<PinnedWindowSummary> PinnedWindowRepository::summary(const QString& id) const {
+    std::lock_guard access(m_accessMutex);
+    if (m_impl == nullptr || !safeId(id))
+        return std::nullopt;
+    std::lock_guard locker(m_impl->mutex);
+    const auto record = m_impl->records.constFind(id);
+    if (record != m_impl->records.cend())
+        return summarizeRecord(record->record);
+    const auto pending = m_impl->pendingCreations.constFind(id);
+    if (pending != m_impl->pendingCreations.cend())
+        return m_impl->summarizePendingLocked(id, pending.value());
+    return std::nullopt;
+}
+
 QVector<PinnedWindowSummary> PinnedWindowRepository::pendingSummaries() const {
     std::lock_guard access(m_accessMutex);
     QVector<PinnedWindowSummary> result;
@@ -1597,12 +1647,7 @@ QVector<PinnedWindowSummary> PinnedWindowRepository::pendingSummaries() const {
     std::lock_guard locker(m_impl->mutex);
     result.reserve(m_impl->pendingCreations.size());
     for (auto it = m_impl->pendingCreations.cbegin(); it != m_impl->pendingCreations.cend(); ++it) {
-        const auto closed = m_impl->pendingCloses.value(it.key());
-        const bool ignored = closed.first.isValid();
-        result.append({it.key(), it->groupId, it->createdUtc, PinnedWindowCreationSource::Other,
-                       it->createdUtc, closed.first, ignored,
-                       ignored ? closed.second : it->activitySequence,
-                       !ignored && it->desiredHidden});
+        result.append(m_impl->summarizePendingLocked(it.key(), it.value()));
     }
     return result;
 }

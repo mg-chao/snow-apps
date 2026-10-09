@@ -152,27 +152,15 @@ void PinnedWindowGroupManager::refreshPersistedCounts() const {
             m_persistedIdsByGroup.clear();
             m_allPersistedIdsByGroup.clear();
             m_closedPendingIds.clear();
-            QSet<QString> persistedIds;
-            const QVector<storage::PinnedWindowSummary> summaries = m_repository->summaries();
+            const auto summaries = m_repository->summariesIncludingPending();
             for (const storage::PinnedWindowSummary& summary : summaries) {
-                persistedIds.insert(summary.id);
                 ++m_persistedTotalCounts[summary.groupId];
                 m_allPersistedIdsByGroup[summary.groupId].insert(summary.id);
                 if (!summary.ignored) {
                     ++m_persistedCounts[summary.groupId];
                     m_persistedIdsByGroup[summary.groupId].insert(summary.id);
-                }
-            }
-            for (const auto& pending : m_repository->pendingSummaries()) {
-                if (persistedIds.contains(pending.id))
-                    continue;
-                ++m_persistedTotalCounts[pending.groupId];
-                m_allPersistedIdsByGroup[pending.groupId].insert(pending.id);
-                if (pending.ignored) {
-                    m_closedPendingIds.insert(pending.id);
-                } else {
-                    ++m_persistedCounts[pending.groupId];
-                    m_persistedIdsByGroup[pending.groupId].insert(pending.id);
+                } else if (summary.pending) {
+                    m_closedPendingIds.insert(summary.id);
                 }
             }
             m_countsRevision = repositoryRevision;

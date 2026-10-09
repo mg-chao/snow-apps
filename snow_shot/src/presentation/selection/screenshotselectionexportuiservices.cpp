@@ -34,7 +34,6 @@
 #include <QUuid>
 
 #include <algorithm>
-#include <iterator>
 #include <limits>
 #include <optional>
 
@@ -461,12 +460,8 @@ class ScreenshotPendingPinCoordinator final : public QObject {
             !m_restoreVisible)
             return;
         auto& repository = snow_shot::storage::ApplicationStorage::instance().pinnedWindows();
-        const auto summaries = repository.summaries();
-        const auto found =
-            std::find_if(summaries.cbegin(), summaries.cend(), [&transaction](const auto& summary) {
-                return summary.id == transaction.snapshot.id;
-            });
-        if (found != summaries.cend() && !found->ignored && !found->hidden &&
+        const auto found = repository.summary(transaction.snapshot.id);
+        if (found && !found->pending && !found->ignored && !found->hidden &&
             found->groupId == repository.activeGroupId())
             m_restoreVisible();
     }
@@ -1109,10 +1104,8 @@ bool ScreenshotSelectionExportUiServices::persistHiddenWindow(
         return false;
     }
     auto& repository = storage.pinnedWindows();
-    const auto pending = repository.pendingSummaries();
-    const bool isPending =
-        std::any_of(pending.cbegin(), pending.cend(),
-                    [&record](const auto& item) { return item.id == record.id; });
+    const auto summary = repository.summary(record.id);
+    const bool isPending = summary && summary->pending;
     if (isPending)
         static_cast<void>(repository.markCreationPresented(record.id));
     if ((!isPending && !repository.updateState(record).success) ||
@@ -1158,8 +1151,7 @@ void ScreenshotSelectionExportUiServices::showAllWindows() {
         return;
     const QString group =
         m_groupManager ? m_groupManager->activeGroupId() : QStringLiteral("default");
-    auto records = storage.pinnedWindows().summaries();
-    records += storage.pinnedWindows().pendingSummaries();
+    const auto records = storage.pinnedWindows().summariesIncludingPending();
     QVector<QString> ids;
     for (const auto& record : records)
         if (!record.ignored && record.groupId == group)
@@ -1182,8 +1174,7 @@ bool ScreenshotSelectionExportUiServices::hideOtherWindows(const QString& except
         return false;
     const QString group =
         m_groupManager ? m_groupManager->activeGroupId() : QStringLiteral("default");
-    auto records = storage.pinnedWindows().summaries();
-    records += storage.pinnedWindows().pendingSummaries();
+    const auto records = storage.pinnedWindows().summariesIncludingPending();
     QVector<QString> ids;
     for (const auto& record : records)
         if (!record.ignored && record.groupId == group && record.id != exceptId)
@@ -1200,8 +1191,7 @@ bool ScreenshotSelectionExportUiServices::toggleAllWindowsVisibility() {
         return false;
     const QString group =
         m_groupManager ? m_groupManager->activeGroupId() : QStringLiteral("default");
-    auto records = storage.pinnedWindows().summaries();
-    records += storage.pinnedWindows().pendingSummaries();
+    const auto records = storage.pinnedWindows().summariesIncludingPending();
     QVector<QString> ids;
     bool shown = false;
     for (const auto& record : records) {
@@ -1241,12 +1231,8 @@ bool ScreenshotSelectionExportUiServices::restoreRecord(const QString& id, bool 
     if (!storage.isInitialized() || m_restoringIds.contains(id))
         return false;
     auto& repository = storage.pinnedWindows();
-    auto records = repository.summaries();
-    const qsizetype persistedCount = records.size();
-    records += repository.pendingSummaries();
-    const auto found = std::find_if(records.cbegin(), records.cend(),
-                                    [&id](const auto& summary) { return summary.id == id; });
-    if (found == records.cend())
+    const auto found = repository.summary(id);
+    if (!found)
         return false;
     if (m_groupManager && ((activateGroup && !m_groupManager->setActiveGroup(found->groupId)) ||
                            found->groupId != m_groupManager->activeGroupId()))
@@ -1260,7 +1246,7 @@ bool ScreenshotSelectionExportUiServices::restoreRecord(const QString& id, bool 
     if (m_restoringIds.contains(id))
         return true;
     // The pending source coordinator replays this desired visibility after its first save.
-    if (std::distance(records.cbegin(), found) >= persistedCount)
+    if (found->pending)
         return true;
     if (!repository.beginRestore(id).success)
         return false;
@@ -1288,11 +1274,8 @@ bool ScreenshotSelectionExportUiServices::restoreRecord(const QString& id, bool 
                     m_restoringIds.remove(id);
                     return;
                 }
-                const auto summaries = storage.pinnedWindows().summaries();
-                const auto found =
-                    std::find_if(summaries.cbegin(), summaries.cend(),
-                                 [&id](const auto& summary) { return summary.id == id; });
-                if (found == summaries.cend() || found->hidden ||
+                const auto found = storage.pinnedWindows().summary(id);
+                if (!found || found->pending || found->hidden ||
                     (m_groupManager && found->groupId != m_groupManager->activeGroupId()) ||
                     (loaded && loaded->groupId != found->groupId)) {
                     cancelRestore(id);
@@ -1449,11 +1432,8 @@ bool ScreenshotSelectionExportUiServices::presentRestoredRecord(
                     windowGuard->close();
                 return;
             }
-            const auto summaries = storage.pinnedWindows().summaries();
-            const auto found =
-                std::find_if(summaries.cbegin(), summaries.cend(),
-                             [&id](const auto& summary) { return summary.id == id; });
-            if (found == summaries.cend() || found->hidden ||
+            const auto found = storage.pinnedWindows().summary(id);
+            if (!found || found->pending || found->hidden ||
                 (m_groupManager && found->groupId != m_groupManager->activeGroupId())) {
                 cancelRestore(id);
                 if (windowGuard)
@@ -1528,8 +1508,7 @@ QSet<QString> ScreenshotSelectionExportUiServices::duplicateSourceKeys() const {
     }
     auto& storage = snow_shot::storage::ApplicationStorage::instance();
     if (storage.isInitialized()) {
-        auto records = storage.pinnedWindows().summaries();
-        records += storage.pinnedWindows().pendingSummaries();
+        const auto records = storage.pinnedWindows().summariesIncludingPending();
         for (const auto& record : records) {
             if (!record.hidden || record.ignored || record.groupId != group)
                 continue;
@@ -1550,8 +1529,7 @@ QString ScreenshotSelectionExportUiServices::hiddenDuplicateId(
         return {};
     const QString group =
         m_groupManager ? m_groupManager->activeGroupId() : QStringLiteral("default");
-    auto records = storage.pinnedWindows().summaries();
-    records += storage.pinnedWindows().pendingSummaries();
+    const auto records = storage.pinnedWindows().summariesIncludingPending();
     QString newest;
     QDateTime created;
     for (const auto& record : records) {
@@ -1588,13 +1566,9 @@ bool ScreenshotSelectionExportUiServices::handleDuplicatePin(
     QString hiddenId = hiddenDuplicateId(identity);
     if (!hiddenId.isEmpty() && (window || pending)) {
         auto& repository = snow_shot::storage::ApplicationStorage::instance().pinnedWindows();
-        auto records = repository.summaries();
-        records += repository.pendingSummaries();
-        const auto hidden =
-            std::find_if(records.cbegin(), records.cend(),
-                         [&hiddenId](const auto& item) { return item.id == hiddenId; });
+        const auto hidden = repository.summary(hiddenId);
         const QDateTime newestShown = pending ? pending->createdUtc : window->sourceCreatedUtc();
-        if (hidden != records.cend() && hidden->createdUtc >= newestShown) {
+        if (hidden && hidden->createdUtc >= newestShown) {
             window = nullptr;
             pending = nullptr;
         } else {

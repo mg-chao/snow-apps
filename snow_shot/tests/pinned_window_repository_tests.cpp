@@ -2001,6 +2001,63 @@ storage::StorageResult createVisibilityImage(storage::PinnedWindowRepository& re
                     : repository.create(record, *prepared);
 }
 
+void lifecycleSummariesCoverPendingAndPersistedPinsWithoutPayloadReads() {
+    QTemporaryDir directory;
+    int payloadReads = 0;
+    storage::PinnedWindowRepository repository(
+        directory.path(), true, 30000, [&](storage::PinnedWindowOperation operation) {
+            if (operation == storage::PinnedWindowOperation::PayloadRead)
+                ++payloadReads;
+        });
+    const auto created = QDateTime::currentDateTimeUtc();
+    auto pending = recordWithId(QUuid::createUuid().toString(QUuid::WithoutBraces),
+                                patternedImage({4, 4}, 21));
+    auto persisted = recordWithId(QUuid::createUuid().toString(QUuid::WithoutBraces),
+                                  patternedImage({4, 4}, 23));
+    persisted.updatedUtc = created.addSecs(1);
+    repository.reserveCreation(pending.id, created);
+    require(repository.upsert(persisted).success &&
+                repository.setRecordsHidden({pending.id, persisted.id}, true).success,
+            "seed pending and persisted lifecycle metadata");
+    const auto revision = repository.revision();
+    const auto pendingSummary = repository.summary(pending.id);
+    const auto persistedSummary = repository.summary(persisted.id);
+    require(pendingSummary && pendingSummary->pending && pendingSummary->hidden &&
+                !pendingSummary->ignored && pendingSummary->createdUtc == created &&
+                persistedSummary && !persistedSummary->pending && persistedSummary->hidden,
+            "ID lookup preserves hidden metadata across both lifecycle states");
+    const auto combined = repository.summariesIncludingPending();
+    require(repository.summaries().size() == 1 && combined.size() == 2 &&
+                combined.first().id == pending.id && combined.last().id == persisted.id &&
+                !repository.summary(QStringLiteral("../invalid")) &&
+                !repository.summary(QUuid::createUuid().toString(QUuid::WithoutBraces)) &&
+                repository.revision() == revision && payloadReads == 0,
+            "unified metadata is sorted, complete and read-only without loading payloads");
+    require(repository.markClosedDeferred(pending.id).success, "close a pending metadata pin");
+    const auto closed = repository.summary(pending.id);
+    require(closed && closed->pending && closed->ignored && !closed->hidden &&
+                closed->lastClosedUtc.isValid() &&
+                closed->activitySequence > pendingSummary->activitySequence,
+            "pending metadata gives Close precedence over Hide");
+    require(createVisibilityImage(repository, pending, true).success,
+            "transfer a pending pin into persisted storage");
+    const auto saved = repository.summary(pending.id);
+    const auto savedSummaries = repository.summariesIncludingPending();
+    require(saved && !saved->pending && saved->ignored && saved->createdUtc == closed->createdUtc &&
+                saved->activitySequence == closed->activitySequence && savedSummaries.size() == 2 &&
+                std::count_if(savedSummaries.cbegin(), savedSummaries.cend(),
+                              [&pending](const auto& item) { return item.id == pending.id; }) ==
+                    1 &&
+                repository.pendingSummaries().isEmpty() && payloadReads == 0,
+            "first save transfers metadata once without losing lifecycle state or reading pixels");
+    const auto canceled = QUuid::createUuid().toString(QUuid::WithoutBraces);
+    repository.reserveCreation(canceled);
+    require(repository.summary(canceled)->pending, "new reservation is discoverable");
+    repository.cancelCreation(canceled);
+    require(!repository.summary(canceled) && repository.summariesIncludingPending().size() == 2,
+            "canceled reservations leave no lifecycle metadata");
+}
+
 void hiddenStatePersistsWithoutClosingOrChangingPayloads() {
     QTemporaryDir directory;
     auto record =
@@ -2237,6 +2294,7 @@ void closeRestoreAndRetentionRevealHiddenSiblings() {
 int main(int argc, char* argv[]) {
     QCoreApplication application(argc, argv);
     if (application.arguments().contains(QStringLiteral("--visibility-only"))) {
+        lifecycleSummariesCoverPendingAndPersistedPinsWithoutPayloadReads();
         hiddenStatePersistsWithoutClosingOrChangingPayloads();
         membershipChangesRevealOnlyAffectedGroups();
         pendingVisibilityDoesNotReplayAfterSourcePersistence();
@@ -2257,6 +2315,7 @@ int main(int argc, char* argv[]) {
     previewsReadOnlySourcePayloadAndKeepStableRevision();
     bulkRemovalIsAtomicAndNotifiesOnce();
     batchGroupAssignmentPreflightsAndNotifiesOnce();
+    lifecycleSummariesCoverPendingAndPersistedPinsWithoutPayloadReads();
     hiddenStatePersistsWithoutClosingOrChangingPayloads();
     membershipChangesRevealOnlyAffectedGroups();
     pendingVisibilityDoesNotReplayAfterSourcePersistence();

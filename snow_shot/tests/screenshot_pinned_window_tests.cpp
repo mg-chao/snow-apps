@@ -1,4 +1,5 @@
 #include "angle_wheel_host_test_support.h"
+#include "../src/app/mcp/mcppinnedstate_p.h"
 #include "cloud_upload_test_support.h"
 #include "print_diagnostics_test_support.h"
 #include "../../test-support/canvas_quick_selection_test_support.h"
@@ -16914,7 +16915,9 @@ void pinnedHiddenWindowsPersistAndRestore() {
 }
 
 void pinnedHideBeforeFirstSaveKeepsLatestVisibility() {
-    for (const bool showBeforeSource : {false, true}) {
+    enum class ShowRequest { None, All, Record };
+    for (const auto showRequest : {ShowRequest::None, ShowRequest::All, ShowRequest::Record}) {
+        const bool showBeforeSource = showRequest != ShowRequest::None;
         IsolatedPinnedStorage isolated;
         using namespace snow_shot;
         auto& repository = storage::ApplicationStorage::instance().pinnedWindows();
@@ -16946,13 +16949,44 @@ void pinnedHideBeforeFirstSaveKeepsLatestVisibility() {
         QPointer<ScreenshotPinnedWindow> pending(windows.front());
         const QString id = pending->persistenceId();
         require(pending->requestHide(), "Hide pending pin");
+        const auto closingList = app::mcp::pinnedWindowList(repository, groups);
+        require(closingList.size() == 1 &&
+                    closingList.first().toObject().value(QStringLiteral("hidden")).toBool() &&
+                    !closingList.first().toObject().value(QStringLiteral("open")).toBool(),
+                "MCP reports pending Hide immediately while the closing shell still exists");
         require(processUntilDeleted(pending, 2000), "Hide releases pending shell");
-        if (showBeforeSource)
-            services.showAllWindows();
+        const auto hiddenState = app::mcp::pinnedWindowState(repository, groups, id);
+        require(hiddenState.value(QStringLiteral("id")).toString() == id &&
+                    hiddenState.value(QStringLiteral("hidden")).toBool() &&
+                    !hiddenState.value(QStringLiteral("open")).toBool() &&
+                    !hiddenState.value(QStringLiteral("closed")).toBool(),
+                "MCP can look up a hidden pin before its first source save");
+        const auto hiddenList = app::mcp::pinnedWindowList(repository, groups);
+        require(hiddenList.size() == 1 &&
+                    hiddenList.first().toObject().value(QStringLiteral("id")).toString() == id &&
+                    hiddenList.first().toObject().value(QStringLiteral("hidden")).toBool(),
+                "MCP lists a hidden pending pin after its shell is deleted");
+        if (showBeforeSource) {
+            if (showRequest == ShowRequest::All)
+                services.showAllWindows();
+            else
+                require(services.restoreRecord(id, false),
+                        "Show accepts the hidden pending ID exposed by MCP");
+            const auto shownState = app::mcp::pinnedWindowState(repository, groups, id);
+            require(!shownState.isEmpty() && !shownState.value(QStringLiteral("hidden")).toBool() &&
+                        !shownState.value(QStringLiteral("open")).toBool(),
+                    "MCP observes pending Show before the source arrives");
+        }
         deliver(image);
         wait([&] { return repository.loadRecord(id).has_value(); },
              "hidden pending source persists after shell deletion");
         require(!repository.loadRecord(id)->ignored, "pending Hide never creates closed history");
+        const auto savedList = app::mcp::pinnedWindowList(repository, groups);
+        require(savedList.size() == 1 &&
+                    savedList.first().toObject().value(QStringLiteral("id")).toString() == id &&
+                    savedList.first().toObject().value(QStringLiteral("hidden")).toBool() ==
+                        !showBeforeSource,
+                "MCP lists the pin exactly once after its first source save");
         if (showBeforeSource) {
             wait([&] { return groups.hasWindow(id); },
                  "Show before first save restores when persistence completes");
@@ -16966,6 +17000,9 @@ void pinnedHideBeforeFirstSaveKeepsLatestVisibility() {
         }
         services.destroyRecords({id});
         QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+        require(app::mcp::pinnedWindowState(repository, groups, id).isEmpty() &&
+                    app::mcp::pinnedWindowList(repository, groups).isEmpty(),
+                "destroyed hidden pins disappear from MCP state and listing");
     }
 }
 

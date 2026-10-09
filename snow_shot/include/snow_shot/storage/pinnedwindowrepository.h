@@ -26,6 +26,7 @@ struct PinnedWindowSummary final {
     bool ignored = false;
     quint64 activitySequence = 0;
     bool hidden = false;
+    bool pending = false;
     [[nodiscard]] QDateTime activityUtc() const {
         return lastClosedUtc.isValid() ? lastClosedUtc : createdUtc;
     }
@@ -70,6 +71,10 @@ class PinnedWindowRepository final {
     loadPreviewSource(const QString& id) const;
     [[nodiscard]] std::optional<quint64> previewSourceRevision(const QString& id) const;
     [[nodiscard]] QVector<PinnedWindowSummary> summaries() const;
+    // One metadata snapshot across persisted records and pending first saves.
+    [[nodiscard]] QVector<PinnedWindowSummary> summariesIncludingPending() const;
+    // Looks up either lifecycle state without reading source or document payloads.
+    [[nodiscard]] std::optional<PinnedWindowSummary> summary(const QString& id) const;
     // Reserved pins can be hidden or moved before their source payload is saved.
     [[nodiscard]] QVector<PinnedWindowSummary> pendingSummaries() const;
     // Reads source identity without materializing any persisted image payload.
@@ -138,6 +143,7 @@ class PinnedWindowRepository final {
     [[nodiscard]] QString lastError() const;
 
   private:
+    [[nodiscard]] QVector<PinnedWindowSummary> summariesImpl(bool includePending) const;
     [[nodiscard]] StorageResult createImpl(PinnedWindowRecord record, PreparedPngImage sourceImage,
                                            bool requireReservation);
     [[nodiscard]] StorageResult createImpl(PinnedWindowRecord record, bool requireReservation);

@@ -1354,6 +1354,7 @@ set(PROJECT_CXX_SOURCES
     src/app/mcp/mcpdocumentservice.cpp
     src/app/mcp/mcpjobregistry.cpp
     src/app/mcp/mcpmediaservice.cpp
+    src/app/mcp/mcppinnedstate.cpp
     src/app/applicationrestart.cpp
     src/app/featureavailability.cpp
     src/app/main.cpp
@@ -4159,6 +4160,7 @@ if(SNOW_SHOT_BUILD_TESTS)
     )
 
     add_executable(snow-shot-pinned-window-tests
+        src/app/mcp/mcppinnedstate.cpp
         tests/screenshot_pinned_hide_to_top_tests.cpp
         src/presentation/services/screenshotfilepinbatch.cpp
         tests/screenshot_pinned_window_tests.cpp
