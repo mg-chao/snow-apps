@@ -67,8 +67,8 @@ void radiusIsClampedBeforeAssetLookup() {
 }
 
 void shadowFadesWithoutAnOpaqueShelf() {
-    // Half-peak coverage must occupy at most an eighth of the margin (formerly about a
-    // fifth), with a soft outer tail. Test rendered pixels across both cache backends.
+    // Keep half-peak coverage near 16% of the margin, midway between the previous 11%
+    // and 21% profiles. Test rendered pixels across both cache backends.
     const QRect outline(72, 72, 800, 640);
     for (const int width : {8, 16, 24, 64}) {
         for (const QSizeF& radii : {QSizeF(), QSizeF(32, 32), QSizeF(300, 300), QSizeF(320, 110)}) {
@@ -85,8 +85,8 @@ void shadowFadesWithoutAnOpaqueShelf() {
                 for (int offset = 0; offset < width; ++offset)
                     if (alphaAt(offset) >= qRound(color.alpha() * 0.18))
                         ++densePixels;
-                require(densePixels > 0 && densePixels <= (width + 7) / 8,
-                        "the dense shadow band was not reduced to roughly half its width");
+                require(densePixels > 0 && std::abs(densePixels - width * 0.16) <= 1.0,
+                        "the dense shadow band is not midway between the previous profiles");
                 require(alphaAt(width / 4) * 2 < edge,
                         "shadow retains a broad, solid-looking band near the content");
                 require(alphaAt(width / 2) * 5 < edge,
@@ -224,7 +224,7 @@ void exteriorBandsHaveNoLeaksOrGaps() {
                         ellipseExteriorDistance(QPointF(pixel) + QPointF(0.5, 0.5), center, radii);
                     const int alpha = image.pixelColor(pixel).alpha();
                     const qreal progress = std::clamp(1.0 - actualDistance / width, 0.0, 1.0);
-                    const int expected = qRound(255.0 * 0.36 * std::pow(progress, 6));
+                    const int expected = qRound(255.0 * 0.36 * std::pow(progress, 4));
                     // Spans sample the analytic distance at physical pixel centers. Quantized
                     // coverage and configured alpha can introduce at most one alpha unit each.
                     require(std::abs(alpha - expected) <= 2,

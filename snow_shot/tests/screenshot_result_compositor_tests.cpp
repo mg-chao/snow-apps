@@ -99,9 +99,9 @@ void exportAndLiveShadowShareSoftFalloff() {
                 require(result.pixelColor(centerX, y) == live.pixelColor(centerX, y),
                         "exported and live shadow profiles disagree");
             const int edge = result.pixelColor(centerX, width - 1).alpha();
-            require(result.pixelColor(centerX, width - 1 - width / 8).alpha() <
+            require(result.pixelColor(centerX, width - 1 - (width + 5) / 6).alpha() <
                         qRound(color.alpha() * 0.18),
-                    "exported shadow retains the previous wide dense band");
+                    "exported shadow retains an overly wide dense band");
             require(result.pixelColor(centerX, width - 1 - width / 4).alpha() * 2 < edge &&
                         result.pixelColor(centerX, width - 1 - width / 2).alpha() * 5 < edge,
                     "exported shadow has a broad opaque shelf");
