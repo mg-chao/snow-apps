@@ -2,6 +2,7 @@
 #define SNOW_SHOT_PRESENTATION_SCREENSHOTTOOLPALETTE_H
 
 #include "snow_shot/presentation/screenshotselectiondisplayunit.h"
+#include "snow_shot/presentation/screenshotrecognitionmodel.h"
 #include "icon_core.h"
 #include "widgets/control_scale.h"
 #include "snow_draw_engine_qt/snow_canvas_style_edit.h"
@@ -423,6 +424,7 @@ class ScreenshotToolPalette final : public QWidget,
     void setQrBusy(bool busy);
     void setImageConversionEnabled(bool enabled);
     void setLatexState(bool enabled, bool busy);
+    void setRecognitionModelState(Tool tool, const ScreenshotRecognitionModelState& state);
     void setLatexEditingState(bool available, bool canUndo, bool canRedo);
     void setImageConversionBusy(bool markdownBusy, bool htmlBusy);
     void setTableEditingState(bool available, bool canUndo, bool canRedo, bool canMerge,
@@ -503,6 +505,7 @@ class ScreenshotToolPalette final : public QWidget,
     void tableRequested();
     void qrRequested();
     void latexRequested();
+    void recognitionModelChanged(const QString& selection);
     void markdownRequested();
     void htmlRequested();
     void imageConversionSettingsRequested();
@@ -632,6 +635,7 @@ class ScreenshotToolPalette final : public QWidget,
 #if SNOW_SHOT_ENABLE_TABLE_RECOGNITION
     void createTableRecognitionActionFamily();
 #endif
+    void refreshRecognitionModelSelect();
 #if SNOW_SHOT_ENABLE_IMAGE_CONVERSION
     void createImageConversionActionFamily();
 #endif
@@ -934,6 +938,10 @@ class ScreenshotToolPalette final : public QWidget,
     adqt::widgets::AdButton* m_tableMergeButton = nullptr;
     adqt::widgets::AdButton* m_tableSplitButton = nullptr;
     adqt::widgets::AdButton* m_tableResetButton = nullptr;
+    adqt::widgets::AdSelect* m_recognitionModelSelect = nullptr;
+    QSpacerItem* m_recognitionModelSpacer = nullptr;
+    ScreenshotRecognitionModelState m_tableRecognitionModelState;
+    ScreenshotRecognitionModelState m_latexRecognitionModelState;
     adqt::widgets::AdSelect* m_textFormattingSelect = nullptr;
     adqt::widgets::AdSelect* m_textPunctuationSelect = nullptr;
     adqt::widgets::AdSelect* m_textTargetLanguageSelect = nullptr;

@@ -105,6 +105,45 @@ void roundTripPreservesValuesAndSchemaVersion(const QTemporaryDir& temporary) {
     }
 }
 
+void recognitionModelPreferencesSurviveRestart(const QTemporaryDir& temporary) {
+    const QString tableKey = QStringLiteral("screenshot_table/model");
+    const QString latexKey = QStringLiteral("screenshot_latex/model");
+    const QString path = temporary.filePath(QStringLiteral("recognition-models.json"));
+    const QString custom = QStringLiteral("custom:11111111-1111-4111-8111-111111111111");
+    {
+        storage::ConfigurationStore store(path, true, true);
+        require(store.value(tableKey).toString() == QStringLiteral("dedicated") &&
+                    store.value(latexKey).toString() == QStringLiteral("dedicated"),
+                "Table and LaTeX both default to dedicated recognition models");
+        require(store.setValue(tableKey, custom) &&
+                    store.value(latexKey).toString() == QStringLiteral("dedicated"),
+                "saving a table model must preserve the LaTeX model preference");
+        require(store.setValue(latexKey, QStringLiteral("snow-shot:vision")),
+                "LaTeX supports an independently saved vision model");
+        for (const QString& invalid :
+             {QString(), QStringLiteral("bad\nmodel"), QStringLiteral("model with spaces"),
+              QString(257, u'x'), QString(QChar(0))}) {
+            require(!store.setValue(tableKey, invalid) &&
+                        store.value(tableKey).toString() == custom,
+                    "invalid recognition identities must not overwrite a saved selection");
+        }
+        require(store.flushNow().success, "recognition preferences flush to storage");
+    }
+    storage::ConfigurationStore restored(path, true, true);
+    require(restored.value(tableKey).toString() == custom &&
+                restored.value(latexKey).toString() == QStringLiteral("snow-shot:vision"),
+            "both recognition preferences survive a fresh configuration store");
+    const QString archive = temporary.filePath(QStringLiteral("recognition-models.zip"));
+    require(storage::ConfigurationArchive::write(
+                archive, restored.snapshot(), storage::ConfigurationStore::currentSchemaVersion())
+                .isEmpty(),
+            "recognition preferences export through configuration archives");
+    const auto imported = storage::ConfigurationArchive::read(archive);
+    require(imported.isValid() && imported.values.value(tableKey).toString() == custom &&
+                imported.values.value(latexKey).toString() == QStringLiteral("snow-shot:vision"),
+            "configuration archives retain both model identities");
+}
+
 void readRejectsInvalidArchives(const QTemporaryDir& temporary) {
     const QString garbage = temporary.filePath(QStringLiteral("garbage.zip"));
     {
@@ -466,12 +505,17 @@ int main(int argc, char** argv) {
         selectionAspectRatioArchivesPreservePreferences(temporary);
         return 0;
     }
+    if (application.arguments().contains(QStringLiteral("--recognition-models-only"))) {
+        recognitionModelPreferencesSurviveRestart(temporary);
+        return 0;
+    }
     roundTripPreservesValuesAndSchemaVersion(temporary);
     readRejectsInvalidArchives(temporary);
     writeRejectsUnwritableTargets(temporary);
     unicodePathsRoundTrip();
     applySnapshotReplacesConfiguration(temporary);
     selectionAspectRatioArchivesPreservePreferences(temporary);
+    recognitionModelPreferencesSurviveRestart(temporary);
     mcpCredentialRedactionAndRevision(temporary);
     return 0;
 }

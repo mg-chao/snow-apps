@@ -9,6 +9,7 @@
 #include "snow_shot/presentation/screenshotocrrecognitionservice.h"
 #include "snow_shot/presentation/screenshotqrrecognitionservice.h"
 #include "snow_shot/presentation/screenshotrecognitionresults.h"
+#include "snow_shot/presentation/screenshotrecognitionmodel.h"
 #include "snow_shot/presentation/screenshotrecognitionfileexport.h"
 
 #include <QObject>
@@ -23,6 +24,7 @@
 
 #include <functional>
 #include <memory>
+#include <atomic>
 
 class QUrl;
 class QMimeData;
@@ -88,6 +90,7 @@ struct ScreenshotRecognitionSessionActions {
     std::function<void(bool)> setShowOriginalImage;
     std::function<void(const QString&)> setTextTargetLanguage;
     std::function<void(bool, bool, bool)> setLatexEditingState;
+    std::function<void(int, const ScreenshotRecognitionModelState&)> setRecognitionModelState;
 };
 
 class ScreenshotRecognitionSessionController final : public QObject {
@@ -114,6 +117,9 @@ class ScreenshotRecognitionSessionController final : public QObject {
     void prefetchText();
     void renderTextBackground();
     void activate(Mode mode);
+    void setRecognitionModel(const QString& selection);
+    void retryRecognition();
+    [[nodiscard]] QString recognitionModelSelection(Mode mode) const;
     void deactivate();
     void invalidate();
 
@@ -223,16 +229,28 @@ class ScreenshotRecognitionSessionController final : public QObject {
     void startTableRecognition();
     void startQrRecognition();
     void startLatexRecognition();
+    void loadRecognitionModels(bool refresh = false);
+    void updateRecognitionModels() const;
+    void cancelModelRecognition(Mode mode);
+    void failModelRecognition(const QString& message);
+    [[nodiscard]] QString resolvedRecognitionModel(Mode mode) const;
+    [[nodiscard]] bool recognitionModelAvailable(const QString& model) const;
+    [[nodiscard]] QString recognitionCacheKey(Mode mode, const QString& model = {}) const;
+    [[nodiscard]] bool recognitionEntryValid(const QString& model,
+                                             const QString& fingerprint) const;
+    void activateModelResult();
     void applyLatexContents(const QString& source);
     void handleLatexDocumentChanged(const QString& key);
     void handleLatexOutput(quint64 generation, const QString& key, SnowShotLatexResult result);
     void handleTextOutput(quint64 generation, const QString& key,
                           ScreenshotOcrRecognitionResult output);
     void handleTableOutput(quint64 generation, const QString& key, SnowShotTableResult result);
+    void materializeTableEntry(quint64 generation, const QString& key,
+                               ScreenshotTableRecognitionEntry entry, bool allowSynchronous);
     void handleQrOutput(quint64 generation, const QString& key,
                         ScreenshotQrRecognitionResult result);
     void ensureContent();
-    void clearContent();
+    void clearContent(bool retainTableEditor = false);
     void applyPresentation(const std::shared_ptr<ScreenshotOcrPresentation>& presentation,
                            QImage filteredImage = {}, QRectF filteredImageCanvasRect = {});
     void applyFormattedText(const std::shared_ptr<QTextDocument>& document);
@@ -290,6 +308,11 @@ class ScreenshotRecognitionSessionController final : public QObject {
     QHash<QString, TextCacheEntry> m_textCache;
 #if SNOW_SHOT_ENABLE_TABLE_RECOGNITION
     QHash<QString, std::shared_ptr<ScreenshotTableEditingSession>> m_tableCache;
+    QHash<QString, ScreenshotTableRecognitionEntry> m_tableEntries;
+    QHash<QString, QString> m_tableEntryTargets;
+    QString m_tableModelSelection;
+    bool m_tableParsing = false;
+    std::shared_ptr<std::atomic_bool> m_tableParsingCancellation;
 #endif
 #if SNOW_SHOT_ENABLE_QR_RECOGNITION
     QHash<QString, QStringList> m_qrCache;
@@ -297,6 +320,9 @@ class ScreenshotRecognitionSessionController final : public QObject {
 #if SNOW_SHOT_ENABLE_LATEX_RECOGNITION
     QHash<QString, SnowShotLatexResult> m_latexResults;
     QHash<QString, std::shared_ptr<ScreenshotOcrTextEditingSession>> m_latexCache;
+    QHash<QString, ScreenshotLatexRecognitionEntry> m_latexEntries;
+    QHash<QString, QString> m_latexEntryTargets;
+    QString m_latexModelSelection;
     SnowShotApiClient::RequestToken m_latexRequestToken = 0;
     quint64 m_latexGeneration = 0;
 #endif
@@ -343,6 +369,15 @@ class ScreenshotRecognitionSessionController final : public QObject {
     quint64 m_translationGeneration = 0;
 #endif
     mutable QString m_workflowError;
+#if SNOW_SHOT_ENABLE_TABLE_RECOGNITION || SNOW_SHOT_ENABLE_LATEX_RECOGNITION
+    SnowShotApiClient::RequestToken m_recognitionModelsToken = 0;
+    quint64 m_recognitionModelsGeneration = 0;
+    QString m_recognitionModelsError;
+    QString m_recognitionEffectiveModel;
+    bool m_recognitionModelsLoading = false;
+    bool m_recognitionAwaitingModel = false;
+    bool m_savingRecognitionModel = false;
+#endif
     Mode m_mode = Mode::Text;
     bool m_active = false;
     bool m_showOriginalImage = false;

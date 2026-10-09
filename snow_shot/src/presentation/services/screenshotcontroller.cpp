@@ -433,6 +433,7 @@ struct ScreenshotController::Impl final : public ScreenshotToolbarCommandSink,
     void setMarkdownTool() override;
     void setHtmlTool() override;
     void openImageConversionSettings() override;
+    void setRecognitionModel(const QString& selection) override;
     void mergeTableSelection() override;
     void splitTableSelection() override;
     void resetTable() override;
@@ -1621,6 +1622,7 @@ void ScreenshotController::Impl::createCaptureWorkflow() {
                         applyGlobalMouseDrag(false);
                     }
                 },
+                [this]() { m_presentationServices->resetPresentation(); },
             },
             [this]() {
                 cancelCloudUpload();
@@ -2786,6 +2788,11 @@ void ScreenshotController::Impl::openImageConversionSettings() {
         m_ocrController->openImageConversionSettings();
     }
 #endif
+}
+
+void ScreenshotController::Impl::setRecognitionModel(const QString& selection) {
+    if (m_ocrController)
+        m_ocrController->setRecognitionModel(selection);
 }
 
 void ScreenshotController::Impl::setTextTranslationTool() {

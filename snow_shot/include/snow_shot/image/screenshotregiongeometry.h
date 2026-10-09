@@ -174,6 +174,13 @@ class ScreenshotRegionGeometry {
         return bytes;
     }
 
+#if defined(SNOW_SHOT_BENCH_INTERNALS)
+    // Observe snapshot retirement without extending the vector storage's lifetime.
+    std::weak_ptr<const void> storageLifetimeForTesting() const {
+        return m_vector;
+    }
+#endif
+
     // Drop derived contours for all snapshots sharing these immutable operands.
     // Geometry and persistence remain unchanged; future readers rebuild on demand.
     void clearDerivedCache() const {

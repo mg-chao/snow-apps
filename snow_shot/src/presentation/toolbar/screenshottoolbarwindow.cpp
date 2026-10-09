@@ -258,6 +258,8 @@ void ScreenshotToolbarWindow::connectToolCommands(ScreenshotToolPalette& toolPal
 #endif
     connect(&toolPalette, &ScreenshotToolPalette::showOriginalImageRequested, this,
             [this](bool show) { m_commands.setShowOriginalImage(show); });
+    connect(&toolPalette, &ScreenshotToolPalette::recognitionModelChanged, this,
+            [this](const QString& selection) { m_commands.setRecognitionModel(selection); });
     connect(&toolPalette, &ScreenshotToolPalette::textEditRequested, this,
             [this]() { m_commands.toggleTextEditing(); });
 #if SNOW_SHOT_ENABLE_TEXT_TRANSLATION
@@ -680,6 +682,13 @@ void ScreenshotToolbarWindow::setQrBusy(bool busy) {
 void ScreenshotToolbarWindow::setImageConversionBusy(bool markdownBusy, bool htmlBusy) {
     if (auto* toolPalette = palette()) {
         toolPalette->setImageConversionBusy(markdownBusy, htmlBusy);
+    }
+}
+
+void ScreenshotToolbarWindow::setRecognitionModelState(
+    ScreenshotToolPalette::Tool tool, const ScreenshotRecognitionModelState& state) {
+    if (auto* toolPalette = palette()) {
+        toolPalette->setRecognitionModelState(tool, state);
     }
 }
 

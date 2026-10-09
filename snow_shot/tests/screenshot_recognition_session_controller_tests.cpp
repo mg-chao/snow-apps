@@ -41,6 +41,7 @@
 
 void runOriginalImageTranslationTests();
 void runImageConversionTests();
+void runRecognitionModelTests();
 
 class SnowShotApiClientTestAccess {
   public:
@@ -142,8 +143,11 @@ void tablePreparationPreservesSessionAndSiblingPopovers() {
         QObject::connect(&server, &QTcpServer::newConnection, &server, [&]() {
             auto* socket = server.nextPendingConnection();
             QObject::connect(socket, &QTcpSocket::readyRead, socket, [socket]() {
-                socket->readAll();
-                const QByteArray body = R"({"data":{"html":"<table><tr><td>1</td></tr></table>"}})";
+                const QByteArray request = socket->readAll();
+                const QByteArray body =
+                    request.startsWith("GET /api/v2/chat/models ")
+                        ? R"({"data":[{"model":"vision","name":"Vision","supports_vision":true}]})"
+                        : R"({"data":{"html":"<table><tr><td>1</td></tr></table>"}})";
                 socket->write(
                     "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: " +
                     QByteArray::number(body.size()) + "\r\nConnection: close\r\n\r\n" + body);
@@ -1088,6 +1092,11 @@ int main(int argc, char** argv) {
             "initialize recognition test storage");
     if (application.arguments().contains(QStringLiteral("--latex-only"))) {
         runLatexRecognitionTests();
+        snow_shot::storage::ApplicationStorage::instance().shutdown();
+        return 0;
+    }
+    if (application.arguments().contains(QStringLiteral("--recognition-model-only"))) {
+        runRecognitionModelTests();
         snow_shot::storage::ApplicationStorage::instance().shutdown();
         return 0;
     }

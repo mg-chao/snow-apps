@@ -618,6 +618,22 @@ so every moment on screen can be expressed clearly and shared easily.</translati
             <translation>Image conversion timed out. Try a smaller area.</translation>
         </message>
         <message>
+            <source>Image recognition failed</source>
+            <translation>Image recognition failed</translation>
+        </message>
+        <message>
+            <source>Image recognition is incomplete. Try a smaller area.</source>
+            <translation>Image recognition is incomplete. Try a smaller area.</translation>
+        </message>
+        <message>
+            <source>Image recognition stream ended unexpectedly</source>
+            <translation>Image recognition stream ended unexpectedly</translation>
+        </message>
+        <message>
+            <source>Image recognition timed out. Try a smaller area.</source>
+            <translation>Image recognition timed out. Try a smaller area.</translation>
+        </message>
+        <message>
             <source>Invalid LaTeX recognition response</source>
             <translation>Invalid LaTeX recognition response</translation>
         </message>
@@ -678,8 +694,16 @@ so every moment on screen can be expressed clearly and shared easily.</translati
             <translation>The image could not be prepared for conversion</translation>
         </message>
         <message>
+            <source>The image could not be prepared for recognition</source>
+            <translation>The image could not be prepared for recognition</translation>
+        </message>
+        <message>
             <source>The image is too large to convert. Select a smaller area.</source>
             <translation>The image is too large to convert. Select a smaller area.</translation>
+        </message>
+        <message>
+            <source>The image is too large to recognize. Select a smaller area.</source>
+            <translation>The image is too large to recognize. Select a smaller area.</translation>
         </message>
         <message>
             <source>The model response is too large</source>
@@ -688,6 +712,18 @@ so every moment on screen can be expressed clearly and shared easily.</translati
         <message>
             <source>The model returned no content</source>
             <translation>The model returned no content</translation>
+        </message>
+        <message>
+            <source>The model returned no usable formula</source>
+            <translation>The model returned no usable formula</translation>
+        </message>
+        <message>
+            <source>The model returned no usable table</source>
+            <translation>The model returned no usable table</translation>
+        </message>
+        <message>
+            <source>The model service changed. Retry to load its models.</source>
+            <translation>The model service changed. Retry to load its models.</translation>
         </message>
         <message>
             <source>The text is too large to translate.</source>

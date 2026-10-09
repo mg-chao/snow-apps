@@ -67,6 +67,7 @@
 #include <QString>
 #include <QTemporaryDir>
 #include <QTimer>
+#include <QTranslator>
 #include <QSlider>
 #include <QSpacerItem>
 #include <QPushButton>
@@ -6834,6 +6835,378 @@ void latexHistoryActionsUseFormulaHistory() {
     palette.setActiveTool(ScreenshotToolPalette::Tool::Qr);
     require(!palette.canActivateScreenshotShortcut(QStringLiteral("redo")),
             "leaving LaTeX does not expose its history in QR mode");
+}
+
+void recognitionModelsDefaultToDedicated() {
+    using Tool = ScreenshotToolPalette::Tool;
+    using adqt::widgets::AdSelect;
+    for (const Tool tool : {Tool::Table, Tool::Latex}) {
+        ScreenshotToolPalette::Options options;
+        options.showTableTool = true;
+        options.showImageConversionTools = true;
+        ScreenshotToolPalette palette(options);
+        int modelChanges = 0;
+        QObject::connect(&palette, &ScreenshotToolPalette::recognitionModelChanged, &palette,
+                         [&](const QString&) { ++modelChanges; });
+        palette.setActiveTool(tool);
+        auto* select =
+            palette.findChild<AdSelect*>(QStringLiteral("screenshotRecognitionModelSelect"));
+        require(select &&
+                    select->currentValue().toString() == screenshotDedicatedRecognitionModelId() &&
+                    modelChanges == 0,
+                "Table and LaTeX selectors initially choose their dedicated models silently");
+        palette.setRecognitionModelState(tool, {});
+        require(select->currentValue().toString() == screenshotDedicatedRecognitionModelId() &&
+                    modelChanges == 0,
+                "empty Table and LaTeX model states fall back to their dedicated models silently");
+    }
+}
+
+void recognitionModelSelectorGroupsOptionsAndRetainsIndependentSelections() {
+    recognitionModelsDefaultToDedicated();
+    using Tool = ScreenshotToolPalette::Tool;
+    using adqt::widgets::AdSelect;
+    ScreenshotToolPalette::Options options;
+    options.showTableTool = true;
+    options.showQrTool = true;
+    options.showImageConversionTools = true;
+    options.showSelectTool = true;
+    ScreenshotToolPalette palette(options);
+    ScreenshotRecognitionModelState tableState;
+    tableState.selection = screenshotDedicatedRecognitionModelId();
+    tableState.models = {
+        {QStringLiteral("text"), QStringLiteral("Text-only model"), false,
+         QStringLiteral("default"), false},
+        {QStringLiteral("vision-default"), QStringLiteral("First server vision model"), false,
+         QStringLiteral("default"), true},
+        {QStringLiteral("vision-other"), QStringLiteral("Other vision model"), false,
+         QStringLiteral("default"), true},
+        {QStringLiteral("custom:vision"), QStringLiteral("A long custom vision model name"), false,
+         QStringLiteral("default"), true},
+        {QStringLiteral("custom:vision-other"), QStringLiteral("Second custom vision model"), false,
+         QStringLiteral("default"), true},
+        {QStringLiteral("custom:text"), QStringLiteral("Custom text-only model"), false,
+         QStringLiteral("default"), false},
+        {QStringLiteral("vision-default"), QStringLiteral("Duplicate vision model"), false,
+         QStringLiteral("default"), true},
+        {screenshotDedicatedRecognitionModelId(), QStringLiteral("Reserved dedicated identity"),
+         false, QStringLiteral("default"), true},
+        {screenshotDefaultVisionRecognitionModelId(), QStringLiteral("Reserved default identity"),
+         false, QStringLiteral("default"), true},
+    };
+    palette.setRecognitionModelState(Tool::Table, tableState);
+    auto latexState = tableState;
+    latexState.selection = screenshotDefaultVisionRecognitionModelId();
+    palette.setRecognitionModelState(Tool::Latex, latexState);
+    require(palette.findChild<AdSelect*>(QStringLiteral("screenshotRecognitionModelSelect")) ==
+                nullptr,
+            "publishing recognition models must not materialize an inactive toolbar");
+    int modelChanges = 0;
+    QString lastSelection;
+    QObject::connect(&palette, &ScreenshotToolPalette::recognitionModelChanged, &palette,
+                     [&](const QString& selection) {
+                         ++modelChanges;
+                         lastSelection = selection;
+                     });
+    palette.setActiveTool(Tool::Table);
+    auto* select = palette.findChild<AdSelect*>(QStringLiteral("screenshotRecognitionModelSelect"));
+    require(select != nullptr && !select->isHidden() &&
+                select->currentValue().toString() == screenshotDedicatedRecognitionModelId() &&
+                modelChanges == 0,
+            "Table must default to Dedicated Model without emitting a recognition request");
+    const auto requireCatalogOptions = [&](const QString& dedicatedLabel) {
+        const auto grouped = select->options();
+        const QStringList expectedIds{
+            screenshotDedicatedRecognitionModelId(), QStringLiteral("vision-default"),
+            QStringLiteral("vision-other"), QStringLiteral("custom:vision"),
+            QStringLiteral("custom:vision-other")};
+        const QStringList expectedLabels{
+            dedicatedLabel, QStringLiteral("First server vision model"),
+            QStringLiteral("Other vision model"), QStringLiteral("A long custom vision model name"),
+            QStringLiteral("Second custom vision model")};
+        require(grouped.size() == expectedIds.size(),
+                "catalog options must include every server and custom vision model and exclude "
+                "both kinds of text-only model");
+        for (qsizetype index = 0; index < grouped.size(); ++index) {
+            require(grouped[index].value.toString() == expectedIds[index] &&
+                        grouped[index].label == expectedLabels[index] && !grouped[index].disabled &&
+                        grouped[index].group == (index == 0 ? QStringLiteral("Dedicated Model")
+                                                            : QStringLiteral("Vision Model")),
+                    "each grouped recognition option must preserve its exact model identity and "
+                    "name, including the first server vision model");
+        }
+    };
+    requireCatalogOptions(QStringLiteral("Table-Specific Model"));
+    auto* layout = qobject_cast<QBoxLayout*>(palette.actionPanel()->layout());
+    require(layout != nullptr && layout->itemAt(layout->count() - 1)->widget() == select &&
+                select->accessibleName() == QStringLiteral("Recognition model"),
+            "recognition model selection must be the named far-right sub-toolbar control");
+    select->setCurrentValue(QStringLiteral("vision-default"));
+    require(modelChanges == 1 && lastSelection == QStringLiteral("vision-default") &&
+                select->currentValue().toString() == QStringLiteral("vision-default") &&
+                select->toolTip() == QStringLiteral("First server vision model"),
+            "choosing the first server model must emit its real ID and display its catalog name");
+    tableState.selection = QStringLiteral("vision-default");
+    palette.setRecognitionModelState(Tool::Table, tableState);
+    require(modelChanges == 1 &&
+                select->currentValue().toString() == QStringLiteral("vision-default"),
+            "restoring an explicit first-server selection must not turn it into a semantic alias");
+    select->setCurrentValue(QStringLiteral("custom:vision"));
+    require(modelChanges == 2 && lastSelection == QStringLiteral("custom:vision") &&
+                select->toolTip() == QStringLiteral("A long custom vision model name") &&
+                select->accessibleDescription() == select->toolTip(),
+            "a model change must emit once and expose the complete model name");
+    palette.setTableBusy(true);
+    require(select->isEnabled(), "model selection must remain available while recognition is busy");
+    palette.setActiveTool(Tool::Latex);
+    require(select->currentValue().toString() == QStringLiteral("vision-default") &&
+                select->toolTip() == QStringLiteral("First server vision model") &&
+                !select->isHidden() && modelChanges == 2,
+            "LaTeX must display the default server model's real identity without emitting a model "
+            "choice");
+    requireCatalogOptions(QStringLiteral("LaTeX-Specific Model"));
+    std::swap(latexState.models[1], latexState.models[2]);
+    latexState.effectiveModel = QStringLiteral("vision-default");
+    palette.setRecognitionModelState(Tool::Latex, latexState);
+    require(select->currentValue().toString() == QStringLiteral("vision-default") &&
+                select->toolTip() == QStringLiteral("First server vision model") &&
+                modelChanges == 2,
+            "a semantic default must display the active extraction model when catalog order "
+            "changes without emitting a model choice");
+    latexState.effectiveModel.clear();
+    palette.setRecognitionModelState(Tool::Latex, latexState);
+    require(select->currentValue().toString() == QStringLiteral("vision-other") &&
+                select->toolTip() == QStringLiteral("Other vision model") && modelChanges == 2,
+            "an unbound semantic default must follow the first server vision model without "
+            "emitting a model choice");
+    select->setCurrentValue(QStringLiteral("vision-default"));
+    require(select->currentValue().toString() == QStringLiteral("vision-default") &&
+                lastSelection == QStringLiteral("vision-default") && modelChanges == 3,
+            "choosing the original first server model after another model must retain its real "
+            "identity");
+    latexState.selection = QStringLiteral("vision-default");
+    std::swap(latexState.models[1], latexState.models[2]);
+    palette.setRecognitionModelState(Tool::Latex, latexState);
+    require(select->currentValue().toString() == QStringLiteral("vision-default") &&
+                select->toolTip() == QStringLiteral("First server vision model") &&
+                modelChanges == 3,
+            "an explicit first-server choice must survive catalog reordering without becoming a "
+            "semantic default or replaying a signal");
+    select->setCurrentValue(screenshotDedicatedRecognitionModelId());
+    require(modelChanges == 4, "LaTeX must permit choosing its dedicated recognition model");
+    palette.setActiveTool(Tool::Qr);
+    palette.setRecognitionModelState(Tool::Qr, tableState);
+    require(select->isHidden() && modelChanges == 4,
+            "barcode recognition must neither display nor accept a recognition model selector");
+    palette.setActiveTool(Tool::Table);
+    require(select->currentValue().toString() == QStringLiteral("custom:vision") &&
+                modelChanges == 4,
+            "returning to Table must retain its separate selection without requesting work");
+    palette.setActiveTool(Tool::Select);
+    require(palette.findChild<AdSelect*>(QStringLiteral("screenshotRecognitionModelSelect")) ==
+                nullptr,
+            "leaving recognition must evict its model selector");
+    palette.setActiveTool(Tool::Latex);
+    select = palette.findChild<AdSelect*>(QStringLiteral("screenshotRecognitionModelSelect"));
+    require(select != nullptr &&
+                select->currentValue().toString() == screenshotDedicatedRecognitionModelId() &&
+                modelChanges == 4,
+            "rehydrating LaTeX must retain its selection and suppress replay signals");
+    latexState.selection = screenshotDefaultVisionRecognitionModelId();
+    latexState.models = {
+        {QStringLiteral("custom:vision"), QStringLiteral("A long custom vision model name"), false,
+         QStringLiteral("default"), true},
+        {QStringLiteral("custom:vision-other"), QStringLiteral("Second custom vision model"), false,
+         QStringLiteral("default"), true},
+    };
+    latexState.loading = true;
+    palette.setRecognitionModelState(Tool::Latex, latexState);
+    const auto unavailableDefault = select->options();
+    require(unavailableDefault.size() == 4 &&
+                unavailableDefault[0].label == QStringLiteral("LaTeX-Specific Model") &&
+                unavailableDefault[1].value.toString() == QStringLiteral("custom:vision") &&
+                unavailableDefault[2].value.toString() == QStringLiteral("custom:vision-other") &&
+                unavailableDefault[3].value.toString() ==
+                    screenshotDefaultVisionRecognitionModelId() &&
+                unavailableDefault[3].label == QStringLiteral("Snow Shot visual understanding") &&
+                unavailableDefault[3].disabled && !select->currentValue().isValid() &&
+                select->placeholder() == QStringLiteral("Snow Shot visual understanding") &&
+                select->lineEdit()->placeholderText() == select->placeholder() &&
+                select->loading() && modelChanges == 4,
+            "an unresolved server default must stay a disabled placeholder alongside all custom "
+            "vision models without choosing a custom fallback");
+}
+
+void recognitionModelSelectorPreservesPopupStateAndScalesAndRetranslates() {
+    using Tool = ScreenshotToolPalette::Tool;
+    using adqt::widgets::AdSelect;
+    ScreenshotToolPalette::Options options;
+    options.showTableTool = true;
+    options.showSelectTool = true;
+    options.showImageConversionTools = true;
+    ScreenshotToolPalette palette(options);
+    ScreenshotRecognitionModelState state;
+    state.selection = QStringLiteral("custom:vision");
+    const QString longName =
+        QStringLiteral("Long custom vision model name that remains available in the full tooltip");
+    state.models = {
+        {QStringLiteral("custom:vision"), longName, false, QStringLiteral("default"), true}};
+    palette.setRecognitionModelState(Tool::Table, state);
+    palette.setRecognitionModelState(Tool::Latex, state);
+    palette.setActiveTool(Tool::Table);
+    palette.show();
+    QCoreApplication::processEvents();
+    auto* select = palette.findChild<AdSelect*>(QStringLiteral("screenshotRecognitionModelSelect"));
+    require(select != nullptr, "recognition selector must materialize");
+    const auto customOnly = select->options();
+    require(customOnly.size() == 2 &&
+                customOnly[0].value.toString() == screenshotDedicatedRecognitionModelId() &&
+                customOnly[1].value.toString() == QStringLiteral("custom:vision") &&
+                customOnly[1].label == longName,
+            "an explicit custom selection must not add an unused semantic-default placeholder");
+    select->setPopupVisible(true);
+    QCoreApplication::processEvents();
+    select->setSearchText(QStringLiteral("Long"));
+    auto* originalModel = select->model();
+    palette.setRecognitionModelState(Tool::Table, state);
+    require(select->model() == originalModel && select->searchText() == QStringLiteral("Long") &&
+                select->popupVisible(),
+            "unchanged recognition state must preserve the open model popup and search");
+    state.loading = true;
+    state.error = QStringLiteral("Unable to load vision models");
+    palette.setRecognitionModelState(Tool::Table, state);
+    require(select->isEnabled() && select->loading() &&
+                select->status() == AdSelect::Status::Warning &&
+                select->toolTip().contains(state.error) && select->toolTip().contains(longName) &&
+                select->accessibleDescription() == select->toolTip() && select->width() == 200 &&
+                select->lineEdit()->fontMetrics().horizontalAdvance(longName) >
+                    select->lineEdit()->width(),
+            "model loading failures must keep dedicated and cached model choices usable");
+    select->setPopupVisible(false);
+    int keyboardSelections = 0;
+    QObject::connect(&palette, &ScreenshotToolPalette::recognitionModelChanged, &palette,
+                     [&](const QString&) { ++keyboardSelections; });
+    PhysicalKeyEvent open(QEvent::KeyPress, Qt::Key_Down, Qt::NoModifier);
+    QApplication::sendEvent(select, &open);
+    QCoreApplication::processEvents();
+    auto* input = select->lineEdit();
+    auto* view = select->view();
+    require(select->popupVisible() && select->loading() && input && !input->isReadOnly() && view &&
+                view->isVisible() && view->window()->isVisible() &&
+                select->screen()->availableGeometry().contains(
+                    QRect(view->mapToGlobal(QPoint()), view->size())),
+            "keyboard opening during model loading must show a usable popup inside screen bounds");
+    input->selectAll();
+    PhysicalKeyEvent search(QEvent::KeyPress, Qt::Key_unknown, Qt::NoModifier,
+                            QStringLiteral("Table-Specific Model"));
+    QApplication::sendEvent(input, &search);
+    QCoreApplication::processEvents();
+    require(select->searchText() == QStringLiteral("Table-Specific Model") &&
+                view->model()->rowCount() == 2 && keyboardSelections == 0,
+            "typing while model loading must filter grouped options without committing a model");
+    PhysicalKeyEvent home(QEvent::KeyPress, Qt::Key_Home, Qt::NoModifier);
+    QApplication::sendEvent(input, &home);
+    PhysicalKeyEvent enter(QEvent::KeyPress, Qt::Key_Return, Qt::NoModifier);
+    QApplication::sendEvent(input, &enter);
+    QCoreApplication::processEvents();
+    require(select->currentValue().toString() == screenshotDedicatedRecognitionModelId() &&
+                keyboardSelections == 1 && select->loading() && !select->popupVisible() &&
+                select->searchText().isEmpty(),
+            "Enter must commit the searched model exactly once and close its popup while loading");
+    palette.setRecognitionModelState(Tool::Table, state);
+    require(keyboardSelections == 1 && select->currentValue().toString() == state.selection,
+            "replaying the selected loading state must not emit another model change");
+    adqt::widgets::AdControlScaleScope scaleScope(&palette);
+    for (const qreal scale : {1.0, 0.64, 1.25, 0.8}) {
+        scaleScope.publishScale(
+            adqt::widgets::AdControlScaleContext::fromDprsAndContentScale(1.0, 1.0, scale));
+        palette.setPhysicalScale(scale);
+        require(select->width() == qRound(200 * scale) && select->height() == qRound(32 * scale),
+                "recognition model select must follow fractional toolbar scaling");
+        select->setStatus(AdSelect::Status::None);
+        select->setStatus(AdSelect::Status::Warning);
+        require(select->height() == qRound(32 * scale),
+                "style refresh must retain the recognition model selector height");
+    }
+    auto defaultState = state;
+    defaultState.selection = screenshotDefaultVisionRecognitionModelId();
+    palette.setRecognitionModelState(Tool::Table, defaultState);
+    palette.setRecognitionModelState(Tool::Latex, defaultState);
+    class RecognitionTranslator final : public QTranslator {
+      public:
+        bool isEmpty() const override {
+            return false;
+        }
+        QString translate(const char* context, const char* source, const char*,
+                          int) const override {
+            if (qstrcmp(context, "ScreenshotToolPalette") == 0) {
+                return QStringLiteral("Translated ") + QString::fromUtf8(source);
+            }
+            return {};
+        }
+    } translator;
+    QCoreApplication::installTranslator(&translator);
+    QCoreApplication::processEvents();
+    const auto translated = select->options();
+    require(
+        translated.size() == 3 &&
+            select->accessibleName() == QStringLiteral("Translated Recognition model") &&
+            translated[0].label == QStringLiteral("Translated Table-Specific Model") &&
+            translated[0].group == QStringLiteral("Translated Dedicated Model") &&
+            translated[1].group == QStringLiteral("Translated Vision Model") &&
+            translated[1].value.toString() == QStringLiteral("custom:vision") &&
+            translated[1].label == longName && translated[2].group == translated[1].group &&
+            translated[2].label == QStringLiteral("Translated Snow Shot visual understanding") &&
+            translated[2].disabled && !select->currentValue().isValid() &&
+            select->placeholder() == QStringLiteral("Translated Snow Shot visual understanding") &&
+            select->lineEdit()->placeholderText() == select->placeholder(),
+        "language changes must translate recognition groups while preserving model identities");
+    palette.setActiveTool(Tool::Latex);
+    const auto translatedLatex = select->options();
+    require(translatedLatex.size() == 3 &&
+                translatedLatex[0].label == QStringLiteral("Translated LaTeX-Specific Model") &&
+                translatedLatex[0].group == QStringLiteral("Translated Dedicated Model") &&
+                translatedLatex[1].group == QStringLiteral("Translated Vision Model") &&
+                translatedLatex[1].label == longName &&
+                translatedLatex[1].value.toString() == QStringLiteral("custom:vision") &&
+                translatedLatex[2].group == translatedLatex[1].group &&
+                translatedLatex[2].label ==
+                    QStringLiteral("Translated Snow Shot visual understanding") &&
+                translatedLatex[2].disabled && !select->currentValue().isValid() &&
+                select->placeholder() ==
+                    QStringLiteral("Translated Snow Shot visual understanding") &&
+                select->lineEdit()->placeholderText() == select->placeholder() &&
+                keyboardSelections == 1,
+            "language changes must translate the LaTeX-specific label without translating catalog "
+            "model names or changing model choices");
+    defaultState.models.prepend({QStringLiteral("server-vision"),
+                                 QStringLiteral("Actual server vision name"), false,
+                                 QStringLiteral("default"), true});
+    palette.setRecognitionModelState(Tool::Latex, defaultState);
+    const auto translatedCatalog = select->options();
+    require(translatedCatalog.size() == 3 &&
+                translatedCatalog[0].label == QStringLiteral("Translated LaTeX-Specific Model") &&
+                translatedCatalog[1].group == QStringLiteral("Translated Vision Model") &&
+                translatedCatalog[1].value.toString() == QStringLiteral("server-vision") &&
+                translatedCatalog[1].label == QStringLiteral("Actual server vision name") &&
+                translatedCatalog[2].value.toString() == QStringLiteral("custom:vision") &&
+                translatedCatalog[2].label == longName &&
+                select->currentValue().toString() == QStringLiteral("server-vision") &&
+                select->placeholder() == QStringLiteral("Translated Recognition model") &&
+                keyboardSelections == 1,
+            "translated recognition options must retain actual server and custom names and IDs "
+            "without adding a duplicate semantic default");
+    palette.setActiveTool(Tool::Table);
+    QCoreApplication::removeTranslator(&translator);
+    QCoreApplication::processEvents();
+    select->setPopupVisible(true);
+    QCoreApplication::processEvents();
+    QPointer<AdSelect> retiredSelect(select);
+    palette.setActiveTool(Tool::Select);
+    require(retiredSelect != nullptr && !retiredSelect->popupVisible(),
+            "eviction must synchronously close a model popup before detaching the direct select");
+    QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+    require(retiredSelect.isNull(), "evicted recognition model selectors must be released");
 }
 
 void imageConversionToolsExposeRecognitionActions() {
@@ -16863,6 +17236,13 @@ int main(int argc, char** argv) {
     }
     if (application.arguments().contains(QStringLiteral("--latex-only"))) {
         latexHistoryActionsUseFormulaHistory();
+        recognitionModelSelectorGroupsOptionsAndRetainsIndependentSelections();
+        snow_shot::storage::ApplicationStorage::instance().shutdown();
+        return 0;
+    }
+    if (application.arguments().contains(QStringLiteral("--recognition-model-only"))) {
+        recognitionModelSelectorGroupsOptionsAndRetainsIndependentSelections();
+        recognitionModelSelectorPreservesPopupStateAndScalesAndRetranslates();
         snow_shot::storage::ApplicationStorage::instance().shutdown();
         return 0;
     }
@@ -16998,6 +17378,8 @@ int main(int argc, char** argv) {
     dynamicToolbarLabelsUseEveryTranslationCatalog();
     numericStrokeWidthPreviewUsesLineWithinPreviewBounds();
     secondaryControlsMaterializeOnlyForTheRequestedFamily();
+    recognitionModelSelectorGroupsOptionsAndRetainsIndependentSelections();
+    recognitionModelSelectorPreservesPopupStateAndScalesAndRetranslates();
     regionControlsFollowTheActiveCaptureType();
     moveToolExposesCaptureCursorAndRecaptureOptions();
     textAndHighlightStrokeWidthTriggersUseSharedPreviewButton();

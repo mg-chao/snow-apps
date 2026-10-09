@@ -27,6 +27,7 @@
 #include <QTextEdit>
 #include <QTextCursor>
 #include <QTimer>
+#include <QScopeGuard>
 #include <QDir>
 #include <QFontDatabase>
 #include <QMimeData>
@@ -817,10 +818,10 @@ void conversionToolbarMigration() {
                                                         QStringLiteral("convert-to-markdown"),
                                                         QStringLiteral("latex-recognition"),
                                                         QStringLiteral("convert-to-html")} &&
-                // quick-save always mirrors save-as-file: hiding the manual
-                // save hides its companion too.
+                // Upload, quick-save, and print inherit the manual save action's visibility.
                 migrated.hidden ==
-                    QStringList{QStringLiteral("save-as-file"), QStringLiteral("quick-save")},
+                    QStringList{QStringLiteral("save-as-file"), QStringLiteral("upload-to-cloud"),
+                                QStringLiteral("quick-save"), QStringLiteral("print")},
             "older layouts gain conversions inside recognition without rearranging other tools");
     const storage::ScreenshotToolbarSettings settings;
     settings.setLayout(storage::ScreenshotToolbarLayoutKind::ActionTools, original);
@@ -876,8 +877,7 @@ void conversionToolbarMigration() {
     qrHidden.hidden.push_back(QStringLiteral("barcode-recognition"));
     auto tableGroup = migrated;
     tableGroup.positions[1].removeAll(QStringLiteral("barcode-recognition"));
-    // The migration preserves the input's hidden order and appends the
-    // quick-save companion last, so barcode-recognition slots in before it.
+    // Recognition keeps its input position before the inherited hidden save companions.
     tableGroup.hidden.insert(1, QStringLiteral("barcode-recognition"));
     verify(qrHidden, tableGroup);
     auto recognitionHidden = defaults;
@@ -938,6 +938,14 @@ void latexSessionRequestsAreIsolated() {
             const auto end = bytes->indexOf("\r\n\r\n");
             if (end < 0 || socket->property("answered").toBool())
                 return;
+            if (bytes->startsWith("GET /api/v2/chat/models ")) {
+                socket->setProperty("answered", true);
+                ConversionServer::respond(
+                    socket,
+                    R"({"data":[{"model":"vision","name":"Vision","supports_vision":true}]})",
+                    "application/json");
+                return;
+            }
             qsizetype length = 0;
             for (const auto& line : bytes->left(end).split('\n'))
                 if (line.toLower().startsWith("content-length:"))
@@ -1058,6 +1066,14 @@ void latexPendingResultReplacesBorrowedDocumentSafely() {
             const auto end = bytes->indexOf("\r\n\r\n");
             if (end < 0)
                 return;
+            if (bytes->startsWith("GET /api/v2/chat/models ")) {
+                socket->setProperty("answered", true);
+                ConversionServer::respond(
+                    socket,
+                    R"({"data":[{"model":"vision","name":"Vision","supports_vision":true}]})",
+                    "application/json");
+                return;
+            }
             qsizetype length = 0;
             for (const auto& line : bytes->left(end).split('\n'))
                 if (line.toLower().startsWith("content-length:"))
@@ -1404,6 +1420,11 @@ void latexKeyboardHistoryRoutesToSession() {
 }
 
 void runLatexRecognitionTests() {
+    const snow_shot::storage::ScreenshotRecognitionModelSettings modelSettings;
+    const QString previousModel = modelSettings.latexModel();
+    const auto restoreModel = qScopeGuard([&] { modelSettings.setLatexModel(previousModel); });
+    // These lifecycle regressions explicitly exercise the retained dedicated API contract.
+    modelSettings.setLatexModel(screenshotDedicatedRecognitionModelId());
     initializeRecognitionTestFonts();
     latexSessionRequestsAreIsolated();
     latexPendingResultReplacesBorrowedDocumentSafely();

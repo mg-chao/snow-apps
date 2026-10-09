@@ -75,6 +75,7 @@ class ScreenshotToolbarCommandSink {
     virtual void setTableTool() {}
     virtual void setQrTool() {}
     virtual void setLatexTool() {}
+    virtual void setRecognitionModel(const QString&) {}
     virtual void setMarkdownTool() {}
     virtual void setHtmlTool() {}
     virtual void openImageConversionSettings() {}

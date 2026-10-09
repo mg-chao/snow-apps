@@ -820,6 +820,55 @@ void restartingCaptureReleasesPreviousSelectorCache() {
             "restarting a capture must stop features owned by the previous capture");
 }
 
+void captureEndResetsPresentationBeforeDeferredCleanup() {
+    enum class Ending { Cancel, Export, Restart };
+    for (const auto ending : {Ending::Cancel, Ending::Export, Ending::Restart}) {
+        ScreenshotCaptureState state;
+        state.sessionId = 41;
+        state.sessionState = ScreenshotSessionState::Editing;
+        ScreenshotDisplaySession displays;
+        ScreenshotGeometryMapper geometry;
+        ScreenshotInteractionState interaction;
+        interaction.enterOverlayVisible(false);
+        ScreenshotSelectionModel selection;
+        selection.setSelectionRect(QRectF(10, 20, 100, 80));
+        ScreenshotIntelligentSelectionModel intelligent;
+        CaptureRuntime runtime;
+        int resets = 0;
+        ScreenshotCaptureWorkflowContext context{state,       runtime,   geometry,    displays,
+                                                 interaction, selection, intelligent, {}};
+        context.presentation.resetPresentation = [&]() {
+            ++resets;
+            require(state.sessionId != 41 && interaction.inactive() &&
+                        !selection.hasPixelSelection(),
+                    "presentation retirement must observe the ended epoch and cleared models");
+            require(runtime.releaseColorPickerCalls == 0,
+                    "presentation snapshots must be retired before session resource cleanup");
+        };
+        ScreenshotCaptureWorkflow workflow(std::move(context));
+        switch (ending) {
+        case Ending::Cancel:
+            workflow.cancelCapture();
+            break;
+        case Ending::Export:
+            workflow.cancelCaptureForExport();
+            break;
+        case Ending::Restart:
+            workflow.startCapture();
+            break;
+        }
+        require(resets == 1,
+                "cancel, export and active restart must each retire presentation immediately");
+        if (ending == Ending::Export) {
+            require(runtime.resetForNewCaptureCalls == 0,
+                    "export presentation retirement must not force deferred native cleanup");
+            workflow.completeDeferredExportCleanup();
+            require(resets == 1,
+                    "completing deferred exports must not retire the same presentation twice");
+        }
+    }
+}
+
 void capturePresentedRunsAfterCapturedOverlayIsShown() {
     ScreenshotCaptureState state;
     state.sessionState = ScreenshotSessionState::IdlePrepared;
@@ -2215,6 +2264,7 @@ int main() {
     captureOverlapsSelectorInitialization();
     synchronousCaptureFailureDoesNotRestartSelectorRefresh();
     restartingCaptureReleasesPreviousSelectorCache();
+    captureEndResetsPresentationBeforeDeferredCleanup();
     capturePresentedRunsAfterCapturedOverlayIsShown();
     capturedOverlayWaitsForImageAndSelectionInEitherOrder();
     overlayCapturePrewarmsToolbarSurfaceAfterCaptureDispatch();

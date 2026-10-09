@@ -362,6 +362,111 @@ void anEpochChangeDiscardsPendingWorkWithoutAnotherStateUpdate() {
             "discarded epoch work must remain canceled on subsequent frame attempts");
 }
 
+void anEpochChangeReleasesShapedSelectionSnapshots() {
+    Fixture fixture(QSize(320, 240), false);
+    fixture.interaction.enterOverlayVisible(false);
+    std::weak_ptr<const void> storage;
+    {
+        QPainterPath path;
+        path.addEllipse(QRectF(40, 30, 160, 120));
+        const auto region = ScreenshotRegionGeometry::fromPath(path, ScreenshotRegionType::Curve);
+        storage = region.storageLifetimeForTesting();
+        fixture.selection.setSelectionRegion(region);
+        fixture.services->updateOverlayState();
+    }
+    require(!storage.expired(), "the active shaped selection must retain its source geometry");
+
+    ++fixture.captureState.sessionId;
+    fixture.captureState.sessionState = ScreenshotSessionState::IdlePrepared;
+    fixture.interaction.reset();
+    fixture.selection.reset();
+    fixture.overlay.resetScreenshotRendering();
+    fixture.resetCounters();
+    fixture.flushFrame();
+    require(storage.expired(),
+            "an ended epoch must release presentation snapshots after model and renderer cleanup");
+    fixture.processEvents();
+    require(fixture.stateNotifications == 0 && !fixture.overlay.hasScreenshotSelection(),
+            "retiring selection snapshots must not publish or replay the ended capture");
+}
+
+void resetReleasesPendingAndCommittedShapedSelections() {
+    for (const bool committed : {false, true}) {
+        Fixture fixture(QSize(320, 240), false);
+        std::weak_ptr<const void> storage;
+        std::optional<ScreenshotRegionGeometry> exported;
+        {
+            QPainterPath path;
+            path.addEllipse(QRectF(40, 30, 160, 120));
+            const auto region =
+                ScreenshotRegionGeometry::fromPath(path, ScreenshotRegionType::Curve);
+            storage = region.storageLifetimeForTesting();
+            fixture.selection.setSelectionRegion(region);
+            fixture.services->updateOverlayState();
+            require(fixture.stateNotifications == 0,
+                    "a shaped smart target must still be pending before its presentation frame");
+            if (committed) {
+                fixture.flushFrame();
+                exported = fixture.selection.selectionRegion();
+            }
+        }
+        require(!storage.expired(), "pending and committed selections must own their geometry");
+        ++fixture.captureState.sessionId;
+        fixture.captureState.sessionState = ScreenshotSessionState::IdlePrepared;
+        fixture.interaction.reset();
+        fixture.selection.reset();
+        fixture.overlay.resetScreenshotRendering();
+        fixture.resetCounters();
+        fixture.services->resetPresentation();
+        if (exported) {
+            require(exported->contains(QPointF(120, 90)) && !exported->contains(QPointF(20, 20)),
+                    "resetting presentation must preserve an independently owned export snapshot");
+            exported.reset();
+        }
+        require(storage.expired(),
+                "explicit teardown must immediately release pending and committed region storage");
+        fixture.services->resetPresentation();
+        fixture.processEvents();
+        fixture.advanceClock(200);
+        fixture.flushFrame();
+        require(fixture.stateNotifications == 0 && !fixture.overlay.hasScreenshotSelection(),
+                "repeated teardown and queued frames must leave the ending capture retired");
+    }
+}
+
+void resetRetainsTheIdleTimerAndAllowsTheNextCapture() {
+    Fixture fixture(QSize(320, 240), false);
+    PresentationTimerObserver observer;
+    fixture.requestPointer(QPointF(100, 150));
+    require(observer.waitForNextTimeout(), "the capture must start its presentation timer");
+    fixture.advanceClock(50);
+    require(observer.waitForNextTimeout() && observer.timer && !observer.timer->isActive(),
+            "the capture's frame timer must be idle before explicit teardown");
+    const QPointer<QTimer> retainedTimer = observer.timer;
+
+    fixture.services->resetPresentation();
+    require(retainedTimer && !retainedTimer->isActive(),
+            "teardown must retain the stopped scheduler object for reuse");
+    fixture.services->updatePointerPresentation(&fixture.overlay, QPointF(80, 60));
+    require(!retainedTimer->isActive(),
+            "pointer input before a new presentation must not restart the retired timer");
+
+    ++fixture.captureState.sessionId;
+    fixture.displays.startup->sessionId = fixture.captureState.sessionId;
+    const QRectF nextSelection = fixture.baseSelection().translated(10, 15);
+    fixture.resetCounters();
+    fixture.requestSelection(nextSelection);
+    require(fixture.displayedSelection() == nextSelection && fixture.stateNotifications == 1,
+            "the next capture must synchronously present and notify its first selection");
+    fixture.requestPointer(QPointF(90, 70));
+    require(observer.waitForNextTimeout() && observer.timer == retainedTimer,
+            "the next capture must reuse the original scheduler object");
+    require(fixture.displayedSelection() == nextSelection && fixture.stateNotifications == 1,
+            "new pointer frames must preserve the new capture's selection and semantic state");
+    fixture.services->resetPresentation();
+    require(!retainedTimer->isActive(), "teardown must also stop an active presentation timer");
+}
+
 void theFrameTimerSurvivesInputBurstsAndStopsAfterIdleOrEpochExit() {
     Fixture fixture(QSize(1200, 800), false);
     PresentationTimerObserver observer;
@@ -607,6 +712,9 @@ int main(int argc, char* argv[]) {
     animationFramesOnlyChangeDisplayedGeometry();
     modeAndSessionChangesCancelOldAnimation();
     anEpochChangeDiscardsPendingWorkWithoutAnotherStateUpdate();
+    anEpochChangeReleasesShapedSelectionSnapshots();
+    resetReleasesPendingAndCommittedShapedSelections();
+    resetRetainsTheIdleTimerAndAllowsTheNextCapture();
     theFrameTimerSurvivesInputBurstsAndStopsAfterIdleOrEpochExit();
     pointerBurstsDoNotPublishSemanticChanges();
     pointerUpdatesWithHiddenGuidesRemainAvailableForLaterPresentation();

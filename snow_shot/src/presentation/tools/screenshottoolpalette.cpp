@@ -238,6 +238,7 @@ constexpr int STYLE_GROUP_SPACING = 8;
 constexpr int COMPACT_SLIDER_ICON_SIZE = 16;
 constexpr int COMPACT_SLIDER_WIDTH = 96;
 constexpr int TEXT_TRANSFORM_SELECT_WIDTH = 132;
+constexpr int RECOGNITION_MODEL_SELECT_WIDTH = 200;
 adqt::icons::IconRef primaryIcon(const adqt::icons::IconRef& iconRef) {
     const auto scheme = snow_shot::presentation::styles::generateThemeColorScheme();
     return snow_shot::presentation::icons::withPrimaryColor(iconRef, scheme.map.colorPrimary);
@@ -954,6 +955,8 @@ ScreenshotToolPalette::ScreenshotToolPalette(const Options& options, QWidget* pa
       m_toolbarLayout(initialToolbarLayout(options)),
       m_actionToolsLayout(initialActionToolsLayout(options)),
       m_actionToolsLayoutExplicit(options.actionToolsLayout.has_value()) {
+    m_tableRecognitionModelState.selection = screenshotDedicatedRecognitionModelId();
+    m_latexRecognitionModelState.selection = screenshotDedicatedRecognitionModelId();
     const toolbar_settings::ScreenshotToolbarSettings settings;
 #if SNOW_SHOT_ENABLE_TABLE_RECOGNITION || SNOW_SHOT_ENABLE_QR_RECOGNITION
     m_tableQrEntryTool = tableQrToolFromSetting(settings.tableQrTool());
@@ -1545,6 +1548,7 @@ bool ScreenshotToolPalette::setSecondaryToolbarVisibility(bool actionToolbarVisi
     const bool ocrVisible = m_activeTool == Tool::Ocr || m_activeTool == Tool::TextTranslation;
     const bool targetLanguageVisible = m_activeTool == Tool::TextTranslation;
     const bool tableVisible = m_activeTool == Tool::Table;
+    const bool modelVisible = tableVisible || m_activeTool == Tool::Latex;
     const bool qrVisible = m_activeTool == Tool::Qr || m_activeTool == Tool::Latex;
     const bool conversionVisible = m_activeTool == Tool::Markdown || m_activeTool == Tool::Html;
     const bool originalVisible = ocrVisible || tableVisible || qrVisible || conversionVisible;
@@ -1565,6 +1569,8 @@ bool ScreenshotToolPalette::setSecondaryToolbarVisibility(bool actionToolbarVisi
          m_jumpToTranslationPageButton->isHidden() ==
              !(ocrVisible && m_jumpToTranslationPageVisible)) &&
         (m_tableMergeButton == nullptr || m_tableMergeButton->isHidden() == !tableVisible) &&
+        (m_recognitionModelSelect == nullptr ||
+         m_recognitionModelSelect->isHidden() == !modelVisible) &&
         (m_scrollingRecognitionControls == nullptr ||
          m_scrollingRecognitionControls->isHidden() == !scrollingVisible);
     if (m_actionToolbarTargetVisible == actionToolbarVisible &&
@@ -1624,6 +1630,10 @@ bool ScreenshotToolPalette::setSecondaryToolbarVisibility(bool actionToolbarVisi
     if (m_tableResetButton != nullptr) {
         m_tableResetButton->setVisible(tableVisible);
     }
+    if (m_recognitionModelSelect != nullptr) {
+        m_recognitionModelSelect->setVisible(modelVisible);
+    }
+    setStyleToolbarSpacingVisible(m_recognitionModelSpacer, modelVisible);
     if (m_scrollingRecognitionControls != nullptr) {
         m_scrollingRecognitionControls->setVisible(scrollingVisible);
     }
@@ -1869,6 +1879,9 @@ void ScreenshotToolPalette::setActiveTool(Tool tool) {
     std::optional<snow_shot::presentation::toolbar_perf::Scope> styleReconcileScope;
     bool secondaryContentsEvicted = false;
     if (!activeToolNoop) {
+        if (m_recognitionModelSelect != nullptr) {
+            m_recognitionModelSelect->setPopupVisible(false);
+        }
         const std::optional<ActionFamily> previousActionFamily =
             m_activeTool.has_value() ? actionFamilyForTool(*m_activeTool) : std::nullopt;
         const std::optional<ActionFamily> nextActionFamily = actionFamilyForTool(tool);
@@ -2007,6 +2020,7 @@ void ScreenshotToolPalette::setActiveTool(Tool tool) {
     }
 
     m_activeTool = tool;
+    refreshRecognitionModelSelect();
     setActiveToolButton(activeButton);
     updateTextRecognitionBusy();
     updateHistoryActionAvailability();
@@ -3605,6 +3619,9 @@ void ScreenshotToolPalette::applyScaledToolbarMetrics() {
             ScreenshotToolPaletteSelectEditor editor{select, TEXT_TRANSFORM_SELECT_WIDTH};
             configureScreenshotToolPaletteSelectEditor(editor, metrics);
         }
+        ScreenshotToolPaletteSelectEditor recognitionModelEditor{m_recognitionModelSelect,
+                                                                 RECOGNITION_MODEL_SELECT_WIDTH};
+        configureScreenshotToolPaletteSelectEditor(recognitionModelEditor, metrics);
         for (adqt::widgets::AdButton* button :
              {m_scrollingVerticalButton, m_scrollingHorizontalButton,
               m_scrollingMoveHorizontalButton, m_scrollingMoveVerticalButton, m_addRegionButton,
@@ -4331,6 +4348,7 @@ void ScreenshotToolPalette::retranslateUi() {
         m_scrollingAutoScrollIntervalEditor->setValueSuffix(tr("ms", "Auto-scroll interval unit"));
     }
     retranslateScreenshotToolPalette(this);
+    refreshRecognitionModelSelect();
     retranslateDrawTemplateUi();
     if (m_styleControls != nullptr) {
         m_styleControls->retranslateWatermarkTemplateUi();
@@ -7500,6 +7518,8 @@ void ScreenshotToolPalette::clearSecondaryResourceBindings() {
     m_tableMergeButton = nullptr;
     m_tableSplitButton = nullptr;
     m_tableResetButton = nullptr;
+    m_recognitionModelSelect = nullptr;
+    m_recognitionModelSpacer = nullptr;
     m_textFormattingSelect = nullptr;
     m_textPunctuationSelect = nullptr;
     m_textTargetLanguageSelect = nullptr;
@@ -7594,6 +7614,9 @@ bool ScreenshotToolPalette::evictSecondaryToolbarContents() {
     // Close popups while their editor components and callbacks are still valid. This also
     // balances text-edit popup interactions before any owner subtree is detached or destroyed.
     for (QWidget* widget : std::as_const(widgets)) {
+        if (auto* select = qobject_cast<adqt::widgets::AdSelect*>(widget)) {
+            select->setPopupVisible(false);
+        }
         const auto colorPickers = widget->findChildren<adqt::widgets::AdColorPicker*>();
         for (adqt::widgets::AdColorPicker* picker : colorPickers) {
             picker->setPopupVisible(false);
@@ -8569,6 +8592,41 @@ void ScreenshotToolPalette::createTableRecognitionActionFamily() {
         addStyleToolbarSpacing(m_selectActionLayout, STYLE_ITEM_SPACING));
     m_tableResetButton =
         add("Reset", outlined_icons::Reload(), QStringLiteral("screenshotTableResetButton"));
+    m_recognitionModelSpacer = addStyleToolbarSpacing(m_selectActionLayout, STYLE_ITEM_SPACING);
+    ScreenshotToolPaletteSelectEditorConfig modelConfig;
+    modelConfig.objectName = QStringLiteral("screenshotRecognitionModelSelect");
+    modelConfig.accessibleName =
+        QString::fromUtf8(QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Recognition model"));
+    modelConfig.tooltip = modelConfig.accessibleName;
+    modelConfig.placeholder = modelConfig.accessibleName;
+    modelConfig.baseWidth = RECOGNITION_MODEL_SELECT_WIDTH;
+    modelConfig.compact = false;
+    modelConfig.searchEnabled = true;
+    m_recognitionModelSelect =
+        createScreenshotToolPaletteSelectEditor(m_selectActionPanel, modelConfig,
+                                                actionButtonMetrics(m_physicalScale))
+            .select;
+    m_recognitionModelSelect->setSearchFilterFields({QStringLiteral("label")});
+    m_selectActionLayout->addWidget(m_recognitionModelSelect);
+    connect(m_recognitionModelSelect, &adqt::widgets::AdSelect::currentValueChanged, this,
+            [this](const QVariant& value) {
+                if (m_replayingMaterializedState ||
+                    (m_activeTool != Tool::Table && m_activeTool != Tool::Latex)) {
+                    return;
+                }
+                const QString selection = value.toString();
+                if (selection.isEmpty()) {
+                    return;
+                }
+                auto& state = m_activeTool == Tool::Table ? m_tableRecognitionModelState
+                                                          : m_latexRecognitionModelState;
+                if (state.selection == selection) {
+                    return;
+                }
+                state.selection = selection;
+                refreshRecognitionModelSelect();
+                emit recognitionModelChanged(selection);
+            });
     connect(m_tableMergeButton, &adqt::widgets::AdButton::clicked, this,
             &ScreenshotToolPalette::tableMergeRequested);
     connect(m_tableSplitButton, &adqt::widgets::AdButton::clicked, this,
@@ -8579,6 +8637,105 @@ void ScreenshotToolPalette::createTableRecognitionActionFamily() {
                          m_tableCanSplit, m_tableCanReset);
 }
 #endif
+
+void ScreenshotToolPalette::setRecognitionModelState(Tool tool,
+                                                     const ScreenshotRecognitionModelState& state) {
+    if (tool != Tool::Table && tool != Tool::Latex) {
+        return;
+    }
+    auto& stored =
+        tool == Tool::Table ? m_tableRecognitionModelState : m_latexRecognitionModelState;
+    auto normalized = state;
+    if (normalized.selection.isEmpty()) {
+        normalized.selection = screenshotDedicatedRecognitionModelId();
+    }
+    if (stored == normalized)
+        return;
+    stored = std::move(normalized);
+    if (m_activeTool == tool) {
+        refreshRecognitionModelSelect();
+    }
+}
+
+void ScreenshotToolPalette::refreshRecognitionModelSelect() {
+    using adqt::widgets::AdSelect;
+    if (m_recognitionModelSelect == nullptr ||
+        (m_activeTool != Tool::Table && m_activeTool != Tool::Latex)) {
+        return;
+    }
+    const auto& state =
+        m_activeTool == Tool::Table ? m_tableRecognitionModelState : m_latexRecognitionModelState;
+    QVector<AdSelect::Option> options{
+        {screenshotDedicatedRecognitionModelId(),
+         m_activeTool == Tool::Table ? tr("Table-Specific Model") : tr("LaTeX-Specific Model"),
+         false, tr("Dedicated Model")},
+    };
+    options.reserve(state.models.size() + 1);
+    QSet<QString> modelIds{screenshotDedicatedRecognitionModelId(),
+                           screenshotDefaultVisionRecognitionModelId()};
+    modelIds.reserve(state.models.size() + 2);
+    QString builtInDefault;
+    for (const auto& model : state.models) {
+        if (!model.supportsVision || model.id.isEmpty()) {
+            continue;
+        }
+        if (modelIds.contains(model.id)) {
+            continue;
+        }
+        modelIds.insert(model.id);
+        if (builtInDefault.isEmpty() && !model.id.startsWith(QStringLiteral("custom:"))) {
+            builtInDefault = model.id;
+        }
+        options.push_back(
+            {model.id, model.name.isEmpty() ? model.id : model.name, false, tr("Vision Model")});
+    }
+    // Keep the semantic default in preferences while displaying its catalog name and identity.
+    // Explicit catalog choices remain distinct from that default as the server order changes.
+    const QString defaultModel =
+        state.effectiveModel.isEmpty() ? builtInDefault : state.effectiveModel;
+    const QString selection =
+        state.selection == screenshotDefaultVisionRecognitionModelId() && !defaultModel.isEmpty()
+            ? defaultModel
+            : state.selection;
+    auto selected =
+        std::find_if(options.cbegin(), options.cend(), [&selection](const auto& option) {
+            return option.value.toString() == selection;
+        });
+    const bool unavailable = selected == options.cend();
+    QString selectedLabel;
+    if (unavailable) {
+        selectedLabel = selection == screenshotDefaultVisionRecognitionModelId()
+                            ? tr("Snow Shot visual understanding")
+                            : tr("Selected model (%1)").arg(selection);
+        options.push_back({selection, selectedLabel, true, tr("Vision Model")});
+    } else {
+        selectedLabel = selected->label;
+    }
+    const QSignalBlocker blocker(m_recognitionModelSelect);
+    const auto previousOptions = m_recognitionModelSelect->options();
+    if (!std::equal(previousOptions.cbegin(), previousOptions.cend(), options.cbegin(),
+                    options.cend(), [](const auto& previous, const auto& next) {
+                        return previous.value == next.value && previous.label == next.label &&
+                               previous.disabled == next.disabled && previous.group == next.group;
+                    })) {
+        m_recognitionModelSelect->setOptions(options);
+    }
+    // Disabled options cannot be selected by AdSelect's item selection model. Keep the chosen
+    // identity in the recognition state and show its label while leaving usable choices enabled.
+    const QVariant selectedValue = unavailable ? QVariant{} : QVariant(selection);
+    m_recognitionModelSelect->setPlaceholder(unavailable ? selectedLabel : tr("Recognition model"));
+    if (m_recognitionModelSelect->currentValue() != selectedValue) {
+        m_recognitionModelSelect->setCurrentValue(selectedValue);
+    }
+    m_recognitionModelSelect->setLoading(state.loading);
+    m_recognitionModelSelect->setStatus(state.error.isEmpty() ? AdSelect::Status::None
+                                                              : AdSelect::Status::Warning);
+    const QString description = state.error.isEmpty()
+                                    ? selectedLabel
+                                    : QStringLiteral("%1\n%2").arg(selectedLabel, state.error);
+    m_recognitionModelSelect->setToolTip(description);
+    m_recognitionModelSelect->setAccessibleDescription(description);
+}
 
 void ScreenshotToolPalette::createMoveActionFamily() {
     if (m_selectActionLayout == nullptr || m_moveActionControls != nullptr) {
