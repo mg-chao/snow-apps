@@ -40,15 +40,14 @@ class ActionPopupMenu final : public QObject {
         m_closeTimer.setInterval(150);
         connect(&m_closeTimer, &QTimer::timeout, this, [this] {
             if (m_menu && !pointerOverMenuOrTrigger(QCursor::pos()))
-                m_menu->dismissPopup();
+                dismissMenu();
         });
         trigger->installEventFilter(this);
         connect(trigger, &QAbstractButton::clicked, this, [this] { open(); });
     }
 
     ~ActionPopupMenu() override {
-        if (m_menu)
-            m_menu->dismissPopup();
+        dismissMenu();
     }
 
     void open(bool keyboard = false, std::optional<QPoint> globalPosition = std::nullopt) {
@@ -57,6 +56,7 @@ class ActionPopupMenu final : public QObject {
         if (!m_trigger->isVisible() || !m_trigger->isEnabled())
             return;
         if (!m_menu || !m_menu->isPopupVisible()) {
+            dismissMenu();
             m_menu = m_createMenu();
             if (!m_menu)
                 return;
@@ -65,8 +65,13 @@ class ActionPopupMenu final : public QObject {
             m_menu->setDeleteOnHide();
             m_menu->setTriggerWidget(m_trigger);
             m_menu->installEventFilter(this);
-            connect(m_menu, &QMenu::aboutToHide, &m_closeTimer, &QTimer::stop,
-                    Qt::UniqueConnection);
+            auto* menu = m_menu.data();
+            const auto detachSession = [this, menu] {
+                if (m_menu == menu)
+                    detachMenu();
+            };
+            connect(menu, &QMenu::aboutToHide, this, detachSession);
+            connect(menu, &adqt::widgets::AdContextMenu::aboutToDestroy, this, detachSession);
             const auto theme = adqt::theme::ThemeManager::instance().resolveTheme(m_trigger);
             auto tokens = m_menu->componentTokens();
             tokens.minimumWidth = 0;
@@ -82,7 +87,7 @@ class ActionPopupMenu final : public QObject {
                 m_menu->setActiveAction(nullptr);
             m_menu->popupAt(globalPosition.value_or(m_trigger->mapToGlobal(position)));
         }
-        if (keyboard) {
+        if (keyboard && m_menu) {
             for (auto* action : m_menu->actions()) {
                 if (action->isEnabled() && action->isVisible() && !action->isSeparator()) {
                     m_menu->setActiveAction(action);
@@ -107,7 +112,7 @@ class ActionPopupMenu final : public QObject {
             open();
         }
         if (watched == m_trigger && event->type() == QEvent::Hide && m_menu)
-            m_menu->dismissPopup();
+            dismissMenu();
         if (event->type() == QEvent::KeyPress) {
             const auto* key = static_cast<QKeyEvent*>(event);
             if (watched == m_trigger && (snow_shot::shortcuts::commandKey(*key) == Qt::Key_Return ||
@@ -123,7 +128,7 @@ class ActionPopupMenu final : public QObject {
                 m_closeTimer.stop();
             }
             if (watched == m_menu && snow_shot::shortcuts::commandKey(*key) == Qt::Key_Escape) {
-                m_menu->dismissPopup();
+                dismissMenu();
                 m_trigger->setFocus(Qt::PopupFocusReason);
                 return true;
             }
@@ -148,6 +153,24 @@ class ActionPopupMenu final : public QObject {
     }
 
   private:
+    adqt::widgets::AdContextMenu* detachMenu() {
+        m_closeTimer.stop();
+        auto* menu = m_menu.data();
+        m_menu.clear();
+        if (menu) {
+            // QPointer survives the derived destructor. Stop observing before
+            // QWidget teardown can send events after the menu's private state is gone.
+            menu->removeEventFilter(this);
+            disconnect(menu, nullptr, this, nullptr);
+        }
+        return menu;
+    }
+
+    void dismissMenu() {
+        if (auto* menu = detachMenu())
+            menu->dismissPopup();
+    }
+
     bool pointerOverMenuOrTrigger(const QPoint& position) const {
         // A popup can grab moves outside its bounds; rectangles also count covered widgets.
         const QWidget* target = QApplication::widgetAt(position);

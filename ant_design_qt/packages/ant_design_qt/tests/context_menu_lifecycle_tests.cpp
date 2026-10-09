@@ -116,6 +116,30 @@ void destructionCancelsPendingPopup() {
   require(icon.expired(), "a cancelled queued popup must release its icon on destruction");
 }
 
+void destructionNotifiesObserversBeforeMenuTeardown(bool native) {
+  QWidget owner;
+  owner.show();
+  for (int state = 0; state < 3; ++state) {
+    QPointer<AdContextMenu> menu = new AdContextMenu(&owner);
+    menu->setNativeMenuEnabled(native);
+    QPointer<QAction> action = menu->addItem(QStringLiteral("Observed action"));
+    if (state > 0) menu->popupAt(QPoint(100, 100));
+    if (state == 2) menu->dismissPopup();
+    int notifications = 0;
+    bool observedLiveState = false;
+    QObject::connect(menu, &AdContextMenu::aboutToDestroy, &owner, [&]() {
+      ++notifications;
+      observedLiveState = menu && action && menu->actions().contains(action) &&
+                          menu->nativeMenuEnabled() == native && !menu->isRetiring();
+      (void)menu->isPopupVisible();
+    });
+    delete menu.data();
+    require(notifications == 1 && observedLiveState && !menu && !action,
+            "observers must be notified once while menu APIs are valid, before Qt teardown");
+    QCoreApplication::processEvents();
+  }
+}
+
 void resettingBackgroundPreservesMenuTree() {
   AdContextMenu menu;
   menu.setNativeMenuEnabled(false);
@@ -307,6 +331,10 @@ int main(int argc, char** argv) {
     destroyedMenuTreesReleaseIcons(false);
     destructionPreservesSharedActionsAndSubmenus();
     destructionCancelsPendingPopup();
+    destructionNotifiesObserversBeforeMenuTeardown(false);
+#ifdef Q_OS_MACOS
+    destructionNotifiesObserversBeforeMenuTeardown(true);
+#endif
     resettingBackgroundPreservesMenuTree();
     transientPopupsReleaseTheirEntireTree();
     lazySubmenusRetireAndReopenWithFreshContent();

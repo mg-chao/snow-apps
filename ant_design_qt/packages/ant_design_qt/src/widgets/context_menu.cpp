@@ -752,6 +752,7 @@ AdContextMenu::AdContextMenu(const QString& title, QWidget* parent) : AdContextM
 
 AdContextMenu::~AdContextMenu() {
   d_->deleteOnHide = false;
+  emit aboutToDestroy();
   dismissPopup();
   if (d_->triggerWidget) {
     d_->triggerWidget->removeEventFilter(this);

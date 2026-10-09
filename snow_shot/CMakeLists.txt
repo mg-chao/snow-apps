@@ -3006,6 +3006,19 @@ if(SNOW_SHOT_BUILD_TESTS)
             "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
     )
 
+    add_executable(snow-shot-action-popup-menu-tests tests/action_popup_menu_tests.cpp)
+    target_include_directories(snow-shot-action-popup-menu-tests PRIVATE
+        "${CMAKE_CURRENT_SOURCE_DIR}/include")
+    target_link_libraries(snow-shot-action-popup-menu-tests PRIVATE
+        ant_design_qt snow_shot_shortcuts Qt6::Widgets)
+    snow_shot_import_offscreen_platform(snow-shot-action-popup-menu-tests)
+    add_test(NAME snow-shot-action-popup-menu-tests
+        COMMAND snow-shot-action-popup-menu-tests -platform offscreen)
+    set_tests_properties(snow-shot-action-popup-menu-tests PROPERTIES
+        LABELS "unit" TIMEOUT 20
+        ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}"
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
+
     if(APPLE)
         snow_find_qt(COMPONENTS Test)
         add_executable(snow-shot-action-popup-native-tests tests/action_popup_menu_native_tests.mm)

@@ -865,6 +865,50 @@ void moreMenuOffersPinAndDelete() {
             "confirming Delete must remove that history entry");
 }
 
+void moreMenuRetirementKeepsIdleHistoryUsable() {
+    MutableHistoryDataSource dataSource;
+    dataSource.setRecords(historyRecords(1));
+    ScreenshotHistoryPageWidget page(&dataSource, nullptr);
+    page.resize(900, 720);
+    page.show();
+    page.setActive(true);
+    flushEvents();
+    auto* more =
+        page.findChild<adqt::widgets::AdButton*>(QStringLiteral("screenshotHistoryEntryMore"));
+    require(more != nullptr, "the idle history fixture must expose More");
+    auto currentMenu = [&]() -> adqt::widgets::AdContextMenu* {
+        for (auto* menu : page.findChildren<adqt::widgets::AdContextMenu*>(
+                 QStringLiteral("screenshotHistoryEntryMoreMenu"))) {
+            if (menu->isPopupVisible()) {
+                return menu;
+            }
+        }
+        return nullptr;
+    };
+    for (int cycle = 0; cycle < 4; ++cycle) {
+        more->click();
+        QPointer<adqt::widgets::AdContextMenu> menu = currentMenu();
+        require(menu != nullptr, "More must open a fresh idle history menu");
+        QPointer<QAction> action = menu->actions().last();
+        menu->dismissPopup();
+        QCoreApplication::sendPostedEvents(nullptr, QEvent::MetaCall);
+        QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+        flushEvents();
+        require(!menu && !action && more->isVisible(),
+                "menu teardown must release the popup and leave the idle history row usable");
+    }
+    more->click();
+    QPointer<adqt::widgets::AdContextMenu> menu = currentMenu();
+    require(menu != nullptr, "the row removal fixture must have an open menu");
+    dataSource.setRecords({});
+    page.refresh();
+    QCoreApplication::sendPostedEvents(nullptr, QEvent::MetaCall);
+    QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+    flushEvents();
+    require(!menu && page.findChildren<adqt::widgets::AdContextMenu*>().isEmpty(),
+            "removing a history row must release its open action menu safely");
+}
+
 void waitUntil(const std::function<bool()>& complete, const char* message) {
     QElapsedTimer deadline;
     deadline.start();
@@ -1127,6 +1171,7 @@ int main(int argc, char** argv) {
             "isolated application storage must initialize");
     if (application.arguments().contains(QStringLiteral("--context-menu-only"))) {
         moreMenuOffersPinAndDelete();
+        moreMenuRetirementKeepsIdleHistoryUsable();
         storage::ApplicationStorage::instance().shutdown();
         QCoreApplication::removeTranslator(&englishTranslator);
         return 0;
@@ -1143,6 +1188,7 @@ int main(int argc, char** argv) {
         return 0;
     }
     moreMenuOffersPinAndDelete();
+    moreMenuRetirementKeepsIdleHistoryUsable();
     entriesUseBordersAndSupportCrossPageSelection();
     historyCopiesPreservePositionAndAppearance();
     thumbnailsUseMediumCompression();

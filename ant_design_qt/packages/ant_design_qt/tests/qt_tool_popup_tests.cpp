@@ -127,6 +127,8 @@ class QtToolPopupTest final : public QObject {
   void retainedFactoryContentIsLazyAndOwnerBound();
   void recreateFactoryContentIsReleasedAfterHide();
   void directContentRemainsCompatibleWithFactoryApi();
+  void popoverDestructionAllowsUiEvents();
+  void tooltipDestructionAllowsUiEvents();
   void colorPickerPrewarmCanBeDisabled();
   void stationaryPopoverStopsRelayout();
   void visiblePopoverRelayoutDoesNotRaise();
@@ -1182,6 +1184,76 @@ void QtToolPopupTest::retainedPopupCachesFollowVisibilityAndStayComponentLocal()
   QTRY_VERIFY(first.isVisible());
   QTRY_VERIFY(adqt::widgets::detail::OverlayPopupSurfaceTestAccess::pathCacheValid(first));
   QTRY_VERIFY(adqt::widgets::detail::OverlayPopupSurfaceTestAccess::shadowCacheValid(first));
+}
+
+void QtToolPopupTest::popoverDestructionAllowsUiEvents() {
+  for (const auto layer :
+       {AdPopover::PopupLayerMode::InWindow, AdPopover::PopupLayerMode::QtTool}) {
+    for (int state = 0; state < 3; ++state) {
+      QWidget host;
+      host.resize(640, 360);
+      QPushButton trigger(QStringLiteral("Open"), &host);
+      trigger.setGeometry(24, 24, 100, 32);
+      auto* popover = new AdPopover;
+      popover->setSourceWidget(&trigger);
+      popover->setTriggers(AdPopover::Trigger::Click);
+      popover->setPopupLayerMode(layer);
+      popover->setText(QStringLiteral("Popup content"));
+      host.show();
+      if (state > 0) popover->show();
+      if (state == 2) popover->hide();
+
+      bool replacementShown = false;
+      connect(popover, &QObject::destroyed, &host, [&]() {
+        // Destruction observers may immediately update the UI. The popup's application
+        // filter must no longer call its delegate after the derived destructor returns.
+        QTest::mouseClick(&trigger, Qt::LeftButton);
+        QWidget replacement;
+        replacement.show();
+        replacementShown = replacement.isVisible();
+      });
+      delete popover;
+      QVERIFY(replacementShown);
+      QVERIFY(!findSurface(QStringLiteral("adpopover-surface"), true));
+      QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+    }
+  }
+}
+
+void QtToolPopupTest::tooltipDestructionAllowsUiEvents() {
+  for (const auto layer :
+       {AdTooltip::LayerMode::InWindow, AdTooltip::LayerMode::TopLevelTransient}) {
+    for (int state = 0; state < 3; ++state) {
+      QWidget host;
+      host.resize(640, 360);
+      QPushButton target(QStringLiteral("Target"), &host);
+      target.setGeometry(24, 24, 100, 32);
+      auto* tooltip = new AdTooltip;
+      tooltip->setTargetWidget(&target);
+      tooltip->setLayerMode(layer);
+      tooltip->setTriggers(AdTooltip::Trigger::Click);
+      tooltip->setText(QStringLiteral("Tooltip content"));
+      host.show();
+      if (state > 0) tooltip->show();
+      if (state == 2) tooltip->hide();
+
+      bool replacementShown = false;
+      // Observe child lifetimes as UI integrations can do. The delegate is a child
+      // of AdTooltip, and its own children must not observe input after it is torn down.
+      for (QObject* child : tooltip->findChildren<QObject*>()) {
+        connect(child, &QObject::destroyed, &host, [&]() {
+          QTest::mouseClick(&target, Qt::LeftButton);
+          QWidget replacement;
+          replacement.show();
+          replacementShown = replacement.isVisible();
+        });
+      }
+      delete tooltip;
+      QVERIFY(replacementShown);
+      QVERIFY(!findSurface(QStringLiteral("adtooltip-surface"), true));
+      QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+    }
+  }
 }
 
 void QtToolPopupTest::retainedFactoryContentIsLazyAndOwnerBound() {

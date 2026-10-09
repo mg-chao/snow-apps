@@ -424,6 +424,9 @@ AdTooltipPrivate::~AdTooltipPrivate() {
   clearTooltipManager(targetWidget, q_ptr);
   detail::clearDerivedAccessibleDescription(targetWidget);
   clearObservedWidgets();
+  // Stop application observation before this delegate's state is released, rather
+  // than leaving its child controller active through QObject destruction callbacks.
+  delete controller.data();
   releasePopupSurface();
 }
 

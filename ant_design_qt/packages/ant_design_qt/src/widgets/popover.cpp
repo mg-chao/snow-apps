@@ -379,6 +379,9 @@ AdPopover::AdPopover(QObject* parent) : QObject(parent) {
 AdPopover::~AdPopover() {
   detail::clearDerivedAccessibleDescription(sourceWidget_);
   clearObservedWidgets();
+  // The controller observes application events through this delegate. QObject child
+  // cleanup runs after our members and delegate base have already been destroyed.
+  delete controller_.data();
   releasePopupSurface();
   deleteOwnedWidget(titleWidget_, titleWidgetDestroyedConnection_);
   deleteOwnedWidget(contentWidget_, contentWidgetDestroyedConnection_);

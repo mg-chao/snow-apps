@@ -147,6 +147,33 @@ void verifyTrayMenuPosition() {
             "platforms without tray geometry must keep a usable pointer-based placement");
 }
 
+void verifyTraySkinDestruction(snow_shot::presentation::SystemTrayController& controller) {
+    auto& configuration = snow_shot::storage::ApplicationStorage::instance().configuration();
+    require(configuration.setValue(QStringLiteral("interface/tray_menu_skin_path"), QString()),
+            "use an unskinned tray for destruction callbacks");
+    for (int state = 0; state < 3; ++state) {
+        QPointer<adqt::widgets::AdContextMenu> menu = controller.createContextMenu();
+        menu->setNativeMenuEnabled(false);
+        if (state > 0)
+            menu->popupAt(QPoint(20, 20));
+        if (state == 2)
+            menu->dismissPopup();
+        bool settingsUpdated = false;
+        QObject::connect(menu, &QObject::destroyed, &controller, [&] {
+            // Qt emits destroyed after AdContextMenu's private state has been released,
+            // but before deleting its child observers. Settings must be safe to change here.
+            settingsUpdated =
+                configuration.setValue(QStringLiteral("interface/skin_opacity"), 70 + state);
+        });
+        delete menu.data();
+        require(!menu && settingsUpdated,
+                "tray menu teardown must detach skin settings before destruction observers run");
+        drainMenus();
+    }
+    require(configuration.setValue(QStringLiteral("interface/skin_opacity"), 100),
+            "restore skin opacity");
+}
+
 void verifyTraySkins(snow_shot::presentation::SystemTrayController& controller,
                      const QTemporaryDir& directory) {
     using snow_shot::presentation::MainWindowSkinController;
@@ -438,6 +465,7 @@ int main(int argc, char* argv[]) {
 #endif
     if (application.arguments().contains(QStringLiteral("--skin-only"))) {
         controller.setMenuOptions(snow_shot::storage::TraySettings().menuOptions());
+        verifyTraySkinDestruction(controller);
         verifyTraySkins(controller, storageDirectory);
         snow_shot::storage::ApplicationStorage::instance().shutdown();
         return 0;

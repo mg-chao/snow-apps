@@ -247,14 +247,17 @@ class TrayMenuSkinBinding final : public QObject {
   public:
     explicit TrayMenuSkinBinding(adqt::widgets::AdContextMenu* menu) : QObject(menu), menu_(menu) {
         menu_->installEventFilter(this);
+        // Qt deletes children after the menu's derived state has been released.
+        // End this binding while its event filter and settings callbacks can still use menu APIs.
+        QObject::connect(menu_, &adqt::widgets::AdContextMenu::aboutToDestroy, this,
+                         [this] { delete this; });
         connectConfiguration();
     }
 
     ~TrayMenuSkinBinding() override {
-        if (controller_ && attached_) {
-            attached_ = false;
-            controller_->detach(menu_);
-        }
+        QObject::disconnect(configurationConnection_);
+        menu_->removeEventFilter(this);
+        releaseFrame();
     }
 
   protected:

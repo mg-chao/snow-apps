@@ -568,6 +568,10 @@ if(ADQT_BUILD_TESTS)
                 directContentRemainsCompatibleWithFactoryApi
                 colorPickerPrewarmCanBeDisabled -platform offscreen)
     set_tests_properties(adqt-popover-content-lifecycle-tests PROPERTIES LABELS "unit")
+    add_test(NAME adqt-popup-delegate-destruction-tests
+        COMMAND adqt-qt-tool-popup-tests popoverDestructionAllowsUiEvents
+                tooltipDestructionAllowsUiEvents -platform offscreen)
+    set_tests_properties(adqt-popup-delegate-destruction-tests PROPERTIES LABELS "unit" TIMEOUT 30)
     foreach(_adqt_audio_ui_test IN ITEMS slider-meter popover-surface-guard)
         string(REPLACE "-" "_" _adqt_audio_ui_source "${_adqt_audio_ui_test}")
         add_executable(adqt-${_adqt_audio_ui_test}-tests tests/${_adqt_audio_ui_source}_tests.cpp)

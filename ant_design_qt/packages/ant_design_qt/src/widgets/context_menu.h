@@ -141,6 +141,9 @@ class AdContextMenu final : public QMenu {
   void componentTokensChanged();
   void triggerWidgetChanged(QWidget* widget);
   void popupFinished();
+  // Detach observers that call menu APIs before the derived state is released.
+  // QPointer is cleared later, during QObject destruction, after QWidget teardown events.
+  void aboutToDestroy();
 
  protected:
   bool event(QEvent* event) override;
