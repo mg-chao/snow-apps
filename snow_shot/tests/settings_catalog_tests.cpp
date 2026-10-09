@@ -2184,6 +2184,13 @@ void globalHotkeyShortcutsHaveStableContracts() {
                 trayMenuSchema->allowedStringValues == trayOptionIds,
             "tray menu options must derive all global-hotkey groups and append system commands");
 
+    const QJsonArray allTrayOptions = QJsonArray::fromStringList(trayOptionIds);
+    const auto normalizedAllTrayOptions = storage::ConfigurationSchema::normalize(
+        QStringLiteral("tray/menu_options"), allTrayOptions);
+    require(normalizedAllTrayOptions.valid && !normalizedAllTrayOptions.changed &&
+                normalizedAllTrayOptions.value.toArray() == allTrayOptions,
+            "selecting every catalog tray option must preserve Restart App and Exit");
+
     for (const auto& id : {QStringLiteral("quick.open-pin-to-screen-management"),
                            QStringLiteral("quick.global-canvas")}) {
         require(!trayMenuSchema->defaultValue.toArray().contains(id),

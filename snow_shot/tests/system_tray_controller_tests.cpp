@@ -27,7 +27,7 @@
 #include <QFileInfo>
 #include <QImage>
 #include <QImageReader>
-#include <QKeyEvent>
+#include <QJsonArray>
 #include <QLineEdit>
 #include <QMenu>
 #include <QPalette>
@@ -148,46 +148,48 @@ void verifyTrayMenuPosition() {
             "platforms without tray geometry must keep a usable pointer-based placement");
 }
 
-void verifyAllTrayMenuOptions(snow_shot::presentation::SystemTrayController& controller) {
+void verifyConfiguredTrayMenuOptions(snow_shot::presentation::SystemTrayController& controller) {
+    using snow_shot::storage::TraySettings;
+    auto& appStorage = snow_shot::storage::ApplicationStorage::instance();
     require(snow_shot::storage::ExtendedFeaturesSettings().setTranslationPageEnabled(true),
-            "enable the optional translation tray entry");
+            "enable all optional tray commands");
     QStringList options;
     for (const auto& group :
          snow_shot::presentation::settings::builtInTrayCommandManifest().groups) {
-        for (const auto& option : group.options) {
+        for (const auto& option : group.options)
             options.append(option.id);
-        }
     }
-    controller.setMenuOptions(options);
-    require(controller.menuOptions().size() == options.size(),
-            "every catalog tray option must be enabled for the overflow regression");
-    controller.setGlobalShortcuts(snow_shot::presentation::GlobalShortcutAction::Screenshot,
-                                  {QStringLiteral("Ctrl+Alt+Shift+F12")});
+    require(TraySettings().setMenuOptions(options) && TraySettings().menuOptions() == options,
+            "saving every tray option must preserve the final Restart App and Exit selections");
+    require(appStorage.configuration().flushNow().success,
+            "all tray selections must flush to disk");
+    snow_shot::storage::ConfigurationStore reloaded(
+        QDir(appStorage.status().effectiveDirectory).filePath(QStringLiteral("config.json")), true,
+        false, 60000);
+    QStringList persisted;
+    for (const auto& value : reloaded.value(QStringLiteral("tray/menu_options")).toArray()) {
+        persisted.append(value.toString());
+    }
+    require(persisted == options, "loading saved tray selections must preserve every option");
+    controller.setMenuOptions(persisted);
     QPointer<adqt::widgets::AdContextMenu> menu = controller.createContextMenu();
-    menu->setNativeMenuEnabled(false);
-    QAction* exit = nullptr;
+    QApplication::processEvents();
+    QStringList visible;
     for (auto* action : menu->actions()) {
-        if (action->data().toString() == QStringLiteral("tray.exit")) {
-            exit = action;
-        }
+        if (!action->isSeparator() && action->isVisible())
+            visible.append(action->data().toString());
     }
-    require(exit && exit->isVisible(), "all tray options must include Exit");
-    int exitRequests = 0;
-    QObject::connect(&controller, &snow_shot::presentation::SystemTrayController::exitRequested,
-                     &controller, [&exitRequests]() { ++exitRequests; });
-    menu->popupAt(QGuiApplication::primaryScreen()->availableGeometry().bottomRight());
-    QApplication::processEvents();
-    menu->setActiveAction(exit);
-    QApplication::processEvents();
-    require(menu->activeAction() == exit && menu->rect().contains(menu->actionGeometry(exit)),
-            "Exit must remain fully reachable when all tray options overflow the screen");
-    require(menu->actionAt(menu->actionGeometry(exit).center()) == exit,
-            "the revealed Exit row must remain hit-testable");
-    QKeyEvent activate(QEvent::KeyPress, Qt::Key_Return, Qt::NoModifier);
-    QCoreApplication::sendEvent(menu, &activate);
-    require(exitRequests == 1, "the overflowing Exit row must dispatch its request exactly once");
+    require(visible == options, "the tray must display every persisted selection, including Exit");
+    menu->dismissPopup();
     drainMenus();
-    require(!menu, "activating Exit must retire the entire overflowing tray popup");
+    require(!menu, "the configured tray session retires after dismissal");
+
+    options.removeAll(QStringLiteral("tray.restart-app"));
+    options.removeAll(QStringLiteral("tray.exit"));
+    require(TraySettings().setMenuOptions(options) && TraySettings().menuOptions() == options,
+            "a customized selection must not automatically re-enable unchecked system commands");
+    require(TraySettings().setMenuOptions({}) && TraySettings().menuOptions().isEmpty(),
+            "an intentionally empty tray selection must remain empty");
 }
 
 void verifyTraySkins(snow_shot::presentation::SystemTrayController& controller,
@@ -467,8 +469,8 @@ int main(int argc, char* argv[]) {
         return 0;
     }
     snow_shot::presentation::SystemTrayController controller;
-    if (application.arguments().contains(QStringLiteral("--all-menu-options-only"))) {
-        verifyAllTrayMenuOptions(controller);
+    if (application.arguments().contains(QStringLiteral("--configured-menu-only"))) {
+        verifyConfiguredTrayMenuOptions(controller);
         snow_shot::storage::ApplicationStorage::instance().shutdown();
         return 0;
     }

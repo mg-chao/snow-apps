@@ -236,6 +236,42 @@ void lazyTraySelectionKeepsPageStable(const settings::SettingsRegistry& registry
     }
 }
 
+void everyTrayOptionRemainsSelected(const settings::SettingsRegistry& registry,
+                                    settings::SettingsRuntimeSession& session) {
+    require(session.applySwitchValue(settings::SettingsSwitchBinding::TranslationPageEnabled, true),
+            "enable all optional tray choices");
+    SettingsPageWidget page(registry, QStringLiteral("desktop-tools"), session);
+    page.resize(880, 360);
+    page.show();
+    page.reveal({page.pageId(), QStringLiteral("tray"), QStringLiteral("tray.menu-options")});
+    drainEvents();
+    QVariantList expected;
+    for (const auto& group : registry.catalog().trayMenuGroups()) {
+        for (const auto& option : group.options) {
+            auto* checkbox = page.findChild<adqt::widgets::AdCheckbox*>(
+                QStringLiteral("settings-tray-menu-option-") + option.id);
+            require(checkbox != nullptr, "every catalog option must have a tray checkbox");
+            if (!checkbox->isChecked())
+                checkbox->click();
+            drainEvents();
+            expected.append(option.id);
+        }
+    }
+    require(session.multiSelectValue(settings::SettingsMultiSelectBinding::TrayMenuOptions) ==
+                expected,
+            "checking every tray checkbox must retain every selection in the settings session");
+    require(snow_shot::storage::ApplicationStorage::instance()
+                    .configuration()
+                    .value(QStringLiteral("tray/menu_options"))
+                    .toArray() == QJsonArray::fromVariantList(expected),
+            "checking every tray checkbox must persist every selection without truncation");
+    for (const auto& option : expected) {
+        auto* checkbox = page.findChild<adqt::widgets::AdCheckbox*>(
+            QStringLiteral("settings-tray-menu-option-") + option.toString());
+        require(checkbox->isChecked(), "all tray checkboxes, including Exit, must remain checked");
+    }
+}
+
 void traySelectionKeepsPageStable(const settings::SettingsRegistry& registry,
                                   settings::SettingsRuntimeSession& session, bool diagnosticOnly) {
     SettingsPageWidget page(registry, QStringLiteral("desktop-tools"), session);
@@ -1410,6 +1446,11 @@ int main(int argc, char** argv) {
     settings::BuiltInSettingsBackend backend(shortcuts);
     const auto registry = settings::buildBuiltInSettingsRegistry();
     settings::SettingsRuntimeSession session(registry, backend);
+    if (application.arguments().contains(QStringLiteral("--tray-selection-only"))) {
+        everyTrayOptionRemainsSelected(registry, session);
+        storage.shutdown();
+        return 0;
+    }
     if (application.arguments().contains(QStringLiteral("--layout-stability-only"))) {
         const bool diagnosticOnly =
             application.arguments().contains(QStringLiteral("--layout-stability-diagnostic"));

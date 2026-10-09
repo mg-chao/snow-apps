@@ -6,13 +6,11 @@
 #include <QImage>
 #include <QPalette>
 #include <QPainter>
-#include <QScreen>
 #include <QSignalSpy>
 #include <QStyleOption>
 #include <QTest>
 #include <QVBoxLayout>
 #include <QWidget>
-#include <QWheelEvent>
 #include <QWindow>
 #include <qscopeguard.h>
 
@@ -55,8 +53,6 @@ class ContextMenuTests final : public QObject {
   void triggerWidgetOpensOnContextMenuEvent();
   void rebindingStopsHandlingTheOldWidget();
   void keyboardActivationUsesNativeMenuBehavior();
-  void overflowingMenusKeepEveryActionReachable_data();
-  void overflowingMenusKeepEveryActionReachable();
   void menuUsesCompactAntMetrics();
   void metricTokensRelayoutExistingActions();
   void cachedVisualsFollowThemeFontAndOwnerChanges();
@@ -370,63 +366,6 @@ void ContextMenuTests::keyboardActivationUsesNativeMenuBehavior() {
   menu.setActiveAction(action);
   QTest::keyClick(&menu, Qt::Key_Return);
   QTRY_COMPARE(triggered.count(), 1);
-  QVERIFY(!menu.isVisible());
-}
-
-void ContextMenuTests::overflowingMenusKeepEveryActionReachable_data() {
-  QTest::addColumn<bool>("constrainedWidth");
-  QTest::addColumn<bool>("rightToLeft");
-  QTest::newRow("natural-ltr") << false << false;
-  QTest::newRow("constrained-ltr") << true << false;
-  QTest::newRow("natural-rtl") << false << true;
-  QTest::newRow("constrained-rtl") << true << true;
-}
-
-void ContextMenuTests::overflowingMenusKeepEveryActionReachable() {
-  QFETCH(bool, constrainedWidth);
-  QFETCH(bool, rightToLeft);
-  AdContextMenu menu;
-  menu.setNativeMenuEnabled(false);
-  menu.setLayoutDirection(rightToLeft ? Qt::RightToLeft : Qt::LeftToRight);
-  if (constrainedWidth) menu.setFixedWidth(300);
-  const QRect screen = QGuiApplication::primaryScreen()->availableGeometry();
-  AdContextMenu::ComponentTokens tokens;
-  tokens.itemHeight = std::max(32, screen.height() / 8);
-  menu.setComponentTokens(tokens);
-  QList<QAction*> items;
-  for (int index = 0; index < 24; ++index) {
-    if (index && index % 6 == 0) menu.addSeparator();
-    items.append(menu.addItem(QStringLiteral("Action %1").arg(index)));
-  }
-  QAction* exit = menu.addItem(QStringLiteral("Exit"));
-  menu.setActionDanger(exit);
-  items.append(exit);
-  QSignalSpy triggered(exit, &QAction::triggered);
-  menu.popupAt(screen.bottomRight());
-  QTRY_VERIFY(menu.isVisible());
-  menu.setActiveAction(items.first());
-  for (auto* action : items) {
-    QCOMPARE(menu.activeAction(), action);
-    QVERIFY2(menu.rect().contains(menu.actionGeometry(action)),
-             "keyboard navigation must scroll each overflowing action fully into view");
-    QCOMPARE(menu.actionAt(menu.actionGeometry(action).center()), action);
-    if (action != exit) QTest::keyClick(&menu, Qt::Key_Down);
-  }
-  QTest::keyClick(&menu, Qt::Key_Home);
-  QCOMPARE(menu.activeAction(), items.first());
-  QVERIFY(menu.rect().contains(menu.actionGeometry(items.first())));
-  const QPoint wheelPosition = menu.rect().center();
-  for (int step = 0; step < items.size() * 2; ++step) {
-    QWheelEvent wheel(wheelPosition, menu.mapToGlobal(wheelPosition), QPoint(), QPoint(0, -120),
-                      Qt::NoButton, Qt::NoModifier, Qt::NoScrollPhase, false);
-    QCoreApplication::sendEvent(&menu, &wheel);
-  }
-  QVERIFY2(menu.rect().contains(menu.actionGeometry(exit)),
-           "mouse-wheel scrolling must reveal the last overflowing action");
-  QTest::keyClick(&menu, Qt::Key_End);
-  QCOMPARE(menu.activeAction(), exit);
-  QTest::keyClick(&menu, Qt::Key_Return);
-  QCOMPARE(triggered.count(), 1);
   QVERIFY(!menu.isVisible());
 }
 

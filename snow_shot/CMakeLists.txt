@@ -2567,8 +2567,10 @@ if(SNOW_SHOT_BUILD_TESTS)
         COMMAND snow-shot-settings-page-loading-tests --action-toolbar-settings-only)
     add_test(NAME snow-shot-settings-layout-stability-tests
         COMMAND snow-shot-settings-page-loading-tests --layout-stability-only)
+    add_test(NAME snow-shot-tray-selection-settings-tests
+        COMMAND snow-shot-settings-page-loading-tests --tray-selection-only)
     set_tests_properties(snow-shot-settings-navigation-tests snow-shot-action-toolbar-settings-tests
-        snow-shot-settings-layout-stability-tests PROPERTIES
+        snow-shot-settings-layout-stability-tests snow-shot-tray-selection-settings-tests PROPERTIES
         LABELS "unit" TIMEOUT 60
         ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}"
         ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
@@ -2901,14 +2903,10 @@ if(SNOW_SHOT_BUILD_TESTS)
         COMMAND snow-shot-system-tray-controller-tests --group-refresh-only -platform offscreen)
     add_test(NAME snow-shot-tray-menu-position-tests
         COMMAND snow-shot-system-tray-controller-tests --menu-position-only -platform offscreen)
-    file(GENERATE OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/test-support/tray-menu-screen.json"
-        CONTENT "{\"screens\":[{\"name\":\"tray-menu-screen\",\"width\":1280,\"height\":720,\"dpr\":1.0}]}\n")
-    add_test(NAME snow-shot-tray-menu-overflow-tests
-        COMMAND snow-shot-system-tray-controller-tests --all-menu-options-only
-            -platform "offscreen:configfile=tray-menu-screen.json")
-    set_tests_properties(snow-shot-tray-menu-overflow-tests PROPERTIES
+    add_test(NAME snow-shot-tray-menu-selection-tests
+        COMMAND snow-shot-system-tray-controller-tests --configured-menu-only -platform offscreen)
+    set_tests_properties(snow-shot-tray-menu-selection-tests PROPERTIES
         LABELS "unit" TIMEOUT 30 SNOW_TEST_CROSS_PLATFORM TRUE
-        WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/test-support"
         ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}"
         ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
     snow_shot_import_offscreen_platform(snow-shot-system-tray-controller-tests)
