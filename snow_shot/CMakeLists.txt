@@ -2565,7 +2565,10 @@ if(SNOW_SHOT_BUILD_TESTS)
         COMMAND snow-shot-settings-page-loading-tests --navigation-only)
     add_test(NAME snow-shot-action-toolbar-settings-tests
         COMMAND snow-shot-settings-page-loading-tests --action-toolbar-settings-only)
-    set_tests_properties(snow-shot-settings-navigation-tests snow-shot-action-toolbar-settings-tests PROPERTIES
+    add_test(NAME snow-shot-settings-layout-stability-tests
+        COMMAND snow-shot-settings-page-loading-tests --layout-stability-only)
+    set_tests_properties(snow-shot-settings-navigation-tests snow-shot-action-toolbar-settings-tests
+        snow-shot-settings-layout-stability-tests PROPERTIES
         LABELS "unit" TIMEOUT 60
         ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}"
         ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
@@ -2898,6 +2901,16 @@ if(SNOW_SHOT_BUILD_TESTS)
         COMMAND snow-shot-system-tray-controller-tests --group-refresh-only -platform offscreen)
     add_test(NAME snow-shot-tray-menu-position-tests
         COMMAND snow-shot-system-tray-controller-tests --menu-position-only -platform offscreen)
+    file(GENERATE OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/test-support/tray-menu-screen.json"
+        CONTENT "{\"screens\":[{\"name\":\"tray-menu-screen\",\"width\":1280,\"height\":720,\"dpr\":1.0}]}\n")
+    add_test(NAME snow-shot-tray-menu-overflow-tests
+        COMMAND snow-shot-system-tray-controller-tests --all-menu-options-only
+            -platform "offscreen:configfile=tray-menu-screen.json")
+    set_tests_properties(snow-shot-tray-menu-overflow-tests PROPERTIES
+        LABELS "unit" TIMEOUT 30 SNOW_TEST_CROSS_PLATFORM TRUE
+        WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/test-support"
+        ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}"
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
     snow_shot_import_offscreen_platform(snow-shot-system-tray-controller-tests)
     set_tests_properties(snow-shot-tray-skin-tests PROPERTIES LABELS "unit" TIMEOUT 60
         ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}"

@@ -27,6 +27,7 @@
 #include <QFileInfo>
 #include <QImage>
 #include <QImageReader>
+#include <QKeyEvent>
 #include <QLineEdit>
 #include <QMenu>
 #include <QPalette>
@@ -145,6 +146,48 @@ void verifyTrayMenuPosition() {
             "mouse context requests inside the icon must retain their pointer position");
     require(systemTrayMenuPosition(QRect(), mouseClick) == mouseClick,
             "platforms without tray geometry must keep a usable pointer-based placement");
+}
+
+void verifyAllTrayMenuOptions(snow_shot::presentation::SystemTrayController& controller) {
+    require(snow_shot::storage::ExtendedFeaturesSettings().setTranslationPageEnabled(true),
+            "enable the optional translation tray entry");
+    QStringList options;
+    for (const auto& group :
+         snow_shot::presentation::settings::builtInTrayCommandManifest().groups) {
+        for (const auto& option : group.options) {
+            options.append(option.id);
+        }
+    }
+    controller.setMenuOptions(options);
+    require(controller.menuOptions().size() == options.size(),
+            "every catalog tray option must be enabled for the overflow regression");
+    controller.setGlobalShortcuts(snow_shot::presentation::GlobalShortcutAction::Screenshot,
+                                  {QStringLiteral("Ctrl+Alt+Shift+F12")});
+    QPointer<adqt::widgets::AdContextMenu> menu = controller.createContextMenu();
+    menu->setNativeMenuEnabled(false);
+    QAction* exit = nullptr;
+    for (auto* action : menu->actions()) {
+        if (action->data().toString() == QStringLiteral("tray.exit")) {
+            exit = action;
+        }
+    }
+    require(exit && exit->isVisible(), "all tray options must include Exit");
+    int exitRequests = 0;
+    QObject::connect(&controller, &snow_shot::presentation::SystemTrayController::exitRequested,
+                     &controller, [&exitRequests]() { ++exitRequests; });
+    menu->popupAt(QGuiApplication::primaryScreen()->availableGeometry().bottomRight());
+    QApplication::processEvents();
+    menu->setActiveAction(exit);
+    QApplication::processEvents();
+    require(menu->activeAction() == exit && menu->rect().contains(menu->actionGeometry(exit)),
+            "Exit must remain fully reachable when all tray options overflow the screen");
+    require(menu->actionAt(menu->actionGeometry(exit).center()) == exit,
+            "the revealed Exit row must remain hit-testable");
+    QKeyEvent activate(QEvent::KeyPress, Qt::Key_Return, Qt::NoModifier);
+    QCoreApplication::sendEvent(menu, &activate);
+    require(exitRequests == 1, "the overflowing Exit row must dispatch its request exactly once");
+    drainMenus();
+    require(!menu, "activating Exit must retire the entire overflowing tray popup");
 }
 
 void verifyTraySkins(snow_shot::presentation::SystemTrayController& controller,
@@ -424,6 +467,11 @@ int main(int argc, char* argv[]) {
         return 0;
     }
     snow_shot::presentation::SystemTrayController controller;
+    if (application.arguments().contains(QStringLiteral("--all-menu-options-only"))) {
+        verifyAllTrayMenuOptions(controller);
+        snow_shot::storage::ApplicationStorage::instance().shutdown();
+        return 0;
+    }
 #ifdef Q_OS_MACOS
     if (application.arguments().contains(QStringLiteral("--native-menu"))) {
         int result = 1;

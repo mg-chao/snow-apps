@@ -126,6 +126,17 @@ void contracts(QApplication& app) {
         editAction->setFocus();
         require(QApplication::focusWidget() == editAction,
                 "focus the translation action before theming");
+        for (const auto phase :
+             {settings::SettingsWritePhase::Pending, settings::SettingsWritePhase::Clean}) {
+            auto state = session.state(QStringLiteral("api.text-translation"));
+            state.phase = phase;
+            state.busy = phase == settings::SettingsWritePhase::Pending;
+            state.dirty = state.busy;
+            emit session.fieldChanged(QStringLiteral("api.text-translation"), state);
+            settle();
+            require(originalAction && QApplication::focusWidget() == originalAction,
+                    "unchanged translation persistence notifications preserve actions and focus");
+        }
         auto& themes = presentation::styles::ThemeManager::instance();
         const auto initialMode = themes.themeMode();
         themes.setThemeMode(presentation::styles::ThemeMode::Dark);
@@ -140,6 +151,9 @@ void contracts(QApplication& app) {
         require(session.textTranslationConfigurations().size() == 2 &&
                     session.textTranslationConfigurations().last().id != original.id,
                 "copy creates distinct same-provider identity");
+        require(widget->findChild<QWidget*>(QStringLiteral("textTranslationRow:") +
+                                            session.textTranslationConfigurations().last().id),
+                "a changed translation list renders its new configuration");
         widget->findChild<AdButton*>(QStringLiteral("edit:") + original.id)->click();
         settle();
         modal = widget->findChild<AdModal*>(QStringLiteral("textTranslationEditor"));

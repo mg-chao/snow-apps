@@ -146,7 +146,13 @@ void CustomAiModelsSettingsWidget::applyTheme(
     update();
 }
 
-void CustomAiModelsSettingsWidget::rebuild() {
+void CustomAiModelsSettingsWidget::rebuild(bool force) {
+    const auto models = m_session.customAiModels();
+    // fieldChanged also reports persistence state without changing the model list.
+    if (!force && m_renderedModels == models) {
+        return;
+    }
+    m_renderedModels = models;
     const QString focusedName =
         QApplication::focusWidget() != nullptr && isAncestorOf(QApplication::focusWidget())
             ? QApplication::focusWidget()->objectName()
@@ -155,7 +161,6 @@ void CustomAiModelsSettingsWidget::rebuild() {
         delete item->widget();
         delete item;
     }
-    const auto models = m_session.customAiModels();
     if (models.isEmpty()) {
         auto* empty = new QLabel(tr("No custom models configured"), this);
         empty->setObjectName(QStringLiteral("customAiModelsEmpty"));
@@ -660,7 +665,7 @@ void CustomAiModelsSettingsWidget::retranslateUi() {
         tr("Unable to save models. Check that configuration storage is writable and try again."));
     m_add->setText(tr("Add Model"));
     m_title->setText(QCoreApplication::translate("SettingsCatalog", "Custom Models"));
-    rebuild();
+    rebuild(true);
     translateModal();
     if (m_modal != nullptr &&
         std::any_of(m_fields.cbegin(), m_fields.cend(),

@@ -294,6 +294,16 @@ class AdContextMenuStyle final : public QProxyStyle {
     }
   }
 
+  int styleHint(StyleHint hint, const QStyleOption* option = nullptr,
+                const QWidget* widget = nullptr,
+                QStyleHintReturn* returnData = nullptr) const override {
+    // QMenu otherwise inherits platform-dependent column wrapping. A popup
+    // constrained to the screen (or a caller's fixed width) can then clip its
+    // trailing columns, leaving actions unreachable. Keep one scrollable column.
+    if (hint == SH_Menu_Scrollable) return 1;
+    return QProxyStyle::styleHint(hint, option, widget, returnData);
+  }
+
   int pixelMetric(PixelMetric metric, const QStyleOption* option = nullptr,
                   const QWidget* widget = nullptr) const override {
     switch (metric) {

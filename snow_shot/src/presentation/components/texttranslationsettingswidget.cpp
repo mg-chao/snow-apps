@@ -141,7 +141,13 @@ void TextTranslationSettingsWidget::applyTheme(
     update();
 }
 
-void TextTranslationSettingsWidget::rebuild() {
+void TextTranslationSettingsWidget::rebuild(bool force) {
+    const auto models = m_session.textTranslationConfigurations();
+    // fieldChanged also reports persistence state without changing configurations.
+    if (!force && m_renderedConfigurations == models) {
+        return;
+    }
+    m_renderedConfigurations = models;
     const QString focusedName =
         QApplication::focusWidget() != nullptr && isAncestorOf(QApplication::focusWidget())
             ? QApplication::focusWidget()->objectName()
@@ -150,7 +156,6 @@ void TextTranslationSettingsWidget::rebuild() {
         delete item->widget();
         delete item;
     }
-    const auto models = m_session.textTranslationConfigurations();
     if (models.isEmpty()) {
         auto* empty = new QLabel(tr("No translation configurations added"), this);
         empty->setObjectName(QStringLiteral("textTranslationConfigurationsEmpty"));
@@ -538,7 +543,7 @@ void TextTranslationSettingsWidget::retranslateUi() {
                         "writable and try again."));
     m_add->setText(tr("Add Configuration"));
     m_title->setText(QCoreApplication::translate("SettingsCatalog", "Translation Configurations"));
-    rebuild();
+    rebuild(true);
     translateModal();
     if (m_modal != nullptr &&
         std::any_of(m_fields.cbegin(), m_fields.cend(),
