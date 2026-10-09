@@ -197,6 +197,8 @@ class ShortcutSettings final {
     bool setPinSelectedFiles(const shortcuts::ShortcutBindingList& bindings) const;
     [[nodiscard]] shortcuts::ShortcutBindingList restoreLastClosedWindows() const;
     bool setRestoreLastClosedWindows(const shortcuts::ShortcutBindingList& bindings) const;
+    [[nodiscard]] shortcuts::ShortcutBindingList hideShowAllWindows() const;
+    bool setHideShowAllWindows(const shortcuts::ShortcutBindingList& bindings) const;
 #if SNOW_SHOT_ENABLE_TEXT_TRANSLATION
     [[nodiscard]] shortcuts::ShortcutBindingList translateSelectedText() const;
     bool setTranslateSelectedText(const shortcuts::ShortcutBindingList& bindings) const;

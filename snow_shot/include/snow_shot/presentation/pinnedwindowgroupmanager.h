@@ -66,6 +66,8 @@ class PinnedWindowGroupManager final : public QObject {
     bool moveWindows(const QVector<QPointer<::ScreenshotPinnedWindow>>& windows,
                      const QString& groupId);
     void restoreActiveGroupWindows();
+    void requestShowAllWindows();
+    void requestHideOtherWindows(const QString& exceptId);
     bool showWindow(const QString& id);
     void destroyWindow(const QString& id);
     void markWindowClosing(::ScreenshotPinnedWindow* window);
@@ -84,6 +86,8 @@ class PinnedWindowGroupManager final : public QObject {
     void groupsChanged();
     void activeGroupChanged(const QString& groupId);
     void restoreActiveGroupWindowsRequested();
+    void showAllWindowsRequested();
+    void hideOtherWindowsRequested(const QString& exceptId);
     void groupDeletionRequested(const QString& groupId);
 
   private:
@@ -101,10 +105,12 @@ class PinnedWindowGroupManager final : public QObject {
     QSet<QString> m_inactiveClosing;
     QHash<QString, QString> m_pendingGroups;
     mutable quint64 m_countsRevision = (std::numeric_limits<quint64>::max)();
+    quint64 m_visibilityRevision = 0;
     mutable QHash<QString, int> m_persistedCounts;
     mutable QHash<QString, int> m_persistedTotalCounts;
     mutable QHash<QString, QSet<QString>> m_persistedIdsByGroup;
     mutable QHash<QString, QSet<QString>> m_allPersistedIdsByGroup;
+    mutable QSet<QString> m_closedPendingIds;
     bool m_groupsChangedScheduled = false;
     quint64 m_automationRevision = 0;
 };

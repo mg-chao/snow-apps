@@ -192,6 +192,9 @@ class ScreenshotPinnedWindow final : public QWidget {
             replacementPersistenceWriter;
         std::function<void(const QString&)> persistenceRemover;
         std::function<void(const snow_shot::storage::PinnedWindowRecord&)> persistenceCloser;
+        std::function<bool(const snow_shot::storage::PinnedWindowRecord&)> persistenceHider;
+        std::function<void()> showAllWindowsRequested;
+        std::function<void(const QString&)> hideOtherWindowsRequested;
         snow_shot::storage::PinnedWindowCreationSource creationSource =
             snow_shot::storage::PinnedWindowCreationSource::Other;
         snow_shot::presentation::PinnedWindowGroupManager* groupManager = nullptr;
@@ -241,6 +244,7 @@ class ScreenshotPinnedWindow final : public QWidget {
   public slots:
     void setGroupId(const QString& id);
     void closeForInactiveGroup();
+    Q_INVOKABLE bool requestHide();
     void requestDestroy();
     void showFromManagement();
     void cancelDeferredInactiveGroupClose();
@@ -263,6 +267,7 @@ class ScreenshotPinnedWindow final : public QWidget {
     friend class ScreenshotPinnedEditController;
     friend class ScreenshotPinnedWindowTestAccess;
     friend class PinnedWindowWindowsEvents;
+    bool m_destroying = false;
     friend class snow_shot::presentation::PinnedWindowSelectionController;
 
     enum class GeometryMutation {
@@ -638,6 +643,9 @@ class ScreenshotPinnedWindow final : public QWidget {
         m_replacementPersistenceWriter;
     std::function<void(const QString&)> m_persistenceRemover;
     std::function<void(const snow_shot::storage::PinnedWindowRecord&)> m_persistenceCloser;
+    std::function<bool(const snow_shot::storage::PinnedWindowRecord&)> m_persistenceHider;
+    std::function<void()> m_showAllWindowsRequested;
+    std::function<void(const QString&)> m_hideOtherWindowsRequested;
     snow_shot::storage::PinnedWindowCreationSource m_creationSource =
         snow_shot::storage::PinnedWindowCreationSource::Other;
     QDateTime m_createdUtc;

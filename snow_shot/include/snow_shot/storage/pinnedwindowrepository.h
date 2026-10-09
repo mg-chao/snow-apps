@@ -25,6 +25,7 @@ struct PinnedWindowSummary final {
     QDateTime lastClosedUtc;
     bool ignored = false;
     quint64 activitySequence = 0;
+    bool hidden = false;
     [[nodiscard]] QDateTime activityUtc() const {
         return lastClosedUtc.isValid() ? lastClosedUtc : createdUtc;
     }
@@ -69,11 +70,16 @@ class PinnedWindowRepository final {
     loadPreviewSource(const QString& id) const;
     [[nodiscard]] std::optional<quint64> previewSourceRevision(const QString& id) const;
     [[nodiscard]] QVector<PinnedWindowSummary> summaries() const;
+    // Reserved pins can be hidden or moved before their source payload is saved.
+    [[nodiscard]] QVector<PinnedWindowSummary> pendingSummaries() const;
     // Reads source identity without materializing any persisted image payload.
     [[nodiscard]] PinnedSourceIdentity sourceIdentity(const QString& id) const;
     [[nodiscard]] quint64 revision() const;
     // Advances only when records enter, leave, close, restore, or change groups.
     [[nodiscard]] quint64 membershipRevision() const;
+    // Also advances for pending-only visibility changes; image payloads are unaffected.
+    [[nodiscard]] quint64 visibilityRevision() const;
+    [[nodiscard]] StorageResult setRecordsHidden(const QVector<QString>& ids, bool hidden);
     [[nodiscard]] int allocateHideToTopAccent();
     [[nodiscard]] QVector<PinnedWindowGroup> groups() const;
     [[nodiscard]] QString activeGroupId() const;
@@ -81,8 +87,7 @@ class PinnedWindowRepository final {
     [[nodiscard]] StorageResult setGroups(QVector<PinnedWindowGroup> groups,
                                           const QString& activeGroupId);
     [[nodiscard]] StorageResult setRecordGroup(const QString& recordId, const QString& groupId);
-    // Batch assignment changes existing records atomically. Missing records may
-    // still have a pending source save, which takes its group from the live window.
+    // Batch assignment changes persisted records and pending reservations atomically.
     [[nodiscard]] StorageResult setRecordsGroup(const QVector<QString>& recordIds,
                                                 const QString& groupId);
     [[nodiscard]] StorageResult removeEmptyGroup(const QString& groupId);
@@ -102,7 +107,11 @@ class PinnedWindowRepository final {
     [[nodiscard]] StorageResult removeMany(const QVector<QString>& ids);
     // Callbacks run under the repository lock; dispatch notifications without reentering it.
     void setChangedCallback(std::function<void()> callback);
-    void reserveCreation(const QString& id, QDateTime when = QDateTime::currentDateTimeUtc());
+    void reserveCreation(const QString& id, QDateTime when = QDateTime::currentDateTimeUtc(),
+                         const QString& groupId = QStringLiteral("default"));
+    // Reveals hidden group members once, when a new pin publishes its first frame.
+    // Later source insertion preserves newer Hide/Close transitions.
+    [[nodiscard]] StorageResult markCreationPresented(const QString& id);
     // Releases a failed or canceled first save, including any close that preceded it.
     void cancelCreation(const QString& id);
     [[nodiscard]] StorageResult markClosed(const QString& id,

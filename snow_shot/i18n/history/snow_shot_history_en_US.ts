@@ -189,6 +189,10 @@
             <translation>Group: %1</translation>
         </message>
         <message>
+            <source>Hidden</source>
+            <translation>Hidden</translation>
+        </message>
+        <message>
             <source>No matching pinned windows</source>
             <translation>No matching pinned windows</translation>
         </message>

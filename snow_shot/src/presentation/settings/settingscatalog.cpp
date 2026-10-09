@@ -1109,6 +1109,16 @@ SettingsItemDefinition restoreLastClosedWindowsItem() {
         []() { return outlined_icons::History(); });
 }
 
+SettingsItemDefinition hideShowAllWindowsItem() {
+    return quickActionItem(
+        QStringLiteral("quick.hide-show-all-windows"),
+        QT_TRANSLATE_NOOP("SettingsCatalog", "Hide/Show All Windows"),
+        QT_TRANSLATE_NOOP("SettingsCatalog", "Hide or show all windows in the current group"), {},
+        GlobalShortcutAction::HideShowAllWindows,
+        QStringLiteral("global_shortcuts/hide_show_all_windows"),
+        []() { return outlined_icons::Eye(); });
+}
+
 SettingsItemDefinition pinSelectedFilesItem() {
     return quickActionItem(
         QStringLiteral("quick.pin-selected-files"),
@@ -2766,6 +2776,7 @@ QVector<SettingsPageDefinition> builtInPages() {
                         pinClipboardContentItem(),
                         pinSelectedFilesItem(),
                         restoreLastClosedWindowsItem(),
+                        hideShowAllWindowsItem(),
                         switchWindowGroupItem(),
                         openPinToScreenManagementItem(),
                     },
@@ -3867,6 +3878,8 @@ QString shortcutConfigurationKey(GlobalShortcutAction action) {
         return QStringLiteral("global_shortcuts/pin_selected_files");
     case GlobalShortcutAction::RestoreLastClosedWindows:
         return QStringLiteral("global_shortcuts/restore_last_closed_windows");
+    case GlobalShortcutAction::HideShowAllWindows:
+        return QStringLiteral("global_shortcuts/hide_show_all_windows");
     case GlobalShortcutAction::TranslateSelectedText:
         return QStringLiteral("global_shortcuts/translate_selected_text");
     case GlobalShortcutAction::ToggleGlobalHotkeys:
@@ -4215,6 +4228,9 @@ TrayCommandManifest buildBuiltInTrayCommandManifest() {
                 QT_TRANSLATE_NOOP("SettingsCatalog", "Restore Last Closed Window"),
                 GlobalShortcutAction::RestoreLastClosedWindows,
                 []() { return outlined_icons::History(); }),
+          quick(QStringLiteral("quick.hide-show-all-windows"),
+                QT_TRANSLATE_NOOP("SettingsCatalog", "Hide/Show All Windows"),
+                GlobalShortcutAction::HideShowAllWindows, []() { return outlined_icons::Eye(); }),
           quick(QStringLiteral("quick.open-pin-to-screen-management"),
                 QT_TRANSLATE_NOOP("SettingsCatalog", "Pin to Screen Management"),
                 GlobalShortcutAction::OpenPinToScreenManagement,

@@ -2389,12 +2389,20 @@
             <translation>Hidden tools</translation>
         </message>
         <message>
+            <source>Hide or show all windows in the current group</source>
+            <translation>Hide or show all windows in the current group</translation>
+        </message>
+        <message>
             <source>Hide to Top</source>
             <translation>Hide to Top</translation>
         </message>
         <message>
             <source>Hide when outside selection</source>
             <translation>Hide when outside selection</translation>
+        </message>
+        <message>
+            <source>Hide/Show All Windows</source>
+            <translation>Hide/Show All Windows</translation>
         </message>
         <message>
             <source>High</source>

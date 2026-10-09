@@ -187,6 +187,10 @@
             <translation>分组：%1</translation>
         </message>
         <message>
+            <source>Hidden</source>
+            <translation>已隐藏</translation>
+        </message>
+        <message>
             <source>No matching pinned windows</source>
             <translation>没有符合条件的固定到屏幕窗口</translation>
         </message>

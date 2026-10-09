@@ -1487,6 +1487,10 @@ bool ScreenshotController::Impl::ensureExportFeature() {
         m_messages->error(QStringLiteral("restore-pinned"),
                           owner.tr("The pinned window could not be restored"));
     });
+    exportUiServices->setVisibilityFailureHandler([this]() {
+        m_messages->error(QStringLiteral("hide-pinned"),
+                          owner.tr("The pinned windows could not be hidden"));
+    });
     m_selectionExportUiServices = std::move(exportUiServices);
     return true;
 }
@@ -4333,7 +4337,7 @@ void ScreenshotController::Impl::printSelection() {
                 {{QStringLiteral("request_kind"), QStringLiteral("capture")},
                  {QStringLiteral("operation"), QString::number(epoch)},
                  {QStringLiteral("stage"), !snapshotSucceeded ? QStringLiteral("export_image")
-                                           : !printer         ? QStringLiteral("service_destroyed")
+                                           : !printer ? QStringLiteral("service_destroyed")
                                                       : QStringLiteral("service_rejected")}},
                 QtWarningMsg);
             finished({ScreenshotPrintService::Status::Failed,
@@ -5949,6 +5953,11 @@ void ScreenshotController::prewarmResources() {
 void ScreenshotController::restoreLastClosedPinnedWindow() {
     if (m_impl->ensureExportFeature())
         m_impl->m_selectionExportUiServices->restoreLastClosedWindow();
+}
+
+void ScreenshotController::togglePinnedWindowsVisibility() {
+    if (m_impl->ensureExportFeature())
+        static_cast<void>(m_impl->m_selectionExportUiServices->toggleAllWindowsVisibility());
 }
 void ScreenshotController::showPinnedRecord(const QString& id) {
     if (m_impl->ensureExportFeature() && !m_impl->m_selectionExportUiServices->restoreRecord(id))

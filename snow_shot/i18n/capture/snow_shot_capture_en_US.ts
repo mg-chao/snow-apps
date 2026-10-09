@@ -130,6 +130,10 @@
             <translation>The pinned window could not be restored</translation>
         </message>
         <message>
+            <source>The pinned windows could not be hidden</source>
+            <translation>The pinned windows could not be hidden</translation>
+        </message>
+        <message>
             <source>The recognition text could not be saved: %1</source>
             <translation>The recognition text could not be saved: %1</translation>
         </message>

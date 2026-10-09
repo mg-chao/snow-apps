@@ -1949,6 +1949,10 @@ if(SNOW_SHOT_BUILD_TESTS)
     )
     add_test(NAME snow-shot-pinned-window-repository-tests
              COMMAND snow-shot-pinned-window-repository-tests)
+    add_test(NAME snow-shot-pinned-window-visibility-storage-tests
+             COMMAND snow-shot-pinned-window-repository-tests --visibility-only)
+    set_tests_properties(snow-shot-pinned-window-visibility-storage-tests PROPERTIES
+        LABELS "unit" TIMEOUT 60)
     set_tests_properties(snow-shot-pinned-window-repository-tests PROPERTIES
         ENVIRONMENT_MODIFICATION
             "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
@@ -2746,6 +2750,10 @@ if(SNOW_SHOT_BUILD_TESTS)
         src/presentation/services/screenshotclipboardservice.cpp)
     target_link_libraries(snow-shot-app-permissions-tests PRIVATE snow_shot_settings)
     add_test(NAME snow-shot-app-permissions-tests COMMAND snow-shot-app-permissions-tests)
+    add_test(NAME snow-shot-pinned-visibility-permission-routing-tests
+        COMMAND snow-shot-app-permissions-tests --routing-only -platform offscreen)
+    set_tests_properties(snow-shot-pinned-visibility-permission-routing-tests PROPERTIES
+        LABELS "unit" TIMEOUT 60)
     set_tests_properties(snow-shot-app-permissions-tests PROPERTIES
         LABELS "unit" ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}")
     snow_shot_import_offscreen_platform(snow-shot-app-permissions-tests)
@@ -2887,6 +2895,10 @@ if(SNOW_SHOT_BUILD_TESTS)
         NAME snow-shot-system-tray-controller-tests
         COMMAND snow-shot-system-tray-controller-tests
     )
+    add_test(NAME snow-shot-pinned-visibility-tray-tests
+        COMMAND snow-shot-system-tray-controller-tests --hide-show-tray-only -platform offscreen)
+    set_tests_properties(snow-shot-pinned-visibility-tray-tests PROPERTIES
+        LABELS "unit" TIMEOUT 60)
     add_test(NAME snow-shot-tray-skin-tests
         COMMAND snow-shot-system-tray-controller-tests --skin-only -platform offscreen)
     add_test(NAME snow-shot-recording-export-tray-tests
@@ -2999,6 +3011,10 @@ if(SNOW_SHOT_BUILD_TESTS)
         NAME snow-shot-pinned-window-group-tests
         COMMAND snow-shot-pinned-window-group-tests
     )
+    add_test(NAME snow-shot-pinned-window-visibility-group-tests
+        COMMAND snow-shot-pinned-window-group-tests --visibility-only -platform offscreen)
+    set_tests_properties(snow-shot-pinned-window-visibility-group-tests PROPERTIES
+        LABELS "unit" TIMEOUT 60)
     set_tests_properties(snow-shot-pinned-window-group-tests PROPERTIES
         ENVIRONMENT
             "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}"
@@ -4291,6 +4307,10 @@ if(SNOW_SHOT_BUILD_TESTS)
         COMMAND snow-shot-pinned-window-tests --management-only -platform offscreen)
     add_test(NAME snow-shot-pinned-close-persistence-tests
         COMMAND snow-shot-pinned-window-tests --deferred-user-close-only -platform offscreen)
+    add_test(NAME snow-shot-pinned-hidden-window-lifecycle-tests
+        COMMAND snow-shot-pinned-window-tests --hidden-window-lifecycle-only -platform offscreen)
+    set_tests_properties(snow-shot-pinned-hidden-window-lifecycle-tests PROPERTIES
+        LABELS "unit" TIMEOUT 60)
     add_test(NAME snow-shot-pinned-window-confirmation-tests
         COMMAND snow-shot-pinned-window-tests --window-confirmation-only -platform offscreen)
     set_tests_properties(snow-shot-pinned-window-confirmation-tests PROPERTIES

@@ -1761,6 +1761,10 @@ class ApplicationController::Impl {
             if (ScreenshotController* controller = ensureScreenshotController())
                 controller->restoreLastClosedPinnedWindow();
             break;
+        case presentation::GlobalShortcutAction::HideShowAllWindows:
+            if (ScreenshotController* controller = ensureScreenshotController())
+                controller->togglePinnedWindowsVisibility();
+            break;
         case presentation::GlobalShortcutAction::PinClipboardContent:
             if (ScreenshotController* controller = ensureScreenshotController()) {
                 controller->pinClipboardContentToScreen();

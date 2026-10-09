@@ -25,7 +25,7 @@
 
 namespace snow_shot::presentation {
 ::ScreenshotPinnedWindow* PinnedWindowGroupManager::liveWindow(const QString& id) const {
-    return m_windows.value(id).data();
+    return hasWindow(id) ? m_windows.value(id).data() : nullptr;
 }
 
 QVector<::ScreenshotPinnedWindow*> PinnedWindowGroupManager::liveWindows() const {
@@ -96,6 +96,7 @@ PinnedWindowGroupManager::PinnedWindowGroupManager(storage::PinnedWindowReposito
     if (!contains(m_activeGroupId)) {
         m_activeGroupId = QString::fromLatin1(kDefaultGroupId);
     }
+    m_visibilityRevision = m_repository != nullptr ? m_repository->visibilityRevision() : 0;
     // Loading the in-memory default state must not rewrite the manifest. The
     // repository owns the first durable write after an actual mutation.
 }
@@ -150,13 +151,28 @@ void PinnedWindowGroupManager::refreshPersistedCounts() const {
             m_persistedTotalCounts.clear();
             m_persistedIdsByGroup.clear();
             m_allPersistedIdsByGroup.clear();
+            m_closedPendingIds.clear();
+            QSet<QString> persistedIds;
             const QVector<storage::PinnedWindowSummary> summaries = m_repository->summaries();
             for (const storage::PinnedWindowSummary& summary : summaries) {
+                persistedIds.insert(summary.id);
                 ++m_persistedTotalCounts[summary.groupId];
                 m_allPersistedIdsByGroup[summary.groupId].insert(summary.id);
                 if (!summary.ignored) {
                     ++m_persistedCounts[summary.groupId];
                     m_persistedIdsByGroup[summary.groupId].insert(summary.id);
+                }
+            }
+            for (const auto& pending : m_repository->pendingSummaries()) {
+                if (persistedIds.contains(pending.id))
+                    continue;
+                ++m_persistedTotalCounts[pending.groupId];
+                m_allPersistedIdsByGroup[pending.groupId].insert(pending.id);
+                if (pending.ignored) {
+                    m_closedPendingIds.insert(pending.id);
+                } else {
+                    ++m_persistedCounts[pending.groupId];
+                    m_persistedIdsByGroup[pending.groupId].insert(pending.id);
                 }
             }
             m_countsRevision = repositoryRevision;
@@ -175,7 +191,7 @@ QVector<WindowGroupDisplayEntry> PinnedWindowGroupManager::displaySnapshot() con
             continue;
         const QString group = it.value()->groupId();
         auto& count = counts[group];
-        if (!m_inactiveClosing.contains(it.key()) &&
+        if (!m_inactiveClosing.contains(it.key()) && !m_closedPendingIds.contains(it.key()) &&
             !m_persistedIdsByGroup.value(group).contains(it.key()))
             ++count.nonIgnored;
         if (!m_allPersistedIdsByGroup.value(group).contains(it.key()))
@@ -185,7 +201,8 @@ QVector<WindowGroupDisplayEntry> PinnedWindowGroupManager::displaySnapshot() con
         if (m_windows.value(it.key()))
             continue;
         auto& count = counts[it.value()];
-        if (!m_persistedIdsByGroup.value(it.value()).contains(it.key()))
+        if (!m_closedPendingIds.contains(it.key()) &&
+            !m_persistedIdsByGroup.value(it.value()).contains(it.key()))
             ++count.nonIgnored;
         if (!m_allPersistedIdsByGroup.value(it.value()).contains(it.key()))
             ++count.total;
@@ -209,7 +226,7 @@ GroupWindowCounts PinnedWindowGroupManager::windowCounts(const QString& groupId)
                              m_persistedTotalCounts.value(groupId, 0)};
     for (auto it = m_windows.cbegin(); it != m_windows.cend(); ++it) {
         if (it.value() != nullptr && it.value()->groupId() == groupId) {
-            if (!m_inactiveClosing.contains(it.key()) &&
+            if (!m_inactiveClosing.contains(it.key()) && !m_closedPendingIds.contains(it.key()) &&
                 !nonIgnoredPersistedIds.contains(it.key())) {
                 ++counts.nonIgnored;
             }
@@ -220,7 +237,8 @@ GroupWindowCounts PinnedWindowGroupManager::windowCounts(const QString& groupId)
     }
     for (auto it = m_pendingGroups.cbegin(); it != m_pendingGroups.cend(); ++it) {
         if (it.value() == groupId && m_windows.value(it.key()) == nullptr) {
-            if (!nonIgnoredPersistedIds.contains(it.key())) {
+            if (!m_closedPendingIds.contains(it.key()) &&
+                !nonIgnoredPersistedIds.contains(it.key())) {
                 ++counts.nonIgnored;
             }
             if (!allPersistedIds.contains(it.key())) {
@@ -238,6 +256,12 @@ int PinnedWindowGroupManager::windowCount(const QString& groupId) const {
 void PinnedWindowGroupManager::onPinnedRecordsChanged() {
     if (m_repository == nullptr)
         return;
+    const quint64 visibilityRevision = m_repository->visibilityRevision();
+    if (visibilityRevision != m_visibilityRevision) {
+        m_visibilityRevision = visibilityRevision;
+        m_automationRevision = nextAutomationRevision();
+        restoreActiveGroupWindows();
+    }
     if (m_repository->membershipRevision() == m_countsRevision)
         return;
     const bool hadCounts = m_countsRevision != (std::numeric_limits<quint64>::max)();
@@ -492,6 +516,14 @@ void PinnedWindowGroupManager::destroyWindow(const QString& id) {
 
 void PinnedWindowGroupManager::restoreActiveGroupWindows() {
     emit restoreActiveGroupWindowsRequested();
+}
+
+void PinnedWindowGroupManager::requestShowAllWindows() {
+    emit showAllWindowsRequested();
+}
+
+void PinnedWindowGroupManager::requestHideOtherWindows(const QString& exceptId) {
+    emit hideOtherWindowsRequested(exceptId);
 }
 
 bool PinnedWindowGroupManager::moveWindow(::ScreenshotPinnedWindow* window,
