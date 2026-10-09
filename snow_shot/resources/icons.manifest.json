@@ -767,6 +767,22 @@
     },
     {
       "variant": "outlined",
+      "symbol": "PinnedWindowBorder",
+      "name": "pinned-window-border",
+      "source": "../src/presentation/components/icons/resources/pinned-window-border.svg",
+      "colorModel": "monochrome",
+      "fit": "contain"
+    },
+    {
+      "variant": "outlined",
+      "symbol": "PinnedWindowShadow",
+      "name": "pinned-window-shadow",
+      "source": "../src/presentation/components/icons/resources/pinned-window-shadow.svg",
+      "colorModel": "monochrome",
+      "fit": "contain"
+    },
+    {
+      "variant": "outlined",
       "symbol": "QuickSave",
       "name": "quick-save",
       "source": "../src/presentation/components/icons/resources/quick-save.svg",

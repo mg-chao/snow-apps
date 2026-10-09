@@ -550,6 +550,7 @@ QJsonObject recordToJson(const PinnedWindowRecord& record, const QJsonObject& pa
         {QStringLiteral("locked_mode"), record.lockedMode},
         {QStringLiteral("always_on_top"), record.alwaysOnTop},
         {QStringLiteral("show_border"), record.showBorder},
+        {QStringLiteral("show_shadow"), record.showShadow},
         {QStringLiteral("border_appearance"), borderAppearanceToJson(record.borderAppearance)},
         {QStringLiteral("checkerboard_enabled"),
          record.checkerboardEnabled ? QJsonValue(*record.checkerboardEnabled) : QJsonValue()},
@@ -916,6 +917,8 @@ bool parseRecord(const QJsonObject& object, const QString& root, PinnedWindowRec
     // Pins saved before the preference existed always drew their rim, so a
     // missing key must restore with the border visible.
     record.showBorder = object.value(QStringLiteral("show_border")).toBool(true);
+    // Older pins had no presentation shadow, independently of current defaults.
+    record.showShadow = object.value(QStringLiteral("show_shadow")).toBool(false);
     record.borderAppearance =
         borderAppearanceFromJson(object.value(QStringLiteral("border_appearance")));
     const QJsonValue checkerboard = object.value(QStringLiteral("checkerboard_enabled"));

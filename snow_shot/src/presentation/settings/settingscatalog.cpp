@@ -703,6 +703,56 @@ SettingsItemDefinition pinBorderColorItem() {
         {settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Pinned window border"))});
 }
 
+SettingsItemDefinition pinShowBorderByDefaultItem() {
+    return {
+        QStringLiteral("interface.pin-to-screen.show-border-by-default"),
+        settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Show border by default")),
+        settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Show the border on new pinned windows")),
+        {},
+        QStringLiteral("pin_to_screen/show_border_by_default"),
+        SettingsSwitchDefinition{SettingsSwitchBinding::PinShowBorderByDefault}};
+}
+
+SettingsItemDefinition pinShowShadowByDefaultItem() {
+    return {
+        QStringLiteral("interface.pin-to-screen.show-shadow-by-default"),
+        settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Show shadow by default")),
+        settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Show the shadow on new pinned windows")),
+        {},
+        QStringLiteral("pin_to_screen/show_shadow_by_default"),
+        SettingsSwitchDefinition{SettingsSwitchBinding::PinShowShadowByDefault}};
+}
+
+SettingsItemDefinition pinShadowColorItem() {
+    return screenshotColorItem(
+        QStringLiteral("interface.pin-to-screen.shadow-color"),
+        QT_TRANSLATE_NOOP("SettingsCatalog", "Shadow color"),
+        QT_TRANSLATE_NOOP("SettingsCatalog", "Set the shadow color of pinned screenshots"),
+        QStringLiteral("pin_to_screen/shadow_color"), SettingsColorBinding::PinShadowColor,
+        {settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Pinned window shadow"))});
+}
+
+SettingsItemDefinition pinShadowActiveColorItem() {
+    return screenshotColorItem(
+        QStringLiteral("interface.pin-to-screen.shadow-active-color"),
+        QT_TRANSLATE_NOOP("SettingsCatalog", "Shadow active color"),
+        QT_TRANSLATE_NOOP("SettingsCatalog",
+                          "Set the shadow color of pinned screenshots while they have focus"),
+        QStringLiteral("pin_to_screen/shadow_active_color"),
+        SettingsColorBinding::PinShadowActiveColor,
+        {settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Pinned window active shadow"))});
+}
+
+SettingsItemDefinition pinLockedShadowColorItem() {
+    return screenshotColorItem(
+        QStringLiteral("interface.pin-to-screen.locked-shadow-color"),
+        QT_TRANSLATE_NOOP("SettingsCatalog", "Locked shadow color"),
+        QT_TRANSLATE_NOOP("SettingsCatalog", "Set the shadow color of locked pinned screenshots"),
+        QStringLiteral("pin_to_screen/locked_shadow_color"),
+        SettingsColorBinding::PinLockedShadowColor,
+        {settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Pinned window locked shadow"))});
+}
+
 SettingsItemDefinition pinBorderActiveColorItem() {
     return screenshotColorItem(
         QStringLiteral("interface.pin-to-screen.border-active-color"),
@@ -2316,7 +2366,10 @@ QVector<SettingsItemDefinition> pinToScreenShortcutItems() {
                           []() { return outlined_icons::ToTop(); }),
         localShortcutItem(SettingsLocalShortcutScope::PinToScreen, QStringLiteral("show_border"),
                           QT_TRANSLATE_NOOP("SettingsCatalog", "Show border"),
-                          []() { return outlined_icons::BorderOuter(); }),
+                          []() { return custom_outlined_icons::PinnedWindowBorder(); }),
+        localShortcutItem(SettingsLocalShortcutScope::PinToScreen, QStringLiteral("show_shadow"),
+                          QT_TRANSLATE_NOOP("SettingsCatalog", "Show shadow"),
+                          []() { return custom_outlined_icons::PinnedWindowShadow(); }),
         localShortcutItem(SettingsLocalShortcutScope::PinToScreen, QStringLiteral("close_window"),
                           QT_TRANSLATE_NOOP("SettingsCatalog", "Close window"),
                           []() { return outlined_icons::Close(); }),
@@ -3082,7 +3135,9 @@ QVector<SettingsPageDefinition> builtInPages() {
                  settingsText(QT_TRANSLATE_NOOP("SettingsCatalog",
                                                 "Pinned screenshot window appearance settings")),
                  SettingsSectionReset::PinToScreen,
-                 {pinBorderColorItem(), pinBorderActiveColorItem(), pinLockedBorderColorItem()},
+                 {pinShowBorderByDefaultItem(), pinBorderColorItem(), pinBorderActiveColorItem(),
+                  pinLockedBorderColorItem(), pinShowShadowByDefaultItem(), pinShadowColorItem(),
+                  pinShadowActiveColorItem(), pinLockedShadowColorItem()},
              },
              {
                  QStringLiteral("pin-to-screen-toolbar"),
@@ -4664,6 +4719,12 @@ QStringList SettingsCatalog::validationErrors() const {
                     case SettingsSwitchBinding::PinShowWindowButtons:
                         expectedKey = QStringLiteral("pin_to_screen/show_window_buttons");
                         break;
+                    case SettingsSwitchBinding::PinShowBorderByDefault:
+                        expectedKey = QStringLiteral("pin_to_screen/show_border_by_default");
+                        break;
+                    case SettingsSwitchBinding::PinShowShadowByDefault:
+                        expectedKey = QStringLiteral("pin_to_screen/show_shadow_by_default");
+                        break;
                     case SettingsSwitchBinding::PinConfirmBeforeClosingWindow:
                         expectedKey = QStringLiteral("pin_to_screen/confirm_before_closing_window");
                         break;
@@ -4958,6 +5019,15 @@ QStringList SettingsCatalog::validationErrors() const {
                         break;
                     case SettingsColorBinding::PinLockedBorderColor:
                         expectedKey = QStringLiteral("pin_to_screen/locked_border_color");
+                        break;
+                    case SettingsColorBinding::PinShadowColor:
+                        expectedKey = QStringLiteral("pin_to_screen/shadow_color");
+                        break;
+                    case SettingsColorBinding::PinShadowActiveColor:
+                        expectedKey = QStringLiteral("pin_to_screen/shadow_active_color");
+                        break;
+                    case SettingsColorBinding::PinLockedShadowColor:
+                        expectedKey = QStringLiteral("pin_to_screen/locked_shadow_color");
                         break;
                     }
                     if (itemDefinition.configurationKey != expectedKey || schemaEntry == nullptr ||

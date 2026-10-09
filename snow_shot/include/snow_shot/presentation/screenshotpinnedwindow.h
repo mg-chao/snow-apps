@@ -133,7 +133,8 @@ class ScreenshotPinnedWindow final : public QWidget {
         snow_shot::storage::PinnedSourceIdentity sourceIdentity;
         QDateTime sourceCreatedUtc;
         snow_shot::storage::PinnedWindowPlacement placement;
-        // Pixel rectangle scoped to screen, for capture/export geometry adapters.
+        // Content rectangle in platform units, without the permanent decoration margin.
+        // Native platform/controller rectangles include that margin.
         QRect nativeGeometry;
         QRectF canvasSourceRect;
         QRectF contentCanvasRect;
@@ -144,6 +145,7 @@ class ScreenshotPinnedWindow final : public QWidget {
         // with unknown opacity use their alpha capability conservatively.
         std::optional<bool> checkerboardEnabled;
         std::optional<bool> initialBorderVisible;
+        std::optional<bool> initialShadowVisible;
         QSize initialWindowSize;
         QString mouseWheelZoomMode = QStringLiteral("mouse_position");
         ScreenshotImageSource imageSource;
@@ -178,6 +180,7 @@ class ScreenshotPinnedWindow final : public QWidget {
         bool persistedLockedMode = false;
         bool persistedAlwaysOnTop = true;
         bool persistedShowBorder = true;
+        bool persistedShowShadow = false;
         QRect persistedPreThumbnailNativeGeometry;
         snow_shot::storage::PinnedWindowPlacement persistedPreThumbnailPlacement;
         QByteArray persistedCanvasSession;
@@ -246,6 +249,9 @@ class ScreenshotPinnedWindow final : public QWidget {
     static void setRuntimeBorderColor(const QColor& color);
     static void setRuntimeBorderActiveColor(const QColor& color);
     static void setRuntimeLockedBorderColor(const QColor& color);
+    static void setRuntimeShadowColor(const QColor& color);
+    static void setRuntimeShadowActiveColor(const QColor& color);
+    static void setRuntimeLockedShadowColor(const QColor& color);
     static void setRuntimeTrayEnabled(bool enabled);
 
   signals:
@@ -410,6 +416,11 @@ class ScreenshotPinnedWindow final : public QWidget {
     void restorePersistentState(const Config& config);
     [[nodiscard]] QRect intendedNativeGeometry() const;
     [[nodiscard]] QRect authoritativeNativeGeometry() const;
+    [[nodiscard]] QRect currentContentNativeGeometry() const;
+    [[nodiscard]] QRect authoritativeContentNativeGeometry() const;
+    [[nodiscard]] QRectF contentViewRect() const;
+    [[nodiscard]] QRect contentWidgetRect() const;
+    [[nodiscard]] std::optional<int> resizeHandleAt(const QPointF& position) const;
     [[nodiscard]] QRect observedNativeGeometry() const;
     void toggleHideToTop();
     void exitHideToTop();
@@ -420,6 +431,8 @@ class ScreenshotPinnedWindow final : public QWidget {
     void toggleAlwaysOnTop();
     void setShowBorder(bool enabled);
     void toggleShowBorder();
+    void setShowShadow(bool enabled);
+    void toggleShowShadow();
     [[nodiscard]] bool ensureClickThroughExitButton();
     [[nodiscard]] bool updateClickThroughExitButtonGeometry();
     void setClickThroughScreen(QScreen* screen);
@@ -567,6 +580,7 @@ class ScreenshotPinnedWindow final : public QWidget {
     QPointer<QAction> m_lockAction;
     QPointer<QAction> m_alwaysOnTopAction;
     QPointer<QAction> m_showBorderAction;
+    QPointer<QAction> m_showShadowAction;
     QPointer<QAction> m_showMainInterfaceAction;
     QPointer<QAction> m_closeAction;
     QPointer<QAction> m_loadContentAction;
@@ -610,8 +624,9 @@ class ScreenshotPinnedWindow final : public QWidget {
     std::function<ScreenshotPinnedRecognitionProviders()> m_recognitionProvider;
     ScreenshotRecognitionResults m_recognitionResults;
     ScreenshotRecognitionWindow* m_recognitionContent = nullptr;
-    // Scale is 100 * current window width / oriented initial window width.
-    // Window units are logical pixels on macOS and physical pixels on Windows;
+    std::optional<bool> m_recognitionEmptyViewportVisibility;
+    // Scale is 100 * current content width / oriented initial content width.
+    // Content units are logical pixels on macOS and physical pixels on Windows;
     // source image density and formatted-text DPR affect rendering only.
     QSize m_initialWindowSize;
     QSize m_originalPixelSize;
@@ -664,6 +679,10 @@ class ScreenshotPinnedWindow final : public QWidget {
     bool m_lockedMode = false;
     bool m_alwaysOnTop = true;
     bool m_showBorder = true;
+    bool m_showShadow = false;
+#if defined(Q_OS_WIN) || defined(_WIN32)
+    unsigned int m_windowsNativeDpi = 0;
+#endif
     bool m_geometryAnimating = false;
     bool m_preserveScaleForSettledGeometry = false;
     bool m_presented = false;

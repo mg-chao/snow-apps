@@ -84,6 +84,42 @@ void edgesRoundIndependently() {
             "clipping must exclude every pixel outside the native client");
 }
 
+void reservedPhysicalMarginSurvivesFractionalDpi() {
+    constexpr int margin = 16;
+    for (const QSize contentSize : {QSize(321, 181), QSize(869, 937), QSize(1, 9), QSize(1, 1)}) {
+        const QRect content(-1921, -517, contentSize.width(), contentSize.height());
+        const QRect outer = content.adjusted(-margin, -margin, margin, margin);
+        for (const qreal dpr : {1.0, 1.25, 1.5, 1.75, 2.0, 2.5, 3.0}) {
+            const ScreenshotPinnedGeometryMapping extent(outer, QSizeF(1, 1), dpr);
+            const QSize widgetSize = extent.coveringLogicalSize();
+            const ScreenshotPinnedGeometryMapping input(outer, widgetSize, dpr);
+            const ScreenshotPinnedGeometryMapping viewport(QRect(QPoint(), contentSize), widgetSize,
+                                                           dpr);
+            const double zoom = viewport.viewportZoom(contentSize);
+            const qreal inset = margin / dpr;
+            const QPointF center = QPointF(contentSize.width() / 2., contentSize.height() / 2.) +
+                                   viewport.viewportCenterOffset(zoom) -
+                                   QPointF(inset, inset) / zoom;
+            const QPointF viewOrigin =
+                QPointF(widgetSize.width() / 2., widgetSize.height() / 2.) - center * zoom;
+            require(qAbs(viewOrigin.x() * dpr - margin) < 1.e-10 &&
+                        qAbs(viewOrigin.y() * dpr - margin) < 1.e-10 &&
+                        qAbs(zoom * dpr - 1.) < 1.e-12,
+                    "fractional QWidget rounding must retain a 16 pixel margin and sharp content");
+            const QPointF contentInput = input.localPosition(content.topLeft());
+            const QPointF nativeContent = input.nativePosition(contentInput);
+            require(
+                qAbs(nativeContent.x() - content.left()) < 1.e-10 &&
+                    qAbs(nativeContent.y() - content.top()) < 1.e-10,
+                "hit testing must map the exact content origin independently of paint rounding");
+            const QRect paintedOuter =
+                input.clippedDeviceRect(QRectF(QPointF(), QSizeF(widgetSize) * dpr));
+            require(paintedOuter.adjusted(margin, margin, -margin, -margin).size() == contentSize,
+                    "one pixel content must keep its native size inside the reserved margin");
+        }
+    }
+}
+
 void invalidSnapshotsStayInvalid() {
     const ScreenshotPinnedGeometryMapping invalid[] = {
         {{}, QSizeF(10, 10), 1.0},
@@ -106,6 +142,7 @@ int main() {
         fractionalWidthDoesNotGrowPastTheClient();
         coveringExtentIsMinimalAtSupportedScales();
         edgesRoundIndependently();
+        reservedPhysicalMarginSurvivesFractionalDpi();
         invalidSnapshotsStayInvalid();
     } catch (const std::exception& error) {
         std::cerr << error.what() << '\n';

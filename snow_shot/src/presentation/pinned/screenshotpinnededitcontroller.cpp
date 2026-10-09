@@ -194,7 +194,7 @@ void ScreenshotPinnedEditController::updateCanvasColorSamplingAfterCursorMove(
     if (!canvasColorSamplingActive()) {
         return;
     }
-    if (m_pinnedWindow.currentNativeGeometry().contains(physicalPosition)) {
+    if (m_pinnedWindow.currentContentNativeGeometry().contains(physicalPosition)) {
         updateCanvasColorSamplingPreviewAtPhysicalPoint(
             physicalPosition, canvasColorGlobalPositionAt(physicalPosition));
     }
@@ -203,6 +203,20 @@ void ScreenshotPinnedEditController::updateCanvasColorSamplingAfterCursorMove(
 bool ScreenshotPinnedEditController::eventFilter(QObject* watched, QEvent* event) {
     if (watched != &m_canvas || event == nullptr || !m_editMode) {
         return QObject::eventFilter(watched, event);
+    }
+
+    if (event->type() == QEvent::MouseMove || event->type() == QEvent::MouseButtonPress ||
+        event->type() == QEvent::MouseButtonDblClick || event->type() == QEvent::Wheel) {
+        const QPointF local = event->type() == QEvent::Wheel
+                                  ? static_cast<QWheelEvent*>(event)->position()
+                                  : static_cast<QMouseEvent*>(event)->position();
+        if (!m_pinnedWindow.contentViewRect().contains(
+                m_pinnedWindow.windowPositionForEvent(watched, local))) {
+            // The host owns the reserved frame, including while a color picker
+            // or an annotation tool is active. Starting its resize transaction
+            // also cancels sampling through beginNativeWindowInteraction().
+            return false;
+        }
     }
 
     if (!m_canvasColorSamplingTarget.isNull()) {
@@ -935,13 +949,13 @@ void ScreenshotPinnedEditController::beginCanvasColorSampling(
 
     const std::optional<QPoint> physicalPosition = m_pinnedWindow.physicalCursorPosition();
     if (physicalPosition.has_value() &&
-        m_pinnedWindow.currentNativeGeometry().contains(*physicalPosition)) {
+        m_pinnedWindow.currentContentNativeGeometry().contains(*physicalPosition)) {
         updateCanvasColorSamplingPreviewAtPhysicalPoint(
             *physicalPosition, canvasColorGlobalPositionAt(*physicalPosition));
         return;
     }
     const QPointF localPosition = m_canvas.mapFromGlobal(QCursor::pos());
-    if (m_canvas.rect().contains(localPosition.toPoint())) {
+    if (m_pinnedWindow.contentViewRect().contains(localPosition)) {
         updateCanvasColorSamplingPreviewAtPhysicalPoint(
             canvasColorPhysicalPositionAt(localPosition), QCursor::pos());
     }
@@ -984,7 +998,7 @@ ScreenshotPinnedEditController::canvasColorGlobalPositionAt(const QPoint& physic
 QImage
 ScreenshotPinnedEditController::canvasColorPreviewAtPhysicalPoint(const QPoint& physicalPosition) {
     const QRect physicalBounds = m_pinnedWindow.currentNativeGeometry();
-    if (!physicalBounds.contains(physicalPosition) ||
+    if (!m_pinnedWindow.currentContentNativeGeometry().contains(physicalPosition) ||
         !m_canvasColorSampler.ensureSnapshot(m_canvas, physicalBounds)) {
         return {};
     }

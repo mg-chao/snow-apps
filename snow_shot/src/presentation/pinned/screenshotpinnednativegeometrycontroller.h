@@ -70,7 +70,8 @@ class ScreenshotPinnedNativeGeometryController final {
     [[nodiscard]] QRect updateMove(const QRect& proposed, const QPoint& nativeCursorPosition);
     [[nodiscard]] std::optional<QRect>
     updateResize(const QRect& proposed, screenshot_pinned_resize_geometry::DragHandle handle,
-                 const QSize& baseline, double minimumScale, double maximumScale);
+                 const QSize& baseline, double minimumScale, double maximumScale,
+                 int frameMargin = 0);
     // Accepts a system-proposed DPI transition geometry verbatim. During a
     // move, the accepted target and current cursor become the live movement
     // reference without replacing the transaction origin used for rollback;

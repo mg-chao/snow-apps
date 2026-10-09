@@ -146,6 +146,7 @@
 #include <QWindow>
 
 #include <algorithm>
+#include <array>
 #include <exception>
 #include <functional>
 #include <initializer_list>
@@ -373,6 +374,29 @@ class ScreenshotPinnedWindowTestAccess {
     }
     static QRect authority(const ScreenshotPinnedWindow& window) {
         return window.authoritativeNativeGeometry();
+    }
+    static QRect contentGeometry(const ScreenshotPinnedWindow& window) {
+        return window.currentContentNativeGeometry();
+    }
+    static QRectF contentViewport(const ScreenshotPinnedWindow& window) {
+        return window.contentViewRect();
+    }
+    static void refreshRecognitionGeometry(ScreenshotPinnedWindow& window) {
+        window.updateRecognitionContentGeometry();
+    }
+    static std::optional<int> decorationResizeHandle(const ScreenshotPinnedWindow& window,
+                                                     const QPointF& point) {
+        return window.resizeHandleAt(point);
+    }
+    static void shadowState(ScreenshotPinnedWindow& window, bool border, bool shadow) {
+        window.setShowBorder(border);
+        window.setShowShadow(shadow);
+    }
+    static void shadowFileDrag(ScreenshotPinnedWindow& window, bool active) {
+        window.setFileDragActive(active);
+    }
+    static QWidget* decoration(ScreenshotPinnedWindow& window) {
+        return window.m_borderFrame;
     }
     static QRect observation(const ScreenshotPinnedWindow& window) {
         return window.observedNativeGeometry();
@@ -689,9 +713,9 @@ class ScreenshotPinnedWindowTestAccess {
     static void restoreOffscreen(ScreenshotPinnedWindow& window,
                                  const ScreenshotPinnedWindow::Config& config) {
         window.setAttribute(Qt::WA_DeleteOnClose, false);
-        const qreal dpr = window.devicePixelRatioF();
-        window.resize(qRound(config.nativeGeometry.width() / dpr),
-                      qRound(config.nativeGeometry.height() / dpr));
+        const qreal dpr = snow_shot::presentation::pinnedGeometryScale(window.devicePixelRatioF());
+        const QRect outer = snow_shot::presentation::pinnedOuterRect(config.nativeGeometry);
+        window.resize(qRound(outer.width() / dpr), qRound(outer.height() / dpr));
         window.m_canvas->setGeometry(window.rect());
         window.m_canvasSourceRect = config.canvasSourceRect;
         window.m_backgroundCanvasRect = config.canvasSourceRect;
@@ -708,11 +732,11 @@ class ScreenshotPinnedWindowTestAccess {
         window.m_screenshotRenderer->setPinnedResultSurface(
             config.canvasSourceRect, config.canvasSourceRect, config.resultStyle);
         window.restorePersistentState(config);
-        static_cast<void>(window.m_nativeGeometryController->initialize(config.nativeGeometry));
+        static_cast<void>(window.m_nativeGeometryController->initialize(outer));
         window.winId();
         static_cast<void>(window.m_platform->attach());
-        static_cast<void>(window.m_platform->applyGeometry(
-            config.nativeGeometry, config.screen ? config.screen : window.screen()));
+        static_cast<void>(window.m_platform->applyGeometry(outer, config.screen ? config.screen
+                                                                                : window.screen()));
         window.m_platformPlacement = window.m_platform->placement();
         window.m_presented = true;
         window.updateCanvasViewport();
@@ -4036,11 +4060,18 @@ template <typename T> bool processUntilDeleted(QPointer<T>& window, int timeoutM
     return window.isNull();
 }
 
-QImage renderWidget(QWidget& widget) {
+QImage renderWholeWidget(QWidget& widget) {
     QImage image(widget.size(), QImage::Format_ARGB32_Premultiplied);
     image.fill(Qt::transparent);
     QPainter painter(&image);
     widget.render(&painter, QPoint(), QRegion(), QWidget::DrawChildren);
+    return image;
+}
+
+QImage renderWidget(QWidget& widget) {
+    const QImage image = renderWholeWidget(widget);
+    if (const auto* pinned = qobject_cast<ScreenshotPinnedWindow*>(&widget))
+        return image.copy(ScreenshotPinnedWindowTestAccess::contentViewport(*pinned).toRect());
     return image;
 }
 
@@ -4217,8 +4248,9 @@ void pinnedPhysicalPixelsFillClientArea(SnowCanvasRuntime&) {
         require(observer.showSeen(), "the pin should be mapped during present()");
         require(observer.windowIdAtShow() == pinnedWindow->winId(),
                 "the final native handle must exist before the pin is shown");
-        require(observer.geometryAtShow() == config.nativeGeometry &&
-                    pinnedWindow->currentNativeGeometry() == config.nativeGeometry,
+        const QRect outerGeometry = snow_shot::presentation::pinnedOuterRect(config.nativeGeometry);
+        require(observer.geometryAtShow() == outerGeometry &&
+                    pinnedWindow->currentNativeGeometry() == outerGeometry,
                 "the pinned client geometry must be final when the show event begins");
         require(observer.windowIdChangesAfterShow() == 0 &&
                     observer.geometryChangesAfterShow() == 0,
@@ -4234,9 +4266,9 @@ void pinnedPhysicalPixelsFillClientArea(SnowCanvasRuntime&) {
         require(GetWindowRect(pinnedHwnd, &windowRect) != FALSE &&
                     GetClientRect(pinnedHwnd, &clientRect) != FALSE &&
                     ClientToScreen(pinnedHwnd, &clientTopLeft) != FALSE &&
-                    qRectForNativeRect(windowRect) == config.nativeGeometry &&
+                    qRectForNativeRect(windowRect) == outerGeometry &&
                     QRect(clientTopLeft.x, clientTopLeft.y, clientRect.right - clientRect.left,
-                          clientRect.bottom - clientRect.top) == config.nativeGeometry,
+                          clientRect.bottom - clientRect.top) == outerGeometry,
                 "the frameless resize style must not consume client pixels");
         require(nativeChildWindowCount(pinnedHwnd) == 0,
                 "the pinned canvas and controls must remain alien child widgets");
@@ -4244,10 +4276,10 @@ void pinnedPhysicalPixelsFillClientArea(SnowCanvasRuntime&) {
         QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
         require(observer.windowIdChangesAfterShow() == 0 &&
                     observer.geometryChangesAfterShow() == 0 &&
-                    pinnedWindow->currentNativeGeometry() == config.nativeGeometry,
+                    pinnedWindow->currentNativeGeometry() == outerGeometry,
                 "the native handle and client geometry must remain stable after event processing");
 
-        QImage rendered(physicalSize, QImage::Format_ARGB32_Premultiplied);
+        QImage rendered(outerGeometry.size(), QImage::Format_ARGB32_Premultiplied);
         rendered.setDevicePixelRatio(screen->devicePixelRatio());
         rendered.fill(Qt::transparent);
         {
@@ -4255,14 +4287,16 @@ void pinnedPhysicalPixelsFillClientArea(SnowCanvasRuntime&) {
             pinnedWindow->render(&painter, QPoint(), QRegion(), QWidget::DrawChildren);
         }
         rendered.setDevicePixelRatio(1.0);
+        const int margin = snow_shot::presentation::pinnedShadowMargin();
+        rendered = rendered.copy(QRect(QPoint(margin, margin), physicalSize));
         require(rendered.size() == physicalSize,
                 "the pinned paint surface must contain one pixel per physical screenshot pixel");
         const double physicalScaleX =
-            static_cast<double>(physicalSize.width()) / std::max(1, pinnedWindow->width());
+            static_cast<double>(outerGeometry.width()) / std::max(1, pinnedWindow->width());
         const double physicalScaleY =
-            static_cast<double>(physicalSize.height()) / std::max(1, pinnedWindow->height());
+            static_cast<double>(outerGeometry.height()) / std::max(1, pinnedWindow->height());
         const QRect controlsPhysicalRect =
-            QRectF(controls->x() * physicalScaleX, controls->y() * physicalScaleY,
+            QRectF(controls->x() * physicalScaleX - margin, controls->y() * physicalScaleY - margin,
                    controls->width() * physicalScaleX, controls->height() * physicalScaleY)
                 .toAlignedRect();
         const int borderPhysicalX = std::max(1, qCeil(2.0 * physicalScaleX));
@@ -4702,21 +4736,30 @@ void clipboardAppearancePresentationAndViewportSnapshots() {
             config.checkerboardEnabled =
                 screenshotSelectionNeedsCheckerboard(config.borderAppearance);
             config.initialBorderVisible = false;
+            config.initialShadowVisible = true;
             config.automaticTextRecognition = false;
             ScreenshotPinnedWindow source;
             Access::restoreOffscreen(source, config);
+            Access::automationReady(source, config.recognitionResults);
             source.show();
             waitForUi(20);
             Access::transformForHideTest(source, false);
             Access::setFractionalScale(source, 125);
             Access::setGeneralOpacity(source, 55);
             waitForUi(20);
-            const auto geometry = source.currentNativeGeometry();
+            const auto geometry = Access::contentGeometry(source);
             const auto artifact = source.automationArtifact(false, true);
             require(artifact != nullptr, "viewport snapshot was not created");
             source.move(source.pos() + QPoint(20, 15));
             Access::transformForHideTest(source, false);
             Access::setGeneralOpacity(source, 90);
+            QString error;
+            const bool shadowUpdated =
+                source.automationUpdate({{QStringLiteral("show_shadow"), false}}, &error);
+            require(shadowUpdated,
+                    qPrintable(QStringLiteral("automation shadow update failed: %1").arg(error)));
+            require(!source.automationState().value(QStringLiteral("show_shadow")).toBool(),
+                    "automation must independently disable the presentation shadow");
             bool completed = false;
             ScreenshotExportClipboardResult exported;
             require(artifact->requestClipboard(&source,
@@ -4739,7 +4782,7 @@ void clipboardAppearancePresentationAndViewportSnapshots() {
                         placement->windowRect == geometry &&
                         placement->placement.windowSize == geometry.size() &&
                         appearance->rasterSize.width() < appearance->rasterSize.height() &&
-                        appearance->showBorder == false &&
+                        appearance->showBorder == false && appearance->showShadow == true &&
                         appearance->checkerboardEnabled == *config.checkerboardEnabled,
                     "viewport snapshot observes later position, rotation, or presentation changes");
             QMimeData mime;
@@ -4750,7 +4793,7 @@ void clipboardAppearancePresentationAndViewportSnapshots() {
                          exported.payload.appearanceBytes());
             const auto content =
                 ScreenshotClipboardContentReader::readMimeData(&mime, screen->devicePixelRatio());
-            require(content && content->appearance &&
+            require(content && content->appearance && content->appearance->showShadow == true &&
                         qAbs(content->image.pixelColor(content->image.rect().center()).alpha() -
                              140) <= 1,
                     "viewport snapshot loses configured opacity or appearance");
@@ -4764,7 +4807,7 @@ void clipboardAppearancePresentationAndViewportSnapshots() {
                     {}, {}, 1.0, {}, {}, [&](bool success, QImage) { presented = success; },
                     content->appearance->borderAppearance, content->appearance->checkerboardEnabled,
                     snow_shot::storage::PinnedWindowCreationSource::Clipboard, {},
-                    content->appearance->showBorder),
+                    content->appearance->showBorder, content->appearance->showShadow),
                 "clipboard appearance presentation did not start");
             timer.restart();
             while (!presented && timer.elapsed() < 10000)
@@ -4779,10 +4822,13 @@ void clipboardAppearancePresentationAndViewportSnapshots() {
             require(restored != nullptr, "restored clipboard pin is missing");
             const auto snapshot = restored->persistenceSnapshot();
             require(snapshot.nativeGeometry == geometry && snapshot.image == content->image &&
+                        restored->currentNativeGeometry() ==
+                            snow_shot::presentation::pinnedOuterRect(geometry) &&
                         snapshot.borderAppearance == content->appearance->borderAppearance &&
                         snapshot.checkerboardEnabled == config.checkerboardEnabled &&
-                        !snapshot.showBorder && snapshot.opacityPercent == 100 &&
-                        snapshot.imageTransform.isIdentity(),
+                        !snapshot.showBorder && snapshot.showShadow &&
+                        restored->automationState().value(QStringLiteral("show_shadow")).toBool() &&
+                        snapshot.opacityPercent == 100 && snapshot.imageTransform.isIdentity(),
                     "clipboard pin reapplies baked effects or loses presentation metadata");
             QPointer<ScreenshotPinnedWindow> guarded(restored);
             restored->close();
@@ -5077,7 +5123,14 @@ void pinnedBorderUsesCeiledWindowDpiPhysicalPixels(SnowCanvasRuntime&) {
     for (const qreal renderScale : renderScales) {
         auto* pinnedWindow = presentWindow(400);
         QPointer<ScreenshotPinnedWindow> guardedWindow(pinnedWindow);
-        const QImage rendered = renderAtScale(*pinnedWindow, renderScale);
+        const QImage surface = renderAtScale(*pinnedWindow, renderScale);
+        const int margin = snow_shot::presentation::kPinnedGeometryUnits ==
+                                   snow_shot::presentation::PinnedGeometryUnits::LogicalPixels
+                               ? qRound(snow_shot::presentation::pinnedShadowMargin() *
+                                        pinnedWindow->devicePixelRatioF())
+                               : snow_shot::presentation::pinnedShadowMargin();
+        const QImage rendered =
+            surface.copy(surface.rect().adjusted(margin, margin, -margin, -margin));
         const int borderWidth = qCeil(pinnedWindow->devicePixelRatioF());
 
         const int lastColumn = rendered.width() - 1;
@@ -5134,20 +5187,24 @@ void pinnedBorderUsesCeiledWindowDpiPhysicalPixels(SnowCanvasRuntime&) {
         const int middleX = store.width() / 2;
         const int middleY = store.height() / 2;
         const int borderWidth = qCeil(pinnedWindow->devicePixelRatioF());
-        requireColorNear(store.pixelColor(clientWidth - 1, middleY), borderColor, 0,
-                         "the border must end at the native client edge, not the store edge");
-        requireColorNear(store.pixelColor(clientWidth - borderWidth, middleY), borderColor, 0,
-                         "the border must cover its DPI-rounded width at the native client edge");
-        require(store.pixelColor(clientWidth - borderWidth - 1, middleY) != borderColor,
-                "the border must stop at its DPI-rounded width before the client edge");
+        const int margin = snow_shot::presentation::pinnedShadowMargin();
+        const int contentRight = clientWidth - margin;
+        requireColorNear(store.pixelColor(contentRight - 1, middleY), borderColor, 0,
+                         "the border must end at the exact content edge inside the native margin");
+        requireColorNear(store.pixelColor(contentRight - borderWidth, middleY), borderColor, 0,
+                         "the border must cover its DPI-rounded width at the content edge");
+        require(store.pixelColor(contentRight - borderWidth - 1, middleY) != borderColor,
+                "the border must stop at its DPI-rounded width before the content edge");
+        require(store.pixelColor(contentRight, middleY).alpha() == 0,
+                "the reserved shadow margin must begin immediately after the content border");
         require(store.pixelColor(clientWidth, middleY) != borderColor,
                 "the store overshoot column past the client edge must stay border-free");
-        requireColorNear(store.pixelColor(middleX, clientWidth - 1), borderColor, 0,
-                         "the bottom border must end at the native client edge");
-        requireColorNear(store.pixelColor(middleX, clientWidth - borderWidth), borderColor, 0,
-                         "the bottom border must cover its DPI-rounded width at the client edge");
-        requireColorNear(store.pixelColor(0, middleY), borderColor, 0,
-                         "the left border must stay anchored at the client origin");
+        requireColorNear(store.pixelColor(middleX, contentRight - 1), borderColor, 0,
+                         "the bottom border must end at the exact content edge");
+        requireColorNear(store.pixelColor(middleX, contentRight - borderWidth), borderColor, 0,
+                         "the bottom border must cover its DPI-rounded width at the content edge");
+        requireColorNear(store.pixelColor(margin, middleY), borderColor, 0,
+                         "the left border must stay anchored at the content origin");
 
         pinnedWindow->close();
         require(processUntilDeleted(guardedWindow, 2000), "client-edge border pin was not deleted");
@@ -6221,8 +6278,11 @@ void pinnedNativeDragCrossingDpiBoundaryPreservesDestination(SnowCanvasRuntime&)
     proposeSystemMove(continuedCursor);
 
     const QRect destinationGeometry = pinnedWindow->currentNativeGeometry();
-    const QSize expectedSize(qRound(startingGeometry.width() * destinationDpr / sourceDpr),
-                             qRound(startingGeometry.height() * destinationDpr / sourceDpr));
+    const QSize startingContent =
+        snow_shot::presentation::pinnedContentRect(startingGeometry).size();
+    const QSize expectedSize = snow_shot::presentation::pinnedOuterSize(
+        QSize(qRound(startingContent.width() * destinationDpr / sourceDpr),
+              qRound(startingContent.height() * destinationDpr / sourceDpr)));
     auto* scaleLabel =
         pinnedWindow->findChild<QLabel*>(QStringLiteral("screenshotPinnedScaleLabel"));
     require(destinationGeometry != startingGeometry &&
@@ -7628,19 +7688,29 @@ void closePinnedWindow(SnowCanvasRuntime&, bool enableEditing, bool enterEditMod
 
 void pinnedReadoutOffscreen() {
     ScreenshotPinnedWindow window;
-    window.setAttribute(Qt::WA_DeleteOnClose, false);
-    window.resize(640, 480);
+    QImage image(640, 480, QImage::Format_ARGB32_Premultiplied);
+    image.fill(Qt::white);
+    ScreenshotPinnedWindow::Config config;
+    config.nativeGeometry = QRect(QPoint(), image.size());
+    config.canvasSourceRect = QRectF(QPointF(), QSizeF(image.size()));
+    config.initialWindowSize = image.size();
+    config.imageSource = ScreenshotImageSource::fromImage(image, config.canvasSourceRect);
+    ScreenshotPinnedWindowTestAccess::restoreOffscreen(window, config);
     window.show();
     auto* label = window.findChild<QLabel*>(QStringLiteral("screenshotPinnedScaleLabel"));
     require(label != nullptr && dynamic_cast<CanvasStatusReadout*>(label) != nullptr,
             "pinned scale label must use the shared canvas readout and retain its object name");
+    const QRectF contentViewport = ScreenshotPinnedWindowTestAccess::contentViewport(window);
+    const QRect readoutBounds(
+        QPoint(qCeil(contentViewport.left()), qCeil(contentViewport.top())),
+        QPoint(qFloor(contentViewport.right()) - 1, qFloor(contentViewport.bottom()) - 1));
     for (const bool opacity : {false, true}) {
         auto* timer = ScreenshotPinnedWindowTestAccess::showReadout(window, opacity);
         const QString text =
             opacity ? QStringLiteral("Opacity: 80%") : QStringLiteral("Scale: 125%");
         require(label->isVisible() && label->text() == text && label->toolTip() == text &&
-                    label->accessibleName() == text && label->x() == 8 &&
-                    label->y() + label->height() == window.height() - 8,
+                    label->accessibleName() == text && label->x() == readoutBounds.x() + 8 &&
+                    label->y() + label->height() == readoutBounds.y() + readoutBounds.height() - 8,
                 "scale and opacity readouts must retain their copy and eight-pixel inset");
         require(label->testAttribute(Qt::WA_TransparentForMouseEvents) &&
                     label->focusPolicy() == Qt::NoFocus && timer->isSingleShot() &&
@@ -7691,11 +7761,13 @@ void pinnedScalingAndAspectLockedResizing(SnowCanvasRuntime&) {
     require(canvas != nullptr && scaleLabel != nullptr && menu != nullptr &&
                 opacityMenu != nullptr && scaleMenu != nullptr && controlsPanel != nullptr,
             "scaling test controls were not found");
-    require(pinnedWindow->currentNativeGeometry().size() == config.nativeGeometry.size() &&
-                scaleMenu->actions().at(3)->isChecked() && scaleLabel->isHidden() &&
-                opacityMenu->actions().constLast()->text() == QStringLiteral("Current: 100%") &&
-                scaleMenu->actions().constLast()->text() == QStringLiteral("Current: 100%"),
-            "the initial native size and current-value readouts should be 100 percent");
+    require(
+        snow_shot::presentation::pinnedContentRect(pinnedWindow->currentNativeGeometry()).size() ==
+                config.nativeGeometry.size() &&
+            scaleMenu->actions().at(3)->isChecked() && scaleLabel->isHidden() &&
+            opacityMenu->actions().constLast()->text() == QStringLiteral("Current: 100%") &&
+            scaleMenu->actions().constLast()->text() == QStringLiteral("Current: 100%"),
+        "the initial native size and current-value readouts should be 100 percent");
 
     const auto sendWheel = [canvas](const QPoint& localPosition, const QPoint& pixelDelta,
                                     const QPoint& angleDelta,
@@ -7712,8 +7784,9 @@ void pinnedScalingAndAspectLockedResizing(SnowCanvasRuntime&) {
         if (transposed) {
             baseline.transpose();
         }
-        return QSize(qRound(baseline.width() * percent / 100.0),
-                     qRound(baseline.height() * percent / 100.0));
+        return snow_shot::presentation::pinnedOuterSize(
+            QSize(qRound(baseline.width() * percent / 100.0),
+                  qRound(baseline.height() * percent / 100.0)));
     };
 
     const QPoint center = canvas->rect().center();
@@ -7766,16 +7839,23 @@ void pinnedScalingAndAspectLockedResizing(SnowCanvasRuntime&) {
         QGuiApplication::platformName() == QStringLiteral("windows") ? 1 : 100;
     const QPoint arbitraryPoint(canvas->width() / 4, canvas->height() * 2 / 3);
     const QRect beforeArbitraryScale = pinnedWindow->currentNativeGeometry();
-    const double normalizedX = static_cast<double>(arbitraryPoint.x()) / canvas->width();
-    const double normalizedY = static_cast<double>(arbitraryPoint.y()) / canvas->height();
-    const QPoint arbitraryAnchor(
-        qRound(beforeArbitraryScale.left() + normalizedX * beforeArbitraryScale.width()),
-        qRound(beforeArbitraryScale.top() + normalizedY * beforeArbitraryScale.height()));
+    const QRect beforeArbitraryContent =
+        snow_shot::presentation::pinnedContentRect(beforeArbitraryScale);
+    const QPoint arbitraryAnchor =
+        ScreenshotPinnedWindowTestAccess::nativePoint(*pinnedWindow, arbitraryPoint);
+    const double normalizedX =
+        static_cast<double>(arbitraryAnchor.x() - beforeArbitraryContent.x()) /
+        beforeArbitraryContent.width();
+    const double normalizedY =
+        static_cast<double>(arbitraryAnchor.y() - beforeArbitraryContent.y()) /
+        beforeArbitraryContent.height();
     sendWheel(arbitraryPoint, QPoint(0, preciseWheelStep), QPoint());
     const QRect afterArbitraryScale = pinnedWindow->currentNativeGeometry();
+    const QRect afterArbitraryContent =
+        snow_shot::presentation::pinnedContentRect(afterArbitraryScale);
     const QPoint preservedAnchor(
-        qRound(afterArbitraryScale.left() + normalizedX * afterArbitraryScale.width()),
-        qRound(afterArbitraryScale.top() + normalizedY * afterArbitraryScale.height()));
+        qRound(afterArbitraryContent.left() + normalizedX * afterArbitraryContent.width()),
+        qRound(afterArbitraryContent.top() + normalizedY * afterArbitraryContent.height()));
     require(afterArbitraryScale.size() == expectedSize(110) &&
                 (preservedAnchor - arbitraryAnchor).manhattanLength() <= 3,
             "pixel-delta scaling should preserve an arbitrary cursor anchor");
@@ -8085,12 +8165,16 @@ void pinnedScalingAndAspectLockedResizing(SnowCanvasRuntime&) {
             waitForUi(20);
             const NativeResizeResult resize =
                 sendNativeResize(resizeCase.direction, resizeCase.sizingEdge, expand);
-            const QSize orientedBaseline = expectedSize(100, true);
-            require(
-                qAbs(resize.after.height() -
-                     qRound(resize.after.width() * static_cast<double>(orientedBaseline.height()) /
-                            orientedBaseline.width())) <= 1,
-                "native edge and corner sizing should preserve the oriented aspect ratio");
+            const QSize orientedBaseline =
+                snow_shot::presentation::pinnedContentRect(QRect(QPoint(), expectedSize(100, true)))
+                    .size();
+            const QSize resizedContent =
+                snow_shot::presentation::pinnedContentRect(resize.after).size();
+            require(qAbs(resizedContent.height() -
+                         qRound(resizedContent.width() *
+                                static_cast<double>(orientedBaseline.height()) /
+                                orientedBaseline.width())) <= 1,
+                    "native edge and corner sizing should preserve the oriented aspect ratio");
             require(fixedCornerForDirection(resize.after, resizeCase.direction) ==
                         fixedCornerForDirection(resize.before, resizeCase.direction),
                     "native sizing should preserve the fixed opposite anchor");
@@ -8243,26 +8327,31 @@ void pinnedNativeBordersCrossWithoutSystemSizing() {
         require(window.present(config), "native crossing pin must present");
         waitForUi(60);
         const QRect original = window.currentNativeGeometry();
+        const int margin = snow_shot::presentation::pinnedShadowMargin();
         const HWND hwnd = toNativeHwnd(window.winId());
         const QPoint pressed = original.topLeft() + QPoint(original.width(), original.height());
         setSystemCursorPosition(pressed);
         SendMessage(hwnd, WM_NCLBUTTONDOWN, HTBOTTOMRIGHT, MAKELPARAM(pressed.x(), pressed.y()));
         require(ScreenshotPinnedWindowTestAccess::interactionActive(window) && GetCapture() == hwnd,
                 "native border must start captured application resizing");
-        setSystemCursorPosition(original.topLeft() - QPoint(120, 60));
+        setSystemCursorPosition(original.topLeft() + QPoint(2 * margin, 2 * margin) -
+                                QPoint(120, 60));
         QMouseEvent move(QEvent::MouseMove, QPointF(), QPointF(QCursor::pos()), Qt::NoButton,
                          Qt::LeftButton, Qt::NoModifier);
         QCoreApplication::sendEvent(&window, &move);
         require(window.currentNativeGeometry() ==
-                    QRect(original.topLeft() - QPoint(120, 60), QSize(120, 60)),
+                    QRect(original.topLeft() - QPoint(120, 60),
+                          snow_shot::presentation::pinnedOuterSize(QSize(120, 60))),
                 "native crossing must use physical pointer distances at every display scale");
-        setSystemCursorPosition(original.topLeft() - QPoint(60, 30));
+        setSystemCursorPosition(original.topLeft() + QPoint(2 * margin, 2 * margin) -
+                                QPoint(60, 30));
         QMouseEvent release(QEvent::MouseButtonRelease, QPointF(), QPointF(QCursor::pos()),
                             Qt::LeftButton, Qt::NoButton, Qt::NoModifier);
         QCoreApplication::sendEvent(&window, &release);
         waitForUi(30);
         require(window.currentNativeGeometry() ==
-                        QRect(original.topLeft() - QPoint(60, 30), QSize(60, 30)) &&
+                        QRect(original.topLeft() - QPoint(60, 30),
+                              snow_shot::presentation::pinnedOuterSize(QSize(60, 30))) &&
                     !ScreenshotPinnedWindowTestAccess::interactionActive(window) &&
                     GetCapture() != hwnd &&
                     ScreenshotPinnedWindowTestAccess::geometrySettled(window),
@@ -8280,9 +8369,9 @@ void pinnedNativeBordersCrossWithoutSystemSizing() {
             QCoreApplication::sendEvent(&window, &move);
             auto effective = screenshot_pinned_resize_geometry::DragHandle::BottomRight;
             QRect expected;
-            require(screenshot_pinned_resize_geometry::dragResizeRect(before, end - start,
-                                                                      image.size(), effective, .1,
-                                                                      5., &effective, &expected) &&
+            require(screenshot_pinned_resize_geometry::dragResizeRect(
+                        before, end - start, image.size(), effective, .1, 5., &effective, &expected,
+                        margin) &&
                         window.currentNativeGeometry() == expected,
                     "cross-display pointer resize must retain the physical anchor and scale");
             SendMessage(hwnd, WM_CANCELMODE, 0, 0);
@@ -8421,18 +8510,22 @@ void pinnedResizeWindowNativeInteractions() {
                 qRectForNativeRect(proposed) != requested,
             "drawing-mode edge resizing must accept and aspect-correct native proposals");
     const QRect corrected = qRectForNativeRect(proposed);
-    require(qAbs(corrected.height() -
-                 qRound(corrected.width() * static_cast<double>(geometry.height()) /
-                        geometry.width())) <= 1,
+    const QSize correctedContent = snow_shot::presentation::pinnedContentRect(corrected).size();
+    const QSize originalContent = snow_shot::presentation::pinnedContentRect(geometry).size();
+    require(qAbs(correctedContent.height() -
+                 qRound(correctedContent.width() * static_cast<double>(originalContent.height()) /
+                        originalContent.width())) <= 1,
             "drawing-mode native resizing must preserve the pinned image aspect ratio");
 
     MINMAXINFO limits{};
     SendMessage(hwnd, WM_GETMINMAXINFO, 0, reinterpret_cast<LPARAM>(&limits));
     require(QSize(limits.ptMinTrackSize.x, limits.ptMinTrackSize.y) ==
-                    QSize(qRound(config.nativeGeometry.width() * 0.1),
-                          qRound(config.nativeGeometry.height() * 0.1)) &&
+                    snow_shot::presentation::pinnedOuterSize(
+                        QSize(qRound(config.nativeGeometry.width() * 0.1),
+                              qRound(config.nativeGeometry.height() * 0.1))) &&
                 QSize(limits.ptMaxTrackSize.x, limits.ptMaxTrackSize.y) ==
-                    QSize(config.nativeGeometry.width() * 5, config.nativeGeometry.height() * 5),
+                    snow_shot::presentation::pinnedOuterSize(QSize(
+                        config.nativeGeometry.width() * 5, config.nativeGeometry.height() * 5)),
             "Resize window must retain the native 10-to-500-percent tracking limits");
 
     window->close();
@@ -8476,8 +8569,9 @@ void pinnedSettledWheelScalingAdvancesPastRoundedLevel(SnowCanvasRuntime&) {
         waitForUi(10);
     };
     const auto expectedSize = [&baseline](int percent) {
-        return QSize(qRound(baseline.width() * percent / 100.0),
-                     qRound(baseline.height() * percent / 100.0));
+        return snow_shot::presentation::pinnedOuterSize(
+            QSize(qRound(baseline.width() * percent / 100.0),
+                  qRound(baseline.height() * percent / 100.0)));
     };
 
     sendNotch(120);
@@ -8516,15 +8610,22 @@ void pinnedWheelScalingUsesConfiguredAnchor(SnowCanvasRuntime&) {
     auto* canvas = pinnedWindow->findChild<SnowCanvasWidget*>();
     require(canvas != nullptr, "configured wheel anchor canvas was not found");
     const QRect before = pinnedWindow->currentNativeGeometry();
-    const QPoint position = canvas->rect().bottomRight() - QPoint(8, 8);
+    const qreal logicalMargin =
+        snow_shot::presentation::pinnedShadowMargin() /
+        snow_shot::presentation::pinnedGeometryScale(canvas->devicePixelRatioF());
+    const QPoint position =
+        canvas->rect().bottomRight() - QPoint(qCeil(logicalMargin) + 8, qCeil(logicalMargin) + 8);
     QWheelEvent wheel(QPointF(position), QPointF(canvas->mapToGlobal(position)), QPoint(),
                       QPoint(0, 120), Qt::NoButton, Qt::NoModifier, Qt::NoScrollPhase, false);
     QCoreApplication::sendEvent(canvas, &wheel);
     waitForUi(20);
 
     const QRect after = pinnedWindow->currentNativeGeometry();
+    const QSize contentSize = snow_shot::presentation::pinnedContentRect(before).size();
     require(wheel.isAccepted() && after.topLeft() == before.topLeft() &&
-                after.size() == QSize(qRound(before.width() * 1.1), qRound(before.height() * 1.1)),
+                after.size() ==
+                    snow_shot::presentation::pinnedOuterSize(QSize(
+                        qRound(contentSize.width() * 1.1), qRound(contentSize.height() * 1.1))),
             "configured top-left wheel scaling should preserve the native top-left anchor");
 
     pinnedWindow->close();
@@ -8599,7 +8700,8 @@ void pinnedFollowsPerMonitorDpiScaling(SnowCanvasRuntime&) {
         waitForUi(300);
     };
     moveToPhysicalScreen(destinationPhysical);
-    const QSize destinationSize = pinnedWindow->currentNativeGeometry().size();
+    const QSize destinationSize =
+        snow_shot::presentation::pinnedContentRect(pinnedWindow->currentNativeGeometry()).size();
     const QSize expectedDestinationSize(
         qRound(initialWindowSize.width() * destinationDpr / sourceDpr),
         qRound(initialWindowSize.height() * destinationDpr / sourceDpr));
@@ -8611,7 +8713,8 @@ void pinnedFollowsPerMonitorDpiScaling(SnowCanvasRuntime&) {
             "a differing-DPI monitor transition should adopt Qt's native resize");
 
     moveToPhysicalScreen(sourcePhysical);
-    const QSize returnedSize = pinnedWindow->currentNativeGeometry().size();
+    const QSize returnedSize =
+        snow_shot::presentation::pinnedContentRect(pinnedWindow->currentNativeGeometry()).size();
     require(qAbs(returnedSize.width() - initialWindowSize.width()) <= 3 &&
                 qAbs(returnedSize.height() - initialWindowSize.height()) <= 3,
             "returning across the DPI boundary should restore scale without drift");
@@ -8950,7 +9053,8 @@ void restoredPinnedWindowIgnoresMonitorDpiChange(SnowCanvasRuntime&) {
     ScreenshotSelectionExportUiServices services;
     ScreenshotPinnedWindow* restoredWindow = restoreSeededPinnedWindow(services, record);
     const QRect expectedGeometry(physical.topLeft() + QPoint(200, 120), QSize(400, 200));
-    require(restoredWindow->currentNativeGeometry() == expectedGeometry,
+    require(restoredWindow->currentNativeGeometry() ==
+                snow_shot::presentation::pinnedOuterRect(expectedGeometry),
             "restored pinned window should present at the saved physical geometry");
     require(scaleMenuReadout(*restoredWindow) == QStringLiteral("Current: 50%"),
             "restored pinned scale menu should derive from the saved physical pixels");
@@ -9011,7 +9115,9 @@ void pinnedHideToTopIntegration(bool native) {
                     enteringSnapshot.hideToTopHandleNativeGeometry.bottom() + 1,
             "entry persistence must use configured opacity and shown geometry");
     action->trigger();
-    require(!controller.active() && window.currentNativeGeometry() == config.nativeGeometry,
+    require(!controller.active() &&
+                window.currentNativeGeometry() ==
+                    snow_shot::presentation::pinnedOuterRect(config.nativeGeometry),
             "canceling entry must restore original geometry");
     ScreenshotPinnedWindowTestAccess::doubleForHideTest(window);
     require(controller.active(), "double-click must toggle mode on");
@@ -9055,6 +9161,11 @@ void pinnedHideToTopIntegration(bool native) {
     require(window.isVisible() &&
                 controller.state() == ScreenshotPinnedHideToTopController::State::Revealed,
             "handle must reveal the real pinned window");
+    const QRect revealedContent =
+        snow_shot::presentation::pinnedContentRect(window.currentNativeGeometry());
+    require(revealedContent.left() == controller.handleGeometry().left() &&
+                revealedContent.top() == controller.handleGeometry().bottom() + 1,
+            "the revealed content must meet the handle while its reserved margin extends outward");
 #ifdef Q_OS_WIN
     if (native) {
         require(GetForegroundWindow() == toNativeHwnd(window.winId()),
@@ -9071,13 +9182,17 @@ void pinnedHideToTopIntegration(bool native) {
     }
 #endif
     const QPoint anchor = window.currentNativeGeometry().topLeft();
+    const QPoint contentAnchor =
+        snow_shot::presentation::pinnedContentRect(window.currentNativeGeometry()).topLeft();
     ScreenshotPinnedWindowTestAccess::scaleForHideTest(window, true);
     require(controller.active() && window.currentNativeGeometry().topLeft() == anchor &&
-                window.currentNativeGeometry().size() == QSize(480, 360),
+                window.currentNativeGeometry().size() ==
+                    snow_shot::presentation::pinnedOuterSize(QSize(480, 360)),
             "wheel scaling must retain the top-left anchor and mode");
     ScreenshotPinnedWindowTestAccess::scaleForHideTest(window, false);
     ScreenshotPinnedWindowTestAccess::transformForHideTest(window, false);
-    require(controller.active() && window.persistenceSnapshot().nativeGeometry.topLeft() == anchor,
+    require(controller.active() &&
+                window.persistenceSnapshot().nativeGeometry.topLeft() == contentAnchor,
             "rotation must preserve hide-to-top and its anchor");
     ScreenshotPinnedWindowTestAccess::transformForHideTest(window, true);
     ScreenshotPinnedWindowTestAccess::opacityForHideTest(window);
@@ -9118,7 +9233,8 @@ void pinnedHideToTopIntegration(bool native) {
     ScreenshotPinnedWindowTestAccess::thumbnailForHideTest(window, true);
     require(!controller.active() && window.persistenceSnapshot().thumbnailMode,
             "thumbnail entry must exit hide-to-top");
-    const QRect expanded = window.persistenceSnapshot().preThumbnailNativeGeometry;
+    const QRect expanded = snow_shot::presentation::pinnedOuterRect(
+        window.persistenceSnapshot().preThumbnailNativeGeometry);
     enter();
     if (window.currentNativeGeometry() != expanded) {
         qWarning() << "Hide-to-top expanded geometry" << expanded << "actual"
@@ -9270,9 +9386,6 @@ void pinnedClickThroughStationaryControls() {
             require(window.present(config), "present stationary controls fixture");
         } else {
             Access::restoreOffscreen(window, config);
-            window.move(
-                ScreenshotGeometryMapper::logicalRectForPhysicalRect(config.nativeGeometry, screen)
-                    .topLeft());
             window.show();
         }
         require(Access::setClickThrough(window, true), "enter stationary controls fixture");
@@ -9307,8 +9420,6 @@ void pinnedClickThroughMoveOffscreen() {
     window.setAttribute(Qt::WA_DeleteOnClose, false);
     const auto config = clickThroughTestConfig(*screen);
     Access::restoreOffscreen(window, config);
-    window.move(ScreenshotGeometryMapper::logicalRectForPhysicalRect(config.nativeGeometry, screen)
-                    .topLeft());
     window.show();
     require(Access::setClickThrough(window, true), "enable passthrough for dragging");
     auto* button = Access::clickThroughMoveButton(window);
@@ -9662,12 +9773,18 @@ void pinnedLockOffscreen() {
                 "custom locked border must override focus and file-drag colors immediately");
     }
     action("screenshotPinnedShowBorderAction")->trigger();
-    require(border->isHidden() && window.persistenceSnapshot().lockedMode,
+    require(!border->property("showBorder").toBool() && !border->property("showShadow").toBool() &&
+                window.persistenceSnapshot().lockedMode,
             "lock must respect Show Border");
     action("screenshotPinnedShowBorderAction")->trigger();
     Access::beginControlled(window, QPointF(40, 40));
     auto* timer = Access::lockReadoutTimer(window);
-    require(label->x() == 8 && label->y() + label->height() == window.height() - 8 &&
+    const QRectF contentViewport = Access::contentViewport(window);
+    const QRect readoutBounds(
+        QPoint(qCeil(contentViewport.left()), qCeil(contentViewport.top())),
+        QPoint(qFloor(contentViewport.right()) - 1, qFloor(contentViewport.bottom()) - 1));
+    require(label->x() == readoutBounds.x() + 8 &&
+                label->y() + label->height() == readoutBounds.y() + readoutBounds.height() - 8 &&
                 label->accessibleName() == QStringLiteral("Locked") && timer->isActive() &&
                 timer->interval() == 1000 && label->testAttribute(Qt::WA_TransparentForMouseEvents),
             "Locked must reuse the passive readout, inset, and one-second timer");
@@ -9722,7 +9839,7 @@ void pinnedLockOffscreen() {
     const auto rotated = window.persistenceSnapshot();
     Access::setLock(window, true);
     action("screenshotPinnedResetTransformAction")->trigger();
-    require(window.currentNativeGeometry() == rotated.nativeGeometry &&
+    require(Access::contentGeometry(window) == rotated.nativeGeometry &&
                 window.persistenceSnapshot().quarterTurns == rotated.quarterTurns &&
                 window.persistenceSnapshot().imageTransform == rotated.imageTransform,
             "locked reset must preserve a rotated window and its transform");
@@ -10940,6 +11057,7 @@ void pinnedShowBorderOffscreen() {
         Access::restoreOffscreen(restored, restoreConfig);
         restored.show();
         waitForUi(20);
+        materializePinnedMenuTree(restored);
         auto* restoredMenu = restored.findChild<adqt::widgets::AdContextMenu*>(
             QStringLiteral("screenshotPinnedContextMenu"));
         auto* restoredAction =
@@ -11180,10 +11298,11 @@ void restoredThumbnailStateOffscreen(const QString& scenario) {
                     config.persistedPreThumbnailNativeGeometry,
                 "thumbnail DPI changes must preserve the saved expansion rectangle");
     } else if (scenario == QStringLiteral("snapshot")) {
-        const QRect target(70, 60, 83, 83);
+        const QRect targetContent(70, 60, 83, 83);
+        const QRect target = snow_shot::presentation::pinnedOuterRect(targetContent);
         ScreenshotPinnedWindowTestAccess::setAnimationSnapshot(window, target);
         const auto snapshot = window.persistenceSnapshot();
-        require(snapshot.thumbnailMode && snapshot.nativeGeometry == target,
+        require(snapshot.thumbnailMode && snapshot.nativeGeometry == targetContent,
                 "a persisted mode must be paired with the animation destination, never a frame");
         ScreenshotPinnedWindowTestAccess::finishExpansionOffscreen(window);
         require(!ScreenshotPinnedWindowTestAccess::isGeometryAnimating(window),
@@ -11252,7 +11371,8 @@ void thumbnailAnimationSurvivesRecreation(bool entering) {
     animation->setCurrentTime(animation->duration() / 2);
     const QRect target = animation->endValue().toRect();
     auto snapshot = window->persistenceSnapshot();
-    require(snapshot.thumbnailMode == entering && snapshot.nativeGeometry == target &&
+    require(snapshot.thumbnailMode == entering &&
+                snapshot.nativeGeometry == snow_shot::presentation::pinnedContentRect(target) &&
                 snapshot.preThumbnailNativeGeometry == expanded,
             "closing during a thumbnail transition must save the destination and expansion state");
     QPointer<ScreenshotPinnedWindow> guarded(window);
@@ -11297,13 +11417,14 @@ void thumbnailReentryPreservesExpandedGeometry(bool scaleDuringExpansion = false
         const QRect applied = window->currentNativeGeometry();
         waitForUi(250);
         const QRect expected(expanded.topLeft(), record.initialWindowSize);
-        if (window->currentNativeGeometry() != expected ||
+        const QRect expectedOuter = snow_shot::presentation::pinnedOuterRect(expected);
+        if (window->currentNativeGeometry() != expectedOuter ||
             window->persistenceSnapshot().nativeGeometry != expected) {
             qWarning() << "Interrupted thumbnail scale" << "expected" << expected << "applied"
                        << applied << "settled" << window->currentNativeGeometry() << "snapshot"
                        << window->persistenceSnapshot().nativeGeometry;
         }
-        require(window->currentNativeGeometry() == expected &&
+        require(window->currentNativeGeometry() == expectedOuter &&
                     window->persistenceSnapshot().nativeGeometry == expected,
                 "a new scale command must replace the pending expansion in live and saved state");
         closeRestoredPinnedWindow(window, record.id);
@@ -11315,7 +11436,7 @@ void thumbnailReentryPreservesExpandedGeometry(bool scaleDuringExpansion = false
     waitForUi(250);
     thumbnail->setChecked(false);
     waitForUi(250);
-    require(window->currentNativeGeometry() == expanded,
+    require(window->currentNativeGeometry() == snow_shot::presentation::pinnedOuterRect(expanded),
             "rapid thumbnail toggles must still expand to the original physical rectangle");
     closeRestoredPinnedWindow(window, record.id);
 }
@@ -14415,8 +14536,8 @@ void pinnedContentReplacement() {
         window.findChild<QAction*>(QStringLiteral("screenshotPinnedShowMainInterfaceAction"));
     require(menu && load && file && clipboard && close && management && showMain &&
                 management->menu() != nullptr &&
-                // Always on Top, Show border, separator, then Load new content.
-                management->menu()->actions().indexOf(load) == 3 && load->isEnabled(),
+                // Always on Top, Show border, Show shadow, separator, then Load new content.
+                management->menu()->actions().indexOf(load) == 4 && load->isEnabled(),
             "replacement submenu must be available after materialization");
     require(menu->actionIcon(clipboard) ==
                 snow_shot::presentation::icons::custom::outlined::PinClipboard(),
@@ -14470,8 +14591,15 @@ void pinnedContentReplacement() {
         canvas->render(&image);
         return image;
     };
+    const auto filteredPixel = [canvas, &paint,
+                                sample = config.canvasSourceRect.topLeft() + QPointF(25, 25)]() {
+        const QImage image = paint();
+        const QPoint position = canvas->canvasToViewTransform().map(sample).toPoint();
+        require(image.rect().contains(position), "filter sample must remain inside the canvas");
+        return image.pixelColor(position);
+    };
     const QColor oldFiltered(235, 215, 195);
-    require(paint().pixelColor(25, 25) == oldFiltered && paint().pixelColor(25, 25) == oldFiltered,
+    require(filteredPixel() == oldFiltered && filteredPixel() == oldFiltered,
             "filter fixture must populate retained tiles");
     const QByteArray history = Access::drawingHistory(window);
     QImage replacement(original.size(), original.format());
@@ -14482,13 +14610,13 @@ void pinnedContentReplacement() {
     require(Access::replace(window, contentFor(replacement)), "same-size replacement must load");
     replacement.setDevicePixelRatio(1.0);
     require(Access::drawingHistory(window) == history &&
-                window.currentNativeGeometry() == before.nativeGeometry &&
+                Access::contentGeometry(window) == before.nativeGeometry &&
                 window.persistenceSnapshot().scalePercent == before.scalePercent,
             "same-size replacement must preserve exact geometry and drawing history");
     const QColor newFiltered(175, 155, 135);
-    require(paint().pixelColor(25, 25) == newFiltered && paint().pixelColor(25, 25) == newFiltered,
+    require(filteredPixel() == newFiltered && filteredPixel() == newFiltered,
             "immediate and retained filter paints must use the new image");
-    require(canvas->undo() && paint().pixelColor(25, 25) == QColor(80, 100, 120) && canvas->redo(),
+    require(canvas->undo() && filteredPixel() == QColor(80, 100, 120) && canvas->redo(),
             "old annotation undo and redo must work on replacement pixels");
     QImage exported;
     auto artifact = Access::fileSave(window);
@@ -14589,6 +14717,17 @@ void pinnedContentReplacement() {
                 transformedWindow.persistenceSnapshot().preThumbnailNativeGeometry.size() ==
                     transformedBefore.nativeGeometry.size(),
             "different-size thumbnail reload must update expansion while retaining thumbnail");
+    const auto thumbnailReplaced = transformedWindow.persistenceSnapshot();
+    require(
+        thumbnailReplaced.preThumbnailPlacement.windowSize ==
+                thumbnailReplaced.preThumbnailNativeGeometry.size() &&
+            thumbnailReplaced.preThumbnailPlacement.position ==
+                thumbnailBefore.preThumbnailPlacement.position,
+        "thumbnail replacement must save its new content extent and retain its fractional origin");
+    Access::thumbnailForHideTest(transformedWindow, false);
+    require(Access::contentGeometry(transformedWindow) ==
+                thumbnailReplaced.preThumbnailNativeGeometry,
+            "leaving a replaced thumbnail must restore the newly saved content bounds");
 
     // Rejected inputs leave source, annotations, and recognition untouched.
     const auto failedBefore = window.persistenceSnapshot();
@@ -15073,15 +15212,19 @@ void pinnedSelectionContentMatchesScreenshotSelection() {
     config.automaticTextRecognition = false;
     require(window.present(config), "pinning the screenshot selection failed");
     waitForUi(50);
-    require(window.currentNativeGeometry() == selectionOnScreen,
+    require(window.currentNativeGeometry() ==
+                snow_shot::presentation::pinnedOuterRect(selectionOnScreen),
             "native window must retain the selection rectangle");
     auto* canvas = window.findChild<SnowCanvasWidget*>();
     require(canvas != nullptr, "the pin must contain a canvas");
     const qreal dpr = canvas->devicePixelRatioF();
-    QImage painted(selection.size(), QImage::Format_ARGB32_Premultiplied);
+    QImage painted(snow_shot::presentation::pinnedOuterSize(selection.size()),
+                   QImage::Format_ARGB32_Premultiplied);
     painted.setDevicePixelRatio(dpr);
     painted.fill(Qt::transparent);
     canvas->render(&painted);
+    const int margin = snow_shot::presentation::pinnedShadowMargin();
+    painted = painted.copy(QRect(QPoint(margin, margin), selection.size()));
     requirePinnedPixels(painted, expected, 0, "canvas");
     require(SetWindowPos(toNativeHwnd(window.winId()), HWND_TOPMOST, 0, 0, 0, 0,
                          SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE) != FALSE,
@@ -15210,12 +15353,23 @@ void pinnedTransparentPhysicalEdges(bool liveSurface) {
             require(store && store->paintDevice() &&
                         store->paintDevice()->devType() == QInternal::Image,
                     "transparent pin must have a raster backing store");
-            verifyCorners(*static_cast<const QImage*>(store->paintDevice()), false);
+            const auto& raster = *static_cast<const QImage*>(store->paintDevice());
+            const int margin = snow_shot::presentation::pinnedShadowMargin();
+            const QRect contentRaster(QPoint(margin, margin), extent);
+            require(
+                raster.rect().contains(contentRaster),
+                "the backing store must contain the full content raster and its reserved margin");
+            verifyCorners(raster.copy(contentRaster), false);
+            require(raster.pixelColor(0, 0).alpha() == 0 &&
+                        raster.pixelColor(contentRaster.center().x(), margin - 1).alpha() == 0,
+                    "the disabled shadow must leave the reserved margin transparent");
             require(SetWindowPos(toNativeHwnd(window.winId()), HWND_TOPMOST, 0, 0, 0, 0,
                                  SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE) != FALSE,
                     "transparent fixture must be above its backdrop");
             require(SUCCEEDED(DwmFlush()), "transparent fixture must reach the compositor");
-            verifyCorners(capturePresentedPixels(window.currentNativeGeometry()), true);
+            verifyCorners(capturePresentedPixels(snow_shot::presentation::pinnedContentRect(
+                              window.currentNativeGeometry())),
+                          true);
         };
         verifyPublished();
         window.update(QRect(window.width() - 1, 0, 1, window.height()));
@@ -15311,7 +15465,10 @@ void pinnedSmallExtentRemainsResponsive() {
             waitForUi(50);
             require(dispatched && paints.count() > previousPaints,
                     "small pin must paint and continue dispatching events");
-            require(expected.size() == extent && window.currentNativeGeometry() == expected,
+            require(expected.size() == snow_shot::presentation::pinnedOuterSize(extent) &&
+                        snow_shot::presentation::pinnedContentRect(expected) ==
+                            config.nativeGeometry &&
+                        window.currentNativeGeometry() == expected,
                     "small pin must retain exact geometry across publication and re-exposure");
             const int settledPaints = paints.count();
             waitForUi(30);
@@ -15342,12 +15499,16 @@ void pinnedOddPixelExtentRemainsSharp() {
         require(window.present(config), "odd-pixel fixture presentation failed");
         waitForUi(50);
         auto* canvas = window.findChild<SnowCanvasWidget*>();
-        require(canvas != nullptr && window.currentNativeGeometry().size() == extent,
-                "window extent must preserve its geometry units independently of raster size");
+        require(
+            canvas != nullptr &&
+                snow_shot::presentation::pinnedContentRect(window.currentNativeGeometry()).size() ==
+                    extent,
+            "window extent must preserve its geometry units independently of raster size");
         if (logical) {
             require(
                 window.geometry() ==
-                        QRect(screen->geometry().topLeft() + QPoint(120, 120), extent) &&
+                        snow_shot::presentation::pinnedOuterRect(
+                            QRect(screen->geometry().topLeft() + QPoint(120, 120), extent)) &&
                     window.persistenceSnapshot().scalePercent == 100.,
                 "logical pin must retain its desktop rectangle and 100 percent scale on Retina");
         }
@@ -15363,11 +15524,23 @@ void pinnedOddPixelExtentRemainsSharp() {
                 "alignment fixture starts with border chrome");
         showBorder->trigger();
         const qreal dpr = canvas->devicePixelRatioF();
+        const QSize outerSize = window.currentNativeGeometry().size();
+        const QSize requiredRasterSize(qRound(outerSize.width() * rasterScale),
+                                       qRound(outerSize.height() * rasterScale));
+        require(qRound(canvas->width() * dpr) >= requiredRasterSize.width() &&
+                    qRound(canvas->height() * dpr) >= requiredRasterSize.height(),
+                "Qt backing store must cover the entire outer client at fractional DPI");
         QImage rendered(QSize(qRound(canvas->width() * dpr), qRound(canvas->height() * dpr)),
                         QImage::Format_ARGB32_Premultiplied);
         rendered.setDevicePixelRatio(dpr);
         rendered.fill(Qt::transparent);
         canvas->render(&rendered);
+        const int rasterMargin =
+            qRound(snow_shot::presentation::pinnedShadowMargin() * rasterScale);
+        const QRect contentRaster(QPoint(rasterMargin, rasterMargin), source.size());
+        require(rendered.rect().contains(contentRaster),
+                "Qt paint extent must reserve the margin around the entire content raster");
+        rendered = rendered.copy(contentRaster);
         require(rendered.width() >= source.width() && rendered.height() >= source.height(),
                 "Qt paint extent must cover the entire physical client");
         for (int y = 0; y < source.height(); ++y) {
@@ -15395,11 +15568,23 @@ void pinnedOddPixelExtentRemainsSharp() {
         }
         showBorder->trigger();
         setPinnedWindowActive(window, false);
+        rendered = QImage(QSize(qRound(canvas->width() * dpr), qRound(canvas->height() * dpr)),
+                          QImage::Format_ARGB32_Premultiplied);
+        rendered.setDevicePixelRatio(dpr);
         rendered.fill(Qt::transparent);
         window.render(&rendered);
+        rendered = rendered.copy(contentRaster);
         const QColor borderColor(219, 219, 219);
         const int middleX = source.width() / 2, middleY = source.height() / 2;
         const int borderWidth = qCeil(window.devicePixelRatioF());
+        const QByteArray bottomBorderMessage =
+            QStringLiteral("bottom border physical width; content=%1x%2 widget=%3x%4 dpr=%5")
+                .arg(extent.width())
+                .arg(extent.height())
+                .arg(canvas->width())
+                .arg(canvas->height())
+                .arg(dpr)
+                .toUtf8();
         for (int inset = 0; inset < borderWidth; ++inset) {
             requireColorNear(rendered.pixelColor(inset, middleY), borderColor, 0,
                              "left border physical width");
@@ -15408,7 +15593,7 @@ void pinnedOddPixelExtentRemainsSharp() {
             requireColorNear(rendered.pixelColor(middleX, inset), borderColor, 0,
                              "top border physical width");
             requireColorNear(rendered.pixelColor(middleX, source.height() - 1 - inset), borderColor,
-                             0, "bottom border physical width");
+                             0, bottomBorderMessage.constData());
         }
         require(rendered.pixel(borderWidth, middleY) == source.pixel(borderWidth, middleY) &&
                     rendered.pixel(middleX, borderWidth) == source.pixel(middleX, borderWidth),
@@ -17385,11 +17570,14 @@ void pinnedMultiSelectionRoutingAndIndicator() {
     pinnedSelectionClick(second, Qt::ControlModifier);
     auto* indicator = first.findChild<adqt::widgets::AdButton*>(
         QStringLiteral("screenshotPinnedSelectionIndicator"));
+    const int margin =
+        qFloor(snow_shot::presentation::pinnedShadowMargin() /
+               snow_shot::presentation::pinnedGeometryScale(first.devicePixelRatioF()));
     require(fixture.selection.selectedCount() == 2 && fixture.selection.isSelected(&first) &&
                 fixture.selection.isSelected(&second) && indicator && indicator->isVisible() &&
                 indicator->accessibleName() == QStringLiteral("Deselect window") &&
                 first.rect().contains(indicator->geometry()) &&
-                indicator->geometry().topLeft() == QPoint(4, 4),
+                indicator->geometry().topLeft() == QPoint(margin + 4, margin + 4),
             "modifier clicks select embedded surfaces and expose a bounded top-left indicator");
     require(Access::dragDocument(first) == document &&
                 first.persistenceSnapshot().canvasSession == snapshot.canvasSession &&
@@ -18341,10 +18529,12 @@ void pinnedMultiSelectionSharedGeometry() {
     for (const auto& pair : {std::pair{&first, movedFirst}, std::pair{&second, movedSecond},
                              std::pair{&third, movedThird}}) {
         const QRect scaled = pair.first->currentNativeGeometry();
+        const QSize contentSize = snow_shot::presentation::pinnedContentRect(pair.second).size();
         require(
             scaled.topLeft() == pair.second.topLeft() &&
                 scaled.size() ==
-                    QSize(qRound(pair.second.width() * 1.5), qRound(pair.second.height() * 1.5)),
+                    snow_shot::presentation::pinnedOuterSize(QSize(
+                        qRound(contentSize.width() * 1.5), qRound(contentSize.height() * 1.5))),
             "all selected windows scale around their own top-left despite bottom-right preference");
     }
     require(fixture.selection.scaleBy(&first, 900.0),
@@ -18400,15 +18590,22 @@ void pinnedMultiSelectionResizeHandlesAndLimits() {
                 "every resize handle can begin a selected-window gesture");
         fixture.selection.updateGeometry(press +
                                          outward.at(static_cast<size_t>(handle)) / coordinateScale);
-        require(first.currentNativeGeometry() == QRect(initialFirst.topLeft(), QSize(180, 120)) &&
+        require(first.currentNativeGeometry() ==
+                        QRect(initialFirst.topLeft(),
+                              snow_shot::presentation::pinnedOuterSize(QSize(180, 120))) &&
                     second.currentNativeGeometry() ==
-                        QRect(initialSecond.topLeft(), QSize(120, 90)) &&
+                        QRect(initialSecond.topLeft(),
+                              snow_shot::presentation::pinnedOuterSize(QSize(120, 90))) &&
                     Access::scale(first) == 150 && Access::scale(second) == 150,
                 "all eight resize handles share scale while every top-left anchor stays fixed");
         fixture.selection.updateGeometry(press - outward.at(static_cast<size_t>(handle)) * 4 /
                                                      coordinateScale);
-        require(first.currentNativeGeometry() == QRect(initialFirst.topLeft(), QSize(12, 8)) &&
-                    second.currentNativeGeometry() == QRect(initialSecond.topLeft(), QSize(8, 6)) &&
+        require(first.currentNativeGeometry() ==
+                        QRect(initialFirst.topLeft(),
+                              snow_shot::presentation::pinnedOuterSize(QSize(12, 8))) &&
+                    second.currentNativeGeometry() ==
+                        QRect(initialSecond.topLeft(),
+                              snow_shot::presentation::pinnedOuterSize(QSize(8, 6))) &&
                     Access::scale(first) == 10 && Access::scale(second) == 10,
                 "crossing the opposite edge clamps shared scale without flipping either window");
         fixture.selection.endGeometry(true);
@@ -18437,14 +18634,164 @@ void pinnedMultiSelectionResizeHandlesAndLimits() {
     for (int cycle = 0; cycle < 3; ++cycle) {
         require(
             tiny.selection.scaleBy(&narrow, 200) &&
-                narrow.currentNativeGeometry().size() == QSize(2, 18) &&
+                narrow.currentNativeGeometry().size() ==
+                    snow_shot::presentation::pinnedOuterSize(QSize(2, 18)) &&
                 tiny.selection.scaleBy(&narrow, 10) &&
-                narrow.currentNativeGeometry().size() == QSize(1, 1) &&
+                narrow.currentNativeGeometry().size() ==
+                    snow_shot::presentation::pinnedOuterSize(QSize(1, 1)) &&
                 tiny.selection.scaleBy(&narrow, 100) &&
                 narrow.currentNativeGeometry() == narrowBaseline &&
                 peer.currentNativeGeometry() == peerBaseline,
             "one-pixel sources repeatedly shrink and grow from baseline without rounding drift");
     }
+}
+
+void pinnedMarginProtectsContentGestures() {
+    using Access = ScreenshotPinnedWindowTestAccess;
+    const int font = QFontDatabase::addApplicationFont(
+        QStringLiteral(":/recording-test-fonts/SnowRecordingTestSans-Regular.ttf"));
+    require(font >= 0, "margin interaction fixtures must load their bundled font");
+    QApplication::setFont(QFont(QFontDatabase::applicationFontFamilies(font).first(), 12));
+    QScreen* screen = QGuiApplication::primaryScreen();
+    require(screen != nullptr, "margin interaction requires an offscreen display");
+    ScreenshotPinnedWindow window;
+    Access::prepareReplacement(window, clickThroughTestConfig(*screen));
+    Access::installFailingPlatform(window);
+    window.show();
+    QApplication::processEvents();
+    auto* canvas = window.findChild<SnowCanvasWidget*>();
+    require(canvas != nullptr, "margin interaction requires the embedded canvas");
+    const QPoint marginPoint(1, canvas->height() / 2);
+    const QPointF desktop = canvas->mapToGlobal(marginPoint);
+    const auto pressMargin = [&] {
+        QMouseEvent press(QEvent::MouseButtonPress, marginPoint, desktop, Qt::LeftButton,
+                          Qt::LeftButton, Qt::ControlModifier);
+        QApplication::sendEvent(canvas, &press);
+    };
+    const auto releaseMargin = [&] {
+        QMouseEvent release(QEvent::MouseButtonRelease, marginPoint, desktop, Qt::LeftButton,
+                            Qt::NoButton, Qt::ControlModifier);
+        QApplication::sendEvent(canvas, &release);
+        if (Access::interactionActive(window))
+            Access::endControlled(window, true);
+    };
+
+    require(!Access::exportEligible(window, marginPoint) &&
+                Access::exportEligible(window, canvas->rect().center()),
+            "reserved margin must reject export initiation while content remains eligible");
+    pressMargin();
+    require(!Access::exportGesture(window), "a margin modifier press must not prepare an export");
+    releaseMargin();
+
+    Access::editSelectionOffscreen(window, true);
+    auto* editor = window.findChild<ScreenshotPinnedEditController*>();
+    require(editor && editor->automationSetTool(SnowCanvasTool::FreeDraw),
+            "margin annotation fixture must activate a drawing tool");
+    const QByteArray document = Access::dragDocument(window);
+    pressMargin();
+    releaseMargin();
+    require(Access::dragDocument(window) == document && !Access::exportGesture(window),
+            "a margin press and release must not create annotations or export gestures");
+
+    adqt::widgets::AdColorPicker picker;
+    picker.setValue(adqt::widgets::AdColorValue::solid(QColor(190, 37, 81)));
+    const auto originalColor = picker.value();
+    editor->toolbarWindow()->palette()->canvasColorSamplingRequested(&picker);
+    require(editor->canvasColorSamplingActive(), "margin sampling fixture must arm the picker");
+    int colorChanges = 0;
+    QObject::connect(&picker, &adqt::widgets::AdColorPicker::valueChanged, &window,
+                     [&](const auto&) { ++colorChanges; });
+    pressMargin();
+    releaseMargin();
+    require(colorChanges == 0 && picker.value() == originalColor &&
+                Access::dragDocument(window) == document && !Access::exportGesture(window),
+            "a margin press must not commit a sampled color or alter the annotation document");
+    using canvas_quick_selection_test::mouse;
+    require(editor->automationSetTool(SnowCanvasTool::FreeDraw),
+            "captured annotation fixture must restore its drawing tool");
+    const QRect originalGeometry = window.currentNativeGeometry();
+    const QPointF strokeStart(canvas->width() / 3., canvas->height() / 3.);
+    const QPointF strokeEnd(canvas->width() / 3., canvas->height() * 2. / 3.);
+    mouse(*canvas, QEvent::MouseButtonPress, strokeStart, Qt::LeftButton, Qt::LeftButton);
+    mouse(*canvas, QEvent::MouseMove, marginPoint, Qt::NoButton, Qt::LeftButton);
+    mouse(*canvas, QEvent::MouseButtonRelease, strokeEnd, Qt::LeftButton, Qt::NoButton);
+    require(canvas->canvasHistoryState().canUndo &&
+                canvas->hasQuickSelectionTargetAt(marginPoint, Qt::RightButton) &&
+                window.currentNativeGeometry() == originalGeometry &&
+                !Access::interactionActive(window),
+            "a captured annotation must receive its margin movement and commit on release");
+    editor->setEditMode(false);
+
+    ScreenshotPinnedWindow ocrWindow;
+    const auto ocrConfig = cachedOcrPinConfig(nullptr);
+    Access::prepareReplacement(ocrWindow, ocrConfig);
+    Access::installFailingPlatform(ocrWindow);
+    ocrWindow.show();
+    QApplication::processEvents();
+    Access::recognitionOffscreen(ocrWindow, ocrConfig);
+    auto* recognition = ocrWindow.findChild<ScreenshotRecognitionWindow*>();
+    require(recognition != nullptr, "captured OCR fixture must create its recognition surface");
+    recognition->installEventFilter(&ocrWindow);
+    require(recognition->present({ocrConfig.screen, &ocrWindow, ocrWindow.rect(),
+                                  ocrConfig.canvasSourceRect,
+                                  ScreenshotRecognitionWindow::PresentationMode::EmbeddedChild}),
+            "captured OCR fixture must present its text surface");
+    Access::refreshRecognitionGeometry(ocrWindow);
+    require(Access::contentViewport(ocrWindow).contains(QRectF(recognition->geometry())),
+            "recognition children must remain inside the content viewport");
+    const auto ocrMouse = [&](QEvent::Type type, QPointF point, Qt::MouseButtons buttons) {
+        const Qt::MouseButton button = type == QEvent::MouseMove ? Qt::NoButton : Qt::LeftButton;
+        QMouseEvent event(type, point, recognition->mapToGlobal(point), button, buttons,
+                          Qt::NoModifier);
+        QApplication::sendEvent(recognition, &event);
+    };
+    auto* ocrCanvas = ocrWindow.findChild<SnowCanvasWidget*>();
+    require(ocrCanvas != nullptr, "captured OCR fixture must retain its image transform");
+    const QPointF textPoint = ocrCanvas->canvasToViewTransform().map(QPointF(790, 420)) -
+                              QPointF(recognition->mapTo(&ocrWindow, QPoint()));
+    const QPointF ocrMargin(1. - recognition->geometry().left(), textPoint.y());
+    const QRect ocrGeometry = ocrWindow.currentNativeGeometry();
+    ocrMouse(QEvent::MouseButtonPress, textPoint, Qt::LeftButton);
+    const auto& presentation = Access::displayedRecognition(ocrWindow);
+    require(presentation.textSelectionActive() && presentation.selectionAnchor().characterIndex > 0,
+            "captured OCR fixture must begin selection within a text line");
+    ocrMouse(QEvent::MouseMove, ocrMargin, Qt::LeftButton);
+    require(presentation.selectionFocus().characterIndex == 0 &&
+                !Access::interactionActive(ocrWindow),
+            "captured OCR movement into the margin must reach the beginning of the text line");
+    ocrMouse(QEvent::MouseButtonRelease, ocrMargin, Qt::NoButton);
+    require(!presentation.textSelectionActive() && presentation.hasTextSelection() &&
+                ocrWindow.currentNativeGeometry() == ocrGeometry &&
+                !Access::interactionActive(ocrWindow),
+            "captured OCR release in the margin must finish selection without resizing the pin");
+    const QRect tiny = snow_shot::presentation::pinnedOuterRect(
+        QRect(Access::contentGeometry(ocrWindow).topLeft(), QSize(1, 1)));
+    // Lazily created recognition starts hidden before an activation requests visibility.
+    recognition->hide();
+    require(Access::moveWindow(ocrWindow, tiny), "recognition fixture must accept tiny content");
+    Access::refreshRecognitionGeometry(ocrWindow);
+    const QRectF tinyContent = Access::contentViewport(ocrWindow);
+    const QRect tinyViewport(
+        QPoint(qCeil(tinyContent.left()), qCeil(tinyContent.top())),
+        QPoint(qFloor(tinyContent.right()) - 1, qFloor(tinyContent.bottom()) - 1));
+    require(tinyViewport.isEmpty() ? recognition->isHidden()
+                                   : tinyContent.contains(QRectF(recognition->geometry())),
+            "tiny recognition content must never expose text outside its fractional viewport");
+    recognition->show();
+    Access::refreshRecognitionGeometry(ocrWindow);
+    require(tinyViewport.isEmpty() ? recognition->isHidden() : !recognition->isHidden(),
+            "activation on tiny content must retain visibility intent without exposing text");
+    Access::showReadout(ocrWindow, false);
+    auto* readout = ocrWindow.findChild<QLabel*>(QStringLiteral("screenshotPinnedScaleLabel"));
+    require(readout &&
+                (readout->size().isEmpty() || tinyContent.contains(QRectF(readout->geometry()))),
+            "tiny readouts must remain inside the exact fractional content viewport");
+    require(Access::moveWindow(ocrWindow, ocrGeometry),
+            "recognition fixture must restore its original content bounds");
+    Access::refreshRecognitionGeometry(ocrWindow);
+    require(!recognition->isHidden() &&
+                Access::contentViewport(ocrWindow).contains(QRectF(recognition->geometry())),
+            "recognition visibility must recover after a viewport too small for its text layer");
 }
 
 void pinnedMultiSelectionGesturesAndRollback() {
@@ -19043,6 +19390,228 @@ void pinnedCloudUploadHiddenToolbar() {
                                  "clipboard observer destruction cleans uploaded file");
 }
 
+void pinnedShadowStateAndMarginsOffscreen() {
+    using Access = ScreenshotPinnedWindowTestAccess;
+    using snow_shot::presentation::pinnedOuterRect;
+    const snow_shot::storage::PinToScreenSettings settings;
+    const bool previousBorder = settings.showBorderByDefault();
+    const bool previousShadow = settings.showShadowByDefault();
+    const QColor previousColor = settings.shadowColor();
+    const QColor previousActiveColor = settings.shadowActiveColor();
+    const QColor previousLockedColor = settings.lockedShadowColor();
+    const auto restore = qScopeGuard([&] {
+        static_cast<void>(settings.setShowBorderByDefault(previousBorder));
+        static_cast<void>(settings.setShowShadowByDefault(previousShadow));
+        ScreenshotPinnedWindow::setRuntimeShadowColor(previousColor);
+        ScreenshotPinnedWindow::setRuntimeShadowActiveColor(previousActiveColor);
+        ScreenshotPinnedWindow::setRuntimeLockedShadowColor(previousLockedColor);
+    });
+    require(settings.setShowBorderByDefault(true) && settings.setShowShadowByDefault(false),
+            "initialize independent creation defaults");
+    require(QGuiApplication::primaryScreen(), "shadow fixture requires a screen");
+    auto config = clickThroughTestConfig(*QGuiApplication::primaryScreen());
+    config.nativeGeometry.setSize(QSize(120, 80));
+    config.initialWindowSize = config.nativeGeometry.size();
+    QImage source(config.initialWindowSize, QImage::Format_RGB32);
+    source.fill(QColor(42, 84, 126));
+    config.canvasSourceRect = QRectF(source.rect());
+    config.imageSource = ScreenshotImageSource::fromImage(source, config.canvasSourceRect);
+    config.checkerboardEnabled = false;
+    config.mouseWheelZoomMode = QStringLiteral("window_center");
+    ScreenshotPinnedWindow window;
+    Access::prepareReplacement(window, config);
+    window.show();
+    waitForUi(20);
+    const QRect outer = window.currentNativeGeometry();
+    const QRect content = Access::contentGeometry(window);
+    require(outer == pinnedOuterRect(config.nativeGeometry) && content == config.nativeGeometry,
+            "presentation reserves a permanent margin around content");
+    require(window.automationState().value(QStringLiteral("show_border")).toBool() &&
+                !window.automationState().value(QStringLiteral("show_shadow")).toBool(),
+            "shadow is off and border is on by default");
+    sendShortcut(window, Qt::Key_Y);
+    require(window.persistenceSnapshot().showShadow && window.persistenceSnapshot().showBorder &&
+                window.currentNativeGeometry() == outer &&
+                Access::contentGeometry(window) == content,
+            "Y must enable the shadow before opening the menu and preserve border and geometry");
+    sendShortcut(window, Qt::Key_Y);
+    require(!window.persistenceSnapshot().showShadow && window.persistenceSnapshot().showBorder,
+            "Y must toggle the shadow off independently of the border");
+    const QRect viewport = Access::contentViewport(window).toRect();
+    const QRect client = window.rect();
+    const std::array<std::pair<QPoint, int>, 8> handles = {
+        std::pair{client.topLeft(), 0},
+        std::pair{QPoint(viewport.center().x(), client.top()), 1},
+        std::pair{client.topRight(), 2},
+        std::pair{QPoint(client.right(), viewport.center().y()), 3},
+        std::pair{client.bottomRight(), 4},
+        std::pair{QPoint(viewport.center().x(), client.bottom()), 5},
+        std::pair{client.bottomLeft(), 6},
+        std::pair{QPoint(client.left(), viewport.center().y()), 7}};
+    for (const auto& [point, expected] : handles)
+        require(Access::decorationResizeHandle(window, point) == expected,
+                "shadow margin shares all eight resize handles with content edges");
+    const QPoint marginSample(viewport.left() - 2, viewport.center().y());
+    const auto sample = [&] { return renderWholeWidget(window).pixelColor(marginSample); };
+    const auto requireShadowRgb = [](const QColor& actual, QColor expected, int tolerance,
+                                     const char* message) {
+        expected.setAlpha(actual.alpha());
+        requireColorNear(actual, expected, tolerance, message);
+    };
+    ScreenshotPinnedWindow::setRuntimeShadowColor(QColor());
+    Access::shadowState(window, false, true);
+    Access::refreshLockBorder(window, false, false);
+    const QColor defaultShadow = sample();
+    require(defaultShadow.alpha() > 0, "default shadow must render in the reserved margin");
+    requireShadowRgb(defaultShadow, QColor(0xbf, 0xbf, 0xbf), 3,
+                     "normal shadow defaults to #bfbfbf when no valid color is configured");
+    ScreenshotPinnedWindow::setRuntimeShadowColor(QColor(200, 30, 70, 160));
+    ScreenshotPinnedWindow::setRuntimeShadowActiveColor(QColor(20, 180, 60, 140));
+    ScreenshotPinnedWindow::setRuntimeLockedShadowColor(QColor(40, 60, 220, 120));
+    for (bool border : {false, true}) {
+        for (bool shadow : {false, true}) {
+            Access::shadowState(window, border, shadow);
+            Access::refreshLockBorder(window, false, false);
+            const QColor pixel = sample();
+            require(window.currentNativeGeometry() == outer &&
+                        Access::contentGeometry(window) == content,
+                    "independent effect toggles preserve outer and content geometry");
+            require(shadow ? pixel.alpha() > 0 && pixel.alpha() <= 58 : pixel.alpha() == 0,
+                    "shadow uses configured translucent alpha and disabled margin is erased");
+            if (shadow)
+                requireShadowRgb(pixel, QColor(200, 30, 70), 3,
+                                 "normal shadow follows live RGBA color");
+            waitForUi(5);
+            if (auto* store = window.backingStore();
+                store && store->paintDevice() &&
+                store->paintDevice()->devType() == QInternal::Image) {
+                const auto& raster = *static_cast<const QImage*>(store->paintDevice());
+                const QPoint physicalSample =
+                    QPointF(marginSample * window.devicePixelRatioF()).toPoint();
+                require(shadow ? raster.pixelColor(physicalSample).alpha() > 0
+                               : raster.pixelColor(physicalSample).alpha() == 0,
+                        "published backing store clears stale shadow pixels on every toggle");
+            }
+            requireColorNear(renderWidget(window).pixelColor(40, 40), source.pixelColor(40, 40), 0,
+                             "decoration never changes interior image pixels");
+        }
+    }
+    Access::shadowState(window, false, true);
+    for (const auto& state : {std::pair{true, false}, std::pair{false, true}}) {
+        Access::refreshLockBorder(window, state.first, state.second);
+        requireShadowRgb(sample(), QColor(20, 180, 60), 3,
+                         "active window and file drag use active shadow color");
+    }
+    Access::setLock(window, true);
+    require(!Access::beginControlled(window, outer.topLeft(), 0),
+            "locked shadow margin cannot start resizing");
+    Access::refreshLockBorder(window, true, true);
+    requireShadowRgb(sample(), QColor(40, 60, 220), 3,
+                     "locked shadow takes precedence over active and drag state");
+    ScreenshotPinnedWindow::setRuntimeLockedShadowColor(QColor(220, 150, 20, 80));
+    requireShadowRgb(sample(), QColor(220, 150, 20), 4,
+                     "locked shadow repaints immediately after a live color change");
+    Access::setLock(window, false);
+    Access::refreshLockBorder(window, false, false);
+    QString error;
+    require(
+        !window.automationUpdate({{QStringLiteral("show_shadow"), QStringLiteral("true")}}, &error),
+        "automation rejects a nonboolean shadow flag");
+    require(window.automationUpdate({{QStringLiteral("show_shadow"), false}}, &error) &&
+                sample().alpha() == 0,
+            "automation independently hides shadow and erases stale pixels");
+    require(window.automationUpdate({{QStringLiteral("show_shadow"), true}}, &error),
+            "automation independently enables shadow");
+    materializePinnedMenuTree(window);
+    auto* action = window.findChild<QAction*>(QStringLiteral("screenshotPinnedShowShadowAction"));
+    require(action && action->isCheckable() && action->isChecked(),
+            "shadow menu action reflects automation state");
+    action->trigger();
+    require(!window.automationState().value(QStringLiteral("show_shadow")).toBool() &&
+                sample().alpha() == 0,
+            "shadow menu action hides and clears the effect");
+    action->trigger();
+    verifyPinnedWindowManagementShortcut(window, *action, QStringLiteral("show_shadow"), Qt::Key_Y,
+                                         &snow_shot::storage::PinnedWindowRecord::showShadow);
+    require(window.currentNativeGeometry() == outer && Access::contentGeometry(window) == content &&
+                !window.persistenceSnapshot().showBorder && sample().alpha() > 0,
+            "shadow shortcuts preserve geometry and border state while repainting the shadow");
+    const auto artifact = Access::viewportExport(window);
+    require(artifact && artifact->clipboardPlacement() && artifact->clipboardAppearance() &&
+                artifact->clipboardPlacement()->windowRect == content &&
+                artifact->clipboardAppearance()->showShadow == true &&
+                artifact->clipboardAppearance()->showBorder == false,
+            "clipboard keeps content geometry and independent presentation metadata");
+    ScreenshotExportImageResult exported;
+    bool complete = false;
+    require(artifact->requestImage(&window,
+                                   [&](ScreenshotExportImageResult result) {
+                                       exported = std::move(result);
+                                       complete = true;
+                                   }),
+            "shadow export starts");
+    translation_tests::waitUntil([&] { return complete; }, "shadow export completes");
+    require(exported.succeeded() && exported.image.size() == source.size() &&
+                exported.image.convertToFormat(source.format()) == source,
+            "window effects preserve exported dimensions and pixels");
+    Access::thumbnailForHideTest(window, true);
+    require(window.persistenceSnapshot().preThumbnailNativeGeometry == content &&
+                Access::decoration(window)->property("cornerRadii").toSizeF() == QSizeF(0, 0) &&
+                !Access::decoration(window)->property("borderOutline").toRectF().isValid() &&
+                sample().alpha() > 0,
+            "thumbnail shadow surrounds its complete inner viewport and saves content bounds");
+    Access::thumbnailForHideTest(window, false);
+    const auto snapshot = window.persistenceSnapshot();
+    require(snapshot.nativeGeometry == content && snapshot.placement.windowSize == content.size() &&
+                snapshot.showShadow && !snapshot.showBorder,
+            "persistence stores margin-free geometry and independent flags");
+    auto restoredConfig = config;
+    restoredConfig.restorePersistentState = true;
+    restoredConfig.persistedShowBorder = snapshot.showBorder;
+    restoredConfig.persistedShowShadow = snapshot.showShadow;
+    restoredConfig.initialBorderVisible = true;
+    restoredConfig.initialShadowVisible = false;
+    Access::prepareReplacement(window, restoredConfig);
+    require(window.currentNativeGeometry() == outer &&
+                window.automationState().value(QStringLiteral("show_shadow")).toBool() &&
+                !window.automationState().value(QStringLiteral("show_border")).toBool(),
+            "restored visibility overrides explicit creation appearance without double expansion");
+    Access::prepareReplacement(window, config);
+    require(!window.automationState().value(QStringLiteral("show_shadow")).toBool() &&
+                sample().alpha() == 0 && window.currentNativeGeometry() == outer,
+            "pooled-window reuse resets shadow and clears stale decoration pixels");
+    require(settings.setShowBorderByDefault(false) && settings.setShowShadowByDefault(true),
+            "change defaults for future pins");
+    require(!window.automationState().value(QStringLiteral("show_shadow")).toBool(),
+            "default switches do not alter an existing pin");
+    Access::prepareReplacement(window, config);
+    require(!window.automationState().value(QStringLiteral("show_border")).toBool() &&
+                window.automationState().value(QStringLiteral("show_shadow")).toBool(),
+            "new presentation uses independently configured defaults");
+    config.borderAppearance = snow_shot::storage::PinnedBorderAppearance{
+        source.size(), QRectF(source.rect()), 8.0, true, std::nullopt};
+    require(settings.setShowBorderByDefault(true), "enable border default for baked exception");
+    Access::prepareReplacement(window, config);
+    require(!window.automationState().value(QStringLiteral("show_border")).toBool() &&
+                !window.automationState().value(QStringLiteral("show_shadow")).toBool(),
+            "single baked-shadow capture suppresses both creation defaults");
+    config.initialBorderVisible = true;
+    config.initialShadowVisible = true;
+    Access::prepareReplacement(window, config);
+    require(window.automationState().value(QStringLiteral("show_border")).toBool() &&
+                window.automationState().value(QStringLiteral("show_shadow")).toBool(),
+            "explicit appearance overrides the baked-shadow exception");
+    config.initialBorderVisible.reset();
+    config.initialShadowVisible.reset();
+    config.borderAppearance->region =
+        ScreenshotRegionGeometry(QRegion(QRect(0, 0, 80, 30)) + QRegion(QRect(0, 30, 60, 50)));
+    Access::prepareReplacement(window, config);
+    require(window.automationState().value(QStringLiteral("show_border")).toBool() &&
+                window.automationState().value(QStringLiteral("show_shadow")).toBool(),
+            "compound captures preserve their creation-default exception behavior");
+    window.hide();
+}
+
 int main(int argc, char* argv[]) {
 
     PinnedWindowTestApplication app(argc, argv);
@@ -19059,6 +19628,19 @@ int main(int argc, char* argv[]) {
         // without this, lazily initialized storage lands in the developer's
         // real AppData (see IsolatedPinnedStorage).
         IsolatedPinnedStorage processStorage;
+        if (app.arguments().contains(QStringLiteral("--show-shadow-only"))) {
+            pinnedShadowStateAndMarginsOffscreen();
+            return 0;
+        }
+        if (app.arguments().contains(QStringLiteral("--shadow-geometry-only"))) {
+            SnowCanvasRuntime runtime;
+            pinnedMarginProtectsContentGestures();
+            pinnedSettledWheelScalingAdvancesPastRoundedLevel(runtime);
+            pinnedWheelScalingUsesConfiguredAnchor(runtime);
+            pinnedSmallExtentRemainsResponsive();
+            pinnedOddPixelExtentRemainsSharp();
+            return 0;
+        }
         if (app.arguments().contains(QStringLiteral("--text-wrap-only"))) {
             pinnedTextWrapUsesVisibleClient();
             return 0;

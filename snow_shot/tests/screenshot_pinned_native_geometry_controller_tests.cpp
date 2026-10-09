@@ -212,6 +212,20 @@ void observationsCannotReplaceAuthoritativeTargets() {
     require(controller.acceptAppliedGeometry(requested), "an exact native observation must verify");
     require(controller.commitTarget().geometry == requested, "verified target must commit");
 }
+
+void frameMarginIsExcludedFromInteractiveScale() {
+    ScreenshotPinnedNativeGeometryController controller;
+    const QRect origin(84, 184, 352, 212);
+    require(controller.initialize(origin), "framed controller initialization failed");
+    const auto target = controller.updateResize(
+        QRect(84, 184, 432, 257), resize_geometry::DragHandle::Right, {320, 180}, .1, 5., 16);
+    require(target == QRect(84, 184, 432, 257) &&
+                controller.constrainWindowPos(QRect(84, 184, 431, 256), true, true) == *target,
+            "native resizing must keep controller authority over the framed content geometry");
+    controller.cancelPendingInteraction();
+    require(controller.targetGeometry() == origin,
+            "frame-aware resize cancellation must restore the complete original outer rectangle");
+}
 } // namespace
 
 int main() {
@@ -227,6 +241,7 @@ int main() {
         shortcutMovementAfterDpiUsesTheAdoptedTargetAsItsAnchor();
         failedTransactionsRollBackDeterministically();
         observationsCannotReplaceAuthoritativeTargets();
+        frameMarginIsExcludedFromInteractiveScale();
     } catch (const std::exception& error) {
         std::cerr << "screenshot pinned native geometry controller test failure: " << error.what()
                   << '\n';

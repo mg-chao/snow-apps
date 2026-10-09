@@ -212,6 +212,7 @@ ScreenshotClipboardAppearance appearanceFixture() {
     value.borderAppearance = snow_shot::storage::PinnedBorderAppearance{
         QSize(320, 200), QRectF(8, 8, 304, 184), 12, true, {}};
     value.showBorder = false;
+    value.showShadow = true;
     return value;
 }
 void appearanceCodecAndContent() {
@@ -219,7 +220,8 @@ void appearanceCodecAndContent() {
     const auto bytes = encodeScreenshotClipboardAppearance(value);
     auto decoded = decodeScreenshotClipboardAppearance(bytes);
     require(decoded && decoded->borderAppearance == value.borderAppearance &&
-                decoded->showBorder == false && !decoded->checkerboardEnabled,
+                decoded->showBorder == false && decoded->showShadow == true &&
+                !decoded->checkerboardEnabled,
             "appearance codec changes the baked outline");
     require(decodeScreenshotClipboardAppearance(bytes + QByteArray(7, 'x')).has_value(),
             "native allocation padding invalidates appearance");
@@ -235,6 +237,18 @@ void appearanceCodecAndContent() {
     require(!decodeScreenshotClipboardAppearance(truncatedBody),
             "truncated appearance body accepted");
     auto json = QJsonDocument::fromJson(bytes.mid(12)).object();
+    json.remove(QStringLiteral("show_shadow"));
+    const auto legacy = decodeScreenshotClipboardAppearance(replaceJson(bytes, json));
+    require(legacy && !legacy->showShadow.has_value(),
+            "legacy appearance must defer shadow visibility to the creation default");
+    json.insert(QStringLiteral("show_shadow"), false);
+    const auto hidden = decodeScreenshotClipboardAppearance(replaceJson(bytes, json));
+    require(hidden && hidden->showShadow == false && hidden->showBorder == false,
+            "appearance must preserve an explicit hidden shadow independently of the border");
+    json.insert(QStringLiteral("show_shadow"), 1);
+    require(!decodeScreenshotClipboardAppearance(replaceJson(bytes, json)),
+            "non-boolean presentation shadow visibility accepted");
+    json = QJsonDocument::fromJson(bytes.mid(12)).object();
     auto border = json[QStringLiteral("border")].toObject();
     border.insert(QStringLiteral("corner_radius"), -1);
     json.insert(QStringLiteral("border"), border);

@@ -1,4 +1,5 @@
 #include "snow_shot/presentation/pinnedwindowselectioncontroller.h"
+#include "snow_shot/presentation/pinnedgeometry.h"
 
 #include "pinnedwindowplatform.h"
 #include "pinnedwindowselectiongeometry.h"
@@ -30,33 +31,6 @@
 namespace snow_shot::presentation {
 namespace {
 using Handle = screenshot_pinned_resize_geometry::DragHandle;
-
-std::optional<int> selectionResizeHandle(const QPointF& point, const QSize& size) {
-    constexpr qreal margin = 6;
-    if (!QRectF(QPointF(), QSizeF(size)).contains(point))
-        return {};
-    const bool left = point.x() < margin;
-    const bool right = point.x() >= size.width() - margin;
-    const bool top = point.y() < margin;
-    const bool bottom = point.y() >= size.height() - margin;
-    if (left && top)
-        return int(Handle::TopLeft);
-    if (right && top)
-        return int(Handle::TopRight);
-    if (right && bottom)
-        return int(Handle::BottomRight);
-    if (left && bottom)
-        return int(Handle::BottomLeft);
-    if (left)
-        return int(Handle::Left);
-    if (right)
-        return int(Handle::Right);
-    if (top)
-        return int(Handle::Top);
-    if (bottom)
-        return int(Handle::Bottom);
-    return {};
-}
 
 Qt::CursorShape selectionResizeCursor(int handle) {
     switch (Handle(handle)) {
@@ -98,7 +72,7 @@ struct PinnedWindowSelectionController::GeometryState {
     struct Member {
         QPointer<ScreenshotPinnedWindow> window;
         PinnedPlacement placement;
-        QPointF desktopOrigin;
+        QPointF desktopContentOrigin;
         QPointer<QScreen> display;
         QSize baseline;
         double scale = 100;
@@ -178,7 +152,10 @@ struct PinnedWindowSelectionController::GeometryState {
             Member member;
             member.window = window;
             member.placement = *placement;
-            member.desktopOrigin = pinnedDesktopRect(*placement, *display).topLeft();
+            member.desktopContentOrigin =
+                pinnedDesktopContentRect(*placement, pinnedDisplayGeometry(*display),
+                                         pinnedShadowMargin(placement->units))
+                    .topLeft();
             member.display = display;
             member.baseline = window->orientedInitialWindowSize();
             member.scale = window->m_scalePercent;
@@ -249,12 +226,14 @@ struct PinnedWindowSelectionController::GeometryState {
                 display = member.display ? member.display.data() : window->screen();
             if (!display)
                 return false;
-            placement.displayName = display->name();
-            placement.displaySerial = display->serialNumber();
-            placement.position = origins[index] - display->geometry().topLeft();
+            placement = pinnedPlacementAtContentOrigin(
+                std::move(placement), pinnedDisplayGeometry(*display), origins[index],
+                pinnedShadowMargin(member.placement.units));
             if (resizing && std::abs(factor - 1.) > 1.e-12)
-                placement.windowSize = screenshot_pinned_resize_geometry::scaledSize(
-                    member.baseline, member.scale * factor / 100.);
+                placement.windowSize =
+                    pinnedOuterSize(screenshot_pinned_resize_geometry::scaledSize(
+                                        member.baseline, member.scale * factor / 100.),
+                                    placement.units);
             const QRect requested = pinnedWindowRect(placement, *display);
             const bool geometryChanged =
                 window->m_nativeGeometryController->targetGeometry() != requested ||
@@ -270,7 +249,8 @@ struct PinnedWindowSelectionController::GeometryState {
                         [window](const auto& proposal, QScreen* proposalDisplay) {
                             return window->m_nativeGeometryController->acceptInteractiveGeometry(
                                 pinnedWindowRect(proposal, *proposalDisplay));
-                        });
+                        },
+                        pinnedShadowMargin(placement.units));
                 }
                 if (!active || !applied)
                     return false;
@@ -356,7 +336,10 @@ void PinnedWindowSelectionController::updateGeometry(const QPointF& desktopPosit
             delta = QPointF(*cursor - *state->nativePress);
         }
         const double requested =
-            dragScaleFactor(ownerMember->placement.windowSize, delta, *state->handle);
+            dragScaleFactor(pinnedContentRect(QRect(QPoint(), ownerMember->placement.windowSize),
+                                              ownerMember->placement.units)
+                                .size(),
+                            delta, *state->handle);
         const auto clamped = pinned_window_selection_geometry::sharedScaleFactor(
             state->originalScales, std::max(requested, std::numeric_limits<double>::min()));
         if (!clamped) {
@@ -375,8 +358,8 @@ void PinnedWindowSelectionController::updateGeometry(const QPointF& desktopPosit
         translation = translation.toPoint();
     }
     for (const auto& member : state->members)
-        state->originsBuffer.append(state->handle ? member.desktopOrigin
-                                                  : member.desktopOrigin + translation);
+        state->originsBuffer.append(state->handle ? member.desktopContentOrigin
+                                                  : member.desktopContentOrigin + translation);
     if (!state->apply(state->originsBuffer, factor, state->handle.has_value()))
         endGeometry(true);
 }
@@ -500,7 +483,7 @@ bool PinnedWindowSelectionController::scaleBy(ScreenshotPinnedWindow* window,
     if (!state)
         return false;
     for (const auto& member : state->members)
-        state->originsBuffer.append(member.desktopOrigin);
+        state->originsBuffer.append(member.desktopContentOrigin);
     const auto factor =
         pinned_window_selection_geometry::sharedScaleFactor(state->originalScales, requested);
     const bool applied = factor && state->apply(state->originsBuffer, *factor, true);
@@ -517,8 +500,11 @@ bool PinnedWindowSelectionController::alignSelection(SnowCanvasSelectionAlignmen
     if (!state)
         return false;
     QList<QRectF> rectangles;
-    for (const auto& member : state->members)
-        rectangles.append(pinnedDesktopRect(member.placement, *member.display));
+    for (const auto& member : state->members) {
+        rectangles.append(pinnedDesktopContentRect(member.placement,
+                                                   pinnedDisplayGeometry(*member.display),
+                                                   pinnedShadowMargin(member.placement.units)));
+    }
     const auto aligned = pinned_window_selection_geometry::alignmentTargets(rectangles, alignment);
     QList<QPointF> origins;
     if (aligned) {
@@ -686,7 +672,7 @@ bool PinnedWindowSelectionController::handlePointer(ScreenshotPinnedWindow* wind
     const QPointF local = window->windowPositionForEvent(watched, mouse->position());
     const bool controls = window->isControlsPanelPosition(local.toPoint());
     const auto handle = selectable && window->interactiveResizingEnabled() && !controls
-                            ? selectionResizeHandle(local, window->size())
+                            ? window->resizeHandleAt(local)
                             : std::optional<int>{};
     const bool move = selectable && !controls && window->windowDragEligibleAt(local.toPoint());
     state = std::make_shared<GeometryState>();

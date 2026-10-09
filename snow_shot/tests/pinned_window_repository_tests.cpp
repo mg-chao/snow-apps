@@ -984,12 +984,13 @@ void pinSourceIdentitySurvivesRestart() {
             "legacy records remain readable without invented identity");
 }
 
-void showBorderStateRoundTripsAndDefaultsToEnabledForLegacyRecords() {
+void borderAndShadowStatesRoundTripWithLegacyDefaults() {
     QTemporaryDir directory;
     require(directory.isValid(), "temporary show border storage is unavailable");
     const QString id = QUuid::createUuid().toString(QUuid::WithoutBraces);
     auto record = recordWithId(id, patternedImage(QSize(200, 100), 5));
     record.showBorder = false;
+    record.showShadow = true;
     record.borderAppearance =
         storage::PinnedBorderAppearance{QSize(200, 100), QRectF(8, 8, 184, 84), 16.0, true, {}};
     const QString manifest =
@@ -999,17 +1000,18 @@ void showBorderStateRoundTripsAndDefaultsToEnabledForLegacyRecords() {
         require(repository.upsert(record).success && repository.flush().success,
                 "the show border opt-out must be committed to disk");
         const auto demoted = repository.loadRecord(id);
-        require(demoted.has_value() && !demoted->showBorder &&
+        require(demoted.has_value() && !demoted->showBorder && demoted->showShadow &&
                     demoted->borderAppearance == record.borderAppearance,
                 "the show border opt-out must survive payload demotion");
         record.showBorder = true;
+        record.showShadow = false;
         require(repository.updateState(record).success && repository.flush().success,
                 "re-enabling the border must update persisted metadata");
     }
     {
         storage::PinnedWindowRepository repository(directory.path());
         const auto loaded = repository.loadRecord(id);
-        require(loaded.has_value() && loaded->showBorder &&
+        require(loaded.has_value() && loaded->showBorder && !loaded->showShadow &&
                     loaded->borderAppearance == record.borderAppearance,
                 "show border state must survive repository recreation");
     }
@@ -1020,6 +1022,7 @@ void showBorderStateRoundTripsAndDefaultsToEnabledForLegacyRecords() {
     auto records = root.value(QStringLiteral("records")).toArray();
     auto item = records.at(0).toObject();
     item.remove(QStringLiteral("show_border"));
+    item.remove(QStringLiteral("show_shadow"));
     item.remove(QStringLiteral("border_appearance"));
     records.replace(0, item);
     root.insert(QStringLiteral("records"), records);
@@ -1031,8 +1034,9 @@ void showBorderStateRoundTripsAndDefaultsToEnabledForLegacyRecords() {
     file.close();
     storage::PinnedWindowRepository repository(directory.path());
     const auto loaded = repository.loadRecord(id);
-    require(loaded.has_value() && loaded->showBorder && !loaded->borderAppearance,
-            "legacy records must restore with the border visible");
+    require(loaded.has_value() && loaded->showBorder && !loaded->showShadow &&
+                !loaded->borderAppearance,
+            "legacy records must restore with the border visible and shadow hidden");
 }
 void malformedCustomBorderRejectsRecord() {
     QTemporaryDir directory;
@@ -2032,7 +2036,7 @@ int main(int argc, char* argv[]) {
     clickThroughStateRoundTripsAndRecoversLegacyOrConflictingMetadata();
     alwaysOnTopStateRoundTripsAndDefaultsToEnabledForLegacyRecords();
     pinSourceIdentitySurvivesRestart();
-    showBorderStateRoundTripsAndDefaultsToEnabledForLegacyRecords();
+    borderAndShadowStatesRoundTripWithLegacyDefaults();
     malformedCustomBorderRejectsRecord();
     thumbnailStateSurvivesRestartAndExit();
     hideToTopRoundTripsAndRecoversLegacyMetadata();

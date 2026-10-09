@@ -397,7 +397,7 @@ choices!(Flip {
     Horizontal,
     Vertical
 });
-input!(PinnedProperties { geometry: Option<[f64; 4]>, scale_percent: Option<f64>, opacity_percent: Option<Percentage>, click_through: Option<bool>, click_through_opacity_percent: Option<Percentage>, always_on_top: Option<bool>, show_border: Option<bool>, thumbnail: Option<bool>, hide_to_top: Option<bool>, rotation: Option<Rotation>, flip: Option<Flip> });
+input!(PinnedProperties { geometry: Option<[f64; 4]>, scale_percent: Option<f64>, opacity_percent: Option<Percentage>, click_through: Option<bool>, click_through_opacity_percent: Option<Percentage>, always_on_top: Option<bool>, show_border: Option<bool>, show_shadow: Option<bool>, thumbnail: Option<bool>, hide_to_top: Option<bool>, rotation: Option<Rotation>, flip: Option<Flip> });
 input!(PinnedUpdate {
     id: String,
     properties: PinnedProperties
@@ -1207,6 +1207,32 @@ mod tests {
             .is_err()
         );
         assert!(schema("snow_shot_pinned_edit",Some(json!({"id":"p","expected_revision":1,"action":"recognize","payload":{"kind":"text"}}))).is_ok());
+    }
+
+    #[test]
+    fn pinned_shadow_visibility_is_an_independent_boolean_property() {
+        for border in [false, true] {
+            for shadow in [false, true] {
+                assert!(
+                    schema(
+                        "snow_shot_pinned_update",
+                        Some(json!({"id":"pin", "expected_revision":1,
+                            "properties":{"show_border":border,"show_shadow":shadow}}))
+                    )
+                    .is_ok()
+                );
+            }
+        }
+        for invalid in [json!(1), json!("true")] {
+            assert!(
+                schema(
+                    "snow_shot_pinned_update",
+                    Some(json!({"id":"pin", "expected_revision":1,
+                        "properties":{"show_shadow":invalid}}))
+                )
+                .is_err()
+            );
+        }
     }
     #[test]
     fn document_capture_recognition_and_artifact_contracts_have_distinct_bounds() {

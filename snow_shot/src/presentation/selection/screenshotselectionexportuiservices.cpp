@@ -508,8 +508,12 @@ bool presentPinnedWindowAndSynchronize(ScreenshotPinnedWindowPool* pool,
         return false;
     }
     SNOW_SHOT_PIN_PERF_COUNTER("window.visible", window->isVisible() ? 1 : 0);
-    SNOW_SHOT_PIN_PERF_COUNTER("window.geometry_valid",
-                               window->currentNativeGeometry() == config.nativeGeometry ? 1 : 0);
+    SNOW_SHOT_PIN_PERF_COUNTER(
+        "window.geometry_valid",
+        window->currentNativeGeometry() ==
+                snow_shot::presentation::pinnedOuterRect(config.nativeGeometry)
+            ? 1
+            : 0);
     SNOW_SHOT_PIN_PERF_MILESTONE("window.present_returned");
     return true;
 }
@@ -807,11 +811,16 @@ bool ScreenshotSelectionExportUiServices::presentDecodedContentOnScreen(
         *screen, snow_shot::presentation::pinnedImageWindowSize(content.image, rasterScale),
         autoResizeWindow);
     return fit.valid &&
-           presentPinnedImage(content.image, screen, fit.nativeGeometry, fit.initialWindowSize,
-                              std::move(content.formattedDocument), content.plainText,
-                              content.formattedTextDevicePixelRatio,
-                              std::move(content.originalContent), {}, {}, {}, {}, source,
-                              std::move(content.sourceIdentity));
+           presentPinnedImage(
+               content.image, screen, fit.nativeGeometry, fit.initialWindowSize,
+               std::move(content.formattedDocument), content.plainText,
+               content.formattedTextDevicePixelRatio, std::move(content.originalContent), {}, {},
+               content.appearance ? content.appearance->borderAppearance : std::nullopt,
+               content.appearance ? std::optional(content.appearance->checkerboardEnabled)
+                                  : std::nullopt,
+               source, std::move(content.sourceIdentity),
+               content.appearance ? content.appearance->showBorder : std::nullopt,
+               content.appearance ? content.appearance->showShadow : std::nullopt);
 }
 
 bool ScreenshotSelectionExportUiServices::presentPinnedImage(
@@ -823,7 +832,7 @@ bool ScreenshotSelectionExportUiServices::presentPinnedImage(
     std::optional<snow_shot::storage::PinnedBorderAppearance> borderAppearance,
     std::optional<bool> checkerboardEnabled, snow_shot::storage::PinnedWindowCreationSource source,
     snow_shot::storage::PinnedSourceIdentity sourceIdentity,
-    std::optional<bool> initialBorderVisible) {
+    std::optional<bool> initialBorderVisible, std::optional<bool> initialShadowVisible) {
     const QSize imageSize =
         !image.isNull() && !image.size().isEmpty() ? image.size() : initialWindowSize;
     if (imageSize.isEmpty() || (!imageLoader && image.isNull()) || screen == nullptr ||
@@ -835,7 +844,8 @@ bool ScreenshotSelectionExportUiServices::presentPinnedImage(
         QRectF(QPointF(0.0, 0.0), QSizeF(imageSize)), std::move(formattedTextDocument),
         formattedPlainText, formattedTextDevicePixelRatio, std::move(originalContent),
         std::move(imageLoader), std::move(completion), std::move(borderAppearance),
-        checkerboardEnabled, source, nullptr, std::move(sourceIdentity), initialBorderVisible);
+        checkerboardEnabled, source, nullptr, std::move(sourceIdentity), initialBorderVisible,
+        initialShadowVisible);
 }
 
 bool ScreenshotSelectionExportUiServices::presentCompositedSelectionImage(
@@ -864,7 +874,7 @@ bool ScreenshotSelectionExportUiServices::presentPinnedImageOnCanvas(
     std::optional<snow_shot::storage::PinnedBorderAppearance> borderAppearance,
     std::optional<bool> checkerboardEnabled, snow_shot::storage::PinnedWindowCreationSource source,
     const ScreenshotHistoryEntry* document, snow_shot::storage::PinnedSourceIdentity sourceIdentity,
-    std::optional<bool> initialBorderVisible) {
+    std::optional<bool> initialBorderVisible, std::optional<bool> initialShadowVisible) {
     SNOW_SHOT_PIN_PERF_SCOPE("ui.present_pinned_image");
     const QSize imageSize =
         !image.isNull() && !image.size().isEmpty() ? image.size() : initialWindowSize;
@@ -901,6 +911,7 @@ bool ScreenshotSelectionExportUiServices::presentPinnedImageOnCanvas(
     config.canvasSourceRect = canvasRect;
     config.borderAppearance = std::move(borderAppearance);
     config.initialBorderVisible = initialBorderVisible;
+    config.initialShadowVisible = initialShadowVisible;
     config.checkerboardEnabled =
         formattedTextDocument != nullptr ? std::optional<bool>(false) : checkerboardEnabled;
     if (!image.isNull()) {
@@ -1139,6 +1150,7 @@ bool ScreenshotSelectionExportUiServices::presentRestoredRecord(
     config.persistedLockedMode = record.lockedMode;
     config.persistedAlwaysOnTop = record.alwaysOnTop;
     config.persistedShowBorder = record.showBorder;
+    config.persistedShowShadow = record.showShadow;
     config.persistedPreThumbnailNativeGeometry = restored.preThumbnailNativeGeometry;
     if (record.preThumbnailPlacement.isValid()) {
         config.persistedPreThumbnailPlacement = snow_shot::presentation::recoverPinnedPlacement(

@@ -102,6 +102,7 @@ struct PinnedWindowRecord final {
     bool lockedMode = false;
     bool alwaysOnTop = true;
     bool showBorder = true;
+    bool showShadow = false;
     std::optional<PinnedBorderAppearance> borderAppearance;
     std::optional<bool> checkerboardEnabled;
     QRect preThumbnailNativeGeometry;

@@ -3,8 +3,11 @@
 
 #include <QPointF>
 #include <QRect>
+#include <QRectF>
 #include <QSize>
 #include <QStringView>
+
+#include <optional>
 
 namespace screenshot_pinned_resize_geometry {
 enum class DragHandle {
@@ -27,6 +30,14 @@ enum class ScaleAnchor {
     Center,
 };
 
+// Outside-content side strips resize their nearest side. Outside both axes
+// selects a corner; the existing inside-content edge band remains available.
+[[nodiscard]] std::optional<DragHandle> hitHandle(const QPointF& position, const QRectF& outer,
+                                                  const QRectF& content, const QSizeF& edgeBand);
+
+[[nodiscard]] QSize dpiScaledOuterSize(const QSize& pendingOuter, int oldDpi, int newDpi,
+                                       int frameMargin);
+
 [[nodiscard]] QSize scaledSize(const QSize& baseline, double scale);
 
 struct TrackSizeLimits {
@@ -44,11 +55,13 @@ struct TrackSizeLimits {
 
 [[nodiscard]] bool proportionalResizeRect(const QRect& proposed, const QRect& reference,
                                           const QSize& baseline, DragHandle handle,
-                                          double minimumScale, double maximumScale, QRect* result);
+                                          double minimumScale, double maximumScale, QRect* result,
+                                          int frameMargin = 0);
 
 [[nodiscard]] bool dragResizeRect(const QRect& reference, const QPoint& delta,
                                   const QSize& baseline, DragHandle pressed, double minimumScale,
-                                  double maximumScale, DragHandle* effective, QRect* result);
+                                  double maximumScale, DragHandle* effective, QRect* result,
+                                  int frameMargin = 0);
 } // namespace screenshot_pinned_resize_geometry
 
 #endif // SNOW_SHOT_PRESENTATION_SCREENSHOTPINNEDRESIZEGEOMETRY_H

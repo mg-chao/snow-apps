@@ -4,6 +4,7 @@
 
 #include <cmath>
 #include <iostream>
+#include <limits>
 #include <stdexcept>
 #include <vector>
 
@@ -271,6 +272,81 @@ void testCrossingResizeKeepsProportionsAndAnchor() {
                 result == QRect(-900, 200, 1000, 500),
             "single-axis crossing must preserve maximum scale and the other axis direction");
 }
+
+void testReservedFrameHitZones() {
+    const QRectF outer(0, 0, 132, 92);
+    const QRectF content(16, 16, 100, 60);
+    const QSizeF edgeBand(6, 6);
+    const QPointF points[] = {{8, 8},    {40, 8},  {124, 8}, {124, 40},
+                              {124, 84}, {40, 84}, {8, 84},  {8, 40}};
+    for (int index = 0; index < 8; ++index)
+        require(resize_geometry::hitHandle(points[index], outer, content, edgeBand) ==
+                    DragHandle(index),
+                "each reserved side/corner must select its resize handle");
+    require(resize_geometry::hitHandle({17, 17}, outer, content, edgeBand) == DragHandle::TopLeft &&
+                resize_geometry::hitHandle({17, 8}, outer, content, edgeBand) == DragHandle::Top,
+            "content edge bands and outside-content side strips must remain distinct");
+    require(!resize_geometry::hitHandle({60, 40}, outer, content, edgeBand) &&
+                !resize_geometry::hitHandle({132, 40}, outer, content, edgeBand) &&
+                !resize_geometry::hitHandle({60, 92}, outer, content, edgeBand),
+            "interior and exclusive outer edges must not resize");
+    const QRectF tinyOuter(0, 0, 33, 33);
+    const QRectF tinyContent(16, 16, 1, 1);
+    require(resize_geometry::hitHandle({16.5, 16.5}, tinyOuter, tinyContent, edgeBand) ==
+                    DragHandle::TopLeft &&
+                resize_geometry::hitHandle({16.9, 16.9}, tinyOuter, tinyContent, edgeBand) ==
+                    DragHandle::BottomRight,
+            "overlapping tiny-window edge bands must choose the nearest corner");
+    require(!resize_geometry::hitHandle({16, 16}, outer, content, QSizeF(-1, 6)) &&
+                !resize_geometry::hitHandle({16, 16}, outer, content,
+                                            QSizeF(std::numeric_limits<qreal>::quiet_NaN(), 6)),
+            "invalid edge bands must be rejected");
+}
+
+void testFrameMarginDoesNotParticipateInResizeScale() {
+    const QSize baseline(320, 180);
+    const QRect reference(84, 184, 352, 212);
+    for (int index = 0; index < 8; ++index) {
+        const auto handle = DragHandle(index);
+        QRect result;
+        require(resize_geometry::proportionalResizeRect(QRect(50, 100, 432, 257), reference,
+                                                        baseline, handle, .1, 5., &result, 16) &&
+                    result.size() == QSize(432, 257) &&
+                    fixedAnchor(result, handle) == fixedAnchor(reference, handle),
+                "proportional resizing must scale content and preserve the fixed outer anchor");
+    }
+    auto effective = DragHandle::Right;
+    QRect result;
+    require(resize_geometry::proportionalResizeRect(QRect(84, 184, 1, 1), reference, baseline,
+                                                    DragHandle::BottomRight, .1, 5., &result, 16) &&
+                result == QRect(84, 184, 64, 50),
+            "a native proposal smaller than the margin must clamp content at its minimum scale");
+    require(resize_geometry::dragResizeRect(reference, {80, 0}, baseline, DragHandle::Right, .1, 5.,
+                                            &effective, &result, 16) &&
+                result == QRect(84, 184, 432, 257),
+            "drag resizing must reserve an unchanged margin around proportional content");
+    require(resize_geometry::dragResizeRect(reference, {-1000, 0}, baseline, DragHandle::Right, .1,
+                                            5., &effective, &result, 16) &&
+                effective == DragHandle::Left && result.width() == 712 && result.height() == 415 &&
+                result.adjusted(16, 16, -16, -16).right() + 1 == 100,
+            "crossing a content edge must retain the content anchor and constant margin");
+}
+
+void testDpiScalingPreservesPhysicalFrameMargin() {
+    require(resize_geometry::dpiScaledOuterSize({132, 92}, 96, 144, 16) == QSize(182, 122) &&
+                resize_geometry::dpiScaledOuterSize({182, 122}, 144, 96, 16) == QSize(132, 92),
+            "DPI scaling must scale content alone and keep all four physical margins fixed");
+    require(resize_geometry::dpiScaledOuterSize({33, 33}, 192, 96, 16) == QSize(33, 33),
+            "one-pixel content must remain visible during downscaling");
+    require(resize_geometry::dpiScaledOuterSize({133, 93}, 96, 192, 16) == QSize(234, 154),
+            "DPI negotiation must use the pending outer extent and preserve its odd content size");
+    require(
+        resize_geometry::dpiScaledOuterSize({32, 33}, 96, 144, 16).isEmpty() &&
+            resize_geometry::dpiScaledOuterSize({132, 92}, 0, 144, 16).isEmpty() &&
+            resize_geometry::dpiScaledOuterSize({132, 92}, 1, std::numeric_limits<int>::max(), 16)
+                .isEmpty(),
+        "invalid and overflowing DPI geometry must be rejected");
+}
 } // namespace
 
 int main(int argc, char* argv[]) {
@@ -279,6 +355,9 @@ int main(int argc, char* argv[]) {
 
     try {
         testCrossingResizeKeepsProportionsAndAnchor();
+        testReservedFrameHitZones();
+        testFrameMarginDoesNotParticipateInResizeScale();
+        testDpiScalingPreservesPhysicalFrameMargin();
         testEveryHandlePreservesItsFixedAnchor();
         testDraggedEdgeDeterminesScale();
         testScaleLimitsUseExactBaselineMultiples();

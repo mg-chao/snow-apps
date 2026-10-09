@@ -27,31 +27,6 @@
 namespace platform = snow_shot::presentation;
 namespace resize_geometry = screenshot_pinned_resize_geometry;
 namespace {
-std::optional<int> resizeHandle(const QPointF& p, const QSize& size) {
-    constexpr qreal margin = 6;
-    if (!QRectF(QPointF(), QSizeF(size)).contains(p))
-        return {};
-    const bool left = p.x() < margin, right = p.x() >= size.width() - margin;
-    const bool top = p.y() < margin, bottom = p.y() >= size.height() - margin;
-    using H = resize_geometry::DragHandle;
-    if (left && top)
-        return int(H::TopLeft);
-    if (right && top)
-        return int(H::TopRight);
-    if (right && bottom)
-        return int(H::BottomRight);
-    if (left && bottom)
-        return int(H::BottomLeft);
-    if (left)
-        return int(H::Left);
-    if (right)
-        return int(H::Right);
-    if (top)
-        return int(H::Top);
-    if (bottom)
-        return int(H::Bottom);
-    return {};
-}
 Qt::CursorShape resizeCursor(int handle) {
     using H = resize_geometry::DragHandle;
     switch (H(handle)) {
@@ -75,8 +50,8 @@ Qt::CursorShape resizeCursor(int handle) {
 bool ScreenshotPinnedWindow::exportDragEnabledAt(const QPoint& position) const {
     return m_presented && !m_closing && !m_clickThroughActive && !m_geometryAnimating &&
            !m_interactionPlacement && !m_windowDragActive && !m_ocrMode && m_canvas &&
-           rect().contains(position) && !isControlsPanelPosition(position) &&
-           (!interactiveResizingEnabled() || !resizeHandle(position, size()));
+           contentViewRect().contains(position) && !isControlsPanelPosition(position) &&
+           (!interactiveResizingEnabled() || !resizeHandleAt(position));
 }
 
 void ScreenshotPinnedWindow::cancelExportDrag() {
@@ -317,7 +292,7 @@ void ScreenshotPinnedWindow::updateControlledInteraction(const QPointF& desktopP
         if (!resize_geometry::dragResizeRect(
                 origin, delta, orientedInitialWindowSize(),
                 resize_geometry::DragHandle(*m_interactionResizeHandle), .1, 5., &effective,
-                &resized))
+                &resized, platform::pinnedShadowMargin()))
             return;
         m_interactionEffectiveResizeHandle = int(effective);
         setWindowDragCursor(resizeCursor(int(effective)));
@@ -364,9 +339,10 @@ void ScreenshotPinnedWindow::updateControlledInteraction(const QPointF& desktopP
     static_cast<void>(m_nativeGeometryController->acceptInteractiveGeometry(
         platform::pinnedWindowRect(*m_platformPlacement, *target)));
     if (m_systemSizingActive)
-        setEffectiveScale(100. * m_platformPlacement->windowSize.width() /
-                              std::max(1, orientedInitialWindowSize().width()),
-                          true);
+        setEffectiveScale(
+            100. * (m_platformPlacement->windowSize.width() - 2 * platform::pinnedShadowMargin()) /
+                std::max(1, orientedInitialWindowSize().width()),
+            true);
     updateCanvasViewport();
     if (m_clickThroughActive)
         static_cast<void>(updateClickThroughExitButtonGeometry());
@@ -427,7 +403,7 @@ bool ScreenshotPinnedWindow::handleLockedPointer(QObject* watched, QEvent* event
     if (!moveControl) {
         const QPointF local = windowPositionForEvent(watched, mouse->position());
         const bool resize =
-            !m_geometryAnimating && !m_thumbnailMode && resizeHandle(local, size()).has_value();
+            !m_geometryAnimating && !m_thumbnailMode && resizeHandleAt(local).has_value();
         if (!resize && !windowDragEligibleAt(local.toPoint()))
             return false;
     }
@@ -494,9 +470,15 @@ bool ScreenshotPinnedWindow::handleControlledPointer(QObject* watched, QEvent* e
     if (event->type() != QEvent::MouseMove && event->type() != QEvent::MouseButtonPress)
         return false;
     auto* mouse = static_cast<QMouseEvent*>(event);
+    if (event->type() == QEvent::MouseMove && mouse->buttons() != Qt::NoButton) {
+        // A canvas/OCR press inside content owns its subsequent movement, even
+        // when the captured pointer enters the reserved frame or an edge band.
+        clearWindowDragCursor();
+        return false;
+    }
     const QPointF local = windowPositionForEvent(watched, mouse->position());
     const auto handle =
-        interactiveResizingEnabled() && !moveControl ? resizeHandle(local, size()) : std::nullopt;
+        interactiveResizingEnabled() && !moveControl ? resizeHandleAt(local) : std::nullopt;
     if (event->type() == QEvent::MouseMove) {
         if (handle) {
             setWindowDragCursor(resizeCursor(*handle));

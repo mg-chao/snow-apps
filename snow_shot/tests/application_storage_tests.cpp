@@ -559,6 +559,7 @@ void settingsSchemaDefaultsAndValidationAreComplete() {
         {QStringLiteral("toggle_click_through"), QJsonArray{QStringLiteral("Ctrl+M")}},
         {QStringLiteral("always_on_top"), QJsonArray{QStringLiteral("T")}},
         {QStringLiteral("show_border"), QJsonArray{QStringLiteral("B")}},
+        {QStringLiteral("show_shadow"), QJsonArray{QStringLiteral("Y")}},
         {QStringLiteral("close_window"), QJsonArray{QStringLiteral("Esc")}},
         {QStringLiteral("destroy_window"), QJsonArray{QStringLiteral("Shift+Esc")}},
         {QStringLiteral("move_cursor_up"), QJsonArray{QStringLiteral("W"), QStringLiteral("Up")}},
@@ -1477,7 +1478,7 @@ void verifyPinToScreenShortcutSettings() {
     const storage::PinToScreenShortcutSettings shortcutSettings;
     const shortcuts::ShortcutBindingMap defaults = shortcutSettings.allShortcuts();
     require(
-        defaults.size() == 28 &&
+        defaults.size() == 30 &&
             portable(defaults.value(QStringLiteral("copy_to_clipboard"))) ==
                 QStringList{QStringLiteral("Ctrl+C")} &&
             portable(defaults.value(QStringLiteral("copy_original_content"))) ==
@@ -1506,6 +1507,8 @@ void verifyPinToScreenShortcutSettings() {
                 QStringList{QStringLiteral("T")} &&
             portable(defaults.value(QStringLiteral("show_border"))) ==
                 QStringList{QStringLiteral("B")} &&
+            portable(defaults.value(QStringLiteral("show_shadow"))) ==
+                QStringList{QStringLiteral("Y")} &&
             portable(defaults.value(QStringLiteral("close_window"))) ==
                 QStringList{QStringLiteral("Esc")} &&
             portable(defaults.value(QStringLiteral("destroy_window"))) ==
@@ -1519,7 +1522,7 @@ void verifyPinToScreenShortcutSettings() {
                                            {QStringLiteral("M")}) &&
             shortcutSettings.shortcuts(QStringLiteral("unsupported")).isEmpty() &&
             !shortcutSettings.setShortcuts(QStringLiteral("unsupported"), {QStringLiteral("Q")}),
-        "pinned-window shortcut adapter must expose twenty-eight stable actions and defaults");
+        "pinned-window shortcut adapter must expose thirty stable actions and defaults");
     require(portable(defaults.value(QStringLiteral("increase_opacity"))) ==
                 QStringList{QStringLiteral("]")},
             "increase_opacity must have its default binding");

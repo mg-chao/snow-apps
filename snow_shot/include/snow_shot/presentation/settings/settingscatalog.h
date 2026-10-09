@@ -152,6 +152,8 @@ enum class SettingsSwitchBinding {
     PinAutomaticTextRecognition,
     PinAutoResizeWindow,
     PinShowWindowButtons,
+    PinShowBorderByDefault,
+    PinShowShadowByDefault,
     PinConfirmBeforeClosingWindow,
     PinConfirmBeforeDestroyingWindow,
     OriginalImageTranslation,
@@ -228,6 +230,9 @@ enum class SettingsColorBinding {
     PinBorderColor,
     PinBorderActiveColor,
     PinLockedBorderColor,
+    PinShadowColor,
+    PinShadowActiveColor,
+    PinLockedShadowColor,
 };
 
 struct SettingsColorDefinition {

@@ -557,6 +557,10 @@ class DrawTemplateSettings final {
 
 class PinToScreenSettings final {
   public:
+    [[nodiscard]] bool showBorderByDefault() const;
+    bool setShowBorderByDefault(bool enabled) const;
+    [[nodiscard]] bool showShadowByDefault() const;
+    bool setShowShadowByDefault(bool enabled) const;
     [[nodiscard]] bool showWindowButtons() const;
     bool setShowWindowButtons(bool enabled) const;
     [[nodiscard]] bool confirmBeforeClosingWindow() const;
@@ -573,6 +577,12 @@ class PinToScreenSettings final {
     [[nodiscard]] QColor lockedBorderColor() const;
     bool setLockedBorderColor(const QColor& color) const;
     bool setBorderActiveColor(const QColor& color) const;
+    [[nodiscard]] QColor shadowColor() const;
+    bool setShadowColor(const QColor& color) const;
+    [[nodiscard]] QColor shadowActiveColor() const;
+    bool setShadowActiveColor(const QColor& color) const;
+    [[nodiscard]] QColor lockedShadowColor() const;
+    bool setLockedShadowColor(const QColor& color) const;
     [[nodiscard]] QString mouseWheelZoomMode() const;
     bool setMouseWheelZoomMode(const QString& mode) const;
     [[nodiscard]] QString duplicateContentAction() const;

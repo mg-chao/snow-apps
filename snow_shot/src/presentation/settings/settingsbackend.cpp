@@ -844,6 +844,10 @@ bool BuiltInSettingsBackend::switchValue(SettingsSwitchBinding binding) const {
         return storage::PinToScreenSettings().autoResizeWindow();
     case SettingsSwitchBinding::PinShowWindowButtons:
         return storage::PinToScreenSettings().showWindowButtons();
+    case SettingsSwitchBinding::PinShowBorderByDefault:
+        return storage::PinToScreenSettings().showBorderByDefault();
+    case SettingsSwitchBinding::PinShowShadowByDefault:
+        return storage::PinToScreenSettings().showShadowByDefault();
     case SettingsSwitchBinding::PinConfirmBeforeClosingWindow:
         return storage::PinToScreenSettings().confirmBeforeClosingWindow();
     case SettingsSwitchBinding::PinConfirmBeforeDestroyingWindow:
@@ -1075,6 +1079,12 @@ bool BuiltInSettingsBackend::applySwitchValue(SettingsSwitchBinding binding, boo
     if (binding == SettingsSwitchBinding::PinShowWindowButtons) {
         return storage::PinToScreenSettings().setShowWindowButtons(value);
     }
+    if (binding == SettingsSwitchBinding::PinShowBorderByDefault) {
+        return storage::PinToScreenSettings().setShowBorderByDefault(value);
+    }
+    if (binding == SettingsSwitchBinding::PinShowShadowByDefault) {
+        return storage::PinToScreenSettings().setShowShadowByDefault(value);
+    }
     if (binding == SettingsSwitchBinding::PinConfirmBeforeClosingWindow) {
         return storage::PinToScreenSettings().setConfirmBeforeClosingWindow(value);
     }
@@ -1200,6 +1210,8 @@ bool BuiltInSettingsBackend::applySwitchValue(SettingsSwitchBinding binding, boo
     case SettingsSwitchBinding::PinAutomaticTextRecognition:
     case SettingsSwitchBinding::PinAutoResizeWindow:
     case SettingsSwitchBinding::PinShowWindowButtons:
+    case SettingsSwitchBinding::PinShowBorderByDefault:
+    case SettingsSwitchBinding::PinShowShadowByDefault:
     case SettingsSwitchBinding::PinConfirmBeforeClosingWindow:
     case SettingsSwitchBinding::PinConfirmBeforeDestroyingWindow:
     case SettingsSwitchBinding::TranslationPageEnabled:
@@ -1409,6 +1421,12 @@ QColor BuiltInSettingsBackend::colorValue(SettingsColorBinding binding) const {
         return storage::PinToScreenSettings().borderActiveColor();
     case SettingsColorBinding::PinLockedBorderColor:
         return storage::PinToScreenSettings().lockedBorderColor();
+    case SettingsColorBinding::PinShadowColor:
+        return storage::PinToScreenSettings().shadowColor();
+    case SettingsColorBinding::PinShadowActiveColor:
+        return storage::PinToScreenSettings().shadowActiveColor();
+    case SettingsColorBinding::PinLockedShadowColor:
+        return storage::PinToScreenSettings().lockedShadowColor();
     }
     return {};
 }
@@ -1436,6 +1454,12 @@ bool BuiltInSettingsBackend::applyColorValue(SettingsColorBinding binding, const
         return storage::PinToScreenSettings().setBorderActiveColor(value);
     case SettingsColorBinding::PinLockedBorderColor:
         return storage::PinToScreenSettings().setLockedBorderColor(value);
+    case SettingsColorBinding::PinShadowColor:
+        return storage::PinToScreenSettings().setShadowColor(value);
+    case SettingsColorBinding::PinShadowActiveColor:
+        return storage::PinToScreenSettings().setShadowActiveColor(value);
+    case SettingsColorBinding::PinLockedShadowColor:
+        return storage::PinToScreenSettings().setLockedShadowColor(value);
     }
     return false;
 }
@@ -2428,6 +2452,21 @@ bool BuiltInSettingsBackend::resetSection(SettingsSectionReset reset) {
         });
     case SettingsSectionReset::PinToScreen:
         return storage::ApplicationStorage::instance().configuration().setValues({
+            {QStringLiteral("pin_to_screen/show_border_by_default"),
+             storage::ConfigurationSchema::defaultValue(
+                 QStringLiteral("pin_to_screen/show_border_by_default"))},
+            {QStringLiteral("pin_to_screen/show_shadow_by_default"),
+             storage::ConfigurationSchema::defaultValue(
+                 QStringLiteral("pin_to_screen/show_shadow_by_default"))},
+            {QStringLiteral("pin_to_screen/shadow_color"),
+             storage::ConfigurationSchema::defaultValue(
+                 QStringLiteral("pin_to_screen/shadow_color"))},
+            {QStringLiteral("pin_to_screen/shadow_active_color"),
+             storage::ConfigurationSchema::defaultValue(
+                 QStringLiteral("pin_to_screen/shadow_active_color"))},
+            {QStringLiteral("pin_to_screen/locked_shadow_color"),
+             storage::ConfigurationSchema::defaultValue(
+                 QStringLiteral("pin_to_screen/locked_shadow_color"))},
             {QStringLiteral("pin_to_screen/border_color"),
              storage::ConfigurationSchema::defaultValue(
                  QStringLiteral("pin_to_screen/border_color"))},

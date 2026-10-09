@@ -123,6 +123,9 @@ class ScreenshotCanvasRenderer final : public SnowCanvasCustomRenderer {
     void clearScrollingResultPreview();
     [[nodiscard]] bool hasScrollingResultPreview() const;
     void setImageViewportPhysicalSize(const QSize& size);
+    // View-space bounds of a pinned window's content, excluding its permanent shadow margin.
+    // Fractional coordinates are intentional: 16 Windows device pixels need not be integral dp.
+    void setPinnedViewportRect(const QRectF& rect);
     void setPinnedResultSurface(const QRectF& contentCanvasRect, const QRectF& surfaceCanvasRect,
                                 const ScreenshotResultStyle& style);
     void setBakedSelectionPath(const QPainterPath& path);
@@ -237,6 +240,7 @@ class ScreenshotCanvasRenderer final : public SnowCanvasCustomRenderer {
     void invalidateCachedContent(bool originalChanged = true);
     void paintBackground(QPainter& painter, const SnowCanvasRenderContext& context,
                          bool originalOnly);
+    [[nodiscard]] QRectF pinnedViewportForContext(const SnowCanvasRenderContext& context) const;
     const SelectionViewGeometry& selectionViewGeometry(const SnowCanvasRenderContext& context,
                                                        int cornerRadius, int borderCornerRadius);
     [[nodiscard]] ScreenshotOcrTextLayer* ensureOcrTextLayer();
@@ -255,6 +259,7 @@ class ScreenshotCanvasRenderer final : public SnowCanvasCustomRenderer {
     QRectF m_scrollingResultPreviewCanvasRect;
     std::optional<Qt::Orientation> m_scrollingCropGuide;
     QSize m_imageViewportPhysicalSize;
+    std::optional<QRectF> m_pinnedViewportRect;
     QRectF m_pinnedContentCanvasRect;
     QRectF m_pinnedSurfaceCanvasRect;
     ScreenshotResultStyle m_pinnedResultStyle;

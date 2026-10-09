@@ -1,6 +1,7 @@
 #include "../../presentation/pinned/pinnedwindowplatform.h"
 #include "snow_shot/presentation/screenshotpinnedwindow.h"
 #include "snow_shot/presentation/pinnedwindowselectioncontroller.h"
+#include "snow_shot/presentation/pinnedgeometry.h"
 #include "pinnedwindownative.h"
 #include "../../presentation/pinned/screenshotpinnednativegeometrycontroller.h"
 #include "../../presentation/pinned/screenshotpinnedgeometrymapping.h"
@@ -16,14 +17,14 @@
 namespace native = screenshot_pinned_window_native;
 namespace resize_geometry = screenshot_pinned_resize_geometry;
 namespace {
-constexpr int kResizeHitWidth = 6;
 constexpr int kMinimumScalePercent = 10;
 constexpr int kMaximumScalePercent = 500;
 template <typename T> T* pointerFromLParam(LPARAM value) {
     return reinterpret_cast<T*>(value);
 }
 QSize physicalSizeAtScale(const QSize& size, int percent) {
-    return resize_geometry::scaledSize(size, percent / 100.);
+    return snow_shot::presentation::pinnedOuterSize(
+        resize_geometry::scaledSize(size, percent / 100.));
 }
 #if defined(Q_OS_WIN) || defined(_WIN32)
 Qt::Edges resizeEdgesForNativeHitTest(LRESULT hitTest) {
@@ -144,6 +145,38 @@ bool PinnedWindowWindowsEvents::handle(ScreenshotPinnedWindow& window, const QBy
         const HWND pinnedHwnd = nativeMessage->hwnd;
         if (pinnedHwnd == nullptr) {
             return false;
+        }
+
+        if (nativeMessage->message == WM_GETDPISCALEDSIZE &&
+            window.m_nativeGeometryController != nullptr) {
+            auto* pending = pointerFromLParam<SIZE>(nativeMessage->lParam);
+            if (pending == nullptr)
+                return false;
+            if (window.m_windowsNativeDpi == 0)
+                window.m_windowsNativeDpi = GetDpiForWindow(pinnedHwnd);
+            using Phase = ScreenshotPinnedNativeGeometryController::Phase;
+            const bool keepTarget =
+                !window.m_presented || window.m_interactionResizeHandle ||
+                window.m_selectionGeometryActive || window.m_attentionOrigin.isValid() ||
+                window.m_nativeGeometryController->phase() == Phase::Programmatic;
+            const QSize desired =
+                keepTarget
+                    ? window.m_nativeGeometryController->targetGeometry().size()
+                    : resize_geometry::dpiScaledOuterSize(
+                          QSize(static_cast<int>(pending->cx), static_cast<int>(pending->cy)),
+                          static_cast<int>(window.m_windowsNativeDpi),
+                          static_cast<int>(nativeMessage->wParam),
+                          snow_shot::presentation::pinnedShadowMargin());
+            if (!desired.isValid() || desired.isEmpty())
+                return false;
+            // Negotiate content-only scaling before USER32 computes the DPI
+            // origin. WM_DPICHANGED can then retain its system suggestion and
+            // the existing cursor/transaction rebasing without another resize.
+            pending->cx = desired.width();
+            pending->cy = desired.height();
+            if (result)
+                *result = TRUE;
+            return true;
         }
 
         if (window.m_clickThroughActive) {
@@ -347,6 +380,9 @@ bool PinnedWindowWindowsEvents::handle(ScreenshotPinnedWindow& window, const QBy
 
         if (nativeMessage->message == WM_DPICHANGED &&
             window.m_nativeGeometryController != nullptr) {
+            const unsigned int dpi = LOWORD(nativeMessage->wParam);
+            if (dpi > 0)
+                window.m_windowsNativeDpi = dpi;
             auto* suggestedRect = pointerFromLParam<RECT>(nativeMessage->lParam);
             const bool shakingDuringApply =
                 window.m_attentionOrigin.isValid() && window.m_platformApplying;
@@ -443,37 +479,11 @@ bool PinnedWindowWindowsEvents::handle(ScreenshotPinnedWindow& window, const QBy
             }
             if (window.interactiveResizingEnabled() && nativeGeometry.isValid() &&
                 !nativeGeometry.isEmpty()) {
-                const QSize nativeHit = mapping.nativeHitSize(kResizeHitWidth);
-                const int nativeHitWidth = nativeHit.width();
-                const int nativeHitHeight = nativeHit.height();
-                const bool inside = mapping.containsNativePosition(screenPosition);
-                if (inside) {
-                    const bool left = screenPosition.x() < nativeGeometry.left() + nativeHitWidth;
-                    const bool right = screenPosition.x() >= nativeGeometry.left() +
-                                                                 nativeGeometry.width() -
-                                                                 nativeHitWidth;
-                    const bool top = screenPosition.y() < nativeGeometry.top() + nativeHitHeight;
-                    const bool bottom = screenPosition.y() >= nativeGeometry.top() +
-                                                                  nativeGeometry.height() -
-                                                                  nativeHitHeight;
-
-                    if (left && top) {
-                        hitTest = HTTOPLEFT;
-                    } else if (right && top) {
-                        hitTest = HTTOPRIGHT;
-                    } else if (right && bottom) {
-                        hitTest = HTBOTTOMRIGHT;
-                    } else if (left && bottom) {
-                        hitTest = HTBOTTOMLEFT;
-                    } else if (top) {
-                        hitTest = HTTOP;
-                    } else if (right) {
-                        hitTest = HTRIGHT;
-                    } else if (bottom) {
-                        hitTest = HTBOTTOM;
-                    } else if (left) {
-                        hitTest = HTLEFT;
-                    }
+                if (const auto handle =
+                        window.resizeHandleAt(mapping.localPosition(screenPosition))) {
+                    constexpr int hits[] = {HTTOPLEFT,     HTTOP,    HTTOPRIGHT,   HTRIGHT,
+                                            HTBOTTOMRIGHT, HTBOTTOM, HTBOTTOMLEFT, HTLEFT};
+                    hitTest = hits[*handle];
                 }
 
                 if (hitTest == HTCLIENT) {
@@ -651,15 +661,19 @@ bool PinnedWindowWindowsEvents::handle(ScreenshotPinnedWindow& window, const QBy
                 const std::optional<QRect> modified =
                     window.m_nativeGeometryController->updateResize(
                         qRectFromNativeRect(*proposedNativeRect), handle, baseline,
-                        kMinimumScalePercent / 100.0, kMaximumScalePercent / 100.0);
+                        kMinimumScalePercent / 100.0, kMaximumScalePercent / 100.0,
+                        snow_shot::presentation::pinnedShadowMargin());
                 if (!modified.has_value()) {
                     return false;
                 }
                 window.exitHideToTop();
                 writeNativeRect(*modified, proposedNativeRect);
                 window.m_systemSizingActive = true;
-                window.setEffectiveScale(100.0 * modified->width() / std::max(1, baseline.width()),
-                                         true);
+                window.setEffectiveScale(
+                    100.0 *
+                        (modified->width() - 2 * snow_shot::presentation::pinnedShadowMargin()) /
+                        std::max(1, baseline.width()),
+                    true);
                 if (result != nullptr) {
                     *result = TRUE;
                 }

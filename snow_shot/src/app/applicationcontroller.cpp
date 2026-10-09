@@ -90,6 +90,9 @@ namespace {
 const QString kPinBorderColorKey = QStringLiteral("pin_to_screen/border_color");
 const QString kPinBorderActiveColorKey = QStringLiteral("pin_to_screen/border_active_color");
 const QString kPinLockedBorderColorKey = QStringLiteral("pin_to_screen/locked_border_color");
+const QString kPinShadowColorKey = QStringLiteral("pin_to_screen/shadow_color");
+const QString kPinShadowActiveColorKey = QStringLiteral("pin_to_screen/shadow_active_color");
+const QString kPinLockedShadowColorKey = QStringLiteral("pin_to_screen/locked_shadow_color");
 const QString kTrayEnabledKey = QStringLiteral("tray/enabled");
 const QString kTrayIconKey = QStringLiteral("tray/icon");
 const QString kTrayCustomIconKey = QStringLiteral("tray/custom_icon");
@@ -485,6 +488,11 @@ class ApplicationController::Impl {
                                   kPinBorderActiveColorKey);
         applyRuntimeConfiguration(configuration.value(kPinLockedBorderColorKey),
                                   kPinLockedBorderColorKey);
+        applyRuntimeConfiguration(configuration.value(kPinShadowColorKey), kPinShadowColorKey);
+        applyRuntimeConfiguration(configuration.value(kPinShadowActiveColorKey),
+                                  kPinShadowActiveColorKey);
+        applyRuntimeConfiguration(configuration.value(kPinLockedShadowColorKey),
+                                  kPinLockedShadowColorKey);
         applyRuntimeConfiguration(configuration.value(kTrayEnabledKey), kTrayEnabledKey);
         applyRuntimeConfiguration(configuration.value(kTrayIconKey), kTrayIconKey);
         applyRuntimeConfiguration(configuration.value(kTrayCustomIconKey), kTrayCustomIconKey);
@@ -1451,6 +1459,15 @@ class ApplicationController::Impl {
                 color = QColor(105, 177, 255, 255);
             }
             ScreenshotPinnedWindow::setRuntimeBorderActiveColor(color);
+        } else if (key == kPinShadowColorKey) {
+            ScreenshotPinnedWindow::setRuntimeShadowColor(
+                storage::colorFromRgbaString(value.toString()));
+        } else if (key == kPinShadowActiveColorKey) {
+            ScreenshotPinnedWindow::setRuntimeShadowActiveColor(
+                storage::colorFromRgbaString(value.toString()));
+        } else if (key == kPinLockedShadowColorKey) {
+            ScreenshotPinnedWindow::setRuntimeLockedShadowColor(
+                storage::colorFromRgbaString(value.toString()));
         } else if (key == kTrayEnabledKey) {
             const bool enabled = value.isBool() ? value.toBool() : true;
             systemTray.setEnabled(enabled);

@@ -10178,3 +10178,78 @@ if(SNOW_SHOT_BUILD_BENCHMARKS)
             LABELS "benchmark" RUN_SERIAL TRUE TIMEOUT 120)
     endif()
 endif()
+
+add_library(snow_shot_pinned_decoration STATIC
+    src/presentation/pinned/screenshotpinneddecorationrenderer.cpp)
+target_include_directories(snow_shot_pinned_decoration PUBLIC src/presentation/pinned)
+target_link_libraries(snow_shot_pinned_decoration PUBLIC Qt6::Widgets PRIVATE snow_shot_history_pin)
+
+# Application, benchmark and integration-test hosts all compile the pinned window.
+get_directory_property(_snow_pinned_hosts BUILDSYSTEM_TARGETS)
+foreach(_snow_pinned_host IN LISTS _snow_pinned_hosts)
+    get_target_property(_snow_pinned_sources ${_snow_pinned_host} SOURCES)
+    if(_snow_pinned_sources MATCHES "screenshotpinnedwindow\\.cpp")
+        target_link_libraries(${_snow_pinned_host} PRIVATE snow_shot_pinned_decoration)
+    endif()
+endforeach()
+
+if(SNOW_SHOT_BUILD_TESTS)
+    add_executable(snow-shot-pinned-shadow-renderer-tests
+        tests/screenshot_pinned_shadow_renderer_tests.cpp)
+    target_include_directories(snow-shot-pinned-shadow-renderer-tests PRIVATE include)
+    target_link_libraries(snow-shot-pinned-shadow-renderer-tests PRIVATE
+        snow_shot_pinned_decoration snow_shot_history_pin)
+    get_target_property(_snow_pinned_shadow_qt_type Qt6::Core TYPE)
+    if(_snow_pinned_shadow_qt_type STREQUAL "STATIC_LIBRARY")
+        target_link_libraries(snow-shot-pinned-shadow-renderer-tests PRIVATE Qt6::QOffscreenIntegrationPlugin)
+        qt_import_plugins(snow-shot-pinned-shadow-renderer-tests INCLUDE Qt6::QOffscreenIntegrationPlugin)
+    endif()
+    add_test(NAME snow-shot-pinned-shadow-renderer-tests
+        COMMAND snow-shot-pinned-shadow-renderer-tests -platform offscreen)
+    set_tests_properties(snow-shot-pinned-shadow-renderer-tests PROPERTIES LABELS "unit"
+        ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}"
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
+    if(TARGET snow-shot-pinned-window-tests)
+        add_test(NAME snow-shot-pinned-show-shadow-tests
+            COMMAND snow-shot-pinned-window-tests --show-shadow-only -platform offscreen)
+        add_test(NAME snow-shot-pinned-shadow-geometry-tests
+            COMMAND snow-shot-pinned-window-tests --shadow-geometry-only -platform offscreen)
+        set_tests_properties(snow-shot-pinned-show-shadow-tests
+            snow-shot-pinned-shadow-geometry-tests PROPERTIES
+            LABELS "unit" RUN_SERIAL TRUE TIMEOUT 90
+            ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}")
+        if(WIN32)
+            foreach(_snow_shadow_geometry_dpr IN ITEMS 1.25 1.5 1.75 2)
+                set(_snow_shadow_geometry_test
+                    "snow-shot-pinned-shadow-geometry-${_snow_shadow_geometry_dpr}-tests")
+                add_test(NAME ${_snow_shadow_geometry_test}
+                    COMMAND snow-shot-pinned-window-tests --shadow-geometry-only -platform offscreen)
+                set_tests_properties(${_snow_shadow_geometry_test} PROPERTIES
+                    LABELS "unit;windows" RUN_SERIAL TRUE TIMEOUT 90
+                    ENVIRONMENT "QT_SCALE_FACTOR=${_snow_shadow_geometry_dpr};${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}")
+            endforeach()
+        endif()
+    endif()
+endif()
+if(SNOW_SHOT_BUILD_BENCHMARKS)
+    # The lifecycle host is also run headlessly with the static Qt kit.
+    get_target_property(_snow_pinned_shadow_qt_type Qt6::Core TYPE)
+    if(_snow_pinned_shadow_qt_type STREQUAL "STATIC_LIBRARY" AND
+        TARGET snow-shot-file-pin-batch-performance-benchmark)
+        target_link_libraries(snow-shot-file-pin-batch-performance-benchmark PRIVATE Qt6::QOffscreenIntegrationPlugin)
+        qt_import_plugins(snow-shot-file-pin-batch-performance-benchmark INCLUDE Qt6::QOffscreenIntegrationPlugin)
+    endif()
+    add_executable(snow-shot-pinned-shadow-performance-benchmark
+        tests/screenshot_pinned_shadow_performance_benchmark.cpp)
+    target_include_directories(snow-shot-pinned-shadow-performance-benchmark PRIVATE include)
+    target_link_libraries(snow-shot-pinned-shadow-performance-benchmark PRIVATE
+        snow_shot_pinned_decoration snow_shot_history_pin)
+    if(MSVC)
+        target_link_options(snow-shot-pinned-shadow-performance-benchmark PRIVATE /MAP)
+    endif()
+    get_target_property(_snow_pinned_shadow_qt_type Qt6::Core TYPE)
+    if(_snow_pinned_shadow_qt_type STREQUAL "STATIC_LIBRARY")
+        target_link_libraries(snow-shot-pinned-shadow-performance-benchmark PRIVATE Qt6::QOffscreenIntegrationPlugin)
+        qt_import_plugins(snow-shot-pinned-shadow-performance-benchmark INCLUDE Qt6::QOffscreenIntegrationPlugin)
+    endif()
+endif()

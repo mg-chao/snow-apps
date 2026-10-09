@@ -6,6 +6,9 @@
 #include <iostream>
 #include <cmath>
 #include <array>
+#include <limits>
+#include <optional>
+#include <vector>
 
 using namespace snow_shot::presentation;
 using snow_shot::storage::PinnedWindowPlacement;
@@ -80,9 +83,182 @@ void displaySelectionPreservesIdentity() {
     require(!pinnedDisplayIndex(placement, {}),
             "an empty display list must have no identity match");
 }
+
+void contentAnchorsSurviveMixedDisplayScales() {
+    const PinnedDisplayGeometry source{QStringLiteral("source"), QStringLiteral("source-serial"),
+                                       QRectF(-1600, -300, 1600, 1000),
+                                       QRectF(-1600, -262, 1600, 930), 1.25};
+    const PinnedDisplayGeometry destination{
+        QStringLiteral("destination"), QStringLiteral("destination-serial"),
+        QRectF(0, 0, 1920, 1080), QRectF(0, 25, 1920, 1010), 1.75};
+    const QPointF translation(1550.125, 250.25);
+    const auto near = [](const QPointF& left, const QPointF& right) {
+        return std::abs(left.x() - right.x()) < 1.e-9 && std::abs(left.y() - right.y()) < 1.e-9;
+    };
+    for (const auto units :
+         {PinnedGeometryUnits::PhysicalPixels, PinnedGeometryUnits::LogicalPixels}) {
+        const int margin = pinnedShadowMargin(units);
+        for (const QSize contentSize : {QSize(321, 181), QSize(1, 1)}) {
+            const PinnedWindowPlacement original{source.name, source.serial, QPointF(100.5, 200.5),
+                                                 pinnedOuterSize(contentSize, units), units};
+            const QPointF contentOrigin =
+                pinnedDesktopContentRect(original, source, margin).topLeft();
+            const QPointF movedContentOrigin = contentOrigin + translation;
+            auto moved =
+                pinnedPlacementAtContentOrigin(original, destination, movedContentOrigin, margin);
+            require(moved.windowSize == original.windowSize &&
+                        moved.displayName == destination.name &&
+                        moved.displaySerial == destination.serial &&
+                        near(pinnedDesktopContentRect(moved, destination, margin).topLeft(),
+                             movedContentOrigin),
+                    "shared movement must preserve the content translation across fractional DPI");
+            const auto outerOrigin = pinnedDesktopRect(moved, destination).topLeft();
+            const qreal destinationInset =
+                margin / pinnedGeometryScale(destination.backingScale, units);
+            require(
+                near(outerOrigin + QPointF(destinationInset, destinationInset), movedContentOrigin),
+                "destination outer bounds must reserve the destination display's frame inset");
+
+            moved.windowSize = pinnedOuterSize(contentSize * 2, units);
+            moved = pinnedPlacementAtContentOrigin(moved, destination, movedContentOrigin, margin);
+            const QRectF scaledContent = pinnedDesktopContentRect(moved, destination, margin);
+            const QSizeF expectedContentSize =
+                QSizeF(contentSize * 2) / pinnedGeometryScale(destination.backingScale, units);
+            require(near(scaledContent.topLeft(), movedContentOrigin) &&
+                        std::abs(scaledContent.width() - expectedContentSize.width()) < 1.e-9 &&
+                        std::abs(scaledContent.height() - expectedContentSize.height()) < 1.e-9,
+                    "shared scaling must change only content extent while preserving its anchor");
+
+            auto roundTrip = original;
+            for (int iteration = 0; iteration < 1000; ++iteration) {
+                roundTrip = pinnedPlacementAtContentOrigin(roundTrip, destination,
+                                                           movedContentOrigin, margin);
+                roundTrip =
+                    pinnedPlacementAtContentOrigin(roundTrip, source, contentOrigin, margin);
+            }
+            require(roundTrip.windowSize == original.windowSize &&
+                        roundTrip.displayName == original.displayName &&
+                        roundTrip.displaySerial == original.displaySerial &&
+                        near(roundTrip.position, original.position),
+                    "repeated shared display changes must not accumulate content-anchor drift");
+            require(original.windowSize == pinnedOuterSize(contentSize, units) &&
+                        original.position == QPointF(100.5, 200.5),
+                    "content-anchor conversion must preserve the original outer rollback snapshot");
+        }
+    }
+}
+
+void exactPlacementRetriesPreserveContentAfterDisplayReassignment() {
+    const PinnedDisplayGeometry source{QStringLiteral("source"), QStringLiteral("source-serial"),
+                                       QRectF(-1600, -300, 1600, 1000),
+                                       QRectF(-1600, -262, 1600, 930), 1.25};
+    const PinnedDisplayGeometry destination{
+        QStringLiteral("destination"), QStringLiteral("destination-serial"),
+        QRectF(0, 0, 1920, 1080), QRectF(0, 25, 1920, 1010), 1.75};
+    const QPointF contentOrigin(-5.125, 70.25);
+    for (const auto units :
+         {PinnedGeometryUnits::PhysicalPixels, PinnedGeometryUnits::LogicalPixels}) {
+        const int margin = pinnedShadowMargin(units);
+        auto original = pinnedPlacementAtContentOrigin(
+            PinnedWindowPlacement{{}, {}, {}, pinnedOuterSize({321, 181}, units), units}, source,
+            contentOrigin, margin);
+        const QPointF outerOrigin = pinnedDesktopRect(original, source).topLeft();
+        for (const int anchorMargin : {0, margin}) {
+            std::optional<PinnedWindowPlacement> actual;
+            std::vector<PinnedWindowPlacement> proposals;
+            const auto apply = [&](const auto& requested, const PinnedDisplayGeometry* display) {
+                proposals.push_back(requested);
+                // The backend selects another display while preserving the requested
+                // outer origin. Its size readback already matches the requested extent.
+                const QPointF outer = pinnedDesktopRect(requested, *display).topLeft();
+                actual = pinnedPlacementAtPointer(requested, destination, outer, {});
+                return true;
+            };
+            const auto describe = [](const PinnedDisplayGeometry* display) { return *display; };
+            const auto resolve = [&](const auto&, const auto*) { return &destination; };
+            require(applyExactPinnedPlacement(
+                        original, &source, anchorMargin, describe, apply, [&] { return actual; },
+                        resolve),
+                    "exact placement must settle after a backend assigns another DPI display");
+            const QPointF settled =
+                pinnedDesktopContentRect(*actual, destination, anchorMargin).topLeft();
+            const QPointF expected = anchorMargin == 0 ? outerOrigin : contentOrigin;
+            require(std::abs(settled.x() - expected.x()) < 1.e-9 &&
+                        std::abs(settled.y() - expected.y()) < 1.e-9 &&
+                        actual->windowSize == original.windowSize,
+                    "placement retry must preserve its selected anchor without scaling the frame");
+            const std::size_t expectedAttempts =
+                anchorMargin != 0 && units == PinnedGeometryUnits::PhysicalPixels ? 2 : 1;
+            require(proposals.size() == expectedAttempts,
+                    "content DPI correction must settle once; outer/logical anchors need no retry");
+        }
+
+        int attempts = 0;
+        std::optional<PinnedWindowPlacement> displaced;
+        require(!applyExactPinnedPlacement(
+                    original, &source, margin,
+                    [](const PinnedDisplayGeometry* display) { return *display; },
+                    [&](const auto& requested, const auto*) {
+                        ++attempts;
+                        displaced = requested;
+                        displaced->position += QPointF(10, 10);
+                        return true;
+                    },
+                    [&] { return displaced; }, [&](const auto&, const auto*) { return &source; }) &&
+                    attempts == (units == PinnedGeometryUnits::PhysicalPixels ? 3 : 1),
+                "an unsatisfied exact placement must fail after its bounded retries");
+        const QPointF originalContent =
+            pinnedDesktopContentRect(original, source, margin).topLeft();
+        require(original.windowSize == pinnedOuterSize({321, 181}, units) &&
+                    std::abs(originalContent.x() - contentOrigin.x()) < 1.e-9 &&
+                    std::abs(originalContent.y() - contentOrigin.y()) < 1.e-9,
+                "placement retries must preserve the original outer rollback snapshot");
+    }
+}
+
+void decorationGeometryRejectsOverflow() {
+    constexpr int minimum = std::numeric_limits<int>::min();
+    constexpr int maximum = std::numeric_limits<int>::max();
+    for (const auto units :
+         {PinnedGeometryUnits::PhysicalPixels, PinnedGeometryUnits::LogicalPixels}) {
+        const int margin = pinnedShadowMargin(units);
+        const int maximumContent = maximum - 2 * margin;
+        require(pinnedOuterSize({maximumContent, 1}, units) == QSize(maximum, 1 + 2 * margin) &&
+                    pinnedOuterSize({maximumContent + 1, 1}, units).isEmpty() &&
+                    pinnedOuterSize({1, maximum}, units).isEmpty(),
+                "frame inflation must accept the largest representable extent and reject overflow");
+        const QRect limit(QPoint(minimum + margin, minimum + margin), QSize(maximumContent, 1));
+        const QRect expanded = pinnedOuterRect(limit, units);
+        require(expanded.isValid() && expanded.size() == QSize(maximum, 1 + 2 * margin) &&
+                    pinnedContentRect(expanded, units) == limit,
+                "checked decoration geometry must round-trip representable coordinate limits");
+        require(
+            pinnedOuterRect(QRect(minimum, 0, 1, 1), units).isEmpty() &&
+                pinnedOuterRect(QRect(QPoint(maximum, 0), QPoint(maximum, 0)), units).isEmpty() &&
+                pinnedOuterRect(QRect(0, 0, maximum, 1), units).isEmpty() &&
+                pinnedContentRect(QRect(QPoint(minimum, 0), QPoint(maximum, 64)), units).isEmpty(),
+            "frame geometry must reject overflowed coordinates and oversized stored bounds");
+    }
+}
 } // namespace
 int main() {
+    for (const auto units :
+         {PinnedGeometryUnits::PhysicalPixels, PinnedGeometryUnits::LogicalPixels}) {
+        const int margin = units == PinnedGeometryUnits::PhysicalPixels ? 16 : 12;
+        const QRect content(-1920, -317, 321, 181);
+        const QRect outer = pinnedOuterRect(content, units);
+        require(outer == content.adjusted(-margin, -margin, margin, margin) &&
+                    pinnedContentRect(outer, units) == content &&
+                    pinnedOuterSize(content.size(), units) == outer.size(),
+                "frame margin must expand outward without moving or resizing the content");
+        require(pinnedOuterSize({1, 1}, units) == QSize(1 + 2 * margin, 1 + 2 * margin) &&
+                    pinnedContentRect(QRect(0, 0, 2 * margin, 2 * margin + 1), units).isEmpty(),
+                "reserved frame must preserve one-unit content and reject empty content bounds");
+    }
     displaySelectionPreservesIdentity();
+    contentAnchorsSurviveMixedDisplayScales();
+    exactPlacementRetriesPreserveContentAfterDisplayReassignment();
+    decorationGeometryRejectsOverflow();
     QImage raster(QSize(600, 400), QImage::Format_RGB32);
     const bool logicalUnits = kPinnedGeometryUnits == PinnedGeometryUnits::LogicalPixels;
     for (const qreal imageScale : {1.0, 2.0, 3.0}) {

@@ -6,13 +6,14 @@
 class QClipboard;
 class QMimeData;
 
-// Effects remain baked into the image. This snapshot restores only its presentation
-// and editing outline, independently of whether a desktop position is available.
+// Screenshot effects remain baked into the image. This snapshot restores the window's
+// presentation and editing outline, independently of whether desktop placement is available.
 struct ScreenshotClipboardAppearance final {
     QSize rasterSize;
     std::optional<snow_shot::storage::PinnedBorderAppearance> borderAppearance;
     bool checkerboardEnabled = false;
     std::optional<bool> showBorder;
+    std::optional<bool> showShadow;
     QString filePath;
     qint64 fileSize = -1;
     qint64 fileModifiedMs = -1;

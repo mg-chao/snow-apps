@@ -633,6 +633,10 @@
             <translation>显示主界面</translation>
         </message>
         <message>
+            <source>Show shadow</source>
+            <translation>显示阴影</translation>
+        </message>
+        <message>
             <source>Supported files (%1)</source>
             <translation>支持的文件 (%1)</translation>
         </message>

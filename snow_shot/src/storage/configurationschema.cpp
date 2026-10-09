@@ -1084,6 +1084,12 @@ const QVector<ConfigurationSchemaEntry> kRawEntries = {
      std::nullopt,
      {},
      2},
+    {QStringLiteral("pin_to_screen_shortcuts/show_shadow"),
+     QJsonArray{QStringLiteral("Y")},
+     ConfigurationValueKind::StringList,
+     std::nullopt,
+     {},
+     2},
     {QStringLiteral("pin_to_screen_shortcuts/thumbnail_mode"),
      QJsonArray{QStringLiteral("R")},
      ConfigurationValueKind::StringList,
@@ -1281,6 +1287,15 @@ const QVector<ConfigurationSchemaEntry> kRawEntries = {
      QStringLiteral("#00000000"), ConfigurationValueKind::String},
     {QStringLiteral("screenshot_ui/show_edit_selection_toolbar"), true,
      ConfigurationValueKind::Boolean},
+    {QStringLiteral("pin_to_screen/show_border_by_default"), true, ConfigurationValueKind::Boolean},
+    {QStringLiteral("pin_to_screen/show_shadow_by_default"), false,
+     ConfigurationValueKind::Boolean},
+    {QStringLiteral("pin_to_screen/shadow_color"), QStringLiteral("#BFBFBFFF"),
+     ConfigurationValueKind::String},
+    {QStringLiteral("pin_to_screen/shadow_active_color"), QStringLiteral("#69B1FFFF"),
+     ConfigurationValueKind::String},
+    {QStringLiteral("pin_to_screen/locked_shadow_color"), QStringLiteral("#FAAD14FF"),
+     ConfigurationValueKind::String},
     {QStringLiteral("pin_to_screen/border_color"), QStringLiteral("#DBDBDBFF"),
      ConfigurationValueKind::String},
     {QStringLiteral("pin_to_screen/border_active_color"), QStringLiteral("#69B1FFFF"),
@@ -1882,6 +1897,9 @@ bool isRgbaColorKey(const QString& key) {
            key == QStringLiteral("pin_to_screen/border_color") ||
            key == QStringLiteral("pin_to_screen/border_active_color") ||
            key == QStringLiteral("pin_to_screen/locked_border_color") ||
+           key == QStringLiteral("pin_to_screen/shadow_color") ||
+           key == QStringLiteral("pin_to_screen/shadow_active_color") ||
+           key == QStringLiteral("pin_to_screen/locked_shadow_color") ||
            key == QStringLiteral("screen_recording/mouse_trail_color") ||
            key == QStringLiteral("screen_recording/mouse_click_color") ||
            key == QStringLiteral("screen_recording/mouse_highlight_color") ||

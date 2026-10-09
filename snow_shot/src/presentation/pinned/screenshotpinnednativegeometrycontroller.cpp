@@ -159,7 +159,7 @@ QRect ScreenshotPinnedNativeGeometryController::updateMove(const QRect& proposed
 
 std::optional<QRect> ScreenshotPinnedNativeGeometryController::updateResize(
     const QRect& proposed, screenshot_pinned_resize_geometry::DragHandle handle,
-    const QSize& baseline, double minimumScale, double maximumScale) {
+    const QSize& baseline, double minimumScale, double maximumScale, int frameMargin) {
     if (m_phase == Phase::Stable && !beginResize(handle)) {
         return std::nullopt;
     }
@@ -171,7 +171,7 @@ std::optional<QRect> ScreenshotPinnedNativeGeometryController::updateResize(
     QRect modified;
     if (!screenshot_pinned_resize_geometry::proportionalResizeRect(
             proposed, m_transactionStartGeometry, baseline, m_resizeHandle, minimumScale,
-            maximumScale, &modified)) {
+            maximumScale, &modified, frameMargin)) {
         return std::nullopt;
     }
 

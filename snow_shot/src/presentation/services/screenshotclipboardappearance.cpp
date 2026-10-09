@@ -126,6 +126,8 @@ QByteArray encodeScreenshotClipboardAppearance(const ScreenshotClipboardAppearan
         {QStringLiteral("checkerboard"), value.checkerboardEnabled}};
     if (value.showBorder)
         object.insert(QStringLiteral("show_border"), *value.showBorder);
+    if (value.showShadow)
+        object.insert(QStringLiteral("show_shadow"), *value.showShadow);
     if (value.borderAppearance) {
         const auto& a = *value.borderAppearance;
         QJsonObject border{{QStringLiteral("source_size"),
@@ -176,6 +178,11 @@ decodeScreenshotClipboardAppearance(const QByteArray& bytes) {
         if (!o[QStringLiteral("show_border")].isBool())
             return {};
         result.showBorder = o[QStringLiteral("show_border")].toBool();
+    }
+    if (o.contains(QStringLiteral("show_shadow"))) {
+        if (!o[QStringLiteral("show_shadow")].isBool())
+            return {};
+        result.showShadow = o[QStringLiteral("show_shadow")].toBool();
     }
     if (o.contains(QStringLiteral("border"))) {
         const auto b = o[QStringLiteral("border")].toObject();

@@ -33,6 +33,13 @@
 #include <stdexcept>
 #include <vector>
 
+#if defined(Q_OS_WIN)
+#include <windows.h>
+#include <psapi.h>
+#elif defined(Q_OS_MACOS)
+#include <mach/mach.h>
+#endif
+
 namespace {
 namespace storage = snow_shot::storage;
 
@@ -58,7 +65,55 @@ struct Sample {
     double hiddenMs = 0;
     double destroyedMs = 0;
     double longestEventTurnMs = 0;
+    qint64 residentBeforeBytes = 0;
+    qint64 residentLiveBytes = 0;
+    qint64 residentAfterBytes = 0;
+    qint64 privateBeforeBytes = 0;
+    qint64 privateLiveBytes = 0;
+    qint64 privateAfterBytes = 0;
 };
+
+struct ProcessMemory {
+    qint64 residentBytes = 0;
+    qint64 privateBytes = 0;
+};
+
+ProcessMemory processMemory() {
+#if defined(Q_OS_WIN)
+    PROCESS_MEMORY_COUNTERS_EX counters{};
+    counters.cb = sizeof(counters);
+    if (K32GetProcessMemoryInfo(GetCurrentProcess(),
+                                reinterpret_cast<PROCESS_MEMORY_COUNTERS*>(&counters),
+                                static_cast<DWORD>(sizeof(counters))))
+        return {static_cast<qint64>(counters.WorkingSetSize),
+                static_cast<qint64>(counters.PrivateUsage)};
+#elif defined(Q_OS_MACOS)
+    mach_task_basic_info_data_t counters{};
+    mach_msg_type_number_t count = MACH_TASK_BASIC_INFO_COUNT;
+    if (task_info(mach_task_self(), MACH_TASK_BASIC_INFO, reinterpret_cast<task_info_t>(&counters),
+                  &count) == KERN_SUCCESS)
+        return {static_cast<qint64>(counters.resident_size), 0};
+#endif
+    return {};
+}
+
+void memoryBeforeOpen(Sample& sample) {
+    const auto memory = processMemory();
+    sample.residentBeforeBytes = memory.residentBytes;
+    sample.privateBeforeBytes = memory.privateBytes;
+}
+
+void memoryWhileOpen(Sample& sample) {
+    const auto memory = processMemory();
+    sample.residentLiveBytes = memory.residentBytes;
+    sample.privateLiveBytes = memory.privateBytes;
+}
+
+void memoryAfterClose(Sample& sample) {
+    const auto memory = processMemory();
+    sample.residentAfterBytes = memory.residentBytes;
+    sample.privateAfterBytes = memory.privateBytes;
+}
 
 class HideObserver final : public QObject {
   public:
@@ -76,7 +131,8 @@ class HideObserver final : public QObject {
     Sample& m_sample;
 };
 
-storage::PinnedWindowRecord record(const QString& id, const QImage& image, QScreen& screen) {
+storage::PinnedWindowRecord record(const QString& id, const QImage& image, QScreen& screen,
+                                   bool showShadow) {
     const auto fit = ScreenshotGeometryMapper::fitImageToAvailableGeometry(
         image.size(), screen.availableGeometry(), screen.geometry(),
         ScreenshotGeometryMapper::physicalRectForScreen(screen), 16);
@@ -89,6 +145,8 @@ storage::PinnedWindowRecord record(const QString& id, const QImage& image, QScre
     result.canvasSourceRect = QRectF(QPointF(), image.size());
     result.contentCanvasRect = result.canvasSourceRect;
     result.surfaceCanvasRect = result.canvasSourceRect;
+    result.showBorder = true;
+    result.showShadow = showShadow;
     return result;
 }
 
@@ -113,12 +171,18 @@ Sample runSample(const storage::PinnedWindowRecord& source, QScreen& screen,
         storage::ApplicationStorage::instance().requestPinnedWindowRetentionCleanup();
     };
     require(repository.markRestored(source.id).success, "mark lifecycle source restored");
+    memoryBeforeOpen(sample);
     QElapsedTimer open;
     open.start();
     QPointer<ScreenshotPinnedWindow> window(new ScreenshotPinnedWindow);
     require(window->present(config), "present lifecycle window");
     sample.openMs = double(open.nsecsElapsed()) / 1'000'000.;
     QApplication::processEvents();
+    const QJsonObject visibility = window->automationState();
+    require(visibility.value(QStringLiteral("show_border")).toBool() &&
+                visibility.value(QStringLiteral("show_shadow")).toBool() == source.showShadow,
+            "lifecycle pin must use the configured border and shadow visibility");
+    memoryWhileOpen(sample);
 
     QSemaphore readStarted;
     std::atomic<bool> announced = false;
@@ -143,9 +207,7 @@ Sample runSample(const storage::PinnedWindowRecord& source, QScreen& screen,
     window->installEventFilter(&observer);
     QObject::connect(window, &QObject::destroyed, &observer,
                      [&] { sample.destroyedMs = double(close.nsecsElapsed()) / 1'000'000.; });
-    auto* closeAction = window->findChild<QAction*>(QStringLiteral("screenshotPinnedCloseAction"));
-    require(closeAction, "lifecycle close action exists");
-    closeAction->trigger();
+    require(window->automationAction(QStringLiteral("close")), "lifecycle close input accepted");
     sample.closeReturnMs = double(close.nsecsElapsed()) / 1'000'000.;
     while (window && close.elapsed() < 30000) {
         QElapsedTimer turn;
@@ -159,16 +221,18 @@ Sample runSample(const storage::PinnedWindowRecord& source, QScreen& screen,
     require(sample.hiddenMs > 0 && sample.destroyedMs > 0, "observe hide and destruction");
     if (loading.valid())
         require(loading.get(), "background source loaded successfully");
+    memoryAfterClose(sample);
     return sample;
 }
 
 // Exercise the application's asynchronous disk restore and window pool, including
 // two closes in one event turn so cleanup cannot hide the next input's latency.
 Sample runRestoreSample(ScreenshotSelectionExportUiServices& services,
-                        snow_shot::presentation::PinnedWindowGroupManager& groups,
-                        int windowCount) {
+                        snow_shot::presentation::PinnedWindowGroupManager& groups, int windowCount,
+                        bool showShadow) {
     Sample sample;
     std::vector<QPointer<ScreenshotPinnedWindow>> windows;
+    memoryBeforeOpen(sample);
     QElapsedTimer open;
     open.start();
     for (int index = 0; index < windowCount; ++index)
@@ -190,6 +254,13 @@ Sample runRestoreSample(ScreenshotSelectionExportUiServices& services,
     }
     require(int(windows.size()) == windowCount, "last closed windows restored and ready");
     sample.openMs = double(open.nsecsElapsed()) / 1'000'000.;
+    for (const auto& window : windows) {
+        const QJsonObject visibility = window->automationState();
+        require(visibility.value(QStringLiteral("show_border")).toBool() &&
+                    visibility.value(QStringLiteral("show_shadow")).toBool() == showShadow,
+                "restored lifecycle pin must retain the configured decoration visibility");
+    }
+    memoryWhileOpen(sample);
     QElapsedTimer close;
     close.start();
     std::vector<std::unique_ptr<HideObserver>> observers;
@@ -199,9 +270,8 @@ Sample runRestoreSample(ScreenshotSelectionExportUiServices& services,
         (*it)->installEventFilter(observers.back().get());
         QObject::connect(*it, &QObject::destroyed, observers.back().get(),
                          [&] { sample.destroyedMs = double(close.nsecsElapsed()) / 1'000'000.; });
-        auto* action = (*it)->findChild<QAction*>(QStringLiteral("screenshotPinnedCloseAction"));
-        require(action, "restored window exposes close action");
-        action->trigger();
+        require((*it)->automationAction(QStringLiteral("close")),
+                "restored window accepts close input");
         require(!(*it)->isVisible(), "one close input hides restored window");
     }
     sample.closeReturnMs = double(close.nsecsElapsed()) / 1'000'000.;
@@ -218,19 +288,20 @@ Sample runRestoreSample(ScreenshotSelectionExportUiServices& services,
     require(
         std::all_of(windows.cbegin(), windows.cend(), [](const auto& window) { return !window; }),
         "restored windows deleted");
+    memoryAfterClose(sample);
     return sample;
 }
 
-QJsonObject distribution(std::vector<double> values) {
+QJsonObject distribution(std::vector<double> values, QStringView unit = u"ms") {
     std::sort(values.begin(), values.end());
     const auto percentile = [&](double fraction) {
         const auto index = size_t(std::ceil(fraction * double(values.size())) - 1);
         return values[std::min(index, values.size() - 1)];
     };
-    return {{QStringLiteral("p50_ms"), percentile(.50)},
-            {QStringLiteral("p95_ms"), percentile(.95)},
-            {QStringLiteral("p99_ms"), percentile(.99)},
-            {QStringLiteral("max_ms"), values.back()}};
+    return {{QStringLiteral("p50_%1").arg(unit), percentile(.50)},
+            {QStringLiteral("p95_%1").arg(unit), percentile(.95)},
+            {QStringLiteral("p99_%1").arg(unit), percentile(.99)},
+            {QStringLiteral("max_%1").arg(unit), values.back()}};
 }
 
 QByteArray serializeTwoPass(SnowCanvasRuntime& runtime) {
@@ -300,6 +371,8 @@ int runPinnedLifecyclePerformanceBenchmark(QApplication& application) {
     parser.addHelpOption();
     parser.addOption(
         {QStringLiteral("lifecycle"), QStringLiteral("Measure pinned open/close latency")});
+    parser.addOption({QStringLiteral("show-shadow"),
+                      QStringLiteral("Measure pinned lifecycle with border and shadow visible")});
     parser.addOption({QStringLiteral("samples"), QStringLiteral("Measured cycles per scenario"),
                       QStringLiteral("count"), QStringLiteral("40")});
     parser.addOption(
@@ -307,6 +380,7 @@ int runPinnedLifecyclePerformanceBenchmark(QApplication& application) {
     parser.process(application);
     bool valid = false;
     const int count = parser.value(QStringLiteral("samples")).toInt(&valid);
+    const bool showShadow = parser.isSet(QStringLiteral("show-shadow"));
     require(valid && count >= 5 && count <= 200, "samples must be between 5 and 200");
     QApplication::setQuitOnLastWindowClosed(false);
     auto* screen = QApplication::primaryScreen();
@@ -324,7 +398,9 @@ int runPinnedLifecyclePerformanceBenchmark(QApplication& application) {
     auto& repository = applicationStorage.pinnedWindows();
     const storage::PinToScreenSettings settings;
     require(settings.setDoubleClickAction(QStringLiteral("none")) &&
-                settings.setAutomaticTextRecognition(false),
+                settings.setAutomaticTextRecognition(false) &&
+                settings.setShowBorderByDefault(true) &&
+                settings.setShowShadowByDefault(showShadow),
             "configure reported pin settings in isolated storage");
     QJsonArray scenarios;
     QJsonObject serialization;
@@ -334,8 +410,8 @@ int runPinnedLifecyclePerformanceBenchmark(QApplication& application) {
         const bool edited = scenarioIndex == 1 || scenarioIndex == 5;
         const auto image =
             sourceImage(concurrentRead || scenarioIndex == 3 ? QSize(2560, 1440) : QSize(800, 600));
-        auto source =
-            record(QStringLiteral("638ab928-9c03-43ac-b63a-35dce600f014"), image, *screen);
+        auto source = record(QStringLiteral("638ab928-9c03-43ac-b63a-35dce600f014"), image, *screen,
+                             showShadow);
         if (edited) {
             SnowCanvasRuntime runtime;
             for (int batch = 0; batch < 8; ++batch) {
@@ -364,7 +440,7 @@ int runPinnedLifecyclePerformanceBenchmark(QApplication& application) {
         require(repository.upsert(source).success, "seed lifecycle source");
         require(repository
                     .upsert(record(QStringLiteral("73b485f8-e136-4387-b357-7e79a81a9c76"),
-                                   sourceImage(QSize(4000, 3000)), *screen))
+                                   sourceImage(QSize(4000, 3000)), *screen, showShadow))
                     .success,
                 "seed background read source");
         const QString secondId = QStringLiteral("87308318-8f7a-49f4-95fd-f8d6a78c7621");
@@ -388,17 +464,23 @@ int runPinnedLifecyclePerformanceBenchmark(QApplication& application) {
         ScreenshotSelectionExportUiServices services(nullptr, nullptr, nullptr, {}, {}, &groups);
         std::vector<Sample> samples;
         for (int cycle = -3; cycle < count; ++cycle) {
-            const auto sample = restore
-                                    ? runRestoreSample(services, groups, scenarioIndex == 4 ? 2 : 1)
-                                    : runSample(source, *screen, repository, concurrentRead);
+            const auto sample =
+                restore ? runRestoreSample(services, groups, scenarioIndex == 4 ? 2 : 1, showShadow)
+                        : runSample(source, *screen, repository, concurrentRead);
             if (cycle >= 0)
                 samples.push_back(sample);
         }
-        const auto metric = [&](auto member) {
+        const auto metric = [&](auto member, QStringView unit = u"ms") {
             std::vector<double> values;
             for (const auto& sample : samples)
-                values.push_back(sample.*member);
-            return distribution(std::move(values));
+                values.push_back(static_cast<double>(sample.*member));
+            return distribution(std::move(values), unit);
+        };
+        const auto retained = [&](auto after, auto before) {
+            std::vector<double> values;
+            for (const auto& sample : samples)
+                values.push_back(static_cast<double>(sample.*after - sample.*before));
+            return distribution(std::move(values), u"bytes");
         };
         QJsonObject scenario{
             {QStringLiteral("name"),
@@ -413,20 +495,39 @@ int runPinnedLifecyclePerformanceBenchmark(QApplication& application) {
             {QStringLiteral("image_width"), image.width()},
             {QStringLiteral("image_height"), image.height()},
             {QStringLiteral("canvas_session_bytes"), source.canvasSession.size()},
+            {QStringLiteral("show_border"), true},
+            {QStringLiteral("show_shadow"), showShadow},
             {QStringLiteral("open"), metric(&Sample::openMs)},
             {QStringLiteral("close_return"), metric(&Sample::closeReturnMs)},
             {QStringLiteral("hidden"), metric(&Sample::hiddenMs)},
             {QStringLiteral("destroyed"), metric(&Sample::destroyedMs)},
-            {QStringLiteral("longest_event_turn"), metric(&Sample::longestEventTurnMs)}};
+            {QStringLiteral("longest_event_turn"), metric(&Sample::longestEventTurnMs)},
+            {QStringLiteral("process_memory"),
+             QJsonObject{
+                 {QStringLiteral("resident_before"),
+                  metric(&Sample::residentBeforeBytes, u"bytes")},
+                 {QStringLiteral("resident_live"), metric(&Sample::residentLiveBytes, u"bytes")},
+                 {QStringLiteral("resident_after"), metric(&Sample::residentAfterBytes, u"bytes")},
+                 {QStringLiteral("resident_retained_delta"),
+                  retained(&Sample::residentAfterBytes, &Sample::residentBeforeBytes)},
+                 {QStringLiteral("private_before"), metric(&Sample::privateBeforeBytes, u"bytes")},
+                 {QStringLiteral("private_live"), metric(&Sample::privateLiveBytes, u"bytes")},
+                 {QStringLiteral("private_after"), metric(&Sample::privateAfterBytes, u"bytes")},
+                 {QStringLiteral("private_retained_delta"),
+                  retained(&Sample::privateAfterBytes, &Sample::privateBeforeBytes)}}}};
         scenarios.append(scenario);
         std::cout << QJsonDocument(scenario).toJson(QJsonDocument::Compact).constData() << '\n';
     }
-    const QJsonDocument report(
-        QJsonObject{{QStringLiteral("configuration"), QStringLiteral("Release")},
-                    {QStringLiteral("platform"), QApplication::platformName()},
-                    {QStringLiteral("scenarios"), scenarios},
-                    {QStringLiteral("serialization"), serialization},
-                    {QStringLiteral("prepared_shell"), measurePreparedShell(*screen, count)}});
+    const QJsonDocument report(QJsonObject{
+        {QStringLiteral("configuration"), QStringLiteral("Release")},
+        {QStringLiteral("platform"), QApplication::platformName()},
+        {QStringLiteral("show_border"), true},
+        {QStringLiteral("show_shadow"), showShadow},
+        {QStringLiteral("resident_memory_available"), processMemory().residentBytes > 0},
+        {QStringLiteral("private_memory_available"), processMemory().privateBytes > 0},
+        {QStringLiteral("scenarios"), scenarios},
+        {QStringLiteral("serialization"), serialization},
+        {QStringLiteral("prepared_shell"), measurePreparedShell(*screen, count)}});
     if (parser.isSet(QStringLiteral("output"))) {
         QFile output(parser.value(QStringLiteral("output")));
         require(output.open(QIODevice::WriteOnly), "open lifecycle report");

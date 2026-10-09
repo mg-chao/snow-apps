@@ -2613,6 +2613,10 @@
             <translation>Locked Border Color</translation>
         </message>
         <message>
+            <source>Locked shadow color</source>
+            <translation>Locked shadow color</translation>
+        </message>
+        <message>
             <source>Loop Animated Images</source>
             <translation>Loop Animated Images</translation>
         </message>
@@ -2997,6 +3001,10 @@
             <translation>Pinned window active border</translation>
         </message>
         <message>
+            <source>Pinned window active shadow</source>
+            <translation>Pinned window active shadow</translation>
+        </message>
+        <message>
             <source>Pinned window behavior, appearance and tools</source>
             <translation>Pinned window behavior, appearance and tools</translation>
         </message>
@@ -3007,6 +3015,14 @@
         <message>
             <source>Pinned window locked border</source>
             <translation>Pinned window locked border</translation>
+        </message>
+        <message>
+            <source>Pinned window locked shadow</source>
+            <translation>Pinned window locked shadow</translation>
+        </message>
+        <message>
+            <source>Pinned window shadow</source>
+            <translation>Pinned window shadow</translation>
         </message>
         <message>
             <source>Pinned-window shortcuts</source>
@@ -3609,6 +3625,18 @@
             <translation>Set the screen recording frame rate</translation>
         </message>
         <message>
+            <source>Set the shadow color of locked pinned screenshots</source>
+            <translation>Set the shadow color of locked pinned screenshots</translation>
+        </message>
+        <message>
+            <source>Set the shadow color of pinned screenshots</source>
+            <translation>Set the shadow color of pinned screenshots</translation>
+        </message>
+        <message>
+            <source>Set the shadow color of pinned screenshots while they have focus</source>
+            <translation>Set the shadow color of pinned screenshots while they have focus</translation>
+        </message>
+        <message>
             <source>Set up to two keys for this pinned window action</source>
             <translation>Set up to two keys for this pinned window action</translation>
         </message>
@@ -3627,6 +3655,14 @@
         <message>
             <source>Settings</source>
             <translation>Settings</translation>
+        </message>
+        <message>
+            <source>Shadow active color</source>
+            <translation>Shadow active color</translation>
+        </message>
+        <message>
+            <source>Shadow color</source>
+            <translation>Shadow color</translation>
         </message>
         <message>
             <source>Shake Window</source>
@@ -3689,6 +3725,10 @@
             <translation>Show border</translation>
         </message>
         <message>
+            <source>Show border by default</source>
+            <translation>Show border by default</translation>
+        </message>
+        <message>
             <source>Show main interface</source>
             <translation>Show main interface</translation>
         </message>
@@ -3703,6 +3743,14 @@
         <message>
             <source>Show screenshot guides when a capture starts</source>
             <translation>Show screenshot guides when a capture starts</translation>
+        </message>
+        <message>
+            <source>Show shadow</source>
+            <translation>Show shadow</translation>
+        </message>
+        <message>
+            <source>Show shadow by default</source>
+            <translation>Show shadow by default</translation>
         </message>
         <message>
             <source>Show text recognition results</source>
@@ -3721,12 +3769,20 @@
             <translation>Show the area type hint at the top of the screenshot window</translation>
         </message>
         <message>
+            <source>Show the border on new pinned windows</source>
+            <translation>Show the border on new pinned windows</translation>
+        </message>
+        <message>
             <source>Show the captured mouse cursor by default in new normal screenshots.</source>
             <translation>Show the captured mouse cursor by default in new normal screenshots.</translation>
         </message>
         <message>
             <source>Show the floating toolbar on the desktop</source>
             <translation>Show the floating toolbar on the desktop</translation>
+        </message>
+        <message>
+            <source>Show the shadow on new pinned windows</source>
+            <translation>Show the shadow on new pinned windows</translation>
         </message>
         <message>
             <source>Show the sub-toolbar for the Edit Selection tool</source>

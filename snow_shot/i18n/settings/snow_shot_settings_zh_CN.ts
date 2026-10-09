@@ -2613,6 +2613,10 @@
             <translation>锁定边框颜色</translation>
         </message>
         <message>
+            <source>Locked shadow color</source>
+            <translation>锁定阴影颜色</translation>
+        </message>
+        <message>
             <source>Loop Animated Images</source>
             <translation>循环播放动图</translation>
         </message>
@@ -2997,6 +3001,10 @@
             <translation>固定到屏幕窗口激活边框</translation>
         </message>
         <message>
+            <source>Pinned window active shadow</source>
+            <translation>固定到屏幕窗口激活阴影</translation>
+        </message>
+        <message>
             <source>Pinned window behavior, appearance and tools</source>
             <translation>固定到屏幕窗口的行为、外观与工具</translation>
         </message>
@@ -3007,6 +3015,14 @@
         <message>
             <source>Pinned window locked border</source>
             <translation>贴图窗口锁定边框</translation>
+        </message>
+        <message>
+            <source>Pinned window locked shadow</source>
+            <translation>固定到屏幕窗口锁定阴影</translation>
+        </message>
+        <message>
+            <source>Pinned window shadow</source>
+            <translation>固定到屏幕窗口阴影</translation>
         </message>
         <message>
             <source>Pinned-window shortcuts</source>
@@ -3609,6 +3625,18 @@
             <translation>设置屏幕录制帧率</translation>
         </message>
         <message>
+            <source>Set the shadow color of locked pinned screenshots</source>
+            <translation>设置已锁定贴图的阴影颜色</translation>
+        </message>
+        <message>
+            <source>Set the shadow color of pinned screenshots</source>
+            <translation>设置固定到屏幕的截图的阴影颜色</translation>
+        </message>
+        <message>
+            <source>Set the shadow color of pinned screenshots while they have focus</source>
+            <translation>设置固定到屏幕的截图获得焦点时的阴影颜色</translation>
+        </message>
+        <message>
             <source>Set up to two keys for this pinned window action</source>
             <translation>为此固定到屏幕窗口操作设置最多两个快捷键</translation>
         </message>
@@ -3627,6 +3655,14 @@
         <message>
             <source>Settings</source>
             <translation>设置</translation>
+        </message>
+        <message>
+            <source>Shadow active color</source>
+            <translation>阴影激活颜色</translation>
+        </message>
+        <message>
+            <source>Shadow color</source>
+            <translation>阴影颜色</translation>
         </message>
         <message>
             <source>Shake Window</source>
@@ -3689,6 +3725,10 @@
             <translation>显示边框</translation>
         </message>
         <message>
+            <source>Show border by default</source>
+            <translation>默认显示边框</translation>
+        </message>
+        <message>
             <source>Show main interface</source>
             <translation>显示主界面</translation>
         </message>
@@ -3703,6 +3743,14 @@
         <message>
             <source>Show screenshot guides when a capture starts</source>
             <translation>开始截图时显示辅助线</translation>
+        </message>
+        <message>
+            <source>Show shadow</source>
+            <translation>显示阴影</translation>
+        </message>
+        <message>
+            <source>Show shadow by default</source>
+            <translation>默认显示阴影</translation>
         </message>
         <message>
             <source>Show text recognition results</source>
@@ -3721,12 +3769,20 @@
             <translation>在截图窗口顶部显示区域类型提示</translation>
         </message>
         <message>
+            <source>Show the border on new pinned windows</source>
+            <translation>在新建贴图窗口中显示边框</translation>
+        </message>
+        <message>
             <source>Show the captured mouse cursor by default in new normal screenshots.</source>
             <translation>在新的普通截图中默认显示捕获的鼠标光标。</translation>
         </message>
         <message>
             <source>Show the floating toolbar on the desktop</source>
             <translation>在桌面上显示悬浮工具栏</translation>
+        </message>
+        <message>
+            <source>Show the shadow on new pinned windows</source>
+            <translation>在新建贴图窗口中显示阴影</translation>
         </message>
         <message>
             <source>Show the sub-toolbar for the Edit Selection tool</source>

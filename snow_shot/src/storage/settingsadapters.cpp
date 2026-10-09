@@ -128,6 +128,7 @@ const QStringList& pinToScreenShortcutActionIds() {
         QStringLiteral("toggle_lock"),
         QStringLiteral("always_on_top"),
         QStringLiteral("show_border"),
+        QStringLiteral("show_shadow"),
         QStringLiteral("close_window"),
         QStringLiteral("destroy_window"),
         QStringLiteral("move_cursor_up"),
@@ -2144,6 +2145,22 @@ bool DrawTemplateSettings::setTemplates(const QVector<DrawTemplate>& templates) 
     return cache().setValue(QStringLiteral("drawing/draw_templates"), array);
 }
 
+bool PinToScreenSettings::showBorderByDefault() const {
+    return cache().value(QStringLiteral("pin_to_screen/show_border_by_default")).toBool(true);
+}
+
+bool PinToScreenSettings::setShowBorderByDefault(bool enabled) const {
+    return cache().setValue(QStringLiteral("pin_to_screen/show_border_by_default"), enabled);
+}
+
+bool PinToScreenSettings::showShadowByDefault() const {
+    return cache().value(QStringLiteral("pin_to_screen/show_shadow_by_default")).toBool(false);
+}
+
+bool PinToScreenSettings::setShowShadowByDefault(bool enabled) const {
+    return cache().setValue(QStringLiteral("pin_to_screen/show_shadow_by_default"), enabled);
+}
+
 bool PinToScreenSettings::showWindowButtons() const {
     return cache().value(QStringLiteral("pin_to_screen/show_window_buttons")).toBool();
 }
@@ -2207,6 +2224,30 @@ QColor PinToScreenSettings::lockedBorderColor() const {
 
 bool PinToScreenSettings::setLockedBorderColor(const QColor& color) const {
     return setColorValue(QStringLiteral("pin_to_screen/locked_border_color"), color);
+}
+
+QColor PinToScreenSettings::shadowColor() const {
+    return colorValue(QStringLiteral("pin_to_screen/shadow_color"));
+}
+
+bool PinToScreenSettings::setShadowColor(const QColor& color) const {
+    return setColorValue(QStringLiteral("pin_to_screen/shadow_color"), color);
+}
+
+QColor PinToScreenSettings::shadowActiveColor() const {
+    return colorValue(QStringLiteral("pin_to_screen/shadow_active_color"));
+}
+
+bool PinToScreenSettings::setShadowActiveColor(const QColor& color) const {
+    return setColorValue(QStringLiteral("pin_to_screen/shadow_active_color"), color);
+}
+
+QColor PinToScreenSettings::lockedShadowColor() const {
+    return colorValue(QStringLiteral("pin_to_screen/locked_shadow_color"));
+}
+
+bool PinToScreenSettings::setLockedShadowColor(const QColor& color) const {
+    return setColorValue(QStringLiteral("pin_to_screen/locked_shadow_color"), color);
 }
 
 QString PinToScreenSettings::mouseWheelZoomMode() const {

@@ -1,5 +1,6 @@
 #include "pinnedwindowplatform.h"
 #include "pinneddisplayselection.h"
+#include "screenshotpinnedgeometrymapping.h"
 #if defined(Q_OS_WIN)
 #include "../../platform/windows/pinnedwindownative.h"
 #include "snow_shot/presentation/screenshotpinnedwindow.h"
@@ -168,36 +169,19 @@ bool PinnedWindowPlatform::applyStablePlacement(PinnedPlacement requested, QScre
 }
 bool PinnedWindowPlatform::applyExactPlacement(
     PinnedPlacement requested, QScreen* screen, GeometryUpdate update,
-    const std::function<bool(const PinnedPlacement&, QScreen*)>& beforeApply) {
-    if (!screen || !requested.isValid())
-        return false;
-    const QPointF origin = pinnedDesktopRect(requested, *screen).topLeft();
+    const std::function<bool(const PinnedPlacement&, QScreen*)>& beforeApply, int frameMargin) {
     const QScopedValueRollback<bool> preserveOrigin(m_preservePlacementOrigin, true);
-    const QSize windowSize = requested.windowSize;
-    const int attempts = requested.units == storage::PinnedGeometryUnits::LogicalPixels ? 1 : 3;
-    QPointer<QScreen> display = screen;
-    for (int attempt = 0; attempt < attempts; ++attempt) {
-        if (!display || (beforeApply && !beforeApply(requested, display)) || !display ||
-            !applyPlacement(requested, display, update) || !display)
-            return false;
-        const auto actual = placement();
-        if (!actual || !display)
-            return false;
-        display = pinnedDisplay(*actual, display);
-        if (!display)
-            return false;
-        if (actual->windowSize == windowSize) {
-            const QPointF difference = pinnedDesktopRect(*actual, *display).topLeft() - origin;
-            const qreal tolerance =
-                .51 / storage::pinnedGeometryScale(display->devicePixelRatio(), actual->units);
-            if (qAbs(difference.x()) <= tolerance && qAbs(difference.y()) <= tolerance)
-                return true;
-        }
-        requested.displayName = display->name();
-        requested.displaySerial = display->serialNumber();
-        requested.position = origin - display->geometry().topLeft();
-    }
-    return false;
+    return applyExactPinnedPlacement(
+        std::move(requested), QPointer<QScreen>(screen), frameMargin,
+        [](const auto& display) { return pinnedDisplayGeometry(*display); },
+        [this, update, &beforeApply](const auto& proposal, const auto& display) {
+            return (!beforeApply || beforeApply(proposal, display)) && display &&
+                   applyPlacement(proposal, display, update);
+        },
+        [this] { return placement(); },
+        [](const auto& actual, const auto& display) {
+            return QPointer<QScreen>(pinnedDisplay(actual, display));
+        });
 }
 QRect PinnedWindowPlatform::windowGeometry() const {
     const auto current = placement();
@@ -222,7 +206,17 @@ class QtPinnedWindowPlatform final : public PinnedWindowPlatform {
         m_placement = placement;
         m_window->setScreen(screen);
         const QRectF target = pinnedDesktopRect(placement, *screen);
-        m_window->setGeometry(QRect(target.topLeft().toPoint(), target.size().toSize()));
+        QSize logicalSize = target.size().toSize();
+        if (placement.units == storage::PinnedGeometryUnits::PhysicalPixels) {
+            const qreal scale = std::max(qreal(1), screen->devicePixelRatio());
+            // The offscreen backing store must cover the requested physical client,
+            // just as the native backend does at fractional DPI.
+            logicalSize = QSize(ScreenshotPinnedGeometryMapping::minimumCoveringLogicalExtent(
+                                    placement.windowSize.width(), scale),
+                                ScreenshotPinnedGeometryMapping::minimumCoveringLogicalExtent(
+                                    placement.windowSize.height(), scale));
+        }
+        m_window->setGeometry(QRect(target.topLeft().toPoint(), logicalSize));
         return true;
     }
     std::optional<PinnedPlacement> placement() const override {

@@ -24,6 +24,7 @@
 #include <QGraphicsView>
 #include <QPainter>
 #include <QPainterPath>
+#include <QPainterStateGuard>
 #include <QPen>
 #include <QPointF>
 #include <QRawFont>
@@ -1100,6 +1101,16 @@ void ScreenshotCanvasRenderer::setImageViewportPhysicalSize(const QSize& size) {
     m_canvas.update();
 }
 
+void ScreenshotCanvasRenderer::setPinnedViewportRect(const QRectF& rect) {
+    const std::optional<QRectF> normalized =
+        rect.isValid() && !rect.isEmpty() ? std::optional<QRectF>(rect.normalized()) : std::nullopt;
+    if (m_pinnedViewportRect == normalized)
+        return;
+    m_pinnedViewportRect = normalized;
+    invalidateCachedContent();
+    m_canvas.update();
+}
+
 void ScreenshotCanvasRenderer::setPinnedResultSurface(const QRectF& contentCanvasRect,
                                                       const QRectF& surfaceCanvasRect,
                                                       const ScreenshotResultStyle& style) {
@@ -1515,6 +1526,7 @@ void ScreenshotCanvasRenderer::reset() {
     m_scrollingCropGuide.reset();
     m_canvas.setBaseImageSources({});
     m_imageViewportPhysicalSize = QSize();
+    m_pinnedViewportRect.reset();
     m_pinnedContentCanvasRect = {};
     m_pinnedSurfaceCanvasRect = {};
     m_pinnedResultStyle = {};
@@ -1683,6 +1695,19 @@ void ScreenshotCanvasRenderer::renderBeforeCanvas(QPainter& painter,
     paintBackground(painter, context, false);
 }
 
+QRectF
+ScreenshotCanvasRenderer::pinnedViewportForContext(const SnowCanvasRenderContext& context) const {
+    if (!m_pinnedViewportRect)
+        return QRectF(context.viewportRect);
+    const QTransform canvasToView = m_canvas.canvasToViewTransform();
+    if (context.canvasToViewTransform == canvasToView || !canvasToView.isInvertible())
+        return *m_pinnedViewportRect;
+    // Pristine/filter tiles use a source-pixel view rather than the widget's view. Project the
+    // host clip through canvas space so it does not accidentally trim their offscreen backdrop.
+    return context.canvasToViewTransform.mapRect(
+        canvasToView.inverted().mapRect(*m_pinnedViewportRect));
+}
+
 void ScreenshotCanvasRenderer::renderOriginalBackground(QPainter& painter,
                                                         const SnowCanvasRenderContext& context) {
     paintBackground(painter, context, true);
@@ -1736,16 +1761,28 @@ void ScreenshotCanvasRenderer::paintBackground(QPainter& painter,
         }
     }
 
+    // The engine restores painter state around each host callback; this local clip constrains
+    // background rendering. renderAfterCanvas also erases scene/editor pixels outside this clip.
+    std::optional<QPainterStateGuard> viewportGuard;
+    if (m_renderMode == RenderMode::PinnedResult && m_pinnedViewportRect) {
+        viewportGuard.emplace(&painter);
+        painter.setClipRect(pinnedViewportForContext(context), Qt::IntersectClip);
+    }
+
     if (!m_imageSource.isValid()) {
         return;
     }
 
-    const bool physicalViewport = m_imageViewportPhysicalSize.isValid() &&
-                                  !m_imageViewportPhysicalSize.isEmpty() &&
-                                  context.devicePixelRatio > 0.0 && m_imageSource.isMaterialized();
+    const bool physicalViewport =
+        m_imageViewportPhysicalSize.isValid() && !m_imageViewportPhysicalSize.isEmpty() &&
+        context.devicePixelRatio > 0.0 && m_imageSource.isMaterialized() &&
+        (!m_pinnedViewportRect ||
+         context.canvasToViewTransform == m_canvas.canvasToViewTransform());
     if (physicalViewport) {
         const QRectF targetRect(
-            QPointF(context.viewportRect.topLeft()),
+            m_renderMode == RenderMode::PinnedResult && m_pinnedViewportRect
+                ? m_pinnedViewportRect->topLeft()
+                : QPointF(context.viewportRect.topLeft()),
             QSizeF(m_imageViewportPhysicalSize.width() / context.devicePixelRatio,
                    m_imageViewportPhysicalSize.height() / context.devicePixelRatio));
         if (!context.exposedRegion.intersects(targetRect.toAlignedRect())) {
@@ -1855,9 +1892,33 @@ ScreenshotCanvasRenderer::selectionViewGeometry(const SnowCanvasRenderContext& c
 void ScreenshotCanvasRenderer::renderAfterCanvas(QPainter& painter,
                                                  const SnowCanvasRenderContext& context) {
     if (m_renderMode == RenderMode::PinnedResult) {
+        const QRectF viewport = pinnedViewportForContext(context).intersected(context.viewportRect);
+        if (m_pinnedViewportRect) {
+            painter.save();
+            // Erase four margin rectangles after scene and editor rendering. Integral physical
+            // edges must be cleared without antialiasing to avoid stale alpha on fractional DPR.
+            painter.setRenderHint(QPainter::Antialiasing, false);
+            painter.setCompositionMode(QPainter::CompositionMode_Source);
+            const QRectF outer(context.viewportRect);
+            painter.fillRect(
+                QRectF(outer.left(), outer.top(), outer.width(), viewport.top() - outer.top()),
+                Qt::transparent);
+            painter.fillRect(QRectF(outer.left(), viewport.bottom(), outer.width(),
+                                    outer.bottom() - viewport.bottom()),
+                             Qt::transparent);
+            painter.fillRect(QRectF(outer.left(), viewport.top(), viewport.left() - outer.left(),
+                                    viewport.height()),
+                             Qt::transparent);
+            painter.fillRect(QRectF(viewport.right(), viewport.top(),
+                                    outer.right() - viewport.right(), viewport.height()),
+                             Qt::transparent);
+            painter.restore();
+        }
+        QPainterStateGuard viewportGuard(&painter);
+        painter.setClipRect(viewport, Qt::IntersectClip);
         if (!m_bakedSelectionPath.isEmpty() && m_imageSource.isMaterialized()) {
             QPainterPath outside;
-            outside.addRect(QRectF(context.viewportRect));
+            outside.addRect(viewport);
             outside = outside.subtracted(context.canvasToViewTransform.map(m_bakedSelectionPath));
             painter.save();
             painter.setClipPath(outside, Qt::IntersectClip);
@@ -1869,8 +1930,7 @@ void ScreenshotCanvasRenderer::renderAfterCanvas(QPainter& painter,
         }
         const QRectF contentView = context.canvasToViewTransform.mapRect(m_pinnedContentCanvasRect);
         ScreenshotResultCompositor::finishLiveSurface(
-            painter, QRectF(context.viewportRect), contentView, m_pinnedResultStyle,
-            context.devicePixelRatio,
+            painter, viewport, contentView, m_pinnedResultStyle, context.devicePixelRatio,
             std::hypot(context.canvasToViewTransform.m11(), context.canvasToViewTransform.m12()));
         // Fill behind the composed image and annotations. The compositor has already
         // cleared the exterior of rounded and shaped results, so an earlier fill
@@ -1883,18 +1943,24 @@ void ScreenshotCanvasRenderer::renderAfterCanvas(QPainter& painter,
                 const QRectF checkerBounds =
                     m_pinnedBackgroundColor.isValid()
                         ? context.canvasToViewTransform.mapRect(m_pinnedSurfaceCanvasRect)
-                        : QRectF(context.viewportRect);
-                painter.fillRect(checkerBounds.intersected(QRectF(context.viewportRect)),
+                        : viewport;
+                painter.fillRect(checkerBounds.intersected(viewport),
                                  adqt::widgets::themedCheckerboardBrush(&m_canvas));
             }
             if (m_pinnedBackgroundColor.isValid())
-                painter.fillRect(context.viewportRect, m_pinnedBackgroundColor);
+                painter.fillRect(viewport, m_pinnedBackgroundColor);
             painter.restore();
         }
         if (m_ocrVisible && m_ocrPresentation != nullptr &&
             m_ocrPresentationMode == OcrPresentationMode::BackgroundAndText &&
             m_ocrTextLayer != nullptr) {
-            m_ocrTextLayer->synchronize(context.canvasToViewTransform, context.viewportRect);
+            const QRect textViewport(
+                QPoint(qCeil(viewport.left()), qCeil(viewport.top())),
+                QPoint(qFloor(viewport.right()) - 1, qFloor(viewport.bottom()) - 1));
+            const QTransform textTransform =
+                context.canvasToViewTransform *
+                QTransform::fromTranslate(-textViewport.x(), -textViewport.y());
+            m_ocrTextLayer->synchronize(textTransform, textViewport);
         }
         return;
     }

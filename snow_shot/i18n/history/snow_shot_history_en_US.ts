@@ -639,6 +639,10 @@
             <translation>Show main interface</translation>
         </message>
         <message>
+            <source>Show shadow</source>
+            <translation>Show shadow</translation>
+        </message>
+        <message>
             <source>Supported files (%1)</source>
             <translation>Supported files (%1)</translation>
         </message>
