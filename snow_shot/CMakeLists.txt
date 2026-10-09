@@ -1909,8 +1909,12 @@ if(SNOW_SHOT_BUILD_TESTS)
         COMMAND snow-shot-application-storage-tests --quit-lifetime-only)
     add_test(NAME snow-shot-draw-template-storage-tests
         COMMAND snow-shot-application-storage-tests --draw-template-only)
+    add_test(NAME snow-shot-watermark-content-storage-tests
+        COMMAND snow-shot-application-storage-tests --watermark-content-only)
+    set_tests_properties(snow-shot-watermark-content-storage-tests PROPERTIES LABELS "unit" TIMEOUT 30)
     set_tests_properties(snow-shot-application-storage-tests
-        snow-shot-storage-quit-lifetime-tests snow-shot-draw-template-storage-tests PROPERTIES
+        snow-shot-storage-quit-lifetime-tests snow-shot-draw-template-storage-tests
+        snow-shot-watermark-content-storage-tests PROPERTIES
         RUN_SERIAL TRUE
         ENVIRONMENT_MODIFICATION
             "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
@@ -5270,6 +5274,14 @@ if(SNOW_SHOT_BUILD_TESTS)
     add_test(NAME snow-shot-style-commit-tests
         COMMAND snow-shot-screenshot-tool-palette-tests --style-commit-only -platform offscreen)
     set_tests_properties(snow-shot-style-commit-tests PROPERTIES LABELS "unit" TIMEOUT 60)
+    add_test(NAME snow-shot-watermark-persistence-tests
+        COMMAND snow-shot-screenshot-tool-palette-tests --watermark-persistence-only
+            -platform offscreen)
+    add_test(NAME snow-shot-watermark-template-tests
+        COMMAND snow-shot-screenshot-tool-palette-tests --watermark-template-only
+            -platform offscreen)
+    set_tests_properties(snow-shot-watermark-persistence-tests snow-shot-watermark-template-tests
+        PROPERTIES LABELS "unit" TIMEOUT 60)
     add_test(NAME snow-shot-spotlight-wheel-tests
         COMMAND snow-shot-screenshot-tool-palette-tests --spotlight-wheel-only -platform offscreen)
     set_tests_properties(snow-shot-spotlight-wheel-tests PROPERTIES LABELS "unit" TIMEOUT 60)

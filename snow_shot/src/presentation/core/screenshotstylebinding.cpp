@@ -35,6 +35,13 @@ ScreenshotStyleBinding::ScreenshotStyleBinding(ScreenshotToolPalette& palette,
             qWarning() << "Unable to apply canvas style edit";
             return false;
         });
+    // Restore after tool handlers have synchronized the canvas and materialized its editors.
+    connect(&palette, &ScreenshotToolPalette::watermarkActivated, this,
+            [source = QPointer<ScreenshotToolPalette>(&palette),
+             target = QPointer<SnowCanvasWidget>(&canvas)] {
+                if (source != nullptr && target != nullptr)
+                    source->restoreWatermarkContentForActivation(target->canvasWatermarkConfig());
+            });
     connect(&canvas, &SnowCanvasWidget::styleEditCommitted, this,
             [this, source = QPointer<ScreenshotToolPalette>(&palette), replicate,
              save](const SnowCanvasStyleEdit& edit) {

@@ -529,6 +529,19 @@ class ScreenshotToolbarSettings final {
     bool setLayout(ScreenshotToolbarLayoutKind kind, const ScreenshotToolbarLayout& layout) const;
 };
 
+struct WatermarkContent {
+    QString text;
+    QString templateValue;
+
+    friend bool operator==(const WatermarkContent&, const WatermarkContent&) = default;
+};
+
+class WatermarkContentSettings final {
+  public:
+    [[nodiscard]] WatermarkContent content() const;
+    bool setContent(const WatermarkContent& content) const;
+};
+
 struct WatermarkTemplate {
     QString name;
     QString value;

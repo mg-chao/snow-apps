@@ -275,7 +275,9 @@ class ScreenshotToolPaletteStyleControls final {
     void rememberStyleEdit(const SnowCanvasStyleEdit& edit);
     void setCreationStyleDefaults(const SnowCanvasStyleDefaults& defaults);
     void setRectangleStyle(const SnowCanvasShapeStyle& style);
-    void setWatermarkConfig(const SnowCanvasWatermarkConfig& config);
+    void setWatermarkConfig(const SnowCanvasWatermarkConfig& config, bool refreshEditors = false);
+    [[nodiscard]] std::optional<SnowCanvasWatermarkTemplateApplicationTime>
+    watermarkTemplateApplicationTime() const;
     void setStyleToolbarState(const SnowCanvasStyleToolbarState& state);
     void setSpotlightConfig(const SnowCanvasSpotlightConfig& config);
     void updateSpotlightColorControls(const QColor& color);
@@ -408,8 +410,6 @@ class ScreenshotToolPaletteStyleControls final {
     void setWatermarkFontFamily(const QString& fontFamily);
     void syncWatermarkTemplateEditorValue(const QString& templateValue);
     void setWatermarkTemplateValue(const QString& templateValue);
-    [[nodiscard]] std::optional<SnowCanvasWatermarkTemplateApplicationTime>
-    watermarkTemplateApplicationTime() const;
     void refreshWatermarkTemplateOptions();
     void openCreateWatermarkTemplateModal();
     void openDeleteWatermarkTemplateModal(const QString& templateKey);

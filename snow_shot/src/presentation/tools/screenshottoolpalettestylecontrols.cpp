@@ -4883,10 +4883,10 @@ void ScreenshotToolPaletteStyleControls::setRectangleStyle(const SnowCanvasShape
     updateRectangleStyleControls();
 }
 
-void ScreenshotToolPaletteStyleControls::setWatermarkConfig(
-    const SnowCanvasWatermarkConfig& config) {
+void ScreenshotToolPaletteStyleControls::setWatermarkConfig(const SnowCanvasWatermarkConfig& config,
+                                                            bool refreshEditors) {
     m_watermarkColorPreviewPending = false;
-    if (m_state.m_watermarkConfig == config) {
+    if (m_state.m_watermarkConfig == config && !refreshEditors) {
         return;
     }
     m_state.m_watermarkConfig = config;

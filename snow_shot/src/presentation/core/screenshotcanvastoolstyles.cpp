@@ -2,6 +2,7 @@
 
 #include "snow_shot/presentation/screenshotdefaultstyles.h"
 #include "snow_shot/storage/applicationstorage.h"
+#include "snow_shot/storage/settingsadapters.h"
 #include "snow_draw_engine_qt/snow_canvas_widget.h"
 
 #include <QJsonObject>
@@ -389,8 +390,8 @@ void readSerialNumberValue(const QJsonObject& object, SnowCanvasSerialNumberStyl
 
 QJsonObject watermarkValue(const SnowCanvasWatermarkConfig& config) {
     QJsonObject value;
-    // Watermark content and template expansion state belong to the editing session. Only its
-    // appearance is a reusable creation default.
+    // Creation defaults contain appearance only. Remembered content is restored separately on
+    // explicit tool activation, with template timestamps owned by the document session.
     value.insert(QStringLiteral("color"), colorValue(config.color));
     putDouble(&value, QStringLiteral("font_size"), config.fontSize);
     value.insert(QStringLiteral("font_family"), config.fontFamily);
@@ -524,13 +525,15 @@ SnowCanvasStyleDefaults screenshotCanvasToolStyleDefaults() {
     return defaults;
 }
 
-bool persistScreenshotCanvasToolStyles(const SnowCanvasStyleDefaults& defaults) {
+namespace {
+bool persistToolStyles(const SnowCanvasStyleDefaults& defaults,
+                       const QMap<QString, QJsonValue>& additionalValues = {}) {
     auto& storage = storage::ApplicationStorage::instance();
     if (!storage.isInitialized())
         return false;
     SnowCanvasFilterStyle penFilter = defaults.penFilter;
     penFilter.strength = defaults.rectangleFilter.strength;
-    const QMap<QString, QJsonValue> values{
+    QMap<QString, QJsonValue> values{
         {kShapeKey, shapeValue(defaults.rectangle)},
         {kArrowKey, shapeValue(defaults.arrow)},
         {kDistanceKey, distanceValue(defaults.distance)},
@@ -552,17 +555,39 @@ bool persistScreenshotCanvasToolStyles(const SnowCanvasStyleDefaults& defaults) 
     if (QThread::currentThread() != configuration.thread()) {
         return false;
     }
+    values.insert(additionalValues);
     return configuration.setValues(values);
+}
+} // namespace
+
+bool persistScreenshotCanvasToolStyles(const SnowCanvasStyleDefaults& defaults) {
+    return persistToolStyles(defaults);
 }
 
 bool persistScreenshotCanvasStyleEdit(const SnowCanvasStyleEdit& edit) {
     if (const auto* angle = std::get_if<SnowCanvasAngleStyleEdit>(&edit);
         angle != nullptr && !angle->creationDefaults)
         return true;
+    if (!storage::ApplicationStorage::instance().isInitialized())
+        return false;
     // Always merge against storage, never an editor's potentially stale snapshot.
     auto defaults = screenshotCanvasToolStyleDefaults();
     snowCanvasMergeStyleEdit(defaults, edit);
-    return persistScreenshotCanvasToolStyles(defaults);
+    QMap<QString, QJsonValue> additionalValues;
+    if (const auto* watermark = std::get_if<SnowCanvasWatermarkEdit>(&edit);
+        watermark != nullptr &&
+        (watermark->properties & (SnowCanvasWatermarkText | SnowCanvasWatermarkTemplate)) != 0) {
+        auto content = storage::WatermarkContentSettings().content();
+        if ((watermark->properties & SnowCanvasWatermarkText) != 0)
+            content.text = watermark->style.text;
+        if ((watermark->properties & SnowCanvasWatermarkTemplate) != 0)
+            content.templateValue = watermark->style.templateValue;
+        additionalValues.insert(
+            QStringLiteral("drawing/watermark_content"),
+            QJsonObject{{QStringLiteral("text"), content.text},
+                        {QStringLiteral("template_value"), content.templateValue}});
+    }
+    return persistToolStyles(defaults, additionalValues);
 }
 
 void applyScreenshotCanvasToolStyles(SnowCanvasWidget& canvas,

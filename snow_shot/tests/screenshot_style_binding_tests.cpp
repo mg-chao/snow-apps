@@ -1,21 +1,26 @@
 #include "snow_shot/presentation/screenshotstylebinding.h"
 #include "snow_shot/presentation/screenshotcanvastoolstyles.h"
 #include "snow_shot/presentation/screenshottoolpalette.h"
+#include "snow_shot/storage/applicationstorage.h"
+#include "snow_shot/storage/settingsadapters.h"
 #include "snow_draw_engine_qt/snow_canvas_widget.h"
 #include "snow_draw_engine_qt/snow_canvas_runtime.h"
 #include <QKeyEvent>
 #include "widgets/button.h"
 #include "widgets/input_line_edit.h"
+#include "widgets/select.h"
 
 #include <QApplication>
 #include <QContextMenuEvent>
 #include <QCursor>
+#include <QDateTime>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QMouseEvent>
 #include <QWheelEvent>
 #include <QScopeGuard>
+#include <QTimeZone>
 #include <limits>
 #include <cstdlib>
 #include <iostream>
@@ -532,7 +537,251 @@ void toolbarAndCanvasShareFontCommit() {
     require(screenshotCanvasToolStyleDefaults().serialNumber.fontSize == 512,
             "serial wheel uses the same upper limit as direct input");
 }
+ScreenshotToolPalette::Options watermarkOptions(std::function<QDateTime()> clock) {
+    auto result = options();
+    result.watermarkTemplateClock = clock ? std::move(clock) : [] {
+        return QDateTime(QDate(2026, 10, 9), QTime(12, 34, 56), QTimeZone::LocalTime);
+    };
+    return result;
+}
+
+struct WatermarkEditor {
+    SnowCanvasRuntime runtime{SnowCanvasRuntimeConfig{screenshotCanvasToolStyleDefaults()}};
+    SnowCanvasWidget canvas{runtime};
+    ScreenshotToolPalette palette;
+    ScreenshotStyleBinding binding;
+
+    explicit WatermarkEditor(std::function<QDateTime()> clock = {})
+        : palette(watermarkOptions(std::move(clock))), binding(palette, canvas, &palette) {
+        canvas.resize(400, 300);
+        canvas.setInteractionEnabled(true);
+        QObject::connect(&canvas, &SnowCanvasWidget::styleToolbarStateChanged, &palette, [this] {
+            palette.setStyleToolbarState(canvas.canvasStyleToolbarState());
+            palette.setWatermarkConfig(canvas.canvasWatermarkConfig());
+        });
+        QObject::connect(&palette, &ScreenshotToolPalette::watermarkRequested, &canvas, [this] {
+            require(canvas.setCanvasTool(SnowCanvasTool::Watermark), "activate watermark canvas");
+        });
+        QObject::connect(&palette, &ScreenshotToolPalette::selectRequested, &canvas, [this] {
+            require(canvas.setCanvasTool(SnowCanvasTool::Select), "activate selection canvas");
+        });
+    }
+
+    void activate() {
+        require(palette.activateToolShortcut(ScreenshotToolPalette::Tool::Watermark),
+                "watermark toolbar activation succeeds");
+    }
+
+    void reopen() {
+        require(palette.activateToolShortcut(ScreenshotToolPalette::Tool::Select),
+                "switch away from watermark");
+        activate();
+    }
+
+    QLineEdit* text() {
+        auto* editor = palette.findChild<QLineEdit*>(QStringLiteral("screenshotWatermarkTextEdit"));
+        require(editor != nullptr, "watermark text editor exists");
+        return editor;
+    }
+
+    QLineEdit* templateText() {
+        auto* select = palette.findChild<adqt::widgets::AdSelect*>(
+            QStringLiteral("screenshotWatermarkTemplateSelect"));
+        require(select != nullptr && select->lineEdit() != nullptr,
+                "watermark template editor exists");
+        return select->lineEdit();
+    }
+
+    void editTemplate(const QString& value) {
+        auto* editor = templateText();
+        editor->setText(value);
+        emit editor->textEdited(value);
+    }
+};
+
+void watermarkContentEditsPersistOnlyCommittedFields() {
+    const snow_shot::storage::WatermarkContentSettings settings;
+    require(settings.setContent({}), "start watermark edits without saved content");
+    WatermarkEditor editor;
+    editor.activate();
+    editor.text()->setText(QStringLiteral("  版权所有 © 雪  "));
+    const QString text = QStringLiteral("版权所有 © 雪");
+    const QString templateValue = QStringLiteral("  {text} / {YYYY-MM-DD_HH-mm-ss}  ");
+    editor.editTemplate(templateValue);
+    require(editor.binding.lastSaveSucceeded() == true &&
+                settings.content() == snow_shot::storage::WatermarkContent{text, templateValue} &&
+                editor.canvas.canvasWatermarkConfig().text == text &&
+                editor.canvas.canvasWatermarkConfig().templateValue == templateValue,
+            "successful editor commits save trimmed text and exact manual template whitespace");
+    const auto stored = snow_shot::storage::ApplicationStorage::instance()
+                            .configuration()
+                            .value(QStringLiteral("drawing/watermark_content"))
+                            .toObject();
+    require(stored.size() == 2 && !stored.contains(QStringLiteral("template_application_time")),
+            "content preferences never save application timestamps");
+    auto stale = editor.canvas.canvasWatermarkConfig();
+    stale.text = QStringLiteral("stale text");
+    stale.templateValue = QStringLiteral("stale template");
+    stale.fontSize = 37;
+    require(editor.canvas.commitStyleEdit(
+                SnowCanvasWatermarkEdit{stale, SnowCanvasWatermarkFontSize}) &&
+                settings.content() == snow_shot::storage::WatermarkContent{text, templateValue},
+            "appearance-only commits preserve saved text and template");
+    stale.text = QStringLiteral("Updated");
+    require(
+        editor.canvas.commitStyleEdit(SnowCanvasWatermarkEdit{stale, SnowCanvasWatermarkText}) &&
+            settings.content() == snow_shot::storage::WatermarkContent{stale.text, templateValue},
+        "text-only patches preserve the latest template rather than a stale editor value");
+    editor.editTemplate(QString());
+    require(settings.content() == snow_shot::storage::WatermarkContent{stale.text, QString()},
+            "clearing the template preserves saved text");
+    WatermarkEditor plain;
+    plain.activate();
+    require(plain.canvas.canvasWatermarkConfig().text == stale.text &&
+                plain.canvas.canvasWatermarkConfig().templateValue.isEmpty() &&
+                !plain.canvas.canvasWatermarkConfig().templateApplicationTime.has_value(),
+            "plain text restores without a template or application time");
+    plain.text()->clear();
+    require(settings.content() == snow_shot::storage::WatermarkContent{},
+            "clearing text persists empty content");
+    plain.reopen();
+    require(plain.canvas.canvasWatermarkConfig().text.isEmpty(),
+            "reopening a cleared watermark does not resurrect previous text");
+    WatermarkEditor empty;
+    empty.activate();
+    require(!empty.runtime.hasDocumentContent() && !empty.runtime.canUndo(),
+            "empty saved content creates no watermark or history entry");
+    empty.editTemplate(QStringLiteral("{YYYY}"));
+    WatermarkEditor templateOnly;
+    templateOnly.activate();
+    require(templateOnly.canvas.canvasWatermarkConfig().text.isEmpty() &&
+                templateOnly.canvas.canvasWatermarkConfig().templateValue ==
+                    QStringLiteral("{YYYY}") &&
+                templateOnly.canvas.canvasWatermarkConfig().templateApplicationTime ==
+                    std::optional<SnowCanvasWatermarkTemplateApplicationTime>{
+                        {2026, 10, 9, 12, 34, 56}},
+            "a timestamp-only template restores even with empty watermark text");
+}
+
+void rememberedWatermarkAppliesOncePerCaptureWithFreshTime() {
+    const snow_shot::storage::WatermarkContentSettings settings;
+    const snow_shot::storage::WatermarkContent saved{
+        QStringLiteral("CONFIDENTIAL"), QStringLiteral("  {text} {YYYY-MM-DD_HH-mm-ss}  ")};
+    require(settings.setContent(saved), "prepare remembered watermark content");
+    int clockCalls = 0;
+    WatermarkEditor editor([&clockCalls] {
+        return QDateTime(QDate(2026, 10, 9), QTime(12, 34, 10 + clockCalls++),
+                         QTimeZone::LocalTime);
+    });
+    const QRectF bounds(0, 0, 400, 300);
+    QImage base(400, 300, QImage::Format_ARGB32_Premultiplied);
+    base.fill(Qt::white);
+    const QList<CanvasExportSource> sources{{base, bounds}};
+    const QImage before = editor.runtime.renderToImage(bounds, base.size(), sources);
+    require(!before.isNull() && !editor.runtime.hasDocumentContent() && !editor.runtime.canUndo() &&
+                editor.canvas.canvasWatermarkConfig().text.isEmpty() && clockCalls == 0,
+            "remembered content does not apply during canvas construction");
+    editor.activate();
+    const auto first = editor.canvas.canvasWatermarkConfig();
+    require(
+        first.text == saved.text && first.templateValue == saved.templateValue &&
+            first.templateApplicationTime ==
+                std::optional<SnowCanvasWatermarkTemplateApplicationTime>{
+                    {2026, 10, 9, 12, 34, 10}} &&
+            editor.text()->text() == saved.text &&
+            editor.templateText()->text() == saved.templateValue && clockCalls == 1,
+        "activation populates both editors and applies remembered content with the current time");
+    const QImage after = editor.runtime.renderToImage(bounds, base.size(), sources);
+    require(!after.isNull() && after != before && editor.runtime.hasDocumentContent(),
+            "the remembered watermark is rendered on the capture after activation");
+    editor.reopen();
+    require(editor.canvas.canvasWatermarkConfig() == first && clockCalls == 1 &&
+                editor.templateText()->text() == saved.templateValue,
+            "tool switching preserves watermark content and its application time");
+    require(editor.canvas.undo() && !editor.runtime.hasDocumentContent() &&
+                !editor.runtime.canUndo(),
+            "restored text and template undo together as one edit");
+    editor.reopen();
+    require(!editor.runtime.hasDocumentContent() && editor.runtime.canRedo() && clockCalls == 1 &&
+                settings.content() == saved,
+            "undo and reopening do not reapply saved content or overwrite preferences");
+    require(editor.canvas.redo() && editor.canvas.canvasWatermarkConfig() == first,
+            "redo restores the original application timestamp");
+    require(editor.canvas.clearDocument(), "start a new capture using the same canvas");
+    editor.palette.resetStyleState();
+    editor.palette.setActiveTool(ScreenshotToolPalette::Tool::Select);
+    editor.activate();
+    require(clockCalls == 2 && editor.canvas.canvasWatermarkConfig().text == saved.text &&
+                editor.canvas.canvasWatermarkConfig().templateApplicationTime ==
+                    std::optional<SnowCanvasWatermarkTemplateApplicationTime>{
+                        {2026, 10, 9, 12, 34, 11}},
+            "a new capture rearms restoration and takes a fresh timestamp");
+    WatermarkEditor existing([&clockCalls] {
+        ++clockCalls;
+        return QDateTime(QDate(2026, 10, 9), QTime(12, 34, 56), QTimeZone::LocalTime);
+    });
+    auto document = first;
+    document.text = QStringLiteral("Existing document");
+    document.templateValue = QStringLiteral("{text} {YYYY}");
+    document.templateApplicationTime =
+        SnowCanvasWatermarkTemplateApplicationTime{2024, 2, 29, 1, 2, 3};
+    require(existing.canvas.setCanvasWatermarkConfig(document),
+            "load an existing document watermark");
+    existing.activate();
+    require(
+        existing.canvas.canvasWatermarkConfig() == document &&
+            existing.text()->text() == document.text &&
+            existing.templateText()->text() == document.templateValue && clockCalls == 2 &&
+            settings.content() == saved,
+        "existing document content and timestamps take precedence without changing preferences");
+    require(existing.canvas.undo(), "undo the loaded document watermark");
+    existing.reopen();
+    require(!existing.runtime.hasDocumentContent() && clockCalls == 2,
+            "an existing document's empty undo state does not trigger preference restoration");
+}
+
+void rejectedWatermarkRestorationCanRetryWithoutSaving() {
+    const snow_shot::storage::WatermarkContentSettings settings;
+    const snow_shot::storage::WatermarkContent saved{QStringLiteral("Saved"),
+                                                     QStringLiteral("{text} {YYYY}")};
+    require(settings.setContent(saved), "prepare content for rejected restoration");
+    WatermarkEditor editor;
+    editor.palette.setStyleEditHandler([](const SnowCanvasStyleEdit&) { return false; });
+    editor.activate();
+    require(!editor.runtime.hasDocumentContent() &&
+                !editor.binding.lastSaveSucceeded().has_value() && settings.content() == saved,
+            "a rejected restoration neither changes the document nor persists content");
+    editor.palette.setStyleEditHandler(
+        [&editor](const SnowCanvasStyleEdit& edit) { return editor.canvas.commitStyleEdit(edit); });
+    editor.reopen();
+    require(editor.canvas.canvasWatermarkConfig().text == saved.text &&
+                editor.canvas.canvasWatermarkConfig().templateValue == saved.templateValue &&
+                editor.binding.lastSaveSucceeded() == true,
+            "rejected restoration remains pending and succeeds on the next activation");
+    const auto applied = editor.canvas.canvasWatermarkConfig();
+    editor.palette.setStyleEditHandler([&editor](const SnowCanvasStyleEdit&) {
+        editor.palette.setWatermarkConfig(editor.canvas.canvasWatermarkConfig());
+        return false;
+    });
+    editor.text()->setText(QStringLiteral("Rejected"));
+    require(editor.canvas.canvasWatermarkConfig() == applied && settings.content() == saved &&
+                editor.text()->text() == applied.text,
+            "rejected text edits preserve the document, saved content, and synchronized editor");
+}
 } // namespace
+
+void runWatermarkPersistenceTests() {
+    const snow_shot::storage::WatermarkContentSettings settings;
+    const auto originalContent = settings.content();
+    const auto originalStyles = screenshotCanvasToolStyleDefaults();
+    const auto restore = qScopeGuard([&] {
+        static_cast<void>(settings.setContent(originalContent));
+        static_cast<void>(persistScreenshotCanvasToolStyles(originalStyles));
+    });
+    watermarkContentEditsPersistOnlyCommittedFields();
+    rememberedWatermarkAppliesOncePerCaptureWithFreshTime();
+    rejectedWatermarkRestorationCanRetryWithoutSaving();
+}
 
 void runScreenshotStyleBindingTests() {
     const auto original = snow_shot::presentation::screenshotCanvasToolStyleDefaults();
@@ -547,6 +796,7 @@ void runScreenshotStyleBindingTests() {
     allStyleFamiliesPersistOnlyTheirPatch();
     toolbarAndCanvasShareFontCommit();
     sharedScreenshotRuntimeKeepsDraftEditsTransient();
+    runWatermarkPersistenceTests();
 }
 
 void runScreenshotSerialNumberRestartTests() {

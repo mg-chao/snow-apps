@@ -2085,6 +2085,19 @@ bool ScreenshotToolbarSettings::setLayout(ScreenshotToolbarLayoutKind kind,
                     {QStringLiteral("hidden"), stringArray(layout.hidden)}});
 }
 
+WatermarkContent WatermarkContentSettings::content() const {
+    const QJsonObject object =
+        cache().value(QStringLiteral("drawing/watermark_content")).toObject();
+    return {object.value(QStringLiteral("text")).toString(),
+            object.value(QStringLiteral("template_value")).toString()};
+}
+
+bool WatermarkContentSettings::setContent(const WatermarkContent& content) const {
+    return cache().setValue(QStringLiteral("drawing/watermark_content"),
+                            QJsonObject{{QStringLiteral("text"), content.text},
+                                        {QStringLiteral("template_value"), content.templateValue}});
+}
+
 QVector<WatermarkTemplate> WatermarkTemplateSettings::templates() const {
     QVector<WatermarkTemplate> result;
     const QJsonArray array = cache().value(QStringLiteral("drawing/watermark_templates")).toArray();

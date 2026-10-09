@@ -717,6 +717,10 @@ const QVector<ConfigurationSchemaEntry> kRawEntries = {
     {QStringLiteral("drawing/serial_number_style"), QJsonObject(),
      ConfigurationValueKind::Structured},
     {QStringLiteral("drawing/watermark_style"), QJsonObject(), ConfigurationValueKind::Structured},
+    {QStringLiteral("drawing/watermark_content"),
+     QJsonObject{{QStringLiteral("text"), QString()},
+                 {QStringLiteral("template_value"), QString()}},
+     ConfigurationValueKind::Structured},
     {QStringLiteral("drawing/spotlight_style"), QJsonObject(), ConfigurationValueKind::Structured},
     {QStringLiteral("drawing/watermark_templates"), QJsonArray(),
      ConfigurationValueKind::Structured},
@@ -1832,6 +1836,19 @@ ConfigurationNormalization normalizePresets(const QJsonValue& value) {
     return {result, true, changed};
 }
 
+ConfigurationNormalization normalizeWatermarkContent(const QJsonValue& value) {
+    if (!value.isObject()) {
+        return {};
+    }
+    const QJsonObject object = value.toObject();
+    const QJsonObject result{
+        {QStringLiteral("text"), object.value(QStringLiteral("text")).toString()},
+        {QStringLiteral("template_value"),
+         object.value(QStringLiteral("template_value")).toString()},
+    };
+    return {result, true, result != object};
+}
+
 ConfigurationNormalization normalizeWatermarkTemplates(const QJsonValue& value) {
     if (!value.isArray()) {
         return {};
@@ -2406,6 +2423,9 @@ ConfigurationNormalization ConfigurationSchema::normalize(const QString& key,
     }
     if (key == QStringLiteral("screenshot_selection/selection_rect_presets")) {
         return normalizePresets(value);
+    }
+    if (key == QStringLiteral("drawing/watermark_content")) {
+        return normalizeWatermarkContent(value);
     }
     if (key == QStringLiteral("drawing/watermark_templates")) {
         return normalizeWatermarkTemplates(value);

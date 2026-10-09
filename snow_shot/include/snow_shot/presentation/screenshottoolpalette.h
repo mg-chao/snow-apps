@@ -358,6 +358,7 @@ class ScreenshotToolPalette final : public QWidget,
     void setRectangleStyle(const SnowCanvasShapeStyle& style);
     void setStyleToolbarState(const SnowCanvasStyleToolbarState& state);
     void setWatermarkConfig(const SnowCanvasWatermarkConfig& config);
+    void restoreWatermarkContentForActivation(const SnowCanvasWatermarkConfig& current);
     void setWatermarkTemplateModalOwnerWindow(QWidget* owner);
     void setDrawTemplateCallbacks(std::function<QByteArray()> selectedPayload,
                                   std::function<void(const QByteArray&)> insertPayload);
@@ -494,6 +495,7 @@ class ScreenshotToolPalette final : public QWidget,
     void autoFilterCategoryRequested(const QString& category);
     void penFilterRequested();
     void watermarkRequested();
+    void watermarkActivated();
     void textRequested();
     void serialNumberRequested();
     void ocrRequested();
@@ -1047,6 +1049,7 @@ class ScreenshotToolPalette final : public QWidget,
     QVector<StyleLayoutProfile> m_styleLayoutProfiles;
     std::unique_ptr<ScreenshotToolPaletteStyleControls> m_styleControls;
     QPointer<QWidget> m_watermarkTemplateModalOwnerWindow;
+    bool m_watermarkContentRestorePending = true;
     QMargins m_baseShadowMargins;
     QMargins m_shadowMargins;
     QHash<QWidget*, quint64> m_styleMetricRevisions;

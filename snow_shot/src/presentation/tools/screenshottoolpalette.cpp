@@ -1308,6 +1308,7 @@ void ScreenshotToolPalette::setActionToolsLayout(
 }
 
 void ScreenshotToolPalette::resetStyleState() {
+    m_watermarkContentRestorePending = true;
     m_styleControls->reset();
     refreshFilterEditorState(m_filterEditor, false);
     refreshFilterEditorState(m_penFilterEditor, true);
@@ -1336,6 +1337,11 @@ bool ScreenshotToolPalette::submitStyleEdit(const SnowCanvasStyleEdit& edit) {
 }
 
 void ScreenshotToolPalette::rememberStyleEdit(const SnowCanvasStyleEdit& edit) {
+    if (const auto* watermark = std::get_if<SnowCanvasWatermarkEdit>(&edit);
+        watermark != nullptr &&
+        (watermark->properties & (SnowCanvasWatermarkText | SnowCanvasWatermarkTemplate)) != 0) {
+        m_watermarkContentRestorePending = false;
+    }
     m_styleControls->rememberStyleEdit(edit);
 }
 
@@ -3168,7 +3174,44 @@ void ScreenshotToolPalette::setStyleToolbarState(const SnowCanvasStyleToolbarSta
 }
 
 void ScreenshotToolPalette::setWatermarkConfig(const SnowCanvasWatermarkConfig& config) {
+    if (!config.text.isEmpty() || !config.templateValue.isEmpty() ||
+        config.templateApplicationTime.has_value()) {
+        m_watermarkContentRestorePending = false;
+    }
     m_styleControls->setWatermarkConfig(config);
+}
+
+void ScreenshotToolPalette::restoreWatermarkContentForActivation(
+    const SnowCanvasWatermarkConfig& current) {
+    if (!m_watermarkContentRestorePending) {
+        m_styleControls->setWatermarkConfig(current, true);
+        return;
+    }
+    // Document content, including a deliberately cleared template, owns its timestamp.
+    if (!current.text.isEmpty() || !current.templateValue.isEmpty() ||
+        current.templateApplicationTime.has_value()) {
+        m_watermarkContentRestorePending = false;
+        m_styleControls->setWatermarkConfig(current, true);
+        return;
+    }
+    const auto content = snow_shot::storage::WatermarkContentSettings().content();
+    if (content.text.isEmpty() && content.templateValue.isEmpty()) {
+        m_watermarkContentRestorePending = false;
+        return;
+    }
+    auto restored = current;
+    restored.text = content.text;
+    restored.templateValue = content.templateValue;
+    restored.templateApplicationTime = content.templateValue.isEmpty()
+                                           ? std::nullopt
+                                           : m_styleControls->watermarkTemplateApplicationTime();
+    if (!submitStyleEdit(SnowCanvasWatermarkEdit{restored, SnowCanvasWatermarkText |
+                                                               SnowCanvasWatermarkTemplate})) {
+        return;
+    }
+    m_watermarkContentRestorePending = false;
+    m_styleControls->setWatermarkConfig(restored, true);
+    emit watermarkConfigChanged(restored);
 }
 
 void ScreenshotToolPalette::setWatermarkTemplateModalOwnerWindow(QWidget* owner) {
@@ -4642,6 +4685,7 @@ void ScreenshotToolPalette::activateDrawingTool(Tool tool) {
         break;
     case Tool::Watermark:
         emit watermarkRequested();
+        emit watermarkActivated();
         break;
     case Tool::Text:
         emit textRequested();
