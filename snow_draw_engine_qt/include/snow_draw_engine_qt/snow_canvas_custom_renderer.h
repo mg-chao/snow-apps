@@ -41,6 +41,10 @@ class SnowCanvasCustomRenderer {
     [[nodiscard]] virtual std::optional<SnowCanvasFilterRenderReference>
     filterRenderReference() const;
 
+    // True only if renderBeforeCanvas replaces every pixel of this widget-space
+    // rectangle. Allows the canvas to omit a redundant background fill.
+    [[nodiscard]] virtual bool coversWidgetRect(const QRect& widgetRect) const;
+
     // Releases derived data while preserving the sources and rendered content.
     virtual void clearRenderState();
 

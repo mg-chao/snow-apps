@@ -1,5 +1,6 @@
 #include "snow_canvas_compositor.h"
 #include "snow_canvas_spotlight_renderer.h"
+#include "snow_draw_engine_qt/snow_canvas_custom_renderer.h"
 
 #include <QPainter>
 #include <QWidget>
@@ -38,7 +39,9 @@ void clearSurface(QPainter& painter, const Frame& frame) {
         return;
     }
 
-    if (frame.clearBackgroundEnabled) {
+    if (frame.clearBackgroundEnabled &&
+        (frame.backgroundRenderer == nullptr ||
+         !frame.backgroundRenderer->coversWidgetRect(exposedRect))) {
         painter.fillRect(exposedRect, snow_canvas_renderer::toQColor(frame.sceneInfo->clear_color));
     }
 }

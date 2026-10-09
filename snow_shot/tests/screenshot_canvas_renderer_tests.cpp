@@ -150,6 +150,53 @@ class NoopOverlayEventSink : public ScreenshotOverlayEventSink {
     void raiseToolbarForCanvasInteraction() override {}
 };
 
+void pointerPresentationRespectsOverlayInputGate() {
+    class Sink final : public NoopOverlayEventSink {
+      public:
+        bool inputAllowed = false;
+        int pointerCalls = 0;
+        ScreenshotOverlayWindow* pointerOwner = nullptr;
+        QPointF pointerPosition;
+
+        bool acceptOverlayInput(bool) override {
+            return inputAllowed;
+        }
+        bool presentOverlayPointer(ScreenshotOverlayWindow* overlay,
+                                   const QPointF& position) override {
+            ++pointerCalls;
+            pointerOwner = overlay;
+            pointerPosition = position;
+            return true;
+        }
+    } sink;
+    auto* canvas = new SnowCanvasWidget;
+    ScreenshotOverlayWindow overlay(sink, canvas);
+    overlay.setCaptureGeometry(QRect(-320, -240, 320, 240));
+    canvas->setInteractionEnabled(false);
+
+    const auto sendMove = [&](const QPointF& position) {
+        QMouseEvent event(QEvent::MouseMove, position,
+                          QPointF(overlay.captureGeometry().topLeft()) + position, Qt::NoButton,
+                          Qt::LeftButton, Qt::NoModifier);
+        QApplication::sendEvent(canvas, &event);
+    };
+    sendMove(QPointF(20.5, 21.25));
+    require(sink.pointerCalls == 0,
+            "rejected startup pointer input must not alter presentation state");
+
+    sink.inputAllowed = true;
+    const QPointF livePosition(319.75, 239.125);
+    sendMove(livePosition);
+    require(sink.pointerCalls == 1 && sink.pointerOwner == &overlay &&
+                sink.pointerPosition == livePosition,
+            "accepted canvas-owned pointer input preserves its owner and fractional position");
+
+    sink.inputAllowed = false;
+    sendMove(QPointF(4.0, 5.0));
+    require(sink.pointerCalls == 1 && sink.pointerPosition == livePosition,
+            "closing the input gate must preserve the last accepted pointer presentation");
+}
+
 // QWidget::setCursor()/unsetCursor() each emit CursorChange and, once the
 // widget lives in a shown native window, each changed-shape transition is
 // forwarded to the native cursor sprite. Counting these events makes cursor
@@ -1412,7 +1459,6 @@ void shortcutHintStagesUseTheExactRequiredLines() {
         QStringLiteral("Copy color: C"),
         keyLine(QStringLiteral("Toggle Global/Relative Coordinates"), {QStringLiteral("Shift+P")}),
         keyLine(QStringLiteral("Toggle cursor visibility"), {QStringLiteral("`")}),
-        keyLine(QStringLiteral("Print"), {QStringLiteral("Ctrl+P")}),
         QStringLiteral("Switch color format: %1")
             .arg(snow_shot::shortcuts::ShortcutDisplayService::instance().modifierText(
                 Qt::ShiftModifier)),
@@ -2301,6 +2347,76 @@ void rendererCoversTheWidgetRectOnceAScreenshotFillsTheViewport() {
 
     renderer.reset();
     require(!renderer.coversWidgetRect(canvas.rect()), "resetting the renderer must drop coverage");
+}
+
+void rendererCoveragePreservesAlphaAndDisplayGaps() {
+    SnowCanvasWidget canvas;
+    canvas.resize(96, 72);
+    canvas.show();
+    QApplication::processEvents();
+    require(canvas.setViewportCamera(0.0, 0.0, 1.0), "initialize coverage camera");
+    ScreenshotCanvasRenderer renderer(canvas);
+    const QRectF full(-48.0, -36.0, 96.0, 72.0);
+    QImage opaque(96, 72, QImage::Format_RGBA8888);
+    opaque.fill(QColor(12, 34, 56));
+    QImage transparent = opaque;
+    transparent.setPixelColor(42, 36, QColor(12, 34, 56, 0));
+
+    renderer.setImage(transparent, full);
+    require(!renderer.coversWidgetRect(canvas.rect()),
+            "a restored image's alpha must retain the parent and canvas clears");
+    renderer.setImageViewportPhysicalSize(opaque.size());
+    require(!renderer.coversWidgetRect(canvas.rect()),
+            "physical viewport sizing must not override the image's alpha");
+    renderer.setImageViewportPhysicalSize({});
+
+    const auto layer = [&](const QRectF& destination) {
+        return ScreenshotImageLayer{opaque, full, destination};
+    };
+    renderer.setImageSource(
+        ScreenshotImageSource::fromLayers({layer(full), ScreenshotImageLayer{}}));
+    require(
+        !renderer.coversWidgetRect(canvas.rect()),
+        "an invalid sibling layer makes the entire source unpaintable and cannot prove coverage");
+
+    const QRectF left(-48.0, -36.0, 48.0, 72.0);
+    const QRectF right(0.0, -36.0, 48.0, 72.0);
+    renderer.setImageSource(ScreenshotImageSource::fromLayers({layer(left), layer(right)}));
+    require(renderer.coversWidgetRect(canvas.rect()),
+            "adjacent opaque display layers must jointly replace the full viewport");
+    require(renderer.coversWidgetRect(QRect(20, 20, 40, 30)),
+            "opaque display coverage must also support damage crossing the seam");
+
+    ScreenshotImageLayer cursor{transparent, full, full};
+    cursor.smartEraseSource = false;
+    renderer.setImageSource(ScreenshotImageSource::fromLayers({layer(left), layer(right), cursor}));
+    require(renderer.coversWidgetRect(canvas.rect()),
+            "alpha cursor layers over an opaque base cannot introduce uncovered pixels");
+
+    renderer.setImageSource(
+        ScreenshotImageSource::fromLayers({layer(left), layer(QRectF(1.0, -36.0, 47.0, 72.0))}));
+    require(!renderer.coversWidgetRect(canvas.rect()),
+            "a gap between display layers must remain uncovered");
+    require(renderer.coversWidgetRect(QRect(10, 10, 20, 20)),
+            "damage confined to a covering display must still skip clearing");
+    require(!renderer.coversWidgetRect(QRect(47, 10, 3, 20)),
+            "damage across a display gap must retain clearing");
+
+    renderer.setImageSource(ScreenshotImageSource::fromLayers(
+        {layer(QRectF(-48.0, -36.0, 48.25, 72.0)), layer(QRectF(0.5, -36.0, 47.5, 72.0))}));
+    require(!renderer.coversWidgetRect(canvas.rect()),
+            "outward rounding must not hide a fractional display gap");
+
+    renderer.setImageSource(ScreenshotImageSource::fromLayers({layer(left), layer(right)}));
+    require(canvas.setViewportCamera(0.0, 0.0, 0.5), "zoom out coverage camera");
+    require(!renderer.coversWidgetRect(canvas.rect()),
+            "camera changes must invalidate mapped opaque coverage");
+    require(canvas.setViewportCamera(0.0, 0.0, 1.0), "restore coverage camera");
+    require(renderer.coversWidgetRect(canvas.rect()),
+            "restoring the camera must restore opaque coverage");
+    renderer.reset();
+    require(!renderer.coversWidgetRect(canvas.rect()),
+            "capture teardown must release cached layered coverage");
 }
 
 void overlayPaintSkipsRedundantTransparentClearWhenRendererCoversTheRect() {
@@ -6506,6 +6622,16 @@ void runScreenshotCursorBenchmark();
 
 int main(int argc, char** argv) {
     QApplication application(argc, argv);
+    if (application.arguments().contains(QStringLiteral("--pointer-presentation-only"))) {
+        pointerPresentationRespectsOverlayInputGate();
+        return 0;
+    }
+    if (application.arguments().contains(QStringLiteral("--background-coverage-only"))) {
+        rendererCoversTheWidgetRectOnceAScreenshotFillsTheViewport();
+        rendererCoveragePreservesAlphaAndDisplayGaps();
+        overlayPaintSkipsRedundantTransparentClearWhenRendererCoversTheRect();
+        return 0;
+    }
     if (application.arguments().contains(QStringLiteral("--guide-rendering-only"))) {
         guideVisibilityResetsAtEachCaptureSession();
         runGuideRenderingTests();
@@ -6720,6 +6846,7 @@ int main(int argc, char** argv) {
         return 0;
     }
     originalEraserSourceExcludesPresentationOverlays();
+    pointerPresentationRespectsOverlayInputGate();
     pinnedFiltersUseTheSourceResolution();
     ocrBackgroundFillSamplesRobustlyAndChoosesContrastingText();
     ocrSolidFillRendersAdaptiveTextPerBlock();

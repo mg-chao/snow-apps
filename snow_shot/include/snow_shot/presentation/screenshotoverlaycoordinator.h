@@ -51,6 +51,10 @@ class ScreenshotOverlayCoordinator final : public ScreenshotOverlayExclusionPort
     void resetForNewCapture(ScreenshotDisplaySession& displaySession);
     void prepareDisplayModels(ScreenshotDisplaySession& displaySession);
     void applyDisplayModels(ScreenshotDisplaySession& displaySession);
+    // Applying capture sources can replace retained renderer state without changing selection.
+    [[nodiscard]] quint64 presentationRevision() const {
+        return m_presentationRevision;
+    }
     [[nodiscard]] bool preparePreCaptureOverlayWindows(ScreenshotDisplaySession& displaySession);
     void showOverlayWindows(const ScreenshotDisplaySession& displaySession,
                             ScreenshotOverlayShowMode mode);
@@ -58,7 +62,8 @@ class ScreenshotOverlayCoordinator final : public ScreenshotOverlayExclusionPort
     void hideOverlayWindows(const ScreenshotDisplaySession& displaySession);
     void updateOverlayState(const ScreenshotDisplaySession& displaySession,
                             const ScreenshotSelectionVisualState& selectionState,
-                            bool intelligentSelecting, bool manualSelecting, bool dragging);
+                            bool intelligentSelecting, bool manualSelecting, bool dragging,
+                            bool updateCursors = true);
     void setScrollingCaptureMode(const ScreenshotDisplaySession& displaySession,
                                  const QRectF& selection, bool enabled);
     void setScrollingResultPreview(const ScreenshotDisplaySession& displaySession,
@@ -145,6 +150,7 @@ class ScreenshotOverlayCoordinator final : public ScreenshotOverlayExclusionPort
     void updateShortcutHints(ScreenshotOverlayWindow* overlay,
                              const ScreenshotShortcutHintContext& context, qreal opacity,
                              const QRectF& selectionGlobal, const QPoint& cursorPosition);
+    void updateShortcutHintPointer(ScreenshotOverlayWindow* overlay, const QPoint& cursorPosition);
     [[nodiscard]] bool screenshotUiContainsGlobalPoint(const QPoint& position) const;
     [[nodiscard]] bool stepToolbarStrokeWidth(int direction);
     [[nodiscard]] bool stepToolbarSelectionOpacity(int direction);
@@ -177,6 +183,7 @@ class ScreenshotOverlayCoordinator final : public ScreenshotOverlayExclusionPort
     ScreenshotOverlayPool m_overlayPool;
     ScreenshotOverlayCanvasPresenter m_canvasPresenter;
     bool m_overlayMaintenancePending = false;
+    quint64 m_presentationRevision = 0;
 };
 
 #endif // SNOW_SHOT_PRESENTATION_SCREENSHOTOVERLAYCOORDINATOR_H

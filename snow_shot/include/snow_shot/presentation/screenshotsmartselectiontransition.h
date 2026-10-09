@@ -3,7 +3,7 @@
 
 #include <QEasingCurve>
 #include <QRectF>
-#include <QVariantAnimation>
+#include <QtGlobal>
 
 #include <functional>
 
@@ -15,22 +15,31 @@ class ScreenshotSmartSelectionTransition final {
     using UpdateCallback = std::function<void(const QRectF&)>;
 
     explicit ScreenshotSmartSelectionTransition(UpdateCallback update);
+    ScreenshotSmartSelectionTransition(const ScreenshotSmartSelectionTransition&) = delete;
+    ScreenshotSmartSelectionTransition&
+    operator=(const ScreenshotSmartSelectionTransition&) = delete;
 
     void setEnabled(bool enabled);
     [[nodiscard]] bool enabled() const;
-    [[nodiscard]] bool update(const QRectF& selection, bool smartFraming);
+    // Both entry points use the presentation scheduler's monotonic clock in milliseconds.
+    [[nodiscard]] bool update(const QRectF& selection, bool smartFraming, qint64 nowMs);
+    // Returns whether the displayed geometry changed; no autonomous animation timer runs.
+    [[nodiscard]] bool advance(qint64 nowMs);
 
     [[nodiscard]] bool isRunning() const;
     [[nodiscard]] QRectF displayedSelection() const;
 
   private:
-    void presentDirectly(const QRectF& selection);
+    [[nodiscard]] bool presentDirectly(const QRectF& selection);
     void notifyUpdate();
 
     UpdateCallback m_update;
-    QVariantAnimation m_animation;
     QRectF m_displayedSelection;
+    QRectF m_startSelection;
     QRectF m_targetSelection;
+    qint64 m_startedAtMs = 0;
+    qint64 m_lastAdvancedAtMs = 0;
+    bool m_running = false;
     bool m_hasPresentedSmartSelection = false;
     bool m_enabled = true;
 };

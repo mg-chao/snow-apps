@@ -135,6 +135,31 @@ void pixelCalibrationPreservesFocusAndPublishedPresentation() {
             "new annotations use the latest pixel calibration");
 }
 
+void calibrationFollowsRuntimeReplacementAndCaptureReset() {
+    SnowCanvasRuntime runtime;
+    SnowCanvasWidget canvas(runtime);
+    prepare(canvas);
+    const auto emptySession = runtime.serializeDocumentSession();
+    for (int capture = 0; capture < 3; ++capture) {
+        if (capture == 1) {
+            require(runtime.restoreDocumentSession(emptySession), "replace the distance runtime");
+            prepare(canvas);
+        } else if (capture == 2) {
+            require(runtime.clearDocumentPreservingViewports(), "reset the capture document");
+            prepare(canvas);
+        }
+        require(canvas.setDistanceCreationPixelScale({2, 3}), "restore capture pixel calibration");
+        require(canvas.setDistanceCreationPixelScale({2, 3}), "reuse unchanged pixel calibration");
+        require(!canvas.setDistanceCreationPixelScale({0, 3}),
+                "invalid calibration must never replace the last valid scale");
+        require(canvas.setDistanceCreationPixelScale({2, 3}), "reuse valid scale after rejection");
+        drag(canvas);
+        require(only(runtime, QStringLiteral("Text")).value(QStringLiteral("text")).toString() ==
+                    QStringLiteral("400 cm"),
+                "reused calibration must survive runtime replacement and capture reset");
+    }
+}
+
 void distanceMovesPublishOneIncrementalPatchForEveryViewport() {
     SnowCanvasRuntime runtime;
     SnowCanvasWidget canvas(runtime);
@@ -404,6 +429,7 @@ int main(int argc, char** argv) {
 #endif
     QApplication application(argc, argv);
     pixelCalibrationPreservesFocusAndPublishedPresentation();
+    calibrationFollowsRuntimeReplacementAndCaptureReset();
     distanceMovesPublishOneIncrementalPatchForEveryViewport();
     gesturesAndDerivedLabels();
     releaseMeasuresTheFinalDistancePreview();

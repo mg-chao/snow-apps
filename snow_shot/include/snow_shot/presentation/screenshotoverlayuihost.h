@@ -56,6 +56,7 @@ class ScreenshotOverlayUiHost final : public QObject {
     void updateShortcutHints(ScreenshotOverlayWindow* overlay,
                              const ScreenshotShortcutHintContext& context, qreal opacity,
                              const QRectF& selectionGlobal, const QPoint& cursorPosition);
+    void updateShortcutHintPointer(ScreenshotOverlayWindow* overlay, const QPoint& cursorPosition);
     void hideShortcutHints();
     [[nodiscard]] bool stepToolbarStrokeWidth(int direction);
     [[nodiscard]] bool stepToolbarSelectionOpacity(int direction);

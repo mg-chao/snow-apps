@@ -18,6 +18,10 @@ class ScreenshotOverlayEventSink {
         Q_UNUSED(genuine);
         return true;
     }
+    // Hosts may coalesce guide presentation even while the canvas owns input.
+    virtual bool presentOverlayPointer(ScreenshotOverlayWindow*, const QPointF&) {
+        return false;
+    }
 
     [[nodiscard]] virtual bool shouldHandleOverlayMouseEvent(const ScreenshotOverlayWindow* overlay,
                                                              const QPointF& localPosition,

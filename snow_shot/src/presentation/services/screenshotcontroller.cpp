@@ -1904,11 +1904,7 @@ void ScreenshotController::Impl::createOverlayInputPipeline() {
                                                       m_presentationServices->colorPickerContext());
         },
         [this](ScreenshotOverlayWindow* overlay, const QPointF& localPosition) {
-            m_overlayCoordinator->updateGuideLines(
-                m_displaySession, overlay, localPosition,
-                !m_interaction.inactive() && m_guideVisibility.visible(),
-                m_uiPreferences.cursorGuideLineColor, m_uiPreferences.monitorCenterGuideLineColor,
-                m_uiPreferences.selectionCenterGuideLineColor);
+            m_presentationServices->updatePointerPresentation(overlay, localPosition);
         },
         [this](const QPointF& virtualPosition) {
             m_colorPickerController->updateForSelectionDrag(
@@ -2044,9 +2040,12 @@ void ScreenshotController::Impl::createOverlayInputPipeline() {
     m_overlayShortcutController = std::make_unique<ScreenshotOverlayShortcutController>(
         *m_windowShortcutManager, *m_overlayInputHandler, m_interaction, m_intelligentSelection,
         std::move(actions), &owner);
-    m_overlayEventAdapter->setEventTargets(*m_overlayInputHandler, [this]() {
-        m_presentationServices->raiseToolbarForCanvasInteraction();
-    });
+    m_overlayEventAdapter->setEventTargets(
+        *m_overlayInputHandler,
+        [this]() { m_presentationServices->raiseToolbarForCanvasInteraction(); },
+        [this](ScreenshotOverlayWindow* overlay, const QPointF& position) {
+            m_presentationServices->updatePointerPresentation(overlay, position);
+        });
 }
 
 bool ScreenshotController::Impl::moveCursorOnePixel(
@@ -5365,12 +5364,14 @@ void ScreenshotController::Impl::hideColorPickersForScreenshotUi() {
 }
 
 void ScreenshotController::Impl::updateGuideLinesForScreenshotUi(const QPoint& globalPosition) {
-    if (m_interaction.inactive() || !m_guideVisibility.visible()) {
+    if (m_interaction.inactive()) {
         return;
     }
-    m_overlayCoordinator->updateGuideLinesAtGlobalPosition(
-        m_displaySession, globalPosition, true, m_uiPreferences.cursorGuideLineColor,
-        m_uiPreferences.monitorCenterGuideLineColor, m_uiPreferences.selectionCenterGuideLineColor);
+    auto* overlay = m_displaySession.overlayForDisplay(
+        m_geometry.displayForLogicalPoint(m_displaySession, globalPosition));
+    if (overlay)
+        m_presentationServices->updatePointerPresentation(
+            overlay, overlay->canvasLocalPosition(globalPosition));
 }
 
 QPoint

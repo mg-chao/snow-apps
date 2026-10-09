@@ -111,11 +111,12 @@ void ScreenshotSelectorWorkflow::handleInitialResult(bool ok, const QVector<QRec
 
     if (m_context.selection.regionType() == ScreenshotRegionType::Rectangle &&
         m_context.interaction.intelligentSelecting()) {
+        bool selectionChanged = false;
         if (ok) {
             SNOW_SHOT_CAPTURE_PERF_SCOPE("selector.chain_apply_hit_path");
-            applyHitPath(hitRects, displayId);
+            selectionChanged = applyHitPath(hitRects, displayId);
         }
-        if (m_context.presentation.updateOverlayState) {
+        if (selectionChanged && m_context.presentation.updateOverlayState) {
             SNOW_SHOT_CAPTURE_PERF_SCOPE("selector.chain_update_overlay_state");
             m_context.presentation.updateOverlayState();
         }
@@ -128,26 +129,21 @@ void ScreenshotSelectorWorkflow::handleInitialResult(bool ok, const QVector<QRec
     }
 }
 
-void ScreenshotSelectorWorkflow::applyHitPath(const QVector<QRectF>& hitRects, quint32 displayId) {
+bool ScreenshotSelectorWorkflow::applyHitPath(const QVector<QRectF>& hitRects, quint32 displayId) {
     if (m_context.selection.regionType() != ScreenshotRegionType::Rectangle)
-        return;
-    QVector<QRectF> canvasHitRects;
-    canvasHitRects.reserve(hitRects.size());
-    for (const QRectF& hitRect : hitRects) {
-        canvasHitRects.push_back(m_context.geometry.canvasRectForPhysicalRect(
-            m_context.displaySession, hitRect,
-            displayId ? QStringLiteral("display:%1").arg(displayId) : QString()));
-    }
+        return false;
+    const QVector<QRectF> canvasHitRects = m_context.geometry.canvasRectsForPhysicalRects(
+        m_context.displaySession, hitRects,
+        displayId ? QStringLiteral("display:%1").arg(displayId) : QString());
 
     if (!m_context.intelligentSelection.applyCanvasHitPath(
             canvasHitRects, m_context.geometry.canvasBounds(),
             snow_shot::presentation::kScreenshotSelectionMinimumSize)) {
-        m_context.selection.setSelectionRect({});
-        return;
+        return m_context.selection.setSelectionRect({});
     }
 
     const QRectF currentSelection = m_context.intelligentSelection.currentSelection();
-    m_context.selection.setSelectionRect(currentSelection);
+    return m_context.selection.setSelectionRect(currentSelection);
 }
 
 void ScreenshotSelectorWorkflow::clearSelection() {
@@ -193,22 +189,18 @@ void ScreenshotSelectorWorkflow::handleRefinement(const QVector<QRectF>& hitRect
         m_context.intelligentSelection.pressActive())
         return;
     if (replacePath) {
-        applyHitPath(hitRects, displayId);
-        if (m_context.presentation.updateOverlayState)
+        if (applyHitPath(hitRects, displayId) && m_context.presentation.updateOverlayState)
             m_context.presentation.updateOverlayState();
         return;
     }
-    QVector<QRectF> canvasRects;
-    canvasRects.reserve(hitRects.size());
-    for (const QRectF& rect : hitRects)
-        canvasRects.push_back(m_context.geometry.canvasRectForPhysicalRect(
-            m_context.displaySession, rect,
-            displayId ? QStringLiteral("display:%1").arg(displayId) : QString()));
+    const QVector<QRectF> canvasRects = m_context.geometry.canvasRectsForPhysicalRects(
+        m_context.displaySession, hitRects,
+        displayId ? QStringLiteral("display:%1").arg(displayId) : QString());
     if (!m_context.intelligentSelection.applyCanvasRefinementPath(
             canvasRects, m_context.geometry.canvasBounds(),
             snow_shot::presentation::kScreenshotSelectionMinimumSize))
         return;
-    m_context.selection.setSelectionRect(m_context.intelligentSelection.currentSelection());
-    if (m_context.presentation.updateOverlayState)
+    if (m_context.selection.setSelectionRect(m_context.intelligentSelection.currentSelection()) &&
+        m_context.presentation.updateOverlayState)
         m_context.presentation.updateOverlayState();
 }

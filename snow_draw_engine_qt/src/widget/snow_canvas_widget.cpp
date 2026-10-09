@@ -529,6 +529,7 @@ struct SnowCanvasWidget::Impl : public snow_canvas_runtime::Client {
     bool dirtyRectsVisible = false;
     bool canvasContentIsVisible = true;
     bool canvasClearBackgroundEnabled = true;
+    std::optional<QSizeF> distanceCreationPixelScale;
     bool suppressNextTextToolCreate = false;
     bool restoredSelectionForNextTextToolPress = false;
     bool suppressMouseContextMenu = false;
@@ -1020,10 +1021,17 @@ bool SnowCanvasWidget::setDistanceCreationPixelScale(const QSizeF& scale) {
 bool SnowCanvasWidget::Impl::setDistanceCreationPixelScale(const QSizeF& scale) {
     // Calibration is captured when creation starts; changing it needs no
     // presentation update, label measurement, or focus transfer.
-    return snow_canvas_commands::setDistancePixelScale(runtimeBinding.engine(),
-                                                       runtimeBinding.viewportHandle(),
-                                                       scale.width(), scale.height())
-        .success;
+    if (distanceCreationPixelScale == scale && hasViewport()) {
+        return true;
+    }
+    const bool success =
+        snow_canvas_commands::setDistancePixelScale(
+            runtimeBinding.engine(), runtimeBinding.viewportHandle(), scale.width(), scale.height())
+            .success;
+    if (success) {
+        distanceCreationPixelScale = scale;
+    }
+    return success;
 }
 
 bool SnowCanvasWidget::Impl::setCanvasShapeStylePatch(const SnowCanvasShapeStyle& style,
@@ -1766,6 +1774,7 @@ void SnowCanvasWidget::Impl::detachRuntimeOwner(SnowCanvasRuntime* owner) {
 }
 
 void SnowCanvasWidget::Impl::attachRuntime(SnowRuntime runtime) {
+    distanceCreationPixelScale.reset();
     snapGuideTargets.reset();
     runtimeBinding.attachRuntime(runtime, displayState);
     setSurfaceSizeAndSync(widget.size(), false);
@@ -1774,6 +1783,7 @@ void SnowCanvasWidget::Impl::attachRuntime(SnowRuntime runtime) {
 }
 
 void SnowCanvasWidget::Impl::clearRetainedDisplayState() {
+    distanceCreationPixelScale.reset();
     snapGuideTargets.reset();
     referenceScene.reset();
     if (pendingLiveStrokePreservesEverySample && hasViewport()) {
@@ -1819,6 +1829,7 @@ void SnowCanvasWidget::Impl::clearRenderState() {
 }
 
 void SnowCanvasWidget::Impl::resetDocumentRetainedState() {
+    distanceCreationPixelScale.reset();
     snapGuideTargets.reset();
     displayState.resetDocumentRetainedState();
     textInteraction.resetDocumentRetainedState();
@@ -2229,6 +2240,7 @@ bool SnowCanvasWidget::Impl::beginSelectedText(const QPointF& viewPosition,
 }
 
 void SnowCanvasWidget::Impl::refreshStateFromEngine(bool emitSignals) {
+    distanceCreationPixelScale.reset();
     if (!hasViewport()) {
         return;
     }
@@ -2258,6 +2270,7 @@ void SnowCanvasWidget::Impl::syncAfterEngineMutation() {
 }
 
 void SnowCanvasWidget::Impl::syncAfterEngineMutation(bool emitSignals) {
+    distanceCreationPixelScale.reset();
     if (auto* owner = runtimeBinding.runtimeOwner())
         snow_canvas_runtime::Access::smartErase(*owner).sync(runtimeBinding.engine());
     const std::uint64_t previousSceneRevision =
@@ -2546,6 +2559,7 @@ snow_canvas_compositor::Frame SnowCanvasWidget::Impl::buildPaintFrame() const {
             const_cast<snow_canvas_filter_render::RenderWorkspace*>(&filterWorkspace),
         });
     frame.penMaskAtlas = &const_cast<SnowCanvasWidget::Impl*>(this)->penMaskAtlas;
+    frame.backgroundRenderer = installedCustomRenderer;
     updateWatermarkPresentationInfo();
     frame.watermarkInfo = &watermarkPresentationInfo;
     frame.watermarkRenderArea = watermarkViewRenderArea();

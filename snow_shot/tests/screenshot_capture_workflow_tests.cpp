@@ -1134,6 +1134,17 @@ void phasedWorkflowOnlySignalsInitialReadinessOnce() {
     workflow.handleInitialResult(true, {physical(bounds)}, 1);
     require(intelligent.currentSelection() == bounds,
             "permission fallback must apply the window on the queried display");
+    workflow.handleInitialResult(true, {physical(bounds)}, 1);
+    workflow.handleInitialResult(false, {}, 1);
+    require(readyCount == 1 && updates == 1 && selection.normalizedSelection() == bounds,
+            "identical and failed initial results must preserve selection without preparing "
+            "another frame");
+    intelligent.beginCaptureSession(true, ScreenshotIntelligentSelectionTarget::Window);
+    workflow.handleInitialResult(true, {physical(child), physical(parent), physical(bounds)}, 1);
+    require(updates == 1 && intelligent.toggleSelectionTarget() &&
+                intelligent.currentSelection() == child,
+            "an unchanged window marquee must still retain the newly returned child hierarchy");
+    intelligent.beginCaptureSession(true);
     // The first result arrives while the image is still being acquired and the
     // pointer remains stationary. Image arrival must preserve that selection.
     display.image = QImage(200, 200, QImage::Format_RGBA8888);
@@ -1145,6 +1156,11 @@ void phasedWorkflowOnlySignalsInitialReadinessOnce() {
     workflow.handleRefinement({physical(child), physical(parent), physical(bounds)}, 1);
     require(readyCount == 1 && updates == 3 && intelligent.currentSelection() == child,
             "refinement must update presentation without repeating initial readiness");
+    require(intelligent.selectIndex(0), "explicit child selection failed");
+    workflow.handleRefinement({physical(leaf), physical(child), physical(parent), physical(bounds)},
+                              1);
+    require(updates == 3 && intelligent.currentSelection() == child && intelligent.index() == 1,
+            "refinement must retain new levels without preparing an unchanged explicit selection");
     intelligent.beginPress(QPointF(5, 5), child);
     workflow.handleRefinement(
         {physical(leaf), physical(child), physical(parent), physical(bounds)});
@@ -1169,6 +1185,20 @@ void phasedWorkflowOnlySignalsInitialReadinessOnce() {
             "failed selector refresh must switch to manual selection and unblock initial reveal");
     workflow.handleRefreshFinished(false);
     require(readyCount == 3, "failed refresh must resolve initial readiness only once");
+
+    ++state.sessionId;
+    interaction.returnToSelectionMode(true);
+    const int updatesBeforeUnchangedSession = updates;
+    workflow.handleInitialResult(true, {physical(bounds)}, 1);
+    require(readyCount == 4 && updates == updatesBeforeUnchangedSession,
+            "an unchanged selection must still resolve the new capture's first result");
+    workflow.handleInitialResult(true, {QRectF(500, 500, 20, 20)}, 1);
+    require(selection.normalizedSelection().isEmpty() && !intelligent.hasCurrentSelection() &&
+                updates == updatesBeforeUnchangedSession + 1,
+            "an invalid path must clear the displayed selection and hierarchy once");
+    workflow.handleInitialResult(true, {}, 1);
+    require(updates == updatesBeforeUnchangedSession + 1 && readyCount == 4,
+            "repeated empty paths must not prepare another frame");
 }
 
 void phasedSelectionPreservesUserIntent() {

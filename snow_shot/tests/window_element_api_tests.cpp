@@ -27,6 +27,7 @@ namespace settings = snow_shot::presentation::settings;
 namespace storage = snow_shot::storage;
 
 bool automaticReply = true;
+bool acceptQueries = true;
 struct Submission {
     SnowUiSelectorService* service;
     SnowUiSelectorQuery query;
@@ -477,17 +478,24 @@ void phasedSchedulingPreservesLatestPendingAndInitialCadence() {
     qint64 now = 0;
     ScreenshotSelectorCoordinator coordinator(nullptr, [&now]() { return now; });
     int initialCount = 0, refinementCount = 0;
+    int expectedPendingXAtPresentation = 0;
 #ifdef Q_OS_MACOS
     constexpr int staleInitials = 0;
 #else
     constexpr int staleInitials = 1;
 #endif
-    QObject::connect(&coordinator, &ScreenshotSelectorCoordinator::initialResultReady, &coordinator,
-                     [&](bool ok, const QVector<QRectF>& rects) {
-                         require(ok && rects.first().width() == 10,
-                                 "initial delivery must copy borrowed data");
-                         ++initialCount;
-                     });
+    QObject::connect(
+        &coordinator, &ScreenshotSelectorCoordinator::initialResultReady, &coordinator,
+        [&](bool ok, const QVector<QRectF>& rects) {
+            require(ok && rects.first().width() == 10, "initial delivery must copy borrowed data");
+            if (expectedPendingXAtPresentation != 0) {
+                require(
+                    coordinator.hitTestInFlight() &&
+                        submissions.last().query.x == expectedPendingXAtPresentation,
+                    "the newest pending native query must start before synchronous presentation");
+            }
+            ++initialCount;
+        });
     QObject::connect(&coordinator, &ScreenshotSelectorCoordinator::refinementReady, &coordinator,
                      [&](const QVector<QRectF>& rects) {
                          require(rects.first().width() == 10, "refinement data must be copied");
@@ -508,8 +516,10 @@ void phasedSchedulingPreservesLatestPendingAndInitialCadence() {
     request(3);
     require(submissions.size() == 1, "movement must coalesce while initial query runs");
     now = 170;
+    expectedPendingXAtPresentation = 3;
     deliver(a);
     QCoreApplication::sendPostedEvents();
+    expectedPendingXAtPresentation = 0;
     require(initialCount == staleInitials && submissions.size() == 2 &&
                 submissions.last().query.x == 3 && refinements.isEmpty(),
             "C must start after A finishes; stale macOS frames must not display");
@@ -587,6 +597,101 @@ void phasedSchedulingPreservesLatestPendingAndInitialCadence() {
     require(
         invalidations == invalidationsBeforeMovement,
         "foreground movement with no submitted refinement must not access the refinement queue");
+    coordinator.releaseCache();
+    automaticReply = true;
+}
+
+void queryAdmissionFailuresPreserveDeliveryOrderAndResetFreshness() {
+    automaticReply = false;
+    for (const bool resetDuringPresentation : {false, true}) {
+        submissions.clear();
+        refinements.clear();
+        qint64 now = 100;
+        ScreenshotSelectorCoordinator coordinator(nullptr, [&] { return now; });
+        QVector<bool> results;
+        QObject::connect(
+            &coordinator, &ScreenshotSelectorCoordinator::initialResultReady, &coordinator,
+            [&](bool ok, const QVector<QRectF>& rects) {
+                results.push_back(ok);
+                if (ok) {
+                    require(!rects.isEmpty(), "successful initial result must preserve geometry");
+#ifndef Q_OS_MACOS
+                    require(submissions.size() == 2 && coordinator.hitTestInFlight(),
+                            "failed pending admission must also occur before presentation");
+#endif
+                    if (resetDuringPresentation) {
+                        acceptQueries = true;
+                        coordinator.resetHitTestState();
+                        require(coordinator.requestHitTest(
+                                    QPoint(3, 5), ScreenshotSelectorHitTestMode::WindowSubElement),
+                                "a presentation subscriber must be able to reset and request a new "
+                                "target");
+                    }
+                } else {
+                    require(rects.isEmpty(), "query admission failure must have no geometry");
+                }
+            });
+        require(coordinator.startRefresh({}), "admission fixture refresh failed");
+        QCoreApplication::sendPostedEvents();
+        require(coordinator.requestHitTest(QPoint(1, 5),
+                                           ScreenshotSelectorHitTestMode::WindowSubElement),
+                "admission fixture first query failed");
+        const Submission first = submissions.last();
+        require(coordinator.requestHitTest(QPoint(2, 5),
+                                           ScreenshotSelectorHitTestMode::WindowSubElement),
+                "admission fixture pending query failed");
+        acceptQueries = false;
+        deliver(first);
+        QCoreApplication::sendPostedEvents();
+        QCoreApplication::sendPostedEvents();
+#ifdef Q_OS_MACOS
+        require(results == QVector<bool>{false},
+                "macOS must reject the obsolete success before delivering admission failure");
+#else
+        require(results ==
+                    (resetDuringPresentation ? QVector<bool>{true} : QVector<bool>{true, false}),
+                "admission failure must follow the preceding success and be discarded after a "
+                "reentrant reset");
+#endif
+        require(refinements.isEmpty(),
+                "failed or reset targets must not schedule stale refinement");
+        acceptQueries = true;
+        coordinator.releaseCache();
+    }
+    automaticReply = true;
+}
+
+void presentationRefreshInvalidatesTrailingPermissionAndRefinement() {
+    automaticReply = false;
+    submissions.clear();
+    refinements.clear();
+    qint64 now = 100;
+    ScreenshotSelectorCoordinator coordinator(nullptr, [&] { return now; });
+    int initials = 0, warnings = 0;
+    QObject::connect(&coordinator, &ScreenshotSelectorCoordinator::accessibilityPermissionRequired,
+                     &coordinator, [&] { ++warnings; });
+    QObject::connect(
+        &coordinator, &ScreenshotSelectorCoordinator::initialResultReady, &coordinator,
+        [&](bool, const QVector<QRectF>&) {
+            ++initials;
+            require(coordinator.startRefresh({}), "presentation subscriber refresh failed");
+            require(coordinator.requestHitTest(QPoint(20, 20),
+                                               ScreenshotSelectorHitTestMode::WindowSubElement),
+                    "presentation subscriber must be able to query the next capture");
+        });
+    require(coordinator.startRefresh({}), "reentrant refresh fixture failed");
+    QCoreApplication::sendPostedEvents();
+    require(
+        coordinator.requestHitTest(QPoint(10, 10), ScreenshotSelectorHitTestMode::WindowSubElement),
+        "reentrant refresh fixture first query failed");
+    deliver(submissions.last(), SNOW_UI_SELECTOR_INITIAL, SNOW_UI_SELECTOR_PERMISSION_REQUIRED);
+    QCoreApplication::sendPostedEvents();
+    QCoreApplication::sendPostedEvents();
+    require(initials == 1 && warnings == 0 && refinements.isEmpty() &&
+                coordinator.hitTestInFlight() && submissions.size() == 2 &&
+                submissions.last().query.x == 20,
+            "a subscriber's new capture must not inherit the old result's permission warning or "
+            "refinement");
     coordinator.releaseCache();
     automaticReply = true;
 }
@@ -812,6 +917,8 @@ uint8_t snow_ui_selector_service_query(SnowUiSelectorService* service,
                                        const SnowUiSelectorQuery* query) {
     currentMode = query->mode;
     submissions.push_back({service, *query});
+    if (!acceptQueries)
+        return 0;
     if (!automaticReply)
         return 1;
     SnowUiSelectorEvent event{};
@@ -876,6 +983,8 @@ int main(int argc, char** argv) {
 #endif
     diagnosticEnvironmentOverridesRemainAvailable();
     phasedSchedulingPreservesLatestPendingAndInitialCadence();
+    queryAdmissionFailuresPreserveDeliveryOrderAndResetFreshness();
+    presentationRefreshInvalidatesTrailingPermissionAndRefinement();
     permissionFallbackIsAppliedAndWarningIsThrottled();
     permissionRevocationDuringRefinementAppliesFallback();
     accessibilityInitializationRefinesAndCancelsWithCapture();

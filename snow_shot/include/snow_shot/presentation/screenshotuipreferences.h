@@ -29,6 +29,7 @@ struct ScreenshotUiPreferences {
     QColor selectionCenterGuideLineColor = QColor(0x40, 0x96, 0xff);
     QColor monitorCenterGuideLineColor = QColor(255, 0, 0);
     QColor colorPickerCenterGuideLineColor = QColor(0, 0, 0, 0);
+    [[nodiscard]] bool operator==(const ScreenshotUiPreferences&) const = default;
 
     [[nodiscard]] ScreenshotUiPreferences normalized() const {
         ScreenshotUiPreferences result = *this;

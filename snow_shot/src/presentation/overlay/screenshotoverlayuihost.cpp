@@ -72,24 +72,31 @@ class ScreenshotShortcutHintsWidget final : public QWidget {
         if (QCoreApplication::instance() != nullptr) {
             QCoreApplication::instance()->installEventFilter(this);
         }
+        connect(&snow_shot::shortcuts::ShortcutDisplayService::instance(),
+                &snow_shot::shortcuts::ShortcutDisplayService::displayChanged, this,
+                [this]() { updateTranslatedLines(); });
         hide();
     }
 
     void setPresentation(ScreenshotShortcutHintMode mode, qreal opacity) {
+        const bool contentChanged = m_context.has_value() || m_mode != mode;
         m_mode = mode;
         m_context.reset();
-        m_opacity = std::clamp<qreal>(opacity, 0.0, 1.0);
-        updateTranslatedLines();
+        setOpacity(opacity);
+        if (contentChanged) {
+            updateTranslatedLines();
+        }
         if (!hasVisiblePresentation()) {
             hide();
         }
     }
 
     void setPresentation(const ScreenshotShortcutHintContext& context, qreal opacity) {
-        m_context = context;
-        m_mode = screenshotShortcutHintModeForContext(context);
-        m_opacity = std::clamp<qreal>(opacity, 0.0, 1.0);
-        updateTranslatedLines();
+        if (!m_context.has_value() || *m_context != context) {
+            m_context = context;
+            updateTranslatedLines();
+        }
+        setOpacity(opacity);
         if (!hasVisiblePresentation()) {
             hide();
         }
@@ -109,9 +116,11 @@ class ScreenshotShortcutHintsWidget final : public QWidget {
         const bool visible = parentWidget() != nullptr && hasVisiblePresentation() &&
                              !screenshotShortcutHintAreaIsObscured(
                                  hintAreaGlobal, m_selectionGlobal, m_cursorGlobal);
-        setVisible(visible);
-        if (visible) {
-            raise();
+        if (isHidden() == visible) {
+            setVisible(visible);
+            if (visible) {
+                raise();
+            }
         }
     }
 
@@ -195,6 +204,14 @@ class ScreenshotShortcutHintsWidget final : public QWidget {
     }
 
   private:
+    void setOpacity(qreal opacity) {
+        const qreal nextOpacity = std::clamp<qreal>(opacity, 0.0, 1.0);
+        if (m_opacity != nextOpacity) {
+            m_opacity = nextOpacity;
+            update();
+        }
+    }
+
     [[nodiscard]] static int shortcutChipHeight() {
         return kShortcutHintsLineHeight + kShortcutHintsChipVerticalPadding * 2;
     }
@@ -629,10 +646,8 @@ void ScreenshotOverlayUiHost::updateShortcutHints(ScreenshotOverlayWindow* overl
                                                   const ScreenshotShortcutHintContext& context,
                                                   qreal opacity, const QRectF& selectionGlobal,
                                                   const QPoint& cursorPosition) {
-    const ScreenshotShortcutHintMode mode = screenshotShortcutHintModeForContext(context);
     auto* hints = static_cast<ScreenshotShortcutHintsWidget*>(m_shortcutHints.data());
-    if (overlay == nullptr || hints == nullptr || mode == ScreenshotShortcutHintMode::Hidden ||
-        opacity <= 0.0) {
+    if (overlay == nullptr || hints == nullptr || opacity <= 0.0) {
         hideShortcutHints();
         return;
     }
@@ -657,6 +672,14 @@ void ScreenshotOverlayUiHost::updateShortcutHints(ScreenshotOverlayWindow* overl
     hints->move(kShortcutHintsMargin, y);
     hints->setObscuringSelection(selectionGlobal);
     hints->refreshVisibility(cursorPosition);
+}
+
+void ScreenshotOverlayUiHost::updateShortcutHintPointer(ScreenshotOverlayWindow* overlay,
+                                                        const QPoint& cursorPosition) {
+    auto* hints = static_cast<ScreenshotShortcutHintsWidget*>(m_shortcutHints.data());
+    if (overlay != nullptr && hints != nullptr && hints->parentWidget() == overlay) {
+        hints->refreshVisibility(cursorPosition);
+    }
 }
 
 void ScreenshotOverlayUiHost::hideShortcutHints() {
@@ -754,7 +777,7 @@ void ScreenshotOverlayUiHost::showToolbar() {
 }
 
 void ScreenshotOverlayUiHost::hideSelectionToolbar() {
-    if (m_selectionToolbar != nullptr) {
+    if (m_selectionToolbar != nullptr && !m_selectionToolbar->isHidden()) {
         m_selectionToolbar->hide();
         // Keep the pooled widget in its canonical idle state so every subsequent
         // attach/show cycle starts from the known Full display mode and input region.

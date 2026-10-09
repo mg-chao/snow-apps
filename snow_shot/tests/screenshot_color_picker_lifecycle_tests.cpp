@@ -39,6 +39,8 @@
 #include <QPointer>
 #include <QScreen>
 #include <QTemporaryDir>
+#include <QTranslator>
+#include <QLabel>
 #include <QWindow>
 
 #include <cstdlib>
@@ -176,6 +178,190 @@ class StyleToolbarCommands final : public ScreenshotToolbarCommandSink,
     std::function<void(const QPoint&)> updateGuideLines = [](const QPoint&) {};
     std::function<void(bool)> selectionToolbarVisibility = [](bool) {};
 };
+
+void overlayPreparationCachesContentAndInvalidatesTranslations() {
+    class HintPresentationObserver final : public QObject {
+      public:
+        int shows = 0;
+        int hides = 0;
+        int raises = 0;
+
+      protected:
+        bool eventFilter(QObject*, QEvent* event) override {
+            if (event->type() == QEvent::Show) {
+                ++shows;
+            } else if (event->type() == QEvent::Hide) {
+                ++hides;
+            } else if (event->type() == QEvent::ZOrderChange) {
+                ++raises;
+            }
+            return false;
+        }
+    } presentationObserver;
+    class TranslationObserver final : public QTranslator {
+      public:
+        mutable int calls = 0;
+        QString disabledRadiusTooltip;
+        bool isEmpty() const override {
+            return false;
+        }
+        QString translate(const char* context, const char* source, const char*,
+                          int) const override {
+            if (QByteArray(context) == "ScreenshotShortcutHintsWidget" ||
+                QByteArray(context) == "SettingsCatalog" ||
+                QByteArray(context) == "ScreenshotSelectionToolbarWidget") {
+                ++calls;
+            }
+            if (QByteArray(context) == "ScreenshotSelectionToolbarWidget" &&
+                QByteArray(source) == "Corner radius is unavailable for custom regions") {
+                return disabledRadiusTooltip;
+            }
+            return {};
+        }
+    } translator;
+    QTemporaryDir directory;
+    auto& storage = snow_shot::storage::ApplicationStorage::instance();
+    require(storage
+                .initialize({directory.filePath(QStringLiteral("bin")),
+                             directory.filePath(QStringLiteral("data")), 60000})
+                .success,
+            "initialize overlay preparation storage");
+    {
+        NoopOverlayEventSink sink;
+        ScreenshotOverlayWindow overlay(sink, new SnowCanvasWidget);
+        overlay.resize(900, 700);
+        overlay.show();
+        StyleToolbarCommands commands;
+        ScreenshotOverlayUiHost host;
+        host.setToolbarCommandSinks(commands, commands);
+        host.attachSelectionToolbarToOverlay(&overlay);
+        QApplication::installTranslator(&translator);
+        QApplication::processEvents();
+
+        ScreenshotShortcutHintContext context;
+        context.captureMode = ScreenshotCaptureMode::IntelligentSelecting;
+        const auto present = [&](qreal opacity, const QRectF& selection, const QPoint& cursor) {
+            host.updateShortcutHints(&overlay, context, opacity, selection, cursor);
+        };
+        present(1.0, {}, overlay.mapToGlobal(QPoint(800, 20)));
+        QWidget* hints = overlay.findChild<QWidget*>(QStringLiteral("screenshotShortcutHints"));
+        require(hints != nullptr && !hints->accessibleName().isEmpty(),
+                "shortcut hints must publish their initial content");
+        const QString initialLines = hints->accessibleName();
+        translator.calls = 0;
+        for (int frame = 0; frame < 20; ++frame) {
+            present(frame % 2 == 0 ? 0.75 : 1.0, QRectF(600 + frame, 20, 120, 80),
+                    overlay.mapToGlobal(QPoint(800, 20 + frame)));
+        }
+        require(translator.calls == 0 && hints->accessibleName() == initialLines,
+                "pointer, selection and opacity updates must reuse translated hint content");
+
+        const QRectF hintBounds(hints->mapToGlobal(QPoint()), hints->size());
+        present(1.0, hintBounds, overlay.mapToGlobal(QPoint(800, 20)));
+        require(!hints->isVisible(), "selection obscuration must still hide cached hints");
+        present(1.0, {}, overlay.mapToGlobal(QPoint(800, 20)));
+        require(hints->isVisible(), "unobscured cached hints must become visible again");
+
+        hints->installEventFilter(&presentationObserver);
+        QWidget sibling(&overlay);
+        sibling.setGeometry(0, 0, 10, 10);
+        sibling.show();
+        sibling.raise();
+        const QPoint outside = overlay.mapToGlobal(QPoint(800, 20));
+        const QPoint hintCenter = hintBounds.center().toPoint();
+        const QRect cachedLayout = hints->geometry();
+        translator.calls = 0;
+        for (int frame = 0; frame < 20; ++frame) {
+            host.updateShortcutHintPointer(&overlay, outside);
+        }
+        require(translator.calls == 0 && hints->geometry() == cachedLayout &&
+                    presentationObserver.shows == 0 && presentationObserver.hides == 0 &&
+                    presentationObserver.raises == 0,
+                "unchanged pointer-only hints must reuse content and layout without showing or "
+                "raising");
+
+        host.updateShortcutHintPointer(&overlay, hintCenter);
+        require(hints->isHidden() && presentationObserver.hides == 1,
+                "pointer-only hint updates must hide content obscured by the pointer");
+        for (int frame = 0; frame < 20; ++frame) {
+            host.updateShortcutHintPointer(&overlay, hintCenter);
+        }
+        require(presentationObserver.hides == 1 && presentationObserver.shows == 0,
+                "repeated obscured pointer updates must leave already hidden hints idle");
+        host.updateShortcutHintPointer(&overlay, outside);
+        require(hints->isVisible() && presentationObserver.shows == 1,
+                "pointer-only hints must become visible again after leaving their bounds");
+        const int raisesAfterReveal = presentationObserver.raises;
+        QMouseEvent move(QEvent::MouseMove, QPointF(800, 20), QPointF(outside), Qt::NoButton,
+                         Qt::NoButton, Qt::NoModifier);
+        QApplication::sendEvent(overlay.canvas(), &move);
+        require(hints->isVisible() && presentationObserver.shows == 1 &&
+                    presentationObserver.hides == 1 &&
+                    presentationObserver.raises == raisesAfterReveal,
+                "standalone host mouse tracking must preserve unchanged hint visibility");
+
+        {
+            ScreenshotOverlayWindow secondOverlay(sink, new SnowCanvasWidget);
+            secondOverlay.resize(900, 700);
+            secondOverlay.show();
+            const QPoint secondOutside = secondOverlay.mapToGlobal(QPoint(800, 20));
+            host.updateShortcutHintPointer(&secondOverlay, secondOutside);
+            require(hints->parentWidget() == &overlay,
+                    "pointer-only updates must leave owner changes to complete presentation");
+            host.updateShortcutHints(&secondOverlay, context, 1.0, {}, secondOutside);
+            require(hints->parentWidget() == &secondOverlay && hints->isVisible() &&
+                        hints->accessibleName() == initialLines,
+                    "complete presentation must reattach cached hints to a new pointer owner");
+            present(1.0, {}, outside);
+        }
+        sibling.hide();
+        hints->removeEventFilter(&presentationObserver);
+
+        snow_shot::shortcuts::ShortcutDisplayService::instance().refresh();
+        require(translator.calls > 0, "native shortcut legend changes must regenerate hint rows");
+        translator.calls = 0;
+        QEvent languageChange(QEvent::LanguageChange);
+        QApplication::sendEvent(hints, &languageChange);
+        require(translator.calls > 0, "language changes must regenerate cached hint rows");
+
+        context.configuredShortcuts = snow_shot::shortcuts::ShortcutBindingMap{
+            {QStringLiteral("move_cursor_up"),
+             snow_shot::shortcuts::bindingsFromPortableText({QStringLiteral("F12")}, true)}};
+        translator.calls = 0;
+        present(1.0, {}, overlay.mapToGlobal(QPoint(800, 20)));
+        require(translator.calls > 0 && hints->accessibleName() != initialLines,
+                "binding configuration changes must invalidate hint content");
+
+        auto* toolbar = host.selectionToolbar();
+        toolbar->setSelectionState(QRect(10, 20, 120, 80), false, 0, 0);
+        host.showSelectionToolbar();
+        host.hideSelectionToolbar();
+        translator.calls = 0;
+        for (int frame = 0; frame < 20; ++frame) {
+            host.hideSelectionToolbar();
+        }
+        require(translator.calls == 0, "hiding an already hidden toolbar must not prepare it");
+
+        toolbar->setCornerRadiusApplicable(false);
+        translator.calls = 0;
+        for (int frame = 0; frame < 20; ++frame) {
+            toolbar->setCornerRadiusApplicable(false);
+        }
+        require(translator.calls == 0,
+                "unchanged corner applicability must not regenerate its tooltip");
+        translator.disabledRadiusTooltip = QStringLiteral("translated disabled radius");
+        QApplication::sendEvent(toolbar, &languageChange);
+        bool sawTranslatedRadius = false;
+        for (QLabel* label : toolbar->findChildren<QLabel*>()) {
+            sawTranslatedRadius =
+                sawTranslatedRadius || label->toolTip() == translator.disabledRadiusTooltip;
+        }
+        require(sawTranslatedRadius,
+                "language changes must refresh the disabled radius tooltip despite its guard");
+        QApplication::removeTranslator(&translator);
+    }
+    storage.shutdown();
+}
 
 class PointerMoveDeliveryObserver final : public QObject {
   public:
@@ -1316,6 +1502,10 @@ void auxiliaryWindowsPreserveOwnerStacking() {
 
 int main(int argc, char** argv) {
     QApplication application(argc, argv);
+    if (application.arguments().contains(QStringLiteral("--overlay-preparation-only"))) {
+        overlayPreparationCachesContentAndInvalidatesTranslations();
+        return 0;
+    }
     if (application.arguments().contains(QStringLiteral("--toolbar-guide-hover-only"))) {
         toolbarHoverKeepsScreenshotGuidesResponsive();
         return 0;

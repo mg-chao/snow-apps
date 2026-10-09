@@ -7,6 +7,7 @@
 #include "snow_canvas_renderer.h"
 #include "snow_canvas_fill_render.h"
 #include "snow_canvas_watermark_renderer.h"
+#include "snow_canvas_compositor.h"
 #include "snow_canvas_runtime_access.h"
 #include "snow_canvas_runtime_cleanup.h"
 #include "snow_canvas_viewport.h"
@@ -89,6 +90,47 @@ QImage renderCanvas(SnowCanvasWidget& canvas) {
     canvas.render(&painter);
     painter.end();
     return image;
+}
+
+void opaqueCustomBackgroundSkipsOnlyRedundantCanvasClearing() {
+    class CoverageRenderer final : public SnowCanvasCustomRenderer {
+      public:
+        bool covered = false;
+        bool coversWidgetRect(const QRect&) const override {
+            return covered;
+        }
+    } renderer;
+    QWidget widget;
+    widget.resize(24, 16);
+    SceneDisplayInfo sceneInfo{};
+    sceneInfo.clear_color = SnowColorRgba8{12, 34, 56, 255};
+    snow_canvas_compositor::Frame frame;
+    frame.widget = &widget;
+    frame.sceneInfo = &sceneInfo;
+    frame.backgroundRenderer = &renderer;
+    QImage image(widget.size(), QImage::Format_ARGB32_Premultiplied);
+    const QColor previous(210, 90, 180);
+    const auto clear = [&]() {
+        image.fill(previous);
+        QPainter painter(&image);
+        painter.setClipRegion(QRegion(widget.rect()));
+        snow_canvas_compositor::clearSurface(painter, frame);
+    };
+    clear();
+    require(image.pixelColor(8, 8) == QColor(12, 34, 56),
+            "the default custom renderer contract must retain canvas clearing");
+    renderer.covered = true;
+    clear();
+    require(image.pixelColor(8, 8) == previous,
+            "a proven replacement background makes canvas clearing redundant");
+    renderer.covered = false;
+    clear();
+    require(image.pixelColor(8, 8) == QColor(12, 34, 56),
+            "losing background coverage must restore canvas clearing immediately");
+    frame.backgroundRenderer = nullptr;
+    clear();
+    require(image.pixelColor(8, 8) == QColor(12, 34, 56),
+            "ordinary canvases must preserve their clear behavior");
 }
 
 struct StrokeRunStats {
@@ -1372,6 +1414,10 @@ void rotationHandleCursorMatchesTheReferencePlatformBehavior() {
 
 int main(int argc, char** argv) {
     QApplication application(argc, argv);
+    if (application.arguments().contains(QStringLiteral("--background-coverage-only"))) {
+        opaqueCustomBackgroundSkipsOnlyRedundantCanvasClearing();
+        return 0;
+    }
 #ifdef Q_OS_WIN
     require(QFontDatabase::addApplicationFont(QStringLiteral("C:/Windows/Fonts/segoeui.ttf")) >= 0,
             "load Segoe UI for offscreen drawing cache checks");

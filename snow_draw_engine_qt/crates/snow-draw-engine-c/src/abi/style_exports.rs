@@ -53,14 +53,16 @@ pub unsafe extern "C" fn snow_viewport_set_distance_pixel_scale_ex(
         }
         ffi_status(with_runtime_impl_mut(runtime, |state| {
             let id = viewport_id(viewport)?;
-            let result = state
+            state
                 .runtime
                 .set_viewport_distance_pixel_scale(
                     id,
                     snow_draw_engine::Point::new(scale_x, scale_y),
                 )
                 .map_err(SnowError::from)?;
-            write_changed_viewports(out_changed_viewports, result.changed_viewports);
+            // Creation calibration never changes presented content. Null is
+            // the empty changed-viewport list, without allocating an empty box.
+            unsafe { *out_changed_viewports = std::ptr::null_mut() };
             Ok(())
         }))
     })
