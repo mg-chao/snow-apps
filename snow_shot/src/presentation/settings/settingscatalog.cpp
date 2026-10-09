@@ -882,6 +882,29 @@ SettingsItemDefinition applicationQoSItem() {
 }
 #endif
 
+#ifdef Q_OS_WIN
+SettingsItemDefinition memoryOptimizationPolicyItem() {
+    SettingsSelectDefinition payload;
+    payload.binding = SettingsSelectBinding::MemoryOptimizationPolicy;
+    payload.options = {
+        {QStringLiteral("smart_control"),
+         settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Smart Control"))},
+        {QStringLiteral("disabled"),
+         settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Disabled"))},
+    };
+    return {
+        QStringLiteral("system.memory-optimization-policy"),
+        settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Memory Optimization Policy")),
+        settingsText(QT_TRANSLATE_NOOP("SettingsCatalog",
+                                       "Smart Control trims resident memory while the app is idle. "
+                                       "The next use may briefly take longer.")),
+        {},
+        QStringLiteral("system/memory_optimization_policy"),
+        payload,
+    };
+}
+#endif
+
 SettingsItemDefinition proxyItem() {
     SettingsSelectDefinition payload;
     payload.options = {
@@ -2938,7 +2961,12 @@ QVector<SettingsPageDefinition> builtInPages() {
 #ifdef Q_OS_MACOS
               {applicationQoSItem()},
 #else
-              {applicationPriorityItem()},
+              {
+                  applicationPriorityItem(),
+#ifdef Q_OS_WIN
+                  memoryOptimizationPolicyItem(),
+#endif
+              },
 #endif
               SettingsSectionItemLayout::VerticalList},
          },
@@ -4476,6 +4504,9 @@ QStringList SettingsCatalog::validationErrors() const {
                         break;
                     case SettingsSelectBinding::ApplicationPriority:
                         expectedKey = QStringLiteral("system/application_priority");
+                        break;
+                    case SettingsSelectBinding::MemoryOptimizationPolicy:
+                        expectedKey = QStringLiteral("system/memory_optimization_policy");
                         break;
                     case SettingsSelectBinding::Proxy:
                         expectedKey = QStringLiteral("network/proxy");

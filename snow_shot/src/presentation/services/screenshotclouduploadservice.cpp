@@ -1,4 +1,5 @@
 #include "snow_shot/presentation/screenshotclouduploadservice.h"
+#include "snow_shot/runtime/runtimeactivitytracker.h"
 #include "snow_shot/network/s3uploadprotocol.h"
 #include "snow_shot/presentation/screenshotencodingsettings.h"
 #include "snow_shot/storage/settingsadapters.h"
@@ -70,6 +71,8 @@ QByteArray contentType(ScreenshotImageFileFormat format) {
 }
 } // namespace
 struct ScreenshotCloudUploadJob::Impl {
+    snow_shot::runtime::RuntimeActivityLease activity =
+        snow_shot::runtime::RuntimeActivityTracker::shared().acquire();
     std::shared_ptr<ScreenshotExportArtifact> artifact;
     snow_shot::CloudUploadConfiguration config;
     ScreenshotCloudUploadOptions options;
@@ -112,6 +115,7 @@ void ScreenshotCloudUploadJob::cancel() {
 void ScreenshotCloudUploadJob::complete(ScreenshotCloudUploadResult result) {
     if (std::exchange(m_impl->terminal, true))
         return;
+    const auto activity = std::move(m_impl->activity);
     m_impl->artifact.reset();
     const QPointer<ScreenshotCloudUploadJob> guard(this);
     emit finished(result);
@@ -172,7 +176,7 @@ void ScreenshotCloudUploadJob::prepare() {
                 } else
                     upload(hash);
             });
-            watcher->setFuture(QtConcurrent::run([payload] {
+            watcher->setFuture(QtConcurrent::run(snow_shot::runtime::trackRuntimeWork([payload] {
                 QFile file(payload->path);
                 if (!file.open(QIODevice::ReadOnly))
                     return QByteArray{};
@@ -187,7 +191,7 @@ void ScreenshotCloudUploadJob::prepare() {
                     hash.addData(QByteArrayView(buffer.constData(), bytesRead));
                 }
                 return hash.result().toHex();
-            }));
+            })));
         },
         m_impl->options.pdf, m_impl->payload);
     if (!started)

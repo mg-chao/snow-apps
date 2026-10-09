@@ -448,6 +448,11 @@ QVariant BuiltInSettingsBackend::selectValue(SettingsSelectBinding binding) cons
             .configuration()
             .value(QStringLiteral("system/application_qos"))
             .toString();
+    case SettingsSelectBinding::MemoryOptimizationPolicy:
+        return storage::ApplicationStorage::instance()
+            .configuration()
+            .value(QStringLiteral("system/memory_optimization_policy"))
+            .toString();
     case SettingsSelectBinding::ApplicationPriority: {
         auto& storage = storage::ApplicationStorage::instance();
         if (!storage.isInitialized()) {
@@ -686,6 +691,13 @@ bool BuiltInSettingsBackend::applySelectValue(SettingsSelectBinding binding,
         return persisted;
 #endif
     }
+    case SettingsSelectBinding::MemoryOptimizationPolicy:
+#ifdef Q_OS_WIN
+        return storage::ApplicationStorage::instance().configuration().setValue(
+            QStringLiteral("system/memory_optimization_policy"), value.toString());
+#else
+        return false;
+#endif
     case SettingsSelectBinding::Proxy:
         return storage::NetworkSettings().setProxy(value.toString());
     case SettingsSelectBinding::UpdateMode:
@@ -2742,10 +2754,18 @@ bool BuiltInSettingsBackend::resetSection(SettingsSectionReset reset) {
             applicationPriorityForValue(storage::ConfigurationSchema::defaultValue(
                                             QStringLiteral("system/application_priority"))
                                             .toString());
-        const bool accepted =
-            priority.has_value() && applyApplicationPriority(*priority) &&
-            storage.configuration().setValue(QStringLiteral("system/application_priority"),
-                                             applicationPriorityValue(*priority));
+        QMap<QString, QJsonValue> defaults{
+            {QStringLiteral("system/application_priority"),
+             storage::ConfigurationSchema::defaultValue(
+                 QStringLiteral("system/application_priority"))},
+        };
+#ifdef Q_OS_WIN
+        defaults.insert(QStringLiteral("system/memory_optimization_policy"),
+                        storage::ConfigurationSchema::defaultValue(
+                            QStringLiteral("system/memory_optimization_policy")));
+#endif
+        const bool accepted = priority.has_value() && applyApplicationPriority(*priority) &&
+                              storage.configuration().setValues(defaults);
         if (accepted) {
             emit synchronized();
         } else if (previous.has_value()) {

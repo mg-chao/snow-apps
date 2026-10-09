@@ -2065,6 +2065,10 @@
             <translation>Disable/Enable global hotkeys</translation>
         </message>
         <message>
+            <source>Disabled</source>
+            <translation>Disabled</translation>
+        </message>
+        <message>
             <source>Disk limit</source>
             <translation>Disk limit</translation>
         </message>
@@ -2715,6 +2719,10 @@
         <message>
             <source>Medium V6</source>
             <translation>Medium V6</translation>
+        </message>
+        <message>
+            <source>Memory Optimization Policy</source>
+            <translation>Memory Optimization Policy</translation>
         </message>
         <message>
             <source>Menu options</source>
@@ -3847,6 +3855,14 @@
         <message>
             <source>Small V6</source>
             <translation>Small V6</translation>
+        </message>
+        <message>
+            <source>Smart Control</source>
+            <translation>Smart Control</translation>
+        </message>
+        <message>
+            <source>Smart Control trims resident memory while the app is idle. The next use may briefly take longer.</source>
+            <translation>Smart Control trims resident memory while the app is idle. The next use may briefly take longer.</translation>
         </message>
         <message>
             <source>Smart Merge</source>

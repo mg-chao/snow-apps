@@ -1,6 +1,8 @@
 #include "snow_draw_engine_qt/snow_canvas_image.h"
 #include "snow_shot/app/edition.h"
 #include "snow_shot/app/applicationcontroller.h"
+#include "snow_shot/runtime/memoryoptimizationcontroller.h"
+#include "snow_shot/runtime/memoryoptimizationuisafety.h"
 #include "snow_shot/app/applicationrestart.h"
 #include "snow_shot/app/updateconfirmationdialog.h"
 #include "snow_shot/app/featureavailability.h"
@@ -532,9 +534,23 @@ class ApplicationController::Impl {
         reopenHandler = std::make_unique<platform::macos::ApplicationReopenHandler>(
             [this]() { showMainWindow(); });
 #endif
+#ifdef Q_OS_WIN
+        auto memoryOptions = runtime::windowsMemoryOptimizationOptions();
+        memoryOptions.enabled = [] {
+            return storage::ApplicationStorage::instance()
+                       .configuration()
+                       .value(QStringLiteral("system/memory_optimization_policy"))
+                       .toString() == QStringLiteral("smart_control");
+        };
+        memoryOptions.safe = [this] { return memoryTrimmingIsSafe(); };
+        memoryOptimization = std::make_unique<runtime::MemoryOptimizationController>(
+            runtime::RuntimeActivityTracker::shared(), std::move(memoryOptions), &q);
+#endif
     }
 
     ~Impl() {
+        if (memoryOptimization)
+            memoryOptimization->stop();
         floatingToolbar.shutdown();
         stopMcp();
         platform::windows::setAdministratorRestartGuard({});
@@ -550,6 +566,23 @@ class ApplicationController::Impl {
                updates->status().state != update::UpdateState::Applying &&
                !(screenshotController && screenshotController->blocksApplicationUpdate()) &&
                !(directCaptureController && directCaptureController->blocksApplicationUpdate());
+    }
+
+    [[nodiscard]] bool memoryTrimmingIsSafe() const {
+        if (runtime::currentProcessOwnsForegroundWindow() ||
+            storage::ApplicationStorage::instance().directoryChanging() ||
+            storage::ApplicationStorage::instance().status().diagnostics.exporting ||
+            (updates && (updates->busy() || updates->handoffPending())) ||
+            (screenshotController && screenshotController->blocksMemoryTrimming()) ||
+            (directCaptureController && directCaptureController->blocksApplicationUpdate()) ||
+            (ocrRecognition && ocrRecognition->storageBusy()) || mcpSourceWork > 0 ||
+            (mcpJobs && mcpJobs->hasRunningJobs()) || floatingToolbar.blocksMemoryTrimming())
+            return false;
+        return runtime::memoryOptimizationUiIsSafe([this](const QWidget* window) {
+            if (const auto* pin = qobject_cast<const ScreenshotPinnedWindow*>(window))
+                return !pin->blocksMemoryTrimming();
+            return floatingToolbar.ownsIdleSurface(window);
+        });
     }
 
     void setUpdateHandoffPending(bool pending) {
@@ -1431,6 +1464,8 @@ class ApplicationController::Impl {
     }
 
     void applyRuntimeConfiguration(const QJsonValue& value, const QString& key) {
+        if (key == u"system/memory_optimization_policy" && memoryOptimization)
+            memoryOptimization->synchronizePolicy();
         if (key == QStringLiteral("screen_recording/enable_microphone"))
             permissions.setMicrophoneEnabled(value.toBool());
 #if SNOW_SHOT_ENABLE_EXTENDED_FEATURES
@@ -1593,6 +1628,7 @@ class ApplicationController::Impl {
     }
 
     void dispatchFloatingAction(const QString& id) {
+        runtime::RuntimeActivityTracker::shared().markActivity();
         using Quick = presentation::GlobalShortcutAction;
         static const QHash<QString, Quick> quickActions{
             {QStringLiteral("screenshot"), Quick::Screenshot},
@@ -1630,6 +1666,7 @@ class ApplicationController::Impl {
 
     void dispatchQuickAction(presentation::GlobalShortcutAction action,
                              QuickActionOrigin origin = QuickActionOrigin::Other) {
+        runtime::RuntimeActivityTracker::shared().markActivity();
         if (storage::ApplicationStorage::instance().directoryChanging() ||
             (updates && updates->handoffPending()))
             return;
@@ -1838,6 +1875,7 @@ class ApplicationController::Impl {
     }
 
     void dispatchGlobalMouseEvent(const presentation::GlobalMouseDragEvent& event) {
+        runtime::RuntimeActivityTracker::shared().markActivity();
         auto* controller = ensureScreenshotController();
         using Kind = presentation::GlobalMouseDragEvent::Kind;
         switch (event.kind) {
@@ -1954,6 +1992,7 @@ class ApplicationController::Impl {
     std::unique_ptr<platform::macos::ApplicationReopenHandler> reopenHandler;
 #endif
     bool started = false;
+    std::unique_ptr<runtime::MemoryOptimizationController> memoryOptimization;
     update::UpdateService* updates = nullptr;
 };
 

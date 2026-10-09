@@ -3,8 +3,10 @@
 
 #include "snow_shot/presentation/screenshotselectorworkflowports.h"
 #include "snow_shot/presentation/screenshottypes.h"
+#include "snow_shot/runtime/runtimeactivitytracker.h"
 
 #include <QObject>
+#include <QHash>
 #include <QPoint>
 #include <QRectF>
 #include <QVector>
@@ -51,6 +53,7 @@ class ScreenshotSelectorServiceClient final : public QObject {
     ScreenshotSelectorServiceClientCallbacks m_callbacks;
     SnowUiSelectorService* m_service = nullptr;
     int m_serviceBackend = -1;
+    QHash<quint64, snow_shot::runtime::RuntimeActivityLease> m_refreshActivities;
 #ifdef Q_OS_MACOS
     QVector<std::uintptr_t> m_excludedWindowIds;
     QVector<CapturedDisplayModel> m_displays;

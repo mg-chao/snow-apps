@@ -13,11 +13,13 @@
 #include "snow_shot/presentation/screenshotocrpresentation.h"
 #include "snow_shot/presentation/screenshotqrrecognitionservice.h"
 #include "snow_shot/presentation/screenshotimagefileservice.h"
+#include "snow_shot/runtime/runtimeactivitytracker.h"
 #include "snowimageqtcodec.h"
 #include <QApplication>
 #include <QCryptographicHash>
 #include <QDir>
 #include <QElapsedTimer>
+#include <QEvent>
 #include <QFile>
 #include <QTemporaryDir>
 #include <QThread>
@@ -756,6 +758,218 @@ void documentConcurrency() {
                     .errorCode == QStringLiteral("resource_limit"),
             "adding worker lanes does not multiply the global document quota");
     service.shutdown();
+}
+void documentMemoryActivity() {
+    using snow_shot::runtime::RuntimeActivityTracker;
+    auto& activity = RuntimeActivityTracker::shared();
+    const auto wait = [](auto condition) {
+        QElapsedTimer timer;
+        timer.start();
+        while (!condition() && timer.elapsed() < 5000) {
+            QCoreApplication::processEvents();
+            QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+            QThread::msleep(1);
+        }
+        require(condition(), "document memory activity did not settle");
+    };
+    wait([&] { return activity.snapshot().activeCount == 0; });
+    const auto baseline = activity.snapshot().activeCount;
+    const auto requireTrimBlocked = [&] {
+        const auto snapshot = activity.snapshot();
+        bool trimmed = false;
+        require(snapshot.activeCount > baseline &&
+                    !activity.tryRunWhenIdle(snapshot.generation, [&] { trimmed = true; }) &&
+                    !trimmed,
+                "pending document work and cleanup must block memory trimming");
+    };
+    const auto waitForIdle = [&] {
+        wait([&] { return activity.snapshot().activeCount == baseline; });
+        const auto snapshot = activity.snapshot();
+        bool trimmed = false;
+        require(activity.tryRunWhenIdle(snapshot.generation, [&] { trimmed = true; }) && trimmed,
+                "completed document work must release memory activity");
+    };
+    for (const bool cancelBeforeSource : {false, true}) {
+        McpDocumentService::Ports::SourceCompletion pendingSource;
+        McpJobRegistry jobs;
+        McpDocumentService::Ports ports;
+        ports.jobs = &jobs;
+        ports.resolveSource = [&](const ScreenshotMcpRequest&, auto completion, auto budget) {
+            require(budget(16 * 16 * 4), "reserve a delayed document source");
+            pendingSource = std::move(completion);
+        };
+        McpDocumentService service(std::move(ports));
+        ScreenshotMcpRequest request;
+        request.connectionId = 1;
+        request.requestId = QStringLiteral("delayed-source");
+        request.idempotencyKey = request.requestId;
+        request.method = QStringLiteral("snow_shot_document_open");
+        request.params = {{QStringLiteral("source"), QStringLiteral("clipboard")}};
+        int completions = 0;
+        std::optional<ScreenshotMcpResponse> opened;
+        service.request(request, [&](auto response) {
+            requireTrimBlocked();
+            ++completions;
+            opened = std::move(response);
+        });
+        require(pendingSource && completions == 0 && !jobs.hasRunningJobs(),
+                "accepted source resolution waits without a worker or registry job");
+        requireTrimBlocked();
+        if (cancelBeforeSource) {
+            require(service.cancelRequest(1, request.requestId) && completions == 1 && opened &&
+                        opened->errorCode == QStringLiteral("canceled"),
+                    "cancel a document request while its external source is pending");
+            waitForIdle();
+            require(bool(pendingSource),
+                    "a retained uninvoked source callback does not pin canceled request activity");
+        }
+        McpDocumentService::Source source;
+        source.image = QImage(16, 16, QImage::Format_ARGB32_Premultiplied);
+        source.image.fill(Qt::white);
+        pendingSource(std::move(source), {});
+        wait([&] { return completions == 1; });
+        waitForIdle();
+        require(
+            pendingSource && opened &&
+                (cancelBeforeSource ? opened->errorCode == QStringLiteral("canceled") : opened->ok),
+            "late or completed source delivery retires activity without another reply");
+        service.shutdown();
+        waitForIdle();
+    }
+    enum class Outcome { Completed, Cancelled, Disconnected };
+    for (const auto outcome : {Outcome::Completed, Outcome::Cancelled, Outcome::Disconnected}) {
+        QSemaphore entered;
+        QSemaphore release;
+        QList<McpDocumentService::Ports::SourceCompletion> retainedSourceCompletions;
+        McpJobRegistry jobs;
+        McpDocumentService::Ports ports;
+        ports.jobs = &jobs;
+        ports.beforeWorkerRequest = [&](const ScreenshotMcpRequest& request) {
+            if (request.method == QStringLiteral("snow_shot_document_render")) {
+                entered.release();
+                release.acquire();
+            }
+        };
+        ports.resolveSource = [&](const ScreenshotMcpRequest&, auto completion, auto budget) {
+            require(budget(16 * 16 * 4), "reserve the memory activity fixture source");
+            McpDocumentService::Source source;
+            source.image = QImage(16, 16, QImage::Format_ARGB32_Premultiplied);
+            source.image.fill(Qt::white);
+            retainedSourceCompletions.append(completion);
+            completion(std::move(source), {});
+        };
+        McpDocumentService service(std::move(ports));
+        quint64 sequence = 0;
+        const auto dispatch = [&](const QString& method, QJsonObject params,
+                                  ScreenshotMcpServer::Completion completion, quint64 owner = 1) {
+            ScreenshotMcpRequest request;
+            request.connectionId = owner;
+            request.requestId = QString::number(++sequence);
+            request.idempotencyKey = request.requestId;
+            request.method = method;
+            request.params = std::move(params);
+            request.expectedRevision = 1;
+            const auto id = request.requestId;
+            service.request(request, std::move(completion));
+            return id;
+        };
+        std::optional<ScreenshotMcpResponse> opened;
+        dispatch(QStringLiteral("snow_shot_document_open"),
+                 {{QStringLiteral("source"), QStringLiteral("clipboard")}},
+                 [&](auto response) { opened = std::move(response); });
+        wait([&] { return opened.has_value(); });
+        require(opened->ok && !retainedSourceCompletions.isEmpty(),
+                "open a document while retaining an already-invoked source callback");
+        waitForIdle();
+        const auto documentId = opened->result.value(QStringLiteral("document_id"));
+        int completions = 0;
+        std::optional<ScreenshotMcpResponse> rendered;
+        const auto renderRequest =
+            dispatch(QStringLiteral("snow_shot_document_render"),
+                     {{QStringLiteral("document_id"), documentId}}, [&](auto response) {
+                         requireTrimBlocked();
+                         ++completions;
+                         rendered = std::move(response);
+                     });
+        wait([&] { return entered.available() > 0; });
+        require(completions == 0 && !jobs.hasRunningJobs(),
+                "blocked document rendering has no registry job or premature completion");
+        requireTrimBlocked();
+        if (outcome == Outcome::Cancelled) {
+            require(service.cancelRequest(1, renderRequest) && completions == 1 && rendered &&
+                        rendered->errorCode == QStringLiteral("canceled"),
+                    "request cancellation acknowledges before the blocked worker returns");
+            requireTrimBlocked();
+        } else if (outcome == Outcome::Disconnected) {
+            service.disconnected(1);
+            require(completions == 0, "disconnect suppresses the pending render completion");
+            requireTrimBlocked();
+        }
+        release.release();
+        if (outcome == Outcome::Completed) {
+            wait([&] { return completions == 1; });
+            require(rendered && rendered->ok && !rendered->attachment.isEmpty(),
+                    "the blocked render publishes its image after actual worker completion");
+        }
+        waitForIdle();
+        require(completions == (outcome == Outcome::Disconnected ? 0 : 1) &&
+                    !retainedSourceCompletions.isEmpty(),
+                "late worker completion does not reply twice or pin retained source callbacks");
+        if (outcome == Outcome::Disconnected) {
+            std::optional<ScreenshotMcpResponse> listed;
+            dispatch(QStringLiteral("snow_shot_document_list"), {},
+                     [&](auto response) { listed = std::move(response); });
+            wait([&] { return listed.has_value(); });
+            require(listed->ok &&
+                        listed->result.value(QStringLiteral("documents")).toArray().isEmpty(),
+                    "reconnecting the same owner finds no documents after worker cleanup");
+            waitForIdle();
+        }
+        service.shutdown();
+        waitForIdle();
+    }
+    {
+        McpDocumentService::Ports::SourceCompletion pendingSource;
+        int sourceResolutions = 0;
+        McpJobRegistry jobs;
+        McpDocumentService::Ports ports;
+        ports.jobs = &jobs;
+        ports.resolveSource = [&](const ScreenshotMcpRequest&, auto completion, auto) {
+            ++sourceResolutions;
+            pendingSource = std::move(completion);
+        };
+        McpDocumentService service(std::move(ports));
+        require(!service.storeArtifact(1, QByteArray("shutdown"), QStringLiteral("text/plain"))
+                     .isEmpty(),
+                "register the shutdown fixture owner");
+        int cancellations = 0;
+        int completions = 0;
+        std::optional<ScreenshotMcpResponse> response;
+        const auto job = jobs.start(1, QStringLiteral("shutdown"), [&] {
+            ++cancellations;
+            requireTrimBlocked();
+            ScreenshotMcpRequest request;
+            request.connectionId = 2;
+            request.requestId = QStringLiteral("during-shutdown");
+            request.idempotencyKey = request.requestId;
+            request.method = QStringLiteral("snow_shot_document_open");
+            request.params = {{QStringLiteral("source"), QStringLiteral("clipboard")}};
+            service.request(request, [&](auto result) {
+                requireTrimBlocked();
+                ++completions;
+                response = std::move(result);
+            });
+            require(completions == 1 && response &&
+                        response->errorCode == QStringLiteral("disabled") &&
+                        sourceResolutions == 0 && !pendingSource,
+                    "shutdown rejects reentrant requests synchronously before source admission");
+        });
+        require(!job.isEmpty(), "admit a job with a reentrant shutdown cancellation callback");
+        service.shutdown();
+        require(cancellations == 1 && completions == 1 && !jobs.hasRunningJobs(),
+                "shutdown cancels the job once and leaves no reentrant request pending");
+        waitForIdle();
+    }
 }
 void recognitionModelDocuments(const QString& directory) {
 #if SNOW_SHOT_ENABLE_TABLE_RECOGNITION && SNOW_SHOT_ENABLE_LATEX_RECOGNITION
@@ -2093,6 +2307,11 @@ int main(int argc, char** argv) {
         snow_shot::storage::ApplicationStorage::instance().shutdown();
         return 0;
     }
+    if (application.arguments().contains(QStringLiteral("--activity-only"))) {
+        documentMemoryActivity();
+        snow_shot::storage::ApplicationStorage::instance().shutdown();
+        return 0;
+    }
     if (application.arguments().contains(QStringLiteral("--recognition-models-only"))) {
         recognitionModelDocuments(temporary.path());
         recognitionModelSourceBudget();
@@ -2108,6 +2327,7 @@ int main(int argc, char** argv) {
     documentReservations(temporary.path());
     documentCacheWork(temporary.path());
     documentConcurrency();
+    documentMemoryActivity();
     documents(temporary.path());
     documentWorkflows();
     recognitionModelDocuments(temporary.path());

@@ -1,4 +1,5 @@
 #include "snow_shot/storage/capturehistoryrepository.h"
+#include "snow_shot/runtime/runtimeactivitytracker.h"
 #include "snowimageqtcodec.h"
 
 #include <QCoreApplication>
@@ -665,6 +666,8 @@ void policyBoundariesAndDisabledPreservation() {
 }
 
 void publicationQueueCapacity() {
+    auto& activity = snow_shot::runtime::RuntimeActivityTracker::shared();
+    const auto baseline = activity.snapshot().activeCount;
     QTemporaryDir temporary;
     require(temporary.isValid(), "failed to create worker directory");
     storage::CaptureHistoryRepositoryOptions options;
@@ -687,10 +690,18 @@ void publicationQueueCapacity() {
     started.get_future().wait();
     auto second = repository->publish(draftAt(now.addMSecs(1)));
     auto third = repository->publish(draftAt(now.addMSecs(2)));
+    const auto queued = activity.snapshot();
+    require(queued.activeCount == baseline + 3,
+            "queued history publications must reserve activity before their worker runs");
+    bool trimmed = false;
+    require(!activity.tryRunWhenIdle(queued.generation, [&trimmed] { trimmed = true; }) && !trimmed,
+            "memory trimming must not overlap queued history publication");
     auto overloaded = repository->publish(draftAt(now.addMSecs(3), QSize(32, 32)));
     require(overloaded.wait_for(std::chrono::milliseconds(0)) == std::future_status::ready &&
                 !overloaded.get().storage.success,
             "publication overload was not rejected immediately");
+    require(activity.snapshot().activeCount == baseline + 3,
+            "rejected history publications must release their activity reservation");
     release.set_value();
     require(first.get().storage.success && second.get().storage.success &&
                 third.get().storage.success,
@@ -698,6 +709,9 @@ void publicationQueueCapacity() {
     repository->drain();
     require(repository->records().size() == 3,
             "serialized worker did not retain all accepted publications");
+    repository.reset();
+    require(activity.snapshot().activeCount == baseline,
+            "drained history publications must release every activity reservation");
 }
 void displayAssetsAreMetadataOnly() {
     QTemporaryDir temporary;
@@ -1229,6 +1243,13 @@ int main(int argc, char** argv) {
     QCoreApplication application(argc, argv);
     if (application.arguments().contains(QStringLiteral("--worker-lifecycle-only"))) {
         idleWorkersRetireAndRestartWithoutLosingHistory();
+        return 0;
+    }
+    if (application.arguments().contains(QStringLiteral("--memory-activity-only"))) {
+        publicationQueueCapacity();
+        clearCancelsQueuedPublicationsAndShutdownDrains();
+        require(snow_shot::runtime::RuntimeActivityTracker::shared().snapshot().activeCount == 0,
+                "history clear and shutdown must drain their activity reservations");
         return 0;
     }
     revisionCheckedMutations();

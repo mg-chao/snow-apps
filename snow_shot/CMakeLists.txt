@@ -745,6 +745,18 @@ set(SNOW_SHOT_STORAGE_SOURCES
     src/storage/storagelogging.cpp
     src/storage/storageusagetracker.cpp
 )
+add_library(snow_shot_runtime_activity INTERFACE)
+target_include_directories(snow_shot_runtime_activity INTERFACE "${CMAKE_CURRENT_SOURCE_DIR}/include")
+target_sources(snow_shot_runtime_activity INTERFACE
+    "${CMAKE_CURRENT_SOURCE_DIR}/include/snow_shot/runtime/runtimeactivitytracker.h")
+add_library(snow_shot_memory_optimization STATIC
+    src/runtime/memoryoptimizationcontroller.cpp
+    src/platform/windows/memoryoptimization.cpp)
+target_link_libraries(snow_shot_memory_optimization PUBLIC snow_shot_runtime_activity Qt6::Core)
+if(WIN32)
+    target_link_libraries(snow_shot_memory_optimization PRIVATE psapi user32)
+endif()
+
 add_library(snow_shot_shortcuts STATIC
     include/snow_shot/shortcuts/shortcutbinding.h
     include/snow_shot/shortcuts/shortcutdisplayservice.h
@@ -772,6 +784,7 @@ set_source_files_properties(
     PROPERTIES SKIP_UNITY_BUILD_INCLUSION ON)
 target_include_directories(snow_shot_storage PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include")
 target_link_libraries(snow_shot_storage PUBLIC
+    snow_shot_runtime_activity
     snow_shot_diagnostics
     snow_shot_image_codec
     snow_shot_shortcuts
@@ -1578,6 +1591,7 @@ if(WIN32)
     )
 endif()
 target_link_libraries(snow_shot PRIVATE
+    snow_shot_memory_optimization
     snow_shot_crash_bridge
     snow_shot_image_codec
     MINIZIP::minizip-ng
@@ -7424,6 +7438,10 @@ if(SNOW_SHOT_BUILD_TESTS)
     set_tests_properties(snow-shot-mcp-storage-guard-tests PROPERTIES LABELS "unit" TIMEOUT 30
         ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
     add_test(NAME snow-shot-mcp-document-tests COMMAND snow-shot-mcp-document-tests -platform offscreen)
+    add_test(NAME snow-shot-mcp-memory-activity-tests
+        COMMAND snow-shot-mcp-document-tests --activity-only -platform offscreen)
+    set_tests_properties(snow-shot-mcp-memory-activity-tests PROPERTIES LABELS "unit" TIMEOUT 30
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
     add_test(NAME snow-shot-mcp-recognition-model-tests
         COMMAND snow-shot-mcp-document-tests --recognition-models-only -platform offscreen)
     set_tests_properties(snow-shot-mcp-recognition-model-tests PROPERTIES LABELS "unit" TIMEOUT 60
@@ -10419,6 +10437,106 @@ foreach(_snow_cloud_target IN LISTS _snow_cloud_targets)
 endforeach()
 
 include("${CMAKE_CURRENT_SOURCE_DIR}/../cmake/SnowShotMini.cmake")
+
+if(SNOW_SHOT_BUILD_TESTS)
+    add_executable(snow-shot-memory-optimization-controller-tests
+        tests/memory_optimization_controller_tests.cpp)
+    target_link_libraries(snow-shot-memory-optimization-controller-tests PRIVATE
+        snow_shot_memory_optimization Qt6::Widgets)
+    snow_shot_import_offscreen_platform(snow-shot-memory-optimization-controller-tests)
+    add_test(NAME snow-shot-memory-optimization-controller-tests
+        COMMAND snow-shot-memory-optimization-controller-tests -platform offscreen)
+    set_tests_properties(snow-shot-memory-optimization-controller-tests PROPERTIES
+        LABELS "unit" TIMEOUT 30
+        ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}"
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
+
+    foreach(_memory_settings_edition IN ITEMS full mini)
+        set(_memory_settings_suffix "")
+        set(_memory_settings_library snow_shot_settings)
+        if(_memory_settings_edition STREQUAL "mini")
+            if(NOT TARGET snow_shot_settings_mini)
+                continue()
+            endif()
+            set(_memory_settings_suffix "-mini")
+            set(_memory_settings_library snow_shot_settings_mini)
+        endif()
+        set(_memory_settings_target "snow-shot-memory-optimization-settings${_memory_settings_suffix}-tests")
+        add_executable(${_memory_settings_target}
+            tests/memory_optimization_settings_tests.cpp
+            src/presentation/services/screenshotclipboardservice.cpp)
+        target_link_libraries(${_memory_settings_target} PRIVATE
+            ${_memory_settings_library} snow_shot_image_codec snow_shot_memory_optimization)
+        snow_shot_import_offscreen_platform(${_memory_settings_target})
+        add_test(NAME ${_memory_settings_target} COMMAND ${_memory_settings_target} -platform offscreen)
+        set_tests_properties(${_memory_settings_target} PROPERTIES LABELS "unit" TIMEOUT 60
+            ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}"
+            ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
+    endforeach()
+    add_test(NAME snow-shot-memory-optimization-catalog-tests
+        COMMAND snow-shot-settings-catalog-tests --memory-optimization-only)
+    set_tests_properties(snow-shot-memory-optimization-catalog-tests PROPERTIES LABELS "unit"
+        TIMEOUT 30 ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
+    add_test(NAME snow-shot-capture-history-memory-activity-tests
+        COMMAND snow-shot-capture-history-repository-tests --memory-activity-only)
+    set_tests_properties(snow-shot-capture-history-memory-activity-tests PROPERTIES LABELS "unit"
+        TIMEOUT 30 ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
+    add_test(NAME snow-shot-pinned-window-memory-activity-tests
+        COMMAND snow-shot-pinned-window-repository-tests --memory-activity-only)
+    set_tests_properties(snow-shot-pinned-window-memory-activity-tests PROPERTIES LABELS "unit"
+        TIMEOUT 30 ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
+    add_test(NAME snow-shot-pinned-window-memory-idle-tests
+        COMMAND snow-shot-pinned-window-tests --memory-idle-only -platform offscreen)
+    add_test(NAME snow-shot-floating-toolbar-memory-idle-tests
+        COMMAND snow-shot-floating-toolbar-tests --memory-idle-only -platform offscreen)
+    add_test(NAME snow-shot-storage-memory-activity-tests
+        COMMAND snow-shot-application-storage-tests --memory-activity-only)
+    set_tests_properties(snow-shot-pinned-window-memory-idle-tests
+        snow-shot-floating-toolbar-memory-idle-tests snow-shot-storage-memory-activity-tests
+        PROPERTIES LABELS "unit" TIMEOUT 60
+        ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}"
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
+
+    if(WIN32)
+        add_executable(snow-shot-memory-optimization-native-smoke-tests
+            tests/memory_optimization_native_smoke_tests.cpp)
+        target_link_libraries(snow-shot-memory-optimization-native-smoke-tests PRIVATE
+            snow_shot_memory_optimization)
+        add_test(NAME snow-shot-memory-optimization-native-smoke-tests
+            COMMAND snow-shot-memory-optimization-native-smoke-tests)
+        set_tests_properties(snow-shot-memory-optimization-native-smoke-tests PROPERTIES
+            LABELS "unit;windows" TIMEOUT 30
+            ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
+        if(SNOW_SHOT_BUILD_BENCHMARKS)
+            get_target_property(_memory_pin_sources snow-shot-pinned-window-tests SOURCES)
+            get_target_property(_memory_selection_sources snow-shot-selection-presentation-runtime SOURCES)
+            set(_memory_ui_sources)
+            foreach(_memory_source IN LISTS _memory_pin_sources _memory_selection_sources)
+                if(NOT IS_ABSOLUTE "${_memory_source}")
+                    set(_memory_source "${CMAKE_CURRENT_SOURCE_DIR}/${_memory_source}")
+                endif()
+                list(APPEND _memory_ui_sources "${_memory_source}")
+            endforeach()
+            list(FILTER _memory_ui_sources EXCLUDE REGEX "/tests/")
+            list(REMOVE_DUPLICATES _memory_ui_sources)
+            add_executable(snow-shot-memory-optimization-performance-benchmark
+                tests/memory_optimization_performance_benchmark.cpp ${_memory_ui_sources})
+            foreach(_memory_property IN ITEMS INCLUDE_DIRECTORIES COMPILE_DEFINITIONS LINK_LIBRARIES)
+                get_target_property(_memory_value snow-shot-pinned-window-tests ${_memory_property})
+                if(NOT _memory_value STREQUAL "_memory_value-NOTFOUND")
+                    set_property(TARGET snow-shot-memory-optimization-performance-benchmark
+                        PROPERTY ${_memory_property} "${_memory_value}")
+                endif()
+            endforeach()
+            get_target_property(_memory_selection_links snow-shot-selection-presentation-runtime LINK_LIBRARIES)
+            target_compile_definitions(snow-shot-memory-optimization-performance-benchmark PRIVATE
+                SNOW_SHOT_BENCH_INTERNALS=1)
+            target_link_libraries(snow-shot-memory-optimization-performance-benchmark PRIVATE
+                snow_shot_memory_optimization ${_memory_selection_links})
+            snow_shot_import_offscreen_platform(snow-shot-memory-optimization-performance-benchmark)
+        endif()
+    endif()
+endif()
 
 # Controllers and their focused fixtures compile the same sources independently.
 get_property(_snow_print_consumers DIRECTORY PROPERTY BUILDSYSTEM_TARGETS)

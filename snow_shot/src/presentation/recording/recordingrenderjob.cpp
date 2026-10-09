@@ -1,3 +1,4 @@
+#include "snow_shot/runtime/runtimeactivitytracker.h"
 #include "recordingrenderjob.h"
 #include "recordingrenderdialog.h"
 #include "snow_shot/platform/applicationqos.h"
@@ -62,9 +63,10 @@ struct RecordingRenderJob::Impl {
             return;
         // A controller can disappear while creation, rendering, or cleanup is
         // pending. Keep source ownership behind the last native operation.
-        std::thread([start = std::move(startFuture), cleanup = std::move(cleanupFuture),
-                     cancellation = std::move(cancelFuture), task = task,
-                     source = source]() mutable {
+        std::thread(snow_shot::runtime::trackRuntimeWork([start = std::move(startFuture),
+                                                          cleanup = std::move(cleanupFuture),
+                                                          cancellation = std::move(cancelFuture),
+                                                          task = task, source = source]() mutable {
             snow_shot::platform::applyApplicationQoSToCurrentThread();
             if (start.valid()) {
                 const auto result = start.get();
@@ -82,7 +84,7 @@ struct RecordingRenderJob::Impl {
                 snow_recording_render_task_destroy(task);
             if (source)
                 snow_recording_source_destroy(source);
-        }).detach();
+        })).detach();
     }
     void notify() {
         refresh();
@@ -119,20 +121,22 @@ struct RecordingRenderJob::Impl {
         dialog->refresh();
     }
     void start() {
+        renderActivity = snow_shot::runtime::RuntimeActivityTracker::shared().acquire();
         retained = false;
         cancelRequested = false;
         percent = 0;
         stage = SNOW_RECORDING_RENDER_STAGE_PREPARE;
         lastError.clear();
         errorTranslation = nullptr;
-        startFuture = std::async(std::launch::async, [source = source] {
-            snow_shot::platform::applyApplicationQoSToCurrentThread();
-            StartResult result;
-            if (snow_recording_source_render_start(source, &result.task) !=
-                SNOW_RECORDING_RESULT_OK)
-                result.error = nativeError();
-            return result;
-        });
+        startFuture =
+            std::async(std::launch::async, snow_shot::runtime::trackRuntimeWork([source = source] {
+                           snow_shot::platform::applyApplicationQoSToCurrentThread();
+                           StartResult result;
+                           if (snow_recording_source_render_start(source, &result.task) !=
+                               SNOW_RECORDING_RESULT_OK)
+                               result.error = nativeError();
+                           return result;
+                       }));
         timer.start();
         ensureModal();
         notify();
@@ -140,6 +144,7 @@ struct RecordingRenderJob::Impl {
             modal->open();
     }
     void retain(QString error) {
+        renderActivity = {};
         retained = true;
         if (error != lastError)
             setError(std::move(error));
@@ -155,14 +160,15 @@ struct RecordingRenderJob::Impl {
             return;
         auto* retiring = task;
         task = nullptr;
-        cleanupFuture = std::async(std::launch::async,
-                                   [retiring, cancellation = std::move(cancelFuture)]() mutable {
-                                       snow_shot::platform::applyApplicationQoSToCurrentThread();
-                                       if (cancellation.valid())
-                                           cancellation.get();
-                                       snow_recording_render_task_destroy(retiring);
-                                       return CleanupResult{};
-                                   });
+        cleanupFuture = std::async(
+            std::launch::async, snow_shot::runtime::trackRuntimeWork(
+                                    [retiring, cancellation = std::move(cancelFuture)]() mutable {
+                                        snow_shot::platform::applyApplicationQoSToCurrentThread();
+                                        if (cancellation.valid())
+                                            cancellation.get();
+                                        snow_recording_render_task_destroy(retiring);
+                                        return CleanupResult{};
+                                    }));
     }
     void requestCancellation() {
         if (!task || cancelFuture.valid())
@@ -170,28 +176,31 @@ struct RecordingRenderJob::Impl {
         // Native cancellation synchronizes with publication. Its commit may be
         // waiting on filesystem work, so keep that wait away from the GUI and
         // preserve the borrowed task until this operation completes.
-        cancelFuture = std::async(std::launch::async, [canceling = task] {
-            snow_shot::platform::applyApplicationQoSToCurrentThread();
-            static_cast<void>(snow_recording_render_task_cancel(canceling));
-        });
+        cancelFuture =
+            std::async(std::launch::async, snow_shot::runtime::trackRuntimeWork([canceling = task] {
+                           snow_shot::platform::applyApplicationQoSToCurrentThread();
+                           static_cast<void>(snow_recording_render_task_cancel(canceling));
+                       }));
     }
     void release(Outcome outcome, bool discard) {
         releasing = outcome;
         auto* retiring = source;
         source = nullptr;
-        cleanupFuture = std::async(std::launch::async, [retiring, discard, outcome] {
-            snow_shot::platform::applyApplicationQoSToCurrentThread();
-            CleanupResult result;
-            if (discard && snow_recording_source_discard(retiring) != SNOW_RECORDING_RESULT_OK) {
-                result.error = nativeError();
-                if (outcome == Outcome::Discarded) {
-                    result.retainedSource = retiring;
-                    return result;
+        cleanupFuture = std::async(
+            std::launch::async, snow_shot::runtime::trackRuntimeWork([retiring, discard, outcome] {
+                snow_shot::platform::applyApplicationQoSToCurrentThread();
+                CleanupResult result;
+                if (discard &&
+                    snow_recording_source_discard(retiring) != SNOW_RECORDING_RESULT_OK) {
+                    result.error = nativeError();
+                    if (outcome == Outcome::Discarded) {
+                        result.retainedSource = retiring;
+                        return result;
+                    }
                 }
-            }
-            snow_recording_source_destroy(retiring);
-            return result;
-        });
+                snow_recording_source_destroy(retiring);
+                return result;
+            }));
         timer.start();
         notify();
     }
@@ -201,6 +210,7 @@ struct RecordingRenderJob::Impl {
                 return;
             const auto cleanup = cleanupFuture.get();
             if (releasing) {
+                renderActivity = {};
                 timer.stop();
                 if (cleanup.retainedSource) {
                     source = cleanup.retainedSource;
@@ -279,6 +289,7 @@ struct RecordingRenderJob::Impl {
     RecordingRenderJob& owner;
     SnowRecordingSource* source = nullptr;
     SnowRecordingRenderTask* task = nullptr;
+    snow_shot::runtime::RuntimeActivityLease renderActivity;
     const bool visible;
     QPointer<QScreen> screen;
     const QRect anchorGeometry;

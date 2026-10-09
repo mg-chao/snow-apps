@@ -10,6 +10,10 @@
 #include "snow_shot/presentation/pinnedgeometry.h"
 #include "snow_shot/presentation/canvasstatusreadout.h"
 #include "snow_shot/presentation/screenshotpinnedwindow.h"
+#include "snow_shot/runtime/runtimeactivitytracker.h"
+#ifdef Q_OS_WIN
+#include <qt_windows.h>
+#endif
 #include "snow_shot/presentation/screenshotprintservice.h"
 #include "../services/screenshotprintinteractionguard.h"
 #include "snow_shot/presentation/automationrevision.h"
@@ -2142,6 +2146,14 @@ bool ScreenshotPinnedWindow::event(QEvent* event) {
 
 bool ScreenshotPinnedWindow::nativeEvent(const QByteArray& eventType, void* message,
                                          qintptr* result) {
+#ifdef Q_OS_WIN
+    if (message) {
+        const auto* native = static_cast<const MSG*>(message);
+        if (native->message == WM_ENTERSIZEMOVE || native->message == WM_EXITSIZEMOVE ||
+            native->message == WM_MOVING || native->message == WM_SIZING)
+            snow_shot::runtime::RuntimeActivityTracker::shared().markActivity();
+    }
+#endif
     if (m_mouseReleaseAction.handleNativeEvent(message, result))
         return true;
     if (!m_closing && m_platform->handleNativeEvent(eventType, message, result))
@@ -6059,6 +6071,26 @@ void ScreenshotPinnedWindow::cancelContentReplacement() {
     ++m_contentReplacementGeneration;
     m_contentReplacementJob.cancel();
     m_contentReplacementJob = {};
+}
+
+bool ScreenshotPinnedWindow::blocksMemoryTrimming() const {
+    if (m_closing || !m_firstContentFramePublished || m_materializationLoading ||
+        m_deferredPresentationSetupScheduled || m_firstFramePaintPending ||
+        (m_editController && m_editController->editMode()) || m_hiddenTextSelection ||
+        m_systemSizingActive || m_windowDragActive || m_auxiliaryWindowInteractionActive ||
+        m_selectionGeometryActive || m_interactionPlacement || m_pinchActive || m_fileDragActive ||
+        m_exportDragPreparing || (m_dragExport && m_dragExport->dragging()) ||
+        (m_nativeGeometryController && m_nativeGeometryController->hasInteractiveTransaction()) ||
+        m_geometryAnimating || m_attentionPending || m_printPending || m_quickSavePending ||
+        m_cloudUploadPreparing || m_cloudUploadJob)
+        return true;
+    if (m_hideToTop && m_hideToTop->animation().state() != QAbstractAnimation::Stopped)
+        return true;
+    for (const auto* animation : findChildren<QAbstractAnimation*>()) {
+        if (animation->state() != QAbstractAnimation::Stopped)
+            return true;
+    }
+    return false;
 }
 
 bool ScreenshotPinnedWindow::acceptsDrop(const QDropEvent& event) const {

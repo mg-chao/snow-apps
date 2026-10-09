@@ -1,3 +1,4 @@
+#include "snow_shot/runtime/runtimeactivitytracker.h"
 #include "snow_draw_engine_qt/snow_canvas_image.h"
 #include "snow_shot/platform/applicationqos.h"
 #include "snow_shot/presentation/components/pinnedwindowmanagementpagewidget.h"
@@ -204,7 +205,7 @@ class ApplicationPinnedDataSource final : public PinnedWindowManagementDataSourc
         const quint64 storageGeneration = m_storageGeneration;
         const QString cachePath = thumbnail_cache::pathForKey(QStringLiteral("pinned|") + cacheKey);
         auto* receiver = this;
-        applicationStorage.pinnedPreviewPool().start(
+        applicationStorage.pinnedPreviewPool().start(snow_shot::runtime::trackRuntimeWork(
             [alive, previewEpoch, requestedEpoch, receiver, repository, id, requestId, boundedSize,
              cacheKey, cachePath, storageGeneration, retryAllowed]() {
                 snow_shot::platform::applyApplicationQoSToCurrentThread();
@@ -230,30 +231,31 @@ class ApplicationPinnedDataSource final : public PinnedWindowManagementDataSourc
                 }
                 QMetaObject::invokeMethod(
                     &storage::ApplicationStorage::instance(),
-                    [alive, previewEpoch, requestedEpoch, receiver, id, requestId, cacheKey, image,
-                     naturalSize, boundedSize, storageGeneration, retryAllowed]() {
-                        if (!alive->load() || previewEpoch->load() != requestedEpoch) {
-                            return;
-                        }
-                        auto& applicationStorage = storage::ApplicationStorage::instance();
-                        if (image.isNull() && retryAllowed &&
-                            (applicationStorage.directoryChanging() ||
-                             receiver->m_storageGeneration != storageGeneration)) {
-                            receiver->retryPreviewAfterDirectoryChange(id, requestId, boundedSize,
-                                                                       requestedEpoch);
-                            return;
-                        }
-                        if (!image.isNull()) {
-                            const auto cost =
-                                std::max<qsizetype>(1, (image.sizeInBytes() + 1023) / 1024);
-                            receiver->m_previewCache.insert(
-                                cacheKey, new PinnedPreviewCacheEntry{image, naturalSize},
-                                static_cast<int>(cost));
-                        }
-                        emit receiver->previewReady(id, requestId, image, naturalSize);
-                    },
+                    snow_shot::runtime::trackRuntimeWork(
+                        [alive, previewEpoch, requestedEpoch, receiver, id, requestId, cacheKey,
+                         image, naturalSize, boundedSize, storageGeneration, retryAllowed]() {
+                            if (!alive->load() || previewEpoch->load() != requestedEpoch) {
+                                return;
+                            }
+                            auto& applicationStorage = storage::ApplicationStorage::instance();
+                            if (image.isNull() && retryAllowed &&
+                                (applicationStorage.directoryChanging() ||
+                                 receiver->m_storageGeneration != storageGeneration)) {
+                                receiver->retryPreviewAfterDirectoryChange(
+                                    id, requestId, boundedSize, requestedEpoch);
+                                return;
+                            }
+                            if (!image.isNull()) {
+                                const auto cost =
+                                    std::max<qsizetype>(1, (image.sizeInBytes() + 1023) / 1024);
+                                receiver->m_previewCache.insert(
+                                    cacheKey, new PinnedPreviewCacheEntry{image, naturalSize},
+                                    static_cast<int>(cost));
+                            }
+                            emit receiver->previewReady(id, requestId, image, naturalSize);
+                        }),
                     Qt::QueuedConnection);
-            });
+            }));
     }
 
     void requestFullImage(const QString& id, quint64 requestId) override {
@@ -266,7 +268,7 @@ class ApplicationPinnedDataSource final : public PinnedWindowManagementDataSourc
         const auto alive = m_alive;
         auto* receiver = this;
         applicationStorage.pinnedFullImagePool().start(
-            [alive, receiver, repository, id, requestId]() {
+            snow_shot::runtime::trackRuntimeWork([alive, receiver, repository, id, requestId]() {
                 snow_shot::platform::applyApplicationQoSToCurrentThread();
                 if (!alive->load()) {
                     return;
@@ -277,13 +279,13 @@ class ApplicationPinnedDataSource final : public PinnedWindowManagementDataSourc
                 }
                 QMetaObject::invokeMethod(
                     &storage::ApplicationStorage::instance(),
-                    [alive, receiver, id, requestId, image]() {
+                    snow_shot::runtime::trackRuntimeWork([alive, receiver, id, requestId, image]() {
                         if (alive->load()) {
                             emit receiver->fullImageReady(id, requestId, image);
                         }
-                    },
+                    }),
                     Qt::QueuedConnection);
-            });
+            }));
     }
 
     void showRecord(const QString& id) override {
@@ -340,8 +342,7 @@ class PinnedImageReply final : public adqt::widgets::AdImageReply {
                     });
         }
         QMetaObject::invokeMethod(
-            this,
-            [this]() {
+            this, snow_shot::runtime::trackRuntimeWork([this]() {
                 if (!isFinished()) {
                     if (m_source) {
                         if (m_targetSize.isValid() && !m_targetSize.isEmpty()) {
@@ -353,7 +354,7 @@ class PinnedImageReply final : public adqt::widgets::AdImageReply {
                         fail(QStringLiteral("Pinned image source is unavailable"));
                     }
                 }
-            },
+            }),
             Qt::QueuedConnection);
     }
 

@@ -1,3 +1,4 @@
+#include "snow_shot/runtime/runtimeactivitytracker.h"
 #include "snow_draw_engine_qt/snow_canvas_image.h"
 #include "snow_shot/platform/applicationqos.h"
 #include "snow_shot/presentation/directcapturecontroller.h"
@@ -137,27 +138,29 @@ class DirectCaptureController::Impl {
             return false;
         return QMetaObject::invokeMethod(
             worker,
-            [this, work = std::move(work), done = std::move(done)]() mutable {
-                if (stopped.load())
-                    return;
-                Result result;
-                try {
-                    result = work();
-                } catch (const std::exception& error) {
-                    result.error = QString::fromUtf8(error.what());
-                } catch (...) {
-                    result.error = DirectCaptureController::tr("The capture operation failed");
-                }
-                if (stopped.load())
-                    return;
-                QMetaObject::invokeMethod(
-                    &owner,
-                    [this, result = std::move(result), done = std::move(done)]() mutable {
-                        if (!stopped.load())
-                            done(std::move(result));
-                    },
-                    Qt::QueuedConnection);
-            },
+            snow_shot::runtime::trackRuntimeWork(
+                [this, work = std::move(work), done = std::move(done)]() mutable {
+                    if (stopped.load())
+                        return;
+                    Result result;
+                    try {
+                        result = work();
+                    } catch (const std::exception& error) {
+                        result.error = QString::fromUtf8(error.what());
+                    } catch (...) {
+                        result.error = DirectCaptureController::tr("The capture operation failed");
+                    }
+                    if (stopped.load())
+                        return;
+                    QMetaObject::invokeMethod(
+                        &owner,
+                        snow_shot::runtime::trackRuntimeWork(
+                            [this, result = std::move(result), done = std::move(done)]() mutable {
+                                if (!stopped.load())
+                                    done(std::move(result));
+                            }),
+                        Qt::QueuedConnection);
+                }),
             Qt::QueuedConnection);
     }
 

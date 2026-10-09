@@ -5,6 +5,7 @@
 #include "snow_shot/presentation/screenshotselectionpin.h"
 #include "snow_shot/storage/applicationstorage.h"
 #include "snow_shot/storage/settingsadapters.h"
+#include "snow_shot/runtime/runtimeactivitytracker.h"
 #include "snowimageqtcodec.h"
 
 #include "snow_draw_engine_qt/snow_canvas_runtime.h"
@@ -698,6 +699,8 @@ void exportWorkerReleasesDocumentSnapshotsBeforeCompletion() {
     const auto placement = fixture.service().prepareClipboardPlacement(selection, {});
     require(placement.has_value(), "prepare snapshot lifetime clipboard placement");
     for (int mode = 0; mode < 3; ++mode) {
+        const auto baseline =
+            snow_shot::runtime::RuntimeActivityTracker::shared().snapshot().activeCount;
         auto snapshot = fixture.runtime().smartEraseSnapshot();
         const std::weak_ptr<const SnowCanvasSmartEraseSnapshot::Data> lifetime = snapshot.data;
         fixture.runtime().restoreSmartEraseSnapshot(snapshot);
@@ -738,11 +741,18 @@ void exportWorkerReleasesDocumentSnapshotsBeforeCompletion() {
                                     "subscribe snapshot lifetime pin result");
                         });
                 }
+                require(
+                    snow_shot::runtime::RuntimeActivityTracker::shared().snapshot().activeCount >
+                        baseline,
+                    "accepted exports reserve activity before worker submission completes");
                 require(fixture.runtime().clearDocumentPreservingViewports(),
                         "retire the capture document while its export is queued");
                 return scheduled;
             },
             [&](QImage image) {
+                require(
+                    snow_shot::runtime::RuntimeActivityTracker::shared().snapshot().activeCount > 0,
+                    "export completion retains activity through result consumption");
                 require(lifetime.expired(),
                         "completed exports must release worker and request snapshot ownership");
                 return image;

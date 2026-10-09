@@ -1,4 +1,5 @@
 #include "snow_shot/presentation/screenshotprintservice.h"
+#include "snow_shot/runtime/runtimeactivitytracker.h"
 #include "nativeprintbackend.h"
 #include "screenshotprintdiagnostics.h"
 
@@ -23,6 +24,8 @@ using snow_shot::print_detail::logPrintEvent;
 using snow_shot::print_detail::printStatusName;
 
 struct ScreenshotPrintService::Request {
+    snow_shot::runtime::RuntimeActivityLease activity =
+        snow_shot::runtime::RuntimeActivityTracker::shared().acquire();
     QString operation = QUuid::createUuid().toString(QUuid::WithoutBraces);
     QElapsedTimer timer;
     QPointer<QObject> receiver;
@@ -122,6 +125,7 @@ bool ScreenshotPrintService::printImage(QObject* receiver, QWidget* owner, QImag
         if (m_request != request || request->completed)
             return;
         request->completed = true;
+        const auto activity = std::move(request->activity);
         auto fields = request->fields();
         fields.insert(QStringLiteral("status"), printStatusName(Status::Cancelled));
         fields.insert(QStringLiteral("reason"), QString::fromLatin1(reason));
@@ -152,13 +156,13 @@ bool ScreenshotPrintService::printImage(QObject* receiver, QWidget* owner, QImag
                       prepared.isNull() ? QtWarningMsg : QtInfoMsg);
         startBackend(request, false);
     });
-    watcher->setFuture(
-        QtConcurrent::run([snapshot = std::move(snapshot), cancelled = request->cancelled] {
+    watcher->setFuture(QtConcurrent::run(snow_shot::runtime::trackRuntimeWork(
+        [snapshot = std::move(snapshot), cancelled = request->cancelled] {
             if (cancelled->load(std::memory_order_acquire))
                 return QImage{};
             QImage prepared = opaqueImage(snapshot);
             return cancelled->load(std::memory_order_acquire) ? QImage{} : prepared;
-        }));
+        })));
     return true;
 }
 
@@ -171,6 +175,7 @@ void ScreenshotPrintService::startBackend(const std::shared_ptr<Request>& reques
         fields.insert(QStringLiteral("reason"), QStringLiteral("target_destroyed"));
         logPrintEvent("print.completed", fields);
         request->completed = true;
+        const auto activity = std::move(request->activity);
         m_request.reset();
         return;
     }
@@ -200,6 +205,7 @@ void ScreenshotPrintService::startBackend(const std::shared_ptr<Request>& reques
                             "ScreenshotPrintService", "The native print interface is unavailable");
                 }
                 request->completed = true;
+                const auto activity = std::move(request->activity);
                 auto fields = request->fields();
                 fields.insert(QStringLiteral("status"), printStatusName(result.status));
                 logPrintEvent("print.completed", fields,

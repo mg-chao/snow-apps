@@ -1044,6 +1044,19 @@ void FloatingToolbarController::shutdown() {
     m_impl->retreat.stop();
     m_impl->syncVisibility();
 }
+bool FloatingToolbarController::ownsIdleSurface(const QWidget* widget) const {
+    return widget == m_impl->iconWindow.get() || widget == m_impl->toolbarWindow.get();
+}
+bool FloatingToolbarController::blocksMemoryTrimming() const {
+    if (m_impl->pressed || m_impl->dragging || m_impl->menuDepth || m_impl->dropReady() ||
+        m_impl->containsCursor())
+        return true;
+    for (const auto& group : m_impl->groups) {
+        if (group.popover && group.popover->isVisible())
+            return true;
+    }
+    return false;
+}
 bool FloatingToolbarController::eventFilter(QObject* watched, QEvent* event) {
     return m_impl && m_impl->event(watched, event);
 }

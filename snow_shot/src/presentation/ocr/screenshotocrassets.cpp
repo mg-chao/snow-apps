@@ -1,4 +1,5 @@
 #include "snow_shot/platform/applicationqos.h"
+#include "snow_shot/runtime/runtimeactivitytracker.h"
 #include "snow_shot/presentation/screenshotocrassets.h"
 #include "snow_shot/platform/minizippath.h"
 #include "screenshotocrprotocol.h"
@@ -867,33 +868,35 @@ class ScreenshotOcrAssets::Impl final {
         const Options options = m_options;
         const quint64 generation = m_generation;
         QPointer<ScreenshotOcrAssets> owner(m_owner);
-        m_thread = QThread::create([this, owner, options, generation]() {
-            QString error;
-            ScreenshotOcrResolvedAssets assets;
-            const bool success = acquire(options, generation, &assets, &error);
-            if (owner == nullptr)
-                return;
-            // Networking and ZIP work above owns thread-local Qt objects.
-            // Destroy their deferred-delete queue before the worker exits.
-            QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
-            QMetaObject::invokeMethod(
-                owner,
-                [this, owner, generation, success, assets, error]() {
-                    if (owner == nullptr || generation != m_generation)
-                        return;
-                    if (success) {
-                        setStatus({assets.offline ? ScreenshotOcrAssetPhase::ReadyOffline
-                                                  : ScreenshotOcrAssetPhase::ReadyCached,
-                                   QStringLiteral("assets")});
-                        emit owner->ready(assets);
-                    } else {
-                        setStatus({ScreenshotOcrAssetPhase::Failed, QStringLiteral("assets"), 0, 0,
-                                   error});
-                        emit owner->failed(error);
-                    }
-                },
-                Qt::QueuedConnection);
-        });
+        m_thread = QThread::create(
+            snow_shot::runtime::trackRuntimeWork([this, owner, options, generation]() {
+                QString error;
+                ScreenshotOcrResolvedAssets assets;
+                const bool success = acquire(options, generation, &assets, &error);
+                if (owner == nullptr)
+                    return;
+                // Networking and ZIP work above owns thread-local Qt objects.
+                // Destroy their deferred-delete queue before the worker exits.
+                QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+                QMetaObject::invokeMethod(
+                    owner,
+                    snow_shot::runtime::trackRuntimeWork(
+                        [this, owner, generation, success, assets, error]() {
+                            if (owner == nullptr || generation != m_generation)
+                                return;
+                            if (success) {
+                                setStatus({assets.offline ? ScreenshotOcrAssetPhase::ReadyOffline
+                                                          : ScreenshotOcrAssetPhase::ReadyCached,
+                                           QStringLiteral("assets")});
+                                emit owner->ready(assets);
+                            } else {
+                                setStatus({ScreenshotOcrAssetPhase::Failed,
+                                           QStringLiteral("assets"), 0, 0, error});
+                                emit owner->failed(error);
+                            }
+                        }),
+                    Qt::QueuedConnection);
+            }));
         QObject::connect(m_thread, &QThread::finished, m_owner, [this]() {
             if (m_thread == nullptr)
                 return;

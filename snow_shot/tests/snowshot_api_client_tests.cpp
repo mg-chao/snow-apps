@@ -1,4 +1,5 @@
 #include "snow_shot/network/snowshotapiclient.h"
+#include "snow_shot/runtime/runtimeactivitytracker.h"
 #include "translation_test_support.h"
 #include "snow_shot/diagnostics/diagnostics.h"
 #include "snowimageqtcodec.h"
@@ -104,8 +105,11 @@ QByteArray waitForHttpRequest(QTcpServer& server, const QByteArray& response,
 void jsonResponsesAreBoundedDuringTransfer() {
     enum class Kind { Table, Latex, Catalog, TextTranslation };
     constexpr qsizetype maximumBytes = snow_shot::network::kMaximumJsonResponseBytes;
+    auto& activity = snow_shot::runtime::RuntimeActivityTracker::shared();
     for (const auto kind : {Kind::Table, Kind::Latex, Kind::Catalog, Kind::TextTranslation}) {
         for (int scenario = 0; scenario < 3; ++scenario) {
+            translation_tests::flushEvents();
+            const auto baseline = activity.snapshot().activeCount;
             QTcpServer server;
             require(server.listen(QHostAddress::LocalHost), "bounded JSON server listens");
             const auto url = QStringLiteral("http://127.0.0.1:%1").arg(server.serverPort());
@@ -113,6 +117,7 @@ void jsonResponsesAreBoundedDuringTransfer() {
             QObject receiver;
             bool completed = false;
             bool succeeded = false;
+            bool replyFinished = false;
             QString error;
             const auto completion = [&](auto result) {
                 require(!completed, "bounded JSON request completes exactly once");
@@ -120,6 +125,17 @@ void jsonResponsesAreBoundedDuringTransfer() {
                 succeeded = result.succeeded();
                 error = result.error;
             };
+            QObject::connect(&server, &QTcpServer::newConnection, &receiver, [&] {
+                auto* reply = client.findChild<QNetworkReply*>();
+                require(reply != nullptr, "bounded JSON transport retains its reply");
+                QObject::connect(reply, &QNetworkReply::finished, &receiver, [&] {
+                    require(completed && SnowShotApiClientTestAccess::requests(client) == 0,
+                            "bounded JSON reply outlives its completed request");
+                    require(activity.snapshot().activeCount > baseline,
+                            "bounded JSON reply cleanup must still block memory trimming");
+                    replyFinished = true;
+                });
+            });
             QImage image(16, 16, QImage::Format_RGBA8888);
             image.fill(Qt::white);
             SnowShotApiClient::RequestToken token = 0;
@@ -167,7 +183,8 @@ void jsonResponsesAreBoundedDuringTransfer() {
                             "\r\nConnection: close\r\n\r\n" + validBody;
             }
             waitForHttpRequest(server, response, scenario == 2);
-            translation_tests::waitUntil([&] { return completed; }, "bounded JSON completion");
+            require(QThreadPool::globalInstance()->waitForDone(5000), "JSON preparation settles");
+            translation_tests::waitUntil([&] { return replyFinished; }, "bounded JSON completion");
             require(succeeded == (scenario == 2), "JSON limit accepts the exact boundary only");
             if (scenario != 2) {
                 require(error.contains(QStringLiteral("too large")),
@@ -180,6 +197,10 @@ void jsonResponsesAreBoundedDuringTransfer() {
             require(SnowShotApiClientTestAccess::requests(client) == 0 &&
                         SnowShotApiClientTestAccess::catalogs(client) == 0,
                     "JSON completion releases requests and catalog subscribers");
+            translation_tests::flushEvents();
+            QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+            require(activity.snapshot().activeCount == baseline,
+                    "bounded JSON response cleanup releases its memory activity");
         }
     }
 }
@@ -282,8 +303,12 @@ void tablePreparationIsAsynchronousAndLifetimeSafe() {
             timeoutLoop.exec();
             require(completions == 1, "deadline includes blocked preparation");
         }
+        require(snow_shot::runtime::RuntimeActivityTracker::shared().snapshot().activeCount > 0,
+                "encoding must block memory trimming after cancellation or owner destruction");
         release.release();
         require(QThreadPool::globalInstance()->waitForDone(5000), "table worker settles");
+        require(snow_shot::runtime::RuntimeActivityTracker::shared().snapshot().activeCount > 0,
+                "queued encoded-image delivery must block trimming until the UI processes it");
         QCoreApplication::sendPostedEvents(nullptr, QEvent::MetaCall);
         require(completions == ((scenario == 0 || scenario == 4 || scenario == 5) ? 1 : 0),
                 "cancelled or destroyed consumers receive no late callback");
@@ -377,6 +402,8 @@ void latexPreparationIsAsynchronousAndLifetimeSafe() {
         }
         release.release();
         require(QThreadPool::globalInstance()->waitForDone(5000), "table worker settles");
+        require(snow_shot::runtime::RuntimeActivityTracker::shared().snapshot().activeCount > 0,
+                "queued LaTeX-image delivery must block trimming until the UI processes it");
         QCoreApplication::sendPostedEvents(nullptr, QEvent::MetaCall);
         require(completions == ((scenario == 0 || scenario == 4 || scenario == 5) ? 1 : 0),
                 "cancelled or destroyed consumers receive no late callback");
@@ -1911,7 +1938,10 @@ QByteArray contentFrame(const QString& text, bool crlf = false) {
 }
 
 void chatStreamsYieldBetweenBatchesAndCancelSafely() {
+    auto& activity = snow_shot::runtime::RuntimeActivityTracker::shared();
     for (int scenario = 0; scenario < 4; ++scenario) {
+        translation_tests::flushEvents();
+        const auto baseline = activity.snapshot().activeCount;
         translation_tests::Server server;
         auto client = std::make_unique<SnowShotApiClient>(server.url());
         auto receiver = std::make_unique<QObject>();
@@ -1938,6 +1968,12 @@ void chatStreamsYieldBetweenBatchesAndCancelSafely() {
                             receiver.reset();
                         else if (scenario == 3)
                             client.reset();
+                        if (scenario == 1 || scenario == 2) {
+                            QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+                            require(
+                                activity.snapshot().activeCount > baseline,
+                                "queued stream drains block trimming after canceled reply cleanup");
+                        }
                     },
                     Qt::QueuedConnection);
             },
@@ -1970,6 +2006,10 @@ void chatStreamsYieldBetweenBatchesAndCancelSafely() {
                         (!client || SnowShotApiClientTestAccess::requests(*client) == 0),
                     "cancellation and consumer destruction suppress queued drains and completion");
         }
+        translation_tests::flushEvents();
+        QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+        require(activity.snapshot().activeCount == baseline,
+                "completed and canceled stream drains release their memory activity");
     }
 }
 
@@ -2134,6 +2174,73 @@ void visionExtractionRejectsIncompleteAndInvalidResponses() {
         require(
             !result.succeeded() && result.html.isEmpty() && !result.error.isEmpty(),
             "invalid fragments, incomplete streams, and empty output never become usable tables");
+    }
+}
+
+void visionPreparationRetainsMemoryActivity() {
+    auto& activity = snow_shot::runtime::RuntimeActivityTracker::shared();
+    translation_tests::flushEvents();
+    QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+    const auto baseline = activity.snapshot().activeCount;
+    for (const bool table : {false, true}) {
+        for (int scenario = 0; scenario < 6; ++scenario) {
+            translation_tests::Server server;
+            auto client = std::make_unique<SnowShotApiClient>(server.url());
+            auto receiver = std::make_unique<QObject>();
+            QSemaphore entered, release;
+            SnowShotApiClientTestAccess::prepare(*client, [&](const QImage&) {
+                entered.release();
+                release.acquire();
+                return QByteArray();
+            });
+            if (scenario == 4)
+                SnowShotApiClientTestAccess::visionTimeout(*client, 20);
+            QImage image(16, 16, QImage::Format_RGBA8888);
+            image.fill(Qt::white);
+            int completions = 0;
+            const auto completion = [&](const auto& result) {
+                require(!result.succeeded(), "empty or expired vision preparation fails");
+                require(activity.snapshot().activeCount > baseline,
+                        "vision completion remains protected from memory trimming");
+                if (scenario == 4)
+                    require(result.code == QStringLiteral("recognition_timeout"),
+                            "vision preparation retains its absolute deadline");
+                ++completions;
+                if (scenario == 5)
+                    client.reset();
+            };
+            const auto token = table ? client->extractTableVision(image, QStringLiteral("vision"),
+                                                                  receiver.get(), completion)
+                                     : client->extractLatexVision(image, QStringLiteral("vision"),
+                                                                  receiver.get(), completion);
+            require(token != 0 && entered.tryAcquire(1, 5000), "vision preparation is pending");
+            if (scenario == 1)
+                client->cancel(token);
+            else if (scenario == 2)
+                receiver.reset();
+            else if (scenario == 3)
+                client.reset();
+            else if (scenario == 4)
+                translation_tests::waitUntil([&] { return completions == 1; },
+                                             "vision deadline expires during preparation");
+            require(activity.snapshot().activeCount > baseline,
+                    "vision encoding blocks trimming after cancellation, destruction, or timeout");
+            release.release();
+            require(QThreadPool::globalInstance()->waitForDone(5000), "vision worker settles");
+            require(activity.snapshot().activeCount > baseline,
+                    "queued vision delivery blocks trimming after its request ends");
+            QCoreApplication::sendPostedEvents(nullptr, QEvent::MetaCall);
+            require(completions == ((scenario == 0 || scenario == 4 || scenario == 5) ? 1 : 0),
+                    "vision consumers receive exactly one completion or none after cancellation");
+            require(server.streams.isEmpty(),
+                    "failed or canceled vision preparation never uploads");
+            receiver.reset();
+            client.reset();
+            translation_tests::flushEvents();
+            QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+            require(activity.snapshot().activeCount == baseline,
+                    "vision preparation releases all activity after its queued delivery settles");
+        }
     }
 }
 
@@ -2390,6 +2497,7 @@ int main(int argc, char** argv) {
     visionQueuedDrainsCheckElapsedDeadlineBeforeTimerDelivery();
     typedVisionStreamsCompleteAfterEveryQueuedFrame();
     visionExtractionRejectsIncompleteAndInvalidResponses();
+    visionPreparationRetainsMemoryActivity();
     visionExtractionDeadlinesCoverPreparationAndCustomQueues();
     visionExtractionCannotOutrunAnExpiredTimerEvent();
     visionLatexResponsesMustContainCompleteSource();

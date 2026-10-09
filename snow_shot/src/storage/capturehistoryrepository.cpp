@@ -1,3 +1,4 @@
+#include "snow_shot/runtime/runtimeactivitytracker.h"
 #include "snow_shot/platform/applicationqos.h"
 #include "snow_shot/storage/capturehistoryrepository.h"
 
@@ -830,6 +831,7 @@ class CaptureHistoryRepositoryImpl final : public CaptureHistoryRepository {
   private:
     enum class Kind { Publish, Remove, Policy, Clear, ConditionalClear, Maintenance, ReadFailure };
     struct Command {
+        snow_shot::runtime::RuntimeActivityLease activity;
         Kind kind = Kind::Maintenance;
         CaptureHistoryDraft draft;
         CaptureHistoryRecord record;
@@ -1195,6 +1197,7 @@ class CaptureHistoryRepositoryImpl final : public CaptureHistoryRepository {
     }
 
     void enqueue(Command command) {
+        command.activity = snow_shot::runtime::RuntimeActivityTracker::shared().acquire();
         std::unique_lock lock(m_queueMutex);
         QString rejection;
         {

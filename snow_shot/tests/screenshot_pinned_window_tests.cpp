@@ -12,6 +12,7 @@
 #include "../../test-support/virtualmemory.h"
 #include "../../test-support/memorysnapshot.h"
 #include "snow_shot/presentation/screenshotselectionpin.h"
+#include "snow_shot/runtime/runtimeactivitytracker.h"
 #include "snow_shot/presentation/pinnedgeometry.h"
 #include "../src/presentation/pinned/pinnedwindowplatform.h"
 #include "../src/presentation/pinned/screenshotclipboardplacementgeometry.h"
@@ -11854,7 +11855,9 @@ void restoredThumbnailScaleMenuStaysConsistentThroughExit(SnowCanvasRuntime&) {
         pinnedMenuActionNamed(*restoredWindow, QStringLiteral("screenshotPinnedThumbnailAction"));
     require(thumbnailAction != nullptr, "pinned thumbnail action was not found");
     const QRect expectedThumbnailGeometry(physical.topLeft() + QPoint(40, 30), QSize(120, 120));
-    require(restoredWindow->currentNativeGeometry() == expectedThumbnailGeometry,
+    require(restoredWindow->currentNativeGeometry() ==
+                    snow_shot::presentation::pinnedOuterRect(expectedThumbnailGeometry) &&
+                restoredWindow->persistenceSnapshot().nativeGeometry == expectedThumbnailGeometry,
             "restored thumbnail pinned window should present at the saved thumbnail geometry");
     // The scale menu is reachable while the thumbnail is showing, and it
     // describes the geometry the window will return to.
@@ -11868,15 +11871,17 @@ void restoredThumbnailScaleMenuStaysConsistentThroughExit(SnowCanvasRuntime&) {
     thumbnailAction->setChecked(false);
 
     const QRect expectedGeometry(physical.topLeft() + QPoint(200, 120), QSize(400, 200));
+    const QRect expectedOuterGeometry = snow_shot::presentation::pinnedOuterRect(expectedGeometry);
     QElapsedTimer settled;
     settled.start();
-    while (restoredWindow->currentNativeGeometry() != expectedGeometry &&
+    while (restoredWindow->currentNativeGeometry() != expectedOuterGeometry &&
            settled.elapsed() < 2000) {
         QCoreApplication::processEvents(QEventLoop::AllEvents, 20);
     }
     QCoreApplication::processEvents(QEventLoop::AllEvents, 100);
 
-    require(restoredWindow->currentNativeGeometry() == expectedGeometry,
+    require(restoredWindow->currentNativeGeometry() == expectedOuterGeometry &&
+                restoredWindow->persistenceSnapshot().nativeGeometry == expectedGeometry,
             "leaving thumbnail mode should apply the saved pre-thumbnail geometry");
     require(scaleMenuReadout(*restoredWindow) == QStringLiteral("Current: 50%"),
             "the scale menu should still describe the saved scale after leaving thumbnail mode");
@@ -11896,7 +11901,9 @@ void restoredFractionalScaleCopiesTheDisplayedViewport(SnowCanvasRuntime&) {
     ScreenshotSelectionExportUiServices services;
     ScreenshotPinnedWindow* restoredWindow = restoreSeededPinnedWindow(services, record);
     const QSize displayedSize = record.nativeGeometry.size();
-    require(restoredWindow->currentNativeGeometry().size() == displayedSize,
+    require(restoredWindow->currentNativeGeometry() ==
+                    snow_shot::presentation::pinnedOuterRect(record.nativeGeometry) &&
+                restoredWindow->persistenceSnapshot().nativeGeometry.size() == displayedSize,
             "fractional-scale restore should present at the saved physical size");
     require(scaleMenuReadout(*restoredWindow) == QStringLiteral("Current: 57%"),
             "fractional scale should only round in the user-facing readout");
@@ -11930,7 +11937,9 @@ void restoredPinnedWindowKeepsExactWheelLevelAtSameDpi(SnowCanvasRuntime&) {
 
     ScreenshotSelectionExportUiServices services;
     ScreenshotPinnedWindow* restoredWindow = restoreSeededPinnedWindow(services, record);
-    require(restoredWindow->currentNativeGeometry().size() == QSize(1092, 547),
+    require(restoredWindow->currentNativeGeometry().size() ==
+                    snow_shot::presentation::pinnedOuterSize(QSize(1092, 547)) &&
+                restoredWindow->persistenceSnapshot().nativeGeometry.size() == QSize(1092, 547),
             "same-DPI restore should present at the saved geometry");
     require(scaleMenuReadout(*restoredWindow) == QStringLiteral("Current: 110%"),
             "same-DPI restore should report the saved scale");
@@ -11948,7 +11957,8 @@ void restoredPinnedWindowKeepsExactWheelLevelAtSameDpi(SnowCanvasRuntime&) {
     waitForUi(50);
 
     const QSize expectedSize(qRound(basis.width() * 1.2), qRound(basis.height() * 1.2));
-    const QSize actualSize = restoredWindow->currentNativeGeometry().size();
+    const QSize actualSize =
+        snow_shot::presentation::pinnedContentRect(restoredWindow->currentNativeGeometry()).size();
     require(qAbs(actualSize.width() - expectedSize.width()) <= 1 &&
                 qAbs(actualSize.height() - expectedSize.height()) <= 1 &&
                 scaleLabel->text() == QStringLiteral("Scale: 120%"),
@@ -17282,11 +17292,15 @@ void pinnedHideCancelsRestoreAndRejectsStaleCallbacks() {
                 "Show queues restoration without creating a shell synchronously");
         require(services.toggleAllWindowsVisibility() && repository.loadRecord(id)->hidden,
                 "Hide cancels an in-flight restore before it has a shell");
+        require(runtime::RuntimeActivityTracker::shared().snapshot().activeCount > 0,
+                "canceled queued restoration retains its activity lease until loading unwinds");
         if (showAgain)
             services.showAllWindows();
         gate->release();
         releaseWorker.dismiss();
         require(pool.waitForDone(5000), "queued payload loads complete");
+        require(runtime::RuntimeActivityTracker::shared().snapshot().activeCount > 0,
+                "queued restore delivery retains activity after the loading worker finishes");
         if (showAgain) {
             wait(
                 [&] {
@@ -20303,6 +20317,48 @@ void pinnedAngleWheel() {
         *canvas, [&] { return ScreenshotPinnedWindowTestAccess::dragDocument(window); });
 }
 
+void pinnedMemoryIdleSafety() {
+    using Access = ScreenshotPinnedWindowTestAccess;
+    ScreenshotPinnedWindow window;
+    Access::prepareReplacement(window, cachedOcrPinConfig(nullptr));
+    window.show();
+    waitForUi(30);
+    require(!window.blocksMemoryTrimming(), "a prepared static pin permits memory trimming");
+
+    Access::editSelectionOffscreen(window, true);
+    require(window.blocksMemoryTrimming(), "an open pin editing session blocks memory trimming");
+    Access::editSelectionOffscreen(window, false);
+    waitForUi(30);
+    require(!window.blocksMemoryTrimming(), "closing pin editing restores memory trim eligibility");
+
+    Access::beginAuxiliaryInteraction(window);
+    require(window.blocksMemoryTrimming(), "an auxiliary pin interaction blocks memory trimming");
+    Access::endAuxiliaryInteraction(window);
+    require(!window.blocksMemoryTrimming(), "settled auxiliary pin interaction permits trimming");
+
+    auto& geometry = Access::nativeController(window);
+    require(geometry.beginMove(QPoint(40, 40)),
+            "begin a deterministic native pin move transaction");
+    require(window.blocksMemoryTrimming(), "an admitted native pin move blocks memory trimming");
+    geometry.cancelPendingInteraction();
+    require(!window.blocksMemoryTrimming(), "cancelled native pin move restores trim eligibility");
+
+    Access::enableLockAttentionFixture(window);
+    window.shakeForAttention();
+    auto* animation =
+        window.findChild<QVariantAnimation*>(QStringLiteral("screenshotPinnedShakeAnimation"));
+    require(animation && animation->state() == QAbstractAnimation::Running,
+            "pin attention fixture starts its actual bounded animation");
+    animation->pause();
+    require(window.blocksMemoryTrimming(), "a paused pin animation remains an active interaction");
+    animation->resume();
+    animation->setCurrentTime(animation->duration());
+    waitForUi(30);
+    require(!window.blocksMemoryTrimming(),
+            "a settled static pin permits trimming after animation");
+    window.hide();
+}
+
 int main(int argc, char* argv[]) {
 
     PinnedWindowTestApplication app(argc, argv);
@@ -20319,6 +20375,10 @@ int main(int argc, char* argv[]) {
         // without this, lazily initialized storage lands in the developer's
         // real AppData (see IsolatedPinnedStorage).
         IsolatedPinnedStorage processStorage;
+        if (app.arguments().contains(QStringLiteral("--memory-idle-only"))) {
+            pinnedMemoryIdleSafety();
+            return 0;
+        }
         if (app.arguments().contains(QStringLiteral("--show-shadow-only"))) {
             pinnedShadowStateAndMarginsOffscreen();
             return 0;

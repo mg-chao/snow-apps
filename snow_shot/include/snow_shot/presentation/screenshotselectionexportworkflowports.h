@@ -6,6 +6,7 @@
 #include "snow_shot/presentation/screenshotrecognitionresults.h"
 #include "snow_shot/presentation/screenshotresultcompositor.h"
 #include "snow_shot/presentation/screenshotselectionparams.h"
+#include "snow_shot/runtime/runtimeactivitytracker.h"
 
 #include <QColor>
 #include <QImage>
@@ -146,11 +147,12 @@ class ScreenshotPinnedSelectionResultHandle final {
         }
         QMetaObject::invokeMethod(
             receiver,
-            [guardedReceiver, callback = std::move(callback), succeeded, image]() mutable {
-                if (!guardedReceiver.isNull()) {
-                    callback(succeeded, image);
-                }
-            },
+            snow_shot::runtime::trackRuntimeWork(
+                [guardedReceiver, callback = std::move(callback), succeeded, image]() mutable {
+                    if (!guardedReceiver.isNull()) {
+                        callback(succeeded, image);
+                    }
+                }),
             Qt::QueuedConnection);
     }
 

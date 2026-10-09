@@ -2,6 +2,7 @@
 #define SNOW_SHOT_RECORDINGTRIMSESSION_H
 
 #include "snow_recording.h"
+#include "snow_shot/runtime/runtimeactivitytracker.h"
 #include <QObject>
 #include <QPointer>
 #include <QTimer>
@@ -63,6 +64,7 @@ class RecordingTrimSession final : public QObject {
     std::future<PublishResult> m_publishFuture;
     std::future<void> m_cancelFuture;
     SnowRecordingClip* m_clip = nullptr;
+    snow_shot::runtime::RuntimeActivityLease m_mediaActivity;
     SnowRecordingClipExport* m_export = nullptr;
     SnowRecordingClipInfo m_info{};
     quint64 m_revision = 0;

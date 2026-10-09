@@ -1,5 +1,6 @@
 #include "nativeprintdocument.h"
 #include "nativeprintdiagnostics.h"
+#include "snow_shot/runtime/runtimeactivitytracker.h"
 #include "snow_shot/presentation/screenshotprintservice.h"
 
 #include <d2d1_1.h>
@@ -89,6 +90,7 @@ ScreenshotWindowsPrintDocument::ScreenshotWindowsPrintDocument(
     : m_image(std::move(image)), m_lifecycle(std::move(lifecycle)) {}
 
 void ScreenshotWindowsPrintDocument::releasePreview() {
+    const auto activity = snow_shot::runtime::RuntimeActivityTracker::shared().acquire();
     ComPtr<IPrintPreviewDxgiPackageTarget> preview;
     {
         std::lock_guard lock(m_mutex);
@@ -101,6 +103,7 @@ void ScreenshotWindowsPrintDocument::releasePreview() {
 HRESULT __stdcall ScreenshotWindowsPrintDocument::GetPreviewPageCollection(
     IPrintDocumentPackageTarget* target, IPrintPreviewPageCollection** collection) noexcept {
     try {
+        const auto activity = snow_shot::runtime::RuntimeActivityTracker::shared().acquire();
         if (!target || !collection)
             return logWindowsPrintResult(E_POINTER, "windows_modern", "GetPreviewPageCollection");
         *collection = nullptr;
@@ -127,6 +130,7 @@ HRESULT __stdcall ScreenshotWindowsPrintDocument::GetPreviewPageCollection(
 HRESULT __stdcall ScreenshotWindowsPrintDocument::Paginate(UINT32,
                                                            ::IInspectable* options) noexcept {
     try {
+        const auto activity = snow_shot::runtime::RuntimeActivityTracker::shared().acquire();
         if (m_lifecycle->finished())
             return E_ABORT;
         const auto description = pageDescription(options);
@@ -161,6 +165,7 @@ HRESULT __stdcall ScreenshotWindowsPrintDocument::MakePage(UINT32 pageNumber, FL
                                                            FLOAT height) noexcept {
     const char* stage = "MakePage";
     try {
+        const auto activity = snow_shot::runtime::RuntimeActivityTracker::shared().acquire();
         if (m_lifecycle->finished())
             return E_ABORT;
         // Windows can ask the application to choose the next preview page.
@@ -235,6 +240,7 @@ HRESULT __stdcall ScreenshotWindowsPrintDocument::MakeDocument(
     ::IInspectable* options, IPrintDocumentPackageTarget* target) noexcept {
     const char* stage = "MakeDocument";
     try {
+        const auto activity = snow_shot::runtime::RuntimeActivityTracker::shared().acquire();
         if (!m_lifecycle->beginDocument())
             return E_ABORT;
         logPrintEvent("print.native_document_started",

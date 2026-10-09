@@ -130,8 +130,10 @@ void currentTemporaryClipboardFileSurvivesApplicationExit() {
     require(child.waitForStarted(2000) && child.waitForFinished(5000) &&
                 child.exitStatus() == QProcess::NormalExit && child.exitCode() == 0,
             "temporary clipboard shutdown process must complete successfully");
-    const QString path = QString::fromUtf8(child.readAllStandardOutput()).trimmed();
-    require(path.startsWith(directory.path() + QDir::separator()) && QFileInfo::exists(path),
+    const QString path =
+        QDir::fromNativeSeparators(QString::fromUtf8(child.readAllStandardOutput()).trimmed());
+    const QString root = QDir::fromNativeSeparators(directory.path());
+    require(path.startsWith(root + u'/') && QFileInfo::exists(path),
             "application exit must preserve the current temporary clipboard file for pasting");
 }
 
