@@ -1029,7 +1029,8 @@ void SnowShotApiClient::setCustomModels(const snow_shot::CustomAiModels& models)
 
 SnowShotApiClient::RequestToken
 SnowShotApiClient::ensureChatModels(const QString& locale, QObject* receiver,
-                                    ChatModelsCompletion completion) {
+                                    ChatModelsCompletion completion,
+                                    ChatModelsCachePolicy cachePolicy) {
     if (receiver == nullptr || !completion ||
         (m_baseUrl.isEmpty() && m_customModels.isEmpty() && m_textTranslations.isEmpty()))
         return 0;
@@ -1042,7 +1043,10 @@ SnowShotApiClient::ensureChatModels(const QString& locale, QObject* receiver,
     subscriber->receiverDestroyed =
         connect(receiver, &QObject::destroyed, this, [this, token] { cancel(token); });
     m_requests.insert(token, subscriber);
-    if (hasBuiltInModels(locale)) {
+    const QString key = QString::number(m_serverGeneration) + u':' +
+                        QString::number(m_chatModelsLocaleGeneration) + u':' + locale;
+    RequestToken owner = m_pendingModelCatalogs.value(key);
+    if (cachePolicy == ChatModelsCachePolicy::UseCached && owner == 0 && hasBuiltInModels(locale)) {
         const auto generation = m_serverGeneration;
         const auto localeGeneration = m_chatModelsLocaleGeneration;
         QTimer::singleShot(0, this, [this, token, generation, locale, localeGeneration] {
@@ -1059,9 +1063,6 @@ SnowShotApiClient::ensureChatModels(const QString& locale, QObject* receiver,
         });
         return token;
     }
-    const QString key = QString::number(m_serverGeneration) + u':' +
-                        QString::number(m_chatModelsLocaleGeneration) + u':' + locale;
-    RequestToken owner = m_pendingModelCatalogs.value(key);
     if (owner == 0) {
         // fetchChatModels always completes asynchronously, including the local-only path.
         const auto ownerToken = std::make_shared<RequestToken>(0);

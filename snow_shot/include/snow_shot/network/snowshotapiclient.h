@@ -49,6 +49,8 @@ struct SnowShotChatModel {
     bool supportsReasoning = false;
     QString translationMode = QStringLiteral("default");
     bool supportsVision = false;
+
+    [[nodiscard]] bool operator==(const SnowShotChatModel&) const = default;
 };
 
 struct SnowShotChatModelsResult {
@@ -106,6 +108,8 @@ class SnowShotApiClient final : public QObject {
     using TranslationDelta = std::function<void(const QString&)>;
     using TranslationCompletion = std::function<void(SnowShotTranslationResult)>;
 
+    enum class ChatModelsCachePolicy { UseCached, Refresh };
+
     explicit SnowShotApiClient(QString baseUrl, QObject* parent = nullptr);
     ~SnowShotApiClient() override;
 
@@ -131,10 +135,11 @@ class SnowShotApiClient final : public QObject {
                                                   QObject* receiver, LatexCompletion completion);
     [[nodiscard]] RequestToken fetchChatModels(const QString& locale, QObject* receiver,
                                                ChatModelsCompletion completion);
-    // Cached discovery and concurrent subscribers share one catalog request. Each returned
-    // token owns only its subscriber; cancelling it never cancels another consumer.
-    [[nodiscard]] RequestToken ensureChatModels(const QString& locale, QObject* receiver,
-                                                ChatModelsCompletion completion);
+    // Discovery reuses the cache unless refreshing. Concurrent subscribers, including normal
+    // discovery during a refresh, share one request. Each token cancels only its subscriber.
+    [[nodiscard]] RequestToken
+    ensureChatModels(const QString& locale, QObject* receiver, ChatModelsCompletion completion,
+                     ChatModelsCachePolicy cachePolicy = ChatModelsCachePolicy::UseCached);
     [[nodiscard]] RequestToken streamTranslation(const SnowShotTranslationRequest& request,
                                                  QObject* receiver, TranslationDelta delta,
                                                  TranslationCompletion completion);

@@ -1513,6 +1513,60 @@ void ensuredCatalogsAreLazySharedAndIndependentlyCancellable() {
             "discovery cancellation releases every owner and subscriber");
 }
 
+void refreshedCatalogsShareRequestsAndRespectCancellation() {
+    translation_tests::Server server;
+    SnowShotApiClient client(server.url());
+    QObject receiver;
+    bool loaded = false;
+    require(client.ensureChatModels(QStringLiteral("en_US"), &receiver,
+                                    [&](auto) { loaded = true; }) != 0,
+            "initial catalog request starts");
+    translation_tests::waitUntil([&] { return loaded; }, "initial catalog loads before refresh");
+    server.holdModels = true;
+    server.models =
+        QJsonArray{QJsonObject{{QStringLiteral("model"), QStringLiteral("updated")},
+                               {QStringLiteral("name"), QStringLiteral("Updated vision")},
+                               {QStringLiteral("supports_vision"), true}}};
+    int cancelledCompletions = 0, refreshedCompletions = 0;
+    const auto completed = [&](SnowShotChatModelsResult result) {
+        require(result.succeeded() && result.models.first().id == QStringLiteral("updated"),
+                "every refresh subscriber receives the updated catalog");
+        ++refreshedCompletions;
+    };
+    const auto cancelled = client.ensureChatModels(
+        QStringLiteral("en_US"), &receiver, [&](auto) { ++cancelledCompletions; },
+        SnowShotApiClient::ChatModelsCachePolicy::Refresh);
+    const auto refreshed =
+        client.ensureChatModels(QStringLiteral("en_US"), &receiver, completed,
+                                SnowShotApiClient::ChatModelsCachePolicy::Refresh);
+    const auto joined = client.ensureChatModels(QStringLiteral("en_US"), &receiver, completed);
+    require(cancelled && refreshed && joined && cancelled != refreshed && refreshed != joined,
+            "refresh and ordinary subscribers own independent tokens");
+    translation_tests::waitUntil([&] { return server.modelRequests == 2; },
+                                 "concurrent refreshes share one additional request");
+    client.cancel(cancelled);
+    server.respondModels();
+    translation_tests::waitUntil([&] { return refreshedCompletions == 2; },
+                                 "remaining refresh subscribers complete");
+    require(cancelledCompletions == 0 && server.modelRequests == 2 &&
+                client.builtInVisionModel() == QStringLiteral("updated") &&
+                SnowShotApiClientTestAccess::requests(client) == 0 &&
+                SnowShotApiClientTestAccess::catalogs(client) == 0,
+            "refresh cancellation preserves other subscribers and retires the shared request");
+    bool cached = false;
+    require(client.ensureChatModels(QStringLiteral("en_US"), &receiver,
+                                    [&](auto result) {
+                                        require(result.models.first().id ==
+                                                    QStringLiteral("updated"),
+                                                "normal discovery reuses the refreshed catalog");
+                                        cached = true;
+                                    }) != 0,
+            "refreshed catalog remains reusable");
+    translation_tests::waitUntil([&] { return cached; },
+                                 "refreshed cache completes asynchronously");
+    require(server.modelRequests == 2, "normal discovery after refresh performs no extra request");
+}
+
 void ensuredCatalogsAndFingerprintsFollowTheServer() {
     translation_tests::Server oldServer, newServer;
     oldServer.holdModels = true;
@@ -1599,9 +1653,16 @@ void obsoleteLocalesCannotReplaceTheCurrentCatalog() {
             "current locale catalog starts independently");
     translation_tests::waitUntil([&] { return server.modelRequests == 2; },
                                  "both localized catalogs are pending");
-    const auto respond = [&](int index, const QString& model) {
-        const auto socket = server.pendingModels.at(index);
-        require(socket != nullptr, "held localized catalog remains connected");
+    const auto respond = [&](const QByteArray& locale, const QString& model) {
+        const auto pending = std::find_if(
+            server.pendingModels.cbegin(), server.pendingModels.cend(),
+            [&locale](const auto& socket) {
+                return socket && socket->property("request").toByteArray().toLower().contains(
+                                     "accept-language: " + locale.toLower() + "\r\n");
+            });
+        require(pending != server.pendingModels.cend(),
+                "find the held catalog by requested locale");
+        const auto socket = *pending;
         const QByteArray body =
             QJsonDocument(
                 QJsonObject{{QStringLiteral("data"),
@@ -1613,9 +1674,9 @@ void obsoleteLocalesCannotReplaceTheCurrentCatalog() {
                       QByteArray::number(body.size()) + "\r\nConnection: close\r\n\r\n" + body);
         socket->disconnectFromHost();
     };
-    respond(1, QStringLiteral("current-vision"));
+    respond("zh_CN", QStringLiteral("current-vision"));
     translation_tests::waitUntil([&] { return currentDone; }, "current locale finishes first");
-    respond(0, QStringLiteral("old-vision"));
+    respond("en_US", QStringLiteral("old-vision"));
     translation_tests::waitUntil([&] { return oldDone; },
                                  "obsolete locale still completes its subscriber");
     require(oldResult.succeeded() && oldResult.models.first().id == QStringLiteral("old-vision") &&
@@ -2191,6 +2252,7 @@ int main(int argc, char** argv) {
     requestsKeepTheirOriginalServer();
     oldCatalogCannotReplaceNewServerModels();
     ensuredCatalogsAreLazySharedAndIndependentlyCancellable();
+    refreshedCatalogsShareRequestsAndRespectCancellation();
     ensuredCatalogsAndFingerprintsFollowTheServer();
     obsoleteLocalesCannotReplaceTheCurrentCatalog();
     visionExtractionPreservesTypedOutputAndImageDetails();

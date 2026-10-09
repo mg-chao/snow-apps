@@ -730,7 +730,23 @@ void ScreenshotRecognitionSessionController::updateRecognitionModels() const {
 #endif
 }
 
-void ScreenshotRecognitionSessionController::loadRecognitionModels() {
+bool ScreenshotRecognitionSessionController::recognitionModelAvailable(const QString& model) const {
+#if SNOW_SHOT_ENABLE_TABLE_RECOGNITION || SNOW_SHOT_ENABLE_LATEX_RECOGNITION
+    return m_tableRecognition &&
+           (model.startsWith(QStringLiteral("custom:")) ||
+            m_tableRecognition->hasBuiltInModels(
+                snow_shot::presentation::LanguageManager::instance().currentLocale().name())) &&
+           std::any_of(m_tableRecognition->cachedChatModels().cbegin(),
+                       m_tableRecognition->cachedChatModels().cend(), [&model](const auto& item) {
+                           return item.id == model && item.supportsVision;
+                       });
+#else
+    Q_UNUSED(model)
+    return false;
+#endif
+}
+
+void ScreenshotRecognitionSessionController::loadRecognitionModels(bool refresh) {
 #if SNOW_SHOT_ENABLE_TABLE_RECOGNITION || SNOW_SHOT_ENABLE_LATEX_RECOGNITION
     if (!m_active || (m_mode != Mode::Table && m_mode != Mode::Latex) || !m_tableRecognition ||
         m_recognitionModelsToken) {
@@ -744,7 +760,8 @@ void ScreenshotRecognitionSessionController::loadRecognitionModels() {
     const QString locale =
         snow_shot::presentation::LanguageManager::instance().currentLocale().name();
     m_recognitionModelsToken = m_tableRecognition->ensureChatModels(
-        locale, this, [this, generation](SnowShotChatModelsResult result) {
+        locale, this,
+        [this, generation](SnowShotChatModelsResult result) {
             if (generation != m_recognitionModelsGeneration || !m_active)
                 return;
             m_recognitionModelsToken = 0;
@@ -758,12 +775,16 @@ void ScreenshotRecognitionSessionController::loadRecognitionModels() {
             if ((m_mode == Mode::Table || m_mode == Mode::Latex) && m_recognitionAwaitingModel)
                 activateModelResult();
             updateBusyState();
-        });
+        },
+        refresh ? SnowShotApiClient::ChatModelsCachePolicy::Refresh
+                : SnowShotApiClient::ChatModelsCachePolicy::UseCached);
     if (!m_recognitionModelsToken) {
         m_recognitionModelsLoading = false;
         m_recognitionModelsError = tr("Unable to load Snow Shot vision models");
         updateRecognitionModels();
     }
+#else
+    Q_UNUSED(refresh)
 #endif
 }
 
@@ -862,10 +883,16 @@ void ScreenshotRecognitionSessionController::retryRecognition() {
     m_workflowError.clear();
 #if SNOW_SHOT_ENABLE_TABLE_RECOGNITION || SNOW_SHOT_ENABLE_LATEX_RECOGNITION
     m_recognitionEffectiveModel.clear();
+    const QString model = resolvedRecognitionModel(m_mode);
+    const bool refresh = model != screenshotDedicatedRecognitionModelId() &&
+                         !model.startsWith(QStringLiteral("custom:")) &&
+                         !recognitionModelAvailable(model);
+#else
+    constexpr bool refresh = false;
 #endif
     if (content())
         content()->clearRecognitionError();
-    loadRecognitionModels();
+    loadRecognitionModels(refresh);
     activateModelResult();
 }
 
@@ -921,16 +948,7 @@ void ScreenshotRecognitionSessionController::activateModelResult() {
     }
 #endif
     if (model != screenshotDedicatedRecognitionModelId()) {
-        const bool available =
-            m_tableRecognition &&
-            (model.startsWith(QStringLiteral("custom:")) ||
-             m_tableRecognition->hasBuiltInModels(
-                 snow_shot::presentation::LanguageManager::instance().currentLocale().name())) &&
-            std::any_of(m_tableRecognition->cachedChatModels().cbegin(),
-                        m_tableRecognition->cachedChatModels().cend(), [&model](const auto& item) {
-                            return item.id == model && item.supportsVision;
-                        });
-        if (!available) {
+        if (!recognitionModelAvailable(model)) {
             if (m_recognitionModelsLoading && !model.startsWith(QStringLiteral("custom:"))) {
                 m_recognitionAwaitingModel = true;
                 showRecognitionMessage();

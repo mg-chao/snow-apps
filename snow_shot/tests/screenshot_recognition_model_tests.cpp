@@ -347,6 +347,28 @@ void visionTablesRequireActualMarkupAndRetainMergedEmptyCells() {
             "and entities");
 }
 
+void visionTableHeadersFollowGridCoordinates() {
+    const auto ragged = ScreenshotTableDocument::fromHtml(
+        QStringLiteral("<table><tr><td>A</td></tr><tr><th>B</th><td>C</td></tr></table>"), true);
+    require(!ragged.empty() && ragged.rowCount() == 2 && ragged.columnCount() == 2 &&
+                !ragged.cellAt(0, 0)->header && !ragged.cellAt(0, 1)->header &&
+                ragged.cellAt(1, 0)->header && !ragged.cellAt(1, 1)->header &&
+                ragged.cellText(1, 0) == QStringLiteral("B"),
+            "synthesized empty cells must not consume the next source cell's header flag");
+    const auto spanned = ScreenshotTableDocument::fromHtml(
+        QStringLiteral("<table><tr><td rowspan=\"2\">A</td><td>B</td></tr>"
+                       "<tr><th>C</th><td>D</td></tr></table>"),
+        true);
+    require(!spanned.empty() && spanned.rowCount() == 2 && spanned.columnCount() == 3 &&
+                spanned.cellAt(0, 0)->rowSpan == 2 && !spanned.cellAt(0, 2)->header &&
+                spanned.cellAt(1, 1)->header && !spanned.cellAt(1, 2)->header &&
+                spanned.cellText(1, 1) == QStringLiteral("C"),
+            "header coordinates account for row spans and missing cells together");
+    require(ScreenshotTableDocument::fromHtml(ragged.toHtml(), true) == ragged &&
+                ScreenshotTableDocument::fromHtml(spanned.toHtml(), true) == spanned,
+            "ragged table headers and spans survive draft serialization and restoration");
+}
+
 void tableModelSwitchesPreserveSpansEditsAndUndo() {
     ModelSettingsGuard guard;
     RecognitionServer server;
@@ -924,10 +946,9 @@ void unavailableSelectionsOfferRetryWithoutDedicatedOrCustomFallback() {
             "recognition");
     retry->click();
     until([&] { return !missing.busy(); }, "retry of an unavailable selection settles");
-    require(server.modelRequests == 1 && server.dedicatedRequests == 0 &&
+    require(server.modelRequests == 2 && server.dedicatedRequests == 0 &&
                 server.visionRequests.isEmpty(),
-            "retry preserves an explicit unavailable selection and does not fall back to a "
-            "different model");
+            "retry refreshes an unavailable selection without falling back to a different model");
 
     ScreenshotRecognitionSessionController noProvider(nullptr, nullptr, nullptr, headlessActions());
     noProvider.setTarget(target(QStringLiteral("default-no-provider")));
@@ -960,6 +981,55 @@ void unavailableSelectionsOfferRetryWithoutDedicatedOrCustomFallback() {
             customOnly.visionRequests.isEmpty() && customOnly.dedicatedRequests == 0,
         "Snow Shot's default vision alias must never resolve to a custom model or dedicated "
         "fallback");
+}
+
+void retryRefreshesUnavailableCatalogsForBothRecognitionModes() {
+    ModelSettingsGuard guard;
+    for (const Mode mode : {Mode::Table, Mode::Latex}) {
+        for (const QString& selection :
+             {QStringLiteral("new-vision"), screenshotDefaultVisionRecognitionModelId()}) {
+            RecognitionServer server;
+            server.catalogOrder = {QStringLiteral("vision-a")};
+            server.includeBuiltinVision = selection != screenshotDefaultVisionRecognitionModelId();
+            server.visionSource = mode == Mode::Table
+                                      ? QStringLiteral("<table><tr><th>Recovered</th></tr></table>")
+                                      : QStringLiteral("x^2");
+            SnowShotApiClient api(server.url());
+            loadCatalog(api);
+            require(mode == Mode::Table ? Settings().setTableModel(selection)
+                                        : Settings().setLatexModel(selection),
+                    "select a currently unavailable builtin recognition model");
+            ScreenshotRecognitionSessionController session(nullptr, nullptr, &api,
+                                                           headlessActions());
+            session.setTarget(target(QStringLiteral("refresh-unavailable-model")));
+            session.activate(mode);
+            until([&] { return !session.busy(); }, "initial unavailable model settles");
+            require(
+                session.workflowResult().isEmpty() &&
+                    !session.workflowState().value(QStringLiteral("error")).toString().isEmpty(),
+                "an unavailable model reports an error before the server catalog changes");
+            server.holdCatalog = true;
+            server.includeBuiltinVision = true;
+            server.catalogOrder.append(QStringLiteral("new-vision"));
+            session.retryRecognition();
+            until([&] { return server.modelRequests == 2 && server.heldCatalog; },
+                  "retry starts a fresh catalog request despite the cached catalog");
+            require(session.busy(mode) && session.workflowResult().isEmpty() &&
+                        session.recognitionModelSelection(mode) == selection &&
+                        server.visionRequests.isEmpty() && server.dedicatedRequests == 0,
+                    "retry awaits discovery and preserves the selected model without fallback");
+            server.respondCatalog(server.heldCatalog);
+            until([&] { return !session.busy() && !session.workflowResult().isEmpty(); },
+                  "the refreshed catalog makes the selected model usable");
+            const QString expected = selection == screenshotDefaultVisionRecognitionModelId()
+                                         ? QStringLiteral("vision-a")
+                                         : selection;
+            require(server.modelRequests == 2 && server.visionRequests.size() == 1 &&
+                        server.visionRequests.first().value(QStringLiteral("model")) == expected &&
+                        session.workflowState().value(QStringLiteral("error")).toString().isEmpty(),
+                    "both table and formula retries recover using the refreshed selected model");
+        }
+    }
 }
 
 void inFlightModelSwitchesCancelOldRequestsAndRetryFailures() {
@@ -1301,6 +1371,7 @@ void runRecognitionModelTests() {
     defaultsAndInactiveToolsDoNotFetchModels();
     defaultLatexUsesDedicatedRecognitionWhileCatalogIsLoading();
     visionTablesRequireActualMarkupAndRetainMergedEmptyCells();
+    visionTableHeadersFollowGridCoordinates();
     tableModelSwitchesPreserveSpansEditsAndUndo();
     tableModelSwitchesReuseEditorAndRestoreIndependentViewState();
     largeSeededTablesMaterializeOnlyWhenSelectedAndIgnoreStaleWorkers();
@@ -1310,6 +1381,7 @@ void runRecognitionModelTests() {
     changedCustomConfigurationInvalidatesOnlyItsOwnResults();
     sourceSwitchesInvalidateBuiltinsAndPreserveIndependentCustomEndpoints();
     unavailableSelectionsOfferRetryWithoutDedicatedOrCustomFallback();
+    retryRefreshesUnavailableCatalogsForBothRecognitionModes();
     inFlightModelSwitchesCancelOldRequestsAndRetryFailures();
     defaultVisionModelRemainsBoundAcrossCatalogRefreshes();
     catalogFetchIsSharedAndCancelledSubscribersDoNotAffectOtherTools();

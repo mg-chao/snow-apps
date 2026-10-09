@@ -6887,6 +6887,12 @@ void recognitionModelSelectorGroupsOptionsAndRetainsIndependentSelections() {
          QStringLiteral("default"), true},
         {QStringLiteral("custom:text"), QStringLiteral("Custom text-only model"), false,
          QStringLiteral("default"), false},
+        {QStringLiteral("vision-default"), QStringLiteral("Duplicate vision model"), false,
+         QStringLiteral("default"), true},
+        {screenshotDedicatedRecognitionModelId(), QStringLiteral("Reserved dedicated identity"),
+         false, QStringLiteral("default"), true},
+        {screenshotDefaultVisionRecognitionModelId(), QStringLiteral("Reserved default identity"),
+         false, QStringLiteral("default"), true},
     };
     palette.setRecognitionModelState(Tool::Table, tableState);
     auto latexState = tableState;

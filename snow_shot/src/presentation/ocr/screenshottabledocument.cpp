@@ -14,6 +14,8 @@
 
 namespace {
 const QString tableClipboardFormat = QStringLiteral("application/x-snow-shot-table-html");
+constexpr int maximumTableDimension = 256;
+constexpr int maximumTableCells = 16384;
 
 bool needsSpreadsheetTextPrefix(const QString& text) {
     static const QRegularExpression numericText(QStringLiteral("\\A[+-]?[0-9]+(?:\\.[0-9]+)?\\z"));
@@ -64,7 +66,7 @@ quint64 coordinateKey(int row, int column) {
     return (static_cast<quint64>(static_cast<quint32>(row)) << 32U) | static_cast<quint32>(column);
 }
 
-bool completeTableHtml(const QString& source, QVector<bool>& cellHeaders) {
+bool completeTableHtml(const QString& source, QBitArray& cellHeaders) {
     // QTextDocument repairs incomplete HTML. Extraction must be complete before that tolerant
     // parser runs, and spans must be bounded before it allocates its table grid.
     static const QRegularExpression markup(QStringLiteral(
@@ -85,7 +87,8 @@ bool completeTableHtml(const QString& source, QVector<bool>& cellHeaders) {
     int nextColumn = 0;
     int gridRows = 0;
     int gridColumns = 0;
-    QBitArray occupied(256 * 256);
+    QBitArray occupied(maximumTableDimension * maximumTableDimension);
+    cellHeaders.resize(occupied.size());
     auto matches = markup.globalMatch(source);
     while (matches.hasNext()) {
         const auto match = matches.next();
@@ -116,13 +119,12 @@ bool completeTableHtml(const QString& source, QVector<bool>& cellHeaders) {
         } else if (tag == QStringLiteral("tr")) {
             if ((parent != QStringLiteral("table") && parent != QStringLiteral("thead") &&
                  parent != QStringLiteral("tbody") && parent != QStringLiteral("tfoot")) ||
-                ++rows > 256)
+                ++rows > maximumTableDimension)
                 return false;
             nextColumn = 0;
         } else if (tag == QStringLiteral("td") || tag == QStringLiteral("th")) {
-            if (parent != QStringLiteral("tr") || ++cells > 16384)
+            if (parent != QStringLiteral("tr") || ++cells > maximumTableCells)
                 return false;
-            cellHeaders.append(tag == QStringLiteral("th"));
             int rowSpan = 1;
             int columnSpan = 1;
             QSet<QString> attributes;
@@ -139,22 +141,26 @@ bool completeTableHtml(const QString& source, QVector<bool>& cellHeaders) {
                                           : attribute.captured(2);
                 bool valid = false;
                 const int count = value.toInt(&valid);
-                if (!valid || count < 1 || count > 256)
+                if (!valid || count < 1 || count > maximumTableDimension)
                     return false;
                 (name == QStringLiteral("rowspan") ? rowSpan : columnSpan) = count;
             }
             const int row = rows - 1;
-            while (nextColumn < 256 && occupied.testBit(row * 256 + nextColumn))
+            while (nextColumn < maximumTableDimension &&
+                   occupied.testBit(row * maximumTableDimension + nextColumn))
                 ++nextColumn;
-            if (row + rowSpan > 256 || nextColumn + columnSpan > 256)
+            if (row + rowSpan > maximumTableDimension ||
+                nextColumn + columnSpan > maximumTableDimension)
                 return false;
             gridRows = std::max(gridRows, row + rowSpan);
             gridColumns = std::max(gridColumns, nextColumn + columnSpan);
-            if (gridRows * gridColumns > 16384)
+            if (gridRows * gridColumns > maximumTableCells)
                 return false;
+            cellHeaders.setBit(row * maximumTableDimension + nextColumn,
+                               tag == QStringLiteral("th"));
             for (int coveredRow = row; coveredRow < row + rowSpan; ++coveredRow) {
                 for (int column = nextColumn; column < nextColumn + columnSpan; ++column) {
-                    const int slot = coveredRow * 256 + column;
+                    const int slot = coveredRow * maximumTableDimension + column;
                     if (occupied.testBit(slot))
                         return false;
                     occupied.setBit(slot);
@@ -183,7 +189,7 @@ ScreenshotTableDocument::ScreenshotTableDocument(int rows, int columns, bool fir
 
 ScreenshotTableDocument ScreenshotTableDocument::fromHtml(const QString& source,
                                                           bool requireTable) {
-    QVector<bool> cellHeaders;
+    QBitArray cellHeaders;
     if (requireTable &&
         (source.size() > 4 * 1024 * 1024 || !completeTableHtml(source, cellHeaders)))
         return {};
@@ -202,14 +208,15 @@ ScreenshotTableDocument ScreenshotTableDocument::fromHtml(const QString& source,
     }
 
     const QTextTable* table = tables.constFirst();
-    if (requireTable && (tables.size() != 1 || table->rows() > 256 || table->columns() > 256 ||
-                         qint64(table->rows()) * table->columns() > 16384)) {
+    if (requireTable && (tables.size() != 1 || table->rows() > maximumTableDimension ||
+                         table->columns() > maximumTableDimension ||
+                         qint64(table->rows()) * table->columns() > maximumTableCells)) {
         return {};
     }
-    const bool firstRowHeader = source.contains(
-        QRegularExpression(QStringLiteral("<th\\b"), QRegularExpression::CaseInsensitiveOption));
+    const bool firstRowHeader =
+        !requireTable && source.contains(QRegularExpression(
+                             QStringLiteral("<th\\b"), QRegularExpression::CaseInsensitiveOption));
     ScreenshotTableDocument result(table->rows(), table->columns(), firstRowHeader);
-    qsizetype cellIndex = 0;
     for (int row = 0; row < table->rows(); ++row) {
         for (int column = 0; column < table->columns(); ++column) {
             const QTextTableCell sourceCell = table->cellAt(row, column);
@@ -220,10 +227,9 @@ ScreenshotTableDocument ScreenshotTableDocument::fromHtml(const QString& source,
             target.cell.text = tableCellText(sourceCell);
             target.cell.rowSpan = std::max(1, sourceCell.rowSpan());
             target.cell.columnSpan = std::max(1, sourceCell.columnSpan());
-            target.cell.header = requireTable && cellIndex < cellHeaders.size()
-                                     ? cellHeaders.at(cellIndex)
+            target.cell.header = requireTable
+                                     ? cellHeaders.testBit(row * maximumTableDimension + column)
                                      : firstRowHeader && row == 0;
-            ++cellIndex;
             result.applySpan(row, column);
         }
     }

@@ -18,6 +18,8 @@ struct ScreenshotRecognitionModelState {
     bool loading = false;
     QString error;
     QString effectiveModel;
+
+    [[nodiscard]] bool operator==(const ScreenshotRecognitionModelState&) const = default;
 };
 
 #endif // SNOW_SHOT_PRESENTATION_SCREENSHOTRECOGNITIONMODEL_H

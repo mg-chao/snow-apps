@@ -229,11 +229,12 @@ class ScreenshotRecognitionSessionController final : public QObject {
     void startTableRecognition();
     void startQrRecognition();
     void startLatexRecognition();
-    void loadRecognitionModels();
+    void loadRecognitionModels(bool refresh = false);
     void updateRecognitionModels() const;
     void cancelModelRecognition(Mode mode);
     void failModelRecognition(const QString& message);
     [[nodiscard]] QString resolvedRecognitionModel(Mode mode) const;
+    [[nodiscard]] bool recognitionModelAvailable(const QString& model) const;
     [[nodiscard]] QString recognitionCacheKey(Mode mode, const QString& model = {}) const;
     [[nodiscard]] bool recognitionEntryValid(const QString& model,
                                              const QString& fingerprint) const;

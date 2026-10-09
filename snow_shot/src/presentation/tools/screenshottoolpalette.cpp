@@ -8645,10 +8645,13 @@ void ScreenshotToolPalette::setRecognitionModelState(Tool tool,
     }
     auto& stored =
         tool == Tool::Table ? m_tableRecognitionModelState : m_latexRecognitionModelState;
-    stored = state;
-    if (stored.selection.isEmpty()) {
-        stored.selection = screenshotDedicatedRecognitionModelId();
+    auto normalized = state;
+    if (normalized.selection.isEmpty()) {
+        normalized.selection = screenshotDedicatedRecognitionModelId();
     }
+    if (stored == normalized)
+        return;
+    stored = std::move(normalized);
     if (m_activeTool == tool) {
         refreshRecognitionModelSelect();
     }
@@ -8667,17 +8670,19 @@ void ScreenshotToolPalette::refreshRecognitionModelSelect() {
          m_activeTool == Tool::Table ? tr("Table-Specific Model") : tr("LaTeX-Specific Model"),
          false, tr("Dedicated Model")},
     };
+    options.reserve(state.models.size() + 1);
+    QSet<QString> modelIds{screenshotDedicatedRecognitionModelId(),
+                           screenshotDefaultVisionRecognitionModelId()};
+    modelIds.reserve(state.models.size() + 2);
     QString builtInDefault;
     for (const auto& model : state.models) {
         if (!model.supportsVision || model.id.isEmpty()) {
             continue;
         }
-        if (model.id == screenshotDefaultVisionRecognitionModelId() ||
-            std::any_of(options.cbegin(), options.cend(), [&model](const auto& option) {
-                return option.value.toString() == model.id;
-            })) {
+        if (modelIds.contains(model.id)) {
             continue;
         }
+        modelIds.insert(model.id);
         if (builtInDefault.isEmpty() && !model.id.startsWith(QStringLiteral("custom:"))) {
             builtInDefault = model.id;
         }

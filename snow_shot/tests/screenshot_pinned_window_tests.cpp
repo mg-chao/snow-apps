@@ -3072,8 +3072,10 @@ void pinnedRecognitionModelsSurviveTransferAndRestart() {
             }
         });
         require(window->present(config), "pin with multiple recognition models presents");
-        waitForUi(100);
         auto* session = window->findChild<ScreenshotRecognitionSessionController*>();
+        require(session != nullptr, "model-aware pin creates its recognition session");
+        translation_tests::waitUntil([&] { return session->hasTarget(); },
+                                     "deferred model-aware recognition setup completes");
         require(session && !session->active() && recognition.requests == 0 &&
                     settings.tableModel() == QStringLiteral("global-table-model") &&
                     settings.latexModel() == QStringLiteral("global-latex-model"),

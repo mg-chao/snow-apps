@@ -142,6 +142,34 @@ QString tableHtml(const QString& label) {
     return html + QStringLiteral("</table>");
 }
 
+void benchmarkCatalogUpdates() {
+    for (const int count : {32, 1024}) {
+        ScreenshotToolPalette palette(paletteOptions());
+        preparePalette(palette);
+        palette.setActiveTool(Tool::Table);
+        ScreenshotRecognitionModelState state;
+        state.models.reserve(count);
+        for (int index = 0; index < count; ++index) {
+            state.models.append({QStringLiteral("catalog-%1").arg(index),
+                                 QStringLiteral("Catalog model %1").arg(index), false,
+                                 QStringLiteral("default"), true});
+        }
+        state.selection = state.models.first().id;
+        palette.setRecognitionModelState(Tool::Table, state);
+        QCoreApplication::processEvents();
+        Samples changed;
+        Samples unchanged;
+        for (int iteration = 0; iteration < 30; ++iteration) {
+            state.selection = iteration % 2 == 0 ? state.models.last().id : state.models.first().id;
+            sample(changed, [&] { palette.setRecognitionModelState(Tool::Table, state); });
+            sample(unchanged, [&] { palette.setRecognitionModelState(Tool::Table, state); });
+        }
+        const auto prefix = QStringLiteral("recognition_catalog_%1").arg(count);
+        report((prefix + QStringLiteral("_selection_update")).toLatin1().constData(), changed);
+        report((prefix + QStringLiteral("_unchanged_state")).toLatin1().constData(), unchanged);
+    }
+}
+
 void benchmarkCachedModelSwitches() {
     QWidget host;
     host.resize(480, 240);
@@ -308,6 +336,7 @@ int main(int argc, char** argv) {
     std::cout << std::fixed << std::setprecision(3)
               << "build=Release platform=" << application.platformName().toStdString() << '\n';
     benchmarkToolbarActivation();
+    benchmarkCatalogUpdates();
     benchmarkCachedModelSwitches();
     snow_shot::storage::ApplicationStorage::instance().shutdown();
     return EXIT_SUCCESS;
