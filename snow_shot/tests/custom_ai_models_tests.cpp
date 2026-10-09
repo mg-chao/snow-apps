@@ -535,6 +535,17 @@ void widgetContracts(QApplication& application) {
         flush();
         editAction->setFocus();
         require(QApplication::focusWidget() == editAction, "focus the model action before theming");
+        for (const auto phase :
+             {settings::SettingsWritePhase::Pending, settings::SettingsWritePhase::Clean}) {
+            auto state = session.state(QStringLiteral("api.custom-models"));
+            state.phase = phase;
+            state.busy = phase == settings::SettingsWritePhase::Pending;
+            state.dirty = state.busy;
+            emit session.fieldChanged(QStringLiteral("api.custom-models"), state);
+            flush();
+            require(originalRow && QApplication::focusWidget() == editAction,
+                    "unchanged model persistence notifications preserve rows and focus");
+        }
         auto& themes = presentation::styles::ThemeManager::instance();
         const auto initialMode = themes.themeMode();
         themes.setThemeMode(presentation::styles::ThemeMode::Dark);
@@ -555,6 +566,8 @@ void widgetContracts(QApplication& application) {
                     copied[1].name == QStringLiteral("Personal model (Copy)") &&
                     copied[2].name == QStringLiteral("Personal model (Copy 2)"),
                 "copy duplicates immediately with independent identity and name");
+        require(widget->findChild<QWidget*>(QStringLiteral("customAiModelRow:") + copied[1].id),
+                "a changed model list renders its new configuration");
         customAiModelRowsRespectSkinMask(registry, session);
         observer.frames.clear();
         application.installEventFilter(&observer);

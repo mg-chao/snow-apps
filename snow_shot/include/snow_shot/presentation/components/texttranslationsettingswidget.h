@@ -5,6 +5,7 @@
 #include "snow_shot/texttranslationconfiguration.h"
 #include <QPointer>
 #include <array>
+#include <optional>
 
 class QVBoxLayout;
 class QLabel;
@@ -34,7 +35,7 @@ class TextTranslationSettingsWidget final : public SettingsCustomWidget {
     void changeEvent(QEvent* event) override;
 
   private:
-    void rebuild();
+    void rebuild(bool force = false);
     void openEditor(const QString& id = {});
     void copyModel(const QString& id);
     void deleteModel(const QString& id);
@@ -44,6 +45,7 @@ class TextTranslationSettingsWidget final : public SettingsCustomWidget {
     snow_shot::presentation::settings::SettingsRuntimeSession& m_session;
     snow_shot::presentation::styles::ThemeColorScheme m_scheme;
     QVBoxLayout* m_rows = nullptr;
+    std::optional<snow_shot::TextTranslationConfigurations> m_renderedConfigurations;
     QLabel* m_title = nullptr;
     adqt::widgets::AdButton* m_add = nullptr;
     adqt::widgets::AdAlert* m_error = nullptr;

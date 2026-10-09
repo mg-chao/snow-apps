@@ -3,6 +3,7 @@
 #include "snow_shot/presentation/components/pathinput.h"
 #include "snow_shot/presentation/components/toolbareditorsettingswidget.h"
 #include "snow_shot/presentation/globalshortcutmanager.h"
+#include "snow_shot/presentation/screenshottoolbarlayoutmodel.h"
 #include "snow_shot/presentation/languagemanager.h"
 #include "snow_shot/presentation/settings/settingsbackend.h"
 #include "snow_shot/presentation/settings/settingsruntimesession.h"
@@ -17,6 +18,7 @@
 #include <QLineEdit>
 #include "widgets/switch.h"
 #include "widgets/button.h"
+#include "widgets/checkbox.h"
 #include "snow_shot/presentation/components/sectionheaderwidget.h"
 #include "snow_shot/storage/configurationschema.h"
 
@@ -29,9 +31,11 @@
 #include <QJsonObject>
 #include <QLabel>
 #include <QProxyStyle>
+#include <QResizeEvent>
 #include <QPixmap>
 #include <QPointer>
 #include <QScrollBar>
+#include <QSet>
 #include <QTemporaryDir>
 #include <QTranslator>
 
@@ -52,6 +56,437 @@ void drainEvents() {
     for (int i = 0; i < 4; ++i) {
         QCoreApplication::processEvents();
         QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+    }
+}
+
+class LayoutStabilityProbe final : public QObject {
+  public:
+    explicit LayoutStabilityProbe(adqt::widgets::AdScrollArea& scroll,
+                                  QWidget* stableTrayControls = nullptr)
+        : bar(scroll.verticalScrollBar()), content(scroll.contentWidget()),
+          initialSize(content->size()), initialValue(scroll.verticalScrollBar()->value()),
+          initialMaximum(scroll.verticalScrollBar()->maximum()),
+          initialFocus(QApplication::focusWidget()) {
+        content->installEventFilter(this);
+        if (stableTrayControls != nullptr) {
+            for (auto* widget : stableTrayControls->findChildren<QWidget*>()) {
+                if (widget->objectName().startsWith(QStringLiteral("settings-tray-menu-option-")) ||
+                    widget->objectName().startsWith(
+                        QStringLiteral("settings-tray-menu-options-separator-"))) {
+                    observedControls.insert(widget);
+                    widget->installEventFilter(this);
+                }
+            }
+        }
+        QObject::connect(scroll.verticalScrollBar(), &QScrollBar::valueChanged, this,
+                         [this](int value) { values.push_back(value); });
+        QObject::connect(
+            scroll.verticalScrollBar(), &QScrollBar::rangeChanged, this,
+            [this](int minimum, int maximum) { ranges.push_back({minimum, maximum}); });
+        QObject::connect(
+            qApp, &QApplication::focusChanged, this, [this](QWidget*, QWidget* focused) {
+                focusNames.push_back(focused ? focused->objectName() : QStringLiteral("<none>"));
+                if (focused != nullptr && focused != initialFocus.data())
+                    redirectedFocus = true;
+            });
+    }
+
+    void verify(const QString& label, bool diagnosticOnly) const {
+        std::cerr << label.toStdString() << ": initial=" << initialSize.width() << 'x'
+                  << initialSize.height() << ", scroll=" << initialValue << '/' << initialMaximum
+                  << ", resizes=" << sizes.size() << ", values=" << values.size()
+                  << ", ranges=" << ranges.size() << ", focus=" << focusNames.size()
+                  << ", controls=" << controlChanges.size() << '\n';
+        for (const auto& size : sizes)
+            std::cerr << "  resized to " << size.width() << 'x' << size.height() << '\n';
+        for (int value : values)
+            std::cerr << "  scroll value " << value << '\n';
+        for (const auto& range : ranges)
+            std::cerr << "  scroll range " << range.first << ':' << range.second << '\n';
+        for (const auto& name : focusNames)
+            std::cerr << "  focus " << name.toStdString() << '\n';
+        for (const auto& change : controlChanges)
+            std::cerr << "  control " << change.toStdString() << '\n';
+        if (!diagnosticOnly) {
+            require(sizes.isEmpty(), "same-height settings edits must not resize page content");
+            require(values.isEmpty(), "same-height settings edits must not move the page");
+            require(ranges.isEmpty(),
+                    "same-height settings edits must not change the scroll range");
+            require(focusNames.isEmpty() && QApplication::focusWidget() == initialFocus,
+                    "editing a settings control must retain focus throughout the update");
+            require(controlChanges.isEmpty(),
+                    "checking a tray option must retain divider visibility and option geometry");
+        }
+    }
+
+    void verifyFinalGeometry(const QString& label, bool diagnosticOnly,
+                             bool allowFocusedReparenting = false) const {
+        verify(label, true);
+        if (diagnosticOnly)
+            return;
+        const QSize finalSize = content->size();
+        const QPair<int, int> finalRange{bar->minimum(), bar->maximum()};
+        const int finalValue = qBound(bar->minimum(), initialValue, bar->maximum());
+        require(sizes.size() <= 1,
+                "settings topology edits must publish the completed content size only once");
+        for (const QSize& size : sizes)
+            require(size == finalSize, "settings topology edits must not publish partial geometry");
+        require(ranges.size() <= 1,
+                "settings topology edits must publish the completed scroll range only once");
+        for (const auto& range : ranges)
+            require(range == finalRange, "settings topology edits must not publish partial ranges");
+        require(values.size() <= 1 && bar->value() == finalValue,
+                "settings topology edits may only clamp scrolling to the completed range");
+        for (int value : values)
+            require(value == finalValue,
+                    "settings topology edits must not scroll through incomplete content");
+        if (allowFocusedReparenting) {
+            require(
+                !redirectedFocus && QApplication::focusWidget() == initialFocus,
+                "reparenting the focused tool must restore it without focusing another control");
+        } else {
+            require(focusNames.isEmpty() && QApplication::focusWidget() == initialFocus,
+                    "settings topology edits must preserve the unaffected control's focus");
+        }
+    }
+
+  protected:
+    bool eventFilter(QObject* watched, QEvent* event) override {
+        if (watched == content && event->type() == QEvent::Resize)
+            sizes.push_back(static_cast<QResizeEvent*>(event)->size());
+        if (observedControls.contains(watched)) {
+            QString change;
+            switch (event->type()) {
+            case QEvent::Move:
+                change = QStringLiteral("move");
+                break;
+            case QEvent::Resize:
+                change = QStringLiteral("resize");
+                break;
+            case QEvent::Hide:
+                change = QStringLiteral("hide");
+                break;
+            case QEvent::Show:
+                change = QStringLiteral("show");
+                break;
+            default:
+                break;
+            }
+            if (!change.isEmpty())
+                controlChanges.push_back(watched->objectName() + QLatin1Char(' ') + change);
+        }
+        return QObject::eventFilter(watched, event);
+    }
+
+  private:
+    QScrollBar* bar;
+    QWidget* content;
+    QSize initialSize;
+    int initialValue;
+    int initialMaximum;
+    QPointer<QWidget> initialFocus;
+    QVector<QSize> sizes;
+    QVector<int> values;
+    QVector<QPair<int, int>> ranges;
+    QStringList focusNames;
+    QSet<QObject*> observedControls;
+    QStringList controlChanges;
+    bool redirectedFocus = false;
+};
+
+void materializeAllSections(SettingsPageWidget& page, const settings::SettingsRegistry& registry) {
+    for (const auto& section : registry.catalog().page(page.pageId())->sections) {
+        page.reveal({page.pageId(), section.id, {}});
+        drainEvents();
+    }
+}
+
+void lazyTraySelectionKeepsPageStable(const settings::SettingsRegistry& registry,
+                                      settings::SettingsRuntimeSession& session,
+                                      bool diagnosticOnly) {
+    for (const QString& optionId :
+         {QStringLiteral("quick.screenshot"), QStringLiteral("tray.exit")}) {
+        SettingsPageWidget page(registry, QStringLiteral("desktop-tools"), session);
+        page.resize(880, 360);
+        page.show();
+        drainEvents();
+        auto* checkbox = page.findChild<adqt::widgets::AdCheckbox*>(
+            QStringLiteral("settings-tray-menu-option-") + optionId);
+        auto* scroll = page.findChild<adqt::widgets::AdScrollArea*>();
+        auto* grid = page.findChild<QWidget*>(QStringLiteral("settings-tray-menu-options-grid"));
+        require(checkbox != nullptr && scroll != nullptr && grid != nullptr,
+                "lazy tray fixture materializes its initial tray section");
+        scroll->ensureWidgetVisible(checkbox);
+        checkbox->setFocus(Qt::MouseFocusReason);
+        drainEvents();
+        require(QApplication::focusWidget() == checkbox, "lazy tray fixture focuses its checkbox");
+        std::cerr << "lazy tray " << optionId.toStdString() << ": floating editor="
+                  << (page.findChild<QWidget*>(
+                          QStringLiteral("settings-floating-toolbar-editor")) != nullptr)
+                  << '\n';
+        const bool original = checkbox->isChecked();
+        for (int pass = 0; pass < 2; ++pass) {
+            LayoutStabilityProbe probe(*scroll, grid);
+            checkbox->click();
+            drainEvents();
+            require(checkbox->isChecked() == (pass == 0 ? !original : original),
+                    "lazy tray edit changes and restores its selection");
+            probe.verify(QStringLiteral("lazy tray %1 %2").arg(optionId).arg(pass), diagnosticOnly);
+        }
+    }
+}
+
+void everyTrayOptionRemainsSelected(const settings::SettingsRegistry& registry,
+                                    settings::SettingsRuntimeSession& session) {
+    require(session.applySwitchValue(settings::SettingsSwitchBinding::TranslationPageEnabled, true),
+            "enable all optional tray choices");
+    SettingsPageWidget page(registry, QStringLiteral("desktop-tools"), session);
+    page.resize(880, 360);
+    page.show();
+    page.reveal({page.pageId(), QStringLiteral("tray"), QStringLiteral("tray.menu-options")});
+    drainEvents();
+    QVariantList expected;
+    for (const auto& group : registry.catalog().trayMenuGroups()) {
+        for (const auto& option : group.options) {
+            auto* checkbox = page.findChild<adqt::widgets::AdCheckbox*>(
+                QStringLiteral("settings-tray-menu-option-") + option.id);
+            require(checkbox != nullptr, "every catalog option must have a tray checkbox");
+            if (!checkbox->isChecked())
+                checkbox->click();
+            drainEvents();
+            expected.append(option.id);
+        }
+    }
+    require(session.multiSelectValue(settings::SettingsMultiSelectBinding::TrayMenuOptions) ==
+                expected,
+            "checking every tray checkbox must retain every selection in the settings session");
+    require(snow_shot::storage::ApplicationStorage::instance()
+                    .configuration()
+                    .value(QStringLiteral("tray/menu_options"))
+                    .toArray() == QJsonArray::fromVariantList(expected),
+            "checking every tray checkbox must persist every selection without truncation");
+    for (const auto& option : expected) {
+        auto* checkbox = page.findChild<adqt::widgets::AdCheckbox*>(
+            QStringLiteral("settings-tray-menu-option-") + option.toString());
+        require(checkbox->isChecked(), "all tray checkboxes, including Exit, must remain checked");
+    }
+}
+
+void traySelectionKeepsPageStable(const settings::SettingsRegistry& registry,
+                                  settings::SettingsRuntimeSession& session, bool diagnosticOnly) {
+    SettingsPageWidget page(registry, QStringLiteral("desktop-tools"), session);
+    page.resize(880, 360);
+    page.show();
+    materializeAllSections(page, registry);
+    page.reveal({page.pageId(), QStringLiteral("tray"), QStringLiteral("tray.menu-options")});
+    drainEvents();
+    auto* checkbox = page.findChild<adqt::widgets::AdCheckbox*>(
+        QStringLiteral("settings-tray-menu-option-tray.exit"));
+    auto* scroll = page.findChild<adqt::widgets::AdScrollArea*>();
+    auto* grid = page.findChild<QWidget*>(QStringLiteral("settings-tray-menu-options-grid"));
+    require(checkbox != nullptr && scroll != nullptr && grid != nullptr,
+            "tray stability fixture is materialized");
+    scroll->ensureWidgetVisible(checkbox);
+    checkbox->setFocus(Qt::MouseFocusReason);
+    drainEvents();
+    require(QApplication::focusWidget() == checkbox, "tray stability fixture focuses its checkbox");
+    const bool original = checkbox->isChecked();
+    for (int pass = 0; pass < 2; ++pass) {
+        LayoutStabilityProbe probe(*scroll, grid);
+        checkbox->click();
+        drainEvents();
+        require(checkbox->isChecked() == (pass == 0 ? !original : original),
+                "tray stability edit changes and restores the selected option");
+        probe.verify(QStringLiteral("tray checkbox %1").arg(pass), diagnosticOnly);
+    }
+    const auto binding = settings::SettingsSwitchBinding::TranslationPageEnabled;
+    const bool translationEnabled = session.switchValue(binding);
+    auto* translation = page.findChild<adqt::widgets::AdCheckbox*>(
+        QStringLiteral("settings-tray-menu-option-quick.translate-selected-text"));
+    require(translation != nullptr, "tray translation option exists even when hidden");
+    const auto originalSelection =
+        session.multiSelectValue(settings::SettingsMultiSelectBinding::TrayMenuOptions);
+    for (int pass = 0; pass < 2; ++pass) {
+        const bool enabled = pass == 0 ? !translationEnabled : translationEnabled;
+        LayoutStabilityProbe probe(*scroll);
+        require(session.applySwitchValue(binding, enabled), "change translation option visibility");
+        drainEvents();
+        require(translation->isVisible() == enabled &&
+                    session.multiSelectValue(
+                        settings::SettingsMultiSelectBinding::TrayMenuOptions) == originalSelection,
+                "translation visibility updates retain all tray selections");
+        probe.verifyFinalGeometry(QStringLiteral("tray translation visibility %1").arg(pass),
+                                  diagnosticOnly);
+    }
+    {
+        LayoutStabilityProbe probe(*scroll, grid);
+        require(session.applySwitchValue(binding, translationEnabled),
+                "resubmit unchanged translation option visibility");
+        drainEvents();
+        probe.verify(QStringLiteral("tray unchanged visibility"), diagnosticOnly);
+    }
+}
+
+void toolbarTopologyKeepsPageStable(const QString& fieldId,
+                                    settings::SettingsRuntimeSession& session,
+                                    snow_shot::storage::ScreenshotToolbarLayoutKind kind,
+                                    SettingsPageWidget& page, QWidget& row,
+                                    adqt::widgets::AdScrollArea& scroll, bool diagnosticOnly) {
+    namespace layout = snow_shot::presentation::toolbar_layout;
+    const auto original = session.toolbarLayout(kind);
+    int targetPosition = -1;
+    for (int index = 0; index < original.positions.size(); ++index) {
+        const auto& position = original.positions.at(index);
+        if (!position.isEmpty() && !layout::requiresOwnPosition(position.constLast(), kind) &&
+            (targetPosition < 0 ||
+             position.size() > original.positions.at(targetPosition).size())) {
+            targetPosition = index;
+        }
+    }
+    require(targetPosition >= 0, "toolbar topology fixture has a stackable position");
+    int sourcePosition = -1;
+    for (int index = static_cast<int>(original.positions.size()) - 1; index >= 0; --index) {
+        const auto& position = original.positions.at(index);
+        if (index != targetPosition && !position.isEmpty() &&
+            !layout::requiresOwnPosition(position.constLast(), kind)) {
+            sourcePosition = index;
+            break;
+        }
+    }
+    require(sourcePosition >= 0, "toolbar topology fixture has a tool to move");
+    QString focusId;
+    for (int index = 0; index < original.positions.size(); ++index) {
+        if (index != targetPosition && index != sourcePosition) {
+            focusId = original.positions.at(index).constLast();
+            break;
+        }
+    }
+    require(!focusId.isEmpty(), "toolbar topology fixture has an unaffected tool");
+    adqt::widgets::AdButton* focusedButton = nullptr;
+    for (auto* button : row.findChildren<adqt::widgets::AdButton*>()) {
+        if (button->property("screenshotToolbarItemId").toString() == focusId) {
+            focusedButton = button;
+            break;
+        }
+    }
+    require(focusedButton != nullptr && focusedButton->isVisible(),
+            "toolbar topology fixture finds its unaffected tool");
+    scroll.ensureWidgetVisible(focusedButton);
+    focusedButton->setFocus(Qt::MouseFocusReason);
+    drainEvents();
+    require(QApplication::focusWidget() == focusedButton,
+            "toolbar topology fixture focuses its unaffected tool");
+    const QString movedId = original.positions.at(sourcePosition).constLast();
+    bool focusedToolMoves = false;
+    const auto apply = [&](const snow_shot::storage::ScreenshotToolbarLayout& candidate,
+                           const QString& action) {
+        LayoutStabilityProbe probe(scroll);
+        require(session.applyToolbarLayout(kind, candidate), "apply toolbar topology edit");
+        drainEvents();
+        require(session.toolbarLayout(kind) == candidate, "toolbar topology edit persists");
+        require(focusedButton->isVisible() && page.isAncestorOf(focusedButton),
+                "toolbar topology edits retain the same visible tool");
+        probe.verifyFinalGeometry(fieldId + QLatin1Char(' ') + action, diagnosticOnly,
+                                  focusedToolMoves);
+    };
+    const auto stacked =
+        layout::stackItemInPosition(original, kind, movedId, targetPosition,
+                                    static_cast<int>(original.positions.at(targetPosition).size()));
+    require(stacked != original, "toolbar topology fixture increases the largest stack");
+    apply(stacked, QStringLiteral("stack"));
+    const auto unstacked = layout::moveItemToPosition(stacked, kind, movedId,
+                                                      static_cast<int>(stacked.positions.size()));
+    apply(unstacked, QStringLiteral("unstack"));
+    const auto hidden = layout::moveItemToHidden(unstacked, kind, movedId,
+                                                 static_cast<int>(unstacked.hidden.size()));
+    apply(hidden, QStringLiteral("hide"));
+    const auto shown = layout::moveItemToPosition(hidden, kind, movedId,
+                                                  static_cast<int>(hidden.positions.size()));
+    apply(shown, QStringLiteral("show"));
+    require(session.applyToolbarLayout(kind, original), "restore toolbar topology fixture");
+    drainEvents();
+    adqt::widgets::AdButton* movedButton = nullptr;
+    for (auto* button : row.findChildren<adqt::widgets::AdButton*>()) {
+        if (button->property("screenshotToolbarItemId").toString() == movedId) {
+            movedButton = button;
+            break;
+        }
+    }
+    require(movedButton != nullptr && movedButton->isVisible(),
+            "focused source fixture finds the tool to move");
+    focusedButton = movedButton;
+    scroll.ensureWidgetVisible(focusedButton);
+    focusedButton->setFocus(Qt::MouseFocusReason);
+    drainEvents();
+    require(QApplication::focusWidget() == focusedButton,
+            "focused source fixture focuses the tool being moved");
+    focusedToolMoves = true;
+    apply(stacked, QStringLiteral("focused source stack"));
+    apply(unstacked, QStringLiteral("focused source unstack"));
+    apply(hidden, QStringLiteral("focused source hide"));
+    apply(shown, QStringLiteral("focused source show"));
+    require(session.applyToolbarLayout(kind, original), "restore focused source topology fixture");
+    drainEvents();
+}
+
+void toolbarReorderingKeepsPageStable(const settings::SettingsRegistry& registry,
+                                      settings::SettingsRuntimeSession& session,
+                                      bool diagnosticOnly) {
+    using Kind = snow_shot::storage::ScreenshotToolbarLayoutKind;
+    struct Fixture {
+        Kind kind;
+        const char* fieldId;
+    };
+    for (const auto& fixture :
+         {Fixture{Kind::DrawingTools, "interface.toolbar.drawing-toolbar-editor"},
+          Fixture{Kind::ActionTools, "interface.screenshot.screenshot-toolbar-editor"},
+          Fixture{Kind::RecordingActionTools,
+                  "interface.screen-recording.recording-toolbar-editor"},
+          Fixture{Kind::PinnedActionTools, "interface.pin-to-screen.pinned-toolbar-editor"},
+          Fixture{Kind::FloatingTools, "interface.floating-toolbar.editor"}}) {
+        const QString fieldId = QString::fromLatin1(fixture.fieldId);
+        const auto* descriptor = registry.field(fieldId);
+        require(descriptor != nullptr, "toolbar stability field is registered");
+        SettingsPageWidget page(registry, descriptor->pageId, session);
+        page.resize(880, 360);
+        page.show();
+        materializeAllSections(page, registry);
+        page.reveal({page.pageId(), descriptor->sectionId, fieldId});
+        drainEvents();
+        auto* row = page.findChild<QWidget*>(
+            settings::generatedObjectName(QStringLiteral("settings-item"), fieldId));
+        auto* scroll = page.findChild<adqt::widgets::AdScrollArea*>();
+        require(row != nullptr && scroll != nullptr, "toolbar stability fixture is materialized");
+        adqt::widgets::AdButton* focusedButton = nullptr;
+        for (auto* button : row->findChildren<adqt::widgets::AdButton*>()) {
+            if (button->isVisible() && button->property("screenshotToolbarItemId").isValid()) {
+                focusedButton = button;
+                break;
+            }
+        }
+        require(focusedButton != nullptr, "toolbar stability fixture has a visible tool");
+        scroll->ensureWidgetVisible(focusedButton);
+        focusedButton->setFocus(Qt::MouseFocusReason);
+        drainEvents();
+        require(QApplication::focusWidget() == focusedButton,
+                "toolbar stability fixture focuses its tool");
+        const auto original = session.toolbarLayout(fixture.kind);
+        auto reordered = original;
+        require(reordered.positions.size() > 1, "toolbar stability fixture has two positions");
+        reordered.positions.swapItemsAt(0, 1);
+        {
+            LayoutStabilityProbe probe(*scroll);
+            require(session.applyToolbarLayout(fixture.kind, reordered),
+                    "reorder toolbar positions");
+            drainEvents();
+            require(session.toolbarLayout(fixture.kind) == reordered,
+                    "toolbar position edit persists the reordered layout");
+            probe.verify(fieldId, diagnosticOnly);
+        }
+        require(session.applyToolbarLayout(fixture.kind, original), "restore toolbar positions");
+        drainEvents();
+        toolbarTopologyKeepsPageStable(fieldId, session, fixture.kind, page, *row, *scroll,
+                                       diagnosticOnly);
     }
 }
 
@@ -1011,6 +1446,20 @@ int main(int argc, char** argv) {
     settings::BuiltInSettingsBackend backend(shortcuts);
     const auto registry = settings::buildBuiltInSettingsRegistry();
     settings::SettingsRuntimeSession session(registry, backend);
+    if (application.arguments().contains(QStringLiteral("--tray-selection-only"))) {
+        everyTrayOptionRemainsSelected(registry, session);
+        storage.shutdown();
+        return 0;
+    }
+    if (application.arguments().contains(QStringLiteral("--layout-stability-only"))) {
+        const bool diagnosticOnly =
+            application.arguments().contains(QStringLiteral("--layout-stability-diagnostic"));
+        lazyTraySelectionKeepsPageStable(registry, session, diagnosticOnly);
+        traySelectionKeepsPageStable(registry, session, diagnosticOnly);
+        toolbarReorderingKeepsPageStable(registry, session, diagnosticOnly);
+        storage.shutdown();
+        return 0;
+    }
     if (application.arguments().contains(QStringLiteral("--action-toolbar-settings-only"))) {
         screenshotActionToolbarSettings(registry, session);
         recordingActionToolbarSettings(registry, session);
