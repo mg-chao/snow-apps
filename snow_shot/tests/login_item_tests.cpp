@@ -21,6 +21,7 @@ struct Fixture {
     bool preference = false;
     bool failNative = false;
     bool approval = false;
+    int queries = 0;
     int changes = 0;
     int opened = 0;
     LoginItemService service{operations()};
@@ -29,10 +30,17 @@ struct Fixture {
         return settings.value(QStringLiteral("initialized"), false).toBool();
     }
     LoginItemOperations operations() {
-        return {[this] { return native; },
+        return {[this] {
+                    ++queries;
+                    return native;
+                },
                 [this](bool enabled) -> LoginItemResult {
                     ++changes;
                     require(service.pending(), "operation must expose pending state");
+                    const int beforeRefresh = queries;
+                    service.refresh();
+                    require(queries == beforeRefresh,
+                            "pending refresh must not query native state");
                     require(!service.setEnabled(!enabled).success,
                             "reentrant mutations must be rejected");
                     if (failNative)
@@ -59,6 +67,44 @@ struct Fixture {
                 [this] { ++opened; }};
     }
 };
+void refreshNotifications() {
+    Fixture f;
+    int notifications = 0;
+    int busyNotifications = 0;
+    QObject::connect(&f.service, &LoginItemService::changed, [&] {
+        ++notifications;
+        if (f.service.pending())
+            ++busyNotifications;
+    });
+    const int beforeRefresh = f.queries;
+    f.service.refresh();
+    f.service.refresh();
+    require(f.queries == beforeRefresh + 2, "refresh must still observe current native state");
+    require(notifications == 0, "unchanged refresh must not notify settings consumers");
+    f.native.status = LoginItemStatus::Unavailable;
+    f.service.refresh();
+    require(notifications == 1 && !f.service.available(), "status change must notify consumers");
+    f.native.error = QStringLiteral("install app");
+    f.service.refresh();
+    require(notifications == 2 && f.service.hint() == f.native.error,
+            "hint change must notify even when status is unchanged");
+    f.service.refresh();
+    require(notifications == 2, "unchanged status and hint must not notify twice");
+    f.native = {LoginItemStatus::Unregistered, {}};
+    f.service.refresh();
+    require(notifications == 3 && f.service.hint().isEmpty(), "cleared hint must notify consumers");
+    notifications = 0;
+    require(f.service.setEnabled(true).success, "registration succeeds");
+    require(notifications == 2 && busyNotifications == 1 && !f.service.pending(),
+            "registration must still notify both busy and idle transitions");
+    notifications = 0;
+    busyNotifications = 0;
+    f.failNative = true;
+    require(!f.service.setEnabled(false).success, "native mutation fails");
+    require(notifications == 2 && busyNotifications == 1 && !f.service.pending() &&
+                f.service.snapshot().requested(),
+            "failed mutation must notify busy and idle even with an unchanged snapshot");
+}
 void registration() {
     Fixture f;
     require(f.service.initialize(true).success && f.changes == 1 && f.preference,
@@ -157,6 +203,7 @@ void launchAndPaths() {
 } // namespace
 int main(int argc, char** argv) {
     QCoreApplication app(argc, argv);
+    refreshNotifications();
     registration();
     failuresAndEligibility();
     launchAndPaths();

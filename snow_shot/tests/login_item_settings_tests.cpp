@@ -121,6 +121,35 @@ int main(int argc, char** argv) {
     emit app.applicationStateChanged(Qt::ApplicationActive);
     require(backend.switchEnabled(binding) && backend.switchValue(binding),
             "activation refresh observes external enable");
+    app.processEvents();
+    int refreshes = 0;
+    QObject::connect(&session, &settings::SettingsRuntimeSession::refreshed, &app,
+                     [&] { ++refreshes; });
+    SettingsPageWidget screenshots(registry, QStringLiteral("screenshots"), session);
+    for (int cycle = 0; cycle < 3; ++cycle) {
+        page.show();
+        app.processEvents();
+        page.hide();
+        screenshots.show();
+        app.processEvents();
+        screenshots.hide();
+    }
+    require(refreshes == 0,
+            "switching pages with unchanged native state must not refresh all settings");
+    native = {LoginItemStatus::Unavailable, QStringLiteral("install app")};
+    page.show();
+    app.processEvents();
+    require(refreshes == 1 && !session.state(QStringLiteral("system.auto-start-at-boot")).enabled,
+            "page switch must still refresh settings when native eligibility changes");
+    native.error = QStringLiteral("updated explanation");
+    backend.refreshPlatformSettings();
+    app.processEvents();
+    require(refreshes == 2 && backend.switchHint(binding) == native.error,
+            "changed native explanation must refresh settings even with the same status");
+    backend.refreshPlatformSettings();
+    app.processEvents();
+    require(refreshes == 2,
+            "repeated platform refresh must not repeat the complete settings refresh");
     storage.shutdown();
     std::cout << "Login item settings tests passed\n";
 }

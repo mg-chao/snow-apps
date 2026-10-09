@@ -736,8 +736,10 @@ approval hint; it does not mean macOS will launch the app yet. Turning the setti
 off also removes a pending registration and does not quit the running app.
 
 Snow Shot observes changes made in System Settings when its settings page opens
-or the app becomes active. It does not re-register on later launches after you
-remove the item or revoke approval. Resetting the General section explicitly
+or the app becomes active by reading the native login-item status. Routine refreshes
+do not validate the bundle signature; macOS enforces signing during registration,
+and Snow Shot reports signature failures from that operation. It does not re-register
+on later launches after you remove the item or revoke approval. Resetting the General section explicitly
 requests the enabled default again. Login startup stays in the background, but
 missing required permissions still open the existing permission guide.
 

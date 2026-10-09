@@ -5,7 +5,6 @@
 
 #import <AppKit/AppKit.h>
 #import <Carbon/Carbon.h>
-#import <Security/Security.h>
 #import <ServiceManagement/ServiceManagement.h>
 #include <QCoreApplication>
 #include <QEventLoop>
@@ -25,6 +24,16 @@ QString markerPath() {
     return QStandardPaths::writableLocation(QStandardPaths::GenericConfigLocation) +
            (QStringLiteral("/") + app::edition::registryName() +
             QStringLiteral("/macos-login-item.ini"));
+}
+QString signatureError() {
+    return app::edition::isMini
+               ? text(QT_TRANSLATE_NOOP("LoginItemService",
+                                        "%1 needs a valid code signature to use launch at login. "
+                                        "Reinstall the signed app."))
+                     .arg(app::edition::productName())
+               : text(QT_TRANSLATE_NOOP("LoginItemService",
+                                        "Snow Shot needs a valid code signature to use launch at "
+                                        "login. Reinstall the signed app."));
 }
 LoginItemSnapshot query() {
     @autoreleasepool {
@@ -48,23 +57,8 @@ LoginItemSnapshot query() {
                                                   "Move the signed Snow Shot app to /Applications "
                                                   "or ~/Applications to use launch at login.")))};
         }
-        SecStaticCodeRef code = nullptr;
-        OSStatus signature = SecStaticCodeCreateWithPath(
-            reinterpret_cast<CFURLRef>(bundle.bundleURL), kSecCSDefaultFlags, &code);
-        if (signature == errSecSuccess) {
-            signature = SecStaticCodeCheckValidity(code, kSecCSDefaultFlags, nullptr);
-            CFRelease(code);
-        }
-        if (signature != errSecSuccess)
-            return {LoginItemStatus::Unavailable,
-                    (app::edition::isMini
-                         ? text(QT_TRANSLATE_NOOP("LoginItemService",
-                                                  "%1 needs a valid code signature to use launch "
-                                                  "at login. Reinstall the signed app."))
-                               .arg(app::edition::productName())
-                         : text(QT_TRANSLATE_NOOP("LoginItemService",
-                                                  "Snow Shot needs a valid code signature to use "
-                                                  "launch at login. Reinstall the signed app.")))};
+        // Registration enforces signing. Routine status refreshes must not revalidate
+        // the entire bundle on the GUI thread whenever a settings page is shown.
         switch (SMAppService.mainAppService.status) {
         case SMAppServiceStatusNotRegistered:
             return {LoginItemStatus::Unregistered, {}};
@@ -87,37 +81,42 @@ LoginItemSnapshot query() {
     }
 }
 } // namespace
-LoginItemService& loginItemService() {
-    static LoginItemService service(
-        {query,
-         [](bool enabled) -> LoginItemResult {
-             @autoreleasepool {
-                 NSError* error = nil;
-                 const BOOL success =
-                     enabled ? [SMAppService.mainAppService registerAndReturnError:&error]
-                             : [SMAppService.mainAppService unregisterAndReturnError:&error];
-                 return {static_cast<bool>(success),
-                         success ? QString()
-                                 : text(QT_TRANSLATE_NOOP("LoginItemService",
+LoginItemOperations nativeLoginItemOperations() {
+    return {query,
+            [](bool enabled) -> LoginItemResult {
+                @autoreleasepool {
+                    NSError* error = nil;
+                    const BOOL success =
+                        enabled ? [SMAppService.mainAppService registerAndReturnError:&error]
+                                : [SMAppService.mainAppService unregisterAndReturnError:&error];
+                    if (success)
+                        return {};
+                    if ([error.domain isEqualToString:SMAppServiceErrorDomain] &&
+                        error.code == kSMErrorInvalidSignature)
+                        return {false, signatureError()};
+                    return {false, text(QT_TRANSLATE_NOOP("LoginItemService",
                                                           "Could not change launch at login: %1"))
                                        .arg(QString::fromNSString(error.localizedDescription))};
-             }
-         },
-         [] {
-             QSettings settings(markerPath(), QSettings::IniFormat);
-             return settings.value(QStringLiteral("initialized"), false).toBool();
-         },
-         [] {
-             QSettings settings(markerPath(), QSettings::IniFormat);
-             settings.setValue(QStringLiteral("initialized"), true);
-             settings.sync();
-             return settings.status() == QSettings::NoError;
-         },
-         [](bool enabled) {
-             return storage::SystemSettings().setAutoStartAtBoot(enabled) &&
-                    storage::ApplicationStorage::instance().configuration().flushNow().success;
-         },
-         [] { [SMAppService openSystemSettingsLoginItems]; }});
+                }
+            },
+            [] {
+                QSettings settings(markerPath(), QSettings::IniFormat);
+                return settings.value(QStringLiteral("initialized"), false).toBool();
+            },
+            [] {
+                QSettings settings(markerPath(), QSettings::IniFormat);
+                settings.setValue(QStringLiteral("initialized"), true);
+                settings.sync();
+                return settings.status() == QSettings::NoError;
+            },
+            [](bool enabled) {
+                return storage::SystemSettings().setAutoStartAtBoot(enabled) &&
+                       storage::ApplicationStorage::instance().configuration().flushNow().success;
+            },
+            [] { [SMAppService openSystemSettingsLoginItems]; }};
+}
+LoginItemService& loginItemService() {
+    static LoginItemService service(nativeLoginItemOperations());
     return service;
 }
 void observeNativeLoginItemLaunch() {

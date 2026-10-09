@@ -17,7 +17,10 @@ LoginItemService::LoginItemService(LoginItemOperations operations, QObject* pare
 void LoginItemService::refresh() {
     if (m_pending)
         return;
-    m_snapshot = m_operations.query();
+    auto snapshot = m_operations.query();
+    if (snapshot.status == m_snapshot.status && snapshot.error == m_snapshot.error)
+        return;
+    m_snapshot = std::move(snapshot);
     emit changed();
 }
 QString LoginItemService::hint() const {

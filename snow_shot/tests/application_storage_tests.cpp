@@ -2747,6 +2747,43 @@ void trayClickSettingsSurviveRestart() {
     applicationStorage.shutdown();
 }
 
+void watermarkContentSettingsRepairAndSurviveRestart() {
+    QTemporaryDir temporary;
+    require(temporary.isValid(), "temporary watermark-content settings directory");
+    const QString executable = temporary.filePath(QStringLiteral("app"));
+    require(QDir().mkpath(executable), "create watermark-content executable directory");
+    auto& applicationStorage = initialize(executable, temporary.path());
+    const storage::WatermarkContentSettings settings;
+    require(settings.content() == storage::WatermarkContent{},
+            "missing watermark content defaults to empty text and template");
+    const storage::WatermarkContent expected{QStringLiteral("版权 © 雪"),
+                                             QStringLiteral("  {text}\t{YYYY-MM-DD_HH-mm-ss}  ")};
+    require(settings.setContent(expected) && applicationStorage.flushNow().success,
+            "watermark content saves Unicode and exact template whitespace");
+    static_cast<void>(initialize(executable, temporary.path()));
+    require(settings.content() == expected, "watermark content survives application restart");
+    const QString key = QStringLiteral("drawing/watermark_content");
+    const auto normalized = storage::ConfigurationSchema::normalize(
+        key, QJsonObject{{QStringLiteral("text"), 42},
+                         {QStringLiteral("template_value"), expected.templateValue},
+                         {QStringLiteral("template_application_time"), QJsonObject()}});
+    require(normalized.valid && normalized.changed && normalized.value.toObject().size() == 2 &&
+                normalized.value.toObject().value(QStringLiteral("text")).toString().isEmpty() &&
+                normalized.value.toObject().value(QStringLiteral("template_value")).toString() ==
+                    expected.templateValue &&
+                !storage::ConfigurationSchema::normalize(key, QJsonArray()).valid,
+            "invalid content fields repair independently and session timestamps are excluded");
+    require(applicationStorage.configuration().setValue(key, normalized.value) &&
+                settings.content() == storage::WatermarkContent{QString(), expected.templateValue},
+            "typed content adapter reads repaired fields");
+    require(settings.setContent({}) && applicationStorage.flushNow().success,
+            "cleared watermark content saves empty values");
+    static_cast<void>(initialize(executable, temporary.path()));
+    require(settings.content() == storage::WatermarkContent{},
+            "cleared watermark content remains empty after restart");
+    applicationStorage.shutdown();
+}
+
 void watermarkTemplateSettingsRepairAndSurviveRestart() {
     QTemporaryDir temporary;
     require(temporary.isValid(), "temporary watermark-template settings directory");
@@ -3021,6 +3058,10 @@ int main(int argc, char** argv) {
         drawTemplateSettingsRepairAndSurviveRestart();
         return 0;
     }
+    if (application.arguments().contains(QStringLiteral("--watermark-content-only"))) {
+        watermarkContentSettingsRepairAndSurviveRestart();
+        return 0;
+    }
     if (application.arguments().contains(QStringLiteral("--pin-shortcuts-only"))) {
         settingsSchemaDefaultsAndValidationAreComplete();
         pinnedDestroyShortcutMigratesPreviousDefault();
@@ -3042,6 +3083,7 @@ int main(int argc, char** argv) {
     legacyTrayHotkeyCommandMigratesToQuickAction();
     trayClickSettingsSurviveRestart();
     watermarkTemplateSettingsRepairAndSurviveRestart();
+    watermarkContentSettingsRepairAndSurviveRestart();
     drawTemplateSettingsRepairAndSurviveRestart();
     globalMouseCombinationSchemaIsStrictAndPersistent();
     screenshotUiSchemaRepairsStructuredValues();

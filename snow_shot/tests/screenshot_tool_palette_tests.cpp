@@ -16571,6 +16571,7 @@ void runScreenshotStyleBindingTests();
 void runAngleStyleBindingTests();
 void runScreenshotSerialNumberRestartTests();
 void runScreenshotStylePersistenceFailureTest();
+void runWatermarkPersistenceTests();
 
 int main(int argc, char** argv) {
     QApplication application(argc, argv);
@@ -16603,6 +16604,11 @@ int main(int argc, char** argv) {
         eraserStyleToolbarHeightMatchesOtherTools();
         eraserToolsExposeRememberedModesAndIndependentWidth();
         recordingEraserActivationReturnsToSelect();
+        snow_shot::storage::ApplicationStorage::instance().shutdown();
+        return 0;
+    }
+    if (application.arguments().contains(QStringLiteral("--watermark-persistence-only"))) {
+        runWatermarkPersistenceTests();
         snow_shot::storage::ApplicationStorage::instance().shutdown();
         return 0;
     }

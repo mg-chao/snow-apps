@@ -1597,13 +1597,43 @@ class MacOSSigningDeployment(unittest.TestCase):
         self.assertEqual(sum(call[:4] == ['codesign', '--verify', '--deep', '--strict']
                              for call in calls), 2)
 
+    def test_each_deployment_verifies_the_final_signature_once(self):
+        for static in (False, True):
+            for ocr in (False, True):
+                with self.subTest(static=static, ocr=ocr):
+                    calls, result = self.deploy('Snow Shot Development (Local)',
+                                                static=static, ocr=ocr)
+                    self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                    verifications = [call for call in calls
+                                     if call[:4] == ['codesign', '--verify', '--deep', '--strict']]
+                    self.assertEqual(len(verifications), 1)
+                    self.assertEqual(calls[-1], verifications[0])
+                    self.assertEqual(any('verify' in call and call[0] == 'ocr'
+                                         for call in calls), ocr)
+                    if static or ocr:
+                        sign = next(call for call in reversed(calls)
+                                    if call[0] == 'codesign' and '--sign' in call)
+                        self.assertEqual(sign[sign.index('--sign') + 1],
+                                         'Snow Shot Development (Local)')
+                        self.assertEqual(sign[-1], verifications[0][-1])
+
+    def test_signature_verification_failure_stops_every_deployment_branch(self):
+        for static in (False, True):
+            for ocr in (False, True):
+                with self.subTest(static=static, ocr=ocr):
+                    calls, result = self.deploy('-', static=static, ocr=ocr, verify_fail=True)
+                    self.assertNotEqual(result.returncode, 0)
+                    self.assertEqual(calls[-1][:4], ['codesign', '--verify', '--deep', '--strict'])
+                    self.assertEqual(sum(call[:4] == ['codesign', '--verify', '--deep', '--strict']
+                                         for call in calls), 1)
+
     def deploy(self, identity, fail=False, static=False, config='Debug', release_static=None,
-               mini=False, strip_fail=False, repeat=1, arch='arm64'):
+               mini=False, strip_fail=False, repeat=1, arch='arm64', ocr=True, verify_fail=False):
         with tempfile.TemporaryDirectory(prefix='snow signing tests ') as temp:
             root = Path(temp)
             log = root / 'calls.jsonl'
             mock = """#!/usr/bin/env python3
-import json, os, pathlib, sys
+import json, os, pathlib, subprocess, sys
 name = pathlib.Path(sys.argv[0]).name
 with open(os.environ['SNOW_TEST_LOG'], 'a') as log:
     log.write(json.dumps([name] + sys.argv[1:]) + '\\n')
@@ -1613,6 +1643,13 @@ if name == 'file':
 if name == 'otool':
     print(sys.argv[-1] + ':\\n\\t/usr/lib/libSystem.B.dylib (compatibility version 1.0.0)')
 if name == 'strip' and os.environ.get('SNOW_TEST_FAIL_STRIP'): sys.exit(37)
+if name == 'codesign' and '--verify' in sys.argv and os.environ.get('SNOW_TEST_FAIL_VERIFY'):
+    sys.exit(38)
+# The real OCR verifier owns the deep signature check when --app is supplied.
+if name == 'ocr' and 'verify' in sys.argv and '--app' in sys.argv:
+    app = sys.argv[sys.argv.index('--app') + 1]
+    sys.exit(subprocess.call([str(pathlib.Path(__file__).with_name('codesign')),
+                             '--verify', '--deep', '--strict', app]))
 """
             for name in ('macdeployqt', 'codesign', 'install_name_tool', 'ocr', 'file', 'otool', 'strip'):
                 tool = root / name
@@ -1634,7 +1671,7 @@ if name == 'strip' and os.environ.get('SNOW_TEST_FAIL_STRIP'): sys.exit(37)
                 script = script.replace('snow-shot-mcp', 'snow-shot-mini-mcp')
             values = {'SNOW_MACOS_CODESIGN_IDENTITY': identity,
                       'SNOW_MACDEPLOYQT': str(root / 'macdeployqt'),
-                      'SNOW_MACOS_OCR_ASSETS_ENABLED': 'ON',
+                      'SNOW_MACOS_OCR_ASSETS_ENABLED': 'ON' if ocr else 'OFF',
                       'SNOW_MACOS_OCR_ARCH': arch,
                       'SNOW_MACOS_OCR_RUNTIME_ONLY': 'ON' if mini else 'OFF',
                       'SNOW_SHOT_ENABLE_MCP': 'ON',
@@ -1657,6 +1694,8 @@ if name == 'strip' and os.environ.get('SNOW_TEST_FAIL_STRIP'): sys.exit(37)
                 env['SNOW_TEST_FAIL_SIGN'] = '1'
             if strip_fail:
                 env['SNOW_TEST_FAIL_STRIP'] = '1'
+            if verify_fail:
+                env['SNOW_TEST_FAIL_VERIFY'] = '1'
             for _ in range(repeat):
                 result = subprocess.run([cmake, '-DCMAKE_INSTALL_PREFIX=' + str(root),
                                          '-DCMAKE_INSTALL_CONFIG_NAME=' + config, '-P', str(path)],
