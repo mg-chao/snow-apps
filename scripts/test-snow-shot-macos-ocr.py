@@ -3,6 +3,7 @@
 import importlib.util
 import json
 from pathlib import Path
+import subprocess
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -124,6 +125,9 @@ class MacOSOcrAssets(unittest.TestCase):
 
         self.run.side_effect = inspect
         self.assertEqual(ocr.verify_bundle(app, arch='x64'), ['Contents/MacOS/snow_shot'])
+        self.run.assert_called_with('/usr/bin/codesign', '--verify', '--deep', '--strict', str(app))
+        self.assertEqual(sum(call.args[0] == '/usr/bin/codesign'
+                             for call in self.run.call_args_list), 1)
         self.run.side_effect = lambda *args: 'arm64'
         with self.assertRaisesRegex(ValueError, 'Non-x64'):
             ocr.verify_bundle(app, arch='x64')
@@ -514,6 +518,8 @@ class MacOSOcrAssets(unittest.TestCase):
         binary.write_bytes(ocr.ARM64_HEADER + bytes(24))
         state = dict(arch='arm64', minimum='15.0', dependency='/usr/lib/libSystem.B.dylib', rpath='@loader_path/../Frameworks')
         def inspect(*args):
+            if args[0] == '/usr/bin/codesign' and state.get('signature_failure'):
+                raise subprocess.CalledProcessError(1, args)
             if 'lipo' in args[0]:
                 return state['arch']
             if '-l' in args:
@@ -523,6 +529,7 @@ class MacOSOcrAssets(unittest.TestCase):
             return str(binary) + ':'
         self.run.side_effect = inspect
         self.assertEqual(ocr.verify_bundle(app), ['Contents/MacOS/snow_shot'])
+        self.run.assert_called_with('/usr/bin/codesign', '--verify', '--deep', '--strict', str(app))
         for key, value in (('arch', 'x86_64'), ('minimum', '27.0'),
                            ('dependency', '/developer/libexample.dylib'),
                            ('dependency', '@rpath/missing.dylib'), ('rpath', '@loader_path/../../../../outside')):
@@ -531,6 +538,11 @@ class MacOSOcrAssets(unittest.TestCase):
             with self.assertRaises(ValueError):
                 ocr.verify_bundle(app)
             state[key] = previous
+        self.assertEqual(sum(call.args[0] == '/usr/bin/codesign'
+                             for call in self.run.call_args_list), 1)
+        state['signature_failure'] = True
+        with self.assertRaises(subprocess.CalledProcessError):
+            ocr.verify_bundle(app)
 
 
 if __name__ == '__main__':

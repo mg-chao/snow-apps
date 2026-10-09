@@ -105,6 +105,8 @@ if(@SNOW_MACOS_OCR_ASSETS_ENABLED@)
         COMMAND_ERROR_IS_FATAL ANY)
     execute_process(COMMAND /usr/bin/codesign --force --sign "${_snow_codesign_identity}" "${_app}"
         COMMAND_ERROR_IS_FATAL ANY)
+    # The OCR verifier checks assets, Mach-O dependencies and the final deep
+    # signature. No bundle changes follow it, so it owns signature verification.
     execute_process(COMMAND "@Python3_EXECUTABLE@" "@SNOW_MACOS_OCR_TOOL@" verify
         --arch "@SNOW_MACOS_OCR_ARCH@"
         --manifest "@SNOW_MACOS_OCR_MANIFEST@"
@@ -112,12 +114,14 @@ if(@SNOW_MACOS_OCR_ASSETS_ENABLED@)
         --report "@CMAKE_BINARY_DIR@/macos-ocr-verification.json"
         ${_snow_ocr_runtime_arguments}
         COMMAND_ERROR_IS_FATAL ANY)
-elseif(@SNOW_SHOT_QT_STATIC@)
-    execute_process(COMMAND /usr/bin/codesign --force --sign "${_snow_codesign_identity}" "${_app}"
-        COMMAND_ERROR_IS_FATAL ANY)
-endif()
-execute_process(COMMAND /usr/bin/codesign --verify --deep --strict "${_app}"
-    RESULT_VARIABLE _result)
-if(NOT _result EQUAL 0)
-    message(FATAL_ERROR "Snow Shot bundle signature verification failed (${_result})")
+else()
+    if(@SNOW_SHOT_QT_STATIC@)
+        execute_process(COMMAND /usr/bin/codesign --force --sign "${_snow_codesign_identity}" "${_app}"
+            COMMAND_ERROR_IS_FATAL ANY)
+    endif()
+    execute_process(COMMAND /usr/bin/codesign --verify --deep --strict "${_app}"
+        RESULT_VARIABLE _result)
+    if(NOT _result EQUAL 0)
+        message(FATAL_ERROR "Snow Shot bundle signature verification failed (${_result})")
+    endif()
 endif()
