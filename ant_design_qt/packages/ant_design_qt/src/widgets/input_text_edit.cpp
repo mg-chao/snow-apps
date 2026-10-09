@@ -1127,7 +1127,12 @@ int AdTextEdit::widthAccessoryHint(const InputVisualStyle& style) const {
 }
 
 void AdTextEdit::syncAccessibleState() {
-  setAccessibleName(tr("Multiline input"));
+  // QWidget::setAccessibleName lets callers provide the input's specific purpose.
+  // Only refresh names supplied by this component, or restore a cleared default.
+  if (accessibleName().isEmpty() || accessibleName() == defaultAccessibleName_) {
+    defaultAccessibleName_ = tr("Multiline input");
+    setAccessibleName(defaultAccessibleName_);
+  }
   setAccessibleDescription(tr("Enter multi-line text"));
   if (clearButton_) {
     clearButton_->setAccessibleName(tr("Clear input"));

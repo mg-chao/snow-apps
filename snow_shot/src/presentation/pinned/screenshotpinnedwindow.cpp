@@ -236,7 +236,10 @@ QByteArray serializeRecognitionResults(const ScreenshotRecognitionResults& sourc
 #endif
 #if SNOW_SHOT_ENABLE_LATEX_RECOGNITION
     if (results.latex && results.latex->succeeded()) {
-        stream << quint32(0x4C415458) << quint8(1) << results.latex->latex << results.visibleLatex;
+        stream << quint32(0x4C415458) << quint8(2) << results.latex->latex << results.visibleLatex
+               << results.latexDraft.has_value();
+        if (results.latexDraft)
+            stream << *results.latexDraft;
     }
 #endif
     return bytes;
@@ -294,16 +297,31 @@ ScreenshotRecognitionResults deserializeRecognitionResults(const QByteArray& byt
         quint32 marker = 0;
         quint8 version = 0;
         stream >> marker >> version;
-        if (marker == quint32(0x4C415458) && version == 1) {
+        if (marker == quint32(0x4C415458) && (version == 1 || version == 2)) {
 #if SNOW_SHOT_ENABLE_LATEX_RECOGNITION
             SnowShotLatexResult latex;
             stream >> latex.latex >> results.visibleLatex;
+            if (version == 2) {
+                bool hasDraft = false;
+                stream >> hasDraft;
+                if (hasDraft) {
+                    QString draft;
+                    stream >> draft;
+                    results.latexDraft = std::move(draft);
+                }
+            }
             if (stream.status() == QDataStream::Ok && latex.succeeded())
                 results.latex = std::move(latex);
 #else
             QString ignoredLatex;
             bool ignoredVisible = false;
             stream >> ignoredLatex >> ignoredVisible;
+            if (version == 2) {
+                bool hasDraft = false;
+                stream >> hasDraft;
+                if (hasDraft)
+                    stream >> ignoredLatex;
+            }
 #endif
             continue;
         }
@@ -4071,50 +4089,6 @@ void ScreenshotPinnedWindow::finishDeferredPresentationSetup(quint64 generation)
     SNOW_SHOT_PIN_PERF_MILESTONE("window.recognition_target_ready");
     SNOW_SHOT_PIN_PERF_MILESTONE("window.context_menu_ready");
     SNOW_SHOT_PIN_PERF_MILESTONE("window.controls_ready");
-#if SNOW_SHOT_ENABLE_LATEX_RECOGNITION
-    if (std::exchange(m_recognitionResults.visibleLatex, false) && m_recognitionResults.latex) {
-        requestMaterializedImage([this, generation](bool succeeded) {
-            if (succeeded && generation == m_presentationGeneration && !m_closing)
-                activateRecognitionMode(
-                    static_cast<int>(ScreenshotRecognitionSessionController::Mode::Latex), false);
-        });
-    }
-#endif
-#if SNOW_SHOT_ENABLE_IMAGE_CONVERSION
-    if (const auto visible = std::exchange(m_recognitionResults.visibleConversion, std::nullopt)) {
-        const auto found = std::find_if(
-            m_recognitionResults.conversions.cbegin(), m_recognitionResults.conversions.cend(),
-            [visible](const auto& entry) {
-                if (entry.model.startsWith(QStringLiteral("custom:"))) {
-                    const auto models =
-                        snow_shot::storage::ApiConfigurationSettings().customModels();
-                    if (std::none_of(models.cbegin(), models.cend(), [&entry](const auto& model) {
-                            return model.selectionId() == entry.model && model.supportsVision &&
-                                   snow_shot::customAiModelFingerprint(model) ==
-                                       entry.modelFingerprint;
-                        })) {
-                        return false;
-                    }
-                }
-                return entry.isValid() && entry.format == *visible &&
-                       entry.model ==
-                           snow_shot::storage::ScreenshotImageConversionSettings().visionModel();
-            });
-        if (found != m_recognitionResults.conversions.cend()) {
-            const auto entry = *found;
-            requestMaterializedImage([this, generation, entry](bool succeeded) {
-                if (succeeded && generation == m_presentationGeneration && !m_closing) {
-                    activateRecognitionMode(
-                        static_cast<int>(
-                            entry.format == SnowShotImageConversionFormat::Markdown
-                                ? ScreenshotRecognitionSessionController::Mode::Markdown
-                                : ScreenshotRecognitionSessionController::Mode::Html),
-                        false);
-                }
-            });
-        }
-    }
-#endif
     if (std::exchange(m_initialRecognitionVisible, false)) {
         const bool translationVisible = std::exchange(m_initialTranslationVisible, false);
         if (m_recognitionSession != nullptr && m_recognitionSession->hasTextResult()) {
@@ -4898,6 +4872,12 @@ void ScreenshotPinnedWindow::configureRecognitionSession() {
                 if (m_editController != nullptr && m_editController->toolbarWindow() != nullptr) {
                     if (auto* palette = m_editController->toolbarWindow()->palette())
                         palette->setTextTargetLanguage(language);
+                }
+            },
+            [this](bool available, bool canUndo, bool canRedo) {
+                if (m_editController != nullptr && m_editController->toolbarWindow() != nullptr) {
+                    if (auto* palette = m_editController->toolbarWindow()->palette())
+                        palette->setLatexEditingState(available, canUndo, canRedo);
                 }
             },
         },

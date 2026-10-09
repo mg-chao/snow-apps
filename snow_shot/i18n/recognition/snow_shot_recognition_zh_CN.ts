@@ -267,16 +267,44 @@
             <translation>删除</translation>
         </message>
         <message>
+            <source>Formula preview limit exceeded.</source>
+            <translation>公式预览超出限制。</translation>
+        </message>
+        <message>
+            <source>Formula renderer is unavailable.</source>
+            <translation>公式渲染器不可用。</translation>
+        </message>
+        <message>
+            <source>LaTeX formula preview</source>
+            <translation>LaTeX 公式预览</translation>
+        </message>
+        <message>
             <source>LaTeX formula source</source>
             <translation>LaTeX 公式源码</translation>
+        </message>
+        <message>
+            <source>No formula to preview</source>
+            <translation>没有可预览的公式</translation>
+        </message>
+        <message>
+            <source>Original image preview</source>
+            <translation>原始图像预览</translation>
         </message>
         <message>
             <source>Paste</source>
             <translation>粘贴</translation>
         </message>
         <message>
+            <source>Rendering formula...</source>
+            <translation>正在渲染公式...</translation>
+        </message>
+        <message>
             <source>Select All</source>
             <translation>全选</translation>
+        </message>
+        <message>
+            <source>Unable to preview this formula. Check the LaTeX source.</source>
+            <translation>无法预览此公式。请检查 LaTeX 源码。</translation>
         </message>
     </context>
     <context>

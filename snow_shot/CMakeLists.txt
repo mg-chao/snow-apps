@@ -9855,6 +9855,51 @@ foreach(_snow_target IN LISTS _snow_skin_consumers)
     endif()
 endforeach()
 
+include("${CMAKE_CURRENT_SOURCE_DIR}/../cmake/MicroTeX.cmake")
+snow_shot_add_latex_renderer()
+
+# Recognition surfaces are also compiled directly by focused fixtures. Keep
+# their formula renderer dependency identical without adding it to the shared
+# original-image preview library, which remains available in Mini.
+get_property(_snow_latex_consumers DIRECTORY PROPERTY BUILDSYSTEM_TARGETS)
+foreach(_snow_target IN LISTS _snow_latex_consumers)
+    get_target_property(_snow_sources ${_snow_target} SOURCES)
+    if("${_snow_sources}" MATCHES "screenshotrecognitionwindow\\.cpp")
+        target_link_libraries(${_snow_target} PRIVATE snow_shot_latex_renderer)
+    endif()
+endforeach()
+
+if(SNOW_SHOT_BUILD_TESTS)
+    add_executable(snow-shot-latex-renderer-tests tests/screenshot_latex_renderer_tests.cpp)
+    target_link_libraries(snow-shot-latex-renderer-tests PRIVATE
+        snow_shot_latex_renderer snow_shot_microtex)
+    snow_shot_import_offscreen_platform(snow-shot-latex-renderer-tests)
+    add_test(NAME snow-shot-latex-renderer-tests
+        COMMAND snow-shot-latex-renderer-tests -platform offscreen)
+    set_tests_properties(snow-shot-latex-renderer-tests PROPERTIES LABELS "unit" TIMEOUT 60
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
+    add_test(NAME snow-shot-latex-preview-window-tests
+        COMMAND snow-shot-recognition-window-tests --latex-preview-only -platform offscreen)
+    set_tests_properties(snow-shot-latex-preview-window-tests PROPERTIES LABELS "unit" TIMEOUT 60
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
+    add_test(NAME snow-shot-latex-toolbar-tests
+        COMMAND snow-shot-screenshot-tool-palette-tests --latex-only -platform offscreen)
+    set_tests_properties(snow-shot-latex-toolbar-tests PROPERTIES LABELS "unit" TIMEOUT 60
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
+endif()
+if(SNOW_SHOT_BUILD_BENCHMARKS)
+    add_executable(snow-shot-latex-renderer-performance-benchmark
+        tests/screenshot_latex_renderer_performance_benchmark.cpp)
+    target_link_libraries(snow-shot-latex-renderer-performance-benchmark PRIVATE
+        snow_shot_latex_renderer)
+    snow_shot_import_offscreen_platform(snow-shot-latex-renderer-performance-benchmark)
+    add_test(NAME snow-shot-latex-renderer-performance-benchmark
+        COMMAND snow-shot-latex-renderer-performance-benchmark -platform offscreen)
+    set_tests_properties(snow-shot-latex-renderer-performance-benchmark PROPERTIES
+        LABELS "benchmark" TIMEOUT 120
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
+endif()
+
 add_library(snow_shot_original_image_preview STATIC
     include/snow_shot/presentation/screenshotoriginalimagepreviewwindow.h
     src/presentation/ocr/screenshotoriginalimagepreviewwindow.cpp

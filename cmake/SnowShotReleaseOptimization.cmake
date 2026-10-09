@@ -5,11 +5,11 @@
 set(SNOW_SHOT_RELEASE_SIZE_TARGETS
     snow_shot_settings_catalog snow_shot_settings_search
     snow_shot_translation snow_shot_login_item snow_shot_administrator
-    snow_shot_permissions snow_shot_updates snow_shot_crash_bridge)
+    snow_shot_permissions snow_shot_updates snow_shot_crash_bridge snow_shot_microtex)
 set(SNOW_SHOT_RELEASE_SPEED_TARGETS
     snow_shot snow_shot_storage snow_shot_settings snow_shot_shortcuts
     snow_shot_window_shortcuts snow_shot_global_mouse snow_shot_diagnostics
-    snow_shot_image_codec snow_shot_image_codec_backend
+    snow_shot_image_codec snow_shot_image_codec_backend snow_shot_latex_renderer
     snow_shot_history_pin snow_shot_clipboard_placement
     snow_shot_macos_clipboard snow_shot_macos_cursor snow_shot_macos_window_platform)
 

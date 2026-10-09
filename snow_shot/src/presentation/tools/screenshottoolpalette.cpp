@@ -2803,6 +2803,13 @@ void ScreenshotToolPalette::setTextEditingState(bool available, bool editing, bo
     updateHistoryActionAvailability();
 }
 
+void ScreenshotToolPalette::setLatexEditingState(bool available, bool canUndo, bool canRedo) {
+    m_latexEditingAvailable = available;
+    m_latexCanUndo = canUndo;
+    m_latexCanRedo = canRedo;
+    updateHistoryActionAvailability();
+}
+
 void ScreenshotToolPalette::setTextTranslationState(bool available, bool translating,
                                                     bool streaming, bool canUndo, bool canRedo,
                                                     bool canReset, bool originalImage) {
@@ -4811,8 +4818,9 @@ bool ScreenshotToolPalette::historyActionEnabled(const QString& itemId) const {
         return false;
     }
     const bool undo = itemId == QStringLiteral("undo");
-    if (m_activeTool == Tool::Latex || m_activeTool == Tool::Qr || m_activeTool == Tool::Markdown ||
-        m_activeTool == Tool::Html) {
+    if (m_activeTool == Tool::Latex)
+        return m_latexEditingAvailable && (undo ? m_latexCanUndo : m_latexCanRedo);
+    if (m_activeTool == Tool::Qr || m_activeTool == Tool::Markdown || m_activeTool == Tool::Html) {
         return false;
     }
     if (m_activeTool == Tool::Table) {

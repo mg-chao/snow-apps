@@ -2,6 +2,7 @@
 #define SNOW_SHOT_PRESENTATION_SCREENSHOTORIGINALIMAGEPREVIEWWINDOW_H
 
 #include <QImage>
+#include <QColor>
 #include <QPointer>
 #include <QRectF>
 #include <QWidget>
@@ -25,6 +26,12 @@ struct ScreenshotOriginalImagePreviewState final {
     bool pinned = false;
     bool staysOnTop = true;
     QWidget* aboveSibling = nullptr;
+    // Formula previews share the native companion surface, including placeholder/error states.
+    bool formula = false;
+    bool dimmed = false;
+    QColor background;
+    QColor statusColor;
+    QString status;
 };
 
 class ScreenshotOriginalImagePreviewWindow final : public QWidget {
@@ -93,6 +100,11 @@ class ScreenshotOriginalImagePreviewWindow final : public QWidget {
     bool m_siblingStackedAbove = false;
     bool m_dragging = false;
     bool m_userPositioned = false;
+    bool m_formula = false;
+    bool m_dimmed = false;
+    QColor m_background;
+    QColor m_statusColor;
+    QString m_status;
 };
 
 #endif // SNOW_SHOT_PRESENTATION_SCREENSHOTORIGINALIMAGEPREVIEWWINDOW_H

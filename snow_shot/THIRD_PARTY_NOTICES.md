@@ -20,6 +20,15 @@ bundle preserves the source archive version and digest, license texts, and
 upstream licensing metadata for Qt Base, Qt SVG, Qt Tools, and Qt Translations.
 Qt Translations uses `licenseRule.json`; the other modules use REUSE metadata.
 
+Formula previews use MicroTeX (MIT), pinned to NanoMichael/MicroTeX revision
+`0e3707f6dafebb121d98b53c64364d16fefe481d`. Its private Qt renderer excludes
+sample applications, other graphics backends, logging, and graphics-debug code.
+The original mathematical fonts retain their Knuth, dsrom, and SIL OFL 1.1
+notices; the Greek and Cyrillic font/XML packages retain their GNU GPL version 3
+notices. The font bytes are unchanged. `licenses/microtex/` preserves every
+upstream notice, the resource inventory, and source provenance; the release
+collector includes these files with tinyxml2's resolved vcpkg copyright notice.
+
 Screen color restoration uses nalgebra (Apache-2.0) for fixed-size matrix
 inversion and validation. Its license and resolved dependencies are included
 in the generated Rust dependency notice bundle.

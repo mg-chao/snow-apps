@@ -4,6 +4,7 @@
 #include "snow_shot/presentation/screenshottoolbarlayoutmodel.h"
 #include "snow_shot/presentation/screenshotrecognitionsessioncontroller.h"
 #include "snow_shot/presentation/screenshotrecognitionwindow.h"
+#include "snow_shot/presentation/screenshotocrtexteditingsession.h"
 #include "snow_shot/storage/settingsadapters.h"
 #include "snow_shot/storage/applicationstorage.h"
 #include "snow_shot/translation/translationservice.h"
@@ -11,20 +12,28 @@
 #include "widgets/modal.h"
 #include "widgets/select.h"
 #include "widgets/button.h"
+#include "widgets/context_menu.h"
+#include "physical_key_test_support.h"
 
 #include <QApplication>
+#include <QAction>
 #include <QClipboard>
+#include <QContextMenuEvent>
 #include <QEventLoop>
 #include <QPushButton>
 #include <QTcpServer>
 #include <QTcpSocket>
 #include <QTextBrowser>
+#include <QTextEdit>
+#include <QTextCursor>
 #include <QTimer>
 #include <QDir>
 #include <QFontDatabase>
 #include <QMimeData>
 #include <QScrollBar>
+#include <QScreen>
 #include <QKeyEvent>
+#include <QKeySequence>
 #include <QLabel>
 
 #include <cstdlib>
@@ -39,7 +48,8 @@ void require(bool condition, const char* message) {
     }
 }
 
-void until(const std::function<bool()>& predicate) {
+void until(const std::function<bool()>& predicate,
+           const char* timeoutMessage = "asynchronous conversion test timed out") {
     if (predicate()) {
         return;
     }
@@ -56,7 +66,7 @@ void until(const std::function<bool()>& predicate) {
     poll.start(5);
     timeout.start(5000);
     loop.exec();
-    require(predicate(), "asynchronous conversion test timed out");
+    require(predicate(), timeoutMessage);
 }
 
 class ConversionServer final : public QTcpServer {
@@ -882,7 +892,8 @@ void conversionToolbarMigration() {
 }
 } // namespace
 
-void runImageConversionTests() {
+namespace {
+void initializeRecognitionTestFonts() {
 #if defined(Q_OS_WIN)
     require(QFontDatabase::addApplicationFont(QStringLiteral("C:/Windows/Fonts/segoeui.ttf")) >= 0,
             "offscreen conversion tests require a font");
@@ -893,6 +904,11 @@ void runImageConversionTests() {
     adqt::theme::ThemeManager::instance().setConfig(theme);
     adqt::theme::ThemeManager::instance().applyTo(*qApp);
 #endif
+}
+} // namespace
+
+void runImageConversionTests() {
+    initializeRecognitionTestFonts();
     settingsInitialAvailability();
     conversionCacheUsesRecognitionKeys();
     conversionLifecycleAndSettings();
@@ -911,7 +927,7 @@ void latexSessionRequestsAreIsolated() {
     QTcpServer server;
     require(server.listen(QHostAddress::LocalHost), "LaTeX session fixture listens");
     int requests = 0;
-    bool hold = false;
+    bool hold = true;
     bool fail = false;
     QPointer<QTcpSocket> held;
     QObject::connect(&server, &QTcpServer::newConnection, &server, [&]() {
@@ -944,18 +960,51 @@ void latexSessionRequestsAreIsolated() {
     });
     auto api = std::make_unique<SnowShotApiClient>(
         QStringLiteral("http://127.0.0.1:%1").arg(server.serverPort()));
-    ScreenshotRecognitionSessionController session(nullptr, nullptr, api.get(), {});
+    ScreenshotRecognitionWindow window(ScreenshotRecognitionWindowActions{});
+    ScreenshotRecognitionSessionActions actions;
+    actions.ensureContent = [&]() { return &window; };
+    ScreenshotRecognitionSessionController session(nullptr, nullptr, api.get(), actions);
+    auto* screen = QGuiApplication::primaryScreen();
+    require(screen != nullptr, "LaTeX recognition lifecycle fixture has a screen");
+    const QRect geometry(screen->availableGeometry().topLeft() + QPoint(320, 120), QSize(360, 220));
+    require(window.present({screen, nullptr, geometry, QRectF(0, 0, 240, 120)}),
+            "LaTeX recognition lifecycle fixture presents");
+    const auto preview = [&]() {
+        return window.findChild<ScreenshotOriginalImagePreviewWindow*>();
+    };
+    const auto requireNoPreview = [&](const char* message) {
+        QCoreApplication::processEvents();
+        QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+        require(preview() == nullptr, message);
+    };
+    const auto requirePreviewVisible = [&]() {
+        until([&] { return preview() && preview()->isVisible(); },
+              "successful LaTeX recognition displays the formula preview");
+    };
     const auto target = [&](const QString& key) {
         session.setTarget({key, sampleImage(), QRectF(0, 0, 240, 120)});
     };
     target(QStringLiteral("success"));
     session.activate(Mode::Latex);
+    until([&] { return held != nullptr; });
+    require(session.busy(Mode::Latex), "LaTeX recognition remains pending until the response");
+    requireNoPreview("switching to LaTeX cannot create a preview before successful recognition");
+    ConversionServer::respond(held, R"({"data":{"latex":"x^2"}})", "application/json");
+    held.clear();
+    hold = false;
     until([&] { return !session.busy(Mode::Latex); });
     require(requests == 1 && session.cachedRecognitionResults().latex.has_value(),
             "successful LaTeX request caches result");
+    requirePreviewVisible();
     session.deactivate();
+    requireNoPreview("deactivation releases the successful formula preview");
     session.activate(Mode::Latex);
     require(requests == 1 && !session.busy(), "cached reactivation does not upload");
+    requirePreviewVisible();
+    session.activate(Mode::Qr);
+    requireNoPreview("switching recognition tools releases the formula preview");
+    session.activate(Mode::Latex);
+    requirePreviewVisible();
     fail = true;
     target(QStringLiteral("retry"));
     session.activate(Mode::Latex);
@@ -963,15 +1012,19 @@ void latexSessionRequestsAreIsolated() {
     require(!session.cachedRecognitionResults().latex &&
                 !session.workflowState().value(QStringLiteral("error")).toString().isEmpty(),
             "failed recognition reports error without caching");
+    requireNoPreview("failed LaTeX recognition cannot create or retain a preview");
     fail = false;
     session.activate(Mode::Latex);
     until([&] { return !session.busy(); });
     require(requests == 3 && session.cachedRecognitionResults().latex.has_value(),
             "reactivation retries a failed request");
+    requirePreviewVisible();
     hold = true;
     target(QStringLiteral("old"));
     session.activate(Mode::Latex);
     until([&] { return held != nullptr; });
+    requireNoPreview(
+        "a new target cannot display the preceding formula while recognition is pending");
     session.deactivate();
     require(!session.active(), "mode exit retains no active result view");
     target(QStringLiteral("new"));
@@ -980,16 +1033,383 @@ void latexSessionRequestsAreIsolated() {
     QCoreApplication::processEvents();
     require(!session.cachedRecognitionResults().latex && !session.busy(),
             "target changes cancel stale results");
+    requireNoPreview("a stale recognition response cannot create a formula preview");
     held.clear();
     session.activate(Mode::Latex);
     until([&] { return held != nullptr; });
     api.reset();
     require(!session.busy() && !session.cachedRecognitionResults().latex,
             "provider destruction releases pending recognition");
+    requireNoPreview("provider destruction cannot create a formula preview");
+    session.activate(Mode::Latex);
+    requireNoPreview("an unavailable recognition provider cannot create a formula preview");
+}
+
+void latexPendingResultReplacesBorrowedDocumentSafely() {
+    using Mode = ScreenshotRecognitionSessionController::Mode;
+    QTcpServer server;
+    require(server.listen(QHostAddress::LocalHost), "LaTeX replacement fixture listens");
+    QPointer<QTcpSocket> held;
+    QObject::connect(&server, &QTcpServer::newConnection, &server, [&]() {
+        auto* socket = server.nextPendingConnection();
+        auto bytes = std::make_shared<QByteArray>();
+        QObject::connect(socket, &QTcpSocket::readyRead, &server, [&, socket, bytes]() {
+            *bytes += socket->readAll();
+            const auto end = bytes->indexOf("\r\n\r\n");
+            if (end < 0)
+                return;
+            qsizetype length = 0;
+            for (const auto& line : bytes->left(end).split('\n'))
+                if (line.toLower().startsWith("content-length:"))
+                    length = line.mid(line.indexOf(':') + 1).trimmed().toLongLong();
+            if (bytes->size() >= end + 4 + length)
+                held = socket;
+        });
+    });
+    SnowShotApiClient api(QStringLiteral("http://127.0.0.1:%1").arg(server.serverPort()));
+    ScreenshotRecognitionWindow window(ScreenshotRecognitionWindowActions{});
+    ScreenshotRecognitionSessionActions actions;
+    actions.ensureContent = [&]() { return &window; };
+    ScreenshotRecognitionSessionController session(nullptr, nullptr, &api, actions);
+    const QString key = QStringLiteral("latex-pending-seed");
+    session.setTarget({key, sampleImage(), QRectF(0, 0, 240, 120)});
+    session.activate(Mode::Latex);
+    until([&]() { return held != nullptr; });
+    ScreenshotRecognitionResults seed;
+    seed.key = key;
+    seed.latex = SnowShotLatexResult{QStringLiteral("a\r\n+b"), {}, {}};
+    session.seedRecognitionResults(seed);
+    auto* editor = window.findChild<QTextEdit*>(QStringLiteral("screenshotOcrEditor"));
+    require(editor && session.busy(),
+            "active seeding attaches a source while recognition is pending");
+    auto* originalDocument = editor->document();
+    QPointer<QTextDocument> originalGuard(originalDocument);
+    bool oldDocumentRetired = false;
+    QObject::connect(originalDocument, &QObject::destroyed, &window, [&]() {
+        const auto* currentEditor =
+            window.findChild<QTextEdit*>(QStringLiteral("screenshotOcrEditor"));
+        require(currentEditor && currentEditor->document() != originalDocument,
+                "a replaced source document must outlive the editor's detach");
+        oldDocumentRetired = true;
+    });
+    QTextCursor cursor(originalDocument);
+    cursor.movePosition(QTextCursor::End);
+    cursor.insertText(QStringLiteral("+c"));
+    require(session.latexDraft() == QStringLiteral("a\r\n+b+c"),
+            "the seeded document remains editable while the request is pending");
+    const QByteArray body = R"({"data":{"latex":"x^2"}})";
+    held->write("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: " +
+                QByteArray::number(body.size()) + "\r\nConnection: close\r\n\r\n" + body);
+    held->disconnectFromHost();
+    until([&]() { return !session.busy(); });
+    editor = window.findChild<QTextEdit*>(QStringLiteral("screenshotOcrEditor"));
+    require(editor && editor->toPlainText() == QStringLiteral("x^2") &&
+                session.latexDraft() == QStringLiteral("x^2") &&
+                session.fileExportSnapshot()->source == QStringLiteral("x^2") &&
+                oldDocumentRetired && originalGuard.isNull(),
+            "late recognition safely rebinds the editor before retiring the seeded source");
+}
+
+void latexRepeatedSeedingPreservesBaselineAndHistory() {
+    using Mode = ScreenshotRecognitionSessionController::Mode;
+    ScreenshotRecognitionWindow window(ScreenshotRecognitionWindowActions{});
+    ScreenshotRecognitionSessionActions actions;
+    actions.ensureContent = [&]() { return &window; };
+    ScreenshotRecognitionSessionController session(nullptr, nullptr, nullptr, actions);
+    ScreenshotRecognitionResults initial;
+    initial.key = QStringLiteral("latex-repeated-seed");
+    const QString original = QStringLiteral("\\alpha\r\n+\u00a0a");
+    initial.latex = SnowShotLatexResult{original, {}, {}};
+    session.setTarget({initial.key, sampleImage(), QRectF(0, 0, 240, 120)});
+    session.seedRecognitionResults(initial);
+    session.activate(Mode::Latex);
+    auto* editor = window.findChild<QTextEdit*>(QStringLiteral("screenshotOcrEditor"));
+    require(editor != nullptr, "repeated LaTeX seeding fixture exposes an editor");
+    QPointer<QTextDocument> sourceDocument(editor->document());
+    const QString edited = original + QStringLiteral("+x");
+    session.setTextDraft(edited);
+    ScreenshotRecognitionResults repeated;
+    repeated.key = initial.key;
+    repeated.latex = SnowShotLatexResult{QStringLiteral("\\beta\u2028+b"), {}, {}};
+    repeated.latexDraft = QStringLiteral("\\gamma\u2029+c");
+    session.seedRecognitionResults(repeated);
+    const auto cached = session.cachedRecognitionResults();
+    require(sourceDocument && editor->document() == sourceDocument && cached.latex &&
+                cached.latex->latex == original && cached.latexDraft == edited &&
+                session.latexDraft() == edited,
+            "repeated seeding preserves the paired recognized baseline and edited document");
+    session.undoTextEdit();
+    require(session.latexDraft() == original && !session.cachedRecognitionResults().latexDraft,
+            "repeated seeding preserves formula undo history and its original exact source");
+    session.redoTextEdit();
+    require(session.latexDraft() == edited, "repeated seeding preserves formula redo history");
+    require(session.editWorkflow({{QStringLiteral("action"), QStringLiteral("reset_text")}}) &&
+                session.latexDraft() == cached.latex->latex,
+            "reset restores the same recognition baseline exported by the cached snapshot");
+}
+
+void latexSourcePreservesWhitespace() {
+    using Mode = ScreenshotRecognitionSessionController::Mode;
+    const QString source = QStringLiteral("\\text{a\u00a0b}\r\n+x\u2028+y\u2029+z\r+1\n");
+    ScreenshotRecognitionWindow window(ScreenshotRecognitionWindowActions{});
+    ScreenshotRecognitionSessionActions actions;
+    actions.ensureContent = [&]() { return &window; };
+    ScreenshotRecognitionSessionController session(nullptr, nullptr, nullptr, actions);
+    session.setTarget({QStringLiteral("latex-whitespace"), sampleImage(), QRectF(0, 0, 240, 120)});
+    ScreenshotRecognitionResults seed;
+    seed.key = QStringLiteral("latex-whitespace");
+    seed.latex = SnowShotLatexResult{source, {}, {}};
+    session.seedRecognitionResults(seed);
+    session.activate(Mode::Latex);
+    auto* editor = window.findChild<QTextEdit*>(QStringLiteral("screenshotOcrEditor"));
+    require(editor && editor->document()->toPlainText() != source,
+            "fixture includes whitespace normalized by QTextDocument");
+    const auto sourceIs = [&](const QString& expected) {
+        const auto file = session.fileExportSnapshot();
+        return session.latexDraft() == expected &&
+               session.recognitionClipboardMimeData()->text() == expected && file &&
+               file->source == expected &&
+               session.workflowResult().value(QStringLiteral("text")).toString() == expected;
+    };
+    require(sourceIs(source) && !session.cachedRecognitionResults().latexDraft,
+            "recognized whitespace remains verbatim through every source export");
+    QTextCursor copyCursor(editor->document());
+    editor->setTextCursor(copyCursor);
+    QApplication::clipboard()->setText(QStringLiteral("clipboard sentinel"));
+    require(window.copyVisibleContentToClipboard() && QApplication::clipboard()->text() == source,
+            "LaTeX copy without a selection preserves every original source character");
+    copyCursor.select(QTextCursor::Document);
+    editor->setTextCursor(copyCursor);
+    QApplication::clipboard()->setText(QStringLiteral("clipboard sentinel"));
+    require(window.copyVisibleContentToClipboard() && QApplication::clipboard()->text() == source,
+            "LaTeX Select All copy preserves CRLF, NBSP and Unicode separators");
+    const QString raw = editor->document()->toRawText();
+    copyCursor.setPosition(static_cast<int>(raw.indexOf(QLatin1Char('a'))));
+    copyCursor.setPosition(static_cast<int>(raw.indexOf(QLatin1Char('z')) + 1),
+                           QTextCursor::KeepAnchor);
+    editor->setTextCursor(copyCursor);
+    const qsizetype sourceStart = source.indexOf(QLatin1Char('a'));
+    const QString selectedSource =
+        source.mid(sourceStart, source.indexOf(QLatin1Char('z')) + 1 - sourceStart);
+    QApplication::clipboard()->setText(QStringLiteral("clipboard sentinel"));
+    require(window.copyVisibleContentToClipboard() &&
+                QApplication::clipboard()->text() == selectedSource,
+            "partial LaTeX copy maps document positions to exact source spans");
+    const int paragraphPosition = static_cast<int>(raw.indexOf(QChar::ParagraphSeparator));
+    copyCursor.setPosition(paragraphPosition);
+    copyCursor.setPosition(paragraphPosition + 1, QTextCursor::KeepAnchor);
+    editor->setTextCursor(copyCursor);
+    QApplication::clipboard()->setText(QStringLiteral("clipboard sentinel"));
+    require(window.copyVisibleContentToClipboard() &&
+                QApplication::clipboard()->text() == QStringLiteral("\r\n"),
+            "copying one document paragraph preserves the source CRLF pair");
+
+    QString edited = source;
+    QTextCursor cursor(editor->document());
+    cursor.setPosition(static_cast<int>(editor->document()->toRawText().indexOf(QChar(0x00a0))));
+    cursor.insertText(QStringLiteral("X"));
+    edited.insert(edited.indexOf(QChar(0x00a0)), QStringLiteral("X"));
+    require(sourceIs(edited), "native insertion preserves adjacent NBSP and all line separators");
+    const auto separator =
+        static_cast<int>(editor->document()->toRawText().indexOf(QChar::ParagraphSeparator));
+    cursor.setPosition(separator);
+    cursor.setPosition(separator + 1, QTextCursor::KeepAnchor);
+    cursor.removeSelectedText();
+    edited.remove(edited.indexOf(QStringLiteral("\r\n")), 2);
+    require(sourceIs(edited), "native paragraph deletion consumes exactly its retained CRLF pair");
+    cursor.movePosition(QTextCursor::End);
+    cursor.insertText(QStringLiteral("\n"));
+    edited += QLatin1Char('\n');
+    require(sourceIs(edited), "new paragraphs use LF while untouched source spans stay exact");
+    session.undoTextEdit();
+    require(sourceIs(edited.chopped(1)), "undo preserves original line separator spelling");
+    session.redoTextEdit();
+    require(sourceIs(edited), "redo preserves original line separator spelling");
+
+    const QString replacement = QStringLiteral("\\alpha\r\n+\u00a0x\u2028+y\u2029+z\r");
+    require(session.editWorkflow({{QStringLiteral("action"), QStringLiteral("set_text")},
+                                  {QStringLiteral("text"), replacement}}) &&
+                sourceIs(replacement) &&
+                session.cachedRecognitionResults().latexDraft == replacement,
+            "workflow replacement and persisted draft retain exact source whitespace");
+    session.undoTextEdit();
+    require(sourceIs(edited), "workflow undo restores the native source without normalization");
+    session.redoTextEdit();
+    require(sourceIs(replacement),
+            "workflow redo restores the supplied source without normalization");
+    require(session.editWorkflow({{QStringLiteral("action"), QStringLiteral("reset_text")}}) &&
+                sourceIs(source) && !session.cachedRecognitionResults().latexDraft,
+            "reset restores the exact recognized baseline and clears the persisted draft");
+
+    ScreenshotOcrTextEditingSession detached(source, true);
+    QTextCursor detachedCursor(detached.document());
+    detachedCursor.setPosition(
+        static_cast<int>(detached.document()->toRawText().indexOf(QChar(0x00a0)) + 1));
+    detachedCursor.insertText(QStringLiteral("Y"));
+    QString detachedExpected = source;
+    detachedExpected.insert(detachedExpected.indexOf(QChar(0x00a0)) + 1, QStringLiteral("Y"));
+    require(detached.text() == detachedExpected,
+            "headless document edits also retain untouched source spans");
+    ScreenshotOcrTextEditingSession repeated(QStringLiteral("a\r\n\r\n\nb"), true);
+    static_cast<void>(repeated.document()->documentLayout());
+    QTextCursor repeatedCursor(repeated.document());
+    repeatedCursor.setPosition(2);
+    repeatedCursor.deleteChar();
+    require(repeated.text() == QStringLiteral("a\r\n\nb"),
+            "native deletion identifies the correct span among repeated normalized paragraphs");
+    ScreenshotOcrTextEditingSession textRecognition(source);
+    require(textRecognition.text() == textRecognition.document()->toPlainText(),
+            "OCR editing keeps its existing plain-text normalization");
+    QTextEdit survivingEditor;
+    bool documentDestroyed = false;
+    auto transient = std::make_unique<ScreenshotOcrTextEditingSession>(source, true);
+    survivingEditor.setDocument(transient->document());
+    QObject::connect(transient->document(), &QObject::destroyed, &survivingEditor,
+                     [&]() { documentDestroyed = true; });
+    QTextCursor transientCursor(transient->document());
+    transientCursor.insertText(QStringLiteral("X"));
+    survivingEditor.setDocument(nullptr);
+    transient.reset();
+    require(documentDestroyed && survivingEditor.toPlainText().isEmpty(),
+            "detached session teardown preserves the editor and external destruction observers");
+}
+
+void latexKeyboardHistoryRoutesToSession() {
+    using Mode = ScreenshotRecognitionSessionController::Mode;
+    QPointer<ScreenshotRecognitionSessionController> activeSession;
+    int undoCallbacks = 0;
+    int redoCallbacks = 0;
+    int copyCallbacks = 0;
+    ScreenshotRecognitionWindowActions windowActions;
+    windowActions.handleUndoTextEdit = [&]() {
+        require(activeSession != nullptr, "LaTeX keyboard undo has a live session");
+        ++undoCallbacks;
+        activeSession->undoTextEdit();
+    };
+    windowActions.handleRedoTextEdit = [&]() {
+        require(activeSession != nullptr, "LaTeX keyboard redo has a live session");
+        ++redoCallbacks;
+        activeSession->redoTextEdit();
+    };
+    windowActions.handleCopy = [&]() { ++copyCallbacks; };
+    ScreenshotRecognitionWindow window(windowActions);
+    ScreenshotRecognitionSessionActions actions;
+    actions.ensureContent = [&]() { return &window; };
+    ScreenshotRecognitionSessionController session(nullptr, nullptr, nullptr, actions);
+    activeSession = &session;
+    const QString original = QStringLiteral("\\alpha");
+    ScreenshotRecognitionResults seed;
+    seed.key = QStringLiteral("latex-keyboard-history");
+    seed.latex = SnowShotLatexResult{original, {}, {}};
+    session.setTarget({seed.key, sampleImage(), QRectF(0, 0, 240, 120)});
+    session.seedRecognitionResults(seed);
+    session.activate(Mode::Latex);
+    auto* editor = window.findChild<QTextEdit*>(QStringLiteral("screenshotOcrEditor"));
+    require(editor != nullptr, "LaTeX keyboard fixture attaches the source editor");
+    auto* screen = QGuiApplication::primaryScreen();
+    require(screen != nullptr, "LaTeX keyboard fixture has a screen");
+    const QRect geometry(screen->availableGeometry().topLeft() + QPoint(320, 120), QSize(360, 220));
+    require(window.present({screen, nullptr, geometry, QRectF(0, 0, 240, 120)}),
+            "LaTeX keyboard fixture presents the selection and source editor");
+    // The offscreen platform activates passive tool windows on their first show.
+    // Settle the companion before focusing the input whose shortcuts are under test.
+    until(
+        [&]() {
+            const auto* preview = window.findChild<ScreenshotOriginalImagePreviewWindow*>();
+            return preview && preview->isVisible() && preview->accessibleDescription().isEmpty();
+        },
+        "LaTeX keyboard fixture's initial formula preview did not settle");
+    window.activateWindow();
+    editor->setFocus();
+    until([&]() { return editor->hasFocus(); },
+          "LaTeX keyboard fixture's presented source editor did not receive focus");
+    QTextCursor cursor(editor->document());
+    cursor.movePosition(QTextCursor::End);
+    cursor.insertText(QStringLiteral("+x"));
+    const QString edited = original + QStringLiteral("+x");
+    require(session.latexDraft() == edited, "keyboard fixture records a native source edit");
+    const auto sendStandardKey = [&](QKeySequence::StandardKey standard) {
+        const auto bindings = QKeySequence::keyBindings(standard);
+        require(!bindings.isEmpty() && bindings.front().count() == 1,
+                "LaTeX source editing has a platform standard shortcut");
+        const auto combination = bindings.front()[0];
+        PhysicalKeyEvent press(QEvent::KeyPress, combination.key(),
+                               combination.keyboardModifiers());
+        QApplication::sendEvent(editor, &press);
+        PhysicalKeyEvent release(QEvent::KeyRelease, combination.key(),
+                                 combination.keyboardModifiers());
+        QApplication::sendEvent(editor, &release);
+    };
+    sendStandardKey(QKeySequence::Undo);
+    require(undoCallbacks == 1 && redoCallbacks == 0 && session.latexDraft() == original &&
+                editor->toPlainText() == original,
+            "focused LaTeX Undo invokes the window callback and session history");
+    sendStandardKey(QKeySequence::Redo);
+    require(undoCallbacks == 1 && redoCallbacks == 1 && session.latexDraft() == edited &&
+                editor->toPlainText() == edited,
+            "focused LaTeX Redo invokes the window callback and session history");
+    const QString exactSource = QStringLiteral("\\text{a\u00a0b}\r\n+x\u2028+y\u2029+z\r+w\n");
+    session.setTextDraft(exactSource);
+    const QString raw = editor->document()->toRawText();
+    QTextCursor selection(editor->document());
+    selection.setPosition(static_cast<int>(raw.indexOf(QLatin1Char('a'))));
+    selection.setPosition(static_cast<int>(raw.indexOf(QLatin1Char('z')) + 1),
+                          QTextCursor::KeepAnchor);
+    editor->setTextCursor(selection);
+    const qsizetype sourceStart = exactSource.indexOf(QLatin1Char('a'));
+    const QString selectedSource =
+        exactSource.mid(sourceStart, exactSource.indexOf(QLatin1Char('z')) + 1 - sourceStart);
+    QApplication::clipboard()->setText(QStringLiteral("clipboard sentinel"));
+    sendStandardKey(QKeySequence::Copy);
+    require(QApplication::clipboard()->text() == selectedSource && copyCallbacks == 0 &&
+                session.active() && session.latexDraft() == exactSource,
+            "LaTeX keyboard Copy preserves a selected source span without finishing capture");
+    bool contextCopyTriggered = false;
+    QApplication::clipboard()->setText(QStringLiteral("clipboard sentinel"));
+    QTimer::singleShot(0, &window, [&]() {
+        auto* menu = window.findChild<adqt::widgets::AdContextMenu*>(
+            QStringLiteral("screenshotTextEditorContextMenu"));
+        require(menu && !menu->actions().isEmpty() && menu->actions().first()->isEnabled(),
+                "selected LaTeX source exposes the local context Copy action");
+        menu->actions().first()->trigger();
+        contextCopyTriggered = true;
+        menu->close();
+    });
+    const QPoint menuPosition = editor->viewport()->rect().center();
+    QContextMenuEvent context(QContextMenuEvent::Mouse, menuPosition,
+                              editor->viewport()->mapToGlobal(menuPosition));
+    QApplication::sendEvent(editor->viewport(), &context);
+    require(contextCopyTriggered && context.isAccepted() &&
+                QApplication::clipboard()->text() == selectedSource && copyCallbacks == 0,
+            "LaTeX context Copy preserves the selected source without finishing capture");
+    window.activateWindow();
+    editor->setFocus();
+    until([&]() { return editor->hasFocus(); },
+          "LaTeX source editor did not regain focus after its context menu");
+    sendStandardKey(QKeySequence::SelectAll);
+    QApplication::clipboard()->setText(QStringLiteral("clipboard sentinel"));
+    sendStandardKey(QKeySequence::Copy);
+    require(QApplication::clipboard()->text() == exactSource && copyCallbacks == 0,
+            "LaTeX keyboard Select All and Copy preserve the complete exact source");
+    selection = editor->textCursor();
+    selection.clearSelection();
+    editor->setTextCursor(selection);
+    QApplication::clipboard()->setText(QStringLiteral("clipboard sentinel"));
+    sendStandardKey(QKeySequence::Copy);
+    require(QApplication::clipboard()->text() == exactSource && copyCallbacks == 0 &&
+                session.active(),
+            "LaTeX keyboard Copy without a selection stays local and preserves the whole source");
+    session.deactivate();
+    window.hide();
 }
 
 void runLatexRecognitionTests() {
+    initializeRecognitionTestFonts();
     latexSessionRequestsAreIsolated();
+    latexPendingResultReplacesBorrowedDocumentSafely();
+    latexRepeatedSeedingPreservesBaselineAndHistory();
+    latexSourcePreservesWhitespace();
+    latexKeyboardHistoryRoutesToSession();
     using Mode = ScreenshotRecognitionSessionController::Mode;
     namespace layout = snow_shot::presentation::toolbar_layout;
     using Kind = snow_shot::storage::ScreenshotToolbarLayoutKind;
@@ -1004,9 +1424,10 @@ void runLatexRecognitionTests() {
     seed.latex = SnowShotLatexResult{source, {}, {}};
     session.seedRecognitionResults(seed);
     session.activate(Mode::Latex);
-    auto* browser = window.findChild<QTextBrowser*>(QStringLiteral("screenshotQrContents"));
-    require(browser && browser->isReadOnly() && browser->toPlainText() == source,
-            "LaTeX reuses QR's read-only view without interpreting source");
+    auto* editor = window.findChild<QTextEdit*>(QStringLiteral("screenshotOcrEditor"));
+    require(editor && !editor->isReadOnly() && editor->toPlainText() == source,
+            "LaTeX opens an editable source document without interpreting source");
+    QPointer<QTextDocument> sourceDocument(editor->document());
     require(session.recognitionClipboardMimeData()->text() == source,
             "LaTeX clipboard source is verbatim");
     const auto file = session.fileExportSnapshot();
@@ -1016,9 +1437,10 @@ void runLatexRecognitionTests() {
     require(session.showOriginalImage() && session.recognitionClipboardMimeData()->text() == source,
             "original image toggle retains source");
     session.activate(Mode::Latex);
-    require(!session.busy() &&
+    editor = window.findChild<QTextEdit*>(QStringLiteral("screenshotOcrEditor"));
+    require(editor && sourceDocument && editor->document() == sourceDocument && !session.busy() &&
                 session.workflowResult().value(QStringLiteral("text")).toString() == source,
-            "reactivation reuses the cached source");
+            "reactivation reuses the cached source document in the current editor");
     const auto snapshot = session.recognitionResultsSnapshot();
     require(snapshot.latex && snapshot.visibleLatex, "snapshot preserves visible LaTeX result");
     ScreenshotRecognitionSessionController pinned(nullptr, nullptr, nullptr, {});
@@ -1027,6 +1449,55 @@ void runLatexRecognitionTests() {
     pinned.activate(Mode::Latex);
     require(pinned.recognitionClipboardMimeData()->text() == source,
             "pin transfer needs no API call");
+    const QString edited = QStringLiteral("\\frac{x+1}{y} \\text{edited}\n");
+    int changes = 0;
+    QObject::connect(&session, &ScreenshotRecognitionSessionController::recognitionResultsChanged,
+                     &window, [&]() { ++changes; });
+    QTextCursor cursor(editor->document());
+    cursor.select(QTextCursor::Document);
+    cursor.insertText(edited);
+    require(changes > 0 && session.latexDraft() == edited &&
+                session.workflowResult().value(QStringLiteral("text")) == edited &&
+                session.recognitionClipboardMimeData()->text() == edited &&
+                session.fileExportSnapshot()->source == edited,
+            "direct document edits reach persistence, workflow, clipboard and save source");
+    require(session.cachedRecognitionResults().latex->latex == source &&
+                session.cachedRecognitionResults().latexDraft == edited,
+            "edited LaTeX preserves the successful recognition baseline");
+    session.undoTextEdit();
+    require(session.latexDraft() == source, "LaTeX undo restores the original source");
+    session.redoTextEdit();
+    require(session.latexDraft() == edited, "LaTeX redo restores the edited source");
+    session.deactivate();
+    session.activate(Mode::Latex);
+    editor = window.findChild<QTextEdit*>(QStringLiteral("screenshotOcrEditor"));
+    require(editor && sourceDocument && editor->document() == sourceDocument &&
+                editor->toPlainText() == edited && !session.busy(),
+            "reactivation preserves the document, edit and history without recognition");
+    require(session.editWorkflow({{QStringLiteral("action"), QStringLiteral("set_text")},
+                                  {QStringLiteral("text"), QString()}}),
+            "LaTeX workflow accepts an empty draft");
+    const auto emptySnapshot = session.recognitionResultsSnapshot();
+    require(emptySnapshot.latex && emptySnapshot.latex->succeeded() && emptySnapshot.latexDraft &&
+                emptySnapshot.latexDraft->isEmpty() &&
+                session.workflowState().value(QStringLiteral("editing")).toBool(),
+            "an empty edit remains a recognized editable result");
+    ScreenshotRecognitionSessionController emptyTransfer(nullptr, nullptr, nullptr, {});
+    emptyTransfer.setTarget({seed.key, sampleImage(), QRectF(0, 0, 240, 120)});
+    emptyTransfer.seedRecognitionResults(emptySnapshot);
+    emptyTransfer.activate(Mode::Latex);
+    require(emptyTransfer.recognitionClipboardMimeData()->text().isEmpty() &&
+                emptyTransfer.fileExportSnapshot()->source.isEmpty() &&
+                emptyTransfer.editWorkflow(
+                    {{QStringLiteral("action"), QStringLiteral("reset_text")}}) &&
+                emptyTransfer.latexDraft() == source,
+            "headless transfer preserves empty source and reset baseline");
+    require(!session.editWorkflow({{QStringLiteral("action"), QStringLiteral("format")},
+                                   {QStringLiteral("value"), QStringLiteral("smart")}}),
+            "LaTeX source does not accept text recognition transforms");
+    require(session.editWorkflow({{QStringLiteral("action"), QStringLiteral("reset_text")}}) &&
+                session.latexDraft() == source,
+            "reset restores recognized LaTeX exactly");
     session.setTarget({QStringLiteral("other"), sampleImage(), QRectF(0, 0, 240, 120)});
     require(!session.cachedRecognitionResults().latex, "another target cannot reuse this formula");
     for (const auto kind : {Kind::ActionTools, Kind::PinnedActionTools}) {

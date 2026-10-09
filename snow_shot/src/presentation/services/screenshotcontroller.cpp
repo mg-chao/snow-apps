@@ -2412,8 +2412,11 @@ void ScreenshotController::Impl::undoCanvasEdit() {
         m_ocrController->undoTableEdit();
         return;
     }
-    if (m_ocrController != nullptr &&
-        (m_ocrController->qrModeActive() || m_ocrController->latexModeActive())) {
+    if (m_ocrController != nullptr && m_ocrController->latexModeActive()) {
+        m_ocrController->undoTextEdit();
+        return;
+    }
+    if (m_ocrController != nullptr && m_ocrController->qrModeActive()) {
         return;
     }
     if (m_ocrController != nullptr && m_ocrController->editing()) {
@@ -2428,8 +2431,11 @@ void ScreenshotController::Impl::redoCanvasEdit() {
         m_ocrController->redoTableEdit();
         return;
     }
-    if (m_ocrController != nullptr &&
-        (m_ocrController->qrModeActive() || m_ocrController->latexModeActive())) {
+    if (m_ocrController != nullptr && m_ocrController->latexModeActive()) {
+        m_ocrController->redoTextEdit();
+        return;
+    }
+    if (m_ocrController != nullptr && m_ocrController->qrModeActive()) {
         return;
     }
     if (m_ocrController != nullptr && m_ocrController->editing()) {

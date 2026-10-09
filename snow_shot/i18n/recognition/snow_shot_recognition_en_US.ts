@@ -267,16 +267,44 @@
             <translation>Delete</translation>
         </message>
         <message>
+            <source>Formula preview limit exceeded.</source>
+            <translation>Formula preview limit exceeded.</translation>
+        </message>
+        <message>
+            <source>Formula renderer is unavailable.</source>
+            <translation>Formula renderer is unavailable.</translation>
+        </message>
+        <message>
+            <source>LaTeX formula preview</source>
+            <translation>LaTeX formula preview</translation>
+        </message>
+        <message>
             <source>LaTeX formula source</source>
             <translation>LaTeX formula source</translation>
+        </message>
+        <message>
+            <source>No formula to preview</source>
+            <translation>No formula to preview</translation>
+        </message>
+        <message>
+            <source>Original image preview</source>
+            <translation>Original image preview</translation>
         </message>
         <message>
             <source>Paste</source>
             <translation>Paste</translation>
         </message>
         <message>
+            <source>Rendering formula...</source>
+            <translation>Rendering formula...</translation>
+        </message>
+        <message>
             <source>Select All</source>
             <translation>Select All</translation>
+        </message>
+        <message>
+            <source>Unable to preview this formula. Check the LaTeX source.</source>
+            <translation>Unable to preview this formula. Check the LaTeX source.</translation>
         </message>
     </context>
     <context>

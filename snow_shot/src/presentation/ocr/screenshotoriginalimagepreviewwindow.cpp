@@ -313,7 +313,7 @@ bool ScreenshotOriginalImagePreviewWindow::present(
             emit hidden();
     });
     const QScopedValueRollback<bool> presenting(m_presenting, true);
-    if (state.image.isNull() || !finiteRect(state.imageRectInViewport) ||
+    if ((!state.formula && state.image.isNull()) || !finiteRect(state.imageRectInViewport) ||
         !state.resultRect.isValid() || state.resultRect.isEmpty()) {
         clear();
         return false;
@@ -330,6 +330,16 @@ bool ScreenshotOriginalImagePreviewWindow::present(
     if (m_dragging && m_resultRect.size() != state.resultRect.size())
         endDrag();
     m_sourceImage = state.image;
+    if (m_formula != state.formula || m_dimmed != state.dimmed ||
+        m_background != state.background || m_statusColor != state.statusColor ||
+        m_status != state.status)
+        m_cachedSourceKey = -1;
+    m_formula = state.formula;
+    m_dimmed = state.dimmed;
+    m_background = state.background;
+    m_statusColor = state.statusColor;
+    m_status = state.status;
+    setAccessibleDescription(m_status);
     m_imageRectInViewport = state.imageRectInViewport;
     m_resultRect = state.resultRect;
     if (m_transientOwner != state.transientOwner || m_aboveSibling != state.aboveSibling ||
@@ -367,6 +377,11 @@ void ScreenshotOriginalImagePreviewWindow::clear() {
     endDrag();
     hide();
     m_sourceImage = {};
+    m_formula = false;
+    m_dimmed = false;
+    m_background = {};
+    m_statusColor = {};
+    m_status.clear();
     m_viewportImage = {};
     m_nativeSurface.reset();
     m_imageRectInViewport = {};
@@ -471,7 +486,8 @@ bool ScreenshotOriginalImagePreviewWindow::applyGeometry(const QRect& target, QS
         m_dpiController->resetBaseline();
         connect(m_dpiController, &adqt::widgets::AdDpiStableWindowController::scaleCommitReady,
                 this, [this] {
-                    if (isVisible() && !m_sourceImage.isNull() && m_targetGeometry.isValid()) {
+                    if (isVisible() && (m_formula || !m_sourceImage.isNull()) &&
+                        m_targetGeometry.isValid()) {
                         static_cast<void>(applyGeometry(m_targetGeometry, this->screen()));
                         static_cast<void>(refreshRaster());
                     }
@@ -497,7 +513,7 @@ bool ScreenshotOriginalImagePreviewWindow::applyGeometry(const QRect& target, QS
 }
 
 bool ScreenshotOriginalImagePreviewWindow::refreshRaster() {
-    if (m_sourceImage.isNull() || !m_resultRect.isValid())
+    if ((!m_formula && m_sourceImage.isNull()) || !m_resultRect.isValid())
         return false;
     const qreal outputDpr = devicePixelRatioF();
     if (!std::isfinite(outputDpr) || outputDpr <= 0)
@@ -510,6 +526,8 @@ bool ScreenshotOriginalImagePreviewWindow::refreshRaster() {
         pixelHeight > std::numeric_limits<int>::max())
         return false;
     const QSize pixelSize(std::max(1, qRound(pixelWidth)), std::max(1, qRound(pixelHeight)));
+    if (m_formula && qint64(pixelSize.width()) * pixelSize.height() > 16000000)
+        return false;
     const QRectF pixelImageRect(m_imageRectInViewport.x() * geometryScale,
                                 m_imageRectInViewport.y() * geometryScale,
                                 m_imageRectInViewport.width() * geometryScale,
@@ -517,7 +535,8 @@ bool ScreenshotOriginalImagePreviewWindow::refreshRaster() {
     if (!finiteRect(pixelImageRect))
         return false;
     if (m_cachedSourceKey == m_sourceImage.cacheKey() && m_cachedImageRect == pixelImageRect &&
-        m_cachedPixelSize == pixelSize) {
+        m_cachedPixelSize == pixelSize &&
+        (!m_formula || m_status.isEmpty() || qFuzzyCompare(m_cachedOutputDpr, outputDpr))) {
         if (!qFuzzyCompare(m_cachedOutputDpr, outputDpr)) {
             // Moving a Windows preview to another DPI grid only changes its paint metadata;
             // its authoritative physical viewport and image mapping retain the same pixels.
@@ -547,13 +566,59 @@ bool ScreenshotOriginalImagePreviewWindow::refreshRaster() {
         viewport = snowCanvasAllocateImage(pixelSize, QImage::Format_ARGB32_Premultiplied);
     if (viewport.isNull())
         return false;
-    viewport.fill(Qt::transparent);
+    viewport.fill(m_formula ? m_background : QColor(Qt::transparent));
     QPainter painter(&viewport);
     painter.setRenderHint(QPainter::SmoothPixmapTransform,
                           pixelImageRect.size() != QSizeF(m_sourceImage.size()));
-    paintExposedScreenshotImage(painter, pixelImageRect, m_sourceImage,
-                                QRectF(QPointF(), QSizeF(m_sourceImage.size())),
-                                QRegion(viewport.rect()));
+    if (m_formula) {
+        QRectF formulaRect = pixelImageRect;
+        QRectF statusRect;
+        if (!m_status.isEmpty()) {
+            const qreal textScale = usesPhysicalGeometry() ? outputDpr : geometryScale;
+            QFont statusFont = font();
+            statusFont.setPixelSize(std::max(1, qRound(12 * textScale)));
+            painter.setFont(statusFont);
+            painter.setPen(m_statusColor);
+            const qreal inset =
+                std::min({8 * textScale, pixelSize.width() / 8.0, pixelSize.height() / 8.0});
+            const QRectF contentRect =
+                QRectF(viewport.rect()).adjusted(inset, inset, -inset, -inset);
+            if (m_sourceImage.isNull()) {
+                statusRect = contentRect;
+            } else {
+                QRectF formulaArea = contentRect;
+                const qreal footerHeight = 36 * textScale;
+                // Small selections retain the complete formula and accessible error text.
+                // Show a footer only when it leaves room for a formula line and a gap.
+                if (contentRect.width() >= 4 * statusFont.pixelSize() &&
+                    contentRect.height() >= footerHeight + statusFont.pixelSize() + inset) {
+                    statusRect = contentRect;
+                    statusRect.setTop(statusRect.bottom() - footerHeight);
+                    formulaArea.setBottom(statusRect.top() - inset);
+                }
+                QSizeF formulaSize = pixelImageRect.size();
+                if (formulaSize.width() > formulaArea.width() ||
+                    formulaSize.height() > formulaArea.height())
+                    formulaSize.scale(formulaArea.size(), Qt::KeepAspectRatio);
+                formulaRect = QRectF(formulaArea.center() -
+                                         QPointF(formulaSize.width() / 2, formulaSize.height() / 2),
+                                     formulaSize);
+            }
+        }
+        if (!m_sourceImage.isNull()) {
+            painter.setRenderHint(QPainter::SmoothPixmapTransform,
+                                  formulaRect.size() != QSizeF(m_sourceImage.size()));
+            painter.setOpacity(m_dimmed ? 0.35 : 1.0);
+            painter.drawImage(formulaRect, m_sourceImage);
+            painter.setOpacity(1.0);
+        }
+        if (!statusRect.isEmpty())
+            painter.drawText(statusRect, Qt::AlignCenter | Qt::TextWordWrap, m_status);
+    } else {
+        paintExposedScreenshotImage(painter, pixelImageRect, m_sourceImage,
+                                    QRectF(QPointF(), QSizeF(m_sourceImage.size())),
+                                    QRegion(viewport.rect()));
+    }
     painter.end();
     viewport.setDevicePixelRatio(outputDpr);
     m_viewportImage = std::move(viewport);
@@ -668,8 +733,8 @@ void ScreenshotOriginalImagePreviewWindow::paintEvent(QPaintEvent* event) {
 void ScreenshotOriginalImagePreviewWindow::resizeEvent(QResizeEvent* event) {
     QWidget::resizeEvent(event);
 #if defined(Q_OS_WIN) || defined(_WIN32)
-    if (usesPhysicalGeometry() && m_targetGeometry.isValid() && !m_sourceImage.isNull() &&
-        !m_adjustingPaintSurface) {
+    if (usesPhysicalGeometry() && m_targetGeometry.isValid() &&
+        (m_formula || !m_sourceImage.isNull()) && !m_adjustingPaintSurface) {
         // QWidgetWindow rounds native extents onto its logical grid before forwarding this
         // event. Keep the paint surface large enough for every physical row and column; the
         // native window itself remains pinned to the exact recognition viewport rectangle.
@@ -721,7 +786,7 @@ bool ScreenshotOriginalImagePreviewWindow::eventFilter(QObject* watched, QEvent*
 
 void ScreenshotOriginalImagePreviewWindow::reconcileNativeGeometry() {
 #if defined(Q_OS_WIN) || defined(_WIN32)
-    if (usesPhysicalGeometry() && isVisible() && !m_sourceImage.isNull() &&
+    if (usesPhysicalGeometry() && isVisible() && (m_formula || !m_sourceImage.isNull()) &&
         m_targetGeometry.isValid() && !m_applyingGeometry && m_nativeSurface &&
         nativeClientRect(this) != m_targetGeometry) {
         // Qt publishes translucent frames using an integer logical frame rectangle, which can
@@ -735,17 +800,18 @@ void ScreenshotOriginalImagePreviewWindow::reconcileNativeGeometry() {
 }
 
 void ScreenshotOriginalImagePreviewWindow::scheduleRefresh() {
-    if (m_refreshPending || !isVisible() || m_sourceImage.isNull())
+    if (m_refreshPending || !isVisible() || (!m_formula && m_sourceImage.isNull()))
         return;
     m_refreshPending = true;
     QTimer::singleShot(0, this, [this] {
         m_refreshPending = false;
         // A drag or a parent hide may suppress the preview before this queued update runs.
-        if (!isVisible() || m_sourceImage.isNull())
+        if (!isVisible() || (!m_formula && m_sourceImage.isNull()))
             return;
         static_cast<void>(
             present({m_sourceImage, m_imageRectInViewport, m_resultRect, m_transientOwner.data(),
-                     m_pinned, m_staysOnTop, m_aboveSibling.data()}));
+                     m_pinned, m_staysOnTop, m_aboveSibling.data(), m_formula, m_dimmed,
+                     m_background, m_statusColor, m_status}));
     });
 }
 

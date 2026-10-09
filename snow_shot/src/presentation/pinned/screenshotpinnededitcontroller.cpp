@@ -12,6 +12,7 @@
 #include "snow_shot/presentation/screenshotdefaultstyles.h"
 #include "snow_shot/presentation/screenshotgeometry.h"
 #include "snow_shot/presentation/screenshotpinnedwindow.h"
+#include "snow_shot/presentation/screenshotrecognitionsessioncontroller.h"
 #include "snow_shot/presentation/screenshottoolpalette.h"
 #include "snow_shot/presentation/screenshottoolpalettehost.h"
 #include "snow_shot/presentation/windowshortcutmanager.h"
@@ -358,10 +359,24 @@ void ScreenshotPinnedEditController::ensureToolbar() {
                                                          QRectF(m_canvas.rect()).center()));
             });
         toolbar->setHistoryState(m_canvas.canvasHistoryState());
-        connect(toolbar, &ScreenshotToolPalette::undoRequested, this,
-                [this]() { static_cast<void>(m_canvas.undo()); });
-        connect(toolbar, &ScreenshotToolPalette::redoRequested, this,
-                [this]() { static_cast<void>(m_canvas.redo()); });
+        connect(toolbar, &ScreenshotToolPalette::undoRequested, this, [this]() {
+            auto* session = m_pinnedWindow.m_recognitionSession.get();
+            if (session && session->active() &&
+                session->mode() == ScreenshotRecognitionSessionController::Mode::Latex) {
+                session->undoTextEdit();
+                return;
+            }
+            static_cast<void>(m_canvas.undo());
+        });
+        connect(toolbar, &ScreenshotToolPalette::redoRequested, this, [this]() {
+            auto* session = m_pinnedWindow.m_recognitionSession.get();
+            if (session && session->active() &&
+                session->mode() == ScreenshotRecognitionSessionController::Mode::Latex) {
+                session->redoTextEdit();
+                return;
+            }
+            static_cast<void>(m_canvas.redo());
+        });
         connect(toolbar, &ScreenshotToolPalette::moveRequested, this,
                 &ScreenshotPinnedEditController::activateResizeWindowTool);
         connect(toolbar, &ScreenshotToolPalette::selectRequested, this,

@@ -109,4 +109,11 @@ $cargoDirectories = @(Get-ChildItem -LiteralPath (Join-Path $destination 'cargo'
 if ($cargoDirectories.Count -ne 3) {
     throw 'Collect only the selected packages: exclude unshipped workspace features and private roots'
 }
+foreach ($notice in @('LICENSE-MIT.txt', 'OFL.txt', 'Knuth_License.txt',
+                      'License_for_dsrom.txt', 'GPL-3.0-greek.txt', 'GPL-3.0-cyrillic.txt',
+                      'RES_README', 'SOURCE.md')) {
+    if (!(Test-Path -LiteralPath (Join-Path $destination "source/microtex-0e3707f6/$notice"))) {
+        throw "MicroTeX source and font notices must be collected: $notice"
+    }
+}
 Write-Output 'License collection regression passed: selected packages, multiple roots, and Git dependencies.'

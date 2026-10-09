@@ -59,6 +59,10 @@
 #include <QUrl>
 #include <QVBoxLayout>
 #include <QWindow>
+#include <QtMath>
+#if SNOW_SHOT_ENABLE_LATEX_RECOGNITION
+#include "snow_shot/presentation/screenshotlatexrenderer.h"
+#endif
 
 #include <algorithm>
 #include <cmath>
@@ -301,9 +305,14 @@ ScreenshotRecognitionWindow::ScreenshotRecognitionWindow(
         m_originalImagePreviewHostHandle = nullptr;
         refreshOriginalImagePreview();
     });
+#if SNOW_SHOT_ENABLE_LATEX_RECOGNITION
+    connect(&adqt::theme::ThemeManager::instance(), &adqt::theme::ThemeManager::themeChanged, this,
+            [this] { refreshOriginalImagePreview(); });
+#endif
 }
 
 ScreenshotRecognitionWindow::~ScreenshotRecognitionWindow() {
+    clearLatexPreview();
     delete m_originalImagePreview.data();
     clearFormattedText();
     if (m_textEditor != nullptr) {
@@ -457,7 +466,7 @@ void ScreenshotRecognitionWindow::syncOriginalImagePreviewStacking(bool staysOnT
 }
 
 void ScreenshotRecognitionWindow::refreshOriginalImagePreview() {
-    if (!m_originalImagePreviewEnabled || m_originalImagePreviewSuppressed || m_showOriginalImage ||
+    if (!companionPreviewEnabled() || m_originalImagePreviewSuppressed || m_showOriginalImage ||
         !isVisible() || !m_originalImagePreviewHost || !m_originalImagePreviewHost->isVisible() ||
         m_originalImagePreviewHost->isMinimized()) {
         destroyOriginalImagePreview();
@@ -474,6 +483,17 @@ void ScreenshotRecognitionWindow::refreshOriginalImagePreview() {
 }
 
 void ScreenshotRecognitionWindow::destroyOriginalImagePreview() {
+#if SNOW_SHOT_ENABLE_LATEX_RECOGNITION
+    if (m_latexRenderer && m_latexRenderPending) {
+        m_latexRenderer->cancel();
+        m_latexRequestToken = 0;
+        m_latexRenderPending = false;
+        m_latexFallbackPending = false;
+        m_latexPendingKey = {};
+        m_latexFallbackAttemptKey = {};
+        m_latexRequestedSize = {};
+    }
+#endif
     if (!m_originalImagePreview) {
         return;
     }
@@ -517,7 +537,7 @@ void ScreenshotRecognitionWindow::observeOriginalImagePreviewHost() {
 }
 
 void ScreenshotRecognitionWindow::updateOriginalImagePreview() {
-    if (!m_originalImagePreviewEnabled || m_originalImagePreviewSuppressed || m_showOriginalImage ||
+    if (!companionPreviewEnabled() || m_originalImagePreviewSuppressed || m_showOriginalImage ||
         !isVisible() || !m_originalImagePreviewHost || !m_originalImagePreviewHost->isVisible() ||
         m_originalImagePreviewHost->isMinimized()) {
         destroyOriginalImagePreview();
@@ -527,8 +547,7 @@ void ScreenshotRecognitionWindow::updateOriginalImagePreview() {
     std::optional<ScreenshotOriginalImagePreviewState> state;
     if (m_originalImagePreviewProvider) {
         state = m_originalImagePreviewProvider();
-    } else if (!m_originalImagePreviewSource.isNull() &&
-               m_originalImagePreviewCanvasRect.isValid()) {
+    } else {
         state.emplace();
         state->image = m_originalImagePreviewSource;
         state->imageRectInViewport =
@@ -543,7 +562,11 @@ void ScreenshotRecognitionWindow::updateOriginalImagePreview() {
                                     ? m_originalImagePreviewTransientOwner.data()
                                     : this;
     }
-    if (!state || state->image.isNull() || state->resultRect.isEmpty() ||
+#if SNOW_SHOT_ENABLE_LATEX_RECOGNITION
+    if (state && m_latexPreviewEnabled)
+        prepareLatexPreview(*state);
+#endif
+    if (!state || (!state->formula && state->image.isNull()) || state->resultRect.isEmpty() ||
         !state->imageRectInViewport.isValid()) {
         destroyOriginalImagePreview();
         return;
@@ -561,6 +584,10 @@ void ScreenshotRecognitionWindow::updateOriginalImagePreview() {
             }
         });
     }
+#if SNOW_SHOT_ENABLE_LATEX_RECOGNITION
+    m_originalImagePreview->setAccessibleName(m_latexPreviewEnabled ? tr("LaTeX formula preview")
+                                                                    : tr("Original image preview"));
+#endif
     if (!m_originalImagePreview->present(*state)) {
         destroyOriginalImagePreview();
     }
@@ -899,8 +926,248 @@ void ScreenshotRecognitionWindow::commitActiveTableEdit() {
 #endif
 }
 
+bool ScreenshotRecognitionWindow::companionPreviewEnabled() const {
+#if SNOW_SHOT_ENABLE_LATEX_RECOGNITION
+    return m_originalImagePreviewEnabled || m_latexPreviewEnabled;
+#else
+    return m_originalImagePreviewEnabled;
+#endif
+}
+
+void ScreenshotRecognitionWindow::setLatexPreviewEnabled(bool enabled) {
+#if SNOW_SHOT_ENABLE_LATEX_RECOGNITION
+    if (m_latexPreviewEnabled == enabled)
+        return;
+    m_latexPreviewEnabled = enabled;
+    if (!enabled && m_latexRenderer) {
+        m_latexRenderer->cancel();
+        m_latexRequestToken = 0;
+        m_latexRenderPending = false;
+        m_latexFallbackPending = false;
+        m_latexPendingKey = {};
+        m_latexFallbackAttemptKey = {};
+        m_latexRequestedSize = {};
+    }
+    refreshOriginalImagePreview();
+#else
+    Q_UNUSED(enabled)
+#endif
+}
+
+void ScreenshotRecognitionWindow::clearLatexPreview() {
+#if SNOW_SHOT_ENABLE_LATEX_RECOGNITION
+    const bool enabled = std::exchange(m_latexPreviewEnabled, false);
+    if (enabled && m_textEditor)
+        m_textEditor->setAccessibleName({});
+    disconnect(m_latexDocumentConnection);
+    m_latexDocument = nullptr;
+    m_latexSource = {};
+    if (m_latexRenderer)
+        m_latexRenderer->clearCache();
+    if (m_latexPreviewTimer)
+        m_latexPreviewTimer->stop();
+    m_latexRequestToken = 0;
+    m_latexPreviewImage = {};
+    m_latexValidKey = {};
+    m_latexPendingKey = {};
+    m_latexFallbackAttemptKey = {};
+    m_latexRequestedSource.clear();
+    m_latexRequestedSize = {};
+    m_latexPreviewError = 0;
+    m_latexRenderPending = false;
+    m_latexFallbackPending = false;
+    if (enabled)
+        refreshOriginalImagePreview();
+#endif
+}
+
+void ScreenshotRecognitionWindow::showLatexEditor(QTextDocument* document,
+                                                  std::function<QString()> source) {
+#if SNOW_SHOT_ENABLE_LATEX_RECOGNITION
+    showTextEditor(document);
+    if (!document || !m_textEditor)
+        return;
+    m_textEditor->setAccessibleName(tr("LaTeX formula source"));
+    m_latexDocument = document;
+    m_latexSource = std::move(source);
+    if (!m_latexPreviewTimer) {
+        m_latexPreviewTimer = new QTimer(this);
+        m_latexPreviewTimer->setSingleShot(true);
+        m_latexPreviewTimer->setInterval(150);
+        connect(m_latexPreviewTimer, &QTimer::timeout, this,
+                &ScreenshotRecognitionWindow::refreshOriginalImagePreview);
+    }
+    m_latexDocumentConnection = connect(document, &QTextDocument::contentsChanged, this,
+                                        &ScreenshotRecognitionWindow::scheduleLatexPreview);
+    setLatexPreviewEnabled(true);
+#else
+    Q_UNUSED(document)
+    Q_UNUSED(source)
+#endif
+}
+
+#if SNOW_SHOT_ENABLE_LATEX_RECOGNITION
+QString ScreenshotRecognitionWindow::currentLatexSource() const {
+    if (!m_latexDocument)
+        return {};
+    return m_latexSource ? m_latexSource() : m_latexDocument->toPlainText();
+}
+
+QString ScreenshotRecognitionWindow::currentLatexSource(int selectionStart,
+                                                        int selectionEnd) const {
+    const QString source = currentLatexSource();
+    qsizetype sourceStart = source.size();
+    qsizetype sourceEnd = source.size();
+    qsizetype documentPosition = 0;
+    for (qsizetype index = 0; index < source.size(); ++index) {
+        if (documentPosition == selectionStart)
+            sourceStart = index;
+        if (documentPosition == selectionEnd) {
+            sourceEnd = index;
+            break;
+        }
+        // QTextDocument stores a CRLF pair as one paragraph position. Other source
+        // characters, including NBSP and Unicode separators, each retain their position.
+        if (source.at(index) == QLatin1Char('\r') && index + 1 < source.size() &&
+            source.at(index + 1) == QLatin1Char('\n')) {
+            ++index;
+        }
+        ++documentPosition;
+    }
+    return source.mid(sourceStart, sourceEnd - sourceStart);
+}
+
+void ScreenshotRecognitionWindow::scheduleLatexPreview() {
+    if (m_latexRenderPending && m_latexRenderer) {
+        m_latexRenderer->cancel();
+        m_latexRequestedSize = {};
+    }
+    m_latexRequestToken = 0;
+    m_latexRenderPending = false;
+    m_latexFallbackPending = false;
+    m_latexPendingKey = {};
+    m_latexFallbackAttemptKey = {};
+    if (currentLatexSource().trimmed().isEmpty()) {
+        m_latexPreviewTimer->stop();
+        m_latexPreviewImage = {};
+        m_latexValidKey = {};
+        m_latexRequestedSource.clear();
+        m_latexRequestedSize = {};
+        m_latexPreviewError = 0;
+        refreshOriginalImagePreview();
+    } else {
+        m_latexPreviewTimer->start();
+    }
+}
+
+QString ScreenshotRecognitionWindow::latexPreviewStatus() const {
+    using Error = ScreenshotLatexRenderer::Error;
+    switch (static_cast<Error>(m_latexPreviewError)) {
+    case Error::InvalidFormula:
+        return tr("Unable to preview this formula. Check the LaTeX source.");
+    case Error::LimitExceeded:
+        return tr("Formula preview limit exceeded.");
+    case Error::InitializationFailed:
+        return tr("Formula renderer is unavailable.");
+    case Error::None:
+        break;
+    }
+    if (m_latexRenderPending)
+        return tr("Rendering formula...");
+    if (currentLatexSource().trimmed().isEmpty())
+        return tr("No formula to preview");
+    return {};
+}
+
+void ScreenshotRecognitionWindow::prepareLatexPreview(ScreenshotOriginalImagePreviewState& state) {
+    state.formula = true;
+    const auto theme = adqt::theme::ThemeManager::instance().resolveTheme(this);
+    state.background = theme.colorBgContainer;
+    state.statusColor = theme.colorText;
+    const qreal dpr = devicePixelRatioF();
+    const qreal geometryScale =
+        ScreenshotOriginalImagePreviewWindow::usesPhysicalGeometry() ? 1.0 / dpr : 1.0;
+    const QSizeF logicalViewport = QSizeF(state.resultRect.size()) * geometryScale;
+    const qreal padding =
+        std::min({12.0, logicalViewport.width() / 8.0, logicalViewport.height() / 8.0});
+    const QSize renderSize(std::max(1, qFloor(logicalViewport.width() - padding * 2)),
+                           std::max(1, qFloor(logicalViewport.height() - padding * 2)));
+    if (m_latexDocument) {
+        const QString source = currentLatexSource();
+        if (!source.trimmed().isEmpty() && !m_latexPreviewTimer->isActive() &&
+            (source != m_latexRequestedSource || renderSize != m_latexRequestedSize ||
+             !qFuzzyCompare(dpr, m_latexRequestedDpr) ||
+             theme.colorText != m_latexRequestedForeground)) {
+            if (!m_latexRenderer) {
+                m_latexRenderer = new ScreenshotLatexRenderer(this);
+                connect(m_latexRenderer, &ScreenshotLatexRenderer::rendered, this,
+                        [this](quint64 token, const QImage& image,
+                               ScreenshotLatexRenderer::Error error) {
+                            if (token != m_latexRequestToken || !m_latexPreviewEnabled ||
+                                !m_latexDocument)
+                                return;
+                            m_latexRenderPending = false;
+                            if (!m_latexFallbackPending)
+                                m_latexPreviewError = static_cast<int>(error);
+                            if (error == ScreenshotLatexRenderer::Error::None) {
+                                m_latexPreviewImage = image;
+                                m_latexValidKey = m_latexPendingKey;
+                                if (!m_latexFallbackPending)
+                                    m_latexFallbackAttemptKey = {};
+                            }
+                            m_latexFallbackPending = false;
+                            refreshOriginalImagePreview();
+                        });
+            }
+            m_latexRequestedSource = source;
+            m_latexRequestedSize = renderSize;
+            m_latexRequestedDpr = dpr;
+            m_latexRequestedForeground = theme.colorText;
+            m_latexRenderPending = true;
+            if (m_latexFallbackPending)
+                m_latexFallbackAttemptKey = {};
+            m_latexFallbackPending = false;
+            m_latexPendingKey = {source, renderSize, dpr, theme.colorText};
+            m_latexRequestToken =
+                m_latexRenderer->request(source, renderSize, dpr, theme.colorText);
+        } else if (!m_latexRenderPending && !m_latexPreviewTimer->isActive() &&
+                   m_latexPreviewError != 0 && !m_latexPreviewImage.isNull() &&
+                   !m_latexValidKey.source.isEmpty()) {
+            const LatexRenderKey fallback{m_latexValidKey.source, renderSize, dpr, theme.colorText};
+            if (!(fallback == m_latexValidKey) && !(fallback == m_latexFallbackAttemptKey)) {
+                // Keep the invalid draft's request key and error intact. The retained formula
+                // needs its own raster for a new theme or viewport, not another draft retry.
+                m_latexFallbackAttemptKey = fallback;
+                m_latexPendingKey = fallback;
+                m_latexRenderPending = true;
+                m_latexFallbackPending = true;
+                m_latexRequestToken = m_latexRenderer->request(fallback.source, fallback.size,
+                                                               fallback.dpr, fallback.foreground);
+            }
+        }
+    }
+    state.image = m_latexPreviewImage;
+    state.dimmed = m_latexPreviewError != 0;
+    state.status = latexPreviewStatus();
+    const qreal viewScale = 1.0 / geometryScale;
+    const QRectF logicalRect(QPointF(), logicalViewport);
+    QRectF formulaRect = logicalRect;
+    if (!state.image.isNull()) {
+        QSizeF formulaSize = QSizeF(state.image.size()) / state.image.devicePixelRatio();
+        if (formulaSize.width() > renderSize.width() || formulaSize.height() > renderSize.height())
+            formulaSize.scale(QSizeF(renderSize), Qt::KeepAspectRatio);
+        formulaRect = QRectF(logicalRect.center() -
+                                 QPointF(formulaSize.width() / 2, formulaSize.height() / 2),
+                             formulaSize);
+    }
+    state.imageRectInViewport =
+        QRectF(formulaRect.topLeft() * viewScale, formulaRect.size() * viewScale);
+}
+#endif
+
 void ScreenshotRecognitionWindow::showTextEditor(QTextDocument* document, bool readOnly,
                                                  bool streaming) {
+    clearLatexPreview();
     if (document == nullptr) {
         return;
     }
@@ -936,8 +1203,15 @@ void ScreenshotRecognitionWindow::showTextEditor(QTextDocument* document, bool r
                 });
         m_stack->addWidget(m_textEditorContainer);
         installSelectionResizeEventFilters(m_textEditorContainer);
-        connect(editor, &adqt::widgets::AdTextEdit::textEdited, this,
-                [this](const QString& text) { m_actions.handleTextEdited(text); });
+        connect(editor, &adqt::widgets::AdTextEdit::textEdited, this, [this](const QString& text) {
+#if SNOW_SHOT_ENABLE_LATEX_RECOGNITION
+            // The formula session observes the document directly and preserves source
+            // whitespace. AdTextEdit's plain-text notification normalizes that source.
+            if (m_latexDocument)
+                return;
+#endif
+            m_actions.handleTextEdited(text);
+        });
         connect(m_textEditor, &QWidget::customContextMenuRequested, this,
                 [this](const QPoint& position) {
                     showTextEditorContextMenu(m_textEditor->viewport()->mapToGlobal(position));
@@ -1082,7 +1356,12 @@ void ScreenshotRecognitionWindow::registerWindowShortcuts() {
     copy.priority = ShortcutManager::StandardPriority::WindowCommand;
     copy.canActivate = copyCommandsAllowed;
     copy.activate = [this](const auto&) {
-        if (copyVisibleContentToClipboard() && m_conversionView == nullptr) {
+        const bool copied = copyVisibleContentToClipboard();
+#if SNOW_SHOT_ENABLE_LATEX_RECOGNITION
+        if (m_latexDocument)
+            return true;
+#endif
+        if (copied && m_conversionView == nullptr) {
             m_actions.handleCopy();
         }
         return true;
@@ -1130,6 +1409,7 @@ void ScreenshotRecognitionWindow::setTextEditorStreaming(bool streaming) {
 }
 
 void ScreenshotRecognitionWindow::hideTextEditor() {
+    clearLatexPreview();
     if (m_textEditor == nullptr) {
         return;
     }
@@ -1317,6 +1597,14 @@ bool ScreenshotRecognitionWindow::copyVisibleContentToClipboard() {
     if (m_textEditor != nullptr) {
         contentAvailable = true;
         const QTextCursor cursor = m_textEditor->textCursor();
+#if SNOW_SHOT_ENABLE_LATEX_RECOGNITION
+        if (m_latexDocument) {
+            clipboard->setText(cursor.hasSelection() ? currentLatexSource(cursor.selectionStart(),
+                                                                          cursor.selectionEnd())
+                                                     : currentLatexSource());
+            return true;
+        }
+#endif
         text = cursor.hasSelection() ? QTextDocumentFragment(cursor).toPlainText()
                                      : m_textEditor->toPlainText();
     }
@@ -1425,7 +1713,15 @@ void ScreenshotRecognitionWindow::showTextEditorContextMenu(const QPoint& global
     remove->setEnabled(writable && hasSelection);
     selectAll->setEnabled(!m_textEditor->document()->isEmpty());
 
-    connect(copy, &QAction::triggered, m_textEditor, &QTextEdit::copy);
+    connect(copy, &QAction::triggered, m_textEditor, [this]() {
+#if SNOW_SHOT_ENABLE_LATEX_RECOGNITION
+        if (m_latexDocument) {
+            static_cast<void>(copyVisibleContentToClipboard());
+            return;
+        }
+#endif
+        m_textEditor->copy();
+    });
     connect(cut, &QAction::triggered, m_textEditor, &QTextEdit::cut);
     connect(paste, &QAction::triggered, m_textEditor, &QTextEdit::paste);
     connect(remove, &QAction::triggered, this, [this]() {
@@ -1804,4 +2100,11 @@ void ScreenshotRecognitionWindow::changeEvent(QEvent* event) {
                                                        : tr("LaTeX formula source"));
     }
 #endif
+#if SNOW_SHOT_ENABLE_LATEX_RECOGNITION
+    if (event->type() == QEvent::LanguageChange && m_latexPreviewEnabled && m_latexDocument &&
+        m_textEditor)
+        m_textEditor->setAccessibleName(tr("LaTeX formula source"));
+#endif
+    if (event->type() == QEvent::LanguageChange && companionPreviewEnabled())
+        refreshOriginalImagePreview();
 }

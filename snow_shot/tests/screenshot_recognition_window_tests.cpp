@@ -2,6 +2,7 @@
 #include "snow_shot/presentation/screenshotgeometry.h"
 #include "snow_shot/presentation/screenshotocrpresentation.h"
 #include "snow_shot/presentation/screenshotrecognitionwindow.h"
+#include "snow_shot/presentation/screenshotlatexrenderer.h"
 #include "snow_shot/presentation/screenshottableeditor.h"
 #include "snow_shot/presentation/windowshortcutmanager.h"
 #include "snow_shot/storage/settingsadapters.h"
@@ -18,7 +19,9 @@
 #include <QClipboard>
 #include <QContextMenuEvent>
 #include <QDir>
+#include <QFileInfo>
 #include <QEventLoop>
+#include <QElapsedTimer>
 #include <QFrame>
 #include <QFontDatabase>
 #include <QFocusEvent>
@@ -46,6 +49,7 @@
 #include <QTextFragment>
 #include <QTimer>
 #include <QThread>
+#include <QTranslator>
 #include <QUrl>
 #include <QVBoxLayout>
 #include <QWindow>
@@ -67,6 +71,21 @@
 #endif
 
 namespace {
+class LatexPreviewTranslator final : public QTranslator {
+  public:
+    bool isEmpty() const override {
+        return false;
+    }
+
+    QString translate(const char* context, const char* source, const char*, int) const override {
+        if (qstrcmp(context, "ScreenshotRecognitionWindow") == 0 ||
+            (qstrcmp(context, "adqt::widgets::AdTextEdit") == 0 &&
+             qstrcmp(source, "Multiline input") == 0))
+            return QStringLiteral("Translated ") + QString::fromUtf8(source);
+        return {};
+    }
+};
+
 void require(bool condition, const char* message) {
     if (!condition) {
         std::cerr << message << '\n';
@@ -2489,9 +2508,243 @@ void originalImagePreviewPreservesSelectionAndOwnerLifecycle() {
     flush();
 }
 
+void latexPreviewUsesPassiveCompanionAndSurvivesEditing() {
+#ifdef Q_OS_WIN
+    if (QGuiApplication::platformName() == QStringLiteral("offscreen")) {
+        require(QFontDatabase::addApplicationFont(QStringLiteral("C:/Windows/Fonts/segoeui.ttf")) >=
+                    0,
+                "load offscreen recognition font");
+        QApplication::setFont(QFont(QStringLiteral("Segoe UI")));
+    }
+#endif
+    auto& themes = adqt::theme::ThemeManager::instance();
+    const auto originalTheme = themes.theme();
+    const auto restoreTheme = qScopeGuard([&] { themes.setTheme(originalTheme); });
+    themes.setPreset(adqt::theme::ThemeScheme::Light, adqt::theme::ThemeDensity::Compact);
+    QScreen* screen = QGuiApplication::primaryScreen();
+    require(screen != nullptr, "LaTeX preview fixture has a screen");
+    // An externally owned Qt document must outlive the editor using it.
+    QTextDocument document;
+    LatexPreviewTranslator translator;
+    ScreenshotRecognitionWindow window(ScreenshotRecognitionWindowActions{});
+    const QRect geometry(screen->availableGeometry().topLeft() + QPoint(320, 120), QSize(200, 100));
+    require(window.present({screen, nullptr, geometry, QRectF(0, 0, 200, 100)}),
+            "LaTeX editor selection presents");
+    QImage original(200, 100, QImage::Format_ARGB32_Premultiplied);
+    original.fill(Qt::blue);
+    window.setOriginalImagePreviewProvider(
+        [&]() -> std::optional<ScreenshotOriginalImagePreviewState> {
+            ScreenshotOriginalImagePreviewState state;
+            state.image = original;
+            state.imageRectInViewport = QRectF(0, 0, 200, 100);
+            state.resultRect = geometry;
+            state.transientOwner = &window;
+            return state;
+        },
+        &window);
+    window.setOriginalImagePreviewEnabled(false);
+    document.setPlainText(QStringLiteral("\\frac{a}{b}+\\sqrt{x}"));
+    window.showLatexEditor(&document);
+    const auto waitFor = [](const std::function<bool()>& predicate) {
+        QElapsedTimer timer;
+        timer.start();
+        do {
+            QApplication::processEvents();
+            QApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+            if (predicate())
+                return true;
+            QThread::msleep(1);
+        } while (timer.elapsed() < 10000);
+        return false;
+    };
+    const auto preview = [&]() {
+        return window.findChild<ScreenshotOriginalImagePreviewWindow*>();
+    };
+    require(waitFor([&] {
+                return preview() && preview()->isVisible() &&
+                       preview()->accessibleDescription().isEmpty();
+            }),
+            "real MicroTeX preview renders even when text preview is disabled");
+    auto* editor = window.findChild<QTextEdit*>(QStringLiteral("screenshotOcrEditor"));
+    require(editor && !editor->isReadOnly() && editor->document() == &document,
+            "LaTeX uses the shared writable input component");
+    require(preview()->windowFlags().testFlag(Qt::WindowDoesNotAcceptFocus) &&
+                preview()->testAttribute(Qt::WA_ShowWithoutActivating) &&
+                preview()->focusPolicy() == Qt::NoFocus,
+            "the formula companion declares passive activation and focus on every backend");
+    // Offscreen does not implement passive tool-window activation. The Windows backend
+    // can verify that showing the companion preserves the real editor's native focus.
+    if (QGuiApplication::platformName() == QStringLiteral("windows")) {
+        require(
+            waitFor([&] { return editor->hasFocus() && QApplication::activeWindow() == &window; }),
+            "showing the native formula companion must preserve editor focus");
+    }
+    require(window.geometry() == geometry && preview()->size() == geometry.size() &&
+                preview()->geometry().right() < window.geometry().left() && !preview()->hasFocus(),
+            "formula companion preserves selection size, left placement and passive focus");
+    const QImage valid = preview()->grab().toImage();
+    require(valid.pixelColor(0, 0) != QColor(Qt::blue),
+            "host preview provider contributes geometry rather than original image pixels");
+    const QString capturePath = qEnvironmentVariable("SNOW_TEST_LATEX_PREVIEW_OUTPUT");
+    const auto saveVisualFixture = [&](const QImage& formulaImage, const QString& path) {
+        const QImage editorImage = window.grab().toImage();
+        QImage capture(QSize(formulaImage.width() + 16 + editorImage.width(),
+                             std::max(formulaImage.height(), editorImage.height())),
+                       QImage::Format_ARGB32_Premultiplied);
+        capture.fill(Qt::transparent);
+        {
+            QPainter painter(&capture);
+            painter.drawImage(QRect(QPoint(), formulaImage.size()), formulaImage);
+            painter.drawImage(QRect(QPoint(formulaImage.width() + 16, 0), editorImage.size()),
+                              editorImage);
+        }
+        require(capture.save(path), "save the optional formula/editor visual fixture");
+    };
+    if (!capturePath.isEmpty())
+        saveVisualFixture(valid, capturePath);
+    const QPointer<ScreenshotOriginalImagePreviewWindow> initialPreview = preview();
+    editor->moveCursor(QTextCursor::End);
+    QKeyEvent type(QEvent::KeyPress, Qt::Key_C, Qt::NoModifier, QStringLiteral("c"));
+    QApplication::sendEvent(editor, &type);
+    require(document.toPlainText().endsWith(QLatin1Char('c')) &&
+                editor->accessibleName() == QStringLiteral("LaTeX formula source"),
+            "typing preserves the formula source's accessible name");
+    QFocusEvent blur(QEvent::FocusOut, Qt::OtherFocusReason);
+    QFocusEvent focus(QEvent::FocusIn, Qt::OtherFocusReason);
+    QApplication::sendEvent(editor, &blur);
+    require(editor->accessibleName() == QStringLiteral("LaTeX formula source"),
+            "losing focus preserves the formula source's accessible name");
+    QApplication::sendEvent(editor, &focus);
+    require(editor->accessibleName() == QStringLiteral("LaTeX formula source"),
+            "gaining focus preserves the formula source's accessible name");
+    document.setPlainText(QStringLiteral("\\unknownSnowShotCommand"));
+    require(waitFor([&] {
+                return preview() && preview()->accessibleDescription().contains(
+                                        QStringLiteral("Check the LaTeX source"));
+            }),
+            "invalid source produces an inline preview error");
+    require(initialPreview == preview() && preview()->grab().toImage() != valid,
+            "invalid source dims the retained formula in the same companion");
+    if (!capturePath.isEmpty()) {
+        const QFileInfo output(capturePath);
+        saveVisualFixture(
+            preview()->grab().toImage(),
+            output.dir().filePath(output.completeBaseName() + QStringLiteral("-invalid.png")));
+    }
+    themes.setPreset(adqt::theme::ThemeScheme::Dark, adqt::theme::ThemeDensity::Compact);
+    require(editor->accessibleName() == QStringLiteral("LaTeX formula source"),
+            "theme changes preserve the formula source's accessible name");
+    const QColor darkBackground = themes.resolveTheme(&window).colorBgContainer;
+    const auto retainedFormulaVisible = [&](const QImage& image) {
+        int lightPixels = 0;
+        // The status occupies the lower footer. Inspect the upper formula area so that
+        // the new error text cannot make an old, dark foreground pass this regression.
+        for (int y = image.height() / 8; y < image.height() / 2; ++y) {
+            for (int x = image.width() / 8; x < image.width() * 7 / 8; ++x) {
+                if (qGray(image.pixel(x, y)) > qGray(darkBackground.rgb()) + 40)
+                    ++lightPixels;
+            }
+        }
+        return lightPixels > 10;
+    };
+    require(waitFor([&] {
+                if (!preview() || !preview()->accessibleDescription().contains(
+                                      QStringLiteral("Check the LaTeX source")))
+                    return false;
+                const QImage image = preview()->grab().toImage();
+                return image.pixelColor(0, 0) == darkBackground && retainedFormulaVisible(image);
+            }),
+            "a theme change rerenders the retained valid formula while preserving the draft error");
+    require(initialPreview == preview() &&
+                editor->toPlainText() == QStringLiteral("\\unknownSnowShotCommand"),
+            "fallback rendering preserves the companion and editable invalid source");
+    document.setPlainText(QStringLiteral("x^2"));
+    document.setPlainText(QStringLiteral("\\int_0^1 x\\,dx"));
+    require(waitFor([&] { return preview() && preview()->accessibleDescription().isEmpty(); }),
+            "latest valid edit clears the error");
+    document.setPlainText(QString());
+    require(waitFor([&] {
+                return preview() && preview()->accessibleDescription() ==
+                                        QStringLiteral("No formula to preview");
+            }),
+            "an empty draft clears the formula without losing the companion");
+    require(editor->toPlainText().isEmpty(), "preview failure must not alter the editable source");
+    window.setOriginalImagePreviewSuppressed(true);
+    require(waitFor([&] { return preview() == nullptr; }),
+            "host interaction suppression tears down a formula companion");
+    window.setOriginalImagePreviewSuppressed(false);
+    require(waitFor([&] { return preview() && preview()->isVisible(); }),
+            "ending suppression restores the formula companion");
+    document.setPlainText(QStringLiteral("\\sum_{n=0}^{100} n"));
+    window.hide();
+    require(waitFor([&] { return preview() == nullptr; }),
+            "hiding the host discards pending rendering and the companion");
+    window.show();
+    require(waitFor([&] { return preview() && preview()->accessibleDescription().isEmpty(); }),
+            "restoring the host renders its current draft");
+    window.showTextEditor(&document);
+    require(waitFor([&] { return preview() == nullptr; }),
+            "switching back to text editing disables the formula companion");
+    window.setOriginalImagePreviewProvider({}, &window);
+    window.setOriginalImagePreviewEnabled(true);
+    window.showLatexEditor(&document);
+    require(waitFor([&] {
+                return preview() && preview()->isVisible() &&
+                       preview()->accessibleDescription().isEmpty();
+            }),
+            "formula placement does not require original pixels when text preview is enabled");
+    document.setPlainText(QStringLiteral("\\unknownSnowShotCommand"));
+    require(waitFor([&] {
+                return preview() && preview()->accessibleDescription() ==
+                                        QStringLiteral("Unable to preview this formula. Check the "
+                                                       "LaTeX source.");
+            }),
+            "language-change fixture starts with an invalid formula draft");
+    QPointer<ScreenshotOriginalImagePreviewWindow> textPreview;
+    {
+        require(QCoreApplication::installTranslator(&translator),
+                "install the focused preview translator");
+        const auto uninstallTranslator =
+            qScopeGuard([&] { QCoreApplication::removeTranslator(&translator); });
+        require(waitFor([&] {
+                    return preview() &&
+                           editor->accessibleName() ==
+                               QStringLiteral("Translated LaTeX formula source") &&
+                           preview()->accessibleName() ==
+                               QStringLiteral("Translated LaTeX formula preview") &&
+                           preview()->accessibleDescription() ==
+                               QStringLiteral("Translated Unable to preview this formula. Check "
+                                              "the LaTeX source.");
+                }),
+                "live language changes retranslate formula source, preview name and cached error");
+        window.showTextEditor(&document);
+        require(editor->accessibleName() == QStringLiteral("Translated Multiline input"),
+                "text reuse restores the input component's translated generic source label");
+        window.setOriginalImagePreviewSource(original, QRectF(0, 0, 200, 100));
+        require(waitFor([&] {
+                    return preview() && preview()->isVisible() &&
+                           preview()->accessibleName() ==
+                               QStringLiteral("Translated Original image preview");
+                }),
+                "text mode retains its translated original-image companion name");
+        textPreview = preview();
+    }
+    require(waitFor([&] {
+                return textPreview && textPreview == preview() &&
+                       preview()->accessibleName() == QStringLiteral("Original image preview");
+            }),
+            "a live text companion refreshes its cached name when the language changes");
+    require(document.toPlainText() == QStringLiteral("\\unknownSnowShotCommand"),
+            "retranslation and text reuse preserve the editable draft");
+}
+
 int main(int argc, char** argv) {
     QApplication application(argc, argv);
     QApplication::setQuitOnLastWindowClosed(false);
+    if (application.arguments().contains(QStringLiteral("--latex-preview-only"))) {
+        latexPreviewUsesPassiveCompanionAndSurvivesEditing();
+        return 0;
+    }
     if (application.arguments().contains(QStringLiteral("--preview-window-only"))) {
         originalImagePreviewPreservesSelectionAndOwnerLifecycle();
         return 0;

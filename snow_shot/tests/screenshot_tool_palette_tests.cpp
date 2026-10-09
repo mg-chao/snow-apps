@@ -6790,6 +6790,35 @@ void originalImageToggleLeadsRecognitionActions() {
             "selection toolbar does not show the toggle");
 }
 
+void latexHistoryActionsUseFormulaHistory() {
+    ScreenshotToolPalette::Options options;
+    options.showHistoryActions = true;
+    options.showSelectTool = true;
+    options.showImageConversionTools = true;
+    ScreenshotToolPalette palette(options);
+    palette.setHistoryState({true, true});
+    palette.setActiveTool(ScreenshotToolPalette::Tool::Latex);
+    palette.setLatexEditingState(false, false, false);
+    require(!palette.canActivateScreenshotShortcut(QStringLiteral("undo")) &&
+                !palette.canActivateScreenshotShortcut(QStringLiteral("redo")),
+            "LaTeX history does not inherit available canvas history");
+    int undos = 0;
+    int redos = 0;
+    QObject::connect(&palette, &ScreenshotToolPalette::undoRequested, &palette, [&]() { ++undos; });
+    QObject::connect(&palette, &ScreenshotToolPalette::redoRequested, &palette, [&]() { ++redos; });
+    palette.setLatexEditingState(true, true, false);
+    require(palette.activateScreenshotShortcut(QStringLiteral("undo")) && undos == 1 &&
+                !palette.canActivateScreenshotShortcut(QStringLiteral("redo")),
+            "LaTeX undo is enabled only by formula history");
+    palette.setLatexEditingState(true, false, true);
+    require(palette.activateScreenshotShortcut(QStringLiteral("redo")) && redos == 1 &&
+                !palette.canActivateScreenshotShortcut(QStringLiteral("undo")),
+            "LaTeX redo follows formula history");
+    palette.setActiveTool(ScreenshotToolPalette::Tool::Qr);
+    require(!palette.canActivateScreenshotShortcut(QStringLiteral("redo")),
+            "leaving LaTeX does not expose its history in QR mode");
+}
+
 void imageConversionToolsExposeRecognitionActions() {
     require(snow_shot::storage::ScreenshotToolbarSettings().setTableQrTool(QStringLiteral("qr")),
             "recognition group fixture starts with the remembered barcode entry");
@@ -16137,6 +16166,11 @@ int main(int argc, char** argv) {
     }
     if (application.arguments().contains(QStringLiteral("--image-conversion-only"))) {
         imageConversionToolsExposeRecognitionActions();
+        snow_shot::storage::ApplicationStorage::instance().shutdown();
+        return 0;
+    }
+    if (application.arguments().contains(QStringLiteral("--latex-only"))) {
+        latexHistoryActionsUseFormulaHistory();
         snow_shot::storage::ApplicationStorage::instance().shutdown();
         return 0;
     }

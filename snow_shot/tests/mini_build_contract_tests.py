@@ -66,6 +66,7 @@ target_sources(snow_shot_storage_mini INTERFACE screenshotocrcontroller.h)
     def test_disabled_packages_cannot_enter_transitively_or_conditionally(self):
         targets = ["snow_shot_translation", "snow_selected_text_c", "snow_shot_full_rust_ffi_bundle",
                    "opencv_wechat_qrcode", "opencv_objdetect", "opencv_dnn",
+                   "snow_shot_latex_renderer", "snow_shot_microtex",
                    "snow_shot_storage", "snow_shot_edition_full"]
         if sys.platform == "win32":
             targets.extend(("snow_ocr_process", "onnxruntime::onnxruntime"))
@@ -84,6 +85,8 @@ target_link_libraries(shared INTERFACE "$<$<CONFIG:Release>:$<LINK_ONLY:{target}
                        "screenshotimageconversioncontroller.h", "texttranslationsettingswidget.cpp",
                        "translationservice.cpp", "qrc_snow_shot_translations.cpp",
                        "snow_shot_translations.qrc",
+                       "screenshotlatexrenderer.cpp", "screenshotlatexrenderer.h",
+                       "qrc_snow_shot_microtex.cpp", "snow_shot_microtex.qrc",
                        "snow_shot_en_US.qm"):
             with self.subTest(source=source):
                 output = self.configure(f'''
@@ -125,6 +128,8 @@ target_sources(mini INTERFACE path/i18n/mini/snow_shot_en_US.qm)
 snow_shot_mini_filter_sources(sources
     path/screenshotqrcontroller.cpp path/screenshotqrcontroller.h
     path/texttranslationsettingswidget.cpp path/screenshotimageconversioncontroller.h
+    path/screenshotlatexrenderer.cpp path/screenshotlatexrenderer.h
+    path/qrc_snow_shot_microtex.cpp path/snow_shot_microtex.qrc
     path/qrc_snow_shot_translations.cpp path/snow_shot_translations.qrc
     path/snow_shot_en_US.qm path/snow_shot_zh_CN.qm path/snow_shot_zh_TW.qm
     path/screenshotocrcontroller.h)

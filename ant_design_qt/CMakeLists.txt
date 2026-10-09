@@ -312,6 +312,20 @@ if(ADQT_BUILD_TESTS)
     set_tests_properties(adqt-focus-interaction-tests PROPERTIES
         LABELS "unit" ENVIRONMENT "QT_QPA_PLATFORM=offscreen" TIMEOUT 30)
 
+    add_executable(adqt-text-edit-accessibility-tests tests/text_edit_accessibility_tests.cpp)
+    target_link_libraries(adqt-text-edit-accessibility-tests PRIVATE adqt::widgets Qt6::Widgets)
+    get_target_property(_adqt_text_edit_qt_core_type Qt6::Core TYPE)
+    if(_adqt_text_edit_qt_core_type STREQUAL "STATIC_LIBRARY" AND TARGET Qt6::QOffscreenIntegrationPlugin)
+        target_link_libraries(adqt-text-edit-accessibility-tests PRIVATE Qt6::QOffscreenIntegrationPlugin)
+        qt_import_plugins(adqt-text-edit-accessibility-tests INCLUDE Qt6::QOffscreenIntegrationPlugin)
+    endif()
+    add_test(NAME adqt-text-edit-accessibility-tests COMMAND adqt-text-edit-accessibility-tests)
+    set_tests_properties(adqt-text-edit-accessibility-tests PROPERTIES
+        LABELS "unit"
+        ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+        TIMEOUT 30)
+
     add_executable(adqt-button-lifetime-tests tests/button_lifetime_tests.cpp)
     target_link_libraries(adqt-button-lifetime-tests PRIVATE adqt::widgets Qt6::Widgets)
     get_target_property(_adqt_button_qt_core_type Qt6::Core TYPE)

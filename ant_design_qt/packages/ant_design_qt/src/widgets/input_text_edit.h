@@ -183,6 +183,7 @@ class AdTextEdit final : public QTextEdit {
   int maximumVisibleRows_ = 6;
   adqt::icons::IconRef feedbackIconRef_;
   QPointer<AdInputTextPolicy> textPolicy_;
+  QString defaultAccessibleName_;
 
   QScrollBar* overlayVerticalScrollBar_ = nullptr;
   QWidget* frameLayer_ = nullptr;

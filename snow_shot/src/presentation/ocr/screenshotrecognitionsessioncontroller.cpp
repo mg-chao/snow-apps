@@ -276,7 +276,16 @@ void ScreenshotRecognitionSessionController::seedRecognitionResults(
 #endif
 #if SNOW_SHOT_ENABLE_LATEX_RECOGNITION
     if (results.latex && results.latex->succeeded()) {
-        m_latexResults.insert(m_target.key, *results.latex);
+        if (!m_latexCache.contains(m_target.key)) {
+            auto session =
+                std::make_shared<ScreenshotOcrTextEditingSession>(results.latex->latex, true);
+            if (results.latexDraft)
+                session->establishHistory(*results.latexDraft);
+            connect(session->document(), &QTextDocument::contentsChanged, this,
+                    [this, key = m_target.key]() { handleLatexDocumentChanged(key); });
+            m_latexResults.insert(m_target.key, *results.latex);
+            m_latexCache.insert(m_target.key, std::move(session));
+        }
         if (m_active && m_mode == Mode::Latex)
             applyLatexContents(results.latex->latex);
     }
@@ -367,8 +376,12 @@ ScreenshotRecognitionSessionController::cachedRecognitionResults() const {
     }
     results.key = m_target.key;
 #if SNOW_SHOT_ENABLE_LATEX_RECOGNITION
-    if (m_latexResults.contains(m_target.key))
+    if (m_latexResults.contains(m_target.key)) {
         results.latex = m_latexResults.value(m_target.key);
+        const QString draft = latexDraft();
+        if (draft != results.latex->latex)
+            results.latexDraft = draft;
+    }
     results.visibleLatex = m_active && m_mode == Mode::Latex;
 #endif
 #if SNOW_SHOT_ENABLE_IMAGE_CONVERSION
@@ -634,6 +647,7 @@ void ScreenshotRecognitionSessionController::invalidate() {
 #endif
 #if SNOW_SHOT_ENABLE_LATEX_RECOGNITION
     m_latexResults.clear();
+    m_latexCache.clear();
 #endif
 #if SNOW_SHOT_ENABLE_TABLE_RECOGNITION
     m_tableResults.clear();
@@ -864,6 +878,13 @@ void ScreenshotRecognitionSessionController::redoTableEdit() {
 }
 
 void ScreenshotRecognitionSessionController::undoTextEdit() {
+#if SNOW_SHOT_ENABLE_LATEX_RECOGNITION
+    if (m_active && m_mode == Mode::Latex) {
+        if (const auto session = m_latexCache.value(m_target.key))
+            session->undo();
+        return;
+    }
+#endif
     if (!m_active || (!m_editing && !m_translating) || m_textDocument == nullptr) {
         return;
     }
@@ -875,6 +896,13 @@ void ScreenshotRecognitionSessionController::undoTextEdit() {
 }
 
 void ScreenshotRecognitionSessionController::redoTextEdit() {
+#if SNOW_SHOT_ENABLE_LATEX_RECOGNITION
+    if (m_active && m_mode == Mode::Latex) {
+        if (const auto session = m_latexCache.value(m_target.key))
+            session->redo();
+        return;
+    }
+#endif
     if (!m_active || (!m_editing && !m_translating) || m_textDocument == nullptr) {
         return;
     }
@@ -1497,6 +1525,16 @@ QString ScreenshotRecognitionSessionController::originalText() const {
     return session != nullptr ? session->originalText() : QString{};
 }
 
+QString ScreenshotRecognitionSessionController::latexDraft() const {
+#if SNOW_SHOT_ENABLE_LATEX_RECOGNITION
+    if (const auto session = m_latexCache.value(m_target.key))
+        return session->text();
+    return m_latexResults.value(m_target.key).latex;
+#else
+    return {};
+#endif
+}
+
 std::optional<ScreenshotRecognitionFileSnapshot>
 ScreenshotRecognitionSessionController::fileExportSnapshot() const {
 #if SNOW_SHOT_ENABLE_IMAGE_CONVERSION || SNOW_SHOT_ENABLE_LATEX_RECOGNITION ||                     \
@@ -1515,7 +1553,7 @@ ScreenshotRecognitionSessionController::fileExportSnapshot() const {
 #if SNOW_SHOT_ENABLE_LATEX_RECOGNITION
     case Mode::Latex:
         return ScreenshotRecognitionFileSnapshot{ScreenshotRecognitionFileKind::Latex,
-                                                 m_latexResults.value(m_target.key).latex};
+                                                 latexDraft()};
 #endif
 #if SNOW_SHOT_ENABLE_QR_RECOGNITION
     case Mode::Qr:
@@ -1548,7 +1586,7 @@ std::unique_ptr<QMimeData> ScreenshotRecognitionSessionController::recognitionCl
     if (m_mode == Mode::Latex) {
         if (!m_latexResults.contains(m_target.key))
             return {};
-        mimeData->setText(m_latexResults.value(m_target.key).latex);
+        mimeData->setText(latexDraft());
         return mimeData;
     }
 #endif
@@ -1618,6 +1656,13 @@ std::unique_ptr<QMimeData> ScreenshotRecognitionSessionController::recognitionCl
 }
 
 void ScreenshotRecognitionSessionController::setTextDraft(const QString& text) {
+#if SNOW_SHOT_ENABLE_LATEX_RECOGNITION
+    if (m_active && m_mode == Mode::Latex) {
+        if (const auto session = m_latexCache.value(m_target.key))
+            static_cast<void>(session->replaceText(text));
+        return;
+    }
+#endif
     if (originalImageTranslationActive()) {
         return;
     }
@@ -1943,7 +1988,14 @@ void ScreenshotRecognitionSessionController::handleLatexOutput(quint64 generatio
     if (generation != m_latexGeneration || key != m_target.key)
         return;
     if (result.succeeded()) {
+        auto session = std::make_shared<ScreenshotOcrTextEditingSession>(result.latex, true);
+        connect(session->document(), &QTextDocument::contentsChanged, this,
+                [this, key]() { handleLatexDocumentChanged(key); });
+        // A result can arrive after an active target was seeded. The editor borrows
+        // that cached document until applyLatexContents binds the replacement.
+        const auto previousSession = m_latexCache.value(key);
         m_latexResults.insert(key, result);
+        m_latexCache.insert(key, std::move(session));
         if (m_active && m_mode == Mode::Latex)
             applyLatexContents(result.latex);
         emit recognitionResultsChanged();
@@ -1961,11 +2013,32 @@ void ScreenshotRecognitionSessionController::handleLatexOutput(quint64 generatio
 
 void ScreenshotRecognitionSessionController::applyLatexContents(const QString& source) {
 #if SNOW_SHOT_ENABLE_LATEX_RECOGNITION
+    Q_UNUSED(source)
     ensureContent();
-    if (content() != nullptr)
-        content()->showQrContents({source}, false);
+    if (content() != nullptr) {
+        if (const auto session = m_latexCache.value(m_target.key)) {
+            content()->showLatexEditor(
+                session->document(),
+                [weakSession = std::weak_ptr<ScreenshotOcrTextEditingSession>(session)] {
+                    const auto current = weakSession.lock();
+                    return current ? current->text() : QString();
+                });
+        }
+    }
+    updateTextState();
 #else
     Q_UNUSED(source)
+#endif
+}
+
+void ScreenshotRecognitionSessionController::handleLatexDocumentChanged(const QString& key) {
+#if SNOW_SHOT_ENABLE_LATEX_RECOGNITION
+    if (key == m_target.key) {
+        updateTextState();
+        emit recognitionResultsChanged();
+    }
+#else
+    Q_UNUSED(key)
 #endif
 }
 
@@ -2033,6 +2106,9 @@ void ScreenshotRecognitionSessionController::clearContent() {
         m_content->clearTableSession();
         m_content->clearQrContents();
         m_content->clearImageConversion();
+#if SNOW_SHOT_ENABLE_LATEX_RECOGNITION
+        m_content->clearLatexPreview();
+#endif
     }
 }
 
@@ -2223,6 +2299,16 @@ void ScreenshotRecognitionSessionController::updateTextState() const {
             m_editing && entry.editingSession != nullptr && entry.editingSession->canUndo(),
             m_editing && entry.editingSession != nullptr && entry.editingSession->canRedo());
     }
+    if (m_actions.setLatexEditingState) {
+#if SNOW_SHOT_ENABLE_LATEX_RECOGNITION
+        const auto session = m_latexCache.value(m_target.key);
+        const bool latexAvailable = m_active && m_mode == Mode::Latex && session != nullptr;
+        m_actions.setLatexEditingState(latexAvailable, latexAvailable && session->canUndo(),
+                                       latexAvailable && session->canRedo());
+#else
+        m_actions.setLatexEditingState(false, false, false);
+#endif
+    }
 #if SNOW_SHOT_ENABLE_TEXT_TRANSLATION
     if (snow_shot::app::edition::textTranslation && m_actions.setTextTranslationState) {
         m_actions.setTextTranslationState(
@@ -2246,6 +2332,10 @@ void ScreenshotRecognitionSessionController::updateOriginalImagePreview() const 
     if (m_content == nullptr) {
         return;
     }
+#if SNOW_SHOT_ENABLE_LATEX_RECOGNITION
+    m_content->setLatexPreviewEnabled(m_active && m_mode == Mode::Latex &&
+                                      m_latexCache.contains(m_target.key));
+#endif
     const bool textActive = m_active && m_mode == Mode::Text;
     if (!textActive) {
         m_content->setOriginalImagePreviewEnabled(false);
@@ -2489,11 +2579,17 @@ QJsonObject ScreenshotRecognitionSessionController::workflowState() const {
 #else
     const QString error = m_workflowError;
 #endif
+#if SNOW_SHOT_ENABLE_LATEX_RECOGNITION
+    const bool latexEditing =
+        m_active && m_mode == Mode::Latex && m_latexCache.contains(m_target.key);
+#else
+    constexpr bool latexEditing = false;
+#endif
     return {{QStringLiteral("active"), m_active},
             {QStringLiteral("kind"), modes.at(static_cast<int>(m_mode))},
             {QStringLiteral("busy"), busy(m_mode) || translating},
             {QStringLiteral("error"), error},
-            {QStringLiteral("editing"), m_editing},
+            {QStringLiteral("editing"), m_editing || latexEditing},
             {QStringLiteral("translating"), m_translating}};
 }
 QJsonObject ScreenshotRecognitionSessionController::workflowResult() const {
@@ -2552,7 +2648,7 @@ QJsonObject ScreenshotRecognitionSessionController::workflowResult() const {
 #if SNOW_SHOT_ENABLE_LATEX_RECOGNITION
     else if (m_mode == Mode::Latex && m_latexResults.contains(m_target.key)) {
         result = {{QStringLiteral("kind"), QStringLiteral("latex")},
-                  {QStringLiteral("text"), m_latexResults.value(m_target.key).latex}};
+                  {QStringLiteral("text"), latexDraft()}};
     }
 #endif
 #if SNOW_SHOT_ENABLE_QR_RECOGNITION
@@ -2583,6 +2679,25 @@ bool ScreenshotRecognitionSessionController::editWorkflow(const QJsonObject& par
         setShowOriginalImage(params.value(QStringLiteral("enabled")).toBool());
         return true;
     }
+#if SNOW_SHOT_ENABLE_LATEX_RECOGNITION
+    if (m_mode == Mode::Latex) {
+        const auto session = m_latexCache.value(m_target.key);
+        if (!session)
+            return false;
+        if (action == QStringLiteral("set_text"))
+            static_cast<void>(
+                session->replaceText(params.value(QStringLiteral("text")).toString()));
+        else if (action == QStringLiteral("reset_text"))
+            static_cast<void>(session->reset());
+        else if (action == QStringLiteral("undo"))
+            session->undo();
+        else if (action == QStringLiteral("redo"))
+            session->redo();
+        else
+            return false;
+        return true;
+    }
+#endif
     if (m_mode == Mode::Text && hasTextResult()) {
         if (action == QStringLiteral("set_text")) {
             beginTextEditing();

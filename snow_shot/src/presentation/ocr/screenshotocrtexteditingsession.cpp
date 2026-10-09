@@ -2,15 +2,34 @@
 
 #include "snow_shot/presentation/screenshotocrtexttransform.h"
 
+#include <algorithm>
 #include <utility>
 
-ScreenshotOcrTextEditingSession::ScreenshotOcrTextEditingSession(QString originalText)
-    : m_originalText(std::move(originalText)) {
+ScreenshotOcrTextEditingSession::ScreenshotOcrTextEditingSession(QString originalText,
+                                                                 bool preserveSource)
+    : m_originalText(std::move(originalText)), m_preserveSource(preserveSource) {
     m_document.setUndoRedoEnabled(false);
+    if (m_preserveSource)
+        m_preservedSource = m_originalText;
     m_document.setPlainText(m_originalText);
+    if (m_preserveSource) {
+        updatePreservedSourceMapping();
+        m_sourceChangeConnection =
+            QObject::connect(&m_document, &QTextDocument::contentsChange,
+                             [this](int position, int removed, int added) {
+                                 synchronizePreservedSource(position, removed, added);
+                             });
+    }
     m_history.push_back(m_originalText);
-    QObject::connect(&m_document, &QTextDocument::contentsChanged,
-                     [this]() { recordCurrentText(); });
+    m_documentChangeConnection = QObject::connect(&m_document, &QTextDocument::contentsChanged,
+                                                  [this]() { recordCurrentText(); });
+}
+
+ScreenshotOcrTextEditingSession::~ScreenshotOcrTextEditingSession() {
+    // The document outlives the history members during teardown. Its callbacks must
+    // stop before member destruction, while the editor's document tracking stays intact.
+    QObject::disconnect(m_sourceChangeConnection);
+    QObject::disconnect(m_documentChangeConnection);
 }
 
 const QString& ScreenshotOcrTextEditingSession::originalText() const {
@@ -18,7 +37,7 @@ const QString& ScreenshotOcrTextEditingSession::originalText() const {
 }
 
 QString ScreenshotOcrTextEditingSession::text() const {
-    return m_document.toPlainText();
+    return m_preserveSource ? m_preservedSource : m_document.toPlainText();
 }
 
 QTextDocument* ScreenshotOcrTextEditingSession::document() {
@@ -141,6 +160,8 @@ void ScreenshotOcrTextEditingSession::recordCurrentText() {
     if (m_applying) {
         return;
     }
+    if (m_preserveSource)
+        synchronizePreservedSource();
     const QString current = text();
     if (current == m_history.at(m_historyIndex)) {
         return;
@@ -155,8 +176,66 @@ void ScreenshotOcrTextEditingSession::recordCurrentText() {
 
 void ScreenshotOcrTextEditingSession::applyText(const QString& text) {
     m_applying = true;
+    if (m_preserveSource)
+        m_preservedSource = text;
     m_document.setPlainText(text);
+    if (m_preserveSource)
+        updatePreservedSourceMapping();
     m_applying = false;
+}
+
+void ScreenshotOcrTextEditingSession::updatePreservedSourceMapping() {
+    m_documentRawText = m_document.toRawText();
+    m_documentSourceOffsets.clear();
+    m_documentSourceOffsets.reserve(m_documentRawText.size() + 1);
+    m_documentSourceOffsets.push_back(0);
+    for (qsizetype index = 0; index < m_preservedSource.size(); ++index) {
+        // QTextDocument stores every paragraph as one U+2029, including a CRLF pair.
+        if (m_preservedSource.at(index) == QLatin1Char('\r') &&
+            index + 1 < m_preservedSource.size() &&
+            m_preservedSource.at(index + 1) == QLatin1Char('\n')) {
+            ++index;
+        }
+        m_documentSourceOffsets.push_back(index + 1);
+    }
+}
+
+void ScreenshotOcrTextEditingSession::synchronizePreservedSource(int position, int charsRemoved,
+                                                                 int charsAdded) {
+    if (m_applying)
+        return;
+    const QString current = m_document.toRawText();
+    if (current == m_documentRawText)
+        return;
+    const qsizetype start = std::clamp<qsizetype>(position, 0, m_documentRawText.size());
+    const qsizetype end = std::min(start + charsRemoved, m_documentRawText.size());
+    const qsizetype sourceStart = m_documentSourceOffsets.at(start);
+    const qsizetype sourceEnd = m_documentSourceOffsets.at(end);
+    QString inserted = current.mid(start, charsAdded);
+    inserted.replace(QChar::ParagraphSeparator, QLatin1Char('\n'));
+    m_preservedSource.replace(sourceStart, sourceEnd - sourceStart, inserted);
+    updatePreservedSourceMapping();
+}
+
+void ScreenshotOcrTextEditingSession::synchronizePreservedSource() {
+    const QString current = m_document.toRawText();
+    if (current == m_documentRawText)
+        return;
+    // A detached document may have no layout and emit only contentsChanged. Preserve
+    // unchanged source spans using its raw text until the editor installs a layout.
+    qsizetype prefix = 0;
+    const qsizetype commonSize = std::min(current.size(), m_documentRawText.size());
+    while (prefix < commonSize && current.at(prefix) == m_documentRawText.at(prefix))
+        ++prefix;
+    qsizetype suffix = 0;
+    while (suffix < commonSize - prefix &&
+           current.at(current.size() - suffix - 1) ==
+               m_documentRawText.at(m_documentRawText.size() - suffix - 1)) {
+        ++suffix;
+    }
+    synchronizePreservedSource(static_cast<int>(prefix),
+                               static_cast<int>(m_documentRawText.size() - prefix - suffix),
+                               static_cast<int>(current.size() - prefix - suffix));
 }
 
 QString ScreenshotOcrTextEditingSession::transformedText() const {

@@ -418,6 +418,7 @@ class ScreenshotToolPalette final : public QWidget,
     void setQrBusy(bool busy);
     void setImageConversionEnabled(bool enabled);
     void setLatexState(bool enabled, bool busy);
+    void setLatexEditingState(bool available, bool canUndo, bool canRedo);
     void setImageConversionBusy(bool markdownBusy, bool htmlBusy);
     void setTableEditingState(bool available, bool canUndo, bool canRedo, bool canMerge,
                               bool canSplit, bool canReset);
@@ -1107,6 +1108,9 @@ class ScreenshotToolPalette final : public QWidget,
     bool m_jumpToTranslationPageVisible = false;
     bool m_textCanUndo = false;
     bool m_textCanRedo = false;
+    bool m_latexEditingAvailable = false;
+    bool m_latexCanUndo = false;
+    bool m_latexCanRedo = false;
     bool m_textCanReset = false;
     bool m_tableCanMerge = false;
     bool m_tableCanSplit = false;

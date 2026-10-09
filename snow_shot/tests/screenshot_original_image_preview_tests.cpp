@@ -10,6 +10,8 @@
 #include <QWindow>
 
 #include <cmath>
+#include <array>
+#include <algorithm>
 #include <iostream>
 #include <limits>
 #include <memory>
@@ -246,6 +248,185 @@ void movementReusesTheRasterAndContentChangesInvalidateIt() {
     require(ScreenshotOriginalImagePreviewWindowTestAccess::generation(preview) ==
                 firstGeneration + 3,
             "source revision changes must invalidate the raster");
+}
+
+void formulaStateSurvivesQueuedBackingRefreshes() {
+    ScreenshotOriginalImagePreviewWindow preview;
+    auto state = stateFor();
+    state.resultRect.setSize(QSize(160, 100));
+    state.image = QImage(24, 20, QImage::Format_ARGB32_Premultiplied);
+    state.image.fill(QColor(210, 30, 40));
+    state.imageRectInViewport = QRectF(16, 16, 24, 20);
+    state.formula = true;
+    state.dimmed = true;
+    state.background = QColor(20, 50, 90);
+    state.statusColor = QColor(245, 235, 220);
+    state.status = QStringLiteral("Invalid formula source");
+    require(preview.present(state), "presenting a dimmed formula preview failed");
+    settle();
+    const QImage initial = ScreenshotOriginalImagePreviewWindowTestAccess::raster(preview);
+    const quint64 generation = ScreenshotOriginalImagePreviewWindowTestAccess::generation(preview);
+    const qreal scale = ScreenshotOriginalImagePreviewWindow::usesPhysicalGeometry()
+                            ? 1.0
+                            : preview.devicePixelRatioF();
+    require(initial.pixelColor(0, 0) == state.background &&
+                initial.pixelColor(qRound(20 * scale), qRound(20 * scale)) !=
+                    state.image.pixelColor(4, 4) &&
+                preview.accessibleDescription() == state.status,
+            "formula errors must retain an opaque themed background and dim the prior image");
+    for (const QEvent::Type eventType :
+         {QEvent::DevicePixelRatioChange, QEvent::ScreenChangeInternal, QEvent::WinIdChange}) {
+        QEvent backingChange(eventType);
+        QApplication::sendEvent(&preview, &backingChange);
+        settle();
+        require(preview.isVisible() && preview.accessibleDescription() == state.status &&
+                    ScreenshotOriginalImagePreviewWindowTestAccess::raster(preview) == initial &&
+                    ScreenshotOriginalImagePreviewWindowTestAccess::generation(preview) ==
+                        generation,
+                "queued backing refreshes must preserve formula pixels, error status and cache");
+    }
+    state.background = QColor(90, 35, 20);
+    state.statusColor = QColor(225, 245, 235);
+    state.status = QStringLiteral("Renderer unavailable");
+    require(preview.present(state), "changing the formula preview theme failed");
+    settle();
+    require(ScreenshotOriginalImagePreviewWindowTestAccess::raster(preview).pixelColor(0, 0) ==
+                    state.background &&
+                preview.accessibleDescription() == state.status &&
+                ScreenshotOriginalImagePreviewWindowTestAccess::generation(preview) ==
+                    generation + 1,
+            "formula theme and status changes must invalidate the raster once");
+}
+
+void formulaPlaceholdersRetainNullImagesAndExactSmallExtents() {
+    ScreenshotOriginalImagePreviewWindow preview;
+    auto state = stateFor();
+    state.image = {};
+    state.resultRect.setSize(QSize(97, 65));
+    state.imageRectInViewport = QRectF(QPointF(), QSizeF(state.resultRect.size()));
+    state.formula = true;
+    state.background = QColor(35, 75, 115);
+    state.statusColor = QColor(245, 245, 245);
+    state.status = QStringLiteral("Rendering formula...");
+    require(preview.present(state), "presenting an image-free formula placeholder failed");
+    settle();
+    const QImage initial = ScreenshotOriginalImagePreviewWindowTestAccess::raster(preview);
+    const quint64 generation = ScreenshotOriginalImagePreviewWindowTestAccess::generation(preview);
+    require(!initial.isNull() && initial.pixelColor(0, 0) == state.background &&
+                ScreenshotOriginalImagePreviewWindowTestAccess::source(preview).isNull() &&
+                preview.accessibleDescription() == state.status,
+            "formula loading must remain visible without a rendered source image");
+    for (const QEvent::Type eventType :
+         {QEvent::DevicePixelRatioChange, QEvent::ScreenChangeInternal}) {
+        QEvent backingChange(eventType);
+        QApplication::sendEvent(&preview, &backingChange);
+        settle();
+        require(preview.isVisible() && preview.accessibleDescription() == state.status &&
+                    ScreenshotOriginalImagePreviewWindowTestAccess::raster(preview) == initial &&
+                    ScreenshotOriginalImagePreviewWindowTestAccess::generation(preview) ==
+                        generation,
+                "queued backing refreshes must preserve image-free formula placeholders");
+    }
+    state.resultRect.setSize(QSize(3, 2));
+    state.imageRectInViewport = QRectF(QPointF(), QSizeF(state.resultRect.size()));
+    state.status.clear();
+    require(preview.present(state), "presenting a tiny formula placeholder failed");
+    settle();
+    const QImage& tiny = ScreenshotOriginalImagePreviewWindowTestAccess::raster(preview);
+    const qreal scale = ScreenshotOriginalImagePreviewWindow::usesPhysicalGeometry()
+                            ? 1.0
+                            : preview.devicePixelRatioF();
+    require(tiny.size() == QSize(qRound(3 * scale), qRound(2 * scale)) &&
+                tiny.pixelColor(0, 0) == state.background && preview.size() == QSize(3, 2),
+            "placeholder rendering must retain exact tiny viewport dimensions");
+}
+
+void formulaErrorsFitTheCompleteImageAboveTheFooter() {
+    ScreenshotOriginalImagePreviewWindow preview;
+    auto state = stateFor();
+    state.resultRect.setSize(QSize(200, 100));
+    state.image = QImage(120, 80, QImage::Format_ARGB32_Premultiplied);
+    state.image.fill(QColor(180, 180, 180));
+    {
+        QPainter painter(&state.image);
+        painter.fillRect(QRect(0, 0, 12, 12), Qt::red);
+        painter.fillRect(QRect(108, 0, 12, 12), Qt::green);
+        painter.fillRect(QRect(0, 68, 12, 12), Qt::blue);
+        painter.fillRect(QRect(108, 68, 12, 12), Qt::yellow);
+    }
+    state.imageRectInViewport = QRectF(40, 10, 120, 80);
+    state.formula = true;
+    state.background = QColor(20, 20, 20);
+    state.statusColor = QColor(220, 220, 220);
+    require(preview.present(state), "presenting the formula marker fixture failed");
+    settle();
+    const QImage valid = ScreenshotOriginalImagePreviewWindowTestAccess::raster(preview);
+    const qreal scale = ScreenshotOriginalImagePreviewWindow::usesPhysicalGeometry()
+                            ? 1.0
+                            : preview.devicePixelRatioF();
+    require(valid.pixelColor(qRound(46 * scale), qRound(16 * scale)) == QColor(Qt::red) &&
+                valid.pixelColor(qRound(154 * scale), qRound(84 * scale)) == QColor(Qt::yellow),
+            "a valid formula retains its supplied source mapping");
+    state.dimmed = true;
+    state.status = QStringLiteral("Invalid formula source");
+    require(preview.present(state), "presenting the retained formula and error footer failed");
+    settle();
+    const QImage error = ScreenshotOriginalImagePreviewWindowTestAccess::raster(preview);
+    std::array<int, 4> markerPixels{};
+    QRect markerBounds;
+    int brightestMarker = 0;
+    for (int y = 0; y < error.height(); ++y) {
+        for (int x = 0; x < error.width(); ++x) {
+            const QColor color = error.pixelColor(x, y);
+            int marker = -1;
+            if (color.red() > color.green() + 35 && color.red() > color.blue() + 35)
+                marker = 0;
+            else if (color.green() > color.red() + 35 && color.green() > color.blue() + 35)
+                marker = 1;
+            else if (color.blue() > color.red() + 35 && color.blue() > color.green() + 35)
+                marker = 2;
+            else if (color.red() > color.blue() + 35 && color.green() > color.blue() + 35)
+                marker = 3;
+            if (marker >= 0) {
+                ++markerPixels[static_cast<size_t>(marker)];
+                markerBounds |= QRect(x, y, 1, 1);
+                brightestMarker =
+                    std::max({brightestMarker, color.red(), color.green(), color.blue()});
+            }
+        }
+    }
+    require(std::all_of(markerPixels.begin(), markerPixels.end(),
+                        [](int count) { return count > 4; }) &&
+                markerBounds.bottom() < error.height() * 0.6 &&
+                std::abs(qreal(markerBounds.width()) / markerBounds.height() - 1.5) < 0.1 &&
+                brightestMarker < 180 && preview.accessibleDescription() == state.status,
+            "an error footer preserves all dimmed formula corners and their complete aspect ratio");
+    const quint64 generation = ScreenshotOriginalImagePreviewWindowTestAccess::generation(preview);
+    state.resultRect.translate(20, 10);
+    require(preview.present(state), "moving the formula marker fixture failed");
+    require(ScreenshotOriginalImagePreviewWindowTestAccess::generation(preview) == generation &&
+                ScreenshotOriginalImagePreviewWindowTestAccess::raster(preview) == error,
+            "moving a formula footer must reuse its composed raster");
+    state.resultRect.setSize(QSize(31, 13));
+    state.image = QImage(31, 13, QImage::Format_ARGB32_Premultiplied);
+    state.image.fill(QColor(240, 80, 40));
+    state.imageRectInViewport = QRectF(0, 0, 31, 13);
+    state.statusColor = Qt::blue;
+    require(preview.present(state), "presenting a tiny retained formula failed");
+    const QImage tiny = ScreenshotOriginalImagePreviewWindowTestAccess::raster(preview);
+    bool formulaVisible = false;
+    for (int y = 0; y < tiny.height(); ++y) {
+        for (int x = 0; x < tiny.width(); ++x) {
+            const QColor color = tiny.pixelColor(x, y);
+            require(color.blue() <= color.red(),
+                    "a tiny formula viewport must omit its unreadable visual footer");
+            formulaVisible = formulaVisible || color.red() > color.blue() + 35;
+        }
+    }
+    require(
+        formulaVisible && tiny.size() == QSize(qRound(31 * scale), qRound(13 * scale)) &&
+            preview.accessibleDescription() == state.status,
+        "tiny selections contract padding while retaining formula pixels and accessible errors");
 }
 
 void mouseDraggingPreservesTheViewportAndOwner() {
@@ -764,6 +945,58 @@ void nativeWindowMatchesOddResultExtentsAfterRepaints() {
     }
 }
 
+void nativeFormulaPlaceholderPreservesOddPhysicalExtents() {
+    require(ScreenshotOriginalImagePreviewWindow::usesPhysicalGeometry(),
+            "native formula placeholders require Windows physical geometry");
+    QScreen* screen = QGuiApplication::primaryScreen();
+    require(screen != nullptr, "native formula placeholders require a monitor");
+    const auto* native = screen->nativeInterface<QNativeInterface::QWindowsScreen>();
+    MONITORINFO info{};
+    info.cbSize = sizeof(info);
+    require(native && GetMonitorInfoW(native->handle(), &info) != FALSE,
+            "native formula placeholder work area is available");
+    QWidget owner(nullptr, Qt::Tool | Qt::FramelessWindowHint);
+    owner.setAttribute(Qt::WA_ShowWithoutActivating);
+    owner.setScreen(screen);
+    owner.setGeometry(
+        QRect(screen->availableGeometry().topLeft() + QPoint(500, 113), QSize(200, 120)));
+    owner.show();
+    settle();
+    ScreenshotOriginalImagePreviewWindow preview(&owner);
+    auto state = stateFor(&owner);
+    state.image = {};
+    state.formula = true;
+    state.background = QColor(25, 75, 125);
+    state.statusColor = QColor(245, 245, 245);
+    for (const QSize size : {QSize(421, 239), QSize(97, 25), QSize(3, 2)}) {
+        state.resultRect =
+            QRect(info.rcWork.left + 500, info.rcWork.top + 113, size.width(), size.height());
+        state.imageRectInViewport = QRectF(QPointF(), QSizeF(size));
+        state.status = size.width() > 3 ? QStringLiteral("Rendering formula...") : QString{};
+        require(preview.present(state), "presenting an odd native formula placeholder failed");
+        settle();
+        const quint64 generation =
+            ScreenshotOriginalImagePreviewWindowTestAccess::generation(preview);
+        for (int pass = 0; pass < 4; ++pass) {
+            QEvent backingChange(QEvent::DevicePixelRatioChange);
+            QApplication::sendEvent(&preview, &backingChange);
+            preview.repaint();
+            settle();
+            const QImage& raster = ScreenshotOriginalImagePreviewWindowTestAccess::raster(preview);
+            require(preview.isVisible() &&
+                        ScreenshotOriginalImagePreviewWindow::nativeClientRect(&preview).size() ==
+                            size &&
+                        raster.size() == size && raster.pixelColor(0, 0) == state.background &&
+                        raster.pixelColor(size.width() - 1, size.height() - 1) ==
+                            state.background &&
+                        preview.accessibleDescription() == state.status &&
+                        ScreenshotOriginalImagePreviewWindowTestAccess::generation(preview) ==
+                            generation,
+                    "native placeholder refresh must preserve exact pixels, dimensions and status");
+        }
+    }
+}
+
 void nativeDraggingPreservesOddPhysicalExtentsAcrossMonitors() {
     require(ScreenshotOriginalImagePreviewWindow::usesPhysicalGeometry(),
             "native drag tests require Windows physical geometry");
@@ -1147,6 +1380,7 @@ int main(int argc, char** argv) {
 #if defined(Q_OS_WIN) || defined(_WIN32)
             nativePreviewPreservesAlienRecognitionAndCanvasChildren();
             nativeWindowMatchesOddResultExtentsAfterRepaints();
+            nativeFormulaPlaceholderPreservesOddPhysicalExtents();
             nativeOverlappingSiblingRemainsAboveWithoutActivation();
             nativeDraggingPreservesOddPhysicalExtentsAcrossMonitors();
 #elif defined(Q_OS_MACOS)
@@ -1161,6 +1395,9 @@ int main(int argc, char** argv) {
             largeSourceCoordinatesRetainVisiblePixels();
             sourceDprMetadataDoesNotAlterViewportMapping();
             movementReusesTheRasterAndContentChangesInvalidateIt();
+            formulaStateSurvivesQueuedBackingRefreshes();
+            formulaPlaceholdersRetainNullImagesAndExactSmallExtents();
+            formulaErrorsFitTheCompleteImageAboveTheFooter();
             mouseDraggingPreservesTheViewportAndOwner();
             clickingDoesNotDetachAutomaticPlacement();
             draggedPlacementSurvivesContentAndBackingRefreshes();

@@ -15,6 +15,8 @@
 struct ScreenshotRecognitionResults {
     QString key;
     std::optional<SnowShotLatexResult> latex;
+    // An empty draft is a valid edit; the successful recognition remains the reset baseline.
+    std::optional<QString> latexDraft;
     bool visibleLatex = false;
     std::optional<ScreenshotOcrRecognitionResult> text;
     std::optional<SnowShotTableResult> table;
@@ -41,6 +43,7 @@ inline void sanitizeEditionRecognitionResults(ScreenshotRecognitionResults& resu
         results.qr.reset();
     if constexpr (!edition::latexRecognition) {
         results.latex.reset();
+        results.latexDraft.reset();
         results.visibleLatex = false;
     }
     if constexpr (!edition::imageConversion) {

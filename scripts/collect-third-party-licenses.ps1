@@ -268,6 +268,26 @@ Copy-LicenseNotice -Category "project-notices" -Package "snow-shot-attributions"
     -Source (Join-Path $PSScriptRoot "../snow_shot/THIRD_PARTY_NOTICES.md") `
     -RelativeName "THIRD_PARTY_NOTICES.md"
 
+if (-not $StandaloneMedia) {
+    $microTexLicenseRoot = Join-Path $PSScriptRoot "../licenses/microtex"
+    $microTexNotices = [ordered]@{
+        "LICENSE-MIT.txt" = "MIT"
+        "OFL.txt" = "OFL-1.1"
+        "Knuth_License.txt" = "LicenseRef-Knuth"
+        "License_for_dsrom.txt" = "LicenseRef-dsrom"
+        "GPL-3.0-greek.txt" = "GPL-3.0"
+        "GPL-3.0-cyrillic.txt" = "GPL-3.0"
+        "RES_README" = "Upstream resource inventory"
+        "SOURCE.md" = "Source provenance and notice mapping"
+    }
+    foreach ($notice in $microTexNotices.GetEnumerator()) {
+        $noticePath = Resolve-ExistingPath -Path (Join-Path $microTexLicenseRoot $notice.Key) `
+            -Description "MicroTeX source/font notice" -PathType Leaf
+        Copy-LicenseNotice -Category "source" -Package "microtex-0e3707f6" `
+            -DeclaredLicense $notice.Value -Source $noticePath -RelativeName $notice.Key
+    }
+}
+
 $sortedRecords = @($records | Sort-Object Category, Package, Notice)
 $indexLines = [System.Collections.Generic.List[string]]::new()
 $indexLines.Add($(if ($StandaloneMedia) { "# Snow Media Third-Party License Index" } else { "# Snow Shot Third-Party License Index" }))

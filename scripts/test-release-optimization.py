@@ -319,6 +319,24 @@ foreach(source IN ITEMS src/storage/preparedpngimage.cpp
 endforeach()
 ''')
 
+    def test_formula_renderer_keeps_speed_and_microtex_remains_strippable(self):
+        self.configure(fixture=f'''
+set(SNOW_SHOT_ENABLE_AGGRESSIVE_RELEASE_OPTIMIZATION OFF)
+set(SNOW_SHOT_RELEASE_STATIC OFF)
+include("{POLICY.as_posix()}")
+if(NOT snow_shot_latex_renderer IN_LIST SNOW_SHOT_RELEASE_SPEED_TARGETS OR
+        NOT snow_shot_microtex IN_LIST SNOW_SHOT_RELEASE_SIZE_TARGETS)
+    message(FATAL_ERROR "Formula rendering must preserve speed and reduce dependency size")
+endif()
+snow_apply_release_options(probe POLICY size)
+get_target_property(options probe COMPILE_OPTIONS)
+foreach(flag IN ITEMS /O1 /Gw /Gy /GL)
+    if(NOT "$<$<CONFIG:Release>:${{flag}}>" IN_LIST options)
+        message(FATAL_ERROR "MicroTeX must retain release dead-code elimination: ${{flag}}")
+    endif()
+endforeach()
+''')
+
     def test_shipping_presets_enable_size_and_other_presets_preserve_speed(self):
         presets = json.loads((REPOSITORY / "CMakePresets.json").read_text(encoding="utf-8"))
         by_name = {preset["name"]: preset for preset in presets["configurePresets"]}

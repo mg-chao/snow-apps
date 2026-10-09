@@ -2956,44 +2956,99 @@ void pinnedSnapshotRetainsRecognitionBeforeDeferredSetup() {
 void pinnedLatexSurvivesTransferAndRestart() {
     using Mode = ScreenshotRecognitionSessionController::Mode;
     IdleOcrRecognition recognition;
-    auto config = cachedOcrPinConfig(&recognition);
-    config.automaticTextRecognition = false;
-    config.recognitionResults.text.reset();
-    const QString source = QStringLiteral("\\frac{a}{b} <x> & y");
-    config.recognitionResults.latex = SnowShotLatexResult{source, {}, {}, 0};
-    config.recognitionResults.visibleLatex = true;
-    QByteArray payload;
-    for (const bool restore : {false, true}) {
-        config.restorePersistentState = restore;
-        if (restore) {
-            config.persistedRecognitionResults = payload;
-            config.recognitionResults = {};
-        }
-        QPointer<ScreenshotPinnedWindow> window(new ScreenshotPinnedWindow);
-        const auto cleanup = qScopeGuard([&]() {
-            if (window) {
-                window->close();
-                static_cast<void>(processUntilDeleted(window, 2000));
+    const QString source = QStringLiteral("\\frac{a}{b}\r\n<x>\u00a0& y\u2028+1");
+    for (const QString& draft :
+         {source, QStringLiteral("\\sqrt{x+1}\r\n\\alpha\u00a0x\u2028+1\u2029"), QString()}) {
+        auto config = cachedOcrPinConfig(&recognition);
+        config.automaticTextRecognition = false;
+        config.recognitionResults.text.reset();
+        config.recognitionResults.latex = SnowShotLatexResult{source, {}, {}, 0};
+        config.recognitionResults.visibleLatex = true;
+        QByteArray payload;
+        for (const bool restore : {false, true}) {
+            config.restorePersistentState = restore;
+            if (restore) {
+                config.persistedRecognitionResults = payload;
+                config.recognitionResults = {};
             }
-        });
-        require(window->present(config), "LaTeX pin presents");
-        waitForUi(100);
-        auto* session = window->findChild<ScreenshotRecognitionSessionController*>();
-        require(session && session->active() && session->mode() == Mode::Latex && !session->busy(),
-                "transferred and restored LaTeX activates without an API request");
-        require(session->recognitionClipboardMimeData()->text() == source,
-                "pin copy preserves formula source");
-        const auto snapshot = session->fileExportSnapshot();
-        require(snapshot && snapshot->kind == ScreenshotRecognitionFileKind::Latex &&
-                    snapshot->source == source,
-                "pin save exports LaTeX text");
-        const auto record = window->persistenceSnapshot();
-        require(!record.recognitionResults.isEmpty(), "pin persistence contains LaTeX");
-        if (restore)
-            require(record.recognitionResults == payload, "LaTeX payload round-trips exactly");
-        payload = record.recognitionResults;
-        require(recognition.requests == 0, "LaTeX restore does not invoke OCR");
+            QPointer<ScreenshotPinnedWindow> window(new ScreenshotPinnedWindow);
+            const auto cleanup = qScopeGuard([&]() {
+                if (window) {
+                    window->close();
+                    static_cast<void>(processUntilDeleted(window, 2000));
+                }
+            });
+            require(window->present(config), "LaTeX pin presents");
+            waitForUi(100);
+            auto* session = window->findChild<ScreenshotRecognitionSessionController*>();
+            require(session && session->hasTarget() && !session->active() &&
+                        !session->recognitionResultsSnapshot().visibleLatex &&
+                        session->cachedRecognitionResults().latex.has_value(),
+                    "transferred and restored LaTeX stays cached without opening recognition");
+            session->activate(Mode::Latex);
+            require(session->active() && session->mode() == Mode::Latex && !session->busy(),
+                    "LaTeX opens on request without an API request");
+            if (!restore) {
+                ScreenshotPinnedWindowTestAccess::editSelectionOffscreen(*window, true);
+                session->activate(Mode::Latex);
+                session->setTextDraft(draft);
+                if (draft != source) {
+                    auto* controller = window->findChild<ScreenshotPinnedEditController*>();
+                    auto* palette = controller && controller->toolbarWindow()
+                                        ? controller->toolbarWindow()->palette()
+                                        : nullptr;
+                    require(palette &&
+                                palette->activateScreenshotShortcut(QStringLiteral("undo")) &&
+                                session->latexDraft() == source &&
+                                palette->activateScreenshotShortcut(QStringLiteral("redo")) &&
+                                session->latexDraft() == draft,
+                            "pin history actions undo and redo formula edits");
+                }
+            }
+            require(session->recognitionClipboardMimeData()->text() == draft,
+                    "pin copy preserves edited and empty formula source");
+            const auto snapshot = session->fileExportSnapshot();
+            require(snapshot && snapshot->kind == ScreenshotRecognitionFileKind::Latex &&
+                        snapshot->source == draft,
+                    "pin save exports the current LaTeX draft");
+            const auto record = window->persistenceSnapshot();
+            require(!record.recognitionResults.isEmpty(), "pin persistence contains LaTeX");
+            if (restore)
+                require(record.recognitionResults == payload, "LaTeX payload round-trips exactly");
+            payload = record.recognitionResults;
+            require(
+                session->editWorkflow({{QStringLiteral("action"), QStringLiteral("reset_text")}}) &&
+                    session->latexDraft() == source,
+                "LaTeX reset baseline survives pin transfer and restart");
+            require(recognition.requests == 0, "LaTeX restore does not invoke OCR");
+        }
     }
+
+    auto legacy = cachedOcrPinConfig(&recognition);
+    const QString key = legacy.recognitionResults.key;
+    legacy.recognitionResults = {};
+    legacy.restorePersistentState = true;
+    QDataStream stream(&legacy.persistedRecognitionResults, QIODevice::WriteOnly);
+    stream.setVersion(QDataStream::Qt_6_11);
+    stream << key << quint8(0) << quint8(0) << quint8(0) << quint32(0x4C415458) << quint8(1)
+           << source << true;
+    QPointer<ScreenshotPinnedWindow> window(new ScreenshotPinnedWindow);
+    const auto cleanup = qScopeGuard([&]() {
+        if (window) {
+            window->close();
+            static_cast<void>(processUntilDeleted(window, 2000));
+        }
+    });
+    require(window->present(legacy), "legacy LaTeX pin presents");
+    waitForUi(100);
+    auto* session = window->findChild<ScreenshotRecognitionSessionController*>();
+    require(session && session->hasTarget() && !session->active() &&
+                !session->recognitionResultsSnapshot().visibleLatex,
+            "legacy LaTeX visibility must not open recognition on restore");
+    session->activate(Mode::Latex);
+    require(session->active() && session->mode() == Mode::Latex &&
+                session->latexDraft() == source && recognition.requests == 0,
+            "legacy v1 LaTeX restores as an unchanged editable baseline");
 }
 
 void pinnedImageConversionsSurviveRestartWithoutProvider() {
@@ -3027,14 +3082,23 @@ void pinnedImageConversionsSurviveRestartWithoutProvider() {
                     static_cast<void>(processUntilDeleted(window, 2000));
                 }
             });
+            const int expectedOcrRequests =
+                recognition.requests + (format == Format::Markdown ? 1 : 0);
             require(window->present(config), "conversion pin should present");
             auto* session = window->findChild<ScreenshotRecognitionSessionController*>();
             waitForUi(100);
-            require(session && session->conversionModeActive() &&
+            require(session && session->hasTarget() && !session->active() &&
+                        !session->recognitionResultsSnapshot().visibleConversion.has_value() &&
+                        session->cachedRecognitionResults().conversions.size() == 1,
+                    "transferred and restored conversions stay cached without opening recognition");
+            require(recognition.requests == expectedOcrRequests,
+                    "hidden conversions allow background OCR only when no text result is cached");
+            session->activate(format == Format::Markdown ? Mode::Markdown : Mode::Html);
+            require(session->conversionModeActive() &&
                         session->mode() ==
                             (format == Format::Markdown ? Mode::Markdown : Mode::Html) &&
                         !session->busy(session->mode()),
-                    "the last completed conversion is restored without a model provider");
+                    "the completed conversion opens on request without a model provider");
             const auto mime = session->recognitionClipboardMimeData();
             require(mime && mime->text() == source,
                     "restored toolbar Copy preserves exact format source");
@@ -3042,7 +3106,8 @@ void pinnedImageConversionsSurviveRestartWithoutProvider() {
             require(results.text.has_value() == (format == Format::Html) &&
                         results.conversions.size() == 1 && results.visibleConversion == format,
                     "conversion persistence retains the existing OCR payload and visible format");
-            require(recognition.requests == 0, "restoring a conversion never requires an OCR pass");
+            require(recognition.requests == expectedOcrRequests,
+                    "opening a cached conversion does not request additional OCR");
             const auto record = window->persistenceSnapshot();
             require(!record.recognitionResults.isEmpty(),
                     "conversion is included in the actual pin record");
@@ -12650,6 +12715,10 @@ void pinnedTextRecognitionSavesSourceFilesOffscreen() {
         require(window->present(config), "text conversion pin could not be presented");
         waitForUi(100);
         auto* session = window->findChild<ScreenshotRecognitionSessionController*>();
+        require(session, "text conversion pin must have a recognition session");
+        session->activate(format == Format::Markdown
+                              ? ScreenshotRecognitionSessionController::Mode::Markdown
+                              : ScreenshotRecognitionSessionController::Mode::Html);
         require(session && session->conversionModeActive(),
                 "text conversion result must be active for save");
         ScreenshotPinnedWindowTestAccess::quickSave(*window);
@@ -19575,8 +19644,8 @@ int main(int argc, char* argv[]) {
             return 0;
         }
         if (app.arguments().contains(QStringLiteral("--recognition-save-only"))) {
-            pinnedRecognitionSaveSnapshotsAndRoutesOffscreen();
             pinnedTextRecognitionSavesSourceFilesOffscreen();
+            pinnedRecognitionSaveSnapshotsAndRoutesOffscreen();
             return 0;
         }
         if (app.arguments().contains(QStringLiteral("--shared-image-export-only"))) {

@@ -11,13 +11,15 @@ set(SNOW_SHOT_MINI_EXCLUDED_SOURCE_NAMES
     screenshottranslationsettingsdialog
     screenshotqrcontroller screenshotqrrecognitionservice
     screenshotimageconversioncontroller screenshotimageconversionview
-    screenshottabledocument screenshottableeditor screenshotrecognitionfileexport)
+    screenshottabledocument screenshottableeditor screenshotrecognitionfileexport
+    screenshotlatexrenderer)
 list(JOIN SNOW_SHOT_MINI_EXCLUDED_SOURCE_NAMES "|" _snow_mini_source_names)
 set(SNOW_SHOT_MINI_EXCLUDED_SOURCE_PATTERN
     "(^|[/,:])(${_snow_mini_source_names})\\.(cpp|h|mm)($|>)")
 set(SNOW_SHOT_MINI_EXCLUDED_LINK_TARGETS
     snow_shot_translation snow_selected_text_c snow_shot_full_rust_ffi_bundle
-    opencv_wechat_qrcode opencv_objdetect opencv_dnn)
+    opencv_wechat_qrcode opencv_objdetect opencv_dnn
+    snow_shot_latex_renderer snow_shot_microtex)
 set(SNOW_SHOT_MINI_EXCLUDED_TARGETS
     ${SNOW_SHOT_MINI_EXCLUDED_LINK_TARGETS}
     snow_shot snow_shot_edition_full
@@ -40,6 +42,7 @@ function(snow_shot_mini_filter_sources output)
     set(_sources ${ARGN})
     list(FILTER _sources EXCLUDE REGEX "${SNOW_SHOT_MINI_EXCLUDED_SOURCE_PATTERN}")
     list(FILTER _sources EXCLUDE REGEX "qrc_snow_shot_translations\\.cpp$|/snow_shot_translations\\.qrc$")
+    list(FILTER _sources EXCLUDE REGEX "(^|/)(qrc_snow_shot_microtex\\.cpp|snow_shot_microtex\\.qrc)$")
     # Qt also attaches generated .qm inputs as header-only target sources. Do
     # not copy these, or building Mini still invokes Full's lrelease commands.
     list(FILTER _sources EXCLUDE REGEX "(^|/)snow_shot_(en_US|zh_CN|zh_TW)\\.qm$")
@@ -76,6 +79,7 @@ function(snow_shot_assert_mini_build_contract root)
                     string(REPLACE "\\" "/" _source "${_source}")
                     if(_source MATCHES "${SNOW_SHOT_MINI_EXCLUDED_SOURCE_PATTERN}" OR
                             _source MATCHES "qrc_snow_shot_translations\\.cpp$|/snow_shot_translations\\.qrc$" OR
+                            _source MATCHES "(^|/)(qrc_snow_shot_microtex\\.cpp|snow_shot_microtex\\.qrc)$" OR
                             (_source MATCHES "(^|/)snow_shot_(en_US|zh_CN|zh_TW)\\.qm$" AND
                                 NOT _source MATCHES "(^|/)i18n/mini/snow_shot_[^/]+\\.qm$"))
                         message(FATAL_ERROR "Mini build includes Full-only source: ${_source} (${_target})")

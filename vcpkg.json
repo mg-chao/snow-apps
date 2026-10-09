@@ -41,6 +41,7 @@
           "platform": "osx"
         },
         { "name": "libpng", "features": ["apng"] },
+        "tinyxml2",
         {
           "name": "libwebp",
           "default-features": false,

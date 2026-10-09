@@ -7,7 +7,8 @@
 
 class ScreenshotOcrTextEditingSession final {
   public:
-    explicit ScreenshotOcrTextEditingSession(QString originalText);
+    explicit ScreenshotOcrTextEditingSession(QString originalText, bool preserveSource = false);
+    ~ScreenshotOcrTextEditingSession();
 
     [[nodiscard]] const QString& originalText() const;
     [[nodiscard]] QString text() const;
@@ -34,6 +35,9 @@ class ScreenshotOcrTextEditingSession final {
 
   private:
     void applyText(const QString& text);
+    void updatePreservedSourceMapping();
+    void synchronizePreservedSource();
+    void synchronizePreservedSource(int position, int charsRemoved, int charsAdded);
     [[nodiscard]] QString transformedText() const;
 
     QString m_originalText;
@@ -41,10 +45,16 @@ class ScreenshotOcrTextEditingSession final {
     QString m_smartText;
     QString m_formatting;
     QString m_punctuation;
+    QString m_preservedSource;
+    QString m_documentRawText;
+    QVector<qsizetype> m_documentSourceOffsets;
     QTextDocument m_document;
+    QMetaObject::Connection m_sourceChangeConnection;
+    QMetaObject::Connection m_documentChangeConnection;
     QVector<QString> m_history;
     int m_historyIndex = 0;
     bool m_applying = false;
+    bool m_preserveSource = false;
 };
 
 #endif // SNOW_SHOT_PRESENTATION_SCREENSHOTOCRTEXTEDITINGSESSION_H

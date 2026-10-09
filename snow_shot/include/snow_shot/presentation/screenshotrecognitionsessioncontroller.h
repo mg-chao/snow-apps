@@ -87,6 +87,7 @@ struct ScreenshotRecognitionSessionActions {
     std::function<void(bool, bool, SnowShotImageConversionFormat)> setConversionState;
     std::function<void(bool)> setShowOriginalImage;
     std::function<void(const QString&)> setTextTargetLanguage;
+    std::function<void(bool, bool, bool)> setLatexEditingState;
 };
 
 class ScreenshotRecognitionSessionController final : public QObject {
@@ -156,6 +157,7 @@ class ScreenshotRecognitionSessionController final : public QObject {
     [[nodiscard]] QString textDraft() const;
     [[nodiscard]] QString sourceTextDraft() const;
     [[nodiscard]] QString originalText() const;
+    [[nodiscard]] QString latexDraft() const;
     [[nodiscard]] std::unique_ptr<QMimeData> recognitionClipboardMimeData(
         const ScreenshotOcrPresentation* displayedPresentation = nullptr) const;
     [[nodiscard]] std::optional<ScreenshotRecognitionFileSnapshot> fileExportSnapshot() const;
@@ -222,6 +224,7 @@ class ScreenshotRecognitionSessionController final : public QObject {
     void startQrRecognition();
     void startLatexRecognition();
     void applyLatexContents(const QString& source);
+    void handleLatexDocumentChanged(const QString& key);
     void handleLatexOutput(quint64 generation, const QString& key, SnowShotLatexResult result);
     void handleTextOutput(quint64 generation, const QString& key,
                           ScreenshotOcrRecognitionResult output);
@@ -293,6 +296,7 @@ class ScreenshotRecognitionSessionController final : public QObject {
 #endif
 #if SNOW_SHOT_ENABLE_LATEX_RECOGNITION
     QHash<QString, SnowShotLatexResult> m_latexResults;
+    QHash<QString, std::shared_ptr<ScreenshotOcrTextEditingSession>> m_latexCache;
     SnowShotApiClient::RequestToken m_latexRequestToken = 0;
     quint64 m_latexGeneration = 0;
 #endif

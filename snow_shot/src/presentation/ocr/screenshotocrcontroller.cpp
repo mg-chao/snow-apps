@@ -271,6 +271,12 @@ ScreenshotOcrController::ScreenshotOcrController(ScreenshotOcrControllerContext 
                 if (auto* toolbar = m_context.overlayCoordinator.toolbar())
                     toolbar->setTextTargetLanguage(language);
             },
+            [this](bool available, bool canUndo, bool canRedo) {
+                if (auto* toolbar = m_context.overlayCoordinator.toolbar()) {
+                    if (auto* palette = toolbar->palette())
+                        palette->setLatexEditingState(available, canUndo, canRedo);
+                }
+            },
         },
         this);
     connect(m_session.get(), &ScreenshotRecognitionSessionController::textEditingChanged, this,
