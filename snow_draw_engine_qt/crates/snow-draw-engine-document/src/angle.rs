@@ -159,6 +159,8 @@ pub fn angle_label(arrow: &ArrowData, layout: Option<TextLayoutSize>) -> Option<
         text: format_angle_value(arrow.angle?, geometry.sweep),
         color: arrow.stroke,
         font_size,
+        bold: false,
+        italic: false,
         font_family: None,
         fill: Default::default(),
         fill_style: FillStyle::Solid,

@@ -81,6 +81,10 @@ double logicalDpiYForFontSizing() {
 }
 
 void applyFontFamily(QFont& font, const SnowSceneDisplayItem& item) {
+    if (item.kind == SNOW_SCENE_DISPLAY_ITEM_TEXT) {
+        font.setBold(item.text_bold != 0);
+        font.setItalic(item.text_italic != 0);
+    }
     const QString family = snow_canvas_text::fontFamilyFromSceneItem(item);
     if (!family.isEmpty()) {
         font.setFamily(family);

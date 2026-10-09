@@ -315,6 +315,8 @@ pub(crate) fn snow_scene_display_item_from_rust(
             out.stroke_width = item.stroke_width;
             out.corner_radii = item.corner_radii.into();
             out.font_size = item.font_size;
+            out.text_bold = u8::from(item.bold);
+            out.text_italic = u8::from(item.italic);
             out.opacity = item.opacity;
             out.content_width = item.content_width;
             out.content_height = item.content_height;

@@ -273,6 +273,8 @@ QRegion SnowCanvasTextEditorSession::applyTextStyle(const SnowTextStyle& style,
     }
 
     QRegion updateRegion = editingRegion(baseFont, sceneInfo);
+    const auto previousBold = m_previewItem.text_bold;
+    const auto previousItalic = m_previewItem.text_italic;
     const double previousFontSize = m_previewItem.font_size;
     const QString previousFontFamily = snow_canvas_text::fontFamilyFromSceneItem(m_previewItem);
     const auto previousHorizontalAlign = m_previewItem.text_horizontal_align;
@@ -282,6 +284,7 @@ QRegion SnowCanvasTextEditorSession::applyTextStyle(const SnowTextStyle& style,
                          ? QPointF(m_previewItem.center_x, m_previewItem.center_y)
                          : snow_canvas_text_edit_geometry::topAnchorForItem(m_previewItem);
     const bool textLayoutChanged =
+        previousBold != m_previewItem.text_bold || previousItalic != m_previewItem.text_italic ||
         previousFontSize != m_previewItem.font_size ||
         previousFontFamily != snow_canvas_text::fontFamilyFromSceneItem(m_previewItem) ||
         (m_textEditingBounds.has_value() && canConstrainAutomaticWidth() &&

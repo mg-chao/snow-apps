@@ -125,6 +125,28 @@ class ScreenshotToolPaletteStyleEditorComponent {
     QWidget* m_rootWidget = nullptr;
 };
 
+class ScreenshotToolPaletteTextEmphasisEditor final
+    : public ScreenshotToolPaletteStyleEditorComponent {
+  public:
+    using Commit = std::function<void(quint32, bool)>;
+    ~ScreenshotToolPaletteTextEmphasisEditor() override {
+        release();
+    }
+    void build(QBoxLayout* layout, QWidget* parent, QObject* receiver, const Commit& commit,
+               const ScreenshotToolPaletteButtonMetrics& metrics);
+    void rebind(const Commit& commit);
+    void update(const SnowCanvasTextStyle& style, quint32 mixed);
+    void retranslate();
+    void refreshMetrics(const ScreenshotToolPaletteButtonMetrics& metrics) override;
+    void release() override;
+
+  private:
+    adqt::widgets::AdButton* m_boldButton = nullptr;
+    adqt::widgets::AdButton* m_italicButton = nullptr;
+    quint32 m_mixed = 0;
+    std::shared_ptr<Commit> m_commit;
+};
+
 struct ScreenshotToolPaletteColorEditorConfig {
     QString accessibleName;
     QString pickerObjectName;

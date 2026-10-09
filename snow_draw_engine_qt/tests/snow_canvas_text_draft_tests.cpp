@@ -4417,6 +4417,12 @@ void preparedTextLayoutsMatchUncachedPixelsAndTrackPaintInputs() {
         }
     };
     verify(base, baseFont, 1.0);
+    for (int variant = 1; variant < 4; ++variant) {
+        auto emphasized = base;
+        emphasized.text_bold = static_cast<std::uint8_t>(variant & 1);
+        emphasized.text_italic = static_cast<std::uint8_t>((variant >> 1) & 1);
+        verify(emphasized, baseFont, 1.0);
+    }
     auto changed = base;
     snow_canvas_text::copyTextToSceneItem(changed, QStringLiteral("Changed text\nA new paragraph"));
     verify(changed, baseFont, 1.0);

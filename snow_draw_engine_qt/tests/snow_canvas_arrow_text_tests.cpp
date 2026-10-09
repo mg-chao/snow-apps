@@ -184,8 +184,13 @@ void naturalLayoutCacheTracksTypographyAndHasABoundedBudget() {
     QFont bold = font;
     bold.setBold(true);
     cache.measure(text, bold, item);
+    require(cache.measurementCount() == 2,
+            "explicit regular text must override inherited base-font emphasis");
+    item.text_bold = 1;
+    cache.measure(text, bold, item);
     cache.measure(text + QStringLiteral("!"), bold, item);
-    require(cache.measurementCount() == 4, "base font and contents are part of the cache key");
+    require(cache.measurementCount() == 4,
+            "element emphasis and contents are part of the cache key");
     require(cache.retainedBytes() > 0, "measuring labels must retain their natural-layout entries");
     cache.clear();
     require(cache.retainedBytes() == 0,

@@ -76,6 +76,8 @@ class ScreenshotToolPaletteTextStyleModel final {
     [[nodiscard]] bool stepFontSize(int direction);
     [[nodiscard]] bool cycleFontSize();
     [[nodiscard]] bool setFontFamily(const QString& fontFamily);
+    [[nodiscard]] bool setBold(bool bold);
+    [[nodiscard]] bool setItalic(bool italic);
     [[nodiscard]] bool setStrokeColor(const QColor& color);
     [[nodiscard]] bool setStrokeWidth(double strokeWidth);
     [[nodiscard]] bool stepStrokeWidth(int direction);

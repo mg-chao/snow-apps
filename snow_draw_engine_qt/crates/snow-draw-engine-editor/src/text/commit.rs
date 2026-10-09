@@ -61,6 +61,8 @@ pub(crate) fn text_with_style_attributes(text: &TextData, style: &TextStyle) -> 
     let mut updated = text.clone();
     updated.color = style.color;
     updated.font_size = style.font_size;
+    updated.bold = style.bold;
+    updated.italic = style.italic;
     updated.font_family = normalize_font_family(style.font_family.clone());
     updated.fill = style.fill;
     updated.fill_style = style.fill_style;
@@ -104,6 +106,8 @@ mod tests {
                 a: 255,
             },
             font_size: 21.0,
+            bold: false,
+            italic: false,
             font_family: Some("Inter".to_owned()),
             fill: ColorRgba8::default(),
             fill_style: FillStyle::Solid,
@@ -148,6 +152,8 @@ mod tests {
             "committed",
             TextLayoutSize::new(120.0, 40.0),
             TextStyle {
+                bold: true,
+                italic: true,
                 font_family: Some("  Inter  ".to_owned()),
                 ..style()
             },
@@ -170,6 +176,7 @@ mod tests {
         assert_eq!(updated.width(), 120.0);
         assert_eq!(updated.height(), 40.0);
         assert_eq!(updated.font_size, draft.style.font_size);
+        assert!(updated.bold && updated.italic);
         assert_eq!(updated.font_family, Some("Inter".to_owned()));
         assert_eq!(updated.color, draft.style.color);
         assert_eq!(updated.fill_style, draft.style.fill_style);

@@ -156,6 +156,10 @@
             <translation>Blue</translation>
         </message>
         <message>
+            <source>Bold</source>
+            <translation>Bold</translation>
+        </message>
+        <message>
             <source>Brightness</source>
             <translation>Brightness</translation>
         </message>
@@ -618,6 +622,10 @@
         <message>
             <source>Inversion</source>
             <translation>Inversion</translation>
+        </message>
+        <message>
+            <source>Italic</source>
+            <translation>Italic</translation>
         </message>
         <message>
             <source>Jump to Translation Page</source>

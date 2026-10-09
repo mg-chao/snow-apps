@@ -156,6 +156,10 @@
             <translation>藍色</translation>
         </message>
         <message>
+            <source>Bold</source>
+            <translation>粗體</translation>
+        </message>
+        <message>
             <source>Brightness</source>
             <translation>亮度</translation>
         </message>
@@ -618,6 +622,10 @@
         <message>
             <source>Inversion</source>
             <translation>反相</translation>
+        </message>
+        <message>
+            <source>Italic</source>
+            <translation>斜體</translation>
         </message>
         <message>
             <source>Jump to Translation Page</source>

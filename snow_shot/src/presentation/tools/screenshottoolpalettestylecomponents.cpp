@@ -9,6 +9,7 @@
 #include "widgets/control_scale.h"
 #include "widgets/popover.h"
 #include "widgets/select.h"
+#include "antd_icons.h"
 
 #include <QBoxLayout>
 #include <QCoreApplication>
@@ -30,6 +31,91 @@
 #include <iterator>
 
 namespace snow_shot::presentation {
+
+void ScreenshotToolPaletteTextEmphasisEditor::build(
+    QBoxLayout* layout, QWidget* parent, QObject* receiver, const Commit& commit,
+    const ScreenshotToolPaletteButtonMetrics& metrics) {
+    if (layout == nullptr || parent == nullptr || receiver == nullptr)
+        return;
+    auto* rootLayout = createRoot(layout, parent);
+    receiver = rootWidget();
+    rebind(commit);
+    m_boldButton = createScreenshotToolPaletteStyleActionButton(
+        rootWidget(), QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Bold"),
+        adqt::icons::antd::outlined::Bold(), metrics);
+    m_italicButton = createScreenshotToolPaletteStyleActionButton(
+        rootWidget(), QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Italic"),
+        adqt::icons::antd::outlined::Italic(), metrics);
+    m_boldButton->setObjectName(QStringLiteral("screenshotTextBoldButton"));
+    m_italicButton->setObjectName(QStringLiteral("screenshotTextItalicButton"));
+    for (auto* button : {m_boldButton, m_italicButton}) {
+        button->setCheckable(true);
+        button->setCheckedUsesActiveStyle(false);
+        rootLayout->addWidget(button);
+    }
+    QObject::connect(m_boldButton, &adqt::widgets::AdButton::clicked, receiver,
+                     [callback = m_commit](bool checked) {
+                         if (callback != nullptr && *callback)
+                             (*callback)(SnowCanvasTextStyleMixedBold, checked);
+                     });
+    QObject::connect(m_italicButton, &adqt::widgets::AdButton::clicked, receiver,
+                     [callback = m_commit](bool checked) {
+                         if (callback != nullptr && *callback)
+                             (*callback)(SnowCanvasTextStyleMixedItalic, checked);
+                     });
+    finalizeRoot();
+}
+
+void ScreenshotToolPaletteTextEmphasisEditor::rebind(const Commit& commit) {
+    if (m_commit == nullptr)
+        m_commit = std::make_shared<Commit>();
+    *m_commit = commit;
+}
+
+void ScreenshotToolPaletteTextEmphasisEditor::update(const SnowCanvasTextStyle& style,
+                                                     quint32 mixed) {
+    m_mixed = mixed;
+    const auto updateButton = [mixed](adqt::widgets::AdButton* button, bool value, quint32 flag) {
+        if (button == nullptr)
+            return;
+        const QSignalBlocker blocker(button);
+        const bool active = value && (mixed & flag) == 0;
+        button->setChecked(active);
+        setScreenshotToolPaletteButtonActive(button, active);
+    };
+    updateButton(m_boldButton, style.bold, SnowCanvasTextStyleMixedBold);
+    updateButton(m_italicButton, style.italic, SnowCanvasTextStyleMixedItalic);
+    retranslate();
+}
+
+void ScreenshotToolPaletteTextEmphasisEditor::retranslate() {
+    if (m_boldButton != nullptr)
+        m_boldButton->setAccessibleDescription(
+            (m_mixed & SnowCanvasTextStyleMixedBold) != 0
+                ? ScreenshotToolPaletteTranslationText("Mixed").translated()
+                : QString());
+    if (m_italicButton != nullptr)
+        m_italicButton->setAccessibleDescription(
+            (m_mixed & SnowCanvasTextStyleMixedItalic) != 0
+                ? ScreenshotToolPaletteTranslationText("Mixed").translated()
+                : QString());
+}
+
+void ScreenshotToolPaletteTextEmphasisEditor::refreshMetrics(
+    const ScreenshotToolPaletteButtonMetrics& metrics) {
+    configureScreenshotToolPaletteStyleButton(m_boldButton, "Bold", metrics);
+    configureScreenshotToolPaletteStyleButton(m_italicButton, "Italic", metrics);
+    refreshRootMetrics(metrics);
+}
+
+void ScreenshotToolPaletteTextEmphasisEditor::release() {
+    if (m_commit != nullptr)
+        *m_commit = {};
+    m_commit.reset();
+    m_boldButton = nullptr;
+    m_italicButton = nullptr;
+    releaseRoot();
+}
 
 void setScreenshotToolPaletteStyleButtonActive(adqt::widgets::AdButton* button, bool active) {
     setScreenshotToolPaletteButtonActive(button, active,

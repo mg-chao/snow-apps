@@ -812,6 +812,8 @@ impl Editor {
             rotation: preview.rect.rotation,
             text: text.text.clone(),
             font_size,
+            bold: text.bold,
+            italic: text.italic,
             font_family: text.font_family.clone(),
             horizontal_align: text.horizontal_align,
             vertical_align: text.vertical_align,

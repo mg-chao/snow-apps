@@ -102,6 +102,8 @@ pub fn distance_label(arrow: &ArrowData, layout: Option<TextLayoutSize>) -> Opti
         text: distance_label_text(arrow)?,
         color: arrow.stroke,
         font_size,
+        bold: false,
+        italic: false,
         font_family: None,
         fill: Default::default(),
         fill_style: FillStyle::Solid,

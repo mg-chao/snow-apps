@@ -65,7 +65,8 @@ TextLayoutOverrideMeasurement
 measureSelectedAutoResizeLayoutOverrides(const SelectedTextLayoutMeasurementRequest& request) {
     TextLayoutOverrideMeasurement result;
     constexpr std::uint32_t fontProperties =
-        SNOW_TEXT_STYLE_MIXED_FONT_SIZE | SNOW_TEXT_STYLE_MIXED_FONT_FAMILY;
+        SNOW_TEXT_STYLE_MIXED_FONT_SIZE | SNOW_TEXT_STYLE_MIXED_FONT_FAMILY |
+        SNOW_TEXT_STYLE_MIXED_BOLD | SNOW_TEXT_STYLE_MIXED_ITALIC;
     const std::uint32_t layoutProperties =
         fontProperties |
         (request.textEditingBounds.has_value() ? SNOW_TEXT_STYLE_MIXED_HORIZONTAL_ALIGN : 0);
@@ -139,6 +140,14 @@ TextLayoutOverrideMeasurement measureAutoResizeLayoutOverrides(
              requestedFontFamily != snow_canvas_text::fontFamilyFromSceneItem(item))) {
             typographyChanged = true;
             item.setFontFamilyUtf8(requestedFontFamily.toUtf8());
+        }
+        if ((properties & SNOW_TEXT_STYLE_MIXED_BOLD) != 0) {
+            typographyChanged |= item.text_bold != style.bold;
+            item.text_bold = style.bold;
+        }
+        if ((properties & SNOW_TEXT_STYLE_MIXED_ITALIC) != 0) {
+            typographyChanged |= item.text_italic != style.italic;
+            item.text_italic = style.italic;
         }
         const auto maximumWidth =
             !snow_canvas_element_id::hasElementId(info.arrow_id)

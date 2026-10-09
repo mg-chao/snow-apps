@@ -535,6 +535,8 @@ impl EditorState {
         let default_text = TextData {
             color: default_styles.text.color,
             font_size: default_styles.text.font_size,
+            bold: default_styles.text.bold,
+            italic: default_styles.text.italic,
             font_family: default_styles.text.font_family.clone(),
             fill: default_styles.text.fill,
             fill_style: default_styles.text.fill_style,

@@ -97,8 +97,10 @@ enum SnowCanvasTextStyleMixedFlag : quint32 {
     SnowCanvasTextStyleMixedHorizontalAlign = 1u << 8,
     SnowCanvasTextStyleMixedVerticalAlign = 1u << 9,
     SnowCanvasTextStyleMixedOpacity = 1u << 10,
+    SnowCanvasTextStyleMixedBold = 1u << 11,
+    SnowCanvasTextStyleMixedItalic = 1u << 12,
 };
-inline constexpr quint32 SnowCanvasTextStyleAllProperties = (1u << 11) - 1u;
+inline constexpr quint32 SnowCanvasTextStyleAllProperties = (1u << 13) - 1u;
 
 enum SnowCanvasSerialNumberStyleMixedFlag : quint32 {
     SnowCanvasSerialNumberStyleMixedNumber = 1u << 0,
@@ -545,6 +547,8 @@ struct SnowCanvasTextStyle {
     SnowCanvasTextHorizontalAlign horizontalAlign = SnowCanvasTextHorizontalAlign::Left;
     SnowCanvasTextVerticalAlign verticalAlign = SnowCanvasTextVerticalAlign::Center;
     double opacity = 1.0;
+    bool bold = false;
+    bool italic = false;
 };
 
 inline bool operator==(const SnowCanvasTextStyle& lhs, const SnowCanvasTextStyle& rhs) {
@@ -554,7 +558,8 @@ inline bool operator==(const SnowCanvasTextStyle& lhs, const SnowCanvasTextStyle
            snowCanvasExactDoubleEqual(lhs.strokeWidth, rhs.strokeWidth) &&
            lhs.cornerRadii == rhs.cornerRadii && lhs.horizontalAlign == rhs.horizontalAlign &&
            lhs.verticalAlign == rhs.verticalAlign &&
-           snowCanvasExactDoubleEqual(lhs.opacity, rhs.opacity);
+           snowCanvasExactDoubleEqual(lhs.opacity, rhs.opacity) && lhs.bold == rhs.bold &&
+           lhs.italic == rhs.italic;
 }
 
 inline bool operator!=(const SnowCanvasTextStyle& lhs, const SnowCanvasTextStyle& rhs) {

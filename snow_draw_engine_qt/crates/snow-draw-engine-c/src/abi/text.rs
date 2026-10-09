@@ -127,6 +127,8 @@ pub(crate) fn active_text_draft_from_c(
             text,
             color: style.color,
             font_size: style.font_size,
+            bold: style.bold,
+            italic: style.italic,
             font_family: style.font_family,
             fill: style.fill,
             fill_style: style.fill_style,

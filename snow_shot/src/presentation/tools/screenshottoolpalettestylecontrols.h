@@ -53,6 +53,8 @@ using ScreenshotToolPaletteWidthColorEditor =
     snow_shot::presentation::ScreenshotToolPaletteWidthColorEditor;
 using ScreenshotToolPaletteNumericPresetEditor =
     snow_shot::presentation::ScreenshotToolPaletteNumericPresetEditor;
+using ScreenshotToolPaletteTextEmphasisEditor =
+    snow_shot::presentation::ScreenshotToolPaletteTextEmphasisEditor;
 using ScreenshotToolPaletteFontEditor = snow_shot::presentation::ScreenshotToolPaletteFontEditor;
 using ScreenshotToolPaletteIconOptionEditor =
     snow_shot::presentation::ScreenshotToolPaletteIconOptionEditor;
@@ -289,6 +291,7 @@ class ScreenshotToolPaletteStyleControls final {
     void refreshToolbarMetrics(const ScreenshotToolPaletteButtonMetrics& metrics);
     void refreshThemeIcons(const ScreenshotToolPaletteButtonMetrics& metrics);
     void retranslateWatermarkTemplateUi();
+    void retranslateTextEmphasisUi();
 
 #if defined(SNOW_SHOT_TEST_HOOKS)
     [[nodiscard]] quint64 styleStateNoopCount() const;
@@ -316,7 +319,8 @@ class ScreenshotToolPaletteStyleControls final {
         TextFillRefresh = 1u << 4,
         TextCornerRefresh = 1u << 5,
         TextAlignmentRefresh = 1u << 6,
-        AllTextRefreshes = (1u << 7) - 1,
+        TextEmphasisRefresh = 1u << 7,
+        AllTextRefreshes = (1u << 8) - 1,
     };
     enum SerialNumberRefreshGroup : quint32 {
         SerialNumberValueRefresh = 1u << 0,
@@ -396,6 +400,7 @@ class ScreenshotToolPaletteStyleControls final {
     void setTextFontSize(double fontSize);
     void cycleTextFontSize();
     void setTextFontFamily(const QString& fontFamily);
+    void setTextEmphasis(quint32 property, bool enabled);
     void setTextStrokeColor(const QColor& color);
     void setTextStrokeWidth(double strokeWidth);
     void setTextFillColor(const QColor& color);
@@ -536,6 +541,7 @@ class ScreenshotToolPaletteStyleControls final {
     std::unique_ptr<ScreenshotToolPaletteIconOptionEditor> m_endArrowheadEditor;
     std::unique_ptr<ScreenshotToolPaletteColorEditor> m_textColorEditor;
     std::unique_ptr<ScreenshotToolPaletteFontEditor> m_textFontEditor;
+    std::unique_ptr<ScreenshotToolPaletteTextEmphasisEditor> m_textEmphasisEditor;
     std::unique_ptr<ScreenshotToolPaletteWidthColorEditor> m_textStrokeEditor;
     std::unique_ptr<ScreenshotToolPaletteFillEditor> m_textFillEditor;
     CornerRadiusEditorButton* m_textCornerRadiusEditor = nullptr;

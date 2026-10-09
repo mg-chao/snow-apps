@@ -189,7 +189,9 @@ pub struct SnowTextElementInfo {
     pub text_utf8: [std::ffi::c_char; SNOW_TEXT_UTF8_CAPACITY],
     pub font_family_utf8_len: u32,
     pub font_family_truncated: u8,
-    pub reserved1: [u8; 3],
+    pub bold: u8,
+    pub italic: u8,
+    pub reserved1: [u8; 1],
     pub font_family_utf8: [std::ffi::c_char; SNOW_FONT_FAMILY_UTF8_CAPACITY],
 }
 
@@ -217,7 +219,9 @@ impl Default for SnowTextElementInfo {
             text_utf8: [0; SNOW_TEXT_UTF8_CAPACITY],
             font_family_utf8_len: 0,
             font_family_truncated: 0,
-            reserved1: [0; 3],
+            bold: 0,
+            italic: 0,
+            reserved1: [0; 1],
             font_family_utf8: [0; SNOW_FONT_FAMILY_UTF8_CAPACITY],
         }
     }

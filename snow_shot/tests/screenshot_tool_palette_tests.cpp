@@ -2127,12 +2127,12 @@ void styleToolReuseMapPreservesEveryCompatibleRole() {
            1);
     verify(Tool::RectangleFilter, Tool::PenFilter,
            {"filter-mode", "filter-type", "filter-intensity"}, 0, 1);
-    verify(Tool::Text, Tool::SerialNumber, {"foreground-color", "text-font", "text-fill"}, 3, 3);
+    verify(Tool::Text, Tool::SerialNumber, {"foreground-color", "text-font", "text-fill"}, 4, 3);
     verify(Tool::PenHighlight, Tool::PenFilter, {"brush-width"}, 2, 3);
     verify(Tool::Spotlight, Tool::Watermark, {"opacity"}, 2, 6);
     verify(Tool::Shape, Tool::Spotlight, {"shape-kind"}, 4, 2);
-    verify(Tool::Shape, Tool::Text, {"corner-radius"}, 4, 5);
-    verify(Tool::Text, Tool::Watermark, {"foreground-color"}, 5, 6);
+    verify(Tool::Shape, Tool::Text, {"corner-radius"}, 4, 6);
+    verify(Tool::Text, Tool::Watermark, {"foreground-color"}, 6, 6);
 }
 
 void retainedOutlineEditorsRebindStateLabelsAndCommands() {
@@ -11907,6 +11907,113 @@ void selectPopupPreservesModelFontRole() {
             "select popup should render an option with its model font");
 }
 
+void textEmphasisButtonsToggleMixedStylesAndSurviveReuse() {
+    ScreenshotToolPalette::Options options;
+    options.showTextTool = true;
+    auto paletteOwner = std::make_unique<ScreenshotToolPalette>(options);
+    auto& palette = *paletteOwner;
+    palette.setActiveTool(ScreenshotToolPalette::Tool::Text);
+    palette.show();
+    QCoreApplication::processEvents();
+    const auto findButton = [&](const char* name) {
+        return palette.findChild<adqt::widgets::AdButton*>(QString::fromLatin1(name));
+    };
+    auto* bold = findButton("screenshotTextBoldButton");
+    auto* italic = findButton("screenshotTextItalicButton");
+    require(bold != nullptr && italic != nullptr && bold->isCheckable() && italic->isCheckable(),
+            "text styles expose independent checkable emphasis buttons");
+    auto* font = controlWithTooltip(palette, "Current text font size");
+    auto* alignment = controlWithAccessibleName(palette, "Text alignment");
+    auto* row = palette.findChild<QWidget*>(QStringLiteral("screenshotTextStyleControls"));
+    require(font != nullptr && alignment != nullptr && row != nullptr &&
+                font->mapTo(row, QPoint()).x() < bold->mapTo(row, QPoint()).x() &&
+                bold->mapTo(row, QPoint()).x() < italic->mapTo(row, QPoint()).x() &&
+                italic->mapTo(row, QPoint()).x() < alignment->mapTo(row, QPoint()).x(),
+            "bold and italic follow font controls and precede alignment");
+    int edits = 0;
+    SnowCanvasTextStyle changed;
+    quint32 properties = 0;
+    QObject::connect(&palette, &ScreenshotToolPalette::textStyleChanged, &palette,
+                     [&](const SnowCanvasTextStyle& style, quint32 flags) {
+                         ++edits;
+                         changed = style;
+                         properties = flags;
+                     });
+    SnowCanvasStyleToolbarState state;
+    state.source = SnowCanvasStyleToolbarSource::DefaultText;
+    palette.setStyleToolbarState(state);
+    bold->click();
+    require(edits == 1 && changed.bold && !changed.italic &&
+                properties == SnowCanvasTextStyleMixedBold && bold->isChecked() &&
+                bold->buttonStyle() == adqt::widgets::AdButton::ButtonStyle::Solid &&
+                bold->accentRole() == adqt::widgets::AdButton::AccentRole::Primary,
+            "bold commits only its flag and uses the recording-toggle active style");
+    italic->click();
+    require(edits == 2 && changed.bold && changed.italic &&
+                properties == SnowCanvasTextStyleMixedItalic,
+            "italic can be enabled independently alongside bold");
+    bold->click();
+    require(edits == 3 && !changed.bold && changed.italic && !bold->isChecked() &&
+                bold->buttonStyle() == adqt::widgets::AdButton::ButtonStyle::Text,
+            "disabling bold preserves italic and restores the inactive style");
+
+    state.source = SnowCanvasStyleToolbarSource::SelectedText;
+    state.textStyle.bold = true;
+    state.textStyle.italic = true;
+    state.textStyleMixed = SnowCanvasTextStyleMixedBold | SnowCanvasTextStyleMixedItalic;
+    palette.setStyleToolbarState(state);
+    require(!bold->isChecked() && !italic->isChecked() &&
+                bold->accessibleDescription() == QStringLiteral("Mixed"),
+            "mixed emphasis is unchecked and described accessibly");
+    auto& language = snow_shot::presentation::LanguageManager::instance();
+    for (const auto& locale :
+         {QStringLiteral("zh_CN"), QStringLiteral("zh_TW"), QStringLiteral("en_US")}) {
+        require(language.setLanguage(locale), "load emphasis translations");
+        QCoreApplication::processEvents();
+        const auto translated = [&](const char* source) {
+            return QCoreApplication::translate("ScreenshotToolPalette", source);
+        };
+        require(bold->toolTip() == translated("Bold") &&
+                    italic->accessibleName() == translated("Italic") &&
+                    bold->accessibleDescription() == translated("Mixed") && edits == 3,
+                "language changes retranslate names and mixed state without committing edits");
+        require(locale == QStringLiteral("en_US") || translated("Bold") != QStringLiteral("Bold"),
+                "both Chinese catalogs translate emphasis controls");
+    }
+    bold->click();
+    require(edits == 4 && changed.bold && bold->isChecked() && !italic->isChecked() &&
+                bold->accessibleDescription().isEmpty(),
+            "clicking mixed bold enables it and leaves italic mixed");
+    const QSize originalSize = bold->size();
+    require(palette.setPhysicalScale(1.5), "scale text emphasis controls");
+    require(bold->width() > originalSize.width() && bold->size() == italic->size(),
+            "emphasis controls use shared DPI metrics");
+    palette.setActiveTool(ScreenshotToolPalette::Tool::Shape);
+    palette.setActiveTool(ScreenshotToolPalette::Tool::Text);
+    QCoreApplication::processEvents();
+    bold = findButton("screenshotTextBoldButton");
+    italic = findButton("screenshotTextItalicButton");
+    require(bold != nullptr && italic != nullptr, "emphasis controls survive style editor reuse");
+    state.textStyleMixed = 0;
+    palette.setStyleToolbarState(state);
+    bold->click();
+    require(edits == 5 && !changed.bold && changed.italic,
+            "reused emphasis controls retain exactly one correctly rebound callback");
+    if (const auto path = qEnvironmentVariable("SNOW_TEXT_EMPHASIS_TOOLBAR_PREVIEW");
+        !path.isEmpty())
+        require(palette.stylePanel()->grab().save(path), "save text emphasis toolbar preview");
+    QPointer<adqt::widgets::AdButton> releasedBold(bold);
+    QPointer<adqt::widgets::AdButton> releasedItalic(italic);
+    palette.clearActiveTool();
+    if (!releasedBold.isNull())
+        releasedBold->click();
+    require(edits == 5, "retired emphasis controls must release their commit callback");
+    paletteOwner.reset();
+    QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+    require(releasedBold.isNull() && releasedItalic.isNull(),
+            "destroying the palette releases both emphasis controls");
+}
+
 void textStyleControlsExposeAndEmitAllRequestedProperties() {
     ScreenshotToolPalette::Options options;
     options.showTextTool = true;
@@ -16529,6 +16636,7 @@ int main(int argc, char** argv) {
     if (application.arguments().contains(QStringLiteral("--text-style-only"))) {
         fontEditorLoadsOnFirstOpen();
         fontFamilyListIsCachedForEditorBuilds();
+        textEmphasisButtonsToggleMixedStylesAndSurviveReuse();
         textStyleControlsExposeAndEmitAllRequestedProperties();
         textStylePopupLifecyclesAreBalanced();
         snow_shot::storage::ApplicationStorage::instance().shutdown();
@@ -16974,6 +17082,7 @@ int main(int argc, char** argv) {
     arrowStyleControlsExposeAndEmitAllStyleProperties();
     lineStyleControlsExposeStraightAndCurveTypes();
     selectedArrowMixedPropertiesResolveIndependently();
+    textEmphasisButtonsToggleMixedStylesAndSurviveReuse();
     textStyleControlsExposeAndEmitAllRequestedProperties();
     serialNumberCreationValuesAreIndependentPerNumericType();
     serialNumberNumericTypeEditorPreservesValuesAndRetranslates();

@@ -644,6 +644,8 @@ mod tests {
             text: "editing".to_owned(),
             color: ColorRgba8::default(),
             font_size: 20.0,
+            bold: false,
+            italic: false,
             font_family: None,
             fill: ColorRgba8::default(),
             fill_style: DisplayFillStyle::Solid,

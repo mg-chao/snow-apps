@@ -173,7 +173,9 @@ typedef struct SnowFilterStyle {
 #define SNOW_TEXT_STYLE_MIXED_HORIZONTAL_ALIGN (1u << 8)
 #define SNOW_TEXT_STYLE_MIXED_VERTICAL_ALIGN (1u << 9)
 #define SNOW_TEXT_STYLE_MIXED_OPACITY (1u << 10)
-#define SNOW_TEXT_STYLE_ALL_PROPERTIES ((1u << 11) - 1u)
+#define SNOW_TEXT_STYLE_MIXED_BOLD (1u << 11)
+#define SNOW_TEXT_STYLE_MIXED_ITALIC (1u << 12)
+#define SNOW_TEXT_STYLE_ALL_PROPERTIES ((1u << 13) - 1u)
 
 #define SNOW_SERIAL_NUMBER_STYLE_MIXED_NUMBER (1u << 0)
 #define SNOW_SERIAL_NUMBER_STYLE_MIXED_COLOR (1u << 1)
@@ -571,7 +573,9 @@ typedef struct SnowTextStyle {
     uint8_t reserved0[4];
     uint32_t font_family_utf8_len;
     uint8_t font_family_truncated;
-    uint8_t reserved1[3];
+    uint8_t bold;
+    uint8_t italic;
+    uint8_t reserved1[1];
     char font_family_utf8[SNOW_FONT_FAMILY_UTF8_CAPACITY];
 } SnowTextStyle;
 
@@ -845,7 +849,9 @@ typedef struct SnowTextElementInfo {
     char text_utf8[SNOW_TEXT_UTF8_CAPACITY];
     uint32_t font_family_utf8_len;
     uint8_t font_family_truncated;
-    uint8_t reserved1[3];
+    uint8_t bold;
+    uint8_t italic;
+    uint8_t reserved1[1];
     char font_family_utf8[SNOW_FONT_FAMILY_UTF8_CAPACITY];
 } SnowTextElementInfo;
 
@@ -1185,7 +1191,8 @@ typedef struct SnowSceneDisplayItem {
     SnowArrowShaftType arrow_shaft_type;
     double arrow_ratio;
     uint8_t is_free_draw;
-    uint8_t reserved1[2];
+    uint8_t text_bold;
+    uint8_t text_italic;
     SnowArrowhead arrow_start_head;
     SnowArrowhead arrow_end_head;
     SnowStrokeStyle arrow_stroke_style;

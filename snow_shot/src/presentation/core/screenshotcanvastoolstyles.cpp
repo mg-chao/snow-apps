@@ -313,6 +313,8 @@ QJsonObject textValue(const SnowCanvasTextStyle& style) {
     value.insert(QStringLiteral("color"), colorValue(style.color));
     putDouble(&value, QStringLiteral("font_size"), style.fontSize);
     value.insert(QStringLiteral("font_family"), style.fontFamily);
+    value.insert(QStringLiteral("bold"), style.bold);
+    value.insert(QStringLiteral("italic"), style.italic);
     value.insert(QStringLiteral("fill"), colorValue(style.fill));
     putEnum(&value, QStringLiteral("fill_style"), style.fillStyle);
     value.insert(QStringLiteral("stroke"), colorValue(style.stroke));
@@ -334,6 +336,10 @@ void readTextValue(const QJsonObject& object, SnowCanvasTextStyle* style) {
         style->fill = color;
     if (colorValue(object.value(QStringLiteral("stroke")), &color))
         style->stroke = color;
+    if (object.value(QStringLiteral("bold")).isBool())
+        style->bold = object.value(QStringLiteral("bold")).toBool();
+    if (object.value(QStringLiteral("italic")).isBool())
+        style->italic = object.value(QStringLiteral("italic")).toBool();
     readDouble(object, QStringLiteral("font_size"), &style->fontSize);
     if (object.value(QStringLiteral("font_family")).isString())
         style->fontFamily = object.value(QStringLiteral("font_family")).toString();

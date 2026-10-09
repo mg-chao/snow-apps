@@ -847,6 +847,10 @@ pub struct TextData {
     pub text: String,
     pub color: ColorRgba8,
     pub font_size: f64,
+    #[serde(default)]
+    pub bold: bool,
+    #[serde(default)]
+    pub italic: bool,
     pub font_family: Option<String>,
     pub fill: ColorRgba8,
     pub fill_style: FillStyle,

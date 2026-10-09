@@ -441,6 +441,20 @@ bool ScreenshotToolPaletteTextStyleModel::setFontFamily(const QString& fontFamil
     return true;
 }
 
+bool ScreenshotToolPaletteTextStyleModel::setBold(bool bold) {
+    if (m_style.bold == bold)
+        return false;
+    m_style.bold = bold;
+    return true;
+}
+
+bool ScreenshotToolPaletteTextStyleModel::setItalic(bool italic) {
+    if (m_style.italic == italic)
+        return false;
+    m_style.italic = italic;
+    return true;
+}
+
 bool ScreenshotToolPaletteTextStyleModel::setStrokeColor(const QColor& color) {
     if (!color.isValid() || m_style.stroke == color) {
         return false;

@@ -1,9 +1,11 @@
 #include "snow_shot/presentation/screenshotstylebinding.h"
 #include "snow_shot/presentation/screenshotcanvastoolstyles.h"
 #include "snow_shot/presentation/screenshottoolpalette.h"
+#include "snow_shot/storage/applicationstorage.h"
 #include "snow_draw_engine_qt/snow_canvas_widget.h"
 #include "snow_draw_engine_qt/snow_canvas_runtime.h"
 #include <QKeyEvent>
+#include <QInputMethodEvent>
 #include "widgets/button.h"
 #include "widgets/input_line_edit.h"
 
@@ -334,6 +336,59 @@ void newScreenshotDocumentRestartsSerialNumberSequences() {
         }
     }
 }
+void textEmphasisButtonsPersistDefaultsWithoutEndingDrafts() {
+    auto defaults = screenshotCanvasToolStyleDefaults();
+    defaults.text.bold = false;
+    defaults.text.italic = false;
+    require(persistScreenshotCanvasToolStyles(defaults), "reset emphasis defaults");
+    Editor editor;
+    editor.text();
+    const auto button = [&](const char* name) {
+        auto* result =
+            editor.palette.findChild<adqt::widgets::AdButton*>(QString::fromLatin1(name));
+        require(result != nullptr, "materialize text emphasis button");
+        return result;
+    };
+    button("screenshotTextBoldButton")->click();
+    require(screenshotCanvasToolStyleDefaults().text.bold &&
+                !screenshotCanvasToolStyleDefaults().text.italic &&
+                editor.canvas.canvasStyleToolbarState().textStyle.bold,
+            "bold button persists and updates canvas defaults");
+    mouse(editor.canvas, QEvent::MouseButtonPress, {100, 100});
+    mouse(editor.canvas, QEvent::MouseButtonRelease, {100, 100});
+    QInputMethodEvent input;
+    input.setCommitString(QStringLiteral("Draft emphasis"));
+    QApplication::sendEvent(&editor.canvas, &input);
+    require(editor.canvas.hasActiveTextEditing(), "begin a styled text draft");
+    button("screenshotTextItalicButton")->click();
+    const auto style = editor.canvas.canvasStyleToolbarState().textStyle;
+    require(editor.canvas.hasActiveTextEditing() && style.bold && style.italic &&
+                screenshotCanvasToolStyleDefaults().text.bold &&
+                screenshotCanvasToolStyleDefaults().text.italic,
+            "italic updates the draft and remembered defaults without ending editing");
+    require(editor.canvas.cancelActiveTextEditing(), "cancel the styled draft");
+    Editor fresh;
+    fresh.text();
+    require(fresh.canvas.canvasStyleToolbarState().textStyle.bold &&
+                fresh.canvas.canvasStyleToolbarState().textStyle.italic,
+            "new editors restore emphasis choices even after draft cancellation");
+    auto& configuration = snow_shot::storage::ApplicationStorage::instance().configuration();
+    const auto key = QStringLiteral("drawing/text_style");
+    auto remembered = configuration.value(key).toObject();
+    require(remembered.value(QStringLiteral("bold")).isBool() &&
+                remembered.value(QStringLiteral("bold")).toBool() &&
+                remembered.value(QStringLiteral("italic")).isBool() &&
+                remembered.value(QStringLiteral("italic")).toBool(),
+            "remembered emphasis is stored as independent booleans");
+    remembered.remove(QStringLiteral("bold"));
+    remembered.remove(QStringLiteral("italic"));
+    require(configuration.setValue(key, remembered), "load legacy text settings");
+    const auto legacy = screenshotCanvasToolStyleDefaults().text;
+    require(!legacy.bold && !legacy.italic && legacy.fontSize == style.fontSize &&
+                legacy.fontFamily == style.fontFamily,
+            "legacy text settings default emphasis to false and preserve existing typography");
+}
+
 void fontWheelRemembersDefaultsAndDraftChoice() {
     Editor editor;
     editor.text();
@@ -543,6 +598,7 @@ void runScreenshotStyleBindingTests() {
     creationDefaultsDoNotActivateFilterTools();
     creationDefaultsPreserveDocumentAndEditingCleanup();
     fontWheelRemembersDefaultsAndDraftChoice();
+    textEmphasisButtonsPersistDefaultsWithoutEndingDrafts();
     propertyPatchesPreserveOtherEditorsAndProgrammaticState();
     allStyleFamiliesPersistOnlyTheirPatch();
     toolbarAndCanvasShareFontCommit();

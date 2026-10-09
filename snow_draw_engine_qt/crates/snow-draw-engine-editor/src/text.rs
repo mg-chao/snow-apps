@@ -27,6 +27,10 @@ pub(crate) use serial::{
 pub struct TextStyle {
     pub color: ColorRgba8,
     pub font_size: f64,
+    #[serde(default)]
+    pub bold: bool,
+    #[serde(default)]
+    pub italic: bool,
     pub font_family: Option<String>,
     pub fill: ColorRgba8,
     pub fill_style: FillStyle,
@@ -44,6 +48,8 @@ impl TextStyle {
             color: text.color,
             font_size: text.font_size,
             font_family: text.font_family.clone(),
+            bold: text.bold,
+            italic: text.italic,
             fill: text.fill,
             fill_style: text.fill_style,
             stroke: text.stroke,

@@ -81,6 +81,8 @@ fn request(
     text_id.hash(&mut key);
     text.text.hash(&mut key);
     text.font_family.hash(&mut key);
+    text.bold.hash(&mut key);
+    text.italic.hash(&mut key);
     text.font_size.to_bits().hash(&mut key);
     (text.horizontal_align as u8).hash(&mut key);
     (text.vertical_align as u8).hash(&mut key);
@@ -788,7 +790,7 @@ mod tests {
     #[test]
     fn natural_label_metrics_invalidate_for_text_font_and_alignment_changes() {
         let (mut editor, mut document, _owner, label) = measurement_fixture();
-        for variant in 0..4 {
+        for variant in 0..6 {
             let request = editor.arrow_text_layout_requests(&document).remove(0);
             editor
                 .apply_arrow_text_measurement(
@@ -804,7 +806,9 @@ mod tests {
                 0 => text.text.push('!'),
                 1 => text.font_size += 1.0,
                 2 => text.font_family = Some("another font".to_owned()),
-                _ => text.horizontal_align = snow_draw_engine_document::TextHorizontalAlign::Right,
+                3 => text.horizontal_align = snow_draw_engine_document::TextHorizontalAlign::Right,
+                4 => text.bold = true,
+                _ => text.italic = true,
             }
             let mut tx = Transaction::new("change label typography");
             tx.update_text(label, text);

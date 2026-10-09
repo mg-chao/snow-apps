@@ -148,6 +148,8 @@ pub fn editor_style_defaults() -> EditorStyleDefaults {
         text: TextStyle {
             color: stroke,
             font_size: 30.0,
+            bold: false,
+            italic: false,
             font_family: None,
             fill: ColorRgba8::default(),
             fill_style: FillStyle::Solid,

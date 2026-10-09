@@ -100,6 +100,8 @@ constexpr char kRoleArrowShaft[] = "arrow-shaft-type";
 constexpr char kSignatureArrowShaft[] = "icon-options:arrow-shaft-type";
 constexpr char kRoleStartArrowhead[] = "start-arrowhead";
 constexpr char kRoleEndArrowhead[] = "end-arrowhead";
+constexpr char kRoleTextEmphasis[] = "text-emphasis";
+constexpr char kSignatureTextEmphasis[] = "toggle:bold-italic";
 constexpr char kRoleTextAlignment[] = "text-alignment";
 constexpr char kRoleTextStroke[] = "text-stroke";
 constexpr char kRoleSerialValue[] = "serial-value";
@@ -238,7 +240,7 @@ QVector<QByteArray> styleEditorRoles(ScreenshotToolPalette::Tool tool) {
     case Tool::Spotlight:
         return {kRoleShapeKind, kRoleMaskColor, kRoleOpacity};
     case Tool::Text:
-        return {kRoleForegroundColor, kRoleTextFont, "text-alignment",
+        return {kRoleForegroundColor, kRoleTextFont, kRoleTextEmphasis, "text-alignment",
                 "text-stroke",        kRoleTextFill, kRoleCornerRadius};
     case Tool::SerialNumber:
         return {kRoleForegroundColor, kRoleSerialType, kRoleSerialNumericType,
@@ -855,6 +857,7 @@ void ScreenshotToolPaletteStyleControls::rebuildRegisteredComponents() {
     append(m_endArrowheadEditor);
     append(m_textColorEditor);
     append(m_textFontEditor);
+    append(m_textEmphasisEditor);
     append(m_textStrokeEditor);
     append(m_textFillEditor);
     append(m_textAlignmentEditor);
@@ -921,6 +924,7 @@ void ScreenshotToolPaletteStyleControls::parkStyleEditors(int tool, QWidget* con
     case Tool::Text:
         park(kRoleForegroundColor, kSignatureForegroundColor, m_textColorEditor);
         park(kRoleTextFont, kSignatureTextFont, m_textFontEditor);
+        park(kRoleTextEmphasis, kSignatureTextEmphasis, m_textEmphasisEditor);
         park(kRoleTextAlignment, kSignatureTextAlignment, m_textAlignmentEditor);
         park(kRoleTextStroke, kSignatureTextStroke, m_textStrokeEditor);
         park(kRoleTextFill, kSignatureTextFill, m_textFillEditor);
@@ -1003,6 +1007,7 @@ void ScreenshotToolPaletteStyleControls::restoreStyleEditors(int tool, QWidget* 
     case Tool::Text:
         restore(kRoleForegroundColor, m_textColorEditor);
         restore(kRoleTextFont, m_textFontEditor);
+        restore(kRoleTextEmphasis, m_textEmphasisEditor);
         restore(kRoleTextAlignment, m_textAlignmentEditor);
         restore(kRoleTextStroke, m_textStrokeEditor);
         restore(kRoleTextFill, m_textFillEditor);
@@ -1321,6 +1326,7 @@ void ScreenshotToolPaletteStyleControls::stageDestinationStyleEditors(
     case Tool::Text:
         stageComponent(kRoleForegroundColor, kSignatureForegroundColor, m_textColorEditor);
         stageComponent(kRoleTextFont, kSignatureTextFont, m_textFontEditor);
+        stageComponent(kRoleTextEmphasis, kSignatureTextEmphasis, m_textEmphasisEditor);
         stageComponent(kRoleTextAlignment, kSignatureTextAlignment, m_textAlignmentEditor);
         stageComponent(kRoleTextStroke, kSignatureTextStroke, m_textStrokeEditor);
         stageComponent(kRoleTextFill, kSignatureTextFill, m_textFillEditor);
@@ -2655,6 +2661,21 @@ QWidget* ScreenshotToolPaletteStyleControls::buildTextFamily(
     tagEditor(m_textFontEditor.get(), kRoleTextFont, kSignatureTextFont);
     registerEditor(m_textFontEditor.get());
 
+    const auto commitEmphasis = [this](quint32 property, bool enabled) {
+        setTextEmphasis(property, enabled);
+    };
+    if (auto reused =
+            takeReusableEditor(kRoleTextEmphasis, kSignatureTextEmphasis, layout, controls)) {
+        m_textEmphasisEditor.reset(
+            static_cast<ScreenshotToolPaletteTextEmphasisEditor*>(reused.release()));
+        m_textEmphasisEditor->rebind(commitEmphasis);
+    } else {
+        m_textEmphasisEditor = std::make_unique<ScreenshotToolPaletteTextEmphasisEditor>();
+        m_textEmphasisEditor->build(layout, controls, controls, commitEmphasis, metrics);
+    }
+    tagEditor(m_textEmphasisEditor.get(), kRoleTextEmphasis, kSignatureTextEmphasis);
+    registerEditor(m_textEmphasisEditor.get());
+
     ScreenshotToolPaletteIconOptionEditorConfig alignmentConfig;
     alignmentConfig.accessibleName = QStringLiteral("Text alignment");
     alignmentConfig.triggerTooltip = QStringLiteral("Text alignment");
@@ -3983,6 +4004,13 @@ void ScreenshotToolPaletteStyleControls::registerTextEntries() {
                      TextFontSizeRefresh, TextFontFamilyRefresh);
              }
          }},
+        {TextEmphasisRefresh,
+         [this]() {
+             if (m_textEmphasisEditor != nullptr)
+                 m_textEmphasisEditor->update(
+                     m_state.m_textStyle.textStyle(),
+                     m_state.m_showingSelectedTextStyle ? m_state.m_textStyleMixed : 0);
+         }},
         {TextStrokeRefresh,
          [this, mixed]() {
              SNOW_SHOT_TOOLBAR_PERF_COUNTER("style.text.stroke_refresh");
@@ -4288,6 +4316,7 @@ void ScreenshotToolPaletteStyleControls::releaseControlBindings() {
     m_endArrowheadEditor.reset();
     m_textColorEditor.reset();
     m_textFontEditor.reset();
+    m_textEmphasisEditor.reset();
     m_textStrokeEditor.reset();
     m_textFillEditor.reset();
     m_textCornerRadiusEditor = nullptr;
@@ -4378,6 +4407,7 @@ void ScreenshotToolPaletteStyleControls::discardBindingsExcept(int destinationTo
     resetUnless(keepArrow, m_endArrowheadEditor);
     resetUnless(keepText, m_textColorEditor);
     resetUnless(keepText, m_textFontEditor);
+    resetUnless(keepText, m_textEmphasisEditor);
     resetUnless(keepText, m_textStrokeEditor);
     resetUnless(keepText, m_textFillEditor);
     resetUnless(keepText, m_textAlignmentEditor);
@@ -5433,6 +5463,18 @@ void ScreenshotToolPaletteStyleControls::setTextFontFamily(const QString& fontFa
                        });
 }
 
+void ScreenshotToolPaletteStyleControls::setTextEmphasis(quint32 property, bool enabled) {
+    commitTextProperty(property, [property, enabled](ScreenshotToolPaletteTextStyleModel& style) {
+        return property == SnowCanvasTextStyleMixedBold ? style.setBold(enabled)
+                                                        : style.setItalic(enabled);
+    });
+}
+
+void ScreenshotToolPaletteStyleControls::retranslateTextEmphasisUi() {
+    if (m_textEmphasisEditor != nullptr)
+        m_textEmphasisEditor->retranslate();
+}
+
 void ScreenshotToolPaletteStyleControls::setTextStrokeColor(const QColor& color) {
     commitTextProperty(SnowCanvasTextStyleMixedStroke,
                        [color](ScreenshotToolPaletteTextStyleModel& style) {
@@ -6189,6 +6231,10 @@ void ScreenshotToolPaletteStyleControls::setStyleToolbarState(
             if (previous.fontSize != normalized.fontSize ||
                 (mixedChanged & SnowCanvasTextStyleMixedFontSize) != 0)
                 groups |= TextFontSizeRefresh;
+            if (previous.bold != normalized.bold || previous.italic != normalized.italic ||
+                (mixedChanged & (SnowCanvasTextStyleMixedBold | SnowCanvasTextStyleMixedItalic)) !=
+                    0)
+                groups |= TextEmphasisRefresh;
             if (previous.fontFamily != normalized.fontFamily ||
                 (mixedChanged & SnowCanvasTextStyleMixedFontFamily) != 0)
                 groups |= TextFontFamilyRefresh;

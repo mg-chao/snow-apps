@@ -156,6 +156,10 @@ inline void snowCanvasMergeStyle(SnowCanvasTextStyle& target, const SnowCanvasTe
         target.verticalAlign = value.verticalAlign;
     if ((properties & SnowCanvasTextStyleMixedOpacity) != 0)
         target.opacity = value.opacity;
+    if ((properties & SnowCanvasTextStyleMixedBold) != 0)
+        target.bold = value.bold;
+    if ((properties & SnowCanvasTextStyleMixedItalic) != 0)
+        target.italic = value.italic;
 }
 
 inline void snowCanvasMergeStyle(SnowCanvasSerialNumberStyle& target,

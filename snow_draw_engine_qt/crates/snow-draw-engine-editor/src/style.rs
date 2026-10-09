@@ -32,12 +32,12 @@ use crate::{
     SHAPE_STYLE_PROPERTY_START_ARROWHEAD, SHAPE_STYLE_PROPERTY_STROKE,
     SHAPE_STYLE_PROPERTY_STROKE_STYLE, SHAPE_STYLE_PROPERTY_STROKE_WIDTH, SelectionArrowState,
     SelectionRectState, SerialNumberStyle, ShapeKind, ShapeStyle, ShapeStylePatch,
-    StyleToolbarSource, TEXT_STYLE_ALL_PROPERTIES, TEXT_STYLE_MIXED_COLOR,
+    StyleToolbarSource, TEXT_STYLE_ALL_PROPERTIES, TEXT_STYLE_MIXED_BOLD, TEXT_STYLE_MIXED_COLOR,
     TEXT_STYLE_MIXED_CORNER_RADII, TEXT_STYLE_MIXED_FILL, TEXT_STYLE_MIXED_FILL_STYLE,
     TEXT_STYLE_MIXED_FONT_FAMILY, TEXT_STYLE_MIXED_FONT_SIZE, TEXT_STYLE_MIXED_HORIZONTAL_ALIGN,
-    TEXT_STYLE_MIXED_OPACITY, TEXT_STYLE_MIXED_STROKE, TEXT_STYLE_MIXED_STROKE_WIDTH,
-    TEXT_STYLE_MIXED_VERTICAL_ALIGN, TextLayoutOverride, TextStyle, arrow_with_style,
-    selection_bounds_from_selection,
+    TEXT_STYLE_MIXED_ITALIC, TEXT_STYLE_MIXED_OPACITY, TEXT_STYLE_MIXED_STROKE,
+    TEXT_STYLE_MIXED_STROKE_WIDTH, TEXT_STYLE_MIXED_VERTICAL_ALIGN, TextLayoutOverride, TextStyle,
+    arrow_with_style, selection_bounds_from_selection,
     text::{text_layout_override_size, text_with_style_attributes},
 };
 
@@ -567,6 +567,8 @@ fn text_with_style(
         && layouts.iter().any(|layout| layout.id == id);
     if updated.font_size == text.font_size
         && updated.font_family == text.font_family
+        && updated.bold == text.bold
+        && updated.italic == text.italic
         && !alignment_layout_changed
     {
         return Ok(updated);
@@ -590,6 +592,12 @@ fn patched_text_style(text: &TextData, style: &TextStyle, properties: u32) -> Te
     let mut patched = TextStyle::from_text(text);
     if properties & TEXT_STYLE_MIXED_COLOR != 0 {
         patched.color = style.color;
+    }
+    if properties & TEXT_STYLE_MIXED_BOLD != 0 {
+        patched.bold = style.bold;
+    }
+    if properties & TEXT_STYLE_MIXED_ITALIC != 0 {
+        patched.italic = style.italic;
     }
     if properties & TEXT_STYLE_MIXED_FONT_SIZE != 0 {
         patched.font_size = style.font_size;
@@ -1559,6 +1567,12 @@ impl Editor {
             let style = TextStyle::from_text(text);
             if style.color != first.color {
                 mixed |= TEXT_STYLE_MIXED_COLOR;
+            }
+            if style.bold != first.bold {
+                mixed |= TEXT_STYLE_MIXED_BOLD;
+            }
+            if style.italic != first.italic {
+                mixed |= TEXT_STYLE_MIXED_ITALIC;
             }
             if style.font_size != first.font_size {
                 mixed |= TEXT_STYLE_MIXED_FONT_SIZE;
@@ -3557,6 +3571,103 @@ mod tests {
             validate_serial_number_style(&style),
             Err(ErrorCode::InvalidArgument)
         );
+    }
+
+    #[test]
+    fn text_emphasis_patches_preserve_other_properties_and_remeasure_each_sizing_mode() {
+        let id = ElementId {
+            index: 1,
+            generation: 1,
+        };
+        for automatic in [false, true] {
+            let text = TextData {
+                auto_resize: automatic,
+                layout: TextLayoutSize::with_content(120.0, 40.0, 100.0, 40.0),
+                ..TextData::default()
+            };
+            let mut style = TextStyle::from_text(&text);
+            style.bold = true;
+            style.italic = true;
+            style.font_size = 80.0;
+            let layouts = [TextLayoutOverride {
+                id,
+                size: TextLayoutSize::with_content(
+                    if automatic { 180.0 } else { 120.0 },
+                    80.0,
+                    110.0,
+                    80.0,
+                ),
+            }];
+            let updated =
+                text_with_style(id, &text, &style, TEXT_STYLE_MIXED_BOLD, &layouts).unwrap();
+            assert!(updated.bold);
+            assert!(!updated.italic);
+            assert_eq!(updated.font_size, text.font_size);
+            assert_eq!(updated.height(), 80.0);
+            assert_eq!(updated.width(), layouts[0].size.width());
+            let updated =
+                text_with_style(id, &updated, &style, TEXT_STYLE_MIXED_ITALIC, &layouts).unwrap();
+            assert!(updated.bold && updated.italic);
+            let mut disabled = style;
+            disabled.bold = false;
+            let updated =
+                text_with_style(id, &updated, &disabled, TEXT_STYLE_MIXED_BOLD, &layouts).unwrap();
+            assert!(!updated.bold && updated.italic);
+        }
+    }
+
+    #[test]
+    fn text_emphasis_selection_reports_independent_mixed_flags() {
+        let mut document = DocumentModel::new();
+        let mut tx = Transaction::new("create mixed emphasis text");
+        let ids = vec![
+            document.allocate_element_id(),
+            document.allocate_element_id(),
+        ];
+        tx.insert_text(
+            ids[0],
+            ElementMeta::default(),
+            TextData {
+                bold: true,
+                ..TextData::default()
+            },
+        );
+        tx.insert_text(
+            ids[1],
+            ElementMeta::default(),
+            TextData {
+                italic: true,
+                ..TextData::default()
+            },
+        );
+        document.apply_transaction(tx).unwrap();
+        let mut editor = Editor::new(snow_draw_engine_core::EngineConfig::default()).unwrap();
+        editor.set_selection_state(ids.clone(), Some(ids[0]));
+        assert_eq!(
+            editor.text_style_mixed(&document),
+            TEXT_STYLE_MIXED_BOLD | TEXT_STYLE_MIXED_ITALIC
+        );
+        let mut style = editor.text_style(&document);
+        style.bold = true;
+        let layouts = ids
+            .iter()
+            .map(|id| TextLayoutOverride {
+                id: *id,
+                size: TextLayoutSize::with_content(120.0, 40.0, 110.0, 40.0),
+            })
+            .collect::<Vec<_>>();
+        let command = editor
+            .set_text_style(&document, style, TEXT_STYLE_MIXED_BOLD, &layouts)
+            .unwrap()
+            .unwrap();
+        let EditorCommand::ApplyTransaction(command) = command else {
+            panic!("emphasis edits must produce a document transaction")
+        };
+        document.apply_transaction(command.transaction).unwrap();
+        assert!(ids.iter().all(|id| document.text(*id).unwrap().bold));
+        assert!(!document.text(ids[0]).unwrap().italic);
+        assert!(document.text(ids[1]).unwrap().italic);
+        assert_eq!(editor.text_style_mixed(&document), TEXT_STYLE_MIXED_ITALIC);
     }
 
     #[test]

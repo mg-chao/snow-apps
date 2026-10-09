@@ -364,7 +364,9 @@ pub struct SnowTextStyle {
     pub reserved0: [u8; 4],
     pub font_family_utf8_len: u32,
     pub font_family_truncated: u8,
-    pub reserved1: [u8; 3],
+    pub bold: u8,
+    pub italic: u8,
+    pub reserved1: [u8; 1],
     pub font_family_utf8: [std::ffi::c_char; SNOW_FONT_FAMILY_UTF8_CAPACITY],
 }
 
@@ -626,6 +628,35 @@ impl Default for SnowArrowStyle {
     }
 }
 
+#[cfg(test)]
+mod text_emphasis_abi_tests {
+    use crate::abi::types::{SnowSceneDisplayItem, SnowTextElementInfo, SnowTextStyle};
+
+    #[test]
+    fn text_emphasis_uses_reserved_bytes_without_changing_abi_layout() {
+        assert_eq!(std::mem::size_of::<SnowTextStyle>(), 232);
+        assert_eq!(std::mem::offset_of!(SnowTextStyle, font_family_utf8), 100);
+        assert_eq!(std::mem::offset_of!(SnowTextStyle, bold), 97);
+        assert_eq!(std::mem::offset_of!(SnowTextStyle, italic), 98);
+        assert_eq!(std::mem::size_of::<SnowTextElementInfo>(), 1264);
+        assert_eq!(std::mem::offset_of!(SnowTextElementInfo, text_utf8), 104);
+        assert_eq!(
+            std::mem::offset_of!(SnowTextElementInfo, font_family_utf8),
+            1136
+        );
+        if std::mem::size_of::<usize>() == 8 {
+            assert_eq!(std::mem::size_of::<SnowSceneDisplayItem>(), 360);
+            assert_eq!(std::mem::offset_of!(SnowSceneDisplayItem, text_bold), 137);
+            assert_eq!(
+                std::mem::offset_of!(SnowSceneDisplayItem, arrow_start_head),
+                140
+            );
+            assert_eq!(std::mem::offset_of!(SnowSceneDisplayItem, font_size), 192);
+            assert_eq!(std::mem::offset_of!(SnowSceneDisplayItem, text_utf8), 336);
+        }
+    }
+}
+
 impl Default for SnowTextStyle {
     fn default() -> Self {
         Self {
@@ -642,7 +673,9 @@ impl Default for SnowTextStyle {
             reserved0: [0; 4],
             font_family_utf8_len: 0,
             font_family_truncated: 0,
-            reserved1: [0; 3],
+            bold: 0,
+            italic: 0,
+            reserved1: [0; 1],
             font_family_utf8: [0; SNOW_FONT_FAMILY_UTF8_CAPACITY],
         }
     }

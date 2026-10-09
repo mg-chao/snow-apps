@@ -565,6 +565,8 @@ SnowCanvasTextStyle toCanvasTextStyle(const SnowTextStyle& style) {
         toCanvasTextHorizontalAlign(style.horizontal_align),
         toCanvasTextVerticalAlign(style.vertical_align),
         style.opacity,
+        style.bold != 0,
+        style.italic != 0,
     };
 }
 
@@ -572,6 +574,8 @@ SnowTextStyle toEngineTextStyle(const SnowCanvasTextStyle& style) {
     SnowTextStyle engineStyle{};
     engineStyle.color = toEngineColor(style.color);
     engineStyle.font_size = style.fontSize;
+    engineStyle.bold = style.bold ? 1 : 0;
+    engineStyle.italic = style.italic ? 1 : 0;
     copyFontFamilyToEngine(style.fontFamily, engineStyle.font_family_utf8,
                            engineStyle.font_family_utf8_len, engineStyle.font_family_truncated,
                            SNOW_FONT_FAMILY_UTF8_CAPACITY);

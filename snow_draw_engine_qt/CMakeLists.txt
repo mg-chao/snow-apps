@@ -296,6 +296,16 @@ if(SNOW_DRAW_ENGINE_QT_BUILD_TESTS)
             "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
     )
 
+    add_executable(snow-canvas-text-emphasis-tests tests/snow_canvas_text_emphasis_tests.cpp)
+    target_include_directories(snow-canvas-text-emphasis-tests PRIVATE
+        ${SNOW_CANVAS_QT_PRIVATE_SOURCE_DIRS}
+        "${CMAKE_CURRENT_SOURCE_DIR}/crates/snow-draw-engine-c/include"
+    )
+    target_link_libraries(snow-canvas-text-emphasis-tests PRIVATE snow_draw_engine_qt_canvas)
+    snow_shot_import_offscreen_platform(snow-canvas-text-emphasis-tests)
+    add_test(NAME snow-canvas-text-emphasis-tests COMMAND snow-canvas-text-emphasis-tests -platform offscreen)
+    set_tests_properties(snow-canvas-text-emphasis-tests PROPERTIES LABELS "unit" TIMEOUT 60)
+
     add_executable(snow-canvas-text-overlay-tests tests/snow_canvas_text_overlay_tests.cpp)
     target_include_directories(snow-canvas-text-overlay-tests PRIVATE
         ${SNOW_CANVAS_QT_PRIVATE_SOURCE_DIRS}

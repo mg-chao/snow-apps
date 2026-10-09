@@ -22,6 +22,8 @@ pub struct TextElementInfo {
     pub rotation: f64,
     pub text: String,
     pub font_size: f64,
+    pub bold: bool,
+    pub italic: bool,
     pub font_family: Option<String>,
     pub horizontal_align: TextHorizontalAlign,
     pub vertical_align: TextVerticalAlign,
@@ -42,6 +44,8 @@ fn text_element_info_from_resize_request(request: TextResizeMeasurementRequest) 
         rotation: request.rotation,
         text: request.text,
         font_size: request.font_size,
+        bold: request.bold,
+        italic: request.italic,
         font_family: request.font_family,
         horizontal_align: request.horizontal_align,
         vertical_align: request.vertical_align,
@@ -63,6 +67,8 @@ fn text_element_info_from_active_draft(draft: &ActiveTextDraftPresentation) -> T
         rotation: draft.text.rotation,
         text: draft.text.text.clone(),
         font_size: draft.text.font_size,
+        bold: draft.text.bold,
+        italic: draft.text.italic,
         font_family: draft.text.font_family.clone(),
         horizontal_align: draft.text.horizontal_align,
         vertical_align: draft.text.vertical_align,
@@ -75,6 +81,8 @@ fn text_style_from_text(text: &TextData) -> TextStyle {
     TextStyle {
         color: text.color,
         font_size: text.font_size,
+        bold: text.bold,
+        italic: text.italic,
         font_family: text.font_family.clone(),
         fill: text.fill,
         fill_style: text.fill_style,
@@ -177,6 +185,8 @@ impl Engine {
                 rotation: 0.0,
                 text: String::new(),
                 font_size: style.font_size,
+                bold: style.bold,
+                italic: style.italic,
                 font_family: style.font_family.clone(),
                 horizontal_align: style.horizontal_align,
                 vertical_align: style.vertical_align,
@@ -312,6 +322,8 @@ impl Engine {
             rotation: layout.rotation,
             text: text.text.clone(),
             font_size: text.font_size,
+            bold: text.bold,
+            italic: text.italic,
             font_family: text.font_family.clone(),
             horizontal_align: text.horizontal_align,
             vertical_align: text.vertical_align,
@@ -554,5 +566,40 @@ mod tests {
             .unwrap();
         assert_eq!((draft.width, draft.height), (1354.0, 287.0));
         assert_eq!((draft.content_width, draft.content_height), (1340.0, 287.0));
+    }
+}
+
+#[cfg(test)]
+mod emphasis_tests {
+    use super::*;
+
+    #[test]
+    fn text_emphasis_serialization_accepts_legacy_styles_and_documents() {
+        let text = TextData {
+            bold: true,
+            italic: true,
+            ..TextData::default()
+        };
+        let style = text_style_from_text(&text);
+        let serialized = serde_json::to_value(&style).unwrap();
+        assert_eq!(
+            serde_json::from_value::<TextStyle>(serialized.clone()).unwrap(),
+            style
+        );
+        let mut legacy = serialized;
+        legacy.as_object_mut().unwrap().remove("bold");
+        legacy.as_object_mut().unwrap().remove("italic");
+        let restored: TextStyle = serde_json::from_value(legacy).unwrap();
+        assert!(!restored.bold && !restored.italic);
+
+        let mut serialized = serde_json::to_value(&text).unwrap();
+        assert_eq!(
+            serde_json::from_value::<TextData>(serialized.clone()).unwrap(),
+            text
+        );
+        serialized.as_object_mut().unwrap().remove("bold");
+        serialized.as_object_mut().unwrap().remove("italic");
+        let restored: TextData = serde_json::from_value(serialized).unwrap();
+        assert!(!restored.bold && !restored.italic);
     }
 }

@@ -1421,6 +1421,8 @@ mod tests {
         TextStyle {
             color,
             font_size,
+            bold: false,
+            italic: false,
             font_family: Some("Inter".to_owned()),
             fill: ColorRgba8 {
                 r: 12,

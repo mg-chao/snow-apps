@@ -331,6 +331,8 @@ pub(crate) fn scene_item_from_text(id: ElementId, text: TextData) -> SceneDispla
         text: text.text,
         color: text.color,
         font_size: text.font_size,
+        bold: text.bold,
+        italic: text.italic,
         font_family: text.font_family,
         fill: text.fill,
         fill_style: display_fill_style(text.fill_style),

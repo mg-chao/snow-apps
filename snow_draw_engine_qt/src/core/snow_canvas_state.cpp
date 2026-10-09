@@ -38,9 +38,10 @@ bool fontFamiliesEqual(const char* lhs, std::uint32_t lhsLength, const char* rhs
 }
 
 bool textStylesEqual(const SnowTextStyle& lhs, const SnowTextStyle& rhs) {
-    return colorsEqual(lhs.color, rhs.color) && lhs.font_size == rhs.font_size &&
-           colorsEqual(lhs.fill, rhs.fill) && lhs.fill_style == rhs.fill_style &&
-           colorsEqual(lhs.stroke, rhs.stroke) && lhs.stroke_width == rhs.stroke_width &&
+    return lhs.bold == rhs.bold && lhs.italic == rhs.italic && colorsEqual(lhs.color, rhs.color) &&
+           lhs.font_size == rhs.font_size && colorsEqual(lhs.fill, rhs.fill) &&
+           lhs.fill_style == rhs.fill_style && colorsEqual(lhs.stroke, rhs.stroke) &&
+           lhs.stroke_width == rhs.stroke_width &&
            cornerRadiiEqual(lhs.corner_radii, rhs.corner_radii) &&
            lhs.horizontal_align == rhs.horizontal_align &&
            lhs.vertical_align == rhs.vertical_align && lhs.opacity == rhs.opacity &&

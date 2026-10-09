@@ -132,6 +132,8 @@ impl Default for TextData {
             },
             font_size: 30.0,
             font_family: None,
+            bold: false,
+            italic: false,
             fill: ColorRgba8::default(),
             fill_style: FillStyle::Solid,
             stroke: ColorRgba8 {

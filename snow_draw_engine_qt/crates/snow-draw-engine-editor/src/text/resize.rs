@@ -14,6 +14,8 @@ pub struct TextResizeMeasurementRequest {
     pub rotation: f64,
     pub text: String,
     pub font_size: f64,
+    pub bold: bool,
+    pub italic: bool,
     pub font_family: Option<String>,
     pub horizontal_align: TextHorizontalAlign,
     pub vertical_align: TextVerticalAlign,
