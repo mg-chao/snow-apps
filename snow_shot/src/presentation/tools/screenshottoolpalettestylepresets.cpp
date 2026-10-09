@@ -2,57 +2,28 @@
 
 #include "snow_shot/presentation/components/icons/snowshoticons.h"
 #include "snow_shot/presentation/screenshotdefaultstyles.h"
+#include "snow_shot/storage/settingsadapters.h"
 
 namespace snow_shot::presentation::style_presets {
 namespace {
 namespace custom_outlined_icons = snow_shot::presentation::icons::custom::outlined;
 
-QVector<QColor> defaultAnchoredColors(const QColor& anchor) {
-    return QVector<QColor>{
-        anchor,
-        QColor(QStringLiteral("#52c41a")),
-        QColor(QStringLiteral("#1677ff")),
-        QColor(QStringLiteral("#fadb14")),
-        QColor(QStringLiteral("#000000")),
-    };
-}
 } // namespace
 
-const QVector<QColor>& strokeColors() {
-    static const QVector<QColor> values = defaultAnchoredColors(
-        snow_shot::presentation::screenshotCanvasStyleDefaults().rectangle.stroke);
-    return values;
+QVector<QColor> strokeColors() {
+    return snow_shot::storage::ScreenshotColorPresetSettings{}.strokeColors();
 }
 
-const QVector<QColor>& shapeFillColors() {
-    static const QVector<QColor> values{
-        snow_shot::presentation::screenshotCanvasStyleDefaults().rectangle.fill,
-        QColor(QStringLiteral("#ffccc7")),
-        QColor(QStringLiteral("#d9f7be")),
-        QColor(QStringLiteral("#bae0ff")),
-        QColor(QStringLiteral("#fff1b8")),
-    };
-    return values;
+QVector<QColor> shapeFillColors() {
+    return snow_shot::storage::ScreenshotColorPresetSettings{}.fillColors();
 }
 
-const QVector<QColor>& textColors() {
-    static const QVector<QColor> values{
-        QColor(QStringLiteral("#f5222d")), QColor(QStringLiteral("#52c41a")),
-        QColor(QStringLiteral("#1677ff")), QColor(QStringLiteral("#fadb14")),
-        QColor(QStringLiteral("#000000")),
-    };
-    return values;
+QVector<QColor> textColors() {
+    return strokeColors();
 }
 
-const QVector<QColor>& textFillColors() {
-    static const QVector<QColor> values{
-        QColor(0, 0, 0, 0),
-        QColor(QStringLiteral("#ffccc7")),
-        QColor(QStringLiteral("#d9f7be")),
-        QColor(QStringLiteral("#bae0ff")),
-        QColor(QStringLiteral("#fff1b8")),
-    };
-    return values;
+QVector<QColor> textFillColors() {
+    return shapeFillColors();
 }
 
 const QVector<double>& shapeStrokeWidths() {

@@ -1,4 +1,5 @@
 #include "slider.h"
+#include "detail/focus_reason.h"
 #include "detail/pointer_region.h"
 
 #include "detail/overlay_accessibility.h"
@@ -97,10 +98,6 @@ bool semanticStylesEqual(const AdMultiSlider::SemanticStyles& lhs,
          semanticSlotStylesEqual(lhs.handle, rhs.handle) &&
          semanticSlotStylesEqual(lhs.mark, rhs.mark) &&
          semanticSlotStylesEqual(lhs.markActive, rhs.markActive);
-}
-
-bool isKeyboardFocusReason(Qt::FocusReason reason) {
-  return reason != Qt::MouseFocusReason && reason != Qt::NoFocusReason;
 }
 
 QString formatNumber(double value) {
@@ -2839,7 +2836,7 @@ void AdMultiSlider::keyReleaseEvent(QKeyEvent* event) {
 }
 
 void AdMultiSlider::focusInEvent(QFocusEvent* event) {
-  focusVisible_ = event && isKeyboardFocusReason(event->reason());
+  focusVisible_ = event && detail::isKeyboardFocusReason(event->reason());
   if (focusHandleIndex_ < 0 && !handles_.isEmpty()) {
     setFocusHandleIndex(0);
   }

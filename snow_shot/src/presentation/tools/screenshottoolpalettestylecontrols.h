@@ -365,7 +365,7 @@ class ScreenshotToolPaletteStyleControls final {
     template <typename Apply> void commitDistanceProperty(quint32 property, Apply apply);
     template <typename Apply> void commitAngleProperty(quint32 property, Apply apply);
     void setAngleStrokeWidth(double width);
-    void setDistanceFactor(double factor);
+    void setDistanceValue(double value);
     void setDistanceStrokeWidth(double width);
     void setDistanceEndpointScale(double scale);
     template <typename Apply> void commitPenHighlightProperty(quint32 property, Apply apply);
@@ -523,7 +523,7 @@ class ScreenshotToolPaletteStyleControls final {
     ScreenshotToolPaletteSelectEditor m_angleDecimalsEditor;
     std::unique_ptr<ScreenshotToolPaletteNumericPresetEditor> m_distanceWidthEditor;
     std::unique_ptr<ScreenshotToolPaletteIconOptionEditor> m_distanceEndpointEditor;
-    QPointer<adqt::widgets::AdInputNumber> m_distanceFactorInput;
+    QPointer<adqt::widgets::AdInputNumber> m_distanceValueInput;
     QPointer<adqt::widgets::AdRadioButtonGroup> m_distanceUnitGroup;
     ScreenshotToolPaletteSelectEditor m_distanceDecimalsEditor;
     QPointer<IconNumericValuePreviewButton> m_distanceScaleEditor;

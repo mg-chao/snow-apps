@@ -294,6 +294,7 @@ impl Engine {
             distance_style_mixed: self.editor.distance_style_mixed(&self.model),
             angle_style: self.editor.angle_style(&self.model),
             angle_style_mixed: self.editor.angle_style_mixed(&self.model),
+            distance_measured_length: self.editor.distance_measured_length(&self.model),
         })
     }
 

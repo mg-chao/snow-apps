@@ -13,6 +13,7 @@
 #include <QJsonObject>
 #include <QTimer>
 
+#include <algorithm>
 #include <utility>
 
 namespace snow_shot::presentation::settings {
@@ -57,6 +58,14 @@ shortcuts::ShortcutBindingList shortcutListValue(const QVariant& value) {
 
 QVariant globalMouseCombinationVariant(const SettingsGlobalMouseCombination& combination) {
     return QVariant::fromValue(combination);
+}
+
+bool sameStoredColor(const QColor& first, const QColor& second) {
+    if (!first.isValid() || !second.isValid())
+        return first.isValid() == second.isValid();
+    // Settings persist eight-bit RGBA. Picker edits can use HSV/HSL or higher
+    // precision, which QColor::operator== distinguishes from the saved RGB value.
+    return first.rgba() == second.rgba();
 }
 
 bool sameStorageStatus(const storage::StorageStatus& first, const storage::StorageStatus& second) {
@@ -890,6 +899,11 @@ SettingsRuntimeSession::descriptorForColor(SettingsColorBinding binding) const {
 }
 
 const SettingsFieldDescriptor*
+SettingsRuntimeSession::descriptorForColorPalette(SettingsColorPaletteBinding binding) const {
+    return m_registry.fieldForColorPalette(binding);
+}
+
+const SettingsFieldDescriptor*
 SettingsRuntimeSession::descriptorForRadio(SettingsRadioBinding binding) const {
     return m_registry.fieldForRadio(binding);
 }
@@ -954,6 +968,8 @@ QVariant SettingsRuntimeSession::readValue(const SettingsFieldDescriptor& descri
                 return m_backend.sliderValue(payload.binding);
             } else if constexpr (std::is_same_v<Payload, SettingsColorDefinition>) {
                 return m_backend.colorValue(payload.binding);
+            } else if constexpr (std::is_same_v<Payload, SettingsColorPaletteDefinition>) {
+                return QVariant::fromValue(m_backend.colorPaletteValue(payload.binding));
             } else if constexpr (std::is_same_v<Payload, SettingsRadioDefinition>) {
                 return m_backend.radioValue(payload.binding);
             } else if constexpr (std::is_same_v<Payload, SettingsFilePathDefinition>) {
@@ -1044,6 +1060,10 @@ bool SettingsRuntimeSession::writeValue(const SettingsFieldDescriptor& descripto
                 return m_backend.applySliderValue(payload.binding, value.toInt());
             } else if constexpr (std::is_same_v<Payload, SettingsColorDefinition>) {
                 return m_backend.applyColorValue(payload.binding, value.value<QColor>());
+            } else if constexpr (std::is_same_v<Payload, SettingsColorPaletteDefinition>) {
+                return value.canConvert<QVector<QColor>>() &&
+                       m_backend.applyColorPaletteValue(payload.binding,
+                                                        value.value<QVector<QColor>>());
             } else if constexpr (std::is_same_v<Payload, SettingsRadioDefinition>) {
                 return m_backend.applyRadioValue(payload.binding, value);
             } else if constexpr (std::is_same_v<Payload, SettingsFilePathDefinition>) {
@@ -1185,7 +1205,13 @@ bool SettingsRuntimeSession::valuesEqual(const SettingsFieldDescriptor& descript
         return first == second;
     }
     if (std::holds_alternative<SettingsColorDefinition>(descriptor.definition->payload)) {
-        return first.value<QColor>() == second.value<QColor>();
+        return sameStoredColor(first.value<QColor>(), second.value<QColor>());
+    }
+    if (std::holds_alternative<SettingsColorPaletteDefinition>(descriptor.definition->payload)) {
+        const auto firstColors = first.value<QVector<QColor>>();
+        const auto secondColors = second.value<QVector<QColor>>();
+        return std::equal(firstColors.cbegin(), firstColors.cend(), secondColors.cbegin(),
+                          secondColors.cend(), sameStoredColor);
     }
     if (std::holds_alternative<SettingsGlobalMouseActionDefinition>(
             descriptor.definition->payload)) {
@@ -1425,6 +1451,19 @@ QColor SettingsRuntimeSession::colorValue(SettingsColorBinding binding) const {
 
 bool SettingsRuntimeSession::applyColorValue(SettingsColorBinding binding, const QColor& value) {
     const auto* descriptor = descriptorForColor(binding);
+    return descriptor != nullptr && submitDraft(descriptor->id, QVariant::fromValue(value));
+}
+
+QVector<QColor>
+SettingsRuntimeSession::colorPaletteValue(SettingsColorPaletteBinding binding) const {
+    const auto* descriptor = descriptorForColorPalette(binding);
+    return descriptor != nullptr ? state(descriptor->id).draftValue.value<QVector<QColor>>()
+                                 : QVector<QColor>();
+}
+
+bool SettingsRuntimeSession::applyColorPaletteValue(SettingsColorPaletteBinding binding,
+                                                    const QVector<QColor>& value) {
+    const auto* descriptor = descriptorForColorPalette(binding);
     return descriptor != nullptr && submitDraft(descriptor->id, QVariant::fromValue(value));
 }
 

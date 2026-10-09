@@ -106,6 +106,9 @@ class SettingsRuntimeSession final : public QObject {
     [[nodiscard]] bool applySliderValue(SettingsSliderBinding binding, int value);
     [[nodiscard]] QColor colorValue(SettingsColorBinding binding) const;
     [[nodiscard]] bool applyColorValue(SettingsColorBinding binding, const QColor& value);
+    [[nodiscard]] QVector<QColor> colorPaletteValue(SettingsColorPaletteBinding binding) const;
+    [[nodiscard]] bool applyColorPaletteValue(SettingsColorPaletteBinding binding,
+                                              const QVector<QColor>& value);
     [[nodiscard]] QVariant radioValue(SettingsRadioBinding binding) const;
     [[nodiscard]] bool applyRadioValue(SettingsRadioBinding binding, const QVariant& value);
     [[nodiscard]] QString filePathValue(SettingsFilePathBinding binding) const;
@@ -238,6 +241,8 @@ class SettingsRuntimeSession final : public QObject {
     const SettingsFieldDescriptor* descriptorForMulti(SettingsMultiSelectBinding binding) const;
     const SettingsFieldDescriptor* descriptorForSlider(SettingsSliderBinding binding) const;
     const SettingsFieldDescriptor* descriptorForColor(SettingsColorBinding binding) const;
+    const SettingsFieldDescriptor*
+    descriptorForColorPalette(SettingsColorPaletteBinding binding) const;
     const SettingsFieldDescriptor* descriptorForRadio(SettingsRadioBinding binding) const;
     const SettingsFieldDescriptor* descriptorForFile(SettingsFilePathBinding binding) const;
     const SettingsFieldDescriptor*

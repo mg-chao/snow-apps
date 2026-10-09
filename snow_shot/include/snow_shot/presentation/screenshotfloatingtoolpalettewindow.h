@@ -4,6 +4,7 @@
 #include "snow_shot/presentation/screenshottoolpalette.h"
 
 #include <QByteArray>
+#include <QHash>
 #include <QPoint>
 #include <QPointF>
 #include <QPointer>
@@ -13,6 +14,7 @@
 
 class QEvent;
 class QHideEvent;
+class QLineEdit;
 class QPaintEvent;
 class QScreen;
 class QShowEvent;
@@ -141,6 +143,8 @@ class ScreenshotFloatingToolPaletteWindow : public QWidget {
     QPointer<QScreen> m_placementScreen;
     QPointer<QWidget> m_transientOwnerWindow;
     QPointer<QWidget> m_keyboardFocusEditor;
+    QHash<QWidget*, QPointer<QLineEdit>> m_textEditorScopes;
+    quint64 m_keyboardFocusInteractionGeneration = 0;
     qreal m_referenceDevicePixelRatio = 0.0;
     qreal m_committedWindowDevicePixelRatio = 0.0;
     qreal m_paletteScaleMultiplier = 1.0;

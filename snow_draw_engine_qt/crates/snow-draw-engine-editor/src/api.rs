@@ -357,6 +357,7 @@ pub struct StyleToolbarState {
     pub distance_style_mixed: u32,
     pub angle_style: crate::AngleStyle,
     pub angle_style_mixed: u32,
+    pub distance_measured_length: f64,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq)]

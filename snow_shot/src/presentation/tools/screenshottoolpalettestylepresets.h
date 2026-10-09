@@ -11,19 +11,19 @@
 namespace snow_shot::presentation::style_presets {
 
 // Stroke color palette shared by the shape, line, free-draw and arrow stroke
-// editors. The first entry tracks the compiled-in creation default.
-[[nodiscard]] const QVector<QColor>& strokeColors();
+// editors. Values come from the customizable screenshot stroke presets.
+[[nodiscard]] QVector<QColor> strokeColors();
 
-// Fill color palette shared by the shape fill editor (no transparent entry).
-[[nodiscard]] const QVector<QColor>& shapeFillColors();
+// Customizable fill color palette shared by the shape fill editor.
+[[nodiscard]] QVector<QColor> shapeFillColors();
 
 // Color palette shared by the text, serial number, watermark, highlight,
 // pen-highlight and spotlight editors.
-[[nodiscard]] const QVector<QColor>& textColors();
+[[nodiscard]] QVector<QColor> textColors();
 
 // Fill color palette shared by the text and serial number fill editors. The
-// first entry is fully transparent.
-[[nodiscard]] const QVector<QColor>& textFillColors();
+// values come from the customizable screenshot fill presets.
+[[nodiscard]] QVector<QColor> textFillColors();
 
 // Stroke width presets for the shape/line/free-draw editors.
 [[nodiscard]] const QVector<double>& shapeStrokeWidths();

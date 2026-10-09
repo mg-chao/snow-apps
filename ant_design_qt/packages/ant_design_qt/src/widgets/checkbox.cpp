@@ -1,4 +1,5 @@
 #include "checkbox.h"
+#include "detail/focus_reason.h"
 #include "detail/pointer_region.h"
 
 #include "checkbox_group.h"
@@ -56,10 +57,6 @@ void mergeTokens(AdCheckbox::ComponentTokens* target, const AdCheckbox::Componen
   mergeOptional(&target->metrics.wrapperMarginInlineEnd, source.metrics.wrapperMarginInlineEnd);
   mergeOptional(&target->metrics.focusOutlineWidth, source.metrics.focusOutlineWidth);
   mergeOptional(&target->metrics.focusOutlineOffset, source.metrics.focusOutlineOffset);
-}
-
-bool keyboardFocusReason(Qt::FocusReason reason) {
-  return reason != Qt::MouseFocusReason && reason != Qt::NoFocusReason;
 }
 
 QRect textBounds(const QFontMetrics& metrics, const QString& text) {
@@ -533,7 +530,7 @@ void AdCheckbox::keyReleaseEvent(QKeyEvent* event) {
 }
 
 void AdCheckbox::focusInEvent(QFocusEvent* event) {
-  focusVisible_ = event && keyboardFocusReason(event->reason());
+  focusVisible_ = event && detail::isKeyboardFocusReason(event->reason());
   QCheckBox::focusInEvent(event);
   updateInteractionFocusOverlay();
   update();

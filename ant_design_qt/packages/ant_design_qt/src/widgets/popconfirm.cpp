@@ -1178,27 +1178,11 @@ class AdPopconfirmPrivate {
     });
   }
 
-  void restoreSourceFocusIfNeeded() {
-    QWidget* focused = QApplication::focusWidget();
-    const bool focusWasInsidePopup = restoreFocusOnHide || widgetInTree(focused, panel);
-    restoreFocusOnHide = false;
-    if (!focusWasInsidePopup) {
-      return;
-    }
-
-    QWidget* target = focusRestoreTarget ? focusRestoreTarget.data() : sourceWidget.data();
-    if (!target || !target->isVisible() || !target->isEnabled()) {
-      return;
-    }
-    target->setFocus(Qt::OtherFocusReason);
-  }
-
   void requestHideAfterAction() {
     if (!popover) {
       return;
     }
 
-    restoreFocusOnHide = true;
     QPointer<AdPopconfirm> self(q);
     QPointer<AdPopover> popoverGuard(popover);
     QTimer::singleShot(0, q, [self, popoverGuard]() {
@@ -1251,8 +1235,6 @@ class AdPopconfirmPrivate {
   QPointer<PopconfirmPanel> panel;
   QList<StandardButton> renderedButtons;
   QList<QPointer<QObject>> watchedPopupObjects;
-  QPointer<QWidget> focusRestoreTarget;
-  bool restoreFocusOnHide = false;
 
   QString text;
   QString informativeText;
@@ -1297,10 +1279,7 @@ AdPopconfirm::AdPopconfirm(QObject* parent)
   connect(d_->popover, &AdPopover::visibleChanged, this, [this](bool value) {
     emit visibleChanged(value);
     if (value) {
-      d_->focusRestoreTarget = d_->sourceWidget;
       d_->scheduleInitialFocus();
-    } else {
-      d_->restoreSourceFocusIfNeeded();
     }
     d_->refreshVisualStyle();
   });
@@ -1731,8 +1710,6 @@ bool AdPopconfirm::eventFilter(QObject* watched, QEvent* event) {
   if (watched && event && d_->watchesPopupObject(watched)) {
     if (event->type() == QEvent::MouseButtonPress) {
       emit popupClicked();
-    } else if (event->type() == QEvent::FocusIn) {
-      d_->restoreFocusOnHide = true;
     }
   } else if (watched == d_->sourceWidget && event && isVisualRefreshEvent(event->type())) {
     if (d_->popover) {

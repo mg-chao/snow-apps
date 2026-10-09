@@ -664,6 +664,8 @@ typedef struct SnowStyleToolbarState {
     uint32_t distance_style_mixed;
     SnowAngleStyle angle_style;
     uint32_t angle_style_mixed;
+    /* Calibrated length before applying the factor; zero without a single valid distance. */
+    double distance_measured_length;
 } SnowStyleToolbarState;
 
 typedef struct SnowStyleDefaults {

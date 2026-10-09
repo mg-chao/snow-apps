@@ -158,7 +158,7 @@ constexpr char kSignatureGap[] = "numeric:gap";
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Distance stroke color %1"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Current distance stroke width"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Distance stroke width %1"),
-    QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Distance scaling factor"),
+    QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Actual distance value"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Distance unit"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Decimal places"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Integers"),
@@ -175,12 +175,12 @@ constexpr char kSignatureGap[] = "numeric:gap";
 };
 
 constexpr char kRoleDistanceColor[] = "distance-color";
-constexpr char kRoleDistanceFactor[] = "distance-factor";
+constexpr char kRoleDistanceValue[] = "distance-value";
 constexpr char kRoleDistanceUnit[] = "distance-unit";
 constexpr char kRoleDistanceDecimals[] = "distance-decimals";
 constexpr char kRoleDistanceScale[] = "distance-scale";
 constexpr char kRoleDistanceEndpoint[] = "distance-endpoint";
-constexpr char kSignatureDistanceFactor[] = "input:distance-factor";
+constexpr char kSignatureDistanceValue[] = "input:distance-value";
 constexpr char kSignatureDistanceUnit[] = "radio:distance-unit";
 constexpr char kSignatureDistanceDecimals[] = "select:distance-decimals";
 constexpr char kRoleAngleColor[] = "angle-color";
@@ -204,9 +204,9 @@ constexpr quint32 angleProperty(SnowCanvasAngleStyleProperty property) {
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Radians"),
 };
 
-class DistanceFactorTextPolicy final : public adqt::widgets::AdInputNumberTextPolicy {
+class DistanceValueTextPolicy final : public adqt::widgets::AdInputNumberTextPolicy {
   public:
-    explicit DistanceFactorTextPolicy(QObject* parent) : AdInputNumberTextPolicy(parent) {}
+    explicit DistanceValueTextPolicy(QObject* parent) : AdInputNumberTextPolicy(parent) {}
 
     QString formatText(const QString& canonicalText, bool editing, const QString&) const override {
         return editing ? QString() : canonicalText;
@@ -224,7 +224,7 @@ QVector<QByteArray> styleEditorRoles(ScreenshotToolPalette::Tool tool) {
     case Tool::FreeDraw:
         return {kRoleOutlineStroke, kRoleOutlineWidth, kRoleShapeFill};
     case Tool::Distance:
-        return {kRoleDistanceColor,    kRoleOutlineWidth,  kRoleDistanceFactor,  kRoleDistanceUnit,
+        return {kRoleDistanceColor,    kRoleOutlineWidth,  kRoleDistanceValue,   kRoleDistanceUnit,
                 kRoleDistanceDecimals, kRoleDistanceScale, kRoleDistanceEndpoint};
     case Tool::Angle:
         return {kRoleAngleColor, kRoleOutlineWidth, kRoleAngleUnit, kRoleAngleDecimals};
@@ -1283,7 +1283,7 @@ void ScreenshotToolPaletteStyleControls::stageDestinationStyleEditors(
         stageComponent(kRoleDistanceColor, kSignatureForegroundColor, m_distanceColorEditor);
         stageComponent(kRoleOutlineWidth, kSignatureStrokeWidth, m_distanceWidthEditor);
         stageComponent(kRoleDistanceEndpoint, kSignatureArrowhead, m_distanceEndpointEditor);
-        stageWidget(kRoleDistanceFactor);
+        stageWidget(kRoleDistanceValue);
         stageWidget(kRoleDistanceUnit);
         stageWidget(kRoleDistanceDecimals);
         stageWidget(kRoleDistanceScale);
@@ -1510,6 +1510,8 @@ ScreenshotToolPaletteShapeFamilyResult ScreenshotToolPaletteStyleControls::build
     strokeConfig.popupObjectName = QStringLiteral("screenshotStrokeOptions");
     strokeConfig.styleRowObjectName = QStringLiteral("screenshotStrokeStyles");
     strokeConfig.colorValues = m_state.m_rectangleStyle.strokeColorValues();
+    strokeConfig.presetSource =
+        snow_shot::presentation::ScreenshotToolPaletteColorPresetSource::Stroke;
     strokeConfig.colorTooltip = [](const QColor& color) {
         return ScreenshotToolPaletteTranslationText("Stroke color %1").arg(color.name());
     };
@@ -1611,6 +1613,7 @@ ScreenshotToolPaletteShapeFamilyResult ScreenshotToolPaletteStyleControls::build
     fillConfig.popupObjectName = QStringLiteral("screenshotFillOptions");
     fillConfig.presetRowObjectName = QStringLiteral("screenshotFillColorPresets");
     fillConfig.colorValues = m_state.m_rectangleStyle.fillColorValues();
+    fillConfig.presetSource = snow_shot::presentation::ScreenshotToolPaletteColorPresetSource::Fill;
     fillConfig.colorTooltip = [](const QColor& color) {
         return color.alpha() == 0
                    ? ScreenshotToolPaletteTranslationText("Fill color transparent")
@@ -1687,6 +1690,8 @@ QWidget* ScreenshotToolPaletteStyleControls::buildArrowFamily(
     ScreenshotToolPaletteStrokeEditorConfig arrowStrokeConfig;
     arrowStrokeConfig.accessibleName = QStringLiteral("Arrow stroke color");
     arrowStrokeConfig.colorValues = style_presets::strokeColors();
+    arrowStrokeConfig.presetSource =
+        snow_shot::presentation::ScreenshotToolPaletteColorPresetSource::Stroke;
     arrowStrokeConfig.colorTooltip = [](const QColor& color) {
         return ScreenshotToolPaletteTranslationText("Arrow stroke color %1").arg(color.name());
     };
@@ -1910,6 +1915,8 @@ QWidget* ScreenshotToolPaletteStyleControls::buildAngleFamily(
     colorConfig.accessibleName = QStringLiteral("Angle stroke color");
     colorConfig.pickerObjectName = QStringLiteral("screenshotAngleColorPicker");
     colorConfig.presetValues = style_presets::strokeColors();
+    colorConfig.presetSource =
+        snow_shot::presentation::ScreenshotToolPaletteColorPresetSource::Stroke;
     colorConfig.presetTooltip = [](const QColor& color) {
         return ScreenshotToolPaletteTranslationText("Angle stroke color %1").arg(color.name());
     };
@@ -2065,6 +2072,8 @@ QWidget* ScreenshotToolPaletteStyleControls::buildDistanceFamily(
     colorConfig.accessibleName = QStringLiteral("Distance stroke color");
     colorConfig.pickerObjectName = QStringLiteral("screenshotDistanceColorPicker");
     colorConfig.presetValues = style_presets::strokeColors();
+    colorConfig.presetSource =
+        snow_shot::presentation::ScreenshotToolPaletteColorPresetSource::Stroke;
     colorConfig.presetTooltip = [](const QColor& color) {
         return ScreenshotToolPaletteTranslationText("Distance stroke color %1").arg(color.name());
     };
@@ -2126,37 +2135,36 @@ QWidget* ScreenshotToolPaletteStyleControls::buildDistanceFamily(
 
     if (host.addGroupSeparator)
         host.addGroupSeparator(layout);
-    m_distanceFactorInput = qobject_cast<adqt::widgets::AdInputNumber*>(
-        takeReusableWidget(kRoleDistanceFactor, kSignatureDistanceFactor, layout, controls));
-    if (m_distanceFactorInput == nullptr) {
-        m_distanceFactorInput = new adqt::widgets::AdInputNumber(controls);
-        m_distanceFactorInput->setTextPolicy(new DistanceFactorTextPolicy(m_distanceFactorInput));
-        layout->addWidget(m_distanceFactorInput);
+    m_distanceValueInput = qobject_cast<adqt::widgets::AdInputNumber*>(
+        takeReusableWidget(kRoleDistanceValue, kSignatureDistanceValue, layout, controls));
+    if (m_distanceValueInput == nullptr) {
+        m_distanceValueInput = new adqt::widgets::AdInputNumber(controls);
+        m_distanceValueInput->setTextPolicy(new DistanceValueTextPolicy(m_distanceValueInput));
+        layout->addWidget(m_distanceValueInput);
     }
-    m_distanceFactorInput->setObjectName(QStringLiteral("screenshotDistanceFactorInput"));
-    m_distanceFactorInput->setPrefixIconRef(custom_outlined_icons::DistanceValueScale());
-    m_distanceFactorInput->setVariant(adqt::widgets::AdInputNumber::Variant::Borderless);
-    m_distanceFactorInput->setValueMode(adqt::widgets::AdInputNumber::ValueMode::ExactDecimal);
-    m_distanceFactorInput->setExactRange(QStringLiteral("0.01"), QStringLiteral("1000"));
-    m_distanceFactorInput->setDecimals(2);
-    m_distanceFactorInput->setExactSingleStep(QStringLiteral("0.1"));
-    m_distanceFactorInput->setWheelStepEnabled(true);
-    m_distanceFactorInput->setControlSize(adqt::widgets::AdInputNumber::ControlSize::Small);
-    m_distanceFactorInput->setStepButtonLayout(
+    m_distanceValueInput->setObjectName(QStringLiteral("screenshotDistanceValueInput"));
+    m_distanceValueInput->setPrefixIconRef(custom_outlined_icons::DistanceValueScale());
+    m_distanceValueInput->setVariant(adqt::widgets::AdInputNumber::Variant::Borderless);
+    m_distanceValueInput->setValueMode(adqt::widgets::AdInputNumber::ValueMode::ExactDecimal);
+    m_distanceValueInput->setDecimals(3);
+    m_distanceValueInput->setExactSingleStep(QStringLiteral("0.1"));
+    m_distanceValueInput->setWheelStepEnabled(true);
+    m_distanceValueInput->setControlSize(adqt::widgets::AdInputNumber::ControlSize::Small);
+    m_distanceValueInput->setStepButtonLayout(
         adqt::widgets::AdInputNumber::StepButtonLayout::Compact);
-    configureScreenshotToolPaletteTooltip(m_distanceFactorInput, "Distance scaling factor");
-    setScreenshotToolPaletteAccessibleNameSource(m_distanceFactorInput, "Distance scaling factor");
-    m_distanceFactorInput->setAccessibleName(
-        ScreenshotToolPaletteTranslationText("Distance scaling factor").translated());
-    tagWidget(m_distanceFactorInput, kRoleDistanceFactor, kSignatureDistanceFactor);
-    QObject::disconnect(m_distanceFactorInput, &adqt::widgets::AdInputNumber::exactValueChanged,
+    configureScreenshotToolPaletteTooltip(m_distanceValueInput, "Actual distance value");
+    setScreenshotToolPaletteAccessibleNameSource(m_distanceValueInput, "Actual distance value");
+    m_distanceValueInput->setAccessibleName(
+        ScreenshotToolPaletteTranslationText("Actual distance value").translated());
+    tagWidget(m_distanceValueInput, kRoleDistanceValue, kSignatureDistanceValue);
+    QObject::disconnect(m_distanceValueInput, &adqt::widgets::AdInputNumber::exactValueChanged,
                         nullptr, nullptr);
-    QObject::connect(m_distanceFactorInput, &adqt::widgets::AdInputNumber::exactValueChanged,
-                     controls, [this](const QString& value) {
+    QObject::connect(m_distanceValueInput, &adqt::widgets::AdInputNumber::exactValueChanged,
+                     controls, [this](const QString& text) {
                          bool ok = false;
-                         const double factor = value.toDouble(&ok);
+                         const double value = text.toDouble(&ok);
                          if (ok)
-                             setDistanceFactor(factor);
+                             setDistanceValue(value);
                      });
 
     QWidget* units =
@@ -2329,6 +2337,8 @@ ScreenshotToolPaletteHighlightFamilyResult ScreenshotToolPaletteStyleControls::b
         ScreenshotToolPaletteColorEditorConfig highlightColorConfig;
         highlightColorConfig.accessibleName = QStringLiteral("Highlight color");
         highlightColorConfig.presetValues = m_state.m_textStyle.colorValues();
+        highlightColorConfig.presetSource =
+            snow_shot::presentation::ScreenshotToolPaletteColorPresetSource::Stroke;
         highlightColorConfig.presetTooltip = [](const QColor& color) {
             return ScreenshotToolPaletteTranslationText("Highlight color %1").arg(color.name());
         };
@@ -2362,6 +2372,8 @@ ScreenshotToolPaletteHighlightFamilyResult ScreenshotToolPaletteStyleControls::b
             QStringLiteral("screenshotHighlightStrokeColorPresets");
         highlightStrokeConfig.widthValues = m_state.m_highlightStyle.strokeWidthValues();
         highlightStrokeConfig.colorValues = m_state.m_highlightStyle.strokeColorValues();
+        highlightStrokeConfig.presetSource =
+            snow_shot::presentation::ScreenshotToolPaletteColorPresetSource::Stroke;
         highlightStrokeConfig.widthTooltip = [](double width) {
             return ScreenshotToolPaletteTranslationText("Highlight stroke width %1px")
                 .arg(width, 0, 'g', 3);
@@ -2418,6 +2430,8 @@ ScreenshotToolPaletteHighlightFamilyResult ScreenshotToolPaletteStyleControls::b
         ScreenshotToolPaletteColorEditorConfig penHighlightColorConfig;
         penHighlightColorConfig.accessibleName = QStringLiteral("Pen highlight color");
         penHighlightColorConfig.presetValues = m_state.m_textStyle.colorValues();
+        penHighlightColorConfig.presetSource =
+            snow_shot::presentation::ScreenshotToolPaletteColorPresetSource::Stroke;
         penHighlightColorConfig.presetTooltip = [](const QColor& color) {
             return ScreenshotToolPaletteTranslationText("Pen highlight color %1").arg(color.name());
         };
@@ -2508,6 +2522,8 @@ QWidget* ScreenshotToolPaletteStyleControls::buildSpotlightFamily(
     spotlightColorConfig.pickerObjectName = QStringLiteral("screenshotSpotlightColorPicker");
     spotlightColorConfig.triggerObjectName = QStringLiteral("screenshotSpotlightColorTrigger");
     spotlightColorConfig.presetValues = style_presets::textColors();
+    spotlightColorConfig.presetSource =
+        snow_shot::presentation::ScreenshotToolPaletteColorPresetSource::Stroke;
     spotlightColorConfig.presetTooltip = [](const QColor& color) {
         return ScreenshotToolPaletteTranslationText("Mask color %1").arg(color.name());
     };
@@ -2592,6 +2608,8 @@ QWidget* ScreenshotToolPaletteStyleControls::buildTextFamily(
     ScreenshotToolPaletteColorEditorConfig textColorConfig;
     textColorConfig.accessibleName = QStringLiteral("Text color");
     textColorConfig.presetValues = m_state.m_textStyle.colorValues();
+    textColorConfig.presetSource =
+        snow_shot::presentation::ScreenshotToolPaletteColorPresetSource::Stroke;
     textColorConfig.observePopup = true;
     textColorConfig.presetTooltip = [](const QColor& color) {
         return ScreenshotToolPaletteTranslationText("Text color %1").arg(color.name());
@@ -2686,6 +2704,8 @@ QWidget* ScreenshotToolPaletteStyleControls::buildTextFamily(
     textStrokeConfig.colorRowObjectName = QStringLiteral("screenshotTextStrokeColorPresets");
     textStrokeConfig.widthValues = m_state.m_textStyle.strokeWidthValues();
     textStrokeConfig.colorValues = m_state.m_textStyle.fillColorValues();
+    textStrokeConfig.presetSource =
+        snow_shot::presentation::ScreenshotToolPaletteColorPresetSource::Fill;
     textStrokeConfig.observePopup = true;
     textStrokeConfig.widthTooltip = [](double width) {
         return ScreenshotToolPaletteTranslationText("Text stroke width %1px").arg(width, 0, 'g', 3);
@@ -2717,6 +2737,8 @@ QWidget* ScreenshotToolPaletteStyleControls::buildTextFamily(
     textFillConfig.popupObjectName = QStringLiteral("screenshotTextFillOptions");
     textFillConfig.presetRowObjectName = QStringLiteral("screenshotTextFillColorPresets");
     textFillConfig.colorValues = m_state.m_textStyle.fillColorValues();
+    textFillConfig.presetSource =
+        snow_shot::presentation::ScreenshotToolPaletteColorPresetSource::Fill;
     textFillConfig.observePopup = true;
     textFillConfig.colorTooltip = [](const QColor& color) {
         return color.alpha() == 0
@@ -2785,6 +2807,8 @@ QWidget* ScreenshotToolPaletteStyleControls::buildSerialNumberFamily(
     ScreenshotToolPaletteColorEditorConfig serialNumberColorConfig;
     serialNumberColorConfig.accessibleName = QStringLiteral("Sequence number color");
     serialNumberColorConfig.presetValues = m_state.m_textStyle.colorValues();
+    serialNumberColorConfig.presetSource =
+        snow_shot::presentation::ScreenshotToolPaletteColorPresetSource::Stroke;
     serialNumberColorConfig.observePopup = true;
     serialNumberColorConfig.presetTooltip = [](const QColor& color) {
         return ScreenshotToolPaletteTranslationText("Sequence number color %1").arg(color.name());
@@ -3011,6 +3035,8 @@ QWidget* ScreenshotToolPaletteStyleControls::buildSerialNumberFamily(
     serialNumberFillConfig.presetRowObjectName =
         QStringLiteral("screenshotSerialNumberFillColorPresets");
     serialNumberFillConfig.colorValues = m_state.m_textStyle.fillColorValues();
+    serialNumberFillConfig.presetSource =
+        snow_shot::presentation::ScreenshotToolPaletteColorPresetSource::Fill;
     serialNumberFillConfig.observePopup = true;
     serialNumberFillConfig.colorTooltip = [](const QColor& color) {
         return color.alpha() == 0
@@ -3066,6 +3092,8 @@ QWidget* ScreenshotToolPaletteStyleControls::buildWatermarkFamily(
     watermarkColorConfig.pickerObjectName = QStringLiteral("screenshotWatermarkColorPicker");
     watermarkColorConfig.triggerObjectName = QStringLiteral("screenshotWatermarkColorTrigger");
     watermarkColorConfig.presetValues = m_state.m_textStyle.colorValues();
+    watermarkColorConfig.presetSource =
+        snow_shot::presentation::ScreenshotToolPaletteColorPresetSource::Stroke;
     watermarkColorConfig.observePopup = true;
     watermarkColorConfig.presetTooltip = [](const QColor& color) {
         return ScreenshotToolPaletteTranslationText("Watermark color %1").arg(color.name());
@@ -3773,12 +3801,19 @@ void ScreenshotToolPaletteStyleControls::registerDistanceEntries() {
              if (m_distanceWidthEditor != nullptr)
                  m_distanceWidthEditor->update(style.strokeWidth,
                                                mixed(SnowCanvasDistanceStylePropertyStrokeWidth));
-             if (m_distanceFactorInput != nullptr) {
-                 const QSignalBlocker blocker(m_distanceFactorInput);
-                 m_distanceFactorInput->setExactValue(QString::number(style.factor, 'g', 15));
-                 if (mixed(SnowCanvasDistanceStylePropertyFactor)) {
-                     m_distanceFactorInput->clear();
-                     m_distanceFactorInput->setPlaceholderText(QStringLiteral("-"));
+             if (m_distanceValueInput != nullptr) {
+                 const QSignalBlocker blocker(m_distanceValueInput);
+                 const double length = m_state.distanceMeasuredLength;
+                 const bool available = std::isfinite(length) && length > 0.0;
+                 m_distanceValueInput->setEnabled(available);
+                 m_distanceValueInput->setPlaceholderText(QStringLiteral("-"));
+                 if (available) {
+                     m_distanceValueInput->setExactRange(QString::number(length * 0.01, 'g', 15),
+                                                         QString::number(length * 1000.0, 'g', 15));
+                     m_distanceValueInput->setExactValue(
+                         QString::number(length * style.factor, 'g', 15));
+                 } else {
+                     m_distanceValueInput->clear();
                  }
              }
              if (m_distanceUnitGroup != nullptr) {
@@ -4236,7 +4271,7 @@ void ScreenshotToolPaletteStyleControls::releaseControlBindings() {
     m_distanceColorEditor.reset();
     m_distanceWidthEditor.reset();
     m_distanceEndpointEditor.reset();
-    m_distanceFactorInput = nullptr;
+    m_distanceValueInput = nullptr;
     m_distanceUnitGroup = nullptr;
     m_distanceDecimalsEditor = {};
     m_distanceScaleEditor = nullptr;
@@ -4366,7 +4401,7 @@ void ScreenshotToolPaletteStyleControls::discardBindingsExcept(int destinationTo
         m_lineTypeButtonGroup = nullptr;
     }
     if (!keepDistance) {
-        m_distanceFactorInput = nullptr;
+        m_distanceValueInput = nullptr;
         m_distanceUnitGroup = nullptr;
         m_distanceDecimalsEditor = {};
         m_distanceScaleEditor = nullptr;
@@ -4459,11 +4494,15 @@ bool ScreenshotToolPaletteStyleControls::handleDistanceWheel(const QPoint& globa
                                                              int direction) {
     if (direction == 0)
         return false;
-    if (m_distanceFactorInput != nullptr && m_distanceFactorInput->isEnabled() &&
-        m_distanceFactorInput->isVisible() &&
-        m_distanceFactorInput->rect().contains(
-            m_distanceFactorInput->mapFromGlobal(globalPosition))) {
-        setDistanceFactor(m_state.distanceStyle.factor + (direction > 0 ? 0.1 : -0.1));
+    if (m_distanceValueInput != nullptr && m_distanceValueInput->isVisible() &&
+        m_distanceValueInput->rect().contains(
+            m_distanceValueInput->mapFromGlobal(globalPosition))) {
+        if (m_distanceValueInput->isEnabled()) {
+            if (direction > 0)
+                m_distanceValueInput->stepUp();
+            else
+                m_distanceValueInput->stepDown();
+        }
         return true;
     }
     if (m_distanceScaleEditor != nullptr && m_distanceScaleEditor->isEnabled() &&
@@ -4910,11 +4949,11 @@ void ScreenshotToolPaletteStyleControls::refreshToolbarMetrics(
     configureScreenshotToolPaletteSelectEditor(m_distanceDecimalsEditor, metrics);
     configureScreenshotToolPaletteStyleRadioButtonGroup(m_angleUnitGroup, metrics, true);
     configureScreenshotToolPaletteSelectEditor(m_angleDecimalsEditor, metrics);
-    if (applies(m_distanceFactorInput)) {
-        m_distanceFactorInput->setFixedSize(
+    if (applies(m_distanceValueInput)) {
+        m_distanceValueInput->setFixedSize(
             qMax(1, qRound(100 * metrics.physicalScale)),
             qMax(1, qRound(metrics.buttonSize * metrics.physicalScale)));
-        stampScreenshotToolbarReferenceWidth(m_distanceFactorInput, 100);
+        stampScreenshotToolbarReferenceWidth(m_distanceValueInput, 100);
     }
 
     for (ScreenshotToolPaletteStyleEditorComponent* component : m_registeredComponents) {
@@ -5072,10 +5111,11 @@ void ScreenshotToolPaletteStyleControls::setAngleStrokeWidth(double width) {
                         [width](SnowCanvasAngleStyle& style) { style.strokeWidth = width; });
 }
 
-void ScreenshotToolPaletteStyleControls::setDistanceFactor(double factor) {
-    if (!std::isfinite(factor))
+void ScreenshotToolPaletteStyleControls::setDistanceValue(double value) {
+    const double length = m_state.distanceMeasuredLength;
+    if (!std::isfinite(value) || !std::isfinite(length) || length <= 0.0)
         return;
-    factor = std::clamp(std::round(factor * 100.0) / 100.0, 0.01, 1000.0);
+    const double factor = std::clamp(value / length, 0.01, 1000.0);
     commitDistanceProperty(SnowCanvasDistanceStylePropertyFactor,
                            [factor](SnowCanvasDistanceStyle& style) { style.factor = factor; });
 }
@@ -6023,12 +6063,14 @@ void ScreenshotToolPaletteStyleControls::setStyleToolbarState(
             displayed.stroke = m_state.distanceStyle.stroke;
         const quint32 mixed = selected ? state.distanceStyleMixed : 0;
         if (m_state.m_styleSource == state.source && m_state.distanceStyle == displayed &&
-            m_state.distanceStyleMixed == mixed)
+            m_state.distanceStyleMixed == mixed &&
+            m_state.distanceMeasuredLength == state.distanceMeasuredLength)
             return;
         m_state.m_styleSource = state.source;
         m_state.showingSelectedDistance = selected;
         m_state.distanceStyle = displayed;
         m_state.distanceStyleMixed = mixed;
+        m_state.distanceMeasuredLength = state.distanceMeasuredLength;
         if (!selected)
             m_state.creationDistanceStyle = displayed;
         updateDistanceStyleControls();

@@ -300,6 +300,24 @@ impl Editor {
         selected.fold(0, |mixed, style| mixed | first.differences(style))
     }
 
+    /// A single annotation supplies the calibrated length used to edit its actual value.
+    /// Zero means that no unambiguous, nonzero measurement is available.
+    pub fn distance_measured_length(&self, document: &DocumentModel) -> f64 {
+        if self.state.selection.ids.len() != 1 {
+            return 0.0;
+        }
+        let Some(arrow) = document.arrow(self.state.selection.ids[0]).ok() else {
+            return 0.0;
+        };
+        let Some(distance) = arrow.distance else {
+            return 0.0;
+        };
+        snow_draw_engine_document::distance_value(arrow)
+            .map(|value| value / distance.factor)
+            .filter(|length| length.is_finite() && *length > 0.0)
+            .unwrap_or(0.0)
+    }
+
     pub fn set_distance_style_patch(
         &mut self,
         document: &DocumentModel,

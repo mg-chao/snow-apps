@@ -15,6 +15,8 @@
 #include "snow_shot/presentation/styles/themecolorscheme.h"
 #include "snow_shot/presentation/styles/thememanager.h"
 #include "snow_shot/storage/applicationstorage.h"
+#include "snow_shot/storage/configurationschema.h"
+#include "snow_shot/storage/configurationstore.h"
 #include "snow_shot/shortcuts/shortcutdisplayservice.h"
 #include "snow_draw_engine_qt/snow_canvas_widget.h"
 #include "snow_draw_engine_qt/snow_canvas_runtime.h"
@@ -49,7 +51,10 @@
 #include <QHash>
 #include <QHelpEvent>
 #include <QImage>
+#include <QJsonArray>
 #include <QJsonObject>
+#include <QJsonDocument>
+#include <QJsonArray>
 #include <QLayout>
 #include <QLabel>
 #include <QLineEdit>
@@ -89,6 +94,7 @@
 #include <tuple>
 #include <algorithm>
 #include <cstddef>
+#include <cmath>
 #include <cstdlib>
 #include <iostream>
 #include <iterator>
@@ -11091,11 +11097,11 @@ void distanceSettingsExposeIndependentPropertiesAndHoverWheel() {
             "distance shortcut activation should select the tool and publish its command");
     palette.show();
     QCoreApplication::processEvents();
-    const auto factorInput = [&palette]() {
+    const auto valueInput = [&palette]() {
         return palette.findChild<adqt::widgets::AdInputNumber*>(
-            QStringLiteral("screenshotDistanceFactorInput"));
+            QStringLiteral("screenshotDistanceValueInput"));
     };
-    auto* factor = factorInput();
+    auto* value = valueInput();
     auto* unitsContainer =
         palette.findChild<QWidget*>(QStringLiteral("screenshotDistanceUnitButtonGroup"));
     auto* units = unitsContainer == nullptr
@@ -11105,17 +11111,16 @@ void distanceSettingsExposeIndependentPropertiesAndHoverWheel() {
         QStringLiteral("screenshotDistanceDecimalsSelect"));
     auto* scale = dynamic_cast<IconNumericValuePreviewButton*>(
         palette.findChild<QWidget*>(QStringLiteral("screenshotDistanceEndpointScaleButton")));
-    require(
-        factor != nullptr && units != nullptr && decimals != nullptr && scale != nullptr,
-        "distance settings should include numeric factor, units, precision, and endpoint scale");
-    const auto factorIcon = adqt::icons::describeIcon(factor->prefixIconRef());
-    require(factorIcon.key.pack == QStringLiteral("snow-shot") &&
-                factorIcon.key.name == QStringLiteral("distance-value-scale") &&
-                factorIcon.colorModel == adqt::icons::IconColorModel::Monochrome,
-            "distance factor should show the theme-aware value scale icon as its prefix");
-    if (const QString path = qEnvironmentVariable("SNOW_DISTANCE_FACTOR_INPUT_PREVIEW");
+    require(value != nullptr && units != nullptr && decimals != nullptr && scale != nullptr,
+            "distance settings should include actual value, units, precision, and endpoint scale");
+    const auto valueIcon = adqt::icons::describeIcon(value->prefixIconRef());
+    require(valueIcon.key.pack == QStringLiteral("snow-shot") &&
+                valueIcon.key.name == QStringLiteral("distance-value-scale") &&
+                valueIcon.colorModel == adqt::icons::IconColorModel::Monochrome,
+            "actual distance should show the theme-aware value scale icon as its prefix");
+    if (const QString path = qEnvironmentVariable("SNOW_DISTANCE_VALUE_INPUT_PREVIEW");
         !path.isEmpty()) {
-        require(factor->grab().save(path), "save distance factor InputNumber preview");
+        require(value->grab().save(path), "save actual distance InputNumber preview");
     }
     const auto initial = palette.creationStyleDefaults().distance;
     require(initial.stroke == QColor(QStringLiteral("#f5222d")) && initial.strokeWidth == 2.0 &&
@@ -11123,17 +11128,25 @@ void distanceSettingsExposeIndependentPropertiesAndHoverWheel() {
                 initial.decimalPlaces == 0 && initial.endpointScale == 1.0 &&
                 initial.endpointStyle == SnowCanvasArrowhead::Bar,
             "distance creation settings should use the product defaults");
-    require(factor->minimum() == 0.01 && factor->maximum() == 1000.0 && factor->decimals() == 2 &&
-                factor->singleStep() == 0.1 && factor->value() == 1.0 &&
+    require(!value->isEnabled() && !value->hasValue(),
+            "actual distance input needs a selected annotation's measured length");
+    SnowCanvasStyleToolbarState single;
+    single.source = SnowCanvasStyleToolbarSource::SelectedDistance;
+    single.selectedElementCount = 1;
+    single.distanceStyle = initial;
+    single.distanceMeasuredLength = 100.0;
+    palette.setStyleToolbarState(single);
+    require(value->minimum() == 1.0 && value->maximum() == 100000.0 && value->decimals() == 3 &&
+                value->singleStep() == 0.1 && value->value() == 100.0 && value->isEnabled() &&
                 units->checkedId() == static_cast<int>(SnowCanvasDistanceUnit::Cm) &&
                 units->buttons().size() == 5 && decimals->model()->rowCount() == 4 &&
                 decimals->currentValue().toInt() == 0,
-            "distance controls should expose the specified ranges and choices");
-    require(factor->variant() == adqt::widgets::AdInputNumber::Variant::Borderless &&
-                factor->valueMode() == adqt::widgets::AdInputNumber::ValueMode::ExactDecimal &&
-                factor->exactValue() == QStringLiteral("1") &&
-                factor->displayText() == QStringLiteral("1"),
-            "distance factor should use a borderless string input without padded decimals");
+            "actual distance range should derive from the measured length and factor limits");
+    require(value->variant() == adqt::widgets::AdInputNumber::Variant::Borderless &&
+                value->valueMode() == adqt::widgets::AdInputNumber::ValueMode::ExactDecimal &&
+                value->exactValue() == QStringLiteral("100") &&
+                value->displayText() == QStringLiteral("100"),
+            "actual distance should use a borderless string input without padded decimals");
     SnowCanvasDistanceStyle emitted = initial;
     quint32 properties = 0;
     int edits = 0;
@@ -11153,57 +11166,53 @@ void distanceSettingsExposeIndependentPropertiesAndHoverWheel() {
         require(palette.handleToolbarWheel(&event) && event.isAccepted(),
                 "distance input wheel should be consumed");
     };
-    factor->clearFocus();
-    wheel(factor, 120);
-    require(emitted.factor == 1.1 && factor->value() == 1.1 &&
-                factor->displayText() == QStringLiteral("1.1") && emitted.strokeWidth == 2.0 &&
-                properties == SnowCanvasDistanceStylePropertyFactor,
-            "hover wheel should increment the unfocused factor by 0.1 without changing width");
-    wheel(factor, -120);
-    require(emitted.factor == 1.0 && factor->displayText() == QStringLiteral("1"),
-            "downward wheel should restore a whole factor without padded decimals");
-    auto* factorLineEdit = factor->findChild<QLineEdit*>();
-    require(factorLineEdit != nullptr, "distance input should expose its numeric editor");
-    const QPoint inputPoint = factorLineEdit->rect().center();
-    QWheelEvent inputWheel(QPointF(inputPoint), factorLineEdit->mapToGlobal(inputPoint), QPoint(),
+    value->clearFocus();
+    wheel(value, 120);
+    require(qAbs(emitted.factor - 1.001) < 1e-12 && value->value() == 100.1 &&
+                emitted.strokeWidth == 2.0 && properties == SnowCanvasDistanceStylePropertyFactor,
+            "hover wheel should increment actual value by 0.1 and calculate the factor");
+    wheel(value, -120);
+    require(emitted.factor == 1.0 && value->displayText() == QStringLiteral("100"),
+            "downward wheel should restore the actual value without padded decimals");
+    auto* valueLineEdit = value->findChild<QLineEdit*>();
+    require(valueLineEdit != nullptr, "distance input should expose its numeric editor");
+    const QPoint inputPoint = valueLineEdit->rect().center();
+    QWheelEvent inputWheel(QPointF(inputPoint), valueLineEdit->mapToGlobal(inputPoint), QPoint(),
                            QPoint(0, 120), Qt::NoButton, Qt::NoModifier, Qt::NoScrollPhase, false);
-    QCoreApplication::sendEvent(factorLineEdit, &inputWheel);
-    require(emitted.factor == 1.1 && emitted.strokeWidth == 2.0,
+    QCoreApplication::sendEvent(valueLineEdit, &inputWheel);
+    require(qAbs(emitted.factor - 1.001) < 1e-12 && emitted.strokeWidth == 2.0,
             "wheel delivered to the numeric editor should apply once without changing width");
-
-    factor->setValue(0.01);
-    wheel(factor, -120);
-    require(factor->value() == 0.01 && emitted.factor == 0.01,
-            "distance factor should clamp at its lower bound");
-    factor->setValue(1000.0);
+    value->setValue(1.0);
+    wheel(value, -120);
+    require(value->value() == 1.0 && emitted.factor == 0.01,
+            "actual distance should clamp to the minimum supported factor");
+    value->setValue(100000.0);
     const int atMaximum = edits;
-    wheel(factor, 120);
-    require(factor->value() == 1000.0 && factor->displayText() == QStringLiteral("1000") &&
-                edits == atMaximum,
-            "distance factor should clamp at its upper bound without redundant edits");
-    factorLineEdit->selectAll();
-    PhysicalKeyEvent factorKey(QEvent::KeyPress, Qt::Key_unknown, Qt::NoModifier,
-                               QStringLiteral("2.50"));
-    QApplication::sendEvent(factorLineEdit, &factorKey);
-    PhysicalKeyEvent factorEnter(QEvent::KeyPress, Qt::Key_Return, Qt::NoModifier);
-    QApplication::sendEvent(factorLineEdit, &factorEnter);
-    require(emitted.factor == 2.5 && factor->exactValue() == QStringLiteral("2.5") &&
-                factor->displayText() == QStringLiteral("2.5") &&
+    wheel(value, 120);
+    require(value->value() == 100000.0 && edits == atMaximum,
+            "actual distance should clamp to the maximum without redundant edits");
+    valueLineEdit->selectAll();
+    PhysicalKeyEvent valueKey(QEvent::KeyPress, Qt::Key_unknown, Qt::NoModifier,
+                              QStringLiteral("42.1246"));
+    QApplication::sendEvent(valueLineEdit, &valueKey);
+    PhysicalKeyEvent valueEnter(QEvent::KeyPress, Qt::Key_Return, Qt::NoModifier);
+    QApplication::sendEvent(valueLineEdit, &valueEnter);
+    require(emitted.factor == 0.42125 && value->exactValue() == QStringLiteral("42.125") &&
+                value->displayText() == QStringLiteral("42.125") &&
                 properties == SnowCanvasDistanceStylePropertyFactor,
-            "typed distance factors should commit strings and remove trailing zeros");
-    factor->setValue(2.25);
-    require(emitted.factor == 2.25 && factor->displayText() == QStringLiteral("2.25"),
-            "distance factor should accept hundredths through numeric input");
+            "actual values should round to three decimals and calculate the factor without "
+            "rounding it");
     for (const int delta : {1, -1}) {
-        const QPoint point = factorLineEdit->rect().center();
-        QWheelEvent pixelWheel(QPointF(point), factorLineEdit->mapToGlobal(point), QPoint(0, delta),
+        const QPoint point = valueLineEdit->rect().center();
+        QWheelEvent pixelWheel(QPointF(point), valueLineEdit->mapToGlobal(point), QPoint(0, delta),
                                QPoint(), Qt::NoButton, Qt::NoModifier, Qt::ScrollUpdate, false);
         const int beforePixelWheel = edits;
-        QCoreApplication::sendEvent(factorLineEdit, &pixelWheel);
+        QCoreApplication::sendEvent(valueLineEdit, &pixelWheel);
         require(pixelWheel.isAccepted() && edits == beforePixelWheel + 1 &&
-                    emitted.factor == (delta > 0 ? 2.35 : 2.25) && emitted.strokeWidth == 2.0 &&
+                    qAbs(value->value() - (delta > 0 ? 42.225 : 42.125)) < 1e-12 &&
+                    emitted.strokeWidth == 2.0 &&
                     properties == SnowCanvasDistanceStylePropertyFactor,
-                "trackpad wheel should preserve hundredths and apply exactly one factor step");
+                "trackpad wheel should preserve fractions and apply one actual value step");
     }
     auto* millimeters = units->button(static_cast<int>(SnowCanvasDistanceUnit::Mm));
     require(millimeters != nullptr && millimeters->text().isEmpty() &&
@@ -11230,7 +11239,7 @@ void distanceSettingsExposeIndependentPropertiesAndHoverWheel() {
     decimals->setCurrentValue(0);
     require(emitted.decimalPlaces == 0, "precision select should restore integers");
     wheel(scale, 120);
-    require(emitted.endpointScale == 1.1 && emitted.factor == 2.25 &&
+    require(emitted.endpointScale == 1.1 && emitted.factor == 0.42125 &&
                 properties == SnowCanvasDistanceStylePropertyEndpointScale,
             "endpoint scale wheel should change only the marker ratio");
     scale->click();
@@ -11278,29 +11287,50 @@ void distanceSettingsExposeIndependentPropertiesAndHoverWheel() {
     palette.setActiveTool(ScreenshotToolPalette::Tool::Arrow);
     palette.setActiveTool(ScreenshotToolPalette::Tool::Distance);
     QCoreApplication::processEvents();
-    require(factorInput() != nullptr && factorInput()->value() == remembered.factor &&
-                adqt::icons::describeIcon(factorInput()->prefixIconRef()).key == factorIcon.key &&
-                factorInput()->variant() == adqt::widgets::AdInputNumber::Variant::Borderless &&
-                factorInput()->valueMode() ==
+    require(valueInput() != nullptr && valueInput()->value() == 100.0 * remembered.factor &&
+                adqt::icons::describeIcon(valueInput()->prefixIconRef()).key == valueIcon.key &&
+                valueInput()->variant() == adqt::widgets::AdInputNumber::Variant::Borderless &&
+                valueInput()->valueMode() ==
                     adqt::widgets::AdInputNumber::ValueMode::ExactDecimal &&
-                factorInput()->displayText() == QStringLiteral("2.25") &&
+                valueInput()->displayText() == QStringLiteral("42.125") &&
                 palette.creationStyleDefaults().distance == remembered,
             "distance settings should survive editor reuse and tool switching");
-    factor = factorInput();
+    value = valueInput();
     SnowCanvasStyleToolbarState selected;
     selected.source = SnowCanvasStyleToolbarSource::SelectedDistance;
     selected.distanceStyle = remembered;
     selected.distanceStyle.factor = 5.0;
+    selected.selectedElementCount = 2;
     selected.distanceStyleMixed =
         SnowCanvasDistanceStyleMixedFactor | SnowCanvasDistanceStyleMixedStrokeColor;
     palette.setStyleToolbarState(selected);
-    require(!factor->hasValue() && palette.creationStyleDefaults().distance == remembered,
-            "mixed selected distance settings should preserve creation defaults");
-    wheel(factor, 120);
-    require(factor->value() == 5.1 && emitted.factor == 5.1 &&
+    require(!value->isEnabled() && !value->hasValue() &&
+                palette.creationStyleDefaults().distance == remembered,
+            "multiple selections have no unambiguous actual value and preserve creation defaults");
+    const int beforeDisabledWheel = edits;
+    wheel(value, 120);
+    require(edits == beforeDisabledWheel,
+            "wheel over an unavailable actual value must not change the stroke width");
+    selected.selectedElementCount = 1;
+    selected.distanceMeasuredLength = 125.0;
+    selected.distanceStyleMixed = SnowCanvasDistanceStyleMixedStrokeColor;
+    palette.setStyleToolbarState(selected);
+    wheel(value, 120);
+    require(value->value() == 625.1 && qAbs(emitted.factor - 5.0008) < 1e-12 &&
                 properties == SnowCanvasDistanceStylePropertyFactor &&
                 emitted.stroke == remembered.stroke,
-            "wheel should resolve only the mixed distance factor");
+            "editing actual value should resolve only the corresponding factor");
+    selected.distanceStyle = emitted;
+    selected.distanceMeasuredLength = 250.0;
+    const int beforeGeometryChange = edits;
+    palette.setStyleToolbarState(selected);
+    require(value->value() == 1250.2 && edits == beforeGeometryChange,
+            "geometry-only changes should refresh actual value without publishing a style edit");
+    selected.distanceMeasuredLength = 0.0;
+    palette.setStyleToolbarState(selected);
+    require(!value->isEnabled() && !value->hasValue() && edits == beforeGeometryChange,
+            "zero-length annotations must not allow division by zero");
+    selected.distanceMeasuredLength = 125.0;
 
     const auto creationBeforeLanguageChange = palette.creationStyleDefaults().distance;
     selected.distanceStyle.factor = 9.75;
@@ -11324,14 +11354,14 @@ void distanceSettingsExposeIndependentPropertiesAndHoverWheel() {
         require(language.setLanguage(locale), "distance controls should load every catalog");
         QCoreApplication::processEvents();
         const QString factorLabel =
-            QCoreApplication::translate("ScreenshotToolPalette", "Distance scaling factor");
+            QCoreApplication::translate("ScreenshotToolPalette", "Actual distance value");
         const QString precisionLabel =
             QCoreApplication::translate("ScreenshotToolPalette", "3 decimal places");
-        require(factor->accessibleName() == factorLabel &&
+        require(value->accessibleName() == factorLabel &&
                     decimals->model()->index(3, 0).data(decimals->labelRole()).toString() ==
                         precisionLabel,
                 "language changes should translate distance control labels");
-        require(factor->value() == 9.75 &&
+        require(value->value() == 1218.75 &&
                     units->checkedId() == static_cast<int>(SnowCanvasDistanceUnit::Mm) &&
                     decimals->currentValue().toInt() == 3 && edits == beforeLanguageChange &&
                     palette.creationStyleDefaults().distance == creationBeforeLanguageChange,
@@ -11364,7 +11394,7 @@ void distanceSettingsExposeIndependentPropertiesAndHoverWheel() {
                 !opacity->isEnabled(),
             "default distance state should clear selection action availability");
     palette.setActiveTool(ScreenshotToolPalette::Tool::Distance);
-    require(factorInput()->value() == creationBeforeLanguageChange.factor &&
+    require(!valueInput()->hasValue() && !valueInput()->isEnabled() &&
                 palette.creationStyleDefaults().distance == creationBeforeLanguageChange,
             "returning to Distance should restore its independent creation settings");
     palette.hide();
@@ -11412,6 +11442,88 @@ void distanceSettingsExposeIndependentPropertiesAndHoverWheel() {
                     QStringLiteral("distance"),
             "a custom Distance option should publish the same tool command as its shortcut");
     hiddenPalette.hide();
+}
+
+void distanceActualValueUpdatesTheCanvasAndUndo() {
+    ScreenshotToolPalette::Options options;
+    options.styleDefaults = snow_shot::presentation::screenshotCanvasStyleDefaults();
+    options.styleDefaults.distance.decimalPlaces = 3;
+    options.styleDefaults.distance.unit = SnowCanvasDistanceUnit::Mm;
+    ScreenshotToolPalette palette(options);
+    SnowCanvasRuntime runtime;
+    SnowCanvasWidget canvas(runtime);
+    canvas.resize(600, 360);
+    canvas.setInteractionEnabled(true);
+    snow_shot::presentation::applyScreenshotCanvasToolStyles(canvas, options.styleDefaults);
+    snow_shot::presentation::ScreenshotStyleBinding binding(
+        palette, canvas, &palette, {}, [](const SnowCanvasStyleEdit&) { return true; });
+    QObject::connect(&canvas, &SnowCanvasWidget::styleToolbarStateChanged, &palette,
+                     [&] { palette.setStyleToolbarState(canvas.canvasStyleToolbarState()); });
+    auto snap = canvas.canvasSnapConfig();
+    snap.enabled = false;
+    require(canvas.setCanvasSnapConfig(snap), "disable snapping for actual value coverage");
+    require(canvas.setCanvasTool(SnowCanvasTool::Distance) &&
+                canvas.setDistanceCreationPixelScale({2.0, 3.0}),
+            "create a calibrated distance annotation");
+    canvas.show();
+    palette.setActiveTool(ScreenshotToolPalette::Tool::Distance);
+    palette.show();
+    QApplication::processEvents();
+    const auto mouse = [&canvas](QEvent::Type type, QPointF point, Qt::MouseButton button,
+                                 Qt::MouseButtons buttons) {
+        QMouseEvent event(type, point, point, point, button, buttons, Qt::NoModifier);
+        QApplication::sendEvent(&canvas, &event);
+        QApplication::processEvents();
+    };
+    mouse(QEvent::MouseButtonPress, {100, 180}, Qt::LeftButton, Qt::LeftButton);
+    mouse(QEvent::MouseMove, {130, 220}, Qt::NoButton, Qt::LeftButton);
+    mouse(QEvent::MouseButtonRelease, {130, 220}, Qt::LeftButton, Qt::NoButton);
+    require(canvas.setCanvasTool(SnowCanvasTool::Select), "select the calibrated distance");
+    mouse(QEvent::MouseButtonPress, {106, 188}, Qt::LeftButton, Qt::LeftButton);
+    mouse(QEvent::MouseButtonRelease, {106, 188}, Qt::LeftButton, Qt::NoButton);
+    palette.setStyleToolbarState(canvas.canvasStyleToolbarState());
+    auto* value = palette.findChild<adqt::widgets::AdInputNumber*>(
+        QStringLiteral("screenshotDistanceValueInput"));
+    const double length = std::hypot(60.0, 120.0);
+    const double displayedLength = std::round(length * 1000.0) / 1000.0;
+    require(value != nullptr && value->isEnabled() && value->value() == displayedLength &&
+                value->displayText() == QStringLiteral("134.164"),
+            "actual input should display the calibrated diagonal length to three decimals");
+    const auto record = [&runtime](const QString& kind) {
+        const auto documentSlots = QJsonDocument::fromJson(runtime.serializeDocumentSession())
+                                       .object()
+                                       .value(QStringLiteral("document"))
+                                       .toObject()
+                                       .value(QStringLiteral("slots"))
+                                       .toArray();
+        for (const auto& slot : documentSlots) {
+            const auto data = slot.toObject().value(QStringLiteral("data")).toObject();
+            if (data.contains(kind))
+                return data.value(kind).toObject();
+        }
+        return QJsonObject{};
+    };
+    const auto points = record(QStringLiteral("Arrow")).value(QStringLiteral("points"));
+    value->setExactValue(QStringLiteral("25.125"));
+    require(qAbs(canvas.canvasDistanceStyle().factor - 25.125 / length) < 1e-12 &&
+                value->displayText() == QStringLiteral("25.125") &&
+                record(QStringLiteral("Text")).value(QStringLiteral("text")).toString() ==
+                    QStringLiteral("25.125 mm") &&
+                record(QStringLiteral("Arrow")).value(QStringLiteral("points")) == points,
+            "editing actual value should update the factor and label while preserving geometry");
+    require(canvas.undo() && value->value() == displayedLength &&
+                canvas.canvasDistanceStyle().factor == 1.0,
+            "undo should restore the factor and actual value input");
+    require(canvas.redo() && value->displayText() == QStringLiteral("25.125"),
+            "redo should restore the user's actual value");
+    const double factor = canvas.canvasDistanceStyle().factor;
+    mouse(QEvent::MouseButtonPress, {130, 220}, Qt::LeftButton, Qt::LeftButton);
+    mouse(QEvent::MouseMove, {160, 260}, Qt::NoButton, Qt::LeftButton);
+    mouse(QEvent::MouseButtonRelease, {160, 260}, Qt::LeftButton, Qt::NoButton);
+    require(qAbs(value->value() - 50.25) < 1e-10 && canvas.canvasDistanceStyle().factor == factor,
+            "resizing an annotation should refresh its actual value while preserving its scale");
+    require(canvas.undo() && value->displayText() == QStringLiteral("25.125"),
+            "undoing geometry should refresh the actual value without changing style");
 }
 
 void arrowRatioEditorAdjustsAndResets() {
@@ -15175,6 +15287,232 @@ void canvasToolStylesPersistIndependentlyWithoutGlobalStyles() {
             "a new editor should start at one and retain the saved appearance");
 }
 
+void customColorPresetSettingsPersistAndValidate(
+    const snow_shot::storage::StorageInitializationOptions& options) {
+    namespace storage = snow_shot::storage;
+    const storage::ScreenshotColorPresetSettings settings;
+    auto& applicationStorage = storage::ApplicationStorage::instance();
+    auto& configuration = applicationStorage.configuration();
+    const QString strokeKey = QStringLiteral("screenshot/stroke_color_presets");
+    const QString fillKey = QStringLiteral("screenshot/fill_color_presets");
+    const auto defaultStroke = settings.strokeColors();
+    const auto defaultFill = settings.fillColors();
+    require(defaultStroke.size() == 5 && defaultFill.size() == 5 &&
+                defaultStroke.first() == QColor(QStringLiteral("#f5222d")) &&
+                defaultFill.first() == QColor(255, 255, 255, 0),
+            "color preset defaults must preserve the five existing drawing swatches");
+    auto stroke = defaultStroke;
+    auto fill = defaultFill;
+    stroke[1] = QColor(12, 34, 56, 78);
+    fill[0] = QColor(90, 80, 70, 0);
+    fill[2] = QColor(98, 76, 54, 123);
+    require(settings.setStrokeColors(stroke) && settings.setFillColors(fill) &&
+                settings.strokeColors() == stroke && settings.fillColors() == fill,
+            "custom stroke and fill presets must retain alpha and transparent RGB");
+    require(configuration.value(strokeKey).toArray().at(1) == QStringLiteral("#0C22384E") &&
+                configuration.value(fillKey).toArray().at(0) == QStringLiteral("#5A504600"),
+            "preset storage must serialize each color as an RGBA string");
+    const auto revision = configuration.revision();
+    auto invalidColors = stroke;
+    invalidColors[2] = QColor();
+    require(!settings.setStrokeColors(stroke.first(4)) &&
+                !settings.setFillColors(fill + QVector<QColor>{QColor(Qt::red)}) &&
+                !settings.setStrokeColors(invalidColors),
+            "typed writes must reject incorrect slot counts and invalid colors");
+    QJsonArray invalidEntries = configuration.value(strokeKey).toArray();
+    invalidEntries[2] = QStringLiteral("#notcolor");
+    QJsonArray invalidType = configuration.value(strokeKey).toArray();
+    invalidType[3] = 42;
+    require(!configuration.setValue(strokeKey, invalidEntries) &&
+                !configuration.setValue(strokeKey, invalidType) &&
+                !configuration.setValue(fillKey, QJsonArray{}) &&
+                !configuration.setValue(fillKey, QStringLiteral("#FF0000FF")) &&
+                configuration.revision() == revision && settings.strokeColors() == stroke &&
+                settings.fillColors() == fill,
+            "invalid preset configuration writes must preserve both palettes without revisions");
+    QJsonArray normalizedStroke = configuration.value(strokeKey).toArray();
+    normalizedStroke[1] = QStringLiteral("  #0c22384e  ");
+    require(configuration.setValue(strokeKey, normalizedStroke) &&
+                configuration.value(strokeKey).toArray().at(1) == QStringLiteral("#0C22384E"),
+            "valid RGBA arrays must normalize whitespace and case");
+    require(applicationStorage.flushNow().success, "custom color presets must flush to disk");
+    applicationStorage.shutdown();
+    require(applicationStorage.initialize(options).success && settings.strokeColors() == stroke &&
+                settings.fillColors() == fill,
+            "both palettes must survive an application storage restart");
+    require(applicationStorage.configuration().setValues(
+                {{strokeKey, storage::ConfigurationSchema::defaultValue(strokeKey)},
+                 {fillKey, storage::ConfigurationSchema::defaultValue(fillKey)}}) &&
+                settings.strokeColors() == defaultStroke && settings.fillColors() == defaultFill,
+            "reset must restore the original ordered palettes");
+}
+
+void customColorPresetsRefreshCurrentAndLazyDrawingEditors() {
+    namespace storage = snow_shot::storage;
+    using namespace snow_shot::presentation;
+    const storage::ScreenshotColorPresetSettings settings;
+    const auto defaultStroke = settings.strokeColors();
+    const auto defaultFill = settings.fillColors();
+    ScreenshotToolPalette palette(ScreenshotToolPalette::Options{});
+    palette.setActiveTool(ScreenshotToolPalette::Tool::Shape);
+    palette.show();
+    QCoreApplication::processEvents();
+    const auto swatches = [](QWidget* host, const QString& prefix) {
+        QVector<ColorSwatchButton*> buttons;
+        require(host != nullptr, "color presets must have a materialized host");
+        for (auto* button : host->findChildren<adqt::widgets::AdButton*>()) {
+            if (auto* swatch = dynamic_cast<ColorSwatchButton*>(button);
+                swatch != nullptr && swatch->toolTip().startsWith(prefix)) {
+                buttons.push_back(swatch);
+            }
+        }
+        return buttons;
+    };
+    const auto requireColors = [](const QVector<ColorSwatchButton*>& buttons,
+                                  const QVector<QColor>& colors) {
+        require(buttons.size() == colors.size(), "drawing editors must retain five preset slots");
+        for (int index = 0; index < colors.size(); ++index) {
+            require(buttons.at(index)->swatchColor() == colors.at(index),
+                    "each quick-set button must display the current configured RGBA color");
+        }
+    };
+    auto strokeButtons = swatches(palette.stylePanel(), QStringLiteral("Stroke color "));
+    auto* fillPicker = colorPickerWithAccessibleName(palette, "Fill color");
+    require(fillPicker != nullptr, "shape fill picker must be available");
+    fillPicker->setPopupVisible(true);
+    QCoreApplication::processEvents();
+    auto fillButtons = swatches(fillPicker->popupContent(), QStringLiteral("Fill color "));
+    requireColors(strokeButtons, defaultStroke);
+    requireColors(fillButtons, defaultFill);
+    int shapeCommands = 0;
+    SnowCanvasShapeStyle changedShape;
+    QObject::connect(&palette, &ScreenshotToolPalette::shapeStyleChanged, &palette,
+                     [&](const SnowCanvasShapeStyle& style, quint32, SnowCanvasShapeKind) {
+                         changedShape = style;
+                         ++shapeCommands;
+                     });
+    const auto originalStyle = palette.creationStyleDefaults().rectangle;
+    auto stroke = defaultStroke;
+    auto fill = defaultFill;
+    stroke[1] = QColor(12, 34, 56, 78);
+    fill[0] = QColor(90, 80, 70, 0);
+    fill[2] = QColor(98, 76, 54, 123);
+    require(settings.setStrokeColors(stroke) && settings.setFillColors(fill),
+            "settings must accept custom stroke and fill colors while the palette is open");
+    requireColors(strokeButtons, stroke);
+    requireColors(fillButtons, fill);
+    require(shapeCommands == 0 && palette.creationStyleDefaults().rectangle == originalStyle &&
+                strokeButtons.at(1)->toolTip() == QStringLiteral("Stroke color #0c2238"),
+            "live preset refresh must update tooltips without changing creation styles");
+    strokeButtons.at(1)->click();
+    require(shapeCommands == 1 && changedShape.stroke == stroke.at(1),
+            "an existing stroke button must commit its updated color exactly once");
+    fillButtons.at(2)->click();
+    require(shapeCommands == 2 && changedShape.fill == fill.at(2),
+            "an already materialized fill button must commit its updated alpha color once");
+    fillPicker->setPopupVisible(false);
+
+    palette.setActiveTool(ScreenshotToolPalette::Tool::Angle);
+    auto angleButtons = swatches(palette.stylePanel(), QStringLiteral("Angle stroke color "));
+    requireColors(angleButtons, stroke);
+    int angleCommands = 0;
+    quint32 angleProperties = 0;
+    SnowCanvasAngleStyle changedAngle;
+    palette.setStyleEditHandler([&](const SnowCanvasStyleEdit& edit) {
+        if (const auto* angle = std::get_if<SnowCanvasAngleStyleEdit>(&edit)) {
+            changedAngle = angle->style;
+            angleProperties = angle->properties;
+            ++angleCommands;
+        }
+        palette.rememberStyleEdit(edit);
+        return true;
+    });
+    const auto originalAngle = palette.creationStyleDefaults().angle;
+    stroke[3] = QColor(23, 45, 67, 89);
+    require(settings.setStrokeColors(stroke),
+            "stroke presets must remain editable with the angle toolbar open");
+    requireColors(angleButtons, stroke);
+    require(angleCommands == 0 && palette.creationStyleDefaults().angle == originalAngle &&
+                angleButtons.at(3)->toolTip() == QStringLiteral("Angle stroke color #172d43"),
+            "angle preset refresh must preserve styles and update translated tooltips");
+    angleButtons.at(3)->click();
+    auto expectedAngle = originalAngle;
+    expectedAngle.stroke = stroke.at(3);
+    require(angleCommands == 1 && changedAngle == expectedAngle &&
+                angleProperties == static_cast<quint32>(SnowCanvasAngleStyleProperty::Stroke),
+            "angle presets must commit the refreshed RGBA color once without editing units");
+    palette.setActiveTool(ScreenshotToolPalette::Tool::Distance);
+    requireColors(swatches(palette.stylePanel(), QStringLiteral("Distance stroke color ")), stroke);
+    palette.setActiveTool(ScreenshotToolPalette::Tool::Angle);
+    angleButtons = swatches(palette.stylePanel(), QStringLiteral("Angle stroke color "));
+    stroke[3] = QColor(32, 54, 76, 98);
+    require(settings.setStrokeColors(stroke), "reactivated angle controls must follow settings");
+    requireColors(angleButtons, stroke);
+    angleButtons.at(3)->click();
+    expectedAngle.stroke = stroke.at(3);
+    require(angleCommands == 2 && changedAngle == expectedAngle,
+            "reactivated angle presets must retain exactly one correctly bound command");
+
+    palette.setActiveTool(ScreenshotToolPalette::Tool::Text);
+    auto textButtons = swatches(palette.stylePanel(), QStringLiteral("Text color "));
+    requireColors(textButtons, stroke);
+    auto* textFill = colorPickerWithAccessibleName(palette, "Text fill color");
+    auto* textStroke = colorPickerWithAccessibleName(palette, "Text stroke width");
+    require(textFill != nullptr && textStroke != nullptr,
+            "lazily materialized text controls must expose fill and stroke pickers");
+    textFill->setPopupVisible(true);
+    QCoreApplication::processEvents();
+    auto textFillButtons = swatches(textFill->popupContent(), QStringLiteral("Text fill color "));
+    requireColors(textFillButtons, fill);
+    textFill->setPopupVisible(false);
+    textStroke->setPopupVisible(true);
+    QCoreApplication::processEvents();
+    auto textStrokeButtons =
+        swatches(textStroke->popupContent(), QStringLiteral("Text stroke color "));
+    requireColors(textStrokeButtons, fill);
+    int textCommands = 0;
+    SnowCanvasTextStyle changedText;
+    QObject::connect(&palette, &ScreenshotToolPalette::textStyleChanged, &palette,
+                     [&](const SnowCanvasTextStyle& style, quint32) {
+                         changedText = style;
+                         ++textCommands;
+                     });
+    fill[2] = QColor(21, 43, 65, 87);
+    require(settings.setFillColors(fill), "custom fill colors must be editable repeatedly");
+    requireColors(textStrokeButtons, fill);
+    requireColors(textFillButtons, fill);
+    textStrokeButtons.at(2)->click();
+    require(textCommands == 1 && changedText.stroke == fill.at(2),
+            "materialized text stroke buttons must commit the refreshed shared fill palette");
+    textStroke->setPopupVisible(false);
+    const auto styleBeforeReset = palette.creationStyleDefaults().text;
+    require(storage::ApplicationStorage::instance().configuration().setValues(
+                {{QStringLiteral("screenshot/stroke_color_presets"),
+                  storage::ConfigurationSchema::defaultValue(
+                      QStringLiteral("screenshot/stroke_color_presets"))},
+                 {QStringLiteral("screenshot/fill_color_presets"),
+                  storage::ConfigurationSchema::defaultValue(
+                      QStringLiteral("screenshot/fill_color_presets"))}}),
+            "reset must accept the default color palettes");
+    requireColors(textButtons, defaultStroke);
+    requireColors(textStrokeButtons, defaultFill);
+    requireColors(textFillButtons, defaultFill);
+    require(textCommands == 1 && palette.creationStyleDefaults().text == styleBeforeReset,
+            "resetting presets must refresh open editors without editing drawing styles");
+    palette.setActiveTool(ScreenshotToolPalette::Tool::Angle);
+    requireColors(swatches(palette.stylePanel(), QStringLiteral("Angle stroke color ")),
+                  defaultStroke);
+    require(angleCommands == 2 && palette.creationStyleDefaults().angle == expectedAngle,
+            "resetting presets must preserve the remembered angle style");
+    palette.setActiveTool(ScreenshotToolPalette::Tool::Shape);
+    requireColors(swatches(palette.stylePanel(), QStringLiteral("Stroke color ")), defaultStroke);
+    require(style_presets::strokeColors() == defaultStroke &&
+                style_presets::textColors() == defaultStroke &&
+                style_presets::shapeFillColors() == defaultFill &&
+                style_presets::textFillColors() == defaultFill,
+            "all shared drawing color providers must reflect the latest settings");
+}
+
 void colorPresetEditorsPreserveCommandsAcrossRebinding() {
     using namespace snow_shot::presentation;
     const QVector<QColor> colors{QColor(Qt::transparent), QColor(210, 40, 70, 128)};
@@ -16116,6 +16454,14 @@ int main(int argc, char** argv) {
     require(QFontDatabase::addApplicationFont(QStringLiteral("C:/Windows/Fonts/segoeui.ttf")) >= 0,
             "the font editor tests require a system TrueType font");
 #endif
+    if (application.arguments().contains(QStringLiteral("--custom-color-presets-only"))) {
+        customColorPresetSettingsPersistAndValidate(
+            {executableDirectory, storageDirectory.path(), 60000});
+        customColorPresetsRefreshCurrentAndLazyDrawingEditors();
+        colorPresetEditorsPreserveCommandsAcrossRebinding();
+        snow_shot::storage::ApplicationStorage::instance().shutdown();
+        return 0;
+    }
     if (application.arguments().contains(QStringLiteral("--eraser-only"))) {
         eraserResetRemainsAvailableWithoutSelection();
         eraserStyleToolbarHeightMatchesOtherTools();
@@ -16282,6 +16628,7 @@ int main(int argc, char** argv) {
         arrowAndLineRemainDirectWhenConfiguredIndividually();
         editorlessToolsRejectStaleStyleToolbarState();
         distanceSettingsExposeIndependentPropertiesAndHoverWheel();
+        distanceActualValueUpdatesTheCanvasAndUndo();
         snow_shot::storage::ApplicationStorage::instance().shutdown();
         return 0;
     }
@@ -16588,6 +16935,7 @@ int main(int argc, char** argv) {
     arrowStyleUsesScreenshotCreationColorOverride();
     distanceSettingsExposeIndependentPropertiesAndHoverWheel();
     angleSettingsAndWheelPreserveIndependentProperties();
+    distanceActualValueUpdatesTheCanvasAndUndo();
     arrowRatioEditorAdjustsAndResets();
     arrowStyleControlsExposeAndEmitAllStyleProperties();
     lineStyleControlsExposeStraightAndCurveTypes();

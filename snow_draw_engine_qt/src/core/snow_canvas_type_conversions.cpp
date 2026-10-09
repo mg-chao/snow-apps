@@ -644,6 +644,7 @@ SnowCanvasStyleToolbarState toCanvasStyleToolbarState(const SnowStyleToolbarStat
         state.distance_style_mixed,
         toCanvasAngleStyle(state.angle_style),
         state.angle_style_mixed,
+        state.distance_measured_length,
     };
 }
 

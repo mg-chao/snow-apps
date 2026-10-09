@@ -294,7 +294,45 @@ QColor colorValue(const QString& key) {
 bool setColorValue(const QString& key, const QColor& color) {
     return color.isValid() && cache().setValue(key, colorToRgbaString(color));
 }
+
+QVector<QColor> colorPresetValues(const QString& key) {
+    QVector<QColor> colors;
+    for (const QJsonValue& value : cache().value(key).toArray()) {
+        colors.push_back(colorFromRgbaString(value.toString()));
+    }
+    return colors;
+}
+
+bool setColorPresetValues(const QString& key, const QVector<QColor>& colors) {
+    if (colors.size() != 5) {
+        return false;
+    }
+    QJsonArray values;
+    for (const QColor& color : colors) {
+        if (!color.isValid()) {
+            return false;
+        }
+        values.push_back(colorToRgbaString(color));
+    }
+    return cache().setValue(key, values);
+}
 } // namespace
+
+QVector<QColor> ScreenshotColorPresetSettings::strokeColors() const {
+    return colorPresetValues(QStringLiteral("screenshot/stroke_color_presets"));
+}
+
+bool ScreenshotColorPresetSettings::setStrokeColors(const QVector<QColor>& colors) const {
+    return setColorPresetValues(QStringLiteral("screenshot/stroke_color_presets"), colors);
+}
+
+QVector<QColor> ScreenshotColorPresetSettings::fillColors() const {
+    return colorPresetValues(QStringLiteral("screenshot/fill_color_presets"));
+}
+
+bool ScreenshotColorPresetSettings::setFillColors(const QVector<QColor>& colors) const {
+    return setColorPresetValues(QStringLiteral("screenshot/fill_color_presets"), colors);
+}
 
 CloudUploadSettings CloudUploadConfigurationSettings::settings() const {
     return cloudUploadSettingsFromJson(cache().value(QStringLiteral("cloud_upload/configuration")));

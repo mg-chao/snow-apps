@@ -88,7 +88,8 @@ bool styleToolbarStatesEqual(const SnowStyleToolbarState& lhs, const SnowStyleTo
            lhs.angle_style.stroke_width == rhs.angle_style.stroke_width &&
            lhs.angle_style.unit == rhs.angle_style.unit &&
            lhs.angle_style.decimal_places == rhs.angle_style.decimal_places &&
-           lhs.angle_style_mixed == rhs.angle_style_mixed;
+           lhs.angle_style_mixed == rhs.angle_style_mixed &&
+           lhs.distance_measured_length == rhs.distance_measured_length;
 }
 
 bool watermarkConfigsEqual(const SnowWatermarkConfig& lhs, const SnowWatermarkConfig& rhs) {

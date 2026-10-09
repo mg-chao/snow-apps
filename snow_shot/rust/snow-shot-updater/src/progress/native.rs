@@ -18,16 +18,12 @@ use windows::core::{PCWSTR, w};
 pub(super) enum Command {
     Update(Progress),
     Visible(bool),
-    Texts(Box<ProgressTexts>),
-    Appearance(Box<ProgressAppearance>),
     Finish,
 }
 
 #[derive(Default)]
 struct Inbox {
     progress: Option<Progress>,
-    texts: Option<ProgressTexts>,
-    appearance: Option<ProgressAppearance>,
     visible: Option<bool>,
     finished: bool,
 }
@@ -44,17 +40,11 @@ impl Shared {
         let (mut inbox, _) = self
             .changed
             .wait_timeout_while(inbox, Duration::from_millis(50), |value| {
-                !value.finished
-                    && value.progress.is_none()
-                    && value.texts.is_none()
-                    && value.appearance.is_none()
-                    && value.visible.is_none()
+                !value.finished && value.progress.is_none() && value.visible.is_none()
             })
             .ok()?;
         Some(Inbox {
             progress: inbox.progress.take(),
-            texts: inbox.texts.take(),
-            appearance: inbox.appearance.take(),
             visible: inbox.visible.take(),
             finished: inbox.finished,
         })
@@ -76,8 +66,6 @@ impl Sender {
         match command {
             Command::Update(progress) => inbox.progress = Some(progress),
             Command::Visible(visible) => inbox.visible = Some(visible),
-            Command::Texts(texts) => inbox.texts = Some(*texts),
-            Command::Appearance(appearance) => inbox.appearance = Some(appearance.normalized()),
             Command::Finish => inbox.finished = true,
         }
         self.shared.changed.notify_one();
@@ -702,20 +690,11 @@ fn run(receiver: Arc<Shared>, texts: ProgressTexts, appearance: ProgressAppearan
         let Some(inbox) = receiver.receive() else {
             break;
         };
-        let changed = inbox.progress.is_some()
-            || inbox.texts.is_some()
-            || inbox.appearance.is_some()
-            || inbox.visible.is_some();
+        let changed = inbox.progress.is_some() || inbox.visible.is_some();
         {
             let mut value = state.borrow_mut();
             if let Some(progress) = inbox.progress {
                 value.progress = progress;
-            }
-            if let Some(texts) = inbox.texts {
-                value.texts = texts;
-            }
-            if let Some(appearance) = inbox.appearance {
-                value.appearance = appearance;
             }
             if let Some(visible) = inbox.visible {
                 value.visibility.request(visible);

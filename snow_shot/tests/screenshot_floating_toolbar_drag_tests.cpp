@@ -8,6 +8,7 @@
 #include "snow_shot/storage/applicationstorage.h"
 #include "snow_shot/storage/settingsadapters.h"
 #include "widgets/button.h"
+#include "widgets/input_number.h"
 #include "widgets/radio_button_group.h"
 #include "widgets/popover.h"
 #include "widgets/detail/overlay_popup_surface.h"
@@ -2361,6 +2362,7 @@ void floatingToolbarInputsAcquireKeyboardFocus() {
     owner.show();
     ScreenshotToolPalette::Options options;
     options.showSerialNumberTool = true;
+    options.showDistanceTool = true;
     ScreenshotFloatingToolPaletteWindow window(options);
     window.setTransientOwnerWindow(&owner);
     window.show();
@@ -2377,38 +2379,72 @@ void floatingToolbarInputsAcquireKeyboardFocus() {
         QApplication::sendEvent(target, &release);
     };
     const auto requireNativeFocus = [&window](QWidget* input) {
+        QWidget* focusTarget = input;
+        while (focusTarget->focusProxy() != nullptr) {
+            focusTarget = focusTarget->focusProxy();
+        }
 #if defined(Q_OS_WIN) || defined(_WIN32)
         if (QGuiApplication::platformName() == QStringLiteral("windows")) {
             const auto hwnd = reinterpret_cast<HWND>(window.winId());
             require((GetWindowLongPtr(hwnd, GWL_EXSTYLE) & WS_EX_NOACTIVATE) == 0,
                     "editing should temporarily allow native toolbar activation");
-            require(input->hasFocus() && QApplication::focusWidget() == input,
+            require(input->hasFocus() && QApplication::focusWidget() == focusTarget,
                     "clicking the floating input must give it actual keyboard focus");
         }
 #elif defined(Q_OS_MACOS)
         if (QGuiApplication::platformName() == QStringLiteral("cocoa")) {
             settleQueuedRefreshes();
             require(!window.windowHandle()->flags().testFlag(Qt::WindowDoesNotAcceptFocus) &&
-                        input->hasFocus() && QApplication::focusWidget() == input,
+                        input->hasFocus() && QApplication::focusWidget() == focusTarget,
                     "editing a Cocoa toolbar must give the input actual keyboard focus");
         }
 #else
         Q_UNUSED(window);
         Q_UNUSED(input);
+        Q_UNUSED(focusTarget);
 #endif
     };
     for (const auto tool :
-         {ScreenshotToolPalette::Tool::Watermark, ScreenshotToolPalette::Tool::SerialNumber}) {
+         {ScreenshotToolPalette::Tool::Distance, ScreenshotToolPalette::Tool::Watermark,
+          ScreenshotToolPalette::Tool::SerialNumber}) {
+        adqt::widgets::AdInputNumber* number = nullptr;
         palette->setActiveTool(tool);
         QCoreApplication::processEvents();
+        if (tool == ScreenshotToolPalette::Tool::Distance) {
+            number = palette->findChild<adqt::widgets::AdInputNumber*>(
+                QStringLiteral("screenshotDistanceValueInput"));
+            require(number != nullptr && !number->isEnabled(),
+                    "actual distance input starts unavailable before selecting an annotation");
+            auto* unavailableInput = number->findChild<QLineEdit*>();
+            require(unavailableInput != nullptr, "distance input should contain a text editor");
+            click(unavailableInput);
+            QCoreApplication::processEvents();
+            require(!ScreenshotFloatingToolPaletteWindowTestAccess::keyboardFocusActive(window,
+                                                                                        nullptr),
+                    "an unavailable distance input must not activate the toolbar");
+            SnowCanvasStyleToolbarState selected;
+            selected.source = SnowCanvasStyleToolbarSource::SelectedDistance;
+            selected.selectedElementCount = 1;
+            selected.distanceMeasuredLength = 100.0;
+            palette->setStyleToolbarState(selected);
+        }
+        QCoreApplication::processEvents();
         QLineEdit* input = nullptr;
-        for (auto* candidate : palette->findChildren<QLineEdit*>()) {
-            if (candidate->isVisible() &&
-                (candidate->objectName() == QStringLiteral("screenshotWatermarkTextEdit") ||
-                 candidate->accessibleName() ==
-                     QStringLiteral("Sequence number (scroll to adjust)"))) {
-                input = candidate;
-                break;
+        if (tool == ScreenshotToolPalette::Tool::Distance) {
+            number = palette->findChild<adqt::widgets::AdInputNumber*>(
+                QStringLiteral("screenshotDistanceValueInput"));
+            require(number != nullptr && number->isEnabled(),
+                    "a selected distance should expose an editable actual value");
+            input = number->findChild<QLineEdit*>();
+        } else {
+            for (auto* candidate : palette->findChildren<QLineEdit*>()) {
+                if (candidate->isVisible() &&
+                    (candidate->objectName() == QStringLiteral("screenshotWatermarkTextEdit") ||
+                     candidate->accessibleName() ==
+                         QStringLiteral("Sequence number (scroll to adjust)"))) {
+                    input = candidate;
+                    break;
+                }
             }
         }
         require(input != nullptr, "floating toolbar should expose the active text input");
@@ -2446,9 +2482,15 @@ void floatingToolbarInputsAcquireKeyboardFocus() {
         QKeyEvent enter(QEvent::KeyPress, Qt::Key_Return, Qt::NoModifier);
         QApplication::sendEvent(input, &enter);
         QCoreApplication::processEvents();
+        if (number != nullptr) {
+            require(number->value() == 42.0 && number->displayText() == QStringLiteral("42"),
+                    "Return should commit the actual distance value before releasing focus");
+        }
         require(!ScreenshotFloatingToolPaletteWindowTestAccess::keyboardFocusActive(window, input),
                 "finishing input should release the temporary keyboard focus interaction");
-        if (auto* prefix = input->findChild<QLabel*>(QStringLiteral("ad-input-prefix-icon"));
+        if (auto* prefix = number != nullptr
+                               ? number->findChild<QLabel*>()
+                               : input->findChild<QLabel*>(QStringLiteral("ad-input-prefix-icon"));
             prefix != nullptr && prefix->isVisible()) {
             click(prefix);
         } else {
@@ -2462,8 +2504,25 @@ void floatingToolbarInputsAcquireKeyboardFocus() {
         QCoreApplication::processEvents();
         require(!ScreenshotFloatingToolPaletteWindowTestAccess::keyboardFocusActive(window, input),
                 "focus loss should restore non-activating toolbar behavior");
+        if (number != nullptr) {
+            click(number);
+            QCoreApplication::processEvents();
+            require(
+                ScreenshotFloatingToolPaletteWindowTestAccess::keyboardFocusActive(window, input),
+                "clicking the numeric input shell should also start keyboard editing");
+            requireNativeFocus(input);
+            QKeyEvent finish(QEvent::KeyPress, Qt::Key_Return, Qt::NoModifier);
+            QApplication::sendEvent(input, &finish);
+            click(number);
+            QCoreApplication::processEvents();
+            require(
+                ScreenshotFloatingToolPaletteWindowTestAccess::keyboardFocusActive(window, input),
+                "queued completion of the previous edit must not end a newly clicked edit");
+            requireNativeFocus(input);
+        }
         click(input);
         palette->setActiveTool(ScreenshotToolPalette::Tool::Select);
+        palette->setStyleToolbarState({});
         // Switching tools retires the input row through staged content
         // changes; let those settle before judging the keyboard state.
         settleQueuedRefreshes();

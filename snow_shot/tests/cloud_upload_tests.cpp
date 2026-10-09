@@ -523,6 +523,18 @@ void widgetContracts(QApplication& app) {
     auto* add = widget.findChild<adqt::widgets::AdButton*>(QStringLiteral("cloudUploadAdd"));
     require(add && session.cloudUploadSettings().configurations.isEmpty(),
             "cloud settings initial state");
+    adqt::widgets::AdButton currentFocus(&widget);
+    currentFocus.show();
+    add->click();
+    flushEvents();
+    auto* cancelled =
+        widget.findChild<adqt::widgets::AdModal*>(QStringLiteral("cloudUploadEditor"));
+    require(cancelled, "open cloud editor for dismissal regression");
+    currentFocus.setFocus(Qt::MouseFocusReason);
+    require(currentFocus.hasFocus(), "establish focus before dismissing cloud editor");
+    cancelled->reject();
+    flushEvents();
+    require(currentFocus.hasFocus(), "cloud editor dismissal must not refocus Add");
     add->click();
     flushEvents();
     auto* editor = widget.findChild<adqt::widgets::AdModal*>(QStringLiteral("cloudUploadEditor"));
@@ -658,6 +670,14 @@ void widgetContracts(QApplication& app) {
     auto* remove =
         widget.findChild<adqt::widgets::AdModal*>(QStringLiteral("cloudUploadDeleteModal"));
     require(remove, "delete cloud confirmation");
+    currentFocus.setFocus(Qt::MouseFocusReason);
+    remove->reject();
+    flushEvents();
+    require(currentFocus.hasFocus(), "cloud delete dismissal must not refocus Add");
+    widget.findChild<adqt::widgets::AdButton*>(QStringLiteral("delete:") + original.id)->click();
+    flushEvents();
+    remove = widget.findChild<adqt::widgets::AdModal*>(QStringLiteral("cloudUploadDeleteModal"));
+    require(remove, "reopen cloud delete confirmation");
     remove->acceptButton()->click();
     waitUntil([&] { return session.cloudUploadSettings().configurations.size() == 1; },
               "delete selected destination");

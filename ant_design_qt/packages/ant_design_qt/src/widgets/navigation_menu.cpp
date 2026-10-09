@@ -1,4 +1,5 @@
 #include "navigation_menu.h"
+#include "detail/focus_reason.h"
 #include "detail/pointer_region.h"
 
 #include "detail/popup_geometry.h"
@@ -65,10 +66,6 @@ constexpr int kSubMenuArrowTextGap = 6;
 QString trimmedOrFallback(const QString& value, const QString& fallback) {
   const QString trimmed = value.trimmed();
   return trimmed.isEmpty() ? fallback : trimmed;
-}
-
-bool isKeyboardFocusReason(Qt::FocusReason reason) {
-  return reason != Qt::MouseFocusReason && reason != Qt::NoFocusReason;
 }
 
 QStringList uniqueStringList(const QStringList& values) {
@@ -2383,7 +2380,7 @@ void AdNavigationMenu::Private::setFocusVisible(bool visible) {
 }
 
 void AdNavigationMenu::Private::handleViewFocusIn(Qt::FocusReason reason) {
-  setFocusVisible(isKeyboardFocusReason(reason));
+  setFocusVisible(detail::isKeyboardFocusReason(reason));
 }
 
 void AdNavigationMenu::Private::handleViewFocusOut() {

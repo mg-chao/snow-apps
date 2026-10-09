@@ -444,6 +444,7 @@ pub struct SnowStyleToolbarState {
     pub distance_style_mixed: u32,
     pub angle_style: SnowAngleStyle,
     pub angle_style_mixed: u32,
+    pub distance_measured_length: f64,
 }
 
 #[repr(C)]

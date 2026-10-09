@@ -9,6 +9,7 @@
 
 #include <QEvent>
 #include <QFileDialog>
+#include <QHBoxLayout>
 #include <QIcon>
 #include <QLabel>
 #include <QSignalBlocker>
@@ -99,6 +100,73 @@ struct SettingsFormField::Impl {
                     handle.editor->setAlphaChannelEnabled(payload.alphaChannelEnabled);
                     handle.editor->setAllowClear(false);
                     handle.editor->setTriggerTextVisible(true);
+                } else if constexpr (std::is_same_v<Payload, SettingsColorPaletteDefinition>) {
+                    options.commitPolicy = fields::CommitPolicy::OnFinish;
+                    auto* host = new QWidget;
+                    host->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+                    auto* layout = new QHBoxLayout(host);
+                    layout->setContentsMargins(0, 0, 0, 0);
+                    layout->setSpacing(8);
+                    layout->setAlignment(options.presentation == fields::Presentation::SettingsRow
+                                             ? Qt::AlignRight | Qt::AlignVCenter
+                                             : Qt::AlignLeft | Qt::AlignVCenter);
+                    QVector<adqt::widgets::AdColorPicker*> pickers;
+                    pickers.reserve(payload.colorCount);
+                    for (int index = 0; index < payload.colorCount; ++index) {
+                        auto* picker = new adqt::widgets::AdColorPicker(host);
+                        picker->setObjectName(generatedObjectName(
+                            QStringLiteral("settings-color-preset"),
+                            descriptor.id + QLatin1Char('.') + QString::number(index + 1)));
+                        picker->setPopupPrewarmEnabled(false);
+                        picker->setSize(adqt::widgets::AdColorPicker::Size::Middle);
+                        picker->setModeOptions({adqt::widgets::AdColorPicker::Mode::Solid});
+                        picker->setMode(adqt::widgets::AdColorPicker::Mode::Solid);
+                        picker->setFormat(adqt::widgets::AdColorPicker::Format::Hex);
+                        picker->setAllowClear(false);
+                        picker->setAlphaChannelEnabled(true);
+                        picker->setTriggerTextVisible(false);
+                        picker->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
+                        if (options.popupInModal) {
+                            picker->setPopupLayerMode(
+                                adqt::widgets::AdColorPicker::PopupLayerMode::QtTool);
+                        }
+                        layout->addWidget(picker);
+                        pickers.push_back(picker);
+                    }
+                    const auto handle = fields::custom(
+                        metadata,
+                        {host, pickers.isEmpty() ? host : pickers.first(),
+                         [pickers] {
+                             QVector<QColor> colors;
+                             colors.reserve(pickers.size());
+                             for (const auto* picker : pickers)
+                                 colors.push_back(picker->value().solidColor);
+                             return QVariant::fromValue(colors);
+                         },
+                         [pickers](const QVariant& value) {
+                             const auto colors = value.value<QVector<QColor>>();
+                             for (int index = 0; index < pickers.size() && index < colors.size();
+                                  ++index) {
+                                 pickers.at(index)->setValue(
+                                     adqt::widgets::AdColorValue::solid(colors.at(index)));
+                             }
+                         },
+                         [pickers, label = payload.buttonLabel] {
+                             for (int index = 0; index < pickers.size(); ++index) {
+                                 const QString text = label.translated().arg(index + 1);
+                                 pickers.at(index)->setAccessibleName(text);
+                                 pickers.at(index)->setToolTip(text);
+                             }
+                         }},
+                        options);
+                    field = handle.field;
+                    editor = handle.editor;
+                    for (auto* picker : pickers) {
+                        QObject::connect(picker, &adqt::widgets::AdColorPicker::valueChanged, field,
+                                         [control = field] { control->notifyEdited(); });
+                        QObject::connect(picker, &adqt::widgets::AdColorPicker::editingFinished,
+                                         field, [control = field] { control->notifyCommitted(); });
+                    }
                 } else if constexpr (std::is_same_v<Payload, SettingsRadioDefinition>) {
                     QVector<fields::Choice> choices;
                     for (const auto& option : payload.options)

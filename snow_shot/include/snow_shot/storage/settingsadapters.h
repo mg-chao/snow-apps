@@ -84,6 +84,14 @@ enum class ScreenshotToolbarLayoutKind {
 [[nodiscard]] QColor colorFromRgbaString(const QString& value);
 [[nodiscard]] QString colorToRgbaString(const QColor& color);
 
+class ScreenshotColorPresetSettings final {
+  public:
+    [[nodiscard]] QVector<QColor> strokeColors() const;
+    bool setStrokeColors(const QVector<QColor>& colors) const;
+    [[nodiscard]] QVector<QColor> fillColors() const;
+    bool setFillColors(const QVector<QColor>& colors) const;
+};
+
 #if SNOW_SHOT_ENABLE_API_CONFIGURATION
 class ApiConfigurationSettings final {
   public:

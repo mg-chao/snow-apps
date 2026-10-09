@@ -235,6 +235,17 @@ struct SettingsColorDefinition {
     bool alphaChannelEnabled = true;
 };
 
+enum class SettingsColorPaletteBinding {
+    StrokeColors,
+    FillColors,
+};
+
+struct SettingsColorPaletteDefinition {
+    SettingsColorPaletteBinding binding = SettingsColorPaletteBinding::StrokeColors;
+    int colorCount = 5;
+    TranslatableText buttonLabel;
+};
+
 enum class SettingsRadioBinding {
     TrayIcon,
 };
@@ -422,12 +433,14 @@ struct TrayCommandManifest {
                                               int screenshotDelaySeconds = 3) const;
 };
 
-using SettingsItemPayload = std::variant<
-    SettingsSelectDefinition, SettingsSwitchDefinition, SettingsIntegerDefinition,
-    SettingsMultiSelectDefinition, SettingsSliderDefinition, SettingsColorDefinition,
-    SettingsRadioDefinition, SettingsFilePathDefinition, SettingsDirectoryPathDefinition,
-    SettingsTextDefinition, SettingsShortcutActionDefinition, SettingsLocalShortcutDefinition,
-    SettingsActionDefinition, SettingsCustomDefinition, SettingsGlobalMouseActionDefinition>;
+using SettingsItemPayload =
+    std::variant<SettingsSelectDefinition, SettingsSwitchDefinition, SettingsIntegerDefinition,
+                 SettingsMultiSelectDefinition, SettingsSliderDefinition, SettingsColorDefinition,
+                 SettingsColorPaletteDefinition, SettingsRadioDefinition,
+                 SettingsFilePathDefinition, SettingsDirectoryPathDefinition,
+                 SettingsTextDefinition, SettingsShortcutActionDefinition,
+                 SettingsLocalShortcutDefinition, SettingsActionDefinition,
+                 SettingsCustomDefinition, SettingsGlobalMouseActionDefinition>;
 
 struct SettingsItemDefinition {
     // Item IDs are globally stable within a registry. They are used as the

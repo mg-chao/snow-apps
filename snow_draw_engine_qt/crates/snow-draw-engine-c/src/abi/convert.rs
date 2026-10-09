@@ -1248,6 +1248,7 @@ impl Default for SnowStyleToolbarState {
             distance_style_mixed: 0,
             angle_style: SnowAngleStyle::default(),
             angle_style_mixed: 0,
+            distance_measured_length: 0.0,
         }
     }
 }

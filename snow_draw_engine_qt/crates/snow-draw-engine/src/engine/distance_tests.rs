@@ -40,6 +40,58 @@ fn setup() -> (Engine, ViewportId) {
 }
 
 #[test]
+fn distance_toolbar_measured_length_uses_calibration_and_single_selection() {
+    let (mut engine, viewport) = setup();
+    assert_eq!(
+        engine
+            .viewport_style_toolbar_state(viewport)
+            .unwrap()
+            .distance_measured_length,
+        0.0
+    );
+    let ids = apply(
+        &mut engine,
+        json!([
+            {"type":"distance","points":[[0,0],[30,40]],"pixel_scale":[2,3],"style":{"factor":5}},
+            {"type":"distance","points":[[100,0],[200,0]]}
+        ]),
+    )
+    .unwrap();
+    engine
+        .select_element_with_viewport_changes(viewport, ids[0])
+        .unwrap();
+    let state = engine.viewport_style_toolbar_state(viewport).unwrap();
+    let length = 60.0_f64.hypot(120.0);
+    assert!((state.distance_measured_length - length).abs() < 1e-10);
+    let mut style = state.distance_style;
+    style.factor = 25.125 / length;
+    engine
+        .set_viewport_distance_style_patch(viewport, style, DISTANCE_STYLE_PROPERTY_FACTOR)
+        .unwrap();
+    let state = engine.viewport_style_toolbar_state(viewport).unwrap();
+    assert!((state.distance_measured_length - length).abs() < 1e-10);
+    assert_eq!(label(&engine, ids[0]).text, "25 cm");
+    select(&mut engine, &ids);
+    assert_eq!(
+        engine
+            .viewport_style_toolbar_state(viewport)
+            .unwrap()
+            .distance_measured_length,
+        0.0
+    );
+    engine
+        .select_element_with_viewport_changes(viewport, ids[1])
+        .unwrap();
+    assert_eq!(
+        engine
+            .viewport_style_toolbar_state(viewport)
+            .unwrap()
+            .distance_measured_length,
+        100.0
+    );
+}
+
+#[test]
 fn distance_input_and_host_metrics_publish_one_incremental_patch() {
     let (mut engine, viewport) = setup();
     let second = engine.create_viewport(ViewportConfig::default()).unwrap();

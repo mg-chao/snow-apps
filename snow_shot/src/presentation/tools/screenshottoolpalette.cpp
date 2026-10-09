@@ -6745,7 +6745,9 @@ void ScreenshotToolPalette::createRecordingExportSettingsToolbar() {
                                            const char* transparentTooltip) {
         auto presets =
             std::make_unique<snow_shot::presentation::ScreenshotToolPaletteColorPresets>();
-        QVector<QColor> colors = snow_shot::presentation::style_presets::strokeColors().first(4);
+        QVector<QColor> colors{QColor(QStringLiteral("#f5222d")), QColor(QStringLiteral("#52c41a")),
+                               QColor(QStringLiteral("#1677ff")),
+                               QColor(QStringLiteral("#fadb14"))};
         for (QColor& color : colors) {
             color.setAlpha(alpha);
         }

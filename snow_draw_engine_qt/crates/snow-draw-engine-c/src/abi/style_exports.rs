@@ -304,6 +304,7 @@ pub unsafe extern "C" fn snow_viewport_get_style_toolbar_state(
                         distance_style_mixed: state.distance_style_mixed,
                         angle_style: state.angle_style.into(),
                         angle_style_mixed: state.angle_style_mixed,
+                        distance_measured_length: state.distance_measured_length,
                     },
                 );
                 Ok(())
