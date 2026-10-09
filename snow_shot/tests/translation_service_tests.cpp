@@ -10,6 +10,77 @@ using namespace snow_shot::translation;
 using snow_shot::storage::ConfigurationStore;
 
 namespace {
+void discoverySharesRequestsAndCancellation(const QString& directory) {
+    Server server;
+    server.holdModels = true;
+    SnowShotApiClient client(server.url());
+    auto settings = std::make_unique<ConfigurationStore>(
+        directory + QStringLiteral("/shared-discovery.json"), true, true, 60000);
+    QPointer<TranslationService> service =
+        &TranslationService::forClient(client, *settings, QLocale::English);
+    const QString locale = QLocale(QLocale::English).name();
+    QObject recognitionReceiver;
+    int cancelledCompletions = 0;
+    const auto recognition = client.ensureChatModels(locale, &recognitionReceiver,
+                                                     [&](auto) { ++cancelledCompletions; });
+    require(recognition != 0, "recognition starts shared model discovery");
+    service->refreshModels();
+    service->refreshModels();
+    waitUntil([&] { return server.modelRequests == 1; }, "translation joins recognition discovery");
+    client.cancel(recognition);
+    server.respondModels();
+    waitUntil([&] { return !service->loadingModels(); },
+              "translation finishes after recognition subscriber cancellation");
+    require(server.modelRequests == 1 && cancelledCompletions == 0 &&
+                service->preferences().modelId == QStringLiteral("general") &&
+                service->models() == client.cachedChatModels(),
+            "translation and recognition share one independently cancellable catalog request");
+
+    service->refreshModels();
+    waitUntil([&] { return !service->loadingModels(); }, "translation reuses the cached catalog");
+    require(server.modelRequests == 1, "ordinary translation discovery avoids another request");
+
+    server.models =
+        QJsonArray{QJsonObject{{QStringLiteral("model"), QStringLiteral("updated")},
+                               {QStringLiteral("name"), QStringLiteral("Updated model")},
+                               {QStringLiteral("supports_vision"), true}}};
+    const auto refresh = client.ensureChatModels(
+        locale, &recognitionReceiver, [&](auto) { ++cancelledCompletions; },
+        SnowShotApiClient::ChatModelsCachePolicy::Refresh);
+    require(refresh != 0, "recognition explicitly refreshes the cached catalog");
+    service->refreshModels();
+    require(service->loadingModels(), "ordinary translation discovery joins an in-flight refresh");
+    waitUntil([&] { return server.modelRequests == 2; }, "refresh sends one shared request");
+    client.cancel(refresh);
+    server.respondModels();
+    waitUntil([&] { return !service->loadingModels(); }, "translation receives refreshed models");
+    require(server.modelRequests == 2 && cancelledCompletions == 0 &&
+                service->preferences().modelId == QStringLiteral("updated"),
+            "shared refresh updates translation selection after the other subscriber cancels");
+
+    service->refreshModels(true);
+    int refreshCompletions = 0;
+    require(client.ensureChatModels(
+                locale, &recognitionReceiver,
+                [&](SnowShotChatModelsResult result) {
+                    require(result.succeeded() &&
+                                result.models.first().id == QStringLiteral("updated"),
+                            "remaining recognition subscriber receives refreshed models");
+                    ++refreshCompletions;
+                },
+                SnowShotApiClient::ChatModelsCachePolicy::Refresh) != 0,
+            "recognition joins explicit translation refresh");
+    waitUntil([&] { return server.modelRequests == 3; },
+              "explicit translation refresh bypasses the warm cache once");
+    settings.reset();
+    require(service == nullptr, "settings destruction removes the translation subscriber");
+    server.respondModels();
+    waitUntil([&] { return refreshCompletions == 1; },
+              "recognition discovery survives translation subscriber destruction");
+    require(server.modelRequests == 3 && cancelledCompletions == 0,
+            "explicit refresh and cancellation preserve a single catalog owner");
+}
+
 void secondaryTargetsPersistAndReachEveryUnit(const QString& directory) {
     Server server;
     SnowShotApiClient client(server.url());
@@ -102,6 +173,10 @@ void customModelsStayAvailableAndInvalidateTogether(const QString& directory) {
     auto* first = service.createJob({QStringLiteral("same input")}, &owner);
     auto* second = service.createJob({QStringLiteral("same input")}, &owner);
     first->start();
+    // Identical parallel requests can reach the server in either order. Establish the
+    // first socket's owner before starting the second, while retaining overlapping jobs.
+    waitUntil([&] { return custom.streams.size() == 1 && builtIn.modelRequests == 1; },
+              "first custom stream does not wait for builtin discovery");
     second->start();
     waitUntil([&] { return custom.streams.size() == 2 && builtIn.modelRequests == 1; },
               "custom streams do not wait for coalesced builtin discovery");
@@ -260,6 +335,7 @@ int main(int argc, char** argv) {
     QCoreApplication application(argc, argv);
     QTemporaryDir directory;
     require(directory.isValid(), "isolated translation service settings");
+    discoverySharesRequestsAndCancellation(directory.path());
     secondaryTargetsPersistAndReachEveryUnit(directory.path());
     customModelsStayAvailableAndInvalidateTogether(directory.path());
     failuresAndOwnerLifetimes(directory.path());

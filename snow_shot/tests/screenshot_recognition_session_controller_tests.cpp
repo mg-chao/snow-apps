@@ -41,6 +41,7 @@
 
 void runOriginalImageTranslationTests();
 void runImageConversionTests();
+void runImageConversionNetworkTests();
 void runRecognitionModelTests();
 
 class SnowShotApiClientTestAccess {
@@ -1118,6 +1119,11 @@ int main(int argc, char** argv) {
     }
     if (application.arguments().contains(QStringLiteral("--table-only"))) {
         tablePreparationPreservesSessionAndSiblingPopovers();
+        snow_shot::storage::ApplicationStorage::instance().shutdown();
+        return 0;
+    }
+    if (application.arguments().contains(QStringLiteral("--image-conversion-network-only"))) {
+        runImageConversionNetworkTests();
         snow_shot::storage::ApplicationStorage::instance().shutdown();
         return 0;
     }

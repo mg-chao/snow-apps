@@ -6,6 +6,7 @@
 #include <QElapsedTimer>
 #include <QDateTime>
 #include <QHttp1Configuration>
+#include "boundednetworkresponse.h"
 #include "texttranslationprotocol.h"
 #include <QUuid>
 
@@ -39,7 +40,7 @@ constexpr int kMaximumSide = 2880;
 constexpr int kWebpQuality = 75;
 constexpr int kRequestTimeoutMs = 35'000;
 constexpr int kTranslationTimeoutMs = 120'000;
-constexpr qsizetype kMaximumResponseBytes = 4 * 1024 * 1024;
+constexpr qsizetype kMaximumResponseBytes = snow_shot::network::kMaximumJsonResponseBytes;
 constexpr qsizetype kMaximumChatRequestBytes = 2 * 1024 * 1024;
 constexpr int kChatStreamEventsPerBatch = 64;
 constexpr int kChatStreamBatchMilliseconds = 4;
@@ -712,8 +713,9 @@ void SnowShotApiClient::startTableUpload(RequestToken token, const QByteArray& w
     QNetworkReply* reply = manager->post(request, multipart);
     multipart->setParent(reply);
     requestState->reply = reply;
+    auto* response = new snow_shot::network::BoundedNetworkResponse(reply, kMaximumResponseBytes);
 
-    connect(reply, &QNetworkReply::finished, this, [this, token, reply]() {
+    connect(reply, &QNetworkReply::finished, this, [this, token, reply, response]() {
         if (!m_requests.contains(token)) {
             reply->deleteLater();
             return;
@@ -721,8 +723,8 @@ void SnowShotApiClient::startTableUpload(RequestToken token, const QByteArray& w
 
         SnowShotTableResult result;
         result.httpStatus = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
-        const QByteArray body = reply->read(kMaximumResponseBytes + 1);
-        if (body.size() > kMaximumResponseBytes) {
+        const QByteArray& body = response->body();
+        if (response->tooLarge()) {
             result.error = tr("Table recognition response is too large");
         } else {
             QJsonParseError parseError{};
@@ -857,8 +859,9 @@ void SnowShotApiClient::startLatexUpload(RequestToken token, const QByteArray& w
     QNetworkReply* reply = manager->post(request, multipart);
     multipart->setParent(reply);
     requestState->reply = reply;
+    auto* response = new snow_shot::network::BoundedNetworkResponse(reply, kMaximumResponseBytes);
 
-    connect(reply, &QNetworkReply::finished, this, [this, token, reply]() {
+    connect(reply, &QNetworkReply::finished, this, [this, token, reply, response]() {
         if (!m_requests.contains(token)) {
             reply->deleteLater();
             return;
@@ -866,8 +869,8 @@ void SnowShotApiClient::startLatexUpload(RequestToken token, const QByteArray& w
 
         SnowShotLatexResult result;
         result.httpStatus = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
-        const QByteArray body = reply->read(kMaximumResponseBytes + 1);
-        if (body.size() > kMaximumResponseBytes) {
+        const QByteArray& body = response->body();
+        if (response->tooLarge()) {
             result.error = tr("LaTeX recognition response is too large");
         } else {
             QJsonParseError parseError{};
@@ -1131,83 +1134,86 @@ SnowShotApiClient::fetchChatModels(const QString& locale, QObject* receiver,
         request.setRawHeader("Accept-Language", locale.toUtf8());
     }
     request.setTransferTimeout(kRequestTimeoutMs);
+    state->transport.start();
     QNetworkReply* reply = manager->get(request);
     state->reply = reply;
+    auto* response = new snow_shot::network::BoundedNetworkResponse(reply, kMaximumResponseBytes);
     const auto generation = m_serverGeneration;
     const auto localeGeneration = m_chatModelsLocaleGeneration;
-    connect(reply, &QNetworkReply::finished, this,
-            [this, token, reply, locale, generation, localeGeneration]() {
-                if (!m_requests.contains(token)) {
-                    reply->deleteLater();
-                    return;
-                }
-                SnowShotChatModelsResult result;
-                result.httpStatus =
-                    reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
-                const QByteArray body = reply->read(kMaximumResponseBytes + 1);
-                QJsonParseError parseError{};
-                const QJsonDocument document = QJsonDocument::fromJson(body, &parseError);
-                const QJsonObject root = document.isObject() ? document.object() : QJsonObject{};
-                result.code = root.value(QStringLiteral("code")).toVariant().toString();
-                if (body.size() > kMaximumResponseBytes) {
-                    result.error = tr("Translation service response is too large");
-                } else if (reply->error() != QNetworkReply::NoError) {
-                    result.error = formatFailure(
-                        result.httpStatus, result.code,
-                        problemDetail(root).isEmpty() ? reply->errorString() : problemDetail(root));
-                } else if (!document.isObject() || !root.value(QStringLiteral("data")).isArray()) {
-                    result.error = tr("Invalid translation service response");
-                } else {
-                    for (const QJsonValue& value : root.value(QStringLiteral("data")).toArray()) {
-                        const QJsonObject model = value.toObject();
-                        SnowShotChatModel parsed{
-                            model.value(QStringLiteral("model")).toString().trimmed(),
-                            model.value(QStringLiteral("name")).toString().trimmed(),
-                            model.value(QStringLiteral("supports_reasoning")).toBool(),
-                            model.value(QStringLiteral("translation_mode")).toString().trimmed(),
-                            model.value(QStringLiteral("supports_vision")).toBool()};
-                        if (parsed.translationMode.isEmpty()) {
-                            parsed.translationMode = QStringLiteral("default");
-                        }
-                        if (!parsed.id.isEmpty() && !parsed.name.isEmpty() &&
-                            !parsed.id.startsWith(QStringLiteral("custom:")) &&
-                            !parsed.id.startsWith(QStringLiteral("translation:"))) {
-                            result.models.push_back(std::move(parsed));
-                        }
+    connect(
+        reply, &QNetworkReply::finished, this,
+        [this, token, reply, response, locale, generation, localeGeneration]() {
+            if (!m_requests.contains(token)) {
+                reply->deleteLater();
+                return;
+            }
+            SnowShotChatModelsResult result;
+            result.httpStatus = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
+            const QByteArray& body = response->body();
+            QJsonParseError parseError{};
+            const QJsonDocument document =
+                response->tooLarge() ? QJsonDocument{} : QJsonDocument::fromJson(body, &parseError);
+            const QJsonObject root = document.isObject() ? document.object() : QJsonObject{};
+            result.code = root.value(QStringLiteral("code")).toVariant().toString();
+            if (response->tooLarge()) {
+                result.error = tr("Translation service response is too large");
+            } else if (reply->error() != QNetworkReply::NoError) {
+                result.error = formatFailure(result.httpStatus, result.code,
+                                             problemDetail(root).isEmpty() ? reply->errorString()
+                                                                           : problemDetail(root));
+            } else if (!document.isObject() || !root.value(QStringLiteral("data")).isArray()) {
+                result.error = tr("Invalid translation service response");
+            } else {
+                for (const QJsonValue& value : root.value(QStringLiteral("data")).toArray()) {
+                    const QJsonObject model = value.toObject();
+                    SnowShotChatModel parsed{
+                        model.value(QStringLiteral("model")).toString().trimmed(),
+                        model.value(QStringLiteral("name")).toString().trimmed(),
+                        model.value(QStringLiteral("supports_reasoning")).toBool(),
+                        model.value(QStringLiteral("translation_mode")).toString().trimmed(),
+                        model.value(QStringLiteral("supports_vision")).toBool()};
+                    if (parsed.translationMode.isEmpty()) {
+                        parsed.translationMode = QStringLiteral("default");
                     }
-                    if (result.models.isEmpty()) {
-                        result.error = tr("No translation services are available");
-                    } else if (generation == m_serverGeneration &&
-                               localeGeneration == m_chatModelsLocaleGeneration) {
-                        m_cachedChatModels = result.models;
-                        m_cachedChatModelsLocale = locale;
+                    if (!parsed.id.isEmpty() && !parsed.name.isEmpty() &&
+                        !parsed.id.startsWith(QStringLiteral("custom:")) &&
+                        !parsed.id.startsWith(QStringLiteral("translation:"))) {
+                        result.models.push_back(std::move(parsed));
                     }
                 }
-                rebuildAvailableModels();
-                // Other consumers also use the completion's models directly. Never deliver
-                // an obsolete server catalog after a switch, even when its request finishes last.
-                if (generation != m_serverGeneration) {
-                    result = {};
-                    result.models = m_availableModels;
-                    if (result.models.isEmpty())
-                        result.error = tr("No translation services are available");
-                } else if (localeGeneration != m_chatModelsLocaleGeneration) {
-                    // The receiver can still inspect its requested locale's result, but an older
-                    // locale must not change the current catalog or a running tool's resolution.
-                    if (!m_customModels.isEmpty()) {
-                        appendLocalModels(result.models);
-                        result.error.clear();
-                    }
-                } else if (!m_customModels.isEmpty()) {
-                    result.models = m_availableModels;
+                if (result.models.isEmpty()) {
+                    result.error = tr("No translation services are available");
+                } else if (generation == m_serverGeneration &&
+                           localeGeneration == m_chatModelsLocaleGeneration) {
+                    m_cachedChatModels = result.models;
+                    m_cachedChatModelsLocale = locale;
+                }
+            }
+            rebuildAvailableModels();
+            // Other consumers also use the completion's models directly. Never deliver
+            // an obsolete server catalog after a switch, even when its request finishes last.
+            if (generation != m_serverGeneration) {
+                result = {};
+                result.models = m_availableModels;
+                if (result.models.isEmpty())
+                    result.error = tr("No translation services are available");
+            } else if (localeGeneration != m_chatModelsLocaleGeneration) {
+                // The receiver can still inspect its requested locale's result, but an older
+                // locale must not change the current catalog or a running tool's resolution.
+                if (!m_customModels.isEmpty()) {
+                    appendLocalModels(result.models);
                     result.error.clear();
                 }
-                if (generation == m_serverGeneration &&
-                    localeGeneration == m_chatModelsLocaleGeneration)
-                    emit chatModelsChanged();
-                finishChatModels(token, std::move(result));
-                reply->deleteLater();
-            });
+            } else if (!m_customModels.isEmpty()) {
+                result.models = m_availableModels;
+                result.error.clear();
+            }
+            if (generation == m_serverGeneration &&
+                localeGeneration == m_chatModelsLocaleGeneration)
+                emit chatModelsChanged();
+            finishChatModels(token, std::move(result));
+            reply->deleteLater();
+        });
     return token;
 }
 
@@ -2011,6 +2017,7 @@ void SnowShotApiClient::startTextTranslation(RequestToken token) {
     state->transport.start();
     auto* reply = networkAccessManager()->post(request, body);
     state->reply = reply;
+    auto* response = new snow_shot::network::BoundedNetworkResponse(reply, kMaximumResponseBytes);
     auto* timeout = new QTimer(this);
     timeout->setSingleShot(true);
     state->timeout = timeout;
@@ -2020,48 +2027,40 @@ void SnowShotApiClient::startTextTranslation(RequestToken token) {
         finishTranslation(token, result);
     });
     timeout->start(kTranslationTimeoutMs);
-    connect(reply, &QNetworkReply::readyRead, this, [this, token] {
-        auto* pending = m_requests.value(token);
-        if (!pending || !pending->reply)
-            return;
-        pending->streamBuffer += pending->reply->readAll();
-        if (pending->streamBuffer.size() > kMaximumResponseBytes) {
-            SnowShotTranslationResult result;
-            result.error = tr("The translation response is too large.");
-            finishTranslation(token, result);
-        }
-    });
     connect(reply, &QNetworkReply::finished, reply, &QObject::deleteLater);
-    connect(reply, &QNetworkReply::finished, this, [this, token, provider = config.provider] {
-        auto* pending = m_requests.value(token);
-        if (!pending || !pending->reply)
-            return;
-        pending->streamBuffer += pending->reply->readAll();
-        SnowShotTranslationResult result;
-        result.httpStatus =
-            pending->reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
-        const auto parsed = snow_shot::text_translation::parse(provider, pending->streamBuffer);
-        result.code = parsed.code;
-        if (parsed.throttled)
-            result.httpStatus = 429;
-        if (pending->streamBuffer.size() > kMaximumResponseBytes) {
-            result.error = tr("The translation response is too large.");
-        } else if (pending->reply->error() != QNetworkReply::NoError || result.httpStatus >= 400 ||
-                   !parsed.code.isEmpty()) {
-            // Do not surface arbitrary gateway bodies, URLs, or credentials in errors.
-            result.error = tr("Translation service request failed (HTTP %1, code %2).")
-                               .arg(result.httpStatus)
-                               .arg(result.code.isEmpty() ? QStringLiteral("-") : result.code);
-        } else if (!parsed.valid) {
-            result.error = tr("Invalid translation service response");
-        }
-        if (result.succeeded() && pending->receiver) {
-            const QPointer<SnowShotApiClient> guard(this);
-            const auto delta = pending->translationDelta;
-            delta(parsed.text);
-            if (!guard || !m_requests.contains(token))
+    connect(
+        reply, &QNetworkReply::finished, this, [this, token, response, provider = config.provider] {
+            auto* pending = m_requests.value(token);
+            if (!pending || !pending->reply)
                 return;
-        }
-        finishTranslation(token, result);
-    });
+            SnowShotTranslationResult result;
+            result.httpStatus =
+                pending->reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
+            const auto parsed =
+                response->tooLarge()
+                    ? snow_shot::text_translation::Response{}
+                    : snow_shot::text_translation::parse(provider, response->body());
+            result.code = parsed.code;
+            if (parsed.throttled)
+                result.httpStatus = 429;
+            if (response->tooLarge()) {
+                result.error = tr("The translation response is too large.");
+            } else if (pending->reply->error() != QNetworkReply::NoError ||
+                       result.httpStatus >= 400 || !parsed.code.isEmpty()) {
+                // Do not surface arbitrary gateway bodies, URLs, or credentials in errors.
+                result.error = tr("Translation service request failed (HTTP %1, code %2).")
+                                   .arg(result.httpStatus)
+                                   .arg(result.code.isEmpty() ? QStringLiteral("-") : result.code);
+            } else if (!parsed.valid) {
+                result.error = tr("Invalid translation service response");
+            }
+            if (result.succeeded() && pending->receiver) {
+                const QPointer<SnowShotApiClient> guard(this);
+                const auto delta = pending->translationDelta;
+                delta(parsed.text);
+                if (!guard || !m_requests.contains(token))
+                    return;
+            }
+            finishTranslation(token, result);
+        });
 }

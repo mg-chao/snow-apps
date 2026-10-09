@@ -1,4 +1,5 @@
 #include "snow_shot/presentation/screenshotimageconversioncontroller.h"
+#include "snow_shot/presentation/languagemanager.h"
 #include "snow_shot/presentation/screenshotimageconversionpersistence.h"
 #include "snow_shot/presentation/screenshotimageconversionview.h"
 #include "snow_shot/presentation/screenshottoolbarlayoutmodel.h"
@@ -95,6 +96,10 @@ class ConversionServer final : public QTcpServer {
                 socket->setProperty("answered", true);
                 if (buffer->startsWith("GET ")) {
                     ++modelRequests;
+                    if (holdModels) {
+                        heldModels = socket;
+                        return;
+                    }
                     respond(socket,
                             QJsonDocument(QJsonObject{{QStringLiteral("code"), 0},
                                                       {QStringLiteral("data"), models}})
@@ -143,7 +148,9 @@ class ConversionServer final : public QTcpServer {
     QJsonArray models;
     QString source = QStringLiteral("# Hello\n\n| Name | Value |\n| --- | --- |\n| Item | 42 |\n");
     bool hold = false;
+    bool holdModels = false;
     QPointer<QTcpSocket> held;
+    QPointer<QTcpSocket> heldModels;
 };
 
 QImage sampleImage() {
@@ -280,12 +287,23 @@ void conversionLifecycleAndSettings() {
     require(settings.visionModel() == QStringLiteral("vision-b") && server.requests.size() == 2 &&
                 server.requests.last().value(QStringLiteral("model")) == QStringLiteral("vision-b"),
             "accept persists the shared model and reruns only the active window");
+    QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+    controller.openSettings(&owner);
+    modal = controller.findChild<adqt::widgets::AdModal*>();
+    select = modal->contentWidget()->findChild<adqt::widgets::AdSelect*>(
+        QStringLiteral("screenshotVisionModel"));
+    select->setCurrentValue(QStringLiteral("vision-a"));
+    modal->closeRequested(adqt::widgets::AdModal::CloseReason::OkAction);
+    require(controller.state() == Controller::State::Completed && server.requests.size() == 2 &&
+                controller.source() == saved.first().source,
+            "changing settings back to a completed model restores its result without uploading");
+    settings.setVisionModel(QStringLiteral("vision-b"));
     server.source = QStringLiteral("```html\n<h1>Hello</h1>\n```");
     controller.activate(QStringLiteral("image-one"), sampleImage(), Format::Html);
     until([&]() { return controller.state() == Controller::State::Completed; });
     require(controller.source() == QStringLiteral("<h1>Hello</h1>") &&
-                controller.entries(QStringLiteral("image-one")).size() == 2,
-            "formats have independent results and only the explicit outer fence is removed");
+                controller.entries(QStringLiteral("image-one")).size() == 3,
+            "formats and models have independent results and only the outer fence is removed");
     server.hold = true;
     controller.activate(QStringLiteral("image-two"), sampleImage(), Format::Markdown);
     until([&]() { return controller.source() == QStringLiteral("# Partial"); });
@@ -323,6 +341,182 @@ void conversionLifecycleAndSettings() {
     controller.deactivate();
 }
 
+void conversionServerAndProviderIdentity() {
+    using Controller = ScreenshotImageConversionController;
+    using Format = SnowShotImageConversionFormat;
+    const snow_shot::storage::ScreenshotImageConversionSettings settings;
+    settings.setVisionModel(QStringLiteral("vision-a"));
+    ConversionServer original, replacement;
+    original.source = QStringLiteral("# Original server");
+    replacement.source = QStringLiteral("# Replacement server");
+    SnowShotApiClient api(original.url());
+    Controller controller;
+    controller.setProvider(&api);
+    const QString key = QStringLiteral("server-identity");
+    controller.activate(key, sampleImage(), Format::Markdown);
+    until([&]() { return controller.state() == Controller::State::Completed; });
+    const auto saved = controller.entries(key);
+    require(saved.size() == 1 &&
+                saved.first().modelFingerprint == api.modelFingerprint(QStringLiteral("vision-a")),
+            "built-in conversion records the server identity used for its request");
+    Controller restored;
+    restored.setProvider(&api);
+    restored.seed(key, saved);
+    restored.activate(key, sampleImage(), Format::Markdown);
+    require(restored.state() == Controller::State::Completed && original.requests.size() == 1,
+            "matching built-in server identity permits persisted cache reuse");
+    require(api.setBaseUrl(replacement.url()), "switch the built-in conversion server");
+    require(controller.state() == Controller::State::Failed && controller.source().isEmpty() &&
+                controller.entries(key).isEmpty() && replacement.requests.isEmpty(),
+            "changing the server invalidates completed results without starting a request");
+    controller.seed(key, saved);
+    require(controller.entries(key).isEmpty(), "old built-in fingerprints cannot be reseeded");
+    controller.activate(key, sampleImage(), Format::Markdown);
+    until([&]() { return controller.state() == Controller::State::Completed; });
+    require(controller.source() == replacement.source && replacement.requests.size() == 1,
+            "an unchanged model ID requests a new result from the replacement server");
+
+    replacement.hold = true;
+    const QString pendingKey = QStringLiteral("server-pending");
+    controller.activate(pendingKey, sampleImage(), Format::Html);
+    until([&]() { return controller.source() == QStringLiteral("# Partial"); });
+    const QPointer<QTcpSocket> oldSocket = replacement.held;
+    require(api.setBaseUrl(original.url()), "switch the server during conversion");
+    require(!controller.busy() && controller.source().isEmpty() &&
+                controller.entries(pendingKey).isEmpty(),
+            "a server change cancels the old stream before its content can be cached");
+    until([&]() { return !oldSocket || oldSocket->state() == QAbstractSocket::UnconnectedState; },
+          "the old conversion transport is aborted");
+    controller.activate(pendingKey, sampleImage(), Format::Html);
+    until([&]() { return controller.state() == Controller::State::Completed; });
+    require(controller.source() == original.source && original.requests.size() == 2 &&
+                controller.entries(pendingKey).first().modelFingerprint ==
+                    api.modelFingerprint(QStringLiteral("vision-a")),
+            "retry after a server change retains only the new server's result and fingerprint");
+
+    SnowShotApiClient sameServer(original.url());
+    controller.setProvider(&sameServer);
+    require(controller.state() == Controller::State::Completed &&
+                controller.source() == original.source && original.requests.size() == 2,
+            "a replacement client for the same server can retain completed conversions");
+    SnowShotApiClient otherServer(replacement.url());
+    controller.setProvider(&otherServer);
+    require(controller.state() == Controller::State::Failed && controller.source().isEmpty() &&
+                controller.entries(pendingKey).isEmpty(),
+            "a replacement provider validates all cached built-in server identities");
+
+    Controller legacy;
+    legacy.seed(key, {{Format::Markdown, QStringLiteral("vision-a"), QStringLiteral("# Legacy")}});
+    legacy.activate(key, sampleImage(), Format::Markdown);
+    require(legacy.state() == Controller::State::Completed,
+            "legacy results without a fingerprint remain viewable offline");
+    legacy.setProvider(&api);
+    require(legacy.entries(key).isEmpty() && legacy.state() == Controller::State::Failed,
+            "offline legacy results cannot acquire the current server's fingerprint");
+}
+
+void conversionCacheBoundsAndSeededModels() {
+    using Controller = ScreenshotImageConversionController;
+    using Format = SnowShotImageConversionFormat;
+    const snow_shot::storage::ScreenshotImageConversionSettings settings;
+    settings.setVisionModel(QStringLiteral("vision-a"));
+    Controller controller;
+    for (qsizetype index = 0; index < snow_shot::presentation::kMaximumImageConversionEntries;
+         ++index) {
+        controller.seed(QString::number(index),
+                        {{Format::Markdown, QStringLiteral("vision-a"), QString::number(index)}});
+    }
+    controller.activate(QStringLiteral("0"), sampleImage(), Format::Markdown);
+    require(controller.state() == Controller::State::Completed,
+            "a cache hit refreshes the retained target's recency");
+    controller.seed(QStringLiteral("newest"),
+                    {{Format::Markdown, QStringLiteral("vision-a"), QStringLiteral("# Newest")}});
+    require(!controller.entries(QStringLiteral("0")).isEmpty() &&
+                controller.entries(QStringLiteral("1")).isEmpty() &&
+                !controller.entries(QStringLiteral("newest")).isEmpty(),
+            "the bounded conversion cache evicts the least recently used completed result");
+
+    Controller large;
+    const QString source(4 * 1024 * 1024, u'x');
+    for (int index = 0; index < 3; ++index)
+        large.seed(QString::number(index),
+                   {{Format::Markdown, QStringLiteral("vision-a"), source}});
+    qsizetype retainedBytes = 0;
+    for (int index = 0; index < 3; ++index)
+        for (const auto& entry : large.entries(QString::number(index)))
+            retainedBytes += entry.source.size() * static_cast<qsizetype>(sizeof(QChar));
+    require(retainedBytes <= snow_shot::presentation::kMaximumImageConversionCacheBytes &&
+                large.entries(QStringLiteral("0")).isEmpty() &&
+                !large.entries(QStringLiteral("2")).isEmpty(),
+            "conversion cache memory is bounded even when a few source documents are large");
+
+    const QString key = QStringLiteral("seeded-models");
+    Controller seeded;
+    seeded.seed(key,
+                {{Format::Markdown, QStringLiteral("vision-a"), QStringLiteral("# Model A")},
+                 {Format::Markdown, QStringLiteral("vision-b"), QStringLiteral("# Model B")},
+                 {Format::Html, QStringLiteral("vision-a"), QStringLiteral("<p>Model A</p>")}});
+    for (const QString& model :
+         {QStringLiteral("vision-a"), QStringLiteral("vision-b"), QStringLiteral("vision-a")}) {
+        settings.setVisionModel(model);
+        seeded.activate(key, sampleImage(), Format::Markdown);
+        require(seeded.state() == Controller::State::Completed &&
+                    seeded.source() == (model == QStringLiteral("vision-a")
+                                            ? QStringLiteral("# Model A")
+                                            : QStringLiteral("# Model B")),
+                "seeded results retain independent models for the same conversion format");
+    }
+    require(seeded.entries(key).size() == 3, "seeded formats and models retain separate entries");
+}
+
+void conversionDiscoveryJoinsPendingRefresh() {
+    using Controller = ScreenshotImageConversionController;
+    using Format = SnowShotImageConversionFormat;
+    const snow_shot::storage::ScreenshotImageConversionSettings settings;
+    settings.setVisionModel(QStringLiteral("vision-a"));
+    ConversionServer server;
+    SnowShotApiClient api(server.url());
+    const QString locale =
+        snow_shot::presentation::LanguageManager::instance().currentLocale().name();
+    bool warmed = false;
+    require(api.ensureChatModels(locale, &api,
+                                 [&](SnowShotChatModelsResult result) {
+                                     require(result.succeeded(),
+                                             "warm the conversion model catalog");
+                                     warmed = true;
+                                 }) != 0,
+            "initial conversion model discovery starts");
+    until([&]() { return warmed; });
+    server.holdModels = true;
+    bool refreshed = false;
+    require(api.ensureChatModels(
+                locale, &api,
+                [&](SnowShotChatModelsResult result) {
+                    require(result.succeeded(), "refresh the conversion model catalog");
+                    refreshed = true;
+                },
+                SnowShotApiClient::ChatModelsCachePolicy::Refresh) != 0,
+            "explicit model refresh starts with a warm catalog");
+    until([&]() { return server.heldModels != nullptr; });
+    Controller controller;
+    controller.setProvider(&api);
+    controller.activate(QStringLiteral("pending-model-refresh"), sampleImage(), Format::Markdown);
+    require(controller.state() == Controller::State::LoadingModels && server.requests.isEmpty() &&
+                server.modelRequests == 2,
+            "normal conversion discovery joins a pending refresh despite a warm catalog");
+    server.models = QJsonArray{server.models.first(), server.models.last()};
+    ConversionServer::respond(server.heldModels,
+                              QJsonDocument(QJsonObject{{QStringLiteral("code"), 0},
+                                                        {QStringLiteral("data"), server.models}})
+                                  .toJson(QJsonDocument::Compact),
+                              "application/json");
+    until([&]() { return refreshed && controller.state() == Controller::State::Completed; });
+    require(server.modelRequests == 2 && server.requests.size() == 1 &&
+                server.requests.first().value(QStringLiteral("model")) ==
+                    QStringLiteral("vision-b"),
+            "joined discovery selects the refreshed catalog without uploading to a removed model");
+}
+
 void customModelWorkflows() {
     using Controller = ScreenshotImageConversionController;
     using Format = SnowShotImageConversionFormat;
@@ -358,6 +552,12 @@ void customModelWorkflows() {
     controller.activate(QStringLiteral("custom-image"), sampleImage(), Format::Markdown);
     require(server.requests.size() == 1 && controller.state() == Controller::State::Completed,
             "rename preserves completed conversion");
+    require(api.setBaseUrl(QStringLiteral("http://127.0.0.1:2")),
+            "change the built-in server while a custom conversion is selected");
+    require(controller.state() == Controller::State::Completed &&
+                controller.entries(QStringLiteral("custom-image")).size() == 1 &&
+                server.requests.size() == 1,
+            "changing the built-in server preserves independent custom model results");
     model.model = QStringLiteral("changed-provider-id");
     require(apiSettings.setCustomModels({model, second}), "edit shared custom model connection");
     require(controller.entries(QStringLiteral("custom-image")).isEmpty() && !controller.busy(),
@@ -553,6 +753,40 @@ void renderingCopyAndPersistence() {
     snow_shot::presentation::decodeImageConversions(QByteArrayLiteral("{invalid"), restored);
     require(restored.qr.has_value() && restored.conversions.size() == 2,
             "malformed optional data preserves recognition results");
+
+    results.conversions.append(
+        {Format::Markdown, QStringLiteral("vision-b"), QStringLiteral("# Another model")});
+    results.conversions.append(results.conversions.first());
+    snow_shot::presentation::decodeImageConversions(
+        snow_shot::presentation::encodeImageConversions(results), restored);
+    require(restored.conversions.size() == 3 && restored.visibleConversion == Format::Html &&
+                std::any_of(restored.conversions.cbegin(), restored.conversions.cend(),
+                            [](const auto& entry) {
+                                return entry.model == QStringLiteral("vision-b") &&
+                                       entry.source == QStringLiteral("# Another model");
+                            }),
+            "persistence retains multiple models per format and deduplicates request identities");
+    QJsonArray excessive;
+    for (qsizetype index = 0; index <= snow_shot::presentation::kMaximumImageConversionEntries;
+         ++index)
+        excessive.append(legacyEntries.first());
+    snow_shot::presentation::decodeImageConversions(
+        QJsonDocument(QJsonObject{{QStringLiteral("entries"), excessive}}).toJson(), restored);
+    require(restored.conversions.size() == 3 && restored.visibleConversion == Format::Html,
+            "over-limit optional conversion payloads cannot replace retained results");
+
+    ScreenshotRecognitionResults large;
+    large.conversions = {
+        {Format::Markdown, QStringLiteral("vision-a"), QString(4 * 1024 * 1024, QChar(0x4e00))},
+        {Format::Markdown, QStringLiteral("vision-b"), QString(4 * 1024 * 1024, QChar(0x4e8c))}};
+    const auto bounded = snow_shot::presentation::encodeImageConversions(large);
+    ScreenshotRecognitionResults boundedRestored;
+    snow_shot::presentation::decodeImageConversions(bounded, boundedRestored);
+    require(!bounded.isEmpty() &&
+                bounded.size() <= snow_shot::presentation::kMaximumImageConversionPayload &&
+                boundedRestored.conversions.size() == 1 &&
+                boundedRestored.conversions.first().model == QStringLiteral("vision-b"),
+            "the persistence byte budget retains the newest usable result instead of losing all");
 }
 
 void conversionSessionRoutesSourceAndClearsOldViews() {
@@ -907,14 +1141,21 @@ void initializeRecognitionTestFonts() {
 }
 } // namespace
 
-void runImageConversionTests() {
+void runImageConversionNetworkTests() {
     initializeRecognitionTestFonts();
     settingsInitialAvailability();
     conversionCacheUsesRecognitionKeys();
     conversionLifecycleAndSettings();
+    conversionServerAndProviderIdentity();
+    conversionCacheBoundsAndSeededModels();
+    conversionDiscoveryJoinsPendingRefresh();
     customModelWorkflows();
     conversionSourceNormalization();
     renderingCopyAndPersistence();
+}
+
+void runImageConversionTests() {
+    runImageConversionNetworkTests();
     conversionSessionRoutesSourceAndClearsOldViews();
     recognitionFileSnapshotTracksPartialConversionAndQrValues();
     conversionUsesRecognitionMessages();

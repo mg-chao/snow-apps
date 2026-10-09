@@ -13,13 +13,26 @@ struct ScreenshotImageConversionEntry {
 
 #if SNOW_SHOT_ENABLE_IMAGE_CONVERSION
     [[nodiscard]] bool isValid() const {
-        return !model.isEmpty() && model.size() <= 256 && !source.trimmed().isEmpty() &&
-               source.size() <= 4 * 1024 * 1024 && promptVersion == 1 &&
+        return !model.isEmpty() && model.size() <= 256 && modelFingerprint.size() <= 256 &&
+               !source.trimmed().isEmpty() && source.size() <= 4 * 1024 * 1024 &&
+               promptVersion == 1 &&
                (format == SnowShotImageConversionFormat::Markdown ||
                 format == SnowShotImageConversionFormat::Html);
     }
 #endif
 };
+
+namespace snow_shot::presentation {
+inline constexpr qsizetype kMaximumImageConversionEntries = 16;
+inline constexpr qsizetype kMaximumImageConversionCacheBytes = 16 * 1024 * 1024;
+
+[[nodiscard]] inline bool sameImageConversionRequest(const ScreenshotImageConversionEntry& left,
+                                                     const ScreenshotImageConversionEntry& right) {
+    return left.format == right.format && left.model == right.model &&
+           left.promptVersion == right.promptVersion &&
+           left.modelFingerprint == right.modelFingerprint;
+}
+} // namespace snow_shot::presentation
 
 #if SNOW_SHOT_ENABLE_IMAGE_CONVERSION
 // Only unwrap a complete, explicitly format-tagged response. Ordinary code fences are content.

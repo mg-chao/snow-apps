@@ -788,6 +788,7 @@ add_library(snow_shot_translation STATIC
     include/snow_shot/presentation/selectedtexttranslationcontroller.h
     src/presentation/services/selectedtexttranslationcontroller.cpp
     include/snow_shot/network/snowshotapiclient.h
+    src/network/boundednetworkresponse.h
     src/network/snowshotapiclient.cpp
     include/snow_shot/presentation/translationlanguages.h
     src/presentation/services/translationlanguages.cpp
@@ -1156,7 +1157,9 @@ set_source_files_properties(
     src/presentation/components/shortcutkeyrow.cpp
     src/platform/macos/globalshortcutbackend.cpp
     PROPERTIES SKIP_UNITY_BUILD_INCLUSION ON)
-target_include_directories(snow_shot_settings PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include")
+target_include_directories(snow_shot_settings
+    PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include"
+    PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src/network")
 target_link_libraries(snow_shot_settings PUBLIC
     snow_shot_main_window_skin
     snow_shot_window_shortcuts
@@ -7332,6 +7335,10 @@ if(SNOW_SHOT_BUILD_TESTS)
         COMMAND snow-shot-recognition-session-controller-tests --image-conversion-only -platform offscreen)
     set_tests_properties(snow-shot-image-conversion-tests PROPERTIES TIMEOUT 60
         ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
+    add_test(NAME snow-shot-image-conversion-network-tests
+        COMMAND snow-shot-recognition-session-controller-tests --image-conversion-network-only -platform offscreen)
+    set_tests_properties(snow-shot-image-conversion-network-tests PROPERTIES TIMEOUT 60
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
     add_test(NAME snow-shot-image-conversion-storage-tests
         COMMAND snow-shot-application-storage-tests --image-conversion-only)
     set_tests_properties(snow-shot-image-conversion-storage-tests PROPERTIES TIMEOUT 60
@@ -7595,6 +7602,7 @@ if(SNOW_SHOT_BUILD_TESTS)
     )
     target_include_directories(snow-shot-api-client-tests PRIVATE
         "${CMAKE_CURRENT_SOURCE_DIR}/include"
+        "${CMAKE_CURRENT_SOURCE_DIR}/src/network"
     )
     target_link_libraries(snow-shot-api-client-tests PRIVATE
         snow_shot_translation

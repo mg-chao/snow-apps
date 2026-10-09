@@ -2,6 +2,7 @@
 #include "translation_test_support.h"
 #include "snow_shot/diagnostics/diagnostics.h"
 #include "snowimageqtcodec.h"
+#include "boundednetworkresponse.h"
 
 #include <QCoreApplication>
 #include <QEventLoop>
@@ -62,7 +63,8 @@ void require(bool condition, const char* message) {
     }
 }
 
-QByteArray waitForHttpRequest(QTcpServer& server, const QByteArray& response) {
+QByteArray waitForHttpRequest(QTcpServer& server, const QByteArray& response,
+                              bool closeConnection = true) {
     QByteArray request;
     QEventLoop loop;
     QTimer timeout;
@@ -88,7 +90,8 @@ QByteArray waitForHttpRequest(QTcpServer& server, const QByteArray& response) {
             }
             socket->write(response);
             socket->flush();
-            socket->disconnectFromHost();
+            if (closeConnection)
+                socket->disconnectFromHost();
             loop.quit();
         });
     });
@@ -96,6 +99,130 @@ QByteArray waitForHttpRequest(QTcpServer& server, const QByteArray& response) {
     loop.exec();
     require(timeout.isActive(), "local API test server timed out waiting for a request");
     return request;
+}
+
+void jsonResponsesAreBoundedDuringTransfer() {
+    enum class Kind { Table, Latex, Catalog, TextTranslation };
+    constexpr qsizetype maximumBytes = snow_shot::network::kMaximumJsonResponseBytes;
+    for (const auto kind : {Kind::Table, Kind::Latex, Kind::Catalog, Kind::TextTranslation}) {
+        for (int scenario = 0; scenario < 3; ++scenario) {
+            QTcpServer server;
+            require(server.listen(QHostAddress::LocalHost), "bounded JSON server listens");
+            const auto url = QStringLiteral("http://127.0.0.1:%1").arg(server.serverPort());
+            SnowShotApiClient client(url);
+            QObject receiver;
+            bool completed = false;
+            bool succeeded = false;
+            QString error;
+            const auto completion = [&](auto result) {
+                require(!completed, "bounded JSON request completes exactly once");
+                completed = true;
+                succeeded = result.succeeded();
+                error = result.error;
+            };
+            QImage image(16, 16, QImage::Format_RGBA8888);
+            image.fill(Qt::white);
+            SnowShotApiClient::RequestToken token = 0;
+            QByteArray validBody;
+            switch (kind) {
+            case Kind::Table:
+                token = client.extractTable(image, &receiver, completion);
+                validBody = R"({"data":{"html":"<table><tr><td>value</td></tr></table>"}})";
+                break;
+            case Kind::Latex:
+                token = client.extractLatex(image, &receiver, completion);
+                validBody = R"({"data":{"latex":"x+y"}})";
+                break;
+            case Kind::Catalog:
+                token = client.ensureChatModels(QStringLiteral("en_US"), &receiver, completion);
+                validBody =
+                    R"({"data":[{"model":"vision","name":"Vision","supports_vision":true}]})";
+                break;
+            case Kind::TextTranslation: {
+                snow_shot::TextTranslationConfiguration config;
+                config.id = QUuid::createUuid().toString(QUuid::WithoutBraces);
+                config.name = QStringLiteral("Bounded provider");
+                config.endpoint = url + QStringLiteral("/translate");
+                client.setTextTranslationConfigurations({config});
+                token = client.streamTranslation(
+                    {config.selectionId(), QStringLiteral("auto"), QStringLiteral("en"),
+                     QStringLiteral("text")},
+                    &receiver, [](const QString&) {}, completion);
+                validBody = R"({"translations":[{"text":"translated"}]})";
+                break;
+            }
+            }
+            require(token != 0, "bounded JSON request is accepted");
+            QByteArray response = "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n";
+            if (scenario == 0) {
+                response += "Content-Length: " + QByteArray::number(maximumBytes + 1) + "\r\n\r\n";
+            } else if (scenario == 1) {
+                const QByteArray oversized(maximumBytes + 1, ' ');
+                response += "Transfer-Encoding: chunked\r\n\r\n" +
+                            QByteArray::number(oversized.size(), 16) + "\r\n" + oversized + "\r\n";
+                // Deliberately omit the terminating chunk: receipt must fail before completion.
+            } else {
+                validBody += QByteArray(maximumBytes - validBody.size(), ' ');
+                response += "Content-Length: " + QByteArray::number(validBody.size()) +
+                            "\r\nConnection: close\r\n\r\n" + validBody;
+            }
+            waitForHttpRequest(server, response, scenario == 2);
+            translation_tests::waitUntil([&] { return completed; }, "bounded JSON completion");
+            require(succeeded == (scenario == 2), "JSON limit accepts the exact boundary only");
+            if (scenario != 2) {
+                require(error.contains(QStringLiteral("too large")),
+                        "oversized JSON reports the size error instead of cancellation or parsing");
+                const QPointer<QTcpSocket> socket = server.findChild<QTcpSocket*>();
+                translation_tests::waitUntil(
+                    [&] { return !socket || socket->state() == QAbstractSocket::UnconnectedState; },
+                    "oversized unfinished JSON aborts the connection");
+            }
+            require(SnowShotApiClientTestAccess::requests(client) == 0 &&
+                        SnowShotApiClientTestAccess::catalogs(client) == 0,
+                    "JSON completion releases requests and catalog subscribers");
+        }
+    }
+}
+
+void boundedResponsesMeasureDecodedBodiesAndFollowRedirects() {
+    for (const bool oversized : {false, true}) {
+        QTcpServer server;
+        require(server.listen(QHostAddress::LocalHost), "compressed response server listens");
+        QNetworkAccessManager manager;
+        auto* reply = manager.get(QNetworkRequest(
+            QUrl(QStringLiteral("http://127.0.0.1:%1/compressed").arg(server.serverPort()))));
+        auto* response = new snow_shot::network::BoundedNetworkResponse(reply, 32);
+        bool finished = false;
+        QObject::connect(reply, &QNetworkReply::finished, &server, [&] { finished = true; });
+        const auto compressed = QByteArray::fromBase64(
+            oversized ? "H4sIAAAAAAAC/6uoIAAArNO/byEAAAA=" : "H4sIAAAAAAAC/6uowA8AiD3OACAAAAA=");
+        waitForHttpRequest(server, "HTTP/1.1 200 OK\r\nContent-Encoding: gzip\r\nContent-Length: " +
+                                       QByteArray::number(compressed.size()) +
+                                       "\r\nConnection: close\r\n\r\n" + compressed);
+        translation_tests::waitUntil([&] { return finished; }, "compressed response finishes");
+        require(response->tooLarge() == oversized,
+                "response limits measure decoded bytes rather than compressed Content-Length");
+        require(oversized ? response->body().isEmpty() : response->body() == QByteArray(32, 'x'),
+                "exact decoded limit succeeds and rejected bodies are discarded");
+    }
+
+    QTcpServer server;
+    require(server.listen(QHostAddress::LocalHost), "redirect response server listens");
+    QNetworkAccessManager manager;
+    auto* reply = manager.get(QNetworkRequest(
+        QUrl(QStringLiteral("http://127.0.0.1:%1/redirect").arg(server.serverPort()))));
+    auto* response = new snow_shot::network::BoundedNetworkResponse(reply, 32);
+    bool finished = false;
+    QObject::connect(reply, &QNetworkReply::finished, &server, [&] { finished = true; });
+    waitForHttpRequest(server, "HTTP/1.1 307 Temporary Redirect\r\nLocation: /final\r\n"
+                               "Content-Length: 33\r\nConnection: close\r\n\r\n" +
+                                   QByteArray(33, 'x'));
+    const auto request = waitForHttpRequest(
+        server, "HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\n{}");
+    translation_tests::waitUntil([&] { return finished; }, "redirected response finishes");
+    require(request.startsWith("GET /final ") && reply->error() == QNetworkReply::NoError &&
+                !response->tooLarge() && response->body() == "{}",
+            "discarded redirect bodies do not reject a small final response");
 }
 
 void tablePreparationIsAsynchronousAndLifetimeSafe() {
@@ -2249,6 +2376,8 @@ int main(int argc, char** argv) {
                 QStringLiteral("Connection failed"),
             "transport failures without a code should remain concise");
     customServerDefaultsAndValidation();
+    jsonResponsesAreBoundedDuringTransfer();
+    boundedResponsesMeasureDecodedBodiesAndFollowRedirects();
     requestsKeepTheirOriginalServer();
     oldCatalogCannotReplaceNewServerModels();
     ensuredCatalogsAreLazySharedAndIndependentlyCancellable();
