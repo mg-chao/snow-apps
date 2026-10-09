@@ -62,10 +62,27 @@ struct SnowCanvasDistanceEdit {
     SnowCanvasDistanceStyle style;
     quint32 properties = 0;
 };
+struct SnowCanvasAngleStyleEdit {
+    SnowCanvasAngleStyle style;
+    quint32 properties = 0;
+    bool creationDefaults = true;
+};
 using SnowCanvasStyleEdit =
     std::variant<SnowCanvasShapeEdit, SnowCanvasTextEdit, SnowCanvasSerialNumberEdit,
                  SnowCanvasFilterEdit, SnowCanvasWatermarkEdit, SnowCanvasSpotlightEdit,
-                 SnowCanvasBrushEraserEdit, SnowCanvasDistanceEdit>;
+                 SnowCanvasBrushEraserEdit, SnowCanvasDistanceEdit, SnowCanvasAngleStyleEdit>;
+
+inline void snowCanvasMergeStyle(SnowCanvasAngleStyle& target, const SnowCanvasAngleStyle& value,
+                                 quint32 properties) {
+    if (properties & static_cast<quint32>(SnowCanvasAngleStyleProperty::Stroke))
+        target.stroke = value.stroke;
+    if (properties & static_cast<quint32>(SnowCanvasAngleStyleProperty::StrokeWidth))
+        target.strokeWidth = value.strokeWidth;
+    if (properties & static_cast<quint32>(SnowCanvasAngleStyleProperty::Unit))
+        target.unit = value.unit;
+    if (properties & static_cast<quint32>(SnowCanvasAngleStyleProperty::DecimalPlaces))
+        target.decimalPlaces = value.decimalPlaces;
+}
 
 inline void snowCanvasMergeStyle(SnowCanvasDistanceStyle& target,
                                  const SnowCanvasDistanceStyle& value, quint32 properties) {
@@ -250,6 +267,9 @@ inline void snowCanvasMergeStyleEdit(SnowCanvasStyleDefaults& defaults,
                     snowCanvasMergeStyle(*target, patch.style, patch.properties);
             } else if constexpr (std::is_same_v<T, SnowCanvasDistanceEdit>) {
                 snowCanvasMergeStyle(defaults.distance, patch.style, patch.properties);
+            } else if constexpr (std::is_same_v<T, SnowCanvasAngleStyleEdit>) {
+                if (patch.creationDefaults)
+                    snowCanvasMergeStyle(defaults.angle, patch.style, patch.properties);
             } else if constexpr (std::is_same_v<T, SnowCanvasTextEdit>) {
                 snowCanvasMergeStyle(defaults.text, patch.style, patch.properties);
             } else if constexpr (std::is_same_v<T, SnowCanvasSerialNumberEdit>) {

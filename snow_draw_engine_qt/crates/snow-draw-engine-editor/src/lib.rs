@@ -6,7 +6,9 @@ mod auto_filter_workflow;
 pub use arrow_text::ArrowTextLayoutRequest;
 mod creation_workflow;
 pub use creation_workflow::SerialNumberLabelLayoutRequest;
+mod angle;
 mod defaults;
+pub use angle::*;
 mod distance;
 pub use distance::*;
 mod document_ops;
@@ -141,8 +143,9 @@ pub struct EditorUpdate {
 
 #[derive(Clone, Debug)]
 pub struct Editor {
+    arrow_text_cache: std::cell::RefCell<arrow_text::ArrowTextCache>,
     state: EditorState,
-    view: EditorViewportState,
+    view: std::cell::Cell<EditorViewportState>,
     config: EngineConfig,
     quick_selection_disabled_tools: u64,
     scene_state_revision: u64,
@@ -154,11 +157,12 @@ impl Editor {
     pub fn new(config: EngineConfig) -> Result<Self, ErrorCode> {
         validate_config(&config)?;
         Ok(Self {
+            arrow_text_cache: Default::default(),
             state: EditorState {
                 active_tool: ActiveTool::Shape,
                 ..EditorState::default()
             },
-            view: EditorViewportState::default(),
+            view: Default::default(),
             config,
             quick_selection_disabled_tools: 0,
             scene_state_revision: 0,
@@ -209,11 +213,28 @@ impl Editor {
     }
 
     pub fn surface_size(&self) -> SurfaceSize {
-        self.view.surface
+        self.view.get().surface
     }
 
     pub fn camera(&self) -> Camera {
-        self.view.camera
+        self.view.get().camera
+    }
+
+    fn with_view<T>(&self, view: &EditorViewportState, query: impl FnOnce(&Self) -> T) -> T {
+        struct RestoreView<'a> {
+            cell: &'a std::cell::Cell<EditorViewportState>,
+            previous: EditorViewportState,
+        }
+        impl Drop for RestoreView<'_> {
+            fn drop(&mut self) {
+                self.cell.set(self.previous);
+            }
+        }
+        let _restore = RestoreView {
+            cell: &self.view,
+            previous: self.view.replace(*view),
+        };
+        query(self)
     }
 
     pub fn active_tool(&self) -> ActiveTool {
@@ -282,8 +303,8 @@ impl Editor {
 
     pub fn set_surface_size(&mut self, width: u32, height: u32) -> Result<(), ErrorCode> {
         let next = SurfaceSize { width, height };
-        if self.view.surface != next {
-            self.view.surface = next;
+        if self.view.get().surface != next {
+            self.view.get_mut().surface = next;
             self.bump_scene_state_revision();
             self.bump_overlay_state_revision();
         }
@@ -292,8 +313,8 @@ impl Editor {
 
     pub fn set_camera(&mut self, camera: Camera) -> Result<(), ErrorCode> {
         validate_camera(&camera)?;
-        if self.view.camera != camera {
-            self.view.camera = camera;
+        if self.view.get().camera != camera {
+            self.view.get_mut().camera = camera;
             self.bump_scene_state_revision();
             self.bump_overlay_state_revision();
         }

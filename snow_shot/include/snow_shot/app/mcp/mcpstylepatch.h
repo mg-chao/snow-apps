@@ -56,6 +56,7 @@ inline const QHash<QString, SnowCanvasTool>& mcpCanvasTools() {
         {QStringLiteral("rectangle"), SnowCanvasTool::Shape},
         {QStringLiteral("arrow"), SnowCanvasTool::Arrow},
         {QStringLiteral("distance"), SnowCanvasTool::Distance},
+        {QStringLiteral("angle"), SnowCanvasTool::Angle},
         {QStringLiteral("line"), SnowCanvasTool::Line},
         {QStringLiteral("freehand"), SnowCanvasTool::FreeDraw},
         {QStringLiteral("rectangle_highlight"), SnowCanvasTool::RectangleHighlight},
@@ -78,10 +79,13 @@ inline bool mcpStylePatch(Commands& commands, Canvas& canvas, const QJsonObject&
     const auto patch = params.value(QStringLiteral("style")).toObject();
     if (patch.isEmpty())
         return false;
+    const QStringList units =
+        target == QStringLiteral("angle")
+            ? QStringList{QStringLiteral("degrees"), QStringLiteral("radians")}
+            : QStringList{QStringLiteral("px"), QStringLiteral("cm"), QStringLiteral("m"),
+                          QStringLiteral("km"), QStringLiteral("mm")};
     const QHash<QString, QStringList> enums{
-        {QStringLiteral("unit"),
-         {QStringLiteral("px"), QStringLiteral("cm"), QStringLiteral("m"), QStringLiteral("km"),
-          QStringLiteral("mm")}},
+        {QStringLiteral("unit"), units},
         {QStringLiteral("shape"),
          {QStringLiteral("rectangle"), QStringLiteral("ellipse"), QStringLiteral("diamond")}},
         {QStringLiteral("fill_style"),
@@ -171,6 +175,9 @@ inline bool mcpStylePatch(Commands& commands, Canvas& canvas, const QJsonObject&
                    QStringLiteral("factor"),         QStringLiteral("unit"),
                    QStringLiteral("decimal_places"), QStringLiteral("endpoint_scale"),
                    QStringLiteral("endpoint_style")};
+    else if (target == QStringLiteral("angle"))
+        allowed = {QStringLiteral("stroke"), QStringLiteral("stroke_width"), QStringLiteral("unit"),
+                   QStringLiteral("decimal_places")};
     else if (target == QStringLiteral("arrow"))
         allowed = {QStringLiteral("stroke"),           QStringLiteral("stroke_width"),
                    QStringLiteral("stroke_style"),     QStringLiteral("start_arrowhead"),
@@ -234,7 +241,7 @@ inline bool mcpStylePatch(Commands& commands, Canvas& canvas, const QJsonObject&
             if (it.key() == QStringLiteral("decimal_places") &&
                 (value > 3 || std::floor(value) != value))
                 return false;
-            if (target == QStringLiteral("distance") &&
+            if ((target == QStringLiteral("distance") || target == QStringLiteral("angle")) &&
                 it.key() == QStringLiteral("stroke_width") && (value < 1 || value > 72))
                 return false;
         } else {
@@ -285,7 +292,32 @@ inline bool mcpStylePatch(Commands& commands, Canvas& canvas, const QJsonObject&
         }
         return fallback;
     };
-    if (target == QStringLiteral("distance")) {
+    if (target == QStringLiteral("angle")) {
+        auto style = state.angleStyle;
+        style.stroke = color("stroke", style.stroke);
+        style.strokeWidth = number("stroke_width", style.strokeWidth);
+        style.unit =
+            static_cast<SnowCanvasAngleUnit>(enumeration("unit", static_cast<int>(style.unit)));
+        style.decimalPlaces = static_cast<quint32>(number("decimal_places", style.decimalPlaces));
+        const QHash<QString, quint32> properties{
+            {QStringLiteral("stroke"), static_cast<quint32>(SnowCanvasAngleStyleProperty::Stroke)},
+            {QStringLiteral("stroke_width"),
+             static_cast<quint32>(SnowCanvasAngleStyleProperty::StrokeWidth)},
+            {QStringLiteral("unit"), static_cast<quint32>(SnowCanvasAngleStyleProperty::Unit)},
+            {QStringLiteral("decimal_places"),
+             static_cast<quint32>(SnowCanvasAngleStyleProperty::DecimalPlaces)}};
+        quint32 flags = 0;
+        for (auto it = patch.begin(); it != patch.end(); ++it)
+            flags |= properties.value(it.key());
+        const bool creationDefaults = state.source != SnowCanvasStyleToolbarSource::SelectedAngle;
+        if constexpr (requires {
+                          canvas.commitStyleEdit(
+                              SnowCanvasAngleStyleEdit{style, flags, creationDefaults});
+                      })
+            return canvas.commitStyleEdit(SnowCanvasAngleStyleEdit{style, flags, creationDefaults});
+        else
+            return canvas.setAngleStyleFromToolbar(style, flags);
+    } else if (target == QStringLiteral("distance")) {
         auto style = state.distanceStyle;
         style.stroke = color("stroke", style.stroke);
         style.strokeWidth = number("stroke_width", style.strokeWidth);

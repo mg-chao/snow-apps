@@ -32,6 +32,7 @@ ScreenshotToolPalette::Options recordingToolbarOptions() {
     options.showArrowTool = true;
     options.showLineTool = true;
     options.showDistanceTool = true;
+    options.showAngleTool = true;
     options.showFreeDrawTool = true;
     options.showHighlightTool = true;
     options.showPenHighlightTool = true;

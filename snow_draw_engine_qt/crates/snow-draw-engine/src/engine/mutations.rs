@@ -82,8 +82,14 @@ impl Engine {
         if transaction.is_empty() {
             return Ok(MutationResult::default());
         }
-        self.editor
-            .append_arrow_text_layouts(&self.model, &mut transaction);
+        let restored_labels = self
+            .history
+            .canonicalize_angle_wheel_transaction(&mut transaction);
+        self.editor.append_arrow_text_layouts_preserving_labels(
+            &self.model,
+            &mut transaction,
+            &restored_labels,
+        );
         let redo_snapshot = self.capture_session_snapshot();
         let undo_snapshot = history_undo_snapshot.unwrap_or_else(|| redo_snapshot.clone());
         let label = transaction.label().to_owned();
@@ -130,6 +136,8 @@ impl Engine {
         changes: &snow_draw_engine_document::DocumentDelta,
     ) -> MutationResult {
         self.scene_cache.sync(&self.model, Some(changes));
+        self.editor
+            .sync_arrow_text_cache_after_document_change(&self.model, changes);
         self.editor
             .sync_after_document_change(&self.model, snapshot);
         self.refresh_all_viewports().unwrap_or_default()

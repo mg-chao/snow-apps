@@ -75,6 +75,11 @@ void nonDrawingToolsDisableCanvasInteraction() {
     workflow.setMoveTool();
     require(!canvasInteractionEnabled && interactionChanges == 3,
             "returning to Move must disable canvas interaction again");
+    workflow.setAngleTool();
+    require(canvasInteractionEnabled && interactionChanges == 4 && canvasToolChanges == 2 &&
+                selectedCanvasTool == SnowCanvasTool::Angle &&
+                interaction.activeTool() == ScreenshotActiveTool::Angle,
+            "activating Angle forwards its drawing tool and re-enables canvas interaction");
 }
 void serialNumberStylePatchesPreservePropertyMask() {
     ScreenshotCaptureState captureState;

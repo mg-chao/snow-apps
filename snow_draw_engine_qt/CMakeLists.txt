@@ -156,6 +156,10 @@ if(SNOW_DRAW_ENGINE_QT_BUILD_BENCHMARKS)
     target_link_libraries(snow-canvas-distance-benchmark PRIVATE snow_draw_engine_qt_canvas)
     snow_shot_import_offscreen_platform(snow-canvas-distance-benchmark)
 
+    add_executable(snow-canvas-angle-benchmark tests/snow_canvas_angle_benchmark.cpp)
+    target_link_libraries(snow-canvas-angle-benchmark PRIVATE snow_draw_engine_qt_canvas)
+    snow_shot_import_offscreen_platform(snow-canvas-angle-benchmark)
+
     snow_add_rust_executable(snow-scene-order-benchmark
         PACKAGE snow-draw-engine-scene
         MANIFEST_DIR "${CMAKE_CURRENT_SOURCE_DIR}"
@@ -318,6 +322,19 @@ if(SNOW_DRAW_ENGINE_QT_BUILD_TESTS)
         LABELS "unit"
     )
 
+    add_executable(snow-canvas-angle-tests tests/snow_canvas_angle_tests.cpp)
+    target_include_directories(snow-canvas-angle-tests PRIVATE
+        ${SNOW_CANVAS_QT_PRIVATE_SOURCE_DIRS}
+        "${CMAKE_CURRENT_SOURCE_DIR}/crates/snow-draw-engine-c/include"
+    )
+    target_link_libraries(snow-canvas-angle-tests PRIVATE snow_draw_engine_qt_canvas)
+    qt_import_plugins(snow-canvas-angle-tests INCLUDE Qt6::QOffscreenIntegrationPlugin)
+    add_test(NAME snow-canvas-angle-tests COMMAND snow-canvas-angle-tests)
+    set_tests_properties(snow-canvas-angle-tests PROPERTIES
+        ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+        LABELS "unit"
+    )
+
     add_executable(snow-canvas-distance-tests tests/snow_canvas_distance_tests.cpp)
     target_include_directories(snow-canvas-distance-tests PRIVATE
         ${SNOW_CANVAS_QT_PRIVATE_SOURCE_DIRS}
@@ -402,6 +419,13 @@ if(SNOW_DRAW_ENGINE_QT_BUILD_TESTS)
         COMMAND snow-canvas-custom-renderer-tests --eraser-only)
     snow_shot_import_offscreen_platform(snow-canvas-custom-renderer-tests)
     snow_shot_offscreen_qpa_environment(_snow_canvas_reset_qpa_environment)
+    add_test(NAME snow-canvas-path-culling-tests
+        COMMAND snow-canvas-custom-renderer-tests --path-culling-only)
+    set_tests_properties(snow-canvas-path-culling-tests PROPERTIES
+        ENVIRONMENT "${_snow_canvas_reset_qpa_environment}"
+        ENVIRONMENT_MODIFICATION
+            "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+        LABELS "unit")
     set_tests_properties(snow-canvas-document-reset-tests snow-canvas-render-state-tests
         snow-canvas-filter-creation-tests snow-canvas-eraser-widget-tests PROPERTIES
         ENVIRONMENT "${_snow_canvas_reset_qpa_environment}"

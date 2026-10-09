@@ -29,6 +29,8 @@ inline SnowCanvasStyleDefaults screenshotCanvasStyleDefaults() {
 
     defaults.distance.stroke = red;
     defaults.distance.strokeWidth = 2.0;
+    defaults.angle.stroke = red;
+    defaults.angle.strokeWidth = 2.0;
 
     defaults.line.fill = transparent;
     defaults.line.fillStyle = SnowCanvasFillStyle::Solid;
@@ -110,6 +112,7 @@ inline QSet<SnowCanvasTool> screenshotQuickSelectionDisabledTools(const QStringL
         {QStringLiteral("shape"), SnowCanvasTool::Shape},
         {QStringLiteral("arrow"), SnowCanvasTool::Arrow},
         {QStringLiteral("distance"), SnowCanvasTool::Distance},
+        {QStringLiteral("angle"), SnowCanvasTool::Angle},
         {QStringLiteral("line"), SnowCanvasTool::Line},
         {QStringLiteral("free-draw"), SnowCanvasTool::FreeDraw},
         {QStringLiteral("rectangle-highlight"), SnowCanvasTool::RectangleHighlight},

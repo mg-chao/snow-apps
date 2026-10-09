@@ -131,6 +131,21 @@ impl Editor {
                         drag_target = lock_linear_point_to_discrete_angle(reference, drag_target);
                     }
                 }
+                if state.original_arrow.is_angle() {
+                    let index =
+                        crate::arrow_endpoint_index(state.original_arrow.points.len(), edge);
+                    return ArrowEditPreview {
+                        arrow: crate::angle::angle_with_moved_point(
+                            &state.original_arrow,
+                            index,
+                            drag_target,
+                        )
+                        .unwrap_or_else(|| state.preview_arrow.clone()),
+                        reorder_targets: Vec::new(),
+                        next_mode: None,
+                        suggested_binding: None,
+                    };
+                }
                 let bindables = self.bindable_elements(document, &[]);
                 let context = self.arrow_engine_context(modifiers);
                 let result = compute_arrow_endpoint_drag(
@@ -197,6 +212,19 @@ impl Editor {
                         .copied()
                 {
                     snapped_point = lock_linear_point_to_discrete_angle(reference, snapped_point);
+                }
+                if state.original_arrow.is_angle() {
+                    return ArrowEditPreview {
+                        arrow: crate::angle::angle_with_moved_point(
+                            &state.original_arrow,
+                            index,
+                            snapped_point,
+                        )
+                        .unwrap_or_else(|| state.preview_arrow.clone()),
+                        reorder_targets: Vec::new(),
+                        next_mode: None,
+                        suggested_binding: None,
+                    };
                 }
                 let arrow = move_linear_arrow_point(&state.original_arrow, index, snapped_point)
                     .unwrap_or_else(|| state.original_arrow.clone());

@@ -1,6 +1,9 @@
 #include "snow_shot/shortcuts/shortcutbinding.h"
 #include "snow_shot/presentation/windowcloseshortcut.h"
 #include "snow_shot/presentation/screenrecordingareawindow.h"
+#include "snow_shot/presentation/screenshotstylebinding.h"
+
+#include <numbers>
 
 #include "snow_shot/presentation/screenshotgeometry.h"
 #include "snow_shot/presentation/screenshotcanvastoolstyles.h"
@@ -192,6 +195,10 @@ ScreenRecordingAreaWindow::ScreenRecordingAreaWindow(QWidget* parent)
     m_canvas->setCanvasContentVisible(true);
     static_cast<void>(m_canvas->setCanvasTool(SnowCanvasTool::Select));
     m_canvas->installEventFilter(this);
+    connect(m_canvas, &SnowCanvasWidget::angleAdjustmentTargetChanged, this,
+            [this]() { m_angleWheelSteps.reset(); });
+    connect(m_canvas, &SnowCanvasWidget::activeToolChanged, this,
+            [this]() { m_angleWheelSteps.reset(); });
     snow_shot::presentation::applyScreenshotCanvasToolStyles(
         *m_canvas, snow_shot::presentation::screenshotCanvasToolStyleDefaults());
     applyQuickSelectionPreferences();
@@ -338,6 +345,7 @@ void ScreenRecordingAreaWindow::setInputMode(InputMode mode) {
         return;
     }
     m_inputMode = mode;
+    m_angleWheelSteps.reset();
     cancelRegionInteraction();
     m_gestureButton = Qt::NoButton;
     applyInputMode();
@@ -536,6 +544,22 @@ bool ScreenRecordingAreaWindow::eventFilter(QObject* watched, QEvent* event) {
             m_canvas->canvasTool() == SnowCanvasTool::SerialNumber)
             return false;
         auto* wheel = static_cast<QWheelEvent*>(event);
+        if (snow_shot::presentation::angleWheelTarget(*m_canvas)) {
+            if ((wheel->modifiers() & ~Qt::ShiftModifier) != Qt::NoModifier) {
+                m_angleWheelSteps.reset();
+                return false;
+            }
+            const int steps = m_angleWheelSteps.consume(*wheel);
+            if (steps != 0)
+                static_cast<void>(m_canvas->adjustAngleValue(
+                    steps * (wheel->modifiers().testFlag(Qt::ShiftModifier) ? 0.1 : 1.0) *
+                    std::numbers::pi / 180.0));
+            wheel->accept();
+            return true;
+        }
+        m_angleWheelSteps.reset();
+        if (wheel->modifiers() != Qt::NoModifier)
+            return false;
         const int delta =
             !wheel->pixelDelta().isNull() ? wheel->pixelDelta().y() : wheel->angleDelta().y();
         if (delta != 0) {
@@ -545,6 +569,7 @@ bool ScreenRecordingAreaWindow::eventFilter(QObject* watched, QEvent* event) {
         return true;
     }
     case QEvent::KeyPress: {
+        m_angleWheelSteps.reset();
         auto* key = static_cast<QKeyEvent*>(event);
         if (snow_shot::shortcuts::commandKey(*key) != Qt::Key_Escape || key->isAutoRepeat()) {
             break;

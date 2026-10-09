@@ -26,6 +26,7 @@ ScreenshotToolPalette::Options screenshotToolbarOptions() {
     options.showArrowTool = true;
     options.showLineTool = true;
     options.showDistanceTool = true;
+    options.showAngleTool = true;
     options.showFreeDrawTool = true;
     options.showHighlightTool = true;
     options.showSpotlightTool = true;
@@ -194,6 +195,10 @@ void ScreenshotToolbarWindow::connectToolCommands(ScreenshotToolPalette& toolPal
     connect(&toolPalette, &ScreenshotToolPalette::distanceToolRequested, this, [this]() {
         m_commands.setDistanceTool();
         setActiveToolAndReposition(ScreenshotToolPalette::Tool::Distance);
+    });
+    connect(&toolPalette, &ScreenshotToolPalette::angleToolRequested, this, [this]() {
+        m_commands.setAngleTool();
+        setActiveToolAndReposition(ScreenshotToolPalette::Tool::Angle);
     });
     connect(&toolPalette, &ScreenshotToolPalette::arrowRequested, this, [this]() {
         m_commands.setArrowTool();

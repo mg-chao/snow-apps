@@ -76,6 +76,26 @@
             <translation>Align top</translation>
         </message>
         <message>
+            <source>Angle annotation</source>
+            <translation>Angle annotation</translation>
+        </message>
+        <message>
+            <source>Angle stroke color</source>
+            <translation>Angle stroke color</translation>
+        </message>
+        <message>
+            <source>Angle stroke color %1</source>
+            <translation>Angle stroke color %1</translation>
+        </message>
+        <message>
+            <source>Angle stroke width %1</source>
+            <translation>Angle stroke width %1</translation>
+        </message>
+        <message>
+            <source>Angle unit</source>
+            <translation>Angle unit</translation>
+        </message>
+        <message>
             <source>Animated recording formats do not contain audio</source>
             <translation>Animated recording formats do not contain audio</translation>
         </message>
@@ -244,6 +264,10 @@
             <translation>Cross-line text fill</translation>
         </message>
         <message>
+            <source>Current angle stroke width</source>
+            <translation>Current angle stroke width</translation>
+        </message>
+        <message>
             <source>Current arrow stroke width</source>
             <translation>Current arrow stroke width</translation>
         </message>
@@ -310,6 +334,10 @@
         <message>
             <source>Default</source>
             <translation>Default</translation>
+        </message>
+        <message>
+            <source>Degrees</source>
+            <translation>Degrees</translation>
         </message>
         <message>
             <source>Delay recording (scroll to adjust)</source>
@@ -810,6 +838,10 @@
         <message>
             <source>Quick save</source>
             <translation>Quick save</translation>
+        </message>
+        <message>
+            <source>Radians</source>
+            <translation>Radians</translation>
         </message>
         <message>
             <source>Recapture</source>

@@ -125,6 +125,7 @@ struct DocumentMutation<T> {
 enum DocumentToolStyleMutation {
     Standard(Box<DocumentMutation<StandardToolStyle>>),
     BrushEraser(DocumentMutation<BrushEraserToolStyle>),
+    Angle(DocumentMutation<AngleToolStyle>),
 }
 input!(Section { section: Option<String> });
 choices!(AppAction {
@@ -210,6 +211,7 @@ input!(DocumentId {
 input!(DocumentPoint { point: [f64; 2] });
 choices!(DocumentCanvasTool {
     Distance,
+    Angle,
     Select,
     Rectangle,
     Arrow,

@@ -216,7 +216,9 @@
         "DefaultSpotlight",
         "SelectedSpotlight",
         "DefaultRectangleEraser",
-        "DefaultBrushEraser"
+        "DefaultBrushEraser",
+        "DefaultAngle",
+        "SelectedAngle"
       ]
     },
     "canvas_tools": {
@@ -225,6 +227,7 @@
         "Select": "Select",
         "Shape": "Rectangle",
         "Arrow": "Arrow",
+        "Angle": "Angle",
         "Line": "Line",
         "FreeDraw": "Freehand",
         "RectangleHighlight": "RectangleHighlight",

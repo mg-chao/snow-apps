@@ -66,6 +66,61 @@ pub unsafe extern "C" fn snow_viewport_set_distance_pixel_scale_ex(
     })
 }
 
+/// # Safety
+/// Handles must be live and pointers readable/writable as indicated.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn snow_viewport_set_angle_style_patch_ex(
+    runtime: SnowRuntime,
+    viewport: SnowViewport,
+    style: *const SnowAngleStyle,
+    properties: u32,
+    out_changed_viewports: *mut SnowChangedViewportList,
+) -> SnowError {
+    ffi_error(|| {
+        if style.is_null() || out_changed_viewports.is_null() {
+            return SnowError::InvalidArgument;
+        }
+        if !unsafe {
+            raw_c_enum_is_valid(std::ptr::addr_of!((*style).unit)) && (*style).decimal_places <= 3
+        } {
+            return SnowError::InvalidArgument;
+        }
+        ffi_status(with_runtime_impl_mut(runtime, |state| {
+            let id = viewport_id(viewport)?;
+            let result = state
+                .runtime
+                .set_viewport_angle_style_patch(id, unsafe { (*style).into() }, properties)
+                .map_err(SnowError::from)?;
+            write_changed_viewports(out_changed_viewports, result.changed_viewports);
+            Ok(())
+        }))
+    })
+}
+/// # Safety
+/// Handles must be live and output writable.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn snow_viewport_adjust_angle_value_ex(
+    runtime: SnowRuntime,
+    viewport: SnowViewport,
+    delta_radians: f64,
+    out_changed_viewports: *mut SnowChangedViewportList,
+) -> SnowError {
+    ffi_error(|| {
+        if out_changed_viewports.is_null() {
+            return SnowError::InvalidArgument;
+        }
+        ffi_status(with_runtime_impl_mut(runtime, |state| {
+            let id = viewport_id(viewport)?;
+            let result = state
+                .runtime
+                .adjust_viewport_angle_value(id, delta_radians)
+                .map_err(SnowError::from)?;
+            write_changed_viewports(out_changed_viewports, result.changed_viewports);
+            Ok(())
+        }))
+    })
+}
+
 unsafe fn filter_style_type_is_valid(style: *const SnowFilterStyle) -> bool {
     let raw =
         unsafe { std::ptr::read_unaligned(std::ptr::addr_of!((*style).filter_type).cast::<i32>()) };
@@ -247,6 +302,8 @@ pub unsafe extern "C" fn snow_viewport_get_style_toolbar_state(
                         brush_eraser_style: state.brush_eraser_style.into(),
                         distance_style: state.distance_style.into(),
                         distance_style_mixed: state.distance_style_mixed,
+                        angle_style: state.angle_style.into(),
+                        angle_style_mixed: state.angle_style_mixed,
                         distance_measured_length: state.distance_measured_length,
                     },
                 );

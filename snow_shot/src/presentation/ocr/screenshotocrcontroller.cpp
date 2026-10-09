@@ -51,6 +51,8 @@ ScreenshotToolPalette::Tool paletteTool(ScreenshotActiveTool tool) {
         return ScreenshotToolPalette::Tool::Arrow;
     case ScreenshotActiveTool::Distance:
         return ScreenshotToolPalette::Tool::Distance;
+    case ScreenshotActiveTool::Angle:
+        return ScreenshotToolPalette::Tool::Angle;
     case ScreenshotActiveTool::Line:
         return ScreenshotToolPalette::Tool::Line;
     case ScreenshotActiveTool::FreeDraw:

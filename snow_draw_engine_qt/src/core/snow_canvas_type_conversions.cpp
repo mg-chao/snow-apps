@@ -106,6 +106,8 @@ SnowCanvasTool toCanvasTool(SnowActiveTool tool) {
         return SnowCanvasTool::BrushEraser;
     case SNOW_ACTIVE_TOOL_DISTANCE:
         return SnowCanvasTool::Distance;
+    case SNOW_ACTIVE_TOOL_ANGLE:
+        return SnowCanvasTool::Angle;
     }
     return SnowCanvasTool::Select;
 }
@@ -148,6 +150,8 @@ SnowActiveTool toEngineTool(SnowCanvasTool tool) {
         return SNOW_ACTIVE_TOOL_BRUSH_ERASER;
     case SnowCanvasTool::Distance:
         return SNOW_ACTIVE_TOOL_DISTANCE;
+    case SnowCanvasTool::Angle:
+        return SNOW_ACTIVE_TOOL_ANGLE;
     }
     return SNOW_ACTIVE_TOOL_SELECT;
 }
@@ -210,6 +214,10 @@ SnowCanvasStyleToolbarSource toCanvasStyleToolbarSource(SnowStyleToolbarSource s
         return SnowCanvasStyleToolbarSource::DefaultDistance;
     case SNOW_STYLE_TOOLBAR_SOURCE_SELECTED_DISTANCE:
         return SnowCanvasStyleToolbarSource::SelectedDistance;
+    case SNOW_STYLE_TOOLBAR_SOURCE_DEFAULT_ANGLE:
+        return SnowCanvasStyleToolbarSource::DefaultAngle;
+    case SNOW_STYLE_TOOLBAR_SOURCE_SELECTED_ANGLE:
+        return SnowCanvasStyleToolbarSource::SelectedAngle;
     }
     return SnowCanvasStyleToolbarSource::DefaultRectangle;
 }
@@ -488,6 +496,27 @@ SnowShapeStyle toEngineShapeStyle(const SnowCanvasShapeStyle& style) {
     return engineStyle;
 }
 
+bool validAngleStyle(const SnowCanvasAngleStyle& style) {
+    return style.stroke.isValid() && std::isfinite(style.strokeWidth) && style.strokeWidth >= 1.0 &&
+           style.strokeWidth <= 72.0 &&
+           enumInRange(style.unit, SnowCanvasAngleUnit::Degrees, SnowCanvasAngleUnit::Radians) &&
+           style.decimalPlaces <= 3;
+}
+
+SnowCanvasAngleStyle toCanvasAngleStyle(const SnowAngleStyle& style) {
+    return {toQColor(style.stroke), style.stroke_width,
+            static_cast<SnowCanvasAngleUnit>(style.unit), style.decimal_places};
+}
+
+SnowAngleStyle toEngineAngleStyle(const SnowCanvasAngleStyle& style) {
+    SnowAngleStyle result{};
+    result.stroke = toEngineColor(style.stroke);
+    result.stroke_width = style.strokeWidth;
+    result.unit = static_cast<SnowAngleUnit>(style.unit);
+    result.decimal_places = style.decimalPlaces;
+    return result;
+}
+
 bool validDistanceStyle(const SnowCanvasDistanceStyle& style) {
     return style.stroke.isValid() && std::isfinite(style.strokeWidth) && style.strokeWidth >= 1.0 &&
            style.strokeWidth <= 72.0 && std::isfinite(style.factor) && style.factor >= 0.01 &&
@@ -613,6 +642,8 @@ SnowCanvasStyleToolbarState toCanvasStyleToolbarState(const SnowStyleToolbarStat
         SnowCanvasBrushEraserStyle{state.brush_eraser_style.stroke_width},
         toCanvasDistanceStyle(state.distance_style),
         state.distance_style_mixed,
+        toCanvasAngleStyle(state.angle_style),
+        state.angle_style_mixed,
         state.distance_measured_length,
     };
 }
@@ -794,7 +825,7 @@ bool toEngineStyleDefaults(const SnowCanvasStyleDefaults& defaults,
         }
     }
 
-    if (!validDistanceStyle(defaults.distance))
+    if (!validDistanceStyle(defaults.distance) || !validAngleStyle(defaults.angle))
         return false;
     engineDefaults = SnowStyleDefaults{};
     engineDefaults.rectangle = toEngineShapeStyle(defaults.rectangle);
@@ -822,6 +853,7 @@ bool toEngineStyleDefaults(const SnowCanvasStyleDefaults& defaults,
     engineDefaults.brush_eraser = SnowBrushEraserStyle{defaults.brushEraser.strokeWidth};
     engineDefaults.spotlight_shape = static_cast<SnowRectangleShape>(defaults.spotlightShape);
     engineDefaults.distance = toEngineDistanceStyle(defaults.distance);
+    engineDefaults.angle = toEngineAngleStyle(defaults.angle);
     return true;
 }
 

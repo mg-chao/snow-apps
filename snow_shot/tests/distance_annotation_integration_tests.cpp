@@ -59,8 +59,8 @@ void persistedDefaultsMergeDistanceProperties() {
 void distanceToolsParticipateInConfiguration() {
     using namespace snow_shot;
     const auto positions = presentation::toolbar_layout::defaultPositions();
-    require(positions.contains(
-                {QStringLiteral("distance"), QStringLiteral("line"), QStringLiteral("arrow")}),
+    require(positions.contains({QStringLiteral("angle"), QStringLiteral("distance"),
+                                QStringLiteral("line"), QStringLiteral("arrow")}),
             "distance joins the arrow and line stack without changing its arrow trigger");
     const auto defaults = storage::DrawingShortcutSettings().allShortcuts();
     require(defaults.contains(QStringLiteral("distance")) &&
@@ -93,15 +93,15 @@ void distanceToolsParticipateInConfiguration() {
         if (!visible.isEmpty())
             defaultsWithHiddenTool.append(QJsonArray::fromStringList(visible));
     }
-    require(
-        storage::ApplicationStorage::instance().configuration().setValue(
-            QStringLiteral("screenshot_toolbar/layout"),
-            QJsonObject{{QStringLiteral("positions"), defaultsWithHiddenTool},
-                        {QStringLiteral("hidden"), QJsonArray{QStringLiteral("eraser")}}}) &&
-            toolbar.layout(kind).positions.contains(
-                {QStringLiteral("distance"), QStringLiteral("line"), QStringLiteral("arrow")}) &&
-            toolbar.layout(kind).hidden == QStringList{QStringLiteral("eraser")},
-        "a previous default layout upgrades its stack while preserving another hidden tool");
+    require(storage::ApplicationStorage::instance().configuration().setValue(
+                QStringLiteral("screenshot_toolbar/layout"),
+                QJsonObject{{QStringLiteral("positions"), defaultsWithHiddenTool},
+                            {QStringLiteral("hidden"), QJsonArray{QStringLiteral("eraser")}}}) &&
+                toolbar.layout(kind).positions.contains(
+                    {QStringLiteral("angle"), QStringLiteral("distance"), QStringLiteral("line"),
+                     QStringLiteral("arrow")}) &&
+                toolbar.layout(kind).hidden == QStringList{QStringLiteral("eraser")},
+            "a previous default layout upgrades its stack while preserving another hidden tool");
     auto customized = toolbar.layout(kind);
     for (auto& position : customized.positions)
         position.removeAll(QStringLiteral("distance"));

@@ -284,6 +284,9 @@ class ScreenshotOverlayInputHandler final {
     bool m_consumeRegionRelease = false;
     ScreenshotOverlayInputHandlerContext m_context;
     snow_shot::presentation::WheelStepAccumulator m_selectionWheelSteps;
+    snow_shot::presentation::WheelStepAccumulator m_angleWheelSteps;
+    QPointer<SnowCanvasWidget> m_angleWheelCanvas;
+    QMetaObject::Connection m_angleTargetConnection;
     bool m_externalDragActive = false;
     std::optional<ScreenshotActiveTool> m_toolBeforeSelectionResize;
     bool m_scrollingCaptureSelectionResize = false;

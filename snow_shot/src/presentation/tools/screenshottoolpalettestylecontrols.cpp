@@ -183,6 +183,26 @@ constexpr char kRoleDistanceEndpoint[] = "distance-endpoint";
 constexpr char kSignatureDistanceValue[] = "input:distance-value";
 constexpr char kSignatureDistanceUnit[] = "radio:distance-unit";
 constexpr char kSignatureDistanceDecimals[] = "select:distance-decimals";
+constexpr char kRoleAngleColor[] = "angle-color";
+constexpr char kRoleAngleUnit[] = "angle-unit";
+constexpr char kRoleAngleDecimals[] = "angle-decimals";
+constexpr char kSignatureAngleUnit[] = "radio:angle-unit";
+constexpr char kSignatureAngleDecimals[] = "select:angle-decimals";
+
+constexpr quint32 angleProperty(SnowCanvasAngleStyleProperty property) {
+    return static_cast<quint32>(property);
+}
+
+[[maybe_unused]] constexpr const char* kAngleTranslationSources[] = {
+    QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Angle annotation"),
+    QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Angle stroke color"),
+    QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Angle stroke color %1"),
+    QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Current angle stroke width"),
+    QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Angle stroke width %1"),
+    QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Angle unit"),
+    QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Degrees"),
+    QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Radians"),
+};
 
 class DistanceValueTextPolicy final : public adqt::widgets::AdInputNumberTextPolicy {
   public:
@@ -206,6 +226,8 @@ QVector<QByteArray> styleEditorRoles(ScreenshotToolPalette::Tool tool) {
     case Tool::Distance:
         return {kRoleDistanceColor,    kRoleOutlineWidth,  kRoleDistanceValue,   kRoleDistanceUnit,
                 kRoleDistanceDecimals, kRoleDistanceScale, kRoleDistanceEndpoint};
+    case Tool::Angle:
+        return {kRoleAngleColor, kRoleOutlineWidth, kRoleAngleUnit, kRoleAngleDecimals};
     case Tool::Arrow:
         return {kRoleOutlineStroke, kRoleOutlineWidth, "arrow-type",   kRoleArrowRatio,
                 "start-arrowhead",  kRoleArrowShaft,   "end-arrowhead"};
@@ -824,6 +846,8 @@ void ScreenshotToolPaletteStyleControls::rebuildRegisteredComponents() {
     append(m_distanceColorEditor);
     append(m_distanceWidthEditor);
     append(m_distanceEndpointEditor);
+    append(m_angleColorEditor);
+    append(m_angleWidthEditor);
     append(m_arrowStrokeWidthEditor);
     append(m_arrowStrokeEditor);
     append(m_startArrowheadEditor);
@@ -871,6 +895,10 @@ void ScreenshotToolPaletteStyleControls::parkStyleEditors(int tool, QWidget* con
         park(kRoleDistanceColor, kSignatureForegroundColor, m_distanceColorEditor);
         park(kRoleOutlineWidth, kSignatureStrokeWidth, m_distanceWidthEditor);
         park(kRoleDistanceEndpoint, kSignatureArrowhead, m_distanceEndpointEditor);
+        break;
+    case Tool::Angle:
+        park(kRoleAngleColor, kSignatureForegroundColor, m_angleColorEditor);
+        park(kRoleOutlineWidth, kSignatureStrokeWidth, m_angleWidthEditor);
         break;
     case Tool::Arrow:
         park(kRoleOutlineStroke, kSignatureStroke, m_arrowStrokeEditor);
@@ -949,6 +977,10 @@ void ScreenshotToolPaletteStyleControls::restoreStyleEditors(int tool, QWidget* 
         restore(kRoleDistanceColor, m_distanceColorEditor);
         restore(kRoleOutlineWidth, m_distanceWidthEditor);
         restore(kRoleDistanceEndpoint, m_distanceEndpointEditor);
+        break;
+    case Tool::Angle:
+        restore(kRoleAngleColor, m_angleColorEditor);
+        restore(kRoleOutlineWidth, m_angleWidthEditor);
         break;
     case Tool::Arrow:
         restore(kRoleOutlineStroke, m_arrowStrokeEditor);
@@ -1092,6 +1124,8 @@ void ScreenshotToolPaletteStyleControls::prepareStyleReconcile(int sourceTool, i
     if (shared(kRoleOutlineWidth)) {
         if (source == ScreenshotToolPalette::Tool::Distance) {
             stageComponent(kRoleOutlineWidth, kSignatureStrokeWidth, m_distanceWidthEditor);
+        } else if (source == ScreenshotToolPalette::Tool::Angle) {
+            stageComponent(kRoleOutlineWidth, kSignatureStrokeWidth, m_angleWidthEditor);
         } else if (source == ScreenshotToolPalette::Tool::Arrow) {
             stageComponent(kRoleOutlineWidth, kSignatureStrokeWidth, m_arrowStrokeWidthEditor);
         } else {
@@ -1253,6 +1287,12 @@ void ScreenshotToolPaletteStyleControls::stageDestinationStyleEditors(
         stageWidget(kRoleDistanceUnit);
         stageWidget(kRoleDistanceDecimals);
         stageWidget(kRoleDistanceScale);
+        break;
+    case Tool::Angle:
+        stageComponent(kRoleAngleColor, kSignatureForegroundColor, m_angleColorEditor);
+        stageComponent(kRoleOutlineWidth, kSignatureStrokeWidth, m_angleWidthEditor);
+        stageWidget(kRoleAngleUnit);
+        stageWidget(kRoleAngleDecimals);
         break;
     case Tool::Arrow:
         stageComponent(kRoleOutlineStroke, kSignatureStroke, m_arrowStrokeEditor);
@@ -1854,6 +1894,163 @@ QWidget* ScreenshotToolPaletteStyleControls::buildArrowFamily(
 
     registerArrowEntries();
     updateArrowStyleControls();
+    return controls;
+}
+
+QWidget* ScreenshotToolPaletteStyleControls::buildAngleFamily(
+    QWidget* panel, const ScreenshotToolPaletteStyleFamilyHost& host,
+    const ScreenshotToolPaletteButtonMetrics& metrics) {
+    if (panel == nullptr)
+        return nullptr;
+    QWidget* controls =
+        createRowWidget(panel, QStringLiteral("screenshotAngleStyleControls"), host);
+    auto* layout = static_cast<QHBoxLayout*>(controls->layout());
+    const auto tagWidget = [](QWidget* widget, const char* role, const char* signature) {
+        widget->setProperty("screenshotStyleEditorRoot", true);
+        widget->setProperty("screenshotStyleEditorRole", role);
+        widget->setProperty("screenshotStyleEditorSignature", signature);
+    };
+
+    ScreenshotToolPaletteColorEditorConfig colorConfig;
+    colorConfig.accessibleName = QStringLiteral("Angle stroke color");
+    colorConfig.pickerObjectName = QStringLiteral("screenshotAngleColorPicker");
+    colorConfig.presetValues = style_presets::strokeColors();
+    colorConfig.presetSource =
+        snow_shot::presentation::ScreenshotToolPaletteColorPresetSource::Stroke;
+    colorConfig.presetTooltip = [](const QColor& color) {
+        return ScreenshotToolPaletteTranslationText("Angle stroke color %1").arg(color.name());
+    };
+    const auto setColor = [this](const QColor& color) {
+        if (!color.isValid())
+            return;
+        commitAngleProperty(angleProperty(SnowCanvasAngleStyleProperty::Stroke),
+                            [color](SnowCanvasAngleStyle& style) { style.stroke = color; });
+    };
+    if (auto reused =
+            takeReusableEditor(kRoleAngleColor, kSignatureForegroundColor, layout, controls)) {
+        m_angleColorEditor.reset(static_cast<ScreenshotToolPaletteColorEditor*>(reused.release()));
+        m_angleColorEditor->rebind(colorConfig, setColor, {});
+    } else {
+        m_angleColorEditor = std::make_unique<ScreenshotToolPaletteColorEditor>();
+        m_angleColorEditor->build(layout, controls, controls, colorConfig,
+                                  m_state.angleStyle.stroke, setColor, {}, editorServices(),
+                                  metrics);
+    }
+    tagEditor(m_angleColorEditor.get(), kRoleAngleColor, kSignatureForegroundColor);
+    registerEditor(m_angleColorEditor.get());
+
+    if (host.addGroupSeparator)
+        host.addGroupSeparator(layout);
+    ScreenshotToolPaletteNumericPresetEditorConfig widthConfig;
+    widthConfig.summaryTooltip = QStringLiteral("Current angle stroke width");
+    widthConfig.values = style_presets::strokePresetWidths();
+    widthConfig.strokePreview = true;
+    widthConfig.presetTooltip = [](int, double value) {
+        return ScreenshotToolPaletteTranslationText("Angle stroke width %1").arg(value, 0, 'g', 2);
+    };
+    const auto cycleWidth = [this]() {
+        const auto values = style_presets::strokePresetWidths();
+        for (double value : values) {
+            if (value > m_state.angleStyle.strokeWidth) {
+                setAngleStrokeWidth(value);
+                return;
+            }
+        }
+        if (!values.isEmpty())
+            setAngleStrokeWidth(values.first());
+    };
+    const auto setWidth = [this](double width) { setAngleStrokeWidth(width); };
+    if (auto reused =
+            takeReusableEditor(kRoleOutlineWidth, kSignatureStrokeWidth, layout, controls)) {
+        m_angleWidthEditor.reset(
+            static_cast<ScreenshotToolPaletteNumericPresetEditor*>(reused.release()));
+        m_angleWidthEditor->rebind(widthConfig, cycleWidth, setWidth);
+    } else {
+        m_angleWidthEditor = std::make_unique<ScreenshotToolPaletteNumericPresetEditor>();
+        m_angleWidthEditor->build(layout, controls, controls, widthConfig,
+                                  m_state.angleStyle.strokeWidth, cycleWidth, setWidth, metrics);
+    }
+    tagEditor(m_angleWidthEditor.get(), kRoleOutlineWidth, kSignatureStrokeWidth);
+    registerEditor(m_angleWidthEditor.get());
+
+    if (host.addGroupSeparator)
+        host.addGroupSeparator(layout);
+    QWidget* units = takeReusableWidget(kRoleAngleUnit, kSignatureAngleUnit, layout, controls);
+    if (units == nullptr) {
+        ScreenshotToolPaletteRadioEditorConfig config;
+        config.objectName = QStringLiteral("screenshotAngleUnitButtonGroup");
+        config.useButtonMetrics = true;
+        config.options = {
+            {static_cast<int>(SnowCanvasAngleUnit::Degrees), "Degrees",
+             custom_outlined_icons::AngleUnitDegrees()},
+            {static_cast<int>(SnowCanvasAngleUnit::Radians), "Radians",
+             custom_outlined_icons::AngleUnitRadians()},
+        };
+        auto editor = createScreenshotToolPaletteRadioEditor(controls, config, metrics);
+        units = editor.container;
+        m_angleUnitGroup = editor.group;
+        layout->addWidget(units);
+    } else {
+        m_angleUnitGroup = units->findChild<adqt::widgets::AdRadioButtonGroup*>();
+    }
+    tagWidget(units, kRoleAngleUnit, kSignatureAngleUnit);
+    configureScreenshotToolPaletteTooltip(units, "Angle unit");
+    setScreenshotToolPaletteAccessibleNameSource(units, "Angle unit");
+    units->setAccessibleName(ScreenshotToolPaletteTranslationText("Angle unit").translated());
+    QObject::disconnect(m_angleUnitGroup, &adqt::widgets::AdRadioButtonGroup::checkedIdChanged,
+                        nullptr, nullptr);
+    QObject::connect(m_angleUnitGroup, &adqt::widgets::AdRadioButtonGroup::checkedIdChanged,
+                     controls, [this](int id) {
+                         if (id < static_cast<int>(SnowCanvasAngleUnit::Degrees) ||
+                             id > static_cast<int>(SnowCanvasAngleUnit::Radians))
+                             return;
+                         commitAngleProperty(angleProperty(SnowCanvasAngleStyleProperty::Unit),
+                                             [id](SnowCanvasAngleStyle& style) {
+                                                 style.unit = static_cast<SnowCanvasAngleUnit>(id);
+                                             });
+                     });
+
+    m_angleDecimalsEditor.select = qobject_cast<adqt::widgets::AdSelect*>(
+        takeReusableWidget(kRoleAngleDecimals, kSignatureAngleDecimals, layout, controls));
+    if (m_angleDecimalsEditor.select == nullptr) {
+        ScreenshotToolPaletteSelectEditorConfig config;
+        config.objectName = QStringLiteral("screenshotAngleDecimalsSelect");
+        config.accessibleName = QStringLiteral("Decimal places");
+        config.tooltip = QStringLiteral("Decimal places");
+        config.baseWidth = 128;
+        m_angleDecimalsEditor = createScreenshotToolPaletteSelectEditor(controls, config, metrics);
+        auto* model = new QStandardItemModel(m_angleDecimalsEditor.select);
+        const char* labels[] = {"Integers", "1 decimal place", "2 decimal places",
+                                "3 decimal places"};
+        for (int i = 0; i < 4; ++i) {
+            auto* item = new QStandardItem;
+            item->setData(i, adqt::widgets::AdSelect::DefaultValueRole);
+            setScreenshotToolPaletteItemTranslationSource(item, labels[i]);
+            model->appendRow(item);
+        }
+        m_angleDecimalsEditor.select->setModel(model);
+        layout->addWidget(m_angleDecimalsEditor.select);
+    }
+    tagWidget(m_angleDecimalsEditor.select, kRoleAngleDecimals, kSignatureAngleDecimals);
+    QObject::disconnect(m_angleDecimalsEditor.select, &adqt::widgets::AdSelect::currentValueChanged,
+                        nullptr, nullptr);
+    QObject::connect(m_angleDecimalsEditor.select, &adqt::widgets::AdSelect::currentValueChanged,
+                     controls, [this](const QVariant& value) {
+                         if (!value.isValid())
+                             return;
+                         const int places = value.toInt();
+                         if (places < 0 || places > 3)
+                             return;
+                         commitAngleProperty(
+                             angleProperty(SnowCanvasAngleStyleProperty::DecimalPlaces),
+                             [places](SnowCanvasAngleStyle& style) {
+                                 style.decimalPlaces = static_cast<quint32>(places);
+                             });
+                     });
+
+    registerAngleEntries();
+    updateAngleStyleControls();
+    refreshToolbarMetrics(metrics);
     return controls;
 }
 
@@ -3648,6 +3845,51 @@ void ScreenshotToolPaletteStyleControls::updateDistanceStyleControls() {
     applyEditorEntries(m_distanceEntries, kAllRefreshGroups);
 }
 
+void ScreenshotToolPaletteStyleControls::registerAngleEntries() {
+    const auto mixed = [this](SnowCanvasAngleStyleProperty property) {
+        return m_state.showingSelectedAngle &&
+               (m_state.angleStyleMixed & angleProperty(property)) != 0;
+    };
+    m_angleEntries = {
+        {angleProperty(SnowCanvasAngleStyleProperty::Stroke),
+         [this, mixed]() {
+             if (m_angleColorEditor != nullptr)
+                 m_angleColorEditor->update(m_state.angleStyle.stroke,
+                                            mixed(SnowCanvasAngleStyleProperty::Stroke));
+         }},
+        {angleProperty(SnowCanvasAngleStyleProperty::StrokeWidth),
+         [this, mixed]() {
+             if (m_angleWidthEditor != nullptr)
+                 m_angleWidthEditor->update(m_state.angleStyle.strokeWidth,
+                                            mixed(SnowCanvasAngleStyleProperty::StrokeWidth));
+         }},
+        {angleProperty(SnowCanvasAngleStyleProperty::Unit),
+         [this, mixed]() {
+             if (m_angleUnitGroup != nullptr) {
+                 const QSignalBlocker blocker(m_angleUnitGroup);
+                 m_angleUnitGroup->setCheckedId(mixed(SnowCanvasAngleStyleProperty::Unit)
+                                                    ? -1
+                                                    : static_cast<int>(m_state.angleStyle.unit));
+             }
+         }},
+        {angleProperty(SnowCanvasAngleStyleProperty::DecimalPlaces),
+         [this, mixed]() {
+             if (m_angleDecimalsEditor.select != nullptr) {
+                 const QSignalBlocker blocker(m_angleDecimalsEditor.select);
+                 m_angleDecimalsEditor.select->setCurrentValue(
+                     mixed(SnowCanvasAngleStyleProperty::DecimalPlaces)
+                         ? QVariant()
+                         : QVariant(static_cast<int>(m_state.angleStyle.decimalPlaces)));
+             }
+         }},
+    };
+}
+
+void ScreenshotToolPaletteStyleControls::updateAngleStyleControls(quint32 properties) {
+    refreshEditorEntries(m_angleEntries, properties,
+                         angleProperty(SnowCanvasAngleStyleProperty::All));
+}
+
 void ScreenshotToolPaletteStyleControls::registerArrowEntries() {
     const auto mixed = [this](quint32 property) { return hasMixedProperty(property); };
     m_arrowEntries = {
@@ -3990,6 +4232,7 @@ void ScreenshotToolPaletteStyleControls::reset() {
     updateRectangleStyleControls();
     updateArrowStyleControls();
     updateDistanceStyleControls();
+    updateAngleStyleControls();
     updateTextStyleControls();
     updateWatermarkControls();
     updateSerialNumberStyleControls();
@@ -4002,6 +4245,7 @@ void ScreenshotToolPaletteStyleControls::releaseControlBindings() {
 
     m_state.m_arrowControlsActive = false;
     m_state.distanceControlsActive = false;
+    m_state.angleControlsActive = false;
     m_state.m_lineControlsActive = false;
     m_state.m_freeDrawControlsActive = false;
     m_state.m_highlightControlsActive = false;
@@ -4031,6 +4275,10 @@ void ScreenshotToolPaletteStyleControls::releaseControlBindings() {
     m_distanceUnitGroup = nullptr;
     m_distanceDecimalsEditor = {};
     m_distanceScaleEditor = nullptr;
+    m_angleColorEditor.reset();
+    m_angleWidthEditor.reset();
+    m_angleUnitGroup = nullptr;
+    m_angleDecimalsEditor = {};
     m_arrowStrokeWidthEditor.reset();
     m_arrowStrokeEditor.reset();
     m_arrowTypeButtonGroup = nullptr;
@@ -4078,6 +4326,7 @@ void ScreenshotToolPaletteStyleControls::releaseControlBindings() {
     m_penHighlightEntries.clear();
     m_arrowEntries.clear();
     m_distanceEntries.clear();
+    m_angleEntries.clear();
     m_textEntries.clear();
     m_serialNumberEntries.clear();
     m_watermarkEntries.clear();
@@ -4092,6 +4341,7 @@ void ScreenshotToolPaletteStyleControls::discardBindingsExcept(int destinationTo
         destination == Tool::Shape || destination == Tool::Line || destination == Tool::FreeDraw;
     const bool keepArrow = destination == Tool::Arrow;
     const bool keepDistance = destination == Tool::Distance;
+    const bool keepAngle = destination == Tool::Angle;
     const bool keepRectangleHighlight = destination == Tool::RectangleHighlight;
     const bool keepPenHighlight = destination == Tool::PenHighlight;
     const bool keepSpotlight = destination == Tool::Spotlight;
@@ -4119,6 +4369,8 @@ void ScreenshotToolPaletteStyleControls::discardBindingsExcept(int destinationTo
     resetUnless(keepDistance, m_distanceColorEditor);
     resetUnless(keepDistance, m_distanceWidthEditor);
     resetUnless(keepDistance, m_distanceEndpointEditor);
+    resetUnless(keepAngle, m_angleColorEditor);
+    resetUnless(keepAngle, m_angleWidthEditor);
     resetUnless(keepArrow, m_arrowStrokeWidthEditor);
     resetUnless(keepArrow, m_arrowStrokeEditor);
     resetUnless(keepArrow, m_startArrowheadEditor);
@@ -4153,6 +4405,10 @@ void ScreenshotToolPaletteStyleControls::discardBindingsExcept(int destinationTo
         m_distanceUnitGroup = nullptr;
         m_distanceDecimalsEditor = {};
         m_distanceScaleEditor = nullptr;
+    }
+    if (!keepAngle) {
+        m_angleUnitGroup = nullptr;
+        m_angleDecimalsEditor = {};
     }
     if (!keepArrow) {
         m_arrowRatioEditor = nullptr;
@@ -4218,6 +4474,7 @@ void ScreenshotToolPaletteStyleControls::setCreationStyleDefaults(
     updateRectangleStyleControls();
     updateArrowStyleControls();
     updateDistanceStyleControls();
+    updateAngleStyleControls();
     updateHighlightStyleControls();
     updatePenHighlightStyleControls();
     updateBrushEraserStrokeWidthControls(m_state.brushEraserStyle.strokeWidth);
@@ -4227,6 +4484,10 @@ void ScreenshotToolPaletteStyleControls::setCreationStyleDefaults(
 
 void ScreenshotToolPaletteStyleControls::setDistanceControlsActive(bool active) {
     m_state.distanceControlsActive = active;
+}
+
+void ScreenshotToolPaletteStyleControls::setAngleControlsActive(bool active) {
+    m_state.angleControlsActive = active;
 }
 
 bool ScreenshotToolPaletteStyleControls::handleDistanceWheel(const QPoint& globalPosition,
@@ -4352,6 +4613,8 @@ void ScreenshotToolPaletteStyleControls::clearTextStylePopupInteractions() {
 }
 
 bool ScreenshotToolPaletteStyleControls::stepStrokeWidth(int direction) {
+    if (m_state.angleControlsActive)
+        return false;
     if (m_state.m_penHighlightControlsActive) {
         if (direction == 0) {
             return false;
@@ -4578,6 +4841,7 @@ SnowCanvasStyleDefaults ScreenshotToolPaletteStyleControls::creationStyleDefault
     defaults.arrow.arrowShaftType = m_state.m_creationArrowStyle.arrowShaftType;
     defaults.arrow.arrowRatio = m_state.m_creationArrowStyle.arrowRatio;
     defaults.distance = m_state.creationDistanceStyle;
+    defaults.angle = m_state.creationAngleStyle;
     defaults.text = m_state.m_creationTextStyle.textStyle();
     defaults.serialNumber = m_state.m_creationSerialNumberStyle;
     defaults.rectangleFilter = m_state.creationRectangleFilterStyle;
@@ -4600,6 +4864,7 @@ void ScreenshotToolPaletteStyleControls::rememberStyleEdit(const SnowCanvasStyle
     m_state.m_creationPenHighlightStyle = remembered.m_creationPenHighlightStyle;
     m_state.m_creationArrowStyle = remembered.m_creationArrowStyle;
     m_state.creationDistanceStyle = remembered.creationDistanceStyle;
+    m_state.creationAngleStyle = remembered.creationAngleStyle;
     m_state.m_creationTextStyle = remembered.m_creationTextStyle;
     m_state.m_creationSerialNumberStyle = remembered.m_creationSerialNumberStyle;
     m_state.creationRectangleFilterStyle = remembered.creationRectangleFilterStyle;
@@ -4682,6 +4947,8 @@ void ScreenshotToolPaletteStyleControls::refreshToolbarMetrics(
     configureScreenshotToolPaletteStyleRadioButtonGroup(m_distanceUnitGroup, metrics, true);
     configureScreenshotToolPaletteIconNumericValueButton(m_distanceScaleEditor, metrics);
     configureScreenshotToolPaletteSelectEditor(m_distanceDecimalsEditor, metrics);
+    configureScreenshotToolPaletteStyleRadioButtonGroup(m_angleUnitGroup, metrics, true);
+    configureScreenshotToolPaletteSelectEditor(m_angleDecimalsEditor, metrics);
     if (applies(m_distanceValueInput)) {
         m_distanceValueInput->setFixedSize(
             qMax(1, qRound(100 * metrics.physicalScale)),
@@ -4821,6 +5088,27 @@ void ScreenshotToolPaletteStyleControls::commitDistanceProperty(quint32 property
     updateDistanceStyleControls();
     if (m_callbacks.distanceStyleChanged)
         m_callbacks.distanceStyleChanged(m_state.distanceStyle, property);
+}
+
+template <typename Apply>
+void ScreenshotToolPaletteStyleControls::commitAngleProperty(quint32 property, Apply apply) {
+    const auto previous = m_state.angleStyle;
+    apply(m_state.angleStyle);
+    const bool wasMixed = m_state.showingSelectedAngle && (m_state.angleStyleMixed & property) != 0;
+    if (previous == m_state.angleStyle && !wasMixed)
+        return;
+    m_state.angleStyleMixed &= ~property;
+    updateAngleStyleControls(property);
+    if (m_callbacks.angleStyleChanged)
+        m_callbacks.angleStyleChanged(m_state.angleStyle, property);
+}
+
+void ScreenshotToolPaletteStyleControls::setAngleStrokeWidth(double width) {
+    if (!std::isfinite(width))
+        return;
+    width = std::clamp(width, 1.0, 72.0);
+    commitAngleProperty(angleProperty(SnowCanvasAngleStyleProperty::StrokeWidth),
+                        [width](SnowCanvasAngleStyle& style) { style.strokeWidth = width; });
 }
 
 void ScreenshotToolPaletteStyleControls::setDistanceValue(double value) {
@@ -5732,6 +6020,41 @@ void ScreenshotToolPaletteStyleControls::setStyleToolbarState(
     const auto editorInteracting = [](const auto& editor) {
         return editor != nullptr && editor->isInteracting();
     };
+    if (state.source == SnowCanvasStyleToolbarSource::DefaultAngle ||
+        state.source == SnowCanvasStyleToolbarSource::SelectedAngle) {
+        const bool selected = state.source == SnowCanvasStyleToolbarSource::SelectedAngle;
+        auto displayed = state.angleStyle;
+        if (editorInteracting(m_angleColorEditor))
+            displayed.stroke = m_state.angleStyle.stroke;
+        const quint32 mixed = selected ? state.angleStyleMixed : 0;
+        if (m_state.m_styleSource == state.source && m_state.angleStyle == displayed &&
+            m_state.angleStyleMixed == mixed) {
+#if defined(SNOW_SHOT_TEST_HOOKS)
+            ++m_styleStateNoopCount;
+#endif
+            SNOW_SHOT_TOOLBAR_PERF_COUNTER("style.state.noop");
+            return;
+        }
+        quint32 changed = m_state.angleStyleMixed ^ mixed;
+        if (m_state.m_styleSource != state.source)
+            changed = angleProperty(SnowCanvasAngleStyleProperty::All);
+        if (m_state.angleStyle.stroke != displayed.stroke)
+            changed |= angleProperty(SnowCanvasAngleStyleProperty::Stroke);
+        if (m_state.angleStyle.strokeWidth != displayed.strokeWidth)
+            changed |= angleProperty(SnowCanvasAngleStyleProperty::StrokeWidth);
+        if (m_state.angleStyle.unit != displayed.unit)
+            changed |= angleProperty(SnowCanvasAngleStyleProperty::Unit);
+        if (m_state.angleStyle.decimalPlaces != displayed.decimalPlaces)
+            changed |= angleProperty(SnowCanvasAngleStyleProperty::DecimalPlaces);
+        m_state.m_styleSource = state.source;
+        m_state.showingSelectedAngle = selected;
+        m_state.angleStyle = displayed;
+        m_state.angleStyleMixed = mixed;
+        if (!selected)
+            m_state.creationAngleStyle = displayed;
+        updateAngleStyleControls(changed);
+        return;
+    }
     if (state.source == SnowCanvasStyleToolbarSource::DefaultDistance ||
         state.source == SnowCanvasStyleToolbarSource::SelectedDistance) {
         const bool selected = state.source == SnowCanvasStyleToolbarSource::SelectedDistance;

@@ -475,9 +475,9 @@ void builtInCatalogIsCompleteAndValid() {
                 itemIds.contains(QStringLiteral("screenshot-shortcut.upload_to_cloud")) &&
                 itemIds.contains(QStringLiteral("pin-to-screen-shortcut.upload_to_cloud")),
             "cloud upload must expose its configuration and shortcuts in both local scopes");
-    require(itemIds.size() == 258,
+    require(itemIds.size() == 259,
             qPrintable(QStringLiteral(
-                           "catalog must contain 258 shared settings on every platform; found %1")
+                           "catalog must contain 259 shared settings on every platform; found %1")
                            .arg(itemIds.size())));
     require(itemIds.contains(QStringLiteral("pin-to-screen.confirm-before-closing-window")) &&
                 itemIds.contains(QStringLiteral("pin-to-screen.confirm-before-destroying-window")),
@@ -1453,7 +1453,7 @@ void builtInCatalogIsCompleteAndValid() {
             std::get<settings::SettingsLocalShortcutDefinition>(
                 screenshotShortcuts->items.constFirst().payload)
                     .scope == settings::SettingsLocalShortcutScope::Screenshot &&
-            drawingShortcuts != nullptr && drawingShortcuts->items.size() == 15 &&
+            drawingShortcuts != nullptr && drawingShortcuts->items.size() == 16 &&
             drawingShortcuts->itemLayout == settings::SettingsSectionItemLayout::TwoColumnGrid &&
             pinToScreenShortcuts != nullptr && pinToScreenShortcuts->items.size() == 30 &&
             pinToScreenShortcuts->itemLayout ==
@@ -1537,13 +1537,25 @@ void builtInCatalogIsCompleteAndValid() {
             otherShortcutSection->itemLayout ==
                 settings::SettingsSectionItemLayout::TwoColumnGrid &&
             otherShortcutSection->title.translated() == QStringLiteral("Image Recognition") &&
-            drawingShortcuts->items.at(13).id == QStringLiteral("screenshot-shortcut.undo") &&
-            drawingShortcuts->items.at(14).id == QStringLiteral("screenshot-shortcut.redo") &&
+            drawingShortcuts->items.at(14).id == QStringLiteral("screenshot-shortcut.undo") &&
+            drawingShortcuts->items.at(15).id == QStringLiteral("screenshot-shortcut.redo") &&
             drawingShortcuts->items.at(3).configurationKey ==
                 QStringLiteral("drawing_shortcuts/distance") &&
+            drawingShortcuts->items.at(4).id == QStringLiteral("drawing-shortcut.angle") &&
+            drawingShortcuts->items.at(4).title.translated() ==
+                QStringLiteral("Angle annotation") &&
             drawingShortcuts->items.at(4).configurationKey ==
+                QStringLiteral("drawing_shortcuts/angle") &&
+            std::get<settings::SettingsLocalShortcutDefinition>(
+                drawingShortcuts->items.at(4).payload)
+                    .scope == settings::SettingsLocalShortcutScope::Drawing &&
+            std::get<settings::SettingsLocalShortcutDefinition>(
+                drawingShortcuts->items.at(4).payload)
+                    .iconFactory() ==
+                snow_shot::presentation::icons::custom::outlined::AngleAnnotation() &&
+            drawingShortcuts->items.at(5).configurationKey ==
                 QStringLiteral("drawing_shortcuts/line") &&
-            drawingShortcuts->items.at(7).configurationKey ==
+            drawingShortcuts->items.at(8).configurationKey ==
                 QStringLiteral("drawing_shortcuts/spotlight") &&
             drawingShortcuts->items.constFirst().id == QStringLiteral("drawing-shortcut.select") &&
             drawingShortcuts->items.at(1).id == QStringLiteral("drawing-shortcut.shape"),

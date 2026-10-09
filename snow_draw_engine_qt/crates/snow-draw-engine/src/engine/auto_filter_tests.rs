@@ -134,6 +134,138 @@ fn smart_erase_order_strength_history_and_session() {
 }
 
 #[test]
+fn smart_erase_sparse_sync_preserves_uncropped_creation_selection_and_document_changes() {
+    use crate::SceneDisplayItem;
+    use snow_draw_engine_document::PenFilterData;
+    use snow_draw_engine_interaction::{
+        Modifiers, PointerButton, PointerButtons, PointerDevice, PointerEvent, PointerEventType,
+    };
+
+    fn pointer(e: &mut Engine, v: ViewportId, kind: PointerEventType, x: f64, y: f64) {
+        e.process_input(
+            v,
+            InputEvent::Pointer(PointerEvent {
+                pointer_id: 1,
+                event_type: kind,
+                device: PointerDevice::Mouse,
+                position: Point::new(x, y),
+                button: matches!(kind, PointerEventType::Down | PointerEventType::Up)
+                    .then_some(PointerButton::Primary),
+                buttons: if kind == PointerEventType::Up {
+                    PointerButtons::default()
+                } else {
+                    PointerButtons(PointerButtons::PRIMARY)
+                },
+                modifiers: Modifiers::default(),
+            }),
+        )
+        .unwrap();
+    }
+    fn assert_matches_full_presentation(e: &mut Engine, v: ViewportId, count: usize, phase: u32) {
+        let presentation = e
+            .editor
+            .presentation_state(&e.model, &e.viewport_slot(v).unwrap().view);
+        let expected = snow_draw_engine_scene::smart_erase_items(&e.model, &presentation);
+        let actual = e.smart_erase_items();
+        assert_eq!(actual, expected);
+        assert_eq!(actual.len(), count);
+        assert!(actual.iter().any(|item| {
+            matches!(item, SceneDisplayItem::Filter(filter) if filter.filter.render_phase == phase)
+        }));
+        assert!(actual.iter().all(|item| {
+            matches!(item, SceneDisplayItem::Filter(filter) if filter.filter.strength == 0.5)
+        }));
+    }
+
+    let (mut e, v) = engine();
+    e.set_viewport_surface_size(v, 800, 600).unwrap();
+    let first = e.model.peek_next_element_id();
+    let mut transaction = Transaction::new("offscreen Smart Erase rectangle");
+    transaction.insert_filter(
+        first,
+        ElementMeta::default(),
+        FilterData {
+            center: Point::new(10000.0, 10000.0),
+            width: 100.0,
+            height: 80.0,
+            filter_type: CanvasFilterType::SmartErase,
+            opacity: 0.6,
+            ..Default::default()
+        },
+    );
+    apply(&mut e, v, transaction);
+    let second = e.model.peek_next_element_id();
+    let mut transaction = Transaction::new("offscreen Smart Erase pen");
+    transaction.insert_pen_filter(
+        second,
+        ElementMeta::default(),
+        PenFilterData::from_global_points(
+            &[Point::new(10500.0, 10000.0), Point::new(10540.0, 10020.0)],
+            CanvasFilterType::SmartErase,
+            0.5,
+            20.0,
+            1.0,
+        )
+        .unwrap(),
+    );
+    apply(&mut e, v, transaction);
+    assert_matches_full_presentation(&mut e, v, 2, 0);
+
+    for tool in [ActiveTool::RectangleFilter, ActiveTool::PenFilter] {
+        e.set_viewport_active_tool(v, tool).unwrap();
+        e.set_viewport_filter_creation_style(
+            v,
+            FilterStyle {
+                filter_type: CanvasFilterType::SmartErase,
+                stroke_width: 20.0,
+                ..Default::default()
+            },
+            snow_draw_engine_editor::FILTER_STYLE_PROPERTY_ALL,
+            tool,
+        )
+        .unwrap();
+        pointer(&mut e, v, PointerEventType::Down, 440.0, 340.0);
+        pointer(&mut e, v, PointerEventType::Move, 520.0, 400.0);
+        assert_matches_full_presentation(&mut e, v, 3, 1);
+        e.process_input(v, InputEvent::FocusLost).unwrap();
+        assert_matches_full_presentation(&mut e, v, 2, 0);
+    }
+
+    e.set_viewport_active_tool(v, ActiveTool::Select).unwrap();
+    e.set_viewport_camera(
+        v,
+        Camera {
+            center: Point::new(10000.0, 10000.0),
+            zoom: 1.0,
+        },
+    )
+    .unwrap();
+    e.select_element_with_viewport_changes(v, first).unwrap();
+    pointer(&mut e, v, PointerEventType::Down, 400.0, 300.0);
+    pointer(&mut e, v, PointerEventType::Move, 440.0, 320.0);
+    assert_matches_full_presentation(&mut e, v, 2, 2);
+    pointer(&mut e, v, PointerEventType::Up, 440.0, 320.0);
+    assert_eq!(
+        e.model.filter(first).unwrap().center,
+        Point::new(10040.0, 10020.0)
+    );
+    assert_matches_full_presentation(&mut e, v, 2, 0);
+    e.set_viewport_camera(
+        v,
+        Camera {
+            center: Point::default(),
+            zoom: 1.0,
+        },
+    )
+    .unwrap();
+    assert_matches_full_presentation(&mut e, v, 2, 0);
+    e.delete_selected_with_viewport_changes(v).unwrap();
+    assert_matches_full_presentation(&mut e, v, 1, 0);
+    e.undo().unwrap();
+    assert_matches_full_presentation(&mut e, v, 2, 0);
+}
+
+#[test]
 fn smart_erase_auto_fill_is_rejected_atomically() {
     let (mut e, v) = engine();
     e.set_auto_filter_regions(v, Some(record(0.0))).unwrap();

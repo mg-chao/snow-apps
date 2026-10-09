@@ -77,6 +77,7 @@ struct ScreenshotToolPaletteStyleControlCallbacks {
         shapeStyleChanged;
     std::function<void(const SnowCanvasDistanceStyle& style, quint32 properties)>
         distanceStyleChanged;
+    std::function<void(const SnowCanvasAngleStyle& style, quint32 properties)> angleStyleChanged;
     std::function<void(const SnowCanvasTextStyle& style, quint32 properties)> textStyleChanged;
     std::function<void()> textStylePopupInteractionBegan;
     std::function<void()> textStylePopupInteractionEnded;
@@ -215,6 +216,9 @@ class ScreenshotToolPaletteStyleControls final {
     [[nodiscard]] QWidget* buildDistanceFamily(QWidget* panel,
                                                const ScreenshotToolPaletteStyleFamilyHost& host,
                                                const ScreenshotToolPaletteButtonMetrics& metrics);
+    [[nodiscard]] QWidget* buildAngleFamily(QWidget* panel,
+                                            const ScreenshotToolPaletteStyleFamilyHost& host,
+                                            const ScreenshotToolPaletteButtonMetrics& metrics);
     [[nodiscard]] ScreenshotToolPaletteHighlightFamilyResult
     buildHighlightFamily(int tool, QWidget* panel, const ScreenshotToolPaletteStyleFamilyHost& host,
                          const ScreenshotToolPaletteButtonMetrics& metrics);
@@ -254,6 +258,7 @@ class ScreenshotToolPaletteStyleControls final {
     void setPenHighlightControlsActive(bool active);
     void setArrowControlsActive(bool active);
     void setDistanceControlsActive(bool active);
+    void setAngleControlsActive(bool active);
     [[nodiscard]] bool handleDistanceWheel(const QPoint& globalPosition, int direction);
     void setTextControlsActive(bool active);
     void clearTextStylePopupInteractions();
@@ -347,6 +352,8 @@ class ScreenshotToolPaletteStyleControls final {
     void registerArrowEntries();
     void registerDistanceEntries();
     void updateDistanceStyleControls();
+    void registerAngleEntries();
+    void updateAngleStyleControls(quint32 properties = 0xffffffffu);
     void registerTextEntries();
     void registerSerialNumberEntries();
     void registerWatermarkEntries();
@@ -356,6 +363,8 @@ class ScreenshotToolPaletteStyleControls final {
     template <typename Apply> void commitShapeProperty(quint32 property, Apply apply);
     template <typename Apply> void commitArrowProperty(quint32 property, Apply apply);
     template <typename Apply> void commitDistanceProperty(quint32 property, Apply apply);
+    template <typename Apply> void commitAngleProperty(quint32 property, Apply apply);
+    void setAngleStrokeWidth(double width);
     void setDistanceValue(double value);
     void setDistanceStrokeWidth(double width);
     void setDistanceEndpointScale(double scale);
@@ -508,6 +517,10 @@ class ScreenshotToolPaletteStyleControls final {
     std::unique_ptr<ScreenshotToolPaletteNumericPresetEditor> m_penFilterStrokeWidthEditor;
     std::unique_ptr<ScreenshotToolPaletteNumericPresetEditor> m_brushEraserStrokeWidthEditor;
     std::unique_ptr<ScreenshotToolPaletteColorEditor> m_distanceColorEditor;
+    std::unique_ptr<ScreenshotToolPaletteColorEditor> m_angleColorEditor;
+    std::unique_ptr<ScreenshotToolPaletteNumericPresetEditor> m_angleWidthEditor;
+    QPointer<adqt::widgets::AdRadioButtonGroup> m_angleUnitGroup;
+    ScreenshotToolPaletteSelectEditor m_angleDecimalsEditor;
     std::unique_ptr<ScreenshotToolPaletteNumericPresetEditor> m_distanceWidthEditor;
     std::unique_ptr<ScreenshotToolPaletteIconOptionEditor> m_distanceEndpointEditor;
     QPointer<adqt::widgets::AdInputNumber> m_distanceValueInput;
@@ -561,6 +574,7 @@ class ScreenshotToolPaletteStyleControls final {
     QVector<StyleEditorEntry> m_penHighlightEntries;
     QVector<StyleEditorEntry> m_arrowEntries;
     QVector<StyleEditorEntry> m_distanceEntries;
+    QVector<StyleEditorEntry> m_angleEntries;
     QVector<StyleEditorEntry> m_textEntries;
     QVector<StyleEditorEntry> m_serialNumberEntries;
     QVector<StyleEditorEntry> m_watermarkEntries;

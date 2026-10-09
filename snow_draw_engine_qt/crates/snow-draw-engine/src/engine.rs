@@ -15,6 +15,8 @@ use snow_draw_engine_interaction::{InputEvent, InteractionOutput};
 use snow_draw_engine_model::DocumentModel;
 use snow_draw_engine_scene::{DocumentSceneCache, ViewportComposer};
 
+#[cfg(test)]
+mod angle_tests;
 mod annotations;
 #[cfg(test)]
 mod auto_filter_tests;
@@ -220,6 +222,7 @@ impl Engine {
         self.ensure_viewport(id)?;
         let before = self.editor.snapshot();
         self.editor.set_active_tool(tool)?;
+        self.history.break_angle_wheel_coalescing();
         self.refresh_after_session_mutation(before)
     }
 
@@ -289,6 +292,8 @@ impl Engine {
             brush_eraser_style: self.editor.brush_eraser_style(),
             distance_style: self.editor.distance_style(&self.model),
             distance_style_mixed: self.editor.distance_style_mixed(&self.model),
+            angle_style: self.editor.angle_style(&self.model),
+            angle_style_mixed: self.editor.angle_style_mixed(&self.model),
             distance_measured_length: self.editor.distance_measured_length(&self.model),
         })
     }
@@ -309,6 +314,43 @@ impl Engine {
     ) -> Result<RectangleShapeStyle, ErrorCode> {
         self.ensure_viewport(id)?;
         Ok(self.editor.rectangle_shape_style(&self.model))
+    }
+
+    pub fn set_viewport_angle_style_patch(
+        &mut self,
+        id: ViewportId,
+        style: snow_draw_engine_editor::AngleStyle,
+        properties: u32,
+    ) -> Result<MutationResult, ErrorCode> {
+        self.ensure_viewport(id)?;
+        let before = self.editor.snapshot();
+        if let Some(command) = self
+            .editor
+            .set_angle_style_patch(&self.model, style, properties)?
+        {
+            self.apply_editor_command(id, command)
+        } else {
+            self.refresh_after_session_mutation(before)
+        }
+    }
+
+    pub fn adjust_viewport_angle_value(
+        &mut self,
+        id: ViewportId,
+        delta_radians: f64,
+    ) -> Result<MutationResult, ErrorCode> {
+        self.ensure_viewport(id)?;
+        let before_scene = self.editor.scene_input_revision();
+        let before_overlay = self.editor.overlay_input_revision();
+        if let Some(command) = self.editor.adjust_angle_value(&self.model, delta_radians)? {
+            self.apply_editor_command(id, command)
+        } else if self.editor.scene_input_revision() != before_scene
+            || self.editor.overlay_input_revision() != before_overlay
+        {
+            self.refresh_all_viewports()
+        } else {
+            Ok(MutationResult::default())
+        }
     }
 
     pub fn set_viewport_distance_style_patch(
@@ -910,10 +952,13 @@ mod arrow_text_tests;
 
 impl Engine {
     pub fn smart_erase_items(&mut self) -> Vec<snow_draw_engine_display::SceneDisplayItem> {
-        let presentation = self
-            .editor
-            .presentation_state_for_refresh(&self.model, &EditorViewportState::default());
-        snow_draw_engine_scene::smart_erase_items(&self.model, &presentation)
+        self.scene_cache.sync(&self.model, None);
+        let presentation = self.editor.smart_erase_presentation(&self.model);
+        snow_draw_engine_scene::cached_smart_erase_items(
+            &self.model,
+            &self.scene_cache,
+            &presentation,
+        )
     }
 }
 

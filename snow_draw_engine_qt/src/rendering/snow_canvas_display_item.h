@@ -68,6 +68,7 @@ class SnowCanvasSceneItem : public SnowSceneDisplayItem {
     void queryPathChunks(const QRectF& canvasBounds,
                          std::vector<std::uint32_t>* outChunkIndices) const;
     std::uint64_t pathGeometryRevision() const;
+    bool needsArrowTextClip(double canvasAntialiasGuard) const;
 
     QRectF viewBounds;
 
@@ -95,6 +96,11 @@ class SnowCanvasSceneItem : public SnowSceneDisplayItem {
     QPainterPath m_aggregateClosedPath;
     std::uint64_t m_pathGeometryRevision = 0;
     bool m_pathClosed = false;
+    mutable bool m_arrowTextClipCacheValid = false;
+    mutable bool m_arrowTextClipNeeded = true;
+    mutable std::uint64_t m_arrowTextClipGeometryRevision = 0;
+    mutable double m_arrowTextClipStrokeWidth = 0.0;
+    mutable QRectF m_arrowTextClipBounds;
     mutable std::size_t m_pendingPenGeometryChunkBuildCount = 0;
     mutable std::size_t m_pendingPenGeometryChunkReuseCount = 0;
 };

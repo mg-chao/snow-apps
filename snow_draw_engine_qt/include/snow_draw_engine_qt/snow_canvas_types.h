@@ -42,6 +42,7 @@ enum class SnowCanvasTool {
     RectangleEraser,
     BrushEraser,
     Distance,
+    Angle,
 };
 
 enum class SnowCanvasCursorLayer {
@@ -80,6 +81,8 @@ enum class SnowCanvasStyleToolbarSource {
     DefaultBrushEraser,
     DefaultDistance,
     SelectedDistance,
+    DefaultAngle,
+    SelectedAngle,
 };
 
 enum SnowCanvasTextStyleMixedFlag : quint32 {
@@ -320,6 +323,33 @@ inline bool operator==(const SnowCanvasCornerRadii& lhs, const SnowCanvasCornerR
 }
 
 inline bool operator!=(const SnowCanvasCornerRadii& lhs, const SnowCanvasCornerRadii& rhs) {
+    return !(lhs == rhs);
+}
+
+enum class SnowCanvasAngleUnit { Degrees, Radians };
+
+enum class SnowCanvasAngleStyleProperty : quint32 {
+    Stroke = 1u << 0,
+    StrokeWidth = 1u << 1,
+    Unit = 1u << 2,
+    DecimalPlaces = 1u << 3,
+    All = (1u << 4) - 1u,
+};
+
+struct SnowCanvasAngleStyle {
+    QColor stroke = QColor(0xf5, 0x22, 0x2d);
+    double strokeWidth = 2.0;
+    SnowCanvasAngleUnit unit = SnowCanvasAngleUnit::Degrees;
+    quint32 decimalPlaces = 0;
+};
+
+inline bool operator==(const SnowCanvasAngleStyle& lhs, const SnowCanvasAngleStyle& rhs) {
+    return lhs.stroke == rhs.stroke &&
+           snowCanvasExactDoubleEqual(lhs.strokeWidth, rhs.strokeWidth) && lhs.unit == rhs.unit &&
+           lhs.decimalPlaces == rhs.decimalPlaces;
+}
+
+inline bool operator!=(const SnowCanvasAngleStyle& lhs, const SnowCanvasAngleStyle& rhs) {
     return !(lhs == rhs);
 }
 
@@ -577,6 +607,7 @@ struct SnowCanvasStyleDefaults {
     SnowCanvasBrushEraserStyle brushEraser;
     SnowCanvasRectangleShape spotlightShape = SnowCanvasRectangleShape::Rectangle;
     SnowCanvasDistanceStyle distance;
+    SnowCanvasAngleStyle angle;
 };
 
 inline bool operator==(const SnowCanvasStyleDefaults& lhs, const SnowCanvasStyleDefaults& rhs) {
@@ -586,7 +617,8 @@ inline bool operator==(const SnowCanvasStyleDefaults& lhs, const SnowCanvasStyle
            lhs.penFilter == rhs.penFilter && lhs.text == rhs.text &&
            lhs.serialNumber == rhs.serialNumber && lhs.watermark == rhs.watermark &&
            lhs.spotlight == rhs.spotlight && lhs.brushEraser == rhs.brushEraser &&
-           lhs.spotlightShape == rhs.spotlightShape && lhs.distance == rhs.distance;
+           lhs.spotlightShape == rhs.spotlightShape && lhs.distance == rhs.distance &&
+           lhs.angle == rhs.angle;
 }
 
 inline bool operator!=(const SnowCanvasStyleDefaults& lhs, const SnowCanvasStyleDefaults& rhs) {
@@ -613,6 +645,8 @@ struct SnowCanvasStyleToolbarState {
     SnowCanvasBrushEraserStyle brushEraserStyle;
     SnowCanvasDistanceStyle distanceStyle;
     quint32 distanceStyleMixed = 0;
+    SnowCanvasAngleStyle angleStyle;
+    quint32 angleStyleMixed = 0;
     // Calibrated length before applying the factor; zero without a single valid distance.
     double distanceMeasuredLength = 0.0;
 };
@@ -628,7 +662,8 @@ inline bool operator==(const SnowCanvasStyleToolbarState& lhs,
            lhs.shapeStyleMixed == rhs.shapeStyleMixed && lhs.filterStyle == rhs.filterStyle &&
            lhs.filterStyleMixed == rhs.filterStyleMixed &&
            lhs.brushEraserStyle == rhs.brushEraserStyle && lhs.distanceStyle == rhs.distanceStyle &&
-           lhs.distanceStyleMixed == rhs.distanceStyleMixed &&
+           lhs.distanceStyleMixed == rhs.distanceStyleMixed && lhs.angleStyle == rhs.angleStyle &&
+           lhs.angleStyleMixed == rhs.angleStyleMixed &&
            lhs.distanceMeasuredLength == rhs.distanceMeasuredLength;
 }
 

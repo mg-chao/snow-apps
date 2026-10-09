@@ -28,6 +28,7 @@ pub enum SnowActiveTool {
     RectangleEraser = 15,
     BrushEraser = 16,
     Distance = 17,
+    Angle = 18,
 }
 
 impl SnowActiveTool {
@@ -66,6 +67,8 @@ pub enum SnowStyleToolbarSource {
     DefaultBrushEraser = 25,
     DefaultDistance = 26,
     SelectedDistance = 27,
+    DefaultAngle = 28,
+    SelectedAngle = 29,
 }
 
 impl SnowStyleToolbarSource {
@@ -152,6 +155,32 @@ snow_c_enum! {
         Mm = 4,
     }
 }
+
+snow_c_enum! {
+    #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+    pub enum SnowAngleUnit {
+        #[default]
+        Degrees = 0,
+        Radians = 1,
+    }
+}
+#[repr(C)]
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct SnowAngleStyle {
+    pub stroke: SnowColorRgba8,
+    pub stroke_width: f64,
+    pub unit: SnowAngleUnit,
+    pub decimal_places: u32,
+}
+pub const SNOW_ANGLE_STYLE_PROPERTY_STROKE: u32 = 1;
+pub const SNOW_ANGLE_STYLE_PROPERTY_STROKE_WIDTH: u32 = 2;
+pub const SNOW_ANGLE_STYLE_PROPERTY_UNIT: u32 = 4;
+pub const SNOW_ANGLE_STYLE_PROPERTY_DECIMAL_PLACES: u32 = 8;
+pub const SNOW_ANGLE_STYLE_PROPERTY_ALL: u32 = 15;
+pub const SNOW_ANGLE_STYLE_MIXED_STROKE: u32 = 1;
+pub const SNOW_ANGLE_STYLE_MIXED_STROKE_WIDTH: u32 = 2;
+pub const SNOW_ANGLE_STYLE_MIXED_UNIT: u32 = 4;
+pub const SNOW_ANGLE_STYLE_MIXED_DECIMAL_PLACES: u32 = 8;
 
 #[repr(C)]
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -413,6 +442,8 @@ pub struct SnowStyleToolbarState {
     pub brush_eraser_style: SnowBrushEraserStyle,
     pub distance_style: SnowDistanceStyle,
     pub distance_style_mixed: u32,
+    pub angle_style: SnowAngleStyle,
+    pub angle_style_mixed: u32,
     pub distance_measured_length: f64,
 }
 
@@ -434,6 +465,7 @@ pub struct SnowStyleDefaults {
     pub brush_eraser: SnowBrushEraserStyle,
     pub spotlight_shape: SnowRectangleShape,
     pub distance: SnowDistanceStyle,
+    pub angle: SnowAngleStyle,
 }
 
 #[repr(C)]

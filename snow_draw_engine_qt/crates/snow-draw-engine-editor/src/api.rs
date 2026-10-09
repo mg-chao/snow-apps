@@ -33,6 +33,7 @@ pub enum ActiveTool {
     RectangleEraser,
     BrushEraser,
     Distance,
+    Angle,
 }
 
 impl ActiveTool {
@@ -69,7 +70,8 @@ impl ActiveTool {
             | Self::Text
             | Self::SerialNumber
             | Self::Spotlight
-            | Self::Distance => false,
+            | Self::Distance
+            | Self::Angle => false,
         }
     }
 }
@@ -155,6 +157,8 @@ pub enum StyleToolbarSource {
     DefaultBrushEraser,
     DefaultDistance,
     SelectedDistance,
+    DefaultAngle,
+    SelectedAngle,
 }
 
 impl StyleToolbarSource {
@@ -351,6 +355,8 @@ pub struct StyleToolbarState {
     pub brush_eraser_style: BrushEraserStyle,
     pub distance_style: crate::DistanceStyle,
     pub distance_style_mixed: u32,
+    pub angle_style: crate::AngleStyle,
+    pub angle_style_mixed: u32,
     pub distance_measured_length: f64,
 }
 

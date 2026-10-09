@@ -444,6 +444,10 @@
     <context>
         <name>DrawingToolbarEditorSettingsWidget</name>
         <message>
+            <source>Angle annotation</source>
+            <translation>角度標註</translation>
+        </message>
+        <message>
             <source>Annotation toolbar preview</source>
             <translation>標註工具列預覽</translation>
         </message>
@@ -1211,6 +1215,10 @@
         <message>
             <source>Always show</source>
             <translation>一律顯示</translation>
+        </message>
+        <message>
+            <source>Angle annotation</source>
+            <translation>角度標註</translation>
         </message>
         <message>
             <source>Animate transitions between smart screenshot selections</source>

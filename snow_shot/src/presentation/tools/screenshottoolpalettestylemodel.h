@@ -119,6 +119,11 @@ struct ScreenshotToolPaletteStyleState {
     double distanceMeasuredLength = 0.0;
     bool showingSelectedDistance = false;
     bool distanceControlsActive = false;
+    SnowCanvasAngleStyle creationAngleStyle;
+    SnowCanvasAngleStyle angleStyle;
+    quint32 angleStyleMixed = 0;
+    bool showingSelectedAngle = false;
+    bool angleControlsActive = false;
     ScreenshotToolPaletteTextStyleModel m_creationTextStyle;
     ScreenshotToolPaletteTextStyleModel m_textStyle;
     SnowCanvasSerialNumberStyle m_creationSerialNumberStyle;

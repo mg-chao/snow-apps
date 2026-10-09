@@ -1,3 +1,4 @@
+#include "angle_wheel_host_test_support.h"
 #include "cloud_upload_test_support.h"
 #include "print_diagnostics_test_support.h"
 #include "../../test-support/canvas_quick_selection_test_support.h"
@@ -2863,6 +2864,7 @@ void pinnedDrawingToolsRemainUsableAfterRecognition() {
             {&ScreenshotToolPalette::shapeRequested, SnowCanvasTool::Shape, Tool::Shape},
             {&ScreenshotToolPalette::arrowRequested, SnowCanvasTool::Arrow, Tool::Arrow},
             {&ScreenshotToolPalette::lineRequested, SnowCanvasTool::Line, Tool::Line},
+            {&ScreenshotToolPalette::angleToolRequested, SnowCanvasTool::Angle, Tool::Angle},
             {&ScreenshotToolPalette::freeDrawRequested, SnowCanvasTool::FreeDraw, Tool::FreeDraw},
             {&ScreenshotToolPalette::highlightRequested, SnowCanvasTool::RectangleHighlight,
              Tool::RectangleHighlight},
@@ -19612,6 +19614,23 @@ void pinnedShadowStateAndMarginsOffscreen() {
     window.hide();
 }
 
+void pinnedAngleWheel() {
+    ScreenshotPinnedWindow window;
+    auto config = cachedOcrPinConfig(nullptr);
+    static_cast<void>(ScreenshotPinnedWindowTestAccess::hiddenSelectionOffscreen(window, config));
+    ScreenshotPinnedWindowTestAccess::editSelectionOffscreen(window, true);
+    auto* controller = window.findChild<ScreenshotPinnedEditController*>();
+    auto* canvas = window.findChild<SnowCanvasWidget*>();
+    require(controller != nullptr && canvas != nullptr, "create pinned angle host fixture");
+    controller->toolbarWindow()->palette()->angleToolRequested();
+    // Finish the initial show/layout/focus events before sending synthetic clicks.
+    QApplication::processEvents();
+    require(canvas->canvasTool() == SnowCanvasTool::Angle, "pinned angle toolbar activates canvas");
+    require(canvas->interactionEnabled(), "pinned angle tool enables canvas interaction");
+    angle_wheel_host_test_support::exercise(
+        *canvas, [&] { return ScreenshotPinnedWindowTestAccess::dragDocument(window); });
+}
+
 int main(int argc, char* argv[]) {
 
     PinnedWindowTestApplication app(argc, argv);
@@ -19977,6 +19996,10 @@ int main(int argc, char* argv[]) {
             return 0;
         }
 #endif
+        if (app.arguments().contains(QStringLiteral("--angle-wheel-only"))) {
+            pinnedAngleWheel();
+            return 0;
+        }
         if (app.arguments().contains(QStringLiteral("--right-quick-selection-only"))) {
             pinnedRightQuickSelection();
             pinnedRightQuickSelectionPreservesWindowSelection();

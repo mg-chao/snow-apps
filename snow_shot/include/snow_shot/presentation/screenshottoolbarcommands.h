@@ -44,6 +44,7 @@ class ScreenshotToolbarCommandSink {
     virtual void setArrowTool() = 0;
     virtual void setLineTool() = 0;
     virtual void setDistanceTool() {}
+    virtual void setAngleTool() {}
     virtual void setFreeDrawTool() = 0;
     virtual void setHighlightTool() = 0;
     virtual void setPenHighlightTool() = 0;

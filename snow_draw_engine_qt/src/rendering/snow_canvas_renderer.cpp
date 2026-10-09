@@ -798,32 +798,45 @@ void drawOwnedPathChunks(QPainter& painter, const ArrowRenderProjection& project
     }
 
     if (stroke.alpha() != 0 && strokeWidth > 0.0) {
-        std::vector<std::uint32_t> visibleChunks;
-        if (hasExplicitClip) {
-            item.queryPathChunks(canvasVisible, &visibleChunks);
+        QPen pen(stroke, strokeWidth, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin);
+        if (item.is_free_draw != 0) {
+            applyFreeDrawStrokeStyle(pen, item.arrow_stroke_style);
         } else {
-            visibleChunks.resize(item.pathChunks().size());
-            std::iota(visibleChunks.begin(), visibleChunks.end(), 0u);
+            applyArrowStrokeStyle(pen, item.arrow_stroke_style);
         }
-        for (std::uint32_t index : visibleChunks) {
-            if (index >= item.pathChunks().size()) {
-                continue;
-            }
-            const SnowCanvasSceneItem::PathChunk& chunk = item.pathChunks()[index];
-            QPen pen(stroke, strokeWidth, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin);
-            if (item.is_free_draw != 0) {
-                applyFreeDrawStrokeStyle(pen, item.arrow_stroke_style);
-            } else {
-                applyArrowStrokeStyle(pen, item.arrow_stroke_style);
-            }
-            if (pen.style() == Qt::CustomDashLine || pen.style() == Qt::DashLine ||
-                pen.style() == Qt::DotLine || pen.style() == Qt::DashDotLine ||
-                pen.style() == Qt::DashDotDotLine) {
-                pen.setDashOffset(-chunk.cumulativeStartLength / strokeWidth);
-            }
+        const bool dashed = pen.style() == Qt::CustomDashLine || pen.style() == Qt::DashLine ||
+                            pen.style() == Qt::DotLine || pen.style() == Qt::DashDotLine ||
+                            pen.style() == Qt::DashDotDotLine;
+        painter.setBrush(Qt::NoBrush);
+        if (!dashed) {
             painter.setPen(pen);
-            painter.setBrush(Qt::NoBrush);
+        }
+        const auto drawChunk = [&](const SnowCanvasSceneItem::PathChunk& chunk) {
+            if (dashed) {
+                pen.setDashOffset(-chunk.cumulativeStartLength / strokeWidth);
+                painter.setPen(pen);
+            }
             painter.drawPath(chunk.canvasPath);
+        };
+        if (!hasExplicitClip || item.pathChunks().size() <= 16) {
+            for (const auto& chunk : item.pathChunks()) {
+                const QRectF& bounds = chunk.canvasBounds;
+                if (hasExplicitClip && (bounds.right() < canvasVisible.left() ||
+                                        canvasVisible.right() < bounds.left() ||
+                                        bounds.bottom() < canvasVisible.top() ||
+                                        canvasVisible.bottom() < bounds.top())) {
+                    continue;
+                }
+                drawChunk(chunk);
+            }
+        } else {
+            std::vector<std::uint32_t> visibleChunks;
+            item.queryPathChunks(canvasVisible, &visibleChunks);
+            for (std::uint32_t index : visibleChunks) {
+                if (index < item.pathChunks().size()) {
+                    drawChunk(item.pathChunks()[index]);
+                }
+            }
         }
     }
     painter.restore();
@@ -837,7 +850,12 @@ void drawArrowItem(QPainter& painter, const SceneDisplayInfo& displayInfo,
     }
     painter.setOpacity(qBound(0.0, item.opacity, 1.0));
     const ArrowRenderProjection projection = arrowProjectionForScene(displayInfo);
-    if (item.has_bound_text_element != 0) {
+    if (item.has_bound_text_element != 0 &&
+        item.needsArrowTextClip(
+            2.0 /
+            (projection.view.cameraZoom *
+             (painter.device() != nullptr ? qMax<qreal>(1.0, painter.device()->devicePixelRatioF())
+                                          : 1.0)))) {
         const auto& bounds = item.arrow_text_bounds;
         const QPointF topLeft = canvasToView(projection.view, bounds[0] - 5.0, bounds[1] - 5.0);
         const QPointF bottomRight = canvasToView(projection.view, bounds[2] + 5.0, bounds[3] + 5.0);
@@ -854,20 +872,23 @@ void drawArrowItem(QPainter& painter, const SceneDisplayInfo& displayInfo,
     }
     if (!item.pathChunks().empty() && item.arrow_shaft_type != SNOW_ARROW_SHAFT_TYPE_TAPERED) {
         drawOwnedPathChunks(painter, projection, item);
-        const QVector<QPointF> viewPoints =
-            arrowPointsToView(projection.view, item.arrow_points, item.arrow_point_count);
         const double viewStrokeWidth = item.stroke_width * projection.view.cameraZoom;
         if (item.arrowhead_primitive_count > 0) {
             drawArrowheadPrimitives(painter, projection, item.arrowhead_primitives,
                                     item.arrowhead_primitive_count, item.arrow_stroke_style,
                                     toQColor(item.stroke), viewStrokeWidth);
-        } else if (viewPoints.size() >= 2) {
-            drawArrowhead(painter, viewPoints, item.arrow_type, true, item.arrow_start_head,
-                          item.arrow_stroke_style, viewStrokeWidth, projection.view.cameraZoom,
-                          item.arrow_ratio, toQColor(item.stroke), projection.background);
-            drawArrowhead(painter, viewPoints, item.arrow_type, false, item.arrow_end_head,
-                          item.arrow_stroke_style, viewStrokeWidth, projection.view.cameraZoom,
-                          item.arrow_ratio, toQColor(item.stroke), projection.background);
+        } else if (item.arrow_start_head != SNOW_ARROWHEAD_NONE ||
+                   item.arrow_end_head != SNOW_ARROWHEAD_NONE) {
+            const QVector<QPointF> viewPoints =
+                arrowPointsToView(projection.view, item.arrow_points, item.arrow_point_count);
+            if (viewPoints.size() >= 2) {
+                drawArrowhead(painter, viewPoints, item.arrow_type, true, item.arrow_start_head,
+                              item.arrow_stroke_style, viewStrokeWidth, projection.view.cameraZoom,
+                              item.arrow_ratio, toQColor(item.stroke), projection.background);
+                drawArrowhead(painter, viewPoints, item.arrow_type, false, item.arrow_end_head,
+                              item.arrow_stroke_style, viewStrokeWidth, projection.view.cameraZoom,
+                              item.arrow_ratio, toQColor(item.stroke), projection.background);
+            }
         }
     } else {
         QPainterPath rustPath = projectedArrowPath(projection, item);

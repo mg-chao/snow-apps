@@ -59,6 +59,13 @@ enum Annotation {
         #[serde(default)]
         style: Style,
     },
+    Angle {
+        points: [[f64; 2]; 3],
+        #[serde(default)]
+        style: AngleAnnotationStyle,
+        #[serde(default)]
+        full_turn: bool,
+    },
     Distance {
         points: [[f64; 2]; 2],
         #[serde(default)]
@@ -126,6 +133,37 @@ enum Annotation {
 fn default_distance_pixel_scale() -> [f64; 2] {
     [1.0, 1.0]
 }
+#[derive(Deserialize)]
+#[serde(default, deny_unknown_fields)]
+struct AngleAnnotationStyle {
+    stroke: [u8; 4],
+    stroke_width: f64,
+    unit: snow_draw_engine_document::AngleUnit,
+    decimal_places: u8,
+}
+impl Default for AngleAnnotationStyle {
+    fn default() -> Self {
+        Self {
+            stroke: [245, 34, 45, 255],
+            stroke_width: 2.0,
+            unit: Default::default(),
+            decimal_places: 0,
+        }
+    }
+}
+impl AngleAnnotationStyle {
+    fn into_style(self) -> Result<snow_draw_engine_editor::AngleStyle, ErrorCode> {
+        let style = snow_draw_engine_editor::AngleStyle {
+            stroke: rgba(self.stroke),
+            stroke_width: self.stroke_width,
+            unit: self.unit,
+            decimal_places: self.decimal_places,
+        };
+        snow_draw_engine_editor::validate_angle_style(style)?;
+        Ok(style)
+    }
+}
+
 #[derive(Deserialize)]
 #[serde(default, deny_unknown_fields)]
 struct DistanceAnnotationStyle {
@@ -499,6 +537,39 @@ impl Engine {
                     .ok_or(ErrorCode::InvalidArgument)?;
                     tx.insert_free_draw(id, meta, data);
                 }
+                Annotation::Angle {
+                    points: p,
+                    style: s,
+                    full_turn,
+                } => {
+                    let style = s.into_style()?;
+                    let mut data = ArrowData::from_global_points(
+                        &points(p.to_vec())?,
+                        style.stroke,
+                        style.stroke_width,
+                        crate::StrokeStyle::Solid,
+                        crate::ArrowType::Straight,
+                        None,
+                        None,
+                    )
+                    .ok_or(ErrorCode::InvalidArgument)?;
+                    style.apply_to_arrow(&mut data);
+                    data.angle
+                        .as_mut()
+                        .ok_or(ErrorCode::InvalidArgument)?
+                        .full_turn = full_turn;
+                    snow_draw_engine_document::validate_arrow(&data)?;
+                    next.index = next
+                        .index
+                        .checked_add(1)
+                        .ok_or(ErrorCode::InvalidArgument)?;
+                    let label_id = next;
+                    data.text_element_id = Some(label_id);
+                    let label = snow_draw_engine_document::angle_label(&data, None)
+                        .ok_or(ErrorCode::InvalidArgument)?;
+                    tx.insert_arrow(id, meta, data);
+                    tx.insert_text(label_id, meta, label);
+                }
                 Annotation::Distance {
                     points: p,
                     style: s,
@@ -563,7 +634,9 @@ impl Engine {
                     data = match linear_kind {
                         LinearElementKind::Line => data.into_line(rgba(s.fill), FillStyle::Solid),
                         LinearElementKind::PenHighlight => data.into_pen_highlight(),
-                        LinearElementKind::Arrow | LinearElementKind::Distance => data,
+                        LinearElementKind::Arrow
+                        | LinearElementKind::Distance
+                        | LinearElementKind::Angle => data,
                     };
                     tx.insert_arrow(id, meta, data);
                 }

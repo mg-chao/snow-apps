@@ -76,6 +76,26 @@
             <translation>顶对齐</translation>
         </message>
         <message>
+            <source>Angle annotation</source>
+            <translation>角度标注</translation>
+        </message>
+        <message>
+            <source>Angle stroke color</source>
+            <translation>角度线条颜色</translation>
+        </message>
+        <message>
+            <source>Angle stroke color %1</source>
+            <translation>角度线条颜色 %1</translation>
+        </message>
+        <message>
+            <source>Angle stroke width %1</source>
+            <translation>角度线条宽度 %1</translation>
+        </message>
+        <message>
+            <source>Angle unit</source>
+            <translation>角度单位</translation>
+        </message>
+        <message>
             <source>Animated recording formats do not contain audio</source>
             <translation>动画录制格式不包含音频</translation>
         </message>
@@ -244,6 +264,10 @@
             <translation>交叉线文本填充</translation>
         </message>
         <message>
+            <source>Current angle stroke width</source>
+            <translation>当前角度线条宽度</translation>
+        </message>
+        <message>
             <source>Current arrow stroke width</source>
             <translation>当前箭头描边宽度</translation>
         </message>
@@ -310,6 +334,10 @@
         <message>
             <source>Default</source>
             <translation>默认</translation>
+        </message>
+        <message>
+            <source>Degrees</source>
+            <translation>度</translation>
         </message>
         <message>
             <source>Delay recording (scroll to adjust)</source>
@@ -810,6 +838,10 @@
         <message>
             <source>Quick save</source>
             <translation>快速保存</translation>
+        </message>
+        <message>
+            <source>Radians</source>
+            <translation>弧度</translation>
         </message>
         <message>
             <source>Recapture</source>

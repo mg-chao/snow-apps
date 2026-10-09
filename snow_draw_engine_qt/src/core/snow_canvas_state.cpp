@@ -84,6 +84,11 @@ bool styleToolbarStatesEqual(const SnowStyleToolbarState& lhs, const SnowStyleTo
            lhs.distance_style.endpoint_scale == rhs.distance_style.endpoint_scale &&
            lhs.distance_style.endpoint_style == rhs.distance_style.endpoint_style &&
            lhs.distance_style_mixed == rhs.distance_style_mixed &&
+           colorsEqual(lhs.angle_style.stroke, rhs.angle_style.stroke) &&
+           lhs.angle_style.stroke_width == rhs.angle_style.stroke_width &&
+           lhs.angle_style.unit == rhs.angle_style.unit &&
+           lhs.angle_style.decimal_places == rhs.angle_style.decimal_places &&
+           lhs.angle_style_mixed == rhs.angle_style_mixed &&
            lhs.distance_measured_length == rhs.distance_measured_length;
 }
 

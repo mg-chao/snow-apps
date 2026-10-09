@@ -3,18 +3,18 @@ mod patch_payloads;
 pub(crate) use patch_payloads::*;
 
 use snow_draw_engine::{
-    ActiveTool, ArrowPathCommand, ArrowType, Arrowhead, ArrowheadDisplayDashMode,
-    ArrowheadDisplayFillMode, ArrowheadDisplayPrimitive, ArrowheadDisplayPrimitiveKind,
-    CanvasFilterType, ColorRgba8, CornerRadii, CursorCommand, CursorStyle, DisplayFillStyle,
-    DisplayTextHorizontalAlign, DisplayTextVerticalAlign, DistanceStyle, DistanceUnit, ElementId,
-    EngineConfig, FillStyle, FilterStyle, GridConfig, HistoryState, InputEvent, InteractionOutput,
-    KeyCode, KeyEvent, KeyEventType, Modifiers, Point, PointerButton, PointerButtons,
-    PointerCaptureCommand, PointerDevice, PointerEvent, PointerEventType, RectangleShapeStyle,
-    RuntimeConfig, SerialNumberStyle, SerialNumberType, ShapeKind, ShapeStyle, SnapConfig,
-    SpotlightConfig, StrokeStyle, StyleDefaults, StyleToolbarSource, TextElementInfo,
-    TextHorizontalAlign, TextLayoutOverride, TextLayoutSize, TextStyle, TextVerticalAlign, Vector2,
-    WatermarkConfig, WatermarkTemplateApplicationTime, WheelDeltaKind, WheelEvent, ZoomFocus,
-    normalize_font_family,
+    ActiveTool, AngleStyle, AngleUnit, ArrowPathCommand, ArrowType, Arrowhead,
+    ArrowheadDisplayDashMode, ArrowheadDisplayFillMode, ArrowheadDisplayPrimitive,
+    ArrowheadDisplayPrimitiveKind, CanvasFilterType, ColorRgba8, CornerRadii, CursorCommand,
+    CursorStyle, DisplayFillStyle, DisplayTextHorizontalAlign, DisplayTextVerticalAlign,
+    DistanceStyle, DistanceUnit, ElementId, EngineConfig, FillStyle, FilterStyle, GridConfig,
+    HistoryState, InputEvent, InteractionOutput, KeyCode, KeyEvent, KeyEventType, Modifiers, Point,
+    PointerButton, PointerButtons, PointerCaptureCommand, PointerDevice, PointerEvent,
+    PointerEventType, RectangleShapeStyle, RuntimeConfig, SerialNumberStyle, SerialNumberType,
+    ShapeKind, ShapeStyle, SnapConfig, SpotlightConfig, StrokeStyle, StyleDefaults,
+    StyleToolbarSource, TextElementInfo, TextHorizontalAlign, TextLayoutOverride, TextLayoutSize,
+    TextStyle, TextVerticalAlign, Vector2, WatermarkConfig, WatermarkTemplateApplicationTime,
+    WheelDeltaKind, WheelEvent, ZoomFocus, normalize_font_family,
 };
 
 use crate::abi::text::{
@@ -614,6 +614,38 @@ impl From<CornerRadii> for SnowCornerRadii {
     }
 }
 
+impl From<SnowAngleStyle> for AngleStyle {
+    fn from(value: SnowAngleStyle) -> Self {
+        Self {
+            stroke: value.stroke.into(),
+            stroke_width: value.stroke_width,
+            unit: match value.unit {
+                SnowAngleUnit::Degrees => AngleUnit::Degrees,
+                SnowAngleUnit::Radians => AngleUnit::Radians,
+            },
+            decimal_places: value.decimal_places.min(255) as u8,
+        }
+    }
+}
+impl From<AngleStyle> for SnowAngleStyle {
+    fn from(value: AngleStyle) -> Self {
+        Self {
+            stroke: value.stroke.into(),
+            stroke_width: value.stroke_width,
+            unit: match value.unit {
+                AngleUnit::Degrees => SnowAngleUnit::Degrees,
+                AngleUnit::Radians => SnowAngleUnit::Radians,
+            },
+            decimal_places: u32::from(value.decimal_places),
+        }
+    }
+}
+impl Default for SnowAngleStyle {
+    fn default() -> Self {
+        AngleStyle::default().into()
+    }
+}
+
 impl From<SnowDistanceStyle> for DistanceStyle {
     fn from(value: SnowDistanceStyle) -> Self {
         Self {
@@ -1001,6 +1033,7 @@ unsafe fn runtime_style_default_enums_are_valid(defaults: *const SnowStyleDefaul
 
     unsafe {
         raw_c_enum_is_valid(std::ptr::addr_of!((*defaults).distance.unit))
+            && raw_c_enum_is_valid(std::ptr::addr_of!((*defaults).angle.unit))
             && raw_c_enum_is_valid(std::ptr::addr_of!((*defaults).distance.endpoint_style))
             && (*defaults).distance.decimal_places <= 3
             && raw_c_enum_is_valid(std::ptr::addr_of!((*defaults).spotlight_shape))
@@ -1075,6 +1108,7 @@ pub(crate) fn runtime_config_from_c(
                 pen_filter: defaults.pen_filter.into(),
                 brush_eraser: defaults.brush_eraser.into(),
                 distance: defaults.distance.into(),
+                angle: defaults.angle.into(),
                 text: TextStyle {
                     color: defaults.text.color.into(),
                     font_size: defaults.text.font_size,
@@ -1186,6 +1220,7 @@ impl From<StyleDefaults> for SnowStyleDefaults {
             spotlight: value.spotlight.into(),
             brush_eraser: value.editor.brush_eraser.into(),
             distance: value.editor.distance.into(),
+            angle: value.editor.angle.into(),
             spotlight_shape: match value.editor.spotlight_shape {
                 snow_draw_engine::HighlightShape::Rectangle => SnowRectangleShape::Rectangle,
                 snow_draw_engine::HighlightShape::Ellipse => SnowRectangleShape::Ellipse,
@@ -1211,6 +1246,8 @@ impl Default for SnowStyleToolbarState {
             brush_eraser_style: SnowBrushEraserStyle::default(),
             distance_style: SnowDistanceStyle::default(),
             distance_style_mixed: 0,
+            angle_style: SnowAngleStyle::default(),
+            angle_style_mixed: 0,
             distance_measured_length: 0.0,
         }
     }
@@ -1260,6 +1297,7 @@ pub(crate) fn snow_active_tool_to_rust(value: SnowActiveTool) -> ActiveTool {
         SnowActiveTool::RectangleEraser => ActiveTool::RectangleEraser,
         SnowActiveTool::BrushEraser => ActiveTool::BrushEraser,
         SnowActiveTool::Distance => ActiveTool::Distance,
+        SnowActiveTool::Angle => ActiveTool::Angle,
         SnowActiveTool::Watermark => ActiveTool::Watermark,
         SnowActiveTool::Text => ActiveTool::Text,
         SnowActiveTool::SerialNumber => ActiveTool::SerialNumber,
@@ -1283,6 +1321,7 @@ pub(crate) fn snow_active_tool_from_rust(value: ActiveTool) -> SnowActiveTool {
         ActiveTool::RectangleEraser => SnowActiveTool::RectangleEraser,
         ActiveTool::BrushEraser => SnowActiveTool::BrushEraser,
         ActiveTool::Distance => SnowActiveTool::Distance,
+        ActiveTool::Angle => SnowActiveTool::Angle,
         ActiveTool::Watermark => SnowActiveTool::Watermark,
         ActiveTool::Text => SnowActiveTool::Text,
         ActiveTool::SerialNumber => SnowActiveTool::SerialNumber,
@@ -1290,7 +1329,7 @@ pub(crate) fn snow_active_tool_from_rust(value: ActiveTool) -> SnowActiveTool {
 }
 
 pub(crate) fn snow_active_tool_mask_to_rust(value: u64) -> u64 {
-    const TOOLS: [SnowActiveTool; 18] = [
+    const TOOLS: [SnowActiveTool; 19] = [
         SnowActiveTool::Select,
         SnowActiveTool::Shape,
         SnowActiveTool::Arrow,
@@ -1309,6 +1348,7 @@ pub(crate) fn snow_active_tool_mask_to_rust(value: u64) -> u64 {
         SnowActiveTool::RectangleEraser,
         SnowActiveTool::BrushEraser,
         SnowActiveTool::Distance,
+        SnowActiveTool::Angle,
     ];
 
     TOOLS.into_iter().fold(0, |mask, tool| {
@@ -1347,6 +1387,8 @@ pub(crate) fn snow_style_toolbar_source_from_rust(
         StyleToolbarSource::DefaultBrushEraser => SnowStyleToolbarSource::DefaultBrushEraser,
         StyleToolbarSource::DefaultDistance => SnowStyleToolbarSource::DefaultDistance,
         StyleToolbarSource::SelectedDistance => SnowStyleToolbarSource::SelectedDistance,
+        StyleToolbarSource::DefaultAngle => SnowStyleToolbarSource::DefaultAngle,
+        StyleToolbarSource::SelectedAngle => SnowStyleToolbarSource::SelectedAngle,
         StyleToolbarSource::DefaultRectangleFilter => {
             SnowStyleToolbarSource::DefaultRectangleFilter
         }

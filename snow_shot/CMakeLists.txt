@@ -3495,6 +3495,11 @@ if(SNOW_SHOT_BUILD_TESTS)
     add_test(NAME snow-shot-multi-region-tests COMMAND snow-shot-multi-region-tests)
     add_test(NAME snow-shot-region-overlay-input-tests
         COMMAND snow-shot-screenshot-canvas-renderer-tests --region-input-only -platform offscreen)
+    add_test(NAME snow-shot-screenshot-angle-wheel-tests
+        COMMAND snow-shot-screenshot-canvas-renderer-tests --angle-wheel-only -platform offscreen)
+    set_tests_properties(snow-shot-screenshot-angle-wheel-tests PROPERTIES
+        LABELS "unit" RUN_SERIAL TRUE TIMEOUT 60
+        ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}")
     set_tests_properties(snow-shot-region-overlay-input-tests PROPERTIES LABELS "unit")
     add_test(NAME snow-shot-region-shape-input-tests COMMAND snow-shot-screenshot-history-tests --region-shapes-only)
     set_tests_properties(snow-shot-region-shape-input-tests PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen" LABELS "unit")
@@ -4265,6 +4270,11 @@ if(SNOW_SHOT_BUILD_TESTS)
         LABELS "interactive;e2e;windows" RUN_SERIAL TRUE TIMEOUT 180
         ENVIRONMENT "QT_QPA_PLATFORM=windows")
     snow_shot_import_offscreen_platform(snow-shot-pinned-window-tests)
+    add_test(NAME snow-shot-pinned-angle-wheel-tests
+        COMMAND snow-shot-pinned-window-tests --angle-wheel-only -platform offscreen)
+    set_tests_properties(snow-shot-pinned-angle-wheel-tests PROPERTIES
+        LABELS "unit" RUN_SERIAL TRUE TIMEOUT 60
+        ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}")
     add_test(NAME snow-shot-pinned-restored-text-theme-tests
         COMMAND snow-shot-pinned-window-tests --restored-text-theme-only -platform offscreen)
     set_tests_properties(snow-shot-pinned-restored-text-theme-tests PROPERTIES
@@ -5094,6 +5104,10 @@ if(SNOW_SHOT_BUILD_TESTS)
         add_test(NAME snow-shot-mcp-capabilities-tests
             COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tests/check_mcp_capabilities.py")
         set_tests_properties(snow-shot-mcp-capabilities-tests PROPERTIES TIMEOUT 30 LABELS unit)
+        add_test(NAME snow-shot-angle-mcp-capabilities-tests
+            COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tests/check_mcp_capabilities.py"
+                --angle-only)
+        set_tests_properties(snow-shot-angle-mcp-capabilities-tests PROPERTIES TIMEOUT 30 LABELS unit)
     endif()
 
     set_tests_properties(snow-shot-mcp-tests PROPERTIES TIMEOUT 90 LABELS unit
@@ -5135,6 +5149,21 @@ if(SNOW_SHOT_BUILD_TESTS)
         ENVIRONMENT_MODIFICATION
             "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
     )
+
+    add_executable(snow-shot-angle-annotation-integration-tests
+        tests/angle_annotation_integration_tests.cpp
+        src/presentation/core/screenshotcanvastoolstyles.cpp)
+    target_include_directories(snow-shot-angle-annotation-integration-tests PRIVATE include)
+    target_link_libraries(snow-shot-angle-annotation-integration-tests PRIVATE
+        snow_shot_storage snow_shot_window_shortcuts snow_draw_engine_qt_canvas
+        ant_design_qt adqt_icon_core ant_design_icons_qt Qt6::Widgets)
+    snow_shot_import_offscreen_platform(snow-shot-angle-annotation-integration-tests)
+    add_test(NAME snow-shot-angle-annotation-integration-tests
+        COMMAND snow-shot-angle-annotation-integration-tests -platform offscreen)
+    set_tests_properties(snow-shot-angle-annotation-integration-tests PROPERTIES
+        LABELS "unit" TIMEOUT 60 SNOW_TEST_CROSS_PLATFORM TRUE
+        ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}"
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
 
     add_executable(snow-shot-distance-annotation-integration-tests
         tests/distance_annotation_integration_tests.cpp
@@ -5215,6 +5244,10 @@ if(SNOW_SHOT_BUILD_TESTS)
     add_test(NAME snow-shot-screenshot-tool-palette-distance-tests
         COMMAND snow-shot-screenshot-tool-palette-tests --distance-only -platform offscreen)
     set_tests_properties(snow-shot-screenshot-tool-palette-distance-tests
+        PROPERTIES LABELS "unit" TIMEOUT 60)
+    add_test(NAME snow-shot-screenshot-tool-palette-angle-tests
+        COMMAND snow-shot-screenshot-tool-palette-tests --angle-only -platform offscreen)
+    set_tests_properties(snow-shot-screenshot-tool-palette-angle-tests
         PROPERTIES LABELS "unit" TIMEOUT 60)
     add_test(NAME snow-shot-scrolling-toolbar-tests
         COMMAND snow-shot-screenshot-tool-palette-tests --scrolling-only -platform offscreen)
@@ -5551,6 +5584,11 @@ if(SNOW_SHOT_BUILD_TESTS)
             LABELS "interactive;macos" RUN_SERIAL TRUE TIMEOUT 30)
     endif()
     snow_shot_import_offscreen_platform(snow-shot-global-canvas-tests)
+    add_test(NAME snow-shot-global-canvas-angle-wheel-tests
+        COMMAND snow-shot-global-canvas-tests --angle-wheel-only -platform offscreen)
+    set_tests_properties(snow-shot-global-canvas-angle-wheel-tests PROPERTIES
+        LABELS "unit" RUN_SERIAL TRUE TIMEOUT 60
+        ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}")
     add_test(NAME snow-shot-global-canvas-window-shadow-tests
         COMMAND snow-shot-global-canvas-tests --window-shadow-only -platform offscreen)
     set_tests_properties(snow-shot-global-canvas-window-shadow-tests PROPERTIES LABELS "unit")
@@ -6796,6 +6834,11 @@ if(SNOW_SHOT_BUILD_TESTS)
         ENVIRONMENT_MODIFICATION
             "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
     )
+    add_test(NAME snow-shot-recording-angle-wheel-tests
+        COMMAND snow-shot-screen-recording-area-window-tests --angle-wheel-only -platform offscreen)
+    set_tests_properties(snow-shot-recording-angle-wheel-tests PROPERTIES
+        LABELS "unit" RUN_SERIAL TRUE TIMEOUT 60
+        ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT};QT_SCALE_FACTOR=1.25")
 
     add_executable(snow-shot-ocr-background-tests
         tests/screenshot_ocr_background_tests.cpp

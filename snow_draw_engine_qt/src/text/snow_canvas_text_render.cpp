@@ -225,8 +225,11 @@ LayoutCacheStats layoutCacheStatsForCurrentThread() {
 
 void drawContents(QPainter& painter, const SnowSceneDisplayItem& item, const QFont& baseFont,
                   const QRectF& localRect, double zoom) {
+    if (item.text_color.a == 0 || item.font_size <= 0.0) {
+        return;
+    }
     const QString text = snow_canvas_text::textFromSceneItem(item);
-    if (text.isEmpty() || item.text_color.a == 0 || item.font_size <= 0.0) {
+    if (text.isEmpty()) {
         return;
     }
 
@@ -305,9 +308,12 @@ void drawBackground(QPainter& painter, const SnowSceneDisplayItem& item, const Q
 
 void drawStroke(QPainter& painter, const SnowSceneDisplayItem& item, const QFont& baseFont,
                 const QRectF& localRect, double zoom) {
-    const QString text = snow_canvas_text::textFromSceneItem(item);
     const double strokeWidth = item.stroke_width * zoom;
-    if (text.isEmpty() || item.stroke.a == 0 || strokeWidth <= 0.0 || item.font_size <= 0.0) {
+    if (item.stroke.a == 0 || strokeWidth <= 0.0 || item.font_size <= 0.0) {
+        return;
+    }
+    const QString text = snow_canvas_text::textFromSceneItem(item);
+    if (text.isEmpty()) {
         return;
     }
 

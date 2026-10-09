@@ -48,6 +48,7 @@ ScreenshotToolPalette::Options pinnedEditToolbarOptions() {
     options.showArrowTool = true;
     options.showLineTool = true;
     options.showDistanceTool = true;
+    options.showAngleTool = true;
     options.showFreeDrawTool = true;
     options.showHighlightTool = true;
     options.showSpotlightTool = true;
@@ -120,8 +121,12 @@ ScreenshotPinnedEditController::ScreenshotPinnedEditController(
                 }
             });
     m_canvas.installEventFilter(this);
-    connect(&m_canvas, &SnowCanvasWidget::activeToolChanged, this,
-            &ScreenshotPinnedEditController::syncPaletteFromCanvasTool);
+    connect(&m_canvas, &SnowCanvasWidget::angleAdjustmentTargetChanged, this,
+            [this]() { m_angleWheelSteps.reset(); });
+    connect(&m_canvas, &SnowCanvasWidget::activeToolChanged, this, [this]() {
+        m_angleWheelSteps.reset();
+        syncPaletteFromCanvasTool();
+    });
     connect(&m_canvas, &SnowCanvasWidget::styleToolbarStateChanged, this,
             &ScreenshotPinnedEditController::syncPaletteFromCanvasStyle);
     connect(&m_canvas, &SnowCanvasWidget::historyStateChanged, this, [this]() {
@@ -259,15 +264,15 @@ bool ScreenshotPinnedEditController::eventFilter(QObject* watched, QEvent* event
         }
     }
 
+    if (event->type() == QEvent::MouseButtonPress || event->type() == QEvent::KeyPress)
+        m_angleWheelSteps.reset();
     if (event->type() == QEvent::Wheel && !m_canvas.hasActiveTextEditing()) {
         auto* wheelEvent = static_cast<QWheelEvent*>(event);
-        const int deltaY = !wheelEvent->pixelDelta().isNull() ? wheelEvent->pixelDelta().y()
-                                                              : wheelEvent->angleDelta().y();
         ScreenshotToolPalette* palette =
             m_toolbarWindow != nullptr ? m_toolbarWindow->palette() : nullptr;
         const bool handled =
-            deltaY != 0 && palette != nullptr &&
-            snow_shot::presentation::stepScreenshotStyle(*palette, m_canvas, deltaY > 0 ? 1 : -1);
+            palette != nullptr && snow_shot::presentation::handleScreenshotStyleWheel(
+                                      *palette, m_canvas, *wheelEvent, m_angleWheelSteps);
         if (handled) {
             wheelEvent->accept();
             return true;
@@ -384,6 +389,8 @@ void ScreenshotPinnedEditController::ensureToolbar() {
                 [this]() { activateCanvasTool(SnowCanvasTool::Shape); });
         connect(toolbar, &ScreenshotToolPalette::distanceToolRequested, this,
                 [this]() { activateCanvasTool(SnowCanvasTool::Distance); });
+        connect(toolbar, &ScreenshotToolPalette::angleToolRequested, this,
+                [this]() { activateCanvasTool(SnowCanvasTool::Angle); });
         connect(toolbar, &ScreenshotToolPalette::arrowRequested, this,
                 [this]() { activateCanvasTool(SnowCanvasTool::Arrow); });
         connect(toolbar, &ScreenshotToolPalette::lineRequested, this,
@@ -524,6 +531,7 @@ void ScreenshotPinnedEditController::setEditMode(bool enabled) {
     }
 
     m_editMode = enabled;
+    m_angleWheelSteps.reset();
     if (enabled) {
         ensureToolbar();
         const SnowCanvasStyleDefaults defaults =
@@ -855,6 +863,9 @@ void ScreenshotPinnedEditController::syncPaletteFromCanvasTool() {
         break;
     case SnowCanvasTool::Distance:
         host->setActiveTool(ScreenshotToolPalette::Tool::Distance);
+        break;
+    case SnowCanvasTool::Angle:
+        host->setActiveTool(ScreenshotToolPalette::Tool::Angle);
         break;
     case SnowCanvasTool::Line:
         host->setActiveTool(ScreenshotToolPalette::Tool::Line);

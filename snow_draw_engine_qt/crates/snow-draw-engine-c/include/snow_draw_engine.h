@@ -92,7 +92,8 @@ typedef enum SnowActiveTool {
     SNOW_ACTIVE_TOOL_AUTO_FILTER = 14,
     SNOW_ACTIVE_TOOL_RECTANGLE_ERASER = 15,
     SNOW_ACTIVE_TOOL_BRUSH_ERASER = 16,
-    SNOW_ACTIVE_TOOL_DISTANCE = 17
+    SNOW_ACTIVE_TOOL_DISTANCE = 17,
+    SNOW_ACTIVE_TOOL_ANGLE = 18
 } SnowActiveTool;
 #define SNOW_ACTIVE_TOOL_FILTER SNOW_ACTIVE_TOOL_RECTANGLE_FILTER
 #define SNOW_ACTIVE_TOOL_HIGHLIGHT SNOW_ACTIVE_TOOL_RECTANGLE_HIGHLIGHT
@@ -125,7 +126,9 @@ typedef enum SnowStyleToolbarSource {
     SNOW_STYLE_TOOLBAR_SOURCE_DEFAULT_RECTANGLE_ERASER = 24,
     SNOW_STYLE_TOOLBAR_SOURCE_DEFAULT_BRUSH_ERASER = 25,
     SNOW_STYLE_TOOLBAR_SOURCE_DEFAULT_DISTANCE = 26,
-    SNOW_STYLE_TOOLBAR_SOURCE_SELECTED_DISTANCE = 27
+    SNOW_STYLE_TOOLBAR_SOURCE_SELECTED_DISTANCE = 27,
+    SNOW_STYLE_TOOLBAR_SOURCE_DEFAULT_ANGLE = 28,
+    SNOW_STYLE_TOOLBAR_SOURCE_SELECTED_ANGLE = 29
 } SnowStyleToolbarSource;
 #define SNOW_STYLE_TOOLBAR_SOURCE_DEFAULT_FILTER SNOW_STYLE_TOOLBAR_SOURCE_DEFAULT_RECTANGLE_FILTER
 #define SNOW_STYLE_TOOLBAR_SOURCE_SELECTED_FILTER                                                  \
@@ -623,6 +626,28 @@ typedef struct SnowDistanceStyle {
 #define SNOW_DISTANCE_STYLE_MIXED_ENDPOINT_SCALE SNOW_DISTANCE_STYLE_PROPERTY_ENDPOINT_SCALE
 #define SNOW_DISTANCE_STYLE_MIXED_ENDPOINT_STYLE SNOW_DISTANCE_STYLE_PROPERTY_ENDPOINT_STYLE
 
+typedef enum SnowAngleUnit {
+    SNOW_ANGLE_UNIT_DEGREES = 0,
+    SNOW_ANGLE_UNIT_RADIANS = 1
+} SnowAngleUnit;
+
+typedef struct SnowAngleStyle {
+    SnowColorRgba8 stroke;
+    double stroke_width;
+    SnowAngleUnit unit;
+    uint32_t decimal_places;
+} SnowAngleStyle;
+
+#define SNOW_ANGLE_STYLE_PROPERTY_STROKE (1u << 0)
+#define SNOW_ANGLE_STYLE_PROPERTY_STROKE_WIDTH (1u << 1)
+#define SNOW_ANGLE_STYLE_PROPERTY_UNIT (1u << 2)
+#define SNOW_ANGLE_STYLE_PROPERTY_DECIMAL_PLACES (1u << 3)
+#define SNOW_ANGLE_STYLE_PROPERTY_ALL ((1u << 4) - 1u)
+#define SNOW_ANGLE_STYLE_MIXED_STROKE SNOW_ANGLE_STYLE_PROPERTY_STROKE
+#define SNOW_ANGLE_STYLE_MIXED_STROKE_WIDTH SNOW_ANGLE_STYLE_PROPERTY_STROKE_WIDTH
+#define SNOW_ANGLE_STYLE_MIXED_UNIT SNOW_ANGLE_STYLE_PROPERTY_UNIT
+#define SNOW_ANGLE_STYLE_MIXED_DECIMAL_PLACES SNOW_ANGLE_STYLE_PROPERTY_DECIMAL_PLACES
+
 typedef struct SnowStyleToolbarState {
     SnowStyleToolbarSource source;
     uint32_t selected_element_count;
@@ -637,6 +662,8 @@ typedef struct SnowStyleToolbarState {
     SnowBrushEraserStyle brush_eraser_style;
     SnowDistanceStyle distance_style;
     uint32_t distance_style_mixed;
+    SnowAngleStyle angle_style;
+    uint32_t angle_style_mixed;
     /* Calibrated length before applying the factor; zero without a single valid distance. */
     double distance_measured_length;
 } SnowStyleToolbarState;
@@ -657,6 +684,7 @@ typedef struct SnowStyleDefaults {
     SnowBrushEraserStyle brush_eraser;
     SnowRectangleShape spotlight_shape;
     SnowDistanceStyle distance;
+    SnowAngleStyle angle;
 } SnowStyleDefaults;
 
 struct SnowRuntimeConfig {
@@ -1347,6 +1375,8 @@ SnowError snow_runtime_apply_annotation_json(SnowRuntime runtime, const uint8_t*
                                              SnowChangedViewportList* out_changed);
 void snow_annotation_result_destroy(uint8_t* bytes, size_t size);
 uint64_t snow_runtime_document_revision(SnowRuntime runtime);
+/* Opaque equality token for tool/selection/draft target changes. Null runtime returns 0. */
+uint64_t snow_runtime_angle_adjustment_target_revision(SnowRuntime runtime);
 // Returns nonzero for invalid handles, elements (including hidden ones), or watermark content.
 uint8_t snow_runtime_has_document_content(SnowRuntime runtime);
 
@@ -1375,6 +1405,13 @@ SnowError snow_viewport_set_distance_style_patch_ex(SnowRuntime runtime, SnowVie
 SnowError snow_viewport_set_distance_pixel_scale_ex(SnowRuntime runtime, SnowViewport viewport,
                                                     double scale_x, double scale_y,
                                                     SnowChangedViewportList* out_changed_viewports);
+
+SnowError snow_viewport_set_angle_style_patch_ex(SnowRuntime runtime, SnowViewport viewport,
+                                                 const SnowAngleStyle* style, uint32_t properties,
+                                                 SnowChangedViewportList* out_changed_viewports);
+SnowError snow_viewport_adjust_angle_value_ex(SnowRuntime runtime, SnowViewport viewport,
+                                              double delta_radians,
+                                              SnowChangedViewportList* out_changed_viewports);
 
 SnowError snow_viewport_set_shape_style_patch_ex(SnowRuntime runtime, SnowViewport viewport,
                                                  const SnowShapeStyle* style, uint32_t properties,

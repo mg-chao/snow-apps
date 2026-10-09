@@ -1,4 +1,5 @@
 #include "../../test-support/canvas_quick_selection_test_support.h"
+#include "angle_wheel_host_test_support.h"
 #include "snow_shot/presentation/screenshotoverlayinputhandler.h"
 #include "snow_shot/presentation/screenshotcapturestate.h"
 #include "snow_shot/presentation/screenshotintelligentselectionmodel.h"
@@ -5891,6 +5892,61 @@ void overlayRightQuickSelection() {
             "color sampling cancellation keeps priority over element selection");
 }
 
+void overlayAngleWheel() {
+    ScreenshotCaptureState capture;
+    ScreenshotInteractionState interaction;
+    ScreenshotSelectionModel selection;
+    ScreenshotIntelligentSelectionModel intelligent;
+    ScreenshotGeometryMapper geometry;
+    ScreenshotDisplaySession displays;
+    interaction.enterOverlayVisible(true);
+    selection.setSelectionRect(QRectF(0, 0, 400, 300));
+    interaction.confirmSelection();
+    int widthSteps = 0;
+    int opacitySteps = 0;
+    ScreenshotOverlayInputActions actions;
+    actions.stepStrokeWidth = [&](int) {
+        ++widthSteps;
+        return true;
+    };
+    actions.stepSelectionOpacity = [&](int) {
+        ++opacitySteps;
+        return true;
+    };
+    ScreenshotOverlayInputHandler handler(
+        {capture, interaction, selection, intelligent, geometry, displays, actions});
+    class AngleOverlayEventSink final : public NoopOverlayEventSink {
+      public:
+        explicit AngleOverlayEventSink(ScreenshotOverlayInputHandler& input) : handler(input) {}
+        bool handleOverlayWheel(ScreenshotOverlayWindow* window,
+                                const QWheelEvent& event) override {
+            return handler.handleWheel(window, event);
+        }
+
+      private:
+        ScreenshotOverlayInputHandler& handler;
+    } sink(handler);
+    SnowCanvasRuntime runtime;
+    ScreenshotOverlayWindow overlay(sink, new SnowCanvasWidget(runtime));
+    overlay.resize(400, 300);
+    QImage image(400, 300, QImage::Format_ARGB32_Premultiplied);
+    image.fill(Qt::white);
+    overlay.setScreenshotImage(image, QRectF(image.rect()));
+    overlay.show();
+    QApplication::processEvents();
+    auto* canvas = overlay.canvas();
+    canvas->setInteractionEnabled(true);
+    QObject::connect(canvas, &SnowCanvasWidget::activeToolChanged, &overlay, [&]() {
+        interaction.setCanvasTool(canvas->canvasTool() == SnowCanvasTool::Angle
+                                      ? ScreenshotActiveTool::Angle
+                                      : ScreenshotActiveTool::Select);
+    });
+    angle_wheel_host_test_support::exercise(*canvas,
+                                            [&]() { return runtime.serializeDocumentSession(); });
+    require(widthSteps == 0 && opacitySteps == 0,
+            "screenshot angle wheel takes precedence over stroke width and selection opacity");
+}
+
 void overlayRightClickClosesOnRelease(bool native = false) {
     using namespace snow_shot::presentation;
     NoopOverlayEventSink sink;
@@ -6528,6 +6584,10 @@ int main(int argc, char** argv) {
         hoveredCompoundSelectionShowsCheckerboardInTransparentGaps();
         compoundSelectionDamageCoversChangedPixels();
         nonRectangularSelectionDraftLeavesInteriorUnchanged();
+        return 0;
+    }
+    if (application.arguments().contains(QStringLiteral("--angle-wheel-only"))) {
+        overlayAngleWheel();
         return 0;
     }
     if (application.arguments().contains(QStringLiteral("--region-input-only"))) {

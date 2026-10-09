@@ -292,6 +292,7 @@ void recordingControlsRemainLaidOutAcrossStateChanges() {
     options.showShapeTool = false;
     options.showArrowTool = false;
     options.showDistanceTool = false;
+    options.showAngleTool = false;
     options.showRecordingControls = true;
     options.enableStyleToolbar = false;
     ScreenshotToolPalette palette(options);
@@ -3378,6 +3379,7 @@ void moveToolPresentationUsesTheOwningShortcutScope() {
     screenshotOptions.showShapeTool = false;
     screenshotOptions.showArrowTool = false;
     screenshotOptions.showDistanceTool = false;
+    screenshotOptions.showAngleTool = false;
     screenshotOptions.enableStyleToolbar = false;
     ScreenshotToolPalette screenshotPalette(screenshotOptions);
     const QList<adqt::widgets::AdButton*> screenshotButtons = mainToolbarButtons(screenshotPalette);
@@ -3397,6 +3399,7 @@ void moveToolPresentationUsesTheOwningShortcutScope() {
     pinnedOptions.showShapeTool = false;
     pinnedOptions.showArrowTool = false;
     pinnedOptions.showDistanceTool = false;
+    pinnedOptions.showAngleTool = false;
     pinnedOptions.enableStyleToolbar = false;
     ScreenshotToolPalette pinnedPalette(pinnedOptions);
     const QList<adqt::widgets::AdButton*> pinnedButtons = mainToolbarButtons(pinnedPalette);
@@ -3688,6 +3691,7 @@ void configurableToolbarLayoutSupportsArbitraryPopoverGroups() {
     options.showShapeTool = true;
     options.showArrowTool = true;
     options.showDistanceTool = false;
+    options.showAngleTool = false;
     options.showLineTool = true;
     options.showFreeDrawTool = true;
     options.showHighlightTool = true;
@@ -3841,6 +3845,7 @@ void arrowAndLineUseConfiguredPopoverGroup() {
     options.showShapeTool = false;
     options.showArrowTool = true;
     options.showDistanceTool = false;
+    options.showAngleTool = false;
     options.showLineTool = true;
     options.enableStyleToolbar = false;
     options.toolbarLayout = snow_shot::storage::ScreenshotToolbarLayout{
@@ -4086,6 +4091,7 @@ void mainToolbarGroupPopoversRecreateTheirOptions() {
     actionOptions.showShapeTool = false;
     actionOptions.showArrowTool = false;
     actionOptions.showDistanceTool = false;
+    actionOptions.showAngleTool = false;
     actionOptions.showTableTool = true;
     actionOptions.showQrTool = true;
     actionOptions.enableStyleToolbar = false;
@@ -4343,6 +4349,7 @@ void tableQrPopoverSharesOneEntryAndRemembersTheSelectedMode() {
     options.showShapeTool = false;
     options.showArrowTool = false;
     options.showDistanceTool = false;
+    options.showAngleTool = false;
     options.showTableTool = true;
     options.showQrTool = true;
     options.enableStyleToolbar = false;
@@ -4458,6 +4465,7 @@ void drawingGroupClicksActivateOnceAfterPointerReentry() {
         options.showShapeTool = groups.at(index).contains(QStringLiteral("shape"));
         options.showArrowTool = groups.at(index).contains(QStringLiteral("arrow"));
         options.showDistanceTool = groups.at(index).contains(QStringLiteral("distance"));
+        options.showAngleTool = groups.at(index).contains(QStringLiteral("angle"));
         options.showLineTool = groups.at(index).contains(QStringLiteral("line"));
         options.showFreeDrawTool = groups.at(index).contains(QStringLiteral("free-draw"));
         options.showHighlightTool = groups.at(index).contains(QStringLiteral("highlighter"));
@@ -5173,6 +5181,7 @@ void screenshotResultActionsFollowCustomLayout() {
     ScreenshotToolPalette::Options options;
     options.showSelectTool = options.showShapeTool = options.showArrowTool =
         options.showDistanceTool = false;
+    options.showAngleTool = false;
     options.showScreenRecordButton = true;
     options.enableStyleToolbar = false;
     options.actions = ScreenshotToolPalette::CancelAction | ScreenshotToolPalette::CopyAction;
@@ -5999,6 +6008,7 @@ void arrowAndLineRemainDirectWhenConfiguredIndividually() {
     arrowOptions.showShapeTool = false;
     arrowOptions.showArrowTool = true;
     arrowOptions.showDistanceTool = false;
+    arrowOptions.showAngleTool = false;
     arrowOptions.enableStyleToolbar = false;
     ScreenshotToolPalette arrowPalette(arrowOptions);
     const QList<adqt::widgets::AdButton*> arrowButtons = mainToolbarButtons(arrowPalette);
@@ -6012,6 +6022,7 @@ void arrowAndLineRemainDirectWhenConfiguredIndividually() {
     lineOptions.showShapeTool = false;
     lineOptions.showArrowTool = false;
     lineOptions.showDistanceTool = false;
+    lineOptions.showAngleTool = false;
     lineOptions.showLineTool = true;
     lineOptions.enableStyleToolbar = false;
     ScreenshotToolPalette linePalette(lineOptions);
@@ -7974,6 +7985,7 @@ void lineToolIsDiscoverableSelectableAndUsesLinearStyleControls() {
     options.showShapeTool = false;
     options.showArrowTool = false;
     options.showDistanceTool = false;
+    options.showAngleTool = false;
     options.showLineTool = true;
     ScreenshotToolPalette palette(options);
 
@@ -8030,6 +8042,7 @@ void freeDrawToolIsDistinctAndUsesIndependentPathStyleControls() {
     options.showShapeTool = false;
     options.showArrowTool = false;
     options.showDistanceTool = false;
+    options.showAngleTool = false;
     options.showLineTool = true;
     options.showFreeDrawTool = true;
     ScreenshotToolPalette palette(options);
@@ -8075,6 +8088,7 @@ void highlightVariantsUseConfiguredPopoverGroup() {
     options.showShapeTool = false;
     options.showArrowTool = false;
     options.showDistanceTool = false;
+    options.showAngleTool = false;
     options.showFreeDrawTool = true;
     options.showHighlightTool = true;
     options.showPenHighlightTool = true;
@@ -8663,6 +8677,7 @@ void filterToolExposesTypeAndIntensityControls() {
     options.showShapeTool = false;
     options.showArrowTool = false;
     options.showDistanceTool = false;
+    options.showAngleTool = false;
     options.showFilterTool = true;
     ScreenshotToolPalette palette(options);
 
@@ -10869,6 +10884,209 @@ void lineStyleControlsExposeStraightAndCurveTypes() {
             "Free Draw should not expose the Line type editor");
 }
 
+void angleSettingsAndWheelPreserveIndependentProperties() {
+    ScreenshotToolPalette palette(ScreenshotToolPalette::Options{});
+    int activations = 0;
+    QObject::connect(&palette, &ScreenshotToolPalette::angleToolRequested,
+                     [&activations]() { ++activations; });
+    require(palette.activateDrawingShortcut(QStringLiteral("angle")) && activations == 1 &&
+                palette.activeTool() == ScreenshotToolPalette::Tool::Angle,
+            "angle shortcut activation should select and publish the tool");
+    palette.show();
+    QCoreApplication::processEvents();
+    const auto unitGroup = [&palette]() {
+        auto* container =
+            palette.findChild<QWidget*>(QStringLiteral("screenshotAngleUnitButtonGroup"));
+        return container == nullptr ? nullptr
+                                    : container->findChild<adqt::widgets::AdRadioButtonGroup*>();
+    };
+    const auto decimalsSelect = [&palette]() {
+        return palette.findChild<adqt::widgets::AdSelect*>(
+            QStringLiteral("screenshotAngleDecimalsSelect"));
+    };
+    auto* units = unitGroup();
+    auto* decimals = decimalsSelect();
+    require(units != nullptr && units->buttons().size() == 2 && decimals != nullptr &&
+                decimals->model()->rowCount() == 4,
+            "angle settings should expose two units and four precision choices");
+    const auto initial = palette.creationStyleDefaults().angle;
+    require(initial.stroke == QColor(QStringLiteral("#f5222d")) && initial.strokeWidth == 2 &&
+                initial.unit == SnowCanvasAngleUnit::Degrees && initial.decimalPlaces == 0 &&
+                units->checkedId() == static_cast<int>(SnowCanvasAngleUnit::Degrees) &&
+                decimals->currentValue().toInt() == 0,
+            "angle defaults should use red two-pixel strokes and integer degrees");
+    if (const QString path = qEnvironmentVariable("SNOW_ANGLE_PALETTE_PREVIEW"); !path.isEmpty()) {
+        require(QDir::isAbsolutePath(path), "angle palette preview path should be absolute");
+        require(palette.grab().save(path, "PNG"), "save default angle palette preview");
+    }
+    const auto bit = [](SnowCanvasAngleStyleProperty property) {
+        return static_cast<quint32>(property);
+    };
+    SnowCanvasAngleStyle emitted = initial;
+    quint32 properties = 0;
+    int edits = 0;
+    palette.setStyleEditHandler([&](const SnowCanvasStyleEdit& edit) {
+        const auto* angle = std::get_if<SnowCanvasAngleStyleEdit>(&edit);
+        require(angle != nullptr, "angle controls should emit only angle style edits");
+        emitted = angle->style;
+        properties = angle->properties;
+        ++edits;
+        palette.rememberStyleEdit(edit);
+        return true;
+    });
+    for (SnowCanvasAngleUnit unit : {SnowCanvasAngleUnit::Radians, SnowCanvasAngleUnit::Degrees}) {
+        auto* button = units->button(static_cast<int>(unit));
+        require(button != nullptr && !button->icon().isNull() &&
+                    button->accessibleName() == (unit == SnowCanvasAngleUnit::Degrees
+                                                     ? QStringLiteral("Degrees")
+                                                     : QStringLiteral("Radians")),
+                "angle units should use the supplied theme-aware icons");
+        button->click();
+        require(emitted.unit == unit && properties == bit(SnowCanvasAngleStyleProperty::Unit),
+                "unit changes should commit only the angle unit");
+    }
+    for (int places : {1, 2, 3, 0}) {
+        decimals->setCurrentValue(places);
+        require(emitted.decimalPlaces == static_cast<quint32>(places) &&
+                    properties == bit(SnowCanvasAngleStyleProperty::DecimalPlaces),
+                "precision choices should commit only decimal places");
+    }
+    clickStyleControl(palette, "Angle stroke width 4");
+    require(emitted.strokeWidth == 4 &&
+                properties == bit(SnowCanvasAngleStyleProperty::StrokeWidth),
+            "angle width presets should commit independently");
+    clickStyleControl(palette, "Angle stroke color #1677ff");
+    require(emitted.stroke == QColor(QStringLiteral("#1677ff")) &&
+                properties == bit(SnowCanvasAngleStyleProperty::Stroke),
+            "angle stroke colors should commit independently");
+    const auto remembered = palette.creationStyleDefaults().angle;
+    const auto widthEditorRoot = [&palette]() -> QWidget* {
+        auto* controls =
+            palette.findChild<QWidget*>(QStringLiteral("screenshotAngleStyleControls"));
+        if (controls == nullptr)
+            return nullptr;
+        for (QWidget* widget : controls->findChildren<QWidget*>()) {
+            if (widget->property("screenshotStyleEditorRoot").toBool() &&
+                widget->property("screenshotStyleEditorRole").toByteArray() == "outline-width")
+                return widget;
+        }
+        return nullptr;
+    };
+    QPointer<QWidget> widthRoot = widthEditorRoot();
+    require(widthRoot != nullptr, "angle width should use the shared editor role");
+    for (int i = 0; i < 5; ++i) {
+        palette.setActiveTool(ScreenshotToolPalette::Tool::Shape);
+        palette.setActiveTool(ScreenshotToolPalette::Tool::Angle);
+        require(widthRoot != nullptr && widthEditorRoot() == widthRoot &&
+                    palette.creationStyleDefaults().angle == remembered &&
+                    palette.lastStyleReconcileStatsForTests().retained >= 1,
+                "tool switching should reuse the width editor and retain angle defaults");
+    }
+    units = unitGroup();
+    decimals = decimalsSelect();
+    require(units != nullptr && decimals != nullptr, "angle controls should rebuild on demand");
+    SnowCanvasStyleToolbarState selected;
+    selected.source = SnowCanvasStyleToolbarSource::SelectedAngle;
+    selected.selectedElementCount = 2;
+    selected.angleStyle = remembered;
+    selected.angleStyle.unit = SnowCanvasAngleUnit::Radians;
+    selected.angleStyle.decimalPlaces = 3;
+    selected.angleStyleMixed =
+        bit(SnowCanvasAngleStyleProperty::Unit) | bit(SnowCanvasAngleStyleProperty::DecimalPlaces);
+    palette.setStyleToolbarState(selected);
+    require(units->checkedId() == -1 && !decimals->currentValue().isValid() &&
+                palette.creationStyleDefaults().angle == remembered,
+            "mixed selected values should clear controls without replacing creation defaults");
+    const int beforeResolving = edits;
+    units->button(static_cast<int>(SnowCanvasAngleUnit::Radians))->click();
+    require(edits == beforeResolving + 1 && properties == bit(SnowCanvasAngleStyleProperty::Unit) &&
+                !decimals->currentValue().isValid() &&
+                palette.creationStyleDefaults().angle == remembered,
+            "resolving one mixed property should preserve the other mixed controls");
+    const auto creationBeforeWheel = palette.creationStyleDefaults().angle;
+    QVector<QPair<int, bool>> adjustments;
+    QObject::connect(&palette, &ScreenshotToolPalette::angleValueAdjustmentRequested,
+                     [&](int steps, bool fine) { adjustments.append({steps, fine}); });
+    const auto wheel = [&palette](int delta, Qt::KeyboardModifiers modifiers) {
+        const QPoint point = palette.rect().center();
+        QWheelEvent event(QPointF(point), palette.mapToGlobal(point), QPoint(), QPoint(0, delta),
+                          Qt::NoButton, modifiers, Qt::NoScrollPhase, false);
+        return palette.handleToolbarWheel(&event) && event.isAccepted();
+    };
+    const int beforeWheel = edits;
+    require(
+        wheel(120, Qt::NoModifier) && adjustments.constLast() == QPair<int, bool>{1, false} &&
+            wheel(240, Qt::ShiftModifier) && adjustments.constLast() == QPair<int, bool>{2, true} &&
+            wheel(-120, Qt::NoModifier) && adjustments.constLast() == QPair<int, bool>{-1, false},
+        "angle wheel should retain notch counts, direction, and fine adjustment modifiers");
+    const auto beforeControlWheel = adjustments.size();
+    require(!wheel(120, Qt::ControlModifier) && adjustments.size() == beforeControlWheel &&
+                edits == beforeWheel &&
+                palette.creationStyleDefaults().angle == creationBeforeWheel,
+            "angle wheel should preserve style defaults and leave control-wheel navigation alone");
+    const auto pixelWheel = [&palette](int delta, Qt::ScrollPhase phase) {
+        const QPoint point = palette.rect().center();
+        QWheelEvent event(QPointF(point), palette.mapToGlobal(point), QPoint(0, delta), QPoint(),
+                          Qt::NoButton, Qt::NoModifier, phase, false);
+        return palette.handleToolbarWheel(&event);
+    };
+    require(pixelWheel(50, Qt::ScrollUpdate), "precise angle wheel should be consumed");
+    const auto beforeWheelEnd = adjustments.size();
+    static_cast<void>(pixelWheel(0, Qt::ScrollEnd));
+    require(pixelWheel(50, Qt::ScrollUpdate) && adjustments.size() == beforeWheelEnd + 1 &&
+                adjustments.constLast() == QPair<int, bool>{1, false},
+            "zero-delta scroll end should reset the angle gesture remainder");
+    const auto beforeWheelBegin = adjustments.size();
+    static_cast<void>(pixelWheel(0, Qt::ScrollBegin));
+    require(pixelWheel(50, Qt::ScrollUpdate) && adjustments.size() == beforeWheelBegin + 1 &&
+                adjustments.constLast() == QPair<int, bool>{1, false},
+            "zero-delta scroll begin should reset the angle gesture remainder");
+    palette.resetAngleWheelInput();
+    const auto beforeTargetChange = adjustments.size();
+    require(pixelWheel(50, Qt::ScrollUpdate) && adjustments.size() == beforeTargetChange + 1 &&
+                adjustments.constLast() == QPair<int, bool>{1, false},
+            "changing the angle adjustment target should reset the wheel gesture remainder");
+    palette.setActiveTool(ScreenshotToolPalette::Tool::Select);
+    palette.setStyleToolbarState(selected);
+    require(unitGroup() == nullptr && decimalsSelect() == nullptr,
+            "Select should release angle style editors while retaining selected angle state");
+    auto* opacity = palette.findChild<adqt::widgets::AdSlider*>(
+        QStringLiteral("screenshotSelectionOpacitySlider"));
+    require(opacity != nullptr, "angle selection should expose common opacity");
+    const double opacityBeforeWheel = opacity->value();
+    require(wheel(120, Qt::ShiftModifier) && adjustments.constLast() == QPair<int, bool>{1, true} &&
+                opacity->value() == opacityBeforeWheel,
+            "selected angles should receive wheel before selection opacity");
+    const auto& language = snow_shot::presentation::LanguageManager::instance();
+    const QString previousLanguage = language.languagePreference();
+    auto& mutableLanguage = snow_shot::presentation::LanguageManager::instance();
+    const auto restoreLanguage =
+        qScopeGuard([&]() { static_cast<void>(mutableLanguage.setLanguage(previousLanguage)); });
+    selected.angleStyleMixed = 0;
+    palette.setActiveTool(ScreenshotToolPalette::Tool::Angle);
+    palette.setStyleToolbarState(selected);
+    units = unitGroup();
+    decimals = decimalsSelect();
+    require(units != nullptr && decimals != nullptr,
+            "angle tool should expose selected angle style controls");
+    const int beforeLanguage = edits;
+    const auto beforeLanguageDefaults = palette.creationStyleDefaults().angle;
+    for (const QString& locale :
+         {QStringLiteral("en_US"), QStringLiteral("zh_CN"), QStringLiteral("zh_TW")}) {
+        require(mutableLanguage.setLanguage(locale), "angle controls should support every locale");
+        QCoreApplication::processEvents();
+        require(
+            units->button(static_cast<int>(SnowCanvasAngleUnit::Degrees))->accessibleName() ==
+                    QCoreApplication::translate("ScreenshotToolPalette", "Degrees") &&
+                decimals->model()->index(3, 0).data(decimals->labelRole()).toString() ==
+                    QCoreApplication::translate("ScreenshotToolPalette", "3 decimal places") &&
+                units->checkedId() == static_cast<int>(SnowCanvasAngleUnit::Radians) &&
+                decimals->currentValue().toInt() == 3 && edits == beforeLanguage &&
+                palette.creationStyleDefaults().angle == beforeLanguageDefaults,
+            "language changes should preserve selected values while translating angle controls");
+    }
+}
+
 void distanceSettingsExposeIndependentPropertiesAndHoverWheel() {
     ScreenshotToolPalette palette(ScreenshotToolPalette::Options{});
     int activations = 0;
@@ -11184,6 +11402,7 @@ void distanceSettingsExposeIndependentPropertiesAndHoverWheel() {
     ScreenshotToolPalette::Options hiddenOptions;
     hiddenOptions.showSelectTool = false;
     hiddenOptions.showArrowTool = false;
+    hiddenOptions.showAngleTool = false;
     hiddenOptions.toolbarLayout = snow_shot::storage::ScreenshotToolbarLayout{
         {{QStringLiteral("shape")}}, {QStringLiteral("distance")}};
     ScreenshotToolPalette hiddenPalette(hiddenOptions);
@@ -15193,6 +15412,47 @@ void customColorPresetsRefreshCurrentAndLazyDrawingEditors() {
             "an already materialized fill button must commit its updated alpha color once");
     fillPicker->setPopupVisible(false);
 
+    palette.setActiveTool(ScreenshotToolPalette::Tool::Angle);
+    auto angleButtons = swatches(palette.stylePanel(), QStringLiteral("Angle stroke color "));
+    requireColors(angleButtons, stroke);
+    int angleCommands = 0;
+    quint32 angleProperties = 0;
+    SnowCanvasAngleStyle changedAngle;
+    palette.setStyleEditHandler([&](const SnowCanvasStyleEdit& edit) {
+        if (const auto* angle = std::get_if<SnowCanvasAngleStyleEdit>(&edit)) {
+            changedAngle = angle->style;
+            angleProperties = angle->properties;
+            ++angleCommands;
+        }
+        palette.rememberStyleEdit(edit);
+        return true;
+    });
+    const auto originalAngle = palette.creationStyleDefaults().angle;
+    stroke[3] = QColor(23, 45, 67, 89);
+    require(settings.setStrokeColors(stroke),
+            "stroke presets must remain editable with the angle toolbar open");
+    requireColors(angleButtons, stroke);
+    require(angleCommands == 0 && palette.creationStyleDefaults().angle == originalAngle &&
+                angleButtons.at(3)->toolTip() == QStringLiteral("Angle stroke color #172d43"),
+            "angle preset refresh must preserve styles and update translated tooltips");
+    angleButtons.at(3)->click();
+    auto expectedAngle = originalAngle;
+    expectedAngle.stroke = stroke.at(3);
+    require(angleCommands == 1 && changedAngle == expectedAngle &&
+                angleProperties == static_cast<quint32>(SnowCanvasAngleStyleProperty::Stroke),
+            "angle presets must commit the refreshed RGBA color once without editing units");
+    palette.setActiveTool(ScreenshotToolPalette::Tool::Distance);
+    requireColors(swatches(palette.stylePanel(), QStringLiteral("Distance stroke color ")), stroke);
+    palette.setActiveTool(ScreenshotToolPalette::Tool::Angle);
+    angleButtons = swatches(palette.stylePanel(), QStringLiteral("Angle stroke color "));
+    stroke[3] = QColor(32, 54, 76, 98);
+    require(settings.setStrokeColors(stroke), "reactivated angle controls must follow settings");
+    requireColors(angleButtons, stroke);
+    angleButtons.at(3)->click();
+    expectedAngle.stroke = stroke.at(3);
+    require(angleCommands == 2 && changedAngle == expectedAngle,
+            "reactivated angle presets must retain exactly one correctly bound command");
+
     palette.setActiveTool(ScreenshotToolPalette::Tool::Text);
     auto textButtons = swatches(palette.stylePanel(), QStringLiteral("Text color "));
     requireColors(textButtons, stroke);
@@ -15239,6 +15499,11 @@ void customColorPresetsRefreshCurrentAndLazyDrawingEditors() {
     requireColors(textFillButtons, defaultFill);
     require(textCommands == 1 && palette.creationStyleDefaults().text == styleBeforeReset,
             "resetting presets must refresh open editors without editing drawing styles");
+    palette.setActiveTool(ScreenshotToolPalette::Tool::Angle);
+    requireColors(swatches(palette.stylePanel(), QStringLiteral("Angle stroke color ")),
+                  defaultStroke);
+    require(angleCommands == 2 && palette.creationStyleDefaults().angle == expectedAngle,
+            "resetting presets must preserve the remembered angle style");
     palette.setActiveTool(ScreenshotToolPalette::Tool::Shape);
     requireColors(swatches(palette.stylePanel(), QStringLiteral("Stroke color ")), defaultStroke);
     require(style_presets::strokeColors() == defaultStroke &&
@@ -16167,6 +16432,7 @@ void regionSwitcherRetranslatesAndRenders() {
 } // namespace
 
 void runScreenshotStyleBindingTests();
+void runAngleStyleBindingTests();
 void runScreenshotSerialNumberRestartTests();
 void runScreenshotStylePersistenceFailureTest();
 
@@ -16349,6 +16615,12 @@ int main(int argc, char** argv) {
         recordingActionLayoutSupportsStacksHidingAndStatefulSlots();
         recordingAudioStacksUseVisibleAnchorsWithoutCompetingHoverPopovers();
         recordingExportSettingsAndDrawingAvailabilityFollowSessionState();
+        snow_shot::storage::ApplicationStorage::instance().shutdown();
+        return 0;
+    }
+    if (application.arguments().contains(QStringLiteral("--angle-only"))) {
+        angleSettingsAndWheelPreserveIndependentProperties();
+        runAngleStyleBindingTests();
         snow_shot::storage::ApplicationStorage::instance().shutdown();
         return 0;
     }
@@ -16662,6 +16934,7 @@ int main(int argc, char** argv) {
     shapeSelectorIsExclusiveToTheShapeTool();
     arrowStyleUsesScreenshotCreationColorOverride();
     distanceSettingsExposeIndependentPropertiesAndHoverWheel();
+    angleSettingsAndWheelPreserveIndependentProperties();
     distanceActualValueUpdatesTheCanvasAndUndo();
     arrowRatioEditorAdjustsAndResets();
     arrowStyleControlsExposeAndEmitAllStyleProperties();

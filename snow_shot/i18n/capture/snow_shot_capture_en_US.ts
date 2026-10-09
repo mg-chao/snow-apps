@@ -466,8 +466,20 @@
             <translation>%1 + %2</translation>
         </message>
         <message>
+            <source>Adjust angle</source>
+            <translation>Adjust angle</translation>
+        </message>
+        <message>
             <source>Auto-align</source>
             <translation>Auto-align</translation>
+        </message>
+        <message>
+            <source>Click endpoint, vertex, then endpoint</source>
+            <translation>Click endpoint, vertex, then endpoint</translation>
+        </message>
+        <message>
+            <source>Create counterclockwise angle</source>
+            <translation>Create counterclockwise angle</translation>
         </message>
         <message>
             <source>Delete selected elements</source>
@@ -476,6 +488,10 @@
         <message>
             <source>Draw straight line</source>
             <translation>Draw straight line</translation>
+        </message>
+        <message>
+            <source>Fine angle adjustment</source>
+            <translation>Fine angle adjustment</translation>
         </message>
         <message>
             <source>Fixed-angle rotation</source>

@@ -444,6 +444,10 @@
     <context>
         <name>DrawingToolbarEditorSettingsWidget</name>
         <message>
+            <source>Angle annotation</source>
+            <translation>Angle annotation</translation>
+        </message>
+        <message>
             <source>Annotation toolbar preview</source>
             <translation>Annotation toolbar preview</translation>
         </message>
@@ -1211,6 +1215,10 @@
         <message>
             <source>Always show</source>
             <translation>Always show</translation>
+        </message>
+        <message>
+            <source>Angle annotation</source>
+            <translation>Angle annotation</translation>
         </message>
         <message>
             <source>Animate transitions between smart screenshot selections</source>

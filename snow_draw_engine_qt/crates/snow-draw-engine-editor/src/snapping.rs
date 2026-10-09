@@ -8,15 +8,12 @@ impl Editor {
         mut snapped: Point<f64>,
         mut guides: Vec<SnapGuide>,
     ) -> (Point<f64>, Vec<SnapGuide>) {
+        let targets = self.view.get().snap_guide_targets;
         for (axis, lines, coordinate) in [
-            (
-                SnapGuideAxis::Vertical,
-                &self.view.snap_guide_targets.vertical_xs[..],
-                source.x,
-            ),
+            (SnapGuideAxis::Vertical, &targets.vertical_xs[..], source.x),
             (
                 SnapGuideAxis::Horizontal,
-                &self.view.snap_guide_targets.horizontal_ys[..],
+                &targets.horizontal_ys[..],
                 source.y,
             ),
         ] {
@@ -174,7 +171,7 @@ impl Editor {
 
     pub(crate) fn effective_snapping_mode(&self, modifiers: Modifiers) -> SnappingMode {
         let mode = self.element_snapping_mode(modifiers);
-        let guides = self.view.snap_guide_targets;
+        let guides = self.view.get().snap_guide_targets;
         let has_guide_targets = guides
             .vertical_xs
             .iter()
@@ -507,7 +504,7 @@ impl Editor {
             return None;
         }
         let element_snapping = self.element_snapping_mode(modifiers) == SnappingMode::Object;
-        let targets = self.view.snap_guide_targets;
+        let targets = self.view.get().snap_guide_targets;
         let has_targets = targets
             .vertical_xs
             .iter()
@@ -841,8 +838,8 @@ mod external_guide_tests {
         let mut editor = Editor::new(EngineConfig::default()).unwrap();
         if with_guides {
             // Keep guides away from the element so they cannot mask its snap.
-            editor.view.snap_guide_targets.vertical_xs[0] = Some(400.0);
-            editor.view.snap_guide_targets.horizontal_ys[0] = Some(400.0);
+            editor.view.get_mut().snap_guide_targets.vertical_xs[0] = Some(400.0);
+            editor.view.get_mut().snap_guide_targets.horizontal_ys[0] = Some(400.0);
         }
         let mut document = DocumentModel::new();
         let rectangle = preview_rectangle(
@@ -1091,7 +1088,7 @@ mod external_guide_tests {
     #[test]
     fn visible_guides_do_not_change_the_persistent_snapping_toggle() {
         let mut editor = Editor::new(EngineConfig::default()).unwrap();
-        editor.view.snap_guide_targets.vertical_xs[0] = Some(100.0);
+        editor.view.get_mut().snap_guide_targets.vertical_xs[0] = Some(100.0);
         assert_eq!(
             editor.effective_snapping_mode(Modifiers::default()),
             SnappingMode::Object

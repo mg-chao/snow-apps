@@ -7,6 +7,17 @@ pub unsafe extern "C" fn snow_runtime_document_revision(runtime: SnowRuntime) ->
     })
 }
 
+/// # Safety
+/// Runtime must be a live handle or null. Null returns zero.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn snow_runtime_angle_adjustment_target_revision(
+    runtime: SnowRuntime,
+) -> u64 {
+    ffi_value(0, || {
+        with_runtime_ref(runtime, |r| Ok(r.angle_adjustment_target_revision())).unwrap_or(0)
+    })
+}
+
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn snow_runtime_has_document_content(runtime: SnowRuntime) -> u8 {
     ffi_value(1, || {

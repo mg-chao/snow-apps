@@ -76,6 +76,26 @@
             <translation>靠上對齊</translation>
         </message>
         <message>
+            <source>Angle annotation</source>
+            <translation>角度標註</translation>
+        </message>
+        <message>
+            <source>Angle stroke color</source>
+            <translation>角度線條顏色</translation>
+        </message>
+        <message>
+            <source>Angle stroke color %1</source>
+            <translation>角度線條顏色 %1</translation>
+        </message>
+        <message>
+            <source>Angle stroke width %1</source>
+            <translation>角度線條寬度 %1</translation>
+        </message>
+        <message>
+            <source>Angle unit</source>
+            <translation>角度單位</translation>
+        </message>
+        <message>
             <source>Animated recording formats do not contain audio</source>
             <translation>動畫錄製格式不包含音訊</translation>
         </message>
@@ -244,6 +264,10 @@
             <translation>交叉線文字填充</translation>
         </message>
         <message>
+            <source>Current angle stroke width</source>
+            <translation>目前角度線條寬度</translation>
+        </message>
+        <message>
             <source>Current arrow stroke width</source>
             <translation>目前箭頭描邊寬度</translation>
         </message>
@@ -310,6 +334,10 @@
         <message>
             <source>Default</source>
             <translation>預設</translation>
+        </message>
+        <message>
+            <source>Degrees</source>
+            <translation>度</translation>
         </message>
         <message>
             <source>Delay recording (scroll to adjust)</source>
@@ -810,6 +838,10 @@
         <message>
             <source>Quick save</source>
             <translation>快速儲存</translation>
+        </message>
+        <message>
+            <source>Radians</source>
+            <translation>弧度</translation>
         </message>
         <message>
             <source>Recapture</source>

@@ -4,7 +4,7 @@ use crate::query::QueryStore;
 use snow_draw_engine_core::{ErrorCode, Point, SnapQuery, SnapResult, ViewportQuery};
 use snow_draw_engine_document::{
     ApplyResult, BindableElementState, Document, DocumentRevision, ElementId, ElementKind,
-    RectangleData, Transaction,
+    ElementState, RectangleData, Transaction,
 };
 
 #[derive(Debug)]
@@ -73,6 +73,12 @@ impl DocumentModel {
     pub fn arrow_label_owner(&self, text: ElementId) -> Option<ElementId> {
         self.queries.relations().arrow_label_owner(text)
     }
+    pub fn arrow_id_for_text(&self, text: ElementId) -> Option<ElementId> {
+        self.arrow_label_owner(text)
+    }
+    pub fn is_text_bound_to_serial_number(&self, text: ElementId) -> bool {
+        !self.serials_for_text(text).is_empty()
+    }
     pub fn serials_for_text(&self, text: ElementId) -> &[ElementId] {
         self.queries.relations().serials_for_text(text)
     }
@@ -134,6 +140,23 @@ impl DocumentModel {
 
     pub fn paint_rank(&self, id: ElementId) -> Option<u32> {
         self.queries.paint_rank(id)
+    }
+
+    /// Use the maintained paint ranks instead of searching the document order
+    /// each time a scene cache refreshes an individual element.
+    pub fn element_state(&self, id: ElementId) -> Result<ElementState<'_>, ErrorCode> {
+        let element = self.document.element(id)?;
+        let z_index = self.queries.paint_rank(id).ok_or(ErrorCode::NotFound)? as usize;
+        Ok(ElementState {
+            id,
+            rect: element.data.state_rect(),
+            rotation: element.data.rotation(),
+            opacity: element.data.opacity(),
+            z_index,
+            visible: element.meta.visible,
+            locked: element.meta.locked,
+            data: &element.data,
+        })
     }
 
     pub fn for_each_visible_scene_rect(
@@ -199,7 +222,7 @@ impl DocumentModel {
             .filter_map(|state| {
                 if !state.visible
                     || state.data.is_background_restore()
-                    || self.document.arrow_id_for_text(state.id).is_some()
+                    || self.arrow_label_owner(state.id).is_some()
                 {
                     return None;
                 }
@@ -309,5 +332,71 @@ mod tests {
             model.visible_element_ids(viewport_query()),
             vec![second, first]
         );
+    }
+
+    #[test]
+    fn element_state_uses_cached_paint_ranks_after_reorder_delete_restore_and_generation_changes() {
+        let mut model = DocumentModel::new();
+        let ids = [
+            model.allocate_element_id(),
+            model.allocate_element_id(),
+            model.allocate_element_id(),
+        ];
+        let mut insert = Transaction::new("insert state fixtures");
+        for (index, id) in ids.into_iter().enumerate() {
+            let mut rectangle = rect(index as f64 * 100.0);
+            rectangle.rotation = index as f64 * 0.25;
+            rectangle.opacity = 0.25 + index as f64 * 0.25;
+            insert.insert_rectangle(
+                id,
+                ElementMeta {
+                    visible: index != 1,
+                    locked: index == 1,
+                },
+                rectangle,
+            );
+        }
+        model.apply_transaction(insert).unwrap();
+        let assert_states_match = |model: &DocumentModel| {
+            for id in model.paint_order() {
+                assert_eq!(
+                    model.element_state(*id),
+                    model.document().element_state(*id)
+                );
+            }
+        };
+        assert_states_match(&model);
+
+        let mut reorder = Transaction::new("reorder state fixtures");
+        reorder.reorder_elements(vec![ids[2], ids[0]], 0);
+        model.apply_transaction(reorder).unwrap();
+        assert_states_match(&model);
+        assert_eq!(model.element_state(ids[2]).unwrap().z_index, 0);
+        assert_eq!(model.element_state(ids[1]).unwrap().z_index, 2);
+
+        let mut remove = Transaction::new("remove state fixture");
+        remove.remove_element(ids[0]);
+        let removed = model.apply_transaction(remove).unwrap();
+        assert_eq!(model.element_state(ids[0]), Err(ErrorCode::NotFound));
+        assert_states_match(&model);
+        model.apply_history_transaction(&removed.inverse).unwrap();
+        assert_states_match(&model);
+
+        let stale = ElementId {
+            generation: ids[0].generation + 1,
+            ..ids[0]
+        };
+        assert_eq!(model.element_state(stale), Err(ErrorCode::NotFound));
+        assert_eq!(model.paint_rank(stale), None);
+        let mut remove = Transaction::new("replace state fixture generation");
+        remove.remove_element(ids[0]);
+        model.apply_transaction(remove).unwrap();
+        let mut replace = Transaction::new("insert next generation");
+        replace.insert_rectangle(stale, ElementMeta::default(), rect(300.0));
+        model.apply_transaction(replace).unwrap();
+        assert_eq!(model.element_state(ids[0]), Err(ErrorCode::NotFound));
+        assert_eq!(model.paint_rank(ids[0]), None);
+        assert_states_match(&model);
+        assert_states_match(&model.clone());
     }
 }

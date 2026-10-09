@@ -72,9 +72,73 @@ impl Editor {
 
     pub fn view_state(&self) -> EditorViewState {
         EditorViewState {
-            surface: self.view.surface,
-            camera: self.view.camera,
+            surface: self.view.get().surface,
+            camera: self.view.get().camera,
             clear_color: self.config.clear_color,
+        }
+    }
+
+    /// Uncropped Smart Erase extraction needs filter previews, without text or selection UI.
+    pub fn smart_erase_presentation(&self, document: &DocumentModel) -> EditorPresentationState {
+        use crate::ElementCreationPreview;
+        use snow_draw_engine_document::CanvasFilterType;
+
+        let copying = matches!(
+            &self.state.interaction,
+            InteractionState::EditingSelection(state) if state.duplicate
+        );
+        let mut preview_elements = if copying {
+            Vec::new()
+        } else {
+            self.selection_preview_elements()
+                .unwrap_or_default()
+                .iter()
+                .filter(|preview| {
+                    document
+                        .element(preview.id)
+                        .is_ok_and(|element| element.data.is_smart_erase())
+                })
+                .cloned()
+                .collect::<Vec<_>>()
+        };
+        if !copying {
+            for id in &self.state.eraser.pending_ids {
+                if !document
+                    .element(*id)
+                    .is_ok_and(|element| element.data.is_smart_erase())
+                {
+                    continue;
+                }
+                preview_elements.retain(|preview| preview.id != *id);
+                if let Some(mut rect) = document.element_rect_proxy(*id) {
+                    rect.opacity = (rect.opacity * 0.5).clamp(0.0, 1.0);
+                    preview_elements.push(SelectionRectState { id: *id, rect });
+                }
+            }
+        }
+        let is_smart_erase = |preview: &ElementCreationPreview| match preview {
+            ElementCreationPreview::Filter(filter) => {
+                filter.filter_type == CanvasFilterType::SmartErase
+            }
+            ElementCreationPreview::PenFilter(filter) => {
+                filter.filter_type == CanvasFilterType::SmartErase
+            }
+            _ => false,
+        };
+        let creation_preview = self
+            .pen_filter_creation_preview()
+            .filter(is_smart_erase)
+            .or_else(|| {
+                self.state
+                    .creation_preview
+                    .as_ref()
+                    .filter(|preview| is_smart_erase(preview))
+                    .cloned()
+            });
+        EditorPresentationState {
+            preview_elements,
+            creation_preview,
+            ..Default::default()
         }
     }
 
@@ -645,12 +709,16 @@ impl Editor {
             }
         }
 
-        let focus_points = visible_arrow_focus_points(
-            arrow_id,
-            arrow,
-            &self.bindable_elements(document, &[]),
-            self.camera().zoom,
-        );
+        let focus_points = if arrow.start_binding.is_some() || arrow.end_binding.is_some() {
+            visible_arrow_focus_points(
+                arrow_id,
+                arrow,
+                &self.bindable_elements(document, &[]),
+                self.camera().zoom,
+            )
+        } else {
+            Vec::new()
+        };
         for focus in focus_points {
             let anchor = points
                 .get(arrow_endpoint_index(points.len(), focus.edge))
@@ -682,7 +750,7 @@ impl Editor {
         if arrow.is_pen_highlight() {
             return Vec::new();
         }
-        let show_segment_handles = !arrow.is_distance()
+        let show_segment_handles = !arrow.is_generated_annotation()
             && (arrow.is_line() || arrow.is_elbow() || arrow.points.len() <= 2);
         if show_segment_handles {
             arrow_segment_midpoints(arrow)
@@ -745,12 +813,16 @@ impl Editor {
             return Some(ArrowHitTarget::Point(index));
         }
 
-        let focus_points = visible_arrow_focus_points(
-            arrow_id,
-            arrow,
-            &self.bindable_elements(document, &[]),
-            self.camera().zoom,
-        );
+        let focus_points = if arrow.start_binding.is_some() || arrow.end_binding.is_some() {
+            visible_arrow_focus_points(
+                arrow_id,
+                arrow,
+                &self.bindable_elements(document, &[]),
+                self.camera().zoom,
+            )
+        } else {
+            Vec::new()
+        };
         for focus in focus_points {
             if point_distance(focus.point, canvas_point) <= handle_tolerance {
                 return Some(ArrowHitTarget::FocusPoint(focus.edge));
@@ -766,7 +838,7 @@ impl Editor {
 
         // Every visible control handle takes precedence over the bound label.
         if self.arrow_label_hit(document, arrow_id, canvas_point) {
-            return Some(if arrow.is_distance() {
+            return Some(if arrow.is_generated_annotation() {
                 ArrowHitTarget::Move
             } else {
                 ArrowHitTarget::Label
