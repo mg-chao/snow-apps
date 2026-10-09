@@ -173,7 +173,37 @@ qint64 sourceAuxiliaryBytes(const McpDocumentService::Source& source) {
         bytes += textBytes(source.recognitionResults.text->presentation);
     bytes += textBytes(source.recognitionResults.translatedText);
     if (source.recognitionResults.table)
-        bytes += 2LL * source.recognitionResults.table->html.size();
+        bytes += 2LL * (source.recognitionResults.table->html.size() +
+                        source.recognitionResults.table->code.size() +
+                        source.recognitionResults.table->error.size());
+    if (source.recognitionResults.latex)
+        bytes += 2LL * (source.recognitionResults.latex->latex.size() +
+                        source.recognitionResults.latex->code.size() +
+                        source.recognitionResults.latex->error.size());
+    if (source.recognitionResults.latexDraft)
+        bytes += 2LL * source.recognitionResults.latexDraft->size();
+    bytes += 2LL * (source.recognitionResults.tableModelSelection.size() +
+                    source.recognitionResults.latexModelSelection.size() +
+                    source.recognitionResults.tableEffectiveModel.size() +
+                    source.recognitionResults.latexEffectiveModel.size());
+    bytes += static_cast<qint64>(source.recognitionResults.tableEntries.capacity()) *
+                 sizeof(ScreenshotTableRecognitionEntry) +
+             static_cast<qint64>(source.recognitionResults.latexEntries.capacity()) *
+                 sizeof(ScreenshotLatexRecognitionEntry);
+    for (const auto& entry : source.recognitionResults.tableEntries) {
+        bytes +=
+            2LL * (entry.model.size() + entry.modelFingerprint.size() + entry.result.html.size() +
+                   entry.result.code.size() + entry.result.error.size());
+        if (entry.draftHtml)
+            bytes += 2LL * entry.draftHtml->size();
+    }
+    for (const auto& entry : source.recognitionResults.latexEntries) {
+        bytes +=
+            2LL * (entry.model.size() + entry.modelFingerprint.size() + entry.result.latex.size() +
+                   entry.result.code.size() + entry.result.error.size());
+        if (entry.draft)
+            bytes += 2LL * entry.draft->size();
+    }
     if (source.recognitionResults.qr)
         for (const auto& value : source.recognitionResults.qr->contents)
             bytes += 2LL * value.size();
@@ -1642,12 +1672,25 @@ struct McpDocumentService::Impl {
                    ScreenshotMcpServer::Completion done) {
         const QString kind =
             request.params.value(QStringLiteral("kind")).toString(QStringLiteral("text"));
-        const QStringList modes{QStringLiteral("text"),     QStringLiteral("table"),
-                                QStringLiteral("qr"),       QStringLiteral("latex"),
-                                QStringLiteral("markdown"), QStringLiteral("html")};
+        const QStringList modes{QStringLiteral("text"), QStringLiteral("table"),
+                                QStringLiteral("qr"),   QStringLiteral("markdown"),
+                                QStringLiteral("html"), QStringLiteral("latex")};
         const qsizetype index = modes.indexOf(kind);
+        const auto documentId = request.params.value(QStringLiteral("document_id")).toString();
+        const auto sourceRevision = static_cast<quint64>(
+            result.response.result.value(QStringLiteral("revision")).toInteger());
+        ScreenshotRecognitionResults cached;
+        const auto retained = retainedRecognition.value(documentId);
+        if (retained.session && retained.sourceRevision == sourceRevision)
+            cached = retained.session->recognitionResultsSnapshot();
+        else if (result.source)
+            cached = result.source->recognitionResults;
+        const bool cachedModelResult =
+            (index == 1 && (cached.table.has_value() || !cached.tableEntries.isEmpty())) ||
+            (index == 5 && (cached.latex.has_value() || !cached.latexEntries.isEmpty()));
         if (index < 0 || (index == 0 && !ports.recognition) ||
-            (index == 2 && !ports.qrRecognition) || (index != 0 && index != 2 && !ports.api)) {
+            (index == 2 && !ports.qrRecognition) ||
+            (index != 0 && index != 2 && !ports.api && !cachedModelResult)) {
             done(failure(request,
                          index < 0 ? QStringLiteral("invalid_parameters")
                                    : QStringLiteral("provider_unavailable"),
@@ -1663,19 +1706,12 @@ struct McpDocumentService::Impl {
         auto* session = new ScreenshotRecognitionSessionController(
             ports.recognition, ports.qrRecognition, ports.api, std::move(actions), &q);
         QPointer<ScreenshotRecognitionSessionController> guardedSession(session);
-        const auto documentId = request.params.value(QStringLiteral("document_id")).toString();
-        const auto sourceRevision = static_cast<quint64>(
-            result.response.result.value(QStringLiteral("revision")).toInteger());
         auto prior = retainedRecognition.take(documentId);
-        ScreenshotRecognitionResults cached;
         if (prior.session) {
-            if (prior.sourceRevision == sourceRevision)
-                cached = prior.session->recognitionResultsSnapshot();
             ports.jobs->cancel(prior.owner, prior.job);
             prior.session->cancelWorkflow();
             prior.session->deleteLater();
-        } else if (result.source)
-            cached = result.source->recognitionResults;
+        }
         const QString id = ports.jobs->start(
             request.connectionId, QStringLiteral("document_recognition"),
             [guardedSession] {

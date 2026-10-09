@@ -369,6 +369,14 @@ const QVector<ConfigurationSchemaEntry> kRawEntries = {
     {QStringLiteral("screenshot_conversion/vision_model"), QString(),
      ConfigurationValueKind::String},
 #endif
+#if SNOW_SHOT_ENABLE_TABLE_RECOGNITION
+    {QStringLiteral("screenshot_table/model"), QStringLiteral("dedicated"),
+     ConfigurationValueKind::String},
+#endif
+#if SNOW_SHOT_ENABLE_LATEX_RECOGNITION
+    {QStringLiteral("screenshot_latex/model"), QStringLiteral("dedicated"),
+     ConfigurationValueKind::String},
+#endif
 #if SNOW_SHOT_ENABLE_EXTENDED_FEATURES
     {QStringLiteral("extended_features/standalone_translation_window"), false,
      ConfigurationValueKind::Boolean},
@@ -2511,6 +2519,22 @@ ConfigurationNormalization ConfigurationSchema::normalize(const QString& key,
     if (isFilenameFormatKey(key)) {
         return normalizeFilenameFormat(value);
     }
+#if SNOW_SHOT_ENABLE_TABLE_RECOGNITION || SNOW_SHOT_ENABLE_LATEX_RECOGNITION
+    if (key == QStringLiteral("screenshot_table/model") ||
+        key == QStringLiteral("screenshot_latex/model")) {
+        if (!value.isString()) {
+            return {};
+        }
+        const QString selection = value.toString().trimmed();
+        if (selection.isEmpty() || selection.size() > 256 ||
+            std::any_of(selection.cbegin(), selection.cend(), [](QChar character) {
+                return character.isSpace() || character.category() == QChar::Other_Control;
+            })) {
+            return {};
+        }
+        return {selection, true, selection != value.toString()};
+    }
+#endif
 #if SNOW_SHOT_ENABLE_TEXT_TRANSLATION
     if (key == QStringLiteral("screenshot_translation/source_language") ||
         key == QStringLiteral("screenshot_translation/target_language") ||

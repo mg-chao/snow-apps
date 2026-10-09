@@ -222,6 +222,9 @@ void ScreenshotCaptureWorkflow::resetCaptureModels() {
     m_context.selection.reset();
     m_context.intelligentSelection.reset();
     m_context.runtime.resetColorPicker();
+    if (m_context.presentation.resetPresentation) {
+        m_context.presentation.resetPresentation();
+    }
     m_captureModelsClean = true;
 }
 

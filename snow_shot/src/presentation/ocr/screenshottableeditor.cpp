@@ -1024,13 +1024,17 @@ void ScreenshotTableEditor::restoreSessionViewState() {
     } else if (m_session->selection.isValid()) {
         current = m_model->index(m_session->selection.top, m_session->selection.left);
     }
-    setCurrentIndex(anchorIndex(current));
-    if (m_session->selection.isValid()) {
-        selectRange(m_session->selection);
-    } else {
+    // Setting the current index can change the selection. Suppress its normalization while
+    // restoring, so it cannot overwrite the model's saved range with the current cell.
+    {
         const QSignalBlocker blocker(selectionModel());
-        selectionModel()->clearSelection();
-        refreshCommandState();
+        setCurrentIndex(anchorIndex(current));
+        if (m_session->selection.isValid()) {
+            selectRange(m_session->selection);
+        } else {
+            selectionModel()->clearSelection();
+            refreshCommandState();
+        }
     }
     horizontalScrollBar()->setValue(m_session->horizontalScrollValue);
     verticalScrollBar()->setValue(m_session->verticalScrollValue);

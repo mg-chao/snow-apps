@@ -168,12 +168,20 @@
             <translation>LaTeX 辨識失敗</translation>
         </message>
         <message>
+            <source>LaTeX recognition is unavailable for screenshots larger than 4K</source>
+            <translation>大於 4K 的截圖無法使用 LaTeX 辨識</translation>
+        </message>
+        <message>
             <source>LaTeX recognition request could not be prepared</source>
             <translation>無法準備 LaTeX 辨識請求</translation>
         </message>
         <message>
             <source>LaTeX recognition service is unavailable</source>
             <translation>LaTeX 辨識服務無法使用</translation>
+        </message>
+        <message>
+            <source>Model configuration changed. Retry to use the updated settings.</source>
+            <translation>模型設定已變更。請重試以使用更新後的設定。</translation>
         </message>
         <message>
             <source>No barcode was recognized</source>
@@ -192,6 +200,10 @@
             <translation>正在準備文字辨識元件（%1%）</translation>
         </message>
         <message>
+            <source>Recognition service changed. Retry to use the updated settings.</source>
+            <translation>辨識服務已變更。請重試以使用更新後的設定。</translation>
+        </message>
+        <message>
             <source>Recognizing LaTeX formula</source>
             <translation>正在辨識 LaTeX 公式</translation>
         </message>
@@ -208,12 +220,20 @@
             <translation>正在辨識文字</translation>
         </message>
         <message>
+            <source>Snow Shot's visual understanding model is unavailable. Choose another model or retry.</source>
+            <translation>Snow Shot 的視覺理解模型無法使用。請選擇其他模型或重試。</translation>
+        </message>
+        <message>
             <source>Some text could not be translated</source>
             <translation>部分文字無法翻譯</translation>
         </message>
         <message>
             <source>Table recognition failed</source>
             <translation>表格辨識失敗</translation>
+        </message>
+        <message>
+            <source>Table recognition is unavailable for screenshots larger than 4K</source>
+            <translation>大於 4K 的截圖無法使用表格辨識</translation>
         </message>
         <message>
             <source>Table recognition request could not be prepared</source>
@@ -236,12 +256,20 @@
             <translation>無法準備文字辨識請求</translation>
         </message>
         <message>
+            <source>The selected recognition model is unavailable. Choose another model or retry.</source>
+            <translation>所選辨識模型無法使用。請選擇其他模型或重試。</translation>
+        </message>
+        <message>
             <source>Translation failed</source>
             <translation>翻譯失敗</translation>
         </message>
         <message>
             <source>Translation service is unavailable</source>
             <translation>翻譯服務無法使用</translation>
+        </message>
+        <message>
+            <source>Unable to load Snow Shot vision models</source>
+            <translation>無法載入 Snow Shot 視覺模型</translation>
         </message>
         <message>
             <source>Unable to read the selected screenshot</source>
@@ -297,6 +325,14 @@
         <message>
             <source>Rendering formula...</source>
             <translation>正在算繪公式...</translation>
+        </message>
+        <message>
+            <source>Retry</source>
+            <translation>重試</translation>
+        </message>
+        <message>
+            <source>Retry recognition</source>
+            <translation>重試辨識</translation>
         </message>
         <message>
             <source>Select All</source>

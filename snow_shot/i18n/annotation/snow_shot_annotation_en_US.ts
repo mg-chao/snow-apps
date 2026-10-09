@@ -336,6 +336,10 @@
             <translation>Decimal places</translation>
         </message>
         <message>
+            <source>Dedicated Model</source>
+            <translation>Dedicated Model</translation>
+        </message>
+        <message>
             <source>Default</source>
             <translation>Default</translation>
         </message>
@@ -648,6 +652,10 @@
             <translation>LaTeX Formula Recognition</translation>
         </message>
         <message>
+            <source>LaTeX-Specific Model</source>
+            <translation>LaTeX-Specific Model</translation>
+        </message>
+        <message>
             <source>Line</source>
             <translation>Line</translation>
         </message>
@@ -856,6 +864,10 @@
             <translation>Recapture</translation>
         </message>
         <message>
+            <source>Recognition model</source>
+            <translation>Recognition model</translation>
+        </message>
+        <message>
             <source>Record microphone</source>
             <translation>Record microphone</translation>
         </message>
@@ -948,6 +960,10 @@
             <translation>Select elements</translation>
         </message>
         <message>
+            <source>Selected model (%1)</source>
+            <translation>Selected model (%1)</translation>
+        </message>
+        <message>
             <source>Send backward</source>
             <translation>Send backward</translation>
         </message>
@@ -1038,6 +1054,10 @@
         <message>
             <source>Smart Erase</source>
             <translation>Smart Erase</translation>
+        </message>
+        <message>
+            <source>Snow Shot visual understanding</source>
+            <translation>Snow Shot visual understanding</translation>
         </message>
         <message>
             <source>Solid arrow stroke</source>
@@ -1172,6 +1192,10 @@
             <translation>Table recognition</translation>
         </message>
         <message>
+            <source>Table-Specific Model</source>
+            <translation>Table-Specific Model</translation>
+        </message>
+        <message>
             <source>Tapered shaft</source>
             <translation>Tapered shaft</translation>
         </message>
@@ -1302,6 +1326,10 @@
         <message>
             <source>Vertical scrolling</source>
             <translation>Vertical scrolling</translation>
+        </message>
+        <message>
+            <source>Vision Model</source>
+            <translation>Vision Model</translation>
         </message>
         <message>
             <source>Watermark</source>

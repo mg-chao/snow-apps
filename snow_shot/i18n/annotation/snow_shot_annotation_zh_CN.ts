@@ -336,6 +336,10 @@
             <translation>小数位数</translation>
         </message>
         <message>
+            <source>Dedicated Model</source>
+            <translation>专用模型</translation>
+        </message>
+        <message>
             <source>Default</source>
             <translation>默认</translation>
         </message>
@@ -648,6 +652,10 @@
             <translation>LaTeX 公式识别</translation>
         </message>
         <message>
+            <source>LaTeX-Specific Model</source>
+            <translation>LaTeX 专用模型</translation>
+        </message>
+        <message>
             <source>Line</source>
             <translation>直线</translation>
         </message>
@@ -856,6 +864,10 @@
             <translation>重新截图</translation>
         </message>
         <message>
+            <source>Recognition model</source>
+            <translation>识别模型</translation>
+        </message>
+        <message>
             <source>Record microphone</source>
             <translation>录制麦克风</translation>
         </message>
@@ -948,6 +960,10 @@
             <translation>选择元素</translation>
         </message>
         <message>
+            <source>Selected model (%1)</source>
+            <translation>已选模型（%1）</translation>
+        </message>
+        <message>
             <source>Send backward</source>
             <translation>下移一层</translation>
         </message>
@@ -1038,6 +1054,10 @@
         <message>
             <source>Smart Erase</source>
             <translation>智能擦除</translation>
+        </message>
+        <message>
+            <source>Snow Shot visual understanding</source>
+            <translation>Snow Shot 视觉理解</translation>
         </message>
         <message>
             <source>Solid arrow stroke</source>
@@ -1172,6 +1192,10 @@
             <translation>表格识别</translation>
         </message>
         <message>
+            <source>Table-Specific Model</source>
+            <translation>表格专用模型</translation>
+        </message>
+        <message>
             <source>Tapered shaft</source>
             <translation>渐宽箭杆</translation>
         </message>
@@ -1302,6 +1326,10 @@
         <message>
             <source>Vertical scrolling</source>
             <translation>垂直滚动</translation>
+        </message>
+        <message>
+            <source>Vision Model</source>
+            <translation>视觉模型</translation>
         </message>
         <message>
             <source>Watermark</source>

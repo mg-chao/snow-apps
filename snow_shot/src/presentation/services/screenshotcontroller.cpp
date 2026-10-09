@@ -432,6 +432,7 @@ struct ScreenshotController::Impl final : public ScreenshotToolbarCommandSink,
     void setMarkdownTool() override;
     void setHtmlTool() override;
     void openImageConversionSettings() override;
+    void setRecognitionModel(const QString& selection) override;
     void mergeTableSelection() override;
     void splitTableSelection() override;
     void resetTable() override;
@@ -1619,6 +1620,7 @@ void ScreenshotController::Impl::createCaptureWorkflow() {
                         applyGlobalMouseDrag(false);
                     }
                 },
+                [this]() { m_presentationServices->resetPresentation(); },
             },
             [this]() {
                 cancelCloudUpload();
@@ -2784,6 +2786,11 @@ void ScreenshotController::Impl::openImageConversionSettings() {
         m_ocrController->openImageConversionSettings();
     }
 #endif
+}
+
+void ScreenshotController::Impl::setRecognitionModel(const QString& selection) {
+    if (m_ocrController)
+        m_ocrController->setRecognitionModel(selection);
 }
 
 void ScreenshotController::Impl::setTextTranslationTool() {
@@ -4336,7 +4343,7 @@ void ScreenshotController::Impl::printSelection() {
                 {{QStringLiteral("request_kind"), QStringLiteral("capture")},
                  {QStringLiteral("operation"), QString::number(epoch)},
                  {QStringLiteral("stage"), !snapshotSucceeded ? QStringLiteral("export_image")
-                                           : !printer ? QStringLiteral("service_destroyed")
+                                           : !printer         ? QStringLiteral("service_destroyed")
                                                       : QStringLiteral("service_rejected")}},
                 QtWarningMsg);
             finished({ScreenshotPrintService::Status::Failed,

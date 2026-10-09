@@ -25,6 +25,8 @@
 #include "widgets/input_text_edit.h"
 #include "widgets/scroll_area.h"
 #include "widgets/spin.h"
+#include "widgets/alert.h"
+#include "widgets/button.h"
 
 #include <QApplication>
 #include <QChildEvent>
@@ -847,26 +849,32 @@ void ScreenshotRecognitionWindow::setTableSession(
             QTimer::singleShot(0, this, [this]() { m_actions.handleCopy(); });
         });
     }
-    m_tableEditor->setSession(std::move(session));
+    // Showing and focusing a table scrolls its current cell into view. Do that while unbound,
+    // then let session restoration apply the model's independent selection and scroll position.
     m_stack->setCurrentWidget(m_tableEditor);
     if (!m_showOriginalImage) {
         m_tableEditor->setFocus(Qt::OtherFocusReason);
     }
+    m_tableEditor->setSession(std::move(session));
 #else
     Q_UNUSED(session)
 #endif
 }
 
-void ScreenshotRecognitionWindow::clearTableSession() {
+void ScreenshotRecognitionWindow::clearTableSession(bool retainEditor) {
 #if SNOW_SHOT_ENABLE_TABLE_RECOGNITION
     if (m_tableEditor == nullptr) {
         return;
     }
     m_tableEditor->clearSession();
-    m_stack->removeWidget(m_tableEditor);
-    delete m_tableEditor;
-    m_tableEditor = nullptr;
+    if (!retainEditor) {
+        m_stack->removeWidget(m_tableEditor);
+        delete m_tableEditor;
+        m_tableEditor = nullptr;
+    }
     m_stack->setCurrentWidget(m_textLayer);
+#else
+    Q_UNUSED(retainEditor)
 #endif
 }
 
@@ -1575,7 +1583,44 @@ void ScreenshotRecognitionWindow::clearImageConversion() {
 #endif
 }
 
+void ScreenshotRecognitionWindow::showRecognitionError(const QString& error) {
+    clearRecognitionError();
+    m_recognitionErrorPage = new QWidget(m_contentContainer);
+    m_recognitionErrorPage->setObjectName(QStringLiteral("screenshotRecognitionError"));
+    auto* layout = new QVBoxLayout(m_recognitionErrorPage);
+    layout->setContentsMargins(8, 8, 8, 8);
+    layout->addStretch();
+    auto* alert = new adqt::widgets::AdAlert(m_recognitionErrorPage);
+    alert->setSeverity(adqt::widgets::AdAlert::Severity::Error);
+    alert->setText(error);
+    m_recognitionRetry = new adqt::widgets::AdButton(alert);
+    m_recognitionRetry->setObjectName(QStringLiteral("screenshotRecognitionRetry"));
+    m_recognitionRetry->setText(tr("Retry"));
+    m_recognitionRetry->setAccessibleName(tr("Retry recognition"));
+    alert->setActionsWidget(m_recognitionRetry);
+    connect(m_recognitionRetry, &adqt::widgets::AdButton::clicked, this,
+            &ScreenshotRecognitionWindow::recognitionRetryRequested);
+    layout->addWidget(alert);
+    layout->addStretch();
+    m_stack->addWidget(m_recognitionErrorPage);
+    m_stack->setCurrentWidget(m_recognitionErrorPage);
+}
+
+void ScreenshotRecognitionWindow::clearRecognitionError() {
+    if (!m_recognitionErrorPage)
+        return;
+    m_stack->removeWidget(m_recognitionErrorPage);
+    // Retry may synchronously replace this page from its own clicked handler.
+    m_recognitionErrorPage->hide();
+    m_recognitionErrorPage->deleteLater();
+    m_recognitionErrorPage = nullptr;
+    m_recognitionRetry = nullptr;
+    m_stack->setCurrentWidget(m_textLayer);
+}
+
 bool ScreenshotRecognitionWindow::copyVisibleContentToClipboard() {
+    if (m_recognitionErrorPage)
+        return false;
 #if SNOW_SHOT_ENABLE_IMAGE_CONVERSION
     if (m_conversionView != nullptr) {
         return m_conversionView->copyToClipboard();
@@ -2094,6 +2139,10 @@ void ScreenshotRecognitionWindow::updateTextEditorSpinGeometry() {
 
 void ScreenshotRecognitionWindow::changeEvent(QEvent* event) {
     QWidget::changeEvent(event);
+    if (event->type() == QEvent::LanguageChange && m_recognitionRetry) {
+        m_recognitionRetry->setText(tr("Retry"));
+        m_recognitionRetry->setAccessibleName(tr("Retry recognition"));
+    }
 #if SNOW_SHOT_ENABLE_QR_RECOGNITION || SNOW_SHOT_ENABLE_LATEX_RECOGNITION
     if (event->type() == QEvent::LanguageChange && m_qrBrowser) {
         m_qrBrowser->setAccessibleName(m_qrDetectLinks ? tr("Barcode recognition result")

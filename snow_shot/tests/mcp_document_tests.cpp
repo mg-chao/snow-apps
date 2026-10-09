@@ -6,6 +6,7 @@
 #include "snow_shot/presentation/globalshortcutmanager.h"
 #include "snow_shot/storage/applicationstorage.h"
 #include "snow_shot/storage/configurationstore.h"
+#include "snow_shot/storage/settingsadapters.h"
 #include "snow_shot/network/snowshotapiclient.h"
 #include "snow_shot/translation/translationservice.h"
 #include "snow_shot/presentation/screenshotocrrecognitionservice.h"
@@ -27,6 +28,7 @@
 #include <QSemaphore>
 #include <QBuffer>
 #include <QMimeData>
+#include <QScopeGuard>
 #include <QtEndian>
 #include <atomic>
 #include <cstdlib>
@@ -755,6 +757,320 @@ void documentConcurrency() {
             "adding worker lanes does not multiply the global document quota");
     service.shutdown();
 }
+void recognitionModelDocuments(const QString& directory) {
+#if SNOW_SHOT_ENABLE_TABLE_RECOGNITION && SNOW_SHOT_ENABLE_LATEX_RECOGNITION
+    using Settings = snow_shot::storage::ScreenshotRecognitionModelSettings;
+    const auto savedTableModel = Settings().tableModel();
+    const auto savedLatexModel = Settings().latexModel();
+    const auto restoreSettings = qScopeGuard([&] {
+        Settings().setTableModel(savedTableModel);
+        Settings().setLatexModel(savedLatexModel);
+    });
+    require(Settings().setTableModel(QStringLiteral("dedicated")) &&
+                Settings().setLatexModel(QStringLiteral("snow-shot:vision")),
+            "MCP recognition defaults differ from the saved source choices");
+
+    ScreenshotRecognitionResults saved;
+    saved.key = QStringLiteral("saved-source");
+    saved.tableModelSelection = QStringLiteral("vision-b");
+    saved.latexModelSelection = QStringLiteral("vision-b");
+    ScreenshotTableRecognitionEntry tableA;
+    tableA.model = QStringLiteral("vision-a");
+    tableA.result.html = QStringLiteral("<table><tr><td>A baseline</td></tr></table>");
+    ScreenshotTableRecognitionEntry tableB;
+    tableB.model = QStringLiteral("vision-b");
+    tableB.result.html = QStringLiteral("<table><tr><th rowspan=\"2\">B heading</th>"
+                                        "<td>B baseline top</td></tr><tr><td></td></tr></table>");
+    tableB.draftHtml = QStringLiteral("<table><tr><th rowspan=\"2\">B heading</th>"
+                                      "<td>B saved top</td></tr><tr><td></td></tr></table>");
+    saved.tableEntries = {tableA, tableB};
+    ScreenshotLatexRecognitionEntry latexA;
+    latexA.model = QStringLiteral("vision-a");
+    latexA.result.latex = QStringLiteral("a^2");
+    latexA.draft = QStringLiteral("A saved formula");
+    ScreenshotLatexRecognitionEntry latexB;
+    latexB.model = QStringLiteral("vision-b");
+    latexB.result.latex = QStringLiteral("b^2");
+    latexB.draft = QString{};
+    saved.latexEntries = {latexA, latexB};
+
+    McpJobRegistry registry;
+    auto clipboard = std::make_shared<MemoryClipboard>();
+    McpDocumentService::Ports ports;
+    ports.jobs = &registry;
+    ports.clipboard = clipboard;
+    int sourceResolutions = 0;
+    ports.resolveSource = [&](const ScreenshotMcpRequest&, auto completion, auto budget) {
+        ++sourceResolutions;
+        require(budget(80 * 60 * 4), "MCP saved recognition source reserves image bytes");
+        McpDocumentService::Source source;
+        source.image = QImage(80, 60, QImage::Format_ARGB32_Premultiplied);
+        source.image.fill(Qt::white);
+        source.recognitionResults = saved;
+        completion(std::move(source), {});
+    };
+    QVector<ScreenshotRecognitionResults> handoffs;
+    ports.present = [&](McpDocumentService::Source source, auto completion) {
+        handoffs.append(std::move(source.recognitionResults));
+        completion(true);
+        return true;
+    };
+    ports.pinDocument = [&](McpDocumentService::Source source, QImage image, auto completion) {
+        require(!image.isNull(), "MCP recognition pin retains the document background");
+        handoffs.append(std::move(source.recognitionResults));
+        completion(true);
+        return true;
+    };
+    McpDocumentService service(std::move(ports));
+    quint64 sequence = 0, revision = 1;
+    qint64 recognitionRevision = 1;
+    QString id;
+    const auto wait = [](auto condition) {
+        QElapsedTimer timer;
+        timer.start();
+        while (!condition() && timer.elapsed() < 5000) {
+            QCoreApplication::processEvents();
+            QThread::msleep(1);
+        }
+        require(condition(), "MCP selected recognition operation completes");
+    };
+    const auto call = [&](const QString& method, QJsonObject params = {}) {
+        ScreenshotMcpRequest request;
+        request.connectionId = 17;
+        request.requestId = QString::number(++sequence);
+        request.idempotencyKey = request.requestId;
+        request.expectedRevision = revision;
+        request.method = QStringLiteral("snow_shot_") + method;
+        if (!id.isEmpty())
+            params.insert(QStringLiteral("document_id"), id);
+        request.params = std::move(params);
+        std::optional<ScreenshotMcpResponse> response;
+        service.request(request, [&](auto value) { response = std::move(value); });
+        wait([&] { return response.has_value(); });
+        if (response->ok && response->revision)
+            revision = *response->revision;
+        return *response;
+    };
+    const auto recognize = [&](const QString& kind) {
+        const auto started =
+            call(QStringLiteral("document_recognize"), {{QStringLiteral("kind"), kind}});
+        require(started.ok, "MCP recognizes saved model results without an API provider");
+        const auto job = started.result.value(QStringLiteral("job_id")).toString();
+        wait([&] {
+            const auto value = registry.get(17, job);
+            return value && value->value(QStringLiteral("status")) != QStringLiteral("running");
+        });
+        const auto result = *registry.get(17, job);
+        require(
+            result.value(QStringLiteral("status")) == QStringLiteral("completed") &&
+                result.value(QStringLiteral("result")).toObject().value(QStringLiteral("kind")) ==
+                    kind,
+            "MCP recognition jobs retain the selected Table or LaTeX workflow");
+        recognitionRevision = 1;
+        return call(QStringLiteral("document_recognition_state"));
+    };
+    const auto edit = [&](const QString& action, QJsonObject params = {}) {
+        params.insert(QStringLiteral("action"), action);
+        params.insert(QStringLiteral("expected_recognition_revision"), recognitionRevision);
+        const auto result = call(QStringLiteral("document_edit_recognition"), std::move(params));
+        if (action != QStringLiteral("set_model"))
+            require(result.ok, "MCP selected recognition edit succeeds");
+        if (result.ok)
+            recognitionRevision =
+                result.result.value(QStringLiteral("recognition_revision")).toInteger();
+        return result;
+    };
+    const auto opened = call(QStringLiteral("document_open"),
+                             {{QStringLiteral("source"), QStringLiteral("clipboard")}});
+    require(opened.ok, "MCP opens a source carrying independent recognition model results");
+    id = opened.result.value(QStringLiteral("document_id")).toString();
+    const auto table = recognize(QStringLiteral("table"));
+    const auto cells = table.result.value(QStringLiteral("cells")).toArray();
+    require(table.ok && table.result.value(QStringLiteral("rows")).toInt() == 2 &&
+                table.result.value(QStringLiteral("columns")).toInt() == 2 && cells.size() == 3 &&
+                cells.at(0).toObject().value(QStringLiteral("row_span")).toInt() == 2 &&
+                cells.at(0).toObject().value(QStringLiteral("header")).toBool() &&
+                cells.at(1).toObject().value(QStringLiteral("text")) ==
+                    QStringLiteral("B saved top") &&
+                cells.at(2).toObject().value(QStringLiteral("text")).toString().isEmpty(),
+            "MCP consumes selected vision Table draft with merged headers and empty cells");
+    require(edit(QStringLiteral("set_cell"), {{QStringLiteral("row"), 0},
+                                              {QStringLiteral("column"), 1},
+                                              {QStringLiteral("text"), QStringLiteral("B edited")}})
+                .ok,
+            "MCP edits the selected model's Table draft");
+    const auto tableCopy = call(QStringLiteral("document_export_recognition"),
+                                {{QStringLiteral("output"), QStringLiteral("copy")},
+                                 {QStringLiteral("format"), QStringLiteral("html")}});
+    require(tableCopy.ok && clipboard->mime && clipboard->mime->hasHtml() &&
+                clipboard->mime->html().contains(QStringLiteral("B edited")) &&
+                !clipboard->mime->html().contains(QStringLiteral("A baseline")),
+            "MCP HTML copy publishes only the edited selected Table");
+    const auto tablePath = QDir(directory).filePath(QStringLiteral("selected-table.html"));
+    require(call(QStringLiteral("document_export_recognition"),
+                 {{QStringLiteral("output"), QStringLiteral("save")},
+                  {QStringLiteral("format"), QStringLiteral("html")},
+                  {QStringLiteral("path"), tablePath}})
+                .ok,
+            "MCP saves the selected Table through the existing export workflow");
+    QFile tableFile(tablePath);
+    require(tableFile.open(QIODevice::ReadOnly) &&
+                tableFile.readAll() == clipboard->mime->html().toUtf8(),
+            "MCP Table save and copy retain the identical canonical selected draft");
+
+    const auto latex = recognize(QStringLiteral("latex"));
+    require(latex.ok && latex.result.contains(QStringLiteral("text")) &&
+                latex.result.value(QStringLiteral("text")).toString().isEmpty(),
+            "MCP consumes a valid empty LaTeX draft from the selected model");
+    const auto emptyCopy = call(QStringLiteral("document_export_recognition"),
+                                {{QStringLiteral("output"), QStringLiteral("copy")},
+                                 {QStringLiteral("format"), QStringLiteral("text")}});
+    require(emptyCopy.ok && clipboard->mimePublications == 2 && clipboard->mime &&
+                clipboard->mime->text().isEmpty(),
+            "MCP empty LaTeX copy publishes an empty draft instead of another model's formula");
+    const auto latexPath = QDir(directory).filePath(QStringLiteral("selected-empty-latex.txt"));
+    require(call(QStringLiteral("document_export_recognition"),
+                 {{QStringLiteral("output"), QStringLiteral("save")},
+                  {QStringLiteral("format"), QStringLiteral("text")},
+                  {QStringLiteral("path"), latexPath}})
+                    .ok &&
+                QFileInfo::exists(latexPath) && QFileInfo(latexPath).size() == 0,
+            "MCP saves an empty selected LaTeX draft losslessly");
+    require(edit(QStringLiteral("set_text"),
+                 {{QStringLiteral("text"), QStringLiteral("B edited formula")}})
+                    .ok &&
+                edit(QStringLiteral("undo"))
+                    .result.value(QStringLiteral("text"))
+                    .toString()
+                    .isEmpty() &&
+                edit(QStringLiteral("redo")).result.value(QStringLiteral("text")) ==
+                    QStringLiteral("B edited formula"),
+            "MCP selected LaTeX edits preserve empty drafts in undo and redo");
+    require(
+        edit(QStringLiteral("set_text"), {{QStringLiteral("text"), QString{}}}).ok &&
+            edit(QStringLiteral("reset_text")).result.value(QStringLiteral("text")) ==
+                QStringLiteral("b^2") &&
+            edit(QStringLiteral("undo")).result.value(QStringLiteral("text")).toString().isEmpty(),
+        "MCP LaTeX reset uses the selected baseline and undo restores an empty draft");
+    require(
+        edit(QStringLiteral("set_model"), {{QStringLiteral("model"), QStringLiteral("vision-a")}})
+                    .errorCode == QStringLiteral("action_unavailable") &&
+            !service.handles(QStringLiteral("snow_shot_document_set_recognition_model")),
+        "MCP keeps its existing recognition interface without adding model selection actions");
+    const auto tableAgain = recognize(QStringLiteral("table"));
+    require(tableAgain.ok && tableAgain.result.value(QStringLiteral("html"))
+                                 .toString()
+                                 .contains(QStringLiteral("B edited")),
+            "MCP workflow changes retain the selected Table's edited result");
+    const auto latexAgain = recognize(QStringLiteral("latex"));
+    require(latexAgain.ok && latexAgain.result.value(QStringLiteral("text")).toString().isEmpty() &&
+                call(QStringLiteral("document_export_recognition"),
+                     {{QStringLiteral("output"), QStringLiteral("return")},
+                      {QStringLiteral("format"), QStringLiteral("text")}})
+                    .result.value(QStringLiteral("text"))
+                    .toString()
+                    .isEmpty(),
+            "MCP returns the selected empty LaTeX draft after switching workflows");
+    require(call(QStringLiteral("document_present")).ok &&
+                call(QStringLiteral("document_pin")).ok && handoffs.size() == 2,
+            "MCP present and pin carry selected recognition snapshots");
+    for (const auto& snapshot : handoffs) {
+        require(!snapshot.key.isEmpty() &&
+                    snapshot.tableModelSelection == QStringLiteral("vision-b") &&
+                    snapshot.latexModelSelection == QStringLiteral("vision-b") &&
+                    snapshot.tableEntries.size() == 2 && snapshot.latexEntries.size() == 2,
+                "MCP handoff preserves both selected identities and independent model entries");
+        for (const auto& entry : snapshot.tableEntries)
+            require(entry.model == QStringLiteral("vision-a")
+                        ? entry.result.html == tableA.result.html && !entry.draftHtml
+                        : entry.draftHtml && entry.draftHtml->contains(QStringLiteral("B edited")),
+                    "MCP handoff keeps Table edits isolated to the selected model");
+        for (const auto& entry : snapshot.latexEntries)
+            require(entry.model == QStringLiteral("vision-a")
+                        ? entry.draft == latexA.draft
+                        : entry.draft && entry.draft->isEmpty() &&
+                              entry.result.latex == QStringLiteral("b^2"),
+                    "MCP handoff keeps selected empty LaTeX drafts and their reset baseline");
+    }
+    require(
+        sourceResolutions == 1 && Settings().tableModel() == QStringLiteral("dedicated") &&
+            Settings().latexModel() == QStringLiteral("snow-shot:vision"),
+        "MCP saved choices remain document-local without resolving pixels or changing settings");
+    service.shutdown();
+#else
+    Q_UNUSED(directory)
+#endif
+}
+
+void recognitionModelSourceBudget() {
+    // QString copies share storage: each fixture retains only one 8 MiB allocation, while the
+    // admission charge accounts for every model's independent baseline and draft.
+    const QString sharedText(4 * 1024 * 1024, QLatin1Char('x'));
+    for (const bool latex : {false, true}) {
+        bool largeSource = true;
+        McpDocumentService::Ports ports;
+        ports.resolveSource = [&](const ScreenshotMcpRequest&, auto completion, auto budget) {
+            require(budget(16 * 16 * 4), "MCP recognition quota fixture reserves source pixels");
+            McpDocumentService::Source source;
+            source.image = QImage(16, 16, QImage::Format_ARGB32_Premultiplied);
+            source.image.fill(Qt::white);
+            if (largeSource) {
+                for (int index = 0; index < 33; ++index) {
+                    const auto model = QStringLiteral("vision-%1").arg(index);
+                    if (latex) {
+                        ScreenshotLatexRecognitionEntry entry;
+                        entry.model = model;
+                        entry.result.latex = sharedText;
+                        entry.draft = sharedText;
+                        source.recognitionResults.latexEntries.append(std::move(entry));
+                    } else {
+                        ScreenshotTableRecognitionEntry entry;
+                        entry.model = model;
+                        entry.result.html = sharedText;
+                        entry.draftHtml = sharedText;
+                        source.recognitionResults.tableEntries.append(std::move(entry));
+                    }
+                }
+            }
+            completion(std::move(source), {});
+        };
+        McpDocumentService service(std::move(ports));
+        quint64 sequence = 0;
+        const auto call = [&](const QString& method, QJsonObject params = {}) {
+            ScreenshotMcpRequest request;
+            request.connectionId = 23;
+            request.requestId = QString::number(++sequence);
+            request.idempotencyKey = request.requestId;
+            request.expectedRevision = 1;
+            request.method = QStringLiteral("snow_shot_") + method;
+            request.params = std::move(params);
+            std::optional<ScreenshotMcpResponse> response;
+            service.request(request, [&](auto result) { response = std::move(result); });
+            QElapsedTimer timer;
+            timer.start();
+            while (!response && timer.elapsed() < 5000) {
+                QCoreApplication::processEvents();
+                QThread::msleep(1);
+            }
+            require(response.has_value(), "MCP recognition quota operation completes");
+            return *response;
+        };
+        require(
+            call(QStringLiteral("document_open"),
+                 {{QStringLiteral("source"), QStringLiteral("clipboard")}})
+                    .errorCode == QStringLiteral("resource_limit"),
+            "all per-model Table or LaTeX baselines and drafts count toward source memory limits");
+        largeSource = false;
+        for (int index = 0; index < 4; ++index)
+            require(
+                call(QStringLiteral("document_open"),
+                     {{QStringLiteral("source"), QStringLiteral("clipboard")}})
+                    .ok,
+                "rejected recognition snapshots release source bytes and document admission slots");
+        service.shutdown();
+    }
+}
+
 void documentWorkflows() {
     FixtureOcr ocr;
     FixtureQr qr;
@@ -1777,6 +2093,12 @@ int main(int argc, char** argv) {
         snow_shot::storage::ApplicationStorage::instance().shutdown();
         return 0;
     }
+    if (application.arguments().contains(QStringLiteral("--recognition-models-only"))) {
+        recognitionModelDocuments(temporary.path());
+        recognitionModelSourceBudget();
+        snow_shot::storage::ApplicationStorage::instance().shutdown();
+        return 0;
+    }
     jobs();
     if (application.arguments().contains(QStringLiteral("--jobs-only"))) {
         snow_shot::storage::ApplicationStorage::instance().shutdown();
@@ -1788,6 +2110,8 @@ int main(int argc, char** argv) {
     documentConcurrency();
     documents(temporary.path());
     documentWorkflows();
+    recognitionModelDocuments(temporary.path());
+    recognitionModelSourceBudget();
     documentClipboardTeardown();
     runMcpApplicationTests();
     snow_shot::storage::ApplicationStorage::instance().shutdown();

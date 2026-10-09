@@ -56,7 +56,8 @@ class ScreenshotTableDocument final {
     ScreenshotTableDocument() = default;
     ScreenshotTableDocument(int rows, int columns, bool firstRowIsHeader = false);
 
-    [[nodiscard]] static ScreenshotTableDocument fromHtml(const QString& source);
+    [[nodiscard]] static ScreenshotTableDocument fromHtml(const QString& source,
+                                                          bool requireTable = false);
     [[nodiscard]] static ScreenshotTableDocument fromPlainText(const QString& source);
     [[nodiscard]] static ScreenshotTableDocument fromClipboardMimeData(const QMimeData& source);
 

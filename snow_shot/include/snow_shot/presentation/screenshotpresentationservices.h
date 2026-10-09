@@ -64,6 +64,8 @@ class ScreenshotPresentationServices final {
     void reloadConfiguredShortcuts();
 
     void setSelectionMovementActive(bool active);
+    // Release capture-owned snapshots and pending frames while retaining the scheduler.
+    void resetPresentation();
     void updateOverlayState();
     void updatePointerPresentation(ScreenshotOverlayWindow* overlay, const QPointF& localPosition);
     void flushPendingFrame();

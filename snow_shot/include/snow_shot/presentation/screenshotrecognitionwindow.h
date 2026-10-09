@@ -44,7 +44,9 @@ class ScreenshotTableEditor;
 struct ScreenshotTableCommandState;
 namespace adqt::widgets {
 class AdSpin;
-}
+class AdButton;
+class AdAlert;
+} // namespace adqt::widgets
 namespace snow_shot::presentation {
 class WindowShortcutManager;
 }
@@ -139,7 +141,7 @@ class ScreenshotRecognitionWindow final : public QWidget {
     void clearFormattedText();
 
     void setTableSession(std::shared_ptr<ScreenshotTableEditingSession> session);
-    void clearTableSession();
+    void clearTableSession(bool retainEditor = false);
     [[nodiscard]] ScreenshotTableCommandState tableCommandState() const;
     void mergeTableSelection();
     void splitTableSelection();
@@ -160,6 +162,8 @@ class ScreenshotRecognitionWindow final : public QWidget {
     void showImageConversion(SnowShotImageConversionFormat format, const QString& source, bool busy,
                              const QString& error);
     void clearImageConversion();
+    void showRecognitionError(const QString& error);
+    void clearRecognitionError();
 
     [[nodiscard]] bool copyVisibleContentToClipboard();
     [[nodiscard]] bool isOcrBackgroundAt(const QPointF& localPosition) const;
@@ -167,6 +171,7 @@ class ScreenshotRecognitionWindow final : public QWidget {
   signals:
     void embeddedContextMenuRequested(const QPoint& globalPosition);
     void imageConversionRetryRequested();
+    void recognitionRetryRequested();
 
   protected:
     void changeEvent(QEvent* event) override;
@@ -260,6 +265,8 @@ class ScreenshotRecognitionWindow final : public QWidget {
     std::shared_ptr<ScreenshotOcrPresentation> m_ocrPresentation;
     bool m_ocrCopyDefaultsEnabled = true;
     QWidget* m_contentContainer = nullptr;
+    QWidget* m_recognitionErrorPage = nullptr;
+    adqt::widgets::AdButton* m_recognitionRetry = nullptr;
     bool m_showOriginalImage = false;
     QStackedLayout* m_stack = nullptr;
     ScreenshotOcrTextLayer* m_textLayer = nullptr;

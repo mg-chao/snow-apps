@@ -125,8 +125,16 @@ class SnowShotApiClient final : public QObject {
                                             Completion completion);
     [[nodiscard]] RequestToken extractLatex(const QImage& image, QObject* receiver,
                                             LatexCompletion completion);
+    [[nodiscard]] RequestToken extractTableVision(const QImage& image, const QString& model,
+                                                  QObject* receiver, Completion completion);
+    [[nodiscard]] RequestToken extractLatexVision(const QImage& image, const QString& model,
+                                                  QObject* receiver, LatexCompletion completion);
     [[nodiscard]] RequestToken fetchChatModels(const QString& locale, QObject* receiver,
                                                ChatModelsCompletion completion);
+    // Cached discovery and concurrent subscribers share one catalog request. Each returned
+    // token owns only its subscriber; cancelling it never cancels another consumer.
+    [[nodiscard]] RequestToken ensureChatModels(const QString& locale, QObject* receiver,
+                                                ChatModelsCompletion completion);
     [[nodiscard]] RequestToken streamTranslation(const SnowShotTranslationRequest& request,
                                                  QObject* receiver, TranslationDelta delta,
                                                  TranslationCompletion completion);
@@ -141,6 +149,7 @@ class SnowShotApiClient final : public QObject {
     void setCustomModels(const snow_shot::CustomAiModels& models);
     [[nodiscard]] bool isCustomModel(const QString& id) const;
     [[nodiscard]] QString fallbackModel(bool vision) const;
+    [[nodiscard]] QString builtInVisionModel() const;
     [[nodiscard]] bool hasBuiltInModels(const QString& locale) const;
     [[nodiscard]] QString modelFingerprint(const QString& id) const;
 
@@ -160,6 +169,7 @@ class SnowShotApiClient final : public QObject {
     std::function<QByteArray(const QImage&)> m_tableImagePreparation;
     int m_latexTimeoutMs = 65000;
     int m_tableTimeoutMs = 35000;
+    int m_visionTimeoutMs = 120000;
     struct Request;
     void startLatexUpload(RequestToken token, const QByteArray& webp);
     void finishLatex(RequestToken token, SnowShotLatexResult result);
@@ -169,9 +179,18 @@ class SnowShotApiClient final : public QObject {
     void finish(RequestToken token, SnowShotTableResult result);
     void finishChatModels(RequestToken token, SnowShotChatModelsResult result);
     void finishTranslation(RequestToken token, SnowShotTranslationResult result);
+    bool finishExpiredImageRequest(RequestToken token);
     void submitChatStream(RequestToken token, QByteArray body);
     void pumpCustomChatStreams();
     void startChatStream(RequestToken token, const QByteArray& body);
+    void drainChatStream(RequestToken token);
+    void completeChatStream(RequestToken token);
+    RequestToken streamImageRequest(const QString& model, const QImage& image,
+                                    const QString& format, const QString& prompt, QObject* receiver,
+                                    TranslationDelta delta, TranslationCompletion completion,
+                                    bool absoluteDeadline);
+    void finishModelCatalogSubscribers(RequestToken owner, SnowShotChatModelsResult result);
+    void noteChatModelsLocale(const QString& locale);
 
     const snow_shot::TextTranslationConfiguration* textTranslation(const QString& id) const;
     RequestToken enqueueTextTranslation(const SnowShotTranslationRequest& input, QObject* receiver,
@@ -182,15 +201,20 @@ class SnowShotApiClient final : public QObject {
     QList<RequestToken> m_translationQueue;
     QList<RequestToken> m_customChatQueue;
     void rebuildAvailableModels();
+    void appendLocalModels(QVector<SnowShotChatModel>& models) const;
     const snow_shot::CustomAiModelConfiguration* customModel(const QString& id) const;
     QString m_baseUrl;
     quint64 m_serverGeneration = 0;
+    quint64 m_chatModelsLocaleGeneration = 0;
+    QString m_requestedChatModelsLocale;
     snow_shot::CustomAiModels m_customModels;
     QVector<SnowShotChatModel> m_availableModels;
 
     bool m_useSystemProxy = false;
     RequestToken m_nextToken = 0;
     QHash<RequestToken, Request*> m_requests;
+    QHash<QString, RequestToken> m_pendingModelCatalogs;
+    QHash<RequestToken, QList<RequestToken>> m_modelCatalogSubscribers;
     QVector<SnowShotChatModel> m_cachedChatModels;
     QString m_cachedChatModelsLocale;
 };

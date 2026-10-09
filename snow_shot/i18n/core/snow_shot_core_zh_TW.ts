@@ -618,6 +618,22 @@ so every moment on screen can be expressed clearly and shared easily.</source>
             <translation>影像轉換逾時，請嘗試較小的區域。</translation>
         </message>
         <message>
+            <source>Image recognition failed</source>
+            <translation>影像辨識失敗</translation>
+        </message>
+        <message>
+            <source>Image recognition is incomplete. Try a smaller area.</source>
+            <translation>影像辨識不完整，請嘗試較小的區域。</translation>
+        </message>
+        <message>
+            <source>Image recognition stream ended unexpectedly</source>
+            <translation>影像辨識串流意外中斷</translation>
+        </message>
+        <message>
+            <source>Image recognition timed out. Try a smaller area.</source>
+            <translation>影像辨識逾時，請嘗試較小的區域。</translation>
+        </message>
+        <message>
             <source>Invalid LaTeX recognition response</source>
             <translation>無效的 LaTeX 辨識回應</translation>
         </message>
@@ -678,8 +694,16 @@ so every moment on screen can be expressed clearly and shared easily.</source>
             <translation>無法準備要轉換的影像</translation>
         </message>
         <message>
+            <source>The image could not be prepared for recognition</source>
+            <translation>無法準備待辨識的影像</translation>
+        </message>
+        <message>
             <source>The image is too large to convert. Select a smaller area.</source>
             <translation>影像過大，無法轉換。請選取較小的區域。</translation>
+        </message>
+        <message>
+            <source>The image is too large to recognize. Select a smaller area.</source>
+            <translation>影像過大，無法辨識。請選擇較小的區域。</translation>
         </message>
         <message>
             <source>The model response is too large</source>
@@ -688,6 +712,18 @@ so every moment on screen can be expressed clearly and shared easily.</source>
         <message>
             <source>The model returned no content</source>
             <translation>模型未傳回內容</translation>
+        </message>
+        <message>
+            <source>The model returned no usable formula</source>
+            <translation>模型未傳回可用的公式</translation>
+        </message>
+        <message>
+            <source>The model returned no usable table</source>
+            <translation>模型未傳回可用的表格</translation>
+        </message>
+        <message>
+            <source>The model service changed. Retry to load its models.</source>
+            <translation>模型服務已變更。請重試以載入其模型。</translation>
         </message>
         <message>
             <source>The text is too large to translate.</source>

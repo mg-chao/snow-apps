@@ -7411,6 +7411,11 @@ if(SNOW_SHOT_BUILD_TESTS)
     set_tests_properties(snow-shot-mcp-storage-guard-tests PROPERTIES LABELS "unit" TIMEOUT 30
         ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
     add_test(NAME snow-shot-mcp-document-tests COMMAND snow-shot-mcp-document-tests -platform offscreen)
+    add_test(NAME snow-shot-mcp-recognition-model-tests
+        COMMAND snow-shot-mcp-document-tests --recognition-models-only -platform offscreen)
+    set_tests_properties(snow-shot-mcp-recognition-model-tests PROPERTIES LABELS "unit" TIMEOUT 60
+        ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}"
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
     add_test(NAME snow-shot-mcp-eraser-tests COMMAND snow-shot-mcp-document-tests --eraser-only -platform offscreen)
     set_tests_properties(snow-shot-mcp-eraser-tests PROPERTIES LABELS "unit" TIMEOUT 60)
     add_test(NAME snow-shot-mcp-application-tests
@@ -9815,6 +9820,13 @@ if(SNOW_SHOT_BUILD_TESTS)
 endif()
 
 if(TARGET snow-shot-recognition-session-controller-tests)
+    target_sources(snow-shot-recognition-session-controller-tests PRIVATE
+        tests/screenshot_recognition_model_tests.cpp)
+    snow_shot_add_translations(snow-shot-recognition-session-controller-tests)
+    add_test(NAME snow-shot-recognition-model-session-tests
+        COMMAND snow-shot-recognition-session-controller-tests --recognition-model-only -platform offscreen)
+    set_tests_properties(snow-shot-recognition-model-session-tests PROPERTIES LABELS "unit" TIMEOUT 60
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
     add_test(NAME snow-shot-latex-recognition-tests COMMAND snow-shot-recognition-session-controller-tests --latex-only -platform offscreen)
     set_tests_properties(snow-shot-latex-recognition-tests PROPERTIES LABELS "unit" TIMEOUT 60)
 endif()
@@ -10192,6 +10204,10 @@ if(SNOW_SHOT_BUILD_TESTS)
     add_test(NAME snow-shot-latex-toolbar-tests
         COMMAND snow-shot-screenshot-tool-palette-tests --latex-only -platform offscreen)
     set_tests_properties(snow-shot-latex-toolbar-tests PROPERTIES LABELS "unit" TIMEOUT 60
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
+    add_test(NAME snow-shot-recognition-model-toolbar-tests
+        COMMAND snow-shot-screenshot-tool-palette-tests --recognition-model-only -platform offscreen)
+    set_tests_properties(snow-shot-recognition-model-toolbar-tests PROPERTIES LABELS "unit" TIMEOUT 60
         ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
 endif()
 if(SNOW_SHOT_BUILD_BENCHMARKS)
@@ -10591,4 +10607,55 @@ if(SNOW_SHOT_BUILD_BENCHMARKS)
         target_link_libraries(snow-shot-pinned-shadow-performance-benchmark PRIVATE Qt6::QOffscreenIntegrationPlugin)
         qt_import_plugins(snow-shot-pinned-shadow-performance-benchmark INCLUDE Qt6::QOffscreenIntegrationPlugin)
     endif()
+endif()
+
+if(TARGET snow-shot-configuration-archive-tests)
+    add_test(NAME snow-shot-recognition-model-settings-tests
+        COMMAND snow-shot-configuration-archive-tests --recognition-models-only)
+    set_tests_properties(snow-shot-recognition-model-settings-tests PROPERTIES LABELS "unit" TIMEOUT 60)
+endif()
+if(TARGET snow-shot-pinned-window-tests)
+    add_test(NAME snow-shot-pinned-recognition-models-tests
+        COMMAND snow-shot-pinned-window-tests --recognition-models-only -platform offscreen)
+    set_tests_properties(snow-shot-pinned-recognition-models-tests PROPERTIES LABELS "unit" TIMEOUT 60)
+endif()
+
+if(SNOW_APPS_BUILD_BENCHMARKS AND TARGET snow-shot-recognition-session-controller-tests AND
+        TARGET snow-shot-screenshot-tool-palette-tests)
+    # Reuse the completed standalone production hosts, excluding their test entry points.
+    # This block stays last so the shared recognition/preview sources and libraries are present.
+    set(_recognition_model_benchmark_sources)
+    foreach(_recognition_model_host IN ITEMS snow-shot-recognition-session-controller-tests
+            snow-shot-screenshot-tool-palette-tests)
+        get_target_property(_recognition_model_host_sources ${_recognition_model_host} SOURCES)
+        list(APPEND _recognition_model_benchmark_sources ${_recognition_model_host_sources})
+    endforeach()
+    list(FILTER _recognition_model_benchmark_sources EXCLUDE REGEX "(^|[/\\\\])tests[/\\\\]")
+    list(REMOVE_DUPLICATES _recognition_model_benchmark_sources)
+    add_executable(snow-shot-recognition-model-benchmark
+        tests/recognition_model_performance_benchmark.cpp ${_recognition_model_benchmark_sources})
+    foreach(_recognition_model_property IN ITEMS INCLUDE_DIRECTORIES LINK_LIBRARIES
+            COMPILE_DEFINITIONS COMPILE_OPTIONS)
+        set(_recognition_model_property_values)
+        foreach(_recognition_model_host IN ITEMS snow-shot-recognition-session-controller-tests
+                snow-shot-screenshot-tool-palette-tests)
+            get_target_property(_recognition_model_host_values ${_recognition_model_host}
+                ${_recognition_model_property})
+            if(_recognition_model_host_values)
+                list(APPEND _recognition_model_property_values ${_recognition_model_host_values})
+            endif()
+        endforeach()
+        list(REMOVE_DUPLICATES _recognition_model_property_values)
+        if(_recognition_model_property_values)
+            set_property(TARGET snow-shot-recognition-model-benchmark PROPERTY
+                ${_recognition_model_property} "${_recognition_model_property_values}")
+        endif()
+    endforeach()
+    snow_shot_import_offscreen_platform(snow-shot-recognition-model-benchmark)
+    snow_shot_offscreen_qpa_environment(_recognition_model_benchmark_environment)
+    add_test(NAME snow-shot-recognition-model-benchmark
+        COMMAND snow-shot-recognition-model-benchmark -platform offscreen)
+    set_tests_properties(snow-shot-recognition-model-benchmark PROPERTIES LABELS "benchmark"
+        TIMEOUT 120 ENVIRONMENT "${_recognition_model_benchmark_environment}"
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
 endif()

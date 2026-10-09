@@ -78,6 +78,7 @@ class ScreenshotOcrController final : public QObject {
     void activateTable();
     void activateQr();
     void activateLatex();
+    void setRecognitionModel(const QString& selection);
     void activateImageConversion(SnowShotImageConversionFormat format);
     void openImageConversionSettings();
     // Leaves the visible recognition tool but deliberately keeps requests and cache entries alive.

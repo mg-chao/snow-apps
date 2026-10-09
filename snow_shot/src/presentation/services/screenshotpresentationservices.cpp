@@ -267,7 +267,39 @@ qint64 ScreenshotPresentationServices::nowNanoseconds() const {
                                           : m_state->clock.nsecsElapsed();
 }
 
+void ScreenshotPresentationServices::resetPresentation() {
+    m_state->timer.stop();
+    (void)m_smartSelectionTransition.update({}, false, nowNanoseconds() / 1000000);
+    m_state->toolbar = {};
+    m_state->lifecycle = {};
+    m_state->visual = {};
+    m_state->hints = {};
+    m_state->committed.reset();
+    m_state->hintMode = ScreenshotShortcutHintMode::Hidden;
+    m_state->pointerOwner.clear();
+    m_state->selectionOwner.clear();
+    m_state->hintOwner.clear();
+    m_state->selectionGlobal = {};
+    m_state->cursorPosition = {};
+    m_state->pointerLocal = {};
+    m_state->pointerCaptureGeometry = {};
+    m_state->sessionId = 0;
+    m_state->lastFrameNs = 0;
+    m_state->initialized = false;
+    m_state->preferencesDirty = true;
+    m_state->presentationDirty = false;
+    m_state->semanticDirty = false;
+    m_state->geometryDirty = false;
+    m_state->pointerDirty = false;
+    m_state->pointerKnown = false;
+    // Keep inFrame intact when a semantic subscriber ends the capture reentrantly.
+}
+
 void ScreenshotPresentationServices::updateOverlayState() {
+    const bool newSession =
+        !m_state->initialized || m_state->sessionId != m_context.captureState.sessionId;
+    if (newSession)
+        resetPresentation();
     const auto lifecycle = presentationLifecycle(m_context);
     const bool lifecycleChanged = lifecycle != m_state->lifecycle;
     if (lifecycle.displayRevision != m_state->lifecycle.displayRevision)
@@ -291,24 +323,12 @@ void ScreenshotPresentationServices::updateOverlayState() {
     hints.smartSelectionEnabled = m_context.intelligentSelection.smartSelectionEnabled();
     const bool firstSelection =
         !m_state->toolbar.selectionCanvas.isValid() && toolbar.selectionCanvas.isValid();
-    const bool newSession =
-        !m_state->initialized || m_state->sessionId != m_context.captureState.sessionId;
     const bool modeChanged =
         !m_state->initialized || hints.captureMode != m_state->hints.captureMode;
     if (!newSession && toolbar == m_state->toolbar && visual == m_state->visual &&
         hints == m_state->hints && !lifecycleChanged && !m_state->preferencesDirty &&
         !m_state->presentationDirty) {
         return;
-    }
-    if (newSession) {
-        m_state->timer.stop();
-        // Reset the trajectory as well as the pending work across capture epochs.
-        (void)m_smartSelectionTransition.update({}, false, nowNanoseconds() / 1000000);
-        m_state->pointerKnown = false;
-        m_state->pointerDirty = false;
-        m_state->pointerOwner.clear();
-        m_state->preferencesDirty = true;
-        m_state->committed.reset();
     }
     m_state->lifecycle = lifecycle;
     m_state->toolbar = toolbar;
@@ -330,7 +350,7 @@ void ScreenshotPresentationServices::updateOverlayState() {
 
 void ScreenshotPresentationServices::updatePointerPresentation(ScreenshotOverlayWindow* overlay,
                                                                const QPointF& localPosition) {
-    if (!overlay || m_context.interaction.inactive())
+    if (!overlay || !m_state->initialized || m_context.interaction.inactive())
         return;
     const QPoint position = overlay->captureGeometry().topLeft() +
                             QPoint(qFloor(localPosition.x()), qFloor(localPosition.y()));
@@ -385,16 +405,7 @@ void ScreenshotPresentationServices::flushPendingFrame() {
     if (m_state->inFrame || !m_state->initialized)
         return;
     if (m_state->sessionId != m_context.captureState.sessionId) {
-        m_state->timer.stop();
-        (void)m_smartSelectionTransition.update({}, false, nowNanoseconds() / 1000000);
-        m_state->semanticDirty = false;
-        m_state->presentationDirty = false;
-        m_state->geometryDirty = false;
-        m_state->pointerDirty = false;
-        m_state->pointerKnown = false;
-        m_state->pointerOwner.clear();
-        m_state->initialized = false;
-        m_state->committed.reset();
+        resetPresentation();
         return;
     }
     if (m_state->hints.captureMode != m_context.interaction.mode() ||

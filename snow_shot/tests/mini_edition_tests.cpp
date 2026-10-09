@@ -118,14 +118,16 @@ void toolbarDefaultsAndImports() {
                  QStringLiteral("pin_to_screen/automatic_text_recognition"))
                  .toBool(),
             "pin automatic recognition must default off");
-    for (const QString& key : {QStringLiteral("api_configuration/server_url"),
-                               QStringLiteral("screenshot/auto_recognize_qr_code"),
-                               QStringLiteral("screenshot_shortcuts/table_recognition"),
-                               QStringLiteral("screenshot_shortcuts/text_translation"),
-                               QStringLiteral("screenshot_conversion/vision_model"),
-                               QStringLiteral("screenshot_toolbar/table_qr_tool"),
-                               QStringLiteral("interface/translation_window_size"),
-                               QStringLiteral("extended_features/translation_page_enabled")}) {
+    for (const QString& key :
+         {QStringLiteral("api_configuration/server_url"),
+          QStringLiteral("screenshot/auto_recognize_qr_code"),
+          QStringLiteral("screenshot_shortcuts/table_recognition"),
+          QStringLiteral("screenshot_shortcuts/text_translation"),
+          QStringLiteral("screenshot_conversion/vision_model"),
+          QStringLiteral("screenshot_table/model"), QStringLiteral("screenshot_latex/model"),
+          QStringLiteral("screenshot_toolbar/table_qr_tool"),
+          QStringLiteral("interface/translation_window_size"),
+          QStringLiteral("extended_features/translation_page_enabled")}) {
         require(!storage::ConfigurationSchema::contains(key) &&
                     !storage::ConfigurationSchema::normalize(key, true).valid,
                 "unavailable settings must reject imports and writes");
@@ -233,6 +235,8 @@ void fullArchiveImportPreservesSupportedChoices() {
         {QStringLiteral("screenshot_shortcuts/text_translation"),
          QJsonArray{QStringLiteral("Ctrl+Alt+3")}},
         {QStringLiteral("screenshot_conversion/vision_model"), QStringLiteral("full-only-model")},
+        {QStringLiteral("screenshot_table/model"), QStringLiteral("dedicated")},
+        {QStringLiteral("screenshot_latex/model"), QStringLiteral("snow-shot:vision")},
         {QStringLiteral("screenshot_toolbar/table_qr_tool"), QStringLiteral("table-recognition")},
         {QStringLiteral("interface/translation_window_size"), QJsonObject()},
         {QStringLiteral("extended_features/translation_page_enabled"), true}};

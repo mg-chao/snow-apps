@@ -5,6 +5,7 @@
 #include "snow_shot/presentation/screenshotrecognitionsessioncontroller.h"
 #include "snow_shot/presentation/screenshottoolpalette.h"
 #include "snow_shot/presentation/screenshotimageconversionpersistence.h"
+#include "snow_shot/presentation/screenshotrecognitionmodelpersistence.h"
 #include "snow_shot/storage/applicationstorage.h"
 
 #include <QApplication>
@@ -100,6 +101,13 @@ void manualRecognitionWithoutRemoteProviders() {
     results.qr.emplace().contents = {QStringLiteral("qr")};
     results.latex.emplace().latex = QStringLiteral("x^2");
     results.visibleLatex = true;
+    results.tableEntries.append({QStringLiteral("dedicated"), {}, 1, *results.table, std::nullopt});
+    results.latexEntries.append(
+        {QStringLiteral("snow-shot:vision"), {}, 1, *results.latex, QString()});
+    results.tableModelSelection = QStringLiteral("dedicated");
+    results.latexModelSelection = QStringLiteral("snow-shot:vision");
+    results.tableEffectiveModel = QStringLiteral("dedicated");
+    results.latexEffectiveModel = QStringLiteral("vision-model");
     results.translatedText = std::make_shared<ScreenshotOcrPresentation>();
     results.conversions.append({SnowShotImageConversionFormat::Markdown, QStringLiteral("model"),
                                 QStringLiteral("# Converted")});
@@ -107,7 +115,10 @@ void manualRecognitionWithoutRemoteProviders() {
     sanitizeEditionRecognitionResults(results);
     require(results.text.has_value() && !results.table && !results.qr && !results.latex &&
                 !results.visibleLatex && !results.translatedText && results.conversions.isEmpty() &&
-                !results.visibleConversion,
+                !results.visibleConversion && results.tableEntries.isEmpty() &&
+                results.latexEntries.isEmpty() && results.tableModelSelection.isEmpty() &&
+                results.latexModelSelection.isEmpty() && results.tableEffectiveModel.isEmpty() &&
+                results.latexEffectiveModel.isEmpty(),
             "legacy recognition payloads must retain text and discard removed feature state");
 }
 
@@ -187,6 +198,15 @@ void legacyPinPayloadsRetainOnlySupportedRecognition() {
                << quint32(conversion.size());
         stream.writeRawData(conversion.constData(), static_cast<int>(conversion.size()));
         stream << quint32(0x4C415458) << quint8(1) << QStringLiteral("x^2") << true;
+        const QByteArray models = QByteArrayLiteral(
+            "{\"table_selection\":\"dedicated\",\"latex_selection\":\"snow-shot:vision\","
+            "\"tables\":[{\"model\":\"dedicated\",\"html\":\"<table><tr><td>x</td></tr></table>\","
+            "\"prompt_version\":1}],\"latex\":[{\"model\":\"snow-shot:vision\",\"latex\":\"x^2\","
+            "\"draft\":\"\",\"prompt_version\":1}]}");
+        stream << snow_shot::presentation::kRecognitionModelPayloadMarker
+               << snow_shot::presentation::kRecognitionModelPayloadVersion
+               << quint32(models.size());
+        stream.writeRawData(models.constData(), static_cast<int>(models.size()));
         stream << quint32(0x53535452) << translationVersion;
         if (translationVersion == 1) {
             stream << QStringList{QStringLiteral("Unavailable translation")};
@@ -202,7 +222,9 @@ void legacyPinPayloadsRetainOnlySupportedRecognition() {
                     results.text->presentation->lines.front().text == line.text && !results.table &&
                     !results.qr && !results.latex && !results.visibleLatex &&
                     !results.translatedText && results.conversions.isEmpty() &&
-                    !results.visibleConversion,
+                    !results.visibleConversion && results.tableEntries.isEmpty() &&
+                    results.latexEntries.isEmpty() && results.tableModelSelection.isEmpty() &&
+                    results.latexModelSelection.isEmpty(),
                 "Mini pin restore must skip removed payloads while retaining local text");
     }
 }
