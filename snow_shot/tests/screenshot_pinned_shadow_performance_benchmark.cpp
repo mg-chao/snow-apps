@@ -9,6 +9,7 @@
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QPainter>
+#include <QPainterPath>
 #include <QTextStream>
 #include <QLibrary>
 
@@ -142,6 +143,38 @@ void operator delete[](void* pointer, std::size_t) noexcept {
 }
 
 namespace {
+void savePreview(const QString& path) {
+    QImage image(QSize(1080, 560), QImage::Format_ARGB32_Premultiplied);
+    image.fill(Qt::transparent);
+    QPainter painter(&image);
+    const std::array radii = {QSizeF(), QSizeF(24, 24), QSizeF(100, 48)};
+    for (int row = 0; row < 2; ++row) {
+        painter.fillRect(QRect(0, row * 280, 1080, 280),
+                         row == 0 ? QColor(242, 244, 247) : QColor(30, 34, 41));
+        for (int column = 0; column < 3; ++column) {
+            const QRect outline(56 + column * 360, 60 + row * 280, 248, 160);
+            ScreenshotPinnedShadowCache cache;
+            ScreenshotPinnedDecorationRenderer::renderShadow(
+                painter, outline, radii[static_cast<std::size_t>(column)], 32,
+                row == 0 ? QColor(Qt::black) : QColor(105, 177, 255), image.rect(), cache);
+            QPainterPath content;
+            const auto& radius = radii[static_cast<std::size_t>(column)];
+            content.addRoundedRect(outline, radius.width(), radius.height());
+            painter.setRenderHint(QPainter::Antialiasing);
+            painter.fillPath(content, row == 0 ? QColor(Qt::white) : QColor(53, 60, 72));
+            painter.setPen(row == 0 ? QColor(70, 80, 95) : QColor(227, 233, 242));
+            painter.drawText(outline, Qt::AlignCenter,
+                             QStringLiteral("%1\n32 px shadow")
+                                 .arg(column == 0   ? QStringLiteral("Square")
+                                      : column == 1 ? QStringLiteral("Rounded")
+                                                    : QStringLiteral("Elliptical")));
+        }
+    }
+    painter.end();
+    if (!image.save(path))
+        throw std::runtime_error("could not save shadow preview");
+}
+
 struct Scenario {
     const char* name;
     QSizeF radii;
@@ -273,11 +306,17 @@ int main(int argc, char** argv) {
         QStringLiteral("trace-allocations"),
         QStringLiteral("Diagnose one Windows vector-paint allocation sample"));
     parser.addOption(traceOption);
+    const QCommandLineOption previewOption(QStringLiteral("preview"),
+                                           QStringLiteral("Save a shadow appearance PNG"),
+                                           QStringLiteral("path"));
+    parser.addOption(previewOption);
     parser.process(application);
     const int iterations = parser.value(iterationsOption).toInt();
     if (iterations < 1 || iterations > 100000)
         return 2;
     try {
+        if (parser.isSet(previewOption))
+            savePreview(parser.value(previewOption));
         QJsonArray results;
         const std::array scenarios = {
             Scenario{"disabled", QSizeF(300, 120), 16, false},

@@ -78,6 +78,42 @@ void roundedAndShadowedResultHasRealTransparency() {
     require(shadowAlpha > 0 && shadowAlpha < 255, "shadow edge is not semitransparent");
 }
 
+void exportAndLiveShadowShareSoftFalloff() {
+    for (const int radius : {0, 16}) {
+        for (const int width : {8, 16, 32}) {
+            const QColor color(40, 80, 120, 190);
+            QImage content = solidContent();
+            content.setDevicePixelRatio(1.0);
+            const QImage result =
+                ScreenshotSelectionShadowRenderer::composeExport(content, radius, width, color);
+            QImage live(result.size(), QImage::Format_ARGB32_Premultiplied);
+            live.fill(Qt::transparent);
+            {
+                QPainter painter(&live);
+                ScreenshotSelectionShadowRenderer::renderResultShadow(
+                    painter, QRectF(QPointF(width, width), QSizeF(content.size())), radius, width,
+                    color, 1.0);
+            }
+            const int centerX = width + content.width() / 2;
+            for (int y = 0; y < width; ++y)
+                require(result.pixelColor(centerX, y) == live.pixelColor(centerX, y),
+                        "exported and live shadow profiles disagree");
+            const int edge = result.pixelColor(centerX, width - 1).alpha();
+            require(result.pixelColor(centerX, width - 1 - width / 8).alpha() <
+                        qRound(color.alpha() * 0.18),
+                    "exported shadow retains the previous wide dense band");
+            require(result.pixelColor(centerX, width - 1 - width / 4).alpha() * 2 < edge &&
+                        result.pixelColor(centerX, width - 1 - width / 2).alpha() * 5 < edge,
+                    "exported shadow has a broad opaque shelf");
+            require(result.pixelColor(centerX, 0).alpha() == 0,
+                    "exported shadow has a visible outer cutoff");
+            require(result.pixelColor(centerX, width + content.height() / 2) ==
+                        content.pixelColor(content.width() / 2, content.height() / 2),
+                    "soft shadow changed the screenshot content");
+        }
+    }
+}
+
 void roundedAlphaMaskMatchesArgbReference() {
     for (const QSize size : {QSize(41, 29), QSize(1025, 513)}) {
         QImage source(size, QImage::Format_ARGB32_Premultiplied);
@@ -364,6 +400,7 @@ int main(int argc, char** argv) {
         squareResultPreservesPhysicalPixels();
         sharedMetadataAndOpacityKeepMappedOwnership();
         roundedAndShadowedResultHasRealTransparency();
+        exportAndLiveShadowShareSoftFalloff();
         roundedAlphaMaskMatchesArgbReference();
         compoundCompositionStartsTransparentForSmallAndLargeImages();
         previewAssetsAreReleasedAfterCapture();

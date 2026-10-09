@@ -2709,7 +2709,7 @@ void hoveredSelectionToolbarHidesBorderAndRendersShadowPreview() {
     require(preview.pixelColor(17, 17) == checkerLight || preview.pixelColor(17, 17) == checkerDark,
             "the expanded shadow area should match the color picker checkerboard");
 
-    const QColor shadow = preview.pixelColor(18, 23);
+    const QColor shadow = preview.pixelColor(19, 26);
     require(shadow != checkerLight && shadow != checkerDark,
             "the shadow should composite over the transparency checkerboard");
     require(preview.pixelColor(12, 40).blue() < shadow.blue(),

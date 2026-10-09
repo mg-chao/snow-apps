@@ -1,6 +1,7 @@
 #include "snow_draw_engine_qt/snow_canvas_image.h"
 #include <snow/memory/pixel_array.h>
 #include "snow_shot/presentation/screenshotselectionshadowrenderer.h"
+#include "snow_shot/presentation/screenshotshadowprofile.h"
 
 #include "snow_shot/presentation/screenshotresultcompositor.h"
 #include "snow_shot/presentation/screenshotselectionlimits.h"
@@ -20,7 +21,7 @@
 #include <vector>
 
 namespace {
-constexpr qreal kPeakAlphaScale = 0.36;
+using namespace snow_shot::presentation::shadow_profile;
 constexpr int kCacheEntryLimit = 8;
 constexpr std::size_t kCacheByteLimit = 16u * 1024u * 1024u;
 constexpr int kDprQuantization = 64;
@@ -107,15 +108,14 @@ QImage buildShadowAsset(const ShadowKey& key) {
     const int shadow = std::max(1, key.physicalShadowWidth);
     const int cornerSpan = radius + shadow;
     const int size = std::max(3, cornerSpan * 2 + 1);
-    QImage asset = snowCanvasAllocateImage(QSize(size, size), QImage::Format_ARGB32);
+    QImage asset = snowCanvasAllocateImage(QSize(size, size), QImage::Format_ARGB32_Premultiplied);
     asset.fill(Qt::transparent);
 
     QColor color = QColor::fromRgba(key.color);
-    const qreal peakAlpha = kPeakAlphaScale * static_cast<qreal>(color.alphaF());
+    const qreal peakAlpha = peakAlphaScale * static_cast<qreal>(color.alphaF());
     // Pixel centers range from 0.5 to size - 0.5, so the asset's geometric
-    // center is size / 2. Keeping the one-pixel center slice inside the shape
-    // is especially important for radius 0: that slice is stretched across
-    // the selection by the nine-slice renderer and must remain transparent.
+    // center is size / 2. Keep the central texel inside the shape even for
+    // radius 0: the slice renderer omits this entirely transparent interior.
     const qreal center = size / 2.0;
     const qreal halfWidth = center - shadow;
     const qreal halfHeight = center - shadow;
@@ -128,11 +128,8 @@ QImage buildShadowAsset(const ShadowKey& key) {
             if (distance < 0.0 || distance >= shadow || peakAlpha <= 0.0) {
                 continue;
             }
-            const qreal progress =
-                std::clamp(1.0 - distance / static_cast<qreal>(shadow), 0.0, 1.0);
-            const qreal smooth = progress * progress * (3.0 - 2.0 * progress);
-            color.setAlphaF(static_cast<float>(peakAlpha * smooth));
-            scanLine[x] = color.rgba();
+            color.setAlphaF(static_cast<float>(peakAlpha * falloff(distance, shadow)));
+            scanLine[x] = qPremultiply(color.rgba());
         }
     }
     return asset;
@@ -236,6 +233,10 @@ void paintNineSlice(QPainter& painter, const QRectF& selectionBounds, qreal corn
     int targetIndex = 0;
     for (int row = 0; row < 3; ++row) {
         for (int column = 0; column < 3; ++column, ++targetIndex) {
+            // The center is entirely inside the content and always transparent. Drawing it
+            // would still make Qt visit a selection-sized surface on every shadow repaint.
+            if (row == 1 && column == 1)
+                continue;
             const QRectF& target = targetRects[targetIndex];
             if (target.width() <= 0.0 || target.height() <= 0.0) {
                 continue;
@@ -522,7 +523,7 @@ QImage regionShadow(const QImage& mask, int width, const QColor& color) {
             const int a =
                 std::clamp(qRound(static_cast<qreal>(alpha[static_cast<std::size_t>(y) * rowWidth +
                                                            static_cast<std::size_t>(x)]) *
-                                  static_cast<qreal>(color.alphaF()) * kPeakAlphaScale *
+                                  static_cast<qreal>(color.alphaF()) * peakAlphaScale *
                                   (255 - maskRow[x]) / 255.0),
                            0, 255);
             row[x] = qPremultiply(qRgba(color.red(), color.green(), color.blue(), a));

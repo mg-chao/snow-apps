@@ -1218,6 +1218,7 @@ set(PROJECT_HEADERS
     include/snow_shot/presentation/screenshotclipboardservice.h
     include/snow_shot/presentation/screenshotresultcompositor.h
     include/snow_shot/presentation/screenshotselectionshadowrenderer.h
+    include/snow_shot/presentation/screenshotshadowprofile.h
     include/snow_shot/presentation/screenshotcolorpickercontroller.h
     include/snow_shot/presentation/screenshotcolorpickerwindow.h
     include/snow_shot/presentation/screenshotcontroller.h
@@ -2176,8 +2177,13 @@ if(SNOW_SHOT_BUILD_TESTS)
         snow_draw_engine_qt_canvas
         Qt6::Widgets
     )
+    snow_shot_import_offscreen_platform(snow-shot-screenshot-result-compositor-tests)
     add_test(NAME snow-shot-screenshot-result-compositor-tests
-             COMMAND snow-shot-screenshot-result-compositor-tests)
+             COMMAND snow-shot-screenshot-result-compositor-tests -platform offscreen)
+    set_tests_properties(snow-shot-screenshot-result-compositor-tests PROPERTIES
+        ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}"
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+    )
 
     add_executable(snow-shot-screenshot-export-service-tests
         tests/screenshot_export_service_tests.cpp

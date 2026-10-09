@@ -50,7 +50,7 @@ void squareShadowMatchesExistingAssets() {
             require(actual.pixelColor(x, y).alpha() == 0, "shadow paints into square content");
     require(actual.pixelColor(outline.center().x(), outline.top() - 17).alpha() == 0,
             "square shadow exceeds its finite width");
-    require(actual.pixelColor(outline.center().x(), outline.top() - 1).alpha() > 60,
+    require(actual.pixelColor(outline.center().x(), outline.top() - 1).alpha() > 50,
             "square shadow has no peak near the outline");
 }
 
@@ -64,6 +64,66 @@ void radiusIsClampedBeforeAssetLookup() {
     const auto diagnostics = ScreenshotSelectionShadowRenderer::diagnosticsForCurrentThread();
     require(diagnostics.retainedBytes <= 65u * 65u * 4u,
             "unclamped radius caused a radius-squared shadow asset");
+}
+
+void shadowFadesWithoutAnOpaqueShelf() {
+    // Half-peak coverage must occupy at most an eighth of the margin (formerly about a
+    // fifth), with a soft outer tail. Test rendered pixels across both cache backends.
+    const QRect outline(72, 72, 800, 640);
+    for (const int width : {8, 16, 24, 64}) {
+        for (const QSizeF& radii : {QSizeF(), QSizeF(32, 32), QSizeF(300, 300), QSizeF(320, 110)}) {
+            for (const QColor& color : {QColor(Qt::black), QColor(105, 177, 255, 128)}) {
+                ScreenshotPinnedShadowCache cache;
+                const QImage image = render(outline, radii, width, color, cache);
+                const auto alphaAt = [&](int offset) {
+                    return image.pixelColor(outline.center().x(), outline.top() - 1 - offset)
+                        .alpha();
+                };
+                const int edge = alphaAt(0);
+                require(edge > color.alpha() * 0.22, "shadow lost its contact definition");
+                int densePixels = 0;
+                for (int offset = 0; offset < width; ++offset)
+                    if (alphaAt(offset) >= qRound(color.alpha() * 0.18))
+                        ++densePixels;
+                require(densePixels > 0 && densePixels <= (width + 7) / 8,
+                        "the dense shadow band was not reduced to roughly half its width");
+                require(alphaAt(width / 4) * 2 < edge,
+                        "shadow retains a broad, solid-looking band near the content");
+                require(alphaAt(width / 2) * 5 < edge,
+                        "shadow midpoint is too dense for a soft falloff");
+                require(alphaAt(width * 3 / 4) <= 2 && alphaAt(width - 1) == 0,
+                        "shadow tail does not fade smoothly to transparent");
+                for (int offset = 1; offset < width; ++offset) {
+                    require(alphaAt(offset) <= alphaAt(offset - 1),
+                            "shadow opacity increases away from the content");
+                    const int step = std::max(1, width / 8);
+                    if (offset >= step && offset < width / 2)
+                        require(alphaAt(offset) < alphaAt(offset - step),
+                                "shadow contains a flat inner opacity shelf");
+                }
+            }
+        }
+    }
+}
+
+void vectorAndBitmapProfilesAgree() {
+    const QRect outline(48, 48, 800, 640);
+    for (const int width : {1, 2, 8, 16, 24, 32}) {
+        for (const QColor& color : {QColor(Qt::black), QColor(105, 177, 255, 128)}) {
+            ScreenshotPinnedShadowCache bitmapCache;
+            const QImage bitmap = render(outline, QSizeF(32, 32), width, color, bitmapCache);
+            for (const QSizeF& radii : {QSizeF(300, 300), QSizeF(320, 110)}) {
+                ScreenshotPinnedShadowCache vectorCache;
+                const QImage vector = render(outline, radii, width, color, vectorCache);
+                for (int offset = 0; offset <= width; ++offset) {
+                    const QPoint sample(outline.center().x(), outline.top() - 1 - offset);
+                    require(std::abs(bitmap.pixelColor(sample).alpha() -
+                                     vector.pixelColor(sample).alpha()) <= 1,
+                            "bitmap and vector shadows have different edge falloffs");
+                }
+            }
+        }
+    }
 }
 
 void ellipticalGeometryIsCachedAcrossColors() {
@@ -85,8 +145,8 @@ void ellipticalGeometryIsCachedAcrossColors() {
     require(cache.diagnostics().paletteBuilds == 3 && cache.diagnostics().paletteHits == 1,
             "warm recoloring rebuilt the cached solid brushes");
     const QPoint peak(outline.center().x(), outline.top() - 1);
-    require(std::abs(normal.pixelColor(peak).alpha() - 92) <= 5,
-            "vector shadow does not reach the shared 0.36 peak");
+    require(normal.pixelColor(peak).alpha() >= 78 && normal.pixelColor(peak).alpha() <= 92,
+            "vector shadow lost contact definition near the 0.36 boundary peak");
     require(std::abs(active.pixelColor(peak).alpha() - normal.pixelColor(peak).alpha()) <= 1,
             "active color changed alpha despite equal configured alpha");
     if (std::abs(locked.pixelColor(peak).alpha() * 2 - normal.pixelColor(peak).alpha()) > 7) {
@@ -100,8 +160,10 @@ void ellipticalGeometryIsCachedAcrossColors() {
     require(locked.pixelColor(peak).red() > locked.pixelColor(peak).blue(),
             "locked shadow does not use its independent color");
     const QImage translucent = render(outline, radii, 24, QColor(40, 80, 120, 190), cache);
-    require(translucent.pixelColor(peak).alpha() == qRound(0.36 * 190),
-            "coverage coalescing exceeded the configured 0.36 alpha peak");
+    require(std::abs(translucent.pixelColor(peak).alpha() -
+                     qRound(normal.pixelColor(peak).alpha() * 190.0 / 255.0)) <= 1 &&
+                translucent.pixelColor(peak).alpha() <= qRound(0.36 * 190),
+            "coverage coalescing did not preserve the configured alpha");
     require(normal.pixelColor(outline.center()).alpha() == 0,
             "elliptical shadow paints into the content interior");
     require(normal.pixelColor(outline.center().x(), outline.top() - 25).alpha() == 0,
@@ -162,16 +224,15 @@ void exteriorBandsHaveNoLeaksOrGaps() {
                         ellipseExteriorDistance(QPointF(pixel) + QPointF(0.5, 0.5), center, radii);
                     const int alpha = image.pixelColor(pixel).alpha();
                     const qreal progress = std::clamp(1.0 - actualDistance / width, 0.0, 1.0);
-                    const int expected =
-                        qRound(255.0 * 0.36 * progress * progress * (3.0 - 2.0 * progress));
+                    const int expected = qRound(255.0 * 0.36 * std::pow(progress, 6));
                     // Spans sample the analytic distance at physical pixel centers. Quantized
                     // coverage and configured alpha can introduce at most one alpha unit each.
                     require(std::abs(alpha - expected) <= 2,
                             "curved shadow band has an opacity seam or wrong falloff");
                     require(alpha <= previousAlpha + 2,
                             "curved shadow opacity rises toward the exterior");
-                    if (actualDistance < width * 0.6)
-                        require(alpha > 15, "curved shadow has a gap between exterior bands");
+                    if (actualDistance < width * 0.35)
+                        require(alpha > 4, "curved shadow has a gap between exterior bands");
                     if (actualDistance > width + 0.75)
                         require(alpha == 0, "curved shadow exceeds its finite physical width");
                     previousAlpha = alpha;
@@ -245,7 +306,7 @@ void physicalCoordinatesRemainExactAtFractionalDpi() {
         ScreenshotPinnedDecorationRenderer::renderShadow(painter, QRect(16, 16, 208, 148), {}, 16,
                                                          Qt::black, image.rect(), cache);
         painter.end();
-        require(image.pixelColor(120, 15).alpha() > 85,
+        require(image.pixelColor(120, 15).alpha() > 75,
                 "fractional DPI moved the physical shadow outline");
         require(image.pixelColor(120, 16).alpha() == 0,
                 "fractional DPI shadow crossed into the content");
@@ -260,6 +321,8 @@ int main(int argc, char** argv) {
     try {
         squareShadowMatchesExistingAssets();
         radiusIsClampedBeforeAssetLookup();
+        shadowFadesWithoutAnOpaqueShelf();
+        vectorAndBitmapProfilesAgree();
         ellipticalGeometryIsCachedAcrossColors();
         exteriorBandsHaveNoLeaksOrGaps();
         largeEqualRadiusUsesBoundedVectorGeometry();

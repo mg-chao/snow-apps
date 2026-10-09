@@ -1,6 +1,7 @@
 #include "screenshotpinneddecorationrenderer.h"
 
 #include "snow_shot/presentation/screenshotselectionshadowrenderer.h"
+#include "snow_shot/presentation/screenshotshadowprofile.h"
 
 #include <QBrush>
 #include <QPainter>
@@ -11,24 +12,19 @@
 #include <vector>
 
 namespace {
-constexpr qreal kPeakAlphaScale = 0.36;
+using namespace snow_shot::presentation::shadow_profile;
 constexpr qreal kMaximumNineSliceRadius = 256.0;
 constexpr qreal kHalfPi = 1.5707963267948966;
 // A fully opaque configured color peaks at 92 alpha, so finer cached coverage levels do not
 // produce additional visible detail. Grouping at that precision coalesces adjacent spans and
 // avoids hundreds of redundant paint calls. Recoloring introduces at most one alpha-unit error.
-constexpr std::size_t kCoverageCount = 93;
+constexpr std::size_t kCoverageCount = static_cast<std::size_t>(qRound(255 * peakAlphaScale)) + 1;
 // Qt can dispatch solid fills by scanline count. A narrow but tall shadow rectangle otherwise
 // creates thread-pool jobs for only a few hundred pixels. Bounded strips keep this work local.
 constexpr int kMaximumSpanHeight = 64;
 
 qreal boundedRadius(qreal radius, qreal maximum) {
     return std::isfinite(radius) ? std::clamp(radius, 0.0, maximum) : 0.0;
-}
-
-qreal falloffAt(qreal distance, int width) {
-    const qreal progress = std::clamp(1.0 - distance / width, 0.0, 1.0);
-    return progress * progress * (3.0 - 2.0 * progress);
 }
 
 int firstPixel(qreal boundary) {
@@ -130,7 +126,7 @@ struct ScreenshotPinnedShadowCache::Geometry {
         const int verticalStart = firstPixel(cy);
         const int verticalEnd = firstPixel(bottom - ry);
         for (int distance = 0; distance < width; ++distance) {
-            const int coverage = qRound(255 * kPeakAlphaScale * falloffAt(distance + 0.5, width));
+            const int coverage = qRound(255 * peakAlphaScale * falloff(distance + 0.5, width));
             if (coverage == 0)
                 continue;
             auto& band = spans[static_cast<std::size_t>(coverage)];
@@ -174,10 +170,9 @@ struct ScreenshotPinnedShadowCache::Geometry {
             };
             for (int x = start; x < end; ++x) {
                 const qreal distance = ellipseDistance(cx - x - 0.5, cy - py, rx, ry);
-                const int coverage =
-                    distance >= width || distance < 0.0
-                        ? 0
-                        : qRound(255 * kPeakAlphaScale * falloffAt(distance, width));
+                const int coverage = distance >= width || distance < 0.0
+                                         ? 0
+                                         : qRound(255 * peakAlphaScale * falloff(distance, width));
                 if (coverage != runCoverage) {
                     flushRun(x);
                     runStart = x;
@@ -201,7 +196,7 @@ struct ScreenshotPinnedShadowCache::Geometry {
         int lastAlpha = -1;
         for (std::size_t coverage = 0; coverage < kCoverageCount; ++coverage) {
             QColor sample = color;
-            sample.setAlpha(std::min(qRound(kPeakAlphaScale * color.alpha()),
+            sample.setAlpha(std::min(qRound(peakAlphaScale * color.alpha()),
                                      qRound(color.alpha() * static_cast<qreal>(coverage) / 255.0)));
             if (sample.alpha() == lastAlpha)
                 palette.brushes[coverage] = palette.brushes[coverage - 1];
