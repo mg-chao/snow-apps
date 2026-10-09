@@ -260,6 +260,123 @@ void serialNumberAppearanceDefaultsPreserveSessionSequences() {
         }
     }
 }
+void selectedSerialNumberEditsPreserveCreationDefaults() {
+    constexpr quint32 properties =
+        SnowCanvasSerialNumberStyleMixedNumber | SnowCanvasSerialNumberStyleMixedColor |
+        SnowCanvasSerialNumberStyleMixedFill | SnowCanvasSerialNumberStyleMixedFillStyle |
+        SnowCanvasSerialNumberStyleMixedFontSize | SnowCanvasSerialNumberStyleMixedFontFamily |
+        SnowCanvasSerialNumberStyleMixedStrokeWidth | SnowCanvasSerialNumberStyleMixedStrokeStyle |
+        SnowCanvasSerialNumberStyleMixedOpacity | SnowCanvasSerialNumberStyleMixedType |
+        SnowCanvasSerialNumberStyleMixedNumericType;
+    const auto originalDefaults = screenshotCanvasToolStyleDefaults();
+    const auto restore = qScopeGuard(
+        [&] { static_cast<void>(persistScreenshotCanvasToolStyles(originalDefaults)); });
+    SnowCanvasRuntime runtime;
+    SnowCanvasWidget canvas(runtime);
+    ScreenshotToolPalette palette(options());
+    int saves = 0;
+    int replications = 0;
+    ScreenshotStyleBinding binding(
+        palette, canvas, &palette, [&](const SnowCanvasStyleEdit&) { ++replications; },
+        [&](const SnowCanvasStyleEdit& edit) {
+            ++saves;
+            return persistScreenshotCanvasStyleEdit(edit);
+        });
+    QObject::connect(&canvas, &SnowCanvasWidget::styleToolbarStateChanged, &palette,
+                     [&] { palette.setStyleToolbarState(canvas.canvasStyleToolbarState()); });
+    auto defaults = originalDefaults;
+    defaults.serialNumber = SnowCanvasSerialNumberStyle{};
+    applyScreenshotCanvasToolStyles(canvas, defaults);
+    canvas.resize(400, 300);
+    canvas.show();
+    require(canvas.setViewportCamera(200, 150, 1) &&
+                canvas.setCanvasTool(SnowCanvasTool::SerialNumber),
+            "prepare selected serial number style fixture");
+    palette.setActiveTool(ScreenshotToolPalette::Tool::SerialNumber);
+    palette.show();
+    QApplication::processEvents();
+    mouse(canvas, QEvent::MouseButtonPress, {80, 80});
+    mouse(canvas, QEvent::MouseButtonRelease, {80, 80});
+    const auto creationDefaults = palette.creationStyleDefaults();
+    const auto configuration =
+        snow_shot::storage::ApplicationStorage::instance().configuration().snapshot();
+    const QPointF point(80, 80);
+    QMouseEvent press(QEvent::MouseButtonPress, point, canvas.mapToGlobal(point.toPoint()),
+                      Qt::RightButton, Qt::RightButton, Qt::NoModifier);
+    QMouseEvent release(QEvent::MouseButtonRelease, point, canvas.mapToGlobal(point.toPoint()),
+                        Qt::RightButton, Qt::NoButton, Qt::NoModifier);
+    QApplication::sendEvent(&canvas, &press);
+    QApplication::sendEvent(&canvas, &release);
+    require(canvas.canvasStyleToolbarState().source ==
+                SnowCanvasStyleToolbarSource::SelectedSerialNumber,
+            "fixture sequence number is selected");
+    adqt::widgets::AdLineEdit* input = nullptr;
+    for (auto* candidate : palette.findChildren<adqt::widgets::AdLineEdit*>()) {
+        if (candidate->toolTip() == QStringLiteral("Sequence number (scroll to adjust)")) {
+            input = candidate;
+            break;
+        }
+    }
+    require(input != nullptr, "selected sequence number exposes its number editor");
+    input->setText(QStringLiteral("55"));
+    require(QMetaObject::invokeMethod(input, "editingFinished", Qt::DirectConnection) &&
+                canvas.canvasStyleToolbarState().serialNumberStyle.number == 55,
+            "number editor updates the selected sequence number");
+    auto selected = canvas.canvasStyleToolbarState().serialNumberStyle;
+    selected.type = SnowCanvasSerialNumberType::OutlinedSquare;
+    selected.numericType = SnowCanvasSerialNumberNumericType::Roman;
+    selected.color = QColor(17, 29, 43);
+    selected.fill = QColor(50, 60, 70, 128);
+    selected.fillStyle = SnowCanvasFillStyle::CrossLine;
+    selected.fontSize = 40;
+    selected.fontFamily = QStringLiteral("Selected font");
+    selected.strokeWidth = 3;
+    selected.strokeStyle = SnowCanvasStrokeStyle::Dashed;
+    selected.opacity = 0.5;
+    require(canvas.commitStyleEdit(SnowCanvasSerialNumberEdit{selected, properties}) &&
+                canvas.canvasStyleToolbarState().serialNumberStyle == selected,
+            "selected sequence number accepts appearance and format edits");
+    require(
+        saves == 0 && replications == 0 && palette.creationStyleDefaults() == creationDefaults &&
+            snow_shot::storage::ApplicationStorage::instance().configuration().snapshot() ==
+                configuration,
+        "selected sequence number edits never remember, replicate or persist creation defaults");
+    require(
+        persistScreenshotCanvasStyleEdit(SnowCanvasSerialNumberEdit{selected, properties, false}) &&
+            snow_shot::storage::ApplicationStorage::instance().configuration().snapshot() ==
+                configuration,
+        "direct persistence of a selection edit preserves stored preferences");
+    require(canvas.resetEditingState(), "leave sequence number selection");
+    for (int repeat = 0; repeat < 2; ++repeat) {
+        require(canvas.undo(), "undo selected sequence number styling");
+    }
+    for (int repeat = 0; repeat < 2; ++repeat) {
+        require(canvas.redo(), "redo selected sequence number styling");
+    }
+    require(canvas.setCanvasTool(SnowCanvasTool::SerialNumber) &&
+                canvas.canvasStyleToolbarState().serialNumberStyle == creationDefaults.serialNumber,
+            "selection styling and history preserve the next sequence number and appearance");
+    mouse(canvas, QEvent::MouseButtonPress, {250, 180});
+    mouse(canvas, QEvent::MouseButtonRelease, {250, 180});
+    require(documentSlots(runtime)
+                    .last()
+                    .toObject()
+                    .value(QStringLiteral("data"))
+                    .toObject()
+                    .value(QStringLiteral("SerialNumber"))
+                    .toObject()
+                    .value(QStringLiteral("number"))
+                    .toInt() == creationDefaults.serialNumber.number,
+            "new sequence number uses the creation counter from before selection styling");
+    auto creation = canvas.canvasStyleToolbarState().serialNumberStyle;
+    creation.fontSize = 32;
+    require(canvas.commitStyleEdit(
+                SnowCanvasSerialNumberEdit{creation, SnowCanvasSerialNumberStyleMixedFontSize}) &&
+                saves == 1 && replications == 1 &&
+                palette.creationStyleDefaults().serialNumber.fontSize == 32 &&
+                screenshotCanvasToolStyleDefaults().serialNumber.fontSize == 32,
+            "editing creation styles still remembers and saves future preferences");
+}
 void newScreenshotDocumentRestartsSerialNumberSequences() {
     const SnowCanvasSerialNumberNumericType types[] = {
         SnowCanvasSerialNumberNumericType::Arabic,
@@ -800,6 +917,7 @@ void runScreenshotStyleBindingTests() {
 }
 
 void runScreenshotSerialNumberRestartTests() {
+    selectedSerialNumberEditsPreserveCreationDefaults();
     serialNumberAppearanceDefaultsPreserveSessionSequences();
     newScreenshotDocumentRestartsSerialNumberSequences();
     const auto original = screenshotCanvasToolStyleDefaults();

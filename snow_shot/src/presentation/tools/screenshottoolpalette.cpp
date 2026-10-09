@@ -999,7 +999,11 @@ ScreenshotToolPalette::ScreenshotToolPalette(const Options& options, QWidget* pa
                 [this]() { emit textStylePopupInteractionBegan(); },
                 [this]() { emit textStylePopupInteractionEnded(); },
                 [this](const SnowCanvasSerialNumberStyle& style, quint32 properties) {
-                    if (!submitStyleEdit(SnowCanvasSerialNumberEdit{style, properties}))
+                    const bool creationDefaults =
+                        m_styleControls->styleState().m_styleSource !=
+                        SnowCanvasStyleToolbarSource::SelectedSerialNumber;
+                    if (!submitStyleEdit(
+                            SnowCanvasSerialNumberEdit{style, properties, creationDefaults}))
                         return;
                     emit serialNumberStyleChanged(style);
                 },

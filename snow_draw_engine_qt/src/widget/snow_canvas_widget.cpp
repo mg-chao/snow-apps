@@ -3170,9 +3170,15 @@ bool SnowCanvasWidget::Impl::rememberDraftStyle(const SnowCanvasStyleEdit& edit)
 }
 
 bool SnowCanvasWidget::commitStyleEdit(const SnowCanvasStyleEdit& edit) {
-    if (!interactionEnabled() || !applyStyleEdit(edit) || !m_impl->rememberDraftStyle(edit))
+    auto committedEdit = edit;
+    if (auto* serial = std::get_if<SnowCanvasSerialNumberEdit>(&committedEdit)) {
+        serial->creationDefaults =
+            canvasStyleToolbarState().source != SnowCanvasStyleToolbarSource::SelectedSerialNumber;
+    }
+    if (!interactionEnabled() || !applyStyleEdit(committedEdit) ||
+        !m_impl->rememberDraftStyle(committedEdit))
         return false;
-    emit styleEditCommitted(edit);
+    emit styleEditCommitted(committedEdit);
     return true;
 }
 

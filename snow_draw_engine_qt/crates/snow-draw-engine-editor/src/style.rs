@@ -2208,16 +2208,12 @@ impl Editor {
             let mut transaction = Transaction::new("update serial number style");
             let mut next_selection_elements = Vec::new();
             let mut next_selection_arrows = Vec::new();
-            let mut number_updates = Vec::new();
 
             for id in self.state.selection.ids.iter().copied() {
                 if let Ok(current_serial) = document.serial_number(id) {
                     let updated_serial =
                         serial_number_with_style_properties(current_serial, &style, properties);
                     validate_serial_number(&updated_serial)?;
-                    if explicit_number && updated_serial.serial_number_type.supports_number() {
-                        number_updates.push((updated_serial.numeric_type, updated_serial.number));
-                    }
                     next_selection_elements.push(SelectionRectState {
                         id,
                         rect: serial_number_rect_proxy(&updated_serial),
@@ -2241,14 +2237,8 @@ impl Editor {
                 }
             }
 
-            self.update_default_serial_number_style(
-                &style,
-                creation_properties & !SERIAL_NUMBER_STYLE_MIXED_NUMBER,
-            );
-            for (numeric_type, number) in number_updates {
-                self.state.set_serial_number_value(numeric_type, number);
-                self.state.serial_number_sequence_overridden[numeric_type as usize] = true;
-            }
+            // Selection edits belong to the document. Creation appearance and
+            // per-format counters change only when editing without a selection.
             if transaction.is_empty() {
                 return Ok(None);
             }
@@ -3773,7 +3763,7 @@ mod tests {
         assert_eq!(*document.rectangle(rectangle_id).unwrap(), rectangle);
     }
     #[test]
-    fn serial_number_selected_value_edits_update_only_the_selected_numeric_types() {
+    fn serial_number_selected_value_edits_preserve_all_creation_sequences() {
         use snow_draw_engine_document::SerialNumberNumericType;
         let mut document = DocumentModel::new();
         let mut insert = Transaction::new("insert mixed numeric types");
@@ -3797,6 +3787,8 @@ mod tests {
         document.apply_transaction(insert).unwrap();
         let mut editor = Editor::new(Default::default()).unwrap();
         editor.state.default_serial_number.number = 7;
+        let values = editor.state.serial_number_values();
+        let overrides = editor.state.serial_number_sequence_overridden;
         editor.set_selection_state(ids.clone(), Some(ids[0]));
         let mut style = editor.serial_number_style(&document);
         style.number = 55;
@@ -3810,6 +3802,8 @@ mod tests {
         for id in ids {
             assert_eq!(document.serial_number(id).unwrap().number, 55);
         }
+        assert_eq!(editor.state.serial_number_values(), values);
+        assert_eq!(editor.state.serial_number_sequence_overridden, overrides);
         editor.set_selection_state(Vec::new(), None);
         assert_eq!(editor.serial_number_style(&document).number, 7);
         for numeric_type in [
@@ -3825,7 +3819,7 @@ mod tests {
                     SERIAL_NUMBER_STYLE_MIXED_NUMERIC_TYPE,
                 )
                 .unwrap();
-            assert_eq!(editor.serial_number_style(&document).number, 55);
+            assert_eq!(editor.serial_number_style(&document).number, 1);
         }
     }
 

@@ -40,6 +40,7 @@ struct SnowCanvasTextEdit {
 struct SnowCanvasSerialNumberEdit {
     SnowCanvasSerialNumberStyle style;
     quint32 properties = 0;
+    bool creationDefaults = true;
 };
 struct SnowCanvasFilterEdit {
     SnowCanvasFilterStyle style;
@@ -71,6 +72,19 @@ using SnowCanvasStyleEdit =
     std::variant<SnowCanvasShapeEdit, SnowCanvasTextEdit, SnowCanvasSerialNumberEdit,
                  SnowCanvasFilterEdit, SnowCanvasWatermarkEdit, SnowCanvasSpotlightEdit,
                  SnowCanvasBrushEraserEdit, SnowCanvasDistanceEdit, SnowCanvasAngleStyleEdit>;
+
+inline bool snowCanvasStyleEditUpdatesCreationDefaults(const SnowCanvasStyleEdit& edit) {
+    return std::visit(
+        [](const auto& patch) {
+            using T = std::decay_t<decltype(patch)>;
+            if constexpr (std::is_same_v<T, SnowCanvasSerialNumberEdit> ||
+                          std::is_same_v<T, SnowCanvasAngleStyleEdit>)
+                return patch.creationDefaults;
+            else
+                return true;
+        },
+        edit);
+}
 
 inline void snowCanvasMergeStyle(SnowCanvasAngleStyle& target, const SnowCanvasAngleStyle& value,
                                  quint32 properties) {
@@ -273,7 +287,8 @@ inline void snowCanvasMergeStyleEdit(SnowCanvasStyleDefaults& defaults,
             } else if constexpr (std::is_same_v<T, SnowCanvasTextEdit>) {
                 snowCanvasMergeStyle(defaults.text, patch.style, patch.properties);
             } else if constexpr (std::is_same_v<T, SnowCanvasSerialNumberEdit>) {
-                snowCanvasMergeStyle(defaults.serialNumber, patch.style, patch.properties);
+                if (patch.creationDefaults)
+                    snowCanvasMergeStyle(defaults.serialNumber, patch.style, patch.properties);
             } else if constexpr (std::is_same_v<T, SnowCanvasFilterEdit>) {
                 snowCanvasMergeStyle(patch.pen ? defaults.penFilter : defaults.rectangleFilter,
                                      patch.style, patch.properties);

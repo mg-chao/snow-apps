@@ -565,8 +565,7 @@ bool persistScreenshotCanvasToolStyles(const SnowCanvasStyleDefaults& defaults) 
 }
 
 bool persistScreenshotCanvasStyleEdit(const SnowCanvasStyleEdit& edit) {
-    if (const auto* angle = std::get_if<SnowCanvasAngleStyleEdit>(&edit);
-        angle != nullptr && !angle->creationDefaults)
+    if (!snowCanvasStyleEditUpdatesCreationDefaults(edit))
         return true;
     if (!storage::ApplicationStorage::instance().isInitialized())
         return false;

@@ -273,25 +273,13 @@ impl Editor {
 
     pub(crate) fn serial_number_creation_preview(
         &self,
-        document: &DocumentModel,
         center: Point<f64>,
     ) -> Result<SerialNumberData, ErrorCode> {
-        let number = if self
-            .state
-            .default_serial_number
-            .serial_number_type
-            .supports_number()
-            && !self.state.serial_number_sequence_overridden
-                [self.state.default_serial_number.numeric_type as usize]
-        {
-            next_serial_number(document, self.state.default_serial_number.numeric_type)
-                .max(self.state.default_serial_number.number)
-        } else {
-            self.state.default_serial_number.number
-        };
+        // Creation uses the same session counter as the toolbar. Document
+        // insertions advance automatic counters at the mutation boundary;
+        // edits to existing badges cannot become implicit sequence starts.
         let mut serial = SerialNumberData {
             center,
-            number,
             ..self.state.default_serial_number.clone()
         };
         serial.text_element_id = None;

@@ -47,8 +47,7 @@ ScreenshotStyleBinding::ScreenshotStyleBinding(ScreenshotToolPalette& palette,
              save](const SnowCanvasStyleEdit& edit) {
                 if (source == nullptr)
                     return;
-                if (const auto* angle = std::get_if<SnowCanvasAngleStyleEdit>(&edit);
-                    angle != nullptr && !angle->creationDefaults)
+                if (!snowCanvasStyleEditUpdatesCreationDefaults(edit))
                     return;
                 source->rememberStyleEdit(edit);
                 if (replicate)

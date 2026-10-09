@@ -1219,7 +1219,7 @@ mod tests {
             snow_draw_engine_document::SerialNumberType::Circle;
         editor.state.default_serial_number.number = 6;
         let preview = editor
-            .serial_number_creation_preview(&document, Point::new(40.0, 50.0))
+            .serial_number_creation_preview(Point::new(40.0, 50.0))
             .unwrap();
         assert_eq!(preview.diameter, 12.0);
         let circle_id = editor
@@ -1250,9 +1250,10 @@ mod tests {
         editor.state.default_serial_number.serial_number_type =
             snow_draw_engine_document::SerialNumberType::OutlinedCircle;
         let numbered = editor
-            .serial_number_creation_preview(&document, Point::default())
+            .serial_number_creation_preview(Point::default())
             .unwrap();
-        assert_eq!(numbered.number, 7);
+        // Adjusting an existing numbered badge leaves the creation sequence alone.
+        assert_eq!(numbered.number, 6);
         assert!(numbered.diameter > 12.0);
     }
 

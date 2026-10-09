@@ -12322,6 +12322,7 @@ void serialNumberNumericTypeEditorPreservesValuesAndRetranslates() {
     state.source = SnowCanvasStyleToolbarSource::SelectedSerialNumber;
     state.serialNumberStyle.number = 27;
     palette.setStyleToolbarState(state);
+    const auto creationDefaults = palette.creationStyleDefaults();
     palette.show();
     QCoreApplication::processEvents();
     auto findGroup = [&]() {
@@ -12338,9 +12339,13 @@ void serialNumberNumericTypeEditorPreservesValuesAndRetranslates() {
         const auto* serial = std::get_if<SnowCanvasSerialNumberEdit>(&edit);
         require(serial && serial->properties == SnowCanvasSerialNumberStyleMixedNumericType,
                 "numeric choice commits only the format property");
+        require(!serial->creationDefaults,
+                "selected numeric format edits target only the document");
         require(serial->style.number == 27, "format edits keep the exact decimal value");
         state.serialNumberStyle = serial->style;
         palette.rememberStyleEdit(edit);
+        require(palette.creationStyleDefaults() == creationDefaults,
+                "selected numeric format edits preserve standalone palette creation defaults");
         ++changes;
         return true;
     });

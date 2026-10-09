@@ -20,8 +20,12 @@ impl Engine {
         let Some(history_result) = self.history.undo(&mut self.model)? else {
             return Ok(MutationResult::default());
         };
-        self.editor
-            .sync_serial_number_types_after_document_change(&self.model, &following_numeric_types);
+        if serial_number_population_changed(&self.model, &history_result.apply_result) {
+            self.editor.sync_serial_number_types_after_document_change(
+                &self.model,
+                &following_numeric_types,
+            );
+        }
         if history_result.restore_selection {
             self.editor
                 .restore_history_selection(&self.model, &history_result.snapshot);
@@ -44,8 +48,12 @@ impl Engine {
         let Some(history_result) = self.history.redo(&mut self.model)? else {
             return Ok(MutationResult::default());
         };
-        self.editor
-            .sync_serial_number_types_after_document_change(&self.model, &following_numeric_types);
+        if serial_number_population_changed(&self.model, &history_result.apply_result) {
+            self.editor.sync_serial_number_types_after_document_change(
+                &self.model,
+                &following_numeric_types,
+            );
+        }
         if history_result.restore_selection {
             self.editor
                 .restore_history_selection(&self.model, &history_result.snapshot);
@@ -107,6 +115,10 @@ impl Engine {
             Vec::new()
         };
         let apply_result = self.model.apply_transaction(transaction)?;
+        self.editor.advance_serial_number_counters_for_insertions(
+            &self.model,
+            &apply_result.changes.created,
+        );
         // Deletion (including canvas reset) must update the creation value before
         // refreshing viewports, just as undo and redo do. Keep explicit defaults.
         if !apply_result.changes.removed.is_empty() {
@@ -142,6 +154,28 @@ impl Engine {
             .sync_after_document_change(&self.model, snapshot);
         self.refresh_all_viewports().unwrap_or_default()
     }
+}
+
+fn serial_number_population_changed(
+    model: &DocumentModel,
+    result: &snow_draw_engine_model::ApplyResult,
+) -> bool {
+    use snow_draw_engine_document::{ElementData, Operation};
+
+    // History of edits to existing badges must not turn their values into
+    // creation counters. The inverse retains removed data and identifies
+    // inserted/restored badges even when the transaction also updates them.
+    result
+        .inverse
+        .operations()
+        .iter()
+        .any(|operation| match operation {
+            Operation::RestoreElement { element, .. } => {
+                matches!(element.data, ElementData::SerialNumber(_))
+            }
+            Operation::RemoveElement { id } => model.serial_number(*id).is_ok(),
+            _ => false,
+        })
 }
 
 #[cfg(test)]
@@ -331,6 +365,20 @@ mod tests {
             (vec![3, 3], 4),
         ] {
             let mut engine = engine_with_serial_numbers(&numbers, next);
+            // Imports advance automatic counters. A custom start below those
+            // values must be requested explicitly, as it is in the UI.
+            let mut style = engine.editor.serial_number_style(&engine.model);
+            if style.number != next {
+                style.number = next;
+                engine
+                    .editor
+                    .set_serial_number_style_patch(
+                        &engine.model,
+                        style,
+                        snow_draw_engine_editor::SERIAL_NUMBER_STYLE_MIXED_NUMBER,
+                    )
+                    .unwrap();
+            }
             engine.undo().unwrap();
             assert_eq!(
                 engine.editor.serial_number_style(&engine.model).number,

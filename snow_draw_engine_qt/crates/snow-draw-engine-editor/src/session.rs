@@ -256,6 +256,18 @@ impl EditorSession {
         Ok(session)
     }
 
+    pub fn from_persisted_with_document(
+        persisted: PersistedEditorSession,
+        document: &DocumentModel,
+    ) -> Result<Self, ErrorCode> {
+        let has_creation_counters = persisted.serial_number_values.is_some();
+        let mut session = Self::from_persisted(persisted)?;
+        if !has_creation_counters {
+            session.advance_serial_number_counters_for_insertions(document, document.paint_order());
+        }
+        Ok(session)
+    }
+
     pub fn snap_config(&self) -> SnapConfig {
         self.editor.snap_config()
     }
@@ -437,6 +449,29 @@ impl EditorSession {
                     == crate::document_ops::next_serial_number(document, *numeric_type)
         })
         .collect()
+    }
+
+    pub fn advance_serial_number_counters_for_insertions(
+        &mut self,
+        document: &DocumentModel,
+        ids: &[ElementId],
+    ) {
+        let state = &mut self.editor.state;
+        for id in ids {
+            let Ok(serial) = document.serial_number(*id) else {
+                continue;
+            };
+            if !serial.serial_number_type.supports_number()
+                || state.serial_number_sequence_overridden[serial.numeric_type as usize]
+            {
+                continue;
+            }
+            let next = serial
+                .number
+                .saturating_add(1)
+                .max(state.serial_number_values()[serial.numeric_type as usize]);
+            state.set_serial_number_value(serial.numeric_type, next);
+        }
     }
 
     pub fn sync_serial_number_types_after_document_change(

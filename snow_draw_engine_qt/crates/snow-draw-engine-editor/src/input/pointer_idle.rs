@@ -405,7 +405,7 @@ impl Editor {
                     canvas_point,
                     event.modifiers,
                 );
-                let preview = self.serial_number_creation_preview(document, center)?;
+                let preview = self.serial_number_creation_preview(center)?;
                 let serial_id = self.queue_serial_number_creation(document, preview)?;
                 self.state.interaction =
                     InteractionState::CreatingSerialNumber(CreateSerialNumberState {
