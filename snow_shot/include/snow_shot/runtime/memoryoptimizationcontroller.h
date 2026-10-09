@@ -8,12 +8,15 @@
 
 namespace snow_shot::runtime {
 struct ProcessMemorySample {
-    std::uint64_t privateWorkingSetBytes = 0;
+    // Windows: private working set. macOS: physical footprint, including compressed memory.
+    std::uint64_t memoryBytes = 0;
     std::uint64_t pageFaultCount = 0;
 };
 struct MemoryTrimResult {
     bool succeeded = false;
     std::uint32_t error = 0;
+    // Allocator-reported reclamation on macOS; Windows does not report this value.
+    std::uint64_t releasedBytes = 0;
 };
 struct MemoryTrimReport {
     bool lowMemory = false;
@@ -57,8 +60,8 @@ class MemoryOptimizationController final : public QObject {
     bool m_stopped = false;
 };
 
-// Native options carry shared ownership of the pressure-notification handle.
-[[nodiscard]] MemoryOptimizationController::Options windowsMemoryOptimizationOptions();
+// Copies of native options retain the pressure-notification backend.
+[[nodiscard]] MemoryOptimizationController::Options nativeMemoryOptimizationOptions();
 [[nodiscard]] bool currentProcessOwnsForegroundWindow();
 } // namespace snow_shot::runtime
 #endif

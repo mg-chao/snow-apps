@@ -505,6 +505,34 @@ For direct CMake use, put the host tools on PATH and supply `-DQt6_DIR=...`:
 `cmake --build --preset build-snow-shot-macos-arm64-debug`.
 The shell wrapper also sets Xcode libclang discovery for Rust bindgen.
 
+### Idle memory optimization
+
+Both editions expose **Memory Optimization Policy** under **General > Application
+performance**. **Smart Control** is the default; **Disabled** stops automatic
+reclamation immediately. On macOS, Smart Control calls
+`malloc_zone_pressure_relief(nullptr, 0)` to return unused allocator pages to the
+system. Live images, capture data, and other allocations retain their contents.
+This is best-effort reclamation and may release zero bytes; it does not evict
+live process pages like Windows `EmptyWorkingSet`.
+
+The controller waits for background idle time, blocks reclamation during active
+work or UI interaction, and limits attempts to one per idle period with a
+five-minute cooldown. Memory pressure notifications shorten the idle wait after
+the initial startup grace. Logs report macOS physical footprint (including
+compressed memory) and allocator-reported released bytes separately.
+
+Focused checks:
+
+```sh
+scripts/build.sh snow-shot-macos-arm64-debug \
+  --target snow-shot-memory-optimization-controller-tests \
+  --target snow-shot-macos-memory-optimization-tests \
+  --target snow-shot-memory-optimization-settings-tests \
+  --target snow-shot-memory-optimization-settings-mini-tests \
+  --target snow-shot-settings-catalog-tests
+ctest --preset test-snow-shot-macos-arm64-debug -R '^snow-shot-(macos-memory-optimization|memory-optimization-(controller|settings|settings-mini|catalog))-tests$'
+```
+
 Formatting and lint entry points are `scripts/check-cpp-format.sh [--fix]` and
 `scripts/check-rust.sh PACKAGE [-- CARGO_OPTIONS...]`. The `snow-format` and
 `snow-lint` CMake targets use native shell scripts on macOS; `snow-lint` checks

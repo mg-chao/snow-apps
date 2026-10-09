@@ -3323,13 +3323,26 @@ void memoryOptimizationPolicyCatalog() {
     require(registry.isValid(), "the memory policy must retain a valid settings registry");
     const auto* item = catalog.item({QStringLiteral("general"), QStringLiteral("core"), id});
     const settings::SettingsSearchIndex index(registry);
-#ifdef Q_OS_WIN
+#if defined(Q_OS_WIN) || defined(Q_OS_MACOS)
     const auto* section = catalog.section(QStringLiteral("general"), QStringLiteral("core"));
     require(section != nullptr && section->items.size() == 2 && section->items.last().id == id &&
                 section->reset == settings::SettingsSectionReset::SystemSettings &&
                 item != nullptr && item->configurationKey == key &&
                 item->title.translated() == QStringLiteral("Memory Optimization Policy"),
-            "Windows exposes memory policy after priority in Application performance");
+            "supported platforms expose memory policy second in Application performance");
+#ifdef Q_OS_MACOS
+    require(section->items.first().id == QStringLiteral("system.application-qos") &&
+                item->description.translated() ==
+                    QStringLiteral("Smart Control releases unused heap memory while the app is "
+                                   "idle. Active captures and pinned images are kept."),
+            "macOS exposes memory policy after QoS with heap reclamation guidance");
+#else
+    require(section->items.first().id == QStringLiteral("system.application-priority") &&
+                item->description.translated() ==
+                    QStringLiteral("Smart Control trims resident memory while the app is idle. "
+                                   "The next use may briefly take longer."),
+            "Windows retains memory policy after priority with resident memory guidance");
+#endif
     const auto* select = std::get_if<settings::SettingsSelectDefinition>(&item->payload);
     require(select != nullptr &&
                 select->binding == settings::SettingsSelectBinding::MemoryOptimizationPolicy &&
@@ -3348,13 +3361,13 @@ void memoryOptimizationPolicyCatalog() {
                     settings::SettingsSelectBinding::MemoryOptimizationPolicy) == field &&
                 !index.search(QStringLiteral("Memory Optimization Policy")).isEmpty() &&
                 !index.search(QStringLiteral("Smart Control")).isEmpty(),
-            "registry and search expose the Windows memory policy with the schema default");
+            "registry and search expose the memory policy with the schema default");
 #else
     require(item == nullptr && registry.field(id) == nullptr &&
                 registry.fieldForSelect(
                     settings::SettingsSelectBinding::MemoryOptimizationPolicy) == nullptr &&
                 index.search(QStringLiteral("Memory Optimization Policy")).isEmpty(),
-            "non-Windows platforms omit the memory policy from settings and search");
+            "unsupported platforms omit the memory policy from settings and search");
 #endif
 }
 } // namespace

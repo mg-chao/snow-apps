@@ -68,7 +68,7 @@ void MemoryOptimizationController::evaluate() {
         return;
     const auto before = m_options.sample ? m_options.sample() : std::nullopt;
     constexpr std::uint64_t mib = 1024 * 1024;
-    if (!before || before->privateWorkingSetBytes < (pressure ? 12 : 18) * mib)
+    if (!before || before->memoryBytes < (pressure ? 12 : 18) * mib)
         return;
     // Sampling can race worker admission. Recheck UI/policy before the tracker
     // checks its generation under the admission lock.

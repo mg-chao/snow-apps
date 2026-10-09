@@ -882,7 +882,7 @@ SettingsItemDefinition applicationQoSItem() {
 }
 #endif
 
-#ifdef Q_OS_WIN
+#if defined(Q_OS_WIN) || defined(Q_OS_MACOS)
 SettingsItemDefinition memoryOptimizationPolicyItem() {
     SettingsSelectDefinition payload;
     payload.binding = SettingsSelectBinding::MemoryOptimizationPolicy;
@@ -895,9 +895,15 @@ SettingsItemDefinition memoryOptimizationPolicyItem() {
     return {
         QStringLiteral("system.memory-optimization-policy"),
         settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Memory Optimization Policy")),
+#ifdef Q_OS_MACOS
+        settingsText(QT_TRANSLATE_NOOP("SettingsCatalog",
+                                       "Smart Control releases unused heap memory while the app is "
+                                       "idle. Active captures and pinned images are kept.")),
+#else
         settingsText(QT_TRANSLATE_NOOP("SettingsCatalog",
                                        "Smart Control trims resident memory while the app is idle. "
                                        "The next use may briefly take longer.")),
+#endif
         {},
         QStringLiteral("system/memory_optimization_policy"),
         payload,
@@ -2959,7 +2965,7 @@ QVector<SettingsPageDefinition> builtInPages() {
               settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Core application settings")),
               SettingsSectionReset::SystemSettings,
 #ifdef Q_OS_MACOS
-              {applicationQoSItem()},
+              {applicationQoSItem(), memoryOptimizationPolicyItem()},
 #else
               {
                   applicationPriorityItem(),

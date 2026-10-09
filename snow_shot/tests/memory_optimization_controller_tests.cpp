@@ -167,24 +167,24 @@ void testSafetyAndFailures() {
         f.memory = ProcessMemorySample{18 * 1024 * 1024 - 1, 7};
         f.tick(61s);
         require(f.calls == 0, "private working set below 18 MiB must not trim without pressure");
-        f.memory->privateWorkingSetBytes++;
+        f.memory->memoryBytes++;
         f.tick(62s);
         require(f.calls == 1, "exact 18 MiB private working-set threshold is eligible");
     }
     {
         Fixture f;
         f.pressure = true;
-        f.memory->privateWorkingSetBytes = 12 * 1024 * 1024 - 1;
+        f.memory->memoryBytes = 12 * 1024 * 1024 - 1;
         f.tick(0s);
         f.tick(60s);
         require(f.calls == 0, "pressure private working-set threshold boundary");
-        f.memory->privateWorkingSetBytes++;
+        f.memory->memoryBytes++;
         f.tick(61s);
         require(f.calls == 1, "exact 12 MiB pressure private working-set threshold is eligible");
     }
     {
         Fixture f;
-        f.memory->privateWorkingSetBytes = 12 * 1024 * 1024;
+        f.memory->memoryBytes = 12 * 1024 * 1024;
         f.pressure = std::nullopt;
         f.tick(0s);
         f.tick(60s);
@@ -196,7 +196,7 @@ void testSafetyAndFailures() {
     }
     {
         Fixture f;
-        f.memory->privateWorkingSetBytes = 0;
+        f.memory->memoryBytes = 0;
         f.tick(0s);
         f.tick(60s);
         require(f.calls == 0, "zero private working set must not trim");

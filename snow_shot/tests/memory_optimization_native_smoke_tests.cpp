@@ -22,13 +22,12 @@ void require(bool condition, const char* message) {
 }
 
 QJsonObject memoryJson(const runtime::ProcessMemorySample& sample) {
-    return {{QStringLiteral("private_working_set_bytes"),
-             static_cast<qint64>(sample.privateWorkingSetBytes)},
+    return {{QStringLiteral("private_working_set_bytes"), static_cast<qint64>(sample.memoryBytes)},
             {QStringLiteral("page_fault_count"), static_cast<qint64>(sample.pageFaultCount)}};
 }
 
 int runChild() {
-    auto options = runtime::windowsMemoryOptimizationOptions();
+    auto options = runtime::nativeMemoryOptimizationOptions();
     require(options.sample && options.trim && options.lowMemory,
             "the Windows production memory callbacks must be available");
     auto* data = static_cast<std::uint64_t*>(
@@ -49,7 +48,7 @@ int runChild() {
     }
     const auto before = options.sample();
     require(before.has_value(), "sample the child's touched allocation");
-    require(before->privateWorkingSetBytes >= kAllocationBytes,
+    require(before->memoryBytes >= kAllocationBytes,
             "private working set includes the touched allocation");
     const auto started = std::chrono::steady_clock::now();
     const auto trimmed = options.trim();
@@ -59,7 +58,7 @@ int runChild() {
     // Sample before examining the allocation: checksum reads intentionally fault it back in.
     const auto after = options.sample();
     require(trimmed.succeeded && after.has_value(), "trim and sample the isolated child");
-    require(after->privateWorkingSetBytes < before->privateWorkingSetBytes,
+    require(after->memoryBytes < before->memoryBytes,
             "EmptyWorkingSet must reduce the touched child's private working set");
     const volatile std::uint64_t* retained = data;
     std::uint64_t checksum = kChecksumSeed;
@@ -70,7 +69,7 @@ int runChild() {
             "every byte of the child's allocation remains readable and unchanged after trimming");
     require(refaulted->pageFaultCount > after->pageFaultCount,
             "reading the retained allocation must demonstrate its page refaults");
-    require(refaulted->privateWorkingSetBytes > after->privateWorkingSetBytes,
+    require(refaulted->memoryBytes > after->memoryBytes,
             "reading the retained allocation restores private resident pages");
     const QJsonObject report{
         {QStringLiteral("child_process_id"), static_cast<qint64>(GetCurrentProcessId())},

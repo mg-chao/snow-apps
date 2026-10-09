@@ -90,8 +90,7 @@ std::uint64_t checksum(const std::vector<std::uint64_t>& allocation) {
 }
 
 QJsonObject memoryJson(const runtime::ProcessMemorySample& sample) {
-    return {{QStringLiteral("private_working_set_bytes"),
-             static_cast<qint64>(sample.privateWorkingSetBytes)},
+    return {{QStringLiteral("private_working_set_bytes"), static_cast<qint64>(sample.memoryBytes)},
             {QStringLiteral("page_fault_count"), static_cast<qint64>(sample.pageFaultCount)}};
 }
 
@@ -190,8 +189,8 @@ QJsonObject runComparison(const QString& name, int pairs, int warmups, Scenario 
                 {QStringLiteral("next_operation_page_faults"),
                  static_cast<qint64>(afterOperation.pageFaultCount - afterTrim.pageFaultCount)},
                 {QStringLiteral("private_working_set_reduction_bytes"),
-                 static_cast<qint64>(before.privateWorkingSetBytes) -
-                     static_cast<qint64>(afterTrim.privateWorkingSetBytes)},
+                 static_cast<qint64>(before.memoryBytes) -
+                     static_cast<qint64>(afterTrim.memoryBytes)},
                 {QStringLiteral("checksum_ok"), integrity},
                 {QStringLiteral("functional_ok"), functional},
                 {QStringLiteral("render_ok"), renderCorrect},
@@ -255,7 +254,7 @@ QJsonObject benchmark(QApplication& application) {
     require(validPairs && validWarmups && pairs >= 2 && pairs <= 100 && warmups >= 1 &&
                 warmups <= 10,
             "invalid benchmark pair or warmup count");
-    auto options = runtime::windowsMemoryOptimizationOptions();
+    auto options = runtime::nativeMemoryOptimizationOptions();
     require(options.sample && options.trim,
             "the benchmark requires the production Windows memory backend");
     selection_presentation_test::IsolatedStorage storage;

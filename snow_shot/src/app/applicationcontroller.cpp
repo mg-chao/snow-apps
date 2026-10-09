@@ -534,8 +534,8 @@ class ApplicationController::Impl {
         reopenHandler = std::make_unique<platform::macos::ApplicationReopenHandler>(
             [this]() { showMainWindow(); });
 #endif
-#ifdef Q_OS_WIN
-        auto memoryOptions = runtime::windowsMemoryOptimizationOptions();
+#if defined(Q_OS_WIN) || defined(Q_OS_MACOS)
+        auto memoryOptions = runtime::nativeMemoryOptimizationOptions();
         memoryOptions.enabled = [] {
             return storage::ApplicationStorage::instance()
                        .configuration()

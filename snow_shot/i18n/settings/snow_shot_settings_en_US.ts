@@ -3861,6 +3861,10 @@
             <translation>Smart Control</translation>
         </message>
         <message>
+            <source>Smart Control releases unused heap memory while the app is idle. Active captures and pinned images are kept.</source>
+            <translation>Smart Control releases unused heap memory while the app is idle. Active captures and pinned images are kept.</translation>
+        </message>
+        <message>
             <source>Smart Control trims resident memory while the app is idle. The next use may briefly take longer.</source>
             <translation>Smart Control trims resident memory while the app is idle. The next use may briefly take longer.</translation>
         </message>

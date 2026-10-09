@@ -68,7 +68,7 @@ void policyPersistsResetsAndImports(const QString& configurationPath) {
     settings::BuiltInSettingsBackend backend(shortcuts);
     constexpr auto binding = settings::SettingsSelectBinding::MemoryOptimizationPolicy;
     auto& configuration = storage::ApplicationStorage::instance().configuration();
-#ifdef Q_OS_WIN
+#if defined(Q_OS_WIN) || defined(Q_OS_MACOS)
     settings::SettingsRuntimeSession session(settings::builtInSettingsRegistry(), backend);
     require(backend.selectValue(binding) == QStringLiteral("smart_control") &&
                 session.state(kPolicyId).acceptedValue == QStringLiteral("smart_control"),
@@ -89,22 +89,37 @@ void policyPersistsResetsAndImports(const QString& configurationPath) {
     snow_shot::runtime::MemoryOptimizationController controller(activity, std::move(options));
     require(controller.isScheduling(), "Smart Control starts the real controller scheduler");
     int policyChanges = 0;
+#ifdef Q_OS_MACOS
+    bool resettingPerformance = false;
+    int performanceResetNotifications = 0;
+#endif
     QObject connectionContext;
-    QObject::connect(&configuration, &storage::ConfigurationStore::valueChanged, &connectionContext,
-                     [&](const QString& key, const QJsonValue& value) {
-                         if (key == kPolicyKey) {
-                             // Match ApplicationController's synchronous runtime configuration
-                             // hook.
-                             controller.synchronizePolicy();
-                             ++policyChanges;
-                             require(
-                                 QThread::currentThread() == configuration.thread() &&
-                                     value == configuration.value(kPolicyKey) &&
-                                     controller.isScheduling() ==
-                                         (value.toString() == QStringLiteral("smart_control")),
-                                 "policy changes notify runtime consumers on the owning thread");
-                         }
-                     });
+    QObject::connect(
+        &configuration, &storage::ConfigurationStore::valueChanged, &connectionContext,
+        [&](const QString& key, const QJsonValue& value) {
+#ifdef Q_OS_MACOS
+            if (resettingPerformance &&
+                (key == kPolicyKey || key == QStringLiteral("system/application_qos"))) {
+                ++performanceResetNotifications;
+                require(configuration.value(kPolicyKey) == QStringLiteral("smart_control") &&
+                            configuration.value(QStringLiteral("system/application_qos")) ==
+                                QStringLiteral("user_interactive"),
+                        "performance reset notifications observe both defaults "
+                        "atomically");
+            }
+#endif
+            if (key == kPolicyKey) {
+                // Match ApplicationController's synchronous runtime configuration
+                // hook.
+                controller.synchronizePolicy();
+                ++policyChanges;
+                require(QThread::currentThread() == configuration.thread() &&
+                            value == configuration.value(kPolicyKey) &&
+                            controller.isScheduling() ==
+                                (value.toString() == QStringLiteral("smart_control")),
+                        "policy changes notify runtime consumers on the owning thread");
+            }
+        });
     require(session.applySelectValue(binding, QStringLiteral("disabled")) && policyChanges == 1 &&
                 backend.selectValue(binding) == QStringLiteral("disabled") &&
                 session.state(kPolicyId).acceptedValue == QStringLiteral("disabled") &&
@@ -120,13 +135,33 @@ void policyPersistsResetsAndImports(const QString& configurationPath) {
     storage::ConfigurationStore reloaded(configurationPath, true, true, 60000);
     require(reloaded.value(kPolicyKey) == QStringLiteral("disabled"),
             "the Disabled memory policy survives a configuration reload");
+#ifdef Q_OS_MACOS
+    require(session.applySelectValue(settings::SettingsSelectBinding::ApplicationQoS,
+                                     QStringLiteral("utility")),
+            "prepare a non-default QoS before resetting Application performance");
+    resettingPerformance = true;
+#endif
+    const bool performanceReset = session.reset(settings::SettingsSectionReset::SystemSettings);
+#ifdef Q_OS_MACOS
+    resettingPerformance = false;
+    require(performanceResetNotifications == 2,
+            "Application performance reset notifies both QoS and memory policy consumers");
+#endif
     require(
-        session.reset(settings::SettingsSectionReset::SystemSettings) && policyChanges == 2 &&
+        performanceReset && policyChanges == 2 &&
             configuration.value(kPolicyKey) == QStringLiteral("smart_control") &&
             session.state(kPolicyId).acceptedValue == QStringLiteral("smart_control") &&
+#ifdef Q_OS_MACOS
+            configuration.value(QStringLiteral("system/application_qos")) ==
+                storage::ConfigurationSchema::defaultValue(
+                    QStringLiteral("system/application_qos")) &&
+            session.state(QStringLiteral("system.application-qos")).acceptedValue ==
+                QStringLiteral("user_interactive") &&
+#else
             configuration.value(QStringLiteral("system/application_priority")) ==
                 storage::ConfigurationSchema::defaultValue(
                     QStringLiteral("system/application_priority")) &&
+#endif
             controller.isScheduling(),
         "Application performance reset restores preferences and immediately restarts scheduling");
     auto imported = configuration.snapshot();
@@ -146,6 +181,11 @@ void policyPersistsResetsAndImports(const QString& configurationPath) {
     require(backend.applySelectValue(binding, QStringLiteral("disabled")) &&
                 !controller.isScheduling(),
             "prepare the memory policy before a rejected reset");
+#ifdef Q_OS_MACOS
+    require(session.applySelectValue(settings::SettingsSelectBinding::ApplicationQoS,
+                                     QStringLiteral("background")),
+            "prepare a non-default QoS before a rejected Application performance reset");
+#endif
     const auto before = configuration.snapshot();
     configuration.suspendWrites(true);
     require(!backend.resetSection(settings::SettingsSectionReset::SystemSettings) &&
@@ -163,7 +203,7 @@ void policyPersistsResetsAndImports(const QString& configurationPath) {
                 !backend.applySelectValue(binding, QStringLiteral("smart_control")) &&
                 configuration.snapshot() == before &&
                 settings::builtInSettingsRegistry().field(kPolicyId) == nullptr,
-            "non-Windows backends reject direct memory policy writes and omit the field");
+            "unsupported platforms reject direct memory policy writes and omit the field");
 #endif
 }
 } // namespace

@@ -750,9 +750,14 @@ target_include_directories(snow_shot_runtime_activity INTERFACE "${CMAKE_CURRENT
 target_sources(snow_shot_runtime_activity INTERFACE
     "${CMAKE_CURRENT_SOURCE_DIR}/include/snow_shot/runtime/runtimeactivitytracker.h")
 add_library(snow_shot_memory_optimization STATIC
-    src/runtime/memoryoptimizationcontroller.cpp
-    src/platform/windows/memoryoptimization.cpp)
+    src/runtime/memoryoptimizationcontroller.cpp)
 target_link_libraries(snow_shot_memory_optimization PUBLIC snow_shot_runtime_activity Qt6::Core)
+if(APPLE)
+    target_sources(snow_shot_memory_optimization PRIVATE src/platform/macos/memoryoptimization.cpp)
+    target_link_libraries(snow_shot_memory_optimization PRIVATE Qt6::Gui)
+else()
+    target_sources(snow_shot_memory_optimization PRIVATE src/platform/windows/memoryoptimization.cpp)
+endif()
 if(WIN32)
     target_link_libraries(snow_shot_memory_optimization PRIVATE psapi user32)
 endif()
@@ -10496,6 +10501,17 @@ if(SNOW_SHOT_BUILD_TESTS)
         PROPERTIES LABELS "unit" TIMEOUT 60
         ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}"
         ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
+
+    if(APPLE)
+        add_executable(snow-shot-macos-memory-optimization-tests
+            tests/macos_memory_optimization_tests.cpp)
+        target_link_libraries(snow-shot-macos-memory-optimization-tests PRIVATE
+            snow_shot_memory_optimization)
+        add_test(NAME snow-shot-macos-memory-optimization-tests
+            COMMAND snow-shot-macos-memory-optimization-tests)
+        set_tests_properties(snow-shot-macos-memory-optimization-tests PROPERTIES
+            LABELS "unit" TIMEOUT 30)
+    endif()
 
     if(WIN32)
         add_executable(snow-shot-memory-optimization-native-smoke-tests

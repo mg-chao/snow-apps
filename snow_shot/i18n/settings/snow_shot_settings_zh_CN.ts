@@ -3861,6 +3861,10 @@
             <translation>智能控制</translation>
         </message>
         <message>
+            <source>Smart Control releases unused heap memory while the app is idle. Active captures and pinned images are kept.</source>
+            <translation>智能控制会在应用空闲时释放未使用的堆内存。正在进行的捕获和贴图会保留。</translation>
+        </message>
+        <message>
             <source>Smart Control trims resident memory while the app is idle. The next use may briefly take longer.</source>
             <translation>智能控制会在应用空闲时缩减驻留内存。下次使用时可能会短暂增加响应时间。</translation>
         </message>

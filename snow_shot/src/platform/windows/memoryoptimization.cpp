@@ -66,7 +66,7 @@ class WindowsMemoryBackend final {
 } // namespace
 #endif
 
-MemoryOptimizationController::Options windowsMemoryOptimizationOptions() {
+MemoryOptimizationController::Options nativeMemoryOptimizationOptions() {
     MemoryOptimizationController::Options options;
 #ifdef Q_OS_WIN
     auto backend = std::make_shared<WindowsMemoryBackend>();
@@ -83,9 +83,9 @@ MemoryOptimizationController::Options windowsMemoryOptimizationOptions() {
             return;
         }
         qInfo() << "Memory trim: pressure=" << report.lowMemory
-                << "private_working_set_before=" << report.before.privateWorkingSetBytes
+                << "private_working_set_before=" << report.before.memoryBytes
                 << "private_working_set_after="
-                << (report.after ? QString::number(report.after->privateWorkingSetBytes)
+                << (report.after ? QString::number(report.after->memoryBytes)
                                  : QStringLiteral("unavailable"))
                 << "duration_ms=" << elapsed;
     };

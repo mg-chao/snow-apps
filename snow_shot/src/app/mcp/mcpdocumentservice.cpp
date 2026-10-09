@@ -188,9 +188,9 @@ qint64 sourceAuxiliaryBytes(const McpDocumentService::Source& source) {
                     source.recognitionResults.tableEffectiveModel.size() +
                     source.recognitionResults.latexEffectiveModel.size());
     bytes += static_cast<qint64>(source.recognitionResults.tableEntries.capacity()) *
-                 sizeof(ScreenshotTableRecognitionEntry) +
+                 static_cast<qint64>(sizeof(ScreenshotTableRecognitionEntry)) +
              static_cast<qint64>(source.recognitionResults.latexEntries.capacity()) *
-                 sizeof(ScreenshotLatexRecognitionEntry);
+                 static_cast<qint64>(sizeof(ScreenshotLatexRecognitionEntry));
     for (const auto& entry : source.recognitionResults.tableEntries) {
         bytes +=
             2LL * (entry.model.size() + entry.modelFingerprint.size() + entry.result.html.size() +

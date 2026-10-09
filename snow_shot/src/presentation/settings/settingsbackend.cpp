@@ -692,7 +692,7 @@ bool BuiltInSettingsBackend::applySelectValue(SettingsSelectBinding binding,
 #endif
     }
     case SettingsSelectBinding::MemoryOptimizationPolicy:
-#ifdef Q_OS_WIN
+#if defined(Q_OS_WIN) || defined(Q_OS_MACOS)
         return storage::ApplicationStorage::instance().configuration().setValue(
             QStringLiteral("system/memory_optimization_policy"), value.toString());
 #else
@@ -2737,10 +2737,13 @@ bool BuiltInSettingsBackend::resetSection(SettingsSectionReset reset) {
             storage::ConfigurationSchema::defaultValue(QStringLiteral("network/proxy")));
     case SettingsSectionReset::SystemSettings: {
 #ifdef Q_OS_MACOS
-        return applySelectValue(
-            SettingsSelectBinding::ApplicationQoS,
-            storage::ConfigurationSchema::defaultValue(QStringLiteral("system/application_qos"))
-                .toVariant());
+        return storage::ApplicationStorage::instance().configuration().setValues({
+            {QStringLiteral("system/application_qos"),
+             storage::ConfigurationSchema::defaultValue(QStringLiteral("system/application_qos"))},
+            {QStringLiteral("system/memory_optimization_policy"),
+             storage::ConfigurationSchema::defaultValue(
+                 QStringLiteral("system/memory_optimization_policy"))},
+        });
 #else
         auto& storage = storage::ApplicationStorage::instance();
         if (!storage.isInitialized()) {
