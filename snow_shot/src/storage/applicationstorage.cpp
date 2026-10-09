@@ -1,3 +1,4 @@
+#include "snow_shot/runtime/runtimeactivitytracker.h"
 #include "snow_shot/platform/applicationqos.h"
 #include "snow_shot/storage/applicationstorage.h"
 #include <QTimer>
@@ -269,25 +270,34 @@ StorageResult ApplicationStorage::initialize(const StorageInitializationOptions&
     historyOptions.policy = captureHistoryPolicyFromConfiguration(*m_configuration);
     historyOptions.callbacks.recordsChanged = [this]() {
         QMetaObject::invokeMethod(
-            this, [this]() { emit captureHistoryChanged(); }, Qt::QueuedConnection);
+            this, snow_shot::runtime::trackRuntimeWork([this]() { emit captureHistoryChanged(); }),
+            Qt::QueuedConnection);
     };
     historyOptions.callbacks.usageChanged = [this](const CaptureHistoryUsage& usage) {
-        QMetaObject::invokeMethod(
-            this, [this, usage]() { updateHistoryUsage(usage); }, Qt::QueuedConnection);
+        QMetaObject::invokeMethod(this, snow_shot::runtime::trackRuntimeWork([this, usage]() {
+                                      updateHistoryUsage(usage);
+                                  }),
+                                  Qt::QueuedConnection);
     };
     historyOptions.callbacks.errorChanged = [this](const QString& error) {
-        QMetaObject::invokeMethod(
-            this, [this, error]() { updateHistoryError(error); }, Qt::QueuedConnection);
+        QMetaObject::invokeMethod(this, snow_shot::runtime::trackRuntimeWork([this, error]() {
+                                      updateHistoryError(error);
+                                  }),
+                                  Qt::QueuedConnection);
     };
     historyOptions.callbacks.policyFinished = [this](bool success, const QString& error) {
-        QMetaObject::invokeMethod(
-            this, [this, success, error]() { finishHistoryPolicy(success, error); },
-            Qt::QueuedConnection);
+        QMetaObject::invokeMethod(this,
+                                  snow_shot::runtime::trackRuntimeWork([this, success, error]() {
+                                      finishHistoryPolicy(success, error);
+                                  }),
+                                  Qt::QueuedConnection);
     };
     historyOptions.callbacks.clearFinished = [this](bool success, const QString& error) {
-        QMetaObject::invokeMethod(
-            this, [this, success, error]() { finishHistoryClear(success, error); },
-            Qt::QueuedConnection);
+        QMetaObject::invokeMethod(this,
+                                  snow_shot::runtime::trackRuntimeWork([this, success, error]() {
+                                      finishHistoryClear(success, error);
+                                  }),
+                                  Qt::QueuedConnection);
     };
     m_captureHistory = makeCaptureHistoryRepository(effectiveDirectory, std::move(historyOptions));
     m_pinnedWindows = std::make_unique<PinnedWindowRepository>(
@@ -296,8 +306,7 @@ StorageResult ApplicationStorage::initialize(const StorageInitializationOptions&
         if (m_pinnedChangeQueued.exchange(true))
             return;
         QMetaObject::invokeMethod(
-            this,
-            [this]() {
+            this, snow_shot::runtime::trackRuntimeWork([this]() {
                 m_pinnedChangeQueued.store(false);
                 if (m_status.directoryChanging || !m_initialized || !m_pinnedWindows)
                     return;
@@ -312,7 +321,7 @@ StorageResult ApplicationStorage::initialize(const StorageInitializationOptions&
                     m_lastPinnedNotifiedRevision = m_pinnedWindows->revision();
                     emit pinnedWindowsChanged();
                 }
-            },
+            }),
             Qt::QueuedConnection);
     });
     static_cast<void>(m_pinnedWindows->setPolicy(pinnedWindowPolicy(), false));
@@ -321,7 +330,7 @@ StorageResult ApplicationStorage::initialize(const StorageInitializationOptions&
     auto* pinnedCleanupTimer = new QTimer(m_configuration.get());
     pinnedCleanupTimer->setInterval(60000);
     connect(pinnedCleanupTimer, &QTimer::timeout, this,
-            &ApplicationStorage::requestPinnedWindowRetentionCleanup);
+            [this] { requestPinnedWindowRetentionCleanup(false); });
     pinnedCleanupTimer->start();
     connect(
         m_configuration.get(), &ConfigurationStore::valueChanged, this,
@@ -388,18 +397,19 @@ void ApplicationStorage::createUsageTracker() {
         return m_captureHistory != nullptr ? m_captureHistory->usage().totalBytes : 0;
     };
     usageOptions.callbacks.usageChanged = [this, generation](const AppStorageUsage& usage) {
-        QMetaObject::invokeMethod(
-            this,
-            [this, generation, usage]() {
-                if (generation == m_usageGeneration)
-                    updateAppUsage(usage);
-            },
-            Qt::QueuedConnection);
+        QMetaObject::invokeMethod(this,
+                                  snow_shot::runtime::trackRuntimeWork([this, generation, usage]() {
+                                      if (generation == m_usageGeneration)
+                                          updateAppUsage(usage);
+                                  }),
+                                  Qt::QueuedConnection);
     };
     usageOptions.callbacks.clearFinished = [this](StorageCacheKind kind,
                                                   const StorageResult& result) {
-        QMetaObject::invokeMethod(
-            this, [this, kind, result]() { finishCacheClear(kind, result); }, Qt::QueuedConnection);
+        QMetaObject::invokeMethod(this,
+                                  snow_shot::runtime::trackRuntimeWork(
+                                      [this, kind, result]() { finishCacheClear(kind, result); }),
+                                  Qt::QueuedConnection);
     };
     m_usageTracker = std::make_unique<StorageUsageTracker>(std::move(usageOptions));
     m_status.appUsage = m_usageTracker->usage();
@@ -612,32 +622,37 @@ bool ApplicationStorage::requestPinnedWindowClear() {
     return result.success;
 }
 
-void ApplicationStorage::requestPinnedWindowRetentionCleanup() {
+void ApplicationStorage::requestPinnedWindowRetentionCleanup(bool restartsQuiet) {
     if (m_status.directoryChanging || !m_initialized || !m_pinnedWindows)
         return;
     // Preserve requests that arrive during a sweep, including late source commits.
     {
         std::lock_guard lock(m_pinnedMaintenanceMutex);
         m_pinnedMaintenancePending = true;
-        if (m_pinnedMaintenanceRunning)
+        if (m_pinnedMaintenanceRunning) {
+            if (restartsQuiet)
+                snow_shot::runtime::RuntimeActivityTracker::shared().markActivity();
             return;
+        }
         m_pinnedMaintenanceRunning = true;
     }
     auto* repository = m_pinnedWindows.get();
-    m_pinnedMaintenancePool.start([this, repository]() {
-        snow_shot::platform::applyApplicationQoSToCurrentThread();
-        for (;;) {
-            {
-                std::lock_guard lock(m_pinnedMaintenanceMutex);
-                if (!m_pinnedMaintenancePending) {
-                    m_pinnedMaintenanceRunning = false;
-                    return;
+    m_pinnedMaintenancePool.start(snow_shot::runtime::trackRuntimeWork(
+        [this, repository]() {
+            snow_shot::platform::applyApplicationQoSToCurrentThread();
+            for (;;) {
+                {
+                    std::lock_guard lock(m_pinnedMaintenanceMutex);
+                    if (!m_pinnedMaintenancePending) {
+                        m_pinnedMaintenanceRunning = false;
+                        return;
+                    }
+                    m_pinnedMaintenancePending = false;
                 }
-                m_pinnedMaintenancePending = false;
+                static_cast<void>(repository->enforcePolicy());
             }
-            static_cast<void>(repository->enforcePolicy());
-        }
-    });
+        },
+        restartsQuiet));
 }
 
 bool ApplicationStorage::requestCaptureHistoryClear() {
@@ -829,8 +844,9 @@ StorageResult ApplicationStorage::requestDirectoryChange(const QString& director
     m_captureHistory->suspendWrites(true);
     emitStatusChanged();
     const auto diagnosticOptions = diagnostics::DiagnosticsService::instance().options();
-    m_directoryWorker =
-        std::async(std::launch::async, [this, before, destination, migrate, diagnosticOptions] {
+    m_directoryWorker = std::async(
+        std::launch::async, snow_shot::runtime::trackRuntimeWork([this, before, destination,
+                                                                  migrate, diagnosticOptions] {
             snow_shot::platform::applyApplicationQoSToCurrentThread();
             StorageDirectoryChangeResult outcome;
             if (m_drainForDirectoryChange)
@@ -880,9 +896,11 @@ StorageResult ApplicationStorage::requestDirectoryChange(const QString& director
             };
             options.preparedFiles = {QStringLiteral("pinned_windows_v2/index.json")};
             options.progress = [this](const StorageDirectoryProgress& progress) {
-                QMetaObject::invokeMethod(
-                    this, [this, progress] { emit directoryChangeProgress(progress); },
-                    Qt::QueuedConnection);
+                QMetaObject::invokeMethod(this,
+                                          snow_shot::runtime::trackRuntimeWork([this, progress] {
+                                              emit directoryChangeProgress(progress);
+                                          }),
+                                          Qt::QueuedConnection);
             };
             options.prepare = [&](const QString& root) {
                 prepared = std::make_unique<PinnedWindowRepository>(root, true, 60000);
@@ -936,7 +954,7 @@ StorageResult ApplicationStorage::requestDirectoryChange(const QString& director
                     outcome.warning += tr("File logging could not be restarted.");
             }
             return outcome;
-        });
+        }));
     auto* poll = new QTimer(this);
     poll->setInterval(25);
     connect(poll, &QTimer::timeout, this, [this, poll, before, destination] {

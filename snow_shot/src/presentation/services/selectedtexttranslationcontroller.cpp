@@ -1,6 +1,7 @@
 #include "snow_shot/presentation/selectedtexttranslationcontroller.h"
 
 #include "snow_selected_text.h"
+#include <QCoreApplication>
 
 namespace snow_shot::presentation {
 namespace {
@@ -30,10 +31,11 @@ class NativeSelectedTextCaptureBackend final : public SelectedTextCaptureBackend
     }
 
     SelectedTextCaptureResult start() override {
+        auto activity = runtime::RuntimeActivityTracker::shared().acquire();
         if (!m_service) {
             SnowSelectedTextService* service = nullptr;
             const auto error = snow_selected_text_service_create(&service, nullptr);
-            m_service.reset(service);
+            m_service.reset(service, snow_selected_text_service_destroy);
             if (error != 0) {
                 return {errorStatus(error), {}};
             }
@@ -49,6 +51,8 @@ class NativeSelectedTextCaptureBackend final : public SelectedTextCaptureBackend
         SnowSelectedTextRequest* request = nullptr;
         const auto error = snow_selected_text_start(m_service.get(), &options, &request, nullptr);
         m_request.reset(request);
+        if (error == 0)
+            m_activity = std::move(activity);
         return {error == 0 ? SelectedTextStatus::Pending : errorStatus(error), {}};
     }
 
@@ -62,6 +66,7 @@ class NativeSelectedTextCaptureBackend final : public SelectedTextCaptureBackend
         const std::unique_ptr<SnowSelectedTextResult, decltype(&snow_selected_text_result_destroy)>
             result(rawResult, snow_selected_text_result_destroy);
         m_request.reset();
+        retainUntilNativeIdle();
         switch (outcome) {
         case SNOW_SELECTED_TEXT_SELECTED: {
             SnowSelectedTextBytes text{};
@@ -91,11 +96,34 @@ class NativeSelectedTextCaptureBackend final : public SelectedTextCaptureBackend
             snow_selected_text_request_cancel(m_request.get());
             m_request.reset();
         }
+        retainUntilNativeIdle();
     }
 
   private:
-    std::unique_ptr<SnowSelectedTextService, decltype(&snow_selected_text_service_destroy)>
-        m_service{nullptr, snow_selected_text_service_destroy};
+    void retainUntilNativeIdle() {
+        if (!m_activity)
+            return;
+        if (!snow_selected_text_service_busy(m_service.get())) {
+            m_activity = {};
+            return;
+        }
+        // Native cancellation publishes its result before clipboard restoration and
+        // provider cleanup finish. Retain the service and reservation after this owner dies.
+        auto* timer = new QTimer(QCoreApplication::instance());
+        timer->setInterval(20);
+        QObject::connect(timer, &QTimer::timeout, timer,
+                         [service = m_service, activity = std::move(m_activity), timer] {
+                             static_cast<void>(activity);
+                             if (!snow_selected_text_service_busy(service.get())) {
+                                 timer->stop();
+                                 timer->deleteLater();
+                             }
+                         });
+        timer->start();
+    }
+
+    std::shared_ptr<SnowSelectedTextService> m_service;
+    runtime::RuntimeActivityLease m_activity;
     std::unique_ptr<SnowSelectedTextRequest, decltype(&snow_selected_text_request_destroy)>
         m_request{nullptr, snow_selected_text_request_destroy};
 };
@@ -121,6 +149,7 @@ void SelectedTextTranslationController::capture() {
         return;
     }
     m_pending = true;
+    m_activity = runtime::RuntimeActivityTracker::shared().acquire();
     m_pollTimer.start();
     acceptResult(m_backend->start());
 }
@@ -137,6 +166,7 @@ void SelectedTextTranslationController::cancel() {
     m_pending = false;
     m_pollTimer.stop();
     m_backend->cancel();
+    m_activity = {};
 }
 
 void SelectedTextTranslationController::acceptResult(const SelectedTextCaptureResult& result) {
@@ -145,6 +175,7 @@ void SelectedTextTranslationController::acceptResult(const SelectedTextCaptureRe
     }
     m_pollTimer.stop();
     m_pending = false;
+    const auto activity = std::move(m_activity);
     // Every completed capture hands off, even with empty text; the destination opens the
     // translation page and warns there when nothing was retrieved.
     emit textReady(result.text);

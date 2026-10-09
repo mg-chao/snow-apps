@@ -1,4 +1,5 @@
 #include "snow_shot/presentation/screenshotexportcoordinator.h"
+#include "snow_shot/runtime/runtimeactivitytracker.h"
 
 #include <QCoreApplication>
 #include <QElapsedTimer>
@@ -305,6 +306,8 @@ void idleWorkersRetireAndLaterWorkRestarts() {
 }
 
 void shutdownAbandonsAWorkerThatIgnoresCancellation() {
+    const auto idleCount =
+        snow_shot::runtime::RuntimeActivityTracker::shared().snapshot().activeCount;
     ScreenshotExportCoordinator coordinator(150);
     QObject receiver;
     std::atomic_bool entered{false};
@@ -332,6 +335,8 @@ void shutdownAbandonsAWorkerThatIgnoresCancellation() {
     coordinator.shutdown();
     require(timer.elapsed() < 2000,
             "shutdown blocked on a worker that ignores its cancellation token");
+    require(snow_shot::runtime::RuntimeActivityTracker::shared().snapshot().activeCount > idleCount,
+            "an abandoned running export must keep memory trimming blocked");
     release.store(true, std::memory_order_release);
     require(processUntil([&coordinator]() { return coordinator.pendingJobCount() == 0; }),
             "the abandoned export worker did not finish after release");
@@ -342,6 +347,12 @@ void shutdownAbandonsAWorkerThatIgnoresCancellation() {
             "the abandoned export worker thread did not retire after finishing");
     QCoreApplication::processEvents(QEventLoop::AllEvents, 20);
     require(completionCount == 1, "the abandoned worker's completion was not delivered");
+    require(
+        processUntil([idleCount] {
+            return snow_shot::runtime::RuntimeActivityTracker::shared().snapshot().activeCount ==
+                   idleCount;
+        }),
+        "settled abandoned work must release its memory activity reservation");
     QElapsedTimer secondShutdown;
     secondShutdown.start();
     coordinator.shutdown();

@@ -1,5 +1,6 @@
 #include "snow_draw_engine_qt/snow_canvas_image.h"
 #include "snow_shot/platform/applicationqos.h"
+#include "snow_shot/runtime/runtimeactivitytracker.h"
 #include "snow_shot/network/snowshotapiclient.h"
 #include "snow_shot/serverconfiguration.h"
 #include "snow_shot/diagnostics/diagnostics.h"
@@ -230,6 +231,8 @@ std::optional<QString> qwenMtLanguage(const QString& language) {
 } // namespace
 
 struct SnowShotApiClient::Request {
+    snow_shot::runtime::RuntimeActivityLease activity =
+        snow_shot::runtime::RuntimeActivityTracker::shared().acquire();
     enum class Kind { LatexExtract, TableExtract, ChatModels, Translation, ImageConversion };
     explicit Request(Kind requestKind) : kind(requestKind) {
         elapsed.start();
@@ -274,6 +277,12 @@ struct SnowShotApiClient::Request {
     TranslationDelta translationDelta;
     TranslationCompletion translationCompletion;
     QPointer<QNetworkReply> reply;
+    void retainReply(QNetworkReply* value) {
+        reply = value;
+        // Cancellation can schedule deferred reply destruction after its Request ends.
+        QObject::connect(value, &QObject::destroyed,
+                         [activity = activity] { static_cast<void>(activity); });
+    }
     QPointer<QTimer> timeout;
     QMetaObject::Connection receiverDestroyed;
     QByteArray streamBuffer;
@@ -413,35 +422,37 @@ SnowShotApiClient::extractTable(const QImage& source, QObject* receiver, Complet
     const QPointer<SnowShotApiClient> guard(this);
     const QElapsedTimer accepted = state->elapsed;
     const auto prepare = m_tableImagePreparation;
-    QThreadPool::globalInstance()->start([guard, token, source, accepted, prepare]() {
-        snow_shot::platform::applyApplicationQoSToCurrentThread();
-        const qint64 queueMs = accepted.elapsed();
-        QElapsedTimer encoding;
-        encoding.start();
-        const QByteArray webp = prepare ? prepare(source) : encodeWebp(prepareImage(source));
-        const qint64 preparationMs = encoding.elapsed();
-        QMetaObject::invokeMethod(
-            QCoreApplication::instance(),
-            [guard, token, webp, queueMs, preparationMs, dimensions = source.size()]() {
-                if (!guard || !guard->m_requests.contains(token)) {
-                    return;
-                }
-                auto* requestState = guard->m_requests.value(token);
-                if (!requestState->receiver) {
-                    guard->cancel(token);
-                    return;
-                }
-                snow_shot::diagnostics::logEvent(
-                    QStringLiteral("snow_shot.network"), QStringLiteral("table.image_prepared"),
-                    {{QStringLiteral("operation"), requestState->operation},
-                     {QStringLiteral("queue_ms"), queueMs},
-                     {QStringLiteral("preparation_ms"), preparationMs},
-                     {QStringLiteral("width"), dimensions.width()},
-                     {QStringLiteral("height"), dimensions.height()}});
-                guard->startTableUpload(token, webp);
-            },
-            Qt::QueuedConnection);
-    });
+    QThreadPool::globalInstance()->start(
+        snow_shot::runtime::trackRuntimeWork([guard, token, source, accepted, prepare]() {
+            snow_shot::platform::applyApplicationQoSToCurrentThread();
+            const qint64 queueMs = accepted.elapsed();
+            QElapsedTimer encoding;
+            encoding.start();
+            const QByteArray webp = prepare ? prepare(source) : encodeWebp(prepareImage(source));
+            const qint64 preparationMs = encoding.elapsed();
+            QMetaObject::invokeMethod(
+                QCoreApplication::instance(),
+                snow_shot::runtime::trackRuntimeWork([guard, token, webp, queueMs, preparationMs,
+                                                      dimensions = source.size()]() {
+                    if (!guard || !guard->m_requests.contains(token)) {
+                        return;
+                    }
+                    auto* requestState = guard->m_requests.value(token);
+                    if (!requestState->receiver) {
+                        guard->cancel(token);
+                        return;
+                    }
+                    snow_shot::diagnostics::logEvent(
+                        QStringLiteral("snow_shot.network"), QStringLiteral("table.image_prepared"),
+                        {{QStringLiteral("operation"), requestState->operation},
+                         {QStringLiteral("queue_ms"), queueMs},
+                         {QStringLiteral("preparation_ms"), preparationMs},
+                         {QStringLiteral("width"), dimensions.width()},
+                         {QStringLiteral("height"), dimensions.height()}});
+                    guard->startTableUpload(token, webp);
+                }),
+                Qt::QueuedConnection);
+        }));
     return token;
 }
 
@@ -476,7 +487,7 @@ void SnowShotApiClient::startTableUpload(RequestToken token, const QByteArray& w
 
     QNetworkReply* reply = manager->post(request, multipart);
     multipart->setParent(reply);
-    requestState->reply = reply;
+    requestState->retainReply(reply);
 
     connect(reply, &QNetworkReply::finished, this, [this, token, reply]() {
         if (!m_requests.contains(token)) {
@@ -558,35 +569,38 @@ SnowShotApiClient::RequestToken SnowShotApiClient::extractLatex(const QImage& so
     const QPointer<SnowShotApiClient> guard(this);
     const QElapsedTimer accepted = state->elapsed;
     const auto prepare = m_tableImagePreparation;
-    QThreadPool::globalInstance()->start([guard, token, source, accepted, prepare]() {
-        snow_shot::platform::applyApplicationQoSToCurrentThread();
-        const qint64 queueMs = accepted.elapsed();
-        QElapsedTimer encoding;
-        encoding.start();
-        const QByteArray webp = prepare ? prepare(source) : encodeWebp(prepareLatexImage(source));
-        const qint64 preparationMs = encoding.elapsed();
-        QMetaObject::invokeMethod(
-            QCoreApplication::instance(),
-            [guard, token, webp, queueMs, preparationMs, dimensions = source.size()]() {
-                if (!guard || !guard->m_requests.contains(token)) {
-                    return;
-                }
-                auto* requestState = guard->m_requests.value(token);
-                if (!requestState->receiver) {
-                    guard->cancel(token);
-                    return;
-                }
-                snow_shot::diagnostics::logEvent(
-                    QStringLiteral("snow_shot.network"), QStringLiteral("latex.image_prepared"),
-                    {{QStringLiteral("operation"), requestState->operation},
-                     {QStringLiteral("queue_ms"), queueMs},
-                     {QStringLiteral("preparation_ms"), preparationMs},
-                     {QStringLiteral("width"), dimensions.width()},
-                     {QStringLiteral("height"), dimensions.height()}});
-                guard->startLatexUpload(token, webp);
-            },
-            Qt::QueuedConnection);
-    });
+    QThreadPool::globalInstance()->start(
+        snow_shot::runtime::trackRuntimeWork([guard, token, source, accepted, prepare]() {
+            snow_shot::platform::applyApplicationQoSToCurrentThread();
+            const qint64 queueMs = accepted.elapsed();
+            QElapsedTimer encoding;
+            encoding.start();
+            const QByteArray webp =
+                prepare ? prepare(source) : encodeWebp(prepareLatexImage(source));
+            const qint64 preparationMs = encoding.elapsed();
+            QMetaObject::invokeMethod(
+                QCoreApplication::instance(),
+                snow_shot::runtime::trackRuntimeWork([guard, token, webp, queueMs, preparationMs,
+                                                      dimensions = source.size()]() {
+                    if (!guard || !guard->m_requests.contains(token)) {
+                        return;
+                    }
+                    auto* requestState = guard->m_requests.value(token);
+                    if (!requestState->receiver) {
+                        guard->cancel(token);
+                        return;
+                    }
+                    snow_shot::diagnostics::logEvent(
+                        QStringLiteral("snow_shot.network"), QStringLiteral("latex.image_prepared"),
+                        {{QStringLiteral("operation"), requestState->operation},
+                         {QStringLiteral("queue_ms"), queueMs},
+                         {QStringLiteral("preparation_ms"), preparationMs},
+                         {QStringLiteral("width"), dimensions.width()},
+                         {QStringLiteral("height"), dimensions.height()}});
+                    guard->startLatexUpload(token, webp);
+                }),
+                Qt::QueuedConnection);
+        }));
     return token;
 }
 
@@ -621,7 +635,7 @@ void SnowShotApiClient::startLatexUpload(RequestToken token, const QByteArray& w
 
     QNetworkReply* reply = manager->post(request, multipart);
     multipart->setParent(reply);
-    requestState->reply = reply;
+    requestState->retainReply(reply);
 
     connect(reply, &QNetworkReply::finished, this, [this, token, reply]() {
         if (!m_requests.contains(token)) {
@@ -803,7 +817,7 @@ SnowShotApiClient::fetchChatModels(const QString& locale, QObject* receiver,
     }
     request.setTransferTimeout(kRequestTimeoutMs);
     QNetworkReply* reply = manager->get(request);
-    state->reply = reply;
+    state->retainReply(reply);
     const auto generation = m_serverGeneration;
     connect(reply, &QNetworkReply::finished, this, [this, token, reply, locale, generation]() {
         if (!m_requests.contains(token)) {
@@ -991,7 +1005,7 @@ SnowShotApiClient::RequestToken SnowShotApiClient::streamImageConversion(
     if (custom != nullptr) {
         effectiveInput.model = custom->model;
     }
-    QThreadPool::globalInstance()->start(
+    QThreadPool::globalInstance()->start(snow_shot::runtime::trackRuntimeWork(
         [guard, token, effectiveInput, isCustom = custom != nullptr,
          supportsReasoning = custom != nullptr && custom->supportsReasoning]() {
             snow_shot::platform::applyApplicationQoSToCurrentThread();
@@ -1005,7 +1019,7 @@ SnowShotApiClient::RequestToken SnowShotApiClient::streamImageConversion(
             }
             QMetaObject::invokeMethod(
                 QCoreApplication::instance(),
-                [guard, token, body]() {
+                snow_shot::runtime::trackRuntimeWork([guard, token, body]() {
                     if (guard == nullptr || !guard->m_requests.contains(token)) {
                         return;
                     }
@@ -1021,9 +1035,9 @@ SnowShotApiClient::RequestToken SnowShotApiClient::streamImageConversion(
                         return;
                     }
                     guard->submitChatStream(token, body);
-                },
+                }),
                 Qt::QueuedConnection);
-        });
+        }));
     state->receiverDestroyed =
         connect(receiver, &QObject::destroyed, this, [this, token]() { cancel(token); });
     return token;
@@ -1096,7 +1110,7 @@ void SnowShotApiClient::startChatStream(RequestToken token, const QByteArray& bo
     request.setTransferTimeout(kTranslationTimeoutMs);
     QNetworkReply* reply = networkAccessManager()->post(request, body);
     reply->setReadBufferSize(64 * 1024);
-    state->reply = reply;
+    state->retainReply(reply);
     if (state->imageConversion && state->timeout)
         state->timeout->start(kTranslationTimeoutMs);
 
@@ -1276,6 +1290,7 @@ void SnowShotApiClient::cancel(RequestToken token) {
     if (!request) {
         return;
     }
+    const auto activity = std::move(request->activity);
     request->report(QStringLiteral("cancelled"));
     const bool translation = request->textTranslation;
     const bool custom = request->custom;
@@ -1293,6 +1308,7 @@ void SnowShotApiClient::finish(RequestToken token, SnowShotTableResult result) {
     if (!request) {
         return;
     }
+    const auto activity = std::move(request->activity);
     request->report(result.succeeded() ? QStringLiteral("succeeded") : QStringLiteral("failed"),
                     result.httpStatus);
     const QPointer<QObject> receiver = request->receiver;
@@ -1308,6 +1324,7 @@ void SnowShotApiClient::finishLatex(RequestToken token, SnowShotLatexResult resu
     if (!request) {
         return;
     }
+    const auto activity = std::move(request->activity);
     request->report(result.succeeded() ? QStringLiteral("succeeded") : QStringLiteral("failed"),
                     result.httpStatus);
     const QPointer<QObject> receiver = request->receiver;
@@ -1324,6 +1341,7 @@ void SnowShotApiClient::finishChatModels(RequestToken token, SnowShotChatModelsR
         return;
     }
     Request* request = it.value();
+    const auto activity = std::move(request->activity);
     request->report(result.succeeded() ? QStringLiteral("succeeded") : QStringLiteral("failed"),
                     result.httpStatus);
     m_requests.erase(it);
@@ -1341,6 +1359,7 @@ void SnowShotApiClient::finishTranslation(RequestToken token, SnowShotTranslatio
         return;
     }
     Request* request = it.value();
+    const auto activity = std::move(request->activity);
     request->report(result.cancelled     ? QStringLiteral("cancelled")
                     : result.succeeded() ? QStringLiteral("succeeded")
                                          : QStringLiteral("failed"),
@@ -1504,7 +1523,7 @@ void SnowShotApiClient::startTextTranslation(RequestToken token) {
         request.setRawHeader("Authorization", "DeepL-Auth-Key " + config.apiKey.toUtf8());
     state->transport.start();
     auto* reply = networkAccessManager()->post(request, body);
-    state->reply = reply;
+    state->retainReply(reply);
     auto* timeout = new QTimer(this);
     timeout->setSingleShot(true);
     state->timeout = timeout;

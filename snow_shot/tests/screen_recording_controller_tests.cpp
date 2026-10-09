@@ -33,6 +33,7 @@
 #include "snow_draw_engine_qt/snow_canvas_widget.h"
 #include "snow_shot/storage/applicationstorage.h"
 #include "snow_shot/storage/settingsadapters.h"
+#include "snow_shot/runtime/runtimeactivitytracker.h"
 #include "snow_capture.h"
 #include "snow_shot/platform/windowcaptureexclusion.h"
 #include "snow_recording.h"
@@ -167,11 +168,23 @@ std::atomic<bool> failExport = false;
 std::atomic<bool> failStart = false;
 std::atomic<bool> failStartOperation = false;
 std::atomic<int> destroyedSessions = 0;
+std::shared_future<void> sessionDestroyGate;
+std::atomic<bool> sessionDestroyEntered = false;
+std::shared_future<void> clipDestroyGate;
+std::atomic<bool> clipDestroyEntered = false;
 void require(bool condition, const char* message) {
     if (!condition) {
         std::cerr << message << '\n';
         std::exit(1);
     }
+}
+void requireMemoryAdmissionBlocked(const char* message) {
+    auto& activity = snow_shot::runtime::RuntimeActivityTracker::shared();
+    const auto snapshot = activity.snapshot();
+    bool entered = false;
+    require(snapshot.activeCount > 0 &&
+                !activity.tryRunWhenIdle(snapshot.generation, [&] { entered = true; }) && !entered,
+            message);
 }
 ScreenshotToolPalette* palette() {
     for (QWidget* widget : QApplication::topLevelWidgets()) {
@@ -2324,6 +2337,10 @@ void snow_recording_render_task_destroy(SnowRecordingRenderTask* task) {
     delete task;
 }
 void snow_recording_session_destroy(SnowRecordingSession*) {
+    if (const auto gate = sessionDestroyGate; gate.valid()) {
+        sessionDestroyEntered = true;
+        gate.wait();
+    }
     ++destroyedSessions;
 }
 uint8_t snow_recording_session_start(SnowRecordingSession*) {
@@ -2344,6 +2361,10 @@ SnowRecordingClip* snow_recording_clip_open(const char* path,
     return new SnowRecordingClip;
 }
 void snow_recording_clip_destroy(SnowRecordingClip* clip) {
+    if (const auto gate = clipDestroyGate; gate.valid()) {
+        clipDestroyEntered = true;
+        gate.wait();
+    }
     delete clip;
     ++clipDestroys;
 }
@@ -3193,14 +3214,27 @@ void recordingPostProcessingLifecycle() {
             "completed Copy uses its immutable path after a finalized observer deletes the owner");
     }
     {
+        wait(
+            [] {
+                return snow_shot::runtime::RuntimeActivityTracker::shared()
+                           .snapshot()
+                           .activeCount == 0;
+            },
+            "earlier recording cleanup retires before the native session lifetime barrier");
         auto controller = std::make_unique<ScreenRecordingController>(testEffectsSource);
         QString error;
         require(controller->startAutomation(QRect(80, 80, 320, 240),
                                             {{QStringLiteral("post_processing"), true}}, &error),
                 "prepare a deferred source finalization barrier");
         waitForRecording(*controller);
+        require(controller->blocksMemoryTrimming(), "an active native recording blocks trimming");
+        requireMemoryAdmissionBlocked(
+            "the live native recording session retains admission after its startup worker retires");
         std::promise<void> releaseExport;
         std::promise<void> enteredPromise;
+        std::promise<void> releaseSessionDestroy;
+        sessionDestroyGate = releaseSessionDestroy.get_future().share();
+        sessionDestroyEntered = false;
         auto entered = enteredPromise.get_future();
         exportGate = releaseExport.get_future().share();
         exportEntered = &enteredPromise;
@@ -3216,11 +3250,26 @@ void recordingPostProcessingLifecycle() {
         controller.reset();
         require(destruction.elapsed() < 500 && destroyedSessions == oldSessions,
                 "controller destruction never joins or releases a pending source finalization");
+        requireMemoryAdmissionBlocked("detached native session finalization retains memory "
+                                      "admission after owner destruction");
         releaseExport.set_value();
         exportEntered = nullptr;
         exportGate = {};
+        wait([] { return sessionDestroyEntered.load(); },
+             "retired native session reaches its actual destruction barrier");
+        requireMemoryAdmissionBlocked(
+            "native session destruction retains memory admission after finalization finishes");
+        releaseSessionDestroy.set_value();
         wait([&] { return sourceDestroys > oldSources && destroyedSessions > oldSessions; },
              "retired finalization eventually releases the session and preserves source media");
+        sessionDestroyGate = {};
+        wait(
+            [] {
+                return snow_shot::runtime::RuntimeActivityTracker::shared()
+                           .snapshot()
+                           .activeCount == 0;
+            },
+            "native session cleanup releases its last memory reservation after destruction");
         require(sourceDiscards == oldDiscards,
                 "destroying a controller never implicitly discards its finalized source");
     }
@@ -3331,6 +3380,13 @@ void recordingPostProcessingLifecycle() {
         waitForIdle(controller);
     }
     for (const int mode : {0, 1, 2, 3}) {
+        wait(
+            [] {
+                return snow_shot::runtime::RuntimeActivityTracker::shared()
+                           .snapshot()
+                           .activeCount == 0;
+            },
+            "earlier work retires before the render cancellation lifetime barrier");
         auto releaseCancel = std::make_shared<std::promise<void>>();
         renderCancelGate = releaseCancel->get_future().share();
         renderCancelEntered = false;
@@ -3380,6 +3436,8 @@ void recordingPostProcessingLifecycle() {
             require(
                 responsiveness.elapsed() < 500 && sourceDestroys == oldSources,
                 "destruction transfers pending cancellation without joining or releasing source");
+            requireMemoryAdmissionBlocked(
+                "detached rendering retains memory admission while native cancellation is blocked");
         } else {
             const int previousPolls = renderPolls.load();
             renderState = mode == 3 ? SNOW_RECORDING_RENDER_STATE_SUCCEEDED
@@ -3429,6 +3487,8 @@ void recordingPostProcessingLifecycle() {
         delete job;
         require(destruction.elapsed() < 500,
                 "destroying the UI must never join a pending render start");
+        requireMemoryAdmissionBlocked(
+            "detached render start cleanup retains memory admission after UI destruction");
         releaseStart.set_value();
         renderStartGate = {};
         wait([&] { return sourceDestroys > oldDestroyed; },
@@ -4198,6 +4258,9 @@ void recordingTrimmingTests(const QString& directory) {
     for (bool deferred : {false, true}) {
         ScreenRecordingController controller(testEffectsSource);
         QStringList notificationPaths;
+        wait([] {
+            return snow_shot::runtime::RuntimeActivityTracker::shared().snapshot().activeCount == 0;
+        });
         QObject::connect(&controller, &ScreenRecordingController::exportNotificationRequested,
                          &controller, [&](const QString& path) { notificationPaths.append(path); });
         QString error;
@@ -4218,6 +4281,12 @@ void recordingTrimmingTests(const QString& directory) {
                 "pending detached export has no completion notification");
         recordingToolbarButton("Close recording")->click();
         require(!controller.isOpen(), "recording windows close while trimmed export continues");
+        requireMemoryAdmissionBlocked(
+            "detached trim export retains memory admission after recording windows close");
+        std::promise<void> releaseClipDestroy;
+        clipDestroyGate = releaseClipDestroy.get_future().share();
+        clipDestroyEntered = false;
+        const int oldClips = clipDestroys.load();
         clipExportState = SNOW_RECORDING_RENDER_STATE_SUCCEEDED;
         wait([&] { return notificationPaths.size() == 1; });
         require(!controller.isOpen() &&
@@ -4225,6 +4294,12 @@ void recordingTrimmingTests(const QString& directory) {
                         QList<QUrl>{QUrl::fromLocalFile(notificationPaths.first())},
                 "detached trim export notifies with its completed path without reopening windows");
         QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+        wait([] { return clipDestroyEntered.load(); });
+        requireMemoryAdmissionBlocked(
+            "detached trim media destruction retains memory admission after publication");
+        releaseClipDestroy.set_value();
+        wait([&] { return clipDestroys > oldClips; });
+        clipDestroyGate = {};
     }
     for (bool deferred : {false, true}) {
         ScreenRecordingController controller(testEffectsSource);

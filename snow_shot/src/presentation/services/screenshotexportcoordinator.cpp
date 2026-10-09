@@ -1,5 +1,6 @@
 #include "snow_shot/platform/applicationqos.h"
 #include "snow_shot/presentation/screenshotexportcoordinator.h"
+#include "snow_shot/runtime/runtimeactivitytracker.h"
 
 #include <QCoreApplication>
 #include <QMetaObject>
@@ -66,6 +67,8 @@ bool ScreenshotExportJobHandle::isCancellationRequested() const {
 
 struct ScreenshotExportCoordinator::Impl final {
     struct Job {
+        snow_shot::runtime::RuntimeActivityLease activity =
+            snow_shot::runtime::RuntimeActivityTracker::shared().acquire();
         std::shared_ptr<std::atomic_bool> cancelled = std::make_shared<std::atomic_bool>(false);
         // Protected by mutex until the worker claims it or cancellation removes it.
         QRunnable* queuedRunnable = nullptr;
@@ -145,7 +148,7 @@ ScreenshotExportJobHandle ScreenshotExportCoordinator::submit(QObject* receiver,
     auto terminal = std::make_shared<std::atomic_bool>(false);
     const QPointer<QObject> guardedReceiver(receiver);
     const QPointer<ScreenshotExportCoordinator> guardedCoordinator(this);
-    job->complete = [state, guardedCoordinator, guardedReceiver, terminal,
+    job->complete = [state, guardedCoordinator, guardedReceiver, terminal, activity = job->activity,
                      completion =
                          std::move(completion)](ScreenshotExportTaskResult result) mutable {
         state->pending.fetch_sub(1, std::memory_order_acq_rel);
@@ -154,8 +157,9 @@ ScreenshotExportJobHandle ScreenshotExportCoordinator::submit(QObject* receiver,
         auto sharedResult = std::make_shared<ScreenshotExportTaskResult>(std::move(result));
         static_cast<void>(QMetaObject::invokeMethod(
             guardedCoordinator,
-            [guardedReceiver, terminal, sharedResult,
+            [guardedReceiver, terminal, sharedResult, activity,
              completion = std::move(completion)]() mutable {
+                static_cast<void>(activity);
                 if (terminal->exchange(true, std::memory_order_acq_rel) || guardedReceiver.isNull())
                     return;
                 completion(std::move(*sharedResult));

@@ -5,6 +5,7 @@
 #include "screenshotocrtransferbuffer.h"
 #include "snow_shot/presentation/screenshotocrassets.h"
 #include "snow_shot/diagnostics/diagnostics.h"
+#include "snow_shot/runtime/runtimeactivitytracker.h"
 #include <QImage>
 #include <QObject>
 #include <QMetaObject>
@@ -65,6 +66,7 @@ class ScreenshotOcrTransport final : public QObject {
         : m_receiver(receiver), m_callbacks(std::move(callbacks)) {}
 
     ~ScreenshotOcrTransport() override {
+        const auto activity = snow_shot::runtime::RuntimeActivityTracker::shared().acquire();
         if (m_process != nullptr) {
             m_process->disconnect(this);
             if (m_process->state() != QProcess::NotRunning) {
@@ -164,8 +166,10 @@ class ScreenshotOcrTransport final : public QObject {
 
   private:
     template <typename Callback, typename... Args> void post(Callback callback, Args... args) {
-        QMetaObject::invokeMethod(
-            m_receiver, [callback, args...]() mutable { callback(args...); }, Qt::QueuedConnection);
+        QMetaObject::invokeMethod(m_receiver,
+                                  snow_shot::runtime::trackRuntimeWork(
+                                      [callback, args...]() mutable { callback(args...); }),
+                                  Qt::QueuedConnection);
     }
     QObject* m_receiver;
     Callbacks m_callbacks;

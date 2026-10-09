@@ -2,6 +2,7 @@
 #include "snow_shot/app/mcp/screenshotmcpsession.h"
 #include "snow_shot/app/mcp/screenshotmcpselection.h"
 #include "snow_shot/app/mcp/mcpstylepatch.h"
+#include "snow_shot/runtime/runtimeactivitytracker.h"
 #include "snowimageqtcodec.h"
 #include <QApplication>
 #include <QClipboard>
@@ -61,6 +62,8 @@ QJsonObject request(const QString& id, const QString& method, const QJsonObject&
             {QStringLiteral("params"), params}};
 }
 void transport() {
+    const auto baseline =
+        snow_shot::runtime::RuntimeActivityTracker::shared().snapshot().activeCount;
     QTemporaryDir directory;
     require(directory.isValid(), "temporary runtime directory");
     ScreenshotMcpServer server(nullptr, directory.path());
@@ -69,6 +72,8 @@ void transport() {
     int flushed = 0;
     quint64 owner = 0;
     server.setRequestHandler([&](const ScreenshotMcpRequest& r, auto completion) {
+        require(snow_shot::runtime::RuntimeActivityTracker::shared().snapshot().activeCount > 0,
+                "socket request handoff retains activity through GUI dispatch");
         require(QThread::currentThread() == QCoreApplication::instance()->thread(),
                 "GUI thread dispatch");
         ++requests;
@@ -94,6 +99,9 @@ void transport() {
         response.ok = true;
         if (r.method == QStringLiteral("after_send"))
             response.afterSend = [&] {
+                require(
+                    snow_shot::runtime::RuntimeActivityTracker::shared().snapshot().activeCount > 0,
+                    "post-response action retains activity through delivery");
                 require(QThread::currentThread() == QCoreApplication::instance()->thread(),
                         "post-response action runs on application thread");
                 ++flushed;
@@ -111,6 +119,10 @@ void transport() {
     });
     QString error;
     require(server.start(&error), qPrintable(error));
+    await([&] {
+        return snow_shot::runtime::RuntimeActivityTracker::shared().snapshot().activeCount ==
+               baseline;
+    });
     QFile descriptor(server.descriptorPath());
     require(descriptor.open(QIODevice::ReadOnly), "published descriptor");
     auto data = QJsonDocument::fromJson(descriptor.readAll()).object();
@@ -225,6 +237,8 @@ void transport() {
     await([&] { return client.state() == QLocalSocket::UnconnectedState; });
     require(server.start(), "runtime re-enable");
     server.stop();
+    require(snow_shot::runtime::RuntimeActivityTracker::shared().snapshot().activeCount == baseline,
+            "completed socket work and shutdown release activity leases");
 }
 void descriptorOverride() {
     QTemporaryDir directory;
@@ -886,6 +900,18 @@ void completeToolStyleContract() {
             state.serialNumberStyle = value;
             properties = flags;
             ++updates;
+        }
+        bool setAngleStyleFromToolbar(const SnowCanvasAngleStyle& value, quint32 flags) {
+            state.angleStyle = value;
+            properties = flags;
+            ++updates;
+            return true;
+        }
+        bool setDistanceStyleFromToolbar(const SnowCanvasDistanceStyle& value, quint32 flags) {
+            state.distanceStyle = value;
+            properties = flags;
+            ++updates;
+            return true;
         }
         void setWatermarkConfigFromToolbar(const SnowCanvasWatermarkConfig&) {
             ++updates;

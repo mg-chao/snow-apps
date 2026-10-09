@@ -1,3 +1,4 @@
+#include "snow_shot/runtime/runtimeactivitytracker.h"
 #include "recordingtrimsession.h"
 #include "snow_shot/platform/applicationqos.h"
 #include "recordingeffectpreview.h"
@@ -204,8 +205,10 @@ QString chooseRecordingOutputPath(const QStringList& directories, const QString&
 // Owns the native recording session (capture pipeline, input hooks while
 // running, and worker threads) through its destroy entry point on every path.
 struct RecordingSessionDeleter {
+    mutable snow_shot::runtime::RuntimeActivityLease activity;
     void operator()(SnowRecordingSession* session) const {
         snow_recording_session_destroy(session);
+        activity = {};
     }
 };
 using RecordingSessionHandle = std::unique_ptr<SnowRecordingSession, RecordingSessionDeleter>;
@@ -403,24 +406,26 @@ struct ScreenRecordingController::Impl {
         // independent owner so controller destruction never joins on the GUI.
         if (startFuture.valid() || finalizationFuture.valid() || recordingSession != nullptr ||
             pendingDimensions.valid()) {
-            std::thread([start = std::move(startFuture), finish = std::move(finalizationFuture),
-                         session = std::move(recordingSession),
-                         dimensions = std::move(pendingDimensions)]() mutable {
-                snow_shot::platform::applyApplicationQoSToCurrentThread();
-                if (start.valid()) {
-                    StartAttemptResult result = start.get();
-                    if (result.session != nullptr && session == nullptr)
-                        session = std::move(result.session);
-                }
-                if (finish.valid()) {
-                    const auto result = finish.get();
-                    if (result.source)
-                        snow_recording_source_destroy(result.source);
-                }
-                session.reset();
-                if (dimensions.valid())
-                    dimensions.wait();
-            }).detach();
+            std::thread(snow_shot::runtime::trackRuntimeWork(
+                            [start = std::move(startFuture), finish = std::move(finalizationFuture),
+                             session = std::move(recordingSession),
+                             dimensions = std::move(pendingDimensions)]() mutable {
+                                snow_shot::platform::applyApplicationQoSToCurrentThread();
+                                if (start.valid()) {
+                                    StartAttemptResult result = start.get();
+                                    if (result.session != nullptr && session == nullptr)
+                                        session = std::move(result.session);
+                                }
+                                if (finish.valid()) {
+                                    const auto result = finish.get();
+                                    if (result.source)
+                                        snow_recording_source_destroy(result.source);
+                                }
+                                session.reset();
+                                if (dimensions.valid())
+                                    dimensions.wait();
+                            }))
+                .detach();
         }
         if (renderJob) {
             delete renderJob;
@@ -1131,13 +1136,17 @@ struct ScreenRecordingController::Impl {
             // paint. The FFI error string is thread-local, so it is read here.
             startFuture = std::async(
                 std::launch::async,
-                [config, excludedWindowIds, directories, baseName, extension, keyboard,
-                 keyboardFont, requestedPath, previewRetirement, deferred = sessionDeferred,
-                 overlay, barColor]() mutable -> StartAttemptResult {
+                snow_shot::runtime::trackRuntimeWork([config, excludedWindowIds, directories,
+                                                      baseName, extension, keyboard, keyboardFont,
+                                                      requestedPath, previewRetirement,
+                                                      deferred = sessionDeferred, overlay,
+                                                      barColor]() mutable -> StartAttemptResult {
                     if (previewRetirement.valid())
                         previewRetirement.wait();
                     snow_shot::platform::applyApplicationQoSToCurrentThread();
                     StartAttemptResult result;
+                    result.session.get_deleter().activity =
+                        snow_shot::runtime::RuntimeActivityTracker::shared().acquire();
                     result.outputPath =
                         requestedPath.isEmpty()
                             ? chooseRecordingOutputPath(directories, baseName, extension)
@@ -1175,7 +1184,7 @@ struct ScreenRecordingController::Impl {
                         return result;
                     }
                     return result;
-                });
+                }));
             startPollTimer.start();
         });
     }
@@ -1192,7 +1201,7 @@ struct ScreenRecordingController::Impl {
             // did start is shut down through the regular finalization path; any
             // other attempt is destroyed when this result is dropped.
             if (result.session != nullptr && result.error.isEmpty()) {
-                recordingSession.reset(result.session.release());
+                recordingSession = std::move(result.session);
                 pendingOutputPath = result.outputPath;
                 sessionStatus = ScreenshotToolPalette::RecordingSessionStatus::recording();
                 automationRevision = snow_shot::presentation::nextAutomationRevision();
@@ -1226,7 +1235,7 @@ struct ScreenRecordingController::Impl {
             return;
         }
 
-        recordingSession.reset(result.session.release());
+        recordingSession = std::move(result.session);
         pendingOutputPath = result.outputPath;
         durationMilliseconds = 0;
         sessionStatus = ScreenshotToolPalette::RecordingSessionStatus::recording();
@@ -1331,16 +1340,18 @@ struct ScreenRecordingController::Impl {
         // The member keeps ownership; pollFinalization destroys the session
         // only after the asynchronous stop has joined the worker.
         SnowRecordingSession* session = recordingSession.get();
-        finalizationFuture = std::async(std::launch::async, [session, deferred = sessionDeferred] {
-            snow_shot::platform::applyApplicationQoSToCurrentThread();
-            FinalizationResult result;
-            result.ok =
-                (deferred ? snow_recording_session_finalize_deferred(session, &result.source)
-                          : snow_recording_session_stop(session)) == SNOW_RECORDING_RESULT_OK;
-            if (!result.ok)
-                result.error = captureError();
-            return result;
-        });
+        finalizationFuture = std::async(
+            std::launch::async,
+            snow_shot::runtime::trackRuntimeWork([session, deferred = sessionDeferred] {
+                snow_shot::platform::applyApplicationQoSToCurrentThread();
+                FinalizationResult result;
+                result.ok =
+                    (deferred ? snow_recording_session_finalize_deferred(session, &result.source)
+                              : snow_recording_session_stop(session)) == SNOW_RECORDING_RESULT_OK;
+                if (!result.ok)
+                    result.error = captureError();
+                return result;
+            }));
         finalizationPollTimer.start();
     }
 
@@ -1601,11 +1612,12 @@ struct ScreenRecordingController::Impl {
         snow_recording_audio_monitor_cancel(retiring);
         std::promise<void> completion;
         audioPreviewRetirement = completion.get_future().share();
-        std::thread([retiring, completion = std::move(completion)]() mutable {
+        std::thread(snow_shot::runtime::trackRuntimeWork([retiring, completion = std::move(
+                                                                        completion)]() mutable {
             snow_shot::platform::applyApplicationQoSToCurrentThread();
             snow_recording_audio_monitor_destroy(retiring);
             completion.set_value();
-        }).detach();
+        })).detach();
     }
 
     void stopAudioMeter() {
@@ -1860,8 +1872,9 @@ struct ScreenRecordingController::Impl {
                 const QSize maximum = output.maximumSize;
                 const auto format = output.format;
                 const auto generation = dimensionsGeneration;
-                dimensionsFuture =
-                    std::async(std::launch::async, [region, maximum, format, generation] {
+                dimensionsFuture = std::async(
+                    std::launch::async,
+                    snow_shot::runtime::trackRuntimeWork([region, maximum, format, generation] {
                         snow_shot::platform::applyApplicationQoSToCurrentThread();
                         uint32_t width = 0, height = 0;
                         const bool ok =
@@ -1874,7 +1887,7 @@ struct ScreenRecordingController::Impl {
                         return std::make_pair(generation, ok ? QSize(static_cast<int>(width),
                                                                      static_cast<int>(height))
                                                              : QSize());
-                    });
+                    }));
                 dimensionsPollTimer.start();
             }
             return;
@@ -2110,6 +2123,16 @@ bool ScreenRecordingController::isOpen() const {
 
 bool ScreenRecordingController::isRecording() const {
     return m_impl->sessionStatus.state() != ScreenshotToolPalette::RecordingState::Idle;
+}
+
+bool ScreenRecordingController::blocksMemoryTrimming() const {
+    const auto& state = *m_impl;
+    return state.isOpen() || isRecording() || state.recordingSession || state.startFuture.valid() ||
+           state.finalizationFuture.valid() || state.renderJob || state.trimSession ||
+           state.audioPreview ||
+           (state.audioPreviewRetirement.valid() &&
+            state.audioPreviewRetirement.wait_for(std::chrono::milliseconds(0)) !=
+                std::future_status::ready);
 }
 
 void ScreenRecordingController::startRecording() {

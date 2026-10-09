@@ -1,4 +1,5 @@
 #include "snow_shot/presentation/screenshotprintservice.h"
+#include "snow_shot/runtime/runtimeactivitytracker.h"
 #include "../src/presentation/services/nativeprintbackend.h"
 #include "../src/presentation/services/screenshotprintinteractionguard.h"
 #include "../src/presentation/services/screenshotprintcompletion.h"
@@ -52,6 +53,8 @@ QImage image() {
     return result;
 }
 void immutableWhiteSnapshotAndDuplicateCompletion() {
+    const auto idleCount =
+        snow_shot::runtime::RuntimeActivityTracker::shared().snapshot().activeCount;
     Service::Completion nativeCompletion;
     QImage received;
     int starts = 0;
@@ -76,6 +79,8 @@ void immutableWhiteSnapshotAndDuplicateCompletion() {
     require(!service.printImage(&owner, &owner, source, [](auto) {}),
             "duplicate preparation or native interaction must be rejected");
     processUntil([&] { return starts == 1; });
+    require(snow_shot::runtime::RuntimeActivityTracker::shared().snapshot().activeCount > idleCount,
+            "pending native print interaction must block memory trimming");
     require(starts == 1 && received.size() == QSize(2, 1) && received.devicePixelRatio() == 1 &&
                 received.pixelColor(0, 0) == QColor(Qt::white) &&
                 received.pixelColor(1, 0) == QColor(255, 127, 127),
@@ -86,6 +91,9 @@ void immutableWhiteSnapshotAndDuplicateCompletion() {
     nativeCompletion({Service::Status::Failed, QStringLiteral("late")});
     flush();
     require(completions == 1 && !service.busy(), "late native completions must be ignored");
+    require(snow_shot::runtime::RuntimeActivityTracker::shared().snapshot().activeCount ==
+                idleCount,
+            "completed print callbacks retained by a backend must not block idle memory trimming");
 }
 void fallbackOnlyWhenUnavailable() {
     for (auto status :

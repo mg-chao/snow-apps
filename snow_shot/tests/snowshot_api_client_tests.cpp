@@ -1,4 +1,5 @@
 #include "snow_shot/network/snowshotapiclient.h"
+#include "snow_shot/runtime/runtimeactivitytracker.h"
 #include "translation_test_support.h"
 #include "snow_shot/diagnostics/diagnostics.h"
 #include "snowimageqtcodec.h"
@@ -145,8 +146,12 @@ void tablePreparationIsAsynchronousAndLifetimeSafe() {
             timeoutLoop.exec();
             require(completions == 1, "deadline includes blocked preparation");
         }
+        require(snow_shot::runtime::RuntimeActivityTracker::shared().snapshot().activeCount > 0,
+                "encoding must block memory trimming after cancellation or owner destruction");
         release.release();
         require(QThreadPool::globalInstance()->waitForDone(5000), "table worker settles");
+        require(snow_shot::runtime::RuntimeActivityTracker::shared().snapshot().activeCount > 0,
+                "queued encoded-image delivery must block trimming until the UI processes it");
         QCoreApplication::sendPostedEvents(nullptr, QEvent::MetaCall);
         require(completions == ((scenario == 0 || scenario == 4 || scenario == 5) ? 1 : 0),
                 "cancelled or destroyed consumers receive no late callback");
@@ -240,6 +245,8 @@ void latexPreparationIsAsynchronousAndLifetimeSafe() {
         }
         release.release();
         require(QThreadPool::globalInstance()->waitForDone(5000), "table worker settles");
+        require(snow_shot::runtime::RuntimeActivityTracker::shared().snapshot().activeCount > 0,
+                "queued LaTeX-image delivery must block trimming until the UI processes it");
         QCoreApplication::sendPostedEvents(nullptr, QEvent::MetaCall);
         require(completions == ((scenario == 0 || scenario == 4 || scenario == 5) ? 1 : 0),
                 "cancelled or destroyed consumers receive no late callback");

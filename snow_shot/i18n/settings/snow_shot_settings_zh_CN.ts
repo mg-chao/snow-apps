@@ -2065,6 +2065,10 @@
             <translation>禁用/启用全局快捷键</translation>
         </message>
         <message>
+            <source>Disabled</source>
+            <translation>禁用</translation>
+        </message>
+        <message>
             <source>Disk limit</source>
             <translation>磁盘限制</translation>
         </message>
@@ -2715,6 +2719,10 @@
         <message>
             <source>Medium V6</source>
             <translation>中型 V6</translation>
+        </message>
+        <message>
+            <source>Memory Optimization Policy</source>
+            <translation>内存优化策略</translation>
         </message>
         <message>
             <source>Menu options</source>
@@ -3847,6 +3855,14 @@
         <message>
             <source>Small V6</source>
             <translation>小型 V6</translation>
+        </message>
+        <message>
+            <source>Smart Control</source>
+            <translation>智能控制</translation>
+        </message>
+        <message>
+            <source>Smart Control trims resident memory while the app is idle. The next use may briefly take longer.</source>
+            <translation>智能控制会在应用空闲时缩减驻留内存。下次使用时可能会短暂增加响应时间。</translation>
         </message>
         <message>
             <source>Smart Merge</source>

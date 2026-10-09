@@ -27,6 +27,7 @@ class ScreenRecordingController final : public QObject {
     void setPermissionCheck(PermissionCheck check);
     bool isOpen() const;
     bool isRecording() const;
+    [[nodiscard]] bool blocksMemoryTrimming() const;
     void startRecording();
     void stopRecordingAndCopy();
     void openRecordingFolder();

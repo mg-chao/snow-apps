@@ -1,4 +1,5 @@
 #include "snow_shot/presentation/screenshotclipboardservice.h"
+#include "snow_shot/runtime/runtimeactivitytracker.h"
 #include "snow_shot/diagnostics/diagnostics.h"
 #include <QUuid>
 
@@ -94,6 +95,7 @@ class PngClipboardMimeData final : public QMimeData {
 
   protected:
     QVariant retrieveData(const QString& mime, QMetaType type) const override {
+        const auto activity = snow_shot::runtime::RuntimeActivityTracker::shared().acquire();
         if (mime == QStringLiteral("application/x-qt-image")) {
             return snow_shot::image_codec::decode(data(QStringLiteral("image/png")),
                                                   snow::image::Format::png, "clipboard.png");
@@ -153,6 +155,7 @@ class ClipboardCommitOperation final : public QObject {
 
   private:
     void runAttempt() {
+        const auto activity = m_activity;
         if (m_finished) {
             return;
         }
@@ -206,6 +209,7 @@ class ClipboardCommitOperation final : public QObject {
             return;
         }
         m_finished = true;
+        const auto activity = std::move(m_activity);
         m_attempt = {};
         if (const auto scope = m_state->scope.lock()) {
             scope->pending.remove(m_state.get());
@@ -241,6 +245,8 @@ class ClipboardCommitOperation final : public QObject {
     QString m_operation = QUuid::createUuid().toString(QUuid::Id128);
     int m_attempts = 0;
     bool m_finished = false;
+    snow_shot::runtime::RuntimeActivityLease m_activity =
+        snow_shot::runtime::RuntimeActivityTracker::shared().acquire();
 };
 } // namespace
 

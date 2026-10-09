@@ -1,5 +1,6 @@
 #include "snow_draw_engine_qt/snow_canvas_image.h"
 #include "snow_shot/platform/applicationqos.h"
+#include "snow_shot/runtime/runtimeactivitytracker.h"
 #include "snow_shot/shortcuts/shortcutbinding.h"
 #include "snow_shot/presentation/screenshotqrcontroller.h"
 
@@ -368,33 +369,36 @@ void ScreenshotQrController::recognize(Snapshot snapshot) {
     const quint64 generation = m_generation;
     m_cancelled = std::make_shared<std::atomic_bool>(false);
     auto image = std::make_shared<QImage>();
-    QThread* worker = QThread::create([snapshot = std::move(snapshot), cancelled = m_cancelled,
-                                       image] { *image = prepareImage(snapshot, *cancelled); });
+    QThread* worker = QThread::create(snow_shot::runtime::trackRuntimeWork(
+        [snapshot = std::move(snapshot), cancelled = m_cancelled, image] {
+            *image = prepareImage(snapshot, *cancelled);
+        }));
     worker->setObjectName(QStringLiteral("ScreenshotQrImageWorker"));
     connect(worker, &QThread::finished, worker, &QObject::deleteLater);
-    connect(worker, &QThread::finished, this, [this, generation, image] {
-        if (generation != m_generation)
-            return;
-        if (image->isNull() || !m_recognition) {
-            finish(generation, {}, {{}, tr("QR code recognition failed"), {}});
-            return;
-        }
-        const QSize pixels = image->size();
-        // A test port may complete synchronously before recognize returns its token.
-        auto completed = std::make_shared<bool>(false);
-        const auto token = m_recognition->recognize(
-            std::move(*image), this,
-            [this, generation, pixels, completed](ScreenshotQrRecognitionResult result) {
-                *completed = true;
-                finish(generation, pixels, std::move(result));
-            },
-            ScreenshotQrRecognitionMode::QrOnly);
-        if (!*completed && generation == m_generation) {
-            m_request = token;
-            if (!token)
-                finish(generation, {}, {{}, tr("QR code recognition failed"), {}});
-        }
-    });
+    connect(worker, &QThread::finished, this,
+            snow_shot::runtime::trackRuntimeWork([this, generation, image] {
+                if (generation != m_generation)
+                    return;
+                if (image->isNull() || !m_recognition) {
+                    finish(generation, {}, {{}, tr("QR code recognition failed"), {}});
+                    return;
+                }
+                const QSize pixels = image->size();
+                // A test port may complete synchronously before recognize returns its token.
+                auto completed = std::make_shared<bool>(false);
+                const auto token = m_recognition->recognize(
+                    std::move(*image), this,
+                    [this, generation, pixels, completed](ScreenshotQrRecognitionResult result) {
+                        *completed = true;
+                        finish(generation, pixels, std::move(result));
+                    },
+                    ScreenshotQrRecognitionMode::QrOnly);
+                if (!*completed && generation == m_generation) {
+                    m_request = token;
+                    if (!token)
+                        finish(generation, {}, {{}, tr("QR code recognition failed"), {}});
+                }
+            }));
     snow_shot::platform::configureApplicationQoSThread(worker);
     worker->start();
 }

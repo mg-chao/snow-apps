@@ -1,6 +1,7 @@
 #include "snow_shot/app/mcp/mcpedition.h"
 #include "snow_shot/platform/applicationqos.h"
 #include "snow_shot/app/mcp/screenshotmcpserver.h"
+#include "snow_shot/runtime/runtimeactivitytracker.h"
 
 #include <QCoreApplication>
 #include <QDir>
@@ -31,6 +32,8 @@
 #include <sddl.h>
 #include <aclapi.h>
 #endif
+
+Q_DECLARE_METATYPE(snow_shot::runtime::RuntimeActivityLease)
 
 namespace snow_shot::app::mcp {
 namespace {
@@ -186,7 +189,8 @@ class ScreenshotMcpServer::SocketWorker final : public QObject {
                     return;
                 timer->stop();
                 timer->deleteLater();
-                QMetaObject::invokeMethod(QCoreApplication::instance(), std::move(drained),
+                QMetaObject::invokeMethod(QCoreApplication::instance(),
+                                          runtime::trackRuntimeWork(std::move(drained)),
                                           Qt::QueuedConnection);
             });
         timer->start(10);
@@ -207,6 +211,7 @@ class ScreenshotMcpServer::SocketWorker final : public QObject {
         dispatch(id);
     }
     void publishEvent(quint64 id, QJsonObject event) {
+        const auto activity = runtime::RuntimeActivityTracker::shared().acquire();
         const auto it = m_clients.find(id);
         if (it == m_clients.end() || !it->authenticated)
             return;
@@ -222,7 +227,8 @@ class ScreenshotMcpServer::SocketWorker final : public QObject {
     }
   signals:
     void requestReceived(quint64 connectionId, const QJsonObject& request,
-                         const QByteArray& attachment);
+                         const QByteArray& attachment,
+                         snow_shot::runtime::RuntimeActivityLease activity);
     void clientDisconnected(quint64 connectionId);
     void connectionCountChanged(int count);
 
@@ -238,6 +244,8 @@ class ScreenshotMcpServer::SocketWorker final : public QObject {
         struct Queued {
             QJsonObject request;
             QElapsedTimer timer;
+            runtime::RuntimeActivityLease activity =
+                runtime::RuntimeActivityTracker::shared().acquire();
         };
         QQueue<Queued> queue;
         QElapsedTimer connected;
@@ -248,10 +256,12 @@ class ScreenshotMcpServer::SocketWorker final : public QObject {
             return;
         auto callbacks = std::exchange(c.afterSend, {});
         for (auto& callback : callbacks)
-            QMetaObject::invokeMethod(QCoreApplication::instance(), std::move(callback),
+            QMetaObject::invokeMethod(QCoreApplication::instance(),
+                                      runtime::trackRuntimeWork(std::move(callback)),
                                       Qt::QueuedConnection);
     }
     void write(Client& c, ScreenshotMcpResponse r) {
+        const auto activity = runtime::RuntimeActivityTracker::shared().acquire();
         QByteArray bytes = frame(responseObject(r), r.attachment);
         if (bytes.isEmpty()) {
             r.afterSend = {};
@@ -267,7 +277,7 @@ class ScreenshotMcpServer::SocketWorker final : public QObject {
             return;
         }
         if (r.afterSend)
-            c.afterSend.append(std::move(r.afterSend));
+            c.afterSend.append(runtime::trackRuntimeWork(std::move(r.afterSend)));
         flushCallbacks(c);
     }
     void accept() {
@@ -322,9 +332,10 @@ class ScreenshotMcpServer::SocketWorker final : public QObject {
         auto request = queued.request;
         request.insert(QStringLiteral("_queue_wait_ms"), queued.timer.elapsed());
         it->activeId = request.value(QStringLiteral("request_id")).toString();
-        emit requestReceived(id, request, {});
+        emit requestReceived(id, request, {}, queued.activity);
     }
     void read(quint64 id) {
+        const auto activity = runtime::RuntimeActivityTracker::shared().acquire();
         auto it = m_clients.find(id);
         if (it == m_clients.end())
             return;
@@ -452,7 +463,7 @@ class ScreenshotMcpServer::SocketWorker final : public QObject {
                     continue;
                 }
                 c.controlIds.insert(requestId);
-                emit requestReceived(id, request, {});
+                emit requestReceived(id, request, {}, activity);
                 continue;
             }
             if (method.startsWith(QStringLiteral("snow_shot_document_"))) {
@@ -463,7 +474,7 @@ class ScreenshotMcpServer::SocketWorker final : public QObject {
                     continue;
                 }
                 c.backgroundIds.insert(requestId);
-                emit requestReceived(id, request, {});
+                emit requestReceived(id, request, {}, activity);
                 continue;
             }
             if (c.queue.size() >= 8) {
@@ -476,7 +487,7 @@ class ScreenshotMcpServer::SocketWorker final : public QObject {
             dispatch(id);
         }
         if (c.socket->bytesAvailable() > 0)
-            QTimer::singleShot(0, this, [this, id] { read(id); });
+            QTimer::singleShot(0, this, runtime::trackRuntimeWork([this, id] { read(id); }));
     }
     QLocalServer* m_server = nullptr;
     QString m_name;
@@ -569,7 +580,9 @@ bool ScreenshotMcpServer::start(QString* error) {
     const quint64 epoch = m_epoch;
     connect(
         m_worker, &SocketWorker::requestReceived, this,
-        [this, epoch](quint64 connection, const QJsonObject& request, const QByteArray& bytes) {
+        [this, epoch](quint64 connection, const QJsonObject& request, const QByteArray& bytes,
+                      runtime::RuntimeActivityLease activity) {
+            static_cast<void>(activity);
             if (epoch == m_epoch)
                 handleRequest(connection, request, bytes);
         },
@@ -591,9 +604,10 @@ bool ScreenshotMcpServer::start(QString* error) {
     snow_shot::platform::configureApplicationQoSThread(m_thread.get());
     m_thread->start();
     QString listenError;
-    QMetaObject::invokeMethod(
-        m_worker, [this, &listenError] { listenError = m_worker->start(); },
-        Qt::BlockingQueuedConnection);
+    QMetaObject::invokeMethod(m_worker, runtime::trackRuntimeWork([this, &listenError] {
+                                  listenError = m_worker->start();
+                              }),
+                              Qt::BlockingQueuedConnection);
     if (!listenError.isEmpty() || !writeDescriptor(error)) {
         if (error && !listenError.isEmpty())
             *error = tr("Could not open the local MCP endpoint.");
@@ -611,7 +625,9 @@ void ScreenshotMcpServer::stop() {
     removeDescriptor();
     if (m_thread) {
         disconnect(m_worker, nullptr, this, nullptr);
-        QMetaObject::invokeMethod(m_worker, &SocketWorker::stop, Qt::BlockingQueuedConnection);
+        QMetaObject::invokeMethod(
+            m_worker, runtime::trackRuntimeWork([worker = m_worker] { worker->stop(); }),
+            Qt::BlockingQueuedConnection);
         m_thread->quit();
         m_thread->wait();
         m_worker = nullptr;
@@ -637,18 +653,19 @@ void ScreenshotMcpServer::drainAndStop(std::function<void()> afterDrain, int tim
     const auto epoch = m_epoch;
     QMetaObject::invokeMethod(
         m_worker,
-        [worker = m_worker, guard, epoch, afterDrain = std::move(afterDrain),
-         timeoutMilliseconds]() mutable {
-            worker->beginDrain(
-                [guard, epoch, afterDrain = std::move(afterDrain)]() mutable {
-                    if (!guard || guard->m_epoch != epoch)
-                        return;
-                    guard->stop();
-                    if (afterDrain)
-                        afterDrain();
-                },
-                std::clamp(timeoutMilliseconds, 1, 10000));
-        },
+        runtime::trackRuntimeWork([worker = m_worker, guard, epoch,
+                                   afterDrain = std::move(afterDrain),
+                                   timeoutMilliseconds]() mutable {
+            worker->beginDrain(runtime::trackRuntimeWork(
+                                   [guard, epoch, afterDrain = std::move(afterDrain)]() mutable {
+                                       if (!guard || guard->m_epoch != epoch)
+                                           return;
+                                       guard->stop();
+                                       if (afterDrain)
+                                           afterDrain();
+                                   }),
+                               std::clamp(timeoutMilliseconds, 1, 10000));
+        }),
         Qt::QueuedConnection);
 }
 bool ScreenshotMcpServer::isRunning() const {
@@ -672,12 +689,12 @@ void ScreenshotMcpServer::setRequestCancellationHandler(RequestCancellationHandl
 void ScreenshotMcpServer::publishEvent(quint64 connection, QJsonObject event) {
     if (!m_worker)
         return;
-    QMetaObject::invokeMethod(
-        m_worker,
-        [worker = m_worker, connection, event = std::move(event)]() mutable {
-            worker->publishEvent(connection, std::move(event));
-        },
-        Qt::QueuedConnection);
+    QMetaObject::invokeMethod(m_worker,
+                              runtime::trackRuntimeWork([worker = m_worker, connection,
+                                                         event = std::move(event)]() mutable {
+                                  worker->publishEvent(connection, std::move(event));
+                              }),
+                              Qt::QueuedConnection);
 }
 void ScreenshotMcpServer::handleRequest(quint64 connection, const QJsonObject& object,
                                         const QByteArray&) {
@@ -740,12 +757,12 @@ void ScreenshotMcpServer::handleClientDisconnected(quint64 id) {
 void ScreenshotMcpServer::sendResponse(quint64 id, ScreenshotMcpResponse response) {
     if (!m_worker)
         return;
-    QMetaObject::invokeMethod(
-        m_worker,
-        [worker = m_worker, id, response = std::move(response)]() mutable {
-            worker->complete(id, std::move(response));
-        },
-        Qt::QueuedConnection);
+    QMetaObject::invokeMethod(m_worker,
+                              runtime::trackRuntimeWork([worker = m_worker, id,
+                                                         response = std::move(response)]() mutable {
+                                  worker->complete(id, std::move(response));
+                              }),
+                              Qt::QueuedConnection);
 }
 bool ScreenshotMcpServer::writeDescriptor(QString* error) {
     QSaveFile file(m_descriptorPath);

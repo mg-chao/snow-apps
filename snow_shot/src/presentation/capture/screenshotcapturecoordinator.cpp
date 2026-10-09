@@ -1,3 +1,4 @@
+#include "snow_shot/runtime/runtimeactivitytracker.h"
 #include "snow_shot/platform/applicationqos.h"
 #include "snow_shot/presentation/screenshotcapturecoordinator.h"
 
@@ -134,10 +135,10 @@ template <typename Task> bool ScreenshotCaptureCoordinator::postWorkerTask(Task&
     const QPointer<ScreenshotCaptureWorker> worker(m_worker);
     return QMetaObject::invokeMethod(
         m_worker,
-        [worker, task = std::forward<Task>(task)]() mutable {
+        snow_shot::runtime::trackRuntimeWork([worker, task = std::forward<Task>(task)]() mutable {
             if (!worker.isNull()) {
                 task(*worker);
             }
-        },
+        }),
         Qt::QueuedConnection);
 }

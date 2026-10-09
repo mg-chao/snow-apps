@@ -1,4 +1,5 @@
 #include "snow_shot/storage/pinnedwindowrepository.h"
+#include "snow_shot/runtime/runtimeactivitytracker.h"
 
 #include <QCoreApplication>
 #include <QBuffer>
@@ -289,12 +290,19 @@ void committedPayloadsAreServedFromDisk() {
     {
         // The long debounce keeps the writer from committing before flush().
         storage::PinnedWindowRepository repository(directory.path(), true, 30000);
+        auto& activity = snow_shot::runtime::RuntimeActivityTracker::shared();
+        const auto baseline = activity.snapshot().activeCount;
+        require(baseline == 0, "an idle pinned writer must not reserve runtime activity");
         require(repository.upsert(record).success, "failed to upsert the pinned record");
+        require(activity.snapshot().activeCount == baseline + 1,
+                "a pending debounced pin write must block memory trimming");
         const auto resident = repository.loadRecord(id);
         require(resident.has_value() && resident->image.cacheKey() == image.cacheKey(),
                 "an uncommitted payload should be served from the resident record");
 
         require(repository.flush().success, "failed to flush the pinned record");
+        require(activity.snapshot().activeCount == baseline,
+                "a committed pinned write must release runtime activity before becoming idle");
         const auto lazy = repository.loadRecord(id);
         require(lazy.has_value(), "the committed record disappeared from the repository");
         require(lazy->image.cacheKey() != image.cacheKey(),
@@ -2293,6 +2301,12 @@ void closeRestoreAndRetentionRevealHiddenSiblings() {
 
 int main(int argc, char* argv[]) {
     QCoreApplication application(argc, argv);
+    if (application.arguments().contains(QStringLiteral("--memory-activity-only"))) {
+        committedPayloadsAreServedFromDisk();
+        require(snow_shot::runtime::RuntimeActivityTracker::shared().snapshot().activeCount == 0,
+                "idle pinned repositories must not retain runtime activity");
+        return 0;
+    }
     if (application.arguments().contains(QStringLiteral("--visibility-only"))) {
         lifecycleSummariesCoverPendingAndPersistedPinsWithoutPayloadReads();
         hiddenStatePersistsWithoutClosingOrChangingPayloads();

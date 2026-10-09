@@ -112,7 +112,7 @@ class ApplicationStorage final : public QObject {
     [[nodiscard]] PinnedWindowPolicy pinnedWindowPolicy() const;
     bool requestPinnedWindowPolicy(const PinnedWindowPolicy& policy);
     bool requestPinnedWindowClear();
-    void requestPinnedWindowRetentionCleanup();
+    void requestPinnedWindowRetentionCleanup(bool restartsQuiet = true);
     void requestPinnedWindowShow(const QString& id) {
         emit pinnedWindowShowRequested(id);
     }

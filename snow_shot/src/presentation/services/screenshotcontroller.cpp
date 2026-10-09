@@ -1,3 +1,4 @@
+#include "snow_shot/runtime/runtimeactivitytracker.h"
 #include "snow_draw_engine_qt/snow_canvas_image.h"
 #include "snow_shot/diagnostics/diagnostics.h"
 #include "snow_shot/presentation/screenshotcursorimagesource.h"
@@ -658,6 +659,7 @@ struct ScreenshotController::Impl final : public ScreenshotToolbarCommandSink,
     quint64 m_historyPinEpoch = 0;
     quint64 m_historyPinSerial = 0;
     quint64 m_delayedCaptureGeneration = 0;
+    snow_shot::runtime::RuntimeActivityLease m_delayedCaptureActivity;
     PendingSelectionAction m_pendingSelectionAction = PendingSelectionAction::None;
     ScreenshotGlobalMouseDrag m_globalMouseDrag;
     bool m_pendingOcrFromQuickOcrAction = false;
@@ -4336,7 +4338,7 @@ void ScreenshotController::Impl::printSelection() {
                 {{QStringLiteral("request_kind"), QStringLiteral("capture")},
                  {QStringLiteral("operation"), QString::number(epoch)},
                  {QStringLiteral("stage"), !snapshotSucceeded ? QStringLiteral("export_image")
-                                           : !printer ? QStringLiteral("service_destroyed")
+                                           : !printer         ? QStringLiteral("service_destroyed")
                                                       : QStringLiteral("service_rejected")}},
                 QtWarningMsg);
             finished({ScreenshotPrintService::Status::Failed,
@@ -5597,6 +5599,7 @@ void ScreenshotController::Impl::applyGlobalMouseDrag(bool finishReleased) {
 }
 
 void ScreenshotController::Impl::invalidateDelayedCapture() {
+    m_delayedCaptureActivity = {};
     emit owner.captureActivityChanged(QStringLiteral("delay"), false);
     ++m_delayedCaptureGeneration;
 }
@@ -6006,6 +6009,17 @@ bool ScreenshotController::blocksApplicationUpdate() const {
              m_impl->m_screenRecordingController->isRecording()));
 }
 
+bool ScreenshotController::blocksMemoryTrimming() const {
+    const auto& state = *m_impl;
+    return !state.canBeginCapture() || state.m_recaptureBusy || state.m_globalMouseDrag.active() ||
+           state.m_filePinBatch.active() || !state.m_historyPinJobs.empty() ||
+           !state.m_activeImageExports.isEmpty() || static_cast<bool>(state.m_cancelSaveDialog) ||
+           (state.m_historyService && state.m_historyService->navigationInProgress()) ||
+           (state.m_scrollingCaptureController && state.m_scrollingCaptureController->active()) ||
+           (state.m_screenRecordingController &&
+            state.m_screenRecordingController->blocksMemoryTrimming());
+}
+
 bool ScreenshotController::captureAcquisitionActive() const {
     return m_impl->m_captureState.captureInProgress ||
            (m_impl->m_captureWorkflow && m_impl->m_captureWorkflow->recaptureInProgress());
@@ -6149,11 +6163,14 @@ void ScreenshotController::startDelayedCapture(int delaySeconds) {
     }
     const int seconds = std::clamp(delaySeconds, 1, 10);
     const quint64 generation = ++m_impl->m_delayedCaptureGeneration;
+    m_impl->m_delayedCaptureActivity =
+        snow_shot::runtime::RuntimeActivityTracker::shared().acquire();
     emit captureActivityChanged(QStringLiteral("delay"), true);
     QTimer::singleShot(seconds * 1000, this, [this, generation]() {
         if (m_impl == nullptr || generation != m_impl->m_delayedCaptureGeneration) {
             return;
         }
+        m_impl->m_delayedCaptureActivity = {};
         emit captureActivityChanged(QStringLiteral("delay"), false);
         if (m_impl->canBeginCapture())
             startCapture();

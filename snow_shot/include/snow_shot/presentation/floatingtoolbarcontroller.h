@@ -7,6 +7,7 @@
 #include <memory>
 
 class QScreen;
+class QWidget;
 
 namespace snow_shot::presentation {
 class FloatingToolbarController final : public QObject {
@@ -20,6 +21,8 @@ class FloatingToolbarController final : public QObject {
     // transitions and overlapping acquisitions cannot briefly show the desktop surface.
     void setCaptureActive(const QString& source, bool active);
     void shutdown();
+    [[nodiscard]] bool ownsIdleSurface(const QWidget* widget) const;
+    [[nodiscard]] bool blocksMemoryTrimming() const;
 
   signals:
     void actionRequested(const QString& action);

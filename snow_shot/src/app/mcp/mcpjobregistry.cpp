@@ -80,6 +80,7 @@ bool McpJobRegistry::finish(const QString& id, const QString& status, QJsonObjec
                         found->value.value(QStringLiteral("finished_at")));
     found->value.remove(QStringLiteral("progress"));
     found->cancellation = {};
+    const auto activity = std::move(found->activity);
     m_bytes -= found->bytes;
     found->bytes =
         QJsonDocument(found->value).toJson(QJsonDocument::Compact).size() + found->inputBytes;

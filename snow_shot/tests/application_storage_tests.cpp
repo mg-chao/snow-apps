@@ -6,6 +6,7 @@
 #include "snow_shot/storage/persistedselectioncodec.h"
 #include "snow_shot/storage/settingsadapters.h"
 #include "snow_shot/storage/storageusagetracker.h"
+#include "snow_shot/runtime/runtimeactivitytracker.h"
 
 #include <QCoreApplication>
 #include <QDateTime>
@@ -2471,6 +2472,36 @@ void asynchronousMutationResultsAreObservable() {
             "history clear remained busy after completion");
 }
 
+void idlePinnedRetentionSweepPreservesQuietPeriod() {
+    QTemporaryDir temporary;
+    require(temporary.isValid(), "failed to create quiet retention fixture");
+    const QString executable = temporary.filePath(QStringLiteral("bin"));
+    require(QDir().mkpath(executable), "failed to create quiet retention executable directory");
+    auto& applicationStorage = initialize(executable, temporary.path(), 60000);
+    require(applicationStorage.flushNow().success, "flush startup storage tasks before idle sweep");
+    auto& activity = snow_shot::runtime::RuntimeActivityTracker::shared();
+    QElapsedTimer timer;
+    timer.start();
+    while (activity.snapshot().activeCount != 0 && timer.elapsed() < 5000) {
+        QCoreApplication::processEvents();
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    require(activity.snapshot().activeCount == 0, "startup work eventually releases its leases");
+    const auto before = activity.snapshot();
+    applicationStorage.requestPinnedWindowRetentionCleanup(false);
+    timer.restart();
+    while (activity.snapshot().activeCount != 0 && timer.elapsed() < 5000) {
+        QCoreApplication::processEvents();
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    const auto after = activity.snapshot();
+    require(after.activeCount == 0 && after.generation > before.generation,
+            "periodic retention reserves admission through its actual worker completion");
+    require(after.idlePeriod == before.idlePeriod && after.lastActivity == before.lastActivity,
+            "a no-op periodic retention sweep preserves the user quiet period");
+    applicationStorage.shutdown();
+}
+
 void pendingClosedPinsReceiveBackgroundRetentionCleanup() {
     QTemporaryDir temporary;
     require(temporary.isValid(), "failed to create pin retention directory");
@@ -3005,6 +3036,10 @@ int main(int argc, char** argv) {
     }
 #endif
     LifetimeObservedApplication application(argc, argv);
+    if (application.arguments().contains(QStringLiteral("--memory-activity-only"))) {
+        idlePinnedRetentionSweepPreservesQuietPeriod();
+        return 0;
+    }
     if (application.arguments().contains(QStringLiteral("--update-settings-only"))) {
         updateSettingsPersistAndValidate();
         return 0;

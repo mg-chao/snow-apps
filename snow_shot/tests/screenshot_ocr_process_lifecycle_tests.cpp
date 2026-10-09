@@ -1,4 +1,5 @@
 #include "snow_shot/presentation/screenshotocrrecognitionservice.h"
+#include "snow_shot/runtime/runtimeactivitytracker.h"
 #include "snow_shot/diagnostics/diagnostics.h"
 #include "../src/presentation/ocr/screenshotocrtransport.h"
 
@@ -823,6 +824,8 @@ void ocrProcessLifecycleTests() {
                 }),
                 "local rendering must not retain the OCR process or block the next inference");
         require(completed.isEmpty(), "a later result must wait for the earlier rendered result");
+        require(snow_shot::runtime::RuntimeActivityTracker::shared().snapshot().activeCount > 0,
+                "local OCR rendering must protect memory after its child process exits");
         resume.release();
         require(waitUntil([&] { return completed == QList<int>({1, 2, 3}); }),
                 "rendering must preserve callback submission order");

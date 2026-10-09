@@ -275,6 +275,16 @@ pub unsafe extern "C" fn snow_selected_text_service_destroy(service: *mut SnowSe
     }
 }
 
+/// Return 1 while native work is queued or running, including canceled acquisition.
+/// # Safety
+/// `service` must be null or a live service handle; null returns 0.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn snow_selected_text_service_busy(
+    service: *const SnowSelectedTextService,
+) -> u8 {
+    u8::from(unsafe { service.as_ref() }.is_some_and(|service| service.0.is_busy()))
+}
+
 /// Capture foreground context and submit work; null options selects defaults.
 /// # Safety
 /// Handles and input arrays must be live; output/error must be writable if non-null.
@@ -706,6 +716,7 @@ mod tests {
     #[test]
     fn null_arguments_are_explicit_and_do_not_create_workers() {
         unsafe {
+            assert_eq!(snow_selected_text_service_busy(ptr::null()), 0);
             let mut error = SnowSelectedTextError::default();
             assert_eq!(
                 snow_selected_text_service_create(ptr::null_mut(), &mut error),

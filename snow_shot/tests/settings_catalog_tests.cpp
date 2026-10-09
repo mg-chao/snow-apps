@@ -3304,10 +3304,67 @@ void featureNavigationAndSearchAreConsistent() {
                 QStringLiteral("invalid related settings link: screenshots")),
             "broken related links must fail catalog validation instead of falling back silently");
 }
+void memoryOptimizationPolicyCatalog() {
+    const QString key = QStringLiteral("system/memory_optimization_policy");
+    const QString id = QStringLiteral("system.memory-optimization-policy");
+    const auto* schema = storage::ConfigurationSchema::entry(key);
+    require(schema != nullptr && schema->valueKind == storage::ConfigurationValueKind::String &&
+                schema->defaultValue == QStringLiteral("smart_control") &&
+                schema->allowedStringValues ==
+                    QStringList{QStringLiteral("smart_control"), QStringLiteral("disabled")},
+            "memory policy has a shared Smart Control default and two exact wire values");
+    require(storage::ConfigurationSchema::normalize(key, QStringLiteral("smart_control")).valid &&
+                storage::ConfigurationSchema::normalize(key, QStringLiteral("disabled")).valid &&
+                !storage::ConfigurationSchema::normalize(key, QStringLiteral("unknown")).valid &&
+                !storage::ConfigurationSchema::normalize(key, false).valid,
+            "memory policy rejects unsupported values and non-string values");
+    const auto& registry = settings::builtInSettingsRegistry();
+    const auto& catalog = registry.catalog();
+    require(registry.isValid(), "the memory policy must retain a valid settings registry");
+    const auto* item = catalog.item({QStringLiteral("general"), QStringLiteral("core"), id});
+    const settings::SettingsSearchIndex index(registry);
+#ifdef Q_OS_WIN
+    const auto* section = catalog.section(QStringLiteral("general"), QStringLiteral("core"));
+    require(section != nullptr && section->items.size() == 2 && section->items.last().id == id &&
+                section->reset == settings::SettingsSectionReset::SystemSettings &&
+                item != nullptr && item->configurationKey == key &&
+                item->title.translated() == QStringLiteral("Memory Optimization Policy"),
+            "Windows exposes memory policy after priority in Application performance");
+    const auto* select = std::get_if<settings::SettingsSelectDefinition>(&item->payload);
+    require(select != nullptr &&
+                select->binding == settings::SettingsSelectBinding::MemoryOptimizationPolicy &&
+                select->source == settings::SettingsSelectSource::Fixed &&
+                select->options.size() == 2 &&
+                select->options[0].value == QStringLiteral("smart_control") &&
+                select->options[0].label.translated() == QStringLiteral("Smart Control") &&
+                select->options[1].value == QStringLiteral("disabled") &&
+                select->options[1].label.translated() == QStringLiteral("Disabled"),
+            "memory policy presents the requested fixed labels and option order");
+    const auto* field = registry.field(id);
+    require(field != nullptr && field->pageId == QStringLiteral("general") &&
+                field->sectionId == QStringLiteral("core") && field->configurationKey == key &&
+                field->defaultValue == QStringLiteral("smart_control") &&
+                registry.fieldForSelect(
+                    settings::SettingsSelectBinding::MemoryOptimizationPolicy) == field &&
+                !index.search(QStringLiteral("Memory Optimization Policy")).isEmpty() &&
+                !index.search(QStringLiteral("Smart Control")).isEmpty(),
+            "registry and search expose the Windows memory policy with the schema default");
+#else
+    require(item == nullptr && registry.field(id) == nullptr &&
+                registry.fieldForSelect(
+                    settings::SettingsSelectBinding::MemoryOptimizationPolicy) == nullptr &&
+                index.search(QStringLiteral("Memory Optimization Policy")).isEmpty(),
+            "non-Windows platforms omit the memory policy from settings and search");
+#endif
+}
 } // namespace
 
 int main(int argc, char** argv) {
     QCoreApplication application(argc, argv);
+    if (application.arguments().contains(QStringLiteral("--memory-optimization-only"))) {
+        memoryOptimizationPolicyCatalog();
+        return 0;
+    }
     if (application.arguments().contains(QStringLiteral("--ocr-text-options-only"))) {
         ocrDefaultOptionsShareToolbarSource(settings::buildBuiltInSettingsCatalog());
         return 0;
@@ -3330,6 +3387,7 @@ int main(int argc, char** argv) {
 #endif
         return 0;
     }
+    memoryOptimizationPolicyCatalog();
     const auto adminCatalog = settings::buildBuiltInSettingsCatalog();
     const auto* qos = adminCatalog.item({QStringLiteral("general"), QStringLiteral("core"),
                                          QStringLiteral("system.application-qos")});

@@ -118,6 +118,8 @@ uint8_t snow_selected_text_options_init(SnowSelectedTextOptions* output);
 uint32_t snow_selected_text_service_create(SnowSelectedTextService** output,
                                            SnowSelectedTextError* error);
 void snow_selected_text_service_destroy(SnowSelectedTextService* service);
+/* Includes native cleanup after cancellation/timeouts. Null returns 0. */
+uint8_t snow_selected_text_service_busy(const SnowSelectedTextService* service);
 uint32_t snow_selected_text_start(const SnowSelectedTextService* service,
                                   const SnowSelectedTextOptions* options,
                                   SnowSelectedTextRequest** output, SnowSelectedTextError* error);
