@@ -29,9 +29,9 @@ struct ScreenshotOriginalImagePreviewState final {
     // Formula previews share the native companion surface, including placeholder/error states.
     bool formula = false;
     bool dimmed = false;
-    QColor background;
-    QColor statusColor;
-    QString status;
+    QColor background = {};
+    QColor statusColor = {};
+    QString status = {};
 };
 
 class ScreenshotOriginalImagePreviewWindow final : public QWidget {

@@ -54,7 +54,7 @@ void fontRenderingAndCachesFollowEmphasis() {
     std::array<QImage, 4> images;
     snow_canvas_text_render::clearRenderCacheForCurrentThread();
     snow_canvas_text_measurement::NaturalTextLayoutCache measurements;
-    for (int variant = 0; variant < 4; ++variant) {
+    for (std::size_t variant = 0; variant < images.size(); ++variant) {
         item.text_bold = static_cast<std::uint8_t>(variant & 1);
         item.text_italic = static_cast<std::uint8_t>((variant >> 1) & 1);
         const auto resolved = snow_canvas_text_layout::resolveFont(baseFont, item, 1.0);
@@ -83,7 +83,7 @@ void fontRenderingAndCachesFollowEmphasis() {
         snow_canvas_text_render::drawContents(painter, item, baseFont, QRectF(0, 0, 420, 120), 1.0);
         painter.end();
         const auto stats = snow_canvas_text_render::renderCacheDiagnosticsForCurrentThread();
-        require(stats.builds == static_cast<std::size_t>(variant + 1),
+        require(stats.builds == variant + 1,
                 "each emphasis combination must have its own retained layout");
         QImage repeat(460, 160, QImage::Format_ARGB32_Premultiplied);
         repeat.fill(Qt::transparent);
@@ -94,7 +94,7 @@ void fontRenderingAndCachesFollowEmphasis() {
                                               QRectF(0, 0, 420, 120), 1.0);
         repeatedPainter.end();
         require(repeat == images[variant], "cached text must match the initial rendered pixels");
-        for (int previous = 0; previous < variant; ++previous)
+        for (std::size_t previous = 0; previous < variant; ++previous)
             require(images[variant] != images[previous],
                     "regular, bold, italic and combined text must render distinct pixels");
     }
@@ -118,7 +118,7 @@ void measurementsAndActiveDraftsFollowEmphasis() {
     canvasStyle.fontSize = 30;
     auto style = snow_canvas_types::toEngineTextStyle(canvasStyle);
     SnowTextElementInfo infos[2]{};
-    for (int index = 0; index < 2; ++index) {
+    for (std::size_t index = 0; index < 2; ++index) {
         auto& info = infos[index];
         info.id = SnowElementId{static_cast<std::uint32_t>(index + 1), 1};
         info.width = 100;
@@ -134,7 +134,7 @@ void measurementsAndActiveDraftsFollowEmphasis() {
         infos, 2, style, font, SNOW_TEXT_STYLE_MIXED_BOLD);
     require(measured.success && measured.layouts.size() == 2,
             "bold edits must remeasure automatic and fixed-width text");
-    for (int index = 0; index < 2; ++index) {
+    for (std::size_t index = 0; index < 2; ++index) {
         auto item = snow_canvas_text::defaultPreviewItem(infos[index]);
         item.text_bold = 1;
         const auto expected = index == 0 ? snow_canvas_text_layout::measureNaturalTextLayout(

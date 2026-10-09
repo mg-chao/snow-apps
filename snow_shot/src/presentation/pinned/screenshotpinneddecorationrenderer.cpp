@@ -202,7 +202,7 @@ struct ScreenshotPinnedShadowCache::Geometry {
         for (std::size_t coverage = 0; coverage < kCoverageCount; ++coverage) {
             QColor sample = color;
             sample.setAlpha(std::min(qRound(kPeakAlphaScale * color.alpha()),
-                                     qRound(color.alpha() * coverage / 255.0)));
+                                     qRound(color.alpha() * static_cast<qreal>(coverage) / 255.0)));
             if (sample.alpha() == lastAlpha)
                 palette.brushes[coverage] = palette.brushes[coverage - 1];
             else

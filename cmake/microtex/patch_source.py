@@ -114,6 +114,12 @@ for relative in ("src/res/parser/font_parser.h", "src/res/parser/font_parser.cpp
     edit(relative, xml_loader)
 
 def qt_font_backend(text):
+    # QFontDatabase exposes static APIs; its deprecated constructor is unavailable
+    # under Snow Shot's Qt 6.12 deprecation policy.
+    text = replace(text, "  QFontDatabase db;\n  int id = db.addApplicationFont(filename);",
+                   "  int id = QFontDatabase::addApplicationFont(filename);")
+    text = replace(text, "db.applicationFontFamilies(id)",
+                   "QFontDatabase::applicationFontFamilies(id)")
     # MicroTeX stores math fonts at one logical em and scales the painter afterwards.
     # Qt raster engines cannot reliably hint that one-pixel font. Keep 64x precision
     # inside QFont, then undo it at metric and paint boundaries so layout remains logical.

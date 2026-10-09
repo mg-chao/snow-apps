@@ -84,6 +84,15 @@ ScreenshotOriginalImagePreviewState stateFor(QWidget* owner = nullptr) {
     return state;
 }
 
+void originalImageStateDefaultsDisableFormulaPresentation() {
+    const ScreenshotOriginalImagePreviewState state{
+        sourceImage(), QRectF(0, 0, 16, 12), QRect(140, 140, 16, 12), nullptr, true, false};
+    require(state.pinned && !state.staysOnTop && state.aboveSibling == nullptr && !state.formula &&
+                !state.dimmed && !state.background.isValid() && !state.statusColor.isValid() &&
+                state.status.isEmpty(),
+            "original-image state must default to an undimmed preview without formula status");
+}
+
 class ResizeCounter final : public QObject {
   public:
     int count = 0;
@@ -1390,6 +1399,7 @@ int main(int argc, char** argv) {
             macDraggingPreservesLogicalExtentsAcrossMonitors();
 #endif
         } else {
+            originalImageStateDefaultsDisableFormulaPresentation();
             placementHonorsTheResultMonitorAndPriority();
             viewportRasterPreservesClippingAndLetterboxing();
             largeSourceCoordinatesRetainVisiblePixels();

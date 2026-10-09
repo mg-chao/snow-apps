@@ -31,6 +31,9 @@ function(snow_shot_add_latex_renderer)
         file(READ "${_source}/snow-patch-key.txt" _existing_key)
     endif()
     if(NOT _patch_key STREQUAL _existing_key)
+        # file(COPY) can skip patched files whose timestamps match upstream.
+        # Regeneration must always patch a pristine copy and drop obsolete files.
+        file(REMOVE_RECURSE "${_source}")
         file(MAKE_DIRECTORY "${_source}")
         file(COPY "${snow_microtex_source_SOURCE_DIR}/src" DESTINATION "${_source}")
         execute_process(COMMAND "${Python3_EXECUTABLE}" "${_support}/patch_source.py" "${_source}"
