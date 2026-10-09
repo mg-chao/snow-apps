@@ -82,6 +82,8 @@ struct ScreenshotShortcutHintContext {
     QSet<SnowCanvasTool> quickSelectionDisabledTools;
     std::optional<snow_shot::shortcuts::ShortcutBindingMap> configuredShortcuts = std::nullopt;
     bool smartSelectionEnabled = true;
+
+    [[nodiscard]] bool operator==(const ScreenshotShortcutHintContext&) const = default;
 };
 
 [[nodiscard]] inline bool screenshotShortcutHintAreaIsObscured(const QRectF& hintArea,

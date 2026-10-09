@@ -1991,10 +1991,316 @@ void storageExchangeDrainsReadersAndRejectsStaleAdmissions() {
     }
 }
 
+storage::StorageResult createVisibilityImage(storage::PinnedWindowRepository& repository,
+                                             const storage::PinnedWindowRecord& record,
+                                             bool reserved = false) {
+    const auto prepared =
+        storage::PreparedPngImage::fromBytes(record.image.size(), pngBytes(record.image, 6));
+    require(prepared.has_value(), "prepare visibility fixture source");
+    return reserved ? repository.createReserved(record, *prepared)
+                    : repository.create(record, *prepared);
+}
+
+void lifecycleSummariesCoverPendingAndPersistedPinsWithoutPayloadReads() {
+    QTemporaryDir directory;
+    int payloadReads = 0;
+    storage::PinnedWindowRepository repository(
+        directory.path(), true, 30000, [&](storage::PinnedWindowOperation operation) {
+            if (operation == storage::PinnedWindowOperation::PayloadRead)
+                ++payloadReads;
+        });
+    const auto created = QDateTime::currentDateTimeUtc();
+    auto pending = recordWithId(QUuid::createUuid().toString(QUuid::WithoutBraces),
+                                patternedImage({4, 4}, 21));
+    auto persisted = recordWithId(QUuid::createUuid().toString(QUuid::WithoutBraces),
+                                  patternedImage({4, 4}, 23));
+    persisted.updatedUtc = created.addSecs(1);
+    repository.reserveCreation(pending.id, created);
+    require(repository.upsert(persisted).success &&
+                repository.setRecordsHidden({pending.id, persisted.id}, true).success,
+            "seed pending and persisted lifecycle metadata");
+    const auto revision = repository.revision();
+    const auto pendingSummary = repository.summary(pending.id);
+    const auto persistedSummary = repository.summary(persisted.id);
+    require(pendingSummary && pendingSummary->pending && pendingSummary->hidden &&
+                !pendingSummary->ignored && pendingSummary->createdUtc == created &&
+                persistedSummary && !persistedSummary->pending && persistedSummary->hidden,
+            "ID lookup preserves hidden metadata across both lifecycle states");
+    const auto combined = repository.summariesIncludingPending();
+    require(repository.summaries().size() == 1 && combined.size() == 2 &&
+                combined.first().id == pending.id && combined.last().id == persisted.id &&
+                !repository.summary(QStringLiteral("../invalid")) &&
+                !repository.summary(QUuid::createUuid().toString(QUuid::WithoutBraces)) &&
+                repository.revision() == revision && payloadReads == 0,
+            "unified metadata is sorted, complete and read-only without loading payloads");
+    require(repository.markClosedDeferred(pending.id).success, "close a pending metadata pin");
+    const auto closed = repository.summary(pending.id);
+    require(closed && closed->pending && closed->ignored && !closed->hidden &&
+                closed->lastClosedUtc.isValid() &&
+                closed->activitySequence > pendingSummary->activitySequence,
+            "pending metadata gives Close precedence over Hide");
+    require(createVisibilityImage(repository, pending, true).success,
+            "transfer a pending pin into persisted storage");
+    const auto saved = repository.summary(pending.id);
+    const auto savedSummaries = repository.summariesIncludingPending();
+    require(saved && !saved->pending && saved->ignored && saved->createdUtc == closed->createdUtc &&
+                saved->activitySequence == closed->activitySequence && savedSummaries.size() == 2 &&
+                std::count_if(savedSummaries.cbegin(), savedSummaries.cend(),
+                              [&pending](const auto& item) { return item.id == pending.id; }) ==
+                    1 &&
+                repository.pendingSummaries().isEmpty() && payloadReads == 0,
+            "first save transfers metadata once without losing lifecycle state or reading pixels");
+    const auto canceled = QUuid::createUuid().toString(QUuid::WithoutBraces);
+    repository.reserveCreation(canceled);
+    require(repository.summary(canceled)->pending, "new reservation is discoverable");
+    repository.cancelCreation(canceled);
+    require(!repository.summary(canceled) && repository.summariesIncludingPending().size() == 2,
+            "canceled reservations leave no lifecycle metadata");
+}
+
+void hiddenStatePersistsWithoutClosingOrChangingPayloads() {
+    QTemporaryDir directory;
+    auto record =
+        recordWithId(QUuid::createUuid().toString(QUuid::WithoutBraces), patternedImage({8, 8}, 3));
+    {
+        storage::PinnedWindowRepository repository(directory.path(), true, 30000);
+        require(repository.upsert(record).success, "seed hidden metadata fixture");
+        const auto membership = repository.membershipRevision();
+        const auto preview = repository.previewSourceRevision(record.id);
+        const auto visibility = repository.visibilityRevision();
+        int notifications = 0;
+        repository.setChangedCallback([&notifications] { ++notifications; });
+        require(
+            !repository.setRecordsHidden({record.id, QStringLiteral("../invalid")}, true).success &&
+                !repository.loadRecord(record.id)->hidden && notifications == 0,
+            "invalid hide batches must leave all records unchanged");
+        require(repository.setRecordsHidden({record.id, record.id}, true).success &&
+                    repository.visibilityRevision() == visibility + 1 && notifications == 1 &&
+                    repository.membershipRevision() == membership &&
+                    repository.previewSourceRevision(record.id) == preview,
+                "hiding changes visibility once without changing membership or image previews");
+        require(repository.setRecordsHidden({record.id}, true).success && notifications == 1,
+                "repeated hiding must not publish another change");
+        repository.setChangedCallback({});
+        record.opacityPercent = 77;
+        require(repository.updateState(record).success &&
+                    repository.upsertExisting(record).success &&
+                    repository.loadRecord(record.id)->hidden &&
+                    !repository.loadRecord(record.id)->ignored &&
+                    !repository.loadRecord(record.id)->lastClosedUtc.isValid(),
+                "late snapshots must retain hidden state separately from close history");
+        repository.suspendWrites(true);
+        const bool changedWhileSuspended = repository.setRecordsHidden({record.id}, false).success;
+        repository.suspendWrites(false);
+        require(!changedWhileSuspended && repository.loadRecord(record.id)->hidden &&
+                    repository.flush().success,
+                "migration rejection must preserve durable hidden state");
+    }
+    {
+        storage::PinnedWindowRepository reloaded(directory.path(), false, 30000);
+        const auto restored = reloaded.loadRecord(record.id);
+        require(restored && restored->hidden && !restored->ignored &&
+                    reloaded.summaries().front().hidden &&
+                    !reloaded.setRecordsHidden({record.id}, false).success,
+                "hidden records survive reload and read-only restoration rejection");
+    }
+    const QString index = QDir(directory.path()).filePath("pinned_windows_v2/index.json");
+    auto manifest = QJsonDocument::fromJson(readBytes(index)).object();
+    auto records = manifest.value(QStringLiteral("records")).toArray();
+    auto legacy = records.at(0).toObject();
+    legacy.remove(QStringLiteral("hidden"));
+    records[0] = legacy;
+    manifest.insert(QStringLiteral("records"), records);
+    QFile file(index);
+    require(file.open(QIODevice::WriteOnly | QIODevice::Truncate) &&
+                file.write(QJsonDocument(manifest).toJson()) > 0,
+            "write legacy hidden-state fixture");
+    file.close();
+    storage::PinnedWindowRepository legacyRepository(directory.path(), false, 30000);
+    require(!legacyRepository.loadRecord(record.id)->hidden,
+            "legacy records default to visible without a schema migration");
+}
+
+void membershipChangesRevealOnlyAffectedGroups() {
+    QTemporaryDir directory;
+    storage::PinnedWindowRepository repository(directory.path(), true, 30000);
+    const QString target = QUuid::createUuid().toString(QUuid::WithoutBraces);
+    const QString unrelated = QUuid::createUuid().toString(QUuid::WithoutBraces);
+    require(repository
+                .setGroups({{"default", "Default", true},
+                            {target, "Target", false},
+                            {unrelated, "Unrelated", false}},
+                           "default")
+                .success,
+            "seed visibility groups");
+    const auto make = [](const QString& group) {
+        auto record = recordWithId(QUuid::createUuid().toString(QUuid::WithoutBraces),
+                                   patternedImage({4, 4}, 5));
+        record.groupId = group;
+        return record;
+    };
+    auto moving = make("default");
+    auto sourcePeer = make("default");
+    auto targetPeer = make(target);
+    auto unrelatedPeer = make(unrelated);
+    require(repository.upsert(moving).success && repository.upsert(sourcePeer).success &&
+                repository.upsert(targetPeer).success && repository.upsert(unrelatedPeer).success &&
+                repository.setRecordsHidden({sourcePeer.id, targetPeer.id, unrelatedPeer.id}, true)
+                    .success,
+            "seed hidden group members");
+    require(repository.setRecordsGroup({moving.id}, "default").success &&
+                repository.loadRecord(sourcePeer.id)->hidden,
+            "same-group assignment must preserve hidden siblings");
+    require(repository.setRecordsGroup({moving.id}, target).success &&
+                !repository.loadRecord(sourcePeer.id)->hidden &&
+                !repository.loadRecord(targetPeer.id)->hidden &&
+                repository.loadRecord(unrelatedPeer.id)->hidden,
+            "transfer reveals every source and destination sibling, preserving unrelated groups");
+    require(repository.updateState(moving).success && repository.upsertExisting(moving).success &&
+                repository.loadRecord(moving.id)->groupId == target,
+            "late snapshots must not undo authoritative group assignment");
+    require(repository.setRecordsHidden({targetPeer.id}, true).success &&
+                repository.remove(moving.id).success &&
+                !repository.loadRecord(targetPeer.id)->hidden,
+            "permanent removal reveals surviving hidden group members");
+    require(repository.setRecordsHidden({sourcePeer.id}, true).success &&
+                createVisibilityImage(repository, make("default")).success &&
+                !repository.loadRecord(sourcePeer.id)->hidden,
+            "a successful new record reveals existing hidden members");
+    auto pending = make("default");
+    repository.reserveCreation(pending.id);
+    require(repository.setRecordsHidden({sourcePeer.id, targetPeer.id}, true).success &&
+                repository.setRecordsGroup({pending.id}, target).success &&
+                repository.pendingSummaries().front().groupId == target &&
+                !repository.loadRecord(sourcePeer.id)->hidden &&
+                !repository.loadRecord(targetPeer.id)->hidden &&
+                repository.setRecordsHidden({pending.id}, true).success &&
+                createVisibilityImage(repository, pending, true).success &&
+                repository.loadRecord(pending.id)->groupId == target &&
+                repository.loadRecord(pending.id)->hidden,
+            "pending transfers reveal both groups and preserve ownership through a stale save");
+    require(repository.setRecordsHidden({targetPeer.id}, true).success &&
+                repository.removeMany({pending.id}).success &&
+                !repository.loadRecord(targetPeer.id)->hidden,
+            "removing a formerly pending pin reveals its current group");
+    require(repository.flush().success, "commit membership visibility");
+    storage::PinnedWindowRepository reloaded(directory.path(), false, 30000);
+    require(!reloaded.loadRecord(sourcePeer.id)->hidden &&
+                !reloaded.loadRecord(targetPeer.id)->hidden &&
+                reloaded.loadRecord(unrelatedPeer.id)->hidden,
+            "affected-group visibility must remain cleared after restart");
+}
+
+void pendingVisibilityDoesNotReplayAfterSourcePersistence() {
+    QTemporaryDir directory;
+    storage::PinnedWindowRepository repository(directory.path(), true, 30000);
+    auto sibling =
+        recordWithId(QUuid::createUuid().toString(QUuid::WithoutBraces), patternedImage({4, 4}, 7));
+    auto pending =
+        recordWithId(QUuid::createUuid().toString(QUuid::WithoutBraces), patternedImage({4, 4}, 9));
+    require(repository.upsert(sibling).success &&
+                repository.setRecordsHidden({sibling.id}, true).success,
+            "seed a hidden peer before pending creation");
+    repository.reserveCreation(pending.id);
+    require(repository.markCreationPresented(pending.id).success &&
+                !repository.loadRecord(sibling.id)->hidden,
+            "successful first presentation reveals hidden siblings");
+    require(repository.setRecordsHidden({sibling.id, pending.id}, true).success &&
+                repository.markCreationPresented(pending.id).success &&
+                repository.pendingSummaries().front().hidden &&
+                createVisibilityImage(repository, pending, true).success &&
+                repository.loadRecord(pending.id)->hidden &&
+                repository.loadRecord(sibling.id)->hidden,
+            "late source insertion preserves a newer Hide without replaying addition reveal");
+    require(repository.markClosedDeferred(pending.id).success &&
+                repository.loadRecord(pending.id)->ignored &&
+                !repository.loadRecord(pending.id)->hidden &&
+                !repository.loadRecord(sibling.id)->hidden,
+            "ordinary Close of a hidden pin closes it before revealing surviving siblings");
+    auto neverPresented = recordWithId(QUuid::createUuid().toString(QUuid::WithoutBraces),
+                                       patternedImage({4, 4}, 11));
+    repository.reserveCreation(neverPresented.id);
+    require(repository.setRecordsHidden({sibling.id, neverPresented.id}, true).success &&
+                repository.markCreationPresented(neverPresented.id).success &&
+                createVisibilityImage(repository, neverPresented, true).success &&
+                repository.loadRecord(sibling.id)->hidden &&
+                repository.loadRecord(neverPresented.id)->hidden,
+            "Hide before first frame remains hidden after its source arrives");
+    auto pendingPeer = recordWithId(QUuid::createUuid().toString(QUuid::WithoutBraces),
+                                    patternedImage({4, 4}, 13));
+    repository.reserveCreation(pendingPeer.id);
+    require(repository.setRecordsHidden({pendingPeer.id}, true).success &&
+                repository.remove(neverPresented.id).success &&
+                !repository.pendingSummaries().front().hidden,
+            "membership reveal clears pending hidden peers before they have persisted sources");
+    require(repository.markClosedDeferred(pendingPeer.id).success &&
+                repository.setRecordsHidden({sibling.id}, true).success &&
+                repository.markClosedDeferred(pendingPeer.id).success &&
+                repository.loadRecord(sibling.id)->hidden,
+            "repeated Close is not a second membership removal");
+    require(repository.clearClosed().success && repository.pendingSummaries().isEmpty() &&
+                !repository.loadRecord(sibling.id)->hidden,
+            "clearing closed pending reservations reveals remaining siblings");
+    const QString destroyedPending = QUuid::createUuid().toString(QUuid::WithoutBraces);
+    repository.reserveCreation(destroyedPending);
+    require(repository.setRecordsHidden({sibling.id}, true).success &&
+                repository.remove(destroyedPending).success &&
+                !repository.loadRecord(sibling.id)->hidden &&
+                repository.pendingSummaries().isEmpty(),
+            "removing a pending pin reveals siblings without waiting for image persistence");
+}
+
+void closeRestoreAndRetentionRevealHiddenSiblings() {
+    for (int operation = 0; operation < 4; ++operation) {
+        QTemporaryDir directory;
+        storage::PinnedWindowRepository repository(directory.path(), true, 30000);
+        auto peer = recordWithId(QUuid::createUuid().toString(QUuid::WithoutBraces),
+                                 patternedImage({4, 4}, 15));
+        auto closed = recordWithId(QUuid::createUuid().toString(QUuid::WithoutBraces),
+                                   patternedImage({4, 4}, 17));
+        auto otherClosed = recordWithId(QUuid::createUuid().toString(QUuid::WithoutBraces),
+                                        patternedImage({4, 4}, 19));
+        require(repository.upsert(peer).success && repository.upsert(closed).success &&
+                    repository.upsert(otherClosed).success &&
+                    repository.markClosedDeferred(closed.id).success &&
+                    repository.markClosedDeferred(otherClosed.id).success &&
+                    repository.setRecordsHidden({peer.id}, true).success,
+                "seed close and retention visibility fixture");
+        if (operation == 0) {
+            require(repository.markRestored(closed.id).success,
+                    "closed-to-active restoration succeeds");
+        } else if (operation == 1) {
+            require(repository.clearClosed().success, "clear closed visibility fixture");
+        } else if (operation == 2) {
+            auto policy = repository.policy();
+            policy.maxEntries = 1;
+            require(repository.setPolicy(policy).success,
+                    "retention removes a closed member of the hidden group");
+        } else {
+            auto policy = repository.policy();
+            policy.enabled = false;
+            require(repository.setPolicy(policy, false).success &&
+                        repository.markClosedDeferred(closed.id).success &&
+                        !repository.loadRecord(closed.id),
+                    "disabled-history Close removes the record");
+        }
+        require(!repository.loadRecord(peer.id)->hidden && !repository.loadRecord(peer.id)->ignored,
+                "Close, Restore, cleanup and retention reveal active peers without closing them");
+    }
+}
+
 } // namespace
 
 int main(int argc, char* argv[]) {
     QCoreApplication application(argc, argv);
+    if (application.arguments().contains(QStringLiteral("--visibility-only"))) {
+        lifecycleSummariesCoverPendingAndPersistedPinsWithoutPayloadReads();
+        hiddenStatePersistsWithoutClosingOrChangingPayloads();
+        membershipChangesRevealOnlyAffectedGroups();
+        pendingVisibilityDoesNotReplayAfterSourcePersistence();
+        closeRestoreAndRetentionRevealHiddenSiblings();
+        return 0;
+    }
     if (application.arguments().contains(QStringLiteral("--batch-group-only"))) {
         batchGroupAssignmentPreflightsAndNotifiesOnce();
         return 0;
@@ -2009,6 +2315,11 @@ int main(int argc, char* argv[]) {
     previewsReadOnlySourcePayloadAndKeepStableRevision();
     bulkRemovalIsAtomicAndNotifiesOnce();
     batchGroupAssignmentPreflightsAndNotifiesOnce();
+    lifecycleSummariesCoverPendingAndPersistedPinsWithoutPayloadReads();
+    hiddenStatePersistsWithoutClosingOrChangingPayloads();
+    membershipChangesRevealOnlyAffectedGroups();
+    pendingVisibilityDoesNotReplayAfterSourcePersistence();
+    closeRestoreAndRetentionRevealHiddenSiblings();
     canceledCreationReleasesLifecycleState();
     managementDiskQuotaAndRestorationProtection();
     membershipAndPreviewRevisionsTrackOnlyTheirSources();

@@ -41,6 +41,7 @@ void shortcutFamiliesAreComplete() {
         {GlobalShortcutAction::PinClipboardContent, FeatureFamily::PinToScreen},
         {GlobalShortcutAction::TranslateSelectedText, std::nullopt},
         {GlobalShortcutAction::PinSelectedFiles, FeatureFamily::PinToScreen},
+        {GlobalShortcutAction::HideShowAllWindows, FeatureFamily::PinToScreen},
         {GlobalShortcutAction::ToggleGlobalHotkeys, std::nullopt},
         {GlobalShortcutAction::ToggleDisableOnFocusedFullscreenWindow, std::nullopt},
     };

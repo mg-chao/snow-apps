@@ -197,7 +197,7 @@ class ScreenshotCanvasRenderer final : public SnowCanvasCustomRenderer {
     [[nodiscard]] QRectF selection() const;
     // True when the next paint will Source-fill or blit screenshot content over
     // every pixel of widgetRect, so a parent translucent clear is redundant.
-    [[nodiscard]] bool coversWidgetRect(const QRect& widgetRect) const;
+    [[nodiscard]] bool coversWidgetRect(const QRect& widgetRect) const override;
 #if defined(SNOW_SHOT_BENCH_INTERNALS)
     [[nodiscard]] quint64 ocrGeometrySynchronizationCountForTesting() const;
 #endif
@@ -255,6 +255,12 @@ class ScreenshotCanvasRenderer final : public SnowCanvasCustomRenderer {
     std::uint64_t m_contentRevision = 0;
     std::uint64_t m_originalBackgroundRevision = 0;
     ScreenshotImageSource m_imageSource;
+    // Source opacity is checked once per image, independently of moving selection damage.
+    QList<QRectF> m_opaqueImageCanvasRects;
+    mutable QRegion m_opaqueImageViewCoverage;
+    mutable QTransform m_opaqueCoverageTransform;
+    mutable QRect m_opaqueCoverageViewport;
+    mutable bool m_opaqueCoverageValid = false;
     QImage m_scrollingResultPreviewImage;
     QRectF m_scrollingResultPreviewCanvasRect;
     std::optional<Qt::Orientation> m_scrollingCropGuide;

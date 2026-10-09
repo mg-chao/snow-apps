@@ -60,15 +60,20 @@ void ScreenshotSelectionModel::clearSelection() {
     }
 }
 
-void ScreenshotSelectionModel::setSelectionRect(const QRectF& selection) {
+bool ScreenshotSelectionModel::setSelectionRect(const QRectF& selection) {
+    const QRectF normalized = selection.normalized();
+    m_selectionFromDrag = false;
+    if (!m_draftRegion && !m_region && m_draftVertices.isEmpty() &&
+        m_start == normalized.topLeft() && m_end == normalized.bottomRight()) {
+        return false;
+    }
     m_cachedSelectionRegion.reset();
     m_draftVertices.clear();
     m_draftRegion.reset();
     m_region.reset();
-    const QRectF normalized = selection.normalized();
     m_start = normalized.topLeft();
     m_end = normalized.bottomRight();
-    m_selectionFromDrag = false;
+    return true;
 }
 
 void ScreenshotSelectionModel::setSelectionStartEnd(const QPointF& start, const QPointF& end) {
@@ -415,6 +420,9 @@ void ScreenshotSelectionModel::beginRegionOperation(RegionOperation operation) {
 
 void ScreenshotSelectionModel::setSelectionRegion(const ScreenshotRegionGeometry& region) {
     const ScreenshotRegionGeometry snapshot = region;
+    // Replacing the operation/confirmed region changes the composed result even
+    // when its bounding rectangle is the same as the previous marquee.
+    m_cachedSelectionRegion.reset();
     setSelectionRect(QRectF(snapshot.boundingRect()));
     m_regionOperation = RegionOperation::Replace;
     m_confirmedRegion = {};

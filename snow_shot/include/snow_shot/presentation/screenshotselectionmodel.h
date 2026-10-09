@@ -63,7 +63,8 @@ class ScreenshotSelectionModel final {
     // Pointer drags must use setDraggedSelectionRect with the shared drag geometry
     // (draggedScreenshotSelectionRect / grabAdjustedScreenshotSelectionRect) so confirmation
     // preserves any gesture-specific aspect ratio.
-    void setSelectionRect(const QRectF& selection);
+    // Returns whether the displayed geometry changed, including replacement of a custom region.
+    bool setSelectionRect(const QRectF& selection);
     // Stores a selection spanning the pointer cells under the press and
     // release positions: both cells are inclusive, exactly like a marquee
     // drag, so pointer-seeded state always addresses whole canvas pixels.

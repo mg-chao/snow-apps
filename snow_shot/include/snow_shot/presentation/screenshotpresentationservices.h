@@ -16,6 +16,7 @@
 
 #include <optional>
 #include <functional>
+#include <memory>
 
 struct ScreenshotCaptureState;
 struct ScreenshotColorPickerContext;
@@ -24,6 +25,7 @@ class ScreenshotGeometryMapper;
 class ScreenshotInteractionState;
 class ScreenshotIntelligentSelectionModel;
 class ScreenshotOverlayCoordinator;
+class ScreenshotOverlayWindow;
 class ScreenshotSelectionModel;
 class ScreenshotToolbarPresenter;
 struct ScreenshotToolbarPresentationState;
@@ -39,11 +41,14 @@ struct ScreenshotPresentationServicesContext {
     ScreenshotIntelligentSelectionModel& intelligentSelection;
     QSet<SnowCanvasTool> quickSelectionDisabledTools;
     std::function<void()> stateChanged = [] {};
+    // Optional monotonic clock for deterministic frame scheduling tests.
+    std::function<qint64()> monotonicNanoseconds = {};
 };
 
 class ScreenshotPresentationServices final {
   public:
     explicit ScreenshotPresentationServices(ScreenshotPresentationServicesContext context);
+    ~ScreenshotPresentationServices();
 
     void hideToolbar();
     void hideMainToolbar();
@@ -60,16 +65,21 @@ class ScreenshotPresentationServices final {
 
     void setSelectionMovementActive(bool active);
     void updateOverlayState();
+    void updatePointerPresentation(ScreenshotOverlayWindow* overlay, const QPointF& localPosition);
+    void flushPendingFrame();
     void updateOverlayCursors() const;
 
     [[nodiscard]] ScreenshotColorPickerContext colorPickerContext() const;
 
   private:
-    void presentSelectionFrame(const QRectF& selection);
-    void presentOverlayState(const QRectF& selection) const;
+    struct State;
+    void scheduleFrame();
+    [[nodiscard]] qint64 nowNanoseconds() const;
+    void presentOverlayState(const QRectF& selection, bool semanticChanged, bool geometryChanged);
     [[nodiscard]] ScreenshotToolbarPresentationState toolbarPresentationState() const;
 
     ScreenshotPresentationServicesContext m_context;
+    std::unique_ptr<State> m_state;
     ScreenshotSmartSelectionTransition m_smartSelectionTransition;
     ScreenshotUiPreferences m_uiPreferences;
     bool m_guideLinesVisible = false;

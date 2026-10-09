@@ -312,7 +312,7 @@ namespace {
 void updateOverlayStateForDisplaySession(const ScreenshotDisplaySession& displaySession,
                                          const ScreenshotSelectionVisualState& selectionState,
                                          bool intelligentSelecting, bool manualSelecting,
-                                         bool dragging) {
+                                         bool dragging, bool updateCursors) {
     const QRectF& selection = selectionState.bounds;
     const bool hasSelection = selection.isValid() && !selection.isEmpty();
     const ScreenshotHalfOpenRect selectionRect =
@@ -343,18 +343,21 @@ void updateOverlayStateForDisplaySession(const ScreenshotDisplaySession& display
             overlay->setScreenshotSelectionState(draftOnly);
         }
     });
-    updateOverlayCursorsForDisplaySession(displaySession, intelligentSelecting || manualSelecting,
-                                          dragging || selectionState.hoveredEffectHandle !=
-                                                          ScreenshotSelectionEffectHandle::None);
+    if (updateCursors) {
+        updateOverlayCursorsForDisplaySession(
+            displaySession, intelligentSelecting || manualSelecting,
+            dragging ||
+                selectionState.hoveredEffectHandle != ScreenshotSelectionEffectHandle::None);
+    }
 }
 } // namespace
 
 void ScreenshotOverlayCanvasPresenter::updateOverlayState(
     const ScreenshotDisplaySession& displaySession,
     const ScreenshotSelectionVisualState& selectionState, bool intelligentSelecting,
-    bool manualSelecting, bool dragging) const {
+    bool manualSelecting, bool dragging, bool updateCursors) const {
     updateOverlayStateForDisplaySession(displaySession, selectionState, intelligentSelecting,
-                                        manualSelecting, dragging);
+                                        manualSelecting, dragging, updateCursors);
 }
 
 namespace {

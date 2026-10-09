@@ -118,6 +118,7 @@ fn distance_ffi_validates_and_supplies_complete_provisional_label() {
             ),
             SnowError::Ok
         );
+        assert!(changed.is_null(), "calibration has no presentation changes");
         snow_changed_viewports_destroy(changed);
         changed = std::ptr::null_mut();
         assert_eq!(

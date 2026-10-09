@@ -87,6 +87,7 @@ void ScreenshotOverlayCoordinator::prepareDisplayModels(ScreenshotDisplaySession
 
 void ScreenshotOverlayCoordinator::applyDisplayModels(ScreenshotDisplaySession& displaySession) {
     m_canvasPresenter.applyDisplayModels(displaySession);
+    ++m_presentationRevision;
 }
 
 bool ScreenshotOverlayCoordinator::preparePreCaptureOverlayWindows(
@@ -205,9 +206,9 @@ void ScreenshotOverlayCoordinator::flushDeferredOverlayMaintenance(
 void ScreenshotOverlayCoordinator::updateOverlayState(
     const ScreenshotDisplaySession& displaySession,
     const ScreenshotSelectionVisualState& selectionState, bool intelligentSelecting,
-    bool manualSelecting, bool dragging) {
+    bool manualSelecting, bool dragging, bool updateCursors) {
     m_canvasPresenter.updateOverlayState(displaySession, selectionState, intelligentSelecting,
-                                         manualSelecting, dragging);
+                                         manualSelecting, dragging, updateCursors);
 }
 
 namespace {
@@ -528,6 +529,11 @@ void ScreenshotOverlayCoordinator::updateShortcutHints(ScreenshotOverlayWindow* 
                                                        qreal opacity, const QRectF& selectionGlobal,
                                                        const QPoint& cursorPosition) {
     m_uiHost.updateShortcutHints(overlay, context, opacity, selectionGlobal, cursorPosition);
+}
+
+void ScreenshotOverlayCoordinator::updateShortcutHintPointer(ScreenshotOverlayWindow* overlay,
+                                                             const QPoint& cursorPosition) {
+    m_uiHost.updateShortcutHintPointer(overlay, cursorPosition);
 }
 
 bool ScreenshotOverlayCoordinator::screenshotUiContainsGlobalPoint(const QPoint& position) const {

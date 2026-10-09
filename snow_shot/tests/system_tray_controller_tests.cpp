@@ -27,6 +27,7 @@
 #include <QFileInfo>
 #include <QImage>
 #include <QImageReader>
+#include <QJsonArray>
 #include <QLineEdit>
 #include <QMenu>
 #include <QPalette>
@@ -172,6 +173,50 @@ void verifyTraySkinDestruction(snow_shot::presentation::SystemTrayController& co
     }
     require(configuration.setValue(QStringLiteral("interface/skin_opacity"), 100),
             "restore skin opacity");
+}
+
+void verifyConfiguredTrayMenuOptions(snow_shot::presentation::SystemTrayController& controller) {
+    using snow_shot::storage::TraySettings;
+    auto& appStorage = snow_shot::storage::ApplicationStorage::instance();
+    require(snow_shot::storage::ExtendedFeaturesSettings().setTranslationPageEnabled(true),
+            "enable all optional tray commands");
+    QStringList options;
+    for (const auto& group :
+         snow_shot::presentation::settings::builtInTrayCommandManifest().groups) {
+        for (const auto& option : group.options)
+            options.append(option.id);
+    }
+    require(TraySettings().setMenuOptions(options) && TraySettings().menuOptions() == options,
+            "saving every tray option must preserve the final Restart App and Exit selections");
+    require(appStorage.configuration().flushNow().success,
+            "all tray selections must flush to disk");
+    snow_shot::storage::ConfigurationStore reloaded(
+        QDir(appStorage.status().effectiveDirectory).filePath(QStringLiteral("config.json")), true,
+        false, 60000);
+    QStringList persisted;
+    for (const auto& value : reloaded.value(QStringLiteral("tray/menu_options")).toArray()) {
+        persisted.append(value.toString());
+    }
+    require(persisted == options, "loading saved tray selections must preserve every option");
+    controller.setMenuOptions(persisted);
+    QPointer<adqt::widgets::AdContextMenu> menu = controller.createContextMenu();
+    QApplication::processEvents();
+    QStringList visible;
+    for (auto* action : menu->actions()) {
+        if (!action->isSeparator() && action->isVisible())
+            visible.append(action->data().toString());
+    }
+    require(visible == options, "the tray must display every persisted selection, including Exit");
+    menu->dismissPopup();
+    drainMenus();
+    require(!menu, "the configured tray session retires after dismissal");
+
+    options.removeAll(QStringLiteral("tray.restart-app"));
+    options.removeAll(QStringLiteral("tray.exit"));
+    require(TraySettings().setMenuOptions(options) && TraySettings().menuOptions() == options,
+            "a customized selection must not automatically re-enable unchecked system commands");
+    require(TraySettings().setMenuOptions({}) && TraySettings().menuOptions().isEmpty(),
+            "an intentionally empty tray selection must remain empty");
 }
 
 void verifyTraySkins(snow_shot::presentation::SystemTrayController& controller,
@@ -417,6 +462,46 @@ void verifyLazyGroupMenuRefresh() {
         groups.completePendingPin(QStringLiteral("lazy-tray-%1").arg(index));
 }
 
+void verifyHideShowTrayAction(snow_shot::presentation::SystemTrayController& controller) {
+    using Action = snow_shot::presentation::GlobalShortcutAction;
+    const QString id = QStringLiteral("quick.hide-show-all-windows");
+    const snow_shot::storage::TraySettings settings;
+    const auto defaults = settings.menuOptions();
+    require(!defaults.contains(id), "hide/show all windows is omitted from default tray options");
+    controller.setMenuOptions(defaults);
+    QPointer<adqt::widgets::AdContextMenu> menu = controller.createContextMenu();
+    require(!menu.isNull(), "hide/show tray action requires a context menu");
+    QAction* hideShow = nullptr;
+    for (auto* action : menu->actions())
+        if (action && action->data().toString() == id)
+            hideShow = action;
+    require(hideShow && !hideShow->isVisible() &&
+                hideShow->text() == QStringLiteral("Hide/Show All Windows"),
+            "hide/show is an optional tray action with the canonical title");
+    auto customized = defaults;
+    customized.append(id);
+    require(settings.setMenuOptions(customized) && settings.menuOptions().contains(id),
+            "customized hide/show tray inclusion persists");
+    controller.setMenuOptions(settings.menuOptions());
+    require(hideShow->isVisible(), "users can include hide/show all windows in the tray");
+    int activations = 0;
+    const auto connection = QObject::connect(
+        &controller, &snow_shot::presentation::SystemTrayController::quickActionRequested,
+        &controller, [&](Action action) {
+            require(action == Action::HideShowAllWindows,
+                    "hide/show tray action dispatches the shared global action");
+            ++activations;
+        });
+    hideShow->trigger();
+    require(activations == 1, "customized hide/show tray action activates exactly once");
+    QObject::disconnect(connection);
+    require(settings.setMenuOptions(defaults), "restore default tray options");
+    controller.setMenuOptions(defaults);
+    require(!hideShow->isVisible(), "restoring default tray options hides hide/show again");
+    menu->dismissPopup();
+    drainMenus();
+}
+
 } // namespace
 
 int main(int argc, char* argv[]) {
@@ -451,6 +536,16 @@ int main(int argc, char* argv[]) {
         return 0;
     }
     snow_shot::presentation::SystemTrayController controller;
+    if (application.arguments().contains(QStringLiteral("--hide-show-tray-only"))) {
+        verifyHideShowTrayAction(controller);
+        snow_shot::storage::ApplicationStorage::instance().shutdown();
+        return 0;
+    }
+    if (application.arguments().contains(QStringLiteral("--configured-menu-only"))) {
+        verifyConfiguredTrayMenuOptions(controller);
+        snow_shot::storage::ApplicationStorage::instance().shutdown();
+        return 0;
+    }
 #ifdef Q_OS_MACOS
     if (application.arguments().contains(QStringLiteral("--native-menu"))) {
         int result = 1;
@@ -974,6 +1069,9 @@ int main(int argc, char* argv[]) {
     auto* restoreClosedAction = actionForId(QStringLiteral("quick.restore-last-closed-windows"));
     require(restoreClosedAction && restoreClosedAction->isVisible(),
             "restore closed pins must appear in the default tray menu");
+    require(actionForId(QStringLiteral("quick.hide-show-all-windows")) &&
+                !actionForId(QStringLiteral("quick.hide-show-all-windows"))->isVisible(),
+            "hide/show all windows must be excluded from the default tray menu");
     const QStringList normalizedDefaultMenuOptions = controller.menuOptions();
     require(
         QSet<QString>(normalizedDefaultMenuOptions.cbegin(), normalizedDefaultMenuOptions.cend()) ==

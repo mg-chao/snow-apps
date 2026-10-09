@@ -833,7 +833,10 @@ void PinnedWindowManagementPageWidget::rebuildEntries() {
                 tr("Group: %1").arg(groups.value(record.groupId, tr("Default"))), details);
             group->setObjectName(QStringLiteral("pinnedManagementGroup"));
             detailsLayout->addWidget(group);
-            auto* status = new QLabel(record.ignored ? tr("Closed") : tr("Not Closed"), details);
+            auto* status = new QLabel(record.ignored  ? tr("Closed")
+                                      : record.hidden ? tr("Hidden")
+                                                      : tr("Not Closed"),
+                                      details);
             status->setObjectName(QStringLiteral("pinnedManagementStatus"));
             detailsLayout->addWidget(status);
             detailsLayout->addStretch(1);
@@ -910,7 +913,9 @@ void PinnedWindowManagementPageWidget::rebuildEntries() {
         row->findChild<QLabel*>(QStringLiteral("pinnedManagementGroup"))
             ->setText(tr("Group: %1").arg(groups.value(record.groupId, tr("Default"))));
         row->findChild<QLabel*>(QStringLiteral("pinnedManagementStatus"))
-            ->setText(record.ignored ? tr("Closed") : tr("Not Closed"));
+            ->setText(record.ignored  ? tr("Closed")
+                      : record.hidden ? tr("Hidden")
+                                      : tr("Not Closed"));
         row->findChild<adqt::widgets::AdButton*>(QStringLiteral("pinnedManagementEntryShow"))
             ->setText(record.ignored ? tr("Restore") : tr("Show"));
         row->findChild<adqt::widgets::AdButton*>(QStringLiteral("pinnedManagementEntryDelete"))

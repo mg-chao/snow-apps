@@ -9,6 +9,7 @@
 #include "snow_shot/presentation/screenshotexportartifact.h"
 #include "snow_shot/storage/applicationstorage.h"
 #include "snow_shot/storage/pinnedwindowrepository.h"
+#include "mcppinnedstate_p.h"
 #include <QApplication>
 #include <QClipboard>
 #include <QCryptographicHash>
@@ -224,23 +225,9 @@ class McpMediaService::Impl {
              {QStringLiteral("active_group_id"), groups.activeGroupId()}});
     }
     QJsonObject pinState(const QString& id) {
-        if (auto* window = groups.liveWindow(id))
-            return versioned(QStringLiteral("pin:") + id, window->automationState());
-        for (const auto& summary :
-             storage::ApplicationStorage::instance().pinnedWindows().summaries())
-            if (summary.id == id)
-                return versioned(
-                    QStringLiteral("pin:") + id,
-                    {{QStringLiteral("id"), id},
-                     {QStringLiteral("revision"),
-                      static_cast<qint64>(
-                          storage::ApplicationStorage::instance().pinnedWindows().revision())},
-                     {QStringLiteral("group_id"), summary.groupId},
-                     {QStringLiteral("visible"), false},
-                     {QStringLiteral("open"), false},
-                     {QStringLiteral("updated_at"), summary.updatedUtc.toString(Qt::ISODateWithMs)},
-                     {QStringLiteral("closed"), summary.ignored}});
-        return {};
+        auto state =
+            pinnedWindowState(storage::ApplicationStorage::instance().pinnedWindows(), groups, id);
+        return state.isEmpty() ? state : versioned(QStringLiteral("pin:") + id, state);
     }
     using Reply = std::function<void(QJsonObject, QString)>;
     void decode(const ScreenshotMcpRequest& r, Reply reply) {
@@ -611,23 +598,8 @@ void McpMediaService::request(const ScreenshotMcpRequest& r,
             reply({}, QStringLiteral("invalid_parameters"));
             return;
         }
-        QJsonArray list;
-        QSet<QString> found;
-        for (const auto& summary :
-             storage::ApplicationStorage::instance().pinnedWindows().summaries()) {
-            found.insert(summary.id);
-            list.append(QJsonObject{
-                {QStringLiteral("id"), summary.id},
-                {QStringLiteral("group_id"), summary.groupId},
-                {QStringLiteral("open"), s.groups.hasWindow(summary.id)},
-                {QStringLiteral("closed"), summary.ignored},
-                {QStringLiteral("updated_at"), summary.updatedUtc.toString(Qt::ISODateWithMs)}});
-        }
-        for (auto* window : s.groups.liveWindows())
-            if (!found.contains(window->persistenceId()))
-                list.append(QJsonObject{{QStringLiteral("id"), window->persistenceId()},
-                                        {QStringLiteral("group_id"), window->groupId()},
-                                        {QStringLiteral("open"), true}});
+        const auto list =
+            pinnedWindowList(storage::ApplicationStorage::instance().pinnedWindows(), s.groups);
         const auto revision = s.observe(
             QStringLiteral("pins"),
             {{QStringLiteral("revision"), static_cast<qint64>(s.groups.automationRevision())},

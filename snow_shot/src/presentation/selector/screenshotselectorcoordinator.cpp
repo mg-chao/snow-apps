@@ -4,6 +4,8 @@
 #include "screenshotselectorserviceclient.h"
 #include "snow_shot/storage/applicationstorage.h"
 
+#include <QMetaObject>
+
 ScreenshotSelectorCoordinator::ScreenshotSelectorCoordinator(QObject* parent,
                                                              std::function<qint64()> now)
     : QObject(parent), m_now(std::move(now)) {
@@ -177,8 +179,19 @@ void ScreenshotSelectorCoordinator::startNextHitTest() {
     m_hitTestInFlight = true;
     if (!m_serviceClient->startHitTest(m_refreshRequestId, requestId, m_targetGeneration, point,
                                        mode, m_pendingDisplayId)) {
-        m_hitTestInFlight = false;
-        emit initialResultReady(false, {});
+        // Native results always arrive through the event queue. Admission failures use
+        // that same path so dispatching the next query cannot publish a newer failure
+        // before the preceding result, or survive a reentrant capture reset.
+        ScreenshotSelectorResult failed;
+        failed.epoch = m_refreshRequestId;
+        failed.requestId = requestId;
+        failed.generation = m_targetGeneration;
+        failed.point = point;
+        failed.mode = mode;
+        failed.displayId = m_pendingDisplayId;
+        failed.stopReason = ScreenshotSelectorStopReason::ProviderFailure;
+        QMetaObject::invokeMethod(
+            this, [this, failed]() { handleResult(failed); }, Qt::QueuedConnection);
     }
 }
 
@@ -231,7 +244,8 @@ void ScreenshotSelectorCoordinator::handleResult(const ScreenshotSelectorResult&
     SNOW_SHOT_CAPTURE_PERF_COUNTER("selector.stop_reason", static_cast<int>(result.stopReason));
     SNOW_SHOT_CAPTURE_PERF_COUNTER("selector.elapsed_us", static_cast<qint64>(result.elapsedUs));
     const auto warnIfPermissionRequired = [this, &result] {
-        if (result.stopReason == ScreenshotSelectorStopReason::PermissionRequired &&
+        if (result.epoch == m_refreshRequestId &&
+            result.stopReason == ScreenshotSelectorStopReason::PermissionRequired &&
             !m_permissionWarningShown) {
             m_permissionWarningShown = true;
             emit accessibilityPermissionRequired();
@@ -252,10 +266,13 @@ void ScreenshotSelectorCoordinator::handleResult(const ScreenshotSelectorResult&
         m_initial = result.canRefine ? result : ScreenshotSelectorResult{};
         SNOW_SHOT_CAPTURE_PERF_MILESTONE("selector.hit_test_finished");
         SNOW_SHOT_CAPTURE_PERF_COUNTER("selector.hit_test_ok", result.ok ? 1 : 0);
+        // Keep the worker busy with the newest pointer before synchronous GUI
+        // subscribers prepare the preceding selection frame.
+        startNextHitTest();
         emit initialResultReady(result.ok, result.rects, result.displayId);
         warnIfPermissionRequired();
-        startNextHitTest();
-        scheduleRefinement();
+        if (result.epoch == m_refreshRequestId && m_initial.requestId == result.requestId)
+            scheduleRefinement();
         return;
     }
     if (!m_hasTarget || result.generation != m_targetGeneration ||

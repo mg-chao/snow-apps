@@ -105,6 +105,7 @@ class ScreenshotController : public QObject {
     void prewarmResources();
     void restorePinnedWindows();
     void restoreLastClosedPinnedWindow();
+    void togglePinnedWindowsVisibility();
     void showPinnedRecord(const QString& id);
     void destroyPinnedRecords(const QVector<QString>& ids);
     void restoreActivePinnedGroupWindows();

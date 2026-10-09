@@ -246,6 +246,38 @@ void pinnedChangesRefreshOnlyVisiblePages(const QVector<storage::PinnedWindowSum
             "showing the page reconciles all hidden changes with one fresh snapshot");
 }
 
+void pinnedHiddenRecordsUseShowAction(const storage::PinnedWindowSummary& record) {
+    Fixture source;
+    source.items = {record};
+    source.items.first().ignored = false;
+    source.items.first().hidden = true;
+    PinnedWindowManagementPageWidget page(&source, nullptr);
+    page.resize(980, 640);
+    page.show();
+    QCoreApplication::processEvents();
+    QPointer<QFrame> row = page.findChild<QFrame*>(QStringLiteral("pinnedManagementRecord"));
+    require(!row.isNull(), "hidden persisted record remains available in management");
+    auto* status = row->findChild<QLabel*>(QStringLiteral("pinnedManagementStatus"));
+    auto* show =
+        row->findChild<adqt::widgets::AdButton*>(QStringLiteral("pinnedManagementEntryShow"));
+    require(status && show && status->text() == QStringLiteral("Hidden") &&
+                show->text() == QStringLiteral("Show"),
+            "hidden records display Hidden and use the Show action");
+    show->click();
+    require(source.shown == record.id, "showing a hidden record dispatches its persisted ID");
+    source.items.first().hidden = false;
+    emit source.changed();
+    require(!row.isNull() && status->text() == QStringLiteral("Not Closed") &&
+                show->text() == QStringLiteral("Show"),
+            "showing a hidden record refreshes its status in the existing row");
+    source.items.first().hidden = true;
+    source.items.first().ignored = true;
+    emit source.changed();
+    require(!row.isNull() && status->text() == QStringLiteral("Closed") &&
+                show->text() == QStringLiteral("Restore"),
+            "closed status and Restore take precedence over a hidden flag");
+}
+
 void pinnedFailedPreviewsRetryOnRefresh(const QVector<storage::PinnedWindowSummary>& records) {
     Fixture source;
     source.items = records;
@@ -432,6 +464,7 @@ int main(int argc, char** argv) {
     pinnedThemeChangesDoNotRestyleTwice(fixture.items);
     pinnedRowsRespectSkinMask(fixture.items);
     pinnedChangesRefreshOnlyVisiblePages(fixture.items);
+    pinnedHiddenRecordsUseShowAction(first);
     pinnedFailedPreviewsRetryOnRefresh(fixture.items);
     pinnedPreviewRetriesAcrossStorageMigration(migratedDirectory.path());
     {

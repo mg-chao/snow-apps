@@ -305,6 +305,12 @@ void shortcutSettings() {
         require(session.applyShortcuts(GlobalShortcutAction::SwitchWindowGroup,
                                        {QStringLiteral("Ctrl+Alt+F8")}),
                 "assign group switch shortcut");
+        require(stored.hideShowAllWindows().isEmpty() &&
+                    session.applyShortcuts(GlobalShortcutAction::HideShowAllWindows,
+                                           {QStringLiteral("Ctrl+Alt+F9")}) &&
+                    manager.state(GlobalShortcutAction::HideShowAllWindows).status ==
+                        GlobalShortcutStatus::Registered,
+                "hide/show all windows starts unassigned and accepts a shortcut");
         require(backend.resetSection(settings::SettingsSectionReset::GlobalPinToScreenShortcuts),
                 "Pin to screen reset succeeds");
         require(stored.pinSelectedFiles().isEmpty() &&
@@ -314,6 +320,10 @@ void shortcutSettings() {
                 "pin section reset clears group switch shortcut");
         require(manager.state(managementAction).shortcuts.isEmpty(),
                 "Pin to screen reset must clear the management shortcut");
+        require(stored.hideShowAllWindows().isEmpty() &&
+                    manager.state(GlobalShortcutAction::HideShowAllWindows).status ==
+                        GlobalShortcutStatus::Unset,
+                "Pin to screen reset must clear the hide/show all windows shortcut");
         require(session.applyShortcuts(action, keys), "prepare reload");
     }
     {

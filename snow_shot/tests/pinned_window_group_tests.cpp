@@ -2,6 +2,7 @@
 #include "snow_shot/storage/pinnedwindowrepository.h"
 
 #include <QCoreApplication>
+#include <QBuffer>
 #include <QDir>
 #include <QFile>
 #include <QJsonArray>
@@ -371,15 +372,121 @@ void batchGroupCreationRejectsStaleTargets() {
     require(notifications == 1 && repository.groups().size() == 2,
             "batch group creation emits one coalesced update and persists its definition");
 }
+
+void hiddenVisibilityNotificationsDoNotChangeMembership() {
+    QTemporaryDir directory;
+    storage::PinnedWindowRepository repository(directory.path(), true, 30000);
+    presentation::PinnedWindowGroupManager manager(&repository);
+    auto item = record(QUuid::createUuid().toString(QUuid::WithoutBraces));
+    require(repository.upsert(item).success && manager.windowCount("default") == 1,
+            "prime visibility manager counts");
+    int restores = 0;
+    int menuUpdates = 0;
+    QObject::connect(&manager,
+                     &presentation::PinnedWindowGroupManager::restoreActiveGroupWindowsRequested,
+                     [&restores] { ++restores; });
+    QObject::connect(&manager, &presentation::PinnedWindowGroupManager::groupsChanged,
+                     [&menuUpdates] { ++menuUpdates; });
+    require(repository.setRecordsHidden({item.id}, true).success, "hide manager fixture");
+    manager.onPinnedRecordsChanged();
+    manager.onPinnedRecordsChanged();
+    QCoreApplication::processEvents();
+    require(restores == 1 && menuUpdates == 0 && repository.loadRecord(item.id)->hidden &&
+                manager.windowCounts("default").nonIgnored == 1,
+            "visibility changes request one filtered restoration without rebuilding group counts");
+    require(repository.setRecordsHidden({item.id}, false).success,
+            "show manager fixture without membership change");
+    manager.onPinnedRecordsChanged();
+    QCoreApplication::processEvents();
+    require(restores == 2 && menuUpdates == 0,
+            "showing hidden members is observed independently of membership revision");
+    const QString pending = QUuid::createUuid().toString(QUuid::WithoutBraces);
+    repository.reserveCreation(pending);
+    require(repository.setRecordsHidden({pending}, true).success, "hide a pending manager fixture");
+    manager.onPinnedRecordsChanged();
+    require(restores == 3 && repository.pendingSummaries().front().hidden,
+            "pending-only visibility changes also reach the application restoration bridge");
+}
+
+void visibilityCommandsBridgeWithoutChangingGroups() {
+    QTemporaryDir directory;
+    storage::PinnedWindowRepository repository(directory.path(), true, 30000);
+    presentation::PinnedWindowGroupManager manager(&repository);
+    int shows = 0;
+    QString excluded;
+    QObject::connect(&manager, &presentation::PinnedWindowGroupManager::showAllWindowsRequested,
+                     [&shows] { ++shows; });
+    QObject::connect(&manager, &presentation::PinnedWindowGroupManager::hideOtherWindowsRequested,
+                     [&excluded](const QString& id) { excluded = id; });
+    manager.requestShowAllWindows();
+    manager.requestHideOtherWindows(QStringLiteral("keep-visible"));
+    require(shows == 1 && excluded == QStringLiteral("keep-visible") &&
+                manager.activeGroupId() == QStringLiteral("default") &&
+                manager.groups().size() == 1,
+            "window menus delegate Show All and Hide Others through the manager");
+}
+
+void hiddenPendingMembersOutliveRuntimeTracking() {
+    QTemporaryDir directory;
+    storage::PinnedWindowRepository repository(directory.path(), true, 30000);
+    presentation::PinnedWindowGroupManager manager(&repository);
+    auto pending = record(QUuid::createUuid().toString(QUuid::WithoutBraces));
+    repository.reserveCreation(pending.id);
+    manager.registerPendingPin(pending.id, "default");
+    require(manager.windowCounts("default").nonIgnored == 1 &&
+                manager.windowCounts("default").total == 1,
+            "runtime and repository pending membership must count once");
+    require(repository.setRecordsHidden({pending.id}, true).success,
+            "hide a pending pin before its source save");
+    manager.completePendingPin(pending.id);
+    require(manager.windowCounts("default").nonIgnored == 1 &&
+                manager.windowCounts("default").total == 1 &&
+                manager.displaySnapshot().front().counts.nonIgnored == 1 &&
+                manager.displaySnapshot().front().counts.total == 1,
+            "hidden pending membership remains counted after its runtime tracking is removed");
+    require(repository.markClosedDeferred(pending.id).success, "close hidden pending membership");
+    manager.registerPendingPin(pending.id, "default");
+    require(manager.windowCounts("default").nonIgnored == 0 &&
+                manager.windowCounts("default").total == 1 &&
+                manager.displaySnapshot().front().counts.nonIgnored == 0 &&
+                manager.displaySnapshot().front().counts.total == 1,
+            "closed pending pins remain total-only despite stale runtime registration");
+    manager.completePendingPin(pending.id);
+    QByteArray bytes;
+    QBuffer source(&bytes);
+    require(source.open(QIODevice::WriteOnly) && pending.image.save(&source, "PNG"),
+            "prepare pending count fixture source");
+    const auto prepared = storage::PreparedPngImage::fromBytes(pending.image.size(), bytes);
+    require(prepared && repository.createReserved(pending, *prepared).success &&
+                manager.windowCounts("default").nonIgnored == 0 &&
+                manager.windowCounts("default").total == 1,
+            "source persistence transfers the closed count without dropping or duplicating it");
+    require(repository.remove(pending.id).success && manager.windowCounts("default").total == 0,
+            "destroying the pin removes its final membership count");
+    repository.reserveCreation(pending.id);
+    require(manager.windowCounts("default").total == 1, "new reservation invalidates count cache");
+    repository.cancelCreation(pending.id);
+    require(manager.windowCounts("default").total == 0,
+            "failed creation invalidates the count cache without leaving a member behind");
+}
 } // namespace
 
 int main(int argc, char* argv[]) {
     QCoreApplication application(argc, argv);
+    if (application.arguments().contains(QStringLiteral("--visibility-only"))) {
+        hiddenVisibilityNotificationsDoNotChangeMembership();
+        visibilityCommandsBridgeWithoutChangingGroups();
+        hiddenPendingMembersOutliveRuntimeTracking();
+        return 0;
+    }
     if (application.arguments().contains(QStringLiteral("--batch-group-only"))) {
         batchGroupCreationRejectsStaleTargets();
         return 0;
     }
     batchGroupCreationRejectsStaleTargets();
+    hiddenVisibilityNotificationsDoNotChangeMembership();
+    visibilityCommandsBridgeWithoutChangingGroups();
+    hiddenPendingMembersOutliveRuntimeTracking();
     ignoredRecordsCountTowardTotalAndDeleteWithEmptyGroups();
     persistedMetadataDoesNotRefreshGroupMenus();
     defaultGroupAndFreshSchema();

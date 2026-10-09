@@ -2389,12 +2389,20 @@
             <translation>隱藏的工具</translation>
         </message>
         <message>
+            <source>Hide or show all windows in the current group</source>
+            <translation>隱藏或顯示目前群組中的所有視窗</translation>
+        </message>
+        <message>
             <source>Hide to Top</source>
             <translation>頂部隱藏</translation>
         </message>
         <message>
             <source>Hide when outside selection</source>
             <translation>位於選取範圍外時隱藏</translation>
+        </message>
+        <message>
+            <source>Hide/Show All Windows</source>
+            <translation>隱藏/顯示所有視窗</translation>
         </message>
         <message>
             <source>High</source>

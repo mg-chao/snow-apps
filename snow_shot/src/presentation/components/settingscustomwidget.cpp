@@ -54,16 +54,61 @@
 #include <QPainter>
 #include <QPainterPath>
 #include <QPalette>
+#include <QPointer>
 #include <QSet>
 #include <QSignalBlocker>
 #include <QVBoxLayout>
 
 #include <algorithm>
 #include <functional>
+#include <optional>
 #include <utility>
 
 namespace {
 namespace toolbar_layout = snow_shot::presentation::toolbar_layout;
+
+// QWidget::show() activates ancestor layouts synchronously. Keep incomplete
+// custom-control layouts out of the page geometry until the whole edit is ready.
+class SettingsLayoutUpdate final {
+  public:
+    explicit SettingsLayoutUpdate(QWidget& widget) {
+        for (QLayout* layout : widget.findChildren<QLayout*>()) {
+            if (layout != widget.layout() && layout->isEnabled()) {
+                childLayouts.push_back(layout);
+                layout->setEnabled(false);
+            }
+        }
+        for (QWidget* ancestor = &widget; ancestor != nullptr;
+             ancestor = ancestor->parentWidget()) {
+            if (QLayout* layout = ancestor->layout(); layout != nullptr && layout->isEnabled()) {
+                ancestorLayouts.push_back(layout);
+                layout->setEnabled(false);
+            }
+        }
+    }
+
+    ~SettingsLayoutUpdate() {
+        // Commit from the innermost layout outward so size hints and fixed-size
+        // constraints already describe the completed children when parents run.
+        for (auto it = childLayouts.crbegin(); it != childLayouts.crend(); ++it) {
+            activate(*it);
+        }
+        for (const auto& layout : std::as_const(ancestorLayouts)) {
+            activate(layout);
+        }
+    }
+
+  private:
+    static void activate(const QPointer<QLayout>& layout) {
+        if (layout != nullptr) {
+            layout->setEnabled(true);
+            layout->activate();
+        }
+    }
+
+    QVector<QPointer<QLayout>> childLayouts;
+    QVector<QPointer<QLayout>> ancestorLayouts;
+};
 namespace storage = snow_shot::storage;
 
 [[maybe_unused]] const char* const kFloatingToolbarEditorTexts[] = {
@@ -579,18 +624,12 @@ class ToolbarHiddenDropZone final : public QFrame {
         update();
     }
 
-    void releaseButtons(QWidget* parent) {
+    void releaseButtons() {
         while (m_layout->count() > 0) {
             QLayoutItem* item = m_layout->takeAt(0);
-            if (ToolbarDragButton* button = dynamic_cast<ToolbarDragButton*>(item->widget())) {
-                button->setParent(parent);
-                button->hide();
-            }
             delete item;
         }
         m_buttons.clear();
-        m_emptyLabel->setParent(this);
-        m_emptyLabel->hide();
     }
 
     void applyTheme(const QColor& background, const QColor& border, const QColor& accent,
@@ -690,15 +729,11 @@ class ToolbarHiddenDropZone final : public QFrame {
     bool m_dragActive = false;
 };
 
-void clearPosition(ToolbarPositionWidget* position, QWidget* buttonParent) {
+void clearPosition(ToolbarPositionWidget* position) {
     if (position == nullptr || position->contentLayout() == nullptr) {
         return;
     }
     while (QLayoutItem* item = position->contentLayout()->takeAt(0)) {
-        if (QWidget* widget = item->widget()) {
-            widget->setParent(buttonParent);
-            widget->hide();
-        }
         delete item;
     }
 }
@@ -861,13 +896,24 @@ class TrayMenuOptionsSettingsWidget final : public SettingsCustomWidget {
         for (auto it = m_checkboxes.cbegin(); it != m_checkboxes.cend(); ++it) {
             const QSignalBlocker blocker(it.value());
             it.value()->setChecked(selected.contains(it.key()));
-            it.value()->setVisible(
-                it.key() != QStringLiteral("quick.translate-selected-text") ||
-                m_runtimeSession.switchValue(snow_shot::presentation::settings::
-                                                 SettingsSwitchBinding::TranslationPageEnabled));
         }
         m_syncing = false;
-        layoutVisibleOptions();
+        QSet<QString> visibleOptions;
+        const bool translationEnabled = m_runtimeSession.switchValue(
+            snow_shot::presentation::settings::SettingsSwitchBinding::TranslationPageEnabled);
+        for (auto it = m_checkboxes.cbegin(); it != m_checkboxes.cend(); ++it) {
+            if (it.key() != QStringLiteral("quick.translate-selected-text") || translationEnabled) {
+                visibleOptions.insert(it.key());
+            }
+        }
+        if (m_visibleOptions != visibleOptions) {
+            const SettingsLayoutUpdate update(*this);
+            m_visibleOptions = visibleOptions;
+            for (auto it = m_checkboxes.cbegin(); it != m_checkboxes.cend(); ++it) {
+                it.value()->setVisible(visibleOptions.contains(it.key()));
+            }
+            layoutVisibleOptions();
+        }
     }
 
     void layoutVisibleOptions() {
@@ -932,6 +978,7 @@ class TrayMenuOptionsSettingsWidget final : public SettingsCustomWidget {
     QGridLayout* m_optionsGrid = nullptr;
     QHash<QString, adqt::widgets::AdDivider*> m_separators;
     QHash<QString, adqt::widgets::AdCheckbox*> m_checkboxes;
+    std::optional<QSet<QString>> m_visibleOptions;
     bool m_syncing = false;
 };
 
@@ -1039,62 +1086,109 @@ struct ToolbarEditorSettingsWidget::Private {
     }
 
     void rebuild() {
-        toolbarSurface->hideIndicators();
-        hiddenZone->releaseButtons(&owner);
-        for (ToolbarPositionWidget* position : std::as_const(positionWidgets)) {
-            clearPosition(position, &owner);
-            toolbarSurface->contentLayout()->removeWidget(position);
-            delete position;
+        QPointer<QWidget> focused = QApplication::focusWidget();
+        if (focused != nullptr && !owner.isAncestorOf(focused)) {
+            focused.clear();
         }
-        positionWidgets.clear();
+        {
+            const SettingsLayoutUpdate update(owner);
+            toolbarSurface->hideIndicators();
+            hiddenZone->releaseButtons();
+            QHash<QString, ToolbarPositionWidget*> existingPositions;
+            for (ToolbarPositionWidget* position : std::as_const(positionWidgets)) {
+                QVBoxLayout* contents = position->contentLayout();
+                if (contents->count() > 0) {
+                    existingPositions.insert(contents->itemAt(contents->count() - 1)
+                                                 ->widget()
+                                                 ->property(kToolbarItemProperty)
+                                                 .toString(),
+                                             position);
+                }
+                clearPosition(position);
+                toolbarSurface->contentLayout()->removeWidget(position);
+            }
+            const auto previousPositions = positionWidgets;
+            positionWidgets.clear();
 
-        for (ToolbarDragButton* button : std::as_const(buttons)) {
-            button->setProperty("screenshotToolbarMainButton", false);
-            button->hide();
-        }
-        for (int positionIndex = 0; positionIndex < layout.positions.size(); ++positionIndex) {
-            const QStringList& itemIds = layout.positions.at(positionIndex);
-            auto* position =
-                new ToolbarPositionWidget(positionIndex, objectNamePrefix, toolbarSurface);
-            position->setProperty(
-                "screenshotToolbarRequiresOwnPosition",
-                std::any_of(itemIds.cbegin(), itemIds.cend(), [this](const QString& itemId) {
-                    return toolbar_layout::requiresOwnPosition(itemId, layoutKind);
-                }));
-            for (const QString& itemId : itemIds) {
-                ToolbarDragButton* button = buttons.value(itemId);
-                if (button == nullptr) {
+            for (ToolbarDragButton* button : std::as_const(buttons)) {
+                button->setProperty("screenshotToolbarMainButton", false);
+            }
+            for (int positionIndex = 0; positionIndex < layout.positions.size(); ++positionIndex) {
+                const QStringList& itemIds = layout.positions.at(positionIndex);
+                // The bottom tool identifies a position. Reordering positions keeps
+                // their widgets, button parents and keyboard focus intact.
+                auto* position = existingPositions.take(itemIds.constLast());
+                if (position == nullptr) {
+                    position =
+                        new ToolbarPositionWidget(positionIndex, objectNamePrefix, toolbarSurface);
+                }
+                position->setObjectName(
+                    QStringLiteral("%1-position-%2").arg(objectNamePrefix).arg(positionIndex));
+                position->setProperty("screenshotToolbarPositionIndex", positionIndex);
+                position->setProperty(
+                    "screenshotToolbarRequiresOwnPosition",
+                    std::any_of(itemIds.cbegin(), itemIds.cend(), [this](const QString& itemId) {
+                        return toolbar_layout::requiresOwnPosition(itemId, layoutKind);
+                    }));
+                for (const QString& itemId : itemIds) {
+                    ToolbarDragButton* button = buttons.value(itemId);
+                    if (button == nullptr) {
+                        continue;
+                    }
+                    if (focused == button && button->parentWidget() != position) {
+                        // Reparenting a focused button otherwise traverses the next
+                        // controls and lets QScrollArea scroll to each one in turn.
+                        button->clearFocus();
+                    }
+                    position->contentLayout()->addWidget(button, 0, Qt::AlignHCenter);
+                }
+                if (position->contentLayout()->count() == 0) {
+                    delete position;
                     continue;
                 }
-                button->show();
-                position->contentLayout()->addWidget(button, 0, Qt::AlignHCenter);
+                if (QWidget* mainButton = position->contentLayout()
+                                              ->itemAt(position->contentLayout()->count() - 1)
+                                              ->widget()) {
+                    mainButton->setProperty("screenshotToolbarMainButton", true);
+                }
+                positionWidgets.push_back(position);
+                toolbarSurface->contentLayout()->addWidget(position, 0,
+                                                           Qt::AlignBottom | Qt::AlignHCenter);
             }
-            if (position->contentLayout()->count() == 0) {
-                delete position;
-                continue;
+            toolbarSurface->setPositions(positionWidgets);
+            QVector<ToolbarDragButton*> hiddenButtons;
+            hiddenButtons.reserve(layout.hidden.size());
+            for (const QString& itemId : layout.hidden) {
+                if (ToolbarDragButton* button = buttons.value(itemId)) {
+                    if (focused == button && button->parentWidget() != hiddenZone) {
+                        button->clearFocus();
+                    }
+                    hiddenButtons.push_back(button);
+                }
             }
-            if (QWidget* mainButton = position->contentLayout()
-                                          ->itemAt(position->contentLayout()->count() - 1)
-                                          ->widget()) {
-                mainButton->setProperty("screenshotToolbarMainButton", true);
+            hiddenZone->setButtons(hiddenButtons);
+            for (ToolbarPositionWidget* position : std::as_const(positionWidgets)) {
+                for (int i = 0; i < position->contentLayout()->count(); ++i) {
+                    position->contentLayout()->itemAt(i)->widget()->show();
+                }
+                // Newly created positions must be visible and sized before the
+                // surface commits; addWidget() alone queues their show for later.
+                position->show();
+                if (position->contentLayout()->isEnabled()) {
+                    position->contentLayout()->activate();
+                }
             }
-            positionWidgets.push_back(position);
-            toolbarSurface->contentLayout()->addWidget(position, 0,
-                                                       Qt::AlignBottom | Qt::AlignHCenter);
+            for (ToolbarPositionWidget* position : previousPositions) {
+                if (!positionWidgets.contains(position)) {
+                    delete position;
+                }
+            }
+            previewStage->updateGeometry();
+            owner.updateGeometry();
         }
-        toolbarSurface->setPositions(positionWidgets);
-        toolbarSurface->contentLayout()->activate();
-        toolbarSurface->adjustSize();
-        QVector<ToolbarDragButton*> hiddenButtons;
-        hiddenButtons.reserve(layout.hidden.size());
-        for (const QString& itemId : layout.hidden) {
-            if (ToolbarDragButton* button = buttons.value(itemId)) {
-                hiddenButtons.push_back(button);
-            }
+        if (focused != nullptr && focused->isVisibleTo(&owner) && !focused->hasFocus()) {
+            focused->setFocus(Qt::OtherFocusReason);
         }
-        hiddenZone->setButtons(hiddenButtons);
-        previewStage->updateGeometry();
-        owner.updateGeometry();
     }
 
     void syncFromRuntime() {

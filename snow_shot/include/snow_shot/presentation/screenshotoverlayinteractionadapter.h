@@ -14,10 +14,13 @@ class ScreenshotOverlayWindow;
 
 class ScreenshotOverlayEventAdapter final : public ScreenshotOverlayEventSink {
   public:
-    void setEventTargets(ScreenshotOverlayInputHandler& inputHandler,
-                         std::function<void()> raiseToolbarForCanvasInteraction);
+    void setEventTargets(
+        ScreenshotOverlayInputHandler& inputHandler,
+        std::function<void()> raiseToolbarForCanvasInteraction,
+        std::function<void(ScreenshotOverlayWindow*, const QPointF&)> presentPointer = {});
     void clearEventTargets();
     bool acceptOverlayInput(bool genuine) override;
+    bool presentOverlayPointer(ScreenshotOverlayWindow*, const QPointF&) override;
 
     [[nodiscard]] bool shouldHandleOverlayMouseEvent(const ScreenshotOverlayWindow* overlay,
                                                      const QPointF& localPosition,
@@ -47,6 +50,7 @@ class ScreenshotOverlayEventAdapter final : public ScreenshotOverlayEventSink {
   private:
     ScreenshotOverlayInputHandler* m_inputHandler = nullptr;
     std::function<void()> m_raiseToolbarForCanvasInteraction;
+    std::function<void(ScreenshotOverlayWindow*, const QPointF&)> m_presentPointer;
 };
 
 #endif // SNOW_SHOT_PRESENTATION_SCREENSHOTOVERLAYINTERACTIONADAPTER_H

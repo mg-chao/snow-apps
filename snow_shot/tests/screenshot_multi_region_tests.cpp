@@ -9,11 +9,9 @@
 
 #include "snow_draw_engine_qt/snow_canvas_path_geometry.h"
 #include <QGuiApplication>
-#include <QEventLoop>
 #include <QJsonArray>
 #include <QPainterPathStroker>
 #include <QPainter>
-#include <QTimer>
 #include <cstdlib>
 #include <iostream>
 
@@ -116,14 +114,14 @@ void animatedMarqueeUsesDisplayedGeometry() {
         ScreenshotSmartSelectionTransition transition(
             [&](const QRectF& frame) { displayed = model.selectionRegionForMarquee(frame); });
 
-        static_cast<void>(transition.update(QRectF(first), true));
+        static_cast<void>(transition.update(QRectF(first), true, 0));
         const QRegion firstRegion = operation == Operation::Add
                                         ? QRegion(confirmed).united(first)
                                         : QRegion(confirmed).subtracted(first);
         require(displayed == firstRegion, "first region preview must be immediate");
 
         model.setSelectionRect(target);
-        static_cast<void>(transition.update(QRectF(target), true));
+        static_cast<void>(transition.update(QRectF(target), true, 0));
         const QRegion targetRegion = operation == Operation::Add
                                          ? QRegion(confirmed).united(target)
                                          : QRegion(confirmed).subtracted(target);
@@ -132,10 +130,7 @@ void animatedMarqueeUsesDisplayedGeometry() {
         require(model.selectionRegion() == targetRegion,
                 "animated region preview must not change the capture target");
 
-        QEventLoop loop;
-        QTimer::singleShot(ScreenshotSmartSelectionTransition::kDurationMs + 100, &loop,
-                           &QEventLoop::quit);
-        loop.exec();
+        static_cast<void>(transition.advance(ScreenshotSmartSelectionTransition::kDurationMs));
         require(!transition.isRunning(), "region preview transition must finish");
         require(displayed == targetRegion, "region preview must finish at the target shape");
     };

@@ -161,6 +161,9 @@ class ScreenshotGeometryMapper final {
     [[nodiscard]] QRectF canvasRectForPhysicalRect(const ScreenshotDisplaySession& displaySession,
                                                    const QRectF& rect,
                                                    const QString& displayId = {}) const;
+    [[nodiscard]] QVector<QRectF>
+    canvasRectsForPhysicalRects(const ScreenshotDisplaySession& displaySession,
+                                const QVector<QRectF>& rects, const QString& displayId = {}) const;
     [[nodiscard]] QPoint
     physicalPositionForLogicalPoint(const ScreenshotDisplaySession& displaySession,
                                     const QPointF& point) const;

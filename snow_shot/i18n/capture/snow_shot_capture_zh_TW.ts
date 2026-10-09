@@ -130,6 +130,10 @@
             <translation>無法還原固定到螢幕視窗</translation>
         </message>
         <message>
+            <source>The pinned windows could not be hidden</source>
+            <translation>無法隱藏貼圖視窗</translation>
+        </message>
+        <message>
             <source>The recognition text could not be saved: %1</source>
             <translation>無法儲存辨識文字：%1</translation>
         </message>

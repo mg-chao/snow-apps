@@ -58,7 +58,8 @@ void applyPersistence(ScreenshotPinnedWindow::Config* config, const QString& id 
     }
     config->persistenceId = id.isEmpty() ? QUuid::createUuid().toString(QUuid::WithoutBraces) : id;
     if (id.isEmpty())
-        storage.pinnedWindows().reserveCreation(config->persistenceId);
+        storage.pinnedWindows().reserveCreation(config->persistenceId,
+                                                QDateTime::currentDateTimeUtc(), config->groupId);
     config->persistenceWriter =
         [sourceManaged](const snow_shot::storage::PinnedWindowRecord& record) {
             auto& storage = snow_shot::storage::ApplicationStorage::instance();
@@ -224,7 +225,9 @@ class ScreenshotPinnedWindowPool final : public QObject {
 
 class ScreenshotPendingPinCoordinator final : public QObject {
   public:
-    explicit ScreenshotPendingPinCoordinator(QObject* parent = nullptr) : QObject(parent) {}
+    explicit ScreenshotPendingPinCoordinator(std::function<void()> restoreVisible,
+                                             QObject* parent = nullptr)
+        : QObject(parent), m_restoreVisible(std::move(restoreVisible)) {}
     ~ScreenshotPendingPinCoordinator() override {
         const QStringList persistenceIds = m_transactions.keys();
         for (const QString& persistenceId : persistenceIds) {
@@ -294,9 +297,14 @@ class ScreenshotPendingPinCoordinator final : public QObject {
     void updateSnapshot(const QString& persistenceId,
                         const snow_shot::storage::PinnedWindowRecord& snapshot) {
         auto transaction = m_transactions.find(persistenceId);
-        if (transaction != m_transactions.end()) {
+        if (transaction != m_transactions.end() &&
+            transaction->intent == snow_shot::storage::PinnedWindowCloseIntent::Preserve) {
             transaction->snapshot = snapshot;
         }
+    }
+
+    snow_shot::storage::PinnedSourceIdentity sourceIdentity(const QString& id) const {
+        return m_transactions.value(id).snapshot.sourceIdentity;
     }
 
     void cancel(const QString& persistenceId) {
@@ -329,10 +337,16 @@ class ScreenshotPendingPinCoordinator final : public QObject {
             return;
         }
         if ((!success &&
-             transaction->intent != snow_shot::storage::PinnedWindowCloseIntent::Close) ||
+             transaction->intent != snow_shot::storage::PinnedWindowCloseIntent::Close &&
+             transaction->intent != snow_shot::storage::PinnedWindowCloseIntent::Hide) ||
             transaction->removed || transaction->artifact == nullptr) {
             finish(persistenceId);
             return;
+        }
+        if (success) {
+            auto& storage = snow_shot::storage::ApplicationStorage::instance();
+            if (storage.isInitialized())
+                static_cast<void>(storage.pinnedWindows().markCreationPresented(persistenceId));
         }
         if (!transaction->window.isNull() &&
             transaction->intent == snow_shot::storage::PinnedWindowCloseIntent::Preserve)
@@ -389,7 +403,7 @@ class ScreenshotPendingPinCoordinator final : public QObject {
         }
     }
 
-    static void persistNonImageSource(Transaction& transaction) {
+    void persistNonImageSource(Transaction& transaction) {
         if (!transaction.window.isNull() &&
             transaction.intent == snow_shot::storage::PinnedWindowCloseIntent::Preserve) {
             transaction.snapshot = transaction.window->persistenceSnapshot();
@@ -403,6 +417,8 @@ class ScreenshotPendingPinCoordinator final : public QObject {
             const auto persisted = storage.pinnedWindows().createReserved(transaction.snapshot);
             if (!persisted.success) {
                 qWarning("Pinned source persistence failed: %s", qPrintable(persisted.error));
+            } else {
+                restoreVisibleHiddenTransaction(transaction);
             }
         }
     }
@@ -426,6 +442,8 @@ class ScreenshotPendingPinCoordinator final : public QObject {
                     transaction->snapshot, std::move(result.image));
                 if (!persisted.success) {
                     qWarning("Pinned source persistence failed: %s", qPrintable(persisted.error));
+                } else {
+                    restoreVisibleHiddenTransaction(*transaction);
                 }
             }
         } else if (!result.succeeded()) {
@@ -435,6 +453,17 @@ class ScreenshotPendingPinCoordinator final : public QObject {
             snow_shot::storage::ApplicationStorage::instance()
                 .requestPinnedWindowRetentionCleanup();
         finish(persistenceId);
+    }
+
+    void restoreVisibleHiddenTransaction(const Transaction& transaction) {
+        if (transaction.intent != snow_shot::storage::PinnedWindowCloseIntent::Hide ||
+            !m_restoreVisible)
+            return;
+        auto& repository = snow_shot::storage::ApplicationStorage::instance().pinnedWindows();
+        const auto found = repository.summary(transaction.snapshot.id);
+        if (found && !found->pending && !found->ignored && !found->hidden &&
+            found->groupId == repository.activeGroupId())
+            m_restoreVisible();
     }
 
     void completeLoadedImage(const QString& persistenceId, const QImage& image) {
@@ -466,6 +495,7 @@ class ScreenshotPendingPinCoordinator final : public QObject {
         }
     }
 
+    std::function<void()> m_restoreVisible;
     QHash<QString, Transaction> m_transactions;
 };
 
@@ -532,7 +562,20 @@ ScreenshotSelectionExportUiServices::ScreenshotSelectionExportUiServices(
           std::make_unique<snow_shot::presentation::PinnedWindowSelectionController>(
               nullptr, [this](const QVector<QString>& ids) { return tryDestroyRecords(ids); })),
       m_windowPool(std::make_unique<ScreenshotPinnedWindowPool>()),
-      m_pendingPinCoordinator(std::make_unique<ScreenshotPendingPinCoordinator>()) {}
+      m_pendingPinCoordinator(std::make_unique<ScreenshotPendingPinCoordinator>(
+          [this]() { restorePersistedWindows(); })) {
+    if (m_groupManager) {
+        QObject::connect(
+            m_groupManager,
+            &snow_shot::presentation::PinnedWindowGroupManager::showAllWindowsRequested,
+            m_pendingPinCoordinator.get(), [this]() { showAllWindows(); });
+        QObject::connect(
+            m_groupManager,
+            &snow_shot::presentation::PinnedWindowGroupManager::hideOtherWindowsRequested,
+            m_pendingPinCoordinator.get(),
+            [this](const QString& id) { static_cast<void>(hideOtherWindows(id)); });
+    }
+}
 
 ScreenshotSelectionExportUiServices::~ScreenshotSelectionExportUiServices() {
     m_selectionController.reset();
@@ -647,6 +690,7 @@ bool ScreenshotSelectionExportUiServices::presentPinnedArtifact(
     config.groupId =
         m_groupManager != nullptr ? m_groupManager->activeGroupId() : QStringLiteral("default");
     applyPersistence(&config, {}, true);
+    configureVisibility(&config);
     m_pendingPinCoordinator->reserve(pinnedWindow, config.persistenceId, config.groupId,
                                      m_groupManager, artifact);
     ScreenshotImageLoader loader = [artifact](QObject* receiver,
@@ -679,11 +723,11 @@ bool ScreenshotSelectionExportUiServices::presentPinnedArtifact(
              {QStringLiteral("outcome"),
               success ? QStringLiteral("succeeded") : QStringLiteral("failed")}},
             success ? QtInfoMsg : QtWarningMsg);
-        if (completion) {
-            completion(success, image);
-        }
         if (!coordinator.isNull()) {
             coordinator->completeFirstFrame(persistenceId, success);
+        }
+        if (completion) {
+            completion(success, image);
         }
     };
     trackSourceWindow(pinnedWindow, config.sourceIdentity);
@@ -740,6 +784,7 @@ bool ScreenshotSelectionExportUiServices::presentPinnedImageArtifact(
     config.groupId =
         m_groupManager != nullptr ? m_groupManager->activeGroupId() : QStringLiteral("default");
     applyPersistence(&config, {}, true);
+    configureVisibility(&config);
     m_pendingPinCoordinator->reserve(pinnedWindow, config.persistenceId, config.groupId,
                                      m_groupManager, artifact);
     ScreenshotImageLoader loader = [artifact](QObject* receiver,
@@ -772,11 +817,11 @@ bool ScreenshotSelectionExportUiServices::presentPinnedImageArtifact(
                  {QStringLiteral("outcome"),
                   success ? QStringLiteral("succeeded") : QStringLiteral("failed")}},
                 success ? QtInfoMsg : QtWarningMsg);
-            if (completion) {
-                completion(success, completedImage);
-            }
             if (!coordinator.isNull()) {
                 coordinator->completeFirstFrame(persistenceId, success);
+            }
+            if (completion) {
+                completion(success, completedImage);
             }
         };
     trackSourceWindow(pinnedWindow, config.sourceIdentity);
@@ -951,6 +996,7 @@ bool ScreenshotSelectionExportUiServices::presentPinnedImageOnCanvas(
     config.groupId =
         m_groupManager != nullptr ? m_groupManager->activeGroupId() : QStringLiteral("default");
     applyPersistence(&config, {}, true);
+    configureVisibility(&config);
     m_pendingPinCoordinator->reserve(pinnedWindow, config.persistenceId, config.groupId,
                                      m_groupManager, artifact);
     if (pending) {
@@ -978,11 +1024,11 @@ bool ScreenshotSelectionExportUiServices::presentPinnedImageOnCanvas(
     const QString persistenceId = config.persistenceId;
     auto synchronizedCompletion = [coordinator, persistenceId, completion = std::move(completion)](
                                       bool success, QImage completedImage) mutable {
-        if (completion) {
-            completion(success, completedImage);
-        }
         if (!coordinator.isNull()) {
             coordinator->completeFirstFrame(persistenceId, success);
+        }
+        if (completion) {
+            completion(success, completedImage);
         }
     };
     trackSourceWindow(pinnedWindow, config.sourceIdentity);
@@ -1013,15 +1059,168 @@ bool ScreenshotSelectionExportUiServices::presentPinnedDocument(const QImage& ba
         snow_shot::storage::PinnedWindowCreationSource::ScreenshotHistory, &entry);
 }
 
+void ScreenshotSelectionExportUiServices::configureVisibility(
+    ScreenshotPinnedWindow::Config* config) {
+    const QPointer<ScreenshotPendingPinCoordinator> lifetime(m_pendingPinCoordinator.get());
+    config->persistenceHider = [this, lifetime](const auto& record) {
+        return !lifetime.isNull() && persistHiddenWindow(record);
+    };
+    config->showAllWindowsRequested = [this, lifetime]() {
+        if (!lifetime.isNull())
+            showAllWindows();
+    };
+    config->hideOtherWindowsRequested = [this, lifetime](const QString& id) {
+        if (!lifetime.isNull())
+            static_cast<void>(hideOtherWindows(id));
+    };
+}
+
+ScreenshotPinnedWindow* ScreenshotSelectionExportUiServices::liveWindow(const QString& id) const {
+    if (m_groupManager)
+        return m_groupManager->hasWindow(id) ? m_groupManager->liveWindow(id) : nullptr;
+    for (auto* widget : QApplication::topLevelWidgets()) {
+        auto* window = qobject_cast<ScreenshotPinnedWindow*>(widget);
+        if (window && window->persistenceId() == id && window->sourcePinAvailable())
+            return window;
+    }
+    return nullptr;
+}
+
+void ScreenshotSelectionExportUiServices::cancelRestore(const QString& id) {
+    m_pendingAttention.remove(id);
+    if (!m_restoringIds.remove(id))
+        return;
+    auto& storage = snow_shot::storage::ApplicationStorage::instance();
+    if (storage.isInitialized())
+        storage.pinnedWindows().cancelRestore(id);
+}
+
+bool ScreenshotSelectionExportUiServices::persistHiddenWindow(
+    const snow_shot::storage::PinnedWindowRecord& record) {
+    auto& storage = snow_shot::storage::ApplicationStorage::instance();
+    if (!storage.isInitialized()) {
+        if (m_visibilityFailure)
+            m_visibilityFailure();
+        return false;
+    }
+    auto& repository = storage.pinnedWindows();
+    const auto summary = repository.summary(record.id);
+    const bool isPending = summary && summary->pending;
+    if (isPending)
+        static_cast<void>(repository.markCreationPresented(record.id));
+    if ((!isPending && !repository.updateState(record).success) ||
+        !repository.setRecordsHidden({record.id}, true).success) {
+        if (m_visibilityFailure)
+            m_visibilityFailure();
+        return false;
+    }
+    cancelRestore(record.id);
+    return true;
+}
+
+bool ScreenshotSelectionExportUiServices::hideRecords(const QVector<QString>& ids) {
+    auto& storage = snow_shot::storage::ApplicationStorage::instance();
+    if (!storage.isInitialized())
+        return false;
+    auto& repository = storage.pinnedWindows();
+    // Accepted pending windows join the group before this newer visibility command.
+    for (const auto& id : ids)
+        static_cast<void>(repository.markCreationPresented(id));
+    if (!repository.setRecordsHidden(ids, true).success) {
+        if (m_visibilityFailure)
+            m_visibilityFailure();
+        return false;
+    }
+    bool success = true;
+    for (const auto& id : ids) {
+        QPointer<ScreenshotPinnedWindow> window = liveWindow(id);
+        if (!window && m_restoringIds.contains(id))
+            window = m_restoringIds.value(id).window;
+        cancelRestore(id);
+        if (window && !window->requestHide()) {
+            static_cast<void>(repository.setRecordsHidden({id}, false));
+            success = false;
+        }
+    }
+    return success;
+}
+
+void ScreenshotSelectionExportUiServices::showAllWindows() {
+    auto& storage = snow_shot::storage::ApplicationStorage::instance();
+    if (!storage.isInitialized())
+        return;
+    const QString group =
+        m_groupManager ? m_groupManager->activeGroupId() : QStringLiteral("default");
+    const auto records = storage.pinnedWindows().summariesIncludingPending();
+    QVector<QString> ids;
+    for (const auto& record : records)
+        if (!record.ignored && record.groupId == group)
+            ids.append(record.id);
+    if (!storage.pinnedWindows().setRecordsHidden(ids, false).success) {
+        if (m_restoreFailure)
+            m_restoreFailure();
+        return;
+    }
+    for (const auto& id : ids) {
+        if (auto* window = liveWindow(id))
+            window->showFromManagement();
+    }
+    restorePersistedWindows();
+}
+
+bool ScreenshotSelectionExportUiServices::hideOtherWindows(const QString& exceptId) {
+    auto& storage = snow_shot::storage::ApplicationStorage::instance();
+    if (!storage.isInitialized())
+        return false;
+    const QString group =
+        m_groupManager ? m_groupManager->activeGroupId() : QStringLiteral("default");
+    const auto records = storage.pinnedWindows().summariesIncludingPending();
+    QVector<QString> ids;
+    for (const auto& record : records)
+        if (!record.ignored && record.groupId == group && record.id != exceptId)
+            ids.append(record.id);
+    for (auto it = m_restoringIds.cbegin(); it != m_restoringIds.cend(); ++it)
+        if (it->groupId == group && it.key() != exceptId && !ids.contains(it.key()))
+            ids.append(it.key());
+    return hideRecords(ids);
+}
+
+bool ScreenshotSelectionExportUiServices::toggleAllWindowsVisibility() {
+    auto& storage = snow_shot::storage::ApplicationStorage::instance();
+    if (!storage.isInitialized())
+        return false;
+    const QString group =
+        m_groupManager ? m_groupManager->activeGroupId() : QStringLiteral("default");
+    const auto records = storage.pinnedWindows().summariesIncludingPending();
+    QVector<QString> ids;
+    bool shown = false;
+    for (const auto& record : records) {
+        if (!record.ignored && record.groupId == group) {
+            ids.append(record.id);
+            shown |= !record.hidden;
+        }
+    }
+    for (auto it = m_restoringIds.cbegin(); it != m_restoringIds.cend(); ++it) {
+        if (it->groupId == group) {
+            shown = true;
+            if (!ids.contains(it.key()))
+                ids.append(it.key());
+        }
+    }
+    if (shown)
+        return hideRecords(ids);
+    showAllWindows();
+    return true;
+}
+
 void ScreenshotSelectionExportUiServices::restorePersistedWindows() {
     auto& storage = snow_shot::storage::ApplicationStorage::instance();
     if (!storage.isInitialized())
         return;
     for (const auto& summary : storage.pinnedWindows().summaries()) {
-        if (summary.ignored ||
+        if (summary.ignored || summary.hidden ||
             (m_groupManager && summary.groupId != m_groupManager->activeGroupId()) ||
-            m_restoringIds.contains(summary.id) ||
-            (m_groupManager && m_groupManager->hasWindow(summary.id)))
+            m_restoringIds.contains(summary.id) || liveWindow(summary.id))
             continue;
         static_cast<void>(restoreRecord(summary.id, false));
     }
@@ -1031,67 +1230,72 @@ bool ScreenshotSelectionExportUiServices::restoreRecord(const QString& id, bool 
     auto& storage = snow_shot::storage::ApplicationStorage::instance();
     if (!storage.isInitialized() || m_restoringIds.contains(id))
         return false;
-    if (m_groupManager && m_groupManager->hasWindow(id))
-        return m_groupManager->showWindow(id);
-    const auto summaries = storage.pinnedWindows().summaries();
-    const auto found = std::find_if(summaries.cbegin(), summaries.cend(),
-                                    [&id](const auto& summary) { return summary.id == id; });
-    if (found == summaries.cend())
+    auto& repository = storage.pinnedWindows();
+    const auto found = repository.summary(id);
+    if (!found)
         return false;
-    if (!storage.pinnedWindows().beginRestore(id).success)
+    if (m_groupManager && ((activateGroup && !m_groupManager->setActiveGroup(found->groupId)) ||
+                           found->groupId != m_groupManager->activeGroupId()))
         return false;
-    m_restoringIds.insert(
-        id, {storage.pinnedWindows().sourceIdentity(id), found->groupId, found->createdUtc});
-    if (m_groupManager) {
-        if ((activateGroup && !m_groupManager->setActiveGroup(found->groupId)) ||
-            found->groupId != m_groupManager->activeGroupId()) {
-            m_restoringIds.remove(id);
-            storage.pinnedWindows().cancelRestore(id);
-            return false;
-        }
+    if (!repository.setRecordsHidden({id}, false).success)
+        return false;
+    if (auto* window = liveWindow(id)) {
+        window->showFromManagement();
+        return true;
     }
-    auto* repository = &storage.pinnedWindows();
+    if (m_restoringIds.contains(id))
+        return true;
+    // The pending source coordinator replays this desired visibility after its first save.
+    if (found->pending)
+        return true;
+    if (!repository.beginRestore(id).success)
+        return false;
+    const quint64 generation = ++m_nextRestoreGeneration;
+    RestoringPin restoring;
+    restoring.sourceIdentity = repository.sourceIdentity(id);
+    restoring.groupId = found->groupId;
+    restoring.createdUtc = found->createdUtc;
+    restoring.generation = generation;
+    restoring.attentionPending = m_pendingAttention.remove(id) > 0;
+    m_restoringIds.insert(id, std::move(restoring));
+    auto* repositoryGuard = &repository;
     const auto alive = m_restoreAlive;
-    storage.pinnedFullImagePool().start([this, alive, repository, id]() {
+    storage.pinnedFullImagePool().start([this, alive, repositoryGuard, id, generation]() {
         snow_shot::platform::applyApplicationQoSToCurrentThread();
-        auto loaded = repository->loadRecord(id);
+        auto loaded = repositoryGuard->loadRecord(id);
         QMetaObject::invokeMethod(
             &snow_shot::storage::ApplicationStorage::instance(),
-            [this, alive, repository, id, loaded = std::move(loaded)]() mutable {
-                if (!alive->load() || !m_restoringIds.contains(id))
+            [this, alive, repositoryGuard, id, generation, loaded = std::move(loaded)]() mutable {
+                if (!alive->load() || !m_restoringIds.contains(id) ||
+                    m_restoringIds.value(id).generation != generation)
                     return;
                 auto& storage = snow_shot::storage::ApplicationStorage::instance();
-                if (!storage.isInitialized() || &storage.pinnedWindows() != repository) {
+                if (!storage.isInitialized() || &storage.pinnedWindows() != repositoryGuard) {
                     m_restoringIds.remove(id);
                     return;
                 }
-                const auto summaries = storage.pinnedWindows().summaries();
-                const auto found =
-                    std::find_if(summaries.cbegin(), summaries.cend(),
-                                 [&id](const auto& summary) { return summary.id == id; });
-                if (found == summaries.cend() ||
+                const auto found = storage.pinnedWindows().summary(id);
+                if (!found || found->pending || found->hidden ||
                     (m_groupManager && found->groupId != m_groupManager->activeGroupId()) ||
                     (loaded && loaded->groupId != found->groupId)) {
-                    m_restoringIds.remove(id);
-                    storage.pinnedWindows().cancelRestore(id);
+                    cancelRestore(id);
                     return;
                 }
                 if (!loaded) {
-                    m_restoringIds.remove(id);
-                    storage.pinnedWindows().cancelRestore(id);
+                    cancelRestore(id);
                     if (m_restoreFailure)
                         m_restoreFailure();
                     return;
                 }
-                if (m_groupManager && m_groupManager->hasWindow(id)) {
-                    m_restoringIds.remove(id);
-                    storage.pinnedWindows().cancelRestore(id);
-                    static_cast<void>(m_groupManager->showWindow(id));
+                if (auto* window = liveWindow(id)) {
+                    cancelRestore(id);
+                    window->showFromManagement();
                     return;
                 }
-                if (!presentRestoredRecord(std::move(*loaded)) && m_restoringIds.contains(id)) {
-                    m_restoringIds.remove(id);
-                    storage.pinnedWindows().cancelRestore(id);
+                loaded->hidden = false;
+                if (!presentRestoredRecord(std::move(*loaded)) && m_restoringIds.contains(id) &&
+                    m_restoringIds.value(id).generation == generation) {
+                    cancelRestore(id);
                     if (m_restoreFailure)
                         m_restoreFailure();
                 }
@@ -1172,6 +1376,7 @@ bool ScreenshotSelectionExportUiServices::presentRestoredRecord(
     // the same immutable source. Save state without replacing/re-encoding it.
     // Explicit content replacement uses replacementPersistenceWriter instead.
     applyPersistence(&config, record.id, true);
+    configureVisibility(&config);
 
     std::shared_ptr<QTextDocument> formattedDocument;
     if (record.sourceKind == snow_shot::storage::PinnedWindowSourceKind::ClipboardText) {
@@ -1205,26 +1410,47 @@ bool ScreenshotSelectionExportUiServices::presentRestoredRecord(
         return false;
     const QPointer<ScreenshotPendingPinCoordinator> lifetime(m_pendingPinCoordinator.get());
     const QPointer<ScreenshotPinnedWindow> windowGuard(window);
+    auto* repositoryGuard = &snow_shot::storage::ApplicationStorage::instance().pinnedWindows();
+    const quint64 generation = m_restoringIds.value(record.id).generation;
+    m_restoringIds[record.id].window = window;
     trackSourceWindow(window, config.sourceIdentity);
     const bool presented = presentPinnedWindowAndSynchronize(
         m_windowPool.get(), window, config, m_showMainWindowRequested,
-        [this, lifetime, id = record.id, windowGuard](bool success, QImage) {
+        [this, lifetime, id = record.id, generation, windowGuard, repositoryGuard](bool success,
+                                                                                   QImage) {
             if (lifetime.isNull())
                 return;
+            if (!m_restoringIds.contains(id) || m_restoringIds.value(id).generation != generation) {
+                if (success && windowGuard)
+                    windowGuard->close();
+                return;
+            }
+            auto& storage = snow_shot::storage::ApplicationStorage::instance();
+            if (!storage.isInitialized() || &storage.pinnedWindows() != repositoryGuard) {
+                m_restoringIds.remove(id);
+                if (windowGuard)
+                    windowGuard->close();
+                return;
+            }
+            const auto found = storage.pinnedWindows().summary(id);
+            if (!found || found->pending || found->hidden ||
+                (m_groupManager && found->groupId != m_groupManager->activeGroupId())) {
+                cancelRestore(id);
+                if (windowGuard)
+                    windowGuard->close();
+                return;
+            }
             const bool attention = m_restoringIds.value(id).attentionPending;
             m_restoringIds.remove(id);
-            if (success && attention && windowGuard)
-                windowGuard->shakeForAttention();
-            auto& applicationStorage = snow_shot::storage::ApplicationStorage::instance();
-            if (applicationStorage.isInitialized()) {
-                if (success) {
-                    if (!applicationStorage.pinnedWindows().markRestored(id).success && windowGuard)
-                        windowGuard->requestDestroy();
-                } else {
-                    applicationStorage.pinnedWindows().cancelRestore(id);
-                    if (m_restoreFailure)
-                        m_restoreFailure();
-                }
+            if (success) {
+                if (!storage.pinnedWindows().markRestored(id).success && windowGuard)
+                    windowGuard->close();
+                else if (attention && windowGuard)
+                    windowGuard->shakeForAttention();
+            } else {
+                storage.pinnedWindows().cancelRestore(id);
+                if (m_restoreFailure)
+                    m_restoreFailure();
             }
         });
     return presented;
@@ -1280,7 +1506,44 @@ QSet<QString> ScreenshotSelectionExportUiServices::duplicateSourceKeys() const {
         if (findDuplicatePin({it.key()}))
             keys.insert(it.key());
     }
+    auto& storage = snow_shot::storage::ApplicationStorage::instance();
+    if (storage.isInitialized()) {
+        const auto records = storage.pinnedWindows().summariesIncludingPending();
+        for (const auto& record : records) {
+            if (!record.hidden || record.ignored || record.groupId != group)
+                continue;
+            auto identity = storage.pinnedWindows().sourceIdentity(record.id);
+            if (!identity.isValid())
+                identity = m_pendingPinCoordinator->sourceIdentity(record.id);
+            if (identity.isValid())
+                keys.insert(identity.key);
+        }
+    }
     return keys;
+}
+
+QString ScreenshotSelectionExportUiServices::hiddenDuplicateId(
+    const snow_shot::storage::PinnedSourceIdentity& identity) const {
+    auto& storage = snow_shot::storage::ApplicationStorage::instance();
+    if (!storage.isInitialized())
+        return {};
+    const QString group =
+        m_groupManager ? m_groupManager->activeGroupId() : QStringLiteral("default");
+    const auto records = storage.pinnedWindows().summariesIncludingPending();
+    QString newest;
+    QDateTime created;
+    for (const auto& record : records) {
+        if (!record.hidden || record.ignored || record.groupId != group)
+            continue;
+        auto candidate = storage.pinnedWindows().sourceIdentity(record.id);
+        if (!candidate.isValid())
+            candidate = m_pendingPinCoordinator->sourceIdentity(record.id);
+        if (candidate == identity && (newest.isEmpty() || record.createdUtc > created)) {
+            newest = record.id;
+            created = record.createdUtc;
+        }
+    }
+    return newest;
 }
 
 bool ScreenshotSelectionExportUiServices::handleDuplicatePin(
@@ -1300,7 +1563,19 @@ bool ScreenshotSelectionExportUiServices::handleDuplicatePin(
             (!pending || restoring.createdUtc > pending->createdUtc))
             pending = &restoring;
     }
-    if (!window && !pending)
+    QString hiddenId = hiddenDuplicateId(identity);
+    if (!hiddenId.isEmpty() && (window || pending)) {
+        auto& repository = snow_shot::storage::ApplicationStorage::instance().pinnedWindows();
+        const auto hidden = repository.summary(hiddenId);
+        const QDateTime newestShown = pending ? pending->createdUtc : window->sourceCreatedUtc();
+        if (hidden && hidden->createdUtc >= newestShown) {
+            window = nullptr;
+            pending = nullptr;
+        } else {
+            hiddenId.clear();
+        }
+    }
+    if (!window && !pending && hiddenId.isEmpty())
         return false;
     if (action == QStringLiteral("restore_last_closed_window")) {
         if (!std::exchange(restored, true))
@@ -1308,8 +1583,16 @@ bool ScreenshotSelectionExportUiServices::handleDuplicatePin(
     } else if (action != QStringLiteral("none")) {
         if (pending)
             pending->attentionPending = true;
-        else
+        else if (window)
             window->shakeForAttention();
+        else {
+            m_pendingAttention.insert(hiddenId);
+            if (!restoreRecord(hiddenId, false)) {
+                m_pendingAttention.remove(hiddenId);
+                if (m_restoreFailure)
+                    m_restoreFailure();
+            }
+        }
     }
     return true;
 }
@@ -1349,7 +1632,8 @@ ScreenshotSelectionExportUiServices::tryDestroyRecords(const QVector<QString>& i
         return result;
     for (const auto& id : ids) {
         m_pendingPinCoordinator->cancel(id);
-        m_restoringIds.remove(id);
+        cancelRestore(id);
+        m_pendingAttention.remove(id);
         if (m_groupManager)
             m_groupManager->destroyWindow(id);
     }

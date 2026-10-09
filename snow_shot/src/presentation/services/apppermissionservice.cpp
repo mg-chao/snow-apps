@@ -67,6 +67,7 @@ AppPermissions requiredPermissions(GlobalShortcutAction action, bool /*microphon
     case Action::OpenSettings:
     case Action::PinClipboardContent:
     case Action::RestoreLastClosedWindows:
+    case Action::HideShowAllWindows:
     case Action::PinSelectedFiles:
     case Action::ToggleGlobalHotkeys:
     case Action::ToggleDisableOnFocusedFullscreenWindow:

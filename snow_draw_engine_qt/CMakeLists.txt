@@ -429,6 +429,12 @@ if(SNOW_DRAW_ENGINE_QT_BUILD_TESTS)
         COMMAND snow-canvas-custom-renderer-tests --eraser-only)
     snow_shot_import_offscreen_platform(snow-canvas-custom-renderer-tests)
     snow_shot_offscreen_qpa_environment(_snow_canvas_reset_qpa_environment)
+    add_test(NAME snow-canvas-background-coverage-tests
+        COMMAND snow-canvas-custom-renderer-tests --background-coverage-only)
+    set_tests_properties(snow-canvas-background-coverage-tests PROPERTIES
+        ENVIRONMENT "${_snow_canvas_reset_qpa_environment}"
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+        LABELS "unit" TIMEOUT 60)
     add_test(NAME snow-canvas-path-culling-tests
         COMMAND snow-canvas-custom-renderer-tests --path-culling-only)
     set_tests_properties(snow-canvas-path-culling-tests PROPERTIES

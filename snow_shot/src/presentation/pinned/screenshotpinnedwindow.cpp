@@ -1674,6 +1674,7 @@ bool ScreenshotPinnedWindow::prewarm(QScreen* screen) {
 }
 
 ScreenshotPinnedWindow::~ScreenshotPinnedWindow() {
+    m_destroying = true;
     if (m_selectionController)
         m_selectionController->unregisterWindow(this);
     m_pointerPresence->setActive(false);
@@ -1997,6 +1998,10 @@ void ScreenshotPinnedWindow::restorePersistentState(const Config& config) {
 }
 
 bool ScreenshotPinnedWindow::event(QEvent* event) {
+    // Member QObjects emit child events while C++ member destruction is in progress.
+    // Their callbacks must not access controllers or guarded pointers already destroyed.
+    if (m_destroying)
+        return QWidget::event(event);
 #if defined(Q_OS_WIN) || defined(_WIN32)
     if (event && event->type() == QEvent::WinIdChange)
         m_windowsNativeDpi = 0;
@@ -2334,6 +2339,9 @@ bool ScreenshotPinnedWindow::present(const Config& requestedConfig,
     m_replacementPersistenceWriter = config.replacementPersistenceWriter;
     m_persistenceRemover = config.persistenceRemover;
     m_persistenceCloser = config.persistenceCloser;
+    m_persistenceHider = config.persistenceHider;
+    m_showAllWindowsRequested = config.showAllWindowsRequested;
+    m_hideOtherWindowsRequested = config.hideOtherWindowsRequested;
     m_creationSource = config.creationSource;
     m_sourceIdentity = config.sourceIdentity;
     m_sourcePinAvailable = true;
@@ -6360,7 +6368,7 @@ void ScreenshotPinnedWindow::printContent() {
                 {{QStringLiteral("request_kind"), QStringLiteral("pinned")},
                  {QStringLiteral("operation"), QString::number(replacement)},
                  {QStringLiteral("stage"), !snapshotSucceeded ? QStringLiteral("export_image")
-                                           : !printer         ? QStringLiteral("service_destroyed")
+                                           : !printer ? QStringLiteral("service_destroyed")
                                                       : QStringLiteral("service_rejected")}},
                 QtWarningMsg);
             finished({ScreenshotPrintService::Status::Failed,
@@ -7891,6 +7899,14 @@ bool ScreenshotPinnedWindow::restoreCommittedNativeGeometry(bool closeOnFailure)
 }
 
 void ScreenshotPinnedWindow::showAllPinnedWindows() {
+    if (m_showAllWindowsRequested) {
+        m_showAllWindowsRequested();
+        return;
+    }
+    if (m_groupManager) {
+        m_groupManager->requestShowAllWindows();
+        return;
+    }
     const auto windows = livePinnedWindows();
     for (const QPointer<ScreenshotPinnedWindow>& window : windows) {
         if (window != nullptr && window->m_presented && !window->m_closing &&
@@ -7907,16 +7923,20 @@ void ScreenshotPinnedWindow::showAllPinnedWindows() {
 }
 
 void ScreenshotPinnedWindow::hideOtherPinnedWindows() {
+    if (m_hideOtherWindowsRequested) {
+        m_hideOtherWindowsRequested(m_persistenceId);
+        return;
+    }
+    if (m_groupManager) {
+        m_groupManager->requestHideOtherWindows(m_persistenceId);
+        return;
+    }
     const auto windows = livePinnedWindows();
     for (const QPointer<ScreenshotPinnedWindow>& window : windows) {
         if (window != nullptr && window != this && window->m_presented && !window->m_closing &&
             (window->m_groupManager == nullptr ||
              window->groupId() == window->m_groupManager->activeGroupId())) {
-            if (window->hideToTopActive()) {
-                window->m_hideToTop->setSuppressed(true);
-            } else {
-                window->hide();
-            }
+            static_cast<void>(window->requestHide());
         }
     }
     show();
@@ -8000,6 +8020,29 @@ void ScreenshotPinnedWindow::requestUserClose() {
     new snow_shot::presentation::ConfirmationSkipButton(*modal, [] {
         return snow_shot::storage::PinToScreenSettings().setConfirmBeforeClosingWindow(false);
     });
+}
+
+bool ScreenshotPinnedWindow::requestHide() {
+    if (m_closing)
+        return false;
+    auto snapshot = persistenceRecord();
+    snapshot.hidden = true;
+    if (m_persistenceHider && !m_persistenceHider(snapshot))
+        return false;
+    if (m_selectionController)
+        m_selectionController->unregisterWindow(this);
+    stopAttentionShake();
+    if (m_groupManager)
+        m_groupManager->markWindowClosing(this);
+    m_inactiveGroupClosing = false;
+    m_deferredInactiveGroupClose = false;
+    m_closeIntent = snow_shot::storage::PinnedWindowCloseIntent::Hide;
+    if (m_persistenceTimer)
+        m_persistenceTimer->stop();
+    m_closeSnapshot = std::move(snapshot);
+    m_closeStatePersisted = static_cast<bool>(m_persistenceHider);
+    m_sourcePinAvailable = false;
+    return close();
 }
 
 void ScreenshotPinnedWindow::closeAfterConfirmation() {
@@ -8624,7 +8667,7 @@ bool ScreenshotPinnedWindow::automationAction(const QString& action) {
     if (action == QStringLiteral("show"))
         showFromManagement();
     else if (action == QStringLiteral("hide"))
-        hide();
+        return requestHide();
     else if (action == QStringLiteral("close"))
         requestUserClose();
     else if (action == QStringLiteral("destroy"))

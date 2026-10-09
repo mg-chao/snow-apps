@@ -35,6 +35,7 @@ struct ScreenshotToolbarPresentationState {
     int shadowWidth = 0;
     QColor shadowColor = QColor(0x33, 0x33, 0x33);
     ScreenshotRegionType regionType = ScreenshotRegionType::Rectangle;
+    [[nodiscard]] bool operator==(const ScreenshotToolbarPresentationState&) const = default;
 };
 
 class ScreenshotToolbarPresenter final {

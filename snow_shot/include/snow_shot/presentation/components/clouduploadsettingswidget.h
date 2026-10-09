@@ -4,6 +4,7 @@
 #include "snow_shot/clouduploadconfiguration.h"
 #include <QPointer>
 #include <array>
+#include <optional>
 class QLabel;
 class QVBoxLayout;
 namespace adqt::widgets {
@@ -28,7 +29,7 @@ class CloudUploadSettingsWidget final : public SettingsCustomWidget {
     void changeEvent(QEvent* event) override;
 
   private:
-    void rebuild();
+    void rebuild(bool force = false);
     void openEditor(const QString& id = {});
     void deleteConfiguration(const QString& id);
     void copyConfiguration(const QString& id);
@@ -38,6 +39,7 @@ class CloudUploadSettingsWidget final : public SettingsCustomWidget {
     snow_shot::presentation::settings::SettingsRuntimeSession& m_session;
     snow_shot::presentation::styles::ThemeColorScheme m_scheme;
     QVBoxLayout* m_rows = nullptr;
+    std::optional<QVector<snow_shot::CloudUploadConfiguration>> m_renderedConfigurations;
     QLabel* m_title = nullptr;
     adqt::widgets::AdButton* m_add = nullptr;
     adqt::widgets::AdAlert* m_error = nullptr;

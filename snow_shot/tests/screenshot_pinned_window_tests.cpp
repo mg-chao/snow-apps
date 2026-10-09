@@ -1,4 +1,5 @@
 #include "angle_wheel_host_test_support.h"
+#include "../src/app/mcp/mcppinnedstate_p.h"
 #include "cloud_upload_test_support.h"
 #include "print_diagnostics_test_support.h"
 #include "../../test-support/canvas_quick_selection_test_support.h"
@@ -4976,6 +4977,99 @@ void pinnedCloseHidesBeforePersistence() {
     }
 }
 
+void pinnedHideClosesOnlyAfterPersistenceSucceeds() {
+    using namespace snow_shot;
+    const storage::PinToScreenSettings settings;
+    const bool previousConfirmation = settings.confirmBeforeClosingWindow();
+    const auto restoreConfirmation = qScopeGuard(
+        [&] { static_cast<void>(settings.setConfirmBeforeClosingWindow(previousConfirmation)); });
+    require(settings.setConfirmBeforeClosingWindow(true), "enable close confirmation for Hide");
+
+    ScreenshotPinnedWindow window;
+    window.setAttribute(Qt::WA_DeleteOnClose, false);
+    auto config = cachedOcrPinConfig(nullptr);
+    config.persistenceId = QUuid::createUuid().toString(QUuid::WithoutBraces);
+    SnowCanvasRuntime editedRuntime;
+    require(!editedRuntime
+                 .applyAnnotationTransaction(
+                     R"({"version":1,"operations":[{"type":"rectangle","bounds":[8,8,24,24]}]})")
+                 .isEmpty(),
+            "Hide fixture must contain an edited document");
+    config.initialCanvasSession = editedRuntime.serializeDocumentSession();
+    int hides = 0;
+    int ordinaryWrites = 0;
+    int closes = 0;
+    int closeSignals = 0;
+    bool accept = false;
+    std::optional<storage::PinnedWindowRecord> persisted;
+    std::optional<storage::PinnedWindowRecord> published;
+    config.persistenceWriter = [&](const auto&) { ++ordinaryWrites; };
+    config.persistenceCloser = [&](const auto&) { ++closes; };
+    config.persistenceHider = [&](const auto& snapshot) {
+        ++hides;
+        require(snapshot.hidden && !snapshot.ignored && window.isVisible(),
+                "Hide must persist its separate lifecycle state before closing");
+        if (accept)
+            persisted = snapshot;
+        return accept;
+    };
+    QObject::connect(&window, &ScreenshotPinnedWindow::closingForPersistence,
+                     [&](const auto& snapshot, auto intent) {
+                         ++closeSignals;
+                         require(intent == storage::PinnedWindowCloseIntent::Hide &&
+                                     !window.isVisible() && !window.sourcePinAvailable(),
+                                 "Hide closes the shell and withdraws duplicate availability");
+                         published = snapshot;
+                     });
+    require(window.present(config), "present Hide persistence fixture");
+    waitForUi(50);
+    const auto before = window.persistenceSnapshot();
+    QPointer<SnowCanvasWidget> canvas(window.findChild<SnowCanvasWidget*>());
+    require(canvas, "Hide fixture has a live canvas");
+    require(!window.automationAction(QStringLiteral("hide")) && window.isVisible() &&
+                window.sourcePinAvailable() && canvas && closeSignals == 0,
+            "a rejected hidden-state save must keep the window usable");
+    accept = true;
+    const int writesBeforeHide = ordinaryWrites;
+    require(window.automationAction(QStringLiteral("hide")), "Hide accepts saved state");
+    require(!window.isVisible() && !canvas && !window.sourcePinAvailable() && hides == 2 &&
+                closes == 0 && closeSignals == 1 && ordinaryWrites == writesBeforeHide &&
+                persisted && published,
+            "Hide tears down once without marking closed or repeating state persistence");
+    require(!window.findChild<adqt::widgets::AdModal*>(
+                QStringLiteral("screenshotPinnedCloseConfirmation")),
+            "Hide must bypass close confirmation");
+    for (const auto* snapshot : {&*persisted, &*published}) {
+        require(snapshot->hidden && !snapshot->ignored &&
+                    snapshot->nativeGeometry == before.nativeGeometry &&
+                    snapshot->placement == before.placement &&
+                    snapshot->canvasSession == before.canvasSession &&
+                    snapshot->recognitionResults == before.recognitionResults,
+                "Hide preserves the final geometry, document and recognition snapshot");
+    }
+    window.showFromManagement();
+    require(!window.isVisible() && !window.requestHide() && hides == 2,
+            "a closed hidden shell cannot reopen or persist Hide again");
+}
+
+void pinnedVisibilityActionsUseServicePorts() {
+    ScreenshotPinnedWindow window;
+    window.setAttribute(Qt::WA_DeleteOnClose, false);
+    auto config = cachedOcrPinConfig(nullptr);
+    config.persistenceId = QStringLiteral("visibility-ports-fixture");
+    int shows = 0;
+    QString exceptId;
+    config.showAllWindowsRequested = [&] { ++shows; };
+    config.hideOtherWindowsRequested = [&](const QString& id) { exceptId = id; };
+    require(window.present(config), "present visibility action fixture");
+    require(window.automationAction(QStringLiteral("show_all")) && shows == 1,
+            "Show All delegates to the service that owns hidden records");
+    require(window.automationAction(QStringLiteral("hide_others")) &&
+                exceptId == config.persistenceId && window.isVisible(),
+            "Hide Others delegates with its own persistent identity");
+    window.close();
+}
+
 void deferredPinUserCloseCancelsLateMaterialization() {
     QScreen* screen = QGuiApplication::primaryScreen();
     require(screen != nullptr, "a primary screen is required");
@@ -4998,8 +5092,8 @@ void deferredPinUserCloseCancelsLateMaterialization() {
     ScreenshotPinnedWindow* window = nullptr;
     for (QWidget* widget : QApplication::topLevelWidgets()) {
         auto* candidate = qobject_cast<ScreenshotPinnedWindow*>(widget);
-        if (candidate != nullptr && candidate->findChild<QAction*>(
-                                        QStringLiteral("screenshotPinnedCloseAction")) != nullptr) {
+        if (candidate != nullptr && candidate->sourcePinAvailable() &&
+            !candidate->persistenceId().isEmpty()) {
             require(window == nullptr, "the pending close test found multiple pinned windows");
             window = candidate;
         }
@@ -16454,13 +16548,24 @@ void duplicatePinActions() {
             "empty restore history consumes duplicate without creating a pin");
     restored = false;
     const QRect baseline = first->currentNativeGeometry();
+    const QRect persistedGeometry = first->persistenceSnapshot().nativeGeometry;
     const auto placement = first->persistenceSnapshot().placement;
-    first->hide();
+    require(first->requestHide(), "hide duplicate through persistent closure");
+    require(processUntilDeleted(first, 2000), "hidden duplicate releases its shell");
     require(service.handleDuplicatePin(identity, QStringLiteral("none"), restored) &&
-                !first->isVisible(),
+                repository.loadRecord(firstId)->hidden,
             "None leaves a hidden duplicate untouched");
     require(service.handleDuplicatePin(identity, QStringLiteral("shake_window"), restored),
             "shake handles a hidden pin");
+    wait([&] { return service.findDuplicatePin(identity) != nullptr; },
+         "shake restores the hidden duplicate");
+    first = service.findDuplicatePin(identity);
+    wait(
+        [&] {
+            return first->findChild<QVariantAnimation*>(
+                       QStringLiteral("screenshotPinnedShakeAnimation")) != nullptr;
+        },
+        "restored duplicate becomes ready for attention");
     require(first->isVisible(), "shake reveals the existing pin");
     auto* animation =
         first->findChild<QVariantAnimation*>(QStringLiteral("screenshotPinnedShakeAnimation"));
@@ -16468,7 +16573,7 @@ void duplicatePinActions() {
     animation->pause();
     animation->setCurrentTime(50);
     require(first->currentNativeGeometry() != baseline, "shake visibly displaces the window");
-    require(first->persistenceSnapshot().nativeGeometry == baseline &&
+    require(first->persistenceSnapshot().nativeGeometry == persistedGeometry &&
                 first->persistenceSnapshot().placement == placement,
             "shake offsets never leak into persisted placement");
     first->shakeForAttention();
@@ -16487,7 +16592,8 @@ void duplicatePinActions() {
         },
         "edits persist while the attention animation is paused");
     const auto editedRecord = repository.loadRecord(firstId);
-    require(editedRecord->nativeGeometry == baseline && editedRecord->placement == placement,
+    require(editedRecord->nativeGeometry == persistedGeometry &&
+                editedRecord->placement == placement,
             "saving an edit during a shake preserves the stable placement");
     require(first->automationUpdate({{QStringLiteral("show_border"), false}}, &editError),
             "border can change before a shake finishes");
@@ -16697,13 +16803,283 @@ void pinnedLargePixelsReleaseOnClose() {
         auto windows = groups.liveWindows();
         require(windows.size() == 1, "pixel lifetime fixture has one live pin");
         QPointer<ScreenshotPinnedWindow> window(windows.front());
-        pinnedMenuActionNamed(*window, QStringLiteral("screenshotPinnedCloseAction"))->trigger();
-        require(processUntilDeleted(window, 2000), "normal Close destroys the pin");
+        const bool hide = cycle >= 4;
+        if (hide)
+            require(window->requestHide(), "Hide accepts the persisted large pin");
+        else
+            pinnedMenuActionNamed(*window, QStringLiteral("screenshotPinnedCloseAction"))
+                ->trigger();
+        require(processUntilDeleted(window, 2000), "Hide and Close destroy the pin");
         require(repository.flush().success, "closed pin pixels finish writing to disk");
         QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
         require(!snow::test_support::virtualMemoryMapped(middle),
-                "normal Close must release large pixel pages while keeping the disk record");
+                "Hide and Close must release large pixel pages while keeping the disk record");
     }
+}
+
+void pinnedHiddenWindowsPersistAndRestore() {
+    IsolatedPinnedStorage isolated;
+    using namespace snow_shot;
+    auto& applicationStorage = storage::ApplicationStorage::instance();
+    auto& repository = applicationStorage.pinnedWindows();
+    require(storage::PinToScreenSettings().setAutomaticTextRecognition(false),
+            "disable automatic recognition for hidden lifecycle");
+    presentation::PinnedWindowGroupManager groups(&repository);
+    ScreenshotSelectionExportUiServices services(nullptr, nullptr, nullptr, {}, {}, &groups);
+    QObject visibilityConnections;
+    QObject::connect(&applicationStorage, &storage::ApplicationStorage::pinnedWindowsChanged,
+                     &visibilityConnections, [&] { groups.onPinnedRecordsChanged(); });
+    QObject::connect(&groups,
+                     &presentation::PinnedWindowGroupManager::restoreActiveGroupWindowsRequested,
+                     &visibilityConnections, [&] { services.restorePersistedWindows(); });
+    QScreen* screen = QGuiApplication::primaryScreen();
+    require(screen, "hidden lifecycle needs a screen");
+    QImage image(120, 80, QImage::Format_RGB32);
+    image.fill(Qt::green);
+    const QRect geometry = physicalPinGeometry(*screen, {50, 50}, image.size());
+    const auto wait = [](auto predicate, const char* message) {
+        QElapsedTimer deadline;
+        deadline.start();
+        while (!predicate() && deadline.elapsed() < 5000)
+            waitForUi(5);
+        require(predicate(), message);
+    };
+    const auto live = [&](const QString& id) { return groups.liveWindow(id); };
+    require(services.presentPinnedImage(image, screen, geometry, image.size()),
+            "create hidden lifecycle pin");
+    wait([&] { return repository.summaries().size() == 1; }, "hidden lifecycle pin persists");
+    const QString firstId = repository.summaries().front().id;
+    QPointer<ScreenshotPinnedWindow> first(live(firstId));
+    require(first, "hidden lifecycle pin is live");
+    const auto before = *repository.loadRecord(firstId);
+    require(first->requestHide() && !first->isVisible() && !groups.hasWindow(firstId) &&
+                groups.liveWindow(firstId) == nullptr,
+            "Hide immediately removes the usable window shell");
+    require(processUntilDeleted(first, 2000), "Hide deletes the pinned QWidget");
+    auto hidden = repository.loadRecord(firstId);
+    require(hidden && hidden->hidden && !hidden->ignored &&
+                hidden->activitySequence == before.activitySequence &&
+                hidden->lastClosedUtc == before.lastClosedUtc &&
+                groups.windowCount(groups.activeGroupId()) == 1,
+            "hidden pins remain group members without entering closed history");
+    hidden.reset();
+    require(repository.flush().success, "flush persistent hidden state");
+    {
+        storage::PinnedWindowRepository reloaded(applicationStorage.configurationDirectory(),
+                                                 false);
+        const auto stored = reloaded.loadRecord(firstId);
+        require(stored && stored->hidden && !stored->ignored &&
+                    stored->nativeGeometry == before.nativeGeometry,
+                "hidden lifecycle survives a repository reload");
+    }
+    services.restorePersistedWindows();
+    services.restoreLastClosedWindow();
+    waitForUi(30);
+    require(!groups.hasWindow(firstId) && repository.loadRecord(firstId)->hidden,
+            "startup and restore-last-closed leave hidden pins closed");
+    services.showAllWindows();
+    wait([&] { return live(firstId) && live(firstId)->sourcePinAvailable(); },
+         "Show All restores hidden pins");
+    require(!repository.loadRecord(firstId)->hidden && !repository.loadRecord(firstId)->ignored &&
+                live(firstId)->persistenceSnapshot().nativeGeometry == before.nativeGeometry,
+            "Show All preserves the document and placement");
+    first = live(firstId);
+    require(first->requestHide(), "hide pin before membership addition");
+    require(processUntilDeleted(first, 2000), "hidden member releases its shell");
+    require(services.presentPinnedImage(image, screen, geometry, image.size()),
+            "add another pin to the group");
+    wait([&] { return repository.summaries().size() == 2 && groups.hasWindow(firstId); },
+         "adding a group member reveals prior hidden members");
+    require(!repository.loadRecord(firstId)->hidden,
+            "membership addition clears persistent hidden state");
+    QString secondId;
+    for (const auto& summary : repository.summaries())
+        if (summary.id != firstId)
+            secondId = summary.id;
+    wait([&] { return groups.hasWindow(secondId); }, "second member is live");
+    require(services.hideOtherWindows(firstId), "Hide Others succeeds");
+    wait([&] { return !groups.hasWindow(secondId); }, "Hide Others closes other members");
+    require(groups.hasWindow(firstId) && repository.loadRecord(secondId)->hidden,
+            "Hide Others leaves its owner visible");
+    require(services.toggleAllWindowsVisibility(), "toggle mixed visibility");
+    require(!groups.hasWindow(firstId) && repository.loadRecord(firstId)->hidden &&
+                repository.loadRecord(secondId)->hidden,
+            "toggle with a visible member hides every group member");
+    require(services.toggleAllWindowsVisibility(), "toggle all-hidden group");
+    wait([&] { return groups.hasWindow(firstId) && groups.hasWindow(secondId); },
+         "toggle restores every hidden group member");
+    require(!repository.loadRecord(firstId)->hidden && !repository.loadRecord(secondId)->hidden,
+            "toggle clears hidden state");
+    services.destroyRecords({firstId, secondId});
+    QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+}
+
+void pinnedHideBeforeFirstSaveKeepsLatestVisibility() {
+    enum class ShowRequest { None, All, Record };
+    for (const auto showRequest : {ShowRequest::None, ShowRequest::All, ShowRequest::Record}) {
+        const bool showBeforeSource = showRequest != ShowRequest::None;
+        IsolatedPinnedStorage isolated;
+        using namespace snow_shot;
+        auto& repository = storage::ApplicationStorage::instance().pinnedWindows();
+        require(storage::PinToScreenSettings().setAutomaticTextRecognition(false),
+                "disable recognition for pending hidden lifecycle");
+        presentation::PinnedWindowGroupManager groups(&repository);
+        ScreenshotSelectionExportUiServices services(nullptr, nullptr, nullptr, {}, {}, &groups);
+        QScreen* screen = QGuiApplication::primaryScreen();
+        require(screen, "pending Hide needs a screen");
+        QImage image(120, 80, QImage::Format_RGB32);
+        image.fill(Qt::cyan);
+        const QRect geometry = physicalPinGeometry(*screen, {50, 50}, image.size());
+        ScreenshotImageLoadCallback deliver;
+        require(services.presentPinnedImage({}, screen, geometry, image.size(), {}, {}, 1.0, {},
+                                            [&](QObject*, ScreenshotImageLoadCallback callback) {
+                                                deliver = std::move(callback);
+                                            }),
+                "create pending source-backed pin");
+        const auto wait = [](auto predicate, const char* message) {
+            QElapsedTimer deadline;
+            deadline.start();
+            while (!predicate() && deadline.elapsed() < 5000)
+                waitForUi(5);
+            require(predicate(), message);
+        };
+        wait([&] { return static_cast<bool>(deliver); }, "pending loader starts");
+        const auto windows = groups.liveWindows();
+        require(windows.size() == 1, "pending fixture has one shell");
+        QPointer<ScreenshotPinnedWindow> pending(windows.front());
+        const QString id = pending->persistenceId();
+        require(pending->requestHide(), "Hide pending pin");
+        const auto closingList = app::mcp::pinnedWindowList(repository, groups);
+        require(closingList.size() == 1 &&
+                    closingList.first().toObject().value(QStringLiteral("hidden")).toBool() &&
+                    !closingList.first().toObject().value(QStringLiteral("open")).toBool(),
+                "MCP reports pending Hide immediately while the closing shell still exists");
+        require(processUntilDeleted(pending, 2000), "Hide releases pending shell");
+        const auto hiddenState = app::mcp::pinnedWindowState(repository, groups, id);
+        require(hiddenState.value(QStringLiteral("id")).toString() == id &&
+                    hiddenState.value(QStringLiteral("hidden")).toBool() &&
+                    !hiddenState.value(QStringLiteral("open")).toBool() &&
+                    !hiddenState.value(QStringLiteral("closed")).toBool(),
+                "MCP can look up a hidden pin before its first source save");
+        const auto hiddenList = app::mcp::pinnedWindowList(repository, groups);
+        require(hiddenList.size() == 1 &&
+                    hiddenList.first().toObject().value(QStringLiteral("id")).toString() == id &&
+                    hiddenList.first().toObject().value(QStringLiteral("hidden")).toBool(),
+                "MCP lists a hidden pending pin after its shell is deleted");
+        if (showBeforeSource) {
+            if (showRequest == ShowRequest::All)
+                services.showAllWindows();
+            else
+                require(services.restoreRecord(id, false),
+                        "Show accepts the hidden pending ID exposed by MCP");
+            const auto shownState = app::mcp::pinnedWindowState(repository, groups, id);
+            require(!shownState.isEmpty() && !shownState.value(QStringLiteral("hidden")).toBool() &&
+                        !shownState.value(QStringLiteral("open")).toBool(),
+                    "MCP observes pending Show before the source arrives");
+        }
+        deliver(image);
+        wait([&] { return repository.loadRecord(id).has_value(); },
+             "hidden pending source persists after shell deletion");
+        require(!repository.loadRecord(id)->ignored, "pending Hide never creates closed history");
+        const auto savedList = app::mcp::pinnedWindowList(repository, groups);
+        require(savedList.size() == 1 &&
+                    savedList.first().toObject().value(QStringLiteral("id")).toString() == id &&
+                    savedList.first().toObject().value(QStringLiteral("hidden")).toBool() ==
+                        !showBeforeSource,
+                "MCP lists the pin exactly once after its first source save");
+        if (showBeforeSource) {
+            wait([&] { return groups.hasWindow(id); },
+                 "Show before first save restores when persistence completes");
+            require(!repository.loadRecord(id)->hidden,
+                    "pending completion preserves the later Show request");
+        } else {
+            require(repository.loadRecord(id)->hidden && !groups.hasWindow(id),
+                    "pending completion preserves Hide without reviving its shell");
+            services.showAllWindows();
+            wait([&] { return groups.hasWindow(id); }, "Show restores saved pending Hide");
+        }
+        services.destroyRecords({id});
+        QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+        require(app::mcp::pinnedWindowState(repository, groups, id).isEmpty() &&
+                    app::mcp::pinnedWindowList(repository, groups).isEmpty(),
+                "destroyed hidden pins disappear from MCP state and listing");
+    }
+}
+
+void pinnedHideCancelsRestoreAndRejectsStaleCallbacks() {
+    IsolatedPinnedStorage isolated;
+    using namespace snow_shot;
+    auto& applicationStorage = storage::ApplicationStorage::instance();
+    auto& repository = applicationStorage.pinnedWindows();
+    require(storage::PinToScreenSettings().setAutomaticTextRecognition(false),
+            "disable recognition for restore visibility races");
+    presentation::PinnedWindowGroupManager groups(&repository);
+    ScreenshotSelectionExportUiServices services(nullptr, nullptr, nullptr, {}, {}, &groups);
+    int failures = 0;
+    services.setRestoreFailureHandler([&] { ++failures; });
+    services.setVisibilityFailureHandler([&] { ++failures; });
+    QScreen* screen = QGuiApplication::primaryScreen();
+    require(screen, "restore visibility race needs a screen");
+    QImage image(120, 80, QImage::Format_RGB32);
+    image.fill(Qt::yellow);
+    const QRect geometry = physicalPinGeometry(*screen, {50, 50}, image.size());
+    require(services.presentPinnedImage(image, screen, geometry, image.size()),
+            "create restore visibility race pin");
+    const auto wait = [](auto predicate, const char* message) {
+        QElapsedTimer deadline;
+        deadline.start();
+        while (!predicate() && deadline.elapsed() < 5000)
+            waitForUi(5);
+        require(predicate(), message);
+    };
+    wait([&] { return repository.summaries().size() == 1; }, "race pin persists");
+    const QString id = repository.summaries().front().id;
+    QPointer<ScreenshotPinnedWindow> window(groups.liveWindow(id));
+    require(window && window->requestHide(), "hide restore visibility fixture");
+    require(processUntilDeleted(window, 2000), "release restore visibility fixture shell");
+    auto& pool = applicationStorage.pinnedFullImagePool();
+    const int previousWorkers = pool.maxThreadCount();
+    const auto restoreWorkers = qScopeGuard([&] { pool.setMaxThreadCount(previousWorkers); });
+    pool.setMaxThreadCount(1);
+    for (const bool showAgain : {false, true}) {
+        auto started = std::make_shared<QSemaphore>();
+        auto gate = std::make_shared<QSemaphore>();
+        auto releaseWorker = qScopeGuard([&] { gate->release(); });
+        pool.start([started, gate] {
+            started->release();
+            gate->acquire();
+        });
+        require(started->tryAcquire(1, 5000), "restore worker is gated before payload load");
+        services.showAllWindows();
+        require(!groups.hasWindow(id) && !repository.loadRecord(id)->hidden,
+                "Show queues restoration without creating a shell synchronously");
+        require(services.toggleAllWindowsVisibility() && repository.loadRecord(id)->hidden,
+                "Hide cancels an in-flight restore before it has a shell");
+        if (showAgain)
+            services.showAllWindows();
+        gate->release();
+        releaseWorker.dismiss();
+        require(pool.waitForDone(5000), "queued payload loads complete");
+        if (showAgain) {
+            wait(
+                [&] {
+                    auto* pin = groups.liveWindow(id);
+                    return pin && pin->automationState().value(QStringLiteral("ready")).toBool();
+                },
+                "latest Show wins over a stale canceled restore callback");
+            require(groups.liveWindows().size() == 1 && !repository.loadRecord(id)->hidden,
+                    "cancel then Show restores one shell with current visibility");
+            window = groups.liveWindow(id);
+            require(window->requestHide(), "hide final race window");
+            require(processUntilDeleted(window, 2000), "release final race shell");
+        } else {
+            waitForUi(30);
+            require(!groups.hasWindow(id) && repository.loadRecord(id)->hidden,
+                    "a canceled load cannot resurrect a hidden window");
+        }
+        require(failures == 0, "intentional restore cancellation reports no failure");
+    }
+    services.destroyRecords({id});
 }
 
 void pinnedManagementLifecycle() {
@@ -20418,6 +20794,14 @@ int main(int argc, char* argv[]) {
         if (app.arguments().contains(QStringLiteral("--deferred-user-close-only"))) {
             pinnedCloseHidesBeforePersistence();
             deferredPinUserCloseCancelsLateMaterialization();
+            return 0;
+        }
+        if (app.arguments().contains(QStringLiteral("--hidden-window-lifecycle-only"))) {
+            pinnedHideClosesOnlyAfterPersistenceSucceeds();
+            pinnedVisibilityActionsUseServicePorts();
+            pinnedHiddenWindowsPersistAndRestore();
+            pinnedHideBeforeFirstSaveKeepsLatestVisibility();
+            pinnedHideCancelsRestoreAndRejectsStaleCallbacks();
             return 0;
         }
         if (app.arguments().contains(QStringLiteral("--selection-restore-only"))) {

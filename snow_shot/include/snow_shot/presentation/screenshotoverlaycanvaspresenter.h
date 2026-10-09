@@ -31,7 +31,8 @@ class ScreenshotOverlayCanvasPresenter final {
                             ScreenshotOverlayShowMode mode) const;
     void updateOverlayState(const ScreenshotDisplaySession& displaySession,
                             const ScreenshotSelectionVisualState& selectionState,
-                            bool intelligentSelecting, bool manualSelecting, bool dragging) const;
+                            bool intelligentSelecting, bool manualSelecting, bool dragging,
+                            bool updateCursors = true) const;
     void updateOverlayCursors(const ScreenshotDisplaySession& displaySession, bool selecting,
                               bool dragging) const;
     void updateGuideLines(const ScreenshotDisplaySession& displaySession,

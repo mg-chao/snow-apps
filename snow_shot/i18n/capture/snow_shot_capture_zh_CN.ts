@@ -130,6 +130,10 @@
             <translation>无法恢复固定到屏幕窗口</translation>
         </message>
         <message>
+            <source>The pinned windows could not be hidden</source>
+            <translation>无法隐藏贴图窗口</translation>
+        </message>
+        <message>
             <source>The recognition text could not be saved: %1</source>
             <translation>无法保存识别文本：%1</translation>
         </message>

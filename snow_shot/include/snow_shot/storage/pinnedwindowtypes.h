@@ -50,7 +50,7 @@ enum class PinnedWindowCreationSource {
     Clipboard,
     SelectedFiles
 };
-enum class PinnedWindowCloseIntent { Preserve, Close, Destroy };
+enum class PinnedWindowCloseIntent { Preserve, Hide, Close, Destroy };
 
 // These limits govern ignored records only.
 using PinnedWindowPolicy = CaptureHistoryPolicy;
@@ -61,6 +61,7 @@ struct PinnedWindowRecord final {
     QDateTime createdUtc;
     QDateTime lastClosedUtc;
     bool ignored = false;
+    bool hidden = false;
     quint64 activitySequence = 0;
     QString id;
     QString groupId = QStringLiteral("default");

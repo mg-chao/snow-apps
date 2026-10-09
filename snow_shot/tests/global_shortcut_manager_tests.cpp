@@ -50,6 +50,7 @@ constexpr std::array ALL_ACTIONS{
     GlobalShortcutAction::TranslateSelectedText,
     GlobalShortcutAction::PinSelectedFiles,
     GlobalShortcutAction::RestoreLastClosedWindows,
+    GlobalShortcutAction::HideShowAllWindows,
     GlobalShortcutAction::ToggleGlobalHotkeys,
     GlobalShortcutAction::ToggleDisableOnFocusedFullscreenWindow,
 };
@@ -280,6 +281,43 @@ void pinnedManagementShortcutCanBeAssignedAndRestored() {
                 restored.state(action).shortcuts == shortcuts::ShortcutBindingList{binding},
             "pinned management hotkey must survive manager recreation");
     require(restored.setShortcuts(action, {}), "clear pinned management hotkey fixture");
+}
+
+void hideShowAllWindowsShortcutCanBeAssignedAndRestored() {
+    constexpr auto action = GlobalShortcutAction::HideShowAllWindows;
+    const shortcuts::ShortcutBinding binding{QStringLiteral("Ctrl+Alt+F8")};
+    {
+        auto backend = std::make_unique<FakeBackend>();
+        auto* input = backend.get();
+        GlobalShortcutManager manager(std::move(backend), nullptr, [] { return false; });
+        manager.initialize();
+        require(manager.state(action).status == GlobalShortcutStatus::Unset &&
+                    manager.state(action).shortcuts.isEmpty(),
+                "hide/show all windows must have no default global hotkey");
+        clearAll(manager);
+        require(manager.setShortcuts(action, {binding}) &&
+                    manager.state(action).status == GlobalShortcutStatus::Registered &&
+                    input->registrations.size() == 1,
+                "hide/show all windows must register an assigned global hotkey");
+        int activations = 0;
+        QObject::connect(&manager, &GlobalShortcutManager::activated, &manager,
+                         [&](GlobalShortcutAction received) {
+                             require(received == action, "hide/show hotkey dispatches its action");
+                             ++activations;
+                         });
+        input->handler(input->registrations.constBegin().key());
+        require(activations == 1, "hide/show hotkey activates exactly once");
+        require(snow_shot::storage::ShortcutSettings().hideShowAllWindows() ==
+                    shortcuts::ShortcutBindingList{binding},
+                "hide/show bindings must persist through the typed settings adapter");
+    }
+    auto backend = std::make_unique<FakeBackend>();
+    GlobalShortcutManager restored(std::move(backend), nullptr, [] { return false; });
+    restored.initialize();
+    require(restored.state(action).status == GlobalShortcutStatus::Registered &&
+                restored.state(action).shortcuts == shortcuts::ShortcutBindingList{binding},
+            "hide/show all windows hotkey must survive manager recreation");
+    require(restored.setShortcuts(action, {}), "clear hide/show all windows hotkey fixture");
 }
 
 void hiddenFloatingToolsPreserveGlobalHotkeys() {
@@ -1140,6 +1178,7 @@ int main(int argc, char** argv) {
     nativeGroupKeyStateUsesEveryShortcutKey();
 #endif
     pinnedManagementShortcutCanBeAssignedAndRestored();
+    hideShowAllWindowsShortcutCanBeAssignedAndRestored();
     globalCanvasShortcutCanBeAssignedAndRestored();
     globalCanvasFullscreenGateTracksSession();
     backendAvailabilityInvalidatesOwnershipAndRecovers();

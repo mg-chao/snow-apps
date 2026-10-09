@@ -54,7 +54,8 @@ class ScreenshotSelectorWorkflow final {
                           bool replacePath = false);
     void handleTargetChanged();
 
-    void applyHitPath(const QVector<QRectF>& hitRects, quint32 displayId = 0);
+    // Applies the complete hierarchy and returns whether the displayed selection changed.
+    bool applyHitPath(const QVector<QRectF>& hitRects, quint32 displayId = 0);
     void clearSelection();
     [[nodiscard]] bool returnToSelection(const QPoint& physicalPoint);
 

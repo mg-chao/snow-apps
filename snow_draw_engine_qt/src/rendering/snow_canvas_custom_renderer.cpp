@@ -15,6 +15,11 @@ SnowCanvasCustomRenderer::filterRenderReference() const {
     return std::nullopt;
 }
 
+bool SnowCanvasCustomRenderer::coversWidgetRect(const QRect& widgetRect) const {
+    Q_UNUSED(widgetRect);
+    return false;
+}
+
 void SnowCanvasCustomRenderer::renderBeforeCanvas(QPainter& painter,
                                                   const SnowCanvasRenderContext& context) {
     Q_UNUSED(painter);

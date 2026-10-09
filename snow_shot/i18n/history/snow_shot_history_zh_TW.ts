@@ -187,6 +187,10 @@
             <translation>群組：%1</translation>
         </message>
         <message>
+            <source>Hidden</source>
+            <translation>已隱藏</translation>
+        </message>
+        <message>
             <source>No matching pinned windows</source>
             <translation>沒有符合條件的固定到螢幕視窗</translation>
         </message>

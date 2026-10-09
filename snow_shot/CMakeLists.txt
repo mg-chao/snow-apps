@@ -1354,6 +1354,7 @@ set(PROJECT_CXX_SOURCES
     src/app/mcp/mcpdocumentservice.cpp
     src/app/mcp/mcpjobregistry.cpp
     src/app/mcp/mcpmediaservice.cpp
+    src/app/mcp/mcppinnedstate.cpp
     src/app/applicationrestart.cpp
     src/app/featureavailability.cpp
     src/app/main.cpp
@@ -1949,6 +1950,10 @@ if(SNOW_SHOT_BUILD_TESTS)
     )
     add_test(NAME snow-shot-pinned-window-repository-tests
              COMMAND snow-shot-pinned-window-repository-tests)
+    add_test(NAME snow-shot-pinned-window-visibility-storage-tests
+             COMMAND snow-shot-pinned-window-repository-tests --visibility-only)
+    set_tests_properties(snow-shot-pinned-window-visibility-storage-tests PROPERTIES
+        LABELS "unit" TIMEOUT 60)
     set_tests_properties(snow-shot-pinned-window-repository-tests PROPERTIES
         ENVIRONMENT_MODIFICATION
             "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
@@ -2565,7 +2570,12 @@ if(SNOW_SHOT_BUILD_TESTS)
         COMMAND snow-shot-settings-page-loading-tests --navigation-only)
     add_test(NAME snow-shot-action-toolbar-settings-tests
         COMMAND snow-shot-settings-page-loading-tests --action-toolbar-settings-only)
-    set_tests_properties(snow-shot-settings-navigation-tests snow-shot-action-toolbar-settings-tests PROPERTIES
+    add_test(NAME snow-shot-settings-layout-stability-tests
+        COMMAND snow-shot-settings-page-loading-tests --layout-stability-only)
+    add_test(NAME snow-shot-tray-selection-settings-tests
+        COMMAND snow-shot-settings-page-loading-tests --tray-selection-only)
+    set_tests_properties(snow-shot-settings-navigation-tests snow-shot-action-toolbar-settings-tests
+        snow-shot-settings-layout-stability-tests snow-shot-tray-selection-settings-tests PROPERTIES
         LABELS "unit" TIMEOUT 60
         ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}"
         ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
@@ -2746,6 +2756,10 @@ if(SNOW_SHOT_BUILD_TESTS)
         src/presentation/services/screenshotclipboardservice.cpp)
     target_link_libraries(snow-shot-app-permissions-tests PRIVATE snow_shot_settings)
     add_test(NAME snow-shot-app-permissions-tests COMMAND snow-shot-app-permissions-tests)
+    add_test(NAME snow-shot-pinned-visibility-permission-routing-tests
+        COMMAND snow-shot-app-permissions-tests --routing-only -platform offscreen)
+    set_tests_properties(snow-shot-pinned-visibility-permission-routing-tests PROPERTIES
+        LABELS "unit" TIMEOUT 60)
     set_tests_properties(snow-shot-app-permissions-tests PROPERTIES
         LABELS "unit" ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}")
     snow_shot_import_offscreen_platform(snow-shot-app-permissions-tests)
@@ -2887,6 +2901,10 @@ if(SNOW_SHOT_BUILD_TESTS)
         NAME snow-shot-system-tray-controller-tests
         COMMAND snow-shot-system-tray-controller-tests
     )
+    add_test(NAME snow-shot-pinned-visibility-tray-tests
+        COMMAND snow-shot-system-tray-controller-tests --hide-show-tray-only -platform offscreen)
+    set_tests_properties(snow-shot-pinned-visibility-tray-tests PROPERTIES
+        LABELS "unit" TIMEOUT 60)
     add_test(NAME snow-shot-tray-skin-tests
         COMMAND snow-shot-system-tray-controller-tests --skin-only -platform offscreen)
     add_test(NAME snow-shot-recording-export-tray-tests
@@ -2898,6 +2916,12 @@ if(SNOW_SHOT_BUILD_TESTS)
         COMMAND snow-shot-system-tray-controller-tests --group-refresh-only -platform offscreen)
     add_test(NAME snow-shot-tray-menu-position-tests
         COMMAND snow-shot-system-tray-controller-tests --menu-position-only -platform offscreen)
+    add_test(NAME snow-shot-tray-menu-selection-tests
+        COMMAND snow-shot-system-tray-controller-tests --configured-menu-only -platform offscreen)
+    set_tests_properties(snow-shot-tray-menu-selection-tests PROPERTIES
+        LABELS "unit" TIMEOUT 30 SNOW_TEST_CROSS_PLATFORM TRUE
+        ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}"
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
     snow_shot_import_offscreen_platform(snow-shot-system-tray-controller-tests)
     set_tests_properties(snow-shot-tray-skin-tests PROPERTIES LABELS "unit" TIMEOUT 60
         ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}"
@@ -2999,6 +3023,10 @@ if(SNOW_SHOT_BUILD_TESTS)
         NAME snow-shot-pinned-window-group-tests
         COMMAND snow-shot-pinned-window-group-tests
     )
+    add_test(NAME snow-shot-pinned-window-visibility-group-tests
+        COMMAND snow-shot-pinned-window-group-tests --visibility-only -platform offscreen)
+    set_tests_properties(snow-shot-pinned-window-visibility-group-tests PROPERTIES
+        LABELS "unit" TIMEOUT 60)
     set_tests_properties(snow-shot-pinned-window-group-tests PROPERTIES
         ENVIRONMENT
             "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}"
@@ -4156,6 +4184,7 @@ if(SNOW_SHOT_BUILD_TESTS)
     )
 
     add_executable(snow-shot-pinned-window-tests
+        src/app/mcp/mcppinnedstate.cpp
         tests/screenshot_pinned_hide_to_top_tests.cpp
         src/presentation/services/screenshotfilepinbatch.cpp
         tests/screenshot_pinned_window_tests.cpp
@@ -4304,6 +4333,10 @@ if(SNOW_SHOT_BUILD_TESTS)
         COMMAND snow-shot-pinned-window-tests --management-only -platform offscreen)
     add_test(NAME snow-shot-pinned-close-persistence-tests
         COMMAND snow-shot-pinned-window-tests --deferred-user-close-only -platform offscreen)
+    add_test(NAME snow-shot-pinned-hidden-window-lifecycle-tests
+        COMMAND snow-shot-pinned-window-tests --hidden-window-lifecycle-only -platform offscreen)
+    set_tests_properties(snow-shot-pinned-hidden-window-lifecycle-tests PROPERTIES
+        LABELS "unit" TIMEOUT 60)
     add_test(NAME snow-shot-pinned-window-confirmation-tests
         COMMAND snow-shot-pinned-window-tests --window-confirmation-only -platform offscreen)
     set_tests_properties(snow-shot-pinned-window-confirmation-tests PROPERTIES
@@ -6039,6 +6072,198 @@ if(SNOW_SHOT_BUILD_TESTS)
         ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}"
         ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
         TIMEOUT 60)
+    # Share the real screenshot UI implementation between deterministic frame tests
+    # and the preparation benchmark; the fixture never substitutes the presenter.
+    set(_selection_presentation_sources ${_color_picker_lifecycle_sources}
+        src/presentation/overlay/screenshotoverlaycoordinator.cpp
+        src/presentation/overlay/screenshotoverlayuihost.cpp
+        src/presentation/services/screenshotcolorpickerwindow.cpp
+        include/snow_shot/presentation/screenshotselectiontoolbarwidget.h
+        src/presentation/selection/screenshotselectiontoolbarwidget.cpp
+        src/presentation/selection/screenshotselectiontoolbarwidgets.h
+        src/presentation/selection/screenshotselectiontoolbarwidgets.cpp
+        src/presentation/services/screenshotpresentationservices.cpp
+        src/presentation/core/screenshotsmartselectiontransition.cpp
+        src/presentation/toolbar/screenshottoolbarpresenter.cpp
+        src/presentation/toolbar/screenshottoolbarpresentationstatefactory.cpp)
+    list(REMOVE_DUPLICATES _selection_presentation_sources)
+    function(snow_shot_selection_presentation_runtime target source_root canvas_target)
+        set(_sources)
+        foreach(_source IN LISTS _selection_presentation_sources)
+            list(APPEND _sources "${source_root}/${_source}")
+        endforeach()
+        add_library(${target} STATIC ${_sources})
+        target_include_directories(${target} BEFORE PUBLIC "${source_root}/include")
+        target_compile_definitions(${target} PUBLIC SNOW_SHOT_BENCH_INTERNALS=1)
+        target_link_libraries(${target} PUBLIC snow_shot_diagnostics snow_shot_storage
+            snow_shot_window_shortcuts ${canvas_target} ant_design_qt adqt_icon_core
+            ant_design_icons_qt Qt6::Widgets)
+        snow_shot_link_macos_window_platform(${target})
+        if(WIN32)
+            target_link_libraries(${target} PUBLIC comctl32)
+        elseif(APPLE)
+            target_sources(${target} PRIVATE "${source_root}/src/platform/macos/windowcaptureexclusion.mm")
+            target_link_libraries(${target} PUBLIC "-framework AppKit" "-framework CoreGraphics")
+        endif()
+    endfunction()
+    snow_shot_selection_presentation_runtime(snow-shot-selection-presentation-runtime
+        "${CMAKE_CURRENT_SOURCE_DIR}" snow_draw_engine_qt_canvas)
+    add_executable(snow-shot-selection-presentation-tests
+        tests/screenshot_selection_presentation_tests.cpp)
+    target_link_libraries(snow-shot-selection-presentation-tests PRIVATE
+        snow-shot-selection-presentation-runtime)
+    snow_shot_import_offscreen_platform(snow-shot-selection-presentation-tests)
+    add_test(NAME snow-shot-selection-presentation-tests
+        COMMAND snow-shot-selection-presentation-tests -platform offscreen)
+    add_test(NAME snow-shot-overlay-preparation-tests
+        COMMAND snow-shot-color-picker-lifecycle-tests --overlay-preparation-only -platform offscreen)
+    add_test(NAME snow-shot-pointer-presentation-tests
+        COMMAND snow-shot-screenshot-canvas-renderer-tests --pointer-presentation-only -platform offscreen)
+    add_test(NAME snow-shot-background-coverage-tests
+        COMMAND snow-shot-screenshot-canvas-renderer-tests --background-coverage-only -platform offscreen)
+    set_tests_properties(snow-shot-selection-presentation-tests snow-shot-overlay-preparation-tests
+        snow-shot-background-coverage-tests snow-shot-pointer-presentation-tests
+        PROPERTIES LABELS "unit" TIMEOUT 60
+        SNOW_TEST_CROSS_PLATFORM TRUE ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}"
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
+    if(SNOW_SHOT_BUILD_BENCHMARKS)
+        add_executable(snow-shot-selection-presentation-benchmark
+            tests/screenshot_selection_presentation_performance_benchmark.cpp)
+        target_link_libraries(snow-shot-selection-presentation-benchmark PRIVATE
+            snow-shot-selection-presentation-runtime)
+        snow_shot_import_offscreen_platform(snow-shot-selection-presentation-benchmark)
+        set(SNOW_SHOT_SELECTION_PRESENTATION_BASELINE_DIR "" CACHE PATH
+            "Optional archived source tree for the same presentation benchmark")
+        set(SNOW_SHOT_SELECTION_PRESENTATION_BASELINE_CANVAS_LIBRARY "" CACHE FILEPATH
+            "Canvas library built from the archived sources")
+        if(SNOW_SHOT_SELECTION_PRESENTATION_BASELINE_DIR AND
+           SNOW_SHOT_SELECTION_PRESENTATION_BASELINE_CANVAS_LIBRARY)
+            add_library(snow-shot-selection-baseline-canvas STATIC IMPORTED)
+            set_target_properties(snow-shot-selection-baseline-canvas PROPERTIES
+                SYSTEM FALSE
+                IMPORTED_LOCATION "${SNOW_SHOT_SELECTION_PRESENTATION_BASELINE_CANVAS_LIBRARY}"
+                INTERFACE_INCLUDE_DIRECTORIES
+                    "${SNOW_SHOT_SELECTION_PRESENTATION_BASELINE_DIR}/snow_draw_engine_qt/include")
+            get_target_property(_canvas_dependencies snow_draw_engine_qt_canvas INTERFACE_LINK_LIBRARIES)
+            set_target_properties(snow-shot-selection-baseline-canvas PROPERTIES
+                INTERFACE_LINK_LIBRARIES "${_canvas_dependencies}")
+            snow_shot_selection_presentation_runtime(snow-shot-selection-presentation-baseline-runtime
+                "${SNOW_SHOT_SELECTION_PRESENTATION_BASELINE_DIR}/snow_shot"
+                snow-shot-selection-baseline-canvas)
+            # Reuse unchanged support archives, replacing the canvas throughout their
+            # transitive link interfaces (storage's image codec also links the canvas).
+            function(snow_shot_baseline_needs_canvas dependency output visited)
+                if(dependency MATCHES "^\\$<LINK_ONLY:([^>]+)>$")
+                    snow_shot_baseline_needs_canvas("${CMAKE_MATCH_1}" _needed "${visited}")
+                    set(${output} "${_needed}" PARENT_SCOPE)
+                    return()
+                endif()
+                if(dependency STREQUAL "snow_draw_engine_qt_canvas")
+                    set(${output} TRUE PARENT_SCOPE)
+                    return()
+                endif()
+                set(${output} FALSE PARENT_SCOPE)
+                if(NOT TARGET "${dependency}" OR dependency IN_LIST visited)
+                    return()
+                endif()
+                get_target_property(_type "${dependency}" TYPE)
+                get_target_property(_imported "${dependency}" IMPORTED)
+                if(NOT _type STREQUAL "STATIC_LIBRARY" OR _imported)
+                    return()
+                endif()
+                list(APPEND visited "${dependency}")
+                get_target_property(_links "${dependency}" INTERFACE_LINK_LIBRARIES)
+                if(_links)
+                    foreach(_link IN LISTS _links)
+                        snow_shot_baseline_needs_canvas("${_link}" _needed "${visited}")
+                        if(_needed)
+                            set(${output} TRUE PARENT_SCOPE)
+                            return()
+                        endif()
+                    endforeach()
+                endif()
+            endfunction()
+            function(snow_shot_baseline_dependency dependency output)
+                if(dependency MATCHES "^\\$<LINK_ONLY:([^>]+)>$")
+                    snow_shot_baseline_dependency("${CMAKE_MATCH_1}" _mapped)
+                    set(${output} "$<LINK_ONLY:${_mapped}>" PARENT_SCOPE)
+                    return()
+                endif()
+                if(dependency STREQUAL "snow_draw_engine_qt_canvas")
+                    set(${output} snow-shot-selection-baseline-canvas PARENT_SCOPE)
+                    return()
+                endif()
+                if(TARGET "${dependency}")
+                    get_target_property(_type "${dependency}" TYPE)
+                    get_target_property(_imported "${dependency}" IMPORTED)
+                    snow_shot_baseline_needs_canvas("${dependency}" _needs_override "")
+                    if(_type STREQUAL "STATIC_LIBRARY" AND NOT _imported AND _needs_override)
+                        string(REPLACE "::" "-" _wrapper "snow-shot-baseline-${dependency}")
+                        if(NOT TARGET "${_wrapper}")
+                            add_library("${_wrapper}" INTERFACE)
+                            add_dependencies("${_wrapper}" "${dependency}")
+                            target_link_libraries("${_wrapper}" INTERFACE "$<TARGET_FILE:${dependency}>")
+                            foreach(_property IN ITEMS INTERFACE_INCLUDE_DIRECTORIES
+                                INTERFACE_COMPILE_DEFINITIONS INTERFACE_COMPILE_OPTIONS
+                                INTERFACE_COMPILE_FEATURES)
+                                get_target_property(_value "${dependency}" "${_property}")
+                                if(_value)
+                                    set_target_properties("${_wrapper}" PROPERTIES "${_property}" "${_value}")
+                                endif()
+                            endforeach()
+                            get_target_property(_links "${dependency}" INTERFACE_LINK_LIBRARIES)
+                            if(_links)
+                                foreach(_link IN LISTS _links)
+                                    snow_shot_baseline_dependency("${_link}" _mapped)
+                                    target_link_libraries("${_wrapper}" INTERFACE "${_mapped}")
+                                endforeach()
+                            endif()
+                        endif()
+                        set(${output} "${_wrapper}" PARENT_SCOPE)
+                        return()
+                    endif()
+                endif()
+                set(${output} "${dependency}" PARENT_SCOPE)
+            endfunction()
+            function(snow_shot_finish_baseline_dependencies)
+                get_target_property(_baseline_links snow-shot-selection-presentation-baseline-runtime
+                    INTERFACE_LINK_LIBRARIES)
+                set(_mapped_baseline_links)
+                foreach(_link IN LISTS _baseline_links)
+                    snow_shot_baseline_dependency("${_link}" _mapped)
+                    list(APPEND _mapped_baseline_links "${_mapped}")
+                endforeach()
+                set_target_properties(snow-shot-selection-presentation-baseline-runtime PROPERTIES
+                    INTERFACE_LINK_LIBRARIES "${_mapped_baseline_links}")
+            endfunction()
+            # Image-codec backends receive their canvas link later in this directory.
+            cmake_language(DEFER CALL snow_shot_finish_baseline_dependencies)
+            target_include_directories(snow-shot-selection-presentation-baseline-runtime BEFORE PUBLIC
+                "${SNOW_SHOT_SELECTION_PRESENTATION_BASELINE_DIR}/snow_draw_engine_qt/include")
+            target_compile_definitions(snow-shot-selection-presentation-baseline-runtime PUBLIC
+                SNOW_SHOT_SELECTION_PRESENTATION_BASELINE=1)
+            add_executable(snow-shot-selection-presentation-baseline-benchmark
+                tests/screenshot_selection_presentation_performance_benchmark.cpp)
+            target_link_libraries(snow-shot-selection-presentation-baseline-benchmark PRIVATE
+                snow-shot-selection-presentation-baseline-runtime)
+            snow_shot_import_offscreen_platform(snow-shot-selection-presentation-baseline-benchmark)
+        endif()
+    endif()
+    if(SNOW_SHOT_BUILD_BENCHMARKS)
+        set(_selection_validation_targets snow_shot snow-shot-selection-presentation-tests
+            snow-shot-selection-presentation-benchmark snow-shot-screenshot-canvas-renderer-tests
+            snow-shot-color-picker-lifecycle-tests snow-shot-smart-selection-transition-tests)
+        foreach(_target IN ITEMS snow-shot-selection-presentation-baseline-benchmark
+            snow-canvas-custom-renderer-tests snow-canvas-distance-tests)
+            if(TARGET ${_target})
+                list(APPEND _selection_validation_targets ${_target})
+            endif()
+        endforeach()
+        add_custom_target(snow-shot-selection-presentation-validation-build
+            DEPENDS ${_selection_validation_targets})
+        unset(_selection_validation_targets)
+    endif()
+    unset(_selection_presentation_sources)
     unset(_color_picker_overlay_sources)
     unset(_color_picker_toolbar_sources)
     unset(_color_picker_lifecycle_sources)

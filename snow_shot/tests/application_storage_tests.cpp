@@ -390,6 +390,7 @@ void settingsSchemaDefaultsAndValidationAreComplete() {
                 structuredShortcuts(QJsonArray{QStringLiteral("F3")}) &&
 #endif
             defaultValue("global_shortcuts/pin_selected_files").toArray().isEmpty() &&
+            defaultValue("global_shortcuts/hide_show_all_windows").toArray().isEmpty() &&
             defaultValue("global_shortcuts/open_screen_recording_folder").toArray().isEmpty() &&
             defaultValue("screenshot/auto_execute_after_text_recognition").toString() ==
                 QStringLiteral("no_action") &&

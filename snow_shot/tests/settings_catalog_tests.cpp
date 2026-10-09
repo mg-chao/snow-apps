@@ -475,9 +475,9 @@ void builtInCatalogIsCompleteAndValid() {
                 itemIds.contains(QStringLiteral("screenshot-shortcut.upload_to_cloud")) &&
                 itemIds.contains(QStringLiteral("pin-to-screen-shortcut.upload_to_cloud")),
             "cloud upload must expose its configuration and shortcuts in both local scopes");
-    require(itemIds.size() == 259,
+    require(itemIds.size() == 260,
             qPrintable(QStringLiteral(
-                           "catalog must contain 259 shared settings on every platform; found %1")
+                           "catalog must contain 260 shared settings on every platform; found %1")
                            .arg(itemIds.size())));
     require(itemIds.contains(QStringLiteral("pin-to-screen.confirm-before-closing-window")) &&
                 itemIds.contains(QStringLiteral("pin-to-screen.confirm-before-destroying-window")),
@@ -2038,6 +2038,9 @@ void globalHotkeyShortcutsHaveStableContracts() {
         {Action::RestoreLastClosedWindows, "pin-to-screen", "quick.restore-last-closed-windows",
          "global_shortcuts/restore_last_closed_windows",
          settings::SettingsCommandKind::ExecuteQuickAction},
+        {Action::HideShowAllWindows, "pin-to-screen", "quick.hide-show-all-windows",
+         "global_shortcuts/hide_show_all_windows",
+         settings::SettingsCommandKind::ExecuteQuickAction},
         {Action::PinSelectedFiles, "pin-to-screen", "quick.pin-selected-files",
          "global_shortcuts/pin_selected_files", settings::SettingsCommandKind::ExecuteQuickAction},
     };
@@ -2074,9 +2077,8 @@ void globalHotkeyShortcutsHaveStableContracts() {
         }
     }
 
-    require(
-        actions.size() == expectations.size() && expectations.size() == 23,
-        "the global-hotkeys catalog must expose all twenty-three shortcut actions exactly once");
+    require(actions.size() == expectations.size() && expectations.size() == 24,
+            "the global-hotkeys catalog must expose all twenty-four shortcut actions exactly once");
     const auto* pinnedManagementShortcut =
         catalog.itemForShortcut(Action::OpenPinToScreenManagement);
     const auto* pinnedManagementSchema = storage::ConfigurationSchema::entry(
@@ -2148,50 +2150,59 @@ void globalHotkeyShortcutsHaveStableContracts() {
     require(trayGroups.size() == 5 && trayGroups.at(0).id == QStringLiteral("screenshot") &&
                 trayGroups.at(0).options.size() == 10 &&
                 trayGroups.at(1).id == QStringLiteral("pin-to-screen") &&
-                trayGroups.at(1).options.size() == 4 &&
+                trayGroups.at(1).options.size() == 5 &&
                 trayGroups.at(2).id == QStringLiteral("screen-recording") &&
                 trayGroups.at(2).options.size() == 3 &&
                 trayGroups.at(3).id == QStringLiteral("other") &&
                 trayGroups.at(3).options.size() == 5 &&
                 trayGroups.at(4).id == QStringLiteral("system") &&
-                trayGroups.at(4).options.size() == 4 && trayOptionIds.size() == 26 &&
+                trayGroups.at(4).options.size() == 4 && trayOptionIds.size() == 27 &&
                 trayOptionIds.at(6) == QStringLiteral("quick.screenshot-save") &&
                 trayOptionIds.at(7) == QStringLiteral("quick.screenshot-quick-save") &&
                 trayOptionIds.at(10) == QStringLiteral("quick.pin-clipboard-content") &&
                 trayOptionIds.at(11) == QStringLiteral("quick.pin-selected-files") &&
                 trayOptionIds.at(12) == QStringLiteral("quick.restore-last-closed-windows") &&
-                trayOptionIds.at(13) == QStringLiteral("quick.open-pin-to-screen-management") &&
-                trayOptionIds.at(14) == QStringLiteral("quick.screen-record") &&
-                trayOptionIds.at(15) == QStringLiteral("quick.screen-record-copy") &&
-                trayOptionIds.at(16) == QStringLiteral("quick.open-screen-recording-folder") &&
-                trayOptionIds.at(17) == QStringLiteral("quick.open-capture-history") &&
-                trayOptionIds.at(18) == QStringLiteral("quick.global-canvas") &&
-                trayOptionIds.at(19) == QStringLiteral("quick.translate-selected-text") &&
-                trayOptionIds.at(20) == QStringLiteral("quick.toggle-global-hotkeys") &&
-                trayOptionIds.at(21) ==
+                trayOptionIds.at(13) == QStringLiteral("quick.hide-show-all-windows") &&
+                trayOptionIds.at(14) == QStringLiteral("quick.open-pin-to-screen-management") &&
+                trayOptionIds.at(15) == QStringLiteral("quick.screen-record") &&
+                trayOptionIds.at(16) == QStringLiteral("quick.screen-record-copy") &&
+                trayOptionIds.at(17) == QStringLiteral("quick.open-screen-recording-folder") &&
+                trayOptionIds.at(18) == QStringLiteral("quick.open-capture-history") &&
+                trayOptionIds.at(19) == QStringLiteral("quick.global-canvas") &&
+                trayOptionIds.at(20) == QStringLiteral("quick.translate-selected-text") &&
+                trayOptionIds.at(21) == QStringLiteral("quick.toggle-global-hotkeys") &&
+                trayOptionIds.at(22) ==
                     QStringLiteral("quick.toggle-disable-on-focused-fullscreen-window") &&
-                trayOptionIds.at(22) == QStringLiteral("tray.window-grouping") &&
+                trayOptionIds.at(23) == QStringLiteral("tray.window-grouping") &&
                 trayGroups.at(4).options.at(0).kind ==
                     settings::SettingsTrayMenuOptionKind::WindowGrouping &&
-                trayOptionIds.at(23) == QStringLiteral("tray.show-main-window") &&
-                trayOptionIds.at(24) == QStringLiteral("tray.restart-app") &&
+                trayOptionIds.at(24) == QStringLiteral("tray.show-main-window") &&
+                trayOptionIds.at(25) == QStringLiteral("tray.restart-app") &&
                 trayGroups.at(4).options.at(2).kind ==
                     settings::SettingsTrayMenuOptionKind::RestartApp &&
                 trayGroups.at(4).options.at(2).iconFactory &&
                 trayGroups.at(4).options.at(2).iconFactory() ==
                     snow_shot::presentation::icons::custom::outlined::Restart() &&
-                trayOptionIds.at(25) == QStringLiteral("tray.exit") && trayMenuSchema != nullptr &&
+                trayOptionIds.at(26) == QStringLiteral("tray.exit") && trayMenuSchema != nullptr &&
                 trayMenuSchema->allowedStringValues == trayOptionIds,
             "tray menu options must derive all global-hotkey groups and append system commands");
 
-    for (const auto& id : {QStringLiteral("quick.open-pin-to-screen-management"),
-                           QStringLiteral("quick.global-canvas")}) {
+    const QJsonArray allTrayOptions = QJsonArray::fromStringList(trayOptionIds);
+    const auto normalizedAllTrayOptions = storage::ConfigurationSchema::normalize(
+        QStringLiteral("tray/menu_options"), allTrayOptions);
+    require(normalizedAllTrayOptions.valid && !normalizedAllTrayOptions.changed &&
+                normalizedAllTrayOptions.value.toArray() == allTrayOptions,
+            "selecting every catalog tray option must preserve Restart App and Exit");
+
+    for (const auto& id :
+         {QStringLiteral("quick.open-pin-to-screen-management"),
+          QStringLiteral("quick.hide-show-all-windows"), QStringLiteral("quick.global-canvas")}) {
         require(!trayMenuSchema->defaultValue.toArray().contains(id),
-                "management and canvas must remain hidden by default");
+                "optional tray actions must remain hidden by default");
         const auto normalized = storage::ConfigurationSchema::normalize(
             QStringLiteral("tray/menu_options"), QJsonArray{id});
         require(normalized.value.toArray().contains(id),
-                "management and canvas tray selections must survive normalization");
+                "optional tray selections must survive normalization");
     }
 
     require(!trayMenuSchema->defaultValue.toArray().contains(QStringLiteral("tray.restart-app")),
@@ -2340,19 +2351,25 @@ void globalHotkeyShortcutsHaveStableContracts() {
             "hotkey toggles");
     const auto* pinSection =
         catalog.section(QStringLiteral("global-hotkeys"), QStringLiteral("pin-to-screen"));
-    require(pinSection != nullptr && pinSection->title.source != nullptr &&
-                QString::fromLatin1(pinSection->title.source) == QStringLiteral("Pin to screen") &&
-                pinSection->reset == settings::SettingsSectionReset::GlobalPinToScreenShortcuts &&
-                pinSection->items.size() == 5 &&
-                pinSection->items.at(0).id == QStringLiteral("quick.pin-clipboard-content") &&
-                pinSection->items.at(1).id == QStringLiteral("quick.pin-selected-files") &&
-                pinSection->items.at(2).id == QStringLiteral("quick.restore-last-closed-windows") &&
-                pinSection->items.at(3).id == QStringLiteral("quick.switch-window-group") &&
-                pinSection->items.at(4).id ==
-                    QStringLiteral("quick.open-pin-to-screen-management") &&
-                pinSection->items.at(2).title.translated() ==
-                    QStringLiteral("Restore Last Closed Window"),
-            "Pin to screen quick actions must form their own resettable category");
+    require(
+        pinSection != nullptr && pinSection->title.source != nullptr &&
+            QString::fromLatin1(pinSection->title.source) == QStringLiteral("Pin to screen") &&
+            pinSection->reset == settings::SettingsSectionReset::GlobalPinToScreenShortcuts &&
+            pinSection->items.size() == 6 &&
+            pinSection->items.at(0).id == QStringLiteral("quick.pin-clipboard-content") &&
+            pinSection->items.at(1).id == QStringLiteral("quick.pin-selected-files") &&
+            pinSection->items.at(2).id == QStringLiteral("quick.restore-last-closed-windows") &&
+            pinSection->items.at(3).id == QStringLiteral("quick.hide-show-all-windows") &&
+            pinSection->items.at(4).id == QStringLiteral("quick.switch-window-group") &&
+            pinSection->items.at(5).id == QStringLiteral("quick.open-pin-to-screen-management") &&
+            pinSection->items.at(2).title.translated() ==
+                QStringLiteral("Restore Last Closed Window") &&
+            pinSection->items.at(3).title.translated() == QStringLiteral("Hide/Show All Windows") &&
+            storage::ConfigurationSchema::defaultValue(
+                QStringLiteral("global_shortcuts/hide_show_all_windows"))
+                .toArray()
+                .isEmpty(),
+        "Pin to screen quick actions must form their own resettable category");
     const auto shortcutPayload = [](const settings::SettingsItemDefinition* item) {
         return item != nullptr
                    ? std::get_if<settings::SettingsShortcutActionDefinition>(&item->payload)

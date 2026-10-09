@@ -734,10 +734,6 @@ bool ScreenshotOverlayWindow::eventFilter(QObject* watched, QEvent* event) {
         if (event->type() == QEvent::UngrabMouse || event->type() == QEvent::Hide)
             m_eventSink.cancelEffectDrag();
     }
-    if (watched == m_canvas && event != nullptr && event->type() == QEvent::MouseMove &&
-        m_screenshotRenderer != nullptr) {
-        m_screenshotRenderer->setGuideCursorPosition(static_cast<QMouseEvent*>(event)->position());
-    }
     if (watched == m_canvas && event != nullptr && event->type() == QEvent::Paint) {
         SNOW_SHOT_CAPTURE_PERF_COUNTER("presentation.window.canvas.paint_dispatches", 1);
 #if defined(SNOW_SHOT_CAPTURE_PERF_INSTRUMENTATION)
@@ -922,6 +918,11 @@ bool ScreenshotOverlayWindow::handleCanvasEvent(QEvent* event) {
         !m_eventSink.acceptOverlayInput(event->spontaneous())) {
         event->accept();
         return true;
+    }
+    if (event->type() == QEvent::MouseMove && m_screenshotRenderer) {
+        const QPointF position = static_cast<QMouseEvent*>(event)->position();
+        if (!m_eventSink.presentOverlayPointer(this, position))
+            m_screenshotRenderer->setGuideCursorPosition(position);
     }
     if (event->type() == QEvent::KeyPress) {
         return handleCanvasKeyPress(static_cast<QKeyEvent*>(event));

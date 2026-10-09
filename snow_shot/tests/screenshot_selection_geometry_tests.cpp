@@ -12,6 +12,7 @@
 
 #include <QGuiApplication>
 #include <QRectF>
+#include <QRegion>
 #include <QScreen>
 
 #include <cmath>
@@ -864,6 +865,82 @@ void selectorDisplayIdentityPreventsMixedScaleCrossMapping() {
         "obsolete display output must not select a different monitor");
 }
 
+void batchedSelectorRectanglesPreserveClippingAndDisplayIdentity() {
+    ScreenshotDisplaySession displays;
+    auto first = syntheticDisplay(QRect(-200, -100, 200, 200), QRect(-100, -50, 100, 100));
+    first.stableId = QStringLiteral("display:1");
+    first.canvasRect = QRect(0, 0, 100, 100);
+    auto second = syntheticDisplay(QRect(0, -100, 100, 200), QRect(0, -100, 100, 200));
+    second.stableId = QStringLiteral("display:2");
+    second.canvasRect = QRect(100, 0, 100, 200);
+    auto inactive = second;
+    inactive.stableId = QStringLiteral("display:3");
+    inactive.active = false;
+    displays.appendDisplay(first);
+    displays.appendDisplay(second);
+    displays.appendDisplay(inactive);
+    ScreenshotGeometryMapper geometry;
+    const QVector<QRectF> physical{QRectF(-300, -200, 500, 400),
+                                   QRectF(-50.5, -25.5, 100, 50),
+                                   QRectF(500, 500, 50, 50),
+                                   {},
+                                   QRectF(-200, -100, 1, 1)};
+    for (const QString& identity : {QString(), QStringLiteral("display:1"),
+                                    QStringLiteral("display:2"), QStringLiteral("display:3")}) {
+        const auto canvas = geometry.canvasRectsForPhysicalRects(displays, physical, identity);
+        require(canvas.size() == physical.size(),
+                "batch mapping must preserve every path position");
+        for (qsizetype index = 0; index < physical.size(); ++index)
+            require(canvas.at(index) ==
+                        geometry.canvasRectForPhysicalRect(displays, physical.at(index), identity),
+                    "batch mapping must preserve clipping, fractional edges and queried display "
+                    "identity");
+    }
+    require(geometry.canvasRectsForPhysicalRects(displays, {}).isEmpty(),
+            "an empty selector path must map to an empty path");
+}
+
+void unchangedSelectionRectanglesPreserveReplacementSemantics() {
+    ScreenshotSelectionModel selection;
+    const QRectF rect(10, 20, 80, 60);
+    require(selection.setSelectionRect(rect) && !selection.setSelectionRect(rect),
+            "identical rectangle writes must report no displayed change");
+    const QRegion custom = QRegion(rect.toRect()).subtracted(QRect(20, 30, 10, 10));
+    selection.setSelectionRegion(custom);
+    require(selection.setSelectionRect(rect) &&
+                selection.selectionRegion() == QRegion(rect.toRect()),
+            "a matching bounding rectangle must replace a custom region");
+    selection.setDraftRegion(ScreenshotRegionGeometry(custom),
+                             {rect.topLeft(), rect.bottomRight()});
+    require(selection.setSelectionRect(rect) && !selection.constructionActive() &&
+                selection.draftVertices().isEmpty() &&
+                selection.selectionRegion() == QRegion(rect.toRect()),
+            "a matching bounding rectangle must clear draft construction");
+    for (auto operation : {ScreenshotSelectionModel::RegionOperation::Add,
+                           ScreenshotSelectionModel::RegionOperation::Subtract}) {
+        selection.setSelectionRegion(custom);
+        selection.beginRegionOperation(operation);
+        require(selection.setSelectionRect(rect), "first pending operand must change the marquee");
+        const auto preview = selection.selectionRegion();
+        require(
+            !selection.setSelectionRect(rect) && selection.regionOperation() == operation &&
+                selection.confirmedRegion() == ScreenshotRegionGeometry(custom) &&
+                selection.selectionRegion() == preview,
+            "an identical operand must preserve the pending operation and its confirmed region");
+        require(selection.setSelectionRect({}) &&
+                    selection.confirmedRegion() == ScreenshotRegionGeometry(custom) &&
+                    selection.selectionRegion() == ScreenshotRegionGeometry(custom),
+                "clearing a pending operand must preserve the confirmed region");
+        selection.setSelectionRect(rect);
+        static_cast<void>(selection.selectionRegion());
+        selection.cancelRegionOperation();
+        require(!selection.regionOperationActive() &&
+                    selection.selectionRegion() == ScreenshotRegionGeometry(custom),
+                "cancelling an operation with the same marquee bounds must invalidate its composed "
+                "preview");
+    }
+}
+
 void physicalWindowRectIsClippedAndMappedAcrossMonitors() {
     ScreenshotDisplaySession displays;
     displays.appendDisplay(syntheticDisplay(QRect(0, 0, 100, 100), QRect(0, 0, 100, 100)));
@@ -1512,6 +1589,8 @@ int main() {
     physicalPointMappingUsesHalfOpenMonitorBounds();
     physicalWindowRectIsClippedAndMappedAcrossMonitors();
     selectorDisplayIdentityPreventsMixedScaleCrossMapping();
+    batchedSelectorRectanglesPreserveClippingAndDisplayIdentity();
+    unchangedSelectionRectanglesPreserveReplacementSemantics();
     dragAnchorDoesNotReplaceTheActualCursorPosition();
     historyPinDesktopUsesNativeMonitorRects();
     return 0;

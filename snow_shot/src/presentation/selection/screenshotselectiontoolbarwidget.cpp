@@ -560,7 +560,9 @@ bool ScreenshotSelectionToolbarWidget::eventFilter(QObject* watched, QEvent* eve
 void ScreenshotSelectionToolbarWidget::changeEvent(QEvent* event) {
     if (event != nullptr && event->type() == QEvent::LanguageChange) {
         retranslateUi();
-        setCornerRadiusApplicable(m_cornerRadiusApplicable);
+        m_radiusLabel->setToolTip(m_cornerRadiusApplicable
+                                      ? tr("Corner radius")
+                                      : tr("Corner radius is unavailable for custom regions"));
     }
     QWidget::changeEvent(event);
 }
@@ -891,8 +893,12 @@ bool ScreenshotSelectionToolbarWidget::updateLabels(bool refreshGeometry) {
         geometryChanged |=
             updateLabelText(label, screenshotSelectionDisplayUnitText(unit), refreshGeometry);
         const QString description = screenshotSelectionDisplayUnitDescription(unit);
-        label->setToolTip(description);
-        label->setAccessibleName(description);
+        if (label->toolTip() != description) {
+            label->setToolTip(description);
+        }
+        if (label->accessibleName() != description) {
+            label->setAccessibleName(description);
+        }
     };
     for (QLabel* label : m_canvasUnitLabels) {
         updateUnit(label, m_canvasUsesPoints ? ScreenshotSelectionDisplayUnit::LogicalPixels
@@ -1049,6 +1055,9 @@ QPoint ScreenshotSelectionToolbarWidget::contentOffset() const {
 }
 
 void ScreenshotSelectionToolbarWidget::setCornerRadiusApplicable(bool enabled) {
+    if (m_cornerRadiusApplicable == enabled) {
+        return;
+    }
     m_cornerRadiusApplicable = enabled;
     m_radiusLabel->setEnabled(enabled);
     m_radiusLabel->setToolTip(enabled ? tr("Corner radius")

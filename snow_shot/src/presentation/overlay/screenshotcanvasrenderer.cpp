@@ -38,6 +38,7 @@
 #include <QTextOption>
 #include <QTransform>
 #include <QVector>
+#include <QtMath>
 
 #include <algorithm>
 #include <array>
@@ -146,6 +147,50 @@ bool rectFCovers(const QRectF& outer, const QRect& inner) {
     const QRectF innerBounds(inner);
     return outer.left() <= innerBounds.left() && outer.top() <= innerBounds.top() &&
            outer.right() >= innerBounds.right() && outer.bottom() >= innerBounds.bottom();
+}
+
+bool imageIsOpaque(const QImage& image) {
+    if (image.isNull()) {
+        return false;
+    }
+    if (!image.hasAlphaChannel()) {
+        return true;
+    }
+    // Capture images use these byte and word formats. Scan only when the source
+    // changes; formats with an unfamiliar alpha representation stay conservative.
+    if (image.format() == QImage::Format_ARGB32 ||
+        image.format() == QImage::Format_ARGB32_Premultiplied) {
+        for (int y = 0; y < image.height(); ++y) {
+            const auto* pixels = reinterpret_cast<const QRgb*>(image.constScanLine(y));
+            for (int x = 0; x < image.width(); ++x) {
+                if (qAlpha(pixels[x]) != 255) {
+                    return false;
+                }
+            }
+        }
+        return true;
+    }
+    if (image.format() == QImage::Format_RGBA8888 ||
+        image.format() == QImage::Format_RGBA8888_Premultiplied) {
+        for (int y = 0; y < image.height(); ++y) {
+            const auto* pixels = image.constScanLine(y);
+            for (int x = 0; x < image.width(); ++x) {
+                if (pixels[x * 4 + 3] != 255) {
+                    return false;
+                }
+            }
+        }
+        return true;
+    }
+    return false;
+}
+
+QRect interiorPixelRect(const QRectF& rect) {
+    // Rounding outwards can incorrectly claim a pixel across a fractional seam
+    // or display gap. Only complete logical pixels contribute to the union.
+    const int left = qCeil(rect.left());
+    const int top = qCeil(rect.top());
+    return QRect(left, top, qFloor(rect.right()) - left, qFloor(rect.bottom()) - top);
 }
 
 void renderSelectionShadow(QPainter& painter, const SnowCanvasRenderContext& context,
@@ -1057,6 +1102,19 @@ void ScreenshotCanvasRenderer::setImageSource(ScreenshotImageSource source, cons
         source.materializedImage.setDevicePixelRatio(1.0);
     }
     m_imageSource = std::move(source);
+    m_opaqueImageCanvasRects.clear();
+    m_opaqueCoverageValid = false;
+    if (m_imageSource.isMaterialized()) {
+        if (imageIsOpaque(m_imageSource.materializedImage)) {
+            m_opaqueImageCanvasRects.append(m_imageSource.materializedCanvasRect);
+        }
+    } else if (m_imageSource.isLayered()) {
+        for (const ScreenshotImageLayer& layer : m_imageSource.layers) {
+            if (layer.isValid() && imageIsOpaque(layer.image)) {
+                m_opaqueImageCanvasRects.append(layer.destinationCanvasRect);
+            }
+        }
+    }
     QList<SnowCanvasBaseImageSource> baseSources;
     if (m_imageSource.isMaterialized()) {
         baseSources.push_back(
@@ -1521,6 +1579,9 @@ void ScreenshotCanvasRenderer::reset() {
                           m_selectionState.toolbarHovered || !m_selectionState.borderVisible ||
                           m_ocrPresentation != nullptr || m_guideLinesVisible;
     m_imageSource = {};
+    m_opaqueImageCanvasRects.clear();
+    m_opaqueImageViewCoverage = {};
+    m_opaqueCoverageValid = false;
     m_scrollingResultPreviewImage = {};
     m_scrollingResultPreviewCanvasRect = {};
     m_scrollingCropGuide.reset();
@@ -1643,14 +1704,14 @@ bool ScreenshotCanvasRenderer::coversWidgetRect(const QRect& widgetRect) const {
         return true;
     }
 
-    if (!m_imageSource.isMaterialized()) {
+    if (m_opaqueImageCanvasRects.isEmpty()) {
         return false;
     }
 
     const QRect canvasRect = m_canvas.rect();
     const qreal devicePixelRatio = m_canvas.devicePixelRatioF();
     if (m_imageViewportPhysicalSize.isValid() && !m_imageViewportPhysicalSize.isEmpty() &&
-        devicePixelRatio > 0.0) {
+        devicePixelRatio > 0.0 && m_imageSource.isMaterialized()) {
         const QRectF targetRect(QPointF(canvasRect.topLeft()),
                                 QSizeF(m_imageViewportPhysicalSize.width() / devicePixelRatio,
                                        m_imageViewportPhysicalSize.height() / devicePixelRatio));
@@ -1658,15 +1719,29 @@ bool ScreenshotCanvasRenderer::coversWidgetRect(const QRect& widgetRect) const {
     }
 
     const QTransform canvasToView = m_canvas.canvasToViewTransform();
-    if (!canvasToView.isInvertible()) {
-        // Overlay paintEvent runs before the child canvas publishes its view
-        // transform. A full-canvas blit of a materialized screenshot still
-        // replaces every parent pixel of that first frame.
-        return widgetRect == canvasRect;
+    if (!canvasToView.isInvertible() || canvasToView.type() > QTransform::TxScale) {
+        return false;
     }
 
-    const QRectF targetRect = canvasToView.mapRect(m_imageSource.materializedCanvasRect);
-    return rectFCovers(targetRect, widgetRect);
+    if (!m_opaqueCoverageValid || m_opaqueCoverageTransform != canvasToView ||
+        m_opaqueCoverageViewport != canvasRect) {
+        m_opaqueImageViewCoverage = {};
+        for (const QRectF& rect : m_opaqueImageCanvasRects) {
+            const QRectF mappedRect = canvasToView.mapRect(rect);
+            if (finiteRect(mappedRect)) {
+                m_opaqueImageViewCoverage +=
+                    interiorPixelRect(mappedRect.intersected(QRectF(canvasRect)));
+            }
+        }
+        m_opaqueCoverageTransform = canvasToView;
+        m_opaqueCoverageViewport = canvasRect;
+        m_opaqueCoverageValid = true;
+    }
+    if (m_opaqueImageViewCoverage.rectCount() == 1) {
+        return m_opaqueImageViewCoverage.boundingRect().contains(widgetRect);
+    }
+    // QRegion::contains(QRect) also returns true for a partial intersection.
+    return QRegion(widgetRect).subtracted(m_opaqueImageViewCoverage).isEmpty();
 }
 
 #if defined(SNOW_SHOT_BENCH_INTERNALS)

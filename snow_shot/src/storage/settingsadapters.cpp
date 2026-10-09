@@ -849,6 +849,14 @@ bool ShortcutSettings::setRestoreLastClosedWindows(
                             bindings);
 }
 
+shortcuts::ShortcutBindingList ShortcutSettings::hideShowAllWindows() const {
+    return shortcutValue(QStringLiteral("global_shortcuts/hide_show_all_windows"));
+}
+
+bool ShortcutSettings::setHideShowAllWindows(const shortcuts::ShortcutBindingList& bindings) const {
+    return setShortcutValue(QStringLiteral("global_shortcuts/hide_show_all_windows"), bindings);
+}
+
 bool ShortcutSettings::setPinClipboardContent(
     const shortcuts::ShortcutBindingList& bindings) const {
     return setShortcutValue(QStringLiteral("global_shortcuts/pin_clipboard_content"), bindings);
