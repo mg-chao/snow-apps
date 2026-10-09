@@ -84,6 +84,12 @@ void applyFontFamily(QFont& font, const SnowSceneDisplayItem& item) {
     if (item.kind == SNOW_SCENE_DISPLAY_ITEM_TEXT) {
         font.setBold(item.text_bold != 0);
         font.setItalic(item.text_italic != 0);
+    } else if (item.kind == SNOW_SCENE_DISPLAY_ITEM_SERIAL_NUMBER) {
+        // Serial labels center and fit glyph ink. Ambient text decorations have
+        // no serial style property and would paint beyond those measured bounds.
+        font.setUnderline(false);
+        font.setOverline(false);
+        font.setStrikeOut(false);
     }
     const QString family = snow_canvas_text::fontFamilyFromSceneItem(item);
     if (!family.isEmpty()) {

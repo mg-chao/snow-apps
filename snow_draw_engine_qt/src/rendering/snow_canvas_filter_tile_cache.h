@@ -1,6 +1,8 @@
 #pragma once
 
+#include <QFont>
 #include <QImage>
+#include <QPainter>
 #include <QPoint>
 #include <QRect>
 #include <QSize>
@@ -27,6 +29,8 @@ struct Key {
     std::uint64_t dependencyFingerprint = 0;
     std::uint64_t nodeFingerprint = 0;
     SourceKind sourceKind = SourceKind::Composite;
+    QFont baseFont{};
+    QPainter::RenderHints renderHints{};
 
     bool operator==(const Key& other) const;
 };

@@ -34,7 +34,14 @@ struct KeyHash {
             static_cast<std::size_t>(key.dependencyFingerprint ^ (key.dependencyFingerprint >> 32));
         result ^= static_cast<std::size_t>(key.nodeFingerprint ^ (key.nodeFingerprint >> 32));
         result ^= static_cast<std::size_t>(key.sourceKind) * 0x27d4eb2fu;
-        return result;
+        // QFont hashing allocates for variable axes in Qt. Use allocation-free
+        // bucket attributes; full font equality still distinguishes axes,
+        // features, spacing and decorations without weakening cache identity.
+        return qHashMulti(result, key.baseFont.families(), key.baseFont.styleName(),
+                          key.baseFont.pixelSize(), key.baseFont.pointSizeF(),
+                          key.baseFont.weight(), key.baseFont.style(), key.baseFont.stretch(),
+                          key.baseFont.hintingPreference(),
+                          static_cast<unsigned int>(key.renderHints));
     }
 };
 
@@ -90,7 +97,8 @@ bool Key::operator==(const Key& other) const {
            sourceRect == other.sourceRect && logicalSize == other.logicalSize &&
            devicePixelRatioBits == other.devicePixelRatioBits && contentKey == other.contentKey &&
            dependencyFingerprint == other.dependencyFingerprint &&
-           nodeFingerprint == other.nodeFingerprint && sourceKind == other.sourceKind;
+           nodeFingerprint == other.nodeFingerprint && sourceKind == other.sourceKind &&
+           baseFont == other.baseFont && renderHints == other.renderHints;
 }
 
 std::shared_ptr<const Entry> find(const Key& key, Diagnostics* diagnostics) {

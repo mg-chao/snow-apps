@@ -15,6 +15,7 @@
 
 #include <QApplication>
 #include <QColor>
+#include <QFontDatabase>
 #include <QImage>
 #include <QPainter>
 #include <QMouseEvent>
@@ -3441,11 +3442,249 @@ void tiledRenderMatchesFullRender() {
     runCase(4, 0.5, "emboss strength 0.5");
     runCase(6, 0.75, "brightness strength 0.75");
 }
+
+struct SerialNumberFontRenderResult {
+    QImage image;
+    snow_canvas_renderer::FilterRenderDiagnostics diagnostics;
+};
+
+SerialNumberFontRenderResult renderSerialNumberWithFont(
+    const QFont& font, const QByteArray& family, std::uint8_t badgeType, qreal dpr, bool tiled,
+    bool includeFilter, bool overlappingFilter, const void* cacheNamespace,
+    QPainter::RenderHints hints = QPainter::Antialiasing | QPainter::TextAntialiasing,
+    SnowCanvasCustomRenderer* backdrop = nullptr) {
+    const QSize logicalSize(640, 256);
+    SceneDisplayInfo info{};
+    info.surface_width = logicalSize.width();
+    info.surface_height = logicalSize.height();
+    info.camera_center_x = 320;
+    info.camera_center_y = 128;
+    info.camera_zoom = 1;
+    info.clear_color = {255, 255, 255, 255};
+
+    SnowCanvasSceneItem serial;
+    serial.kind = SNOW_SCENE_DISPLAY_ITEM_SERIAL_NUMBER;
+    serial.element_id = {1, 1};
+    serial.serial_number_type = badgeType;
+    serial.serial_number = 27;
+    serial.center_x = 160;
+    serial.center_y = 128;
+    serial.width = serial.height = 100;
+    serial.font_size = 63.25;
+    serial.stroke_width = 3;
+    serial.stroke = serial.fill = {255, 255, 255, 255};
+    serial.text_color = {0, 0, 0, 255};
+    serial.fill_style = SNOW_FILL_STYLE_SOLID;
+    serial.opacity = 1;
+    serial.setTextUtf8("27");
+    serial.setFontFamilyUtf8(family);
+    std::vector<SnowCanvasSceneItem> items{serial};
+    if (includeFilter) {
+        SnowCanvasSceneItem filter;
+        filter.kind = SNOW_SCENE_DISPLAY_ITEM_FILTER;
+        filter.element_id = {2, 1};
+        filter.center_x = overlappingFilter ? serial.center_x : 520;
+        filter.center_y = 128;
+        filter.width = filter.height = overlappingFilter ? 140 : 40;
+        filter.opacity = 1;
+        filter.filter = snow_filter_render_spec_resolve(2, 1.0);
+        items.push_back(filter);
+    }
+
+    SerialNumberFontRenderResult result;
+    result.image =
+        QImage(QSize(qRound(logicalSize.width() * dpr), qRound(logicalSize.height() * dpr)),
+               QImage::Format_ARGB32_Premultiplied);
+    result.image.setDevicePixelRatio(dpr);
+    result.image.fill(Qt::white);
+    QPainter painter(&result.image);
+    painter.setFont(font);
+    painter.setRenderHints(painter.renderHints(), false);
+    painter.setRenderHints(hints);
+    snow_canvas_renderer::SceneRenderRequest request;
+    request.painter = &painter;
+    request.displayInfo = &info;
+    request.sceneItems = items.data();
+    request.sceneItemCount = static_cast<std::uint32_t>(items.size());
+    request.exposedRegion = QRegion(QRect(QPoint(), logicalSize));
+    request.cacheNamespace = cacheNamespace;
+    request.filterTileContentKey = 1;
+    request.diagnostics = &result.diagnostics;
+    const SnowCanvasRenderContext context{QRect(QPoint(), logicalSize), request.exposedRegion,
+                                          QTransform(), dpr};
+    request.backgroundRenderer = backdrop;
+    request.backgroundContext = backdrop != nullptr ? &context : nullptr;
+    if (tiled) {
+        snow_canvas_renderer::renderSceneItemsTiled(request);
+    } else {
+        snow_canvas_renderer::renderSceneItems(request);
+    }
+    painter.end();
+    return result;
+}
+
+QImage serialNumberFontBadgeRegion(const QImage& image) {
+    const qreal dpr = image.devicePixelRatio();
+    return image.copy(qRound(80 * dpr), qRound(60 * dpr), qRound(160 * dpr), qRound(140 * dpr));
+}
+
+void serialNumberFontsStayIdenticalAcrossDirectAndTiledRendering() {
+    const QFont defaultFont = QApplication::font();
+    QFont inheritedFont = QFontDatabase::systemFont(QFontDatabase::FixedFont);
+    inheritedFont.setBold(true);
+    inheritedFont.setItalic(true);
+    QFont spacedFont = defaultFont;
+    spacedFont.setStretch(QFont::Expanded);
+    spacedFont.setLetterSpacing(QFont::AbsoluteSpacing, 3.0);
+    for (const QFont& font : {defaultFont, inheritedFont, spacedFont}) {
+        for (const QByteArray& family : {QByteArray(), defaultFont.family().toUtf8()}) {
+            for (const std::uint8_t badgeType :
+                 std::array<std::uint8_t, 2>{SNOW_SERIAL_NUMBER_TYPE_OUTLINED_CIRCLE,
+                                             SNOW_SERIAL_NUMBER_TYPE_SOLID_SQUARE}) {
+                for (const QPainter::RenderHints hints :
+                     {QPainter::RenderHints(QPainter::Antialiasing | QPainter::TextAntialiasing),
+                      QPainter::RenderHints(QPainter::Antialiasing)}) {
+                    for (const qreal dpr : {1.0, 2.0}) {
+                        int namespaceToken = 0;
+                        snow_canvas_filter_tile_cache::invalidateNamespace(&namespaceToken);
+                        const auto direct =
+                            renderSerialNumberWithFont(font, family, badgeType, dpr, false, false,
+                                                       false, &namespaceToken, hints);
+                        const auto directFiltered =
+                            renderSerialNumberWithFont(font, family, badgeType, dpr, false, true,
+                                                       false, &namespaceToken, hints);
+                        const auto tiledPlain =
+                            renderSerialNumberWithFont(font, family, badgeType, dpr, true, false,
+                                                       false, &namespaceToken, hints);
+                        const auto tiledFiltered =
+                            renderSerialNumberWithFont(font, family, badgeType, dpr, true, true,
+                                                       false, &namespaceToken, hints);
+                        const QImage badge = serialNumberFontBadgeRegion(direct.image);
+                        require(serialNumberFontBadgeRegion(directFiltered.image) == badge,
+                                "a distant filter must preserve the font and exact "
+                                "text-antialiasing state");
+                        require(
+                            serialNumberFontBadgeRegion(tiledPlain.image) == badge,
+                            "the filter-free tiled entry point must preserve the incoming font");
+                        if (serialNumberFontBadgeRegion(tiledFiltered.image) != badge) {
+                            std::cerr << "serial font=" << font.toString().toStdString()
+                                      << " item family=" << family.toStdString()
+                                      << " badge type=" << static_cast<int>(badgeType)
+                                      << " DPR=" << dpr
+                                      << " hints=" << static_cast<unsigned int>(hints) << '\n';
+                        }
+                        require(serialNumberFontBadgeRegion(tiledFiltered.image) == badge,
+                                "filter tiles must preserve every inherited serial-number font "
+                                "attribute, exact render hints and the direct glyph placement");
+                        snow_canvas_filter_tile_cache::invalidateNamespace(&namespaceToken);
+                    }
+                }
+            }
+        }
+    }
+}
+
+void retainedSerialNumberSourcesTrackFontAndRenderHints() {
+    const QFont originalFont = QApplication::font();
+    QFont changedFont = originalFont;
+    // Spacing is outside the bucket hash; full font equality must still
+    // invalidate retained pixels when it changes.
+    changedFont.setLetterSpacing(QFont::AbsoluteSpacing, 3.0);
+    const QPainter::RenderHints originalHints = QPainter::Antialiasing | QPainter::TextAntialiasing;
+    for (const qreal dpr : {1.0, 2.0}) {
+        for (const QByteArray& family : {QByteArray(), originalFont.family().toUtf8()}) {
+            for (const bool changeFont : {true, false}) {
+                int namespaceToken = 0;
+                snow_canvas_filter_tile_cache::invalidateNamespace(&namespaceToken);
+                const auto render = [&](const QFont& font, bool tiled,
+                                        QPainter::RenderHints hints) {
+                    return renderSerialNumberWithFont(font, family,
+                                                      SNOW_SERIAL_NUMBER_TYPE_OUTLINED_CIRCLE, dpr,
+                                                      tiled, true, true, &namespaceToken, hints);
+                };
+                const auto cold = render(originalFont, true, originalHints);
+                const auto retained = render(originalFont, true, originalHints);
+                require(retained.image == cold.image && retained.diagnostics.sourceTileHits > 0,
+                        "unchanged serial-number fonts must reuse identical retained sources");
+
+                // Keep both the namespace and caller-provided content key unchanged: the
+                // incoming painter state is an independent dependency of the source pixels.
+                const QFont& nextFont = changeFont ? changedFont : originalFont;
+                const QPainter::RenderHints nextHints =
+                    changeFont ? originalHints : QPainter::RenderHints{};
+                const auto expected = render(nextFont, false, nextHints);
+                if (changeFont) {
+                    const auto original = render(originalFont, false, originalHints);
+                    require(serialNumberFontBadgeRegion(original.image) !=
+                                serialNumberFontBadgeRegion(expected.image),
+                            "font-cache regression must exercise a visible font change");
+                }
+                const auto changed = render(nextFont, true, nextHints);
+                if (serialNumberFontBadgeRegion(changed.image) !=
+                    serialNumberFontBadgeRegion(expected.image)) {
+                    std::cerr << "retained serial source after "
+                              << (changeFont ? "font" : "render-hint") << " change, DPR=" << dpr
+                              << " item family=" << family.toStdString() << '\n';
+                }
+                require(serialNumberFontBadgeRegion(changed.image) ==
+                            serialNumberFontBadgeRegion(expected.image),
+                        "retained serial-number sources must follow changed fonts and render "
+                        "hints without stale glyphs or baselines");
+                require(changed.diagnostics.sourceTileMisses > 0,
+                        "changed font or render hints must rebuild dependent source tiles");
+                const auto reused = render(nextFont, true, nextHints);
+                require(reused.image == changed.image && reused.diagnostics.sourceTileHits > 0,
+                        "rebuilt serial-number sources must be reusable with unchanged state");
+                snow_canvas_filter_tile_cache::invalidateNamespace(&namespaceToken);
+            }
+        }
+    }
+}
+class PainterStateBackdropRenderer final : public SnowCanvasCustomRenderer {
+  public:
+    PainterStateBackdropRenderer(const QFont& font, QPainter::RenderHints hints)
+        : expectedFont(font), expectedHints(hints) {}
+
+    void renderBeforeCanvas(QPainter& painter, const SnowCanvasRenderContext& context) override {
+        ++calls;
+        preservedState = preservedState && painter.font() == expectedFont &&
+                         painter.renderHints() == expectedHints;
+        painter.fillRect(context.viewportRect, Qt::white);
+    }
+
+    const QFont expectedFont;
+    const QPainter::RenderHints expectedHints;
+    int calls = 0;
+    bool preservedState = true;
+};
+
+void offscreenSerialScenesPreserveExactPainterState() {
+    QFont font = QFontDatabase::systemFont(QFontDatabase::FixedFont);
+    font.setItalic(true);
+    const QPainter::RenderHints hints = QPainter::Antialiasing;
+    for (bool tiled : {false, true}) {
+        int namespaceToken = 0;
+        PainterStateBackdropRenderer backdrop(font, hints);
+        renderSerialNumberWithFont(font, {}, SNOW_SERIAL_NUMBER_TYPE_OUTLINED_CIRCLE, 1.0, tiled,
+                                   true, false, &namespaceToken, hints, &backdrop);
+        require(backdrop.calls > 0, "the regression must render an offscreen filter backdrop");
+        require(backdrop.preservedState,
+                "offscreen serial scenes must preserve the incoming font and disabled text "
+                "antialiasing for custom backdrop renderers");
+        snow_canvas_filter_tile_cache::invalidateNamespace(&namespaceToken);
+    }
+}
 } // namespace
 
 int main(int argc, char** argv) {
     QApplication application(argc, argv);
     snow_canvas_render_diagnostics::setEnabled(true);
+    if (application.arguments().contains(QStringLiteral("--serial-number-font-only"))) {
+        serialNumberFontsStayIdenticalAcrossDirectAndTiledRendering();
+        retainedSerialNumberSourcesTrackFontAndRenderHints();
+        offscreenSerialScenesPreserveExactPainterState();
+        return 0;
+    }
     if (application.arguments().contains(QStringLiteral("--export-only"))) {
         exportWithoutRuntimeStillRendersSources();
         plainExportUsesDirectSourceFastPath();
@@ -3487,6 +3726,9 @@ int main(int argc, char** argv) {
     sparseSpatialFilterDamagePreservesHalosAndRetainedPixels();
     tiledFiltersCoverFractionalDevicePixels();
     tiledRenderMatchesFullRender();
+    serialNumberFontsStayIdenticalAcrossDirectAndTiledRendering();
+    retainedSerialNumberSourcesTrackFontAndRenderHints();
+    offscreenSerialScenesPreserveExactPainterState();
     inversionPreservesPremultipliedAlpha();
     grayscalePreservesPremultipliedAlpha();
     colorEffectStrengthHasExactEndpointsAndInterpolation();

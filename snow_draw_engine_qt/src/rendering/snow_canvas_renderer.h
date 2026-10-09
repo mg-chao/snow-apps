@@ -130,6 +130,7 @@ struct SceneRenderRequest {
 };
 
 QColor toQColor(const SnowColorRgba8& color);
+void copyPainterFontAndHints(QPainter& destination, const QPainter& source);
 std::size_t hatchTextureCacheEntryCountForCurrentThread();
 FilterRenderDiagnostics filterRenderDiagnosticsForCurrentThread();
 void resetFilterRenderDiagnosticsForCurrentThread();

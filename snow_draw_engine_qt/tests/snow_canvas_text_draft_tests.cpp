@@ -958,6 +958,144 @@ void bahnschriftCondensedSerialNumberUsesResolvedGlyphBounds() {
             "serial-number measured glyphs should be vertically centered");
 }
 
+void serialNumberGlyphBaselinesRemainCentered() {
+    const QList<QByteArray> labels = {
+        "1",
+        "3",
+        "7",
+        "8",
+        "27",
+        "a",
+        "g",
+        "j",
+        "p",
+        "q",
+        "y",
+        "ag",
+        "gy",
+        QByteArray::fromHex("e4b880"),
+        QByteArray::fromHex("e4ba8c"),
+        QByteArray::fromHex("e99bb6"),
+        QByteArray::fromHex("e4baac"),
+    };
+    const QList<QFont> fonts = {QApplication::font(),
+                                QFontDatabase::systemFont(QFontDatabase::FixedFont)};
+    SceneDisplayInfo info{};
+    info.surface_width = info.surface_height = 240;
+    info.camera_center_x = -10.25;
+    info.camera_center_y = 33.5;
+    for (const QFont& font : fonts) {
+        for (const auto shape :
+             {SNOW_SERIAL_NUMBER_TYPE_OUTLINED_CIRCLE, SNOW_SERIAL_NUMBER_TYPE_OUTLINED_SQUARE,
+              SNOW_SERIAL_NUMBER_TYPE_SOLID_CIRCLE, SNOW_SERIAL_NUMBER_TYPE_SOLID_SQUARE}) {
+            for (double zoom : {0.65, 1.37}) {
+                info.camera_zoom = zoom;
+                for (double diameter : {40.0, 100.0}) {
+                    for (qreal dpr : {1.0, 2.0}) {
+                        for (double rotation : {0.0, 3.14159265358979323846 / 2.0}) {
+                            for (const QByteArray& label : labels) {
+                                SnowCanvasSceneItem item;
+                                item.kind = SNOW_SCENE_DISPLAY_ITEM_SERIAL_NUMBER;
+                                item.serial_number_type = static_cast<std::uint8_t>(shape);
+                                item.center_x = -10.125;
+                                item.center_y = 33.25;
+                                item.width = item.height = diameter;
+                                item.rotation = rotation;
+                                item.font_size = 63.25;
+                                item.opacity = 1.0;
+                                item.stroke = item.fill = SnowColorRgba8{255, 255, 255, 255};
+                                item.stroke_width = 3.0;
+                                item.fill_style = SNOW_FILL_STYLE_SOLID;
+                                item.text_color = SnowColorRgba8{0, 0, 0, 255};
+                                item.setTextUtf8(label);
+                                QImage image(QSize(qRound(240 * dpr), qRound(240 * dpr)),
+                                             QImage::Format_ARGB32_Premultiplied);
+                                image.setDevicePixelRatio(dpr);
+                                image.fill(Qt::transparent);
+                                QPainter painter(&image);
+                                painter.setFont(font);
+                                snow_canvas_renderer::renderSceneItems(
+                                    {&painter, &info, &item, 1, QRegion(QRect(0, 0, 240, 240))});
+                                painter.end();
+                                const QRect ink = darkPixelBounds(image);
+                                require(!ink.isEmpty(),
+                                        "each baseline variant paints visible glyphs");
+                                const QPointF expected = snow_canvas_render_geometry::canvasToView(
+                                    snow_canvas_render_geometry::sceneProjection(info),
+                                    item.center_x, item.center_y);
+                                const QPointF paintedCenter = QRectF(ink).center() / dpr;
+                                require(std::abs(paintedCenter.x() - expected.x()) <= 2.0 &&
+                                            std::abs(paintedCenter.y() - expected.y()) <= 2.0,
+                                        "digits, descenders and CJK fallback glyphs stay centered "
+                                        "across zoom, rotation and pixel density");
+                                const double contentSize =
+                                    (diameter - 2.0 * item.stroke_width) * zoom * dpr;
+                                require(ink.width() <= contentSize + 2.0 &&
+                                            ink.height() <= contentSize + 2.0,
+                                        "baseline variants fit the badge content area");
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+void serialNumberLabelsIgnoreInheritedTextDecorations() {
+    QFont font = QFontDatabase::systemFont(QFontDatabase::FixedFont);
+    font.setBold(true);
+    font.setItalic(true);
+    SceneDisplayInfo info{};
+    info.surface_width = info.surface_height = 240;
+    info.camera_zoom = 1.37;
+    for (const QByteArray& family : {QByteArray(), QApplication::font().family().toUtf8()}) {
+        for (const auto shape :
+             {SNOW_SERIAL_NUMBER_TYPE_OUTLINED_CIRCLE, SNOW_SERIAL_NUMBER_TYPE_SOLID_SQUARE}) {
+            for (qreal dpr : {1.0, 2.0}) {
+                SnowCanvasSceneItem item;
+                item.kind = SNOW_SCENE_DISPLAY_ITEM_SERIAL_NUMBER;
+                item.serial_number_type = static_cast<std::uint8_t>(shape);
+                item.width = item.height = 40.0;
+                item.font_size = 63.25;
+                item.opacity = 1.0;
+                item.stroke = item.fill = SnowColorRgba8{255, 255, 255, 255};
+                item.stroke_width = 3.0;
+                item.fill_style = SNOW_FILL_STYLE_SOLID;
+                item.text_color = SnowColorRgba8{0, 0, 0, 255};
+                item.setTextUtf8("27");
+                item.setFontFamilyUtf8(family);
+                const auto render = [&](const QFont& baseFont) {
+                    QImage image(QSize(qRound(240 * dpr), qRound(240 * dpr)),
+                                 QImage::Format_ARGB32_Premultiplied);
+                    image.setDevicePixelRatio(dpr);
+                    image.fill(Qt::transparent);
+                    QPainter painter(&image);
+                    painter.setFont(baseFont);
+                    snow_canvas_renderer::renderSceneItems(
+                        {&painter, &info, &item, 1, QRegion(QRect(0, 0, 240, 240))});
+                    require(painter.font() == baseFont,
+                            "serial rendering restores the caller's font state");
+                    painter.end();
+                    return image;
+                };
+                const QImage undecorated = render(font);
+                require(!darkPixelBounds(undecorated).isEmpty(),
+                        "the undecorated serial label paints visible glyphs");
+                for (int decorations = 1; decorations < 8; ++decorations) {
+                    QFont decorated = font;
+                    decorated.setUnderline((decorations & 1) != 0);
+                    decorated.setOverline((decorations & 2) != 0);
+                    decorated.setStrikeOut((decorations & 4) != 0);
+                    require(render(decorated) == undecorated,
+                            "serial glyphs must not inherit text decorations outside their "
+                            "measured bounds");
+                }
+            }
+        }
+    }
+}
+
 bool textEditorOverlayHasVisiblePixels(SnowCanvasWidgetTextInteraction& interaction,
                                        const SnowCanvasDisplayCache& displayCache,
                                        const QFont& font, const QSize& size) {
@@ -5310,6 +5448,9 @@ int main(int argc, char** argv) {
 
     if (app.arguments().contains(QStringLiteral("--serial-number-only"))) {
         serialNumberFormattedLabelsRenderAndFitBadges();
+        bahnschriftCondensedSerialNumberUsesResolvedGlyphBounds();
+        serialNumberGlyphBaselinesRemainCentered();
+        serialNumberLabelsIgnoreInheritedTextDecorations();
         serialNumberBackgroundUsesTextHatchTexture();
         circleRendersFillAndStrokeWithoutNumber();
         serialNumberTypesRenderExpectedSilhouettesAndSolidSemantics();
@@ -5334,6 +5475,8 @@ int main(int argc, char** argv) {
     preparedTextLayoutsAreBoundedAndReleasedWithRenderingState();
     preparedTextLayoutsStayOnTheirThreadAndFollowFontDatabaseChanges();
     serialNumberFormattedLabelsRenderAndFitBadges();
+    serialNumberGlyphBaselinesRemainCentered();
+    serialNumberLabelsIgnoreInheritedTextDecorations();
     replacementNormalizesLineBreaksAndSupportsUndoRedo();
     cursorPositionReportsOnlyRealStateChanges();
     inputMethodPreeditDoesNotCommitUntilCommitString();

@@ -2172,6 +2172,14 @@ const SceneExecutionPlan& resolveExecutionPlan(const SceneRenderRequest& request
 }
 } // namespace
 
+void copyPainterFontAndHints(QPainter& destination, const QPainter& source) {
+    const QPainter::RenderHints hints = source.renderHints();
+    destination.setFont(source.font());
+    // setRenderHints enables flags without clearing a new painter's defaults.
+    destination.setRenderHints(destination.renderHints(), false);
+    destination.setRenderHints(hints);
+}
+
 void renderSceneItems(const SceneRenderRequest& request) {
     if (request.painter == nullptr || request.displayInfo == nullptr) {
         return;
@@ -2289,7 +2297,7 @@ void renderSceneItemsTiled(const SceneRenderRequest& request) {
                                ? toQColor(request.displayInfo->clear_color)
                                : Qt::transparent);
             QPainter tilePainter(&tileImage);
-            tilePainter.setRenderHints(request.painter->renderHints());
+            copyPainterFontAndHints(tilePainter, *request.painter);
             tilePainter.translate(-physicalRect.left() / dpr, -physicalRect.top() / dpr);
             tilePainter.setClipRegion(QRegion(logicalRect));
             SceneRenderRequest tiled = request;
@@ -2653,6 +2661,9 @@ void renderSceneItemsImpl(const SceneRenderRequest& request) {
                         dependencyFingerprints[static_cast<std::size_t>(
                             plan.passForItem[candidateIndex])],
                         passFingerprint(candidatePass.id),
+                        snow_canvas_filter_tile_cache::SourceKind::Composite,
+                        painter.font(),
+                        painter.renderHints(),
                     };
                     preloadedLayerStart = candidateLayerStart;
                     preloadedLookupAttempted = true;
@@ -2677,8 +2688,7 @@ void renderSceneItemsImpl(const SceneRenderRequest& request) {
             // Restore retained pixels before opening the painter. Cache hits
             // and cold replays must both begin painting this surface once.
             QPainter scenePainter(&scene);
-            scenePainter.setFont(painter.font());
-            scenePainter.setRenderHints(painter.renderHints());
+            copyPainterFontAndHints(scenePainter, painter);
             scenePainter.translate(-surfaceGeometry.logicalOrigin);
             const StageTimer backgroundReplayTimer{g_filterDiagnostics.sceneReplayNanoseconds};
             if (!reusedPreLayer && !copiedBackgroundRows && backgroundImage != nullptr &&
@@ -2726,8 +2736,7 @@ void renderSceneItemsImpl(const SceneRenderRequest& request) {
                                 workspace, execution, g_filterDiagnostics);
                         }
                         scenePainter.begin(&scene);
-                        scenePainter.setFont(painter.font());
-                        scenePainter.setRenderHints(painter.renderHints());
+                        copyPainterFontAndHints(scenePainter, painter);
                         scenePainter.translate(-surfaceGeometry.logicalOrigin);
                     }
                     ++position;
@@ -2794,6 +2803,9 @@ void renderSceneItemsImpl(const SceneRenderRequest& request) {
                         request.filterTileContentKey,
                         dependencyFingerprints[static_cast<std::size_t>(plan.passForItem[index])],
                         passFingerprint(pass.id),
+                        snow_canvas_filter_tile_cache::SourceKind::Composite,
+                        painter.font(),
+                        painter.renderHints(),
                     };
                     std::shared_ptr<const snow_canvas_filter_tile_cache::Entry> retainedSource =
                         preloadedLookupAttempted && preloadedLayerStart == layerStart
@@ -2818,8 +2830,7 @@ void renderSceneItemsImpl(const SceneRenderRequest& request) {
                         workspace.preLayerScratch(scene.size(), devicePixelRatio);
                     if (pooledPreLayer.isNull()) {
                         scenePainter.begin(&scene);
-                        scenePainter.setFont(painter.font());
-                        scenePainter.setRenderHints(painter.renderHints());
+                        copyPainterFontAndHints(scenePainter, painter);
                         scenePainter.translate(-surfaceGeometry.logicalOrigin);
                         continue;
                     }
@@ -3037,8 +3048,7 @@ void renderSceneItemsImpl(const SceneRenderRequest& request) {
                         std::max(g_filterDiagnostics.peakEffectPixelCount, effectPixels);
                 }
                 scenePainter.begin(&scene);
-                scenePainter.setFont(painter.font());
-                scenePainter.setRenderHints(painter.renderHints());
+                copyPainterFontAndHints(scenePainter, painter);
                 scenePainter.translate(-surfaceGeometry.logicalOrigin);
             }
             scenePainter.end();

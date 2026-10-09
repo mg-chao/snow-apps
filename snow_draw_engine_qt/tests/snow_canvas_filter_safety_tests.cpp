@@ -76,6 +76,8 @@ void cacheHitsPreserveLruWithoutAllocating() {
     int namespaceToken = 0;
     Key first{};
     first.canvasNamespace = &namespaceToken;
+    first.baseFont.setVariableAxis(QFont::Tag("wght"), 650.0f);
+    first.baseFont.setFeature(QFont::Tag("tnum"), 1);
     Key second = first;
     second.tile = QPoint(1, 0);
     QImage image(16, 16, QImage::Format_ARGB32_Premultiplied);
@@ -94,7 +96,9 @@ void cacheHitsPreserveLruWithoutAllocating() {
         threw = true;
     }
     failAllocation = false;
-    require(!threw, "cache hits must not allocate or throw under allocation failure");
+    require(!threw,
+            "cache hits with font axes and features must not allocate or throw under allocation "
+            "failure");
     require(sameEntry, "cache hits must retain the original entry");
     require(cache().entries.size() == 2 && cache().lru.size() == 2,
             "each cached entry must retain one live LRU node");

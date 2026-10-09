@@ -33,8 +33,6 @@ std::uint64_t contentKey(const snow_canvas_renderer::SceneRenderRequest& request
     hashDouble(hash, info.camera_center_y);
     hashDouble(hash, info.camera_zoom);
     hashDouble(hash, dpr);
-    hashValue(hash, static_cast<std::uint64_t>(request.painter->renderHints()));
-    hashValue(hash, static_cast<std::uint64_t>(qHash(request.painter->font().toString())));
     if (request.backgroundContext != nullptr) {
         const auto& transform = request.backgroundContext->canvasToViewTransform;
         hashDouble(hash, transform.m11());
@@ -163,6 +161,8 @@ originalBackground(const snow_canvas_renderer::SceneRenderRequest& request,
     std::memcpy(&key.devicePixelRatioBits, &dprDouble, sizeof(dprDouble));
     key.contentKey = contentKey(request, dpr);
     key.sourceKind = snow_canvas_filter_tile_cache::SourceKind::Pristine;
+    key.baseFont = request.painter->font();
+    key.renderHints = request.painter->renderHints();
     const bool cacheEnabled =
         (request.enableFilterTileCache || request.enableOriginalBackgroundCache) &&
         key.canvasNamespace != nullptr;
@@ -181,8 +181,7 @@ originalBackground(const snow_canvas_renderer::SceneRenderRequest& request,
     image.fill(request.clearBackgroundEnabled ? snow_canvas_renderer::toQColor(info.clear_color)
                                               : QColor(Qt::transparent));
     QPainter painter(&image);
-    painter.setFont(request.painter->font());
-    painter.setRenderHints(request.painter->renderHints());
+    snow_canvas_renderer::copyPainterFontAndHints(painter, *request.painter);
     painter.translate(-physicalBounds.left() / dpr, -physicalBounds.top() / dpr);
     if (request.backgroundImage != nullptr && !request.backgroundImage->isNull()) {
         painter.drawImage(QRectF(0, 0, info.surface_width, info.surface_height),

@@ -90,8 +90,7 @@ bool SnowCanvasReferenceScene::render(SnowRuntime runtime,
                        ? snow_canvas_renderer::toQColor(m_displayCache.sceneInfo().clear_color)
                        : Qt::transparent);
         QPainter painter(&image);
-        painter.setFont(request.painter->font());
-        painter.setRenderHints(request.painter->renderHints());
+        snow_canvas_renderer::copyPainterFontAndHints(painter, *request.painter);
         const QTransform sourceTransform(scale, 0, 0, scale, -bounds.x() * scale,
                                          -bounds.y() * scale);
         const SnowCanvasRenderContext context{image.rect(), QRegion(image.rect()), sourceTransform,
