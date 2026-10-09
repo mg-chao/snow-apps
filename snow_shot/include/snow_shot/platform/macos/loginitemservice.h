@@ -61,6 +61,7 @@ bool loginItemLocationAllowed(const QString& bundle, const QString& userApplicat
 QStringList loginItemLaunchArguments(QStringList arguments, bool nativeLoginLaunch);
 bool loginItemAutomaticRegistrationAllowed(const QStringList& arguments);
 #ifdef Q_OS_MACOS
+LoginItemOperations nativeLoginItemOperations();
 LoginItemService& loginItemService();
 void observeNativeLoginItemLaunch();
 bool initialNativeLoginItemLaunch();
