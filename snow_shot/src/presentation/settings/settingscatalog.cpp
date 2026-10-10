@@ -2040,6 +2040,17 @@ SettingsItemDefinition screenRecordingNotifyAfterExportCompletesItem() {
                       SettingsSwitchBinding::ScreenRecordingNotifyAfterExportCompletes);
 }
 
+SettingsItemDefinition screenRecordingDeleteFilesOnRecordingCloseItem() {
+    return switchItem(
+        QStringLiteral("screen-recording.delete-files-on-recording-close"),
+        QT_TRANSLATE_NOOP("SettingsCatalog", "Delete files on recording close"),
+        QT_TRANSLATE_NOOP("SettingsCatalog",
+                          "Delete the current recording files when closing an active recording. "
+                          "Stopping recording still saves the output."),
+        QStringLiteral("screen_recording/delete_files_on_recording_close"),
+        SettingsSwitchBinding::ScreenRecordingDeleteFilesOnRecordingClose);
+}
+
 SettingsItemDefinition fullscreenHotkeySuppressionItem() {
     return switchItem(
         QStringLiteral("global-hotkeys.disable-on-focused-fullscreen-window"),
@@ -3258,7 +3269,8 @@ QVector<SettingsPageDefinition> builtInPages() {
                  settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Screen recording behavior")),
                  SettingsSectionReset::ScreenRecordingInteraction,
                  {screenRecordingAutoExitAfterRecordingEndsItem(),
-                  screenRecordingNotifyAfterExportCompletesItem()},
+                  screenRecordingNotifyAfterExportCompletesItem(),
+                  screenRecordingDeleteFilesOnRecordingCloseItem()},
              },
          },
          SettingsPageKind::GeneratedSettings,
@@ -4821,6 +4833,10 @@ QStringList SettingsCatalog::validationErrors() const {
                     case SettingsSwitchBinding::ScreenRecordingNotifyAfterExportCompletes:
                         expectedKey =
                             QStringLiteral("screen_recording/notify_after_export_completes");
+                        break;
+                    case SettingsSwitchBinding::ScreenRecordingDeleteFilesOnRecordingClose:
+                        expectedKey =
+                            QStringLiteral("screen_recording/delete_files_on_recording_close");
                         break;
                     case SettingsSwitchBinding::DisableHotkeysOnFocusedFullscreen:
                         expectedKey =

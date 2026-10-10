@@ -103,7 +103,11 @@ struct SnowRecordingClipImpl {
 };
 struct SnowRecordingClipFrameImpl {};
 struct SnowRecordingClipExportImpl {};
-struct SnowRecordingSessionImpl {};
+struct SnowRecordingSessionImpl {
+    QString stagingFile;
+    QString temporaryDirectory;
+    QString outputFile;
+};
 struct SnowRecordingAudioMonitorImpl {
     uint32_t source = 0;
     int gain = 0;
@@ -170,6 +174,9 @@ std::atomic<bool> failStartOperation = false;
 std::atomic<int> destroyedSessions = 0;
 std::shared_future<void> sessionDestroyGate;
 std::atomic<bool> sessionDestroyEntered = false;
+std::shared_future<void> sessionCreateGate;
+std::atomic<bool> sessionCreateEntered = false;
+bool recordingFileFixture = false;
 std::shared_future<void> clipDestroyGate;
 std::atomic<bool> clipDestroyEntered = false;
 void require(bool condition, const char* message) {
@@ -408,6 +415,275 @@ void recordingCanCloseDuringAndAfterFinalization() {
             }
         }
     }
+}
+
+void recordingDeleteOnCloseTests(const QString& directory) {
+    using snow_shot::storage::RecordingSettings;
+    const auto wait = [](auto predicate) {
+        QElapsedTimer deadline;
+        deadline.start();
+        while (!predicate() && deadline.elapsed() < 3000) {
+            QCoreApplication::processEvents(QEventLoop::AllEvents, 20);
+            QThread::msleep(1);
+        }
+        require(predicate(), "recording close fixture must reach its controlled boundary");
+    };
+    const auto idle = [&] {
+        wait([] {
+            return snow_shot::runtime::RuntimeActivityTracker::shared().snapshot().activeCount == 0;
+        });
+        QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+    };
+    const auto finishRender = [&](ScreenRecordingController& controller) {
+        wait([&] {
+            return controller.automationState()
+                       .value(QStringLiteral("render_duration_ms"))
+                       .toInteger() == 2300;
+        });
+        renderState = SNOW_RECORDING_RENDER_STATE_SUCCEEDED;
+    };
+    idle();
+    recordingFileFixture = true;
+    require(RecordingSettings().setNotifyAfterExportCompletes(true),
+            "enable notifications to detect unwanted exports");
+    const auto reset = qScopeGuard([] {
+        recordingFileFixture = false;
+        RecordingSettings().setDeleteFilesOnRecordingClose(false);
+        RecordingSettings().setNotifyAfterExportCompletes(false);
+    });
+    QFile previous(QDir(directory).filePath(QStringLiteral("previous-recording.mp4")));
+    require(previous.open(QIODevice::WriteOnly) && previous.write("previous recording") > 0,
+            "create an earlier exported recording");
+    previous.close();
+    int fixture = 0;
+    for (bool deferred : {false, true}) {
+        for (int delay : {0, 10}) {
+            require(RecordingSettings().setDeleteFilesOnRecordingClose(true),
+                    "enable deletion for canceled scheduled starts");
+            const int beforeStarts = starts, beforeExports = exports,
+                      beforeDestroyed = destroyedSessions, beforeDeferred = deferredCreates;
+            ScreenRecordingController controller(testEffectsSource);
+            QString error;
+            require(controller.startAutomation(QRect(80, 80, 320, 240),
+                                               {{QStringLiteral("post_processing"), deferred},
+                                                {QStringLiteral("start_delay_seconds"), delay}},
+                                               &error) &&
+                        controller.controlAutomation(QStringLiteral("close"), {}, &error),
+                    "Close cancels a scheduled start or countdown");
+            idle();
+            require(!controller.isOpen() && !controller.isRecording() && starts == beforeStarts &&
+                        exports == beforeExports && destroyedSessions == beforeDestroyed &&
+                        deferredCreates == beforeDeferred && recordingWindowCount() == 0,
+                    "Close before native startup creates no recording files or session");
+        }
+        for (bool paused : {false, true}) {
+            // Exercise toolbar, configured shortcut, native window Close, and
+            // both automation aliases through the same controller handler.
+            for (int route = 0; route < 5; ++route) {
+                idle();
+                require(RecordingSettings().setDeleteFilesOnRecordingClose(true),
+                        "enable deletion for direct Close");
+                const QString output =
+                    QDir(directory).filePath(QStringLiteral("discard-%1.mp4").arg(++fixture));
+                const int beforeExports = exports, beforeDestroyed = destroyedSessions,
+                          beforeRenders = renderStarts, beforeSources = sourceDestroys;
+                ScreenRecordingController controller(testEffectsSource);
+                int finalized = 0, notified = 0;
+                QVector<bool> captureActivity;
+                QObject::connect(&controller, &ScreenRecordingController::finalized, &controller,
+                                 [&] { ++finalized; });
+                QObject::connect(&controller,
+                                 &ScreenRecordingController::exportNotificationRequested,
+                                 &controller, [&] { ++notified; });
+                QObject::connect(&controller, &ScreenRecordingController::captureActivityChanged,
+                                 &controller, [&](bool active) { captureActivity.append(active); });
+                QString error;
+                require(controller.startAutomation(QRect(80, 80, 320, 240),
+                                                   {{QStringLiteral("path"), output},
+                                                    {QStringLiteral("post_processing"), deferred}},
+                                                   &error),
+                        "start a recording to discard");
+                waitForRecording(controller);
+                if (paused)
+                    require(controller.controlAutomation(QStringLiteral("pause"), {}, &error),
+                            "pause a recording to discard");
+                QApplication::clipboard()->setText(QStringLiteral("keep clipboard"));
+                std::promise<void> release;
+                sessionDestroyGate = release.get_future().share();
+                sessionDestroyEntered = false;
+                if (route == 0) {
+                    recordingToolbarButton("Close recording")->click();
+                } else if (route == 1) {
+                    require(palette()->activateRecordingShortcut(QStringLiteral("end_recording")),
+                            "configured recording Close shortcut must activate");
+                } else if (route == 2) {
+                    palette()->window()->close();
+                } else {
+                    require(controller.controlAutomation(route == 3 ? QStringLiteral("close")
+                                                                    : QStringLiteral("cancel"),
+                                                         {}, &error),
+                            "automation Close aliases discard an active recording");
+                }
+                require(!controller.isOpen() && captureActivity == QVector<bool>({true, false}),
+                        "Close hides recording UI and releases capture suppression immediately");
+                wait([] { return sessionDestroyEntered.load(); });
+                require(controller.blocksMemoryTrimming() && controller.isRecording(),
+                        "pending cancellation keeps the session busy and blocks memory trimming");
+                requireMemoryAdmissionBlocked("cancellation retains its native activity lease");
+                require(!controller.startAutomation(QRect(80, 80, 320, 240), {}, &error) &&
+                            error == QStringLiteral("busy"),
+                        "a new recording cannot overlap cancellation teardown");
+                require(exports == beforeExports && !recordingStopRequested &&
+                            destroyedSessions == beforeDestroyed,
+                        "Close cancels without requesting Stop or finalization");
+                require(controller.controlAutomation(QStringLiteral("close"), {}, &error),
+                        "repeated Close during cancellation is harmless");
+                release.set_value();
+                waitForIdle(controller);
+                idle();
+                sessionDestroyGate = {};
+                require(
+                    destroyedSessions == beforeDestroyed + 1 && finalized == 0 && notified == 0 &&
+                        renderStarts == beforeRenders && sourceDestroys == beforeSources &&
+                        !QFileInfo::exists(output) &&
+                        !QFileInfo::exists(output + QStringLiteral(".test-staging")) &&
+                        !QFileInfo::exists(output + QStringLiteral(".test-temporary")) &&
+                        QApplication::clipboard()->text() == QStringLiteral("keep clipboard"),
+                    "discard removes current artifacts exactly once without exporting or copying");
+                require(
+                    controller.automationState()
+                            .value(QStringLiteral("path"))
+                            .toString()
+                            .isEmpty() &&
+                        !controller.automationState().value(QStringLiteral("finalized")).toBool() &&
+                        !controller.blocksMemoryTrimming() && recordingWindowCount() == 0,
+                    "discarded sessions return to idle without publishing a file");
+            }
+        }
+        for (bool enabled : {false, true}) {
+            idle();
+            require(RecordingSettings().setDeleteFilesOnRecordingClose(enabled),
+                    "set startup Close preference");
+            const QString output =
+                QDir(directory).filePath(QStringLiteral("starting-%1.mp4").arg(++fixture));
+            const int beforeExports = exports, beforeDestroyed = destroyedSessions;
+            auto controller = std::make_unique<ScreenRecordingController>(testEffectsSource);
+            std::promise<void> releaseStart, releaseDestroy;
+            sessionCreateGate = releaseStart.get_future().share();
+            sessionCreateEntered = false;
+            QString error;
+            require(controller->startAutomation(QRect(80, 80, 320, 240),
+                                                {{QStringLiteral("path"), output},
+                                                 {QStringLiteral("post_processing"), deferred}},
+                                                &error),
+                    "start delayed backend fixture");
+            wait([] { return sessionCreateEntered.load(); });
+            require(controller->controlAutomation(QStringLiteral("close"), {}, &error) &&
+                        !controller->isOpen(),
+                    "Close stays responsive during native startup");
+            require(RecordingSettings().setDeleteFilesOnRecordingClose(!enabled) &&
+                        controller->controlAutomation(QStringLiteral("close"), {}, &error),
+                    "repeated Close preserves the original startup decision");
+            if (enabled) {
+                sessionDestroyGate = releaseDestroy.get_future().share();
+                sessionDestroyEntered = false;
+            }
+            releaseStart.set_value();
+            wait([&] {
+                return enabled ? sessionDestroyEntered.load() : destroyedSessions > beforeDestroyed;
+            });
+            sessionCreateGate = {};
+            if (enabled) {
+                controller.reset();
+                requireMemoryAdmissionBlocked(
+                    "controller destruction retains pending cancellation");
+                releaseDestroy.set_value();
+            } else {
+                if (deferred)
+                    finishRender(*controller);
+                waitForIdle(*controller);
+                controller.reset();
+            }
+            idle();
+            sessionDestroyGate = {};
+            require(destroyedSessions == beforeDestroyed + 1 &&
+                        exports == beforeExports + (enabled ? 0 : 1) &&
+                        QFileInfo::exists(output) == !enabled &&
+                        !QFileInfo::exists(output + QStringLiteral(".test-staging")) &&
+                        !QFileInfo::exists(output + QStringLiteral(".test-temporary")),
+                    "startup Close snapshots deletion and survives controller destruction");
+        }
+        for (bool paused : {false, true}) {
+            idle();
+            require(RecordingSettings().setDeleteFilesOnRecordingClose(false),
+                    "disable deletion to preserve direct Close behavior");
+            const QString output =
+                QDir(directory).filePath(QStringLiteral("closed-%1.mp4").arg(++fixture));
+            const int beforeExports = exports, beforeDestroyed = destroyedSessions;
+            ScreenRecordingController controller(testEffectsSource);
+            QString error;
+            require(controller.startAutomation(QRect(80, 80, 320, 240),
+                                               {{QStringLiteral("path"), output},
+                                                {QStringLiteral("post_processing"), deferred}},
+                                               &error),
+                    "start default Close behavior fixture");
+            waitForRecording(controller);
+            if (paused)
+                require(controller.controlAutomation(QStringLiteral("pause"), {}, &error),
+                        "pause default Close behavior fixture");
+            require(controller.controlAutomation(QStringLiteral("close"), {}, &error),
+                    "disabled delete-on-close still saves the recording");
+            if (deferred)
+                finishRender(controller);
+            waitForIdle(controller);
+            idle();
+            require(exports == beforeExports + 1 && destroyedSessions == beforeDestroyed + 1 &&
+                        QFileInfo::exists(output),
+                    "disabled delete-on-close saves both active and paused recordings");
+        }
+        // Stop, Copy, and Trim take ownership of finalization before Close.
+        for (int action = 0; action < 3; ++action) {
+            idle();
+            require(RecordingSettings().setDeleteFilesOnRecordingClose(true),
+                    "enable deletion while testing explicit save actions");
+            const QString output =
+                QDir(directory).filePath(QStringLiteral("saved-%1.mp4").arg(++fixture));
+            const int beforeExports = exports, beforeDestroyed = destroyedSessions;
+            ScreenRecordingController controller(testEffectsSource);
+            QString error;
+            require(controller.startAutomation(QRect(80, 80, 320, 240),
+                                               {{QStringLiteral("path"), output},
+                                                {QStringLiteral("post_processing"), deferred}},
+                                               &error),
+                    "start explicit save fixture");
+            waitForRecording(controller);
+            std::promise<void> release, entered;
+            auto reached = entered.get_future();
+            exportGate = release.get_future().share();
+            exportEntered = &entered;
+            if (action == 2)
+                recordingToolbarButton("Trim Video")->click();
+            else
+                require(controller.controlAutomation(action == 0 ? QStringLiteral("stop")
+                                                                 : QStringLiteral("copy"),
+                                                     {}, &error),
+                        "explicit Stop or Copy accepts finalization");
+            require(reached.wait_for(std::chrono::seconds(2)) == std::future_status::ready,
+                    "explicit save reaches the gated finalization worker");
+            require(controller.controlAutomation(QStringLiteral("close"), {}, &error),
+                    "Close preserves an accepted save operation");
+            joinHeldExport(release, beforeExports);
+            if (deferred && action != 2)
+                finishRender(controller);
+            waitForIdle(controller);
+            idle();
+            require(exports == beforeExports + 1 && destroyedSessions == beforeDestroyed + 1 &&
+                        QFileInfo::exists(output),
+                    "Stop, Copy, and Trim still save when delete-on-close is enabled");
+        }
+    }
+    require(previous.open(QIODevice::ReadOnly) && previous.readAll() == "previous recording",
+            "deleting current recording artifacts preserves earlier exports");
 }
 
 void recordingAutoExitAfterSuccessfulFinalization(bool notifications = false) {
@@ -2227,6 +2503,10 @@ snow_recording_session_create_direct(const SnowCaptureDirectRecordingConfig* con
     // thread by controllerPreviewTransitions instead.
     require(audioMonitorsActive == 0,
             "recording native initialization follows audio preview retirement");
+    if (const auto gate = sessionCreateGate; gate.valid()) {
+        sessionCreateEntered = true;
+        gate.wait();
+    }
     lastDirectConfig = *config;
     liveSystemGain = config->system_audio_gain_db;
     liveMicrophoneGain = config->microphone_gain_db;
@@ -2246,6 +2526,15 @@ snow_recording_session_create_direct(const SnowCaptureDirectRecordingConfig* con
     if (failStart) {
         *result = nullptr;
         return SNOW_RECORDING_RESULT_INVALID_ARGUMENT;
+    }
+    if (recordingFileFixture) {
+        session.outputFile = QString::fromUtf8(config->output_file_utf8);
+        session.stagingFile = session.outputFile + QStringLiteral(".test-staging");
+        session.temporaryDirectory = session.outputFile + QStringLiteral(".test-temporary");
+        QFile staging(session.stagingFile);
+        require(staging.open(QIODevice::WriteOnly) && staging.write("captured media") > 0 &&
+                    QDir().mkpath(session.temporaryDirectory),
+                "fake capture creates session-owned recording artifacts");
     }
     *result = &session;
     return SNOW_RECORDING_RESULT_OK;
@@ -2336,10 +2625,18 @@ void snow_recording_render_task_destroy(SnowRecordingRenderTask* task) {
     --activeRenderTasks;
     delete task;
 }
-void snow_recording_session_destroy(SnowRecordingSession*) {
+void snow_recording_session_destroy(SnowRecordingSession* recording) {
     if (const auto gate = sessionDestroyGate; gate.valid()) {
         sessionDestroyEntered = true;
         gate.wait();
+    }
+    if (!recording->stagingFile.isEmpty()) {
+        require(QFile::remove(recording->stagingFile) &&
+                    QDir(recording->temporaryDirectory).removeRecursively(),
+                "native session destruction removes only its owned staging artifacts");
+        recording->stagingFile.clear();
+        recording->temporaryDirectory.clear();
+        recording->outputFile.clear();
     }
     ++destroyedSessions;
 }
@@ -2415,7 +2712,7 @@ void snow_recording_clip_export_cancel(SnowRecordingClipExport*) {
 void snow_recording_clip_export_destroy(SnowRecordingClipExport* task) {
     delete task;
 }
-SnowRecordingResult snow_recording_session_stop(SnowRecordingSession*) {
+SnowRecordingResult snow_recording_session_stop(SnowRecordingSession* recording) {
     require(recordingStopRequested,
             "Stop must freeze its endpoint before asynchronous finalization");
     // Snapshot the gate before publishing entry. The UI may release and clear
@@ -2427,6 +2724,11 @@ SnowRecordingResult snow_recording_session_stop(SnowRecordingSession*) {
     }
     if (gate.valid()) {
         gate.wait();
+    }
+    if (!failure && !recording->outputFile.isEmpty()) {
+        QFile output(recording->outputFile);
+        require(output.open(QIODevice::WriteOnly) && output.write("finalized recording") > 0,
+                "only finalization publishes the recording output");
     }
     ++exports;
     return failure ? SNOW_RECORDING_RESULT_INVALID_ARGUMENT : SNOW_RECORDING_RESULT_OK;
@@ -2551,13 +2853,17 @@ void recordingSettingsDialog() {
                 "recording preferences must keep descriptions out of the compact form rows");
     }
     const int apiModeCount = form->field(QStringLiteral("screen-recording.api-mode")) ? 1 : 0;
-    // Video/audio (4), animation (3), encoding (2), capture (1), interaction (2).
-    require(form->items().size() == expectedCount && expectedCount == 12 + apiModeCount,
+    // Video/audio (4), animation (3), encoding (2), capture (1), interaction (3).
+    require(form->items().size() == expectedCount && expectedCount == 13 + apiModeCount,
             "recording popup must contain exactly the requested settings categories");
     auto* notifyExport = form->findChild<AdSwitch*>(
         QStringLiteral("screen-recording.notify-after-export-completes"));
     require(notifyExport && !notifyExport->isChecked(),
             "recording settings include export notifications disabled by default");
+    auto* deleteOnClose = form->findChild<AdSwitch*>(
+        QStringLiteral("screen-recording.delete-files-on-recording-close"));
+    require(deleteOnClose && !deleteOnClose->isChecked(),
+            "recording settings include deleting files on close disabled by default");
     class SettingsTranslator final : public QTranslator {
       public:
         bool isEmpty() const override {
@@ -2577,6 +2883,9 @@ void recordingSettingsDialog() {
     require(modal->windowTitle() == QStringLiteral("Translated: Recording settings") &&
                 form->field(QStringLiteral("screen-recording.notify-after-export-completes"))
                         ->label() == QStringLiteral("Translated: Notify after export completes") &&
+                form->field(QStringLiteral("screen-recording.delete-files-on-recording-close"))
+                        ->label() ==
+                    QStringLiteral("Translated: Delete files on recording close") &&
                 form->field(QStringLiteral("screen-recording.frame-rate"))->label() ==
                     QStringLiteral("Translated: Frame rate") &&
                 form->findChild<AdSelect*>(QStringLiteral("screen-recording.encoder"))
@@ -2590,6 +2899,10 @@ void recordingSettingsDialog() {
     require(snow_shot::storage::RecordingSettings().notifyAfterExportCompletes(),
             "recording settings notification switch persists immediately");
     notifyExport->setChecked(false);
+    deleteOnClose->setChecked(true);
+    require(snow_shot::storage::RecordingSettings().deleteFilesOnRecordingClose(),
+            "recording settings delete-on-close switch persists immediately");
+    deleteOnClose->setChecked(false);
     if (const QString preview = qEnvironmentVariable("SNOW_TEST_RECORDING_SETTINGS_PREVIEW");
         !preview.isEmpty()) {
         require(modal->contentWidget()->window()->grab().save(preview),
@@ -4435,6 +4748,11 @@ int main(int argc, char** argv) {
     }
     if (app.arguments().contains(QStringLiteral("--finalization-close-only"))) {
         recordingCanCloseDuringAndAfterFinalization();
+        ApplicationStorage::instance().shutdown();
+        return 0;
+    }
+    if (app.arguments().contains(QStringLiteral("--delete-on-close-only"))) {
+        recordingDeleteOnCloseTests(temporary.path());
         ApplicationStorage::instance().shutdown();
         return 0;
     }

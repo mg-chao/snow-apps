@@ -378,8 +378,10 @@ struct ScreenRecordingController::Impl {
             syncUi();
         });
         finalizationPollTimer.setInterval(50);
-        QObject::connect(&finalizationPollTimer, &QTimer::timeout, &owner,
-                         [this]() { pollFinalization(); });
+        QObject::connect(&finalizationPollTimer, &QTimer::timeout, &owner, [this]() {
+            pollDiscard();
+            pollFinalization();
+        });
         startPollTimer.setInterval(50);
         QObject::connect(&startPollTimer, &QTimer::timeout, &owner, [this]() { pollStart(); });
         // The countdown shares one clock with the overlay digits: every tick
@@ -404,27 +406,30 @@ struct ScreenRecordingController::Impl {
         // Native acquisition/teardown and compressed-source finalization can
         // block. Transfer every pending operation and its session into one
         // independent owner so controller destruction never joins on the GUI.
-        if (startFuture.valid() || finalizationFuture.valid() || recordingSession != nullptr ||
-            pendingDimensions.valid()) {
-            std::thread(snow_shot::runtime::trackRuntimeWork(
-                            [start = std::move(startFuture), finish = std::move(finalizationFuture),
-                             session = std::move(recordingSession),
-                             dimensions = std::move(pendingDimensions)]() mutable {
-                                snow_shot::platform::applyApplicationQoSToCurrentThread();
-                                if (start.valid()) {
-                                    StartAttemptResult result = start.get();
-                                    if (result.session != nullptr && session == nullptr)
-                                        session = std::move(result.session);
-                                }
-                                if (finish.valid()) {
-                                    const auto result = finish.get();
-                                    if (result.source)
-                                        snow_recording_source_destroy(result.source);
-                                }
-                                session.reset();
-                                if (dimensions.valid())
-                                    dimensions.wait();
-                            }))
+        if (startFuture.valid() || finalizationFuture.valid() || discardFuture.valid() ||
+            recordingSession != nullptr || pendingDimensions.valid()) {
+            std::thread(
+                snow_shot::runtime::trackRuntimeWork(
+                    [start = std::move(startFuture), finish = std::move(finalizationFuture),
+                     discard = std::move(discardFuture), session = std::move(recordingSession),
+                     dimensions = std::move(pendingDimensions)]() mutable {
+                        snow_shot::platform::applyApplicationQoSToCurrentThread();
+                        if (start.valid()) {
+                            StartAttemptResult result = start.get();
+                            if (result.session != nullptr && session == nullptr)
+                                session = std::move(result.session);
+                        }
+                        if (finish.valid()) {
+                            const auto result = finish.get();
+                            if (result.source)
+                                snow_recording_source_destroy(result.source);
+                        }
+                        if (discard.valid())
+                            discard.wait();
+                        session.reset();
+                        if (dimensions.valid())
+                            dimensions.wait();
+                    }))
                 .detach();
         }
         if (renderJob) {
@@ -1034,6 +1039,7 @@ struct ScreenRecordingController::Impl {
                 return;
             }
             sessionStatus = ScreenshotToolPalette::RecordingSessionStatus::starting();
+            discardPendingStart = false;
             automationRevision = snow_shot::presentation::nextAutomationRevision();
             syncUi();
 
@@ -1196,6 +1202,18 @@ struct ScreenRecordingController::Impl {
         }
         startPollTimer.stop();
         StartAttemptResult result = startFuture.get();
+        if (discardPendingStart) {
+            discardPendingStart = false;
+            recordingSession = std::move(result.session);
+            if (recordingSession != nullptr) {
+                discard();
+            } else {
+                sessionStatus = ScreenshotToolPalette::RecordingSessionStatus::idle();
+                automationRevision = snow_shot::presentation::nextAutomationRevision();
+                restoreToolbarCaptureVisibility();
+            }
+            return;
+        }
         if (uiSession == nullptr) {
             // The UI was retired while the backend was starting. A session that
             // did start is shut down through the regular finalization path; any
@@ -1507,8 +1525,54 @@ struct ScreenRecordingController::Impl {
         static_cast<void>(snow_shot::presentation::recording::openScreenRecordingFolder());
     }
 
+    void discard() {
+        setCaptureActivity(false);
+        stopAudioMeter();
+        exclusionPollTimer.stop();
+        durationTimer.stop();
+        sessionStatus = ScreenshotToolPalette::RecordingSessionStatus::stopping();
+        automationRevision = snow_shot::presentation::nextAutomationRevision();
+        syncUi();
+        // Destroy cancels capture and removes only the session's private staging
+        // files. It can join native workers, so retain ownership off the GUI thread.
+        discardFuture = std::async(
+            std::launch::async,
+            snow_shot::runtime::trackRuntimeWork([session = std::move(recordingSession)]() mutable {
+                snow_shot::platform::applyApplicationQoSToCurrentThread();
+                session.reset();
+            }));
+        finalizationPollTimer.start();
+    }
+
+    void pollDiscard() {
+        if (!discardFuture.valid() ||
+            discardFuture.wait_for(std::chrono::milliseconds(0)) != std::future_status::ready)
+            return;
+        finalizationPollTimer.stop();
+        discardFuture.get();
+        pendingOutputPath.clear();
+        durationMilliseconds = 0;
+        sessionStatus = ScreenshotToolPalette::RecordingSessionStatus::idle();
+        automationRevision = snow_shot::presentation::nextAutomationRevision();
+        restoreToolbarCaptureVisibility();
+        syncUi();
+    }
+
     void close() {
-        stop(false);
+        // Snapshot the preference for an in-flight start while its UI still
+        // exists. Repeated Close commands must not change that decision.
+        if (startFuture.valid() && uiSession != nullptr) {
+            discardPendingStart =
+                snow_shot::storage::RecordingSettings().deleteFilesOnRecordingClose();
+            if (discardPendingStart)
+                setCaptureActivity(false);
+        }
+        if (recordingSession != nullptr && !sessionStatus.busy() &&
+            snow_shot::storage::RecordingSettings().deleteFilesOnRecordingClose()) {
+            discard();
+        } else {
+            stop(false);
+        }
         destroyUi();
     }
 
@@ -2020,6 +2084,8 @@ struct ScreenRecordingController::Impl {
     QElapsedTimer countdownElapsed;
     qint64 countdownTotalMilliseconds = 0;
     std::future<FinalizationResult> finalizationFuture;
+    std::future<void> discardFuture;
+    bool discardPendingStart = false;
     RecordingRenderJob* renderJob = nullptr;
     QPointer<RecordingTrimSession> trimSession;
     bool trimRequested = false;
@@ -2128,8 +2194,8 @@ bool ScreenRecordingController::isRecording() const {
 bool ScreenRecordingController::blocksMemoryTrimming() const {
     const auto& state = *m_impl;
     return state.isOpen() || isRecording() || state.recordingSession || state.startFuture.valid() ||
-           state.finalizationFuture.valid() || state.renderJob || state.trimSession ||
-           state.audioPreview ||
+           state.finalizationFuture.valid() || state.discardFuture.valid() || state.renderJob ||
+           state.trimSession || state.audioPreview ||
            (state.audioPreviewRetirement.valid() &&
             state.audioPreviewRetirement.wait_for(std::chrono::milliseconds(0)) !=
                 std::future_status::ready);

@@ -7071,6 +7071,12 @@ if(SNOW_SHOT_BUILD_TESTS)
         ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}"
         ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
         LABELS "unit" RUN_SERIAL TRUE TIMEOUT 60)
+    add_test(NAME snow-shot-recording-delete-on-close-tests
+        COMMAND snow-shot-screen-recording-controller-tests --delete-on-close-only -platform offscreen)
+    set_tests_properties(snow-shot-recording-delete-on-close-tests PROPERTIES
+        ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}"
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+        LABELS "unit" RUN_SERIAL TRUE TIMEOUT 60)
     add_test(NAME snow-shot-recording-auto-exit-tests
         COMMAND snow-shot-screen-recording-controller-tests --auto-exit-only -platform offscreen)
     set_tests_properties(snow-shot-recording-auto-exit-tests PROPERTIES

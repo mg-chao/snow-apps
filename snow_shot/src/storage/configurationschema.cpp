@@ -698,6 +698,8 @@ const QVector<ConfigurationSchemaEntry> kRawEntries = {
      ConfigurationValueKind::Boolean},
     {QStringLiteral("screen_recording/notify_after_export_completes"), false,
      ConfigurationValueKind::Boolean},
+    {QStringLiteral("screen_recording/delete_files_on_recording_close"), false,
+     ConfigurationValueKind::Boolean},
     {QStringLiteral("screen_recording/start_delay_seconds"), 0, ConfigurationValueKind::Integer,
      ConfigurationIntegerRange{0, 10, 1}},
     {QStringLiteral("screen_recording/video_save_directory"),

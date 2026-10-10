@@ -2021,6 +2021,10 @@
             <translation>刪除檔案</translation>
         </message>
         <message>
+            <source>Delete files on recording close</source>
+            <translation>關閉錄製時刪除檔案</translation>
+        </message>
+        <message>
             <source>Delete history</source>
             <translation>刪除歷史記錄</translation>
         </message>
@@ -2035,6 +2039,10 @@
         <message>
             <source>Delete temporary recording files?</source>
             <translation>刪除螢幕錄製暫存檔案？</translation>
+        </message>
+        <message>
+            <source>Delete the current recording files when closing an active recording. Stopping recording still saves the output.</source>
+            <translation>關閉進行中的錄製時，刪除本次錄製的檔案。停止錄製仍會儲存輸出檔案。</translation>
         </message>
         <message>
             <source>Desktop access to your capture tools</source>

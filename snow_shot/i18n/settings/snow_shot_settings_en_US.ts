@@ -2021,6 +2021,10 @@
             <translation>Delete files</translation>
         </message>
         <message>
+            <source>Delete files on recording close</source>
+            <translation>Delete files on recording close</translation>
+        </message>
+        <message>
             <source>Delete history</source>
             <translation>Delete history</translation>
         </message>
@@ -2035,6 +2039,10 @@
         <message>
             <source>Delete temporary recording files?</source>
             <translation>Delete temporary recording files?</translation>
+        </message>
+        <message>
+            <source>Delete the current recording files when closing an active recording. Stopping recording still saves the output.</source>
+            <translation>Delete the current recording files when closing an active recording. Stopping recording still saves the output.</translation>
         </message>
         <message>
             <source>Desktop access to your capture tools</source>

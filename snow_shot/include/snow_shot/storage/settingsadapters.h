@@ -519,6 +519,8 @@ class RecordingSettings final {
     bool setAutoExitAfterRecordingEnds(bool enabled) const;
     [[nodiscard]] bool notifyAfterExportCompletes() const;
     bool setNotifyAfterExportCompletes(bool enabled) const;
+    [[nodiscard]] bool deleteFilesOnRecordingClose() const;
+    bool setDeleteFilesOnRecordingClose(bool enabled) const;
     [[nodiscard]] int startDelaySeconds() const;
     bool setStartDelaySeconds(int seconds) const;
     [[nodiscard]] QString videoSaveDirectory() const;

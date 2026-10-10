@@ -1890,6 +1890,17 @@ bool RecordingSettings::setNotifyAfterExportCompletes(bool enabled) const {
                             enabled);
 }
 
+bool RecordingSettings::deleteFilesOnRecordingClose() const {
+    return cache()
+        .value(QStringLiteral("screen_recording/delete_files_on_recording_close"))
+        .toBool();
+}
+
+bool RecordingSettings::setDeleteFilesOnRecordingClose(bool enabled) const {
+    return cache().setValue(QStringLiteral("screen_recording/delete_files_on_recording_close"),
+                            enabled);
+}
+
 QString RecordingSettings::videoSaveDirectory() const {
     return cache().value(QStringLiteral("screen_recording/video_save_directory")).toString();
 }

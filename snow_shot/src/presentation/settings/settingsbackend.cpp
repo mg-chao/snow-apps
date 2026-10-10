@@ -898,6 +898,8 @@ bool BuiltInSettingsBackend::switchValue(SettingsSwitchBinding binding) const {
         return storage::RecordingSettings().autoExitAfterRecordingEnds();
     case SettingsSwitchBinding::ScreenRecordingNotifyAfterExportCompletes:
         return storage::RecordingSettings().notifyAfterExportCompletes();
+    case SettingsSwitchBinding::ScreenRecordingDeleteFilesOnRecordingClose:
+        return storage::RecordingSettings().deleteFilesOnRecordingClose();
     case SettingsSwitchBinding::DisableHotkeysOnFocusedFullscreen:
         return storage::GlobalShortcutSettings().disableOnFocusedFullscreenWindow();
     case SettingsSwitchBinding::McpEnabled:
@@ -1148,6 +1150,9 @@ bool BuiltInSettingsBackend::applySwitchValue(SettingsSwitchBinding binding, boo
     if (binding == SettingsSwitchBinding::ScreenRecordingNotifyAfterExportCompletes) {
         return storage::RecordingSettings().setNotifyAfterExportCompletes(value);
     }
+    if (binding == SettingsSwitchBinding::ScreenRecordingDeleteFilesOnRecordingClose) {
+        return storage::RecordingSettings().setDeleteFilesOnRecordingClose(value);
+    }
     if (binding == SettingsSwitchBinding::DisableHotkeysOnFocusedFullscreen) {
         return storage::GlobalShortcutSettings().setDisableOnFocusedFullscreenWindow(value);
     }
@@ -1235,6 +1240,7 @@ bool BuiltInSettingsBackend::applySwitchValue(SettingsSwitchBinding binding, boo
     case SettingsSwitchBinding::ScreenRecordingCaptureToolbar:
     case SettingsSwitchBinding::ScreenRecordingAutoExitAfterRecordingEnds:
     case SettingsSwitchBinding::ScreenRecordingNotifyAfterExportCompletes:
+    case SettingsSwitchBinding::ScreenRecordingDeleteFilesOnRecordingClose:
     case SettingsSwitchBinding::DisableHotkeysOnFocusedFullscreen:
     case SettingsSwitchBinding::McpEnabled:
     case SettingsSwitchBinding::AutoStartAtBoot:
@@ -2685,6 +2691,9 @@ bool BuiltInSettingsBackend::resetSection(SettingsSectionReset reset) {
             {QStringLiteral("screen_recording/notify_after_export_completes"),
              storage::ConfigurationSchema::defaultValue(
                  QStringLiteral("screen_recording/notify_after_export_completes"))},
+            {QStringLiteral("screen_recording/delete_files_on_recording_close"),
+             storage::ConfigurationSchema::defaultValue(
+                 QStringLiteral("screen_recording/delete_files_on_recording_close"))},
         });
     case SettingsSectionReset::ScreenRecordingOutput:
         return storage::ApplicationStorage::instance().configuration().setValues({
